@@ -91,7 +91,7 @@ extension NodeCollection {
         return [
             NodeCollection(
                 id: corpusID,
-                name: "Corpus",
+                name: "Library",
                 nodeCount: 142,
                 lastEntryAt: now.addingTimeInterval(-12 * minute)
             ),

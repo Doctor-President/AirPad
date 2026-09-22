@@ -104,13 +104,13 @@ struct RelatedNodesSection: View {
     /// stays subordinate to the header, never a prominent button.
     private var relatedHeader: some View {
         HStack(spacing: 8) {
-            channelHeader("Related Nodes", secondary: false)
+            channelHeader("Related Entries", secondary: false)
             Spacer(minLength: 8)
             Button { showLinkPicker = true } label: {
                 HStack(spacing: 3) {
                     Image(systemName: "plus")
                         .font(.system(size: 10, weight: .semibold))
-                    Text("Link to node")
+                    Text("Link to entry")
                         .font(.system(size: 12, weight: .medium))
                 }
                 .foregroundStyle(AppearancePalette.ink.opacity(0.4))

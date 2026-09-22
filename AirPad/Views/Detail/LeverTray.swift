@@ -613,8 +613,8 @@ struct LeverTray: View {
     private var tagsRefusalMessage: String {
         let hasSummary = !((node?.summary ?? "").trimmingCharacters(in: .whitespacesAndNewlines).isEmpty)
         return hasSummary
-            ? "Apple Intelligence declined to suggest tags for this note — its title and summary are unaffected. \(privateModelPitch)"
-            : "Apple Intelligence declined to suggest tags for this note. \(privateModelPitch)"
+            ? "Apple Intelligence declined to suggest tags for this entry — its title and summary are unaffected. \(privateModelPitch)"
+            : "Apple Intelligence declined to suggest tags for this entry. \(privateModelPitch)"
     }
 
     private func loadTagSuggestions() async {
@@ -765,7 +765,7 @@ struct LeverTray: View {
             // F5b — the window is SHARED input+output, so a note that "fits" can
             // still overflow because the reply needs room too. (Numbers are in the
             // payload + log; copy stays plain. T dials wording.)
-            return "This note fills the model's context window, leaving no room for a reply."
+            return "This entry fills the model's context window, leaving no room for a reply."
         case .failed(let msg):
             return msg
         case .refused(let msg):

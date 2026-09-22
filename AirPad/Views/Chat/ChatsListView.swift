@@ -125,7 +125,7 @@ struct ChatsListView: View {
                     Button {
                         pinningChatID = chat.id
                     } label: {
-                        Label(store.nodePinned(forChatID: chat.id) != nil ? "Change pin…" : "Pin to node…",
+                        Label(store.nodePinned(forChatID: chat.id) != nil ? "Change pin…" : "Pin to entry…",
                               systemImage: "pin")
                     }
                     Button(role: .destructive) {
@@ -155,7 +155,7 @@ struct ChatsListView: View {
                 pendingDeleteChat = nil
             }
         } message: {
-            Text("This chat is pinned to \(pendingDeleteNodeName). Deleting it removes it from that node too.")
+            Text("This chat is pinned to \(pendingDeleteNodeName). Deleting it removes it from that entry too.")
         }
         .sheet(isPresented: pinSheetPresented) {
             if let id = pinningChatID {

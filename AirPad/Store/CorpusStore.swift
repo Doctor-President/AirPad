@@ -885,14 +885,14 @@ final class CorpusStore {
         var suggestions: [String] = []
         if let summary = corpusIndex.summary {
             let themeQuestions = summary.dominantThemes.prefix(3).map {
-                "What patterns show up in my \($0.lowercased()) ideas?"
+                "What patterns show up in my \($0.lowercased()) entries?"
             }
             suggestions.append(contentsOf: themeQuestions)
             if let recent = summary.recentDominantTags.first {
                 suggestions.append("What have I been thinking about with \(recent)?")
             }
             if let stale = summary.anomalies.staleTags.first {
-                suggestions.append("What happened to my \(stale) ideas?")
+                suggestions.append("What happened to my \(stale) entries?")
             }
         }
         let fallbacks = [

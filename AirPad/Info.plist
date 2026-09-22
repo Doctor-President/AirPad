@@ -39,15 +39,15 @@
 		<true/>
 	</dict>
 	<key>NSCameraUsageDescription</key>
-	<string>AirPad uses the camera to capture photos and videos as ideas.</string>
+	<string>AirPad uses the camera to capture photos and videos as entries.</string>
 	<key>NSLocalNetworkUsageDescription</key>
 	<string>AirPad needs local network access to reach the Ollama or LM Studio endpoint you configured in Settings. Only used for queries you initiate.</string>
 	<key>NSMicrophoneUsageDescription</key>
-	<string>AirPad needs microphone access to record voice notes.</string>
+	<string>AirPad needs microphone access to record voice memos.</string>
 	<key>NSPhotoLibraryUsageDescription</key>
-	<string>AirPad can add photos from your library to an idea.</string>
+	<string>AirPad can add photos from your photo library to an entry.</string>
 	<key>NSSpeechRecognitionUsageDescription</key>
-	<string>AirPad uses speech recognition to transcribe your voice notes.</string>
+	<string>AirPad uses speech recognition to transcribe your voice memos.</string>
 	<key>NSUbiquitousContainers</key>
 	<dict>
 		<key>iCloud.com.doctorpresident.airpad</key>

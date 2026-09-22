@@ -37,6 +37,9 @@ struct CanvasChrome: View {
     @State private var showEditMap = false
     @State private var showBatchDeleteConfirmation = false
     @State private var showBatchAddTagSheet = false
+    /// Brief AG3 — the first-run callout on screen (`view.buttons` → `map.intro`), if any.
+    @State private var activeCallout: FirstRunCalloutKey?
+    @State private var calloutTask: Task<Void, Never>?
 
     #if DEBUG
     /// DEBUG-only — Solar Flare material spike tuner. Mounted here in
@@ -86,10 +89,11 @@ struct CanvasChrome: View {
             CaptureButtonLabel() // shared visual — see CaptureButtonLabel.swift
         }
         .buttonStyle(.plain)
+        .firstRunCalloutTarget(FirstRunCalloutTargetID.captureButton)
     }
 
-    /// The bottom-right VIEW SWITCHER — a second anchor for the same picker the top pill presents
-    /// (T, 2026-09-14). It WEARS THE CURRENT VIEW'S ICON, so it announces the mode and invites the
+    /// The bottom-right VIEW SWITCHER — the only view-mode control since Brief AG2 demoted the top
+    /// pill to a label (T, 2026-09-14). It WEARS THE CURRENT VIEW'S ICON, so it announces the mode and invites the
     /// change at once; the glyph follows `viewMode` via the shared `destinations` mapping. Same
     /// circle/material/shadow as the capture "+" (see `CanvasCircleButtonLabel`) and stacked
     /// directly above it, at the SAME 10pt gap "+" keeps to the search pill, so the two read as one
@@ -101,7 +105,45 @@ struct CanvasChrome: View {
             CanvasCircleButtonLabel(systemName: viewSwitchGlyph, glyphSize: 22)
         }
         .accessibilityLabel("View: \(ViewSwitchMenuContent.destination(for: filterState.viewMode).label)")
-        .accessibilityHint("Switches between Card, List and Map")
+        .accessibilityHint("Switches between Map, List and Card View")
+        .firstRunCalloutTarget(FirstRunCalloutTargetID.viewButton)
+    }
+
+    // MARK: - First-run callouts (Brief AG3/AG4)
+
+    /// The chrome a callout talks about must be on screen and uncovered: not in a detail, not
+    /// selecting, Librarian at peek (View + Capture only render then), menu closed.
+    private var canvasCalloutEligible: Bool {
+        !store.isInDetailView && !selection.isActive && router.librarianAtPeek
+            && !showSlideOutMenu && !router.isCapturing
+    }
+
+    /// `view.buttons` first on ANY view; `map.intro` after it, Map only. List / Cards get only
+    /// `view.buttons`.
+    private var nextCanvasCallout: FirstRunCalloutKey? {
+        if !FirstRunCalloutKey.viewButtons.hasShown { return .viewButtons }
+        if filterState.viewMode == .systemGraph && !FirstRunCalloutKey.mapIntro.hasShown { return .mapIntro }
+        return nil
+    }
+
+    /// Re-evaluated on every input change. Never on the first frame: waits for the surface to
+    /// settle (Map: `router.mapSettled`), then one beat.
+    private func scheduleCanvasCallout() {
+        calloutTask?.cancel()
+        guard activeCallout == nil, nextCanvasCallout != nil else { return }
+        calloutTask = Task { @MainActor in
+            try? await Task.sleep(for: FirstRunCalloutTiming.beat)
+            guard !Task.isCancelled, activeCallout == nil, canvasCalloutEligible,
+                  let next = nextCanvasCallout else { return }
+            if filterState.viewMode == .systemGraph && !router.mapSettled { return }  // re-fires on settle
+            activeCallout = next
+        }
+    }
+
+    private func finishCanvasCallout(_ key: FirstRunCalloutKey) {
+        key.markShown()
+        if activeCallout == key { activeCallout = nil }
+        scheduleCanvasCallout()   // `map.intro` follows `view.buttons` after one beat
     }
 
     /// The switcher's glyph — the CURRENT view's icon. **T's ruling, 2026-09-15**, taken against
@@ -196,9 +238,9 @@ struct CanvasChrome: View {
                             // back button vs. the wider trailing ChromeBar —
                             // two Spacers would bias it toward the narrower side.
                             ZStack {
-                                // Top-center view pill — the single view-mode
-                                // switcher, persistent across every canvas mode.
-                                ViewPill(scope: scope, onEditMap: { showEditMap = true })
+                                // Top-center view pill — a label of the current view
+                                // (Brief AG2); the View button is the switcher.
+                                ViewPill(scope: scope)
 
                                 HStack(alignment: .center, spacing: 8) {
                                     DashboardBackButton {
@@ -355,6 +397,26 @@ struct CanvasChrome: View {
                 floatingSolarFlareTuningPanel
             }
             #endif
+        }
+        // Brief AG3 — first-run callout. Read here (not inside the ZStack) so the ring can find
+        // the View / Capture anchors; drawn over every canvas overlay including the slide-out menu.
+        .overlayPreferenceValue(FirstRunCalloutTargetsKey.self) { anchors in
+            if let key = activeCallout {
+                FirstRunCalloutOverlay(key: key, targetAnchors: anchors) {
+                    finishCanvasCallout(key)
+                }
+                .id(key)
+            }
+        }
+        .onAppear { scheduleCanvasCallout() }
+        .onDisappear { calloutTask?.cancel() }
+        .onChange(of: filterState.viewMode) { _, _ in scheduleCanvasCallout() }
+        .onChange(of: router.mapSettled) { _, _ in scheduleCanvasCallout() }
+        .onChange(of: canvasCalloutEligible) { _, eligible in
+            // Something covered the chrome (Librarian raised, detail pushed, selection…) —
+            // that interaction counts as the tap-to-dismiss.
+            if !eligible, let key = activeCallout { finishCanvasCallout(key) }
+            else { scheduleCanvasCallout() }
         }
         // #3 — clear the persistent focus highlight on the user's next touch
         // anywhere. Installed once on the window; observes touches without
@@ -592,12 +654,11 @@ struct ViewSwitchMenuContent: View {
     }
 }
 
+/// Brief AG2 — the top-of-view pill is a LABEL of the current view, not a control: no chevron,
+/// no tap target. The View button (above Capture) is the only way to switch views.
 private struct ViewPill: View {
     @Environment(CorpusStore.self) private var store
     let scope: CanvasScope
-    /// Tag-anchored Map — opens the anchor-designation settings. Shown in the
-    /// flyout only when Map is the active view.
-    var onEditMap: () -> Void = {}
 
     private var current: ViewMode { store.filterState(for: scope).viewMode }
     private var currentDest: (mode: ViewMode, label: String, icon: String) {
@@ -605,28 +666,21 @@ private struct ViewPill: View {
     }
 
     var body: some View {
-        Menu {
-            ViewSwitchMenuContent(scope: scope, onEditMap: onEditMap)
-        } label: {
-            HStack(spacing: 5) {
-                Image(systemName: currentDest.icon)
-                    .font(.system(size: 13, weight: .semibold))
-                Text(currentDest.label)
-                    .font(.system(size: 14, weight: .semibold))
-                Image(systemName: "chevron.down")
-                    .font(.system(size: 10, weight: .bold))
-                    .opacity(0.6)
-            }
-            // ws-dark-light-mode item 2 — the "Map"/view pill. ink (dark #FFFFFF == .white).
-            .foregroundStyle(AppearancePalette.ink)
-            .frame(height: 36)
-            .padding(.horizontal, 14)
-            .contentShape(Capsule())
-            .chromeSurface(Capsule())
-            .clipShape(Capsule())
+        HStack(spacing: 5) {
+            Image(systemName: currentDest.icon)
+                .font(.system(size: 13, weight: .semibold))
+            Text(currentDest.label)
+                .font(.system(size: 14, weight: .semibold))
         }
-        .menuStyle(.button)
-        .buttonStyle(.plain)
+        // ws-dark-light-mode item 2 — the "Map"/view pill. ink (dark #FFFFFF == .white).
+        .foregroundStyle(AppearancePalette.ink)
+        .frame(height: 36)
+        .padding(.horizontal, 14)
+        .chromeSurface(Capsule())
+        .clipShape(Capsule())
+        .accessibilityElement(children: .ignore)
+        .accessibilityLabel("\(currentDest.label) View")
+        .accessibilityAddTraits(.isHeader)
     }
 }
 
@@ -914,7 +968,7 @@ private struct ImportProgressBanner: View {
             ProgressView()
                 .tint(AppearancePalette.ink)
                 .scaleEffect(0.75)
-            Text("Importing \(total) ideas… (\(current)/\(total) processed)")
+            Text("Importing \(total) entries… (\(current)/\(total) processed)")
                 .font(.caption.weight(.medium))
                 .foregroundStyle(AppearancePalette.ink)
         }

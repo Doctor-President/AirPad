@@ -76,6 +76,10 @@ struct LibrarianSurface: View {
     /// Brief AF3 — which row Settings should scroll to on open (nil = top, today's
     /// behavior). Set to `.webSearch` by the no-Brave-key notice's tap.
     @State private var settingsAnchor: SettingsView.Anchor? = nil
+    /// Brief AG3/AG4 — the first-run callout over the raised sheet (`librarian.intro` in the
+    /// user's rooms, `librarian.sample` in the Sample Library), if any.
+    @State private var activeCallout: FirstRunCalloutKey?
+    @State private var calloutTask: Task<Void, Never>?
     @FocusState private var isInputFocused: Bool
     /// Live measured height of the Ask field (grows with wrapped lines). Drives
     /// the Messages-style corner: `min(height/2, singleLineHeight/2)` — a PILL at
@@ -254,6 +258,16 @@ struct LibrarianSurface: View {
                         .allowsHitTesting(fieldOpacity > 0.01)
                 }
 
+                // Brief AG3 — first-run callout, over the raised sheet only.
+                if let key = activeCallout {
+                    FirstRunCalloutOverlay(
+                        key: key,
+                        onAction: { question in sendCalloutQuestion(question, librarian: librarian) },
+                        onDismiss: { finishLibrarianCallout(key) }
+                    )
+                    .id(key)
+                }
+
             }
         }
         .onAppear {
@@ -390,6 +404,14 @@ struct LibrarianSurface: View {
             seedScopeFromHostIfNeeded(librarian: librarian)
         }
         .onChange(of: panelModel.state) { _, newState in
+            // Brief AG3 — first raise of the sheet in a room → its callout, one beat after present.
+            // Dropping back to peek / hidden while it's up counts as the dismiss.
+            if newState == .half || newState == .full {
+                scheduleLibrarianCallout()
+            } else {
+                calloutTask?.cancel()
+                if let key = activeCallout { finishLibrarianCallout(key) }
+            }
             // The keyboard belongs only at .full (promote-on-focus). Any exit —
             // flick to half, drop to peek, duck to hidden — tears it down. NOTE:
             // this no longer clears `isViewingActiveChat` — the conversation now
@@ -1432,7 +1454,7 @@ struct LibrarianSurface: View {
             HStack(spacing: 5) {
                 Image(systemName: on ? "books.vertical.fill" : "lock.fill")
                     .font(.system(size: 11, weight: .semibold))
-                Text(on ? "Corpus" : "Private")
+                Text(on ? "Library" : "Private")
                     .font(.system(size: 12, weight: .semibold))
             }
             .foregroundStyle(AppearancePalette.ink.opacity(on ? 0.9 : 0.55))
@@ -1448,8 +1470,8 @@ struct LibrarianSurface: View {
             .contentShape(Capsule())
         }
         .buttonStyle(.plain)
-        .accessibilityLabel(on ? "Corpus grounding on" : "Private chat")
-        .accessibilityHint("Toggles whether answers are grounded in your notes")
+        .accessibilityLabel(on ? "Library mode" : "Private mode")
+        .accessibilityHint("Toggles whether answers read and cite your entries")
     }
 
     /// ★ Read-only active-model indicator — declares WHICH model will answer the
@@ -1794,7 +1816,7 @@ struct LibrarianSurface: View {
                     .foregroundStyle(AppearancePalette.ink.opacity(0.4))
             }
             .buttonStyle(.plain)
-            .accessibilityLabel(isPinned ? "Change pinned node" : "Pin chat to a node")
+            .accessibilityLabel(isPinned ? "Change pinned entry" : "Pin chat to an entry")
 
             Button {
                 if isPinned {
@@ -2006,13 +2028,52 @@ struct LibrarianSurface: View {
     private func scopeRoomText(_ scope: CanvasScope) -> String {
         switch scope {
         case .corpus:
-            return "Your notes"
+            return "Your library"
         case .collection(let id):
             if id == NodeCollection.journalID { return "Journal" }
             return store.collections.first { $0.id == id }?.name ?? "Collection"
         case .nodeIDs(let ids):
-            return ids == store.sampleNodeIDs ? "Sample library" : "Selected notes"
+            return ids == store.sampleNodeIDs ? "Sample Library" : "Selected entries"
         }
+    }
+
+    // MARK: - First-run callouts (Brief AG3/AG4)
+
+    /// The Sample Library room gets `librarian.sample`; every other room (the user's library,
+    /// Journal, a collection) gets `librarian.intro`.
+    private var librarianCalloutForRoom: FirstRunCalloutKey {
+        if case .nodeIDs(let ids) = router.librarian.selectedScope, ids == store.sampleNodeIDs {
+            return .librarianSample
+        }
+        return .librarianIntro
+    }
+
+    private func scheduleLibrarianCallout() {
+        calloutTask?.cancel()
+        guard activeCallout == nil, !librarianCalloutForRoom.hasShown else { return }
+        calloutTask = Task { @MainActor in
+            try? await Task.sleep(for: FirstRunCalloutTiming.beat)
+            let key = librarianCalloutForRoom
+            guard !Task.isCancelled, activeCallout == nil, !key.hasShown,
+                  panelModel.state == .half || panelModel.state == .full else { return }
+            activeCallout = key
+        }
+    }
+
+    private func finishLibrarianCallout(_ key: FirstRunCalloutKey) {
+        key.markShown()
+        if activeCallout == key { activeCallout = nil }
+    }
+
+    /// `librarian.sample` tap-to-send. The card promises "Ask this LIBRARY", and the questions
+    /// only resolve against the sample's entries — so the send runs in Library mode (the
+    /// persisted default is Private). Same path as the composer's send.
+    private func sendCalloutQuestion(_ question: String, librarian: LibrarianState) {
+        guard !librarian.askUnavailable, !router.chat.isStreaming else { return }
+        librarian.corpusAware = true
+        isViewingActiveChat = true
+        panelModel.expandToFull(animated: true)
+        Task { await librarian.groundedSend(query: question, store: store, chat: router.chat) }
     }
 
     /// Seeds `selectedScope` from the host the first time the surface

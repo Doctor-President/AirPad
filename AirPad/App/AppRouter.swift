@@ -48,6 +48,11 @@ final class AppRouter {
     /// fix-pass v3 Item 2a).
     var librarianAtPeek: Bool = false
 
+    /// Brief AG3 — true once the Map on screen has SETTLED (first frame rendered and, in
+    /// territory mode, the card-basis territories formed). Set by `CanvasView`; false while no
+    /// Map is mounted. `CanvasChrome` waits on it before showing a first-run callout over the Map.
+    var mapSettled: Bool = false
+
 
     /// Capture mode (ws-note-primitive / capture-flow). When true the user is in
     /// the focused blank-node capture surface: the Librarian ducks, the note is

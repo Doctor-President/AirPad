@@ -68,7 +68,7 @@ struct TagEditorSheet: View {
                 dismiss()
             }
         } message: {
-            Text("Nodes with this tag will keep the name but lose its color.")
+            Text("Entries with this tag will keep the name but lose its color.")
         }
     }
 

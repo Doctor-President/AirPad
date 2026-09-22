@@ -821,6 +821,7 @@ struct LibrarianSurface: View {
             // sheet. All that remains is a NON-interactive READABLE label of the room.
             if !isViewingActiveChat {
                 scopeRoomLabel(librarian: librarian)
+                    .padding(.top, 12)   // Brief AC4 — ≥12pt below the search field (was flush)
                     .padding(.bottom, 8)
             }
 

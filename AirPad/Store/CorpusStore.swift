@@ -1133,12 +1133,16 @@ final class CorpusStore {
                     func idx(_ s: String) -> String { "\(CitationReference.citedIndices(in: s).sorted())" }
                     NSLog("[CitRegex] [237]=%@ [12a]=%@ [2] [3]=%@ [12]=%@ [2][3][7]=%@",
                           idx("x [237] y"), idx("z [12a] z"), idx("a [2] b [3]"), idx("n [12] n"), idx("r [2][3][7]"))
-                    // Brief AB3 verify #4 — a marker whose index isn't a candidate is
-                    // stripped; the empty branch (valid = {}) strips ALL markers.
-                    NSLog("[CitRegex] strip valid={1,3} of 'See [1] and [9] plus [3].' → '%@'",
+                    // Brief AC1 — the FIVE forms must all parse (deepseek writes lists).
+                    NSLog("[CitRegex-AC1] [7]=%@ · [1, 2, 7]=%@ · [1,2]=%@ · [7][8]=%@ · [3], [4]=%@",
+                          idx("a [7] b"), idx("a [1, 2, 7] b"), idx("a [1,2] b"), idx("a [7][8] b"), idx("a [3], [4] b"))
+                    // Brief AB3/AC1 — invalid indices stripped INDIVIDUALLY inside a list.
+                    NSLog("[CitRegex] strip {1,3} of 'See [1] and [9] plus [3].' → '%@'",
                           CitationReference.stripInvalidMarkers(in: "See [1] and [9] plus [3].", valid: [1, 3]))
-                    NSLog("[CitRegex] strip valid={} of 'Generic [1][2][3][4][5] answer.' → '%@'",
+                    NSLog("[CitRegex] strip {} of 'Generic [1][2][3][4][5] answer.' → '%@'",
                           CitationReference.stripInvalidMarkers(in: "Generic [1][2][3][4][5] answer.", valid: []))
+                    NSLog("[CitRegex-AC1] strip {1,3} of 'x [1, 9, 3] y' → '%@'",
+                          CitationReference.stripInvalidMarkers(in: "x [1, 9, 3] y", valid: [1, 3]))
                 }
                 // Brief Y Part E verify — search-index coverage + the technology
                 // question over the USER's corpus (Corpus scope). The candidate list
@@ -1272,6 +1276,14 @@ final class CorpusStore {
                     let e = LibrarianState(); let ce = ChatSession(); e.selectedScope = .nodeIDs(Set(sampleNodeIDs.prefix(2)))
                     NSLog("[ScopeRepro] --- E) gibberish over a 2-node room — expect empty=TRUE ---")
                     await e.debugCorpusRetrieve(query: "xzqf plorktangle vurnbelsplat quomby", store: self, chat: ce)
+                    // F) AC2 — the user-room miss T reported on device (build C). Canvas,
+                    // Dashboard, and entry ALL open with hostScope=.corpus (→ user room),
+                    // so one probe covers all three. Report scope/empty/shape/counts: if the
+                    // fixture returns cards (no miss), the device cause is the MODEL or the
+                    // [n]-list rendering (AC1), NOT retrieval — STOP + wait for T's log.
+                    let f = LibrarianState(); let cf = ChatSession(); f.selectedScope = .corpus
+                    NSLog("[ScopeRepro] --- F) AC2 'What is my thinking on technology?' over .corpus (canvas/dashboard/entry) ---")
+                    await f.debugCorpusRetrieve(query: "What is my thinking on technology?", store: self, chat: cf)
                     NSLog("[ScopeRepro] done")
                 }
                 #endif

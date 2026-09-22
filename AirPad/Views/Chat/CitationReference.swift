@@ -33,18 +33,28 @@ enum CitationReference {
             let plain = String(attr.characters)
             let ns = plain as NSString
             let full = NSRange(location: 0, length: ns.length)
-            guard let match = markerRegex.firstMatch(in: plain, range: full) else { break }
-            let token = ns.substring(with: match.range)          // "[2]"
-            let number = ns.substring(with: match.range(at: 1))  // "2"
+            guard let match = citationTokenRegex.firstMatch(in: plain, range: full) else { break }
+            let token = ns.substring(with: match.range)          // "[2]" or "[1, 2, 7]"
             guard let range = attr.range(of: token) else { break }
-            var superscript = AttributedString(number)
-            superscript.font = ChatTypography.inlineCitationSuperscript
-            superscript.baselineOffset = ChatTypography.inlineCitationBaselineOffset
-            superscript.foregroundColor = ChatTypography.bodyText   // monochrome, over link tint
-            if let n = Int(number), let link = url(forIndex: n) {
-                superscript.link = link
+            // AC1 — one superscript per index in the bracket (deepseek writes
+            // `[1, 2, 7]`), hair-space separated, each linked to its own citation.
+            // The replacement carries no `[`, so the next `firstMatch` advances.
+            var replacement = AttributedString("")
+            for (i, n) in indices(inToken: token).enumerated() {
+                if i > 0 {
+                    var sep = AttributedString("\u{2009}")   // thin space between stacked numerals
+                    sep.font = ChatTypography.inlineCitationSuperscript
+                    sep.baselineOffset = ChatTypography.inlineCitationBaselineOffset
+                    replacement.append(sep)
+                }
+                var sup = AttributedString("\(n)")
+                sup.font = ChatTypography.inlineCitationSuperscript
+                sup.baselineOffset = ChatTypography.inlineCitationBaselineOffset
+                sup.foregroundColor = ChatTypography.bodyText   // monochrome, over link tint
+                if let link = url(forIndex: n) { sup.link = link }
+                replacement.append(sup)
             }
-            attr.replaceSubrange(range, with: superscript)
+            attr.replaceSubrange(range, with: replacement)
         }
     }
 
@@ -61,11 +71,9 @@ enum CitationReference {
     /// renders as a superscript and what survives as a source can't disagree.
     static func citedIndices(in text: String) -> Set<Int> {
         let ns = text as NSString
-        let matches = markerRegex.matches(in: text, range: NSRange(location: 0, length: ns.length))
+        let matches = citationTokenRegex.matches(in: text, range: NSRange(location: 0, length: ns.length))
         var out = Set<Int>()
-        for m in matches where m.numberOfRanges > 1 {
-            if let n = Int(ns.substring(with: m.range(at: 1))) { out.insert(n) }
-        }
+        for m in matches { out.formUnion(indices(inToken: ns.substring(with: m.range))) }
         return out
     }
 
@@ -77,20 +85,40 @@ enum CitationReference {
     /// passes an empty `valid` set → all markers stripped).
     static func stripInvalidMarkers(in text: String, valid: Set<Int>) -> String {
         let ns = text as NSString
-        let matches = markerRegex.matches(in: text, range: NSRange(location: 0, length: ns.length))
+        let matches = citationTokenRegex.matches(in: text, range: NSRange(location: 0, length: ns.length))
         guard !matches.isEmpty else { return text }
         var out = ns
         for m in matches.reversed() {
-            guard m.numberOfRanges > 1, let n = Int(ns.substring(with: m.range(at: 1))) else { continue }
-            if valid.contains(n) { continue }
+            let all = indices(inToken: ns.substring(with: m.range))
+            let kept = all.filter { valid.contains($0) }
+            if kept.count == all.count { continue }   // all valid — leave untouched
             var r = m.range
-            if r.location > 0, out.substring(with: NSRange(location: r.location - 1, length: 1)) == " " {
-                r = NSRange(location: r.location - 1, length: r.length + 1)
+            if kept.isEmpty {
+                // Whole token invalid → drop it, absorbing one preceding space.
+                if r.location > 0, out.substring(with: NSRange(location: r.location - 1, length: 1)) == " " {
+                    r = NSRange(location: r.location - 1, length: r.length + 1)
+                }
+                out = out.replacingCharacters(in: r, with: "") as NSString
+            } else {
+                // Some valid → rebuild the bracket with only the valid indices.
+                out = out.replacingCharacters(in: r, with: "[" + kept.map(String.init).joined(separator: ", ") + "]") as NSString
             }
-            out = out.replacingCharacters(in: r, with: "") as NSString
         }
         return out as String
     }
 
-    private static let markerRegex = try! NSRegularExpression(pattern: #"\[(\d{1,2})\]"#)
+    /// AC1 — ONE citation token: a bracket holding one or more comma-separated
+    /// 1-2 digit indices. Matches `[7]`, `[1, 2, 7]`, `[1,2]`; adjacency (`[n][m]`)
+    /// and `[n], [m]` are two tokens. Shared by the renderer, `citedIndices`, and
+    /// `stripInvalidMarkers` so parser/renderer/stripper can't disagree — and
+    /// model-agnostic (Qwen writes `[7]`, deepseek writes `[1, 2, 7]`).
+    static let citationTokenRegex = try! NSRegularExpression(pattern: #"\[\s*\d{1,2}(?:\s*,\s*\d{1,2})*\s*\]"#)
+    private static let indexRegex = try! NSRegularExpression(pattern: #"\d{1,2}"#)
+
+    /// All indices inside a citation token, in order (`"[1, 2, 7]"` → `[1, 2, 7]`).
+    static func indices(inToken token: String) -> [Int] {
+        let ns = token as NSString
+        return indexRegex.matches(in: token, range: NSRange(location: 0, length: ns.length))
+            .compactMap { Int(ns.substring(with: $0.range)) }
+    }
 }

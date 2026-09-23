@@ -440,9 +440,20 @@ final class ChatSession {
                             endpoint: endpoint, model: model, messages: working,
                             tools: turnTools, onContentDelta: onDelta, onReasoningDelta: onReasoning)
                     case .host(let pairing):
+                        // Brief AM1 — REVERTED AL3's `think: thinkEnabled` forwarding on the
+                        // agent/search path back to `false`. Ollama itself finishes a
+                        // think:true + tools turn (verified on the Mac: 7s turn-1, 16s
+                        // synthesis, both done), but the END-TO-END sealed Host path wedged the
+                        // Host on build M (T, 2026-09-23) — the runner stayed busy and every
+                        // later request queued behind it. Search turns run thinking-OFF (the
+                        // stable build-L behavior; ruled acceptable, post-V1). The
+                        // `onReasoningDelta` plumbing stays but is inert while think is false
+                        // (the Host emits no reasoning channel), ready for a post-V1 re-enable
+                        // once that path is verified live. DO NOT re-forward think here without
+                        // an AM1-style live-Host replay first.
                         turn = try await ModelRouter.streamHostAgentTurn(
                             pairing: pairing, messages: working,
-                            tools: turnTools, think: thinkEnabled,
+                            tools: turnTools, think: false,
                             onContentDelta: onDelta, onReasoningDelta: onReasoning)
                     }
 

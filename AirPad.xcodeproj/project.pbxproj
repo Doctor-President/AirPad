@@ -118,6 +118,7 @@
 		55858A9A690EA3D459DE82E9 /* FilterState.swift in Sources */ = {isa = PBXBuildFile; fileRef = 48DBCBFAFA7298D82C3BB0FF /* FilterState.swift */; };
 		56061A0335E2973DF52243F1 /* NodeGridTile.swift in Sources */ = {isa = PBXBuildFile; fileRef = F189E8F160D5B6BD04D88706 /* NodeGridTile.swift */; };
 		5681223387D04D1716AB1020 /* SourceSerif4-Regular.ttf in Resources */ = {isa = PBXBuildFile; fileRef = B88DD76629EBF533BCDC9ADE /* SourceSerif4-Regular.ttf */; };
+		570D62A8CEA2A19CC44B383D /* ManageModelsRepro.swift in Sources */ = {isa = PBXBuildFile; fileRef = DD915DF68A27E1ED37382E19 /* ManageModelsRepro.swift */; };
 		588C140B790E7DD63A55BCC1 /* MediaPickerWrapper.swift in Sources */ = {isa = PBXBuildFile; fileRef = 894DD6E70D91D9E9B00246B9 /* MediaPickerWrapper.swift */; };
 		598AB294337257CEED19A5BC /* LinkEntryBody.swift in Sources */ = {isa = PBXBuildFile; fileRef = 4E72F7C5BEAD8D357C8976F7 /* LinkEntryBody.swift */; };
 		59D565CBEADBCAFF7FF2D755 /* CorpusPhysicsScene.swift in Sources */ = {isa = PBXBuildFile; fileRef = 1652D343DDB50759748BDE8F /* CorpusPhysicsScene.swift */; };
@@ -601,6 +602,7 @@
 		DD430ECBC121FAEF8C93DBB9 /* sourceserifblack_msdf.png */ = {isa = PBXFileReference; lastKnownFileType = image.png; path = sourceserifblack_msdf.png; sourceTree = "<group>"; };
 		DD4733E2421E070A68925125 /* BatchParser.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = BatchParser.swift; sourceTree = "<group>"; };
 		DD83A4DC76F83C28E144AA6D /* HDBSCANLinkage.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = HDBSCANLinkage.swift; sourceTree = "<group>"; };
+		DD915DF68A27E1ED37382E19 /* ManageModelsRepro.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ManageModelsRepro.swift; sourceTree = "<group>"; };
 		DEE52A59E0B190ECA764DE9A /* MediaThumbnailLoader.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = MediaThumbnailLoader.swift; sourceTree = "<group>"; };
 		DF61433D19DB8098D7096F3D /* VideoEntryBody.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = VideoEntryBody.swift; sourceTree = "<group>"; };
 		E0B45CEB1C0E9FEB4B20A4F4 /* CanvasChrome.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = CanvasChrome.swift; sourceTree = "<group>"; };
@@ -742,6 +744,7 @@
 				B8D87927EAE11D669A11A825 /* CardSwipeRepro.swift */,
 				A9C57830B6D6683951BF3F6E /* CaretTapTest.swift */,
 				5CA786FE73ACBE100B4FAA56 /* HoldDragRepro.swift */,
+				DD915DF68A27E1ED37382E19 /* ManageModelsRepro.swift */,
 				331D29B33502CD4329D9797D /* RelatedTapRepro.swift */,
 			);
 			path = AirPadUITests;
@@ -1431,6 +1434,7 @@
 				7D662BACA7CB206841C5BA3D /* CardSwipeRepro.swift in Sources */,
 				DDFA466B1F065DAF3DC13799 /* CaretTapTest.swift in Sources */,
 				B50270CC57FE455419F41E86 /* HoldDragRepro.swift in Sources */,
+				570D62A8CEA2A19CC44B383D /* ManageModelsRepro.swift in Sources */,
 				E33D0E04DA7D961FF7E4F164 /* RelatedTapRepro.swift in Sources */,
 			);
 			runOnlyForDeploymentPostprocessing = 0;

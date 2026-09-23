@@ -2,13 +2,31 @@ import SwiftUI
 
 struct SettingsView: View {
 
-    /// Brief AF3 — a row Settings can open scrolled-to. `.webSearch` is set when the
-    /// Librarian's no-Brave-key notice is tapped. Extend as more deep-links appear.
-    enum Anchor: Hashable { case webSearch }
+    /// Brief AF3 / AJ — a submenu Settings can open PUSHED-to on appear. `.webSearch`
+    /// = the Librarian's no-Brave-key notice; `.models` = the model chip's "Manage
+    /// models". (AJ2: the deep link now PUSHES the submenu, it no longer scrolls.)
+    enum Anchor: Hashable { case webSearch, models }
 
-    /// Which row to scroll to on open (nil = top, today's behavior). Default keeps every
+    /// Which submenu to push on open (nil = the top-level list). Default keeps every
     /// existing `SettingsView()` call site unchanged.
     var initialAnchor: Anchor? = nil
+
+    /// Brief AJ1 — the submenu destinations (iOS-Settings-style navigation).
+    enum Dest: Hashable {
+        case library, tags, models, webSearch, librarian, privacy, about
+        case macModels, advanced   // nested under Models
+        #if DEBUG
+        case developer
+        #endif
+    }
+
+    @State private var path: [Dest] = []
+
+    #if DEBUG
+    /// Screenshot harness only (`-Screen settings-<dest>`): pushes a submenu on open so
+    /// each screen can be captured headlessly. Never set in production.
+    var debugInitialDest: Dest? = nil
+    #endif
 
     @Environment(CorpusStore.self) private var store
     @Environment(\.dismiss) private var dismiss
@@ -46,6 +64,8 @@ struct SettingsView: View {
     @State private var isTestingConnection = false
     @State private var showTagEditor = false
     @State private var editingTag: Tag? = nil
+    /// Brief AJ — the read-only Manage Tags search field (build J).
+    @State private var tagSearch = ""
     // Stage 4 — desktop Host pairing. `hostPairing` is cached (Keychain read is XPC-backed;
     // never read HostPairing.load() from `body`); refreshed on appear + after the sheet closes.
     @State private var showPairingQR = false
@@ -77,34 +97,37 @@ struct SettingsView: View {
     #endif
 
     var body: some View {
-        NavigationStack {
-            ScrollViewReader { proxy in
-            ScrollView {
-                VStack(alignment: .leading, spacing: 32) {
-                    aiModelSection
-                    Divider().background(AppearancePalette.ink.opacity(0.1))
-                    privacySection
-                    Divider().background(AppearancePalette.ink.opacity(0.1))
-                    tagsSection
-                    Divider().background(AppearancePalette.ink.opacity(0.1))
-                    importSection
-                    Divider().background(AppearancePalette.ink.opacity(0.1))
-                    reviewSection
-                    Divider().background(AppearancePalette.ink.opacity(0.1))
-                    corpusSection
-                    Divider().background(AppearancePalette.ink.opacity(0.1))
-                    aboutSection
-                    #if DEBUG
-                    developerSection
-                    #endif
+        NavigationStack(path: $path) {
+            List {
+                // Group 1 — the library and its labels.
+                Section {
+                    settingsRow(.library,  icon: "books.vertical.fill",       tint: "1B59C2", title: "Library")
+                    settingsRow(.tags,     icon: "tag.fill",                   tint: "E8820A", title: "Tags")
                 }
-                .padding(20)
-                .dismissKeyboardOnTapOutside()
+                // Group 2 — who answers and how.
+                Section {
+                    settingsRow(.models,   icon: "cpu",                        tint: "7A3FF2", title: "Models")
+                    settingsRow(.webSearch,icon: "magnifyingglass",            tint: "2E9E4F", title: "Web search")
+                    settingsRow(.librarian,icon: "character.book.closed.fill", tint: "C2571B", title: "Librarian")
+                }
+                // Group 3 — privacy and about.
+                Section {
+                    settingsRow(.privacy,  icon: "lock.fill",                  tint: "3A8DDE", title: "Privacy")
+                    settingsRow(.about,    icon: "info.circle.fill",           tint: "8A8A8E", title: "About")
+                }
+                #if DEBUG
+                Section {
+                    settingsRow(.developer, icon: "hammer.fill",              tint: "8A8A8E", title: "Developer")
+                }
+                #endif
             }
+            .listStyle(.insetGrouped)
+            .scrollContentBackground(.hidden)
             .background(AppearancePalette.bgBase.ignoresSafeArea())
             .navigationTitle("Settings")
             .navigationBarTitleDisplayMode(.inline)
             .toolbarBackground(.visible, for: .navigationBar)
+            .navigationDestination(for: Dest.self) { submenu(for: $0) }
             .toolbar {
                 ToolbarItem(placement: .confirmationAction) {
                     Button("Done") {
@@ -115,17 +138,352 @@ struct SettingsView: View {
                     .fontWeight(.semibold)
                 }
             }
-            // Brief AF3 — open scrolled to the requested row. Deferred a beat so the
-            // layout exists before we scroll (a bare onAppear scroll no-ops otherwise).
-            .task {
-                guard let anchor = initialAnchor else { return }
-                try? await Task.sleep(nanoseconds: 250_000_000)
-                withAnimation { proxy.scrollTo(anchor, anchor: .top) }
-            }
-            }
         }
         .presentationBackground(AppearancePalette.bgBase)
-        .onAppear { loadKeys() }
+        .onAppear {
+            loadKeys()
+            // Brief AJ2 — the deep link PUSHES its submenu (was AF3's scroll-to).
+            switch initialAnchor {
+            case .webSearch: path = [.webSearch]
+            case .models:    path = [.models]
+            case nil:        break
+            }
+            #if DEBUG
+            if let debugInitialDest { path = [debugInitialDest] }
+            #endif
+        }
+    }
+
+    // MARK: - Brief AJ1 — top-level rows + submenu routing
+
+    /// One iOS-Settings-style row: a tinted rounded-square SF Symbol tile + label +
+    /// chevron. Tint is decoration (T ruled): the symbol + label carry the meaning.
+    private func settingsRow(_ dest: Dest, icon: String, tint: String, title: String) -> some View {
+        NavigationLink(value: dest) {
+            HStack(spacing: 12) {
+                RoundedRectangle(cornerRadius: 7, style: .continuous)
+                    .fill(Color(hexString: tint))
+                    .frame(width: 29, height: 29)
+                    .overlay(Image(systemName: icon).font(.system(size: 15, weight: .semibold)).foregroundStyle(.white))
+                Text(title).font(.body).foregroundStyle(AppearancePalette.ink)
+            }
+            .padding(.vertical, 2)
+        }
+        .listRowBackground(AppearancePalette.ink.opacity(0.04))
+    }
+
+    @ViewBuilder
+    private func submenu(for dest: Dest) -> some View {
+        switch dest {
+        case .library:   librarySubmenu
+        case .tags:      tagsSubmenu
+        case .models:    modelsSubmenu
+        case .macModels: macModelsSubmenu
+        case .advanced:  advancedSubmenu
+        case .webSearch: webSearchSubmenu
+        case .librarian: librarianSubmenu
+        case .privacy:   privacySubmenu
+        case .about:     aboutSubmenu
+        #if DEBUG
+        case .developer: submenuScroll { developerSection }
+        #endif
+        }
+    }
+
+    /// A submenu screen: header card (icon, title, one sentence) + content, on the
+    /// standard Settings ground. Reused by every submenu (Brief AJ1).
+    @ViewBuilder
+    private func submenuScroll<Content: View>(header: (() -> AnyView)? = nil, @ViewBuilder _ content: () -> Content) -> some View {
+        ScrollView {
+            VStack(alignment: .leading, spacing: 24) {
+                if let header { header() }
+                content()
+            }
+            .padding(20)
+            .dismissKeyboardOnTapOutside()
+        }
+        .background(AppearancePalette.bgBase.ignoresSafeArea())
+        .navigationBarTitleDisplayMode(.inline)
+    }
+
+    /// iOS-General-style header card: a big tinted tile + title + one sentence.
+    private func submenuHeader(icon: String, tint: String, title: String, blurb: String) -> AnyView {
+        AnyView(
+            VStack(spacing: 10) {
+                RoundedRectangle(cornerRadius: 14, style: .continuous)
+                    .fill(Color(hexString: tint))
+                    .frame(width: 60, height: 60)
+                    .overlay(Image(systemName: icon).font(.system(size: 30, weight: .semibold)).foregroundStyle(.white))
+                Text(title).font(.title3.weight(.semibold)).foregroundStyle(AppearancePalette.ink)
+                Text(blurb)
+                    .font(.subheadline)
+                    .foregroundStyle(AppearancePalette.ink.opacity(0.5))
+                    .multilineTextAlignment(.center)
+                    .fixedSize(horizontal: false, vertical: true)
+            }
+            .frame(maxWidth: .infinity)
+            .padding(.top, 8)
+        )
+    }
+
+    // MARK: - Brief AJ — submenu screens (reuse the existing controls; only their home changes)
+
+    /// Thinking default for the paired Mac (the Mac-screen toggle). Persisted; seeding
+    /// new Librarian sessions from it is a follow-up.
+    @AppStorage("hostThinkingDefault") private var hostThinkingDefault = false
+
+    private var librarySubmenu: some View {
+        submenuScroll(header: { submenuHeader(icon: "books.vertical.fill", tint: "1B59C2", title: "Library",
+            blurb: "Everything you've saved, and the ways to bring more in or take it out.") }) {
+            corpusSection      // counts · search index + rebuild · export · clear · sample add/remove
+            importSection      // "each paragraph becomes an entry"
+            reviewSection      // Needs review (import review queue)
+        }
+    }
+
+    private var tagsSubmenu: some View {
+        submenuScroll(header: { submenuHeader(icon: "tag.fill", tint: "E8820A", title: "Tags",
+            blurb: "Tags label entries. Pinned tags form territories on the Map.") }) {
+            manageTagsReadOnly   // Brief AJ (J): READ-ONLY list — full CRUD + per-room seal land in build K
+        }
+    }
+
+    private var modelsSubmenu: some View {
+        submenuScroll(header: { submenuHeader(icon: "cpu", tint: "7A3FF2", title: "Models",
+            blurb: "Choose who answers. Apple Intelligence works right away — everything here is optional.") }) {
+            VStack(alignment: .leading, spacing: 16) {
+                sectionHeader("On this iPhone")
+                appleIntelligenceRow
+                localModelSubsection   // "Downloaded model"
+            }
+            VStack(alignment: .leading, spacing: 12) {
+                sectionHeader("On your Mac")
+                macRow
+            }
+            NavigationLink(value: Dest.advanced) {
+                HStack {
+                    Text("Advanced").font(.subheadline.weight(.medium)).foregroundStyle(AppearancePalette.ink.opacity(0.8))
+                    Spacer()
+                    Image(systemName: "chevron.right").font(.caption).foregroundStyle(AppearancePalette.ink.opacity(0.3))
+                }
+                .padding(.horizontal, 16).padding(.vertical, 12)
+                .background(AppearancePalette.ink.opacity(0.05)).clipShape(RoundedRectangle(cornerRadius: 10))
+            }
+            .buttonStyle(.plain)
+        }
+        .sheet(isPresented: $showPairingQR, onDismiss: { hostPairing = HostPairing.load() }) {
+            HostPairingSheet()
+        }
+    }
+
+    /// Apple Intelligence — built in, always available. Colourblind-safe (icon + text).
+    private var appleIntelligenceRow: some View {
+        HStack(spacing: 12) {
+            Image(systemName: "apple.logo").font(.system(size: 16)).foregroundStyle(AppearancePalette.ink.opacity(0.8)).frame(width: 24)
+            VStack(alignment: .leading, spacing: 2) {
+                Text("Apple Intelligence").font(.subheadline.weight(.semibold)).foregroundStyle(AppearancePalette.ink)
+                Text("Built in, ready. The default.").font(.caption).foregroundStyle(AppearancePalette.ink.opacity(0.5))
+            }
+            Spacer()
+            Image(systemName: "checkmark.circle.fill").foregroundStyle(.green.opacity(0.8))
+        }
+        .padding(14).background(AppearancePalette.ink.opacity(0.05)).clipShape(RoundedRectangle(cornerRadius: 12))
+    }
+
+    /// One "On your Mac" row: unpaired → Host setup (QR); paired → push the Mac screen.
+    @ViewBuilder private var macRow: some View {
+        if hostPairing == nil {
+            Button { showPairingQR = true } label: {
+                macRowLabel(icon: "qrcode", text: "Connect your Mac", chevron: true)
+            }.buttonStyle(.plain)
+            Text("Reach a private model running on your own Mac, from anywhere — end-to-end encrypted.")
+                .font(.caption2).foregroundStyle(AppearancePalette.ink.opacity(0.3))
+        } else {
+            NavigationLink(value: Dest.macModels) {
+                macRowLabel(icon: "checkmark.seal.fill", text: "\(hostPairing!.displayHost)", chevron: true, green: true)
+            }.buttonStyle(.plain)
+        }
+    }
+
+    private func macRowLabel(icon: String, text: String, chevron: Bool, green: Bool = false) -> some View {
+        HStack(spacing: 8) {
+            Image(systemName: icon).foregroundStyle(green ? .green : AppearancePalette.ink.opacity(0.8))
+            Text(text).font(.subheadline.weight(.medium)).foregroundStyle(AppearancePalette.ink.opacity(0.85))
+            Spacer()
+            if chevron { Image(systemName: "chevron.right").font(.caption).foregroundStyle(AppearancePalette.ink.opacity(0.3)) }
+        }
+        .padding(.horizontal, 16).padding(.vertical, 11)
+        .background(AppearancePalette.ink.opacity(0.07)).clipShape(RoundedRectangle(cornerRadius: 10))
+    }
+
+    /// Settings → Models → your Mac: the FULL model-management surface (reuses
+    /// ModelPickerSheet with `fullControls: true`), plus Unpair (Brief AJ3).
+    private var macModelsSubmenu: some View {
+        ModelPickerSheet(
+            catalog: HostCatalog.shared,
+            thinkEnabled: $hostThinkingDefault,
+            fullControls: true,
+            macName: hostPairing?.displayHost,
+            onUnpair: {
+                HostPairing.clear()
+                hostPairing = nil
+                HostCatalog.shared.refreshPaired()
+                if !path.isEmpty { path.removeLast() }
+            }
+        )
+        .navigationTitle("Your Mac")
+        .navigationBarTitleDisplayMode(.inline)
+    }
+
+    private var advancedSubmenu: some View {
+        submenuScroll(header: { submenuHeader(icon: "slider.horizontal.3", tint: "8A8A8E", title: "Advanced",
+            blurb: "Connect a local server, or a cloud provider.") }) {
+            VStack(alignment: .leading, spacing: 12) {
+                VStack(alignment: .leading, spacing: 4) {
+                    Text("Ollama / LM Studio endpoint").font(.caption.weight(.semibold)).foregroundStyle(AppearancePalette.ink.opacity(0.4))
+                    TextField("http://192.168.x.x:11434", text: $ollamaEndpoint)
+                        .font(.subheadline).foregroundStyle(AppearancePalette.ink).tint(AppearancePalette.ink)
+                        .padding(12).background(AppearancePalette.ink.opacity(0.06)).clipShape(RoundedRectangle(cornerRadius: 10))
+                        .keyboardType(.URL).autocorrectionDisabled().textInputAutocapitalization(.never)
+                }
+                apiKeyField(label: "API token (optional)", placeholder: "Bearer token — leave empty for none", text: $ollamaAPIToken)
+                HStack {
+                    Button { testConnection() } label: {
+                        HStack(spacing: 6) {
+                            if isTestingConnection { ProgressView().tint(AppearancePalette.ink).scaleEffect(0.7) }
+                            Text(isTestingConnection ? "Testing…" : "Test connection").font(.subheadline.weight(.medium))
+                        }
+                        .foregroundStyle(AppearancePalette.ink.opacity(0.75)).padding(.horizontal, 16).padding(.vertical, 9)
+                        .background(AppearancePalette.ink.opacity(0.09)).clipShape(Capsule())
+                    }.buttonStyle(.plain).disabled(isTestingConnection)
+                    if let result = connectionTestResult {
+                        Text(result).font(.caption).foregroundStyle(connectionResultColor(result))
+                    }
+                    Spacer()
+                }
+                // Brief AJ5 — cloud (frontier) providers ONLY when the flag is on (DEBUG).
+                // In Release these fields never render; their Keychain entries are untouched.
+                if FeatureFlags.cloudProviders {
+                    Divider().overlay(AppearancePalette.ink.opacity(0.1)).padding(.vertical, 4)
+                    Text("Cloud providers (developer)").font(.caption.weight(.semibold)).foregroundStyle(AppearancePalette.ink.opacity(0.4))
+                    apiKeyField(label: "Anthropic API key", placeholder: "sk-ant-...", text: $anthropicKey)
+                    apiKeyField(label: "OpenAI API key", placeholder: "sk-...", text: $openAIKey)
+                    apiKeyField(label: "DeepSeek API key", placeholder: "sk-...", text: $deepSeekKey)
+                }
+            }
+        }
+    }
+
+    private var webSearchSubmenu: some View {
+        submenuScroll(header: { submenuHeader(icon: "magnifyingglass", tint: "2E9E4F", title: "Web search",
+            blurb: "Lets the Librarian look things up in General mode.") }) {
+            VStack(alignment: .leading, spacing: 6) {
+                apiKeyField(label: "Brave Search API key", placeholder: "BSA...", text: $braveSearchKey)
+                Text("Web search uses Brave's Search API. Brave gives a monthly credit that covers normal use, but needs an account with a card on file. Paste your key here.")
+                    .font(.caption).foregroundStyle(AppearancePalette.ink.opacity(0.4))
+                Link("Get a Brave Search API key", destination: URL(string: "https://brave.com/search/api/")!)
+                    .font(.caption.weight(.semibold)).tint(Color(hexString: "E8820A"))
+            }
+        }
+    }
+
+    private var librarianSubmenu: some View {
+        submenuScroll(header: { submenuHeader(icon: "character.book.closed.fill", tint: "C2571B", title: "Librarian",
+            blurb: "How the Librarian talks to you.") }) {
+            personalPromptField
+            resetTipsButton
+            librarianLogRow
+        }
+    }
+
+    private var privacySubmenu: some View {
+        submenuScroll(header: { submenuHeader(icon: "lock.fill", tint: "3A8DDE", title: "Privacy",
+            blurb: "Your library stays on your phone.") }) {
+            Toggle(isOn: $locationEnabled) {
+                VStack(alignment: .leading, spacing: 2) {
+                    Text("GPS location on capture").font(.subheadline.weight(.medium)).foregroundStyle(AppearancePalette.ink)
+                    Text("Attaches your location to newly captured entries").font(.caption).foregroundStyle(AppearancePalette.ink.opacity(0.4))
+                }
+            }.tint(.purple)
+            if !hasAnyFrontierKey {
+                HStack(spacing: 8) {
+                    Image(systemName: "lock.fill").font(.caption).foregroundStyle(.green.opacity(0.8))
+                    Text("Your data never leaves this device").font(.caption).foregroundStyle(AppearancePalette.ink.opacity(0.5))
+                }
+            }
+        }
+    }
+
+    private var aboutSubmenu: some View {
+        submenuScroll(header: { submenuHeader(icon: "info.circle.fill", tint: "8A8A8E", title: "About",
+            blurb: "It works around you. Not the other way around.") }) {
+            VStack(alignment: .leading, spacing: 10) {
+                Text("AirPad").font(.subheadline.weight(.semibold)).foregroundStyle(AppearancePalette.ink)
+                if let version = Bundle.main.object(forInfoDictionaryKey: "CFBundleShortVersionString") as? String,
+                   let build = Bundle.main.object(forInfoDictionaryKey: "CFBundleVersion") as? String {
+                    Text("Version \(version) (\(build))").font(.caption2).foregroundStyle(AppearancePalette.ink.opacity(0.25))
+                }
+            }
+        }
+    }
+
+    /// Brief AG3 — moved to the Librarian submenu (Brief AJ2). Brings back every callout.
+    private var resetTipsButton: some View {
+        Button {
+            FirstRunCalloutKey.resetAll()
+            tipsReset = true
+            DispatchQueue.main.asyncAfter(deadline: .now() + 1.6) { tipsReset = false }
+        } label: {
+            HStack {
+                Image(systemName: tipsReset ? "checkmark" : "lightbulb")
+                Text(tipsReset ? "First-time tips will show again" : "Reset first-time tips").font(.subheadline.weight(.medium))
+            }
+            .foregroundStyle(AppearancePalette.ink.opacity(0.75)).padding(.horizontal, 16).padding(.vertical, 10)
+            .background(AppearancePalette.ink.opacity(0.07)).clipShape(RoundedRectangle(cornerRadius: 10))
+        }.buttonStyle(.plain)
+    }
+
+    /// Brief AJ (build J) — READ-ONLY Manage Tags: sorted by use, trailing count, search,
+    /// "N tags" header. NO delete/rename (that would orphan tags today; the full CRUD +
+    /// per-room seal land in build K). Derived from the global vocabulary.
+    @ViewBuilder private var manageTagsReadOnly: some View {
+        let counted = store.tags
+            .map { (tag: $0, count: store.nodeCount(forTag: $0.name)) }
+            .sorted { $0.count != $1.count ? $0.count > $1.count : $0.tag.name.lowercased() < $1.tag.name.lowercased() }
+        let filtered = tagSearch.isEmpty ? counted
+            : counted.filter { $0.tag.name.localizedCaseInsensitiveContains(tagSearch) }
+        VStack(alignment: .leading, spacing: 12) {
+            if store.tags.isEmpty {
+                Text("No tags yet — AI will suggest them as you capture entries.")
+                    .font(.caption).foregroundStyle(AppearancePalette.ink.opacity(0.35))
+            } else {
+                HStack(spacing: 8) {
+                    Image(systemName: "magnifyingglass").foregroundStyle(AppearancePalette.ink.opacity(0.4))
+                    TextField("Search tags", text: $tagSearch)
+                        .font(.subheadline).foregroundStyle(AppearancePalette.ink).tint(AppearancePalette.ink)
+                        .autocorrectionDisabled()
+                }
+                .padding(10).background(AppearancePalette.ink.opacity(0.06)).clipShape(RoundedRectangle(cornerRadius: 10))
+                Text("\(filtered.count) \(filtered.count == 1 ? "tag" : "tags")")
+                    .font(.caption.weight(.semibold)).foregroundStyle(AppearancePalette.ink.opacity(0.35)).textCase(.uppercase)
+                VStack(spacing: 0) {
+                    ForEach(Array(filtered.enumerated()), id: \.element.tag.id) { i, row in
+                        if i > 0 { Divider().overlay(AppearancePalette.ink.opacity(0.06)) }
+                        HStack(spacing: 10) {
+                            Circle().fill(Color(hex: row.tag.colorHex) ?? .gray).frame(width: 10, height: 10)
+                            Text(row.tag.name).font(.subheadline).foregroundStyle(AppearancePalette.ink)
+                            if row.tag.isCanvasAnchor {
+                                Image(systemName: "map.fill").font(.system(size: 10)).foregroundStyle(AppearancePalette.ink.opacity(0.3))
+                            }
+                            Spacer()
+                            Text("\(row.count)").font(.subheadline.monospacedDigit()).foregroundStyle(AppearancePalette.ink.opacity(0.4))
+                        }
+                        .padding(.vertical, 10)
+                    }
+                }
+                .padding(.horizontal, 14).background(AppearancePalette.ink.opacity(0.04)).clipShape(RoundedRectangle(cornerRadius: 12))
+            }
+        }
     }
 
     // MARK: - AI Model
@@ -290,11 +648,11 @@ struct SettingsView: View {
     private var localModelSubsection: some View {
         VStack(alignment: .leading, spacing: 12) {
             Divider().overlay(AppearancePalette.ink.opacity(0.1))
-            Text("Private on-device model")
+            Text("Downloaded model")
                 .font(.caption.weight(.semibold))
                 .foregroundStyle(AppearancePalette.ink.opacity(0.4))
-            // Placeholder copy (T is providing final wording).
-            Text("AirPad lets you choose which model does its thinking. Apple Intelligence is built into your device and works immediately. AirPad also offers an optional private model you can download — it runs entirely on your device, engages consistently across all subjects, and doesn't change when your phone updates.")
+            // Brief AJ3 — copy states its real job TODAY (bake-off may change it later).
+            Text("An optional model you download to run entirely on your phone. Writes titles, summaries and tags on your phone. The Librarian doesn't use it.")
                 .font(.caption)
                 .foregroundStyle(AppearancePalette.ink.opacity(0.55))
 
@@ -542,7 +900,10 @@ struct SettingsView: View {
     }
 
     private var hasAnyFrontierKey: Bool {
-        !anthropicKey.isEmpty || !openAIKey.isEmpty || !deepSeekKey.isEmpty
+        // Brief AJ5 — with cloud providers gated off (Release), data never leaves the
+        // device regardless of any Keychain remnant, so the lock line always shows.
+        guard FeatureFlags.cloudProviders else { return false }
+        return !anthropicKey.isEmpty || !openAIKey.isEmpty || !deepSeekKey.isEmpty
     }
 
     // MARK: - Tags
@@ -634,14 +995,14 @@ struct SettingsView: View {
 
     private var reviewSection: some View {
         VStack(alignment: .leading, spacing: 16) {
-            sectionHeader("Review")
+            sectionHeader("Needs review")
 
             Button {
                 showReviewQueue = true
             } label: {
                 HStack {
                     Image(systemName: "tray.and.arrow.down")
-                    Text("Flagged entries")
+                    Text("Needs review")
                     Spacer()
                     if store.reviewQueue.isEmpty {
                         Text("Clear")
@@ -1023,9 +1384,14 @@ struct SettingsView: View {
     }
 
     private func loadKeys() {
-        anthropicKey   = KeychainHelper.load(key: "anthropicAPIKey")   ?? ""
-        openAIKey      = KeychainHelper.load(key: "openAIAPIKey")      ?? ""
-        deepSeekKey    = KeychainHelper.load(key: "deepSeekAPIKey")    ?? ""
+        // Brief AJ5 — cloud keys are neither loaded nor saved when the flag is off
+        // (Release): the fields don't exist, and existing Keychain entries are LEFT
+        // exactly as-is (never read back, never re-written, never deleted).
+        if FeatureFlags.cloudProviders {
+            anthropicKey   = KeychainHelper.load(key: "anthropicAPIKey")   ?? ""
+            openAIKey      = KeychainHelper.load(key: "openAIAPIKey")      ?? ""
+            deepSeekKey    = KeychainHelper.load(key: "deepSeekAPIKey")    ?? ""
+        }
         braveSearchKey = KeychainHelper.load(key: WebSearchBackend.keychainKey) ?? ""
         ollamaEndpoint = KeychainHelper.load(key: "ollamaEndpoint")    ?? ""
         ollamaAPIToken = KeychainHelper.load(key: "ollamaAPIToken")    ?? ""
@@ -1033,9 +1399,11 @@ struct SettingsView: View {
     }
 
     private func saveKeys() {
-        persistKey("anthropicAPIKey", value: anthropicKey)
-        persistKey("openAIAPIKey",    value: openAIKey)
-        persistKey("deepSeekAPIKey",  value: deepSeekKey)
+        if FeatureFlags.cloudProviders {
+            persistKey("anthropicAPIKey", value: anthropicKey)
+            persistKey("openAIAPIKey",    value: openAIKey)
+            persistKey("deepSeekAPIKey",  value: deepSeekKey)
+        }
         persistKey(WebSearchBackend.keychainKey, value: braveSearchKey)
         persistKey("ollamaEndpoint",  value: ollamaEndpoint)
         persistKey("ollamaAPIToken",  value: ollamaAPIToken)

@@ -19,6 +19,7 @@ enum FirstRunCalloutKey: String, CaseIterable, Identifiable {
     case librarianSample = "librarian.sample"
     case librarianMode   = "librarian.mode"   // Brief AH3 — first tap of the mode chip
     case librarianModel  = "librarian.model"  // Brief AH3 — first tap of the model chip
+    case entryIntro      = "entry.intro"      // Brief AJ6 — first open of any entry
 
     var id: String { rawValue }
 
@@ -78,6 +79,15 @@ enum FirstRunCalloutKey: String, CaseIterable, Identifiable {
                 body: ["Choose who answers — on your phone, or on your Mac with the Host."],
                 targets: [FirstRunCalloutTargetID.librarianModelChip]
             )
+        case .entryIntro:
+            // Brief AJ6 — first open of any entry. Layout confirmed against
+            // NodeDetailView: the + Menu (bottom-right) adds text/photos/links/voice;
+            // tags + collections sit in the header above; Related Entries sits below.
+            return FirstRunCalloutContent(
+                headline: "An entry holds items.",
+                body: ["Add text, photos, links or voice with **+**. Tags and collections sit above; linked entries appear below."],
+                targets: [FirstRunCalloutTargetID.entryAddButton]
+            )
         }
     }
 }
@@ -98,6 +108,7 @@ enum FirstRunCalloutTargetID {
     static let captureButton = "capture"
     static let librarianModeChip  = "librarian.mode.chip"   // Brief AH3
     static let librarianModelChip = "librarian.model.chip"  // Brief AH3
+    static let entryAddButton     = "entry.add.button"      // Brief AJ6 — the + Menu
 }
 
 struct FirstRunCalloutTargetsKey: PreferenceKey {

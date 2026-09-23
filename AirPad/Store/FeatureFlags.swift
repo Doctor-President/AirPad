@@ -73,4 +73,17 @@ enum FeatureFlags {
         }
         set { UserDefaults.standard.set(newValue, forKey: strandSnapKey) }
     }
+
+    /// Brief AJ5 — cloud (frontier) AI providers: Anthropic / OpenAI / DeepSeek.
+    /// FALSE in Release (their key fields are hidden and no path can select or
+    /// resolve them — saved Keychain entries are left untouched, not deleted),
+    /// TRUE only in DEBUG so a developer can still exercise them. A COMPILE-TIME
+    /// constant, not a UserDefault, so Release can never be flipped on at runtime.
+    static var cloudProviders: Bool {
+        #if DEBUG
+        return true
+        #else
+        return false
+        #endif
+    }
 }

@@ -655,6 +655,7 @@ struct DebugScreenHost: View {
         case "library":   return .library
         case "tags":      return .tags
         case "models":    return .models
+        case "macmodels": return .macModels   // Brief AL — the paired Mac models screen (needs -FakeHostPairing)
         case "advanced":  return .advanced
         case "websearch": return .webSearch
         case "librarian": return .librarian

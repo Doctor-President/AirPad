@@ -20,7 +20,24 @@ struct AirPadApp: App {
         self.router = appRouter
         AppDependencyManager.shared.add(dependency: appRouter)
         Self.purgeRetiredDevTunerDefaults()
+        #if DEBUG
+        Self.injectFakeHostPairingIfRequested()
+        #endif
     }
+
+    #if DEBUG
+    /// Brief AL verify — `-FakeHostPairing` seeds a throwaway paired HostPairing into the
+    /// (Simulator) Keychain so the PAIRED Settings→Models / Mac-models UI can be exercised
+    /// headlessly WITHOUT a live Host. The host is unreachable (a fake tunnel URL); that's
+    /// fine — the screens under test read pairing STATE + display name, not reachability.
+    /// Compiled out of Release. Clear it by uninstalling the app (or pairing for real).
+    private static func injectFakeHostPairingIfRequested() {
+        guard UserDefaults.standard.bool(forKey: "FakeHostPairing"), HostPairing.load() == nil else { return }
+        let hpk = Data(repeating: 7, count: 32).base64EncodedString()   // valid 32-byte host key
+        let payload = "{\"tunnelURL\":\"https://fake-mac.curiousobjects.co\",\"protocolVersion\":1,\"s\":\"debug-fake-pairing-secret-0123456789\",\"hpk\":\"\(hpk)\"}"
+        HostPairing.parse(payload)?.persist()
+    }
+    #endif
 
     /// One-shot cleanup of retired persisted state (bake). Every value these keys carried is a literal
     /// in source now — or, for `graze.*`, was never read by anything at all — but a device that upgrades

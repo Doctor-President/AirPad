@@ -347,8 +347,16 @@ final class ChatSession {
     /// against an infinite loop. The OpenAI messages working-set is kept SEPARATE from
     /// the display transcript (which owns rendering + persistence): the transcript gets
     /// the user bubble, one activity row per phase, and the final answer.
-    func sendWithTools(displayText: String, systemPrompt: String, executor: ToolExecutor) async {
-        guard !displayText.isEmpty, !isStreaming else { return }
+    /// Brief AI4 — `forceWebSearch` REQUIRES the web tool for the FIRST turn. Since
+    /// `tool_choice` is verified inert on the Ollama/Host stack (curl'd: Ollama 0.13.2
+    /// ignores it on `/api/chat` AND `/v1/chat/completions`; the Host decode-struct
+    /// drops the field), "require" is a NUDGE — "(Use the web_search tool for this.)"
+    /// appended to the model's copy of the user turn (the display bubble stays clean).
+    /// Returns whether the refusal guard fired a web retry, so the caller can log
+    /// `retry=web`.
+    @discardableResult
+    func sendWithTools(displayText: String, systemPrompt: String, executor: ToolExecutor, forceWebSearch: Bool = false) async -> Bool {
+        guard !displayText.isEmpty, !isStreaming else { return false }
         // The agentic tool loop runs over a direct .ollama endpoint OR the sealed .host pairing.
         // (It was .ollama-ONLY — the reason web search never worked over a paired Host: it was
         // NEVER WIRED for .host, not a regression from the /api/chat switch.) Any other provider
@@ -358,7 +366,7 @@ final class ChatSession {
         case .ollama, .host: break
         default:
             await send(displayText: displayText, modelText: displayText, systemPrompt: systemPrompt)
-            return
+            return false
         }
 
         lastError = nil
@@ -370,6 +378,7 @@ final class ChatSession {
         let maxToolSteps = 5
         // Declared outside `do` so the `catch` can read it (Swift scoping).
         var producedActivity = false
+        var didRetryWeb = false
 
         do {
             // Resolve the backend once: .ollama needs its model id up front; .host resolves the
@@ -381,114 +390,132 @@ final class ChatSession {
             case .host(let pairing):
                 backend = .host(pairing: pairing)
             default:
-                return // unreachable — guarded above
+                return false // unreachable — guarded above
             }
             // Stream the assistant's partial answer into the live transcript (shared by both paths).
             let onDelta: @Sendable (String) -> Void = { [weak self] delta in
                 Task { @MainActor in self?.streamingText += delta }
             }
 
-            // OpenAI working-set (system + prior chat turns + this turn). Activity
-            // rows are display-only — skipped here.
-            var working: [[String: Any]] = [["role": "system", "content": systemPrompt]]
-            for m in messages.dropLast() where m.role == .user || m.role == .assistant {
-                working.append(["role": m.role == .user ? "user" : "assistant", "content": m.text])
-            }
-            working.append(["role": "user", "content": displayText])
-
-            var finalAnswer = ""
-            // Accumulates web_search result links across the turn, GLOBALLY numbered,
-            // so the answer's cited [n] maps unambiguously to its {title, url}.
-            var citationLinks: [ToolLink] = []
-            // Whether any tool reported a provider throttle this turn — used only to
-            // word the give-up message honestly (the cap/backoff live in the executor).
-            var sawRateLimit = false
-            // Whether any tool reported it has NO backend (web search with no Brave key).
-            // Once true, the tool schema is WITHHELD from the next model turn so the model
-            // can't retry a tool that cannot succeed — one attempt, one honest chip.
-            var sawUnavailable = false
-            for step in 0..<maxToolSteps {
-                streamingText = ""
-                // Withhold the tool schema once a tool reported it has no backend — the model
-                // can't retry a tool that can't succeed, so it answers honestly.
-                let turnTools = sawUnavailable ? nil : AgentTools.schema
-                let turn: AgentTurn
-                switch backend {
-                case .ollama(let endpoint, let model):
-                    turn = try await ModelRouter.streamAgentTurn(
-                        endpoint: endpoint, model: model, messages: working,
-                        tools: turnTools, onContentDelta: onDelta)
-                case .host(let pairing):
-                    turn = try await ModelRouter.streamHostAgentTurn(
-                        pairing: pairing, messages: working,
-                        tools: turnTools, onContentDelta: onDelta)
+            // ONE pass of the tool loop. `nudge` appends the AI4 forcing line to THIS
+            // turn's user content (the display transcript keeps the clean question). It
+            // returns the settled answer, its GLOBALLY-numbered citation links, whether
+            // ANY tool ran, and whether a provider throttle was seen (for honest wording).
+            func runToolLoop(nudge: Bool) async throws -> (answer: String, links: [ToolLink], anyTool: Bool, rateLimited: Bool) {
+                // OpenAI working-set (system + prior chat turns + this turn). Activity
+                // rows are display-only — skipped here.
+                var working: [[String: Any]] = [["role": "system", "content": systemPrompt]]
+                for m in messages.dropLast() where m.role == .user || m.role == .assistant {
+                    working.append(["role": m.role == .user ? "user" : "assistant", "content": m.text])
                 }
+                let userContent = nudge ? displayText + "\n\n(Use the web_search tool for this.)" : displayText
+                working.append(["role": "user", "content": userContent])
 
-                if turn.toolCalls.isEmpty {
-                    finalAnswer = turn.content.trimmingCharacters(in: .whitespacesAndNewlines)
-                    break
-                }
-
-                // Record the assistant tool-call turn in the OpenAI working-set.
-                working.append([
-                    "role": "assistant",
-                    "content": turn.content,
-                    "tool_calls": turn.toolCalls.map { call in
-                        ["id": call.id, "type": "function",
-                         "function": ["name": call.name, "arguments": call.argumentsJSON]]
+                var finalAnswer = ""
+                var citationLinks: [ToolLink] = []
+                // Whether any tool reported a provider throttle this turn — used only to
+                // word the give-up message honestly (the cap/backoff live in the executor).
+                var sawRateLimit = false
+                // Whether any tool reported it has NO backend (web search with no Brave key).
+                // Once true, the tool schema is WITHHELD from the next model turn so the model
+                // can't retry a tool that cannot succeed — one attempt, one honest chip.
+                var sawUnavailable = false
+                var anyTool = false
+                for step in 0..<maxToolSteps {
+                    streamingText = ""
+                    // Withhold the tool schema once a tool reported it has no backend — the model
+                    // can't retry a tool that can't succeed, so it answers honestly.
+                    let turnTools = sawUnavailable ? nil : AgentTools.schema
+                    let turn: AgentTurn
+                    switch backend {
+                    case .ollama(let endpoint, let model):
+                        turn = try await ModelRouter.streamAgentTurn(
+                            endpoint: endpoint, model: model, messages: working,
+                            tools: turnTools, onContentDelta: onDelta)
+                    case .host(let pairing):
+                        turn = try await ModelRouter.streamHostAgentTurn(
+                            pairing: pairing, messages: working,
+                            tools: turnTools, onContentDelta: onDelta)
                     }
-                ])
-                streamingText = ""
 
-                // Run each tool through the seam; show an activity row; feed results back.
-                for call in turn.toolCalls {
-                    let result = await executor.execute(name: call.name, arguments: call.arguments)
-                    appendActivity(for: call, result: result)
-                    producedActivity = true
-                    if result.rateLimited { sawRateLimit = true }
-                    if result.unavailable { sawUnavailable = true }
-                    // Web results feed the answer's citations. Renumber GLOBALLY across
-                    // the turn so the model's [n] is unambiguous even across multiple
-                    // searches, and accumulate so cited [n] → {title, url}.
-                    let toolContent: String
-                    if call.name == AgentTools.webSearch, !result.links.isEmpty {
-                        let start = citationLinks.count
-                        toolContent = result.links.enumerated().map { i, l in
-                            "[\(start + i + 1)] \(l.title)\n\(l.url)\n\(l.snippet ?? "")"
-                        }.joined(separator: "\n\n")
-                        citationLinks.append(contentsOf: result.links)
-                    } else {
-                        toolContent = result.textForModel
+                    if turn.toolCalls.isEmpty {
+                        finalAnswer = turn.content.trimmingCharacters(in: .whitespacesAndNewlines)
+                        break
                     }
+                    anyTool = true
+
+                    // Record the assistant tool-call turn in the OpenAI working-set.
                     working.append([
-                        "role": "tool",
-                        "tool_call_id": call.id,
-                        "content": toolContent
+                        "role": "assistant",
+                        "content": turn.content,
+                        "tool_calls": turn.toolCalls.map { call in
+                            ["id": call.id, "type": "function",
+                             "function": ["name": call.name, "arguments": call.argumentsJSON]]
+                        }
                     ])
-                }
+                    streamingText = ""
 
-                if step == maxToolSteps - 1 {
-                    // Loop backstop (the model never settled on an answer). Word it by
-                    // CAUSE: a throttle reads as honest degradation, not surrender.
-                    finalAnswer = sawRateLimit
-                        ? "Web search is temporarily rate-limited right now, so I couldn't pull fresh sources for this. Please try again in a little while — or ask me to answer from what I already know."
-                        : "I reached the tool-step limit (\(maxToolSteps)) for this question. Here's what I have so far — ask me to continue if you'd like."
+                    // Run each tool through the seam; show an activity row; feed results back.
+                    for call in turn.toolCalls {
+                        let result = await executor.execute(name: call.name, arguments: call.arguments)
+                        appendActivity(for: call, result: result)
+                        producedActivity = true
+                        if result.rateLimited { sawRateLimit = true }
+                        if result.unavailable { sawUnavailable = true }
+                        // Web results feed the answer's citations. Renumber GLOBALLY across
+                        // the turn so the model's [n] is unambiguous even across multiple
+                        // searches, and accumulate so cited [n] → {title, url}.
+                        let toolContent: String
+                        if call.name == AgentTools.webSearch, !result.links.isEmpty {
+                            let start = citationLinks.count
+                            toolContent = result.links.enumerated().map { i, l in
+                                "[\(start + i + 1)] \(l.title)\n\(l.url)\n\(l.snippet ?? "")"
+                            }.joined(separator: "\n\n")
+                            citationLinks.append(contentsOf: result.links)
+                        } else {
+                            toolContent = result.textForModel
+                        }
+                        working.append([
+                            "role": "tool",
+                            "tool_call_id": call.id,
+                            "content": toolContent
+                        ])
+                    }
+
+                    if step == maxToolSteps - 1 {
+                        // Loop backstop (the model never settled on an answer). Word it by
+                        // CAUSE: a throttle reads as honest degradation, not surrender.
+                        finalAnswer = sawRateLimit
+                            ? "Web search is temporarily rate-limited right now, so I couldn't pull fresh sources for this. Please try again in a little while — or ask me to answer from what I already know."
+                            : "I reached the tool-step limit (\(maxToolSteps)) for this question. Here's what I have so far — ask me to continue if you'd like."
+                    }
                 }
+                return (finalAnswer, citationLinks, anyTool, sawRateLimit)
+            }
+
+            var outcome = try await runToolLoop(nudge: forceWebSearch)
+            // Brief AI4 refusal guard — an INTENT turn (forceWebSearch) that made NO tool
+            // call yet answered with the trained "I can't reach the live web" reflex →
+            // re-run ONCE with the nudge. (Non-intent turns keep the model's judgment; a
+            // turn that DID search is trusted.) Exactly one retry; caller logs retry=web.
+            if forceWebSearch, !outcome.anyTool, Self.looksLikeWebRefusal(outcome.answer) {
+                didRetryWeb = true
+                outcome = try await runToolLoop(nudge: true)
             }
 
             streamingText = ""
-            if !finalAnswer.isEmpty {
+            if !outcome.answer.isEmpty {
                 // ★ Gate chips to CITED, not searched (the corpus rule via the SAME
                 // `citedIndices` parser): attach a web citation ONLY for the [n] the
                 // answer actually referenced, each mapped to its real scraped URL. No
                 // [n] → no footer, exactly like corpus.
-                let cited = CitationReference.citedIndices(in: finalAnswer)
+                let cited = CitationReference.citedIndices(in: outcome.answer)
                 let webCitations: [Message.Citation] = cited.sorted().compactMap { n in
-                    guard n >= 1, n <= citationLinks.count else { return nil }
-                    let link = citationLinks[n - 1]
+                    guard n >= 1, n <= outcome.links.count else { return nil }
+                    let link = outcome.links[n - 1]
                     return Message.Citation(index: n, url: link.url, title: link.title, snippet: link.snippet ?? "")
                 }
-                messages.append(Message(role: .assistant, text: finalAnswer,
+                messages.append(Message(role: .assistant, text: outcome.answer,
                                         citations: webCitations.isEmpty ? nil : webCitations))
             }
         } catch {
@@ -502,7 +529,7 @@ final class ChatSession {
                 streamingText = ""
                 isStreaming = false
                 await send(displayText: displayText, modelText: displayText, systemPrompt: systemPrompt)
-                return
+                return didRetryWeb
             }
             // Brief AF2 — route the agentic error through the SAME honest banner as the
             // plain path (AD2). Previously this used the raw errorDescription, which
@@ -514,6 +541,23 @@ final class ChatSession {
         isStreaming = false
         flush()
         scheduleTitleGenerationIfNeeded()
+        return didRetryWeb
+    }
+
+    /// Brief AI4 refusal guard — does this answer read as the trained "I can't reach the
+    /// live web" reflex rather than a real answer? Used ONLY to decide a single forced
+    /// retry on an intent turn that made no tool call. Deliberately narrow: these phrases
+    /// almost never appear in a genuine current-information answer (a turn that actually
+    /// searched cites its live sources instead).
+    static func looksLikeWebRefusal(_ text: String) -> Bool {
+        let t = text.lowercased()
+        let cues = ["access the internet", "access to the internet", "access the web",
+                    "access real-time", "access to real-time", "browse the web",
+                    "real-time data", "real-time information", "real time information",
+                    "as of my training", "as of my last", "knowledge cutoff",
+                    "my training data", "up-to-date information", "up to date information",
+                    "don't have access to current", "do not have access to current"]
+        return cues.contains { t.contains($0) }
     }
 
     /// Brief AF3 — the app-owned no-key state. When the user asks to search the web but

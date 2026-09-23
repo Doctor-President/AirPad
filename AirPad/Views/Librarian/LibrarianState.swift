@@ -575,6 +575,7 @@ final class LibrarianState {
         let query = rawQuery.trimmingCharacters(in: .whitespacesAndNewlines)
         guard !query.isEmpty else { return }
         chat.thinkEnabled = thinkEnabled // Phase 2: the Librarian's per-session Thinking toggle → the Host
+        pendingWebSearchOffer = nil      // Brief AI5 — any fresh send clears a stale web-search offer
 
         // ★ Private mode (DEFAULT, corpusAware == false): do NOT retrieve. Send the
         // bare question with a plain assistant prompt — no passages, no citation
@@ -600,6 +601,7 @@ final class LibrarianState {
             }
             guard toolCapable else {
                 // FM (no tool API) → plain private chat, exactly as before.
+                Self.logGeneralTurn(query: query, scope: selectedScope, tool: "none", retry: false, store: store)
                 await chat.send(displayText: query, modelText: query,
                                 systemPrompt: privateSystemPrompt, citations: nil)
                 return
@@ -613,6 +615,7 @@ final class LibrarianState {
             //   • any other message → a plain private chat with the tool-free prompt,
             //     so the model never advertises a capability it can't use.
             guard WebSearchBackend.hasKey else {
+                Self.logGeneralTurn(query: query, scope: selectedScope, tool: "none", retry: false, store: store)
                 if Self.looksLikeSearchIntent(query) {
                     chat.appendWebSearchKeyNotice(userText: query)
                 } else {
@@ -625,9 +628,23 @@ final class LibrarianState {
             // Key present → the agentic tool loop. It steers with the tool-aware prompt
             // (real date + "trust the live results, don't hedge") — NOT the plain private
             // prompt, which told the model to answer "from your own knowledge" (the bug).
-            await chat.sendWithTools(displayText: query,
-                                     systemPrompt: toolChatSystemPrompt,
-                                     executor: WebSearchBackend.make())
+            //
+            // Brief AI4 — the APP decides when to search. A current-information question
+            // (`looksLikeSearchIntent`) REQUIRES the web tool for THIS turn; every other
+            // question leaves it merely declared (the model's judgment, as before).
+            // `tool_choice` is verified INERT on this stack (curl'd on this Mac: Ollama
+            // 0.13.2 ignores it on BOTH `/api/chat` and `/v1/chat/completions`, and the
+            // Host decode-struct drops the field before it reaches Ollama), so "require"
+            // is a NUDGE appended to the model turn — `sendWithTools(forceWebSearch:)`.
+            // That call also runs the refusal guard (a no-tool "I can't access the web"
+            // answer on an intent turn → ONE web retry), returning whether it fired.
+            let forceWeb = Self.looksLikeSearchIntent(query)
+            let didRetry = await chat.sendWithTools(displayText: query,
+                                                    systemPrompt: toolChatSystemPrompt,
+                                                    executor: WebSearchBackend.make(),
+                                                    forceWebSearch: forceWeb)
+            Self.logGeneralTurn(query: query, scope: selectedScope,
+                                tool: forceWeb ? "required" : "declared", retry: didRetry, store: store)
             return
         }
 
@@ -643,6 +660,11 @@ final class LibrarianState {
             // chips. `ChatSession.send` strips any hallucinated [n] (empty valid set).
             await chat.send(displayText: query, modelText: query,
                             systemPrompt: emptyLibrarySystemPrompt, citations: nil)
+            // Brief AI5 — Library mode never searches, but when the empty room meets a
+            // current-information question the app OFFERS the web under the answer. Set
+            // after the answer commits; the surface renders the offer bar, and tapping it
+            // flips to General + re-sends (AI4). App UI only — never model text/citation.
+            if Self.looksLikeSearchIntent(query) { pendingWebSearchOffer = query }
             return
         }
 
@@ -658,6 +680,19 @@ final class LibrarianState {
         // the [n] the model actually cited before committing the message.
         let chips = Self.citationChips(from: candidates, store: store)
         await chat.send(displayText: query, modelText: modelText, systemPrompt: askSystemPrompt, citations: chips)
+    }
+
+    /// Brief AI5 — the user tapped "Search the web instead" under an empty Library
+    /// answer. Clear the offer, flip to General (the AH4 chip morph animates on the
+    /// surface off the `corpusAware` change), and re-send the SAME question — which now
+    /// runs the AI4 General path: with a key the search is forced; without one the AF3
+    /// no-key notice appears. Re-sending is exactly `groundedSend`, so nothing about the
+    /// tool/nudge/refusal-guard logic is duplicated here.
+    func acceptWebSearchOffer(store: CorpusStore, chat: ChatSession) async {
+        guard let query = pendingWebSearchOffer else { return }
+        pendingWebSearchOffer = nil
+        corpusAware = false
+        await groundedSend(query: query, store: store, chat: chat)
     }
 
     /// Brief S — assemble the numbered candidate list for a corpus-Ask turn. S2:
@@ -1294,6 +1329,21 @@ final class LibrarianState {
         }
     }
 
+    /// Brief AI4 — the General-mode analogue of the S5 line (corpus mode has no
+    /// candidates to log). One record per General turn carrying the web-tool state:
+    /// `tool=required` (app forced the search via the nudge), `declared` (tool offered,
+    /// model's choice), or `none` (FM / no-key). `retry=web` appears when the refusal
+    /// guard fired a second attempt. Shares the same os_log + "Copy Librarian log" buffer.
+    private static func logGeneralTurn(query: String, scope: CanvasScope, tool: String, retry: Bool, store: CorpusStore) {
+        let q = query.replacingOccurrences(of: "\n", with: " ⏎ ")
+        let record = "general · scope=\(scopeLabel(scope, store: store)) · tool=\(tool)\(retry ? " · retry=web" : "") · query=\"\(q)\""
+        candidateLog.log("\(record, privacy: .public)")
+        recentCandidateLog.append(record)
+        if recentCandidateLog.count > recentCandidateLogCap {
+            recentCandidateLog.removeFirst(recentCandidateLog.count - recentCandidateLogCap)
+        }
+    }
+
     // ws-card-catalog Ask hybrid — the old grounded pipeline (executeQuery →
     // runAskPipeline) was orphaned when the Ask button was rewired to the
     // ChatSession lane; retrieval was replaced by `groundedSend` above (the one
@@ -1388,7 +1438,14 @@ final class LibrarianState {
     /// substrings. `static` + `internal` so the AF3 unit test can exercise it directly.
     static func looksLikeSearchIntent(_ query: String) -> Bool {
         let q = query.lowercased()
-        let cues = ["search", "look up", "latest", "today's news", "current"]
+        // Brief AI4 — the "current-information" cue set. ONE matcher is the single
+        // source of truth for BOTH the no-key notice (AF3) and the app-forced search
+        // (AI4 General-mode force + AI5 Library offer). Broadened from the original
+        // five to the AI4 list; false positives stay cheap (General mode with a key
+        // just runs a search the user may not have needed; without a key, the
+        // one-line "add a key" reply).
+        let cues = ["search", "look up", "latest", "today", "current", "news",
+                    "what happened", "who won", "score", "weather", "price"]
         return cues.contains { q.contains($0) }
     }
 
@@ -1403,6 +1460,14 @@ final class LibrarianState {
     /// (no persistent thread to store it on); the pill/sheet write it; `groundedSend` forwards it
     /// to the ChatSession, which sends `think` to the Host (the only path that honors it).
     var thinkEnabled: Bool = false
+
+    /// Brief AI5 — a Library-mode turn that found NOTHING in the room AND read as a
+    /// current-information question parks the user's query here; the surface renders an
+    /// app-level "Search the web instead" offer under the answer (NOT model text, never
+    /// a citation). Tapping flips to General and re-sends (AI4 applies). Set after the
+    /// empty-library answer commits; cleared on the next send, an accept, or a manual
+    /// mode flip. Observable so the surface shows/hides the offer bar.
+    var pendingWebSearchOffer: String? = nil
 
     /// Read-only indicator of the model that will answer the next Ask (the FM
     /// friendly name, or a remote endpoint's model id). STORED + observable so the

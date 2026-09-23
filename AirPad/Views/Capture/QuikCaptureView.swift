@@ -584,6 +584,7 @@ struct QuikCaptureView: View {
                 TagPickerButton(
                     tags: store.tags,
                     excludeNames: Set(editedTags),
+                    store: store,
                     onPickExisting: { name in
                         if !editedTags.contains(name) {
                             editedTags.append(name)

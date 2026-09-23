@@ -1343,6 +1343,24 @@ final class CorpusStore {
                                      "what is 2 + 2"]
                     for q in positives { expect(LibrarianState.looksLikeSearchIntent(q), "intent+ \(q)") }
                     for q in negatives { expect(!LibrarianState.looksLikeSearchIntent(q), "intent- \(q)") }
+                    // Brief AI4 — the broadened current-information cue set fires on the new
+                    // cues (weather / price / score / who won / what happened) and NOT on a
+                    // library-scoped or coding question.
+                    let ai4Positives = ["who won the game last night", "what's the weather today",
+                                        "what happened at the summit", "the score of the match",
+                                        "look up the price of gold"]
+                    for q in ai4Positives { expect(LibrarianState.looksLikeSearchIntent(q), "AI4 intent+ \(q)") }
+                    let ai4Negatives = ["summarise my notes on stoicism", "how do I write a for loop"]
+                    for q in ai4Negatives { expect(!LibrarianState.looksLikeSearchIntent(q), "AI4 intent- \(q)") }
+                    // Brief AI4 refusal guard — the trained "no live web" reflex is detected,
+                    // a genuine answer is not (so a real search result never triggers a retry).
+                    let refusals = ["I don't have real-time data about that.",
+                                    "As of my training data, I can't access the internet.",
+                                    "I cannot browse the web to check current prices."]
+                    for r in refusals { expect(ChatSession.looksLikeWebRefusal(r), "refusal+ \(r)") }
+                    let nonRefusals = ["The UN Security Council met today and passed a resolution [1].",
+                                       "Paris is the capital of France."]
+                    for r in nonRefusals { expect(!ChatSession.looksLikeWebRefusal(r), "refusal- \(r)") }
                     NSLog("[WebKeyDiag] hasKey=%@ (expect false on a fresh sim)", "\(WebSearchBackend.hasKey)")
                     let cs = ChatSession()
                     cs.appendWebSearchKeyNotice(userText: "search for today's headlines")

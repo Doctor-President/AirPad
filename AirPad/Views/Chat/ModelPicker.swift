@@ -159,8 +159,12 @@ struct ModelPillRow: View {
     private var canToggleThinking: Bool { catalog.resident?.thinkingToggleable == true }
 
     var body: some View {
+        // Brief AI3 — mode chip leads (Librarian) / Private leads (Chat View); the model
+        // pill HUGS its content and is CENTRED in the space between the leading chip and
+        // the Thinking chip (or the trailing edge when Thinking is absent). ≥12 pt gaps.
         HStack(spacing: 8) {
             if includePrivate { privatePill }
+            Spacer(minLength: 12)
             modelPill
             Spacer(minLength: 12)
             if canToggleThinking { thinkingPill }
@@ -203,13 +207,20 @@ struct ModelPillRow: View {
         }
         .buttonStyle(.plain)
         .accessibilityLabel(catalog.resident.map { "Model \($0.display), loaded" } ?? "No model loaded")
+        // Brief AI2 — the callout ring hugs the MODEL chip ONLY (was the whole row, so it
+        // spanned Thinking too). The anchor is harmless in Chat View (no overlay reads it).
+        .firstRunCalloutTarget(FirstRunCalloutTargetID.librarianModelChip)
     }
 
-    // NO pill is ever taller than one text row (T): tail-truncate the name, bounded width.
+    // NO pill is ever taller than one text row (T). Brief AI3 — the name HUGS its content
+    // (no width frame: a fixed `maxWidth` is greedy-up-to-max and reintroduces the
+    // dead-space bug). The row's flanking Spacers (min 12) both CENTRE the pill and
+    // bound it, so a long name middle-truncates without ever touching a neighbour, while
+    // a short name reads as a compact pill (PickerPill's own padding is the floor).
     private func name(_ s: String) -> some View {
         Text(s).font(.system(size: 12, weight: .semibold))
             .foregroundStyle(AppearancePalette.ink.opacity(0.9))
-            .lineLimit(1).truncationMode(.tail).frame(maxWidth: 190, alignment: .leading)
+            .lineLimit(1).truncationMode(.middle)
     }
 
     private var thinkingPill: some View {

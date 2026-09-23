@@ -53,6 +53,20 @@ struct ContentView: View {
                 }
             }
         }
+        #if DEBUG
+        // Brief AN (spike/map-depth) — PIN the Map (System Graph) + suppress first-run callouts
+        // so the depth-options harness lands cleanly. On the ROOT ZStack (a real view, so `.task`
+        // fires reliably — the zero-frame Color.clear ran it only intermittently). Pins for ~24s
+        // (harness only), covering the seed + settle + capture window.
+        .task {
+            guard MapDepthDebug.harness else { return }
+            FirstRunCalloutKey.allCases.forEach { $0.markShown() }
+            for _ in 0..<80 {
+                if router.entryMode != .canvas { router.entryMode = .canvas }
+                try? await Task.sleep(nanoseconds: 300_000_000)
+            }
+        }
+        #endif
         // Chats list sheet — shared by the Dashboard header bubble and
         // the Librarian "Chats" tile via `router.showChatsList`. Mounted
         // at the root so both entry points present the bit-identical

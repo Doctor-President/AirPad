@@ -231,11 +231,31 @@ enum BackgroundGridNode {
             // (The COLOUR REACTION — dot opacity rising where the grid compresses — was baked to 0
             // and deleted at the 2026-09-14 bake; T never dialled it on.)
 
-            // Premultiplied output. u_dot_color is the per-theme dot tint
-            // (default white → dark byte-identical: (1,1,1)*alpha reproduces the
-            // old vec4(alpha,alpha,alpha,alpha)); light mode pushes a cool
-            // graphite so the dots read on cream (ws-dark-light-mode item 3).
-            gl_FragColor = vec4(u_dot_color * alpha, alpha);
+            // Brief AN L2 (DEBUG spike) — GROUND DARKENING. u_ground_on < 0.5 (every normal
+            // run) → the node stays transparent dots, BYTE-IDENTICAL. On → the node also
+            // paints the (darkened) ground opaque, with the dots composited over it. Three
+            // shapes: ao (pool under the warp mass field the dots already sample), well
+            // (radial, dark middle), vignette (dark edges). k = 0.25/0.45 toward black.
+            if (u_ground_on > 0.5) {
+                vec2 screenOffsetL2 = (v_tex_coord - vec2(0.5)) * u_viewport_size;
+                float factor;
+                if (u_l2_mode < 0.5) {
+                    vec2 pullF = (texture2D(u_disp_field, v_tex_coord).rg - vec2(0.5)) * (2.0 * u_warp_mass_range);
+                    factor = clamp(length(pullF) * 1.2, 0.0, 1.0);
+                } else {
+                    vec2 focal = vec2(0.0, u_viewport_size.y * 0.5 * 0.12);
+                    float r = clamp(length(screenOffsetL2 - focal) / length(u_viewport_size * 0.5), 0.0, 1.0);
+                    factor = (u_l2_mode < 1.5) ? (1.0 - r) : r;   // well = dark middle, vignette = dark edges
+                }
+                vec3 ground = mix(u_ground_color, vec3(0.0), u_l2_k * factor);
+                gl_FragColor = vec4(ground * (1.0 - alpha) + u_dot_color * alpha, 1.0);
+            } else {
+                // Premultiplied output. u_dot_color is the per-theme dot tint
+                // (default white → dark byte-identical: (1,1,1)*alpha reproduces the
+                // old vec4(alpha,alpha,alpha,alpha)); light mode pushes a cool
+                // graphite so the dots read on cream (ws-dark-light-mode item 3).
+                gl_FragColor = vec4(u_dot_color * alpha, alpha);
+            }
         }
         """
 
@@ -261,9 +281,37 @@ enum BackgroundGridNode {
             SKUniform(name: "u_warp_sign",     float: 1),
             SKUniform(name: "u_warp_shrink",   float: 0.4),   // mode 3: dots shrink near mass (depression recedes)
             SKUniform(name: "u_warp_mass_range", float: 1),   // 1 = mass influence 0 → encodings byte-identical
-            SKUniform(name: "u_disp_field",    texture: fieldZero)
+            SKUniform(name: "u_disp_field",    texture: fieldZero),
+            // Brief AN L2 (DEBUG spike) — ground darkening. 0/off in every normal run.
+            SKUniform(name: "u_ground_on",    float: Self.mapDepthL2On),
+            SKUniform(name: "u_l2_mode",      float: Self.mapDepthL2Mode),
+            SKUniform(name: "u_l2_k",         float: Self.mapDepthL2K),
+            SKUniform(name: "u_ground_color", vectorFloat3: vector_float3(0.0667, 0.0667, 0.0824))  // #111115
         ]
         return shader
+    }
+
+    // Brief AN L2 — DEBUG spike reads the launch arg; Release = off (byte-identical).
+    private static var mapDepthL2On: Float {
+        #if DEBUG
+        return MapDepthDebug.l2On ? 1 : 0
+        #else
+        return 0
+        #endif
+    }
+    private static var mapDepthL2Mode: Float {
+        #if DEBUG
+        return MapDepthDebug.l2Mode
+        #else
+        return 0
+        #endif
+    }
+    private static var mapDepthL2K: Float {
+        #if DEBUG
+        return MapDepthDebug.l2K
+        #else
+        return 0
+        #endif
     }
 
     /// How many nearest orbs contribute to the displacement field (the CPU-side "48-set").

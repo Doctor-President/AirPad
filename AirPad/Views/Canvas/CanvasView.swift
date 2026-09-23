@@ -52,6 +52,7 @@ struct CanvasView: View {
     /// empty in Release.
     private var mapDebugOptions: SpriteView.DebugOptions {
         #if DEBUG
+        if MapDepthDebug.hideHUD { return [] }   // Brief AN — `-NoMapDebugHUD` hides the HUD for clean stills
         return [.showsFPS, .showsDrawCount, .showsNodeCount]
         #else
         return []

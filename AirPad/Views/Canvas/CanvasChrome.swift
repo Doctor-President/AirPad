@@ -197,6 +197,23 @@ struct CanvasChrome: View {
                 ChromeEdgeBands()
             }
 
+            #if DEBUG
+            // Brief AN L3 (spike/map-depth) — reuse the shipped chrome bands behind the MAP's
+            // top (View pill row) + bottom (Librarian pill) chrome. Dark shipped geometry
+            // (top 194 · bottom 118 · blur 1.0 · easing 1.0); darken from the launch arg
+            // (0.74 shipped-dark / 0.45 lighter). SwiftUI → ABOVE the SpriteView, so the
+            // bands sit above BOTH the orbs and the region labels. Off in every normal run.
+            if filterState.viewMode == .systemGraph, !store.isInDetailView, let l3 = MapDepthDebug.l3Darken {
+                VStack(spacing: 0) {
+                    ChromeEdgeBand(edge: .top, height: 194, blur: 1.0, darken: l3, easing: 1.0)
+                    Spacer(minLength: 0)
+                    ChromeEdgeBand(edge: .bottom, height: 118, blur: 1.0, darken: l3, easing: 1.0)
+                }
+                .ignoresSafeArea()
+                .allowsHitTesting(false)
+            }
+            #endif
+
             // Overlays that live above the canvas but behind the fan — these all
             // blur uniformly when the fan is expanded so the focal effect is
             // consistent across the full screen, not just the canvas area.

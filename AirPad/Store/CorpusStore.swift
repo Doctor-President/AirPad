@@ -1413,7 +1413,70 @@ final class CorpusStore {
                     expect(tagsOf(r2.nodes, "u1").contains("cinema"), "rename shared: u1 now 'cinema'")
                     expect(tagsOf(r2.nodes, "s1") == ["film"], "rename shared: sample s1 still 'film'")
                     expect(sampleAfter(r2.nodes) == sampleBefore, "rename shared: ZERO sample entries changed")
+
+                    // BATCH delete {coffee (user-only), film (shared)} — u1 carries BOTH,
+                    // so it must be written ONCE; u2 carries coffee. film's Tag survives
+                    // (sample s1); coffee's does not.
+                    let b = TagRoomEdit.delete(tagNames: ["coffee", "film"], from: fixture, sampleIDs: sampleIDs)
+                    expect(Set(b.changedUserIDs) == ["u1", "u2"] && b.changedUserIDs.count == 2, "batch: u1,u2 each written once (u1 had both)")
+                    expect(tagsOf(b.nodes, "u1").isEmpty, "batch: u1 lost both coffee+film")
+                    expect(b.keepVocabulary["coffee"] == false && b.keepVocabulary["film"] == true, "batch: coffee dropped, film kept (sample)")
+                    expect(sampleAfter(b.nodes) == sampleBefore, "batch: ZERO sample entries changed")
                     NSLog("[TagCrudDiag] done")
+                }
+                // Pre-build-L integration check — run the REAL store methods against a
+                // SCRATCH COPY of T's library (`-CorpusFixture` root) + the seeded Sample
+                // Library, in three phases so the shell can diff the on-disk files between
+                // launches + confirm persistence. GUARDED to the corpus-fixture scratch so
+                // it can NEVER touch iCloud or a real container.
+                let tfKind = await service.storageDiagnostic().kind
+                if tfKind == "corpus-fixture" {
+                    let ep0 = Date(timeIntervalSince1970: 1_700_000_000)
+                    if ProcessInfo.processInfo.arguments.contains("-TFSeed") {
+                        await addSampleLibrary()   // Sample Library brings coffee / film / … tags
+                        func inject(_ id: String, _ tag: String) async {
+                            let n = Node(id: id, createdAt: ep0, updatedAt: ep0, title: id, summary: "", tags: [tag])
+                            try? await service.saveNode(n)
+                            if !nodes.contains(where: { $0.id == id }) { nodes.append(n) }
+                        }
+                        await inject("ccfx-user-del", "ccfx_useronly_del")   // user-only
+                        await inject("ccfx-user-ren", "ccfx_useronly_ren")   // user-only
+                        await inject("ccfx-shared-del", "coffee")            // shared w/ sample
+                        await inject("ccfx-shared-ren", "film")              // shared w/ sample
+                        await inject("ccfx-batch-a", "ccfx_batch_a")         // batch, user-only
+                        await inject("ccfx-batch-b", "horror")               // batch, shared w/ sample
+                        for name in ["ccfx_useronly_del", "ccfx_useronly_ren", "ccfx_batch_a"] where !tags.contains(where: { $0.name == name }) {
+                            tags.append(Tag(id: UUID(), name: name, colorHex: "#1B59C2", createdAt: ep0, useCount: 0))
+                        }
+                        await persistTags()
+                        NSLog("[TF] seeded — userNodes=%d sampleNodes=%d coffeeInSample=%@ filmInSample=%@",
+                              userNodes.count, sampleNodeIDs.count,
+                              "\(nodes.contains { isSample($0.id) && $0.tags.contains("coffee") })",
+                              "\(nodes.contains { isSample($0.id) && $0.tags.contains("film") })")
+                        NSLog("[TF] seed done")
+                    }
+                    if ProcessInfo.processInfo.arguments.contains("-TFRun") {
+                        func tag(_ n: String) -> Tag? { tags.first { $0.name == n } }
+                        if let t = tag("ccfx_useronly_del") { let c = await deleteTagInUserRoom(t); NSLog("[TF] delete user-only → %d user entries; tagGone=%@", c, "\(!tags.contains { $0.name == "ccfx_useronly_del" })") }
+                        if let t = tag("coffee") { let c = await deleteTagInUserRoom(t); NSLog("[TF] delete shared 'coffee' → %d user entries; tagKept=%@", c, "\(tags.contains { $0.name == "coffee" })") }
+                        if let t = tag("ccfx_useronly_ren") { let c = await renameTagInUserRoom(t, to: "ccfx_renamed"); NSLog("[TF] rename user-only → %d user entries; renamed=%@", c, "\(tags.contains { $0.name == "ccfx_renamed" } && !tags.contains { $0.name == "ccfx_useronly_ren" })") }
+                        if let t = tag("film") { let c = await renameTagInUserRoom(t, to: "ccfx_cinema"); NSLog("[TF] rename shared 'film'→'ccfx_cinema' → %d user entries; filmKept=%@ cinemaMade=%@", c, "\(tags.contains { $0.name == "film" })", "\(tags.contains { $0.name == "ccfx_cinema" })") }
+                        let batch = [tag("ccfx_batch_a"), tag("horror")].compactMap { $0 }
+                        let bres = await deleteTagsInUserRoom(batch)
+                        NSLog("[TF] BATCH delete {ccfx_batch_a, horror} → %d user entries, %d tags removed; horrorKept=%@ batchAgone=%@", bres.entries, bres.tagsRemoved, "\(tags.contains { $0.name == "horror" })", "\(!tags.contains { $0.name == "ccfx_batch_a" })")
+                        NSLog("[TF] run done")
+                    }
+                    if ProcessInfo.processInfo.arguments.contains("-TFCheck") {
+                        func tg(_ id: String) -> String { (nodes.first { $0.id == id }?.tags ?? []).joined(separator: ",") }
+                        NSLog("[TF] CHECK user-del=[%@] (want empty) · user-ren=[%@] (want ccfx_renamed)", tg("ccfx-user-del"), tg("ccfx-user-ren"))
+                        NSLog("[TF] CHECK shared-del=[%@] (want empty) · shared-ren=[%@] (want ccfx_cinema)", tg("ccfx-shared-del"), tg("ccfx-shared-ren"))
+                        NSLog("[TF] CHECK batch-a=[%@] (want empty) · batch-b=[%@] (want empty)", tg("ccfx-batch-a"), tg("ccfx-batch-b"))
+                        NSLog("[TF] CHECK vocab coffee=%@ film=%@ cinema=%@ renamed=%@ useronly_del=%@",
+                              "\(tags.contains { $0.name == "coffee" })", "\(tags.contains { $0.name == "film" })",
+                              "\(tags.contains { $0.name == "ccfx_cinema" })", "\(tags.contains { $0.name == "ccfx_renamed" })",
+                              "\(tags.contains { $0.name == "ccfx_useronly_del" })")
+                        NSLog("[TF] check done")
+                    }
                 }
                 #endif
                 // THE TAG PRODUCER — Step 0 (ws-lever.md). READ-ONLY corpus diagnostic
@@ -5189,6 +5252,29 @@ final class CorpusStore {
             await persistTags()
         }
         return result.changedUserIDs.count
+    }
+
+    /// BATCH delete (Manage Tags → Edit → select → Delete N). Same SEALED pure core over
+    /// a SET of names: one write per affected USER entry (even if it carried several of
+    /// the selected tags); a Tag stays if the sample still uses its name. Returns the
+    /// number of user entries changed + tags removed from the vocabulary.
+    @discardableResult
+    func deleteTagsInUserRoom(_ tagsToDelete: [Tag]) async -> (entries: Int, tagsRemoved: Int) {
+        let names = Set(tagsToDelete.map(\.name))
+        guard !names.isEmpty else { return (0, 0) }
+        let result = TagRoomEdit.delete(tagNames: names, from: nodes, sampleIDs: sampleNodeIDs)
+        for id in result.changedUserIDs {
+            if let n = result.nodes.first(where: { $0.id == id }) { await updateNode(n) }
+        }
+        var removed = 0
+        for t in tagsToDelete where result.keepVocabulary[t.name] == false {
+            tags.removeAll { $0.id == t.id }
+            tagLastUsedAt.removeValue(forKey: t.name)
+            dropTerritorySlot(forKey: "tag:\(t.name)")
+            removed += 1
+        }
+        await persistTags()
+        return (result.changedUserIDs.count, removed)
     }
 
     /// Rename a tag IN THE USER ROOM. Re-tags the user's entries old→new. A USER-ONLY

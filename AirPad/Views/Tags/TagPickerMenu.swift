@@ -18,6 +18,11 @@ struct TagPickerButton<Label: View>: View {
 
     let tags: [Tag]
     let excludeNames: Set<String>
+    /// Build K / AJ4 — when a store is supplied, the picker rows gain swipe-to-delete
+    /// and long-press-rename (the SAME `deleteTagInUserRoom` / `renameTagInUserRoom`
+    /// the Settings → Tags list uses), so the entry-side Add Tag sheet has CRUD parity.
+    /// nil (the canvas batch bar) → the plain add-only picker, unchanged.
+    var store: CorpusStore? = nil
     let onPickExisting: (String) -> Void
     let onAddNew: () -> Void
     @ViewBuilder var label: () -> Label
@@ -39,6 +44,7 @@ struct TagPickerButton<Label: View>: View {
                 TagPickerSheet(
                     tags: tags,
                     excludeNames: excludeNames,
+                    store: store,
                     onPickExisting: onPickExisting,
                     onRequestCreate: { pendingCreate = true }
                 )
@@ -53,18 +59,29 @@ struct TagPickerSheet: View {
 
     let tags: [Tag]
     let excludeNames: Set<String>
+    /// When set, rows gain delete/rename (see `TagPickerButton.store`). Read LIVE for
+    /// the row source so a delete/rename reflects in the list immediately.
+    var store: CorpusStore? = nil
     let onPickExisting: (String) -> Void
     let onRequestCreate: () -> Void
 
     @Environment(\.dismiss) private var dismiss
     @State private var query = ""
+    // AJ4 CRUD state (only reachable when `store != nil`), mirroring Settings → Tags.
+    @State private var tagPendingDelete: Tag? = nil
+    @State private var tagRenaming: Tag? = nil
+    @State private var tagRenameText = ""
 
     private var trimmed: String {
         query.trimmingCharacters(in: .whitespacesAndNewlines)
     }
 
+    /// Vocabulary source: LIVE `store.tags` when a store is present (so CRUD reflects
+    /// at once), else the passed snapshot (canvas batch bar).
+    private var source: [Tag] { store?.tags ?? tags }
+
     private var available: [Tag] {
-        let base = tags.filter { !excludeNames.contains($0.name) }
+        let base = source.filter { !excludeNames.contains($0.name) }
         guard !trimmed.isEmpty else { return base }
         return base.filter { $0.name.localizedCaseInsensitiveContains(trimmed) }
     }
@@ -85,13 +102,7 @@ struct TagPickerSheet: View {
                 } else {
                     Section {
                         ForEach(available) { tag in
-                            Button {
-                                onPickExisting(tag.name)
-                                dismiss()
-                            } label: {
-                                Text(tag.name)
-                                    .foregroundStyle(AppearancePalette.ink)
-                            }
+                            tagRow(tag)
                         }
                     }
                 }
@@ -107,6 +118,61 @@ struct TagPickerSheet: View {
                     Button("Cancel") { dismiss() }
                 }
             }
+            // AJ4 — delete/rename reuse the SAME room-sealed store methods as Settings;
+            // wording matches so the two surfaces read identically. Inert when store == nil
+            // (the state never gets set without CRUD rows).
+            .confirmationDialog(deleteTitle(tagPendingDelete),
+                                isPresented: Binding(get: { tagPendingDelete != nil },
+                                                     set: { if !$0 { tagPendingDelete = nil } }),
+                                titleVisibility: .visible, presenting: tagPendingDelete) { tag in
+                Button("Remove", role: .destructive) {
+                    if let store { Task { await store.deleteTagInUserRoom(tag) } }
+                }
+                Button("Cancel", role: .cancel) {}
+            } message: { tag in
+                if tag.isCanvasAnchor { Text("Its territory on the Map will dissolve.") }
+            }
+            .alert("Rename tag", isPresented: Binding(get: { tagRenaming != nil },
+                                                      set: { if !$0 { tagRenaming = nil } })) {
+                TextField("Tag name", text: $tagRenameText).autocorrectionDisabled()
+                Button("Rename") {
+                    if let store, let t = tagRenaming { Task { await store.renameTagInUserRoom(t, to: tagRenameText) } }
+                }
+                Button("Cancel", role: .cancel) {}
+            } message: {
+                Text("Renames it on your entries and keeps its colour. The Sample Library keeps the old name.")
+            }
         }
+    }
+
+    /// One tag row. With a store, it carries swipe-delete + long-press rename/delete
+    /// (the entry-side parity with Settings → Tags); without one, it's add-only.
+    @ViewBuilder
+    private func tagRow(_ tag: Tag) -> some View {
+        let button = Button {
+            onPickExisting(tag.name)
+            dismiss()
+        } label: {
+            Text(tag.name).foregroundStyle(AppearancePalette.ink)
+        }
+        if store != nil {
+            button
+                .swipeActions(edge: .trailing) {
+                    Button(role: .destructive) { tagPendingDelete = tag } label: { Label("Delete", systemImage: "trash") }
+                }
+                .contextMenu {
+                    Button { tagRenaming = tag; tagRenameText = tag.name } label: { Label("Rename", systemImage: "pencil") }
+                    Button(role: .destructive) { tagPendingDelete = tag } label: { Label("Delete", systemImage: "trash") }
+                }
+        } else {
+            button
+        }
+    }
+
+    /// Delete-confirmation title names the cost (the user-room count), matching Settings.
+    private func deleteTitle(_ tag: Tag?) -> String {
+        guard let tag else { return "Remove tag?" }
+        let n = store?.userNodeCount(forTag: tag.name) ?? 0
+        return "Remove \u{201C}\(tag.name)\u{201D} from \(n) \(n == 1 ? "entry" : "entries")?"
     }
 }

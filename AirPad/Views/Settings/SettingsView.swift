@@ -70,6 +70,9 @@ struct SettingsView: View {
     @State private var tagPendingDelete: Tag? = nil
     @State private var tagRenaming: Tag? = nil
     @State private var tagRenameText = ""
+    /// Brief K addendum — Manage Tags multi-select batch delete (Edit → select → Delete N).
+    @State private var tagSelection = Set<UUID>()
+    @State private var showBatchTagDelete = false
     // Stage 4 — desktop Host pairing. `hostPairing` is cached (Keychain read is XPC-backed;
     // never read HostPairing.load() from `body`); refreshed on appear + after the sheet closes.
     @State private var showPairingQR = false
@@ -248,7 +251,7 @@ struct SettingsView: View {
     /// Brief K — Manage Tags CRUD. A `List` (native swipe + context menu). Room-SEALED:
     /// sample-only tags never appear; counts + delete/rename act on the USER room only.
     private var tagsSubmenu: some View {
-        List {
+        List(selection: $tagSelection) {
             Section {
                 submenuHeader(icon: "tag.fill", tint: "E8820A", title: "Tags",
                               blurb: "Tags label entries. Pinned tags form territories on the Map.")
@@ -304,6 +307,22 @@ struct SettingsView: View {
         } message: {
             Text("Renames it on your entries and keeps its colour. The Sample Library keeps the old name.")
         }
+        // Brief K addendum — Edit → multi-select → Delete (N), one confirmation with totals.
+        .toolbar {
+            ToolbarItem(placement: .topBarTrailing) { if !manageTagRows.isEmpty { EditButton() } }
+            ToolbarItem(placement: .bottomBar) {
+                if !tagSelection.isEmpty {
+                    Button("Delete (\(tagSelection.count))", role: .destructive) { showBatchTagDelete = true }
+                }
+            }
+        }
+        .confirmationDialog(batchTagDeleteTitle, isPresented: $showBatchTagDelete, titleVisibility: .visible) {
+            Button("Remove", role: .destructive) {
+                let selected = store.tags.filter { tagSelection.contains($0.id) }
+                Task { await store.deleteTagsInUserRoom(selected); tagSelection.removeAll() }
+            }
+            Button("Cancel", role: .cancel) {}
+        }
     }
 
     /// The delete-confirmation title names the cost (Brief K rule 1): the user-room count.
@@ -311,6 +330,14 @@ struct SettingsView: View {
         guard let tag else { return "Remove tag?" }
         let n = store.userNodeCount(forTag: tag.name)
         return "Remove \u{201C}\(tag.name)\u{201D} from \(n) \(n == 1 ? "entry" : "entries")?"
+    }
+
+    /// Batch-delete confirmation names the TOTALS: N tags across M user entries (an entry
+    /// carrying several selected tags counts once).
+    private var batchTagDeleteTitle: String {
+        let names = Set(store.tags.filter { tagSelection.contains($0.id) }.map(\.name))
+        let entries = store.userNodes.filter { n in names.contains { n.tags.contains($0) } }.count
+        return "Remove \(names.count) \(names.count == 1 ? "tag" : "tags") from \(entries) \(entries == 1 ? "entry" : "entries")?"
     }
 
     private var modelsSubmenu: some View {

@@ -694,8 +694,48 @@ struct DebugScreenHost: View {
         case "quikcapturefull":  ContentView()   // QuikCapture WITH content → Delete pill + pinned chrome
         case "capturemodefull":  NavigationStack { NodeDetailView(nodeID: "seed-cap") }   // detail capture WITH content
         case "chatview":         NavigationStack { ChatView() }   // real chat transcript
+        case "managemodels":     ManageModelsReproView()          // Brief AM3 — the REAL picker→Settings flow
         default:                 Text("unknown -Screen: \(screen)")
         }
+    }
+}
+
+/// Brief AM3 — a faithful repro of the model-chip → "Manage models" → Settings flow, using
+/// the REAL `ModelPickerSheet` (fullControls:false) and the REAL `SettingsView`, with the
+/// SAME two-sheets-on-one-view + `onDismiss`-sequenced presentation LibrarianSurface uses.
+/// The bug (Manage models lands on the Settings ROOT, not the Mac screen) lives in this
+/// presentation mechanism, so this exercises it WITHOUT the FloatingPanel/callout machinery
+/// that makes the full LibrarianSurface hard to drive headlessly. The XCUITest
+/// (`ManageModelsRepro`) launches `-Screen managemodels -FakeHostPairing YES`, taps
+/// "Manage models", and asserts the Mac screen ("Your Mac") is visible. Auto-opens the
+/// picker on appear so the test's first tap is the real "Manage models" row.
+private struct ManageModelsReproView: View {
+    @State private var showModelPicker = false
+    @State private var settingsPresentation: SettingsView.Presentation? = nil
+    @State private var pendingManageModels = false
+
+    var body: some View {
+        Color(hexString: "EFEAE0").ignoresSafeArea()
+            .onAppear { HostCatalog.shared.refreshPaired(); showModelPicker = true }
+            .sheet(isPresented: $showModelPicker, onDismiss: {
+                if pendingManageModels {
+                    pendingManageModels = false
+                    settingsPresentation = .at(.models)
+                }
+            }) {
+                ModelPickerSheet(
+                    catalog: HostCatalog.shared,
+                    thinkEnabled: .constant(false),
+                    onManageModels: {
+                        pendingManageModels = true
+                        showModelPicker = false
+                    }
+                )
+                .presentationDetents([.medium, .large])
+            }
+            .sheet(item: $settingsPresentation) { presentation in
+                SettingsView(initialAnchor: presentation.anchor)
+            }
     }
 }
 #endif

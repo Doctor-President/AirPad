@@ -7,6 +7,19 @@ struct SettingsView: View {
     /// models". (AJ2: the deep link now PUSHES the submenu, it no longer scrolls.)
     enum Anchor: Hashable { case webSearch, models }
 
+    /// Brief AM3 — a value-identified presentation, so hosts present via `.sheet(item:)`
+    /// instead of a `.sheet(isPresented:) { SettingsView(initialAnchor: separateState) }`
+    /// pair. That pair DESYNCED: the separate anchor `@State` read `nil` when the sheet
+    /// content closure evaluated, so the model-chip deep link landed on the Settings ROOT
+    /// (reproduced by `ManageModelsRepro`). `.sheet(item:)` hands the closure the exact
+    /// presented value, so the anchor can't be lost.
+    struct Presentation: Identifiable {
+        let anchor: Anchor?
+        var id: String { anchor.map { "\($0)" } ?? "root" }
+        static let root = Presentation(anchor: nil)
+        static func at(_ anchor: Anchor) -> Presentation { Presentation(anchor: anchor) }
+    }
+
     /// Which submenu to push on open (nil = the top-level list). Default keeps every
     /// existing `SettingsView()` call site unchanged.
     var initialAnchor: Anchor? = nil
@@ -27,6 +40,33 @@ struct SettingsView: View {
     /// each screen can be captured headlessly. Never set in production.
     var debugInitialDest: Dest? = nil
     #endif
+
+    /// Brief AM3 — SEED the navigation path in `init`, so the `NavigationStack` is BORN at
+    /// its destination. The build-M fix assigned `path` in `.onAppear`, which is unreliable
+    /// when Settings is presented from the model-picker's `onDismiss` (a sheet-over-sheet
+    /// sequence): the deep link landed on the Settings ROOT (reproduced by `ManageModelsRepro`).
+    /// Seeding at birth removes the timing dependency entirely.
+    init(initialAnchor: Anchor? = nil) {
+        self.initialAnchor = initialAnchor
+        _path = State(initialValue: Self.seededPath(anchor: initialAnchor))
+    }
+    #if DEBUG
+    init(debugInitialDest: Dest?) {
+        self.debugInitialDest = debugInitialDest
+        _path = State(initialValue: debugInitialDest.map { [$0] } ?? [])
+    }
+    #endif
+
+    /// The initial `path` for a deep-link anchor. `.models` lands on the paired Mac screen
+    /// when a Host is paired (`HostCatalog.shared.isPaired`, primed off-render before Settings
+    /// opens), else on Models.
+    private static func seededPath(anchor: Anchor?) -> [Dest] {
+        switch anchor {
+        case .webSearch: return [.webSearch]
+        case .models:    return HostCatalog.shared.isPaired ? [.models, .macModels] : [.models]
+        case .none:      return []
+        }
+    }
 
     @Environment(CorpusStore.self) private var store
     @Environment(\.dismiss) private var dismiss
@@ -152,18 +192,9 @@ struct SettingsView: View {
             // Brief AL1 — pairing state is the shared observable `HostCatalog.shared.isPaired`
             // (the SAME source the Librarian reads), refreshed off-render here so Settings and
             // the Librarian can never disagree. `hostPairing` is kept only for the display
-            // name / Unpair / sheets.
+            // name / Unpair / sheets. (AM3: the deep-link `path` is now SEEDED in `init`, not
+            // pushed here — the onAppear push was unreliable through the picker's onDismiss.)
             HostCatalog.shared.refreshPaired()
-            // Brief AJ2 — the deep link PUSHES its submenu (was AF3's scroll-to). AL2: the
-            // model-chip "Manage models" lands on the paired Mac screen; unpaired → Models.
-            switch initialAnchor {
-            case .webSearch: path = [.webSearch]
-            case .models:    path = HostCatalog.shared.isPaired ? [.models, .macModels] : [.models]
-            case nil:        break
-            }
-            #if DEBUG
-            if let debugInitialDest { path = [debugInitialDest] }
-            #endif
         }
     }
 

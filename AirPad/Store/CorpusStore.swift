@@ -1516,6 +1516,14 @@ final class CorpusStore {
                     s.viewMode = .grid
                     setFilterState(s, for: .corpus)
                 }
+                // Brief AN (spike/map-depth) — force the MAP (System Graph); viewMode
+                // otherwise persisted/defaulted to Card on some seeds, so the harness
+                // landed on the card list instead of the scene.
+                if ProcessInfo.processInfo.arguments.contains("-MapDepthHarness") {
+                    var s = filterState(for: .corpus)
+                    s.viewMode = .systemGraph
+                    setFilterState(s, for: .corpus)
+                }
                 if ProcessInfo.processInfo.arguments.contains("-FieldFixtureNode") {
                     let defs = FieldValueSelfTest.fixtureDefinitions()
                     fieldDefinitions = defs

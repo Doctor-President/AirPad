@@ -34,7 +34,14 @@ final class AppRouter {
 
     static var shared: AppRouter?
 
-    var entryMode: EntryMode = .recents
+    var entryMode: EntryMode = {
+        #if DEBUG
+        // Brief AN (spike/map-depth) — START on the Map so the depth-options harness never
+        // races the default .recents (the onAppear/pin approaches were intermittent).
+        if ProcessInfo.processInfo.arguments.contains("-MapDepthHarness") { return .canvas }
+        #endif
+        return .recents
+    }()
 
     /// Mirror of the in-layout Librarian panel's detent — `true` when
     /// the panel is at peek (`.tip`), `false` at half / full / hidden.

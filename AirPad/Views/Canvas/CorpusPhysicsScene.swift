@@ -2,6 +2,50 @@ import SpriteKit
 import UIKit
 import simd
 
+#if DEBUG
+/// Brief AN (spike/map-depth) — DEBUG-only "map depth" render options, driven by launch args.
+/// THROWAWAY: never merged, never shipped; Release is byte-identical (every read is `#if DEBUG`
+/// + a launch arg that is absent in normal runs). Three additive layers a reviewer can toggle:
+///   -MapDepthL1 subtle|medium|strong   (orb defocus toward the screen edges, in the orb shader)
+///   -MapDepthL2 ao-0.25|ao-0.45|well-0.25|well-0.45|vignette-0.25|vignette-0.45  (grid ground darkening)
+///   -MapDepthL3 0.74|0.45               (chrome bands behind the Map's top/bottom chrome)
+enum MapDepthDebug {
+    /// The value following `-<key>` in argv (nil if absent or the next token is another flag).
+    /// Parsed from `ProcessInfo.arguments` directly — NOT the UserDefaults argument domain,
+    /// which mis-pairs valueless flags with the next token.
+    private static func arg(_ key: String) -> String? {
+        let args = ProcessInfo.processInfo.arguments
+        guard let i = args.firstIndex(of: "-" + key), i + 1 < args.count else { return nil }
+        let v = args[i + 1]
+        return v.hasPrefix("-") ? nil : v
+    }
+    static var harness: Bool { ProcessInfo.processInfo.arguments.contains("-MapDepthHarness") }
+    static var hideHUD: Bool { ProcessInfo.processInfo.arguments.contains("-NoMapDebugHUD") }
+
+    // L1 — per-orb defocus by screen distance from the focal centre.
+    enum L1: String { case off, subtle, medium, strong }
+    static var l1: L1 { L1(rawValue: arg("MapDepthL1") ?? "off") ?? .off }
+    /// Edge feather multiply at the screen edge (≈ +px of softening; base feather is ~1px).
+    static var l1EdgePx: Float { switch l1 { case .off: return 0; case .subtle: return 1.5; case .medium: return 4; case .strong: return 8 } }
+    static var l1ValCut: Float { switch l1 { case .off: return 0; case .subtle: return 0.08; case .medium: return 0.18; case .strong: return 0.30 } }
+    static var l1SatCut: Float { switch l1 { case .off: return 0; case .subtle: return 0;    case .medium: return 0.10; case .strong: return 0.20 } }
+
+    // L2 — grid ground darkening. Raw "mode-k" e.g. "ao-0.45".
+    static var l2On: Bool { arg("MapDepthL2") != nil }
+    /// 0 = ao (mass field), 1 = well (radial, dark middle), 2 = vignette (dark edges); -1 = off.
+    static var l2Mode: Float {
+        guard let m = arg("MapDepthL2")?.split(separator: "-").first.map(String.init) else { return -1 }
+        switch m { case "ao": return 0; case "well": return 1; case "vignette": return 2; default: return -1 }
+    }
+    /// Fraction of the way from the ground toward black (0.25 / 0.45).
+    static var l2K: Float { Float(arg("MapDepthL2")?.split(separator: "-").last.flatMap { Double($0) } ?? 0) }
+
+    // L3 — chrome bands. Darken value (0.74 shipped-dark / 0.45 lighter). nil = off.
+    static var l3Darken: Double? { arg("MapDepthL3").flatMap(Double.init) }
+    static var l3On: Bool { l3Darken != nil }
+}
+#endif
+
 /// Node-title typeface. **BAKED to `.fraunces`** (T's device-final, Type arc end) —
 /// `mapLabelFont` resolves it to Fraunces72pt-Bold. The audition/tuner is gone; the
 /// enum + `mapLabelFont` switch stay so the choice is one-liner-revivable. All faces
@@ -545,11 +589,25 @@ final class CorpusPhysicsScene: SKScene {
         let ramp = zoomRampScale(cameraScale)
         let envelope = AnnulusTuning.envelope(cameraScale)
         let annulusOn = envelope > 0.001
+        // Brief AN L1 (DEBUG spike) — when defocus is active, run every frame so a_defocus
+        // tracks the camera on a pan even where the annulus is off (a normal run: mapDepthL1On
+        // is false, so the cheap idle early-return below is UNCHANGED).
+        var mapDepthL1On = false
+        #if DEBUG
+        mapDepthL1On = MapDepthDebug.l1 != .off
+        #endif
         // Annulus ON → re-run every frame (camera.position pans → magnify center
         // shifts). OFF → only when the zoom actually changed (cheap idle path).
-        if !annulusOn && abs(cameraScale - lastRampCameraScale) < 0.0005 { return }
+        if !annulusOn && !mapDepthL1On && abs(cameraScale - lastRampCameraScale) < 0.0005 { return }
         lastRampCameraScale = cameraScale
         let camPos = cameraNode.position
+        // Brief AN L1 — focal centre + edge radius for the per-orb defocus factor. Focal
+        // centre = ~12% ABOVE the geometric centre (SpriteKit y-up), approximating the middle
+        // of the band between the top View-pill chrome and the bottom Librarian pill.
+        #if DEBUG
+        let mdFocalY = size.height * 0.12
+        let mdEdgeRadius = max(1, hypot(size.width * 0.5, size.height * 0.5))
+        #endif
         let lod = LensTuning.labelLOD
         let fadeHi = lod * 1.5
         for (nodeID, sprite) in nodeSprites {
@@ -568,6 +626,17 @@ final class CorpusPhysicsScene: SKScene {
                 scale *= annulusAmplify(hypot(dx, dy), cameraScale: cameraScale, envelope: env)
             }
             sprite.setScale(scale)
+            #if DEBUG
+            if mapDepthL1On {
+                // Screen-space distance from the focal centre (points), normalised to the
+                // screen half-diagonal so it reaches 1 at the corners → the L1 driver.
+                let home = nodeRestingPositions[nodeID] ?? sprite.position
+                let sx = (home.x - camPos.x) / max(cameraScale, 0.0001)
+                let sy = (home.y - camPos.y) / max(cameraScale, 0.0001)
+                let defocus = Float(min(hypot(sx, sy - mdFocalY) / mdEdgeRadius, 1.0))
+                sprite.setValue(SKAttributeValue(float: defocus), forAttribute: "a_defocus")
+            }
+            #endif
             guard let intrinsic = nodeIntrinsicRadii[nodeID] else { continue }
             // On-screen diameter (pt) = worldDiameter · spriteScale / cameraScale.
             let worldToScreen = scale / max(cameraScale, 0.0001)
@@ -1337,6 +1406,19 @@ final class CorpusPhysicsScene: SKScene {
         // (The `-SPRMeasure` / `-SPRBand` synthetic-corpus harnesses were deleted at the
         // 2026-09-14 bake — they existed to dial the now-baked warp/band spikes and were
         // wired to the deleted tuner.)
+
+        #if DEBUG
+        // Brief AN (spike/map-depth) — `-MapAutoPan` scripts a deterministic camera move for
+        // the motion clips: let the layout settle, drift slowly across two territories, then
+        // zoom in (things coming into focus). Only when the flag is present (never a normal run).
+        if ProcessInfo.processInfo.arguments.contains("-MapAutoPan") {
+            cameraNode.run(.sequence([
+                .wait(forDuration: 3.5),
+                .moveBy(x: 260, y: -90, duration: 3.2),
+                .scale(by: 0.62, duration: 2.2)
+            ]), withKey: "mapDepthAutoPan")
+        }
+        #endif
     }
 
     override func didChangeSize(_ oldSize: CGSize) {
@@ -2963,7 +3045,10 @@ final class CorpusPhysicsScene: SKScene {
             vec2 p = v_tex_coord - vec2(0.5);
             float d = sdRoundBox(p, vec2(0.5), u_corner_radius) + 0.5;
             float R = 0.5;
-            float aa = a_geom.y;          // ~1px feather (uv)
+            // Brief AN L1 — soften the SDF edge toward the screen periphery. a_defocus is
+            // 0 at the focal centre → 1 at the screen edge; u_defocus_edge is the level's px
+            // (base feather ≈ 1px, so ×(1+edge·defocus) ≈ +edge px of blur at the edge).
+            float aa = a_geom.y * (1.0 + u_defocus_edge * a_defocus);
             float sw = a_geom.x;          // stroke width (uv)
             float disc = 1.0 - smoothstep(R - aa, R, d);
             float ring = clamp(smoothstep(R - sw - aa, R - sw, d) - smoothstep(R - aa, R, d), 0.0, 1.0);
@@ -2993,6 +3078,10 @@ final class CorpusPhysicsScene: SKScene {
                 vec3 hsv = rgb2hsv(fillRGB);
                 hsv.y = clamp(hsv.y * u_dark_sat, 0.0, 1.0);   // 1. saturation (drab-killer, hue kept)
                 hsv.z = clamp(hsv.z * u_dark_val, 0.0, 1.0);   //    + brightness
+                // Brief AN L1 — desaturate + dim toward the screen periphery (after the baked
+                // dark levers), so peripheral orbs recede. a_defocus 0 (focus) → 1 (edge).
+                hsv.y = clamp(hsv.y * (1.0 - u_defocus_sat * a_defocus), 0.0, 1.0);
+                hsv.z = clamp(hsv.z * (1.0 - u_defocus_val * a_defocus), 0.0, 1.0);
                 vec3 col = hsv2rgb(hsv);
 
                 vec2 ldir = normalize(u_light_dir);
@@ -3026,7 +3115,8 @@ final class CorpusPhysicsScene: SKScene {
             SKAttribute(name: "a_node_color", type: .vectorFloat4),
             SKAttribute(name: "a_stroke_color", type: .vectorFloat4),
             SKAttribute(name: "a_geom", type: .vectorFloat2),
-            SKAttribute(name: "a_wash", type: .vectorFloat4)    // rgb = wash pigment, a = peak strength
+            SKAttribute(name: "a_wash", type: .vectorFloat4),   // rgb = wash pigment, a = peak strength
+            SKAttribute(name: "a_defocus", type: .float)        // Brief AN L1 — 0 focus → 1 edge (0 in Release/off)
         ]
         // u_corner_radius: 0.5 = circle. Held at 0.5 — the morph to rounded square
         // (cornerMin) is retired to dormant; the uniform + sdRoundBox stay inert for
@@ -3045,10 +3135,38 @@ final class CorpusPhysicsScene: SKScene {
             SKUniform(name: "u_light_dir", vectorFloat2: vector_float2(Float(DarkOrbTuning.lightDirX), Float(DarkOrbTuning.lightDirY))),
             SKUniform(name: "u_dark_spec", float: Float(DarkOrbTuning.spec)),
             SKUniform(name: "u_spec_size", float: Float(DarkOrbTuning.specSize)),
-            SKUniform(name: "u_dark_glow", float: Float(DarkOrbTuning.glow))
+            SKUniform(name: "u_dark_glow", float: Float(DarkOrbTuning.glow)),
+            // Brief AN L1 — defocus levers (0 = off → Release byte-identical). Set from the
+            // launch arg on the DEBUG spike; a_defocus (per orb) gates them by focal distance.
+            SKUniform(name: "u_defocus_edge", float: Self.mapDepthL1Edge),
+            SKUniform(name: "u_defocus_val", float: Self.mapDepthL1Val),
+            SKUniform(name: "u_defocus_sat", float: Self.mapDepthL1Sat)
         ]
         return shader
     }()
+
+    /// Brief AN L1 lever values — DEBUG spike reads the launch arg; Release = 0 (inert).
+    private static var mapDepthL1Edge: Float { { () -> Float in
+        #if DEBUG
+        return MapDepthDebug.l1EdgePx
+        #else
+        return 0
+        #endif
+    }() }
+    private static var mapDepthL1Val: Float { { () -> Float in
+        #if DEBUG
+        return MapDepthDebug.l1ValCut
+        #else
+        return 0
+        #endif
+    }() }
+    private static var mapDepthL1Sat: Float { { () -> Float in
+        #if DEBUG
+        return MapDepthDebug.l1SatCut
+        #else
+        return 0
+        #endif
+    }() }
 
     private static func rgbaVec(_ c: UIColor) -> vector_float4 {
         var r: CGFloat = 0, g: CGFloat = 0, b: CGFloat = 0, a: CGFloat = 0
@@ -3069,6 +3187,7 @@ final class CorpusPhysicsScene: SKScene {
         let w = Self.rgbaVec(wash)   // straight rgb; alpha overridden by the wash peak strength
         sprite.setValue(SKAttributeValue(vectorFloat4: vector_float4(w.x, w.y, w.z, Float(washStrength))),
                         forAttribute: "a_wash")
+        sprite.setValue(SKAttributeValue(float: 0), forAttribute: "a_defocus")  // Brief AN L1 — 0 until applyOrbScales sets it
     }
 
 

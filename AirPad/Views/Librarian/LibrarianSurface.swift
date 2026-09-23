@@ -1402,7 +1402,8 @@ struct LibrarianSurface: View {
                         },
                         includePrivate: false
                     )
-                    .firstRunCalloutTarget(FirstRunCalloutTargetID.librarianModelChip)
+                    // Brief AI2 — the ring target now lives on the model pill INSIDE
+                    // ModelPillRow, so the ring hugs the model chip (not model + Thinking).
                 } else {
                     activeModelLabelView(librarian: librarian) // FM / Ollama: the plain label (unchanged)
                     Spacer(minLength: 0)

@@ -1371,6 +1371,50 @@ final class CorpusStore {
                     expect(lib.debugCarriedCount(forChatID: chatB) == 0, "a NEW chat (new room) starts with empty carry")
                     NSLog("[RoomChatDiag] done")
                 }
+                // Brief AJ4 / build K — the SEALED room-scoped tag edit, on a FIXTURE
+                // CLONE (fabricated nodes; `self` / the real container is NEVER touched).
+                // Proves all four cases (delete/rename × user-only/shared) and that ZERO
+                // Sample Library entries change. `TagRoomEdit` is the SAME pure core the
+                // store's delete/rename call.
+                if ProcessInfo.processInfo.arguments.contains("-TagCrudDiag") {
+                    func expect(_ c: Bool, _ l: String) { NSLog("[TagCrudDiag] %@ %@", c ? "PASS" : "FAIL", l) }
+                    let ep = Date(timeIntervalSince1970: 1_700_000_000)
+                    func fnode(_ id: String, _ tags: [String]) -> Node {
+                        Node(id: id, createdAt: ep, updatedAt: ep, title: id, summary: "", tags: tags)
+                    }
+                    let sampleIDs: Set<String> = ["s1", "s2"]
+                    // "coffee" = user-only; "film" = shared (user u1 + sample s1).
+                    let fixture = [fnode("u1", ["coffee", "film"]), fnode("u2", ["coffee"]),
+                                   fnode("s1", ["film"]), fnode("s2", ["horror"])]
+                    let sampleBefore = fixture.filter { sampleIDs.contains($0.id) }.map { $0.tags }
+                    func sampleAfter(_ ns: [Node]) -> [[String]] { ns.filter { sampleIDs.contains($0.id) }.map { $0.tags } }
+                    func tagsOf(_ ns: [Node], _ id: String) -> [String] { ns.first { $0.id == id }?.tags ?? [] }
+
+                    let d1 = TagRoomEdit.delete(tagName: "coffee", from: fixture, sampleIDs: sampleIDs)
+                    expect(Set(d1.changedUserIDs) == ["u1", "u2"], "delete user-only: u1,u2 changed")
+                    expect(d1.keepVocabulary == false, "delete user-only: Tag dropped (now unused)")
+                    expect(!tagsOf(d1.nodes, "u1").contains("coffee"), "delete user-only: coffee gone from u1")
+                    expect(sampleAfter(d1.nodes) == sampleBefore, "delete user-only: ZERO sample entries changed")
+
+                    let d2 = TagRoomEdit.delete(tagName: "film", from: fixture, sampleIDs: sampleIDs)
+                    expect(d2.changedUserIDs == ["u1"], "delete shared: only u1 changed")
+                    expect(d2.keepVocabulary == true, "delete shared: Tag KEPT for the sample")
+                    expect(sampleAfter(d2.nodes) == sampleBefore, "delete shared: ZERO sample entries changed")
+
+                    let r1 = TagRoomEdit.rename(old: "coffee", to: "brew", in: fixture, sampleIDs: sampleIDs)
+                    expect(Set(r1.changedUserIDs) == ["u1", "u2"], "rename user-only: u1,u2 changed")
+                    expect(r1.shared == false, "rename user-only: rename-in-place (not shared)")
+                    expect(tagsOf(r1.nodes, "u1").contains("brew") && !tagsOf(r1.nodes, "u1").contains("coffee"), "rename user-only: coffee→brew on u1")
+                    expect(sampleAfter(r1.nodes) == sampleBefore, "rename user-only: ZERO sample entries changed")
+
+                    let r2 = TagRoomEdit.rename(old: "film", to: "cinema", in: fixture, sampleIDs: sampleIDs)
+                    expect(r2.changedUserIDs == ["u1"], "rename shared: only u1 changed")
+                    expect(r2.shared == true, "rename shared: SPLIT (sample keeps old name)")
+                    expect(tagsOf(r2.nodes, "u1").contains("cinema"), "rename shared: u1 now 'cinema'")
+                    expect(tagsOf(r2.nodes, "s1") == ["film"], "rename shared: sample s1 still 'film'")
+                    expect(sampleAfter(r2.nodes) == sampleBefore, "rename shared: ZERO sample entries changed")
+                    NSLog("[TagCrudDiag] done")
+                }
                 #endif
                 // THE TAG PRODUCER — Step 0 (ws-lever.md). READ-ONLY corpus diagnostic
                 // (folksonomy coverage / recurrence / long tail / fragmentation / tag
@@ -5110,6 +5154,96 @@ final class CorpusStore {
             tagLastUsedAt.removeValue(forKey: removedName)
         }
         await persistTags()
+    }
+
+    // MARK: - Brief AJ4 / build K — room-scoped tag delete + rename (SEALED)
+    // "Tags follow the room" (T, 2026-09-23). Delete/rename in the USER room touch
+    // ONLY the user's entries; a Sample Library entry file is NEVER modified. These
+    // are the ONLY tag ops that mutate `Node.tags` (the old `deleteTag`/`updateTag`
+    // are vocabulary-only and no longer surfaced — the read-only J list, now CRUD).
+
+    /// Node coverage for a tag in the USER room only (drives the Manage-Tags count +
+    /// the delete-confirmation cost line). Sample entries are excluded.
+    func userNodeCount(forTag name: String) -> Int {
+        userNodes.reduce(0) { $0 + ($1.tags.contains(name) ? 1 : 0) }
+    }
+
+    /// Delete a tag FROM THE USER ROOM. Removes the name from the user's entries only.
+    /// If nothing (user OR sample) still carries it, the Tag object is removed and its
+    /// territory dissolves (anchor demoted + slot claim dropped). If a sample entry
+    /// still carries it, the Tag stays (the sample keeps it); it simply leaves the
+    /// user-room list. Returns the number of user entries changed.
+    @discardableResult
+    func deleteTagInUserRoom(_ tag: Tag) async -> Int {
+        let name = tag.name
+        // PURE decision (shared with `-TagCrudDiag`): which USER nodes change, and does
+        // the vocabulary Tag survive (a sample entry still carries the name)?
+        let result = TagRoomEdit.delete(tagName: name, from: nodes, sampleIDs: sampleNodeIDs)
+        for id in result.changedUserIDs {
+            if let n = result.nodes.first(where: { $0.id == id }) { await updateNode(n) }
+        }
+        if !result.keepVocabulary {
+            tags.removeAll { $0.id == tag.id }
+            tagLastUsedAt.removeValue(forKey: name)
+            dropTerritorySlot(forKey: "tag:\(name)")   // territory dissolves
+            await persistTags()
+        }
+        return result.changedUserIDs.count
+    }
+
+    /// Rename a tag IN THE USER ROOM. Re-tags the user's entries old→new. A USER-ONLY
+    /// tag is renamed in place (id + slot colour + anchor kept). A tag whose name is
+    /// ALSO used by the sample SPLITS: a new Tag inherits the old one's slot colour +
+    /// anchor and owns the user room; the old Tag is left untouched for the sample.
+    /// The territory slot claim moves `tag:<old>` → `tag:<new>` in the USER scope only;
+    /// the sample scope keeps `tag:<old>`. No-op on an empty / unchanged / colliding
+    /// name (merge is post-V1). Returns the number of user entries changed.
+    @discardableResult
+    func renameTagInUserRoom(_ tag: Tag, to rawNew: String) async -> Int {
+        let old = tag.name
+        let new = rawNew.trimmingCharacters(in: .whitespacesAndNewlines)
+        guard !new.isEmpty, new.lowercased() != old.lowercased() else { return 0 }
+        // Merge is post-V1: refuse a rename onto an existing DIFFERENT tag's name.
+        guard !tags.contains(where: { $0.id != tag.id && $0.name.lowercased() == new.lowercased() }) else { return 0 }
+
+        // PURE decision (shared with `-TagCrudDiag`): re-tag USER nodes, learn whether
+        // the name is shared with the sample (→ split) or user-only (→ rename in place).
+        let result = TagRoomEdit.rename(old: old, to: new, in: nodes, sampleIDs: sampleNodeIDs)
+        for id in result.changedUserIDs {
+            if let n = result.nodes.first(where: { $0.id == id }) { await updateNode(n) }
+        }
+        if result.shared {
+            // SPLIT — keep the old Tag for the sample; mint a new one for the user room
+            // that inherits the slot colour + anchor.
+            tags.append(Tag(id: UUID(), name: new, colorHex: tag.colorHex,
+                            createdAt: Date(), useCount: 0, isCanvasAnchor: tag.isCanvasAnchor))
+        } else if let idx = tags.firstIndex(where: { $0.id == tag.id }) {
+            // USER-ONLY — rename the Tag itself (keeps id, colour, anchor).
+            tags[idx].name = new
+        }
+        if let last = tagLastUsedAt[old] { tagLastUsedAt[new] = last; tagLastUsedAt[old] = nil }
+        moveTerritorySlot(from: "tag:\(old)", to: "tag:\(new)")
+        await persistTags()
+        return result.changedUserIDs.count
+    }
+
+    /// Move a territory's persisted slot-colour claim to a new key in the USER scope
+    /// (`.corpus`) snapshot; the sample scope's snapshot is left untouched. Positions
+    /// re-derive on the next layout — only the colour claim needs to survive a rename.
+    private func moveTerritorySlot(from oldKey: String, to newKey: String) {
+        guard var snap = territoryLayouts[CanvasScope.corpus.key],
+              let slot = snap.territorySlot[oldKey] else { return }
+        snap.territorySlot[newKey] = slot
+        snap.territorySlot[oldKey] = nil
+        persistTerritoryLayout(snap, for: .corpus)
+    }
+
+    /// Drop a dissolved territory's slot claim (USER scope) so its colour is freed.
+    private func dropTerritorySlot(forKey key: String) {
+        guard var snap = territoryLayouts[CanvasScope.corpus.key],
+              snap.territorySlot[key] != nil else { return }
+        snap.territorySlot[key] = nil
+        persistTerritoryLayout(snap, for: .corpus)
     }
 
     // MARK: - Canvas anchors (tag-anchored Map v1)

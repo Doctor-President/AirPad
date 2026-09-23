@@ -58,6 +58,26 @@ enum TagRoomEdit {
         return (out, changed, keepVocabulary)
     }
 
+    /// BATCH delete — remove ALL of `names` from every USER entry in ONE pass, writing
+    /// each affected entry ONCE even if it carried several of the names (sample entries
+    /// untouched). `keepVocabulary[name]` is true when a SAMPLE entry still carries that
+    /// name → the caller keeps that Tag; false → the caller removes it + dissolves it.
+    static func delete(tagNames names: Set<String>, from nodes: [Node], sampleIDs: Set<String>)
+        -> (nodes: [Node], changedUserIDs: [String], keepVocabulary: [String: Bool]) {
+        var out = nodes
+        var changed: [String] = []
+        for i in out.indices where !sampleIDs.contains(out[i].id) {
+            let hits = out[i].tags.filter { names.contains($0) }
+            guard !hits.isEmpty else { continue }
+            out[i].tags.removeAll { names.contains($0) }
+            for h in hits { out[i].tagSources[h] = nil }
+            changed.append(out[i].id)
+        }
+        var keep: [String: Bool] = [:]
+        for name in names { keep[name] = out.contains { sampleIDs.contains($0.id) && $0.tags.contains(name) } }
+        return (out, changed, keep)
+    }
+
     /// Re-tag every USER entry `old` → `new` (sample entries untouched). `shared` is
     /// true when a SAMPLE entry still carries `old` → the caller SPLITS (new Tag for the
     /// user, old Tag kept for the sample); false → the caller renames the Tag in place.

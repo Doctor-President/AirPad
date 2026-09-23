@@ -80,11 +80,17 @@ final class HostCatalog {
     /// Whether a Host is paired at all — the picker (pill row + sheet) is a HOST feature; FM/Ollama
     /// keep their plain provider label. Refreshed off-render (Keychain read, never in `body`).
     private(set) var isPaired = false
+    /// Brief AL1 — the paired record itself, cached off-render, so a view can read the pairing
+    /// STATE + display NAME from ONE observable source instead of a per-view `@State` copy that
+    /// a pushed `.navigationDestination` resolves against a stale (nil) snapshot. `displayHost`
+    /// is read from here in Settings → Models.
+    private(set) var pairing: HostPairing? = nil
 
     /// Cheap off-render pairing check (Keychain) so a view can decide whether to show the picker
-    /// without reading the Keychain from `body`. Also primes `isPaired`.
+    /// without reading the Keychain from `body`. Also primes `isPaired` + `pairing`.
     @discardableResult func refreshPaired() -> Bool {
-        isPaired = HostPairing.load() != nil
+        pairing = HostPairing.load()
+        isPaired = pairing != nil
         return isPaired
     }
 
@@ -113,7 +119,8 @@ final class HostCatalog {
 
     /// Fetch the catalog. Call OFF the render path (on sheet-open / pill-appear).
     func refresh() async {
-        isPaired = HostPairing.load() != nil
+        pairing = HostPairing.load()
+        isPaired = pairing != nil
         guard let url = HostPairing.load()?.catalogURL, let req = authed(url, method: "GET", body: nil) else {
             models = []; reachable = false; return
         }

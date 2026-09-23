@@ -77,10 +77,11 @@ struct LibrarianSurface: View {
     @State private var showingLibrarianPinSheet = false
     /// STATE 2 — routes the "no model for chat" notice into Settings (same pattern as the
     /// lever's capability-boundary banner: CanvasChrome / DashboardView / LeverTray).
-    @State private var showSettings = false
-    /// Brief AF3 — which row Settings should scroll to on open (nil = top, today's
-    /// behavior). Set to `.webSearch` by the no-Brave-key notice's tap.
-    @State private var settingsAnchor: SettingsView.Anchor? = nil
+    /// Brief AM3 — ONE value-identified presentation drives the Settings sheet via
+    /// `.sheet(item:)`, so the deep-link anchor (webSearch / models) is delivered atomically
+    /// (the old `showSettings` + separate `settingsAnchor` pair desynced → the models deep
+    /// link landed on the Settings root). `.root` = the gear (top level).
+    @State private var settingsPresentation: SettingsView.Presentation? = nil
     /// Brief AG3/AG4 — the first-run callout over the raised sheet (`librarian.intro` in the
     /// user's rooms, `librarian.sample` in the Sample Library), if any.
     @State private var activeCallout: FirstRunCalloutKey?
@@ -901,8 +902,7 @@ struct LibrarianSurface: View {
                     onOpenWebSearchSettings: {
                         // Brief AF3 — the no-key notice's tap opens Settings scrolled to
                         // the Web-search row (same sheet the capability boundary uses).
-                        settingsAnchor = .webSearch
-                        showSettings = true
+                        settingsPresentation = .at(.webSearch)
                     },
                     topFadeFraction: cctTopFade,
                     bottomFadeFraction: cctBottomFade,
@@ -1016,8 +1016,8 @@ struct LibrarianSurface: View {
         .sheet(isPresented: $showingLibrarianPinSheet) {
             PinChatSheet(chatID: router.chat.id).environment(store)
         }
-        .sheet(isPresented: $showSettings, onDismiss: { settingsAnchor = nil }) {
-            SettingsView(initialAnchor: settingsAnchor)
+        .sheet(item: $settingsPresentation) { presentation in
+            SettingsView(initialAnchor: presentation.anchor)
         }
     }
 
@@ -1460,8 +1460,7 @@ struct LibrarianSurface: View {
             // second presentation is dropped and Settings opens at its root, not Models).
             if pendingManageModels {
                 pendingManageModels = false
-                settingsAnchor = .models
-                showSettings = true
+                settingsPresentation = .at(.models)
             }
         }) {
             // Brief AJ3 — the model chip is the QUICK SWITCHER (fullControls: false, the
@@ -1593,7 +1592,7 @@ struct LibrarianSurface: View {
     /// is "connect", not "download" — on the floor the only Ask provider is an ollama/LM Studio
     /// endpoint, so offering the download here would promise chat the build cannot deliver.
     private var askNoModelNotice: some View {
-        Button { showSettings = true } label: {
+        Button { settingsPresentation = .root } label: {
             HStack(alignment: .top, spacing: 8) {
                 Image(systemName: "cpu")
                     .font(.system(size: 12, weight: .semibold))

@@ -113,6 +113,7 @@ struct NodeDetailView: View {
     @State private var linkDraft = ""
     @State private var showDocumentPicker = false
     @State private var showFieldSheet = false   // Stage 5.2 — "+" → More…
+    @State private var entryCalloutArmed = false   // Brief AJ6 — arms the entry.intro callout a beat after appear
 
     // THE LEVER — Stage 2. `showLeverTray` presents the proposals sheet.
     // `laneStackHeight` is the MEASURED combined height of the two chip lanes
@@ -641,6 +642,23 @@ struct NodeDetailView: View {
                     .padding(.bottom, LibrarianPanelLayout.peekOverlayClearance)
                     .transition(.opacity)
             }
+        }
+        // Brief AJ6 — entry.intro first-run callout (first open of ANY entry, once).
+        // Armed a beat after appear so it never flashes on the first frame; the ring
+        // reads the + button's anchor. Global key → later entries never re-show it.
+        .overlayPreferenceValue(FirstRunCalloutTargetsKey.self) { anchors in
+            if entryCalloutArmed, !FirstRunCalloutKey.entryIntro.hasShown {
+                FirstRunCalloutOverlay(key: .entryIntro, targetAnchors: anchors) {
+                    FirstRunCalloutKey.entryIntro.markShown()
+                    entryCalloutArmed = false
+                }
+                .id(FirstRunCalloutKey.entryIntro)
+            }
+        }
+        .task {
+            guard !FirstRunCalloutKey.entryIntro.hasShown else { return }
+            try? await Task.sleep(for: .milliseconds(500))
+            if !Task.isCancelled { entryCalloutArmed = true }
         }
         // Stage 2b — shimmer tuner: a small trigger (top-leading, under the chrome)
         // toggles the draggable variant/duration/replay widget so T picks the
@@ -1255,6 +1273,7 @@ struct NodeDetailView: View {
         } label: {
             CaptureButtonLabel() // shared visual — unified with the map/list/card capture button
         }
+        .firstRunCalloutTarget(FirstRunCalloutTargetID.entryAddButton)  // Brief AJ6 — the entry.intro ring
     }
 
     // (Stage 4.8's `hasRating` singleton gate removed in 5.2 — rating is now

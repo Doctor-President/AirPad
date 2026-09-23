@@ -650,10 +650,27 @@ struct DebugScreenHost: View {
         }
     }
 
+    private func settingsDest(_ s: String) -> SettingsView.Dest? {
+        switch s {
+        case "library":   return .library
+        case "tags":      return .tags
+        case "models":    return .models
+        case "advanced":  return .advanced
+        case "websearch": return .webSearch
+        case "librarian": return .librarian
+        case "privacy":   return .privacy
+        case "about":     return .about
+        default:          return nil
+        }
+    }
+
     @ViewBuilder
     private var content: some View {
         switch screen {
         case "settings":         SettingsView()
+        // Brief AJ — screenshot each submenu: `-Screen settings-<dest>`.
+        case let s where s.hasPrefix("settings-"):
+            SettingsView(debugInitialDest: settingsDest(String(s.dropFirst("settings-".count))))
         case "substrate":        SubstrateInspectView()
         case "import":           ImportIdeasSheet()
         case "reviewqueue":      ReviewQueueSheet()

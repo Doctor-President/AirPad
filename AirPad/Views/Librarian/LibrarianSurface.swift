@@ -904,6 +904,11 @@ struct LibrarianSurface: View {
                     onScrollTopOffset: { chatScrollTopOffset = $0 }
                 )
                 .frame(maxHeight: .infinity)
+                // Brief AI5 — the app-level "Search the web instead" offer, under the
+                // answer and above the composer (app UI, not model text / not a citation).
+                if let offer = librarian.pendingWebSearchOffer {
+                    webSearchOfferBar(query: offer, librarian: librarian)
+                }
                 askComposer(librarian: librarian)
             } else if panelModel.contentRevealed {
                 // Home / search are light — free to mount/unmount with the
@@ -1471,10 +1476,47 @@ struct LibrarianSurface: View {
     /// words, and Library adds a stroke + heavier fill so "on" is unmistakable in
     /// grayscale. AH4: the icon + label crossfade on toggle (spring; Reduce Motion →
     /// instant). AH3: the first tap surfaces the `librarian.mode` coach-mark.
+    /// Brief AI5 — the app-level offer under an empty Library answer. Plain app UI (never
+    /// model text, never a citation): tapping flips to General and re-sends the same
+    /// question via `acceptWebSearchOffer` (AI4 applies — forced search with a key, the
+    /// AF3 no-key notice without one). Colourblind-safe: reads by shape (globe) + label,
+    /// no colour signal.
+    @ViewBuilder
+    private func webSearchOfferBar(query: String, librarian: LibrarianState) -> some View {
+        HStack(spacing: 10) {
+            Image(systemName: "globe")
+                .font(.system(size: 13, weight: .semibold))
+                .foregroundStyle(AppearancePalette.ink.opacity(0.55))
+            Text("Nothing in your library covers this.")
+                .font(.system(size: 13))
+                .foregroundStyle(AppearancePalette.ink.opacity(0.7))
+                .fixedSize(horizontal: false, vertical: true)
+            Spacer(minLength: 8)
+            Button {
+                Task { await librarian.acceptWebSearchOffer(store: store, chat: router.chat) }
+            } label: {
+                Text("Search the web instead")
+                    .font(.system(size: 13, weight: .semibold))
+                    .foregroundStyle(AppearancePalette.ink)
+                    .padding(.horizontal, 12)
+                    .padding(.vertical, 7)
+                    .background(Capsule().fill(AppearancePalette.ink.opacity(0.1)))
+                    .overlay(Capsule().strokeBorder(AppearancePalette.ink.opacity(0.25), lineWidth: 1))
+            }
+            .buttonStyle(.plain)
+            .fixedSize()
+        }
+        .padding(.horizontal, 16)
+        .padding(.vertical, 10)
+        .background(AppearancePalette.bgBase)
+        .transition(.opacity)
+    }
+
     @ViewBuilder
     private func corpusModeToggle(librarian: LibrarianState) -> some View {
         let on = librarian.corpusAware
         Button {
+            librarian.pendingWebSearchOffer = nil   // AI5 — a manual mode flip retires any stale offer
             librarian.corpusAware.toggle()   // stored + persisted (didSet → UserDefaults)
             // AH3 — teach the toggle the first time it's used (once). The morph above
             // still plays; the coach-mark's ring pulses once (AH4).

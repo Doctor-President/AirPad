@@ -1446,9 +1446,17 @@ struct LibrarianSurface: View {
         }
         .task { HostCatalog.shared.refreshPaired(); await HostCatalog.shared.refresh() } // off-render
         .sheet(isPresented: $showModelPicker) {
+            // Brief AJ3 — the model chip is the QUICK SWITCHER (fullControls: false, the
+            // default): no Memory policy / Eject-all; "Manage models" opens the full
+            // Settings → Models surface.
             ModelPickerSheet(
                 catalog: HostCatalog.shared,
-                thinkEnabled: Binding(get: { librarian.thinkEnabled }, set: { librarian.thinkEnabled = $0 })
+                thinkEnabled: Binding(get: { librarian.thinkEnabled }, set: { librarian.thinkEnabled = $0 }),
+                onManageModels: {
+                    showModelPicker = false
+                    settingsAnchor = .models
+                    showSettings = true
+                }
             )
             .presentationDetents([.medium, .large])
         }

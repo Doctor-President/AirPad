@@ -241,6 +241,15 @@ struct ModelPillRow: View {
 struct ModelPickerSheet: View {
     var catalog: HostCatalog
     @Binding var thinkEnabled: Bool
+    /// Brief AJ3 — the SAME surface, two contexts. `false` (default) = the Librarian /
+    /// Chat model-chip QUICK SWITCHER: selection + Thinking + in-memory badge, but NO
+    /// Memory policy / Eject-all; instead a "Manage models" row (`onManageModels`) opens
+    /// Settings → Models. `true` = Settings → Models → your Mac: the FULL surface (adds
+    /// Memory policy, Eject-all) plus a Mac header (`macName`) and Unpair (`onUnpair`).
+    var fullControls: Bool = false
+    var macName: String? = nil
+    var onManageModels: (() -> Void)? = nil
+    var onUnpair: (() -> Void)? = nil
     @Environment(\.dismiss) private var dismiss
     /// EDIT MODE (T-ruled): the platform idiom for "destructive controls appear". In Edit, Load/Eject
     /// are suppressed and Delete shows on every installed row — so there's no third control in the
@@ -304,6 +313,18 @@ struct ModelPickerSheet: View {
     var body: some View {
         ScrollView {
             VStack(alignment: .leading, spacing: 18) {
+                // Brief AJ3 — Settings context: a Mac header (name + connected state).
+                if fullControls, let macName {
+                    HStack(spacing: 8) {
+                        Image(systemName: "checkmark.seal.fill").foregroundStyle(.green)
+                        VStack(alignment: .leading, spacing: 2) {
+                            Text(macName).font(.system(size: 16, weight: .semibold)).foregroundStyle(AppearancePalette.ink)
+                            Text(catalog.reachable ? "Connected" : "Not reachable right now")
+                                .font(.system(size: 12)).foregroundStyle(AppearancePalette.ink.opacity(0.5))
+                        }
+                        Spacer()
+                    }
+                }
                 if let err = catalog.lastActionError {
                     actionErrorBanner(err)
                 }
@@ -336,7 +357,8 @@ struct ModelPickerSheet: View {
 
                 if !catalog.installed.isEmpty {
                     section("INSTALLED") { rows(catalog.installed) }
-                    if catalog.installed.contains(where: { $0.isResident }) {
+                    // Brief AJ3 — Eject-all is a FULL-controls (Settings) affordance only.
+                    if fullControls, catalog.installed.contains(where: { $0.isResident }) {
                         Button { Task { await catalog.ejectAll() } } label: {
                             Text("Eject all from memory").font(.system(size: 13, weight: .semibold))
                                 .foregroundStyle(AppearancePalette.ink.opacity(0.9))
@@ -345,7 +367,9 @@ struct ModelPickerSheet: View {
                         }.buttonStyle(.plain).disabled(catalog.busyTag != nil).padding(.leading, 4).padding(.top, 2)
                     }
                 }
-                if !catalog.residencyCards.isEmpty {
+                // Brief AJ3 — Memory policy is FULL-controls (Settings) only; the quick
+                // switcher hides it.
+                if fullControls, !catalog.residencyCards.isEmpty {
                     section("MEMORY") {
                         ForEach(Array(catalog.residencyCards.enumerated()), id: \.element.id) { i, card in
                             if i > 0 { divider }
@@ -367,6 +391,33 @@ struct ModelPickerSheet: View {
                     Text(catalog.reachable ? "No models available for this Mac." : "Can't reach your Mac right now.")
                         .font(.system(size: 14)).foregroundStyle(AppearancePalette.ink.opacity(0.5))
                         .frame(maxWidth: .infinity).padding(.top, 40)
+                }
+                // Brief AJ3 — quick switcher: a row into the full Settings → Models surface.
+                if !fullControls, let onManageModels {
+                    Button { onManageModels() } label: {
+                        HStack {
+                            Image(systemName: "slider.horizontal.3")
+                            Text("Manage models").font(.system(size: 15, weight: .semibold))
+                            Spacer()
+                            Image(systemName: "chevron.right").font(.system(size: 12, weight: .semibold)).foregroundStyle(AppearancePalette.ink.opacity(0.3))
+                        }
+                        .foregroundStyle(AppearancePalette.ink.opacity(0.85))
+                        .padding(.horizontal, 14).padding(.vertical, 12)
+                        .background(RoundedRectangle(cornerRadius: 12).fill(AppearancePalette.ink.opacity(0.05)))
+                    }.buttonStyle(.plain)
+                }
+                // Brief AJ3 — full controls (Settings): Unpair lives at the bottom.
+                if fullControls, let onUnpair {
+                    Button(role: .destructive) { onUnpair() } label: {
+                        HStack {
+                            Image(systemName: "xmark.circle")
+                            Text("Unpair this Mac").font(.system(size: 15, weight: .semibold))
+                            Spacer()
+                        }
+                        .foregroundStyle(.red.opacity(0.8))
+                        .padding(.horizontal, 14).padding(.vertical, 12)
+                        .background(RoundedRectangle(cornerRadius: 12).fill(Color.red.opacity(0.08)))
+                    }.buttonStyle(.plain).padding(.top, 4)
                 }
             }
             .padding(20)
@@ -416,7 +467,7 @@ struct ModelPickerSheet: View {
             }
             Button("Cancel", role: .cancel) { installName = "" }
         } message: {
-            Text("Enter any Ollama model name. Uncurated models install unverified and are tested on first load.")
+            Text("Enter any Ollama model name. It installs and is checked on first load.")
         }
         .task { await catalog.refresh(); await catalog.fetchResidency() } // fetch on sheet-open, off the render path
     }
@@ -514,7 +565,7 @@ private struct ModelSheetRow: View {
         if !caps.isEmpty { parts.append(caps.joined(separator: ", ")) }
         parts.append(model.thinkingCopy)
         if let toolsCopy = model.toolsCopy { parts.append(toolsCopy) }
-        parts.append(model.verified ? "✓ tested" : "candidate")
+        // Brief AJ3 — "candidate" / "✓ tested" removed (show nothing in their place).
         return parts.joined(separator: " · ")
     }
     private func gb(_ b: Int64) -> String { b > 0 ? "\(Int((Double(b) / 1e9).rounded())) GB" : "" }

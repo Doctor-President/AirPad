@@ -882,7 +882,9 @@ enum ModelRouter {
         pairing: HostPairing,
         messages: [[String: Any]],
         tools: [[String: Any]]?,
-        onContentDelta: @Sendable @escaping (String) -> Void
+        think: Bool = false,
+        onContentDelta: @Sendable @escaping (String) -> Void,
+        onReasoningDelta: @Sendable @escaping (String) -> Void = { _ in }
     ) async throws -> AgentTurn {
         guard let hpk = pairing.hostPublicKey, let chatURL = pairing.chatURL else {
             throw RouterError.ollamaBadEndpoint(pairing.tunnelURL)
@@ -893,7 +895,11 @@ enum ModelRouter {
         } else {
             model = try await firstHostModel(pairing: pairing)
         }
-        var body: [String: Any] = ["model": model, "stream": true, "think": false, "messages": Self.nativizeToolMessages(messages)]
+        // Brief AL3 — honour the user's Thinking toggle on SEARCH turns too (was hardcoded
+        // false, so a reasoning model never reasoned on the agent path). With `think` on, the
+        // Host routes the thought process to the reasoning channel (rendered live via
+        // `onReasoningDelta`), leaving the answer clean.
+        var body: [String: Any] = ["model": model, "stream": true, "think": think, "messages": Self.nativizeToolMessages(messages)]
         if let tools { body["tools"] = tools }
         let plaintext = try JSONSerialization.data(withJSONObject: body)
         let (envelope, session) = try HostE2E.sealRequest(master: pairing.master, hostStaticPub: hpk, plaintext: plaintext)
@@ -926,7 +932,7 @@ enum ModelRouter {
             if let epk = obj["epk"] as? String { try session.setHostEphemeral(epk); continue }
             guard let ct = obj["ct"] as? String else { continue }
             buffer.append(try session.openFrame(ct))
-            drainInnerAgentSSE(&buffer, content: &content, accum: &accum, onContentDelta: onContentDelta)
+            drainInnerAgentSSE(&buffer, content: &content, accum: &accum, onContentDelta: onContentDelta, onReasoningDelta: onReasoningDelta)
         }
         let toolCalls = accum.sorted { $0.key < $1.key }.map { idx, e in
             ToolCall(id: e.id.isEmpty ? "call_\(idx)" : e.id, name: e.name, argumentsJSON: e.args)
@@ -940,7 +946,8 @@ enum ModelRouter {
         _ buffer: inout Data,
         content: inout String,
         accum: inout [Int: (id: String, name: String, args: String)],
-        onContentDelta: @Sendable (String) -> Void
+        onContentDelta: @Sendable (String) -> Void,
+        onReasoningDelta: @Sendable (String) -> Void = { _ in }
     ) {
         while let nl = buffer.firstIndex(of: 0x0A) {
             let lineData = buffer[buffer.startIndex..<nl]
@@ -953,7 +960,7 @@ enum ModelRouter {
             if let obj = try? JSONSerialization.jsonObject(with: Data(payload.utf8)) as? [String: Any],
                let choices = obj["choices"] as? [[String: Any]],
                let delta = choices.first?["delta"] as? [String: Any] {
-                accumulateAgentDelta(delta, content: &content, accum: &accum, onContentDelta: onContentDelta)
+                accumulateAgentDelta(delta, content: &content, accum: &accum, onContentDelta: onContentDelta, onReasoningDelta: onReasoningDelta)
             }
         }
     }
@@ -965,8 +972,15 @@ enum ModelRouter {
         _ delta: [String: Any],
         content: inout String,
         accum: inout [Int: (id: String, name: String, args: String)],
-        onContentDelta: @Sendable (String) -> Void
+        onContentDelta: @Sendable (String) -> Void,
+        onReasoningDelta: @Sendable (String) -> Void = { _ in }
     ) {
+        // Brief AL3 — the reasoning channel on the agent path (Host /api/chat, translated).
+        // Previously dropped here, so Thinking-on SEARCH turns showed no thought process even
+        // when the model reasoned. Streamed live (ephemeral), never folded into the answer.
+        if let r = delta["reasoning"] as? String, !r.isEmpty {
+            onReasoningDelta(r)
+        }
         if let c = delta["content"] as? String, !c.isEmpty {
             content += c
             onContentDelta(c)
@@ -1174,7 +1188,8 @@ extension ModelRouter {
         model: String,
         messages: [[String: Any]],
         tools: [[String: Any]]?,
-        onContentDelta: @Sendable @escaping (String) -> Void
+        onContentDelta: @Sendable @escaping (String) -> Void,
+        onReasoningDelta: @Sendable @escaping (String) -> Void = { _ in }
     ) async throws -> AgentTurn {
         guard let base = URL(string: endpoint) else { throw RouterError.ollamaBadEndpoint(endpoint) }
         let path = "v1/chat/completions"
@@ -1211,7 +1226,7 @@ extension ModelRouter {
                   let json = try? JSONSerialization.jsonObject(with: data) as? [String: Any],
                   let choices = json["choices"] as? [[String: Any]],
                   let delta = choices.first?["delta"] as? [String: Any] else { continue }
-            Self.accumulateAgentDelta(delta, content: &content, accum: &accum, onContentDelta: onContentDelta)
+            Self.accumulateAgentDelta(delta, content: &content, accum: &accum, onContentDelta: onContentDelta, onReasoningDelta: onReasoningDelta)
         }
         let toolCalls = accum.sorted { $0.key < $1.key }.map { idx, e in
             ToolCall(id: e.id.isEmpty ? "call_\(idx)" : e.id, name: e.name, argumentsJSON: e.args)

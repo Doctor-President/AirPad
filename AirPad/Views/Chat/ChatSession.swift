@@ -374,6 +374,7 @@ final class ChatSession {
         pendingUser = nil
         isStreaming = true
         streamingText = ""
+        streamingThinking = ""   // Brief AL3 — clear any prior turn's thought process
 
         let maxToolSteps = 5
         // Declared outside `do` so the `catch` can read it (Swift scoping).
@@ -395,6 +396,11 @@ final class ChatSession {
             // Stream the assistant's partial answer into the live transcript (shared by both paths).
             let onDelta: @Sendable (String) -> Void = { [weak self] delta in
                 Task { @MainActor in self?.streamingText += delta }
+            }
+            // Brief AL3 — the reasoning channel (Thinking on, Host path): stream the thought
+            // process into `streamingThinking` (ephemeral; the Thought-process block renders it).
+            let onReasoning: @Sendable (String) -> Void = { [weak self] r in
+                Task { @MainActor in self?.streamingThinking += r }
             }
 
             // ONE pass of the tool loop. `nudge` appends the AI4 forcing line to THIS
@@ -423,6 +429,7 @@ final class ChatSession {
                 var anyTool = false
                 for step in 0..<maxToolSteps {
                     streamingText = ""
+                    streamingThinking = ""   // AL3 — per step, so the panel shows THIS step's reasoning; the final (synthesis) step's is retained at commit
                     // Withhold the tool schema once a tool reported it has no backend — the model
                     // can't retry a tool that can't succeed, so it answers honestly.
                     let turnTools = sawUnavailable ? nil : AgentTools.schema
@@ -431,11 +438,12 @@ final class ChatSession {
                     case .ollama(let endpoint, let model):
                         turn = try await ModelRouter.streamAgentTurn(
                             endpoint: endpoint, model: model, messages: working,
-                            tools: turnTools, onContentDelta: onDelta)
+                            tools: turnTools, onContentDelta: onDelta, onReasoningDelta: onReasoning)
                     case .host(let pairing):
                         turn = try await ModelRouter.streamHostAgentTurn(
                             pairing: pairing, messages: working,
-                            tools: turnTools, onContentDelta: onDelta)
+                            tools: turnTools, think: thinkEnabled,
+                            onContentDelta: onDelta, onReasoningDelta: onReasoning)
                     }
 
                     if turn.toolCalls.isEmpty {

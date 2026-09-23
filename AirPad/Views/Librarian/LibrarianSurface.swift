@@ -42,6 +42,11 @@ struct LibrarianSurface: View {
     @State private var textOpacity: Double = 0.55
     /// Phase 2 — the model-picker sheet, opened by tapping the Model pill.
     @State private var showModelPicker = false
+    /// Brief AL2 — "Manage models" must open Settings→Models AFTER the picker sheet is
+    /// fully dismissed (presenting Settings while the picker dismisses is the sheet-over-
+    /// sheet race that dropped the deep link, landing on the Settings root). The picker's
+    /// `onDismiss` reads this and presents Settings then.
+    @State private var pendingManageModels = false
     @State private var presentedCitation: PresentedCitation? = nil
     @State private var researchExportCopied = false
     /// Ask chat/home toggle. False → Librarian home (capability-tile
@@ -1450,17 +1455,24 @@ struct LibrarianSurface: View {
                 )
         }
         .task { HostCatalog.shared.refreshPaired(); await HostCatalog.shared.refresh() } // off-render
-        .sheet(isPresented: $showModelPicker) {
+        .sheet(isPresented: $showModelPicker, onDismiss: {
+            // Brief AL2 — present Settings only AFTER the picker sheet is gone (else the
+            // second presentation is dropped and Settings opens at its root, not Models).
+            if pendingManageModels {
+                pendingManageModels = false
+                settingsAnchor = .models
+                showSettings = true
+            }
+        }) {
             // Brief AJ3 — the model chip is the QUICK SWITCHER (fullControls: false, the
             // default): no Memory policy / Eject-all; "Manage models" opens the full
-            // Settings → Models surface.
+            // Settings → Models surface (AL2: routes to the paired Mac screen when paired).
             ModelPickerSheet(
                 catalog: HostCatalog.shared,
                 thinkEnabled: Binding(get: { librarian.thinkEnabled }, set: { librarian.thinkEnabled = $0 }),
                 onManageModels: {
+                    pendingManageModels = true
                     showModelPicker = false
-                    settingsAnchor = .models
-                    showSettings = true
                 }
             )
             .presentationDetents([.medium, .large])

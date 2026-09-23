@@ -149,10 +149,16 @@ struct SettingsView: View {
         .presentationBackground(AppearancePalette.bgBase)
         .onAppear {
             loadKeys()
-            // Brief AJ2 — the deep link PUSHES its submenu (was AF3's scroll-to).
+            // Brief AL1 — pairing state is the shared observable `HostCatalog.shared.isPaired`
+            // (the SAME source the Librarian reads), refreshed off-render here so Settings and
+            // the Librarian can never disagree. `hostPairing` is kept only for the display
+            // name / Unpair / sheets.
+            HostCatalog.shared.refreshPaired()
+            // Brief AJ2 — the deep link PUSHES its submenu (was AF3's scroll-to). AL2: the
+            // model-chip "Manage models" lands on the paired Mac screen; unpaired → Models.
             switch initialAnchor {
             case .webSearch: path = [.webSearch]
-            case .models:    path = [.models]
+            case .models:    path = HostCatalog.shared.isPaired ? [.models, .macModels] : [.models]
             case nil:        break
             }
             #if DEBUG
@@ -363,7 +369,17 @@ struct SettingsView: View {
             }
             .buttonStyle(.plain)
         }
-        .sheet(isPresented: $showPairingQR, onDismiss: { hostPairing = HostPairing.load() }) {
+        // Brief AL1 — refresh the shared pairing observable + the local name off-render when
+        // the Models screen appears (covers the deep-link push, where the root `onAppear`
+        // may not have committed `hostPairing` before this destination first resolved).
+        .onAppear {
+            HostCatalog.shared.refreshPaired()
+            if hostPairing == nil { hostPairing = HostPairing.load() }
+        }
+        .sheet(isPresented: $showPairingQR, onDismiss: {
+            hostPairing = HostPairing.load()
+            HostCatalog.shared.refreshPaired()
+        }) {
             HostPairingSheet()
         }
     }
@@ -383,17 +399,23 @@ struct SettingsView: View {
     }
 
     /// One "On your Mac" row: unpaired → Host setup (QR); paired → push the Mac screen.
+    /// Brief AL1 — the branch reads `HostCatalog.shared.isPaired` (the shared observable,
+    /// refreshed off-render), NOT the per-view `@State hostPairing`. The old code branched
+    /// on `hostPairing == nil`, which a deep-linked / pushed destination could resolve
+    /// against a stale-nil snapshot before `loadKeys()` committed — so Settings showed
+    /// "unpaired" while the Librarian (reading the same observable) showed paired.
+    /// `hostPairing` is still used for the display NAME + the Mac-models screen + Unpair.
     @ViewBuilder private var macRow: some View {
-        if hostPairing == nil {
+        if HostCatalog.shared.isPaired {
+            NavigationLink(value: Dest.macModels) {
+                macRowLabel(icon: "checkmark.seal.fill", text: HostCatalog.shared.pairing?.displayHost ?? hostPairing?.displayHost ?? "Your Mac", chevron: true, green: true)
+            }.buttonStyle(.plain)
+        } else {
             Button { showPairingQR = true } label: {
                 macRowLabel(icon: "qrcode", text: "Connect your Mac", chevron: true)
             }.buttonStyle(.plain)
-            Text("Reach a private model running on your own Mac, from anywhere — end-to-end encrypted.")
+            Text("Use models running on your own Mac, from anywhere — end-to-end encrypted.")
                 .font(.caption2).foregroundStyle(AppearancePalette.ink.opacity(0.3))
-        } else {
-            NavigationLink(value: Dest.macModels) {
-                macRowLabel(icon: "checkmark.seal.fill", text: "\(hostPairing!.displayHost)", chevron: true, green: true)
-            }.buttonStyle(.plain)
         }
     }
 
@@ -415,7 +437,7 @@ struct SettingsView: View {
             catalog: HostCatalog.shared,
             thinkEnabled: $hostThinkingDefault,
             fullControls: true,
-            macName: hostPairing?.displayHost,
+            macName: HostCatalog.shared.pairing?.displayHost ?? hostPairing?.displayHost,
             onUnpair: {
                 HostPairing.clear()
                 hostPairing = nil
@@ -429,7 +451,7 @@ struct SettingsView: View {
 
     private var advancedSubmenu: some View {
         submenuScroll(header: { submenuHeader(icon: "slider.horizontal.3", tint: "8A8A8E", title: "Advanced",
-            blurb: "Connect a local server, or a cloud provider.") }) {
+            blurb: "Connect a model server on your network, like Ollama or LM Studio.") }) {
             VStack(alignment: .leading, spacing: 12) {
                 VStack(alignment: .leading, spacing: 4) {
                     Text("Ollama / LM Studio endpoint").font(.caption.weight(.semibold)).foregroundStyle(AppearancePalette.ink.opacity(0.4))
@@ -754,15 +776,15 @@ struct SettingsView: View {
                                 .font(.subheadline.weight(.medium))
                                 .foregroundStyle(AppearancePalette.ink.opacity(0.85))
                             Text(useLocalEnrichment
-                                 ? "New entry titles, summaries, and tags use the private model."
-                                 : "Apple Intelligence is still doing the thinking. Turn on to use the private model.")
+                                 ? "New entry titles, summaries, and tags use the downloaded model."
+                                 : "Apple Intelligence is still doing the thinking. Turn on to use the downloaded model.")
                                 .font(.caption2)
                                 .foregroundStyle(AppearancePalette.ink.opacity(0.45))
                                 .fixedSize(horizontal: false, vertical: true)
                         }
                     }
                     .tint(Color(hexString: "1B59C2"))
-                    Text("Excluded from backup: \(localModel.excludedFromBackup ? "yes" : "NO"). Stored in Application Support (not iCloud).")
+                    Text("Not backed up to iCloud. You can download it again anytime.")
                         .font(.caption2).foregroundStyle(AppearancePalette.ink.opacity(0.35))
                     localCapsuleButton("Delete model · reclaim \(reclaimLabel)", symbol: "trash") { localModel.deleteModel() }
                     if InternalBuild.showsDevTuners { localTestBlock }

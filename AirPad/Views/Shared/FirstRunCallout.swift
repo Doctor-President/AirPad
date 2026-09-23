@@ -50,9 +50,12 @@ enum FirstRunCalloutKey: String, CaseIterable, Identifiable {
                        "Regions form as you add to them. Pinch and pan like any map. Tap an entry for a quick look, then tap the quick look to open it."]
             )
         case .librarianIntro:
+            // Brief AI1 — the intro now names Search + Ask and both Ask modes.
             return FirstRunCalloutContent(
                 headline: "Librarian",
-                body: ["**Library** reads your entries and cites them. **General** answers from the model — and the web, once you've added a search key."]
+                body: ["**Search** finds an entry instantly. **Ask** answers questions, two ways:",
+                       "**General** — most questions, and the web once you've added a search key.",
+                       "**Library** — questions about your own entries, with citations."]
             )
         case .librarianSample:
             return FirstRunCalloutContent(
@@ -274,6 +277,12 @@ struct CalloutGalleryView: View {
     @State private var dismissed = false
 
     private var calloutKey: FirstRunCalloutKey? { FirstRunCalloutKey(rawValue: key) }
+    /// AG canvas callouts show the View/Capture stubs; everything else shows the
+    /// faithful Librarian composer chip row (Brief AI). `chip.row[.long][.nothink]`
+    /// vary the model name length + Thinking presence for the AI3 layout screenshots.
+    private var isCanvasCallout: Bool { key == "view.buttons" || key == "map.intro" }
+    private var galleryModelName: String { key.contains("long") ? "gpt-oss:120b-cloud" : "qwen3:8b" }
+    private var galleryShowThinking: Bool { !key.contains("nothink") }
 
     var body: some View {
         ZStack {
@@ -288,27 +297,36 @@ struct CalloutGalleryView: View {
                 }
             }
 
-            // Composer-like pill row (bottom-left) + View/Capture stack (bottom-right), so
-            // every callout's rings land on a faithful anchor. Hidden in the chip.modes shot.
             VStack {
                 Spacer()
-                HStack(alignment: .bottom) {
+                if isCanvasCallout {
+                    // AG — View + Capture stack, bottom-right (for view.buttons / map.intro).
+                    HStack {
+                        Spacer()
+                        VStack(spacing: 10) {
+                            calloutButtonStub(systemName: "map")
+                                .firstRunCalloutTarget(FirstRunCalloutTargetID.viewButton)
+                            calloutButtonStub(systemName: "plus")
+                                .firstRunCalloutTarget(FirstRunCalloutTargetID.captureButton)
+                        }
+                    }
+                    .padding(.horizontal, 20)
+                } else {
+                    // AH/AI — the faithful composer chip row: mode leading · model pill
+                    // centred + hugging its content · Thinking trailing. The ring target is
+                    // on the MODEL PILL ONLY (AI2), so it hugs the model chip.
                     HStack(spacing: 8) {
                         galleryModeChip(on: false)
                             .firstRunCalloutTarget(FirstRunCalloutTargetID.librarianModeChip)
-                        galleryModelChip()
+                        Spacer(minLength: 12)
+                        galleryModelPill(name: galleryModelName)
                             .firstRunCalloutTarget(FirstRunCalloutTargetID.librarianModelChip)
+                        Spacer(minLength: 12)
+                        if galleryShowThinking { galleryThinkChip }
                     }
-                    Spacer()
-                    VStack(spacing: 10) {
-                        calloutButtonStub(systemName: "map")
-                            .firstRunCalloutTarget(FirstRunCalloutTargetID.viewButton)
-                        calloutButtonStub(systemName: "plus")
-                            .firstRunCalloutTarget(FirstRunCalloutTargetID.captureButton)
-                    }
+                    .padding(.horizontal, 20)
                 }
-                .padding(.horizontal, 20)
-                .padding(.bottom, 44)
+                Color.clear.frame(height: 44)
             }
             .opacity(key == "chip.modes" ? 0 : 1)
         }
@@ -347,13 +365,29 @@ struct CalloutGalleryView: View {
         .overlay(Capsule().strokeBorder(AppearancePalette.ink.opacity(on ? 0.28 : 0), lineWidth: 1))
     }
 
-    /// Matches `LibrarianSurface.activeModelLabelView` — the read-only model indicator.
-    private func galleryModelChip() -> some View {
-        HStack(spacing: 4) {
-            Image(systemName: "cpu").font(.system(size: 9, weight: .semibold))
-            Text("qwen3:8b").font(.system(size: 11, weight: .medium))
+    /// Matches `ModelPillRow.modelPill` (Brief AI3): checkmark + name that HUGS its
+    /// content between a min and a max, centred inside the pill.
+    private func galleryModelPill(name: String) -> some View {
+        HStack(spacing: 5) {
+            Image(systemName: "checkmark").font(.system(size: 10, weight: .bold))
+                .foregroundStyle(Color(hexString: "2E9E4F"))
+            Text(name).font(.system(size: 12, weight: .semibold))
+                .foregroundStyle(AppearancePalette.ink.opacity(0.9))
+                .lineLimit(1).truncationMode(.middle)
         }
-        .foregroundStyle(AppearancePalette.ink.opacity(0.4))
+        .padding(.horizontal, 11)
+        .padding(.vertical, 5)
+        .background(Capsule().fill(AppearancePalette.ink.opacity(0.05)))
+    }
+
+    /// Matches `ModelPillRow.thinkingPill` (on state).
+    private var galleryThinkChip: some View {
+        Text("Thinking on")
+            .font(.system(size: 12, weight: .semibold))
+            .foregroundStyle(AppearancePalette.ink.opacity(0.9))
+            .padding(.horizontal, 11)
+            .padding(.vertical, 5)
+            .background(Capsule().fill(AppearancePalette.ink.opacity(0.12)))
     }
 }
 #endif

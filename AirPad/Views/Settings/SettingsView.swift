@@ -64,8 +64,12 @@ struct SettingsView: View {
     @State private var isTestingConnection = false
     @State private var showTagEditor = false
     @State private var editingTag: Tag? = nil
-    /// Brief AJ — the read-only Manage Tags search field (build J).
+    /// Brief AJ — Manage Tags search field.
     @State private var tagSearch = ""
+    /// Brief K — Manage Tags CRUD (room-scoped, corpus-mutating).
+    @State private var tagPendingDelete: Tag? = nil
+    @State private var tagRenaming: Tag? = nil
+    @State private var tagRenameText = ""
     // Stage 4 — desktop Host pairing. `hostPairing` is cached (Keychain read is XPC-backed;
     // never read HostPairing.load() from `body`); refreshed on appear + after the sheet closes.
     @State private var showPairingQR = false
@@ -241,11 +245,72 @@ struct SettingsView: View {
         }
     }
 
+    /// Brief K — Manage Tags CRUD. A `List` (native swipe + context menu). Room-SEALED:
+    /// sample-only tags never appear; counts + delete/rename act on the USER room only.
     private var tagsSubmenu: some View {
-        submenuScroll(header: { submenuHeader(icon: "tag.fill", tint: "E8820A", title: "Tags",
-            blurb: "Tags label entries. Pinned tags form territories on the Map.") }) {
-            manageTagsReadOnly   // Brief AJ (J): READ-ONLY list — full CRUD + per-room seal land in build K
+        List {
+            Section {
+                submenuHeader(icon: "tag.fill", tint: "E8820A", title: "Tags",
+                              blurb: "Tags label entries. Pinned tags form territories on the Map.")
+                    .listRowBackground(Color.clear)
+                    .listRowInsets(EdgeInsets())
+            }
+            if manageTagRows.isEmpty {
+                Text(tagSearch.isEmpty ? "No tags yet — AI will suggest them as you capture entries." : "No tags match.")
+                    .font(.callout).foregroundStyle(AppearancePalette.ink.opacity(0.4))
+                    .listRowBackground(AppearancePalette.ink.opacity(0.04))
+            } else {
+                Section("\(manageTagRows.count) \(manageTagRows.count == 1 ? "tag" : "tags")") {
+                    ForEach(manageTagRows, id: \.tag.id) { row in
+                        HStack(spacing: 10) {
+                            Circle().fill(Color(hex: row.tag.colorHex) ?? .gray).frame(width: 11, height: 11)
+                            Text(row.tag.name).foregroundStyle(AppearancePalette.ink)
+                            if row.tag.isCanvasAnchor {
+                                Image(systemName: "map.fill").font(.system(size: 10)).foregroundStyle(AppearancePalette.ink.opacity(0.3))
+                            }
+                            Spacer()
+                            Text("\(row.count)").monospacedDigit().foregroundStyle(AppearancePalette.ink.opacity(0.4))
+                        }
+                        .listRowBackground(AppearancePalette.ink.opacity(0.04))
+                        .swipeActions(edge: .trailing) {
+                            Button(role: .destructive) { tagPendingDelete = row.tag } label: { Label("Delete", systemImage: "trash") }
+                        }
+                        .contextMenu {
+                            Button { tagRenaming = row.tag; tagRenameText = row.tag.name } label: { Label("Rename", systemImage: "pencil") }
+                            Button(role: .destructive) { tagPendingDelete = row.tag } label: { Label("Delete", systemImage: "trash") }
+                        }
+                    }
+                }
+            }
         }
+        .listStyle(.insetGrouped)
+        .scrollContentBackground(.hidden)
+        .background(AppearancePalette.bgBase.ignoresSafeArea())
+        .navigationTitle("Tags")
+        .navigationBarTitleDisplayMode(.inline)
+        .searchable(text: $tagSearch, prompt: "Search tags")
+        .confirmationDialog(tagDeleteTitle(tagPendingDelete),
+                            isPresented: Binding(get: { tagPendingDelete != nil }, set: { if !$0 { tagPendingDelete = nil } }),
+                            titleVisibility: .visible, presenting: tagPendingDelete) { tag in
+            Button("Remove", role: .destructive) { Task { await store.deleteTagInUserRoom(tag) } }
+            Button("Cancel", role: .cancel) {}
+        } message: { tag in
+            if tag.isCanvasAnchor { Text("Its territory on the Map will dissolve.") }
+        }
+        .alert("Rename tag", isPresented: Binding(get: { tagRenaming != nil }, set: { if !$0 { tagRenaming = nil } })) {
+            TextField("Tag name", text: $tagRenameText).autocorrectionDisabled()
+            Button("Rename") { if let t = tagRenaming { Task { await store.renameTagInUserRoom(t, to: tagRenameText) } } }
+            Button("Cancel", role: .cancel) {}
+        } message: {
+            Text("Renames it on your entries and keeps its colour. The Sample Library keeps the old name.")
+        }
+    }
+
+    /// The delete-confirmation title names the cost (Brief K rule 1): the user-room count.
+    private func tagDeleteTitle(_ tag: Tag?) -> String {
+        guard let tag else { return "Remove tag?" }
+        let n = store.userNodeCount(forTag: tag.name)
+        return "Remove \u{201C}\(tag.name)\u{201D} from \(n) \(n == 1 ? "entry" : "entries")?"
     }
 
     private var modelsSubmenu: some View {
@@ -446,44 +511,17 @@ struct SettingsView: View {
     /// Brief AJ (build J) — READ-ONLY Manage Tags: sorted by use, trailing count, search,
     /// "N tags" header. NO delete/rename (that would orphan tags today; the full CRUD +
     /// per-room seal land in build K). Derived from the global vocabulary.
-    @ViewBuilder private var manageTagsReadOnly: some View {
-        let counted = store.tags
-            .map { (tag: $0, count: store.nodeCount(forTag: $0.name)) }
-            .sorted { $0.count != $1.count ? $0.count > $1.count : $0.tag.name.lowercased() < $1.tag.name.lowercased() }
-        let filtered = tagSearch.isEmpty ? counted
-            : counted.filter { $0.tag.name.localizedCaseInsensitiveContains(tagSearch) }
-        VStack(alignment: .leading, spacing: 12) {
-            if store.tags.isEmpty {
-                Text("No tags yet — AI will suggest them as you capture entries.")
-                    .font(.caption).foregroundStyle(AppearancePalette.ink.opacity(0.35))
-            } else {
-                HStack(spacing: 8) {
-                    Image(systemName: "magnifyingglass").foregroundStyle(AppearancePalette.ink.opacity(0.4))
-                    TextField("Search tags", text: $tagSearch)
-                        .font(.subheadline).foregroundStyle(AppearancePalette.ink).tint(AppearancePalette.ink)
-                        .autocorrectionDisabled()
-                }
-                .padding(10).background(AppearancePalette.ink.opacity(0.06)).clipShape(RoundedRectangle(cornerRadius: 10))
-                Text("\(filtered.count) \(filtered.count == 1 ? "tag" : "tags")")
-                    .font(.caption.weight(.semibold)).foregroundStyle(AppearancePalette.ink.opacity(0.35)).textCase(.uppercase)
-                VStack(spacing: 0) {
-                    ForEach(Array(filtered.enumerated()), id: \.element.tag.id) { i, row in
-                        if i > 0 { Divider().overlay(AppearancePalette.ink.opacity(0.06)) }
-                        HStack(spacing: 10) {
-                            Circle().fill(Color(hex: row.tag.colorHex) ?? .gray).frame(width: 10, height: 10)
-                            Text(row.tag.name).font(.subheadline).foregroundStyle(AppearancePalette.ink)
-                            if row.tag.isCanvasAnchor {
-                                Image(systemName: "map.fill").font(.system(size: 10)).foregroundStyle(AppearancePalette.ink.opacity(0.3))
-                            }
-                            Spacer()
-                            Text("\(row.count)").font(.subheadline.monospacedDigit()).foregroundStyle(AppearancePalette.ink.opacity(0.4))
-                        }
-                        .padding(.vertical, 10)
-                    }
-                }
-                .padding(.horizontal, 14).background(AppearancePalette.ink.opacity(0.04)).clipShape(RoundedRectangle(cornerRadius: 12))
-            }
+    /// Brief K — the user-room tag rows: SEALED (sample-only tags never appear), counted
+    /// by USER coverage, sorted by use (then alphabetical), filtered by the search field.
+    private var manageTagRows: [(tag: Tag, count: Int)] {
+        store.tags.compactMap { t -> (tag: Tag, count: Int)? in
+            let count = store.userNodeCount(forTag: t.name)
+            let sampleOnly = count == 0 && store.nodes.contains { store.isSample($0.id) && $0.tags.contains(t.name) }
+            guard !sampleOnly else { return nil }   // rule 3: sample-only tags never show in the user room
+            return (t, count)
         }
+        .filter { tagSearch.isEmpty || $0.tag.name.localizedCaseInsensitiveContains(tagSearch) }
+        .sorted { $0.count != $1.count ? $0.count > $1.count : $0.tag.name.lowercased() < $1.tag.name.lowercased() }
     }
 
     // MARK: - AI Model

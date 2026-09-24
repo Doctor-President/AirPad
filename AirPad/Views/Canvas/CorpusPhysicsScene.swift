@@ -118,6 +118,85 @@ enum MapDepthDebug {
 }
 #endif
 
+#if DEBUG
+/// Brief AO — image generation for the Map layer export (ground, data passes, compositing).
+/// THROWAWAY spike helper; only reachable via the `-MapExport` launch arg.
+enum MapExportHelpers {
+    static func groundUIColor(light: Bool) -> UIColor {
+        light ? UIColor(red: 0xF4/255.0, green: 0xEF/255.0, blue: 0xE3/255.0, alpha: 1)
+              : UIColor(red: 0x11/255.0, green: 0x11/255.0, blue: 0x15/255.0, alpha: 1)
+    }
+    /// Renderer at scale 1 — we pass PIXEL dimensions, so the default @3x scale must be off.
+    private static func renderer(_ w: Int, _ h: Int) -> UIGraphicsImageRenderer {
+        let f = UIGraphicsImageRendererFormat(); f.scale = 1; f.opaque = false
+        return UIGraphicsImageRenderer(size: CGSize(width: w, height: h), format: f)
+    }
+    static func solid(w: Int, h: Int, light: Bool) -> UIImage {
+        renderer(w, h).image { ctx in
+            groundUIColor(light: light).setFill(); ctx.fill(CGRect(x: 0, y: 0, width: w, height: h))
+        }
+    }
+    /// Composite a (premultiplied) scene CGImage over the ground colour → opaque reference.
+    static func over(_ top: CGImage, light: Bool, w: Int, h: Int) -> UIImage {
+        renderer(w, h).image { ctx in
+            groundUIColor(light: light).setFill(); ctx.fill(CGRect(x: 0, y: 0, width: w, height: h))
+            UIImage(cgImage: top).draw(in: CGRect(x: 0, y: 0, width: w, height: h))
+        }
+    }
+    /// Grayscale: 0 at the geometric centre → 1 at the farthest corner (the half-diagonal).
+    static func focalDistance(w: Int, h: Int) -> UIImage? {
+        let cx = Double(w) / 2, cy = Double(h) / 2
+        let maxD = (cx * cx + cy * cy).squareRoot()
+        var buf = [UInt8](repeating: 0, count: w * h)
+        for y in 0..<h { let dy = Double(y) + 0.5 - cy
+            for x in 0..<w { let dx = Double(x) + 0.5 - cx
+                buf[y * w + x] = UInt8(min(255.0, (dx*dx + dy*dy).squareRoot() / maxD * 255))
+            }
+        }
+        return grayImage(&buf, w: w, h: h)
+    }
+    /// Warp/mass-field magnitude → grayscale normalised by the frame max, upscaled. Returns the
+    /// max magnitude used for normalisation (report it). The field is flipped to screen orientation.
+    static func massField(_ bytes: [UInt8], w: Int, h: Int, outW: Int, outH: Int) -> (UIImage, Double)? {
+        var mag = [Double](repeating: 0, count: w * h); var maxM = 1e-6
+        for i in 0..<(w*h) {
+            let ex = (Double(bytes[i*4]) / 255 - 0.5) * 2, ey = (Double(bytes[i*4+1]) / 255 - 0.5) * 2
+            let m = (ex*ex + ey*ey).squareRoot(); mag[i] = m; if m > maxM { maxM = m }
+        }
+        var small = [UInt8](repeating: 0, count: w * h)   // flip rows: field row 0 is BOTTOM (SK y-up)
+        for j in 0..<h { for i in 0..<w { small[(h - 1 - j) * w + i] = UInt8(min(255.0, mag[j*w+i] / maxM * 255)) } }
+        guard let img = grayImage(&small, w: w, h: h) else { return nil }
+        let up = renderer(outW, outH).image { _ in img.draw(in: CGRect(x: 0, y: 0, width: outW, height: outH)) }
+        return (up, maxM)
+    }
+    private static func grayImage(_ buf: inout [UInt8], w: Int, h: Int) -> UIImage? {
+        buf.withUnsafeMutableBytes { ptr -> UIImage? in
+            guard let ctx = CGContext(data: ptr.baseAddress, width: w, height: h, bitsPerComponent: 8,
+                                      bytesPerRow: w, space: CGColorSpaceCreateDeviceGray(),
+                                      bitmapInfo: CGImageAlphaInfo.none.rawValue) else { return nil }
+            return ctx.makeImage().map { UIImage(cgImage: $0) }
+        }
+    }
+    static func write(_ img: UIImage?, _ url: URL) { if let d = img?.pngData() { try? d.write(to: url) } }
+    static func exportDir(appearance: String, framing: String) -> URL? {
+        guard let docs = try? FileManager.default.url(for: .documentDirectory, in: .userDomainMask, appropriateFor: nil, create: true) else { return nil }
+        let dir = docs.appendingPathComponent("mapexport/\(appearance)/\(framing)", isDirectory: true)
+        try? FileManager.default.createDirectory(at: dir, withIntermediateDirectories: true)
+        return dir
+    }
+}
+
+/// Brief AO — the scene signals a framing is exported; CanvasView (SwiftUI) then captures the
+/// region-label overlay via ImageRenderer into the same folder (region labels are SwiftUI, not
+/// SpriteKit). `tick` is observed; `pending` carries the appearance/framing.
+@Observable final class MapExportState {
+    static let shared = MapExportState()
+    @ObservationIgnored var pending: (appearance: String, framing: String)?
+    var tick = 0
+    func request(appearance: String, framing: String) { pending = (appearance, framing); tick += 1 }
+}
+#endif
+
 /// Node-title typeface. **BAKED to `.fraunces`** (T's device-final, Type arc end) —
 /// `mapLabelFont` resolves it to Fraunces72pt-Bold. The audition/tuner is gone; the
 /// enum + `mapLabelFont` switch stay so the choice is one-liner-revivable. All faces
@@ -765,6 +844,70 @@ final class CorpusPhysicsScene: SKScene {
                 .scale(by: 0.72, duration: 2.2)
             ]), withKey: "mapDepthAutoPan")
         }
+    }
+    #endif
+
+    #if DEBUG
+    // Brief AO — throwaway export shaders: a transparent disc (titles-only pass) + a white SDF
+    // disc matte (data pass). No attributes → the orb sprite's a_* values are simply unused.
+    private lazy var exportClearShader = SKShader(source: "void main() { gl_FragColor = vec4(0.0); }")
+    private lazy var exportMatteShader = SKShader(source: """
+        void main() {
+            vec2 p = v_tex_coord - vec2(0.5);
+            float a = 1.0 - smoothstep(0.47, 0.5, length(p));
+            gl_FragColor = vec4(a);
+        }
+        """)
+
+    /// Export the Map as separate transparent PNG layers + data passes to
+    /// Documents/mapexport/<appearance>/<framing>/. SpriteKit layers via `view.texture(from:)`
+    /// (straight alpha through pngData); ground/focal/mass generated. Region-labels + chrome are
+    /// SwiftUI, captured on the SwiftUI side. `00_scene_composite` = the scene layers over the
+    /// ground (for the stack-diff); the true shipped `00_composite` is a simctl screenshot.
+    func exportMapLayers(appearance: String, framing: String) {
+        guard let view = self.view else { NSLog("[MapExport] no view"); return }
+        let scale = view.contentScaleFactor
+        let pxW = Int((view.bounds.width * scale).rounded()), pxH = Int((view.bounds.height * scale).rounded())
+        guard let docs = try? FileManager.default.url(for: .documentDirectory, in: .userDomainMask, appropriateFor: nil, create: true) else { return }
+        let dir = docs.appendingPathComponent("mapexport/\(appearance)/\(framing)", isDirectory: true)
+        try? FileManager.default.createDirectory(at: dir, withIntermediateDirectories: true)
+        NSLog("[MapExport] START %@/%@ %dx%d", appearance, framing, pxW, pxH)
+
+        let light = appearance == "light"
+        let orbSprites = nodeSprites.values.compactMap { $0 as? SKSpriteNode }
+        let wasPaused = isPaused; isPaused = true
+        defer { isPaused = wasPaused }
+
+        func snap(_ name: String) {
+            guard let tex = view.texture(from: self) else { NSLog("[MapExport] FAIL %@", name); return }
+            MapExportHelpers.write(UIImage(cgImage: tex.cgImage()), dir.appendingPathComponent(name))
+        }
+        func hideAllOrbs(_ h: Bool) { for (_, s) in nodeSprites { s.isHidden = h }; for (_, s) in uberNodeSprites { s.isHidden = h } }
+        func hideTitles(_ h: Bool) { for s in orbSprites { s.childNode(withName: "titleLabel")?.isHidden = h } }
+        func setShader(_ sh: SKShader?) { for s in orbSprites { s.shader = sh } }
+
+        gridNode?.isHidden = false; hideAllOrbs(true)
+        snap("02_dotgrid.png")                                   // grid alone
+        gridNode?.isHidden = true; hideAllOrbs(false); hideTitles(true)
+        snap("03_orbs.png")                                      // orb discs only
+        setShader(exportClearShader); hideTitles(false)
+        snap("04_orb_titles.png")                                // titles only (disc → clear)
+        setShader(exportMatteShader); hideTitles(true)
+        let bg = backgroundColor; backgroundColor = .black
+        snap("12_orb_matte.png")                                 // white discs on black (data pass)
+        backgroundColor = bg
+        setShader(orbSpriteShader); hideTitles(false); gridNode?.isHidden = false; hideAllOrbs(false)   // restore
+
+        if let tex = view.texture(from: self) {   // 00 scene composite (no chrome/labels)
+            MapExportHelpers.write(MapExportHelpers.over(tex.cgImage(), light: light, w: pxW, h: pxH), dir.appendingPathComponent("00_scene_composite.png"))
+        }
+        MapExportHelpers.write(MapExportHelpers.solid(w: pxW, h: pxH, light: light), dir.appendingPathComponent("01_ground.png"))
+        MapExportHelpers.write(MapExportHelpers.focalDistance(w: pxW, h: pxH), dir.appendingPathComponent("11_focal_distance.png"))
+        if let f = lastWarpField, let (img, maxM) = MapExportHelpers.massField(f.bytes, w: f.w, h: f.h, outW: pxW, outH: pxH) {
+            MapExportHelpers.write(img, dir.appendingPathComponent("10_mass_field.png"))
+            NSLog("[MapExport] mass field normalised by max magnitude = %.4f", maxM)
+        }
+        NSLog("[MapExport] DONE %@/%@", appearance, framing)
     }
     #endif
 
@@ -1521,6 +1664,22 @@ final class CorpusPhysicsScene: SKScene {
                 DispatchQueue.main.asyncAfter(deadline: .now() + 1.5) {
                     if MapDepthDebug.autoStills { live.startAutoAdvance(every: 5) }
                     if MapDepthDebug.autoPan { live.requestPan() }
+                }
+            }
+        }
+        // Brief AO — layer export. Depth layers OFF (shipped look). After the auto-fit settles:
+        // export the WIDE framing, zoom to mid (0.60x), export MID. Appearance = the sim's (labelled
+        // by `-MapExportLight`). `[MapExport] ALL DONE` signals the capture script to pull + screenshot.
+        if ProcessInfo.processInfo.arguments.contains("-MapExport") {
+            let appear = ProcessInfo.processInfo.arguments.contains("-MapExportLight") ? "light" : "dark"
+            DispatchQueue.main.asyncAfter(deadline: .now() + 15) {
+                self.exportMapLayers(appearance: appear, framing: "wide")
+                MapExportState.shared.request(appearance: appear, framing: "wide")   // SwiftUI region labels
+                self.cameraNode.setScale(self.cameraNode.xScale * 0.60)              // mid-zoom framing
+                DispatchQueue.main.asyncAfter(deadline: .now() + 2.5) {
+                    self.exportMapLayers(appearance: appear, framing: "mid")
+                    MapExportState.shared.request(appearance: appear, framing: "mid")
+                    DispatchQueue.main.asyncAfter(deadline: .now() + 1.5) { NSLog("[MapExport] ALL DONE") }
                 }
             }
         }
@@ -3090,8 +3249,17 @@ final class CorpusPhysicsScene: SKScene {
         }
         let tex = SKTexture(data: Data(bytes), size: CGSize(width: fw, height: fh))
         tex.filteringMode = .linear
+        #if DEBUG
+        lastWarpField = (bytes: bytes, w: fw, h: fh)   // Brief AO — capture for the mass-field export pass
+        #endif
         return tex
     }
+
+    #if DEBUG
+    /// Brief AO — the most recent CPU-built warp/mass field (RG displacement, 128 = no pull), so
+    /// the layer export can render its magnitude as a grayscale data pass.
+    var lastWarpField: (bytes: [UInt8], w: Int, h: Int)?
+    #endif
 
     /// Double smoothstep (the shader has one; the scene didn't).
     private func smoothstepD(_ e0: Double, _ e1: Double, _ x: Double) -> Double {

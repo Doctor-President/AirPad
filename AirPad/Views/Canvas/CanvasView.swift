@@ -813,6 +813,23 @@ struct CanvasView: View {
             drillDownBackButton
 
         }
+        #if DEBUG
+        // Brief AO — when the scene signals a framing is exported, capture the SwiftUI region-label
+        // overlay (05) via ImageRenderer into the same folder (labels are SwiftUI, not SpriteKit).
+        .onChange(of: MapExportState.shared.tick) { _, _ in
+            guard let (appear, framing) = MapExportState.shared.pending,
+                  let dir = MapExportHelpers.exportDir(appearance: appear, framing: framing) else { return }
+            let sz = UIScreen.main.bounds.size
+            let renderer = ImageRenderer(content:
+                TerritoryLabelLayer(labels: canvasState.territoryLabels)
+                    .frame(width: sz.width, height: sz.height)
+                    .environment(\.colorScheme, appear == "light" ? .light : .dark))
+            renderer.scale = UIScreen.main.scale
+            renderer.isOpaque = false
+            MapExportHelpers.write(renderer.uiImage, dir.appendingPathComponent("05_region_labels.png"))
+            NSLog("[MapExport] region labels %@/%@", appear, framing)
+        }
+        #endif
     }
 
     @ViewBuilder

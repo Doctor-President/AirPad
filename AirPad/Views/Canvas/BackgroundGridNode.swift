@@ -158,6 +158,14 @@ enum BackgroundGridNode {
             float baseR    = dotBasePx * u_camera_scale;  // world units
             float feather  = 0.75 * u_camera_scale;       // edge softness in world units
 
+            // Brief AP — vertical TILT-SHIFT matte D (0 = in focus, 1 = defocused), matched to the orb
+            // pass. yn = 0 top … 1 bottom (v_tex_coord.y is 1 at top). Widens the dot feather so dots
+            // soften + spread toward the top/bottom bands. u_dot_blur = 0 in every normal run → inert.
+            float yn = clamp(1.0 - v_tex_coord.y, 0.0, 1.0);
+            float Dcomp = max(1.0 - smoothstep(u_focus_top0, u_focus_top1, yn),
+                              smoothstep(u_focus_bot0, u_focus_bot1, yn));
+            feather = feather * (1.0 + u_dot_blur * Dcomp);
+
             float p1 = u_period1;
             float p0 = p1 / u_ratio;   // finer lattice — u_ratio dots per cell edge
             float p2 = p1 * u_ratio;   // coarser lattice
@@ -249,6 +257,17 @@ enum BackgroundGridNode {
                 }
                 vec3 ground = mix(u_ground_color, vec3(0.0), u_l2_k * factor);
                 gl_FragColor = vec4(ground * (1.0 - alpha) + u_dot_color * alpha, 1.0);
+            } else if (u_ripple_amt > 0.0) {
+                // Brief AP — MASS-FIELD RIPPLE. value = ‖warp‖/K → invert → AE Levels(gamma) → composite
+                // over (ground ▸ dots) at u_ripple_amt, Normal. Darkens wells (high ‖warp‖) AND lifts the
+                // ground between them (low ‖warp‖). Opaque output. u_ripple_amt = 0 everywhere else → inert.
+                vec2 pullR = (texture2D(u_disp_field, v_tex_coord).rg - vec2(0.5)) * (2.0 * u_warp_mass_range);
+                float mag = length(pullR);
+                float v = clamp(1.0 - mag / u_ripple_k, 0.0, 1.0);          // /K then invert
+                float R = pow(v, 1.0 / max(u_ripple_gamma, 0.001));         // AE Levels gamma (output = in^(1/g))
+                vec3 groundDots = u_ground_color * (1.0 - alpha) + u_dot_color * alpha;
+                vec3 outRGB = mix(groundDots, vec3(R), u_ripple_amt);       // ripple ABOVE dots, Normal @ amt
+                gl_FragColor = vec4(outRGB, 1.0);
             } else {
                 // Premultiplied output. u_dot_color is the per-theme dot tint
                 // (default white → dark byte-identical: (1,1,1)*alpha reproduces the
@@ -286,7 +305,17 @@ enum BackgroundGridNode {
             SKUniform(name: "u_ground_on",    float: Self.mapDepthL2On),
             SKUniform(name: "u_l2_mode",      float: Self.mapDepthL2Mode),
             SKUniform(name: "u_l2_k",         float: Self.mapDepthL2K),
-            SKUniform(name: "u_ground_color", vectorFloat3: vector_float3(0.0667, 0.0667, 0.0824))  // #111115
+            SKUniform(name: "u_ground_color", vectorFloat3: vector_float3(0.0667, 0.0667, 0.0824)),  // #111115
+            // Brief AP (DEBUG spike) — tilt-shift dot blur + mass-field ripple. All 0/off in every
+            // normal run → byte-identical (dot_blur 0 = feather unchanged; ripple_amt 0 = transparent dots).
+            SKUniform(name: "u_focus_top0", float: -1),
+            SKUniform(name: "u_focus_top1", float: 0),
+            SKUniform(name: "u_focus_bot0", float: 1),
+            SKUniform(name: "u_focus_bot1", float: 2),
+            SKUniform(name: "u_dot_blur",     float: 0),
+            SKUniform(name: "u_ripple_k",     float: 1),
+            SKUniform(name: "u_ripple_gamma", float: 1),
+            SKUniform(name: "u_ripple_amt",   float: 0)
         ]
         return shader
     }

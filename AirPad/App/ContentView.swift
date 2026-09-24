@@ -98,6 +98,11 @@ struct ContentView: View {
                 .environment(router)
                 .environment(selection)
                 .environment(quarantineStore)
+                #if DEBUG
+                // Brief AO — drop the Librarian peek (the bottom "Search" pill) along with the
+                // chrome overlay so the export harness's chrome-off screenshot omits it too.
+                .opacity(MapExportState.shared.hideChrome ? 0 : 1)
+                #endif
                 .onAppear {
                     panelState.controller = proxy.controller
                     proxy.controller.delegate = panelState

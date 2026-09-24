@@ -194,6 +194,10 @@ enum MapExportHelpers {
     @ObservationIgnored var pending: (appearance: String, framing: String)?
     var tick = 0
     func request(appearance: String, framing: String) { pending = (appearance, framing); tick += 1 }
+    /// When true, CanvasChrome drops its chrome-overlay layer (pills/buttons) so a
+    /// screenshot captures map+labels alone. Diffed against the chrome-on screenshot
+    /// (same pipeline, map frozen) → a clean chrome MATTE in both appearances.
+    var hideChrome = false
 }
 #endif
 
@@ -1673,18 +1677,42 @@ final class CorpusPhysicsScene: SKScene {
         if ProcessInfo.processInfo.arguments.contains("-MapExport") {
             let appear = ProcessInfo.processInfo.arguments.contains("-MapExportLight") ? "light" : "dark"
             DispatchQueue.main.asyncAfter(deadline: .now() + 15) {
-                self.exportMapLayers(appearance: appear, framing: "wide")
-                MapExportState.shared.request(appearance: appear, framing: "wide")   // SwiftUI region labels
-                self.cameraNode.setScale(self.cameraNode.xScale * 0.60)              // mid-zoom framing
-                DispatchQueue.main.asyncAfter(deadline: .now() + 2.5) {
-                    self.exportMapLayers(appearance: appear, framing: "mid")
-                    MapExportState.shared.request(appearance: appear, framing: "mid")
-                    DispatchQueue.main.asyncAfter(deadline: .now() + 1.5) { NSLog("[MapExport] ALL DONE") }
+                self.captureFraming(appear: appear, framing: "wide") {
+                    self.cameraNode.setScale(self.cameraNode.xScale * 0.60)          // mid-zoom framing
+                    DispatchQueue.main.asyncAfter(deadline: .now() + 0.6) {          // let labels re-project
+                        self.captureFraming(appear: appear, framing: "mid") {
+                            NSLog("[MapExport] ALL DONE")
+                        }
+                    }
                 }
             }
         }
         #endif
     }
+
+    #if DEBUG
+    /// Brief AO — export one framing over a FROZEN map: snap the SpriteKit layers + request the
+    /// SwiftUI labels, hold a chrome-ON window (`READY` → the script screenshots `00_composite`),
+    /// then drop the chrome and hold a chrome-OFF window (`NOCHROME` → the script screenshots the
+    /// matte source). Map is paused throughout, so chrome-on vs chrome-off differ ONLY in chrome →
+    /// a drift-free, same-pipeline chrome matte in either appearance. Restores + calls `next`.
+    private func captureFraming(appear: String, framing: String, next: @escaping () -> Void) {
+        isPaused = true
+        exportMapLayers(appearance: appear, framing: framing)   // its defer restores isPaused to this `true`
+        MapExportState.shared.request(appearance: appear, framing: framing)
+        isPaused = true
+        NSLog("[MapExport] READY %@/%@", appear, framing)
+        DispatchQueue.main.asyncAfter(deadline: .now() + 2.5) {
+            MapExportState.shared.hideChrome = true
+            NSLog("[MapExport] NOCHROME %@/%@", appear, framing)
+            DispatchQueue.main.asyncAfter(deadline: .now() + 2.5) {
+                MapExportState.shared.hideChrome = false
+                self.isPaused = false
+                next()
+            }
+        }
+    }
+    #endif
 
     override func didChangeSize(_ oldSize: CGSize) {
         super.didChangeSize(oldSize)

@@ -392,6 +392,11 @@ struct CanvasChrome: View {
                 }
 
             }
+            #if DEBUG
+            // Brief AO (spike/map-depth) — the export harness drops the chrome layer for one
+            // frozen frame so a chrome-off screenshot can be diffed against chrome-on → matte.
+            .opacity(MapExportState.shared.hideChrome ? 0 : 1)
+            #endif
 
             // Slide-out menu sits outside any blur scope so it stays sharp.
             CanvasSlideOutMenu(
@@ -410,7 +415,9 @@ struct CanvasChrome: View {
             // the menu, batch bar, banners). Both pieces are zero-cost
             // when the spike is removed; just delete this block + the
             // two #if DEBUG @State props above.
-            solarFlareTuningTrigger
+            // Brief AO — the ☀︎ dev trigger is not real chrome; keep it out of the export
+            // harness's frames (it animates, so it wouldn't cancel in the chrome matte diff).
+            if !MapDepthDebug.harness { solarFlareTuningTrigger }
             if showSolarFlareTuningPanel {
                 floatingSolarFlareTuningPanel
             }

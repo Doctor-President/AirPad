@@ -109,6 +109,11 @@ struct AirPadApp: App {
                 await store.setup()
             }
             .onOpenURL { url in
+                #if DEBUG
+                // Brief AN cycler — `airpad://mapdepth/next|pan|set/<i>` from `simctl openurl`
+                // advances the live variant without relaunching.
+                if url.scheme == "airpad", MapDepthLive.handle(url) { return }
+                #endif
                 guard url.scheme == "airpad", url.host == "quikcapture" else { return }
                 // Open the standalone QuikCapture screen DIRECTLY — rendered
                 // at the ContentView root, no Dashboard/Recents routing, so

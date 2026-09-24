@@ -22,27 +22,99 @@ enum MapDepthDebug {
     static var harness: Bool { ProcessInfo.processInfo.arguments.contains("-MapDepthHarness") }
     static var hideHUD: Bool { ProcessInfo.processInfo.arguments.contains("-NoMapDebugHUD") }
 
-    // L1 — per-orb defocus by screen distance from the focal centre.
+    /// Runtime cycler: apply each variant live, no relaunch (`-MapDepthCycle`, driven by
+    /// `airpad://mapdepth/…`). When on, the scene + chrome read MapDepthLive, not these args.
+    static var cycle: Bool { ProcessInfo.processInfo.arguments.contains("-MapDepthCycle") }
+
+    // L1 — per-orb defocus by screen distance from the focal centre. Levels TUNED (2026-09-23,
+    // T): lean on DIMMING + DESATURATION, less on edge feather (edge px cut ~3× vs the first pass).
     enum L1: String { case off, subtle, medium, strong }
     static var l1: L1 { L1(rawValue: arg("MapDepthL1") ?? "off") ?? .off }
-    /// Edge feather multiply at the screen edge (≈ +px of softening; base feather is ~1px).
-    static var l1EdgePx: Float { switch l1 { case .off: return 0; case .subtle: return 1.5; case .medium: return 4; case .strong: return 8 } }
-    static var l1ValCut: Float { switch l1 { case .off: return 0; case .subtle: return 0.08; case .medium: return 0.18; case .strong: return 0.30 } }
-    static var l1SatCut: Float { switch l1 { case .off: return 0; case .subtle: return 0;    case .medium: return 0.10; case .strong: return 0.20 } }
+    static func l1EdgePx(_ l: L1) -> Float { switch l { case .off: return 0; case .subtle: return 1.0; case .medium: return 2.0; case .strong: return 3.0 } }
+    static func l1ValCut(_ l: L1) -> Float { switch l { case .off: return 0; case .subtle: return 0.10; case .medium: return 0.28; case .strong: return 0.50 } }
+    static func l1SatCut(_ l: L1) -> Float { switch l { case .off: return 0; case .subtle: return 0.06; case .medium: return 0.18; case .strong: return 0.38 } }
+    static var l1EdgePx: Float { l1EdgePx(l1) }
+    static var l1ValCut: Float { l1ValCut(l1) }
+    static var l1SatCut: Float { l1SatCut(l1) }
 
     // L2 — grid ground darkening. Raw "mode-k" e.g. "ao-0.45".
     static var l2On: Bool { arg("MapDepthL2") != nil }
-    /// 0 = ao (mass field), 1 = well (radial, dark middle), 2 = vignette (dark edges); -1 = off.
-    static var l2Mode: Float {
-        guard let m = arg("MapDepthL2")?.split(separator: "-").first.map(String.init) else { return -1 }
+    static func l2Mode(_ s: String?) -> Float {
+        guard let m = s?.split(separator: "-").first.map(String.init) else { return -1 }
         switch m { case "ao": return 0; case "well": return 1; case "vignette": return 2; default: return -1 }
     }
+    /// 0 = ao (mass field), 1 = well (radial, dark middle), 2 = vignette (dark edges); -1 = off.
+    static var l2Mode: Float { l2Mode(arg("MapDepthL2")) }
     /// Fraction of the way from the ground toward black (0.25 / 0.45).
     static var l2K: Float { Float(arg("MapDepthL2")?.split(separator: "-").last.flatMap { Double($0) } ?? 0) }
 
     // L3 — chrome bands. Darken value (0.74 shipped-dark / 0.45 lighter). nil = off.
     static var l3Darken: Double? { arg("MapDepthL3").flatMap(Double.init) }
     static var l3On: Bool { l3Darken != nil }
+
+    /// Cycler start index (video mode holds one variant); `-MapDepthStart <i>`.
+    static var startIndex: Int? { arg("MapDepthStart").flatMap(Int.init) }
+    static var autoStills: Bool { ProcessInfo.processInfo.arguments.contains("-MapAutoStills") }
+    static var autoPan: Bool { ProcessInfo.processInfo.arguments.contains("-MapAutoPan") }
+}
+
+/// Brief AN runtime CYCLER — one Map launch, each curated variant applied LIVE (shader uniform
+/// pokes + an observable L3 flag), advanced by `airpad://mapdepth/next` (or `/set/<i>`, `/pan`).
+/// Avoids the relaunch-degrades-to-Recents harness wall. Observable so CanvasChrome (L3) reacts.
+@Observable final class MapDepthLive {
+    static let shared = MapDepthLive()
+    struct Variant { let name: String; let l1: MapDepthDebug.L1; let l2: String?; let l3: Double? }
+    let variants: [Variant] = [
+        .init(name: "baseline",   l1: .off,    l2: nil,            l3: nil),
+        .init(name: "L1-strong",  l1: .strong, l2: nil,            l3: nil),
+        .init(name: "L2-ao",      l1: .off,    l2: "ao-0.45",      l3: nil),
+        .init(name: "L2-well",    l1: .off,    l2: "well-0.45",    l3: nil),
+        .init(name: "L2-vignette",l1: .off,    l2: "vignette-0.45",l3: nil),
+        .init(name: "L3-bands",   l1: .off,    l2: nil,            l3: 0.74),
+        .init(name: "comboA",     l1: .subtle, l2: "ao-0.25",      l3: 0.45),
+        .init(name: "comboB",     l1: .medium, l2: "well-0.25",    l3: 0.74),
+        .init(name: "comboC",     l1: .medium, l2: "ao-0.45",      l3: 0.74),
+        .init(name: "comboD",     l1: .subtle, l2: "vignette-0.25",l3: 0.45),
+    ]
+    private(set) var index = 0
+    var current: Variant { variants[index] }
+    /// Non-observed one-shot flags the scene polls in `update()`.
+    @ObservationIgnored var panRequested = false
+    @ObservationIgnored var midZoomRequested = false   // applied on demand (AFTER the auto-fit settles)
+
+    @ObservationIgnored private var timer: Timer?
+    func advance() { index = (index + 1) % variants.count; log() }
+    func setIndex(_ i: Int) { guard variants.indices.contains(i) else { return }; index = i; log() }
+    func requestPan() { panRequested = true; NSLog("[MapDepth] PAN requested (variant=%@)", current.name) }
+    func requestZoom() { midZoomRequested = true; NSLog("[MapDepth] MID-ZOOM requested") }
+    private func log() { NSLog("[MapDepth] SHOW %d %@", index, current.name) }
+
+    /// Auto-advance through the variants (no external trigger → no `openurl` confirm dialog).
+    /// Logs `[MapDepth] SHOW <i> <name>` on each — the capture loop greps that to screenshot each
+    /// variant exactly once. Stops after the last.
+    func startAutoAdvance(every seconds: TimeInterval) {
+        log()   // SHOW the current (starting) variant
+        timer?.invalidate()
+        timer = Timer.scheduledTimer(withTimeInterval: seconds, repeats: true) { [weak self] t in
+            guard let self else { t.invalidate(); return }
+            if self.index >= self.variants.count - 1 { t.invalidate(); NSLog("[MapDepth] CYCLE DONE"); return }
+            self.advance()
+        }
+    }
+
+    /// Handle `airpad://mapdepth/<cmd>` from `simctl openurl`.
+    static func handle(_ url: URL) -> Bool {
+        guard url.host == "mapdepth" else { return false }
+        let parts = url.pathComponents.filter { $0 != "/" }
+        switch parts.first {
+        case "next": shared.advance()
+        case "pan":  shared.requestPan()
+        case "zoom": shared.requestZoom()
+        case "set":  if parts.count > 1, let i = Int(parts[1]) { shared.setIndex(i) }
+        default:     break
+        }
+        return true
+    }
 }
 #endif
 
@@ -594,18 +666,17 @@ final class CorpusPhysicsScene: SKScene {
         // is false, so the cheap idle early-return below is UNCHANGED).
         var mapDepthL1On = false
         #if DEBUG
-        mapDepthL1On = MapDepthDebug.l1 != .off
+        mapDepthL1On = MapDepthDebug.l1 != .off || MapDepthDebug.cycle
         #endif
         // Annulus ON → re-run every frame (camera.position pans → magnify center
         // shifts). OFF → only when the zoom actually changed (cheap idle path).
         if !annulusOn && !mapDepthL1On && abs(cameraScale - lastRampCameraScale) < 0.0005 { return }
         lastRampCameraScale = cameraScale
         let camPos = cameraNode.position
-        // Brief AN L1 — focal centre + edge radius for the per-orb defocus factor. Focal
-        // centre = ~12% ABOVE the geometric centre (SpriteKit y-up), approximating the middle
-        // of the band between the top View-pill chrome and the bottom Librarian pill.
+        // Brief AN L1 — focal centre + edge radius for the per-orb defocus factor. Focal centre
+        // = the GEOMETRIC centre of the screen (T's ruling 2026-09-23; was ~12% high before).
         #if DEBUG
-        let mdFocalY = size.height * 0.12
+        let mdFocalY: CGFloat = 0
         let mdEdgeRadius = max(1, hypot(size.width * 0.5, size.height * 0.5))
         #endif
         let lod = LensTuning.labelLOD
@@ -666,6 +737,36 @@ final class CorpusPhysicsScene: SKScene {
             }
         }
     }
+
+    #if DEBUG
+    /// Brief AN cycler — push the LIVE variant's L1/L2 params into the shared shaders each frame
+    /// (cheap uniform pokes), apply the mid-zoom framing once, and fire the pan on request. L3
+    /// (chrome bands) is read observably by CanvasChrome from MapDepthLive.current.
+    private func applyMapDepthLive() {
+        let live = MapDepthLive.shared
+        let v = live.current
+        func setOrb(_ name: String, _ value: Float) { orbSpriteShader.uniforms.first { $0.name == name }?.floatValue = value }
+        setOrb("u_defocus_edge", MapDepthDebug.l1EdgePx(v.l1))
+        setOrb("u_defocus_val", MapDepthDebug.l1ValCut(v.l1))
+        setOrb("u_defocus_sat", MapDepthDebug.l1SatCut(v.l1))
+        if let u = gridNode?.fillShader?.uniforms {
+            u.first { $0.name == "u_ground_on" }?.floatValue = (v.l2 != nil) ? 1 : 0
+            u.first { $0.name == "u_l2_mode" }?.floatValue = MapDepthDebug.l2Mode(v.l2)
+            u.first { $0.name == "u_l2_k" }?.floatValue = Float(v.l2?.split(separator: "-").last.flatMap { Double($0) } ?? 0)
+        }
+        // Mid-zoom framing (on demand, AFTER the auto-fit has settled): zoom in so titles + the
+        // annulus engage. Driven by `airpad://mapdepth/zoom` so it can't race the initial framing.
+        if live.midZoomRequested { live.midZoomRequested = false; cameraNode.setScale(cameraNode.xScale * 0.60) }
+        if live.panRequested {
+            live.panRequested = false
+            cameraNode.removeAction(forKey: "mapDepthAutoPan")
+            cameraNode.run(.sequence([
+                .moveBy(x: 260, y: -90, duration: 3.2),
+                .scale(by: 0.72, duration: 2.2)
+            ]), withKey: "mapDepthAutoPan")
+        }
+    }
+    #endif
 
     /// Cached `view.contentScaleFactor` for MSDF smoothing (device px per point).
     private var glyphContentScale: CGFloat { view?.contentScaleFactor ?? 3.0 }
@@ -1408,15 +1509,20 @@ final class CorpusPhysicsScene: SKScene {
         // wired to the deleted tuner.)
 
         #if DEBUG
-        // Brief AN (spike/map-depth) — `-MapAutoPan` scripts a deterministic camera move for
-        // the motion clips: let the layout settle, drift slowly across two territories, then
-        // zoom in (things coming into focus). Only when the flag is present (never a normal run).
-        if ProcessInfo.processInfo.arguments.contains("-MapAutoPan") {
-            cameraNode.run(.sequence([
-                .wait(forDuration: 3.5),
-                .moveBy(x: 260, y: -90, duration: 3.2),
-                .scale(by: 0.62, duration: 2.2)
-            ]), withKey: "mapDepthAutoPan")
+        // Brief AN cycler — orchestrate the ONE-launch capture session. After the auto-fit
+        // settles (~13s): apply the mid-zoom framing, then either auto-advance the stills
+        // (`-MapAutoStills`, log-driven capture) or fire the pan for a motion clip
+        // (`-MapAutoPan`, holding the `-MapDepthStart <i>` variant).
+        if MapDepthDebug.cycle {
+            let live = MapDepthLive.shared
+            if let i = MapDepthDebug.startIndex { live.setIndex(i) }
+            DispatchQueue.main.asyncAfter(deadline: .now() + 13) {
+                live.requestZoom()
+                DispatchQueue.main.asyncAfter(deadline: .now() + 1.5) {
+                    if MapDepthDebug.autoStills { live.startAutoAdvance(every: 5) }
+                    if MapDepthDebug.autoPan { live.requestPan() }
+                }
+            }
         }
         #endif
     }
@@ -1439,6 +1545,10 @@ final class CorpusPhysicsScene: SKScene {
         }
 
         updateGridWarp()      // grid warp — SHIPS (baked 2026-09-14)
+
+        #if DEBUG
+        if MapDepthDebug.cycle { applyMapDepthLive() }   // Brief AN runtime cycler
+        #endif
 
         // SB83c: Coast camera with friction. Same pan math as SB83a (`* cameraNode.xScale`).
         if coastVelocity != .zero {

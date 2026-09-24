@@ -255,14 +255,17 @@ enum MSDFLabel {
     /// Folding both into one child loop avoids a second per-frame iteration. Call across the
     /// WHOLE fade band (incl. `lodAlpha` → 0) so the fade-IN from zero is smooth; the caller
     /// loop only runs on zoom-change / annulus, so this stays cheap.
+    /// `smoothingWiden` (Brief AP, default 1) DIVIDES the screen px-range → widens the MSDF
+    /// smoothing band → softens/blurs the glyph. 1 = crisp (shipped); >1 = softer.
     static func applyLOD(container: SKNode, lodAlpha: CGFloat,
-                         worldToScreenPt: CGFloat, contentScale: CGFloat) {
+                         worldToScreenPt: CGFloat, contentScale: CGFloat,
+                         smoothingWiden: CGFloat = 1) {
         let font = MSDFFont.orbTitle   // MUST match the face the glyphs were built from
         guard let pt = container.userData?[pointSizeKey] as? CGFloat, pt > 0 else { return }
         // screenPxRange = pxrange · (screen px per atlas texel).
         // screen px per atlas texel = (pt · worldToScreenPt · contentScale) / atlasSize  (em cancels).
         let screenPxRange = max(1.0, font.distanceRange * pt * worldToScreenPt * contentScale / font.atlasSize)
-        let px = Float(screenPxRange)
+        let px = Float(screenPxRange / max(smoothingWiden, 0.0001))
         let lod = Float(lodAlpha)
         for case let glyph as SKSpriteNode in container.children {
             glyph.setValue(SKAttributeValue(float: px), forAttribute: "a_px_range")

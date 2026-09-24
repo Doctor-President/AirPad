@@ -58,6 +58,63 @@ enum MapDepthDebug {
     static var autoPan: Bool { ProcessInfo.processInfo.arguments.contains("-MapAutoPan") }
 }
 
+/// Brief AP (spike/map-depth) — DEBUG-only implementation of T's Map comp (dark): a vertical
+/// tilt-shift focus band (blur + desaturate + darken orbs, titles, dots) + a mass-field ground
+/// ripple. Driven by `-MapComp`. THROWAWAY; Release byte-identical (every read is #if DEBUG + an
+/// absent launch arg). Calibrated to T's 2026-09-24 AE comp on the AO dark/wide layer kit; every
+/// value is overridable via a launch arg (e.g. `-CompEdge 6 -CompK 1.08`) for Simulator calibration.
+enum MapComp {
+    static var on: Bool { ProcessInfo.processInfo.arguments.contains("-MapComp") }
+    /// Which effects are live at launch: both | focus | ripple (the stills cycler flips this live).
+    static var argMode: String { arg("MapCompMode") ?? "both" }
+    static var stills: Bool { ProcessInfo.processInfo.arguments.contains("-MapCompStills") }
+    static var pan: Bool { ProcessInfo.processInfo.arguments.contains("-MapCompPan") }
+    private static func arg(_ k: String) -> String? {
+        let a = ProcessInfo.processInfo.arguments
+        guard let i = a.firstIndex(of: "-" + k), i + 1 < a.count else { return nil }
+        let v = a[i + 1]; return v.hasPrefix("-") ? nil : v
+    }
+    private static func f(_ k: String, _ d: Float) -> Float { arg(k).flatMap { Float($0) } ?? d }
+
+    // ── Focus band (screen Y normalised, 0 = top … 1 = bottom) — MEASURED from focus_matte.png:
+    //    D = max( 1 - smoothstep(0, 0.268, yn),  smoothstep(0.70, 0.98, yn) ).  D: 0 = sharp, 1 = defocused.
+    static let topEdge0: Float = 0.0, topEdge1: Float = 0.268
+    static let botEdge0: Float = 0.70, botEdge1: Float = 0.98
+    static func smoothstep(_ a: Float, _ b: Float, _ x: Float) -> Float {
+        let t = min(max((x - a) / (b - a), 0), 1); return t * t * (3 - 2 * t)
+    }
+    static func defocus(_ yn: Float) -> Float {
+        max(1 - smoothstep(topEdge0, topEdge1, yn), smoothstep(botEdge0, botEdge1, yn))
+    }
+
+    // ── Orb defocus levers at D=1 (AE Hue/Sat Master → HSV; blur = SDF edge-feather widen).
+    static var edge: Float { f("CompEdge", 6.0) }        // SDF feather ×(1 + edge·D)
+    static var sat:  Float { f("CompSat", 0.39) }        // AE saturation −39 → HSV S×0.61 at D=1
+    static var val:  Float { f("CompVal", 0.40) }        // AE lightness  −40 → HSV V×0.60 at D=1
+    static var pad:  Float { f("CompPad", 0.0) }         // quad-padding fraction at D=1 (outward blur spill)
+    static var titleBlur: Float { f("CompTitleBlur", 0.7) } // MSDF smoothing widen: a_px_range ÷ (1 + ·D)
+
+    // ── Mass-field ripple (grid shader): value=‖warp‖/K, invert, Levels(gamma), N% Normal over ground+dots.
+    static var rippleK: Float { f("CompK", 1.08) }       // FIXED normalisation (~AO per-frame max 1.03–1.12)
+    static var rippleGamma: Float { f("CompGamma", 0.12) } // AE Levels gamma
+    static var rippleOpacity: Float { f("CompOpacity", 0.10) }
+    static var dotBlur: Float { f("CompDotBlur", 4.0) }  // grid dot feather ×(1 + dotBlur·D)
+}
+
+/// Runtime sub-mode for the comp — which of the two effects are live (the stills cycler flips these
+/// for focus-only / ripple-only / both). The scene polls it each frame (not observed). Default from
+/// `-MapCompMode both|focus|ripple`.
+final class MapCompState {
+    static let shared = MapCompState()
+    var focusOn = true
+    var rippleOn = true
+    func set(mode: String) {
+        focusOn = (mode == "both" || mode == "focus")
+        rippleOn = (mode == "both" || mode == "ripple")
+        NSLog("[MapComp] MODE %@ (focus=%d ripple=%d)", mode, focusOn ? 1 : 0, rippleOn ? 1 : 0)
+    }
+}
+
 /// Brief AN runtime CYCLER — one Map launch, each curated variant applied LIVE (shader uniform
 /// pokes + an observable L3 flag), advanced by `airpad://mapdepth/next` (or `/set/<i>`, `/pan`).
 /// Avoids the relaunch-degrades-to-Recents harness wall. Observable so CanvasChrome (L3) reacts.
@@ -748,12 +805,15 @@ final class CorpusPhysicsScene: SKScene {
         // tracks the camera on a pan even where the annulus is off (a normal run: mapDepthL1On
         // is false, so the cheap idle early-return below is UNCHANGED).
         var mapDepthL1On = false
+        var mapCompOn = false
         #if DEBUG
         mapDepthL1On = MapDepthDebug.l1 != .off || MapDepthDebug.cycle
+        mapCompOn = MapComp.on
         #endif
         // Annulus ON → re-run every frame (camera.position pans → magnify center
         // shifts). OFF → only when the zoom actually changed (cheap idle path).
-        if !annulusOn && !mapDepthL1On && abs(cameraScale - lastRampCameraScale) < 0.0005 { return }
+        // MapComp (Brief AP) must also run every frame so a_defocus tracks the tilt-shift band on a pan.
+        if !annulusOn && !mapDepthL1On && !mapCompOn && abs(cameraScale - lastRampCameraScale) < 0.0005 { return }
         lastRampCameraScale = cameraScale
         let camPos = cameraNode.position
         // Brief AN L1 — focal centre + edge radius for the per-orb defocus factor. Focal centre
@@ -780,8 +840,17 @@ final class CorpusPhysicsScene: SKScene {
                 scale *= annulusAmplify(hypot(dx, dy), cameraScale: cameraScale, envelope: env)
             }
             sprite.setScale(scale)
+            var compDefocus: Float = 0   // Brief AP — this orb's tilt-shift D, reused for its title blur
             #if DEBUG
-            if mapDepthL1On {
+            if mapCompOn {
+                // Brief AP — per-orb defocus from the vertical TILT-SHIFT matte D(screen Y).
+                // sy = screen-space Y offset (pt), SpriteKit y-up; yn = 0 top … 1 bottom.
+                let home = nodeRestingPositions[nodeID] ?? sprite.position
+                let syc = (home.y - camPos.y) / max(cameraScale, 0.0001)
+                let yn = Float(min(max(0.5 - syc / size.height, 0), 1))
+                compDefocus = MapCompState.shared.focusOn ? MapComp.defocus(yn) : 0
+                sprite.setValue(SKAttributeValue(float: compDefocus), forAttribute: "a_defocus")
+            } else if mapDepthL1On {
                 // Screen-space distance from the focal centre (points), normalised to the
                 // screen half-diagonal so it reaches 1 at the corners → the L1 driver.
                 let home = nodeRestingPositions[nodeID] ?? sprite.position
@@ -815,8 +884,13 @@ final class CorpusPhysicsScene: SKScene {
             // Across the WHOLE band (not gated at alpha > 0) so the fade-IN from zero is
             // smooth — the loop already runs only on zoom-change / annulus, so it's cheap.
             if MSDFLabel.isGlyphContainer(title) {
+                var widen: CGFloat = 1   // Brief AP — widen MSDF smoothing (soften) by the tilt-shift D
+                #if DEBUG
+                if compDefocus > 0 { widen = 1 + CGFloat(MapComp.titleBlur * compDefocus) }
+                #endif
                 MSDFLabel.applyLOD(container: title, lodAlpha: lodFade,
-                                   worldToScreenPt: worldToScreen, contentScale: glyphContentScale)
+                                   worldToScreenPt: worldToScreen, contentScale: glyphContentScale,
+                                   smoothingWiden: widen)
             }
         }
     }
@@ -847,6 +921,25 @@ final class CorpusPhysicsScene: SKScene {
                 .moveBy(x: 260, y: -90, duration: 3.2),
                 .scale(by: 0.72, duration: 2.2)
             ]), withKey: "mapDepthAutoPan")
+        }
+    }
+
+    /// Brief AP — push the comp levers into the orb + grid shaders each frame (cheap uniform pokes).
+    /// Orb defocus (edge/val/sat) gates on `focusOn`; the grid's ripple + dot-blur gate on their modes.
+    private func applyMapComp() {
+        let s = MapCompState.shared
+        func setOrb(_ n: String, _ v: Float) { orbSpriteShader.uniforms.first { $0.name == n }?.floatValue = v }
+        setOrb("u_defocus_edge", s.focusOn ? MapComp.edge : 0)
+        setOrb("u_defocus_val",  s.focusOn ? MapComp.val : 0)
+        setOrb("u_defocus_sat",  s.focusOn ? MapComp.sat : 0)
+        if let u = gridNode?.fillShader?.uniforms {
+            func setG(_ n: String, _ v: Float) { u.first { $0.name == n }?.floatValue = v }
+            setG("u_focus_top0", MapComp.topEdge0); setG("u_focus_top1", MapComp.topEdge1)
+            setG("u_focus_bot0", MapComp.botEdge0); setG("u_focus_bot1", MapComp.botEdge1)
+            setG("u_dot_blur",     s.focusOn  ? MapComp.dotBlur : 0)
+            setG("u_ripple_k",     MapComp.rippleK)
+            setG("u_ripple_gamma", MapComp.rippleGamma)
+            setG("u_ripple_amt",   s.rippleOn ? MapComp.rippleOpacity : 0)
         }
     }
     #endif
@@ -1687,6 +1780,33 @@ final class CorpusPhysicsScene: SKScene {
                 }
             }
         }
+        // Brief AP — T's Map comp (tilt-shift + ripple). Wide framing (auto-fit = T's camera). Set the
+        // launch mode; optionally cycle the three stills (focus → ripple → both, log-driven capture) or
+        // run a VERTICAL pan so orbs cross the focus band. No mid-zoom (T comped the wide frame).
+        if MapComp.on {
+            MapCompState.shared.set(mode: MapComp.argMode)
+            if MapComp.stills {
+                let modes = ["off", "focus", "ripple", "both"]
+                DispatchQueue.main.asyncAfter(deadline: .now() + 14) {
+                    func step(_ i: Int) {
+                        guard i < modes.count else { NSLog("[MapComp] STILLS DONE"); return }
+                        MapCompState.shared.set(mode: modes[i])
+                        NSLog("[MapComp] STILL %@", modes[i])
+                        DispatchQueue.main.asyncAfter(deadline: .now() + 3) { step(i + 1) }
+                    }
+                    step(0)
+                }
+            }
+            if MapComp.pan {
+                DispatchQueue.main.asyncAfter(deadline: .now() + 14) {
+                    self.cameraNode.removeAction(forKey: "compPan")
+                    self.cameraNode.run(.sequence([
+                        .moveBy(x: 0, y: -300, duration: 3.0),   // orbs sweep DOWN through the band
+                        .moveBy(x: 0, y: 300, duration: 3.0)     // and back UP
+                    ]), withKey: "compPan")
+                }
+            }
+        }
         #endif
     }
 
@@ -1735,6 +1855,7 @@ final class CorpusPhysicsScene: SKScene {
 
         #if DEBUG
         if MapDepthDebug.cycle { applyMapDepthLive() }   // Brief AN runtime cycler
+        if MapComp.on { applyMapComp() }                 // Brief AP tilt-shift + ripple
         #endif
 
         // SB83c: Coast camera with friction. Same pan math as SB83a (`* cameraNode.xScale`).

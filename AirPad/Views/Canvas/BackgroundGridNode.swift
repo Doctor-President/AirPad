@@ -243,7 +243,7 @@ enum BackgroundGridNode {
                     vec2 pullF = (texture2D(u_disp_field, v_tex_coord).rg - vec2(0.5)) * (2.0 * u_warp_mass_range);
                     factor = clamp(length(pullF) * 1.2, 0.0, 1.0);
                 } else {
-                    vec2 focal = vec2(0.0, u_viewport_size.y * 0.5 * 0.12);
+                    vec2 focal = vec2(0.0, 0.0);   // Brief AN — focal = geometric screen centre (T)
                     float r = clamp(length(screenOffsetL2 - focal) / length(u_viewport_size * 0.5), 0.0, 1.0);
                     factor = (u_l2_mode < 1.5) ? (1.0 - r) : r;   // well = dark middle, vignette = dark edges
                 }

@@ -203,7 +203,8 @@ struct CanvasChrome: View {
             // (top 194 · bottom 118 · blur 1.0 · easing 1.0); darken from the launch arg
             // (0.74 shipped-dark / 0.45 lighter). SwiftUI → ABOVE the SpriteView, so the
             // bands sit above BOTH the orbs and the region labels. Off in every normal run.
-            if filterState.viewMode == .systemGraph, !store.isInDetailView, let l3 = MapDepthDebug.l3Darken {
+            if filterState.viewMode == .systemGraph, !store.isInDetailView,
+               let l3 = (MapDepthDebug.cycle ? MapDepthLive.shared.current.l3 : MapDepthDebug.l3Darken) {
                 VStack(spacing: 0) {
                     ChromeEdgeBand(edge: .top, height: 194, blur: 1.0, darken: l3, easing: 1.0)
                     Spacer(minLength: 0)

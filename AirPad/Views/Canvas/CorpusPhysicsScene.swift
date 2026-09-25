@@ -70,15 +70,20 @@ enum MapCompTuning {
     // Focus matte D(screen-Y), yn 0 = top … 1 = bottom (MEASURED from T's focus_matte.png, Brief AP).
     static let topEdge0: Float = 0.0, topEdge1: Float = 0.268
     static let botEdge0: Float = 0.70, botEdge1: Float = 0.98
-    // Zoom-couple: focus 0 at the wide overview → full close. cameraScale 1.0 = auto-fit; smaller = closer.
-    static let zoomWide: Float = 0.95, zoomClose: Float = 0.40
     static func smoothstep(_ a: Float, _ b: Float, _ x: Float) -> Float {
         let t = min(max((x - a) / (b - a), 0), 1); return t * t * (3 - 2 * t)
     }
     static func defocus(_ yn: Float) -> Float {
         max(1 - smoothstep(topEdge0, topEdge1, yn), smoothstep(botEdge0, botEdge1, yn))
     }
-    static func zoomFactor(_ scale: Float) -> Float { 1 - smoothstep(zoomClose, zoomWide, scale) }
+    // Brief AU — focus is coupled to "READING MODE", NOT absolute camera scale (which didn't transfer
+    // across library sizes: T's 5235-node library sits at a different absolute scale than the 210-node
+    // sample, so the old `1-smoothstep(0.40,0.95,scale)` only reached strength at extreme zoom). Driver =
+    // the average ON-SCREEN title LOD (the legibility fade the scene already computes) → focus arrives as
+    // titles become readable, at the same ON-SCREEN orb size on any library. onset/ramp remap the driver.
+    static func focusWeight(driver: Float, onset: Float, ramp: Float) -> Float {
+        smoothstep(onset, min(1, onset + max(ramp, 0.01)), driver)
+    }
 
     // Focus dim/desat at D=1 (AE Hue/Sat −40 lightness / −39 saturation → HSV ×0.60 / ×0.61).
     static let dim: Float = 0.40, desat: Float = 0.39
@@ -88,10 +93,14 @@ enum MapCompTuning {
     // Mass-field ripple: value = ‖warp‖/K → invert → AE Levels gamma → N% Normal over ground+dots.
     static let rippleK: Float = 1.08, rippleGamma: Float = 0.12
 
-    // ── TUNER-LIVE defaults (T dials these on device; everything else is fixed) ──
-    static let defFocusStrength:  Float = 1.0    // × on dim+desat, 0 … 2
-    static let defGlowOpacity:    Float = 0.30   // 0 … 0.60
-    static let defRippleStrength: Float = 0.10   // 0 … 0.25 (Normal opacity)
+    // ── TUNER-LIVE defaults. Brief AU round 2 — the three carried at T's build-O values. Onset/ramp
+    // remap the reading driver: onset = where focus starts on the driver (lower = earlier / as titles
+    // fade in), ramp = how fast it reaches full after onset.
+    static let defFocusStrength:  Float = 1.96   // × on dim+desat, 0 … 2 (T, build O)
+    static let defGlowOpacity:    Float = 0.30   // 0 … 0.60 (T)
+    static let defRippleStrength: Float = 0.067  // 0 … 0.25 (T)
+    static let defFocusOnset:     Float = 0.10   // 0 … 0.6 — starts as titles fade in
+    static let defFocusRamp:      Float = 0.40   // 0.1 … 0.9 — medium
 }
 
 /// The three TUNER-LIVE values (Brief AS2), persisted so a dial survives within a session (a reinstall
@@ -104,7 +113,14 @@ final class MapCompLive {
     var focusStrength:  Float { get { g("mapComp.focus",  MapCompTuning.defFocusStrength) }  set { d.set(newValue, forKey: "mapComp.focus") } }
     var glowOpacity:    Float { get { g("mapComp.glow",   MapCompTuning.defGlowOpacity) }    set { d.set(newValue, forKey: "mapComp.glow") } }
     var rippleStrength: Float { get { g("mapComp.ripple", MapCompTuning.defRippleStrength) } set { d.set(newValue, forKey: "mapComp.ripple") } }
-    func reset() { ["mapComp.focus", "mapComp.glow", "mapComp.ripple"].forEach { d.removeObject(forKey: $0) } }
+    var focusOnset:     Float { get { g("mapComp.onset",  MapCompTuning.defFocusOnset) }     set { d.set(newValue, forKey: "mapComp.onset") } }
+    var focusRamp:      Float { get { g("mapComp.ramp",   MapCompTuning.defFocusRamp) }      set { d.set(newValue, forKey: "mapComp.ramp") } }
+    /// Live read-outs the scene publishes for the tuner's Copy (Brief AU): the reading driver, the
+    /// camera scale, and the median on-screen orb radius (pt).
+    var driver: Float = 0
+    var cameraScale: Float = 1
+    var medianOrbRadius: Float = 0
+    func reset() { ["mapComp.focus","mapComp.glow","mapComp.ripple","mapComp.onset","mapComp.ramp"].forEach { d.removeObject(forKey: $0) } }
 }
 
 final class CorpusPhysicsScene: SKScene {
@@ -582,6 +598,10 @@ final class CorpusPhysicsScene: SKScene {
         1 + AnnulusTuning.amplitude * annulusFalloff(dist, cameraScale: cameraScale) * envelope
     }
 
+    #if DEBUG
+    private var mapCompLogTick = 0   // Brief AU — throttle the -MapCompLogDriver readout
+    #endif
+
     /// PER-FRAME orb scale + label LOD. `scale = restingScale × zoomRamp × annulus
     /// Amplify(dist to viewport center)`, magnifying nodes near SCREEN CENTER as the
     /// zoom BLOOM envelope (0→1 across onset…fullZoom) opens — no hard on/off
@@ -602,6 +622,37 @@ final class CorpusPhysicsScene: SKScene {
         let camPos = cameraNode.position
         let lod = LensTuning.labelLOD
         let fadeHi = lod * 1.5
+        // Brief AU — READING-MODE focus weight (library-size-independent). Driver = the average ON-SCREEN
+        // title LOD (last frame's cached lodFade; a 1-frame lag is imperceptible). onset/ramp remap it.
+        // Also publish the driver + camera scale + median on-screen orb radius (pt) for the tuner Copy.
+        var readingWeight: Float = 0
+        if compOn {
+            let halfW = size.width / 2, halfH = size.height / 2
+            var lodSum: Float = 0, onCount = 0
+            var radii: [Float] = []; radii.reserveCapacity(nodeSprites.count)
+            for (id, home) in nodeRestingPositions {
+                let sx = (home.x - camPos.x) / max(cameraScale, 0.0001)
+                let sy = (home.y - camPos.y) / max(cameraScale, 0.0001)
+                guard abs(sx) <= halfW, abs(sy) <= halfH else { continue }   // on-screen only
+                lodSum += Float(nodeTitleLodFade[id] ?? 0); onCount += 1
+                if let dia = nodeOnScreenDiameter[id] { radii.append(Float(dia) / 2) }
+            }
+            let avgLOD = onCount > 0 ? lodSum / Float(onCount) : 0
+            let live = MapCompLive.shared
+            readingWeight = MapCompTuning.focusWeight(driver: avgLOD, onset: live.focusOnset, ramp: live.focusRamp)
+            live.driver = avgLOD
+            live.cameraScale = Float(cameraScale)
+            if !radii.isEmpty { radii.sort(); live.medianOrbRadius = radii[radii.count / 2] }
+            #if DEBUG
+            if ProcessInfo.processInfo.arguments.contains("-MapCompLogDriver") {
+                mapCompLogTick += 1
+                if mapCompLogTick % 60 == 0 {
+                    NSLog("[MapComp] scale=%.3f onScreenOrbs=%d driver(avgLOD)=%.3f medianR=%.1fpt readingWeight=%.3f",
+                          cameraScale, onCount, avgLOD, live.medianOrbRadius, readingWeight)
+                }
+            }
+            #endif
+        }
         for (nodeID, sprite) in nodeSprites {
             let resting = nodeRestingScales[nodeID] ?? 1.0
             var scale = resting * ramp
@@ -619,13 +670,14 @@ final class CorpusPhysicsScene: SKScene {
             }
             sprite.setScale(scale)
             if compOn {
-                // Brief AS — per-orb tilt-shift matte D from the orb's SCREEN Y (0 top … 1 bottom),
-                // zoom-coupled (0 at the wide overview → full close). Consumed only by the dark orb branch.
+                // Brief AS/AU — per-orb tilt-shift matte D from the orb's SCREEN Y (0 top … 1 bottom),
+                // scaled by the READING-MODE weight (0 at the overview → full once titles are readable).
+                // Consumed only by the dark orb branch.
                 let home = nodeRestingPositions[nodeID] ?? sprite.position
                 let sy = (home.y - camPos.y) / max(cameraScale, 0.0001)
                 let yn = Float(min(max(0.5 - sy / size.height, 0), 1))
-                let d = MapCompTuning.defocus(yn) * MapCompTuning.zoomFactor(Float(cameraScale))
-                sprite.setValue(SKAttributeValue(float: d), forAttribute: "a_defocus")
+                sprite.setValue(SKAttributeValue(float: MapCompTuning.defocus(yn) * readingWeight),
+                                forAttribute: "a_defocus")
             }
             guard let intrinsic = nodeIntrinsicRadii[nodeID] else { continue }
             // On-screen diameter (pt) = worldDiameter · spriteScale / cameraScale.

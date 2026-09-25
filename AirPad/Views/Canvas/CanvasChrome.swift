@@ -1543,6 +1543,8 @@ struct MapCompTuningPanel: View {
     @State private var focus  = Double(MapCompLive.shared.focusStrength)
     @State private var glow   = Double(MapCompLive.shared.glowOpacity)
     @State private var ripple = Double(MapCompLive.shared.rippleStrength)
+    @State private var onset  = Double(MapCompLive.shared.focusOnset)
+    @State private var ramp   = Double(MapCompLive.shared.focusRamp)
     @State private var meter = MapCompFpsMeter()
     @State private var copied = false
 
@@ -1557,6 +1559,8 @@ struct MapCompTuningPanel: View {
             row("Focus", $focus, 0...2, "%.2f×") { MapCompLive.shared.focusStrength = Float($0) }
             row("Glow",  $glow, 0...0.6, "%.2f")  { MapCompLive.shared.glowOpacity = Float($0) }
             row("Ripple", $ripple, 0...0.25, "%.0f%%", pct: true) { MapCompLive.shared.rippleStrength = Float($0) }
+            row("Focus onset", $onset, 0...0.6, "%.2f") { MapCompLive.shared.focusOnset = Float($0) }
+            row("Focus ramp",  $ramp, 0.1...0.9, "%.2f") { MapCompLive.shared.focusRamp = Float($0) }
             Text(meter.lastSnapshot.isEmpty ? "no snapshot yet" : meter.lastSnapshot)
                 .font(.system(size: 11, design: .monospaced)).foregroundStyle(.secondary)
                 .fixedSize(horizontal: false, vertical: true)
@@ -1592,8 +1596,10 @@ struct MapCompTuningPanel: View {
         Button(t, action: a).font(.system(size: 12, weight: .medium)).buttonStyle(.bordered)
     }
     private func copyValues() {
+        let live = MapCompLive.shared
         let txt = """
-        MapComp (dark) — focus=\(String(format: "%.2f", focus)) glow=\(String(format: "%.2f", glow)) ripple=\(String(format: "%.3f", ripple))
+        MapComp (dark) — focus=\(String(format: "%.2f", focus)) glow=\(String(format: "%.2f", glow)) ripple=\(String(format: "%.3f", ripple)) onset=\(String(format: "%.2f", onset)) ramp=\(String(format: "%.2f", ramp))
+        driver(avg on-screen title LOD)=\(String(format: "%.2f", live.driver)) · cameraScale=\(String(format: "%.3f", live.cameraScale)) · median orb r=\(String(format: "%.1f", live.medianOrbRadius))pt
         \(meter.lastSnapshot.isEmpty ? "no perf snapshot" : meter.lastSnapshot)
         \(MapCompFpsMeter.deviceModel) · iOS \(UIDevice.current.systemVersion)
         """
@@ -1606,6 +1612,8 @@ struct MapCompTuningPanel: View {
         focus = Double(MapCompTuning.defFocusStrength)
         glow = Double(MapCompTuning.defGlowOpacity)
         ripple = Double(MapCompTuning.defRippleStrength)
+        onset = Double(MapCompTuning.defFocusOnset)
+        ramp = Double(MapCompTuning.defFocusRamp)
     }
 }
 #endif

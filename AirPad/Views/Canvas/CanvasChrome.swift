@@ -54,6 +54,8 @@ struct CanvasChrome: View {
     /// survives close/re-open within a session — same pattern as
     /// NodeGridView's tile tuning panel.
     @State private var solarFlareTuningPanelOffset: CGSize = .zero
+    /// Brief AS2 — the Map-comp tuner (dark only): focus / glow / ripple + fps + perf snapshot + Copy.
+    @State private var showMapCompTuner = false
 
     #endif
 
@@ -396,6 +398,15 @@ struct CanvasChrome: View {
             if showSolarFlareTuningPanel {
                 floatingSolarFlareTuningPanel
             }
+            // Brief AS2 — Map-comp tuner trigger + panel (Map / systemGraph + DARK only).
+            if filterState.viewMode == .systemGraph {
+                mapCompTuningTrigger
+                    .onAppear { if ProcessInfo.processInfo.arguments.contains("-OpenMapCompTuner") { showMapCompTuner = true } }
+                if showMapCompTuner {
+                    VStack { Spacer(); MapCompTuningPanel(isPresented: $showMapCompTuner).padding(.bottom, 80) }
+                        .frame(maxWidth: .infinity, maxHeight: .infinity)
+                }
+            }
             #endif
         }
         // Brief AG3 — first-run callout. Read here (not inside the ZStack) so the ring can find
@@ -515,6 +526,26 @@ struct CanvasChrome: View {
         }
         .frame(maxWidth: .infinity, maxHeight: .infinity)
         .allowsHitTesting(true)
+    }
+
+    /// Brief AS2 — the Map-comp tuner trigger (`camera.filters`), just below the ☀︎, top-left.
+    private var mapCompTuningTrigger: some View {
+        VStack {
+            HStack {
+                Button { showMapCompTuner.toggle() } label: {
+                    Image(systemName: "camera.filters")
+                        .font(.system(size: 13, weight: .medium))
+                        .foregroundStyle(AppearancePalette.ink.opacity(0.45))
+                        .frame(width: 28, height: 28)
+                        .contentShape(Rectangle())
+                }
+                .buttonStyle(.plain)
+                Spacer()
+            }
+            Spacer()
+        }
+        .padding(.top, 140)
+        .padding(.leading, 10)
     }
 
     // MARK: - Dark-mode orb POP tuning (DEBUG)
@@ -1458,3 +1489,123 @@ private struct ChromeEdgeBand: View {
         }
     }
 }
+
+#if DEBUG
+import Darwin
+
+/// Brief AS2 — CADisplayLink fps meter + a 10 s perf snapshot (avg / 1%-low fps, frame-time p95).
+@Observable final class MapCompFpsMeter {
+    var fps: Double = 0
+    var lastSnapshot: String = ""
+    var snapshotting = false
+    @ObservationIgnored private var link: CADisplayLink?
+    @ObservationIgnored private var last: CFTimeInterval = 0
+    @ObservationIgnored private var frames: [Double] = []
+    func start() {
+        stop(); last = 0
+        let l = CADisplayLink(target: self, selector: #selector(tick(_:)))
+        l.add(to: .main, forMode: .common); link = l
+    }
+    func stop() { link?.invalidate(); link = nil }
+    @objc private func tick(_ l: CADisplayLink) {
+        if last > 0 {
+            let dt = l.timestamp - last
+            if dt > 0 { fps = fps == 0 ? 1 / dt : fps * 0.9 + (1 / dt) * 0.1 }
+            if snapshotting, dt > 0 { frames.append(dt * 1000) }   // ms
+        }
+        last = l.timestamp
+    }
+    func beginSnapshot() {
+        frames.removeAll(); snapshotting = true; lastSnapshot = "recording 10 s — pan + zoom…"
+        DispatchQueue.main.asyncAfter(deadline: .now() + 10) { [weak self] in self?.endSnapshot() }
+    }
+    private func endSnapshot() {
+        snapshotting = false
+        let ms = frames.sorted(); guard ms.count > 5 else { lastSnapshot = "snapshot: too few frames"; return }
+        let mean = ms.reduce(0, +) / Double(ms.count)
+        let avg = 1000 / mean
+        let fpsAsc = ms.map { 1000 / $0 }.sorted()                 // low fps = long frames
+        let low1 = fpsAsc[max(0, Int(Double(fpsAsc.count) * 0.01))]
+        let p95 = ms[min(ms.count - 1, Int(Double(ms.count) * 0.95))]
+        lastSnapshot = String(format: "avg %.0f · 1%%-low %.0f fps · frametime p95 %.1f ms (%d frames)",
+                              avg, low1, p95, ms.count)
+    }
+    static var deviceModel: String {
+        var s = utsname(); uname(&s)
+        return withUnsafePointer(to: &s.machine) { $0.withMemoryRebound(to: CChar.self, capacity: 1) { String(cString: $0) } }
+    }
+}
+
+/// Brief AS2 — the Map-comp tuner (dark only): three sliders + live fps + perf snapshot + Copy + Reset.
+/// Values write straight to `MapCompLive` (the scene reads it each frame); Copy produces the paste text.
+struct MapCompTuningPanel: View {
+    @Binding var isPresented: Bool
+    @State private var focus  = Double(MapCompLive.shared.focusStrength)
+    @State private var glow   = Double(MapCompLive.shared.glowOpacity)
+    @State private var ripple = Double(MapCompLive.shared.rippleStrength)
+    @State private var meter = MapCompFpsMeter()
+    @State private var copied = false
+
+    var body: some View {
+        VStack(alignment: .leading, spacing: 10) {
+            HStack {
+                Text("Map comp — dark").font(.system(size: 13, weight: .semibold))
+                Spacer()
+                Text(String(format: "%.0f fps", meter.fps)).font(.system(size: 12, design: .monospaced))
+                    .foregroundStyle(meter.fps >= 55 ? .green : (meter.fps >= 40 ? .yellow : .red))
+            }
+            row("Focus", $focus, 0...2, "%.2f×") { MapCompLive.shared.focusStrength = Float($0) }
+            row("Glow",  $glow, 0...0.6, "%.2f")  { MapCompLive.shared.glowOpacity = Float($0) }
+            row("Ripple", $ripple, 0...0.25, "%.0f%%", pct: true) { MapCompLive.shared.rippleStrength = Float($0) }
+            Text(meter.lastSnapshot.isEmpty ? "no snapshot yet" : meter.lastSnapshot)
+                .font(.system(size: 11, design: .monospaced)).foregroundStyle(.secondary)
+                .fixedSize(horizontal: false, vertical: true)
+            HStack(spacing: 10) {
+                btn(meter.snapshotting ? "Recording…" : "Perf 10 s") { meter.beginSnapshot() }
+                    .disabled(meter.snapshotting)
+                btn(copied ? "Copied ✓" : "Copy") { copyValues() }
+                btn("Reset") { reset() }
+                btn("Close") { isPresented = false }
+            }
+        }
+        .padding(14)
+        .frame(width: 300)
+        .background(.ultraThinMaterial, in: RoundedRectangle(cornerRadius: 16))
+        .onAppear { meter.start() }
+        .onDisappear { meter.stop() }
+    }
+
+    private func row(_ name: String, _ v: Binding<Double>, _ range: ClosedRange<Double>,
+                     _ fmt: String, pct: Bool = false, _ apply: @escaping (Double) -> Void) -> some View {
+        VStack(alignment: .leading, spacing: 2) {
+            HStack {
+                Text(name).font(.system(size: 12))
+                Spacer()
+                Text(String(format: fmt, pct ? v.wrappedValue * 100 : v.wrappedValue))
+                    .font(.system(size: 12, design: .monospaced))
+            }
+            Slider(value: v, in: range) { _ in apply(v.wrappedValue) }
+                .onChange(of: v.wrappedValue) { _, nv in apply(nv) }
+        }
+    }
+    private func btn(_ t: String, _ a: @escaping () -> Void) -> some View {
+        Button(t, action: a).font(.system(size: 12, weight: .medium)).buttonStyle(.bordered)
+    }
+    private func copyValues() {
+        let txt = """
+        MapComp (dark) — focus=\(String(format: "%.2f", focus)) glow=\(String(format: "%.2f", glow)) ripple=\(String(format: "%.3f", ripple))
+        \(meter.lastSnapshot.isEmpty ? "no perf snapshot" : meter.lastSnapshot)
+        \(MapCompFpsMeter.deviceModel) · iOS \(UIDevice.current.systemVersion)
+        """
+        UIPasteboard.general.string = txt
+        copied = true
+        DispatchQueue.main.asyncAfter(deadline: .now() + 1.2) { copied = false }
+    }
+    private func reset() {
+        MapCompLive.shared.reset()
+        focus = Double(MapCompTuning.defFocusStrength)
+        glow = Double(MapCompTuning.defGlowOpacity)
+        ripple = Double(MapCompTuning.defRippleStrength)
+    }
+}
+#endif

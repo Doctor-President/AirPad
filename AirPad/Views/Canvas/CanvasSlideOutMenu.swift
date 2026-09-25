@@ -31,6 +31,8 @@ struct CanvasSlideOutMenu: View {
 
     private let panelWidth: CGFloat = 280
     @State private var dragOffset: CGFloat = 0
+    // Brief AT5 — Appearance override (shared with Settings via one @AppStorage key).
+    @AppStorage(AppearanceOverride.storageKey) private var appearanceRaw = AppearanceOverride.system.rawValue
 
     var body: some View {
         ZStack(alignment: .trailing) {
@@ -92,6 +94,18 @@ struct CanvasSlideOutMenu: View {
                             action: { dismiss(then: onQuarantineReview) }
                         )
                     }
+                }
+
+                section("Appearance") {
+                    Picker("Appearance", selection: Binding(
+                        get: { AppearanceOverride(rawValue: appearanceRaw) ?? .system },
+                        set: { appearanceRaw = $0.rawValue }
+                    )) {
+                        ForEach(AppearanceOverride.allCases) { Text($0.label).tag($0) }
+                    }
+                    .pickerStyle(.segmented)
+                    .padding(.horizontal, 16)
+                    .padding(.vertical, 6)
                 }
             }
             .padding(.bottom, 32)

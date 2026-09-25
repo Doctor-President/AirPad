@@ -274,3 +274,52 @@ extension View {
         )
     }
 }
+
+// MARK: - Brief AT5 — Appearance override (System / Light / Dark)
+
+/// The user's app-wide appearance choice. `system` follows iOS live; `light`/`dark` pin it. One shared
+/// `@AppStorage(AppearanceOverride.storageKey)` drives the ≡ menu control AND the Settings row.
+enum AppearanceOverride: String, CaseIterable, Identifiable {
+    case system, light, dark
+    var id: String { rawValue }
+    static let storageKey = "appearance.override"
+    var label: String {
+        switch self {
+        case .system: return "System"
+        case .light:  return "Light"
+        case .dark:   return "Dark"
+        }
+    }
+    /// `.unspecified` = follow iOS. Applied to the app's window(s).
+    var uiStyle: UIUserInterfaceStyle {
+        switch self {
+        case .system: return .unspecified
+        case .light:  return .light
+        case .dark:   return .dark
+        }
+    }
+    static func current() -> AppearanceOverride {
+        AppearanceOverride(rawValue: UserDefaults.standard.string(forKey: storageKey) ?? "") ?? .system
+    }
+}
+
+/// Applies the Appearance override to the app's window(s) so UIKit + SpriteKit AND SwiftUI flip together,
+/// LIVE (no relaunch), covering sheets and full-screen covers presented on the same window. Setting the
+/// window's `overrideUserInterfaceStyle` also drives SwiftUI's `@Environment(\.colorScheme)`, so the Map's
+/// colour-only flip path (`flipMapColorsForAppearance`) fires — it never re-forms. `.unspecified` = System.
+struct AppearanceApplier: UIViewRepresentable {
+    let style: UIUserInterfaceStyle
+    func makeUIView(context: Context) -> UIView {
+        let v = UIView(); v.isHidden = true; v.isUserInteractionEnabled = false
+        DispatchQueue.main.async { AppearanceApplier.apply(style) }
+        return v
+    }
+    func updateUIView(_ uiView: UIView, context: Context) {
+        AppearanceApplier.apply(style)
+    }
+    static func apply(_ style: UIUserInterfaceStyle) {
+        for scene in UIApplication.shared.connectedScenes.compactMap({ $0 as? UIWindowScene }) {
+            for window in scene.windows { window.overrideUserInterfaceStyle = style }
+        }
+    }
+}

@@ -82,6 +82,8 @@ struct SettingsView: View {
     // AirPad Bridge/Host (the Host requires the QR-derived bearer) and any authed proxy.
     @State private var ollamaAPIToken = ""
 
+    // Brief AT5 — Appearance override (shared with the ≡ menu).
+    @AppStorage(AppearanceOverride.storageKey) private var appearanceRaw = AppearanceOverride.system.rawValue
     // Privacy
     @AppStorage("locationEnabled") private var locationEnabled = false
 
@@ -156,6 +158,22 @@ struct SettingsView: View {
                     settingsRow(.models,   icon: "cpu",                        tint: "7A3FF2", title: "Models")
                     settingsRow(.webSearch,icon: "magnifyingglass",            tint: "2E9E4F", title: "Web search")
                     settingsRow(.librarian,icon: "character.book.closed.fill", tint: "C2571B", title: "Librarian")
+                }
+                // Brief AT5 — Appearance override (shared with the ≡ menu via one @AppStorage key).
+                Section {
+                    Picker(selection: Binding(
+                        get: { AppearanceOverride(rawValue: appearanceRaw) ?? .system },
+                        set: { appearanceRaw = $0.rawValue }
+                    )) {
+                        ForEach(AppearanceOverride.allCases) { Text($0.label).tag($0) }
+                    } label: {
+                        Label {
+                            Text("Appearance")
+                        } icon: {
+                            Image(systemName: "circle.righthalf.filled")
+                                .foregroundStyle(.secondary)
+                        }
+                    }
                 }
                 // Group 3 — privacy and about.
                 Section {

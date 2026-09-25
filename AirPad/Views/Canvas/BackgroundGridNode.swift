@@ -226,7 +226,8 @@ enum BackgroundGridNode {
             float c0g = c0 * step(2.5, u_lod_levels);
             float c2g = c2 * step(1.5, u_lod_levels);
             float coverage = max(c1, max(c0g, c2g));
-            float alpha    = clamp(coverage * baseOpac, 0.0, 1.0);
+            // Brief AW — the light tuner's Dot-opacity ×multiplier (default 1 → dark/list byte-identical).
+            float alpha    = clamp(coverage * baseOpac * u_dot_opacity_mul, 0.0, 1.0);
 
             // (The COLOUR REACTION — dot opacity rising where the grid compresses — was baked to 0
             // and deleted at the 2026-09-14 bake; T never dialled it on.)
@@ -239,6 +240,16 @@ enum BackgroundGridNode {
                 float R = texture2D(u_disp_field, v_tex_coord).b;
                 vec3 groundDots = u_ground_color * (1.0 - alpha) + u_dot_color * alpha;
                 gl_FragColor = vec4(mix(groundDots, vec3(R), u_ripple_amt), 1.0);
+            } else if (u_light_ground_on > 0.5) {
+                // Brief AW — LIGHT comp: OWN the opaque ground so "Darken over ground" (per-channel min)
+                // is exact. Pool = the eased, AE-leveled neutral grey baked into the field B channel on
+                // the CPU (1.0 = far field = no darken); u_pool_amt scales its strength. Dots composite on
+                // top of the pooled ground. min() also leaves the (darker) dots untouched by the pool.
+                float pool = texture2D(u_disp_field, v_tex_coord).b;
+                float pv = clamp(1.0 - u_pool_amt * (1.0 - pool), 0.0, 1.0);
+                vec3 g = min(u_ground_color, vec3(pv));
+                vec3 groundDots = g * (1.0 - alpha) + u_dot_color * alpha;
+                gl_FragColor = vec4(groundDots, 1.0);
             } else {
                 // Premultiplied output. u_dot_color is the per-theme dot tint
                 // (default white → dark byte-identical: (1,1,1)*alpha reproduces the
@@ -274,7 +285,11 @@ enum BackgroundGridNode {
             SKUniform(name: "u_disp_field",    texture: fieldZero),
             // Brief AS — mass-field ripple (dark only; 0 in light → byte-identical). u_ground_color = #111115.
             SKUniform(name: "u_ripple_amt",   float: 0),
-            SKUniform(name: "u_ground_color", vectorFloat3: vector_float3(0.0667, 0.0667, 0.0824))
+            SKUniform(name: "u_ground_color", vectorFloat3: vector_float3(0.0667, 0.0667, 0.0824)),
+            // Brief AW — LIGHT comp: owned opaque ground + mass-field POOL (both 0 → dark/list byte-identical).
+            SKUniform(name: "u_light_ground_on", float: 0),
+            SKUniform(name: "u_pool_amt",        float: 0),
+            SKUniform(name: "u_dot_opacity_mul", float: 1)
         ]
         return shader
     }

@@ -1540,27 +1540,61 @@ import Darwin
 /// Values write straight to `MapCompLive` (the scene reads it each frame); Copy produces the paste text.
 struct MapCompTuningPanel: View {
     @Binding var isPresented: Bool
+    // Dark (Brief AS/AU)
     @State private var focus  = Double(MapCompLive.shared.focusStrength)
     @State private var glow   = Double(MapCompLive.shared.glowOpacity)
     @State private var ripple = Double(MapCompLive.shared.rippleStrength)
     @State private var onset  = Double(MapCompLive.shared.focusOnset)
     @State private var ramp   = Double(MapCompLive.shared.focusRamp)
+    // Light (Brief AW)
+    @State private var pool     = Double(MapCompLive.shared.poolStrength)
+    @State private var poolSoft = Double(MapCompLive.shared.poolSoftness)
+    @State private var orbOp    = Double(MapCompLive.shared.orbOpacity)
+    @State private var rim      = Double(MapCompLive.shared.rimOpacity)
+    @State private var dotMul   = Double(MapCompLive.shared.dotOpacityMul)
+    @State private var lightFocus = Double(MapCompLive.shared.lightFocus)
+    @State private var ground   = Color(UIColor(hex: MapCompLive.shared.groundHex) ?? .gray)
+    @State private var groundHex = MapCompLive.shared.groundHex
     @State private var meter = MapCompFpsMeter()
     @State private var copied = false
 
     var body: some View {
         VStack(alignment: .leading, spacing: 10) {
             HStack {
-                Text("Map comp — dark").font(.system(size: 13, weight: .semibold))
+                Text("Map comp").font(.system(size: 13, weight: .semibold))
                 Spacer()
                 Text(String(format: "%.0f fps", meter.fps)).font(.system(size: 12, design: .monospaced))
                     .foregroundStyle(meter.fps >= 55 ? .green : (meter.fps >= 40 ? .yellow : .red))
             }
-            row("Focus", $focus, 0...2, "%.2f×") { MapCompLive.shared.focusStrength = Float($0) }
-            row("Glow",  $glow, 0...0.6, "%.2f")  { MapCompLive.shared.glowOpacity = Float($0) }
-            row("Ripple", $ripple, 0...0.25, "%.0f%%", pct: true) { MapCompLive.shared.rippleStrength = Float($0) }
-            row("Focus onset", $onset, 0...0.6, "%.2f") { MapCompLive.shared.focusOnset = Float($0) }
-            row("Focus ramp",  $ramp, 0.1...0.9, "%.2f") { MapCompLive.shared.focusRamp = Float($0) }
+            ScrollView {
+                VStack(alignment: .leading, spacing: 8) {
+                    Text("DARK").font(.system(size: 10, weight: .bold)).foregroundStyle(.secondary)
+                    row("Focus", $focus, 0...2, "%.2f×") { MapCompLive.shared.focusStrength = Float($0) }
+                    row("Glow",  $glow, 0...0.6, "%.2f")  { MapCompLive.shared.glowOpacity = Float($0) }
+                    row("Ripple", $ripple, 0...0.25, "%.0f%%", pct: true) { MapCompLive.shared.rippleStrength = Float($0) }
+                    row("Focus onset", $onset, 0...0.6, "%.2f") { MapCompLive.shared.focusOnset = Float($0) }
+                    row("Focus ramp",  $ramp, 0.1...0.9, "%.2f") { MapCompLive.shared.focusRamp = Float($0) }
+                    Divider().padding(.vertical, 2)
+                    Text("LIGHT").font(.system(size: 10, weight: .bold)).foregroundStyle(.secondary)
+                    row("Pool strength", $pool, 0...2, "%.2f×") { MapCompLive.shared.poolStrength = Float($0) }
+                    row("Pool softness", $poolSoft, 0.5...2, "%.2f×") { MapCompLive.shared.poolSoftness = Float($0) }
+                    row("Orb opacity", $orbOp, 0.5...1.0, "%.0f%%", pct: true) { MapCompLive.shared.orbOpacity = Float($0) }
+                    row("Rim", $rim, 0...1, "%.0f%%", pct: true) { MapCompLive.shared.rimOpacity = Float($0) }
+                    row("Dot opacity", $dotMul, 0.5...2, "%.2f×") { MapCompLive.shared.dotOpacityMul = Float($0) }
+                    row("Focus strength", $lightFocus, 0...2, "%.2f×") { MapCompLive.shared.lightFocus = Float($0) }
+                    HStack {
+                        ColorPicker("Ground", selection: $ground, supportsOpacity: false)
+                            .font(.system(size: 12))
+                            .onChange(of: ground) { _, c in
+                                let hex = Self.hexString(c)
+                                groundHex = hex; MapCompLive.shared.groundHex = hex
+                            }
+                        Spacer()
+                        Text("#\(groundHex)").font(.system(size: 12, design: .monospaced))
+                    }
+                }
+            }
+            .frame(maxHeight: 380)
             Text(meter.lastSnapshot.isEmpty ? "no snapshot yet" : meter.lastSnapshot)
                 .font(.system(size: 11, design: .monospaced)).foregroundStyle(.secondary)
                 .fixedSize(horizontal: false, vertical: true)
@@ -1577,6 +1611,12 @@ struct MapCompTuningPanel: View {
         .background(.ultraThinMaterial, in: RoundedRectangle(cornerRadius: 16))
         .onAppear { meter.start() }
         .onDisappear { meter.stop() }
+    }
+
+    static func hexString(_ c: Color) -> String {
+        var r: CGFloat = 0, g: CGFloat = 0, b: CGFloat = 0, a: CGFloat = 0
+        UIColor(c).getRed(&r, green: &g, blue: &b, alpha: &a)
+        return String(format: "%02X%02X%02X", Int((r * 255).rounded()), Int((g * 255).rounded()), Int((b * 255).rounded()))
     }
 
     private func row(_ name: String, _ v: Binding<Double>, _ range: ClosedRange<Double>,
@@ -1599,6 +1639,7 @@ struct MapCompTuningPanel: View {
         let live = MapCompLive.shared
         let txt = """
         MapComp (dark) — focus=\(String(format: "%.2f", focus)) glow=\(String(format: "%.2f", glow)) ripple=\(String(format: "%.3f", ripple)) onset=\(String(format: "%.2f", onset)) ramp=\(String(format: "%.2f", ramp))
+        MapComp (light) — pool=\(String(format: "%.2f", pool)) poolSoft=\(String(format: "%.2f", poolSoft)) orbOpacity=\(String(format: "%.2f", orbOp)) rim=\(String(format: "%.2f", rim)) dotOpacity=\(String(format: "%.2f", dotMul)) focus=\(String(format: "%.2f", lightFocus)) ground=#\(groundHex)
         driver(avg on-screen title LOD)=\(String(format: "%.2f", live.driver)) · cameraScale=\(String(format: "%.3f", live.cameraScale)) · median orb r=\(String(format: "%.1f", live.medianOrbRadius))pt
         \(meter.lastSnapshot.isEmpty ? "no perf snapshot" : meter.lastSnapshot)
         \(MapCompFpsMeter.deviceModel) · iOS \(UIDevice.current.systemVersion)
@@ -1614,6 +1655,14 @@ struct MapCompTuningPanel: View {
         ripple = Double(MapCompTuning.defRippleStrength)
         onset = Double(MapCompTuning.defFocusOnset)
         ramp = Double(MapCompTuning.defFocusRamp)
+        pool = Double(MapCompTuning.defPoolStrength)
+        poolSoft = Double(MapCompTuning.defPoolSoftness)
+        orbOp = Double(MapCompTuning.defOrbOpacity)
+        rim = Double(MapCompTuning.defRimOpacity)
+        dotMul = Double(MapCompTuning.defDotOpacityMul)
+        lightFocus = Double(MapCompTuning.defLightFocus)
+        groundHex = MapCompTuning.defLightGroundHex
+        ground = Color(UIColor(hex: MapCompTuning.defLightGroundHex) ?? .gray)
     }
 }
 #endif

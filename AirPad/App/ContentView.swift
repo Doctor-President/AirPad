@@ -16,10 +16,15 @@ struct ContentView: View {
     /// `.tip` ↔ `.half` ↔ `.full`.
     @State private var panelState = LibrarianPanelStateModel()
     private let panelLayout = LibrarianPanelLayout()
+    // Brief AT5 — app-wide Appearance override (System / Light / Dark), applied to the window(s).
+    @AppStorage(AppearanceOverride.storageKey) private var appearanceRaw = AppearanceOverride.system.rawValue
 
     var body: some View {
         @Bindable var routerBinding = router
         ZStack {
+            // Brief AT5 — pin the window appearance to the user's choice (System = follow iOS). Live.
+            AppearanceApplier(style: (AppearanceOverride(rawValue: appearanceRaw) ?? .system).uiStyle)
+                .frame(width: 0, height: 0)
             #if DEBUG
             // `-OpenCardView` companion — `entryMode` defaults to `.recents`, so the
             // viewMode seed alone never reaches the canvas.

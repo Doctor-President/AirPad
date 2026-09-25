@@ -1555,6 +1555,16 @@ struct MapCompTuningPanel: View {
     @State private var lightFocus = Double(MapCompLive.shared.lightFocus)
     @State private var ground   = Color(UIColor(hex: MapCompLive.shared.groundHex) ?? .gray)
     @State private var groundHex = MapCompLive.shared.groundHex
+    // Rim controls (Brief AX1)
+    @State private var rimSize  = Double(MapCompLive.shared.rimSize)
+    @State private var rimSoft  = Double(MapCompLive.shared.rimSoftness)
+    @State private var rimMode  = Int(MapCompLive.shared.rimMode)
+    @State private var rimColor = Color(UIColor(hex: MapCompLive.shared.rimColorHex) ?? .black)
+    @State private var rimColorHex = MapCompLive.shared.rimColorHex
+    // Palette dials (Brief AX2)
+    @State private var palL = Double(MapCompLive.shared.palLightness)
+    @State private var palC = Double(MapCompLive.shared.palChroma)
+    @State private var palH = Double(MapCompLive.shared.palHueDeg)
     @State private var meter = MapCompFpsMeter()
     @State private var copied = false
 
@@ -1579,7 +1589,6 @@ struct MapCompTuningPanel: View {
                     row("Pool strength", $pool, 0...2, "%.2f×") { MapCompLive.shared.poolStrength = Float($0) }
                     row("Pool softness", $poolSoft, 0.5...2, "%.2f×") { MapCompLive.shared.poolSoftness = Float($0) }
                     row("Orb opacity", $orbOp, 0.5...1.0, "%.0f%%", pct: true) { MapCompLive.shared.orbOpacity = Float($0) }
-                    row("Rim", $rim, 0...1, "%.0f%%", pct: true) { MapCompLive.shared.rimOpacity = Float($0) }
                     row("Dot opacity", $dotMul, 0.5...2, "%.2f×") { MapCompLive.shared.dotOpacityMul = Float($0) }
                     row("Focus strength", $lightFocus, 0...2, "%.2f×") { MapCompLive.shared.lightFocus = Float($0) }
                     HStack {
@@ -1592,6 +1601,32 @@ struct MapCompTuningPanel: View {
                         Spacer()
                         Text("#\(groundHex)").font(.system(size: 12, design: .monospaced))
                     }
+                    Divider().padding(.vertical, 2)
+                    Text("RIM (inner glow · OFF by default)").font(.system(size: 10, weight: .bold)).foregroundStyle(.secondary)
+                    row("Rim opacity", $rim, 0...1, "%.0f%%", pct: true) { MapCompLive.shared.rimOpacity = Float($0) }
+                    row("Rim size", $rimSize, 0.05...0.6, "%.2f") { MapCompLive.shared.rimSize = Float($0) }
+                    row("Rim softness", $rimSoft, 0...1, "%.2f") { MapCompLive.shared.rimSoftness = Float($0) }
+                    Picker("Rim mode", selection: $rimMode) {
+                        Text("Soft Light").tag(0); Text("Multiply").tag(1); Text("Normal").tag(2)
+                    }
+                    .pickerStyle(.segmented).font(.system(size: 11))
+                    .onChange(of: rimMode) { _, m in MapCompLive.shared.rimMode = Float(m) }
+                    if rimMode == 2 {
+                        HStack {
+                            ColorPicker("Rim colour", selection: $rimColor, supportsOpacity: false).font(.system(size: 12))
+                                .onChange(of: rimColor) { _, c in
+                                    let h = Self.hexString(c); rimColorHex = h; MapCompLive.shared.rimColorHex = h
+                                }
+                            Spacer()
+                            Text("#\(rimColorHex)").font(.system(size: 12, design: .monospaced))
+                        }
+                    }
+                    Divider().padding(.vertical, 2)
+                    Text("PALETTE (OKLCH, after translate)").font(.system(size: 10, weight: .bold)).foregroundStyle(.secondary)
+                    row("Lightness", $palL, -0.15...0.20, "%+.2f") { MapCompLive.shared.palLightness = Float($0) }
+                    row("Chroma", $palC, 0.5...1.5, "%.2f×") { MapCompLive.shared.palChroma = Float($0) }
+                    row("Hue rotate", $palH, -30...30, "%+.0f°") { MapCompLive.shared.palHueDeg = Float($0) }
+                    swatchStrip
                 }
             }
             .frame(maxHeight: 380)
@@ -1635,11 +1670,38 @@ struct MapCompTuningPanel: View {
     private func btn(_ t: String, _ a: @escaping () -> Void) -> some View {
         Button(t, action: a).font(.system(size: 12, weight: .medium)).buttonStyle(.bordered)
     }
+    /// AX2 — the 12 light slots after AE translate + OKLCH dials, two rows of 6, hex under each. Recomputes
+    /// on every dial change (the palette @State are read in `body`), so it tracks the live Map.
+    private var swatchStrip: some View {
+        let sw = MapCompTuning.lightSwatches()
+        return VStack(alignment: .leading, spacing: 3) {
+            ForEach(0..<2, id: \.self) { rowIdx in
+                HStack(spacing: 3) {
+                    ForEach(0..<6, id: \.self) { col in
+                        let i = rowIdx * 6 + col
+                        if i < sw.count {
+                            VStack(spacing: 1) {
+                                RoundedRectangle(cornerRadius: 3).fill(Color(sw[i].color))
+                                    .frame(width: 40, height: 20)
+                                    .overlay(RoundedRectangle(cornerRadius: 3).strokeBorder(.black.opacity(0.15)))
+                                Text(sw[i].hex).font(.system(size: 7, design: .monospaced)).foregroundStyle(.secondary)
+                            }
+                        }
+                    }
+                }
+            }
+        }
+    }
     private func copyValues() {
         let live = MapCompLive.shared
+        let rimName = ["SoftLight", "Multiply", "Normal"][max(0, min(2, rimMode))]
+        let hexes = MapCompTuning.lightSwatches().map { "#\($0.hex)" }.joined(separator: " ")
         let txt = """
         MapComp (dark) — focus=\(String(format: "%.2f", focus)) glow=\(String(format: "%.2f", glow)) ripple=\(String(format: "%.3f", ripple)) onset=\(String(format: "%.2f", onset)) ramp=\(String(format: "%.2f", ramp))
-        MapComp (light) — pool=\(String(format: "%.2f", pool)) poolSoft=\(String(format: "%.2f", poolSoft)) orbOpacity=\(String(format: "%.2f", orbOp)) rim=\(String(format: "%.2f", rim)) dotOpacity=\(String(format: "%.2f", dotMul)) focus=\(String(format: "%.2f", lightFocus)) ground=#\(groundHex)
+        MapComp (light) — pool=\(String(format: "%.2f", pool)) poolSoft=\(String(format: "%.2f", poolSoft)) orbOpacity=\(String(format: "%.2f", orbOp)) dotOpacity=\(String(format: "%.2f", dotMul)) focus=\(String(format: "%.2f", lightFocus)) ground=#\(groundHex)
+        MapComp (rim) — opacity=\(String(format: "%.2f", rim)) size=\(String(format: "%.2f", rimSize)) softness=\(String(format: "%.2f", rimSoft)) mode=\(rimName) colour=#\(rimColorHex)
+        MapComp (palette) — L=\(String(format: "%+.3f", palL)) C=\(String(format: "%.2f", palC)) H=\(String(format: "%+.0f", palH))°
+        slots: \(hexes)
         driver(avg on-screen title LOD)=\(String(format: "%.2f", live.driver)) · cameraScale=\(String(format: "%.3f", live.cameraScale)) · median orb r=\(String(format: "%.1f", live.medianOrbRadius))pt
         \(meter.lastSnapshot.isEmpty ? "no perf snapshot" : meter.lastSnapshot)
         \(MapCompFpsMeter.deviceModel) · iOS \(UIDevice.current.systemVersion)
@@ -1663,6 +1725,14 @@ struct MapCompTuningPanel: View {
         lightFocus = Double(MapCompTuning.defLightFocus)
         groundHex = MapCompTuning.defLightGroundHex
         ground = Color(UIColor(hex: MapCompTuning.defLightGroundHex) ?? .gray)
+        rimSize = Double(MapCompTuning.defRimSize)
+        rimSoft = Double(MapCompTuning.defRimSoftness)
+        rimMode = Int(MapCompTuning.defRimMode)
+        rimColorHex = MapCompTuning.defRimColorHex
+        rimColor = Color(UIColor(hex: MapCompTuning.defRimColorHex) ?? .black)
+        palL = Double(MapCompTuning.defPalLightness)
+        palC = Double(MapCompTuning.defPalChroma)
+        palH = Double(MapCompTuning.defPalHueDeg)
     }
 }
 #endif

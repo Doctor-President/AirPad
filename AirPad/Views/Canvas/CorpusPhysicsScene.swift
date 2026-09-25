@@ -87,24 +87,28 @@ enum MapComp {
         max(1 - smoothstep(topEdge0, topEdge1, yn), smoothstep(botEdge0, botEdge1, yn))
     }
 
-    // ── Orb defocus levers at D=1 (AE Hue/Sat Master → HSV; blur = SDF edge-feather widen).
-    static var edge: Float { f("CompEdge", 6.0) }        // SDF feather ×(1 + edge·D)
+    // ── Orb desat/darken at D=1 (AE Hue/Sat Master → HSV). Kept from AP.
     static var sat:  Float { f("CompSat", 0.39) }        // AE saturation −39 → HSV S×0.61 at D=1
     static var val:  Float { f("CompVal", 0.40) }        // AE lightness  −40 → HSV V×0.60 at D=1
-    static var pad:  Float { f("CompPad", 0.0) }         // quad-padding fraction at D=1 (outward blur spill)
-    static var titleBlur: Float { f("CompTitleBlur", 0.7) } // MSDF smoothing widen: a_px_range ÷ (1 + ·D)
+    // ── AP per-element blurs are SUPERSEDED by AQ's screen-space field blur (default 0 = off). The
+    // finished picture is blurred once by D(y) instead (SKScene.filter), so titles/dots/ripple blur too.
+    static var edge: Float { f("CompEdge", 0.0) }        // SDF feather ×(1 + edge·D) — off
+    static var titleBlur: Float { f("CompTitleBlur", 0.0) } // MSDF smoothing widen — off
+    // ── AQ1 screen-space field blur (SwiftUI .layerEffect on the SpriteView; mapFieldBlur in BlobField.metal).
+    static var sigmaMax: Float { f("CompSigma", 5.0) }   // max Gaussian σ in POINTS at D=1; fit from T's frame
+    static var blurOn: Bool { on && sigmaMax > 0 }
 
     // ── Mass-field ripple (grid shader): value=‖warp‖/K, invert, Levels(gamma), N% Normal over ground+dots.
     static var rippleK: Float { f("CompK", 1.08) }       // FIXED normalisation (~AO per-frame max 1.03–1.12)
     static var rippleGamma: Float { f("CompGamma", 0.12) } // AE Levels gamma
     static var rippleOpacity: Float { f("CompOpacity", 0.10) }
-    static var dotBlur: Float { f("CompDotBlur", 4.0) }  // grid dot feather ×(1 + dotBlur·D)
+    static var dotBlur: Float { f("CompDotBlur", 0.0) }  // superseded by the field blur (default 0)
 }
 
 /// Runtime sub-mode for the comp — which of the two effects are live (the stills cycler flips these
 /// for focus-only / ripple-only / both). The scene polls it each frame (not observed). Default from
 /// `-MapCompMode both|focus|ripple`.
-final class MapCompState {
+@Observable final class MapCompState {
     static let shared = MapCompState()
     var focusOn = true
     var rippleOn = true
@@ -941,6 +945,9 @@ final class CorpusPhysicsScene: SKScene {
             setG("u_ripple_gamma", MapComp.rippleGamma)
             setG("u_ripple_amt",   s.rippleOn ? MapComp.rippleOpacity : 0)
         }
+        // AQ1 field blur is a UIVisualEffectView masked to the bands, above the SpriteView (CanvasView) —
+        // SKScene.filter rasterises only scene.size (black under the zoomed camera) and .layerEffect can't
+        // sample a live Metal SpriteView (blank). Nothing to poke here; the blur reads MapCompState directly.
     }
     #endif
 
@@ -3684,17 +3691,40 @@ final class CorpusPhysicsScene: SKScene {
     /// fill, warm off-white on a dark one, each paired with an opposite-luminance
     /// halo so the type separates on mid-tones too. Mirrors the focal bubble's
     /// SwiftUI rule (`NodeGradientLayer.legibleInk`), in UIKit for the sprite path.
+    /// Brief AQ2 — title ink by MEASURED WCAG contrast: white vs near-black, whichever has the
+    /// higher contrast ratio against the orb's actual rendered fill (`applyDarkOrbBoost` base tone;
+    /// rim/sphere/spec/glow are localized highlights, not the base tone). Replaces the old lum>0.6
+    /// proxy. Flip point is L≈0.179 (WCAG): fills below → white, above → near-black. Deep blue → white.
     private func legibleInk(over fill: UIColor) -> (ink: UIColor, halo: UIColor) {
+        let white = UIColor(red: 1.0, green: 0.98, blue: 0.95, alpha: 1.0)
+        let black = UIColor(red: 0.08, green: 0.07, blue: 0.06, alpha: 1.0)
+        #if DEBUG
+        if MapComp.on {   // Brief AQ2 spike — gated so Release stays byte-identical until T approves.
+            if Self.wcagContrast(white, fill) >= Self.wcagContrast(black, fill) {
+                return (white, UIColor(white: 0.0, alpha: 0.6))   // white ink, dark halo
+            } else {
+                return (black, UIColor(white: 1.0, alpha: 0.6))   // dark ink, light halo
+            }
+        }
+        #endif
+        // Shipped rule (byte-identical): simple luminance threshold.
         var r: CGFloat = 0, g: CGFloat = 0, b: CGFloat = 0, a: CGFloat = 0
         fill.getRed(&r, green: &g, blue: &b, alpha: &a)
         let lum = 0.2126 * r + 0.7152 * g + 0.0722 * b
-        if lum > 0.6 {
-            return (UIColor(red: 0.08, green: 0.07, blue: 0.06, alpha: 1.0),
-                    UIColor(white: 1.0, alpha: 0.6))     // dark ink, light halo
-        } else {
-            return (UIColor(red: 1.0, green: 0.98, blue: 0.95, alpha: 1.0),
-                    UIColor(white: 0.0, alpha: 0.6))     // light ink, dark halo
-        }
+        return lum > 0.6 ? (black, UIColor(white: 1.0, alpha: 0.6))
+                         : (white, UIColor(white: 0.0, alpha: 0.6))
+    }
+
+    /// WCAG 2.x relative luminance (sRGB linearised) + contrast ratio (hi+0.05)/(lo+0.05).
+    static func wcagRelLum(_ c: UIColor) -> CGFloat {
+        var r: CGFloat = 0, g: CGFloat = 0, b: CGFloat = 0, a: CGFloat = 0
+        c.getRed(&r, green: &g, blue: &b, alpha: &a)
+        func lin(_ v: CGFloat) -> CGFloat { v <= 0.03928 ? v / 12.92 : pow((v + 0.055) / 1.055, 2.4) }
+        return 0.2126 * lin(r) + 0.7152 * lin(g) + 0.0722 * lin(b)
+    }
+    static func wcagContrast(_ a: UIColor, _ b: UIColor) -> CGFloat {
+        let la = wcagRelLum(a), lb = wcagRelLum(b)
+        return (max(la, lb) + 0.05) / (min(la, lb) + 0.05)
     }
 
     /// Replicate `orbSpriteShader`'s DARK sat/val boost EXACTLY (rgb→hsv,

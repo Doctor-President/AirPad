@@ -798,6 +798,15 @@ struct CanvasView: View {
             // White-flash fix: hidden until the scene's first frame; the labels
             // below carry the same gate so orbs + labels appear together.
             .opacity(mapContentRevealed ? 1 : 0)
+            #if DEBUG
+            // Brief AQ1 — screen-space tilt-shift blur: a UIVisualEffectView masked to the top/bottom
+            // bands sits ABOVE the SpriteView (blurs its live backdrop) and BELOW the chrome + region
+            // labels (which stay sharp). Only mounts under `-MapComp`; normal runs skip it (byte-identical).
+            FieldBlurBands(active: MapComp.blurOn && MapCompState.shared.focusOn)
+                .ignoresSafeArea()
+                .opacity(mapContentRevealed ? 1 : 0)
+                .allowsHitTesting(false)
+            #endif
 
             if store.nodes(in: scope).isEmpty {
                 EmptyStateOverlay()
@@ -2021,4 +2030,39 @@ enum RegionLabelTuning {
     static let alphaFloor: CGFloat = 0
     static let materialDropThreshold: CGFloat = 0.0
 }
+
+#if DEBUG
+/// Brief AQ1 — screen-space tilt-shift blur via a `UIVisualEffectView` masked to the top/bottom bands.
+/// `.layerEffect` can't sample a live Metal SpriteView and `SKScene.filter` clips to scene.size under a
+/// zoomed camera; a UIKit blur-behind is the one thing that blurs live backdrop content. The band mask
+/// is a vertical alpha gradient shaped by the measured focus matte (full blur at the edges → clear by
+/// `topEdge1` / from `botEdge0`). NOT a per-pixel-variable Gaussian — a masked, feathered uniform blur.
+struct FieldBlurBands: UIViewRepresentable {
+    let active: Bool
+    func makeUIView(context: Context) -> UIVisualEffectView {
+        let v = UIVisualEffectView(effect: nil)
+        let mask = CAGradientLayer()
+        mask.colors = [UIColor(white: 1, alpha: 1).cgColor,   // top: full blur (D=1)
+                       UIColor(white: 1, alpha: 0).cgColor,   // topEdge1: sharp (D=0)
+                       UIColor(white: 1, alpha: 0).cgColor,   // botEdge0: sharp (D=0)
+                       UIColor(white: 1, alpha: 1).cgColor]   // bottom: full blur (D=1)
+        mask.locations = [0.0, NSNumber(value: MapComp.topEdge1),
+                          NSNumber(value: MapComp.botEdge0), 1.0]
+        mask.startPoint = CGPoint(x: 0.5, y: 0); mask.endPoint = CGPoint(x: 0.5, y: 1)
+        v.layer.mask = mask
+        context.coordinator.mask = mask
+        return v
+    }
+    func updateUIView(_ v: UIVisualEffectView, context: Context) {
+        v.effect = active ? UIBlurEffect(style: .systemThinMaterialDark) : nil
+        if let m = context.coordinator.mask {
+            CATransaction.begin(); CATransaction.setDisableActions(true)
+            m.frame = v.bounds
+            CATransaction.commit()
+        }
+    }
+    func makeCoordinator() -> Coordinator { Coordinator() }
+    final class Coordinator { var mask: CAGradientLayer? }
+}
+#endif
 

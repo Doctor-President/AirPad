@@ -26,6 +26,9 @@ struct ContentView: View {
             Color.clear.frame(width: 0, height: 0).onAppear {
                 if ProcessInfo.processInfo.arguments.contains("-OpenCardView"),
                    router.entryMode != .canvas { router.entryMode = .canvas }
+                // Brief AS — `-OpenMap` lands on the canvas (Map) for headless verification.
+                if ProcessInfo.processInfo.arguments.contains("-OpenMap"),
+                   router.entryMode != .canvas { router.entryMode = .canvas }
                 // `-OpenDashboard` — land on the Dashboard ROOT (not Recents) so the
                 // sample-library strip (Brief T) is screenshot-reachable headlessly.
                 if ProcessInfo.processInfo.arguments.contains("-OpenDashboard"),

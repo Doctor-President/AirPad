@@ -61,6 +61,52 @@ enum MapHaptics {
 
 /// The SpriteKit physics canvas that renders nodes as floating bubbles.
 /// Owned by CanvasView; communicates selection events back via CanvasState.
+/// Brief AS — the Map "comp" look promoted from spike/map-depth to a real DARK-MODE feature: a vertical
+/// tilt-shift focus band (dim + desaturate, zoom-coupled), T's AE inner glow, and a mass-field ground
+/// ripple. ALL values live here (the TestFlight tuner and the eventual bake touch one place). The effect
+/// is applied ONLY in the orb shader's DARK branch + a dark-gated ripple, so LIGHT renders exactly as
+/// before — the WCAG title-ink rule is the one shared change (a legibility fix, both appearances).
+enum MapCompTuning {
+    // Focus matte D(screen-Y), yn 0 = top … 1 = bottom (MEASURED from T's focus_matte.png, Brief AP).
+    static let topEdge0: Float = 0.0, topEdge1: Float = 0.268
+    static let botEdge0: Float = 0.70, botEdge1: Float = 0.98
+    // Zoom-couple: focus 0 at the wide overview → full close. cameraScale 1.0 = auto-fit; smaller = closer.
+    static let zoomWide: Float = 0.95, zoomClose: Float = 0.40
+    static func smoothstep(_ a: Float, _ b: Float, _ x: Float) -> Float {
+        let t = min(max((x - a) / (b - a), 0), 1); return t * t * (3 - 2 * t)
+    }
+    static func defocus(_ yn: Float) -> Float {
+        max(1 - smoothstep(topEdge0, topEdge1, yn), smoothstep(botEdge0, botEdge1, yn))
+    }
+    static func zoomFactor(_ scale: Float) -> Float { 1 - smoothstep(zoomClose, zoomWide, scale) }
+
+    // Focus dim/desat at D=1 (AE Hue/Sat −40 lightness / −39 saturation → HSV ×0.60 / ×0.61).
+    static let dim: Float = 0.40, desat: Float = 0.39
+    // AE Inner Glow: white · Normal · Softer · Source Edge. Size = a constant UV fraction of the orb
+    // radius (relative → holds at every zoom); ≈ 30 pt on a typical orb at the export zoom.
+    static let glowSizeRel: Float = 0.34
+    // Mass-field ripple: value = ‖warp‖/K → invert → AE Levels gamma → N% Normal over ground+dots.
+    static let rippleK: Float = 1.08, rippleGamma: Float = 0.12
+
+    // ── TUNER-LIVE defaults (T dials these on device; everything else is fixed) ──
+    static let defFocusStrength:  Float = 1.0    // × on dim+desat, 0 … 2
+    static let defGlowOpacity:    Float = 0.30   // 0 … 0.60
+    static let defRippleStrength: Float = 0.10   // 0 … 0.25 (Normal opacity)
+}
+
+/// The three TUNER-LIVE values (Brief AS2), persisted so a dial survives within a session (a reinstall
+/// wipes them → the tuner's Copy button is the way back). Read by the scene each frame; written by the
+/// tuner. Defaults = MapCompTuning; the bake folds a T-approved set back into MapCompTuning + deletes the tuner.
+final class MapCompLive {
+    static let shared = MapCompLive()
+    private let d = UserDefaults.standard
+    private func g(_ k: String, _ def: Float) -> Float { d.object(forKey: k) == nil ? def : d.float(forKey: k) }
+    var focusStrength:  Float { get { g("mapComp.focus",  MapCompTuning.defFocusStrength) }  set { d.set(newValue, forKey: "mapComp.focus") } }
+    var glowOpacity:    Float { get { g("mapComp.glow",   MapCompTuning.defGlowOpacity) }    set { d.set(newValue, forKey: "mapComp.glow") } }
+    var rippleStrength: Float { get { g("mapComp.ripple", MapCompTuning.defRippleStrength) } set { d.set(newValue, forKey: "mapComp.ripple") } }
+    func reset() { ["mapComp.focus", "mapComp.glow", "mapComp.ripple"].forEach { d.removeObject(forKey: $0) } }
+}
+
 final class CorpusPhysicsScene: SKScene {
 
     // MARK: - Public interface
@@ -545,9 +591,13 @@ final class CorpusPhysicsScene: SKScene {
         let ramp = zoomRampScale(cameraScale)
         let envelope = AnnulusTuning.envelope(cameraScale)
         let annulusOn = envelope > 0.001
+        // Brief AS — the DARK Map-comp focus band is SCREEN-fixed, so a_defocus must re-derive on every
+        // PAN (camera.position moves though the zoom is unchanged) → run per-frame in dark. Light keeps
+        // the cheap idle early-out. (The per-orb cost is measured by the tuner's fps readout.)
+        let compOn = !currentIsLight
         // Annulus ON → re-run every frame (camera.position pans → magnify center
         // shifts). OFF → only when the zoom actually changed (cheap idle path).
-        if !annulusOn && abs(cameraScale - lastRampCameraScale) < 0.0005 { return }
+        if !annulusOn && !compOn && abs(cameraScale - lastRampCameraScale) < 0.0005 { return }
         lastRampCameraScale = cameraScale
         let camPos = cameraNode.position
         let lod = LensTuning.labelLOD
@@ -568,6 +618,15 @@ final class CorpusPhysicsScene: SKScene {
                 scale *= annulusAmplify(hypot(dx, dy), cameraScale: cameraScale, envelope: env)
             }
             sprite.setScale(scale)
+            if compOn {
+                // Brief AS — per-orb tilt-shift matte D from the orb's SCREEN Y (0 top … 1 bottom),
+                // zoom-coupled (0 at the wide overview → full close). Consumed only by the dark orb branch.
+                let home = nodeRestingPositions[nodeID] ?? sprite.position
+                let sy = (home.y - camPos.y) / max(cameraScale, 0.0001)
+                let yn = Float(min(max(0.5 - sy / size.height, 0), 1))
+                let d = MapCompTuning.defocus(yn) * MapCompTuning.zoomFactor(Float(cameraScale))
+                sprite.setValue(SKAttributeValue(float: d), forAttribute: "a_defocus")
+            }
             guard let intrinsic = nodeIntrinsicRadii[nodeID] else { continue }
             // On-screen diameter (pt) = worldDiameter · spriteScale / cameraScale.
             let worldToScreen = scale / max(cameraScale, 0.0001)
@@ -600,6 +659,24 @@ final class CorpusPhysicsScene: SKScene {
 
     /// Cached `view.contentScaleFactor` for MSDF smoothing (device px per point).
     private var glyphContentScale: CGFloat { view?.contentScaleFactor ?? 3.0 }
+
+    /// Brief AS — push the live Map-comp levers into the shaders each frame. DARK only: the orb dark
+    /// branch + the dark-gated ripple are the sole consumers, so LIGHT is byte-identical to before.
+    /// Focus strength multiplies the measured dim/desat; glow + ripple are the two other tuner sliders.
+    private func applyMapComp() {
+        guard !currentIsLight else {
+            // Ensure the ripple is OFF in light (transparent-dots grid, as before).
+            gridNode?.fillShader?.uniforms.first { $0.name == "u_ripple_amt" }?.floatValue = 0
+            return
+        }
+        let live = MapCompLive.shared
+        let fs = live.focusStrength
+        func setOrb(_ n: String, _ v: Float) { orbSpriteShader.uniforms.first { $0.name == n }?.floatValue = v }
+        setOrb("u_defocus_val", MapCompTuning.dim * fs)
+        setOrb("u_defocus_sat", MapCompTuning.desat * fs)
+        setOrb("u_ar_glow_op",  live.glowOpacity)
+        gridNode?.fillShader?.uniforms.first { $0.name == "u_ripple_amt" }?.floatValue = live.rippleStrength
+    }
 
     // Orb edge feather (a_geom.y) clamps — screen-constant AA, tunable.
     private static let orbEdgeMinAA: Float = 0.0003   // floor: avoid a razor-hard / aliased edge
@@ -1357,6 +1434,7 @@ final class CorpusPhysicsScene: SKScene {
         }
 
         updateGridWarp()      // grid warp — SHIPS (baked 2026-09-14)
+        applyMapComp()        // Brief AS — push the live Map-comp levers (dark only)
 
         // SB83c: Coast camera with friction. Same pan math as SB83a (`* cameraNode.xScale`).
         if coastVelocity != .zero {
@@ -2871,6 +2949,7 @@ final class CorpusPhysicsScene: SKScene {
         let fw = 40, fh = 80
         var bytes = [UInt8](repeating: 128, count: fw * fh * 4)   // 128 = 0.5 = no pull
         let invRange = 1 / max(massRange, 0.001)
+        let compBaked = !currentIsLight   // Brief AS — bake the ripple B channel only in dark
         for j in 0..<fh {
             let fy = (Double(j) + 0.5) / Double(fh)
             let fragPy = (fy - 0.5) * viewH
@@ -2894,6 +2973,15 @@ final class CorpusPhysicsScene: SKScene {
                 let b = (j * fw + i) * 4
                 bytes[b] = UInt8((0.5 + ex * 0.5) * 255)
                 bytes[b + 1] = UInt8((0.5 + ey * 0.5) * 255)
+                if compBaked {
+                    // Brief AS (AR1) — bake the RIPPLE layer value R into the B channel at FULL CPU
+                    // precision (‖warp‖/K → invert → AE Levels gamma). The shader reads this single
+                    // linear-filtered channel → no in-shader ^8.33 on an 8-bit field → no stepping.
+                    let mag = (ex * ex + ey * ey).squareRoot() * massRange
+                    let u = min(1, max(0, mag / Double(MapCompTuning.rippleK)))
+                    let R = pow(1 - u, 1 / max(Double(MapCompTuning.rippleGamma), 0.001))
+                    bytes[b + 2] = UInt8(min(255, max(0, R * 255)))
+                }
             }
         }
         let tex = SKTexture(data: Data(bytes), size: CGSize(width: fw, height: fh))
@@ -2993,6 +3081,11 @@ final class CorpusPhysicsScene: SKScene {
                 vec3 hsv = rgb2hsv(fillRGB);
                 hsv.y = clamp(hsv.y * u_dark_sat, 0.0, 1.0);   // 1. saturation (drab-killer, hue kept)
                 hsv.z = clamp(hsv.z * u_dark_val, 0.0, 1.0);   //    + brightness
+                // Brief AS — FOCUS BAND (dark only): desaturate + dim by the vertical tilt-shift matte
+                // D = a_defocus (0 = in focus … 1 = defocused; zoom-coupled, computed per orb). AE
+                // Hue/Sat −39 sat / −40 lightness → ×0.61 / ×0.60 at D=1, scaled by the focus-strength tuner.
+                hsv.y = clamp(hsv.y * (1.0 - u_defocus_sat * a_defocus), 0.0, 1.0);
+                hsv.z = clamp(hsv.z * (1.0 - u_defocus_val * a_defocus), 0.0, 1.0);
                 vec3 col = hsv2rgb(hsv);
 
                 vec2 ldir = normalize(u_light_dir);
@@ -3011,6 +3104,14 @@ final class CorpusPhysicsScene: SKScene {
                 vec3 glowCol = hsv2rgb(vec3(hsv.x, hsv.y, 1.0));
                 col += u_dark_glow * glowFall * glowCol;
 
+                // Brief AS (AR2) — T's AE INNER GLOW: WHITE · Normal · opacity u_ar_glow_op · Softer
+                // falloff from the EDGE inward reaching ~0 at Size (a_glow_size, UV; R = 0.5 = orb radius).
+                // Recedes with the orb in the focus band (u_defocus_val·a_defocus).
+                float edgeIn = clamp((R - d) / max(u_glow_size, 1e-4), 0.0, 1.0);   // 0 edge → 1 at Size inward
+                float gf = 1.0 - edgeIn; gf = gf * gf * (3.0 - 2.0 * gf);           // Softer (smoothstep) falloff
+                float gDim = 1.0 - u_defocus_val * a_defocus;
+                col = mix(col, vec3(1.0), u_ar_glow_op * gf * gDim);
+
                 fillRGB = clamp(col, 0.0, 1.0);
             }
 
@@ -3026,7 +3127,8 @@ final class CorpusPhysicsScene: SKScene {
             SKAttribute(name: "a_node_color", type: .vectorFloat4),
             SKAttribute(name: "a_stroke_color", type: .vectorFloat4),
             SKAttribute(name: "a_geom", type: .vectorFloat2),
-            SKAttribute(name: "a_wash", type: .vectorFloat4)    // rgb = wash pigment, a = peak strength
+            SKAttribute(name: "a_wash", type: .vectorFloat4),   // rgb = wash pigment, a = peak strength
+            SKAttribute(name: "a_defocus", type: .float)        // Brief AS — tilt-shift matte D (0 focus → 1)
         ]
         // u_corner_radius: 0.5 = circle. Held at 0.5 — the morph to rounded square
         // (cornerMin) is retired to dormant; the uniform + sdRoundBox stay inert for
@@ -3045,7 +3147,13 @@ final class CorpusPhysicsScene: SKScene {
             SKUniform(name: "u_light_dir", vectorFloat2: vector_float2(Float(DarkOrbTuning.lightDirX), Float(DarkOrbTuning.lightDirY))),
             SKUniform(name: "u_dark_spec", float: Float(DarkOrbTuning.spec)),
             SKUniform(name: "u_spec_size", float: Float(DarkOrbTuning.specSize)),
-            SKUniform(name: "u_dark_glow", float: Float(DarkOrbTuning.glow))
+            SKUniform(name: "u_dark_glow", float: Float(DarkOrbTuning.glow)),
+            // Brief AS — Map-comp focus + inner glow (DARK branch only; light ignores these). Init to the
+            // MapCompTuning × tuner defaults; `applyMapComp` re-pushes them per frame from the live tuner.
+            SKUniform(name: "u_defocus_val", float: MapCompTuning.dim * MapCompTuning.defFocusStrength),
+            SKUniform(name: "u_defocus_sat", float: MapCompTuning.desat * MapCompTuning.defFocusStrength),
+            SKUniform(name: "u_ar_glow_op",  float: MapCompTuning.defGlowOpacity),
+            SKUniform(name: "u_glow_size",   float: MapCompTuning.glowSizeRel)
         ]
         return shader
     }()
@@ -3069,6 +3177,8 @@ final class CorpusPhysicsScene: SKScene {
         let w = Self.rgbaVec(wash)   // straight rgb; alpha overridden by the wash peak strength
         sprite.setValue(SKAttributeValue(vectorFloat4: vector_float4(w.x, w.y, w.z, Float(washStrength))),
                         forAttribute: "a_wash")
+        // Brief AS — 0 until applyOrbScales sets the per-orb focus matte (dark only; light ignores it).
+        sprite.setValue(SKAttributeValue(float: 0), forAttribute: "a_defocus")
     }
 
 
@@ -3138,17 +3248,29 @@ final class CorpusPhysicsScene: SKScene {
     /// fill, warm off-white on a dark one, each paired with an opposite-luminance
     /// halo so the type separates on mid-tones too. Mirrors the focal bubble's
     /// SwiftUI rule (`NodeGradientLayer.legibleInk`), in UIKit for the sprite path.
+    /// Brief AS (AQ2) — title ink by MEASURED WCAG contrast: white vs near-black, whichever has the
+    /// higher contrast ratio against the orb's actual rendered fill. Replaces the old `lum > 0.6` proxy
+    /// (a legibility fix applied in BOTH appearances — the one shared change vs today). Flip point L≈0.179.
     private func legibleInk(over fill: UIColor) -> (ink: UIColor, halo: UIColor) {
-        var r: CGFloat = 0, g: CGFloat = 0, b: CGFloat = 0, a: CGFloat = 0
-        fill.getRed(&r, green: &g, blue: &b, alpha: &a)
-        let lum = 0.2126 * r + 0.7152 * g + 0.0722 * b
-        if lum > 0.6 {
-            return (UIColor(red: 0.08, green: 0.07, blue: 0.06, alpha: 1.0),
-                    UIColor(white: 1.0, alpha: 0.6))     // dark ink, light halo
+        let white = UIColor(red: 1.0, green: 0.98, blue: 0.95, alpha: 1.0)
+        let black = UIColor(red: 0.08, green: 0.07, blue: 0.06, alpha: 1.0)
+        if Self.wcagContrast(white, fill) >= Self.wcagContrast(black, fill) {
+            return (white, UIColor(white: 0.0, alpha: 0.6))   // white ink, dark halo
         } else {
-            return (UIColor(red: 1.0, green: 0.98, blue: 0.95, alpha: 1.0),
-                    UIColor(white: 0.0, alpha: 0.6))     // light ink, dark halo
+            return (black, UIColor(white: 1.0, alpha: 0.6))   // dark ink, light halo
         }
+    }
+
+    /// WCAG 2.x relative luminance (sRGB linearised) + contrast ratio (hi+0.05)/(lo+0.05).
+    static func wcagRelLum(_ c: UIColor) -> CGFloat {
+        var r: CGFloat = 0, g: CGFloat = 0, b: CGFloat = 0, a: CGFloat = 0
+        c.getRed(&r, green: &g, blue: &b, alpha: &a)
+        func lin(_ v: CGFloat) -> CGFloat { v <= 0.03928 ? v / 12.92 : pow((v + 0.055) / 1.055, 2.4) }
+        return 0.2126 * lin(r) + 0.7152 * lin(g) + 0.0722 * lin(b)
+    }
+    static func wcagContrast(_ a: UIColor, _ b: UIColor) -> CGFloat {
+        let la = wcagRelLum(a), lb = wcagRelLum(b)
+        return (max(la, lb) + 0.05) / (min(la, lb) + 0.05)
     }
 
     /// Replicate `orbSpriteShader`'s DARK sat/val boost EXACTLY (rgb→hsv,

@@ -97,7 +97,7 @@ enum MapCompTuning {
     // remap the reading driver: onset = where focus starts on the driver (lower = earlier / as titles
     // fade in), ramp = how fast it reaches full after onset.
     static let defFocusStrength:  Float = 1.96   // × on dim+desat, 0 … 2 (T, build O)
-    static let defGlowOpacity:    Float = 0.30   // 0 … 0.60 (T)
+    static let defGlowOpacity:    Float = 0.12   // 0 … 0.60 (T, O4 Copy — was 0.30)
     static let defRippleStrength: Float = 0.067  // 0 … 0.25 (T)
     static let defFocusOnset:     Float = 0.10   // 0 … 0.6 — starts as titles fade in
     static let defFocusRamp:      Float = 0.40   // 0.1 … 0.9 — medium
@@ -106,7 +106,7 @@ enum MapCompTuning {
     // grey, Darken over the owned ground), orbs at 70% with an AE Hue/Sat translate + a black Soft-Light
     // inner-glow rim, and a light FOCUS band that fades toward the GROUND (lighten + desat) on the same
     // matte + reading-mode weight as dark. No ripple, no blur in light.
-    static let defLightGroundHex = "E8E5E0"      // ground (AW3 tuner-adjustable), was #F4EFE3
+    static let defLightGroundHex = "FFEEED"      // ground (T, O4 Copy — was #E8E5E0 / #F4EFE3)
     // POOL (‖warp‖/K → invert → Gaussian blur → AE Levels → Darken). T's spec K = 1.08 (= dark's rippleK),
     // but our shipping warp field's NORMALIZED magnitude sits higher over broad clusters than T's AO
     // `mass_field` pass did, so 1.08 over-darkens a wide region; poolK reproduces T's subtle watercolour
@@ -132,14 +132,15 @@ enum MapCompTuning {
     static let defRimSoftness:   Float = 0.5     // 0 … 1 (AE Range / falloff shape; 0.5 ≈ the O3 Softer curve)
     static let defRimMode:       Float = 0       // Soft Light
     static let defRimColorHex          = "000000"
-    static let defPoolStrength:  Float = 0.50    // 0 … 2×  ★ AX: T final "subtle, just perceptible"
-    static let defPoolSoftness:  Float = 1.0     // 0.5 … 2× (blur scale)
+    static let defPoolStrength:  Float = 0.65    // 0 … 2×  (T, O4 Copy — was 0.50)
+    static let defPoolSoftness:  Float = 1.73    // 0.5 … 2× (blur scale) (T, O4 Copy — was 1.0)
     static let defDotOpacityMul: Float = 1.0     // ×0.5 … 2
-    static let defLightFocus:    Float = 1.0     // 0 … 2×
-    // ── Brief AX2 — global light-palette dials (OKLCH, AFTER the AE Hue/Sat translate). Defaults = no-op.
+    static let defLightFocus:    Float = 1.02    // 0 … 2×  (T, O4 Copy — was 1.0)
+    // ── Brief AX2 — global light-palette dials (OKLCH, AFTER the AE Hue/Sat translate). T's O4 Copy set
+    // C=1.10 / H=+13° (L=0) → the palette is ACTIVE by default now (the shipped light look, not a no-op).
     static let defPalLightness:  Float = 0.0     // −0.15 … +0.20 (OKLCH L offset)
-    static let defPalChroma:     Float = 1.0     //  0.5 … 1.5   (OKLCH C multiplier)
-    static let defPalHueDeg:     Float = 0.0     // −30 … +30°   (OKLCH H rotate; the −9° AE shift is separate)
+    static let defPalChroma:     Float = 1.10    //  0.5 … 1.5   (OKLCH C multiplier) (T, O4)
+    static let defPalHueDeg:     Float = 13.0    // −30 … +30°   (OKLCH H rotate) (T, O4)
 
     // ── The LIGHT orb fill pipeline, shared so the scene's WCAG ink + the tuner's swatch strip agree with
     // the rendered orb: AE Hue/Sat translate → OKLCH palette dials (both mirrored from the shader).
@@ -234,6 +235,12 @@ final class MapCompLive {
     var driver: Float = 0
     var cameraScale: Float = 1
     var medianOrbRadius: Float = 0
+    // ── Brief AY — heat instruments the scene publishes (the tuner reads/Copies them so T reports heat
+    // as data). renderFPS = actual SKView RENDERS in the last second (idle drops it; the display-link
+    // Hz doesn't); cpuPercent = the app process, rolling 2 s; thermalState = ProcessInfo (live).
+    var renderFPS: Int = 0
+    var cpuPercent: Double = 0
+    var thermalState: String = "nominal"
     func reset() {
         ["mapComp.focus","mapComp.glow","mapComp.ripple","mapComp.onset","mapComp.ramp",
          "mapComp.orbOpacity","mapComp.rim","mapComp.pool","mapComp.poolSoft","mapComp.dotMul",
@@ -917,12 +924,17 @@ final class CorpusPhysicsScene: SKScene {
         let cameraScale = cameraNode.xScale
         let envelope = AnnulusTuning.envelope(cameraScale)
         let lerp = AnnulusTuning.relaxLerp
-        // Damped move of a sprite toward `target`; skips sub-pixel noise.
+        // Damped move of a sprite toward `target`; skips sub-pixel noise. Brief AY — only a PERCEPTIBLE
+        // move (> 0.5 pt, ~1.5 device-px) keeps the map awake. The annulus is fully on at normal zoom, so
+        // the band micro-jitters forever from the maxBand-boundary flip; that sub-pixel churn is invisible,
+        // and counting it as "active" would pin the map at 120 fps at rest (the whole heat bug). The ease
+        // still runs (smoothness) down to the 0.05 pt dead-zone; it just stops WAKING once it's settled.
         func ease(_ id: String, _ target: CGPoint) {
             guard let sprite = nodeSprites[id] else { return }
             let dx = target.x - sprite.position.x, dy = target.y - sprite.position.y
             if abs(dx) < 0.05 && abs(dy) < 0.05 { return }
             sprite.position = CGPoint(x: sprite.position.x + dx * lerp, y: sprite.position.y + dy * lerp)
+            if abs(dx) > 0.5 || abs(dy) > 0.5 { animatingThisFrame = true }
         }
 
         guard envelope > 0.001 else {
@@ -1575,6 +1587,121 @@ final class CorpusPhysicsScene: SKScene {
     private var lastInkSig: String = ""
     private var lastInkRestyleTime: TimeInterval = 0
 
+    // ── Brief AY — idle-when-static + heat instruments.
+    /// Set by any per-frame animation (band ease, halo fade) so the idle detector keeps the map awake
+    /// until it settles. Cleared each frame after the check.
+    private var animatingThisFrame = false
+    private var lastCamPosForIdle: CGPoint = .zero
+    private var lastCamScaleForIdle: CGFloat = -1      // impossible scale → frame 1 always reads "moved"
+    private var lastCardProgressForIdle: CGFloat = -1
+    private var isTouchingMap = false
+    private var lastActivityTime: TimeInterval = 0
+    private var poolConverged = false            // set by buildWarpField when the ease delta is tiny
+    private var recentRenderTimes: [TimeInterval] = []   // for renderFPS (actual SKView renders / s)
+    private var desiredMapFPS: Int = 120
+    private var cpuSamples: [(t: TimeInterval, pct: Double)] = []
+    private var lastCPUSampleTime: TimeInterval = 0
+    private static let idleMapFPS = 8            // render rate at rest — visually identical, instant wake
+    private static let activeMapFPS = 120
+    private static let idleDelay: TimeInterval = 0.4   // stay awake this long after the last activity
+
+    /// Immediately restore the full frame rate (called from `touchesBegan` so a pan/tap never waits for
+    /// the next idle-rate frame). Also bumps `lastActivityTime` so the debounce starts fresh.
+    private func wakeMap() {
+        isTouchingMap = true
+        desiredMapFPS = Self.activeMapFPS
+        if let v = view, v.preferredFramesPerSecond != Self.activeMapFPS {
+            v.preferredFramesPerSecond = Self.activeMapFPS
+        }
+    }
+
+    /// Brief AY — per-frame: count real renders, detect activity, drop/raise the SKView frame rate, and
+    /// publish the heat instruments. At rest the map renders at `idleMapFPS` (a static image looks
+    /// identical); ANY motion (touch/coast/camera/card/band/halo/pool-ease) keeps it at 120. Touch wake is
+    /// instant via `wakeMap()`; everything else wakes within one idle frame (≤ 1/8 s).
+    private func updateHeatAndIdle(_ currentTime: TimeInterval) {
+        guard let v = view else { return }
+        recentRenderTimes.append(currentTime)
+        while let f = recentRenderTimes.first, currentTime - f > 1.0 { recentRenderTimes.removeFirst() }
+
+        let cam = cameraNode.position, scale = cameraNode.xScale
+        let camMoved = !(abs(cam.x - lastCamPosForIdle.x) <= 0.01) || !(abs(cam.y - lastCamPosForIdle.y) <= 0.01)
+                     || !(abs(scale - lastCamScaleForIdle) <= 0.0001)      // NaN-safe on first frame → moved
+        let cardMoving = abs(cardProgress - lastCardProgressForIdle) > 0.0005
+        lastCamPosForIdle = cam; lastCamScaleForIdle = scale; lastCardProgressForIdle = cardProgress
+        let wasAnimating = animatingThisFrame
+        let active = isTouchingMap || coastVelocity != .zero || camMoved || cardMoving
+                   || wasAnimating || !poolConverged
+        if active { lastActivityTime = currentTime }
+        orbsMovedLastFrame = wasAnimating   // latch for next frame's updateGridWarp dirty check
+        animatingThisFrame = false
+
+        var target = (currentTime - lastActivityTime < Self.idleDelay) ? Self.activeMapFPS : Self.idleMapFPS
+        #if DEBUG
+        if ProcessInfo.processInfo.arguments.contains("-NoMapIdle") { target = Self.activeMapFPS }  // A/B baseline
+        #endif
+        if desiredMapFPS != target { desiredMapFPS = target }
+        if v.preferredFramesPerSecond != desiredMapFPS { v.preferredFramesPerSecond = desiredMapFPS }
+
+        if currentTime - lastCPUSampleTime > 0.5 {
+            let pct = Self.processCPUPercent()
+            cpuSamples.append((currentTime, pct))
+            while let f = cpuSamples.first, currentTime - f.t > 2.0 { cpuSamples.removeFirst() }
+            let avg = cpuSamples.isEmpty ? pct : cpuSamples.map(\.pct).reduce(0, +) / Double(cpuSamples.count)
+            let live = MapCompLive.shared
+            live.cpuPercent = avg
+            live.renderFPS = recentRenderTimes.count
+            live.thermalState = Self.thermalString()
+            lastCPUSampleTime = currentTime
+            #if DEBUG
+            if ProcessInfo.processInfo.arguments.contains("-MapHeatLog") {
+                NSLog("[MapHeat] rendered=%d/s targetFPS=%d CPU=%.0f%% active=%@ [touch=%@ coast=%@ cam=%@ card=%@ anim=%@ pool!conv=%@]",
+                      live.renderFPS, desiredMapFPS, avg, active ? "Y" : "n",
+                      isTouchingMap ? "1":"0", coastVelocity != .zero ? "1":"0", camMoved ? "1":"0",
+                      cardMoving ? "1":"0", wasAnimating ? "1":"0", !poolConverged ? "1":"0")
+            }
+            #endif
+        }
+    }
+
+    /// Total CPU% of the app process across its threads (of one core; multi-core can exceed 100%).
+    private static func processCPUPercent() -> Double {
+        var threadList: thread_act_array_t?
+        var threadCount = mach_msg_type_number_t(0)
+        guard task_threads(mach_task_self_, &threadList, &threadCount) == KERN_SUCCESS,
+              let threads = threadList else { return 0 }
+        defer {
+            vm_deallocate(mach_task_self_, vm_address_t(UInt(bitPattern: UnsafeRawPointer(threads))),
+                          vm_size_t(Int(threadCount) * MemoryLayout<thread_t>.stride))
+        }
+        // THREAD_BASIC_INFO_COUNT is a C macro Swift doesn't import — derive it.
+        let basicCount = mach_msg_type_number_t(MemoryLayout<thread_basic_info_data_t>.size / MemoryLayout<natural_t>.size)
+        var total = 0.0
+        for i in 0..<Int(threadCount) {
+            var info = thread_basic_info_data_t()
+            var count = basicCount
+            let kr = withUnsafeMutablePointer(to: &info) { infoPtr -> kern_return_t in
+                infoPtr.withMemoryRebound(to: integer_t.self, capacity: Int(count)) { rebound in
+                    thread_info(threads[i], thread_flavor_t(THREAD_BASIC_INFO), rebound, &count)
+                }
+            }
+            if kr == KERN_SUCCESS, (info.flags & TH_FLAGS_IDLE) == 0 {
+                total += Double(info.cpu_usage) / Double(TH_USAGE_SCALE) * 100.0
+            }
+        }
+        return total
+    }
+
+    private static func thermalString() -> String {
+        switch ProcessInfo.processInfo.thermalState {
+        case .nominal:  return "nominal"
+        case .fair:     return "fair"
+        case .serious:  return "serious"
+        case .critical: return "critical"
+        @unknown default: return "?"
+        }
+    }
+
     // MARK: - Neighborhood cohesion state
 
     /// Track velocity for convergence detection
@@ -1791,6 +1918,10 @@ final class CorpusPhysicsScene: SKScene {
         updateCardPresentation()   // tap-driven card morph → SwiftUI overlay
         syncClusterCentroidsToCanvasState()
         syncTerritoryLabelsToCanvasState(currentTime: currentTime)
+
+        // Brief AY — idle the SKView frame rate when nothing moves + publish the heat instruments. Runs
+        // LAST so it sees this frame's camera/card/band/pool state.
+        updateHeatAndIdle(currentTime)
 
         // Resting state: continuous physics disabled (forces governed by algorithmic layout)
         // applyNeighborhoodForces and checkConvergence removed
@@ -2610,6 +2741,8 @@ final class CorpusPhysicsScene: SKScene {
                 // Decay opacity from 0.5 to 0.0
                 let opacity = 0.5 * (1.0 - progress)
                 halo.strokeColor = UIColor.white.withAlphaComponent(opacity)
+                // Brief AY — a newcomer halo fades over 5 MINUTES; that must NOT hold the map at 120 fps
+                // (it fades imperceptibly at any rate). It renders fine at the idle rate.
             }
         }
     }
@@ -3065,6 +3198,12 @@ final class CorpusPhysicsScene: SKScene {
     }
 
     private var lastWarpMode = 0
+    // Brief AY — dirty-field tracking (reuse the last texture when nothing that feeds it changed).
+    private var fieldBuiltOnce = false
+    private var lastFieldCamPos: CGPoint = .zero      // gated by fieldBuiltOnce → init value is inert
+    private var lastFieldCamScale: CGFloat = -1
+    private var lastFieldOrbCount = -1
+    private var orbsMovedLastFrame = false   // latched from animatingThisFrame each frame (band ease)
 
     /// Cached corpus-wide resting-radius references (the grid-warp mass normalisers). Invalidated by
     /// `captureRestingState`; the count/exponent checks are a second line of defence.
@@ -3099,6 +3238,22 @@ final class CorpusPhysicsScene: SKScene {
         let cameraScale = cameraNode.xScale, camPos = cameraNode.position
         let viewW = Double(view.bounds.width), viewH = Double(view.bounds.height)
         let cs = Double(cameraScale)
+
+        if !isLight { poolConverged = true }   // dark has no pool ease → never blocks the dirty skip
+        // Brief AY — DIRTY-TRACK: rebuild the CPU field only when something that feeds it changed. Reuse
+        // last frame's texture at rest. Rebuild if the camera moved, an orb moved (band ease, latched from
+        // last frame since this runs BEFORE applyBandRelaxation), orbs entered/left, the pool ease hasn't
+        // converged (light), or on the first build. Conservative — any doubt rebuilds (a wasted build is
+        // invisible; a missed one would stale the map).
+        let camMovedSinceField = !fieldBuiltOnce
+            || abs(camPos.x - lastFieldCamPos.x) > 0.01 || abs(camPos.y - lastFieldCamPos.y) > 0.01
+            || abs(cameraScale - lastFieldCamScale) > 0.0001
+        let orbsChanged = nodeSprites.count != lastFieldOrbCount
+        if !(camMovedSinceField || orbsChanged || orbsMovedLastFrame || !poolConverged) {
+            return   // field inputs unchanged → last texture + uniforms stand
+        }
+        fieldBuiltOnce = true
+        lastFieldCamPos = camPos; lastFieldCamScale = cameraScale; lastFieldOrbCount = nodeSprites.count
 
         // ── ORB-UNIT BASIS (2026-09-14) ───────────────────────────────────────────────────────────
         // Reach and depth are dialled in ORB UNITS, converted to px per frame from each orb's ACTUAL
@@ -3306,12 +3461,18 @@ final class CorpusPhysicsScene: SKScene {
             let oB = MapCompTuning.poolOutBlack, oW = MapCompTuning.poolOutWhite
             let invGamma = 1 / max(MapCompTuning.poolGamma, 0.001)
             let a = 1 - exp(-Float(frameDT) / max(MapCompTuning.poolEaseTau, 0.001))   // ease coefficient
+            var maxDelta: Float = 0
             for k in 0..<fw * fh {
                 let n = min(1, max(0, (blurred[k] - inB) / max(inW - inB, 1e-4)))
                 let leveled = oB + (oW - oB) * pow(n, invGamma)                          // AE Levels
-                poolEased[k] += (leveled - poolEased[k]) * a                             // exponential ease
+                let step = (leveled - poolEased[k]) * a
+                poolEased[k] += step                                                     // exponential ease
+                maxDelta = max(maxDelta, abs(step))
                 bytes[k * 4 + 2] = UInt8(min(255, max(0, poolEased[k] * 255)))
             }
+            // Brief AY — the pool ease has converged when no texel moved more than ~0.5/255 this frame;
+            // while it's still easing, the dirty-field check keeps rebuilding so the fade animates.
+            poolConverged = maxDelta < (0.5 / 255)
             #if DEBUG
             if ProcessInfo.processInfo.arguments.contains("-MapCompLogDriver") {
                 poolLogTick += 1
@@ -4178,6 +4339,8 @@ final class CorpusPhysicsScene: SKScene {
     override func touchesBegan(_ touches: Set<UITouch>, with event: UIEvent?) {
         guard let view else { return }
 
+        wakeMap()   // Brief AY — restore 120 fps THIS touch, before the gesture moves anything (no wake hitch)
+
         // SB83c: Touch-down kills momentum unconditionally — every touch, no exceptions.
         coastVelocity = .zero
         panSamples.removeAll()
@@ -4298,6 +4461,7 @@ final class CorpusPhysicsScene: SKScene {
             if activeTouches.isEmpty {
                 lastPinchDistance = nil
                 tapStartInfo = nil
+                isTouchingMap = false   // Brief AY — coast (if any) keeps it awake; else it idles after the delay
             }
         }
 
@@ -4397,6 +4561,7 @@ final class CorpusPhysicsScene: SKScene {
         for touch in touches { activeTouches.removeValue(forKey: touch) }
         lastPinchDistance = nil
         tapStartInfo = nil
+        isTouchingMap = false   // Brief AY
         gestureState = .idle   // nothing to disengage — the annulus is per-frame
         springCameraInsideBounds()   // same spring as a normal release
     }

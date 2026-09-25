@@ -258,13 +258,18 @@ enum BackgroundGridNode {
                 vec3 ground = mix(u_ground_color, vec3(0.0), u_l2_k * factor);
                 gl_FragColor = vec4(ground * (1.0 - alpha) + u_dot_color * alpha, 1.0);
             } else if (u_ripple_amt > 0.0) {
-                // Brief AP — MASS-FIELD RIPPLE. value = ‖warp‖/K → invert → AE Levels(gamma) → composite
-                // over (ground ▸ dots) at u_ripple_amt, Normal. Darkens wells (high ‖warp‖) AND lifts the
-                // ground between them (low ‖warp‖). Opaque output. u_ripple_amt = 0 everywhere else → inert.
-                vec2 pullR = (texture2D(u_disp_field, v_tex_coord).rg - vec2(0.5)) * (2.0 * u_warp_mass_range);
-                float mag = length(pullR);
-                float v = clamp(1.0 - mag / u_ripple_k, 0.0, 1.0);          // /K then invert
-                float R = pow(v, 1.0 / max(u_ripple_gamma, 0.001));         // AE Levels gamma (output = in^(1/g))
+                // Brief AP/AR1 — MASS-FIELD RIPPLE. The ripple layer value R (= ‖warp‖/K → invert → AE
+                // Levels gamma) is now baked into the field's B channel on the CPU at FULL precision (was
+                // computed in-shader from 8-bit rg + a ^8.33 gamma → visible stepping as the camera moved).
+                // Reading the single linear-filtered channel = smooth. Composite over (ground ▸ dots),
+                // Normal @ u_ripple_amt. Darkens wells + lifts between. Opaque. amt = 0 elsewhere → inert.
+                float R;
+                if (u_ripple_old > 0.5) {   // AR1 before/after — the OLD 8-bit rg + in-shader gamma (steps)
+                    vec2 pullR = (texture2D(u_disp_field, v_tex_coord).rg - vec2(0.5)) * (2.0 * u_warp_mass_range);
+                    R = pow(clamp(1.0 - length(pullR) / u_ripple_k, 0.0, 1.0), 1.0 / max(u_ripple_gamma, 0.001));
+                } else {
+                    R = texture2D(u_disp_field, v_tex_coord).b;             // NEW: CPU-baked, smooth
+                }
                 vec3 groundDots = u_ground_color * (1.0 - alpha) + u_dot_color * alpha;
                 vec3 outRGB = mix(groundDots, vec3(R), u_ripple_amt);       // ripple ABOVE dots, Normal @ amt
                 gl_FragColor = vec4(outRGB, 1.0);
@@ -315,7 +320,8 @@ enum BackgroundGridNode {
             SKUniform(name: "u_dot_blur",     float: 0),
             SKUniform(name: "u_ripple_k",     float: 1),
             SKUniform(name: "u_ripple_gamma", float: 1),
-            SKUniform(name: "u_ripple_amt",   float: 0)
+            SKUniform(name: "u_ripple_amt",   float: 0),
+            SKUniform(name: "u_ripple_old",   float: 0)   // AR1 before/after: 1 = old 8-bit rg+gamma path
         ]
         return shader
     }

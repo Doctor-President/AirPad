@@ -65,10 +65,16 @@ enum MapDepthDebug {
 /// value is overridable via a launch arg (e.g. `-CompEdge 6 -CompK 1.08`) for Simulator calibration.
 enum MapComp {
     static var on: Bool { ProcessInfo.processInfo.arguments.contains("-MapComp") }
-    /// Which effects are live at launch: both | focus | ripple (the stills cycler flips this live).
-    static var argMode: String { arg("MapCompMode") ?? "both" }
+    /// Live variant at launch (also the pan/zoom-in variant). See MapCompState.set for names.
+    static var argVariant: String { arg("MapCompVariant") ?? "round2rel" }
+    /// Stills cycler list (`-MapCompList a,b,c`); default = the round-2 trio.
+    static var variantList: [String] {
+        (arg("MapCompList")?.split(separator: ",").map(String.init)) ?? ["baseline", "round2rel", "round2fix"]
+    }
+    static var zoom: Float? { arg("MapCompZoom").flatMap { Float($0) } }   // camera-scale multiplier (0.60 = mid)
     static var stills: Bool { ProcessInfo.processInfo.arguments.contains("-MapCompStills") }
     static var pan: Bool { ProcessInfo.processInfo.arguments.contains("-MapCompPan") }
+    static var zoomIn: Bool { ProcessInfo.processInfo.arguments.contains("-MapCompZoomIn") }
     private static func arg(_ k: String) -> String? {
         let a = ProcessInfo.processInfo.arguments
         guard let i = a.firstIndex(of: "-" + k), i + 1 < a.count else { return nil }
@@ -87,36 +93,51 @@ enum MapComp {
         max(1 - smoothstep(topEdge0, topEdge1, yn), smoothstep(botEdge0, botEdge1, yn))
     }
 
-    // ── Orb desat/darken at D=1 (AE Hue/Sat Master → HSV). Kept from AP.
+    // ── Orb focus desat/darken at D=1 (AE Hue/Sat Master → HSV). Kept from AP; AR3 toggles them.
     static var sat:  Float { f("CompSat", 0.39) }        // AE saturation −39 → HSV S×0.61 at D=1
     static var val:  Float { f("CompVal", 0.40) }        // AE lightness  −40 → HSV V×0.60 at D=1
-    // ── AP per-element blurs are SUPERSEDED by AQ's screen-space field blur (default 0 = off). The
-    // finished picture is blurred once by D(y) instead (SKScene.filter), so titles/dots/ripple blur too.
-    static var edge: Float { f("CompEdge", 0.0) }        // SDF feather ×(1 + edge·D) — off
-    static var titleBlur: Float { f("CompTitleBlur", 0.0) } // MSDF smoothing widen — off
-    // ── AQ1 screen-space field blur (SwiftUI .layerEffect on the SpriteView; mapFieldBlur in BlobField.metal).
-    static var sigmaMax: Float { f("CompSigma", 5.0) }   // max Gaussian σ in POINTS at D=1; fit from T's frame
-    static var blurOn: Bool { on && sigmaMax > 0 }
+    // The AQ1 band blur is REMOVED (T rejected it; progressive blur deferred to a render-to-texture spike).
 
-    // ── Mass-field ripple (grid shader): value=‖warp‖/K, invert, Levels(gamma), N% Normal over ground+dots.
-    static var rippleK: Float { f("CompK", 1.08) }       // FIXED normalisation (~AO per-frame max 1.03–1.12)
-    static var rippleGamma: Float { f("CompGamma", 0.12) } // AE Levels gamma
+    // ── AR2 inner glow (AE Inner Glow: white · Normal · Opacity 0.30 · Size 90px@3× = 30pt · Softer ·
+    // Source Edge). Shader size is in UV (R=0.5 = orb radius). `relative` = constant UV → holds at every
+    // zoom; `fixed` = 30pt re-derived per orb from its on-screen radius.
+    static var glowOp: Float { f("CompGlowOp", 0.30) }
+    static var glowSizeRel: Float { f("CompGlowRel", 0.34) } // UV; ≈30pt on a typical orb at the export zoom
+    static var glowSizePt: Float { f("CompGlowPt", 30.0) }   // fixed-variant size in points
+
+    // ── AR3 zoom-couple: focus strength ramps 0 (wide overview) → 1 (close). Measured: auto-fit
+    // cameraScale = 1.0; zooming IN DECREASES it (mid 0.60× → 0.60, close → ~0.35). So effect = 0 at/above
+    // zoomWide (overview) → full at/below zoomClose (close).
+    static var zoomWide: Float { f("CompZoomWide", 0.95) }
+    static var zoomClose: Float { f("CompZoomClose", 0.40) }
+    static func zoomFactor(_ cameraScale: Float) -> Float { 1 - smoothstep(zoomClose, zoomWide, cameraScale) }
+
+    // ── Mass-field ripple (grid shader). AR1: the field magnitude is now 16-bit (banding fix).
+    static var rippleK: Float { f("CompK", 1.08) }
+    static var rippleGamma: Float { f("CompGamma", 0.12) }
     static var rippleOpacity: Float { f("CompOpacity", 0.10) }
-    static var dotBlur: Float { f("CompDotBlur", 0.0) }  // superseded by the field blur (default 0)
+    static var rippleOld: Bool { ProcessInfo.processInfo.arguments.contains("-CompRippleOld") } // AR1 before/after
 }
 
-/// Runtime sub-mode for the comp — which of the two effects are live (the stills cycler flips these
-/// for focus-only / ripple-only / both). The scene polls it each frame (not observed). Default from
-/// `-MapCompMode both|focus|ripple`.
-@Observable final class MapCompState {
+/// Runtime variant config for the comp — the cycler flips these live; the scene polls them each frame.
+/// AR3 makes dim + desat independent; AR2 glow has relative/fixed size; zoom-couple ramps focus with zoom.
+final class MapCompState {   // polled by the scene each frame (no SwiftUI observation needed post-AR)
     static let shared = MapCompState()
-    var focusOn = true
-    var rippleOn = true
-    func set(mode: String) {
-        focusOn = (mode == "both" || mode == "focus")
-        rippleOn = (mode == "both" || mode == "ripple")
-        NSLog("[MapComp] MODE %@ (focus=%d ripple=%d)", mode, focusOn ? 1 : 0, rippleOn ? 1 : 0)
+    var dimOn = false, desatOn = false, rippleOn = true
+    var glowOn = false, glowFixed = false, zoomCoupled = false
+    /// Variant names: baseline · round2rel · round2fix · none · dim · desat · dimdesat · zoomcoupled.
+    func set(variant v: String) {
+        dimOn   = ["round2rel", "round2fix", "dim", "dimdesat", "zoomcoupled"].contains(v)
+        desatOn = ["round2rel", "round2fix", "desat", "dimdesat", "zoomcoupled"].contains(v)
+        glowOn = v != "baseline"
+        glowFixed = v == "round2fix"
+        zoomCoupled = v == "zoomcoupled"
+        rippleOn = v != "baseline"
+        NSLog("[MapComp] VARIANT %@ (dim=%d desat=%d glow=%d fixed=%d zc=%d ripple=%d)", v,
+              dimOn ? 1 : 0, desatOn ? 1 : 0, glowOn ? 1 : 0, glowFixed ? 1 : 0, zoomCoupled ? 1 : 0, rippleOn ? 1 : 0)
     }
+    /// Any per-orb focus pass active → applyOrbScales must run + set a_defocus / a_glow_size.
+    var anyOrbEffect: Bool { dimOn || desatOn || glowOn }
 }
 
 /// Brief AN runtime CYCLER — one Map launch, each curated variant applied LIVE (shader uniform
@@ -844,16 +865,16 @@ final class CorpusPhysicsScene: SKScene {
                 scale *= annulusAmplify(hypot(dx, dy), cameraScale: cameraScale, envelope: env)
             }
             sprite.setScale(scale)
-            var compDefocus: Float = 0   // Brief AP — this orb's tilt-shift D, reused for its title blur
             #if DEBUG
             if mapCompOn {
-                // Brief AP — per-orb defocus from the vertical TILT-SHIFT matte D(screen Y).
-                // sy = screen-space Y offset (pt), SpriteKit y-up; yn = 0 top … 1 bottom.
+                // Brief AP/AR — per-orb defocus from the vertical TILT-SHIFT matte D(screen Y).
+                // sy = screen-space Y offset (pt), SpriteKit y-up; yn = 0 top … 1 bottom. AR3 zoom-couple
+                // scales the matte by the zoom factor (0 at the wide overview → 1 close) when active.
                 let home = nodeRestingPositions[nodeID] ?? sprite.position
                 let syc = (home.y - camPos.y) / max(cameraScale, 0.0001)
                 let yn = Float(min(max(0.5 - syc / size.height, 0), 1))
-                compDefocus = MapCompState.shared.focusOn ? MapComp.defocus(yn) : 0
-                sprite.setValue(SKAttributeValue(float: compDefocus), forAttribute: "a_defocus")
+                let zf = MapCompState.shared.zoomCoupled ? MapComp.zoomFactor(Float(cameraScale)) : 1
+                sprite.setValue(SKAttributeValue(float: MapComp.defocus(yn) * zf), forAttribute: "a_defocus")
             } else if mapDepthL1On {
                 // Screen-space distance from the focal centre (points), normalised to the
                 // screen half-diagonal so it reaches 1 at the corners → the L1 driver.
@@ -871,6 +892,17 @@ final class CorpusPhysicsScene: SKScene {
             // Orb edge crispness: drive the SDF feather to a screen-constant width so
             // zooming in doesn't blow the 1px edge into a soft blur (see updateOrbEdgeAA).
             updateOrbEdgeAA(sprite, onScreen: onScreen)
+            #if DEBUG
+            if mapCompOn {
+                // Brief AR2 — inner-glow Size in UV (R=0.5 = orb radius). relative = constant fraction
+                // (holds at every zoom); fixed = 30 pt re-derived from THIS orb's on-screen radius.
+                let s = MapCompState.shared
+                let orbRadiusPt = max(Float(onScreen) / 2, 1)
+                let glowUV: Float = s.glowFixed ? min(0.49, MapComp.glowSizePt / orbRadiusPt * 0.5)
+                                                 : MapComp.glowSizeRel
+                sprite.setValue(SKAttributeValue(float: glowUV), forAttribute: "a_glow_size")
+            }
+            #endif
 
             // Title LOD fade — computed for EVERY orb (title-bearing or not, so the guard below can't
             // starve the grid-warp cache) and HOISTED above the title guard. Same value drives the
@@ -888,13 +920,9 @@ final class CorpusPhysicsScene: SKScene {
             // Across the WHOLE band (not gated at alpha > 0) so the fade-IN from zero is
             // smooth — the loop already runs only on zoom-change / annulus, so it's cheap.
             if MSDFLabel.isGlyphContainer(title) {
-                var widen: CGFloat = 1   // Brief AP — widen MSDF smoothing (soften) by the tilt-shift D
-                #if DEBUG
-                if compDefocus > 0 { widen = 1 + CGFloat(MapComp.titleBlur * compDefocus) }
-                #endif
+                // Brief AR — the AP/AQ per-title blur was dropped (the blur is deferred); titles stay crisp.
                 MSDFLabel.applyLOD(container: title, lodAlpha: lodFade,
-                                   worldToScreenPt: worldToScreen, contentScale: glyphContentScale,
-                                   smoothingWiden: widen)
+                                   worldToScreenPt: worldToScreen, contentScale: glyphContentScale)
             }
         }
     }
@@ -933,21 +961,18 @@ final class CorpusPhysicsScene: SKScene {
     private func applyMapComp() {
         let s = MapCompState.shared
         func setOrb(_ n: String, _ v: Float) { orbSpriteShader.uniforms.first { $0.name == n }?.floatValue = v }
-        setOrb("u_defocus_edge", s.focusOn ? MapComp.edge : 0)
-        setOrb("u_defocus_val",  s.focusOn ? MapComp.val : 0)
-        setOrb("u_defocus_sat",  s.focusOn ? MapComp.sat : 0)
+        setOrb("u_defocus_edge", 0)                          // AR — per-orb edge blur removed
+        setOrb("u_defocus_val",  s.dimOn   ? MapComp.val : 0) // AR3 dim (independent)
+        setOrb("u_defocus_sat",  s.desatOn ? MapComp.sat : 0) // AR3 desat (independent)
+        setOrb("u_ar_glow_op",   s.glowOn  ? MapComp.glowOp : 0) // AR2 inner glow
         if let u = gridNode?.fillShader?.uniforms {
             func setG(_ n: String, _ v: Float) { u.first { $0.name == n }?.floatValue = v }
-            setG("u_focus_top0", MapComp.topEdge0); setG("u_focus_top1", MapComp.topEdge1)
-            setG("u_focus_bot0", MapComp.botEdge0); setG("u_focus_bot1", MapComp.botEdge1)
-            setG("u_dot_blur",     s.focusOn  ? MapComp.dotBlur : 0)
-            setG("u_ripple_k",     MapComp.rippleK)
+            setG("u_dot_blur", 0)                            // AR — dot blur removed
+            setG("u_ripple_k",     MapComp.rippleK)          // used only by the OLD path (before/after)
             setG("u_ripple_gamma", MapComp.rippleGamma)
             setG("u_ripple_amt",   s.rippleOn ? MapComp.rippleOpacity : 0)
+            setG("u_ripple_old",   MapComp.rippleOld ? 1 : 0) // AR1 before/after switch
         }
-        // AQ1 field blur is a UIVisualEffectView masked to the bands, above the SpriteView (CanvasView) —
-        // SKScene.filter rasterises only scene.size (black under the zoomed camera) and .layerEffect can't
-        // sample a live Metal SpriteView (blank). Nothing to poke here; the blur reads MapCompState directly.
     }
     #endif
 
@@ -1787,30 +1812,34 @@ final class CorpusPhysicsScene: SKScene {
                 }
             }
         }
-        // Brief AP — T's Map comp (tilt-shift + ripple). Wide framing (auto-fit = T's camera). Set the
-        // launch mode; optionally cycle the three stills (focus → ripple → both, log-driven capture) or
-        // run a VERTICAL pan so orbs cross the focus band. No mid-zoom (T comped the wide frame).
+        // Brief AR — T's Map comp round 2 (ripple + desat/dim + inner glow; AR3 zoom-couple). Wide
+        // (auto-fit) framing. `-MapCompVariant <name>` sets the live variant; `-MapCompZoom <mult>`
+        // zooms first (0.60 = mid, smaller = close); `-MapCompStills` cycles `-MapCompList a,b,c`;
+        // `-MapCompPan` = vertical pan; `-MapCompZoomIn` = a smooth wide→close zoom for the video.
         if MapComp.on {
-            MapCompState.shared.set(mode: MapComp.argMode)
-            if MapComp.stills {
-                let modes = ["off", "focus", "ripple", "both"]
-                DispatchQueue.main.asyncAfter(deadline: .now() + 14) {
+            MapCompState.shared.set(variant: MapComp.argVariant)
+            DispatchQueue.main.asyncAfter(deadline: .now() + 14) {
+                NSLog("[MapComp] cameraScale(auto-fit)=%.3f", self.cameraNode.xScale)   // zoom-couple calibration
+                if let z = MapComp.zoom { self.cameraNode.setScale(self.cameraNode.xScale * CGFloat(z))
+                    NSLog("[MapComp] cameraScale(zoomed)=%.3f", self.cameraNode.xScale) }
+                if MapComp.stills {
+                    let list = MapComp.variantList
                     func step(_ i: Int) {
-                        guard i < modes.count else { NSLog("[MapComp] STILLS DONE"); return }
-                        MapCompState.shared.set(mode: modes[i])
-                        NSLog("[MapComp] STILL %@", modes[i])
-                        DispatchQueue.main.asyncAfter(deadline: .now() + 3) { step(i + 1) }
+                        guard i < list.count else { NSLog("[MapComp] STILLS DONE"); return }
+                        MapCompState.shared.set(variant: list[i])
+                        NSLog("[MapComp] STILL %@", list[i])
+                        DispatchQueue.main.asyncAfter(deadline: .now() + 2.5) { step(i + 1) }
                     }
                     step(0)
                 }
-            }
-            if MapComp.pan {
-                DispatchQueue.main.asyncAfter(deadline: .now() + 14) {
+                if MapComp.pan {
                     self.cameraNode.removeAction(forKey: "compPan")
-                    self.cameraNode.run(.sequence([
-                        .moveBy(x: 0, y: -300, duration: 3.0),   // orbs sweep DOWN through the band
-                        .moveBy(x: 0, y: 300, duration: 3.0)     // and back UP
-                    ]), withKey: "compPan")
+                    self.cameraNode.run(.sequence([.moveBy(x: 0, y: -300, duration: 3.0),
+                                                   .moveBy(x: 0, y: 300, duration: 3.0)]), withKey: "compPan")
+                }
+                if MapComp.zoomIn {   // wide → close, for the zoom-in video
+                    self.cameraNode.removeAction(forKey: "compZoom")
+                    self.cameraNode.run(.scale(by: 0.33, duration: 6.0), withKey: "compZoom")
                 }
             }
         }
@@ -3401,6 +3430,19 @@ final class CorpusPhysicsScene: SKScene {
                 let b = (j * fw + i) * 4
                 bytes[b] = UInt8((0.5 + ex * 0.5) * 255)
                 bytes[b + 1] = UInt8((0.5 + ey * 0.5) * 255)
+                #if DEBUG
+                // Brief AR1 — bake the RIPPLE layer value R into the B channel at FULL CPU precision, so
+                // the steep gamma (^8.33) isn't applied to an 8-bit field in the shader (that was the
+                // stepping: per-frame 8-bit rg + in-shader gamma → bands snap between quantised states as
+                // the camera moves). R is quantised to 8-bit ONCE, uniformly → smooth; linear filtering
+                // interpolates a single channel cleanly. Only when the comp is on → Release B stays unused.
+                if MapComp.on {
+                    let mag = (ex * ex + ey * ey).squareRoot() * massRange          // matches shader length(pull)
+                    let u = min(1, max(0, mag / Double(MapComp.rippleK)))
+                    let R = pow(1 - u, 1 / max(Double(MapComp.rippleGamma), 0.001))  // AE Levels gamma, CPU precision
+                    bytes[b + 2] = UInt8(min(255, max(0, R * 255)))
+                }
+                #endif
             }
         }
         let tex = SKTexture(data: Data(bytes), size: CGSize(width: fw, height: fh))
@@ -3534,6 +3576,15 @@ final class CorpusPhysicsScene: SKScene {
                 vec3 glowCol = hsv2rgb(vec3(hsv.x, hsv.y, 1.0));
                 col += u_dark_glow * glowFall * glowCol;
 
+                // Brief AR2 — T's AE Inner Glow: WHITE · Normal · opacity u_ar_glow_op · Softer falloff from
+                // the EDGE inward reaching ~0 at Size (a_glow_size, UV; R=0.5 = orb radius). Dimmed by the
+                // focus band (u_defocus_val·a_defocus) so it recedes with the orb at top/bottom.
+                // u_ar_glow_op = 0 in every normal run → byte-identical.
+                float edgeIn = clamp((R - d) / max(a_glow_size, 1e-4), 0.0, 1.0);   // 0 edge → 1 at Size inward
+                float gf = 1.0 - edgeIn; gf = gf * gf * (3.0 - 2.0 * gf);           // Softer (smoothstep) falloff
+                float gDim = 1.0 - u_defocus_val * a_defocus;                       // recede with the dimmed orb
+                col = mix(col, vec3(1.0), u_ar_glow_op * gf * gDim);
+
                 fillRGB = clamp(col, 0.0, 1.0);
             }
 
@@ -3550,7 +3601,8 @@ final class CorpusPhysicsScene: SKScene {
             SKAttribute(name: "a_stroke_color", type: .vectorFloat4),
             SKAttribute(name: "a_geom", type: .vectorFloat2),
             SKAttribute(name: "a_wash", type: .vectorFloat4),   // rgb = wash pigment, a = peak strength
-            SKAttribute(name: "a_defocus", type: .float)        // Brief AN L1 — 0 focus → 1 edge (0 in Release/off)
+            SKAttribute(name: "a_defocus", type: .float),       // Brief AN L1 — 0 focus → 1 edge (0 in Release/off)
+            SKAttribute(name: "a_glow_size", type: .float)      // Brief AR2 — inner-glow Size (UV); 0 = no glow
         ]
         // u_corner_radius: 0.5 = circle. Held at 0.5 — the morph to rounded square
         // (cornerMin) is retired to dormant; the uniform + sdRoundBox stay inert for
@@ -3574,7 +3626,9 @@ final class CorpusPhysicsScene: SKScene {
             // launch arg on the DEBUG spike; a_defocus (per orb) gates them by focal distance.
             SKUniform(name: "u_defocus_edge", float: Self.mapDepthL1Edge),
             SKUniform(name: "u_defocus_val", float: Self.mapDepthL1Val),
-            SKUniform(name: "u_defocus_sat", float: Self.mapDepthL1Sat)
+            SKUniform(name: "u_defocus_sat", float: Self.mapDepthL1Sat),
+            // Brief AR2 — white inner-glow opacity (0 = off → Release byte-identical).
+            SKUniform(name: "u_ar_glow_op", float: 0)
         ]
         return shader
     }()
@@ -3622,6 +3676,7 @@ final class CorpusPhysicsScene: SKScene {
         sprite.setValue(SKAttributeValue(vectorFloat4: vector_float4(w.x, w.y, w.z, Float(washStrength))),
                         forAttribute: "a_wash")
         sprite.setValue(SKAttributeValue(float: 0), forAttribute: "a_defocus")  // Brief AN L1 — 0 until applyOrbScales sets it
+        sprite.setValue(SKAttributeValue(float: 0), forAttribute: "a_glow_size") // Brief AR2 — 0 until applyOrbScales sets it
     }
 
 

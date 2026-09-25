@@ -1376,6 +1376,17 @@ final class CorpusPhysicsScene: SKScene {
 
     override func didMove(to view: SKView) {
         self.isPaused = false
+        #if DEBUG
+        // Brief AS — `-MapZoom <mult>` zooms the camera after the auto-fit settles, for headless
+        // verification of the zoom-coupled focus (close vs overview). DEBUG harness only.
+        if let i = ProcessInfo.processInfo.arguments.firstIndex(of: "-MapZoom"),
+           i + 1 < ProcessInfo.processInfo.arguments.count,
+           let mult = Float(ProcessInfo.processInfo.arguments[i + 1]) {
+            DispatchQueue.main.asyncAfter(deadline: .now() + 14) {
+                self.cameraNode.setScale(self.cameraNode.xScale * CGFloat(mult))
+            }
+        }
+        #endif
         // White-flash fix: a re-presented scene must re-signal its first frame so
         // CanvasView re-hides then reveals (each mount has the backing gap).
         hasRenderedFirstFrame = false

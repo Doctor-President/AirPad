@@ -93,54 +93,31 @@ enum MapCompTuning {
     // Mass-field ripple: value = ‖warp‖/K → invert → AE Levels gamma → N% Normal over ground+dots.
     static let rippleK: Float = 1.08, rippleGamma: Float = 0.12
 
-    // ── TUNER-LIVE defaults. Brief AU round 2 — the three carried at T's build-O values. Onset/ramp
-    // remap the reading driver: onset = where focus starts on the driver (lower = earlier / as titles
-    // fade in), ramp = how fast it reaches full after onset.
-    static let defFocusStrength:  Float = 1.96   // × on dim+desat, 0 … 2 (T, build O)
-    static let defGlowOpacity:    Float = 0.12   // 0 … 0.60 (T, O4 Copy — was 0.30)
-    static let defRippleStrength: Float = 0.067  // 0 … 0.25 (T)
-    static let defFocusOnset:     Float = 0.10   // 0 … 0.6 — starts as titles fade in
-    static let defFocusRamp:      Float = 0.40   // 0.1 … 0.9 — medium
+    // ── DARK comp, LOCKED FINAL (Brief AT 2026-09-25). Onset/ramp remap the reading driver: onset = where
+    // focus starts on the driver, ramp = how fast it reaches full after onset. (Names keep the `def`
+    // prefix from the tuner era; the tuner is deleted — these constants ARE the shipped values.)
+    static let defFocusStrength:  Float = 1.96   // × on dim+desat
+    static let defGlowOpacity:    Float = 0.12   // AE inner-glow opacity (T lock, O4)
+    static let defRippleStrength: Float = 0.067  // mass-field ripple
+    static let defFocusOnset:     Float = 0.10   // starts as titles fade in
+    static let defFocusRamp:      Float = 0.40   // medium
 
-    // ── Brief AW — LIGHT comp. A separate register from dark: a mass-field watercolour POOL (neutral
-    // grey, Darken over the owned ground), orbs at 70% with an AE Hue/Sat translate + a black Soft-Light
-    // inner-glow rim, and a light FOCUS band that fades toward the GROUND (lighten + desat) on the same
-    // matte + reading-mode weight as dark. No ripple, no blur in light.
-    static let defLightGroundHex = "FFEEED"      // ground (T, O4 Copy — was #E8E5E0 / #F4EFE3)
-    // POOL (‖warp‖/K → invert → Gaussian blur → AE Levels → Darken). T's spec K = 1.08 (= dark's rippleK),
-    // but our shipping warp field's NORMALIZED magnitude sits higher over broad clusters than T's AO
-    // `mass_field` pass did, so 1.08 over-darkens a wide region; poolK reproduces T's subtle watercolour
-    // (the darkest core still hits outBlack, but only tiny cores → the blur dilutes them). Tunable-adjacent.
-    static let poolK:            Float = 2.0
-    static let poolBlurPt:       Float = 100     // on-screen Gaussian σ (AE Blurriness 300px @3× ≈ 100pt)
-    static let poolInBlack:      Float = 0.643, poolInWhite: Float = 1.0
-    static let poolGamma:        Float = 0.88
-    static let poolOutBlack:     Float = 0.349, poolOutWhite: Float = 1.0
-    static let poolEaseTau:      Float = 0.25    // s — temporal ease (no pops on orb enter/leave)
-    // ORB Hue/Sat (AE Master: hue −9° · sat −24 · lightness +2), translated as AP did for dark.
-    static let lightHueShift:    Float = -9.0 / 360.0   // HSV hue turns
-    static let lightSatMul:      Float = 0.76           // 1 + (−24)/100
-    static let lightValAdd:      Float = 0.02           // +2 lightness → mix(V, 1, 0.02)
-    // Inner glow: black · Soft Light · 0.50 · Size 74px @3× (≈24.7pt) · Range 86.5% (Softer, Source Edge).
+    // ── Brief AT (LIGHT comp, LOCKED FINAL 2026-09-25). The tuner is deleted; these are T's values.
+    // POOL + light RIM were REMOVED (T: the pool didn't read as depth, the rim was muddy). The light orb =
+    // AE Hue/Sat translate → OKLCH palette dials (baked, applied PER-ORB in the shader so per-orb recency
+    // shades survive) → fade toward the ground by the reading-mode focus band. The grid owns an opaque
+    // #FFEEED ground so the dots read. Recorded in Ops/reference/tuner-state-accepted.md.
+    static let lightGroundHex = "FFEEED"                // T's ground (kept knowingly)
+    static let lightHueShift:    Float = -9.0 / 360.0   // AE hue −9° (HSV turns)
+    static let lightSatMul:      Float = 0.76           // AE sat −24 → ×0.76
+    static let lightValAdd:      Float = 0.02           // AE lightness +2 → mix(V, 1, 0.02)
     static let lightFocusBase:   Float = 0.55           // mix toward ground at D=1, focus strength 1
-    // Rim mode: 0 = Soft Light of black (col²) · 1 = Multiply by rim colour · 2 = Normal with rim colour.
-    static let rimModeSoftLight: Float = 0, rimModeMultiply: Float = 1, rimModeNormal: Float = 2
-    // ── light tuner-live defaults (Brief AX — from T's O3 Copy: pool 0.50, rim OFF; others held).
-    static let defOrbOpacity:    Float = 0.70    // 0.5 … 1.0
-    static let defRimOpacity:    Float = 0.0     // 0 … 1  ★ AX: rim OFF by default (T disliked it)
-    static let defRimSize:       Float = 0.28    // 0.05 … 0.6 (rel; was lightRimSizeRel)
-    static let defRimSoftness:   Float = 0.5     // 0 … 1 (AE Range / falloff shape; 0.5 ≈ the O3 Softer curve)
-    static let defRimMode:       Float = 0       // Soft Light
-    static let defRimColorHex          = "000000"
-    static let defPoolStrength:  Float = 0.65    // 0 … 2×  (T, O4 Copy — was 0.50)
-    static let defPoolSoftness:  Float = 1.73    // 0.5 … 2× (blur scale) (T, O4 Copy — was 1.0)
-    static let defDotOpacityMul: Float = 1.0     // ×0.5 … 2
-    static let defLightFocus:    Float = 1.02    // 0 … 2×  (T, O4 Copy — was 1.0)
-    // ── Brief AX2 — global light-palette dials (OKLCH, AFTER the AE Hue/Sat translate). T's O4 Copy set
-    // C=1.10 / H=+13° (L=0) → the palette is ACTIVE by default now (the shipped light look, not a no-op).
-    static let defPalLightness:  Float = 0.0     // −0.15 … +0.20 (OKLCH L offset)
-    static let defPalChroma:     Float = 1.10    //  0.5 … 1.5   (OKLCH C multiplier) (T, O4)
-    static let defPalHueDeg:     Float = 13.0    // −30 … +30°   (OKLCH H rotate) (T, O4)
+    static let orbOpacity:       Float = 0.60           // T lock — dots show through
+    static let lightFocus:       Float = 1.02           // T lock — fade toward ground (reading-mode coupled)
+    // OKLCH palette dials (AFTER the AE translate), baked to T's lock.
+    static let palLightness:     Float = 0.109          // OKLCH L offset (T lock)
+    static let palChroma:        Float = 1.26           // OKLCH C multiplier (T lock)
+    static let palHueDeg:        Float = 30.0           // OKLCH H rotate ° (T lock)
 
     // ── The LIGHT orb fill pipeline, shared so the scene's WCAG ink + the tuner's swatch strip agree with
     // the rendered orb: AE Hue/Sat translate → OKLCH palette dials (both mirrored from the shader).
@@ -155,11 +132,9 @@ enum MapCompTuning {
         return UIColor(hue: h, saturation: s, brightness: v, alpha: 1)
     }
 
-    /// OKLCH L-offset / C-mult / H-rotate (Ottosson) — the CPU twin of the shader `palette()`. No-op at
-    /// defaults so light stays byte-identical to O3 until T dials.
+    /// OKLCH L-offset / C-mult / H-rotate (Ottosson) — the CPU twin of the shader `palette()`, baked to
+    /// T's locked dials. Feeds the WCAG ink + the hex verification so both agree with the rendered orb.
     static func oklchAdjust(_ c: UIColor) -> UIColor {
-        let live = MapCompLive.shared
-        guard live.paletteActive else { return c }
         var r: CGFloat = 0, g: CGFloat = 0, b: CGFloat = 0, a: CGFloat = 0
         c.getRed(&r, green: &g, blue: &b, alpha: &a)
         func s2l(_ v: Double) -> Double { v > 0.04045 ? pow((v + 0.055) / 1.055, 2.4) : v / 12.92 }
@@ -172,9 +147,9 @@ enum MapCompTuning {
         let okL = 0.2104542553 * l_ + 0.7936177850 * m_ - 0.0040720468 * s_
         let okA = 1.9779984951 * l_ - 2.4285922050 * m_ + 0.4505937099 * s_
         let okB = 0.0259040371 * l_ + 0.7827717662 * m_ - 0.8086757660 * s_
-        let L = min(1, max(0, okL + Double(live.palLightness)))
-        let C = max(0, (okA * okA + okB * okB).squareRoot() * Double(live.palChroma))
-        let H = atan2(okB, okA) + Double(live.palHueDeg) * .pi / 180
+        let L = min(1, max(0, okL + Double(palLightness)))
+        let C = max(0, (okA * okA + okB * okB).squareRoot() * Double(palChroma))
+        let H = atan2(okB, okA) + Double(palHueDeg) * .pi / 180
         let na = C * cos(H), nb = C * sin(H)
         let L2 = L + 0.3963377774 * na + 0.2158037573 * nb
         let M2 = L - 0.1055613458 * na - 0.0638541728 * nb
@@ -198,56 +173,6 @@ enum MapCompTuning {
     }
 }
 
-/// The three TUNER-LIVE values (Brief AS2), persisted so a dial survives within a session (a reinstall
-/// wipes them → the tuner's Copy button is the way back). Read by the scene each frame; written by the
-/// tuner. Defaults = MapCompTuning; the bake folds a T-approved set back into MapCompTuning + deletes the tuner.
-final class MapCompLive {
-    static let shared = MapCompLive()
-    private let d = UserDefaults.standard
-    private func g(_ k: String, _ def: Float) -> Float { d.object(forKey: k) == nil ? def : d.float(forKey: k) }
-    var focusStrength:  Float { get { g("mapComp.focus",  MapCompTuning.defFocusStrength) }  set { d.set(newValue, forKey: "mapComp.focus") } }
-    var glowOpacity:    Float { get { g("mapComp.glow",   MapCompTuning.defGlowOpacity) }    set { d.set(newValue, forKey: "mapComp.glow") } }
-    var rippleStrength: Float { get { g("mapComp.ripple", MapCompTuning.defRippleStrength) } set { d.set(newValue, forKey: "mapComp.ripple") } }
-    var focusOnset:     Float { get { g("mapComp.onset",  MapCompTuning.defFocusOnset) }     set { d.set(newValue, forKey: "mapComp.onset") } }
-    var focusRamp:      Float { get { g("mapComp.ramp",   MapCompTuning.defFocusRamp) }      set { d.set(newValue, forKey: "mapComp.ramp") } }
-    // ── Brief AW — LIGHT comp levers (persisted; wiped by a reinstall → Copy is the way back).
-    var orbOpacity:     Float { get { g("mapComp.orbOpacity",  MapCompTuning.defOrbOpacity) }    set { d.set(newValue, forKey: "mapComp.orbOpacity") } }
-    var rimOpacity:     Float { get { g("mapComp.rim",         MapCompTuning.defRimOpacity) }     set { d.set(newValue, forKey: "mapComp.rim") } }
-    var poolStrength:   Float { get { g("mapComp.pool",        MapCompTuning.defPoolStrength) }   set { d.set(newValue, forKey: "mapComp.pool") } }
-    var poolSoftness:   Float { get { g("mapComp.poolSoft",    MapCompTuning.defPoolSoftness) }   set { d.set(newValue, forKey: "mapComp.poolSoft") } }
-    var dotOpacityMul:  Float { get { g("mapComp.dotMul",      MapCompTuning.defDotOpacityMul) }  set { d.set(newValue, forKey: "mapComp.dotMul") } }
-    var lightFocus:     Float { get { g("mapComp.lightFocus",  MapCompTuning.defLightFocus) }     set { d.set(newValue, forKey: "mapComp.lightFocus") } }
-    var groundHex:      String { get { d.string(forKey: "mapComp.ground") ?? MapCompTuning.defLightGroundHex } set { d.set(newValue, forKey: "mapComp.ground") } }
-    // ── Brief AX1 — rim controls (rim OFF by default).
-    var rimSize:        Float { get { g("mapComp.rimSize",     MapCompTuning.defRimSize) }         set { d.set(newValue, forKey: "mapComp.rimSize") } }
-    var rimSoftness:    Float { get { g("mapComp.rimSoft",     MapCompTuning.defRimSoftness) }     set { d.set(newValue, forKey: "mapComp.rimSoft") } }
-    var rimMode:        Float { get { g("mapComp.rimMode",     MapCompTuning.defRimMode) }         set { d.set(newValue, forKey: "mapComp.rimMode") } }
-    var rimColorHex:    String { get { d.string(forKey: "mapComp.rimColor") ?? MapCompTuning.defRimColorHex } set { d.set(newValue, forKey: "mapComp.rimColor") } }
-    // ── Brief AX2 — global light-palette dials (OKLCH, after the AE translate).
-    var palLightness:   Float { get { g("mapComp.palL",        MapCompTuning.defPalLightness) }    set { d.set(newValue, forKey: "mapComp.palL") } }
-    var palChroma:      Float { get { g("mapComp.palC",        MapCompTuning.defPalChroma) }       set { d.set(newValue, forKey: "mapComp.palC") } }
-    var palHueDeg:      Float { get { g("mapComp.palH",        MapCompTuning.defPalHueDeg) }        set { d.set(newValue, forKey: "mapComp.palH") } }
-    /// AX2 — true when any palette dial is off its no-op default (gates the shader OKLCH round-trip so the
-    /// default light look stays byte-identical to O3).
-    var paletteActive: Bool { abs(palLightness) > 0.0005 || abs(palChroma - 1) > 0.0005 || abs(palHueDeg) > 0.02 }
-    /// Live read-outs the scene publishes for the tuner's Copy (Brief AU): the reading driver, the
-    /// camera scale, and the median on-screen orb radius (pt).
-    var driver: Float = 0
-    var cameraScale: Float = 1
-    var medianOrbRadius: Float = 0
-    // ── Brief AY — heat instruments the scene publishes (the tuner reads/Copies them so T reports heat
-    // as data). renderFPS = actual SKView RENDERS in the last second (idle drops it; the display-link
-    // Hz doesn't); cpuPercent = the app process, rolling 2 s; thermalState = ProcessInfo (live).
-    var renderFPS: Int = 0
-    var cpuPercent: Double = 0
-    var thermalState: String = "nominal"
-    func reset() {
-        ["mapComp.focus","mapComp.glow","mapComp.ripple","mapComp.onset","mapComp.ramp",
-         "mapComp.orbOpacity","mapComp.rim","mapComp.pool","mapComp.poolSoft","mapComp.dotMul",
-         "mapComp.lightFocus","mapComp.ground","mapComp.rimSize","mapComp.rimSoft","mapComp.rimMode",
-         "mapComp.rimColor","mapComp.palL","mapComp.palC","mapComp.palH"].forEach { d.removeObject(forKey: $0) }
-    }
-}
 
 final class CorpusPhysicsScene: SKScene {
 
@@ -676,6 +601,10 @@ final class CorpusPhysicsScene: SKScene {
     /// Last `cameraNode.xScale` the idle ramp was applied at. `-1` forces a
     /// re-apply on the next idle frame (used on entering idle + on a DEBUG dial).
     private var lastRampCameraScale: CGFloat = -1
+    private var lastRampCameraPos: CGPoint = .init(x: -1e9, y: -1e9)   // Brief AT — camera-still skip
+    private var lastOrbScaleCount = -1
+    private var lastBandCameraScale: CGFloat = -1
+    private var lastBandCameraPos: CGPoint = .init(x: -1e9, y: -1e9)
 
     /// Global zoom → idle-scale multiplier ∈ [minShrink, 1.0]. `cameraNode.xScale`
     /// is 1.0 at rest and LARGER when zoomed OUT (SpriteKit camera). Zoomed in
@@ -726,7 +655,6 @@ final class CorpusPhysicsScene: SKScene {
 
     #if DEBUG
     private var mapCompLogTick = 0   // Brief AU — throttle the -MapCompLogDriver readout
-    private var poolLogTick = 0      // Brief AW — throttle the pool-cost readout
     #endif
 
     /// PER-FRAME orb scale + label LOD. `scale = restingScale × zoomRamp × annulus
@@ -738,16 +666,20 @@ final class CorpusPhysicsScene: SKScene {
         let ramp = zoomRampScale(cameraScale)
         let envelope = AnnulusTuning.envelope(cameraScale)
         let annulusOn = envelope > 0.001
-        // Brief AS/AW — the Map-comp focus band is SCREEN-fixed, so a_defocus must re-derive on every
-        // PAN (camera.position moves though the zoom is unchanged) → run per-frame. Now BOTH appearances
-        // carry a focus band (dark = dim+desat toward black; light = fade toward the ground), so the
-        // reading-mode pre-pass + a_defocus run in both. (The per-orb cost is measured by the tuner fps.)
         let compOn = true
-        // Annulus ON → re-run every frame (camera.position pans → magnify center
-        // shifts). OFF → only when the zoom actually changed (cheap idle path).
-        if !annulusOn && !compOn && abs(cameraScale - lastRampCameraScale) < 0.0005 { return }
-        lastRampCameraScale = cameraScale
         let camPos = cameraNode.position
+        // Brief AT — SKIP the whole per-orb pass when the camera is STATIC, no card is animating, and the
+        // orb set is unchanged. Everything this computes (scale, the screen-fixed focus matte a_defocus,
+        // the reading driver, title LOD) is a pure function of the camera + HOME positions, so it's
+        // identical frame-to-frame at rest. This is what stops applyOrbScales ticking over all 5235 orbs
+        // every idle frame — the resting-CPU cost T's tuner build flagged. (Band relaxation moves sprite
+        // POSITIONS, which this pass never reads, so skipping is safe while the band micro-settles.)
+        let camStill = abs(cameraScale - lastRampCameraScale) < 0.0005
+            && abs(camPos.x - lastRampCameraPos.x) < 0.01 && abs(camPos.y - lastRampCameraPos.y) < 0.01
+        if camStill && activeCardID == nil && nodeSprites.count == lastOrbScaleCount { return }
+        lastRampCameraScale = cameraScale
+        lastRampCameraPos = camPos
+        lastOrbScaleCount = nodeSprites.count
         let lod = LensTuning.labelLOD
         let fadeHi = lod * 1.5
         // Brief AU — READING-MODE focus weight (library-size-independent). Driver = the average ON-SCREEN
@@ -766,17 +698,16 @@ final class CorpusPhysicsScene: SKScene {
                 if let dia = nodeOnScreenDiameter[id] { radii.append(Float(dia) / 2) }
             }
             let avgLOD = onCount > 0 ? lodSum / Float(onCount) : 0
-            let live = MapCompLive.shared
-            readingWeight = MapCompTuning.focusWeight(driver: avgLOD, onset: live.focusOnset, ramp: live.focusRamp)
-            live.driver = avgLOD
-            live.cameraScale = Float(cameraScale)
-            if !radii.isEmpty { radii.sort(); live.medianOrbRadius = radii[radii.count / 2] }
+            readingWeight = MapCompTuning.focusWeight(driver: avgLOD,
+                                                      onset: MapCompTuning.defFocusOnset,
+                                                      ramp: MapCompTuning.defFocusRamp)
             #if DEBUG
             if ProcessInfo.processInfo.arguments.contains("-MapCompLogDriver") {
                 mapCompLogTick += 1
+                let medianR = radii.isEmpty ? 0 : radii.sorted()[radii.count / 2]
                 if mapCompLogTick % 60 == 0 {
                     NSLog("[MapComp] scale=%.3f onScreenOrbs=%d driver(avgLOD)=%.3f medianR=%.1fpt readingWeight=%.3f",
-                          cameraScale, onCount, avgLOD, live.medianOrbRadius, readingWeight)
+                          cameraScale, onCount, avgLOD, medianR, readingWeight)
                 }
             }
             #endif
@@ -840,52 +771,38 @@ final class CorpusPhysicsScene: SKScene {
     /// Cached `view.contentScaleFactor` for MSDF smoothing (device px per point).
     private var glyphContentScale: CGFloat { view?.contentScaleFactor ?? 3.0 }
 
-    /// Brief AS/AW — push the live Map-comp levers into the shaders each frame, per appearance. DARK: the
-    /// orb dark branch + the dark-gated ripple (u_orb_opacity held at 1, u_pool_amt/u_light_ground_on 0 →
-    /// byte-identical). LIGHT: the orb light branch (hue/sat/rim/focus/opacity) + the owned opaque ground +
-    /// pool. Focus strength multiplies the measured dim/desat (dark) or the mix-toward-ground (light).
+    /// Brief AT (baked) — push the LOCKED Map-comp constants into the shaders per appearance. DARK: the orb
+    /// dark branch (focus dim+desat, AE inner glow) + the dark-gated ripple. LIGHT: the orb light branch
+    /// (AE translate + baked OKLCH palette + fade toward ground, at orb opacity) + the owned opaque #FFEEED
+    /// ground. Pool + light rim are gone. Constant per appearance; re-pushed per frame (cheap).
     private func applyMapComp() {
         func setOrb(_ n: String, _ v: Float) { orbSpriteShader.uniforms.first { $0.name == n }?.floatValue = v }
         func setGrid(_ n: String, _ v: Float) { gridNode?.fillShader?.uniforms.first { $0.name == n }?.floatValue = v }
-        let live = MapCompLive.shared
         if currentIsLight {
-            // Orb light branch. Hue/sat are static translations; rim/focus/opacity are tuner-live. Reuse
-            // u_glow_size for the light rim size; u_ground_color as the focus fade target.
             setOrb("u_light_hue", MapCompTuning.lightHueShift)
             setOrb("u_light_sat", MapCompTuning.lightSatMul)
             setOrb("u_light_val_add", MapCompTuning.lightValAdd)
-            setOrb("u_rim_op", live.rimOpacity)
-            setOrb("u_light_focus", MapCompTuning.lightFocusBase * live.lightFocus)
-            setOrb("u_orb_opacity", live.orbOpacity)
-            setOrb("u_glow_size", live.rimSize)              // AX1 — rim size now tuner-live
-            setOrb("u_rim_softness", live.rimSoftness)       // AX1 — rim falloff shape
-            setOrb("u_rim_mode", live.rimMode)               // AX1 — Soft Light / Multiply / Normal
-            setOrb("u_pal_on", live.paletteActive ? 1 : 0)   // AX2 — gate the OKLCH round-trip
-            orbSpriteShader.uniforms.first { $0.name == "u_rim_color" }?
-                .vectorFloat3Value = Self.rgb3(live.rimColorHex)
+            setOrb("u_light_focus", MapCompTuning.lightFocusBase * MapCompTuning.lightFocus)
+            setOrb("u_orb_opacity", MapCompTuning.orbOpacity)
             orbSpriteShader.uniforms.first { $0.name == "u_pal_lch" }?
-                .vectorFloat3Value = vector_float3(live.palLightness, live.palChroma,
-                                                   live.palHueDeg * Float.pi / 180)   // deg → radians
+                .vectorFloat3Value = vector_float3(MapCompTuning.palLightness, MapCompTuning.palChroma,
+                                                   MapCompTuning.palHueDeg * Float.pi / 180)   // deg → rad
             orbSpriteShader.uniforms.first { $0.name == "u_ground_color" }?
-                .vectorFloat3Value = Self.rgb3(live.groundHex)
-            // Grid: opaque owned ground + pool; ripple OFF.
+                .vectorFloat3Value = Self.rgb3(MapCompTuning.lightGroundHex)
+            // Grid: opaque owned #FFEEED ground; no pool, no ripple.
             setGrid("u_ripple_amt", 0)
-            setGrid("u_pool_amt", live.poolStrength)
             setGrid("u_light_ground_on", 1)
-            setGrid("u_dot_opacity_mul", live.dotOpacityMul)
             gridNode?.fillShader?.uniforms.first { $0.name == "u_ground_color" }?
-                .vectorFloat3Value = Self.rgb3(live.groundHex)
+                .vectorFloat3Value = Self.rgb3(MapCompTuning.lightGroundHex)
         } else {
-            let fs = live.focusStrength
+            let fs = MapCompTuning.defFocusStrength
             setOrb("u_defocus_val", MapCompTuning.dim * fs)
             setOrb("u_defocus_sat", MapCompTuning.desat * fs)
-            setOrb("u_ar_glow_op",  live.glowOpacity)
+            setOrb("u_ar_glow_op",  MapCompTuning.defGlowOpacity)
             setOrb("u_orb_opacity", 1.0)                 // dark = fully opaque (byte-identical premultiply)
             setOrb("u_glow_size",   MapCompTuning.glowSizeRel)
-            setGrid("u_ripple_amt", live.rippleStrength)
-            setGrid("u_pool_amt", 0)
+            setGrid("u_ripple_amt", MapCompTuning.defRippleStrength)
             setGrid("u_light_ground_on", 0)
-            setGrid("u_dot_opacity_mul", 1.0)
             // Restore the dark ripple ground (#111115) after any light→dark flip left the light hex here.
             gridNode?.fillShader?.uniforms.first { $0.name == "u_ground_color" }?
                 .vectorFloat3Value = vector_float3(0.0667, 0.0667, 0.0824)
@@ -922,6 +839,14 @@ final class CorpusPhysicsScene: SKScene {
     /// so it settles home. Envelope 0 (above onset) → everything lerps home.
     private func applyBandRelaxation() {
         let cameraScale = cameraNode.xScale
+        // Brief AT — skip the all-orbs band scan when the camera is STATIC and the band already settled
+        // last frame (sprites within 0.5pt of target; the sub-pixel residual is abandoned, invisible). This
+        // stops the per-frame scan of all 5235 orbs at rest. Camera move or a card morph → resume.
+        let camStill = abs(cameraScale - lastBandCameraScale) < 0.0005
+            && abs(cameraNode.position.x - lastBandCameraPos.x) < 0.01
+            && abs(cameraNode.position.y - lastBandCameraPos.y) < 0.01
+        if camStill && !orbsMovedLastFrame && activeCardID == nil { return }
+        lastBandCameraScale = cameraScale; lastBandCameraPos = cameraNode.position
         let envelope = AnnulusTuning.envelope(cameraScale)
         let lerp = AnnulusTuning.relaxLerp
         // Damped move of a sprite toward `target`; skips sub-pixel noise. Brief AY — only a PERCEPTIBLE
@@ -1580,12 +1505,6 @@ final class CorpusPhysicsScene: SKScene {
     /// Brief AW — frame delta (s), captured at the top of `update` before the per-frame passes run, so
     /// `buildWarpField`'s pool temporal ease is frame-rate independent. Clamped to avoid a huge first step.
     private var frameDT: TimeInterval = 1.0 / 120.0
-    /// Brief AW — the light POOL's temporally-eased grey (fw×fh, 1.0 = no darken), persisted across frames
-    /// so orbs entering/leaving (filter, capture, pan) fade the pool in/out instead of popping.
-    private var poolEased: [Float] = []
-    /// Brief AX2 — throttle live WCAG-ink re-evaluation to palette/opacity/ground changes.
-    private var lastInkSig: String = ""
-    private var lastInkRestyleTime: TimeInterval = 0
 
     // ── Brief AY — idle-when-static + heat instruments.
     /// Set by any per-frame animation (band ease, halo fade) so the idle detector keeps the map awake
@@ -1596,7 +1515,6 @@ final class CorpusPhysicsScene: SKScene {
     private var lastCardProgressForIdle: CGFloat = -1
     private var isTouchingMap = false
     private var lastActivityTime: TimeInterval = 0
-    private var poolConverged = false            // set by buildWarpField when the ease delta is tiny
     private var recentRenderTimes: [TimeInterval] = []   // for renderFPS (actual SKView renders / s)
     private var desiredMapFPS: Int = 120
     private var cpuSamples: [(t: TimeInterval, pct: Double)] = []
@@ -1630,8 +1548,7 @@ final class CorpusPhysicsScene: SKScene {
         let cardMoving = abs(cardProgress - lastCardProgressForIdle) > 0.0005
         lastCamPosForIdle = cam; lastCamScaleForIdle = scale; lastCardProgressForIdle = cardProgress
         let wasAnimating = animatingThisFrame
-        let active = isTouchingMap || coastVelocity != .zero || camMoved || cardMoving
-                   || wasAnimating || !poolConverged
+        let active = isTouchingMap || coastVelocity != .zero || camMoved || cardMoving || wasAnimating
         if active { lastActivityTime = currentTime }
         orbsMovedLastFrame = wasAnimating   // latch for next frame's updateGridWarp dirty check
         animatingThisFrame = false
@@ -1648,17 +1565,13 @@ final class CorpusPhysicsScene: SKScene {
             cpuSamples.append((currentTime, pct))
             while let f = cpuSamples.first, currentTime - f.t > 2.0 { cpuSamples.removeFirst() }
             let avg = cpuSamples.isEmpty ? pct : cpuSamples.map(\.pct).reduce(0, +) / Double(cpuSamples.count)
-            let live = MapCompLive.shared
-            live.cpuPercent = avg
-            live.renderFPS = recentRenderTimes.count
-            live.thermalState = Self.thermalString()
             lastCPUSampleTime = currentTime
             #if DEBUG
             if ProcessInfo.processInfo.arguments.contains("-MapHeatLog") {
-                NSLog("[MapHeat] rendered=%d/s targetFPS=%d CPU=%.0f%% active=%@ [touch=%@ coast=%@ cam=%@ card=%@ anim=%@ pool!conv=%@]",
-                      live.renderFPS, desiredMapFPS, avg, active ? "Y" : "n",
+                NSLog("[MapHeat] rendered=%d/s targetFPS=%d CPU=%.0f%% thermal=%@ active=%@ [touch=%@ coast=%@ cam=%@ card=%@ anim=%@]",
+                      recentRenderTimes.count, desiredMapFPS, avg, Self.thermalString(), active ? "Y" : "n",
                       isTouchingMap ? "1":"0", coastVelocity != .zero ? "1":"0", camMoved ? "1":"0",
-                      cardMoving ? "1":"0", wasAnimating ? "1":"0", !poolConverged ? "1":"0")
+                      cardMoving ? "1":"0", wasAnimating ? "1":"0")
             }
             #endif
         }
@@ -1720,6 +1633,10 @@ final class CorpusPhysicsScene: SKScene {
     override func didMove(to view: SKView) {
         self.isPaused = false
         #if DEBUG
+        if ProcessInfo.processInfo.arguments.contains("-LogSwatches") {
+            NSLog("[Swatches] baked light slots: %@",
+                  MapCompTuning.lightSwatches().map { "#\($0.hex)" }.joined(separator: " "))
+        }
         // Brief AS — `-MapZoom <mult>` zooms the camera after the auto-fit settles, for headless
         // verification of the zoom-coupled focus (close vs overview). DEBUG harness only.
         if let i = ProcessInfo.processInfo.arguments.firstIndex(of: "-MapZoom"),
@@ -1777,44 +1694,11 @@ final class CorpusPhysicsScene: SKScene {
         }
     }
 
-    #if DEBUG
-    // Brief AX3 — auto-open/close the card preview on a big central orb every ~1.8 s and log the frame
-    // times DURING the open/close morph, so the tap-dip is measurable headlessly. `-AutoCardCycle` on;
-    // pair with -NoCardFreeze (freeze off) and the pool-strength launch state to A/B the three conditions.
-    private var autoCardNext: TimeInterval = 0
-    private var autoCardOpen = false
-    private var cardFrameSamples: [Double] = []
-    private var wasCardAnimating = false
-    private func debugCardCycle(_ currentTime: TimeInterval) {
-        guard ProcessInfo.processInfo.arguments.contains("-AutoCardCycle"), let cs = canvasState else { return }
-        if autoCardNext == 0 { autoCardNext = currentTime + 3 }   // let the map settle first
-        if currentTime >= autoCardNext {
-            autoCardOpen.toggle()
-            cs.cardedNodeID = autoCardOpen ? nodeOnScreenDiameter.max(by: { $0.value < $1.value })?.key : nil
-            autoCardNext = currentTime + 1.8
-        }
-        let animating = cardProgress > 0.01 && cardProgress < 0.99
-        if animating { cardFrameSamples.append(frameDT * 1000) }
-        if wasCardAnimating && !animating && cardFrameSamples.count > 2 {
-            let ms = cardFrameSamples
-            let mx = ms.max() ?? 0, avg = ms.reduce(0, +) / Double(ms.count)
-            NSLog("[MapComp] card-morph frames: n=%d avg=%.1fms max=%.1fms · light=%d pool=%.2f freeze=%d",
-                  ms.count, avg, mx, currentIsLight ? 1 : 0, MapCompLive.shared.poolStrength,
-                  ProcessInfo.processInfo.arguments.contains("-NoCardFreeze") ? 0 : 1)
-            cardFrameSamples.removeAll()
-        }
-        wasCardAnimating = animating
-    }
-    #endif
 
     override func update(_ currentTime: TimeInterval) {
         if isPaused { return }
-        // Brief AW — frame delta for the pool ease, before updateGridWarp consumes it (lastUpdateTime is
-        // only advanced at the end of this method). Clamp so a stall / first frame can't over-ease.
+        // Frame delta (s), captured before the per-frame passes consume it. Clamp against a stall.
         frameDT = lastUpdateTime > 0 ? min(max(currentTime - lastUpdateTime, 0), 0.1) : 1.0 / 120.0
-        #if DEBUG
-        debugCardCycle(currentTime)   // Brief AX3 — auto-open the card preview + log open-animation frames
-        #endif
 
         // White-flash fix (queue.md:879): first non-paused frame → tell CanvasView
         // to reveal the map (orbs + labels) now that the host has real content.
@@ -1883,20 +1767,6 @@ final class CorpusPhysicsScene: SKScene {
             lastAppearanceIsLight = orbIsLight
             restyleUnfocusedOrbs()
         }
-
-        // Brief AX2 — WCAG title ink re-evaluates live as the light palette (or opacity/ground) changes.
-        // The orb FILL recolors live via the shader; only the ink is a discrete choice, so re-run
-        // `restyleLabels` when the ink signature moves. Throttled to ≤5×/s so a continuous dial drag on
-        // T's 5235-orb library doesn't recolour every glyph every frame.
-        if currentIsLight {
-            let live = MapCompLive.shared
-            let sig = "\(live.palLightness)|\(live.palChroma)|\(live.palHueDeg)|\(live.orbOpacity)|\(live.groundHex)"
-            if sig != lastInkSig, currentTime - lastInkRestyleTime > 0.2 {
-                lastInkSig = sig; lastInkRestyleTime = currentTime
-                restyleLabels()
-            }
-        }
-
 
         // Über-node shader updates disabled (sprites not rendered)
         // for (_, shape) in uberNodeSprites {
@@ -3221,35 +3091,21 @@ final class CorpusPhysicsScene: SKScene {
     /// smear, and they shrink near mass. The CPU builds a low-res displacement field once per frame.
     func updateGridWarp() {
         guard let grid = gridNode, let view = view else { return }
-        // Brief AX3 — FREEZE the field (warp + pool) while a card preview animates. The per-frame rebuild
-        // (RG warp + the pool blur) would stack on the SwiftUI card morph and cause T's small tap-dip; the
-        // card covers the background during the morph and the 0.25 s pool ease hides the hold, so the last
-        // field standing is invisible. Skips the whole build. Flip off with -NoCardFreeze to A/B measure.
-        if activeCardID != nil || cardProgress > 0.01 {
-            #if DEBUG
-            if ProcessInfo.processInfo.arguments.contains("-NoCardFreeze") { /* fall through: rebuild */ }
-            else { return }
-            #else
-            return
-            #endif
-        }
         let isLight = currentIsLight
         let mode: Float = 3                                   // Relocate C — the only mode that ships
         let cameraScale = cameraNode.xScale, camPos = cameraNode.position
         let viewW = Double(view.bounds.width), viewH = Double(view.bounds.height)
         let cs = Double(cameraScale)
 
-        if !isLight { poolConverged = true }   // dark has no pool ease → never blocks the dirty skip
         // Brief AY — DIRTY-TRACK: rebuild the CPU field only when something that feeds it changed. Reuse
         // last frame's texture at rest. Rebuild if the camera moved, an orb moved (band ease, latched from
-        // last frame since this runs BEFORE applyBandRelaxation), orbs entered/left, the pool ease hasn't
-        // converged (light), or on the first build. Conservative — any doubt rebuilds (a wasted build is
-        // invisible; a missed one would stale the map).
+        // last frame since this runs BEFORE applyBandRelaxation), orbs entered/left, or on the first build.
+        // Conservative — any doubt rebuilds (a wasted build is invisible; a missed one would stale the map).
         let camMovedSinceField = !fieldBuiltOnce
             || abs(camPos.x - lastFieldCamPos.x) > 0.01 || abs(camPos.y - lastFieldCamPos.y) > 0.01
             || abs(cameraScale - lastFieldCamScale) > 0.0001
         let orbsChanged = nodeSprites.count != lastFieldOrbCount
-        if !(camMovedSinceField || orbsChanged || orbsMovedLastFrame || !poolConverged) {
+        if !(camMovedSinceField || orbsChanged || orbsMovedLastFrame) {
             return   // field inputs unchanged → last texture + uniforms stand
         }
         fieldBuiltOnce = true
@@ -3335,15 +3191,7 @@ final class CorpusPhysicsScene: SKScene {
         // every weight 0). Push the exact mode-0 path → byte-identical to an unwarped grid. This is what
         // delivers "fully zoomed out = undistorted" by construction.
         guard depth > 0.0001, maxW > 0.002 else {
-            // Brief AW — the LIGHT pool is independent of the dot-warp: keep rebuilding + pushing the
-            // field so it eases toward "no pool" as you zoom out (packed weights ~0 → mag ~0 → B ~1.0 →
-            // ground untouched). The warp itself still goes mode 0 (no dot relocation).
-            if isLight {
-                let field = buildWarpField(orbs: packed, falloff: 1.0, massRange: massRange, viewW: viewW, viewH: viewH)
-                BackgroundGridNode.setWarp(grid, mode: 0, strength: 0, sign: 1,
-                                           shrink: 0, massRange: 1, field: field)
-                lastWarpMode = 0
-            } else if lastWarpMode != 0 {
+            if lastWarpMode != 0 {
                 BackgroundGridNode.setWarp(grid, mode: 0, strength: 0, sign: 1,
                                            shrink: 0, massRange: 1, field: nil)
                 lastWarpMode = 0
@@ -3401,10 +3249,6 @@ final class CorpusPhysicsScene: SKScene {
         var bytes = [UInt8](repeating: 128, count: fw * fh * 4)   // 128 = 0.5 = no pull
         let invRange = 1 / max(massRange, 0.001)
         let compBaked = !currentIsLight   // Brief AS — bake the ripple B channel only in dark
-        let isLight = currentIsLight
-        // Brief AW — LIGHT pool: hold the INVERTED mass input per texel (1 far field … 0 under clusters)
-        // so it can be blurred, leveled, and eased AFTER the field is summed.
-        var inv = isLight ? [Float](repeating: 1, count: fw * fh) : []
         let K = Double(MapCompTuning.rippleK)
         for j in 0..<fh {
             let fy = (Double(j) + 0.5) / Double(fh)
@@ -3429,95 +3273,20 @@ final class CorpusPhysicsScene: SKScene {
                 let b = (j * fw + i) * 4
                 bytes[b] = UInt8((0.5 + ex * 0.5) * 255)
                 bytes[b + 1] = UInt8((0.5 + ey * 0.5) * 255)
-                let magN = (ex * ex + ey * ey).squareRoot()   // NORMALIZED warp (ex,ey are ÷massRange)
                 if compBaked {
-                    // Brief AS (AR1) — bake the RIPPLE layer value R into the B channel at FULL CPU
-                    // precision (‖warp‖/K → invert → AE Levels gamma). The shader reads this single
+                    // Brief AS (AR1) — bake the RIPPLE layer value R into the B channel (DARK only) at FULL
+                    // CPU precision (‖warp‖/K → invert → AE Levels gamma). The shader reads this single
                     // linear-filtered channel → no in-shader ^8.33 on an 8-bit field → no stepping.
+                    let magN = (ex * ex + ey * ey).squareRoot()
                     let u = min(1, max(0, magN * massRange / K))
                     let R = pow(1 - u, 1 / max(Double(MapCompTuning.rippleGamma), 0.001))
                     bytes[b + 2] = UInt8(min(255, max(0, R * 255)))
-                } else if isLight {
-                    // POOL input = the NORMALIZED mass field ‖warp‖/poolK (T's AO mass_field pass was
-                    // ‖warp‖/max ∈ [0,1]; re-multiplying massRange over-saturates a huge central region) →
-                    // INVERT (1 far … 0 dense). Blur + AE Levels happen below, once.
-                    inv[j * fw + i] = Float(1 - min(1, max(0, magN / Double(MapCompTuning.poolK))))
                 }
             }
-        }
-        if isLight {
-            #if DEBUG
-            let t0 = CFAbsoluteTimeGetCurrent()
-            #endif
-            // POOL post-pass: Gaussian blur (σ ≈ 100pt on screen, softness-scaled) → AE Levels →
-            // temporal ease → write B. σ in TEXELS is zoom-independent (the field always spans the
-            // viewport): texel = viewW/fw pt, so σ = poolBlurPt · fw/viewW.
-            let soft = Double(MapCompLive.shared.poolSoftness)
-            let sigmaX = Float(Double(MapCompTuning.poolBlurPt) * soft * Double(fw) / max(viewW, 1))
-            let sigmaY = Float(Double(MapCompTuning.poolBlurPt) * soft * Double(fh) / max(viewH, 1))
-            let blurred = Self.separableGaussian(inv, w: fw, h: fh, sigmaX: sigmaX, sigmaY: sigmaY)
-            if poolEased.count != fw * fh { poolEased = [Float](repeating: 1, count: fw * fh) }
-            let inB = MapCompTuning.poolInBlack, inW = MapCompTuning.poolInWhite
-            let oB = MapCompTuning.poolOutBlack, oW = MapCompTuning.poolOutWhite
-            let invGamma = 1 / max(MapCompTuning.poolGamma, 0.001)
-            let a = 1 - exp(-Float(frameDT) / max(MapCompTuning.poolEaseTau, 0.001))   // ease coefficient
-            var maxDelta: Float = 0
-            for k in 0..<fw * fh {
-                let n = min(1, max(0, (blurred[k] - inB) / max(inW - inB, 1e-4)))
-                let leveled = oB + (oW - oB) * pow(n, invGamma)                          // AE Levels
-                let step = (leveled - poolEased[k]) * a
-                poolEased[k] += step                                                     // exponential ease
-                maxDelta = max(maxDelta, abs(step))
-                bytes[k * 4 + 2] = UInt8(min(255, max(0, poolEased[k] * 255)))
-            }
-            // Brief AY — the pool ease has converged when no texel moved more than ~0.5/255 this frame;
-            // while it's still easing, the dirty-field check keeps rebuilding so the fade animates.
-            poolConverged = maxDelta < (0.5 / 255)
-            #if DEBUG
-            if ProcessInfo.processInfo.arguments.contains("-MapCompLogDriver") {
-                poolLogTick += 1
-                if poolLogTick % 60 == 0 {
-                    NSLog("[MapComp] pool post-pass %.3f ms (σx=%.1f σy=%.1f texels, %dx%d field)",
-                          (CFAbsoluteTimeGetCurrent() - t0) * 1000, sigmaX, sigmaY, fw, fh)
-                }
-            }
-            #endif
         }
         let tex = SKTexture(data: Data(bytes), size: CGSize(width: fw, height: fh))
         tex.filteringMode = .linear
         return tex
-    }
-
-    /// Separable Gaussian over a `w×h` float grid, edges CLAMPED (AE "repeat edge pixels"). Kernel radius
-    /// = ⌈3σ⌉. Used only for the Brief AW light pool (≈0.3–0.5 ms at σ≈9 on the 40×80 field).
-    private static func separableGaussian(_ src: [Float], w: Int, h: Int, sigmaX: Float, sigmaY: Float) -> [Float] {
-        func kernel(_ s: Float) -> [Float] {
-            let sig = max(s, 0.01)
-            let r = max(1, Int((3 * sig).rounded()))
-            var k = [Float](repeating: 0, count: 2 * r + 1); var sum: Float = 0
-            for i in -r...r { let v = expf(-Float(i * i) / (2 * sig * sig)); k[i + r] = v; sum += v }
-            for i in 0..<k.count { k[i] /= sum }
-            return k
-        }
-        let kx = kernel(sigmaX), ky = kernel(sigmaY)
-        let rx = kx.count / 2, ry = ky.count / 2
-        var tmp = [Float](repeating: 0, count: w * h)
-        for j in 0..<h {
-            for i in 0..<w {
-                var acc: Float = 0
-                for t in -rx...rx { acc += src[j * w + min(max(i + t, 0), w - 1)] * kx[t + rx] }
-                tmp[j * w + i] = acc
-            }
-        }
-        var out = [Float](repeating: 0, count: w * h)
-        for j in 0..<h {
-            for i in 0..<w {
-                var acc: Float = 0
-                for t in -ry...ry { acc += tmp[min(max(j + t, 0), h - 1) * w + i] * ky[t + ry] }
-                out[j * w + i] = acc
-            }
-        }
-        return out
     }
 
     /// Double smoothstep (the shader has one; the scene didn't).
@@ -3632,31 +3401,18 @@ final class CorpusPhysicsScene: SKScene {
             float wS = a_wash.a * washT;
             vec3 fillRGB = fillC.rgb;
             if (u_wash_is_light > 0.5) {
-                // Brief AW — LIGHT comp. Flat slot fill → AE Hue/Sat translate (hue −9° · sat −24 ·
-                // lightness +2) → black Soft-Light inner-glow rim → light FOCUS band (fade toward the
-                // ground: lighten + desat). NO diagonal wash — T's comp is a flat periwinkle with a
-                // pooled rim. a_defocus + the reading-mode weight are SHARED with dark; the orb is drawn
-                // at u_orb_opacity (final premultiply) so the dots + pool show faintly through.
+                // Brief AT (LIGHT comp, LOCKED). Flat slot fill → AE Hue/Sat translate → OKLCH palette dials
+                // (baked, applied PER-ORB so per-orb recency shades survive) → light FOCUS band (fade toward
+                // the ground). NO diagonal wash, NO pool, NO rim (all removed at the lock). a_defocus + the
+                // reading-mode weight are SHARED with dark; the orb draws at u_orb_opacity so the dots show.
                 vec3 hsv = rgb2hsv(fillRGB);
-                hsv.x = fract(hsv.x + u_light_hue);              // hue −9° (uniform wheel shift)
-                hsv.y = clamp(hsv.y * u_light_sat, 0.0, 1.0);    // sat −24 → ×0.76
-                hsv.z = mix(hsv.z, 1.0, u_light_val_add);        // lightness +2 → toward white
+                hsv.x = fract(hsv.x + u_light_hue);              // AE hue −9°
+                hsv.y = clamp(hsv.y * u_light_sat, 0.0, 1.0);    // AE sat −24 → ×0.76
+                hsv.z = mix(hsv.z, 1.0, u_light_val_add);        // AE lightness +2 → toward white
                 vec3 col = hsv2rgb(hsv);
-                // AX2 — global palette dials (OKLCH), AFTER the AE translate. Gated: u_pal_on = 0 at the
-                // no-op default → the round-trip is skipped → default light look byte-identical to O3.
-                if (u_pal_on > 0.5) { vec3 lch = u_pal_lch; col = palette(col, lch); }
-                // AX1 — INNER GLOW (rim), from the EDGE inward over Size (u_glow_size). Softness shapes the
-                // falloff exponent (AE Range). Mode: 0 Soft-Light of black (col²) · 1 Multiply by rim colour
-                // · 2 Normal with rim colour. Default rim opacity 0 → no effect (T disliked it).
-                float edgeIn = clamp((R - d) / max(u_glow_size, 1e-4), 0.0, 1.0);   // 0 edge → 1 at Size in
-                float gf = 1.0 - edgeIn; gf = gf * gf * (3.0 - 2.0 * gf);           // Softer base
-                gf = pow(gf, mix(2.5, 0.4, clamp(u_rim_softness, 0.0, 1.0)));       // softness → falloff shape
-                vec3 rimEffect = (u_rim_mode < 0.5) ? col * col
-                               : (u_rim_mode < 1.5) ? col * u_rim_color
-                                                    : u_rim_color;
-                col = mix(col, rimEffect, u_rim_op * gf);
+                vec3 lch = u_pal_lch; col = palette(col, lch);   // baked OKLCH L/C/H (T lock)
                 // LIGHT FOCUS — fade toward the GROUND colour (lighten + desat) by the tilt-shift matte
-                // a_defocus × strength (u_light_focus = base × tuner). Same matte + reading weight as dark.
+                // a_defocus × strength (u_light_focus = base × 1.02). Same matte + reading weight as dark.
                 col = mix(col, u_ground_color, clamp(u_light_focus * a_defocus, 0.0, 1.0));
                 fillRGB = clamp(col, 0.0, 1.0);
             } else {
@@ -3743,22 +3499,18 @@ final class CorpusPhysicsScene: SKScene {
             SKUniform(name: "u_defocus_sat", float: MapCompTuning.desat * MapCompTuning.defFocusStrength),
             SKUniform(name: "u_ar_glow_op",  float: MapCompTuning.defGlowOpacity),
             SKUniform(name: "u_glow_size",   float: MapCompTuning.glowSizeRel),
-            // Brief AW — LIGHT comp levers (light branch only). Dark holds them inert: u_orb_opacity = 1
-            // (byte-identical premultiply), and the dark branch never reads the hue/sat/rim/focus/ground.
-            // `applyMapComp` re-pushes them per frame from the live tuner + flips u_glow_size per mode.
+            // Brief AT — LIGHT comp levers (light branch only). Dark holds them inert: u_orb_opacity = 1
+            // (byte-identical premultiply), and the dark branch never reads the hue/sat/focus/palette/ground.
+            // `applyMapComp` re-pushes them per appearance. Rim + pool uniforms were removed at the lock.
             SKUniform(name: "u_light_hue",     float: MapCompTuning.lightHueShift),
             SKUniform(name: "u_light_sat",     float: MapCompTuning.lightSatMul),
             SKUniform(name: "u_light_val_add", float: MapCompTuning.lightValAdd),
-            SKUniform(name: "u_rim_op",        float: MapCompTuning.defRimOpacity),
-            SKUniform(name: "u_light_focus",   float: MapCompTuning.lightFocusBase * MapCompTuning.defLightFocus),
+            SKUniform(name: "u_light_focus",   float: MapCompTuning.lightFocusBase * MapCompTuning.lightFocus),
             SKUniform(name: "u_orb_opacity",   float: 1.0),
-            SKUniform(name: "u_ground_color",  vectorFloat3: Self.rgb3(MapCompTuning.defLightGroundHex)),
-            // Brief AX1 — rim controls; Brief AX2 — OKLCH palette dials (u_pal_on = 0 at default → skipped).
-            SKUniform(name: "u_rim_softness",  float: MapCompTuning.defRimSoftness),
-            SKUniform(name: "u_rim_mode",      float: MapCompTuning.defRimMode),
-            SKUniform(name: "u_rim_color",     vectorFloat3: Self.rgb3(MapCompTuning.defRimColorHex)),
-            SKUniform(name: "u_pal_on",        float: 0),
-            SKUniform(name: "u_pal_lch",       vectorFloat3: vector_float3(0, 1, 0))
+            SKUniform(name: "u_ground_color",  vectorFloat3: Self.rgb3(MapCompTuning.lightGroundHex)),
+            SKUniform(name: "u_pal_lch",       vectorFloat3: vector_float3(MapCompTuning.palLightness,
+                                                                           MapCompTuning.palChroma,
+                                                                           MapCompTuning.palHueDeg * .pi / 180))
         ]
         return shader
     }()
@@ -3911,8 +3663,8 @@ final class CorpusPhysicsScene: SKScene {
         // AX2 — the orb fill = AE Hue/Sat translate → OKLCH palette dials (shared with the swatch strip).
         let orb = MapCompTuning.lightOrbColor(c)
         // Composite orb at opacity over the ground (straight-alpha over) — the title sees orb-over-ground.
-        let op = CGFloat(MapCompLive.shared.orbOpacity)
-        let ground = UIColor(hex: MapCompLive.shared.groundHex) ?? UIColor(white: 0.9, alpha: 1)
+        let op = CGFloat(MapCompTuning.orbOpacity)
+        let ground = UIColor(hex: MapCompTuning.lightGroundHex) ?? UIColor(white: 0.9, alpha: 1)
         var or_: CGFloat = 0, og: CGFloat = 0, ob: CGFloat = 0, gr: CGFloat = 0, gg: CGFloat = 0, gb: CGFloat = 0, t: CGFloat = 0
         orb.getRed(&or_, green: &og, blue: &ob, alpha: &t)
         ground.getRed(&gr, green: &gg, blue: &gb, alpha: &t)

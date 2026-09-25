@@ -1496,6 +1496,12 @@ import Darwin
 /// Brief AS2 — CADisplayLink fps meter + a 10 s perf snapshot (avg / 1%-low fps, frame-time p95).
 @Observable final class MapCompFpsMeter {
     var fps: Double = 0
+    // Brief AY — the scene's published heat instruments (polled each display tick so the tuner shows them
+    // live). renderFPS = actual SKView renders/s (drops to ~8 at rest — the idle proof); CPU% = app
+    // process, rolling 2 s; thermal = ProcessInfo state.
+    var renderFPS: Int = 0
+    var cpuPercent: Double = 0
+    var thermal: String = "nominal"
     var lastSnapshot: String = ""
     var snapshotting = false
     @ObservationIgnored private var link: CADisplayLink?
@@ -1514,6 +1520,8 @@ import Darwin
             if snapshotting, dt > 0 { frames.append(dt * 1000) }   // ms
         }
         last = l.timestamp
+        let live = MapCompLive.shared
+        renderFPS = live.renderFPS; cpuPercent = live.cpuPercent; thermal = live.thermalState
     }
     func beginSnapshot() {
         frames.removeAll(); snapshotting = true; lastSnapshot = "recording 10 s — pan + zoom…"
@@ -1573,8 +1581,16 @@ struct MapCompTuningPanel: View {
             HStack {
                 Text("Map comp").font(.system(size: 13, weight: .semibold))
                 Spacer()
-                Text(String(format: "%.0f fps", meter.fps)).font(.system(size: 12, design: .monospaced))
-                    .foregroundStyle(meter.fps >= 55 ? .green : (meter.fps >= 40 ? .yellow : .red))
+                Text("\(meter.renderFPS) rend").font(.system(size: 12, design: .monospaced))
+                    .foregroundStyle(meter.renderFPS <= 12 ? .green : (meter.renderFPS >= 100 ? .yellow : .primary))
+            }
+            // Brief AY — heat instruments (live): thermal state · app CPU% (rolling 2s) · renders/s.
+            HStack(spacing: 10) {
+                Text(meter.thermal).font(.system(size: 11, weight: .semibold))
+                    .foregroundStyle(meter.thermal == "nominal" ? .green : (meter.thermal == "fair" ? .yellow : .red))
+                Text(String(format: "CPU %.0f%%", meter.cpuPercent)).font(.system(size: 11, design: .monospaced))
+                Text("\(meter.renderFPS) fps rendered").font(.system(size: 11, design: .monospaced)).foregroundStyle(.secondary)
+                Spacer()
             }
             ScrollView {
                 VStack(alignment: .leading, spacing: 8) {
@@ -1703,6 +1719,7 @@ struct MapCompTuningPanel: View {
         MapComp (palette) — L=\(String(format: "%+.3f", palL)) C=\(String(format: "%.2f", palC)) H=\(String(format: "%+.0f", palH))°
         slots: \(hexes)
         driver(avg on-screen title LOD)=\(String(format: "%.2f", live.driver)) · cameraScale=\(String(format: "%.3f", live.cameraScale)) · median orb r=\(String(format: "%.1f", live.medianOrbRadius))pt
+        HEAT — thermal=\(meter.thermal) · CPU=\(String(format: "%.0f", meter.cpuPercent))% (2s avg) · rendered=\(meter.renderFPS) fps
         \(meter.lastSnapshot.isEmpty ? "no perf snapshot" : meter.lastSnapshot)
         \(MapCompFpsMeter.deviceModel) · iOS \(UIDevice.current.systemVersion)
         """

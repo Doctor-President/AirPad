@@ -231,11 +231,26 @@ enum BackgroundGridNode {
             // (The COLOUR REACTION — dot opacity rising where the grid compresses — was baked to 0
             // and deleted at the 2026-09-14 bake; T never dialled it on.)
 
-            // Premultiplied output. u_dot_color is the per-theme dot tint
-            // (default white → dark byte-identical: (1,1,1)*alpha reproduces the
-            // old vec4(alpha,alpha,alpha,alpha)); light mode pushes a cool
-            // graphite so the dots read on cream (ws-dark-light-mode item 3).
-            gl_FragColor = vec4(u_dot_color * alpha, alpha);
+            // Brief AS — MASS-FIELD RIPPLE (dark only; u_ripple_amt = 0 in light → byte-identical dots).
+            // R (‖warp‖/K → invert → AE Levels gamma) is baked into the field B channel on the CPU at FULL
+            // precision (no in-shader gamma on an 8-bit field → no stepping); the shader reads that single
+            // linear-filtered channel and composites it Normal over (opaque ground ▸ dots) at u_ripple_amt.
+            if (u_ripple_amt > 0.0) {
+                float R = texture2D(u_disp_field, v_tex_coord).b;
+                vec3 groundDots = u_ground_color * (1.0 - alpha) + u_dot_color * alpha;
+                gl_FragColor = vec4(mix(groundDots, vec3(R), u_ripple_amt), 1.0);
+            } else if (u_light_ground_on > 0.5) {
+                // Brief AT — LIGHT comp: the grid OWNS the opaque #FFEEED ground (u_ground_color) so the
+                // dots read on T's chosen ground. Pool was removed at the lock; just ground ▸ dots, opaque.
+                vec3 groundDots = u_ground_color * (1.0 - alpha) + u_dot_color * alpha;
+                gl_FragColor = vec4(groundDots, 1.0);
+            } else {
+                // Premultiplied output. u_dot_color is the per-theme dot tint
+                // (default white → dark byte-identical: (1,1,1)*alpha reproduces the
+                // old vec4(alpha,alpha,alpha,alpha)); light mode pushes a cool
+                // graphite so the dots read on cream (ws-dark-light-mode item 3).
+                gl_FragColor = vec4(u_dot_color * alpha, alpha);
+            }
         }
         """
 
@@ -261,7 +276,12 @@ enum BackgroundGridNode {
             SKUniform(name: "u_warp_sign",     float: 1),
             SKUniform(name: "u_warp_shrink",   float: 0.4),   // mode 3: dots shrink near mass (depression recedes)
             SKUniform(name: "u_warp_mass_range", float: 1),   // 1 = mass influence 0 → encodings byte-identical
-            SKUniform(name: "u_disp_field",    texture: fieldZero)
+            SKUniform(name: "u_disp_field",    texture: fieldZero),
+            // Brief AS — mass-field ripple (dark only; 0 in light → byte-identical). u_ground_color = #111115.
+            SKUniform(name: "u_ripple_amt",   float: 0),
+            SKUniform(name: "u_ground_color", vectorFloat3: vector_float3(0.0667, 0.0667, 0.0824)),
+            // Brief AT — LIGHT comp owns the opaque ground (0 → dark/list byte-identical). Pool removed.
+            SKUniform(name: "u_light_ground_on", float: 0)
         ]
         return shader
     }

@@ -54,6 +54,7 @@ struct CanvasChrome: View {
     /// survives close/re-open within a session — same pattern as
     /// NodeGridView's tile tuning panel.
     @State private var solarFlareTuningPanelOffset: CGSize = .zero
+    /// Brief AS2 — the Map-comp tuner (dark only): focus / glow / ripple + fps + perf snapshot + Copy.
 
     #endif
 
@@ -396,6 +397,7 @@ struct CanvasChrome: View {
             if showSolarFlareTuningPanel {
                 floatingSolarFlareTuningPanel
             }
+            // Brief AT — the Map-comp tuner was deleted at the lock (values baked into MapCompTuning).
             #endif
         }
         // Brief AG3 — first-run callout. Read here (not inside the ZStack) so the ring can find
@@ -516,6 +518,7 @@ struct CanvasChrome: View {
         .frame(maxWidth: .infinity, maxHeight: .infinity)
         .allowsHitTesting(true)
     }
+
 
     // MARK: - Dark-mode orb POP tuning (DEBUG)
 

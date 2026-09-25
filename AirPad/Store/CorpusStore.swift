@@ -1516,6 +1516,13 @@ final class CorpusStore {
                     s.viewMode = .grid
                     setFilterState(s, for: .corpus)
                 }
+                // Brief AS — `-OpenMap` opens the Map (System Graph) directly for headless verification
+                // (comp render + the layer-export harness), without driving the view-switcher menu.
+                if ProcessInfo.processInfo.arguments.contains("-OpenMap") {
+                    var s = filterState(for: .corpus)
+                    s.viewMode = .systemGraph
+                    setFilterState(s, for: .corpus)
+                }
                 if ProcessInfo.processInfo.arguments.contains("-FieldFixtureNode") {
                     let defs = FieldValueSelfTest.fixtureDefinitions()
                     fieldDefinitions = defs

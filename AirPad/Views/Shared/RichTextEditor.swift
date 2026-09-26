@@ -712,6 +712,23 @@ struct RichTextEditor: UIViewRepresentable {
                 typing.removeValue(forKey: .attachment)
                 textView.typingAttributes = typing
             }
+            // Brief AZ2 — the entry-title face (Fraunces Bold) must not leak PAST paragraph 1. When the
+            // caret is OUTSIDE paragraph 1 and typingAttributes still carries the title font (inherited
+            // across Return/tap/arrow), reset it to plain body so paragraph 2+ types as REGULAR body — not
+            // the Source Serif 4 Bold `applyFont` would re-face the leaked bold into. Fraunces is the title
+            // role ONLY (body faces are Source Serif 4 / SF Pro / New York), so this strips exactly the
+            // carry-over; a user-toggled bold uses a BODY face and is untouched. Skip when the caret's
+            // paragraph has an explicit heading level (an intentional Title/Heading keeps its face).
+            if parent.firstParagraphAsTitle,
+               let tf = textView.typingAttributes[.font] as? UIFont,
+               tf.fontName.hasPrefix("Fraunces"),
+               textView.typingAttributes[.airpadHeadingLevel] == nil,
+               !NoteTypography.caretInFirstParagraph(textView) {
+                var typing = textView.typingAttributes
+                typing[.font] = NoteTypographyHelper.bodyFont   // applyFont re-faces to the body serif next keystroke
+                textView.typingAttributes = typing
+                state.isBold = false; state.isItalic = false   // toolbar must not show the stale title traits
+            }
 
             // Keep Note document typography (line height, paragraph spacing, list
             // hanging indent, adaptive color) applied as the text changes. This is
@@ -3784,6 +3801,23 @@ enum NoteTypography {
         let base = UIFont(name: "Fraunces72pt-Bold", size: 20)
             ?? NoteTypographyHelper.headingFont(level: .title, italic: false)
         return italic ? NoteTypographyHelper.italicized(base) : base
+    }
+
+    /// Brief AZ2 — true when the caret sits inside the FIRST non-empty paragraph (the entry-title zone).
+    /// Used to stop the title's Fraunces from leaking into paragraph 2+ via `typingAttributes`.
+    static func caretInFirstParagraph(_ textView: UITextView) -> Bool {
+        let ns = textView.textStorage.string as NSString
+        guard ns.length > 0 else { return true }
+        var firstRange: NSRange?
+        ns.enumerateSubstrings(in: NSRange(location: 0, length: ns.length),
+                               options: .byParagraphs) { sub, subRange, _, stop in
+            if let sub, !sub.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty {
+                firstRange = subRange; stop.pointee = true
+            }
+        }
+        guard let fr = firstRange else { return true }
+        let caret = textView.selectedRange.location
+        return caret >= fr.location && caret <= fr.location + fr.length
     }
 
     private static func paragraphStyle(

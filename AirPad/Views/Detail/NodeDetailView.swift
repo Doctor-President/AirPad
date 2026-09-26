@@ -180,6 +180,21 @@ struct NodeDetailView: View {
     /// in commit 3 when the dev panel is deleted.
     @State private var visualSettings = EntryVisualSettings.shared
 
+    /// Brief BA1 — the app-wide "Default font" (shared with the Settings Appearance
+    /// submenu + `TextEntryBody`). Read here so the entry-view title re-faces live when
+    /// the default (or this entry's override) changes.
+    @AppStorage(EntryBodyFont.defaultStorageKey) private var defaultBodyFontRaw = EntryBodyFont.fallback.rawValue
+
+    /// Brief BA1 — the entry-view title font follows the entry's pairing (per-entry body
+    /// face, else the global default), BOLD, at the `nodeTitle` role's size. "Titles are
+    /// ALWAYS the chosen body face" — Fraunces is no longer used for the entry title. The
+    /// size still comes from the (dev-only) `nodeTitle` role, so a dialed size carries.
+    private var entryTitleFont: Font {
+        let def = EntryBodyFont(rawValue: defaultBodyFontRaw) ?? .fallback
+        let effective = node?.perEntryBodyFont ?? def
+        return effective.titleFont(size: visualSettings.nodeTitle.size)
+    }
+
     // MARK: - Scroll-collapsed hero → title band (Twitter-profile-header collapse)
     //
     // Purely scroll-driven, no gesture. Scroll down → the hero blurs out into a
@@ -507,7 +522,7 @@ struct NodeDetailView: View {
                     }
                 ) {
                     TextField("Title", text: $editedTitle, axis: .vertical)
-                        .font(visualSettings.nodeTitle.resolvedFont())
+                        .font(entryTitleFont)
                         .foregroundStyle(AppearancePalette.ink)
                         .tint(AppearancePalette.ink)
                         .focused($focusedField)

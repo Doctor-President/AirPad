@@ -190,8 +190,9 @@ extension PriorityState {
 /// `.text` content of a Node). PERSISTED contract: the rawValues are storage-stable
 /// (renaming one orphans saved entries). UIKit-free so it compiles in the Share
 /// extension (which builds `AirPad/Models`, not `AirPad/Views`); the rendering layer
-/// (`NoteFontChoice` in RichTextEditor) maps each case to a concrete face. This is the
-/// BODY face only — the entry-title paragraph stays Fraunces regardless of the choice.
+/// (`NoteFontChoice` in RichTextEditor) maps each case to a concrete face. Brief BA1 —
+/// this is the pairing for the WHOLE entry: the entry title + item titles follow this
+/// same chosen face (bold, at the title size), not Fraunces.
 enum EntryBodyFont: String, Codable, CaseIterable, Hashable {
     case sourceSerif4   // AirPad's note serif — the shipped default
     case sfPro          // San Francisco — Apple's system sans (honours Dynamic Type)

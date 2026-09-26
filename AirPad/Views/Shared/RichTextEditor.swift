@@ -82,8 +82,8 @@ struct RichTextEditor: UIViewRepresentable {
     var onInsertImageTapped: (() -> Void)? = nil
 
     /// SPIKE v3 (spike-entry-spine) Model C — when true, the note's FIRST non-empty
-    /// PARAGRAPH is styled in the entry-title serif role (Fraunces) in place, so the
-    /// heading IS line 1 of the editor (no separate copy of the string). Display-only:
+    /// PARAGRAPH is styled in the entry-title role (the pairing's bold body face, Brief
+    /// BA1) in place, so the heading IS line 1 of the editor (no separate copy). Display-only:
     /// it sets a FONT, never `.airpadHeadingLevel`, so `encode` emits no `#` and
     /// storage is unchanged. Re-derived on every keystroke (after `applyInPlace`), so
     /// deleting paragraph 1 promotes the next paragraph live. Only notes opt in.
@@ -134,7 +134,7 @@ struct RichTextEditor: UIViewRepresentable {
         textView.minHeight = minHeight
         textView.attributedText = decodedAttributedText(text)
         // SPIKE v3 Model C — style paragraph 1 as the entry title on first render.
-        if firstParagraphAsTitle { NoteTypography.styleFirstParagraphAsEntryTitle(textView) }
+        if firstParagraphAsTitle { NoteTypography.styleFirstParagraphAsEntryTitle(textView, font: documentFont) }
         // Record the markdown now reflected in the view so the first updateUIView
         // (and every benign re-render after) is a no-op — see `lastAppliedMarkdown`.
         context.coordinator.lastAppliedMarkdown = text
@@ -202,7 +202,7 @@ struct RichTextEditor: UIViewRepresentable {
             let clampedLength = min(previousRange.length, length - clampedLocation)
             uiView.selectedRange = NSRange(location: clampedLocation, length: clampedLength)
             // SPIKE v3 Model C — re-style paragraph 1 as the entry title after a re-decode.
-            if firstParagraphAsTitle { NoteTypography.styleFirstParagraphAsEntryTitle(uiView) }
+            if firstParagraphAsTitle { NoteTypography.styleFirstParagraphAsEntryTitle(uiView, font: documentFont) }
             CaretTrace.log("updateUIView REASSIGNED attributedText, restored \(CaretTrace.sel(uiView)) (prev=\(NSStringFromRange(previousRange)))")
             // After replacing attributedText, typingAttributes inherit from the new
             // surrounding character — or default to system attrs if the text is empty.
@@ -751,16 +751,18 @@ struct RichTextEditor: UIViewRepresentable {
                 typing.removeValue(forKey: .attachment)
                 textView.typingAttributes = typing
             }
-            // Brief AZ2 — the entry-title face (Fraunces Bold) must not leak PAST paragraph 1. When the
-            // caret is OUTSIDE paragraph 1 and typingAttributes still carries the title font (inherited
-            // across Return/tap/arrow), reset it to plain body so paragraph 2+ types as REGULAR body — not
-            // the Source Serif 4 Bold `applyFont` would re-face the leaked bold into. Fraunces is the title
-            // role ONLY (body faces are Source Serif 4 / SF Pro / New York), so this strips exactly the
-            // carry-over; a user-toggled bold uses a BODY face and is untouched. Skip when the caret's
-            // paragraph has an explicit heading level (an intentional Title/Heading keeps its face).
+            // Brief AZ2/BA1 — the entry-title font (the pairing's bold title face) must not leak
+            // PAST paragraph 1. When the caret is OUTSIDE paragraph 1 and typingAttributes still
+            // carries the title font (inherited across Return/tap/arrow), reset it to plain body so
+            // paragraph 2+ types as REGULAR body — not the bold body face `applyFont` would re-face
+            // the leaked bold into. BA1 made the title the CHOSEN body face, so the old
+            // `hasPrefix("Fraunces")` check no longer fires; detect the leak by the TITLE SIZE
+            // instead (`isEntryTitleTypingFont`) — the body renders a point smaller, and a
+            // user-toggled bold in the body is at the body size, so it's untouched. Skip when the
+            // caret's paragraph has an explicit heading level (an intentional Title/Heading keeps it).
             if parent.firstParagraphAsTitle,
                let tf = textView.typingAttributes[.font] as? UIFont,
-               tf.fontName.hasPrefix("Fraunces"),
+               NoteTypography.isEntryTitleTypingFont(tf),
                textView.typingAttributes[.airpadHeadingLevel] == nil,
                !NoteTypography.caretInFirstParagraph(textView) {
                 var typing = textView.typingAttributes
@@ -777,10 +779,10 @@ struct RichTextEditor: UIViewRepresentable {
                 CaretTrace.log("  refreshActiveState pre-applyInPlace  \(CaretTrace.sel(textView))")
                 isRestyling = true
                 NoteTypography.applyInPlace(to: textView, font: parent.documentFont)
-                // SPIKE v3 Model C — the entry-title pass runs LAST (after the serif
-                // re-facing) so paragraph 1 keeps the Fraunces title on every keystroke.
+                // SPIKE v3 Model C / BA1 — the entry-title pass runs LAST (after the body
+                // re-facing) so paragraph 1 keeps the (pairing-faced) title on every keystroke.
                 if parent.firstParagraphAsTitle {
-                    NoteTypography.styleFirstParagraphAsEntryTitle(textView)
+                    NoteTypography.styleFirstParagraphAsEntryTitle(textView, font: parent.documentFont)
                 }
                 isRestyling = false
                 CaretTrace.log("  refreshActiveState post-applyInPlace \(CaretTrace.sel(textView))")
@@ -2580,7 +2582,7 @@ final class RichTextUIView: UITextView {
         if appliedExclusionContainerW == containerW { return }
         appliedExclusionContainerW = containerW
         // Height kept just under a full line so ONLY the title line wraps; 30pt
-        // covers the Fraunces-20 title line + the 2pt top inset.
+        // covers the 20pt title line (entryTitlePointSize) + the 2pt top inset.
         let rect = CGRect(x: containerW - titleTrailingReserve, y: 0,
                           width: titleTrailingReserve, height: 30)
         textContainer.exclusionPaths = [UIBezierPath(rect: rect)]
@@ -3717,6 +3719,21 @@ extension EntryBodyFont {
         case .newYork:      return .newYork
         }
     }
+
+    /// Brief BA1 — a SwiftUI `Font` for the entry/item TITLE role in this pairing: the
+    /// chosen face, BOLD, at `size`. "Titles are ALWAYS the chosen body face" — Fraunces
+    /// is no longer used for the item-title role inside an entry. Mirrors
+    /// `TypeRoleSettings.resolvedFont()` (custom faces via `.custom(_:size:)`, system faces
+    /// via `.system`) so swapping the family doesn't change the scaling the entry title /
+    /// collapsed rows already had. The UIKit sibling `NoteTypography.entryTitleFont(choice:…)`
+    /// resolves the SAME family + weight for the expanded editor, so the fold shows no jump.
+    func titleFont(size: CGFloat) -> Font {
+        switch self {
+        case .sourceSerif4: return .custom("SourceSerif4-Bold", size: size)
+        case .sfPro:        return .system(size: size, weight: .bold)
+        case .newYork:      return .system(size: size, weight: .bold, design: .serif)
+        }
+    }
 }
 
 /// Brief AZ4 — the toolbar font-chip model: the effective body face + whether it's a
@@ -3924,14 +3941,14 @@ enum NoteTypography {
 
     // MARK: - SPIKE v3 (spike-entry-spine) Model C — first paragraph = entry title
 
-    /// Style the FIRST non-empty paragraph in the entry-title serif (Fraunces) IN
-    /// PLACE. Runs AFTER `applyFont` (which re-faces every run to the body serif on
-    /// each keystroke) so it wins the per-keystroke restyle. Sets only `.font` —
+    /// Style the FIRST non-empty paragraph in the entry-title role (the pairing's bold
+    /// body face, Brief BA1) IN PLACE. Runs AFTER `applyFont` (which re-faces every run to
+    /// the body face on each keystroke) so it wins the per-keystroke restyle. Sets only `.font` —
     /// NEVER `.airpadHeadingLevel` — so `encode` (which keys on that attribute) emits
     /// no `#` and the stored markdown is unchanged. Re-derives the first paragraph
     /// each call, so deleting paragraph 1 promotes the next paragraph to the title
     /// live. Idempotent (target font is absolute, not derived from the current font).
-    static func styleFirstParagraphAsEntryTitle(_ textView: UITextView) {
+    static func styleFirstParagraphAsEntryTitle(_ textView: UITextView, font choice: NoteFontChoice) {
         let storage = textView.textStorage
         let ns = storage.string as NSString
         guard ns.length > 0 else { return }
@@ -3944,37 +3961,78 @@ enum NoteTypography {
             }
         }
         guard let fr = firstRange, fr.length > 0 else { return }
-        // DEFAULT, not mandate — only dress a PLAIN BODY first paragraph. If the user
-        // gave it any explicit style (`.airpadHeadingLevel`: Title/Heading/Subhead/
-        // Mono), honor it EXACTLY: skip so `applyFont`'s styling stands and the Format
-        // sheet reflects + can change it. The collapsed static row still renders the
-        // derived text in the uniform spine typography (the index's rendering) — that
-        // divergence on user-styled titles is the intended fold crossfade.
-        if storage.attribute(.airpadHeadingLevel, at: fr.location, effectiveRange: nil) != nil {
-            return
-        }
+        // Brief BA2 — DEFAULT, not mandate — only dress a PLAIN BODY first paragraph as the
+        // title. If it's a list item (bullet/numbered/checklist), an inline-code span, or an
+        // explicit heading level (Title/Heading/Subhead/Mono), honor that EXACTLY: skip so
+        // `applyFont`'s styling stands and the Format sheet reflects + can change it. The
+        // collapsed static row still renders the derived text in the title face (its bullet
+        // glyph stripped) — that divergence on a non-plain first line is the intended fold.
+        guard firstParagraphIsPlain(storage, range: fr) else { return }
         storage.beginEditing()
         storage.enumerateAttribute(.font, in: fr, options: []) { value, r, _ in
             let existing = (value as? UIFont) ?? NoteTypographyHelper.bodyFont
             let italic = existing.fontDescriptor.symbolicTraits.contains(.traitItalic)
-            storage.addAttribute(.font, value: entryTitleFont(italic: italic), range: r)
+            storage.addAttribute(.font, value: entryTitleFont(choice: choice, italic: italic), range: r)
         }
         storage.endEditing()
         // Type in the title font while the caret sits in paragraph 1 — but only for a
         // plain-Body first paragraph (a user-styled one keeps its own typing font).
         let caret = textView.selectedRange.location
         if caret >= fr.location && caret <= fr.location + fr.length {
-            textView.typingAttributes[.font] = entryTitleFont(italic: false)
+            textView.typingAttributes[.font] = entryTitleFont(choice: choice, italic: false)
         }
     }
 
-    /// The entry-title serif (Fraunces), matching the chrome `sectionTitle` role
-    /// (size 20) so the collapsed static row and the expanded first line read
-    /// identically. Falls back to the system title font if the face won't resolve.
-    static func entryTitleFont(italic: Bool) -> UIFont {
-        let base = UIFont(name: "Fraunces72pt-Bold", size: 20)
-            ?? NoteTypographyHelper.headingFont(level: .title, italic: false)
+    /// Brief BA2 — true when the first non-empty paragraph is a PLAIN paragraph, hence
+    /// eligible for the auto entry-title styling. Skips (returns false) for a list item
+    /// (bullet/numbered/checklist), a whole-paragraph inline-code / monospaced span, or an
+    /// explicit heading level. Quote is not a supported note primitive, so there's nothing
+    /// to test for it. Bullet/numbered reuse the Coordinator's single line parser (the one
+    /// source of truth for list markers); checklist/code/heading key on their attributes.
+    private static func firstParagraphIsPlain(_ storage: NSTextStorage, range fr: NSRange) -> Bool {
+        if storage.attribute(.airpadHeadingLevel, at: fr.location, effectiveRange: nil) != nil { return false }
+        if storage.attribute(.airpadChecklistGlyph, at: fr.location, effectiveRange: nil) != nil { return false }
+        if (storage.attribute(.airpadInlineCode, at: fr.location, effectiveRange: nil) as? Bool) == true { return false }
+        if let f = storage.attribute(.font, at: fr.location, effectiveRange: nil) as? UIFont,
+           f.fontDescriptor.symbolicTraits.contains(.traitMonoSpace) { return false }
+        let line = (storage.string as NSString).substring(with: fr)
+        if RichTextEditor.Coordinator.parseLine(line).kind != nil { return false }
+        return true
+    }
+
+    /// Brief BA1 — the entry-title point size, matching the chrome `sectionTitle`
+    /// role so the collapsed static row and the expanded first line read at the same
+    /// size. Also the discriminator for `isEntryTitleTypingFont` (the body renders a
+    /// point smaller — see `bodyPointSizeRatio` — so a leaked title font is spotted by
+    /// its size, no longer by a Fraunces family name).
+    /// `nonisolated` so it's usable as a default-argument value (a nonisolated context)
+    /// under the module's MainActor default isolation — it's an immutable Sendable constant.
+    nonisolated static let entryTitlePointSize: CGFloat = 20
+
+    /// The entry-title face for the pairing `choice`: the chosen body face, BOLD, at
+    /// `size` (default the title size). Brief BA1 — "titles are ALWAYS the chosen body
+    /// face": one family per entry, so the title no longer uses Fraunces. Falls back to
+    /// the system bold face if the chosen face won't resolve. The SwiftUI sibling for
+    /// the collapsed rows / entry-view title is `EntryBodyFont.titleFont(size:)`, which
+    /// resolves the SAME family + weight so the fold crossfade shows no face jump.
+    static func entryTitleFont(choice: NoteFontChoice, italic: Bool,
+                               size: CGFloat = entryTitlePointSize) -> UIFont {
+        if let f = choice.resolveFont(size: size, weight: UIFont.Weight.bold.rawValue,
+                                      italic: italic) {
+            return f
+        }
+        let base = UIFont.systemFont(ofSize: size, weight: .bold)
         return italic ? NoteTypographyHelper.italicized(base) : base
+    }
+
+    /// Brief BA1 — true when `font` is the entry-title typing font (the pairing's title
+    /// face at the title size). Face-independent successor to the AZ2 `hasPrefix("Fraunces")`
+    /// check: the title is now the chosen body face, so leak detection keys on the TITLE
+    /// SIZE (the body renders a point smaller; headings carry `.airpadHeadingLevel`, which
+    /// the caller guards separately) rather than the family. Stops the title font leaking
+    /// into paragraph 2+ via `typingAttributes`.
+    static func isEntryTitleTypingFont(_ font: UIFont) -> Bool {
+        abs(font.pointSize - entryTitlePointSize) < 0.5
     }
 
     /// Brief AZ2 — true when the caret sits inside the FIRST non-empty paragraph (the entry-title zone).

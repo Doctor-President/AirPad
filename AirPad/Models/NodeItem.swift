@@ -195,8 +195,8 @@ struct NodeItem: Codable, Identifiable, Equatable {
     var attributeTile: AttributeTile?
 
     /// Brief AZ3 — explicit "Body" override for a `.text` item's FIRST paragraph.
-    /// The note's Model-C rendering styles paragraph 1 as the entry title (Fraunces)
-    /// by DEFAULT — "Body" is the ABSENCE of a heading level, so before this flag a
+    /// The note's Model-C rendering styles paragraph 1 as the entry title (the pairing's
+    /// bold body face, Brief BA1) by DEFAULT — "Body" is the ABSENCE of a heading level, so before this flag a
     /// user could not make paragraph 1 plain body (the auto-title always re-applied).
     /// Choosing "Body" in the Aa styles on paragraph 1 sets this true, which turns the
     /// title styling OFF for this item so paragraph 1 renders as plain body — and STICKS

@@ -46,6 +46,11 @@ struct EntryCard: View {
     /// and commit 3 deletes the settings file along with the dev panel.
     @State private var visualSettings = EntryVisualSettings.shared
 
+    /// Brief BA1 — the app-wide "Default font" (shared with the Settings Appearance
+    /// submenu + `TextEntryBody`). Reading it here re-renders the card's collapsed row
+    /// title when the default changes so item titles follow the entry's pairing live.
+    @AppStorage(EntryBodyFont.defaultStorageKey) private var defaultBodyFontRaw = EntryBodyFont.fallback.rawValue
+
     /// Local mirror of `item.isExpanded` so the chevron toggles instantly,
     /// independent of the persistence round-trip through the store. Kept in
     /// sync via `.onChange` against the model.
@@ -134,6 +139,18 @@ struct EntryCard: View {
     private var atomicCount: Int {
         guard let node = store.nodes.first(where: { $0.id == nodeID }) else { return 0 }
         return node.items.prefix(while: { $0.type.isAtomic }).count
+    }
+
+    /// Brief BA1 — the item-title font for THIS entry's pairing: the entry's per-entry
+    /// body face (else the global default), BOLD, at the `sectionTitle` size. Replaces the
+    /// hardcoded Fraunces `sectionTitle.resolvedFont()` for every item-title role in the
+    /// card (note collapsed row, gallery/document names, EntryTitleRow) — one family per
+    /// entry, matching the expanded paragraph-1 title. The size still comes from the
+    /// (dev-only) `sectionTitle` role, so a dialed size carries; only the face changes.
+    private var pairingTitleFont: Font {
+        let def = EntryBodyFont(rawValue: defaultBodyFontRaw) ?? .fallback
+        let effective = (store.nodes.first { $0.id == nodeID }?.perEntryBodyFont) ?? def
+        return effective.titleFont(size: visualSettings.sectionTitle.size)
     }
 
     /// ws-entry-containers (4b) — the reorder drag handle, RELOCATED from the
@@ -278,7 +295,7 @@ struct EntryCard: View {
                         isExpanded: effectiveExpansion,
                         onToggleExpansion: toggleExpansion,
                         reorderActive: presentation.reorderActive,
-                        headingFont: visualSettings.sectionTitle.resolvedFont(),
+                        headingFont: pairingTitleFont,
                         optionsMenu: AnyView(entryOptionsMenu),
                         gripDragHandle: AnyView(dragRecognizer)
                     )
@@ -289,7 +306,7 @@ struct EntryCard: View {
                         onToggleExpansion: toggleExpansion,
                         reorderActive: presentation.reorderActive,
                         name: displayName,
-                        nameFont: visualSettings.sectionTitle.resolvedFont(),
+                        nameFont: pairingTitleFont,
                         optionsMenu: AnyView(entryOptionsMenu),
                         gripDragHandle: AnyView(dragRecognizer)
                     )
@@ -308,7 +325,7 @@ struct EntryCard: View {
                 isExpanded: effectiveExpansion,
                 reorderActive: presentation.reorderActive,
                 isAboveFold: isAboveFold,
-                titleFont: visualSettings.sectionTitle.resolvedFont(),
+                titleFont: pairingTitleFont,
                 timestampFont: visualSettings.sectionTimestamp.resolvedFont(),
                 onToggle: toggleExpansion,
                 onPromote: togglePromote,
@@ -511,7 +528,7 @@ struct EntryCard: View {
                 isPlaceholder: false,
                 isExpanded: effectiveExpansion,
                 reorderActive: reorderActive,
-                nameFont: visualSettings.sectionTitle.resolvedFont(),
+                nameFont: pairingTitleFont,
                 onToggle: toggleExpansion,
                 trailing: { spineMetadata },
                 optionsMenu: AnyView(entryOptionsMenu),

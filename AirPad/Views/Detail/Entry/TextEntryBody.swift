@@ -40,6 +40,11 @@ struct TextEntryBody: View {
     @Environment(AppRouter.self) private var router
     @State private var editingText = ""
     @State private var didConsumeAutoFocus = false
+
+    // Brief AZ4 — the app-wide "Default font" (shared with the Settings Appearance
+    // submenu). New entries + entries with no per-entry override follow it; a @AppStorage
+    // read re-evaluates `body` (and re-faces the editor) live when it changes.
+    @AppStorage(EntryBodyFont.defaultStorageKey) private var defaultBodyFontRaw = EntryBodyFont.fallback.rawValue
     /// Photos-picker selection for inserting an inline image into the note.
     @State private var pickerItem: PhotosPickerItem? = nil
     /// Present the picker from a Button so we can capture the caret BEFORE it opens.
@@ -49,6 +54,26 @@ struct TextEntryBody: View {
 
     private var shouldAutoFocus: Bool {
         !didConsumeAutoFocus && store.pendingAutoFocusItemID == item.id
+    }
+
+    // MARK: - Brief AZ3/AZ4 — body font + first-paragraph-Body override
+    //
+    // Read fresh from the store (not the passed-in `item`) so the editor re-faces / the
+    // title flips the instant `setEntryBodyFont` / `setFirstParaExplicitBody` persists,
+    // regardless of how the parent forwards `item`. Both are cheap `.first(where:)` reads.
+
+    /// The entry's node as currently held in the store (source of truth for the overrides).
+    private var storeNode: Node? { store.nodes.first(where: { $0.id == nodeID }) }
+
+    /// The global "Default font" (falls back to Source Serif 4 for an unset/garbage key).
+    private var defaultBodyFont: EntryBodyFont { EntryBodyFont(rawValue: defaultBodyFontRaw) ?? .fallback }
+
+    /// The EFFECTIVE body face for this entry: its per-entry override, else the default.
+    private var effectiveBodyFont: EntryBodyFont { storeNode?.perEntryBodyFont ?? defaultBodyFont }
+
+    /// AZ3 — true when the user opted paragraph 1 out of the entry-title styling.
+    private var firstParaIsExplicitBody: Bool {
+        storeNode?.items.first(where: { $0.id == item.id })?.firstParaExplicitBody ?? false
     }
 
     var body: some View {
@@ -104,7 +129,8 @@ struct TextEntryBody: View {
                 // exists exactly once — it IS line 1 (A4 by construction). Chevron +
                 // grip float over line 1 (chevron in the gutter, grip trailing);
                 // tapping line 1 edits the title (tap-to-rename free).
-                editorCore(text: $editingText, firstParagraphAsTitle: true)
+                // AZ3 — paragraph 1 is the entry title UNLESS the user opted it out (Body).
+                editorCore(text: $editingText, firstParagraphAsTitle: !firstParaIsExplicitBody)
                     .padding(.leading, EntrySpineRow<EmptyView>.textMargin)
                     .frame(maxWidth: .infinity, alignment: .leading)
                     .overlay(alignment: .topLeading) { chevronOverlay }
@@ -226,9 +252,9 @@ struct TextEntryBody: View {
             },
             autoFocusOnAppear: shouldAutoFocus,
             documentStyle: true,
-            // Source Serif 4 is the Note typography default (SB121). Lora stays
-            // bundled for the forthcoming user-selectable font picker.
-            documentFont: .sourceSerif4,
+            // Brief AZ4 — the effective body face: this entry's override, else the global
+            // "Default font". Changing either re-faces the editor live (updateUIView re-decode).
+            documentFont: effectiveBodyFont.noteFontChoice,
             // Inline images: resolve a token's item id → image for rendering.
             resolveImage: { await store.inlineImage(forItemID: $0, nodeID: nodeID) },
             // photo-at-caret: the editor wires this so we can capture the caret + splice.
@@ -237,7 +263,27 @@ struct TextEntryBody: View {
             // captured the caret at the tap (state.insertImage); this just presents.
             onInsertImageTapped: { showPhotoPicker = true },
             // SPIKE v3 Model C — style paragraph 1 as the entry title (spine only).
-            firstParagraphAsTitle: firstParagraphAsTitle
+            firstParagraphAsTitle: firstParagraphAsTitle,
+            // AZ3 — "Body" on the auto-titled paragraph 1 → persist the opt-out, which
+            // flips `firstParagraphAsTitle` off for this item so it sticks as plain body.
+            onExplicitBodyFirstParagraph: {
+                Task { await store.setFirstParaExplicitBody(true, itemID: item.id, nodeID: nodeID) }
+            },
+            // AZ4 — the toolbar font chip: pick this entry's face, follow the default, or
+            // set the shown face as the app-wide default.
+            bodyFontMenu: EntryFontMenu(
+                current: effectiveBodyFont,
+                isOverride: storeNode?.perEntryBodyFont != nil,
+                defaultFont: defaultBodyFont,
+                select: { face in Task { await store.setEntryBodyFont(face, nodeID: nodeID) } },
+                useDefault: { Task { await store.setEntryBodyFont(nil, nodeID: nodeID) } },
+                setAsDefault: { face in
+                    defaultBodyFontRaw = face.rawValue
+                    // Setting a face as the global default also clears THIS entry's
+                    // override so it follows the new default ("set it once, stop fighting it").
+                    Task { await store.setEntryBodyFont(nil, nodeID: nodeID) }
+                }
+            )
         )
         // Inline-image insertion lives on the launcher bar's `image` category
         // (ws-editor-chrome); the picker is presented from here, caret captured

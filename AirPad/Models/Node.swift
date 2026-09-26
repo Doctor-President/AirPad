@@ -186,6 +186,40 @@ extension PriorityState {
     }
 }
 
+/// Brief AZ4 — the user-selectable BODY typeface for an entry's text (the whole
+/// `.text` content of a Node). PERSISTED contract: the rawValues are storage-stable
+/// (renaming one orphans saved entries). UIKit-free so it compiles in the Share
+/// extension (which builds `AirPad/Models`, not `AirPad/Views`); the rendering layer
+/// (`NoteFontChoice` in RichTextEditor) maps each case to a concrete face. This is the
+/// BODY face only — the entry-title paragraph stays Fraunces regardless of the choice.
+enum EntryBodyFont: String, Codable, CaseIterable, Hashable {
+    case sourceSerif4   // AirPad's note serif — the shipped default
+    case sfPro          // San Francisco — Apple's system sans (honours Dynamic Type)
+    case newYork        // Apple's system serif
+
+    /// Full user-facing name (vocabulary.md), for the picker rows.
+    var displayName: String {
+        switch self {
+        case .sourceSerif4: return "Source Serif 4"
+        case .sfPro:        return "SF Pro"
+        case .newYork:      return "New York"
+        }
+    }
+    /// Compact name for the toolbar font chip (kept short so the chip fits the bar).
+    var shortName: String {
+        switch self {
+        case .sourceSerif4: return "Serif"
+        case .sfPro:        return "SF Pro"
+        case .newYork:      return "New York"
+        }
+    }
+
+    /// The global-default fallback + the @AppStorage key storing the app-wide "Default
+    /// font" (shared by the Settings Appearance submenu and the toolbar chip).
+    static let fallback: EntryBodyFont = .sourceSerif4
+    static let defaultStorageKey = "entry.defaultBodyFont"
+}
+
 struct Node: Codable, Identifiable, Hashable {
     let id: String
     var createdAt: Date
@@ -435,6 +469,14 @@ struct Node: Codable, Identifiable, Hashable {
     /// `priority` pattern.
     var proposals: [Proposal]?
 
+    /// Brief AZ4 — per-ENTRY body-typeface override. `nil` = FOLLOW the global
+    /// "Default font" (@AppStorage `EntryBodyFont.defaultStorageKey`); a non-nil value
+    /// pins THIS entry's body face regardless of the default, and stays put when the
+    /// default changes. The picker's "Use default" clears it back to nil. See
+    /// `EntryBodyFont`. Additive + decode-tolerant (`decodeIfPresent`); legacy nodes
+    /// decode as nil — no schema-version bump (the `heroCrop` / `priority` pattern).
+    var perEntryBodyFont: EntryBodyFont?
+
     enum CodingKeys: String, CodingKey {
         case id, title, summary, tags, mood, provenance, threads, location, items, domain, source
         case createdAt = "created_at"
@@ -474,6 +516,7 @@ struct Node: Codable, Identifiable, Hashable {
         case heroAnalysis = "hero_analysis"
         case priority
         case proposals
+        case perEntryBodyFont = "per_entry_body_font"
     }
 
     // ID-based equality so Hashable synthesis doesn't require all properties to be Hashable.
@@ -529,7 +572,8 @@ struct Node: Codable, Identifiable, Hashable {
         heroCrop: HeroCrop? = nil,
         heroAnalysis: ImageAnalysis? = nil,
         priority: PriorityState? = nil,
-        proposals: [Proposal]? = nil
+        proposals: [Proposal]? = nil,
+        perEntryBodyFont: EntryBodyFont? = nil
     ) {
         self.id                          = id
         self.createdAt                   = createdAt
@@ -579,6 +623,7 @@ struct Node: Codable, Identifiable, Hashable {
         self.heroAnalysis                = heroAnalysis
         self.priority                    = priority
         self.proposals                   = proposals
+        self.perEntryBodyFont            = perEntryBodyFont
     }
 }
 
@@ -642,6 +687,7 @@ extension Node {
         heroAnalysis               = try c.decodeIfPresent(ImageAnalysis.self, forKey: .heroAnalysis) ?? nil
         priority                   = try c.decodeIfPresent(PriorityState.self, forKey: .priority)
         proposals                  = try c.decodeIfPresent([Proposal].self, forKey: .proposals)
+        perEntryBodyFont           = try c.decodeIfPresent(EntryBodyFont.self, forKey: .perEntryBodyFont)
     }
 }
 

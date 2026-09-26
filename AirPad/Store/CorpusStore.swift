@@ -3886,6 +3886,38 @@ final class CorpusStore {
         await updateNode(updated)
     }
 
+    /// Brief AZ3 — set the explicit "Body" override on a `.text` item's FIRST paragraph
+    /// (`NodeItem.firstParaExplicitBody`). Fired when the user picks "Body" in the Aa
+    /// styles while the caret sits in the auto-titled paragraph 1, so the entry-title
+    /// styling turns OFF for that item and STICKS. Stored on the item, never in the
+    /// markdown. Mirrors `setEntryExpanded` (per-item Bool, no-op-skipping, race-safe:
+    /// no suspension between the fresh read and the write).
+    func setFirstParaExplicitBody(_ value: Bool, itemID: String, nodeID: String) async {
+        guard let nodeIdx = nodes.firstIndex(where: { $0.id == nodeID }) else { return }
+        var updated = nodes[nodeIdx]
+        guard let itemIdx = updated.items.firstIndex(where: { $0.id == itemID }),
+              updated.items[itemIdx].type == .text,
+              (updated.items[itemIdx].firstParaExplicitBody ?? false) != value else { return }
+        let now = Date()
+        updated.items[itemIdx].firstParaExplicitBody = value
+        updated.items[itemIdx].updatedAt = now
+        updated.updatedAt = now
+        await updateNode(updated)
+    }
+
+    /// Brief AZ4 — set (or clear, with `nil`) THIS entry's body-typeface override
+    /// (`Node.perEntryBodyFont`). `nil` = follow the global "Default font". The note
+    /// editor re-faces live when this changes. Mirrors `setHeroCrop` (per-node value,
+    /// no-op-skipping, race-safe).
+    func setEntryBodyFont(_ font: EntryBodyFont?, nodeID: String) async {
+        guard let nodeIdx = nodes.firstIndex(where: { $0.id == nodeID }) else { return }
+        var updated = nodes[nodeIdx]
+        guard updated.perEntryBodyFont != font else { return }
+        updated.perEntryBodyFont = font
+        updated.updatedAt = Date()
+        await updateNode(updated)
+    }
+
     /// Resolves the on-disk URL of a node's hero image, or `nil` when
     /// none is set. The hero always lives on its own node, so the node's
     /// own id is the resolution context.

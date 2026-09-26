@@ -92,6 +92,7 @@
 		4554A6E0AE6CD1513CB6E0E5 /* sourceserifblack_msdf.json in Resources */ = {isa = PBXBuildFile; fileRef = 970BD9EEAF319B1548FDB3F6 /* sourceserifblack_msdf.json */; };
 		460B456B553D07FAD0AAA28C /* SourceSerif4-Italic.ttf in Resources */ = {isa = PBXBuildFile; fileRef = 7A472A94A2947218490CED0B /* SourceSerif4-Italic.ttf */; };
 		477F08FD09F9D4C6A9418BB6 /* Security.framework in Frameworks */ = {isa = PBXBuildFile; fileRef = 6150CF6FB6E8BBB89B1C5C8F /* Security.framework */; };
+		47CC4C3FFCA1B8E4A9FF4836 /* TypeSystemPreview.swift in Sources */ = {isa = PBXBuildFile; fileRef = 1B306E9C0D8DCA247E578174 /* TypeSystemPreview.swift */; };
 		48043B3C310828936B349842 /* BGEMicro.mlpackage in Sources */ = {isa = PBXBuildFile; fileRef = 8C73593D5F5CF884769506DE /* BGEMicro.mlpackage */; };
 		482DEB06493226E28C6252D5 /* SampleLibrary in Resources */ = {isa = PBXBuildFile; fileRef = FF17153136D015CF18EF722D /* SampleLibrary */; };
 		48F889B689808B42A745DCFB /* CardEmbeddingParityTest.swift in Sources */ = {isa = PBXBuildFile; fileRef = A68F48BA8AA932943F118533 /* CardEmbeddingParityTest.swift */; };
@@ -384,6 +385,7 @@
 		194292F01A21193B880F16FA /* ContentView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ContentView.swift; sourceTree = "<group>"; };
 		1AB3E0DAA09EAAB03B140BC7 /* SubstrateBagLayout.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = SubstrateBagLayout.swift; sourceTree = "<group>"; };
 		1B2FC18986ACC45F4CAA20A7 /* card_parity_fixture.json */ = {isa = PBXFileReference; lastKnownFileType = text.json; path = card_parity_fixture.json; sourceTree = "<group>"; };
+		1B306E9C0D8DCA247E578174 /* TypeSystemPreview.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = TypeSystemPreview.swift; sourceTree = "<group>"; };
 		1CF73692FBE1135F029C455E /* spacegroteskbold_msdf.json */ = {isa = PBXFileReference; lastKnownFileType = text.json; path = spacegroteskbold_msdf.json; sourceTree = "<group>"; };
 		1DBE8572AE138177283E2B18 /* Lato-Bold.ttf */ = {isa = PBXFileReference; lastKnownFileType = file; path = "Lato-Bold.ttf"; sourceTree = "<group>"; };
 		1F0919534CCB6765FBE4D8F0 /* Fraunces_72pt-Bold.ttf */ = {isa = PBXFileReference; lastKnownFileType = file; path = "Fraunces_72pt-Bold.ttf"; sourceTree = "<group>"; };
@@ -911,6 +913,7 @@
 				3CE3C621B79444C7292BABAE /* Chat */,
 				37218568793A17FDE4D48112 /* Collections */,
 				A1059810ABACBA240F7761FF /* Dashboard */,
+				C13C6E932655973232E8EC35 /* Debug */,
 				4457977889C2B78493EC5AD7 /* Detail */,
 				2BB717D4AE953E9CFCD7C90A /* Grid */,
 				A4B743E14DBF0611388FD4DE /* Librarian */,
@@ -1134,6 +1137,14 @@
 				36D4851654AC4C2F3AF8798F /* ZoomableImageView.swift */,
 			);
 			path = Entry;
+			sourceTree = "<group>";
+		};
+		C13C6E932655973232E8EC35 /* Debug */ = {
+			isa = PBXGroup;
+			children = (
+				1B306E9C0D8DCA247E578174 /* TypeSystemPreview.swift */,
+			);
+			path = Debug;
 			sourceTree = "<group>";
 		};
 		CF874724BE8A2033D58ADCC8 /* Threads */ = {
@@ -1654,6 +1665,7 @@
 				8A4950423895F7ECE2B4D88E /* ThreadService.swift in Sources */,
 				E4343E9BFBA0EAAF7E3C9D5B /* ThreadSuggestionCard.swift in Sources */,
 				26E14B3E298318D333114703 /* TodayCardView.swift in Sources */,
+				47CC4C3FFCA1B8E4A9FF4836 /* TypeSystemPreview.swift in Sources */,
 				180A5BBD985A33703EA64E74 /* UMAP.swift in Sources */,
 				AC00CAAEA3AB86F2D4455FD1 /* UMAPFindAB.swift in Sources */,
 				A859CCDDA5AEF40491043CDA /* UMAPFuzzySet.swift in Sources */,

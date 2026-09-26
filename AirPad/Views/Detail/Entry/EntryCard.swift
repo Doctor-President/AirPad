@@ -148,6 +148,10 @@ struct EntryCard: View {
     /// entry, matching the expanded paragraph-1 title. The size still comes from the
     /// (dev-only) `sectionTitle` role, so a dialed size carries; only the face changes.
     private var pairingTitleFont: Font {
+        #if DEBUG
+        // Brief BB4 — the `-TypeSystem` harness overrides the Title role app-wide.
+        if let f = TypeSystemPreview.titleFont(size: visualSettings.sectionTitle.size) { return f }
+        #endif
         let def = EntryBodyFont(rawValue: defaultBodyFontRaw) ?? .fallback
         let effective = (store.nodes.first { $0.id == nodeID }?.perEntryBodyFont) ?? def
         return effective.titleFont(size: visualSettings.sectionTitle.size)

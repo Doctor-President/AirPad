@@ -190,6 +190,10 @@ struct NodeDetailView: View {
     /// ALWAYS the chosen body face" — Fraunces is no longer used for the entry title. The
     /// size still comes from the (dev-only) `nodeTitle` role, so a dialed size carries.
     private var entryTitleFont: Font {
+        #if DEBUG
+        // Brief BB4 — the `-TypeSystem` harness overrides the Display/Title role app-wide.
+        if let f = TypeSystemPreview.titleFont(size: visualSettings.nodeTitle.size) { return f }
+        #endif
         let def = EntryBodyFont(rawValue: defaultBodyFontRaw) ?? .fallback
         let effective = node?.perEntryBodyFont ?? def
         return effective.titleFont(size: visualSettings.nodeTitle.size)

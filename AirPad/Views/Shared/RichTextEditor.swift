@@ -3932,6 +3932,14 @@ enum NoteTypography {
             // theirs. SF Pro / New York body stays at its natural (regular) weight — no
             // lift — so a clean sans/serif body doesn't read heavy.
             if choice == .sourceSerif4 { weight = max(weight, UIFont.Weight.semibold.rawValue) }
+            #if DEBUG
+            // Brief BB4 — the `-TypeSystem` harness overrides the Body role app-wide.
+            if let previewed = TypeSystemPreview.bodyUIFont(size: size,
+                                                           weight: UIFont.Weight(rawValue: weight),
+                                                           italic: symbolic.contains(.traitItalic)) {
+                runs.append((r, previewed)); return
+            }
+            #endif
             guard let swapped = choice.resolveFont(size: size, weight: weight,
                                                    italic: symbolic.contains(.traitItalic)) else { return }
             runs.append((r, swapped))
@@ -4017,6 +4025,10 @@ enum NoteTypography {
     /// resolves the SAME family + weight so the fold crossfade shows no face jump.
     static func entryTitleFont(choice: NoteFontChoice, italic: Bool,
                                size: CGFloat = entryTitlePointSize) -> UIFont {
+        #if DEBUG
+        // Brief BB4 — the `-TypeSystem` harness overrides the Title role app-wide.
+        if let f = TypeSystemPreview.titleUIFont(size: size, italic: italic) { return f }
+        #endif
         if let f = choice.resolveFont(size: size, weight: UIFont.Weight.bold.rawValue,
                                       italic: italic) {
             return f

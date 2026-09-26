@@ -194,6 +194,18 @@ struct NodeItem: Codable, Identifiable, Equatable {
     /// legacy JSON — no `entrySchemaVersion` bump.
     var attributeTile: AttributeTile?
 
+    /// Brief AZ3 — explicit "Body" override for a `.text` item's FIRST paragraph.
+    /// The note's Model-C rendering styles paragraph 1 as the entry title (Fraunces)
+    /// by DEFAULT — "Body" is the ABSENCE of a heading level, so before this flag a
+    /// user could not make paragraph 1 plain body (the auto-title always re-applied).
+    /// Choosing "Body" in the Aa styles on paragraph 1 sets this true, which turns the
+    /// title styling OFF for this item so paragraph 1 renders as plain body — and STICKS
+    /// across relaunch. Stored on the item, NOT in the markdown, so normal notes' stored
+    /// text is byte-unchanged. Additive optional, synthesized decode-tolerant
+    /// (`decodeIfPresent` reads a missing key as nil = "default: title on"); nil on every
+    /// non-text item and on legacy JSON — no `entrySchemaVersion` bump.
+    var firstParaExplicitBody: Bool?
+
     enum CodingKeys: String, CodingKey {
         case id, type, content, file, description, transcript, url, title, preview
         case createdAt = "created_at"
@@ -217,6 +229,7 @@ struct NodeItem: Codable, Identifiable, Equatable {
         case chatSessionIDs = "chat_session_ids"
         case field
         case attributeTile = "attribute_tile"
+        case firstParaExplicitBody = "first_para_explicit_body"
     }
 }
 

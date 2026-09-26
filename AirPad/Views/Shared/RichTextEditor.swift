@@ -89,6 +89,18 @@ struct RichTextEditor: UIViewRepresentable {
     /// deleting paragraph 1 promotes the next paragraph live. Only notes opt in.
     var firstParagraphAsTitle: Bool = false
 
+    /// Brief AZ3 — fired when the user picks "Body" in the Aa styles while the caret is
+    /// in the auto-titled paragraph 1 (i.e. `firstParagraphAsTitle` is active and the
+    /// paragraph has no explicit heading level). The consumer persists the explicit-Body
+    /// override (`NodeItem.firstParaExplicitBody`), which flips `firstParagraphAsTitle`
+    /// off for this item so paragraph 1 sticks as plain body. Nil for editors without a
+    /// Model-C title.
+    var onExplicitBodyFirstParagraph: (() -> Void)? = nil
+
+    /// Brief AZ4 — the toolbar font-chip model (see `EntryFontMenu`). Non-nil only for
+    /// the note editor; drives the font chip in the toolbar's reserved slot.
+    var bodyFontMenu: EntryFontMenu? = nil
+
     func makeCoordinator() -> Coordinator {
         Coordinator(parent: self)
     }
@@ -135,6 +147,12 @@ struct RichTextEditor: UIViewRepresentable {
         // Launcher bar: show the `image` category only for editors that support
         // inline images (the note; not capture surfaces).
         context.coordinator.state.supportsInlineImage = (onInsertImageTapped != nil)
+        // Brief AZ4 — the toolbar font chip's model (nil = no chip, for capture surfaces).
+        context.coordinator.state.bodyFontMenu = bodyFontMenu
+        // Brief AZ4/AZ3 — record the font + title mode now reflected in the view so a
+        // later change to either (with the text unchanged) re-styles live (see updateUIView).
+        context.coordinator.lastAppliedFont = documentFont
+        context.coordinator.lastFirstParagraphAsTitle = firstParagraphAsTitle
         // photo-at-caret: let the note drive inline-image insertion at a remembered
         // caret. Closures capture the Coordinator, which owns the text view.
         if let insertion = inlineImageInsertion {
@@ -154,6 +172,9 @@ struct RichTextEditor: UIViewRepresentable {
 
     func updateUIView(_ uiView: RichTextUIView, context: Context) {
         context.coordinator.parent = self
+        // Brief AZ4 — keep the toolbar font chip's model live (the closures + the
+        // effective face change as the entry's override / the global default change).
+        context.coordinator.state.bodyFontMenu = bodyFontMenu
         CaretTrace.log("updateUIView ENTER \(CaretTrace.sel(uiView)) bindingLen=\((text as NSString).length) lastAppliedLen=\((context.coordinator.lastAppliedMarkdown as NSString?)?.length ?? -1) willReassign=\(text != context.coordinator.lastAppliedMarkdown)")
         // Only re-decode when the incoming binding differs from the markdown we last
         // reflected in the view (`lastAppliedMarkdown`). This is a plain string compare,
@@ -162,10 +183,20 @@ struct RichTextEditor: UIViewRepresentable {
         // that form was permanently true and would re-decode (clobbering caret/attributes)
         // on every render. Typing keeps the two in sync: `pushBinding` sets
         // `lastAppliedMarkdown` to the value it writes, so the next render is a no-op.
-        if text != context.coordinator.lastAppliedMarkdown {
+        //
+        // Brief AZ4/AZ3 — ALSO re-decode when the body FONT (`documentFont`) or the
+        // title MODE (`firstParagraphAsTitle`) changed with the text unchanged: re-decode
+        // from the binding (role-truth) so the new face applies WITHOUT compounding the
+        // baked weights of the prior face, and the entry-title styling is applied/stripped
+        // to match the new mode. Both are deliberate, infrequent menu actions.
+        let fontChanged = documentStyle && context.coordinator.lastAppliedFont != documentFont
+        let titleModeChanged = context.coordinator.lastFirstParagraphAsTitle != firstParagraphAsTitle
+        if text != context.coordinator.lastAppliedMarkdown || fontChanged || titleModeChanged {
             let previousRange = uiView.selectedRange
             uiView.attributedText = decodedAttributedText(text)
             context.coordinator.lastAppliedMarkdown = text
+            context.coordinator.lastAppliedFont = documentFont
+            context.coordinator.lastFirstParagraphAsTitle = firstParagraphAsTitle
             let length = uiView.attributedText.length
             let clampedLocation = min(previousRange.location, length)
             let clampedLength = min(previousRange.length, length - clampedLocation)
@@ -232,6 +263,14 @@ struct RichTextEditor: UIViewRepresentable {
         /// is still the end-of-text default, jumping the caret to the end (MD14).
         /// Set in `makeUIView`, `updateUIView` (external change), and `pushBinding`.
         var lastAppliedMarkdown: String?
+        /// Brief AZ4 — the `documentFont` last reflected in the view. When the effective
+        /// body face changes (entry override / global default), `updateUIView` re-decodes
+        /// so the new face applies live. `nil` until first render.
+        var lastAppliedFont: NoteFontChoice?
+        /// Brief AZ3 — the `firstParagraphAsTitle` mode last reflected in the view. When it
+        /// flips (the user opts paragraph 1 into/out of plain body), `updateUIView`
+        /// re-decodes so the title face is applied/stripped live. `nil` until first render.
+        var lastFirstParagraphAsTitle: Bool?
         /// Guards against re-entrancy when `applyInPlace` restyles storage from
         /// within `refreshActiveState` (a programmatic selection nudge could
         /// otherwise re-trigger the delegate and recurse).
@@ -1481,6 +1520,18 @@ struct RichTextEditor: UIViewRepresentable {
 
             refreshActiveState(in: textView)
             pushBinding(from: textView)
+
+            // Brief AZ3 — picking "Body" (level nil) while paragraph 1 is the auto-title
+            // (firstParagraphAsTitle active, caret in paragraph 1) means "make paragraph 1
+            // plain body, and stick." Ask the consumer to persist the explicit-Body
+            // override (`NodeItem.firstParaExplicitBody`); it flips `firstParagraphAsTitle`
+            // off for this item, so the updateUIView re-decode drops the title face. Can't
+            // re-fire once opted out — the flag makes `firstParagraphAsTitle` false.
+            if level == nil,
+               parent.firstParagraphAsTitle,
+               NoteTypography.caretInFirstParagraph(textView) {
+                parent.onExplicitBodyFirstParagraph?()
+            }
         }
 
         // MARK: Checklist toggle (Stage 2.3)
@@ -2127,6 +2178,13 @@ final class RichTextEditorState {
     /// `image` category on the bar → captures the caret (before the picker resigns
     /// first responder) and asks the consumer to present the photo picker.
     var insertImage: () -> Void = {}
+
+    /// Brief AZ4 — the toolbar font chip's model. Non-nil ONLY for the note editor
+    /// (`documentStyle`); when set, the bar shows a font chip in the reserved slot
+    /// (between the image button and the keyboard toggle) whose menu changes the
+    /// entry's body face, the global default, or clears the override. The Coordinator
+    /// copies `RichTextEditor.bodyFontMenu` here on every `updateUIView` so it stays live.
+    var bodyFontMenu: EntryFontMenu? = nil
 }
 
 // MARK: - Toolbar view
@@ -2161,9 +2219,14 @@ struct RichTextToolbar: View {
                 separator
                 button(icon: "photo", active: false, action: state.insertImage)             // image — its own section
             }
-            // table — RESERVED position, NO icon (an icon implies a primitive that
-            // doesn't exist yet; ws-editor-chrome §"table IS NOT A BUTTON").
-            Color.clear.frame(width: 36, height: 36)
+            // Brief AZ4 — the font chip lives in this slot for the note editor (it opens
+            // the body-typeface picker). Non-note editors keep the empty reserved slot
+            // (was the table-reserved position; ws-editor-chrome §"table IS NOT A BUTTON").
+            if let fontMenu = state.bodyFontMenu {
+                fontChip(fontMenu)
+            } else {
+                Color.clear.frame(width: 36, height: 36)
+            }
             Spacer(minLength: 0)
             button(icon: "keyboard.chevron.compact.down", active: false, action: state.dismissKeyboard)
         }
@@ -2186,6 +2249,49 @@ struct RichTextToolbar: View {
             .fill(Color.primary.opacity(0.12))
             .frame(width: 1, height: 22)
             .padding(.horizontal, 4)
+    }
+
+    /// Brief AZ4 — the body-typeface chip + its picker menu. The menu's face list is a
+    /// `Picker` (auto-checkmark on the effective face); "Use default" clears the entry's
+    /// override, "Set as default" makes the shown face the app-wide default. The chip
+    /// text reads "Default · <face>" (following the default) or the bare face name (an
+    /// override). No per-selection fonts — one body face per entry (no style soup).
+    private func fontChip(_ menu: EntryFontMenu) -> some View {
+        Menu {
+            Picker("Font", selection: Binding(get: { menu.current }, set: { menu.select($0) })) {
+                ForEach(EntryBodyFont.allCases, id: \.self) { face in
+                    Text(face.displayName).tag(face)
+                }
+            }
+            Divider()
+            Button {
+                menu.useDefault()
+            } label: {
+                Label("Use default (\(menu.defaultFont.displayName))",
+                      systemImage: menu.isOverride ? "arrow.uturn.backward" : "checkmark")
+            }
+            Button {
+                menu.setAsDefault(menu.current)
+            } label: {
+                Label("Set “\(menu.current.displayName)” as default", systemImage: "star")
+            }
+        } label: {
+            HStack(spacing: 4) {
+                Image(systemName: "character")
+                    .font(.system(size: 12, weight: .semibold))
+                Text(menu.chipLabel)
+                    .font(.system(size: 13, weight: .medium))
+                    .lineLimit(1)
+                    .truncationMode(.tail)
+            }
+            .foregroundStyle(Color.primary.opacity(0.8))
+            .padding(.horizontal, 11)
+            .frame(height: 32)
+            .frame(maxWidth: 168)
+            .background(Capsule(style: .continuous).fill(Color.primary.opacity(0.08)))
+        }
+        .menuOrder(.fixed)
+        .accessibilityIdentifier("entryFontChip")
     }
 
     private func button(
@@ -3513,14 +3619,18 @@ enum MarkdownCodec {
 
 // MARK: - Note serif feel-test (SB121)
 
-/// Scaffold font options for the Note serif feel-test. This is throwaway
-/// plumbing — it will be replaced by the real font-picker setting. `.system`
-/// keeps the decoded system font (existing behavior); the serif cases swap the
-/// typeface while preserving each run's size + bold/italic.
+/// Font options for the note body. `.system` keeps the decoded system font
+/// (existing capture-surface behavior; `applyFont` is skipped entirely for it). The
+/// rest re-face every run while preserving each run's size + weight + italic and
+/// scaling to the note body size. Brief AZ4 makes `.sourceSerif4` / `.sfPro` /
+/// `.newYork` user-selectable via the toolbar font chip (mapped from the persisted
+/// `EntryBodyFont`); `.lora` is dead scaffold kept for back-compat (not offered).
 enum NoteFontChoice {
     case system
     case lora
     case sourceSerif4
+    case sfPro          // Brief AZ4 — San Francisco (system sans), note-body-scaled
+    case newYork        // Brief AZ4 — Apple's system serif (`.serif` design)
 
     /// Bundled serif PostScript face name for a run's NUMERIC `weight` + `italic`,
     /// or nil to keep the system font. `weight` is the UIFontWeight-axis value read
@@ -3540,7 +3650,9 @@ enum NoteFontChoice {
     /// is a separate, family-based path — not this PostScript-name one.)
     func faceName(weight: CGFloat, italic: Bool) -> String? {
         switch self {
-        case .system:
+        case .system, .sfPro, .newYork:
+            // `.system` keeps the decoded font; SF Pro / New York resolve SYSTEM faces
+            // (not vendored PostScript names) — see `resolveFont`.
             return nil
         case .sourceSerif4:
             // (axis weight, upright stem, italic stem) per vendored face. PS names
@@ -3562,6 +3674,67 @@ enum NoteFontChoice {
             if bold { return "Lora-Bold" }
             return italic ? "Lora-Italic" : "Lora-Regular"
         }
+    }
+
+    /// Fully-resolved face for a run at `size` (already note-scaled) with NUMERIC
+    /// `weight` and `italic`. `nil` = keep the run's current font (only `.system`).
+    ///
+    /// Brief AZ4 — this replaces the old PostScript-only `faceName` path in
+    /// `NoteTypography.applyFont` so SF Pro / New York can resolve SYSTEM faces:
+    /// - `.sourceSerif4` / `.lora`: a vendored PostScript face by name.
+    /// - `.sfPro`: San Francisco via `systemFont(ofSize:weight:)`; italic synthesised.
+    /// - `.newYork`: the system font with the `.serif` design applied to its descriptor
+    ///   (Apple's New York), at the same weight; italic synthesised.
+    /// Italic is always the reliable `withSymbolicTraits` path (`NoteTypographyHelper
+    /// .italicized`) — `.traits`-dict annotation doesn't resolve a concrete italic face.
+    func resolveFont(size: CGFloat, weight: CGFloat, italic: Bool) -> UIFont? {
+        switch self {
+        case .system:
+            return nil
+        case .sourceSerif4, .lora:
+            guard let name = faceName(weight: weight, italic: italic),
+                  let f = UIFont(name: name, size: size) else { return nil }
+            return f
+        case .sfPro:
+            let f = UIFont.systemFont(ofSize: size, weight: UIFont.Weight(rawValue: weight))
+            return italic ? NoteTypographyHelper.italicized(f) : f
+        case .newYork:
+            let base = UIFont.systemFont(ofSize: size, weight: UIFont.Weight(rawValue: weight))
+            let serif = base.fontDescriptor.withDesign(.serif).map { UIFont(descriptor: $0, size: size) } ?? base
+            return italic ? NoteTypographyHelper.italicized(serif) : serif
+        }
+    }
+}
+
+extension EntryBodyFont {
+    /// Brief AZ4 — map the persisted, UIKit-free `EntryBodyFont` (Models) to the
+    /// rendering `NoteFontChoice` (Views). Kept here (not in Models) because
+    /// `NoteFontChoice` lives in the Views layer, which the Share extension doesn't build.
+    var noteFontChoice: NoteFontChoice {
+        switch self {
+        case .sourceSerif4: return .sourceSerif4
+        case .sfPro:        return .sfPro
+        case .newYork:      return .newYork
+        }
+    }
+}
+
+/// Brief AZ4 — the toolbar font-chip model: the effective body face + whether it's a
+/// per-entry override + the global default, plus the actions the chip's menu invokes.
+/// Built by the note consumer (`TextEntryBody`) from the @AppStorage default + the
+/// entry's `perEntryBodyFont`, copied onto `RichTextEditorState` so the toolbar reads it.
+struct EntryFontMenu {
+    var current: EntryBodyFont        // the effective (rendered) body face
+    var isOverride: Bool              // true = a per-entry override; false = following the default
+    var defaultFont: EntryBodyFont    // the global "Default font"
+    var select: (EntryBodyFont) -> Void      // set THIS entry's override to a face
+    var useDefault: () -> Void               // clear the override → follow the default
+    var setAsDefault: (EntryBodyFont) -> Void // make a face the global default (+ clear the override)
+
+    /// The chip's label: "Default · <face>" when following the default, else the bare
+    /// face name (Brief AZ4's "Default · SF Pro" / "Lora" form, using the compact name).
+    var chipLabel: String {
+        isOverride ? current.shortName : "Default · \(current.shortName)"
     }
 }
 
@@ -3737,12 +3910,13 @@ enum NoteTypography {
             // don't set .traitBold, so the bit path drops their weight. Italic stays
             // the symbolic trait (its correct source).
             var weight = current.airpadWeightValue
-            // Serif note body reads at Semibold (600): plain (Regular) body runs are
-            // lifted to the body weight; heavier runs (bold, Bold headings) keep theirs.
+            // Source Serif's note body reads at Semibold (600): plain (Regular) body runs
+            // are lifted to the body weight; heavier runs (bold, Bold headings) keep
+            // theirs. SF Pro / New York body stays at its natural (regular) weight — no
+            // lift — so a clean sans/serif body doesn't read heavy.
             if choice == .sourceSerif4 { weight = max(weight, UIFont.Weight.semibold.rawValue) }
-            guard let name = choice.faceName(weight: weight,
-                                             italic: symbolic.contains(.traitItalic)),
-                  let swapped = UIFont(name: name, size: size) else { return }
+            guard let swapped = choice.resolveFont(size: size, weight: weight,
+                                                   italic: symbolic.contains(.traitItalic)) else { return }
             runs.append((r, swapped))
         }
         for (r, f) in runs { mut.addAttribute(.font, value: f, range: r) }

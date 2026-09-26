@@ -26,7 +26,7 @@ struct SettingsView: View {
 
     /// Brief AJ1 — the submenu destinations (iOS-Settings-style navigation).
     enum Dest: Hashable {
-        case library, tags, models, webSearch, librarian, privacy, about
+        case library, tags, models, webSearch, librarian, appearance, privacy, about
         case macModels, advanced   // nested under Models
         #if DEBUG
         case developer
@@ -84,6 +84,10 @@ struct SettingsView: View {
 
     // Brief AT5 — Appearance override (shared with the ≡ menu).
     @AppStorage(AppearanceOverride.storageKey) private var appearanceRaw = AppearanceOverride.system.rawValue
+    // Brief AZ4 — the app-wide "Default font" for entry body text (shared with the note
+    // toolbar's font chip via the SAME @AppStorage key). New entries + entries with no
+    // per-entry override follow it.
+    @AppStorage(EntryBodyFont.defaultStorageKey) private var defaultBodyFontRaw = EntryBodyFont.fallback.rawValue
     // Privacy
     @AppStorage("locationEnabled") private var locationEnabled = false
 
@@ -159,21 +163,10 @@ struct SettingsView: View {
                     settingsRow(.webSearch,icon: "magnifyingglass",            tint: "2E9E4F", title: "Web search")
                     settingsRow(.librarian,icon: "character.book.closed.fill", tint: "C2571B", title: "Librarian")
                 }
-                // Brief AT5 — Appearance override (shared with the ≡ menu via one @AppStorage key).
+                // Brief AZ4 — Appearance is now a submenu (Theme + Default font), so the
+                // app-wide light/dark override and the default entry font live together.
                 Section {
-                    Picker(selection: Binding(
-                        get: { AppearanceOverride(rawValue: appearanceRaw) ?? .system },
-                        set: { appearanceRaw = $0.rawValue }
-                    )) {
-                        ForEach(AppearanceOverride.allCases) { Text($0.label).tag($0) }
-                    } label: {
-                        Label {
-                            Text("Appearance")
-                        } icon: {
-                            Image(systemName: "circle.righthalf.filled")
-                                .foregroundStyle(.secondary)
-                        }
-                    }
+                    settingsRow(.appearance, icon: "circle.righthalf.filled", tint: "5E5CE6", title: "Appearance")
                 }
                 // Group 3 — privacy and about.
                 Section {
@@ -244,6 +237,7 @@ struct SettingsView: View {
         case .advanced:  advancedSubmenu
         case .webSearch: webSearchSubmenu
         case .librarian: librarianSubmenu
+        case .appearance: appearanceSubmenu
         case .privacy:   privacySubmenu
         case .about:     aboutSubmenu
         #if DEBUG
@@ -556,6 +550,44 @@ struct SettingsView: View {
             personalPromptField
             resetTipsButton
             librarianLogRow
+        }
+    }
+
+    /// Brief AZ4 — Appearance submenu: the app-wide Theme override (System / Light /
+    /// Dark, shared with the ≡ menu via `AppearanceOverride.storageKey`) + the "Default
+    /// font" for entry body text (shared with the note toolbar chip via
+    /// `EntryBodyFont.defaultStorageKey`).
+    private var appearanceSubmenu: some View {
+        submenuScroll(header: { submenuHeader(icon: "circle.righthalf.filled", tint: "5E5CE6", title: "Appearance",
+            blurb: "How AirPad looks, and the default font for your entries.") }) {
+            VStack(alignment: .leading, spacing: 20) {
+                VStack(alignment: .leading, spacing: 8) {
+                    Text("Theme").font(.subheadline.weight(.semibold)).foregroundStyle(AppearancePalette.ink)
+                    Picker("Theme", selection: Binding(
+                        get: { AppearanceOverride(rawValue: appearanceRaw) ?? .system },
+                        set: { appearanceRaw = $0.rawValue }
+                    )) {
+                        ForEach(AppearanceOverride.allCases) { Text($0.label).tag($0) }
+                    }
+                    .pickerStyle(.segmented)
+                }
+                VStack(alignment: .leading, spacing: 8) {
+                    HStack {
+                        Text("Default font").font(.subheadline.weight(.medium)).foregroundStyle(AppearancePalette.ink)
+                        Spacer()
+                        Picker("Default font", selection: Binding(
+                            get: { EntryBodyFont(rawValue: defaultBodyFontRaw) ?? .fallback },
+                            set: { defaultBodyFontRaw = $0.rawValue }
+                        )) {
+                            ForEach(EntryBodyFont.allCases, id: \.self) { Text($0.displayName).tag($0) }
+                        }
+                        .pickerStyle(.menu)
+                        .tint(AppearancePalette.ink)
+                    }
+                    Text("New entries use this. An entry can still pick its own font from the editor toolbar.")
+                        .font(.caption).foregroundStyle(AppearancePalette.ink.opacity(0.4))
+                }
+            }
         }
     }
 

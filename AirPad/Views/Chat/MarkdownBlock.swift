@@ -313,13 +313,13 @@ struct MarkdownBlockView: View {
     var body: some View {
         switch block {
         case let .heading(level, text):
-            Text(Self.inline(text))
+            Text(Self.inline(text, face: appFont))
                 .font(headingFont(level))
                 .foregroundStyle(ChatTypography.headingText)
                 .textSelection(.enabled)
 
         case let .paragraph(text):
-            Text(Self.inline(text))
+            Text(Self.inline(text, face: appFont))
                 .font(bodyFont)
                 .foregroundStyle(ChatTypography.bodyText)
                 .lineSpacing(ChatTypography.bodyLine)
@@ -362,7 +362,7 @@ struct MarkdownBlockView: View {
     @ViewBuilder
     private func reflowedRow(headers: [String], cells: [String]) -> some View {
         if cells.count != headers.count {
-            Text(Self.inline(cells.filter { !$0.isEmpty }.joined(separator: "  ·  ")))
+            Text(Self.inline(cells.filter { !$0.isEmpty }.joined(separator: "  ·  "), face: appFont))
                 .font(bodyFont)
                 .foregroundStyle(ChatTypography.bodyText)
                 .lineSpacing(ChatTypography.bodyLine)
@@ -388,7 +388,7 @@ struct MarkdownBlockView: View {
             .font(bodyFont)
             .fontWeight(.semibold)
             .foregroundStyle(ChatTypography.secondaryText)
-         + Text(Self.inline(value))
+         + Text(Self.inline(value, face: appFont))
             .font(bodyFont)
             .foregroundStyle(ChatTypography.bodyText))
             .lineSpacing(ChatTypography.bodyLine)
@@ -416,7 +416,7 @@ struct MarkdownBlockView: View {
                 .font(bodyFont)
                 .foregroundStyle(ChatTypography.secondaryText)
                 .frame(width: ChatTypography.bulletIndent, alignment: .leading)
-            Text(Self.inline(text))
+            Text(Self.inline(text, face: appFont))
                 .font(bodyFont)
                 .foregroundStyle(ChatTypography.bodyText)
                 .lineSpacing(ChatTypography.bodyLine)
@@ -427,8 +427,11 @@ struct MarkdownBlockView: View {
 
     // Inline parse cache — mirrors the old AssistantMarkdownText.cache.
     private static var cache: [String: AttributedString] = [:]
-    private static func inline(_ raw: String) -> AttributedString {
-        if let cached = cache[raw] { return cached }
+    private static func inline(_ raw: String, face: EntryBodyFont) -> AttributedString {
+        // Brief BG — the `[n]` citation superscript follows the app Font, so the parse
+        // cache is keyed by face too (a Font switch populates fresh entries, never stale).
+        let cacheKey = "\(face.rawValue)\u{1}\(raw)"
+        if let cached = cache[cacheKey] { return cached }
         var result: AttributedString
         if let attr = try? AttributedString(
             markdown: raw,
@@ -450,9 +453,9 @@ struct MarkdownBlockView: View {
         deLinkModelAuthoredURLs(in: &result)
         // Piece 1.5 — render the model's [n] citation tokens as serif superscript
         // numerals (a no-op when there are none, so non-citation text is untouched).
-        CitationReference.styleInlineMarkers(in: &result)
+        CitationReference.styleInlineMarkers(in: &result, face: face)
         if cache.count > 200 { cache.removeAll(keepingCapacity: true) }
-        cache[raw] = result
+        cache[cacheKey] = result
         return result
     }
 

@@ -51,7 +51,9 @@ enum MapOrbFont: String, CaseIterable, Identifiable {
     }
 
     static let storageKey = "map.orbFont"
-    static let fallback: MapOrbFont = .spaceGrotesk
+    /// Brief BG — the default Orb font is **Lato** (fresh installs; an explicit Edit Map…
+    /// choice is kept). Was `.spaceGrotesk`.
+    static let fallback: MapOrbFont = .lato
     /// The current choice, read straight from UserDefaults (the SpriteKit scene isn't a View).
     static var current: MapOrbFont {
         MapOrbFont(rawValue: UserDefaults.standard.string(forKey: storageKey) ?? "") ?? fallback

@@ -1855,10 +1855,12 @@ private struct ClusterLabelLayer: View {
 
 private struct LabelPill: View {
     let text: String
+    /// Brief BG — this map label pill follows the app-wide Font (was `.system(.serif)`).
+    @Environment(\.appBodyFont) private var appFont
 
     var body: some View {
         Text(text)
-            .font(.system(size: 13, weight: .medium, design: .serif))
+            .font(appFont.font(size: 13, weight: .medium))
             // Light-mode convergence — adaptive ink on the already-adaptive
             // `.ultraThinMaterial` pill (was hardcoded `.white`, illegible on the
             // cream map in light). The white rim (below) is a frosted-glass

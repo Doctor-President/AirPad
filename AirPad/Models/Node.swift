@@ -218,9 +218,11 @@ enum EntryBodyFont: String, Codable, CaseIterable, Hashable {
         }
     }
 
-    /// The global-default fallback + the @AppStorage key storing the app-wide "Default
-    /// font" (shared by the Settings Appearance submenu and the toolbar chip).
-    static let fallback: EntryBodyFont = .sourceSerif4
+    /// The global-default fallback + the @AppStorage key storing the app-wide "Font"
+    /// (shared by the Settings Appearance submenu and the toolbar chip). Brief BG — the
+    /// default is **Lato** (fresh installs; a user who made an explicit choice keeps it,
+    /// since that writes the key). Was `.sourceSerif4`.
+    static let fallback: EntryBodyFont = .lato
     static let defaultStorageKey = "entry.defaultBodyFont"
 }
 

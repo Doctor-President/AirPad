@@ -1045,6 +1045,9 @@ final class CorpusStore {
                 if ProcessInfo.processInfo.arguments.contains("-SampleSeedSelfTest") {
                     NSLog("[SampleSeedSelfTest] %@", SampleLibrarySeederSelfTest.run())
                 }
+                // Brief BE1 (SPIKE) — on-device MSDF generation proof. Off-main; logs
+                // time/memory/bytes per face and writes the atlases to Documents.
+                MSDFGenProof.runIfRequested()
                 // Brief R Step 4 — READ-ONLY block-retrieval probe. Runs
                 // findRelevantBlocks for a fixed query over ALL node ids (corpus
                 // scope) and logs the top-3 (score, node id, title). Writes

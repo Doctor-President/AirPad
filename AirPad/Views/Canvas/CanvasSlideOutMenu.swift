@@ -19,6 +19,10 @@ import SwiftUI
 /// coupled to `CorpusStore` / `QuarantineStore` directly.
 struct CanvasSlideOutMenu: View {
 
+    /// Brief BG — the ≡ menu is a CUSTOM view, so its section headers + action labels
+    /// follow the app-wide Font (icons + badges stay SF chrome).
+    @Environment(\.appBodyFont) private var appFont
+
     @Binding var isPresented: Bool
 
     let filterActiveCount: Int
@@ -138,7 +142,7 @@ struct CanvasSlideOutMenu: View {
     private func section<Content: View>(_ title: String, @ViewBuilder content: () -> Content) -> some View {
         VStack(alignment: .leading, spacing: 0) {
             Text(title)
-                .font(.caption.weight(.semibold))
+                .font(appFont.font(size: 12, weight: .semibold, relativeTo: .caption1))
                 .foregroundStyle(AppearancePalette.ink.opacity(0.4))
                 .textCase(.uppercase)
                 .padding(.horizontal, 20)
@@ -164,7 +168,7 @@ struct CanvasSlideOutMenu: View {
                     .foregroundStyle(AppearancePalette.ink.opacity(0.95))
                     .frame(width: 24)
                 Text(label)
-                    .font(.system(size: 15, weight: .medium))
+                    .font(appFont.font(size: 15, weight: .medium))
                     .foregroundStyle(AppearancePalette.ink.opacity(0.95))
                 Spacer()
                 if let badge {

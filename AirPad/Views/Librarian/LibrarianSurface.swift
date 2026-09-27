@@ -37,6 +37,8 @@ struct LibrarianSurface: View {
 
     @Environment(CorpusStore.self) private var store
     @Environment(AppRouter.self) private var router
+    /// Brief BF — the chat-collapse title follows the app-wide Font (Librarian header).
+    @Environment(\.appBodyFont) private var appFont
 
     @State private var currentWhisperIndex = 0
     @State private var textOpacity: Double = 0.55
@@ -839,7 +841,7 @@ struct LibrarianSurface: View {
                         // same face as ChatTypography's headings). It reads
                         // optically smaller than the system face, so the tuner's
                         // title-size still needs re-dialing — tuner stays, NOT baked.
-                        .font(.custom("SourceSerif4-Bold", size: cctTitleSize))
+                        .font(appFont.font(size: cctTitleSize, weight: .bold))
                         .foregroundStyle(AppearancePalette.ink.opacity(0.9))
                         .lineLimit(1)
                         .padding(.horizontal, 44)
@@ -2370,16 +2372,18 @@ private struct SearchImageRow: View {
 private struct SearchRelatedRow: View {
     let node: Node
     let snippet: String
+    /// Brief BF — a cited-source row follows the app-wide Font (Librarian sources).
+    @Environment(\.appBodyFont) private var appFont
 
     var body: some View {
         VStack(alignment: .leading, spacing: 3) {
             Text(node.title.isEmpty ? "Untitled" : node.title)
-                .font(.system(size: 15, weight: .semibold))
+                .font(appFont.font(size: 15, weight: .semibold))
                 .foregroundStyle(AppearancePalette.ink.opacity(0.95))
                 .lineLimit(1)
             if !snippet.isEmpty {
                 Text(snippet)
-                    .font(.system(size: 13, weight: .regular, design: .serif))
+                    .font(appFont.font(size: 13))
                     .italic()
                     .foregroundStyle(AppearancePalette.ink.opacity(0.7))
                     .lineLimit(3)

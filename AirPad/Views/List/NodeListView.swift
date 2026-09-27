@@ -26,6 +26,8 @@ struct NodeListView: View {
     @Environment(SelectionService.self) private var selection
     @Environment(AppRouter.self) private var router
     @Environment(\.colorScheme) private var colorScheme
+    /// Brief BF — bucket headers + empty state follow the app-wide Font; the sort icon stays SF.
+    @Environment(\.appBodyFont) private var appFont
 
     @State private var navigationPath = NavigationPath()
     /// Node ID at the top of the nav stack after a router-driven push —
@@ -125,7 +127,7 @@ struct NodeListView: View {
                             }
                         } label: {
                             RecentNodeRow(node: node, timestamp: node.updatedAt,
-                                          ink: AppearancePalette.ink)
+                                          ink: AppearancePalette.ink, appFont: appFont)
                                 .equatable()
                                 // BUG 10 — shared selection CHECKMARK (trailing;
                                 // the row's leading slot has the type dot). Outline
@@ -183,7 +185,7 @@ struct NodeListView: View {
                 } header: {
                     if let label = section.label {
                         Text(label)
-                            .font(.caption.weight(.semibold))
+                            .font(appFont.font(size: 12, weight: .semibold, relativeTo: .caption1))
                             .foregroundStyle(AppearancePalette.ink.opacity(0.5))
                             .textCase(.uppercase)
                             .tracking(0.8)
@@ -208,10 +210,10 @@ struct NodeListView: View {
     private var emptyState: some View {
         VStack(spacing: 8) {
             Text("Nothing here yet")
-                .font(.system(size: 17, weight: .semibold))
+                .font(appFont.font(size: 17, weight: .semibold))
                 .foregroundStyle(AppearancePalette.ink.opacity(0.5))
             Text("Capture something to get started.")
-                .font(.system(size: 14))
+                .font(appFont.font(size: 14))
                 .foregroundStyle(AppearancePalette.ink.opacity(0.3))
         }
         .frame(maxWidth: .infinity, maxHeight: .infinity)

@@ -21,6 +21,9 @@ struct NodeGridView: View {
     @Environment(SelectionService.self) private var selection
     @Environment(AppRouter.self) private var router
     @Environment(\.colorScheme) private var colorScheme
+    /// Brief BF — passed into each `NodeTileView` so a live Font switch reaches the
+    /// `.equatable()`-wrapped tiles (it's part of `NodeTileView.==`).
+    @Environment(\.appBodyFont) private var appFont
     @Namespace private var zoomNamespace
 
     var scope: CanvasScope = .corpus
@@ -207,7 +210,8 @@ struct NodeGridView: View {
                                 cellWidth: cellW,
                                 cellHeight: cellH,
                                 animateGradient: true,
-                                columnCount: columnCount
+                                columnCount: columnCount,
+                                appFont: appFont
                             )
                             // Commit 3 — skip re-rendering tiles whose rendered
                             // fields didn't change (NodeTileView.==), so a single
@@ -346,6 +350,10 @@ private struct NodeTileView: View, Equatable {
     let cellHeight: CGFloat
     let animateGradient: Bool
     let columnCount: Int
+    /// Brief BF — the app-wide content face. This wrapper is `.equatable()`, so a live Font
+    /// switch is invisible to it unless the face is in `==`; the inner `NodeGridTile` reads
+    /// the same face from `@Environment` and re-renders when this wrapper does.
+    let appFont: EntryBodyFont
 
     // Commit 3 — targeted re-render. `Node.==` is id-only, so SwiftUI's default
     // diff hides title/summary/etc. edits and the tile renders stale until a
@@ -366,7 +374,8 @@ private struct NodeTileView: View, Equatable {
         l.node.items == r.node.items &&
         l.node.coverImageRelativePath == r.node.coverImageRelativePath &&
         l.node.descriptionOnCard == r.node.descriptionOnCard &&
-        l.node.updatedAt == r.node.updatedAt
+        l.node.updatedAt == r.node.updatedAt &&
+        l.appFont == r.appFont
     }
 
     var body: some View {

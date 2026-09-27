@@ -70,6 +70,10 @@ struct SettingsView: View {
 
     @Environment(CorpusStore.self) private var store
     @Environment(\.dismiss) private var dismiss
+    /// Brief BG — Settings text follows the app-wide Font. All the `.font(...)` sites below
+    /// are instance-method helpers on this one struct, so this one property covers them;
+    /// native controls (Toggle/Picker UI, nav back button) + SF Symbol icons stay system.
+    @Environment(\.appBodyFont) private var appFont
 
     // Frontier API keys (loaded from Keychain on appear)
     @State private var anthropicKey = ""
@@ -220,7 +224,7 @@ struct SettingsView: View {
                     .fill(Color(hexString: tint))
                     .frame(width: 29, height: 29)
                     .overlay(Image(systemName: icon).font(.system(size: 15, weight: .semibold)).foregroundStyle(.white))
-                Text(title).font(.body).foregroundStyle(AppearancePalette.ink)
+                Text(title).font(appFont.font(size: 17, relativeTo: .body)).foregroundStyle(AppearancePalette.ink)
             }
             .padding(.vertical, 2)
         }
@@ -270,9 +274,9 @@ struct SettingsView: View {
                     .fill(Color(hexString: tint))
                     .frame(width: 60, height: 60)
                     .overlay(Image(systemName: icon).font(.system(size: 30, weight: .semibold)).foregroundStyle(.white))
-                Text(title).font(.title3.weight(.semibold)).foregroundStyle(AppearancePalette.ink)
+                Text(title).font(appFont.font(size: 20, weight: .semibold, relativeTo: .title3)).foregroundStyle(AppearancePalette.ink)
                 Text(blurb)
-                    .font(.subheadline)
+                    .font(appFont.font(size: 15, relativeTo: .subheadline))
                     .foregroundStyle(AppearancePalette.ink.opacity(0.5))
                     .multilineTextAlignment(.center)
                     .fixedSize(horizontal: false, vertical: true)
@@ -309,7 +313,7 @@ struct SettingsView: View {
             }
             if manageTagRows.isEmpty {
                 Text(tagSearch.isEmpty ? "No tags yet — AI will suggest them as you capture entries." : "No tags match.")
-                    .font(.callout).foregroundStyle(AppearancePalette.ink.opacity(0.4))
+                    .font(appFont.font(size: 16, relativeTo: .callout)).foregroundStyle(AppearancePalette.ink.opacity(0.4))
                     .listRowBackground(AppearancePalette.ink.opacity(0.04))
             } else {
                 Section("\(manageTagRows.count) \(manageTagRows.count == 1 ? "tag" : "tags")") {
@@ -403,7 +407,7 @@ struct SettingsView: View {
             }
             NavigationLink(value: Dest.advanced) {
                 HStack {
-                    Text("Advanced").font(.subheadline.weight(.medium)).foregroundStyle(AppearancePalette.ink.opacity(0.8))
+                    Text("Advanced").font(appFont.font(size: 15, weight: .medium, relativeTo: .subheadline)).foregroundStyle(AppearancePalette.ink.opacity(0.8))
                     Spacer()
                     Image(systemName: "chevron.right").font(.caption).foregroundStyle(AppearancePalette.ink.opacity(0.3))
                 }
@@ -432,8 +436,8 @@ struct SettingsView: View {
         HStack(spacing: 12) {
             Image(systemName: "apple.logo").font(.system(size: 16)).foregroundStyle(AppearancePalette.ink.opacity(0.8)).frame(width: 24)
             VStack(alignment: .leading, spacing: 2) {
-                Text("Apple Intelligence").font(.subheadline.weight(.semibold)).foregroundStyle(AppearancePalette.ink)
-                Text("Built in, ready. The default.").font(.caption).foregroundStyle(AppearancePalette.ink.opacity(0.5))
+                Text("Apple Intelligence").font(appFont.font(size: 15, weight: .semibold, relativeTo: .subheadline)).foregroundStyle(AppearancePalette.ink)
+                Text("Built in, ready. The default.").font(appFont.font(size: 12, relativeTo: .caption1)).foregroundStyle(AppearancePalette.ink.opacity(0.5))
             }
             Spacer()
             Image(systemName: "checkmark.circle.fill").foregroundStyle(.green.opacity(0.8))
@@ -458,14 +462,14 @@ struct SettingsView: View {
                 macRowLabel(icon: "qrcode", text: "Connect your Mac", chevron: true)
             }.buttonStyle(.plain)
             Text("Use models running on your own Mac, from anywhere — end-to-end encrypted.")
-                .font(.caption2).foregroundStyle(AppearancePalette.ink.opacity(0.3))
+                .font(appFont.font(size: 11, relativeTo: .caption2)).foregroundStyle(AppearancePalette.ink.opacity(0.3))
         }
     }
 
     private func macRowLabel(icon: String, text: String, chevron: Bool, green: Bool = false) -> some View {
         HStack(spacing: 8) {
             Image(systemName: icon).foregroundStyle(green ? .green : AppearancePalette.ink.opacity(0.8))
-            Text(text).font(.subheadline.weight(.medium)).foregroundStyle(AppearancePalette.ink.opacity(0.85))
+            Text(text).font(appFont.font(size: 15, weight: .medium, relativeTo: .subheadline)).foregroundStyle(AppearancePalette.ink.opacity(0.85))
             Spacer()
             if chevron { Image(systemName: "chevron.right").font(.caption).foregroundStyle(AppearancePalette.ink.opacity(0.3)) }
         }
@@ -497,9 +501,9 @@ struct SettingsView: View {
             blurb: "Connect a model server on your network, like Ollama or LM Studio.") }) {
             VStack(alignment: .leading, spacing: 12) {
                 VStack(alignment: .leading, spacing: 4) {
-                    Text("Ollama / LM Studio endpoint").font(.caption.weight(.semibold)).foregroundStyle(AppearancePalette.ink.opacity(0.4))
+                    Text("Ollama / LM Studio endpoint").font(appFont.font(size: 12, weight: .semibold, relativeTo: .caption1)).foregroundStyle(AppearancePalette.ink.opacity(0.4))
                     TextField("http://192.168.x.x:11434", text: $ollamaEndpoint)
-                        .font(.subheadline).foregroundStyle(AppearancePalette.ink).tint(AppearancePalette.ink)
+                        .font(appFont.font(size: 15, relativeTo: .subheadline)).foregroundStyle(AppearancePalette.ink).tint(AppearancePalette.ink)
                         .padding(12).background(AppearancePalette.ink.opacity(0.06)).clipShape(RoundedRectangle(cornerRadius: 10))
                         .keyboardType(.URL).autocorrectionDisabled().textInputAutocapitalization(.never)
                 }
@@ -508,13 +512,13 @@ struct SettingsView: View {
                     Button { testConnection() } label: {
                         HStack(spacing: 6) {
                             if isTestingConnection { ProgressView().tint(AppearancePalette.ink).scaleEffect(0.7) }
-                            Text(isTestingConnection ? "Testing…" : "Test connection").font(.subheadline.weight(.medium))
+                            Text(isTestingConnection ? "Testing…" : "Test connection").font(appFont.font(size: 15, weight: .medium, relativeTo: .subheadline))
                         }
                         .foregroundStyle(AppearancePalette.ink.opacity(0.75)).padding(.horizontal, 16).padding(.vertical, 9)
                         .background(AppearancePalette.ink.opacity(0.09)).clipShape(Capsule())
                     }.buttonStyle(.plain).disabled(isTestingConnection)
                     if let result = connectionTestResult {
-                        Text(result).font(.caption).foregroundStyle(connectionResultColor(result))
+                        Text(result).font(appFont.font(size: 12, relativeTo: .caption1)).foregroundStyle(connectionResultColor(result))
                     }
                     Spacer()
                 }
@@ -522,7 +526,7 @@ struct SettingsView: View {
                 // In Release these fields never render; their Keychain entries are untouched.
                 if FeatureFlags.cloudProviders {
                     Divider().overlay(AppearancePalette.ink.opacity(0.1)).padding(.vertical, 4)
-                    Text("Cloud providers (developer)").font(.caption.weight(.semibold)).foregroundStyle(AppearancePalette.ink.opacity(0.4))
+                    Text("Cloud providers (developer)").font(appFont.font(size: 12, weight: .semibold, relativeTo: .caption1)).foregroundStyle(AppearancePalette.ink.opacity(0.4))
                     apiKeyField(label: "Anthropic API key", placeholder: "sk-ant-...", text: $anthropicKey)
                     apiKeyField(label: "OpenAI API key", placeholder: "sk-...", text: $openAIKey)
                     apiKeyField(label: "DeepSeek API key", placeholder: "sk-...", text: $deepSeekKey)
@@ -537,9 +541,9 @@ struct SettingsView: View {
             VStack(alignment: .leading, spacing: 6) {
                 apiKeyField(label: "Brave Search API key", placeholder: "BSA...", text: $braveSearchKey)
                 Text("Web search uses Brave's Search API. Brave gives a monthly credit that covers normal use, but needs an account with a card on file. Paste your key here.")
-                    .font(.caption).foregroundStyle(AppearancePalette.ink.opacity(0.4))
+                    .font(appFont.font(size: 12, relativeTo: .caption1)).foregroundStyle(AppearancePalette.ink.opacity(0.4))
                 Link("Get a Brave Search API key", destination: URL(string: "https://brave.com/search/api/")!)
-                    .font(.caption.weight(.semibold)).tint(Color(hexString: "E8820A"))
+                    .font(appFont.font(size: 12, weight: .semibold, relativeTo: .caption1)).tint(Color(hexString: "E8820A"))
             }
         }
     }
@@ -559,10 +563,10 @@ struct SettingsView: View {
     /// `EntryBodyFont.defaultStorageKey`).
     private var appearanceSubmenu: some View {
         submenuScroll(header: { submenuHeader(icon: "circle.righthalf.filled", tint: "5E5CE6", title: "Appearance",
-            blurb: "How AirPad looks, and the default font for your entries.") }) {
+            blurb: "How AirPad looks, and the font it uses.") }) {
             VStack(alignment: .leading, spacing: 20) {
                 VStack(alignment: .leading, spacing: 8) {
-                    Text("Theme").font(.subheadline.weight(.semibold)).foregroundStyle(AppearancePalette.ink)
+                    Text("Theme").font(appFont.font(size: 15, weight: .semibold, relativeTo: .subheadline)).foregroundStyle(AppearancePalette.ink)
                     Picker("Theme", selection: Binding(
                         get: { AppearanceOverride(rawValue: appearanceRaw) ?? .system },
                         set: { appearanceRaw = $0.rawValue }
@@ -573,9 +577,9 @@ struct SettingsView: View {
                 }
                 VStack(alignment: .leading, spacing: 8) {
                     HStack {
-                        Text("Default font").font(.subheadline.weight(.medium)).foregroundStyle(AppearancePalette.ink)
+                        Text("Font").font(appFont.font(size: 15, weight: .medium, relativeTo: .subheadline)).foregroundStyle(AppearancePalette.ink)
                         Spacer()
-                        Picker("Default font", selection: Binding(
+                        Picker("Font", selection: Binding(
                             get: { EntryBodyFont(rawValue: defaultBodyFontRaw) ?? .fallback },
                             set: { defaultBodyFontRaw = $0.rawValue }
                         )) {
@@ -584,8 +588,8 @@ struct SettingsView: View {
                         .pickerStyle(.menu)
                         .tint(AppearancePalette.ink)
                     }
-                    Text("New entries use this. An entry can still pick its own font from the editor toolbar.")
-                        .font(.caption).foregroundStyle(AppearancePalette.ink.opacity(0.4))
+                    Text("AirPad uses this typeface everywhere. An entry can still pick its own font from the editor toolbar.")
+                        .font(appFont.font(size: 12, relativeTo: .caption1)).foregroundStyle(AppearancePalette.ink.opacity(0.4))
                 }
             }
         }
@@ -596,14 +600,14 @@ struct SettingsView: View {
             blurb: "Your library stays on your phone.") }) {
             Toggle(isOn: $locationEnabled) {
                 VStack(alignment: .leading, spacing: 2) {
-                    Text("GPS location on capture").font(.subheadline.weight(.medium)).foregroundStyle(AppearancePalette.ink)
-                    Text("Attaches your location to newly captured entries").font(.caption).foregroundStyle(AppearancePalette.ink.opacity(0.4))
+                    Text("GPS location on capture").font(appFont.font(size: 15, weight: .medium, relativeTo: .subheadline)).foregroundStyle(AppearancePalette.ink)
+                    Text("Attaches your location to newly captured entries").font(appFont.font(size: 12, relativeTo: .caption1)).foregroundStyle(AppearancePalette.ink.opacity(0.4))
                 }
             }.tint(.purple)
             if !hasAnyFrontierKey {
                 HStack(spacing: 8) {
                     Image(systemName: "lock.fill").font(.caption).foregroundStyle(.green.opacity(0.8))
-                    Text("Your data never leaves this device").font(.caption).foregroundStyle(AppearancePalette.ink.opacity(0.5))
+                    Text("Your data never leaves this device").font(appFont.font(size: 12, relativeTo: .caption1)).foregroundStyle(AppearancePalette.ink.opacity(0.5))
                 }
             }
         }
@@ -613,10 +617,10 @@ struct SettingsView: View {
         submenuScroll(header: { submenuHeader(icon: "info.circle.fill", tint: "8A8A8E", title: "About",
             blurb: "It works around you. Not the other way around.") }) {
             VStack(alignment: .leading, spacing: 10) {
-                Text("AirPad").font(.subheadline.weight(.semibold)).foregroundStyle(AppearancePalette.ink)
+                Text("AirPad").font(appFont.font(size: 15, weight: .semibold, relativeTo: .subheadline)).foregroundStyle(AppearancePalette.ink)
                 if let version = Bundle.main.object(forInfoDictionaryKey: "CFBundleShortVersionString") as? String,
                    let build = Bundle.main.object(forInfoDictionaryKey: "CFBundleVersion") as? String {
-                    Text("Version \(version) (\(build))").font(.caption2).foregroundStyle(AppearancePalette.ink.opacity(0.25))
+                    Text("Version \(version) (\(build))").font(appFont.font(size: 11, relativeTo: .caption2)).foregroundStyle(AppearancePalette.ink.opacity(0.25))
                 }
             }
         }
@@ -631,7 +635,7 @@ struct SettingsView: View {
         } label: {
             HStack {
                 Image(systemName: tipsReset ? "checkmark" : "lightbulb")
-                Text(tipsReset ? "First-time tips will show again" : "Reset first-time tips").font(.subheadline.weight(.medium))
+                Text(tipsReset ? "First-time tips will show again" : "Reset first-time tips").font(appFont.font(size: 15, weight: .medium, relativeTo: .subheadline))
             }
             .foregroundStyle(AppearancePalette.ink.opacity(0.75)).padding(.horizontal, 16).padding(.vertical, 10)
             .background(AppearancePalette.ink.opacity(0.07)).clipShape(RoundedRectangle(cornerRadius: 10))
@@ -676,20 +680,20 @@ struct SettingsView: View {
                 VStack(alignment: .leading, spacing: 6) {
                     apiKeyField(label: "Brave Search API key", placeholder: "BSA...", text: $braveSearchKey)
                     Text("Web search uses Brave's Search API. Brave gives a monthly credit that covers normal use, but needs an account with a card on file. Paste your key here.")
-                        .font(.caption)
+                        .font(appFont.font(size: 12, relativeTo: .caption1))
                         .foregroundStyle(AppearancePalette.ink.opacity(0.4))
                     Link("Get a Brave Search API key", destination: URL(string: "https://brave.com/search/api/")!)
-                        .font(.caption.weight(.semibold))
+                        .font(appFont.font(size: 12, weight: .semibold, relativeTo: .caption1))
                         .tint(Color(hexString: "E8820A"))
                 }
                 .id(Anchor.webSearch)
 
                 VStack(alignment: .leading, spacing: 4) {
                     Text("Ollama / LM Studio endpoint")
-                        .font(.caption.weight(.semibold))
+                        .font(appFont.font(size: 12, weight: .semibold, relativeTo: .caption1))
                         .foregroundStyle(AppearancePalette.ink.opacity(0.4))
                     TextField("http://192.168.x.x:11434", text: $ollamaEndpoint)
-                        .font(.subheadline)
+                        .font(appFont.font(size: 15, relativeTo: .subheadline))
                         .foregroundStyle(AppearancePalette.ink)
                         .tint(AppearancePalette.ink)
                         .padding(12)
@@ -717,7 +721,7 @@ struct SettingsView: View {
                             ProgressView().tint(AppearancePalette.ink).scaleEffect(0.7)
                         }
                         Text(isTestingConnection ? "Testing…" : "Test connection")
-                            .font(.subheadline.weight(.medium))
+                            .font(appFont.font(size: 15, weight: .medium, relativeTo: .subheadline))
                     }
                     .foregroundStyle(AppearancePalette.ink.opacity(0.75))
                     .padding(.horizontal, 16)
@@ -733,7 +737,7 @@ struct SettingsView: View {
 
                 if let result = connectionTestResult {
                     Text(result)
-                        .font(.caption)
+                        .font(appFont.font(size: 12, relativeTo: .caption1))
                         .foregroundStyle(connectionResultColor(result))
                 }
                 Spacer()
@@ -769,7 +773,7 @@ struct SettingsView: View {
                 HStack(spacing: 6) {
                     Image(systemName: librarianLogCopied ? "checkmark" : "doc.on.clipboard")
                     Text(librarianLogCopied ? "Copied" : "Copy Librarian log")
-                        .font(.subheadline.weight(.medium))
+                        .font(appFont.font(size: 15, weight: .medium, relativeTo: .subheadline))
                 }
                 .foregroundStyle(AppearancePalette.ink.opacity(0.75))
                 .padding(.horizontal, 16)
@@ -779,7 +783,7 @@ struct SettingsView: View {
             }
             .buttonStyle(.plain)
             Text("The last 10 Library-mode retrievals (scope, whether empty, shape, candidate rows). Paste it when a Librarian answer looks wrong.")
-                .font(.caption2)
+                .font(appFont.font(size: 11, relativeTo: .caption2))
                 .foregroundStyle(AppearancePalette.ink.opacity(0.3))
         }
     }
@@ -789,14 +793,14 @@ struct SettingsView: View {
         VStack(alignment: .leading, spacing: 8) {
             Divider().overlay(AppearancePalette.ink.opacity(0.1))
             Text("Connect to your computer")
-                .font(.caption.weight(.semibold))
+                .font(appFont.font(size: 12, weight: .semibold, relativeTo: .caption1))
                 .foregroundStyle(AppearancePalette.ink.opacity(0.4))
             Button { showPairingQR = true } label: {
                 HStack(spacing: 8) {
                     Image(systemName: hostPairing == nil ? "qrcode" : "checkmark.seal.fill")
                         .foregroundStyle(hostPairing == nil ? AppearancePalette.ink.opacity(0.8) : .green)
                     Text(hostPairing == nil ? "Pair with your desktop model" : "Paired — \(hostPairing!.displayHost)")
-                        .font(.subheadline.weight(.medium))
+                        .font(appFont.font(size: 15, weight: .medium, relativeTo: .subheadline))
                         .foregroundStyle(AppearancePalette.ink.opacity(0.8))
                     Spacer()
                     Image(systemName: "chevron.right").font(.caption).foregroundStyle(AppearancePalette.ink.opacity(0.3))
@@ -807,7 +811,7 @@ struct SettingsView: View {
             }
             .buttonStyle(.plain)
             Text("Reach a private model running on your own Mac, from anywhere — end-to-end encrypted.")
-                .font(.caption2).foregroundStyle(AppearancePalette.ink.opacity(0.3))
+                .font(appFont.font(size: 11, relativeTo: .caption2)).foregroundStyle(AppearancePalette.ink.opacity(0.3))
         }
     }
 
@@ -817,11 +821,11 @@ struct SettingsView: View {
         VStack(alignment: .leading, spacing: 12) {
             Divider().overlay(AppearancePalette.ink.opacity(0.1))
             Text("Downloaded model")
-                .font(.caption.weight(.semibold))
+                .font(appFont.font(size: 12, weight: .semibold, relativeTo: .caption1))
                 .foregroundStyle(AppearancePalette.ink.opacity(0.4))
             // Brief AJ3 — copy states its real job TODAY (bake-off may change it later).
             Text("An optional model you download to run entirely on your phone. Writes titles, summaries and tags on your phone. The Librarian doesn't use it.")
-                .font(.caption)
+                .font(appFont.font(size: 12, relativeTo: .caption1))
                 .foregroundStyle(AppearancePalette.ink.opacity(0.55))
 
             if !localModel.isAvailable {
@@ -830,7 +834,7 @@ struct SettingsView: View {
                 switch localModel.state {
                 case .notDownloaded:
                     Text("Download \(localModel.modelDisplayName) · \(localModel.downloadSizeLabel). Use Wi-Fi — this is a large download.")
-                        .font(.caption2).foregroundStyle(AppearancePalette.ink.opacity(0.4))
+                        .font(appFont.font(size: 11, relativeTo: .caption2)).foregroundStyle(AppearancePalette.ink.opacity(0.4))
                     localCapsuleButton("Download model", symbol: "arrow.down.circle") { localModel.download() }
                 case .downloading(let p):
                     VStack(alignment: .leading, spacing: 6) {
@@ -854,25 +858,25 @@ struct SettingsView: View {
                     Toggle(isOn: $useLocalEnrichment) {
                         VStack(alignment: .leading, spacing: 2) {
                             Text("Use for entry enrichment")
-                                .font(.subheadline.weight(.medium))
+                                .font(appFont.font(size: 15, weight: .medium, relativeTo: .subheadline))
                                 .foregroundStyle(AppearancePalette.ink.opacity(0.85))
                             Text(useLocalEnrichment
                                  ? "New entry titles, summaries, and tags use the downloaded model."
                                  : "Apple Intelligence is still doing the thinking. Turn on to use the downloaded model.")
-                                .font(.caption2)
+                                .font(appFont.font(size: 11, relativeTo: .caption2))
                                 .foregroundStyle(AppearancePalette.ink.opacity(0.45))
                                 .fixedSize(horizontal: false, vertical: true)
                         }
                     }
                     .tint(Color(hexString: "1B59C2"))
                     Text("Not backed up to iCloud. You can download it again anytime.")
-                        .font(.caption2).foregroundStyle(AppearancePalette.ink.opacity(0.35))
+                        .font(appFont.font(size: 11, relativeTo: .caption2)).foregroundStyle(AppearancePalette.ink.opacity(0.35))
                     localCapsuleButton("Delete model · reclaim \(reclaimLabel)", symbol: "trash") { localModel.deleteModel() }
                     if InternalBuild.showsDevTuners { localTestBlock }
                 case .failed(let reason):
                     // A DOWNLOAD failure — the weights aren't (fully) on disk, so re-downloading is right.
                     localStatusRow(symbol: "exclamationmark.triangle", text: "Download failed")
-                    Text(reason).font(.caption2).foregroundStyle(.orange.opacity(0.8)).lineLimit(3)
+                    Text(reason).font(appFont.font(size: 11, relativeTo: .caption2)).foregroundStyle(.orange.opacity(0.8)).lineLimit(3)
                     localCapsuleButton("Retry download", symbol: "arrow.clockwise") { localModel.download() }
                 case .loadFailed(let reason):
                     // ws-bg-download Fix Path A — the weights ARE on disk; this is a LOAD failure, so the
@@ -880,7 +884,7 @@ struct SettingsView: View {
                     // re-download is exactly what cost T two cellular downloads. Delete stays as the
                     // deliberate escape hatch.
                     localStatusRow(symbol: "exclamationmark.triangle", text: "Downloaded — but couldn't load")
-                    Text(reason).font(.caption2).foregroundStyle(.orange.opacity(0.8)).lineLimit(3)
+                    Text(reason).font(appFont.font(size: 11, relativeTo: .caption2)).foregroundStyle(.orange.opacity(0.8)).lineLimit(3)
                     localCapsuleButton("Try again", symbol: "arrow.clockwise") { localModel.retryLoad() }
                     localCapsuleButton("Delete model · reclaim \(reclaimLabel)", symbol: "trash") { localModel.deleteModel() }
                 }
@@ -896,7 +900,7 @@ struct SettingsView: View {
     private func localStatusRow(symbol: String, text: String) -> some View {
         HStack(spacing: 6) {
             Image(systemName: symbol).foregroundStyle(AppearancePalette.ink.opacity(0.55))
-            Text(text).font(.subheadline.weight(.medium)).foregroundStyle(AppearancePalette.ink.opacity(0.75))
+            Text(text).font(appFont.font(size: 15, weight: .medium, relativeTo: .subheadline)).foregroundStyle(AppearancePalette.ink.opacity(0.75))
         }
     }
 
@@ -904,7 +908,7 @@ struct SettingsView: View {
         Button(action: action) {
             HStack(spacing: 6) {
                 Image(systemName: symbol)
-                Text(title).font(.subheadline.weight(.medium))
+                Text(title).font(appFont.font(size: 15, weight: .medium, relativeTo: .subheadline))
             }
             .foregroundStyle(AppearancePalette.ink.opacity(0.75))
             .padding(.horizontal, 16).padding(.vertical, 9)
@@ -952,7 +956,7 @@ struct SettingsView: View {
         VStack(alignment: .leading, spacing: 4) {
             HStack(alignment: .firstTextBaseline) {
                 Text("Personal voice")
-                    .font(.caption.weight(.semibold))
+                    .font(appFont.font(size: 12, weight: .semibold, relativeTo: .caption1))
                     .foregroundStyle(AppearancePalette.ink.opacity(0.4))
                 Spacer()
                 Text("\(librarianPersonalPrompt.count) / \(Self.librarianPersonalPromptMaxChars)")
@@ -968,7 +972,7 @@ struct SettingsView: View {
                 text: $librarianPersonalPrompt,
                 axis: .vertical
             )
-            .font(.subheadline)
+            .font(appFont.font(size: 15, relativeTo: .subheadline))
             .foregroundStyle(AppearancePalette.ink)
             .tint(AppearancePalette.ink)
             .lineLimit(3...8)
@@ -984,7 +988,7 @@ struct SettingsView: View {
             }
 
             Text("Prepended to every Librarian query — shapes how the model engages with you.")
-                .font(.caption2)
+                .font(appFont.font(size: 11, relativeTo: .caption2))
                 .foregroundStyle(AppearancePalette.ink.opacity(0.3))
         }
     }
@@ -995,10 +999,10 @@ struct SettingsView: View {
                 .foregroundStyle(.purple.opacity(0.8))
             VStack(alignment: .leading, spacing: 2) {
                 Text("Active model")
-                    .font(.caption.weight(.semibold))
+                    .font(appFont.font(size: 12, weight: .semibold, relativeTo: .caption1))
                     .foregroundStyle(AppearancePalette.ink.opacity(0.4))
                 Text(activeModelName)
-                    .font(.subheadline.weight(.medium))
+                    .font(appFont.font(size: 15, weight: .medium, relativeTo: .subheadline))
                     .foregroundStyle(AppearancePalette.ink)
             }
             Spacer()
@@ -1022,10 +1026,10 @@ struct SettingsView: View {
     private func apiKeyField(label: String, placeholder: String, text: Binding<String>) -> some View {
         VStack(alignment: .leading, spacing: 4) {
             Text(label)
-                .font(.caption.weight(.semibold))
+                .font(appFont.font(size: 12, weight: .semibold, relativeTo: .caption1))
                 .foregroundStyle(AppearancePalette.ink.opacity(0.4))
             SecureField(placeholder, text: text)
-                .font(.subheadline)
+                .font(appFont.font(size: 15, relativeTo: .subheadline))
                 .foregroundStyle(AppearancePalette.ink)
                 .tint(AppearancePalette.ink)
                 .padding(12)
@@ -1045,10 +1049,10 @@ struct SettingsView: View {
             Toggle(isOn: $locationEnabled) {
                 VStack(alignment: .leading, spacing: 2) {
                     Text("GPS location on capture")
-                        .font(.subheadline.weight(.medium))
+                        .font(appFont.font(size: 15, weight: .medium, relativeTo: .subheadline))
                         .foregroundStyle(AppearancePalette.ink)
                     Text("Attaches your location to newly captured entries")
-                        .font(.caption)
+                        .font(appFont.font(size: 12, relativeTo: .caption1))
                         .foregroundStyle(AppearancePalette.ink.opacity(0.4))
                 }
             }
@@ -1057,10 +1061,10 @@ struct SettingsView: View {
             if !hasAnyFrontierKey {
                 HStack(spacing: 8) {
                     Image(systemName: "lock.fill")
-                        .font(.caption)
+                        .font(appFont.font(size: 12, relativeTo: .caption1))
                         .foregroundStyle(.green.opacity(0.8))
                     Text("Your data never leaves this device")
-                        .font(.caption)
+                        .font(appFont.font(size: 12, relativeTo: .caption1))
                         .foregroundStyle(AppearancePalette.ink.opacity(0.5))
                 }
             }
@@ -1082,7 +1086,7 @@ struct SettingsView: View {
 
             if store.tags.isEmpty {
                 Text("No tags yet — AI will suggest them as you capture entries.")
-                    .font(.caption)
+                    .font(appFont.font(size: 12, relativeTo: .caption1))
                     .foregroundStyle(AppearancePalette.ink.opacity(0.35))
             } else {
                 FlowLayoutSettings(spacing: 8) {
@@ -1097,7 +1101,7 @@ struct SettingsView: View {
                 showTagEditor = true
             } label: {
                 Label("New Tag", systemImage: "plus")
-                    .font(.subheadline.weight(.medium))
+                    .font(appFont.font(size: 15, weight: .medium, relativeTo: .subheadline))
                     .foregroundStyle(AppearancePalette.ink.opacity(0.75))
                     .padding(.horizontal, 14)
                     .padding(.vertical, 8)
@@ -1117,7 +1121,7 @@ struct SettingsView: View {
             showTagEditor = true
         } label: {
             Text(tag.name)
-                .font(.caption.weight(.semibold))
+                .font(appFont.font(size: 12, weight: .semibold, relativeTo: .caption1))
                 .foregroundStyle(.white)
                 .padding(.horizontal, 12)
                 .padding(.vertical, 6)
@@ -1141,7 +1145,7 @@ struct SettingsView: View {
                     Image(systemName: "square.and.arrow.down")
                     Text("Import entries")
                 }
-                .font(.subheadline.weight(.medium))
+                .font(appFont.font(size: 15, weight: .medium, relativeTo: .subheadline))
                 .foregroundStyle(AppearancePalette.ink.opacity(0.75))
                 .padding(.horizontal, 16)
                 .padding(.vertical, 10)
@@ -1154,7 +1158,7 @@ struct SettingsView: View {
             }
 
             Text("Paste a block of text or share a .txt / .md file — each paragraph becomes an entry.")
-                .font(.caption)
+                .font(appFont.font(size: 12, relativeTo: .caption1))
                 .foregroundStyle(AppearancePalette.ink.opacity(0.3))
         }
     }
@@ -1174,11 +1178,11 @@ struct SettingsView: View {
                     Spacer()
                     if store.reviewQueue.isEmpty {
                         Text("Clear")
-                            .font(.caption)
+                            .font(appFont.font(size: 12, relativeTo: .caption1))
                             .foregroundStyle(AppearancePalette.ink.opacity(0.3))
                     } else {
                         Text("\(store.reviewQueue.count)")
-                            .font(.caption.weight(.bold))
+                            .font(appFont.font(size: 12, weight: .bold, relativeTo: .caption1))
                             .foregroundStyle(.white)
                             .padding(.horizontal, 8)
                             .padding(.vertical, 3)
@@ -1186,7 +1190,7 @@ struct SettingsView: View {
                             .clipShape(Capsule())
                     }
                 }
-                .font(.subheadline.weight(.medium))
+                .font(appFont.font(size: 15, weight: .medium, relativeTo: .subheadline))
                 .foregroundStyle(AppearancePalette.ink.opacity(0.75))
                 .padding(.horizontal, 16)
                 .padding(.vertical, 10)
@@ -1199,7 +1203,7 @@ struct SettingsView: View {
             }
 
             Text("Entries that didn't pass the quality gate during import. Promote or discard — nothing is lost.")
-                .font(.caption)
+                .font(appFont.font(size: 12, relativeTo: .caption1))
                 .foregroundStyle(AppearancePalette.ink.opacity(0.3))
         }
     }
@@ -1369,7 +1373,7 @@ struct SettingsView: View {
             }
             if store.sampleLibraryPresent {
                 Text("Sample Library: \(store.sampleNodeIDs.count) entries")
-                    .font(.footnote)
+                    .font(appFont.font(size: 13, relativeTo: .footnote))
                     .foregroundStyle(AppearancePalette.ink.opacity(0.4))
             }
 
@@ -1392,10 +1396,10 @@ struct SettingsView: View {
                     Button("Rebuild now") {
                         Task { await store.rebuildBlockIndexNow() }
                     }
-                    .font(.footnote.weight(.semibold))
+                    .font(appFont.font(size: 13, weight: .semibold, relativeTo: .footnote))
                     .disabled(store.blockIndexRebuilding)
                 }
-                .font(.subheadline.weight(.medium))
+                .font(appFont.font(size: 15, weight: .medium, relativeTo: .subheadline))
                 .foregroundStyle(AppearancePalette.ink.opacity(0.6))
                 .padding(.horizontal, 16)
                 .padding(.vertical, 10)
@@ -1411,7 +1415,7 @@ struct SettingsView: View {
                     Image(systemName: "square.and.arrow.up")
                     Text("Export library")
                 }
-                .font(.subheadline.weight(.medium))
+                .font(appFont.font(size: 15, weight: .medium, relativeTo: .subheadline))
                 .foregroundStyle(AppearancePalette.ink.opacity(0.5))
                 .padding(.horizontal, 16)
                 .padding(.vertical, 10)
@@ -1427,7 +1431,7 @@ struct SettingsView: View {
                     Image(systemName: "trash")
                     Text("Clear all entries")
                 }
-                .font(.subheadline.weight(.medium))
+                .font(appFont.font(size: 15, weight: .medium, relativeTo: .subheadline))
                 .foregroundStyle(.red.opacity(0.75))
                 .padding(.horizontal, 16)
                 .padding(.vertical, 10)
@@ -1465,7 +1469,7 @@ struct SettingsView: View {
                           ? "sparkles.rectangle.stack" : "sparkles.rectangle.stack.fill")
                     Text(store.sampleLibraryPresent ? "Remove Sample Library" : "Add Sample Library")
                 }
-                .font(.subheadline.weight(.medium))
+                .font(appFont.font(size: 15, weight: .medium, relativeTo: .subheadline))
                 .foregroundStyle(AppearancePalette.ink.opacity(0.5))
                 .padding(.horizontal, 16)
                 .padding(.vertical, 10)
@@ -1490,10 +1494,10 @@ struct SettingsView: View {
     private func statBox(value: String, label: String) -> some View {
         VStack(spacing: 4) {
             Text(value)
-                .font(.title2.weight(.bold))
+                .font(appFont.font(size: 22, weight: .bold, relativeTo: .title2))
                 .foregroundStyle(AppearancePalette.ink)
             Text(label)
-                .font(.caption)
+                .font(appFont.font(size: 12, relativeTo: .caption1))
                 .foregroundStyle(AppearancePalette.ink.opacity(0.4))
         }
         .frame(maxWidth: .infinity)
@@ -1508,10 +1512,10 @@ struct SettingsView: View {
         VStack(alignment: .leading, spacing: 10) {
             sectionHeader("About")
             Text("AirPad")
-                .font(.subheadline.weight(.semibold))
+                .font(appFont.font(size: 15, weight: .semibold, relativeTo: .subheadline))
                 .foregroundStyle(AppearancePalette.ink)
             Text("It works around you. Not the other way around.")
-                .font(.caption)
+                .font(appFont.font(size: 12, relativeTo: .caption1))
                 .foregroundStyle(AppearancePalette.ink.opacity(0.4))
             // Brief AG3 — bring back every first-run callout (each shows again on its surface).
             Button {
@@ -1523,7 +1527,7 @@ struct SettingsView: View {
                     Image(systemName: tipsReset ? "checkmark" : "lightbulb")
                     Text(tipsReset ? "First-time tips will show again" : "Reset first-time tips")
                 }
-                .font(.subheadline.weight(.medium))
+                .font(appFont.font(size: 15, weight: .medium, relativeTo: .subheadline))
                 .foregroundStyle(AppearancePalette.ink.opacity(0.75))
                 .padding(.horizontal, 16)
                 .padding(.vertical, 10)
@@ -1534,7 +1538,7 @@ struct SettingsView: View {
             if let version = Bundle.main.object(forInfoDictionaryKey: "CFBundleShortVersionString") as? String,
                let build = Bundle.main.object(forInfoDictionaryKey: "CFBundleVersion") as? String {
                 Text("Version \(version) (\(build))")
-                    .font(.caption2)
+                    .font(appFont.font(size: 11, relativeTo: .caption2))
                     .foregroundStyle(AppearancePalette.ink.opacity(0.25))
             }
         }
@@ -1545,7 +1549,7 @@ struct SettingsView: View {
     @ViewBuilder
     private func sectionHeader(_ title: String) -> some View {
         Text(title)
-            .font(.caption.weight(.semibold))
+            .font(appFont.font(size: 12, weight: .semibold, relativeTo: .caption1))
             .foregroundStyle(AppearancePalette.ink.opacity(0.35))
             .textCase(.uppercase)
             .tracking(0.6)

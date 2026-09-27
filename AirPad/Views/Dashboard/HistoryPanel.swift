@@ -8,6 +8,9 @@ struct HistoryPanel: View {
     let onSelect: (Node) -> Void
     @Environment(CorpusStore.self) private var store
     @Environment(\.dismiss) private var dismiss
+    /// Brief BF — rows follow the app-wide Font (passed into `RecentNodeRow`'s `==` for
+    /// live switch under `.equatable()`).
+    @Environment(\.appBodyFont) private var appFont
 
     private var nodesByRecency: [Node] {
         // Brief Z R1 — the user's corpus room (the sample is a guest, not history).
@@ -26,7 +29,7 @@ struct HistoryPanel: View {
                         // defaults to `.white`, which was illegible on the light
                         // panel). Same as RecentsView / NodeListView callers.
                         RecentNodeRow(node: node, timestamp: node.updatedAt,
-                                      ink: AppearancePalette.ink)
+                                      ink: AppearancePalette.ink, appFont: appFont)
                             .equatable()
                     }
                     .listRowBackground(AppearancePalette.ink.opacity(0.05))

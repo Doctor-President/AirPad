@@ -15,6 +15,9 @@ struct RecentsView: View {
 
     @Environment(CorpusStore.self) private var store
     @Environment(\.dismiss) private var dismiss
+    /// Brief BF — section eyebrows + empty state follow the app-wide Font (the "Recents"
+    /// nav title + sort/back icons stay SF chrome).
+    @Environment(\.appBodyFont) private var appFont
 
     @State private var sortKey: SortKey = .modified
 
@@ -143,7 +146,7 @@ struct RecentsView: View {
                                     onOpenNode(node)
                                 } label: {
                                     RecentNodeRow(node: node, timestamp: date(for: node),
-                                                  ink: AppearancePalette.ink)
+                                                  ink: AppearancePalette.ink, appFont: appFont)
                                         .equatable()
                                         .padding(.horizontal, 18)
                                         .padding(.vertical, 14)
@@ -169,7 +172,7 @@ struct RecentsView: View {
     /// `#FFFFFF@0.5` byte-identical; light dark-ink so it reads on parchment).
     private func sectionHeader(_ label: String) -> some View {
         Text(label)
-            .font(.caption.weight(.semibold))
+            .font(appFont.font(size: 12, weight: .semibold, relativeTo: .caption1))
             .foregroundStyle(AppearancePalette.ink.opacity(0.5))
             .textCase(.uppercase)
             .tracking(0.8)
@@ -187,10 +190,10 @@ struct RecentsView: View {
         VStack(spacing: 8) {
             Spacer()
             Text("Nothing yet")
-                .font(.system(size: 17, weight: .semibold))
+                .font(appFont.font(size: 17, weight: .semibold))
                 .foregroundStyle(AppearancePalette.ink.opacity(0.5))
             Text("Capture something to get started.")
-                .font(.system(size: 14))
+                .font(appFont.font(size: 14))
                 .foregroundStyle(AppearancePalette.ink.opacity(0.3))
             Spacer()
         }
@@ -286,17 +289,24 @@ struct RecentNodeRow: View, Equatable {
     var ink: Color = .white
 
     @Environment(CorpusStore.self) private var store
+    /// Brief BF — the row's node TITLE follows the app-wide Font (the timestamp stays SF).
+    /// A STORED `let` (not `@Environment`) so it's part of `==`: this row is `.equatable()`,
+    /// and an `@Environment`-only dependency is skipped by `EquatableView` when the node
+    /// data is unchanged — so a live Font switch wouldn't repaint the title. The parent
+    /// reads `@Environment(\.appBodyFont)` and passes it in; it's now in `==`.
+    var appFont: EntryBodyFont = .fallback
 
     // Commit 3 — targeted re-render. Diff on exactly what this row renders:
     // the title, the tag that drives the color dot, and the timestamp. `Node.==`
     // is id-only, so without this a title change never re-renders the row.
     // (Tag-color *definition* edits in store.tags are a rare, separate concern
-    // and intentionally out of this set.)
+    // and intentionally out of this set.) Brief BF adds `appFont` for live Font switch.
     static func == (l: RecentNodeRow, r: RecentNodeRow) -> Bool {
         l.node.id == r.node.id &&
         l.node.title == r.node.title &&
         l.node.tags == r.node.tags &&
-        l.timestamp == r.timestamp
+        l.timestamp == r.timestamp &&
+        l.appFont == r.appFont
     }
 
     var body: some View {
@@ -306,7 +316,7 @@ struct RecentNodeRow: View, Equatable {
                 .frame(width: 10, height: 10)
             VStack(alignment: .leading, spacing: 2) {
                 Text(node.title)
-                    .font(.subheadline.weight(.medium))
+                    .font(appFont.font(size: 15, weight: .medium, relativeTo: .subheadline))
                     .foregroundStyle(ink)
                     .lineLimit(1)
                 Text(timestamp, style: .relative)
@@ -340,6 +350,8 @@ struct PriorityView: View {
 
     @Environment(CorpusStore.self) private var store
     @Environment(\.dismiss) private var dismiss
+    /// Brief BF — empty state follows the app-wide Font ("Priority" nav title stays SF).
+    @Environment(\.appBodyFont) private var appFont
     @State private var showReorder = false
 
     var body: some View {
@@ -410,7 +422,7 @@ struct PriorityView: View {
                         onOpenNode(node)
                     } label: {
                         RecentNodeRow(node: node, timestamp: node.updatedAt,
-                                      ink: AppearancePalette.ink)
+                                      ink: AppearancePalette.ink, appFont: appFont)
                             .equatable()
                             .padding(.horizontal, 18)
                             .padding(.vertical, 14)
@@ -435,10 +447,10 @@ struct PriorityView: View {
         VStack(spacing: 8) {
             Spacer()
             Text("No priority entries")
-                .font(.system(size: 17, weight: .semibold))
+                .font(appFont.font(size: 17, weight: .semibold))
                 .foregroundStyle(AppearancePalette.ink.opacity(0.5))
             Text("Flag an entry as Priority from its ••• menu.")
-                .font(.system(size: 14))
+                .font(appFont.font(size: 14))
                 .foregroundStyle(AppearancePalette.ink.opacity(0.3))
             Spacer()
         }

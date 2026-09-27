@@ -22,6 +22,9 @@ struct TodayCardView: View {
     let onRecentTap: (Node) -> Void
 
     @Environment(\.colorScheme) private var colorScheme
+    /// Brief BF — Today's date, eyebrows, journal prompt and activity titles follow the
+    /// app-wide Font; the middot separator and relative timestamp stay SF (Meta chrome).
+    @Environment(\.appBodyFont) private var appFont
 
     init(
         now: Date = Date(),
@@ -54,12 +57,12 @@ struct TodayCardView: View {
     private var dateHeader: some View {
         VStack(alignment: .leading, spacing: 4) {
             Text("Today")
-                .font(.caption.weight(.semibold))
+                .font(appFont.font(size: 12, weight: .semibold, relativeTo: .caption1))
                 .foregroundStyle(AppearancePalette.ink.opacity(0.4))
                 .textCase(.uppercase)
                 .tracking(0.8)
             Text(longDate(now))
-                .font(.system(size: 22, weight: .semibold))
+                .font(appFont.font(size: 22, weight: .semibold))
                 .foregroundStyle(AppearancePalette.ink)
         }
     }
@@ -78,7 +81,7 @@ struct TodayCardView: View {
             Button(action: onJournalPromptTap) {
                 HStack(alignment: .firstTextBaseline, spacing: 10) {
                     Text("What's on your mind today?")
-                        .font(.system(size: 15, weight: .regular))
+                        .font(appFont.font(size: 15))
                         .foregroundStyle(AppearancePalette.ink.opacity(0.55))
                         .frame(maxWidth: .infinity, alignment: .leading)
                     Image(systemName: "pencil.line")
@@ -113,7 +116,7 @@ struct TodayCardView: View {
             VStack(alignment: .leading, spacing: 8) {
                 if recentNodes.isEmpty {
                     Text("No recent activity")
-                        .font(.system(size: 14, weight: .regular))
+                        .font(appFont.font(size: 14))
                         .foregroundStyle(AppearancePalette.ink.opacity(0.4))
                 } else {
                     ForEach(recentNodes.prefix(3)) { node in
@@ -130,7 +133,7 @@ struct TodayCardView: View {
     private func activityRow(node: Node) -> some View {
         HStack(spacing: 10) {
             Text(node.title)
-                .font(.system(size: 14, weight: .regular))
+                .font(appFont.font(size: 14))
                 .foregroundStyle(AppearancePalette.ink.opacity(0.78))
                 .lineLimit(1)
             Text("·")
@@ -148,7 +151,7 @@ struct TodayCardView: View {
 
     private func sectionLabel(_ text: String) -> some View {
         Text(text)
-            .font(.caption.weight(.semibold))
+            .font(appFont.font(size: 12, weight: .semibold, relativeTo: .caption1))
             .foregroundStyle(AppearancePalette.ink.opacity(0.4))
             .textCase(.uppercase)
             .tracking(0.8)

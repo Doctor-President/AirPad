@@ -559,7 +559,7 @@ struct SettingsView: View {
     /// `EntryBodyFont.defaultStorageKey`).
     private var appearanceSubmenu: some View {
         submenuScroll(header: { submenuHeader(icon: "circle.righthalf.filled", tint: "5E5CE6", title: "Appearance",
-            blurb: "How AirPad looks, and the default font for your entries.") }) {
+            blurb: "How AirPad looks, and the font it uses.") }) {
             VStack(alignment: .leading, spacing: 20) {
                 VStack(alignment: .leading, spacing: 8) {
                     Text("Theme").font(.subheadline.weight(.semibold)).foregroundStyle(AppearancePalette.ink)
@@ -573,9 +573,9 @@ struct SettingsView: View {
                 }
                 VStack(alignment: .leading, spacing: 8) {
                     HStack {
-                        Text("Default font").font(.subheadline.weight(.medium)).foregroundStyle(AppearancePalette.ink)
+                        Text("Font").font(.subheadline.weight(.medium)).foregroundStyle(AppearancePalette.ink)
                         Spacer()
-                        Picker("Default font", selection: Binding(
+                        Picker("Font", selection: Binding(
                             get: { EntryBodyFont(rawValue: defaultBodyFontRaw) ?? .fallback },
                             set: { defaultBodyFontRaw = $0.rawValue }
                         )) {
@@ -584,7 +584,7 @@ struct SettingsView: View {
                         .pickerStyle(.menu)
                         .tint(AppearancePalette.ink)
                     }
-                    Text("New entries use this. An entry can still pick its own font from the editor toolbar.")
+                    Text("AirPad uses this typeface everywhere. An entry can still pick its own font from the editor toolbar.")
                         .font(.caption).foregroundStyle(AppearancePalette.ink.opacity(0.4))
                 }
             }

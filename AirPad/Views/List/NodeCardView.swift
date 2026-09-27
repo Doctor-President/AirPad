@@ -26,6 +26,18 @@ struct NodeCardView: View {
     /// Card-surface values are LIGHT-ONLY; every resolver is keyed on appearance.
     @Environment(\.colorScheme) private var colorScheme
 
+    /// Brief BF — the app-wide content face. Card view was `.system(design: .serif)`
+    /// (New York) at every text site; now every one of those sites resolves through the
+    /// registry via `cardFont(_:weight:)`, so the whole card follows the chosen Font and
+    /// switches live. Fixed sizes (× `fs`) and all trailing modifiers are preserved.
+    @Environment(\.appBodyFont) private var appFont
+
+    /// Choke point for every card text site (Brief BF). `.italic()` / `.tracking()` stay
+    /// as Text modifiers at the call site — only the face + size + weight resolve here.
+    private func cardFont(_ size: CGFloat, weight: UIFont.Weight = .regular) -> Font {
+        appFont.font(size: size, weight: weight)
+    }
+
     // R2 — the card observes the store itself so in-place mutations to
     // its node trigger a re-render without waiting for the list to
     // recycle. Mirrors NodeDetailView's pattern: keep the ID, look up
@@ -470,14 +482,14 @@ struct NodeCardView: View {
             HStack(alignment: .firstTextBaseline, spacing: 8) {
                 if let category {
                     Text(category)
-                        .font(.system(size: 12 * fs, design: .serif))
+                        .font(cardFont(12 * fs))
                         .italic()
                         .foregroundColor(Self.inkMeta)
                         .lineLimit(1)
                 }
                 Spacer(minLength: 8)
                 Text(node.relativeTimestamp.uppercased())
-                    .font(.system(size: 10 * fs, design: .serif))
+                    .font(cardFont(10 * fs))
                     .tracking(2.2)
                     .foregroundColor(Self.inkMeta)
                     .lineLimit(1)
@@ -492,7 +504,7 @@ struct NodeCardView: View {
 
             // Title
             Text(titleText)
-                .font(.system(size: 23 * fs, weight: .bold, design: .serif))
+                .font(cardFont(23 * fs, weight: .bold))
                 .tracking(-0.35)
                 .foregroundColor(Self.inkTitle)
                 .shadow(color: inkHalo.opacity(0.45), radius: 3, x: 0, y: 1)
@@ -505,7 +517,7 @@ struct NodeCardView: View {
                     // Folded entries own the flex slot below — keep the deck a
                     // capped 3-line lede so the body has room.
                     Text(node.summary)
-                        .font(.system(size: 14 * fs, design: .serif))
+                        .font(cardFont(14 * fs))
                         .italic()
                         .foregroundColor(Self.inkDeck)
                         .shadow(color: inkHalo.opacity(0.4), radius: 2, x: 0, y: 1)
@@ -579,7 +591,7 @@ struct NodeCardView: View {
                     .frame(height: 0.5)
                     .padding(.bottom, 10)
                 Text(tagList.map { $0.uppercased() }.joined(separator: " · "))
-                    .font(.system(size: 10 * fs, weight: .medium, design: .serif))
+                    .font(cardFont(10 * fs, weight: .medium))
                     .tracking(2.0)
                     .foregroundColor(Self.inkMeta)
                     .shadow(color: inkHalo.opacity(0.4), radius: 2, x: 0, y: 1)
@@ -609,7 +621,7 @@ struct NodeCardView: View {
             ForEach(Array(atomics.enumerated()), id: \.element.id) { idx, item in
                 if idx > 0 {
                     Text("·")
-                        .font(.system(size: 12, design: .serif))
+                        .font(cardFont(12))
                         .foregroundColor(Self.inkMeta)
                 }
                 atomicGlyph(item)
@@ -664,7 +676,7 @@ struct NodeCardView: View {
                 resolveNodeTitle: { id in store.nodes.first { $0.id == id }?.title }
             ) {
                 Text(text)
-                    .font(.system(size: 12, design: .serif))
+                    .font(cardFont(12))
                     .foregroundColor(Self.inkMeta)
                     .lineLimit(1)
             }
@@ -718,7 +730,7 @@ struct NodeCardView: View {
             Image(systemName: systemImage)
                 .font(.system(size: 11))
             Text(label)
-                .font(.system(size: 11, weight: .medium, design: .serif))
+                .font(cardFont(11, weight: .medium))
                 .tracking(1.4)
                 .lineLimit(1)
             Spacer(minLength: 0)
@@ -729,7 +741,7 @@ struct NodeCardView: View {
 
     private func overflowLine(_ count: Int) -> some View {
         Text("+\(count) more")
-            .font(.system(size: 11, design: .serif))
+            .font(cardFont(11))
             .italic()
             .foregroundColor(Self.inkMeta.opacity(0.85))
             .shadow(color: inkHalo.opacity(0.35), radius: 2, x: 0, y: 1)
@@ -826,7 +838,7 @@ struct NodeCardView: View {
                     .foregroundColor(Self.inkDeck)
                 if let duration {
                     Text(duration)
-                        .font(.system(size: 13, weight: .semibold, design: .serif))
+                        .font(cardFont(13, weight: .semibold))
                         .foregroundColor(Self.inkTitle)
                         .lineLimit(1)
                 }
@@ -910,7 +922,7 @@ struct NodeCardView: View {
     private func fitLinesText(
         _ content: String,
         fontSize: CGFloat,
-        weight: Font.Weight = .regular,
+        weight: UIFont.Weight = .regular,
         italic: Bool = false,
         lineSpacing: CGFloat = 2,
         color: Color,
@@ -919,14 +931,14 @@ struct NodeCardView: View {
     ) -> some View {
         // Decode ONCE here (not per geometry pass) when this is a markdown note body.
         let attributed: AttributedString? = renderMarkdown
-            ? Self.markdownBody(content, fontSize: fontSize, weight: weight, italic: italic)
+            ? Self.markdownBody(content, fontSize: fontSize, weight: weight, italic: italic, face: appFont)
             : nil
         return GeometryReader { proxy in
             let lineHeight = fontSize * 1.35 + lineSpacing
             let maxLines = max(1, Int(proxy.size.height / lineHeight))
             let styled: Text = {
                 if let attributed { return Text(attributed) }  // #18: formatted, not raw markdown
-                var t = Text(content).font(.system(size: fontSize, weight: weight, design: .serif))
+                var t = Text(content).font(appFont.font(size: fontSize, weight: weight))
                 if italic { t = t.italic() }
                 return t
             }()
@@ -949,7 +961,8 @@ struct NodeCardView: View {
     /// (inline images) are stripped — SwiftUI `Text` can't render `NSTextAttachment`.
     /// Best-effort: any decode oddity still renders as text, never raw asterisks.
     private static func markdownBody(_ markdown: String, fontSize: CGFloat,
-                                     weight: Font.Weight, italic baseItalic: Bool) -> AttributedString {
+                                     weight: UIFont.Weight, italic baseItalic: Bool,
+                                     face: EntryBodyFont) -> AttributedString {
         let ns = MarkdownCodec.decode(markdown)
         guard ns.length > 0 else { return AttributedString(markdown) }
         var out = AttributedString()
@@ -963,11 +976,17 @@ struct NodeCardView: View {
             let isBold = traits.contains(.traitBold)
             let isItalic = traits.contains(.traitItalic) || baseItalic
             let isMono = (attrs[.airpadInlineCode] as? Bool) == true || traits.contains(.traitMonoSpace)
-            var font = Font.system(size: fontSize,
-                                   weight: isBold ? .bold : weight,
-                                   design: isMono ? .monospaced : .serif)
-            if isItalic { font = font.italic() }
-            piece.font = font
+            // Brief BF — serif runs follow the app face (the registry); code runs stay on
+            // SF Mono (the Mono role is platform-native, never re-faced).
+            let piece_font: Font
+            if isMono {
+                var f = Font.system(size: fontSize, weight: isBold ? .bold : .regular, design: .monospaced)
+                if isItalic { f = f.italic() }
+                piece_font = f
+            } else {
+                piece_font = Font(face.uiFont(size: fontSize, weight: isBold ? .bold : weight, italic: isItalic))
+            }
+            piece.font = piece_font
             if (attrs[.underlineStyle] as? Int).map({ $0 != 0 }) ?? false { piece.underlineStyle = .single }
             if (attrs[.strikethroughStyle] as? Int).map({ $0 != 0 }) ?? false { piece.strikethroughStyle = .single }
             // No foreground — the card's `.foregroundColor(color)` controls it.

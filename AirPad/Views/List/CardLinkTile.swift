@@ -12,6 +12,8 @@ struct CardLinkTile: View {
     let nodeID: String
 
     @Environment(CorpusStore.self) private var store
+    /// Brief BF — link-tile name + site follow the app-wide Font (card content).
+    @Environment(\.appBodyFont) private var appFont
     @State private var thumbImage: UIImage? = nil
 
     // Appearance-aware ink: dark = shipped warm-cream (byte-identical), light =
@@ -27,13 +29,13 @@ struct CardLinkTile: View {
                 .clipShape(RoundedRectangle(cornerRadius: 6))
             VStack(alignment: .leading, spacing: 2) {
                 Text(displayTitle)
-                    .font(.system(size: 12, weight: .semibold, design: .serif))
+                    .font(appFont.font(size: 12, weight: .semibold))
                     .foregroundColor(Self.inkTitle)
                     .lineLimit(2)
                     .multilineTextAlignment(.leading)
                 if let site = linkItem.siteName, !site.isEmpty {
                     Text(site)
-                        .font(.system(size: 10, design: .serif))
+                        .font(appFont.font(size: 10))
                         .foregroundColor(Self.inkMeta)
                         .lineLimit(1)
                 }

@@ -12,8 +12,11 @@ enum ChatTypography {
     private static let serif     = "SourceSerif4-Regular"
     private static let serifBold = "SourceSerif4-Bold"
 
-    // Baked from the on-device tuner pass (Source Serif reads optically small).
-    static let body     = Font.custom(serif, size: 19, relativeTo: .body)
+    // Brief BF — the Librarian ANSWER + HEADINGS follow the app-wide Font (the registry),
+    // no longer hardwired to Source Serif. Sizes + Dynamic Type (`relativeTo:`) are the
+    // tuned values, unchanged; only the FACE follows `face`. Code (mono), the user bubble
+    // (SF, the app's own voice) and footer icons (SF Symbols) deliberately stay SF.
+    static func body(_ face: EntryBodyFont) -> Font { face.font(size: 19, relativeTo: .body) }
     static let bodyLine : CGFloat = 0    // explicit. Source Serif's intrinsic
                                          // leading carries it. Keep the token:
                                          // lineSpacing is additive POINTS and
@@ -28,17 +31,17 @@ enum ChatTypography {
     // h1 = 26. NO observed model has emitted `#`. Across five sampled turns
     // (FM + Qwen), `##` is the top-level heading and `###` the subheads.
     // This value exists only so h1 cannot collide with h2. Not tuned.
-    static let h1 = Font.custom(serifBold, size: 26, relativeTo: .title2)
-    static let h2 = Font.custom(serifBold, size: 23, relativeTo: .title3)
+    static func h1(_ face: EntryBodyFont) -> Font { face.font(size: 26, weight: .bold, relativeTo: .title2) }
+    static func h2(_ face: EntryBodyFont) -> Font { face.font(size: 23, weight: .bold, relativeTo: .title3) }
     // h3 IS live (`###`). Derived from the scale, NOT device-observed: T tuned
     // h2 while h3 still rendered at 18 — below body at 19, which inverted the
     // hierarchy. 21 restores h3 above body and below h2.
-    static let h3 = Font.custom(serifBold, size: 21, relativeTo: .headline)
+    static func h3(_ face: EntryBodyFont) -> Font { face.font(size: 21, weight: .bold, relativeTo: .headline) }
 
     // Code stays MONOSPACED SYSTEM. A serif code block is illegible.
     static let code = Font.system(size: 15, design: .monospaced)
 
-    static let thinking = Font.custom(serif, size: 15, relativeTo: .footnote)
+    static func thinking(_ face: EntryBodyFont) -> Font { face.font(size: 15, relativeTo: .footnote) }
 
     // Footer icons are SF Symbols. System font. Unchanged.
     static let footerIcon = Font.system(size: 16)

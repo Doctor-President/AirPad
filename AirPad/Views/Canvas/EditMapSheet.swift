@@ -18,6 +18,8 @@ struct EditMapSheet: View {
     @AppStorage("map.weight.language") private var wLanguage: Double = 0.3
     @AppStorage("map.weight.backlink") private var wBacklink: Double = 0.4
     @AppStorage("map.tintByRecency") private var tintByRecency: Bool = true
+    /// Brief BF addendum — the Orb-font choice (5 baked faces), independent of the app Font.
+    @AppStorage(MapOrbFont.storageKey) private var orbFontRaw = MapOrbFont.fallback.rawValue
 
 
     private var sortedTags: [Tag] {
@@ -29,6 +31,27 @@ struct EditMapSheet: View {
     var body: some View {
         NavigationStack {
             List {
+                Section {
+                    Picker(selection: Binding(
+                        get: { MapOrbFont(rawValue: orbFontRaw) ?? .fallback },
+                        set: { orbFontRaw = $0.rawValue }
+                    )) {
+                        ForEach(MapOrbFont.allCases) { Text($0.displayName).tag($0) }
+                    } label: {
+                        Text("Orb font")
+                            .font(.system(size: 15, weight: .medium))
+                            .foregroundStyle(AppearancePalette.ink)
+                    }
+                    .pickerStyle(.menu)
+                    .tint(AppearancePalette.ink)
+                    .listRowBackground(AppearancePalette.ink.opacity(0.04))
+                } header: {
+                    Text("Orb titles")
+                } footer: {
+                    Text("The typeface for entry titles on the Map. Independent of the app-wide Font (Settings → Appearance). Titles re-wrap inside each circle when you switch.")
+                        .font(.caption).foregroundStyle(AppearancePalette.ink.opacity(0.4))
+                }
+
                 Section {
                     weightRow("Collection", $wCollection)
                     weightRow("Anchor tag", $wAnchor)

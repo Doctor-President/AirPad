@@ -104,6 +104,7 @@ struct AirPadApp: App {
             .environment(quarantineStore)
             .environment(router)
             .environment(selectionService)
+            .provideAppBodyFont()   // Brief BF — inject the app-wide content face (live)
             .task {
                 store.quarantineStore = quarantineStore
                 await store.setup()
@@ -192,6 +193,7 @@ private struct SpineGateView: View {
         .environment(quarantineStore)
         .environment(selectionService)
         .environment(router)
+        .provideAppBodyFont()   // Brief BF — DEBUG harness sees the app-wide face too
         .onAppear {
             switch section {
             case "related": store.nodes = SpineGateView.relatedSeed()

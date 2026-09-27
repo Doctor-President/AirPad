@@ -48,6 +48,8 @@ struct DashboardView: View {
 
     @Environment(AppRouter.self) private var router
     @Environment(CorpusStore.self) private var store
+    /// Brief BF — the app-wide content face (Dashboard eyebrow + collection names follow it).
+    @Environment(\.appBodyFont) private var appFont
 
     // Related-nav fix (2026-08-24): the dashboard stack path is TYPE-ERASED
     // (`NavigationPath`), NOT a typed `[DashboardRoute]`. A Related link fires
@@ -542,7 +544,7 @@ struct DashboardView: View {
         VStack(alignment: .leading, spacing: 12) {
             HStack {
                 Text("Collections")
-                    .font(.caption.weight(.semibold))
+                    .font(appFont.font(size: 12, weight: .semibold, relativeTo: .caption1))
                     .foregroundStyle(AppearancePalette.ink.opacity(0.4))
                     .textCase(.uppercase)
                     .tracking(0.8)
@@ -664,6 +666,8 @@ struct DashboardView: View {
 // MARK: - Collection row
 
 private struct CollectionRow: View {
+    /// Brief BF — collection NAMES are content, so they follow the app-wide Font.
+    @Environment(\.appBodyFont) private var appFont
     let collection: NodeCollection
     let onTap: () -> Void
     /// Nil → no ellipsis menu on this row (Corpus, Journal).
@@ -723,8 +727,8 @@ private struct CollectionRow: View {
 
     private var nameFont: Font {
         collection.isCorpus
-            ? .system(size: 20, weight: .semibold)
-            : .system(size: 16, weight: .semibold)
+            ? appFont.font(size: 20, weight: .semibold)
+            : appFont.font(size: 16, weight: .semibold)
     }
 
     private var verticalPadding: CGFloat {

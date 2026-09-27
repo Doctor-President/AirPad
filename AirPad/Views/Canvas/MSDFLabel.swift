@@ -44,10 +44,24 @@ final class MSDFFont {
     /// load, so titles can never silently vanish. ★ Orb-title METRICS must come from this same face:
     /// `applyLOD` derives screenPxRange from `distanceRange`/`atlasSize`, so reading them off another
     /// atlas would mis-scale the glyph AA (a latent bug while the font was a dial).
-    static let orbTitle: MSDFFont = {
+    static let orbTitleShipping: MSDFFont = {
         let f = MSDFFont(atlas: "spacegroteskbold_msdf")
         return f.loaded ? f : shared
     }()
+    /// The face orb titles render AND measure from. Release: always `orbTitleShipping`
+    /// (byte-identical to the former `static let`). DEBUG: Brief BB4's `-TypeSystem` harness
+    /// can point it at another bundled atlas — `named(_:)` caches, so this stays a dictionary
+    /// lookup even though `applyLOD` reads it per frame. Metrics + glyphs still come from ONE
+    /// atlas (the invariant above holds), because both sides read this same property.
+    static var orbTitle: MSDFFont {
+        #if DEBUG
+        if let n = TypeSystemPreview.orbAtlasName {
+            let f = named(n)
+            return f.loaded ? f : orbTitleShipping
+        }
+        #endif
+        return orbTitleShipping
+    }
     /// Curated MSDF atlases loaded by NAME, cached (one texture each; sub-rects still batch).
     /// Used by the orb-title font picker. A missing/unloadable atlas → `.loaded == false` (visible,
     /// not a silent fallback) so the tuner can flag it.

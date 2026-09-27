@@ -1940,11 +1940,20 @@ private struct TerritoryLabelPill: View {
     /// on cream (this pill was missed by the canvas white-sweep).
     @Environment(\.colorScheme) private var colorScheme
 
+    /// The pill's Label-role face. Release: the shipping Source Serif 4 Bold at the shared
+    /// metric size. DEBUG: Brief BB4's `-TypeSystem` harness can swap the face.
+    private static var pillFont: Font {
+        #if DEBUG
+        if let f = TypeSystemPreview.pillFont(size: RegionLabelPillMetrics.fontSize) { return f }
+        #endif
+        return .custom("SourceSerif4-Bold", size: RegionLabelPillMetrics.fontSize)
+    }
+
     var body: some View {
         Text(text.uppercased())
             // Font size + padding + minHeight read the SHARED RegionLabelPillMetrics so the
             // rendered pill and the scene's declutter box can't drift apart.
-            .font(.custom("SourceSerif4-Bold", size: RegionLabelPillMetrics.fontSize))
+            .font(Self.pillFont)
             .tracking(1.5)
             // Dark (Solar Flare): byte-identical white@0.95. Light (Cucumber
             // Water): AppearancePalette.ink — the same token the detail view uses.

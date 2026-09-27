@@ -112,7 +112,45 @@ final class MSDFFont {
     }
 
     fileprivate func glyph(_ scalar: UInt32) -> MSDFAtlasJSON.Glyph? { glyphs[Int(scalar)] }
-    fileprivate func advance(_ scalar: UInt32) -> CGFloat { CGFloat(glyphs[Int(scalar)]?.advance ?? 0.25) }
+
+    /// Advance (em) for a scalar. **Brief BD3 — a character the atlas cannot DRAW must not
+    /// RESERVE space.** This used to fall back to `0.25`, so any glyph outside the atlas
+    /// (every accent, dash and curly quote, since atlases were ASCII-only) rendered as an
+    /// invisible hole AND shifted the wrap — `Cléo de 5 à 7` came out as `CL O DE 5 7`.
+    ///
+    /// ★ The fix belongs HERE and only here: `makeContainer` (render) and `width` (the
+    /// wrap/fit measurer) both read this one function, so correcting it keeps the two
+    /// consistent by construction rather than by two matching guards. A missing glyph now
+    /// takes **zero** advance and draws nothing — it disappears cleanly instead of leaving a
+    /// gap. (The atlases carry no `.notdef`, so there is no visible glyph to substitute; if
+    /// one is ever baked in, prefer substituting it over dropping.)
+    ///
+    /// U+0020 is a real atlas entry with a real advance and no `planeBounds`, so spaces keep
+    /// working — they're "present but not drawable", which is not the missing case.
+    fileprivate func advance(_ scalar: UInt32) -> CGFloat {
+        guard let a = glyphs[Int(scalar)]?.advance else {
+            MSDFFont.noteMissingGlyph(scalar, atlas: atlasName)
+            return 0
+        }
+        return CGFloat(a)
+    }
+
+    /// DEBUG-only: report each missing codepoint ONCE per atlas, so a title in a script the
+    /// atlas doesn't cover (emoji, CJK) is visible in the console instead of failing silently.
+    /// Release compiles this to an empty call.
+    fileprivate static func noteMissingGlyph(_ scalar: UInt32, atlas: String) {
+        #if DEBUG
+        let key = "\(atlas)#\(scalar)"
+        guard !reportedMissing.contains(key) else { return }
+        reportedMissing.insert(key)
+        let ch = Unicode.Scalar(scalar).map(String.init) ?? "?"
+        print(String(format: "[MSDF] missing glyph U+%04X '%@' in atlas '%@' — dropped (0 advance)",
+                     scalar, ch, atlas))
+        #endif
+    }
+    #if DEBUG
+    private static var reportedMissing: Set<String> = []
+    #endif
 
     /// Rendered width (points) of `text` at `pointSize` — the SAME atlas advances that
     /// drive the glyph render, so fit and render share one metric system.

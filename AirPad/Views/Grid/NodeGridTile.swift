@@ -40,6 +40,18 @@ struct NodeGridTile: View {
 
     @Environment(CorpusStore.self) private var store
 
+    /// Brief BF — the app-wide content face. Grid tiles were `.system(design: .serif)`
+    /// (New York) at every text site; each now resolves through the registry via
+    /// `tileFont(_:weight:)`, so tiles follow the chosen Font and switch live. The
+    /// density-responsive `scaled(...)` sizes and all trailing modifiers are preserved.
+    @Environment(\.appBodyFont) private var appFont
+
+    /// Choke point for every grid-tile text site (Brief BF). `.italic()` / `.tracking()`
+    /// stay as Text modifiers — only the face + size + weight resolve here.
+    private func tileFont(_ size: CGFloat, weight: UIFont.Weight = .regular) -> Font {
+        appFont.font(size: size, weight: weight)
+    }
+
     // MARK: - Tuning storage (per-density, live)
     // Mirrors every key declared in TileTuningKey. The panel mutates the
     // same UserDefaults entries → these @AppStorage observers fire → every
@@ -344,14 +356,14 @@ struct NodeGridTile: View {
             HStack(alignment: .firstTextBaseline, spacing: 8) {
                 if let category {
                     Text(category)
-                        .font(.system(size: scaled(t.metaBaseSize), design: .serif))
+                        .font(tileFont(scaled(t.metaBaseSize)))
                         .italic()
                         .foregroundColor(Self.inkMeta)
                         .lineLimit(1)
                 }
                 Spacer(minLength: 8)
                 Text(node.relativeTimestamp.uppercased())
-                    .font(.system(size: scaled(t.metaBaseSize), design: .serif))
+                    .font(tileFont(scaled(t.metaBaseSize)))
                     .tracking(t.metaTracking)
                     .foregroundColor(Self.inkMeta)
                     .lineLimit(1)
@@ -367,7 +379,7 @@ struct NodeGridTile: View {
             // Title — hyphenated via cached AttributedString so the wrap
             // looks intentional when a line ends mid-word.
             Text(HyphenatedTextCache.attributed(titleText))
-                .font(.system(size: scaled(t.titleBaseSize * titleScaleFactor(for: titleText, maxScale: t.titleMaxScale)), weight: .bold, design: .serif))
+                .font(tileFont(scaled(t.titleBaseSize * titleScaleFactor(for: titleText, maxScale: t.titleMaxScale)), weight: .bold))
                 .tracking(t.titleTracking)
                 .foregroundColor(Self.inkTitle)
                 .shadow(color: Self.inkShadow.opacity(0.45), radius: 3, x: 0, y: 1)
@@ -380,7 +392,7 @@ struct NodeGridTile: View {
 
             if showDeck {
                 Text(HyphenatedTextCache.attributed(node.summary))
-                    .font(.system(size: scaled(t.deckBaseSize), design: .serif))
+                    .font(tileFont(scaled(t.deckBaseSize)))
                     .italic()
                     .foregroundColor(Self.inkDeck)
                     .shadow(color: Self.inkShadow.opacity(0.4), radius: 2, x: 0, y: 1)
@@ -403,7 +415,7 @@ struct NodeGridTile: View {
                     .frame(height: 0.5)
                     .padding(.bottom, 10)
                 Text(tagList.map { $0.uppercased() }.joined(separator: " · "))
-                    .font(.system(size: scaled(t.metaBaseSize), weight: .medium, design: .serif))
+                    .font(tileFont(scaled(t.metaBaseSize), weight: .medium))
                     .tracking(t.metaTracking)
                     .foregroundColor(Self.inkMeta)
                     .shadow(color: Self.inkShadow.opacity(0.4), radius: 2, x: 0, y: 1)
@@ -429,7 +441,7 @@ struct NodeGridTile: View {
                 Spacer(minLength: 0)
             }
             Text(HyphenatedTextCache.attributed(displayTitle))
-                .font(.system(size: scaled(t.titleBaseSize * titleScaleFactor(for: displayTitle, maxScale: t.titleMaxScale)), weight: .bold, design: .serif))
+                .font(tileFont(scaled(t.titleBaseSize * titleScaleFactor(for: displayTitle, maxScale: t.titleMaxScale)), weight: .bold))
                 .tracking(t.titleTracking)
                 .foregroundColor(Self.inkTitle)
                 .shadow(color: Self.inkShadow.opacity(0.45), radius: 3, x: 0, y: 1)

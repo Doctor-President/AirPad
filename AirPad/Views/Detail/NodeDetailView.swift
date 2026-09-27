@@ -195,6 +195,16 @@ struct NodeDetailView: View {
         return effective.titleFont(size: visualSettings.nodeTitle.size)
     }
 
+    /// Brief BF — the entry SUMMARY follows the same pairing (per-entry body face, else the
+    /// global default) at the `nodeSummary` size, regular weight — the Body role. Fraunces
+    /// is retired here too; the summary now matches the entry's chosen face. Size still from
+    /// the (dev-only) `nodeSummary` role.
+    private var entrySummaryFont: Font {
+        let def = EntryBodyFont(rawValue: defaultBodyFontRaw) ?? .fallback
+        let effective = node?.perEntryBodyFont ?? def
+        return effective.font(size: visualSettings.nodeSummary.size)
+    }
+
     // MARK: - Scroll-collapsed hero → title band (Twitter-profile-header collapse)
     //
     // Purely scroll-driven, no gesture. Scroll down → the hero blurs out into a
@@ -532,7 +542,7 @@ struct NodeDetailView: View {
                         .opacity(bandTitleShown && !focusedField ? 0 : 1)
                 } summary: {
                     TextField("Summary", text: $editedSummary, axis: .vertical)
-                        .font(visualSettings.nodeSummary.resolvedFont())
+                        .font(entrySummaryFont)
                         .foregroundStyle(AppearancePalette.ink.opacity(0.75))
                         .tint(AppearancePalette.ink)
                         .focused($focusedField)

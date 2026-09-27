@@ -32,9 +32,16 @@ bake() {  # $1 = atlas name (no _msdf suffix)   $2 = source .ttf
     -imageout "$OUT/${name}_msdf.png" -json "$OUT/${name}_msdf.json"
 }
 
-# The two atlases actually reachable from code: MSDFFont.orbTitle and MSDFFont.shared (fallback).
+# Brief BF addendum — the FIVE selectable orb-title faces (Edit Map… → Orb font). All Bold,
+# all OFL. Space Grotesk is the default (also the `MSDFFont.shared` fallback after BF retired
+# Fraunces). Source Serif 4 + Lato bake from the app-bundled TTFs; Cinzel + Big Shoulders
+# Display are display cuts instanced to Bold (wght=700) via fontTools and kept in tools/fonts/
+# (outside the app target). Fraunces is RETIRED — its atlas is deleted, not re-baked.
 bake spacegroteskbold "$REPO/tools/fonts/SpaceGrotesk-Bold.ttf"
-bake fraunces         "$REPO/AirPad/Resources/Fonts/Fraunces/Fraunces_72pt-Bold.ttf"
+bake sourceserifbold  "$REPO/AirPad/Resources/Fonts/SourceSerif4/SourceSerif4-Bold.ttf"
+bake latobold         "$REPO/AirPad/Resources/Fonts/Lato/Lato-Bold.ttf"
+bake cinzelbold       "$REPO/tools/fonts/Cinzel-Bold.ttf"
+bake bigshouldersbold "$REPO/tools/fonts/BigShouldersDisplay-Bold.ttf"
 
 echo
 echo "Re-baked. VERIFY before committing: ASCII advances must be unchanged, or every"

@@ -2,19 +2,62 @@ import SpriteKit
 import UIKit
 import simd
 
-/// Node-title typeface. **BAKED to `.fraunces`** (T's device-final, Type arc end) —
-/// `mapLabelFont` resolves it to Fraunces72pt-Bold. The audition/tuner is gone; the
-/// enum + `mapLabelFont` switch stay so the choice is one-liner-revivable. All faces
-/// are OFL/on-device. NOTE: only the Fraunces *72pt* (display) optical cut is bundled
-/// — the static instance can't dial `opsz` to the soft TEXT axis; if the 72pt reads
-/// too sharp at tiny sizes, bundle the Fraunces TEXT-optical cut. `.lora` stays
-/// bundled but dormant; `.sourceSerif`/`.sfSemibold`/`.charter` are system/already-bundled.
+/// The tier-fit SIZE-CARRIER face — a UIFont whose only job is to pass the tier point
+/// size through the wrap loop (`mapLabelFont`); the FACE never reaches the screen. The
+/// actual orb-title face is a BAKED MSDF atlas chosen via `MapOrbFont` (Edit Map… → Orb
+/// font), resolved in `makeTitleSprite`. Brief BF retired the `.fraunces` case here (that
+/// was the last Fraunces reference in the app); `fontChoice` is now `.sfSemibold`.
 enum MapLabelFont: String, CaseIterable {
     case sfSemibold
     case sourceSerif
-    case fraunces
     case lora
     case charter
+}
+
+/// Brief BF addendum — the five BAKED orb-title faces offered in **Edit Map… → Orb font**,
+/// independent of the app-wide Font. Each is an MSDF atlas (all Bold, all OFL). The
+/// post-V1 on-device generator later adds SF Pro / New York here (they can't be baked +
+/// redistributed as an atlas). Persisted in UserDefaults so the scene (not a SwiftUI view)
+/// can read the current choice directly.
+enum MapOrbFont: String, CaseIterable, Identifiable {
+    case spaceGrotesk
+    case sourceSerif
+    case lato
+    case cinzel
+    case bigShoulders
+
+    var id: String { rawValue }
+
+    /// The baked MSDF atlas resource name (no extension).
+    var atlasName: String {
+        switch self {
+        case .spaceGrotesk: return "spacegroteskbold_msdf"
+        case .sourceSerif:  return "sourceserifbold_msdf"
+        case .lato:         return "latobold_msdf"
+        case .cinzel:       return "cinzelbold_msdf"
+        case .bigShoulders: return "bigshouldersbold_msdf"
+        }
+    }
+
+    /// User-facing name (Edit Map… picker).
+    var displayName: String {
+        switch self {
+        case .spaceGrotesk: return "Space Grotesk"
+        case .sourceSerif:  return "Source Serif 4"
+        case .lato:         return "Lato"
+        case .cinzel:       return "Cinzel"
+        case .bigShoulders: return "Big Shoulders"
+        }
+    }
+
+    static let storageKey = "map.orbFont"
+    /// Brief BG — the default Orb font is **Lato** (fresh installs; an explicit Edit Map…
+    /// choice is kept). Was `.spaceGrotesk`.
+    static let fallback: MapOrbFont = .lato
+    /// The current choice, read straight from UserDefaults (the SpriteKit scene isn't a View).
+    static var current: MapOrbFont {
+        MapOrbFont(rawValue: UserDefaults.standard.string(forKey: storageKey) ?? "") ?? fallback
+    }
 }
 
 /// Curated haptic ESCALATIONS for the browse→commit→detail→release loop. Weight
@@ -1049,8 +1092,6 @@ final class CorpusPhysicsScene: SKScene {
             return UIFont.systemFont(ofSize: size, weight: .semibold)
         case .sourceSerif:
             return serifFont(size: size, weight: .bold)               // SourceSerif4-Bold
-        case .fraunces:
-            return UIFont(name: "Fraunces72pt-Bold", size: size) ?? serifFont(size: size, weight: .bold)
         case .lora:
             return UIFont(name: "Lora-Bold", size: size) ?? serifFont(size: size, weight: .bold)
         case .charter:
@@ -3698,7 +3739,9 @@ final class CorpusPhysicsScene: SKScene {
         static let allCaps: Bool = true
         static let hyphenation: Bool = true
         static let tracking: CGFloat = 0.0
-        static let fontChoice: MapLabelFont = .fraunces
+        // Brief BF — the size-carrier face is inert (only pointSize is used; the real orb
+        // face is a MapOrbFont MSDF atlas). Repointed off the retired `.fraunces`.
+        static let fontChoice: MapLabelFont = .sfSemibold
     }
 
     /// Dark-mode orb POP — the substrate's first EFFECT: dimensionality levers fed to
@@ -3922,9 +3965,10 @@ final class CorpusPhysicsScene: SKScene {
         // (legibleInk over the dark-boosted fill). Returns a container child of the orb
         // named "titleLabel", z 2 — resolution-independent (crisp at any zoom) + batched.
         let side = radius * LensTuning.labelBoxFactor
-        // Orb-title FONT — Space Grotesk Bold (T device-final 2026-09-14). MSDF renders + measures
-        // from the SAME atlas, so the face and its metrics must not diverge (see MSDFFont.orbTitle).
-        let font = MSDFFont.orbTitle
+        // Orb-title FONT — the user's Orb-font choice (Edit Map…), default Space Grotesk Bold.
+        // MSDF renders + measures from the SAME atlas, so a face swap re-wraps every title
+        // consistently (fit uses this atlas's advances). Metrics travel with the container.
+        let font = MSDFFont.orb(atlas: MapOrbFont.current.atlasName)
         let (glyphFont, lines) = resolveTitleLines(text, box: side) { s, f in
             MSDFLabel.textWidth(s, pointSize: f.pointSize, font: font)
         }
@@ -3934,6 +3978,24 @@ final class CorpusPhysicsScene: SKScene {
         let titleColor = legibleInk(over: inkFill).ink
         return MSDFLabel.makeContainer(lines: lines, pointSize: glyphFont.pointSize,
                                        color: titleColor, fullTitle: text, font: font)
+    }
+
+    /// Brief BF addendum — rebuild EVERY orb title in the newly-chosen Orb font (Edit Map…).
+    /// Each title re-wraps in the chosen atlas's glyph-space and is swapped in place on the
+    /// SAME orb — no territory re-form, no orb movement, layout/warp untouched. Forces the
+    /// next `applyOrbScales` pass so the fresh containers pick up their LOD fade (no flash).
+    func reloadOrbTitles() {
+        for node in currentNodes {
+            guard let shape = nodeSprites[node.id],
+                  let titleNode = shape.children.first(where: { $0.name == "titleLabel" }),
+                  MSDFLabel.isGlyphContainer(titleNode) else { continue }
+            let displayText = node.title.isEmpty ? (node.items.first?.content ?? "") : node.title
+            titleNode.removeFromParent()
+            let radius = nodeIntrinsicRadii[node.id] ?? bubbleRadius(for: node)
+            shape.addChild(makeTitleSprite(text: displayText, radius: radius,
+                                           fillColor: bubbleColor(for: node)))
+        }
+        lastRampCameraScale = -1   // force applyOrbScales to re-apply title LOD next frame
     }
 
     /// The resting orb physics body for a given radius — extracted so a rebuild

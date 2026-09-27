@@ -30,6 +30,26 @@ The licence text ships with the app at
 `AirPad/Resources/Fonts/SpaceGrotesk/SpaceGrotesk-OFL.txt` — an MSDF atlas is a derivative of
 the font outlines, so the notice must travel with the build even though the `.ttf` does not.
 
+## Cinzel-Bold.ttf & BigShouldersDisplay-Bold.ttf
+
+Added in **Brief BF (orb-font addendum)** as two of the five selectable orb-title faces
+(Edit Map… → Orb font). Both are variable fonts **instanced to Bold (`wght=700`)** with
+`fontTools.varLib.instancer … --update-name-table`, so the atlas rasterises the Bold master.
+
+| | Cinzel | Big Shoulders Display |
+|---|---|---|
+| Source | <https://github.com/google/fonts> `ofl/cinzel/Cinzel[wght].ttf` | `ofl/bigshouldersdisplay/BigShouldersDisplay[wght].ttf` |
+| Downloaded | 2026-09-27, `main` | 2026-09-27, `main` |
+| Instanced | `wght=700` → `CinzelRoman-Bold` | `wght=700` → `BigShouldersDisplay-Bold` |
+| Licence | SIL OFL 1.1, © 2020 The Cinzel Project Authors | SIL OFL 1.1, © 2019 The Big Shoulders Project Authors |
+| Character | inscriptional caps (lowercase are small caps; orb titles are uppercase) | condensed display caps (fits more of a title in a circle) |
+
+Licence text ships at `AirPad/Resources/Fonts/{Cinzel,BigShouldersDisplay}/…-OFL.txt` (the MSDF
+atlas is a derivative of the outlines, so the notice travels with the build even though the
+`.ttf` does not). Glyph coverage of the wide charset (measured at bake): Cinzel 302/327,
+Big Shoulders 323/327 — **all Latin-1 accents + every accented probe present**; the gaps are
+Latin Extended-A only, which drop cleanly (Brief BD3).
+
 ## msdf-charset.txt
 
 The charset every shipping atlas is baked with. **Keep it wide.** A character absent from the

@@ -43,18 +43,21 @@ final class EntryVisualSettings {
 
     // MARK: - Typography family
 
+    // Brief BF — the FACE axis of this dev panel is now INERT: every render site resolves
+    // its face through the app-wide registry (`EntryBodyFont`), reading only `.size` from
+    // these roles. Fraunces is retired, so its case is gone; the remaining cases exist only
+    // for the panel's own history and the two live `resolvedFont()` timestamp uses (SF Pro).
     enum TypographyChoice: String, Codable, CaseIterable, Identifiable {
         case sfPro    = "SF Pro"
         case newYork  = "New York"
         case lato     = "Lato"
-        case fraunces = "Fraunces"
         case lora     = "Lora"
 
         var id: String { rawValue }
 
         /// PostScript name for the bundled `.ttf`. We only bundled Regular
         /// + Bold per custom family, so the weight picker collapses to a
-        /// binary file choice for Lato/Fraunces/Lora (see
+        /// binary file choice for Lato/Lora (see
         /// `FontWeightChoice.clampsToBoldFile`). System families return
         /// `nil` so callers route to `.system(...)` with a real weight.
         func postScriptName(boldFile: Bool) -> String? {
@@ -63,11 +66,6 @@ final class EntryVisualSettings {
                 return nil
             case .lato:
                 return boldFile ? "Lato-Bold" : "Lato-Regular"
-            case .fraunces:
-                // PostScript name unverified on device. The runtime debug
-                // log in `logFontFamilyOnceIfNeeded(...)` resolves the
-                // actual name on first selection so T can correct here.
-                return boldFile ? "Fraunces72pt-Bold" : "Fraunces72pt-Regular"
             case .lora:
                 return boldFile ? "Lora-Bold" : "Lora-Regular"
             }
@@ -167,16 +165,14 @@ final class EntryVisualSettings {
         /// what Release renders (panel is DEBUG-only; reads gated at 725a646).
         var defaultSettings: TypeRoleSettings {
             switch self {
+            // Brief BF — `family` here is INERT (render sites resolve the face through the
+            // app-wide registry; only `size` is read). Kept as a valid case for Codable.
             case .nodeTitle:
-                return TypeRoleSettings(family: .fraunces, size: 35, weight: .bold)
+                return TypeRoleSettings(family: .newYork, size: 35, weight: .bold)
             case .nodeSummary:
-                return TypeRoleSettings(family: .fraunces, size: 17, weight: .regular)
+                return TypeRoleSettings(family: .newYork, size: 17, weight: .regular)
             case .sectionTitle:
-                // T picked Fraunces + "Semibold", but Fraunces ships Regular +
-                // Bold only, so semibold clamps to the Bold file → it RENDERS
-                // Bold (the weight T approved). Baked as `.bold` to encode the
-                // actual render; `.semibold` is identical for Fraunces.
-                return TypeRoleSettings(family: .fraunces, size: 20, weight: .bold)
+                return TypeRoleSettings(family: .newYork, size: 20, weight: .bold)
             case .sectionTimestamp:
                 // Unchanged from production: SF Pro 11 Regular.
                 return TypeRoleSettings(family: .sfPro, size: 11, weight: .regular)
@@ -460,7 +456,6 @@ final class EntryVisualSettings {
         let family: String?
         switch choice {
         case .lato:     family = "Lato"
-        case .fraunces: family = "Fraunces 72pt"
         case .lora:     family = "Lora"
         case .sfPro, .newYork: family = nil
         }

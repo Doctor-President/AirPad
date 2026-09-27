@@ -38,24 +38,22 @@ private struct MSDFAtlasJSON: Decodable {
 // MARK: - Atlas loader (loaded once)
 
 final class MSDFFont {
-    static let shared = MSDFFont(atlas: "fraunces_msdf")
-    /// The SHIPPING orb-title face — **T device-final 2026-09-14** (`titleFont=Space Grotesk Bold`,
-    /// see Ops/reference/tuner-state-accepted.md). Falls back to `shared` if the atlas ever fails to
-    /// load, so titles can never silently vanish. ★ Orb-title METRICS must come from this same face:
-    /// `applyLOD` derives screenPxRange from `distanceRange`/`atlasSize`, so reading them off another
-    /// atlas would mis-scale the glyph AA (a latent bug while the font was a dial).
-    static let orbTitle: MSDFFont = {
-        let f = MSDFFont(atlas: "spacegroteskbold_msdf")
-        return f.loaded ? f : shared
-    }()
+    /// The DEFAULT orb-title face (Space Grotesk Bold — T device-final 2026-09-14,
+    /// `tuner-state-accepted.md`) AND the universal fallback. ★ Brief BF repointed this off
+    /// `fraunces_msdf` (Fraunces retired). Every chosen Orb font resolves through `orb(atlas:)`,
+    /// which falls back HERE if an atlas can't load, so a title can never silently vanish.
+    /// ★ Orb-title METRICS (distanceRange/atlasSize) travel WITH the container now (stored in
+    /// `makeContainer`, read by `applyLOD`), so a per-face swap keeps its own AA scale.
+    static let shared = MSDFFont(atlas: "spacegroteskbold_msdf")
     /// Curated MSDF atlases loaded by NAME, cached (one texture each; sub-rects still batch).
-    /// Used by the orb-title font picker. A missing/unloadable atlas → `.loaded == false` (visible,
-    /// not a silent fallback) so the tuner can flag it.
+    /// Brief BF addendum — the Edit Map… Orb-font picker resolves each of its 5 baked faces
+    /// through here. A missing/unloadable atlas falls back to `shared` (never a blank title).
     private static var cache: [String: MSDFFont] = [:]
-    static func named(_ name: String) -> MSDFFont {
-        if name == "fraunces_msdf" { return shared }
-        if let f = cache[name] { return f }
-        let f = MSDFFont(atlas: name); cache[name] = f; return f
+    static func orb(atlas name: String) -> MSDFFont {
+        if name == shared.atlasName { return shared }
+        if let f = cache[name] { return f.loaded ? f : shared }
+        let f = MSDFFont(atlas: name); cache[name] = f
+        return f.loaded ? f : shared
     }
     let atlasName: String
 
@@ -239,6 +237,11 @@ enum MSDFLabel {
         container.userData?["isFocal"] = false
         container.userData?[markerKey] = true
         container.userData?[pointSizeKey] = pointSize
+        // Brief BF — the AA scale (`applyLOD`) derives screenPxRange from THIS face's
+        // distanceRange/atlasSize, so they must travel with the container (the orb font is
+        // now selectable, so `applyLOD` can no longer hardcode one atlas's metrics).
+        container.userData?["msdfDistanceRange"] = font.distanceRange
+        container.userData?["msdfAtlasSize"] = font.atlasSize
 
         guard font.loaded, pointSize > 0, !lines.isEmpty else { return container }
 
@@ -295,11 +298,15 @@ enum MSDFLabel {
     /// loop only runs on zoom-change / annulus, so this stays cheap.
     static func applyLOD(container: SKNode, lodAlpha: CGFloat,
                          worldToScreenPt: CGFloat, contentScale: CGFloat) {
-        let font = MSDFFont.orbTitle   // MUST match the face the glyphs were built from
+        // Brief BF — the face's metrics travel with the container (set in `makeContainer`),
+        // so the AA scale is correct for WHICHEVER orb font built these glyphs, not a
+        // hardcoded atlas. Falls back to `shared`'s metrics for any pre-existing container.
         guard let pt = container.userData?[pointSizeKey] as? CGFloat, pt > 0 else { return }
+        let distanceRange = (container.userData?["msdfDistanceRange"] as? CGFloat) ?? MSDFFont.shared.distanceRange
+        let atlasSize = (container.userData?["msdfAtlasSize"] as? CGFloat) ?? MSDFFont.shared.atlasSize
         // screenPxRange = pxrange · (screen px per atlas texel).
         // screen px per atlas texel = (pt · worldToScreenPt · contentScale) / atlasSize  (em cancels).
-        let screenPxRange = max(1.0, font.distanceRange * pt * worldToScreenPt * contentScale / font.atlasSize)
+        let screenPxRange = max(1.0, distanceRange * pt * worldToScreenPt * contentScale / atlasSize)
         let px = Float(screenPxRange)
         let lod = Float(lodAlpha)
         for case let glyph as SKSpriteNode in container.children {

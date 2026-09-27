@@ -1146,7 +1146,7 @@ final class CorpusStore {
                     // Brief AE3 — adjacent markers get a thin separator (␟ marks U+2009).
                     // "[25][26]" (fused) and "[25, 26]" (list) both → "25␟26".
                     var ae3 = AttributedString("x [25][26] y [25, 26] z")
-                    CitationReference.styleInlineMarkers(in: &ae3)
+                    CitationReference.styleInlineMarkers(in: &ae3, face: .fallback)  // diagnostic — face irrelevant
                     NSLog("[CitRegex-AE3] styled='%@'",
                           String(ae3.characters).replacingOccurrences(of: "\u{2009}", with: "␟"))
                 }

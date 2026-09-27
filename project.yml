@@ -187,8 +187,7 @@ targets:
         UIAppFonts:
           - Lato-Regular.ttf
           - Lato-Bold.ttf
-          - Fraunces_72pt-Regular.ttf
-          - Fraunces_72pt-Bold.ttf
+          # Brief BF — Fraunces retired (was Fraunces_72pt-Regular/Bold).
           - Lora-Regular.ttf
           - Lora-Bold.ttf
           # Note editor serif typography (SB121) — Source Serif 4 (default) +

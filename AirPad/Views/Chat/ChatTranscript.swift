@@ -805,10 +805,11 @@ private struct StreamingTail: View {
 private struct ThinkingShimmerView: View {
     @State private var phase: CGFloat = -1
     @Environment(\.accessibilityReduceMotion) private var reduceMotion
+    @Environment(\.appBodyFont) private var appFont
 
     var body: some View {
         Text("Thinking…")
-            .font(ChatTypography.thinking)
+            .font(ChatTypography.thinking(appFont))
             .foregroundStyle(ChatTypography.secondaryText)
             .overlay {
                 if !reduceMotion {
@@ -825,7 +826,7 @@ private struct ThinkingShimmerView: View {
                     .blendMode(.plusLighter)
                 }
             }
-            .mask(Text("Thinking…").font(ChatTypography.thinking))
+            .mask(Text("Thinking…").font(ChatTypography.thinking(appFont)))
             .onAppear {
                 guard !reduceMotion else { return }
                 withAnimation(.linear(duration: 1.6).repeatForever(autoreverses: false)) {

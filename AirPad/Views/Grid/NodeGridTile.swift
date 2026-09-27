@@ -22,6 +22,23 @@ import SwiftUI
 import UIKit
 
 struct NodeGridTile: View {
+
+    /// The grid tile's type face — the tile's single font choke point.
+    ///
+    /// ★ Brief BE2: this is the surface the Grid ("Card View") actually draws, and the BB1
+    /// typography audit MISSED it, attributing these tiles to `NodeCardView`. BB4 wired
+    /// `NodeCardView` and nothing changed on screen, because `-OpenCardView` sets
+    /// `viewMode = .grid` and `NodeCardView` was never being rendered.
+    ///
+    /// Release: byte-identical to the `.system(…, design: .serif)` it replaced.
+    /// DEBUG: the `-TypeSystem` harness swaps the family here.
+    fileprivate static func tileFont(size: CGFloat, weight: Font.Weight = .regular) -> Font {
+        #if DEBUG
+        if let f = TypeSystemPreview.cardFont(size: size, weight: weight) { return f }
+        #endif
+        return .system(size: size, weight: weight, design: .serif)
+    }
+
     let node: Node
     let cellWidth: CGFloat
     let cellHeight: CGFloat
@@ -344,14 +361,14 @@ struct NodeGridTile: View {
             HStack(alignment: .firstTextBaseline, spacing: 8) {
                 if let category {
                     Text(category)
-                        .font(.system(size: scaled(t.metaBaseSize), design: .serif))
+                        .font(Self.tileFont(size: scaled(t.metaBaseSize)))
                         .italic()
                         .foregroundColor(Self.inkMeta)
                         .lineLimit(1)
                 }
                 Spacer(minLength: 8)
                 Text(node.relativeTimestamp.uppercased())
-                    .font(.system(size: scaled(t.metaBaseSize), design: .serif))
+                    .font(Self.tileFont(size: scaled(t.metaBaseSize)))
                     .tracking(t.metaTracking)
                     .foregroundColor(Self.inkMeta)
                     .lineLimit(1)
@@ -367,7 +384,7 @@ struct NodeGridTile: View {
             // Title — hyphenated via cached AttributedString so the wrap
             // looks intentional when a line ends mid-word.
             Text(HyphenatedTextCache.attributed(titleText))
-                .font(.system(size: scaled(t.titleBaseSize * titleScaleFactor(for: titleText, maxScale: t.titleMaxScale)), weight: .bold, design: .serif))
+                .font(Self.tileFont(size: scaled(t.titleBaseSize * titleScaleFactor(for: titleText, maxScale: t.titleMaxScale)), weight: .bold))
                 .tracking(t.titleTracking)
                 .foregroundColor(Self.inkTitle)
                 .shadow(color: Self.inkShadow.opacity(0.45), radius: 3, x: 0, y: 1)
@@ -380,7 +397,7 @@ struct NodeGridTile: View {
 
             if showDeck {
                 Text(HyphenatedTextCache.attributed(node.summary))
-                    .font(.system(size: scaled(t.deckBaseSize), design: .serif))
+                    .font(Self.tileFont(size: scaled(t.deckBaseSize)))
                     .italic()
                     .foregroundColor(Self.inkDeck)
                     .shadow(color: Self.inkShadow.opacity(0.4), radius: 2, x: 0, y: 1)
@@ -403,7 +420,7 @@ struct NodeGridTile: View {
                     .frame(height: 0.5)
                     .padding(.bottom, 10)
                 Text(tagList.map { $0.uppercased() }.joined(separator: " · "))
-                    .font(.system(size: scaled(t.metaBaseSize), weight: .medium, design: .serif))
+                    .font(Self.tileFont(size: scaled(t.metaBaseSize), weight: .medium))
                     .tracking(t.metaTracking)
                     .foregroundColor(Self.inkMeta)
                     .shadow(color: Self.inkShadow.opacity(0.4), radius: 2, x: 0, y: 1)
@@ -429,7 +446,7 @@ struct NodeGridTile: View {
                 Spacer(minLength: 0)
             }
             Text(HyphenatedTextCache.attributed(displayTitle))
-                .font(.system(size: scaled(t.titleBaseSize * titleScaleFactor(for: displayTitle, maxScale: t.titleMaxScale)), weight: .bold, design: .serif))
+                .font(Self.tileFont(size: scaled(t.titleBaseSize * titleScaleFactor(for: displayTitle, maxScale: t.titleMaxScale)), weight: .bold))
                 .tracking(t.titleTracking)
                 .foregroundColor(Self.inkTitle)
                 .shadow(color: Self.inkShadow.opacity(0.45), radius: 3, x: 0, y: 1)

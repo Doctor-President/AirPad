@@ -55,6 +55,21 @@ final class MSDFFont {
     /// atlas (the invariant above holds), because both sides read this same property.
     static var orbTitle: MSDFFont {
         #if DEBUG
+        // Brief BE1 (SPIKE) — `-MapGeneratedFace <name>` renders the Map from an atlas
+        // generated on-device into Documents by `-MSDFGenProof`, so a generated face can be
+        // judged in the real Map rather than by eyeballing an atlas sheet.
+        if let n = generatedOverrideName {
+            if let f = generatedCache ?? generated(named: n) {
+                if generatedCache == nil {
+                    NSLog("[MSDF] orbTitle <- GENERATED '%@' (%.0fx%.0f)", n, f.atlasW, f.atlasH)
+                }
+                generatedCache = f
+                return f
+            } else if !loggedGeneratedMiss {
+                loggedGeneratedMiss = true
+                NSLog("[MSDF] orbTitle: generated '%@' NOT FOUND — falling back to the baked atlas", n)
+            }
+        }
         if let n = TypeSystemPreview.orbAtlasName {
             let f = named(n)
             return f.loaded ? f : orbTitleShipping
@@ -82,10 +97,43 @@ final class MSDFFont {
     private let glyphs: [Int: MSDFAtlasJSON.Glyph]
     private var subTexCache: [Int: SKTexture] = [:]
 
-    private init(atlas: String) {
+    #if DEBUG
+    /// `-MapGeneratedFace <name>` → render orb titles from `<name>_msdf.{png,json}` in Documents.
+    static let generatedOverrideName: String? = {
+        let a = ProcessInfo.processInfo.arguments
+        guard let i = a.firstIndex(of: "-MapGeneratedFace"), i + 1 < a.count else { return nil }
+        return a[i + 1]
+    }()
+    private static var generatedCache: MSDFFont?
+    private static var loggedGeneratedMiss = false
+
+    /// Brief BE1 (SPIKE) — load a RUNTIME-GENERATED atlas from Documents, so an atlas built
+    /// on-device by `MSDFAtlasGenerator` can be rendered by the real Map and compared
+    /// against the baked one. Same decode path as the bundled case.
+    static func generated(named name: String) -> MSDFFont? {
+        let dir = FileManager.default.urls(for: .documentDirectory, in: .userDomainMask)[0]
+        let json = dir.appendingPathComponent("\(name)_msdf.json")
+        let png  = dir.appendingPathComponent("\(name)_msdf.png")
+        guard FileManager.default.fileExists(atPath: json.path),
+              FileManager.default.fileExists(atPath: png.path) else { return nil }
+        let f = MSDFFont(jsonURL: json, pngPath: png.path, name: "generated:\(name)")
+        return f.loaded ? f : nil
+    }
+
+    private convenience init(jsonURL: URL, pngPath: String, name: String) {
+        self.init(atlas: name, jsonURL: jsonURL, pngPath: pngPath)
+    }
+    #endif
+
+    private convenience init(atlas: String) {
+        self.init(atlas: atlas,
+                  jsonURL: Bundle.main.url(forResource: atlas, withExtension: "json"),
+                  pngPath: Bundle.main.path(forResource: atlas, ofType: "png"))
+    }
+
+    private init(atlas: String, jsonURL: URL?, pngPath: String?) {
         atlasName = atlas
-        guard let jsonURL = Bundle.main.url(forResource: atlas, withExtension: "json"),
-              let pngPath = Bundle.main.path(forResource: atlas, ofType: "png"),
+        guard let jsonURL, let pngPath,
               let data = try? Data(contentsOf: jsonURL),
               let parsed = try? JSONDecoder().decode(MSDFAtlasJSON.self, from: data),
               let tex = MSDFFont.loadDataTexture(path: pngPath) else {

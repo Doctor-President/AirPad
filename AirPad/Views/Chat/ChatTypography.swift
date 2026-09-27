@@ -49,7 +49,7 @@ enum ChatTypography {
     // Piece 1.5 — inline citation superscript: the model's serif voice at ~0.7×
     // body (19 → 13), baseline-raised. Monochrome — inherits the answer's
     // `bodyText` color (no foreground set on the run).
-    static let inlineCitationSuperscript = Font.custom(serif, size: 13, relativeTo: .footnote)
+    static func inlineCitationSuperscript(_ face: EntryBodyFont) -> Font { face.font(size: 13, relativeTo: .footnote) }
     static let inlineCitationBaselineOffset: CGFloat = 6
 
     // Spacing — baked from the tuner pass. `listSpacing` (adjacent list items

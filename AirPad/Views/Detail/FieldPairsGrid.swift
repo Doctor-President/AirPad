@@ -909,6 +909,8 @@ struct FieldPairCell: View {
     var labelStyle: AttrLabelStyle = .serifItalic
 
     @Environment(\.colorScheme) private var colorScheme
+    /// Brief BG — the serif-italic attribute label follows the app-wide Font (italic).
+    @Environment(\.appBodyFont) private var appFont
 
     /// The content treatment DERIVED from the span's shape (ws-free-footprint, §4). This is
     /// the provisional rule the shape-matrix spike ran under — the starting point, not a
@@ -1091,7 +1093,7 @@ struct FieldPairCell: View {
         let font: Font
         switch labelStyle {
         case .regular:     font = .system(size: size, weight: .medium, design: .rounded)
-        case .serifItalic: font = .system(size: size, weight: .medium, design: .serif).italic()
+        case .serifItalic: font = appFont.font(size: size, weight: .medium, italic: true)   // Brief BG — follows the Font
         case .sansItalic:  font = .system(size: size, weight: .medium, design: .default).italic()
         }
         return Text(definition.displayName.uppercased())

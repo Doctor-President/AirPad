@@ -28,7 +28,7 @@ enum CitationReference {
     /// routes through `openURL` (Piece 2) — but stays MONOCHROME via an explicit
     /// foreground that overrides the default link tint. Done at render time — the
     /// model never emits superscript. No-op when there are no `[n]` tokens.
-    static func styleInlineMarkers(in attr: inout AttributedString) {
+    static func styleInlineMarkers(in attr: inout AttributedString, face: EntryBodyFont) {
         while true {
             let plain = String(attr.characters)
             let ns = plain as NSString
@@ -44,7 +44,7 @@ enum CitationReference {
             // so the next `firstMatch` advances.
             func separator() -> AttributedString {
                 var sep = AttributedString("\u{2009}")   // thin space
-                sep.font = ChatTypography.inlineCitationSuperscript
+                sep.font = ChatTypography.inlineCitationSuperscript(face)
                 sep.baselineOffset = ChatTypography.inlineCitationBaselineOffset
                 return sep
             }
@@ -56,7 +56,7 @@ enum CitationReference {
             for (i, n) in indices(inToken: token).enumerated() {
                 if i > 0 { replacement.append(separator()) }
                 var sup = AttributedString("\(n)")
-                sup.font = ChatTypography.inlineCitationSuperscript
+                sup.font = ChatTypography.inlineCitationSuperscript(face)
                 sup.baselineOffset = ChatTypography.inlineCitationBaselineOffset
                 sup.foregroundColor = ChatTypography.bodyText   // monochrome, over link tint
                 if let link = url(forIndex: n) { sup.link = link }

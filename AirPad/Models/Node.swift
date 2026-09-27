@@ -197,6 +197,7 @@ enum EntryBodyFont: String, Codable, CaseIterable, Hashable {
     case sourceSerif4   // AirPad's note serif — the shipped default
     case sfPro          // San Francisco — Apple's system sans (honours Dynamic Type)
     case newYork        // Apple's system serif
+    case lato           // Brief BF — bundled humanist sans (OFL); Regular + Bold only
 
     /// Full user-facing name (vocabulary.md), for the picker rows.
     var displayName: String {
@@ -204,6 +205,7 @@ enum EntryBodyFont: String, Codable, CaseIterable, Hashable {
         case .sourceSerif4: return "Source Serif 4"
         case .sfPro:        return "SF Pro"
         case .newYork:      return "New York"
+        case .lato:         return "Lato"
         }
     }
     /// Compact name for the toolbar font chip (kept short so the chip fits the bar).
@@ -212,6 +214,7 @@ enum EntryBodyFont: String, Codable, CaseIterable, Hashable {
         case .sourceSerif4: return "Serif"
         case .sfPro:        return "SF Pro"
         case .newYork:      return "New York"
+        case .lato:         return "Lato"
         }
     }
 

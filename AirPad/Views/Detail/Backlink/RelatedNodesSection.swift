@@ -10,6 +10,8 @@ struct RelatedNodesSection: View {
     let nodeID: String
 
     @Environment(CorpusStore.self) private var store
+    /// Brief BF — related-entry NAMES are entry content, so they follow the app-wide Font.
+    @Environment(\.appBodyFont) private var appFont
 
     /// Presents the node-level backlink authoring picker (see `relatedHeader`).
     @State private var showLinkPicker = false
@@ -174,7 +176,7 @@ struct RelatedNodesSection: View {
                 // promise; AirPad's posture is patient, legible work.
                 HStack(spacing: 10) {
                     Text(BacklinkLabels.title(node))
-                        .font(.system(size: 15))
+                        .font(appFont.font(size: 15))
                         .foregroundStyle(AppearancePalette.ink.opacity(0.7))
                         .lineLimit(1)
                     Spacer(minLength: 8)
@@ -227,7 +229,7 @@ struct RelatedNodesSection: View {
         HStack(spacing: 10) {
             VStack(alignment: .leading, spacing: 2) {
                 Text(BacklinkLabels.title(target))
-                    .font(.system(size: 15, weight: .medium))
+                    .font(appFont.font(size: 15, weight: .medium))
                     .foregroundStyle(AppearancePalette.ink)
                     .lineLimit(1)
                 // Entry-level qualifier, when the edge points at a specific entry.

@@ -201,18 +201,21 @@ struct FirstRunCalloutOverlay: View {
         }
     }
 
+    // Brief BF — callouts follow the app-wide Font; the headline is retired off Fraunces.
+    @Environment(\.appBodyFont) private var appFont
+
     private var card: some View {
         VStack(alignment: .leading, spacing: 14) {
             // One readable block for VoiceOver; double-tap dismisses (the sighted "tap anywhere").
             VStack(alignment: .leading, spacing: 10) {
                 if let headline = content.headline {
                     Text(headline)
-                        .font(.custom("Fraunces72pt-Bold", size: 22, relativeTo: .title3))
+                        .font(appFont.font(size: 22, weight: .bold, relativeTo: .title3))
                         .foregroundStyle(AppearancePalette.ink)
                 }
                 ForEach(Array(content.body.enumerated()), id: \.offset) { _, paragraph in
                     Text((try? AttributedString(markdown: paragraph)) ?? AttributedString(paragraph))
-                        .font(.custom("SourceSerif4-Regular", size: 17, relativeTo: .body))
+                        .font(appFont.font(size: 17, relativeTo: .body))
                         .foregroundStyle(AppearancePalette.ink.opacity(0.85))
                         .fixedSize(horizontal: false, vertical: true)
                 }
@@ -231,7 +234,7 @@ struct FirstRunCalloutOverlay: View {
                             dismiss()
                         } label: {
                             Text(question)
-                                .font(.custom("SourceSerif4-Regular", size: 16, relativeTo: .callout))
+                                .font(appFont.font(size: 16, relativeTo: .callout))
                                 .foregroundStyle(AppearancePalette.ink)
                                 .multilineTextAlignment(.leading)
                                 .fixedSize(horizontal: false, vertical: true)

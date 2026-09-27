@@ -306,6 +306,10 @@ enum BlockSpacing {
 struct MarkdownBlockView: View {
     let block: MarkdownBlock
 
+    /// Brief BF — the app-wide content face; the Librarian answer/headings follow it.
+    @Environment(\.appBodyFont) private var appFont
+    private var bodyFont: Font { ChatTypography.body(appFont) }
+
     var body: some View {
         switch block {
         case let .heading(level, text):
@@ -316,7 +320,7 @@ struct MarkdownBlockView: View {
 
         case let .paragraph(text):
             Text(Self.inline(text))
-                .font(ChatTypography.body)
+                .font(bodyFont)
                 .foregroundStyle(ChatTypography.bodyText)
                 .lineSpacing(ChatTypography.bodyLine)
                 .textSelection(.enabled)
@@ -359,7 +363,7 @@ struct MarkdownBlockView: View {
     private func reflowedRow(headers: [String], cells: [String]) -> some View {
         if cells.count != headers.count {
             Text(Self.inline(cells.filter { !$0.isEmpty }.joined(separator: "  ·  ")))
-                .font(ChatTypography.body)
+                .font(bodyFont)
                 .foregroundStyle(ChatTypography.bodyText)
                 .lineSpacing(ChatTypography.bodyLine)
                 .frame(maxWidth: .infinity, alignment: .leading)
@@ -381,11 +385,11 @@ struct MarkdownBlockView: View {
     /// citations survive inside cells.
     private func labeledCell(header: String, value: String) -> some View {
         (Text(header.isEmpty ? "" : header + ": ")
-            .font(ChatTypography.body)
+            .font(bodyFont)
             .fontWeight(.semibold)
             .foregroundStyle(ChatTypography.secondaryText)
          + Text(Self.inline(value))
-            .font(ChatTypography.body)
+            .font(bodyFont)
             .foregroundStyle(ChatTypography.bodyText))
             .lineSpacing(ChatTypography.bodyLine)
             .frame(maxWidth: .infinity, alignment: .leading)
@@ -393,9 +397,9 @@ struct MarkdownBlockView: View {
 
     private func headingFont(_ level: Int) -> Font {
         switch level {
-        case 1:  return ChatTypography.h1
-        case 2:  return ChatTypography.h2
-        default: return ChatTypography.h3
+        case 1:  return ChatTypography.h1(appFont)
+        case 2:  return ChatTypography.h2(appFont)
+        default: return ChatTypography.h3(appFont)
         }
     }
 
@@ -409,11 +413,11 @@ struct MarkdownBlockView: View {
     private func listRow(marker: String, text: String) -> some View {
         HStack(alignment: .firstTextBaseline, spacing: ChatTypography.bulletGap) {
             Text(marker)
-                .font(ChatTypography.body)
+                .font(bodyFont)
                 .foregroundStyle(ChatTypography.secondaryText)
                 .frame(width: ChatTypography.bulletIndent, alignment: .leading)
             Text(Self.inline(text))
-                .font(ChatTypography.body)
+                .font(bodyFont)
                 .foregroundStyle(ChatTypography.bodyText)
                 .lineSpacing(ChatTypography.bodyLine)
                 .frame(maxWidth: .infinity, alignment: .leading)

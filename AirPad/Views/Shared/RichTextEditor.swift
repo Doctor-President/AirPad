@@ -2269,13 +2269,13 @@ struct RichTextToolbar: View {
             Button {
                 menu.useDefault()
             } label: {
-                Label("Use default (\(menu.defaultFont.displayName))",
+                Label("Use app font (\(menu.defaultFont.displayName))",
                       systemImage: menu.isOverride ? "arrow.uturn.backward" : "checkmark")
             }
             Button {
                 menu.setAsDefault(menu.current)
             } label: {
-                Label("Set “\(menu.current.displayName)” as default", systemImage: "star")
+                Label("Set “\(menu.current.displayName)” as app font", systemImage: "star")
             }
         } label: {
             HStack(spacing: 4) {
@@ -3633,6 +3633,7 @@ enum NoteFontChoice {
     case sourceSerif4
     case sfPro          // Brief AZ4 — San Francisco (system sans), note-body-scaled
     case newYork        // Brief AZ4 — Apple's system serif (`.serif` design)
+    case lato           // Brief BF — bundled humanist sans; Regular + Bold, italic synthesised
 
     /// Bundled serif PostScript face name for a run's NUMERIC `weight` + `italic`,
     /// or nil to keep the system font. `weight` is the UIFontWeight-axis value read
@@ -3668,6 +3669,11 @@ enum NoteFontChoice {
             ]
             let nearest = faces.min { abs($0.w - weight) < abs($1.w - weight) }!
             return "SourceSerif4-" + (italic ? nearest.it : nearest.up)
+        case .lato:
+            // Brief BF — Lato vendors only Regular + Bold (no Semibold, no italic cut),
+            // so weight collapses to a bold threshold and italic is synthesised in
+            // `resolveFont` (never a `-Italic` PS name here). See `resolveFont`.
+            return weight >= UIFont.Weight.semibold.rawValue ? "Lato-Bold" : "Lato-Regular"
         case .lora:
             // Dead scaffold — only Regular/Bold/Italic vendored (no semibold /
             // bold-italic), so weight collapses to a bold threshold and bold+italic
@@ -3697,6 +3703,12 @@ enum NoteFontChoice {
             guard let name = faceName(weight: weight, italic: italic),
                   let f = UIFont(name: name, size: size) else { return nil }
             return f
+        case .lato:
+            // Bundled Regular/Bold face; no vendored italic cut, so synthesise italic
+            // via the reliable `withSymbolicTraits` path (same as SF Pro / New York).
+            guard let name = faceName(weight: weight, italic: italic),
+                  let f = UIFont(name: name, size: size) else { return nil }
+            return italic ? NoteTypographyHelper.italicized(f) : f
         case .sfPro:
             let f = UIFont.systemFont(ofSize: size, weight: UIFont.Weight(rawValue: weight))
             return italic ? NoteTypographyHelper.italicized(f) : f
@@ -3717,6 +3729,7 @@ extension EntryBodyFont {
         case .sourceSerif4: return .sourceSerif4
         case .sfPro:        return .sfPro
         case .newYork:      return .newYork
+        case .lato:         return .lato
         }
     }
 
@@ -3732,6 +3745,7 @@ extension EntryBodyFont {
         case .sourceSerif4: return .custom("SourceSerif4-Bold", size: size)
         case .sfPro:        return .system(size: size, weight: .bold)
         case .newYork:      return .system(size: size, weight: .bold, design: .serif)
+        case .lato:         return .custom("Lato-Bold", size: size)
         }
     }
 }

@@ -7,6 +7,9 @@ struct CanvasView: View {
     @Environment(CorpusStore.self) private var store
     @Environment(SelectionService.self) private var selection
     @Environment(AppRouter.self) private var router
+    /// Brief BF — the graze/focal-node preview overlay (a SwiftUI card, NOT the MSDF orb
+    /// pipeline) shows entry title + summary content, so it follows the app-wide Font.
+    @Environment(\.appBodyFont) private var appFont
     @State private var canvasState = CanvasState()
     /// What slice of the corpus this canvas renders. Defaults to `.corpus`
     /// so the existing ContentView call site (the only one in A1) keeps its
@@ -47,6 +50,9 @@ struct CanvasView: View {
     @AppStorage("map.weight.language") private var wLanguage: Double = 0.3
     @AppStorage("map.weight.backlink") private var wBacklink: Double = 0.4
     @AppStorage("map.tintByRecency") private var tintByRecency: Bool = true
+    /// Brief BF addendum — the Orb-font choice (Edit Map…). Independent of the app Font;
+    /// the scene reads `MapOrbFont.current` from UserDefaults, this drives the live reload.
+    @AppStorage(MapOrbFont.storageKey) private var orbFontRaw = MapOrbFont.fallback.rawValue
 
     /// SKView HUD (draw-call count / fps / nodes) for node-perf spikes. DEBUG only;
     /// empty in Release.
@@ -636,6 +642,9 @@ struct CanvasView: View {
             reblendMap()
         }
         .onChange(of: tintByRecency) { _, _ in reblendMap() }
+        // Brief BF addendum — Orb-font switch: rebuild every orb title in the new face,
+        // in place (no territory re-form, no orb movement, warp/LOD untouched).
+        .onChange(of: orbFontRaw) { _, _ in scene.reloadOrbTitles() }
         .onChange(of: store.filterState.sortOrder) { _, newOrder in
             rearrangeForSortOrder(newOrder, nodes: store.visibleNodes(in: scope))
         }
@@ -955,7 +964,7 @@ struct CanvasView: View {
                         let halo = Color.black.opacity(0.6)
                         VStack(spacing: finalDiameter * 0.025) {
                             Text(displayTitle)
-                                .font(.custom("SourceSerif4-Bold", size: finalDiameter * 0.085))
+                                .font(appFont.font(size: finalDiameter * 0.085, weight: .bold))
                                 .foregroundStyle(ink)
                                 .shadow(color: halo, radius: 3)
                                 .shadow(color: halo, radius: 1)
@@ -964,7 +973,7 @@ struct CanvasView: View {
 
                             if !node.summary.isEmpty {
                                 Text(node.summary)
-                                    .font(.custom("SourceSerif4-Regular", size: finalDiameter * 0.05))
+                                    .font(appFont.font(size: finalDiameter * 0.05))
                                     .foregroundStyle(ink)
                                     .shadow(color: halo, radius: 3)
                                     .shadow(color: halo, radius: 1)
@@ -1939,12 +1948,15 @@ private struct TerritoryLabelPill: View {
     /// shipped white; light darkens the text to the detail-view ink so it reads
     /// on cream (this pill was missed by the canvas white-sweep).
     @Environment(\.colorScheme) private var colorScheme
+    /// Brief BF — territory pills are NOT MSDF, so they follow the app-wide Font (the orb
+    /// TITLES stay Space Grotesk via the MSDF atlas / Orb-font choice). Bold caps.
+    @Environment(\.appBodyFont) private var appFont
 
     var body: some View {
         Text(text.uppercased())
             // Font size + padding + minHeight read the SHARED RegionLabelPillMetrics so the
             // rendered pill and the scene's declutter box can't drift apart.
-            .font(.custom("SourceSerif4-Bold", size: RegionLabelPillMetrics.fontSize))
+            .font(appFont.font(size: RegionLabelPillMetrics.fontSize, weight: .bold))
             .tracking(1.5)
             // Dark (Solar Flare): byte-identical white@0.95. Light (Cucumber
             // Water): AppearancePalette.ink — the same token the detail view uses.

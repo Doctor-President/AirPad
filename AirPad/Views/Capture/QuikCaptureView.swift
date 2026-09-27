@@ -19,6 +19,10 @@ struct QuikCaptureView: View {
 
     @Environment(CorpusStore.self) private var store
     @Environment(AppRouter.self) private var router
+    /// Brief BF — a fresh capture has no per-entry override, so its title + summary follow
+    /// the app-wide Font (the pairing), no longer Fraunces. The dialed SIZE is still read
+    /// from `visualSettings`; only the FACE resolves through the registry.
+    @Environment(\.appBodyFont) private var appFont
 
     /// The capture node's id, created on appear. Nil until
     /// `createCaptureNode()` returns.
@@ -285,13 +289,13 @@ struct QuikCaptureView: View {
                     }
                 ) {
                     TextField("Title", text: $editedTitle, axis: .vertical)
-                        .font(visualSettings.nodeTitle.resolvedFont())
+                        .font(appFont.titleFont(size: visualSettings.nodeTitle.size))
                         .foregroundStyle(AppearancePalette.ink)
                         .tint(AppearancePalette.ink)
                         .focused($focusedField)
                 } summary: {
                     TextField("Summary", text: $editedSummary, axis: .vertical)
-                        .font(visualSettings.nodeSummary.resolvedFont())
+                        .font(appFont.font(size: visualSettings.nodeSummary.size))
                         .foregroundStyle(AppearancePalette.ink.opacity(0.75))
                         .tint(AppearancePalette.ink)
                         .focused($focusedField)

@@ -121,6 +121,17 @@ struct NodeCardView: View {
     private static let inkMeta  = ink(cream, 0.68)
     private static let hairline = ink(creamHair, 0.22)
 
+    /// The card's type face. The whole card is ONE serif today — the system serif
+    /// (New York), with weight + size carrying the role — so this is the card's single
+    /// font choke point. Release: byte-identical to the `.system(…, design: .serif)` it
+    /// replaced. DEBUG: Brief BB4's `-TypeSystem` harness can swap the family here.
+    private static func cardFont(size: CGFloat, weight: Font.Weight = .regular) -> Font {
+        #if DEBUG
+        if let f = TypeSystemPreview.cardFont(size: size, weight: weight) { return f }
+        #endif
+        return .system(size: size, weight: weight, design: .serif)
+    }
+
     // Legibility shadow behind ink. Dark: black (the shipped scrim substitute —
     // byte-identical). Light: a soft WHITE halo so type separates from the
     // multiplied mid-tone pigment without smearing dark onto parchment.
@@ -470,14 +481,14 @@ struct NodeCardView: View {
             HStack(alignment: .firstTextBaseline, spacing: 8) {
                 if let category {
                     Text(category)
-                        .font(.system(size: 12 * fs, design: .serif))
+                        .font(Self.cardFont(size: 12 * fs))
                         .italic()
                         .foregroundColor(Self.inkMeta)
                         .lineLimit(1)
                 }
                 Spacer(minLength: 8)
                 Text(node.relativeTimestamp.uppercased())
-                    .font(.system(size: 10 * fs, design: .serif))
+                    .font(Self.cardFont(size: 10 * fs))
                     .tracking(2.2)
                     .foregroundColor(Self.inkMeta)
                     .lineLimit(1)
@@ -492,7 +503,7 @@ struct NodeCardView: View {
 
             // Title
             Text(titleText)
-                .font(.system(size: 23 * fs, weight: .bold, design: .serif))
+                .font(Self.cardFont(size: 23 * fs, weight: .bold))
                 .tracking(-0.35)
                 .foregroundColor(Self.inkTitle)
                 .shadow(color: inkHalo.opacity(0.45), radius: 3, x: 0, y: 1)
@@ -505,7 +516,7 @@ struct NodeCardView: View {
                     // Folded entries own the flex slot below — keep the deck a
                     // capped 3-line lede so the body has room.
                     Text(node.summary)
-                        .font(.system(size: 14 * fs, design: .serif))
+                        .font(Self.cardFont(size: 14 * fs))
                         .italic()
                         .foregroundColor(Self.inkDeck)
                         .shadow(color: inkHalo.opacity(0.4), radius: 2, x: 0, y: 1)
@@ -579,7 +590,7 @@ struct NodeCardView: View {
                     .frame(height: 0.5)
                     .padding(.bottom, 10)
                 Text(tagList.map { $0.uppercased() }.joined(separator: " · "))
-                    .font(.system(size: 10 * fs, weight: .medium, design: .serif))
+                    .font(Self.cardFont(size: 10 * fs, weight: .medium))
                     .tracking(2.0)
                     .foregroundColor(Self.inkMeta)
                     .shadow(color: inkHalo.opacity(0.4), radius: 2, x: 0, y: 1)
@@ -609,7 +620,7 @@ struct NodeCardView: View {
             ForEach(Array(atomics.enumerated()), id: \.element.id) { idx, item in
                 if idx > 0 {
                     Text("·")
-                        .font(.system(size: 12, design: .serif))
+                        .font(Self.cardFont(size: 12))
                         .foregroundColor(Self.inkMeta)
                 }
                 atomicGlyph(item)
@@ -664,7 +675,7 @@ struct NodeCardView: View {
                 resolveNodeTitle: { id in store.nodes.first { $0.id == id }?.title }
             ) {
                 Text(text)
-                    .font(.system(size: 12, design: .serif))
+                    .font(Self.cardFont(size: 12))
                     .foregroundColor(Self.inkMeta)
                     .lineLimit(1)
             }
@@ -718,7 +729,7 @@ struct NodeCardView: View {
             Image(systemName: systemImage)
                 .font(.system(size: 11))
             Text(label)
-                .font(.system(size: 11, weight: .medium, design: .serif))
+                .font(Self.cardFont(size: 11, weight: .medium))
                 .tracking(1.4)
                 .lineLimit(1)
             Spacer(minLength: 0)
@@ -729,7 +740,7 @@ struct NodeCardView: View {
 
     private func overflowLine(_ count: Int) -> some View {
         Text("+\(count) more")
-            .font(.system(size: 11, design: .serif))
+            .font(Self.cardFont(size: 11))
             .italic()
             .foregroundColor(Self.inkMeta.opacity(0.85))
             .shadow(color: inkHalo.opacity(0.35), radius: 2, x: 0, y: 1)
@@ -826,7 +837,7 @@ struct NodeCardView: View {
                     .foregroundColor(Self.inkDeck)
                 if let duration {
                     Text(duration)
-                        .font(.system(size: 13, weight: .semibold, design: .serif))
+                        .font(Self.cardFont(size: 13, weight: .semibold))
                         .foregroundColor(Self.inkTitle)
                         .lineLimit(1)
                 }
@@ -926,7 +937,7 @@ struct NodeCardView: View {
             let maxLines = max(1, Int(proxy.size.height / lineHeight))
             let styled: Text = {
                 if let attributed { return Text(attributed) }  // #18: formatted, not raw markdown
-                var t = Text(content).font(.system(size: fontSize, weight: weight, design: .serif))
+                var t = Text(content).font(Self.cardFont(size: fontSize, weight: weight))
                 if italic { t = t.italic() }
                 return t
             }()

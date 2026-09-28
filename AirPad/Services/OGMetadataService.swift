@@ -61,12 +61,31 @@ actor OGMetadataService {
             pageURL: url
         )
 
-        let title = lpResult?.title
-        let description = scrapeResult?.description
+        // Brief BK — TITLE FALLBACK: LP first (og:title), else the site-name-stripped
+        // `<title>` from the scrape (WordPress etc. often have only a `<title>`).
+        let title = lpResult?.title ?? scrapeResult?.titleTag
+        // Brief BK — DESCRIPTION FALLBACK: no og/meta description → derive the link's
+        // preview text from the page body (WebReadability, first ~2000 chars). Same DERIVED
+        // bucket as og:description (never authored); feeds naming, the summary, and the
+        // Librarian search index, so a saved article is findable by content without a
+        // snapshot. This whole fetch is detached, so it never blocks Done; a failed /
+        // paywalled / non-HTML fetch returns a sentinel string, treated as a miss.
+        var description = scrapeResult?.description
+        var readableHit = false
+        if description == nil {
+            let readable = await WebReadability.fetchReadable(url, budget: 2000)
+            if !readable.hasPrefix("Couldn't fetch") && !readable.hasPrefix("No readable text"), readable.count >= 40 {
+                description = readable
+                readableHit = true
+            }
+        }
         let scrapeSite = scrapeResult?.siteName
         let siteName = scrapeSite ?? url.host
         let imageTempURL = lpResult?.imageTempURL
         let imageExtension = lpResult?.imageExtension
+
+        // Brief BK — one line per link explaining the outcome.
+        print("[OG] lp=\(lpResult?.title != nil ? "y" : "n") titleTag=\(scrapeResult?.titleTag != nil ? "y" : "n") ogDesc=\(scrapeResult?.description != nil ? "y" : "n") readable=\(readableHit ? "hit" : "miss") site=\(scrapeSite != nil ? "y" : "n") url=\(url.absoluteString)")
 
         // Bare URL fallback only when no meaningful field landed. `url.host`
         // alone (without LP or scrape success) does NOT count — otherwise
@@ -164,6 +183,10 @@ actor OGMetadataService {
     private struct ScrapeResult: Sendable {
         var description: String?
         var siteName: String?
+        /// Brief BK — the plain `<title>` element, site-name-stripped. Used as the title
+        /// FALLBACK when `LPMetadataProvider` returns nil (WordPress etc. often have a
+        /// `<title>` but no `og:title`), so a link is never left with only a host string.
+        var titleTag: String?
         /// Stage 4.5 commit 4 — `<link rel="icon|shortcut icon|apple-touch-icon">`
         /// resolved to an absolute URL using the page URL as base. Caller
         /// downloads it in a second pass; the `/favicon.ico` convention
@@ -183,11 +206,14 @@ actor OGMetadataService {
             ?? Self.metaName(in: html, name: "description")
         let siteName = Self.ogTagValue(in: html, property: "og:site_name")
         let faviconRawURL = Self.extractFaviconURL(in: html, base: url)
+        // Brief BK — plain `<title>`, with a leading/trailing site-name segment stripped.
+        let titleTag = Self.cleanTitle(Self.titleTagValue(in: html), siteName: siteName ?? url.host)
 
-        if description == nil && siteName == nil && faviconRawURL == nil { return nil }
+        if description == nil && siteName == nil && faviconRawURL == nil && titleTag == nil { return nil }
         return ScrapeResult(
             description: description,
             siteName: siteName,
+            titleTag: titleTag,
             faviconRawURL: faviconRawURL
         )
     }
@@ -330,6 +356,32 @@ actor OGMetadataService {
             let captureRange = Range(match.range(at: 1), in: source)
         else { return nil }
         return String(source[captureRange])
+    }
+
+    /// Brief BK — the plain `<title>` element's text (entities decoded), or nil.
+    static func titleTagValue(in html: String) -> String? {
+        guard let match = firstCaptureGroup(html, pattern: #"<title[^>]*>([\s\S]*?)</title>"#) else { return nil }
+        return decodeHTMLEntities(match.trimmingCharacters(in: .whitespacesAndNewlines)).nilIfEmpty
+    }
+
+    /// Brief BK — strip a leading/trailing SITE-NAME segment from a `<title>` on the common
+    /// separators (`::`, `|`, `–`, `—`, ` - `), keeping the remainder only when it is still
+    /// ≥ 3 words (else the raw title, since a short title is unsafe to strip). The site name
+    /// is the shorter end by convention ("Site :: Page" and "Page | Site" both resolve).
+    /// "Falvey Library :: The Printed Image: Gustave Doré and Paradise Lost" → the title.
+    static func cleanTitle(_ raw: String?, siteName: String?) -> String? {
+        guard let raw = raw?.trimmingCharacters(in: .whitespacesAndNewlines).nilIfEmpty else { return nil }
+        func words(_ s: String) -> Int { s.split(whereSeparator: { $0.isWhitespace }).count }
+        // Space-padded forms first so " - " never splits a hyphenated word.
+        for sep in [" :: ", "::", " | ", "|", " – ", " — ", " - "] {
+            guard let r = raw.range(of: sep) else { continue }
+            let head = String(raw[..<r.lowerBound]).trimmingCharacters(in: .whitespaces)
+            let tail = String(raw[r.upperBound...]).trimmingCharacters(in: .whitespaces)
+            let hw = words(head), tw = words(tail)
+            if tw >= hw { return tw >= 3 ? tail : raw }
+            return hw >= 3 ? head : raw
+        }
+        return raw
     }
 
     private static func decodeHTMLEntities(_ s: String) -> String {

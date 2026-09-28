@@ -779,8 +779,11 @@ actor AIService {
         }
     }
 
-    // MARK: - Image description (stubbed — vision input added in later session)
+    // MARK: - Image description (stubbed)
 
+    // iOS 27: Foundation Models image input — the real fix (a model-authored description
+    // of the photo). Post-V1. Until then, Brief BK derives searchable text from on-device
+    // Vision (OCR + `ImageOCRService.classify` labels) and falls back to a dated title.
     func describeImage(_ imageData: Data) async -> String? {
         return nil
     }
@@ -817,8 +820,16 @@ actor AIService {
                 let ocr = (item.mediaItems ?? [])
                     .compactMap { $0.analysis?.recognizedText }
                     .filter { !$0.isEmpty }
+                // Brief BK — Vision labels are DERIVED search context ("find my beach
+                // photos"), capped below authored text. A no-readable-text photo skips the
+                // authorship pass entirely (dated title instead), so labels never become the
+                // title — they only make the photo findable via the substrate.
+                let labels = (item.mediaItems ?? [])
+                    .compactMap { $0.analysis?.classificationLabels }
+                    .flatMap { $0 }
                 let desc = (item.description?.isEmpty == false) ? [item.description!] : []
-                let parts = desc + ocr
+                var parts = desc + ocr
+                if !labels.isEmpty { parts.append(labels.joined(separator: ", ")) }
                 if !parts.isEmpty { derived.append(parts.joined(separator: "\n")) }
             // Rating/field are atomic (no free text); .chats is a reference.
             case .rating, .field, .chats:

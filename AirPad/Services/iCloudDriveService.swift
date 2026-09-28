@@ -233,12 +233,41 @@ actor iCloudDriveService {
             options: .skipsHiddenFiles
         )
 
-        return try contents.compactMap { nodeDir in
+        // Decode every `<dir>/node.json`, remembering its directory for conflict diagnosis.
+        // (A file-level iCloud conflict copy — `node 2.json` — is IGNORED here because we only
+        //  read `node.json`; a DIRECTORY-level conflict — `nodes/<id> 2/node.json` — is not, and
+        //  is the duplicate-id source below.)
+        var decoded: [(node: Node, dir: String)] = []
+        for nodeDir in contents {
             let fileURL = nodeDir.appendingPathComponent("node.json")
-            guard FileManager.default.fileExists(atPath: fileURL.path) else { return nil }
+            guard FileManager.default.fileExists(atPath: fileURL.path) else { continue }
             let data = try Data(contentsOf: fileURL)
-            return try JSONDecoder.airPad.decode(Node.self, from: data)
+            let node = try JSONDecoder.airPad.decode(Node.self, from: data)
+            decoded.append((node, nodeDir.lastPathComponent))
         }
+        return Self.dedupById(decoded)
+    }
+
+    /// Brief BN0 — DEDUP nodes by id at the load boundary, the source fix for the BQ crash. An
+    /// iCloud DIRECTORY conflict copy (`nodes/<id> 2/`) or a double import yields two directories
+    /// whose `node.json` share an id; loading both put a duplicate id into `nodes`, trapping every
+    /// `Dictionary(uniqueKeysWithValues:)` over the corpus (`_assertionFailure`, the crash). Keep the
+    /// NEWEST by `updatedAt` (the live edit wins the conflict), ignore the stale copy, and LOG the
+    /// losing directory so the conflict is visible for cleanup. No data is deleted — the losing
+    /// directory is left on disk untouched. Pure + `static` so a self-test can exercise it.
+    static func dedupById(_ decoded: [(node: Node, dir: String)]) -> [Node] {
+        var byID: [String: (node: Node, dir: String)] = [:]
+        var duplicates = 0
+        for entry in decoded {
+            guard let existing = byID[entry.node.id] else { byID[entry.node.id] = entry; continue }
+            duplicates += 1
+            let winner = entry.node.updatedAt > existing.node.updatedAt ? entry : existing
+            let loser  = entry.node.updatedAt > existing.node.updatedAt ? existing : entry
+            byID[entry.node.id] = winner
+            print("[Load] BN0 ⚠️ duplicate node id \(entry.node.id) — kept dir '\(winner.dir)' (updatedAt \(winner.node.updatedAt)), IGNORED dir '\(loser.dir)' (likely an iCloud conflict copy or double import)")
+        }
+        if duplicates > 0 { print("[Load] BN0 — deduped \(duplicates) duplicate node id(s) on load") }
+        return byID.values.map { $0.node }
     }
 
     // MARK: - Block embedding sidecar

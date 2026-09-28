@@ -245,7 +245,7 @@ final class LayoutService {
         if let cache = neighborhoodCache,
            let ownNeighborhoodID = cache.neighborhoodID(forNodeID: node.id) {
             // Build a map of nodeID -> Node for fast lookup
-            let nodeMap = Dictionary(uniqueKeysWithValues: allNodes.map { ($0.id, $0) })
+            let nodeMap = Dictionary(allNodes.map { ($0.id, $0) }, uniquingKeysWith: { a, _ in a })   // BN0 — tolerate a dup id
 
             // For each tag in this node, count how many OTHER neighborhoods contain it
             for tag in node.tags {

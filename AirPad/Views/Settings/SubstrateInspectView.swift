@@ -1206,7 +1206,7 @@ struct SubstrateInspectView: View {
             case excludedNoSubstrate
         }
         let coordByNodeID: [String: SubstrateCoord2D] = Dictionary(
-            uniqueKeysWithValues: model.trainingPoints.map { ($0.nodeID, $0.coord2D) }
+            model.trainingPoints.map { ($0.nodeID, $0.coord2D) }, uniquingKeysWith: { a, _ in a }   // BN0
         )
         var bucketByID: [String: Bucket] = [:]
         var orderedIncludedIDs: [String] = []
@@ -1950,7 +1950,7 @@ struct SubstrateInspectView: View {
             n: coords.count
         )
 
-        let nodesByID = Dictionary(uniqueKeysWithValues: store.nodes.map { ($0.id, $0) })
+        let nodesByID = Dictionary(store.nodes.map { ($0.id, $0) }, uniquingKeysWith: { a, _ in a })   // BN0 — tolerate a dup id
         let titleFor: (Int) -> String = { idx in
             let id = pts[idx].nodeID
             return nodesByID[id]?.title ?? id
@@ -2244,7 +2244,7 @@ struct SubstrateInspectView: View {
             return
         }
 
-        let nodesByID = Dictionary(uniqueKeysWithValues: store.nodes.map { ($0.id, $0) })
+        let nodesByID = Dictionary(store.nodes.map { ($0.id, $0) }, uniquingKeysWith: { a, _ in a })   // BN0 — tolerate a dup id
         clearFMLabelsFeedback = "cleared \(cleared) · regenerating…"
         Task { @MainActor in
             await SubstrateClusterLabelService.shared.labelMissingClusters(
@@ -2852,7 +2852,7 @@ struct SubstrateInspectView: View {
         let bpvCount = bpv?.count ?? 0
         let coverage = SubstrateCoverage.compute(allNodes)
         let titlesByID: [String: String] = Dictionary(
-            uniqueKeysWithValues: allNodes.map { ($0.id, String($0.title.prefix(80))) }
+            allNodes.map { ($0.id, String($0.title.prefix(80))) }, uniquingKeysWith: { a, _ in a }   // BN0
         )
 
         // ---- A: legacy NLContextual, node-level ----

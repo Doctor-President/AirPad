@@ -1838,7 +1838,7 @@ final class CorpusStore {
                 current.updatedAt = Date()
                 await updateNode(current)
             }
-            await processNodeWithAI(nodeID: nodeID)
+            await processNodeWithAI(nodeID: nodeID, posture: .captureDone)   // Brief BI — link capture is a Done
         }
 
         return (nodeID, itemID)
@@ -2266,6 +2266,17 @@ final class CorpusStore {
     func enrichIfNeeded(nodeID: String, at moment: EnrichmentGate.Moment = .committed) async {
         enrichmentTasks[nodeID]?.cancel()
         enrichmentTasks[nodeID] = nil
+        guard nodes.contains(where: { $0.id == nodeID }) else { return }
+        // Brief BI — DONE-DELEGATES. Done on a capture (`.committed`) resolves the posture
+        // from the capture MOMENT + the delegate setting. Under `.automatic`, an untitled
+        // aspect whose FRESH proposal already matches the current content is PROMOTED (no
+        // model call — the eager `.composing` pass usually won the race). This is the fix
+        // for the "commit skip" trap: a matching proposal used to make the gate report
+        // "nothing needed" and the entry stayed untitled.
+        let posture = AuthorshipPosture.resolve(
+            for: moment == .committed ? .committedCapture : .authoring,
+            setting: AuthorshipPosture.delegateOn)
+        if posture == .automatic { await promoteMatchingProposals(nodeID: nodeID) }
         guard let node = nodes.first(where: { $0.id == nodeID }) else { return }
         let needs = enrichmentNeeds(for: node, at: moment)
         guard needs.any else {
@@ -2273,10 +2284,30 @@ final class CorpusStore {
             await markAIWorkSettled(nodeID: nodeID)
             return
         }
-        print("[Enrich] commit firing node=\(nodeID) needsAuthorship=\(needs.authorship) needsSubstrate=\(needs.substrate)")
+        print("[Enrich] commit firing node=\(nodeID) needsAuthorship=\(needs.authorship) needsSubstrate=\(needs.substrate) posture=\(posture.rawValue)")
         await processNodeWithAI(nodeID: nodeID,
                                 needsAuthorship: needs.authorship,
-                                needsSubstrate: needs.substrate)
+                                needsSubstrate: needs.substrate,
+                                posture: posture)
+    }
+
+    /// Brief BI — promote a FRESH, content-matching proposal into an UNTITLED aspect at
+    /// Done: write the field + stamp `.model` + drop the proposal, with NO model call
+    /// (reuses `acceptProposal`). Only an unauthored aspect (`source == nil`) is touched —
+    /// a typed title/summary is never overwritten. A stale (hash-mismatched) or missing
+    /// proposal is left for the gate → regenerate under `.automatic`. Promotion is the
+    /// common path (the eager pass usually already produced the matching proposal).
+    private func promoteMatchingProposals(nodeID: String) async {
+        guard let node = nodes.first(where: { $0.id == nodeID }) else { return }
+        let hash = cardContentHash(for: node)
+        for kind in EnrichmentGate.authoredAspects {
+            let source: TagSource? = (kind == .title) ? node.titleSource : node.summarySource
+            guard source == nil,
+                  let p = node.proposals?.first(where: { $0.kind == kind && $0.state == .fresh }),
+                  p.sourceContentHash == hash else { continue }
+            print("[Enrich] PROMOTE node=\(nodeID) kind=\(kind) (no model call)")
+            await acceptProposal(nodeID: nodeID, kind: kind)
+        }
     }
 
     /// `needsAIProcessing` means "no AI pass has ever run on this node" and is read
@@ -6079,6 +6110,10 @@ final class CorpusStore {
                            needsSubstrate: Bool = true,
                            solicited: Bool = false,
                            authoredOnly: Bool = false,
+                           // Brief BI — the RESOLVED posture (was the `AuthorshipPosture.current`
+                           // constant read inside). Defaults to `.propose` (authoring / background);
+                           // capture-Done callers pass `.resolve(for: .committedCapture, setting:)`.
+                           posture: AuthorshipPosture = .propose,
                            aspects: Set<Proposal.Kind> = [.title, .summary]) async -> NodeAIFailure? {
         print("[AI] processNodeWithAI called for \(nodeID) suppressTagSheet=\(suppressTagSheet) needsAuthorship=\(needsAuthorship) needsSubstrate=\(needsSubstrate) solicited=\(solicited)")
         // GAP 27 shape at the caller layer: DON'T bail here on !iOS26. `processNode` and
@@ -6200,7 +6235,7 @@ final class CorpusStore {
                         case .image, .document, .imageVideo, .rating, .field, .chats: return nil
                         }
                     }.first(where: { !$0.isEmpty })
-                    let mayFillBlank = n.title.isEmpty && AuthorshipPosture.current == .automatic
+                    let mayFillBlank = n.title.isEmpty && posture == .automatic
                     if let fallback, mayFillBlank || n.title == "Photo" || n.title == "Voice note" {
                         n.title = String(fallback.prefix(40))
                     }
@@ -6263,7 +6298,7 @@ final class CorpusStore {
             // ★ sourceEmbedding = the vector THIS substrate pass produced (on the
             // throwaway `working` copy), the same one copied onto `n` below, so
             // Stage 4 can measure how far the node's meaning has drifted from it.
-            let posture = AuthorshipPosture.current
+            // Brief BI — `posture` is the resolved parameter (was `AuthorshipPosture.current`).
             let generatedAt = Date()
             let sourceEmbedding = working.contextualContentEmbedding
             // Only the requested aspect(s) are recorded/written — so a per-row
@@ -6975,7 +7010,9 @@ final class CorpusStore {
     private func scanForUnprocessedNodes() async {
         let unprocessed = nodes.filter { $0.needsAIProcessing }
         for node in unprocessed {
-            await processNodeWithAI(nodeID: node.id)
+            // Brief BI — a share-extension import is "threw it in and walked away" — the
+            // strongest delegate case. Name it under the delegate posture.
+            await processNodeWithAI(nodeID: node.id, posture: .captureDone)
         }
     }
 

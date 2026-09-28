@@ -190,9 +190,9 @@ struct CameraCaptureView: View {
         )
 
         if let nodeID = targetNodeID {
-            await store.processNodeWithAI(nodeID: nodeID)
+            await store.processNodeWithAI(nodeID: nodeID, posture: .captureDone)   // Brief BI — photo capture is a Done
         } else if let newest = store.nodes.first {
-            await store.processNodeWithAI(nodeID: newest.id)
+            await store.processNodeWithAI(nodeID: newest.id, posture: .captureDone)
         }
 
         if targetNodeID == nil, let cid = targetCollectionID {
@@ -252,9 +252,9 @@ struct CameraCaptureView: View {
         )
 
         if let nodeID = targetNodeID {
-            await store.processNodeWithAI(nodeID: nodeID)
+            await store.processNodeWithAI(nodeID: nodeID, posture: .captureDone)   // Brief BI — photo capture is a Done
         } else if let newest = store.nodes.first {
-            await store.processNodeWithAI(nodeID: newest.id)
+            await store.processNodeWithAI(nodeID: newest.id, posture: .captureDone)
         }
 
         if targetNodeID == nil, let cid = targetCollectionID {

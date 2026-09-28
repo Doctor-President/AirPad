@@ -1829,14 +1829,21 @@ final class CorpusStore {
             // canvas + AI pipeline pick up the rich name (matches the
             // 3.1a-shape mutation pattern in the original QuikCapture
             // path).
-            if let ogTitle = metadata?.title, !ogTitle.isEmpty,
-               var current = nodes.first(where: { $0.id == nodeID }) {
-                current.title = ogTitle
-                if !current.items.isEmpty {
-                    current.items[0].title = ogTitle
+            if var current = nodes.first(where: { $0.id == nodeID }) {
+                var changed = false
+                if let ogTitle = metadata?.title, !ogTitle.isEmpty {
+                    current.title = ogTitle
+                    if !current.items.isEmpty { current.items[0].title = ogTitle }
+                    changed = true
                 }
-                current.updatedAt = Date()
-                await updateNode(current)
+                // Brief BK — the derived preview text (og:description OR the readable
+                // fallback) into `item.preview`, the bucket `classifyContent(.link)` reads,
+                // so a link with no og tags still feeds naming + summary + Librarian search.
+                if let ogDesc = metadata?.description, !ogDesc.isEmpty, !current.items.isEmpty {
+                    current.items[0].preview = ogDesc
+                    changed = true
+                }
+                if changed { current.updatedAt = Date(); await updateNode(current) }
             }
             await processNodeWithAI(nodeID: nodeID, posture: .captureDone)   // Brief BI — link capture is a Done
         }
@@ -4837,11 +4844,13 @@ final class CorpusStore {
                 jobs.append(Job(entryID: entry.id, media: media))
             }
         }
+        var didAnalyze = false
         for job in jobs {
             if Task.isCancelled { return }
             guard let url = await resolveGalleryItemURL(job.media, nodeID: nodeID) else { continue }
-            let text = await Task.detached(priority: .utility) {
-                ImageOCRService.recognizeText(fileURL: url)
+            // Brief BK — one decode, OCR text + Vision labels together.
+            let (text, labels) = await Task.detached(priority: .utility) {
+                ImageOCRService.analyze(fileURL: url)
             }.value
             await setGalleryItemAnalysis(
                 entryID: job.entryID,
@@ -4849,10 +4858,12 @@ final class CorpusStore {
                 galleryItemID: job.media.id,
                 analysis: ImageAnalysis(
                     recognizedText: text,
+                    classificationLabels: labels.isEmpty ? nil : labels,
                     extractedAt: Date(),
                     extractorVersion: ImageOCRService.extractorVersion
                 )
             )
+            didAnalyze = true
         }
         // Directly-picked hero (no gallery entry) — SAME OCR path, SAME version
         // gate. `directlyPickedHeroPath != nil` is the dedupe gate: a gallery-
@@ -4861,19 +4872,67 @@ final class CorpusStore {
             let a = node.heroAnalysis
             if a?.recognizedText == nil || a?.extractorVersion != ImageOCRService.extractorVersion,
                let url = await coverImageURL(for: node) {
-                let text = await Task.detached(priority: .utility) {
-                    ImageOCRService.recognizeText(fileURL: url)
+                let (text, labels) = await Task.detached(priority: .utility) {
+                    ImageOCRService.analyze(fileURL: url)
                 }.value
                 await setNodeHeroAnalysis(
                     nodeID: nodeID,
                     analysis: ImageAnalysis(
                         recognizedText: text,
+                        classificationLabels: labels.isEmpty ? nil : labels,
                         extractedAt: Date(),
                         extractorVersion: ImageOCRService.extractorVersion
                     )
                 )
+                didAnalyze = true
             }
         }
+        // Brief BK — the OCR text + labels are now stored, so (re-)name the photo: from its
+        // readable text via the normal gate, or a plain dated title if there's none. Gated on
+        // `didAnalyze` so an already-analyzed node is never retroactively renamed on the
+        // launch sweep (only a freshly-analyzed capture is named).
+        if didAnalyze { await nameAnalyzedPhotoNode(nodeID: nodeID) }
+    }
+
+    /// Brief BK — name a photo node after its images were analyzed. A photo WITH readable
+    /// text (OCR) or authored text names from that via the normal gate; a photo with NO
+    /// readable text gets a plain DATED title ("Photo · Sep 27" / "Photos · …" for multi-image)
+    /// and NO summary — its Vision labels never become the title, they only make it findable
+    /// (the substrate still runs). A `.user` title is never touched; a real (non-placeholder)
+    /// title is left as-is.
+    private func nameAnalyzedPhotoNode(nodeID: String) async {
+        guard let node = nodes.first(where: { $0.id == nodeID }), node.titleSource != .user else { return }
+        let imageEntries = node.items.filter { $0.type == .imageVideo }
+        guard !imageEntries.isEmpty else { return }
+        let hasOCRText = node.items.contains { item in
+            (item.mediaItems ?? []).contains { !($0.analysis?.recognizedText ?? "").trimmingCharacters(in: .whitespacesAndNewlines).isEmpty }
+        }
+        let hasAuthored = node.items.contains { $0.type == .text && !($0.content ?? "").trimmingCharacters(in: .whitespacesAndNewlines).isEmpty }
+        if hasOCRText || hasAuthored {
+            // Names from its text via the normal gate (labels ride in the derived content,
+            // capped below authored, so the text drives the title).
+            await enrichIfNeeded(nodeID: nodeID, at: .committed)
+            return
+        }
+        // No readable text — a plain dated title, only over a blank/generic placeholder.
+        let placeholders: Set<String> = ["", "Photo", "Photos", "Image", "Video"]
+        let current = node.title.trimmingCharacters(in: .whitespacesAndNewlines)
+        if placeholders.contains(current) {
+            let imageCount = imageEntries.reduce(0) { $0 + (($1.mediaItems ?? []).filter { $0.mediaType == .image }.count) }
+            let word = imageCount > 1 ? "Photos" : "Photo"
+            let formatter = DateFormatter()
+            formatter.setLocalizedDateFormatFromTemplate("MMMd")
+            let dated = "\(word) · \(formatter.string(from: node.createdAt))"
+            await mutateNode(id: nodeID) { n in
+                n.title = dated
+                n.titleSource = .model   // a user edit flips it .user; never a summary
+                n.updatedAt = Date()
+            }
+            print("[Enrich] PHOTO dated-title node=\(nodeID) → \(dated)")
+        }
+        // Run the substrate (no authorship) so the labels are embedded + findable, without
+        // ever naming the photo from them.
+        _ = await processNodeWithAI(nodeID: nodeID, needsAuthorship: false, needsSubstrate: true, posture: .captureDone)
     }
 
     // MARK: - Substrate reconciler (image analysis)

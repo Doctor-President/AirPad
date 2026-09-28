@@ -355,11 +355,16 @@ struct GalleryItem: Codable, Identifiable, Equatable {
 /// enrichment on already-analyzed items.
 struct ImageAnalysis: Codable, Equatable {
     var recognizedText: String?
+    /// Brief BK — on-device Vision classification labels (top-N over a confidence floor),
+    /// DERIVED text for the Librarian ("find my beach photos"). Never a title. Additive +
+    /// decode-tolerant (absent on existing items).
+    var classificationLabels: [String]?
     var extractedAt: Date?
     var extractorVersion: String?
 
     enum CodingKeys: String, CodingKey {
         case recognizedText = "recognized_text"
+        case classificationLabels = "classification_labels"
         case extractedAt = "extracted_at"
         case extractorVersion = "extractor_version"
     }

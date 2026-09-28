@@ -207,8 +207,9 @@ extension Node {
         // `.model` = a prior FM write (FM may refresh); `.user` = locked — UNLESS
         // the user explicitly asked (`solicited`), in which case the gate opens
         // for RECORDING only (never for the write; the return is unchanged).
+        let hasText = !text.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty
         let mayRecord = solicited || currentSource == nil || currentSource == .model
-        if mayRecord, !text.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty {
+        if mayRecord, hasText {
             var list = proposals ?? []
             list.removeAll { $0.kind == kind }   // one per kind — regeneration replaces
             list.append(Proposal(id: UUID(),
@@ -223,8 +224,14 @@ extension Node {
         }
         // ★ The WRITE is never bypassed by `solicited`: user-authored fields still
         // never auto-write, and under `.propose` nothing auto-writes at all.
+        // ★ Brief BM1 — an EMPTY model answer is NOT an offer and must never be written.
+        // The FM returns an empty title for a derived-only entry (a link/article has no user
+        // prose to title from); writing `"" + .model` used to LOCK that title blank forever
+        // (the caller wrote `n.title = result.title` on a true return, and `.model` then made
+        // the gate skip it). Gating the write-permission return on `hasText` leaves the field
+        // untouched (source stays nil) so the deterministic link-title fallback can fill it.
         guard currentSource == nil || currentSource == .model else { return false }
-        return posture == .automatic
+        return hasText && posture == .automatic
     }
 
     /// THE LEVER — the proposal to SURFACE for `kind` in the button + tray, or

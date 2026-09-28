@@ -74,6 +74,22 @@ struct TextCaptureSheet: View {
     private func commit() {
         guard !trimmed.isEmpty else { return }
 
+        // Brief BM2 — a capture that is ONLY a web URL is a LINK, not a text note. The text
+        // path stored the raw URL as a `.text` item titled with its first 40 chars and
+        // `needsAIProcessing: false`, so it never fetched OG metadata and never got page-named
+        // ("nothing authored" in Recents). Route a bare-URL NEW capture to `addLinkNode`, which
+        // fetches OG + names it exactly like the Link button. Appends to an existing node keep
+        // the text path (a URL added inside a note is that note's text).
+        if targetNodeID == nil, let url = CaptureURLDetector.singleURL(in: trimmed) {
+            let cid = targetCollectionID
+            Task {
+                _ = await store.addLinkNode(url: url, targetCollectionID: cid)
+                if let cid { store.markCollectionUsed(cid) }
+            }
+            dismiss()
+            return
+        }
+
         let title = String(trimmed.prefix(40))
         let now = Date()
         let stamp = NodeCollection.captureStamp(forCollectionID: targetCollectionID)
@@ -89,7 +105,7 @@ struct TextCaptureSheet: View {
             provenance: nil,
             threads: [],
             location: nil,
-            items: [.text(content: trimmed)],
+            items: [.text(content: trimmed)],  // non-URL capture — plain text note
             domain: nil,
             domainConfirmed: false,
             needsAIProcessing: false,
@@ -121,5 +137,22 @@ struct TextCaptureSheet: View {
             }
         }
         dismiss()
+    }
+}
+
+/// Brief BM2 — decides whether a capture is "just a link". A capture whose entire trimmed
+/// text is a single whitespace-free web URL (http/https, with a host) is routed to a LINK
+/// entry instead of a text note, so it gets OG metadata + page-title naming. Deliberately
+/// STRICT: a prose note that merely contains a URL has whitespace and stays text. Pure +
+/// standalone so the `-BMDoneMatrix` harness can assert the routing headlessly.
+enum CaptureURLDetector {
+    static func singleURL(in text: String) -> URL? {
+        let t = text.trimmingCharacters(in: .whitespacesAndNewlines)
+        guard !t.isEmpty, !t.contains(where: { $0.isWhitespace }) else { return nil }
+        guard let url = URL(string: t),
+              let scheme = url.scheme?.lowercased(),
+              scheme == "http" || scheme == "https",
+              (url.host?.isEmpty == false) else { return nil }
+        return url
     }
 }

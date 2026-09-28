@@ -1332,13 +1332,82 @@ enum WebReadability {
         return re.stringByReplacingMatches(in: html, range: NSRange(location: 0, length: ns.length), withTemplate: "")
     }
 
+    /// Brief BM3 — decode HTML entities: numeric (`&#DDDD;` / `&#xHHHH;`, universal) plus a
+    /// table of the named entities that actually appear in web titles/descriptions (Latin-1
+    /// supplement letters + common punctuation/symbols). `&amp;` is applied LAST so a
+    /// double-escaped `&amp;copy;` decodes to the literal "&copy;", not ©.
     static func decodeEntities(_ s: String) -> String {
-        var out = s
-        let map = ["&amp;": "&", "&lt;": "<", "&gt;": ">", "&quot;": "\"",
-                   "&#x27;": "'", "&#39;": "'", "&apos;": "'", "&nbsp;": " ", "&#x2F;": "/"]
-        for (k, v) in map { out = out.replacingOccurrences(of: k, with: v) }
+        var out = replaceNumericEntities(s)
+        for (k, v) in namedEntities { out = out.replacingOccurrences(of: k, with: v) }
+        out = out.replacingOccurrences(of: "&amp;", with: "&")
         return out
     }
+
+    /// Brief BM3 — the canonical link-text cleanup applied to every OG/meta field: decode
+    /// entities, THEN repair the classic double-encoding mojibake.
+    static func sanitize(_ s: String) -> String { repairMojibake(decodeEntities(s)) }
+
+    /// Brief BM3 — repair UTF-8 bytes that were misread as Latin-1 ("Pokémon" → "PokÃ©mon").
+    /// Only when the text round-trips CLEANLY as Latin-1 → UTF-8 — so genuine accented text
+    /// ("São Paulo", "café"), whose bytes are NOT valid UTF-8 when read back, is left untouched
+    /// — and only when the repair actually changes something. The `Ã`/`Â`/`â€` prefilter keeps
+    /// clean text (which has no such sequences) from even attempting the round-trip.
+    static func repairMojibake(_ s: String) -> String {
+        guard s.contains("Ã") || s.contains("Â") || s.contains("â€") else { return s }
+        guard let latin1 = s.data(using: .isoLatin1),
+              let utf8 = String(data: latin1, encoding: .utf8),
+              utf8 != s else { return s }
+        return utf8
+    }
+
+    private static func replaceNumericEntities(_ s: String) -> String {
+        var out = s
+        if let re = try? NSRegularExpression(pattern: "&#([0-9]{1,7});") {
+            out = replaceEntityMatches(out, re, radix: 10)
+        }
+        if let re = try? NSRegularExpression(pattern: "&#[xX]([0-9A-Fa-f]{1,6});") {
+            out = replaceEntityMatches(out, re, radix: 16)
+        }
+        return out
+    }
+
+    private static func replaceEntityMatches(_ s: String, _ re: NSRegularExpression, radix: Int) -> String {
+        var result = s
+        let ns = s as NSString
+        for m in re.matches(in: s, range: NSRange(location: 0, length: ns.length)).reversed() {
+            guard let full = Range(m.range, in: result),
+                  let g = Range(m.range(at: 1), in: result),
+                  let cp = UInt32(result[g], radix: radix),
+                  let scalar = Unicode.Scalar(cp) else { continue }
+            result.replaceSubrange(full, with: String(Character(scalar)))
+        }
+        return result
+    }
+
+    private static let namedEntities: [(String, String)] = [
+        ("&lt;", "<"), ("&gt;", ">"), ("&quot;", "\""), ("&apos;", "'"), ("&nbsp;", " "),
+        ("&copy;", "©"), ("&reg;", "®"), ("&trade;", "™"), ("&mdash;", "—"), ("&ndash;", "–"),
+        ("&hellip;", "…"), ("&lsquo;", "\u{2018}"), ("&rsquo;", "\u{2019}"), ("&ldquo;", "\u{201C}"),
+        ("&rdquo;", "\u{201D}"), ("&bull;", "•"), ("&middot;", "·"), ("&deg;", "°"), ("&sect;", "§"),
+        ("&para;", "¶"), ("&euro;", "€"), ("&pound;", "£"), ("&yen;", "¥"), ("&cent;", "¢"),
+        ("&times;", "×"), ("&divide;", "÷"), ("&plusmn;", "±"), ("&frac12;", "½"), ("&frac14;", "¼"),
+        ("&frac34;", "¾"), ("&dagger;", "†"), ("&Dagger;", "‡"), ("&laquo;", "«"), ("&raquo;", "»"),
+        ("&iquest;", "¿"), ("&iexcl;", "¡"),
+        ("&Agrave;", "À"), ("&Aacute;", "Á"), ("&Acirc;", "Â"), ("&Atilde;", "Ã"), ("&Auml;", "Ä"),
+        ("&Aring;", "Å"), ("&AElig;", "Æ"), ("&Ccedil;", "Ç"), ("&Egrave;", "È"), ("&Eacute;", "É"),
+        ("&Ecirc;", "Ê"), ("&Euml;", "Ë"), ("&Igrave;", "Ì"), ("&Iacute;", "Í"), ("&Icirc;", "Î"),
+        ("&Iuml;", "Ï"), ("&ETH;", "Ð"), ("&Ntilde;", "Ñ"), ("&Ograve;", "Ò"), ("&Oacute;", "Ó"),
+        ("&Ocirc;", "Ô"), ("&Otilde;", "Õ"), ("&Ouml;", "Ö"), ("&Oslash;", "Ø"), ("&Ugrave;", "Ù"),
+        ("&Uacute;", "Ú"), ("&Ucirc;", "Û"), ("&Uuml;", "Ü"), ("&Yacute;", "Ý"), ("&THORN;", "Þ"),
+        ("&szlig;", "ß"),
+        ("&agrave;", "à"), ("&aacute;", "á"), ("&acirc;", "â"), ("&atilde;", "ã"), ("&auml;", "ä"),
+        ("&aring;", "å"), ("&aelig;", "æ"), ("&ccedil;", "ç"), ("&egrave;", "è"), ("&eacute;", "é"),
+        ("&ecirc;", "ê"), ("&euml;", "ë"), ("&igrave;", "ì"), ("&iacute;", "í"), ("&icirc;", "î"),
+        ("&iuml;", "ï"), ("&eth;", "ð"), ("&ntilde;", "ñ"), ("&ograve;", "ò"), ("&oacute;", "ó"),
+        ("&ocirc;", "ô"), ("&otilde;", "õ"), ("&ouml;", "ö"), ("&oslash;", "ø"), ("&ugrave;", "ù"),
+        ("&uacute;", "ú"), ("&ucirc;", "û"), ("&uuml;", "ü"), ("&yacute;", "ý"), ("&thorn;", "þ"),
+        ("&yuml;", "ÿ")
+    ]
 }
 
 /// ★ THE web-search executor — Brave Search API (real independent index, JSON, no scraping /

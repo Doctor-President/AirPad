@@ -376,6 +376,12 @@ final class CorpusStore {
     /// Card worked, Map didn't) — decisions.md 2026-07-06.
     private var enrichmentTasks: [String: Task<Void, Never>] = [:]
 
+    /// Brief BP3 — node IDs whose Done ran while the content wasn't ready yet (a link whose OG
+    /// hadn't landed → `.noContent`). `applyOGFetch` consumes this when the OG arrives and authors
+    /// ONCE from the whole entry. A precise "deferred Done intent" marker, distinct from
+    /// `needsAIProcessing` (which the eager compose pass also clears, so it can't mean "Done ran").
+    private var pendingLinkAuthor: Set<String> = []
+
     /// ws-card-catalog step 2c — debounced per-node catalog-card refresh+embed
     /// tasks. Keyed by nodeID; re-arming cancels the prior task so rapid edits
     /// coalesce, exactly like `enrichmentTasks` and the block-rebuild enqueue.
@@ -1840,12 +1846,12 @@ final class CorpusStore {
             let metadata = await fetchHandle.value
             await applyOGFetch(nodeID: nodeID, itemID: itemID, metadata: metadata)
 
-            // Brief BM1 — the OG page title → NODE title lift is retired here: the authorship
-            // pass below now fills a link-dominant node's empty title from `item.title`
-            // deterministically (stamped `.model`, posture-gated), so every link path — capture
-            // button, Quick Capture, capture sheet — names identically through ONE code path.
-            // `applyOGFetch` already wrote items[0].title/preview + linkItems[0] (Brief BL).
-            await processNodeWithAI(nodeID: nodeID, posture: .captureDone)   // Brief BI — link capture is a Done
+            // Brief BP1 — route the Link-button Done through `enrichIfNeeded` (not
+            // `processNodeWithAI` directly) so it PROMOTES the link-title ghost that
+            // `applyOGFetch` recorded, committing it (`.model`) alongside the FM summary — one
+            // Done path, no pre-Done writes. `enrichIfNeeded(.committed)` resolves the same
+            // `.automatic` posture `.captureDone` did.
+            await enrichIfNeeded(nodeID: nodeID)
         }
 
         return (nodeID, itemID)
@@ -2283,13 +2289,12 @@ final class CorpusStore {
         let posture = AuthorshipPosture.resolve(
             for: moment == .committed ? .committedCapture : .authoring,
             setting: AuthorshipPosture.delegateOn)
-        if posture == .automatic {
-            await promoteMatchingProposals(nodeID: nodeID)
-            // Brief BO1 — deterministic link title runs on EVERY Done, BEFORE the needs gate, so
-            // the promote-only path ("commit skip") still names a link. Filling the title also
-            // flips its aspect to `.model`, so the gate below correctly reports title = done.
-            await fillLinkTitleFromOG(nodeID: nodeID)
-        }
+        // Brief BP1 — Done is the commit signal: `promoteMatchingProposals` writes the fresh title
+        // + summary GHOSTS (incl. the deterministic link-title ghost from `proposeLinkTitleFromOG`)
+        // into the fields, `.model`. Nothing was written before this. If the user added content
+        // (the Halloween note), the ghost's hash no longer matches → it's skipped and the gate below
+        // re-authors from the whole entry.
+        if posture == .automatic { await promoteMatchingProposals(nodeID: nodeID) }
         guard let node = nodes.first(where: { $0.id == nodeID }) else { return }
         let needs = enrichmentNeeds(for: node, at: moment)
         guard needs.any else {
@@ -2323,38 +2328,38 @@ final class CorpusStore {
         }
     }
 
-    /// Brief BO1 — DETERMINISTIC link naming, reached by EVERY route. A link's title is its
-    /// page title, NOT a model guess: the FM returns an empty title for a derived-only entry, so
-    /// naming a link through the FM/fallback/gate chain is fragile (BM's fallback lived inside
-    /// `processNodeWithAI`'s write-back, which the **promote-only** Done path and the **late-OG**
-    /// path both bypass — the device bug). This fills an EMPTY or bare-URL, NON-`.user` title on a
-    /// link-DOMINANT node (no authored text) from the link's cleaned OG title (else its site
-    /// name), the moment the name becomes knowable. Called from `applyOGFetch` (OG lands — the
-    /// upstream trigger every path hits) and from every Done route (`enrichIfNeeded`,
-    /// `processNodeWithAI`) as a backstop. Gated on the delegate setting — the deterministic
-    /// equivalent of a capture-Done delegation; a structural name like the "Photo" placeholder,
-    /// not a model proposal. Idempotent; never overwrites a `.user` title or a note WITH text.
+    /// Brief BP1 — the link's page title is a GHOST SUGGESTION, never a pre-Done write. BO wrote
+    /// `node.title` the moment OG landed, which flickered (the model rewrote it seconds later) and
+    /// locked a `.model` title that Done then wouldn't re-author — the Halloween case (paste a link,
+    /// THEN add a "costume research" note: the right title is about the costume). This records the
+    /// page title as an ordinary `.propose` title proposal instead: rendered as ghost text in a
+    /// fresh capture and COMMITTED only at Done (via `promoteMatchingProposals`). Because the
+    /// proposal carries the content hash at OG-time, adding a note moves the hash, so Done skips this
+    /// stale ghost and the FM re-authors from the WHOLE entry. Only a link-DOMINANT node (no
+    /// authored text) with an empty, never-authored title, under the delegate setting. Idempotent:
+    /// won't clobber a richer fresh title proposal (e.g. one the FM already offered).
     @discardableResult
-    func fillLinkTitleFromOG(nodeID: String) async -> Bool {
+    func proposeLinkTitleFromOG(nodeID: String) async -> Bool {
         guard AuthorshipPosture.delegateOn else { return false }
-        guard let node = nodes.first(where: { $0.id == nodeID }), node.titleSource != .user else { return false }
-        let t = node.title.trimmingCharacters(in: .whitespacesAndNewlines)
-        // Fill an empty title, or a bare-URL placeholder (the `.noContent` FM-failure fallback
-        // writes `url.prefix(40)` with a nil source when Done beats the OG fetch).
-        let isPlaceholder = t.isEmpty || (!t.contains(where: { $0.isWhitespace }) && t.lowercased().hasPrefix("http"))
-        guard isPlaceholder else { return false }
+        guard let node = nodes.first(where: { $0.id == nodeID }), node.titleSource == nil else { return false }
+        guard node.title.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty else { return false }
         guard AIService.classifyContent(from: node).authored.isEmpty else { return false }   // a note with text titles from its words
         guard let link = node.items.first(where: { $0.type == .link }) else { return false }
         let name = (link.title?.trimmingCharacters(in: .whitespacesAndNewlines)).flatMap { $0.isEmpty ? nil : $0 }
             ?? (link.ogSiteName?.trimmingCharacters(in: .whitespacesAndNewlines)).flatMap { $0.isEmpty ? nil : $0 }
         guard let name else { return false }
+        let hash = cardContentHash(for: node)
+        var recorded = false
         await mutateNode(id: nodeID) { n in
-            guard n.titleSource != .user else { return }
-            n.title = name
-            n.titleSource = .model
+            // Don't overwrite a fresh title proposal the FM already produced for this content.
+            if n.proposals?.contains(where: { $0.kind == .title && $0.state == .fresh }) == true { return }
+            _ = n.recordProposal(kind: .title, text: name, currentSource: n.titleSource,
+                                 sourceEmbedding: nil, sourceContentHash: hash,
+                                 posture: .propose, generatedAt: Date())
+            recorded = true
         }
-        print("[Enrich] LINK-TITLE node=\(nodeID) → \"\(name)\" (deterministic)")
-        return true
+        if recorded { print("[Enrich] LINK-TITLE-GHOST node=\(nodeID) → \"\(name)\"") }
+        return recorded
     }
 
     /// `needsAIProcessing` means "no AI pass has ever run on this node" and is read
@@ -2586,7 +2591,14 @@ final class CorpusStore {
             await appendItemToNode(nodeID: id, item: item)
             await renderFetch(id, item.id)            // OG lands + arms eager
             await settle(750)                         // let the eager pass fire + record proposals
-            await enrichIfNeeded(nodeID: id)          // Done
+            // Brief BP1 — assert NOTHING is authored before Done: the title/summary fields are
+            // still empty (only GHOST proposals exist), and a fresh title ghost is present.
+            if let pre = nodes.first(where: { $0.id == id }) {
+                let ghostPresent = pre.proposals?.contains(where: { $0.kind == .title && $0.state == .fresh }) == true
+                check("(c) NOTHING before Done", pre.title.isEmpty && pre.titleSource == nil && pre.summary.isEmpty, "field written pre-Done")
+                check("(c) ghost title present pre-Done", ghostPresent, "no ghost proposal")
+            }
+            await enrichIfNeeded(nodeID: id)          // Done → promote commits the ghosts
             await settle(500)
             verdict("(c) OG→eager→Done", id); await deleteNode(id: id)
         }
@@ -3619,24 +3631,20 @@ final class CorpusStore {
         updated.updatedAt = Date()
         await updateNode(updated)
 
-        // Brief BO1 — the moment the OG title is known, deterministically name a link-dominant
-        // entry. This is the UPSTREAM trigger every capture path reaches (Quick Capture, capture
-        // sheet, Link button, in-entry), independent of Done timing — so a link is titled whether
-        // OG lands before OR after Done. No-op on a note with text, a `.user` title, or delegate-off.
-        await fillLinkTitleFromOG(nodeID: nodeID)
+        // Brief BP1 — the moment the OG title is known, record it as a GHOST title suggestion
+        // (a `.propose` proposal), NEVER a written field. Shown as ghost text in a fresh capture,
+        // committed only at Done. The UPSTREAM trigger every path reaches; no-op on a note with
+        // text, a `.user`/already-authored title, or delegate-off.
+        await proposeLinkTitleFromOG(nodeID: nodeID)
 
-        // Brief BO1 — LATE-OG summary. If a committed pass already ran (`needsAIProcessing == false`)
-        // but this link-dominant entry still has no summary, Done beat the OG fetch (`.noContent`)
-        // and the content only just arrived — delegate a committed pass now so the summary fills
-        // too (the title is already set, so it's untouched). `needsAIProcessing == true` means Done
-        // hasn't run yet, so the normal Done flow will summarise — we don't pre-empt it here.
-        if AuthorshipPosture.delegateOn,
-           let n = nodes.first(where: { $0.id == nodeID }),
-           n.needsAIProcessing == false,
-           n.summary.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty,
-           n.summarySource != .user,
-           n.items.contains(where: { $0.type == .link }),
-           AIService.classifyContent(from: n).authored.isEmpty {
+        // Brief BP3 — DEFERRED Done. When Done beat the OG fetch, `processNodeWithAI` hit
+        // `.noContent` and recorded the node in `pendingLinkAuthor` (an explicit "Done ran, content
+        // not ready" marker — NOT `needsAIProcessing`, which the eager pass also clears mid-compose).
+        // Now that the content has arrived, honour that deferred intent ONCE: a committed pass
+        // promotes the ghost title + authors the summary. During composing the node is NOT in the
+        // set, so this never pre-empts Done.
+        if pendingLinkAuthor.contains(nodeID) {
+            pendingLinkAuthor.remove(nodeID)
             await enrichIfNeeded(nodeID: nodeID, at: .committed)
         }
     }
@@ -6673,7 +6681,11 @@ final class CorpusStore {
                         switch item.type {
                         case .text:          return item.content
                         case .audio, .video: return item.transcript
-                        case .link:          return item.title ?? item.url
+                        // Brief BP1 — a link falls back to its OG title only, NEVER the raw URL: when
+                        // Done beats the OG fetch (`.noContent`) the link contributes nothing here, so
+                        // the title stays empty for the ghost / late-OG path to name — no ugly
+                        // `https://…` title written at Done.
+                        case .link:          return item.title
                         case .image, .document, .imageVideo, .rating, .field, .chats: return nil
                         }
                     }.first(where: { !$0.isEmpty })
@@ -6682,6 +6694,16 @@ final class CorpusStore {
                         n.title = String(fallback.prefix(40))
                     }
                     n.needsAIProcessing = false
+                }
+                // Brief BP3 — a committed Done that couldn't author because the content wasn't ready
+                // yet (a link whose OG hadn't landed → `.noContent`) records a deferred-intent marker;
+                // `applyOGFetch` authors ONCE when the OG arrives. Link-dominant + delegate-on only.
+                if posture == .automatic, case .noContent = reason,
+                   let n = nodes.first(where: { $0.id == nodeID }),
+                   AuthorshipPosture.delegateOn,
+                   n.items.contains(where: { $0.type == .link }),
+                   AIService.classifyContent(from: n).authored.isEmpty {
+                    pendingLinkAuthor.insert(nodeID)
                 }
                 return reason
             }
@@ -6772,7 +6794,8 @@ final class CorpusStore {
             }
             // Brief BO1 — the link-title fill MOVED OUT of this write-back (BM put it here, but
             // the promote-only Done path and the late-OG path both bypass this block — the device
-            // bug). It's now `fillLinkTitleFromOG`, called below and from `applyOGFetch`/`enrichIfNeeded`.
+            // bug). Brief BP1 — the link title is now a GHOST (`proposeLinkTitleFromOG` in
+            // `applyOGFetch`), committed at Done via `promoteMatchingProposals`. No write here.
             // SB126 Stage 2 — deterministic-prefilter embedding + FM neighborhood
             // guess. No-ops on the legacy path. (mood/domain/tags no longer
             // applied — step 1.)
@@ -6808,10 +6831,9 @@ final class CorpusStore {
             n.needsAIProcessing = false
         }
 
-        // Brief BO1 — deterministic link naming, backstop for the direct `.captureDone` callers
-        // (addLinkNode / share extension) whose Done is `processNodeWithAI`, not `enrichIfNeeded`.
-        // Only under `.automatic` (the eager `.propose` pass proposes, it doesn't name).
-        if posture == .automatic { await fillLinkTitleFromOG(nodeID: nodeID) }
+        // Brief BP1 — the link-title backstop WRITE that used to be here is gone: nothing is
+        // authored outside Done, and the link title commits via `promoteMatchingProposals` (the
+        // ghost proposal), reached by routing every link Done through `enrichIfNeeded`.
 
         // BUG 17 instrument — WRITE outcome: did the summary/title gate pass?
         // (summarySource `.user`, even empty, blocks the FM summary — 3876.)
@@ -6838,6 +6860,13 @@ final class CorpusStore {
         if !suppressTagSheet, #available(iOS 17.0, *) {
             refreshSubstrateThreadCandidates()
         }
+        // Brief BP1 — a `.automatic` pass is a Done: commit any fresh GHOST (the link-title ghost,
+        // an eager summary proposal) into its field now. This is what names the DIRECT
+        // `.captureDone` callers (share-extension import) that don't go through `enrichIfNeeded`'s
+        // promote. Idempotent — for the `enrichIfNeeded` path the ghost was already promoted, so
+        // there's nothing fresh left. The eager `.propose` compose pass never reaches this (it
+        // proposes, it doesn't commit).
+        if posture == .automatic { await promoteMatchingProposals(nodeID: nodeID) }
         return nil   // F3 — authorship succeeded (proposals recorded / fields written)
     }
 

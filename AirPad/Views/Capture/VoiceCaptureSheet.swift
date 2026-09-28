@@ -336,14 +336,14 @@ struct VoiceCaptureSheet: View {
                 if !transcript.isEmpty {
                     await store.appendItemToNode(nodeID: targetID, item: .text(content: transcript))
                 }
-                await store.processNodeWithAI(nodeID: targetID)
+                await store.processNodeWithAI(nodeID: targetID, posture: .captureDone)   // Brief BI — voice capture is a Done
             } else {
                 // Create new node
                 await store.addNodeWithAudio(node, audioURL: audioURL, audioItemID: audioItemID, position: position)
                 if let cid = targetCollectionID {
                     store.markCollectionUsed(cid)
                 }
-                await store.processNodeWithAI(nodeID: node.id)
+                await store.processNodeWithAI(nodeID: node.id, posture: .captureDone)   // Brief BI — voice capture is a Done
             }
         }
 

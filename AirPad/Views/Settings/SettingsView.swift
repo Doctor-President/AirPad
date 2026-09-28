@@ -97,6 +97,8 @@ struct SettingsView: View {
 
     // SB126 Stage 2 — bound to the same key FeatureFlags.useCorpusAwareTagging reads.
     @AppStorage("ff.useCorpusAwareTagging") private var useCorpusAwareTagging = false
+    /// Brief BI — Done-delegates. When ON (default), Done on an untitled capture names it.
+    @AppStorage(AuthorshipPosture.delegateSettingKey) private var autoNameCaptures = true
     // ★ Brief J §2 — one-shot "Copy all tuner state" result (keys copied), TEMP.
     @State private var tunerExportStatus = ""
 
@@ -295,9 +297,28 @@ struct SettingsView: View {
     private var librarySubmenu: some View {
         submenuScroll(header: { submenuHeader(icon: "books.vertical.fill", tint: "1B59C2", title: "Library",
             blurb: "Everything you've saved, and the ways to bring more in or take it out.") }) {
+            captureSection     // Brief BI — Done-delegates toggle
             corpusSection      // counts · search index + rebuild · export · clear · sample add/remove
             importSection      // "each paragraph becomes an entry"
             reviewSection      // Needs review (import review queue)
+        }
+    }
+
+    /// Brief BI — Done-delegates. One toggle, default ON: hitting Done on an untitled
+    /// capture names + describes it (a typed field is never overwritten). The native
+    /// Toggle control stays system; its label follows the app Font (BG).
+    private var captureSection: some View {
+        Section {
+            Toggle(isOn: $autoNameCaptures) {
+                Text("Name and describe new entries automatically")
+                    .font(appFont.font(size: 15, weight: .medium, relativeTo: .subheadline))
+                    .foregroundStyle(AppearancePalette.ink)
+            }
+            .tint(Color(hexString: "1B59C2"))
+        } footer: {
+            Text("When you hit Done without a title, AirPad writes one.")
+                .font(appFont.font(size: 12, relativeTo: .caption1))
+                .foregroundStyle(AppearancePalette.ink.opacity(0.4))
         }
     }
 

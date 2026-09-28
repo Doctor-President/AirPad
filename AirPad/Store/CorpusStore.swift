@@ -1052,6 +1052,17 @@ final class CorpusStore {
                 if ProcessInfo.processInfo.arguments.contains("-BODoneMatrix") {
                     NSLog("[BODoneMatrix] %@", await runBODoneMatrix())
                 }
+                // Brief BN0 — the load-boundary dedup keeps the NEWEST duplicate + drops the rest.
+                if ProcessInfo.processInfo.arguments.contains("-BN0DedupSelfTest") {
+                    let d0 = Date(timeIntervalSince1970: 0), d1 = Date(timeIntervalSince1970: 100)
+                    let older = Node(id: "dup", createdAt: d0, updatedAt: d0, title: "OLD", summary: "", tags: [])
+                    let newer = Node(id: "dup", createdAt: d0, updatedAt: d1, title: "NEW", summary: "", tags: [])
+                    let solo  = Node(id: "solo", createdAt: d0, updatedAt: d0, title: "S", summary: "", tags: [])
+                    let out = iCloudDriveService.dedupById([(older, "dup"), (newer, "dup 2"), (solo, "solo")])
+                    let keptNew = out.first(where: { $0.id == "dup" })?.title == "NEW"
+                    let ok = out.count == 2 && keptNew && out.contains(where: { $0.id == "solo" })
+                    NSLog("[BN0DedupSelfTest] %@ (kept=%d dup→%@)", ok ? "PASS" : "FAIL", out.count, out.first(where: { $0.id == "dup" })?.title ?? "?")
+                }
                 #endif
                 // MAP-RELAYOUT GATE (ws-map-relayout). Pins the persist/restore
                 // decision logic so a re-introduced on-launch reform fails here

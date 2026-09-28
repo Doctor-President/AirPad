@@ -75,14 +75,16 @@ actor OGMetadataService {
         // segment ("Falvey Library :: The Printed Image…") and must be stripped too. The
         // scraped `titleTag` is already cleaned (see `scrapeOG`); re-cleaning it is
         // idempotent (no separator → returns the input unchanged), so one call covers both.
-        let title = Self.cleanTitle(lpResult?.title ?? scrapeResult?.titleTag,
-                                    siteName: scrapeResult?.siteName ?? url.host)
+        // Brief BM3 — sanitize (entity-decode + mojibake-repair) EVERY title source, incl. the
+        // LP title (which never passed through the scrape's decoder), before cleaning.
+        let rawTitle = (lpResult?.title ?? scrapeResult?.titleTag).map { WebReadability.sanitize($0) }
+        let title = Self.cleanTitle(rawTitle, siteName: scrapeResult?.siteName ?? url.host)
         // Brief BL3.2 — the CARD description is a REAL og/meta description only. When absent,
         // derive `readableText` from the page body (article-first; feeds naming + summary +
         // Librarian search) but keep it OUT of `description` so the card shows no chrome.
         // Brief BL3.3 — reuse the HTML the scrape already fetched instead of a third network
         // trip; fall back to `fetchReadable` (its own fetch) only if the scrape got no HTML.
-        let description = scrapeResult?.description
+        let description = scrapeResult?.description.map { WebReadability.sanitize($0) }
         var readableText: String? = nil
         if description == nil {
             let readable: String
@@ -92,10 +94,10 @@ actor OGMetadataService {
                 readable = await WebReadability.fetchReadable(url, budget: 2000)
             }
             if !readable.hasPrefix("Couldn't fetch") && !readable.hasPrefix("No readable text"), readable.count >= 40 {
-                readableText = readable
+                readableText = WebReadability.sanitize(readable)   // Brief BM3 — entities + mojibake
             }
         }
-        let scrapeSite = scrapeResult?.siteName
+        let scrapeSite = scrapeResult?.siteName.map { WebReadability.sanitize($0) }
         let siteName = scrapeSite ?? url.host
         let imageTempURL = lpResult?.imageTempURL
         let imageExtension = lpResult?.imageExtension

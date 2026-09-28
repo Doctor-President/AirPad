@@ -20,6 +20,19 @@ Authoritative operating conventions for any Claude Code session in this repo. Re
   claim was true of the 26.5 beta only. The epistemics survive the toolchain: compiling is not
   knowing.)
 
+## Done / authorship changes — verify with `-StubAuthorModel` (standing rule, Brief BM)
+- **Any change to the Done → model → write path (naming, summarising, the enrichment gate,
+  proposals) MUST be verified end-to-end in the Simulator with `-StubAuthorModel` before merge.**
+  Foundation Models / Apple Intelligence is **absent in the Simulator**, so the real Done pass
+  never runs there — which is exactly why BI, BL, and BM each passed the sim gate and still
+  failed on device. The `-StubAuthorModel` stub (in `AIService.processNode`/`processSubstrate`,
+  `#if DEBUG`) stands in for FM with a deterministic result and **faithfully reproduces the FM's
+  failure mode** (empty title on a derived-only entry), so the write/promote/gate wiring is
+  testable headlessly.
+- Drive every capture path with `-BMDoneMatrix` (Quick Capture · capture sheet · Link button ·
+  link block · share extension) and assert WHICH fields Done wrote, with which provenance. A new
+  Done/authorship bug should first be **reproduced as a failing matrix row**, then fixed.
+
 ## Project structure (XcodeGen)
 - `project.yml` is the source of truth. `AirPad.xcodeproj/project.pbxproj` is **generated**.
 - Adding, removing, or renaming a source file: edit `project.yml`, then run `xcodegen generate`. Tell T so he regenerates/reopens in Xcode.

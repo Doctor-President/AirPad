@@ -1042,6 +1042,10 @@ final class CorpusStore {
                 if ProcessInfo.processInfo.arguments.contains("-BMDoneMatrix") {
                     NSLog("[BMDoneMatrix] %@", await runBMDoneMatrix())
                 }
+                // Brief BO0 — the real-timing Done matrix (variants a–d; needs `-StubAuthorModel`).
+                if ProcessInfo.processInfo.arguments.contains("-BODoneMatrix") {
+                    NSLog("[BODoneMatrix] %@", await runBODoneMatrix())
+                }
                 #endif
                 // MAP-RELAYOUT GATE (ws-map-relayout). Pins the persist/restore
                 // decision logic so a re-introduced on-launch reform fails here
@@ -2279,7 +2283,13 @@ final class CorpusStore {
         let posture = AuthorshipPosture.resolve(
             for: moment == .committed ? .committedCapture : .authoring,
             setting: AuthorshipPosture.delegateOn)
-        if posture == .automatic { await promoteMatchingProposals(nodeID: nodeID) }
+        if posture == .automatic {
+            await promoteMatchingProposals(nodeID: nodeID)
+            // Brief BO1 — deterministic link title runs on EVERY Done, BEFORE the needs gate, so
+            // the promote-only path ("commit skip") still names a link. Filling the title also
+            // flips its aspect to `.model`, so the gate below correctly reports title = done.
+            await fillLinkTitleFromOG(nodeID: nodeID)
+        }
         guard let node = nodes.first(where: { $0.id == nodeID }) else { return }
         let needs = enrichmentNeeds(for: node, at: moment)
         guard needs.any else {
@@ -2311,6 +2321,40 @@ final class CorpusStore {
             print("[Enrich] PROMOTE node=\(nodeID) kind=\(kind) (no model call)")
             await acceptProposal(nodeID: nodeID, kind: kind)
         }
+    }
+
+    /// Brief BO1 — DETERMINISTIC link naming, reached by EVERY route. A link's title is its
+    /// page title, NOT a model guess: the FM returns an empty title for a derived-only entry, so
+    /// naming a link through the FM/fallback/gate chain is fragile (BM's fallback lived inside
+    /// `processNodeWithAI`'s write-back, which the **promote-only** Done path and the **late-OG**
+    /// path both bypass — the device bug). This fills an EMPTY or bare-URL, NON-`.user` title on a
+    /// link-DOMINANT node (no authored text) from the link's cleaned OG title (else its site
+    /// name), the moment the name becomes knowable. Called from `applyOGFetch` (OG lands — the
+    /// upstream trigger every path hits) and from every Done route (`enrichIfNeeded`,
+    /// `processNodeWithAI`) as a backstop. Gated on the delegate setting — the deterministic
+    /// equivalent of a capture-Done delegation; a structural name like the "Photo" placeholder,
+    /// not a model proposal. Idempotent; never overwrites a `.user` title or a note WITH text.
+    @discardableResult
+    func fillLinkTitleFromOG(nodeID: String) async -> Bool {
+        guard AuthorshipPosture.delegateOn else { return false }
+        guard let node = nodes.first(where: { $0.id == nodeID }), node.titleSource != .user else { return false }
+        let t = node.title.trimmingCharacters(in: .whitespacesAndNewlines)
+        // Fill an empty title, or a bare-URL placeholder (the `.noContent` FM-failure fallback
+        // writes `url.prefix(40)` with a nil source when Done beats the OG fetch).
+        let isPlaceholder = t.isEmpty || (!t.contains(where: { $0.isWhitespace }) && t.lowercased().hasPrefix("http"))
+        guard isPlaceholder else { return false }
+        guard AIService.classifyContent(from: node).authored.isEmpty else { return false }   // a note with text titles from its words
+        guard let link = node.items.first(where: { $0.type == .link }) else { return false }
+        let name = (link.title?.trimmingCharacters(in: .whitespacesAndNewlines)).flatMap { $0.isEmpty ? nil : $0 }
+            ?? (link.ogSiteName?.trimmingCharacters(in: .whitespacesAndNewlines)).flatMap { $0.isEmpty ? nil : $0 }
+        guard let name else { return false }
+        await mutateNode(id: nodeID) { n in
+            guard n.titleSource != .user else { return }
+            n.title = name
+            n.titleSource = .model
+        }
+        print("[Enrich] LINK-TITLE node=\(nodeID) → \"\(name)\" (deterministic)")
+        return true
     }
 
     /// `needsAIProcessing` means "no AI pass has ever run on this node" and is read
@@ -2470,6 +2514,106 @@ final class CorpusStore {
         let head = stub ? "stub=ON" : "stub=OFF ⚠ pass -StubAuthorModel"
         let verdict = fail == 0 ? "PASS (\(pass)/\(pass + fail))" : "FAIL (\(pass)/\(pass + fail))"
         return "\(verdict) [\(head)]\n" + lines.joined(separator: "\n")
+    }
+
+    /// Brief BO0 — the matrix that replays REALITY. BM's matrix injected OG synchronously and
+    /// ran `enrichIfNeeded(.composing)` directly, so it never saw the async ordering that makes
+    /// the device fail. This one replays the REAL QuickCapture store sequence — bare
+    /// `appendItemToNode` (which arms a debounced eager pass), then a `renderFetch` (OG lands +
+    /// re-arms the eager pass, as `LinkEntryBody.triggerFetch` does), then Done — across the four
+    /// TIMING variants T can hit. Needs `-StubAuthorModel` (empty title on a derived-only entry,
+    /// FM's real behaviour). Reads AFTER the async tail settles.
+    func runBODoneMatrix() async -> String {
+        var lines: [String] = []
+        var pass = 0, fail = 0
+        func note(_ s: String) { lines.append(s) }
+        func ogMeta() -> OGMetadata {
+            OGMetadata(title: "Team Rocket Trio - TV Tropes", description: nil,
+                       readableText: "The Team Rocket trio are the recurring comedic villains of the Pokémon anime.",
+                       siteName: "TV Tropes", imageTempURL: nil, imageExtension: nil,
+                       faviconTempURL: nil, faviconExtension: nil)
+        }
+        func settle(_ ms: UInt64) async { try? await Task.sleep(nanoseconds: ms * 1_000_000) }
+        func makeDraft(_ id: String) -> Node {
+            var n = Node(id: id, createdAt: Date(), updatedAt: Date(), title: "", summary: "", tags: [])
+            n.needsAIProcessing = false
+            return n
+        }
+        func bareLink() -> NodeItem {
+            NodeItem(id: UUID().uuidString, type: .link, createdAt: Date(),
+                     url: "https://tvtropes.org/pmwiki/pmwiki.php/Characters/TeamRocketTrio",
+                     title: nil, preview: nil)
+        }
+        // Mimics `LinkEntryBody.triggerFetch`: OG lands, then the eager pass is re-armed.
+        func renderFetch(_ id: String, _ iid: String) async {
+            await applyOGFetch(nodeID: id, itemID: iid, metadata: ogMeta())
+            scheduleEnrichment(nodeID: id)
+        }
+        func verdict(_ label: String, _ id: String) {
+            guard let n = nodes.first(where: { $0.id == id }) else { note("  ✗ \(label): <gone>"); fail += 1; return }
+            let ok = !n.title.trimmingCharacters(in: .whitespaces).isEmpty && n.titleSource == .model
+                && !n.summary.isEmpty && n.summarySource == .model
+            if ok { pass += 1 } else { fail += 1 }
+            note("  \(ok ? "✓" : "✗") \(label): title=\(n.title.isEmpty ? "<EMPTY>" : "\"\(n.title)\"")[\(n.titleSource.map { "\($0)" } ?? "nil")] summary=\(n.summary.isEmpty ? "<empty>" : "set")[\(n.summarySource.map { "\($0)" } ?? "nil")]")
+        }
+        UserDefaults.standard.set(true, forKey: AuthorshipPosture.delegateSettingKey)
+
+        // (a) paste → Done immediately (before OG, before eager) → OG lands after.
+        do {
+            let id = "bo-a", item = bareLink()
+            await addNode(makeDraft(id), position: .zero)
+            await appendItemToNode(nodeID: id, item: item)
+            await enrichIfNeeded(nodeID: id)          // Done — no OG yet
+            await settle(150)
+            await renderFetch(id, item.id)            // OG lands AFTER Done
+            await settle(900)
+            verdict("(a) Done-before-OG", id); await deleteNode(id: id)
+        }
+        // (b) paste → OG lands → Done (before the eager pass fires).
+        do {
+            let id = "bo-b", item = bareLink()
+            await addNode(makeDraft(id), position: .zero)
+            await appendItemToNode(nodeID: id, item: item)
+            await renderFetch(id, item.id)            // OG lands
+            await enrichIfNeeded(nodeID: id)          // Done immediately (cancels the eager task)
+            await settle(700)
+            verdict("(b) OG-then-Done", id); await deleteNode(id: id)
+        }
+        // (c) paste → OG lands → eager .composing records a proposal → Done  ← the common case.
+        do {
+            let id = "bo-c", item = bareLink()
+            await addNode(makeDraft(id), position: .zero)
+            await appendItemToNode(nodeID: id, item: item)
+            await renderFetch(id, item.id)            // OG lands + arms eager
+            await settle(750)                         // let the eager pass fire + record proposals
+            await enrichIfNeeded(nodeID: id)          // Done
+            await settle(500)
+            verdict("(c) OG→eager→Done", id); await deleteNode(id: id)
+        }
+        // (d) paste → eager fires BEFORE OG (bare, skips) → OG lands → Done.
+        do {
+            let id = "bo-d", item = bareLink()
+            await addNode(makeDraft(id), position: .zero)
+            await appendItemToNode(nodeID: id, item: item)
+            await settle(750)                         // eager#1 fires on the BARE link (skips)
+            await renderFetch(id, item.id)            // OG lands
+            await enrichIfNeeded(nodeID: id)          // Done
+            await settle(700)
+            verdict("(d) eager-bare→OG→Done", id); await deleteNode(id: id)
+        }
+
+        // BO3 — per-run mojibake repair: survives a non-Latin-1 char (em dash) mid-string.
+        func check(_ name: String, _ cond: Bool, _ got: String) {
+            if cond { pass += 1 } else { fail += 1; note("  ✗ \(name) — got: \(got)") }
+        }
+        let emDash = WebReadability.sanitize("PokÃ©mon \u{2014} the anime, naÃ¯ve heroes")
+        check("BO3 repairs across an em dash", emDash == "Pokémon \u{2014} the anime, naïve heroes", emDash)
+        let entityMoji = WebReadability.sanitize("Pok&Atilde;&copy;mon the Series \u{2014} characters index")
+        check("BO3 entity+mojibake+dash", entityMoji == "Pokémon the Series \u{2014} characters index", entityMoji)
+        check("BO3 leaves São Paulo / café", WebReadability.sanitize("São Paulo café \u{2014} 2023") == "São Paulo café \u{2014} 2023", "accents mangled")
+
+        let verdictLine = fail == 0 ? "PASS (\(pass)/\(pass + fail))" : "FAIL (\(pass)/\(pass + fail))"
+        return "\(verdictLine)\n" + lines.joined(separator: "\n")
     }
     #endif
 
@@ -3474,6 +3618,27 @@ final class CorpusStore {
         updated.items[itemIdx] = item
         updated.updatedAt = Date()
         await updateNode(updated)
+
+        // Brief BO1 — the moment the OG title is known, deterministically name a link-dominant
+        // entry. This is the UPSTREAM trigger every capture path reaches (Quick Capture, capture
+        // sheet, Link button, in-entry), independent of Done timing — so a link is titled whether
+        // OG lands before OR after Done. No-op on a note with text, a `.user` title, or delegate-off.
+        await fillLinkTitleFromOG(nodeID: nodeID)
+
+        // Brief BO1 — LATE-OG summary. If a committed pass already ran (`needsAIProcessing == false`)
+        // but this link-dominant entry still has no summary, Done beat the OG fetch (`.noContent`)
+        // and the content only just arrived — delegate a committed pass now so the summary fills
+        // too (the title is already set, so it's untouched). `needsAIProcessing == true` means Done
+        // hasn't run yet, so the normal Done flow will summarise — we don't pre-empt it here.
+        if AuthorshipPosture.delegateOn,
+           let n = nodes.first(where: { $0.id == nodeID }),
+           n.needsAIProcessing == false,
+           n.summary.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty,
+           n.summarySource != .user,
+           n.items.contains(where: { $0.type == .link }),
+           AIService.classifyContent(from: n).authored.isEmpty {
+            await enrichIfNeeded(nodeID: nodeID, at: .committed)
+        }
     }
 
     /// Brief BL1 — the canonical single-link `linkItems` for a `.link` NodeItem, lifted from
@@ -6605,24 +6770,9 @@ final class CorpusStore {
                     n.summarySource = .model
                 }
             }
-            // Brief BM1 — DETERMINISTIC link naming. The FM leaves the title empty for a
-            // derived-only entry (a saved link / article has no user prose to title from), so a
-            // link-DOMINANT node would otherwise stay blank while its summary fills — exactly the
-            // device bug. When the title is still empty after the authorship pass, isn't
-            // user-authored, the posture is `.automatic`, AND the node has NO authored text
-            // (a note WITH text titles from what the user wrote — S4), fall back to the link's
-            // own cleaned page title (`item.title`), the natural name for a saved link. This is
-            // the ONE place link → node title now happens (addLinkNode's inline lift is retired).
-            if aspects.contains(.title),
-               n.title.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty,
-               posture == .automatic,
-               n.titleSource == nil || n.titleSource == .model,
-               AIService.classifyContent(from: n).authored.isEmpty,
-               let linkTitle = n.items.first(where: { $0.type == .link })?.title,
-               !linkTitle.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty {
-                n.title = linkTitle
-                n.titleSource = .model
-            }
+            // Brief BO1 — the link-title fill MOVED OUT of this write-back (BM put it here, but
+            // the promote-only Done path and the late-OG path both bypass this block — the device
+            // bug). It's now `fillLinkTitleFromOG`, called below and from `applyOGFetch`/`enrichIfNeeded`.
             // SB126 Stage 2 — deterministic-prefilter embedding + FM neighborhood
             // guess. No-ops on the legacy path. (mood/domain/tags no longer
             // applied — step 1.)
@@ -6657,6 +6807,11 @@ final class CorpusStore {
             }
             n.needsAIProcessing = false
         }
+
+        // Brief BO1 — deterministic link naming, backstop for the direct `.captureDone` callers
+        // (addLinkNode / share extension) whose Done is `processNodeWithAI`, not `enrichIfNeeded`.
+        // Only under `.automatic` (the eager `.propose` pass proposes, it doesn't name).
+        if posture == .automatic { await fillLinkTitleFromOG(nodeID: nodeID) }
 
         // BUG 17 instrument — WRITE outcome: did the summary/title gate pass?
         // (summarySource `.user`, even empty, blocks the FM summary — 3876.)

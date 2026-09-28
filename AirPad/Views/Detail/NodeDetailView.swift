@@ -55,6 +55,15 @@ struct NodeDetailView: View {
     private func finishCapture(node: Node) {
         router.requestFocus(node.id)
         router.captureDraftHasText = false
+        // Brief BO2 — the regular-capture Done (Dashboard/Canvas "+" → this editor) must DELEGATE
+        // naming, like Quick Capture and the capture sheet do. It called nothing before, so an
+        // entry with a Link block (or any untitled capture) stayed nameless. `finishCapture` is
+        // the FRESH-capture Done (re-opening an existing entry closes via `onDisappear` →
+        // `saveIfChanged`, never here), so this is `.committedCapture` (delegates); editing an
+        // existing entry stays `.authoring` (propose-only) by construction. `commitEditsIfChanged`
+        // on disappear still stamps `.user` for anything the user actually typed, and
+        // `enrichIfNeeded` never overwrites a `.user` field — so a hand-titled capture is safe.
+        Task { await store.enrichIfNeeded(nodeID: node.id) }
         dismiss()
     }
 

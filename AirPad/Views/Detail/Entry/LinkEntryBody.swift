@@ -97,7 +97,12 @@ struct LinkEntryBody: View {
                 }
             }
         }
-        .onAppear { Task { await refetchIfStaleOrMissing() } }
+        .onAppear { Task {
+            // Brief BL1 — lift an existing legacy link (url only, no linkItems) into
+            // linkItems[0] so "Save content" appears without waiting for a re-fetch.
+            await store.normalizeLegacyLinkItem(nodeID: nodeID, itemID: item.id)
+            await refetchIfStaleOrMissing()
+        } }
     }
 
     /// Stage 4.6 commit 5 — single-link menu, no Delete. Same chrome
@@ -180,16 +185,14 @@ struct LinkEntryBody: View {
         }
     }
 
-    /// Stage 4.5 commit 5 — skip when `linkItems[0]` is present.
-    /// `LinkGalleryTile` owns its own freshness check via `hasAnyOG` and
-    /// triggers its own fetch on appear, so a single-mode entry whose
-    /// data lives in `linkItems[0]` (e.g. after a 2→1 down-collapse from
-    /// per-tile delete) doesn't need a parallel refetch here. Legacy-
-    /// only entries (no linkItems) still flow through the original
-    /// staleness check below.
+    /// Stage 4.5 / Brief BL1 — refetch when the link's OG data is missing or stale.
+    /// Gated on `ogFetchedAt` (not `linkItems` presence): now that BL1 normalises every
+    /// single-link entry to carry `linkItems[0]`, keying the skip on that would suppress
+    /// the staleness refresh for exactly the legacy links this brief exists to heal.
+    /// `LinkEntryBody` only renders 0/1-link entries (2+ dispatch to `LinkGalleryBody`),
+    /// so there is no competing per-tile fetch to double up with.
     private func refetchIfStaleOrMissing() async {
-        if item.linkItems?.first != nil { return }
-        guard let urlString = item.url, !urlString.isEmpty else { return }
+        guard let urlString = resolvedURLString, !urlString.isEmpty else { return }
         if let fetchedAt = item.ogFetchedAt,
            Date().timeIntervalSince(fetchedAt) < OGMetadataService.staleness {
             return
@@ -201,5 +204,9 @@ struct LinkEntryBody: View {
         guard let url = URL(string: urlString) else { return }
         let metadata = await OGMetadataService().fetch(url: url)
         await store.applyOGFetch(nodeID: nodeID, itemID: item.id, metadata: metadata)
+        // Brief BL2 — the OG fetch just wrote the link's derived title/preview; re-arm the
+        // debounced composing pass so the enrichment feather lights on a link-only entry
+        // (compose offers) and Done still names it via `enrichIfNeeded(.committed)`.
+        store.scheduleEnrichment(nodeID: nodeID)
     }
 }

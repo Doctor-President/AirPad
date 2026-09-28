@@ -449,6 +449,12 @@ struct QuikCaptureView: View {
         // fires `textViewDidEndEditing` synchronously → `updateTextItem` (via
         // mutateNode) commits the body; then we route.
         UIApplication.shared.sendAction(#selector(UIResponder.resignFirstResponder), to: nil, from: nil, for: nil)
+        // Brief BI — Done on a quick capture delegates naming. The flush above committed the
+        // body synchronously, so `enrichIfNeeded(.committed)` reads the final content: it
+        // PROMOTES a matching proposal from the eager pass (no model call) or generates
+        // under the delegate posture. Previously QuikCapture never enriched at Done, so an
+        // unnamed capture stayed untitled — the exact set-and-forget gap BI closes.
+        if let id = nodeID { Task { await store.enrichIfNeeded(nodeID: id) } }
         router.isCapturing = false
         router.captureNodeID = nil
         router.captureDraftHasText = false

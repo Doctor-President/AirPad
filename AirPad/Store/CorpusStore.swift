@@ -2276,10 +2276,29 @@ final class CorpusStore {
     /// node fresh and both would see pre-enrichment state if they overlapped, so both
     /// would do the same work — the exact duplication being removed. Done always has
     /// the newer content, so it wins.
+    /// Brief BQ4 — at Done, drop any empty/whitespace `.text` item: the blank SCAFFOLD Note the
+    /// capture starts with (`appendEmptyTextItem` → `content: ""`, or a `\n` the editor leaves), or
+    /// a note the user typed into and then cleared — empty is empty at Done, per T. "Scaffold" =
+    /// a `.text` item with no `meaningfulText`; emptiness is the identity, so no flag is needed.
+    /// Kept only if the node has NO other content (an otherwise-empty entry keeps a place to type).
+    func pruneEmptyTextItems(nodeID: String) async {
+        guard let node = nodes.first(where: { $0.id == nodeID }) else { return }
+        let hasOtherContent = node.items.contains { $0.type != .text || AIService.meaningfulText($0.content) != nil }
+        guard hasOtherContent else { return }
+        let kept = node.items.filter { !($0.type == .text && AIService.meaningfulText($0.content) == nil) }
+        guard kept.count != node.items.count else { return }
+        await mutateNode(id: nodeID) { $0.items = kept; $0.updatedAt = Date() }
+        print("[Capture] BQ4 — pruned \(node.items.count - kept.count) empty scaffold note(s) from \(nodeID)")
+    }
+
     func enrichIfNeeded(nodeID: String, at moment: EnrichmentGate.Moment = .committed) async {
         enrichmentTasks[nodeID]?.cancel()
         enrichmentTasks[nodeID] = nil
         guard nodes.contains(where: { $0.id == nodeID }) else { return }
+        // Brief BQ4 — a capture's Done drops its untouched scaffold Note before naming, so the
+        // named entry holds only real content. (BQ2's `meaningfulText` already keeps an empty
+        // scaffold out of the content hash, so this doesn't shift what's being named.)
+        if moment == .committed { await pruneEmptyTextItems(nodeID: nodeID) }
         // Brief BI — DONE-DELEGATES. Done on a capture (`.committed`) resolves the posture
         // from the capture MOMENT + the delegate setting. Under `.automatic`, an untitled
         // aspect whose FRESH proposal already matches the current content is PROMOTED (no
@@ -2612,6 +2631,27 @@ final class CorpusStore {
             await enrichIfNeeded(nodeID: id)          // Done
             await settle(700)
             verdict("(d) eager-bare→OG→Done", id); await deleteNode(id: id)
+        }
+        // (e) Brief BQ2 — the REAL Quick Capture shape: a blank SCAFFOLD Note (whitespace, as the
+        // RichText editor leaves it once focused) SITS ALONGSIDE the link. Before BQ2 this counted
+        // as authored content → the link wasn't link-dominant → the page-title ghost was skipped →
+        // title empty (the device bug the scaffold-less matrices all missed). Must still name.
+        do {
+            let id = "bo-e", item = bareLink()
+            var n = makeDraft(id)
+            n.items = [NodeItem(id: "\(id)-scaffold", type: .text, createdAt: Date(), content: " \n ")]
+            await addNode(n, position: .zero)
+            await appendItemToNode(nodeID: id, item: item)   // link joins the scaffold Note
+            await renderFetch(id, item.id)
+            await settle(750)
+            await enrichIfNeeded(nodeID: id)
+            await settle(500)
+            verdict("(e) scaffold-note + link", id)
+            if let n = nodes.first(where: { $0.id == id }) {
+                let hasEmptyNote = n.items.contains { $0.type == .text && AIService.meaningfulText($0.content) == nil }
+                check("(e) BQ4 scaffold pruned at Done", !hasEmptyNote, "empty scaffold note survived")
+            }
+            await deleteNode(id: id)
         }
 
         // BO3 — per-run mojibake repair: survives a non-Latin-1 char (em dash) mid-string.
@@ -8912,11 +8952,14 @@ final class CorpusStore {
     /// call it without an actor hop.
     private func extractNodeContent(_ node: Node) -> String {
         node.items.compactMap { item -> String? in
+            // Brief BQ2 — `meaningfulText` trims whitespace/newlines so a blank scaffold Note
+            // doesn't shift the content hash (a stray `\n` used to make the hash differ from the
+            // matrices' scaffold-less nodes AND count as authored content).
             switch item.type {
-            case .text:              return item.content
-            case .audio, .video:     return item.transcript
-            case .image, .document:  return item.description
-            case .link:              return [item.title, item.preview].compactMap { $0 }.joined(separator: " ")
+            case .text:              return AIService.meaningfulText(item.content)
+            case .audio, .video:     return AIService.meaningfulText(item.transcript)
+            case .image, .document:  return AIService.meaningfulText(item.description)
+            case .link:              return AIService.meaningfulText([item.title, item.preview].compactMap { $0 }.joined(separator: " "))
             case .imageVideo:        return nil
             case .rating, .field, .chats:  return nil
             }

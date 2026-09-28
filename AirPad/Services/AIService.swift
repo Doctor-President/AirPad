@@ -831,20 +831,31 @@ actor AIService {
     ///   • DERIVED = machine-extracted (image OCR + parent description, image/
     ///     document descriptions, link title/OG preview).
     /// Per-item order is preserved WITHIN each bucket (items are visited in order).
+    /// Brief BQ2 — the SINGLE source of truth for "does this text count as content?" Trims
+    /// whitespace/newlines and returns nil when nothing remains. A blank scaffold Note (created
+    /// `content: ""`, but the RichText editor can leave a stray `\n`/space behind once focused)
+    /// must NEVER read as authored content — otherwise a link-only capture stops being
+    /// link-dominant and the page-title ghost/fallback is skipped, leaving the title empty (the
+    /// bug the store matrices kept missing because they had no scaffold Note). Used by
+    /// `classifyContent`, `extractNodeContent` (the content hash), and scaffold detection.
+    static func meaningfulText(_ s: String?) -> String? {
+        guard let t = s?.trimmingCharacters(in: .whitespacesAndNewlines), !t.isEmpty else { return nil }
+        return t
+    }
+
     static func classifyContent(from node: Node) -> (authored: [String], derived: [String]) {
         var authored: [String] = []
         var derived: [String] = []
         for item in node.items {
             switch item.type {
             case .text:
-                if let c = item.content, !c.isEmpty { authored.append(c) }
+                if let c = meaningfulText(item.content) { authored.append(c) }
             case .audio, .video:
-                if let t = item.transcript, !t.isEmpty { authored.append(t) }
+                if let t = meaningfulText(item.transcript) { authored.append(t) }
             case .image, .document:
-                if let d = item.description, !d.isEmpty { derived.append(d) }
+                if let d = meaningfulText(item.description) { derived.append(d) }
             case .link:
-                let s = [item.title, item.preview].compactMap { $0 }.joined(separator: " ")
-                if !s.isEmpty { derived.append(s) }
+                if let s = meaningfulText([item.title, item.preview].compactMap { $0 }.joined(separator: " ")) { derived.append(s) }
             case .imageVideo:
                 // Gallery OCR + legacy parent description. This is DERIVED — the
                 // 2026-08-17 ranking bug was a mockup's OCR caption outranking four

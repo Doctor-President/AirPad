@@ -87,7 +87,7 @@ enum SubstrateColoringPass {
         let sorted = placements.sorted { $0.nodeID < $1.nodeID }
         let n = sorted.count
         let indexByNodeID: [String: Int] = Dictionary(
-            uniqueKeysWithValues: sorted.enumerated().map { ($1.nodeID, $0) }
+            sorted.enumerated().map { ($1.nodeID, $0) }, uniquingKeysWith: { a, _ in a }   // BN0 — tolerate a dup nodeID
         )
 
         // Group by cluster (non-noise only).

@@ -1410,7 +1410,7 @@ struct CanvasView: View {
             }()
             let substratePositions: [String: CanvasPosition]
             if FeatureFlags.substrateRelaxation {
-                let nodesByID = Dictionary(uniqueKeysWithValues: nodes.map { ($0.id, $0) })
+                let nodesByID = Dictionary(nodes.map { ($0.id, $0) }, uniquingKeysWith: { a, _ in a })   // BN0 — tolerate a dup id
                 var visualRadii: [String: CGFloat] = [:]
                 visualRadii.reserveCapacity(mergedTruth.count)
                 for id in mergedTruth.keys {
@@ -1497,7 +1497,7 @@ struct CanvasView: View {
 
         // Capture snapshot maps so the async task doesn't reach into
         // the live store off-MainActor.
-        let nodesByID = Dictionary(uniqueKeysWithValues: store.nodes.map { ($0.id, $0) })
+        let nodesByID = Dictionary(store.nodes.map { ($0.id, $0) }, uniquingKeysWith: { a, _ in a })   // BN0 — tolerate a dup id
         Task { @MainActor in
             await SubstrateClusterLabelService.shared.labelMissingClusters(
                 persistentIDByNodeID: persistentIDByNodeID,

@@ -509,6 +509,14 @@ final class LibrarianState {
             }
         }
         var isCard: Bool { if case .card = payload { return true } else { return false } }
+        /// Brief BN1 — the item's own text length (a passage's block text, a card's gist), for the
+        /// `-LibrarianTrace` packet dump.
+        var charCount: Int {
+            switch payload {
+            case .passage(let m): return m.block.text.count
+            case .card(let c):    return c.gist.count
+            }
+        }
 
         /// Stable de-dup / carry identity: a passage's blockID, a card's node id
         /// (`card:`-prefixed so a card and a passage of the same node never collide).
@@ -669,6 +677,24 @@ final class LibrarianState {
         }
 
         let context = buildAskContext(candidates: candidates, store: store)
+        #if DEBUG
+        // Brief BN1 — `-LibrarianTrace`: dump the exact Ask packet per Library turn (Release-inert).
+        // The instrument BJ's diagnosis recommended and every find-then-read check (BN2–BN5) reads.
+        // TODAY it shows the SURVEY path (the ≤3/node passage cap + the fixed 12k budget); when the
+        // read/survey router (BN2) and read-in-full budget (BN3) land, the same line reports mode=read,
+        // which entries were read in full, and the model-derived budget. Never blocks or mutates.
+        if ProcessInfo.processInfo.arguments.contains("-LibrarianTrace") {
+            let totalChars = context.count
+            let budget = Self.askPassageCharBudget
+            NSLog("[LibrarianTrace] mode=survey provider=%@ candidates=%d contextChars=%d ~tokens=%d passageBudget=%d truncated=%@",
+                  "\(ModelRouter.active)", candidates.count, totalChars, totalChars / 4, budget,
+                  totalChars >= budget ? "yes" : "no")
+            for c in candidates.sorted(by: { $0.number < $1.number }) {
+                NSLog("[LibrarianTrace]   [%d] node=%@ score=%.3f chars=%d %@ origin=%@",
+                      c.number, c.nodeID, c.score, c.charCount, c.isCard ? "CARD" : "passage", c.origin.rawValue)
+            }
+        }
+        #endif
         let modelText = """
         Some of your notes were retrieved by similarity search — they may or may not be relevant to the question:
 

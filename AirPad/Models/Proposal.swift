@@ -120,16 +120,41 @@ enum AuthorshipPosture: String, Codable {
     /// Nothing is ever offered; the lever still works on demand. (Stage 3+.)
     case off
 
-    /// ★ THE SEAM. Stage 3 makes this a per-aspect stored setting. Do not read
-    /// the posture from anywhere but `AuthorshipPosture.current`.
+    /// ★ THE SEAM — Brief BI (Done-delegates). Posture is now RESOLVED per capture
+    /// MOMENT, not read from a global constant (was `current`). The capture ACT owns the
+    /// posture (hybrid-authorship.md): hitting Done on something you haven't named IS
+    /// initiating — "you name it". No call site hard-codes `.automatic`; `recordProposal`
+    /// still withholds the write and records-only under `.propose`.
     ///
-    /// Stage 2 (T's explicit call): flipped `.automatic` → `.propose`. This is
-    /// the one-line change the Stage 1 seam was built for, and the real
-    /// behaviour change of the stage — blank captures STOP auto-filling; title
-    /// and summary wait for the user to pull the lever. `recordProposal` already
-    /// withholds the write and records the proposal under `.propose`, so nothing
-    /// else in the pipeline changes.
-    static let current: AuthorshipPosture = .propose
+    /// - `.committedCapture` (Done on a capture) + the delegate setting ON → `.automatic`
+    ///   (AirPad names the untitled entry).
+    /// - `.authoring` (composing / detail-view authoring / a background pass), OR the
+    ///   setting OFF → `.propose` (the lever offers; unchanged).
+    static func resolve(for moment: CaptureMoment, setting delegateOn: Bool) -> AuthorshipPosture {
+        switch moment {
+        case .committedCapture: return delegateOn ? .automatic : .propose
+        case .authoring:        return .propose
+        }
+    }
+
+    /// The delegate setting ("Name and describe new entries automatically", Settings →
+    /// Library), **default ON**. Stored in UserDefaults so the store (not a SwiftUI view)
+    /// reads it directly; `object(forKey:) ?? true` means a fresh install delegates.
+    static let delegateSettingKey = "library.autoNameCaptures"
+    static var delegateOn: Bool { UserDefaults.standard.object(forKey: delegateSettingKey) as? Bool ?? true }
+
+    /// Convenience — the posture for a Done on a capture, resolving the delegate setting
+    /// (used by the direct capture paths: voice, camera, link, share-extension import).
+    static var captureDone: AuthorshipPosture { resolve(for: .committedCapture, setting: delegateOn) }
+}
+
+/// Brief BI — the MOMENT a posture is resolved for. Posture belongs to the capture act,
+/// not the app: a Done on an unnamed capture delegates; authoring offers.
+enum CaptureMoment {
+    /// The user pressed Done on a capture (text / voice / photo / link / share import).
+    case committedCapture
+    /// Composing, detail-view authoring, or a background pass — the lever offers.
+    case authoring
 }
 
 extension Node {

@@ -123,6 +123,21 @@ enum EnrichmentGateSelfTest {
             if kind == .title { titleSource = .model } else { summarySource = .model }
             proposals.removeAll { $0.kind == kind }
         }
+
+        /// Brief BI — PROMOTE at Done under `.automatic`: write a FRESH, content-matching
+        /// proposal into an UNTITLED aspect with NO model call (mirrors
+        /// `CorpusStore.promoteMatchingProposals` → `acceptProposal`). Returns whether it
+        /// promoted. Note: `authorshipCalls` is NOT bumped — promotion never calls the FM.
+        mutating func promote(_ kind: Proposal.Kind) -> Bool {
+            let source: TagSource? = (kind == .title) ? titleSource : summarySource
+            guard source == nil,
+                  let p = proposals.first(where: { $0.kind == kind && $0.state == .fresh }),
+                  p.sourceContentHash == content else { return false }
+            if kind == .title { title = p.text; titleSource = .model }
+            else { summary = p.text; summarySource = .model }
+            proposals.removeAll { $0.kind == kind }
+            return true
+        }
     }
 
     private struct Row {
@@ -204,6 +219,33 @@ enum EnrichmentGateSelfTest {
             var w = Sim(); w.content = "z"; w.eagerAfter()
             w.proposals = w.proposals.map { var p = $0; p.sourceContentHash = nil; return p }
             if !w.needs(at: .composing).authorship { failures.append("hashless legacy proposal read as fresh") }
+
+            // ── Brief BI (Done-delegates) ──────────────────────────────────────────
+            // (6) THE RESOLVER — the ONLY source of posture. Done on a capture delegates
+            //     only with the setting ON; authoring/off always propose.
+            if AuthorshipPosture.resolve(for: .committedCapture, setting: true)  != .automatic { failures.append("BI resolver: committed+on ≠ automatic") }
+            if AuthorshipPosture.resolve(for: .committedCapture, setting: false) != .propose   { failures.append("BI resolver: committed+off ≠ propose") }
+            if AuthorshipPosture.resolve(for: .authoring,        setting: true)  != .propose   { failures.append("BI resolver: authoring ≠ propose") }
+            // (7) THE TRAP (BI1, measured): the eager `.composing` pass records a proposal
+            //     matching the content, so at Done the gate reports NO authorship need — the
+            //     "commit skip" that leaves the entry untitled without the promote.
+            var d = Sim(); d.content = "delegate me"; d.eagerAfter()
+            if d.needs(at: .committed).authorship { failures.append("BI trap: expected commit-skip (needs.authorship false) with a matching proposal") }
+            let callsBefore = d.authorshipCalls
+            // (8) PROMOTE (BI3): writes the untitled field, stamps .model, drops the
+            //     proposal, and makes NO model call. After promoting both aspects, Done
+            //     needs nothing (fields are .model).
+            let pT = d.promote(.title); let pS = d.promote(.summary)
+            if !pT || !pS { failures.append("BI promote: a fresh matching proposal was not promoted") }
+            if d.authorshipCalls != callsBefore { failures.append("BI promote: made a model call (should be zero)") }
+            if d.titleSource != .model || d.title.isEmpty { failures.append("BI promote: title not written/stamped .model") }
+            if d.needs(at: .committed).authorship { failures.append("BI promote: still needs authorship after promoting both") }
+            // (9) PER-ASPECT: a typed (.user) title is NEVER promoted; an empty summary is.
+            var e = Sim(); e.content = "typed title only"; e.titleSource = .user
+            e.eagerAfter()   // records a summary proposal only (title is .user, gate skips it)
+            if e.promote(.title)  { failures.append("BI per-aspect: promoted a user-authored title") }
+            if !e.promote(.summary) { failures.append("BI per-aspect: did not promote the empty summary") }
+            if e.titleSource != .user || e.summarySource != .model { failures.append("BI per-aspect: sources wrong after promote") }
         }
 
         var out = "\n  scenario                              before   after\n"
@@ -213,7 +255,7 @@ enum EnrichmentGateSelfTest {
         }
         out += "  (counts are FM calls per note: processNode + processSubstrate)\n"
         out += failures.isEmpty
-            ? "  invariants: 5/5 PASS\n"
+            ? "  invariants: 9/9 PASS (incl. Brief BI resolver · trap · promote · per-aspect)\n"
             : "  invariants FAILED: \(failures.joined(separator: " | "))\n"
         return out
     }

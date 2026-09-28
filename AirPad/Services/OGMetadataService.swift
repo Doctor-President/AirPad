@@ -17,7 +17,15 @@ import UniformTypeIdentifiers
 
 struct OGMetadata: Equatable, Sendable {
     var title: String?
+    /// Brief BL3.2 — the CARD-FACING description: a real `og:description` /
+    /// `<meta name="description">` ONLY. Nil when the page has none, so the
+    /// link card shows no chrome (the whole point of BL3.2). The readable
+    /// body-text fallback lives in `readableText`, never here.
     var description: String?
+    /// Brief BL3.2 — DERIVED body text (readability extract, article-first)
+    /// for naming + Librarian search. Never shown in the card. Populated only
+    /// when there is no real `description`, so the two never both carry text.
+    var readableText: String?
     var siteName: String?
     /// Temp file URL holding the downloaded image in its source format.
     /// Caller moves it into the corpus via `iCloudDriveService.saveItemFile`.
@@ -61,22 +69,30 @@ actor OGMetadataService {
             pageURL: url
         )
 
-        // Brief BK — TITLE FALLBACK: LP first (og:title), else the site-name-stripped
-        // `<title>` from the scrape (WordPress etc. often have only a `<title>`).
-        let title = lpResult?.title ?? scrapeResult?.titleTag
-        // Brief BK — DESCRIPTION FALLBACK: no og/meta description → derive the link's
-        // preview text from the page body (WebReadability, first ~2000 chars). Same DERIVED
-        // bucket as og:description (never authored); feeds naming, the summary, and the
-        // Librarian search index, so a saved article is findable by content without a
-        // snapshot. This whole fetch is detached, so it never blocks Done; a failed /
-        // paywalled / non-HTML fetch returns a sentinel string, treated as a miss.
-        var description = scrapeResult?.description
-        var readableHit = false
+        // Brief BK — TITLE FALLBACK: LP first (og:title), else the scraped `<title>`.
+        // Brief BL3.1 — `cleanTitle` applies to EVERY title source, not just the `<title>`
+        // fallback: the LP (LinkPresentation) title also arrives with a leading site-name
+        // segment ("Falvey Library :: The Printed Image…") and must be stripped too. The
+        // scraped `titleTag` is already cleaned (see `scrapeOG`); re-cleaning it is
+        // idempotent (no separator → returns the input unchanged), so one call covers both.
+        let title = Self.cleanTitle(lpResult?.title ?? scrapeResult?.titleTag,
+                                    siteName: scrapeResult?.siteName ?? url.host)
+        // Brief BL3.2 — the CARD description is a REAL og/meta description only. When absent,
+        // derive `readableText` from the page body (article-first; feeds naming + summary +
+        // Librarian search) but keep it OUT of `description` so the card shows no chrome.
+        // Brief BL3.3 — reuse the HTML the scrape already fetched instead of a third network
+        // trip; fall back to `fetchReadable` (its own fetch) only if the scrape got no HTML.
+        let description = scrapeResult?.description
+        var readableText: String? = nil
         if description == nil {
-            let readable = await WebReadability.fetchReadable(url, budget: 2000)
+            let readable: String
+            if let html = scrapeResult?.rawHTML {
+                readable = WebReadability.extractReadable(from: html, budget: 2000)
+            } else {
+                readable = await WebReadability.fetchReadable(url, budget: 2000)
+            }
             if !readable.hasPrefix("Couldn't fetch") && !readable.hasPrefix("No readable text"), readable.count >= 40 {
-                description = readable
-                readableHit = true
+                readableText = readable
             }
         }
         let scrapeSite = scrapeResult?.siteName
@@ -84,8 +100,8 @@ actor OGMetadataService {
         let imageTempURL = lpResult?.imageTempURL
         let imageExtension = lpResult?.imageExtension
 
-        // Brief BK — one line per link explaining the outcome.
-        print("[OG] lp=\(lpResult?.title != nil ? "y" : "n") titleTag=\(scrapeResult?.titleTag != nil ? "y" : "n") ogDesc=\(scrapeResult?.description != nil ? "y" : "n") readable=\(readableHit ? "hit" : "miss") site=\(scrapeSite != nil ? "y" : "n") url=\(url.absoluteString)")
+        // Brief BK/BL — one line per link explaining the outcome.
+        print("[OG] lp=\(lpResult?.title != nil ? "y" : "n") titleTag=\(scrapeResult?.titleTag != nil ? "y" : "n") ogDesc=\(description != nil ? "y" : "n") readable=\(readableText != nil ? "hit" : "miss") site=\(scrapeSite != nil ? "y" : "n") url=\(url.absoluteString)")
 
         // Bare URL fallback only when no meaningful field landed. `url.host`
         // alone (without LP or scrape success) does NOT count — otherwise
@@ -95,6 +111,7 @@ actor OGMetadataService {
         // bare URL string, which is the whole reason commit 4 added it.
         let hasMeaningful = title != nil
             || description != nil
+            || readableText != nil
             || imageTempURL != nil
             || scrapeSite != nil
             || faviconTempURL != nil
@@ -103,6 +120,7 @@ actor OGMetadataService {
         return OGMetadata(
             title: title,
             description: description,
+            readableText: readableText,
             siteName: siteName,
             imageTempURL: imageTempURL,
             imageExtension: imageExtension,
@@ -192,6 +210,10 @@ actor OGMetadataService {
         /// downloads it in a second pass; the `/favicon.ico` convention
         /// fallback runs when this is nil OR the download fails.
         var faviconRawURL: URL?
+        /// Brief BL3.3 — the decoded page HTML, kept so `fetch` can derive the
+        /// readable body-text fallback from it WITHOUT a second network trip.
+        /// Present whenever the scrape decoded HTML, even if no OG field landed.
+        var rawHTML: String?
     }
 
     private func scrapeOG(url: URL) async -> ScrapeResult? {
@@ -209,12 +231,16 @@ actor OGMetadataService {
         // Brief BK — plain `<title>`, with a leading/trailing site-name segment stripped.
         let titleTag = Self.cleanTitle(Self.titleTagValue(in: html), siteName: siteName ?? url.host)
 
-        if description == nil && siteName == nil && faviconRawURL == nil && titleTag == nil { return nil }
+        // Brief BL3.3 — do NOT early-return when every OG field is nil: the HTML still
+        // feeds the readable body-text fallback in `fetch` (a page with no og tags but real
+        // article text — Villanova — is exactly the case that motivated this). The final
+        // "nothing meaningful landed" decision is made once, downstream, in `fetch`.
         return ScrapeResult(
             description: description,
             siteName: siteName,
             titleTag: titleTag,
-            faviconRawURL: faviconRawURL
+            faviconRawURL: faviconRawURL,
+            rawHTML: html
         )
     }
 

@@ -297,7 +297,22 @@ final class NeighborhoodService {
             membersByCommunity[communityID, default: []].append(nodeID)
         }
 
-        let nodesByID: [String: Node] = Dictionary(uniqueKeysWithValues: nodes.map { ($0.id, $0) })
+        // Brief BQ1 (CRASH FIX) — `Dictionary(uniqueKeysWithValues:)` TRAPS ("Fatal error:
+        // Duplicate values for key") when `nodes` contains two entries with the same id. That
+        // hard-crashed the app on launch (this runs on the initial neighborhood refresh, which
+        // coincided with a Quick Capture) — a best-effort, read-only clustering service must
+        // NEVER abort the whole app on a data anomaly. Dedup keeping the first, and log the
+        // duplicate so the upstream source (a genuine dup id, or a transient double-append during
+        // capture) stays visible. Not a paper-over: a duplicate id is meaningless for routing, so
+        // one representative is the correct input.
+        var nodesByID: [String: Node] = [:]
+        nodesByID.reserveCapacity(nodes.count)
+        for node in nodes where nodesByID.index(forKey: node.id) == nil {
+            nodesByID[node.id] = node
+        }
+        if nodesByID.count != nodes.count {
+            print("[Neighborhood] ⚠️ BQ1 — deduped \(nodes.count - nodesByID.count) duplicate node id(s) in refresh input")
+        }
 
         // Substantive clusters form the routing target pool. Each target's
         // vector is the elementwise mean of its members' contentEmbedding

@@ -41,6 +41,16 @@ Authoritative operating conventions for any Claude Code session in this repo. Re
   deterministic outcome (a link's title IS its page title) on the FM/promote/gate chain, which the
   promote-only and late-OG paths bypass — fill it UPSTREAM where every path converges
   (`applyOGFetch`, i.e. the moment the fact is knowable).
+- **The matrix must build what the REAL capture builds (Brief BQ).** BM/BO/BP1 each passed their
+  store matrix and still failed on device a fourth time — because Quick Capture and the Capture
+  screen start with a blank **scaffold Note** item, and the matrices built link nodes WITHOUT it.
+  On device the (whitespace) scaffold read as authored content → the link stopped being
+  link-dominant → the page-title ghost was skipped → title empty. `-BODoneMatrix` variant (e) now
+  includes the scaffold Note. Rule: when a store-level matrix keeps passing while the device fails,
+  the matrix is missing something the real screen creates — add it (the scaffold Note here), and
+  prefer an **XCUITest that drives the real screen** for anything the store shape can't capture.
+  Emptiness is whitespace-trimmed everywhere (`AIService.meaningfulText`) so a blank note never
+  counts as content.
 
 ## Project structure (XcodeGen)
 - `project.yml` is the source of truth. `AirPad.xcodeproj/project.pbxproj` is **generated**.

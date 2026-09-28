@@ -1149,6 +1149,20 @@ final class CorpusStore {
                     CitationReference.styleInlineMarkers(in: &ae3, face: .fallback)  // diagnostic — face irrelevant
                     NSLog("[CitRegex-AE3] styled='%@'",
                           String(ae3.characters).replacingOccurrences(of: "\u{2009}", with: "␟"))
+                    // Brief BH — renumber to ONE number per SOURCE. Two passages of one
+                    // entry ([3],[12] → nodeID "abc") + one of another ([7] → "def"),
+                    // cited out of order, must become prose [1] [1] [2] with chips
+                    // 1=abc, 2=def; an adjacent same-source repeat [3][12] collapses to [1].
+                    let bhCites: [ChatSession.Message.Citation] = [
+                        .init(index: 3,  nodeID: "abc", title: "Medical – Lab Tests", snippet: "a"),
+                        .init(index: 12, nodeID: "abc", title: "Medical – Lab Tests", snippet: "b"),
+                        .init(index: 7,  nodeID: "def", title: "Other entry",         snippet: "c"),
+                    ]
+                    let bh1 = CitationReference.renumberBySource(text: "See [3] and [12] here, also [7].", citations: bhCites)
+                    NSLog("[CitRegex-BH] in='See [3] and [12] here, also [7].' out='%@' chips=%@",
+                          bh1.text, bh1.citations.map { "\($0.index):\($0.nodeID ?? $0.url ?? "?")" }.joined(separator: ","))
+                    let bh2 = CitationReference.renumberBySource(text: "X [3][12] Y [7] Z.", citations: bhCites)
+                    NSLog("[CitRegex-BH] fused in='X [3][12] Y [7] Z.' out='%@'", bh2.text)
                 }
                 // Brief Y Part E verify — search-index coverage + the technology
                 // question over the USER's corpus (Corpus scope). The candidate list

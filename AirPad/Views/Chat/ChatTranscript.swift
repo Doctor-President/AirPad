@@ -56,6 +56,8 @@ struct ChatTranscript: View {
     /// Ambient URL opener — web-citation chips (real scraped URLs) open through this.
     /// (Corpus chips navigate to a node via `onOpenNode` instead.)
     @Environment(\.openURL) private var openURL
+    /// Brief BN5 — the app-wide Font (serif/SF face), so the read/skim receipt line follows the Font.
+    @Environment(\.appBodyFont) private var appFont
     /// Live "is the user reading at/near the bottom?" — gates the stream-follow.
     /// Assigned ONLY on change (below) so scroll geometry callbacks don't churn
     /// this body (and re-parse settled bubbles) on every frame.
@@ -312,6 +314,8 @@ struct ChatTranscript: View {
                 MarkdownBlockText(raw: message.text)
                     .frame(maxWidth: .infinity, alignment: .leading)
                     .padding(.trailing, 40)
+                // Brief BN5 — "Read 1 entry in full · skimmed 6" / "Skimmed 9 entries".
+                readReceiptLine(message: message)
                 // Piece 1 — collapsible grounded-Ask sources (chrome, not content).
                 citationFooter(message: message)
                 // ★ BUG 36 — a turn that stopped early (stream dropped while
@@ -355,6 +359,38 @@ struct ChatTranscript: View {
                 ActivityRow(activity: activity)
             }
         }
+    }
+
+    // MARK: - Read/skim receipt (Brief BN5 — what the Librarian read)
+
+    /// Brief BN5 — under the answer: "Read 1 entry in full · skimmed 6" on a READ turn (singular/
+    /// plural, and "(partial)" when the focus entry didn't fully fit the budget), or "Skimmed 9
+    /// entries" on a SURVEY turn. Counts come from the packet (`Message.ReadReceipt`), independent of
+    /// the citation chips — a full read the model didn't superscript still reads "Read 1 entry".
+    /// Follows the app Font (serif/SF face), matching the answer's voice; warm-grey like the sources
+    /// header. Rendered only for Librarian turns that carry a receipt (plain/General chat has none).
+    @ViewBuilder
+    private func readReceiptLine(message: ChatSession.Message) -> some View {
+        if let r = message.readReceipt {
+            Text(Self.readReceiptText(r))
+                .font(appFont.font(size: 13, relativeTo: .footnote))
+                .foregroundStyle(ChatTypography.secondaryText)
+                .padding(.top, 1)
+                .accessibilityLabel(Self.readReceiptText(r))
+        }
+    }
+
+    /// Pure string builder for the receipt line (BN5) — `static` so a self-test can exercise the
+    /// singular/plural + partial + survey wording without a view.
+    static func readReceiptText(_ r: ChatSession.Message.ReadReceipt) -> String {
+        func entries(_ n: Int) -> String { "\(n) entr\(n == 1 ? "y" : "ies")" }
+        if r.readInFull > 0 {
+            let read = r.partial
+                ? "Read \(entries(r.readInFull)) (partial)"
+                : "Read \(entries(r.readInFull)) in full"
+            return r.skimmed > 0 ? "\(read) · skimmed \(r.skimmed)" : read
+        }
+        return "Skimmed \(entries(r.skimmed))"
     }
 
     // MARK: - Citation footer (Piece 1 — collapsible grounded sources)

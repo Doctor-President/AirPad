@@ -1347,17 +1347,40 @@ enum WebReadability {
     /// entities, THEN repair the classic double-encoding mojibake.
     static func sanitize(_ s: String) -> String { repairMojibake(decodeEntities(s)) }
 
-    /// Brief BM3 — repair UTF-8 bytes that were misread as Latin-1 ("Pokémon" → "PokÃ©mon").
-    /// Only when the text round-trips CLEANLY as Latin-1 → UTF-8 — so genuine accented text
-    /// ("São Paulo", "café"), whose bytes are NOT valid UTF-8 when read back, is left untouched
-    /// — and only when the repair actually changes something. The `Ã`/`Â`/`â€` prefilter keeps
-    /// clean text (which has no such sequences) from even attempting the round-trip.
+    /// Brief BM3/BO3 — repair UTF-8 bytes that were misread as Latin-1 ("Pokémon" → "PokÃ©mon").
+    /// PER-RUN, not whole-string: a real og:description almost always contains at least one
+    /// character outside Latin-1 (an em dash, a curly quote), and the old whole-string round-trip
+    /// bailed on the ENTIRE string the moment it saw one — leaving "PokÃ©mon" on screen. This
+    /// walks maximal runs of Latin-1-representable characters (a non-Latin-1 char separates runs
+    /// and passes through untouched) and repairs each run that both contains a `Ã`/`Â` lead AND
+    /// round-trips cleanly as Latin-1 → UTF-8. Genuine accented text ("São Paulo", "café") has no
+    /// `Ã`/`Â` (its accents are lowercase / already correct), so it never enters the repair.
     static func repairMojibake(_ s: String) -> String {
-        guard s.contains("Ã") || s.contains("Â") || s.contains("â€") else { return s }
-        guard let latin1 = s.data(using: .isoLatin1),
-              let utf8 = String(data: latin1, encoding: .utf8),
-              utf8 != s else { return s }
-        return utf8
+        guard s.contains("Ã") || s.contains("Â") else { return s }
+        var result = ""
+        var run = ""
+        func flush() {
+            if run.isEmpty { return }
+            if (run.contains("Ã") || run.contains("Â")),
+               let latin1 = run.data(using: .isoLatin1),
+               let utf8 = String(data: latin1, encoding: .utf8),
+               utf8 != run {
+                result += utf8
+            } else {
+                result += run
+            }
+            run = ""
+        }
+        for ch in s {
+            if ch.unicodeScalars.count == 1, let u = ch.unicodeScalars.first, u.value <= 0xFF {
+                run.append(ch)          // Latin-1-representable — part of the current run
+            } else {
+                flush()
+                result.append(ch)       // outside Latin-1 (em dash, curly quote) — separates runs
+            }
+        }
+        flush()
+        return result
     }
 
     private static func replaceNumericEntities(_ s: String) -> String {

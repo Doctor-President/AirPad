@@ -115,6 +115,81 @@ enum CitationReference {
         return out as String
     }
 
+    /// Brief BH — renumber cited `[n]` to **one number per SOURCE**, assigned 1…k by
+    /// FIRST appearance in the prose, and rebuild ONE citation per source with the same
+    /// number. Result: the inline superscripts and the node-deduped footer chips always
+    /// show the same numbers (a reader's ¹ points at chip ①).
+    ///
+    /// The bug it fixes: two passages of one entry (`[3]` and `[12]`) kept two prose
+    /// numbers but the footer dedupes by source and drew the FIRST kept citation's RAW
+    /// candidate index — a number (e.g. ①) with no relation to the prose or to a source
+    /// ordinal. This applies at commit time in EVERY citation path (corpus send, the web
+    /// tool loop, the debug hook) — one numbering scheme, no second.
+    ///
+    /// Rewrites each `[n]` token to the source display number, collapses within-bracket
+    /// duplicates (`[3, 12]` on one entry → `[1]`) and drops an immediately-repeated
+    /// identical marker (`[1][1]` → `[1]`). Tap routing stays index-based (the link URL
+    /// and the citation both carry the display number), so it still resolves to the node.
+    static func renumberBySource(
+        text: String,
+        citations: [ChatSession.Message.Citation]
+    ) -> (text: String, citations: [ChatSession.Message.Citation]) {
+        guard !citations.isEmpty else { return (text, citations) }
+        func sourceKey(_ c: ChatSession.Message.Citation) -> String { c.nodeID ?? c.url ?? "idx:\(c.index)" }
+        // raw candidate index → its citation (first wins; per-block citations share a source).
+        var byIndex: [Int: ChatSession.Message.Citation] = [:]
+        for c in citations where byIndex[c.index] == nil { byIndex[c.index] = c }
+
+        let ns = text as NSString
+        let tokens = citationTokenRegex.matches(in: text, range: NSRange(location: 0, length: ns.length))
+        // Assign display numbers 1…k to SOURCES in order of first prose mention.
+        var displayForSource: [String: Int] = [:]
+        var displayForRaw: [Int: Int] = [:]
+        for m in tokens {
+            for raw in indices(inToken: ns.substring(with: m.range)) {
+                guard let c = byIndex[raw] else { continue }
+                let key = sourceKey(c)
+                let d: Int
+                if let existing = displayForSource[key] { d = existing }
+                else { d = displayForSource.count + 1; displayForSource[key] = d }
+                displayForRaw[raw] = d
+            }
+        }
+        guard !displayForRaw.isEmpty else { return (text, citations) }
+
+        // Rewrite each token → the source display numbers, de-duped within the bracket.
+        var out = ns
+        for m in tokens.reversed() {
+            var seen = Set<Int>(); var disp: [Int] = []
+            for raw in indices(inToken: ns.substring(with: m.range)) {
+                guard let d = displayForRaw[raw] else { continue }
+                if seen.insert(d).inserted { disp.append(d) }
+            }
+            let rep = disp.isEmpty ? "" : "[" + disp.map(String.init).joined(separator: ", ") + "]"
+            out = out.replacingCharacters(in: m.range, with: rep) as NSString
+        }
+        // Drop an immediately-repeated identical marker (`[1][1]` / `[1] [1]` → `[1]`).
+        let rewritten = out as String
+        let collapsed = repeatedMarkerRegex.stringByReplacingMatches(
+            in: rewritten, range: NSRange(location: 0, length: (rewritten as NSString).length), withTemplate: "$1")
+
+        // ONE citation per source, in display order (1…k).
+        let renumbered: [ChatSession.Message.Citation] = displayForSource
+            .sorted { $0.value < $1.value }
+            .compactMap { (key, display) in
+                guard let c = citations.first(where: { sourceKey($0) == key }) else { return nil }
+                if let node = c.nodeID { return .init(index: display, nodeID: node, title: c.title, snippet: c.snippet) }
+                if let u = c.url { return .init(index: display, url: u, title: c.title, snippet: c.snippet) }
+                return nil
+            }
+        return (collapsed, renumbered)
+    }
+
+    /// A run of the SAME citation token repeated with only whitespace between
+    /// (`[1][1]` / `[1] [1]`) — collapsed to one by `renumberBySource`.
+    private static let repeatedMarkerRegex = try! NSRegularExpression(
+        pattern: #"(\[\s*\d{1,2}(?:\s*,\s*\d{1,2})*\s*\])(?:\s*\1)+"#)
+
     /// AC1 — ONE citation token: a bracket holding one or more comma-separated
     /// 1-2 digit indices. Matches `[7]`, `[1, 2, 7]`, `[1,2]`; adjacency (`[n][m]`)
     /// and `[n], [m]` are two tokens. Shared by the renderer, `citedIndices`, and

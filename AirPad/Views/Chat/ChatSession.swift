@@ -291,7 +291,14 @@ final class ChatSession {
                     let kept = candidates.filter { used.contains($0.index) }
                     return kept.isEmpty ? nil : kept
                 }
-                messages.append(Message(id: streamingMessageID, role: .assistant, text: finalText, citations: citedOnly))
+                // Brief BH — renumber to ONE number per source (1…k, first-mention order)
+                // so the inline superscripts and the node-deduped footer chips always match.
+                if let cited = citedOnly {
+                    let r = CitationReference.renumberBySource(text: finalText, citations: cited)
+                    messages.append(Message(id: streamingMessageID, role: .assistant, text: r.text, citations: r.citations))
+                } else {
+                    messages.append(Message(id: streamingMessageID, role: .assistant, text: finalText, citations: nil))
+                }
             }
         } catch {
             // ★ BUG 36 — do NOT discard the partial. A mid-stream drop (the app
@@ -534,8 +541,10 @@ final class ChatSession {
                     let link = outcome.links[n - 1]
                     return Message.Citation(index: n, url: link.url, title: link.title, snippet: link.snippet ?? "")
                 }
-                messages.append(Message(role: .assistant, text: outcome.answer,
-                                        citations: webCitations.isEmpty ? nil : webCitations))
+                // Brief BH — same renumber (one per source) so web chips match the prose.
+                let r = CitationReference.renumberBySource(text: outcome.answer, citations: webCitations)
+                messages.append(Message(role: .assistant, text: r.text,
+                                        citations: r.citations.isEmpty ? nil : r.citations))
             }
         } catch {
             // Degrade SILENTLY if the FIRST turn failed (e.g. the endpoint/model
@@ -696,7 +705,9 @@ final class ChatSession {
             let l = links[n - 1]
             return Message.Citation(index: n, url: l.url, title: l.title, snippet: l.snippet ?? "")
         }
-        messages.append(Message(role: .assistant, text: text, citations: cites.isEmpty ? nil : cites))
+        // Brief BH — renumber to one per source (matches the live path).
+        let r = CitationReference.renumberBySource(text: text, citations: cites)
+        messages.append(Message(role: .assistant, text: r.text, citations: r.citations.isEmpty ? nil : r.citations))
     }
 
     /// Headless verification hook — inject a completed activity row (from a REAL

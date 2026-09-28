@@ -1037,6 +1037,12 @@ final class CorpusStore {
                 if ProcessInfo.processInfo.arguments.contains("-BLLinkSelfTest") {
                     NSLog("[LinkFollowupsSelfTest] %@", LinkFollowupsSelfTest.run())
                 }
+                #if DEBUG
+                // Brief BM0 — the Done-matrix driver (needs `-StubAuthorModel` alongside).
+                if ProcessInfo.processInfo.arguments.contains("-BMDoneMatrix") {
+                    NSLog("[BMDoneMatrix] %@", await runBMDoneMatrix())
+                }
+                #endif
                 // MAP-RELAYOUT GATE (ws-map-relayout). Pins the persist/restore
                 // decision logic so a re-introduced on-launch reform fails here
                 // instead of shipping quietly (the third resurrection).
@@ -1830,18 +1836,11 @@ final class CorpusStore {
             let metadata = await fetchHandle.value
             await applyOGFetch(nodeID: nodeID, itemID: itemID, metadata: metadata)
 
-            // Brief BL — `applyOGFetch` now writes items[0].title (cleaned, BL3.1),
-            // items[0].preview (derived, BL3.2), AND linkItems[0] (BL1) — one metadata path,
-            // shared with the in-entry link path. Here we only lift that item title up to the
-            // NODE title so the canvas + AI pipeline pick up the rich name on a pure-link node.
-            if let current = nodes.first(where: { $0.id == nodeID }),
-               let itemTitle = current.items.first?.title, !itemTitle.isEmpty,
-               current.title != itemTitle {
-                var node = current
-                node.title = itemTitle
-                node.updatedAt = Date()
-                await updateNode(node)
-            }
+            // Brief BM1 — the OG page title → NODE title lift is retired here: the authorship
+            // pass below now fills a link-dominant node's empty title from `item.title`
+            // deterministically (stamped `.model`, posture-gated), so every link path — capture
+            // button, Quick Capture, capture sheet — names identically through ONE code path.
+            // `applyOGFetch` already wrote items[0].title/preview + linkItems[0] (Brief BL).
             await processNodeWithAI(nodeID: nodeID, posture: .captureDone)   // Brief BI — link capture is a Done
         }
 
@@ -2327,6 +2326,152 @@ final class CorpusStore {
         guard let node = nodes.first(where: { $0.id == nodeID }), node.needsAIProcessing else { return }
         await mutateNode(id: nodeID) { $0.needsAIProcessing = false }
     }
+
+    #if DEBUG
+    /// Brief BM0 — the headless Done-matrix driver. With `-StubAuthorModel` active it drives
+    /// each capture path end-to-end (create link → inject OG → [eager] → Done) and asserts
+    /// WHICH fields Done wrote, with which provenance. This is the harness that stops the
+    /// "passed the sim gate, failed on device" class: FM/Apple Intelligence is absent in the
+    /// Simulator, so before this the real Done → model → write path never ran headlessly.
+    /// Creates + deletes its own scratch nodes; NSLogs a PASS/FAIL summary + a per-row trace.
+    func runBMDoneMatrix() async -> String {
+        let stub = ProcessInfo.processInfo.arguments.contains("-StubAuthorModel")
+        var lines: [String] = []
+        var pass = 0, fail = 0
+        func note(_ s: String) { lines.append(s) }
+        func ogMeta() -> OGMetadata {
+            OGMetadata(title: "Team Rocket Trio - TV Tropes", description: nil,
+                       readableText: "The Team Rocket trio are the recurring comedic villains of the Pokémon anime.",
+                       siteName: "TV Tropes", imageTempURL: nil, imageExtension: nil,
+                       faviconTempURL: nil, faviconExtension: nil)
+        }
+        func makeNode(_ nodeID: String, _ itemID: String, noteText: String?) -> Node {
+            var items: [NodeItem] = []
+            if let noteText { items.append(NodeItem(id: itemID + "-t", type: .text, createdAt: Date(), content: noteText)) }
+            items.append(NodeItem(id: itemID, type: .link, createdAt: Date(),
+                                  url: "https://tvtropes.org/pmwiki/pmwiki.php/Characters/TeamRocketTrio",
+                                  title: nil, preview: nil))
+            var n = Node(id: nodeID, createdAt: Date(), updatedAt: Date(), title: "", summary: "", tags: [])
+            n.items = items
+            n.needsAIProcessing = true
+            return n
+        }
+        func read(_ id: String) -> (t: String, ts: TagSource?, s: String, ss: TagSource?) {
+            guard let n = nodes.first(where: { $0.id == id }) else { return ("<gone>", nil, "<gone>", nil) }
+            return (n.title, n.titleSource, n.summary, n.summarySource)
+        }
+        func check(_ name: String, _ cond: Bool, _ detail: String) {
+            if cond { pass += 1 } else { fail += 1; note("    ✗ \(name) — \(detail)") }
+        }
+        func trace(_ label: String, _ r: (t: String, ts: TagSource?, s: String, ss: TagSource?)) {
+            note("  \(label): title=\(r.t.isEmpty ? "<empty>" : "\"\(r.t)\"")[\(r.ts.map { "\($0)" } ?? "nil")] summary=\(r.s.isEmpty ? "<empty>" : "set")[\(r.ss.map { "\($0)" } ?? "nil")]")
+        }
+
+        let priorSetting = UserDefaults.standard.object(forKey: AuthorshipPosture.delegateSettingKey)
+        UserDefaults.standard.set(true, forKey: AuthorshipPosture.delegateSettingKey)
+
+        // S1 — Quick Capture: bare link, OG lands, eager composing pass, then Done.
+        do {
+            let id = "bm-s1", iid = "bm-s1-i"
+            await addNode(makeNode(id, iid, noteText: nil), position: .zero)
+            await applyOGFetch(nodeID: id, itemID: iid, metadata: ogMeta())
+            await enrichIfNeeded(nodeID: id, at: .composing)   // eager pass records proposals
+            await enrichIfNeeded(nodeID: id)                   // Done (.committed) promotes/authors
+            let r = read(id); trace("S1 QuickCapture", r)
+            check("S1 title", !r.t.isEmpty && r.ts == .model, "title empty or not .model")
+            check("S1 summary", !r.s.isEmpty && r.ss == .model, "summary empty or not .model")
+            await deleteNode(id: id)
+        }
+        // S2 — Capture sheet (paste link), Done with NO eager pass.
+        do {
+            let id = "bm-s2", iid = "bm-s2-i"
+            await addNode(makeNode(id, iid, noteText: nil), position: .zero)
+            await applyOGFetch(nodeID: id, itemID: iid, metadata: ogMeta())
+            await enrichIfNeeded(nodeID: id)
+            let r = read(id); trace("S2 CaptureSheet", r)
+            check("S2 title", !r.t.isEmpty && r.ts == .model, "title empty or not .model")
+            check("S2 summary", !r.s.isEmpty && r.ss == .model, "summary empty or not .model")
+            await deleteNode(id: id)
+        }
+        // S3 — Link button / share extension: Done = processNodeWithAI(.captureDone).
+        do {
+            let id = "bm-s3", iid = "bm-s3-i"
+            await addNode(makeNode(id, iid, noteText: nil), position: .zero)
+            await applyOGFetch(nodeID: id, itemID: iid, metadata: ogMeta())
+            _ = await processNodeWithAI(nodeID: id, posture: .captureDone)
+            let r = read(id); trace("S3 LinkBtn/ShareExt", r)
+            check("S3 title", !r.t.isEmpty && r.ts == .model, "title empty or not .model")
+            check("S3 summary", !r.s.isEmpty && r.ss == .model, "summary empty or not .model")
+            await deleteNode(id: id)
+        }
+        // S4 — link block inside a NOTE (authored text present).
+        do {
+            let id = "bm-s4", iid = "bm-s4-i"
+            await addNode(makeNode(id, iid, noteText: "My reflections on the Team Rocket trio and villainy."), position: .zero)
+            await applyOGFetch(nodeID: id, itemID: iid, metadata: ogMeta())
+            await enrichIfNeeded(nodeID: id)
+            let r = read(id); trace("S4 LinkInNote", r)
+            check("S4 title", !r.t.isEmpty && r.ts == .model, "title empty or not .model")
+            check("S4 summary", !r.s.isEmpty && r.ss == .model, "summary empty or not .model")
+            await deleteNode(id: id)
+        }
+        // S6 — typed title (.user) + link: only summary fills; title untouched.
+        do {
+            let id = "bm-s6", iid = "bm-s6-i"
+            var n = makeNode(id, iid, noteText: nil)
+            n.title = "My Own Title"; n.titleSource = .user
+            await addNode(n, position: .zero)
+            await applyOGFetch(nodeID: id, itemID: iid, metadata: ogMeta())
+            await enrichIfNeeded(nodeID: id)
+            let r = read(id); trace("S6 TypedTitle", r)
+            check("S6 title stays user", r.t == "My Own Title" && r.ts == .user, "user title overwritten")
+            check("S6 summary", !r.s.isEmpty && r.ss == .model, "summary empty or not .model")
+            await deleteNode(id: id)
+        }
+        // S7 — delegate setting OFF: nothing auto-authored.
+        do {
+            UserDefaults.standard.set(false, forKey: AuthorshipPosture.delegateSettingKey)
+            let id = "bm-s7", iid = "bm-s7-i"
+            await addNode(makeNode(id, iid, noteText: nil), position: .zero)
+            await applyOGFetch(nodeID: id, itemID: iid, metadata: ogMeta())
+            await enrichIfNeeded(nodeID: id)
+            let r = read(id); trace("S7 SettingOFF", r)
+            check("S7 title empty", r.t.isEmpty && r.ts != .model, "auto-wrote title under OFF")
+            check("S7 summary empty", r.s.isEmpty && r.ss != .model, "auto-wrote summary under OFF")
+            await deleteNode(id: id)
+            UserDefaults.standard.set(true, forKey: AuthorshipPosture.delegateSettingKey)
+        }
+        // S8 — OG NOT landed (bare link, no inject): documents the ordering race (no derived content).
+        do {
+            let id = "bm-s8", iid = "bm-s8-i"
+            await addNode(makeNode(id, iid, noteText: nil), position: .zero)
+            await enrichIfNeeded(nodeID: id)
+            let r = read(id); trace("S8 NoOG(race,doc-only)", r)
+            await deleteNode(id: id)
+        }
+
+        // BM2 — the capture-sheet URL router (pure): a bare URL → link; prose stays text.
+        check("BM2 bare https URL → link", CaptureURLDetector.singleURL(in: "https://tvtropes.org/x") != nil, "bare URL not routed")
+        check("BM2 bare http URL → link", CaptureURLDetector.singleURL(in: "http://x.com/a") != nil, "http not routed")
+        check("BM2 prose with URL stays text", CaptureURLDetector.singleURL(in: "check https://x.com out") == nil, "multi-token routed")
+        check("BM2 plain note stays text", CaptureURLDetector.singleURL(in: "my note about tv tropes") == nil, "plain text routed")
+        check("BM2 non-web scheme ignored", CaptureURLDetector.singleURL(in: "mailto:x@y.com") == nil, "non-web scheme routed")
+
+        // BM3 — entity decode + mojibake repair on link text.
+        let mojibake = "Pok&Atilde;&copy;mon the Series characters index"
+        let fixed = WebReadability.sanitize(mojibake)
+        check("BM3 decodes named entities + repairs mojibake", fixed.contains("Pokémon"), "got: \(fixed)")
+        check("BM3 leaves clean text untouched", WebReadability.sanitize("Team Rocket Trio") == "Team Rocket Trio", "clean text altered")
+        check("BM3 preserves legit accents", WebReadability.sanitize("São Paulo café") == "São Paulo café", "legit accents mangled")
+
+        if let priorSetting { UserDefaults.standard.set(priorSetting, forKey: AuthorshipPosture.delegateSettingKey) }
+        else { UserDefaults.standard.removeObject(forKey: AuthorshipPosture.delegateSettingKey) }
+
+        let head = stub ? "stub=ON" : "stub=OFF ⚠ pass -StubAuthorModel"
+        let verdict = fail == 0 ? "PASS (\(pass)/\(pass + fail))" : "FAIL (\(pass)/\(pass + fail))"
+        return "\(verdict) [\(head)]\n" + lines.joined(separator: "\n")
+    }
+    #endif
 
     /// Debounced automatic enrichment for a single node. Coalesces rapid text
     /// commits (cancel + re-arm), then re-reads the node FRESH at fire time and
@@ -6459,6 +6604,24 @@ final class CorpusStore {
                     n.summary = result.summary
                     n.summarySource = .model
                 }
+            }
+            // Brief BM1 — DETERMINISTIC link naming. The FM leaves the title empty for a
+            // derived-only entry (a saved link / article has no user prose to title from), so a
+            // link-DOMINANT node would otherwise stay blank while its summary fills — exactly the
+            // device bug. When the title is still empty after the authorship pass, isn't
+            // user-authored, the posture is `.automatic`, AND the node has NO authored text
+            // (a note WITH text titles from what the user wrote — S4), fall back to the link's
+            // own cleaned page title (`item.title`), the natural name for a saved link. This is
+            // the ONE place link → node title now happens (addLinkNode's inline lift is retired).
+            if aspects.contains(.title),
+               n.title.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty,
+               posture == .automatic,
+               n.titleSource == nil || n.titleSource == .model,
+               AIService.classifyContent(from: n).authored.isEmpty,
+               let linkTitle = n.items.first(where: { $0.type == .link })?.title,
+               !linkTitle.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty {
+                n.title = linkTitle
+                n.titleSource = .model
             }
             // SB126 Stage 2 — deterministic-prefilter embedding + FM neighborhood
             // guess. No-ops on the legacy path. (mood/domain/tags no longer

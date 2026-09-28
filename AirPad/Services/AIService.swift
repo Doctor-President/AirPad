@@ -198,6 +198,30 @@ actor AIService {
     /// moves to a deferred reflection pass (step 5). `tagVocabulary` is retained
     /// for signature stability with the corpus-aware sibling but is no longer read.
     func processNode(_ node: Node, tagVocabulary: [Tag], authoredOnly: Bool = false) async -> NodeAIOutcome {
+        #if DEBUG
+        // Brief BM0 — `-StubAuthorModel` stands in for FM/MLX so the Done → model → write
+        // path is testable HEADLESS (FM/Apple Intelligence is absent in the Simulator, which
+        // is exactly why BI/BL/BM all passed the sim gate and failed on device). Keeps the
+        // real `.noContent` guard so a content-starved link still reproduces faithfully; then
+        // returns a deterministic, NON-empty title + summary so the write-back, promote, and
+        // gate all run exactly as in production. Launch-arg gated → Release excludes it (#if DEBUG).
+        if ProcessInfo.processInfo.arguments.contains("-StubAuthorModel") {
+            let content = extractContent(from: node, authoredOnly: authoredOnly)
+            guard !content.isEmpty else { return .failure(.noContent) }
+            try? await Task.sleep(nanoseconds: 150_000_000)
+            // ★ Faithfully REPRODUCE the real FM's failure mode: the prompt tells the model to
+            // base the TITLE on what the user WROTE, so for a derived-only node (a link / an
+            // article with no user prose) it returns an empty title while still summarising the
+            // supporting text. `-StubEmptyTitleOnDerived` (default ON for the matrix) mimics that
+            // so the "summary fills, title empty" device bug is reproducible headlessly; pass
+            // `-StubNonEmptyTitle` to force a title for the wiring-only baseline.
+            let (authored, _) = Self.classifyContent(from: node)
+            let forceTitle = ProcessInfo.processInfo.arguments.contains("-StubNonEmptyTitle")
+            let title = (authored.isEmpty && !forceTitle) ? "" : "Stub Title"
+            return .success(NodeAIOutput(title: title, summary: "Stub summary.",
+                                         tags: [], mood: nil, domain: nil, neighborhoodID: nil))
+        }
+        #endif
         // GAP 27 — consult the router BEFORE the FM guard. This call routes through
         // `ModelRouter.generateNodeSummary`, which sends `.local` to the on-device model,
         // so the FM-availability guard applies only when FM is the resolved provider.
@@ -605,6 +629,15 @@ actor AIService {
     }
 
     func processSubstrate(content: String) async -> SubstrateFMOutcome {
+        #if DEBUG
+        // Brief BM0 — stub the SECOND capture model call too, so a `-StubAuthorModel` pass
+        // completes deterministically end-to-end (substrate summary + folksonomy) without FM.
+        if ProcessInfo.processInfo.arguments.contains("-StubAuthorModel") {
+            guard !content.isEmpty else { return .otherError(FMErrorDetail(errorType: "empty_content", debugDescription: nil)) }
+            try? await Task.sleep(nanoseconds: 100_000_000)
+            return .ok(summary: "Stub substrate summary.", folksonomy: ["stub", "test"])
+        }
+        #endif
         // GAP 27 (the site T hit) — consult the router BEFORE the FM guard. This call routes
         // through `ModelRouter.generateSubstrate`, which sends `.local` to the on-device
         // model; returning `model_unavailable` here without asking the router meant the local

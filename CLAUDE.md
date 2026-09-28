@@ -32,6 +32,15 @@ Authoritative operating conventions for any Claude Code session in this repo. Re
 - Drive every capture path with `-BMDoneMatrix` (Quick Capture · capture sheet · Link button ·
   link block · share extension) and assert WHICH fields Done wrote, with which provenance. A new
   Done/authorship bug should first be **reproduced as a failing matrix row**, then fixed.
+- **TIMING matters more than the path (Brief BO).** BM's matrix injected OG synchronously and
+  passed 20/20 while the device still failed — because the real flow is async: a link is appended
+  BARE, OG lands later (when `LinkEntryBody` renders), and a debounced eager pass runs in between.
+  `-BODoneMatrix` replays the real store sequence across the four timing variants — (a) Done
+  before OG, (b) OG then Done, (c) OG → eager → Done, (d) eager-on-bare → OG → Done — and reads
+  AFTER the async tail settles. Any Done/link fix must pass ALL FOUR. Corollary: don't hang a
+  deterministic outcome (a link's title IS its page title) on the FM/promote/gate chain, which the
+  promote-only and late-OG paths bypass — fill it UPSTREAM where every path converges
+  (`applyOGFetch`, i.e. the moment the fact is knowable).
 
 ## Project structure (XcodeGen)
 - `project.yml` is the source of truth. `AirPad.xcodeproj/project.pbxproj` is **generated**.

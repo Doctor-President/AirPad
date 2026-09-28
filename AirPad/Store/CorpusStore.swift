@@ -1032,6 +1032,11 @@ final class CorpusStore {
                 if ProcessInfo.processInfo.arguments.contains("-EnrichmentGateSelfTest") {
                     NSLog("[EnrichmentGateSelfTest] %@", EnrichmentGateSelfTest.run())
                 }
+                // Brief BL — pure link follow-up logic (cleanTitle every source, article-first
+                // readable, linkItems lift + snapshot preservation, gate input). No net/FM.
+                if ProcessInfo.processInfo.arguments.contains("-BLLinkSelfTest") {
+                    NSLog("[LinkFollowupsSelfTest] %@", LinkFollowupsSelfTest.run())
+                }
                 // MAP-RELAYOUT GATE (ws-map-relayout). Pins the persist/restore
                 // decision logic so a re-introduced on-launch reform fails here
                 // instead of shipping quietly (the third resurrection).
@@ -1825,25 +1830,17 @@ final class CorpusStore {
             let metadata = await fetchHandle.value
             await applyOGFetch(nodeID: nodeID, itemID: itemID, metadata: metadata)
 
-            // Propagate OG title to display title + legacy item title so
-            // canvas + AI pipeline pick up the rich name (matches the
-            // 3.1a-shape mutation pattern in the original QuikCapture
-            // path).
-            if var current = nodes.first(where: { $0.id == nodeID }) {
-                var changed = false
-                if let ogTitle = metadata?.title, !ogTitle.isEmpty {
-                    current.title = ogTitle
-                    if !current.items.isEmpty { current.items[0].title = ogTitle }
-                    changed = true
-                }
-                // Brief BK — the derived preview text (og:description OR the readable
-                // fallback) into `item.preview`, the bucket `classifyContent(.link)` reads,
-                // so a link with no og tags still feeds naming + summary + Librarian search.
-                if let ogDesc = metadata?.description, !ogDesc.isEmpty, !current.items.isEmpty {
-                    current.items[0].preview = ogDesc
-                    changed = true
-                }
-                if changed { current.updatedAt = Date(); await updateNode(current) }
+            // Brief BL — `applyOGFetch` now writes items[0].title (cleaned, BL3.1),
+            // items[0].preview (derived, BL3.2), AND linkItems[0] (BL1) — one metadata path,
+            // shared with the in-entry link path. Here we only lift that item title up to the
+            // NODE title so the canvas + AI pipeline pick up the rich name on a pure-link node.
+            if let current = nodes.first(where: { $0.id == nodeID }),
+               let itemTitle = current.items.first?.title, !itemTitle.isEmpty,
+               current.title != itemTitle {
+                var node = current
+                node.title = itemTitle
+                node.updatedAt = Date()
+                await updateNode(node)
             }
             await processNodeWithAI(nodeID: nodeID, posture: .captureDone)   // Brief BI — link capture is a Done
         }
@@ -2348,7 +2345,17 @@ final class CorpusStore {
             let title = node.title.trimmingCharacters(in: .whitespacesAndNewlines)
             let summary = node.summary.trimmingCharacters(in: .whitespacesAndNewlines)
             let content = node.items.compactMap { item -> String? in
-                item.type == .text ? item.content : item.transcript
+                switch item.type {
+                // Brief BL2 — a link block's DERIVED text (title + preview) counts as content so
+                // a link-only entry offers a title WHILE COMPOSING (the feather lights). Mirrors
+                // `classifyContent(.link)`'s bucket; without it the gate saw "no content" here
+                // (`.text`/transcript only) and the debounced pass skipped every link-only note.
+                case .link:
+                    let s = [item.title, item.preview].compactMap { $0 }.joined(separator: " ")
+                    return s.isEmpty ? nil : s
+                case .text: return item.content
+                default: return item.transcript
+                }
             }.joined(separator: " ").trimmingCharacters(in: .whitespacesAndNewlines)
             // THE LEVER — Stage 1 (ws-lever.md § C4). The old single `needs`
             // boolean did TWO unrelated jobs — "this node needs authored fields"
@@ -3255,6 +3262,12 @@ final class CorpusStore {
         item.ogSiteName = nil
         item.ogImageFile = nil
         item.ogFetchedAt = nil
+        // Brief BL1 — normalise at WRITE: a URL committed on the in-entry path gets its
+        // linkItems[0] NOW, so "Save content" is available immediately (not only after the
+        // async OG fetch lands). A (re)commit is a fresh URL, so the snapshot state resets.
+        item.linkItems = [LinkItem(id: item.id, url: url, title: nil, description: nil,
+                                   imageFile: nil, siteName: nil, faviconFile: nil,
+                                   capturedAt: item.createdAt)]
         item.updatedAt = Date()
         updated.items[itemIdx] = item
         updated.updatedAt = Date()
@@ -3293,10 +3306,70 @@ final class CorpusStore {
         }
 
         item.ogTitle = metadata?.title
-        item.ogDescription = metadata?.description
+        item.ogDescription = metadata?.description   // BL3.2 — real og/meta only; card-facing
         item.ogSiteName = metadata?.siteName
         item.ogImageFile = imageRelativePath
         item.ogFetchedAt = Date()
+
+        // Brief BL2 — ONE metadata path. Propagate the derived link fields into the buckets
+        // `classifyContent(.link)` reads (`title` + `preview`) so the in-entry link path names
+        // + summarises exactly like the capture-button path. `addLinkNode` used to do this
+        // inline; it now lives here so both callers share it and can't drift.
+        if let ogTitle = metadata?.title, !ogTitle.isEmpty { item.title = ogTitle }
+        // Derived preview: a real og/meta description if present, else the readable body text.
+        // BL3.2 keeps readable OUT of the card (`ogDescription`) but IN naming + search here.
+        if let preview = metadata?.description ?? metadata?.readableText, !preview.isEmpty {
+            item.preview = preview
+        }
+
+        // Brief BL1 — normalise the single-link shape so "Save content" is ALWAYS available,
+        // whatever path created the link. Preserves any existing snapshot trio.
+        item.linkItems = Self.singleLinkItems(for: item)
+
+        updated.items[itemIdx] = item
+        updated.updatedAt = Date()
+        await updateNode(updated)
+    }
+
+    /// Brief BL1 — the canonical single-link `linkItems` for a `.link` NodeItem, lifted from
+    /// its legacy `url` + OG fields. Idempotent: reuses an existing `linkItems[0]`'s id and
+    /// PRESERVES its snapshot trio, so re-normalising never drops a saved "Save content" pass.
+    /// Leaves a multi-link (gallery) entry untouched; returns nil only when there's no URL.
+    /// `nonisolated` — a pure function of its argument (no store state), so callers off the
+    /// main actor (the `-BLLinkSelfTest` harness) can reach it too.
+    nonisolated static func singleLinkItems(for item: NodeItem) -> [LinkItem]? {
+        if let existing = item.linkItems, existing.count > 1 { return existing }  // gallery — leave it
+        guard let url = item.url, !url.isEmpty else { return item.linkItems }
+        let existing = item.linkItems?.first
+        var lifted = LinkItem(
+            id: existing?.id ?? item.id,
+            url: url,
+            title: item.ogTitle ?? existing?.title,
+            description: item.ogDescription ?? existing?.description,
+            imageFile: item.ogImageFile ?? existing?.imageFile,
+            siteName: item.ogSiteName ?? existing?.siteName,
+            faviconFile: existing?.faviconFile,
+            capturedAt: existing?.capturedAt ?? item.createdAt
+        )
+        lifted.snapshotText = existing?.snapshotText
+        lifted.snapshotAt = existing?.snapshotAt
+        lifted.snapshotWordCount = existing?.snapshotWordCount
+        return [lifted]
+    }
+
+    /// Brief BL1 — on-appear migration for EXISTING legacy links (stored before BL, or via a
+    /// path that wrote only the legacy `url`): lift the stored `url` + OG fields into
+    /// `linkItems[0]` so "Save content" appears WITHOUT waiting for a re-fetch. No-op when the
+    /// entry already has `linkItems`, isn't a `.link`, or has no URL. Idempotent.
+    func normalizeLegacyLinkItem(nodeID: String, itemID: String) async {
+        guard let nodeIdx = nodes.firstIndex(where: { $0.id == nodeID }) else { return }
+        var updated = nodes[nodeIdx]
+        guard let itemIdx = updated.items.firstIndex(where: { $0.id == itemID }),
+              updated.items[itemIdx].type == .link,
+              (updated.items[itemIdx].linkItems?.isEmpty ?? true),
+              !(updated.items[itemIdx].url?.isEmpty ?? true) else { return }
+        var item = updated.items[itemIdx]
+        item.linkItems = Self.singleLinkItems(for: item)
         updated.items[itemIdx] = item
         updated.updatedAt = Date()
         await updateNode(updated)

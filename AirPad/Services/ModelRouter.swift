@@ -1267,13 +1267,55 @@ enum WebReadability {
               let html = String(data: data, encoding: .utf8) else {
             return "Couldn't fetch \(url.absoluteString)."
         }
-        var text = removeBlocks(html, tag: "script")
-        text = removeBlocks(text, tag: "style")
-        text = stripTags(text)
+        let text = extractReadable(from: html, budget: budget)
+        return text.isEmpty ? "No readable text at this URL." : text
+    }
+
+    /// Brief BL3.3 — the pure HTML → readable-text core, split out of `fetchReadable`
+    /// so `OGMetadataService` can reuse the HTML it already fetched (no third network
+    /// trip). Two improvements over the old whole-page strip:
+    ///   1. Drop boilerplate BLOCKS — `script`, `style`, `nav`, `header`, `footer`,
+    ///      `aside`, `form` — before stripping, so their text never reaches the output.
+    ///   2. Prefer the MAIN content region — first `<article>`, else `<main>`, else an
+    ///      element with `role="main"` — and read only that. Fall back to the whole
+    ///      (boilerplate-stripped) body when a page marks up none of them.
+    /// The result is the article, not the site chrome ("Skip Navigation … VISIT / APPLY").
+    /// Returns "" (not a sentinel) when nothing readable remains — callers add their own.
+    static func extractReadable(from html: String, budget: Int) -> String {
+        var cleaned = html
+        for tag in ["script", "style", "nav", "header", "footer", "aside", "form"] {
+            cleaned = removeBlocks(cleaned, tag: tag)
+        }
+        // Main-content region, in priority order. `<article>`/`<main>` are unambiguous;
+        // `role="main"` is matched on any element carrying that attribute.
+        let region = firstBlock(cleaned, tag: "article")
+            ?? firstBlock(cleaned, tag: "main")
+            ?? firstRoleMainBlock(cleaned)
+            ?? cleaned
+        var text = stripTags(region)
         text = decodeEntities(text)
         text = text.split(whereSeparator: { $0.isWhitespace }).joined(separator: " ")
         if text.count > budget { text = String(text.prefix(budget)) + "…" }
-        return text.isEmpty ? "No readable text at \(url.absoluteString)." : text
+        return text
+    }
+
+    /// First `<tag …>…</tag>` block's inner HTML (greedy to the LAST close so a nested
+    /// same-tag doesn't truncate the article), or nil when the tag is absent.
+    private static func firstBlock(_ html: String, tag: String) -> String? {
+        guard let re = try? NSRegularExpression(pattern: "<\(tag)[^>]*>([\\s\\S]*)</\(tag)>", options: [.caseInsensitive]) else { return nil }
+        let ns = html as NSString
+        guard let m = re.firstMatch(in: html, range: NSRange(location: 0, length: ns.length)), m.numberOfRanges > 1 else { return nil }
+        return ns.substring(with: m.range(at: 1))
+    }
+
+    /// First element carrying `role="main"` (or `role='main'`) → its inner HTML to the
+    /// matching-depth close is hard in regex; approximate by taking from the tag to the
+    /// end of the document, then letting boilerplate-strip + budget bound it. Nil when absent.
+    private static func firstRoleMainBlock(_ html: String) -> String? {
+        guard let re = try? NSRegularExpression(pattern: "<[^>]*role=[\"']main[\"'][^>]*>([\\s\\S]*)", options: [.caseInsensitive]) else { return nil }
+        let ns = html as NSString
+        guard let m = re.firstMatch(in: html, range: NSRange(location: 0, length: ns.length)), m.numberOfRanges > 1 else { return nil }
+        return ns.substring(with: m.range(at: 1))
     }
 
     // MARK: HTML helpers

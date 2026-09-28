@@ -43,6 +43,19 @@ final class ChatSession {
             }
         }
 
+        /// Brief BN5 — what the Librarian actually READ to answer this turn, counted from the
+        /// packet: entries read IN FULL vs entries merely SKIMMED (contributed passages/summaries).
+        /// Rendered UNDER the answer as "Read 1 entry in full · skimmed 6" (READ turns) or
+        /// "Skimmed 9 entries" (SURVEY turns), independent of `citations` (a turn can read an entry
+        /// yet cite nothing inline). `partial` = the focus entry didn't fully fit the budget → its
+        /// best passages were sent and the model was told so. Optional + synthesized Codable →
+        /// legacy transcripts decode with `readReceipt == nil` (mirrors `citations`).
+        struct ReadReceipt: Codable, Hashable {
+            let readInFull: Int
+            let skimmed: Int
+            let partial: Bool
+        }
+
         let id: UUID
         let role: Role
         var text: String
@@ -51,6 +64,9 @@ final class ChatSession {
         /// uses decodeIfPresent, so legacy transcripts decode with `nil`
         /// (mirrors `Node.titleSource` / `isJournalEntry`).
         var citations: [Citation]?
+        /// Brief BN5 — the read/skim receipt for this turn (see `ReadReceipt`). Nil for user turns,
+        /// plain/General chat, and empty-library answers.
+        var readReceipt: ReadReceipt?
         /// Tool-loop activity payload for a `.activity` row (icon, label, the query/url,
         /// and the tappable links returned). Nil for chat turns. Optional →
         /// decodeIfPresent keeps legacy transcripts decoding with `nil`.
@@ -70,11 +86,12 @@ final class ChatSession {
         /// kill (D3) and decodes nil on legacy transcripts.
         var requestID: String?
 
-        init(id: UUID = UUID(), role: Role, text: String, citations: [Citation]? = nil, activity: ToolActivity? = nil, isPartial: Bool? = nil, requestID: String? = nil) {
+        init(id: UUID = UUID(), role: Role, text: String, citations: [Citation]? = nil, readReceipt: ReadReceipt? = nil, activity: ToolActivity? = nil, isPartial: Bool? = nil, requestID: String? = nil) {
             self.id = id
             self.role = role
             self.text = text
             self.citations = citations
+            self.readReceipt = readReceipt
             self.activity = activity
             self.isPartial = isPartial
             self.requestID = requestID
@@ -104,6 +121,14 @@ final class ChatSession {
     /// never changes room, so the carried candidate list (keyed to the chat id) can
     /// never cross rooms. `nil` = the generic chat lane (ChatView / Chats-list "New").
     var room: String? = nil
+
+    /// Brief BN4 — the WORKING SET: node ids the Librarian has READ IN FULL in this conversation.
+    /// They stay "open" for follow-ups: "analyze that document" / "tell me more" re-reads these same
+    /// entries in full with NO fresh similarity search (LibrarianState.corpusCandidates), unless the
+    /// question clearly moves on. Persisted with the chat (round-trips through `Chat.workingSet`) so a
+    /// reloaded conversation keeps what was open. Written by LibrarianState each Librarian turn (the
+    /// entries read that turn, empty on a survey). Reset on `reset()`.
+    var workingSet: [String] = []
 
     /// Permanent transcript. Each completed turn appends one user message
     /// then one assistant message; `streamingText` is the in-flight tail
@@ -226,7 +251,7 @@ final class ChatSession {
     /// turns by `buildPrompt`); `systemPrompt` steers it. ChatSession stays a dumb
     /// lane — it appends the bubble, streams, and persists; it does NOT retrieve
     /// or build the grounded prompt (LibrarianState owns that — step 3/Ask hybrid).
-    func send(displayText: String, modelText: String, systemPrompt: String, citations: [Message.Citation]? = nil) async {
+    func send(displayText: String, modelText: String, systemPrompt: String, citations: [Message.Citation]? = nil, readReceipt: Message.ReadReceipt? = nil) async {
         guard !displayText.isEmpty, !isStreaming else { return }
 
         // New attempt clears any prior transient failure banner.
@@ -295,9 +320,11 @@ final class ChatSession {
                 // so the inline superscripts and the node-deduped footer chips always match.
                 if let cited = citedOnly {
                     let r = CitationReference.renumberBySource(text: finalText, citations: cited)
-                    messages.append(Message(id: streamingMessageID, role: .assistant, text: r.text, citations: r.citations))
+                    messages.append(Message(id: streamingMessageID, role: .assistant, text: r.text, citations: r.citations, readReceipt: readReceipt))
                 } else {
-                    messages.append(Message(id: streamingMessageID, role: .assistant, text: finalText, citations: nil))
+                    // Brief BN5 — the read/skim receipt renders even when the answer cited nothing
+                    // inline (a full read the model didn't superscript still "read 1 entry").
+                    messages.append(Message(id: streamingMessageID, role: .assistant, text: finalText, citations: nil, readReceipt: readReceipt))
                 }
             }
         } catch {
@@ -311,8 +338,9 @@ final class ChatSession {
             // `.user` message remains so retry can re-send it).
             let partial = streamingText.trimmingCharacters(in: .whitespacesAndNewlines)
             if !partial.isEmpty {
-                // Carry the requestID so foreground / relaunch can fetch the FULL answer.
-                messages.append(Message(id: streamingMessageID, role: .assistant, text: partial, isPartial: true, requestID: hostRequestID))
+                // Carry the requestID so foreground / relaunch can fetch the FULL answer. Keep the
+                // read receipt so a resumed partial still shows what it read (BN5).
+                messages.append(Message(id: streamingMessageID, role: .assistant, text: partial, readReceipt: readReceipt, isPartial: true, requestID: hostRequestID))
             } else {
                 // Nothing streamed — a genuine failure. Classify it into a human
                 // banner (field findings #2/#3): unreachable/530 reads as "offline
@@ -1042,6 +1070,7 @@ final class ChatSession {
         id = UUID()
         createdAt = Date()
         room = nil   // AH2 — a fresh chat has no room until a host stamps it
+        workingSet = []   // BN4 — a fresh chat has nothing open
         // A fresh chat must not be replaced by the most-recent record
         // on the next ChatView appearance — mark restore consumed.
         didRestore = true
@@ -1068,6 +1097,7 @@ final class ChatSession {
         createdAt = chat.createdAt
         messages = chat.messages
         room = chat.room   // AH2 — the opened chat carries its room tag
+        workingSet = chat.workingSet   // BN4 — the opened chat keeps what was read in full
         streamingText = ""
         pendingUser = nil
         isStreaming = false
@@ -1123,6 +1153,7 @@ final class ChatSession {
         let snapshotID = id
         let snapshotCreatedAt = createdAt
         let snapshotRoom = room
+        let snapshotWorkingSet = workingSet   // BN4 — persist what's open with the chat
         Task {
             let chat = Chat(
                 id: snapshotID,
@@ -1130,7 +1161,8 @@ final class ChatSession {
                 createdAt: snapshotCreatedAt,
                 updatedAt: Date(),
                 messages: snapshotMessages,
-                room: snapshotRoom
+                room: snapshotRoom,
+                workingSet: snapshotWorkingSet
             )
             store.upsert(chat)
             await store.save()
@@ -1156,6 +1188,7 @@ final class ChatSession {
         createdAt = chat.createdAt
         messages = chat.messages
         room = chat.room   // AH2 — the resumed chat keeps its room tag
+        workingSet = chat.workingSet   // BN4 — the resumed chat keeps what was read in full
     }
 
     /// Header / list display title. Reads the stored title from

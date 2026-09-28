@@ -105,6 +105,34 @@ enum ModelRouter {
         return true
     }
 
+    /// Brief BN3 — the active backend's real context window, in TOKENS. The Librarian's
+    /// read-in-full budget is DERIVED from this (minus system prompt, history, and an answer
+    /// reserve), replacing the fixed `askPassageCharBudget`/`contextBudgetChars` that were sized
+    /// for a 4096-token stock window. The same rule then degrades gracefully per backend —
+    /// generous on the Host, tight on FM — instead of one constant that either overflows the small
+    /// window or starves the big one.
+    ///
+    /// The numbers, by provider:
+    ///   • `.host` — 32,768. The paired Mac's Ollama is Modelfile-pinned to `num_ctx 32768`
+    ///     (Brief BJ verified this on T's machine); this is the marquee "read my whole entry"
+    ///     path, so it gets the real served window.
+    ///   • `.foundationModel` — 4,096. Apple's on-device model is a hard 4K window; the budget
+    ///     must never overflow it, so a big entry degrades to its best passages ("partial").
+    ///   • `.ollama` — 4,096. A direct LAN endpoint (Ollama/LM Studio) self-reports no reliable
+    ///     served `num_ctx`, and both commonly default low, so we stay conservative and never
+    ///     overflow. (A future brief can probe `/api/show` for the real value.)
+    ///   • `.local` — 4,096. The on-device MLX model is small and not wired to free-text Ask
+    ///     anyway; a safe floor for exhaustiveness.
+    /// Reads the Keychain (XPC) via `active` — call OFF the SwiftUI render path.
+    static var contextWindowTokens: Int {
+        switch active {
+        case .host:            return 32_768
+        case .foundationModel: return 4_096
+        case .ollama:          return 4_096
+        case .local:           return 4_096
+        }
+    }
+
     /// Friendly, quiet name for the on-device Foundation Model — no network, safe
     /// to return instantly. (Wording confirmed by T.)
     static let foundationModelName = "Apple Intelligence"

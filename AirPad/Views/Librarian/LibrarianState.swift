@@ -613,6 +613,12 @@ final class LibrarianState {
         chat.thinkEnabled = thinkEnabled // Phase 2: the Librarian's per-session Thinking toggle → the Host
         pendingWebSearchOffer = nil      // Brief AI5 — any fresh send clears a stale web-search offer
         pendingReadInFullOffer = nil     // Brief BS3 — a fresh send clears a stale "Read … in full?" offer
+        // Brief BT3 — record the routing MODE (corpusAware) for EVERY turn to the Release-visible
+        // "Copy Librarian log" (device diagnosis on TestFlight, where os_log isn't readable). Three
+        // builds argued turn 1 "is routed" while T saw no footer; this makes the first turn's actual
+        // path unambiguous — a `[turn] corpusAware=false` line = the General path (no read/footer).
+        let userTurnNo = chat.messages.filter { $0.role == .user }.count + 1
+        Self.logTurnEntry(turnNo: userTurnNo, corpusAware: corpusAware, scope: selectedScope, query: query, store: store)
 
         // ★ Private mode (DEFAULT, corpusAware == false): do NOT retrieve. Send the
         // bare question with a plain assistant prompt — no passages, no citation
@@ -721,10 +727,15 @@ final class LibrarianState {
             let totalChars = context.count
             let budget = askContextCharBudget()
             let mode = (receipt?.readInFull ?? 0) > 0 ? "read" : "survey"
-            NSLog("[LibrarianTrace] mode=%@ provider=%@ window~tokens=%d budgetChars=%d candidates=%d contextChars=%d ~tokens=%d readInFull=%d skimmed=%d partial=%@ overBudget=%@",
+            // BT2 — estimate tokens CONSERVATIVELY (3 chars/token). `overWindow=yes` would mean the
+            // packet is about to be truncated by Ollama (system prompt + entry dropped) — with the
+            // BT2 cap it must never happen; the flag is the "never silent" guard.
+            let estTokens = totalChars / Self.charsPerToken
+            NSLog("[LibrarianTrace] mode=%@ provider=%@ window~tokens=%d budgetChars=%d candidates=%d contextChars=%d estTokens=%d readInFull=%d skimmed=%d partial=%@ overBudget=%@ overWindow=%@",
                   mode, "\(ModelRouter.active)", ModelRouter.contextWindowTokens, budget, candidates.count,
-                  totalChars, totalChars / 4, receipt?.readInFull ?? 0, receipt?.skimmed ?? 0,
-                  (receipt?.partial ?? false) ? "yes" : "no", totalChars > budget ? "yes" : "no")
+                  totalChars, estTokens, receipt?.readInFull ?? 0, receipt?.skimmed ?? 0,
+                  (receipt?.partial ?? false) ? "yes" : "no", totalChars > budget ? "yes" : "no",
+                  estTokens > ModelRouter.contextWindowTokens ? "YES-BUG" : "no")
             for c in candidates.sorted(by: { $0.number < $1.number }) {
                 let kind = c.isEntryRead ? (c.isPartialRead ? "READ(partial)" : "READ-IN-FULL") : (c.isCard ? "CARD" : "passage")
                 NSLog("[LibrarianTrace]   [%d] node=%@ score=%.3f chars=%d %@ origin=%@",
@@ -1077,9 +1088,17 @@ final class LibrarianState {
             // A LATER target that doesn't fit falls through to the skim sections below.
         }
 
+        // BT2.3 — the skimmed context on a READ turn is ≤ ~6 items (a few labelled passages + a few
+        // one-liners), not "everything that fits the window". The read entry is the answer surface;
+        // skim is just breadth. Bounding the count keeps the packet small AND fast, on top of the
+        // char budget. (SURVEY turns don't come through here — they assemble via `assembleCandidates`.)
+        let maxSkimItems = 6
+        var skimCount = 0
+
         // 3. Labelled skim passages (≤3/node) from entries not read in full.
         var perNode: [String: Int] = [:]
         for m in rankedPassages where !readSet.contains(m.nodeID) {
+            guard skimCount < maxSkimItems else { break }
             let cost = m.block.text.count + overheadPerItem
             guard used + cost <= budget else { break }
             let k = perNode[m.nodeID, default: 0]
@@ -1088,16 +1107,19 @@ final class LibrarianState {
             out.append(NumberedCandidate(number: num, payload: .passage(m), origin: wasCarried ? .carried : .new))
             used += cost
             perNode[m.nodeID] = k + 1
+            skimCount += 1
         }
 
         // 4. One-line summaries (cards) for the rest — not already read or shown as a passage.
         let shownNodes = Set(out.map { $0.nodeID })
         for card in cards where !readSet.contains(card.nodeID) && !shownNodes.contains(card.nodeID) {
+            guard skimCount < maxSkimItems else { break }
             let cost = card.gist.count + overheadPerItem
             guard used + cost <= budget else { break }
             let (num, wasCarried) = number(for: "card:\(card.nodeID)")
             out.append(NumberedCandidate(number: num, payload: .card(card), origin: wasCarried ? .carried : .new))
             used += cost
+            skimCount += 1
         }
 
         // BN5/BS3 receipt — entries read in full (with their TITLES, in packet order) vs distinct
@@ -1292,19 +1314,26 @@ final class LibrarianState {
     /// not enforced post-hoc — even if the model omits them, the chips
     /// still anchor the answer to its sources. Inline-marker parsing
     /// lands when the citation sheet does (c5c).
-    /// Brief BN3 — the derived char budget for everything RETRIEVED into the Ask prompt
-    /// (read-in-full entries + labelled passages + one-line summaries). It replaces the old fixed
-    /// `askPassageCharBudget = 12,000` / `contextBudgetChars = 14,000` constants (both sized by
-    /// hand for a 4096-token stock window). Now the budget comes from the ACTIVE backend's real
-    /// context window (`ModelRouter.contextWindowTokens`) minus the system prompt, the accrued
-    /// session history, and an answer reserve — ×4 (the app's standing char≈token/4 heuristic).
-    /// The SAME formula gives the Host a generous ~120K-char budget (a whole entry fits several
-    /// times over) and FM a tight ~10K (a big entry degrades to its best passages, marked
-    /// "partial"), so it never overflows the small window nor starves the big one.
-    ///
-    /// `windowOverride` lets the routing/budget self-test exercise a specific backend's window
-    /// headlessly (the Simulator has no Host/FM). Read LIVE here — this runs in the async send
-    /// path, OFF the SwiftUI render path, so the `ModelRouter.active` Keychain read is safe.
+    /// Brief BT2 — the READ context TARGET, in tokens. The model window is a CEILING, not a target:
+    /// even on a 32K Host we keep the retrieved context modest (a lab report + a few one-liners) so
+    /// prompt-eval stays fast — speed is part of the promise on a local model. BN3 first set the
+    /// budget to (window − reserves) × 4 ≈ 124K chars, which BT measured at ~40K real tokens > the
+    /// 32,768 window → Ollama truncated from the FRONT (system prompt + entry dropped) AND spent tens
+    /// of seconds prompt-evaluating. Capping the target well below the window fixes both.
+    static let readContextTargetTokens = 12_000
+    /// Brief BT2 — conservative chars/token. Dense lab tables / numbers / names run ~3 chars/token,
+    /// not the optimistic 4; counting at 4 is what let a "31K-token" budget actually be ~40K tokens.
+    static let charsPerToken = 3
+
+    /// Brief BN3+BT2 — the char budget for everything RETRIEVED into the Ask prompt (read-in-full
+    /// entries + labelled passages + one-line summaries). Derived from the active backend's window
+    /// (`ModelRouter.contextWindowTokens`) minus the system prompt, session history, and an answer
+    /// reserve, at a CONSERVATIVE 3 chars/token, then CAPPED at `readContextTargetTokens` (BT2 —
+    /// never fill the window). Host (32K) → ~12K-token target ≈ 36K chars (a whole ~5K-token entry +
+    /// a few one-liners, fast); FM (4K) → the window binds first (~2K tokens ≈ 6–7K chars → a big
+    /// entry degrades to its best passages, "partial"). Replaced the old fixed
+    /// `askPassageCharBudget`/`contextBudgetChars`. `windowOverride` lets the self-test exercise a
+    /// specific window headlessly. Read LIVE (async send path, off the render path).
     #if DEBUG
     /// Brief BN3 verify — force the derived budget's window (tokens) for `-LibrarianRoutingDiag`
     /// (e.g. 4096 to reproduce FM's tight window on the Simulator, which has no FM). No-op when nil.
@@ -1316,15 +1345,17 @@ final class LibrarianState {
         #else
         let windowTokens = windowOverride ?? ModelRouter.contextWindowTokens
         #endif
+        let cpt = Self.charsPerToken
         let answerReserveTokens = min(1_024, windowTokens / 4)   // room for the reply (FM: 1024 of 4096)
-        let sysTokens = askSystemPrompt.count / 4
+        let sysTokens = askSystemPrompt.count / cpt
         let historyChars = (compactedSummary?.count ?? 0)
             + sessionHistory.reduce(0) { $0 + $1.query.count + $1.responseText.count }
-        let historyTokens = historyChars / 4
-        let questionReserveTokens = 128            // the question + section-header framing overhead
-        let budgetTokens = windowTokens - answerReserveTokens - sysTokens - historyTokens - questionReserveTokens
-        // Never return a non-positive or absurd budget — always ship at least one entry's worth.
-        return max(2_000, budgetTokens * 4)
+        let historyTokens = historyChars / cpt
+        let questionReserveTokens = 256            // the question + section-header framing overhead
+        let availableTokens = windowTokens - answerReserveTokens - sysTokens - historyTokens - questionReserveTokens
+        // BT2.1 — never fill the window: target a modest READ context; the window is only a ceiling.
+        let budgetTokens = min(Self.readContextTargetTokens, max(1_024, availableTokens))
+        return budgetTokens * cpt
     }
 
     /// 0…1 estimate of how much of the context window will be consumed
@@ -1853,6 +1884,20 @@ final class LibrarianState {
     /// `tool=required` (app forced the search via the nudge), `declared` (tool offered,
     /// model's choice), or `none` (FM / no-key). `retry=web` appears when the refusal
     /// guard fired a second attempt. Shares the same os_log + "Copy Librarian log" buffer.
+    /// Brief BT3 — the FIRST line of every Librarian turn in the Release-visible "Copy Librarian
+    /// log": which mode the turn actually ran in (`corpusAware`). A `[turn N] corpusAware=false` for
+    /// a question the user thought was a Library query is the proof that turn ran in General (no
+    /// retrieval, no footer) — the turn-1 symptom, now captured on device instead of inferred.
+    private static func logTurnEntry(turnNo: Int, corpusAware: Bool, scope: CanvasScope, query: String, store: CorpusStore) {
+        let q = query.replacingOccurrences(of: "\n", with: " ⏎ ")
+        let record = "[turn \(turnNo)] corpusAware=\(corpusAware) · scope=\(scopeLabel(scope, store: store)) · query=\"\(q)\""
+        candidateLog.log("\(record, privacy: .public)")
+        recentCandidateLog.append(record)
+        if recentCandidateLog.count > recentCandidateLogCap {
+            recentCandidateLog.removeFirst(recentCandidateLog.count - recentCandidateLogCap)
+        }
+    }
+
     private static func logGeneralTurn(query: String, scope: CanvasScope, tool: String, retry: Bool, store: CorpusStore) {
         let q = query.replacingOccurrences(of: "\n", with: " ⏎ ")
         let record = "general · scope=\(scopeLabel(scope, store: store)) · tool=\(tool)\(retry ? " · retry=web" : "") · query=\"\(q)\""
@@ -1968,11 +2013,22 @@ final class LibrarianState {
         return cues.contains { q.contains($0) }
     }
 
-    /// ★ Corpus-grounding toggle (default FALSE = private chat). Stored so the
-    /// surface pill re-renders on flip (observation-tracked), and persisted via
-    /// `didSet` so it survives surface remounts and app restarts — a standing
-    /// preference, like personal voice. `groundedSend` reads it live at send time.
-    var corpusAware: Bool = UserDefaults.standard.bool(forKey: "librarianCorpusAware") {
+    /// ★ Corpus-grounding toggle. Stored so the surface pill re-renders on flip (observation-
+    /// tracked), and persisted via `didSet` so it survives surface remounts and app restarts — a
+    /// standing preference, like personal voice. `groundedSend` reads it live at send time.
+    ///
+    /// Brief BT3 — DEFAULT is now ON (Library). It was opt-in-OFF (2026-08) because forced retrieval
+    /// fed a small model hard-negative noise on every Ask; the find-then-read arc (BN/BR/BS) removed
+    /// that — a named/dominant question reads ONE entry cleanly, and a thin match honestly says "No
+    /// matching entries" — so a first Library question should land, not run in General. Default ON
+    /// applies only when the user has never chosen (`object(forKey:) == nil`); an explicit toggle
+    /// still persists. (T approved default-ON as a product decision; it is NOT claimed as the turn-1
+    /// fix — the per-turn log now records `corpusAware` so the real turn-1 path is captured on device.)
+    var corpusAware: Bool = {
+        UserDefaults.standard.object(forKey: "librarianCorpusAware") == nil
+            ? true
+            : UserDefaults.standard.bool(forKey: "librarianCorpusAware")
+    }() {
         didSet { UserDefaults.standard.set(corpusAware, forKey: "librarianCorpusAware") }
     }
     /// Phase 2 — per-session Thinking toggle, OFF by default. Ephemeral to the Librarian session

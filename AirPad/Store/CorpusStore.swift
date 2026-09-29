@@ -1092,7 +1092,14 @@ final class CorpusStore {
                     let medicalChars = 16_090   // BJ's fixture Medical entry (~4,022 tokens)
                     let hostBudget = lib.askContextCharBudget(windowOverride: 32_768)
                     let fmBudget   = lib.askContextCharBudget(windowOverride: 4_096)
-                    let budgetOK = hostBudget >= medicalChars && fmBudget < medicalChars && fmBudget >= 2_000
+                    // BT2 — the Host budget FITS a whole entry (≥ medical) yet is CAPPED well below the
+                    // window (≤ ~13k tokens ≈ 39k chars at 3 chars/token — never fills 32,768, which BT1
+                    // showed overflows at ~44k tokens). FM's tight window still forces a partial (< entry).
+                    let hostTokens = hostBudget / LibrarianState.charsPerToken
+                    let budgetOK = hostBudget >= medicalChars
+                        && hostTokens <= LibrarianState.readContextTargetTokens + 200
+                        && hostTokens < 32_768
+                        && fmBudget < medicalChars && fmBudget >= 2_000
                     // BN2 — ranking. Entry A: 3 passages summing 0.66+0.64+0.62=1.92; Entry B: one 0.82.
                     func bm(_ node: String, _ score: Float, _ bid: String) -> BlockMatch {
                         BlockMatch(block: NodeBlock(blockID: bid, itemID: "i", chunkIndex: 0, text: "t",
@@ -1279,6 +1286,17 @@ final class CorpusStore {
                         let p3 = await libP.debugBuildAskPacket(query: "What have I been thinking about lately?", store: self, chat: cP)
                         NSLog("[RoutingDiag] MOVED-ON: mode=%@ skim=%d workingSetCleared=%@ (expect survey, working set cleared)",
                               p3.mode, p3.receipt?.skimmed ?? -1, "\(cP.workingSet.isEmpty)")
+
+                        // BT3 — the FIRST message of a BRAND-NEW chat. `corpusAware` defaults OFF
+                        // (Library mode is opt-in, T-ruled 2026-08) → a first turn sent in General
+                        // mode never reaches corpusCandidates → the "I can't access your records"
+                        // refusal + no footer T saw 3 builds running. Here we log that default AND
+                        // prove that WITH Library on, a fresh chat's FIRST send routes (receipt present).
+                        let libN = LibrarianState(); let cN = ChatSession(); libN.selectedScope = .corpus
+                        let freshDefault = LibrarianState().corpusAware
+                        let turn1 = await libN.debugBuildAskPacket(query: "what do my \(firstTwo) show?", store: self, chat: cN)
+                        NSLog("[RoutingDiag] TURN-1 fresh chat: corpusAware default=%@ · library-on first-send mode=%@ read=%d receipt=%@ (expect routes → receipt; default OFF explains the General-mode turn-1 refusal)",
+                              "\(freshDefault)", turn1.mode, turn1.receipt?.readInFull ?? -1, turn1.receipt != nil ? "present" : "nil")
                     } else {
                         NSLog("[RoutingDiag] no big document loaded — skipped read-in-full/pin checks")
                     }

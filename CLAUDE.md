@@ -36,6 +36,37 @@ Authoritative operating conventions for any Claude Code session in this repo. Re
   (`chat→ollama … num_ctx=… totalChars=…`, presence-only, no content). `prompt_eval_count` ≈ packet
   size ⇒ delivered; a few thousand clamped ⇒ truncated.
 
+## Librarian changes — RUN THE GAUNTLET and paste the table (standing rule, Brief BU)
+- **Every Librarian brief runs `-LibrarianGauntlet` end-to-end and pastes the table in its CC
+  report. Nothing goes back to T until the table is green.** The gauntlet drives the REAL turn path
+  — `LibrarianState.groundedSend` → `ChatSession.send` → `ModelRouter.streamHost` → sealed E2E → a
+  locally-run `airpad-host` → Ollama — over the fixture clone, and grades the **delivered answer**
+  (required facts present, forbidden claims absent), not an internal decision. Every prior brief
+  (BN, BR, BS, BT) verified a decision, passed, and failed on T's device.
+- Run it:
+  1. Host from source (NEVER T's installed .app): `HOST_SECRET=<S> <bin> --headless --observe
+     --listen 127.0.0.1:8799 --ollama 127.0.0.1:11434 --identity <scratch>/identity.key
+     --secret-file <scratch>/secret` (a scratch `--secret-file` dir isolates residency/capability
+     state from T's real Host).
+  2. `hpk` = `curl -s :8799/health -H "Authorization: Bearer $(<bin> --print-token …)"` →
+     `hostPublicKey`.
+  3. `xcrun simctl launch --console-pty <dev> com.doctorpresident.airpad -CorpusFixture <clone>
+     -EmbedCPUOnly -LibrarianGauntlet -DebugHostURL http://127.0.0.1:8799 -DebugHostSecret <S>
+     -DebugHostPubKey <hpk>` (the `-DebugHost*` keystone bypasses `parse`'s https/QR requirement —
+     DEBUG-only, Release-inert).
+- **Read the Host's `--observe` log alongside the app table; it is the authority on what actually
+  happened.** `chat→ollama … roles=[system user] lens=[…] num_ctx=…` proves the packet was
+  delivered with real roles; `chat done model=… prompt_eval=… truncated=…` names **which model
+  answered** and whether Ollama clamped the window.
+- **WHICH MODEL ANSWERED is part of every result.** A table can read as "the Librarian is broken"
+  when routing, packet and delivery were all perfect and the fault was the model picked: with
+  nothing resident the phone fell back to `.first of /v1/models` = install order =
+  `llama3.2:latest`, an uncurated dev fixture. Model resolution is now curated-only
+  (`ModelRouter.resolveHostModel`); if a facts case fails, check `chat done model=` FIRST.
+- New bugs T reports become new cases. A forbidden-phrase list must stay NARROW — "not provided" is
+  an honest answer when the fact genuinely isn't in any block (BJ: the Hgb range never extracted), so
+  a false FAIL costs as much as a false PASS.
+
 ## Done / authorship changes — verify with `-StubAuthorModel` (standing rule, Brief BM)
 - **Any change to the Done → model → write path (naming, summarising, the enrichment gate,
   proposals) MUST be verified end-to-end in the Simulator with `-StubAuthorModel` before merge.**

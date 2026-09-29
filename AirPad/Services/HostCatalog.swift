@@ -213,6 +213,13 @@ final class HostCatalog {
 
     func load(_ tag: String) async {
         guard let url = HostPairing.load()?.loadURL, let req = authed(url, method: "POST", body: ["catalogId": tag]) else { return }
+        // ★ Brief BU3 (T's ruling, 2026-09-29) — THE USER'S PICK IS THE DEFAULT MODEL. Every picker
+        // "Load" funnels through here, so this is the one place the choice is knowable. Persisted so a
+        // COLD Host (restarted, idle-ejected, freshly reinstalled) is asked for the model the user
+        // actually chose instead of whatever Ollama happens to list first — which was `llama3.2:latest`,
+        // an uncurated dev fixture that answered read-in-full lab questions. No separate "default
+        // model" setting in V1: the picker IS the setting.
+        ModelRouter.userPickedHostModel = tag
         busyTag = tag
         lastActionError = nil
         defer { busyTag = nil }

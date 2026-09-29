@@ -345,7 +345,11 @@ final class ChatSession {
                 // Brief BH — renumber to ONE number per source (1…k, first-mention order)
                 // so the inline superscripts and the node-deduped footer chips always match.
                 if let cited = citedOnly {
-                    let r = CitationReference.renumberBySource(text: finalText, citations: cited)
+                    // BU1 — carry the always-cite set INTO the renumber: keeping a chip past the
+                    // filter is not enough, the renumber rebuilds from prose mentions and would
+                    // drop an uncited read entry (BS2's guarantee, restored end-to-end).
+                    let r = CitationReference.renumberBySource(text: finalText, citations: cited,
+                                                               alwaysInclude: alwaysCiteIndices)
                     messages.append(Message(id: streamingMessageID, role: .assistant, text: r.text, citations: r.citations, readReceipt: readReceipt))
                 } else {
                     // Brief BN5 — the read/skim receipt renders even when the answer cited nothing
@@ -883,13 +887,46 @@ final class ChatSession {
     /// never appended an assistant turn, so the trailing entry is still that
     /// user message — pop it and re-send its text through the normal path so
     /// there's no duplicate user bubble. No-op mid-stream.
+    /// ★ Brief BU1 — HOW TO RE-SEND one user turn through the pipeline that OWNS it. `LibrarianState`
+    /// installs this on every grounded turn; nil means a plain chat lane (unchanged behaviour for
+    /// non-Librarian chats). ChatSession stays a dumb lane — it does not know about retrieval, it just
+    /// knows who to hand a re-send back to.
+    ///
+    /// The bug this closes (measured in the gauntlet, and it is T's reported symptom): Retry and ↻
+    /// called `send(_ raw:)`, the PLAIN overload — so a retry after a failed **Library** turn silently
+    /// became a general chat. No packet, no receipt, no chips, and the answer was *"I can't review
+    /// your lab test results directly. Please share the specific results…"* with **no footer** — a
+    /// refusal that reads exactly like the Librarian losing access to the corpus. Nothing was broken
+    /// about retrieval; the retry entry point simply never entered it.
+    var resendHandler: ((String) async -> Void)?
+
     func retryLastUserTurn() async {
         guard !isStreaming, let last = messages.last, last.role == .user else {
             lastError = nil
             return
         }
         messages.removeLast()
-        await send(last.text)
+        if let resend = resendHandler { await resend(last.text) } else { await send(last.text) }
+    }
+
+    /// Brief BU1 — prepare a RE-ASK of the SAME question with a different plan (the "Read it in full"
+    /// offer, and any future path that re-sends one question a new way). Such a turn must REPLACE the
+    /// answer to that user turn — never leave the question standing twice. Measured on the real path
+    /// before this existed: accepting the offer took the transcript from 1 user turn to 2, so T saw
+    /// his question duplicated with a different answer under each copy.
+    ///
+    /// Pops the trailing assistant answer and the user turn beneath it (the same mechanism
+    /// `regenerateLast` uses) so the re-send lands as ONE exchange — `send` re-appends the user
+    /// message itself. Returns false when the transcript doesn't end in an answered turn, in which
+    /// case the caller just sends normally.
+    @discardableResult
+    func prepareForReask() -> Bool {
+        guard !isStreaming, messages.count >= 2,
+              messages.last?.role == .assistant,
+              messages[messages.count - 2].role == .user else { return false }
+        messages.removeLast()   // the answer being replaced
+        messages.removeLast()   // the user turn (re-appended by send)
+        return true
     }
 
     /// Re-run the most recent exchange. Pops the trailing assistant turn and
@@ -905,7 +942,8 @@ final class ChatSession {
               messages[messages.count - 2].role == .user else { return }
         messages.removeLast()               // assistant
         let userText = messages.removeLast().text
-        await send(userText)
+        // BU1 — ↻ is a re-send too: route it through the owning pipeline, not the plain lane.
+        if let resend = resendHandler { await resend(userText) } else { await send(userText) }
     }
 
     // MARK: - Host re-attach (BUG 36 Pillar 2 — the true walk-away)

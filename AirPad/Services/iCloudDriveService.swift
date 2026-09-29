@@ -64,24 +64,70 @@ actor iCloudDriveService {
         guard let caches = fm.urls(for: .cachesDirectory, in: .userDomainMask).first else { return false }
         let root = caches.appendingPathComponent("AirPadCorpusFixtureScratch")
         let src = URL(fileURLWithPath: (source as NSString).expandingTildeInPath)
-        guard fm.fileExists(atPath: src.appendingPathComponent("nodes").path) else {
+        let srcNodes = src.appendingPathComponent("nodes")
+        guard fm.fileExists(atPath: srcNodes.path) else {
             print("[CorpusFixture] source has no nodes/ dir: \(src.path)")
             return false
         }
-        do {
-            if !fm.fileExists(atPath: root.path) {
-                try fm.copyItem(at: src, to: root)
+        // Brief BU — REFRESH ON SOURCE CHANGE (the fixture-clone Medical-node drop). The scratch
+        // is copied ONCE and reused so a large corpus isn't re-copied every launch — but a reused
+        // scratch goes STALE when the -CorpusFixture SOURCE changes (a new clone path, or entries
+        // added/removed at the same path). The old code (`if !exists { copy }`) then silently rooted
+        // at the OLD copy: the gauntlet ran against a 406-node scratch cloned from a *different*
+        // fixture, MISSING 52 entries incl. BJ's Medical node 038820A3, so case 1 could never route.
+        // Fix: stamp the scratch with a source signature (path + node-dir count) and RE-COPY whenever
+        // it doesn't match, so the fixture ALWAYS reflects the requested source. The stale-scratch
+        // state can no longer persist. (Pass `-CorpusFixtureFresh` to force a rebuild regardless.)
+        //
+        // ★ CONCURRENCY: CorpusStore and ChatStore each own a SEPARATE iCloudDriveService instance and
+        // both call setup() at launch — two actors, so they DON'T serialize and race on this shared
+        // path. A naive remove-then-copy hits NSCocoa 516 ("item already exists") and one racer falls
+        // through to the local fallback (non-deterministic rooting). So build a FRESH copy in a
+        // per-launch STAGING dir and swap it in atomically; whoever finishes last wins with a COMPLETE
+        // tree, and a loser discards its staging. The swap is the only cross-instance mutation of `root`.
+        let marker = root.appendingPathComponent(".fixture-source")
+        let srcCount = (try? fm.contentsOfDirectory(atPath: srcNodes.path))?.count ?? -1
+        let signature = "\(src.standardizedFileURL.path)\n\(srcCount)"
+        let forceFresh = ProcessInfo.processInfo.arguments.contains("-CorpusFixtureFresh")
+        func upToDate() -> Bool {
+            guard !forceFresh, fm.fileExists(atPath: root.path) else { return false }
+            return ((try? String(contentsOf: marker, encoding: .utf8)) ?? "") == signature
+        }
+        if !upToDate() {
+            let staging = caches.appendingPathComponent("AirPadCorpusFixtureScratch.staging-\(ProcessInfo.processInfo.globallyUniqueString)")
+            do {
+                try? fm.removeItem(at: staging)
+                try fm.copyItem(at: src, to: staging)
+                try? Data(signature.utf8).write(to: staging.appendingPathComponent(".fixture-source"), options: .atomic)
+                if fm.fileExists(atPath: root.path) {
+                    _ = try fm.replaceItemAt(root, withItemAt: staging) // atomic dir swap
+                } else {
+                    do { try fm.moveItem(at: staging, to: root) }
+                    catch let moveError { // lost the race: another instance created root first — use theirs
+                        try? fm.removeItem(at: staging)
+                        if !fm.fileExists(atPath: root.path) { throw moveError }
+                    }
+                }
+                print("[CorpusFixture] refreshed scratch from \(src.path) (source nodes=\(srcCount))")
+            } catch {
+                try? fm.removeItem(at: staging)
+                // A refresh failure is only fatal if there is no usable scratch at all.
+                guard fm.fileExists(atPath: root.appendingPathComponent("nodes").path) else {
+                    print("[CorpusFixture] setup error (no usable scratch): \(error)")
+                    return false
+                }
+                print("[CorpusFixture] refresh error, using existing scratch: \(error)")
             }
-            try fm.createDirectory(at: root.appendingPathComponent("nodes"), withIntermediateDirectories: true)
-            rootURL = root
-            isAvailable = true
-            usingLocalFallback = false
-            print("[CorpusFixture] rooted at scratch copy of \(src.path)")
-            return true
-        } catch {
-            print("[CorpusFixture] setup error: \(error)")
+        }
+        guard fm.fileExists(atPath: root.appendingPathComponent("nodes").path) else {
+            print("[CorpusFixture] scratch has no nodes/ after setup")
             return false
         }
+        rootURL = root
+        isAvailable = true
+        usingLocalFallback = false
+        print("[CorpusFixture] rooted at scratch copy of \(src.path) (source nodes=\(srcCount))")
+        return true
     }
 
     private func trySetupFieldFixtureScratch() -> Bool {

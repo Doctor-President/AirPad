@@ -17,9 +17,29 @@ extension HostPairing {
 
     /// Load the current pairing, if any.
     static func load() -> HostPairing? {
+        #if DEBUG
+        if let dbg = debugLANHostPairing() { return dbg }
+        #endif
         guard let json = KeychainHelper.load(key: keychainKey) else { return nil }
         return parse(json)
     }
+
+    #if DEBUG
+    /// Brief BU2 — the DEBUG LAN-Host override (T-chosen gauntlet infra). Launch args
+    /// `-DebugHostURL http://127.0.0.1:<port> -DebugHostSecret <S> -DebugHostPubKey <b64>` construct a
+    /// pairing DIRECTLY, bypassing `parse`'s https/QR requirement, so the eval gauntlet can drive the
+    /// app's REAL sealed pipeline (`ModelRouter.streamHost` → sealed E2E → local `airpad-host` →
+    /// Ollama) against a locally-run Host — the "real Host, not direct Ollama" the brief demands,
+    /// without a cloudflare tunnel. `hpk` comes from the local Host's `GET /health.hostPublicKey`;
+    /// `S` is its `HOST_SECRET` (master/bearer derive identically on both sides). Release-inert.
+    private static func debugLANHostPairing() -> HostPairing? {
+        let d = UserDefaults.standard
+        guard let url = d.string(forKey: "DebugHostURL"), !url.isEmpty,
+              let secret = d.string(forKey: "DebugHostSecret"), !secret.isEmpty,
+              let hpk = d.string(forKey: "DebugHostPubKey"), !hpk.isEmpty else { return nil }
+        return HostPairing(tunnelURL: url, protocolVersion: 1, secret: secret, hostPublicKeyB64: hpk)
+    }
+    #endif
 
     /// Forget the pairing (unpair / revoke on the phone side).
     static func clear() {

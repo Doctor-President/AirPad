@@ -1302,6 +1302,11 @@ final class CorpusStore {
                     }
                     NSLog("[RoutingDiag] done")
                 }
+                // Brief BU2 — THE GAUNTLET. Drives the REAL grounded send through the sealed local
+                // Host for the golden question set and prints the table. The standing gate.
+                if ProcessInfo.processInfo.arguments.contains("-LibrarianGauntlet") {
+                    await runLibrarianGauntlet()
+                }
                 // Brief U verify (READ-ONLY) — the sample/user SPLIT. Logs the node
                 // partition, which collections land in COLLECTIONS vs the sample
                 // region, and that the capture picker hides the sample's collections
@@ -1833,6 +1838,295 @@ final class CorpusStore {
         // Process any nodes that were captured by the share extension (no AI ran at capture time)
         await scanForUnprocessedNodes()
     }
+
+    // MARK: - Brief BU2 — THE LIBRARIAN GAUNTLET (the standing gate)
+
+    #if DEBUG
+    /// Brief BU2 — the eval gauntlet. Runs the golden question set through the **REAL** turn path
+    /// (`LibrarianState.groundedSend` → `ChatSession.send` → `ModelRouter.streamHost` → sealed E2E →
+    /// the local `airpad-host` → Ollama/Qwen3) on the fixture clone of T's library, and prints one
+    /// table row per case: route, entries read/skimmed, packet chars, receipt, chips, the BU1
+    /// invariants, and an ANSWER CHECK (required facts present / forbidden claims absent).
+    ///
+    /// This exists because every prior brief verified an internal DECISION and shipped a build that
+    /// failed on the real path. A case passes only when the delivered ANSWER is right — not when
+    /// routing "chose" correctly. Pair with the Host's `--observe` log (`chat→ollama …` +
+    /// `chat done … prompt_eval=… truncated=…`) for the Host-side half of the invariants.
+    ///
+    /// Launch: `-CorpusFixture <clone> -EmbedCPUOnly -LibrarianGauntlet`
+    ///         `-DebugHostURL http://127.0.0.1:<port> -DebugHostSecret <S> -DebugHostPubKey <b64>`
+    func runLibrarianGauntlet() async {
+        /// One case. `act` runs it against a live Librarian + chat and returns the turn's outcome.
+        struct Case {
+            var id: String
+            var what: String              // what this case is for (the grader's note)
+            var question: String
+            var expectRoute: String       // "read" | "survey" | "empty" | "" = don't care
+            var mustContain: [[String]] = []   // each inner array = one required fact (any synonym)
+            var minFacts: Int = 0              // require at least this many of `mustContain` groups
+            var mustNotContain: [String] = []  // forbidden claims (e.g. "I can't access")
+            var newChat: Bool = true
+            var fmWindow: Bool = false         // force the 4K FM window (partial-read case)
+            var acceptOffer: Bool = false      // tap "Read it in full" instead of typing
+            var retry: Bool = false            // tap Retry (re-ask the same user turn)
+            var maxCards: Int? = nil           // survey shape: cards ≤ this
+            var maxPassages: Int? = nil        // survey shape: passages ≤ this
+            var carriesEntry: Bool = false     // must read the SAME entry as the previous case
+        }
+
+        // The forbidden set every grounded turn shares: the refusals BU exists to eliminate. The
+        // "section is empty" family is here because a 3B fixture model slipped a case through the
+        // FIRST gauntlet run by claiming the packet was empty when the entry HAD been delivered in
+        // full (measured: fullEntryText 3,308 chars inside a 3,702-char packet). An answer that
+        // denies its own context is a failure even when routing and delivery were perfect.
+        // ★ Deliberately NARROW: only phrases that deny the CONTEXT ITSELF. "not provided" is NOT here
+        // — BJ found the Rapid Hgb reference range genuinely isn't in any block, so "no reference range
+        // is provided" is an HONEST answer and must never fail a case. A false FAIL costs as much as a
+        // false PASS.
+        let refusals = ["i can't access", "i cannot access", "i don't have access", "i do not have access",
+                        "unable to access", "no documents", "don't see any lab", "assistant:",
+                        "section is empty", "no text was provided", "appears to be empty",
+                        "read in full\" section is empty"]
+        let panel = [["153"], ["213"], ["137"], ["4.4"], ["85"], ["15"], ["99"]] // LDL, chol, Na, K, eGFR, BUN, glucose
+
+        let cases: [Case] = [
+            // 1 — the lab question as the FIRST message of a NEW chat (T's turn-1 bug). Also case 6:
+            // nothing is resident when the gauntlet starts, so this turn must AUTO-LOAD the model.
+            Case(id: "1", what: "lab question, first message of a new chat (also: cold model auto-load)",
+                 question: "What do my lab test results reveal?", expectRoute: "read",
+                 mustContain: panel, minFacts: 4, mustNotContain: refusals),
+            // 2 — a follow-up carries the SAME entry with no fresh retrieval.
+            Case(id: "2", what: "follow-up carries the same entry (working set, no re-retrieval)",
+                 question: "Interpret my medical results.", expectRoute: "read",
+                 mustContain: panel, minFacts: 3, mustNotContain: refusals, newChat: false),
+            // 2b — a bare deictic follow-up. Graded on CARRYING the entry, NOT on repeating the
+            // values: a third consecutive "check that document again" legitimately answers "same as
+            // before" without re-listing the panel, and failing that would be the grader
+            // over-specifying the product (measured: qwen3:8b did exactly that, correctly).
+            Case(id: "2b", what: "bare deictic follow-up keeps the SAME entry open (no re-retrieval)",
+                 question: "Please check that document again.", expectRoute: "read",
+                 mustNotContain: refusals, newChat: false, carriesEntry: true),
+            // 3 — a broad OWN-entries question → survey, ≤ 8 cards / ≤ 4 passages, offer never a
+            // saved article. The two caps are SEPARATE: 8 cards + 4 passages = 12 candidates is the
+            // contract met, not exceeded.
+            Case(id: "3", what: "broad 'my thoughts' question → survey from OWN entries, ≤8 cards/≤4 passages",
+                 question: "How would you describe my thoughts on technology?", expectRoute: "survey",
+                 mustNotContain: refusals, maxCards: 8, maxPassages: 4),
+            // 4 — accept the "Read it in full" offer → answer in place, no duplicate user bubble.
+            Case(id: "4", what: "accept the 'Read it in full' offer → in place, no duplicate bubble",
+                 question: "", expectRoute: "read", mustNotContain: refusals,
+                 newChat: false, acceptOffer: true),
+            // 5 — Retry re-asks the SAME user turn: the packet is delivered, no new user bubble.
+            Case(id: "5", what: "Retry after a FORCED Host error → the packet is delivered",
+                 question: "What do my lab test results reveal?", expectRoute: "read",
+                 mustContain: panel, minFacts: 3, mustNotContain: refusals, newChat: true, retry: true),
+            // 7 — a saved article NAMED by title → READ + chip.
+            Case(id: "7", what: "named saved article → READ that entry + chip",
+                 question: "What is The Book of Enoch about?", expectRoute: "read",
+                 mustNotContain: refusals),
+            // 7b — another named entry, unquoted + partial tokens.
+            Case(id: "7b", what: "named entry, unquoted partial tokens ('eleusinian mysteries')",
+                 question: "Tell me about the eleusinian mysteries entry.", expectRoute: "read",
+                 mustNotContain: refusals),
+            // 8 — general knowledge in Library mode → honest empty, still a normal answer.
+            Case(id: "8", what: "general-knowledge question in Library mode → 'No matching entries'",
+                 question: "What is the capital of France?", expectRoute: "empty",
+                 mustContain: [["paris"]], minFacts: 1),
+            // 9 — the FM 4K budget → PARTIAL footer, never an overflow.
+            Case(id: "9", what: "FM 4K budget forced → PARTIAL footer, no overflow",
+                 question: "What do my lab test results reveal?", expectRoute: "read",
+                 mustNotContain: refusals, fmWindow: true),
+            // 10 — a link-only entry: the answer must come from its DERIVED text.
+            Case(id: "10", what: "link-only entry question → reads the derived text",
+                 question: "What does my Prisoner's Cinema entry say?", expectRoute: "read",
+                 mustNotContain: refusals),
+            // 11 — a possession lookup (paraphrase family of case 1's routing).
+            Case(id: "11", what: "possession lookup by name ('Bolex H16 — mine')",
+                 question: "What did I write about my Bolex H16?", expectRoute: "read",
+                 mustNotContain: refusals),
+            // 12 — a paraphrase of case 1 that shares only stemmed/pluralised title tokens.
+            Case(id: "12", what: "paraphrase: only pluralised title tokens ('medical labs')",
+                 question: "Summarise my medical labs for me.", expectRoute: "read",
+                 mustContain: panel, minFacts: 3, mustNotContain: refusals),
+        ]
+
+        NSLog("[Gauntlet] START provider=%@ window=%d nodes=%d userNodes=%d cases=%d",
+              "\(ModelRouter.active)", ModelRouter.contextWindowTokens, nodes.count, userNodes.count, cases.count)
+        // ★ WHICH MODEL ANSWERS is part of the result. The first run's cases failed on FACTS while
+        // routing + delivery were perfect, because the phone asked for `llama3.2:latest` (an uncurated
+        // dev fixture) whenever nothing was resident. Print the resolved tag so a table can never
+        // again be read as "the Librarian is broken" when the real fault was the model picked.
+        NSLog("[Gauntlet] model resolution: userPicked=%@ (the Host's --observe `chat done model=…` line is the authority on what actually answered)",
+              ModelRouter.userPickedHostModel ?? "none (no picker choice yet → smallest installed curated)")
+        guard case .host = ModelRouter.active else {
+            NSLog("[Gauntlet] ABORT — provider is NOT .host. Pass -DebugHostURL/-DebugHostSecret/-DebugHostPubKey so the REAL sealed Host path is exercised (direct-Ollama/FM would be a fake green).")
+            NSLog("[Gauntlet] done")
+            return
+        }
+
+        let librarian = LibrarianState()
+        librarian.selectedScope = .corpus
+        librarian.corpusAware = true
+        var chat = ChatSession()
+        var rows: [String] = []
+        var passCount = 0
+        var carriedEntryIDs: Set<String> = []   // what the previous case left open (BN4 working set)
+        var previousTurn: LibrarianState.TurnRecord? = nil   // the prior case's record (case 4's offer target)
+
+        for c in cases {
+            if c.newChat { chat = ChatSession() }
+            librarian.debugContextWindowOverride = c.fmWindow ? 4_096 : nil
+            var forcedFailureMissing = false
+            let usersBefore = chat.messages.filter { $0.role == .user }.count
+            // The baseline the no-duplicate-bubble invariant compares against. A re-ask must not
+            // CHANGE it. Case 5 re-points it after its forced failure: that failed send legitimately
+            // adds the first user turn of a new chat, and Retry must leave THAT count unchanged —
+            // comparing against the pre-case count would fail a correct retry.
+            var bubbleBaseline = usersBefore
+            let offerBefore = librarian.pendingReadInFullOffer
+            NSLog("[Gauntlet] CASE %@ BEGIN — %@", c.id, c.what)
+            let t0 = Date()
+
+            if c.acceptOffer {
+                // The offer's FIRING is embedding-dependent (BS3: aggregate ≥ 1.3, and the sim's
+                // CPU-BGE tops ~0.5) and — since BU3 — never a saved article, so a survey may
+                // legitimately produce none. What THIS case must prove is the RE-ASK BEHAVIOUR: the
+                // answer is replaced in place, no duplicate user bubble, receipt + chip. So when no
+                // offer is pending, SYNTHESIZE one pointing at an entry the user AUTHORED and say so
+                // in the row — never silently skip the invariant.
+                if offerBefore == nil {
+                    // Target the LEADING OWN entry of the survey we just ran — the entry the offer
+                    // would name — so the re-ask is about the same subject. (Picking an arbitrary
+                    // own document instead made this case meaningless: it force-read a D&D character
+                    // sheet for a question about technology.)
+                    let surveyCards = previousTurn?.cardNodeIDs ?? []
+                    let leadOwn = surveyCards.first { id in
+                        nodes.first(where: { $0.id == id })?.cardProvenance().kind != .savedLink
+                    }
+                    guard let ownID = leadOwn, let own = nodes.first(where: { $0.id == ownID }),
+                          let q = chat.messages.last(where: { $0.role == .user })?.text else {
+                        rows.append("| \(c.id) | — | 0/0 | — | — | — | — | — | SKIPPED: no pending offer and no own entry in the previous survey | — | ⚠️ SKIPPED |")
+                        NSLog("[Gauntlet] CASE %@ SKIP — no offer and no own entry in the previous survey", c.id)
+                        continue
+                    }
+                    librarian.pendingReadInFullOffer = LibrarianState.ReadInFullOffer(
+                        query: q, nodeID: own.id, title: own.title)
+                    NSLog("[Gauntlet] CASE %@ note — no offer fired (BU3: a saved article can no longer trigger one); SYNTHESIZED one for the survey's LEADING OWN entry '%@' so the re-ask invariant is still exercised",
+                          c.id, own.title)
+                }
+                await librarian.acceptReadInFullOffer(store: self, chat: chat)
+            } else if c.retry {
+                // Brief BU2 case 5 — Retry after a FORCED Host error must deliver the packet. Point
+                // the DEBUG pairing at a dead port for ONE send (HostPairing.load() reads UserDefaults
+                // live, so this takes effect immediately), which leaves the transcript ending in the
+                // user turn with `lastError` set — exactly T's failed-send state. Then restore the real
+                // Host and tap Retry. Without the forced failure this case was a silent NO-OP:
+                // `retryLastUserTurn` guards on the transcript ending in a user turn, so it returned
+                // instantly (0.0s, no inference) and the row re-graded the PREVIOUS answer.
+                HostPairing.debugForceUnreachableHost = true
+                await librarian.groundedSend(query: c.question, store: self, chat: chat)
+                let failedAsExpected = chat.messages.last?.role == .user
+                HostPairing.debugForceUnreachableHost = false
+                NSLog("[Gauntlet] CASE %@ note — forced Host error first (dead port): transcript ends in the user turn = %@; now tapping Retry",
+                      c.id, failedAsExpected ? "yes" : "NO (the failure did not surface as expected)")
+                // The case is only meaningful if the failure REALLY happened; otherwise Retry is a
+                // no-op and the row would re-grade the previous answer as a pass.
+                if !failedAsExpected { forcedFailureMissing = true }
+                bubbleBaseline = chat.messages.filter { $0.role == .user }.count
+                await chat.retryLastUserTurn()
+            } else {
+                await librarian.groundedSend(query: c.question, store: self, chat: chat)
+            }
+
+            let elapsed = Date().timeIntervalSince(t0)
+            let rec = librarian.debugLastTurn
+            let answerMsg = chat.messages.last { $0.role == .assistant }
+            let answer = answerMsg?.text ?? ""
+            let lower = answer.lowercased()
+            let usersAfter = chat.messages.filter { $0.role == .user }.count
+            let receiptText = answerMsg?.readReceipt.map { ChatTranscript.readReceiptText($0) } ?? "(none)"
+            let chips = answerMsg?.citations ?? []
+
+            // ── The grade. Every check is a REASON string when it fails, so the table says WHY.
+            var fails: [String] = []
+            if forcedFailureMissing { fails.append("SETUP: the forced Host failure did not occur, so Retry proved nothing") }
+            if answer.isEmpty { fails.append("EMPTY ANSWER (\(chat.lastError ?? "no error reported"))") }
+            let route = rec?.mode ?? "(none)"
+            if !c.expectRoute.isEmpty, !c.retry, route != c.expectRoute {
+                fails.append("route=\(route) expected=\(c.expectRoute)")
+            }
+            let factsHit = c.mustContain.filter { syns in syns.contains { lower.contains($0.lowercased()) } }.count
+            if c.minFacts > 0, factsHit < c.minFacts {
+                fails.append("facts \(factsHit)/\(c.minFacts) required")
+            }
+            for bad in c.mustNotContain where lower.contains(bad) {
+                fails.append("FORBIDDEN '\(bad)'")
+            }
+            // BU1 invariant — a READ turn ALWAYS carries its read entry as a chip.
+            if route == "read", let r = rec {
+                let chipNodes = Set(chips.compactMap { $0.nodeID })
+                let missing = r.readNodeIDs.filter { !chipNodes.contains($0) }
+                if !missing.isEmpty { fails.append("INV-chip: read entry not chipped (\(missing.count))") }
+                if (r.receipt?.readInFull ?? 0) == 0 { fails.append("INV-receipt: read turn with readInFull=0") }
+            }
+            // BU1 invariant — estimated prompt tokens must fit the window.
+            if let r = rec, r.estTokens >= r.windowTokens {
+                fails.append("INV-window: estTokens \(r.estTokens) ≥ window \(r.windowTokens)")
+            }
+            if let r = rec, r.packetChars > r.budgetChars {
+                fails.append("INV-budget: packet \(r.packetChars) > budget \(r.budgetChars)")
+            }
+            // BU1 invariant — a re-ask/Retry REPLACES the answer, never adds a user bubble.
+            if c.retry || c.acceptOffer {
+                if usersAfter != bubbleBaseline {
+                    fails.append("INV-bubble: user turns \(bubbleBaseline)→\(usersAfter) (re-ask duplicated the question)")
+                }
+            }
+            // Survey shape (BU3) — PER KIND, never a single total.
+            if let r = rec, route == "survey" {
+                if let maxCards = c.maxCards, r.cardCount > maxCards {
+                    fails.append("survey cards \(r.cardCount) > \(maxCards)")
+                }
+                if let maxPassages = c.maxPassages, r.passageCount > maxPassages {
+                    fails.append("survey passages \(r.passageCount) > \(maxPassages)")
+                }
+            }
+            // BN4 — a follow-up must keep the SAME entry open, with no fresh retrieval.
+            if c.carriesEntry {
+                let now = Set(rec?.readNodeIDs ?? [])
+                if now.isEmpty || !now.isSubset(of: carriedEntryIDs) || carriedEntryIDs.isEmpty {
+                    fails.append("INV-carry: read \(Array(now).map { String($0.prefix(8)) }) is not the previously-open entry \(Array(carriedEntryIDs).map { String($0.prefix(8)) })")
+                }
+            }
+            if let ids = rec?.readNodeIDs, !ids.isEmpty { carriedEntryIDs = Set(ids) }
+            previousTurn = rec ?? previousTurn
+            // BU3 — the survey offer must never point at a saved article.
+            if route == "survey", let offer = librarian.pendingReadInFullOffer,
+               let node = nodes.first(where: { $0.id == offer.nodeID }),
+               node.cardProvenance().kind == .savedLink {
+                fails.append("offer points at a SAVED ARTICLE ('\(offer.title)')")
+            }
+            if fails.isEmpty { passCount += 1 }
+
+            let verdict = fails.isEmpty ? "✅ PASS" : "❌ \(fails.joined(separator: "; "))"
+            NSLog("[Gauntlet] CASE %@ %@ route=%@ read=%d skim=%d packetChars=%d estTok=%d chips=%d users=%d→%d %.1fs",
+                  c.id, fails.isEmpty ? "PASS" : "FAIL", route,
+                  rec?.receipt?.readInFull ?? -1, rec?.receipt?.skimmed ?? -1,
+                  rec?.packetChars ?? -1, rec?.estTokens ?? -1, chips.count,
+                  usersBefore, usersAfter, elapsed)
+            NSLog("[Gauntlet] CASE %@ receipt=%@", c.id, receiptText)
+            NSLog("[Gauntlet] CASE %@ answer=%@", c.id, answer.replacingOccurrences(of: "\n", with: " ").prefix(400).description)
+            rows.append("| \(c.id) | \(route) | \(rec?.receipt?.readInFull ?? 0)/\(rec?.receipt?.skimmed ?? 0) | \(rec?.cardCount ?? -1)c/\(rec?.passageCount ?? -1)p | \(rec?.packetChars ?? -1) | \(rec?.estTokens ?? -1) | \(chips.count) | \(String(format: "%.1f", elapsed))s | \(receiptText) | \(factsHit)/\(c.minFacts) | \(verdict) |")
+        }
+
+        NSLog("[Gauntlet] ── TABLE ──")
+        NSLog("[Gauntlet] | case | route | read/skim | shape | packetChars | estTok | chips | time | receipt | facts | verdict |")
+        NSLog("[Gauntlet] |---|---|---|---|---|---|---|---|---|---|---|")
+        for r in rows { NSLog("[Gauntlet] %@", r) }
+        NSLog("[Gauntlet] RESULT %d/%d PASS", passCount, cases.count)
+        NSLog("[Gauntlet] done")
+    }
+    #endif
 
     // MARK: - Sample library (Brief N §2)
 

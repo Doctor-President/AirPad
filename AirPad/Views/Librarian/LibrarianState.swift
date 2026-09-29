@@ -564,7 +564,12 @@ final class LibrarianState {
         case lookup, survey
         /// AA2 budgets. Lookup leans on passages (depth); survey leans on cards (breadth).
         var passageBudget: Int { self == .lookup ? 8 : 4 }
-        var cardBudget: Int { self == .lookup ? 12 : 30 }
+        /// Brief BU3 — a SURVEY sends ≤ 8 card one-liners (was 30). Measured on the real path: a
+        /// "my thoughts on technology" turn shipped THIRTY-ONE card summaries, which buries the
+        /// user's own entries in a wall of weak neighbours and (with the old ranking) let a saved
+        /// Wikipedia article lead. A survey's job is to FIND, so a shortlist is the product; the
+        /// entries that matter then get READ. `.lookup` keeps its wider net (12) — it feeds a read.
+        var cardBudget: Int { self == .lookup ? 12 : 8 }
     }
 
     struct ShapeVerdict: Sendable {
@@ -610,6 +615,15 @@ final class LibrarianState {
     func groundedSend(query rawQuery: String, store: CorpusStore, chat: ChatSession) async {
         let query = rawQuery.trimmingCharacters(in: .whitespacesAndNewlines)
         guard !query.isEmpty else { return }
+        // ★ Brief BU1 — CLAIM the re-send entry points (Retry, ↻) for THIS pipeline. Without it they
+        // fell through to `ChatSession.send(_ raw:)`, a plain chat: a retry of a failed Library turn
+        // came back *"I can't review your lab test results directly…"* with no footer and no chips —
+        // T's reported symptom, and nothing to do with retrieval. Re-installed every turn so it always
+        // closes over the live store; `[weak chat]` so the session can't retain itself.
+        chat.resendHandler = { [weak self, weak chat] text in
+            guard let self, let chat else { return }
+            await self.groundedSend(query: text, store: store, chat: chat)
+        }
         chat.thinkEnabled = thinkEnabled // Phase 2: the Librarian's per-session Thinking toggle → the Host
         pendingWebSearchOffer = nil      // Brief AI5 — any fresh send clears a stale web-search offer
         pendingReadInFullOffer = nil     // Brief BS3 — a fresh send clears a stale "Read … in full?" offer
@@ -697,6 +711,17 @@ final class LibrarianState {
         let (candidates, empty, receipt) = await corpusCandidates(query: query, store: store, chat: chat)
 
         if empty {
+            #if DEBUG
+            // Brief BU — an EMPTY turn is still a turn the gauntlet grades ("No matching entries"
+            // + a normal answer, no fake grounding), so it gets a record too.
+            debugLastTurn = TurnRecord(mode: "empty", readNodeIDs: [], packetChars: query.count,
+                                       estTokens: query.count / Self.charsPerToken,
+                                       windowTokens: ModelRouter.contextWindowTokens,
+                                       budgetChars: askContextCharBudget(), candidateCount: 0,
+                                       cardCount: 0, passageCount: 0, cardNodeIDs: [],
+                                       chipIndices: [], alwaysCiteIndices: [],
+                                       receipt: ChatSession.Message.ReadReceipt(readInFull: 0, skimmed: 0, partial: false))
+            #endif
             // Brief AB3 — nothing in THIS ROOM matched (no candidates, or a survey
             // with < 3 cards and no passages, no pin). Do NOT dress up general
             // knowledge as an answer from the notes: send the bare question under the
@@ -758,6 +783,24 @@ final class LibrarianState {
         // for it (provenance is the product). `ChatSession.send` keeps these indices regardless of
         // inline citation; skimmed passages/cards still only chip when the prose cites them.
         let alwaysCite = Set(candidates.filter { $0.isEntryRead }.map { $0.number })
+        #if DEBUG
+        // Brief BU — record the turn AS SENT (the same `modelText`/`chips`/`receipt` objects that go
+        // on the wire below), so the gauntlet's invariants test the DELIVERED turn, not a re-derived one.
+        debugLastTurn = TurnRecord(
+            mode: (receipt?.readInFull ?? 0) > 0 ? "read" : "survey",
+            readNodeIDs: candidates.filter { $0.isEntryRead }.map { $0.nodeID },
+            packetChars: modelText.count,
+            estTokens: modelText.count / Self.charsPerToken,
+            windowTokens: ModelRouter.contextWindowTokens,
+            budgetChars: askContextCharBudget(),
+            candidateCount: candidates.count,
+            cardCount: candidates.filter { $0.isCard }.count,
+            passageCount: candidates.filter { !$0.isCard && !$0.isEntryRead }.count,
+            cardNodeIDs: candidates.filter { $0.isCard }.sorted { $0.number < $1.number }.map { $0.nodeID },
+            chipIndices: (chips ?? []).map { $0.index }.sorted(),
+            alwaysCiteIndices: alwaysCite.sorted(),
+            receipt: receipt)
+        #endif
         await chat.send(displayText: query, modelText: modelText, systemPrompt: askSystemPrompt,
                         citations: chips, alwaysCiteIndices: alwaysCite, readReceipt: receipt)
     }
@@ -783,6 +826,9 @@ final class LibrarianState {
         guard let offer = pendingReadInFullOffer else { return }
         pendingReadInFullOffer = nil
         forcedReadNodeID = offer.nodeID
+        // Brief BU1 — this is a RE-ASK of the SAME question, so it REPLACES that turn's answer
+        // instead of asking it twice (measured: 1 user turn → 2 before this).
+        chat.prepareForReask()
         await groundedSend(query: offer.query, store: store, chat: chat)
     }
 
@@ -928,9 +974,25 @@ final class LibrarianState {
         // ── SURVEY (today's path) ─────────────────────────────────────────────────────────────────
         // AA2 — shape sets the passage/card budget split.
         let verdict = Self.retrievalShape(passages: general, pinning: false, store: store)
-        let generalFiltered = general.filter { $0.score >= CorpusStore.minRelevanceScore }
+        var generalFiltered = general.filter { $0.score >= CorpusStore.minRelevanceScore }
+        var orderedCards = cards
+        // Brief BU3 — "MY …" QUESTIONS PUT THE USER'S OWN ENTRIES FIRST. Measured on the real path:
+        // "How would you describe my thoughts on technology?" ranked the saved article *Schema
+        // (psychology)* above everything T wrote — its internal passage density is a document
+        // artefact (a long encyclopedia page has many on-topic blocks), not evidence that it holds
+        // the user's thinking. A possessive question is ABOUT the user, so a thing they AUTHORED
+        // outranks a thing they merely SAVED. This is a stable partition (relative order kept inside
+        // each group) applied BEFORE the budget prefix, so the shortlist can't be all saved articles.
+        if Self.looksLikeOwnershipQuestion(query) {
+            func isOwn(_ nodeID: String) -> Bool {
+                guard let n = store.nodes.first(where: { $0.id == nodeID }) else { return false }
+                return n.cardProvenance().kind != .savedLink
+            }
+            generalFiltered = generalFiltered.filter { isOwn($0.nodeID) } + generalFiltered.filter { !isOwn($0.nodeID) }
+            orderedCards = orderedCards.filter { isOwn($0.nodeID) } + orderedCards.filter { !isOwn($0.nodeID) }
+        }
         let newPassages = Array(generalFiltered.prefix(verdict.shape.passageBudget))
-        let newCards = Array(cards.prefix(verdict.shape.cardBudget))
+        let newCards = Array(orderedCards.prefix(verdict.shape.cardBudget))
         // Carry unions both kinds, but never a stale full-entry read into a survey (a survey is a new
         // topic — a prior read's `.entry` must not leak in as a source).
         let candidates = Self.assembleCandidates(
@@ -951,9 +1013,17 @@ final class LibrarianState {
         // user need never learn to pin). Fires only when the lead is strong: top aggregate ≥ 1.3
         // (≈ two ~0.65 passages) AND ≥ 2 passages AND ≥ 1.5× the runner-up — set from the fixture
         // (survey tops run ~0.5–0.6, a genuine single-entry lookup sums higher). Not on every survey.
+        // Brief BU3 — a SAVED ARTICLE never triggers the offer. The dominance READ already gates on
+        // provenance (BN2c: `.note`/`.document`, never `.savedLink`), but the offer did NOT — so the
+        // one path that could still hand a whole Wikipedia page to the model as "the answer" was the
+        // friendly button under a survey. Measured: "my thoughts on technology" offered *Schema
+        // (psychology)*, and accepting it read that article in full (receipt: "Read *Schema
+        // (psychology)* in full"). Same rule, both paths: an entry the user SAVED is a locator, not
+        // the authority on what the user thinks.
         if !empty, let lead = ranking.first, lead.aggregate >= 1.3, lead.count >= 2,
            (ranking.count == 1 || lead.aggregate >= 1.5 * (ranking[1].aggregate)),
-           let node = store.nodes.first(where: { $0.id == lead.nodeID }) {
+           let node = store.nodes.first(where: { $0.id == lead.nodeID }),
+           node.cardProvenance().kind != .savedLink {
             pendingReadInFullOffer = ReadInFullOffer(query: query, nodeID: lead.nodeID, title: node.title)
         }
 
@@ -1001,6 +1071,19 @@ final class LibrarianState {
         let kind = node.cardProvenance().kind
         guard kind == .note || kind == .document else { return nil }
         return leader.nodeID
+    }
+
+    /// Brief BU3 — is this question ABOUT THE USER ("my thoughts on technology", "what do I think
+    /// about…", "things I've written")? Then what they AUTHORED outranks what they merely SAVED (see
+    /// the survey's own-first partition). Deliberately a phrase matcher, not a classifier (T's
+    /// standing "no question classifier" ruling, same posture as `looksLikeWorkingSetFollowUp`).
+    /// Possessives only — a bare "technology" question is a normal survey with no ownership claim.
+    static func looksLikeOwnershipQuestion(_ query: String) -> Bool {
+        let q = query.lowercased()
+        let phrases = ["my ", " mine", "i think", "i thought", "i believe", "i wrote", "i've written",
+                       "i have written", "i said", "i feel", "my own", "do i ", "did i ", "am i ",
+                       "have i ", "about me", "of mine"]
+        return phrases.contains(where: { q.contains($0) })
     }
 
     /// Brief BN4 — does this question read as a FOLLOW-UP about the open entry (the working set)
@@ -1938,8 +2021,18 @@ final class LibrarianState {
     /// (no candidates, or a survey with < 3 cards and no passages). Say so plainly
     /// instead of answering from general knowledge and hallucinating citations. No
     /// `[n]` instruction — there is nothing to cite. Keeps the personal-voice tone.
+    /// Brief BU3/BU2 case 8 — nothing in the library matched. Say so in ONE short sentence, then
+    /// ANSWER THE QUESTION NORMALLY from general knowledge.
+    ///
+    /// ★ This CHANGES Brief AB3's behaviour (which forbade answering from general knowledge here, so
+    /// "what's the capital of France?" in Library mode hit a dead end: *"There are no matches for that
+    /// question in my library."* and nothing else — measured in the gauntlet). AB3's real concern was
+    /// never "don't answer" but "don't DRESS UP general knowledge as an answer from the notes" — and
+    /// that is now structurally handled elsewhere: the turn carries a receipt, so the footer always
+    /// reads "No matching entries" (BR3), and there are no candidates, so any fabricated `[n]` is
+    /// stripped (AB3's own guard). Provenance stays honest while the user still gets an answer.
     private var emptyLibrarySystemPrompt: String {
-        let base = "You are a reflective AI that helps someone think across their OWN entries. No entries in this library match the question. Say so plainly in one sentence. Do not cite anything and do not answer from general knowledge unless the user asks you to."
+        let base = "You are a reflective AI that helps someone think across their OWN entries. No entries in this library match this question. Open by saying that in ONE short sentence, then answer the question normally from your own general knowledge. Never imply the answer came from the user's entries, and never cite anything."
         return personalVoicePrefix + base
     }
 
@@ -2062,6 +2155,30 @@ final class LibrarianState {
     /// treats this node exactly like a pin (READ it in full) for the single re-asked turn, then it's
     /// cleared. Lets the survey-lead offer re-read an entry the router had only skimmed.
     @ObservationIgnored var forcedReadNodeID: String? = nil
+
+    #if DEBUG
+    /// Brief BU — the TURN RECORD: what the ONE pipeline actually decided and sent for the last
+    /// Library turn. The gauntlet asserts the BU1 invariants against this (request chars ≈ packet
+    /// chars; estimated tokens < window − reserve; a READ turn carries its entry as a chip), which
+    /// is only checkable if the decision and the wire agree — the exact drift BU exists to kill
+    /// (T's log showed a turn that CHOSE a 16,337-char read and sent a request without it).
+    struct TurnRecord {
+        var mode: String            // read(pin|title|followup|dominance) | survey | empty
+        var readNodeIDs: [String]   // entries read IN FULL
+        var packetChars: Int        // the modelText actually handed to ChatSession.send
+        var estTokens: Int          // conservative estimate (3 chars/token)
+        var windowTokens: Int       // the active backend's window
+        var budgetChars: Int        // the derived char budget for this turn
+        var candidateCount: Int
+        var cardCount: Int          // survey shape is asserted PER KIND (≤ 8 cards / ≤ 4 passages),
+        var passageCount: Int       // never as one total — 8 + 4 = 12 is CORRECT, not an overflow.
+        var cardNodeIDs: [String]   // survey card entries, best-first (the gauntlet's offer target)
+        var chipIndices: [Int]      // candidate numbers offered as sources
+        var alwaysCiteIndices: [Int]
+        var receipt: ChatSession.Message.ReadReceipt?
+    }
+    @ObservationIgnored var debugLastTurn: TurnRecord? = nil
+    #endif
 
     /// Read-only indicator of the model that will answer the next Ask (the FM
     /// friendly name, or a remote endpoint's model id). STORED + observable so the

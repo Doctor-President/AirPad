@@ -855,15 +855,77 @@ enum ModelRouter {
     /// /v1/catalog and returns the tag whose `state == "installed-loaded"`, or nil if none is
     /// loaded (the caller falls back; the Host's residency mode then decides what an ask does).
     private static func residentHostModel(pairing: HostPairing) async throws -> String? {
-        guard let url = pairing.catalogURL else { return nil }
+        try await resolveHostModel(pairing: pairing).resident
+    }
+
+    /// Brief BU3 — WHICH MODEL ANSWERS, resolved from the CURATED catalog. Three ordered answers:
+    ///
+    ///  1. `resident` — the model the Mac holds in memory. Under LOAD = SELECT the resident model IS
+    ///     the selection (one at a time), so it answers — NOT `.first of /v1/models` (install-order),
+    ///     which left a deliberately-loaded 30B unreachable from the phone.
+    ///  2. `preferred` — what to ASK FOR when nothing is resident (a restarted Host, an idle-eject, a
+    ///     fresh install: T's "set to load only when you choose"). It is the user's LAST-USED model if
+    ///     still installed, else the largest installed CURATED model. Naming it lets the Host's Dynamic
+    ///     mode auto-load the right weights; Manual/Always-on still refuse honestly, as ruled.
+    ///
+    /// ★ The bug this closes (measured through the sealed path, Brief BU): with nothing resident the
+    /// phone fell through to `firstHostModel` = install order = `llama3.2:latest` — a deliberately
+    /// UNCURATED dev/conformance fixture (no `tier`, absent from /v1/catalog). Retrieval, packet and
+    /// delivery were all correct and a 3B fixture answered a read-in-full lab question. A turn must
+    /// never be served by a model the catalog doesn't offer.
+    private static func resolveHostModel(pairing: HostPairing) async throws -> (resident: String?, preferred: String?) {
+        guard let url = pairing.catalogURL else { return (nil, nil) }
         var req = URLRequest(url: url)
         req.setValue("Bearer \(pairing.authToken)", forHTTPHeaderField: "Authorization")
         req.setValue(hostUserAgent, forHTTPHeaderField: "User-Agent")
         let (data, response) = try await runRequest(req, path: "v1/catalog")
-        guard let http = response as? HTTPURLResponse, (200...299).contains(http.statusCode) else { return nil }
+        guard let http = response as? HTTPURLResponse, (200...299).contains(http.statusCode) else {
+            NSLog("[ModelRouter] catalog: non-2xx (%d) — cannot resolve the curated model",
+                  (response as? HTTPURLResponse)?.statusCode ?? -1)
+            return (nil, nil)
+        }
         guard let json = try? JSONSerialization.jsonObject(with: data) as? [String: Any],
-              let models = json["models"] as? [[String: Any]] else { return nil }
-        return models.first(where: { ($0["state"] as? String) == "installed-loaded" })?["tag"] as? String
+              let models = json["models"] as? [[String: Any]] else {
+            NSLog("[ModelRouter] catalog: unparseable (%d bytes) — cannot resolve the curated model", data.count)
+            return (nil, nil)
+        }
+        func tag(_ m: [String: Any]) -> String? { m["tag"] as? String }
+        func state(_ m: [String: Any]) -> String { (m["state"] as? String) ?? "" }
+        func tier(_ m: [String: Any]) -> Int { (m["tier"] as? Int) ?? 0 }
+
+        // ★ CURATED ONLY — every candidate below is filtered to `tier > 0`. An untiered entry
+        // (`llama3.2:latest`, `deepseek-r1`) is a deliberate dev/conformance fixture that the phone's
+        // picker never offers, so it can NEVER be "the user's model" — not even when it is RESIDENT.
+        // Measured: run 1's fallback loaded llama3.2, which left it `installed-loaded`, and honouring
+        // LOAD = SELECT then made the accident STICKY — a 3B fixture kept answering read-in-full lab
+        // questions on run 2. LOAD = SELECT still holds, but only over models the user could select.
+        let curated = models.filter { tier($0) > 0 }
+        let resident = curated.first(where: { state($0) == "installed-loaded" }).flatMap(tag)
+        let installed = curated.filter { state($0).hasPrefix("installed") }
+        // The model the USER PICKED in the phone's picker (T's ruling: that IS the default in V1 —
+        // no separate setting). Used only while it is still installed; an ejected-but-installed pick is
+        // fine (naming it makes Dynamic load it), a DELETED one falls through.
+        let picked = userPickedHostModel.flatMap { p in installed.first { tag($0) == p }.flatMap(tag) }
+        // Else the SMALLEST curated shelf installed (`tier` = the GB shelf). Smallest, not largest: it
+        // is the fastest to load, the least surprising thing to spend ~20 s of the user's Mac on
+        // unasked, and — on T's machine — `qwen3:8b`, the model every prior brief (BR, BT) verified
+        // this path against. ⚠️ PRODUCT GAP: there is still no explicit "default model" setting, so
+        // this is a defensible proxy, not a user choice. Flagged for T.
+        let smallestCurated = installed.min(by: { tier($0) < tier($1) }).flatMap(tag)
+        return (resident, resident ?? picked ?? smallestCurated)
+    }
+
+    /// ★ The model the USER PICKED in the phone's model picker — T's ruling (2026-09-29): that IS the
+    /// default model for V1, with no separate setting. Written by `HostCatalog.load` (the one funnel
+    /// every picker "Load" goes through) and read by `resolveHostModel` when nothing is resident, so a
+    /// cold/idle-ejected Host is asked for the user's own choice rather than Ollama's install order.
+    /// Deliberately NOT overwritten by whichever model happened to answer a turn — a fallback pick
+    /// must never silently become the default (that is how `llama3.2` got sticky). Plain UserDefaults:
+    /// a preference, not a secret.
+    private static let userPickedHostModelKey = "airpadUserPickedHostModel"
+    static var userPickedHostModel: String? {
+        get { UserDefaults.standard.string(forKey: userPickedHostModelKey) }
+        set { UserDefaults.standard.set(newValue, forKey: userPickedHostModelKey) }
     }
 
     /// One-shot Host generation (accumulates the streamed answer). Short prompts (compaction /
@@ -901,14 +963,19 @@ enum ModelRouter {
         guard let hpk = pairing.hostPublicKey, let chatURL = pairing.chatURL else {
             throw RouterError.ollamaBadEndpoint(pairing.tunnelURL)
         }
-        // LOAD = SELECT: name the RESIDENT model. Only if nothing is loaded do we fall back to the
-        // filtered list (the Host's residency mode decides what an ask does with a non-resident pick).
+        // LOAD = SELECT: name the RESIDENT model. With NOTHING resident, name the user's default (last
+        // used, else the largest installed CURATED model) so a cold/idle-ejected Host loads the right
+        // weights (Brief BU3). `firstHostModel` is the last resort ONLY — on its own it picked
+        // `llama3.2:latest`, an uncurated dev fixture, to answer a read-in-full lab question.
         let model: String
-        if let resident = try await residentHostModel(pairing: pairing) {
-            model = resident
+        let resolved = try await resolveHostModel(pairing: pairing)
+        if let pick = resolved.preferred {
+            model = pick
         } else {
             model = try await firstHostModel(pairing: pairing)
         }
+        // NOTE: deliberately does NOT write `userPickedHostModel` — the default is the user's PICKER
+        // choice, not whatever a fallback happened to resolve to (see that property).
         // Brief BR — send REAL roles (system + history + user), never a folded "User:/Assistant:"
         // string, and set `options.num_ctx` so the Host tells Ollama to serve a window big enough
         // for the read-in-full packet (else it truncates to the model's 4096 default). The Host's

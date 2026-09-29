@@ -32,11 +32,19 @@ extension HostPairing {
     /// Ollama) against a locally-run Host — the "real Host, not direct Ollama" the brief demands,
     /// without a cloudflare tunnel. `hpk` comes from the local Host's `GET /health.hostPublicKey`;
     /// `S` is its `HOST_SECRET` (master/bearer derive identically on both sides). Release-inert.
+    /// Brief BU2 — force an UNREACHABLE Host for the next send(s), so the gauntlet can test Retry
+    /// after a real transport failure (case 5). ★ This cannot be done by writing `DebugHostURL` with
+    /// `UserDefaults.set`: a value supplied as a LAUNCH ARGUMENT lives in the **argument domain**,
+    /// which OUTRANKS the application domain, so the original URL keeps winning the read and the
+    /// "failing" send quietly succeeds (measured: 68 s of real inference on a turn meant to fail).
+    static var debugForceUnreachableHost = false
+
     private static func debugLANHostPairing() -> HostPairing? {
         let d = UserDefaults.standard
-        guard let url = d.string(forKey: "DebugHostURL"), !url.isEmpty,
+        guard var url = d.string(forKey: "DebugHostURL"), !url.isEmpty,
               let secret = d.string(forKey: "DebugHostSecret"), !secret.isEmpty,
               let hpk = d.string(forKey: "DebugHostPubKey"), !hpk.isEmpty else { return nil }
+        if debugForceUnreachableHost { url = "http://127.0.0.1:1" } // nothing listens on port 1
         return HostPairing(tunnelURL: url, protocolVersion: 1, secret: secret, hostPublicKeyB64: hpk)
     }
     #endif

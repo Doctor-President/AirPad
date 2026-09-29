@@ -130,9 +130,20 @@ enum CitationReference {
     /// duplicates (`[3, 12]` on one entry → `[1]`) and drops an immediately-repeated
     /// identical marker (`[1][1]` → `[1]`). Tap routing stays index-based (the link URL
     /// and the citation both carry the display number), so it still resolves to the node.
+    /// `alwaysInclude` (Brief BU1) — RAW candidate indices that MUST survive as chips even when the
+    /// prose never cited them: the entries READ IN FULL (BS2 — "provenance is the product").
+    ///
+    /// ★ Without this, BS2's guarantee was silently defeated HERE, at the last step.
+    /// `alwaysCiteIndices` correctly kept the read entry past `ChatSession.send`'s cited-only filter,
+    /// but this function then rebuilt its output **purely from prose mentions** — so an entry the
+    /// model happened not to write `[n]` for was dropped anyway. It looked correct for as long as the
+    /// model cited the entry of its own accord. Measured in the gauntlet on the offer/forced-read
+    /// path (cases 4/5), where the model cited a skimmed passage instead: the footer read
+    /// "Read *…* in full" while the entry had NO chip.
     static func renumberBySource(
         text: String,
-        citations: [ChatSession.Message.Citation]
+        citations: [ChatSession.Message.Citation],
+        alwaysInclude: Set<Int> = []
     ) -> (text: String, citations: [ChatSession.Message.Citation]) {
         guard !citations.isEmpty else { return (text, citations) }
         func sourceKey(_ c: ChatSession.Message.Citation) -> String { c.nodeID ?? c.url ?? "idx:\(c.index)" }
@@ -154,6 +165,14 @@ enum CitationReference {
                 else { d = displayForSource.count + 1; displayForSource[key] = d }
                 displayForRaw[raw] = d
             }
+        }
+        // BU1 — a REQUIRED source with no prose mention still gets a display number, appended after
+        // the mentioned ones (first-mention order is preserved for everything the model did cite).
+        for raw in alwaysInclude.sorted() {
+            guard let c = byIndex[raw] else { continue }
+            let key = sourceKey(c)
+            if displayForSource[key] == nil { displayForSource[key] = displayForSource.count + 1 }
+            if displayForRaw[raw] == nil { displayForRaw[raw] = displayForSource[key] }
         }
         guard !displayForRaw.isEmpty else { return (text, citations) }
 

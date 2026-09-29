@@ -612,6 +612,7 @@ final class LibrarianState {
         guard !query.isEmpty else { return }
         chat.thinkEnabled = thinkEnabled // Phase 2: the Librarian's per-session Thinking toggle → the Host
         pendingWebSearchOffer = nil      // Brief AI5 — any fresh send clears a stale web-search offer
+        pendingReadInFullOffer = nil     // Brief BS3 — a fresh send clears a stale "Read … in full?" offer
 
         // ★ Private mode (DEFAULT, corpusAware == false): do NOT retrieve. Send the
         // bare question with a plain assistant prompt — no passages, no citation
@@ -742,7 +743,12 @@ final class LibrarianState {
         // the [n] the model actually cited before committing the message. The read/skim
         // receipt (BN5) rides alongside so the footer can show what was read.
         let chips = Self.citationChips(from: candidates, store: store)
-        await chat.send(displayText: query, modelText: modelText, systemPrompt: askSystemPrompt, citations: chips, readReceipt: receipt)
+        // Brief BS2 — an entry READ IN FULL is ALWAYS a source chip, even if the model wrote no [n]
+        // for it (provenance is the product). `ChatSession.send` keeps these indices regardless of
+        // inline citation; skimmed passages/cards still only chip when the prose cites them.
+        let alwaysCite = Set(candidates.filter { $0.isEntryRead }.map { $0.number })
+        await chat.send(displayText: query, modelText: modelText, systemPrompt: askSystemPrompt,
+                        citations: chips, alwaysCiteIndices: alwaysCite, readReceipt: receipt)
     }
 
     /// Brief AI5 — the user tapped "Search the web instead" under an empty Library
@@ -756,6 +762,17 @@ final class LibrarianState {
         pendingWebSearchOffer = nil
         corpusAware = false
         await groundedSend(query: query, store: store, chat: chat)
+    }
+
+    /// Brief BS3 — the user tapped "Read *Title* in full?" under a survey answer. Force-read that
+    /// entry for the re-asked turn (`forcedReadNodeID`, treated as a pin by `corpusCandidates`) and
+    /// re-send the SAME question. Re-sending is exactly `groundedSend`, so routing/delivery/receipt
+    /// all flow through the one path — this just changes which entry gets read in full.
+    func acceptReadInFullOffer(store: CorpusStore, chat: ChatSession) async {
+        guard let offer = pendingReadInFullOffer else { return }
+        pendingReadInFullOffer = nil
+        forcedReadNodeID = offer.nodeID
+        await groundedSend(query: offer.query, store: store, chat: chat)
     }
 
     /// Brief BN2–BN5 — route the corpus-Ask turn (read vs survey), then assemble the numbered
@@ -784,9 +801,16 @@ final class LibrarianState {
             return query
         }()
 
-        // BN2 trigger #1 — PIN: a quoted title, or a title verbatim in the question (`pinnedNodeIDs`).
-        // Detect against the CURRENT question, not the augmented query.
-        let pinnedIDs = Self.pinnedNodeIDs(question: query, store: store)
+        // BS3 — a one-shot forced read (the "Read … in full?" survey-lead offer was tapped) acts
+        // exactly like a pin for THIS turn, then clears. Otherwise BN2 trigger #1 — PIN: a quoted
+        // title, or a title verbatim in the question (`pinnedNodeIDs`); detect against the CURRENT
+        // question, not the augmented query.
+        let forcedID = forcedReadNodeID
+        forcedReadNodeID = nil
+        let pinnedIDs: [String] = {
+            if let forcedID, store.nodes.contains(where: { $0.id == forcedID }) { return [forcedID] }
+            return Self.pinnedNodeIDs(question: query, store: store)
+        }()
         let pinning = !pinnedIDs.isEmpty
         // BN2 trigger #2 — the question NAMES an entry by TITLE MATCH: looser than the strict
         // quoted/verbatim pin (punctuation-normalised, word-order-independent), so "what's in my
@@ -841,14 +865,40 @@ final class LibrarianState {
         let dominant = Self.dominantReadEntry(ranking: ranking, store: store)   // nil → no single dominator
 
         if named || dominant != nil {
-            // READ. Targets: the NAMED entries (pin or title match, store order) OR the dominant entry.
-            let readTargets: [String] = named ? namedIDs : [dominant!]
+            // READ targets + BS1 AMBIGUITY. A pin reads all pinned entries; a title match that named
+            // ONE entry reads it; a title match that named 2+ entries reads the TOP by aggregate
+            // passage score and lists the rest as CHIPS (BS1 — the user still sees the alternatives
+            // without learning to pin); dominance reads the single dominant entry.
+            func agg(_ id: String) -> Float { ranking.first { $0.nodeID == id }?.aggregate ?? 0 }
+            let readTargets: [String]
+            var ambiguousChipIDs: [String] = []
+            if pinning {
+                readTargets = namedIDs
+            } else if named {
+                if titleMatchedIDs.count <= 1 {
+                    readTargets = titleMatchedIDs
+                } else {
+                    let ranked = titleMatchedIDs.sorted { agg($0) > agg($1) }
+                    readTargets = [ranked[0]]
+                    ambiguousChipIDs = Array(ranked.dropFirst().prefix(4))   // the other named entries → chips
+                }
+            } else {
+                readTargets = [dominant!]
+            }
             let readSet = Set(readTargets)
             // Non-target passages become labelled skim passages; non-target cards become one-line
             // summaries. For a NAMED entry, non-named passages still clear the higher 0.70 bar (S3).
             let bar: Float = named ? 0.70 : CorpusStore.minRelevanceScore
             let skimPassages = general.filter { !readSet.contains($0.nodeID) && $0.score >= bar }
-            let skimCards = named ? [] : cards.filter { !readSet.contains($0.nodeID) }
+            var skimCards = named ? [] : cards.filter { !readSet.contains($0.nodeID) }
+            // BS1 — the other title-matched entries become chips even though a NAMED turn suppresses
+            // the survey: build a card per one (its gist = the node summary) so it's a tappable source.
+            for id in ambiguousChipIDs where !readSet.contains(id) {
+                if let node = store.nodes.first(where: { $0.id == id }) {
+                    let gist = (node.substrateSummary?.isEmpty == false ? node.substrateSummary! : node.summary)
+                    skimCards.append(CardMatch(nodeID: id, gist: gist, score: agg(id)))
+                }
+            }
             // A NAMED turn drops carried CARDS (AA); dominance keeps the full carry for stable [n].
             let carried = named ? carriedAll.filter { !$0.isCard } : carriedAll
             let (candidates, receipt) = await buildReadPacket(
@@ -885,6 +935,16 @@ final class LibrarianState {
         let cardCount = candidates.count - passageCount
         let empty = candidates.isEmpty
             || (passageCount == 0 && cardCount < 3 && verdict.shape == .survey)
+
+        // Brief BS3 — a survey where ONE entry clearly leads offers "Read *Title* in full?" (so the
+        // user need never learn to pin). Fires only when the lead is strong: top aggregate ≥ 1.3
+        // (≈ two ~0.65 passages) AND ≥ 2 passages AND ≥ 1.5× the runner-up — set from the fixture
+        // (survey tops run ~0.5–0.6, a genuine single-entry lookup sums higher). Not on every survey.
+        if !empty, let lead = ranking.first, lead.aggregate >= 1.3, lead.count >= 2,
+           (ranking.count == 1 || lead.aggregate >= 1.5 * (ranking[1].aggregate)),
+           let node = store.nodes.first(where: { $0.id == lead.nodeID }) {
+            pendingReadInFullOffer = ReadInFullOffer(query: query, nodeID: lead.nodeID, title: node.title)
+        }
 
         Self.logCandidates(turnIndex: turnIndex, query: retrievalQuery, candidates: candidates, shape: verdict, scope: selectedScope, empty: empty, store: store)
         let receipt: ChatSession.Message.ReadReceipt? = empty ? nil : Self.surveyReceipt(candidates: candidates)
@@ -1040,10 +1100,19 @@ final class LibrarianState {
             used += cost
         }
 
-        // BN5 receipt — entries read in full vs distinct entries merely skimmed.
-        let readNodes = Set(out.filter { $0.isEntryRead }.map { $0.nodeID })
+        // BN5/BS3 receipt — entries read in full (with their TITLES, in packet order) vs distinct
+        // entries merely skimmed. `partialModel` names the model for the BS3 "too long for {model}"
+        // line (only when a read was partial).
+        let readEntries = out.filter { $0.isEntryRead }
+        let readNodes = Set(readEntries.map { $0.nodeID })
         let skimmedNodes = Set(out.filter { !$0.isEntryRead }.map { $0.nodeID }).subtracting(readNodes)
-        let receipt = ChatSession.Message.ReadReceipt(readInFull: readNodes.count, skimmed: skimmedNodes.count, partial: partialAny)
+        let readTitles = readEntries.compactMap { c -> String? in
+            if case .entry(let e) = c.payload { return e.title } else { return nil }
+        }
+        let receipt = ChatSession.Message.ReadReceipt(
+            readInFull: readNodes.count, skimmed: skimmedNodes.count, partial: partialAny,
+            readTitles: readTitles.isEmpty ? nil : readTitles,
+            partialModel: partialAny ? activeModelLabel : nil)
         return (out, receipt)
     }
 
@@ -1592,45 +1661,64 @@ final class LibrarianState {
         return result
     }
 
-    /// Brief BN2 (READ trigger #2) — the question NAMES an entry by its TITLE, more loosely than the
-    /// strict quoted/verbatim pin (`pinnedNodeIDs`): punctuation is normalised (en-dashes, parens,
-    /// slashes → spaces) and matching is on TITLE-WORD OVERLAP, word-order-independent. An entry is
-    /// "named" when ALL of its distinctive title words (≥ 2 content words, stopwords + very short
-    /// words dropped) appear in the question — so "what's in my Medical Lab Tests?" names the
-    /// "Medical – Lab Tests" entry even without quotes or the exact en-dashed form, while a lookup
-    /// like "what do my lab test results reveal?" (which omits "medical") does NOT (that routes by
-    /// dominance instead). Requiring the FULL distinctive title keeps false positives low. When
-    /// several titles are fully named, the most specific (most title-words) wins. Empty for the
-    /// common no-named-entry question. Order follows `store.nodes`. Never called when a pin fired.
+    /// Brief BS1 (READ trigger #2) — the question NAMES an entry by its TITLE, matched on TOKEN
+    /// OVERLAP (not the whole-phrase subset BN2 first shipped, which missed "what do my lab test
+    /// results reveal?" ↔ "Medical – Lab Tests" because the question omits "medical" and says
+    /// "test*s* results"). Now: lowercase, split punctuation (en-dash/parens/slash), drop stopwords +
+    /// sub-3-char words, LIGHT-STEM (tests→test, results→result, studies→study). An entry with ≥ 2
+    /// distinctive title tokens matches when **the question shares ≥ 2 of them, OR ≥ 60% of them**
+    /// (the reported rule). "lab test results" → {lab, test, result}; "Medical – Lab Tests" →
+    /// {medical, lab, test}; overlap {lab, test} = 2 → MATCH. Returned BEST-FIRST by overlap; when
+    /// two entries both match (ambiguous), the caller READS the top by passage score and lists the
+    /// rest as chips (BS1). Empty for the common no-named-entry question. Never called when a pin
+    /// fired.
     static func titleMatchedEntryIDs(question: String, store: CorpusStore) -> [String] {
-        let qWords = Set(contentWords(question))
-        guard qWords.count >= 2 else { return [] }
-        var best = 0
-        var matches: [(id: String, words: Int)] = []
+        let q = contentTokens(question)
+        guard !q.isEmpty else { return [] }
+        var matches: [(id: String, overlap: Int)] = []
         for node in store.nodes {
-            let titleWords = Set(contentWords(node.title))
-            guard titleWords.count >= 2 else { continue }   // single-word titles are too grabby
-            guard titleWords.isSubset(of: qWords) else { continue }
-            matches.append((node.id, titleWords.count))
-            best = max(best, titleWords.count)
+            let t = contentTokens(node.title)
+            guard t.count >= 2 else { continue }   // single distinctive-token titles are too grabby
+            let overlap = t.intersection(q).count
+            guard overlap >= 1 else { continue }
+            let frac = Double(overlap) / Double(t.count)
+            if overlap >= 2 || frac >= 0.6 {
+                matches.append((node.id, overlap))
+            }
         }
-        return matches.filter { $0.words == best }.map(\.id)
+        // Best (most shared tokens) first — the caller reads the top and lists the rest as chips.
+        return matches.sorted { $0.overlap > $1.overlap }.map(\.id)
     }
 
-    /// Distinctive words of a string for title matching: lowercased, punctuation split out (so an
-    /// en-dashed / parenthesised title tokenises the same as the question), stopwords + sub-3-char
-    /// words dropped. Shared by the question and each title so both are normalised the same way.
-    private static func contentWords(_ s: String) -> [String] {
+    /// Distinctive, light-stemmed tokens of a string for title matching: lowercased, punctuation
+    /// split out (so an en-dashed / parenthesised title tokenises the same as the question),
+    /// stopwords + sub-3-char words dropped, then a conservative plural stem (tests→test,
+    /// results→result, studies→study; never touches "…ss"). Shared by the question and each title so
+    /// both are normalised the same way. Stopwords are matched on the RAW word (function words
+    /// aren't pluralised), so "does" isn't stemmed to "doe".
+    private static func contentTokens(_ s: String) -> Set<String> {
         let stop: Set<String> = [
             "the", "and", "for", "with", "about", "what", "whats", "tell", "does", "did",
-            "entry", "note", "notes", "document", "article", "page", "this", "that", "these",
-            "those", "your", "you", "reveal", "reveals", "say", "says", "have", "has", "are",
-            "was", "were", "can", "how", "why", "who", "when", "where", "which", "from", "into",
-            "get", "got", "any", "all", "some", "more", "call", "called", "named", "titled"]
-        return s.lowercased()
-            .split(whereSeparator: { !$0.isLetter && !$0.isNumber })
-            .map(String.init)
-            .filter { $0.count >= 3 && !stop.contains($0) }
+            "entry", "note", "notes", "document", "documents", "article", "articles", "page", "pages",
+            "this", "that", "these", "those", "your", "you", "reveal", "reveals", "say", "says",
+            "have", "has", "are", "was", "were", "can", "how", "why", "who", "when", "where", "which",
+            "from", "into", "get", "got", "any", "all", "some", "more", "call", "called", "named",
+            "titled", "show", "give", "find", "want", "would", "could", "should", "please", "thing"]
+        var out: Set<String> = []
+        for w in s.lowercased().split(whereSeparator: { !$0.isLetter && !$0.isNumber }).map(String.init)
+        where w.count >= 3 && !stop.contains(w) {
+            out.insert(Self.stemToken(w))
+        }
+        return out
+    }
+
+    /// Conservative plural stem: `…ies`→`…y` (studies→study), else a trailing `s` dropped unless it's
+    /// a double-s (tests→test, results→result; business→business). Not a real stemmer — just enough
+    /// to make singular/plural title↔question tokens agree.
+    private static func stemToken(_ w: String) -> String {
+        if w.count > 4, w.hasSuffix("ies") { return String(w.dropLast(3)) + "y" }
+        if w.count > 3, w.hasSuffix("s"), !w.hasSuffix("ss") { return String(w.dropLast()) }
+        return w
     }
 
     /// Brief S3 — nodes to PIN for `question`: (1) a node title exactly equal to a
@@ -1899,6 +1987,25 @@ final class LibrarianState {
     /// empty-library answer commits; cleared on the next send, an accept, or a manual
     /// mode flip. Observable so the surface shows/hides the offer bar.
     var pendingWebSearchOffer: String? = nil
+
+    /// Brief BS3 — a SURVEY turn where ONE entry clearly leads parks a "Read *Title* in full?" offer
+    /// here; the surface renders it under the answer, and tapping re-asks the SAME question with that
+    /// entry force-read (`acceptReadInFullOffer`) — so the user never has to learn that pinning is
+    /// the trick. Set only when the lead is strong (see `surveyLeadOffer`); cleared on the next send
+    /// or an accept. Never model text / never a citation.
+    struct ReadInFullOffer: Equatable { let query: String; let nodeID: String; let title: String }
+    var pendingReadInFullOffer: ReadInFullOffer? = nil
+
+    // Brief BS3 note — a "Use {larger model}" ACTION is deliberately NOT wired: `ModelRouter.active`
+    // already selects Host (32K) over FM/Ollama (4K) whenever a Host is paired, so a PARTIAL read
+    // only ever happens on a 4K provider with NO larger model reachable — i.e. the brief's "otherwise
+    // no button" is the ONLY reachable state. The footer still explains the partial and names the
+    // model (`ReadReceipt.partialModel`); there is simply nothing larger to offer.
+
+    /// Brief BS3 — a one-turn forced read target set by `acceptReadInFullOffer`: `corpusCandidates`
+    /// treats this node exactly like a pin (READ it in full) for the single re-asked turn, then it's
+    /// cleared. Lets the survey-lead offer re-read an entry the router had only skimmed.
+    @ObservationIgnored var forcedReadNodeID: String? = nil
 
     /// Read-only indicator of the model that will answer the next Ask (the FM
     /// friendly name, or a remote endpoint's model id). STORED + observable so the

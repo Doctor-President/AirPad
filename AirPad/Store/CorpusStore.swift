@@ -1115,11 +1115,18 @@ final class CorpusStore {
                     let r3 = ChatTranscript.readReceiptText(.init(readInFull: 1, skimmed: 3, partial: true))
                     let r4 = ChatTranscript.readReceiptText(.init(readInFull: 0, skimmed: 9, partial: false))
                     let r5 = ChatTranscript.readReceiptText(.init(readInFull: 0, skimmed: 1, partial: false))
+                    let r6 = ChatTranscript.readReceiptText(.init(readInFull: 0, skimmed: 0, partial: false))
+                    // BS3 — title-named + partial-line receipts.
+                    let r7 = ChatTranscript.readReceiptText(.init(readInFull: 1, skimmed: 9, partial: false, readTitles: ["Medical – Lab Tests"]))
+                    let r8 = ChatTranscript.readReceiptText(.init(readInFull: 1, skimmed: 0, partial: true, readTitles: ["Medical – Lab Tests"], partialModel: "Apple Intelligence"))
                     let receiptOK = r1 == "Read 1 entry in full · skimmed 6"
                         && r2 == "Read 2 entries in full"
                         && r3 == "Read 1 entry (partial) · skimmed 3"
                         && r4 == "Skimmed 9 entries"
                         && r5 == "Skimmed 1 entry"
+                        && r6 == "No matching entries"
+                        && r7 == "Read *Medical – Lab Tests* in full · skimmed 9"
+                        && r8 == "*Medical – Lab Tests* is too long for Apple Intelligence to read at once — I used the most relevant parts."
                     // Brief BR — the DELIVERY shape: the chat path must build proper roles (system
                     // first, history roles preserved, current turn as a `user` message), never a
                     // flattened "User:/Assistant:" transcript in one message.
@@ -1251,6 +1258,15 @@ final class CorpusStore {
                         let pt = await libT.debugBuildAskPacket(query: "what's in my \(titleWords)?", store: self, chat: cT)
                         NSLog("[RoutingDiag] TITLE-MATCH (unquoted '%@'): titleMatchedEntryIDs→%@ · mode=%@ read=%d (expect read(title), names the doc)",
                               titleWords, "\(tmIDs.contains(docID))", pt.mode, pt.receipt?.readInFull ?? -1)
+                        // BS1 — TOKEN match: only the FIRST TWO title tokens, each PLURALISED, must still
+                        // match (proves ≥2-token rule + light stemming — the "lab test results" ↔
+                        // "Medical – Lab Tests" fix, which the old whole-phrase subset missed).
+                        let firstTwo = docTitle.lowercased()
+                            .split(whereSeparator: { !$0.isLetter && !$0.isNumber }).map(String.init)
+                            .filter { $0.count >= 3 }.prefix(2).map { $0.hasSuffix("s") ? $0 : $0 + "s" }.joined(separator: " ")
+                        let tmPartial = LibrarianState.titleMatchedEntryIDs(question: "what do my \(firstTwo) show?", store: self)
+                        NSLog("[RoutingDiag] TITLE-MATCH (2 tokens, pluralised '%@'): matches doc=%@ (expect true — token+stem)",
+                              firstTwo, "\(tmPartial.contains(docID))")
 
                         // ── BN2 PIN + BN4 WORKING SET + follow-up + moved-on (deterministic; pin=title-match).
                         let libP = LibrarianState(); let cP = ChatSession(); libP.selectedScope = .corpus

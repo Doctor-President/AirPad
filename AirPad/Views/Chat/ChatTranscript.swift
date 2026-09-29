@@ -372,22 +372,40 @@ struct ChatTranscript: View {
     @ViewBuilder
     private func readReceiptLine(message: ChatSession.Message) -> some View {
         if let r = message.readReceipt {
-            Text(Self.readReceiptText(r))
+            // BS3 — the entry title is emphasised (markdown `*…*`); the whole line follows the Font.
+            let md = Self.readReceiptText(r)
+            let attributed = (try? AttributedString(markdown: md)) ?? AttributedString(md)
+            Text(attributed)
                 .font(appFont.font(size: 13, relativeTo: .footnote))
                 .foregroundStyle(ChatTypography.secondaryText)
                 .padding(.top, 1)
-                .accessibilityLabel(Self.readReceiptText(r))
+                .accessibilityLabel(md.replacingOccurrences(of: "*", with: ""))
         }
     }
 
-    /// Pure string builder for the receipt line (BN5) — `static` so a self-test can exercise the
-    /// singular/plural + partial + survey wording without a view.
+    /// Pure string builder for the receipt line (BN5/BS3) — `static` so a self-test can exercise the
+    /// wording without a view. Returns MARKDOWN: an entry title is wrapped in `*…*` (rendered
+    /// italic). BS3: name the entry read ("Read *Medical – Lab Tests* in full · skimmed 9"); a
+    /// PARTIAL names the entry + model ("*Title* is too long for {model} to read at once — I used the
+    /// most relevant parts."); a SURVEY says "Skimmed N entries"; nothing matched → "No matching
+    /// entries". Falls back to counts when titles are absent (legacy receipts).
     static func readReceiptText(_ r: ChatSession.Message.ReadReceipt) -> String {
         func entries(_ n: Int) -> String { "\(n) entr\(n == 1 ? "y" : "ies")" }
+        let titles = r.readTitles ?? []
         if r.readInFull > 0 {
-            let read = r.partial
-                ? "Read \(entries(r.readInFull)) (partial)"
-                : "Read \(entries(r.readInFull)) in full"
+            // PARTIAL — the focus entry didn't fit the model's window.
+            if r.partial {
+                if let first = titles.first {
+                    let model = r.partialModel ?? "this model"
+                    return "*\(first)* is too long for \(model) to read at once — I used the most relevant parts."
+                }
+                let read = "Read \(entries(r.readInFull)) (partial)"
+                return r.skimmed > 0 ? "\(read) · skimmed \(r.skimmed)" : read
+            }
+            // FULL — name the entry (one) or count (two+).
+            let read: String
+            if titles.count == 1 { read = "Read *\(titles[0])* in full" }
+            else { read = "Read \(entries(r.readInFull)) in full" }
             return r.skimmed > 0 ? "\(read) · skimmed \(r.skimmed)" : read
         }
         // Brief BR3 — an empty Library turn (nothing matched) still reports, so the footer never

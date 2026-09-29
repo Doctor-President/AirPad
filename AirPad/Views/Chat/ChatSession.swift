@@ -54,6 +54,14 @@ final class ChatSession {
             let readInFull: Int
             let skimmed: Int
             let partial: Bool
+            /// Brief BS3 — the TITLES of the entries read in full, so the footer names them
+            /// ("Read *Medical – Lab Tests* in full · skimmed 9") instead of a bare count. Optional +
+            /// synthesized Codable → legacy receipts decode with `readTitles == nil` (footer falls
+            /// back to the count wording).
+            var readTitles: [String]? = nil
+            /// Brief BS3 — the model's friendly name for the PARTIAL line ("*Title* is too long for
+            /// {model} to read at once — I used the most relevant parts"). Nil unless `partial`.
+            var partialModel: String? = nil
         }
 
         let id: UUID
@@ -251,7 +259,7 @@ final class ChatSession {
     /// turns by `buildPrompt`); `systemPrompt` steers it. ChatSession stays a dumb
     /// lane — it appends the bubble, streams, and persists; it does NOT retrieve
     /// or build the grounded prompt (LibrarianState owns that — step 3/Ask hybrid).
-    func send(displayText: String, modelText: String, systemPrompt: String, citations: [Message.Citation]? = nil, readReceipt: Message.ReadReceipt? = nil) async {
+    func send(displayText: String, modelText: String, systemPrompt: String, citations: [Message.Citation]? = nil, alwaysCiteIndices: Set<Int> = [], readReceipt: Message.ReadReceipt? = nil) async {
         guard !displayText.isEmpty, !isStreaming else { return }
 
         // New attempt clears any prior transient failure banner.
@@ -326,9 +334,12 @@ final class ChatSession {
                 // only when the prose references it — so a turn that ignores the
                 // passages (or answers from general knowledge) can't render
                 // phantom "sources" under it (BUG 7 / Part 2).
+                // Brief BS2 — an entry READ IN FULL (its index in `alwaysCiteIndices`) is ALWAYS
+                // kept as a source chip, whether or not the model wrote its [n]; skimmed
+                // passages/cards still only survive when the prose cites them.
                 let citedOnly: [Message.Citation]? = citations.flatMap { candidates in
                     let used = CitationReference.citedIndices(in: finalText)
-                    let kept = candidates.filter { used.contains($0.index) }
+                    let kept = candidates.filter { used.contains($0.index) || alwaysCiteIndices.contains($0.index) }
                     return kept.isEmpty ? nil : kept
                 }
                 // Brief BH — renumber to ONE number per source (1…k, first-mention order)

@@ -20,6 +20,22 @@ Authoritative operating conventions for any Claude Code session in this repo. Re
   claim was true of the 26.5 beta only. The epistemics survive the toolchain: compiling is not
   knowing.)
 
+## Librarian changes — verify THROUGH THE HOST, not direct Ollama (standing rule, Brief BR)
+- **Any change to the Librarian Ask/delivery path (retrieval, packet building, prompt shape,
+  `ModelRouter` streaming, `ChatSession.send`) MUST be verified on T's REAL path: iOS/Sim app →
+  AirPad Host (Mac) → Ollama — NOT by feeding a packet straight to localhost Ollama.** BN's case-1
+  "PASS" fed the read packet directly to `localhost:11434` and shipped a build that failed on
+  device: the app FOLDED system + a `User:/Assistant:` transcript into ONE user message (Qwen3
+  continued the transcript, leaking "Assistant:") **and** never set `options.num_ctx`, so Ollama
+  served qwen3:8b's DEFAULT 4096 window and silently TRUNCATED the ~6k-token entry — the footer said
+  "Read 1 entry in full" while the model saw only the tail. Direct-Ollama hid both (it got a clean
+  2-message chat at num_ctx 32768). The Host relays `messages` + `options` RAW to `/api/chat`
+  (`internal/host/chat_translate.go`); the app sends real roles + `options.num_ctx =
+  ModelRouter.contextWindowTokens`. **A model's served window is its request `num_ctx`, not its
+  architecture max** — check `ollama ps` (the `ctx=` column) and the Host `--observe` line
+  (`chat→ollama … num_ctx=… totalChars=…`, presence-only, no content). `prompt_eval_count` ≈ packet
+  size ⇒ delivered; a few thousand clamped ⇒ truncated.
+
 ## Done / authorship changes — verify with `-StubAuthorModel` (standing rule, Brief BM)
 - **Any change to the Done → model → write path (naming, summarising, the enrichment gate,
   proposals) MUST be verified end-to-end in the Simulator with `-StubAuthorModel` before merge.**

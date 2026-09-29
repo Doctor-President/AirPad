@@ -105,6 +105,34 @@ enum ModelRouter {
         return true
     }
 
+    /// Brief BN3 — the active backend's real context window, in TOKENS. The Librarian's
+    /// read-in-full budget is DERIVED from this (minus system prompt, history, and an answer
+    /// reserve), replacing the fixed `askPassageCharBudget`/`contextBudgetChars` that were sized
+    /// for a 4096-token stock window. The same rule then degrades gracefully per backend —
+    /// generous on the Host, tight on FM — instead of one constant that either overflows the small
+    /// window or starves the big one.
+    ///
+    /// The numbers, by provider:
+    ///   • `.host` — 32,768. The paired Mac's Ollama is Modelfile-pinned to `num_ctx 32768`
+    ///     (Brief BJ verified this on T's machine); this is the marquee "read my whole entry"
+    ///     path, so it gets the real served window.
+    ///   • `.foundationModel` — 4,096. Apple's on-device model is a hard 4K window; the budget
+    ///     must never overflow it, so a big entry degrades to its best passages ("partial").
+    ///   • `.ollama` — 4,096. A direct LAN endpoint (Ollama/LM Studio) self-reports no reliable
+    ///     served `num_ctx`, and both commonly default low, so we stay conservative and never
+    ///     overflow. (A future brief can probe `/api/show` for the real value.)
+    ///   • `.local` — 4,096. The on-device MLX model is small and not wired to free-text Ask
+    ///     anyway; a safe floor for exhaustiveness.
+    /// Reads the Keychain (XPC) via `active` — call OFF the SwiftUI render path.
+    static var contextWindowTokens: Int {
+        switch active {
+        case .host:            return 32_768
+        case .foundationModel: return 4_096
+        case .ollama:          return 4_096
+        case .local:           return 4_096
+        }
+    }
+
     /// Friendly, quiet name for the on-device Foundation Model — no network, safe
     /// to return instantly. (Wording confirmed by T.)
     static let foundationModelName = "Apple Intelligence"
@@ -182,9 +210,65 @@ enum ModelRouter {
     /// deltas in `streamFoundationModel` so both providers present the identical delta contract.
     /// `think` (per-chat, OFF by default) reaches only the Host path — the sole endpoint that
     /// honors it (Ollama's native /api/chat, via the Host).
+    /// One chat message on the wire. `role` ∈ {"system","user","assistant"}.
+    typealias WireMessage = [String: String]
+
+    /// Streaming from a SINGLE folded prompt (legacy shape). Kept for the BUG-36 continuation path,
+    /// which hands a pre-rendered transcript. Builds `[system?, user]` and dispatches.
     static func generateStreaming(
         systemPrompt: String,
         userPrompt: String,
+        requestID: String? = nil,
+        think: Bool = false
+    ) -> AsyncThrowingStream<ModelDelta, Error> {
+        var msgs: [WireMessage] = []
+        if !systemPrompt.isEmpty { msgs.append(["role": "system", "content": systemPrompt]) }
+        msgs.append(["role": "user", "content": userPrompt])
+        return generateStreaming(messages: msgs, numCtx: nil, requestID: requestID, think: think)
+    }
+
+    /// Brief BR — streaming from a proper CHAT: `system` + real-role `history` + the current `user`
+    /// turn, with an explicit `numCtx` so the backend serves a window big enough for the packet.
+    /// This is the ONE shape all live Library turns use — never a flattened "User:/Assistant:"
+    /// string. Two things went wrong on the Host path before this: the read packet was folded into a
+    /// single user message ending "Assistant:" (so Qwen3 continued a transcript, leaking "Assistant:"
+    /// + echoing the question), and Ollama served the model's DEFAULT window (qwen3:8b → 4096) and
+    /// TRUNCATED the ~6k-token entry — the receipt said "Read 1 entry in full" while the model saw
+    /// only the tail. Real roles fix the first; `numCtx` (forwarded by the Host into
+    /// `options.num_ctx`) fixes the second.
+    static func generateStreaming(
+        systemPrompt: String,
+        history: [WireMessage],
+        userContent: String,
+        numCtx: Int?,
+        requestID: String? = nil,
+        think: Bool = false
+    ) -> AsyncThrowingStream<ModelDelta, Error> {
+        var msgs: [WireMessage] = []
+        if !systemPrompt.isEmpty { msgs.append(["role": "system", "content": systemPrompt]) }
+        msgs.append(contentsOf: history)
+        msgs.append(["role": "user", "content": userContent])
+        return generateStreaming(messages: msgs, numCtx: numCtx, requestID: requestID, think: think)
+    }
+
+    #if DEBUG
+    /// Brief BR verify — the wire message array the chat path builds (system + real-role history +
+    /// current user), so a self-test can assert the SHAPE without a live backend: system leads,
+    /// history roles are preserved, the current turn is a `user` message, and NOTHING is a flattened
+    /// "User:/Assistant:" transcript. Locks the contract against a regression back to the fold.
+    static func debugWireMessages(systemPrompt: String, history: [WireMessage], userContent: String) -> [WireMessage] {
+        var msgs: [WireMessage] = []
+        if !systemPrompt.isEmpty { msgs.append(["role": "system", "content": systemPrompt]) }
+        msgs.append(contentsOf: history)
+        msgs.append(["role": "user", "content": userContent])
+        return msgs
+    }
+    #endif
+
+    /// The streaming dispatcher — every provider consumes the SAME message array + `numCtx`.
+    static func generateStreaming(
+        messages: [WireMessage],
+        numCtx: Int?,
         requestID: String? = nil,
         think: Bool = false
     ) -> AsyncThrowingStream<ModelDelta, Error> {
@@ -196,25 +280,16 @@ enum ModelRouter {
                         guard #available(iOS 26.0, *) else {
                             throw RouterError.foundationModelUnavailable
                         }
-                        try await streamFoundationModel(
-                            systemPrompt: systemPrompt,
-                            userPrompt: userPrompt,
-                            continuation: continuation
-                        )
+                        try await streamFoundationModel(messages: messages, continuation: continuation)
                         continuation.finish()
                     case .ollama(let endpoint):
-                        try await streamOllama(
-                            endpoint: endpoint,
-                            systemPrompt: systemPrompt,
-                            userPrompt: userPrompt,
-                            continuation: continuation
-                        )
+                        try await streamOllama(endpoint: endpoint, messages: messages, numCtx: numCtx, continuation: continuation)
                         continuation.finish()
                     case .host(let pairing):
                         try await streamHost(
                             pairing: pairing,
-                            systemPrompt: systemPrompt,
-                            userPrompt: userPrompt,
+                            messages: messages,
+                            numCtx: numCtx,
                             requestID: requestID, // BUG 36: opt this turn into hold-and-resume
                             think: think,
                             continuation: continuation
@@ -225,11 +300,7 @@ enum ModelRouter {
                         // enrichment levers (generateNodeSummary / generateSubstrate), not the
                         // free-text Librarian path. Defensive → FM.
                         guard #available(iOS 26.0, *) else { throw RouterError.foundationModelUnavailable }
-                        try await streamFoundationModel(
-                            systemPrompt: systemPrompt,
-                            userPrompt: userPrompt,
-                            continuation: continuation
-                        )
+                        try await streamFoundationModel(messages: messages, continuation: continuation)
                         continuation.finish()
                     }
                 } catch {
@@ -237,6 +308,48 @@ enum ModelRouter {
                 }
             }
         }
+    }
+
+    /// Fold a message array into a single prompt for a provider with NO role API (Foundation
+    /// Model). System text leads; prior turns are labelled; the final user turn is raw. FM is the
+    /// on-device fallback (not the reported Host bug) and has no chat-messages API, so a fold is
+    /// unavoidable here — but it keeps the system prompt intact and doesn't append an "Assistant:"
+    /// continuation cue.
+    private static func flattenForFM(_ messages: [WireMessage]) -> String {
+        var parts: [String] = []
+        for (i, m) in messages.enumerated() {
+            let c = (m["content"] ?? "").trimmingCharacters(in: .whitespacesAndNewlines)
+            guard !c.isEmpty else { continue }
+            let isLast = i == messages.count - 1
+            switch m["role"] {
+            case "system":    parts.append(c)
+            case "assistant": parts.append("Assistant: \(c)")
+            case "user":      parts.append(isLast ? c : "User: \(c)")
+            default:          parts.append(c)
+            }
+        }
+        return parts.joined(separator: "\n\n")
+    }
+
+    /// For the DIRECT `/v1/chat/completions` path: fold a leading `system` message into the first
+    /// user turn (some local chat templates — legacy Mistral — HTTP-400 on a standalone system
+    /// role), while KEEPING real user/assistant roles for history (no transcript flattening). The
+    /// Host path does not use this — it forwards a real `system` role to Ollama's native /api/chat.
+    private static func foldSystemForV1(_ messages: [WireMessage]) -> [WireMessage] {
+        var system = ""
+        var out: [WireMessage] = []
+        var foldedIntoUser = false
+        for m in messages {
+            if m["role"] == "system" { system += (system.isEmpty ? "" : "\n\n") + (m["content"] ?? ""); continue }
+            var mm = m
+            if !system.isEmpty, m["role"] == "user", !foldedIntoUser {
+                mm["content"] = system + "\n\n" + (m["content"] ?? "")
+                foldedIntoUser = true
+            }
+            out.append(mm)
+        }
+        if !system.isEmpty, !foldedIntoUser { out.insert(["role": "user", "content": system], at: 0) }
+        return out
     }
 
     enum RouterError: LocalizedError {
@@ -461,17 +574,14 @@ enum ModelRouter {
     /// never leak upward or it duplicates exponentially.
     @available(iOS 26.0, *)
     private static func streamFoundationModel(
-        systemPrompt: String,
-        userPrompt: String,
+        messages: [WireMessage],
         continuation: AsyncThrowingStream<ModelDelta, Error>.Continuation
     ) async throws {
         guard SystemLanguageModel.default.isAvailable else {
             throw RouterError.foundationModelUnavailable
         }
         let session = LanguageModelSession()
-        let combined = systemPrompt.isEmpty
-            ? userPrompt
-            : "\(systemPrompt)\n\n\(userPrompt)"
+        let combined = flattenForFM(messages)   // FM has no role API — fold (system leads, no "Assistant:" cue)
 
         // Snapshots are CUMULATIVE. Convert to deltas via suffix-diff.
         var emitted = ""
@@ -563,8 +673,8 @@ enum ModelRouter {
     /// not apply here.
     private static func streamOllama(
         endpoint: String,
-        systemPrompt: String,
-        userPrompt: String,
+        messages: [WireMessage],
+        numCtx: Int?,
         continuation: AsyncThrowingStream<ModelDelta, Error>.Continuation
     ) async throws {
         guard let base = URL(string: endpoint) else {
@@ -578,16 +688,16 @@ enum ModelRouter {
         request.setValue("application/json", forHTTPHeaderField: "Content-Type")
         applyEndpointAuth(&request)
 
-        let foldedUserContent = systemPrompt.isEmpty
-            ? userPrompt
-            : "\(systemPrompt)\n\n\(userPrompt)"
-        let body: [String: Any] = [
+        // Brief BR — real roles (system folded into the first user for /v1 template safety; history
+        // keeps user/assistant roles — never a flattened transcript).
+        var body: [String: Any] = [
             "model": modelName,
             "stream": true,
-            "messages": [
-                ["role": "user", "content": foldedUserContent]
-            ]
+            "messages": foldSystemForV1(messages)
         ]
+        // Best-effort context window (Ollama's /v1 accepts an `options` passthrough; ignored by
+        // strict OpenAI servers, harmless). The Host path is where num_ctx is load-bearing.
+        if let numCtx { body["options"] = ["num_ctx": numCtx] }
         request.httpBody = try JSONSerialization.data(withJSONObject: body)
 
         let (bytes, response): (URLSession.AsyncBytes, URLResponse)
@@ -756,13 +866,17 @@ enum ModelRouter {
         return models.first(where: { ($0["state"] as? String) == "installed-loaded" })?["tag"] as? String
     }
 
-    /// One-shot Host generation (accumulates the streamed answer).
+    /// One-shot Host generation (accumulates the streamed answer). Short prompts (compaction /
+    /// labels) → `[system?, user]`, no explicit num_ctx (well within any served window).
     private static func generateHost(pairing: HostPairing, systemPrompt: String, userPrompt: String) async throws -> String {
+        var msgs: [WireMessage] = []
+        if !systemPrompt.isEmpty { msgs.append(["role": "system", "content": systemPrompt]) }
+        msgs.append(["role": "user", "content": userPrompt])
         var out = ""
         let stream = AsyncThrowingStream<ModelDelta, Error> { cont in
             Task {
                 do {
-                    try await streamHost(pairing: pairing, systemPrompt: systemPrompt, userPrompt: userPrompt, continuation: cont)
+                    try await streamHost(pairing: pairing, messages: msgs, numCtx: nil, continuation: cont)
                     cont.finish()
                 } catch { cont.finish(throwing: error) }
             }
@@ -778,8 +892,8 @@ enum ModelRouter {
     /// conformance path exactly.
     private static func streamHost(
         pairing: HostPairing,
-        systemPrompt: String,
-        userPrompt: String,
+        messages: [WireMessage],
+        numCtx: Int?,
         requestID: String? = nil,
         think: Bool = false,
         continuation: AsyncThrowingStream<ModelDelta, Error>.Continuation
@@ -795,10 +909,13 @@ enum ModelRouter {
         } else {
             model = try await firstHostModel(pairing: pairing)
         }
-        let folded = systemPrompt.isEmpty ? userPrompt : "\(systemPrompt)\n\n\(userPrompt)"
-        // `think` (per-chat, off by default) is honored only by the Host's /api/chat path. The
-        // Host translates the resulting two channels back into the sealed SSE this stream opens.
-        var body: [String: Any] = ["model": model, "stream": true, "think": think, "messages": [["role": "user", "content": folded]]]
+        // Brief BR — send REAL roles (system + history + user), never a folded "User:/Assistant:"
+        // string, and set `options.num_ctx` so the Host tells Ollama to serve a window big enough
+        // for the read-in-full packet (else it truncates to the model's 4096 default). The Host's
+        // `ollamaChatBody` forwards `messages` + `options` raw to Ollama's native /api/chat.
+        // `think` (per-chat, off by default) is honored only by that /api/chat path.
+        var body: [String: Any] = ["model": model, "stream": true, "think": think, "messages": messages]
+        if let numCtx { body["options"] = ["num_ctx": numCtx] }
         // BUG 36 Pillar 2: a client-generated requestID (sealed inside the body — D1) opts this
         // generation into the Host's finish-and-hold, so a mid-stream drop can be resumed.
         if let requestID { body["requestID"] = requestID }

@@ -916,6 +916,10 @@ struct LibrarianSurface: View {
                 if let offer = librarian.pendingWebSearchOffer {
                     webSearchOfferBar(query: offer, librarian: librarian)
                 }
+                // Brief BS3 — a survey where one entry clearly leads offers to read it in full.
+                if let offer = librarian.pendingReadInFullOffer {
+                    readInFullOfferBar(offer: offer, librarian: librarian)
+                }
                 askComposer(librarian: librarian)
             } else if panelModel.contentRevealed {
                 // Home / search are light — free to mount/unmount with the
@@ -1509,6 +1513,40 @@ struct LibrarianSurface: View {
                 Task { await librarian.acceptWebSearchOffer(store: store, chat: router.chat) }
             } label: {
                 Text("Search the web instead")
+                    .font(.system(size: 13, weight: .semibold))
+                    .foregroundStyle(AppearancePalette.ink)
+                    .padding(.horizontal, 12)
+                    .padding(.vertical, 7)
+                    .background(Capsule().fill(AppearancePalette.ink.opacity(0.1)))
+                    .overlay(Capsule().strokeBorder(AppearancePalette.ink.opacity(0.25), lineWidth: 1))
+            }
+            .buttonStyle(.plain)
+            .fixedSize()
+        }
+        .padding(.horizontal, 16)
+        .padding(.vertical, 10)
+        .background(AppearancePalette.bgBase)
+        .transition(.opacity)
+    }
+
+    /// Brief BS3 — under a SURVEY answer where one entry clearly leads: "Read *Title* in full?".
+    /// Tapping re-asks the SAME question with that entry force-read (`acceptReadInFullOffer`), so the
+    /// user gets the deep read without learning that pinning is the trick. App UI — never model text.
+    @ViewBuilder
+    private func readInFullOfferBar(offer: LibrarianState.ReadInFullOffer, librarian: LibrarianState) -> some View {
+        HStack(spacing: 10) {
+            Image(systemName: "book")
+                .font(.system(size: 13, weight: .semibold))
+                .foregroundStyle(AppearancePalette.ink.opacity(0.55))
+            (Text("One entry stands out: ") + Text(offer.title).italic())
+                .font(.system(size: 13))
+                .foregroundStyle(AppearancePalette.ink.opacity(0.7))
+                .fixedSize(horizontal: false, vertical: true)
+            Spacer(minLength: 8)
+            Button {
+                Task { await librarian.acceptReadInFullOffer(store: store, chat: router.chat) }
+            } label: {
+                Text("Read it in full")
                     .font(.system(size: 13, weight: .semibold))
                     .foregroundStyle(AppearancePalette.ink)
                     .padding(.horizontal, 12)

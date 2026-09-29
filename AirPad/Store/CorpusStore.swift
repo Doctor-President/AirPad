@@ -1120,10 +1120,21 @@ final class CorpusStore {
                         && r3 == "Read 1 entry (partial) · skimmed 3"
                         && r4 == "Skimmed 9 entries"
                         && r5 == "Skimmed 1 entry"
-                    let all = budgetOK && rankOK && followOK && receiptOK
-                    NSLog("[LibrarianRoutingSelfTest] %@ · budget(host=%d fm=%d medical=%d)=%@ rank=%@ followup=%@ receipt=%@",
+                    // Brief BR — the DELIVERY shape: the chat path must build proper roles (system
+                    // first, history roles preserved, current turn as a `user` message), never a
+                    // flattened "User:/Assistant:" transcript in one message.
+                    let wire = ModelRouter.debugWireMessages(
+                        systemPrompt: "SYS", history: [["role": "user", "content": "q1"], ["role": "assistant", "content": "a1"]],
+                        userContent: "PACKET")
+                    let deliveryOK = wire.count == 4
+                        && wire[0]["role"] == "system" && wire[0]["content"] == "SYS"
+                        && wire[1]["role"] == "user" && wire[2]["role"] == "assistant"
+                        && wire[3]["role"] == "user" && wire[3]["content"] == "PACKET"
+                        && !wire.contains { ($0["content"] ?? "").contains("\nAssistant:") }
+                    let all = budgetOK && rankOK && followOK && receiptOK && deliveryOK
+                    NSLog("[LibrarianRoutingSelfTest] %@ · budget(host=%d fm=%d medical=%d)=%@ rank=%@ followup=%@ receipt=%@ delivery=%@",
                           all ? "PASS" : "FAIL", hostBudget, fmBudget, medicalChars,
-                          budgetOK ? "ok" : "BAD", rankOK ? "ok" : "BAD", followOK ? "ok" : "BAD", receiptOK ? "ok" : "BAD")
+                          budgetOK ? "ok" : "BAD", rankOK ? "ok" : "BAD", followOK ? "ok" : "BAD", receiptOK ? "ok" : "BAD", deliveryOK ? "ok" : "BAD")
                     if !receiptOK { NSLog("[LibrarianRoutingSelfTest] receipt strings: r1='%@' r2='%@' r3='%@' r4='%@' r5='%@'", r1, r2, r3, r4, r5) }
                 }
                 #endif

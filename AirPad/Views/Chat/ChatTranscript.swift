@@ -390,6 +390,9 @@ struct ChatTranscript: View {
                 : "Read \(entries(r.readInFull)) in full"
             return r.skimmed > 0 ? "\(read) · skimmed \(r.skimmed)" : read
         }
+        // Brief BR3 — an empty Library turn (nothing matched) still reports, so the footer never
+        // silently vanishes (which read as a plain chat, not a library that looked and found nothing).
+        if r.skimmed == 0 { return "No matching entries" }
         return "Skimmed \(entries(r.skimmed))"
     }
 

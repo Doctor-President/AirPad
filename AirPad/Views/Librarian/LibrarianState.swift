@@ -695,8 +695,12 @@ final class LibrarianState {
             // knowledge as an answer from the notes: send the bare question under the
             // honest empty-library prompt, with NO candidates → no [n] instruction, no
             // chips. `ChatSession.send` strips any hallucinated [n] (empty valid set).
+            // Brief BR3 — EVERY Library turn reports what it read: an empty turn still carries a
+            // receipt (0/0) so the footer says "No matching entries" instead of rendering nothing
+            // (which read like a plain chat — T's turn-1 symptom: no footer, no chips).
             await chat.send(displayText: query, modelText: query,
-                            systemPrompt: emptyLibrarySystemPrompt, citations: nil)
+                            systemPrompt: emptyLibrarySystemPrompt, citations: nil,
+                            readReceipt: ChatSession.Message.ReadReceipt(readInFull: 0, skimmed: 0, partial: false))
             // Brief AI5 — Library mode never searches, but when the empty room meets a
             // current-information question the app OFFERS the web under the answer. Set
             // after the answer commits; the surface renders the offer bar, and tapping it

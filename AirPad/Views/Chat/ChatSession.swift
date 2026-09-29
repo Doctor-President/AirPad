@@ -268,7 +268,20 @@ final class ChatSession {
         // that survives an app KILL (D3), so a cold-launch restore can still re-attach.
         let hostRequestID: String? = { if case .host = ModelRouter.active { return UUID().uuidString } else { return nil } }()
         currentRequestID = hostRequestID
-        let prompt = buildPrompt(current: modelText)
+        // Brief BR — send a proper CHAT: prior turns as REAL user/assistant roles + this turn's
+        // `modelText` (the read/survey packet) as the current user message, with the backend's
+        // context window as `numCtx`. The `messages.dropLast()` excludes the user bubble just
+        // appended above (its raw `displayText`); the current turn carries the packet instead.
+        // Never a flattened "User:/Assistant:" string, which made Qwen3 continue a transcript and
+        // let Ollama truncate the entry.
+        let history: [ModelRouter.WireMessage] = messages.dropLast().compactMap { m in
+            switch m.role {
+            case .user:      return ["role": "user", "content": m.text]
+            case .assistant: return ["role": "assistant", "content": m.text]
+            case .activity:  return nil   // tool-loop phase rows are not chat turns
+            }
+        }
+        let numCtx = ModelRouter.contextWindowTokens
 
         // ★ BUG 36 — incremental delta persistence. The partial is made durable
         // AS IT ARRIVES (coalesced by `partialPersistThreshold`), so a mid-stream
@@ -279,7 +292,9 @@ final class ChatSession {
         do {
             for try await delta in ModelRouter.generateStreaming(
                 systemPrompt: systemPrompt,
-                userPrompt: prompt,
+                history: history,
+                userContent: modelText,
+                numCtx: numCtx,
                 requestID: hostRequestID,
                 think: thinkEnabled
             ) {

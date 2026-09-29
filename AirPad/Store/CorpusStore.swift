@@ -806,7 +806,7 @@ final class CorpusStore {
         // the candidate set spans multiple nodes instead of one article's chunks.
         let pool = max(topK * 5, 60)
         var matches = Self.diversifyByNode(
-            await blockEmbedding.findRelevantBlocks(queryVector: qvec, candidateNodeIDs: candidateIDs, topK: pool),
+            await blockEmbedding.findRelevantBlocks(queryVector: qvec, candidateNodeIDs: candidateIDs, topK: pool, queryText: query),
             perNode: Self.maxBlocksPerNode, limit: topK)
         // A COLLECTION miss broadens to the collection's OWN ROOM — never crossing
         // rooms. Brief AB: the old retry always fell back to the USER corpus, so a
@@ -817,7 +817,7 @@ final class CorpusStore {
         if case .collection(let cid) = scope, (matches.first?.score ?? 0) < Self.minRelevanceScore {
             let retryIDs = sampleCollectionIDs.contains(cid) ? Array(sampleNodeIDs) : corpusAskCandidateIDs
             let retryMatches = Self.diversifyByNode(
-                await blockEmbedding.findRelevantBlocks(queryVector: qvec, candidateNodeIDs: retryIDs, topK: pool),
+                await blockEmbedding.findRelevantBlocks(queryVector: qvec, candidateNodeIDs: retryIDs, topK: pool, queryText: query),
                 perNode: Self.maxBlocksPerNode, limit: topK)
             if (retryMatches.first?.score ?? 0) >= Self.minRelevanceScore {
                 matches = retryMatches
@@ -1948,6 +1948,26 @@ final class CorpusStore {
             Case(id: "12", what: "paraphrase: only pluralised title tokens ('medical labs')",
                  question: "Summarise my medical labs for me.", expectRoute: "read",
                  mustContain: panel, minFacts: 3, mustNotContain: refusals),
+            // ── Brief BV — KEYWORD (lexical) recall. Each query carries a distinctive RARE term that
+            // does NOT title-match (so it can't route via the title trigger) and whose semantic
+            // neighbours are weak — the exact case pure cosine buries and the hybrid lexical boost
+            // rescues. Route-agnostic (read OR survey); the grade is that a FACT from the entry BODY
+            // (never the query word itself) reaches the answer. Prove BEFORE with `-LibrarianNoLexical`.
+            // BV-a — a block-only rare term (NOT in the "Bolex H16 — mine" title): the lens brand.
+            Case(id: "BVa", what: "keyword recall — block-only rare term 'Switar' (embedding buries it)",
+                 question: "What did I note about the Switar lens?", expectRoute: "",
+                 mustContain: [["520", "25mm", "ohio", "1956", "27 second", "cloudy", "ebay"]], minFacts: 1,
+                 mustNotContain: refusals),
+            // BV-b — an untranslated loanword with weak semantic neighbours; 1 title token (no match).
+            Case(id: "BVb", what: "keyword recall — loanword 'dandori' (1 title token, no title-match)",
+                 question: "Tell me what I saved about dandori.", expectRoute: "",
+                 mustContain: [["sequenc", "order of operation", "pikmin", "japanese", "localis", "localiz"]], minFacts: 1,
+                 mustNotContain: refusals),
+            // BV-c — a rare proper noun; shares only 1 of the title's 2 tokens (no title-match).
+            Case(id: "BVc", what: "keyword recall — proper noun 'Muratorian' (1 of 2 title tokens)",
+                 question: "What do I have on the Muratorian?", expectRoute: "",
+                 mustContain: [["canon", "second-century", "eighth-century", "latin", "list", "inventory", "books"]], minFacts: 1,
+                 mustNotContain: refusals),
         ]
 
         NSLog("[Gauntlet] START provider=%@ window=%d nodes=%d userNodes=%d cases=%d",

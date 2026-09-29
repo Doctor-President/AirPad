@@ -184,7 +184,7 @@ final class BlockEmbeddingService {
         // re-embedded blocks. BGE is unit-normalized, so scoring is RAW cosine —
         // the NLContextual mean-centering crutch does not carry to BGE.
         guard let qvec = await CardEmbeddingService.shared.embed(query), !qvec.isEmpty else { return [] }
-        return await findRelevantBlocks(queryVector: qvec, candidateNodeIDs: candidateNodeIDs, topK: topK)
+        return await findRelevantBlocks(queryVector: qvec, candidateNodeIDs: candidateNodeIDs, topK: topK, queryText: query)
     }
 
     /// step 3c — pre-embedded-query variant. The two-tier store funnel embeds the
@@ -193,7 +193,8 @@ final class BlockEmbeddingService {
     func findRelevantBlocks(
         queryVector qvec: [Float],
         candidateNodeIDs: [String],
-        topK: Int = 50
+        topK: Int = 50,
+        queryText: String = ""
     ) async -> [BlockMatch] {
         guard !qvec.isEmpty else { return [] }
         // Gather block indices (storage-actor I/O), then score OFF the main actor
@@ -209,30 +210,91 @@ final class BlockEmbeddingService {
                 print("[BlockEmbedding] load sidecar error node=\(nodeID): \(error)")
             }
         }
-        return await Self.scoreBlocksOffMain(qvec: qvec, snapshot: snapshot, topK: topK)
+        return await Self.scoreBlocksOffMain(qvec: qvec, queryText: queryText, snapshot: snapshot, topK: topK)
     }
 
     /// Off-main-actor block scoring. Runs the raw-cosine pass in a detached task
     /// so the main thread stays free during Librarian typing/drag.
+    ///
+    /// Brief BV — HYBRID retrieval: the raw cosine score is fused with a KEYWORD (lexical) boost so a
+    /// query with a distinctive rare term (a proper noun, a loanword, a model number the embedding
+    /// buries under its weak semantic neighbours) still lifts the block that literally contains it
+    /// into the top-K. Corpus-wide document frequency is computed over the SAME `snapshot` the cosine
+    /// pass already loaded — no extra I/O, no persistent index (the app has no SQLite; FTS5 would be a
+    /// whole new subsystem, and the corpus is small). The rescue is **IDF-GATED**: only query terms
+    /// rare enough (in ≤ 3 blocks corpus-wide) rescue their block, so a common-word query (every prior
+    /// Librarian turn) rescues nothing and the cosine ranking is preserved exactly.
     nonisolated private static func scoreBlocksOffMain(
         qvec: [Float],
+        queryText: String,
         snapshot: [(nodeID: String, blocks: [NodeBlock])],
         topK: Int
     ) async -> [BlockMatch] {
         await Task.detached(priority: .userInitiated) {
+            let distinctive = lexicalDistinctiveTerms(queryText: queryText, snapshot: snapshot)
             var scored: [BlockMatch] = []
             for (nodeID, blocks) in snapshot {
                 for block in blocks where block.embedding.count == qvec.count {
-                    scored.append(BlockMatch(
-                        block: block,
-                        nodeID: nodeID,
-                        score: cosine(qvec, block.embedding)
-                    ))
+                    let cos = cosine(qvec, block.embedding)
+                    let score = distinctive.isEmpty ? cos : lexicalScore(cosine: cos, text: block.text, terms: distinctive)
+                    scored.append(BlockMatch(block: block, nodeID: nodeID, score: score))
                 }
             }
             scored.sort { $0.score > $1.score }
             return Array(scored.prefix(topK))
         }.value
+    }
+
+    // MARK: - Brief BV — the keyword (lexical) half of hybrid retrieval
+
+    /// DEBUG kill-switch (`-LibrarianNoLexical`) — disables the lexical boost so the gauntlet can
+    /// prove the BEFORE (cosine-only) vs AFTER (hybrid) behaviour from ONE build. Release-inert.
+    nonisolated static let lexicalDisabled: Bool = {
+        #if DEBUG
+        return ProcessInfo.processInfo.arguments.contains("-LibrarianNoLexical")
+        #else
+        return false
+        #endif
+    }()
+
+    /// Lowercase word tokens, ≥ 4 chars (drops short glue words; rarity does the rest).
+    nonisolated private static func bvTokens(_ s: String) -> [String] {
+        s.lowercased().split { !$0.isLetter && !$0.isNumber }.map(String.init).filter { $0.count >= 4 }
+    }
+
+    /// The query terms rare enough to be a genuine KEYWORD target — appearing in ≤ 3 of the corpus's
+    /// blocks (and at least once). An ABSOLUTE cap (not a percentage): a term in ≤ 3 of thousands of
+    /// blocks is a proper noun / model number / loanword the user is clearly asking about, not a
+    /// common word. Measured on the fixture: `switar`=2, `muratorian`=1, `dandori`=1 qualify;
+    /// `france`=4, `capital`=6, `medical`=6, `lens`=10 do NOT — so a general-knowledge probe
+    /// ("capital of France") and every common-word Librarian turn get an EMPTY set → the boost is a
+    /// strict no-op and the cosine-only ranking (and every existing gauntlet route) is untouched.
+    nonisolated private static func lexicalDistinctiveTerms(
+        queryText: String,
+        snapshot: [(nodeID: String, blocks: [NodeBlock])]
+    ) -> Set<String> {
+        guard !lexicalDisabled, !queryText.isEmpty else { return [] }
+        let qTerms = Set(bvTokens(queryText))
+        guard !qTerms.isEmpty else { return [] }
+        var df: [String: Int] = [:]
+        for (_, blocks) in snapshot {
+            for block in blocks {
+                for t in Set(bvTokens(block.text)) where qTerms.contains(t) { df[t, default: 0] += 1 }
+            }
+        }
+        let maxDF = 3   // "rare" = in ≤ 3 blocks corpus-wide (measured cutoff; see doc above)
+        return qTerms.filter { if let d = df[$0] { return d >= 1 && d <= maxDF }; return false }
+    }
+
+    /// A very-rare query term (df ≤ 3) appearing in a block is a STRONG signal — the query is almost
+    /// certainly ABOUT that term — so the block is RESCUED to a score near the read bar (≥ 0.72),
+    /// guaranteeing it surfaces in the top-K even when its cosine is weak (the exact case BV exists
+    /// for: a proper noun / loanword / model number the embedding buries under weak neighbours).
+    /// `max(cosine, …)` never LOWERS a genuine cosine hit; a block with no rare term is unchanged.
+    nonisolated private static func lexicalScore(cosine: Float, text: String, terms: Set<String>) -> Float {
+        let matched = terms.intersection(Set(bvTokens(text))).count
+        guard matched > 0 else { return cosine }
+        return max(cosine, min(0.85, 0.72 + 0.05 * Float(matched - 1)))
     }
 
     /// Navigate-mode retrieval — ranks nodes by their best-scoring block.

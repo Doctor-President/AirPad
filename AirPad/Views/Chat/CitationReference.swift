@@ -209,12 +209,15 @@ enum CitationReference {
     private static let repeatedMarkerRegex = try! NSRegularExpression(
         pattern: #"(\[\s*\d{1,2}(?:\s*,\s*\d{1,2})*\s*\])(?:\s*\1)+"#)
 
-    /// AC1 — ONE citation token: a bracket holding one or more comma-separated
-    /// 1-2 digit indices. Matches `[7]`, `[1, 2, 7]`, `[1,2]`; adjacency (`[n][m]`)
-    /// and `[n], [m]` are two tokens. Shared by the renderer, `citedIndices`, and
-    /// `stripInvalidMarkers` so parser/renderer/stripper can't disagree — and
-    /// model-agnostic (Qwen writes `[7]`, deepseek writes `[1, 2, 7]`).
-    static let citationTokenRegex = try! NSRegularExpression(pattern: #"\[\s*\d{1,2}(?:\s*,\s*\d{1,2})*\s*\]"#)
+    /// AC1 + Brief BU4 — ONE citation token: a bracket holding one or more comma-separated 1-2 digit
+    /// indices, each with an OPTIONAL `E` prefix. Matches `[7]`, `[1, 2, 7]`, `[1,2]` AND the BU4
+    /// entry-label form `[E7]`, `[E1, E2]` (the packet now labels items `[E<n>]`); adjacency
+    /// (`[n][m]`) and `[n], [m]` are two tokens. Shared by the renderer, `citedIndices`,
+    /// `stripInvalidMarkers`, and `renumberBySource` so parser/renderer/stripper can't disagree.
+    /// `indexRegex` extracts only the DIGITS, so `[E7]` → index 7; `renumberBySource` rewrites every
+    /// surviving token to a plain `[n]`, so the committed prose (and its superscripts/tap targets)
+    /// stay numeric — the `E` lives only in the model-facing packet + the model's raw reply.
+    static let citationTokenRegex = try! NSRegularExpression(pattern: #"\[\s*[Ee]?\s*\d{1,2}(?:\s*,\s*[Ee]?\s*\d{1,2})*\s*\]"#)
     private static let indexRegex = try! NSRegularExpression(pattern: #"\d{1,2}"#)
 
     /// All indices inside a citation token, in order (`"[1, 2, 7]"` → `[1, 2, 7]`).

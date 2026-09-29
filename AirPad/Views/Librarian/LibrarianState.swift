@@ -710,99 +710,26 @@ final class LibrarianState {
         // BN4 working set), then send with the read/skim receipt (BN5).
         let (candidates, empty, receipt) = await corpusCandidates(query: query, store: store, chat: chat)
 
-        if empty {
-            #if DEBUG
-            // Brief BU — an EMPTY turn is still a turn the gauntlet grades ("No matching entries"
-            // + a normal answer, no fake grounding), so it gets a record too.
-            debugLastTurn = TurnRecord(mode: "empty", readNodeIDs: [], packetChars: query.count,
-                                       estTokens: query.count / Self.charsPerToken,
-                                       windowTokens: ModelRouter.contextWindowTokens,
-                                       budgetChars: askContextCharBudget(), candidateCount: 0,
-                                       cardCount: 0, passageCount: 0, cardNodeIDs: [],
-                                       chipIndices: [], alwaysCiteIndices: [],
-                                       receipt: ChatSession.Message.ReadReceipt(readInFull: 0, skimmed: 0, partial: false))
-            #endif
-            // Brief AB3 — nothing in THIS ROOM matched (no candidates, or a survey
-            // with < 3 cards and no passages, no pin). Do NOT dress up general
-            // knowledge as an answer from the notes: send the bare question under the
-            // honest empty-library prompt, with NO candidates → no [n] instruction, no
-            // chips. `ChatSession.send` strips any hallucinated [n] (empty valid set).
-            // Brief BR3 — EVERY Library turn reports what it read: an empty turn still carries a
-            // receipt (0/0) so the footer says "No matching entries" instead of rendering nothing
-            // (which read like a plain chat — T's turn-1 symptom: no footer, no chips).
-            await chat.send(displayText: query, modelText: query,
-                            systemPrompt: emptyLibrarySystemPrompt, citations: nil,
-                            readReceipt: ChatSession.Message.ReadReceipt(readInFull: 0, skimmed: 0, partial: false))
-            // Brief AI5 — Library mode never searches, but when the empty room meets a
-            // current-information question the app OFFERS the web under the answer. Set
-            // after the answer commits; the surface renders the offer bar, and tapping it
-            // flips to General + re-sends (AI4). App UI only — never model text/citation.
-            if Self.looksLikeSearchIntent(query) { pendingWebSearchOffer = query }
-            return
-        }
-
-        let context = buildAskContext(candidates: candidates, store: store)
+        // ★ Brief BU1 — ONE plan for the grounded turn (READ, SURVEY, or EMPTY), built by the single
+        // `makeTurnPlan` constructor. Every entry point reaches HERE (composer, the "Read it in full"
+        // offer re-ask, and Retry/↻ via `resendHandler`), and hands the SAME plan's fields to the ONE
+        // `chat.send` below — so the packet, the request, the chips, and the receipt cannot drift
+        // apart (T's log: a 16,337-char read chosen, then a request sent without it).
+        let plan = makeTurnPlan(query: query, candidates: candidates, empty: empty, receipt: receipt, store: store)
         #if DEBUG
-        // Brief BN1 — `-LibrarianTrace`: dump the exact Ask packet per Library turn (Release-inert).
-        // The instrument BJ's diagnosis recommended and every find-then-read check (BN2–BN5) reads.
-        // Now reports the BN2 routing: `mode=read`/`survey`, how many entries were READ IN FULL vs
-        // skimmed (BN5 receipt), the BN3 model-DERIVED char budget (was the fixed 12k), and marks
-        // which candidates are full reads. Never blocks or mutates.
-        if ProcessInfo.processInfo.arguments.contains("-LibrarianTrace") {
-            let totalChars = context.count
-            let budget = askContextCharBudget()
-            let mode = (receipt?.readInFull ?? 0) > 0 ? "read" : "survey"
-            // BT2 — estimate tokens CONSERVATIVELY (3 chars/token). `overWindow=yes` would mean the
-            // packet is about to be truncated by Ollama (system prompt + entry dropped) — with the
-            // BT2 cap it must never happen; the flag is the "never silent" guard.
-            let estTokens = totalChars / Self.charsPerToken
-            NSLog("[LibrarianTrace] mode=%@ provider=%@ window~tokens=%d budgetChars=%d candidates=%d contextChars=%d estTokens=%d readInFull=%d skimmed=%d partial=%@ overBudget=%@ overWindow=%@",
-                  mode, "\(ModelRouter.active)", ModelRouter.contextWindowTokens, budget, candidates.count,
-                  totalChars, estTokens, receipt?.readInFull ?? 0, receipt?.skimmed ?? 0,
-                  (receipt?.partial ?? false) ? "yes" : "no", totalChars > budget ? "yes" : "no",
-                  estTokens > ModelRouter.contextWindowTokens ? "YES-BUG" : "no")
-            for c in candidates.sorted(by: { $0.number < $1.number }) {
-                let kind = c.isEntryRead ? (c.isPartialRead ? "READ(partial)" : "READ-IN-FULL") : (c.isCard ? "CARD" : "passage")
-                NSLog("[LibrarianTrace]   [%d] node=%@ score=%.3f chars=%d %@ origin=%@",
-                      c.number, c.nodeID, c.score, c.charCount, kind, c.origin.rawValue)
-            }
-        }
+        // The gauntlet asserts the BU1 invariants against the very object that ships.
+        debugLastTurn = plan
+        // Brief BN1 — `-LibrarianTrace` (Release-inert): dump the exact Ask packet, sourced from the plan.
+        if ProcessInfo.processInfo.arguments.contains("-LibrarianTrace") { logTrace(plan: plan, candidates: candidates) }
         #endif
-        let modelText = """
-        Some of your notes were retrieved for you — they may or may not be relevant to the question:
-
-        \(context)
-
-        Question: \(query)
-        """
-        // Candidate sources for THIS turn; `ChatSession.send` filters these down to
-        // the [n] the model actually cited before committing the message. The read/skim
-        // receipt (BN5) rides alongside so the footer can show what was read.
-        let chips = Self.citationChips(from: candidates, store: store)
-        // Brief BS2 — an entry READ IN FULL is ALWAYS a source chip, even if the model wrote no [n]
-        // for it (provenance is the product). `ChatSession.send` keeps these indices regardless of
-        // inline citation; skimmed passages/cards still only chip when the prose cites them.
-        let alwaysCite = Set(candidates.filter { $0.isEntryRead }.map { $0.number })
-        #if DEBUG
-        // Brief BU — record the turn AS SENT (the same `modelText`/`chips`/`receipt` objects that go
-        // on the wire below), so the gauntlet's invariants test the DELIVERED turn, not a re-derived one.
-        debugLastTurn = TurnRecord(
-            mode: (receipt?.readInFull ?? 0) > 0 ? "read" : "survey",
-            readNodeIDs: candidates.filter { $0.isEntryRead }.map { $0.nodeID },
-            packetChars: modelText.count,
-            estTokens: modelText.count / Self.charsPerToken,
-            windowTokens: ModelRouter.contextWindowTokens,
-            budgetChars: askContextCharBudget(),
-            candidateCount: candidates.count,
-            cardCount: candidates.filter { $0.isCard }.count,
-            passageCount: candidates.filter { !$0.isCard && !$0.isEntryRead }.count,
-            cardNodeIDs: candidates.filter { $0.isCard }.sorted { $0.number < $1.number }.map { $0.nodeID },
-            chipIndices: (chips ?? []).map { $0.index }.sorted(),
-            alwaysCiteIndices: alwaysCite.sorted(),
-            receipt: receipt)
-        #endif
-        await chat.send(displayText: query, modelText: modelText, systemPrompt: askSystemPrompt,
-                        citations: chips, alwaysCiteIndices: alwaysCite, readReceipt: receipt)
+        await chat.send(displayText: plan.displayText, modelText: plan.modelText,
+                        systemPrompt: plan.systemPrompt, citations: plan.citations,
+                        alwaysCiteIndices: plan.alwaysCiteIndices, readReceipt: plan.readReceipt)
+        // Brief AI5 — Library mode never searches, but when the EMPTY room meets a current-information
+        // question the app OFFERS the web under the answer (App UI only — never model text/citation).
+        // Set after the answer commits; the surface renders the offer bar, tapping it flips to General
+        // + re-sends (AI4). Only the empty branch: a grounded read/survey answered from the notes.
+        if empty, Self.looksLikeSearchIntent(query) { pendingWebSearchOffer = query }
     }
 
     /// Brief AI5 — the user tapped "Search the web instead" under an empty Library
@@ -831,6 +758,74 @@ final class LibrarianState {
         chat.prepareForReask()
         await groundedSend(query: offer.query, store: store, chat: chat)
     }
+
+    /// ★ Brief BU1 — THE ONE CONSTRUCTOR. Given the routed candidates (or an empty room), assemble
+    /// the entire grounded turn as a single immutable `TurnPlan`: the display bubble, the packet
+    /// (`modelText`, with the always-changing question at the TAIL — BU4 prefix-caching), the system
+    /// prompt, the citation chips, the always-cite set, and the read/skim receipt — all derived
+    /// together, right here, and NOWHERE ELSE. `groundedSend` hands the plan's fields to ONE
+    /// `chat.send`; the DEBUG record and the trace read the SAME plan. This is what makes "the
+    /// receipt claims a read the request doesn't carry" impossible by construction.
+    func makeTurnPlan(query: String, candidates: [NumberedCandidate], empty: Bool,
+                      receipt: ChatSession.Message.ReadReceipt?, store: CorpusStore) -> TurnPlan {
+        let window = ModelRouter.contextWindowTokens
+        let budget = askContextCharBudget()
+        // EMPTY room (Brief AB3/BU3 case 8) — the bare question under the honest empty-library prompt,
+        // NO candidates → no [n] instruction, no chips; a 0/0 receipt so the footer still reports
+        // "No matching entries" (BR3 — every Library turn reports what it read).
+        guard !empty else {
+            let r = ChatSession.Message.ReadReceipt(readInFull: 0, skimmed: 0, partial: false)
+            return TurnPlan(displayText: query, modelText: query, systemPrompt: emptyLibrarySystemPrompt,
+                            citations: nil, alwaysCiteIndices: [], readReceipt: r,
+                            mode: "empty", readNodeIDs: [], candidateCount: 0, cardCount: 0,
+                            passageCount: 0, cardNodeIDs: [], chipIndices: [],
+                            windowTokens: window, budgetChars: budget)
+        }
+        // READ / SURVEY — the retrieved context, then the question LAST (BU4: no volatile text at the
+        // top; the stable system-prompt + packet prefix is what Ollama can KV-cache across turns).
+        let context = buildAskContext(candidates: candidates, store: store)
+        let modelText = """
+        Some of your notes were retrieved for you — they may or may not be relevant to the question:
+
+        \(context)
+
+        Question: \(query)
+        """
+        let chips = Self.citationChips(from: candidates, store: store)
+        // Brief BS2 — an entry READ IN FULL is ALWAYS a source chip, even with no inline [n].
+        let alwaysCite = Set(candidates.filter { $0.isEntryRead }.map { $0.number })
+        return TurnPlan(
+            displayText: query, modelText: modelText, systemPrompt: askSystemPrompt,
+            citations: chips, alwaysCiteIndices: alwaysCite, readReceipt: receipt,
+            mode: (receipt?.readInFull ?? 0) > 0 ? "read" : "survey",
+            readNodeIDs: candidates.filter { $0.isEntryRead }.map { $0.nodeID },
+            candidateCount: candidates.count,
+            cardCount: candidates.filter { $0.isCard }.count,
+            passageCount: candidates.filter { !$0.isCard && !$0.isEntryRead }.count,
+            cardNodeIDs: candidates.filter { $0.isCard }.sorted { $0.number < $1.number }.map { $0.nodeID },
+            chipIndices: (chips ?? []).map { $0.index }.sorted(),
+            windowTokens: window, budgetChars: budget)
+    }
+
+    #if DEBUG
+    /// Brief BN1 — `-LibrarianTrace`: dump the exact Ask packet per Library turn (Release-inert), all
+    /// sourced from the ONE `TurnPlan` so what the trace prints is what shipped. `overWindow=YES-BUG`
+    /// would mean Ollama is about to front-truncate (system + entry dropped) — with the BT2 cap it
+    /// must never fire; it is the "never silent" guard.
+    private func logTrace(plan: TurnPlan, candidates: [NumberedCandidate]) {
+        NSLog("[LibrarianTrace] mode=%@ provider=%@ window~tokens=%d budgetChars=%d candidates=%d packetChars=%d estTokens=%d readInFull=%d skimmed=%d partial=%@ overBudget=%@ overWindow=%@",
+              plan.mode, "\(ModelRouter.active)", plan.windowTokens, plan.budgetChars, plan.candidateCount,
+              plan.packetChars, plan.estTokens, plan.readReceipt?.readInFull ?? 0, plan.readReceipt?.skimmed ?? 0,
+              (plan.readReceipt?.partial ?? false) ? "yes" : "no",
+              plan.packetChars > plan.budgetChars ? "yes" : "no",
+              plan.estTokens > plan.windowTokens ? "YES-BUG" : "no")
+        for c in candidates.sorted(by: { $0.number < $1.number }) {
+            let kind = c.isEntryRead ? (c.isPartialRead ? "READ(partial)" : "READ-IN-FULL") : (c.isCard ? "CARD" : "passage")
+            NSLog("[LibrarianTrace]   [%d] node=%@ score=%.3f chars=%d %@ origin=%@",
+                  c.number, c.nodeID, c.score, c.charCount, kind, c.origin.rawValue)
+        }
+    }
+    #endif
 
     /// Brief BN2–BN5 — route the corpus-Ask turn (read vs survey), then assemble the numbered
     /// candidate list + the read/skim receipt. FIND, THEN READ (protocol north star): passages/cards
@@ -1280,17 +1275,10 @@ final class LibrarianState {
         let (candidates, empty, receipt) = await corpusCandidates(query: query, store: store, chat: chat)
         defer { chat.debugAppendUser(query) }   // so the NEXT call sees this as the previous user turn
         if empty { return ("empty", [], query, nil) }
-        let context = buildAskContext(candidates: candidates, store: store)
-        let modelText = """
-        Some of your notes were retrieved for you — they may or may not be relevant to the question:
-
-        \(context)
-
-        Question: \(query)
-        """
-        let mode = (receipt?.readInFull ?? 0) > 0 ? "read" : "survey"
-        let readNodeIDs = candidates.filter { $0.isEntryRead }.map { $0.nodeID }
-        return (mode, readNodeIDs, modelText, receipt)
+        // BU1 — build via the ONE constructor, so this diag tests the SAME packet the real send ships
+        // (it used to reproduce the "Some of your notes…" wrapper by hand — a drift surface).
+        let plan = makeTurnPlan(query: query, candidates: candidates, empty: false, receipt: receipt, store: store)
+        return (plan.mode, plan.readNodeIDs, plan.modelText, plan.readReceipt)
     }
 
     /// Brief BN3 verify — FORCE a read of specific node ids (bypassing the router), so the
@@ -2013,7 +2001,7 @@ final class LibrarianState {
     /// renders citations as chips below the answer, so an in-text list
     /// is a duplicate the user never asked for.
     private var askSystemPrompt: String {
-        let base = "You are a reflective AI that helps someone think across their OWN entries. Up to three labelled sections may appear below the question: ENTRIES READ IN FULL contains the COMPLETE text of the user's most relevant entries — these are the PRIMARY source, answer from them directly and thoroughly; ENTRIES ON THIS TOPIC lists other related entries (one line each); and PASSAGES are excerpts. They were pulled from the user's library and MAY OR MAY NOT all be relevant. When an entry is READ IN FULL, base your answer on its whole text — give the specifics it actually contains (names, values, dates, figures) rather than a vague summary. For broad questions about what the user thinks or has, synthesise across ENTRIES and cite them; for specific facts, answer from the full entry or the PASSAGES. Treat anything that genuinely helps as authoritative about the user's own world — if it defines a term, use THEIR definition over a generic one — and cite it inline with bracket numbers like [1] [2] matching the numbered sections. If a full entry is marked PARTIAL, only its best excerpts were included — answer from what's there and don't invent the rest. Ignore items that don't help and answer normally from your own knowledge. Never say the entries don't contain the answer and never refuse for lack of a matching passage — just answer the question directly. Be specific, concise, and never generic. Cite only items you actually used. Do not connect entries the question did not ask about. If an entry distinguishes an estimate from an actual figure, say which. Entries marked saved article, document, or image text are things the user collected, not their own words. For questions about the user's own views, answer from their entries and refer to collected sources as such. Do not append a References, Sources, or Citations section — AirPad renders citations separately. End your reply at the end of the prose answer."
+        let base = "You are a reflective AI that helps someone think across their OWN entries. Up to three labelled sections may appear below the question: ENTRIES READ IN FULL contains the COMPLETE text of the user's most relevant entries — these are the PRIMARY source, answer from them directly and thoroughly; ENTRIES ON THIS TOPIC lists other related entries (one line each); and PASSAGES are excerpts. They were pulled from the user's library and MAY OR MAY NOT all be relevant. When an entry is READ IN FULL, base your answer on its whole text — give the specifics it actually contains (names, values, dates, figures) rather than a vague summary. For broad questions about what the user thinks or has, synthesise across ENTRIES and cite them; for specific facts, answer from the full entry or the PASSAGES. Treat anything that genuinely helps as authoritative about the user's own world — if it defines a term, use THEIR definition over a generic one — and cite it inline with its entry label like [E1] [E2] matching the labelled entries above. If a full entry is marked PARTIAL, only its best excerpts were included — answer from what's there and don't invent the rest. Ignore items that don't help and answer normally from your own knowledge. These are entries from the user's OWN library — each is labelled with who authored it (or where it was saved from) and its date. If a specific fact genuinely isn't in these entries, you may say so briefly and then answer from your general knowledge — that is a valid answer. Never refuse, and never claim you cannot access the entries — just answer the question directly. Be specific, concise, and never generic. Cite only items you actually used. Do not connect entries the question did not ask about. If an entry distinguishes an estimate from an actual figure, say which. Entries marked saved article, document, or image text are things the user collected, not their own words. For questions about the user's own views, answer from their entries and refer to collected sources as such. Do not append a References, Sources, or Citations section — AirPad renders citations separately. End your reply at the end of the prose answer."
         return personalVoicePrefix + base
     }
 
@@ -2156,28 +2144,50 @@ final class LibrarianState {
     /// cleared. Lets the survey-lead offer re-read an entry the router had only skimmed.
     @ObservationIgnored var forcedReadNodeID: String? = nil
 
-    #if DEBUG
-    /// Brief BU — the TURN RECORD: what the ONE pipeline actually decided and sent for the last
-    /// Library turn. The gauntlet asserts the BU1 invariants against this (request chars ≈ packet
-    /// chars; estimated tokens < window − reserve; a READ turn carries its entry as a chip), which
-    /// is only checkable if the decision and the wire agree — the exact drift BU exists to kill
-    /// (T's log showed a turn that CHOSE a 16,337-char read and sent a request without it).
-    struct TurnRecord {
-        var mode: String            // read(pin|title|followup|dominance) | survey | empty
-        var readNodeIDs: [String]   // entries read IN FULL
-        var packetChars: Int        // the modelText actually handed to ChatSession.send
-        var estTokens: Int          // conservative estimate (3 chars/token)
-        var windowTokens: Int       // the active backend's window
-        var budgetChars: Int        // the derived char budget for this turn
-        var candidateCount: Int
-        var cardCount: Int          // survey shape is asserted PER KIND (≤ 8 cards / ≤ 4 passages),
-        var passageCount: Int       // never as one total — 8 + 4 = 12 is CORRECT, not an overflow.
-        var cardNodeIDs: [String]   // survey card entries, best-first (the gauntlet's offer target)
-        var chipIndices: [Int]      // candidate numbers offered as sources
-        var alwaysCiteIndices: [Int]
-        var receipt: ChatSession.Message.ReadReceipt?
+    /// ★ Brief BU1 — the TURN PLAN: the ONE immutable object every GROUNDED Library turn is built
+    /// from. `makeTurnPlan` is the single constructor; `groundedSend` (reached by every send entry
+    /// point — composer new/existing chat, the "Read it in full" offer re-ask, Retry, ↻, and voice,
+    /// which just fills the composer) sends its fields in ONE `chat.send` call. The packet
+    /// (`modelText`), the request, the citation chips, and the read/skim receipt are all FIELDS OF
+    /// ONE VALUE, derived together in one place — so the drift BU1 exists to kill (a turn that logs
+    /// a 16,337-char read, then sends a request without it) is UNREPRESENTABLE: there is no second
+    /// place any of them is assembled. Non-DEBUG on purpose — it drives the send in Release too, so
+    /// Release can't drift from what the gauntlet proves under DEBUG.
+    ///
+    /// (Private mode — `corpusAware == false`, the web-tool / plain-chat lane — is deliberately NOT a
+    /// TurnPlan: it carries no retrieval packet or receipt, so it has nothing to drift, and it flows
+    /// through `sendWithTools` / the no-key notice, a different sink. The plan governs the grounded
+    /// read/survey/empty turn, which is exactly where the drift lived.)
+    struct TurnPlan {
+        // The WIRE — exactly what ChatSession.send receives, all derived in makeTurnPlan.
+        let displayText: String
+        let modelText: String
+        let systemPrompt: String
+        let citations: [ChatSession.Message.Citation]?
+        let alwaysCiteIndices: Set<Int>
+        let readReceipt: ChatSession.Message.ReadReceipt?
+        // Routing facts — logging, the survey-offer target, and the DEBUG invariants.
+        let mode: String            // read | survey | empty
+        let readNodeIDs: [String]   // entries read IN FULL
+        let candidateCount: Int
+        let cardCount: Int          // survey shape is asserted PER KIND (≤ 8 cards / ≤ 4 passages),
+        let passageCount: Int       // never as one total — 8 + 4 = 12 is CORRECT, not an overflow.
+        let cardNodeIDs: [String]   // survey card entries, best-first (the gauntlet's offer target)
+        let chipIndices: [Int]      // candidate numbers offered as sources
+        let windowTokens: Int       // the active backend's window
+        let budgetChars: Int        // the derived char budget for this turn
+        // Derived from the ONE modelText — the receipt/invariants read the SAME string that ships.
+        var packetChars: Int { modelText.count }
+        var estTokens: Int { modelText.count / LibrarianState.charsPerToken }   // conservative (3 chars/tok)
+        var alwaysCiteIndicesList: [Int] { alwaysCiteIndices.sorted() }
     }
-    @ObservationIgnored var debugLastTurn: TurnRecord? = nil
+
+    #if DEBUG
+    /// Brief BU1 — the plan the ONE pipeline actually decided + sent for the last Library turn. The
+    /// gauntlet asserts the BU1 invariants against it (request chars == packet chars by construction;
+    /// estimated tokens < window; a READ turn carries its entry as a chip; a re-ask replaces its
+    /// answer) — only checkable because the decision and the wire are the SAME object.
+    @ObservationIgnored var debugLastTurn: TurnPlan? = nil
     #endif
 
     /// Read-only indicator of the model that will answer the next Ask (the FM
@@ -2284,42 +2294,57 @@ final class LibrarianState {
         return sections.joined(separator: "\n\n")
     }
 
-    /// Brief BN3 — the header for a full-entry read: `[n] <provenance> — <Title>[ (domain)] — read
-    /// in full` (or `— PARTIAL: best excerpts of a long entry` when it didn't fit the budget, so the
-    /// model knows the read is incomplete and never invents the missing part).
+    /// Brief BU4 — ownership phrasing for a packet-item label. The model must never read a SAVED
+    /// article as the user's OWN words: a note is "authored by you"; a saved link is "saved from
+    /// <site>"; a document/image is something the user ADDED to their library. This is the
+    /// "tell the model plainly whose words these are" half of BU4's grounding.
+    private static func ownershipLabel(kind: Node.BlockProvenance, domain: String?) -> String {
+        switch kind {
+        case .note:      return "authored by you"
+        case .savedLink: return "saved from \(domain ?? "the web")"
+        case .document:  return "a document you added"
+        case .imageText: return "text from your image"
+        }
+    }
+
+    /// Brief BU4 — the entry's own date (when the user created/saved it). STABLE per entry, so it is
+    /// cache-safe at the top of the packet (unlike a per-turn "today is …" timestamp, which BU4 keeps
+    /// out of the prefix). `yyyy-MM-dd`, POSIX-stable.
+    private static let entryDateFormatter: DateFormatter = {
+        let f = DateFormatter()
+        f.locale = Locale(identifier: "en_US_POSIX")
+        f.dateFormat = "yyyy-MM-dd"
+        return f
+    }()
+    private static func entryDate(for nodeID: String, store: CorpusStore) -> String {
+        guard let node = store.nodes.first(where: { $0.id == nodeID }) else { return "undated" }
+        return entryDateFormatter.string(from: node.createdAt)
+    }
+
+    /// Brief BN3 + BU4 — the header for a full-entry read: `[E<n>] <Title> · <ownership> · <date>`
+    /// (+ ` — read in full` / ` — PARTIAL: best excerpts of a long entry`). `[E<n>]` is the citation
+    /// handle the model cites back (see `askSystemPrompt`); ownership + date are BU4's grounding.
     private static func entryReadHeader(for c: NumberedCandidate, store: CorpusStore) -> String {
         guard case .entry(let e) = c.payload else { return "" }
         let (kind, domain) = provenance(for: c, store: store)
-        let suffix = (kind == .savedLink) ? (domain.map { " (\($0))" } ?? "") : ""
         let tail = e.partial ? " — PARTIAL: best excerpts of a long entry" : " — read in full"
-        return "[\(c.number)] \(provenanceLabel(kind)) — \(e.title)\(suffix)\(tail)"
+        return "[E\(c.number)] \(e.title) · \(ownershipLabel(kind: kind, domain: domain)) · \(entryDate(for: c.nodeID, store: store))\(tail)"
     }
 
-    /// Brief W1 — the passage's prompt header, provenance-labelled:
-    /// `[n] your note — Title` / `[n] saved article — Title (domain)` /
-    /// `[n] document — Title` / `[n] image text — Title`.
+    /// Brief W1 + BU4 — a passage's header: `[E<n>] <Title> · <ownership> · <date>`.
     private static func passageHeader(for c: NumberedCandidate, store: CorpusStore) -> String {
         let title = store.nodes.first { $0.id == c.nodeID }?.title ?? "Untitled"
         let (kind, domain) = provenance(for: c, store: store)
-        let suffix = (kind == .savedLink) ? (domain.map { " (\($0))" } ?? "") : ""
-        return "[\(c.number)] \(provenanceLabel(kind)) — \(title)\(suffix)"
+        return "[E\(c.number)] \(title) · \(ownershipLabel(kind: kind, domain: domain)) · \(entryDate(for: c.nodeID, store: store))"
     }
 
-    /// Brief AA3 — a card's NOTES-section line: `[n] <title> — <gist>`, with the W1
-    /// provenance label folded in only for a COLLECTED node so the model doesn't
-    /// read a saved article's gist as the user's own words.
+    /// Brief AA3 + BU4 — a card's ENTRIES-ON-THIS-TOPIC line:
+    /// `[E<n>] <Title> · <ownership> · <date> — <gist>`.
     private static func cardContextLine(for c: NumberedCandidate, store: CorpusStore) -> String {
         guard case .card(let card) = c.payload else { return "" }
         let title = store.nodes.first { $0.id == card.nodeID }?.title ?? "Untitled"
         let (kind, domain) = provenance(for: c, store: store)
-        let prov: String
-        switch kind {
-        case .note:      prov = ""
-        case .savedLink: prov = " (saved article\(domain.map { ", \($0)" } ?? ""))"
-        case .document:  prov = " (document)"
-        case .imageText: prov = " (image text)"
-        }
-        return "[\(c.number)] \(title)\(prov) — \(card.gist)"
+        return "[E\(c.number)] \(title) · \(ownershipLabel(kind: kind, domain: domain)) · \(entryDate(for: c.nodeID, store: store)) — \(card.gist)"
     }
 
     /// AA4 — compact card line for the S5 log (title only, gist omitted to keep the

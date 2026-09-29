@@ -717,6 +717,7 @@ struct ChatTranscript: View {
 /// the sole way to jump to the newest text.
 private struct StreamingTail: View {
     let session: ChatSession
+    @Environment(\.appBodyFont) private var appFont
 
     /// Fully faded-in text (opacity 1); never re-animated.
     @State private var revealedText: String = ""
@@ -745,10 +746,18 @@ private struct StreamingTail: View {
     var body: some View {
         Group {
             if revealedText.isEmpty && pendingText.isEmpty {
-                // Pre-token indicator keeps its own leading layout — it is not
-                // text and does not need to match the block wrapper.
-                HStack(alignment: .top, spacing: 6) {
-                    ThinkingShimmerView()
+                // Brief BW5 — a slow first READ says WHAT it is doing ("Reading <Title>…" /
+                // "Skimming your library…"), never a silent spinner; the stream replaces it the
+                // moment the first token lands. Falls back to the shimmer for private/general chat
+                // (no prefill notice). Keeps its own leading layout — not block-wrapped text.
+                HStack(alignment: .top, spacing: 8) {
+                    if let notice = session.prefillNotice {
+                        Text(notice)
+                            .font(appFont.font(size: 15, relativeTo: .body))
+                            .foregroundStyle(.secondary)
+                    } else {
+                        ThinkingShimmerView()
+                    }
                     Spacer(minLength: 40)
                 }
             } else {

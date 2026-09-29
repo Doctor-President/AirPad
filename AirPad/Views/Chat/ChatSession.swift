@@ -159,6 +159,12 @@ final class ChatSession {
     /// Per-chat Thinking toggle, OFF by default. The picker sheet's toggle sets it; send() passes
     /// it to the Host — the only path that honors `think`.
     var thinkEnabled: Bool = false
+    /// Brief BW5 — a human line shown in the answer slot WHILE the model prefills, before the first
+    /// token: "Reading *Medical – Lab Tests*…" (READ) / "Skimming your library…" (survey). Set per
+    /// turn by `LibrarianState.groundedSend`; cleared the moment the first answer token streams and on
+    /// turn end. Nil → the plain thinking shimmer (private/general chat). No spinner-only silence on a
+    /// slow first read.
+    var prefillNotice: String? = nil
     /// Echoed back as a `.user` message the moment send() fires so the
     /// transcript shows the turn instantly while the model starts.
     private(set) var pendingUser: String? = nil
@@ -310,6 +316,7 @@ final class ChatSession {
                 case .thinking(let t):
                     streamingThinking += t   // ephemeral — the Thought-process block renders it (increment 7)
                 case .answer(let t):
+                    if prefillNotice != nil { prefillNotice = nil }   // BW5 — the first token replaces the "Reading…" line
                     streamingText += t
                     if streamingText.count - lastPersistedLength >= Self.partialPersistThreshold {
                         lastPersistedLength = streamingText.count
@@ -382,6 +389,7 @@ final class ChatSession {
         streamingText = ""
         isStreaming = false
         currentRequestID = nil
+        prefillNotice = nil   // BW5 — never let a "Reading…" line outlive the turn
 
         // Turn boundary — persist now that the assistant message is
         // committed. Not per-token: the store coalesces nothing today

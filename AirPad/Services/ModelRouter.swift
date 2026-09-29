@@ -113,9 +113,14 @@ enum ModelRouter {
     /// window or starves the big one.
     ///
     /// The numbers, by provider:
-    ///   • `.host` — 32,768. The paired Mac's Ollama is Modelfile-pinned to `num_ctx 32768`
-    ///     (Brief BJ verified this on T's machine); this is the marquee "read my whole entry"
-    ///     path, so it gets the real served window.
+    ///   • `.host` — 20,480. Brief BW3: right-sized DOWN from 32,768. The read context is capped at
+    ///     `readContextTargetTokens` (12k, BT2), so a whole-entry read + system + a few turns of
+    ///     history + the answer reserve fits comfortably under 20k (measured: read turns prompt-eval
+    ///     ~6–7k tokens). A smaller num_ctx means a smaller KV allocation (~10 GB → ~6–7 GB on
+    ///     qwen3:8b), which frees memory during a mixed session (capture, Done authoring) and cuts the
+    ///     chance Ollama evicts the model — the "no reload in a session" goal. Measured finding: the
+    ///     window size does NOT change PREFILL speed (that's token-count-bound, ~200 tok/s on M1 Max);
+    ///     the win here is memory + load, not prefill. The request num_ctx overrides the Modelfile pin.
     ///   • `.foundationModel` — 4,096. Apple's on-device model is a hard 4K window; the budget
     ///     must never overflow it, so a big entry degrades to its best passages ("partial").
     ///   • `.ollama` — 4,096. A direct LAN endpoint (Ollama/LM Studio) self-reports no reliable
@@ -126,12 +131,19 @@ enum ModelRouter {
     /// Reads the Keychain (XPC) via `active` — call OFF the SwiftUI render path.
     static var contextWindowTokens: Int {
         switch active {
-        case .host:            return 32_768
+        case .host:            return 20_480   // Brief BW3 — right-sized from 32768 (read cap is 12k; frees KV RAM)
         case .foundationModel: return 4_096
         case .ollama:          return 4_096
         case .local:           return 4_096
         }
     }
+
+    /// Brief BW2 — how long the paired Host's Ollama keeps the chat model resident after a request.
+    /// Sent on every Host chat/label request so a session's idle gaps don't idle-eject the model
+    /// (Ollama's 5-min default → the next question paid a cold load + cold prefill). Long enough to
+    /// span an active Librarian session; the model still frees after a genuine idle stretch. The Host
+    /// forwards this into Ollama's `/api/chat` `keep_alive`.
+    static let hostKeepAlive = "30m"
 
     /// Friendly, quiet name for the on-device Foundation Model — no network, safe
     /// to return instantly. (Wording confirmed by T.)
@@ -929,7 +941,15 @@ enum ModelRouter {
     }
 
     /// One-shot Host generation (accumulates the streamed answer). Short prompts (compaction /
-    /// labels) → `[system?, user]`, no explicit num_ctx (well within any served window).
+    /// chat-title / summary labels).
+    ///
+    /// ★ Brief BW2 — sends the SAME `num_ctx` as the Librarian chat (`contextWindowTokens`), NOT nil.
+    /// A nil `num_ctx` let Ollama fall back to qwen3:8b's DEFAULT 4096, which is a DIFFERENT KV
+    /// allocation than the chat's 32768 — so Ollama RELOADED the model (measured: `ollama ps` flipped
+    /// 32768→4096, load≈1.5s) and DISCARDED the KV cache. Since chat-title generation fires right
+    /// after the first Librarian answer, every session thrashed 32768⇄4096 and each question paid a
+    /// full cold prefill. One shared `num_ctx` keeps ONE resident instance; a small label prompt fits
+    /// 32768 trivially. (T's "the model needed to be loaded again.")
     private static func generateHost(pairing: HostPairing, systemPrompt: String, userPrompt: String) async throws -> String {
         var msgs: [WireMessage] = []
         if !systemPrompt.isEmpty { msgs.append(["role": "system", "content": systemPrompt]) }
@@ -938,13 +958,32 @@ enum ModelRouter {
         let stream = AsyncThrowingStream<ModelDelta, Error> { cont in
             Task {
                 do {
-                    try await streamHost(pairing: pairing, messages: msgs, numCtx: nil, continuation: cont)
+                    try await streamHost(pairing: pairing, messages: msgs, numCtx: contextWindowTokens, continuation: cont)
                     cont.finish()
                 } catch { cont.finish(throwing: error) }
             }
         }
         for try await d in stream { if case .answer(let t) = d { out += t } } // one-shot: answer only
         return out
+    }
+
+    /// Brief BW4 — WARM the paired Host's chat model so the FIRST Librarian question finds it
+    /// resident (skips the ~cold load) with its KV allocation already at the chat's `num_ctx`, so the
+    /// first real turn neither loads nor reloads. Fire-and-forget: a 1-token chat at the SAME
+    /// `num_ctx` (32768) + `keep_alive` as a real turn. No-op unless the active backend is `.host`;
+    /// errors are swallowed (a failed warm just means the first question loads as it does today).
+    static func warmHostModel() {
+        guard case .host(let pairing) = active else { return }
+        Task.detached(priority: .utility) {
+            let msgs: [WireMessage] = [["role": "user", "content": "ok"]]
+            let stream = AsyncThrowingStream<ModelDelta, Error> { cont in
+                Task {
+                    do { try await streamHost(pairing: pairing, messages: msgs, numCtx: contextWindowTokens, continuation: cont); cont.finish() }
+                    catch { cont.finish(throwing: error) }
+                }
+            }
+            do { for try await _ in stream {} } catch { /* warm is best-effort */ }
+        }
     }
 
     /// Streaming Host generation over the tunnel with app-layer E2E. Seals the OpenAI chat
@@ -983,6 +1022,12 @@ enum ModelRouter {
         // `think` (per-chat, off by default) is honored only by that /api/chat path.
         var body: [String: Any] = ["model": model, "stream": true, "think": think, "messages": messages]
         if let numCtx { body["options"] = ["num_ctx": numCtx] }
+        // ★ Brief BW2 — keep the model RESIDENT across a session so an idle gap between questions
+        // doesn't idle-eject it (Ollama's default is 5 min → the next question pays a cold load AND a
+        // cold prefill). Sent on EVERY Host chat request; the Host forwards it to Ollama's /api/chat
+        // (`ollamaChatBody`). Combined with the shared `num_ctx` above, one instance stays warm with
+        // its KV cache intact, so follow-ups are ~instant instead of ~30 s.
+        body["keep_alive"] = Self.hostKeepAlive
         // BUG 36 Pillar 2: a client-generated requestID (sealed inside the body — D1) opts this
         // generation into the Host's finish-and-hold, so a mid-stream drop can be resumed.
         if let requestID { body["requestID"] = requestID }

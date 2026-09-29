@@ -627,6 +627,7 @@ final class LibrarianState {
         chat.thinkEnabled = thinkEnabled // Phase 2: the Librarian's per-session Thinking toggle → the Host
         pendingWebSearchOffer = nil      // Brief AI5 — any fresh send clears a stale web-search offer
         pendingReadInFullOffer = nil     // Brief BS3 — a fresh send clears a stale "Read … in full?" offer
+        chat.prefillNotice = nil         // Brief BW5 — start clean; the corpus branch sets the "Reading…" line
         // Brief BT3 — record the routing MODE (corpusAware) for EVERY turn to the Release-visible
         // "Copy Librarian log" (device diagnosis on TestFlight, where os_log isn't readable). Three
         // builds argued turn 1 "is routed" while T saw no footer; this makes the first turn's actual
@@ -722,6 +723,8 @@ final class LibrarianState {
         // Brief BN1 — `-LibrarianTrace` (Release-inert): dump the exact Ask packet, sourced from the plan.
         if ProcessInfo.processInfo.arguments.contains("-LibrarianTrace") { logTrace(plan: plan, candidates: candidates) }
         #endif
+        // Brief BW5 — the "Reading <Title>…" / "Skimming your library…" line shown until the first token.
+        chat.prefillNotice = plan.prefillNotice()
         await chat.send(displayText: plan.displayText, modelText: plan.modelText,
                         systemPrompt: plan.systemPrompt, citations: plan.citations,
                         alwaysCiteIndices: plan.alwaysCiteIndices, readReceipt: plan.readReceipt)
@@ -779,7 +782,7 @@ final class LibrarianState {
                             citations: nil, alwaysCiteIndices: [], readReceipt: r,
                             mode: "empty", readNodeIDs: [], candidateCount: 0, cardCount: 0,
                             passageCount: 0, cardNodeIDs: [], chipIndices: [],
-                            windowTokens: window, budgetChars: budget)
+                            windowTokens: window, budgetChars: budget, readTitle: nil)
         }
         // READ / SURVEY — the retrieved context, then the question LAST (BU4: no volatile text at the
         // top; the stable system-prompt + packet prefix is what Ollama can KV-cache across turns).
@@ -794,6 +797,8 @@ final class LibrarianState {
         let chips = Self.citationChips(from: candidates, store: store)
         // Brief BS2 — an entry READ IN FULL is ALWAYS a source chip, even with no inline [n].
         let alwaysCite = Set(candidates.filter { $0.isEntryRead }.map { $0.number })
+        let readTitle = candidates.first(where: { $0.isEntryRead })
+            .flatMap { c in store.nodes.first(where: { $0.id == c.nodeID })?.title }
         return TurnPlan(
             displayText: query, modelText: modelText, systemPrompt: askSystemPrompt,
             citations: chips, alwaysCiteIndices: alwaysCite, readReceipt: receipt,
@@ -804,7 +809,7 @@ final class LibrarianState {
             passageCount: candidates.filter { !$0.isCard && !$0.isEntryRead }.count,
             cardNodeIDs: candidates.filter { $0.isCard }.sorted { $0.number < $1.number }.map { $0.nodeID },
             chipIndices: (chips ?? []).map { $0.index }.sorted(),
-            windowTokens: window, budgetChars: budget)
+            windowTokens: window, budgetChars: budget, readTitle: readTitle)
     }
 
     #if DEBUG
@@ -2176,10 +2181,23 @@ final class LibrarianState {
         let chipIndices: [Int]      // candidate numbers offered as sources
         let windowTokens: Int       // the active backend's window
         let budgetChars: Int        // the derived char budget for this turn
+        let readTitle: String?      // Brief BW5 — the read entry's title (resolved in makeTurnPlan)
         // Derived from the ONE modelText — the receipt/invariants read the SAME string that ships.
         var packetChars: Int { modelText.count }
         var estTokens: Int { modelText.count / LibrarianState.charsPerToken }   // conservative (3 chars/tok)
         var alwaysCiteIndicesList: [Int] { alwaysCiteIndices.sorted() }
+
+        /// Brief BW5 — the human "prefill" line for this turn, shown in the answer slot until the
+        /// first token streams: the read entry's title for a READ, a generic line for a survey, and
+        /// nothing (→ the plain shimmer) for the empty room. Uses the pre-resolved `readTitle` so it
+        /// needs no main-actor store access.
+        func prefillNotice() -> String? {
+            switch mode {
+            case "read":   return "Reading \(readTitle ?? "your entry")…"
+            case "survey": return "Skimming your library…"
+            default:       return nil
+            }
+        }
     }
 
     #if DEBUG

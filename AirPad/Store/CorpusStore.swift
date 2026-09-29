@@ -1971,7 +1971,7 @@ final class CorpusStore {
         var rows: [String] = []
         var passCount = 0
         var carriedEntryIDs: Set<String> = []   // what the previous case left open (BN4 working set)
-        var previousTurn: LibrarianState.TurnRecord? = nil   // the prior case's record (case 4's offer target)
+        var previousTurn: LibrarianState.TurnPlan? = nil   // the prior case's plan (case 4's offer target)
 
         for c in cases {
             if c.newChat { chat = ChatSession() }
@@ -2067,7 +2067,7 @@ final class CorpusStore {
                 let chipNodes = Set(chips.compactMap { $0.nodeID })
                 let missing = r.readNodeIDs.filter { !chipNodes.contains($0) }
                 if !missing.isEmpty { fails.append("INV-chip: read entry not chipped (\(missing.count))") }
-                if (r.receipt?.readInFull ?? 0) == 0 { fails.append("INV-receipt: read turn with readInFull=0") }
+                if (r.readReceipt?.readInFull ?? 0) == 0 { fails.append("INV-receipt: read turn with readInFull=0") }
             }
             // BU1 invariant — estimated prompt tokens must fit the window.
             if let r = rec, r.estTokens >= r.windowTokens {
@@ -2111,12 +2111,12 @@ final class CorpusStore {
             let verdict = fails.isEmpty ? "✅ PASS" : "❌ \(fails.joined(separator: "; "))"
             NSLog("[Gauntlet] CASE %@ %@ route=%@ read=%d skim=%d packetChars=%d estTok=%d chips=%d users=%d→%d %.1fs",
                   c.id, fails.isEmpty ? "PASS" : "FAIL", route,
-                  rec?.receipt?.readInFull ?? -1, rec?.receipt?.skimmed ?? -1,
+                  rec?.readReceipt?.readInFull ?? -1, rec?.readReceipt?.skimmed ?? -1,
                   rec?.packetChars ?? -1, rec?.estTokens ?? -1, chips.count,
                   usersBefore, usersAfter, elapsed)
             NSLog("[Gauntlet] CASE %@ receipt=%@", c.id, receiptText)
             NSLog("[Gauntlet] CASE %@ answer=%@", c.id, answer.replacingOccurrences(of: "\n", with: " ").prefix(400).description)
-            rows.append("| \(c.id) | \(route) | \(rec?.receipt?.readInFull ?? 0)/\(rec?.receipt?.skimmed ?? 0) | \(rec?.cardCount ?? -1)c/\(rec?.passageCount ?? -1)p | \(rec?.packetChars ?? -1) | \(rec?.estTokens ?? -1) | \(chips.count) | \(String(format: "%.1f", elapsed))s | \(receiptText) | \(factsHit)/\(c.minFacts) | \(verdict) |")
+            rows.append("| \(c.id) | \(route) | \(rec?.readReceipt?.readInFull ?? 0)/\(rec?.readReceipt?.skimmed ?? 0) | \(rec?.cardCount ?? -1)c/\(rec?.passageCount ?? -1)p | \(rec?.packetChars ?? -1) | \(rec?.estTokens ?? -1) | \(chips.count) | \(String(format: "%.1f", elapsed))s | \(receiptText) | \(factsHit)/\(c.minFacts) | \(verdict) |")
         }
 
         NSLog("[Gauntlet] ── TABLE ──")

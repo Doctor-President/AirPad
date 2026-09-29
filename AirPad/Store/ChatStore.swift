@@ -24,6 +24,11 @@ struct Chat: Identifiable, Codable, Hashable {
     /// the Chats list shows this as secondary text. Optional + synthesized Codable →
     /// legacy chats decode with `room == nil` (no tag shown).
     var room: String? = nil
+    /// Brief BN4 — the WORKING SET: node ids the Librarian read IN FULL in this chat, so a reloaded
+    /// conversation keeps them "open" for follow-ups ("analyze that document" re-reads these, no
+    /// fresh search). Defaulted → synthesized Codable decodeIfPresent, so legacy chats decode with
+    /// `workingSet == []` (mirrors `room`). Written by `ChatSession.flush`.
+    var workingSet: [String] = []
 }
 
 /// Persistence layer for the clean Chat lane. Mirrors the
@@ -100,6 +105,7 @@ final class ChatStore {
             var updated = chats[i]
             updated.messages = chat.messages
             updated.updatedAt = chat.updatedAt
+            updated.workingSet = chat.workingSet   // BN4 — the working set changes per turn; keep it fresh
             chats[i] = updated
         } else {
             chats.append(chat)

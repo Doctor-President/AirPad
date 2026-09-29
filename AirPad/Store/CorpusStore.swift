@@ -845,6 +845,24 @@ final class CorpusStore {
     /// Brief W2/Z R1 — node ids for a CORPUS-scope Ask = the corpus room.
     private var corpusAskCandidateIDs: [String] { corpusRoomNodes.map { $0.id } }
 
+    /// Brief BN3 — the WHOLE entry as an ordered array of its block texts. Read from the block
+    /// sidecar (`nodes/<id>/blocks.json`), which is the DERIVED, already-chunked form of the
+    /// entry — it folds together authored notes, document/PDF extraction, audio/video transcripts,
+    /// and link previews, exactly the text Brief BJ joined for its D_whole packet (the one that
+    /// answered the lab question completely). Stored array order IS reading order. This is NOT a
+    /// retrieval (no embedding, no similarity search) — it's a plain read of the entry's text, so a
+    /// follow-up "read that entry in full" costs no query embed. Empty when the node has no sidecar.
+    func entryBlockTexts(nodeID: String) async -> [String] {
+        guard let index = await blockIndex(forNodeID: nodeID) else { return [] }
+        return index.blocks.map(\.text)
+    }
+
+    /// Brief BN3 — the whole entry as one string (its block texts joined in order). Convenience
+    /// over `entryBlockTexts`; matches Brief BJ's `"\n".join(blocks)` reconstruction exactly.
+    func fullEntryText(nodeID: String) async -> String {
+        await entryBlockTexts(nodeID: nodeID).joined(separator: "\n")
+    }
+
     /// Brief S3 — every block of `nodeIDs` scored against `query`, regardless of
     /// the relevance bar, so a named entry's passages can be PINNED to the front of
     /// the Ask candidate list. Thin wrapper over the block retriever (one BGE embed
@@ -1063,6 +1081,62 @@ final class CorpusStore {
                     let ok = out.count == 2 && keptNew && out.contains(where: { $0.id == "solo" })
                     NSLog("[BN0DedupSelfTest] %@ (kept=%d dup→%@)", ok ? "PASS" : "FAIL", out.count, out.first(where: { $0.id == "dup" })?.title ?? "?")
                 }
+                // Brief BN2–BN5 — PURE routing/budget/receipt self-test (no corpus, no embedder, no
+                // model — runs headless in the Simulator). Covers: (BN3) the model-derived budget
+                // degrades — a 32K Host window fits a ~16k-char entry while a 4K FM window can't;
+                // (BN2) entry ranking is by aggregate SUM so a multi-passage entry leads a stronger
+                // single passage; (BN4) the follow-up matcher fires on deixis, not on a fresh topic;
+                // (BN5) the receipt wording (singular/plural · partial · survey).
+                if ProcessInfo.processInfo.arguments.contains("-LibrarianRoutingSelfTest") {
+                    let lib = LibrarianState()
+                    let medicalChars = 16_090   // BJ's fixture Medical entry (~4,022 tokens)
+                    let hostBudget = lib.askContextCharBudget(windowOverride: 32_768)
+                    let fmBudget   = lib.askContextCharBudget(windowOverride: 4_096)
+                    let budgetOK = hostBudget >= medicalChars && fmBudget < medicalChars && fmBudget >= 2_000
+                    // BN2 — ranking. Entry A: 3 passages summing 0.66+0.64+0.62=1.92; Entry B: one 0.82.
+                    func bm(_ node: String, _ score: Float, _ bid: String) -> BlockMatch {
+                        BlockMatch(block: NodeBlock(blockID: bid, itemID: "i", chunkIndex: 0, text: "t",
+                                                    embedding: [], embeddingBasis: nil, sourceHash: "s",
+                                                    embedderVersion: 0, charLocation: 0, charLength: 1),
+                                   nodeID: node, score: score)
+                    }
+                    let ranking = LibrarianState.entryRanking(passages: [
+                        bm("A", 0.66, "a1"), bm("A", 0.64, "a2"), bm("A", 0.62, "a3"), bm("B", 0.82, "b1")])
+                    let rankOK = ranking.first?.nodeID == "A" && (ranking.first?.count ?? 0) == 3
+                    // BN4 — follow-up vs fresh topic.
+                    let f1 = LibrarianState.looksLikeWorkingSetFollowUp("analyze that document")
+                    let f2 = LibrarianState.looksLikeWorkingSetFollowUp("tell me more")
+                    let f3 = !LibrarianState.looksLikeWorkingSetFollowUp("What have I been thinking about lately?")
+                    let f4 = !LibrarianState.looksLikeWorkingSetFollowUp("How much did my Bolex camera cost?")
+                    let followOK = f1 && f2 && f3 && f4
+                    // BN5 — receipt wording.
+                    let r1 = ChatTranscript.readReceiptText(.init(readInFull: 1, skimmed: 6, partial: false))
+                    let r2 = ChatTranscript.readReceiptText(.init(readInFull: 2, skimmed: 0, partial: false))
+                    let r3 = ChatTranscript.readReceiptText(.init(readInFull: 1, skimmed: 3, partial: true))
+                    let r4 = ChatTranscript.readReceiptText(.init(readInFull: 0, skimmed: 9, partial: false))
+                    let r5 = ChatTranscript.readReceiptText(.init(readInFull: 0, skimmed: 1, partial: false))
+                    let receiptOK = r1 == "Read 1 entry in full · skimmed 6"
+                        && r2 == "Read 2 entries in full"
+                        && r3 == "Read 1 entry (partial) · skimmed 3"
+                        && r4 == "Skimmed 9 entries"
+                        && r5 == "Skimmed 1 entry"
+                    // Brief BR — the DELIVERY shape: the chat path must build proper roles (system
+                    // first, history roles preserved, current turn as a `user` message), never a
+                    // flattened "User:/Assistant:" transcript in one message.
+                    let wire = ModelRouter.debugWireMessages(
+                        systemPrompt: "SYS", history: [["role": "user", "content": "q1"], ["role": "assistant", "content": "a1"]],
+                        userContent: "PACKET")
+                    let deliveryOK = wire.count == 4
+                        && wire[0]["role"] == "system" && wire[0]["content"] == "SYS"
+                        && wire[1]["role"] == "user" && wire[2]["role"] == "assistant"
+                        && wire[3]["role"] == "user" && wire[3]["content"] == "PACKET"
+                        && !wire.contains { ($0["content"] ?? "").contains("\nAssistant:") }
+                    let all = budgetOK && rankOK && followOK && receiptOK && deliveryOK
+                    NSLog("[LibrarianRoutingSelfTest] %@ · budget(host=%d fm=%d medical=%d)=%@ rank=%@ followup=%@ receipt=%@ delivery=%@",
+                          all ? "PASS" : "FAIL", hostBudget, fmBudget, medicalChars,
+                          budgetOK ? "ok" : "BAD", rankOK ? "ok" : "BAD", followOK ? "ok" : "BAD", receiptOK ? "ok" : "BAD", deliveryOK ? "ok" : "BAD")
+                    if !receiptOK { NSLog("[LibrarianRoutingSelfTest] receipt strings: r1='%@' r2='%@' r3='%@' r4='%@' r5='%@'", r1, r2, r3, r4, r5) }
+                }
                 #endif
                 // MAP-RELAYOUT GATE (ws-map-relayout). Pins the persist/restore
                 // decision logic so a re-introduced on-launch reform fails here
@@ -1110,6 +1184,89 @@ final class CorpusStore {
                     NSLog("[LibDiag] --- named-entry pin (S3), stand-in title ---")
                     await lib.debugCorpusRetrieve(query: "What can you tell me about my entry called \"The Kuleshov Effect\"?", store: self, chat: chat2)
                     NSLog("[LibDiag] done")
+                }
+                // Brief BN2–BN5 — the find-then-read ROUTER over the fixture (needs -CorpusFixture
+                // + -EmbedCPUOnly). Drives the real pipeline WITHOUT the model and logs the routing
+                // (mode · read/skim · budget) for each verify case: (1) the lab question → READ the
+                // Medical document in full; (2) "analyze that document" → READ the SAME entry, NO new
+                // retrieval (working set); (3) a broad question → SURVEY; (4) a named-entry pin →
+                // READ(pin); (5) the lab question at a forced FM 4K window → READ but PARTIAL (no
+                // overflow). The `librarian` Logger category also carries the per-turn `mode=…` record.
+                if ProcessInfo.processInfo.arguments.contains("-LibrarianRoutingDiag") {
+                    // Auto-select LOADED nodes (this fixture clone drops some entries at load, incl.
+                    // BJ's Medical doc — an app-load quirk of the scratch copy, not routing). We verify
+                    // the machinery on whatever loaded: a big DOCUMENT (for the read + dominance), a
+                    // SAVED ARTICLE (for the dominance provenance gate), and a plain-title node (pin).
+                    var docID: String? = nil; var docTitle = ""; var docChars = 0
+                    for n in userNodes where n.cardProvenance().kind == .document {
+                        let chars = (await fullEntryText(nodeID: n.id)).count
+                        if chars > 2_000 { docID = n.id; docTitle = n.title; docChars = chars; break }
+                    }
+                    let linkNode = userNodes.first { $0.cardProvenance().kind == .savedLink }
+                    NSLog("[RoutingDiag] fixture: loaded=%d userRoom=%d · picked document=%@ (%d chars) · savedArticle=%@",
+                          nodes.count, userNodes.count, docTitle.isEmpty ? "NONE" : docTitle, docChars, linkNode?.title ?? "NONE")
+
+                    // ── BN2 DOMINANCE provenance gate against REAL fixture nodes (embedding-independent).
+                    // Same synthetic ranking shape (top 0.75, 3 passages); a DOCUMENT leads → READ, a
+                    // SAVED ARTICLE leads → nil (its internal passage density is a document artefact).
+                    func rank(_ id: String) -> [(nodeID: String, aggregate: Float, top: Float, count: Int)] {
+                        [(id, 2.1, 0.75, 3), ("other", 0.9, 0.62, 1)]
+                    }
+                    if let docID {
+                        let domDoc = LibrarianState.dominantReadEntry(ranking: rank(docID), store: self)
+                        NSLog("[RoutingDiag] DOMINANCE document→%@ (expect READ = the doc id)", domDoc ?? "nil")
+                    }
+                    if let link = linkNode {
+                        let domLink = LibrarianState.dominantReadEntry(ranking: rank(link.id), store: self)
+                        NSLog("[RoutingDiag] DOMINANCE savedArticle→%@ (expect nil)", domLink ?? "nil")
+                    }
+                    // Weak-signal (below 0.70) never dominates, whatever the provenance.
+                    if let docID {
+                        let weak: [(nodeID: String, aggregate: Float, top: Float, count: Int)] = [(docID, 1.2, 0.55, 2)]
+                        NSLog("[RoutingDiag] DOMINANCE weak(top 0.55)→%@ (expect nil)", LibrarianState.dominantReadEntry(ranking: weak, store: self) ?? "nil")
+                    }
+
+                    if let docID {
+                        // ── BN3 READ-IN-FULL: HOST 32K reads the WHOLE entry; FM 4K degrades to a
+                        // PARTIAL best-passages read, and the packet never exceeds the derived budget.
+                        let libHost = LibrarianState()
+                        let host = await libHost.debugForceReadPacket(readTargets: [docID], store: self, windowOverride: 32_768)
+                        NSLog("[RoutingDiag] HOST read: read=%d skim=%d partial=%@ contextChars=%d fullChars=%d (expect read=1 partial=false, contextChars≥fullChars)",
+                              host.receipt.readInFull, host.receipt.skimmed, "\(host.receipt.partial)", host.context.count, docChars)
+                        let libFM = LibrarianState()
+                        let fmBudget = libFM.askContextCharBudget(windowOverride: 4_096)
+                        let fm = await libFM.debugForceReadPacket(readTargets: [docID], store: self, windowOverride: 4_096)
+                        let fmOverflow = fm.context.count > fmBudget
+                        NSLog("[RoutingDiag] FM 4K read: read=%d partial=%@ contextChars=%d budget=%d overflow=%@ (expect partial=%@, no overflow)",
+                              fm.receipt.readInFull, "\(fm.receipt.partial)", fm.context.count, fmBudget, "\(fmOverflow)", docChars > fmBudget ? "true" : "false")
+
+                        // ── BN2 TRIGGER #2 — the question NAMES the entry by title WITHOUT quotes
+                        // (punctuation-normalised, word-order-independent) → read(title). Build a
+                        // natural naming question from the title's own words.
+                        let titleWords = docTitle.lowercased()
+                            .split(whereSeparator: { !$0.isLetter && !$0.isNumber }).map(String.init)
+                            .filter { $0.count >= 3 }.joined(separator: " ")
+                        let tmIDs = LibrarianState.titleMatchedEntryIDs(question: "what's in my \(titleWords)?", store: self)
+                        let libT = LibrarianState(); let cT = ChatSession(); libT.selectedScope = .corpus
+                        let pt = await libT.debugBuildAskPacket(query: "what's in my \(titleWords)?", store: self, chat: cT)
+                        NSLog("[RoutingDiag] TITLE-MATCH (unquoted '%@'): titleMatchedEntryIDs→%@ · mode=%@ read=%d (expect read(title), names the doc)",
+                              titleWords, "\(tmIDs.contains(docID))", pt.mode, pt.receipt?.readInFull ?? -1)
+
+                        // ── BN2 PIN + BN4 WORKING SET + follow-up + moved-on (deterministic; pin=title-match).
+                        let libP = LibrarianState(); let cP = ChatSession(); libP.selectedScope = .corpus
+                        let p1 = await libP.debugBuildAskPacket(query: "Tell me about my entry \"\(docTitle)\".", store: self, chat: cP)
+                        NSLog("[RoutingDiag] PIN '%@': mode=%@ read=%d skim=%d workingSet=%@ (expect read, workingSet=[that entry])",
+                              docTitle, p1.mode, p1.receipt?.readInFull ?? -1, p1.receipt?.skimmed ?? -1, "\(cP.workingSet == [docID])")
+                        let p2 = await libP.debugBuildAskPacket(query: "analyze that document", store: self, chat: cP)
+                        NSLog("[RoutingDiag] FOLLOWUP: mode=%@ read=%d workingSetUnchanged=%@ (expect read(followup), no new retrieval)",
+                              p2.mode, p2.receipt?.readInFull ?? -1, "\(cP.workingSet == [docID])")
+                        let p3 = await libP.debugBuildAskPacket(query: "What have I been thinking about lately?", store: self, chat: cP)
+                        NSLog("[RoutingDiag] MOVED-ON: mode=%@ skim=%d workingSetCleared=%@ (expect survey, working set cleared)",
+                              p3.mode, p3.receipt?.skimmed ?? -1, "\(cP.workingSet.isEmpty)")
+                    } else {
+                        NSLog("[RoutingDiag] no big document loaded — skipped read-in-full/pin checks")
+                    }
+                    NSLog("[RoutingDiag] done")
                 }
                 // Brief U verify (READ-ONLY) — the sample/user SPLIT. Logs the node
                 // partition, which collections land in COLLECTIONS vs the sample

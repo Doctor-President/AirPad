@@ -289,6 +289,10 @@ struct LibrarianSurface: View {
             // possible network probe). Refreshed again on Ask-focus so a Settings
             // endpoint swap is reflected before the next turn.
             Task { await librarian.refreshActiveModel() }
+            // Brief BW4 — warm the Host model now, while the user is still reading/typing, so the
+            // first question finds it resident (no cold load) at the chat's num_ctx. Fire-and-forget,
+            // no-op off the Host path.
+            ModelRouter.warmHostModel()
             #if DEBUG
             // Real-screen verification hooks for the Ask-field shape/glow pass:
             // `-AskPrefill <text>` fills the Ask field (to see it wrap), `-AskFocus`

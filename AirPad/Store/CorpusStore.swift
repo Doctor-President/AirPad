@@ -1307,6 +1307,10 @@ final class CorpusStore {
                 if ProcessInfo.processInfo.arguments.contains("-LibrarianGauntlet") {
                     await runLibrarianGauntlet()
                 }
+                // Brief BY — the residency-mode gauntlet (Dynamic/Manual/Always-ready + the idle-eject repro).
+                if ProcessInfo.processInfo.arguments.contains("-LibrarianResidencyGauntlet") {
+                    await runResidencyGauntlet()
+                }
                 // Brief U verify (READ-ONLY) — the sample/user SPLIT. Logs the node
                 // partition, which collections land in COLLECTIONS vs the sample
                 // region, and that the capture picker hides the sample's collections
@@ -2156,6 +2160,95 @@ final class CorpusStore {
         for r in rows { NSLog("[Gauntlet] %@", r) }
         NSLog("[Gauntlet] RESULT %d/%d PASS", passCount, cases.count)
         NSLog("[Gauntlet] done")
+    }
+
+    /// Brief BY — the RESIDENCY-MODE gauntlet. Drives the REAL sealed path in each residency mode to
+    /// prove the fix: DYNAMIC auto-loads (serves cold); MANUAL refuses cold (honest, no silent load);
+    /// ALWAYS-READY serves when resident AND — the fix — reloads a HELD model that was idle-ejected
+    /// (the BW keep_alive bug stranded it: refuse + Retry never helped). Sets the mode + loads/ejects
+    /// via the loopback control endpoints, asks via `groundedSend`, reads serve-vs-refuse off the
+    /// ChatSession's `lastError` (a Host 409 surfaces there). Launch: `-LibrarianResidencyGauntlet`
+    /// `-DebugHostModel qwen3:8b` + the `-DebugHost*` keys. (The reload-on-demand + keep_alive-owner
+    /// invariants are also PINNED by the Host go tests `TestAutoLoadRefusal_ReloadsHeldOnDemand` +
+    /// `TestOllamaChatBody_KeepAliveOwnedByMode`.)
+    func runResidencyGauntlet() async {
+        guard case .host(let pairing) = ModelRouter.active else {
+            NSLog("[ResidencyGauntlet] ABORT — provider is not .host"); NSLog("[ResidencyGauntlet] done"); return
+        }
+        let args = ProcessInfo.processInfo.arguments
+        let tag: String = args.firstIndex(of: "-DebugHostModel").flatMap { $0 + 1 < args.count ? args[$0 + 1] : nil } ?? "qwen3:8b"
+        NSLog("[ResidencyGauntlet] START model=%@", tag)
+
+        func post(_ url: URL?, _ body: [String: Any]) async {
+            guard let url else { return }
+            var req = URLRequest(url: url); req.httpMethod = "POST"
+            req.setValue("application/json", forHTTPHeaderField: "Content-Type")
+            req.setValue("Bearer \(pairing.authToken)", forHTTPHeaderField: "Authorization")
+            req.httpBody = try? JSONSerialization.data(withJSONObject: body)
+            _ = try? await URLSession.shared.data(for: req)
+        }
+        func setMode(_ m: String) async { await post(pairing.residencyURL, ["mode": m]) }
+        // Poll /v1/catalog until the model has actually LEFT `installed-loaded` — the eject completes
+        // async (Ollama holds a "Stopping" window), and asking before it clears lets autoLoadRefusal
+        // see the model as still resident and serve, defeating the cold-state setup (the manual-cold
+        // race). Bounded so a stuck eject can't hang the run.
+        func waitEjected() async {
+            guard let url = pairing.catalogURL else { return }
+            for _ in 0..<24 { // ~12s cap
+                try? await Task.sleep(nanoseconds: 500_000_000)
+                var req = URLRequest(url: url)
+                req.setValue("Bearer \(pairing.authToken)", forHTTPHeaderField: "Authorization")
+                guard let (data, _) = try? await URLSession.shared.data(for: req),
+                      let json = try? JSONSerialization.jsonObject(with: data) as? [String: Any],
+                      let models = json["models"] as? [[String: Any]] else { continue }
+                let stillLoaded = models.contains { ($0["tag"] as? String) == tag && ($0["state"] as? String) == "installed-loaded" }
+                if !stillLoaded { return }
+            }
+        }
+        // load with keepAlive "0" EJECTS (Ollama loads then unloads) but the Host STILL marks it held
+        // in Always-ready → exactly the idle-ejected-but-held state; nil uses the mode default (load).
+        func load(keepAlive: String?) async {
+            var b: [String: Any] = ["catalogId": tag, "confirmed": true]
+            if let keepAlive { b["keepAlive"] = keepAlive }
+            await post(pairing.loadURL, b)
+            if keepAlive == "0" {
+                await waitEjected() // don't ask until the model has really left memory
+            } else {
+                try? await Task.sleep(nanoseconds: 1_500_000_000) // let a real load settle
+            }
+        }
+        func ask(_ q: String) async -> Bool {
+            let chat = ChatSession()
+            chat.suppressTitleGeneration = true // else its async reload defeats the test ejects
+            let lib = LibrarianState(); lib.selectedScope = .corpus; lib.corpusAware = true
+            await lib.groundedSend(query: q, store: self, chat: chat)
+            let answered = (chat.messages.last { $0.role == .assistant }?.text.isEmpty == false)
+            if let err = chat.lastError { NSLog("[ResidencyGauntlet]   refused: %@", String(err.prefix(90))) }
+            return answered && chat.lastError == nil
+        }
+        let Q = "What do my lab test results reveal?"
+        var rows: [String] = []; var pass = 0; var total = 0
+        func check(_ label: String, want: Bool, got: Bool) {
+            total += 1; let ok = (want == got); if ok { pass += 1 }
+            rows.append("| \(label) | \(want ? "serve" : "refuse") | \(got ? "served" : "refused") | \(ok ? "✅ PASS" : "❌ FAIL") |")
+            NSLog("[ResidencyGauntlet] %@ want=%@ got=%@ %@", label, want ? "serve" : "refuse", got ? "served" : "refused", ok ? "PASS" : "FAIL")
+        }
+
+        await setMode("dynamic"); await load(keepAlive: "0")           // DYNAMIC cold → auto-loads
+        check("dynamic-cold", want: true, got: await ask(Q))
+        await setMode("manual"); await load(keepAlive: "0")            // MANUAL cold → refuses (no auto-load)
+        check("manual-cold", want: false, got: await ask(Q))
+        await setMode("always-on"); await load(keepAlive: nil)        // ALWAYS-READY resident → serves
+        check("always-ready-resident", want: true, got: await ask(Q))
+        await load(keepAlive: "0")                                     // ★ idle-eject (held) → ask → reload-on-demand
+        check("always-ready-idle-ejected+ask", want: true, got: await ask(Q))
+        await setMode("dynamic")                                       // reset to the default
+
+        NSLog("[ResidencyGauntlet] ── TABLE ──")
+        NSLog("[ResidencyGauntlet] | scenario | expect | got | verdict |")
+        for r in rows { NSLog("[ResidencyGauntlet] %@", r) }
+        NSLog("[ResidencyGauntlet] RESULT %d/%d PASS", pass, total)
+        NSLog("[ResidencyGauntlet] done")
     }
     #endif
 

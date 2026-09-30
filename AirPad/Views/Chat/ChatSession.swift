@@ -215,6 +215,13 @@ final class ChatSession {
     @ObservationIgnored
     private var didGenerateTitle: Bool = false
 
+    /// Brief BY — suppress the background title-generation chat. Default OFF (normal chats title
+    /// themselves). The residency GAUNTLET sets it on its throwaway sessions: title-gen fires a small
+    /// async chat AFTER the answer, which would RELOAD the model right after a test eject and defeat
+    /// the cold-state setup.
+    @ObservationIgnored
+    var suppressTitleGeneration: Bool = false
+
     /// ★ BUG 36 — stable identity for the assistant turn currently streaming.
     /// The incrementally-persisted partial (`flush()` during the stream), the
     /// partial committed if the stream drops, and any later continuation all
@@ -1300,7 +1307,7 @@ final class ChatSession {
     /// user turn. The store hop on success is async (@MainActor); a
     /// failure / refusal / no-op leaves the fallback title intact.
     private func scheduleTitleGenerationIfNeeded() {
-        guard !didGenerateTitle else { return }
+        guard !didGenerateTitle, !suppressTitleGeneration else { return }
         guard let firstUser = messages.first(where: { $0.role == .user })?.text else { return }
         guard let firstAssistant = messages.first(where: { $0.role == .assistant })?.text else { return }
         didGenerateTitle = true

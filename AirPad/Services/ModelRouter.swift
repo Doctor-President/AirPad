@@ -138,12 +138,10 @@ enum ModelRouter {
         }
     }
 
-    /// Brief BW2 — how long the paired Host's Ollama keeps the chat model resident after a request.
-    /// Sent on every Host chat/label request so a session's idle gaps don't idle-eject the model
-    /// (Ollama's 5-min default → the next question paid a cold load + cold prefill). Long enough to
-    /// span an active Librarian session; the model still frees after a genuine idle stretch. The Host
-    /// forwards this into Ollama's `/api/chat` `keep_alive`.
-    static let hostKeepAlive = "30m"
+    // Brief BY — the app NO LONGER sends `keep_alive`. Retention is owned SOLELY by the Host's
+    // residency mode (Always-ready/Manual = -1, Dynamic = the idle default), applied on the chat path
+    // by the Host. BW's app-side `keep_alive=30m` was overriding Always-ready's -1 hold and stranding
+    // held models (Brief BY). One owner, no override.
 
     /// Friendly, quiet name for the on-device Foundation Model — no network, safe
     /// to return instantly. (Wording confirmed by T.)
@@ -1035,12 +1033,10 @@ enum ModelRouter {
         // `think` (per-chat, off by default) is honored only by that /api/chat path.
         var body: [String: Any] = ["model": model, "stream": true, "think": think, "messages": messages]
         if let numCtx { body["options"] = ["num_ctx": numCtx] }
-        // ★ Brief BW2 — keep the model RESIDENT across a session so an idle gap between questions
-        // doesn't idle-eject it (Ollama's default is 5 min → the next question pays a cold load AND a
-        // cold prefill). Sent on EVERY Host chat request; the Host forwards it to Ollama's /api/chat
-        // (`ollamaChatBody`). Combined with the shared `num_ctx` above, one instance stays warm with
-        // its KV cache intact, so follow-ups are ~instant instead of ~30 s.
-        body["keep_alive"] = Self.hostKeepAlive
+        // ★ Brief BY — the app does NOT send `keep_alive`. The Host's RESIDENCY MODE owns retention and
+        // applies it on the chat path (Always-ready/Manual = -1, Dynamic = the idle default). BW's
+        // app-side keep_alive=30m overrode Always-ready's -1 hold → the held model idle-ejected → every
+        // ask was then refused. One owner (the Mac's mode), no override from the phone.
         // BUG 36 Pillar 2: a client-generated requestID (sealed inside the body — D1) opts this
         // generation into the Host's finish-and-hold, so a mid-stream drop can be resumed.
         if let requestID { body["requestID"] = requestID }

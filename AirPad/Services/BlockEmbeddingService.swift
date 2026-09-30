@@ -184,16 +184,20 @@ final class BlockEmbeddingService {
         // re-embedded blocks. BGE is unit-normalized, so scoring is RAW cosine —
         // the NLContextual mean-centering crutch does not carry to BGE.
         guard let qvec = await CardEmbeddingService.shared.embed(query), !qvec.isEmpty else { return [] }
-        return await findRelevantBlocks(queryVector: qvec, candidateNodeIDs: candidateNodeIDs, topK: topK)
+        return await findRelevantBlocks(queryVector: qvec, candidateNodeIDs: candidateNodeIDs, topK: topK, queryText: query)
     }
 
     /// step 3c — pre-embedded-query variant. The two-tier store funnel embeds the
     /// query once (for the card Stage-1) and passes the vector straight through to
     /// this Stage-2 block pass, so a search does a single BGE inference.
+    /// `queryText` (Brief BV) carries the raw query for the KEYWORD (lexical) pass; "" disables it
+    /// (the BX working-set probes pass "" so lexical governs retrieval ranking only, not the carry
+    /// geometry). Defaulted so non-Librarian callers are unaffected.
     func findRelevantBlocks(
         queryVector qvec: [Float],
         candidateNodeIDs: [String],
-        topK: Int = 50
+        topK: Int = 50,
+        queryText: String = ""
     ) async -> [BlockMatch] {
         guard !qvec.isEmpty else { return [] }
         // Gather block indices (storage-actor I/O), then score OFF the main actor
@@ -209,17 +213,34 @@ final class BlockEmbeddingService {
                 print("[BlockEmbedding] load sidecar error node=\(nodeID): \(error)")
             }
         }
-        return await Self.scoreBlocksOffMain(qvec: qvec, snapshot: snapshot, topK: topK)
+        return await Self.scoreBlocksOffMain(qvec: qvec, queryText: queryText, snapshot: snapshot, topK: topK)
     }
 
     /// Off-main-actor block scoring. Runs the raw-cosine pass in a detached task
     /// so the main thread stays free during Librarian typing/drag.
+    ///
+    /// Brief BV — the KEYWORD (lexical) half is INSTRUMENTED-FIRST here: we compute the IDF-gated
+    /// distinctive query terms and LOG them, but do NOT yet change any score. That roots-causes the
+    /// case-8 "capital of France" regression (blocks were promoted though france/capital are common)
+    /// by showing the LIVE distinctive set + its document frequencies over the REAL candidate snapshot,
+    /// before the priority-tier scoring lands. `-LibrarianLexicalDiag` prints it.
     nonisolated private static func scoreBlocksOffMain(
         qvec: [Float],
+        queryText: String,
         snapshot: [(nodeID: String, blocks: [NodeBlock])],
         topK: Int
     ) async -> [BlockMatch] {
         await Task.detached(priority: .userInitiated) {
+            // INSTRUMENT (no scoring change): the df-gated distinctive terms over THIS snapshot.
+            if !queryText.isEmpty, lexicalDiag {
+                let (distinctive, dfs) = lexicalDistinctiveTerms(queryText: queryText, snapshot: snapshot)
+                var blockCount = 0
+                for (_, blocks) in snapshot { blockCount += blocks.count }
+                let dfDesc = dfs.sorted { $0.value < $1.value }.map { "\($0.key)=\($0.value)" }.joined(separator: " ")
+                NSLog("[LexicalDiag] q=%@ | snapshotBlocks=%d | distinctive(df<=%d)=%@ | df: %@",
+                      String(queryText.prefix(60)), blockCount, lexicalMaxDF,
+                      distinctive.isEmpty ? "(none → no-op)" : distinctive.sorted().joined(separator: ","), dfDesc)
+            }
             var scored: [BlockMatch] = []
             for (nodeID, blocks) in snapshot {
                 for block in blocks where block.embedding.count == qvec.count {
@@ -233,6 +254,43 @@ final class BlockEmbeddingService {
             scored.sort { $0.score > $1.score }
             return Array(scored.prefix(topK))
         }.value
+    }
+
+    // MARK: - Brief BV — the keyword (lexical) gate (INSTRUMENTED; scoring lands after case 8 is understood)
+
+    nonisolated static let lexicalDiag: Bool = {
+        #if DEBUG
+        return ProcessInfo.processInfo.arguments.contains("-LibrarianLexicalDiag")
+        #else
+        return false
+        #endif
+    }()
+    /// "rare" cutoff — a query term in ≤ this many candidate blocks is a genuine keyword target.
+    nonisolated static let lexicalMaxDF = 3
+
+    /// Lowercase word tokens, ≥ 4 chars (drops short glue words; rarity does the rest).
+    nonisolated private static func bvTokens(_ s: String) -> [String] {
+        s.lowercased().split { !$0.isLetter && !$0.isNumber }.map(String.init).filter { $0.count >= 4 }
+    }
+
+    /// The query terms rare enough to be a keyword target — present in ≤ lexicalMaxDF of the CANDIDATE
+    /// snapshot's blocks (and ≥1). Returns the set + the full per-term df (for the diagnostic). NOTE:
+    /// df is over the SNAPSHOT passed in (the candidate pool), not the whole corpus — the exact thing
+    /// case-8 instrumentation checks (a term common corpus-wide can be rare within a small pool).
+    nonisolated private static func lexicalDistinctiveTerms(
+        queryText: String,
+        snapshot: [(nodeID: String, blocks: [NodeBlock])]
+    ) -> (Set<String>, [String: Int]) {
+        let qTerms = Set(bvTokens(queryText))
+        guard !qTerms.isEmpty else { return ([], [:]) }
+        var df: [String: Int] = [:]
+        for (_, blocks) in snapshot {
+            for block in blocks {
+                for t in Set(bvTokens(block.text)) where qTerms.contains(t) { df[t, default: 0] += 1 }
+            }
+        }
+        let distinctive = qTerms.filter { if let d = df[$0] { return d >= 1 && d <= lexicalMaxDF }; return false }
+        return (distinctive, df)
     }
 
     /// Navigate-mode retrieval — ranks nodes by their best-scoring block.

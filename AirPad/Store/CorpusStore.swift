@@ -787,7 +787,11 @@ final class CorpusStore {
     /// so a single long saved article can't monopolise Ask.
     static let maxBlocksPerNode = 3
 
-    func askMatches(query: String, scope: CanvasScope = .corpus, topK: Int = 8, queryVector: [Float]? = nil) async -> [BlockMatch] {
+    func askMatches(query: String, scope: CanvasScope = .corpus, topK: Int = 8, queryVector: [Float]? = nil, lexical: Bool = true) async -> [BlockMatch] {
+        // Brief BV — `lexical` carries the raw query into the keyword pass. The BX working-set carry
+        // probe passes `lexical: false` so the lexical boost governs retrieval RANKING only, never the
+        // 0.08 carry-vs-switch geometry (which reads raw cosine).
+        let lexText = lexical ? query : ""
         // AA1 — reuse the caller's query embedding when supplied (embed once for
         // passages + cards); otherwise embed here as before.
         let qvec: [Float]
@@ -806,7 +810,7 @@ final class CorpusStore {
         // the candidate set spans multiple nodes instead of one article's chunks.
         let pool = max(topK * 5, 60)
         var matches = Self.diversifyByNode(
-            await blockEmbedding.findRelevantBlocks(queryVector: qvec, candidateNodeIDs: candidateIDs, topK: pool),
+            await blockEmbedding.findRelevantBlocks(queryVector: qvec, candidateNodeIDs: candidateIDs, topK: pool, queryText: lexText),
             perNode: Self.maxBlocksPerNode, limit: topK)
         // A COLLECTION miss broadens to the collection's OWN ROOM — never crossing
         // rooms. Brief AB: the old retry always fell back to the USER corpus, so a
@@ -817,7 +821,7 @@ final class CorpusStore {
         if case .collection(let cid) = scope, (matches.first?.score ?? 0) < Self.minRelevanceScore {
             let retryIDs = sampleCollectionIDs.contains(cid) ? Array(sampleNodeIDs) : corpusAskCandidateIDs
             let retryMatches = Self.diversifyByNode(
-                await blockEmbedding.findRelevantBlocks(queryVector: qvec, candidateNodeIDs: retryIDs, topK: pool),
+                await blockEmbedding.findRelevantBlocks(queryVector: qvec, candidateNodeIDs: retryIDs, topK: pool, queryText: lexText),
                 perNode: Self.maxBlocksPerNode, limit: topK)
             if (retryMatches.first?.score ?? 0) >= Self.minRelevanceScore {
                 matches = retryMatches
@@ -1171,16 +1175,27 @@ final class CorpusStore {
                 // nothing. Needs blocks.json present + the BGE query embed (which
                 // needs .cpuOnly on the Simulator, same as the card bake).
                 if ProcessInfo.processInfo.arguments.contains("-AskMatchDiag") {
-                    let q = "How much did my Bolex cost?"
+                    // Brief BV — instrument case 8 + the keyword targets. Pair with -LibrarianLexicalDiag
+                    // to see each query's df-gated distinctive set over the REAL candidate snapshot. The
+                    // regression hypothesis: "capital of France" should yield an EMPTY set (common words),
+                    // and Switar/Muratorian a rare proper noun the cosine pass buries.
                     let ids = nodes.map { $0.id }
-                    let matches = await blockEmbedding.findRelevantBlocks(query: q, candidateNodeIDs: ids, topK: 5)
-                    NSLog("[AskMatchDiag] query=%@ candidates=%d matches=%d", q, ids.count, matches.count)
-                    for m in matches {
-                        let title = nodes.first(where: { $0.id == m.nodeID })?.title ?? "?"
-                        let snip = String(m.block.text.trimmingCharacters(in: .whitespacesAndNewlines).prefix(60))
-                        NSLog("[AskMatchDiag] score=%.3f node=%@ title=%@ :: %@", m.score, m.nodeID, title, snip)
+                    let queries = [
+                        "What is the capital of France?",          // case 8 — MUST be a no-op
+                        "What did I write about my Switar lens?",  // BV target — rare, body-only
+                        "What does the Muratorian fragment say?",  // BV target — rare proper noun
+                        "What did I write about dandori?",         // BV target — rare (title)
+                        "What do my lab test results reveal?",     // control — common words, a read
+                    ]
+                    for q in queries {
+                        let matches = await blockEmbedding.findRelevantBlocks(query: q, candidateNodeIDs: ids, topK: 8)
+                        NSLog("[AskMatchDiag] q=%@ candidates=%d matches=%d top=%.3f", q, ids.count, matches.count, matches.first?.score ?? 0)
+                        for m in matches.prefix(4) {
+                            let title = nodes.first(where: { $0.id == m.nodeID })?.title ?? "?"
+                            NSLog("[AskMatchDiag]   score=%.3f node=%@ title=%@", m.score, m.nodeID, String(title.prefix(42)))
+                        }
                     }
-                    if matches.isEmpty { NSLog("[AskMatchDiag] NO MATCHES") }
+                    NSLog("[AskMatchDiag] done")
                 }
                 // Brief S verify (S2/S3/S5) — READ-ONLY Librarian retrieval probe.
                 // Drives corpus-Ask retrieval WITHOUT the model: a two-turn Bolex

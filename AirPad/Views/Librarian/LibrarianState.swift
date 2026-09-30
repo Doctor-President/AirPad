@@ -932,8 +932,10 @@ final class LibrarianState {
         var wsBest: Float = 0, topOther: Float = 0
         if !wsTargets.isEmpty {
             let curVec = await CardEmbeddingService.shared.embed(query) ?? qvec
+            // Brief BV — these two probes read RAW COSINE (lexical: false): the 0.08 carry-vs-switch
+            // margin is tuned on cosine geometry and must not shift when the keyword boost lands.
             wsBest = (await store.blocksForNodes(query: query, nodeIDs: wsTargets, topK: 3, queryVector: curVec)).map(\.score).max() ?? 0
-            let curMatches = await store.askMatches(query: query, scope: selectedScope, topK: 8, queryVector: curVec)
+            let curMatches = await store.askMatches(query: query, scope: selectedScope, topK: 8, queryVector: curVec, lexical: false)
             topOther = curMatches.first(where: { !wsTargets.contains($0.nodeID) })?.score ?? 0
             // CARRY BY DEFAULT (Brief BX) — the open entry stays open unless the current query is
             // CLEARLY more about a DIFFERENT entry: the best OTHER block must beat the ws entry's best

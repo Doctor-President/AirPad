@@ -398,3 +398,26 @@ final class HostCatalog {
         await refresh()
     }
 }
+
+#if DEBUG
+// Brief CA — fakes for the `-PillGallery` screenshot harness (renders ModelPillRow in fixed states
+// without a live Host). Same-file so they can set the `private(set) models`.
+extension CatalogModel {
+    static func galleryFake(tag: String, display: String, toggleable: Bool) -> CatalogModel {
+        CatalogModel(
+            tag: tag, display: display, state: "installed-loaded", sizeBytes: 0, tier: 8,
+            recommended: false, capabilities: ["chat", "thinking"], verified: true, note: "",
+            supportsThinking: true, thinkingMeasured: true,
+            thinkingToggleable: toggleable, toggleMeasured: true,
+            supportsTools: false, toolsMeasured: true, capability: "", posture: ""
+        )
+    }
+}
+extension HostCatalog {
+    static func galleryFake(resident: CatalogModel) -> HostCatalog {
+        let c = HostCatalog()
+        c.models = [resident]
+        return c
+    }
+}
+#endif

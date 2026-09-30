@@ -60,6 +60,12 @@ struct ContentView: View {
                     CanvasChrome(scope: .nodeIDs(store.sampleNodeIDs))
                 }
             }
+            #if DEBUG
+            // Brief CA — headless screenshot harness for the model pill; renders on top of everything.
+            if ProcessInfo.processInfo.arguments.contains("-PillGallery") {
+                PillGalleryView()
+            }
+            #endif
         }
         // Chats list sheet — shared by the Dashboard header bubble and
         // the Librarian "Chats" tile via `router.showChatsList`. Mounted

@@ -105,6 +105,63 @@ struct ComposerSendControls: View {
 
 // MARK: - shared pills (the corpusModeToggle capsule idiom)
 
+#if DEBUG
+/// Brief CA — the `-PillGallery` screenshot harness: renders ModelPillRow in fixed states (both
+/// models · Thinking off/on/hidden · a long name · a narrow width that forces the icon toggle) on a
+/// composer-like ground, so the before/after can be screenshotted headlessly in light + dark. A fake
+/// "Library" chip stands in for the Librarian's Corpus toggle (same leading footprint). Throwaway.
+struct PillGalleryView: View {
+    var body: some View {
+        ZStack {
+            Color(uiColor: .systemBackground).ignoresSafeArea()
+            ScrollView {
+                VStack(alignment: .leading, spacing: 16) {
+                    Text("ModelPillRow — Brief CA · pill centred on screen · full name · Thinking→icon when tight")
+                        .font(.system(size: 12, weight: .semibold)).foregroundStyle(AppearancePalette.ink.opacity(0.6))
+                    group("Qwen3 4B — Thinking off", tag: "qwen3:4b", display: "Qwen3 4B", toggleable: true, think: false)
+                    group("Qwen3 4B — Thinking on", tag: "qwen3:4b", display: "Qwen3 4B", toggleable: true, think: true)
+                    group("Qwen3 8B — Thinking on", tag: "qwen3:8b", display: "Qwen3 8B", toggleable: true, think: true)
+                    group("Qwen3 30B-A3B — long name, centred + full", tag: "q30", display: "Qwen3 30B-A3B", toggleable: true, think: true)
+                    group("Qwen3 4B — Thinking NOT toggleable (pill still centred)", tag: "x4", display: "Qwen3 4B", toggleable: false, think: false)
+                    Text("Tight width → the compact icon toggle (same on/off state), still full name:")
+                        .font(.system(size: 11)).foregroundStyle(AppearancePalette.ink.opacity(0.5))
+                    galleryRow(tag: "qwen3:4b", display: "Qwen3 4B", toggleable: true, think: true)
+                        .frame(width: 300)
+                        .overlay(RoundedRectangle(cornerRadius: 12).stroke(AppearancePalette.ink.opacity(0.15)))
+                }
+                .padding(20)
+            }
+        }
+    }
+    @ViewBuilder private func group(_ title: String, tag: String, display: String, toggleable: Bool, think: Bool) -> some View {
+        VStack(alignment: .leading, spacing: 5) {
+            Text(title).font(.system(size: 10)).foregroundStyle(AppearancePalette.ink.opacity(0.45))
+            galleryRow(tag: tag, display: display, toggleable: toggleable, think: think)
+                .overlay(RoundedRectangle(cornerRadius: 12).stroke(AppearancePalette.ink.opacity(0.15)))
+        }
+    }
+    @ViewBuilder private func galleryRow(tag: String, display: String, toggleable: Bool, think: Bool) -> some View {
+        ModelPillRow(
+            catalog: .galleryFake(resident: .galleryFake(tag: tag, display: display, toggleable: toggleable)),
+            thinkEnabled: .constant(think),
+            onTapModel: {},
+            includePrivate: false,
+            leading: AnyView(fakeCorpusToggle)
+        )
+        .frame(height: 44)
+    }
+    private var fakeCorpusToggle: some View {
+        HStack(spacing: 5) {
+            Image(systemName: "books.vertical.fill").font(.system(size: 11, weight: .semibold))
+            Text("Library").font(.system(size: 12, weight: .semibold)).lineLimit(1).fixedSize()
+        }
+        .foregroundStyle(AppearancePalette.ink.opacity(0.55))
+        .padding(.horizontal, 10).padding(.vertical, 6)
+        .background(Capsule().fill(AppearancePalette.ink.opacity(0.08)))
+    }
+}
+#endif
+
 private struct PickerPill<Content: View>: View {
     var filled: Bool = false
     var stroked: Bool = false
@@ -152,36 +209,56 @@ struct ModelPillRow: View {
     var catalog: HostCatalog
     @Binding var thinkEnabled: Bool
     var onTapModel: () -> Void
-    /// Chat View shows its own Private pill; the Librarian already has the Private/Corpus toggle,
-    /// so it passes false and provides that pill itself (no double "Private").
+    /// Chat View shows its own Private pill; the Librarian passes false and hands its Corpus toggle in
+    /// as `leading` (below) so the whole row lives in ONE layout that can centre the pill on-screen.
     var includePrivate: Bool = true
+    /// Brief CA — the leading control OWNED by this row (the Librarian's Corpus toggle). Owning it here
+    /// is what lets the model pill centre across the FULL width (the screen) instead of the leftover
+    /// space to the right of an external toggle. Chat View leaves it nil and uses `includePrivate`.
+    var leading: AnyView? = nil
 
     private var canToggleThinking: Bool { catalog.resident?.thinkingToggleable == true }
 
     var body: some View {
-        // Brief BZ (item 5) — the model pill stays CENTERED in EVERY state. The old two flanking
-        // Spacers only centered when the flanks happened to be equal, so the pill SHIFTED whenever a
-        // neighbour changed width: Thinking appearing / toggling "on"↔"off", the resident name length,
-        // or loading vs picked vs "No model". Now a 3-column layout — the leading and trailing
-        // side-slots each take maxWidth .infinity, so they SPLIT the leftover space equally and pin the
-        // hugging pill to the true centre regardless of what the chips show (or whether they show).
+        // Brief CA — FIX the BZ regression (pill truncated "Q…4B", sat right-of-centre, "Thinking on"
+        // wrapped to two lines). Three rules: the model pill is CENTRED ON THE SCREEN with its FULL
+        // name always visible; NOTHING in the row wraps or truncates; and when the WORD Thinking pill
+        // would not fit, Thinking becomes an ICON toggle. Mechanism: two equal-width flanks (the
+        // leading control · Thinking) split the leftover space so the pill sits dead-centre across the
+        // whole row; the pill is `fixedSize` + high `layoutPriority`, so it is NEVER compressed. The
+        // BZ version competed for width with `.infinity` flanks that could squeeze the pill — hence the
+        // truncation + wrap. `ViewThatFits` picks the widest Thinking variant that still fits.
+        ViewThatFits(in: .horizontal) {
+            row(thinking: AnyView(thinkingWordPill))   // preferred: the "Thinking on/off" word pill
+            row(thinking: AnyView(thinkingIconToggle)) // tight: a compact icon toggle (same on/off state)
+            row(thinking: AnyView(EmptyView()))        // last resort: never clip the pill or wrap a chip
+        }
+        .padding(.leading, 6)
+        .onChange(of: canToggleThinking) { _, ok in if !ok { thinkEnabled = false } } // toggle can't work → force off
+    }
+
+    /// One row layout: leading flank · centred pill · trailing Thinking flank. The flanks each take
+    /// `maxWidth: .infinity` so they balance and the pill lands on the true centre; the pill is
+    /// `fixedSize` + prioritised so the flanks yield to it and the full name is never truncated.
+    @ViewBuilder private func row(thinking: AnyView) -> some View {
         HStack(spacing: 8) {
             HStack(spacing: 8) {
+                if let leading { leading }
                 if includePrivate { privatePill }
                 Spacer(minLength: 0)
             }
             .frame(maxWidth: .infinity, alignment: .leading)
 
             modelPill
+                .fixedSize(horizontal: true, vertical: false)
+                .layoutPriority(1)
 
             HStack(spacing: 8) {
                 Spacer(minLength: 0)
-                if canToggleThinking { thinkingPill }
+                if canToggleThinking { thinking }
             }
             .frame(maxWidth: .infinity, alignment: .trailing)
         }
-        .padding(.leading, 6)
-        .onChange(of: canToggleThinking) { _, ok in if !ok { thinkEnabled = false } } // toggle can't work → force off
     }
 
     private var privatePill: some View {
@@ -223,22 +300,36 @@ struct ModelPillRow: View {
         .firstRunCalloutTarget(FirstRunCalloutTargetID.librarianModelChip)
     }
 
-    // NO pill is ever taller than one text row (T). Brief AI3 — the name HUGS its content
-    // (no width frame: a fixed `maxWidth` is greedy-up-to-max and reintroduces the
-    // dead-space bug). The row's flanking Spacers (min 12) both CENTRE the pill and
-    // bound it, so a long name middle-truncates without ever touching a neighbour, while
-    // a short name reads as a compact pill (PickerPill's own padding is the floor).
+    // NO pill is ever taller than one text row (T). Brief CA — the name shows IN FULL, always: one
+    // line, `fixedSize` so it is never truncated ("Q…4B" was the BZ bug). The pill in `row()` carries
+    // the same `fixedSize` + priority, so the flanks yield to the name instead of squeezing it.
     private func name(_ s: String) -> some View {
         Text(s).font(.system(size: 12, weight: .semibold))
             .foregroundStyle(AppearancePalette.ink.opacity(0.9))
-            .lineLimit(1).truncationMode(.middle)
+            .lineLimit(1).fixedSize()
     }
 
-    private var thinkingPill: some View {
+    /// The full "Thinking on/off" word pill — one line, `fixedSize` so it never wraps (the BZ bug).
+    private var thinkingWordPill: some View {
         Button { thinkEnabled.toggle() } label: {
             PickerPill(filled: thinkEnabled, stroked: !thinkEnabled) {
                 Text(thinkEnabled ? "Thinking on" : "Thinking off")
                     .font(.system(size: 12, weight: .semibold))
+                    .lineLimit(1).fixedSize()
+                    .foregroundStyle(AppearancePalette.ink.opacity(thinkEnabled ? 0.9 : 0.55))
+            }
+        }
+        .buttonStyle(.plain)
+        .accessibilityLabel(thinkEnabled ? "Thinking on" : "Thinking off")
+    }
+
+    /// The COMPACT Thinking toggle (Brief CA) — an icon that carries the same on/off state (filled
+    /// when on), used when the word pill wouldn't fit without wrapping or pushing the pill off-centre.
+    private var thinkingIconToggle: some View {
+        Button { thinkEnabled.toggle() } label: {
+            PickerPill(filled: thinkEnabled, stroked: !thinkEnabled) {
+                Image(systemName: "brain")
+                    .font(.system(size: 13, weight: .semibold))
                     .foregroundStyle(AppearancePalette.ink.opacity(thinkEnabled ? 0.9 : 0.55))
             }
         }

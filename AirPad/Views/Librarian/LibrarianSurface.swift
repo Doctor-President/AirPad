@@ -1402,34 +1402,35 @@ struct LibrarianSurface: View {
             // the Ask field so the user knows which mode the next question runs in AND
             // which model will answer (hybrid-authorship: the system's behaviour is
             // legible, never hidden). Leading-aligned near the feather.
-            HStack(spacing: 8) {
-                corpusModeToggle(librarian: librarian)
-                if HostCatalog.shared.isPaired {
-                    // The shared picker pill (Model + Thinking). corpusModeToggle above IS the
-                    // Private/Corpus pill, so the shared row omits its own Private pill.
-                    ModelPillRow(
-                        catalog: HostCatalog.shared,
-                        thinkEnabled: Binding(get: { librarian.thinkEnabled }, set: { librarian.thinkEnabled = $0 }),
-                        onTapModel: {
-                            // AH3 — the FIRST model-chip tap teaches (coach-mark) instead
-                            // of opening the picker (a sheet would cover the callout); the
-                            // next tap opens it. Once shown, always opens.
-                            if !FirstRunCalloutKey.librarianModel.hasShown, activeCallout == nil {
-                                activeCallout = .librarianModel
-                            } else {
-                                showModelPicker = true
-                            }
-                        },
-                        includePrivate: false
-                    )
-                    // Brief AI2 — the ring target now lives on the model pill INSIDE
-                    // ModelPillRow, so the ring hugs the model chip (not model + Thinking).
-                } else {
+            // Brief CA — the Corpus toggle is handed INTO ModelPillRow as its `leading` control so the
+            // whole row (Corpus · Model · Thinking) is ONE layout and the model pill centres on the
+            // SCREEN (the BZ regression centred it only in the space to the right of the toggle). The
+            // unpaired (FM/Ollama) case keeps its own simple leading-aligned row.
+            if HostCatalog.shared.isPaired {
+                ModelPillRow(
+                    catalog: HostCatalog.shared,
+                    thinkEnabled: Binding(get: { librarian.thinkEnabled }, set: { librarian.thinkEnabled = $0 }),
+                    onTapModel: {
+                        // AH3 — the FIRST model-chip tap teaches (coach-mark) instead of opening the
+                        // picker (a sheet would cover the callout); the next tap opens it.
+                        if !FirstRunCalloutKey.librarianModel.hasShown, activeCallout == nil {
+                            activeCallout = .librarianModel
+                        } else {
+                            showModelPicker = true
+                        }
+                    },
+                    includePrivate: false,
+                    leading: AnyView(corpusModeToggle(librarian: librarian))
+                )
+                // Brief AI2 — the ring target lives on the model pill INSIDE ModelPillRow.
+            } else {
+                HStack(spacing: 8) {
+                    corpusModeToggle(librarian: librarian)
                     activeModelLabelView(librarian: librarian) // FM / Ollama: the plain label (unchanged)
                     Spacer(minLength: 0)
                 }
+                .padding(.leading, 6)
             }
-            .padding(.leading, 6)
 
             // STATE 2 — no free-text model on this device: gate Ask (send disabled via
             // `sendIsEnabled`) and say so, routing to Settings. Honest capability boundary,

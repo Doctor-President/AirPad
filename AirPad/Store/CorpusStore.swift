@@ -2226,6 +2226,20 @@ final class CorpusStore {
             if let err = chat.lastError { NSLog("[ResidencyGauntlet]   refused: %@", String(err.prefix(90))) }
             return answered && chat.lastError == nil
         }
+        // Brief BZ — the window the model runner was actually LOADED at, read straight from Ollama's
+        // /api/ps (the Simulator shares the Mac's loopback, and the scratch Host runs --ollama
+        // 127.0.0.1:11434). The invariant: every Host load binds num_ctx 20480, so a mode switch
+        // leaves ollama ps at 20480 — NOT the 4096 default that forced a reload on the first ask.
+        func loadedCtx() async -> Int {
+            guard let url = URL(string: "http://127.0.0.1:11434/api/ps") else { return -1 }
+            guard let (data, _) = try? await URLSession.shared.data(from: url),
+                  let json = try? JSONSerialization.jsonObject(with: data) as? [String: Any],
+                  let models = json["models"] as? [[String: Any]] else { return -1 }
+            for m in models where (m["name"] as? String) == tag || (m["model"] as? String) == tag {
+                if let c = m["context_length"] as? Int { return c }
+            }
+            return -1
+        }
         let Q = "What do my lab test results reveal?"
         var rows: [String] = []; var pass = 0; var total = 0
         func check(_ label: String, want: Bool, got: Bool) {
@@ -2233,12 +2247,18 @@ final class CorpusStore {
             rows.append("| \(label) | \(want ? "serve" : "refuse") | \(got ? "served" : "refused") | \(ok ? "✅ PASS" : "❌ FAIL") |")
             NSLog("[ResidencyGauntlet] %@ want=%@ got=%@ %@", label, want ? "serve" : "refuse", got ? "served" : "refused", ok ? "PASS" : "FAIL")
         }
+        func checkCtx(_ label: String, want: Int, got: Int) {
+            total += 1; let ok = (want == got); if ok { pass += 1 }
+            rows.append("| \(label) | ctx \(want) | ctx \(got) | \(ok ? "✅ PASS" : "❌ FAIL") |")
+            NSLog("[ResidencyGauntlet] %@ want=ctx:%d got=ctx:%d %@", label, want, got, ok ? "PASS" : "FAIL")
+        }
 
         await setMode("dynamic"); await load(keepAlive: "0")           // DYNAMIC cold → auto-loads
         check("dynamic-cold", want: true, got: await ask(Q))
         await setMode("manual"); await load(keepAlive: "0")            // MANUAL cold → refuses (no auto-load)
         check("manual-cold", want: false, got: await ask(Q))
         await setMode("always-on"); await load(keepAlive: nil)        // ALWAYS-READY resident → serves
+        checkCtx("mode-switch-load-ctx", want: 20480, got: await loadedCtx())  // ★ BZ: the LOAD bound 20480, not Ollama's 4096 (checked BEFORE any ask)
         check("always-ready-resident", want: true, got: await ask(Q))
         await load(keepAlive: "0")                                     // ★ idle-eject (held) → ask → reload-on-demand
         check("always-ready-idle-ejected+ask", want: true, got: await ask(Q))

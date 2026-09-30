@@ -902,6 +902,7 @@ enum ModelRouter {
         func tag(_ m: [String: Any]) -> String? { m["tag"] as? String }
         func state(_ m: [String: Any]) -> String { (m["state"] as? String) ?? "" }
         func tier(_ m: [String: Any]) -> Int { (m["tier"] as? Int) ?? 0 }
+        func isRecommended(_ m: [String: Any]) -> Bool { (m["recommended"] as? Bool) ?? false }
 
         // ★ CURATED ONLY — every candidate below is filtered to `tier > 0`. An untiered entry
         // (`llama3.2:latest`, `deepseek-r1`) is a deliberate dev/conformance fixture that the phone's
@@ -916,13 +917,23 @@ enum ModelRouter {
         // no separate setting). Used only while it is still installed; an ejected-but-installed pick is
         // fine (naming it makes Dynamic load it), a DELETED one falls through.
         let picked = userPickedHostModel.flatMap { p in installed.first { tag($0) == p }.flatMap(tag) }
-        // Else the SMALLEST curated shelf installed (`tier` = the GB shelf). Smallest, not largest: it
-        // is the fastest to load, the least surprising thing to spend ~20 s of the user's Mac on
-        // unasked, and — on T's machine — `qwen3:8b`, the model every prior brief (BR, BT) verified
-        // this path against. ⚠️ PRODUCT GAP: there is still no explicit "default model" setting, so
-        // this is a defensible proxy, not a user choice. Flagged for T.
+        // The V1 DEFAULT when nothing was ever picked: the Host's RECOMMENDED model (Qwen3 4B) if
+        // installed, else the smallest curated shelf (`tier` = the GB shelf — fastest to load, least
+        // surprising to spend a load on unasked). Brief BZ replaced the bare smallest-tier proxy with
+        // the Host's explicit `recommended` flag so "the default" is a curated decision, not an accident.
+        let recommended = installed.first(where: isRecommended).flatMap(tag)
         let smallestCurated = installed.min(by: { tier($0) < tier($1) }).flatMap(tag)
-        return (resident, resident ?? picked ?? smallestCurated)
+        let defaultPick = recommended ?? smallestCurated
+        // ★ Brief BZ — the user's PICK WINS EVERYWHERE. When they picked a model (still installed),
+        // that is what every path names — chat, warm ping, title gen, Librarian — EVEN IF a different
+        // model is momentarily resident, so the Host loads/holds the pick and a stale 8B can't override
+        // a 4B pick (the field bug: picked 4B, 8B kept answering). Resident-first ONLY when NOTHING was
+        // ever picked (don't spend a load unasked; use what's warm). Nothing picked + nothing resident →
+        // the recommended default. Naming the pick also makes a Manual/Always-ready mode that can't
+        // serve it REFUSE HONESTLY (the Host's 409, surfaced) rather than silently answering as another
+        // model — "never silently switch". `resident` (first return) still drives the live label.
+        let preferred = picked ?? resident ?? defaultPick
+        return (resident, preferred)
     }
 
     /// ★ The model the USER PICKED in the phone's model picker — T's ruling (2026-09-29): that IS the
@@ -1127,9 +1138,13 @@ enum ModelRouter {
         guard let hpk = pairing.hostPublicKey, let chatURL = pairing.chatURL else {
             throw RouterError.ollamaBadEndpoint(pairing.tunnelURL)
         }
+        // ★ Brief BZ — route the SEARCH turn through the SAME resolution as chat/warm/title so the
+        // user's pick wins here too. It used to be `resident ?? firstHostModel`, never consulting the
+        // pick — so a General/web-search turn on a cold Host fell to `firstHostModel` (install order),
+        // the uncurated-fixture trap. Now: pick > resident > recommended default, `firstHostModel` last.
         let model: String
-        if let resident = try await residentHostModel(pairing: pairing) {
-            model = resident
+        if let pick = try await resolveHostModel(pairing: pairing).preferred {
+            model = pick
         } else {
             model = try await firstHostModel(pairing: pairing)
         }

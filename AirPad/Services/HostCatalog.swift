@@ -11,6 +11,7 @@ struct CatalogModel: Identifiable, Sendable, Equatable {
     let state: String          // installed-loaded | installed-ejected | not-installed
     let sizeBytes: Int64
     let tier: Int
+    let recommended: Bool      // the V1 default pick + recommended download (Brief BZ)
     let capabilities: [String]
     let verified: Bool
     let note: String
@@ -150,6 +151,7 @@ final class HostCatalog {
                 state: m["state"] as? String ?? "not-installed",
                 sizeBytes: Int64((m["sizeBytes"] as? Int) ?? 0),
                 tier: m["tier"] as? Int ?? 0,
+                recommended: m["recommended"] as? Bool ?? false,
                 capabilities: m["capabilities"] as? [String] ?? [],
                 verified: m["verified"] as? Bool ?? false,
                 note: m["note"] as? String ?? "",
@@ -219,17 +221,31 @@ final class HostCatalog {
         // actually chose instead of whatever Ollama happens to list first — which was `llama3.2:latest`,
         // an uncurated dev fixture that answered read-in-full lab questions. No separate "default
         // model" setting in V1: the picker IS the setting.
+        let previousPick = ModelRouter.userPickedHostModel   // capture BEFORE overwrite (Brief BZ)
         ModelRouter.userPickedHostModel = tag
         busyTag = tag
         lastActionError = nil
         defer { busyTag = nil }
+        var loaded = false
         do {
             let (data, response) = try await URLSession.shared.data(for: req)
             if let http = response as? HTTPURLResponse, !(200...299).contains(http.statusCode) {
                 lastActionError = Self.actionError(data) ?? "That didn't work on your Mac. Try again."
+            } else {
+                loaded = true
             }
         } catch {
             lastActionError = "Couldn't reach your Mac. Try again."
+        }
+        // ★ Brief BZ — the PICK owns the held set. On a real switch, release the PREVIOUS pick so the
+        // Host stops keeping the old model resident/held (the field bug: picked 4B, the held set still
+        // held 8B and reloaded it on a mode switch). Only after the new model loaded, and only for a
+        // genuine change — an eject in Always-ready also UNMARKS the old tag from `held`, so the held
+        // set collapses to just the new pick. Fire-and-forget cleanup; the refresh below reflects it.
+        if loaded, let previous = previousPick, previous != tag,
+           let ejectURL = HostPairing.load()?.ejectURL,
+           let ejReq = authed(ejectURL, method: "POST", body: ["catalogId": previous]) {
+            _ = try? await URLSession.shared.data(for: ejReq)
         }
         await refresh()
     }

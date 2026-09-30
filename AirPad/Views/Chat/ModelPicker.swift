@@ -159,15 +159,26 @@ struct ModelPillRow: View {
     private var canToggleThinking: Bool { catalog.resident?.thinkingToggleable == true }
 
     var body: some View {
-        // Brief AI3 — mode chip leads (Librarian) / Private leads (Chat View); the model
-        // pill HUGS its content and is CENTRED in the space between the leading chip and
-        // the Thinking chip (or the trailing edge when Thinking is absent). ≥12 pt gaps.
+        // Brief BZ (item 5) — the model pill stays CENTERED in EVERY state. The old two flanking
+        // Spacers only centered when the flanks happened to be equal, so the pill SHIFTED whenever a
+        // neighbour changed width: Thinking appearing / toggling "on"↔"off", the resident name length,
+        // or loading vs picked vs "No model". Now a 3-column layout — the leading and trailing
+        // side-slots each take maxWidth .infinity, so they SPLIT the leftover space equally and pin the
+        // hugging pill to the true centre regardless of what the chips show (or whether they show).
         HStack(spacing: 8) {
-            if includePrivate { privatePill }
-            Spacer(minLength: 12)
+            HStack(spacing: 8) {
+                if includePrivate { privatePill }
+                Spacer(minLength: 0)
+            }
+            .frame(maxWidth: .infinity, alignment: .leading)
+
             modelPill
-            Spacer(minLength: 12)
-            if canToggleThinking { thinkingPill }
+
+            HStack(spacing: 8) {
+                Spacer(minLength: 0)
+                if canToggleThinking { thinkingPill }
+            }
+            .frame(maxWidth: .infinity, alignment: .trailing)
         }
         .padding(.leading, 6)
         .onChange(of: canToggleThinking) { _, ok in if !ok { thinkEnabled = false } } // toggle can't work → force off
@@ -575,6 +586,13 @@ private struct ModelSheetRow: View {
             HStack(alignment: .firstTextBaseline, spacing: 8) {
                 Text(model.display).font(.system(size: 16, weight: .semibold)).foregroundStyle(AppearancePalette.ink)
                     .lineLimit(1).truncationMode(.tail)
+                // Brief BZ — the V1 default / recommended-to-download model (Qwen3 4B). Green so it
+                // reads distinctly from the blue "in memory" state badge; the Host's `recommended` flag.
+                if model.recommended {
+                    Text("recommended").font(.system(size: 11, weight: .semibold)).foregroundStyle(.white)
+                        .padding(.horizontal, 8).padding(.vertical, 2)
+                        .background(Capsule().fill(Color(hexString: "2E9E4F")))
+                }
                 if model.isResident {
                     Text("in memory").font(.system(size: 11, weight: .semibold)).foregroundStyle(.white)
                         .padding(.horizontal, 8).padding(.vertical, 2)

@@ -882,25 +882,12 @@ final class LibrarianState {
         let turnIndex = chat.messages.filter { $0.role == .user }.count + 1
         let carriedAll = (carriedChatID == chat.id) ? carriedCandidates : []
 
-        // BN4 — WORKING-SET FOLLOW-UP (trigger #3). If the previous turn READ entries and THIS
-        // question is a follow-up about them (deixis; no NEW entry named), RE-READ the same entries
-        // in full with NO fresh similarity search (Brief BN4 / verify case 2). The working set lives
-        // on the chat, so a reloaded conversation keeps it open.
-        if !named, !chat.workingSet.isEmpty, Self.looksLikeWorkingSetFollowUp(query) {
-            let targets = chat.workingSet.filter { id in store.nodes.contains { $0.id == id } }
-            if !targets.isEmpty {
-                let (candidates, receipt) = await buildReadPacket(
-                    readTargets: targets, rankedPassages: [], cards: [],
-                    carried: carriedAll, budget: budget, queryVector: [], store: store)
-                carriedCandidates = candidates; carriedChatID = chat.id
-                chat.workingSet = candidates.filter { $0.isEntryRead }.map { $0.nodeID }
-                let empty = candidates.isEmpty
-                Self.logRouting(turnIndex: turnIndex, query: retrievalQuery, mode: "read(followup)",
-                                candidates: candidates, receipt: receipt, budget: budget,
-                                scope: selectedScope, store: store)
-                return (candidates, empty, empty ? nil : receipt)
-            }
-        }
+        // Brief BX — the WORKING-SET carry decision moved BELOW retrieval (was a deictic-only early
+        // return here). It now CARRIES BY DEFAULT: a non-deictic follow-up like "which values are out
+        // of range?" must keep the lab entry open, not fall to survey (T's glucose error). Retrieval
+        // below tells carry ("the entry is still near / it's deictic") apart from switch (a different
+        // entry named or dominates) and general (nothing near the set). See the carry block after
+        // `dominant` is computed.
 
         // ── Normal routing ──────────────────────────────────────────────────────────────────────
         // AA1 — embed the retrieval query ONCE; the passage scan and the card scan share it (empty on
@@ -920,6 +907,62 @@ final class LibrarianState {
         // BN2 — rank ENTRIES by aggregate score, then decide READ vs SURVEY.
         let ranking = Self.entryRanking(passages: general)
         let dominant = Self.dominantReadEntry(ranking: ranking, store: store)   // nil → no single dominator
+
+        // ★ Brief BX — CARRY THE WORKING SET across follow-ups. When a prior turn left entries open, a
+        // new turn RE-READS them (same targets → same packet prefix → Ollama KV-cached → fast) UNLESS
+        // the conversation clearly moved on:
+        //   • it NAMES a different entry (the `named` branch below reads it — a switch); or
+        //   • a DIFFERENT entry DOMINATES retrieval (dominantDifferent) → switch to it; or
+        //   • it's clearly general/unrelated: NO working-set entry is among the retrieved passages AND
+        //     it isn't a deictic follow-up → fall through to normal routing.
+        // Otherwise the entry stays open, so a NON-deictic follow-up ("which values are out of
+        // range?") answers FROM the lab entry (chol 213 / LDL 153) instead of the model's prior text
+        // (T's glucose 99 "out of range" error). Carried lean (entry only, no fresh skim) so the
+        // packet prefix matches the prior read and Ollama reuses the KV — the fast follow-up.
+        let wsTargets = chat.workingSet.filter { id in store.nodes.contains { $0.id == id } }
+        let dominantDifferent = (dominant != nil) && !wsTargets.contains(dominant!)
+        // ★ Decide the carry from the CURRENT question ALONE — NOT the augmented `retrievalQuery`,
+        // which folds in the PRIOR user turn and biases the working set BOTH ways (measured: the prior
+        // "insights" turn inflated a DIFFERENT entry above the lab on "which values are out of range?"
+        // → false drop; the prior "Bolex" turn inflated the Bolex set on "capital of France?" → false
+        // carry). Score the ws entry's OWN best block against the best OTHER block, both for the
+        // current query only: the ws is "still relevant" when it is at least as near as anything else.
+        // Deixis ("it", "that") always carries regardless.
+        var wsStillRelevant = false
+        var wsBest: Float = 0, topOther: Float = 0
+        if !wsTargets.isEmpty {
+            let curVec = await CardEmbeddingService.shared.embed(query) ?? qvec
+            wsBest = (await store.blocksForNodes(query: query, nodeIDs: wsTargets, topK: 3, queryVector: curVec)).map(\.score).max() ?? 0
+            let curMatches = await store.askMatches(query: query, scope: selectedScope, topK: 8, queryVector: curVec)
+            topOther = curMatches.first(where: { !wsTargets.contains($0.nodeID) })?.score ?? 0
+            // CARRY BY DEFAULT (Brief BX) — the open entry stays open unless the current query is
+            // CLEARLY more about a DIFFERENT entry: the best OTHER block must beat the ws entry's best
+            // block by a MARGIN. Measured on the fixture: "which values are out of range?" leaves the
+            // (terse, value-per-line) lab entry only ~0.03 behind the top other → still about the labs
+            // → CARRY; "capital of France" leaves it ~0.10 behind → the topic moved → let go. CPU-BGE
+            // is exact (matches device), so the 0.08 margin transfers off the Simulator.
+            wsStillRelevant = wsBest >= topOther - 0.08
+        }
+        #if DEBUG
+        if ProcessInfo.processInfo.arguments.contains("-LibrarianGauntlet"), !wsTargets.isEmpty {
+            NSLog("[BX] carry check (current-query): wsBest=%.3f topOther=%.3f deictic=%@ named=%@ domDiff=%@ → carry=%@",
+                  wsBest, topOther, Self.looksLikeWorkingSetFollowUp(query) ? "y":"n", named ? "y":"n",
+                  dominantDifferent ? "y":"n",
+                  (!named && !dominantDifferent && (Self.looksLikeWorkingSetFollowUp(query) || wsStillRelevant)) ? "y":"n")
+        }
+        #endif
+        if !named, !dominantDifferent, !wsTargets.isEmpty, (Self.looksLikeWorkingSetFollowUp(query) || wsStillRelevant) {
+            let (candidates, receipt) = await buildReadPacket(
+                readTargets: wsTargets, rankedPassages: [], cards: [],
+                carried: carriedAll, budget: budget, queryVector: qvec, store: store)
+            carriedCandidates = candidates; carriedChatID = chat.id
+            chat.workingSet = candidates.filter { $0.isEntryRead }.map { $0.nodeID }
+            let empty = candidates.isEmpty
+            Self.logRouting(turnIndex: turnIndex, query: retrievalQuery, mode: "read(carry)",
+                            candidates: candidates, receipt: receipt, budget: budget,
+                            scope: selectedScope, store: store)
+            return (candidates, empty, empty ? nil : receipt)
+        }
 
         if named || dominant != nil {
             // READ targets + BS1 AMBIGUITY. A pin reads all pinned entries; a title match that named

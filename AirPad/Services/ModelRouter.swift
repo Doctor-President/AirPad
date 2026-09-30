@@ -1007,12 +1007,25 @@ enum ModelRouter {
         // weights (Brief BU3). `firstHostModel` is the last resort ONLY — on its own it picked
         // `llama3.2:latest`, an uncurated dev fixture, to answer a read-in-full lab question.
         let model: String
+        #if DEBUG
+        // Brief BX3 — `-DebugHostModel <tag>` forces the chat model, so the gauntlet can measure an
+        // UNCURATED shelf (e.g. `qwen3:4b`, absent from the manifest) side by side with the curated
+        // default WITHOUT manifest surgery. Release-inert; measurement only.
+        let dbgArgs = ProcessInfo.processInfo.arguments
+        if let i = dbgArgs.firstIndex(of: "-DebugHostModel"), i + 1 < dbgArgs.count {
+            model = dbgArgs[i + 1]
+        } else {
+            let resolved = try await resolveHostModel(pairing: pairing)
+            if let pick = resolved.preferred { model = pick } else { model = try await firstHostModel(pairing: pairing) }
+        }
+        #else
         let resolved = try await resolveHostModel(pairing: pairing)
         if let pick = resolved.preferred {
             model = pick
         } else {
             model = try await firstHostModel(pairing: pairing)
         }
+        #endif
         // NOTE: deliberately does NOT write `userPickedHostModel` — the default is the user's PICKER
         // choice, not whatever a fallback happened to resolve to (see that property).
         // Brief BR — send REAL roles (system + history + user), never a folded "User:/Assistant:"

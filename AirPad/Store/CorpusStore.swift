@@ -1948,6 +1948,37 @@ final class CorpusStore {
             Case(id: "12", what: "paraphrase: only pluralised title tokens ('medical labs')",
                  question: "Summarise my medical labs for me.", expectRoute: "read",
                  mustContain: panel, minFacts: 3, mustNotContain: refusals),
+            // ── Brief BX — KEEP THE ENTRY OPEN across NON-deictic follow-ups. T's bug: turn 3
+            // "Which values are out of range?" (no deixis) dropped the working set → SURVEY → the lab
+            // entry left the packet → the model reasoned from its own prior answer and mis-flagged
+            // glucose 99 as out of range. These chain in ONE chat (BXa opens, the rest follow up).
+            // BXa — open the lab entry (establishes the working set).
+            Case(id: "BXa", what: "BX: lab READ opens the working set",
+                 question: "What do my lab test results reveal?", expectRoute: "read",
+                 mustContain: panel, minFacts: 3, mustNotContain: refusals, newChat: true),
+            // BXb — a follow-up with weak deixis ("this"): must stay on the lab entry.
+            Case(id: "BXb", what: "BX: 'insights from this' → carried READ, chip",
+                 question: "And what insights can you derive from this?", expectRoute: "read",
+                 mustNotContain: refusals, newChat: false, carriesEntry: true),
+            // BXc — ★ THE BUG: a NON-deictic follow-up. Before BX1 this drops to survey (no chip, wrong
+            // facts); after BX1 it carries the lab entry → lists the REAL out-of-range values.
+            Case(id: "BXc", what: "BX: 'which values are out of range?' (NO deixis) → carried READ, chip, chol 213 + LDL 153",
+                 question: "Which values are out of range?", expectRoute: "read",
+                 mustContain: [["213"], ["153"]], minFacts: 2, mustNotContain: refusals,
+                 newChat: false, carriesEntry: true),
+            // BXd — names a DIFFERENT entry → SWITCH (the Bolex facts prove it left the lab; a lab
+            // carry here would have none of them). NOT carriesEntry (it replaces the working set).
+            Case(id: "BXd", what: "BX: names a different entry (Bolex) → switches, no lab carry",
+                 question: "What did I write about my Bolex H16?", expectRoute: "read",
+                 mustContain: [["520", "25mm", "switar", "ohio", "bolex", "1956"]], minFacts: 1,
+                 mustNotContain: refusals, newChat: false),
+            // BXe — clearly general/unrelated → must NOT carry the working set. Route-agnostic: the
+            // real test is that it answers the GENERAL question ("Paris"), not the working-set entry.
+            // A wrongful carry would answer from the lab/Bolex (no "paris"); a survey that still says
+            // "Paris" is fine.
+            Case(id: "BXe", what: "BX: 'capital of France' with a working set → answers Paris, no carry",
+                 question: "What is the capital of France?", expectRoute: "",
+                 mustContain: [["paris"]], minFacts: 1, newChat: false),
         ]
 
         NSLog("[Gauntlet] START provider=%@ window=%d nodes=%d userNodes=%d cases=%d",

@@ -1311,6 +1311,11 @@ final class CorpusStore {
                 if ProcessInfo.processInfo.arguments.contains("-LibrarianResidencyGauntlet") {
                     await runResidencyGauntlet()
                 }
+                // 4B-vs-8B fair comparison (T, 2026-09-30) — same cases × Thinking off/on × 3 runs +
+                // unsupported-claim check. One launch per model via -DebugHostModel.
+                if ProcessInfo.processInfo.arguments.contains("-LibrarianCompare") {
+                    await runLibrarianCompare()
+                }
                 // Brief U verify (READ-ONLY) — the sample/user SPLIT. Logs the node
                 // partition, which collections land in COLLECTIONS vs the sample
                 // region, and that the capture picker hides the sample's collections
@@ -2160,6 +2165,85 @@ final class CorpusStore {
         for r in rows { NSLog("[Gauntlet] %@", r) }
         NSLog("[Gauntlet] RESULT %d/%d PASS", passCount, cases.count)
         NSLog("[Gauntlet] done")
+    }
+
+    /// Brief comparison (T, 2026-09-30) — a FAIR 4B-vs-8B answer-quality run so the default-model
+    /// decision rests on data. The SAME fact-bearing cases as the gauntlet × Thinking OFF and ON × 3
+    /// runs each, for the model forced by `-DebugHostModel` (one launch per model). Grades facts-present
+    /// + forbidden-absent AND a NEW unsupported-claim check: numeric claims (≥2 digits) in a GROUNDED
+    /// answer that are ABSENT from the delivered packet (`modelText`) — a fabricated value the source
+    /// doesn't support (the glucose-99 family). Empty/general cases (e.g. "capital of France") are
+    /// EXEMPT from that check — answering from general knowledge is correct there. Prints per-(think)
+    /// mean pass + mean unsupported with per-run values so variance is visible. Retry/offer mechanics
+    /// are excluded (model-independent invariants, not answer quality). Run: `-LibrarianCompare` +
+    /// `-DebugHostModel qwen3:4b` (then qwen3:8b) + the -DebugHost* keys.
+    func runLibrarianCompare() async {
+        guard case .host = ModelRouter.active else {
+            NSLog("[Compare] ABORT — provider is NOT .host (pass -DebugHost* for the sealed path)"); NSLog("[Compare] done"); return
+        }
+        let args = ProcessInfo.processInfo.arguments
+        let model = args.firstIndex(of: "-DebugHostModel").flatMap { $0 + 1 < args.count ? args[$0 + 1] : nil } ?? "(resolved)"
+        NSLog("[Compare] START model=%@ — same cases × Thinking off/on × 3 runs + unsupported-claim check", model)
+
+        struct CCase { let id: String; let q: String; let facts: [[String]]; let minFacts: Int; let newChat: Bool; let emptyGeneral: Bool }
+        let refusals = ["i can't access", "i cannot access", "i don't have access", "unable to access",
+                        "no documents", "section is empty", "assistant:", "appears to be empty"]
+        let panel = [["153"], ["213"], ["137"], ["4.4"], ["85"], ["15"], ["99"]]
+        // The same fact-bearing cases as -LibrarianGauntlet (answer-producing subset), incl. the BX carry.
+        let cases: [CCase] = [
+            CCase(id: "lab-read",            q: "What do my lab test results reveal?", facts: panel, minFacts: 4, newChat: true,  emptyGeneral: false),
+            CCase(id: "lab-carry-insights",  q: "And what insights can you derive from this?", facts: [], minFacts: 0, newChat: false, emptyGeneral: false),
+            CCase(id: "lab-carry-outofrange",q: "Which values are out of range?", facts: [["213"], ["153"]], minFacts: 2, newChat: false, emptyGeneral: false),
+            CCase(id: "enoch",               q: "What is The Book of Enoch about?", facts: [], minFacts: 0, newChat: true, emptyGeneral: false),
+            CCase(id: "eleusinian",          q: "Tell me about the eleusinian mysteries entry.", facts: [], minFacts: 0, newChat: true, emptyGeneral: false),
+            CCase(id: "prisoners-cinema",    q: "What does my Prisoner's Cinema entry say?", facts: [], minFacts: 0, newChat: true, emptyGeneral: false),
+            CCase(id: "bolex",               q: "What did I write about my Bolex H16?", facts: [["520", "switar", "ohio", "bolex", "1956", "25mm"]], minFacts: 1, newChat: true, emptyGeneral: false),
+            CCase(id: "tech-survey",         q: "How would you describe my thoughts on technology?", facts: [], minFacts: 0, newChat: true, emptyGeneral: false),
+            CCase(id: "france-general",      q: "What is the capital of France?", facts: [["paris"]], minFacts: 1, newChat: true, emptyGeneral: true),
+        ]
+        // Numeric claims (≥2 digits) — value-like tokens, not single-digit list markers.
+        func numbers(_ s: String) -> [String] {
+            var out: [String] = [], cur = ""
+            for ch in s { if ch.isNumber { cur.append(ch) } else { if cur.count >= 2 { out.append(cur) }; cur = "" } }
+            if cur.count >= 2 { out.append(cur) }
+            return out
+        }
+        var summary: [String] = []
+        for think in [false, true] {
+            var passByRun: [Int] = [], unsupByRun: [Int] = []
+            for run in 1...3 {
+                let librarian = LibrarianState(); librarian.selectedScope = .corpus; librarian.corpusAware = true
+                librarian.thinkEnabled = think
+                var chat = ChatSession(); chat.suppressTitleGeneration = true
+                var pass = 0, unsupported = 0
+                for c in cases {
+                    if c.newChat { chat = ChatSession(); chat.suppressTitleGeneration = true }
+                    await librarian.groundedSend(query: c.q, store: self, chat: chat)
+                    let ans = chat.messages.last { $0.role == .assistant }?.text ?? ""
+                    let lower = ans.lowercased()
+                    let packet = librarian.debugLastTurn?.modelText ?? ""
+                    let factsHit = c.facts.filter { syns in syns.contains { lower.contains($0.lowercased()) } }.count
+                    let forbidden = refusals.contains { lower.contains($0) }
+                    let ok = !ans.isEmpty && factsHit >= c.minFacts && !forbidden
+                    if ok { pass += 1 }
+                    // Unsupported numeric claims — GROUNDED cases only (general-knowledge answers may cite outside facts).
+                    var miss: [String] = []
+                    if !c.emptyGeneral { miss = numbers(ans).filter { !packet.contains($0) }; unsupported += miss.count }
+                    NSLog("[Compare] model=%@ think=%@ run=%d %@ %@ facts=%d/%d unsup=%d %@", model, think ? "on" : "off", run, c.id,
+                          ok ? "PASS" : "FAIL", factsHit, c.minFacts, miss.count, miss.isEmpty ? "" : "["+miss.joined(separator: ",")+"]")
+                }
+                passByRun.append(pass); unsupByRun.append(unsupported)
+                NSLog("[Compare] model=%@ think=%@ run=%d → pass=%d/%d unsupported=%d", model, think ? "on" : "off", run, pass, cases.count, unsupported)
+            }
+            let meanPass = Double(passByRun.reduce(0, +)) / 3.0
+            let meanUnsup = Double(unsupByRun.reduce(0, +)) / 3.0
+            summary.append(String(format: "| %@ | %@ | %.1f/%d (%@) | %.1f (%@) |", model, think ? "on" : "off",
+                                  meanPass, cases.count, passByRun.map(String.init).joined(separator: "/"),
+                                  meanUnsup, unsupByRun.map(String.init).joined(separator: "/")))
+        }
+        NSLog("[Compare] ── TABLE (model | thinking | mean pass (per-run) | mean unsupported (per-run)) ──")
+        for s in summary { NSLog("[Compare] %@", s) }
+        NSLog("[Compare] done model=%@", model)
     }
 
     /// Brief BY — the RESIDENCY-MODE gauntlet. Drives the REAL sealed path in each residency mode to

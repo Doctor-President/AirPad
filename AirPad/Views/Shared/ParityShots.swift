@@ -652,6 +652,26 @@ struct DebugScreenHost: View {
             router.captureNodeID = "seed-0"
             router.captureDraftHasText = false   // empty draft → the "Cancel" state (BUG 9)
         }
+        // Brief CD (device-bug fix) — the DETAIL-view capture surface (the regular "+" → NodeDetailView
+        // with isCaptureMode) must ALSO show ghosts (rule 5b = "not re-opened entries", not "QuikCapture
+        // only"). A fresh empty node + `.propose` proposals + isCapturing so isCaptureMode is true.
+        if screen == "capturemodeghost" {
+            router.isCapturing = true
+            router.captureNodeID = "seed-cmghost"
+            router.captureDraftHasText = false
+            var n = Node(id: "seed-cmghost", createdAt: Self.epoch, updatedAt: Self.epoch,
+                         title: "", summary: "", tags: [],
+                         items: [NodeItem(id: "seed-cmghost-text", type: .text, createdAt: Self.epoch,
+                                          content: "Four of us going as Team Rocket for the office Halloween party.")],
+                         entrySchemaVersion: 1)
+            _ = n.recordProposal(kind: .title, text: "Team Rocket Halloween costume",
+                                 currentSource: nil, sourceEmbedding: nil, sourceContentHash: "seed",
+                                 posture: .propose, generatedAt: Self.epoch)
+            _ = n.recordProposal(kind: .summary, text: "Group costume idea for the office Halloween party.",
+                                 currentSource: nil, sourceEmbedding: nil, sourceContentHash: "seed",
+                                 posture: .propose, generatedAt: Self.epoch)
+            store.nodes.append(n)
+        }
         // ws-capture-chrome — the WITH-CONTENT capture states at BOTH surfaces, so
         // the shared Delete pill + equidistant spacing + bottom-pinned chrome are
         // exercised by the harness (item 4: catch the next divergence here, not on
@@ -732,6 +752,8 @@ struct DebugScreenHost: View {
         case "quikcapture":      ContentView()   // real app → QuikCapture surface
         case "quikcaptureghost": ContentView()   // Brief CD — QuikCapture with seeded `.propose` ghosts
         case "capturemode":      NavigationStack { NodeDetailView(nodeID: "seed-0") }   // capture-mode note editor (BUG 9)
+        case "capturemodeghost": NavigationStack { NodeDetailView(nodeID: "seed-cmghost") }   // Brief CD — detail capture WITH ghosts
+
         case "quikcapturefull":  ContentView()   // QuikCapture WITH content → Delete pill + pinned chrome
         case "capturemodefull":  NavigationStack { NodeDetailView(nodeID: "seed-cap") }   // detail capture WITH content
         case "chatview":         NavigationStack { ChatView() }   // real chat transcript

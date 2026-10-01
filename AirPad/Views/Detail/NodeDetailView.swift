@@ -91,7 +91,15 @@ struct NodeDetailView: View {
     @State private var editedSummary = ""
     @State private var editedTags: [String] = []
 
-    @FocusState private var focusedField: Bool
+    /// Per-field focus (the shared `CaptureHeaderFocus`) so a capture-mode ghost clears for the field
+    /// you TAP and stays for the other (Brief CD rule 3). Was a shared Bool.
+    @FocusState private var focusedField: CaptureHeaderFocus?
+
+    /// Brief CD — ghost shimmer triggers (capture mode only; bumped on a NEW title/summary suggestion)
+    /// and the ghost opacity (CD1 look option, shipped 45%).
+    @State private var titleShimmer = 0
+    @State private var summaryShimmer = 0
+    private let ghostOpacity: Double = 0.45
 
     // "Add entry" floating "+" state. Stage 3.1a commit (c) replaced the
     // inline bottom composer triad with a single floating Menu button that
@@ -515,10 +523,26 @@ struct NodeDetailView: View {
                 // (`EntryVisualSettings`) with QuikCaptureView, so the rhythm can't
                 // drift. Normal viewing gates ATTRIBUTES on atomics; capture always
                 // shows it (its "+" is the first-field entry point).
+                // Brief CD — ghosts show on a FRESH capture only (rule 5b): this surface is a fresh
+                // capture exactly when `isCaptureMode`, so gate on it. A re-OPENED entry
+                // (isCaptureMode == false) never computes a ghost config → never shows a ghost.
+                let tGhostText = (isCaptureMode && editedTitle.isEmpty) ? node.surfacedProposal(kind: .title)?.text : nil
+                let sGhostText = (isCaptureMode && editedSummary.isEmpty) ? node.surfacedProposal(kind: .summary)?.text : nil
                 CaptureHeader(
                     nodeID: nodeID,
                     showSummary: !editedSummary.isEmpty || node.summary.isEmpty,
                     showAttributes: isCaptureMode || atomicCount > 0,
+                    // rule 6 — in capture mode the inline ghost plays the lever shimmer, so suppress the
+                    // feather's. In NORMAL viewing (no ghost) the feather shimmer is the only signal — keep it.
+                    suppressLeverShimmer: isCaptureMode,
+                    titleGhost: tGhostText.map {
+                        GhostFieldConfig(text: $0, font: entryTitleFont, hidden: focusedField == .title,
+                                         shimmerTrigger: titleShimmer, opacity: ghostOpacity)
+                    },
+                    summaryGhost: sGhostText.map {
+                        GhostFieldConfig(text: $0, font: entrySummaryFont, hidden: focusedField == .summary,
+                                         shimmerTrigger: summaryShimmer, opacity: ghostOpacity * 0.85)
+                    },
                     onLeverTap: {
                         // Item 1 — COMMIT the header's live title/summary edit BEFORE
                         // presenting the tray. The fields write only on end-editing, so
@@ -532,7 +556,7 @@ struct NodeDetailView: View {
                         // and only persists on end-editing, so without this the substrate
                         // reads a stale/empty body (the tags tier stayed empty until an
                         // exit-and-return re-ran it).
-                        focusedField = false
+                        focusedField = nil
                         Task {
                             await commitEditsIfChanged()
                             await store.commitPendingItemEdits(forNodeID: nodeID)
@@ -540,21 +564,30 @@ struct NodeDetailView: View {
                         }
                     }
                 ) {
-                    TextField("Title", text: $editedTitle, axis: .vertical)
+                    // Placeholder suppressed while a ghost shows (rule 7); the shared header draws the ghost.
+                    TextField(tGhostText != nil && focusedField != .title ? "" : "Title",
+                              text: $editedTitle, axis: .vertical)
                         .font(entryTitleFont)
                         .foregroundStyle(AppearancePalette.ink)
                         .tint(AppearancePalette.ink)
-                        .focused($focusedField)
+                        .focused($focusedField, equals: .title)
+                        .onChange(of: node.surfacedProposal(kind: .title)?.text) { _, newValue in
+                            if newValue != nil { titleShimmer += 1 }
+                        }
                         // Scroll-collapsed band — the in-flow title hands off to the
-                        // band title; gated on `!focusedField` so editing never hides
+                        // band title; gated on "no field focused" so editing never hides
                         // the field under the caret.
-                        .opacity(bandTitleShown && !focusedField ? 0 : 1)
+                        .opacity(bandTitleShown && focusedField == nil ? 0 : 1)
                 } summary: {
-                    TextField("Summary", text: $editedSummary, axis: .vertical)
+                    TextField(sGhostText != nil && focusedField != .summary ? "" : "Summary",
+                              text: $editedSummary, axis: .vertical)
                         .font(entrySummaryFont)
                         .foregroundStyle(AppearancePalette.ink.opacity(0.75))
                         .tint(AppearancePalette.ink)
-                        .focused($focusedField)
+                        .focused($focusedField, equals: .summary)
+                        .onChange(of: node.surfacedProposal(kind: .summary)?.text) { _, newValue in
+                            if newValue != nil { summaryShimmer += 1 }
+                        }
                 } collections: {
                     collectionsRow(node: node)
                 } tags: {

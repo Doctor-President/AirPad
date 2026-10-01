@@ -560,6 +560,20 @@ struct DebugScreenHost: View {
                     router.captureDraftHasText = false
                     router.pendingNodeNavigationID = "seed-0"   // push the capture detail (full flow)
                 }
+                // Brief CD — land a NEW title suggestion ~1.2 s after the ghost appears (different text,
+                // so `surfacedProposal(.title)?.text` changes) to exercise the one-shot shimmer trigger
+                // on the REAL field, exactly as capture-time enrichment does on device (~0.8 s in).
+                if screen == "quikcaptureghost",
+                   UserDefaults.standard.bool(forKey: "GhostShimmer") {
+                    try? await Task.sleep(nanoseconds: 1_200_000_000)
+                    if let idx = store.nodes.firstIndex(where: { $0.id == "seed-ghost" }) {
+                        var n = store.nodes[idx]
+                        _ = n.recordProposal(kind: .title, text: "Office Halloween — Team Rocket group costume",
+                                             currentSource: nil, sourceEmbedding: nil, sourceContentHash: "seed2",
+                                             posture: .propose, generatedAt: Self.epoch)
+                        store.nodes[idx] = n
+                    }
+                }
             }
     }
 
@@ -606,6 +620,26 @@ struct DebugScreenHost: View {
         if screen == "quikcapture" {
             router.entryMode = .quikCapture
             router.captureNodeID = "seed-0"
+        }
+        // Brief CD — a FRESH capture (empty title/summary) carrying `.propose` title + summary
+        // proposals, so the REAL QuikCaptureView renders the ghosts in the REAL fields (FM is absent
+        // in the Simulator, so without a seed no proposal ever lands). `-GhostShimmer YES` re-records
+        // the title proposal ~0.8 s after appear to exercise the one-shot trigger (a "new suggestion").
+        if screen == "quikcaptureghost" {
+            router.entryMode = .quikCapture
+            router.captureNodeID = "seed-ghost"
+            var n = Node(id: "seed-ghost", createdAt: Self.epoch, updatedAt: Self.epoch,
+                         title: "", summary: "", tags: [],
+                         items: [NodeItem(id: "seed-ghost-text", type: .text, createdAt: Self.epoch,
+                                          content: "Four of us going as Team Rocket for the office Halloween party.")],
+                         entrySchemaVersion: 1)
+            _ = n.recordProposal(kind: .title, text: "Team Rocket Halloween costume",
+                                 currentSource: nil, sourceEmbedding: nil, sourceContentHash: "seed",
+                                 posture: .propose, generatedAt: Self.epoch)
+            _ = n.recordProposal(kind: .summary, text: "Group costume idea for the office Halloween party.",
+                                 currentSource: nil, sourceEmbedding: nil, sourceContentHash: "seed",
+                                 posture: .propose, generatedAt: Self.epoch)
+            store.nodes.append(n)
         }
         if screen == "capturemode" {
             router.isCapturing = true
@@ -690,6 +724,7 @@ struct DebugScreenHost: View {
         case "backlink":         BacklinkPickerSheet(sourceNodeID: "seed-0", sourceEntryID: nil)
         case "librarian":        ContentView()   // real app → canvas + Librarian panel
         case "quikcapture":      ContentView()   // real app → QuikCapture surface
+        case "quikcaptureghost": ContentView()   // Brief CD — QuikCapture with seeded `.propose` ghosts
         case "capturemode":      NavigationStack { NodeDetailView(nodeID: "seed-0") }   // capture-mode note editor (BUG 9)
         case "quikcapturefull":  ContentView()   // QuikCapture WITH content → Delete pill + pinned chrome
         case "capturemodefull":  NavigationStack { NodeDetailView(nodeID: "seed-cap") }   // detail capture WITH content

@@ -268,3 +268,101 @@ enum EnrichmentGateSelfTest {
         return Row(name: name, before: b.total, after: a.total)
     }
 }
+
+/// Brief CD3 (BP2) — trigger TIGHTENING measurement. The gate self-test above is TIMELESS (it counts
+/// the FM calls the gate *decides* to make per logical pause). CD3's reduction is TIMING-based: a longer
+/// typing-PAUSE window + a minimum interval between eager fires. This models that layer as a faithful
+/// discrete-event simulation of `scheduleEnrichment` over a capture TIMELINE, and reports the number of
+/// eager PASSES before (0.5 s pause, no floor — the pre-CD3 behaviour) vs after (the shipped constants).
+///
+/// `countEagerPasses` mirrors the real algorithm exactly: every edit re-arms a `pause`-second debounce
+/// (so a burst of edits within `pause` of each other coalesces to ONE settle); a settle's fire is
+/// deferred to `lastFire + floor` if it would land too soon, and a later edit before the deferred time
+/// CANCELS it (the next settle handles the latest content); a fire only COUNTS when the content hash
+/// changed since the last fire (the gate — already shipped). A capture that ENDS before a deferred fire
+/// lands never makes that eager call — Done's final pass (0 calls if the hash still matches a proposal,
+/// else 1) reconciles the tail; that's noted per scenario, not folded into the eager count.
+enum GhostTriggerSelfTest {
+    /// One content-change event on the capture timeline: `t` seconds after open, `hash` = content hash
+    /// AFTER the change (a keystroke burst, an OG/photo/transcription landing — all are content changes).
+    struct Event { let t: Double; let hash: Int }
+
+    /// Faithful sim of `scheduleEnrichment`'s debounce + min-interval + change-gate. Returns eager fires.
+    static func countEagerPasses(_ events: [Event], pause: Double, floor: Double) -> Int {
+        var fires = 0
+        var lastFireT = -Double.infinity
+        var lastHash = Int.min        // the content hash we last authored for (the shipped gate)
+        var i = 0
+        let n = events.count
+        while i < n {
+            // Coalesce a burst: advance while the next edit lands within `pause` of this one (re-arm).
+            var k = i
+            while k + 1 < n && events[k + 1].t - events[k].t <= pause { k += 1 }
+            let settleHash = events[k].hash
+            var fireT = events[k].t + pause
+            // Min-interval floor: defer if too soon after the last fire.
+            if fireT < lastFireT + floor {
+                let deferredT = lastFireT + floor
+                // A later edit before the deferred moment cancels this task (it re-arms the debounce).
+                if k + 1 < n && events[k + 1].t < deferredT { i = k + 1; continue }
+                fireT = deferredT
+            }
+            // The gate: an eager pass only does FM work when the content changed since the last one.
+            if settleHash != lastHash { fires += 1; lastFireT = fireT; lastHash = settleHash }
+            i = k + 1
+        }
+        return fires
+    }
+
+    struct Row { let name: String; let before: Int; let after: Int; let note: String }
+
+    static func run() -> String {
+        let pauseBefore = 0.5, floorBefore = 0.0                    // pre-CD3
+        let pauseAfter = CorpusStore.eagerTypingPause               // shipped (2.0 s)
+        let floorAfter = CorpusStore.minEagerInterval              // shipped (9.0 s)
+
+        // Each burst = a few keystrokes <pause apart, then a gap; content hash grows per burst.
+        // S1 — a long note typed in 7 bursts ~3 s apart over ~18 s (BP0's "7 passes" case).
+        let s1: [Event] = [
+            .init(t: 0.0, hash: 1), .init(t: 0.2, hash: 1), .init(t: 0.4, hash: 1),
+            .init(t: 3.0, hash: 2), .init(t: 3.2, hash: 2),
+            .init(t: 6.0, hash: 3),
+            .init(t: 9.0, hash: 4), .init(t: 9.3, hash: 4),
+            .init(t: 12.0, hash: 5),
+            .init(t: 15.0, hash: 6), .init(t: 15.4, hash: 6),
+            .init(t: 18.0, hash: 7),
+        ]
+        // S2 — paste a link; OG lands ~1.2 s later (a piece landing); then a short note in 2 bursts.
+        let s2: [Event] = [
+            .init(t: 1.2, hash: 2),                                 // OG landing (bare link had no content)
+            .init(t: 5.0, hash: 3), .init(t: 5.3, hash: 3),
+            .init(t: 8.0, hash: 4),
+        ]
+        // S3 — a short note, one burst, one pause.
+        let s3: [Event] = [ .init(t: 0.0, hash: 1), .init(t: 0.3, hash: 1) ]
+
+        func row(_ name: String, _ e: [Event], _ note: String) -> Row {
+            Row(name: name,
+                before: countEagerPasses(e, pause: pauseBefore, floor: floorBefore),
+                after:  countEagerPasses(e, pause: pauseAfter,  floor: floorAfter),
+                note: note)
+        }
+        let rows = [
+            row("1. long note, 7 bursts over ~18 s", s1, "Done: promote (0) if unchanged"),
+            row("2. link paste + OG + short note",   s2, "a deferred eager fire past Done → Done authors tail"),
+            row("3. short note, one pause",           s3, "already minimal"),
+        ]
+
+        var out = "\n  scenario                              before   after   note\n"
+        out +=      "  ------------------------------------  ------   -----   ----\n"
+        var pass = true
+        for r in rows {
+            out += "  \(r.name.padding(toLength: 36, withPad: " ", startingAt: 0))  \(String(r.before).padding(toLength: 6, withPad: " ", startingAt: 0))   \(String(r.after).padding(toLength: 5, withPad: " ", startingAt: 0)) \(r.note)\n"
+            if r.after > 3 || r.after > r.before { pass = false }   // BP2 target: 1–3, never worse than before
+        }
+        out += "  (counts are EAGER passes per capture; pause/floor before=\(pauseBefore)s/\(floorBefore)s after=\(pauseAfter)s/\(floorAfter)s)\n"
+        out += pass ? "  BP2: PASS (every scenario ≤ 3 eager passes and ≤ before)\n"
+                    : "  BP2: FAIL (a scenario exceeds the 1–3 target or regressed)\n"
+        return out
+    }
+}

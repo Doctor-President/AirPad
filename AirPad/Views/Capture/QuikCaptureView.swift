@@ -754,6 +754,15 @@ struct QuikCaptureView: View {
     private func handlePastedText(_ text: String) {
         let trimmed = text.trimmingCharacters(in: .whitespacesAndNewlines)
         guard !trimmed.isEmpty, let id = nodeID else { return }
+        // #2/#3 — FILL an existing EMPTY note (the capture scaffold) instead of stacking a new note
+        // ABOVE it; only create a new note when none is empty. `meaningfulText == nil` is the shared
+        // "this note holds nothing" test (so whitespace counts as empty too). Routing through
+        // updateTextItem also feeds the enrichment pipeline → the ghost appears on paste.
+        if let empty = node?.items.first(where: { $0.type == .text && AIService.meaningfulText($0.content) == nil }) {
+            let itemID = empty.id
+            Task { await store.updateTextItem(itemID: itemID, newContent: text, nodeID: id) }
+            return
+        }
         let now = Date()
         let item = NodeItem(
             id: UUID().uuidString,

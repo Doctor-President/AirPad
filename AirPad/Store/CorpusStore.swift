@@ -2648,6 +2648,21 @@ final class CorpusStore {
     /// not date-bound — each capture session starts a new node that lands in
     /// Recents on Done. The empty text item flags `pendingAutoFocusItemID` so the
     /// note opens with the keyboard up.
+    /// Brief CD fix — nodes that are a FRESH capture still being composed (created by `createCaptureNode`,
+    /// not yet Done). This is the ROBUST "is this surface composing a new entry" signal: it lives on the
+    /// store, so navigation lifecycle can't clear it the way `router.isCapturing` can (the detail-exit
+    /// handler in ContentView was clearing `isCapturing` during the "+"→push, so the ghost gate +
+    /// live-commit saw capture=false and nothing surfaced). Added at create, removed at Done/cancel.
+    @ObservationIgnored var composingNodeIDs: Set<String> = []
+
+    /// True while `nodeID` is a fresh capture being composed. The ghost gate + the note live-commit use
+    /// this (not the fragile `router.isCapturing`), so every input path works on both capture surfaces.
+    func isComposing(nodeID: String) -> Bool { composingNodeIDs.contains(nodeID) }
+
+    /// Capture ended (Done or cancel) → stop treating the node as composing (so a re-opened entry never
+    /// shows a ghost — rule 5b).
+    func endComposing(nodeID: String) { composingNodeIDs.remove(nodeID) }
+
     func createCaptureNode() async -> Node? {
         let now = Date()
         let node = Node(
@@ -2661,6 +2676,7 @@ final class CorpusStore {
         )
         await addNode(node, position: .zero)
         _ = await appendEmptyTextItem(nodeID: node.id)
+        composingNodeIDs.insert(node.id)   // Brief CD fix — mark it composing (robust capture signal)
         // Launchpad: the note is one of four equal capture choices, so do NOT
         // auto-raise the keyboard on open. `appendEmptyTextItem` primes
         // autofocus; clear it so capture mode opens calm (tap the note for text).
@@ -2996,6 +3012,7 @@ final class CorpusStore {
             try? await Task.sleep(for: .seconds(1.0))
             guard let self, !Task.isCancelled else { return }
             self.captureLiveCommitTasks[itemID] = nil
+            CaptureDiagLog.shared.add("LIVECOMMIT len=\(text.count)")
             await self.updateTextItem(itemID: itemID, newContent: text, nodeID: nodeID)
         }
     }
@@ -3057,7 +3074,10 @@ final class CorpusStore {
         // Brief BQ4 — a capture's Done drops its untouched scaffold Note before naming, so the
         // named entry holds only real content. (BQ2's `meaningfulText` already keeps an empty
         // scaffold out of the content hash, so this doesn't shift what's being named.)
-        if moment == .committed { await pruneEmptyTextItems(nodeID: nodeID) }
+        if moment == .committed {
+            await pruneEmptyTextItems(nodeID: nodeID)
+            endComposing(nodeID: nodeID)   // Brief CD fix — capture is Done → no longer composing (re-open shows no ghost)
+        }
         // Brief BI — DONE-DELEGATES. Done on a capture (`.committed`) resolves the posture
         // from the capture MOMENT + the delegate setting. Under `.automatic`, an untitled
         // aspect whose FRESH proposal already matches the current content is PROMOTED (no
@@ -3484,6 +3504,7 @@ final class CorpusStore {
             // Done asks the staleness question instead (`.committed`).
             var needs = self.enrichmentNeeds(for: node, at: .composing)
             bug17Log.notice("GATE node=\(nodeID, privacy: .public) needs=\(needs.any) needsAuthorship=\(needs.authorship) needsSubstrate=\(needs.substrate) titleEmpty=\(title.isEmpty) summaryEmpty=\(summary.isEmpty) contentLen=\(content.count) titleSource=\(String(describing: node.titleSource), privacy: .public) summarySource=\(String(describing: node.summarySource), privacy: .public) → fire=\(needs.any && !content.isEmpty)")
+            CaptureDiagLog.shared.add("GATE len=\(content.count) auth=\(needs.authorship ? "1":"0") fire=\(needs.any && !content.isEmpty ? "1":"0")")
             guard needs.any, !content.isEmpty else {
                 // A gate that says "nothing needed" is a CONCLUSION about this node,
                 // so settle the launch-sweep flag. (Empty content is not a conclusion
@@ -7591,6 +7612,7 @@ final class CorpusStore {
             // `result` is nil when the gate skipped the authorship call: no new answer,
             // so nothing to record and the proposal already on the node stands.
             if let result {
+                CaptureDiagLog.shared.add("PROPOSAL t=\(result.title.isEmpty ? "(empty)" : String(result.title.prefix(14)))")
                 if aspects.contains(.title),
                    n.recordProposal(kind: .title, text: result.title,
                                     currentSource: n.titleSource,

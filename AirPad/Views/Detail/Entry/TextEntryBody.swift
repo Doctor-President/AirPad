@@ -93,10 +93,13 @@ struct TextEntryBody: View {
         // it fires in spine mode whether the note is expanded or collapsed.
         .onChange(of: editingText) { _, newValue in
             store.mirrorPendingItemEdit(itemID: item.id, text: newValue)
-            guard router.isCapturing, router.captureNodeID == nodeID else { return }
+            // Brief CD fix — gate on the ROBUST composing signal, not `router.isCapturing` (which the
+            // detail-exit handler clears during the "+"→push, so on device typing/pasting never committed
+            // live). `isComposing` is set at createCaptureNode + cleared at Done → survives navigation.
+            guard store.isComposing(nodeID: nodeID) else { return }
             router.captureDraftHasText = !newValue.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty
-            // Brief CD fix — commit the live note text on a ~1 s typing pause so a ghost suggestion
-            // appears WHILE you type (the editor otherwise persists only on end-editing). Capture only.
+            // Commit the live note text on a ~1 s pause (typing OR paste — both fire editingText via
+            // textViewDidChange) so a ghost suggestion appears WHILE you compose, not only after Done.
             store.scheduleCaptureLiveCommit(itemID: item.id, nodeID: nodeID, text: newValue)
         }
         .onAppear {

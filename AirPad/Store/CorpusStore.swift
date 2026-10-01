@@ -1076,6 +1076,11 @@ final class CorpusStore {
                     NSLog("[LinkFollowupsSelfTest] %@", LinkFollowupsSelfTest.run())
                 }
                 #if DEBUG
+                // Brief CD #1 — identical text in TWO entries must each get their OWN proposals (a
+                // duplicate must not suppress the second entry's ghost). Needs `-StubAuthorModel`.
+                if ProcessInfo.processInfo.arguments.contains("-DupProposalSelfTest") {
+                    NSLog("[DupProposalSelfTest] %@", await runDupProposalSelfTest())
+                }
                 // Brief BM0 — the Done-matrix driver (needs `-StubAuthorModel` alongside).
                 if ProcessInfo.processInfo.arguments.contains("-BMDoneMatrix") {
                     NSLog("[BMDoneMatrix] %@", await runBMDoneMatrix())
@@ -2677,6 +2682,8 @@ final class CorpusStore {
         await addNode(node, position: .zero)
         _ = await appendEmptyTextItem(nodeID: node.id)
         composingNodeIDs.insert(node.id)   // Brief CD fix — mark it composing (robust capture signal)
+        CaptureDiagLog.shared.clear()      // #3 — fresh HUD per capture (no lines from a previous entry)
+        CaptureDiagLog.shared.add("\(node.id.suffix(4)) OPEN")
         // Launchpad: the note is one of four equal capture choices, so do NOT
         // auto-raise the keyboard on open. `appendEmptyTextItem` primes
         // autofocus; clear it so capture mode opens calm (tap the note for text).
@@ -3012,7 +3019,7 @@ final class CorpusStore {
             try? await Task.sleep(for: .seconds(1.0))
             guard let self, !Task.isCancelled else { return }
             self.captureLiveCommitTasks[itemID] = nil
-            CaptureDiagLog.shared.add("LIVECOMMIT len=\(text.count)")
+            CaptureDiagLog.shared.add("\(nodeID.suffix(4)) LIVECOMMIT len=\(text.count)")
             await self.updateTextItem(itemID: itemID, newContent: text, nodeID: nodeID)
         }
     }
@@ -3181,6 +3188,36 @@ final class CorpusStore {
     /// "passed the sim gate, failed on device" class: FM/Apple Intelligence is absent in the
     /// Simulator, so before this the real Done → model → write path never ran headlessly.
     /// Creates + deletes its own scratch nodes; NSLogs a PASS/FAIL summary + a per-row trace.
+    /// Brief CD #1 regression — identical note text in TWO entries must EACH get its own title/summary
+    /// proposal. (The device bug: a near/exact duplicate in the corpus made the corpus-aware FM call
+    /// fail → no proposal; the corpus-free retry fixes it. At the STORE level this guards that nothing
+    /// cross-node dedups the proposal: two fresh nodes with the SAME content both come out of the eager
+    /// pass with a `.title` proposal.) Needs `-StubAuthorModel` (FM is absent in the Simulator).
+    func runDupProposalSelfTest() async -> String {
+        let text = "Four of us going as Team Rocket for the office Halloween party, costumes due Friday."
+        func makeNode(_ id: String) -> Node {
+            var n = Node(id: id, createdAt: Date(), updatedAt: Date(), title: "", summary: "", tags: [])
+            n.items = [NodeItem(id: id + "-t", type: .text, createdAt: Date(), content: text)]
+            n.entrySchemaVersion = 1
+            return n
+        }
+        let ids = ["dup-a", "dup-b"]
+        for id in ids { await addNode(makeNode(id), position: .zero) }
+        // Run the eager composing pass on BOTH (identical content). Under `.propose` each records a
+        // title proposal; the second must NOT be suppressed because the first (or a pre-existing entry)
+        // holds the same text.
+        for id in ids {
+            await processNodeWithAI(nodeID: id, suppressTagSheet: true,
+                                    needsAuthorship: true, needsSubstrate: false, posture: .propose)
+        }
+        let got = ids.map { id in nodes.first(where: { $0.id == id })?.surfacedProposal(kind: .title) != nil }
+        for id in ids { await deleteNode(id: id) }   // clean up the fixtures
+        let pass = got.allSatisfy { $0 }
+        return pass
+            ? "PASS — both identical-content entries got their own title proposal"
+            : "FAIL — a duplicate suppressed a proposal: dup-a=\(got[0]) dup-b=\(got[1])"
+    }
+
     func runBMDoneMatrix() async -> String {
         let stub = ProcessInfo.processInfo.arguments.contains("-StubAuthorModel")
         var lines: [String] = []
@@ -3504,7 +3541,7 @@ final class CorpusStore {
             // Done asks the staleness question instead (`.committed`).
             var needs = self.enrichmentNeeds(for: node, at: .composing)
             bug17Log.notice("GATE node=\(nodeID, privacy: .public) needs=\(needs.any) needsAuthorship=\(needs.authorship) needsSubstrate=\(needs.substrate) titleEmpty=\(title.isEmpty) summaryEmpty=\(summary.isEmpty) contentLen=\(content.count) titleSource=\(String(describing: node.titleSource), privacy: .public) summarySource=\(String(describing: node.summarySource), privacy: .public) → fire=\(needs.any && !content.isEmpty)")
-            CaptureDiagLog.shared.add("GATE len=\(content.count) auth=\(needs.authorship ? "1":"0") fire=\(needs.any && !content.isEmpty ? "1":"0")")
+            CaptureDiagLog.shared.add("\(nodeID.suffix(4)) GATE len=\(content.count) auth=\(needs.authorship ? "1":"0") sub=\(needs.substrate ? "1":"0") fire=\(needs.any && !content.isEmpty ? "1":"0")")
             guard needs.any, !content.isEmpty else {
                 // A gate that says "nothing needed" is a CONCLUSION about this node,
                 // so settle the launch-sweep flag. (Empty content is not a conclusion
@@ -7467,7 +7504,7 @@ final class CorpusStore {
         let nodeEmbedding: [Float]? = (needsAuthorship && useCorpusAware) ? computeNodeEmbedding(for: node) : nil
         let result: NodeAIOutput?
         if needsAuthorship {
-            let aiOutcome: NodeAIOutcome
+            var aiOutcome: NodeAIOutcome
             bug17Log.notice("FM-RAN node=\(nodeID, privacy: .public) path=\(useCorpusAware ? "corpusAware" : "legacy", privacy: .public) suppressTagSheet=\(suppressTagSheet)")
             if useCorpusAware {
                 if #available(iOS 26.0, *) {
@@ -7490,13 +7527,27 @@ final class CorpusStore {
             } else {
                 aiOutcome = await aiSvc.processNode(node, tagVocabulary: currentTags, authoredOnly: authoredOnly)
             }
+            // #1 (duplicate-content miss) — the corpus-aware prompt embeds the top NEIGHBORHOODS, so a
+            // near/exact-duplicate entry (carrying the same text) can bloat it past the FM's context
+            // window and the call FAILS → no proposal, even though naming THIS idea is perfectly fine.
+            // Identical text in two entries is legitimate; each must get its own ghosts. On any
+            // corpus-aware FAILURE, retry with the CORPUS-FREE legacy prompt (it names only THIS node's
+            // content — nothing about the rest of the corpus), so the proposal records regardless of
+            // what else exists. A GENUINE content refusal fails this too → falls through to CD5's
+            // refusal surface, unchanged. (`processNode` guards FM internally; safe on any OS.)
+            if useCorpusAware, case .failure = aiOutcome {
+                CaptureDiagLog.shared.add("\(nodeID.suffix(4)) FM-RETRY corpus-free")
+                aiOutcome = await aiSvc.processNode(node, tagVocabulary: currentTags, authoredOnly: authoredOnly)
+            }
             // F3 — a failed authorship call no longer collapses into a bare nil: the
             // reason travels back so the tray can say which one it was.
             switch aiOutcome {
             case .success(let r):
                 result = r
+                CaptureDiagLog.shared.add("\(nodeID.suffix(4)) FM-OK t=\(r.title.count) s=\(r.summary.count)")
                 bug17Log.notice("FM-RETURNED node=\(nodeID, privacy: .public) ok summaryLen=\(r.summary.count) titleLen=\(r.title.count)")
             case .failure(let reason):
+                CaptureDiagLog.shared.add("\(nodeID.suffix(4)) FM-FAIL \(String(describing: reason).prefix(18))")
                 bug17Log.notice("FM-RETURNED node=\(nodeID, privacy: .public) FAILED reason=\(String(describing: reason), privacy: .public)")
                 // Fallback title from raw content so the node isn't blank on FM
                 // failure. Race-safe read-modify-write; never touches `.items`.
@@ -7612,7 +7663,7 @@ final class CorpusStore {
             // `result` is nil when the gate skipped the authorship call: no new answer,
             // so nothing to record and the proposal already on the node stands.
             if let result {
-                CaptureDiagLog.shared.add("PROPOSAL t=\(result.title.isEmpty ? "(empty)" : String(result.title.prefix(14)))")
+                CaptureDiagLog.shared.add("\(nodeID.suffix(4)) PROPOSAL t=\(result.title.isEmpty ? "(empty)" : String(result.title.prefix(14)))")
                 if aspects.contains(.title),
                    n.recordProposal(kind: .title, text: result.title,
                                     currentSource: n.titleSource,

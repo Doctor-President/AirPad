@@ -15,7 +15,10 @@ final class CDGhostAcceptanceMatrix: XCTestCase {
 
     private func launch(_ extra: [String]) -> XCUIApplication {
         let app = XCUIApplication()
-        app.launchArguments = ["-StubAuthorModel", "-StubNonEmptyTitle", "-EmbedCPUOnly"] + extra
+        // `-UITestLibrary` = isolated scratch (never T's real Library); `-UITestLibraryFresh` wipes it
+        // at the START of each test so the newest entry is unambiguously this test's.
+        app.launchArguments = ["-StubAuthorModel", "-StubNonEmptyTitle", "-EmbedCPUOnly",
+                               "-UITestLibrary", "-UITestLibraryFresh"] + extra
         app.launch()
         return app
     }
@@ -88,7 +91,8 @@ final class CDGhostAcceptanceMatrix: XCTestCase {
     private func reopenNewestEntry(_ app: XCUIApplication) {
         Thread.sleep(forTimeInterval: 15)  // Done's async promote+author+substrate+embed can take >5s on-device
         shot(app, "post-Done-before-relaunch")   // diagnostic: did the title land before we relaunch?
-        app.launchArguments = ["-StubAuthorModel", "-StubNonEmptyTitle", "-EmbedCPUOnly"]  // default entryMode = .recents
+        // Reopen: keep the isolated library (NO -Fresh, so the entry just committed survives the relaunch).
+        app.launchArguments = ["-StubAuthorModel", "-StubNonEmptyTitle", "-EmbedCPUOnly", "-UITestLibrary"]
         app.launch()
         let row = app.buttons.matching(NSPredicate(format: "identifier BEGINSWITH 'entryRow-'")).firstMatch
         XCTAssertTrue(row.waitForExistence(timeout: 20), "the just-created entry should be in Recents")
@@ -189,7 +193,8 @@ final class CDGhostAcceptanceMatrix: XCTestCase {
         XCTAssertFalse(fieldValue(app, "titleField").isEmpty, "entry A (identical text) must be titled")
         // entry B — a COLD relaunch re-runs the production quikCapture entry; the persisted corpus
         // (entry A, just confirmed) reloads. (`launch()` terminates the running instance.)
-        app.launchArguments = ["-StubAuthorModel", "-StubNonEmptyTitle", "-EmbedCPUOnly", "-EntryQuikCapture"]
+        // Entry B: keep the isolated library (NO -Fresh) so entry A survives for the both-titled check.
+        app.launchArguments = ["-StubAuthorModel", "-StubNonEmptyTitle", "-EmbedCPUOnly", "-UITestLibrary", "-EntryQuikCapture"]
         app.launch()
         enterQuickCapture(app)
         typeNote(app, noteText)

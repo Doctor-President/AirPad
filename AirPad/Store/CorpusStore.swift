@@ -1087,6 +1087,16 @@ final class CorpusStore {
                 if ProcessInfo.processInfo.arguments.contains("-DupTitleCommitSelfTest") {
                     NSLog("[DupTitleCommitSelfTest] %@", await runDupTitleCommitSelfTest())
                 }
+                // UI-first cleanup — LIST (dry-run) or PURGE the entries the UI test suite created in
+                // T's REAL Library. Run WITHOUT -UITestLibrary so it targets the real corpus; marker-
+                // matched; -ListTestEntries always runs first so T sees exactly what -PurgeTestEntries
+                // would delete. One-off remediation for runs made before the isolated library landed.
+                if ProcessInfo.processInfo.arguments.contains("-ListTestEntries") {
+                    NSLog("[ListTestEntries]\n%@", await listOrPurgeTestEntries(purge: false))
+                }
+                if ProcessInfo.processInfo.arguments.contains("-PurgeTestEntries") {
+                    NSLog("[PurgeTestEntries]\n%@", await listOrPurgeTestEntries(purge: true))
+                }
                 // Brief BM0 — the Done-matrix driver (needs `-StubAuthorModel` alongside).
                 if ProcessInfo.processInfo.arguments.contains("-BMDoneMatrix") {
                     NSLog("[BMDoneMatrix] %@", await runBMDoneMatrix())
@@ -2389,6 +2399,11 @@ final class CorpusStore {
     /// copy runs OFF the main actor (detached); afterward the in-memory corpus is
     /// refreshed so the rest of `load()` sees the seeded nodes.
     func seedSampleLibraryIfNeeded() async {
+        #if DEBUG
+        // UI-first rule — the `-UITestLibrary` scratch must stay EMPTY so a real-UI test's "newest
+        // entry" is always the one IT just created; never seed the onboarding sample into it.
+        if ProcessInfo.processInfo.arguments.contains("-UITestLibrary") { return }
+        #endif
         guard let root = await service.containerRootURL() else { return }
         guard nodes.isEmpty,
               let bundle = SampleLibrarySeeder.bundledLibraryURL(),
@@ -3311,6 +3326,38 @@ final class CorpusStore {
         return fails.isEmpty
             ? "PASS [\(head)] — both identical-content entries committed their SHOWING title+summary ghost at Done"
             : "FAIL [\(head)] — \(fails.joined(separator: "; "))"
+    }
+
+    /// UI-first cleanup — LIST (dry-run) or PURGE entries the device UI test suite created in T's REAL
+    /// Library, before the isolated `-UITestLibrary` existed. Matches ONLY the suite's exact marker text
+    /// (`CDGhostAcceptanceMatrix.noteText` / `CDGhostWhileTyping` / the dup self-test string), so nothing
+    /// of T's can match by accident; every match is printed (id · title · created · text preview) so the
+    /// `-ListTestEntries` dry run shows precisely what `-PurgeTestEntries` would remove. `deleteNode` is
+    /// the normal delete path (removes the node dir + sidecars), so purged entries don't resurrect.
+    func listOrPurgeTestEntries(purge: Bool) async -> String {
+        let markers = [
+            "Four of us going as Team Rocket for the office Halloween party",   // CDGhost* suites
+            "The mask falls off and the face underneath is the one we always suspected",  // dup self-test
+        ]
+        func isTestEntry(_ n: Node) -> Bool {
+            let text = n.items.compactMap { $0.content }.joined(separator: " ")
+            return markers.contains { text.contains($0) }
+        }
+        let matches = nodes.filter(isTestEntry)
+        var lines = ["\(matches.count) match(es) in the REAL Library (total nodes \(nodes.count)):"]
+        for n in matches {
+            let preview = (n.items.first(where: { $0.type == .text })?.content ?? "")
+                .trimmingCharacters(in: .whitespacesAndNewlines).prefix(44)
+            let t = n.title.isEmpty ? "<empty>" : n.title
+            lines.append("  \(n.id.suffix(6)) title=\"\(t)\" created=\(n.createdAt) text=\"\(preview)…\"")
+        }
+        if purge {
+            for n in matches { await deleteNode(id: n.id) }
+            lines.append("DELETED \(matches.count) entr\(matches.count == 1 ? "y" : "ies").")
+        } else {
+            lines.append(matches.isEmpty ? "(nothing to purge)" : "(DRY RUN — relaunch with -PurgeTestEntries to delete the above)")
+        }
+        return lines.joined(separator: "\n")
     }
 
     func runBMDoneMatrix() async -> String {

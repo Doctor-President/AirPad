@@ -38,6 +38,14 @@ actor iCloudDriveService {
            trySetupSampleDemoScratch() {
             return
         }
+        // UI-first rule (SCHEMA.md §Briefs, 2026-10-01) — `-UITestLibrary` roots at an ISOLATED, EMPTY
+        // scratch so device XCUITests never create entries in T's real Library. No sample seed (see
+        // `seedSampleLibraryIfNeeded`), wiped clean each launch. Single total isolation point, like the
+        // other scratch roots: the real container is never resolved in this mode.
+        if ProcessInfo.processInfo.arguments.contains("-UITestLibrary"),
+           trySetupUITestScratch() {
+            return
+        }
         // Brief Y Part D — `-CorpusFixture <path>`: root at a COPY of the directory
         // at <path> (a read-only clone of T's real corpus). Every write lands in a
         // throwaway scratch, NEVER back to <path> and NEVER to iCloud — so CC can run
@@ -186,6 +194,33 @@ actor iCloudDriveService {
             return false
         }
     }
+
+    /// UI-first rule — an ISOLATED scratch container for device XCUITests (`-UITestLibrary`), so a
+    /// real-UI test run never writes into T's Library. Writes land only here; the real/iCloud container
+    /// is never resolved; no sample seed (gated in `CorpusStore.seedSampleLibraryIfNeeded`). It PERSISTS
+    /// across launches ON PURPOSE — the tests cold-relaunch to reopen the just-committed entry, so
+    /// wiping per launch would delete it. Pass `-UITestLibraryFresh` to start empty (a session's first
+    /// launch); it's a throwaway caches dir, so the OS reclaims it and app-delete resets it.
+    private func trySetupUITestScratch() -> Bool {
+        guard let caches = FileManager.default.urls(for: .cachesDirectory, in: .userDomainMask).first else { return false }
+        let root = caches.appendingPathComponent("AirPadUITestScratch")
+        do {
+            if ProcessInfo.processInfo.arguments.contains("-UITestLibraryFresh"),
+               FileManager.default.fileExists(atPath: root.path) {
+                try FileManager.default.removeItem(at: root)
+            }
+            try FileManager.default.createDirectory(
+                at: root.appendingPathComponent("nodes"),
+                withIntermediateDirectories: true
+            )
+            rootURL = root
+            isAvailable = true
+            usingLocalFallback = false   // cosmetic only (no "saving locally" banner during tests)
+            return true
+        } catch {
+            return false
+        }
+    }
     #endif
 
     private func trySetupICloud() async -> Bool {
@@ -243,6 +278,7 @@ actor iCloudDriveService {
         let path = root.path
         let kind: String
         if path.contains("AirPadSampleDemoScratch") { kind = "scratch" }
+        else if path.contains("AirPadUITestScratch") { kind = "uitest" }
         else if path.contains("AirPadCorpusFixtureScratch") { kind = "corpus-fixture" }
         else if path.contains("AirPadFieldFixtureScratch") { kind = "field-scratch" }
         else if path.contains("Mobile Documents") || path.contains("com~apple~CloudDocs") { kind = "icloud" }

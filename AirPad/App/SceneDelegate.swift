@@ -19,8 +19,16 @@ final class SceneDelegate: NSObject, UIWindowSceneDelegate {
         for urlContext in urlContexts {
             let url = urlContext.url
             if url.scheme == "airpad", url.host == "quikcapture" {
-                // Open the standalone QuikCapture screen directly (no routing).
-                AppRouter.shared?.entryMode = .quikCapture
+                // Brief CE — one shared route for Control Center / Lock Screen / Action Button, cold OR
+                // warm. WARM (app running, incl. the Action Button's usual case): the router exists, set
+                // it directly. COLD (the Control launches the app from the extension): this scene callback
+                // runs BEFORE `AppRouter()` is created, so `shared` is nil — latch a flag the router
+                // consumes in `init()`. Only latch when nil so a stray late router can't pick up a stale flag.
+                if let router = AppRouter.shared {
+                    router.entryMode = .quikCapture
+                } else {
+                    AppRouter.pendingQuikCapture = true
+                }
                 return
             }
         }

@@ -317,6 +317,7 @@ targets:
       - path: AirPadWidgets
         excludes:
           - "Info.plist"
+          - "*.entitlements"
       # The SHARED intent — compiled into the extension AND the app (no UIApplication.shared, so it
       # compiles here). One entry point, not two.
       - path: AirPad/Intents/CaptureIntent.swift
@@ -325,11 +326,15 @@ targets:
       - sdk: SwiftUI.framework
     settings:
       base:
-        PRODUCT_BUNDLE_IDENTIFIER: com.doctorpresident.airpad.widgets
+        # Brief CE #7 — EXACTLY `.Widgets` (capital W): `.widgets` collided case-insensitively with the
+        # existing App ID `com.doctorpresident.airpad.Widgets` ("not available" at App Store export).
+        PRODUCT_BUNDLE_IDENTIFIER: com.doctorpresident.airpad.Widgets
         TARGETED_DEVICE_FAMILY: "1"
         DEVELOPMENT_TEAM: 8XM4B5F42Y
         CODE_SIGN_STYLE: Automatic
         CODE_SIGN_IDENTITY: "Apple Development"
+        # App Group matches the main app (Brief CE #7), so the Control can share state with the app later.
+        CODE_SIGN_ENTITLEMENTS: AirPadWidgets/AirPadWidgets.entitlements
     info:
       path: AirPadWidgets/Info.plist
       properties:

@@ -1801,6 +1801,7 @@
 		0971F275BBB074FAC046B2C5 /* Release */ = {
 			isa = XCBuildConfiguration;
 			buildSettings = {
+				CODE_SIGN_ENTITLEMENTS = AirPadWidgets/AirPadWidgets.entitlements;
 				CODE_SIGN_IDENTITY = "Apple Development";
 				CODE_SIGN_STYLE = Automatic;
 				DEVELOPMENT_TEAM = 8XM4B5F42Y;
@@ -1811,7 +1812,7 @@
 					"@executable_path/Frameworks",
 					"@executable_path/../../Frameworks",
 				);
-				PRODUCT_BUNDLE_IDENTIFIER = com.doctorpresident.airpad.widgets;
+				PRODUCT_BUNDLE_IDENTIFIER = com.doctorpresident.airpad.Widgets;
 				SDKROOT = iphoneos;
 				TARGETED_DEVICE_FAMILY = 1;
 			};
@@ -1838,6 +1839,7 @@
 		4A1C406E1D5C32090FCB0173 /* Debug */ = {
 			isa = XCBuildConfiguration;
 			buildSettings = {
+				CODE_SIGN_ENTITLEMENTS = AirPadWidgets/AirPadWidgets.entitlements;
 				CODE_SIGN_IDENTITY = "Apple Development";
 				CODE_SIGN_STYLE = Automatic;
 				DEVELOPMENT_TEAM = 8XM4B5F42Y;
@@ -1848,7 +1850,7 @@
 					"@executable_path/Frameworks",
 					"@executable_path/../../Frameworks",
 				);
-				PRODUCT_BUNDLE_IDENTIFIER = com.doctorpresident.airpad.widgets;
+				PRODUCT_BUNDLE_IDENTIFIER = com.doctorpresident.airpad.Widgets;
 				SDKROOT = iphoneos;
 				TARGETED_DEVICE_FAMILY = 1;
 			};

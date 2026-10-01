@@ -84,6 +84,9 @@ struct CaptureHeader<Title: View, Summary: View, Collections: View, Tags: View, 
     /// "+" is the first-field entry point); the detail view keeps its normal-viewing
     /// gate (atomics present). The caller resolves this — see each surface.
     let showAttributes: Bool
+    /// Brief CD rule 6 — the fresh-capture surface sets this so the feather doesn't ALSO shimmer for a
+    /// title/summary offer the inline ghost is already playing. Default false (detail view keeps it).
+    var suppressLeverShimmer: Bool = false
     let onLeverTap: () -> Void
     @ViewBuilder var title: Title
     @ViewBuilder var summary: Summary
@@ -109,7 +112,8 @@ struct CaptureHeader<Title: View, Summary: View, Collections: View, Tags: View, 
             // lane gap is `chipRowGap` (#1 — one value, both surfaces; QuikCapture had
             // 24).
             HStack(alignment: .center, spacing: 12) {
-                LeverButton(nodeID: nodeID, diameter: laneStackHeight, onTap: onLeverTap)
+                LeverButton(nodeID: nodeID, diameter: laneStackHeight, onTap: onLeverTap,
+                            suppressShimmer: suppressLeverShimmer)
                 VStack(alignment: .leading, spacing: 0) {
                     collections.measureHeaderBound("collections")
                     tags

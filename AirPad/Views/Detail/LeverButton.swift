@@ -146,6 +146,11 @@ struct LeverButton: View {
     let nodeID: String
     let diameter: CGFloat
     let onTap: () -> Void
+    /// Brief CD rule 6 (no double signal) — suppress the feather's attention-shimmer on a surface
+    /// where a GHOST already plays the lever shimmer inline for the SAME title/summary offer (the
+    /// fresh-capture surface). The pending Klein-gradient feather still shows (tray discoverability);
+    /// only the redundant shimmer is withheld. Default false → every other surface keeps the shimmer.
+    var suppressShimmer: Bool = false
 
     @Environment(CorpusStore.self) private var store
     @Environment(\.accessibilityReduceMotion) private var reduceMotion
@@ -246,6 +251,7 @@ struct LeverButton: View {
     }
 
     private func attemptShimmer() {
+        guard !suppressShimmer else { return }   // rule 6 — the ghost carries this signal inline
         guard Self.shouldFire(pending: pending, visible: isVisible,
                               hasShimmered: hasShimmered, reduceMotion: reduceMotion) else { return }
         hasShimmered = true

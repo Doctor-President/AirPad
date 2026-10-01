@@ -23,6 +23,9 @@ struct QuikCaptureView: View {
     /// the app-wide Font (the pairing), no longer Fraunces. The dialed SIZE is still read
     /// from `visualSettings`; only the FACE resolves through the registry.
     @Environment(\.appBodyFont) private var appFont
+    /// Ghost suggestions (Brief CD) honour Reduce Motion: the glint sweep is dropped; the ghost's
+    /// resting dimness carries the signal (the component falls back to a plain appearance).
+    @Environment(\.accessibilityReduceMotion) private var reduceMotion
 
     /// The capture node's id, created on appear. Nil until
     /// `createCaptureNode()` returns.
@@ -47,7 +50,17 @@ struct QuikCaptureView: View {
     @State private var editedSummary = ""
     @State private var editedTags: [String] = []
 
-    @FocusState private var focusedField: Bool
+    /// Which header field holds the keyboard. Per-field (not a shared Bool) so a ghost clears for
+    /// the field you TAP and stays for the one you don't (Brief CD rule 3 — tap clears, leave returns).
+    private enum CaptureFocus: Hashable { case title, summary }
+    @FocusState private var focusedField: CaptureFocus?
+
+    /// Ghost shimmer triggers (Brief CD rule 2): bump when a NEW title/summary suggestion lands so the
+    /// ghost plays the lever's specular glint ONCE — never on a plain re-render/scroll/focus toggle.
+    @State private var titleShimmer = 0
+    @State private var summaryShimmer = 0
+    /// Ghost opacity (Brief CD1 look option). Shipped default = 45%; T overrides on device review.
+    private let ghostOpacity: Double = 0.45
 
     @State private var captureMode: CaptureMode? = nil
     @State private var showingNewTagSheet = false
@@ -273,6 +286,9 @@ struct QuikCaptureView: View {
                     nodeID: node.id,
                     showSummary: !editedSummary.isEmpty || node.summary.isEmpty,
                     showAttributes: true,
+                    // rule 6 — the inline ghost plays the lever shimmer for title/summary here, so the
+                    // feather must NOT also shimmer for the same offer (no double signal).
+                    suppressLeverShimmer: true,
                     onLeverTap: {
                         // SITE 2 (commit-before-fire) — capture is the FIRST surface a new
                         // user hits, where "the AI does nothing" gets formed. Commit the
@@ -280,7 +296,7 @@ struct QuikCaptureView: View {
                         // bind live but only persist on end-editing, so firing without
                         // dismissing the keyboard would read a stale/empty node. Awaited —
                         // a fire-and-forget save races the tray.
-                        focusedField = false
+                        focusedField = nil
                         Task {
                             await commitEditsIfChanged()
                             await store.commitPendingItemEdits(forNodeID: node.id)
@@ -288,17 +304,72 @@ struct QuikCaptureView: View {
                         }
                     }
                 ) {
-                    TextField("Title", text: $editedTitle, axis: .vertical)
-                        .font(appFont.titleFont(size: visualSettings.nodeTitle.size))
-                        .foregroundStyle(AppearancePalette.ink)
-                        .tint(AppearancePalette.ink)
-                        .focused($focusedField)
+                    // The ghost is a SIZE-DETERMINING sibling (ZStack), not an `.overlay`: an empty
+                    // field is one line tall, so an overlay would CLIP a two-line suggestion to
+                    // "Team Rocket Hallow…". The ZStack sizes to the union, so an empty field reserves
+                    // the suggestion's full wrapped height; the field grows past it once the user types.
+                    // The gray "Title" placeholder is suppressed while the ghost shows (rule 7 — the
+                    // ghost IS the fill, in app-ink); it returns on focus (tap-in) or when there's no
+                    // suggestion. The ghost stays mounted the whole time the field is empty, so the
+                    // shimmer trigger lands on the FIRST suggestion too (no onAppear replay needed).
+                    let tGhost = editedTitle.isEmpty ? node.surfacedProposal(kind: .title)?.text : nil
+                    ZStack(alignment: .topLeading) {
+                        if editedTitle.isEmpty {
+                            GhostFieldOverlay(
+                                text: tGhost ?? "",
+                                font: appFont.titleFont(size: visualSettings.nodeTitle.size),
+                                ink: AppearancePalette.ink,
+                                opacity: ghostOpacity,
+                                shimmerTrigger: titleShimmer,
+                                reduceMotion: reduceMotion
+                            )
+                            .opacity(focusedField == .title ? 0 : 1)   // tap → clears; leave → returns (rule 3)
+                            .animation(.easeInOut(duration: 0.18), value: focusedField == .title)
+                            // Accept (feather/tray) or Done commits the suggestion → the field fills and the
+                            // ghost fades out over the now-full-opacity real text (rule 5 — "animate to full
+                            // opacity"). Skipped under Reduce Motion (plain swap).
+                            .transition(reduceMotion ? .identity : .opacity)
+                        }
+                        TextField(tGhost != nil && focusedField != .title ? "" : "Title",
+                                  text: $editedTitle, axis: .vertical)
+                            .font(appFont.titleFont(size: visualSettings.nodeTitle.size))
+                            .foregroundStyle(AppearancePalette.ink)
+                            .tint(AppearancePalette.ink)
+                            .focused($focusedField, equals: .title)
+                            // Bump the shimmer only when the PROPOSAL text changes (a new suggestion), not
+                            // on focus/empty toggles — those don't change `surfacedProposal(.title)?.text`.
+                            .onChange(of: node.surfacedProposal(kind: .title)?.text) { _, newValue in
+                                if newValue != nil { titleShimmer += 1 }
+                            }
+                    }
+                    .animation(.easeInOut(duration: 0.3), value: editedTitle.isEmpty)
                 } summary: {
-                    TextField("Summary", text: $editedSummary, axis: .vertical)
-                        .font(appFont.font(size: visualSettings.nodeSummary.size))
-                        .foregroundStyle(AppearancePalette.ink.opacity(0.75))
-                        .tint(AppearancePalette.ink)
-                        .focused($focusedField)
+                    let sGhost = editedSummary.isEmpty ? node.surfacedProposal(kind: .summary)?.text : nil
+                    ZStack(alignment: .topLeading) {
+                        if editedSummary.isEmpty {
+                            GhostFieldOverlay(
+                                text: sGhost ?? "",
+                                font: appFont.font(size: visualSettings.nodeSummary.size),
+                                ink: AppearancePalette.ink,
+                                opacity: ghostOpacity * 0.85,   // summary already sits at 0.75 ink; keep it quieter than the title
+                                shimmerTrigger: summaryShimmer,
+                                reduceMotion: reduceMotion
+                            )
+                            .opacity(focusedField == .summary ? 0 : 1)
+                            .animation(.easeInOut(duration: 0.18), value: focusedField == .summary)
+                            .transition(reduceMotion ? .identity : .opacity)
+                        }
+                        TextField(sGhost != nil && focusedField != .summary ? "" : "Summary",
+                                  text: $editedSummary, axis: .vertical)
+                            .font(appFont.font(size: visualSettings.nodeSummary.size))
+                            .foregroundStyle(AppearancePalette.ink.opacity(0.75))
+                            .tint(AppearancePalette.ink)
+                            .focused($focusedField, equals: .summary)
+                            .onChange(of: node.surfacedProposal(kind: .summary)?.text) { _, newValue in
+                                if newValue != nil { summaryShimmer += 1 }
+                            }
+                    }
+                    .animation(.easeInOut(duration: 0.3), value: editedSummary.isEmpty)
                 } collections: {
                     collectionsRow(node: node)
                 } tags: {
@@ -1054,7 +1125,14 @@ private struct QuikCaptureHeroImageBanner: View {
     }
 }
 
-// MARK: - Brief CD — the ghost suggestion overlay (reusable; CD2 extracts it to Views/Shared for the share editor)
+// MARK: - Brief CD — the ghost suggestion overlay (reusable; proven dependency-free, see below)
+//
+// Share-sheet readiness (ws-share-sheet §3): this view is self-contained — SwiftUI + Foundation only,
+// no CorpusStore / app singletons / AppearancePalette / hexString (the ink is INJECTED; the glint is
+// Color.white). Verified by an isolated `swiftc -typecheck` against the iOS SDK with NO project files
+// (CLEAN). To actually reuse it in the share extension: move this struct to its own file under
+// Views/Shared and add that path to the `AirPadShare` target's `sources` in project.yml — a pure move,
+// NO code change. Left in place now (the share editor doesn't exist yet; smallest reversible change).
 
 /// Low-opacity model-suggested text rendered INSIDE an empty Title/Summary field of a fresh capture,
 /// that plays the lever's specular shimmer when a NEW suggestion lands (rule 2). Store-free +
@@ -1064,6 +1142,10 @@ private struct QuikCaptureHeroImageBanner: View {
 struct GhostFieldOverlay: View {
     let text: String
     let font: Font
+    /// The adaptive text ink, INJECTED (not read from `AppearancePalette`) so the component has zero
+    /// main-app-only dependencies and compiles unchanged into the share extension (ws-share-sheet §3).
+    /// The host passes `AppearancePalette.ink`; a share editor passes its own.
+    var ink: Color = .primary
     /// Ghost opacity (Brief CD1 look option; T picks). Applied to the adaptive ink.
     var opacity: Double = 0.45
     /// Bump when a NEW suggestion lands → the shimmer plays ONCE (rule 2). Never on re-render.
@@ -1076,45 +1158,53 @@ struct GhostFieldOverlay: View {
     /// it. The real capture leaves this false and drives ONE pass per new suggestion via `shimmerTrigger`.
     var demoLoop: Bool = false
 
-    /// Sweep phase as a multiple of the ghost width: rests off-screen RIGHT (glint hidden), snaps to
-    /// off-screen LEFT on a new suggestion, then animates across — the specular glint's one pass.
-    @State private var phase: CGFloat = 1.2  // rests off-screen RIGHT → glint hidden
+    /// One-shot sweep driven by the CLOCK, not by `withAnimation`: `playStart` stamps when a new
+    /// suggestion landed and the TimelineView derives the glint's phase from elapsed time (a
+    /// @State + withAnimation offset *inside a mask* does not animate — proven in the CD1 gallery).
+    /// `playing` pauses the TimelineView once the single pass finishes, so an idle ghost (the common
+    /// case while the user reads/types) costs zero per-frame work.
+    @State private var playStart: Date = .distantPast
+    @State private var playing: Bool = false
 
     var body: some View {
         let glyphs = Text(text).font(font).frame(maxWidth: .infinity, alignment: .leading)
-        Group {
-            if demoLoop && !reduceMotion {
-                // Gallery recording (`-GhostGallery`): TimelineView re-renders every frame, so the glint
-                // offset follows a continuous phase — a reliable repeated sweep (a @State+withAnimation
-                // offset inside a mask does not animate). The real capture uses the trigger path below.
-                TimelineView(.animation) { tl in
-                    glyphs
-                        .foregroundStyle(AppearancePalette.ink.opacity(opacity))
-                        .overlay { glint(at: Self.demoPhase(tl.date)) }
+        // Paused unless a one-shot is mid-pass (real capture) or the gallery is looping; Reduce Motion
+        // never animates (the resting dimness carries the ghost — rule 2's crossfade fallback).
+        TimelineView(.animation(paused: reduceMotion || !(playing || demoLoop))) { tl in
+            glyphs
+                .foregroundStyle(ink.opacity(opacity))
+                .overlay {
+                    if !reduceMotion, playing || demoLoop { glint(at: phase(at: tl.date)) }
                 }
-            } else {
-                glyphs
-                    .foregroundStyle(AppearancePalette.ink.opacity(opacity))
-                    .overlay { if !reduceMotion { glint(at: phase) } }
-                    .onChange(of: shimmerTrigger) { _, _ in
-                        guard !reduceMotion else { return }   // Reduce Motion → no sweep (ghost just appears)
-                        // Snap off-screen LEFT this runloop, animate across the NEXT — a synchronous
-                        // snap-then-animate collapses to a no-op, so the defer is load-bearing.
-                        phase = -1.2
-                        DispatchQueue.main.async {
-                            withAnimation(.easeInOut(duration: shimmerDuration)) { phase = 1.2 }
-                        }
-                    }
-            }
         }
         .allowsHitTesting(false)
-        .accessibilityLabel("Suggested: \(text)")
+        .accessibilityLabel(text.isEmpty ? "" : "Suggested: \(text)")
+        // The host keeps this overlay mounted for the whole empty-field lifetime and bumps
+        // `shimmerTrigger` only when the model proposes NEW text, so onChange fires exactly once per
+        // new suggestion (rule 2) — never on a focus toggle, scroll, or field re-empty (no remount play).
+        .onChange(of: shimmerTrigger) { _, _ in play() }
     }
 
-    /// Continuous demo phase (-1.3 → 1.3 every 2.4 s) for the gallery's TimelineView sweep.
-    private static func demoPhase(_ date: Date) -> CGFloat {
-        let t = date.timeIntervalSinceReferenceDate.truncatingRemainder(dividingBy: 2.4) / 2.4
-        return CGFloat(t) * 2.6 - 1.3
+    /// Start a single sweep. Reduce Motion shows the ghost with no glint (just the resting dimness).
+    private func play() {
+        guard !reduceMotion else { return }
+        playStart = Date()
+        playing = true
+        let ns = UInt64((shimmerDuration + 0.15) * 1_000_000_000)
+        Task { try? await Task.sleep(nanoseconds: ns); playing = false }   // pause after the one pass
+    }
+
+    /// Glint phase as a multiple of the ghost width: off-screen LEFT (-1.3) → off-screen RIGHT (1.3)
+    /// across `shimmerDuration`; the gallery loops it on a 2.4 s clock so the recording repeats. Rests
+    /// at 1.3 (off-screen → glint hidden) when a one-shot pass is over.
+    private func phase(at now: Date) -> CGFloat {
+        if demoLoop {
+            let t = now.timeIntervalSinceReferenceDate.truncatingRemainder(dividingBy: 2.4) / 2.4
+            return CGFloat(t) * 2.6 - 1.3
+        }
+        let e = now.timeIntervalSince(playStart)
+        guard e >= 0, e < shimmerDuration else { return 1.3 }   // rest off-screen RIGHT (hidden)
+        return CGFloat(e / shimmerDuration) * 2.6 - 1.3
     }
 
     /// The lever's specular glint (white, luminance-only — T is colourblind): a WHITE copy of the
@@ -1122,7 +1212,7 @@ struct GhostFieldOverlay: View {
     /// the glyphs. `p` rests at ±1.3 (off-screen → hidden); the sweep crosses 0 (glint over the text).
     private func glint(at p: CGFloat) -> some View {
         Text(text).font(font).frame(maxWidth: .infinity, alignment: .leading)
-            .foregroundStyle(Color(hexString: "FFFFFF"))
+            .foregroundStyle(Color.white)   // luminance-only glint (T is colourblind); no app-only helper
             .mask {
                 GeometryReader { geo in
                     let w = max(geo.size.width, 1)
@@ -1158,7 +1248,7 @@ struct GhostGalleryView: View {
                         Text("Placeholder vs ghost — must read as different (rule 7)")
                             .font(.system(size: 10)).foregroundStyle(AppearancePalette.ink.opacity(0.45))
                         Text("Title").font(faces[0].1.titleFont(size: titleSize)).foregroundStyle(Color(uiColor: .placeholderText))
-                        GhostFieldOverlay(text: ghostTitle, font: faces[0].1.titleFont(size: titleSize), opacity: 0.45, shimmerTrigger: trigger, demoLoop: true)
+                        GhostFieldOverlay(text: ghostTitle, font: faces[0].1.titleFont(size: titleSize), ink: AppearancePalette.ink, opacity: 0.45, shimmerTrigger: trigger, demoLoop: true)
                     }
                     Divider().overlay(AppearancePalette.ink.opacity(0.1))
                     ForEach(Array(faces.enumerated()), id: \.offset) { _, f in
@@ -1168,8 +1258,8 @@ struct GhostGalleryView: View {
                                 VStack(alignment: .leading, spacing: 3) {
                                     Text("\(Int(op * 100))% \(op == 0.45 ? "· recommended default" : "")")
                                         .font(.system(size: 9)).foregroundStyle(AppearancePalette.ink.opacity(op == 0.45 ? 0.7 : 0.4))
-                                    GhostFieldOverlay(text: ghostTitle, font: f.1.titleFont(size: titleSize), opacity: op, shimmerTrigger: trigger, demoLoop: true)
-                                    GhostFieldOverlay(text: ghostSummary, font: f.1.font(size: summarySize), opacity: op, shimmerTrigger: trigger, demoLoop: true)
+                                    GhostFieldOverlay(text: ghostTitle, font: f.1.titleFont(size: titleSize), ink: AppearancePalette.ink, opacity: op, shimmerTrigger: trigger, demoLoop: true)
+                                    GhostFieldOverlay(text: ghostSummary, font: f.1.font(size: summarySize), ink: AppearancePalette.ink, opacity: op, shimmerTrigger: trigger, demoLoop: true)
                                 }
                                 .padding(.bottom, 6)
                             }

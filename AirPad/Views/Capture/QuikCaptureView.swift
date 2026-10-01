@@ -62,6 +62,16 @@ struct QuikCaptureView: View {
     /// Ghost opacity (Brief CD1 look option). Shipped default = 45%; T overrides on device review.
     private let ghostOpacity: Double = 0.45
 
+    /// Brief CD4 (BP4) — armed a beat after the FIRST capture opens with an empty title, to show the
+    /// one-time ghost tip ("Leave it blank — AirPad names it when you hit Done"). Shows once, ever.
+    @State private var titleTipArmed = false
+
+    /// Brief CD5 (BP5) — the AI-refusal note. Shown (non-modal, once per capture) when Apple
+    /// Intelligence refused this node's authoring AND the on-device model isn't installed to recover
+    /// with (if it were installed, CD5's silent retry would have authored it). `onSetUp` opens Settings.
+    @State private var showRefusalSettings = false
+    @State private var refusalNoteDismissed = false
+
     @State private var captureMode: CaptureMode? = nil
     @State private var showingNewTagSheet = false
     @State private var showingNewCollectionSheet = false
@@ -122,6 +132,23 @@ struct QuikCaptureView: View {
             if let node {
                 content(node: node)
                     .environment(reorderController)
+                    // Brief CD4 (BP4) — the one-time ghost tip, ringing the title field. Shows a beat
+                    // after the first capture opens with an empty title; any tap dismisses + marks shown.
+                    .overlayPreferenceValue(FirstRunCalloutTargetsKey.self) { anchors in
+                        if titleTipArmed, !FirstRunCalloutKey.captureTitle.hasShown {
+                            FirstRunCalloutOverlay(key: .captureTitle, targetAnchors: anchors) {
+                                FirstRunCalloutKey.captureTitle.markShown()
+                                titleTipArmed = false
+                            }
+                            .id(FirstRunCalloutKey.captureTitle)
+                        }
+                    }
+                    .task {
+                        guard !FirstRunCalloutKey.captureTitle.hasShown else { return }
+                        try? await Task.sleep(for: .milliseconds(600))
+                        // Only if the user hasn't already started titling it (don't coach over typing).
+                        if !Task.isCancelled, editedTitle.isEmpty { titleTipArmed = true }
+                    }
                     .onAppear {
                         editedTitle   = node.title
                         editedSummary = node.summary
@@ -169,6 +196,10 @@ struct QuikCaptureView: View {
                     // Shared ATTRIBUTES "+" → Add-Field sheet (same as the detail view).
                     .sheet(isPresented: $showFieldSheet) {
                         FieldCreationSheet(nodeID: node.id)
+                    }
+                    // Brief CD5 — the refusal note's "Set up the private model" → Settings → Models.
+                    .sheet(isPresented: $showRefusalSettings) {
+                        SettingsView(initialAnchor: .models)
                     }
                     .sheet(isPresented: $showDocumentPicker) {
                         DocumentPickerView { urls in
@@ -343,6 +374,7 @@ struct QuikCaptureView: View {
                             }
                     }
                     .animation(.easeInOut(duration: 0.3), value: editedTitle.isEmpty)
+                    .firstRunCalloutTarget(FirstRunCalloutTargetID.captureTitleField)   // CD4 — the ghost tip rings this
                 } summary: {
                     let sGhost = editedSummary.isEmpty ? node.surfacedProposal(kind: .summary)?.text : nil
                     ZStack(alignment: .topLeading) {
@@ -376,6 +408,20 @@ struct QuikCaptureView: View {
                     tagsRow
                 } attributes: {
                     CaptureAttributesSection(nodeID: node.id, showFieldSheet: $showFieldSheet, measured: true)
+                }
+
+                // Brief CD5 (BP5) — Apple Intelligence refused this capture AND no on-device model is
+                // installed to recover with. A non-modal one-line note (the SAME LeverRefusalBanner the
+                // tray uses), once per capture; "Set up the private model" opens Settings → Models.
+                if node.embeddingFailureReason == "guardrail_refused",
+                   LocalModelService.shared.state != .ready, !refusalNoteDismissed {
+                    LeverRefusalBanner(
+                        message: "Apple Intelligence declined to name this one. AirPad's optional private model handles a wider range of subjects.",
+                        onSetUp: { showRefusalSettings = true },
+                        onDismiss: { withAnimation(.easeInOut(duration: 0.2)) { refusalNoteDismissed = true } }
+                    )
+                    .clipShape(RoundedRectangle(cornerRadius: 14, style: .continuous))
+                    .padding(.top, 8)
                 }
 
                 // Items — every entry is rendered as an `EntryCard`. Each

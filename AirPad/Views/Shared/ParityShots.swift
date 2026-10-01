@@ -639,6 +639,12 @@ struct DebugScreenHost: View {
             _ = n.recordProposal(kind: .summary, text: "Group costume idea for the office Halloween party.",
                                  currentSource: nil, sourceEmbedding: nil, sourceContentHash: "seed",
                                  posture: .propose, generatedAt: Self.epoch)
+            // Brief CD5 — `-GhostRefused YES`: mark this capture AI-refused (no proposals), so the
+            // capture-surface LeverRefusalBanner renders (the real trigger needs FM on a device).
+            if UserDefaults.standard.bool(forKey: "GhostRefused") {
+                n.proposals = nil
+                n.embeddingFailureReason = "guardrail_refused"
+            }
             store.nodes.append(n)
         }
         if screen == "capturemode" {

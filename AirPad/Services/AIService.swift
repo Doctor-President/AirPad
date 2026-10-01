@@ -271,7 +271,22 @@ actor AIService {
             // come from the local path (e.g. RouterError.localBadJSON), so carry its message
             // verbatim — the same "show what you're handed" derivation nodeFailure uses.
             if #available(iOS 26.0, *) {
-                return .failure(await nodeFailure(from: error, prompt: prompt))
+                let failure = await nodeFailure(from: error, prompt: prompt)
+                // Brief CD5 (BP5) — Apple Intelligence REFUSED. If the optional on-device model is
+                // INSTALLED (.ready — not necessarily opted in), silently retry with it rather than
+                // stranding the capture, and log which model authored. If it isn't installed, or the
+                // retry also fails, surface the ORIGINAL refusal (→ LeverRefusalBanner / capture note).
+                if case .refused = failure, await LocalModelService.shared.state == .ready {
+                    do {
+                        let r = try await ModelRouter.nodeSummaryLocalForced(prompt: prompt)
+                        print("[FM][processNode] refusal → on-device model authored (title/summary)")
+                        return .success(NodeAIOutput(title: r.title, summary: r.summary,
+                                                     tags: [], mood: nil, domain: nil, neighborhoodID: nil))
+                    } catch {
+                        print("[FM][processNode] refusal → on-device retry also failed: \(error)")
+                    }
+                }
+                return .failure(failure)
             } else {
                 return .failure(.failed(message: (error as? LocalizedError)?.errorDescription ?? error.localizedDescription))
             }
@@ -713,6 +728,19 @@ actor AIService {
                 switch genErr {
                 case .refusal, .guardrailViolation:
                     print("[FM][processSubstrate] guardrail refusal: \(error)")
+                    // Brief CD5 (BP5) — silent retry with the installed on-device model, same gate as
+                    // processNode. On success the substrate is authored locally; else surface the refusal.
+                    if await LocalModelService.shared.state == .ready {
+                        do {
+                            let r = try await ModelRouter.substrateLocalForced(prompt: prompt, responseLanguage: responseLanguage)
+                            if !(r.summary.isEmpty && r.folksonomy.isEmpty) {
+                                print("[FM][processSubstrate] refusal → on-device model authored (substrate)")
+                                return .ok(summary: r.summary, folksonomy: r.folksonomy)
+                            }
+                        } catch {
+                            print("[FM][processSubstrate] refusal → on-device retry also failed: \(error)")
+                        }
+                    }
                     return .guardrailRefused
                 default:
                     break

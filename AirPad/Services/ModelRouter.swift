@@ -442,6 +442,13 @@ enum ModelRouter {
         }
     }
 
+    /// Brief CD5 (BP5) — FORCE the on-device model regardless of the opt-in flag, for the silent
+    /// retry when Apple Intelligence REFUSES a title/summary and the model is installed (`.ready`).
+    /// The caller gates on readiness; this throws (via `generate`) if the model can't run.
+    static func nodeSummaryLocalForced(prompt: String) async throws -> NodeSummaryResult {
+        try await nodeSummaryLocal(prompt: prompt)
+    }
+
     @available(iOS 26.0, *)
     private static func nodeSummaryFoundationModel(prompt: String) async throws -> NodeSummaryResult {
         guard SystemLanguageModel.default.isAvailable else { throw RouterError.foundationModelUnavailable }
@@ -498,6 +505,12 @@ enum ModelRouter {
             guard #available(iOS 26.0, *) else { throw RouterError.foundationModelUnavailable }
             return try await substrateFoundationModel(prompt: prompt)
         }
+    }
+
+    /// Brief CD5 (BP5) — FORCE the on-device model for the silent retry when the substrate FM call
+    /// refuses and the model is installed (`.ready`). Caller gates on readiness.
+    static func substrateLocalForced(prompt: String, responseLanguage: String? = nil) async throws -> SubstrateResult {
+        try await substrateLocal(prompt: prompt, responseLanguage: responseLanguage)
     }
 
     @available(iOS 26.0, *)

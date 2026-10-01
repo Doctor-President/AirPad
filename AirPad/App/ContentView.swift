@@ -59,6 +59,14 @@ struct ContentView: View {
                            let textID = fresh.items.first(where: { $0.type == .text })?.id {
                             store.pendingAutoFocusItemID = textID
                         }
+                        // Brief CD — REPRODUCE THE DEVICE BUG: the detail-exit handler clears
+                        // router.isCapturing during the "+"→push on device. Clear it here too, so the
+                        // XCUITest composes with cap=0 — and the ghost must STILL appear via the robust
+                        // `isComposing` signal. (`-RealCapturePlusKeepFlag` skips this for the old path.)
+                        if !ProcessInfo.processInfo.arguments.contains("-RealCapturePlusKeepFlag") {
+                            router.isCapturing = false
+                            router.captureNodeID = nil
+                        }
                     }
                 }
             }

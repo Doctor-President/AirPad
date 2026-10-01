@@ -23,9 +23,13 @@ struct NodeDetailView: View {
     // MARK: - Capture mode (QuikCapture stage 1)
 
     /// True when this detail view is the active capture surface (opened from the
-    /// Dashboard "+"). Drives the capture chrome + keeps the Librarian ducked.
+    /// Dashboard "+"). Drives the capture chrome, the ghost gate, and keeps the Librarian ducked.
+    /// Brief CD fix — OR the ROBUST store-level composing signal, because the detail-exit handler in
+    /// ContentView was clearing `router.isCapturing` during the "+"→push, so on device the ghost gate
+    /// saw capture=false and NOTHING surfaced while composing. `composingNodeIDs` is set at
+    /// `createCaptureNode` and cleared at Done, so it can't be cleared by navigation lifecycle.
     private var isCaptureMode: Bool {
-        router.isCapturing && router.captureNodeID == nodeID
+        (router.isCapturing && router.captureNodeID == nodeID) || store.isComposing(nodeID: nodeID)
     }
 
     /// Whether anything has actually been captured yet (drives the "Done"
@@ -535,6 +539,9 @@ struct NodeDetailView: View {
                     // rule 6 — in capture mode the inline ghost plays the lever shimmer, so suppress the
                     // feather's. In NORMAL viewing (no ghost) the feather shimmer is the only signal — keep it.
                     suppressLeverShimmer: isCaptureMode,
+                    showDiagnostics: isCaptureMode,   // Brief CD — TestFlight-readable capture HUD (capture only)
+                    diagIsCapturing: router.isCapturing,
+                    diagIsComposing: store.isComposing(nodeID: nodeID),
                     titleGhost: tGhostText.map {
                         GhostFieldConfig(text: $0, font: entryTitleFont, hidden: focusedField == .title,
                                          shimmerTrigger: titleShimmer, opacity: ghostOpacity)

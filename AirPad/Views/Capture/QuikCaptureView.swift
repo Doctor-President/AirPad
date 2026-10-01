@@ -50,10 +50,9 @@ struct QuikCaptureView: View {
     @State private var editedSummary = ""
     @State private var editedTags: [String] = []
 
-    /// Which header field holds the keyboard. Per-field (not a shared Bool) so a ghost clears for
-    /// the field you TAP and stays for the one you don't (Brief CD rule 3 — tap clears, leave returns).
-    private enum CaptureFocus: Hashable { case title, summary }
-    @FocusState private var focusedField: CaptureFocus?
+    /// Which header field holds the keyboard. Per-field (the shared `CaptureHeaderFocus`) so a ghost
+    /// clears for the field you TAP and stays for the one you don't (Brief CD rule 3).
+    @FocusState private var focusedField: CaptureHeaderFocus?
 
     /// Ghost shimmer triggers (Brief CD rule 2): bump when a NEW title/summary suggestion lands so the
     /// ghost plays the lever's specular glint ONCE — never on a plain re-render/scroll/focus toggle.
@@ -313,6 +312,12 @@ struct QuikCaptureView: View {
                 // (`EntryVisualSettings`) with NodeDetailView, so the rhythm can't
                 // drift. `showAttributes: true` — the "+" is the first-field entry
                 // point on the capture surface, so it's always shown.
+                //
+                // Brief CD — QuikCapture is ALWAYS a fresh capture, so it offers ghost configs
+                // unconditionally (gated only on the field being empty + a surfaced proposal). The
+                // SHARED header renders them, so the detail-view capture path gets the same ghosts.
+                let tGhostText = editedTitle.isEmpty ? node.surfacedProposal(kind: .title)?.text : nil
+                let sGhostText = editedSummary.isEmpty ? node.surfacedProposal(kind: .summary)?.text : nil
                 CaptureHeader(
                     nodeID: node.id,
                     showSummary: !editedSummary.isEmpty || node.summary.isEmpty,
@@ -320,6 +325,15 @@ struct QuikCaptureView: View {
                     // rule 6 — the inline ghost plays the lever shimmer for title/summary here, so the
                     // feather must NOT also shimmer for the same offer (no double signal).
                     suppressLeverShimmer: true,
+                    titleGhost: tGhostText.map {
+                        GhostFieldConfig(text: $0, font: appFont.titleFont(size: visualSettings.nodeTitle.size),
+                                         hidden: focusedField == .title, shimmerTrigger: titleShimmer, opacity: ghostOpacity)
+                    },
+                    summaryGhost: sGhostText.map {
+                        GhostFieldConfig(text: $0, font: appFont.font(size: visualSettings.nodeSummary.size),
+                                         hidden: focusedField == .summary, shimmerTrigger: summaryShimmer,
+                                         opacity: ghostOpacity * 0.85)   // summary sits at 0.75 ink; keep it quieter than the title
+                    },
                     onLeverTap: {
                         // SITE 2 (commit-before-fire) — capture is the FIRST surface a new
                         // user hits, where "the AI does nothing" gets formed. Commit the
@@ -335,73 +349,30 @@ struct QuikCaptureView: View {
                         }
                     }
                 ) {
-                    // The ghost is a SIZE-DETERMINING sibling (ZStack), not an `.overlay`: an empty
-                    // field is one line tall, so an overlay would CLIP a two-line suggestion to
-                    // "Team Rocket Hallow…". The ZStack sizes to the union, so an empty field reserves
-                    // the suggestion's full wrapped height; the field grows past it once the user types.
                     // The gray "Title" placeholder is suppressed while the ghost shows (rule 7 — the
                     // ghost IS the fill, in app-ink); it returns on focus (tap-in) or when there's no
-                    // suggestion. The ghost stays mounted the whole time the field is empty, so the
-                    // shimmer trigger lands on the FIRST suggestion too (no onAppear replay needed).
-                    let tGhost = editedTitle.isEmpty ? node.surfacedProposal(kind: .title)?.text : nil
-                    ZStack(alignment: .topLeading) {
-                        if editedTitle.isEmpty {
-                            GhostFieldOverlay(
-                                text: tGhost ?? "",
-                                font: appFont.titleFont(size: visualSettings.nodeTitle.size),
-                                ink: AppearancePalette.ink,
-                                opacity: ghostOpacity,
-                                shimmerTrigger: titleShimmer,
-                                reduceMotion: reduceMotion
-                            )
-                            .opacity(focusedField == .title ? 0 : 1)   // tap → clears; leave → returns (rule 3)
-                            .animation(.easeInOut(duration: 0.18), value: focusedField == .title)
-                            // Accept (feather/tray) or Done commits the suggestion → the field fills and the
-                            // ghost fades out over the now-full-opacity real text (rule 5 — "animate to full
-                            // opacity"). Skipped under Reduce Motion (plain swap).
-                            .transition(reduceMotion ? .identity : .opacity)
+                    // suggestion. The ghost itself is drawn by the shared `CaptureHeader` (one place →
+                    // every capture surface gets it); the shimmer trigger bumps on a NEW proposal.
+                    TextField(tGhostText != nil && focusedField != .title ? "" : "Title",
+                              text: $editedTitle, axis: .vertical)
+                        .font(appFont.titleFont(size: visualSettings.nodeTitle.size))
+                        .foregroundStyle(AppearancePalette.ink)
+                        .tint(AppearancePalette.ink)
+                        .focused($focusedField, equals: .title)
+                        .onChange(of: node.surfacedProposal(kind: .title)?.text) { _, newValue in
+                            if newValue != nil { titleShimmer += 1 }
                         }
-                        TextField(tGhost != nil && focusedField != .title ? "" : "Title",
-                                  text: $editedTitle, axis: .vertical)
-                            .font(appFont.titleFont(size: visualSettings.nodeTitle.size))
-                            .foregroundStyle(AppearancePalette.ink)
-                            .tint(AppearancePalette.ink)
-                            .focused($focusedField, equals: .title)
-                            // Bump the shimmer only when the PROPOSAL text changes (a new suggestion), not
-                            // on focus/empty toggles — those don't change `surfacedProposal(.title)?.text`.
-                            .onChange(of: node.surfacedProposal(kind: .title)?.text) { _, newValue in
-                                if newValue != nil { titleShimmer += 1 }
-                            }
-                    }
-                    .animation(.easeInOut(duration: 0.3), value: editedTitle.isEmpty)
-                    .firstRunCalloutTarget(FirstRunCalloutTargetID.captureTitleField)   // CD4 — the ghost tip rings this
+                        .firstRunCalloutTarget(FirstRunCalloutTargetID.captureTitleField)   // CD4 — the ghost tip rings this
                 } summary: {
-                    let sGhost = editedSummary.isEmpty ? node.surfacedProposal(kind: .summary)?.text : nil
-                    ZStack(alignment: .topLeading) {
-                        if editedSummary.isEmpty {
-                            GhostFieldOverlay(
-                                text: sGhost ?? "",
-                                font: appFont.font(size: visualSettings.nodeSummary.size),
-                                ink: AppearancePalette.ink,
-                                opacity: ghostOpacity * 0.85,   // summary already sits at 0.75 ink; keep it quieter than the title
-                                shimmerTrigger: summaryShimmer,
-                                reduceMotion: reduceMotion
-                            )
-                            .opacity(focusedField == .summary ? 0 : 1)
-                            .animation(.easeInOut(duration: 0.18), value: focusedField == .summary)
-                            .transition(reduceMotion ? .identity : .opacity)
+                    TextField(sGhostText != nil && focusedField != .summary ? "" : "Summary",
+                              text: $editedSummary, axis: .vertical)
+                        .font(appFont.font(size: visualSettings.nodeSummary.size))
+                        .foregroundStyle(AppearancePalette.ink.opacity(0.75))
+                        .tint(AppearancePalette.ink)
+                        .focused($focusedField, equals: .summary)
+                        .onChange(of: node.surfacedProposal(kind: .summary)?.text) { _, newValue in
+                            if newValue != nil { summaryShimmer += 1 }
                         }
-                        TextField(sGhost != nil && focusedField != .summary ? "" : "Summary",
-                                  text: $editedSummary, axis: .vertical)
-                            .font(appFont.font(size: visualSettings.nodeSummary.size))
-                            .foregroundStyle(AppearancePalette.ink.opacity(0.75))
-                            .tint(AppearancePalette.ink)
-                            .focused($focusedField, equals: .summary)
-                            .onChange(of: node.surfacedProposal(kind: .summary)?.text) { _, newValue in
-                                if newValue != nil { summaryShimmer += 1 }
-                            }
-                    }
-                    .animation(.easeInOut(duration: 0.3), value: editedSummary.isEmpty)
                 } collections: {
                     collectionsRow(node: node)
                 } tags: {

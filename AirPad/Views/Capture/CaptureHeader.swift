@@ -76,6 +76,29 @@ enum CaptureHeaderMeasure {
 /// Surface-specific leaves are slots (like `CaptureChromeBar`'s leading slot): the
 /// Title/Summary fields (with their own bindings, focus, and NodeDetail's band-
 /// collapse opacity), the collections/tags chip rows, and the ATTRIBUTES section.
+/// Per-field focus for the capture header, shared by both fresh-capture surfaces (QuikCaptureView +
+/// NodeDetailView in capture mode) so a ghost clears for the field you TAP and stays for the other
+/// (Brief CD rule 3). Per-field (not a shared Bool) is what makes that distinction possible.
+enum CaptureHeaderFocus: Hashable { case title, summary }
+
+/// Brief CD — everything `CaptureHeader` needs to draw a ghost suggestion INSIDE a header field,
+/// computed by the host (it owns the proposal lookup, the fresh-capture gate, the field's resolved
+/// font, and the focus state). Nil ⇒ no ghost (a re-opened entry, a non-empty field, no proposal, or
+/// the setting off). The host passes a config ONLY for a FRESH capture — this is where rule 5b lives.
+struct GhostFieldConfig {
+    /// The model's suggested text.
+    let text: String
+    /// The field's RESOLVED font — host-specific (QuikCapture uses the app font; the detail view uses
+    /// the entry's per-entry effective font), so the ghost always matches the field it fills.
+    let font: Font
+    /// The field holds the keyboard right now → dim the ghost to 0 (tap clears; leave returns — rule 3).
+    var hidden: Bool = false
+    /// Bump on a NEW suggestion so the ghost plays the lever glint once (rule 2).
+    var shimmerTrigger: Int = 0
+    /// Brief CD1 look option (T picks; shipped 45%).
+    var opacity: Double = 0.45
+}
+
 struct CaptureHeader<Title: View, Summary: View, Collections: View, Tags: View, Attributes: View>: View {
     let nodeID: String
     /// Whether the summary field renders (the surfaces share the same predicate).
@@ -87,6 +110,12 @@ struct CaptureHeader<Title: View, Summary: View, Collections: View, Tags: View, 
     /// Brief CD rule 6 — the fresh-capture surface sets this so the feather doesn't ALSO shimmer for a
     /// title/summary offer the inline ghost is already playing. Default false (detail view keeps it).
     var suppressLeverShimmer: Bool = false
+    /// Brief CD — the ghost to render INSIDE the title / summary field, or nil. The host passes these
+    /// ONLY for a fresh capture (QuikCapture always; the detail view only when `isCaptureMode`), so a
+    /// re-opened entry NEVER shows a ghost (rule 5b). One place renders them → every capture surface
+    /// that uses this header gets ghosts, by construction.
+    var titleGhost: GhostFieldConfig? = nil
+    var summaryGhost: GhostFieldConfig? = nil
     let onLeverTap: () -> Void
     @ViewBuilder var title: Title
     @ViewBuilder var summary: Summary
@@ -95,15 +124,36 @@ struct CaptureHeader<Title: View, Summary: View, Collections: View, Tags: View, 
     @ViewBuilder var attributes: Attributes
 
     @State private var laneStackHeight: CGFloat = 60
+    @Environment(\.accessibilityReduceMotion) private var reduceMotion
     private var s: EntryVisualSettings { .shared }
+
+    /// Wrap a header field (the host's TextField) in a ZStack with its ghost, when present. The ghost
+    /// is a SIZE-DETERMINING sibling (not an `.overlay`): an empty field is one line tall, so an overlay
+    /// would clip a two-line suggestion — the ZStack sizes to the union so the field reserves the full
+    /// wrapped height; the field grows past it once the user types. Placeholder suppression + the
+    /// shimmer trigger live in the host (it builds the TextField); this only renders the ghost.
+    @ViewBuilder private func withGhost<V: View>(_ field: V, _ cfg: GhostFieldConfig?) -> some View {
+        if let cfg {
+            ZStack(alignment: .topLeading) {
+                GhostFieldOverlay(text: cfg.text, font: cfg.font, ink: AppearancePalette.ink,
+                                  opacity: cfg.opacity, shimmerTrigger: cfg.shimmerTrigger,
+                                  reduceMotion: reduceMotion)
+                    .opacity(cfg.hidden ? 0 : 1)                               // tap → clears (rule 3)
+                    .animation(.easeInOut(duration: 0.18), value: cfg.hidden)
+                field
+            }
+        } else {
+            field
+        }
+    }
 
     var body: some View {
         VStack(alignment: .leading, spacing: 0) {
-            title
+            withGhost(title, titleGhost)
                 .measureHeaderBound("title")
 
             if showSummary {
-                summary
+                withGhost(summary, summaryGhost)
                     .measureHeaderBound("summary")     // measure CONTENT, then pad
                     .padding(.top, s.titleToSummary)   // #3 — one value, both surfaces
             }

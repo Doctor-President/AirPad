@@ -376,6 +376,15 @@ final class CorpusStore {
     /// Card worked, Map didn't) — decisions.md 2026-07-06.
     private var enrichmentTasks: [String: Task<Void, Never>] = [:]
 
+    /// Brief CD3 (BP2) — trigger tightening. The eager compose pass fires on a typing PAUSE (a
+    /// content-change settles) or a piece landing, but never more often than `minEagerInterval`:
+    /// `lastEagerFireAt` stamps each fire, and a pass that would land too soon DEFERS to the earliest
+    /// allowed moment (re-reading + re-gating then), so a flurry of edits yields ONE pass, not many.
+    /// Target 1–3 eager passes per typical capture (BP0 measured 7 for a long note).
+    static let eagerTypingPause: TimeInterval = 2.0   // the "settle" window (was 500 ms — fired on every micro-pause)
+    static let minEagerInterval: TimeInterval = 9.0   // floor between eager fires (BP2 "~8–10 s")
+    private var lastEagerFireAt: [String: Date] = [:]
+
     /// Brief BP3 — node IDs whose Done ran while the content wasn't ready yet (a link whose OG
     /// hadn't landed → `.noContent`). `applyOGFetch` consumes this when the OG arrives and authors
     /// ONCE from the whole entry. A precise "deferred Done intent" marker, distinct from
@@ -1055,6 +1064,11 @@ final class CorpusStore {
                 // Pure in-memory; no FM, no corpus access.
                 if ProcessInfo.processInfo.arguments.contains("-EnrichmentGateSelfTest") {
                     NSLog("[EnrichmentGateSelfTest] %@", EnrichmentGateSelfTest.run())
+                }
+                // Brief CD3 (BP2) — trigger tightening: eager PASSES per capture, before vs after the
+                // 2 s pause + 9 s floor, over three capture timelines. Pure; no FM, no corpus.
+                if ProcessInfo.processInfo.arguments.contains("-GhostTriggerSelfTest") {
+                    NSLog("[GhostTriggerSelfTest] %@", GhostTriggerSelfTest.run())
                 }
                 // Brief BL — pure link follow-up logic (cleanTitle every source, article-first
                 // readable, linkItems lift + snapshot preservation, gate input). No net/FM.
@@ -3403,7 +3417,9 @@ final class CorpusStore {
         bug17Log.notice("SCHEDULED node=\(nodeID, privacy: .public)")
         enrichmentTasks[nodeID]?.cancel()
         enrichmentTasks[nodeID] = Task(priority: .userInitiated) { @MainActor [weak self] in
-            try? await Task.sleep(for: .milliseconds(500))
+            // CD3 (BP2) — wait out the typing-PAUSE window, not a micro-pause. Re-arming on each edit
+            // cancels this, so a fire only follows a genuine settle (or a piece landing).
+            try? await Task.sleep(for: .seconds(Self.eagerTypingPause))
             guard let self, !Task.isCancelled else { return }
             defer { self.enrichmentTasks[nodeID] = nil }
             guard let node = self.nodes.first(where: { $0.id == nodeID }) else { return }
@@ -3445,7 +3461,7 @@ final class CorpusStore {
             // `.composing`: the substrate half asks only "are you MISSING?", so a
             // note being written doesn't re-derive its substrate at every pause.
             // Done asks the staleness question instead (`.committed`).
-            let needs = self.enrichmentNeeds(for: node, at: .composing)
+            var needs = self.enrichmentNeeds(for: node, at: .composing)
             bug17Log.notice("GATE node=\(nodeID, privacy: .public) needs=\(needs.any) needsAuthorship=\(needs.authorship) needsSubstrate=\(needs.substrate) titleEmpty=\(title.isEmpty) summaryEmpty=\(summary.isEmpty) contentLen=\(content.count) titleSource=\(String(describing: node.titleSource), privacy: .public) summarySource=\(String(describing: node.summarySource), privacy: .public) → fire=\(needs.any && !content.isEmpty)")
             guard needs.any, !content.isEmpty else {
                 // A gate that says "nothing needed" is a CONCLUSION about this node,
@@ -3455,6 +3471,25 @@ final class CorpusStore {
                 print("[Enrich] skip node=\(nodeID) needs=\(needs.any) contentLen=\(content.count)")
                 return
             }
+            // CD3 (BP2) — the minimum-interval floor. If we fired recently, DON'T fire again now; wait
+            // out the remainder, then re-read + re-gate (content may have changed or been reconciled in
+            // the meantime). A new edit during the wait cancels this task, so this never double-fires.
+            if let last = self.lastEagerFireAt[nodeID] {
+                let elapsed = Date().timeIntervalSince(last)
+                if elapsed < Self.minEagerInterval {
+                    try? await Task.sleep(for: .seconds(Self.minEagerInterval - elapsed))
+                    guard !Task.isCancelled else { return }
+                    // Re-read + re-gate against the LATEST content — it may have changed (or been
+                    // reconciled) during the floor wait, so author only what is still blank.
+                    guard let fresh = self.nodes.first(where: { $0.id == nodeID }) else { return }
+                    needs = self.enrichmentNeeds(for: fresh, at: .composing)
+                    guard needs.any else {
+                        print("[Enrich] interval-settled node=\(nodeID) (nothing left to do after floor)")
+                        return
+                    }
+                }
+            }
+            self.lastEagerFireAt[nodeID] = Date()
             print("[Enrich] firing node=\(nodeID) needsAuthorship=\(needs.authorship) needsSubstrate=\(needs.substrate) contentLen=\(content.count)")
             await self.processNodeWithAI(nodeID: nodeID,
                                          suppressTagSheet: true,

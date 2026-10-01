@@ -217,7 +217,12 @@ actor AIService {
             // `-StubNonEmptyTitle` to force a title for the wiring-only baseline.
             let (authored, _) = Self.classifyContent(from: node)
             let forceTitle = ProcessInfo.processInfo.arguments.contains("-StubNonEmptyTitle")
-            let title = (authored.isEmpty && !forceTitle) ? "" : "Stub Title"
+            // ★ Brief CF — `-StubBlankTitleAlways` blanks the title even for PROSE, mimicking the
+            // corpus-aware FM deferring to an identical-content neighbour (T's duplicate-paste:
+            // summary fills, title blanks though the note has prose). Exercises the showing-ghost
+            // fallback in `runDupTitleCommitSelfTest`.
+            let forceBlank = ProcessInfo.processInfo.arguments.contains("-StubBlankTitleAlways")
+            let title = ((authored.isEmpty || forceBlank) && !forceTitle) ? "" : "Stub Title"
             return .success(NodeAIOutput(title: title, summary: "Stub summary.",
                                          tags: [], mood: nil, domain: nil, neighborhoodID: nil))
         }

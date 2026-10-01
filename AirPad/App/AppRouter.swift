@@ -34,6 +34,13 @@ final class AppRouter {
 
     static var shared: AppRouter?
 
+    /// Brief CE — a cold launch from the Quick Capture CONTROL fires the `airpad://quikcapture` deep
+    /// link via `SceneDelegate.willConnectTo` BEFORE this router exists, so `AppRouter.shared?` is nil
+    /// and the write no-ops (→ lands on Recents). SceneDelegate latches this flag instead; the real
+    /// router consumes it in `init()`, so the route survives regardless of init-vs-scene-connect order.
+    /// (The Action Button runs warm → `shared` already set → the direct write works; this fixes cold.)
+    static var pendingQuikCapture = false
+
     var entryMode: EntryMode = .recents
 
     /// Mirror of the in-layout Librarian panel's detent — `true` when
@@ -194,6 +201,13 @@ final class AppRouter {
 
     init() {
         AppRouter.shared = self
+        // Brief CE — consume a deep link that arrived before this router existed (cold launch from the
+        // Control). Set BEFORE the view tree first reads `entryMode`, so the app opens straight into
+        // Quick Capture instead of flashing Recents.
+        if AppRouter.pendingQuikCapture {
+            entryMode = .quikCapture
+            AppRouter.pendingQuikCapture = false
+        }
         // Wire the persistence seam once. ChatSession holds the store
         // weakly so the router stays the sole owner.
         chat.store = chatStore

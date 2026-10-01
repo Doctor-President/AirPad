@@ -1081,6 +1081,12 @@ final class CorpusStore {
                 if ProcessInfo.processInfo.arguments.contains("-DupProposalSelfTest") {
                     NSLog("[DupProposalSelfTest] %@", await runDupProposalSelfTest())
                 }
+                // Brief CF — rule 2: a SHOWING ghost must commit at Done for BOTH fields, even when
+                // the re-author blanks the title (duplicate content). Needs `-StubAuthorModel
+                // -StubBlankTitleAlways`. Two identical entries must each keep their title.
+                if ProcessInfo.processInfo.arguments.contains("-DupTitleCommitSelfTest") {
+                    NSLog("[DupTitleCommitSelfTest] %@", await runDupTitleCommitSelfTest())
+                }
                 // Brief BM0 — the Done-matrix driver (needs `-StubAuthorModel` alongside).
                 if ProcessInfo.processInfo.arguments.contains("-BMDoneMatrix") {
                     NSLog("[BMDoneMatrix] %@", await runBMDoneMatrix())
@@ -3112,6 +3118,11 @@ final class CorpusStore {
                                 needsAuthorship: needs.authorship,
                                 needsSubstrate: needs.substrate,
                                 posture: posture)
+        // Brief CF — rule 2: whatever ghost was SHOWING at Done must commit, for BOTH fields.
+        // The re-author above can leave a field EMPTY (the corpus-aware FM deferring to an
+        // identical-content neighbour — T's duplicate-paste: summary fills, title blanks). If so,
+        // commit the still-surfacing ghost rather than stranding the field blank. Fills only.
+        if posture == .automatic { await commitShowingGhosts(nodeID: nodeID) }
     }
 
     /// Brief BI — promote a FRESH, content-matching proposal into an UNTITLED aspect at
@@ -3125,10 +3136,40 @@ final class CorpusStore {
         let hash = cardContentHash(for: node)
         for kind in EnrichmentGate.authoredAspects {
             let source: TagSource? = (kind == .title) ? node.titleSource : node.summarySource
-            guard source == nil,
-                  let p = node.proposals?.first(where: { $0.kind == kind && $0.state == .fresh }),
-                  p.sourceContentHash == hash else { continue }
-            print("[Enrich] PROMOTE node=\(nodeID) kind=\(kind) (no model call)")
+            let p = node.proposals?.first(where: { $0.kind == kind && $0.state == .fresh })
+            // Brief CF HUD — prove WHY each aspect promotes or is skipped at Done (the user asked
+            // for proof, not inference). A `hashNE` skip + a surfacing ghost is the exact bug the
+            // `commitShowingGhosts` fallback below catches.
+            if let source {
+                CaptureDiagLog.shared.add("\(nodeID.suffix(4)) PROMO-SKIP \(kind) src=\(source)")
+            } else if let p, p.sourceContentHash == hash {
+                CaptureDiagLog.shared.add("\(nodeID.suffix(4)) PROMOTE \(kind)")
+                print("[Enrich] PROMOTE node=\(nodeID) kind=\(kind) (no model call)")
+                await acceptProposal(nodeID: nodeID, kind: kind)
+            } else if let p {
+                let ph = p.sourceContentHash.map { String($0.suffix(4)) } ?? "nil"
+                CaptureDiagLog.shared.add("\(nodeID.suffix(4)) PROMO-SKIP \(kind) hashNE p=\(ph) now=\(String(hash.suffix(4)))")
+            } else {
+                CaptureDiagLog.shared.add("\(nodeID.suffix(4)) PROMO-SKIP \(kind) no-fresh")
+            }
+        }
+    }
+
+    /// Brief CF — rule 2 safety net. After promote + re-author, an authored aspect can still be
+    /// EMPTY while its ghost is on screen: `surfacedProposal` ignores the content hash (so a
+    /// drifted ghost keeps showing) but `promoteMatchingProposals` requires a hash match (so it
+    /// skipped), and the Done re-author then returned an empty field (the corpus-aware FM deferring
+    /// to an identical-content neighbour — T's duplicate-paste case). The rule: whatever ghost was
+    /// SHOWING at Done must commit, for BOTH fields. So for any still-unset aspect whose ghost is
+    /// surfacing, commit it. FILLS ONLY — a field the promote/author already wrote has a non-nil
+    /// source and is skipped, so this never blanks or overrides.
+    private func commitShowingGhosts(nodeID: String) async {
+        guard let node = nodes.first(where: { $0.id == nodeID }) else { return }
+        for kind in EnrichmentGate.authoredAspects {
+            let source: TagSource? = (kind == .title) ? node.titleSource : node.summarySource
+            guard source == nil, node.surfacedProposal(kind: kind) != nil else { continue }
+            CaptureDiagLog.shared.add("\(nodeID.suffix(4)) GHOST-COMMIT \(kind)")
+            print("[Enrich] GHOST-COMMIT node=\(nodeID) kind=\(kind) (rule 2 — showing ghost)")
             await acceptProposal(nodeID: nodeID, kind: kind)
         }
     }
@@ -3216,6 +3257,60 @@ final class CorpusStore {
         return pass
             ? "PASS — both identical-content entries got their own title proposal"
             : "FAIL — a duplicate suppressed a proposal: dup-a=\(got[0]) dup-b=\(got[1])"
+    }
+
+    /// Brief CF — rule 2 regression: whatever ghost is SHOWING at Done must commit, for BOTH
+    /// title and summary, and TWO entries with identical text + an identical title proposal must
+    /// EACH keep their title (no cross-entry title-uniqueness blanking — two entries may share a
+    /// title). Reproduces the device bug headlessly: each node carries a fresh, SURFACING
+    /// title+summary ghost whose `sourceContentHash` is STALE (as on device, where the hash drifts
+    /// between the eager pass and Done), so `promoteMatchingProposals` skips it; the Done re-author
+    /// returns an EMPTY title (`-StubBlankTitleAlways`) while summarising. `commitShowingGhosts`
+    /// must then commit the on-screen title ghost rather than leaving the field blank.
+    /// Needs `-StubAuthorModel -StubBlankTitleAlways`.
+    func runDupTitleCommitSelfTest() async -> String {
+        let text = "The mask falls off and the face underneath is the one we always suspected."
+        let sharedTitle = "The Mask Falls Off"
+        let blankStub = ProcessInfo.processInfo.arguments.contains("-StubBlankTitleAlways")
+        let priorSetting = UserDefaults.standard.object(forKey: AuthorshipPosture.delegateSettingKey)
+        UserDefaults.standard.set(true, forKey: AuthorshipPosture.delegateSettingKey)
+        defer { UserDefaults.standard.set(priorSetting, forKey: AuthorshipPosture.delegateSettingKey) }
+        let ids = ["dtc-a", "dtc-b"]
+        for id in ids {
+            var n = Node(id: id, createdAt: Date(), updatedAt: Date(), title: "", summary: "", tags: [])
+            n.items = [NodeItem(id: id + "-t", type: .text, createdAt: Date(), content: text)]
+            n.entrySchemaVersion = 1
+            await addNode(n, position: .zero)
+            // A SURFACING ghost with a STALE hash: it SHOWS (surfacedProposal ignores the hash) but
+            // promote SKIPS it (hash mismatch) — the exact device asymmetry rule 2 is about.
+            await mutateNode(id: id) { m in
+                _ = m.recordProposal(kind: .title, text: sharedTitle, currentSource: nil,
+                                     sourceEmbedding: nil, sourceContentHash: "STALE-EAGER-HASH",
+                                     posture: .propose, generatedAt: Date())
+                _ = m.recordProposal(kind: .summary, text: "A shared summary ghost.", currentSource: nil,
+                                     sourceEmbedding: nil, sourceContentHash: "STALE-EAGER-HASH",
+                                     posture: .propose, generatedAt: Date())
+            }
+        }
+        for id in ids { await enrichIfNeeded(nodeID: id, at: .committed) }
+        func read(_ id: String) -> (t: String, ts: TagSource?, s: String, ss: TagSource?) {
+            guard let n = nodes.first(where: { $0.id == id }) else { return ("<gone>", nil, "<gone>", nil) }
+            return (n.title, n.titleSource, n.summary, n.summarySource)
+        }
+        let rows = ids.map { ($0, read($0)) }
+        for id in ids { await deleteNode(id: id) }
+        var fails: [String] = []
+        for (id, r) in rows {
+            if r.t.isEmpty || r.ts != .model {
+                fails.append("\(id) title=\(r.t.isEmpty ? "<EMPTY>" : "\"\(r.t)\"")[\(r.ts.map { "\($0)" } ?? "nil")]")
+            }
+            if r.s.isEmpty || r.ss != .model { fails.append("\(id) summary empty/not-model") }
+            if blankStub && r.t != sharedTitle { fails.append("\(id) title not the surfaced ghost (got \"\(r.t)\")") }
+        }
+        let head = blankStub ? "stub=blankTitle" : "stub=plain ⚠ pass -StubBlankTitleAlways to exercise the fallback"
+        return fails.isEmpty
+            ? "PASS [\(head)] — both identical-content entries committed their SHOWING title+summary ghost at Done"
+            : "FAIL [\(head)] — \(fails.joined(separator: "; "))"
     }
 
     func runBMDoneMatrix() async -> String {
@@ -7663,7 +7758,7 @@ final class CorpusStore {
             // `result` is nil when the gate skipped the authorship call: no new answer,
             // so nothing to record and the proposal already on the node stands.
             if let result {
-                CaptureDiagLog.shared.add("\(nodeID.suffix(4)) PROPOSAL t=\(result.title.isEmpty ? "(empty)" : String(result.title.prefix(14)))")
+                CaptureDiagLog.shared.add("\(nodeID.suffix(4)) AUTH t=\(result.title.isEmpty ? "EMPTY" : String(result.title.prefix(12))) s=\(result.summary.isEmpty ? "EMPTY" : "ok")")
                 if aspects.contains(.title),
                    n.recordProposal(kind: .title, text: result.title,
                                     currentSource: n.titleSource,

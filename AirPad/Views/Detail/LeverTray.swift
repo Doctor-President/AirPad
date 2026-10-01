@@ -791,7 +791,9 @@ struct LeverTray: View {
 /// persisted message, so `frameworkMessage` is empty there. `onDismiss` is optional: a
 /// transient banner (title+summary) shows a ×; a notice derived from the node's persisted
 /// state (tags) omits it — dismissing a persisted fact would just reappear on reload.
-private struct LeverRefusalBanner: View {
+// Brief CD5 — internal (was private) so the fresh-capture surface can reuse the SAME refusal banner
+// (one-line note + "Set up the private model" → Settings), per BP5's reuse requirement.
+struct LeverRefusalBanner: View {
     let message: String
     var frameworkMessage: String = ""
     /// Nil HIDES the "Set up the private model" CTA — used when the local model is already

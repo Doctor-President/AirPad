@@ -20,6 +20,7 @@ enum FirstRunCalloutKey: String, CaseIterable, Identifiable {
     case librarianMode   = "librarian.mode"   // Brief AH3 — first tap of the mode chip
     case librarianModel  = "librarian.model"  // Brief AH3 — first tap of the model chip
     case entryIntro      = "entry.intro"      // Brief AJ6 — first open of any entry
+    case captureTitle    = "capture.title"    // Brief CD4 — first capture, empty title → the ghost tip
 
     var id: String { rawValue }
 
@@ -88,6 +89,14 @@ enum FirstRunCalloutKey: String, CaseIterable, Identifiable {
                 body: ["Add text, photos, links or voice with **+**. Tags and collections sit above; linked entries appear below."],
                 targets: [FirstRunCalloutTargetID.entryAddButton]
             )
+        case .captureTitle:
+            // Brief CD4 (BP4) — first capture with an empty title. Terse coach-mark (no headline),
+            // ringing the title field, explaining the ghost: leave it blank and Done names it.
+            return FirstRunCalloutContent(
+                headline: nil,
+                body: ["Leave it blank — AirPad names it when you hit Done."],
+                targets: [FirstRunCalloutTargetID.captureTitleField]
+            )
         }
     }
 }
@@ -109,6 +118,7 @@ enum FirstRunCalloutTargetID {
     static let librarianModeChip  = "librarian.mode.chip"   // Brief AH3
     static let librarianModelChip = "librarian.model.chip"  // Brief AH3
     static let entryAddButton     = "entry.add.button"      // Brief AJ6 — the + Menu
+    static let captureTitleField  = "capture.title.field"   // Brief CD4 — the empty-title ghost tip
 }
 
 struct FirstRunCalloutTargetsKey: PreferenceKey {

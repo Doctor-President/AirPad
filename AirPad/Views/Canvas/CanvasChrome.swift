@@ -91,6 +91,7 @@ struct CanvasChrome: View {
         }
         .buttonStyle(.plain)
         .firstRunCalloutTarget(FirstRunCalloutTargetID.captureButton)
+        .accessibilityIdentifier("captureButton")   // Brief CD — real-"+"-flow XCUITest taps this
     }
 
     /// The bottom-right VIEW SWITCHER — the only view-mode control since Brief AG2 demoted the top

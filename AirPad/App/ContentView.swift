@@ -38,6 +38,29 @@ struct ContentView: View {
                 // sample-library strip (Brief T) is screenshot-reachable headlessly.
                 if ProcessInfo.processInfo.arguments.contains("-OpenDashboard"),
                    router.entryMode != .dashboard { router.entryMode = .dashboard }
+                // Brief CD diag/test — `-RealCapturePlus` runs the REAL "+" capture ACTION (the exact
+                // calls CanvasChrome's captureTriggerButton makes: createCaptureNode → router handoff →
+                // push NodeDetailView in capture mode), then STOPS. No seeded node content, no seeded
+                // proposal — the XCUITest types into the REAL note editor from here, so the whole
+                // pipeline (editor → scheduleCaptureLiveCommit → updateTextItem → scheduleEnrichment →
+                // gate → processNodeWithAI → recordProposal → ghost) runs for real. (On the empty-corpus
+                // canvas the "+" chrome is awkward to hit by coordinate; the ACTION is identical.)
+                if ProcessInfo.processInfo.arguments.contains("-RealCapturePlus") {
+                    Task { @MainActor in
+                        guard let node = await store.createCaptureNode() else { return }
+                        router.isCapturing = true
+                        router.captureNodeID = node.id
+                        router.captureDraftHasText = false
+                        router.pendingNodeNavigationID = node.id   // the real "+" handoff → push detail
+                        // Auto-focus the note so the XCUITest's typeText lands (createCaptureNode opens
+                        // "calm" by design; the test needs the keyboard up to type). Real editor, real pipeline.
+                        try? await Task.sleep(nanoseconds: 1_200_000_000)
+                        if let fresh = store.nodes.first(where: { $0.id == node.id }),
+                           let textID = fresh.items.first(where: { $0.type == .text })?.id {
+                            store.pendingAutoFocusItemID = textID
+                        }
+                    }
+                }
             }
             #endif
             Group {

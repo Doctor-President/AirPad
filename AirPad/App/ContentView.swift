@@ -38,6 +38,13 @@ struct ContentView: View {
                 // sample-library strip (Brief T) is screenshot-reachable headlessly.
                 if ProcessInfo.processInfo.arguments.contains("-OpenDashboard"),
                    router.entryMode != .dashboard { router.entryMode = .dashboard }
+                // Brief CD acceptance tests — `-EntryQuikCapture` is the EXACT production
+                // Quick Capture entry: it sets `entryMode = .quikCapture`, the same line the
+                // `airpad://quikcapture` deep-link handler runs (AirPadApp.onOpenURL). NOT a
+                // seeded screen — QuikCaptureView's own `.task` creates the real capture node,
+                // and Done runs the real path. Lets an XCUITest drive the real Quick Capture flow.
+                if ProcessInfo.processInfo.arguments.contains("-EntryQuikCapture"),
+                   router.entryMode != .quikCapture { router.entryMode = .quikCapture }
                 // Brief CD diag/test — `-RealCapturePlus` runs the REAL "+" capture ACTION (the exact
                 // calls CanvasChrome's captureTriggerButton makes: createCaptureNode → router handoff →
                 // push NodeDetailView in capture mode), then STOPS. No seeded node content, no seeded

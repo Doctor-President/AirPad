@@ -61,6 +61,7 @@
 		299AECA5A73FE92E7FB0378B /* ImageEntryBody.swift in Sources */ = {isa = PBXBuildFile; fileRef = 1051A2630769178DF195B38B /* ImageEntryBody.swift */; };
 		2B4E58DDB1092B8D07102CC3 /* RelatednessService.swift in Sources */ = {isa = PBXBuildFile; fileRef = 988F66299DD79745A824B3A0 /* RelatednessService.swift */; };
 		2C1F540D4AE140CFEE09150A /* vocab.txt in Resources */ = {isa = PBXBuildFile; fileRef = 782CAEDAAAAE280B4F2A8D91 /* vocab.txt */; };
+		2C84139C9AD63BE52CF57C6E /* CDGhostAcceptanceMatrix.swift in Sources */ = {isa = PBXBuildFile; fileRef = D9EBCB0852E91FE9CD47F61F /* CDGhostAcceptanceMatrix.swift */; };
 		2D797B443BD3042A6F78FC40 /* LinkAppendSheet.swift in Sources */ = {isa = PBXBuildFile; fileRef = 8BF1D622AE4FE341F4039341 /* LinkAppendSheet.swift */; };
 		2DDA27FA6C4F26BC05D7EA97 /* UMAPGraph.swift in Sources */ = {isa = PBXBuildFile; fileRef = BE499E529F1B439D3EDD8816 /* UMAPGraph.swift */; };
 		2E8726CA49E4BE479EED79CC /* FeatureFlags.swift in Sources */ = {isa = PBXBuildFile; fileRef = C3FFA73288300E8E7B5FBA46 /* FeatureFlags.swift */; };
@@ -584,6 +585,7 @@
 		D92B43ACAA1EFEADD262281A /* ChatStore.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ChatStore.swift; sourceTree = "<group>"; };
 		D953A7AAAC24875D5B6157C4 /* ChatTypography.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ChatTypography.swift; sourceTree = "<group>"; };
 		D9792DA964AD5BC6DF0B2F6C /* EditMapSheet.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = EditMapSheet.swift; sourceTree = "<group>"; };
+		D9EBCB0852E91FE9CD47F61F /* CDGhostAcceptanceMatrix.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = CDGhostAcceptanceMatrix.swift; sourceTree = "<group>"; };
 		DA3C21B9BBF3AC6D802175E4 /* DocumentEntryBody.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = DocumentEntryBody.swift; sourceTree = "<group>"; };
 		DB97C8C89A4E56E95903000D /* BentoLayout.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = BentoLayout.swift; sourceTree = "<group>"; };
 		DC64642A8AD34593133AC155 /* PlaybackAudioSession.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = PlaybackAudioSession.swift; sourceTree = "<group>"; };
@@ -717,6 +719,7 @@
 			children = (
 				B8D87927EAE11D669A11A825 /* CardSwipeRepro.swift */,
 				A9C57830B6D6683951BF3F6E /* CaretTapTest.swift */,
+				D9EBCB0852E91FE9CD47F61F /* CDGhostAcceptanceMatrix.swift */,
 				1B6BEF2C32FEEC7F6D57FD03 /* CDGhostWhileTyping.swift */,
 				5CA786FE73ACBE100B4FAA56 /* HoldDragRepro.swift */,
 				DD915DF68A27E1ED37382E19 /* ManageModelsRepro.swift */,
@@ -1416,6 +1419,7 @@
 			isa = PBXSourcesBuildPhase;
 			buildActionMask = 2147483647;
 			files = (
+				2C84139C9AD63BE52CF57C6E /* CDGhostAcceptanceMatrix.swift in Sources */,
 				3F3D03BCB7B579A34CFA9B92 /* CDGhostWhileTyping.swift in Sources */,
 				7D662BACA7CB206841C5BA3D /* CardSwipeRepro.swift in Sources */,
 				DDFA466B1F065DAF3DC13799 /* CaretTapTest.swift in Sources */,

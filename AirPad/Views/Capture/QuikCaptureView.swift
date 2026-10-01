@@ -50,6 +50,14 @@ struct QuikCaptureView: View {
     @State private var editedSummary = ""
     @State private var editedTags: [String] = []
 
+    /// Brief CD (no-overwrite rule) — did the USER actually edit this field in this session?
+    /// The save commits a field ONLY when its flag is true. An empty, never-edited mirror must
+    /// never overwrite a value the model promoted at Done (the teardown race blanked the title);
+    /// an edited-to-empty field DOES commit, so a user-cleared field stays cleared. Set only on a
+    /// change WHILE the field holds focus, so the programmatic node→mirror syncs below don't trip it.
+    @State private var titleEdited = false
+    @State private var summaryEdited = false
+
     /// Which header field holds the keyboard. Per-field (the shared `CaptureHeaderFocus`) so a ghost
     /// clears for the field you TAP and stays for the one you don't (Brief CD rule 3).
     @FocusState private var focusedField: CaptureHeaderFocus?
@@ -168,6 +176,12 @@ struct QuikCaptureView: View {
                     .onChange(of: node.tags) { old, new in
                         if editedTags == old { editedTags = new }
                     }
+                    // Brief CD (no-overwrite rule) — a change WHILE the field is focused is a real
+                    // user edit (typing, dictation, paste into the field). The node→mirror syncs
+                    // above run unfocused (promote lands at Done after focus resigns), so they don't
+                    // mark the field edited.
+                    .onChange(of: editedTitle) { _, _ in if focusedField == .title { titleEdited = true } }
+                    .onChange(of: editedSummary) { _, _ in if focusedField == .summary { summaryEdited = true } }
                     .sheet(item: $captureMode) { mode in
                         switch mode {
                         case .voice:  VoiceCaptureSheet(targetNodeID: node.id)
@@ -288,6 +302,16 @@ struct QuikCaptureView: View {
                 router.captureNodeID = node.id
                 router.captureDraftHasText = false
                 nodeID = node.id
+                #if DEBUG
+                // Brief CD acceptance test — `-EntryQuikCapture` auto-focuses the note so an XCUITest's
+                // typeText lands DETERMINISTICALLY (createCaptureNode opens "calm" by clearing autofocus;
+                // the real user taps the note, which XCUITest can't do reliably). Everything else — the
+                // enrichment pipeline, Done, promote, the save — is the real production path.
+                if ProcessInfo.processInfo.arguments.contains("-EntryQuikCapture"),
+                   let textID = node.items.first(where: { $0.type == .text })?.id {
+                    store.pendingAutoFocusItemID = textID
+                }
+                #endif
             }
         }
     }
@@ -362,6 +386,8 @@ struct QuikCaptureView: View {
                         .foregroundStyle(AppearancePalette.ink)
                         .tint(AppearancePalette.ink)
                         .focused($focusedField, equals: .title)
+                        .accessibilityIdentifier("titleField")
+                        .accessibilityValue(editedTitle)   // Brief CD — lets XCUITest read the committed title
                         .onChange(of: node.surfacedProposal(kind: .title)?.text) { _, newValue in
                             if newValue != nil { titleShimmer += 1 }
                         }
@@ -373,6 +399,8 @@ struct QuikCaptureView: View {
                         .foregroundStyle(AppearancePalette.ink.opacity(0.75))
                         .tint(AppearancePalette.ink)
                         .focused($focusedField, equals: .summary)
+                        .accessibilityIdentifier("summaryField")
+                        .accessibilityValue(editedSummary)
                         .onChange(of: node.surfacedProposal(kind: .summary)?.text) { _, newValue in
                             if newValue != nil { summaryShimmer += 1 }
                         }
@@ -990,14 +1018,18 @@ struct QuikCaptureView: View {
         let newTitle = editedTitle, newSummary = editedSummary, newTags = editedTags
         // Compare against the FRESHEST node so an unedited close stays a no-op.
         guard let fresh = store.nodes.first(where: { $0.id == nodeID }) else { return }
-        let titleChanged = fresh.title != newTitle
-        let summaryChanged = fresh.summary != newSummary
+        // Brief CD NO-OVERWRITE RULE — commit a header field ONLY when the user actually edited it.
+        // An empty, never-edited mirror must never overwrite the title/summary the model promoted at
+        // Done (the teardown race that blanked the title + locked it `.user`); an edited field DOES
+        // commit even when empty, so a user-cleared field stays cleared. `titleSource = .user` is thus
+        // stamped only on genuine user authorship.
+        let titleChanged = titleEdited
+        let summaryChanged = summaryEdited
         let tagsChanged = fresh.tags != newTags
         guard titleChanged || summaryChanged || tagsChanged else { return }
         // ws-card-catalog Change A — write via mutateNode (fresh read-modify-write)
         // so this title/summary/tags save can't blind-overwrite `.items` with a
         // stale snapshot and erase the note body typed just before Done.
-        // titleSource/summarySource stamps unchanged from step 1.
         await store.mutateNode(id: nodeID) { n in
             if titleChanged { n.title = newTitle; n.titleSource = .user }
             if summaryChanged { n.summary = newSummary; n.summarySource = .user }

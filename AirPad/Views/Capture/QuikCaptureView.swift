@@ -1053,3 +1053,139 @@ private struct QuikCaptureHeroImageBanner: View {
         }
     }
 }
+
+// MARK: - Brief CD — the ghost suggestion overlay (reusable; CD2 extracts it to Views/Shared for the share editor)
+
+/// Low-opacity model-suggested text rendered INSIDE an empty Title/Summary field of a fresh capture,
+/// that plays the lever's specular shimmer when a NEW suggestion lands (rule 2). Store-free +
+/// app-singleton-free — text + resolved Font + opacity in, shimmer `trigger` in — so the share editor
+/// can reuse the SAME component (ws-share-sheet §3). The host owns WHICH proposal + what Accept does;
+/// this view only renders. Reads as app-INK (not the system-gray placeholder — rule 7).
+struct GhostFieldOverlay: View {
+    let text: String
+    let font: Font
+    /// Ghost opacity (Brief CD1 look option; T picks). Applied to the adaptive ink.
+    var opacity: Double = 0.45
+    /// Bump when a NEW suggestion lands → the shimmer plays ONCE (rule 2). Never on re-render.
+    var shimmerTrigger: Int = 0
+    /// Reduce Motion → no sweep; the ghost just appears (crossfade — the resting dimness carries it).
+    var reduceMotion: Bool = false
+    /// The lever's shipped shimmer timing (LeverShimmerTuning default) so the ghost matches its vocabulary.
+    var shimmerDuration: Double = 1.95
+    /// Gallery demo ONLY (`-GhostGallery`) — repeat the sweep on appear so the screen recording shows
+    /// it. The real capture leaves this false and drives ONE pass per new suggestion via `shimmerTrigger`.
+    var demoLoop: Bool = false
+
+    /// Sweep phase as a multiple of the ghost width: rests off-screen RIGHT (glint hidden), snaps to
+    /// off-screen LEFT on a new suggestion, then animates across — the specular glint's one pass.
+    @State private var phase: CGFloat = 1.2  // rests off-screen RIGHT → glint hidden
+
+    var body: some View {
+        let glyphs = Text(text).font(font).frame(maxWidth: .infinity, alignment: .leading)
+        Group {
+            if demoLoop && !reduceMotion {
+                // Gallery recording (`-GhostGallery`): TimelineView re-renders every frame, so the glint
+                // offset follows a continuous phase — a reliable repeated sweep (a @State+withAnimation
+                // offset inside a mask does not animate). The real capture uses the trigger path below.
+                TimelineView(.animation) { tl in
+                    glyphs
+                        .foregroundStyle(AppearancePalette.ink.opacity(opacity))
+                        .overlay { glint(at: Self.demoPhase(tl.date)) }
+                }
+            } else {
+                glyphs
+                    .foregroundStyle(AppearancePalette.ink.opacity(opacity))
+                    .overlay { if !reduceMotion { glint(at: phase) } }
+                    .onChange(of: shimmerTrigger) { _, _ in
+                        guard !reduceMotion else { return }   // Reduce Motion → no sweep (ghost just appears)
+                        // Snap off-screen LEFT this runloop, animate across the NEXT — a synchronous
+                        // snap-then-animate collapses to a no-op, so the defer is load-bearing.
+                        phase = -1.2
+                        DispatchQueue.main.async {
+                            withAnimation(.easeInOut(duration: shimmerDuration)) { phase = 1.2 }
+                        }
+                    }
+            }
+        }
+        .allowsHitTesting(false)
+        .accessibilityLabel("Suggested: \(text)")
+    }
+
+    /// Continuous demo phase (-1.3 → 1.3 every 2.4 s) for the gallery's TimelineView sweep.
+    private static func demoPhase(_ date: Date) -> CGFloat {
+        let t = date.timeIntervalSinceReferenceDate.truncatingRemainder(dividingBy: 2.4) / 2.4
+        return CGFloat(t) * 2.6 - 1.3
+    }
+
+    /// The lever's specular glint (white, luminance-only — T is colourblind): a WHITE copy of the
+    /// ghost text revealed only under a moving gradient slice at phase `p`, so a bright sweep travels
+    /// the glyphs. `p` rests at ±1.3 (off-screen → hidden); the sweep crosses 0 (glint over the text).
+    private func glint(at p: CGFloat) -> some View {
+        Text(text).font(font).frame(maxWidth: .infinity, alignment: .leading)
+            .foregroundStyle(Color(hexString: "FFFFFF"))
+            .mask {
+                GeometryReader { geo in
+                    let w = max(geo.size.width, 1)
+                    LinearGradient(colors: [.clear, .black, .black, .clear], startPoint: .leading, endPoint: .trailing)
+                        .frame(width: w * 0.5)
+                        .offset(x: p * w)
+                }
+            }
+    }
+}
+
+#if DEBUG
+/// `-GhostGallery` — Brief CD1 look-options screenshot harness. Renders the ghost in the capture
+/// Title/Summary idiom at 2 fonts × 3 opacities, on a capture-like ground, + a placeholder-vs-ghost
+/// comparison (rule 7) + an auto-replaying shimmer (for the screen recording). Store-free.
+struct GhostGalleryView: View {
+    @State private var trigger = 0
+    private let opacities: [Double] = [0.35, 0.45, 0.55]
+    private let faces: [(String, EntryBodyFont)] = [("Lato (default)", .lato), ("Source Serif 4", .sourceSerif4)]
+    private var titleSize: CGFloat { EntryVisualSettings.shared.nodeTitle.size }
+    private var summarySize: CGFloat { EntryVisualSettings.shared.nodeSummary.size }
+    private let ghostTitle = "Team Rocket Halloween costume"
+    private let ghostSummary = "Notes on building the Jessie & James look for the party."
+
+    var body: some View {
+        ZStack {
+            Color(uiColor: .systemBackground).ignoresSafeArea()
+            ScrollView {
+                VStack(alignment: .leading, spacing: 20) {
+                    Text("Ghost suggestions — CD1 · opacity 35 / 45 / 55% · Lato + Source Serif 4")
+                        .font(.system(size: 12, weight: .semibold)).foregroundStyle(AppearancePalette.ink.opacity(0.6))
+                    VStack(alignment: .leading, spacing: 6) {
+                        Text("Placeholder vs ghost — must read as different (rule 7)")
+                            .font(.system(size: 10)).foregroundStyle(AppearancePalette.ink.opacity(0.45))
+                        Text("Title").font(faces[0].1.titleFont(size: titleSize)).foregroundStyle(Color(uiColor: .placeholderText))
+                        GhostFieldOverlay(text: ghostTitle, font: faces[0].1.titleFont(size: titleSize), opacity: 0.45, shimmerTrigger: trigger, demoLoop: true)
+                    }
+                    Divider().overlay(AppearancePalette.ink.opacity(0.1))
+                    ForEach(Array(faces.enumerated()), id: \.offset) { _, f in
+                        VStack(alignment: .leading, spacing: 12) {
+                            Text(f.0).font(.system(size: 11, weight: .semibold)).foregroundStyle(AppearancePalette.ink.opacity(0.5))
+                            ForEach(opacities, id: \.self) { op in
+                                VStack(alignment: .leading, spacing: 3) {
+                                    Text("\(Int(op * 100))% \(op == 0.45 ? "· recommended default" : "")")
+                                        .font(.system(size: 9)).foregroundStyle(AppearancePalette.ink.opacity(op == 0.45 ? 0.7 : 0.4))
+                                    GhostFieldOverlay(text: ghostTitle, font: f.1.titleFont(size: titleSize), opacity: op, shimmerTrigger: trigger, demoLoop: true)
+                                    GhostFieldOverlay(text: ghostSummary, font: f.1.font(size: summarySize), opacity: op, shimmerTrigger: trigger, demoLoop: true)
+                                }
+                                .padding(.bottom, 6)
+                            }
+                            Divider().overlay(AppearancePalette.ink.opacity(0.08))
+                        }
+                    }
+                }
+                .padding(20)
+            }
+        }
+        .task {
+            while !Task.isCancelled {
+                try? await Task.sleep(nanoseconds: 3_000_000_000)
+                trigger += 1   // replay the shimmer every ~3s for the recording
+            }
+        }
+    }
+}
+#endif

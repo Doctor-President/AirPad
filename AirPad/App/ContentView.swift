@@ -65,6 +65,10 @@ struct ContentView: View {
             if ProcessInfo.processInfo.arguments.contains("-PillGallery") {
                 PillGalleryView()
             }
+            // Brief CD1 — ghost-suggestion look options (opacity × font × light/dark + shimmer).
+            if ProcessInfo.processInfo.arguments.contains("-GhostGallery") {
+                GhostGalleryView()
+            }
             #endif
         }
         // Chats list sheet — shared by the Dashboard header bubble and

@@ -108,7 +108,11 @@ struct RichTextEditor: UIViewRepresentable {
     func makeUIView(context: Context) -> RichTextUIView {
         let textView = RichTextUIView()
         textView.delegate = context.coordinator
+        #if DEBUG
+        textView.accessibilityIdentifier = "noteEditor"   // Brief CD — real-flow XCUITest types here (DEBUG only)
+        #else
         if CaretTrace.enabled { textView.accessibilityIdentifier = "noteEditor" }
+        #endif
         textView.backgroundColor = .clear
         textView.font = UIFont.preferredFont(forTextStyle: .body)
         // documentStyle uses semantic `.label` (adaptive) so text is legible in

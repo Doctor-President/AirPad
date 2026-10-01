@@ -2979,6 +2979,27 @@ final class CorpusStore {
         }
     }
 
+    @ObservationIgnored private var captureLiveCommitTasks: [String: Task<Void, Never>] = [:]
+
+    /// Brief CD fix — a typing-PAUSE commit, for CAPTURE only. The note editor otherwise persists ONLY
+    /// on end-editing, so a ghost suggestion (title/summary) could never appear while you're still
+    /// typing — it waited for the keyboard to drop. During a capture, a ~1 s pause in the note persists
+    /// the live text (via `updateTextItem`, which schedules the eager enrichment pass), so the eager
+    /// pass runs on what you've written SO FAR and the ghost appears WHILE you type — matching Quick
+    /// Capture. Per-item debounce (cancel+rearm coalesces keystrokes). The CALLER gates on capture mode,
+    /// so a re-opened entry is unchanged (still commits on end-editing). Safe against the editor: the
+    /// `onChange(item.content)` guard (TextEntryBody) only resyncs when the user hasn't diverged, so a
+    /// mid-edit persist never resets the caret. CD3's enrichment floor still caps how often it fires.
+    func scheduleCaptureLiveCommit(itemID: String, nodeID: String, text: String) {
+        captureLiveCommitTasks[itemID]?.cancel()
+        captureLiveCommitTasks[itemID] = Task(priority: .userInitiated) { @MainActor [weak self] in
+            try? await Task.sleep(for: .seconds(1.0))
+            guard let self, !Task.isCancelled else { return }
+            self.captureLiveCommitTasks[itemID] = nil
+            await self.updateTextItem(itemID: itemID, newContent: text, nodeID: nodeID)
+        }
+    }
+
     /// THE ENRICHMENT GATE, bound to this store's freshness key.
     ///
     /// ★ ONE QUESTION, TWO ASKERS. The eager pass (`scheduleEnrichment`) and Done

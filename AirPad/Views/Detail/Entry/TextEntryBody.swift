@@ -95,6 +95,9 @@ struct TextEntryBody: View {
             store.mirrorPendingItemEdit(itemID: item.id, text: newValue)
             guard router.isCapturing, router.captureNodeID == nodeID else { return }
             router.captureDraftHasText = !newValue.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty
+            // Brief CD fix — commit the live note text on a ~1 s typing pause so a ghost suggestion
+            // appears WHILE you type (the editor otherwise persists only on end-editing). Capture only.
+            store.scheduleCaptureLiveCommit(itemID: item.id, nodeID: nodeID, text: newValue)
         }
         .onAppear {
             // DISPLAY-TRIM leading blank lines so the first non-empty line (the

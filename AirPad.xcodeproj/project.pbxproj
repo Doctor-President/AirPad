@@ -46,6 +46,7 @@
 		1A71668ACC87B6B9C0D804E7 /* Collection.swift in Sources */ = {isa = PBXBuildFile; fileRef = 909B3DB690784E89652659ED /* Collection.swift */; };
 		1A9E8EF4E13EF3D1B9009EB8 /* ReviewQueueSheet.swift in Sources */ = {isa = PBXBuildFile; fileRef = 8BDD458C42AD717CBB2269BE /* ReviewQueueSheet.swift */; };
 		1AB937D63FE8F452D767344B /* Neighborhood.swift in Sources */ = {isa = PBXBuildFile; fileRef = AE402981E931009EBB3F93EE /* Neighborhood.swift */; };
+		1C3C8D561E55F06E8803826E /* SwiftUI.framework in Frameworks */ = {isa = PBXBuildFile; fileRef = 360617FDFF9D3F6D0175F257 /* SwiftUI.framework */; };
 		1C7BD8D8DAED08D89F04F795 /* LongPressDragRecognizer.swift in Sources */ = {isa = PBXBuildFile; fileRef = 3A582AE8DB1D9CEB0084017C /* LongPressDragRecognizer.swift */; };
 		1D608EF5021F6603E6048269 /* BackgroundGridNode.swift in Sources */ = {isa = PBXBuildFile; fileRef = ACE4CFCC06057A8055A511FC /* BackgroundGridNode.swift */; };
 		1F75D3242F7280C70C2158C5 /* SceneDelegate.swift in Sources */ = {isa = PBXBuildFile; fileRef = 79694583DE4ADDFCDD62B5F6 /* SceneDelegate.swift */; };
@@ -63,6 +64,7 @@
 		2C1F540D4AE140CFEE09150A /* vocab.txt in Resources */ = {isa = PBXBuildFile; fileRef = 782CAEDAAAAE280B4F2A8D91 /* vocab.txt */; };
 		2C84139C9AD63BE52CF57C6E /* CDGhostAcceptanceMatrix.swift in Sources */ = {isa = PBXBuildFile; fileRef = D9EBCB0852E91FE9CD47F61F /* CDGhostAcceptanceMatrix.swift */; };
 		2D797B443BD3042A6F78FC40 /* LinkAppendSheet.swift in Sources */ = {isa = PBXBuildFile; fileRef = 8BF1D622AE4FE341F4039341 /* LinkAppendSheet.swift */; };
+		2D8CCD981197441D1AA1F024 /* AirPadWidgetBundle.swift in Sources */ = {isa = PBXBuildFile; fileRef = 0D775E93481C7D942A38FABD /* AirPadWidgetBundle.swift */; };
 		2DDA27FA6C4F26BC05D7EA97 /* UMAPGraph.swift in Sources */ = {isa = PBXBuildFile; fileRef = BE499E529F1B439D3EDD8816 /* UMAPGraph.swift */; };
 		2E8726CA49E4BE479EED79CC /* FeatureFlags.swift in Sources */ = {isa = PBXBuildFile; fileRef = C3FFA73288300E8E7B5FBA46 /* FeatureFlags.swift */; };
 		334550772B8C8599E8D99C30 /* TagTerritoryLayout.swift in Sources */ = {isa = PBXBuildFile; fileRef = 219BB28A054C465CCA88BA43 /* TagTerritoryLayout.swift */; };
@@ -106,12 +108,14 @@
 		514CFC25C6AAC1607E3E31E6 /* LeverButton.swift in Sources */ = {isa = PBXBuildFile; fileRef = 99AE7198F824D189DAD581EE /* LeverButton.swift */; };
 		524632EA61033FFCA11734F8 /* BentoLayout.swift in Sources */ = {isa = PBXBuildFile; fileRef = DB97C8C89A4E56E95903000D /* BentoLayout.swift */; };
 		52D3D753240395AD3A873749 /* DashboardView.swift in Sources */ = {isa = PBXBuildFile; fileRef = 88ABC9EFFF4787FFDF05A2CB /* DashboardView.swift */; };
+		52E814CA75A30AACE5AC618A /* AirPadWidgets.appex in Embed Foundation Extensions */ = {isa = PBXBuildFile; fileRef = 69902D1D994B371BD68A2D71 /* AirPadWidgets.appex */; settings = {ATTRIBUTES = (RemoveHeadersOnCopy, ); }; };
 		536D8F5AEBC887BD1A87C990 /* AutoScrollDriver.swift in Sources */ = {isa = PBXBuildFile; fileRef = 9640DF6602CDCA4B2689C33C /* AutoScrollDriver.swift */; };
 		53C50184B3A475F62CC9BDE2 /* FieldDefinition.swift in Sources */ = {isa = PBXBuildFile; fileRef = 003CEDBA7C8C183191D81F3E /* FieldDefinition.swift */; };
 		55858A9A690EA3D459DE82E9 /* FilterState.swift in Sources */ = {isa = PBXBuildFile; fileRef = 48DBCBFAFA7298D82C3BB0FF /* FilterState.swift */; };
 		56061A0335E2973DF52243F1 /* NodeGridTile.swift in Sources */ = {isa = PBXBuildFile; fileRef = F189E8F160D5B6BD04D88706 /* NodeGridTile.swift */; };
 		5681223387D04D1716AB1020 /* SourceSerif4-Regular.ttf in Resources */ = {isa = PBXBuildFile; fileRef = B88DD76629EBF533BCDC9ADE /* SourceSerif4-Regular.ttf */; };
 		570D62A8CEA2A19CC44B383D /* ManageModelsRepro.swift in Sources */ = {isa = PBXBuildFile; fileRef = DD915DF68A27E1ED37382E19 /* ManageModelsRepro.swift */; };
+		573C4D53C4F372C3497BBEF1 /* WidgetKit.framework in Frameworks */ = {isa = PBXBuildFile; fileRef = 31D68FA628B933D53B524B98 /* WidgetKit.framework */; };
 		588C140B790E7DD63A55BCC1 /* MediaPickerWrapper.swift in Sources */ = {isa = PBXBuildFile; fileRef = 894DD6E70D91D9E9B00246B9 /* MediaPickerWrapper.swift */; };
 		598AB294337257CEED19A5BC /* LinkEntryBody.swift in Sources */ = {isa = PBXBuildFile; fileRef = 4E72F7C5BEAD8D357C8976F7 /* LinkEntryBody.swift */; };
 		59D565CBEADBCAFF7FF2D755 /* CorpusPhysicsScene.swift in Sources */ = {isa = PBXBuildFile; fileRef = 1652D343DDB50759748BDE8F /* CorpusPhysicsScene.swift */; };
@@ -161,6 +165,7 @@
 		868B804EAA857627DC429F67 /* DocumentQuickLookViewer.swift in Sources */ = {isa = PBXBuildFile; fileRef = 8B88D3F84112712169492D89 /* DocumentQuickLookViewer.swift */; };
 		86C3217B7B90105732A120FA /* ClipboardContentRouter.swift in Sources */ = {isa = PBXBuildFile; fileRef = 39A4F2C5815649CFC465EF1F /* ClipboardContentRouter.swift */; };
 		872217B757A952ED832C6741 /* AttributeTile.swift in Sources */ = {isa = PBXBuildFile; fileRef = 7E766D5A76F8E33EC9A24C07 /* AttributeTile.swift */; };
+		87C2B621CF7711E7FF62598C /* CaptureIntent.swift in Sources */ = {isa = PBXBuildFile; fileRef = C8376D171BB956C6EA17E5F9 /* CaptureIntent.swift */; };
 		8943F983244CAFA176DC3313 /* TagCreationSheet.swift in Sources */ = {isa = PBXBuildFile; fileRef = F6A18AD80C0FCB6B5E928844 /* TagCreationSheet.swift */; };
 		89E7C55E1D0C63E7C5D191D6 /* NodeItemType.swift in Sources */ = {isa = PBXBuildFile; fileRef = 7ED3DACE683F20031A4F5E03 /* NodeItemType.swift */; };
 		8A4950423895F7ECE2B4D88E /* ThreadService.swift in Sources */ = {isa = PBXBuildFile; fileRef = B01CAFC639E0B10C51EF1BE3 /* ThreadService.swift */; };
@@ -229,6 +234,7 @@
 		B0413B9A6B947367B02E462E /* CardTuning.swift in Sources */ = {isa = PBXBuildFile; fileRef = 37F96F01949F13EC35528775 /* CardTuning.swift */; };
 		B0C29E98DF6C6DBE11E29DF1 /* SingleMediaBody.swift in Sources */ = {isa = PBXBuildFile; fileRef = 0B37326A27826C7715C130B6 /* SingleMediaBody.swift */; };
 		B11CC0100B96616EFF31AF9F /* CatalogCard.swift in Sources */ = {isa = PBXBuildFile; fileRef = 50172A80D6B3F46FAE1A4862 /* CatalogCard.swift */; };
+		B17DD9C767DE65A3033EC241 /* QuickCaptureControl.swift in Sources */ = {isa = PBXBuildFile; fileRef = C754F682AD01FF5801808F72 /* QuickCaptureControl.swift */; };
 		B22143F553374028E0FCAF87 /* Lato-Bold.ttf in Resources */ = {isa = PBXBuildFile; fileRef = 1DBE8572AE138177283E2B18 /* Lato-Bold.ttf */; };
 		B35E3505455954169FCEDDDB /* AVFoundation.framework in Frameworks */ = {isa = PBXBuildFile; fileRef = 7F65B5EE1F36033500EF4B74 /* AVFoundation.framework */; };
 		B3905779F4DC65E2E8AFB76A /* CollectionPillRail.swift in Sources */ = {isa = PBXBuildFile; fileRef = C824F739A24F35A1EE96F481 /* CollectionPillRail.swift */; };
@@ -320,6 +326,13 @@
 /* End PBXBuildFile section */
 
 /* Begin PBXContainerItemProxy section */
+		497DD0CDE1FA1E106A859536 /* PBXContainerItemProxy */ = {
+			isa = PBXContainerItemProxy;
+			containerPortal = 88710B490536A898E4AE3E9F /* Project object */;
+			proxyType = 1;
+			remoteGlobalIDString = 478761CF9C12DB05D43D2DC3;
+			remoteInfo = AirPadWidgets;
+		};
 		739EC8D6156E30C3FDE6CC62 /* PBXContainerItemProxy */ = {
 			isa = PBXContainerItemProxy;
 			containerPortal = 88710B490536A898E4AE3E9F /* Project object */;
@@ -344,6 +357,7 @@
 			dstSubfolderSpec = 13;
 			files = (
 				D9A7E5403FE45B08C51D6DB5 /* AirPadShare.appex in Embed Foundation Extensions */,
+				52E814CA75A30AACE5AC618A /* AirPadWidgets.appex in Embed Foundation Extensions */,
 			);
 			name = "Embed Foundation Extensions";
 			runOnlyForDeploymentPostprocessing = 0;
@@ -364,6 +378,7 @@
 		0AD607D873DD5FF571DE6C5D /* CardLinkTile.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = CardLinkTile.swift; sourceTree = "<group>"; };
 		0B37326A27826C7715C130B6 /* SingleMediaBody.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = SingleMediaBody.swift; sourceTree = "<group>"; };
 		0C38EEC0DB9F051F85839CCE /* ChatSession.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ChatSession.swift; sourceTree = "<group>"; };
+		0D775E93481C7D942A38FABD /* AirPadWidgetBundle.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = AirPadWidgetBundle.swift; sourceTree = "<group>"; };
 		0EAE9B78BB325C211A14551B /* PhotosUI.framework */ = {isa = PBXFileReference; lastKnownFileType = wrapper.framework; name = PhotosUI.framework; path = System/Library/Frameworks/PhotosUI.framework; sourceTree = SDKROOT; };
 		1004BF2AC849AC8BA745BD5D /* UberNodeService.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = UberNodeService.swift; sourceTree = "<group>"; };
 		1005ACA467AE3052F511365B /* TagSelectionSheet.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = TagSelectionSheet.swift; sourceTree = "<group>"; };
@@ -397,6 +412,7 @@
 		2D22141DDFC181FE31634680 /* CaretMeasure.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = CaretMeasure.swift; sourceTree = "<group>"; };
 		2E92C2D35B0BE6D96A64B830 /* FieldCreationSheet.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = FieldCreationSheet.swift; sourceTree = "<group>"; };
 		31AC6EC9380F63E183E91CFC /* HDBSCANTree.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = HDBSCANTree.swift; sourceTree = "<group>"; };
+		31D68FA628B933D53B524B98 /* WidgetKit.framework */ = {isa = PBXFileReference; lastKnownFileType = wrapper.framework; name = WidgetKit.framework; path = System/Library/Frameworks/WidgetKit.framework; sourceTree = SDKROOT; };
 		321F93F7630A107A8A1266EF /* CardDocumentTile.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = CardDocumentTile.swift; sourceTree = "<group>"; };
 		328B8A79A32590B1D037ABEA /* BackgroundModelDownloader.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = BackgroundModelDownloader.swift; sourceTree = "<group>"; };
 		331D29B33502CD4329D9797D /* RelatedTapRepro.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = RelatedTapRepro.swift; sourceTree = "<group>"; };
@@ -406,6 +422,7 @@
 		33AB8A695AFDD807BC72EBE9 /* SolarFlareTuning.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = SolarFlareTuning.swift; sourceTree = "<group>"; };
 		34AC513418FD53025E45C9B6 /* BlockChunker.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = BlockChunker.swift; sourceTree = "<group>"; };
 		3555E8AE351646CB6D4A2886 /* FieldValueSelfTest.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = FieldValueSelfTest.swift; sourceTree = "<group>"; };
+		360617FDFF9D3F6D0175F257 /* SwiftUI.framework */ = {isa = PBXFileReference; lastKnownFileType = wrapper.framework; name = SwiftUI.framework; path = System/Library/Frameworks/SwiftUI.framework; sourceTree = SDKROOT; };
 		360B7A6DADF89ED7B6D1DD3E /* MarkdownBlockParserSelfTest.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = MarkdownBlockParserSelfTest.swift; sourceTree = "<group>"; };
 		36746C9E05B99C06E6564DA4 /* SourceSerif4-SemiboldItalic.ttf */ = {isa = PBXFileReference; lastKnownFileType = file; path = "SourceSerif4-SemiboldItalic.ttf"; sourceTree = "<group>"; };
 		36D4851654AC4C2F3AF8798F /* ZoomableImageView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ZoomableImageView.swift; sourceTree = "<group>"; };
@@ -468,6 +485,7 @@
 		67DA47C9C206AAD26121CA99 /* QuikCaptureView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = QuikCaptureView.swift; sourceTree = "<group>"; };
 		688537782A3AA4A7F0B436F9 /* CollectionView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = CollectionView.swift; sourceTree = "<group>"; };
 		68BC1C6F6322A33290F95FDE /* DocumentViewModeToggle.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = DocumentViewModeToggle.swift; sourceTree = "<group>"; };
+		69902D1D994B371BD68A2D71 /* AirPadWidgets.appex */ = {isa = PBXFileReference; includeInIndex = 0; lastKnownFileType = "wrapper.app-extension"; path = AirPadWidgets.appex; sourceTree = BUILT_PRODUCTS_DIR; };
 		6CA2C672B173696A7DD874CF /* SubstrateCanvasLayoutAdapter.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = SubstrateCanvasLayoutAdapter.swift; sourceTree = "<group>"; };
 		6CC9DA2E35A6A167254A44EC /* GalleryItemTile.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = GalleryItemTile.swift; sourceTree = "<group>"; };
 		6CEB84A4A23D03CBE6C82507 /* FolksonomyDiagnostic.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = FolksonomyDiagnostic.swift; sourceTree = "<group>"; };
@@ -563,6 +581,7 @@
 		C49FE808E3476860F4E68D4F /* CoverFlowView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = CoverFlowView.swift; sourceTree = "<group>"; };
 		C6CE4B33C6F4682BF9799EC2 /* SpriteKit.framework */ = {isa = PBXFileReference; lastKnownFileType = wrapper.framework; name = SpriteKit.framework; path = System/Library/Frameworks/SpriteKit.framework; sourceTree = SDKROOT; };
 		C729D9028EBF447A0241ABFD /* KeychainHelper.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = KeychainHelper.swift; sourceTree = "<group>"; };
+		C754F682AD01FF5801808F72 /* QuickCaptureControl.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = QuickCaptureControl.swift; sourceTree = "<group>"; };
 		C824F739A24F35A1EE96F481 /* CollectionPillRail.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = CollectionPillRail.swift; sourceTree = "<group>"; };
 		C8376D171BB956C6EA17E5F9 /* CaptureIntent.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = CaptureIntent.swift; sourceTree = "<group>"; };
 		C9E7CD2C583E1D7E60A3126A /* FoundationModels.framework */ = {isa = PBXFileReference; lastKnownFileType = wrapper.framework; name = FoundationModels.framework; path = System/Library/Frameworks/FoundationModels.framework; sourceTree = SDKROOT; };
@@ -637,6 +656,15 @@
 /* End PBXFileReference section */
 
 /* Begin PBXFrameworksBuildPhase section */
+		97681C061E9C43A48D474E13 /* Frameworks */ = {
+			isa = PBXFrameworksBuildPhase;
+			buildActionMask = 2147483647;
+			files = (
+				573C4D53C4F372C3497BBEF1 /* WidgetKit.framework in Frameworks */,
+				1C3C8D561E55F06E8803826E /* SwiftUI.framework in Frameworks */,
+			);
+			runOnlyForDeploymentPostprocessing = 0;
+		};
 		E5CCE4B7D4E3DC05629BA7C9 /* Frameworks */ = {
 			isa = PBXFrameworksBuildPhase;
 			buildActionMask = 2147483647;
@@ -930,6 +958,8 @@
 				6150CF6FB6E8BBB89B1C5C8F /* Security.framework */,
 				4339BD7FF5450195EDF70A95 /* Speech.framework */,
 				C6CE4B33C6F4682BF9799EC2 /* SpriteKit.framework */,
+				360617FDFF9D3F6D0175F257 /* SwiftUI.framework */,
+				31D68FA628B933D53B524B98 /* WidgetKit.framework */,
 			);
 			name = Frameworks;
 			sourceTree = "<group>";
@@ -940,6 +970,7 @@
 				A055D36542F89044D66F6B90 /* AirPad */,
 				FDEDADDFC6788C80B33AEE44 /* AirPadShare */,
 				1FD4D705EF0E64DD9326D5C6 /* AirPadUITests */,
+				ECB288A7AD69D6C13110D6CA /* AirPadWidgets */,
 				6876C92BB6761BB9D3907C40 /* Frameworks */,
 				95C31440F925CC38D4918A3D /* Products */,
 			);
@@ -1039,6 +1070,7 @@
 				9D21AB3DEE91993C6F039833 /* AirPad.app */,
 				20ED1D435BF9E254D634DF37 /* AirPadShare.appex */,
 				64F471EBF10E37239E168D8D /* AirPadUITests.xctest */,
+				69902D1D994B371BD68A2D71 /* AirPadWidgets.appex */,
 			);
 			name = Products;
 			sourceTree = "<group>";
@@ -1232,6 +1264,15 @@
 			path = BigShouldersDisplay;
 			sourceTree = "<group>";
 		};
+		ECB288A7AD69D6C13110D6CA /* AirPadWidgets */ = {
+			isa = PBXGroup;
+			children = (
+				0D775E93481C7D942A38FABD /* AirPadWidgetBundle.swift */,
+				C754F682AD01FF5801808F72 /* QuickCaptureControl.swift */,
+			);
+			path = AirPadWidgets;
+			sourceTree = "<group>";
+		};
 		F3DC304BB1B0CB1D516B5C34 /* Lora */ = {
 			isa = PBXGroup;
 			children = (
@@ -1262,6 +1303,24 @@
 /* End PBXGroup section */
 
 /* Begin PBXNativeTarget section */
+		478761CF9C12DB05D43D2DC3 /* AirPadWidgets */ = {
+			isa = PBXNativeTarget;
+			buildConfigurationList = 10E50E40B89DFB3954D7E712 /* Build configuration list for PBXNativeTarget "AirPadWidgets" */;
+			buildPhases = (
+				07835A1F53E45CD666F585E5 /* Sources */,
+				97681C061E9C43A48D474E13 /* Frameworks */,
+			);
+			buildRules = (
+			);
+			dependencies = (
+			);
+			name = AirPadWidgets;
+			packageProductDependencies = (
+			);
+			productName = AirPadWidgets;
+			productReference = 69902D1D994B371BD68A2D71 /* AirPadWidgets.appex */;
+			productType = "com.apple.product-type.app-extension";
+		};
 		62C8055DB0F7AF52F9B3E615 /* AirPad */ = {
 			isa = PBXNativeTarget;
 			buildConfigurationList = 724E5D109A9BD9941149EF41 /* Build configuration list for PBXNativeTarget "AirPad" */;
@@ -1275,6 +1334,7 @@
 			);
 			dependencies = (
 				4C4FA9FB46FC1707AF3D3102 /* PBXTargetDependency */,
+				50B6DBC9481CC8CEA4004287 /* PBXTargetDependency */,
 			);
 			name = AirPad;
 			packageProductDependencies = (
@@ -1331,6 +1391,10 @@
 				BuildIndependentTargetsInParallel = YES;
 				LastUpgradeCheck = 1430;
 				TargetAttributes = {
+					478761CF9C12DB05D43D2DC3 = {
+						DevelopmentTeam = 8XM4B5F42Y;
+						ProvisioningStyle = Automatic;
+					};
 					62C8055DB0F7AF52F9B3E615 = {
 						DevelopmentTeam = 8XM4B5F42Y;
 						ProvisioningStyle = Automatic;
@@ -1368,6 +1432,7 @@
 				62C8055DB0F7AF52F9B3E615 /* AirPad */,
 				9F144B331C91B74D76253A80 /* AirPadShare */,
 				AA9929896740AE8EED70334C /* AirPadUITests */,
+				478761CF9C12DB05D43D2DC3 /* AirPadWidgets */,
 			);
 		};
 /* End PBXProject section */
@@ -1415,6 +1480,16 @@
 /* End PBXResourcesBuildPhase section */
 
 /* Begin PBXSourcesBuildPhase section */
+		07835A1F53E45CD666F585E5 /* Sources */ = {
+			isa = PBXSourcesBuildPhase;
+			buildActionMask = 2147483647;
+			files = (
+				2D8CCD981197441D1AA1F024 /* AirPadWidgetBundle.swift in Sources */,
+				87C2B621CF7711E7FF62598C /* CaptureIntent.swift in Sources */,
+				B17DD9C767DE65A3033EC241 /* QuickCaptureControl.swift in Sources */,
+			);
+			runOnlyForDeploymentPostprocessing = 0;
+		};
 		2EAF9ACCF41F405BE3FB2447 /* Sources */ = {
 			isa = PBXSourcesBuildPhase;
 			buildActionMask = 2147483647;
@@ -1710,6 +1785,11 @@
 			target = 9F144B331C91B74D76253A80 /* AirPadShare */;
 			targetProxy = 739EC8D6156E30C3FDE6CC62 /* PBXContainerItemProxy */;
 		};
+		50B6DBC9481CC8CEA4004287 /* PBXTargetDependency */ = {
+			isa = PBXTargetDependency;
+			target = 478761CF9C12DB05D43D2DC3 /* AirPadWidgets */;
+			targetProxy = 497DD0CDE1FA1E106A859536 /* PBXContainerItemProxy */;
+		};
 		5453D48B856A8C4E1DA0A3CF /* PBXTargetDependency */ = {
 			isa = PBXTargetDependency;
 			target = 62C8055DB0F7AF52F9B3E615 /* AirPad */;
@@ -1718,6 +1798,25 @@
 /* End PBXTargetDependency section */
 
 /* Begin XCBuildConfiguration section */
+		0971F275BBB074FAC046B2C5 /* Release */ = {
+			isa = XCBuildConfiguration;
+			buildSettings = {
+				CODE_SIGN_IDENTITY = "Apple Development";
+				CODE_SIGN_STYLE = Automatic;
+				DEVELOPMENT_TEAM = 8XM4B5F42Y;
+				INFOPLIST_FILE = AirPadWidgets/Info.plist;
+				IPHONEOS_DEPLOYMENT_TARGET = 18.0;
+				LD_RUNPATH_SEARCH_PATHS = (
+					"$(inherited)",
+					"@executable_path/Frameworks",
+					"@executable_path/../../Frameworks",
+				);
+				PRODUCT_BUNDLE_IDENTIFIER = com.doctorpresident.airpad.widgets;
+				SDKROOT = iphoneos;
+				TARGETED_DEVICE_FAMILY = 1;
+			};
+			name = Release;
+		};
 		3FBCA2F86FFC3CA18EB2872E /* Debug */ = {
 			isa = XCBuildConfiguration;
 			buildSettings = {
@@ -1731,6 +1830,25 @@
 					"@executable_path/../../Frameworks",
 				);
 				PRODUCT_BUNDLE_IDENTIFIER = com.doctorpresident.airpad.share;
+				SDKROOT = iphoneos;
+				TARGETED_DEVICE_FAMILY = 1;
+			};
+			name = Debug;
+		};
+		4A1C406E1D5C32090FCB0173 /* Debug */ = {
+			isa = XCBuildConfiguration;
+			buildSettings = {
+				CODE_SIGN_IDENTITY = "Apple Development";
+				CODE_SIGN_STYLE = Automatic;
+				DEVELOPMENT_TEAM = 8XM4B5F42Y;
+				INFOPLIST_FILE = AirPadWidgets/Info.plist;
+				IPHONEOS_DEPLOYMENT_TARGET = 18.0;
+				LD_RUNPATH_SEARCH_PATHS = (
+					"$(inherited)",
+					"@executable_path/Frameworks",
+					"@executable_path/../../Frameworks",
+				);
+				PRODUCT_BUNDLE_IDENTIFIER = com.doctorpresident.airpad.widgets;
 				SDKROOT = iphoneos;
 				TARGETED_DEVICE_FAMILY = 1;
 			};
@@ -1962,6 +2080,15 @@
 /* End XCBuildConfiguration section */
 
 /* Begin XCConfigurationList section */
+		10E50E40B89DFB3954D7E712 /* Build configuration list for PBXNativeTarget "AirPadWidgets" */ = {
+			isa = XCConfigurationList;
+			buildConfigurations = (
+				4A1C406E1D5C32090FCB0173 /* Debug */,
+				0971F275BBB074FAC046B2C5 /* Release */,
+			);
+			defaultConfigurationIsVisible = 0;
+			defaultConfigurationName = Debug;
+		};
 		50C1C80C799EE7F631291186 /* Build configuration list for PBXNativeTarget "AirPadShare" */ = {
 			isa = XCConfigurationList;
 			buildConfigurations = (

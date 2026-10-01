@@ -121,6 +121,10 @@ targets:
     dependencies:
       - target: AirPadShare
         embed: true
+      # Brief CE — the iOS 18 Control (Quick Capture) lives in its own widget extension, embedded
+      # in the app like the share extension. One capture entry point: it runs the SAME CaptureIntent.
+      - target: AirPadWidgets
+        embed: true
       - package: FloatingPanel
       # Local on-device model (ws-local-model Stage 1). MLXLLM/MLXLMCommon from
       # mlx-swift-examples 2.29.1 (mlx-swift 0.29.1 transitive). Plumbing only this
@@ -301,6 +305,40 @@ targets:
               NSExtensionActivationSupportsText: true
               NSExtensionActivationSupportsImageWithMaxCount: 10
               NSExtensionActivationSupportsFileWithMaxCount: 10
+
+  # Brief CE — the iOS 18 Controls widget extension. Carries ONE control (Quick Capture) that runs the
+  # SHARED CaptureIntent (AirPad/Intents/CaptureIntent.swift is listed in BOTH this target's sources
+  # and the app's glob) → one capture entry point for the Control + the Action Button. iOS 18 min.
+  AirPadWidgets:
+    type: app-extension
+    platform: iOS
+    deploymentTarget: "18.0"
+    sources:
+      - path: AirPadWidgets
+        excludes:
+          - "Info.plist"
+      # The SHARED intent — compiled into the extension AND the app (no UIApplication.shared, so it
+      # compiles here). One entry point, not two.
+      - path: AirPad/Intents/CaptureIntent.swift
+    dependencies:
+      - sdk: WidgetKit.framework
+      - sdk: SwiftUI.framework
+    settings:
+      base:
+        PRODUCT_BUNDLE_IDENTIFIER: com.doctorpresident.airpad.widgets
+        TARGETED_DEVICE_FAMILY: "1"
+        DEVELOPMENT_TEAM: 8XM4B5F42Y
+        CODE_SIGN_STYLE: Automatic
+        CODE_SIGN_IDENTITY: "Apple Development"
+    info:
+      path: AirPadWidgets/Info.plist
+      properties:
+        CFBundleDisplayName: AirPad
+        # Same as the app + share extension — pin to the project version (never xcodegen's "1").
+        CFBundleVersion: "$(CURRENT_PROJECT_VERSION)"
+        ITSAppUsesNonExemptEncryption: false
+        NSExtension:
+          NSExtensionPointIdentifier: com.apple.widgetkit-extension
 
   # MD14 measurement-only UI test target (drives a real synthesized tap into the
   # note editor in the Simulator; the app traces the caret event sequence to a

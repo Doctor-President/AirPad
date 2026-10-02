@@ -3,40 +3,6 @@ import SwiftUI
 import UIKit
 #endif
 
-// MARK: - Brief CD — on-screen capture diagnostics (readable on TestFlight, where Console/print are dead)
-
-/// A tiny ring buffer of capture-pipeline events, shown as a compact on-screen HUD during a capture so
-/// T can read the live SCHEDULED / GATE / COMMIT / PROPOSAL flow + the capture flags on a TestFlight
-/// build (print/os_log don't reach Console there). Ships in RELEASE on purpose (debug TestFlight build);
-/// removed once the "+"-capture ghost is confirmed on device.
-@Observable
-final class CaptureDiagLog {
-    @MainActor static let shared = CaptureDiagLog()
-    private(set) var lines: [String] = []
-    @MainActor func add(_ s: String) { lines = Array((lines + [s]).suffix(7)) }
-    @MainActor func clear() { lines = [] }
-}
-
-/// The HUD overlay: capture flags + the last few pipeline events. Mounted by `CaptureHeader` when the
-/// host marks the surface as composing. Monospaced, low-opacity, non-interactive.
-struct CaptureDiagHUD: View {
-    let isCapturing: Bool
-    let isComposing: Bool
-    @State private var log = CaptureDiagLog.shared
-    var body: some View {
-        VStack(alignment: .leading, spacing: 1) {
-            Text("cap=\(isCapturing ? "1":"0") comp=\(isComposing ? "1":"0")")
-                .foregroundStyle(isComposing ? Color.green : Color.red)
-            ForEach(Array(log.lines.enumerated()), id: \.offset) { _, l in Text(l) }
-        }
-        .font(.system(size: 9, design: .monospaced))
-        .foregroundStyle(AppearancePalette.ink.opacity(0.8))
-        .padding(6)
-        .background(AppearancePalette.ink.opacity(0.06), in: RoundedRectangle(cornerRadius: 6))
-        .allowsHitTesting(false)
-    }
-}
-
 // MARK: - Rendered-geometry measurement (proves parity, DEBUG-only)
 
 /// Collects the rendered frame of each header boundary (keyed by name) in a shared
@@ -148,11 +114,6 @@ struct CaptureHeader<Title: View, Summary: View, Collections: View, Tags: View, 
     /// ONLY for a fresh capture (QuikCapture always; the detail view only when `isCaptureMode`), so a
     /// re-opened entry NEVER shows a ghost (rule 5b). One place renders them → every capture surface
     /// that uses this header gets ghosts, by construction.
-    /// Brief CD — show the on-screen capture diagnostics HUD (TestFlight-readable). Hosts set it while
-    /// composing + pass the live capture flags, so T can see cap/comp + the SCHEDULED/GATE/COMMIT flow.
-    var showDiagnostics: Bool = false
-    var diagIsCapturing: Bool = false
-    var diagIsComposing: Bool = false
     var titleGhost: GhostFieldConfig? = nil
     var summaryGhost: GhostFieldConfig? = nil
     let onLeverTap: () -> Void
@@ -188,10 +149,6 @@ struct CaptureHeader<Title: View, Summary: View, Collections: View, Tags: View, 
 
     var body: some View {
         VStack(alignment: .leading, spacing: 0) {
-            if showDiagnostics {
-                CaptureDiagHUD(isCapturing: diagIsCapturing, isComposing: diagIsComposing)
-                    .padding(.bottom, 6)
-            }
             withGhost(title, titleGhost)
                 .measureHeaderBound("title")
 

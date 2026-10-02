@@ -8741,6 +8741,7 @@ final class CorpusStore {
             options: .skipsHiddenFiles
         ) else { return }
 
+        var importedIDs: [String] = []
         for dir in dirs {
             var isDir: ObjCBool = false
             guard FileManager.default.fileExists(atPath: dir.path, isDirectory: &isDir), isDir.boolValue else { continue }
@@ -8778,6 +8779,18 @@ final class CorpusStore {
 
             try? FileManager.default.removeItem(at: dir)
             nodes.insert(node, at: 0)
+            importedIDs.append(node.id)
+        }
+
+        // Brief CG (CG3) — NAME each imported share via the app's proven path. The share extension can't
+        // run the model (FM is iOS-26-only + untested in-extension; MLX is infeasible in the ~20 MB
+        // extension heap — CG0 audit), so it stages a bare/placeholder-titled node and the APP names it
+        // here under `.committedCapture` — exactly the Done-delegate path (promote a matching proposal or
+        // author title+summary, with the CD corpus-free retry when a duplicate neighbour blanks the
+        // title). A link already carries its page title from share time, so the gate no-ops it. Done
+        // AFTER the import loop so file I/O for all records finishes first.
+        for id in importedIDs {
+            await enrichIfNeeded(nodeID: id, at: .committed)
         }
     }
 

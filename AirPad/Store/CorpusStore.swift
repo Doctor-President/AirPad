@@ -8721,6 +8721,14 @@ final class CorpusStore {
     // MARK: - Share extension inbox import
 
     /// Reads nodes staged by the share extension in the App Group container and imports them.
+    /// Brief CG — re-import the App Group share inbox on FOREGROUND (not just boot). The audit found
+    /// import was boot-only, so a share taken while AirPad was suspended didn't appear until a cold
+    /// relaunch. `importFromAppGroupInbox` is id-dedup-guarded + removes each record it consumes, so
+    /// re-running it is safe + idempotent. Called from `AirPadApp`'s scenePhase → `.active`.
+    func refreshShareInbox() async {
+        await importFromAppGroupInbox()
+    }
+
     private func importFromAppGroupInbox() async {
         guard let groupContainer = FileManager.default.containerURL(
             forSecurityApplicationGroupIdentifier: "group.com.doctorpresident.airpad"

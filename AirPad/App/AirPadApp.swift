@@ -10,6 +10,7 @@ struct AirPadApp: App {
 
     @UIApplicationDelegateAdaptor(AppDelegate.self) var appDelegate
 
+    @Environment(\.scenePhase) private var scenePhase   // Brief CG — foreground share-inbox re-import
     @State private var store = CorpusStore()
     @State private var quarantineStore = QuarantineStore()
     @State private var selectionService = SelectionService()
@@ -115,6 +116,12 @@ struct AirPadApp: App {
                 // at the ContentView root, no Dashboard/Recents routing, so
                 // there's no flash on entry.
                 router.entryMode = .quikCapture
+            }
+            // Brief CG — re-import the share inbox on FOREGROUND (the audit found import was boot-only,
+            // so a share taken while AirPad was suspended didn't appear until a cold relaunch). Boot is
+            // already covered by `store.setup()` in `.task`; this adds every warm return to foreground.
+            .onChange(of: scenePhase) { _, phase in
+                if phase == .active { Task { await store.refreshShareInbox() } }
             }
         // (Both dev tuners were DELETED at the 2026-09-15 bake — every value they carried is now a
         // literal in source; Ops/reference/tuner-state-accepted.md is the permanent record.)

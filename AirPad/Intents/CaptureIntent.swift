@@ -21,8 +21,19 @@ struct CaptureIntent: AppIntent {
 
     static let openAppWhenRun = true
 
+    @MainActor
     func perform() async throws -> some IntentResult {
+        // Apple's documented path: with openAppWhenRun, perform() runs IN THE APP after launch — the same
+        // way the Action Button works — so set the router DIRECTLY (the reliable route). The App Group
+        // flag stays as a BACKUP for any path where perform() runs in the extension instead.
         QuikCaptureHandoff.setPending()
+        #if !WIDGET_EXTENSION
+        if let router = AppRouter.shared {
+            router.entryMode = .quikCapture
+        } else {
+            AppRouter.pendingQuikCapture = true   // router not built yet → consumed in init()
+        }
+        #endif
         return .result()
     }
 }

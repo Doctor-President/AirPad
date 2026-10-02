@@ -326,6 +326,9 @@ targets:
       - sdk: SwiftUI.framework
     settings:
       base:
+        # Brief CE — the shared CaptureIntent.swift compiles here too; this flag lets it `#if` out the
+        # in-app AppRouter reference (AppRouter isn't in the extension) while the APP build keeps it.
+        SWIFT_ACTIVE_COMPILATION_CONDITIONS: WIDGET_EXTENSION
         # Brief CE #7 — EXACTLY `.Widgets` (capital W): `.widgets` collided case-insensitively with the
         # existing App ID `com.doctorpresident.airpad.Widgets` ("not available" at App Store export).
         PRODUCT_BUNDLE_IDENTIFIER: com.doctorpresident.airpad.Widgets

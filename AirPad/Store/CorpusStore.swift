@@ -2,6 +2,7 @@ import CryptoKit
 import Foundation
 import NaturalLanguage
 import Observation
+import Speech
 import UIKit
 import os
 
@@ -1104,6 +1105,12 @@ final class CorpusStore {
                 // Brief BO0 — the real-timing Done matrix (variants a–d; needs `-StubAuthorModel`).
                 if ProcessInfo.processInfo.arguments.contains("-BODoneMatrix") {
                     NSLog("[BODoneMatrix] %@", await runBODoneMatrix())
+                }
+                // Brief CG — the share-import logic matrix (gallery coalesce · link page-title +
+                // captcha filter · photo dated fallback · audio transcription wiring). Run with
+                // `-StubAuthorModel -StubNonEmptyTitle -StubTranscription -UITestLibrary(Fresh)`.
+                if ProcessInfo.processInfo.arguments.contains("-CGShareImportMatrix") {
+                    NSLog("[CGShareImportMatrix]\n%@", await runCGShareImportMatrix())
                 }
                 // Brief BN0 — the load-boundary dedup keeps the NEWEST duplicate + drops the rest.
                 if ProcessInfo.processInfo.arguments.contains("-BN0DedupSelfTest") {
@@ -4636,10 +4643,12 @@ final class CorpusStore {
         // `classifyContent(.link)` reads (`title` + `preview`) so the in-entry link path names
         // + summarises exactly like the capture-button path. `addLinkNode` used to do this
         // inline; it now lives here so both callers share it and can't drift.
-        if let ogTitle = metadata?.title, !ogTitle.isEmpty { item.title = ogTitle }
+        // Brief CG — a bot-wall / captcha interstitial ("px-captcha", Cloudflare "Just a moment…")
+        // is NOT content: it must not become the link's title/preview (and so must not feed naming).
+        if let ogTitle = metadata?.title, !ogTitle.isEmpty, !Self.isBotWallText(ogTitle) { item.title = ogTitle }
         // Derived preview: a real og/meta description if present, else the readable body text.
         // BL3.2 keeps readable OUT of the card (`ogDescription`) but IN naming + search here.
-        if let preview = metadata?.description ?? metadata?.readableText, !preview.isEmpty {
+        if let preview = metadata?.description ?? metadata?.readableText, !preview.isEmpty, !Self.isBotWallText(preview) {
             item.preview = preview
         }
 
@@ -8790,8 +8799,258 @@ final class CorpusStore {
         // title). A link already carries its page title from share time, so the gate no-ops it. Done
         // AFTER the import loop so file I/O for all records finishes first.
         for id in importedIDs {
-            await enrichIfNeeded(nodeID: id, at: .committed)
+            // Brief CG — converge the imported share on the SAME in-app paths before naming:
+            //  (1) collapse a multi-photo/video share into ONE `.imageVideo` gallery entry,
+            //  (2) transcribe any shared audio (the voice-capture path) so naming has its words,
+            //  (3) name on the path that matches the content — the photo path (`runImageOCR` →
+            //      `nameAnalyzedPhotoNode`: OCR-named or a dated "Photos · <date>" fallback) for an
+            //      image/video entry, else the normal `.committed` gate (links, text, audio, docs).
+            await coalesceImportedGallery(nodeID: id)
+            await transcribeImportedAudio(nodeID: id)
+            if nodes.first(where: { $0.id == id })?.items.contains(where: { $0.type == .imageVideo }) == true {
+                await runImageOCR(nodeID: id)
+            } else {
+                await enrichIfNeeded(nodeID: id, at: .committed)
+            }
         }
+    }
+
+    /// Brief CG — collapse every image/video item in a freshly-imported share into ONE `.imageVideo`
+    /// gallery entry (the canonical in-app shape `addMediaItems` produces), so a multi-photo share
+    /// renders as one gallery and names via the photo path. Handles both the modern `.imageVideo`
+    /// shape and legacy `.image`/`.video` items (the share extension stages the latter). Non-image
+    /// items keep their place + order. No-op when there is 0 or 1 media item already in gallery form.
+    private func coalesceImportedGallery(nodeID: String) async {
+        guard let node = nodes.first(where: { $0.id == nodeID }) else { return }
+        func isMedia(_ t: NodeItemType) -> Bool { t == .image || t == .video || t == .imageVideo }
+        let mediaItems = node.items.filter { isMedia($0.type) }
+        guard mediaItems.count > 1 else { return }   // 0 or 1 → nothing to merge
+
+        var gallery: [GalleryItem] = []
+        for item in mediaItems {
+            switch item.type {
+            case .imageVideo:
+                gallery.append(contentsOf: item.mediaItems ?? [])
+            case .image, .video:
+                if let file = item.file {
+                    gallery.append(GalleryItem(
+                        id: item.id,
+                        mediaType: item.type == .image ? .image : .video,
+                        file: file,
+                        aspectRatio: nil,
+                        capturedAt: item.createdAt
+                    ))
+                }
+            default:
+                break
+            }
+        }
+        guard !gallery.isEmpty else { return }
+        let galleryEntryID = mediaItems[0].id
+        let galleryCreatedAt = mediaItems[0].createdAt
+        await mutateNode(id: nodeID) { n in
+            var rebuilt: [NodeItem] = []
+            var placed = false
+            for item in n.items {
+                if isMedia(item.type) {
+                    guard !placed else { continue }   // drop the other media items; folded below
+                    var g = NodeItem(id: galleryEntryID, type: .imageVideo, createdAt: galleryCreatedAt)
+                    g.mediaItems = gallery
+                    g.viewMode = gallery.count >= 4 ? .horizontalBento : .carousel
+                    rebuilt.append(g)
+                    placed = true
+                } else {
+                    rebuilt.append(item)
+                }
+            }
+            n.items = rebuilt
+            n.updatedAt = Date()
+        }
+    }
+
+    /// Brief CG — transcribe any shared AUDIO item that arrived without a transcript, using the
+    /// SAME on-device recognizer as in-app voice capture, then write it back so the normal naming
+    /// gate (which reads `item.transcript` for `.audio`) titles + summarises from the words. Audio
+    /// only — video audio-track transcription is out of V1 scope.
+    private func transcribeImportedAudio(nodeID: String) async {
+        guard let node = nodes.first(where: { $0.id == nodeID }) else { return }
+        for item in node.items where item.type == .audio {
+            guard (item.transcript ?? "").isEmpty, let rel = item.file else { continue }
+            guard let url = await service.resolveItemPath(nodeID: nodeID, relativePath: rel) else { continue }
+            let transcript = await Self.transcribeAudioFile(at: url)
+            guard !transcript.isEmpty else { continue }
+            await mutateNode(id: nodeID) { n in
+                if let idx = n.items.firstIndex(where: { $0.id == item.id }) {
+                    n.items[idx].transcript = transcript
+                    n.items[idx].updatedAt = Date()
+                }
+                n.updatedAt = Date()
+            }
+            print("[Import] transcribed audio item=\(item.id.suffix(4)) node=\(nodeID.suffix(4)) len=\(transcript.count)")
+        }
+    }
+
+    /// File-based speech-to-text, mirroring `VoiceCaptureSheet.transcribe`. Returns "" when
+    /// recognition is unavailable/denied (the entry then keeps a dated/"Voice note" fallback). The
+    /// `-StubTranscription` launch arg returns a canned transcript so the Simulator logic-matrix can
+    /// prove the WIRING without a real speech model (device proves transcription QUALITY).
+    nonisolated private static func transcribeAudioFile(at url: URL) async -> String {
+        if CommandLine.arguments.contains("-StubTranscription") {
+            return "stub transcript for share-import wiring"
+        }
+        if SFSpeechRecognizer.authorizationStatus() != .authorized {
+            let status = await withCheckedContinuation { (cont: CheckedContinuation<SFSpeechRecognizerAuthorizationStatus, Never>) in
+                SFSpeechRecognizer.requestAuthorization { cont.resume(returning: $0) }
+            }
+            guard status == .authorized else { return "" }
+        }
+        guard let recognizer = SFSpeechRecognizer(locale: Locale.current), recognizer.isAvailable else { return "" }
+        let request = SFSpeechURLRecognitionRequest(url: url)
+        request.shouldReportPartialResults = false
+        return await withCheckedContinuation { (cont: CheckedContinuation<String, Never>) in
+            var resumed = false
+            var task: SFSpeechRecognitionTask?
+            task = recognizer.recognitionTask(with: request) { result, error in
+                if let result, result.isFinal {
+                    if !resumed { resumed = true; cont.resume(returning: result.bestTranscription.formattedString) }
+                } else if error != nil {
+                    if !resumed { resumed = true; cont.resume(returning: "") }
+                }
+                _ = task   // hold the task alive until the continuation resumes
+            }
+        }
+    }
+
+    /// Brief CG — a bot-wall / captcha interstitial is not content. Conservative lowercased
+    /// substring match over the common PerimeterX / Cloudflare / generic markers.
+    nonisolated static func isBotWallText(_ s: String) -> Bool {
+        let t = s.lowercased()
+        let markers = ["px-captcha", "captcha", "are you a robot", "are you human",
+                       "verify you are human", "enable javascript", "access denied",
+                       "just a moment", "checking your browser", "ddos protection",
+                       "attention required", "cf-browser-verification", "bot detection"]
+        return markers.contains { t.contains($0) }
+    }
+
+    // MARK: - Brief CG — share-import logic matrix (Simulator, store-level, FM+transcription stubbed)
+
+    private var cgInboxURL: URL? {
+        FileManager.default
+            .containerURL(forSecurityApplicationGroupIdentifier: "group.com.doctorpresident.airpad")?
+            .appendingPathComponent("AirPad/inbox")
+    }
+
+    private func cgClearInbox() {
+        if let inbox = cgInboxURL { try? FileManager.default.removeItem(at: inbox) }
+    }
+
+    /// Stage a share-inbox record exactly as the extension writes it: `inbox/{id}/node.json` + media.
+    private func cgStage(_ node: Node, media: [(itemID: String, data: Data, ext: String)]) {
+        guard let inbox = cgInboxURL else { return }
+        let dir = inbox.appendingPathComponent(node.id)
+        try? FileManager.default.createDirectory(at: dir, withIntermediateDirectories: true)
+        let enc = JSONEncoder()
+        enc.dateEncodingStrategy = .iso8601
+        enc.outputFormatting = [.prettyPrinted, .sortedKeys]
+        if let d = try? enc.encode(node) { try? d.write(to: dir.appendingPathComponent("node.json"), options: .atomic) }
+        if !media.isEmpty {
+            let itemsDir = dir.appendingPathComponent("items")
+            try? FileManager.default.createDirectory(at: itemsDir, withIntermediateDirectories: true)
+            for m in media { try? m.data.write(to: itemsDir.appendingPathComponent("\(m.itemID).\(m.ext)"), options: .atomic) }
+        }
+    }
+
+    private func cgTinyJPEG() -> Data {
+        let r = UIGraphicsImageRenderer(size: CGSize(width: 4, height: 4))
+        let img = r.image { ctx in UIColor.gray.setFill(); ctx.fill(CGRect(x: 0, y: 0, width: 4, height: 4)) }
+        return img.jpegData(compressionQuality: 0.8) ?? Data()
+    }
+
+    private func cgShareItem(_ id: String, _ type: NodeItemType, url: String? = nil, file: String? = nil) -> NodeItem {
+        NodeItem(id: id, type: type, createdAt: Date(), content: nil, file: file, description: nil,
+                 transcript: nil, durationSeconds: nil, url: url, title: nil, preview: nil)
+    }
+
+    private func cgShareNode(id: String, items: [NodeItem]) -> Node {
+        Node(id: id, createdAt: Date(), updatedAt: Date(), title: "", summary: "", tags: [], mood: nil,
+             isMeta: false, provenance: nil, threads: [], location: nil, items: items,
+             domain: nil, domainConfirmed: false, needsAIProcessing: true)
+    }
+
+    /// Prove the import-side logic T's spot-checks flagged, WITHOUT the model or a speech engine
+    /// (both stubbed): a multi-photo share → ONE gallery, a link → its page title (captcha filtered),
+    /// a photos-only entry → the dated "Photos · …" fallback, and shared audio → transcription wiring.
+    /// Model-written naming + transcription QUALITY are proven on-device by T's spot-checks.
+    func runCGShareImportMatrix() async -> String {
+        var lines = ["CG share-import matrix (store-level; FM + transcription STUBBED):"]
+        func row(_ name: String, _ pass: Bool, _ detail: String) {
+            lines.append("\(pass ? "PASS" : "FAIL") · \(name) — \(detail)")
+        }
+
+        cgClearInbox()
+
+        // Case 1 — bare link (title nil, as the extension now stages it).
+        let linkNodeID = UUID().uuidString, linkItemID = UUID().uuidString
+        cgStage(cgShareNode(id: linkNodeID, items: [
+            cgShareItem(linkItemID, .link, url: "https://www.wayfair.com/furniture/pdp/lindyn-sectional.html")
+        ]), media: [])
+
+        // Case 2 — two photos in one share.
+        let photoNodeID = UUID().uuidString, p1 = UUID().uuidString, p2 = UUID().uuidString
+        let jpeg = cgTinyJPEG()
+        cgStage(cgShareNode(id: photoNodeID, items: [
+            cgShareItem(p1, .image, file: "items/\(p1).jpg"),
+            cgShareItem(p2, .image, file: "items/\(p2).jpg")
+        ]), media: [(p1, jpeg, "jpg"), (p2, jpeg, "jpg")])
+
+        // Case 3 — one audio item, no transcript.
+        let audioNodeID = UUID().uuidString, a1 = UUID().uuidString
+        cgStage(cgShareNode(id: audioNodeID, items: [
+            cgShareItem(a1, .audio, file: "items/\(a1).m4a")
+        ]), media: [(a1, Data("fake-audio".utf8), "m4a")])
+
+        // Run the REAL import (coalesce → transcribe → route-name).
+        await importFromAppGroupInbox()
+
+        // Case 1 — simulate OG landing on card-render with a captcha description.
+        await applyOGFetch(nodeID: linkNodeID, itemID: linkItemID,
+                           metadata: OGMetadata(title: "Lindyn Sectional", description: "px-captcha"))
+        if let n = nodes.first(where: { $0.id == linkNodeID }) {
+            let link = n.items.first(where: { $0.type == .link })
+            // Deterministic seam (the bug was: host → item.title → "Wayfair.com" named from URL):
+            // the page title now lands on the item and IS the naming content; the captcha is dropped.
+            // The final node TITLE is model-written (device-proven); here the model is a fixed stub.
+            row("link-item-page-title", link?.title == "Lindyn Sectional",
+                "item.title=\(link?.title ?? "nil") (want \"Lindyn Sectional\")")
+            row("captcha-as-no-content", !((link?.preview ?? "").lowercased().contains("captcha")),
+                "preview=\(link?.preview ?? "nil")")
+            row("link-naming-content-is-page-title", extractNodeContent(n) == "Lindyn Sectional",
+                "content=\"\(extractNodeContent(n))\" (want \"Lindyn Sectional\")")
+        } else { row("link", false, "node missing after import") }
+
+        // Case 2 — ONE gallery + dated fallback.
+        if let n = nodes.first(where: { $0.id == photoNodeID }) {
+            let media = n.items.filter { $0.type == .imageVideo }
+            row("gallery-coalesce-one-entry", media.count == 1 && (media.first?.mediaItems?.count ?? 0) == 2,
+                "imageVideo items=\(media.count) mediaItems=\(media.first?.mediaItems?.count ?? 0) totalItems=\(n.items.count)")
+            row("photo-dated-fallback", n.title.hasPrefix("Photos · "),
+                "title=\"\(n.title)\" (want prefix \"Photos · \")")
+        } else { row("photos", false, "node missing after import") }
+
+        // Case 3 — transcription wiring (stub) + named from the transcript.
+        if let n = nodes.first(where: { $0.id == audioNodeID }) {
+            let audio = n.items.first(where: { $0.type == .audio })
+            row("audio-transcription-wiring", (audio?.transcript ?? "").contains("stub transcript"),
+                "transcript=\(audio?.transcript ?? "nil")")
+            row("audio-named-from-transcript", !n.title.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty,
+                "title=\"\(n.title)\"")
+        } else { row("audio", false, "node missing after import") }
+
+        cgClearInbox()
+        let pass = lines.filter { $0.hasPrefix("PASS") }.count
+        let fail = lines.filter { $0.hasPrefix("FAIL") }.count
+        lines.append("RESULT: \(pass) pass / \(fail) fail")
+        return lines.joined(separator: "\n")
     }
 
     // MARK: - Batch import

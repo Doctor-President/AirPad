@@ -67,6 +67,7 @@
 		2D8CCD981197441D1AA1F024 /* AirPadWidgetBundle.swift in Sources */ = {isa = PBXBuildFile; fileRef = 0D775E93481C7D942A38FABD /* AirPadWidgetBundle.swift */; };
 		2DDA27FA6C4F26BC05D7EA97 /* UMAPGraph.swift in Sources */ = {isa = PBXBuildFile; fileRef = BE499E529F1B439D3EDD8816 /* UMAPGraph.swift */; };
 		2E8726CA49E4BE479EED79CC /* FeatureFlags.swift in Sources */ = {isa = PBXBuildFile; fileRef = C3FFA73288300E8E7B5FBA46 /* FeatureFlags.swift */; };
+		323E01DE20F1D667B931F5F0 /* GhostFieldOverlay.swift in Sources */ = {isa = PBXBuildFile; fileRef = CF2C09BA37847F1EB226638D /* GhostFieldOverlay.swift */; };
 		334550772B8C8599E8D99C30 /* TagTerritoryLayout.swift in Sources */ = {isa = PBXBuildFile; fileRef = 219BB28A054C465CCA88BA43 /* TagTerritoryLayout.swift */; };
 		33BCDE66EDD07EFE3F1CBB6A /* ModelPicker.swift in Sources */ = {isa = PBXBuildFile; fileRef = 21D283503B6CC7FE116CC91F /* ModelPicker.swift */; };
 		3421335809DAF6820317ADDC /* LibrarianSheetBackground.swift in Sources */ = {isa = PBXBuildFile; fileRef = 51379886273900EA232831C5 /* LibrarianSheetBackground.swift */; };
@@ -238,6 +239,7 @@
 		B22143F553374028E0FCAF87 /* Lato-Bold.ttf in Resources */ = {isa = PBXBuildFile; fileRef = 1DBE8572AE138177283E2B18 /* Lato-Bold.ttf */; };
 		B35E3505455954169FCEDDDB /* AVFoundation.framework in Frameworks */ = {isa = PBXBuildFile; fileRef = 7F65B5EE1F36033500EF4B74 /* AVFoundation.framework */; };
 		B3905779F4DC65E2E8AFB76A /* CollectionPillRail.swift in Sources */ = {isa = PBXBuildFile; fileRef = C824F739A24F35A1EE96F481 /* CollectionPillRail.swift */; };
+		B41BE6EEABE45AC1655AD699 /* GhostFieldOverlay.swift in Sources */ = {isa = PBXBuildFile; fileRef = CF2C09BA37847F1EB226638D /* GhostFieldOverlay.swift */; };
 		B42B66E904E381DFE892340C /* AppFont.swift in Sources */ = {isa = PBXBuildFile; fileRef = 71268D5FBA66FA5B4EF35343 /* AppFont.swift */; };
 		B4E62AF570E763637681508A /* Cinzel-OFL.txt in Resources */ = {isa = PBXBuildFile; fileRef = 7C8D218A54294B5A75BA557D /* Cinzel-OFL.txt */; };
 		B50270CC57FE455419F41E86 /* HoldDragRepro.swift in Sources */ = {isa = PBXBuildFile; fileRef = 5CA786FE73ACBE100B4FAA56 /* HoldDragRepro.swift */; };
@@ -593,6 +595,7 @@
 		CB9627DA5A37E1126FD4446D /* QuarantineReviewSheet.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = QuarantineReviewSheet.swift; sourceTree = "<group>"; };
 		CBFC67AB61C6EF9AE8FAEA9E /* UMAPTransform.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = UMAPTransform.swift; sourceTree = "<group>"; };
 		CEFDD2E723DD375BFAA41689 /* cinzelbold_msdf.json */ = {isa = PBXFileReference; lastKnownFileType = text.json; path = cinzelbold_msdf.json; sourceTree = "<group>"; };
+		CF2C09BA37847F1EB226638D /* GhostFieldOverlay.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = GhostFieldOverlay.swift; sourceTree = "<group>"; };
 		CF8F89C6F77EFD27FB9CDB99 /* VectorBasis.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = VectorBasis.swift; sourceTree = "<group>"; };
 		D06AD49C19B1632AA4F8E29C /* DocumentPickerView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = DocumentPickerView.swift; sourceTree = "<group>"; };
 		D414766388E3034250D0E1AE /* Lora-Bold.ttf */ = {isa = PBXFileReference; lastKnownFileType = file; path = "Lora-Bold.ttf"; sourceTree = "<group>"; };
@@ -1223,6 +1226,7 @@
 				2D22141DDFC181FE31634680 /* CaretMeasure.swift */,
 				5A96FFE17D3D32F62010C786 /* FirstRunCallout.swift */,
 				8D3B404567771D9D41AB6936 /* FMFailureBanner.swift */,
+				CF2C09BA37847F1EB226638D /* GhostFieldOverlay.swift */,
 				E1CA7EBB8E00D6EB0B60EBCE /* KeyboardDismissModifier.swift */,
 				497A2D223E494E948D445DFF /* NodeGradientBackground.swift */,
 				BBA68756B325BB81B3EDBA12 /* OGPreviewView.swift */,
@@ -1609,6 +1613,7 @@
 				9DE472F3C0CC2C7696196323 /* GalleryBody.swift in Sources */,
 				348CAEC8BA9B796ECC63C1B0 /* GalleryFullscreenViewer.swift in Sources */,
 				CA78CCC70BD9A594AD079E7D /* GalleryItemTile.swift in Sources */,
+				323E01DE20F1D667B931F5F0 /* GhostFieldOverlay.swift in Sources */,
 				E138DAC05805DC2211707EE9 /* HDBSCAN.swift in Sources */,
 				130B5342B773AA3949CFC79C /* HDBSCANCluster.swift in Sources */,
 				CCD5B920FFC2E6B349140203 /* HDBSCANLinkage.swift in Sources */,
@@ -1765,6 +1770,7 @@
 				E0FFC1D3012E19FD234F3751 /* FieldPreset.swift in Sources */,
 				D2F3CB50F971A325ED172AD3 /* FieldValue.swift in Sources */,
 				E015CC503DCD0442457638C9 /* FieldValueFormatter.swift in Sources */,
+				B41BE6EEABE45AC1655AD699 /* GhostFieldOverlay.swift in Sources */,
 				1AB937D63FE8F452D767344B /* Neighborhood.swift in Sources */,
 				0498E0EE7559CBC6D217A2AA /* Node.swift in Sources */,
 				07C8518A53FA5439187CAE4B /* NodeBlock.swift in Sources */,

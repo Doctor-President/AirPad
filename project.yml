@@ -273,6 +273,8 @@ targets:
           # References CorpusStore (app-target only) for the normalize-invariant
           # assertion — same reason the other self-tests are excluded here.
           - "FieldValueSelfTest.swift"
+      # Brief CG — the dependency-free ghost component, reused by the lighter share editor.
+      - path: AirPad/Views/Shared/GhostFieldOverlay.swift
     settings:
       base:
         PRODUCT_BUNDLE_IDENTIFIER: com.doctorpresident.airpad.share

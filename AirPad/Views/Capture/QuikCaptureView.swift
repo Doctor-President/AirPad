@@ -349,9 +349,6 @@ struct QuikCaptureView: View {
                     // rule 6 — the inline ghost plays the lever shimmer for title/summary here, so the
                     // feather must NOT also shimmer for the same offer (no double signal).
                     suppressLeverShimmer: true,
-                    showDiagnostics: true,   // Brief CD — TestFlight-readable capture HUD
-                    diagIsCapturing: router.isCapturing,
-                    diagIsComposing: store.isComposing(nodeID: node.id),
                     titleGhost: tGhostText.map {
                         GhostFieldConfig(text: $0, font: appFont.titleFont(size: visualSettings.nodeTitle.size),
                                          hidden: focusedField == .title, shimmerTrigger: titleShimmer, opacity: ghostOpacity)

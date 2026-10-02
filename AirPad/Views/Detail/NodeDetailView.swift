@@ -550,12 +550,6 @@ struct NodeDetailView: View {
                     // rule 6 — in capture mode the inline ghost plays the lever shimmer, so suppress the
                     // feather's. In NORMAL viewing (no ghost) the feather shimmer is the only signal — keep it.
                     suppressLeverShimmer: isCaptureMode,
-                    // Brief CF — readable in capture AND after Done/reopen: the log persists until the
-                    // next capture clears it, so reopening the just-committed entry shows the Done trace
-                    // (PROMO-SKIP / AUTH / GHOST-COMMIT). The user asked to read it through Done.
-                    showDiagnostics: isCaptureMode || !CaptureDiagLog.shared.lines.isEmpty,
-                    diagIsCapturing: router.isCapturing,
-                    diagIsComposing: store.isComposing(nodeID: nodeID),
                     titleGhost: tGhostText.map {
                         GhostFieldConfig(text: $0, font: entryTitleFont, hidden: focusedField == .title,
                                          shimmerTrigger: titleShimmer, opacity: ghostOpacity)

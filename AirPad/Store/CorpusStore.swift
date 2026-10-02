@@ -2717,8 +2717,6 @@ final class CorpusStore {
         await addNode(node, position: .zero)
         _ = await appendEmptyTextItem(nodeID: node.id)
         composingNodeIDs.insert(node.id)   // Brief CD fix — mark it composing (robust capture signal)
-        CaptureDiagLog.shared.clear()      // #3 — fresh HUD per capture (no lines from a previous entry)
-        CaptureDiagLog.shared.add("\(node.id.suffix(4)) OPEN")
         // Launchpad: the note is one of four equal capture choices, so do NOT
         // auto-raise the keyboard on open. `appendEmptyTextItem` primes
         // autofocus; clear it so capture mode opens calm (tap the note for text).
@@ -3054,7 +3052,6 @@ final class CorpusStore {
             try? await Task.sleep(for: .seconds(1.0))
             guard let self, !Task.isCancelled else { return }
             self.captureLiveCommitTasks[itemID] = nil
-            CaptureDiagLog.shared.add("\(nodeID.suffix(4)) LIVECOMMIT len=\(text.count)")
             await self.updateTextItem(itemID: itemID, newContent: text, nodeID: nodeID)
         }
     }
@@ -3165,22 +3162,13 @@ final class CorpusStore {
         let hash = cardContentHash(for: node)
         for kind in EnrichmentGate.authoredAspects {
             let source: TagSource? = (kind == .title) ? node.titleSource : node.summarySource
-            let p = node.proposals?.first(where: { $0.kind == kind && $0.state == .fresh })
-            // Brief CF HUD — prove WHY each aspect promotes or is skipped at Done (the user asked
-            // for proof, not inference). A `hashNE` skip + a surfacing ghost is the exact bug the
-            // `commitShowingGhosts` fallback below catches.
-            if let source {
-                CaptureDiagLog.shared.add("\(nodeID.suffix(4)) PROMO-SKIP \(kind) src=\(source)")
-            } else if let p, p.sourceContentHash == hash {
-                CaptureDiagLog.shared.add("\(nodeID.suffix(4)) PROMOTE \(kind)")
-                print("[Enrich] PROMOTE node=\(nodeID) kind=\(kind) (no model call)")
-                await acceptProposal(nodeID: nodeID, kind: kind)
-            } else if let p {
-                let ph = p.sourceContentHash.map { String($0.suffix(4)) } ?? "nil"
-                CaptureDiagLog.shared.add("\(nodeID.suffix(4)) PROMO-SKIP \(kind) hashNE p=\(ph) now=\(String(hash.suffix(4)))")
-            } else {
-                CaptureDiagLog.shared.add("\(nodeID.suffix(4)) PROMO-SKIP \(kind) no-fresh")
-            }
+            // Never overwrite an authored aspect; promote ONLY a fresh proposal whose content hash
+            // still matches (a stale/missing one is left for the gate to regenerate under .automatic).
+            guard source == nil,
+                  let p = node.proposals?.first(where: { $0.kind == kind && $0.state == .fresh }),
+                  p.sourceContentHash == hash else { continue }
+            print("[Enrich] PROMOTE node=\(nodeID) kind=\(kind) (no model call)")
+            await acceptProposal(nodeID: nodeID, kind: kind)
         }
     }
 
@@ -3197,7 +3185,6 @@ final class CorpusStore {
         for kind in EnrichmentGate.authoredAspects {
             let source: TagSource? = (kind == .title) ? node.titleSource : node.summarySource
             guard source == nil, node.surfacedProposal(kind: kind) != nil else { continue }
-            CaptureDiagLog.shared.add("\(nodeID.suffix(4)) GHOST-COMMIT \(kind)")
             print("[Enrich] GHOST-COMMIT node=\(nodeID) kind=\(kind) (rule 2 — showing ghost)")
             await acceptProposal(nodeID: nodeID, kind: kind)
         }
@@ -3697,7 +3684,6 @@ final class CorpusStore {
             // Done asks the staleness question instead (`.committed`).
             var needs = self.enrichmentNeeds(for: node, at: .composing)
             bug17Log.notice("GATE node=\(nodeID, privacy: .public) needs=\(needs.any) needsAuthorship=\(needs.authorship) needsSubstrate=\(needs.substrate) titleEmpty=\(title.isEmpty) summaryEmpty=\(summary.isEmpty) contentLen=\(content.count) titleSource=\(String(describing: node.titleSource), privacy: .public) summarySource=\(String(describing: node.summarySource), privacy: .public) → fire=\(needs.any && !content.isEmpty)")
-            CaptureDiagLog.shared.add("\(nodeID.suffix(4)) GATE len=\(content.count) auth=\(needs.authorship ? "1":"0") sub=\(needs.substrate ? "1":"0") fire=\(needs.any && !content.isEmpty ? "1":"0")")
             guard needs.any, !content.isEmpty else {
                 // A gate that says "nothing needed" is a CONCLUSION about this node,
                 // so settle the launch-sweep flag. (Empty content is not a conclusion
@@ -7633,7 +7619,6 @@ final class CorpusStore {
         let meaningfulContentLen = extractNodeContent(node).count
         let suppressSummary = meaningfulContentLen < Self.minSummaryContentChars
         if suppressSummary {
-            CaptureDiagLog.shared.add("\(nodeID.suffix(4)) THIN len=\(meaningfulContentLen) → title-only")
             print("[AI] thin content (\(meaningfulContentLen) < \(Self.minSummaryContentChars)) — title only, summary suppressed for \(nodeID)")
         }
 
@@ -7710,7 +7695,6 @@ final class CorpusStore {
             // what else exists. A GENUINE content refusal fails this too → falls through to CD5's
             // refusal surface, unchanged. (`processNode` guards FM internally; safe on any OS.)
             if useCorpusAware, case .failure = aiOutcome {
-                CaptureDiagLog.shared.add("\(nodeID.suffix(4)) FM-RETRY corpus-free")
                 aiOutcome = await aiSvc.processNode(node, tagVocabulary: currentTags, authoredOnly: authoredOnly)
             }
             // F3 — a failed authorship call no longer collapses into a bare nil: the
@@ -7718,10 +7702,8 @@ final class CorpusStore {
             switch aiOutcome {
             case .success(let r):
                 result = r
-                CaptureDiagLog.shared.add("\(nodeID.suffix(4)) FM-OK t=\(r.title.count) s=\(r.summary.count)")
                 bug17Log.notice("FM-RETURNED node=\(nodeID, privacy: .public) ok summaryLen=\(r.summary.count) titleLen=\(r.title.count)")
             case .failure(let reason):
-                CaptureDiagLog.shared.add("\(nodeID.suffix(4)) FM-FAIL \(String(describing: reason).prefix(18))")
                 bug17Log.notice("FM-RETURNED node=\(nodeID, privacy: .public) FAILED reason=\(String(describing: reason), privacy: .public)")
                 // Fallback title from raw content so the node isn't blank on FM
                 // failure. Race-safe read-modify-write; never touches `.items`.
@@ -7837,7 +7819,6 @@ final class CorpusStore {
             // `result` is nil when the gate skipped the authorship call: no new answer,
             // so nothing to record and the proposal already on the node stands.
             if let result {
-                CaptureDiagLog.shared.add("\(nodeID.suffix(4)) AUTH t=\(result.title.isEmpty ? "EMPTY" : String(result.title.prefix(12))) s=\(result.summary.isEmpty ? "EMPTY" : "ok")")
                 if aspects.contains(.title),
                    n.recordProposal(kind: .title, text: result.title,
                                     currentSource: n.titleSource,

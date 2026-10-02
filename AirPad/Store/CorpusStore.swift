@@ -392,6 +392,13 @@ final class CorpusStore {
     /// `needsAIProcessing` (which the eager compose pass also clears, so it can't mean "Done ran").
     private var pendingLinkAuthor: Set<String> = []
 
+    /// Brief CG — thin-content floor for SUMMARY authoring (chars of meaningful content). Below it,
+    /// naming authors the title only and leaves the summary empty rather than inventing one from a
+    /// title-length input (T: a 16-char link title spawned a hallucinated summary). Tunable; 64
+    /// separates a title-ONLY link (~16–40 chars → no summary) from a link carrying a real OG
+    /// description/readable body (~100+ chars → summary). The title is never gated.
+    private static let minSummaryContentChars = 64
+
     /// ws-card-catalog step 2c — debounced per-node catalog-card refresh+embed
     /// tasks. Keyed by nodeID; re-arming cancels the prior task so rapid edits
     /// coalesce, exactly like `enrichmentTasks` and the block-rebuild enqueue.
@@ -4633,8 +4640,11 @@ final class CorpusStore {
             }
         }
 
-        item.ogTitle = metadata?.title
-        item.ogDescription = metadata?.description   // BL3.2 — real og/meta only; card-facing
+        // Brief CG — filter bot-wall/captcha text from the CARD-FACING OG fields too (not only the
+        // naming fields below): `singleLinkItems` lifts `ogTitle`/`ogDescription` into the displayed
+        // `LinkItem`, so an unfiltered "px-captcha" showed on the link card.
+        item.ogTitle = metadata?.title.flatMap { Self.isBotWallText($0) ? nil : $0 }
+        item.ogDescription = metadata?.description.flatMap { Self.isBotWallText($0) ? nil : $0 }   // BL3.2 — real og/meta only; card-facing
         item.ogSiteName = metadata?.siteName
         item.ogImageFile = imageRelativePath
         item.ogFetchedAt = Date()
@@ -7614,6 +7624,19 @@ final class CorpusStore {
         // (Same key the card catalog uses — one notion of "the content moved".)
         let promptContentHash = cardContentHash(for: node)
 
+        // Brief CG — THIN-CONTENT GUARD. Below a floor of meaningful content there is nothing to
+        // summarise, so a summary can only be invented (T: a 16-char link title "Lindyn Sectional"
+        // spawned a hallucinated "A note about the value of time and resources…"). Author the TITLE
+        // only and leave the summary EMPTY — never invent one. Applies to EVERY naming path (all
+        // authored passes funnel through here), not just links. A title legitimately restates a few
+        // words, so only the summary is gated. The substrate/folksonomy pass (search) is unaffected.
+        let meaningfulContentLen = extractNodeContent(node).count
+        let suppressSummary = meaningfulContentLen < Self.minSummaryContentChars
+        if suppressSummary {
+            CaptureDiagLog.shared.add("\(nodeID.suffix(4)) THIN len=\(meaningfulContentLen) → title-only")
+            print("[AI] thin content (\(meaningfulContentLen) < \(Self.minSummaryContentChars)) — title only, summary suppressed for \(nodeID)")
+        }
+
         // SB126 Stage 2 — corpus-aware tagging path. Behind a feature flag so
         // legacy processNode stays bit-identical until validation phases A–G
         // sign off. Computes a node embedding, builds a deterministic context
@@ -7825,7 +7848,7 @@ final class CorpusStore {
                     n.title = result.title
                     n.titleSource = .model
                 }
-                if aspects.contains(.summary),
+                if !suppressSummary, aspects.contains(.summary),
                    n.recordProposal(kind: .summary, text: result.summary,
                                     currentSource: n.summarySource,
                                     sourceEmbedding: sourceEmbedding,
@@ -8812,6 +8835,28 @@ final class CorpusStore {
             } else {
                 await enrichIfNeeded(nodeID: id, at: .committed)
             }
+            //  (4) fetch a link's OG EAGERLY on import (not lazily on first card render) so a shared
+            //      link is page-titled + summarised in Recents without being opened. For a bare link
+            //      this runs AFTER the `.noContent` enrich above set `pendingLinkAuthor`, so
+            //      `applyOGFetch` re-authors from the page title in the same import pass.
+            await fetchAndApplyOGForImportedLinks(nodeID: id)
+        }
+    }
+
+    /// Brief CG — fetch OG metadata for a freshly-imported link EAGERLY (on import) instead of lazily
+    /// on first card render, so the entry is named in Recents without being opened. Mirrors
+    /// `LinkEntryBody`'s fetch; no-op for a non-link node or a link already fetched (`ogFetchedAt`
+    /// set — which is how the `-CGShareImportMatrix` harness stages its link to simulate OG offline
+    /// without a network call, so this stays free of any test-only branch).
+    private func fetchAndApplyOGForImportedLinks(nodeID: String) async {
+        guard let node = nodes.first(where: { $0.id == nodeID }) else { return }
+        let links = node.items.filter { $0.type == .link && $0.ogFetchedAt == nil }
+        guard !links.isEmpty else { return }
+        let og = OGMetadataService()
+        for item in links {
+            guard let urlString = item.url, let url = URL(string: urlString) else { continue }
+            let metadata = await og.fetch(url: url)
+            await applyOGFetch(nodeID: nodeID, itemID: item.id, metadata: metadata)
         }
     }
 
@@ -8989,11 +9034,12 @@ final class CorpusStore {
 
         cgClearInbox()
 
-        // Case 1 — bare link (title nil, as the extension now stages it).
+        // Case 1 — bare link (title nil, as the extension stages it). Pre-stamp `ogFetchedAt` so the
+        // eager import-OG fetch SKIPS it (no network in the Sim); the matrix simulates OG below.
         let linkNodeID = UUID().uuidString, linkItemID = UUID().uuidString
-        cgStage(cgShareNode(id: linkNodeID, items: [
-            cgShareItem(linkItemID, .link, url: "https://www.wayfair.com/furniture/pdp/lindyn-sectional.html")
-        ]), media: [])
+        var linkItem = cgShareItem(linkItemID, .link, url: "https://www.wayfair.com/furniture/pdp/lindyn-sectional.html")
+        linkItem.ogFetchedAt = Date()
+        cgStage(cgShareNode(id: linkNodeID, items: [linkItem]), media: [])
 
         // Case 2 — two photos in one share.
         let photoNodeID = UUID().uuidString, p1 = UUID().uuidString, p2 = UUID().uuidString
@@ -9024,8 +9070,12 @@ final class CorpusStore {
                 "item.title=\(link?.title ?? "nil") (want \"Lindyn Sectional\")")
             row("captcha-as-no-content", !((link?.preview ?? "").lowercased().contains("captcha")),
                 "preview=\(link?.preview ?? "nil")")
+            row("captcha-not-displayed", !((link?.ogDescription ?? "").lowercased().contains("captcha")),
+                "ogDescription=\(link?.ogDescription ?? "nil") (card-facing)")
             row("link-naming-content-is-page-title", extractNodeContent(n) == "Lindyn Sectional",
                 "content=\"\(extractNodeContent(n))\" (want \"Lindyn Sectional\")")
+            row("thin-content-no-summary", n.summary.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty,
+                "summary=\"\(n.summary)\" (16-char content → title only)")
         } else { row("link", false, "node missing after import") }
 
         // Case 2 — ONE gallery + dated fallback.

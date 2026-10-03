@@ -186,16 +186,12 @@ struct CanvasChrome: View {
             }
             .animation(.easeInOut(duration: 0.22), value: filterState.viewMode)
 
-            // Chrome edge bands: eased blur + darken behind the chrome on the
-            // vertical card surface. Sits ABOVE the surface (cards blur as they
-            // pass under) and BELOW every chrome overlay below (pills, switcher,
-            // capsule, +), so the chrome stays crisp.
-            // BUG 26 — `VerticalScrollView` pushes its detail INSIDE this ZStack
-            // (its own NavigationStack), so the surface gate alone kept the bands
-            // rendering over the pushed detail. Add the discrete depth guard the
-            // sibling overlays below already use (`!store.isInDetailView`) so the
-            // bands hide in the detail view — same shape as the drop-shadow fix.
-            if filterState.viewMode == .grid && gridColumnCount == 4 && !store.isInDetailView {
+            // Chrome edge bands (shipped 1.0 treatment — eased blur + darken behind the chrome; cards
+            // blur/darken passing under, chrome stays crisp). T 2026-10-03: kept this over the §4 scrim
+            // experiments and extended it from vertical-only to ALL CARD densities. `viewMode == .grid` is
+            // Card View (carousel / grid / vertical); List (`.list`) and the graph (`.systemGraph`) are
+            // excluded — List stays untreated per T. `!isInDetailView` hides it under a pushed detail.
+            if filterState.viewMode == .grid && !store.isInDetailView {
                 ChromeEdgeBands()
             }
 
@@ -1408,11 +1404,12 @@ extension View {
 
 // MARK: - Chrome edge bands
 
-/// Full-width top + bottom bands that sit BEHIND the chrome on the vertical
-/// scroll surface: an eased backdrop blur + darkening that ramps from full at the
-/// screen edge to zero at the inner boundary. Cards blur passing under; the
-/// chrome (mounted later in CanvasChrome's ZStack) stays crisp. Values are baked
-/// PER APPEARANCE in `ChromeBandDefaults` (dark ≠ light).
+/// Full-width top + bottom bands that sit BEHIND the chrome: an eased backdrop blur + darkening that ramps
+/// from full at the screen edge to zero at the inner boundary. Cards blur/darken passing under; the chrome
+/// (mounted later in CanvasChrome's ZStack) stays crisp. Values are baked PER APPEARANCE in
+/// `ChromeBandDefaults` (dark ≠ light). This is the shipped 1.0 (202610022131) treatment T chose to keep
+/// (2026-10-03), now extended from vertical-only to all CARD densities (carousel / grid / vertical); List
+/// and the graph stay untreated. (The §4 scrim / fade-to-black experiments were reverted to this.)
 struct ChromeEdgeBands: View {
     @Environment(\.colorScheme) private var colorScheme
 

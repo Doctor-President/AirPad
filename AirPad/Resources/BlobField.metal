@@ -396,3 +396,4 @@ static float2 blobWarp(float2 p, float t, float scale, float amount) {
         return heroField(samplePos, time, size, bloom, blend, params, paramCount);
     }
 }
+

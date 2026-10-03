@@ -204,7 +204,15 @@ enum AppearancePalette {
     /// on cream). Pushed live from the Map's per-frame trait resolution
     /// alongside `mapGridDotRGB`.
     static func mapGridDotOpacity(dark: Bool) -> Float {
-        dark ? 0.809 : 0.805   // T device-final 2026-09-14, see Ops/reference/tuner-state-accepted.md
+        dark ? 0.809 : 0.805   // ★ MAP ONLY. T device-final 2026-09-14, Ops/reference/tuner-state-accepted.md.
+    }
+
+    /// §4 background-pass (T 2026-10-02) — LIBRARY-view dot opacity (List / Grid / Card carousel /
+    /// vertical Card ONLY, via `BackgroundGridView`). Quieter than the Map so the dots don't compete
+    /// with cards/rows: dark 30% / light 65% of the Map's 0.809 / 0.805. Split from `mapGridDotOpacity`
+    /// so the Map's grid stays byte-for-byte unchanged (fixes the shared-token regression on TF 202610021917).
+    static func libraryGridDotOpacity(dark: Bool) -> Float {
+        dark ? 0.243 : 0.523
     }
 
     /// The Map canvas background. Dark: `#111115` (T's dialed near-black — a
@@ -323,3 +331,4 @@ struct AppearanceApplier: UIViewRepresentable {
         }
     }
 }
+

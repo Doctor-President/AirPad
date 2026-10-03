@@ -19,7 +19,7 @@ import UIKit
 /// `colorScheme` through updateUIView — an SKView never receives SwiftUI's
 /// environment, so the trait is read up here and pushed down. This fixes the
 /// white-only dots (they were the makeShape default, unreadable on light ground).
-struct BackgroundGridView: UIViewRepresentable {
+struct BackgroundGridSKView: UIViewRepresentable {
     @Environment(\.colorScheme) private var colorScheme
 
     func makeUIView(context: Context) -> SKView {
@@ -75,8 +75,10 @@ struct BackgroundGridView: UIViewRepresentable {
     private func pushAppearance(to grid: SKShapeNode) {
         let dark = colorScheme == .dark
         let dot = AppearancePalette.mapGridDotRGB(dark: dark)
+        // §4 — LIBRARY views use the QUIETER library dot opacity; the Map keeps `mapGridDotOpacity`
+        // (byte-for-byte), so this change can't touch the Map. Hue (`mapGridDotRGB`) stays shared.
         BackgroundGridNode.setDotAppearance(grid, r: dot.r, g: dot.g, b: dot.b,
-                                            opacity: AppearancePalette.mapGridDotOpacity(dark: dark))
+                                            opacity: AppearancePalette.libraryGridDotOpacity(dark: dark))
     }
 
     /// Shared 128x128 white texture for SKShapeNode.fillShader UV validity.
@@ -98,5 +100,26 @@ private final class BackgroundGridScene: SKScene {
         super.didChangeSize(oldSize)
         guard let grid = grid else { return }
         BackgroundGridNode.resize(grid, to: size)
+    }
+}
+
+/// §4 background pass wrapper. The dots render in `BackgroundGridSKView`; this adds the optional dim-2
+/// dark VERTICAL GRADIENT (current charcoal `#161616` at top → near-black `#0A0A0C` at bottom) BEHIND the
+/// dots, replacing the flat dark ground. Light mode and the flat-dark case are byte-identical to before
+/// (just the SK dots). Every corpus view already mounts `BackgroundGridView`, so this one seam covers
+/// List / Grid / Vertical / Carousel at once.
+struct BackgroundGridView: View {
+    @Environment(\.colorScheme) private var colorScheme
+    var body: some View {
+        ZStack {
+            // §4 background-pass bake (T 2026-10-02): the dark ground is a VERTICAL GRADIENT
+            // (#161616 top → #0A0A0C bottom), replacing the flat #161616; light stays flat.
+            if colorScheme == .dark {
+                LinearGradient(colors: [Color(hexString: "161616"), Color(hexString: "0A0A0C")],
+                               startPoint: .top, endPoint: .bottom)
+                    .ignoresSafeArea()
+            }
+            BackgroundGridSKView()
+        }
     }
 }

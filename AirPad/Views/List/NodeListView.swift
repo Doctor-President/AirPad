@@ -171,6 +171,10 @@ struct NodeListView: View {
                                         startPoint: .leading, endPoint: .trailing
                                     )
                                 } else {
+                                    // §4 background pass (T 2026-10-02): KEEP the row panel (the
+                                    // "removed" option was a Companion default, not T's pick) — now over
+                                    // the quieter dots + dark gradient. Dark = frosted material; light =
+                                    // warm elevated fill + lift.
                                     Rectangle()
                                         .fill(colorScheme == .dark
                                               ? AnyShapeStyle(.ultraThinMaterial)

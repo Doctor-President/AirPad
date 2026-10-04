@@ -156,6 +156,27 @@ final class ChatSession {
     /// The reasoning-model thought process of the LATEST turn — streamed live (rendered by the
     /// Thought-process block) and NEVER persisted; ephemeral by design. Reset at each stream start.
     private(set) var streamingThinking: String = ""
+    /// Set once per turn after `appendAnswerDelta` has split a leaked chain-of-thought off the answer
+    /// channel, so the answer can safely mention the word again. Reset at each stream/step start.
+    private var didSplitLeakedThinking = false
+
+    /// Append an ANSWER-channel delta, live-routing a leaked chain-of-thought into the Thought-process
+    /// block instead of the answer body. Models that ignore `think:false` (deepseek-r1, qwen3:4b) dump
+    /// their reasoning onto the answer channel terminated by a stray `</think>`; everything up to + that
+    /// first close is reasoning → `streamingThinking` (collapsed UI), the rest is the real answer. Clean
+    /// models never emit `</think>`, so this is a no-op for them. Idempotent per turn.
+    @MainActor
+    private func appendAnswerDelta(_ t: String) {
+        streamingText += t
+        guard !didSplitLeakedThinking, let r = streamingText.range(of: "</think>") else { return }
+        let reasoning = String(streamingText[..<r.upperBound])
+            .replacingOccurrences(of: "<think>", with: "")
+            .replacingOccurrences(of: "</think>", with: "")
+            .trimmingCharacters(in: .whitespacesAndNewlines)
+        if !reasoning.isEmpty { streamingThinking += reasoning }
+        streamingText = String(streamingText[r.upperBound...])
+        didSplitLeakedThinking = true
+    }
     /// Per-chat Thinking toggle, OFF by default. The picker sheet's toggle sets it; send() passes
     /// it to the Host — the only path that honors `think`.
     var thinkEnabled: Bool = false
@@ -310,6 +331,7 @@ final class ChatSession {
         // folds the in-flight `streamingText` into the persisted snapshot.
         var lastPersistedLength = 0
         streamingThinking = ""
+        didSplitLeakedThinking = false
         do {
             for try await delta in ModelRouter.generateStreaming(
                 systemPrompt: systemPrompt,
@@ -324,7 +346,7 @@ final class ChatSession {
                     streamingThinking += t   // ephemeral — the Thought-process block renders it (increment 7)
                 case .answer(let t):
                     if prefillNotice != nil { prefillNotice = nil }   // BW5 — the first token replaces the "Reading…" line
-                    streamingText += t
+                    appendAnswerDelta(t)   // routes a leaked chain-of-thought to the Thought-process block, keeps the answer clean
                     if streamingText.count - lastPersistedLength >= Self.partialPersistThreshold {
                         lastPersistedLength = streamingText.count
                         flush()
@@ -364,6 +386,17 @@ final class ChatSession {
                     // drop an uncited read entry (BS2's guarantee, restored end-to-end).
                     let r = CitationReference.renumberBySource(text: finalText, citations: cited,
                                                                alwaysInclude: alwaysCiteIndices)
+                    messages.append(Message(id: streamingMessageID, role: .assistant, text: r.text, citations: r.citations, readReceipt: readReceipt))
+                } else if let candidates = citations,
+                          case let titleMatched = candidates.filter({ Self.titleMentioned($0.title, in: finalText) }),
+                          !titleMatched.isEmpty {
+                    // Deterministic citation fallback (T 2026-10-04): the answer wrote NO [n] (small models
+                    // under-cite a free-form synthesis — qwen3:4b's connections turn). Attach a FOOTER chip
+                    // for every PACKET entry the answer NAMES by title (case/punctuation-tolerant). `[n]`
+                    // parsing stays the primary path above; this fires only when there are no markers. Only
+                    // `candidates` are considered, so a chip can never point at an entry not in the packet.
+                    let r = CitationReference.renumberBySource(text: finalText, citations: titleMatched,
+                                                               alwaysInclude: Set(titleMatched.map { $0.index }))
                     messages.append(Message(id: streamingMessageID, role: .assistant, text: r.text, citations: r.citations, readReceipt: readReceipt))
                 } else {
                     // Brief BN5 — the read/skim receipt renders even when the answer cited nothing
@@ -475,7 +508,7 @@ final class ChatSession {
             }
             // Stream the assistant's partial answer into the live transcript (shared by both paths).
             let onDelta: @Sendable (String) -> Void = { [weak self] delta in
-                Task { @MainActor in self?.streamingText += delta }
+                Task { @MainActor in self?.appendAnswerDelta(delta) }   // route a leaked CoT to the Thought-process block
             }
             // Brief AL3 — the reasoning channel (Thinking on, Host path): stream the thought
             // process into `streamingThinking` (ephemeral; the Thought-process block renders it).
@@ -510,6 +543,7 @@ final class ChatSession {
                 for step in 0..<maxToolSteps {
                     streamingText = ""
                     streamingThinking = ""   // AL3 — per step, so the panel shows THIS step's reasoning; the final (synthesis) step's is retained at commit
+                    didSplitLeakedThinking = false
                     // Withhold the tool schema once a tool reported it has no backend — the model
                     // can't retry a tool that can't succeed, so it answers honestly.
                     let turnTools = sawUnavailable ? nil : AgentTools.schema
@@ -538,7 +572,9 @@ final class ChatSession {
                     }
 
                     if turn.toolCalls.isEmpty {
-                        finalAnswer = turn.content.trimmingCharacters(in: .whitespacesAndNewlines)
+                        // Strip any leaked chain-of-thought from the settled agent answer (search turns run
+                        // think:false; a model that ignores it dumps reasoning into content → stray </think>).
+                        finalAnswer = Self.stripThinkTags(turn.content).trimmingCharacters(in: .whitespacesAndNewlines)
                         break
                     }
                     anyTool = true
@@ -805,9 +841,33 @@ final class ChatSession {
     /// chain-of-thought is never rendered and its `[n]` never parsed as a citation.
     /// No-op on the Host path (reasoning rides its own channel) and on plain answers.
     static func stripThinkTags(_ s: String) -> String {
-        var out = s.replacingOccurrences(of: #"(?is)<think>.*?</think>"#, with: "", options: .regularExpression)
-        out = out.replacingOccurrences(of: #"(?is)<think>.*$"#, with: "", options: .regularExpression)
-        return out.replacingOccurrences(of: "</think>", with: "")
+        var out = s.replacingOccurrences(of: #"(?is)<think>.*?</think>"#, with: "", options: .regularExpression)   // paired block
+        out = out.replacingOccurrences(of: #"(?is)<think>.*$"#, with: "", options: .regularExpression)             // unclosed <think> → EOS
+        // Reasoning dumped onto the ANSWER channel with NO opening <think> but terminated by a stray
+        // </think> (deepseek-r1 / qwen3:4b via Ollama with think:false ignore it and emit the full
+        // chain-of-thought as content ending in "…</think>\n<answer>"). Drop everything up to + including
+        // that first stray close — the preamble is the leaked reasoning; the real answer follows it.
+        out = out.replacingOccurrences(of: #"(?is)^.*?</think>"#, with: "", options: .regularExpression)
+        out = out.replacingOccurrences(of: "</think>", with: "")   // any residual bare close
+        return out.replacingOccurrences(of: "<think>", with: "")   // any residual bare open
+    }
+
+    /// Deterministic citation fallback — does `answer` NAME a packet entry titled `title`? Case- and
+    /// punctuation-tolerant: compares the title's MAIN part (before a ':', '—', or '·' subtitle) as a
+    /// normalized (lowercased, non-alphanumeric → space, collapsed) substring of the answer. Used ONLY when
+    /// the answer wrote no `[n]`, so a small model's uncited synthesis still gets footer chips for the
+    /// entries it mentions. Guarded at ≥4 chars so tiny/generic titles don't false-match.
+    static func titleMentioned(_ title: String, in answer: String) -> Bool {
+        func norm(_ s: String) -> String {
+            let scalars = s.lowercased().unicodeScalars.map {
+                CharacterSet.alphanumerics.contains($0) ? Character($0) : " "
+            }
+            return String(scalars).split(separator: " ").joined(separator: " ")
+        }
+        let main = title.split(whereSeparator: { ":—·".contains($0) }).first.map(String.init) ?? title
+        let needle = norm(main)
+        guard needle.count >= 4 else { return false }
+        return norm(answer).contains(needle)
     }
 
     static func humanError(for error: Error) -> String {

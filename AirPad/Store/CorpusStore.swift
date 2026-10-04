@@ -1374,6 +1374,12 @@ final class CorpusStore {
                 if ProcessInfo.processInfo.arguments.contains("-LibrarianGauntlet") {
                     await runLibrarianGauntlet()
                 }
+                // Thinking-leak verification matrix (T, 2026-10-03): {qwen3:4b, qwen3:8b, deepseek-r1}
+                // × Thinking{off,on} × 3 questions through the REAL turn path — no reasoning trace / no
+                // system-prompt echo / citations resolve.
+                if ProcessInfo.processInfo.arguments.contains("-LibrarianLeakMatrix") {
+                    await runLibrarianLeakMatrix()
+                }
                 // Brief BY — the residency-mode gauntlet (Dynamic/Manual/Always-ready + the idle-eject repro).
                 if ProcessInfo.processInfo.arguments.contains("-LibrarianResidencyGauntlet") {
                     await runResidencyGauntlet()
@@ -1929,6 +1935,104 @@ final class CorpusStore {
     /// routing "chose" correctly. Pair with the Host's `--observe` log (`chat→ollama …` +
     /// `chat done … prompt_eval=… truncated=…`) for the Host-side half of the invariants.
     ///
+    /// Thinking-leak verification matrix (T, 2026-10-03). Drives the REAL turn path
+    /// (`groundedSend → ChatSession.send → ModelRouter.streamHost → Host → Ollama`) for every cell of
+    /// {qwen3:4b, qwen3:8b, deepseek-r1} × Thinking{off,on} × 3 questions, and grades the DELIVERED answer:
+    /// (1) no reasoning trace (no `<think>`/`</think>` + no reasoning-preamble markers), (2) no verbatim
+    /// system-prompt echo, (3) citations resolve (every `[n]` has a source chip; every corpus chip → a real
+    /// node). `userPickedHostModel` routes each row to its model (Ollama loads on demand). The Host's
+    /// `--observe` log is the authority on which model actually answered.
+    /// Launch: `-CorpusFixture <clone> -EmbedCPUOnly -LibrarianLeakMatrix -DebugHostURL … -DebugHostSecret … -DebugHostPubKey …`
+    func runLibrarianLeakMatrix() async {
+        NSLog("[LeakMatrix] START provider=%@ window=%d corpusNodes=%d", "\(ModelRouter.active)", ModelRouter.contextWindowTokens, nodes.count)
+        guard case .host = ModelRouter.active else {
+            NSLog("[LeakMatrix] ABORT — provider is NOT .host. Pass -DebugHostURL/-DebugHostSecret/-DebugHostPubKey so the REAL sealed Host path is exercised.")
+            NSLog("[LeakMatrix] done"); return
+        }
+        let nodeIDs = Set(nodes.map { $0.id })
+        var models = ["qwen3:4b", "qwen3:8b", "deepseek-r1:latest"]
+        // `-MatrixModel <tag>` runs just one model's rows, so the caller can control Host residency
+        // externally (resolveActiveModelName PREFERS the resident model, so each model must be made
+        // resident on its own run — eject the others, let row 1 load this one).
+        if let mi = ProcessInfo.processInfo.arguments.firstIndex(of: "-MatrixModel"),
+           mi + 1 < ProcessInfo.processInfo.arguments.count {
+            models = [ProcessInfo.processInfo.arguments[mi + 1]]
+        }
+        let questions: [(id: String, q: String)] = [
+            ("Q1-grounded",    "What do my lab test results reveal?"),
+            ("Q2-connections", "What connections do you find between my ideas?"),
+            ("Q3-general",     "What is the capital of France?"),
+        ]
+        // Reasoning-leak markers — TIGHT (a clean answer addressed to the user never narrates these).
+        let leakMarkers = ["<think>", "</think>", "we are given", "we are done", "the user asked",
+            "the user just asked", "the user is asking", "okay, the user", "first, the user",
+            "let me reconsider", "let me think through", "chain of thought", "the system prompt",
+            "the instructions say", "i need to answer the"]
+
+        let librarian = LibrarianState()
+        librarian.selectedScope = .corpus
+        librarian.corpusAware = true
+        var rows: [String] = ["| model | thinking | question | result | detail |", "|---|---|---|---|---|"]
+        var pass = 0, total = 0
+
+        for model in models {
+            ModelRouter.userPickedHostModel = model
+            for think in [false, true] {
+                for tc in questions {
+                    total += 1
+                    let chat = ChatSession()
+                    chat.thinkEnabled = think
+                    let t0 = Date()
+                    await librarian.groundedSend(query: tc.q, store: self, chat: chat)
+                    let plan = librarian.debugLastTurn
+                    let msg = chat.messages.last { $0.role == .assistant }
+                    let answer = msg?.text ?? ""
+                    let lower = answer.lowercased()
+                    let secs = Int(Date().timeIntervalSince(t0))
+
+                    var fails: [String] = []
+                    if answer.isEmpty { fails.append("EMPTY (\(chat.lastError ?? "no error"))") }
+                    // (1) no reasoning trace
+                    for m in leakMarkers where lower.contains(m) { fails.append("leak:'\(m)'") }
+                    // (2) no verbatim system-prompt echo (any ≥40-char prompt line appearing in the answer)
+                    if let sp = plan?.systemPrompt, !answer.isEmpty {
+                        for line in sp.split(whereSeparator: { $0.isNewline }) {
+                            let s = line.trimmingCharacters(in: .whitespaces)
+                            if s.count >= 40, answer.contains(s) { fails.append("sysprompt-echo:\"\(s.prefix(32))…\""); break }
+                        }
+                    }
+                    // (3) citations resolve
+                    let chips = msg?.citations ?? []
+                    let chipIdx = Set(chips.map { $0.index })
+                    for n in CitationReference.citedIndices(in: answer) where !chipIdx.contains(n) {
+                        fails.append("cite[\(n)]→no chip")
+                    }
+                    for ch in chips { if let nid = ch.nodeID, !nodeIDs.contains(nid) { fails.append("chip[\(ch.index)]→missing node") } }
+                    // (3b) NO bare `E<n>` entry labels in prose — the model must cite with [n], not "E6"/"E7-E9"
+                    // (the field bug: the packet used [E<n>] labels and qwen3:4b wrote bracket-less E6/E10).
+                    if answer.range(of: #"\bE\d"#, options: .regularExpression) != nil {
+                        fails.append("bare E<n> label in prose (must be [n])")
+                    }
+                    // (3c) a grounded answer (read/survey) must actually cite at least one entry
+                    let rt = plan?.mode ?? ""
+                    if (rt == "read" || rt == "survey"), !answer.isEmpty, chips.isEmpty {
+                        fails.append("grounded(\(rt)) answer cited 0 entries")
+                    }
+
+                    let ok = fails.isEmpty
+                    if ok { pass += 1 }
+                    let detail = ok ? "clean · \(secs)s · route=\(plan?.mode ?? "?") · \(chips.count) chips" : fails.joined(separator: "; ")
+                    rows.append("| \(model) | think=\(think ? "on" : "off") | \(tc.id) | \(ok ? "✅ PASS" : "❌ FAIL") | \(detail) |")
+                    NSLog("[LeakMatrix] %@ think=%@ %@ -> %@ | %@ | answer[:90]=%@",
+                          model, think ? "on":"off", tc.id, ok ? "PASS":"FAIL", fails.joined(separator:"; "), String(answer.prefix(90)))
+                }
+            }
+        }
+        NSLog("[LeakMatrix] ===== RESULT %d/%d PASS =====", pass, total)
+        for r in rows { NSLog("%@", r) }
+        NSLog("[LeakMatrix] done")
+    }
+
     /// Launch: `-CorpusFixture <clone> -EmbedCPUOnly -LibrarianGauntlet`
     ///         `-DebugHostURL http://127.0.0.1:<port> -DebugHostSecret <S> -DebugHostPubKey <b64>`
     func runLibrarianGauntlet() async {

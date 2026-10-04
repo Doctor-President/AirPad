@@ -2049,7 +2049,7 @@ final class LibrarianState {
     /// renders citations as chips below the answer, so an in-text list
     /// is a duplicate the user never asked for.
     private var askSystemPrompt: String {
-        let base = "You are a reflective AI that helps someone think across their OWN entries. Up to three labelled sections may appear below the question: ENTRIES READ IN FULL contains the COMPLETE text of the user's most relevant entries — these are the PRIMARY source, answer from them directly and thoroughly; ENTRIES ON THIS TOPIC lists other related entries (one line each); and PASSAGES are excerpts. They were pulled from the user's library and MAY OR MAY NOT all be relevant. When an entry is READ IN FULL, base your answer on its whole text — give the specifics it actually contains (names, values, dates, figures) rather than a vague summary. For broad questions about what the user thinks or has, synthesise across ENTRIES and cite them; for specific facts, answer from the full entry or the PASSAGES. Treat anything that genuinely helps as authoritative about the user's own world — if it defines a term, use THEIR definition over a generic one — and cite it inline with its entry label like [E1] [E2] matching the labelled entries above. If a full entry is marked PARTIAL, only its best excerpts were included — answer from what's there and don't invent the rest. Ignore items that don't help and answer normally from your own knowledge. These are entries from the user's OWN library — each is labelled with who authored it (or where it was saved from) and its date. If a specific fact genuinely isn't in these entries, you may say so briefly and then answer from your general knowledge — that is a valid answer. Never refuse, and never claim you cannot access the entries — just answer the question directly. Be specific, concise, and never generic. Cite only items you actually used. Do not connect entries the question did not ask about. If an entry distinguishes an estimate from an actual figure, say which. Entries marked saved article, document, or image text are things the user collected, not their own words. For questions about the user's own views, answer from their entries and refer to collected sources as such. Do not append a References, Sources, or Citations section — AirPad renders citations separately. End your reply at the end of the prose answer."
+        let base = "You are a reflective AI that helps someone think across their OWN entries. Up to three labelled sections may appear below the question: ENTRIES READ IN FULL contains the COMPLETE text of the user's most relevant entries — these are the PRIMARY source, answer from them directly and thoroughly; ENTRIES ON THIS TOPIC lists other related entries (one line each); and PASSAGES are excerpts. They were pulled from the user's library and MAY OR MAY NOT all be relevant. When an entry is READ IN FULL, base your answer on its whole text — give the specifics it actually contains (names, values, dates, figures) rather than a vague summary. For broad questions about what the user thinks or has, synthesise across ENTRIES and cite them; for specific facts, answer from the full entry or the PASSAGES. Treat anything that genuinely helps as authoritative about the user's own world — if it defines a term, use THEIR definition over a generic one — and cite it inline with its bracketed number like [1] [2] matching the numbered entries above — ALWAYS use the exact bracketed number of the entry you are referring to (e.g. write [6], never 'E6' or 'entry 6'), and cite every entry you discuss. If a full entry is marked PARTIAL, only its best excerpts were included — answer from what's there and don't invent the rest. Ignore items that don't help and answer normally from your own knowledge. These are entries from the user's OWN library — each is labelled with who authored it (or where it was saved from) and its date. If a specific fact genuinely isn't in these entries, you may say so briefly and then answer from your general knowledge — that is a valid answer. Never refuse, and never claim you cannot access the entries — just answer the question directly. Be specific, concise, and never generic. Cite only items you actually used. Do not connect entries the question did not ask about. If an entry distinguishes an estimate from an actual figure, say which. Entries marked saved article, document, or image text are things the user collected, not their own words. For questions about the user's own views, answer from their entries and refer to collected sources as such. Do not append a References, Sources, or Citations section — AirPad renders citations separately. End your reply at the end of the prose answer."
         return personalVoicePrefix + base
     }
 
@@ -2382,30 +2382,30 @@ final class LibrarianState {
         return entryDateFormatter.string(from: node.createdAt)
     }
 
-    /// Brief BN3 + BU4 — the header for a full-entry read: `[E<n>] <Title> · <ownership> · <date>`
-    /// (+ ` — read in full` / ` — PARTIAL: best excerpts of a long entry`). `[E<n>]` is the citation
+    /// Brief BN3 + BU4 — the header for a full-entry read: `[n] <Title> · <ownership> · <date>`
+    /// (+ ` — read in full` / ` — PARTIAL: best excerpts of a long entry`). `[n]` is the citation
     /// handle the model cites back (see `askSystemPrompt`); ownership + date are BU4's grounding.
     private static func entryReadHeader(for c: NumberedCandidate, store: CorpusStore) -> String {
         guard case .entry(let e) = c.payload else { return "" }
         let (kind, domain) = provenance(for: c, store: store)
         let tail = e.partial ? " — PARTIAL: best excerpts of a long entry" : " — read in full"
-        return "[E\(c.number)] \(e.title) · \(ownershipLabel(kind: kind, domain: domain)) · \(entryDate(for: c.nodeID, store: store))\(tail)"
+        return "[\(c.number)] \(e.title) · \(ownershipLabel(kind: kind, domain: domain)) · \(entryDate(for: c.nodeID, store: store))\(tail)"
     }
 
-    /// Brief W1 + BU4 — a passage's header: `[E<n>] <Title> · <ownership> · <date>`.
+    /// Brief W1 + BU4 — a passage's header: `[n] <Title> · <ownership> · <date>`.
     private static func passageHeader(for c: NumberedCandidate, store: CorpusStore) -> String {
         let title = store.nodes.first { $0.id == c.nodeID }?.title ?? "Untitled"
         let (kind, domain) = provenance(for: c, store: store)
-        return "[E\(c.number)] \(title) · \(ownershipLabel(kind: kind, domain: domain)) · \(entryDate(for: c.nodeID, store: store))"
+        return "[\(c.number)] \(title) · \(ownershipLabel(kind: kind, domain: domain)) · \(entryDate(for: c.nodeID, store: store))"
     }
 
     /// Brief AA3 + BU4 — a card's ENTRIES-ON-THIS-TOPIC line:
-    /// `[E<n>] <Title> · <ownership> · <date> — <gist>`.
+    /// `[n] <Title> · <ownership> · <date> — <gist>`.
     private static func cardContextLine(for c: NumberedCandidate, store: CorpusStore) -> String {
         guard case .card(let card) = c.payload else { return "" }
         let title = store.nodes.first { $0.id == card.nodeID }?.title ?? "Untitled"
         let (kind, domain) = provenance(for: c, store: store)
-        return "[E\(c.number)] \(title) · \(ownershipLabel(kind: kind, domain: domain)) · \(entryDate(for: c.nodeID, store: store)) — \(card.gist)"
+        return "[\(c.number)] \(title) · \(ownershipLabel(kind: kind, domain: domain)) · \(entryDate(for: c.nodeID, store: store)) — \(card.gist)"
     }
 
     /// AA4 — compact card line for the S5 log (title only, gist omitted to keep the

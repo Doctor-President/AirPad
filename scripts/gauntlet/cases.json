@@ -1,0 +1,47 @@
+{
+  "_doc": "Brief CH-0 — Gauntlet v2 case list (SOURCE OF TRUTH; Ops/reports/ch-model-bakeoff/gauntlet-v2-cases.md is generated from this by `gauntlet.py emit-md`). One CHAT = one app launch = one fresh conversation; its cases run in order inside it. Each case runs × Thinking {off,on} (where the model supports it) × 3 runs. Every row is graded by EVERY applicable grader (see gauntlet.py GRADERS); fields below only add case-specific expectations.",
+  "refusals": ["i can't access", "i cannot access", "i don't have access", "i do not have access",
+               "unable to access", "no documents", "don't see any lab", "assistant:",
+               "section is empty", "no text was provided", "appears to be empty",
+               "read in full\" section is empty", "i'm sorry, but i can't", "i cannot help with", "i can't help with",
+               "i'm not able to help", "as an ai"],
+  "panel": [["153"], ["213"], ["137"], ["4.4"], ["85"], ["15"], ["99"]],
+  "chats": [
+    {"chat": "bu2-lab", "cases": [
+      {"id": "1",  "kind": "bu2", "what": "lab question, first message of a new chat (also: cold model auto-load — A4)", "question": "What do my lab test results reveal?", "expectRoute": "read", "facts": "panel", "minFacts": 4, "cold": true},
+      {"id": "2",  "kind": "bu2", "what": "follow-up carries the same entry (working set, no re-retrieval)", "question": "Interpret my medical results.", "expectRoute": "read", "facts": "panel", "minFacts": 3},
+      {"id": "2b", "kind": "bu2", "what": "bare deictic follow-up keeps the SAME entry open", "question": "Please check that document again.", "expectRoute": "read", "carriesEntry": true}
+    ]},
+    {"chat": "bu2-survey-offer", "args": ["-GauntletSynthOffer", "YES"], "cases": [
+      {"id": "3", "kind": "bu2", "what": "broad 'my thoughts' question → survey from OWN entries, ≤8 cards/≤4 passages", "question": "How would you describe my thoughts on technology?", "expectRoute": "survey", "maxCards": 8, "maxPassages": 4},
+      {"id": "4", "kind": "bu2", "what": "accept the 'Read it in full' offer → in place, no duplicate bubble", "action": "offer", "question": "", "expectRoute": "read", "reask": true}
+    ]},
+    {"chat": "bu2-retry", "args": ["-GauntletFailFirstSend", "YES"], "cases": [
+      {"id": "5", "kind": "bu2", "what": "Retry after a FORCED Host error → the packet is delivered (also adversarial A3: Retry)", "action": "retry", "question": "What do my lab test results reveal?", "expectRoute": "read", "facts": "panel", "minFacts": 3, "reask": true}
+    ]},
+    {"chat": "bu2-7",  "cases": [{"id": "7",  "kind": "bu2", "what": "named saved article → READ that entry + chip", "question": "What is The Book of Enoch about?", "expectRoute": "read"}]},
+    {"chat": "bu2-7b", "cases": [{"id": "7b", "kind": "bu2", "what": "named entry, unquoted partial tokens", "question": "Tell me about the eleusinian mysteries entry.", "expectRoute": "read"}]},
+    {"chat": "bu2-8",  "cases": [{"id": "8",  "kind": "bu2", "what": "general-knowledge question in Library mode → 'No matching entries', still answers", "question": "What is the capital of France?", "expectRoute": "empty", "mustContain": [["paris"]], "minFacts": 1}]},
+    {"chat": "bu2-9",  "args": ["-GauntletFMWindow", "4096"], "cases": [{"id": "9", "kind": "bu2", "what": "FM 4K budget forced → PARTIAL footer, no overflow", "question": "What do my lab test results reveal?", "expectRoute": "read"}]},
+    {"chat": "bu2-10", "cases": [{"id": "10", "kind": "bu2", "what": "link-only entry question → reads the derived text", "question": "What does my Prisoner's Cinema entry say?", "expectRoute": "read"}]},
+    {"chat": "bu2-11", "cases": [{"id": "11", "kind": "bu2", "what": "possession lookup by name ('Bolex H16 — mine')", "question": "What did I write about my Bolex H16?", "expectRoute": "read"}]},
+    {"chat": "bu2-12", "cases": [{"id": "12", "kind": "bu2", "what": "paraphrase: only pluralised title tokens ('medical labs')", "question": "Summarise my medical labs for me.", "expectRoute": "read", "facts": "panel", "minFacts": 3}]},
+    {"chat": "bu2-bx", "cases": [
+      {"id": "BXa", "kind": "bu2", "what": "BX: lab READ opens the working set", "question": "What do my lab test results reveal?", "expectRoute": "read", "facts": "panel", "minFacts": 3},
+      {"id": "BXb", "kind": "bu2", "what": "BX: 'insights from this' → carried READ, chip", "question": "And what insights can you derive from this?", "expectRoute": "read", "carriesEntry": true},
+      {"id": "BXc", "kind": "bu2", "what": "BX: 'which values are out of range?' (NO deixis) → carried READ, chol 213 + LDL 153", "question": "Which values are out of range?", "expectRoute": "read", "mustContain": [["213"], ["153"]], "minFacts": 2, "carriesEntry": true},
+      {"id": "BXd", "kind": "bu2", "what": "BX: names a different entry (Bolex) → switches, no lab carry", "question": "What did I write about my Bolex H16?", "expectRoute": "read", "mustContain": [["520", "25mm", "switar", "ohio", "bolex", "1956"]], "minFacts": 1},
+      {"id": "BXe", "kind": "bu2", "what": "BX: 'capital of France' with a working set → answers Paris, no carry", "question": "What is the capital of France?", "expectRoute": "", "mustContain": [["paris"]], "minFacts": 1}
+    ]},
+    {"chat": "syn-1", "cases": [
+      {"id": "S1", "kind": "synthesis", "what": "connections across ideas — ALSO the regression row for every 10-03/04 device bug: REG-leak (reasoning streamed as answer, Thinking OFF), REG-bareE (bare E6/E10 labels), REG-label (prose names entry X, chip/[n] points at Y), REG-jump (streams as answer then jumps into Thought process)", "question": "What connections do you find between my ideas?", "expectRoute": "survey", "regression": ["REG-leak", "REG-bareE", "REG-label", "REG-jump"]},
+      {"id": "A2", "kind": "adversarial", "what": "follow-up turn: the history sent must carry NO thinking/reasoning from turn 1 (Thinking ON is the risky arm)", "question": "Which of those connections is the strongest, and why?", "expectRoute": ""}
+    ]},
+    {"chat": "syn-2", "cases": [{"id": "S2", "kind": "synthesis", "what": "tensions between ideas", "question": "Where do my ideas pull against each other? What tensions do you see?", "expectRoute": "survey"}]},
+    {"chat": "syn-3", "cases": [{"id": "S3", "kind": "synthesis", "what": "recurring patterns across collections", "question": "What recurring patterns run across my different collections?", "expectRoute": "survey"}]},
+    {"chat": "syn-4", "cases": [{"id": "S4", "kind": "synthesis", "what": "the 'what am I circling?' question", "question": "What am I circling around without saying it directly?", "expectRoute": "survey"}]},
+    {"chat": "adv-1", "cases": [{"id": "A1", "kind": "adversarial", "what": "bare reasoning prompt (baits a thinking model to reason in content)", "question": "What is 17 × 23?", "expectRoute": "", "mustContain": [["391"]], "minFacts": 1}]},
+    {"chat": "adv-3", "args": ["-GauntletFailFirstSend", "YES"], "cases": [{"id": "A3", "kind": "adversarial", "what": "Retry on a SURVEY (the connections question) after a forced Host error", "action": "retry", "question": "What connections do you find between my ideas?", "expectRoute": "survey", "reask": true}]},
+    {"chat": "adv-5", "cases": [{"id": "A5", "kind": "adversarial", "what": "packet near the context limit — read the largest OWN entry (Project: AirPad); no truncation, no overflow", "question": "Summarise my Project: AirPad entry.", "expectRoute": "read"}]}
+  ]
+}

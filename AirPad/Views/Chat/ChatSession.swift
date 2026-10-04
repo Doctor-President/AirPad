@@ -332,6 +332,12 @@ final class ChatSession {
         var lastPersistedLength = 0
         streamingThinking = ""
         didSplitLeakedThinking = false
+        #if DEBUG
+        // Brief CH-0 — Gauntlet v2 render tap (inert without -GauntletTapDir).
+        GauntletTap.shared.beginTurn(requestID: hostRequestID, think: thinkEnabled, systemPrompt: systemPrompt,
+                                     history: history,
+                                     userContent: modelText, numCtx: numCtx)
+        #endif
         do {
             for try await delta in ModelRouter.generateStreaming(
                 systemPrompt: systemPrompt,
@@ -341,6 +347,12 @@ final class ChatSession {
                 requestID: hostRequestID,
                 think: thinkEnabled
             ) {
+                #if DEBUG
+                switch delta {
+                case .thinking(let t): GauntletTap.shared.rawDelta(thinking: true, t)
+                case .answer(let t): GauntletTap.shared.rawDelta(thinking: false, t)
+                }
+                #endif
                 switch delta {
                 case .thinking(let t):
                     streamingThinking += t   // ephemeral — the Thought-process block renders it (increment 7)
@@ -426,6 +438,15 @@ final class ChatSession {
             }
         }
 
+        #if DEBUG
+        do {
+            let committed = messages.last.flatMap { $0.role == .assistant && $0.id == streamingMessageID ? $0 : nil }
+            GauntletTap.shared.endTurn(finalText: committed?.text, citations: committed?.citations,
+                                       receipt: committed?.readReceipt.map { ChatTranscript.readReceiptText($0) },
+                                       thinking: streamingThinking, lastError: lastError,
+                                       isPartial: committed?.isPartial == true)
+        }
+        #endif
         streamingText = ""
         isStreaming = false
         currentRequestID = nil

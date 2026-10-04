@@ -1,0 +1,265 @@
+#!/usr/bin/env python3
+"""Brief CH-0 — build the KNOWN-BAD corpus that proves every Gauntlet v2 grader can fail.
+
+  replays <live_leak_run_dir> <kb_dir>
+      Writes replay scripts (kb_dir/replays/*.json) for the items pushed through the REAL UI capture path
+      via `-GauntletReplay`. Item (a) itself is the LIVE run (current qwen3:4b, think:false, T's
+      connections question) — its raw model output is saved verbatim as kb_dir/a-raw-output.txt.
+  doctor <replay_run_dir> <live_leak_run_dir> <kb_dir>
+      Copies captured runs into kb_dir (packet text redacted), builds the "doctored-expectation" items
+      for the run-validity (V*) and invariant (I*) graders, and writes kb_dir/manifest.json.
+
+Replay placeholders: `{{n:<title prefix>}}` → that entry's [n] in the live packet (GauntletTap).
+"""
+import copy, json, os, shutil, sys
+
+def chunks(text, n=24):
+    """Stream-like deltas: ~n chars, always breaking after newlines (the tail reveals per line). A
+    `{{n:…}}` placeholder is ATOMIC — the tap resolves per delta, so a split one would never resolve
+    (it did, once: the positive control failed C3 on a literal `{{n:Inspiration: Memex}}`)."""
+    import re
+    out, buf = [], ""
+    for unit in re.split(r"(\{\{n:[^}]+\}\})", text):
+        if unit.startswith("{{n:"):
+            buf += unit
+            continue
+        for ch in unit:
+            buf += ch
+            if len(buf) >= n or ch == "\n":
+                out.append(["a", buf]); buf = ""
+    if buf:
+        out.append(["a", buf])
+    return out
+
+KG1 = ("Three threads run through these entries.\n\n"
+       "1. **Noise versus meaning.** *Drowning in Noise* {{n:Drowning}} argues that modern trends drown out meaning "
+       "and threaten human survival, and *Decentralized Social Network* {{n:Decentralized}} answers it with a "
+       "return-to-text movement against cluttered feeds.\n\n"
+       "2. **A tool for thinking.** *Inspiration: Memex-like AirPad* {{n:Inspiration: Memex}} imagines an iPad that "
+       "indexes thoughts and connects existing ideas, which is the remedy the first thread asks for.\n\n"
+       "3. **Growth through friction.** *Self-awareness Through Relationships* {{n:Self-awareness}} treats difficult "
+       "conversations as mirrors for self-knowledge.\n\n"
+       "Together they describe one arc: noise erodes meaning, and you keep reaching for tools and relationships "
+       "that restore it.")
+
+KG2 = ("Your lab panel {{n:Medical}} is mostly in range. Sodium 137, potassium 4.4, glucose 99, BUN 15 and eGFR 85 "
+       "are all normal. Two values stand out: total cholesterol 213 and LDL 153 are above the usual targets, so the "
+       "lipid panel is the one to discuss with your doctor.")
+
+# (b) is T's verbatim 10-04 device answer (qwen3:4b, TF 202610040217) — passed in as a file.
+
+E_MISLABEL = ("**Drowning in Noise** {{n:Inspiration: Memex}} argues that modern trends drown out meaning and "
+              "threaten human survival.\n\n**Self-awareness Through Relationships** {{n:Plastic Beach}} treats "
+              "difficult conversations as mirrors for growth.")
+
+H_UNCITED = ("Your ideas keep returning to how people find meaning, how tools can help them think, and how "
+             "relationships shape growth. There is a steady interest in making technology serve reflection "
+             "rather than distraction.")
+
+D_REFUSAL = ("I'm sorry, but I can't access your documents or lab results. If you paste the values here, I can "
+             "help you understand what they mean.")
+
+
+def replays(live_dir, kb_dir, bare_e_text):
+    t = json.load(open(os.path.join(live_dir, "turn-001.json")))
+    raw_answer = "".join(d["s"] for d in t["raw"] if d["ch"] == "answer")
+    raw_think = "".join(d["s"] for d in t["raw"] if d["ch"] == "thinking")
+    os.makedirs(os.path.join(kb_dir, "replays"), exist_ok=True)
+    open(os.path.join(kb_dir, "a-raw-output.txt"), "w").write(
+        f"# Known-bad (a) — RAW model output, captured live {t['startedAt']}\n"
+        f"# model={t.get('modelRequested')} think={t['think']} (current qwen3:4b tag = thinking-only 2507 build)\n"
+        f"# thinking channel: {len(raw_think)} chars · answer channel: {len(raw_answer)} chars · stray </think> in content: {'</think>' in raw_answer}\n"
+        f"# question: What connections do you find between my ideas?\n\n" + raw_answer)
+    sp = t["systemPrompt"]
+    clause = next(c for c in sp.split(". ") if len(c) > 60)   # a real system-prompt clause, quoted back
+    dump = raw_answer.replace("</think>", "").replace("<think>", "")   # (c) the 30B shape: no tags, channel empty
+    reason, _, ans = raw_answer.partition("</think>")
+    short_dump = reason[:1200].rsplit(".", 1)[0] + ".\n\n" + ans.strip()[:600].rsplit(".", 1)[0] + "."
+    items = {
+        "b-bare-e6":      [{"deltas": chunks(bare_e_text)}],
+        "c-content-dump": [{"deltas": chunks(dump), "delayMs": 4},
+                           {"deltas": chunks("The strongest is the link between difficult conversations and self-knowledge, because it recurs across several of your entries.")}],
+        # c2 — the same leak, SHORT (1.2k chars of reasoning + the answer), so the follow-up can be sent
+        # without tripping the long-answer layout hang (finding, CH-0) — proves H1 on a live follow-up.
+        "c2-short-dump-followup": [{"deltas": chunks(short_dump)},
+                                   {"deltas": chunks("The strongest is the link between difficult conversations and self-knowledge, because it recurs across several of your entries.")}],
+        # c3 — a reasoning PREAMBLE leaked ahead of an otherwise clean answer, then a follow-up: proves H1
+        # (the leaked reasoning rides the follow-up's HISTORY) without the c/c2 follow-up freeze.
+        "c3-preamble-followup": [{"deltas": chunks("Okay, the user is asking about connections between their ideas. Let me think about which entries relate.\n\n" + KG1)},
+                                 {"deltas": chunks("The strongest is the first: *Drowning in Noise* {{n:Drowning}} names the problem that every other entry is answering.")}],
+        "kgf-clean-followup": [{"deltas": chunks(KG1)},
+                               {"deltas": chunks("The strongest is the first: *Drowning in Noise* {{n:Drowning}} names the problem that every other entry is answering.")}],
+        "d-refusal":      [{"deltas": chunks(D_REFUSAL)}],
+        "e-label-mismatch": [{"deltas": chunks(E_MISLABEL)}],
+        "f-channel-tokens": [{"deltas": chunks("<|im_start|>assistant\n" + KG1 + "<|im_end|>")}],
+        "g-empty":        [{"deltas": []}],
+        "h-uncited":      [{"deltas": chunks(H_UNCITED)}],
+        "i-sysprompt-echo": [{"deltas": chunks(f"As instructed: \"{clause}.\"\n\n" + KG1)}],
+        "kg1-clean-survey": [{"deltas": chunks(KG1)}],
+        "kg1b-clean-survey": [{"deltas": chunks(KG1)}],
+        "kg2-clean-read": [{"deltas": chunks(KG2)}],
+    }
+    for name, turns in items.items():
+        json.dump({"turns": turns}, open(os.path.join(kb_dir, "replays", f"{name}.json"), "w"), indent=1, ensure_ascii=False)
+    print("wrote", len(items), "replays")
+
+
+def redact_run(src, dst):
+    """Copy a run dir, dropping the packet text (the user's notes) — graders never read `userContent`."""
+    os.makedirs(dst, exist_ok=True)
+    for f in os.listdir(src):
+        p = os.path.join(src, f)
+        if not os.path.isfile(p) or f in ("config.json", "xcuitest.log", "build.log", "heartbeat") or f.endswith(".sample.txt"):
+            continue
+        if f.startswith("turn-"):
+            t = json.load(open(p))
+            t["userContent"] = f"<redacted: {len(t.get('userContent') or '')} chars of packet>"
+            json.dump(t, open(os.path.join(dst, f), "w"), indent=1, ensure_ascii=False)
+        else:
+            shutil.copy(p, os.path.join(dst, f))
+
+
+def doctor(replay_dir, live_dir, kb_dir):
+    redact_run(live_dir, os.path.join(kb_dir, "run-a-live"))
+    redact_run(replay_dir, os.path.join(kb_dir, "run-replays"))
+    if os.path.isdir(replay_dir + "-2"):
+        redact_run(replay_dir + "-2", os.path.join(kb_dir, "run-replays-2"))
+
+    def variant(base, name, mutate):
+        d = os.path.join(kb_dir, name)
+        if os.path.exists(d):
+            shutil.rmtree(d)
+        shutil.copytree(os.path.join(kb_dir, base), d)
+        exp = json.load(open(os.path.join(d, "expected.json")))
+        mutate(d, exp)
+        json.dump(exp, open(os.path.join(d, "expected.json"), "w"), indent=1, ensure_ascii=False)
+
+    def jset(path, fn):
+        o = json.load(open(path)); fn(o); json.dump(o, open(path, "w"), indent=1, ensure_ascii=False)
+
+    A = "S1.off.r1"
+    # Run-validity graders: the SAME live capture, graded against an expectation the run does not meet.
+    variant("run-a-live", "v1-wrong-model", lambda d, e: e["rows"][A].update(model="qwen3:8b"))
+    variant("run-a-live", "v2-digest-drift", lambda d, e: e["rows"][A].update(digest="2bfd38a7daaf"))
+    variant("run-a-live", "v3-think-mismatch", lambda d, e: e["rows"][A].update(think=True))
+    variant("run-a-live", "v5-route-mismatch", lambda d, e: e["rows"][A].update(expectRoute="read"))
+    variant("run-a-live", "v6-no-versions", lambda d, e: os.remove(os.path.join(d, "versions.json")))
+    variant("run-a-live", "v7-not-cold", lambda d, e: e["rows"][A].update(cold=True))
+    variant("run-a-live", "v0-incomplete", lambda d, e: jset(os.path.join(d, f"ui-{A}.json"), lambda u: u.update(turnCompleted=False, driverNote="timed out")))
+    # V4 — a grounded expectation on a turn whose packet was empty (the replay of 'capital of France'
+    # isn't in this corpus, so blank the packet of the survey turn instead: retrieval came back empty).
+    def v4(d, e):
+        ui = json.load(open(os.path.join(d, f"ui-{A}.json")))
+        jset(os.path.join(d, f"turn-{ui['seq']:03d}.json"), lambda t: t["plan"].update(candidates=[]))
+    variant("run-a-live", "v4-empty-retrieval", v4)
+    # Invariant graders on the clean READ replay (kg2): each a single, named violation.
+    K = "1.off.kg2-clean-read"
+    def on_turn(row, fn):
+        def m(d, e):
+            ui = json.load(open(os.path.join(d, f"ui-{row}.json")))
+            jset(os.path.join(d, f"turn-{ui['seq']:03d}.json"), fn)
+        return m
+    variant("run-replays", "i1-read-not-chipped", on_turn(K, lambda t: t.update(citations=[c for c in t["citations"] if c["nodeID"] not in t["plan"]["readNodeIDs"]])))
+    variant("run-replays", "i2-no-receipt", on_turn(K, lambda t: t.update(receipt="Skimmed 9 entries")))
+    variant("run-replays", "i3-window-overflow", on_turn(K, lambda t: t["plan"].update(estTokens=t["plan"]["windowTokens"] + 1)))
+    variant("run-replays", "i4-budget-overflow", on_turn(K, lambda t: t["plan"].update(packetChars=t["plan"]["budgetChars"] + 1)))
+    C2 = "A2.off.kgf-clean-followup"
+    variant("run-replays", "i5-duplicated-turn", lambda d, e: e["rows"][C2].update(reask=True))
+    variant("run-replays", "i6-no-carry", lambda d, e: e["rows"][C2].update(carriesEntry=True))
+    c3_text = None
+    r2 = os.path.join(kb_dir, "run-replays-2")
+    if os.path.isdir(r2):
+        u3 = json.load(open(os.path.join(r2, "ui-S1.off.c3-preamble-followup.json")))
+        c3_text = json.load(open(os.path.join(r2, f"turn-{u3['seq']:03d}.json")))["finalText"]
+    def h1(t):
+        for m in t["history"]:
+            if m.get("role") == "assistant":
+                m["content"] = c3_text
+    variant("run-replays", "h1-history-carries-reasoning", on_turn("A2.off.kgf-clean-followup", h1))
+    # Capture/render-agreement graders: no model output can trip these — only a drift between what the
+    # app committed and what the screen showed. So the known-bad IS that drift.
+    G = "S1.off.kg1-clean-survey"
+    def a7(d, e):
+        other = json.load(open(os.path.join(d, "ui-S1.off.b-bare-e6.json")))["onScreenAnswer"]
+        jset(os.path.join(d, f"ui-{G}.json"), lambda u: u.update(onScreenAnswer=other))
+    variant("run-replays", "a7-render-drift", a7)
+    variant("run-replays", "c5-chip-outside-packet", on_turn(G, lambda t: t["citations"].append(
+        {"index": 99, "nodeID": "00000000-0000-0000-0000-000000000000", "url": "", "title": "Phantom entry", "snippet": ""})))
+    variant("run-replays", "c5-screen-chip-missing",
+            lambda d, e: jset(os.path.join(d, f"ui-{G}.json"), lambda u: u.update(onScreenChips=u["onScreenChips"][:-1])))
+    variant("run-replays", "i7-survey-over-cap", lambda d, e: e["rows"]["S1.off.kg1-clean-survey"].update(maxCards=2, maxPassages=1))
+
+    man = {"items": [
+        {"id": "a-live-leak", "what": "LIVE: current qwen3:4b (thinking-only 2507 build) + think:false + T's connections question — reasoning streams as answer, quotes the system prompt, then jumps into Thought process",
+         "runDir": "run-a-live", "expectRed": {A: ["F1", "F2", "F4", "T1"]}},
+        {"id": "b-bare-e6", "what": "T's verbatim 10-04 device answer — bare E6/E7-E9/E10 labels", "runDir": "run-replays",
+         "expectRed": {"S1.off.b-bare-e6": ["C1"]}},
+        {"id": "c-content-dump", "what": "30B-style dump: thinking channel EMPTY, reasoning in content, no tags (6k chars) — and the follow-up send FREEZES the app (layout-loop finding; watchdog → A8)",
+         "runDir": "run-replays", "expectRed": {"S1.off.c-content-dump": ["F1", "F2", "A2", "A3"],
+                                                 "A2.off.c-content-dump": ["A8"]}},
+        {"id": "c2-short-dump-followup", "what": "the same leak, SHORT (1k chars) — its follow-up ALSO freezes the app (so the freeze is not about length)",
+         "runDir": "run-replays", "expectRed": {"S1.off.c2-short-dump-followup": ["F1", "A2"], "A2.off.c2-short-dump-followup": ["A8"]}},
+        {"id": "c3-preamble-followup", "what": "a 2-sentence leaked reasoning preamble ahead of the CLEAN control text — its follow-up ALSO freezes (the clean control's does not)", "runDir": "run-replays-2",
+         "expectRed": {"S1.off.c3-preamble-followup": ["F1", "A2"], "A2.off.c3-preamble-followup": ["A8"]}},
+        {"id": "h1-history-carries-reasoning", "runDir": "h1-history-carries-reasoning",
+         "what": "the clean follow-up's REAL history, with its assistant turn replaced by c3's committed leaked text (the UI route to this state is blocked by the follow-up freeze)",
+         "expectRed": {"A2.off.kgf-clean-followup": ["H1"]}},
+        {"id": "d-refusal", "what": "refusal on the lab question", "runDir": "run-replays", "expectRed": {"1.off.d-refusal": ["A5", "A6"]}},
+        {"id": "e-label-mismatch", "what": "prose names entry X, its [n] points at entry Y", "runDir": "run-replays",
+         "expectRed": {"S1.off.e-label-mismatch": ["C3", "C4"]}},
+        {"id": "f-channel-tokens", "what": "<|im_start|>/<|im_end|> residue in the answer", "runDir": "run-replays",
+         "expectRed": {"S1.off.f-channel-tokens": ["F3", "A4"]}},
+        {"id": "g-empty", "what": "empty answer", "runDir": "run-replays", "expectRed": {"S1.off.g-empty": ["A1"]}},
+        {"id": "h-uncited", "what": "grounded survey answer citing nothing", "runDir": "run-replays", "expectRed": {"S1.off.h-uncited": ["C2"]}},
+        {"id": "i-sysprompt-echo", "what": "answer quotes a system-prompt clause", "runDir": "run-replays", "expectRed": {"S1.off.i-sysprompt-echo": ["A3", "F2"]}},
+        {"id": "kg-controls", "what": "POSITIVE CONTROLS — clean survey + clean read must be ALL GREEN", "runDir": "run-replays",
+         "expectGreen": ["S1.off.kg1-clean-survey", "S1.off.kg1b-clean-survey", "1.off.kg2-clean-read",
+                         "S1.off.kgf-clean-followup", "A2.off.kgf-clean-followup"]},
+        {"id": "r1-intermittent", "what": "S1 × 3 runs: two clean, one bare-E6 → the aggregate must FAIL", "runDir": "run-replays",
+         "expectAggregateFail": ["S1.off.kg1-clean-survey", "S1.off.kg1b-clean-survey", "S1.off.b-bare-e6"]},
+        {"id": "v0-incomplete", "runDir": "v0-incomplete", "what": "turn never completed", "expectRed": {A: ["V0"]}},
+        {"id": "v1-wrong-model", "runDir": "v1-wrong-model", "what": "asked for qwen3:8b, qwen3:4b answered", "expectRed": {A: ["V1"]}},
+        {"id": "v2-digest-drift", "runDir": "v2-digest-drift", "what": "expected the hybrid digest 2bfd38a7daaf, the thinking-only 359d7dd4bcda answered", "expectRed": {A: ["V2"]}},
+        {"id": "v3-think-mismatch", "runDir": "v3-think-mismatch", "what": "row expects Thinking ON, think:false was sent", "expectRed": {A: ["V3"]}},
+        {"id": "v4-empty-retrieval", "runDir": "v4-empty-retrieval", "what": "grounded case, empty packet", "expectRed": {A: ["V4"]}},
+        {"id": "v5-route-mismatch", "runDir": "v5-route-mismatch", "what": "expected READ, routed SURVEY", "expectRed": {A: ["V5"]}},
+        {"id": "v6-no-versions", "runDir": "v6-no-versions", "what": "versions not recorded", "expectRed": {A: ["V6"]}},
+        {"id": "v7-not-cold", "runDir": "v7-not-cold", "what": "cold row, but nothing was ejected first", "expectRed": {A: ["V7"]}},
+        {"id": "i1-read-not-chipped", "runDir": "i1-read-not-chipped", "what": "READ entry has no chip", "expectRed": {K: ["I1"]}},
+        {"id": "i2-no-receipt", "runDir": "i2-no-receipt", "what": "READ turn's receipt says skimmed", "expectRed": {K: ["I2"]}},
+        {"id": "i3-window-overflow", "runDir": "i3-window-overflow", "what": "estimated tokens ≥ window", "expectRed": {K: ["I3"]}},
+        {"id": "i4-budget-overflow", "runDir": "i4-budget-overflow", "what": "packet > budget", "expectRed": {K: ["I4"]}},
+        {"id": "i5-duplicated-turn", "runDir": "i5-duplicated-turn", "what": "a 're-ask' that added a turn", "expectRed": {C2: ["I5"]}},
+        {"id": "i6-no-carry", "runDir": "i6-no-carry", "what": "follow-up didn't keep the open entry", "expectRed": {C2: ["I6"]}},
+        {"id": "a7-render-drift", "runDir": "a7-render-drift", "what": "screen showed a different answer than the one committed", "expectRed": {"S1.off.kg1-clean-survey": ["A7"]}},
+        {"id": "c5-chip-outside-packet", "runDir": "c5-chip-outside-packet", "what": "a chip pointing at an entry that was never in the packet", "expectRed": {"S1.off.kg1-clean-survey": ["C5"]}},
+        {"id": "c5-screen-chip-missing", "runDir": "c5-screen-chip-missing", "what": "a committed chip that never rendered on screen", "expectRed": {"S1.off.kg1-clean-survey": ["C5"]}},
+        {"id": "i7-survey-over-cap", "runDir": "i7-survey-over-cap", "what": "survey shape over its caps", "expectRed": {"S1.off.kg1-clean-survey": ["I7"]}},
+    ]}
+    # Doctored copies keep ONLY the rows they test (+ each row's previous turn) — Ops stays small.
+    for item in man["items"]:
+        if item["runDir"].startswith("run-"):
+            continue
+        d = os.path.join(kb_dir, item["runDir"])
+        keep = set(item.get("expectRed", {})) | set(item.get("expectGreen", []))
+        exp = json.load(open(os.path.join(d, "expected.json")))
+        exp["rows"] = {r: v for r, v in exp["rows"].items() if r in keep}
+        json.dump(exp, open(os.path.join(d, "expected.json"), "w"), indent=1, ensure_ascii=False)
+        seqs = set()
+        for r in keep:
+            u = json.load(open(os.path.join(d, f"ui-{r}.json")))
+            seqs |= {u["seq"], u["seq"] - 1}
+        for f in os.listdir(d):
+            if (f.startswith("ui-") and f[3:-5] not in keep) or (f.startswith("turn-") and int(f[5:8]) not in seqs) \
+                    or f in ("grades.json", "table.md"):
+                os.remove(os.path.join(d, f))
+    json.dump(man, open(os.path.join(kb_dir, "manifest.json"), "w"), indent=1, ensure_ascii=False)
+    print("wrote manifest with", len(man["items"]), "items")
+
+
+if __name__ == "__main__":
+    cmd = sys.argv[1]
+    if cmd == "replays":
+        replays(sys.argv[2], sys.argv[3], open(sys.argv[4]).read())
+    elif cmd == "doctor":
+        doctor(sys.argv[2], sys.argv[3], sys.argv[4])

@@ -720,6 +720,12 @@ final class LibrarianState {
         #if DEBUG
         // The gauntlet asserts the BU1 invariants against the very object that ships.
         debugLastTurn = plan
+        // Brief CH-0 — Gauntlet v2 tap: the route + the packet's numbered entries for this turn.
+        GauntletTap.shared.notePlan(mode: plan.mode, readNodeIDs: plan.readNodeIDs, candidates: plan.citations ?? [],
+                                    cardCount: plan.cardCount, passageCount: plan.passageCount,
+                                    packetChars: plan.packetChars, estTokens: plan.estTokens,
+                                    windowTokens: plan.windowTokens, budgetChars: plan.budgetChars,
+                                    alwaysCite: plan.alwaysCiteIndicesList)
         // Brief BN1 — `-LibrarianTrace` (Release-inert): dump the exact Ask packet, sourced from the plan.
         if ProcessInfo.processInfo.arguments.contains("-LibrarianTrace") { logTrace(plan: plan, candidates: candidates) }
         #endif
@@ -733,6 +739,17 @@ final class LibrarianState {
         // Set after the answer commits; the surface renders the offer bar, tapping it flips to General
         // + re-sends (AI4). Only the empty branch: a grounded read/survey answered from the notes.
         if empty, Self.looksLikeSearchIntent(query) { pendingWebSearchOffer = query }
+        #if DEBUG
+        // Brief CH-0 — `-GauntletSynthOffer YES`: BU2 case 4 must exercise the offer's RE-ASK even when
+        // no offer fired (its firing is embedding-dependent and the Sim's CPU-BGE rarely clears it).
+        // Same synthesis as the store gauntlet: the survey's LEADING OWN entry (never a saved article).
+        if UserDefaults.standard.bool(forKey: "GauntletSynthOffer"), plan.mode == "survey", pendingReadInFullOffer == nil,
+           let lead = plan.cardNodeIDs.compactMap({ id in store.nodes.first(where: { $0.id == id }) })
+                .first(where: { $0.cardProvenance().kind != .savedLink }) {
+            pendingReadInFullOffer = ReadInFullOffer(query: query, nodeID: lead.id, title: lead.title)
+            NSLog("[GauntletTap] synthesized Read-in-full offer → '%@'", lead.title)
+        }
+        #endif
     }
 
     /// Brief AI5 — the user tapped "Search the web instead" under an empty Library

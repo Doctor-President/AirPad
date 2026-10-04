@@ -285,6 +285,19 @@ enum ModelRouter {
         AsyncThrowingStream { continuation in
             Task {
                 do {
+                    #if DEBUG
+                    // Brief CH-0 — `-GauntletReplay`: stream a RECORDED turn instead of the model, so the
+                    // known-bad corpus runs through the real retrieval → ChatSession → UI capture path.
+                    if let replay = GauntletTap.shared.nextReplayTurn() {
+                        GauntletTap.shared.noteModel("replay")
+                        for d in replay.deltas {
+                            try await Task.sleep(for: .milliseconds(replay.delayMs))
+                            continuation.yield(d.thinking ? .thinking(d.s) : .answer(d.s))
+                        }
+                        continuation.finish()
+                        return
+                    }
+                    #endif
                     switch active {
                     case .foundationModel:
                         guard #available(iOS 26.0, *) else {
@@ -1047,6 +1060,9 @@ enum ModelRouter {
         } else {
             model = try await firstHostModel(pairing: pairing)
         }
+        #endif
+        #if DEBUG
+        GauntletTap.shared.noteModel(model)   // Brief CH-0 — the tag actually put on the wire
         #endif
         // NOTE: deliberately does NOT write `userPickedHostModel` — the default is the user's PICKER
         // choice, not whatever a fallback happened to resolve to (see that property).

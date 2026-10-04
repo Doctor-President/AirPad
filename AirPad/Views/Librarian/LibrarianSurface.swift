@@ -322,6 +322,30 @@ struct LibrarianSurface: View {
                     Task { await librarian.groundedSend(query: q, store: store, chat: router.chat) }
                 }
             }
+            // Brief CH-0 — Gauntlet v2 (XCUITest) entry: a FRESH chat, Library mode, the panel open on
+            // the chat with the Ask composer ready. The test then types + taps Send like T does.
+            // `-GauntletThink YES|NO` sets the per-chat Thinking toggle (the wire `think` is recorded by
+            // the tap and cross-checked against the Host log); `-GauntletFMWindow <n>` forces a window
+            // (BU2 case 9); `-GauntletFailFirstSend YES` points the FIRST send at a dead port (case 5's
+            // Retry); `-GauntletSynthOffer YES` = the store harness's case-4 synthesis when no offer fired.
+            if UserDefaults.standard.bool(forKey: "GauntletUI") {
+                FirstRunCalloutKey.allCases.forEach { $0.markShown() }   // no coach marks over the composer
+                activeCallout = nil
+                router.chat.reset()
+                librarian.corpusAware = true
+                librarian.selectedScope = .corpus
+                librarian.thinkEnabled = UserDefaults.standard.bool(forKey: "GauntletThink")
+                let w = UserDefaults.standard.integer(forKey: "GauntletFMWindow")
+                librarian.debugContextWindowOverride = w > 0 ? w : nil
+                if UserDefaults.standard.bool(forKey: "GauntletFailFirstSend") { HostPairing.debugForceUnreachableHost = true }
+                // After the entry screen settles (the test also passes `-OpenMap`, so the Librarian is
+                // mounted over the canvas, not hidden by Recents) — open on the chat with the composer.
+                DispatchQueue.main.asyncAfter(deadline: .now() + 1.0) {
+                    activeCallout = nil
+                    isViewingActiveChat = true
+                    panelModel.expandToFull(animated: false)
+                }
+            }
             // `-PersistCorpusAware YES` — flips the toggle ON via the real setter
             // (didSet → UserDefaults), so a SUBSEQUENT launch with no arg proves the
             // preference persisted across an app restart (⊇ a surface remount).

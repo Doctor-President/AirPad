@@ -789,6 +789,9 @@ struct ThoughtProcessBlock: View {
                     .foregroundStyle(AppearancePalette.ink.opacity(0.5))
                     .fixedSize(horizontal: false, vertical: true)
                     .textSelection(.enabled)
+                    #if DEBUG
+                    .gauntletID("chat.thought")   // Brief CH-0 — the expanded Thought-process text
+                    #endif
             }
         }
         .padding(.horizontal, 12).padding(.vertical, 10)

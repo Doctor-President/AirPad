@@ -314,6 +314,9 @@ struct ChatTranscript: View {
                 MarkdownBlockText(raw: message.text)
                     .frame(maxWidth: .infinity, alignment: .leading)
                     .padding(.trailing, 40)
+                    #if DEBUG
+                    .gauntletID("chat.answer", combine: true)   // Brief CH-0 — XCUITest reads the on-screen answer
+                    #endif
                 // Brief BN5 — "Read 1 entry in full · skimmed 6" / "Skimmed 9 entries".
                 readReceiptLine(message: message)
                 // Piece 1 — collapsible grounded-Ask sources (chrome, not content).
@@ -494,6 +497,9 @@ struct ChatTranscript: View {
                             }
                             .buttonStyle(.plain)
                             .accessibilityHint(onOpenNode == nil ? "" : "Opens \(c.title)")
+                            #if DEBUG
+                            .gauntletID("chat.source")   // Brief CH-0 — the rendered citation chip
+                            #endif
                         }
                     }
                     .padding(.leading, 2)
@@ -838,6 +844,9 @@ private struct StreamingTail: View {
         revealedText += pendingText
         pendingText = chunk
         lastFlush = Date()
+        #if DEBUG
+        GauntletTap.shared.answerFrame(revealedText + pendingText)   // Brief CH-0 — what the answer body DISPLAYS
+        #endif
 
         // Parse the CONCATENATION, never the two strings separately: the
         // revealed/pending split is a character boundary, not a block one, so

@@ -191,6 +191,23 @@ struct CanvasView: View {
             print("[Territory] No territories (no anchors / user collections) — trigger: \(trigger)")
             return
         }
+        // Sample-map FREEZE — a frozen scope NEVER fresh-forms: it restores the BAKED snapshot verbatim
+        // when the corpus matches its signature, and otherwise DEFERS (keeps the current territory) rather
+        // than forming with wrong slots. This closes the fresh-install flake: the async seed re-forms
+        // mid-population, where `restoredTerritory` returns nil (partial-corpus signature mismatch) — a
+        // fresh form there claimed FILM its natural alphabetical slot (pink in light) instead of the baked
+        // slot 9. Deferring means the LATER re-form (full corpus) restores the baked layout. The freeze
+        // releases itself only when the scope is no longer frozen (the production corpus key once the user
+        // has their own nodes is handled by the signature: a changed corpus simply never matches).
+        if store.frozenTerritoryScopes.contains(scope.key) {
+            if let restored = restoredTerritory(nodes: nodes) {
+                territory = restored
+                print("[Territory] FROZEN scope \(scope.key) — restored baked layout (trigger: \(trigger))")
+            } else {
+                print("[Territory] FROZEN scope \(scope.key) — corpus not matching yet, deferring (trigger: \(trigger))")
+            }
+            return
+        }
         let layout = TagTerritoryLayout.layout(
             nodes: nodes, anchors: store.canvasAnchorTags,
             collections: store.collections, weights: mapWeights, radii: mapLayoutRadii(for: nodes)
@@ -218,6 +235,17 @@ struct CanvasView: View {
         }
     }
 
+    #if DEBUG
+    /// Sample-map bake — persist the CURRENTLY-DISPLAYED territory to disk on demand (`-ExportLayout`),
+    /// regardless of the card-warm persist gate. Timed from `onAppear` so it captures the settled form
+    /// that's actually on screen (not an early/empty one). The captured snapshot is what gets baked.
+    func exportDisplayedTerritory() {
+        guard let frozen = territory else { print("[SampleBake] -ExportLayout: no territory to export"); return }
+        persistTerritory(layout: frozen.layout, slots: frozen.slots, signature: frozen.signature)
+        print("[SampleBake] -ExportLayout: persisted \(frozen.layout.territories.count) territories, \(frozen.slots.count) slots")
+    }
+    #endif
+
     /// The persisted slot claims, read UNCONDITIONALLY.
     ///
     /// ★★ DELIBERATELY NOT BEHIND `TerritoryLayoutRestore.canRestore`. That gate answers "is this
@@ -233,7 +261,22 @@ struct CanvasView: View {
     /// a store or a corpus (the same reason `EnrichmentGate` was pulled out).
     private func claimSlots(for territories: [TagTerritoryLayout.Territory],
                             existing: [String: Int]) -> [String: Int] {
-        TerritorySlotClaims.claim(currentKeys: territories.map(\.key), existing: existing)
+        var seed = existing
+        #if DEBUG
+        // Sample-map bake render override — pin a territory (by display NAME) to a palette slot, so CC can
+        // render the sample Map with a chosen territory colour before freezing. e.g. `-ForceTerritorySlot FILM=9`
+        // (slot 9 = yellow in the CURRENT dark palette). DEBUG harness only; the real colour ships baked
+        // into the sample TerritoryLayoutSnapshot.
+        let args = ProcessInfo.processInfo.arguments
+        if let i = args.firstIndex(of: "-ForceTerritorySlot"), i + 1 < args.count {
+            let parts = args[i + 1].split(separator: "=")
+            if parts.count == 2, let slot = Int(parts[1]) {
+                let name = parts[0].lowercased()
+                for t in territories where t.name.lowercased() == name { seed[t.key] = slot }
+            }
+        }
+        #endif
+        return TerritorySlotClaims.claim(currentKeys: territories.map(\.key), existing: seed)
     }
 
     /// STABLE fingerprint of the current territory-determining inputs, for the
@@ -552,6 +595,12 @@ struct CanvasView: View {
             kickOffSubstrateAutoFitIfNeeded()
             kickOffClusterLabelingIfNeeded()
             warmCardVectorsThenReform()
+            #if DEBUG
+            // Sample-map bake — capture the SETTLED displayed territory to disk for baking.
+            if ProcessInfo.processInfo.arguments.contains("-ExportLayout") {
+                DispatchQueue.main.asyncAfter(deadline: .now() + 14) { exportDisplayedTerritory() }
+            }
+            #endif
         }
         .onChange(of: store.territoryFormationRequest) { _, _ in
             // DELIBERATE re-formation — Analyze button / idle fallback bumped the

@@ -183,6 +183,12 @@ final class CorpusStore {
     /// snapshot migrates in as `_corpus`.
     var territoryLayouts: [String: TerritoryLayoutSnapshot] = [:]
 
+    /// Sample-map FREEZE — scope keys whose territory layout is a BAKED snapshot that must be restored
+    /// verbatim on every form trigger (never re-formed), as long as the corpus still matches its signature.
+    /// Seeded from the baked sample snapshot (and `-RestoreLayout` in DEBUG). Once the user changes the
+    /// corpus, the signature stops matching and normal forming resumes — the freeze releases itself.
+    var frozenTerritoryScopes: Set<String> = []
+
     /// The snapshot for `scope` (nil ⇒ form fresh). Read by the canvas restore gate.
     func territoryLayout(for scope: CanvasScope) -> TerritoryLayoutSnapshot? {
         territoryLayouts[scope.key]
@@ -1006,6 +1012,18 @@ final class CorpusStore {
             // rather than crashing on a stale artifact (the brief's "loads silently
             // fail" case, handled as a safe fall-through, not a fault).
             territoryLayouts = (try? await service.loadTerritoryLayouts()) ?? [:]
+            #if DEBUG
+            // Sample-map bake — `-RestoreLayout <path>` injects a captured snapshot dict (per-scope) so the
+            // Map restores it verbatim: candidate re-render (light/dark) + a bake dry-run. The existing
+            // `restoredTerritory` + `alreadyCurrent` guard then restore it and SKIP the re-form. DEBUG only.
+            if let ri = ProcessInfo.processInfo.arguments.firstIndex(of: "-RestoreLayout"),
+               ri + 1 < ProcessInfo.processInfo.arguments.count,
+               let rdata = try? Data(contentsOf: URL(fileURLWithPath: ProcessInfo.processInfo.arguments[ri + 1])),
+               let rdict = try? JSONDecoder.airPad.decode([String: TerritoryLayoutSnapshot].self, from: rdata) {
+                for (k, v) in rdict { territoryLayouts[k] = v; frozenTerritoryScopes.insert(k) }
+                print("[SampleBake] -RestoreLayout injected \(rdict.count) scope snapshot(s) [frozen]")
+            }
+            #endif
             let minimumViableTagCount = 8
             if loadedTags.count < minimumViableTagCount {
                 let existingNames = Set(loadedTags.map { $0.name.lowercased() })
@@ -2430,6 +2448,13 @@ final class CorpusStore {
             let manifest = try await Task.detached(priority: .userInitiated) {
                 try SampleLibrarySeeder.seed(containerRoot: root, bundleRoot: bundle)
             }.value
+            // Sample-map FREEZE — a fresh install just seeded the sample, so bake its Map layout +
+            // territory colours (FILM = yellow): restore the bundled snapshot so EVERY install and the
+            // App Store screenshots match. MUST run BEFORE `refreshCorpusFromDisk` — that refresh triggers
+            // the reactive `anchor-change` re-form, which would FRESH-form (ignoring the freeze) if the
+            // freeze weren't armed yet. Arming first means that re-form hits the frozen guard and restores
+            // the baked layout. Persisted to disk so later launches restore it via the normal path.
+            await loadAndFreezeBakedSampleMapLayout()
             await refreshCorpusFromDisk()
             applySampleManifest(manifest)
             let ms = Int(Date().timeIntervalSince(start) * 1000)
@@ -2437,6 +2462,27 @@ final class CorpusStore {
         } catch {
             print("[SampleSeed] seed error: \(error)")
         }
+    }
+
+    /// Sample-map FREEZE — read the baked Map layout shipped at `SampleLibrary/map_layout.json` and inject
+    /// it so the fresh-install sample Map is DETERMINISTIC (identical positions + territory colours, FILM
+    /// yellow, on every install and in the App Store screenshots). The file is a per-scope
+    /// `[CanvasScope.key: TerritoryLayoutSnapshot]` dict. We (1) set it in memory + persist it to the
+    /// container (so later launches restore it via the normal map-relayout path), and (2) arm
+    /// `frozenTerritoryScopes` so THIS launch's async-seed re-form restores it instead of forming fresh.
+    /// No-op when the file isn't bundled. The freeze releases itself once the corpus no longer matches.
+    private func loadAndFreezeBakedSampleMapLayout() async {
+        guard let bundleRoot = SampleLibrarySeeder.bundledLibraryURL() else { return }
+        let url = bundleRoot.appendingPathComponent("map_layout.json")
+        guard let data = try? Data(contentsOf: url),
+              let dict = try? JSONDecoder.airPad.decode([String: TerritoryLayoutSnapshot].self, from: data),
+              !dict.isEmpty else {
+            print("[SampleBake] no bundled map_layout.json (skipping freeze)")
+            return
+        }
+        for (k, v) in dict { territoryLayouts[k] = v; frozenTerritoryScopes.insert(k) }
+        try? await service.saveTerritoryLayouts(territoryLayouts)
+        print("[SampleBake] baked sample Map layout — froze \(dict.count) scope(s): \(dict.keys.sorted())")
     }
 
     /// Brief U Step 3 — add the sample library ON DEMAND (Settings), over a corpus

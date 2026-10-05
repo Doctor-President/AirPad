@@ -115,6 +115,12 @@ def title_mentioned(title, text):
     needle = title_norm(main if len(title_norm(main).split()) >= 2 or title_norm(main) == title_norm(title) else title)
     if len(needle) < 4:
         return False
+    if len(needle.split()) == 1:
+        # A one-word title ("Hallucinations") is also an ordinary word: it NAMES the entry only when styled as a
+        # name — wrapped in * " ' “ ‘ or capitalised mid-sentence (CH-A: "depicts elaborate hallucinations"
+        # was a false C3). Lowercase prose use is not a reference.
+        w = re.escape(title.strip())
+        return bool(re.search(rf"[*\"'“‘_]{w}|(?<=[a-z,;:] ){w}\b", text or ""))
     return needle in title_norm(text)
 
 STOP = set("about above after again against their there these those which while would could should being other through between where what when with from into that this have your yours they them were will also than then just like only some such very more most much many each idea ideas entry entries note notes".split())
@@ -774,7 +780,7 @@ def main():
     p.add_argument("--turn-timeout", type=int, default=900)
     p.add_argument("--base-args", required=True, help="JSON list")
     g = sub.add_parser("grade"); g.add_argument("run_dir")
-    gs = sub.add_parser("grade-store"); gs.add_argument("pass_dir"); gs.add_argument("--model", required=True); gs.add_argument("--digest", required=True)
+    gs = sub.add_parser("grade-store"); gs.add_argument("pass_dir"); gs.add_argument("--model"); gs.add_argument("--digest")
     s = sub.add_parser("selftest"); s.add_argument("kb_dir")
     m = sub.add_parser("emit-md"); m.add_argument("--cases", default=os.path.join(HERE, "cases.json"))
     a = ap.parse_args()
@@ -788,7 +794,8 @@ def main():
         out = grade_dir(a.run_dir)
         print(open(os.path.join(a.run_dir, "table.md")).read())
     elif a.cmd == "grade-store":
-        grade_store(a.pass_dir, a.model, a.digest)
+        v = load_json(os.path.join(a.pass_dir, "versions.json"), {})   # the run's own record, unless overridden
+        grade_store(a.pass_dir, a.model or v.get("model"), a.digest or v.get("digest"))
         print(open(os.path.join(a.pass_dir, "table.md")).read())
     elif a.cmd == "selftest":
         proven, unproven, problems, matrix = selftest(a.kb_dir)

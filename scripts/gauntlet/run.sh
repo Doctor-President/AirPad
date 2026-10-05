@@ -18,7 +18,7 @@
 set -uo pipefail
 
 RUN_DIR=${1:?run_dir}; MODEL=${2:?model}; shift 2
-THINK=off,on; RUNS=3; ONLY=""; REPLAYS=(); EXPECT_DIGEST=""; BUILD=1; EXTRA=(); TT=900
+THINK=off,on; RUNS=3; ONLY=""; REPLAYS=(); EXPECT_DIGEST=""; BUILD=1; EXTRA=(); TT=900; STORE_PASSES=()
 while (( $# )); do
   case $1 in
     --think) THINK=$2; shift 2;;
@@ -28,6 +28,10 @@ while (( $# )); do
     --expect-digest) EXPECT_DIGEST=$2; shift 2;;
     --no-build) BUILD=0; shift;;
     --turn-timeout) TT=$2; shift 2;;
+    # Store-level PRE-SCREEN (no UI): `--store-pass "<label>|<abs .app>|<YES|NO think>|<case ids or empty>"`,
+    # repeatable. Each pass installs that .app, runs `-LibrarianGauntlet` headless with the render tap on, and
+    # is graded by `gauntlet.py grade-store` into <run_dir>/<label>/. Passes share ONE Host session.
+    --store-pass) STORE_PASSES+=("$2"); shift 2;;
     --extra-arg) EXTRA+=("$2"); shift 2;;   # appended to every launch (e.g. an A/B switch)
     *) echo "unknown arg $1"; exit 2;;
   esac
@@ -107,13 +111,37 @@ log "versions: $(cat $RUN_DIR/versions.json | tr -d '\n ' )"
 zmodload zsh/datetime
 ( while true; do
     print -n "${EPOCHREALTIME}\t"
-    curl -s -m 2 $OLL/api/ps | python3 -c "import json,sys;print(','.join(m['name']+'@'+m['digest'] for m in json.load(sys.stdin).get('models',[])))" 2>/dev/null || print
+    curl -s -m 2 $OLL/api/ps | python3 -c "import json,sys;print(','.join(m['name']+'@'+m['digest']+'@'+str(m.get('size_vram',0))+'@'+str(m.get('context_length',0)) for m in json.load(sys.stdin).get('models',[])))" 2>/dev/null || print
     sleep 2
   done ) >> "$RUN_DIR/ps.log" &
 POLL_PID=$!
 
 # ── 4. Plan + drive the real UI ─────────────────────────────────────────────────────────────────
 BASE=$(python3 -c "import json,sys;print(json.dumps(['-CorpusFixture','$FIXTURE','-EmbedCPUOnly','-DebugHostURL','http://127.0.0.1:$PORT','-DebugHostSecret','$SECRET','-DebugHostPubKey','$HPK']+sys.argv[1:]))" "${EXTRA[@]}")
+if (( ${#STORE_PASSES[@]} )); then
+  xcrun simctl boot $SIM 2>/dev/null; xcrun simctl bootstatus $SIM -b >/dev/null 2>&1
+  BASEARGS=("${(@f)$(python3 -c "import json,sys;print('\n'.join(json.loads(sys.argv[1])))" "$BASE")}")
+  for P in "${STORE_PASSES[@]}"; do
+    IFS='|' read -r LABEL APP THINKF ONLYC <<< "$P"
+    PD="$RUN_DIR/$LABEL"; rm -rf "$PD"; mkdir -p "$PD"
+    xcrun simctl terminate $SIM com.doctorpresident.airpad 2>/dev/null
+    xcrun simctl install $SIM "$APP" || { log "install failed: $APP"; continue; }
+    ARGS=("${BASEARGS[@]}" -LibrarianGauntlet -GauntletTapDir "$PD" -DebugHostModel "$MODEL" -GauntletThink "$THINKF")
+    [[ -n $ONLYC ]] && ARGS+=(-GauntletOnly "$ONLYC")
+    log "store pass $LABEL (think=$THINKF only=${ONLYC:-all}) …"
+    HL0=$(wc -l < "$RUN_DIR/host.log")
+    ( xcrun simctl launch --console-pty --terminate-running-process $SIM com.doctorpresident.airpad "${ARGS[@]}" > "$PD/store.log" 2>&1 ) &
+    LPID=$!
+    for i in {1..720}; do grep -q "\[Gauntlet\] done" "$PD/store.log" 2>/dev/null && break; sleep 5; done
+    kill $LPID 2>/dev/null; xcrun simctl terminate $SIM com.doctorpresident.airpad 2>/dev/null
+    tail -n +$((HL0+1)) "$RUN_DIR/host.log" > "$PD/host.log"; cp "$RUN_DIR/ps.log" "$RUN_DIR/versions.json" "$PD/" 2>/dev/null
+    python3 $AIRPAD/scripts/gauntlet/gauntlet.py grade-store "$PD" --model "$MODEL" --digest "$DIGEST" > /dev/null
+    log "store pass $LABEL graded → $PD/table.md"
+  done
+  restore_real_host; trap - EXIT
+  log "done (wall $(( $(date +%s) - START ))s)"
+  exit 0
+fi
 python3 $AIRPAD/scripts/gauntlet/gauntlet.py plan --model "$MODEL" --digest "$DIGEST" --think "$THINK" --runs $RUNS \
   --out "$RUN_DIR" --only "$ONLY" --turn-timeout $TT "${REPLAYS[@]}" --base-args "$BASE" | tee -a "$RUN_DIR/run.log"
 if (( BUILD )); then

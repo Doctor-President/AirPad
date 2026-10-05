@@ -46,6 +46,7 @@ GRADERS = {
     "A4": "no <think>/channel tokens in the shown answer",
     "A5": "no refusal / forbidden phrase",
     "A6": "required facts present",
+    "A6b": "every value the answer labels high/low/normal/out-of-range (or lower/upper end) matches the entry's OWN range",
     "A7": "on-screen answer == the committed answer (capture/render agree)",
     "A8": "the app stayed responsive (main-thread stall ≤ 5 s; a hang the watchdog had to kill = FAIL)",
     "C1": "no bare E<n> entry labels",
@@ -191,6 +192,190 @@ def length_class(exp):
     return {"read": "short", "empty": "short", "survey": "broad"}.get(exp.get("expectRoute") or "")
 
 W3_SHORT_MAX, W3_BROAD_MIN, W2_MAX_SHARE = 120, 60, 0.5
+
+
+# ── A6b (Brief CH-A1b iteration 2) — status labels vs the entry's OWN reference ranges ──
+# Voice iteration 1 called testosterone 897 "well above the normal range (300–1080)", filed cholesterol 213
+# (<200) under "within normal ranges", and put albumin 5.0 "at the lower end" of 3.4–5.0. A6 (required facts)
+# passed those answers, because every number was present. A6b reads what the answer CLAIMS about each value.
+# Lenient by design (a false FAIL costs as much as a false PASS): a claim it can't attribute is not checked.
+LAB_ROW_RE = re.compile(r"([A-Z][A-Z0-9 ,&*/()%.-]*?)\s+(\d+(?:\.\d+)?)\s+(\d+(?:\.\d+)?\s*-\s*\d+(?:\.\d+)?|[<>]=?\s*\d+(?:\.\d+)?)"
+                        r"\s+(?:[A-Za-z/%*.\d]+\s+){0,2}?([HLN])\b")
+# analyte key → (keyword in the ENTRY's row name, answer-side pattern). Order = most specific first.
+ANALYTES = [
+    ("pct_free_t", "PERCENTAGE FREE", r"(?:percentage|percent|%)\s*free(?:\s+testosterone)?|free\s+testosterone\s+(?:percentage|percent|%)|testosterone,?\s+percentage\s+free"),
+    ("free_t", "FREE", r"free\s+testosterone(?:\s+calculation)?|testosterone,?\s+free(?:\s+calculation)?|free\s+t\b"),
+    ("shbg", "BINDING GLOBULIN", r"\bshbg\b|sex[- ]hormone[- ]binding globulin"),
+    ("total_t", "TESTOSTERONE", r"(?:total\s+)?testosterone(?:\s*\(immunoassay\)|,?\s+immunoassay|,?\s+total)?"),
+    ("ldl", "LDL", r"\bldl(?:[- ]c)?\b(?:\s*\([^)]{0,40}\))?(?:[ ,-]+(?:calculated\s+)?cholesterol)?|low[- ]density lipoprotein(?:\s+cholesterol)?|bad cholesterol"),
+    ("hdl", "HDL", r"\bhdl(?:[- ]c)?\b(?:\s*\([^)]{0,40}\))?(?:[ ,-]+cholesterol)?|high[- ]density lipoprotein(?:\s+cholesterol)?|good cholesterol"),
+    ("trig", "TRIGLYCERIDE", r"triglycerides?"),
+    ("chol", "CHOLESTEROL", r"(?:total\s+)?cholesterol"),
+    ("egfr", "FILTRATION", r"\begfr\b|glomerular filtration rate"),
+    ("bun", "UREA", r"\bbun\b|(?:blood\s+)?urea nitrogen"),
+    ("sodium", "SODIUM", r"\bsodium\b"), ("potassium", "POTASSIUM", r"\bpotassium\b"),
+    ("chloride", "CHLORIDE", r"\bchloride\b"), ("co2", "CO2", r"\bco2\b(?:\s+content)?|carbon dioxide|bicarbonate"),
+    ("glucose", "GLUCOSE", r"\bglucose\b"), ("calcium", "CALCIUM", r"\bcalcium\b"),
+    ("creatinine", "CREATININE", r"\bcreatinine\b"), ("protein", "TOTAL PROTEIN", r"total protein"),
+    ("albumin", "ALBUMIN", r"\balbumin\b"), ("alkp", "ALK PHOS", r"alk(?:aline)?[ -]?phos(?:phatase)?|\balk-?p\b"),
+    ("alt", "ALT", r"\balt\b"), ("ast", "AST", r"\bast\b"), ("bili", "BILIRUBIN", r"bilirubin"),
+    ("aniongap", "ANION GAP", r"anion gap"),
+]
+_ANALYTE_RES = [(k, kw, re.compile(pat, re.I)) for k, kw, pat in ANALYTES]
+A6B_CLAIMS = [   # (claim, pattern) — searched in the answer with analyte names masked out
+    ("POS_LOW", r"\b(?:lower|low)\s+end\b|\blower\s+(?:limit|bound)\b|bottom of the (?:normal |reference )?range|\blow[- ]normal\b"),
+    ("POS_HIGH", r"\bnormal[- ]to[- ]high\b|\b(?:upper|higher|high)\s+end\b|\bupper\s+(?:limit|bound)\b|top of the (?:normal |reference )?range|\bhigh[- ]normal\b"),
+    ("ABNORMAL", r"out of (?:the )?(?:normal |reference )?range|outside (?:the |of the )?(?:normal |reference )?range|\babnormal\b|\bflagged\b"),
+    ("NORMAL", r"\b(?:within|in|inside)\s+(?:the\s+)?(?:normal|reference|expected)\b|\bnormal\s+(?:limits|levels?|values?|results?)\b|\b(?:is|are|was|were|remains?|looks?|appears?)\s+(?:all\s+|completely\s+|entirely\s+)?normal\b|[—–:-]\s*normal\b|\bin range\b"),
+    ("HIGH", r"\b(?:elevated|exceeds?|exceeding)\b|\bhigh\b(?![- ](?:end|normal|side))|\babove\b|\bhigher than\b"),
+    ("LOW", r"\b(?:decreased|reduced|deficient)\b|\blow\b(?![- ](?:end|normal|side|density))|\bbelow\b|\blower than\b"),
+]
+_A6B_CLAIM_RES = [(c, re.compile(p, re.I)) for c, p in A6B_CLAIMS]
+_NEGATION_RE = re.compile(r"\b(?:not|no|isn't|aren't|wasn't|weren't|never|nor|without)\b[^.;:\n]{0,45}$", re.I)
+# an EXAMPLE or a HYPOTHETICAL is not a claim about this value ("(e.g., low testosterone)", "may indicate … reduced …")
+_HYPOTHETICAL_RE = re.compile(r"(?:e\.g\.,?|i\.e\.,?|such as|for example|like|if|whether|risk of|signs? of|symptoms? of)\s*[^.;:\n]{0,25}$"
+                              # a modal is a hedge or a general statement ("immunoassays can be imprecise at low levels")
+                              r"|\b(?:may|might|could|can|would)\b[^.;\n]{0,45}$"
+                              # medical HISTORY, not a label of this result ("you were treated for low testosterone")
+                              r"|\b(?:treated for|treatment for|history of|diagnosed with|prescribed for|was|were)\s+[^.;:\n]{0,15}$", re.I)
+
+
+def lab_reference(packet):
+    """{analyte key: [(value, lo, hi, flag, row text), …]} parsed from the entry's own result rows
+    (`NAME value range UNIT FLAG`, name possibly on earlier lines). Several rows per analyte when the packet
+    holds more than one lab report. Empty when the packet has no lab table."""
+    flat = re.sub(r"\s+", " ", packet or "")
+    out = {}
+    for m in LAB_ROW_RE.finditer(flat):
+        name, val, rng, flag = m.group(1).upper(), float(m.group(2)), m.group(3).replace(" ", ""), m.group(4)
+        hit = None   # the keyword that ENDS latest in the row name wins; on a tie the longer ("PERCENTAGE FREE" > "FREE")
+        for k, kw, _ in _ANALYTE_RES:
+            pos = name.rfind(kw)
+            if pos >= 0 and (hit is None or (pos + len(kw), len(kw)) > hit[1]):
+                hit = (k, (pos + len(kw), len(kw)))
+        if not hit:
+            continue
+        if "-" in rng and not rng.startswith(("<", ">")):
+            lo, hi = (float(x) for x in rng.split("-"))
+        elif rng.startswith("<"):
+            lo, hi = None, float(rng.lstrip("<="))
+        else:
+            lo, hi = float(rng.lstrip(">=")), None
+        out.setdefault(hit[0], []).append((val, lo, hi, flag, m.group(0).strip()[-60:]))
+    return out
+
+
+def _truth(claim, ref):
+    v, lo, hi, _, _ = ref
+    normal = (lo is None or v >= lo) and (hi is None or v <= hi)
+    if claim == "NORMAL":
+        return normal
+    if claim == "ABNORMAL":
+        return not normal
+    if claim == "HIGH":     # above the upper bound; on a lower-bound-only range (">40") "above" is just true
+        return (hi is not None and v > hi) or (hi is None and v > lo)
+    if claim == "LOW":
+        return (lo is not None and v < lo) or (lo is None and v < hi)
+    if lo is None or hi is None or hi <= lo:
+        return True         # position claims are judged only on a bounded range
+    pos = (v - lo) / (hi - lo)
+    return pos <= 0.5 if claim == "POS_LOW" else pos >= 0.5
+
+
+def a6b_violations(answer, ref):
+    """→ list of human-readable mislabels. Each claim is attributed to ONE analyte mention in its segment:
+    the next mention if the claim word sits right before it ("elevated LDL"), else the previous one."""
+    if sum(len(v) for v in ref.values()) < 3:
+        return None
+    text = strip_markers(answer or "").replace("\u2019", "'")
+    text = re.sub(r"[*_`#>|~]", "", text)
+    bad = []
+    truly_out = sorted(k for k, rows in ref.items() if all(not _truth("NORMAL", r) for r in rows))
+    recent = []   # analytes named by the last segments that named any (for "This is the only value…" lines)
+    for seg in re.split(r"\n+|(?<=[.!?])\s+(?=[A-Z(])", text):
+        # "None of your values are out of range" / "no lab values are outside the reference range" — while some ARE
+        if truly_out and re.search(r"\b(?:none of (?:your|the|these)|no (?:lab |other )?(?:values?|results?|lab results?|lab values?)|nothing)\b[^.\n]{0,50}"
+                                   r"(?:out of (?:the )?(?:normal |reference )?range|outside (?:of )?(?:the |their )?(?:official |normal |reference )?(?:reference )?(?:range|limits)|abnormal)", seg, re.I) \
+                and not re.search(r"\b(?:other|else|besides|apart|except|aside)\b", seg, re.I) \
+                and not re.search(r"\b(?:panel|testing|tests|section|category|hormones?|hormonal|metabolic|electrolytes?|liver|kidney|lipids?)\b", seg, re.I):
+            # (a scoped "no values are out of range in hormone testing" is true — only an UNSCOPED "none" is judged)
+            bad.append(f"says no value is out of range; out of range per the entry: {truly_out}: \"{seg[:90].strip()}\"")
+        # analyte mentions: most-specific pattern wins; masked so 'LDL cholesterol' is never also 'cholesterol'
+        mask, mentions = list(seg), []
+        for k, _, rx in _ANALYTE_RES:
+            for m in rx.finditer("".join(mask)):
+                mentions.append((m.start(), m.end(), k))   # every analyte attributes; only those in `ref` are judged
+                for i in range(m.start(), m.end()):
+                    mask[i] = "\0"
+        if not any(k in ref for _, _, k in mentions):
+            # "This is the only value that is out of range." under an analyte's bullet → that analyte (look back ≤4 lines)
+            if recent and re.search(r"\bonly\b[^.\n]{0,40}(?:out of (?:the )?(?:normal |reference )?range|abnormal)", seg, re.I) \
+                    and not re.search(r"\b(?:not|no)\b", seg, re.I):
+                named = recent[-1][1]
+                missing = [k for k in truly_out if k not in named]
+                if missing:
+                    bad.append(f"says only {sorted(named)} out of range; also out of range: {missing}: \"{seg[:90].strip()}\"")
+            recent = [(age + 1, n) for age, n in recent if age < 4]
+            continue
+        recent = [(0, {k for _, _, k in mentions if k in ref})]
+        mentions.sort()
+        masked = "".join(mask)
+        claims = []   # (pos, end, claim)
+        for c, rx in _A6B_CLAIM_RES:
+            for m in rx.finditer(masked):
+                if any(s <= m.start() < e for s, e, _ in claims):
+                    continue
+                if _NEGATION_RE.search(masked[:m.start()]) or _HYPOTHETICAL_RE.search(masked[:m.start()]):
+                    continue
+                # about OTHER values ("…even if other values are normal", "the rest are within range") → not this analyte
+                if re.search(r"\b(?:other|others|rest|remaining)\b[^.;:\n]{0,30}$", masked[:m.start()], re.I):
+                    continue
+                # a range QUOTE ("the normal range is below 200", "above 40 mg/dL") is not a claim
+                if c in ("HIGH", "LOW") and re.match(r"\s*(?:the\s+)?[<>≥≤]?\s*\d", masked[m.end():]):
+                    continue
+                # the label modifies some OTHER noun ("elevated estrogen", "reduced libido") → not this analyte
+                nxt = re.match(r"\s+([A-Za-z]+)", masked[m.end():])
+                if c in ("HIGH", "LOW") and nxt and not masked[m.end():].lstrip().startswith("\0") and nxt.group(1).lower() not in (
+                        "levels", "level", "values", "value", "at", "in", "by", "for", "and", "or", "than", "the", "range",
+                        "limit", "limits", "but", "which", "with", "compared", "relative", "normal", "reference", "recommended",
+                        "target", "ideal", "optimal", "upper", "lower", "its", "their", "your", "his", "her", "a", "an", "to",
+                        "according", "per", "is", "are", "as", "so", "this", "that", "though", "although", "side"):
+                    continue
+                # a range QUOTE ("normal range 0.50-1.50", "(normal <200)") is not a claim — unless "within the normal range"
+                if c == "NORMAL" and re.match(r"\s*(?:range\s*)?[:(]?\s*[<>≥≤]?\s*\d", masked[m.end():]) and not re.match(r"(?:within|in|inside)\b", m.group(0), re.I):
+                    continue
+                claims.append((m.start(), m.end(), c))
+        # "with the exception of X" / "except X" after a NORMAL claim → X is claimed abnormal
+        for m in re.finditer(r"\b(?:with the exception of|except(?: for)?|apart from|other than)\b", seg, re.I):
+            if any(c == "NORMAL" and p < m.start() for p, _, c in claims):
+                nxt = [mm for mm in mentions if mm[0] >= m.end()][:1]
+                if nxt:
+                    claims.append((nxt[0][0] - 1, nxt[0][0] - 1, "ABNORMAL@" + nxt[0][2]))
+        for p, e, c in claims:
+            if c.startswith("ABNORMAL@"):
+                k, c = c.split("@")[1], "ABNORMAL"
+            else:
+                after = [mm for mm in mentions if mm[0] >= e and re.fullmatch(r"[\sA-Za-z'-]{0,25}", seg[e:mm[0]])]
+                before = [mm for mm in mentions if mm[1] <= p]
+                pick = after[0] if after and (c in ("HIGH", "LOW", "ABNORMAL") and len(seg[e:after[0][0]].split()) <= 3) else (before[-1] if before else (after[0] if after else None))
+                if not pick:
+                    continue
+                k = pick[2]
+            if k not in ref:
+                continue
+            if not any(_truth(c, r) for r in ref[k]):   # false for EVERY row of this analyte in the packet
+                v, lo, hi, flag, row = ref[k][0]
+                rng = f"{lo}-{hi}" if lo is not None and hi is not None else (f"<{hi}" if lo is None else f">{lo}")
+                msg = f"{k} {v} ({rng}, lab flag {flag}) labelled {c}"
+                if not any(b.startswith(msg) for b in bad):
+                    bad.append(f"{msg}: \"{seg[max(0, p - 50):e + 10].strip()}\"")
+        # "the only value out of range is X" → every truly out-of-range analyte must be among those named
+        if re.search(r"\bonly\b", seg, re.I) and any(c in ("ABNORMAL", "HIGH", "LOW") for _, _, c in claims):
+            named = {k for _, _, k in mentions}
+            missing = [k for k in truly_out if k not in named]
+            if missing and named:
+                bad.append(f"says only {sorted(named)} out of range; also out of range: {missing}: \"{seg[:90].strip()}\"")
+    return bad
 
 
 # ─────────────────────────── logs ───────────────────────────
@@ -418,6 +603,14 @@ def grade_row(exp, turn, ui, prev_turn, host, ps, versions, cases_meta, store=Fa
         res("A7", ratio >= 0.9, f"similarity {ratio:.2f}")
     else:
         na("A7")
+
+    ref = turn.get("refRanges")   # known-bad items carry the parsed ranges instead of the (redacted) packet
+    ref = {k: [tuple(r) for r in rows] for k, rows in ref.items()} if ref else lab_reference(turn.get("userContent") or "")
+    v6b = a6b_violations(final, ref) if norm_ws(final) else None
+    if v6b is None:
+        na("A6b", "no lab table in the packet" if norm_ws(final) else "no answer")
+    else:
+        res("A6b", not v6b, "; ".join(v6b[:3]) or f"{sum(len(r) for r in ref.values())} reference rows")
 
     gap = turn.get("maxMainThreadGapMs")
     if gap is not None:
@@ -775,7 +968,11 @@ def selftest(kb_dir):
     problems, matrix = [], []
     for item in man["items"]:
         run_dir = os.path.join(kb_dir, item["runDir"])
-        grades = grade_dir(run_dir, quiet=True)
+        if item.get("store"):   # a store pre-screen capture (no UI) — graded the way it was produced
+            v = load_json(os.path.join(run_dir, "versions.json"), {})
+            grades = grade_store(run_dir, v.get("model"), v.get("digest"))
+        else:
+            grades = grade_dir(run_dir, quiet=True)
         for row, want_red in item.get("expectRed", {}).items():
             g = grades.get(row)
             if not g:
@@ -794,6 +991,14 @@ def selftest(kb_dir):
             if not g or red:
                 problems.append(f"{item['id']} {row}: positive control is not green: {red or 'not graded'}")
             matrix.append((item["id"], row, sorted(red), (g or {}).get("results", {})))
+        # named graders that must stay GREEN on a row (a control that is not all-green for unrelated reasons)
+        for row, want_green in item.get("expectGreenOn", {}).items():
+            g = grades.get(row)
+            for w in want_green:
+                st = (g or {"results": {}})["results"].get(w, ("MISSING", ""))
+                if st[0] != "PASS":
+                    problems.append(f"{item['id']} {row}: control grader {w} is not green: {st}")
+            matrix.append((item["id"], row, sorted(k for k, (st, _) in (g or {"results": {}})["results"].items() if st in ("FAIL", "ABORT", "FLAG")), (g or {}).get("results", {})))
         # run-level graders (W2): RED (or FLAG) on a known-bad run, green on its control
         rl = run_level(grades)
         for w in item.get("expectRunRed", []):

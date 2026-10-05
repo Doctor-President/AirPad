@@ -2096,11 +2096,15 @@ final class LibrarianState {
     /// full text"), redrafted ~5×, and mislabelled its citations (T's 10-04 trace). A survey turn now says
     /// plainly that it has summaries + excerpts, that this is expected, and to synthesise across them.
     /// Brief CH-A1b — order: voice → what's below the question → how to use the entries → closing voice →
-    /// the user's standing voice (when set).
+    /// the user's standing voice (when set). Iteration 2 (T: keep the voice, fix accuracy only): iteration 1
+    /// dropped LDL 153 and mislabelled in-range values (testosterone 897 "well above 300–1080", cholesterol
+    /// 213 filed as normal) and over-read synthesis ("it seals the connection… a ritual") → "thoroughly" is
+    /// restored on read turns, plus a facts-first line and "say what the entries say before what you make
+    /// of them". Graded by A6b (every high/low/normal label must match the entry's own range).
     private func askSystemPrompt(hasReads: Bool, hasCards: Bool, hasPassages: Bool, hasPartial: Bool) -> String {
         var below: String
         if hasReads {
-            below = "Below the question, ENTRIES READ IN FULL holds the complete text of their most relevant entries — that's your main source, so answer from it directly."
+            below = "Below the question, ENTRIES READ IN FULL holds the complete text of their most relevant entries — that's your main source, so answer from it directly and thoroughly."
             if hasCards { below += " ENTRIES ON THIS TOPIC lists other related entries, one line each." }
             if hasPassages { below += " PASSAGES are short excerpts." }
             below += " They were pulled from the library and may not all be relevant. When an entry is read in full, work from its whole text and give the specifics it actually contains — names, values, dates, figures — rather than a vague summary. For a broad question about what they think or have, synthesise across the entries; for a specific fact, answer from the full entry\(hasPassages ? " or the PASSAGES" : "")."
@@ -2110,7 +2114,7 @@ final class LibrarianState {
             if hasPassages { have.append("PASSAGES are short excerpts from entries") }
             below = "Below the question is a SURVEY of their library: \(have.joined(separator: "; ")). You don't have the full text of any entry, and that's expected for a broad question — work from these summaries and excerpts, and never look for, mention or apologise for missing full text. They were pulled from the library and may not all be relevant. Synthesise across them."
         }
-        var use = "How to use the entries: each is labelled with who wrote it (or where it was saved from) and its date. They're from the user's own library, so treat anything that genuinely helps as authoritative about their world — if they define a term, use their definition over a generic one. Cite each entry you draw on inline with its exact bracketed number, like [1] or [6] (never 'E6' or 'entry 6'); cite every entry you discuss, and only the ones you actually used."
+        var use = "How to use the entries: each is labelled with who wrote it (or where it was saved from) and its date. Say what the entries say before what you make of them. When asked about specific facts or figures, report them exactly and completely before interpreting. They're from the user's own library, so treat anything that genuinely helps as authoritative about their world — if they define a term, use their definition over a generic one. Cite each entry you draw on inline with its exact bracketed number, like [1] or [6] (never 'E6' or 'entry 6'); cite every entry you discuss, and only the ones you actually used."
         if hasPartial { use += " If a full entry is marked PARTIAL, only its best excerpts were included — answer from what's there and don't invent the rest." }
         use += " Entries marked saved article, document or image text are things they collected, not their own words — for questions about their own views, answer from their entries and refer to collected sources as such. If an entry distinguishes an estimate from an actual figure, say which. Stay on what they asked: don't connect entries the question isn't about, and skip entries that don't help. If a fact isn't in the entries, say so briefly and answer from your general knowledge — that's a good answer. Never refuse, and never say you can't access the entries — just answer. Finish on your last sentence of prose — no References, Sources or Citations section; AirPad shows the citations itself."
         return [Self.librarianVoice, below, use, Self.librarianClosingVoice].joined(separator: "\n\n") + standingVoiceSuffix

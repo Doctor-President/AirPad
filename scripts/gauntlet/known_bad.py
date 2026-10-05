@@ -5,6 +5,8 @@
       Writes replay scripts (kb_dir/replays/*.json) for the items pushed through the REAL UI capture path
       via `-GauntletReplay`. Item (a) itself is the LIVE run (current qwen3:4b, think:false, T's
       connections question) — its raw model output is saved verbatim as kb_dir/a-raw-output.txt.
+  a6b <kb_dir> <voice_run_dir>
+      Brief CH-A1b iteration 2 — A6b known-bad from the REAL iteration-1 voice answers (+ OLD as control).
   voice <kb_dir>
       Brief CH-A1b — adds the VOICE known-bad items (W1–W3), doctored from run-replays' clean captures.
   doctor <replay_run_dir> <live_leak_run_dir> <kb_dir>
@@ -336,6 +338,41 @@ def voice(kb_dir):
     print("wrote", len(items), "voice items")
 
 
+def a6b(kb_dir, voice_dir):
+    """Brief CH-A1b iteration 2 — A6b known-bad = the REAL iteration-1 read answers (store passes in
+    <voice_dir>/<arm>/{new,old}). NEW must go RED on A6b; OLD is the control (A6b green). The packet text is
+    redacted; only its parsed reference rows (`refRanges`) are kept, which is all A6b reads."""
+    import gauntlet as G
+    items = []
+    for arm in ("qwen3-4b-hybrid", "qwen3-4b-instruct"):
+        for which in ("new", "old"):
+            src, name = os.path.join(voice_dir, arm, which), f"a6b-it1-{arm[6:]}-{which}"
+            d = os.path.join(kb_dir, name)
+            if os.path.exists(d):
+                shutil.rmtree(d)
+            os.makedirs(d)
+            sr = json.load(open(os.path.join(src, "store-rows.json")))
+            sr["rows"] = [r for r in sr["rows"] if r["case"] in ("1", "BXc")]
+            json.dump(sr, open(os.path.join(d, "store-rows.json"), "w"), indent=1)
+            for f in ("host.log", "ps.log", "versions.json"):
+                shutil.copy(os.path.join(src, f), d)
+            for r in sr["rows"]:
+                t = json.load(open(os.path.join(src, f"turn-{r['seq']:03d}.json")))
+                t["refRanges"] = G.lab_reference(t.get("userContent") or "")
+                t["userContent"] = f"<redacted: {len(t.get('userContent') or '')} chars of packet>"
+                json.dump(t, open(os.path.join(d, f"turn-{r['seq']:03d}.json"), "w"), indent=1, ensure_ascii=False)
+            rows = {"1.off.store": ["A6b"], "BXc.off.store": ["A6b"]}
+            items.append({"id": name, "runDir": name, "store": True,
+                          "what": f"REAL iteration-1 {which.upper()}-prompt read answers ({arm}, cases 1 + BXc)"
+                                  + (" — mislabelled values vs the entry's ranges" if which == "new" else " — CONTROL: A6b must stay green"),
+                          **({"expectRed": rows} if which == "new" else {"expectGreenOn": rows})})
+    mp = os.path.join(kb_dir, "manifest.json")
+    man = json.load(open(mp))
+    man["items"] = [i for i in man["items"] if not i["id"].startswith("a6b-")] + items
+    json.dump(man, open(mp, "w"), indent=1, ensure_ascii=False)
+    print("wrote", len(items), "A6b items")
+
+
 if __name__ == "__main__":
     cmd = sys.argv[1]
     if cmd == "replays":
@@ -344,3 +381,5 @@ if __name__ == "__main__":
         doctor(sys.argv[2], sys.argv[3], sys.argv[4])
     elif cmd == "voice":
         voice(sys.argv[2])
+    elif cmd == "a6b":
+        a6b(sys.argv[2], sys.argv[3])

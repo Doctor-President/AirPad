@@ -2,6 +2,7 @@
 """Brief CH-A1b — write the OLD-vs-NEW voice samples for T (labelled, NOT blind).
 
   voice_samples.py <out.md> <arm_dir>...      each arm_dir holds store passes `old/` and `new/` (graded)
+  voice_samples.py --iteration2 <out.md> <arm_dir>...   passes `old-r1..3` / `new2-r1..3` (accuracy table + answers)
 
 Per question: each model's OLD answer directly above its NEW answer, with word count, chips and the graders
 (every Gauntlet v2 grader incl. the voice graders W1–W3)."""
@@ -74,5 +75,59 @@ def main():
     open(out_md, "a").write("\n".join(L))
 
 
+def iteration2(out_md, arms, runs=3):
+    """Iteration 2: per arm, OLD ×runs vs NEW2 ×runs (store passes old-rN / new2-rN). Appends an accuracy table
+    over every run, the full NEW2 run-1 answers, and NEW2 runs 2..N of the read/fact answers (collapsed)."""
+    cm = json.load(open(os.path.join(os.path.dirname(__file__), "cases.json")))
+    questions = {c["id"]: c["question"] for ch in cm["chats"] for c in ch["cases"]}
+    L = ["## Iteration 2 — accuracy over all runs", "",
+         "Each cell = one run: words · graders that are red (A6 required facts, A6b status labels vs the entry's ranges, "
+         "others) · flags. ✓ = no red grader.", "",
+         "| model | prompt | run | 1 (read) | BXc (fact) | S1 | S2 | W2 |", "|---|---|---|---|---|---|---|---|"]
+    for a in arms:
+        model = G.load_json(os.path.join(a, "new2-r1", "versions.json"), {}).get("model", os.path.basename(a))
+        for which, label in (("old", "OLD"), ("new2", "NEW-it2")):
+            for r in range(1, runs + 1):
+                d = os.path.join(a, f"{which}-r{r}")
+                ps = load_pass(d)
+                cells = []
+                for q in ("1", "BXc", "S1", "S2"):   # the table's column order (ORDER is the answers' section order)
+                    row = ps.get(q)
+                    if not row:
+                        cells.append("—"); continue
+                    res = row["grade"].get("results", {})
+                    reds = [k for k, (st, _) in res.items() if st in ("FAIL", "ABORT")]
+                    cells.append(f"{row['grade'].get('stats', {}).get('words', '?')} w · " + ("**" + ", ".join(reds) + "**" if reds else "✓"))
+                w2 = G.run_level(G.load_json(os.path.join(d, "grades.json"), {}))["W2"]
+                L.append(f"| {model} | {label} | {r} | " + " | ".join(cells) + f" | {w2[0]} ({w2[1].split(' answers')[0]}) |")
+    L += [""]
+    for a in arms:
+        model = G.load_json(os.path.join(a, "new2-r1", "versions.json"), {}).get("model", os.path.basename(a))
+        r1 = load_pass(os.path.join(a, "new2-r1"))
+        L += [f"## Iteration 2 — {model} · NEW-it2 prompt, run 1 (full)", ""]
+        for q in ORDER:
+            row = r1.get(q)
+            if not row:
+                continue
+            t, g = row["turn"], row["grade"]
+            chips = ", ".join(f"[{c['index']}] {c.get('title', '')[:40]}" for c in (t.get("citations") or []))
+            L += [f"### {q} · {KIND[q]} — “{questions.get(q, '')}”",
+                  f"_{g.get('stats', {}).get('words', '?')} words · {round(row['secs'] or 0)} s · {t.get('receipt') or 'no receipt'} · chips: {chips or 'none'}_  ",
+                  f"_{grader_line(g)}_", "", quote(t.get("finalText")), ""]
+        L += [f"<details><summary>{model} · NEW-it2 runs 2–{runs}: the read + fact answers</summary>", ""]
+        for r in range(2, runs + 1):
+            ps = load_pass(os.path.join(a, f"new2-r{r}"))
+            for q in ("1", "BXc"):
+                row = ps.get(q)
+                if row:
+                    L += [f"#### run {r} · {q} — {row['grade'].get('stats', {}).get('words', '?')} words · {grader_line(row['grade'])}", "",
+                          quote(row["turn"].get("finalText")), ""]
+        L += ["</details>", ""]
+    open(out_md, "a").write("\n".join(L))
+
+
 if __name__ == "__main__":
-    main()
+    if sys.argv[1] == "--iteration2":
+        iteration2(sys.argv[2], sys.argv[3:])
+    else:
+        main()

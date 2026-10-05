@@ -2075,29 +2075,45 @@ final class LibrarianState {
         askSystemPrompt(hasReads: true, hasCards: true, hasPassages: true, hasPartial: true)
     }
 
+    /// Brief CH-A1b — the Librarian is ONE character across modes: this identity + voice paragraph opens the
+    /// grounded prompt AND the empty-library prompt. T: the old voice felt distant and uninterested next to
+    /// Claude — one line of identity, then ~400 words of rules ending on "Be specific, concise, and never
+    /// generic… End your reply at the end of the prose answer." Small models mirror the register of their
+    /// instructions, so a rules-first prompt produced a compliance voice ("We are to look for connections…
+    /// We must cite…"). Voice now comes FIRST and LAST; the rules sit in the middle, compressed, with the
+    /// same semantics (no rule was removed).
+    static let librarianVoice = "You're the Librarian for one person's private library of ideas — their notes, sketches, saved articles and half-formed thoughts. You've read these entries closely and you're genuinely interested in how their thinking fits together. Talk to them directly, as \"you\", like a thoughtful friend who knows their notes well: warm, curious and plain-spoken. Lead with the most interesting thing you found. When ideas connect or pull against each other, say why it matters. Match length to the question — a quick fact gets a sentence or two; a broad question gets a few short paragraphs."
+    /// The last generic instruction of the grounded prompt (small models weight the end most).
+    static let librarianClosingVoice = "Write like you're talking with them about their own ideas — engaged, specific and human."
+    /// The corpus-free opening for the general-knowledge and web-search prompts — the same voice, with no
+    /// library language (Private mode must carry none).
+    static let plainVoice = "You're a thoughtful, knowledgeable friend to the person you're talking with — warm, curious, plain-spoken and to the point."
+
     /// Brief CH A1 — the system prompt must describe ONLY the sections actually in the packet. The old
     /// single prompt always said "ENTRIES READ IN FULL … are the PRIMARY source, answer from them directly
     /// and thoroughly", so on a SURVEY turn (one-line cards + passages, nothing read in full) a thinking
     /// model spent ~⅓ of its trace hunting for full text that wasn't there ("But wait… we don't have the
     /// full text"), redrafted ~5×, and mislabelled its citations (T's 10-04 trace). A survey turn now says
     /// plainly that it has summaries + excerpts, that this is expected, and to synthesise across them.
+    /// Brief CH-A1b — order: voice → what's below the question → how to use the entries → closing voice →
+    /// the user's standing voice (when set).
     private func askSystemPrompt(hasReads: Bool, hasCards: Bool, hasPassages: Bool, hasPartial: Bool) -> String {
-        var p = "You are a reflective AI that helps someone think across their OWN entries. "
+        var below: String
         if hasReads {
-            p += "Below the question, ENTRIES READ IN FULL contains the COMPLETE text of the user's most relevant entries — these are the PRIMARY source, answer from them directly and thoroughly."
-            if hasCards { p += " ENTRIES ON THIS TOPIC lists other related entries (one line each)." }
-            if hasPassages { p += " PASSAGES are excerpts." }
-            p += " They were pulled from the user's library and MAY OR MAY NOT all be relevant. When an entry is READ IN FULL, base your answer on its whole text — give the specifics it actually contains (names, values, dates, figures) rather than a vague summary. For broad questions about what the user thinks or has, synthesise across the entries and cite them; for specific facts, answer from the full entry\(hasPassages ? " or the PASSAGES" : "")."
+            below = "Below the question, ENTRIES READ IN FULL holds the complete text of their most relevant entries — that's your main source, so answer from it directly."
+            if hasCards { below += " ENTRIES ON THIS TOPIC lists other related entries, one line each." }
+            if hasPassages { below += " PASSAGES are short excerpts." }
+            below += " They were pulled from the library and may not all be relevant. When an entry is read in full, work from its whole text and give the specifics it actually contains — names, values, dates, figures — rather than a vague summary. For a broad question about what they think or have, synthesise across the entries; for a specific fact, answer from the full entry\(hasPassages ? " or the PASSAGES" : "")."
         } else {
             var have: [String] = []
             if hasCards { have.append("ENTRIES ON THIS TOPIC gives each related entry as one line (its title and a short summary)") }
             if hasPassages { have.append("PASSAGES are short excerpts from entries") }
-            p += "Below the question is a SURVEY of the user's library: \(have.joined(separator: "; ")). You do not have the full text of any entry, and that is expected for a broad question — work from these summaries and excerpts; never look for, mention, or apologise for missing full text. They were pulled from the user's library and MAY OR MAY NOT all be relevant. Synthesise across them and cite the entries you draw on."
+            below = "Below the question is a SURVEY of their library: \(have.joined(separator: "; ")). You don't have the full text of any entry, and that's expected for a broad question — work from these summaries and excerpts, and never look for, mention or apologise for missing full text. They were pulled from the library and may not all be relevant. Synthesise across them."
         }
-        p += " Treat anything that genuinely helps as authoritative about the user's own world — if it defines a term, use THEIR definition over a generic one — and cite it inline with its bracketed number like [1] [2] matching the numbered entries above — ALWAYS use the exact bracketed number of the entry you are referring to (e.g. write [6], never 'E6' or 'entry 6'), and cite every entry you discuss."
-        if hasPartial { p += " If a full entry is marked PARTIAL, only its best excerpts were included — answer from what's there and don't invent the rest." }
-        p += " Ignore items that don't help and answer normally from your own knowledge. These are entries from the user's OWN library — each is labelled with who authored it (or where it was saved from) and its date. If a specific fact genuinely isn't in these entries, you may say so briefly and then answer from your general knowledge — that is a valid answer. Never refuse, and never claim you cannot access the entries — just answer the question directly. Be specific, concise, and never generic. Cite only items you actually used. Do not connect entries the question did not ask about. If an entry distinguishes an estimate from an actual figure, say which. Entries marked saved article, document, or image text are things the user collected, not their own words. For questions about the user's own views, answer from their entries and refer to collected sources as such. Do not append a References, Sources, or Citations section — AirPad renders citations separately. End your reply at the end of the prose answer."
-        return personalVoicePrefix + p
+        var use = "How to use the entries: each is labelled with who wrote it (or where it was saved from) and its date. They're from the user's own library, so treat anything that genuinely helps as authoritative about their world — if they define a term, use their definition over a generic one. Cite each entry you draw on inline with its exact bracketed number, like [1] or [6] (never 'E6' or 'entry 6'); cite every entry you discuss, and only the ones you actually used."
+        if hasPartial { use += " If a full entry is marked PARTIAL, only its best excerpts were included — answer from what's there and don't invent the rest." }
+        use += " Entries marked saved article, document or image text are things they collected, not their own words — for questions about their own views, answer from their entries and refer to collected sources as such. If an entry distinguishes an estimate from an actual figure, say which. Stay on what they asked: don't connect entries the question isn't about, and skip entries that don't help. If a fact isn't in the entries, say so briefly and answer from your general knowledge — that's a good answer. Never refuse, and never say you can't access the entries — just answer. Finish on your last sentence of prose — no References, Sources or Citations section; AirPad shows the citations itself."
+        return [Self.librarianVoice, below, use, Self.librarianClosingVoice].joined(separator: "\n\n") + standingVoiceSuffix
     }
 
     /// Brief AB3 — empty-library prompt: corpus mode found NOTHING in this room
@@ -2115,8 +2131,8 @@ final class LibrarianState {
     /// reads "No matching entries" (BR3), and there are no candidates, so any fabricated `[n]` is
     /// stripped (AB3's own guard). Provenance stays honest while the user still gets an answer.
     private var emptyLibrarySystemPrompt: String {
-        let base = "You are a reflective AI that helps someone think across their OWN entries. No entries in this library match this question. Open by saying that in ONE short sentence, then answer the question normally from your own general knowledge. Never imply the answer came from the user's entries, and never cite anything."
-        return personalVoicePrefix + base
+        let rules = "No entries in this library match this question. Open by saying that in one short sentence, then answer the question normally from your own general knowledge. Never imply the answer came from their entries, and never cite anything."
+        return Self.librarianVoice + "\n\n" + rules + standingVoiceSuffix
     }
 
     /// ★ Private-mode system prompt (corpusAware OFF). A plain, direct assistant —
@@ -2124,11 +2140,11 @@ final class LibrarianState {
     /// framing, no "answer from your own knowledge if the notes don't help" hedging.
     /// Sending corpus framing when there IS no corpus in the prompt is exactly what
     /// confuses a small model; this is the LM-Studio-quality private-chat experience.
-    /// Keeps `personalVoicePrefix` because the standing voice is about tone, not
-    /// grounding — it applies to both modes.
+    /// Keeps the standing voice because it is about tone, not grounding — it applies to both modes.
+    /// Brief CH-A1b — opens with the Librarian's corpus-free voice line; the standing voice comes LAST.
     private var privateSystemPrompt: String {
-        let base = "You are a helpful, direct, and concise assistant. Answer the user's question clearly and accurately from your own knowledge. Be specific and genuinely useful; don't pad the answer."
-        return personalVoicePrefix + base
+        let base = Self.plainVoice + " Answer the user's question clearly and accurately from your own knowledge. Be specific and genuinely useful; don't pad the answer."
+        return base + standingVoiceSuffix
     }
 
     /// ★ Tool-loop system prompt (private + REMOTE). Distinct from `privateSystemPrompt`
@@ -2144,7 +2160,7 @@ final class LibrarianState {
         df.dateFormat = "EEEE, MMMM d, yyyy"
         let today = df.string(from: Date())
         let base = """
-        You are a helpful, direct, concise assistant. You can search the web with the web_search tool \
+        \(Self.plainVoice) You can search the web with the web_search tool \
         when the user asks for current information or explicitly asks you to search (and fetch_url reads \
         a page you found). Today's real date is \(today). When a question needs current, local, or \
         factual information, call the tools.
@@ -2161,7 +2177,7 @@ final class LibrarianState {
         URLs into your prose — the app renders the real links from your [n] citations, and any URL you \
         type yourself will be shown as plain, non-clickable text.
         """
-        return personalVoicePrefix + base
+        return base + standingVoiceSuffix
     }
 
     #if DEBUG
@@ -2349,14 +2365,15 @@ final class LibrarianState {
 
     /// User-defined standing voice (c7) — read fresh on each prompt build
     /// so Settings edits take effect on the next Ask without re-creating
-    /// the session. Returns "" when unset or whitespace-only; otherwise
-    /// returns the trimmed text followed by a blank line so it
-    /// concatenates cleanly into whatever follows.
-    private var personalVoicePrefix: String {
+    /// the session. Returns "" when unset or whitespace-only.
+    ///
+    /// Brief CH-A1b — appended LAST (it was a prefix, then buried under ~400 words of rules; small models
+    /// weight the last instructions most). It overrides the default voice, never the rules.
+    private var standingVoiceSuffix: String {
         let raw = UserDefaults.standard.string(forKey: "librarianPersonalPrompt") ?? ""
         let trimmed = raw.trimmingCharacters(in: .whitespacesAndNewlines)
         guard !trimmed.isEmpty else { return "" }
-        return trimmed + "\n\n"
+        return "\n\nThe user has told you how they'd like you to sound — follow it: " + trimmed
     }
 
     /// Surface-visible flag for the personal-voice indicator. Pure UI hook —

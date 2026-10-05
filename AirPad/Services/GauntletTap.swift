@@ -231,3 +231,44 @@ extension View {
     }
 }
 #endif
+
+#if DEBUG
+/// Freeze investigation (CH-0 follow-up) — per-second hit counts + last values at each geometry/preference
+/// → state feedback edge, written by a BACKGROUND thread to `<GauntletTapDir>/probe.log`, so it keeps
+/// reporting while the main thread spins. Inert without -GauntletTapDir. Measurement only.
+final class FreezeProbe: @unchecked Sendable {
+    static let shared = FreezeProbe()
+    private let lock = NSLock()
+    private var counts: [String: Int] = [:]
+    private var last: [String: String] = [:]
+    private let on: Bool
+    private init() {
+        on = GauntletTap.shared.isOn
+        guard on, let dir = GauntletTap.shared.dir else { return }
+        let url = dir.appendingPathComponent("probe.log")
+        let t0 = Date()
+        Thread.detachNewThread { [weak self] in
+            while let self {
+                Thread.sleep(forTimeInterval: 1)
+                self.lock.lock()
+                let line = self.counts.sorted { $0.key < $1.key }
+                    .map { "\($0.key)=\($0.value)(\(self.last[$0.key] ?? ""))" }.joined(separator: " ")
+                self.counts = [:]
+                self.lock.unlock()
+                guard !line.isEmpty else { continue }
+                let s = String(format: "t=%.0f ", Date().timeIntervalSince(t0)) + line + "\n"
+                if let h = try? FileHandle(forWritingTo: url) { h.seekToEndOfFile(); h.write(s.data(using: .utf8)!); try? h.close() }
+                else { try? s.write(to: url, atomically: false, encoding: .utf8) }
+            }
+        }
+    }
+    @inline(__always) static func hit(_ key: String, _ value: Any? = nil) {
+        let p = shared
+        guard p.on else { return }
+        p.lock.lock()
+        p.counts[key, default: 0] += 1
+        if let value { p.last[key] = "\(value)" }
+        p.lock.unlock()
+    }
+}
+#endif

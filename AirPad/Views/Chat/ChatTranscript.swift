@@ -76,6 +76,9 @@ struct ChatTranscript: View {
     private static let bottomFollowThreshold: CGFloat = 80
 
     var body: some View {
+        #if DEBUG
+        let _ = FreezeProbe.hit("transcript.body")
+        #endif
         VStack(spacing: 0) {
             transcript
             if let error = session.lastError {
@@ -127,13 +130,65 @@ struct ChatTranscript: View {
         }
     }
 
+    #if DEBUG
+    private static let freezeEagerStack = UserDefaults.standard.bool(forKey: "FreezeEagerStack")
+    private static let freezeNoScrollTo = UserDefaults.standard.bool(forKey: "FreezeNoScrollTo")
+    /// Hypothesis H3 — the streaming tail is the oscillating lazy row. Measurement only.
+    private static let freezeNoTail = UserDefaults.standard.bool(forKey: "FreezeNoTail")
+    #else
+    private static let freezeNoTail = false
+    #endif
+
+    @ViewBuilder
+    private var lazyRows: some View {
+                LazyVStack(alignment: .leading, spacing: 18) {
+                    ForEach(session.messages) { message in
+                        bubble(for: message)
+                            .id(message.id)
+                            #if DEBUG
+                            .onGeometryChange(for: CGFloat.self) { g in
+                                let h = g.size.height
+                                FreezeProbe.hit("row.\(session.messages.firstIndex(where: { $0.id == message.id }) ?? -1).\(message.role)", Int(h))
+                                return h
+                            } action: { _ in }
+                            #endif
+                    }
+                    if session.isStreaming && !session.streamingThinking.isEmpty {
+                        // Brief AE2 — while streaming, the thought process renders at the
+                        // HEAD of the reply (before the answer tail). On completion it
+                        // moves INTO the committed assistant bubble's top (same position),
+                        // so it never jumps below the answer/sources.
+                        ThoughtProcessBlock(session: session)
+                            .id("__thought_process__")
+                    }
+                    if session.isStreaming && !Self.freezeNoTail {
+                        // Isolated: the ONLY reader of streamingText. Its own id is the ↓
+                        // jump anchor (Brief AE1 — no automatic follow-scroll).
+                        StreamingTail(session: session)
+                            .id(Self.tailAnchor)
+                            #if DEBUG
+                            .onGeometryChange(for: CGFloat.self) { g in
+                                FreezeProbe.hit("row.tail", Int(g.size.height)); return g.size.height
+                            } action: { _ in }
+                            #endif
+                    }
+                }
+        .padding(.horizontal, 16)
+        .padding(.top, 16)
+        .padding(.bottom, 24)
+    }
+
     // MARK: - Transcript
 
     @ViewBuilder
     private var transcript: some View {
         ScrollViewReader { proxy in
             ScrollView {
-                LazyVStack(alignment: .leading, spacing: 18) {
+                #if DEBUG
+                // Freeze investigation (CH-0 follow-up): `-FreezeEagerStack YES` swaps the LazyVStack for an
+                // eager VStack (hypothesis H1: lazy-row materialisation oscillation). Measurement only.
+                if Self.freezeEagerStack {
+                    VStack(alignment: .leading, spacing: 18) {
                     ForEach(session.messages) { message in
                         bubble(for: message)
                             .id(message.id)
@@ -153,9 +208,15 @@ struct ChatTranscript: View {
                             .id(Self.tailAnchor)
                     }
                 }
-                .padding(.horizontal, 16)
-                .padding(.top, 16)
-                .padding(.bottom, 24)
+                    .padding(.horizontal, 16)
+                    .padding(.top, 16)
+                    .padding(.bottom, 24)
+                } else {
+                    lazyRows
+                }
+                #else
+                lazyRows
+                #endif
             }
             // Tap-to-dismiss the keyboard without swallowing scroll / selection.
             .simultaneousGesture(
@@ -166,8 +227,14 @@ struct ChatTranscript: View {
             // stream (whose per-token scrollTo keeps distance ≈ 0) never
             // invalidates this body — the ForEach of settled bubbles stays put.
             .onScrollGeometryChange(for: CGFloat.self) { geo in
-                geo.contentSize.height - geo.visibleRect.maxY
+                #if DEBUG
+                FreezeProbe.hit("geo.transform", "content=\(Int(geo.contentSize.height)) container=\(Int(geo.containerSize.height)) offY=\(Int(geo.contentOffset.y)) visMaxY=\(Int(geo.visibleRect.maxY)) insetT=\(Int(geo.contentInsets.top)) insetB=\(Int(geo.contentInsets.bottom))")
+                #endif
+                return geo.contentSize.height - geo.visibleRect.maxY
             } action: { _, distanceFromBottom in
+                #if DEBUG
+                FreezeProbe.hit("transcript.distFromBottom", Int(distanceFromBottom))
+                #endif
                 let pinned = distanceFromBottom <= Self.bottomFollowThreshold
                 // Keep the guard — it stops per-frame body churn during a
                 // pinned stream. Animate so the scroll-to-latest arrow fades
@@ -181,9 +248,15 @@ struct ChatTranscript: View {
             .onScrollGeometryChange(for: CGFloat.self) { geo in
                 geo.visibleRect.minY
             } action: { _, topOffset in
+                #if DEBUG
+                FreezeProbe.hit("transcript.topOffset", Int(topOffset))
+                #endif
                 onScrollTopOffset?(topOffset)
             }
             .onChange(of: session.messages.count) { oldCount, newCount in
+                #if DEBUG
+                FreezeProbe.hit("transcript.msgCount", newCount)
+                #endif
                 // New user turn → reveal the query + START of the response near
                 // the TOP (read-from-top), not the bottom. Assistant commit →
                 // leave the user where they are (no yank). Bulk change (restore
@@ -191,6 +264,9 @@ struct ChatTranscript: View {
                 if newCount == oldCount + 1, let last = session.messages.last {
                     switch last.role {
                     case .user:
+                        #if DEBUG
+                        if Self.freezeNoScrollTo { break }   // hypothesis H2 — measurement only
+                        #endif
                         withAnimation(.easeOut(duration: 0.25)) {
                             proxy.scrollTo(last.id, anchor: .top)
                         }

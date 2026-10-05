@@ -130,6 +130,14 @@ enum ModelRouter {
     ///     anyway; a safe floor for exhaustiveness.
     /// Reads the Keychain (XPC) via `active` — call OFF the SwiftUI render path.
     static var contextWindowTokens: Int {
+        #if DEBUG
+        // Brief CH-A (T ruling 3) — `-GauntletHostNumCtx <n>` measures resident memory + read pass rate at a
+        // smaller window with NO Host change: the app's num_ctx wins over the Host's `--num-ctx`, and the
+        // read budget derives from this same value, so one override moves both, as production would.
+        if case .host = active, UserDefaults.standard.integer(forKey: "GauntletHostNumCtx") > 0 {
+            return UserDefaults.standard.integer(forKey: "GauntletHostNumCtx")
+        }
+        #endif
         switch active {
         case .host:            return 20_480   // Brief BW3 — right-sized from 32768 (read cap is 12k; frees KV RAM)
         case .foundationModel: return 4_096

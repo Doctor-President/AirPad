@@ -284,7 +284,8 @@
               "paris"
             ]
           ],
-          "minFacts": 1
+          "minFacts": 1,
+          "length": "short"
         }
       ]
     },
@@ -363,7 +364,8 @@
               "391"
             ]
           ],
-          "minFacts": 1
+          "minFacts": 1,
+          "length": "short"
         }
       ]
     },

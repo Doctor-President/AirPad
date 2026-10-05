@@ -36,6 +36,7 @@ final class GauntletTap: @unchecked Sendable {
     private var raw: [[String: Any]] = []
     private var turnStart = Date()
     private var lastBeat = Date()
+    private var beatSeen = false   // the self-watchdog arms only after the first main-thread beat
     private var maxGapMs = 0
     /// One id per app launch (= one Gauntlet chat), so the grader pairs a turn with the previous turn
     /// of the SAME conversation (carry / re-ask / history checks) and never across launches.
@@ -48,18 +49,26 @@ final class GauntletTap: @unchecked Sendable {
     private init() {
         let d = UserDefaults.standard
         if let p = d.string(forKey: "GauntletTapDir"), !p.isEmpty {
-            let url = URL(fileURLWithPath: p, isDirectory: true)
+            // `app-tmp` = inside the app's own sandbox (a physical device can't write Mac paths).
+            let url = p == "app-tmp"
+                ? URL(fileURLWithPath: NSTemporaryDirectory(), isDirectory: true).appendingPathComponent("gauntlet", isDirectory: true)
+                : URL(fileURLWithPath: p, isDirectory: true)
             try? FileManager.default.createDirectory(at: url, withIntermediateDirectories: true)
             dir = url
         } else {
             dir = nil
         }
-        if let rp = d.string(forKey: "GauntletReplay"), !rp.isEmpty,
-           let data = try? Data(contentsOf: URL(fileURLWithPath: rp)),
+        // `-GauntletReplayB64 <base64 json>` — the same replay passed INLINE (a device can't read a Mac file).
+        let replayData: Data? = {
+            if let b = d.string(forKey: "GauntletReplayB64"), !b.isEmpty { return Data(base64Encoded: b) }
+            if let rp = d.string(forKey: "GauntletReplay"), !rp.isEmpty { return try? Data(contentsOf: URL(fileURLWithPath: rp)) }
+            return nil
+        }()
+        if let data = replayData,
            let obj = try? JSONSerialization.jsonObject(with: data) as? [String: Any],
            let turns = obj["turns"] as? [[String: Any]] {
             replayTurns = turns
-            NSLog("[GauntletTap] replay armed: %d turn(s) from %@", turns.count, rp)
+            NSLog("[GauntletTap] replay armed: %d turn(s)", turns.count)
         }
         // Main-thread HEARTBEAT: a 0.25 s main-runloop timer. The largest gap between ticks during a
         // turn is recorded (`maxMainThreadGapMs`, graded A8), and a `heartbeat` file is touched every
@@ -73,10 +82,27 @@ final class GauntletTap: @unchecked Sendable {
                     let now = Date()
                     self.lock.lock()
                     let gap = Int(now.timeIntervalSince(self.lastBeat) * 1000)
-                    if gap > self.maxGapMs { self.maxGapMs = gap }
+                    if gap > self.maxGapMs && self.beatSeen { self.maxGapMs = gap }
                     self.lastBeat = now
+                    self.beatSeen = true
                     self.lock.unlock()
                     try? "\(now.timeIntervalSince1970)".write(to: hb, atomically: false, encoding: .utf8)
+                }
+            }
+        }
+        // `-GauntletSelfWatchdog <s>` — on a physical device nothing on the Mac can sample/kill a hung app
+        // cheaply, and XCUITest blocks forever waiting for "idle". A background thread exits the app when the
+        // main-thread heartbeat is older than <s> seconds, which unblocks the driver (it records APP HUNG).
+        let wd = d.integer(forKey: "GauntletSelfWatchdog")
+        if wd > 0, dir != nil {
+            Thread.detachNewThread { [weak self] in
+                while let self {
+                    Thread.sleep(forTimeInterval: 1)
+                    self.lock.lock(); let stale = Date().timeIntervalSince(self.lastBeat); let armed = self.beatSeen; self.lock.unlock()
+                    if armed && stale > Double(wd) {
+                        NSLog("[GauntletTap] SELF-WATCHDOG: main thread stalled %.0fs — exiting (86)", stale)
+                        exit(86)
+                    }
                 }
             }
         }

@@ -131,51 +131,90 @@ struct ChatTranscript: View {
     }
 
     #if DEBUG
-    private static let freezeEagerStack = UserDefaults.standard.bool(forKey: "FreezeEagerStack")
-    private static let freezeNoScrollTo = UserDefaults.standard.bool(forKey: "FreezeNoScrollTo")
+    /// Measurement only (perf A/B + freeze repro): `-FreezeLazyStack YES` = the pre-fix all-lazy stack;
+    /// `-FreezeEagerAll YES` = every row eager (the first fix, which failed the scroll perf gate).
+    private static let freezeLazyStack = UserDefaults.standard.bool(forKey: "FreezeLazyStack")
+    private static let freezeEagerAll = UserDefaults.standard.bool(forKey: "FreezeEagerAll")
     /// Hypothesis H3 — the streaming tail is the oscillating lazy row. Measurement only.
     private static let freezeNoTail = UserDefaults.standard.bool(forKey: "FreezeNoTail")
     #else
     private static let freezeNoTail = false
     #endif
 
+    /// Index of the LATEST exchange: the last user message onward (its answer, plus the live Thought
+    /// process / streaming tail while it streams).
+    private var liveStart: Int {
+        session.messages.lastIndex(where: { $0.role == .user }) ?? session.messages.count
+    }
+
+    /// The transcript rows (Brief CH follow-up freeze, 2026-10-04). Settled HISTORY stays in a
+    /// `LazyVStack` (a long chat must scroll at full frame rate — an all-eager stack measured ~30 fps
+    /// flings on a 100-turn chat); the LATEST exchange renders in an eager `VStack` below it. Why: on
+    /// iOS 26+ a lazy stack whose trailing row (the 18 pt streaming tail, or the just-sent user bubble)
+    /// sits at the materialisation edge never reaches a layout fixed point — measured it shrinks the
+    /// stack, estimated (~ the average row height) it grows it, so materialisation flips every pass and
+    /// the main thread spins forever (Apple Forums 805306). The rows that appear and change size during a
+    /// turn are therefore never estimated.
     @ViewBuilder
-    private var lazyRows: some View {
-                LazyVStack(alignment: .leading, spacing: 18) {
-                    ForEach(session.messages) { message in
-                        bubble(for: message)
-                            .id(message.id)
-                            #if DEBUG
-                            .onGeometryChange(for: CGFloat.self) { g in
-                                let h = g.size.height
-                                FreezeProbe.hit("row.\(session.messages.firstIndex(where: { $0.id == message.id }) ?? -1).\(message.role)", Int(h))
-                                return h
-                            } action: { _ in }
-                            #endif
-                    }
-                    if session.isStreaming && !session.streamingThinking.isEmpty {
-                        // Brief AE2 — while streaming, the thought process renders at the
-                        // HEAD of the reply (before the answer tail). On completion it
-                        // moves INTO the committed assistant bubble's top (same position),
-                        // so it never jumps below the answer/sources.
-                        ThoughtProcessBlock(session: session)
-                            .id("__thought_process__")
-                    }
-                    if session.isStreaming && !Self.freezeNoTail {
-                        // Isolated: the ONLY reader of streamingText. Its own id is the ↓
-                        // jump anchor (Brief AE1 — no automatic follow-scroll).
-                        StreamingTail(session: session)
-                            .id(Self.tailAnchor)
-                            #if DEBUG
-                            .onGeometryChange(for: CGFloat.self) { g in
-                                FreezeProbe.hit("row.tail", Int(g.size.height)); return g.size.height
-                            } action: { _ in }
-                            #endif
-                    }
-                }
-        .padding(.horizontal, 16)
-        .padding(.top, 16)
-        .padding(.bottom, 24)
+    private var rows: some View {
+        #if DEBUG
+        if Self.freezeLazyStack {
+            LazyVStack(alignment: .leading, spacing: 18) { historyRows(0..<session.messages.count); liveTail }
+                .padding(.horizontal, 16).padding(.top, 16).padding(.bottom, 24)
+        } else if Self.freezeEagerAll {
+            VStack(alignment: .leading, spacing: 18) { historyRows(0..<session.messages.count); liveTail }
+                .padding(.horizontal, 16).padding(.top, 16).padding(.bottom, 24)
+        } else {
+            splitRows
+        }
+        #else
+        splitRows
+        #endif
+    }
+
+    @ViewBuilder
+    private var splitRows: some View {
+        let split = liveStart
+        VStack(alignment: .leading, spacing: 18) {
+            if split > 0 {
+                LazyVStack(alignment: .leading, spacing: 18) { historyRows(0..<split) }
+            }
+            historyRows(split..<session.messages.count)
+            liveTail
+        }
+        .padding(.horizontal, 16).padding(.top, 16).padding(.bottom, 24)
+    }
+
+    @ViewBuilder
+    private func historyRows(_ range: Range<Int>) -> some View {
+        ForEach(session.messages[range]) { message in
+            bubble(for: message)
+                .id(message.id)
+                #if DEBUG
+                .freezeRowProbe("row.\(message.role)")
+                #endif
+        }
+    }
+
+    @ViewBuilder
+    private var liveTail: some View {
+        if session.isStreaming && !session.streamingThinking.isEmpty {
+            // Brief AE2 — while streaming, the thought process renders at the
+            // HEAD of the reply (before the answer tail). On completion it
+            // moves INTO the committed assistant bubble's top (same position),
+            // so it never jumps below the answer/sources.
+            ThoughtProcessBlock(session: session)
+                .id("__thought_process__")
+        }
+        if session.isStreaming && !Self.freezeNoTail {
+            // Isolated: the ONLY reader of streamingText. Its own id is the ↓
+            // jump anchor (Brief AE1 — no automatic follow-scroll).
+            StreamingTail(session: session)
+                .id(Self.tailAnchor)
+                #if DEBUG
+                .freezeRowProbe("row.tail")
+                #endif
+        }
     }
 
     // MARK: - Transcript
@@ -184,40 +223,18 @@ struct ChatTranscript: View {
     private var transcript: some View {
         ScrollViewReader { proxy in
             ScrollView {
-                #if DEBUG
-                // Freeze investigation (CH-0 follow-up): `-FreezeEagerStack YES` swaps the LazyVStack for an
-                // eager VStack (hypothesis H1: lazy-row materialisation oscillation). Measurement only.
-                if Self.freezeEagerStack {
-                    VStack(alignment: .leading, spacing: 18) {
-                    ForEach(session.messages) { message in
-                        bubble(for: message)
-                            .id(message.id)
-                    }
-                    if session.isStreaming && !session.streamingThinking.isEmpty {
-                        // Brief AE2 — while streaming, the thought process renders at the
-                        // HEAD of the reply (before the answer tail). On completion it
-                        // moves INTO the committed assistant bubble's top (same position),
-                        // so it never jumps below the answer/sources.
-                        ThoughtProcessBlock(session: session)
-                            .id("__thought_process__")
-                    }
-                    if session.isStreaming {
-                        // Isolated: the ONLY reader of streamingText. Its own id is the ↓
-                        // jump anchor (Brief AE1 — no automatic follow-scroll).
-                        StreamingTail(session: session)
-                            .id(Self.tailAnchor)
-                    }
-                }
-                    .padding(.horizontal, 16)
-                    .padding(.top, 16)
-                    .padding(.bottom, 24)
-                } else {
-                    lazyRows
-                }
-                #else
-                lazyRows
-                #endif
+                rows
             }
+            #if DEBUG
+            // Perf gate: the first committed layout of the transcript (one runloop after mount).
+            .onAppear { DispatchQueue.main.async { GauntletMetrics.shared.transcriptLaidOut(messages: session.messages.count) } }
+            .overlay(alignment: .topLeading) {
+                if GauntletTap.shared.isOn {
+                    Text(GauntletMetrics.shared.line).font(.system(size: 1)).opacity(0.02)
+                        .accessibilityIdentifier("gauntlet.metrics")
+                }
+            }
+            #endif
             // Tap-to-dismiss the keyboard without swallowing scroll / selection.
             .simultaneousGesture(
                 TapGesture().onEnded { inputFocused = false }
@@ -264,12 +281,10 @@ struct ChatTranscript: View {
                 if newCount == oldCount + 1, let last = session.messages.last {
                     switch last.role {
                     case .user:
-                        #if DEBUG
-                        if Self.freezeNoScrollTo { break }   // hypothesis H2 — measurement only
-                        #endif
-                        withAnimation(.easeOut(duration: 0.25)) {
-                            proxy.scrollTo(last.id, anchor: .top)
-                        }
+                        // NOT animated (Brief CH follow-up freeze): the animated scroll-to-top moved the
+                        // trailing row across the lazy materialisation edge each frame and was one of the
+                        // triggers. A jump lands the question at the top in one layout.
+                        proxy.scrollTo(last.id, anchor: .top)
                     case .assistant:
                         break
                     case .activity:

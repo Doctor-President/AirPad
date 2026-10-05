@@ -55,6 +55,7 @@ final class LibrarianGauntletV2: XCTestCase {
             for t in g.turns {
                 let before = isDevice ? [] : turnFiles(out)
                 let answersBefore = isDevice ? app.descendants(matching: .any).matching(identifier: "chat.answer").count : 0
+                let lastAnswerBefore = isDevice ? (app.descendants(matching: .any).matching(identifier: "chat.answer").allElementsBoundByIndex.last?.label ?? "") : ""
                 let t0 = Date()
                 var note = ""
                 switch t.action {
@@ -83,7 +84,7 @@ final class LibrarianGauntletV2: XCTestCase {
                     if t.action != "look", app.wait(for: .notRunning, timeout: (cfg.watchdogSec ?? 30) + 15) {
                         hungNote = "APP HUNG — the in-app self-watchdog exited the app (main thread stalled)"
                     }
-                    ok = (note.isEmpty && hungNote == nil) ? waitForAnswers(app, count: answersBefore + (t.action == "look" ? 0 : 1), timeout: turnTimeout) : false
+                    ok = (note.isEmpty && hungNote == nil) ? waitForAnswers(app, count: answersBefore + (t.action == "look" ? 0 : 1), orLastLabelNot: t.action == "look" ? nil : lastAnswerBefore, timeout: turnTimeout) : false
                     if app.state != .runningForeground { hungNote = "APP HUNG — the in-app self-watchdog exited the app (main thread stalled)"; ok = false }
                 } else {
                     ok = note.isEmpty ? waitForTurnFiles(out, count: expected, timeout: turnTimeout) : false
@@ -226,11 +227,15 @@ final class LibrarianGauntletV2: XCTestCase {
 
     /// Device mode: turn completion read off the UI. A hung app blocks the query until the in-app
     /// self-watchdog exits it; then `app.state` is no longer foreground and the row is recorded as a hang.
-    private func waitForAnswers(_ app: XCUIApplication, count: Int, timeout: TimeInterval) -> Bool {
+    private func waitForAnswers(_ app: XCUIApplication, count: Int, orLastLabelNot previous: String? = nil, timeout: TimeInterval) -> Bool {
         let deadline = Date().addingTimeInterval(timeout)
         while Date() < deadline {
             if app.state != .runningForeground { return false }
-            if app.descendants(matching: .any).matching(identifier: "chat.answer").count >= count { return true }
+            let q = app.descendants(matching: .any).matching(identifier: "chat.answer")
+            if q.count >= count { return true }
+            // A lazy transcript drops off-screen bubbles from the a11y tree, so the count can stay flat even
+            // though a new answer landed — a changed LAST answer is the same signal.
+            if let previous, let last = q.allElementsBoundByIndex.last?.label, !last.isEmpty, last != previous { return true }
             Thread.sleep(forTimeInterval: 1)
         }
         return false

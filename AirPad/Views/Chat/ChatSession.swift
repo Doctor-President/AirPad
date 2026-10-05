@@ -996,6 +996,24 @@ final class ChatSession {
     /// about retrieval; the retry entry point simply never entered it.
     var resendHandler: ((String) async -> Void)?
 
+    #if DEBUG
+    /// Perf gate — `-GauntletSeedChat <n>`: replace the transcript with n synthetic turns (realistic answer
+    /// lengths + markdown) so opening/scrolling a long chat can be measured. Never persisted on its own.
+    func debugSeed(turns n: Int) {
+        let para = "Your entries return to the same few themes from different angles, and each one adds a detail the others leave out. "
+        var out: [Message] = []
+        for k in 0..<n {
+            out.append(Message(role: .user, text: "Question \(k + 1): what do my notes say about theme \(k % 7 + 1)?"))
+            let reps = 2 + (k * 5) % 11          // ~240 … 1,500 chars
+            var body = "**Theme \(k % 7 + 1).** " + String(repeating: para, count: reps / 2)
+            if k % 3 == 0 { body += "\n\n- First, " + para + "\n- Second, " + para + "\n- Third, " + para }
+            if k % 4 == 1 { body += "\n\n### What stands out\n\n" + String(repeating: para, count: 2) }
+            out.append(Message(role: .assistant, text: body))
+        }
+        messages = out
+    }
+    #endif
+
     func retryLastUserTurn() async {
         guard !isStreaming, let last = messages.last, last.role == .user else {
             lastError = nil

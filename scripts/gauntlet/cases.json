@@ -419,6 +419,261 @@
           "expectRoute": ""
         }
       ]
+    },
+    {
+      "chat": "ci0-probe",
+      "_probe": true,
+      "cases": [
+        {
+          "id": "P1a",
+          "kind": "probe",
+          "category": "P1 ranges",
+          "question": "Which of my lab values are out of range?",
+          "expectRoute": "",
+          "probe": {
+            "kind": "ranges"
+          },
+          "mustContain": [
+            [
+              "213"
+            ],
+            [
+              "153"
+            ]
+          ],
+          "minFacts": 2
+        },
+        {
+          "id": "P1b",
+          "kind": "probe",
+          "category": "P1 ranges",
+          "question": "Is my HDL in the normal range?",
+          "expectRoute": "",
+          "probe": {
+            "kind": "ranges"
+          },
+          "mustContain": [
+            [
+              "43"
+            ]
+          ],
+          "minFacts": 1
+        },
+        {
+          "id": "P2a",
+          "kind": "probe",
+          "category": "P2 dates",
+          "question": "What did I write last month?",
+          "expectRoute": "",
+          "probe": {
+            "kind": "window",
+            "from": "2026-09-01",
+            "to": "2026-09-30",
+            "today": "2026-10-05"
+          }
+        },
+        {
+          "id": "P2b",
+          "kind": "probe",
+          "category": "P2 dates",
+          "question": "When did Mara call me about Thanksgiving, and how long ago was that?",
+          "expectRoute": "",
+          "probe": {
+            "kind": "age",
+            "date": "2025-11-18",
+            "today": "2026-10-05"
+          }
+        },
+        {
+          "id": "P2c",
+          "kind": "probe",
+          "category": "P2 dates",
+          "question": "What's my most recent entry about Mara?",
+          "expectRoute": "",
+          "probe": {
+            "kind": "identity",
+            "nodeID": "38249F96",
+            "title": "it's November again soon",
+            "today": "2026-10-05"
+          }
+        },
+        {
+          "id": "P3a",
+          "kind": "probe",
+          "category": "P3 counting",
+          "question": "How many of my entries mention Mara?",
+          "expectRoute": "",
+          "probe": {
+            "kind": "count",
+            "value": 5
+          }
+        },
+        {
+          "id": "P3b",
+          "kind": "probe",
+          "category": "P3 counting",
+          "question": "How many of my entries mention my Bolex?",
+          "expectRoute": "",
+          "probe": {
+            "kind": "count",
+            "value": 5
+          }
+        },
+        {
+          "id": "P4a",
+          "kind": "probe",
+          "category": "P4 ordering",
+          "question": "What's my oldest entry about Mara?",
+          "expectRoute": "",
+          "probe": {
+            "kind": "identity",
+            "nodeID": "7027892F",
+            "title": "Mara called about Thanksgiving"
+          }
+        },
+        {
+          "id": "P4b",
+          "kind": "probe",
+          "category": "P4 ordering",
+          "question": "What's the longest entry in my library?",
+          "expectRoute": "",
+          "probe": {
+            "kind": "identity",
+            "nodeID": "",
+            "title": "Gnosticism, Esotericism"
+          }
+        },
+        {
+          "id": "P5a",
+          "kind": "probe",
+          "category": "P5 absence",
+          "question": "Did I ever write about beekeeping?",
+          "expectRoute": "",
+          "probe": {
+            "kind": "absent",
+            "term": "beekeeping"
+          }
+        },
+        {
+          "id": "P5b",
+          "kind": "probe",
+          "category": "P5 absence",
+          "question": "Did I ever write about Richard Dawkins?",
+          "expectRoute": "",
+          "probe": {
+            "kind": "present",
+            "term": "Dawkins",
+            "nodeID": "3B45EFDF",
+            "title": "DEEP DIVE - Linguistics"
+          }
+        },
+        {
+          "id": "P6a",
+          "kind": "probe",
+          "category": "P6 arithmetic",
+          "question": "If I did the estate-sale cataloguing for 12 hours a week, how much would I earn per week?",
+          "expectRoute": "",
+          "probe": {
+            "kind": "value",
+            "value": 300,
+            "tol": 0.5,
+            "units": [
+              "$",
+              "dollar",
+              "usd"
+            ]
+          }
+        },
+        {
+          "id": "P6b",
+          "kind": "probe",
+          "category": "P6 arithmetic",
+          "question": "How far above its target is my LDL?",
+          "expectRoute": "",
+          "probe": {
+            "kind": "value",
+            "value": 23,
+            "tol": 0.5,
+            "units": [
+              "mg/dl",
+              "mg/dL",
+              "points"
+            ]
+          }
+        },
+        {
+          "id": "P7a",
+          "kind": "probe",
+          "category": "P7 quotes",
+          "question": "What exactly did I write in my Idea about Privacy entry?",
+          "expectRoute": "",
+          "probe": {
+            "kind": "quote"
+          }
+        },
+        {
+          "id": "P7b",
+          "kind": "probe",
+          "category": "P7 quotes",
+          "question": "What exactly did I say about the Bolex being dandori?",
+          "expectRoute": "",
+          "probe": {
+            "kind": "quote"
+          }
+        },
+        {
+          "id": "P8a",
+          "kind": "probe",
+          "category": "P8 units",
+          "question": "How many minutes of film do I get from one wind of my Bolex?",
+          "expectRoute": "",
+          "probe": {
+            "kind": "value",
+            "value": 0.467,
+            "tol": 0.04,
+            "units": [
+              "min",
+              "minute"
+            ],
+            "unitRequired": true
+          }
+        },
+        {
+          "id": "P8b",
+          "kind": "probe",
+          "category": "P8 units",
+          "question": "How many grams of tomatillos does my Enchiladas Suizas recipe call for?",
+          "expectRoute": "",
+          "probe": {
+            "kind": "value",
+            "value": 453.6,
+            "tol": 10,
+            "units": [
+              "g",
+              "gram"
+            ],
+            "unitRequired": true
+          }
+        },
+        {
+          "id": "P8c",
+          "kind": "probe",
+          "category": "P8 units",
+          "question": "How long does my Enchiladas Suizas recipe take to cook, in minutes?",
+          "expectRoute": "",
+          "probe": {
+            "kind": "value",
+            "value": 50,
+            "tol": 0.5,
+            "units": [
+              "min",
+              "minute"
+            ],
+            "note": "typed duration field (3000 s) — not in the packet today",
+            "unitRequired": true
+          }
+        }
+      ]
     }
   ]
 }

@@ -2165,6 +2165,27 @@ final class CorpusStore {
             Case(id: "S2", what: "synthesis: tensions", question: "Where do my ideas pull against each other? What tensions do you see?", expectRoute: "survey"),
             Case(id: "S3", what: "synthesis: recurring patterns across collections", question: "What recurring patterns run across my different collections?", expectRoute: "survey"),
             Case(id: "S4", what: "synthesis: what am I circling?", question: "What am I circling around without saying it directly?", expectRoute: "survey"),
+            // ── Brief CI-0 (computed-facts PROBE) — store-level only, each a fresh chat; graded by gauntlet.py from
+            // the render tap against fixture ground truth in cases.json (`probe`). Route-agnostic on purpose: the
+            // probe measures whether the ANSWER gets the fact right, whatever the retrieval did.
+            Case(id: "P1a", what: "CI-0 P1 ranges: out-of-range values (fresh chat)", question: "Which of my lab values are out of range?", expectRoute: ""),
+            Case(id: "P1b", what: "CI-0 P1 ranges: is HDL 43 (>40) in range", question: "Is my HDL in the normal range?", expectRoute: ""),
+            Case(id: "P2a", what: "CI-0 P2 dates: window 'last month'", question: "What did I write last month?", expectRoute: ""),
+            Case(id: "P2b", what: "CI-0 P2 dates: age of a dated entry", question: "When did Mara call me about Thanksgiving, and how long ago was that?", expectRoute: ""),
+            Case(id: "P2c", what: "CI-0 P2 dates: most recent entry about X", question: "What's my most recent entry about Mara?", expectRoute: ""),
+            Case(id: "P3a", what: "CI-0 P3 counting", question: "How many of my entries mention Mara?", expectRoute: ""),
+            Case(id: "P3b", what: "CI-0 P3 counting", question: "How many of my entries mention my Bolex?", expectRoute: ""),
+            Case(id: "P4a", what: "CI-0 P4 ordering: oldest about X", question: "What's my oldest entry about Mara?", expectRoute: ""),
+            Case(id: "P4b", what: "CI-0 P4 ordering: longest entry", question: "What's the longest entry in my library?", expectRoute: ""),
+            Case(id: "P5a", what: "CI-0 P5 absence: nothing exists", question: "Did I ever write about beekeeping?", expectRoute: ""),
+            Case(id: "P5b", what: "CI-0 P5 absence: exists once, deep in a long entry", question: "Did I ever write about Richard Dawkins?", expectRoute: ""),
+            Case(id: "P6a", what: "CI-0 P6 arithmetic: rate x hours", question: "If I did the estate-sale cataloguing for 12 hours a week, how much would I earn per week?", expectRoute: ""),
+            Case(id: "P6b", what: "CI-0 P6 arithmetic: difference from target", question: "How far above its target is my LDL?", expectRoute: ""),
+            Case(id: "P7a", what: "CI-0 P7 exact quotes", question: "What exactly did I write in my Idea about Privacy entry?", expectRoute: ""),
+            Case(id: "P7b", what: "CI-0 P7 exact quotes", question: "What exactly did I say about the Bolex being dandori?", expectRoute: ""),
+            Case(id: "P8a", what: "CI-0 P8 units: seconds to minutes", question: "How many minutes of film do I get from one wind of my Bolex?", expectRoute: ""),
+            Case(id: "P8b", what: "CI-0 P8 units: lb to grams", question: "How many grams of tomatillos does my Enchiladas Suizas recipe call for?", expectRoute: ""),
+            Case(id: "P8c", what: "CI-0 P8 units: TYPED field (duration) — not in the packet today", question: "How long does my Enchiladas Suizas recipe take to cook, in minutes?", expectRoute: ""),
         ]
 
         NSLog("[Gauntlet] START provider=%@ window=%d nodes=%d userNodes=%d cases=%d",

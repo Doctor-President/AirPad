@@ -373,6 +373,67 @@ def a6b(kb_dir, voice_dir):
     print("wrote", len(items), "A6b items")
 
 
+def ci0(kb_dir, template_dir):
+    """Brief CI-0 — known-bad + known-good answers for every new probe grader (D1 D2 O1 K1 B1 M1 Q1). Each item is
+    a one-row store pass cloned from a real store turn (`template_dir`, its turn-001) with the answer, chips,
+    candidates, candidate dates and quote source set by hand from the fixture's ground truth."""
+    import glob
+    src_rows = json.load(open(os.path.join(template_dir, "store-rows.json")))["rows"][0]
+    tmpl = json.load(open(os.path.join(template_dir, f"turn-{src_rows['seq']:03d}.json")))
+    PRIV = ("I just wanna say that I think that every human being is entitled to the privacy of their own ideas "
+            "not being invaded by other people or other entities")
+    C = lambda i, nid, t: {"index": i, "nodeID": nid, "title": t, "snippet": ""}
+    VIV, BOLEX = C(1, "E7E26F7C-3539-55D8-BE9F-ABDA996F4E0B", "Vivre Sa Vie, 4th time"), C(2, "AD81E8B2-190E-578B-B36D-3FF357D76170", "Bolex H16")
+    NOV, FOURTEEN = C(1, "38249F96-0000-0000-0000-000000000000", "it's November again soon"), C(2, "1D521599-0000-0000-0000-000000000000", "Fourteen years")
+    LING = C(1, "3B45EFDF-22C4-4CF7-942B-41B0786D37EA", "DEEP DIVE - Linguistics: The Engine You Can't See")
+    # (item id, case, answer, candidates, candDates, quoteSource, grader, bad?)
+    specs = [
+        ("ci0-d1-window-bad", "P2a", "Last month you rewatched Vivre Sa Vie [1] and wrote about your Bolex H16 [2].", [VIV, BOLEX], {1: "2026-09-12", 2: "2026-05-19"}, None, "D1", True),
+        ("ci0-d1-window-good", "P2a", "Last month you wrote about rewatching Vivre Sa Vie for the fourth time [1].", [VIV, BOLEX], {1: "2026-09-12", 2: "2026-05-19"}, None, "D1", False),
+        ("ci0-d2-age-bad", "P2b", "Mara called you about Thanksgiving on November 18, 2024 — about two years ago.", [], {}, None, "D2", True),
+        ("ci0-d2-age-good", "P2b", "Mara called about Thanksgiving on November 18, 2025 — about 10 months ago.", [], {}, None, "D2", False),
+        ("ci0-o1-identity-bad", "P2c", "Your most recent entry about Mara is *Fourteen years* [2].", [NOV, FOURTEEN], {}, None, "O1", True),
+        ("ci0-o1-identity-good", "P2c", "Your most recent entry about Mara is *it's November again soon* [1].", [NOV, FOURTEEN], {}, None, "O1", False),
+        ("ci0-k1-count-bad", "P3a", "Mara comes up in 3 of your entries.", [], {}, None, "K1", True),
+        ("ci0-k1-count-good", "P3a", "Mara comes up in five of your entries.", [], {}, None, "K1", False),
+        ("ci0-b1-absent-bad", "P5a", "Yes — you wrote about beekeeping in your garden notes [1].", [VIV], {}, None, "B1", True),
+        ("ci0-b1-absent-good", "P5a", "No — I don't see anything about beekeeping in your library.", [], {}, None, "B1", False),
+        ("ci0-b1-present-bad", "P5b", "No, you've never written about Richard Dawkins.", [], {}, None, "B1", True),
+        ("ci0-b1-present-good", "P5b", "Yes — Dawkins comes up in your *DEEP DIVE - Linguistics* entry [1], in the part about memes.", [LING], {}, None, "B1", False),
+        ("ci0-m1-arith-bad", "P6a", "At $25 an hour, that would be $250 a week.", [], {}, None, "M1", True),
+        ("ci0-m1-arith-good", "P6a", "At $25 an hour, 12 hours comes to $300 a week.", [], {}, None, "M1", False),
+        ("ci0-m1-units-bad", "P8a", "One wind of your Bolex gives you 28 seconds of film.", [], {}, None, "M1", True),
+        ("ci0-m1-units-good", "P8a", "One wind is 28 seconds of film — about 0.47 minutes.", [], {}, None, "M1", False),
+        ("ci0-q1-quote-bad", "P7a", 'You wrote: "every person deserves to keep their thoughts private from companies and governments."', [], {}, PRIV, "Q1", True),
+        ("ci0-q1-quote-good", "P7a", 'You wrote: "every human being is entitled to the privacy of their own ideas not being invaded by other people or other entities."', [], {}, PRIV, "Q1", False),
+    ]
+    items = []
+    for iid, case, ans, cand, cdates, qsrc, grader, bad in specs:
+        d = os.path.join(kb_dir, iid)
+        if os.path.exists(d):
+            shutil.rmtree(d)
+        os.makedirs(d)
+        for f in ("host.log", "ps.log", "versions.json"):
+            shutil.copy(os.path.join(template_dir, f), d)
+        t = copy.deepcopy(tmpl)
+        t.update(seq=1, finalText=ans, userContent="<redacted: CI-0 known-bad uses candDates/quoteSource>",
+                 citations=[c for c in cand if f"[{c['index']}]" in ans], candDates={str(k): v for k, v in cdates.items()})
+        t["plan"] = dict(t.get("plan") or {}, candidates=cand)
+        if qsrc:
+            t["quoteSource"] = qsrc
+        json.dump(t, open(os.path.join(d, "turn-001.json"), "w"), indent=1, ensure_ascii=False)
+        json.dump({"think": False, "rows": [{"case": case, "seq": 1, "newChat": True, "elapsedSec": 1}]}, open(os.path.join(d, "store-rows.json"), "w"))
+        row = f"{case}.off.store"
+        items.append({"id": iid, "runDir": iid, "store": True,
+                      "what": f"CI-0 {grader} {'KNOWN-BAD' if bad else 'CONTROL'}: {ans[:90]}",
+                      **({"expectRed": {row: [grader]}} if bad else {"expectGreenOn": {row: [grader]}})})
+    mp = os.path.join(kb_dir, "manifest.json")
+    man = json.load(open(mp))
+    man["items"] = [i for i in man["items"] if not i["id"].startswith("ci0-")] + items
+    json.dump(man, open(mp, "w"), indent=1, ensure_ascii=False)
+    print("wrote", len(items), "CI-0 items")
+
+
 if __name__ == "__main__":
     cmd = sys.argv[1]
     if cmd == "replays":
@@ -381,5 +442,7 @@ if __name__ == "__main__":
         doctor(sys.argv[2], sys.argv[3], sys.argv[4])
     elif cmd == "voice":
         voice(sys.argv[2])
+    elif cmd == "ci0":
+        ci0(sys.argv[2], sys.argv[3])
     elif cmd == "a6b":
         a6b(sys.argv[2], sys.argv[3])

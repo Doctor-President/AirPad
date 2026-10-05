@@ -66,10 +66,17 @@ GRADERS = {
     "W1": "voice: no sycophantic opener (\"Great question\", \"What a fascinating…\", \"I'd be happy to\")",
     "W2": "voice: question tic — FLAG the RUN when > 50% of its answers end with a question back to the user",
     "W3": "voice: length fit — FLAG a fact/read answer over ~120 words or a broad answer under ~60 (CC reads it)",
+    "D1": "CI-0 dates: every entry the answer cites for a time window falls inside that window",
+    "D2": "CI-0 dates: the answer's date AND age of the entry match its real date vs the test 'today'",
+    "O1": "CI-0 ordering/recency: the answer names the right entry (oldest / newest / longest)",
+    "K1": "CI-0 counting: the number of entries the answer states == the true count",
+    "B1": "CI-0 absence: no invented presence; no unhedged 'you never wrote about it' when it exists",
+    "M1": "CI-0 arithmetic/units: the computed value (with its unit, where required) is in the answer",
+    "Q1": "CI-0 quotes: every quoted span (≥4 words) string-matches the source text",
     "R1": "repeat: 3/3 runs pass (aggregate)",
 }
 # Brief CH-A1b — the voice graders are named W* (not the brief's V1–V3: V* is run validity and ABORTs).
-FLAG_ONLY = {"W2", "W3"}   # a flag sends the row to CC's read; it never fails the row by itself
+FLAG_ONLY = {"W2", "W3"}   # (Q1 FLAGs only when an 'exactly' answer quotes nothing)   # a flag sends the row to CC's read; it never fails the row by itself
 
 
 # Reasoning prose — TIGHT. A clean answer addressed to the user never narrates these. (Kept narrow on
@@ -292,7 +299,19 @@ def a6b_violations(answer, ref):
     bad = []
     truly_out = sorted(k for k, rows in ref.items() if all(not _truth("NORMAL", r) for r in rows))
     recent = []   # analytes named by the last segments that named any (for "This is the only value…" lines)
-    for seg in re.split(r"\n+|(?<=[.!?])\s+(?=[A-Z(])", text):
+    segs = re.split(r"\n+|(?<=[.!?])\s+(?=[A-Z(])", text)
+
+    def judged_in(sg):
+        found, mk = set(), list(sg)
+        for k, _, rx in _ANALYTE_RES:
+            for mm in rx.finditer("".join(mk)):
+                if k in ref:
+                    found.add(k)
+                for i in range(mm.start(), mm.end()):
+                    mk[i] = "\0"
+        return found
+
+    for si, seg in enumerate(segs):
         # "None of your values are out of range" / "no lab values are outside the reference range" — while some ARE
         if truly_out and re.search(r"\b(?:none of (?:your|the|these)|no (?:lab |other )?(?:values?|results?|lab results?|lab values?)|nothing)\b[^.\n]{0,50}"
                                    r"(?:out of (?:the )?(?:normal |reference )?range|outside (?:of )?(?:the |their )?(?:official |normal |reference )?(?:reference )?(?:range|limits)|abnormal)", seg, re.I) \
@@ -309,9 +328,17 @@ def a6b_violations(answer, ref):
                     mask[i] = "\0"
         if not any(k in ref for _, _, k in mentions):
             # "This is the only value that is out of range." under an analyte's bullet → that analyte (look back ≤4 lines)
-            if recent and re.search(r"\bonly\b[^.\n]{0,40}(?:out of (?:the )?(?:normal |reference )?range|abnormal)", seg, re.I) \
-                    and not re.search(r"\b(?:not|no)\b", seg, re.I):
-                named = recent[-1][1]
+            if re.search(r"\bonly\b[^.\n]{0,40}(?:out of (?:the )?(?:normal |reference )?range|abnormal)", seg, re.I) \
+                    and not re.search(r"\b(?:not|no)\b", seg, re.I) and (recent or seg.rstrip().endswith(":")):
+                if seg.rstrip().endswith(":"):   # "Only two values are out of range:" introduces the list that FOLLOWS
+                    named = set()
+                    for nxt in segs[si + 1:si + 7]:
+                        got = judged_in(nxt)
+                        if not got and named:
+                            break
+                        named |= got
+                else:
+                    named = recent[-1][1]
                 missing = [k for k in truly_out if k not in named]
                 if missing:
                     bad.append(f"says only {sorted(named)} out of range; also out of range: {missing}: \"{seg[:90].strip()}\"")
@@ -376,6 +403,143 @@ def a6b_violations(answer, ref):
             if missing and named:
                 bad.append(f"says only {sorted(named)} out of range; also out of range: {missing}: \"{seg[:90].strip()}\"")
     return bad
+
+
+# ── CI-0 probe graders (Brief CI) — driven by the case's `probe` spec (fixture ground truth in cases.json) ──
+MONTHS = {m: i + 1 for i, m in enumerate(["january", "february", "march", "april", "may", "june", "july", "august",
+                                          "september", "october", "november", "december"])}
+MONTHS.update({m[:3]: i for m, i in list(MONTHS.items())})
+NUMWORDS = {w: i for i, w in enumerate("zero one two three four five six seven eight nine ten eleven twelve thirteen "
+                                        "fourteen fifteen sixteen seventeen eighteen nineteen twenty".split())}
+NUMWORDS.update({"a": 1, "an": 1, "a couple of": 2, "a few": 3, "several": 3})
+
+
+def cand_dates(turn):
+    """{[n]: 'YYYY-MM-DD'} from the packet's entry lines (`[5] Title · authored by you · 2026-05-31 — …`);
+    known-bad items carry `candDates` instead of the (redacted) packet."""
+    if turn.get("candDates"):
+        return {int(k): v for k, v in turn["candDates"].items()}
+    out = {}
+    for m in re.finditer(r"^\[(\d+)\][^\n]*?·\s*(\d{4}-\d{2}-\d{2})", turn.get("userContent") or "", re.M):
+        out.setdefault(int(m.group(1)), m.group(2))
+    return out
+
+
+def norm_text(s):
+    s = (s or "").lower().replace("\u2019", "'").replace("\u2018", "'").replace("\u201c", '"').replace("\u201d", '"')
+    return " ".join(re.sub(r"[^a-z0-9']+", " ", s).split())
+
+
+def stated_ages_days(text):
+    """Relative ages the answer states ('about 10 months ago', 'almost a year ago', '321 days ago') → days."""
+    out, unit_days = [], {"day": 1, "week": 7, "month": 30.44, "year": 365.25}
+    for m in re.finditer(r"\b(\d+(?:\.\d+)?|a|an|one|two|three|four|five|six|seven|eight|nine|ten|eleven|twelve|a couple of|a few|several)"
+                         r"(?:\s+and\s+a\s+half)?\s+(day|week|month|year)s?\b(?![- ]old)", text, re.I):
+        n = m.group(1).lower()
+        v = float(n) if n[0].isdigit() else NUMWORDS.get(n, 0)
+        if "and a half" in m.group(0).lower():
+            v += 0.5
+        out.append((v * unit_days[m.group(2).lower()], m.group(0)))
+    for m in re.finditer(r"\b(?:almost|nearly|about|over|just over|just under|around)\s+a\s+year\b", text, re.I):
+        out.append((365.25, m.group(0)))
+    return out
+
+
+def stated_dates(text):
+    """(year|None, month, day) for every calendar date the answer states."""
+    out = []
+    for m in re.finditer(r"\b(\d{4})-(\d{2})-(\d{2})\b", text):
+        out.append((int(m.group(1)), int(m.group(2)), int(m.group(3))))
+    for m in re.finditer(r"\b(jan(?:uary)?|feb(?:ruary)?|mar(?:ch)?|apr(?:il)?|may|june?|july?|aug(?:ust)?|sep(?:t|tember)?|oct(?:ober)?|nov(?:ember)?|dec(?:ember)?)\.?\s+(\d{1,2})(?:st|nd|rd|th)?(?:,?\s+(\d{4}))?", text, re.I):
+        mon = MONTHS.get(m.group(1).lower()[:3])
+        out.append((int(m.group(3)) if m.group(3) else None, mon, int(m.group(2))))
+    for m in re.finditer(r"\b(\d{1,2})(?:st|nd|rd|th)?\s+(january|february|march|april|may|june|july|august|september|october|november|december),?\s+(\d{4})?", text, re.I):
+        out.append((int(m.group(3)) if m.group(3) else None, MONTHS[m.group(2).lower()], int(m.group(1))))
+    return out
+
+
+def stated_numbers(text):
+    """(value, following 14 chars, preceding 3 chars) for every number in the answer, incl. 'half a minute'."""
+    out = []
+    for m in re.finditer(r"(?<![\w.])(\d{1,3}(?:,\d{3})+|\d+(?:\.\d+)?)(?![\w.]*\d)", text):
+        out.append((float(m.group(1).replace(",", "")), text[m.end():m.end() + 14].lower(), text[max(0, m.start() - 3):m.start()].lower()))
+    for m in re.finditer(r"\b(half|a quarter of|three quarters of) an? (minute|hour)", text, re.I):
+        out.append(({"half": 0.5, "a quarter of": 0.25, "three quarters of": 0.75}[m.group(1).lower()], " " + m.group(2).lower(), ""))
+    return out
+
+
+def probe_grade(probe, final, turn, cites, cand, R, res, na):
+    kind = probe.get("kind")
+    low = final.lower()
+    idx_title = {c["index"]: c.get("title", "") for c in cand}
+    if kind == "window":
+        dates = cand_dates(turn)
+        cited = sorted({int(x) for x in re.findall(r"\[(\d+)\]", final)} | {c["index"] for c in cites})
+        named = [c["index"] for c in cand if c.get("title") and title_mentioned(c["title"], final)]
+        used = sorted(set(cited) | set(named))
+        dated = [(i, dates.get(i)) for i in used if dates.get(i)]
+        out = [(i, d) for i, d in dated if not (probe["from"] <= d <= probe["to"])]
+        res("D1", bool(dated) and not out,
+            f"{len(out)}/{len(dated)} entries outside {probe['from']}..{probe['to']}: " + "; ".join(f"[{i}] '{idx_title.get(i, '')[:24]}' {d}" for i, d in out[:3])
+            if out else (f"{len(dated)} dated entries, all in window" if dated else "no dated entry cited or named for the window"))
+    elif kind == "age":
+        y, mo, d = (int(x) for x in probe["date"].split("-"))
+        truth = (datetime.date.fromisoformat(probe["today"]) - datetime.date(y, mo, d)).days
+        dates = stated_dates(final)
+        right_date = any(mm == mo and dd == d and (yy in (None, y)) for yy, mm, dd in dates)
+        wrong_date = [x for x in dates if x[1] == mo and x[2] == d and x[0] not in (None, y)]
+        ages = stated_ages_days(final)
+        bad_ages = [a for a in ages if not (0.75 * truth <= a[0] <= 1.25 * truth)]
+        ok_ages = [a for a in ages if a not in bad_ages]
+        res("D2", right_date and not wrong_date and ok_ages and not bad_ages,
+            f"truth {probe['date']} = {truth} days before {probe['today']}; date {'✓' if right_date and not wrong_date else '✗ ' + str(wrong_date or dates[:3] or 'none stated')}; "
+            f"age {'✓ ' + ok_ages[0][1] if ok_ages and not bad_ages else '✗ ' + (', '.join(a[1] for a in bad_ages) or 'none stated')}")
+    elif kind == "identity":
+        tnorm = title_norm(probe["title"])
+        named = tnorm in title_norm(final)
+        target_idx = [c["index"] for c in cand if probe.get("nodeID") and (c.get("nodeID") or "").startswith(probe["nodeID"])]
+        cited = any(f"[{i}]" in final for i in target_idx)
+        res("O1", named or cited, f"target '{probe['title']}' {'named' if named else ('cited' if cited else 'NOT named or cited')}"
+                                   f"{'' if target_idx else ' (not in the packet)'}")
+    elif kind == "count":
+        counts = []
+        for m in re.finditer(r"\b(\d+|" + "|".join(sorted((w for w in NUMWORDS if " " not in w and w not in ("a", "an")), key=len, reverse=True)) +
+                             r")\s+(?:\w+\s+){0,2}?(?:entries|entry|notes|times|places|mentions)\b", final, re.I):
+            n = m.group(1).lower()
+            counts.append(int(n) if n.isdigit() else NUMWORDS[n])
+        res("K1", probe["value"] in counts, f"true count {probe['value']}; stated {counts or 'no count'}")
+    elif kind == "absent":
+        neg = re.search(r"\b(?:don't|do not|didn't|did not|haven't|have not|hasn't|can't|cannot|couldn't|no|not|never|nothing|none|isn't|aren't)\b", low)
+        affirm = re.search(r"^\W*yes\b|\byou (?:did|have) (?:write|written|wrote|mention)|\byou (?:wrote|mentioned|noted) (?:about )?" + re.escape(probe["term"].lower()), low)
+        res("B1", bool(neg) and not affirm, "absent in the library; answer " + ("affirms presence" if affirm else ("says no" if neg else "never says no")))
+    elif kind == "present":
+        term = probe["term"].lower()
+        found = term in low and not re.search(r"(?:no|not|n't|never|nothing|none)\b[^.\n]{0,40}" + re.escape(term), low)
+        absence = re.search(r"(?:\bno\b|\bnot\b|n't|\bnever\b|\bnothing\b|\bnone\b)[^.\n]{0,60}(?:entr|note|wr[io]te|written|mention|record|anything)", low)
+        hedge = re.search(r"retrieved|in front of me|given to me|i was given|i can see|i was shown|shown here|these (?:entries|notes|excerpts|results)|this (?:selection|survey|set)|what i (?:have|got|can)|in the (?:entries|notes) (?:i|provided|here)|provided", low)
+        named = title_norm(probe["title"]) in title_norm(final) or any(f"[{c['index']}]" in final for c in cand if (c.get("nodeID") or "").startswith(probe["nodeID"]))
+        ok = (found and named) or (absence and hedge and not found)
+        res("B1", bool(ok), "exists once (deep in a long entry); answer " + (
+            "finds it" if found and named else ("mentions it but points at no real entry" if found else
+            ("hedges its absence to what it was shown" if absence and hedge else ("ASSERTS absence" if absence else "neither finds nor denies it")))))
+    elif kind == "value":
+        units = [u.lower() for u in probe.get("units", [])]
+        hits = []
+        for v, after, before in stated_numbers(final):
+            if abs(v - probe["value"]) <= probe["tol"]:
+                unit_ok = not probe.get("unitRequired") or any(after.lstrip().startswith(u) or (u == "$" and "$" in before) for u in units)
+                hits.append((v, unit_ok))
+        res("M1", any(u for _, u in hits), f"computed {probe['value']}{' ' + units[0] if units else ''} (±{probe['tol']}); "
+                                            + (f"found {[h[0] for h in hits]}" + ("" if any(u for _, u in hits) else " but without the unit") if hits else "not in the answer"))
+    elif kind == "quote":
+        src = norm_text(turn.get("quoteSource") or turn.get("userContent") or "")
+        spans = re.findall(r'["\u201c]([^"\u201d\n]{12,})["\u201d]', final) + re.findall(r"^\s*>\s*(.+)$", final, re.M)
+        frags = [f for sp in spans for f in re.split(r"\u2026|\.\.\.|\[\d+\]", sp) if len(norm_text(f).split()) >= 4]
+        bad = [f for f in frags if norm_text(f) not in src]
+        if not frags:
+            R["Q1"] = ("FLAG", "no quotation in an answer to an 'exactly' question")
+        else:
+            res("Q1", not bad, f"{len(bad)}/{len(frags)} quoted spans not in the source: " + "; ".join(f'"{b.strip()[:60]}"' for b in bad[:2]) if bad else f"{len(frags)} quoted spans verbatim")
 
 
 # ─────────────────────────── logs ───────────────────────────
@@ -617,6 +781,13 @@ def grade_row(exp, turn, ui, prev_turn, host, ps, versions, cases_meta, store=Fa
         res("A8", gap <= 5000, f"longest main-thread stall {gap} ms")
     else:
         na("A8", "no heartbeat recorded")
+
+    # ── CI-0 probe graders (only on probe cases)
+    probe = exp.get("probe")
+    for g in ("D1", "D2", "O1", "K1", "B1", "M1", "Q1"):
+        na(g, "not a CI-0 probe of this kind")
+    if probe and probe.get("kind") != "ranges" and norm_ws(final):
+        probe_grade(probe, final, turn, cites, cand, R, res, na)
 
     # ── W* voice (Brief CH-A1b) — graded on the committed answer (what the model said)
     if norm_ws(final):
@@ -929,8 +1100,8 @@ def plan(cases_path, model, digest, thinks, runs, out_dir, base_args, only=None,
     for r in range(1, (runs if not variants else 0) + 1):
         for think in thinks:
             for chat in cm["chats"]:
-                if chat.get("_lab"):
-                    continue   # lab-only chats run only when a replay variant names them
+                if chat.get("_lab") or chat.get("_probe"):
+                    continue   # lab-only chats run only when a replay variant names them; CI-0 probes are store-only
                 cs = [c for c in chat["cases"] if not only or c["id"] in only]
                 if not cs:
                     continue
@@ -1033,7 +1204,7 @@ def emit_md(cases_path):
          "One *chat* = one app launch = one fresh conversation; its cases run in order inside it (follow-ups, carries, re-asks).",
          "Every row is graded by every applicable grader below; the case only adds its own expectations.", "",
          "## Cases", "", "| # | kind | chat | question | expected route | case-specific checks |", "|---|---|---|---|---|---|"]
-    for chat in (c for c in cm["chats"] if not c.get("_lab")):
+    for chat in (c for c in cm["chats"] if not c.get("_lab") and not c.get("_probe")):
         for c in chat["cases"]:
             checks = []
             if c.get("facts") == "panel": checks.append(f"lab panel facts ≥{c['minFacts']}/7")

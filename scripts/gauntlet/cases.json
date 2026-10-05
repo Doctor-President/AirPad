@@ -431,7 +431,11 @@
           "question": "Which of my lab values are out of range?",
           "expectRoute": "",
           "probe": {
-            "kind": "ranges"
+            "kind": "ranges",
+            "evidence": [
+              "CHOLESTEROL 213",
+              "LDL, CALCULATED 153"
+            ]
           },
           "mustContain": [
             [
@@ -450,7 +454,10 @@
           "question": "Is my HDL in the normal range?",
           "expectRoute": "",
           "probe": {
-            "kind": "ranges"
+            "kind": "ranges",
+            "evidence": [
+              "HDL 43"
+            ]
           },
           "mustContain": [
             [
@@ -469,7 +476,10 @@
             "kind": "window",
             "from": "2026-09-01",
             "to": "2026-09-30",
-            "today": "2026-10-05"
+            "today": "2026-10-05",
+            "evidence": {
+              "window": true
+            }
           }
         },
         {
@@ -481,7 +491,10 @@
           "probe": {
             "kind": "age",
             "date": "2025-11-18",
-            "today": "2026-10-05"
+            "today": "2026-10-05",
+            "evidence": [
+              "2025-11-18"
+            ]
           }
         },
         {
@@ -494,7 +507,10 @@
             "kind": "identity",
             "nodeID": "38249F96",
             "title": "it's November again soon",
-            "today": "2026-10-05"
+            "today": "2026-10-05",
+            "evidence": [
+              "it's November again soon"
+            ]
           }
         },
         {
@@ -505,7 +521,10 @@
           "expectRoute": "",
           "probe": {
             "kind": "count",
-            "value": 5
+            "value": 5,
+            "evidence": {
+              "countTerm": "Mara"
+            }
           }
         },
         {
@@ -516,7 +535,10 @@
           "expectRoute": "",
           "probe": {
             "kind": "count",
-            "value": 5
+            "value": 5,
+            "evidence": {
+              "countTerm": "Bolex"
+            }
           }
         },
         {
@@ -528,7 +550,10 @@
           "probe": {
             "kind": "identity",
             "nodeID": "7027892F",
-            "title": "Mara called about Thanksgiving"
+            "title": "Mara called about Thanksgiving",
+            "evidence": [
+              "Mara called about Thanksgiving"
+            ]
           }
         },
         {
@@ -540,7 +565,10 @@
           "probe": {
             "kind": "identity",
             "nodeID": "",
-            "title": "Gnosticism, Esotericism"
+            "title": "Gnosticism, Esotericism",
+            "evidence": [
+              "Gnosticism"
+            ]
           }
         },
         {
@@ -551,7 +579,8 @@
           "expectRoute": "",
           "probe": {
             "kind": "absent",
-            "term": "beekeeping"
+            "term": "beekeeping",
+            "evidence": []
           }
         },
         {
@@ -564,7 +593,10 @@
             "kind": "present",
             "term": "Dawkins",
             "nodeID": "3B45EFDF",
-            "title": "DEEP DIVE - Linguistics"
+            "title": "DEEP DIVE - Linguistics",
+            "evidence": [
+              "Dawkins"
+            ]
           }
         },
         {
@@ -581,6 +613,9 @@
               "$",
               "dollar",
               "usd"
+            ],
+            "evidence": [
+              "$25/hr"
             ]
           }
         },
@@ -598,6 +633,10 @@
               "mg/dl",
               "mg/dL",
               "points"
+            ],
+            "evidence": [
+              "153",
+              "<130"
             ]
           }
         },
@@ -608,7 +647,10 @@
           "question": "What exactly did I write in my Idea about Privacy entry?",
           "expectRoute": "",
           "probe": {
-            "kind": "quote"
+            "kind": "quote",
+            "evidence": [
+              "entitled to the privacy"
+            ]
           }
         },
         {
@@ -618,7 +660,10 @@
           "question": "What exactly did I say about the Bolex being dandori?",
           "expectRoute": "",
           "probe": {
-            "kind": "quote"
+            "kind": "quote",
+            "evidence": [
+              "Shooting on the Bolex is dandori"
+            ]
           }
         },
         {
@@ -635,7 +680,10 @@
               "min",
               "minute"
             ],
-            "unitRequired": true
+            "unitRequired": true,
+            "evidence": [
+              "28 seconds"
+            ]
           }
         },
         {
@@ -652,7 +700,10 @@
               "g",
               "gram"
             ],
-            "unitRequired": true
+            "unitRequired": true,
+            "evidence": [
+              "1 lb tomatillos"
+            ]
           }
         },
         {
@@ -670,7 +721,10 @@
               "minute"
             ],
             "note": "typed duration field (3000 s) — not in the packet today",
-            "unitRequired": true
+            "unitRequired": true,
+            "evidence": [
+              "__typed field: never in the packet__"
+            ]
           }
         }
       ]

@@ -22,15 +22,25 @@ final class LibrarianGauntletV2: XCTestCase {
         let baseArgs: [String]
         let turnTimeoutSec: Double?
         let groups: [Group]
+        /// Physical device: no Mac paths. The tap writes inside the app (`app-tmp`), turn completion is read
+        /// off the UI (answer-bubble count), a hang is the app's own self-watchdog exiting it, and results
+        /// go to the test log as `GAUNTLET_V2 RESULT {json}` lines.
+        let device: Bool?
+        /// Device mode: the app's `-GauntletSelfWatchdog` seconds (the driver waits this + 15 s on the app's
+        /// RUN STATE — no UI query — after each send, so a hung app exits before anything queries it).
+        let watchdogSec: Double?
     }
 
     func testRunGauntlet() throws {
-        guard let cfgPath = ProcessInfo.processInfo.environment["GAUNTLET_CONFIG"] else {
-            throw XCTSkip("GAUNTLET_CONFIG not set — run via scripts/gauntlet/run.sh")
-        }
-        let cfg = try JSONDecoder().decode(Config.self, from: Data(contentsOf: URL(fileURLWithPath: cfgPath)))
+        let env = ProcessInfo.processInfo.environment
+        let cfgData: Data
+        if let b = env["GAUNTLET_CONFIG_B64"], let d = Data(base64Encoded: b) { cfgData = d }
+        else if let cfgPath = env["GAUNTLET_CONFIG"] { cfgData = try Data(contentsOf: URL(fileURLWithPath: cfgPath)) }
+        else { throw XCTSkip("GAUNTLET_CONFIG(_B64) not set — run via scripts/gauntlet/run.sh / lab.sh / lab_device.sh") }
+        let cfg = try JSONDecoder().decode(Config.self, from: cfgData)
+        let isDevice = cfg.device == true
         let out = URL(fileURLWithPath: cfg.outDir, isDirectory: true)
-        try FileManager.default.createDirectory(at: out, withIntermediateDirectories: true)
+        if !isDevice { try FileManager.default.createDirectory(at: out, withIntermediateDirectories: true) }
         let turnTimeout = cfg.turnTimeoutSec ?? 900
 
         for g in cfg.groups {
@@ -39,11 +49,12 @@ final class LibrarianGauntletV2: XCTestCase {
             var ejectedAt: Double? = nil
             if g.eject == true { ejectedAt = ejectAllModels() }
             let app = XCUIApplication()
-            app.launchArguments = cfg.baseArgs + g.args + ["-OpenMap", "-GauntletUI", "YES", "-GauntletTapDir", cfg.outDir]
+            app.launchArguments = cfg.baseArgs + g.args + ["-OpenMap", "-GauntletUI", "YES", "-GauntletTapDir", isDevice ? "app-tmp" : cfg.outDir]
             app.launch()
             log("GROUP \(g.group) launched args=\(g.args)")
             for t in g.turns {
-                let before = turnFiles(out)
+                let before = isDevice ? [] : turnFiles(out)
+                let answersBefore = isDevice ? app.descendants(matching: .any).matching(identifier: "chat.answer").count : 0
                 let t0 = Date()
                 var note = ""
                 switch t.action {
@@ -65,7 +76,18 @@ final class LibrarianGauntletV2: XCTestCase {
                 let expected = before.count + (t.action == "retry" ? 2 : (t.action == "look" ? 0 : 1))
                 hungNote = nil
                 let hangsAtStart = hangMarkers(out)
-                var ok = note.isEmpty ? waitForTurnFiles(out, count: expected, timeout: turnTimeout) : false
+                var ok: Bool
+                if isDevice {
+                    // A hung app exits (self-watchdog) within watchdogSec; waiting on the run STATE never
+                    // queries the accessibility tree, so the dying app can't fail the whole test mid-query.
+                    if t.action != "look", app.wait(for: .notRunning, timeout: (cfg.watchdogSec ?? 30) + 15) {
+                        hungNote = "APP HUNG — the in-app self-watchdog exited the app (main thread stalled)"
+                    }
+                    ok = (note.isEmpty && hungNote == nil) ? waitForAnswers(app, count: answersBefore + (t.action == "look" ? 0 : 1), timeout: turnTimeout) : false
+                    if app.state != .runningForeground { hungNote = "APP HUNG — the in-app self-watchdog exited the app (main thread stalled)"; ok = false }
+                } else {
+                    ok = note.isEmpty ? waitForTurnFiles(out, count: expected, timeout: turnTimeout) : false
+                }
                 if hangMarkers(out) > hangsAtStart { hungNote = hungNote ?? "APP HUNG — main thread stopped; the watchdog terminated it"; ok = false }
                 if let h = hungNote { note = h }
                 // The tap writes at turn end, a beat before the view commits — let the bubble settle.
@@ -77,6 +99,15 @@ final class LibrarianGauntletV2: XCTestCase {
                 if !note.isEmpty { rec["driverNote"] = note }
                 if let e = ejectedAt { rec["ejectedAtEpoch"] = e; ejectedAt = nil }
                 if hungNote == nil { rec.merge(captureScreen(app)) { a, _ in a } }
+                if hungNote == nil, isDevice, app.state != .runningForeground {
+                    hungNote = "APP HUNG — the in-app self-watchdog exited the app during capture"; note = hungNote!; rec["driverNote"] = note
+                }
+                if isDevice {
+                    let summary: [String: Any] = ["row": t.row, "ok": ok && hungNote == nil, "note": note,
+                                                  "answerChars": (rec["onScreenAnswer"] as? String)?.count ?? 0,
+                                                  "bubbles": rec["answerBubbleCount"] ?? 0, "wallSec": rec["wallSec"] ?? 0]
+                    if let d = try? JSONSerialization.data(withJSONObject: summary), let s = String(data: d, encoding: .utf8) { log("RESULT \(s)") }
+                }
                 write(rec, to: out.appendingPathComponent("ui-\(t.row).json"))
                 log("ROW \(t.row) case=\(t.case) seq=\(seq) ok=\(ok) \(note)")
                 if hungNote != nil { break }   // the app was terminated — the rest of this chat can't run
@@ -188,6 +219,18 @@ final class LibrarianGauntletV2: XCTestCase {
         while Date() < deadline {
             if turnFiles(dir).count >= count { return true }
             if hangMarkers(dir) > hangsBefore { hungNote = "APP HUNG — main thread stopped; the watchdog terminated it"; return false }
+            Thread.sleep(forTimeInterval: 1)
+        }
+        return false
+    }
+
+    /// Device mode: turn completion read off the UI. A hung app blocks the query until the in-app
+    /// self-watchdog exits it; then `app.state` is no longer foreground and the row is recorded as a hang.
+    private func waitForAnswers(_ app: XCUIApplication, count: Int, timeout: TimeInterval) -> Bool {
+        let deadline = Date().addingTimeInterval(timeout)
+        while Date() < deadline {
+            if app.state != .runningForeground { return false }
+            if app.descendants(matching: .any).matching(identifier: "chat.answer").count >= count { return true }
             Thread.sleep(forTimeInterval: 1)
         }
         return false

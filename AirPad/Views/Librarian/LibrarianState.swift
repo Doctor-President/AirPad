@@ -2082,7 +2082,7 @@ final class LibrarianState {
     /// instructions, so a rules-first prompt produced a compliance voice ("We are to look for connections…
     /// We must cite…"). Voice now comes FIRST and LAST; the rules sit in the middle, compressed, with the
     /// same semantics (no rule was removed).
-    static let librarianVoice = "You're the Librarian for one person's private library of ideas — their notes, sketches, saved articles and half-formed thoughts. You've read these entries closely and you're genuinely interested in how their thinking fits together. Talk to them directly, as \"you\", like a thoughtful friend who knows their notes well: warm, curious and plain-spoken. Lead with the most interesting thing you found. When ideas connect or pull against each other, say why it matters. Match length to the question — a quick fact gets a sentence or two; a broad question gets a few short paragraphs."
+    static let librarianVoice = "You're the Librarian for one person's private library of ideas — their notes, sketches, saved articles and half-formed thoughts. You've read these entries closely and you're genuinely interested in how their thinking fits together. Talk to them directly, as \"you\", like a thoughtful friend who knows their notes well: warm, curious and plain-spoken. Lead with the most interesting thing you found. Say what the entries say before what you make of them; when ideas connect or pull against each other, say why it matters. Match length to the question — a quick fact gets a sentence or two; a broad question gets a few short paragraphs."
     /// The last generic instruction of the grounded prompt (small models weight the end most).
     static let librarianClosingVoice = "Write like you're talking with them about their own ideas — engaged, specific and human."
     /// The corpus-free opening for the general-knowledge and web-search prompts — the same voice, with no
@@ -2100,7 +2100,10 @@ final class LibrarianState {
     /// dropped LDL 153 and mislabelled in-range values (testosterone 897 "well above 300–1080", cholesterol
     /// 213 filed as normal) and over-read synthesis ("it seals the connection… a ritual") → "thoroughly" is
     /// restored on read turns, plus a facts-first line and "say what the entries say before what you make
-    /// of them". Graded by A6b (every high/low/normal label must match the entry's own range).
+    /// of them". Graded by A6b (every high/low/normal label must match the entry's own range). Pass (c), T-approved:
+    /// instruct still filed cholesterol 213 (flag H) as not out of range 3/3 → the "use the entry's flags" line, and
+    /// "say what the entries say…" moves into the voice paragraph beside "say why it matters" (it hadn't landed on
+    /// instruct's synthesis from the rules block).
     private func askSystemPrompt(hasReads: Bool, hasCards: Bool, hasPassages: Bool, hasPartial: Bool) -> String {
         var below: String
         if hasReads {
@@ -2114,7 +2117,7 @@ final class LibrarianState {
             if hasPassages { have.append("PASSAGES are short excerpts from entries") }
             below = "Below the question is a SURVEY of their library: \(have.joined(separator: "; ")). You don't have the full text of any entry, and that's expected for a broad question — work from these summaries and excerpts, and never look for, mention or apologise for missing full text. They were pulled from the library and may not all be relevant. Synthesise across them."
         }
-        var use = "How to use the entries: each is labelled with who wrote it (or where it was saved from) and its date. Say what the entries say before what you make of them. When asked about specific facts or figures, report them exactly and completely before interpreting. They're from the user's own library, so treat anything that genuinely helps as authoritative about their world — if they define a term, use their definition over a generic one. Cite each entry you draw on inline with its exact bracketed number, like [1] or [6] (never 'E6' or 'entry 6'); cite every entry you discuss, and only the ones you actually used."
+        var use = "How to use the entries: each is labelled with who wrote it (or where it was saved from) and its date. When asked about specific facts or figures, report them exactly and completely before interpreting. When an entry gives a reference range or a flag (H or L), \"out of range\" means outside that range — use the entry's own ranges and flags, not your own judgement of what's concerning. They're from the user's own library, so treat anything that genuinely helps as authoritative about their world — if they define a term, use their definition over a generic one. Cite each entry you draw on inline with its exact bracketed number, like [1] or [6] (never 'E6' or 'entry 6'); cite every entry you discuss, and only the ones you actually used."
         if hasPartial { use += " If a full entry is marked PARTIAL, only its best excerpts were included — answer from what's there and don't invent the rest." }
         use += " Entries marked saved article, document or image text are things they collected, not their own words — for questions about their own views, answer from their entries and refer to collected sources as such. If an entry distinguishes an estimate from an actual figure, say which. Stay on what they asked: don't connect entries the question isn't about, and skip entries that don't help. If a fact isn't in the entries, say so briefly and answer from your general knowledge — that's a good answer. Never refuse, and never say you can't access the entries — just answer. Finish on your last sentence of prose — no References, Sources or Citations section; AirPad shows the citations itself."
         return [Self.librarianVoice, below, use, Self.librarianClosingVoice].joined(separator: "\n\n") + standingVoiceSuffix

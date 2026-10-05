@@ -141,6 +141,7 @@
 		6DA9E5E14E071618E0AEB602 /* PhotosUI.framework in Frameworks */ = {isa = PBXBuildFile; fileRef = 0EAE9B78BB325C211A14551B /* PhotosUI.framework */; };
 		6F98C9A9D3DA0E6A178A022B /* FMFailureBanner.swift in Sources */ = {isa = PBXBuildFile; fileRef = 8D3B404567771D9D41AB6936 /* FMFailureBanner.swift */; };
 		6FC2BE9C463FD9AE53042812 /* RichTextEditor.swift in Sources */ = {isa = PBXBuildFile; fileRef = F135F708282671E607C7C84B /* RichTextEditor.swift */; };
+		70696C7DE6DCC44361DBCC54 /* TestFlightRestore.swift in Sources */ = {isa = PBXBuildFile; fileRef = CB533693BAEAB8B5A5A69BC9 /* TestFlightRestore.swift */; };
 		709B693116148A5A33D7BFCF /* SubstrateClusterLabelService.swift in Sources */ = {isa = PBXBuildFile; fileRef = 657E5CF4617BD56734417E8F /* SubstrateClusterLabelService.swift */; };
 		71D025511C4B62325B4E6A4D /* BackgroundModelDownloader.swift in Sources */ = {isa = PBXBuildFile; fileRef = 328B8A79A32590B1D037ABEA /* BackgroundModelDownloader.swift */; };
 		71FA4FF948901041E16802D4 /* FolksonomyDiagnostic.swift in Sources */ = {isa = PBXBuildFile; fileRef = 6CEB84A4A23D03CBE6C82507 /* FolksonomyDiagnostic.swift */; };
@@ -155,6 +156,7 @@
 		790E62A06880D73E5FE759EA /* HostPairingSheet.swift in Sources */ = {isa = PBXBuildFile; fileRef = 93FCE9DB8410C90A3B0EFAC0 /* HostPairingSheet.swift */; };
 		79EBBD07CEAF35CA5E4CF8A3 /* Neighborhood.swift in Sources */ = {isa = PBXBuildFile; fileRef = AE402981E931009EBB3F93EE /* Neighborhood.swift */; };
 		7A35344BA88803818AB82661 /* cinzelbold_msdf.png in Resources */ = {isa = PBXBuildFile; fileRef = A041B55F9CB72A7C37989EF0 /* cinzelbold_msdf.png */; };
+		7B5E835B2655C01AC63A3F3C /* LibrarianPerfGate.swift in Sources */ = {isa = PBXBuildFile; fileRef = 9C2FF3FB474EB570C6F67185 /* LibrarianPerfGate.swift */; };
 		7CE4D30F31BD74E94FB87500 /* SpeechSynthesisService.swift in Sources */ = {isa = PBXBuildFile; fileRef = 4496FF91A72DB981ED791A85 /* SpeechSynthesisService.swift */; };
 		7D662BACA7CB206841C5BA3D /* CardSwipeRepro.swift in Sources */ = {isa = PBXBuildFile; fileRef = B8D87927EAE11D669A11A825 /* CardSwipeRepro.swift */; };
 		80929F37D80B349FBF52A58E /* NodeConnection.swift in Sources */ = {isa = PBXBuildFile; fileRef = 555A2F390CA8E4777AAE7CB6 /* NodeConnection.swift */; };
@@ -551,6 +553,7 @@
 		99AE7198F824D189DAD581EE /* LeverButton.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = LeverButton.swift; sourceTree = "<group>"; };
 		9AA8521DD3D6E9D3A98EF6EB /* TodayCardView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = TodayCardView.swift; sourceTree = "<group>"; };
 		9C20470AE11E1FAF10AF1071 /* TagSuggestionService.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = TagSuggestionService.swift; sourceTree = "<group>"; };
+		9C2FF3FB474EB570C6F67185 /* LibrarianPerfGate.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = LibrarianPerfGate.swift; sourceTree = "<group>"; };
 		9C34AEE42CAC269D68078D15 /* TerritoryLayoutRestoreSelfTest.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = TerritoryLayoutRestoreSelfTest.swift; sourceTree = "<group>"; };
 		9C401DD21DDB057255BB02AD /* SampleLibrarySeederSelfTest.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = SampleLibrarySeederSelfTest.swift; sourceTree = "<group>"; };
 		9D1E4579C38329B81D4436DD /* SubstrateClusterRegistry.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = SubstrateClusterRegistry.swift; sourceTree = "<group>"; };
@@ -596,6 +599,7 @@
 		CA44132CD96DC6E2560940ED /* BacklinkPickerSheet.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = BacklinkPickerSheet.swift; sourceTree = "<group>"; };
 		CAB00D11EDA08830EC33C8EC /* Lato-OFL.txt */ = {isa = PBXFileReference; lastKnownFileType = text; path = "Lato-OFL.txt"; sourceTree = "<group>"; };
 		CB4204EBBDB6AEFAC59BB313 /* SubstrateCoord2D.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = SubstrateCoord2D.swift; sourceTree = "<group>"; };
+		CB533693BAEAB8B5A5A69BC9 /* TestFlightRestore.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = TestFlightRestore.swift; sourceTree = "<group>"; };
 		CB9627DA5A37E1126FD4446D /* QuarantineReviewSheet.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = QuarantineReviewSheet.swift; sourceTree = "<group>"; };
 		CBFC67AB61C6EF9AE8FAEA9E /* UMAPTransform.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = UMAPTransform.swift; sourceTree = "<group>"; };
 		CEFDD2E723DD375BFAA41689 /* cinzelbold_msdf.json */ = {isa = PBXFileReference; lastKnownFileType = text.json; path = cinzelbold_msdf.json; sourceTree = "<group>"; };
@@ -761,8 +765,10 @@
 				A662760759EB979E56CF6090 /* CEControlRouting.swift */,
 				5CA786FE73ACBE100B4FAA56 /* HoldDragRepro.swift */,
 				47D13AA6D276BABAF0A77D8B /* LibrarianGauntletV2.swift */,
+				9C2FF3FB474EB570C6F67185 /* LibrarianPerfGate.swift */,
 				DD915DF68A27E1ED37382E19 /* ManageModelsRepro.swift */,
 				331D29B33502CD4329D9797D /* RelatedTapRepro.swift */,
+				CB533693BAEAB8B5A5A69BC9 /* TestFlightRestore.swift */,
 			);
 			path = AirPadUITests;
 			sourceTree = "<group>";
@@ -1514,8 +1520,10 @@
 				DDFA466B1F065DAF3DC13799 /* CaretTapTest.swift in Sources */,
 				B50270CC57FE455419F41E86 /* HoldDragRepro.swift in Sources */,
 				385D05CF17B9D82F1F6D8A2D /* LibrarianGauntletV2.swift in Sources */,
+				7B5E835B2655C01AC63A3F3C /* LibrarianPerfGate.swift in Sources */,
 				570D62A8CEA2A19CC44B383D /* ManageModelsRepro.swift in Sources */,
 				E33D0E04DA7D961FF7E4F164 /* RelatedTapRepro.swift in Sources */,
+				70696C7DE6DCC44361DBCC54 /* TestFlightRestore.swift in Sources */,
 			);
 			runOnlyForDeploymentPostprocessing = 0;
 		};

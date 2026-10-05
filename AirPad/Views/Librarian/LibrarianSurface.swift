@@ -337,6 +337,8 @@ struct LibrarianSurface: View {
                 // `-GauntletKeepChat YES` — skip the fresh-chat reset so the persisted ACTIVE chat restores
                 // exactly as on a real relaunch (`restoreIfNeededFromStore`, the .task below).
                 if !UserDefaults.standard.bool(forKey: "GauntletKeepChat") { router.chat.reset() }
+                let seed = UserDefaults.standard.integer(forKey: "GauntletSeedChat")
+                if seed > 0 { router.chat.debugSeed(turns: seed) }
                 librarian.corpusAware = true
                 librarian.selectedScope = .corpus
                 librarian.thinkEnabled = UserDefaults.standard.bool(forKey: "GauntletThink")
@@ -347,6 +349,7 @@ struct LibrarianSurface: View {
                 // mounted over the canvas, not hidden by Recents) — open on the chat with the composer.
                 DispatchQueue.main.asyncAfter(deadline: .now() + 1.0) {
                     activeCallout = nil
+                    GauntletMetrics.shared.markOpen()
                     isViewingActiveChat = true
                     panelModel.expandToFull(animated: false)
                 }
@@ -1950,6 +1953,9 @@ struct LibrarianSurface: View {
         let isPinned = store.nodePinned(forChatID: router.chat.id) != nil
         return HStack(spacing: 10) {
             Button {
+                #if DEBUG
+                GauntletMetrics.shared.markOpen()   // perf gate: re-open timing
+                #endif
                 // Resume the chat: raise to full so the transcript shows
                 // (transcript ⟺ isViewingActiveChat && expanded), never a
                 // blank half. BUG 5 (A) — flip the mount-gate one runloop tick

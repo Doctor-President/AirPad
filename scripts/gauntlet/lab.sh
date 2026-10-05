@@ -21,7 +21,7 @@ done
 AIRPAD=~/Developer/AirPad
 FIXTURE=~/Developer/fixtures/tom-corpus-2026-09-21
 SIM=${GAUNTLET_SIM:-CC2D6B5F-A6C2-494F-AC5E-555F8FF3C73A}
-DD=$AIRPAD/build/gauntlet-dd
+DD=${GAUNTLET_DD:-$AIRPAD/build/gauntlet-dd}
 export DEVELOPER_DIR=/Applications/Xcode.app/Contents/Developer
 rm -rf "$RUN_DIR"; mkdir -p "$RUN_DIR"; RUN_DIR=$(cd "$RUN_DIR" && pwd)
 log() { print -r -- "[lab $(date +%H:%M:%S)] $*" | tee -a "$RUN_DIR/run.log"; }

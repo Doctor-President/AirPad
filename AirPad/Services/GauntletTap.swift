@@ -202,6 +202,9 @@ final class GauntletTap: @unchecked Sendable {
         NSLog("[GauntletTap] wrote %@", url.lastPathComponent)
     }
 
+    func resetGap() { lock.lock(); maxGapMs = 0; lastBeat = Date(); lock.unlock() }
+    func maxGapSinceReset() -> Int { lock.lock(); defer { lock.unlock() }; return maxGapMs }
+
     // MARK: replay
 
     var isReplaying: Bool { !replayTurns.isEmpty }
@@ -251,7 +254,46 @@ struct GauntletA11y: ViewModifier {
     }
 }
 
+/// Perf gate (Brief CH follow-up): time from "open the chat" to the transcript's first committed layout,
+/// plus the longest main-thread stall in the 2 s after. Surfaced to XCUITest through a hidden label
+/// (`gauntlet.metrics`) — on a physical device the test runner can't read the app's files.
+@Observable final class GauntletMetrics {
+    static let shared = GauntletMetrics()
+    var line = ""
+    @ObservationIgnored private var openT0: Date? = nil
+    @ObservationIgnored private var opens = 0
+    func markOpen() { openT0 = Date(); GauntletTap.shared.resetGap() }
+    func transcriptLaidOut(messages: Int) {
+        guard let t0 = openT0 else { return }
+        openT0 = nil
+        let ms = Int(Date().timeIntervalSince(t0) * 1000)
+        opens += 1
+        let n = opens
+        DispatchQueue.main.asyncAfter(deadline: .now() + 2) {
+            let stall = GauntletTap.shared.maxGapSinceReset()
+            self.line = "open#\(n) openMs=\(ms) stallMs=\(stall) messages=\(messages)"
+            NSLog("[GauntletMetrics] %@", self.line)
+        }
+    }
+}
+
+/// Freeze investigation — reports a row's height to `FreezeProbe` ONLY when the tap is on; otherwise the
+/// view is returned untouched (no geometry observer in ordinary DEBUG runs or perf measurements).
+struct FreezeRowProbe: ViewModifier {
+    let key: String
+    func body(content: Content) -> some View {
+        if GauntletTap.shared.isOn {
+            content.onGeometryChange(for: CGFloat.self) { g in
+                FreezeProbe.hit(key, Int(g.size.height)); return g.size.height
+            } action: { _ in }
+        } else {
+            content
+        }
+    }
+}
+
 extension View {
+    func freezeRowProbe(_ key: String) -> some View { modifier(FreezeRowProbe(key: key)) }
     func gauntletID(_ id: String, combine: Bool = false) -> some View {
         modifier(GauntletA11y(id: id, combine: combine))
     }

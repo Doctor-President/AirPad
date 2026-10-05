@@ -574,6 +574,8 @@ def plan(cases_path, model, digest, thinks, runs, out_dir, base_args, only=None,
     for r in range(1, (runs if not variants else 0) + 1):
         for think in thinks:
             for chat in cm["chats"]:
+                if chat.get("_lab"):
+                    continue   # lab-only chats run only when a replay variant names them
                 cs = [c for c in chat["cases"] if not only or c["id"] in only]
                 if not cs:
                     continue
@@ -652,7 +654,7 @@ def emit_md(cases_path):
          "One *chat* = one app launch = one fresh conversation; its cases run in order inside it (follow-ups, carries, re-asks).",
          "Every row is graded by every applicable grader below; the case only adds its own expectations.", "",
          "## Cases", "", "| # | kind | chat | question | expected route | case-specific checks |", "|---|---|---|---|---|---|"]
-    for chat in cm["chats"]:
+    for chat in (c for c in cm["chats"] if not c.get("_lab")):
         for c in chat["cases"]:
             checks = []
             if c.get("facts") == "panel": checks.append(f"lab panel facts ≥{c['minFacts']}/7")

@@ -47,6 +47,9 @@ final class LibrarianGauntletV2: XCTestCase {
                 let t0 = Date()
                 var note = ""
                 switch t.action {
+                case "look":
+                    // No input: just let the screen settle and capture it (e.g. a REOPENED chat).
+                    Thread.sleep(forTimeInterval: 8)
                 case "offer":
                     let offer = app.buttons["Read it in full"]
                     if offer.waitForExistence(timeout: 10) { offer.tap() } else { note = "NO OFFER BUTTON" }
@@ -59,7 +62,7 @@ final class LibrarianGauntletV2: XCTestCase {
                 default:
                     ask(app, t.question)
                 }
-                let expected = before.count + (t.action == "retry" ? 2 : 1)
+                let expected = before.count + (t.action == "retry" ? 2 : (t.action == "look" ? 0 : 1))
                 hungNote = nil
                 let hangsAtStart = hangMarkers(out)
                 var ok = note.isEmpty ? waitForTurnFiles(out, count: expected, timeout: turnTimeout) : false

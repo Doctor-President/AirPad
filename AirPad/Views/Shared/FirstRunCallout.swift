@@ -124,6 +124,9 @@ enum FirstRunCalloutTargetID {
 struct FirstRunCalloutTargetsKey: PreferenceKey {
     static let defaultValue: [String: Anchor<CGRect>] = [:]
     static func reduce(value: inout [String: Anchor<CGRect>], nextValue: () -> [String: Anchor<CGRect>]) {
+        #if DEBUG
+        FreezeProbe.hit("callout.reduce")
+        #endif
         value.merge(nextValue()) { $1 }
     }
 }

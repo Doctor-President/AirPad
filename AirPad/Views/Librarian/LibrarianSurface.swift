@@ -206,6 +206,9 @@ struct LibrarianSurface: View {
         // against this live size so the field rides the panel's height
         // change as p climbs from 0→1.
         GeometryReader { geo in
+            #if DEBUG
+            let _ = FreezeProbe.hit("surface.body", "\(Int(geo.size.width))x\(Int(geo.size.height))")
+            #endif
             ZStack {
                 // Panel material — PER-MODE (T's decision 2026-07-24: the
                 // Librarian is NO LONGER dark-only; the "deliberately dark Solar
@@ -331,7 +334,9 @@ struct LibrarianSurface: View {
             if UserDefaults.standard.bool(forKey: "GauntletUI") {
                 FirstRunCalloutKey.allCases.forEach { $0.markShown() }   // no coach marks over the composer
                 activeCallout = nil
-                router.chat.reset()
+                // `-GauntletKeepChat YES` — skip the fresh-chat reset so the persisted ACTIVE chat restores
+                // exactly as on a real relaunch (`restoreIfNeededFromStore`, the .task below).
+                if !UserDefaults.standard.bool(forKey: "GauntletKeepChat") { router.chat.reset() }
                 librarian.corpusAware = true
                 librarian.selectedScope = .corpus
                 librarian.thinkEnabled = UserDefaults.standard.bool(forKey: "GauntletThink")
@@ -936,7 +941,12 @@ struct LibrarianSurface: View {
                     },
                     topFadeFraction: cctTopFade,
                     bottomFadeFraction: cctBottomFade,
-                    onScrollTopOffset: { chatScrollTopOffset = $0 }
+                    onScrollTopOffset: {
+                        #if DEBUG
+                        FreezeProbe.hit("surface.scrollTop", $0)
+                        #endif
+                        chatScrollTopOffset = $0
+                    }
                 )
                 .frame(maxHeight: .infinity)
                 // Brief AI5 — the app-level "Search the web instead" offer, under the
@@ -1797,7 +1807,12 @@ struct LibrarianSurface: View {
         // Item 1 — measure the live height to drive the Messages-style corner
         // (`askCornerRadius`). Read-only (feeds the corner, not the height), so no
         // ratchet. Grows/shrinks as the TextField wraps/unwraps (lineLimit 1...4).
-        .onGeometryChange(for: CGFloat.self) { $0.size.height } action: { askFieldHeight = $0 }
+        .onGeometryChange(for: CGFloat.self) { $0.size.height } action: {
+            #if DEBUG
+            FreezeProbe.hit("ask.height", $0)
+            #endif
+            askFieldHeight = $0
+        }
         .background(askFill)
         // Item 2 — mic/send/clear as a BOTTOM-TRAILING overlay (not an HStack
         // sibling). Optical: constrain the cluster to the LINE-BOX height and pin

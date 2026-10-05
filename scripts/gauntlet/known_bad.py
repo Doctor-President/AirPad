@@ -5,6 +5,8 @@
       Writes replay scripts (kb_dir/replays/*.json) for the items pushed through the REAL UI capture path
       via `-GauntletReplay`. Item (a) itself is the LIVE run (current qwen3:4b, think:false, T's
       connections question) — its raw model output is saved verbatim as kb_dir/a-raw-output.txt.
+  voice <kb_dir>
+      Brief CH-A1b — adds the VOICE known-bad items (W1–W3), doctored from run-replays' clean captures.
   doctor <replay_run_dir> <live_leak_run_dir> <kb_dir>
       Copies captured runs into kb_dir (packet text redacted), builds the "doctored-expectation" items
       for the run-validity (V*) and invariant (I*) graders, and writes kb_dir/manifest.json.
@@ -257,9 +259,88 @@ def doctor(replay_dir, live_dir, kb_dir):
     print("wrote manifest with", len(man["items"]), "items")
 
 
+def voice(kb_dir):
+    """Brief CH-A1b — known-bad items for the VOICE graders (W1–W3), doctored from the clean replay captures
+    in run-replays (the answer text is the only thing a W grader reads, so the item IS that text). Appends to
+    manifest.json (replacing any earlier w-items), so the rest of the corpus is not rebuilt."""
+    src = os.path.join(kb_dir, "run-replays")
+    S, R, F = "S1.off.kg1-clean-survey", "1.off.kg2-clean-read", "S1.off.kgf-clean-followup"
+    S_B = "S1.off.kg1b-clean-survey"
+
+    def set_answer(d, row, fn):
+        u = json.load(open(os.path.join(d, f"ui-{row}.json")))
+        tp = os.path.join(d, f"turn-{u['seq']:03d}.json")
+        t = json.load(open(tp))
+        t["finalText"] = fn(t["finalText"])
+        try:   # screen agrees with the commit: only the VOICE is bad (the screen label is flattened → fall back)
+            u["onScreenAnswer"] = fn(u["onScreenAnswer"])
+        except StopIteration:
+            u["onScreenAnswer"] = t["finalText"]
+        json.dump(t, open(tp, "w"), indent=1, ensure_ascii=False)
+        json.dump(u, open(os.path.join(d, f"ui-{row}.json"), "w"), indent=1, ensure_ascii=False)
+
+    def make(name, keep, mutate):
+        d = os.path.join(kb_dir, name)
+        if os.path.exists(d):
+            shutil.rmtree(d)
+        shutil.copytree(src, d)
+        mutate(d)
+        exp = json.load(open(os.path.join(d, "expected.json")))
+        exp["rows"] = {r: v for r, v in exp["rows"].items() if r in keep}
+        json.dump(exp, open(os.path.join(d, "expected.json"), "w"), indent=1, ensure_ascii=False)
+        seqs = {json.load(open(os.path.join(d, f"ui-{r}.json")))["seq"] for r in keep}
+        seqs |= {x - 1 for x in seqs}
+        for f in os.listdir(d):
+            fp = os.path.join(d, f)
+            if os.path.isdir(fp) or (f.startswith("ui-") and f[3:-5] not in keep) \
+                    or (f.startswith("turn-") and int(f[5:8]) not in seqs) or f in ("grades.json", "table.md"):
+                shutil.rmtree(fp) if os.path.isdir(fp) else os.remove(fp)
+
+    ASK_BACK = "\n\nWhich of these threads feels most alive to you right now?"
+    PADDING = ("\n\nIt's worth keeping in mind that lab values are only a snapshot of a single moment, and many "
+               "things can nudge them up or down from one test to the next, including what you ate, how well you "
+               "slept, how hydrated you were and even the time of day the sample was drawn. Reference ranges also "
+               "vary a little between laboratories, so a value just outside one lab's range may sit inside "
+               "another's. Lifestyle factors such as diet, exercise, sleep and stress all play a part in lipid "
+               "levels over time, and your doctor can put these numbers in the context of your overall health, "
+               "your family history and any earlier results you may have.")
+    def first_item(a):   # KG1's first numbered thread alone: on-topic, correctly cited, and far too thin
+        para = next(p for p in a.split("\n\n") if p.lstrip().startswith("1."))
+        return para.split(".", 1)[1].strip().replace("**Noise versus meaning.** ", "")
+
+    make("w1-sycophantic-opener", {S, R}, lambda d: (
+        set_answer(d, S, lambda a: "Great question! " + a),
+        set_answer(d, R, lambda a: "I'd be happy to help with that. " + a)))
+    make("w2-question-tic", {S, S_B, R, F}, lambda d: [set_answer(d, r, lambda a: a + ASK_BACK) for r in (S, S_B, R)])
+    make("w2-control-one-in-four", {S, S_B, R, F}, lambda d: set_answer(d, S, lambda a: a + ASK_BACK))
+    make("w3-read-too-long", {R}, lambda d: set_answer(d, R, lambda a: a + PADDING))
+    make("w3-broad-too-short", {S}, lambda d: set_answer(d, S, first_item))
+
+    items = [
+        {"id": "w1-sycophantic-opener", "runDir": "w1-sycophantic-opener",
+         "what": "the clean survey + read answers, opened with \"Great question!\" / \"I'd be happy to help with that.\"",
+         "expectRed": {S: ["W1"], R: ["W1"]}},
+        {"id": "w2-question-tic", "runDir": "w2-question-tic",
+         "what": "3 of 4 clean answers end by asking the user a question back (75% > 50%)", "expectRunRed": ["W2"]},
+        {"id": "w2-control-one-in-four", "runDir": "w2-control-one-in-four",
+         "what": "CONTROL — 1 of 4 answers ends with a question (25%): the run must NOT be flagged", "expectRunGreen": ["W2"]},
+        {"id": "w3-read-too-long", "runDir": "w3-read-too-long",
+         "what": "the clean lab read (48 words) padded with generic lab-value advice to ~150 words", "expectRed": {R: ["W3"]}},
+        {"id": "w3-broad-too-short", "runDir": "w3-broad-too-short",
+         "what": "the connections question answered with ONE thread (~30 words)", "expectRed": {S: ["W3"]}},
+    ]
+    mp = os.path.join(kb_dir, "manifest.json")
+    man = json.load(open(mp))
+    man["items"] = [i for i in man["items"] if not i["id"].startswith("w")] + items
+    json.dump(man, open(mp, "w"), indent=1, ensure_ascii=False)
+    print("wrote", len(items), "voice items")
+
+
 if __name__ == "__main__":
     cmd = sys.argv[1]
     if cmd == "replays":
         replays(sys.argv[2], sys.argv[3], open(sys.argv[4]).read())
     elif cmd == "doctor":
         doctor(sys.argv[2], sys.argv[3], sys.argv[4])
+    elif cmd == "voice":
+        voice(sys.argv[2])

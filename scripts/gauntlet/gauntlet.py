@@ -19,6 +19,7 @@ Grader IDs (every row is graded by every applicable grader):
   C*  citations end to end
   T*/H*  thinking channel + history hygiene
   I*  the BU2 invariants (carried over)
+  W*  the Librarian's VOICE (Brief CH-A1b) — W1 fails the row; W2/W3 only FLAG it for CC's read
   R1  repeat — a case passes only 3/3 (intermittent = FAIL), aggregated in the table
   CC  CC's read of every answer (verdicts.json) — a row passes only when graders AND CC agree
 """
@@ -61,8 +62,14 @@ GRADERS = {
     "I5": "INV-bubble: a re-ask (Retry / offer) replaces the turn, never duplicates it",
     "I6": "INV-carry: a follow-up keeps the SAME entry open",
     "I7": "survey shape: cards/passages within caps",
+    "W1": "voice: no sycophantic opener (\"Great question\", \"What a fascinating…\", \"I'd be happy to\")",
+    "W2": "voice: question tic — FLAG the RUN when > 50% of its answers end with a question back to the user",
+    "W3": "voice: length fit — FLAG a fact/read answer over ~120 words or a broad answer under ~60 (CC reads it)",
     "R1": "repeat: 3/3 runs pass (aggregate)",
 }
+# Brief CH-A1b — the voice graders are named W* (not the brief's V1–V3: V* is run validity and ABORTs).
+FLAG_ONLY = {"W2", "W3"}   # a flag sends the row to CC's read; it never fails the row by itself
+
 
 # Reasoning prose — TIGHT. A clean answer addressed to the user never narrates these. (Kept narrow on
 # purpose: a false FAIL costs as much as a false PASS — CLAUDE.md BU rule.)
@@ -146,6 +153,44 @@ def sysprompt_echo(text, sysprompt):
         if len(f) >= 40 and f in hay:
             return f[:48]
     return None
+
+
+# ── voice (Brief CH-A1b) ── narrow on purpose: a false FAIL costs as much as a false PASS.
+SYCOPHANTIC_OPENERS = [
+    r"(?:great|good|excellent|fantastic|wonderful|terrific|brilliant|lovely|fascinating|interesting) question",
+    r"what (?:a|an) (?:great|fascinating|wonderful|interesting|intriguing|lovely|thoughtful|beautiful|delightful|rich|fun) ",
+    r"(?:i'd|i would|i'll|i will|i'm|i am) (?:be )?(?:so |more than )?(?:happy|glad|delighted|thrilled) to",
+    r"(?:i'd|i would) love to",
+    r"(?:thanks|thank you) for (?:asking|the question|sharing)",
+    r"(?:absolutely|certainly|of course|sure)!",
+]
+_OPENER_RE = re.compile(r"^(?:" + "|".join(SYCOPHANTIC_OPENERS) + ")")
+
+def plain_answer(s):
+    """Answer text with citation markers and markdown punctuation removed, curly apostrophes folded."""
+    s = strip_markers(s or "").replace("\u2019", "'")
+    s = re.sub(r"[*_`#>|~]", "", s)
+    return norm_ws(re.sub(r"^\s*(?:[-•]|\d+\.)\s+", "", s, flags=re.M))
+
+def sycophantic_opener(text):
+    head = plain_answer(text)[:160].lower().lstrip("\"'“ ")
+    m = _OPENER_RE.match(head)
+    return head[:m.end() + 20].strip() if m else None
+
+def word_count(text):
+    return len(re.findall(r"[A-Za-z0-9][\w'.-]*", plain_answer(text)))
+
+def ends_with_question(text):
+    return plain_answer(text).rstrip(" )\"'”’").endswith("?")
+
+def length_class(exp):
+    """'short' (a fact or a read question) | 'broad' (a synthesis / survey question) | None (not judged).
+    An explicit `length` on the case wins; otherwise the expected route decides."""
+    if exp.get("length"):
+        return exp["length"]
+    return {"read": "short", "empty": "short", "survey": "broad"}.get(exp.get("expectRoute") or "")
+
+W3_SHORT_MAX, W3_BROAD_MIN, W2_MAX_SHARE = 120, 60, 0.5
 
 
 # ─────────────────────────── logs ───────────────────────────
@@ -380,6 +425,22 @@ def grade_row(exp, turn, ui, prev_turn, host, ps, versions, cases_meta, store=Fa
     else:
         na("A8", "no heartbeat recorded")
 
+    # ── W* voice (Brief CH-A1b) — graded on the committed answer (what the model said)
+    if norm_ws(final):
+        op = sycophantic_opener(final)
+        res("W1", not op, f"opens \"{op}…\"" if op else "")
+        wc, lc = word_count(final), length_class(exp)
+        stats.update(words=wc, endsWithQuestion=ends_with_question(final))
+        if lc == "short":
+            R["W3"] = ("PASS" if wc <= W3_SHORT_MAX else "FLAG", f"{wc} words on a fact/read question (≤{W3_SHORT_MAX})")
+        elif lc == "broad":
+            R["W3"] = ("PASS" if wc >= W3_BROAD_MIN else "FLAG", f"{wc} words on a broad question (≥{W3_BROAD_MIN})")
+        else:
+            na("W3", "length not judged for this case")
+    else:
+        na("W1", "no answer"); na("W3", "no answer")
+    na("W2", "run-level (see the table footer)")
+
     # ── C* citations
     c1 = re.findall(r"\bE\d+\b", both)
     res("C1", not c1, f"bare labels {sorted(set(c1))[:6]}" if c1 else "")
@@ -517,6 +578,15 @@ def grade_row(exp, turn, ui, prev_turn, host, ps, versions, cases_meta, store=Fa
     return {"results": R, "stats": stats}
 
 
+def run_level(out):
+    """Run-level graders → {grader: (status, detail)}. W2: the question tic, across every answered row."""
+    ans = [g["stats"].get("endsWithQuestion") for g in out.values() if "endsWithQuestion" in g.get("stats", {})]
+    if len(ans) < 2:
+        return {"W2": ("N/A", f"{len(ans)} answer(s) — too few to judge a tic")}
+    q = sum(1 for a in ans if a)
+    return {"W2": ("FLAG" if q / len(ans) > W2_MAX_SHARE else "PASS", f"{q}/{len(ans)} answers end with a question")}
+
+
 def row_status(g, verdict):
     vals = [s for s, _ in g["results"].values()]
     if "ABORT" in vals:
@@ -567,15 +637,16 @@ def grade_dir(run_dir, quiet=False):
 
 
 def write_table(run_dir, exp, out):
-    lines = ["| row | case | think | status | route | chips (native/rescue) | TTFT | load | eval tok | think chars | full-text hunts | red graders |",
-             "|---|---|---|---|---|---|---|---|---|---|---|---|"]
+    lines = ["| row | case | think | status | route | chips (native/rescue) | TTFT | load | eval tok | think chars | full-text hunts | words | red graders | flags (CC reads) |",
+             "|---|---|---|---|---|---|---|---|---|---|---|---|---|---|"]
     for row in sorted(out):
         g, e, s = out[row], exp["rows"][row], out[row]["stats"]
         reds = [f"{k}:{d}" for k, (st, d) in g["results"].items() if st in ("FAIL", "ABORT")]
+        flags = [f"{k}:{d}" for k, (st, d) in g["results"].items() if st == "FLAG"]
         lines.append(f"| {row} | {e['case']} | {'on' if e['think'] else 'off'} | {g['status']} | {s.get('route','')} | "
                      f"{s.get('chips','')} ({s.get('nativeMarkers','')}/{'Y' if s.get('titleRescue') else 'n'}) | "
                      f"{s.get('ttftMs','')} | {s.get('loadMs','')} | {s.get('evalTokens','')} | {s.get('thinkingChars','')} | {s.get('fullTextHunts','')} | "
-                     f"{'<br>'.join(reds) if reds else '—'} |")
+                     f"{s.get('words','')} | {'<br>'.join(reds) if reds else '—'} | {'<br>'.join(flags) if flags else '—'} |")
     # R1 — aggregate (case × think) over runs: 3/3 or FAIL
     agg = {}
     for row, g in out.items():
@@ -587,6 +658,7 @@ def write_table(run_dir, exp, out):
         a = "PASS" if all(s == "PASS" for s in sts) and len(sts) >= exp.get("runs", 3) else (
             "INVALID" if "INVALID" in sts else ("PENDING-READ" if set(sts) <= {"PASS", "PENDING-READ"} and len(sts) >= exp.get("runs", 3) else "FAIL"))
         lines.append(f"| {c} | {'on' if t else 'off'} | {' '.join(sts)} | {a} |")
+    lines += ["", "**Run-level:** " + "; ".join(f"{k} {st} ({d})" for k, (st, d) in run_level(out).items())]
     open(os.path.join(run_dir, "table.md"), "w").write("\n".join(lines) + "\n")
 
 
@@ -708,7 +780,7 @@ def selftest(kb_dir):
             g = grades.get(row)
             if not g:
                 problems.append(f"{item['id']}: row {row} not graded (missing capture?)"); continue
-            red = {k for k, (st, _) in g["results"].items() if st in ("FAIL", "ABORT")}
+            red = {k for k, (st, _) in g["results"].items() if st in ("FAIL", "ABORT", "FLAG")}
             for w in want_red:
                 if w in red:
                     proven[w].append(item["id"])
@@ -718,10 +790,22 @@ def selftest(kb_dir):
             matrix.append((item["id"], row, sorted(red), g["results"]))
         for row in item.get("expectGreen", []):
             g = grades.get(row)
-            red = {k: d for k, (st, d) in (g or {"results": {}})["results"].items() if st in ("FAIL", "ABORT")}
+            red = {k: d for k, (st, d) in (g or {"results": {}})["results"].items() if st in ("FAIL", "ABORT", "FLAG")}
             if not g or red:
                 problems.append(f"{item['id']} {row}: positive control is not green: {red or 'not graded'}")
             matrix.append((item["id"], row, sorted(red), (g or {}).get("results", {})))
+        # run-level graders (W2): RED (or FLAG) on a known-bad run, green on its control
+        rl = run_level(grades)
+        for w in item.get("expectRunRed", []):
+            if rl.get(w, ("MISSING",))[0] in ("FAIL", "FLAG"):
+                proven[w].append(item["id"])
+            else:
+                problems.append(f"{item['id']}: run-level {w} should be RED but is {rl.get(w)}")
+        for w in item.get("expectRunGreen", []):
+            if rl.get(w, ("MISSING",))[0] != "PASS":
+                problems.append(f"{item['id']}: run-level control {w} is not green: {rl.get(w)}")
+        if item.get("expectRunRed") or item.get("expectRunGreen"):
+            matrix.append((item["id"], "(run)", sorted(k for k, (st, _) in rl.items() if st in ("FAIL", "FLAG")), rl))
         # aggregate known-bad (R1): the item's rows as runs of one case must aggregate to FAIL
         if item.get("expectAggregateFail"):
             sts = [row_status(grades[r], {"verdict": "ok"}) for r in item["expectAggregateFail"] if r in grades]
@@ -763,7 +847,7 @@ def emit_md(cases_path):
           "A3 the Retry row; case 1 doubles as A4 cold auto-load; A5 the near-context-limit packet.", "",
           "## Graders", "", "| id | checks | on a miss |", "|---|---|---|"]
     for g, d in GRADERS.items():
-        L.append(f"| {g} | {d} | {'ABORT (row invalid)' if g.startswith('V') else ('FAIL the case' if g != 'R1' else 'FAIL the case (aggregate)')} |")
+        L.append(f"| {g} | {d} | {'ABORT (row invalid)' if g.startswith('V') else ('FLAG for CC’s read' + (' (run-level)' if g == 'W2' else '') if g in FLAG_ONLY else ('FAIL the case' if g != 'R1' else 'FAIL the case (aggregate)'))} |")
     L += ["| CC | CC reads every answer: one-line verdict + reason (wrong connection, fabricated fact, hedging, thin) | row passes only when graders AND CC agree |", ""]
     return "\n".join(L)
 

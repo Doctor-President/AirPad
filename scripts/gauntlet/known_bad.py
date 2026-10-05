@@ -434,6 +434,82 @@ def ci0(kb_dir, template_dir):
     print("wrote", len(items), "CI-0 items")
 
 
+def ci2(kb_dir, ci0_root, template_dir):
+    """Brief CI-2 — known-bad + controls for C6 B2 E1 E2 FX1. C6/B2/E1 use REAL CI-0 answers (the packet is
+    redacted to the segments the grader needs: `entryTexts`, `candDates`); E2/FX1 use synthetic packets."""
+    import gauntlet as G
+    def real(arm, run, case):
+        d = os.path.join(ci0_root, arm, run)
+        sr = json.load(open(os.path.join(d, "store-rows.json")))
+        r = next(x for x in sr["rows"] if x["case"] == case)
+        return d, json.load(open(os.path.join(d, f"turn-{r['seq']:03d}.json")))
+    items = []
+
+    def item(iid, case, t, src_dir, grader, bad, keep_segments=(), what=""):
+        d = os.path.join(kb_dir, iid)
+        if os.path.exists(d):
+            shutil.rmtree(d)
+        os.makedirs(d)
+        for f in ("host.log", "ps.log", "versions.json"):
+            shutil.copy(os.path.join(src_dir, f), d)
+        t = copy.deepcopy(t)
+        segs = G.packet_segments(t)
+        if keep_segments:
+            t["entryTexts"] = {str(i): segs[i] for i in keep_segments if i in segs}
+        t["candDates"] = {str(k): v for k, v in G.cand_dates(t).items()}
+        if "COMPUTED FACTS" not in (t.get("userContent") or "") or not t.get("_synthetic"):
+            t["userContent"] = f"<redacted: {len(t.get('userContent') or '')} chars of packet>" if not t.get("_synthetic") else t["userContent"]
+        t["seq"] = 1
+        json.dump(t, open(os.path.join(d, "turn-001.json"), "w"), indent=1, ensure_ascii=False)
+        json.dump({"think": False, "rows": [{"case": case, "seq": 1, "newChat": True, "elapsedSec": 1}]}, open(os.path.join(d, "store-rows.json"), "w"))
+        row = f"{case}.off.store"
+        items.append({"id": iid, "runDir": iid, "store": True, "what": what,
+                      **({"expectRed": {row: [grader]}} if bad else {"expectGreenOn": {row: [grader]}})})
+
+    d, t = real("qwen3-8b", "r1", "P7b")
+    item("ci2-c6-fabricated", "P7b", t, d, "C6", True, (1,), "REAL 8B: 'In your note from January 24, 2026, you mentioned that the Bolex is an example of dandori' — that note never mentions the Bolex")
+    d, t = real("qwen3-8b", "r1", "P5b")
+    item("ci2-c6-control", "P5b", t, d, "C6", False, (1, 2, 3, 4), "CONTROL REAL 8B: 'In your entry … [1], you referenced Richard Dawkins directly' — true")
+    d, t = real("qwen3-4b-instruct", "r1", "P7b")
+    item("ci2-b2-false-absence", "P7b", t, d, "B2", True, (), "REAL instruct: 'I didn't say anything about the Bolex being dandori' — entry '28 seconds' says it")
+    d, t = real("qwen3-4b-instruct", "r1", "P5a")
+    item("ci2-b2-control", "P5a", t, d, "B2", False, (), "CONTROL REAL instruct: no beekeeping anywhere — an honest no")
+    d, t = real("qwen3-8b", "r1", "P3a")
+    item("ci2-e1-confident-wrong", "P3a", t, d, "E1", True, (), "REAL 8B: 'Just one — … That's the only entry that directly references her' (truth: 5)")
+    t2 = copy.deepcopy(t); t2["finalText"] = "Of the entries I can see here, one mentions Mara [1] — there may be more in your whole library, so I can't count them all."
+    item("ci2-e1-control", "P3a", t2, d, "E1", False, (), "CONTROL: the same packet, answered honestly about scope")
+    # E2 — over-hedging on an ordinary (non-whole-library) question; FX1 — synthetic facts
+    tmpl_rows = json.load(open(os.path.join(template_dir, "store-rows.json")))["rows"]
+    s1 = next(r for r in tmpl_rows if r["case"] == "S1")
+    ts = json.load(open(os.path.join(template_dir, f"turn-{s1['seq']:03d}.json")))
+    te = copy.deepcopy(ts); te["finalText"] = "Your ideas cluster around meaning and tools [1]. This may not be everything in your whole library, so I can't count or rank across it."
+    item("ci2-e2-overhedge", "S1", te, template_dir, "E2", True, (), "doctored: a whole-library disclaimer on an ordinary synthesis question")
+    tg = copy.deepcopy(ts); tg["finalText"] = "Your ideas cluster around meaning and the tools that protect it [1]."
+    item("ci2-e2-control", "S1", tg, template_dir, "E2", False, (), "CONTROL: the same question, no disclaimer")
+    lab = ("[1] Lab report · a document you added · 2026-07-07 — read in full\nCHOLESTEROL 213 <200 MG/DL H\nHDL 43 >40 MG/DL N\n"
+           "LDL, CALCULATED 153 <130 MG/DL H\nALBUMIN 5.0 3.4-5.0 GM/DL N\n")
+    def facts(hdl_status):
+        return ("COMPUTED FACTS (worked out by the app from the entries above — exact; trust them over your own reading or arithmetic):\n"
+                "Today is Monday, 5 October 2026.\nYou are seeing 1 of the 434 entries in this library — the ones most related to the question, not all of them.\n"
+                "Dates: [1] Lab report — written 2026-07-07, 2 months ago (90 days).\nRanges in [1] Lab report (4 values with a reference range):\n"
+                "- CHOLESTEROL 213 MG/DL: reference <200 — ABOVE the range (the entry flags it H).\n"
+                f"- HDL 43 MG/DL: reference >40 — {hdl_status}.\n"
+                "- LDL, CALCULATED 153 MG/DL: reference <130 — ABOVE the range (the entry flags it H).\n"
+                "- ALBUMIN 5.0 GM/DL: reference 3.4-5.0 — within the range, AT its upper limit.\n")
+    for iid, st, bad in (("ci2-fx1-wrong-fact", "BELOW the range", True), ("ci2-fx1-control", "within the range", False)):
+        tf = copy.deepcopy(ts)
+        tf["_synthetic"] = True
+        tf["userContent"] = "Some of your notes were retrieved for you:\n\nENTRIES READ IN FULL:\n" + lab + "\n" + facts(st) + "\nQuestion: Is my HDL in the normal range?"
+        tf["plan"] = dict(tf.get("plan") or {}, candidates=[{"index": 1, "nodeID": "LAB", "title": "Lab report", "snippet": ""}])
+        tf["finalText"] = "Yes — your HDL is 43, within its range (>40) [1]."
+        item(iid, "P1b", tf, template_dir, "FX1", bad, (), "synthetic packet: HDL 43 vs >40 stated BELOW (wrong)" if bad else "CONTROL synthetic: correct facts")
+    mp = os.path.join(kb_dir, "manifest.json")
+    man = json.load(open(mp))
+    man["items"] = [i for i in man["items"] if not i["id"].startswith("ci2-")] + items
+    json.dump(man, open(mp, "w"), indent=1, ensure_ascii=False)
+    print("wrote", len(items), "CI-2 items")
+
+
 if __name__ == "__main__":
     cmd = sys.argv[1]
     if cmd == "replays":
@@ -442,6 +518,8 @@ if __name__ == "__main__":
         doctor(sys.argv[2], sys.argv[3], sys.argv[4])
     elif cmd == "voice":
         voice(sys.argv[2])
+    elif cmd == "ci2":
+        ci2(sys.argv[2], sys.argv[3], sys.argv[4])
     elif cmd == "ci0":
         ci0(sys.argv[2], sys.argv[3])
     elif cmd == "a6b":

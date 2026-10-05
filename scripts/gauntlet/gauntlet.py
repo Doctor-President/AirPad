@@ -73,10 +73,15 @@ GRADERS = {
     "B1": "CI-0 absence: no invented presence; no unhedged 'you never wrote about it' when it exists",
     "M1": "CI-0 arithmetic/units: the computed value (with its unit, where required) is in the answer",
     "Q1": "CI-0 quotes: every quoted span (≥4 words) string-matches the source text",
+    "C6": "no fabricated attribution: every library proper noun in a 'you wrote/said…' clause is in the entry it's attributed to (FAIL on CI probes, FLAG elsewhere)",
+    "B2": "no false absence: no unhedged 'you never wrote / I didn't say…' about something the library contains (FAIL on CI probes, FLAG elsewhere)",
+    "E1": "CI honest scope: a whole-library question gets the right answer OR an honest 'of the entries I can see…' — never a confident wrong one",
+    "E2": "CI over-hedging: no whole-library disclaimer on an ordinary question (FLAG, CC reads)",
+    "FX1": "CI facts faithful: every COMPUTED FACTS range/date/scope line matches the independent Python computation",
     "R1": "repeat: 3/3 runs pass (aggregate)",
 }
 # Brief CH-A1b — the voice graders are named W* (not the brief's V1–V3: V* is run validity and ABORTs).
-FLAG_ONLY = {"W2", "W3"}   # (Q1 FLAGs only when an 'exactly' answer quotes nothing)   # a flag sends the row to CC's read; it never fails the row by itself
+FLAG_ONLY = {"W2", "W3", "E2"}   # (Q1 FLAGs only when an 'exactly' answer quotes nothing)   # a flag sends the row to CC's read; it never fails the row by itself
 
 
 # Reasoning prose — TIGHT. A clean answer addressed to the user never narrates these. (Kept narrow on
@@ -468,6 +473,21 @@ def stated_numbers(text):
     return out
 
 
+def looks_whole_library(q):
+    """Python port of `ComputedFacts.looksLikeWholeLibraryQuestion` (word boundaries)."""
+    pats = [r"\bhow many\b", r"\bnumber of\b", r"\bcount\b", r"\b(?:oldest|newest|latest|earliest|longest|shortest|biggest|smallest)\b",
+            r"\bmost recent\b", r"\bfirst time\b", r"\blast time\b", r"\b(?:most|least)\s+(?:often|frequent(?:ly)?|common|mentioned|written)\b",
+            r"\bever\b", r"\bnever\b", r"\bany (?:entries|notes)\b", r"\bdid i (?:ever )?(?:write|mention|say)\b", r"\bhave i ever\b",
+            r"\bwhat exactly did i (?:say|write)\b"]
+    return any(re.search(p, q or "", re.I) for p in pats)
+
+def probe_base_pass(probe, final, R):
+    """Is the honest-scope probe answered RIGHT (not just honestly)?"""
+    if probe.get("truthQuote"):
+        return norm_text(probe["truthQuote"]) in norm_text(final)
+    g = {"count": "K1", "identity": "O1", "present": "B1"}.get(probe.get("kind"))
+    return bool(g) and R.get(g, ("N/A",))[0] == "PASS"
+
 def probe_grade(probe, final, turn, cites, cand, R, res, na):
     kind = probe.get("kind")
     low = final.lower()
@@ -479,6 +499,11 @@ def probe_grade(probe, final, turn, cites, cand, R, res, na):
         used = sorted(set(cited) | set(named))
         dated = [(i, dates.get(i)) for i in used if dates.get(i)]
         out = [(i, d) for i, d in dated if not (probe["from"] <= d <= probe["to"])]
+        none_said = re.search(r"\b(?:none|no entr\w*|nothing|not any)\b[^.\n]{0,90}\b(?:last month|this month|that (?:month|period|window|time)|september|in that window|from then)\b"
+                              r"|\b(?:don't|do not|didn't|did not) (?:see|find|have)\b[^.\n]{0,60}\b(?:from|in|during) (?:last month|that month|september)\b", final, re.I)
+        if not dated and none_said:
+            res("D1", True, "says none of the shown entries is from the window (honest)")
+            return
         res("D1", bool(dated) and not out,
             f"{len(out)}/{len(dated)} entries outside {probe['from']}..{probe['to']}: " + "; ".join(f"[{i}] '{idx_title.get(i, '')[:24]}' {d}" for i, d in out[:3])
             if out else (f"{len(dated)} dated entries, all in window" if dated else "no dated entry cited or named for the window"))
@@ -540,6 +565,174 @@ def probe_grade(probe, final, turn, cites, cand, R, res, na):
             R["Q1"] = ("FLAG", "no quotation in an answer to an 'exactly' question")
         else:
             res("Q1", not bad, f"{len(bad)}/{len(frags)} quoted spans not in the source: " + "; ".join(f'"{b.strip()[:60]}"' for b in bad[:2]) if bad else f"{len(frags)} quoted spans verbatim")
+
+
+# ── CI-2 graders (Brief CI design §6) ──
+FIXTURE_DIR = os.path.expanduser("~/Developer/fixtures/tom-corpus-2026-09-21")
+_LIB = None
+
+def library_texts():
+    """[(title, text)] for every fixture entry — the WHOLE library (ground truth for B2's 'does it exist?')."""
+    global _LIB
+    if _LIB is None:
+        _LIB = []
+        for p in glob.glob(os.path.join(FIXTURE_DIR, "nodes", "*", "node.json")):
+            try:
+                n = json.load(open(p)); bp = os.path.join(os.path.dirname(p), "blocks.json")
+                b = json.load(open(bp)) if os.path.exists(bp) else {"blocks": []}
+                _LIB.append((n.get("title", ""), " ".join(x.get("text") or "" for x in b["blocks"])))
+            except Exception:
+                pass
+    return _LIB
+
+SCOPE_HEDGE = re.compile(r"retrieved|in front of me|given to me|i was given|i(?:'ve| have)? (?:been )?(?:shown|given)|i can see|i can only see|i(?:'m| am) seeing|"
+                         r"(?:of|in|from|among) the (?:\d+ )?(?:entries|notes) (?:i|you) |these (?:entries|notes|excerpts)|may not be (?:everything|all|complete|the full)|"
+                         r"might not be (?:everything|all)|not (?:all|everything) (?:of )?your|there (?:may|might|could) be (?:more|others)|whole library|entire library|"
+                         r"all of your (?:entries|notes)|in what i (?:have|can|was)|only (?:see|have) (?:a few|some|part)|can't (?:count|rank|tell)|cannot (?:count|rank|tell)|"
+                         r"(?:shown|surfaced|pulled up) (?:here|for this)|in this (?:selection|set|packet)", re.I)
+ABSENCE = re.compile(r"\byou (?:never|didn't|did not|haven't|have not|hadn't)\s+(?:\w+\s+){0,2}?(?:write|written|wrote|mention(?:ed)?|say|said|note(?:d)?|discuss(?:ed)?)\b|"
+                     r"\bi (?:didn't|did not|never) (?:say|said|write|wrote|mention)|\bi don't recall\b|\bi do not recall\b|"
+                     r"\bthere(?:'s| is| are) no (?:mention|entr|note|record)|\bnone of (?:your|the) (?:entries|notes)\b[^.\n]{0,40}\b(?:mention|discuss|talk|refer)|"
+                     r"\bno (?:entries|notes) (?:mention|discuss|talk|refer)|\bdoesn't (?:mention|appear)|\bnot mentioned\b", re.I)
+ATTRIB = re.compile(r"\byou(?:'ve| have)?\s+(?:also\s+|even\s+|directly\s+)?(?:wrote|written|write|said|say|mentioned|mention|noted|described|called|argued|explained|referenced|defined|compared|contrasted|tied|noted)\b|\bin your (?:note|entry|journal|piece|post)\b", re.I)
+Q_STOP = set("what which when where how did does have about write wrote written said say mention mentioned entry entries notes note exactly ever library my your being the that this from with into".split())
+
+def packet_segments(turn):
+    """{[n]: text} per packet item (its header + body) — known-bad items carry `entryTexts` instead."""
+    if turn.get("entryTexts"):
+        return {int(k): v for k, v in turn["entryTexts"].items()}
+    out, cur, buf = {}, None, []
+    for line in (turn.get("userContent") or "").split("\n"):
+        m = re.match(r"^\[(\d+)\] ", line)
+        if m or line.startswith(("COMPUTED FACTS", "Question:", "ENTRIES ", "PASSAGES:")):
+            if cur is not None:
+                out[cur] = out.get(cur, "") + "\n".join(buf)
+            cur, buf = (int(m.group(1)) if m else None), [line]
+        else:
+            buf.append(line)
+    if cur is not None:
+        out[cur] = out.get(cur, "") + "\n".join(buf)
+    return out
+
+def c6_violations(final, turn, cand, question):
+    segs = packet_segments(turn)
+    if not segs:
+        return []
+    known = norm_text((turn.get("userContent") or "") + " " + " ".join(segs.values()) + " " + (question or ""))
+    dates = cand_dates(turn)
+    bad = []
+    final = (final or "").replace("\u2019", "'")
+    kwords, ewords = None, None
+
+    def present(tok, words):
+        nt = norm_text(tok)
+        pre = nt[:max(4, min(len(nt) - 2, 6))]      # morphology-tolerant: Gnosticism ~ Gnostic, Pikmin's ~ Pikmin
+        return any(w.startswith(pre) for w in words)
+    for sent in re.split(r"(?<=[.!?])\s+|\n+", final):
+        ms = list(ATTRIB.finditer(sent))
+        if not ms:
+            continue
+        m = ms[-1]   # the LAST attribution verb owns the claim ("In your note [1], you mentioned that …")
+        # EXPLICIT anchors only: a [n] in the sentence, or "your note/entry from <date>". A bare title mention is
+        # too weak (calibration: "You mentioned that Mara called…" restates the QUESTION, and "Mara" is a title).
+        idx = {int(x) for x in re.findall(r"\[(\d+)\]", sent)}
+        for yy, mo, dd in (stated_dates(sent) if re.search(r"\byour (?:note|entry|journal)\b", sent, re.I) else []):
+            for i, dstr in dates.items():
+                y2, m2, d2 = (int(x) for x in dstr.split("-"))
+                if m2 == mo and d2 == dd and (yy in (None, y2)):
+                    idx.add(i)
+        idx = {i for i in idx if i in segs}
+        if not idx:
+            continue
+        ewords = norm_text(" ".join(segs[i] for i in idx)).split()
+        kwords = known.split()
+        # only the ATTRIBUTED claim: from the verb to its citation marker / clause break (", which …" is a new claim)
+        clause = sent[m.start():]
+        cut = min([i for i in (clause.find(x) for x in ("[", " — ", " – ", ", which", "; ", ": ")) if i > 8] or [len(clause)])
+        clause = strip_markers(clause[:cut])
+        toks = set()
+        for w in re.finditer(r"(?<![.!?]\s)(?<!^)\b([A-Z][a-zA-Z'’-]{2,})\b", clause):
+            if w.group(1).lower()[:3] not in MONTHS and w.group(1).lower() not in ("monday", "tuesday", "wednesday", "thursday", "friday", "saturday", "sunday"):
+                toks.add(w.group(1))
+        for q in re.findall(r'["\u201c]([^"\u201d\n]{3,40})["\u201d]', clause):   # real quotation marks only (not **bold**)
+            toks |= {w for w in re.findall(r"[A-Za-z][A-Za-z'’-]{3,}", q)}
+        miss = []
+        for t in sorted(toks):
+            nt = norm_text(t)
+            if not nt or nt in ("you", "your", "i", "the") or len(nt) < 3:
+                continue
+            if present(t, kwords) and not present(t, ewords):   # a LIBRARY/question term, not in the entry it's pinned on
+                miss.append(t)
+        if miss:
+            bad.append(f"attributes {miss} to [{','.join(map(str, sorted(idx)))}] where it does not appear: \"{sent.strip()[:110]}\"")
+    return bad
+
+def b2_violations(final, question):
+    final = (final or "").replace("\u2019", "'")
+    key = [w for w in re.findall(r"[a-z][a-z'-]{3,}", (question or "").lower()) if w not in Q_STOP]
+    if not key:
+        return []
+    bad = []
+    sents = [x for x in re.split(r"(?<=[.!?])\s+|\n+", final) if x.strip()]
+    for si, sent in enumerate(sents):
+        if not ABSENCE.search(sent):
+            continue
+        # a hedge must be WITH the claim (this sentence or the next) — a disclaimer 800 chars later doesn't
+        # excuse a flat opening "I didn't say that" (calibrated on CI-0 instruct P7b r1)
+        if SCOPE_HEDGE.search(sent) or (si + 1 < len(sents) and SCOPE_HEDGE.search(sents[si + 1])):
+            continue
+        # not an absence claim: a qualified one ("didn't explicitly write a whole essay on X, you did engage…")
+        if re.search(r"\b(?:explicitly|directly|a whole|a dedicated|an entire|specifically|in so many words|just|only|himself|herself|itself|themselves|per se)\b|\byou did (?!not\b)|\byes\b", sent, re.I):
+            continue
+        hits = [t for t, x in library_texts() if all(re.search(r"\b" + re.escape(k[:6]), (t + " " + x).lower()) for k in key)]
+        if hits:
+            bad.append(f"asserts absence, but the library has it ({hits[0][:30]}{' +' + str(len(hits) - 1) if len(hits) > 1 else ''}): \"{sent.strip()[:100]}\"")
+    return bad
+
+def fx1_violations(turn, plan):
+    """Parse the app's COMPUTED FACTS section and check it against the independent Python computation."""
+    uc = turn.get("userContent") or ""
+    if "COMPUTED FACTS" not in uc:
+        return None
+    sec = uc[uc.index("COMPUTED FACTS"):].split("\nQuestion:")[0]
+    bad = []
+    tm = re.search(r"Today is \w+, (\d{1,2}) (\w+) (\d{4})\.", sec)
+    today = datetime.date(int(tm.group(3)), MONTHS[tm.group(2).lower()], int(tm.group(1))) if tm else None
+    if not today:
+        bad.append("no 'Today is' line")
+    sm = re.search(r"You are seeing (\d+) of the (\d+) entries", sec)
+    nodes = {c.get("nodeID") for c in (plan.get("candidates") or [])}
+    if not sm:
+        bad.append("no scope line")
+    elif nodes and int(sm.group(1)) != len(nodes):
+        bad.append(f"scope N={sm.group(1)} but the packet has {len(nodes)} entries")
+    hdr = cand_dates(turn)
+    for m in re.finditer(r"\[(\d+)\] [^\n]*? — written (\d{4}-\d{2}-\d{2}), [^(]*\((\d+) days?\)", sec):
+        i, d, n = int(m.group(1)), m.group(2), int(m.group(3))
+        if hdr.get(i) and hdr[i] != d:
+            bad.append(f"[{i}] fact date {d} ≠ packet header {hdr[i]}")
+        if today and (today - datetime.date.fromisoformat(d)).days != n:
+            bad.append(f"[{i}] {n} days ≠ today−{d} = {(today - datetime.date.fromisoformat(d)).days}")
+    ref = lab_reference(uc)
+    for m in re.finditer(r"^- (.+?) (\d+(?:\.\d+)?)(?: ([^:]+?))?: reference (\S+) — (.+)\.$", sec, re.M):
+        name, val, rng, status = m.group(1), float(m.group(2)), m.group(4), m.group(5)
+        hit = None
+        for k, kw, _ in _ANALYTE_RES:
+            pos = name.upper().rfind(kw)
+            if pos >= 0 and (hit is None or (pos + len(kw), len(kw)) > hit[1]):
+                hit = (k, (pos + len(kw), len(kw)))
+        rows = ref.get(hit[0], []) if hit else []
+        row = next((r for r in rows if abs(r[0] - val) < 1e-9), None)
+        if not row:
+            bad.append(f"fact row '{name} {val}' has no matching row in the entry (Python parser)")
+            continue
+        v, lo, hi, flag, _ = row
+        claim = "HIGH" if status.startswith("ABOVE") else "LOW" if status.startswith("BELOW") else "NORMAL" if status.startswith("within") else None
+        if claim and not _truth(claim, row):
+            bad.append(f"'{name} {val}' stated {status[:30]} but range {lo}-{hi} says otherwise")
+        if "AT its upper limit" in status and not (hi is not None and abs(v - hi) < 1e-9):
+            bad.append(f"'{name}' AT upper limit but {v} ≠ {hi}")
+    return bad
 
 
 # ─────────────────────────── logs ───────────────────────────
@@ -788,6 +981,35 @@ def grade_row(exp, turn, ui, prev_turn, host, ps, versions, cases_meta, store=Fa
         na(g, "not a CI-0 probe of this kind")
     if probe and probe.get("kind") != "ranges" and norm_ws(final):
         probe_grade(probe, final, turn, cites, cand, R, res, na)
+
+    # ── CI-2: C6 / B2 (FAIL on CI probe rows, FLAG elsewhere — Companion Q4), E1, E2, FX1
+    question = exp.get("question") or ""
+    strict = exp.get("kind") == "probe"
+    if norm_ws(final) and route in ("read", "survey"):
+        c6 = c6_violations(final, turn, cand, question)
+        R["C6"] = ("PASS", "") if not c6 else (("FAIL" if strict else "FLAG"), "; ".join(c6[:2]))
+        b2 = b2_violations(final, question)
+        R["B2"] = ("PASS", "") if not b2 else (("FAIL" if strict else "FLAG"), "; ".join(b2[:2]))
+    else:
+        na("C6", "not a grounded answer"); na("B2", "not a grounded answer")
+    if probe and probe.get("honestScope") and norm_ws(final):
+        base = probe_base_pass(probe, final, R)
+        hedged = bool(SCOPE_HEDGE.search(final))
+        clean = R.get("C6", ("PASS",))[0] == "PASS" and R.get("B2", ("PASS",))[0] == "PASS"
+        res("E1", clean and (base or hedged), f"{'right' if base else ('honest about scope' if hedged else 'confident and wrong')}"
+                                               f"{'' if clean else ' — but C6/B2 red'}")
+    else:
+        na("E1", "not an honest-scope probe")
+    if norm_ws(final) and route in ("read", "survey") and not (probe and probe.get("honestScope")) and not looks_whole_library(question):
+        hh = SCOPE_HEDGE.search(final)
+        R["E2"] = ("FLAG", f"scope disclaimer on an ordinary question: \"{hh.group(0)}\"") if hh and re.search(r"whole library|entire library|can't count|cannot count|may not be (?:everything|all)|not all of your", final, re.I) else ("PASS", "")
+    else:
+        na("E2")
+    fx = fx1_violations(turn, plan) if turn else None
+    if fx is None:
+        na("FX1", "no COMPUTED FACTS section")
+    else:
+        res("FX1", not fx, "; ".join(fx[:3]) or "all fact lines verified")
 
     # ── W* voice (Brief CH-A1b) — graded on the committed answer (what the model said)
     if norm_ws(final):

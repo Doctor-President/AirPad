@@ -886,6 +886,25 @@ final class CorpusStore {
         await entryBlockTexts(nodeID: nodeID).joined(separator: "\n")
     }
 
+    /// Brief CI (CI-2, design §4) — the text the Librarian READS IN FULL: the entry's filled typed fields as
+    /// ONE leading line, then its block text. Typed fields never reach blocks (`BlockChunker` drops `.field`
+    /// / `.rating` — atomic values), so before this a recipe's "Cook time: 50 min" was invisible to the
+    /// Librarian (CI-0 P8c, 9/9 fail). Rendered by `FieldValueFormatter` — what the user sees on the card.
+    /// Blocks, embeddings and the card cache are unchanged (fields in cards/index → 1.1).
+    func readInFullText(nodeID: String) async -> String {
+        let body = await fullEntryText(nodeID: nodeID)
+        guard let line = typedFieldsLine(nodeID: nodeID) else { return body }
+        return body.isEmpty ? line : line + "\n" + body
+    }
+
+    /// `Fields: Serves: 4–6 · Cook time: 50 min · Rating: 4/5` — filled values only, in the entry's item
+    /// order; a field whose definition is missing is omitted (never shown raw). nil when there are none.
+    func typedFieldsLine(nodeID: String) -> String? {
+        guard let node = nodes.first(where: { $0.id == nodeID }) else { return nil }
+        return ComputedFacts.fieldsLine(items: node.items, definition: { [self] in fieldDefinition(id: $0) },
+                                        resolveNodeTitle: { [nodes] id in nodes.first(where: { $0.id == id })?.title })
+    }
+
     /// Brief S3 — every block of `nodeIDs` scored against `query`, regardless of
     /// the relevance bar, so a named entry's passages can be PINNED to the front of
     /// the Ask candidate list. Thin wrapper over the block retriever (one BGE embed
@@ -1077,6 +1096,11 @@ final class CorpusStore {
                 }
                 // THE LEVER — Stage 1 (ws-lever.md § C6). Pure in-memory schema /
                 // recordProposal self-test; writes nothing to the corpus.
+                // Brief CI (CI-2) — the computed-facts layer's pure self-test (parser, ages, windows, matchers,
+                // fields line, determinism). Pure in-memory; no corpus access.
+                if ProcessInfo.processInfo.arguments.contains("-ComputedFactsSelfTest") {
+                    NSLog("[ComputedFactsSelfTest] %@", ComputedFactsSelfTest.run())
+                }
                 if ProcessInfo.processInfo.arguments.contains("-ProposalSelfTest") {
                     NSLog("[ProposalSelfTest] %@", ProposalSelfTest.run())
                 }
@@ -2168,11 +2192,12 @@ final class CorpusStore {
             // ── Brief CI-0 (computed-facts PROBE) — store-level only, each a fresh chat; graded by gauntlet.py from
             // the render tap against fixture ground truth in cases.json (`probe`). Route-agnostic on purpose: the
             // probe measures whether the ANSWER gets the fact right, whatever the retrieval did.
-            Case(id: "P1a", what: "CI-0 P1 ranges: out-of-range values (fresh chat)", question: "Which of my lab values are out of range?", expectRoute: ""),
+            Case(id: "P1a", what: "CI-0 P1 ranges: out-of-range values (fresh chat) — CI-2 range routing → READ", question: "Which of my lab values are out of range?", expectRoute: "read"),
             Case(id: "P1b", what: "CI-0 P1 ranges: is HDL 43 (>40) in range", question: "Is my HDL in the normal range?", expectRoute: ""),
             Case(id: "P2a", what: "CI-0 P2 dates: window 'last month'", question: "What did I write last month?", expectRoute: ""),
             Case(id: "P2b", what: "CI-0 P2 dates: age of a dated entry", question: "When did Mara call me about Thanksgiving, and how long ago was that?", expectRoute: ""),
             Case(id: "P2c", what: "CI-0 P2 dates: most recent entry about X", question: "What's my most recent entry about Mara?", expectRoute: ""),
+            Case(id: "P2d", what: "CI-2 P2 dates: age of a NAMED entry (target in the packet)", question: "How long ago did I write my entry Mara called about Thanksgiving?", expectRoute: "read"),
             Case(id: "P3a", what: "CI-0 P3 counting", question: "How many of my entries mention Mara?", expectRoute: ""),
             Case(id: "P3b", what: "CI-0 P3 counting", question: "How many of my entries mention my Bolex?", expectRoute: ""),
             Case(id: "P4a", what: "CI-0 P4 ordering: oldest about X", question: "What's my oldest entry about Mara?", expectRoute: ""),
@@ -2185,7 +2210,10 @@ final class CorpusStore {
             Case(id: "P7b", what: "CI-0 P7 exact quotes", question: "What exactly did I say about the Bolex being dandori?", expectRoute: ""),
             Case(id: "P8a", what: "CI-0 P8 units: seconds to minutes", question: "How many minutes of film do I get from one wind of my Bolex?", expectRoute: ""),
             Case(id: "P8b", what: "CI-0 P8 units: lb to grams", question: "How many grams of tomatillos does my Enchiladas Suizas recipe call for?", expectRoute: ""),
-            Case(id: "P8c", what: "CI-0 P8 units: TYPED field (duration) — not in the packet today", question: "How long does my Enchiladas Suizas recipe take to cook, in minutes?", expectRoute: ""),
+            Case(id: "P8c", what: "CI-0 P8 units: TYPED field (duration) — CI-2 puts typed fields in the read text", question: "How long does my Enchiladas Suizas recipe take to cook, in minutes?", expectRoute: ""),
+            // CI-2 routing regressions (Companion): bare high/low WITHOUT a measurement word must stay SURVEY.
+            Case(id: "RG-high", what: "CI-2 routing regression: 'high points' is not a range question", question: "What were the high points of my year?", expectRoute: "survey"),
+            Case(id: "RG-low", what: "CI-2 routing regression: 'felt low' is not a range question", question: "Why have I felt low lately?", expectRoute: "survey"),
         ]
 
         NSLog("[Gauntlet] START provider=%@ window=%d nodes=%d userNodes=%d cases=%d",

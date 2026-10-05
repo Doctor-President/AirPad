@@ -429,7 +429,7 @@
           "kind": "probe",
           "category": "P1 ranges",
           "question": "Which of my lab values are out of range?",
-          "expectRoute": "",
+          "expectRoute": "read",
           "probe": {
             "kind": "ranges",
             "evidence": [
@@ -514,6 +514,21 @@
           }
         },
         {
+          "id": "P2d",
+          "kind": "probe",
+          "category": "P2 dates",
+          "question": "How long ago did I write my entry Mara called about Thanksgiving?",
+          "expectRoute": "read",
+          "probe": {
+            "kind": "age",
+            "date": "2025-11-18",
+            "today": "2026-10-05",
+            "evidence": [
+              "2025-11-18"
+            ]
+          }
+        },
+        {
           "id": "P3a",
           "kind": "probe",
           "category": "P3 counting",
@@ -524,7 +539,8 @@
             "value": 5,
             "evidence": {
               "countTerm": "Mara"
-            }
+            },
+            "honestScope": true
           }
         },
         {
@@ -538,7 +554,8 @@
             "value": 5,
             "evidence": {
               "countTerm": "Bolex"
-            }
+            },
+            "honestScope": true
           }
         },
         {
@@ -553,7 +570,8 @@
             "title": "Mara called about Thanksgiving",
             "evidence": [
               "Mara called about Thanksgiving"
-            ]
+            ],
+            "honestScope": true
           }
         },
         {
@@ -568,7 +586,8 @@
             "title": "Gnosticism, Esotericism",
             "evidence": [
               "Gnosticism"
-            ]
+            ],
+            "honestScope": true
           }
         },
         {
@@ -596,7 +615,8 @@
             "title": "DEEP DIVE - Linguistics",
             "evidence": [
               "Dawkins"
-            ]
+            ],
+            "honestScope": true
           }
         },
         {
@@ -663,7 +683,9 @@
             "kind": "quote",
             "evidence": [
               "Shooting on the Bolex is dandori"
-            ]
+            ],
+            "honestScope": true,
+            "truthQuote": "Shooting on the Bolex is dandori"
           }
         },
         {
@@ -726,6 +748,20 @@
               "__typed field: never in the packet__"
             ]
           }
+        },
+        {
+          "id": "RG-high",
+          "kind": "probe-regression",
+          "category": "routing regression",
+          "question": "What were the high points of my year?",
+          "expectRoute": "survey"
+        },
+        {
+          "id": "RG-low",
+          "kind": "probe-regression",
+          "category": "routing regression",
+          "question": "Why have I felt low lately?",
+          "expectRoute": "survey"
         }
       ]
     }

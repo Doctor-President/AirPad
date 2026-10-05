@@ -804,11 +804,15 @@ final class LibrarianState {
         // READ / SURVEY — the retrieved context, then the question LAST (BU4: no volatile text at the
         // top; the stable system-prompt + packet prefix is what Ollama can KV-cache across turns).
         let context = buildAskContext(candidates: candidates, store: store)
+        // Brief CI — COMPUTED FACTS (today, ages, ranges, scope) at the TAIL, just before the question:
+        // it carries today + ages (volatile daily), so it stays out of BU4's cacheable prefix.
+        let facts = computedFacts(query: query, candidates: candidates, store: store,
+                                  allowance: Self.factsAllowance(budget: budget))
         let modelText = """
         Some of your notes were retrieved for you — they may or may not be relevant to the question:
 
         \(context)
-
+        \(facts.map { "\n" + $0 + "\n" } ?? "")
         Question: \(query)
         """
         let chips = Self.citationChips(from: candidates, store: store)
@@ -821,7 +825,8 @@ final class LibrarianState {
             systemPrompt: askSystemPrompt(hasReads: candidates.contains { $0.isEntryRead },
                                           hasCards: candidates.contains { $0.isCard },
                                           hasPassages: candidates.contains { !$0.isCard && !$0.isEntryRead },
-                                          hasPartial: receipt?.partial == true),
+                                          hasPartial: receipt?.partial == true,
+                                          hasFacts: facts != nil),
             citations: chips, alwaysCiteIndices: alwaysCite, readReceipt: receipt,
             mode: (receipt?.readInFull ?? 0) > 0 ? "read" : "survey",
             readNodeIDs: candidates.filter { $0.isEntryRead }.map { $0.nodeID },
@@ -868,7 +873,10 @@ final class LibrarianState {
     /// the prompt + chips and sends with the receipt.
     private func corpusCandidates(query: String, store: CorpusStore, chat: ChatSession) async -> (candidates: [NumberedCandidate], empty: Bool, receipt: ChatSession.Message.ReadReceipt?) {
         // BN3 — the char budget for everything retrieved, DERIVED from the active backend's window.
-        let budget = askContextCharBudget()
+        // Brief CI §1.4 — minus the COMPUTED FACTS allowance, reserved BEFORE retrieval fills the packet, so
+        // packet + facts can never exceed the plan's budget (I4 holds with the facts counted as packet).
+        let fullBudget = askContextCharBudget()
+        let budget = fullBudget - Self.factsAllowance(budget: fullBudget)
 
         // S2 — retrieval query = current question + the previous USER turn in this chat (first turn:
         // bare question), so a follow-up keeps its subject.
@@ -928,6 +936,14 @@ final class LibrarianState {
         // BN2 — rank ENTRIES by aggregate score, then decide READ vs SURVEY.
         let ranking = Self.entryRanking(passages: general)
         let dominant = Self.dominantReadEntry(ranking: ranking, store: store)   // nil → no single dominator
+        // Brief CI §2.6 — a RANGE question reads its range TABLE. "Which of my lab values are out of range?"
+        // shares one title token with "Medical – Lab Tests" (title match needs 2) and the terse table embeds
+        // too weakly to dominate → it surveyed a "Result 17.6" fragment (CI-0 P1a, 9/9). Narrowed (Companion):
+        // explicit range phrasing, or a bare high/low/elevated/abnormal only WITH a measurement word; and the
+        // range-bearing entry (≥3 parsed result rows) must be in the TOP-5 retrieved.
+        let rangeTarget: String? = (named || dominant != nil || !Self.isRangeRoutingEnabled
+                                    || !ComputedFacts.looksLikeRangeQuestion(query))
+            ? nil : await Self.rangeBearingTarget(ranking: ranking, cards: cards, store: store)
 
         // ★ Brief BX — CARRY THE WORKING SET across follow-ups. When a prior turn left entries open, a
         // new turn RE-READS them (same targets → same packet prefix → Ollama KV-cached → fast) UNLESS
@@ -985,7 +1001,7 @@ final class LibrarianState {
             return (candidates, empty, empty ? nil : receipt)
         }
 
-        if named || dominant != nil {
+        if named || dominant != nil || rangeTarget != nil {
             // READ targets + BS1 AMBIGUITY. A pin reads all pinned entries; a title match that named
             // ONE entry reads it; a title match that named 2+ entries reads the TOP by aggregate
             // passage score and lists the rest as CHIPS (BS1 — the user still sees the alternatives
@@ -1003,8 +1019,10 @@ final class LibrarianState {
                     readTargets = [ranked[0]]
                     ambiguousChipIDs = Array(ranked.dropFirst().prefix(4))   // the other named entries → chips
                 }
+            } else if let dominant {
+                readTargets = [dominant]
             } else {
-                readTargets = [dominant!]
+                readTargets = [rangeTarget!]
             }
             let readSet = Set(readTargets)
             // Non-target passages become labelled skim passages; non-target cards become one-line
@@ -1028,7 +1046,7 @@ final class LibrarianState {
             carriedCandidates = candidates; carriedChatID = chat.id
             chat.workingSet = candidates.filter { $0.isEntryRead }.map { $0.nodeID }
             let empty = candidates.isEmpty
-            let mode = named ? (pinning ? "read(pin)" : "read(title)") : "read(dominance)"
+            let mode = named ? (pinning ? "read(pin)" : "read(title)") : (dominant != nil ? "read(dominance)" : "read(range)")
             Self.logRouting(turnIndex: turnIndex, query: retrievalQuery, mode: mode,
                             candidates: candidates, receipt: receipt, budget: budget,
                             scope: selectedScope, store: store)
@@ -1128,6 +1146,30 @@ final class LibrarianState {
     /// artefact — a broad theme with many entries, not a single-entry target → stays SURVEY. (A named
     /// saved-article read, e.g. the Villanova link, still routes via a pin, not dominance.) Returns
     /// the dominant node id, or nil when no entry dominates.
+    /// Brief CI §2.6 — the TOP-5 retrieved entries (entry ranking first, then card order, de-duplicated) in a
+    /// TOTAL order (aggregate desc, node id asc — `entryRanking` alone has no tie-break); the first that is
+    /// RANGE-BEARING (≥ 3 confidently-parsed result rows in its read text) is read in full.
+    static func rangeBearingTarget(ranking: [(nodeID: String, aggregate: Float, top: Float, count: Int)],
+                                   cards: [CardMatch], store: CorpusStore) async -> String? {
+        var top: [String] = []
+        let ordered = ranking.sorted { $0.aggregate != $1.aggregate ? $0.aggregate > $1.aggregate : $0.nodeID < $1.nodeID }
+        for r in ordered where !top.contains(r.nodeID) { top.append(r.nodeID); if top.count == 5 { break } }
+        if top.count < 5 { for c in cards where !top.contains(c.nodeID) { top.append(c.nodeID); if top.count == 5 { break } } }
+        for id in top {
+            if ComputedFacts.rangeRows(in: await store.fullEntryText(nodeID: id)).count >= 3 { return id }
+        }
+        return nil
+    }
+
+    /// DEBUG A/B switch for the gauntlet: `-CIRangeRoutingOff YES` disables the §2.6 trigger.
+    static var isRangeRoutingEnabled: Bool {
+        #if DEBUG
+        return !UserDefaults.standard.bool(forKey: "CIRangeRoutingOff")
+        #else
+        return true
+        #endif
+    }
+
     static func dominantReadEntry(ranking: [(nodeID: String, aggregate: Float, top: Float, count: Int)], store: CorpusStore) -> String? {
         guard let leader = ranking.first else { return nil }
         guard leader.top >= 0.70, leader.count >= 2 else { return nil }
@@ -1213,7 +1255,7 @@ final class LibrarianState {
         // 1/2. Read targets in full (top, then second if it fits, …).
         for nodeID in readTargets {
             guard let node = store.nodes.first(where: { $0.id == nodeID }) else { continue }
-            let full = await store.fullEntryText(nodeID: nodeID)
+            let full = await store.readInFullText(nodeID: nodeID)   // Brief CI §4 — typed fields + block text
             let (num, wasCarried) = number(for: "full:\(nodeID)")
             let origin: NumberedCandidate.Origin = wasCarried ? .carried : .new
             let remaining = budget - used
@@ -1223,8 +1265,11 @@ final class LibrarianState {
                 used += full.count + overheadPerItem
             } else if out.isEmpty {
                 // The FIRST target doesn't fit → its best passages (today's behaviour), marked partial.
-                let text = await bestPassagesText(nodeID: nodeID, rankedPassages: rankedPassages,
-                                                  queryVector: queryVector, budget: max(0, remaining - overheadPerItem), store: store)
+                // Brief CI §4 — a PARTIAL read leads with the same typed-fields line (tiny, exact, high value).
+                let fieldsLine = store.typedFieldsLine(nodeID: nodeID).map { $0 + "\n" } ?? ""
+                let excerpts = await bestPassagesText(nodeID: nodeID, rankedPassages: rankedPassages,
+                                                      queryVector: queryVector, budget: max(0, remaining - overheadPerItem - fieldsLine.count), store: store)
+                let text = excerpts.isEmpty ? "" : fieldsLine + excerpts
                 if !text.isEmpty {
                     let e = EntryRead(nodeID: nodeID, title: node.title, text: text, score: aggregate(nodeID), partial: true)
                     out.append(NumberedCandidate(number: num, payload: .entry(e), origin: origin))
@@ -1479,6 +1524,9 @@ final class LibrarianState {
     /// (e.g. 4096 to reproduce FM's tight window on the Simulator, which has no FM). No-op when nil.
     var debugContextWindowOverride: Int? = nil
     #endif
+    /// Brief CI §1.4 — the COMPUTED FACTS allowance: min(1,200 tokens, 10% of the read budget), in chars.
+    static func factsAllowance(budget: Int) -> Int { min(1_200 * charsPerToken, budget / 10) }
+
     func askContextCharBudget(windowOverride: Int? = nil) -> Int {
         #if DEBUG
         let windowTokens = windowOverride ?? debugContextWindowOverride ?? ModelRouter.contextWindowTokens
@@ -2072,7 +2120,7 @@ final class LibrarianState {
     private var askSystemPrompt: String {
         // The LONGEST variant (every section present) — what the char budget reserves for. The prompt
         // actually sent is `askSystemPrompt(sections:)`, which describes ONLY what the packet contains.
-        askSystemPrompt(hasReads: true, hasCards: true, hasPassages: true, hasPartial: true)
+        askSystemPrompt(hasReads: true, hasCards: true, hasPassages: true, hasPartial: true, hasFacts: true)
     }
 
     /// Brief CH-A1b — the Librarian is ONE character across modes: this identity + voice paragraph opens the
@@ -2104,7 +2152,7 @@ final class LibrarianState {
     /// instruct still filed cholesterol 213 (flag H) as not out of range 3/3 → the "use the entry's flags" line, and
     /// "say what the entries say…" moves into the voice paragraph beside "say why it matters" (it hadn't landed on
     /// instruct's synthesis from the rules block).
-    private func askSystemPrompt(hasReads: Bool, hasCards: Bool, hasPassages: Bool, hasPartial: Bool) -> String {
+    private func askSystemPrompt(hasReads: Bool, hasCards: Bool, hasPassages: Bool, hasPartial: Bool, hasFacts: Bool = false) -> String {
         var below: String
         if hasReads {
             below = "Below the question, ENTRIES READ IN FULL holds the complete text of their most relevant entries — that's your main source, so answer from it directly and thoroughly."
@@ -2119,6 +2167,8 @@ final class LibrarianState {
         }
         var use = "How to use the entries: each is labelled with who wrote it (or where it was saved from) and its date. When asked about specific facts or figures, report them exactly and completely before interpreting. When an entry gives a reference range or a flag (H or L), \"out of range\" means outside that range — use the entry's own ranges and flags, not your own judgement of what's concerning. They're from the user's own library, so treat anything that genuinely helps as authoritative about their world — if they define a term, use their definition over a generic one. Cite each entry you draw on inline with its exact bracketed number, like [1] or [6] (never 'E6' or 'entry 6'); cite every entry you discuss, and only the ones you actually used."
         if hasPartial { use += " If a full entry is marked PARTIAL, only its best excerpts were included — answer from what's there and don't invent the rest." }
+        // Brief CI §1.3 — one rules sentence (not voice), only when the packet carries a COMPUTED FACTS section.
+        if hasFacts { use += " COMPUTED FACTS are worked out by the app from the entries: today's date, each entry's age, which values are in or out of their range, and how much of the library you are seeing. They are exact — use them instead of your own date math or range checks, and say what they say." }
         use += " Entries marked saved article, document or image text are things they collected, not their own words — for questions about their own views, answer from their entries and refer to collected sources as such. If an entry distinguishes an estimate from an actual figure, say which. Stay on what they asked: don't connect entries the question isn't about, and skip entries that don't help. If a fact isn't in the entries, say so briefly and answer from your general knowledge — that's a good answer. Never refuse, and never say you can't access the entries — just answer. Finish on your last sentence of prose — no References, Sources or Citations section; AirPad shows the citations itself."
         return [Self.librarianVoice, below, use, Self.librarianClosingVoice].joined(separator: "\n\n") + standingVoiceSuffix
     }
@@ -2396,6 +2446,31 @@ final class LibrarianState {
     /// (cards, one line each — breadth) → `PASSAGES` (block excerpts — depth). Each section is
     /// omitted when empty. The read-in-full section leads because "find, then read": the whole
     /// entries are what the answer comes from; cards/passages are what FOUND the rest.
+    /// Brief CI — the COMPUTED FACTS section for this packet (nil when it carries no fact). Pure given the
+    /// packet, the node dates, the scope size and today; `-CIToday yyyy-MM-dd` (DEBUG) pins today for tests.
+    private func computedFacts(query: String, candidates: [NumberedCandidate], store: CorpusStore, allowance: Int) -> String? {
+        let cal = ComputedFacts.calendar()
+        var today = Date()
+        #if DEBUG
+        if let s = UserDefaults.standard.string(forKey: "CIToday") {
+            let f = DateFormatter(); f.locale = Locale(identifier: "en_US_POSIX"); f.timeZone = cal.timeZone
+            f.dateFormat = "yyyy-MM-dd"
+            if let d = f.date(from: s) { today = cal.date(byAdding: .hour, value: 12, to: d) ?? d }
+        }
+        #endif
+        let entries: [ComputedFacts.PacketEntry] = candidates.map { c in
+            let node = store.nodes.first { $0.id == c.nodeID }
+            var readText: String? = nil
+            if case .entry(let e) = c.payload { readText = e.text }
+            return ComputedFacts.PacketEntry(number: c.number, nodeID: c.nodeID, title: node?.title ?? "Untitled",
+                                             created: node?.createdAt, readText: readText)
+        }
+        let noun: String = { if case .corpus = selectedScope { return "library" }; return "collection" }()
+        return ComputedFacts.build(.init(today: today, calendar: cal, question: query, entries: entries,
+                                         scopeTotal: store.nodes(in: selectedScope).count, scopeNoun: noun,
+                                         allowanceChars: allowance))
+    }
+
     private func buildAskContext(
         candidates: [NumberedCandidate],
         store: CorpusStore

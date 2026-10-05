@@ -55,7 +55,7 @@ final class LibrarianGauntletV2: XCTestCase {
             for t in g.turns {
                 let before = isDevice ? [] : turnFiles(out)
                 let answersBefore = isDevice ? app.descendants(matching: .any).matching(identifier: "chat.answer").count : 0
-                let lastAnswerBefore = isDevice ? (app.descendants(matching: .any).matching(identifier: "chat.answer").allElementsBoundByIndex.last?.label ?? "") : ""
+                let lastAnswerBefore = isDevice ? (screenOrdered(app.descendants(matching: .any).matching(identifier: "chat.answer")).last?.label ?? "") : ""
                 let t0 = Date()
                 var note = ""
                 switch t.action {
@@ -99,7 +99,7 @@ final class LibrarianGauntletV2: XCTestCase {
                                           "wallSec": Date().timeIntervalSince(t0)]
                 if !note.isEmpty { rec["driverNote"] = note }
                 if let e = ejectedAt { rec["ejectedAtEpoch"] = e; ejectedAt = nil }
-                if hungNote == nil { rec.merge(captureScreen(app)) { a, _ in a } }
+                if hungNote == nil { rec.merge(captureScreen(app, row: t.row, out: isDevice ? nil : out)) { a, _ in a } }
                 if hungNote == nil, isDevice, app.state != .runningForeground {
                     hungNote = "APP HUNG — the in-app self-watchdog exited the app during capture"; note = hungNote!; rec["driverNote"] = note
                 }
@@ -171,11 +171,31 @@ final class LibrarianGauntletV2: XCTestCase {
 
     // MARK: on-screen capture
 
-    private func captureScreen(_ app: XCUIApplication) -> [String: Any] {
+    /// Matches top-to-bottom as they sit ON SCREEN. Never trust accessibility-index order for "the latest":
+    /// the freeze fix's split stack (lazy history + eager latest exchange) lists the latest exchange first.
+    private func screenOrdered(_ q: XCUIElementQuery) -> [XCUIElement] {
+        q.allElementsBoundByIndex.sorted { $0.frame.minY < $1.frame.minY }
+    }
+
+    private func captureScreen(_ app: XCUIApplication, row: String, out: URL?) -> [String: Any] {
         var r: [String: Any] = [:]
         // Bring the end of the latest answer (and its footer) into the materialised region.
         for _ in 0..<6 { app.swipeUp(velocity: .fast) }
-        let answers = app.descendants(matching: .any).matching(identifier: "chat.answer").allElementsBoundByIndex
+        // ★ Ordered by ON-SCREEN position, never by accessibility index: since the follow-up freeze fix
+        // (`8dd63e1`: lazy history + an eager latest exchange below it) the accessibility tree lists the
+        // LATEST exchange FIRST, so `.last` read the PREVIOUS answer on every follow-up row (CH-A triage,
+        // proven with a screenshot: the screen was right, the capture was wrong). Same for the sources button.
+        let answers = screenOrdered(app.descendants(matching: .any).matching(identifier: "chat.answer"))
+        // `TEST_RUNNER_GAUNTLET_SHOTS=1` — capture DIAGNOSTICS: what is actually ON SCREEN (a screenshot) plus
+        // every answer element's frame + label head, top to bottom (CH-A triage: follow-up rows read
+        // the PREVIOUS answer after the freeze fix — screen truth vs accessibility order).
+        if let out, ProcessInfo.processInfo.environment["GAUNTLET_SHOTS"] == "1" {
+            try? app.screenshot().pngRepresentation.write(to: out.appendingPathComponent("screen-\(row).png"))
+            r["answerElements"] = answers.map { e -> [String: Any] in
+                let f = e.frame
+                return ["y": Int(f.minY), "h": Int(f.height), "hittable": e.isHittable, "head": String(e.label.prefix(60))]
+            }
+        }
         r["onScreenAnswer"] = answers.last?.label ?? NSNull()
         r["answerBubbleCount"] = answers.count
         r["errorBanner"] = app.buttons["Retry"].exists
@@ -183,7 +203,7 @@ final class LibrarianGauntletV2: XCTestCase {
         // Citation chips: expand the LATEST footer, read its rows, collapse it again so the next turn's
         // read can't pick up this message's rows.
         let showPred = NSPredicate(format: "label BEGINSWITH 'Show ' AND label ENDSWITH ' sources'")
-        let shows = app.buttons.matching(showPred).allElementsBoundByIndex
+        let shows = screenOrdered(app.buttons.matching(showPred))
         var chips: [String] = []
         if let show = shows.last, show.exists {
             r["sourcesHeader"] = show.label
@@ -235,7 +255,7 @@ final class LibrarianGauntletV2: XCTestCase {
             if q.count >= count { return true }
             // A lazy transcript drops off-screen bubbles from the a11y tree, so the count can stay flat even
             // though a new answer landed — a changed LAST answer is the same signal.
-            if let previous, let last = q.allElementsBoundByIndex.last?.label, !last.isEmpty, last != previous { return true }
+            if let previous, let last = screenOrdered(q).last?.label, !last.isEmpty, last != previous { return true }
             Thread.sleep(forTimeInterval: 1)
         }
         return false

@@ -121,6 +121,7 @@
 		588C140B790E7DD63A55BCC1 /* MediaPickerWrapper.swift in Sources */ = {isa = PBXBuildFile; fileRef = 894DD6E70D91D9E9B00246B9 /* MediaPickerWrapper.swift */; };
 		598AB294337257CEED19A5BC /* LinkEntryBody.swift in Sources */ = {isa = PBXBuildFile; fileRef = 4E72F7C5BEAD8D357C8976F7 /* LinkEntryBody.swift */; };
 		59D565CBEADBCAFF7FF2D755 /* CorpusPhysicsScene.swift in Sources */ = {isa = PBXBuildFile; fileRef = 1652D343DDB50759748BDE8F /* CorpusPhysicsScene.swift */; };
+		59DD09A4F2DB7EE37185D5E5 /* ComputedFacts.swift in Sources */ = {isa = PBXBuildFile; fileRef = A9BA50DDB57EE55DCCBE7FF1 /* ComputedFacts.swift */; };
 		5A03FDA3ADA663B72A753A5C /* CollectionCreationSheet.swift in Sources */ = {isa = PBXBuildFile; fileRef = 6123D1D38AF585588EBDF3F2 /* CollectionCreationSheet.swift */; };
 		5A4ACFE6BDA35A2F9B792DDD /* KeyboardDismissModifier.swift in Sources */ = {isa = PBXBuildFile; fileRef = E1CA7EBB8E00D6EB0B60EBCE /* KeyboardDismissModifier.swift */; };
 		5E5D595A3C1F9CA4851D05A1 /* LibrarianSurface.swift in Sources */ = {isa = PBXBuildFile; fileRef = 6005A33A7E6D6D1064AE551C /* LibrarianSurface.swift */; };
@@ -217,6 +218,7 @@
 		A2C5037009821DE621FC3B03 /* LiveDictationService.swift in Sources */ = {isa = PBXBuildFile; fileRef = 9113DD140BEEB334F5D52DA8 /* LiveDictationService.swift */; };
 		A3E698D765C180092E891E83 /* VerticalScrollView.swift in Sources */ = {isa = PBXBuildFile; fileRef = 45A1B85265CDBCD7A2E66288 /* VerticalScrollView.swift */; };
 		A4DA6CD119A6F58B875F0923 /* bigshouldersbold_msdf.json in Resources */ = {isa = PBXBuildFile; fileRef = 2674695478CBBF59D690FC8A /* bigshouldersbold_msdf.json */; };
+		A52E27E44371802AA6F21B1A /* ComputedFactsSelfTest.swift in Sources */ = {isa = PBXBuildFile; fileRef = 9F3E8A865C93E644AEFCF299 /* ComputedFactsSelfTest.swift */; };
 		A795741744098AF3B305335B /* CardBlurTest.swift in Sources */ = {isa = PBXBuildFile; fileRef = B65719255B960A7B6876EC2A /* CardBlurTest.swift */; };
 		A859CCDDA5AEF40491043CDA /* UMAPFuzzySet.swift in Sources */ = {isa = PBXBuildFile; fileRef = 7B05C305C5A28D74F771BA11 /* UMAPFuzzySet.swift */; };
 		AA9443964465D51E902BE973 /* TagPillRail.swift in Sources */ = {isa = PBXBuildFile; fileRef = 586FC4429B40614A3F7EBDC6 /* TagPillRail.swift */; };
@@ -558,12 +560,14 @@
 		9C401DD21DDB057255BB02AD /* SampleLibrarySeederSelfTest.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = SampleLibrarySeederSelfTest.swift; sourceTree = "<group>"; };
 		9D1E4579C38329B81D4436DD /* SubstrateClusterRegistry.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = SubstrateClusterRegistry.swift; sourceTree = "<group>"; };
 		9D21AB3DEE91993C6F039833 /* AirPad.app */ = {isa = PBXFileReference; includeInIndex = 0; lastKnownFileType = wrapper.application; path = AirPad.app; sourceTree = BUILT_PRODUCTS_DIR; };
+		9F3E8A865C93E644AEFCF299 /* ComputedFactsSelfTest.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ComputedFactsSelfTest.swift; sourceTree = "<group>"; };
 		A041B55F9CB72A7C37989EF0 /* cinzelbold_msdf.png */ = {isa = PBXFileReference; lastKnownFileType = image.png; path = cinzelbold_msdf.png; sourceTree = "<group>"; };
 		A1213E716A9E302D0B777EDD /* EntryCard.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = EntryCard.swift; sourceTree = "<group>"; };
 		A662760759EB979E56CF6090 /* CEControlRouting.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = CEControlRouting.swift; sourceTree = "<group>"; };
 		A68F48BA8AA932943F118533 /* CardEmbeddingParityTest.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = CardEmbeddingParityTest.swift; sourceTree = "<group>"; };
 		A78147F82EB55E186C5934A2 /* AlphabetScrubber.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = AlphabetScrubber.swift; sourceTree = "<group>"; };
 		A9247083C950538B08FD4D00 /* RenameCollectionSheet.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = RenameCollectionSheet.swift; sourceTree = "<group>"; };
+		A9BA50DDB57EE55DCCBE7FF1 /* ComputedFacts.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ComputedFacts.swift; sourceTree = "<group>"; };
 		A9C57830B6D6683951BF3F6E /* CaretTapTest.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = CaretTapTest.swift; sourceTree = "<group>"; };
 		AA69D329E4CBB77BDB1B9345 /* SubstrateService.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = SubstrateService.swift; sourceTree = "<group>"; };
 		AC63EC73AD8EFD037637381F /* FieldPreset.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = FieldPreset.swift; sourceTree = "<group>"; };
@@ -810,6 +814,8 @@
 				A68F48BA8AA932943F118533 /* CardEmbeddingParityTest.swift */,
 				FA68215D2065B3D02251352C /* CardEmbeddingService.swift */,
 				39A4F2C5815649CFC465EF1F /* ClipboardContentRouter.swift */,
+				A9BA50DDB57EE55DCCBE7FF1 /* ComputedFacts.swift */,
+				9F3E8A865C93E644AEFCF299 /* ComputedFactsSelfTest.swift */,
 				04C9DF59B5CB0AF40373A81B /* DocumentExtractionService.swift */,
 				BC2397AFB193E7A4EF7411E4 /* EnrichmentGateSelfTest.swift */,
 				6CEB84A4A23D03CBE6C82507 /* FolksonomyDiagnostic.swift */,
@@ -1587,6 +1593,8 @@
 				AD35DBA4F029E70A9B72068F /* CollectionPickerMenu.swift in Sources */,
 				B3905779F4DC65E2E8AFB76A /* CollectionPillRail.swift in Sources */,
 				B73EA7AE6A764D173EA47BD8 /* CollectionView.swift in Sources */,
+				59DD09A4F2DB7EE37185D5E5 /* ComputedFacts.swift in Sources */,
+				A52E27E44371802AA6F21B1A /* ComputedFactsSelfTest.swift in Sources */,
 				50D317CEDE9F97C21ED80ECF /* ContentView.swift in Sources */,
 				92F35A9326AC198E2D28E79B /* CorpusIndex.swift in Sources */,
 				59D565CBEADBCAFF7FF2D755 /* CorpusPhysicsScene.swift in Sources */,

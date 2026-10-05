@@ -108,8 +108,11 @@ def title_main(title):
     return re.split(r"[:—·]", title or "")[0]
 
 def title_mentioned(title, text):
-    """Mirror of ChatSession.titleMentioned — the main part of a title, normalized, ≥4 chars."""
-    needle = title_norm(title_main(title))
+    """Mirror of ChatSession.titleMentioned — the main part of a title, normalized, ≥4 chars — EXCEPT a
+    one-word main part ("Feature" of "Feature: Remote Connect") is too generic to count as naming the entry:
+    then the whole title is required (found as a false C3 in CH-A A1)."""
+    main = title_main(title)
+    needle = title_norm(main if len(title_norm(main).split()) >= 2 or title_norm(main) == title_norm(title) else title)
     if len(needle) < 4:
         return False
     return needle in title_norm(text)
@@ -181,9 +184,26 @@ def parse_ps_log(path):
             ts = float(parts[0])
         except ValueError:
             continue
-        loaded = [x.split("@", 1) for x in (parts[1].split(",") if len(parts) > 1 and parts[1] else [])]
-        rows.append((ts, [(a, b) for a, b in loaded]))
+        # `name@digest[@size_vram@context_length]` (size/ctx added for test 4's resident-memory read)
+        loaded = [x.split("@") for x in (parts[1].split(",") if len(parts) > 1 and parts[1] else [])]
+        rows.append((ts, [(f[0], f[1]) for f in loaded if len(f) >= 2]))
     return rows
+
+def resident_sizes(path):
+    """{model: (max size_vram bytes, context_length)} seen in ps.log — test 4's resident-memory read."""
+    out = {}
+    if not path or not os.path.exists(path):
+        return out
+    for line in open(path):
+        parts = line.rstrip("\n").split("\t")
+        for x in (parts[1].split(",") if len(parts) > 1 and parts[1] else []):
+            f = x.split("@")
+            if len(f) >= 4:
+                size, ctx = int(f[2] or 0), int(f[3] or 0)
+                if size > out.get(f[0], (0, 0))[0]:
+                    out[f[0]] = (size, ctx)
+    return out
+
 
 def iso_epoch(s):
     try:
@@ -194,7 +214,7 @@ def iso_epoch(s):
 
 # ─────────────────────────── grading ───────────────────────────
 
-def grade_row(exp, turn, ui, prev_turn, host, ps, versions, cases_meta):
+def grade_row(exp, turn, ui, prev_turn, host, ps, versions, cases_meta, store=False):
     """→ dict(results={grader: (status, detail)}, stats={…}). status ∈ PASS | FAIL | ABORT | N/A."""
     R = {}
     def res(g, ok, detail="", abort=False):
@@ -229,6 +249,7 @@ def grade_row(exp, turn, ui, prev_turn, host, ps, versions, cases_meta):
     route = plan.get("mode") or "(none)"
     tag = req_tag(turn.get("requestID", ""))
     h = host.get(tag, {})
+    stats["fullTextHunts"] = len(re.findall(r"full text|read in full|don'?t have the (?:full|complete)|we don'?t have", (thinking or "").lower()))
     stats.update(route=route, chips=len(cites), frames=len(frames), thinkingChars=len(thinking),
                  answerChars=len(final), elapsedMs=turn.get("elapsedMs"), loadMs=h.get("loadMs"),
                  ttftMs=h.get("ttftMs"), evalTokens=h.get("eval"), modelAnswered=h.get("model"))
@@ -275,7 +296,7 @@ def grade_row(exp, turn, ui, prev_turn, host, ps, versions, cases_meta):
     res("V6", bool(versions.get("ollama")) and bool(versions.get("host") or replay),
         f"ollama={versions.get('ollama')} host={versions.get('host')}", abort=True)
     # ── V7 cold
-    if exp.get("cold") and not replay:
+    if exp.get("cold") and not replay and not store:
         ej = ui.get("ejectedAtEpoch")
         t0 = iso_epoch(turn.get("startedAt", "")) or 0
         between = [loaded for ts, loaded in ps if ej and ej + 1 <= ts <= t0]
@@ -285,7 +306,9 @@ def grade_row(exp, turn, ui, prev_turn, host, ps, versions, cases_meta):
     else:
         na("V7")
 
-    # ── F* stream
+    # ── F* stream (store pre-screen has no UI → no frames: N/A, not PASS)
+    if store:
+        frames = []
     fr = [(i, f, hits(f, REASONING)) for i, f in enumerate(frames)]
     bad = [(i, hs) for i, f, hs in fr if hs]
     res("F1", not bad, f"first reasoning frame #{bad[0][0]}: {bad[0][1][:3]}" if bad else f"{len(frames)} frames clean")
@@ -310,6 +333,9 @@ def grade_row(exp, turn, ui, prev_turn, host, ps, versions, cases_meta):
                 retract = (i, where, gone[:90], len(fn) - k)
     res("F4", retract is None,
         f"frame #{retract[0]}: {retract[3]} displayed chars later {retract[1]}: \"{retract[2]}…\"" if retract else "")
+    if store:
+        for g in ("F1", "F2", "F3", "F4"):
+            na(g, "store pre-screen (no UI frames)")
 
     # ── A* final answer as shown (graded on BOTH the on-screen text and the committed text)
     both = shown + "\n" + final
@@ -331,7 +357,9 @@ def grade_row(exp, turn, ui, prev_turn, host, ps, versions, cases_meta):
         res("A6", got >= exp["minFacts"], f"facts {got}/{exp['minFacts']} required")
     else:
         na("A6", "no required facts")
-    if shown or final:
+    if store:
+        na("A7", "store pre-screen (no screen)")
+    elif shown or final:
         # Letters only: the on-screen label joins blocks with ", ", renders [n] as bare superscript
         # digits and drops markdown — none of which is a content difference.
         letters = lambda x: re.sub(r"[^a-z]", "", (x or "").lower())
@@ -368,16 +396,25 @@ def grade_row(exp, turn, ui, prev_turn, host, ps, versions, cases_meta):
         titled = [c for c in cand if c.get("title") and title_mentioned(c["title"], sent)]
         if not titled:
             continue
-        for m in re.finditer(r"\[(\d+)\]", sent):
+        prev_end = 0
+        for m in re.finditer(r"\[(\d+)(?:\s*[–-]\s*\d+)?\]", sent):
             n = int(m.group(1))
+            seg_start, prev_end = prev_end, m.end()   # only the text since the PREVIOUS marker is "beside" this one
             target = cite_by_idx.get(n)
             if not target:
                 continue
             tnode = target.get("nodeID")
             if any(c.get("nodeID") == tnode for c in titled):
                 continue
-            pre = sent[:m.start()]
-            near = [c for c in titled if title_norm(title_main(c["title"])) in title_norm(pre[-120:])]
+            # The cited entry is itself what the sentence talks about (≥2 shared title words, e.g. a heading
+            # "Self-Knowledge Through Relationships [1][2][3]" grouping the near-duplicate "Self-awareness
+            # Through Relationships" [2]) → a legitimate grouped citation, not a label mismatch. Found as a
+            # false FAIL on qwen3:8b in CH-A A1; a false FAIL costs as much as a false PASS.
+            tt = content_tokens(target.get("title", ""))
+            if len(tt & content_tokens(strip_markers(sent))) >= min(2, len(tt)):
+                continue
+            pre = sent[seg_start:m.start()]
+            near = [c for c in titled if title_mentioned(c["title"], pre)]
             if near:
                 c3.append(f"'{title_main(near[-1]['title'])[:28]}' [{n}] → chip is '{target.get('title','')[:28]}'")
     res("C3", not c3, "; ".join(c3[:3]))
@@ -388,17 +425,23 @@ def grade_row(exp, turn, ui, prev_turn, host, ps, versions, cases_meta):
     # its [n] actually talks about it (shares a title word, or ≥2 content words of its snippet). A bare
     # [n] on a sentence about something else is NOT discussion — that is the mis-citation family.
     sentences = re.split(r"(?<=[.!?\n])\s+", final)
+    # Narrowed after CH-A A1 (two false FAILs on qwen3:8b — a paraphrase of an entry's content can't be
+    # judged from its title + an 80-char snippet). C4 now fires only on clear evidence; paraphrase quality
+    # is CC's per-row read: (a) a phantom chip — never cited inline, never named, not read; or (b) cited
+    # ONLY in sentences that name a DIFFERENT entry and share nothing with this entry's title or snippet.
     def discussed(c):
         if title_mentioned(c.get("title", ""), final) or c.get("nodeID") in read_nodes:
             return True
+        citing = [s for s in sentences if f"[{c['index']}]" in s]
+        if not citing:
+            return False                                   # (a) phantom
         tt, st = content_tokens(c.get("title", "")), content_tokens(c.get("snippet", ""))
-        for sent in sentences:
-            if f"[{c['index']}]" not in sent:
-                continue
+        for sent in citing:
             ws = content_tokens(strip_markers(sent))
-            if tt & ws or len(st & ws) >= 2:
+            names_other = any(o.get("nodeID") != c.get("nodeID") and title_mentioned(o.get("title", ""), sent) for o in cand)
+            if not names_other or (tt | st) & ws:
                 return True
-        return False
+        return False                                       # (b) only beside another named entry, nothing shared
     c4 = [c for c in cites if not discussed(c)]
     res("C4", not c4, "; ".join(f"chip [{c['index']}] '{c.get('title','')[:30]}' not discussed where cited" for c in c4[:3]))
     cand_nodes = {c.get("nodeID") for c in cand}
@@ -410,7 +453,7 @@ def grade_row(exp, turn, ui, prev_turn, host, ps, versions, cases_meta):
         if key not in seen_nodes:
             seen_nodes.add(key); dedup_titles.append(c.get("title", ""))
     screen_chips = ui.get("onScreenChips") or []
-    mism = len(screen_chips) != len(dedup_titles) or any(t and t not in s for t, s in zip(dedup_titles, screen_chips))
+    mism = (not store) and (len(screen_chips) != len(dedup_titles) or any(t and t not in s for t, s in zip(dedup_titles, screen_chips)))
     res("C5", not outside and not mism,
         ("chip outside packet: " + ", ".join(c.get("title", "")[:24] for c in outside) + "; " if outside else "")
         + (f"on-screen chips {len(screen_chips)} ≠ committed {len(dedup_titles)}" if mism else ""))
@@ -419,7 +462,7 @@ def grade_row(exp, turn, ui, prev_turn, host, ps, versions, cases_meta):
     # ── T1 thinking OFF honesty
     raw_think = sum(len(d.get("s", "")) for d in raw if d.get("ch") == "thinking")
     if not exp["think"]:
-        res("T1", not thinking and raw_think == 0 and not ui.get("thoughtHeaderPresent"),
+        res("T1", not thinking and raw_think == 0 and not (ui.get("thoughtHeaderPresent") and not store),
             f"Thinking OFF but thought-block={len(thinking)} chars, thinking-channel={raw_think} chars, header={'shown' if ui.get('thoughtHeaderPresent') else 'absent'}")
     else:
         na("T1", f"Thinking ON ({len(thinking)} chars of thought)")
@@ -518,14 +561,14 @@ def grade_dir(run_dir, quiet=False):
 
 
 def write_table(run_dir, exp, out):
-    lines = ["| row | case | think | status | route | chips (native/rescue) | TTFT | load | eval tok | think chars | red graders |",
-             "|---|---|---|---|---|---|---|---|---|---|---|"]
+    lines = ["| row | case | think | status | route | chips (native/rescue) | TTFT | load | eval tok | think chars | full-text hunts | red graders |",
+             "|---|---|---|---|---|---|---|---|---|---|---|---|"]
     for row in sorted(out):
         g, e, s = out[row], exp["rows"][row], out[row]["stats"]
         reds = [f"{k}:{d}" for k, (st, d) in g["results"].items() if st in ("FAIL", "ABORT")]
         lines.append(f"| {row} | {e['case']} | {'on' if e['think'] else 'off'} | {g['status']} | {s.get('route','')} | "
                      f"{s.get('chips','')} ({s.get('nativeMarkers','')}/{'Y' if s.get('titleRescue') else 'n'}) | "
-                     f"{s.get('ttftMs','')} | {s.get('loadMs','')} | {s.get('evalTokens','')} | {s.get('thinkingChars','')} | "
+                     f"{s.get('ttftMs','')} | {s.get('loadMs','')} | {s.get('evalTokens','')} | {s.get('thinkingChars','')} | {s.get('fullTextHunts','')} | "
                      f"{'<br>'.join(reds) if reds else '—'} |")
     # R1 — aggregate (case × think) over runs: 3/3 or FAIL
     agg = {}
@@ -539,6 +582,47 @@ def write_table(run_dir, exp, out):
             "INVALID" if "INVALID" in sts else ("PENDING-READ" if set(sts) <= {"PASS", "PENDING-READ"} and len(sts) >= exp.get("runs", 3) else "FAIL"))
         lines.append(f"| {c} | {'on' if t else 'off'} | {' '.join(sts)} | {a} |")
     open(os.path.join(run_dir, "table.md"), "w").write("\n".join(lines) + "\n")
+
+
+def grade_store(pass_dir, model, digest):
+    """Store-level PRE-SCREEN (`-LibrarianGauntlet` + render tap, no UI): grade every case's turn with the
+    same graders; UI-only graders (F*, A7, on-screen half of C5, the Thought-process header) are N/A."""
+    cm = json.load(open(os.path.join(HERE, "cases.json")))
+    meta = {c["id"]: c for chat in cm["chats"] for c in chat["cases"]}
+    sr = load_json(os.path.join(pass_dir, "store-rows.json"), {"rows": [], "think": False})
+    think = bool(sr.get("think"))
+    host = parse_host_log(os.path.join(pass_dir, "host.log"))
+    ps = parse_ps_log(os.path.join(pass_dir, "ps.log"))
+    versions = load_json(os.path.join(pass_dir, "versions.json"), {})
+    verdicts = load_json(os.path.join(pass_dir, "verdicts.json"), {})
+    turns = {}
+    for p in glob.glob(os.path.join(pass_dir, "turn-*.json")):
+        t = load_json(p)
+        if t:
+            turns[t["seq"]] = t
+    exp_rows, out = {}, {}
+    for r in sr["rows"]:
+        c = meta.get(r["case"], {"id": r["case"]})
+        row = f"{r['case']}.{'on' if think else 'off'}.store"
+        e = {k: v for k, v in c.items() if k != "what"}
+        if c.get("facts") == "panel":
+            e["mustContain"] = cm["panel"]
+        e.update(case=r["case"], think=think, run="store", model=model, digest=digest, replay=False)
+        exp_rows[row] = e
+        turn = turns.get(r["seq"])
+        prev = turns.get(r["seq"] - 1) if (not r.get("newChat") or c.get("reask")) else None
+        ui = {"turnCompleted": turn is not None, "onScreenAnswer": (turn or {}).get("finalText"),
+              "errorBanner": bool((turn or {}).get("lastError"))}
+        g = grade_row(e, turn, ui, prev, host, ps, versions, cm, store=True)
+        g["status"] = row_status(g, verdicts.get(row))
+        g["verdict"] = verdicts.get(row)
+        g["answer"] = (turn or {}).get("finalText")
+        out[row] = g
+    exp = {"model": model, "digest": digest, "runs": 1, "rows": exp_rows}
+    json.dump(exp, open(os.path.join(pass_dir, "expected.json"), "w"), indent=2, ensure_ascii=False)
+    json.dump(out, open(os.path.join(pass_dir, "grades.json"), "w"), indent=2, ensure_ascii=False)
+    write_table(pass_dir, exp, out)
+    return out
 
 
 # ─────────────────────────── plan ───────────────────────────
@@ -690,6 +774,7 @@ def main():
     p.add_argument("--turn-timeout", type=int, default=900)
     p.add_argument("--base-args", required=True, help="JSON list")
     g = sub.add_parser("grade"); g.add_argument("run_dir")
+    gs = sub.add_parser("grade-store"); gs.add_argument("pass_dir"); gs.add_argument("--model", required=True); gs.add_argument("--digest", required=True)
     s = sub.add_parser("selftest"); s.add_argument("kb_dir")
     m = sub.add_parser("emit-md"); m.add_argument("--cases", default=os.path.join(HERE, "cases.json"))
     a = ap.parse_args()
@@ -702,6 +787,9 @@ def main():
     elif a.cmd == "grade":
         out = grade_dir(a.run_dir)
         print(open(os.path.join(a.run_dir, "table.md")).read())
+    elif a.cmd == "grade-store":
+        grade_store(a.pass_dir, a.model, a.digest)
+        print(open(os.path.join(a.pass_dir, "table.md")).read())
     elif a.cmd == "selftest":
         proven, unproven, problems, matrix = selftest(a.kb_dir)
         for item, row, red, _ in matrix:

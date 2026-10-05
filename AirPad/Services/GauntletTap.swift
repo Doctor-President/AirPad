@@ -202,6 +202,8 @@ final class GauntletTap: @unchecked Sendable {
         NSLog("[GauntletTap] wrote %@", url.lastPathComponent)
     }
 
+    /// The seq of the last turn written (store pre-screen maps cases → turn files with it).
+    var currentSeq: Int { lock.lock(); defer { lock.unlock() }; return seq }
     func resetGap() { lock.lock(); maxGapMs = 0; lastBeat = Date(); lock.unlock() }
     func maxGapSinceReset() -> Int { lock.lock(); defer { lock.unlock() }; return maxGapMs }
 

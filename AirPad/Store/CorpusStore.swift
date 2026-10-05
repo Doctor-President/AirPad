@@ -2159,6 +2159,12 @@ final class CorpusStore {
             Case(id: "BXe", what: "BX: 'capital of France' with a working set → answers Paris, no carry",
                  question: "What is the capital of France?", expectRoute: "",
                  mustContain: [["paris"]], minFacts: 1, newChat: false),
+            // ── Brief CH (Gauntlet v2 synthesis set) — store-level PRE-SCREEN rows; graded by
+            // scripts/gauntlet/gauntlet.py from the render tap (`-GauntletTapDir`). Each a fresh chat.
+            Case(id: "S1", what: "synthesis: connections across ideas", question: "What connections do you find between my ideas?", expectRoute: "survey"),
+            Case(id: "S2", what: "synthesis: tensions", question: "Where do my ideas pull against each other? What tensions do you see?", expectRoute: "survey"),
+            Case(id: "S3", what: "synthesis: recurring patterns across collections", question: "What recurring patterns run across my different collections?", expectRoute: "survey"),
+            Case(id: "S4", what: "synthesis: what am I circling?", question: "What am I circling around without saying it directly?", expectRoute: "survey"),
         ]
 
         NSLog("[Gauntlet] START provider=%@ window=%d nodes=%d userNodes=%d cases=%d",
@@ -2176,6 +2182,14 @@ final class CorpusStore {
         }
 
         let librarian = LibrarianState()
+        #if DEBUG
+        // Brief CH — `-GauntletThink YES` runs the whole store pre-screen with Thinking ON; `-GauntletOnly
+        // S1,S2` restricts it to those cases (an arm's synthesis-only pass). Every turn is also written by the
+        // render tap when `-GauntletTapDir` is set; the per-case seq is logged for gauntlet.py's store mode.
+        librarian.thinkEnabled = UserDefaults.standard.bool(forKey: "GauntletThink")
+        let onlyCases = Set((UserDefaults.standard.string(forKey: "GauntletOnly") ?? "").split(separator: ",").map(String.init))
+        var storeRows: [[String: Any]] = []
+        #endif
         librarian.selectedScope = .corpus
         librarian.corpusAware = true
         var chat = ChatSession()
@@ -2185,6 +2199,9 @@ final class CorpusStore {
         var previousTurn: LibrarianState.TurnPlan? = nil   // the prior case's plan (case 4's offer target)
 
         for c in cases {
+            #if DEBUG
+            if !onlyCases.isEmpty && !onlyCases.contains(c.id) { continue }
+            #endif
             if c.newChat { chat = ChatSession() }
             librarian.debugContextWindowOverride = c.fmWindow ? 4_096 : nil
             var forcedFailureMissing = false
@@ -2327,6 +2344,9 @@ final class CorpusStore {
                   usersBefore, usersAfter, elapsed)
             NSLog("[Gauntlet] CASE %@ receipt=%@", c.id, receiptText)
             NSLog("[Gauntlet] CASE %@ answer=%@", c.id, answer.replacingOccurrences(of: "\n", with: " ").prefix(400).description)
+            #if DEBUG
+            storeRows.append(["case": c.id, "seq": GauntletTap.shared.currentSeq, "newChat": c.newChat, "elapsedSec": elapsed])
+            #endif
             rows.append("| \(c.id) | \(route) | \(rec?.readReceipt?.readInFull ?? 0)/\(rec?.readReceipt?.skimmed ?? 0) | \(rec?.cardCount ?? -1)c/\(rec?.passageCount ?? -1)p | \(rec?.packetChars ?? -1) | \(rec?.estTokens ?? -1) | \(chips.count) | \(String(format: "%.1f", elapsed))s | \(receiptText) | \(factsHit)/\(c.minFacts) | \(verdict) |")
         }
 
@@ -2334,6 +2354,12 @@ final class CorpusStore {
         NSLog("[Gauntlet] | case | route | read/skim | shape | packetChars | estTok | chips | time | receipt | facts | verdict |")
         NSLog("[Gauntlet] |---|---|---|---|---|---|---|---|---|---|---|")
         for r in rows { NSLog("[Gauntlet] %@", r) }
+        #if DEBUG
+        if let dir = GauntletTap.shared.dir,
+           let d = try? JSONSerialization.data(withJSONObject: ["think": librarian.thinkEnabled, "rows": storeRows], options: .prettyPrinted) {
+            try? d.write(to: dir.appendingPathComponent("store-rows.json"))
+        }
+        #endif
         NSLog("[Gauntlet] RESULT %d/%d PASS", passCount, cases.count)
         NSLog("[Gauntlet] done")
     }

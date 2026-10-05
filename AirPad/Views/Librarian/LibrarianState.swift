@@ -817,7 +817,11 @@ final class LibrarianState {
         let readTitle = candidates.first(where: { $0.isEntryRead })
             .flatMap { c in store.nodes.first(where: { $0.id == c.nodeID })?.title }
         return TurnPlan(
-            displayText: query, modelText: modelText, systemPrompt: askSystemPrompt,
+            displayText: query, modelText: modelText,
+            systemPrompt: askSystemPrompt(hasReads: candidates.contains { $0.isEntryRead },
+                                          hasCards: candidates.contains { $0.isCard },
+                                          hasPassages: candidates.contains { !$0.isCard && !$0.isEntryRead },
+                                          hasPartial: receipt?.partial == true),
             citations: chips, alwaysCiteIndices: alwaysCite, readReceipt: receipt,
             mode: (receipt?.readInFull ?? 0) > 0 ? "read" : "survey",
             readNodeIDs: candidates.filter { $0.isEntryRead }.map { $0.nodeID },
@@ -2066,8 +2070,34 @@ final class LibrarianState {
     /// renders citations as chips below the answer, so an in-text list
     /// is a duplicate the user never asked for.
     private var askSystemPrompt: String {
-        let base = "You are a reflective AI that helps someone think across their OWN entries. Up to three labelled sections may appear below the question: ENTRIES READ IN FULL contains the COMPLETE text of the user's most relevant entries — these are the PRIMARY source, answer from them directly and thoroughly; ENTRIES ON THIS TOPIC lists other related entries (one line each); and PASSAGES are excerpts. They were pulled from the user's library and MAY OR MAY NOT all be relevant. When an entry is READ IN FULL, base your answer on its whole text — give the specifics it actually contains (names, values, dates, figures) rather than a vague summary. For broad questions about what the user thinks or has, synthesise across ENTRIES and cite them; for specific facts, answer from the full entry or the PASSAGES. Treat anything that genuinely helps as authoritative about the user's own world — if it defines a term, use THEIR definition over a generic one — and cite it inline with its bracketed number like [1] [2] matching the numbered entries above — ALWAYS use the exact bracketed number of the entry you are referring to (e.g. write [6], never 'E6' or 'entry 6'), and cite every entry you discuss. If a full entry is marked PARTIAL, only its best excerpts were included — answer from what's there and don't invent the rest. Ignore items that don't help and answer normally from your own knowledge. These are entries from the user's OWN library — each is labelled with who authored it (or where it was saved from) and its date. If a specific fact genuinely isn't in these entries, you may say so briefly and then answer from your general knowledge — that is a valid answer. Never refuse, and never claim you cannot access the entries — just answer the question directly. Be specific, concise, and never generic. Cite only items you actually used. Do not connect entries the question did not ask about. If an entry distinguishes an estimate from an actual figure, say which. Entries marked saved article, document, or image text are things the user collected, not their own words. For questions about the user's own views, answer from their entries and refer to collected sources as such. Do not append a References, Sources, or Citations section — AirPad renders citations separately. End your reply at the end of the prose answer."
-        return personalVoicePrefix + base
+        // The LONGEST variant (every section present) — what the char budget reserves for. The prompt
+        // actually sent is `askSystemPrompt(sections:)`, which describes ONLY what the packet contains.
+        askSystemPrompt(hasReads: true, hasCards: true, hasPassages: true, hasPartial: true)
+    }
+
+    /// Brief CH A1 — the system prompt must describe ONLY the sections actually in the packet. The old
+    /// single prompt always said "ENTRIES READ IN FULL … are the PRIMARY source, answer from them directly
+    /// and thoroughly", so on a SURVEY turn (one-line cards + passages, nothing read in full) a thinking
+    /// model spent ~⅓ of its trace hunting for full text that wasn't there ("But wait… we don't have the
+    /// full text"), redrafted ~5×, and mislabelled its citations (T's 10-04 trace). A survey turn now says
+    /// plainly that it has summaries + excerpts, that this is expected, and to synthesise across them.
+    private func askSystemPrompt(hasReads: Bool, hasCards: Bool, hasPassages: Bool, hasPartial: Bool) -> String {
+        var p = "You are a reflective AI that helps someone think across their OWN entries. "
+        if hasReads {
+            p += "Below the question, ENTRIES READ IN FULL contains the COMPLETE text of the user's most relevant entries — these are the PRIMARY source, answer from them directly and thoroughly."
+            if hasCards { p += " ENTRIES ON THIS TOPIC lists other related entries (one line each)." }
+            if hasPassages { p += " PASSAGES are excerpts." }
+            p += " They were pulled from the user's library and MAY OR MAY NOT all be relevant. When an entry is READ IN FULL, base your answer on its whole text — give the specifics it actually contains (names, values, dates, figures) rather than a vague summary. For broad questions about what the user thinks or has, synthesise across the entries and cite them; for specific facts, answer from the full entry\(hasPassages ? " or the PASSAGES" : "")."
+        } else {
+            var have: [String] = []
+            if hasCards { have.append("ENTRIES ON THIS TOPIC gives each related entry as one line (its title and a short summary)") }
+            if hasPassages { have.append("PASSAGES are short excerpts from entries") }
+            p += "Below the question is a SURVEY of the user's library: \(have.joined(separator: "; ")). You do not have the full text of any entry, and that is expected for a broad question — work from these summaries and excerpts; never look for, mention, or apologise for missing full text. They were pulled from the user's library and MAY OR MAY NOT all be relevant. Synthesise across them and cite the entries you draw on."
+        }
+        p += " Treat anything that genuinely helps as authoritative about the user's own world — if it defines a term, use THEIR definition over a generic one — and cite it inline with its bracketed number like [1] [2] matching the numbered entries above — ALWAYS use the exact bracketed number of the entry you are referring to (e.g. write [6], never 'E6' or 'entry 6'), and cite every entry you discuss."
+        if hasPartial { p += " If a full entry is marked PARTIAL, only its best excerpts were included — answer from what's there and don't invent the rest." }
+        p += " Ignore items that don't help and answer normally from your own knowledge. These are entries from the user's OWN library — each is labelled with who authored it (or where it was saved from) and its date. If a specific fact genuinely isn't in these entries, you may say so briefly and then answer from your general knowledge — that is a valid answer. Never refuse, and never claim you cannot access the entries — just answer the question directly. Be specific, concise, and never generic. Cite only items you actually used. Do not connect entries the question did not ask about. If an entry distinguishes an estimate from an actual figure, say which. Entries marked saved article, document, or image text are things the user collected, not their own words. For questions about the user's own views, answer from their entries and refer to collected sources as such. Do not append a References, Sources, or Citations section — AirPad renders citations separately. End your reply at the end of the prose answer."
+        return personalVoicePrefix + p
     }
 
     /// Brief AB3 — empty-library prompt: corpus mode found NOTHING in this room

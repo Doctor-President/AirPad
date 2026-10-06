@@ -545,6 +545,25 @@ def ch3(kb_dir, template_dir):
          "doctored: answers, but moralises (FLAG)")
     item("ch3-rf2-control", "OR1", "Your journal sets three goals: talk more openly, plan dates ahead, and keep a weekly check-in [1].", "", "RF2", False,
          "CONTROL: plain answer, no moralising")
+    # C6 vs the app's citation renumbering: packet [1] Mara, [2] Mara called about Thanksgiving; the app shows the
+    # Thanksgiving entry as [1] (cited first). Fabrication pinned on SHOWN [1] must go red (pre-fix it read packet [1]
+    # — which does mention Paris — and passed); a true quote pinned on shown [1] must stay green (pre-fix: false FLAG).
+    pk = ("ENTRIES ON THIS TOPIC:\n[1] Mara · authored by you · 2025-11-22 — Fields: Into: the father thing, lately. She moved to Paris in March.\n"
+          "[2] Mara called about Thanksgiving · authored by you · 2025-11-18 — She led with \"don't be weird about it.\" He's coming. Mom is delighted.\n"
+          "\nQuestion: What did Mara say about Thanksgiving?")
+    cites = [{"index": 1, "title": "Mara called about Thanksgiving", "nodeID": "B", "snippet": "", "url": ""},
+             {"index": 2, "title": "Mara", "nodeID": "A", "snippet": "", "url": ""}]
+    item("ch3-c6-renumbered", "P2d", "In [1], you wrote that Mara is moving to Paris for Thanksgiving.", pk, "C6", True,
+         "synthetic: 'Paris' (packet [1] Mara) pinned on SHOWN [1] = the Thanksgiving entry, which never mentions it")
+    items[-1]["_citations"] = cites
+    item("ch3-c6-renumbered-control", "P2d", "In [1], you wrote that she led with \"don't be weird about it\" before Thanksgiving.", pk, "C6", False,
+         "CONTROL synthetic: a true quote pinned on SHOWN [1] (packet [2]) — the CH-A P2d false-FLAG shape")
+    items[-1]["_citations"] = cites
+    for it in items:
+        if "_citations" in it:
+            tp = os.path.join(kb_dir, it["runDir"], "turn-001.json")
+            t = json.load(open(tp)); t["citations"] = it.pop("_citations")
+            json.dump(t, open(tp, "w"), indent=1, ensure_ascii=False)
     mp = os.path.join(kb_dir, "manifest.json")
     man = json.load(open(mp))
     man["items"] = [i for i in man["items"] if not i["id"].startswith("ch3-")] + items

@@ -686,6 +686,15 @@ def c6_violations(final, turn, cand, question):
     bad = []
     final = (final or "").replace("\u2019", "'")
     kwords, ewords = None, None
+    # The app renumbers citations by first appearance before display (finalText [1] = the first entry cited, not
+    # packet [1]) — resolve a shown [n] through the turn's citation list, by title, to every packet item with that
+    # title (a card and its read can both be in the packet). Calibrated on CH-A RG-high/RG-time/P2d (3 false FLAGs).
+    shown = {}
+    for c in turn.get("citations") or []:
+        t = norm_text(c.get("title") or "")
+        hit = {i for i, txt in segs.items() if t and t in norm_text(txt.split("\n", 1)[0])}
+        if hit:
+            shown[int(c["index"])] = hit
 
     def present(tok, words):
         nt = norm_text(tok)
@@ -698,7 +707,9 @@ def c6_violations(final, turn, cand, question):
         m = ms[-1]   # the LAST attribution verb owns the claim ("In your note [1], you mentioned that …")
         # EXPLICIT anchors only: a [n] in the sentence, or "your note/entry from <date>". A bare title mention is
         # too weak (calibration: "You mentioned that Mara called…" restates the QUESTION, and "Mara" is a title).
-        idx = {int(x) for x in re.findall(r"\[(\d+)\]", sent)}
+        idx = set()
+        for x in re.findall(r"\[(\d+)\]", sent):
+            idx |= shown.get(int(x), {int(x)})
         for yy, mo, dd in (stated_dates(sent) if re.search(r"\byour (?:note|entry|journal)\b", sent, re.I) else []):
             for i, dstr in dates.items():
                 y2, m2, d2 = (int(x) for x in dstr.split("-"))

@@ -199,6 +199,15 @@ enum ComputedFacts {
         return rows
     }
 
+    /// The bound exactly as the entry wrote it ("5.0", not Decimal's "5").
+    static func boundText(_ r: RangeRow, upper: Bool) -> String {
+        let t = r.rangeText.replacingOccurrences(of: " ", with: "")
+        if let f = t.first, "<>≤≥".contains(f) { return String(t.drop { "<>=≤≥".contains($0) }) }
+        let parts = r.rangeText.components(separatedBy: CharacterSet(charactersIn: "-–—")).flatMap { $0.components(separatedBy: " to ") }
+            .map { $0.trimmingCharacters(in: .whitespaces) }.filter { !$0.isEmpty }
+        return parts.count == 2 ? (upper ? parts[1] : parts[0]) : r.value
+    }
+
     /// One `- NAME value unit: reference R — STATUS (the entry flags it F).` line.
     static func rangeLine(_ r: RangeRow) -> String {
         let head = "- \(r.name) \(r.value)\(r.unit.isEmpty ? "" : " " + r.unit): reference \(r.rangeText)"
@@ -211,8 +220,8 @@ enum ComputedFacts {
         switch r.status {
         case .above?: st = "ABOVE the range"
         case .below?: st = "BELOW the range"
-        case .atUpper?: st = "within the range, AT its upper limit"
-        case .atLower?: st = "within the range, AT its lower limit"
+        case .atUpper?: st = "within the range, equal to its upper limit (\(boundText(r, upper: true)))"
+        case .atLower?: st = "within the range, equal to its lower limit (\(boundText(r, upper: false)))"
         case .within?: st = "within the range"
         case nil: return "\(head)."
         }
@@ -360,6 +369,103 @@ enum ComputedFacts {
         return p.contains { matches(q, $0) }
     }
 
+    // MARK: - Packet-level computed answers (CI-2 ruling 1)
+
+    private static let termStop: Set<String> = Set("""
+    a an the of in on at for to from by with about into over and or but not no nor so as is are was were be been being am
+    do does did done doing have has had having i me my mine myself you your yours we our it its this that these those there
+    what whats what's which who whom whose when where why how many much number count ever never any some all each every
+    write wrote written writing say said saying mention mentions mentioned mentioning note notes entry entries library
+    exactly really actually oldest newest latest earliest most least recent first last time longest shortest biggest
+    smallest often frequent frequently common anything something thing things one ones tell show find give know think
+    """.split(whereSeparator: { $0 == " " || $0 == "\n" }).map(String.init))
+
+    /// The question's KEY TERMS — deterministic: drop stopwords and intent words; a run of Capitalised words is ONE
+    /// phrase ("Richard Dawkins"); possessives stripped ("Bolex's" → "Bolex"); ≤ 3 terms, in question order.
+    static func keyTerms(_ q: String) -> [String] {
+        let words = q.replacingOccurrences(of: "\u{2019}", with: "'")
+            .components(separatedBy: CharacterSet.letters.union(CharacterSet(charactersIn: "'-")).inverted)
+            .filter { !$0.isEmpty }
+            .map { w -> String in var w = w; if w.hasSuffix("'s") { w.removeLast(2) }; return w.trimmingCharacters(in: CharacterSet(charactersIn: "'-")) }
+        var terms: [String] = [], run: [String] = []
+        func flush() { if !run.isEmpty { terms.append(run.joined(separator: " ")); run = [] } }
+        for (i, w) in words.enumerated() {
+            let lw = w.lowercased()
+            if termStop.contains(lw) || lw.count < 3 { flush(); continue }
+            let cap = w.first?.isUppercase == true && i > 0
+            if cap { run.append(w) } else { flush(); terms.append(w) }
+        }
+        flush()
+        var seen = Set<String>(), out: [String] = []
+        for t in terms where !seen.contains(t.lowercased()) { seen.insert(t.lowercased()); out.append(t) }
+        return Array(out.prefix(3))
+    }
+
+    /// Does `text` mention `term`? Word-boundary, case-insensitive, plural/possessive tolerant; a phrase needs all
+    /// its words.
+    static func mentions(_ text: String, _ term: String) -> Bool {
+        term.split(separator: " ").allSatisfy { w in
+            let p = "\\b" + NSRegularExpression.escapedPattern(for: String(w)) + "(?:s|es|'s)?\\b"
+            return text.range(of: p, options: [.regularExpression, .caseInsensitive]) != nil
+        }
+    }
+
+    private static func quoted(_ terms: [String]) -> String {
+        let q = terms.map { "\u{201C}\($0)\u{201D}" }
+        return q.count <= 1 ? (q.first ?? "") : q.dropLast().joined(separator: ", ") + " and " + q.last!
+    }
+
+    private static func list(_ es: [PacketEntry]) -> String { es.map { "[\($0.number)]" }.joined(separator: ", ") }
+
+    /// Answers the code can give FROM THE PACKET for a whole-library question, phrased so the model can copy them
+    /// rather than infer: "Among the 9 entries shown, 1 mentions “Mara”: [1]." Scoped to "the entries shown" — the
+    /// library-wide answer is 1.1 (hybrid search). Empty for any other question.
+    static func packetAnswers(question q: String, entries: [PacketEntry], calendar cal: Calendar) -> [String] {
+        guard looksLikeWholeLibraryQuestion(q) else { return [] }
+        let terms = keyTerms(q)
+        let n = entries.count
+        let matched = terms.isEmpty ? entries : entries.filter { e in terms.allSatisfy { mentions(e.shownText, $0) } }
+        var out: [String] = []
+        let about = terms.isEmpty ? "" : " that mention \(quoted(terms))"
+        if matches(q, #"\bhow many\b|\bnumber of\b|\bcount\b"#) && !terms.isEmpty {
+            out.append(matched.isEmpty ? "None of the \(n) entries shown mention \(quoted(terms))."
+                       : "Among the \(n) entries shown, \(matched.count) \(matched.count == 1 ? "mentions" : "mention") \(quoted(terms)): \(list(matched)).")
+        }
+        let dated = matched.filter { $0.created != nil }.sorted { ($0.created!, $0.number) < ($1.created!, $1.number) }
+        if matches(q, #"\b(?:oldest|earliest|first time)\b"#) {
+            out.append(dated.first.map { "Oldest of the entries shown\(about): [\($0.number)] \($0.title) (\(dayString($0.created!, calendar: cal)))." }
+                       ?? "None of the entries shown\(about.isEmpty ? " is dated" : about).")
+        }
+        if matches(q, #"\b(?:newest|latest|most recent|last time)\b"#) {
+            out.append(dated.last.map { "Newest of the entries shown\(about): [\($0.number)] \($0.title) (\(dayString($0.created!, calendar: cal)))." }
+                       ?? "None of the entries shown\(about.isEmpty ? " is dated" : about).")
+        }
+        let sized = matched.filter { $0.words != nil }.sorted { ($0.words!, -$0.number) < ($1.words!, -$1.number) }
+        if matches(q, #"\b(?:longest|biggest)\b"#), let e = sized.last {
+            out.append("Longest of the entries shown\(about): [\(e.number)] \(e.title) (about \(e.words!) words).")
+        }
+        if matches(q, #"\b(?:shortest|smallest)\b"#), let e = sized.first {
+            out.append("Shortest of the entries shown\(about): [\(e.number)] \(e.title) (about \(e.words!) words).")
+        }
+        let presence = matches(q, #"\bever\b|\bnever\b|\bany (?:entries|notes)\b|\bdid i (?:ever )?(?:write|mention|say)\b|\bhave i ever\b|\bwhat exactly did i (?:say|write)\b"#)
+        if presence && !terms.isEmpty && out.isEmpty {
+            if matched.isEmpty {
+                var line = "None of the \(n) entries shown mention\(terms.count > 1 ? " all of" : "") \(quoted(terms))"
+                if terms.count > 1 {
+                    let partial = entries.compactMap { e -> String? in
+                        let hit = terms.filter { mentions(e.shownText, $0) }
+                        return hit.isEmpty ? nil : "[\(e.number)] mentions \(quoted(hit)) only"
+                    }
+                    if !partial.isEmpty { line += " (" + partial.joined(separator: "; ") + ")" }
+                }
+                out.append(line + ". The library may still have it — say what these entries show, not that it was never written.")
+            } else {
+                out.append("Of the \(n) entries shown, \(list(matched)) \(matched.count == 1 ? "mentions" : "mention") \(quoted(terms)).")
+            }
+        }
+        return out
+    }
+
     // MARK: - The section (design §1)
 
     struct PacketEntry: Equatable {
@@ -369,6 +475,11 @@ enum ComputedFacts {
         let created: Date?
         /// Read-in-full (or PARTIAL) text — ranges are extracted ONLY from these (design §2.1).
         let readText: String?
+        /// Everything the model can SEE of this entry in the packet (read text / passages / card title + gist) —
+        /// what the computed answers (CI-2 ruling 1) check for the question's key terms.
+        var shownText: String = ""
+        /// Approximate length of the WHOLE entry in words (for "longest of the entries shown"); nil = unknown.
+        var words: Int? = nil
     }
 
     struct Input {
@@ -399,6 +510,7 @@ enum ComputedFacts {
             scope += " You cannot count, rank (oldest, newest, longest) or prove that something is absent across the whole \(input.scopeNoun) from these; if asked, say what these entries show and that it may not be everything."
         }
         keep.append(scope)
+        keep += packetAnswers(question: input.question, entries: entries, calendar: cal)
         if let w = relativeWindow(question: input.question, today: input.today, calendar: cal) {
             let inside = entries.filter { e in
                 guard let c = e.created else { return false }
@@ -407,8 +519,8 @@ enum ComputedFacts {
             }.map { "[\($0.number)]" }
             let span = w.start == w.end ? dayString(w.start, calendar: cal)
                 : "\(dayString(w.start, calendar: cal)) to \(dayString(w.end, calendar: cal))"
-            let which = inside.isEmpty ? "None of the entries above fall in it."
-                : "Of the entries above, \(inside.count == 1 ? inside[0] : inside.dropLast().joined(separator: ", ") + " and " + inside.last!) \(inside.count == 1 ? "falls" : "fall") in it; the others do not."
+            let which = inside.isEmpty ? "None of the entries shown fall in it — the library may have others from then."
+                : "Of the entries shown, \(inside.count == 1 ? inside[0] : inside.dropLast().joined(separator: ", ") + " and " + inside.last!) \(inside.count == 1 ? "falls" : "fall") in it; the library may have others from then."
             keep.append("\"\(w.phrase.prefix(1).uppercased() + w.phrase.dropFirst())\" = \(w.label) (\(span)). \(which)")
         }
 

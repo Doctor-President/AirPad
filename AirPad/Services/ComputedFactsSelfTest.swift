@@ -51,7 +51,7 @@ enum ComputedFactsSelfTest {
         check("P-ge", row("ESTIMATED GLOMERULAR FILTRATION RATE")?.status == .within && row("ESTIMATED GLOMERULAR FILTRATION RATE")?.unit == "mL/min/1.73m*2")
         check("P-percent", row("TESTOSTERONE, PERCENTAGE FREE")?.unit == "%" && row("TESTOSTERONE, PERCENTAGE FREE")?.flagToken == "N")
         check("P-no-address-name", !rows.contains { $0.name.contains("IL") && $0.name.contains("Springfield") })
-        check("P-line-albumin", ComputedFacts.rangeLine(row("ALBUMIN")!) == "- ALBUMIN 5.0 GM/DL: reference 3.4-5.0 — within the range, AT its upper limit.",
+        check("P-line-albumin", ComputedFacts.rangeLine(row("ALBUMIN")!) == "- ALBUMIN 5.0 GM/DL: reference 3.4-5.0 — within the range, equal to its upper limit (5.0).",
               ComputedFacts.rangeLine(row("ALBUMIN")!))
         check("P-line-chol", ComputedFacts.rangeLine(row("CHOLESTEROL")!) == "- CHOLESTEROL 213 MG/DL: reference <200 — ABOVE the range (the entry flags it H).",
               ComputedFacts.rangeLine(row("CHOLESTEROL")!))
@@ -167,11 +167,37 @@ enum ComputedFactsSelfTest {
         let sCount = section("How many of my entries mention Mara?")
         check("S-limit-sentence", sCount?.contains("You cannot count, rank (oldest, newest, longest) or prove that something is absent") == true)
         let sWin = section("What did I write last month?")
-        check("S-window-none", sWin?.contains("\"Last month\" = September 2026 (2026-09-01 to 2026-09-30). None of the entries above fall in it.") == true,
+        check("S-window-none", sWin?.contains("\"Last month\" = September 2026 (2026-09-01 to 2026-09-30). None of the entries shown fall in it — the library may have others from then.") == true,
               sWin ?? "nil")
         let tight = section("Which of my lab values are out of range?", 700)
         check("S-allowance-keeps-floor", tight.map { $0.count <= 700 && $0.contains("Today is") && $0.contains("Out of range in [1]") } == true,
               tight ?? "nil")
+
+        // ── CI-2 ruling 1: key terms + packet-level computed answers
+        let kt: [(String, [String])] = [
+            ("How many of my entries mention Mara?", ["Mara"]), ("How many of my entries mention my Bolex?", ["Bolex"]),
+            ("What's my oldest entry about Mara?", ["Mara"]), ("What's the longest entry in my library?", []),
+            ("Did I ever write about Richard Dawkins?", ["Richard Dawkins"]), ("Did I ever write about beekeeping?", ["beekeeping"]),
+            ("What exactly did I say about the Bolex being dandori?", ["Bolex", "dandori"]),
+        ]
+        for (q, want) in kt { check("K \(q)", ComputedFacts.keyTerms(q) == want, "\(ComputedFacts.keyTerms(q))") }
+        var shownEntries = [
+            ComputedFacts.PacketEntry(number: 1, nodeID: "M1", title: "Mara", created: d("2025-11-22"), readText: nil),
+            ComputedFacts.PacketEntry(number: 2, nodeID: "D1", title: "dandori", created: d("2026-01-24"), readText: nil),
+            ComputedFacts.PacketEntry(number: 3, nodeID: "L1", title: "Deep dive", created: d("2026-06-16"), readText: nil),
+        ]
+        shownEntries[0].shownText = "Mara\nShe alphabetises her spice rack."; shownEntries[0].words = 40
+        shownEntries[1].shownText = "dandori\nThe art of sequencing a task well."; shownEntries[1].words = 120
+        shownEntries[2].shownText = "Deep dive\nThat concept comes from Richard Dawkins."; shownEntries[2].words = 4000
+        func ans(_ q: String) -> [String] { ComputedFacts.packetAnswers(question: q, entries: shownEntries, calendar: cal) }
+        check("A-count", ans("How many of my entries mention Mara?") == ["Among the 3 entries shown, 1 mentions \u{201C}Mara\u{201D}: [1]."], "\(ans("How many of my entries mention Mara?"))")
+        check("A-count-none", ans("How many of my entries mention my Bolex?") == ["None of the 3 entries shown mention \u{201C}Bolex\u{201D}."], "\(ans("How many of my entries mention my Bolex?"))")
+        check("A-oldest", ans("What's my oldest entry about Mara?") == ["Oldest of the entries shown that mention \u{201C}Mara\u{201D}: [1] Mara (2025-11-22)."], "\(ans("What's my oldest entry about Mara?"))")
+        check("A-longest", ans("What's the longest entry in my library?") == ["Longest of the entries shown: [3] Deep dive (about 4000 words)."], "\(ans("What's the longest entry in my library?"))")
+        check("A-present", ans("Did I ever write about Richard Dawkins?") == ["Of the 3 entries shown, [3] mentions \u{201C}Richard Dawkins\u{201D}."], "\(ans("Did I ever write about Richard Dawkins?"))")
+        check("A-absent-partial", ans("What exactly did I say about the Bolex being dandori?").first?.hasPrefix("None of the 3 entries shown mention all of \u{201C}Bolex\u{201D} and \u{201C}dandori\u{201D} ([2] mentions \u{201C}dandori\u{201D} only). The library may still have it") == true,
+              "\(ans("What exactly did I say about the Bolex being dandori?"))")
+        check("A-none-for-ordinary", ans("What connections do you find between my ideas?").isEmpty && ans("Which of my lab values are out of range?").isEmpty)
 
         // ── typed fields line (every kind, via the shared field fixture)
         if #available(iOS 17.0, *) {

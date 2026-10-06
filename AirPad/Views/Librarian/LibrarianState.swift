@@ -2458,17 +2458,42 @@ final class LibrarianState {
             if let d = f.date(from: s) { today = cal.date(byAdding: .hour, value: 12, to: d) ?? d }
         }
         #endif
+        // CI-2 ruling 1 — what the model can SEE of each node (all its packet items joined) + its approximate length.
+        var shown: [String: String] = [:]
+        for c in candidates {
+            var t = ""
+            switch c.payload {
+            case .entry(let e): t = e.text
+            case .passage(let m): t = m.block.text
+            case .card(let card): t = card.gist
+            }
+            shown[c.nodeID, default: (store.nodes.first { $0.id == c.nodeID }?.title ?? "")] += "\n" + t
+        }
         let entries: [ComputedFacts.PacketEntry] = candidates.map { c in
             let node = store.nodes.first { $0.id == c.nodeID }
             var readText: String? = nil
             if case .entry(let e) = c.payload { readText = e.text }
-            return ComputedFacts.PacketEntry(number: c.number, nodeID: c.nodeID, title: node?.title ?? "Untitled",
-                                             created: node?.createdAt, readText: readText)
+            var e = ComputedFacts.PacketEntry(number: c.number, nodeID: c.nodeID, title: node?.title ?? "Untitled",
+                                              created: node?.createdAt, readText: readText)
+            e.shownText = shown[c.nodeID] ?? ""
+            e.words = node.map(Self.approximateWords)
+            return e
         }
         let noun: String = { if case .corpus = selectedScope { return "library" }; return "collection" }()
         return ComputedFacts.build(.init(today: today, calendar: cal, question: query, entries: entries,
                                          scopeTotal: store.nodes(in: selectedScope).count, scopeNoun: noun,
                                          allowanceChars: allowance))
+    }
+
+    /// CI-2 ruling 1 — an entry's approximate length in words (its text items + any document's extracted text), for
+    /// "longest of the entries shown". Synchronous and deterministic; never shown as more than "about N words".
+    static func approximateWords(_ node: Node) -> Int {
+        var n = 0
+        for item in node.items {
+            n += (item.content ?? "").split(whereSeparator: { $0.isWhitespace }).count
+            for d in item.documentItems ?? [] { n += (d.extractedText ?? "").split(whereSeparator: { $0.isWhitespace }).count }
+        }
+        return n
     }
 
     private func buildAskContext(

@@ -305,6 +305,7 @@ def a6b_violations(answer, ref):
     truly_out = sorted(k for k, rows in ref.items() if all(not _truth("NORMAL", r) for r in rows))
     recent = []   # analytes named by the last segments that named any (for "This is the only value…" lines)
     segs = re.split(r"\n+|(?<=[.!?])\s+(?=[A-Z(])", text)
+    named_order = []   # analytes in order of their LAST mention (for count-aware "these two are the only…")
 
     def judged_in(sg):
         found, mk = set(), list(sg)
@@ -343,7 +344,18 @@ def a6b_violations(answer, ref):
                             break
                         named |= got
                 else:
-                    named = recent[-1][1]
+                    # count-aware: "These two values are the only ones…" = the last TWO analytes named; a singular
+                    # "This is the only value…" = the last one (keeps the iteration-2 true positives)
+                    w = next((w for w in ("two", "both", "three", "four") if re.search(r"\b" + w + r"\b", seg, re.I)), "")
+                    k = {"two": 2, "both": 2, "three": 3, "four": 4}.get(w, 1)
+                    named = set()
+                    for ns in reversed(named_order):
+                        if ns not in named and len(named) < k:
+                            named.add(ns)
+                    # "the only PART / area / section / finding" closes a SECTION → every analyte the last ≤4 lines named
+                    if re.search(r"\bonly (?:part|area|section|thing|finding|concern|issue|problem|results?)\b", seg, re.I):
+                        for prev in segs[max(0, si - 4):si]:
+                            named |= judged_in(prev)
                 missing = [k for k in truly_out if k not in named]
                 if missing:
                     bad.append(f"says only {sorted(named)} out of range; also out of range: {missing}: \"{seg[:90].strip()}\"")
@@ -351,6 +363,11 @@ def a6b_violations(answer, ref):
             continue
         recent = [(0, {k for _, _, k in mentions if k in ref})]
         mentions.sort()
+        for _, _, k in mentions:
+            if k in ref:
+                if k in named_order:
+                    named_order.remove(k)
+                named_order.append(k)
         masked = "".join(mask)
         claims = []   # (pos, end, claim)
         for c, rx in _A6B_CLAIM_RES:
@@ -358,6 +375,10 @@ def a6b_violations(answer, ref):
                 if any(s <= m.start() < e for s, e, _ in claims):
                     continue
                 if _NEGATION_RE.search(masked[:m.start()]) or _HYPOTHETICAL_RE.search(masked[:m.start()]):
+                    continue
+                # a label on a NON-measure noun ("keep your cardiovascular risk low") or a hedge ("at or above normal")
+                if c in ("HIGH", "LOW") and (re.search(r"\b(?:risk|chance|odds|likelihood|probability|stress|energy|mood|libido|motivation)\s+\w*\s*$", masked[:m.start()], re.I)
+                                            or re.search(r"\b(?:at or|or)\s*$", masked[:m.start()], re.I)):
                     continue
                 # about OTHER values ("…even if other values are normal", "the rest are within range") → not this analyte
                 if re.search(r"\b(?:other|others|rest|remaining)\b[^.;:\n]{0,30}$", masked[:m.start()], re.I):
@@ -438,6 +459,13 @@ def norm_text(s):
 def stated_ages_days(text):
     """Relative ages the answer states ('about 10 months ago', 'almost a year ago', '321 days ago') → days."""
     out, unit_days = [], {"day": 1, "week": 7, "month": 30.44, "year": 365.25}
+    # a COMPOUND age ("10 months and 18 days", "1 year and 2 months") is ONE age, not two (calibrated on CI-2 instruct P2d)
+    def _n(x):
+        return float(x) if x[0].isdigit() else NUMWORDS.get(x.lower(), 0)
+    comp = r"(\d+|a|an|one|two|three|four|five|six|seven|eight|nine|ten|eleven|twelve)\s+(year|month|week)s?,?\s+and\s+(\d+|a|an|one|two|three|four|five|six|seven|eight|nine|ten|eleven|twelve)\s+(month|week|day)s?\b"
+    for m in re.finditer(comp, text, re.I):
+        out.append((_n(m.group(1)) * unit_days[m.group(2).lower()] + _n(m.group(3)) * unit_days[m.group(4).lower()], m.group(0)))
+    text = re.sub(comp, " ", text, flags=re.I)
     for m in re.finditer(r"\b(\d+(?:\.\d+)?|a|an|one|two|three|four|five|six|seven|eight|nine|ten|eleven|twelve|a couple of|a few|several)"
                          r"(?:\s+and\s+a\s+half)?\s+(day|week|month|year)s?\b(?![- ]old)", text, re.I):
         n = m.group(1).lower()
@@ -472,6 +500,20 @@ def stated_numbers(text):
         out.append(({"half": 0.5, "a quarter of": 0.25, "three quarters of": 0.75}[m.group(1).lower()], " " + m.group(2).lower(), ""))
     return out
 
+
+ABS_CLAIM = re.compile(r"\b(?:none|zero|no|not one|only one|just one|\d+|one|two|three|four|five|six|seven|eight|nine|ten) of your (?:entries|notes)\b|"
+                       r"\bnone of your (?:entries|notes)\b|\byour (?:oldest|newest|longest|shortest|most recent|latest|earliest|first) (?:entry|note)\b|"
+                       r"\bthe (?:oldest|newest|longest|shortest|most recent|latest|earliest) (?:entry|note) in your library\b|"
+                       r"\byou (?:never|didn't|did not) (?:write|say|said|mention)|\bi (?:didn't|did not) say\b|\b(?:\d+|one|two|three|four|five) (?:of your )?entries mention\b", re.I)
+
+def unscoped_claims(final):
+    """Whole-library claims made WITHOUT a scope hedge in the same sentence (a caveat later doesn't unsay them)."""
+    out = []
+    for sent in re.split(r"(?<=[.!?])\s+|\n+", (final or "").replace("\u2019", "'")):
+        if ABS_CLAIM.search(sent) and not SCOPE_HEDGE.search(sent) \
+                and not re.search(r"\b(?:don't know|do not know|can't (?:tell|say|determine|know)|cannot (?:tell|say|determine|know)|unable to|no way to|not sure)\b", sent, re.I):
+            out.append(sent.strip()[:90])
+    return out
 
 def looks_whole_library(q):
     """Python port of `ComputedFacts.looksLikeWholeLibraryQuestion` (word boundaries)."""
@@ -539,7 +581,9 @@ def probe_grade(probe, final, turn, cites, cand, R, res, na):
         res("B1", bool(neg) and not affirm, "absent in the library; answer " + ("affirms presence" if affirm else ("says no" if neg else "never says no")))
     elif kind == "present":
         term = probe["term"].lower()
-        found = term in low and not re.search(r"(?:no|not|n't|never|nothing|none)\b[^.\n]{0,40}" + re.escape(term), low)
+        # found = at least ONE un-negated mention (a later "…not just Dawkins…" must not cancel a clear "Yes, you did")
+        found = any(not re.search(r"(?:\bno|\bnot|n't|\bnever|\bnothing|\bnone)\b[^.\n]{0,40}$", low[:mm.start()])
+                    for mm in re.finditer(re.escape(term), low))
         absence = re.search(r"(?:\bno\b|\bnot\b|n't|\bnever\b|\bnothing\b|\bnone\b)[^.\n]{0,60}(?:entr|note|wr[io]te|written|mention|record|anything)", low)
         hedge = re.search(r"retrieved|in front of me|given to me|i was given|i can see|i was shown|shown here|these (?:entries|notes|excerpts|results)|this (?:selection|survey|set)|what i (?:have|got|can)|in the (?:entries|notes) (?:i|provided|here)|provided", low)
         named = title_norm(probe["title"]) in title_norm(final) or any(f"[{c['index']}]" in final for c in cand if (c.get("nodeID") or "").startswith(probe["nodeID"]))
@@ -585,7 +629,7 @@ def library_texts():
                 pass
     return _LIB
 
-SCOPE_HEDGE = re.compile(r"retrieved|in front of me|given to me|i was given|i(?:'ve| have)? (?:been )?(?:shown|given)|i can see|i can only see|i(?:'m| am) seeing|"
+SCOPE_HEDGE = re.compile(r"\b(?:only )?(?:\w+|\d+) of (?:the )?\d+ (?:entries|notes)|\b(?:you're|you are|i'm|i am) seeing \d+|can't determine|cannot determine|can't say for sure|no way to (?:know|tell)|retrieved|in front of me|given to me|i was given|i(?:'ve| have)? (?:been )?(?:shown|given)|i can see|i can only see|i(?:'m| am) seeing|"
                          r"(?:of|in|from|among) the (?:\d+ )?(?:entries|notes) (?:i|you) |these (?:entries|notes|excerpts)|may not be (?:everything|all|complete|the full)|"
                          r"might not be (?:everything|all)|not (?:all|everything) (?:of )?your|there (?:may|might|could) be (?:more|others)|whole library|entire library|"
                          r"all of your (?:entries|notes)|in what i (?:have|can|was)|only (?:see|have) (?:a few|some|part)|can't (?:count|rank|tell)|cannot (?:count|rank|tell)|"
@@ -724,8 +768,20 @@ def fx1_violations(turn, plan):
         rows = ref.get(hit[0], []) if hit else []
         row = next((r for r in rows if abs(r[0] - val) < 1e-9), None)
         if not row:
-            bad.append(f"fact row '{name} {val}' has no matching row in the entry (Python parser)")
-            continue
+            # the analyte map is lab-keyword based; for any other name, verify the row VERBATIM in the packet
+            # (value then range, as the entry wrote them) and recompute its bounds independently
+            vm = re.search(r"(?<![\d.])" + re.escape(m.group(2)) + r"\s+" + re.escape(rng) + r"(?![\d.])", uc)
+            if not vm:
+                bad.append(f"fact row '{name} {val} {rng}' does not appear in the packet")
+                continue
+            r_ = rng.replace(" ", "")
+            if re.fullmatch(r"\d+(?:\.\d+)?[-–—]\d+(?:\.\d+)?", r_):
+                lo, hi = (float(x) for x in re.split(r"[-–—]", r_))
+            elif r_[0] in "<≤":
+                lo, hi = None, float(r_.lstrip("<=≤"))
+            else:
+                lo, hi = float(r_.lstrip(">=≥")), None
+            row = (val, lo, hi, "", "")
         v, lo, hi, flag, _ = row
         claim = "HIGH" if status.startswith("ABOVE") else "LOW" if status.startswith("BELOW") else "NORMAL" if status.startswith("within") else None
         if claim and not _truth(claim, row):
@@ -994,10 +1050,13 @@ def grade_row(exp, turn, ui, prev_turn, host, ps, versions, cases_meta, store=Fa
         na("C6", "not a grounded answer"); na("B2", "not a grounded answer")
     if probe and probe.get("honestScope") and norm_ws(final):
         base = probe_base_pass(probe, final, R)
-        hedged = bool(SCOPE_HEDGE.search(final))
+        hedged = bool(SCOPE_HEDGE.search(final.replace("\u2019", "'")))
+        claims = [] if base else unscoped_claims(final)
         clean = R.get("C6", ("PASS",))[0] == "PASS" and R.get("B2", ("PASS",))[0] == "PASS"
-        res("E1", clean and (base or hedged), f"{'right' if base else ('honest about scope' if hedged else 'confident and wrong')}"
-                                               f"{'' if clean else ' — but C6/B2 red'}")
+        ok = clean and (base or (hedged and not claims))
+        res("E1", ok, ("right" if base else ("honest about scope" if hedged and not claims else
+                       (f"unscoped whole-library claim: \"{claims[0]}\"" if claims else "confident and wrong")))
+                      + ("" if clean else " — but C6/B2 red"))
     else:
         na("E1", "not an honest-scope probe")
     if norm_ws(final) and route in ("read", "survey") and not (probe and probe.get("honestScope")) and not looks_whole_library(question):

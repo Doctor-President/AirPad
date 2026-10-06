@@ -786,8 +786,10 @@ def fx1_violations(turn, plan):
         claim = "HIGH" if status.startswith("ABOVE") else "LOW" if status.startswith("BELOW") else "NORMAL" if status.startswith("within") else None
         if claim and not _truth(claim, row):
             bad.append(f"'{name} {val}' stated {status[:30]} but range {lo}-{hi} says otherwise")
-        if "AT its upper limit" in status and not (hi is not None and abs(v - hi) < 1e-9):
-            bad.append(f"'{name}' AT upper limit but {v} ≠ {hi}")
+        if ("AT its upper limit" in status or "equal to its upper limit" in status) and not (hi is not None and abs(v - hi) < 1e-9):
+            bad.append(f"'{name}' at its upper limit but {v} ≠ {hi}")
+        if "equal to its lower limit" in status and not (lo is not None and abs(v - lo) < 1e-9):
+            bad.append(f"'{name}' at its lower limit but {v} ≠ {lo}")
     return bad
 
 

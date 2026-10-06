@@ -179,6 +179,47 @@ final class LibrarianGauntletV2: XCTestCase {
 
     private func captureScreen(_ app: XCUIApplication, row: String, out: URL?) -> [String: Any] {
         var r: [String: Any] = [:]
+        // Dismiss the keyboard first: while it is up the composer rides over the end of the chat and covers the
+        // latest footer, so 'Show N sources' is on-screen by frame but NOT hittable (CH-A UI ×1, screenshot
+        // proven). `ask()` taps the field again before every question, so this is safe.
+        let donePred = NSPredicate(format: "label == 'Done' OR identifier == 'Done'")
+        r["doneButtons"] = screenOrdered(app.descendants(matching: .any).matching(donePred)).map { e -> [String: Any] in
+            ["y": Int(e.frame.minY), "hittable": e.isHittable, "type": e.elementType.rawValue]
+        }
+        r["doneTree"] = app.debugDescription.split(separator: "\n").filter { $0.contains("Done") || $0.contains("Toolbar") }.prefix(12).map(String.init)
+        if app.keyboards.firstMatch.exists {
+            r["kbButtons"] = app.keyboards.firstMatch.buttons.allElementsBoundByIndex.prefix(60).map { "\($0.identifier)|\($0.label)|\(Int($0.frame.minY))" }
+            r["kbOther"] = app.keyboards.firstMatch.debugDescription.split(separator: "\n").filter { $0.contains("Done") || $0.contains("Dismiss") || $0.contains("Hide") || $0.contains("dismiss") }.prefix(10).map(String.init)
+        }
+        var how = "none"
+        if app.keyboards.firstMatch.exists {
+            let tries: [(String, () -> Void)] = [
+                ("done", {
+                    if let d = self.screenOrdered(app.descendants(matching: .any).matching(donePred)).last(where: { $0.isHittable }) { d.tap() }
+                }),
+                ("hideKey", {
+                    for id in ["Hide keyboard", "keyboard.chevron.compact.down", "Dismiss"] where app.keyboards.buttons[id].exists {
+                        app.keyboards.buttons[id].tap(); break
+                    }
+                }),
+            ]
+            r["kbFrame"] = "\(app.keyboards.firstMatch.frame)"
+            for (name, act) in tries + [("doneBar", {
+                // The keyboard accessory "Done" is NOT in the accessibility tree (iOS 27 out-of-process keyboard).
+                // Screenshot-measured on this Simulator: Done bar = y 555–612pt, keyboard keys start at 655pt, the
+                // SUGGESTION bar sits between them (a tap at kb.minY−29 hit a suggestion and TYPED "I'm" into Ask).
+                // Only tap when the layout is exactly the measured one; otherwise record and move on.
+                let kb = app.keyboards.firstMatch.frame, w = app.windows.firstMatch.frame
+                guard Int(kb.minY) == 655, Int(w.width) == 440 else { return }
+                app.coordinate(withNormalizedOffset: .zero).withOffset(CGVector(dx: w.maxX - 45, dy: kb.minY - 72)).tap()
+            })] where app.keyboards.firstMatch.exists {
+                act(); Thread.sleep(forTimeInterval: 0.7)
+                if !app.keyboards.firstMatch.exists { how = name }
+            }
+        }
+        r["keyboardDismissedBy"] = how
+        r["askFieldAfterDismiss"] = app.textFields.firstMatch.exists ? (app.textFields.firstMatch.value as? String ?? "") : "?"
+        r["keyboardUpAtCapture"] = app.keyboards.firstMatch.exists
         // Bring the end of the latest answer (and its footer) into the materialised region.
         for _ in 0..<6 { app.swipeUp(velocity: .fast) }
         // ★ Ordered by ON-SCREEN position, never by accessibility index: since the follow-up freeze fix
@@ -204,14 +245,25 @@ final class LibrarianGauntletV2: XCTestCase {
         // read can't pick up this message's rows.
         let showPred = NSPredicate(format: "label BEGINSWITH 'Show ' AND label ENDSWITH ' sources'")
         let shows = screenOrdered(app.buttons.matching(showPred))
+        r["showElements"] = shows.map { e -> [String: Any] in
+            ["y": Int(e.frame.minY), "hittable": e.isHittable, "label": e.label]
+        }
+        r["window"] = Int(app.windows.firstMatch.frame.height)
         var chips: [String] = []
         if let show = shows.last, show.exists {
             r["sourcesHeader"] = show.label
-            show.tap()
-            Thread.sleep(forTimeInterval: 0.6)
-            chips = app.descendants(matching: .any).matching(identifier: "chat.source").allElementsBoundByIndex.map { $0.label }
-            let hide = app.buttons["Hide sources"]
-            if hide.exists { hide.tap() }
+            // Now that the LATEST footer is picked (not the previous one), on a long answer it can still sit
+            // below the fold after the fast swipes — a tap on a non-hittable element FAILS the whole run (CH-A
+            // UI ×1: all four sets died on 'Show 1 sources' at y≈1230–1730). Scroll until hittable; else record.
+            if reach(show, app, up: true) {
+                show.tap()
+                Thread.sleep(forTimeInterval: 0.6)
+                chips = app.descendants(matching: .any).matching(identifier: "chat.source").allElementsBoundByIndex.map { $0.label }
+                let hide = app.buttons["Hide sources"]
+                if hide.exists && hide.isHittable { hide.tap() }
+            } else {
+                r["sourcesUnreachable"] = true
+            }
         }
         r["onScreenChips"] = chips
 
@@ -219,12 +271,26 @@ final class LibrarianGauntletV2: XCTestCase {
         let header = app.buttons["Thought process"]
         r["thoughtHeaderPresent"] = header.exists
         if header.exists {
-            header.tap()
-            Thread.sleep(forTimeInterval: 0.6)
-            r["onScreenThought"] = app.descendants(matching: .any).matching(identifier: "chat.thought").firstMatch.label
-            header.tap()
+            if reach(header, app, up: false) {
+                header.tap()
+                Thread.sleep(forTimeInterval: 0.6)
+                r["onScreenThought"] = app.descendants(matching: .any).matching(identifier: "chat.thought").firstMatch.label
+                if header.isHittable { header.tap() }
+            } else {
+                r["thoughtUnreachable"] = true
+            }
         }
         return r
+    }
+
+    /// Scrolls (slowly, so it settles) until `e` is hittable. `up` = the element is below the fold.
+    private func reach(_ e: XCUIElement, _ app: XCUIApplication, up: Bool) -> Bool {
+        for _ in 0..<12 {
+            if e.exists && e.isHittable { return true }
+            if up { app.swipeUp(velocity: .slow) } else { app.swipeDown(velocity: .slow) }
+            Thread.sleep(forTimeInterval: 0.4)
+        }
+        return e.exists && e.isHittable
     }
 
     // MARK: files

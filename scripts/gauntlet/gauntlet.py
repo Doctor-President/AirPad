@@ -249,7 +249,7 @@ _HYPOTHETICAL_RE = re.compile(r"(?:e\.g\.,?|i\.e\.,?|such as|for example|like|if
                               # a modal is a hedge or a general statement ("immunoassays can be imprecise at low levels")
                               r"|\b(?:may|might|could|can|would)\b[^.;\n]{0,45}$"
                               # general medical statements, not a label of THIS value ("men with low testosterone are…")
-                              r"|\b(?:men|women|people|patients|those|anyone|someone) with\s+[^.;:\n]{0,10}$|\bpossible that\b[^.;\n]{0,40}$"
+                              r"|\b(?:men|women|people|patients|those|anyone|someone) with\s+[^.;:\n]{0,40}$|\bpossible that\b[^.;\n]{0,40}$|\bis linked to\b[^.;\n]{0,20}$"
                               # medical HISTORY, not a label of this result ("you were treated for low testosterone")
                               r"|\b(?:treated for|treatment for|history of|diagnosed with|prescribed for|was|were)\s+[^.;:\n]{0,15}$", re.I)
 
@@ -584,6 +584,9 @@ def probe_grade(probe, final, turn, cites, cand, R, res, na):
     elif kind == "absent":
         neg = re.search(r"\b(?:don't|do not|didn't|did not|haven't|have not|hasn't|can't|cannot|couldn't|no|not|never|nothing|none|isn't|aren't)\b", low)
         affirm = re.search(r"^\W*yes\b|\byou (?:did|have) (?:write|written|wrote|mention)|\byou (?:wrote|mentioned|noted) (?:about )?" + re.escape(probe["term"].lower()), low)
+        # a HYPOTHETICAL is not an affirmation ("it is possible that you wrote about beekeeping in another entry")
+        if affirm and re.search(r"\b(?:possible|possibly|may|might|could|perhaps|maybe)\b[^.\n]{0,30}$", low[:affirm.start()]):
+            affirm = None
         res("B1", bool(neg) and not affirm, "absent in the library; answer " + ("affirms presence" if affirm else ("says no" if neg else "never says no")))
     elif kind == "present":
         term = probe["term"].lower()

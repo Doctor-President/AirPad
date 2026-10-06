@@ -190,13 +190,16 @@ enum ComputedFactsSelfTest {
         shownEntries[1].shownText = "dandori\nThe art of sequencing a task well."; shownEntries[1].words = 120
         shownEntries[2].shownText = "Deep dive\nThat concept comes from Richard Dawkins."; shownEntries[2].words = 4000
         func ans(_ q: String) -> [String] { ComputedFacts.packetAnswers(question: q, entries: shownEntries, calendar: cal) }
-        check("A-count", ans("How many of my entries mention Mara?") == ["Among the 3 entries shown, 1 mentions \u{201C}Mara\u{201D}: [1]."], "\(ans("How many of my entries mention Mara?"))")
-        check("A-count-none", ans("How many of my entries mention my Bolex?") == ["None of the 3 entries shown mention \u{201C}Bolex\u{201D}."], "\(ans("How many of my entries mention my Bolex?"))")
-        check("A-oldest", ans("What's my oldest entry about Mara?") == ["Oldest of the entries shown that mention \u{201C}Mara\u{201D}: [1] Mara (2025-11-22)."], "\(ans("What's my oldest entry about Mara?"))")
-        check("A-longest", ans("What's the longest entry in my library?") == ["Longest of the entries shown: [3] Deep dive (about 4000 words)."], "\(ans("What's the longest entry in my library?"))")
-        check("A-present", ans("Did I ever write about Richard Dawkins?") == ["Of the 3 entries shown, [3] mentions \u{201C}Richard Dawkins\u{201D}."], "\(ans("Did I ever write about Richard Dawkins?"))")
-        check("A-absent-partial", ans("What exactly did I say about the Bolex being dandori?").first?.hasPrefix("None of the 3 entries shown mention all of \u{201C}Bolex\u{201D} and \u{201C}dandori\u{201D} ([2] mentions \u{201C}dandori\u{201D} only). The library may still have it") == true,
-              "\(ans("What exactly did I say about the Bolex being dandori?"))")
+        func line(_ q: String) -> String { ans(q).dropFirst().first ?? "" }   // [0] = the "start your answer with" lead
+        check("A-lead", ans("How many of my entries mention Mara?").first?.hasPrefix("This is a whole-library question") == true)
+        check("A-count", line("How many of my entries mention Mara?") == "Answer: \u{201C}Of the 3 entries I can see, 1 mentions \u{201C}Mara\u{201D} ([1]) — I can't see your whole library, so there may be more.\u{201D}", line("How many of my entries mention Mara?"))
+        check("A-count-none", line("How many of my entries mention my Bolex?").hasPrefix("Answer: \u{201C}None of the 3 entries I can see mention \u{201C}Bolex\u{201D}"), line("How many of my entries mention my Bolex?"))
+        check("A-oldest", line("What's my oldest entry about Mara?").hasPrefix("Answer: \u{201C}Of the entries I can see that mention \u{201C}Mara\u{201D}, the oldest is [1] Mara (2025-11-22)"), line("What's my oldest entry about Mara?"))
+        check("A-longest", line("What's the longest entry in my library?").hasPrefix("Answer: \u{201C}Of the entries I can see, the longest is [3] Deep dive (about 4000 words)"), line("What's the longest entry in my library?"))
+        check("A-present", line("Did I ever write about Richard Dawkins?") == "Answer: \u{201C}Yes — of the 3 entries I can see, [3] mentions \u{201C}Richard Dawkins\u{201D}.\u{201D}", line("Did I ever write about Richard Dawkins?"))
+        check("A-absent-partial", line("What exactly did I say about the Bolex being dandori?").hasPrefix("Answer: \u{201C}None of the 3 entries I can see mention all of \u{201C}Bolex\u{201D} and \u{201C}dandori\u{201D} ([2] mentions \u{201C}dandori\u{201D} only) — but I can't see your whole library"),
+              line("What exactly did I say about the Bolex being dandori?"))
+        check("A-no-time-terms", ComputedFacts.keyTerms("What did I write last month?").isEmpty && ans("What did I write last month?").isEmpty, "\(ComputedFacts.keyTerms("What did I write last month?"))")
         check("A-none-for-ordinary", ans("What connections do you find between my ideas?").isEmpty && ans("Which of my lab values are out of range?").isEmpty)
 
         // ── typed fields line (every kind, via the shared field fixture)

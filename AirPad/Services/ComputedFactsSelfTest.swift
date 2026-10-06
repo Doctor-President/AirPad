@@ -141,6 +141,10 @@ enum ComputedFactsSelfTest {
                   "What's the longest entry in my library?", "What exactly did I say about the Bolex being dandori?", "Have I ever mentioned Paris?"] {
             check("L+ \(q)", ComputedFacts.looksLikeWholeLibraryQuestion(q))
         }
+        for q in ["What did I write about my Bolex H16?", "What did I write about the new cock ring I bought?"] {
+            check("L- read-q \(q)", !ComputedFacts.looksLikeWholeLibraryQuestion(q) && ComputedFacts.packetAnswers(question: q, entries: [], calendar: ComputedFacts.calendar()).isEmpty)
+        }
+        check("L+ anything", ComputedFacts.looksLikeWholeLibraryQuestion("Did I write anything about beekeeping?"))
         for q in ["What do I think about everything?", "Whatever happened with the sculpture?", "What connections do you find between my ideas?",
                   "What do my lab test results reveal?", "However you read it, what's the gist?", "Is my HDL in the normal range?"] {
             check("L- \(q)", !ComputedFacts.looksLikeWholeLibraryQuestion(q))

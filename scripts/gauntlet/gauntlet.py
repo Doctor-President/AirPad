@@ -531,7 +531,7 @@ def looks_whole_library(q):
     """Python port of `ComputedFacts.looksLikeWholeLibraryQuestion` (word boundaries)."""
     pats = [r"\bhow many\b", r"\bnumber of\b", r"\bcount\b", r"\b(?:oldest|newest|latest|earliest|longest|shortest|biggest|smallest)\b",
             r"\bmost recent\b", r"\bfirst time\b", r"\blast time\b", r"\b(?:most|least)\s+(?:often|frequent(?:ly)?|common|mentioned|written)\b",
-            r"\bever\b", r"\bnever\b", r"\bany (?:entries|notes)\b", r"\bdid i (?:ever )?(?:write|mention|say)\b", r"\bhave i ever\b",
+            r"\bever\b", r"\bnever\b", r"\bany (?:entries|notes)\b", r"\bdid i (?:write|mention|say|note) anything\b", r"\bhave i ever\b",
             r"\bwhat exactly did i (?:say|write)\b"]
     return any(re.search(p, q or "", re.I) for p in pats)
 

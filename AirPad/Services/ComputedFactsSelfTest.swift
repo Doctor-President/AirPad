@@ -163,7 +163,17 @@ enum ComputedFactsSelfTest {
         check("S-no-limit-on-range-q", s1?.contains("You cannot count") == false)
         check("S-summary", s1?.contains("Out of range in [1], among the 9 values above: CHOLESTEROL 213 (H), LDL, CALCULATED 153 (H). The other 7 are within their ranges.") == true,
               s1?.components(separatedBy: "\n").first { $0.hasPrefix("Out of range") } ?? "missing")
-        check("S-dates", s1?.contains("[2] Fourteen years — written 2026-06-20, 3 months ago (107 days).") == true)
+        check("S-no-dates-on-range-q", s1?.contains("Dates:") == false, s1 ?? "nil")
+        let sTime = section("How has my thinking about AirPad changed over time?")
+        check("S-dates-on-temporal-q", sTime?.contains("[2] Fourteen years — written 2026-06-20, 3 months ago (107 days).") == true, sTime ?? "nil")
+        check("S-no-dates-on-synthesis", section("What connections do you find between my ideas?")?.contains("Dates:") == false)
+        for q in ["How has my thinking about AirPad changed over time?", "How did my view evolve?", "What have I written recently?",
+                  "What did I note since June?", "When did I start the sculpture?", "What came before the Bolex?", "Anything new lately?"] {
+            check("T+ \(q)", ComputedFacts.looksLikeTemporalQuestion(q))
+        }
+        for q in ["What connections do you find between my ideas?", "Which of my lab values are out of range?", "What am I circling around without saying it directly?"] {
+            check("T- \(q)", !ComputedFacts.looksLikeTemporalQuestion(q))
+        }
         let sCount = section("How many of my entries mention Mara?")
         check("S-limit-sentence", sCount?.contains("You cannot count, rank (oldest, newest, longest) or prove that something is absent") == true)
         let sWin = section("What did I write last month?")
@@ -193,11 +203,16 @@ enum ComputedFactsSelfTest {
         func line(_ q: String) -> String { ans(q).dropFirst().first ?? "" }   // [0] = the "start your answer with" lead
         check("A-lead", ans("How many of my entries mention Mara?").first?.hasPrefix("This is a whole-library question") == true)
         check("A-count", line("How many of my entries mention Mara?") == "Answer: \u{201C}Of the 3 entries I can see, 1 mentions \u{201C}Mara\u{201D} ([1]) — I can't see your whole library, so there may be more.\u{201D}", line("How many of my entries mention Mara?"))
-        check("A-count-none", line("How many of my entries mention my Bolex?").hasPrefix("Answer: \u{201C}None of the 3 entries I can see mention \u{201C}Bolex\u{201D}"), line("How many of my entries mention my Bolex?"))
+        check("A-count-none", line("How many of my entries mention my Bolex?") == "Answer: \u{201C}None of the 3 entries I can see mention \u{201C}Bolex\u{201D} — I can't see your whole library, so I can't rule it out.\u{201D}", line("How many of my entries mention my Bolex?"))
+        let one = [shownEntries[0]]
+        let oneLine = ComputedFacts.packetAnswers(question: "How many of my entries mention Mara?", entries: one, calendar: cal).dropFirst().first ?? ""
+        check("A-singular", oneLine.contains("Of the one entry I can see, 1 mentions") && !oneLine.contains("1 entries"), oneLine)
+        let oneNone = ComputedFacts.packetAnswers(question: "Did I ever write about beekeeping?", entries: one, calendar: cal).dropFirst().first ?? ""
+        check("A-singular-none", oneNone.hasPrefix("Answer: \u{201C}The one entry I can see doesn't mention \u{201C}beekeeping\u{201D} — but I can't see your whole library, so I can't rule it out."), oneNone)
         check("A-oldest", line("What's my oldest entry about Mara?").hasPrefix("Answer: \u{201C}Of the entries I can see that mention \u{201C}Mara\u{201D}, the oldest is [1] Mara (2025-11-22)"), line("What's my oldest entry about Mara?"))
         check("A-longest", line("What's the longest entry in my library?").hasPrefix("Answer: \u{201C}Of the entries I can see, the longest is [3] Deep dive (about 4000 words)"), line("What's the longest entry in my library?"))
         check("A-present", line("Did I ever write about Richard Dawkins?") == "Answer: \u{201C}Yes — of the 3 entries I can see, [3] mentions \u{201C}Richard Dawkins\u{201D}.\u{201D}", line("Did I ever write about Richard Dawkins?"))
-        check("A-absent-partial", line("What exactly did I say about the Bolex being dandori?").hasPrefix("Answer: \u{201C}None of the 3 entries I can see mention all of \u{201C}Bolex\u{201D} and \u{201C}dandori\u{201D} ([2] mentions \u{201C}dandori\u{201D} only) — but I can't see your whole library"),
+        check("A-absent-partial", line("What exactly did I say about the Bolex being dandori?").hasPrefix("Answer: \u{201C}None of the 3 entries I can see mention all of \u{201C}Bolex\u{201D} and \u{201C}dandori\u{201D} ([2] mentions \u{201C}dandori\u{201D} only) — but I can't see your whole library, so I can't rule it out."),
               line("What exactly did I say about the Bolex being dandori?"))
         check("A-no-time-terms", ComputedFacts.keyTerms("What did I write last month?").isEmpty && ans("What did I write last month?").isEmpty, "\(ComputedFacts.keyTerms("What did I write last month?"))")
         check("A-none-for-ordinary", ans("What connections do you find between my ideas?").isEmpty && ans("Which of my lab values are out of range?").isEmpty)

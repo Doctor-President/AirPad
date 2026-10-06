@@ -378,6 +378,7 @@ enum ComputedFacts {
     write wrote written writing say said saying mention mentions mentioned mentioning note notes entry entries library
     exactly really actually oldest newest latest earliest most least recent first last time longest shortest biggest
     smallest often frequent frequently common anything something thing things one ones tell show find give know think
+    today yesterday tomorrow day days week weeks month months year years lately recently ago past this next
     """.split(whereSeparator: { $0 == " " || $0 == "\n" }).map(String.init))
 
     /// The question's KEY TERMS — deterministic: drop stopwords and intent words; a run of Capitalised words is ONE
@@ -428,29 +429,30 @@ enum ComputedFacts {
         var out: [String] = []
         let about = terms.isEmpty ? "" : " that mention \(quoted(terms))"
         if matches(q, #"\bhow many\b|\bnumber of\b|\bcount\b"#) && !terms.isEmpty {
-            out.append(matched.isEmpty ? "None of the \(n) entries shown mention \(quoted(terms))."
-                       : "Among the \(n) entries shown, \(matched.count) \(matched.count == 1 ? "mentions" : "mention") \(quoted(terms)): \(list(matched)).")
+            out.append(matched.isEmpty
+                       ? "Answer: \u{201C}None of the \(n) entries I can see mention \(quoted(terms)) — I can't see your whole library, so there may be some.\u{201D}"
+                       : "Answer: \u{201C}Of the \(n) entries I can see, \(matched.count) \(matched.count == 1 ? "mentions" : "mention") \(quoted(terms)) (\(list(matched))) — I can't see your whole library, so there may be more.\u{201D}")
         }
         let dated = matched.filter { $0.created != nil }.sorted { ($0.created!, $0.number) < ($1.created!, $1.number) }
         if matches(q, #"\b(?:oldest|earliest|first time)\b"#) {
-            out.append(dated.first.map { "Oldest of the entries shown\(about): [\($0.number)] \($0.title) (\(dayString($0.created!, calendar: cal)))." }
-                       ?? "None of the entries shown\(about.isEmpty ? " is dated" : about).")
+            out.append(dated.first.map { "Answer: \u{201C}Of the entries I can see\(about), the oldest is [\($0.number)] \($0.title) (\(dayString($0.created!, calendar: cal))) — I can't see your whole library, so it may not be your oldest.\u{201D}" }
+                       ?? "Answer: \u{201C}None of the entries I can see\(about.isEmpty ? " are dated" : about) — I can't see your whole library.\u{201D}")
         }
         if matches(q, #"\b(?:newest|latest|most recent|last time)\b"#) {
-            out.append(dated.last.map { "Newest of the entries shown\(about): [\($0.number)] \($0.title) (\(dayString($0.created!, calendar: cal)))." }
-                       ?? "None of the entries shown\(about.isEmpty ? " is dated" : about).")
+            out.append(dated.last.map { "Answer: \u{201C}Of the entries I can see\(about), the most recent is [\($0.number)] \($0.title) (\(dayString($0.created!, calendar: cal))) — I can't see your whole library, so it may not be your latest.\u{201D}" }
+                       ?? "Answer: \u{201C}None of the entries I can see\(about.isEmpty ? " are dated" : about) — I can't see your whole library.\u{201D}")
         }
         let sized = matched.filter { $0.words != nil }.sorted { ($0.words!, -$0.number) < ($1.words!, -$1.number) }
         if matches(q, #"\b(?:longest|biggest)\b"#), let e = sized.last {
-            out.append("Longest of the entries shown\(about): [\(e.number)] \(e.title) (about \(e.words!) words).")
+            out.append("Answer: \u{201C}Of the entries I can see\(about), the longest is [\(e.number)] \(e.title) (about \(e.words!) words) — I can't see your whole library, so it may not be your longest.\u{201D}")
         }
         if matches(q, #"\b(?:shortest|smallest)\b"#), let e = sized.first {
-            out.append("Shortest of the entries shown\(about): [\(e.number)] \(e.title) (about \(e.words!) words).")
+            out.append("Answer: \u{201C}Of the entries I can see\(about), the shortest is [\(e.number)] \(e.title) (about \(e.words!) words) — I can't see your whole library, so it may not be your shortest.\u{201D}")
         }
         let presence = matches(q, #"\bever\b|\bnever\b|\bany (?:entries|notes)\b|\bdid i (?:ever )?(?:write|mention|say)\b|\bhave i ever\b|\bwhat exactly did i (?:say|write)\b"#)
         if presence && !terms.isEmpty && out.isEmpty {
             if matched.isEmpty {
-                var line = "None of the \(n) entries shown mention\(terms.count > 1 ? " all of" : "") \(quoted(terms))"
+                var line = "Answer: \u{201C}None of the \(n) entries I can see mention\(terms.count > 1 ? " all of" : "") \(quoted(terms))"
                 if terms.count > 1 {
                     let partial = entries.compactMap { e -> String? in
                         let hit = terms.filter { mentions(e.shownText, $0) }
@@ -458,10 +460,13 @@ enum ComputedFacts {
                     }
                     if !partial.isEmpty { line += " (" + partial.joined(separator: "; ") + ")" }
                 }
-                out.append(line + ". The library may still have it — say what these entries show, not that it was never written.")
+                out.append(line + " — but I can't see your whole library, so you may well have written it.\u{201D} Do not say it was never written.")
             } else {
-                out.append("Of the \(n) entries shown, \(list(matched)) \(matched.count == 1 ? "mentions" : "mention") \(quoted(terms)).")
+                out.append("Answer: \u{201C}Yes — of the \(n) entries I can see, \(list(matched)) \(matched.count == 1 ? "mentions" : "mention") \(quoted(terms)).\u{201D}")
             }
+        }
+        if !out.isEmpty {
+            out.insert("This is a whole-library question and you can see only part of the library. Start your answer with the sentence below, then add what the entries say:", at: 0)
         }
         return out
     }

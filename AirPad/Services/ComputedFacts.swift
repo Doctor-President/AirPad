@@ -354,6 +354,18 @@ enum ComputedFacts {
         return bare && measure
     }
 
+    /// A TEMPORAL question (CI ruling 2) — per-entry date lines are emitted only for these (and whole-library
+    /// questions). Word boundaries throughout.
+    static func looksLikeTemporalQuestion(_ q: String) -> Bool {
+        let p = [
+            #"\bevolv(?:e|ed|es|ing)\b"#, #"\bchang(?:e|ed|es|ing)\b"#, #"\bover time\b"#, #"\blately\b"#, #"\brecently\b"#,
+            #"\bsince\b"#, #"\bbefore\b"#, #"\bafter\b"#, #"\bwhen\b"#, #"\bago\b"#, #"\bhow long\b"#,
+            #"\b(?:today|yesterday)\b"#, #"\b(?:this|last|past) (?:week|month|year)\b"#, #"\b(?:past|last) \d{1,3} (?:days?|weeks?|months?)\b"#,
+            #"\b(?:recent|date|dated)\b"#,
+        ]
+        return p.contains { matches(q, $0) }
+    }
+
     /// A WHOLE-LIBRARY question (count / rank / oldest-newest / absence / exact quote) → the scope line
     /// gains its limit sentence (design §5).
     static func looksLikeWholeLibraryQuestion(_ q: String) -> Bool {
@@ -416,6 +428,9 @@ enum ComputedFacts {
         return q.count <= 1 ? (q.first ?? "") : q.dropLast().joined(separator: ", ") + " and " + q.last!
     }
 
+    /// "the 3 entries" / "the one entry" — CI ruling 1 (no "1 entries").
+    private static func seen(_ n: Int) -> String { n == 1 ? "the one entry I can see" : "the \(n) entries I can see" }
+
     private static func list(_ es: [PacketEntry]) -> String { es.map { "[\($0.number)]" }.joined(separator: ", ") }
 
     /// Answers the code can give FROM THE PACKET for a whole-library question, phrased so the model can copy them
@@ -430,8 +445,8 @@ enum ComputedFacts {
         let about = terms.isEmpty ? "" : " that mention \(quoted(terms))"
         if matches(q, #"\bhow many\b|\bnumber of\b|\bcount\b"#) && !terms.isEmpty {
             out.append(matched.isEmpty
-                       ? "Answer: \u{201C}None of the \(n) entries I can see mention \(quoted(terms)) — I can't see your whole library, so there may be some.\u{201D}"
-                       : "Answer: \u{201C}Of the \(n) entries I can see, \(matched.count) \(matched.count == 1 ? "mentions" : "mention") \(quoted(terms)) (\(list(matched))) — I can't see your whole library, so there may be more.\u{201D}")
+                       ? "Answer: \u{201C}\(n == 1 ? "The one entry I can see doesn't mention" : "None of \(seen(n)) mention") \(quoted(terms)) — I can't see your whole library, so I can't rule it out.\u{201D}"
+                       : "Answer: \u{201C}Of \(seen(n)), \(matched.count) \(matched.count == 1 ? "mentions" : "mention") \(quoted(terms)) (\(list(matched))) — I can't see your whole library, so there may be more.\u{201D}")
         }
         let dated = matched.filter { $0.created != nil }.sorted { ($0.created!, $0.number) < ($1.created!, $1.number) }
         if matches(q, #"\b(?:oldest|earliest|first time)\b"#) {
@@ -452,7 +467,7 @@ enum ComputedFacts {
         let presence = matches(q, #"\bever\b|\bnever\b|\bany (?:entries|notes)\b|\bdid i (?:ever )?(?:write|mention|say)\b|\bhave i ever\b|\bwhat exactly did i (?:say|write)\b"#)
         if presence && !terms.isEmpty && out.isEmpty {
             if matched.isEmpty {
-                var line = "Answer: \u{201C}None of the \(n) entries I can see mention\(terms.count > 1 ? " all of" : "") \(quoted(terms))"
+                var line = "Answer: \u{201C}\(n == 1 ? "The one entry I can see doesn't mention" : "None of \(seen(n)) mention")\(terms.count > 1 ? " all of" : "") \(quoted(terms))"
                 if terms.count > 1 {
                     let partial = entries.compactMap { e -> String? in
                         let hit = terms.filter { mentions(e.shownText, $0) }
@@ -460,9 +475,9 @@ enum ComputedFacts {
                     }
                     if !partial.isEmpty { line += " (" + partial.joined(separator: "; ") + ")" }
                 }
-                out.append(line + " — but I can't see your whole library, so you may well have written it.\u{201D} Do not say it was never written.")
+                out.append(line + " — but I can't see your whole library, so I can't rule it out.\u{201D} Do not say it was never written.")
             } else {
-                out.append("Answer: \u{201C}Yes — of the \(n) entries I can see, \(list(matched)) \(matched.count == 1 ? "mentions" : "mention") \(quoted(terms)).\u{201D}")
+                out.append("Answer: \u{201C}Yes — of \(seen(n)), \(list(matched)) \(matched.count == 1 ? "mentions" : "mention") \(quoted(terms)).\u{201D}")
             }
         }
         if !out.isEmpty {
@@ -529,9 +544,11 @@ enum ComputedFacts {
             keep.append("\"\(w.phrase.prefix(1).uppercased() + w.phrase.dropFirst())\" = \(w.label) (\(span)). \(which)")
         }
 
-        // date lines (droppable from the highest [n] down)
+        // date lines (droppable from the highest [n] down) — CI ruling 2: ONLY on temporal / whole-library questions
+        // (on a 12-entry survey they were ~300 prompt tokens ≈ +1 s first token for nothing).
         var dateLines: [String] = []
-        for e in entries {
+        let wantDates = looksLikeTemporalQuestion(input.question) || looksLikeWholeLibraryQuestion(input.question)
+        for e in entries where wantDates {
             guard let c = e.created, let days = ageDays(created: c, today: input.today, calendar: cal),
                   let words = ageWords(created: c, today: input.today, calendar: cal) else { continue }
             dateLines.append("[\(e.number)] \(e.title) — written \(dayString(c, calendar: cal)), \(words) (\(days) \(days == 1 ? "day" : "days")).")

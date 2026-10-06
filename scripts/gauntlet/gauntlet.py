@@ -1217,7 +1217,11 @@ def grade_row(exp, turn, ui, prev_turn, host, ps, versions, cases_meta, store=Fa
             seen_nodes.add(key); dedup_titles.append(c.get("title", ""))
     screen_chips = ui.get("onScreenChips") or []
     mism = (not store) and (len(screen_chips) != len(dedup_titles) or any(t and t not in s for t, s in zip(dedup_titles, screen_chips)))
-    if mism and not outside and ui.get("sourcesUnreachable"):
+    if mism and not outside and not dedup_titles and screen_chips and not store:
+        # Driver before the footer-below-answer guard: the latest answer committed NO sources, so the lowest footer
+        # it opened was the PREVIOUS answer's. Not a judgement of this turn — CC checks these rows by hand.
+        na("C5", f"latest answer has no sources; driver read an earlier footer ({len(screen_chips)} chip) — CC hand-check")
+    elif mism and not outside and ui.get("sourcesUnreachable"):
         # The footer sat under the keyboard-raised composer and the driver no longer dismisses the keyboard
         # (dismissing it triggers the real layout-loop freeze — findings/keyboard-dismiss-layout-loop.md).
         # The committed chips are still checked for packet membership (the `outside` half of C5).

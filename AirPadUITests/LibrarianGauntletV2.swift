@@ -253,7 +253,10 @@ final class LibrarianGauntletV2: XCTestCase {
         }
         r["window"] = Int(app.windows.firstMatch.frame.height)
         var chips: [String] = []
-        if let show = shows.last, show.exists {
+        // Only a footer BELOW the latest answer belongs to it: when the latest answer has no sources, the lowest
+        // footer on screen is the PREVIOUS answer's (CH-A instruct BXe read a stale "Show 1 sources").
+        let latestTop = answers.last?.frame.minY ?? -.greatestFiniteMagnitude
+        if let show = shows.last, show.exists, show.frame.minY > latestTop {
             r["sourcesHeader"] = show.label
             // Now that the LATEST footer is picked (not the previous one), on a long answer it can still sit
             // below the fold after the fast swipes — a tap on a non-hittable element FAILS the whole run (CH-A

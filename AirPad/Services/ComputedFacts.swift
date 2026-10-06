@@ -375,7 +375,9 @@ enum ComputedFacts {
             #"\bmost recent\b"#, #"\bfirst time\b"#, #"\blast time\b"#,
             #"\b(?:most|least)\s+(?:often|frequent(?:ly)?|common|mentioned|written)\b"#,
             #"\bever\b"#, #"\bnever\b"#, #"\bany (?:entries|notes)\b"#,
-            #"\bdid i (?:ever )?(?:write|mention|say)\b"#, #"\bhave i ever\b"#,
+            // EXISTENCE only: "did I EVER write…" (\bever\b above) / "did I write ANYTHING about…" — never a plain
+            // "What did I write about my Bolex?", which is an ordinary read question (caught in the CH-A pre-screen).
+            #"\bdid i (?:write|mention|say|note) anything\b"#, #"\bhave i ever\b"#,
             #"\bwhat exactly did i (?:say|write)\b"#,
         ]
         return p.contains { matches(q, $0) }
@@ -384,13 +386,16 @@ enum ComputedFacts {
     // MARK: - Packet-level computed answers (CI-2 ruling 1)
 
     private static let termStop: Set<String> = Set("""
-    a an the of in on at for to from by with about into over and or but not no nor so as is are was were be been being am
-    do does did done doing have has had having i me my mine myself you your yours we our it its this that these those there
-    what whats what's which who whom whose when where why how many much number count ever never any some all each every
-    write wrote written writing say said saying mention mentions mentioned mentioning note notes entry entries library
-    exactly really actually oldest newest latest earliest most least recent first last time longest shortest biggest
-    smallest often frequent frequently common anything something thing things one ones tell show find give know think
-    today yesterday tomorrow day days week weeks month months year years lately recently ago past this next
+    a an the of in on at for to from by with about into over and
+    or but not no nor so as is are was were be been being am do
+    does did done doing have has had having i me my mine myself you your yours
+    we our it its this that these those there what whats what's which who whom whose
+    when where why how many much number count ever never any some all each every write
+    wrote written writing say said saying mention mentions mentioned mentioning note notes entry entries library exactly
+    really actually oldest newest latest earliest most least recent first last time longest shortest biggest smallest
+    often frequent frequently common anything something thing things one ones tell show find give know think
+    today yesterday tomorrow day days week weeks month months year years lately recently ago past this
+    next new old bought got made idea ideas take the
     """.split(whereSeparator: { $0 == " " || $0 == "\n" }).map(String.init))
 
     /// The question's KEY TERMS — deterministic: drop stopwords and intent words; a run of Capitalised words is ONE
@@ -464,7 +469,7 @@ enum ComputedFacts {
         if matches(q, #"\b(?:shortest|smallest)\b"#), let e = sized.first {
             out.append("Answer: \u{201C}Of the entries I can see\(about), the shortest is [\(e.number)] \(e.title) (about \(e.words!) words) — I can't see your whole library, so it may not be your shortest.\u{201D}")
         }
-        let presence = matches(q, #"\bever\b|\bnever\b|\bany (?:entries|notes)\b|\bdid i (?:ever )?(?:write|mention|say)\b|\bhave i ever\b|\bwhat exactly did i (?:say|write)\b"#)
+        let presence = matches(q, #"\bever\b|\bnever\b|\bany (?:entries|notes)\b|\bdid i (?:write|mention|say|note) anything\b|\bhave i ever\b|\bwhat exactly did i (?:say|write)\b"#)
         if presence && !terms.isEmpty && out.isEmpty {
             if matched.isEmpty {
                 var line = "Answer: \u{201C}\(n == 1 ? "The one entry I can see doesn't mention" : "None of \(seen(n)) mention")\(terms.count > 1 ? " all of" : "") \(quoted(terms))"

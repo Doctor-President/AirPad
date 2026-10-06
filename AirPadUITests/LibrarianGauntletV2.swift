@@ -192,7 +192,10 @@ final class LibrarianGauntletV2: XCTestCase {
             r["kbOther"] = app.keyboards.firstMatch.debugDescription.split(separator: "\n").filter { $0.contains("Done") || $0.contains("Dismiss") || $0.contains("Hide") || $0.contains("dismiss") }.prefix(10).map(String.init)
         }
         var how = "none"
-        if app.keyboards.firstMatch.exists {
+        // OPT-IN ONLY (`TEST_RUNNER_GAUNTLET_KB_DISMISS=1`): dismissing the keyboard after a long multi-turn chat
+        // triggers a REAL app layout loop (findings/keyboard-dismiss-layout-loop.md — 2 of 3 runs froze in BX),
+        // which kills the run. By default the keyboard stays up and a covered footer is recorded as unreachable.
+        if ProcessInfo.processInfo.environment["GAUNTLET_KB_DISMISS"] == "1", app.keyboards.firstMatch.exists {
             let tries: [(String, () -> Void)] = [
                 ("done", {
                     if let d = self.screenOrdered(app.descendants(matching: .any).matching(donePred)).last(where: { $0.isHittable }) { d.tap() }

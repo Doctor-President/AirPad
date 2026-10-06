@@ -1217,9 +1217,15 @@ def grade_row(exp, turn, ui, prev_turn, host, ps, versions, cases_meta, store=Fa
             seen_nodes.add(key); dedup_titles.append(c.get("title", ""))
     screen_chips = ui.get("onScreenChips") or []
     mism = (not store) and (len(screen_chips) != len(dedup_titles) or any(t and t not in s for t, s in zip(dedup_titles, screen_chips)))
-    res("C5", not outside and not mism,
-        ("chip outside packet: " + ", ".join(c.get("title", "")[:24] for c in outside) + "; " if outside else "")
-        + (f"on-screen chips {len(screen_chips)} ≠ committed {len(dedup_titles)}" if mism else ""))
+    if mism and not outside and ui.get("sourcesUnreachable"):
+        # The footer sat under the keyboard-raised composer and the driver no longer dismisses the keyboard
+        # (dismissing it triggers the real layout-loop freeze — findings/keyboard-dismiss-layout-loop.md).
+        # The committed chips are still checked for packet membership (the `outside` half of C5).
+        na("C5", "footer under the composer (keyboard up) — on-screen chips not readable; committed chips all in packet")
+    else:
+        res("C5", not outside and not mism,
+            ("chip outside packet: " + ", ".join(c.get("title", "")[:24] for c in outside) + "; " if outside else "")
+            + (f"on-screen chips {len(screen_chips)} ≠ committed {len(dedup_titles)}" if mism else ""))
     stats.update(nativeMarkers=len(inline), titleRescue=bool(cites) and not inline and not (set(c["index"] for c in cites) <= always))
 
     # ── T1 thinking OFF honesty

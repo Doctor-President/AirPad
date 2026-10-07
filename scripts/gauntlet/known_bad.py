@@ -9,6 +9,8 @@
       Brief CH-A1b iteration 2 — A6b known-bad from the REAL iteration-1 voice answers (+ OLD as control).
   voice <kb_dir>
       Brief CH-A1b — adds the VOICE known-bad items (W1–W3), doctored from run-replays' clean captures.
+  s1 <kb_dir> <store_template_dir>
+      CH 2026-10-07 Session 1 — W1 greeting openers, N1 (prose "entries 5, 8, 9"), F4 citation-only retraction.
   doctor <replay_run_dir> <live_leak_run_dir> <kb_dir>
       Copies captured runs into kb_dir (packet text redacted), builds the "doctored-expectation" items
       for the run-validity (V*) and invariant (I*) graders, and writes kb_dir/manifest.json.
@@ -616,6 +618,91 @@ def pillars(kb_dir, template_dir):
     print("wrote", len(items), "pillar items")
 
 
+def s1(kb_dir, template_dir):
+    """CH 2026-10-07 Session 1 — known-bad + controls for ruling 7 (W1 greeting openers) and ruling 8 (N1 prose
+    references by number; F4 citation-only retraction). N1's bad items are the REAL blind-packet S1-B / S1-D answers
+    (T noticed "entries 5, 8, 9" in the ranking); F4's is the REAL old-pipeline capture of the clean survey (streamed
+    packet numbers [10] [4] [6] [8], committed [1] [2] [3] [4]). The clean controls' frames are renumbered to what the
+    numberer now displays, so they stay the positive controls."""
+    import re
+    tmpl_rows = json.load(open(os.path.join(template_dir, "store-rows.json")))["rows"]
+    base = json.load(open(os.path.join(template_dir, f"turn-{tmpl_rows[0]['seq']:03d}.json")))
+    items = []
+    def item(iid, case, grader, bad, what, **turn):
+        d = os.path.join(kb_dir, iid)
+        if os.path.exists(d):
+            shutil.rmtree(d)
+        os.makedirs(d)
+        for f in ("host.log", "ps.log", "versions.json"):   # a store pass dir keeps versions.json one level up
+            src_f = os.path.join(template_dir, f)
+            shutil.copy(src_f if os.path.exists(src_f) else os.path.join(os.path.dirname(template_dir), f), d)
+        t = copy.deepcopy(base); t.update(seq=1, userContent="", citations=[], plan={}, tools=[], raw=[], frames=[], thinking="")
+        t.pop("path", None); t.update(turn)
+        json.dump(t, open(os.path.join(d, "turn-001.json"), "w"), indent=1, ensure_ascii=False)
+        json.dump({"think": False, "rows": [{"case": case, "seq": 1, "newChat": True, "elapsedSec": 1}]}, open(os.path.join(d, "store-rows.json"), "w"))
+        row = f"{case}.off.store"
+        items.append({"id": iid, "runDir": iid, "store": True, "what": what,
+                      **({"expectRed": {row: [grader]}} if bad else {"expectGreenOn": {row: [grader]}})})
+    # blind packet S1-B / S1-D, verbatim (first paragraphs) — Ops reports/ch-model-bakeoff/blind/packet.md
+    S1B = ("Hey—what stood out first was how your **self-knowledge through relationships** work (entries 5, 8, 9) directly "
+           "feeds into your **AirPad vision** (entry 6). You see difficult conversations as the *only* real catalyst for growth—"
+           "using your sister’s letter as proof [1]—but you’re building a tool *specifically* to handle the noise that makes "
+           "those conversations hard.")
+    S1D = ("Your ideas weave together in a few key ways. First, the theme of **self-knowledge through relationships** (entries 5, 8, 9) "
+           "connects to the **drowning in noise** (entry 10) by framing interpersonal challenges as both a mirror for growth and a "
+           "battleground against overwhelming trends.\n\nThe **Memex-like AirPad** (entry 6) and **decentralized social networks** "
+           "(entry 4) both aim to reclaim control over information and connection.")
+    S1B_FIXED = S1B.replace("Hey—what", "What").replace("(entries 5, 8, 9)", "(entries [2], [3], [4])").replace("(entry 6)", "(entry [5])")
+    item("s1-w1-hey-opener", "S1", "W1", True, "REAL blind-packet S1-B opener: \"Hey—what stood out first…\"", finalText=S1B)
+    item("s1-w1-hi-opener", "1", "W1", True, "synthetic: \"Hi there! Your lab panel…\"",
+         finalText="Hi there! Your lab panel [1] is mostly in range; total cholesterol 213 and LDL 153 are flagged high.")
+    item("s1-w1-control", "1", "W1", False, "CONTROL: a sentence that starts with \"Hi…\" as a word, not a greeting",
+         finalText="Hiking comes up in two entries [1], both about the same trip.")
+    item("s1-n1-blind-b", "S1", "N1", True, "REAL blind-packet S1-B: \"(entries 5, 8, 9)\" / \"(entry 6)\" in prose", finalText=S1B)
+    item("s1-n1-blind-d", "S1", "N1", True, "REAL blind-packet S1-D: \"(entries 5, 8, 9)\", \"(entry 10)\", \"(entry 6)\"", finalText=S1D)
+    item("s1-n1-control", "S1", "N1", False, "CONTROL: the S1-B paragraph as the numberer rewrites it (\"entries [2], [3], [4]\")", finalText=S1B_FIXED)
+
+    # F4 — the REAL old-pipeline capture is the known-bad; the controls are renumbered the way the numberer shows them.
+    src = os.path.join(kb_dir, "run-replays")
+    G = "S1.off.kg1-clean-survey"
+    d = os.path.join(kb_dir, "s1-f4-citation-renumber")
+    if os.path.exists(d):
+        shutil.rmtree(d)
+    shutil.copytree(src, d)
+    exp = json.load(open(os.path.join(d, "expected.json")))
+    exp["rows"] = {r: v for r, v in exp["rows"].items() if r == G}
+    json.dump(exp, open(os.path.join(d, "expected.json"), "w"), indent=1, ensure_ascii=False)
+    seq = json.load(open(os.path.join(d, f"ui-{G}.json")))["seq"]
+    for f in os.listdir(d):
+        fp = os.path.join(d, f)
+        if os.path.isdir(fp) or (f.startswith("ui-") and f[3:-5] != G) or (f.startswith("turn-") and int(f[5:8]) not in (seq, seq - 1)) \
+                or f in ("grades.json", "table.md") or f.startswith("hung-"):
+            shutil.rmtree(fp) if os.path.isdir(fp) else os.remove(fp)
+    items.append({"id": "s1-f4-citation-renumber", "runDir": "s1-f4-citation-renumber",
+                  "what": "REAL capture of the old pipeline: the clean survey streamed packet numbers [10] [4] [6] [8] and committed [1] [2] [3] [4]",
+                  "expectRed": {G: ["F4"]}})
+    tok = re.compile(r"\[(\d{1,2})\]")
+    for row in ("S1.off.kg1-clean-survey", "S1.off.kg1b-clean-survey", "S1.off.kgf-clean-followup"):
+        u = json.load(open(os.path.join(src, f"ui-{row}.json")))
+        tp = os.path.join(src, f"turn-{u['seq']:03d}.json")
+        t = json.load(open(tp))
+        fr = t.get("frames", [])
+        if not fr:
+            continue
+        mapping = {}
+        for a, b in zip(tok.findall(fr[-1]["s"]), tok.findall(t["finalText"])):
+            mapping.setdefault(a, b)
+        for f in fr:
+            f["s"] = tok.sub(lambda m: "[" + mapping.get(m.group(1), m.group(1)) + "]", f["s"])
+        json.dump(t, open(tp, "w"), indent=1, ensure_ascii=False)
+
+    mp = os.path.join(kb_dir, "manifest.json")
+    man = json.load(open(mp))
+    man["items"] = [i for i in man["items"] if not i["id"].startswith("s1-")] + items
+    json.dump(man, open(mp, "w"), indent=1, ensure_ascii=False)
+    print("wrote", len(items), "session-1 items")
+
+
 if __name__ == "__main__":
     cmd = sys.argv[1]
     if cmd == "replays":
@@ -624,6 +711,8 @@ if __name__ == "__main__":
         doctor(sys.argv[2], sys.argv[3], sys.argv[4])
     elif cmd == "voice":
         voice(sys.argv[2])
+    elif cmd == "s1":
+        s1(sys.argv[2], sys.argv[3])
     elif cmd == "pillars":
         pillars(sys.argv[2], sys.argv[3])
     elif cmd == "ch3":

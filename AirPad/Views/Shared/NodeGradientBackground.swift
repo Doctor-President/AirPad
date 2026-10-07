@@ -169,7 +169,16 @@ struct NodeGradientLayer: View {
     }
     var blobDistribution: BlobDistribution? = nil
 
-    @State private var phase: Double = Double.random(in: 0...100)
+    @State private var phase: Double = Self.initialPhase()
+
+    /// Random per instance; pinned under the DEBUG `-GlassFreezeTime` still harness so two
+    /// builds' stills can be pixel-diffed (ws-fluted-glass).
+    private static func initialPhase() -> Double {
+        #if DEBUG
+        if UserDefaults.standard.object(forKey: "GlassFreezeTime") != nil { return 42 }
+        #endif
+        return Double.random(in: 0...100)
+    }
 
     /// Effective appearance — the SAME mechanism the shipped map/chrome theming
     /// uses (`AppearancePalette.mapBackground(dark: colorScheme == .dark)`). Dark

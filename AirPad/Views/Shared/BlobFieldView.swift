@@ -207,7 +207,7 @@ struct BlobFieldView: View {
                 TimelineView(.animation(minimumInterval: frameInterval)) { timeline in
                     // Wrap time to keep Float precision usable across the app's
                     // multi-hundred-million-second reference clock (per brief).
-                    let t = Float(timeline.date.timeIntervalSinceReferenceDate
+                    let t = Self.frozenTime ?? Float(timeline.date.timeIntervalSinceReferenceDate
                         .truncatingRemainder(dividingBy: 1000.0))
                     canvas(size: geo.size, origin: origin, time: t)
                 }
@@ -219,6 +219,18 @@ struct BlobFieldView: View {
             }
         }
     }
+
+    /// DEBUG still harness (ws-fluted-glass): `-GlassFreezeTime <seconds>` pins every animated
+    /// blob field to one clock value so two builds' Simulator stills can be pixel-diffed.
+    /// nil (no arg / Release) → the live clock, unchanged.
+    private static let frozenTime: Float? = {
+        #if DEBUG
+        guard UserDefaults.standard.object(forKey: "GlassFreezeTime") != nil else { return nil }
+        return UserDefaults.standard.float(forKey: "GlassFreezeTime")
+        #else
+        return nil
+        #endif
+    }()
 
     /// Blob-compositing blend index (order matches `BlobField.metal`'s `blendColor`).
     /// ★ **T device-final 2026-09-14** (`blob: blend=`, see Ops/reference/tuner-state-accepted.md):

@@ -39,7 +39,7 @@ GRADERS = {
     "F1": "no displayed frame contains reasoning prose",
     "F2": "no displayed frame contains system-prompt text",
     "F3": "no displayed frame contains <think>/</think>/channel tokens",
-    "F4": "nothing displayed was later retracted / moved into Thought process (stream-then-jump)",
+    "F4": "nothing displayed was later retracted / moved into Thought process (stream-then-jump) — incl. a citation number that changed",
     "A1": "answer not empty (and no error banner)",
     "A2": "no reasoning prose in the shown answer",
     "A3": "no system-prompt echo in the shown answer",
@@ -63,7 +63,8 @@ GRADERS = {
     "I5": "INV-bubble: a re-ask (Retry / offer) replaces the turn, never duplicates it",
     "I6": "INV-carry: a follow-up keeps the SAME entry open",
     "I7": "survey shape: cards/passages within caps",
-    "W1": "voice: no sycophantic opener (\"Great question\", \"What a fascinating…\", \"I'd be happy to\")",
+    "W1": "voice: no sycophantic or greeting opener (\"Great question\", \"What a fascinating…\", \"I'd be happy to\", \"Hey!\", \"Hi there,\")",
+    "N1": "citations: the prose never names an entry by number outside a bracket (\"entries 5, 8, 9\", \"(entry 6)\")",
     "W2": "voice: question tic — FLAG the RUN when > 50% of its answers end with a question back to the user",
     "W3": "voice: length fit — FLAG a fact/read answer over ~120 words or a broad answer under ~60 (CC reads it)",
     "D1": "CI-0 dates: every entry the answer cites for a time window falls inside that window",
@@ -126,6 +127,16 @@ def norm_cmp(s):
     s = re.sub(r"^\s*[-•]\s+", "", s, flags=re.M)
     return norm_ws(s).lower()
 
+def norm_keep_markers(s):
+    """norm_cmp, but citation markers KEPT (as plain [n]) — for the citation-only half of F4."""
+    s = re.sub(r"[*_`#>|~]", "", s or "")
+    s = re.sub(r"^\s*[-•]\s+", "", s, flags=re.M)
+    return norm_ws(s).lower()
+
+# CH ruling 8 — a prose reference to an entry BY NUMBER (outside the bracket grammar). The numberer rewrites the
+# valid ones into "entries [1], [2]"; any left is a number the reader can't match to a chip.
+PROSE_REF = re.compile(r"\b(?:entry|entries|note|notes|item|items)\s+#?\d{1,2}(?:\s*(?:,|and|&)\s*#?\d{1,2})*\b", re.I)
+
 def title_norm(s):
     s = "".join(ch if ch.isalnum() else " " for ch in (s or "").lower())
     return " ".join(s.split())
@@ -182,6 +193,9 @@ SYCOPHANTIC_OPENERS = [
     r"(?:i'd|i would) love to",
     r"(?:thanks|thank you) for (?:asking|the question|sharing)",
     r"(?:absolutely|certainly|of course|sure)!",
+    # T 2026-10-07 ruling 7 — a greeting opener ("Hey!", "Hey—what stood out…", "Hi there,"): instruct-2507 GW1,
+    # blind packet S1-B. Needs the punctuation, so "Hiking…" / "Hey Jude" never match.
+    r"(?:hey|hi|hello)(?: there)?\s*[!,.—–-]",
 ]
 _OPENER_RE = re.compile(r"^(?:" + "|".join(SYCOPHANTIC_OPENERS) + ")")
 
@@ -1073,6 +1087,19 @@ def grade_row(exp, turn, ui, prev_turn, host, ps, versions, cases_meta, store=Fa
                 gone = fn[k:k + 160]
                 where = "moved into Thought process" if gone[:40] and gone[:40] in norm_cmp(thinking) else "retracted"
                 retract = (i, where, gone[:90], len(fn) - k)
+    if retract is None:
+        # CH ruling 8 — a CITATION-ONLY retraction is a FAIL too: a number shown while streaming must be the number
+        # committed (the old pipeline showed packet [5, 8, 9] and committed [1, 2, 3]). Compare with the markers
+        # kept; a marker still being typed at a frame's end ("[5") is not yet displayed as a citation.
+        fin_k = norm_keep_markers(final)
+        for i, f in enumerate(frames):
+            fk = norm_keep_markers(re.sub(r"\[[\dEe,\s]*$", "", f))
+            if fk and not fin_k.startswith(fk):
+                k = 0
+                while k < min(len(fk), len(fin_k)) and fk[k] == fin_k[k]:
+                    k += 1
+                retract = (i, "renumbered (citation-only)", fk[max(0, k - 30):k + 40], len(fk) - k)
+                break
     res("F4", retract is None,
         f"frame #{retract[0]}: {retract[3]} displayed chars later {retract[1]}: \"{retract[2]}…\"" if retract else "")
     if store:
@@ -1182,6 +1209,13 @@ def grade_row(exp, turn, ui, prev_turn, host, ps, versions, cases_meta, store=Fa
     else:
         res("FX1", not fx, "; ".join(fx[:3]) or "all fact lines verified")
 
+    # ── N1 (CH ruling 8) — prose names an entry by number outside a bracket. Library rows only (a general / web
+    # answer can say "step 2" or "note 3" of something that is not a packet entry).
+    if norm_ws(final) and exp.get("kind") not in ("general", "web"):
+        pr = PROSE_REF.findall(final)
+        res("N1", not pr, f"prose reference(s) by number: {pr[:3]}" if pr else "")
+    else:
+        na("N1", "no answer" if not norm_ws(final) else "general/web row")
     # ── W* voice (Brief CH-A1b) — graded on the committed answer (what the model said)
     if norm_ws(final):
         op = sycophantic_opener(final)

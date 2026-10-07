@@ -50,6 +50,9 @@ final class LibrarianGauntletV2: XCTestCase {
             if g.eject == true { ejectedAt = ejectAllModels() }
             let app = XCUIApplication()
             app.launchArguments = cfg.baseArgs + g.args + ["-OpenMap", "-GauntletUI", "YES", "-GauntletTapDir", isDevice ? "app-tmp" : cfg.outDir]
+            // CH ruling 9 — the LIVE Brave run: T's key arrives only through the test runner's environment
+            // (`TEST_RUNNER_GAUNTLET_BRAVE_KEY`), never through the run config, so it is never written to a file.
+            if let k = env["GAUNTLET_BRAVE_KEY"], !k.isEmpty { app.launchArguments += ["-BraveTestKey", k] }
             app.launch()
             log("GROUP \(g.group) launched args=\(g.args)")
             for t in g.turns {
@@ -58,10 +61,22 @@ final class LibrarianGauntletV2: XCTestCase {
                 let lastAnswerBefore = isDevice ? (screenOrdered(app.descendants(matching: .any).matching(identifier: "chat.answer")).last?.label ?? "") : ""
                 let t0 = Date()
                 var note = ""
+                var mode: String? = nil
                 switch t.action {
                 case "look":
                     // No input: just let the screen settle and capture it (e.g. a REOPENED chat).
                     Thread.sleep(forTimeInterval: 8)
+                case "general":
+                    // CH ruling 9 — the pillar rows through the REAL UI: tap the Library toggle over to General
+                    // (the gauntlet launch resets it to Library), then ask. The mode reached is recorded (V5).
+                    if !app.buttons["General mode"].exists {
+                        let lib = app.buttons["Library mode"]
+                        if lib.waitForExistence(timeout: 15) { lib.tap() }
+                    }
+                    if app.buttons["General mode"].waitForExistence(timeout: 5) {
+                        mode = "general"
+                        ask(app, t.question)
+                    } else { note = "NO MODE TOGGLE (could not switch to General)" }
                 case "offer":
                     let offer = app.buttons["Read it in full"]
                     if offer.waitForExistence(timeout: 10) { offer.tap() } else { note = "NO OFFER BUTTON" }
@@ -98,6 +113,7 @@ final class LibrarianGauntletV2: XCTestCase {
                                           "question": t.question, "seq": seq, "turnCompleted": ok,
                                           "wallSec": Date().timeIntervalSince(t0)]
                 if !note.isEmpty { rec["driverNote"] = note }
+                if let m = mode { rec["mode"] = m }
                 if let e = ejectedAt { rec["ejectedAtEpoch"] = e; ejectedAt = nil }
                 if hungNote == nil { rec.merge(captureScreen(app, row: t.row, out: isDevice ? nil : out)) { a, _ in a } }
                 if hungNote == nil, isDevice, app.state != .runningForeground {

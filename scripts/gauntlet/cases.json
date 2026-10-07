@@ -1010,6 +1010,82 @@
           "expectRoute": ""
         }
       ]
+    },
+    {
+      "chat": "ui-pillars",
+      "what": "CH ruling 9 (T 2026-10-07) — the pillar rows through the REAL UI: the driver taps the Library toggle to General, then asks. Run once with `--extra-arg -WebSearchMock --extra-arg YES` (key), once without (no key), and live with TEST_RUNNER_GAUNTLET_BRAVE_KEY set (T's key; never written to a file).",
+      "cases": [
+        {
+          "id": "GK1",
+          "kind": "general",
+          "what": "pillar 3 general knowledge: arithmetic in GENERAL mode, no library citations",
+          "question": "What is 17 × 23?",
+          "expectRoute": "",
+          "mustContain": [
+            [
+              "391"
+            ]
+          ],
+          "minFacts": 1,
+          "action": "general"
+        },
+        {
+          "id": "GK2",
+          "kind": "general",
+          "what": "pillar 3 general knowledge: a literary fact",
+          "question": "Who wrote Pride and Prejudice?",
+          "expectRoute": "",
+          "mustContain": [
+            [
+              "austen"
+            ]
+          ],
+          "minFacts": 1,
+          "action": "general"
+        },
+        {
+          "id": "GK3",
+          "kind": "general",
+          "what": "pillar 3 general knowledge: a short explanation",
+          "question": "Explain in two sentences why the sky is blue.",
+          "expectRoute": "",
+          "mustContain": [
+            [
+              "scatter",
+              "rayleigh"
+            ]
+          ],
+          "minFacts": 1,
+          "action": "general"
+        },
+        {
+          "id": "GW1",
+          "kind": "web",
+          "webIntent": true,
+          "what": "pillar 2 web search, intent word 'latest': key (-WebSearchMock) → web_search fires + web cite + sentinel; no key → the app's line",
+          "question": "What's the latest news about the Lakeview Observatory telescope?",
+          "expectRoute": "",
+          "action": "general"
+        },
+        {
+          "id": "GW2",
+          "kind": "web",
+          "webIntent": true,
+          "what": "pillar 2 web search, explicit 'search the web': as GW1",
+          "question": "Search the web for when the Lakeview Observatory telescope sees first light.",
+          "expectRoute": "",
+          "action": "general"
+        },
+        {
+          "id": "GW3",
+          "kind": "web",
+          "webIntent": false,
+          "what": "pillar 2 web search, NO intent word (model's judgement): key → should search (FLAG if not); no key → must not invent a date (FLAG)",
+          "question": "When will the new Lakeview Observatory telescope see first light?",
+          "expectRoute": "",
+          "action": "general"
+        }
+      ]
     }
   ]
 }

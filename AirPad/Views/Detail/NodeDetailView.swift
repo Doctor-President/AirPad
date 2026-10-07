@@ -887,18 +887,7 @@ struct NodeDetailView: View {
                 // ws-entry-containers — the Display/Edit toggle is RETIRED (the
                 // container's collapse/expand is the presentation state now).
                 Menu {
-                    Button {} label: {
-                        Label("Share / Export", systemImage: "square.and.arrow.up")
-                    }
-                    .disabled(true)
-
-                    // STUB — needs `store.duplicateNode(id:)` (not yet
-                    // implemented). Wire once the store method lands.
-                    Button {} label: {
-                        Label("Duplicate", systemImage: "doc.on.doc")
-                    }
-                    .disabled(true)
-                    Divider()
+                    // Share / Export + Duplicate — not built (V1: hidden, T 2026-10-07 ruling 3; inventory 1.1 list).
                     // Priority working set (Dashboard "Priority" row). `flag` =
                     // a follow-up / working-set mark, deliberately NOT a star
                     // (T rejected "Favorites" — it's a working set, not affection).

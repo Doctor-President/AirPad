@@ -679,104 +679,6 @@ struct SettingsView: View {
         .sorted { $0.count != $1.count ? $0.count > $1.count : $0.tag.name.lowercased() < $1.tag.name.lowercased() }
     }
 
-    // MARK: - AI Model
-
-    private var aiModelSection: some View {
-        VStack(alignment: .leading, spacing: 16) {
-            sectionHeader("AI Model")
-
-            currentModelRow
-
-            VStack(alignment: .leading, spacing: 12) {
-                apiKeyField(label: "Anthropic API key", placeholder: "sk-ant-...", text: $anthropicKey)
-                apiKeyField(label: "OpenAI API key", placeholder: "sk-...", text: $openAIKey)
-                apiKeyField(label: "DeepSeek API key", placeholder: "sk-...", text: $deepSeekKey)
-                // Web search backend (private-mode tool loop). Web search REQUIRES a Brave
-                // key: with one, the Brave Search API is used; without one, web search is
-                // unavailable (no keyless fallback). Same BYO-key model as the frontier
-                // providers above and the Ollama endpoint below.
-                // Brief AF3 — carries the "what Brave is / why a card" copy + a signup
-                // link, and `.id(Anchor.webSearch)` so the Librarian no-key notice can
-                // open Settings scrolled here.
-                VStack(alignment: .leading, spacing: 6) {
-                    apiKeyField(label: "Brave Search API key", placeholder: "BSA...", text: $braveSearchKey)
-                    Text("Web search uses Brave's Search API. Brave gives a monthly credit that covers normal use, but needs an account with a card on file. Paste your key here.")
-                        .font(appFont.font(size: 12, relativeTo: .caption1))
-                        .foregroundStyle(AppearancePalette.ink.opacity(0.4))
-                    Link("Get a Brave Search API key", destination: URL(string: "https://brave.com/search/api/")!)
-                        .font(appFont.font(size: 12, weight: .semibold, relativeTo: .caption1))
-                        .tint(Color(hexString: "E8820A"))
-                }
-                .id(Anchor.webSearch)
-
-                VStack(alignment: .leading, spacing: 4) {
-                    Text("Ollama / LM Studio endpoint")
-                        .font(appFont.font(size: 12, weight: .semibold, relativeTo: .caption1))
-                        .foregroundStyle(AppearancePalette.ink.opacity(0.4))
-                    TextField("http://192.168.x.x:11434", text: $ollamaEndpoint)
-                        .font(appFont.font(size: 15, relativeTo: .subheadline))
-                        .foregroundStyle(AppearancePalette.ink)
-                        .tint(AppearancePalette.ink)
-                        .padding(12)
-                        .background(AppearancePalette.ink.opacity(0.06))
-                        .clipShape(RoundedRectangle(cornerRadius: 10))
-                        .keyboardType(.URL)
-                        .autocorrectionDisabled()
-                        .textInputAutocapitalization(.never)
-                }
-
-                // Optional bearer token for the endpoint above. Empty = no auth header
-                // (today's behavior). Sent as `Authorization: Bearer <token>` on every
-                // request; required by the AirPad Bridge/Host and any authed proxy.
-                apiKeyField(label: "API token (optional)",
-                            placeholder: "Bearer token — leave empty for none",
-                            text: $ollamaAPIToken)
-            }
-
-            HStack {
-                Button {
-                    testConnection()
-                } label: {
-                    HStack(spacing: 6) {
-                        if isTestingConnection {
-                            ProgressView().tint(AppearancePalette.ink).scaleEffect(0.7)
-                        }
-                        Text(isTestingConnection ? "Testing…" : "Test connection")
-                            .font(appFont.font(size: 15, weight: .medium, relativeTo: .subheadline))
-                    }
-                    .foregroundStyle(AppearancePalette.ink.opacity(0.75))
-                    .padding(.horizontal, 16)
-                    .padding(.vertical, 9)
-                    .background(AppearancePalette.ink.opacity(0.09))
-                    .clipShape(Capsule())
-                }
-                .buttonStyle(.plain)
-                // Enabled even with an empty endpoint — the tap must always produce a visible,
-                // honest response (empty → guidance; reachable/unreachable → result). Gating it on
-                // a key made it a dead control for a reviewer with nothing configured (the 2.1 case).
-                .disabled(isTestingConnection)
-
-                if let result = connectionTestResult {
-                    Text(result)
-                        .font(appFont.font(size: 12, relativeTo: .caption1))
-                        .foregroundStyle(connectionResultColor(result))
-                }
-                Spacer()
-            }
-
-            personalPromptField
-
-            librarianLogRow
-
-            localModelSubsection
-
-            hostPairingRow
-        }
-        .sheet(isPresented: $showPairingQR, onDismiss: { hostPairing = HostPairing.load() }) {
-            HostPairingSheet()
-        }
-    }
-
     // MARK: - Brief AC2 — Copy Librarian log (device diagnosis, no Mac needed)
     /// Puts the last 10 corpus-Ask S5 records (scope · empty · shape · per-candidate
     /// rows) on the clipboard. os_log isn't readable on TestFlight, so this is the
@@ -806,33 +708,6 @@ struct SettingsView: View {
             Text("The last 10 Library-mode retrievals (scope, whether empty, shape, candidate rows). Paste it when a Librarian answer looks wrong.")
                 .font(appFont.font(size: 11, relativeTo: .caption2))
                 .foregroundStyle(AppearancePalette.ink.opacity(0.3))
-        }
-    }
-
-    // MARK: - Connect to your computer (Stage 4: pair with the desktop Host over the tunnel)
-    private var hostPairingRow: some View {
-        VStack(alignment: .leading, spacing: 8) {
-            Divider().overlay(AppearancePalette.ink.opacity(0.1))
-            Text("Connect to your computer")
-                .font(appFont.font(size: 12, weight: .semibold, relativeTo: .caption1))
-                .foregroundStyle(AppearancePalette.ink.opacity(0.4))
-            Button { showPairingQR = true } label: {
-                HStack(spacing: 8) {
-                    Image(systemName: hostPairing == nil ? "qrcode" : "checkmark.seal.fill")
-                        .foregroundStyle(hostPairing == nil ? AppearancePalette.ink.opacity(0.8) : .green)
-                    Text(hostPairing == nil ? "Pair with your desktop model" : "Paired — \(hostPairing!.displayHost)")
-                        .font(appFont.font(size: 15, weight: .medium, relativeTo: .subheadline))
-                        .foregroundStyle(AppearancePalette.ink.opacity(0.8))
-                    Spacer()
-                    Image(systemName: "chevron.right").font(.caption).foregroundStyle(AppearancePalette.ink.opacity(0.3))
-                }
-                .padding(.horizontal, 16).padding(.vertical, 11)
-                .background(AppearancePalette.ink.opacity(0.07))
-                .clipShape(RoundedRectangle(cornerRadius: 10))
-            }
-            .buttonStyle(.plain)
-            Text("Reach a private model running on your own Mac, from anywhere — end-to-end encrypted.")
-                .font(appFont.font(size: 11, relativeTo: .caption2)).foregroundStyle(AppearancePalette.ink.opacity(0.3))
         }
     }
 
@@ -1012,35 +887,6 @@ struct SettingsView: View {
                 .font(appFont.font(size: 11, relativeTo: .caption2))
                 .foregroundStyle(AppearancePalette.ink.opacity(0.3))
         }
-    }
-
-    private var currentModelRow: some View {
-        HStack {
-            Image(systemName: "cpu")
-                .foregroundStyle(.purple.opacity(0.8))
-            VStack(alignment: .leading, spacing: 2) {
-                Text("Active model")
-                    .font(appFont.font(size: 12, weight: .semibold, relativeTo: .caption1))
-                    .foregroundStyle(AppearancePalette.ink.opacity(0.4))
-                Text(activeModelName)
-                    .font(appFont.font(size: 15, weight: .medium, relativeTo: .subheadline))
-                    .foregroundStyle(AppearancePalette.ink)
-            }
-            Spacer()
-        }
-        .padding(14)
-        .background(AppearancePalette.ink.opacity(0.05))
-        .clipShape(RoundedRectangle(cornerRadius: 12))
-    }
-
-    private var activeModelName: String {
-        if !anthropicKey.isEmpty { return "Anthropic (Claude)" }
-        if !openAIKey.isEmpty    { return "OpenAI" }
-        if !deepSeekKey.isEmpty  { return "DeepSeek" }
-        if !ollamaEndpoint.isEmpty { return "Ollama (local)" }
-        // Single source of truth so this can't drift from the Librarian pill
-        // (both now read "Apple Intelligence"). Was "On-device (Foundation Model)".
-        return ModelRouter.foundationModelName
     }
 
     @ViewBuilder
@@ -1429,21 +1275,7 @@ struct SettingsView: View {
                 .task { await store.refreshBlockIndexCoverage() }
             }
 
-            Button {
-                // Scaffold — full export in Session 6
-            } label: {
-                HStack {
-                    Image(systemName: "square.and.arrow.up")
-                    Text("Export library")
-                }
-                .font(appFont.font(size: 15, weight: .medium, relativeTo: .subheadline))
-                .foregroundStyle(AppearancePalette.ink.opacity(0.5))
-                .padding(.horizontal, 16)
-                .padding(.vertical, 10)
-                .background(AppearancePalette.ink.opacity(0.07))
-                .clipShape(RoundedRectangle(cornerRadius: 10))
-            }
-            .buttonStyle(.plain)
+            // Export library — not built (V1: hidden, T 2026-10-07 ruling 3; inventory 1.1 list).
 
             Button {
                 showClearConfirmation = true

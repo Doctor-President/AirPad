@@ -1558,7 +1558,14 @@ struct WebSearchMockExecutor: ToolExecutor {
     func execute(name: String, arguments: [String: Any]) async -> ToolResult {
         switch name {
         case AgentTools.webSearch:
-            NSLog("[WebSearchMock] web_search query=%@", (arguments["query"] as? String) ?? "")
+            let query = (arguments["query"] as? String) ?? ""
+            NSLog("[WebSearchMock] web_search query=%@", query)
+            // Only an on-topic query gets the sentinel results; anything else gets Brave's own no-results reply —
+            // a search for "Pride and Prejudice author" must not come back with telescope news (first run: the
+            // model then cited an irrelevant [1] on a general-knowledge row — a mock artefact, not the model).
+            guard query.range(of: #"lakeview|observatory|telescope|first light"#, options: [.regularExpression, .caseInsensitive]) != nil else {
+                return ToolResult(textForModel: "No results found for \"\(query)\".", links: [])
+            }
             let text = Self.links.enumerated().map { i, l in "[\(i + 1)] \(l.title)\n\(l.url)\n\(l.snippet ?? "")" }
                 .joined(separator: "\n\n")
             return ToolResult(textForModel: text, links: Self.links)

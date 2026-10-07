@@ -43,7 +43,7 @@ xcrun simctl boot $SIM 2>/dev/null; xcrun simctl bootstatus $SIM -b >/dev/null 2
 ( while true; do
     sleep 10
     [[ -f $RUN_DIR/heartbeat ]] || continue
-    APID=$(pgrep -f "AirPad.app/AirPad" | head -1); [[ -n $APID ]] || continue
+    APID=$(pgrep -f "Devices/$SIM/.*AirPad.app/AirPad" | head -1); [[ -n $APID ]] || continue
     up=$(ps -o etime= -p $APID | awk -F'[:-]' '{n=NF; s=$n+($(n-1))*60; if(n>2)s+=$(n-2)*3600; print s}')
     age=$(( $(date +%s) - $(cut -d. -f1 $RUN_DIR/heartbeat) ))
     if (( age > 45 && up > 55 )); then

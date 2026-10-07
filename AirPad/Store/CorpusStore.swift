@@ -1101,6 +1101,10 @@ final class CorpusStore {
                 if ProcessInfo.processInfo.arguments.contains("-ComputedFactsSelfTest") {
                     NSLog("[ComputedFactsSelfTest] %@", ComputedFactsSelfTest.run())
                 }
+                // Brief CH ruling 8 — the citation numberer (prefix invariant, orphan strip, prose references).
+                if ProcessInfo.processInfo.arguments.contains("-CitationNumberSelfTest") {
+                    NSLog("[CitationNumberSelfTest] %@", CitationNumberSelfTest.run())
+                }
                 if ProcessInfo.processInfo.arguments.contains("-ProposalSelfTest") {
                     NSLog("[ProposalSelfTest] %@", ProposalSelfTest.run())
                 }

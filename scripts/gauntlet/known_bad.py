@@ -571,6 +571,51 @@ def ch3(kb_dir, template_dir):
     print("wrote", len(items), "ch3 items")
 
 
+def pillars(kb_dir, template_dir):
+    """T 2026-10-06 pillars 2+3 — known-bad + controls for GK1 (general mode cites a library entry), GW1 (web intent:
+    tool not fired / no web cite / no sentinel; a model answer where the app's no-key line belongs) and GW2 (an
+    invented date). Synthetic answers on a real store turn's shell; no user content."""
+    tmpl_rows = json.load(open(os.path.join(template_dir, "store-rows.json")))["rows"]
+    base = json.load(open(os.path.join(template_dir, f"turn-{tmpl_rows[0]['seq']:03d}.json")))
+    items = []
+    def item(iid, case, grader, bad, what, **turn):
+        d = os.path.join(kb_dir, iid)
+        if os.path.exists(d):
+            shutil.rmtree(d)
+        os.makedirs(d)
+        for f in ("host.log", "ps.log", "versions.json"):
+            shutil.copy(os.path.join(template_dir, f), d)
+        t = copy.deepcopy(base); t.update(seq=1, userContent="", citations=[], plan={}, tools=[], raw=[], frames=[], thinking="")
+        t.pop("path", None); t.update(turn)
+        json.dump(t, open(os.path.join(d, "turn-001.json"), "w"), indent=1, ensure_ascii=False)
+        json.dump({"think": False, "rows": [{"case": case, "seq": 1, "newChat": True, "elapsedSec": 1}]}, open(os.path.join(d, "store-rows.json"), "w"))
+        row = f"{case}.off.store"
+        items.append({"id": iid, "runDir": iid, "store": True, "what": what,
+                      **({"expectRed": {row: [grader]}} if bad else {"expectGreenOn": {row: [grader]}})})
+    web = [{"index": 1, "nodeID": "", "url": "https://news.gauntlet.example/lakeview-first-light", "title": "Lakeview Observatory sets first-light date", "snippet": ""}]
+    item("pil-gk1-libcite", "GK1", "GK1", True, "synthetic: a GENERAL-mode answer that cites a library entry",
+         finalText="17 × 23 = 391 [1].", citations=[{"index": 1, "nodeID": "N1", "url": "", "title": "Fitness Journal", "snippet": ""}])
+    item("pil-gk1-control", "GK1", "GK1", False, "CONTROL: general answer, no citations", finalText="17 × 23 = 391.")
+    item("pil-gw1-nofire", "GW1", "GW1", True, "synthetic: key present (tools path) but web_search never called, no web cite",
+         path="tools", finalText="I can't browse the web, but telescopes usually take years to commission.")
+    item("pil-gw1-control", "GW1", "GW1", False, "CONTROL: web_search fired, web result cited, sentinel stated",
+         path="tools", tools=[{"name": "web_search", "argument": "Lakeview Observatory telescope news"}],
+         citations=web, finalText="The Lakeview Observatory's new telescope will see first light on 19 November 2031 [1].")
+    item("pil-gw1-nokey-model", "GW1", "GW1", True, "synthetic: NO key, intent question answered by the model instead of the app's line",
+         finalText="I don't have live news, but the Lakeview telescope was announced some time ago.")
+    item("pil-gw1-nokey-control", "GW1", "GW1", False, "CONTROL: no key → the app's line", path="nokey",
+         finalText="Web search needs a Brave Search key. [Add one in Settings → Web search.](airpad-settings://websearch)")
+    item("pil-gw2-invented", "GW3", "GW2", True, "synthetic: no key, no intent word, the model INVENTS a date",
+         finalText="The new Lakeview telescope is scheduled to see first light in March 2027.")
+    item("pil-gw2-control", "GW3", "GW2", False, "CONTROL: says it doesn't know",
+         finalText="I don't know — that isn't something I have reliable information on, and I can't check the web without a search key.")
+    mp = os.path.join(kb_dir, "manifest.json")
+    man = json.load(open(mp))
+    man["items"] = [i for i in man["items"] if not i["id"].startswith("pil-")] + items
+    json.dump(man, open(mp, "w"), indent=1, ensure_ascii=False)
+    print("wrote", len(items), "pillar items")
+
+
 if __name__ == "__main__":
     cmd = sys.argv[1]
     if cmd == "replays":
@@ -579,6 +624,8 @@ if __name__ == "__main__":
         doctor(sys.argv[2], sys.argv[3], sys.argv[4])
     elif cmd == "voice":
         voice(sys.argv[2])
+    elif cmd == "pillars":
+        pillars(sys.argv[2], sys.argv[3])
     elif cmd == "ch3":
         ch3(sys.argv[2], sys.argv[3])
     elif cmd == "ci2":

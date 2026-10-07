@@ -81,6 +81,9 @@ GRADERS = {
     "DL1": "CI ruling 2: a temporal question's COMPUTED FACTS carry per-entry date lines",
     "RF1": "CH-A test 3: no outright refusal (FAIL)",
     "RF2": "CH-A test 3: hedging / moralising / warnings recorded (FLAG, CC reads)",
+    "GK1": "pillar 3 (general knowledge): a GENERAL-mode answer cites no library entry and states its facts",
+    "GW1": "pillar 2 (web search), intent question: key → web_search fires, the answer cites a web result + the sentinel; no key → the app's no-key line, no model call",
+    "GW2": "pillar 2 (web search), no intent word: key → the model searches (FLAG if not); no key → no invented date (FLAG, CC reads)",
     "R1": "repeat: 3/3 runs pass (aggregate)",
 }
 # Brief CH-A1b — the voice graders are named W* (not the brief's V1–V3: V* is run validity and ABORTs).
@@ -895,6 +898,57 @@ def iso_epoch(s):
 
 # ─────────────────────────── grading ───────────────────────────
 
+NOKEY_LINE = "Web search needs a Brave Search key"
+SENTINEL = re.compile(r"\b(?:19(?:th)? november,? 2031|november 19(?:th)?,? 2031|2031-11-19)\b", re.I)
+INVENTED_DATE = re.compile(r"\b(?:19|20)\d\d\b|\b(?:january|february|march|april|may|june|july|august|september|october|november|december) \d{1,2}\b", re.I)
+
+def grade_pillar(exp, turn, ps, R, res, na):
+    """T 2026-10-06 pillars 2 + 3 — GENERAL mode + WEB SEARCH rows. The turn's `path` (render tap) says which
+    branch ran: "tools" = key present (the agent loop), "nokey" = the app-owned line (no model call), absent =
+    a plain private chat. Graders:
+      GK1 (FAIL)  general knowledge: no LIBRARY citation (General mode never cites entries) + its facts (A6).
+      GW1 (FAIL)  web, intent question: key → web_search FIRED and the answer CITES a web result and states the
+                  sentinel fact; no key → exactly the app's no-key line (no model call).
+      GW2 (FLAG)  web, no intent word: key → the model should search (it cannot know the sentinel); no key → it must
+                  not invent a date (CC reads every firing)."""
+    final = turn.get("finalText") or ""
+    cites = turn.get("citations") or []
+    path = turn.get("path") or "plain"
+    tools = [t.get("name") for t in (turn.get("tools") or [])]
+    web_cites = [c for c in cites if c.get("url")]
+    lib_cites = [c for c in cites if c.get("nodeID")]
+    stats = {"route": f"general/{path}", "chips": len(cites), "webCites": len(web_cites), "tools": ",".join(tools) or "—",
+             "answerChars": len(final), "elapsedMs": turn.get("elapsedMs")}
+    facts = exp.get("mustContain") or []
+    if facts and exp.get("minFacts", 0) > 0:
+        low = final.lower()
+        got = sum(1 for alts in facts if any(a.lower() in low for a in alts))
+        res("A6", got >= exp["minFacts"], f"facts {got}/{exp['minFacts']} required")
+    if exp["kind"] == "general":
+        res("GK1", not lib_cites and path != "nokey",
+            ("cites library entries: " + ", ".join(c.get("title", "")[:24] for c in lib_cites) if lib_cites else "")
+            + (" got the no-key line on a non-search question" if path == "nokey" else ""))
+        return {"results": R, "stats": stats}
+    intent = exp.get("webIntent", True)
+    if path == "nokey":
+        res("GW1" if intent else "GW2", intent and NOKEY_LINE in final,
+            "no-key line shown" if intent else "no-key line on a NON-intent question (the app only owns intent turns)")
+    elif path == "tools":
+        fired, cited, fact = "web_search" in tools, bool(web_cites), bool(SENTINEL.search(final))
+        detail = f"web_search {'fired' if fired else 'NOT called'}; web cites {len(web_cites)}; sentinel fact {'stated' if fact else 'MISSING'}"
+        if intent:
+            res("GW1", fired and cited and fact, detail)
+        else:
+            R["GW2"] = ("PASS" if fired and cited and fact else "FLAG", detail)
+    else:   # plain private chat (no key, no intent word)
+        if intent:
+            res("GW1", False, "an intent question with no key must get the app's no-key line, not a model answer")
+        else:
+            inv = INVENTED_DATE.search(final)
+            R["GW2"] = ("FLAG" if inv else "PASS", f"states a date it cannot know: '{inv.group(0)}'" if inv else "no invented date")
+    return {"results": R, "stats": stats}
+
+
 def grade_row(exp, turn, ui, prev_turn, host, ps, versions, cases_meta, store=False):
     """→ dict(results={grader: (status, detail)}, stats={…}). status ∈ PASS | FAIL | ABORT | N/A."""
     R = {}
@@ -917,6 +971,8 @@ def grade_row(exp, turn, ui, prev_turn, host, ps, versions, cases_meta, store=Fa
             abort=True)
         return {"results": R, "stats": stats}
     res("V0", True, "")
+    if exp.get("kind") in ("general", "web"):
+        return grade_pillar(exp, turn, ps, R, res, na)
 
     plan = turn.get("plan") or {}
     final = turn.get("finalText") or ""

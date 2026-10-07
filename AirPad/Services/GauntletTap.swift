@@ -149,6 +149,21 @@ final class GauntletTap: @unchecked Sendable {
         pendingPlan = nil
     }
 
+    /// Gauntlet v2 pillar rows (T 2026-10-06) — which path produced the turn ("plain" is implicit; "tools" = the
+    /// web-search agent loop, "nokey" = the app-owned no-key line, no model call) and every tool the model called.
+    func notePath(_ path: String) {
+        guard isOn else { return }
+        lock.lock(); defer { lock.unlock() }
+        turn?["path"] = path
+    }
+    func noteTool(_ name: String, _ argument: String) {
+        guard isOn else { return }
+        lock.lock(); defer { lock.unlock() }
+        var tools = (turn?["tools"] as? [[String: String]]) ?? []
+        tools.append(["name": name, "argument": argument])
+        turn?["tools"] = tools
+    }
+
     /// The model tag the app actually put on the wire (ModelRouter.streamHost).
     func noteModel(_ model: String) {
         guard isOn else { return }

@@ -163,7 +163,11 @@ enum ComputedFactsSelfTest {
         let s1 = section("Which of my lab values are out of range?"), s2 = section("Which of my lab values are out of range?")
         let h1 = s1.map { SHA256.hash(data: Data($0.utf8)).description }, h2 = s2.map { SHA256.hash(data: Data($0.utf8)).description }
         check("S-deterministic", s1 != nil && h1 == h2)
-        check("S-scope-N-of-M", s1?.contains("You are seeing 2 of the 434 entries in this library") == true, s1 ?? "nil")
+        // T 2026-10-06: "N of M" ONLY on whole-library questions — absent on a single-entry read, present on a count/rank/absence question.
+        check("S-no-N-of-M-on-read-q", s1?.contains("You are seeing") == false, s1 ?? "nil")
+        let sWhole = section("How many of my entries mention my lab report?")
+        check("S-scope-N-of-M-whole-library", sWhole?.contains("You are seeing 2 of the 434 entries in this library") == true, sWhole ?? "nil")
+        check("S-no-N-of-M-on-synthesis", section("What connections do you find between my ideas?")?.contains("You are seeing") == false)
         check("S-no-limit-on-range-q", s1?.contains("You cannot count") == false)
         check("S-summary", s1?.contains("Out of range in [1], among the 9 values above: CHOLESTEROL 213 (H), LDL, CALCULATED 153 (H). The other 7 are within their ranges.") == true,
               s1?.components(separatedBy: "\n").first { $0.hasPrefix("Out of range") } ?? "missing")

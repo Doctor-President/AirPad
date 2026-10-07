@@ -530,11 +530,12 @@ enum ComputedFacts {
         guard !entries.isEmpty else { return nil }
 
         var keep: [String] = [todayLine(input.today, calendar: cal)]
-        var scope = "You are seeing \(entries.count) of the \(input.scopeTotal) entries in this \(input.scopeNoun) — the ones most related to the question, not all of them."
+        // "N of M" ONLY on whole-library questions (T 2026-10-06): on a single-entry read the models recited it
+        // as chatter ("I'm seeing only 1 of 224 entries in your library" — thinking-4B 3/15 on test 3).
         if looksLikeWholeLibraryQuestion(input.question) {
-            scope += " You cannot count, rank (oldest, newest, longest) or prove that something is absent across the whole \(input.scopeNoun) from these; if asked, say what these entries show and that it may not be everything."
+            keep.append("You are seeing \(entries.count) of the \(input.scopeTotal) entries in this \(input.scopeNoun) — the ones most related to the question, not all of them."
+                + " You cannot count, rank (oldest, newest, longest) or prove that something is absent across the whole \(input.scopeNoun) from these; if asked, say what these entries show and that it may not be everything.")
         }
-        keep.append(scope)
         keep += packetAnswers(question: input.question, entries: entries, calendar: cal)
         if let w = relativeWindow(question: input.question, today: input.today, calendar: cal) {
             let inside = entries.filter { e in

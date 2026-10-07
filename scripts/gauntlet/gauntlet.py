@@ -1475,7 +1475,11 @@ def grade_store(pass_dir, model, digest):
     """Store-level PRE-SCREEN (`-LibrarianGauntlet` + render tap, no UI): grade every case's turn with the
     same graders; UI-only graders (F*, A7, on-screen half of C5, the Thought-process header) are N/A."""
     cm = json.load(open(os.path.join(HERE, "cases.json")))
-    meta = {c["id"]: c for chat in cm["chats"] for c in chat["cases"]}
+    # first definition wins: a UI-only copy of a store case (chat `ui-pillars`, action "general") must not shadow it
+    meta = {}
+    for chat in cm["chats"]:
+        for c in chat["cases"]:
+            meta.setdefault(c["id"], c)
     sr = load_json(os.path.join(pass_dir, "store-rows.json"), {"rows": [], "think": False})
     think = bool(sr.get("think"))
     host = parse_host_log(os.path.join(pass_dir, "host.log"))

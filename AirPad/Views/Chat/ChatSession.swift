@@ -1037,6 +1037,7 @@ final class ChatSession {
             out.append(Message(role: .assistant, text: body))
         }
         messages = out
+        flush()   // persisted like a real chat, so the Chats list (off-pillar smoke test) can see it
     }
     #endif
 

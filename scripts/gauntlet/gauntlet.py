@@ -991,6 +991,14 @@ def grade_row(exp, turn, ui, prev_turn, host, ps, versions, cases_meta, store=Fa
         return {"results": R, "stats": stats}
     res("V0", True, "")
     if exp.get("kind") in ("general", "web"):
+        if not store:
+            # UI-level pillar rows (CH ruling 9): the screen must show the committed answer (A7, same letters-only
+            # comparison as library rows) — the no-key line and the web tool loop render through their own paths.
+            letters = lambda x: re.sub(r"[^a-z]", "", (x or "").lower())
+            ratio = difflib.SequenceMatcher(None, letters(ui.get("onScreenAnswer")), letters(turn.get("finalText")), autojunk=False).ratio()
+            res("A7", ratio >= 0.9, f"similarity {ratio:.2f}")
+            if exp.get("action") == "general":
+                res("V5", ui.get("mode") == "general", f"mode={ui.get('mode')} (the driver must have switched the Library toggle to General)", abort=True)
         return grade_pillar(exp, turn, ps, R, res, na)
 
     plan = turn.get("plan") or {}

@@ -366,21 +366,54 @@ enum ComputedFacts {
         return p.contains { matches(q, $0) }
     }
 
+    /// The QUESTION SENTENCE(S) of a turn (T 2026-10-07, ruling 6): the sentences that end in "?", or — when none
+    /// does ("Tell me how many entries mention Mara") — the last sentence. A conversational reply carries context
+    /// before its question ("…but I almost never go back and reread them. What does that say about me?"); only the
+    /// question decides whether the turn is a whole-library question.
+    static func questionSentence(_ q: String) -> String {
+        let parts = q.replacingOccurrences(of: #"(?<=[.!?])\s+|\n+"#, with: "\u{1F}", options: .regularExpression)
+            .components(separatedBy: "\u{1F}")
+            .map { $0.trimmingCharacters(in: .whitespacesAndNewlines) }
+            .filter { !$0.isEmpty }
+        let asked = parts.filter { $0.hasSuffix("?") }
+        return asked.isEmpty ? (parts.last ?? "") : asked.joined(separator: " ")
+    }
+
+    /// The whole-library FORMS a question takes — ONE derivation, read by the matcher, the computed answers and the
+    /// key terms, so they can't disagree (T 2026-10-07, ruling 6: question sentence only, existence forms; the same
+    /// for latest/count). A rank word must rank ENTRIES ("my oldest entry", "the last time I…", "when did I last…"),
+    /// not modify a topic ("the earliest stages of AirPad"); "count" must count entries ("how many times", "how many
+    /// of my entries"), never "does my diet count as…"; presence must be an existence form ("did I ever", "have I
+    /// never", "I've never written"), never a bare "never" in a reply.
+    enum WholeLibraryForm: Hashable { case count, oldest, newest, longest, shortest, frequency, presence }
+
+    private static let entryNoun = #"(?:entr(?:y|ies)|notes?|things?|items?|ones?|pieces?|documents?|articles?|journal entries)"#
+
+    static func wholeLibraryForms(_ q: String) -> Set<WholeLibraryForm> {
+        let s = questionSentence(q).replacingOccurrences(of: "\u{2019}", with: "'")
+        let rank = { (words: String) in #"\b(?:"# + words + #")\s+(?:\w+\s+){0,2}?"# + entryNoun + #"\b"# }
+        var out = Set<WholeLibraryForm>()
+        if matches(s, #"\bhow many\s+(?:\w+\s+){0,3}?(?:"# + entryNoun + #"|times)\b|\bnumber of (?:"# + entryNoun + #"|times)\b|\bcount (?:up |the |my |of )*(?:"# + entryNoun + #"|times)\b"#) {
+            out.insert(.count)
+        }
+        if matches(s, rank("oldest|earliest|first") + #"|\bfirst time\b|\bwhen did i first\b"#) { out.insert(.oldest) }
+        if matches(s, rank("newest|latest|most recent|last") + #"|\blast time\b|\bwhen did i (?:last|most recently)\b"#) { out.insert(.newest) }
+        if matches(s, rank("longest|biggest")) { out.insert(.longest) }
+        if matches(s, rank("shortest|smallest")) { out.insert(.shortest) }
+        if matches(s, #"\b(?:most|least)\s+(?:often|frequent(?:ly)?|common|mentioned|written)\b"#) { out.insert(.frequency) }
+        if matches(s, #"\b(?:did|have|had|do)\s+i\s+(?:\w+\s+)?(?:ever|never)\b"#
+                    + #"|\bi(?:'ve| have)?\s+never\s+(?:written|wrote|mentioned|noted|said|recorded|saved)\b"#
+                    + #"|\bever\s+(?:been\s+)?(?:written|mentioned|noted|recorded)\b"#
+                    + #"|\bany (?:entries|notes)\b|\bdid i (?:write|mention|say|note) anything\b|\bwhat exactly did i (?:say|write)\b"#) {
+            out.insert(.presence)
+        }
+        return out
+    }
+
     /// A WHOLE-LIBRARY question (count / rank / oldest-newest / absence / exact quote) → the scope line
-    /// gains its limit sentence (design §5).
+    /// gains its limit sentence (design §5). See `wholeLibraryForms`.
     static func looksLikeWholeLibraryQuestion(_ q: String) -> Bool {
-        let p = [
-            #"\bhow many\b"#, #"\bnumber of\b"#, #"\bcount\b"#,
-            #"\b(?:oldest|newest|latest|earliest|longest|shortest|biggest|smallest)\b"#,
-            #"\bmost recent\b"#, #"\bfirst time\b"#, #"\blast time\b"#,
-            #"\b(?:most|least)\s+(?:often|frequent(?:ly)?|common|mentioned|written)\b"#,
-            #"\bever\b"#, #"\bnever\b"#, #"\bany (?:entries|notes)\b"#,
-            // EXISTENCE only: "did I EVER write…" (\bever\b above) / "did I write ANYTHING about…" — never a plain
-            // "What did I write about my Bolex?", which is an ordinary read question (caught in the CH-A pre-screen).
-            #"\bdid i (?:write|mention|say|note) anything\b"#, #"\bhave i ever\b"#,
-            #"\bwhat exactly did i (?:say|write)\b"#,
-        ]
-        return p.contains { matches(q, $0) }
+        !wholeLibraryForms(q).isEmpty
     }
 
     // MARK: - Packet-level computed answers (CI-2 ruling 1)
@@ -395,7 +428,7 @@ enum ComputedFacts {
     really actually oldest newest latest earliest most least recent first last time longest shortest biggest smallest
     often frequent frequently common anything something thing things one ones tell show find give know think
     today yesterday tomorrow day days week weeks month months year years lately recently ago past this
-    next new old bought got made idea ideas take the
+    next new old bought got made idea ideas take the times item items piece pieces
     """.split(whereSeparator: { $0 == " " || $0 == "\n" }).map(String.init))
 
     /// The question's KEY TERMS — deterministic: drop stopwords and intent words; a run of Capitalised words is ONE
@@ -442,35 +475,35 @@ enum ComputedFacts {
     /// rather than infer: "Among the 9 entries shown, 1 mentions “Mara”: [1]." Scoped to "the entries shown" — the
     /// library-wide answer is 1.1 (hybrid search). Empty for any other question.
     static func packetAnswers(question q: String, entries: [PacketEntry], calendar cal: Calendar) -> [String] {
-        guard looksLikeWholeLibraryQuestion(q) else { return [] }
-        let terms = keyTerms(q)
+        let forms = wholeLibraryForms(q)
+        guard !forms.isEmpty else { return [] }
+        let terms = keyTerms(questionSentence(q))
         let n = entries.count
         let matched = terms.isEmpty ? entries : entries.filter { e in terms.allSatisfy { mentions(e.shownText, $0) } }
         var out: [String] = []
         let about = terms.isEmpty ? "" : " that mention \(quoted(terms))"
-        if matches(q, #"\bhow many\b|\bnumber of\b|\bcount\b"#) && !terms.isEmpty {
+        if forms.contains(.count) && !terms.isEmpty {
             out.append(matched.isEmpty
                        ? "Answer: \u{201C}\(n == 1 ? "The one entry I can see doesn't mention" : "None of \(seen(n)) mention") \(quoted(terms)) — I can't see your whole library, so I can't rule it out.\u{201D}"
                        : "Answer: \u{201C}Of \(seen(n)), \(matched.count) \(matched.count == 1 ? "mentions" : "mention") \(quoted(terms)) (\(list(matched))) — I can't see your whole library, so there may be more.\u{201D}")
         }
         let dated = matched.filter { $0.created != nil }.sorted { ($0.created!, $0.number) < ($1.created!, $1.number) }
-        if matches(q, #"\b(?:oldest|earliest|first time)\b"#) {
+        if forms.contains(.oldest) {
             out.append(dated.first.map { "Answer: \u{201C}Of the entries I can see\(about), the oldest is [\($0.number)] \($0.title) (\(dayString($0.created!, calendar: cal))) — I can't see your whole library, so it may not be your oldest.\u{201D}" }
                        ?? "Answer: \u{201C}None of the entries I can see\(about.isEmpty ? " are dated" : about) — I can't see your whole library.\u{201D}")
         }
-        if matches(q, #"\b(?:newest|latest|most recent|last time)\b"#) {
+        if forms.contains(.newest) {
             out.append(dated.last.map { "Answer: \u{201C}Of the entries I can see\(about), the most recent is [\($0.number)] \($0.title) (\(dayString($0.created!, calendar: cal))) — I can't see your whole library, so it may not be your latest.\u{201D}" }
                        ?? "Answer: \u{201C}None of the entries I can see\(about.isEmpty ? " are dated" : about) — I can't see your whole library.\u{201D}")
         }
         let sized = matched.filter { $0.words != nil }.sorted { ($0.words!, -$0.number) < ($1.words!, -$1.number) }
-        if matches(q, #"\b(?:longest|biggest)\b"#), let e = sized.last {
+        if forms.contains(.longest), let e = sized.last {
             out.append("Answer: \u{201C}Of the entries I can see\(about), the longest is [\(e.number)] \(e.title) (about \(e.words!) words) — I can't see your whole library, so it may not be your longest.\u{201D}")
         }
-        if matches(q, #"\b(?:shortest|smallest)\b"#), let e = sized.first {
+        if forms.contains(.shortest), let e = sized.first {
             out.append("Answer: \u{201C}Of the entries I can see\(about), the shortest is [\(e.number)] \(e.title) (about \(e.words!) words) — I can't see your whole library, so it may not be your shortest.\u{201D}")
         }
-        let presence = matches(q, #"\bever\b|\bnever\b|\bany (?:entries|notes)\b|\bdid i (?:write|mention|say|note) anything\b|\bhave i ever\b|\bwhat exactly did i (?:say|write)\b"#)
-        if presence && !terms.isEmpty && out.isEmpty {
+        if forms.contains(.presence) && !terms.isEmpty && out.isEmpty {
             if matched.isEmpty {
                 var line = "Answer: \u{201C}\(n == 1 ? "The one entry I can see doesn't mention" : "None of \(seen(n)) mention")\(terms.count > 1 ? " all of" : "") \(quoted(terms))"
                 if terms.count > 1 {

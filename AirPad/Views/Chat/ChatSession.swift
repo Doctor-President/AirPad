@@ -165,18 +165,41 @@ final class ChatSession {
     /// their reasoning onto the answer channel terminated by a stray `</think>`; everything up to + that
     /// first close is reasoning → `streamingThinking` (collapsed UI), the rest is the real answer. Clean
     /// models never emit `</think>`, so this is a no-op for them. Idempotent per turn.
+    ///
+    /// Brief CH ruling 8 — the answer is shown THROUGH this turn's `CitationNumberer`: `streamingText` is its
+    /// display text (citation numbers final at first appearance, invalid markers never shown), while
+    /// `rawAnswer` keeps the model's own stream.
     @MainActor
     private func appendAnswerDelta(_ t: String) {
-        streamingText += t
-        guard !didSplitLeakedThinking, let r = streamingText.range(of: "</think>") else { return }
-        let reasoning = String(streamingText[..<r.upperBound])
-            .replacingOccurrences(of: "<think>", with: "")
-            .replacingOccurrences(of: "</think>", with: "")
-            .trimmingCharacters(in: .whitespacesAndNewlines)
-        if !reasoning.isEmpty { streamingThinking += reasoning }
-        streamingText = String(streamingText[r.upperBound...])
-        didSplitLeakedThinking = true
+        rawAnswer += t
+        if !didSplitLeakedThinking, let r = rawAnswer.range(of: "</think>") {
+            let reasoning = String(rawAnswer[..<r.upperBound])
+                .replacingOccurrences(of: "<think>", with: "")
+                .replacingOccurrences(of: "</think>", with: "")
+                .trimmingCharacters(in: .whitespacesAndNewlines)
+            if !reasoning.isEmpty { streamingThinking += reasoning }
+            rawAnswer = String(rawAnswer[r.upperBound...])
+            didSplitLeakedThinking = true
+            numberer = CitationNumberer(candidates: numbererCandidates)
+            numberer.feed(rawAnswer)
+        } else {
+            numberer.feed(t)
+        }
+        streamingText = numberer.displayText
     }
+
+    /// Brief CH ruling 8 — start a fresh answer stream numbered against `candidates` (the turn's packet
+    /// citations, or the web results found so far). Every stream start goes through here.
+    @MainActor
+    private func beginAnswerStream(candidates: [Message.Citation]?) {
+        streamingText = ""
+        rawAnswer = ""
+        numbererCandidates = candidates
+        numberer = CitationNumberer(candidates: candidates)
+    }
+    @ObservationIgnored private var rawAnswer = ""
+    @ObservationIgnored private var numbererCandidates: [Message.Citation]?
+    @ObservationIgnored private var numberer = CitationNumberer(candidates: nil)
     /// Per-chat Thinking toggle, OFF by default. The picker sheet's toggle sets it; send() passes
     /// it to the Host — the only path that honors `think`.
     var thinkEnabled: Bool = false
@@ -301,7 +324,7 @@ final class ChatSession {
         messages.append(Message(role: .user, text: displayText))
         pendingUser = nil
         isStreaming = true
-        streamingText = ""
+        beginAnswerStream(candidates: citations ?? [])
 
         streamingMessageID = UUID()
         // ★ BUG 36 Pillar 2 — a HOST turn gets a client-generated requestID (D1) so a
@@ -365,56 +388,29 @@ final class ChatSession {
                     }
                 }
             }
-            // Brief AD — a reasoning model routes its thoughts to the `reasoning`
-            // channel (→ `.thinking`), but one that instead dumps `<think>…</think>`
-            // INTO the answer must not have that chain-of-thought rendered — or its
-            // `[n]` parsed as a citation. Strip it before citation processing.
-            let streamed = Self.stripThinkTags(streamingText).trimmingCharacters(in: .whitespacesAndNewlines)
-            // Brief AB3 — STRIP any `[n]` whose index isn't a candidate this turn
-            // (a hallucinated marker: the empty-library branch passes no candidates,
-            // and a small model still fabricates [1]-[5]). Without this the renderer
-            // draws orphan superscripts with no chip behind them (T's build-B report).
-            let validIndices = Set((citations ?? []).map { $0.index })
-            let finalText = CitationReference.stripInvalidMarkers(in: streamed, valid: validIndices)
+            // Brief CH ruling 8 — the committed text IS what was on screen: the numberer's display text (numbers
+            // assigned at first appearance, invalid markers dropped at first sight — Brief AB3's strip, applied
+            // incrementally; the empty-library branch passes no candidates, so every marker is dropped). Brief AD — a
+            // model that dumps `<think>…</think>` INTO the answer must not have that chain-of-thought rendered.
+            numberer.settleAll()
+            var r = numberer.result(alwaysInclude: alwaysCiteIndices)
+            let finalText = Self.stripThinkTags(r.text).trimmingCharacters(in: .whitespacesAndNewlines)
             if !finalText.isEmpty {
-                // Keep ONLY the sources the answer actually cited inline ([n]).
-                // Retrieval hands over candidates; a passage becomes a citation
-                // only when the prose references it — so a turn that ignores the
-                // passages (or answers from general knowledge) can't render
-                // phantom "sources" under it (BUG 7 / Part 2).
-                // Brief BS2 — an entry READ IN FULL (its index in `alwaysCiteIndices`) is ALWAYS
-                // kept as a source chip, whether or not the model wrote its [n]; skimmed
-                // passages/cards still only survive when the prose cites them.
-                let citedOnly: [Message.Citation]? = citations.flatMap { candidates in
-                    let used = CitationReference.citedIndices(in: finalText)
-                    let kept = candidates.filter { used.contains($0.index) || alwaysCiteIndices.contains($0.index) }
-                    return kept.isEmpty ? nil : kept
-                }
-                // Brief BH — renumber to ONE number per source (1…k, first-mention order)
-                // so the inline superscripts and the node-deduped footer chips always match.
-                if let cited = citedOnly {
-                    // BU1 — carry the always-cite set INTO the renumber: keeping a chip past the
-                    // filter is not enough, the renumber rebuilds from prose mentions and would
-                    // drop an uncited read entry (BS2's guarantee, restored end-to-end).
-                    let r = CitationReference.renumberBySource(text: finalText, citations: cited,
-                                                               alwaysInclude: alwaysCiteIndices)
-                    messages.append(Message(id: streamingMessageID, role: .assistant, text: r.text, citations: r.citations, readReceipt: readReceipt))
-                } else if let candidates = citations,
-                          case let titleMatched = candidates.filter({ Self.titleMentioned($0.title, in: finalText) }),
-                          !titleMatched.isEmpty {
+                // Sources are ONLY the ones the answer cited inline (BUG 7 / Part 2) — a passage becomes a
+                // citation only when the prose references it — plus the entries READ IN FULL (BS2/BU1), appended
+                // after the mentioned ones. One number per source (BH), so superscripts and chips always match.
+                if r.citations.isEmpty, let candidates = citations,
+                   case let titleMatched = candidates.filter({ Self.titleMentioned($0.title, in: finalText) }),
+                   !titleMatched.isEmpty {
                     // Deterministic citation fallback (T 2026-10-04): the answer wrote NO [n] (small models
                     // under-cite a free-form synthesis — qwen3:4b's connections turn). Attach a FOOTER chip
-                    // for every PACKET entry the answer NAMES by title (case/punctuation-tolerant). `[n]`
-                    // parsing stays the primary path above; this fires only when there are no markers. Only
+                    // for every PACKET entry the answer NAMES by title (case/punctuation-tolerant). Only
                     // `candidates` are considered, so a chip can never point at an entry not in the packet.
-                    let r = CitationReference.renumberBySource(text: finalText, citations: titleMatched,
-                                                               alwaysInclude: Set(titleMatched.map { $0.index }))
-                    messages.append(Message(id: streamingMessageID, role: .assistant, text: r.text, citations: r.citations, readReceipt: readReceipt))
-                } else {
-                    // Brief BN5 — the read/skim receipt renders even when the answer cited nothing
-                    // inline (a full read the model didn't superscript still "read 1 entry").
-                    messages.append(Message(id: streamingMessageID, role: .assistant, text: finalText, citations: nil, readReceipt: readReceipt))
+                    r = numberer.result(alwaysInclude: Set(titleMatched.map { $0.index }))
                 }
+                // Brief BN5 — the read/skim receipt renders even when the answer cited nothing inline.
+                messages.append(Message(id: streamingMessageID, role: .assistant, text: finalText,
+                                        citations: r.citations.isEmpty ? nil : r.citations, readReceipt: readReceipt))
             }
         } catch {
             // ★ BUG 36 — do NOT discard the partial. A mid-stream drop (the app
@@ -425,7 +421,8 @@ final class ChatSession {
             // Only when NOTHING streamed do we surface a failure banner, so a
             // genuine unreachable-Host error is still visible (and the trailing
             // `.user` message remains so retry can re-send it).
-            let partial = streamingText.trimmingCharacters(in: .whitespacesAndNewlines)
+            numberer.settleAll()
+            let partial = numberer.result().text.trimmingCharacters(in: .whitespacesAndNewlines)
             if !partial.isEmpty {
                 // Carry the requestID so foreground / relaunch can fetch the FULL answer. Keep the
                 // read receipt so a resumed partial still shows what it read (BN5).
@@ -488,6 +485,11 @@ final class ChatSession {
     /// appended to the model's copy of the user turn (the display bubble stays clean).
     /// Returns whether the refusal guard fired a web retry, so the caller can log
     /// `retry=web`.
+    /// The web results found so far this turn, as numberer candidates (global `[n]` = position + 1).
+    static func webCandidates(_ links: [ToolLink]) -> [Message.Citation] {
+        links.enumerated().map { i, l in Message.Citation(index: i + 1, url: l.url, title: l.title, snippet: l.snippet ?? "") }
+    }
+
     @discardableResult
     func sendWithTools(displayText: String, systemPrompt: String, executor: ToolExecutor, forceWebSearch: Bool = false) async -> Bool {
         guard !displayText.isEmpty, !isStreaming else { return false }
@@ -507,7 +509,7 @@ final class ChatSession {
         messages.append(Message(role: .user, text: displayText))
         pendingUser = nil
         isStreaming = true
-        streamingText = ""
+        beginAnswerStream(candidates: [])
         streamingThinking = ""   // Brief AL3 — clear any prior turn's thought process
 
         #if DEBUG
@@ -569,7 +571,9 @@ final class ChatSession {
                 var sawUnavailable = false
                 var anyTool = false
                 for step in 0..<maxToolSteps {
-                    streamingText = ""
+                    // CH ruling 8/7 — each step streams through a numberer over the web results found so far,
+                    // so a marker with no result behind it (8B's "Jane Austen [1]" with no search) is never shown.
+                    beginAnswerStream(candidates: Self.webCandidates(citationLinks))
                     streamingThinking = ""   // AL3 — per step, so the panel shows THIS step's reasoning; the final (synthesis) step's is retained at commit
                     didSplitLeakedThinking = false
                     // Withhold the tool schema once a tool reported it has no backend — the model
@@ -616,7 +620,7 @@ final class ChatSession {
                              "function": ["name": call.name, "arguments": call.argumentsJSON]]
                         }
                     ])
-                    streamingText = ""
+                    beginAnswerStream(candidates: Self.webCandidates(citationLinks))
 
                     // Run each tool through the seam; show an activity row; feed results back.
                     for call in turn.toolCalls {
@@ -671,20 +675,19 @@ final class ChatSession {
 
             streamingText = ""
             if !outcome.answer.isEmpty {
-                // ★ Gate chips to CITED, not searched (the corpus rule via the SAME
-                // `citedIndices` parser): attach a web citation ONLY for the [n] the
-                // answer actually referenced, each mapped to its real scraped URL. No
-                // [n] → no footer, exactly like corpus.
-                let cited = CitationReference.citedIndices(in: outcome.answer)
-                let webCitations: [Message.Citation] = cited.sorted().compactMap { n in
-                    guard n >= 1, n <= outcome.links.count else { return nil }
-                    let link = outcome.links[n - 1]
-                    return Message.Citation(index: n, url: link.url, title: link.title, snippet: link.snippet ?? "")
+                // ★ Gate chips to CITED, not searched: a web citation ONLY for the [n] the answer actually
+                // referenced, each mapped to its real scraped URL; no [n] → no footer, exactly like corpus.
+                // CH ruling 7/8 — the SAME numberer as the corpus path, over the settled answer: an orphan
+                // marker (no result behind it) is stripped, numbers are one per source by first appearance —
+                // identical to what streamed (the step's deltas went through the same function).
+                var n = CitationNumberer(candidates: Self.webCandidates(outcome.links))
+                n.feed(outcome.answer)
+                n.settleAll()
+                let r = n.result()
+                if !r.text.isEmpty {
+                    messages.append(Message(role: .assistant, text: r.text,
+                                            citations: r.citations.isEmpty ? nil : r.citations))
                 }
-                // Brief BH — same renumber (one per source) so web chips match the prose.
-                let r = CitationReference.renumberBySource(text: outcome.answer, citations: webCitations)
-                messages.append(Message(role: .assistant, text: r.text,
-                                        citations: r.citations.isEmpty ? nil : r.citations))
             }
         } catch {
             // Degrade SILENTLY if the FIRST turn failed (e.g. the endpoint/model

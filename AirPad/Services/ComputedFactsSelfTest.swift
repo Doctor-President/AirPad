@@ -145,6 +145,24 @@ enum ComputedFactsSelfTest {
             check("L- read-q \(q)", !ComputedFacts.looksLikeWholeLibraryQuestion(q) && ComputedFacts.packetAnswers(question: q, entries: [], calendar: ComputedFacts.calendar()).isEmpty)
         }
         check("L+ anything", ComputedFacts.looksLikeWholeLibraryQuestion("Did I write anything about beekeeping?"))
+        // T 2026-10-07 ruling 6 — question sentence only; existence forms; the same for latest/count.
+        for q in ["Have I never written about my father?", "I've been thinking about bees. Did I ever write about beekeeping?",
+                  "When did I last write about Mara?", "How many times did I mention Paris?", "What's my most recent note about Mara?",
+                  "Tell me how many entries mention Mara", "What was the first thing I wrote about AirPad?",
+                  "I've never written about my father, have I?", "Is Paris ever mentioned in my notes?"] {
+            check("L+ form \(q)", ComputedFacts.looksLikeWholeLibraryQuestion(q))
+        }
+        let mt1b = "Honestly, I write the hard conversations down afterwards, but I almost never go back and reread them. What does that say about me?"
+        for q in [mt1b, "Honestly I never reread them.", "Does my diet count as healthy?", "What's the latest on my sculpture project?",
+                  "What did I write about the earliest stages of AirPad?", "How many hours did I sleep according to my notes?",
+                  "I never kept a diary as a kid. Which of my entries feel most like one?", "Will I ever finish the Bolex film?"] {
+            check("L- form \(q)", !ComputedFacts.looksLikeWholeLibraryQuestion(q)
+                  && ComputedFacts.packetAnswers(question: q, entries: [], calendar: ComputedFacts.calendar()).isEmpty)
+        }
+        check("L-terms from the question sentence", ComputedFacts.keyTerms(ComputedFacts.questionSentence(
+            "I've been thinking about bees. Did I ever write about beekeeping?")) == ["beekeeping"])
+        check("L-count-times", ComputedFacts.wholeLibraryForms("How many times did I mention Paris?") == [.count]
+              && ComputedFacts.keyTerms("How many times did I mention Paris?") == ["Paris"])
         for q in ["What do I think about everything?", "Whatever happened with the sculpture?", "What connections do you find between my ideas?",
                   "What do my lab test results reveal?", "However you read it, what's the gist?", "Is my HDL in the normal range?"] {
             check("L- \(q)", !ComputedFacts.looksLikeWholeLibraryQuestion(q))

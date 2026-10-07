@@ -77,7 +77,11 @@ final class GauntletTap: @unchecked Sendable {
         if let dir {
             let hb = dir.appendingPathComponent("heartbeat")
             DispatchQueue.main.async { [weak self] in
-                Timer.scheduledTimer(withTimeInterval: 0.25, repeats: true) { _ in
+                // `.common` modes, not `scheduledTimer`'s default mode: a runloop parked in a TRACKING mode (a
+                // scroll / interactive keyboard dismiss) is not a hung main thread — the default-mode timer stopped
+                // ticking there and the watchdog killed an IDLE app (2026-10-06 lab: 2 false "hangs", main thread in
+                // mach_msg 1,683/2,157 samples). A real hang still stops this timer in every mode.
+                let beat = Timer(timeInterval: 0.25, repeats: true) { _ in
                     guard let self else { return }
                     let now = Date()
                     self.lock.lock()
@@ -88,6 +92,7 @@ final class GauntletTap: @unchecked Sendable {
                     self.lock.unlock()
                     try? "\(now.timeIntervalSince1970)".write(to: hb, atomically: false, encoding: .utf8)
                 }
+                RunLoop.main.add(beat, forMode: .common)
             }
         }
         // `-GauntletSelfWatchdog <s>` — on a physical device nothing on the Mac can sample/kill a hung app

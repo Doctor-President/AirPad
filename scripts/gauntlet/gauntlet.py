@@ -779,8 +779,11 @@ def fx1_violations(turn, plan):
         bad.append("no 'Today is' line")
     sm = re.search(r"You are seeing (\d+) of the (\d+) entries", sec)
     nodes = {c.get("nodeID") for c in (plan.get("candidates") or [])}
+    # T 2026-10-06: the "N of M" line appears ONLY on whole-library questions — its absence is correct elsewhere.
+    # A whole-library turn is the one the app gives a computed "Answer: “…”" line, so require the scope line there.
     if not sm:
-        bad.append("no scope line")
+        if "Answer: \u201c" in sec or "whole-library question" in sec:
+            bad.append("whole-library answer without the scope line")
     elif nodes and int(sm.group(1)) != len(nodes):
         bad.append(f"scope N={sm.group(1)} but the packet has {len(nodes)} entries")
     hdr = cand_dates(turn)
@@ -944,7 +947,9 @@ def grade_pillar(exp, turn, ps, R, res, na):
         if intent:
             res("GW1", False, "an intent question with no key must get the app's no-key line, not a model answer")
         else:
-            inv = INVENTED_DATE.search(final)
+            # a knowledge-cutoff remark ("As of my last update in July 2024") is not a first-light date (8B GW3 on)
+            scrub = re.sub(r"\bas of (?:my )?(?:last )?(?:update|training|knowledge)[^.,;]*", "", final, flags=re.I)
+            inv = INVENTED_DATE.search(scrub)
             R["GW2"] = ("FLAG" if inv else "PASS", f"states a date it cannot know: '{inv.group(0)}'" if inv else "no invented date")
     return {"results": R, "stats": stats}
 

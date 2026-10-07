@@ -900,6 +900,116 @@
           "expectRoute": ""
         }
       ]
+    },
+    {
+      "chat": "mt-1",
+      "cases": [
+        {
+          "id": "MT1a",
+          "kind": "synthesis",
+          "what": "multi-turn (T, blind ranking 2026-10-06: 'I'd be curious to know how well it can respond to a follow-up answer'): opens a synthesis that usually ends with a question back to the user",
+          "question": "What connections do you find between my ideas?",
+          "expectRoute": "survey"
+        },
+        {
+          "id": "MT1b",
+          "kind": "bu2",
+          "what": "multi-turn: the user ANSWERS the model's question; the reply must engage with what the user said (not restart the survey)",
+          "question": "Honestly, I write the hard conversations down afterwards, but I almost never go back and reread them. What does that say about me?",
+          "expectRoute": "",
+          "mustContain": [
+            [
+              "reread",
+              "re-read",
+              "go back",
+              "going back",
+              "revisit",
+              "return to",
+              "never read",
+              "don't read",
+              "rarely"
+            ]
+          ],
+          "minFacts": 1
+        },
+        {
+          "id": "MT1c",
+          "kind": "bu2",
+          "what": "multi-turn: third turn asks for grounding — must cite at least one entry (C2) and stay on the thread",
+          "question": "Which of my entries shows that best?",
+          "expectRoute": ""
+        }
+      ]
+    },
+    {
+      "chat": "pillars",
+      "_probe": true,
+      "cases": [
+        {
+          "id": "GK1",
+          "kind": "general",
+          "what": "pillar 3 general knowledge: arithmetic in GENERAL mode, no library citations",
+          "question": "What is 17 × 23?",
+          "expectRoute": "",
+          "mustContain": [
+            [
+              "391"
+            ]
+          ],
+          "minFacts": 1
+        },
+        {
+          "id": "GK2",
+          "kind": "general",
+          "what": "pillar 3 general knowledge: a literary fact",
+          "question": "Who wrote Pride and Prejudice?",
+          "expectRoute": "",
+          "mustContain": [
+            [
+              "austen"
+            ]
+          ],
+          "minFacts": 1
+        },
+        {
+          "id": "GK3",
+          "kind": "general",
+          "what": "pillar 3 general knowledge: a short explanation",
+          "question": "Explain in two sentences why the sky is blue.",
+          "expectRoute": "",
+          "mustContain": [
+            [
+              "scatter",
+              "rayleigh"
+            ]
+          ],
+          "minFacts": 1
+        },
+        {
+          "id": "GW1",
+          "kind": "web",
+          "webIntent": true,
+          "what": "pillar 2 web search, intent word 'latest': key (-WebSearchMock) → web_search fires + web cite + sentinel; no key → the app's line",
+          "question": "What's the latest news about the Lakeview Observatory telescope?",
+          "expectRoute": ""
+        },
+        {
+          "id": "GW2",
+          "kind": "web",
+          "webIntent": true,
+          "what": "pillar 2 web search, explicit 'search the web': as GW1",
+          "question": "Search the web for when the Lakeview Observatory telescope sees first light.",
+          "expectRoute": ""
+        },
+        {
+          "id": "GW3",
+          "kind": "web",
+          "webIntent": false,
+          "what": "pillar 2 web search, NO intent word (model's judgement): key → should search (FLAG if not); no key → must not invent a date (FLAG)",
+          "question": "When will the new Lakeview Observatory telescope see first light?",
+          "expectRoute": ""
+        }
+      ]
     }
   ]
 }

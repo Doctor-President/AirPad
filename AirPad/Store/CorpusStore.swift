@@ -2076,6 +2076,7 @@ final class CorpusStore {
             var maxCards: Int? = nil           // survey shape: cards ≤ this
             var maxPassages: Int? = nil        // survey shape: passages ≤ this
             var carriesEntry: Bool = false     // must read the SAME entry as the previous case
+            var general: Bool = false          // T 2026-10-06 pillars 2+3: run in GENERAL mode (corpusAware = false)
         }
 
         // The forbidden set every grounded turn shares: the refusals BU exists to eliminate. The
@@ -2189,6 +2190,30 @@ final class CorpusStore {
             Case(id: "S2", what: "synthesis: tensions", question: "Where do my ideas pull against each other? What tensions do you see?", expectRoute: "survey"),
             Case(id: "S3", what: "synthesis: recurring patterns across collections", question: "What recurring patterns run across my different collections?", expectRoute: "survey"),
             Case(id: "S4", what: "synthesis: what am I circling?", question: "What am I circling around without saying it directly?", expectRoute: "survey"),
+            // ── Multi-turn (T, blind ranking 2026-10-06: "I'd be curious to know how well it can respond to a follow-up
+            // answer"). ONE chat: a synthesis that usually ends with a question → the user ANSWERS it → asks for grounding.
+            // ── Pillars 2 + 3 (T 2026-10-06): GENERAL mode (general knowledge) and WEB SEARCH. Run the GW* rows twice:
+            // with `-WebSearchMock YES` (a key-present stand-in: web_search must FIRE and the answer must CITE the
+            // web result) and without any key (a search-intent question → the app's no-key line, NO model call).
+            Case(id: "GK1", what: "general knowledge: arithmetic, no library citations", question: "What is 17 × 23?",
+                 expectRoute: "", mustContain: [["391"]], minFacts: 1, general: true),
+            Case(id: "GK2", what: "general knowledge: a literary fact", question: "Who wrote Pride and Prejudice?",
+                 expectRoute: "", mustContain: [["austen"]], minFacts: 1, general: true),
+            Case(id: "GK3", what: "general knowledge: a short explanation", question: "Explain in two sentences why the sky is blue.",
+                 expectRoute: "", mustContain: [["scatter", "rayleigh"]], minFacts: 1, general: true),
+            Case(id: "GW1", what: "web search (intent word 'latest'): key → web_search fires + web cite; no key → the app's line",
+                 question: "What's the latest news about the Lakeview Observatory telescope?", expectRoute: "", general: true),
+            Case(id: "GW2", what: "web search (explicit 'search the web'): key → fires + cites; no key → the app's line",
+                 question: "Search the web for when the Lakeview Observatory telescope sees first light.", expectRoute: "", general: true),
+            Case(id: "GW3", what: "web search WITHOUT an intent word (the model's own judgement): key → should search (it can't know); no key → must not invent a date",
+                 question: "When will the new Lakeview Observatory telescope see first light?", expectRoute: "", general: true),
+            Case(id: "MT1a", what: "multi-turn: synthesis opener", question: "What connections do you find between my ideas?", expectRoute: "survey"),
+            Case(id: "MT1b", what: "multi-turn: the user answers the model's question — the reply must engage with it",
+                 question: "Honestly, I write the hard conversations down afterwards, but I almost never go back and reread them. What does that say about me?",
+                 expectRoute: "", mustContain: [["reread", "re-read", "go back", "going back", "revisit", "return to", "never read", "don't read", "rarely"]],
+                 minFacts: 1, newChat: false),
+            Case(id: "MT1c", what: "multi-turn: asks for grounding — must cite ≥1 entry", question: "Which of my entries shows that best?",
+                 expectRoute: "", newChat: false),
             // ── Brief CI-0 (computed-facts PROBE) — store-level only, each a fresh chat; graded by gauntlet.py from
             // the render tap against fixture ground truth in cases.json (`probe`). Route-agnostic on purpose: the
             // probe measures whether the ANSWER gets the fact right, whatever the retrieval did.
@@ -2269,6 +2294,7 @@ final class CorpusStore {
             if !onlyCases.isEmpty && !onlyCases.contains(c.id) { continue }
             #endif
             if c.newChat { chat = ChatSession() }
+            librarian.corpusAware = !c.general
             librarian.debugContextWindowOverride = c.fmWindow ? 4_096 : nil
             var forcedFailureMissing = false
             let usersBefore = chat.messages.filter { $0.role == .user }.count

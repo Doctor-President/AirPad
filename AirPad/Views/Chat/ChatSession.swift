@@ -510,6 +510,13 @@ final class ChatSession {
         streamingText = ""
         streamingThinking = ""   // Brief AL3 — clear any prior turn's thought process
 
+        #if DEBUG
+        // Gauntlet v2 pillar rows — the agent loop is a turn too (inert without -GauntletTapDir). Per-step Host
+        // requests aren't joined; the grader reads `path`, `tools` and the committed citations.
+        GauntletTap.shared.beginTurn(requestID: nil, think: false, systemPrompt: systemPrompt, history: [],
+                                     userContent: displayText, numCtx: ModelRouter.contextWindowTokens)
+        GauntletTap.shared.notePath("tools")
+        #endif
         let maxToolSteps = 5
         // Declared outside `do` so the `catch` can read it (Swift scoping).
         var producedActivity = false
@@ -614,6 +621,9 @@ final class ChatSession {
                     // Run each tool through the seam; show an activity row; feed results back.
                     for call in turn.toolCalls {
                         let result = await executor.execute(name: call.name, arguments: call.arguments)
+                        #if DEBUG
+                        GauntletTap.shared.noteTool(call.name, (call.arguments["query"] as? String) ?? (call.arguments["url"] as? String) ?? "")
+                        #endif
                         appendActivity(for: call, result: result)
                         producedActivity = true
                         if result.rateLimited { sawRateLimit = true }
@@ -695,6 +705,13 @@ final class ChatSession {
             lastError = Self.humanError(for: error)
         }
 
+        #if DEBUG
+        do {
+            let committed = messages.last.flatMap { $0.role == .assistant ? $0 : nil }
+            GauntletTap.shared.endTurn(finalText: committed?.text, citations: committed?.citations, receipt: nil,
+                                       thinking: "", lastError: lastError, isPartial: false)
+        }
+        #endif
         streamingText = ""
         isStreaming = false
         flush()
@@ -732,6 +749,12 @@ final class ChatSession {
             text: "Web search needs a Brave Search key. [Add one in Settings → Web search.](airpad-settings://websearch)"))
         pendingUser = nil
         flush()
+        #if DEBUG
+        GauntletTap.shared.beginTurn(requestID: nil, think: false, systemPrompt: "", history: [], userContent: text, numCtx: 0)
+        GauntletTap.shared.notePath("nokey")
+        GauntletTap.shared.endTurn(finalText: messages.last?.text, citations: nil, receipt: nil, thinking: "",
+                                   lastError: nil, isPartial: false)
+        #endif
     }
 
     /// Append a collapsible activity row for one completed tool call.

@@ -1540,6 +1540,38 @@ struct WebSearchUnavailableExecutor: ToolExecutor {
     }
 }
 
+#if DEBUG
+/// Gauntlet v2 web-search rows (T 2026-10-06, pillar 2) — `-WebSearchMock YES`: a deterministic stand-in for Brave
+/// so the gate needs no key and no network. Every `web_search` returns the SAME two results carrying a SENTINEL
+/// fact no model can know (a fictional future date), so an answer that states it AND cites `gauntlet.example`
+/// proves the tool fired and its result was cited. Same wire as Brave (`[n] title / url / snippet`), same cap.
+/// Release-inert. The live Brave path is still exercised by `-BraveTestKey` (pass a real key).
+struct WebSearchMockExecutor: ToolExecutor {
+    static let links = [
+        ToolLink(title: "Lakeview Observatory sets first-light date for its new telescope",
+                 url: "https://news.gauntlet.example/lakeview-first-light",
+                 snippet: "The Lakeview Observatory announced that its new 4-metre telescope will see first light on 19 November 2031, director Ana Okafor said."),
+        ToolLink(title: "Lakeview telescope: what we know",
+                 url: "https://science.gauntlet.example/lakeview-explainer",
+                 snippet: "First light is scheduled for 19 November 2031; the mirror was cast in 2029."),
+    ]
+    func execute(name: String, arguments: [String: Any]) async -> ToolResult {
+        switch name {
+        case AgentTools.webSearch:
+            NSLog("[WebSearchMock] web_search query=%@", (arguments["query"] as? String) ?? "")
+            let text = Self.links.enumerated().map { i, l in "[\(i + 1)] \(l.title)\n\(l.url)\n\(l.snippet ?? "")" }
+                .joined(separator: "\n\n")
+            return ToolResult(textForModel: text, links: Self.links)
+        case AgentTools.fetchURL:
+            NSLog("[WebSearchMock] fetch_url url=%@", (arguments["url"] as? String) ?? "")
+            return ToolResult(textForModel: Self.links[0].snippet ?? "", links: [])
+        default:
+            return ToolResult(textForModel: "Unknown tool: \(name)", links: [])
+        }
+    }
+}
+#endif
+
 /// Shared web-content utilities (readability fetch + HTML cleanup). These formerly lived on
 /// the removed `WebSearchToolExecutor` (the keyless DDG scraper); `BraveSearchToolExecutor`
 /// reuses them for `fetch_url` and for cleaning result snippets, so they outlive the scraper.
@@ -1855,6 +1887,7 @@ enum WebSearchBackend {
     static var hasKey: Bool {
         #if DEBUG
         if let k = UserDefaults.standard.string(forKey: "BraveTestKey"), !k.isEmpty { return true }
+        if UserDefaults.standard.bool(forKey: "WebSearchMock") { return true }
         #endif
         return !((KeychainHelper.load(key: keychainKey) ?? "").trimmingCharacters(in: .whitespacesAndNewlines).isEmpty)
     }
@@ -1864,6 +1897,7 @@ enum WebSearchBackend {
         if let k = UserDefaults.standard.string(forKey: "BraveTestKey"), !k.isEmpty {
             return BraveSearchToolExecutor(apiKey: k)
         }
+        if UserDefaults.standard.bool(forKey: "WebSearchMock") { return WebSearchMockExecutor() }
         #endif
         let key = (KeychainHelper.load(key: keychainKey) ?? "").trimmingCharacters(in: .whitespacesAndNewlines)
         return key.isEmpty ? WebSearchUnavailableExecutor() : BraveSearchToolExecutor(apiKey: key)

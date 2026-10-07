@@ -34,6 +34,11 @@ struct ContentView: View {
                 // Brief AS — `-OpenMap` lands on the canvas (Map) for headless verification.
                 if ProcessInfo.processInfo.arguments.contains("-OpenMap"),
                    router.entryMode != .canvas { router.entryMode = .canvas }
+                // CH ruling 5 — `-OpenChatsList` opens the Chats list sheet (the real surface both entry points
+                // present) so the off-pillar smoke test can drive rename / delete headlessly.
+                if ProcessInfo.processInfo.arguments.contains("-OpenChatsList") {
+                    DispatchQueue.main.asyncAfter(deadline: .now() + 1.5) { router.showChatsList = true }
+                }
                 // `-OpenDashboard` — land on the Dashboard ROOT (not Recents) so the
                 // sample-library strip (Brief T) is screenshot-reachable headlessly.
                 if ProcessInfo.processInfo.arguments.contains("-OpenDashboard"),

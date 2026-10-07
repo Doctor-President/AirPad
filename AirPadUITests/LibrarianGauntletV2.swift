@@ -363,3 +363,63 @@ final class LibrarianGauntletV2: XCTestCase {
 
     private func log(_ s: String) { print("GAUNTLET_V2 \(s)") }
 }
+
+
+/// CH ruling 5 (T 2026-10-07) — off-pillar Librarian features stay in V1 only if they're GREEN in the inventory
+/// pass. This is that pass for the ones a Simulator can check without a model: read-aloud (Play → Pause → Play on a
+/// seeded answer) and the Chats list's rename + delete (long-press menu). Dictation (needs a microphone) and pin-to-
+/// entry are not covered here. No Host needed: `-GauntletSeedChat` seeds a persisted two-turn chat.
+final class OffPillarSmoke: XCTestCase {
+
+    func testReadAloudTogglesPlayback() throws {
+        let app = XCUIApplication()
+        app.launchArguments = ["-OpenMap", "-GauntletUI", "YES", "-GauntletSeedChat", "2"]
+        app.launch()
+        XCTAssertTrue(app.descendants(matching: .any).matching(identifier: "chat.answer").firstMatch.waitForExistence(timeout: 30),
+                      "seeded answer never appeared")
+        let play = app.buttons["Play"].firstMatch
+        XCTAssertTrue(play.waitForExistence(timeout: 10), "no read-aloud Play button under the answer")
+        play.tap()
+        XCTAssertTrue(app.buttons["Pause"].firstMatch.waitForExistence(timeout: 10), "Play did not start read-aloud (no Pause)")
+        app.buttons["Pause"].firstMatch.tap()
+        XCTAssertTrue(app.buttons["Play"].firstMatch.waitForExistence(timeout: 10), "Pause did not stop read-aloud")
+        app.terminate()
+    }
+
+    func testChatsListRenameAndDelete() throws {
+        // 1. seed + persist a chat
+        let seed = XCUIApplication()
+        seed.launchArguments = ["-OpenMap", "-GauntletUI", "YES", "-GauntletSeedChat", "2"]
+        seed.launch()
+        XCTAssertTrue(seed.descendants(matching: .any).matching(identifier: "chat.answer").firstMatch.waitForExistence(timeout: 30))
+        Thread.sleep(forTimeInterval: 2)
+        seed.terminate()
+        // 2. open the Chats list, rename the newest chat, then delete it
+        let app = XCUIApplication()
+        app.launchArguments = ["-OpenMap", "-OpenChatsList"]
+        app.launch()
+        XCTAssertTrue(app.navigationBars["Chats"].waitForExistence(timeout: 20), "Chats list never opened")
+        let row = app.cells.firstMatch
+        XCTAssertTrue(row.waitForExistence(timeout: 10), "no chat row")
+        let before = app.cells.count
+        row.press(forDuration: 1.2)
+        let rename = app.buttons["Rename"].firstMatch
+        XCTAssertTrue(rename.waitForExistence(timeout: 5), "no Rename in the long-press menu")
+        rename.tap()
+        let field = app.textFields.firstMatch
+        XCTAssertTrue(field.waitForExistence(timeout: 5), "no rename field")
+        field.press(forDuration: 1.0)
+        if app.menuItems["Select All"].waitForExistence(timeout: 2) { app.menuItems["Select All"].tap() }
+        field.typeText("Smoke renamed chat\n")
+        let ok = app.buttons["Save"].firstMatch.exists ? app.buttons["Save"].firstMatch : app.buttons["OK"].firstMatch
+        if ok.exists { ok.tap() }
+        XCTAssertTrue(app.staticTexts["Smoke renamed chat"].waitForExistence(timeout: 5), "rename did not show in the list")
+        app.cells.containing(.staticText, identifier: "Smoke renamed chat").firstMatch.press(forDuration: 1.2)
+        let del = app.buttons["Delete"].firstMatch
+        XCTAssertTrue(del.waitForExistence(timeout: 5), "no Delete in the long-press menu")
+        del.tap()
+        XCTAssertTrue(app.staticTexts["Smoke renamed chat"].waitForNonExistence(timeout: 5), "deleted chat still listed")
+        XCTAssertEqual(app.cells.count, before - 1)
+        app.terminate()
+    }
+}

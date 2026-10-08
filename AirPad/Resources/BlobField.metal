@@ -397,3 +397,118 @@ static float2 blobWarp(float2 p, float t, float scale, float amount) {
     }
 }
 
+// Style dispatch for the glass entry point (the glass samples the SAME field several times at
+// displaced positions — it never touches the field's colour logic).
+static half4 fieldAt(float2 samplePos, float time, float2 size, float style, float2 anchor,
+                     float bloom, float blend, device const float *params, int paramCount) {
+    if (style < 0.5) {
+        return lavaField(samplePos, time, size, params, paramCount);   // lava keeps its native additive
+    } else if (style < 1.5) {
+        return cardField(samplePos, time, size, anchor, bloom, blend, params, paramCount);
+    } else {
+        return heroField(samplePos, time, size, bloom, blend, params, paramCount);
+    }
+}
+
+// FLUTED "VOID" GLASS (ws-fluted-glass). Reeded glass over a black void: rib interiors pass
+// almost nothing, so the field is only INFERRED through thin refracted slivers at the rib edges.
+// Ribs are fixed to the SCREEN (phase from `screenPos`) or ride with the card ([6]); the field
+// moves with tilt. The material is BAKED from T's device dial (2026-10-07) — constants below; the
+// per-surface size + fade arrive in the buffer (`GlassSurface.spec`).
+// GLASS layout (a second .floatArray, so the 13-blob param buffer is untouched):
+//   [0] mode: 1 glass · 2 tilt only (field offset by tilt, nothing else)
+//   [1] screenWidth (pt)  [2] tiltX  [3] tiltY  (already × range, fraction of width)
+//   [4] ribs (per screen width)  [5] refraction (width-normalised)  [6] rib anchor (0 screen · 1 card)
+//   [7] fadeStart  [8] fadeEnd — fractions of the surface; the glass hands back to the plain field
+//       between them (start ≥ 1 = no fade)
+//   [9] fade axis (0 down the surface · 1 across it, left → right)
+constant int GLASS_COUNT = 10;
+constant float GLASS_VOID  = 0.1433333456516266;    // 1 = rib interiors fully black
+constant float GLASS_SLIT  = 5.175555542111397;     // edge exponent; higher = thinner slivers
+constant float GLASS_GRAIN = 0.035333333909511565;  // hides banding in the dark falloff
+
+static half4 fieldGlass(float2 samplePos, float2 screenPos, float time, float2 size, float style,
+                        float2 anchor, float bloom, float blend,
+                        device const float *params, int paramCount, device const float *glass,
+                        float strength) {
+    // `strength` (1 = full glass … 0 = the plain field) is the fade: it scales every glass term
+    // down instead of evaluating glass AND plain and cross-fading them. At 0 every term is
+    // identity → the plain field, so the edge is seamless.
+    float W          = max(glass[1], 1.0);
+    float2 tilt      = float2(glass[2], glass[3]) * W * strength;   // points
+    float ribs       = max(glass[4], 1.0);
+    float voidAmt    = GLASS_VOID * strength;
+    float refraction = glass[5] * strength;
+    float grain      = GLASS_GRAIN * strength;
+
+    // Rib coordinate across the screen width.
+    float x  = screenPos.x / W;
+    float t  = fract(x * ribs);
+    float u  = t - 0.5;
+    // Cylinder lens: ~0 at the rib centre, steep at the edges (u = ±0.5 → 1 − 0.9 = 0.1, finite).
+    float lens = u / sqrt(1.0 - 3.6 * u * u) * 0.32;
+    float o    = lens * refraction / ribs * 3.0 * W;            // width-normalised → points
+
+    // Transmission: interiors dark, both edges pass.
+    float edge     = abs(2.0 * u);
+    float transmit = mix(1.0, pow(edge, GLASS_SLIT), voidAmt);
+
+    // One refracted sample — the same single field evaluation per pixel as V1.
+    half4 cG = fieldAt(samplePos + float2(o, 0.0) + tilt, time, size, style, anchor, bloom, blend,
+                       params, paramCount);
+    float3 c = float3(cG.rgb) * transmit;
+    float  a = float(cG.a) * transmit;
+
+    // Static grain (screen-locked, ~per-pixel at 3x) to hide banding in the dark falloff.
+    float n = hash21(floor(screenPos * 3.0)) - 0.5;
+    c = max(c + n * grain, 0.0);
+
+    c = saturate(c);
+    a = saturate(max(a, max(c.r, max(c.g, c.b))));              // keep rgb ≤ a (premultiplied)
+    return half4(half3(c), half(a));
+}
+
+// GLASS ENTRY POINT (ws-fluted-glass). A SEPARATE stitchable function so the shipping
+// `blobField` above stays byte-for-byte V1: BlobFieldView only calls this one when its caller
+// passed a `GlassRender`, so glass-off surfaces run the untouched V1 shader BY CONSTRUCTION (adding
+// the glass branch inside `blobField` shifted the light Dashboard's codegen by 1/255 even with the
+// branch never taken — measured 2026-10-06). Same arguments as `blobField`, plus the glass buffer.
+[[ stitchable ]] half4 blobFieldGlass(float2 position,
+                                      half4 color,
+                                      float time,
+                                      float2 size,
+                                      float2 globalOrigin,
+                                      float sharedField,
+                                      float style,
+                                      float2 anchor,
+                                      float noiseAmount,
+                                      float noiseScale,
+                                      float bloom,
+                                      float blend,
+                                      device const float *params,
+                                      int paramCount,
+                                      device const float *glass,
+                                      int glassCount) {
+    float2 samplePos = position + globalOrigin * step(0.5, sharedField);
+    if (noiseAmount > 0.001) {
+        samplePos = blobWarp(samplePos, time, noiseScale, noiseAmount);
+    }
+    if (glassCount >= GLASS_COUNT && glass[0] > 1.5) {
+        // TILT ONLY (glass off, tilt on): the field moves with the phone, no ribs / grain.
+        samplePos += float2(glass[2], glass[3]) * max(glass[1], 1.0);
+    } else if (glassCount >= GLASS_COUNT && glass[0] > 0.5) {
+        // glass[6] = rib anchor: 0 → ribs fixed to the SCREEN, 1 → ribs ride with the CARD.
+        float2 ribPos = glass[6] > 0.5 ? position : position + globalOrigin;
+        // Glass fade: between fadeStart → fadeEnd (down, or across) the glass eases back to the
+        // PLAIN field, so the card's own fade + type zone read exactly as V1. Past fadeEnd only
+        // the plain field runs.
+        float fy = glass[9] > 0.5 ? position.x / max(size.x, 1.0) : position.y / max(size.y, 1.0);
+        float k  = glass[7] < 0.999 ? smoothstep(glass[7], max(glass[8], glass[7] + 0.001), fy) : 0.0;
+        if (k >= 1.0) {
+            return fieldAt(samplePos, time, size, style, anchor, bloom, blend, params, paramCount);
+        }
+        return fieldGlass(samplePos, ribPos, time, size, style, anchor, bloom, blend,
+                          params, paramCount, glass, 1.0 - k);
+    }
+    return fieldAt(samplePos, time, size, style, anchor, bloom, blend, params, paramCount);
+}

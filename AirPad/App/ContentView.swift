@@ -38,6 +38,20 @@ struct ContentView: View {
                 // sample-library strip (Brief T) is screenshot-reachable headlessly.
                 if ProcessInfo.processInfo.arguments.contains("-OpenDashboard"),
                    router.entryMode != .dashboard { router.entryMode = .dashboard }
+                // ws-fluted-glass still harness — `-OpenFirstGradientEntry` pushes the detail of
+                // the first gradient-only (no cover image) entry, so the entry hero is reachable
+                // headlessly. Waits for the corpus to load.
+                if ProcessInfo.processInfo.arguments.contains("-OpenFirstGradientEntry") {
+                    Task { @MainActor in
+                        for _ in 0..<40 where store.nodes.isEmpty {
+                            try? await Task.sleep(nanoseconds: 250_000_000)
+                        }
+                        try? await Task.sleep(nanoseconds: 1_500_000_000)
+                        if let node = store.nodes.first(where: { $0.coverImageRelativePath == nil }) {
+                            router.pendingNodeNavigationID = node.id
+                        }
+                    }
+                }
                 // Brief CD acceptance tests — `-EntryQuikCapture` is the EXACT production
                 // Quick Capture entry: it sets `entryMode = .quikCapture`, the same line the
                 // `airpad://quikcapture` deep-link handler runs (AirPadApp.onOpenURL). NOT a

@@ -9,6 +9,9 @@
       Brief CH-A1b iteration 2 — A6b known-bad from the REAL iteration-1 voice answers (+ OLD as control).
   voice <kb_dir>
       Brief CH-A1b — adds the VOICE known-bad items (W1–W3), doctored from run-replays' clean captures.
+  web2 <kb_dir> <store_template_dir>
+      CH Session 2 (T 2026-10-08) — web grounding: WF1 invented URLs, WF2 model source list, WD1 stale-as-today,
+      GF1 known facts, GL1 the general-knowledge line.
   s1 <kb_dir> <store_template_dir>
       CH 2026-10-07 Session 1 — W1 greeting openers, N1 (prose "entries 5, 8, 9"), F4 citation-only retraction.
   doctor <replay_run_dir> <live_leak_run_dir> <kb_dir>
@@ -703,6 +706,117 @@ def s1(kb_dir, template_dir):
     print("wrote", len(items), "session-1 items")
 
 
+def web2(kb_dir, template_dir):
+    """CH Session 2 (T 2026-10-08) — known-bad + controls for web grounding: WF1 (an invented URL — T's case 1, a
+    General answer that didn't search ending with NatGeo/Science links), WF2 (the model's own source list with an
+    uncited source — T's case 3), WD1 (a stale story presented as today's news, sourced from a front page — T's case
+    2), GF1 (T's known-answer fact rows) and GL1 (the general-knowledge line). Synthetic answers on a real store
+    turn's shell; no user content."""
+    tmpl_rows = json.load(open(os.path.join(template_dir, "store-rows.json")))["rows"]
+    base = json.load(open(os.path.join(template_dir, f"turn-{tmpl_rows[0]['seq']:03d}.json")))
+    items = []
+    def item(iid, case, bad, graders, what, **turn):
+        d = os.path.join(kb_dir, iid)
+        if os.path.exists(d):
+            shutil.rmtree(d)
+        os.makedirs(d)
+        for f in ("host.log", "ps.log", "versions.json"):
+            shutil.copy(os.path.join(template_dir, f), d)
+        t = copy.deepcopy(base)
+        t.update(seq=1, userContent="", citations=[], plan={}, tools=[], raw=[], frames=[], thinking="", receipt=None,
+                 startedAt="2026-10-08T15:00:00Z")
+        for k in ("path", "toolLinks", "fetched", "generalKnowledge", "prefetch", "prefetchMs"):
+            t.pop(k, None)
+        t.update(turn)
+        json.dump(t, open(os.path.join(d, "turn-001.json"), "w"), indent=1, ensure_ascii=False)
+        json.dump({"think": False, "rows": [{"case": case, "seq": 1, "newChat": True, "elapsedSec": 1}]}, open(os.path.join(d, "store-rows.json"), "w"))
+        row = f"{case}.off.store"
+        items.append({"id": iid, "runDir": iid, "store": True, "what": what,
+                      **({"expectRed": {row: graders}} if bad else {"expectGreenOn": {row: graders}})})
+    def cite(i, l):
+        return {"index": i, "nodeID": "", "url": l["url"], "title": l["title"], "snippet": ""}
+    search = [{"name": "web_search", "argument": "q"}]
+
+    # WF1 / WF2 / GL1 — T's case 1: key present, the model answered without searching, then invented sources.
+    natgeo = ("Oarfish belong to the family Regalecidae and can grow longer than 8 metres.\n\n**Sources:**\n"
+              "- National Geographic: https://www.nationalgeographic.com/animals/fish/facts/oarfish\n"
+              "- Science: https://www.science.org/content/article/oarfish-deep-sea")
+    item("web-wf1-invented-urls", "GK4", True, ["WF1", "WF2", "GL1"],
+         "T's case 1 (old pipeline shape): a General answer that didn't search ends with invented NatGeo/Science URLs, no label",
+         path="tools", finalText=natgeo)
+    oar = [{"url": "https://encyclopedia.gauntlet.example/wiki/Oarfish", "title": "Oarfish — encyclopedia", "published": ""},
+           {"url": "https://aquarium.gauntlet.example/giant-oarfish", "title": "Giant oarfish facts", "published": ""}]
+    item("web-wf1-control-returned", "GK4", False, ["WF1", "WF2", "GL1", "GF1"],
+         "CONTROL: searched; cites [1] and links the URL the search returned; no label",
+         path="tools", tools=search + [{"name": "fetch_url", "argument": oar[0]["url"]}], toolLinks=oar, fetched=oar[0]["url"],
+         citations=[cite(1, oar[0])],
+         finalText="The oarfish belongs to the family Regalecidae [1] (https://encyclopedia.gauntlet.example/wiki/Oarfish).")
+    item("web-wf1-returned-elsewhere", "GK4", True, ["WF1"],
+         "synthetic: searched, but the answer links a URL the search did NOT return",
+         path="tools", tools=search, toolLinks=oar, citations=[cite(1, oar[0])],
+         finalText="The oarfish belongs to the family Regalecidae [1]. More at https://www.nationalgeographic.com/animals/fish/facts/oarfish")
+    item("web-gl1-control-nosearch", "GK7", False, ["WF1", "WF2", "GL1"],
+         "CONTROL: no key, a creative ask, no URL, the general-knowledge line shown",
+         finalText="Soft rain on the roof —\nthe gutter hums a low tune,\npuddles hold the sky.", generalKnowledge=True)
+    item("web-gl1-searched-labelled", "GK4", True, ["GL1"],
+         "synthetic: the answer IS backed by search results but carries the general-knowledge line",
+         path="tools", tools=search, toolLinks=oar, citations=[cite(1, oar[0])], generalKnowledge=True,
+         finalText="The oarfish belongs to the family Regalecidae [1].")
+
+    # WF2 — T's case 3: the model's own source list, an uncited source in it.
+    news = [{"url": "https://news.gauntlet.example/world/floods", "title": "Floods hit the north", "published": "2026-10-08"},
+            {"url": "https://news.gauntlet.example/markets", "title": "Markets rally", "published": "2026-10-08"},
+            {"url": "https://news.gauntlet.example/world/", "title": "World news — Reuters", "published": ""}]
+    item("web-wf2-model-list", "GW1", True, ["WF2"],
+         "T's case 3 (old pipeline shape): the model wrote its own source list; an uncited source became a chip",
+         path="tools", tools=search, toolLinks=news, citations=[cite(1, news[0]), cite(2, news[1]), cite(3, news[2])],
+         finalText="Floods hit the north overnight [1] and markets rallied on the news [2].\n\nSources:\n[3] World news — Reuters\n[1] Floods hit the north\n[2] Markets rally")
+    item("web-wf2-control", "GW1", False, ["WF1", "WF2", "GL1"],
+         "CONTROL: two results cited in the prose, chips 1–2 by first mention, no model list",
+         path="tools", tools=search, toolLinks=news, citations=[cite(1, news[0]), cite(2, news[1])],
+         finalText="Floods hit the north overnight [1] and markets rallied on the news [2].")
+
+    # WD1 — T's case 2: a June story presented as today's news, sourced from a front page.
+    town = [{"url": "https://news.gauntlet.example/lakeview/council-budget", "title": "Lakeview council approves its 2027 budget", "published": "2026-06-24"},
+            {"url": "https://news.gauntlet.example/lakeview/", "title": "Lakeview News — latest headlines", "published": ""},
+            {"url": "https://news.gauntlet.example/lakeview/ferry-resumes", "title": "Lakeview ferry resumes service", "published": "2026-10-08"}]
+    item("web-wd1-stale-as-today", "GW4", True, ["WD1"],
+         "T's case 2 shape: a 106-day-old story presented as today's news; the fresh story not cited",
+         path="tools", tools=search, toolLinks=town, citations=[cite(1, town[0]), cite(2, town[1])],
+         finalText="Today in Lakeview, the council approved its 2027 budget [1]. More headlines are on the Lakeview News front page [2].")
+    item("web-wd1-hub-today", "GW4", True, ["WD1"],
+         "synthetic: a 'today' claim backed only by an undated section front page",
+         path="tools", tools=search, toolLinks=town, citations=[cite(1, town[1])],
+         finalText="The top story in Lakeview today is the breaking coverage on Lakeview News [1].")
+    item("web-wd1-control", "GW4", False, ["WD1", "WF2", "WF1"],
+         "CONTROL: today's story leads; the older one carries its date",
+         path="tools", tools=search, toolLinks=town, citations=[cite(1, town[2]), cite(2, town[0])],
+         finalText="The main story today: the Lakeview ferry resumed service this morning after storm repairs [1]. "
+                   "An older story, from 24 June, is the council's 2027 budget [2].")
+
+    # GF1 — T's known-answer rows.
+    item("web-gf1-oarfish-wrong", "GK4", True, ["GF1"], "synthetic: wrong family (Trachipteridae)",
+         finalText="The oarfish belongs to the family Trachipteridae, the ribbonfishes.", generalKnowledge=True)
+    item("web-gf1-squid-wrong", "GK5", True, ["GF1"], "synthetic: the giant squid's name given for the colossal squid",
+         finalText="The colossal squid's scientific name is Architeuthis dux.", generalKnowledge=True)
+    item("web-gf1-antarctica-landing", "GK6", True, ["GF1"], "synthetic: invents a landing in 1820",
+         finalText="Antarctica was first sighted in January 1820, and Bellingshausen's crew landed on the ice shelf that same month.",
+         generalKnowledge=True)
+    item("web-gf1-control-oarfish", "GK4", False, ["GF1"], "CONTROL: Regalecidae",
+         finalText="The oarfish belongs to the family Regalecidae.", generalKnowledge=True)
+    item("web-gf1-control-squid", "GK5", False, ["GF1"], "CONTROL: Mesonychoteuthis hamiltoni, and a correct mention of the giant squid",
+         finalText="The colossal squid is Mesonychoteuthis hamiltoni — unlike the giant squid, Architeuthis dux.", generalKnowledge=True)
+    item("web-gf1-control-antarctica", "GK6", False, ["GF1"], "CONTROL: 1820, no landing then",
+         finalText="Antarctica was first sighted in January 1820. No one landed at the time; the first documented landing came in 1895.",
+         generalKnowledge=True)
+
+    mp = os.path.join(kb_dir, "manifest.json")
+    man = json.load(open(mp))
+    man["items"] = [i for i in man["items"] if not i["id"].startswith("web-")] + items
+    json.dump(man, open(mp, "w"), indent=1, ensure_ascii=False)
+    print("wrote", len(items), "web-grounding items")
+
+
 if __name__ == "__main__":
     cmd = sys.argv[1]
     if cmd == "replays":
@@ -715,6 +829,8 @@ if __name__ == "__main__":
         s1(sys.argv[2], sys.argv[3])
     elif cmd == "pillars":
         pillars(sys.argv[2], sys.argv[3])
+    elif cmd == "web2":
+        web2(sys.argv[2], sys.argv[3])
     elif cmd == "ch3":
         ch3(sys.argv[2], sys.argv[3])
     elif cmd == "ci2":

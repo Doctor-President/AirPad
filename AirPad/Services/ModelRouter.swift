@@ -1277,11 +1277,27 @@ enum ModelRouter {
         // pick — so a General/web-search turn on a cold Host fell to `firstHostModel` (install order),
         // the uncurated-fixture trap. Now: pick > resident > recommended default, `firstHostModel` last.
         let model: String
+        #if DEBUG
+        // `-DebugHostModel` forces the SEARCH turn's model too (it only reached `streamHost`, so a gauntlet
+        // General/web row ran on the resolved default instead of the planned model). Release-inert.
+        let dbgArgs = ProcessInfo.processInfo.arguments
+        if let i = dbgArgs.firstIndex(of: "-DebugHostModel"), i + 1 < dbgArgs.count {
+            model = dbgArgs[i + 1]
+        } else if let pick = try await resolveHostModel(pairing: pairing).preferred {
+            model = pick
+        } else {
+            model = try await firstHostModel(pairing: pairing)
+        }
+        #else
         if let pick = try await resolveHostModel(pairing: pairing).preferred {
             model = pick
         } else {
             model = try await firstHostModel(pairing: pairing)
         }
+        #endif
+        #if DEBUG
+        GauntletTap.shared.noteModel(model)
+        #endif
         // Brief AL3 — honour the user's Thinking toggle on SEARCH turns too (was hardcoded
         // false, so a reasoning model never reasoned on the agent path). With `think` on, the
         // Host routes the thought process to the reasoning channel (rendered live via
@@ -1463,6 +1479,9 @@ struct ToolLink: Codable, Hashable, Sendable, Identifiable {
     let title: String
     let url: String
     let snippet: String?
+    /// CH Session 2 — the result's publication date when the provider gives one (Brave `page_age` / `age`).
+    /// Goes into the packet as a computed fact and ranks fresh results first on a today/latest question.
+    var published: Date? = nil
     var id: String { url }
 }
 
@@ -1631,28 +1650,106 @@ struct WebSearchMockExecutor: ToolExecutor {
     static let links = [
         ToolLink(title: "Lakeview Observatory sets first-light date for its new telescope",
                  url: "https://news.gauntlet.example/lakeview-first-light",
-                 snippet: "The Lakeview Observatory announced that its new 4-metre telescope will see first light on 19 November 2031, director Ana Okafor said."),
+                 snippet: "The Lakeview Observatory announced that its new 4-metre telescope will see first light on 19 November 2031, director Ana Okafor said.",
+                 published: Calendar.current.date(byAdding: .day, value: -3, to: Date())),
         ToolLink(title: "Lakeview telescope: what we know",
                  url: "https://science.gauntlet.example/lakeview-explainer",
-                 snippet: "First light is scheduled for 19 November 2031; the mirror was cast in 2029."),
+                 snippet: "First light is scheduled for 19 November 2031; the mirror was cast in 2029.",
+                 published: Calendar.current.date(byAdding: .day, value: -40, to: Date())),
     ]
+
+    /// CH Session 2 — GW4 "today's news" (T's case 2): Brave-like order puts a 106-day-old story FIRST, an undated
+    /// section front page second, and the only story from today LAST — the app must rank and date them.
+    static var townNews: [ToolLink] {
+        let c = Calendar.current, now = Date()
+        return [
+            ToolLink(title: "Lakeview council approves its 2027 budget",
+                     url: "https://news.gauntlet.example/lakeview/council-budget",
+                     snippet: "The Lakeview town council approved its 2027 budget on Tuesday after a four-hour session, raising the library fund by 6 percent.",
+                     published: c.date(byAdding: .day, value: -106, to: now)),
+            ToolLink(title: "Lakeview News — latest headlines",
+                     url: "https://news.gauntlet.example/lakeview/",
+                     snippet: "Breaking news, weather, traffic and sports from Lakeview and the lake district."),
+            ToolLink(title: "Lakeview ferry resumes service after storm repairs",
+                     url: "https://news.gauntlet.example/lakeview/ferry-resumes",
+                     snippet: "The Lakeview ferry resumed service this morning after three weeks of storm repairs, the harbour office said.",
+                     published: now),
+        ]
+    }
+
+    /// CH Session 2 — GK4–GK6 fact rows (T's known answers). Encyclopedia-style results + page text for the app's
+    /// fetch of the top result. The facts match the real world (the rows also run live with a Brave key).
+    struct FactPage { let match: String; let links: [ToolLink]; let page: String }
+    static let factPages: [FactPage] = [
+        FactPage(match: #"oarfish"#, links: [
+            ToolLink(title: "Oarfish — encyclopedia", url: "https://encyclopedia.gauntlet.example/wiki/Oarfish",
+                     snippet: "Oarfish are large, greatly elongated, pelagic lampriform fishes belonging to the small family Regalecidae."),
+            ToolLink(title: "Giant oarfish facts | Aquarium guide", url: "https://aquarium.gauntlet.example/giant-oarfish",
+                     snippet: "The giant oarfish (Regalecus glesne) is the longest bony fish alive, reported up to 8 metres."),
+        ], page: """
+            Oarfish are large, greatly elongated, pelagic lampriform fishes belonging to the small family Regalecidae. \
+            The family contains three species in two genera: Agrarius and Regalecus. One species, the giant oarfish \
+            (Regalecus glesne), is the longest bony fish alive, growing up to 8 metres in length. Oarfish live in the \
+            open ocean, usually in the mesopelagic zone between 200 and 1,000 metres deep, and are rarely seen at the \
+            surface. They have a long dorsal fin that runs the length of the body and red, crest-like rays on the head. \
+            They feed mainly on zooplankton such as krill and small crustaceans. Because they are seldom seen alive, \
+            much of what is known about them comes from specimens that wash ashore after storms or when sick or dying. \
+            Oarfish are sometimes linked in folklore with earthquakes, but no scientific study has found a reliable link.
+            """),
+        FactPage(match: #"colossal squid"#, links: [
+            ToolLink(title: "Colossal squid — encyclopedia", url: "https://encyclopedia.gauntlet.example/wiki/Colossal_squid",
+                     snippet: "The colossal squid (Mesonychoteuthis hamiltoni) is a species of very large squid in the glass squid family, Cranchiidae."),
+            ToolLink(title: "Colossal squid filmed in its natural habitat", url: "https://science.gauntlet.example/colossal-squid-footage",
+                     snippet: "Researchers recorded a juvenile colossal squid in the Southern Ocean."),
+        ], page: """
+            The colossal squid (Mesonychoteuthis hamiltoni) is a species of very large squid belonging to the family \
+            Cranchiidae, the glass squids. It is the only recognised member of the genus Mesonychoteuthis. It is believed \
+            to be the largest squid species by mass, with the heaviest recorded specimen weighing about 495 kilograms. \
+            It lives in the cold waters of the Southern Ocean around Antarctica. Unlike the giant squid (Architeuthis \
+            dux), whose arms and tentacles bear suckers lined with small teeth, the colossal squid's arms and tentacles \
+            carry sharp swivelling hooks. It also has the largest eyes documented in the animal kingdom. The species was \
+            first described in 1925 from parts found in the stomach of a sperm whale.
+            """),
+        FactPage(match: #"antarctica|antarctic"#, links: [
+            ToolLink(title: "History of Antarctica — encyclopedia", url: "https://encyclopedia.gauntlet.example/wiki/History_of_Antarctica",
+                     snippet: "The first confirmed sightings of mainland Antarctica were made in January 1820; no landing was made on those voyages."),
+            ToolLink(title: "Who discovered Antarctica? | Polar history", url: "https://polar.gauntlet.example/discovery",
+                     snippet: "Bellingshausen and Lazarev sighted an ice shelf on 27 January 1820; Bransfield sighted the Trinity Peninsula three days later."),
+        ], page: """
+            The first confirmed sightings of mainland Antarctica came in January 1820. On 27 January 1820 the Russian \
+            expedition of Fabian Gottlieb von Bellingshausen and Mikhail Lazarev sighted an ice shelf, and on 30 January \
+            1820 Edward Bransfield and William Smith of the Royal Navy sighted the Trinity Peninsula. Neither expedition \
+            made a landing on the continent. The first claimed landing on the mainland was by the American sealer John \
+            Davis on 7 February 1821, but historians dispute it. The first documented landing on the mainland took place \
+            on 24 January 1895, when a party from the Norwegian ship Antarctic went ashore at Cape Adare.
+            """),
+    ]
+
     func execute(name: String, arguments: [String: Any]) async -> ToolResult {
         switch name {
         case AgentTools.webSearch:
             let query = (arguments["query"] as? String) ?? ""
             NSLog("[WebSearchMock] web_search query=%@", query)
-            // Only an on-topic query gets the sentinel results; anything else gets Brave's own no-results reply —
-            // a search for "Pride and Prejudice author" must not come back with telescope news (first run: the
-            // model then cited an irrelevant [1] on a general-knowledge row — a mock artefact, not the model).
-            guard query.range(of: #"lakeview|observatory|telescope|first light"#, options: [.regularExpression, .caseInsensitive]) != nil else {
-                return ToolResult(textForModel: "No results found for \"\(query)\".", links: [])
+            func has(_ p: String) -> Bool { query.range(of: p, options: [.regularExpression, .caseInsensitive]) != nil }
+            func reply(_ links: [ToolLink]) -> ToolResult {
+                let text = links.enumerated().map { i, l in "[\(i + 1)] \(l.title)\n\(l.url)\n\(l.snippet ?? "")" }.joined(separator: "\n\n")
+                return ToolResult(textForModel: text, links: links)
             }
-            let text = Self.links.enumerated().map { i, l in "[\(i + 1)] \(l.title)\n\(l.url)\n\(l.snippet ?? "")" }
-                .joined(separator: "\n\n")
-            return ToolResult(textForModel: text, links: Self.links)
+            // Only an on-topic query gets results; anything else gets Brave's own no-results reply — a search for
+            // "Pride and Prejudice author" must not come back with telescope news (first run: the model then cited
+            // an irrelevant [1] on a general-knowledge row — a mock artefact, not the model).
+            if has(#"observatory|telescope|first light"#) { return reply(Self.links) }
+            if has(#"lakeview"#), has(#"news|today|headline|happening"#) { return reply(Self.townNews) }
+            if let f = Self.factPages.first(where: { has($0.match) }) { return reply(f.links) }
+            return ToolResult(textForModel: "No results found for \"\(query)\".", links: [])
         case AgentTools.fetchURL:
-            NSLog("[WebSearchMock] fetch_url url=%@", (arguments["url"] as? String) ?? "")
-            return ToolResult(textForModel: Self.links[0].snippet ?? "", links: [])
+            let url = (arguments["url"] as? String) ?? ""
+            NSLog("[WebSearchMock] fetch_url url=%@", url)
+            if let f = Self.factPages.first(where: { $0.links.contains { $0.url == url } }) {
+                return ToolResult(textForModel: f.page, links: [])
+            }
+            let all = Self.links + Self.townNews
+            return ToolResult(textForModel: all.first { $0.url == url }?.snippet ?? Self.links[0].snippet ?? "", links: [])
         default:
             return ToolResult(textForModel: "Unknown tool: \(name)", links: [])
         }
@@ -1955,7 +2052,8 @@ final class BraveSearchToolExecutor: ToolExecutor, @unchecked Sendable {
                 return clean.count > 300 ? String(clean.prefix(300)) + "…" : clean
             }
             guard !cleanTitle.isEmpty else { return nil }
-            return ToolLink(title: cleanTitle, url: urlStr, snippet: snippet)
+            return ToolLink(title: cleanTitle, url: urlStr, snippet: snippet,
+                            published: WebGrounding.parsePublished(pageAge: r["page_age"] as? String, age: r["age"] as? String))
         }
     }
 }

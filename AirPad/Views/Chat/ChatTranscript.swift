@@ -433,6 +433,16 @@ struct ChatTranscript: View {
                     #endif
                 // Brief BN5 — "Read 1 entry in full · skimmed 6" / "Skimmed 9 entries".
                 readReceiptLine(message: message)
+                // CH Session 2 — a General answer no web result backs says so (app chrome, not model text).
+                if message.generalKnowledge == true {
+                    Text(WebGrounding.generalKnowledgeNote)
+                        .font(appFont.font(size: 13, relativeTo: .footnote))
+                        .foregroundStyle(ChatTypography.secondaryText)
+                        .padding(.top, 1)
+                        #if DEBUG
+                        .gauntletID("chat.generalKnowledge")
+                        #endif
+                }
                 // Piece 1 — collapsible grounded-Ask sources (chrome, not content).
                 citationFooter(message: message)
                 // ★ BUG 36 — a turn that stopped early (stream dropped while

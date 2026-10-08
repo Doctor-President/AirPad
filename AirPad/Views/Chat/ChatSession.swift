@@ -93,8 +93,12 @@ final class ChatSession {
         /// partial with the authoritative full answer. Optional + Codable → survives an app
         /// kill (D3) and decodes nil on legacy transcripts.
         var requestID: String?
+        /// CH Session 2 (T 2026-10-08) — a General answer with no web result behind it (no key, no search, or the
+        /// search found nothing). The transcript shows `WebGrounding.generalKnowledgeNote` under it. App chrome,
+        /// never model text (so it is not sent back as history). Optional → legacy transcripts decode nil.
+        var generalKnowledge: Bool?
 
-        init(id: UUID = UUID(), role: Role, text: String, citations: [Citation]? = nil, readReceipt: ReadReceipt? = nil, activity: ToolActivity? = nil, isPartial: Bool? = nil, requestID: String? = nil) {
+        init(id: UUID = UUID(), role: Role, text: String, citations: [Citation]? = nil, readReceipt: ReadReceipt? = nil, activity: ToolActivity? = nil, isPartial: Bool? = nil, requestID: String? = nil, generalKnowledge: Bool? = nil) {
             self.id = id
             self.role = role
             self.text = text
@@ -103,6 +107,7 @@ final class ChatSession {
             self.activity = activity
             self.isPartial = isPartial
             self.requestID = requestID
+            self.generalKnowledge = generalKnowledge
         }
     }
 
@@ -181,11 +186,26 @@ final class ChatSession {
             rawAnswer = String(rawAnswer[r.upperBound...])
             didSplitLeakedThinking = true
             numberer = CitationNumberer(candidates: numbererCandidates)
-            numberer.feed(rawAnswer)
+            if answerFilter != nil { answerFilter = WebAnswerFilter(allowed: filterAllowed) }
+            numberer.feed(filtered(rawAnswer))
         } else {
-            numberer.feed(t)
+            numberer.feed(filtered(t))
         }
         streamingText = numberer.displayText
+    }
+
+    /// CH Session 2 — General answers stream through `WebAnswerFilter` BEFORE the numberer (URLs no tool returned
+    /// and the model's own source list never show); nil on Library turns (their packet decides what may be cited).
+    @ObservationIgnored private var answerFilter: WebAnswerFilter?
+    @ObservationIgnored private var filterAllowed: [String] = []
+    private func filtered(_ t: String) -> String {
+        guard answerFilter != nil else { return t }
+        return answerFilter!.feed(t)
+    }
+    /// Release what the filter still holds and settle the numberer (stream end).
+    private func settleAnswer() {
+        if answerFilter != nil { numberer.feed(answerFilter!.finish()) }
+        numberer.settleAll()
     }
 
     /// Brief CH ruling 8 — start a fresh answer stream numbered against `candidates` (the turn's packet
@@ -196,6 +216,7 @@ final class ChatSession {
         rawAnswer = ""
         numbererCandidates = candidates
         numberer = CitationNumberer(candidates: candidates)
+        if answerFilter != nil { answerFilter = WebAnswerFilter(allowed: filterAllowed) }
     }
     @ObservationIgnored private var rawAnswer = ""
     @ObservationIgnored private var numbererCandidates: [Message.Citation]?
@@ -316,7 +337,10 @@ final class ChatSession {
     /// turns by `buildPrompt`); `systemPrompt` steers it. ChatSession stays a dumb
     /// lane — it appends the bubble, streams, and persists; it does NOT retrieve
     /// or build the grounded prompt (LibrarianState owns that — step 3/Ask hybrid).
-    func send(displayText: String, modelText: String, systemPrompt: String, citations: [Message.Citation]? = nil, alwaysCiteIndices: Set<Int> = [], readReceipt: Message.ReadReceipt? = nil) async {
+    /// `generalKnowledge` (CH Session 2) — a General turn with no web search behind it: its answer streams through
+    /// `WebAnswerFilter` (no tool ran, so only a URL the user typed may appear) and carries the app's
+    /// general-knowledge line.
+    func send(displayText: String, modelText: String, systemPrompt: String, citations: [Message.Citation]? = nil, alwaysCiteIndices: Set<Int> = [], readReceipt: Message.ReadReceipt? = nil, generalKnowledge: Bool = false) async {
         guard !displayText.isEmpty, !isStreaming else { return }
 
         // New attempt clears any prior transient failure banner.
@@ -324,6 +348,8 @@ final class ChatSession {
         messages.append(Message(role: .user, text: displayText))
         pendingUser = nil
         isStreaming = true
+        filterAllowed = WebGrounding.urls(in: displayText)
+        answerFilter = generalKnowledge ? WebAnswerFilter(allowed: filterAllowed) : nil
         beginAnswerStream(candidates: citations ?? [])
 
         streamingMessageID = UUID()
@@ -392,7 +418,7 @@ final class ChatSession {
             // assigned at first appearance, invalid markers dropped at first sight — Brief AB3's strip, applied
             // incrementally; the empty-library branch passes no candidates, so every marker is dropped). Brief AD — a
             // model that dumps `<think>…</think>` INTO the answer must not have that chain-of-thought rendered.
-            numberer.settleAll()
+            settleAnswer()
             var r = numberer.result(alwaysInclude: alwaysCiteIndices)
             let finalText = Self.stripThinkTags(r.text).trimmingCharacters(in: .whitespacesAndNewlines)
             if !finalText.isEmpty {
@@ -410,7 +436,11 @@ final class ChatSession {
                 }
                 // Brief BN5 — the read/skim receipt renders even when the answer cited nothing inline.
                 messages.append(Message(id: streamingMessageID, role: .assistant, text: finalText,
-                                        citations: r.citations.isEmpty ? nil : r.citations, readReceipt: readReceipt))
+                                        citations: r.citations.isEmpty ? nil : r.citations, readReceipt: readReceipt,
+                                        generalKnowledge: generalKnowledge ? true : nil))
+                #if DEBUG
+                if generalKnowledge { GauntletTap.shared.noteValue("generalKnowledge", true) }
+                #endif
             }
         } catch {
             // ★ BUG 36 — do NOT discard the partial. A mid-stream drop (the app
@@ -421,7 +451,7 @@ final class ChatSession {
             // Only when NOTHING streamed do we surface a failure banner, so a
             // genuine unreachable-Host error is still visible (and the trailing
             // `.user` message remains so retry can re-send it).
-            numberer.settleAll()
+            settleAnswer()
             let partial = numberer.result().text.trimmingCharacters(in: .whitespacesAndNewlines)
             if !partial.isEmpty {
                 // Carry the requestID so foreground / relaunch can fetch the FULL answer. Keep the
@@ -490,8 +520,15 @@ final class ChatSession {
         links.enumerated().map { i, l in Message.Citation(index: i + 1, url: l.url, title: l.title, snippet: l.snippet ?? "") }
     }
 
+    /// CH Session 2 (T 2026-10-08) — the APP runs the search before the model answers, instead of nudging the
+    /// model (`tool_choice` is inert on this stack, and instruct-2507 refused "latest news" even after the nudge
+    /// and its retry): `.search` for a current-information question, `.searchAndFetch` for a factual question —
+    /// search, then read the top result's page text.
+    enum WebPrefetch: String { case none, search, searchAndFetch }
+
     @discardableResult
-    func sendWithTools(displayText: String, systemPrompt: String, executor: ToolExecutor, forceWebSearch: Bool = false) async -> Bool {
+    func sendWithTools(displayText: String, systemPrompt: String, executor: ToolExecutor, forceWebSearch: Bool = false,
+                       prefetch: WebPrefetch = .none) async -> Bool {
         guard !displayText.isEmpty, !isStreaming else { return false }
         // The agentic tool loop runs over a direct .ollama endpoint OR the sealed .host pairing.
         // (It was .ollama-ONLY — the reason web search never worked over a paired Host: it was
@@ -501,7 +538,7 @@ final class ChatSession {
         switch toolProvider {
         case .ollama, .host: break
         default:
-            await send(displayText: displayText, modelText: displayText, systemPrompt: systemPrompt)
+            await send(displayText: displayText, modelText: displayText, systemPrompt: systemPrompt, generalKnowledge: true)
             return false
         }
 
@@ -509,6 +546,11 @@ final class ChatSession {
         messages.append(Message(role: .user, text: displayText))
         pendingUser = nil
         isStreaming = true
+        // CH Session 2 — only a URL this turn's tools return (or the user typed) may appear in the answer.
+        filterAllowed = WebGrounding.urls(in: displayText)
+        answerFilter = WebAnswerFilter(allowed: filterAllowed)
+        let freshness = WebGrounding.isFreshnessQuestion(displayText)
+        let now = Date()
         beginAnswerStream(candidates: [])
         streamingThinking = ""   // Brief AL3 — clear any prior turn's thought process
 
@@ -557,7 +599,7 @@ final class ChatSession {
                 for m in messages.dropLast() where m.role == .user || m.role == .assistant {
                     working.append(["role": m.role == .user ? "user" : "assistant", "content": m.text])
                 }
-                let userContent = nudge ? displayText + "\n\n(Use the web_search tool for this.)" : displayText
+                let userContent = nudge && prefetch == .none ? displayText + "\n\n(Use the web_search tool for this.)" : displayText
                 working.append(["role": "user", "content": userContent])
 
                 var finalAnswer = ""
@@ -570,6 +612,78 @@ final class ChatSession {
                 // can't retry a tool that cannot succeed — one attempt, one honest chip.
                 var sawUnavailable = false
                 var anyTool = false
+
+                /// Runs one assistant tool-call turn through the seam: records it in the working set, shows an activity
+                /// row per call, and feeds each result back. A web_search's results are ranked (fresh first on a
+                /// today/latest question), numbered GLOBALLY across the turn and dated in the packet; every URL a tool
+                /// returns joins the answer's allow-list.
+                func runCalls(_ calls: [ToolCall], content: String) async {
+                    anyTool = true
+                    working.append([
+                        "role": "assistant",
+                        "content": content,
+                        "tool_calls": calls.map { call in
+                            ["id": call.id, "type": "function",
+                             "function": ["name": call.name, "arguments": call.argumentsJSON]]
+                        }
+                    ])
+                    for call in calls {
+                        var result = await executor.execute(name: call.name, arguments: call.arguments)
+                        #if DEBUG
+                        GauntletTap.shared.noteTool(call.name, (call.arguments["query"] as? String) ?? (call.arguments["url"] as? String) ?? "")
+                        #endif
+                        if result.rateLimited { sawRateLimit = true }
+                        if result.unavailable { sawUnavailable = true }
+                        let toolContent: String
+                        if call.name == AgentTools.webSearch, !result.links.isEmpty {
+                            let ranked = freshness ? WebGrounding.rank(result.links) : result.links
+                            toolContent = WebGrounding.packet(ranked, start: citationLinks.count, now: now, freshness: freshness)
+                            result = ToolResult(textForModel: result.textForModel, links: ranked,
+                                                rateLimited: result.rateLimited, unavailable: result.unavailable)
+                            citationLinks.append(contentsOf: ranked)
+                            filterAllowed += ranked.map(\.url)
+                            #if DEBUG
+                            GauntletTap.shared.noteToolLinks(ranked)
+                            #endif
+                        } else if call.name == AgentTools.fetchURL, let url = call.arguments["url"] as? String,
+                                  !result.textForModel.hasPrefix("Couldn't fetch"), !result.textForModel.hasPrefix("Invalid URL") {
+                            let n = citationLinks.firstIndex { WebGrounding.normalize($0.url) == WebGrounding.normalize(url) }
+                            toolContent = WebGrounding.fetchedPage(index: n.map { $0 + 1 }, title: n.map { citationLinks[$0].title },
+                                                                   url: url, text: result.textForModel)
+                            filterAllowed.append(url)
+                            #if DEBUG
+                            GauntletTap.shared.noteValue("fetched", url)
+                            #endif
+                        } else if call.id == "app_search", call.name == AgentTools.webSearch, result.links.isEmpty, !result.unavailable, !result.rateLimited {
+                            // The APP ran this search, not the model — an empty result read as the model's own failed
+                            // call ("I apologize for the error…"). Say plainly what happened.
+                            toolContent = "The web search found nothing for this question. Answer it from your own knowledge."
+                        } else {
+                            toolContent = result.textForModel
+                        }
+                        appendActivity(for: call, result: result)
+                        producedActivity = true
+                        working.append(["role": "tool", "tool_call_id": call.id, "content": toolContent])
+                    }
+                }
+
+                // CH Session 2 — the app searches (and reads the top result) BEFORE the model's first step.
+                if prefetch != .none {
+                    let t0 = Date()
+                    func call(_ id: String, _ name: String, _ args: [String: String]) -> ToolCall {
+                        let json = (try? JSONSerialization.data(withJSONObject: args)).flatMap { String(data: $0, encoding: .utf8) } ?? "{}"
+                        return ToolCall(id: id, name: name, argumentsJSON: json)
+                    }
+                    await runCalls([call("app_search", AgentTools.webSearch, ["query": displayText])], content: "")
+                    if prefetch == .searchAndFetch, !sawUnavailable, let top = citationLinks.first {
+                        await runCalls([call("app_fetch", AgentTools.fetchURL, ["url": top.url])], content: "")
+                    }
+                    #if DEBUG
+                    GauntletTap.shared.noteValue("prefetch", prefetch.rawValue)
+                    GauntletTap.shared.noteValue("prefetchMs", Int(Date().timeIntervalSince(t0) * 1000))
+                    #endif
+                }
+
                 for step in 0..<maxToolSteps {
                     // CH ruling 8/7 — each step streams through a numberer over the web results found so far,
                     // so a marker with no result behind it (8B's "Jane Austen [1]" with no search) is never shown.
@@ -609,48 +723,8 @@ final class ChatSession {
                         finalAnswer = Self.stripThinkTags(turn.content).trimmingCharacters(in: .whitespacesAndNewlines)
                         break
                     }
-                    anyTool = true
-
-                    // Record the assistant tool-call turn in the OpenAI working-set.
-                    working.append([
-                        "role": "assistant",
-                        "content": turn.content,
-                        "tool_calls": turn.toolCalls.map { call in
-                            ["id": call.id, "type": "function",
-                             "function": ["name": call.name, "arguments": call.argumentsJSON]]
-                        }
-                    ])
+                    await runCalls(turn.toolCalls, content: turn.content)
                     beginAnswerStream(candidates: Self.webCandidates(citationLinks))
-
-                    // Run each tool through the seam; show an activity row; feed results back.
-                    for call in turn.toolCalls {
-                        let result = await executor.execute(name: call.name, arguments: call.arguments)
-                        #if DEBUG
-                        GauntletTap.shared.noteTool(call.name, (call.arguments["query"] as? String) ?? (call.arguments["url"] as? String) ?? "")
-                        #endif
-                        appendActivity(for: call, result: result)
-                        producedActivity = true
-                        if result.rateLimited { sawRateLimit = true }
-                        if result.unavailable { sawUnavailable = true }
-                        // Web results feed the answer's citations. Renumber GLOBALLY across
-                        // the turn so the model's [n] is unambiguous even across multiple
-                        // searches, and accumulate so cited [n] → {title, url}.
-                        let toolContent: String
-                        if call.name == AgentTools.webSearch, !result.links.isEmpty {
-                            let start = citationLinks.count
-                            toolContent = result.links.enumerated().map { i, l in
-                                "[\(start + i + 1)] \(l.title)\n\(l.url)\n\(l.snippet ?? "")"
-                            }.joined(separator: "\n\n")
-                            citationLinks.append(contentsOf: result.links)
-                        } else {
-                            toolContent = result.textForModel
-                        }
-                        working.append([
-                            "role": "tool",
-                            "tool_call_id": call.id,
-                            "content": toolContent
-                        ])
-                    }
 
                     if step == maxToolSteps - 1 {
                         // Loop backstop (the model never settled on an answer). Word it by
@@ -681,12 +755,19 @@ final class ChatSession {
                 // marker (no result behind it) is stripped, numbers are one per source by first appearance —
                 // identical to what streamed (the step's deltas went through the same function).
                 var n = CitationNumberer(candidates: Self.webCandidates(outcome.links))
-                n.feed(outcome.answer)
+                n.feed(WebAnswerFilter.apply(outcome.answer, allowed: filterAllowed))
                 n.settleAll()
                 let r = n.result()
                 if !r.text.isEmpty {
+                    // No web result behind the answer (the model didn't search, or nothing came back) → the app's
+                    // general-knowledge line. A throttled turn's canned message is the app's own, so it gets none.
+                    let ungrounded = outcome.links.isEmpty && !outcome.rateLimited
                     messages.append(Message(role: .assistant, text: r.text,
-                                            citations: r.citations.isEmpty ? nil : r.citations))
+                                            citations: r.citations.isEmpty ? nil : r.citations,
+                                            generalKnowledge: ungrounded ? true : nil))
+                    #if DEBUG
+                    if ungrounded { GauntletTap.shared.noteValue("generalKnowledge", true) }
+                    #endif
                 }
             }
         } catch {

@@ -227,9 +227,10 @@ final class LibrarianGauntletV2: XCTestCase {
                 // The keyboard accessory "Done" is NOT in the accessibility tree (iOS 27 out-of-process keyboard).
                 // Screenshot-measured on this Simulator: Done bar = y 555–612pt, keyboard keys start at 655pt, the
                 // SUGGESTION bar sits between them (a tap at kb.minY−29 hit a suggestion and TYPED "I'm" into Ask).
+                // iOS 27 Sim puts the keyboard at 653 pt; `askFieldAfterDismiss` records any stray typing.
                 // Only tap when the layout is exactly the measured one; otherwise record and move on.
                 let kb = app.keyboards.firstMatch.frame, w = app.windows.firstMatch.frame
-                guard Int(kb.minY) == 655, Int(w.width) == 440 else { return }
+                guard abs(Int(kb.minY) - 655) <= 3, Int(w.width) == 440 else { return }   // 27: 653
                 app.coordinate(withNormalizedOffset: .zero).withOffset(CGVector(dx: w.maxX - 45, dy: kb.minY - 72)).tap()
             })] where app.keyboards.firstMatch.exists {
                 act(); Thread.sleep(forTimeInterval: 0.7)

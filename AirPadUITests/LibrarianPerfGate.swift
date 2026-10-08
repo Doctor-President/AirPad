@@ -42,7 +42,7 @@ final class LibrarianPerfGate: XCTestCase {
         return (Int(f), Int(h), ms, t)
     }
 
-    func testOpenAndScroll100TurnChat() { run(label: "FREEZE FIX (production): all eager ≤ 40 messages, else option 1", extra: []) }
+    func testOpenAndScroll100TurnChat() { run(label: "FREEZE FIX (production): all eager ≤ 24 messages, else option 1", extra: []) }
     /// A/B baseline for the freeze fix: option 1 (lazy history + eager latest exchange only).
     func testOpenAndScroll100TurnChatSplitBaseline() { run(label: "split: lazy history + eager live exchange (option 1)", extra: ["-TranscriptEagerAll", "0"]) }
     /// A/B baseline: the pre-fix LazyVStack on the same seeded chat (DEBUG `-FreezeLazyStack`).

@@ -1105,6 +1105,10 @@ final class CorpusStore {
                 if ProcessInfo.processInfo.arguments.contains("-CitationNumberSelfTest") {
                     NSLog("[CitationNumberSelfTest] %@", CitationNumberSelfTest.run())
                 }
+                // CH Session 2 — web grounding: URL / source-list filter (prefix invariant), dates, ranking, question shape.
+                if ProcessInfo.processInfo.arguments.contains("-WebGroundingSelfTest") {
+                    NSLog("[WebGroundingSelfTest] %@", WebGroundingSelfTest.run())
+                }
                 // CH Session 2 (C4 / C4a) — the shared active-model derivation + friendly names.
                 if ProcessInfo.processInfo.arguments.contains("-ModelPickSelfTest") {
                     NSLog("[ModelPickSelfTest] %@", await MainActor.run { ModelPickSelfTest.run() })

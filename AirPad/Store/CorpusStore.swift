@@ -1105,6 +1105,10 @@ final class CorpusStore {
                 if ProcessInfo.processInfo.arguments.contains("-CitationNumberSelfTest") {
                     NSLog("[CitationNumberSelfTest] %@", CitationNumberSelfTest.run())
                 }
+                // CH Session 2 (C4 / C4a) — the shared active-model derivation + friendly names.
+                if ProcessInfo.processInfo.arguments.contains("-ModelPickSelfTest") {
+                    NSLog("[ModelPickSelfTest] %@", await MainActor.run { ModelPickSelfTest.run() })
+                }
                 if ProcessInfo.processInfo.arguments.contains("-ProposalSelfTest") {
                     NSLog("[ProposalSelfTest] %@", ProposalSelfTest.run())
                 }
@@ -2260,6 +2264,68 @@ final class CorpusStore {
             Case(id: "OR13", what: "CH-A test 3 over-refusal: Women's Subjugation and Reproduction in Capitalist Society", question: "What's my argument about women's subjugation and reproduction under capitalism?", expectRoute: "", mustNotContain: refusals),
             Case(id: "OR14", what: "CH-A test 3 over-refusal: Hereditary is a grief film", question: "Why do I say Hereditary is a grief film?", expectRoute: "", mustNotContain: refusals),
             Case(id: "OR15", what: "CH-A test 3 over-refusal: Medical – Lab Tests", question: "What do my lab tests show for the sexual-health and drug screening?", expectRoute: "", mustNotContain: refusals),
+            // ── CH Session 2 — the SAMPLE LIBRARY question set (second corpus: run with `-SampleSeedDemo`, no
+            // `-CorpusFixture`). Known answers from AirPad/Resources/SampleLibrary (dates are not shifted by the seeder).
+            // Mirrored in scripts/gauntlet/cases.json (chats sl-*) for the UI driver + graders.
+            Case(id: "SL-S1", what: "Sample synthesis: film × games share the constraint theme (Bolex 28 s, SH2 fog, dandori)",
+                 question: "What connects my film entries and my games entries?", expectRoute: "survey",
+                 mustContain: [["constraint", "limitation", "limit", "28 seconds", "28-second", "dandori", "fog", "one wind"]], minFacts: 1, mustNotContain: refusals),
+            Case(id: "SL-S2", what: "Sample synthesis: what the coffee entries keep coming back to (brewing variables / grind / water)",
+                 question: "What do my coffee entries keep coming back to?", expectRoute: "survey",
+                 mustContain: [["grind", "water", "brew", "extraction", "bloom", "body"]], minFacts: 1, mustNotContain: refusals),
+            Case(id: "SL-R1", what: "Sample read: the Bolex H16 entry (28 s per wind; spring-wound / Swiss)",
+                 question: "What does my Bolex H16 entry say?", expectRoute: "read",
+                 mustContain: [["28 seconds", "28-second", "28 second"], ["spring", "no batteries", "switzerland", "swiss"]], minFacts: 2, mustNotContain: refusals),
+            Case(id: "SL-R2", what: "Sample read: red lentil soup recipe (ingredients + the lemon fix)",
+                 question: "What's in my red lentil soup?", expectRoute: "read",
+                 mustContain: [["onion"], ["carrot"], ["bay leaf", "bay"], ["lemon"]], minFacts: 3, mustNotContain: refusals),
+            Case(id: "SL-F1", what: "Sample fact (typed field): roaster of the Ethiopia Guji → Metric",
+                 question: "Who roasted the Ethiopia Guji coffee I wrote about?", expectRoute: "",
+                 mustContain: [["metric"]], minFacts: 1, mustNotContain: refusals),
+            Case(id: "SL-F2", what: "Sample fact (typed field): origin of the Sparrow coffee → Huehuetenango, Guatemala",
+                 question: "Where is the Sparrow coffee from?", expectRoute: "",
+                 mustContain: [["huehuetenango", "guatemala"]], minFacts: 1, mustNotContain: refusals),
+            Case(id: "SL-F3", what: "Sample fact (typed field): how I met Dolores → she trained me on the desk",
+                 question: "How did I meet Dolores?", expectRoute: "",
+                 mustContain: [["trained"]], minFacts: 1, mustNotContain: refusals),
+            Case(id: "SL-F4", what: "Sample fact (prose): the dish for company → roast chicken",
+                 question: "What do I cook when someone comes over?", expectRoute: "",
+                 mustContain: [["chicken"]], minFacts: 1, mustNotContain: refusals),
+            Case(id: "SL-D1", what: "Sample date: the Bolex arrived (diary 'bought it', 12 July 2026)",
+                 question: "When did my Bolex arrive?", expectRoute: "",
+                 mustContain: [["july", "jul ", "2026-07"]], minFacts: 1, mustNotContain: refusals),
+            Case(id: "SL-D2", what: "Sample date: finished BG3 (3 September 2026)",
+                 question: "When did I finish Baldur's Gate 3?", expectRoute: "",
+                 mustContain: [["september", "sept", "sep ", "2026-09"]], minFacts: 1, mustNotContain: refusals),
+            Case(id: "SL-D3", what: "Sample date (typed field): last spoke to Mom → 4 September 2026",
+                 question: "When did I last speak to Mom?", expectRoute: "",
+                 mustContain: [["september 4", "sept 4", "sep 4", "4 september", "september 4th", "2026-09-04"]], minFacts: 1, mustNotContain: refusals),
+            Case(id: "SL-A1", what: "Sample absence: beekeeping (nothing exists) → says so, invents nothing",
+                 question: "Did I ever write about beekeeping?", expectRoute: "",
+                 mustContain: [["no ", "not ", "n't", "none", "nothing"]], minFacts: 1, mustNotContain: refusals + ["your beekeeping entry", "you wrote about beekeeping"]),
+            Case(id: "SL-A2", what: "Sample absence: skiing (nothing exists)",
+                 question: "Have I written anything about skiing?", expectRoute: "",
+                 mustContain: [["no ", "not ", "n't", "none", "nothing"]], minFacts: 1, mustNotContain: refusals + ["your skiing entry", "you wrote about skiing"]),
+            Case(id: "SL-M1a", what: "Sample multi-turn 1/3: BG3 (reloading saves; one ending)",
+                 question: "What have I written about Baldur's Gate 3?", expectRoute: "",
+                 mustContain: [["reload", "save"], ["ending", "finished"]], minFacts: 1, mustNotContain: refusals),
+            Case(id: "SL-M1b", what: "Sample multi-turn 2/3: did I look at the other endings? → no",
+                 question: "Did I end up looking at the other endings?", expectRoute: "",
+                 mustContain: [["didn't", "did not", "no,", "no.", "not look", "never"]], minFacts: 1, mustNotContain: refusals, newChat: false),
+            Case(id: "SL-M1c", what: "Sample multi-turn 3/3: grounding → must cite the entry",
+                 question: "Which entry says that?", expectRoute: "", mustNotContain: refusals, newChat: false),
+            // ── CH Session 2 heuristic-audit SPOT CHECKS (observational: read by hand, not graded) on the sample's short
+            // titles — "train" / "after" are ≥ 4-char titles a plain substring pin would match inside other words.
+            Case(id: "SL-AU1", what: "audit: substring pin — 'training' contains the dream title 'train'",
+                 question: "What have I written about training?", expectRoute: ""),
+            Case(id: "SL-AU2", what: "audit: substring pin — the diary title 'after'",
+                 question: "What did I do after the Bolex arrived?", expectRoute: ""),
+            Case(id: "SL-AU3", what: "audit: count matcher with filler terms ('should', 'drink')",
+                 question: "How many times a day should I drink coffee?", expectRoute: ""),
+            Case(id: "SL-AU4a", what: "audit: dominance carry 1/2 — read the Bolex entry",
+                 question: "What does my Bolex H16 entry say?", expectRoute: "read"),
+            Case(id: "SL-AU4b", what: "audit: dominance carry 2/2 — an unrelated question must not re-cite the Bolex entry",
+                 question: "What is the capital of France?", expectRoute: "", newChat: false),
         ]
 
         NSLog("[Gauntlet] START provider=%@ window=%d nodes=%d userNodes=%d cases=%d",
@@ -2297,6 +2363,8 @@ final class CorpusStore {
             #if DEBUG
             if !onlyCases.isEmpty && !onlyCases.contains(c.id) { continue }
             #endif
+            // The Sample Library set only means something on the seeded sample corpus.
+            if c.id.hasPrefix("SL-") != ProcessInfo.processInfo.arguments.contains("-SampleSeedDemo") { continue }
             if c.newChat { chat = ChatSession() }
             librarian.corpusAware = !c.general
             librarian.debugContextWindowOverride = c.fmWindow ? 4_096 : nil

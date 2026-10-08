@@ -27,6 +27,54 @@ struct CatalogModel: Identifiable, Sendable, Equatable {
 
     var isResident: Bool { state == "installed-loaded" }
     var isInstalled: Bool { state == "installed-loaded" || state == "installed-ejected" }
+
+    /// ★ C4 (T, 2026-10-08) — the name a person reads: the catalog's curated `display`, or, for an
+    /// off-manifest install (whose Host display IS the raw tag), a name derived from the tag. Never the
+    /// raw tag: "qwen3:4b-instruct-2507-q4_K_M" reads "Qwen3 4B Instruct".
+    var friendlyName: String { display != tag ? display : Self.friendlyName(forTag: tag) }
+
+    private static let families: [String: String] = [
+        "qwen3": "Qwen3", "qwen3.5": "Qwen3.5", "qwen2.5": "Qwen2.5", "qwen2": "Qwen2",
+        "llama3": "Llama 3", "llama3.1": "Llama 3.1", "llama3.2": "Llama 3.2", "llama3.3": "Llama 3.3",
+        "deepseek-r1": "DeepSeek-R1", "gemma3": "Gemma 3", "gemma4": "Gemma 4", "phi4": "Phi-4",
+        "mistral": "Mistral", "gpt-oss": "gpt-oss",
+    ]
+    /// Tag → readable name: family mapped (or capitalised), sizes upper-cased ("30b-a3b" → "30B-A3B"),
+    /// quantisation / date / `latest` tokens dropped, other words capitalised. hf.co tags use the repo name.
+    static func friendlyName(forTag tag: String) -> String {
+        var t = tag
+        if t.hasPrefix("hf.co/") { t = String(t.split(separator: "/").last ?? Substring(t)) }
+        let parts = t.split(separator: ":", maxSplits: 1).map(String.init)
+        let family = (parts.first ?? t).split(separator: "/").last.map(String.init) ?? t
+        let variant = parts.count > 1 ? parts[1] : ""
+        func isQuant(_ w: String) -> Bool {
+            w.range(of: #"^(i?q\d.*|f(p)?16|bf16|f32|gguf|qat)$"#, options: [.regularExpression, .caseInsensitive]) != nil
+        }
+        func isSize(_ w: String) -> Bool { w.range(of: #"^(\d+(\.\d+)?[bm]|a\d+(\.\d+)?b|e\d+b)$"#, options: [.regularExpression, .caseInsensitive]) != nil }
+        var words: [String] = []
+        let lower = family.lowercased()
+        var rest: [String]
+        if let mapped = families[lower] {
+            words.append(mapped); rest = []
+        } else {
+            let toks = family.split(separator: "-").map(String.init)
+            if let first = toks.first { words.append(families[first.lowercased()] ?? first.prefix(1).uppercased() + first.dropFirst()) }
+            rest = Array(toks.dropFirst())
+        }
+        rest += variant.split(separator: "-").map(String.init)
+        for w in rest where !w.isEmpty {
+            let l = w.lowercased()
+            if l == "latest" || isQuant(w) || l.range(of: #"^\d{4}$"#, options: .regularExpression) != nil { continue }
+            if isSize(w) {
+                if l.hasPrefix("a"), let last = words.last, isSize(last) { words[words.count - 1] = last + "-" + w.uppercased() }
+                else { words.append(w.uppercased()) }
+            } else {
+                words.append(l == "it" ? "Instruct" : w.prefix(1).uppercased() + w.dropFirst())
+            }
+        }
+        let name = words.joined(separator: " ")
+        return name.isEmpty ? tag : name
+    }
     /// The one-line "thinking support" statement — an HONEST ladder off the two measured traits.
     /// "always on" is the 30B's case: it thinks but the toggle can't stop it, so we never imply the
     /// user controls it. "Can think" is a capable model whose toggle we haven't probed yet (not
@@ -97,6 +145,37 @@ final class HostCatalog {
 
     /// LOAD = SELECT: the resident model IS the selection (one at a time).
     var resident: CatalogModel? { models.first(where: { $0.isResident }) }
+
+    /// The user's pick, cached off-render (UserDefaults is read in `refresh`/`load`, never in `body`).
+    private(set) var pickedTag: String? = ModelRouter.userPickedHostModel
+    /// ★ C4a — the model an ask will NAME, by the SAME derivation routing uses
+    /// (`ModelRouter.activeHostModel`). The pill shows this one, with ✓ only when it is resident, so
+    /// the pill can never claim a model that the next ask's "not loaded" banner contradicts.
+    var active: CatalogModel? {
+        let entries = models.map { ModelRouter.HostModelEntry(tag: $0.tag, state: $0.state, tier: $0.tier, recommended: $0.recommended) }
+        guard let tag = ModelRouter.activeHostModel(entries, picked: pickedTag).preferred else { return nil }
+        return models.first { $0.tag == tag }
+    }
+
+    /// C4 — the name every surface shows for `m` (pill, sheet rows, confirmations): its friendly name, plus the
+    /// tag's variant when a DERIVED name would collide with another installed model's (an off-manifest
+    /// `qwen3:4b-q4_K_M` beside the curated "Qwen3 4B" reads "Qwen3 4B (4b-q4_K_M)"), so two rows never look alike.
+    func name(_ m: CatalogModel) -> String {
+        #if DEBUG
+        // C4 UI check — `-GauntletPillName "<very long name>"` stress-tests the pill row with the real controls.
+        if let o = UserDefaults.standard.string(forKey: "GauntletPillName"), !o.isEmpty { return o }
+        #endif
+        let n = m.friendlyName
+        guard m.display == m.tag, models.contains(where: { $0.tag != m.tag && $0.friendlyName == n }) else { return n }
+        return "\(n) (\(m.tag.split(separator: ":").last.map(String.init) ?? m.tag))"
+    }
+
+    /// C4a — an ASK is loading `tag` (the not-loaded auto-load): narrate it on the pill like a picker load.
+    func beginAskLoad(_ tag: String) { busyTag = tag }
+    func endAskLoad() async {
+        busyTag = nil
+        await refresh()
+    }
     var installed: [CatalogModel] { models.filter { $0.isInstalled } }
     var available: [CatalogModel] { models.filter { !$0.isInstalled } }
 
@@ -120,6 +199,7 @@ final class HostCatalog {
 
     /// Fetch the catalog. Call OFF the render path (on sheet-open / pill-appear).
     func refresh() async {
+        pickedTag = ModelRouter.userPickedHostModel
         pairing = HostPairing.load()
         isPaired = pairing != nil
         guard let url = HostPairing.load()?.catalogURL, let req = authed(url, method: "GET", body: nil) else {
@@ -223,6 +303,7 @@ final class HostCatalog {
         // model" setting in V1: the picker IS the setting.
         let previousPick = ModelRouter.userPickedHostModel   // capture BEFORE overwrite (Brief BZ)
         ModelRouter.userPickedHostModel = tag
+        pickedTag = tag
         busyTag = tag
         lastActionError = nil
         defer { busyTag = nil }
@@ -419,5 +500,70 @@ extension HostCatalog {
         c.models = [resident]
         return c
     }
+}
+#endif
+
+#if DEBUG
+/// CH Session 2 (C4 / C4a) — pure self-test (`-ModelPickSelfTest`): the ONE active-model derivation that routing and
+/// the pill share, the friendly names, and the name-collision rule. Row 1 is T's field state (2026-10-08); its
+/// CONTROL is the pre-fix rule (picks filtered to curated), which must give the wrong answer there.
+@MainActor enum ModelPickSelfTest {
+    static func run() -> String {
+        var fails: [String] = [], ran = 0
+        func check(_ name: String, _ ok: Bool, _ detail: String = "") {
+            ran += 1
+            if !ok { fails.append("FAIL \(name)\(detail.isEmpty ? "" : " — \(detail)")") }
+        }
+        typealias E = ModelRouter.HostModelEntry
+        let ins = "qwen3:4b-instruct-2507-q4_K_M"
+        func e(_ t: String, _ st: String, tier: Int = 0, rec: Bool = false) -> E { E(tag: t, state: st, tier: tier, recommended: rec) }
+        // 1. T's field state: Instruct (off-manifest, tier 0) picked + resident; the recommended 4B was ejected by the pick's load.
+        let field = [e("qwen3:4b", "installed-ejected", tier: 16, rec: true), e(ins, "installed-loaded")]
+        let r1 = ModelRouter.activeHostModel(field, picked: ins)
+        check("field: the pick (off-manifest, resident) is what an ask names", r1.preferred == ins, "\(r1)")
+        // CONTROL — the pre-fix rule dropped a tier-0 pick and asked for the recommended (ejected) model → the 409.
+        let curated = field.filter { $0.tier > 0 }
+        let oldPick = curated.first { $0.tag == ins }?.tag
+        let oldPreferred = oldPick ?? curated.first { $0.state == "installed-loaded" }?.tag ?? curated.first { $0.recommended }?.tag
+        check("control: the old rule names the ejected qwen3:4b here", oldPreferred == "qwen3:4b", "\(oldPreferred ?? "nil")")
+        // 2. Pick wins over another resident model (Brief BZ).
+        let r2 = ModelRouter.activeHostModel([e("qwen3:4b", "installed-ejected", tier: 16, rec: true), e("qwen3:8b", "installed-loaded", tier: 16)], picked: "qwen3:4b")
+        check("pick beats resident", r2.preferred == "qwen3:4b" && r2.resident == "qwen3:8b", "\(r2)")
+        // 3. Nothing picked → the resident curated model.
+        let r3 = ModelRouter.activeHostModel([e("qwen3:4b", "installed-ejected", tier: 16, rec: true), e("qwen3:8b", "installed-loaded", tier: 16)], picked: nil)
+        check("no pick → resident curated", r3.preferred == "qwen3:8b", "\(r3)")
+        // 4. A resident UNCURATED fixture never becomes the answerer by fallback.
+        let r4 = ModelRouter.activeHostModel([e("qwen3:4b", "installed-ejected", tier: 16, rec: true), e("llama3.2:latest", "installed-loaded")], picked: nil)
+        check("resident fixture is not a fallback", r4.preferred == "qwen3:4b" && r4.resident == nil, "\(r4)")
+        // 5. A deleted pick falls through.
+        let r5 = ModelRouter.activeHostModel([e("qwen3:4b", "installed-loaded", tier: 16, rec: true), e(ins, "not-installed")], picked: ins)
+        check("deleted pick falls through", r5.preferred == "qwen3:4b", "\(r5)")
+        // 6. Nothing installed → nil.
+        check("nothing installed → nil", ModelRouter.activeHostModel([e("qwen3:4b", "not-installed", tier: 16, rec: true)], picked: nil).preferred == nil)
+
+        // Friendly names: never the raw tag.
+        let names: [(String, String)] = [
+            (ins, "Qwen3 4B Instruct"), ("qwen3:30b-a3b-instruct-2507-q4_K_M", "Qwen3 30B-A3B Instruct"),
+            ("qwen3:8b", "Qwen3 8B"), ("llama3.2:latest", "Llama 3.2"), ("deepseek-r1:8b", "DeepSeek-R1 8B"),
+            ("hf.co/unsloth/Qwen3-4B-Instruct-2507-GGUF:Q4_K_M", "Qwen3 4B Instruct"), ("gemma3:12b-it-qat", "Gemma 3 12B Instruct"),
+        ]
+        for (t, want) in names { check("name \(t)", CatalogModel.friendlyName(forTag: t) == want, CatalogModel.friendlyName(forTag: t)) }
+        func cm(_ t: String, _ d: String) -> CatalogModel {
+            CatalogModel(tag: t, display: d, state: "installed-ejected", sizeBytes: 0, tier: d == t ? 0 : 16, recommended: false,
+                         capabilities: [], verified: d != t, note: "", supportsThinking: false, thinkingMeasured: false,
+                         thinkingToggleable: false, toggleMeasured: false, supportsTools: false, toolsMeasured: false, capability: "", posture: "")
+        }
+        // Curated display wins; a derived name that collides with another model's gets the variant.
+        let c = HostCatalog.galleryFake(resident: cm("qwen3:4b", "Qwen3 4B"))
+        c.debugSetModels([cm("qwen3:4b", "Qwen3 4B"), cm("qwen3:4b-q4_K_M", "qwen3:4b-q4_K_M"), cm(ins, ins)])
+        check("curated display kept", c.name(c.models[0]) == "Qwen3 4B", c.name(c.models[0]))
+        check("collision disambiguated", c.name(c.models[1]) == "Qwen3 4B (4b-q4_K_M)", c.name(c.models[1]))
+        check("no collision → plain", c.name(c.models[2]) == "Qwen3 4B Instruct", c.name(c.models[2]))
+        for m in c.models { check("no raw tag shown for \(m.tag)", c.name(m) != m.tag || !m.tag.contains(":")) }
+        return fails.isEmpty ? "PASS \(ran)/\(ran)" : "FAIL \(fails.count)/\(ran)\n" + fails.joined(separator: "\n")
+    }
+}
+extension HostCatalog {
+    func debugSetModels(_ m: [CatalogModel]) { models = m }
 }
 #endif

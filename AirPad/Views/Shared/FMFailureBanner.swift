@@ -14,6 +14,8 @@ import SwiftUI
 struct FMFailureBanner: View {
     let message: String
     var retryDisabled: Bool = false
+    /// C4a — replaces "Retry" with a named action (e.g. "Load and ask") when the failure has a better fix.
+    var retryTitle: String = "Retry"
     let onRetry: () -> Void
     let onDismiss: () -> Void
 
@@ -26,7 +28,8 @@ struct FMFailureBanner: View {
                 .font(.system(size: 13))
                 .foregroundStyle(AppearancePalette.ink.opacity(0.9))
                 .frame(maxWidth: .infinity, alignment: .leading)
-            Button("Retry", action: onRetry)
+            Button(retryTitle, action: onRetry)
+                .fixedSize()
                 .font(.system(size: 13, weight: .semibold))
                 .foregroundStyle(Color(hexString: "00BFFF"))
                 .buttonStyle(.plain)

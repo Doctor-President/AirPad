@@ -391,9 +391,14 @@ enum ModelRouter {
         case ollamaHTTPError(path: String, status: Int, body: String)
         case ollamaBadResponse(path: String, body: String)
         case localBadJSON(String)
+        /// ★ C4a — the Host refused because `tag` isn't loaded and the app did NOT auto-load it (Hands-on,
+        /// where loading is the user's call, or the load itself failed). `message` is the Host's own words;
+        /// the transcript banner pairs it with a one-tap "Load and ask" for `tag`.
+        case modelNotLoaded(tag: String, message: String)
 
         var errorDescription: String? {
             switch self {
+            case .modelNotLoaded(_, let message): return message
             case .foundationModelUnavailable: return "Foundation Model not available on this device."
             case .localBadJSON(let s): return "The on-device model didn't return valid JSON: \(Self.truncate(s))"
             case .ollamaNoModels: return "Endpoint is reachable but no models are loaded. Load a model in LM Studio / pull one with `ollama pull <name>`."
@@ -933,41 +938,44 @@ enum ModelRouter {
             NSLog("[ModelRouter] catalog: unparseable (%d bytes) — cannot resolve the curated model", data.count)
             return (nil, nil)
         }
-        func tag(_ m: [String: Any]) -> String? { m["tag"] as? String }
-        func state(_ m: [String: Any]) -> String { (m["state"] as? String) ?? "" }
-        func tier(_ m: [String: Any]) -> Int { (m["tier"] as? Int) ?? 0 }
-        func isRecommended(_ m: [String: Any]) -> Bool { (m["recommended"] as? Bool) ?? false }
+        let entries = models.compactMap { m -> HostModelEntry? in
+            guard let tag = m["tag"] as? String, !tag.isEmpty else { return nil }
+            return HostModelEntry(tag: tag, state: (m["state"] as? String) ?? "", tier: (m["tier"] as? Int) ?? 0,
+                                  recommended: (m["recommended"] as? Bool) ?? false)
+        }
+        return activeHostModel(entries, picked: userPickedHostModel)
+    }
 
-        // ★ CURATED ONLY — every candidate below is filtered to `tier > 0`. An untiered entry
-        // (`llama3.2:latest`, `deepseek-r1`) is a deliberate dev/conformance fixture that the phone's
-        // picker never offers, so it can NEVER be "the user's model" — not even when it is RESIDENT.
-        // Measured: run 1's fallback loaded llama3.2, which left it `installed-loaded`, and honouring
-        // LOAD = SELECT then made the accident STICKY — a 3B fixture kept answering read-in-full lab
-        // questions on run 2. LOAD = SELECT still holds, but only over models the user could select.
-        let curated = models.filter { tier($0) > 0 }
-        let resident = curated.first(where: { state($0) == "installed-loaded" }).flatMap(tag)
-        let installed = curated.filter { state($0).hasPrefix("installed") }
-        // The model the USER PICKED in the phone's picker (T's ruling: that IS the default in V1 —
-        // no separate setting). Used only while it is still installed; an ejected-but-installed pick is
-        // fine (naming it makes Dynamic load it), a DELETED one falls through.
-        let picked = userPickedHostModel.flatMap { p in installed.first { tag($0) == p }.flatMap(tag) }
-        // The V1 DEFAULT when nothing was ever picked: the Host's RECOMMENDED model (Qwen3 4B) if
-        // installed, else the smallest curated shelf (`tier` = the GB shelf — fastest to load, least
-        // surprising to spend a load on unasked). Brief BZ replaced the bare smallest-tier proxy with
-        // the Host's explicit `recommended` flag so "the default" is a curated decision, not an accident.
-        let recommended = installed.first(where: isRecommended).flatMap(tag)
-        let smallestCurated = installed.min(by: { tier($0) < tier($1) }).flatMap(tag)
-        let defaultPick = recommended ?? smallestCurated
-        // ★ Brief BZ — the user's PICK WINS EVERYWHERE. When they picked a model (still installed),
-        // that is what every path names — chat, warm ping, title gen, Librarian — EVEN IF a different
-        // model is momentarily resident, so the Host loads/holds the pick and a stale 8B can't override
-        // a 4B pick (the field bug: picked 4B, 8B kept answering). Resident-first ONLY when NOTHING was
-        // ever picked (don't spend a load unasked; use what's warm). Nothing picked + nothing resident →
-        // the recommended default. Naming the pick also makes a Manual/Always-ready mode that can't
-        // serve it REFUSE HONESTLY (the Host's 409, surfaced) rather than silently answering as another
-        // model — "never silently switch". `resident` (first return) still drives the live label.
-        let preferred = picked ?? resident ?? defaultPick
-        return (resident, preferred)
+    /// One catalog row, as the active-model derivation needs it.
+    struct HostModelEntry: Equatable, Sendable {
+        let tag: String
+        let state: String       // installed-loaded | installed-ejected | not-installed
+        let tier: Int           // 0 = not a curated shelf (an off-manifest install, or a dev fixture)
+        let recommended: Bool
+    }
+
+    /// ★ C4a — THE active model: ONE pure derivation read by routing (every ask names `preferred`) AND by
+    /// the model pill (its name, and ✓ only when `preferred` is resident). T's field bug (2026-10-08) was
+    /// this value derived TWICE: the pill showed ✓ on whatever was resident (Instruct, off-manifest, tier
+    /// 0), while routing dropped the tier-0 pick and asked for the recommended `qwen3:4b`, which the pick's
+    /// own load had just ejected → 409 "No model is loaded", under a ✓.
+    ///
+    ///  - `preferred` = the user's PICK if it is still installed (curated OR an off-manifest install: the
+    ///    picker offers both, and an explicit choice is never silently swapped), else the resident CURATED
+    ///    model (a fallback must stay curated: a resident dev fixture like `llama3.2` must never become the
+    ///    answerer), else the Host's recommended default, else the smallest curated shelf.
+    ///  - `resident` = the resident curated model (nil if none).
+    ///
+    /// The user's PICK wins over a resident model (Brief BZ), so a stale 8B can't answer a 4B pick, and a
+    /// mode that can't serve the pick refuses honestly (or, C4a, the ask loads it).
+    static func activeHostModel(_ models: [HostModelEntry], picked: String?) -> (resident: String?, preferred: String?) {
+        let curated = models.filter { $0.tier > 0 }
+        let resident = curated.first(where: { $0.state == "installed-loaded" })?.tag
+        let pick = picked.flatMap { p in models.first { $0.tag == p && $0.state.hasPrefix("installed") }?.tag }
+        let installed = curated.filter { $0.state.hasPrefix("installed") }
+        let recommended = installed.first(where: \.recommended)?.tag
+        let smallestCurated = installed.min(by: { $0.tier < $1.tier })?.tag
+        return (resident, pick ?? resident ?? recommended ?? smallestCurated)
     }
 
     /// ★ The model the USER PICKED in the phone's model picker — T's ruling (2026-09-29): that IS the
@@ -1088,25 +1096,8 @@ enum ModelRouter {
         // BUG 36 Pillar 2: a client-generated requestID (sealed inside the body — D1) opts this
         // generation into the Host's finish-and-hold, so a mid-stream drop can be resumed.
         if let requestID { body["requestID"] = requestID }
-        let plaintext = try JSONSerialization.data(withJSONObject: body)
-        let (envelope, session) = try HostE2E.sealRequest(master: pairing.master, hostStaticPub: hpk, plaintext: plaintext)
-
-        var request = URLRequest(url: chatURL)
-        request.httpMethod = "POST"
-        request.setValue("application/json", forHTTPHeaderField: "Content-Type")
-        request.setValue(hostUserAgent, forHTTPHeaderField: "User-Agent") // P8
-        request.setValue("Bearer \(pairing.authToken)", forHTTPHeaderField: "Authorization")
-        request.httpBody = try JSONEncoder().encode(envelope)
-
-        let (bytes, response): (URLSession.AsyncBytes, URLResponse)
-        do { (bytes, response) = try await hostStreamSession.bytes(for: request) }
-        catch { throw RouterError.ollamaTransport(error.localizedDescription) }
-
-        if let http = response as? HTTPURLResponse, !(200...299).contains(http.statusCode) {
-            var data = Data()
-            for try await b in bytes { data.append(b) }
-            throw RouterError.ollamaHTTPError(path: "v1/chat/completions", status: http.statusCode,
-                                              body: String(data: data, encoding: .utf8) ?? "")
+        let (bytes, session) = try await withAskLoad(pairing: pairing, model: model) {
+            try await openSealedChat(pairing: pairing, hpk: hpk, chatURL: chatURL, body: body)
         }
 
         // Sealed frames carry RAW upstream SSE byte-chunks (not line-aligned). Accumulate the
@@ -1122,6 +1113,96 @@ enum ModelRouter {
             buffer.append(try session.openFrame(ct))
             drainInnerSSE(&buffer, continuation)
         }
+    }
+
+    /// Seal one chat body and POST it; a non-2xx reads the Host's body into `ollamaHTTPError`.
+    private static func openSealedChat(pairing: HostPairing, hpk: Data, chatURL: URL, body: [String: Any])
+        async throws -> (URLSession.AsyncBytes, HostE2E.ClientSession)
+    {
+        let plaintext = try JSONSerialization.data(withJSONObject: body)
+        let (envelope, session) = try HostE2E.sealRequest(master: pairing.master, hostStaticPub: hpk, plaintext: plaintext)
+
+        var request = URLRequest(url: chatURL)
+        request.httpMethod = "POST"
+        request.setValue("application/json", forHTTPHeaderField: "Content-Type")
+        request.setValue(hostUserAgent, forHTTPHeaderField: "User-Agent") // P8
+        request.setValue("Bearer \(pairing.authToken)", forHTTPHeaderField: "Authorization")
+        request.httpBody = try JSONEncoder().encode(envelope)
+
+        let (bytes, response): (URLSession.AsyncBytes, URLResponse)
+        do { (bytes, response) = try await hostStreamSession.bytes(for: request) }
+        catch { throw RouterError.ollamaTransport(error.localizedDescription) }
+        if let http = response as? HTTPURLResponse, !(200...299).contains(http.statusCode) {
+            var data = Data()
+            for try await b in bytes { data.append(b) }
+            throw RouterError.ollamaHTTPError(path: "v1/chat/completions", status: http.statusCode,
+                                              body: String(data: data, encoding: .utf8) ?? "")
+        }
+        return (bytes, session)
+    }
+
+    // MARK: - C4a: asking IS choosing — a not-loaded refusal loads the asked-for model
+
+    /// ★ C4a (T, 2026-10-08) — run `open`; if the Host refuses with 409 `model_not_loaded`, the ask is the
+    /// user's choice of model, so load it and try ONCE more (Always-ready / Balanced). Hands-on ("load only
+    /// when you choose") is NOT overridden: it throws `modelNotLoaded`, and the banner offers a one-tap
+    /// "Load and ask". A failed load (pressure, won't fit) throws `modelNotLoaded` with the Host's reason,
+    /// so the banner never repeats "load it again" after we already tried.
+    private static func withAskLoad<T>(pairing: HostPairing, model: String, _ open: () async throws -> T) async throws -> T {
+        do {
+            return try await open()
+        } catch RouterError.ollamaHTTPError(_, 409, let body) where hostError(body)?.code == "model_not_loaded" {
+            let refusal = hostError(body)?.message ?? "This model isn't loaded on your Mac."
+            if await hostResidencyMode(pairing: pairing) == "manual" {
+                throw RouterError.modelNotLoaded(tag: model, message: refusal)
+            }
+            if let failure = await loadForAsk(pairing: pairing, model: model) {
+                throw RouterError.modelNotLoaded(tag: model, message: failure)
+            }
+            #if DEBUG
+            GauntletTap.shared.noteAskLoad(model)
+            #endif
+            return try await open()
+        }
+    }
+
+    /// The Host's `{error:{code,message}}` refusal envelope (plaintext, not sealed).
+    static func hostError(_ body: String) -> (code: String, message: String?)? {
+        guard let json = try? JSONSerialization.jsonObject(with: Data(body.utf8)) as? [String: Any],
+              let err = json["error"] as? [String: Any], let code = err["code"] as? String else { return nil }
+        return (code, err["message"] as? String)
+    }
+
+    /// The Mac's residency mode (`always-on` | `dynamic` | `manual`), or nil if unreadable.
+    private static func hostResidencyMode(pairing: HostPairing) async -> String? {
+        guard let url = pairing.residencyURL else { return nil }
+        var req = URLRequest(url: url)
+        req.setValue("Bearer \(pairing.authToken)", forHTTPHeaderField: "Authorization")
+        req.setValue(hostUserAgent, forHTTPHeaderField: "User-Agent")
+        guard let (data, resp) = try? await URLSession.shared.data(for: req),
+              let http = resp as? HTTPURLResponse, (200...299).contains(http.statusCode),
+              let json = try? JSONSerialization.jsonObject(with: data) as? [String: Any] else { return nil }
+        return json["mode"] as? String
+    }
+
+    /// Load `model` on the Host for an ask. nil = loaded; otherwise the Host's own reason (a pressure hold's
+    /// notice, a won't-fit refusal) or a plain line. The pill narrates it like a picker load (`busyTag`).
+    private static func loadForAsk(pairing: HostPairing, model: String) async -> String? {
+        guard let url = pairing.loadURL else { return "Couldn't reach your Mac. Try again." }
+        await MainActor.run { HostCatalog.shared.beginAskLoad(model) }
+        defer { Task { @MainActor in await HostCatalog.shared.endAskLoad() } }
+        var req = URLRequest(url: url, timeoutInterval: 180)   // a 30B load takes ~20 s
+        req.httpMethod = "POST"
+        req.setValue("application/json", forHTTPHeaderField: "Content-Type")
+        req.setValue("Bearer \(pairing.authToken)", forHTTPHeaderField: "Authorization")
+        req.setValue(hostUserAgent, forHTTPHeaderField: "User-Agent")
+        req.httpBody = try? JSONSerialization.data(withJSONObject: ["catalogId": model])
+        guard let (data, resp) = try? await URLSession.shared.data(for: req),
+              let http = resp as? HTTPURLResponse else { return "Couldn't reach your Mac. Try again." }
+        let json = (try? JSONSerialization.jsonObject(with: data)) as? [String: Any]
+        if (200...299).contains(http.statusCode), json?["result"] as? String == "loaded" { return nil }
+        if let notice = json?["notice"] as? [String: Any], let text = notice["text"] as? String, !text.isEmpty { return text }
+        return hostError(String(decoding: data, as: UTF8.self))?.message ?? "This model didn't load on your Mac. Try again."
     }
 
     // MARK: - Host agentic tool turn (web search over the SEALED path)
@@ -1172,6 +1253,22 @@ enum ModelRouter {
         onContentDelta: @Sendable @escaping (String) -> Void,
         onReasoningDelta: @Sendable @escaping (String) -> Void = { _ in }
     ) async throws -> AgentTurn {
+        #if DEBUG
+        // CH Session 2 — `-GauntletReplay` on the AGENT path: a recorded round streams its content and returns its
+        // recorded tool calls (which the loop then runs through the real executor / web mock). No Host, no model.
+        if let replay = GauntletTap.shared.nextReplayTurn() {
+            GauntletTap.shared.noteModel("replay")
+            var content = ""
+            for d in replay.deltas where !d.thinking {
+                try await Task.sleep(for: .milliseconds(replay.delayMs))
+                content += d.s
+                onContentDelta(d.s)
+            }
+            return AgentTurn(content: content, toolCalls: replay.toolCalls.enumerated().map {
+                ToolCall(id: "replay-\($0.offset)", name: $0.element.name, argumentsJSON: $0.element.argumentsJSON)
+            })
+        }
+        #endif
         guard let hpk = pairing.hostPublicKey, let chatURL = pairing.chatURL else {
             throw RouterError.ollamaBadEndpoint(pairing.tunnelURL)
         }
@@ -1191,24 +1288,8 @@ enum ModelRouter {
         // `onReasoningDelta`), leaving the answer clean.
         var body: [String: Any] = ["model": model, "stream": true, "think": think, "messages": Self.nativizeToolMessages(messages)]
         if let tools { body["tools"] = tools }
-        let plaintext = try JSONSerialization.data(withJSONObject: body)
-        let (envelope, session) = try HostE2E.sealRequest(master: pairing.master, hostStaticPub: hpk, plaintext: plaintext)
-
-        var request = URLRequest(url: chatURL)
-        request.httpMethod = "POST"
-        request.setValue("application/json", forHTTPHeaderField: "Content-Type")
-        request.setValue(hostUserAgent, forHTTPHeaderField: "User-Agent") // P8
-        request.setValue("Bearer \(pairing.authToken)", forHTTPHeaderField: "Authorization")
-        request.httpBody = try JSONEncoder().encode(envelope)
-
-        let (bytes, response): (URLSession.AsyncBytes, URLResponse)
-        do { (bytes, response) = try await hostStreamSession.bytes(for: request) }
-        catch { throw RouterError.ollamaTransport(error.localizedDescription) }
-        if let http = response as? HTTPURLResponse, !(200...299).contains(http.statusCode) {
-            var data = Data()
-            for try await b in bytes { data.append(b) }
-            throw RouterError.ollamaHTTPError(path: "v1/chat/completions", status: http.statusCode,
-                                              body: String(data: data, encoding: .utf8) ?? "")
+        let (bytes, session) = try await withAskLoad(pairing: pairing, model: model) {
+            try await openSealedChat(pairing: pairing, hpk: hpk, chatURL: chatURL, body: body)
         }
 
         var buffer = Data()

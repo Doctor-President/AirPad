@@ -339,6 +339,7 @@ struct LibrarianSurface: View {
                 if !UserDefaults.standard.bool(forKey: "GauntletKeepChat") { router.chat.reset() }
                 let seed = UserDefaults.standard.integer(forKey: "GauntletSeedChat")
                 if seed > 0 { router.chat.debugSeed(turns: seed) }
+                if seed > 0, UserDefaults.standard.bool(forKey: "GauntletSeedPartial") { router.chat.debugMarkLastPartial() }
                 librarian.corpusAware = true
                 librarian.selectedScope = .corpus
                 librarian.thinkEnabled = UserDefaults.standard.bool(forKey: "GauntletThink")

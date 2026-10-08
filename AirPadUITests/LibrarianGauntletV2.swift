@@ -384,6 +384,53 @@ final class OffPillarSmoke: XCTestCase {
         app.terminate()
     }
 
+    /// CH item 4 — Copy answer: tap the footer's Copy on the LATEST answer. The pasteboard is checked from outside the
+    /// app (`xcrun simctl pbpaste` after the run, against a sentinel planted before it — no cross-app paste prompt).
+    func testCopyAnswerToPasteboard() throws {
+        let app = XCUIApplication()
+        app.launchArguments = ["-OpenMap", "-GauntletUI", "YES", "-GauntletSeedChat", "2"]
+        app.launch()
+        let copies = app.buttons.matching(NSPredicate(format: "label == 'Copy message'"))
+        XCTAssertTrue(copies.firstMatch.waitForExistence(timeout: 30), "no Copy under the seeded answers")
+        let last = copies.allElementsBoundByIndex.filter { $0.isHittable }.max(by: { $0.frame.minY < $1.frame.minY })
+        XCTAssertNotNil(last, "no hittable Copy button")
+        last?.tap()
+        Thread.sleep(forTimeInterval: 1.5)
+        print("CONTINUE_COPY copy tapped")
+        app.terminate()
+    }
+
+    /// CH item 4 — Continue: a stopped-early answer (`-GauntletSeedPartial`) resumes through a real model and stops
+    /// being partial. Needs a scratch Host: `TEST_RUNNER_CC_HOST_ARGS="-DebugHostURL … -DebugHostSecret … -DebugHostPubKey …"`.
+    func testContinueResumesStoppedAnswer() throws {
+        guard let host = ProcessInfo.processInfo.environment["CC_HOST_ARGS"], !host.isEmpty else {
+            throw XCTSkip("needs CC_HOST_ARGS (a scratch Host)")
+        }
+        let app = XCUIApplication()
+        app.launchArguments = ["-OpenMap", "-GauntletUI", "YES", "-GauntletTapDir", "app-tmp", "-GauntletSeedChat", "2", "-GauntletSeedPartial", "YES"]
+            + host.split(separator: " ").map(String.init)
+        app.launch()
+        let cont = app.buttons["Continue the answer"]
+        XCTAssertTrue(cont.waitForExistence(timeout: 30), "no Continue on the stopped-early answer")
+        let answers = app.descendants(matching: .any).matching(identifier: "chat.answer")
+        func lastAnswerChars() -> Int { answers.allElementsBoundByIndex.max(by: { $0.frame.minY < $1.frame.minY })?.label.count ?? 0 }
+        let before = lastAnswerChars()
+        cont.tap()
+        let stopped = app.descendants(matching: .any).matching(NSPredicate(format: "label == 'Stopped early'")).firstMatch
+        let deadline = Date().addingTimeInterval(240)
+        var done = false
+        while Date() < deadline {
+            Thread.sleep(forTimeInterval: 3)
+            if !stopped.exists && !cont.exists && !app.staticTexts["Resuming…"].exists { done = true; break }
+            if cont.exists && cont.isEnabled && Date().timeIntervalSince(deadline.addingTimeInterval(-240)) > 20 { break } // dropped again
+        }
+        let after = lastAnswerChars()
+        print("CONTINUE_COPY continue done=\(done) answerChars \(before)→\(after)")
+        XCTAssertTrue(done, "the answer is still 'Stopped early' after Continue")
+        XCTAssertGreaterThan(after, before, "Continue added no text")
+        app.terminate()
+    }
+
     /// Pin a chat to an entry and unpin it again (the Chats list's long-press "Pin to entry…" → the entry picker).
     /// Same scratch-library precondition as the rename/delete test.
     func testChatPinToEntryAndUnpin() throws {
@@ -458,3 +505,136 @@ final class OffPillarSmoke: XCTestCase {
         app.terminate()
     }
 }
+
+
+/// CH Session 2, items 2–3 (inventory C4 / C4a) through the REAL Librarian, against a scratch Host
+/// (`TEST_RUNNER_CC_HOST_ARGS`). The script sets the Host's residency + residents per case (`TEST_RUNNER_C4A_CASE`).
+final class ModelPillChecks: XCTestCase {
+
+    private func launch(_ extra: [String]) throws -> XCUIApplication {
+        guard let host = ProcessInfo.processInfo.environment["CC_HOST_ARGS"], !host.isEmpty else {
+            throw XCTSkip("needs CC_HOST_ARGS (a scratch Host)")
+        }
+        let app = XCUIApplication()
+        app.launchArguments = ["-OpenMap", "-GauntletUI", "YES", "-GauntletTapDir", "app-tmp"]
+            + host.split(separator: " ").map(String.init) + extra
+        app.launch()
+        return app
+    }
+
+    private func pill(_ app: XCUIApplication) -> XCUIElement {
+        app.buttons.matching(NSPredicate(format: "label BEGINSWITH 'Model ' OR label == 'No model loaded'")).firstMatch
+    }
+
+    private func toGeneralAndAsk(_ app: XCUIApplication, _ q: String) {
+        let lib = app.buttons["Library mode"]
+        if lib.waitForExistence(timeout: 20) { lib.tap() }
+        XCTAssertTrue(app.buttons["General mode"].waitForExistence(timeout: 5), "could not switch to General")
+        let pred = NSPredicate(format: "placeholderValue == 'Ask' OR label == 'Ask'")
+        var field = app.textViews.matching(pred).firstMatch
+        if !field.waitForExistence(timeout: 5) { field = app.textFields.matching(pred).firstMatch }
+        XCTAssertTrue(field.waitForExistence(timeout: 10), "Ask field missing")
+        field.tap(); field.typeText(q)
+        app.buttons["Send"].tap()
+    }
+
+    private func waitForAnswer(_ app: XCUIApplication, timeout: TimeInterval = 180) -> String? {
+        let answers = app.descendants(matching: .any).matching(identifier: "chat.answer")
+        let deadline = Date().addingTimeInterval(timeout)
+        while Date() < deadline {
+            if let a = answers.allElementsBoundByIndex.max(by: { $0.frame.minY < $1.frame.minY }), a.label.count > 1,
+               !app.buttons["Stop"].exists { return a.label }
+            Thread.sleep(forTimeInterval: 2)
+        }
+        return nil
+    }
+
+    /// C4 — a very long model name must fade inside the pill; the Library/General toggle and Thinking keep their
+    /// size (one line each — T's screenshot had "Library" wrapped one syllable per line), and the raw tag never shows.
+    func testLongNameNeverSqueezesNeighbours() throws {
+        let long = "Qwen3 30B-A3B Instruct 2507 · Extended Context Long Name Edition"
+        let app = try launch(["-GauntletPillName", long])
+        let lib = app.buttons["Library mode"]
+        XCTAssertTrue(lib.waitForExistence(timeout: 30), "no Library toggle")
+        let p = pill(app)
+        XCTAssertTrue(p.waitForExistence(timeout: 20), "no model pill")
+        Thread.sleep(forTimeInterval: 2)
+        let think = app.buttons.matching(NSPredicate(format: "label BEGINSWITH 'Thinking'")).firstMatch
+        let shot = XCUIScreen.main.screenshot()
+        if let dir = ProcessInfo.processInfo.environment["C4_SHOT_DIR"] {
+            try? shot.pngRepresentation.write(to: URL(fileURLWithPath: dir).appendingPathComponent("pill-long.png"))
+        }
+        print("C4 frames library=\(lib.frame) pill=\(p.frame) thinking=\(think.exists ? "\(think.frame)" : "absent") label=\(p.label)")
+        XCTAssertLessThan(lib.frame.height, 40, "Library toggle wrapped (taller than one line)")
+        XCTAssertGreaterThan(lib.frame.width, 60, "Library toggle squeezed")
+        XCTAssertLessThanOrEqual(p.frame.width, 230, "the pill did not cap its long name")
+        XCTAssertFalse(p.frame.intersects(lib.frame), "pill overlaps the Library toggle")
+        if think.exists {
+            XCTAssertLessThan(think.frame.height, 40, "Thinking control wrapped")
+            XCTAssertFalse(p.frame.intersects(think.frame), "pill overlaps Thinking")
+        }
+        app.terminate()
+    }
+
+    /// C4 — the `-PillGallery` harness (fake catalog, a Thinking-toggleable model): next to the long name, every
+    /// "Library" chip and every Thinking control stays one line, and no pill overlaps its neighbours.
+    func testGalleryLongNameKeepsThinking() throws {
+        let app = XCUIApplication()
+        app.launchArguments = ["-PillGallery"]
+        app.launch()
+        let pills = app.buttons.matching(NSPredicate(format: "label BEGINSWITH 'Model Qwen3 30B-A3B Instruct 2507'"))
+        XCTAssertTrue(pills.firstMatch.waitForExistence(timeout: 30), "no long-name gallery row")
+        Thread.sleep(forTimeInterval: 1)
+        if let dir = ProcessInfo.processInfo.environment["C4_SHOT_DIR"] {
+            try? XCUIScreen.main.screenshot().pngRepresentation.write(to: URL(fileURLWithPath: dir).appendingPathComponent("pill-gallery.png"))
+        }
+        let thinks = app.buttons.matching(NSPredicate(format: "label BEGINSWITH 'Thinking'")).allElementsBoundByIndex
+        let libs = app.staticTexts.matching(NSPredicate(format: "label == 'Library'")).allElementsBoundByIndex
+        for p in pills.allElementsBoundByIndex {
+            let row = p.frame.insetBy(dx: -400, dy: 0)   // same-row neighbours
+            let t = thinks.first { row.intersects($0.frame) }
+            print("C4 gallery pill=\(p.frame) thinking=\(t.map { "\($0.frame)" } ?? "absent")")
+            XCTAssertNotNil(t, "Thinking disappeared next to the long name")
+            if let t { XCTAssertLessThan(t.frame.height, 40); XCTAssertFalse(p.frame.intersects(t.frame), "pill overlaps Thinking") }
+            XCTAssertLessThanOrEqual(p.frame.width, 230, "the pill did not cap its long name")
+        }
+        for l in libs { XCTAssertLessThan(l.frame.height, 30, "a Library chip wrapped") }
+        app.terminate()
+    }
+
+    /// C4a — the cases the script prepares on the scratch Host (residency + residents):
+    ///   A "pick-resident"  Always-ready; pick = Instruct (resident, off-manifest); curated qwen3:4b NOT resident. T's bug.
+    ///   B "autoload"       Always-ready; pick = a model that is NOT resident → the ask loads it and answers.
+    ///   C "handson"        Hands-on; pick NOT resident → banner with "Load and ask" → tap → answer.
+    func testAskWithPickedModel() throws {
+        let env = ProcessInfo.processInfo.environment
+        let c = env["C4A_CASE"] ?? "pick-resident"
+        let pick = env["C4A_PICK"] ?? "qwen3:4b-instruct-2507-q4_K_M"
+        let app = try launch(["-airpadUserPickedHostModel", pick])
+        let p = pill(app)
+        XCTAssertTrue(p.waitForExistence(timeout: 30), "no model pill")
+        Thread.sleep(forTimeInterval: 3)
+        let pillBefore = p.label
+        XCTAssertFalse(pillBefore.contains(":"), "the pill shows a raw tag: \(pillBefore)")
+        if c == "pick-resident" { XCTAssertTrue(pillBefore.hasSuffix(", loaded"), "pick is resident but the pill says \(pillBefore)") }
+        // (autoload: no pre-check — in Always-ready the panel's warm-on-open ping already loads the pick, and wins the race
+        // to the pill on 26.5/27; the script checks the Host log for the 409 → load instead.)
+        else if c == "handson" { XCTAssertTrue(pillBefore.hasSuffix("not loaded yet"), "pick is NOT resident but the pill says \(pillBefore)") }
+        toGeneralAndAsk(app, "In one sentence: what is the capital of France?")
+        if c == "handson" {
+            let load = app.buttons["Load and ask"]
+            XCTAssertTrue(load.waitForExistence(timeout: 60), "Hands-on: no 'Load and ask' in the banner")
+            load.tap()
+        }
+        let answer = waitForAnswer(app)
+        let pillAfter = p.label
+        print("C4A case=\(c) pillBefore=\(pillBefore) pillAfter=\(pillAfter) answer=\(answer?.prefix(80) ?? "NONE")")
+        XCTAssertNotNil(answer, "no answer (case \(c))")
+        XCTAssertTrue(answer?.localizedCaseInsensitiveContains("Paris") == true, "answer doesn't name Paris")
+        XCTAssertTrue(pillAfter.hasSuffix(", loaded"), "after answering, the pill says \(pillAfter)")
+        XCTAssertFalse(app.staticTexts.matching(NSPredicate(format: "label CONTAINS 'No model is loaded'")).firstMatch.exists,
+                       "a not-loaded banner is still showing")
+        app.terminate()
+    }
+}
+

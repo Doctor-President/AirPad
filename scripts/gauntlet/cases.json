@@ -1086,6 +1086,458 @@
           "action": "general"
         }
       ]
+    },
+    {
+      "chat": "sl-s1",
+      "args": [
+        "-SampleSeedDemo"
+      ],
+      "cases": [
+        {
+          "id": "SL-S1",
+          "kind": "synthesis",
+          "what": "Sample synthesis: film × games share the constraint theme (Bolex 28 s, SH2 fog, dandori)",
+          "question": "What connects my film entries and my games entries?",
+          "expectRoute": "survey",
+          "mustContain": [
+            [
+              "constraint",
+              "limitation",
+              "limit",
+              "28 seconds",
+              "28-second",
+              "dandori",
+              "fog",
+              "one wind"
+            ]
+          ],
+          "minFacts": 1
+        }
+      ]
+    },
+    {
+      "chat": "sl-s2",
+      "args": [
+        "-SampleSeedDemo"
+      ],
+      "cases": [
+        {
+          "id": "SL-S2",
+          "kind": "synthesis",
+          "what": "Sample synthesis: what the coffee entries keep coming back to (brewing variables / grind / water)",
+          "question": "What do my coffee entries keep coming back to?",
+          "expectRoute": "survey",
+          "mustContain": [
+            [
+              "grind",
+              "water",
+              "brew",
+              "extraction",
+              "bloom",
+              "body"
+            ]
+          ],
+          "minFacts": 1
+        }
+      ]
+    },
+    {
+      "chat": "sl-r1",
+      "args": [
+        "-SampleSeedDemo"
+      ],
+      "cases": [
+        {
+          "id": "SL-R1",
+          "kind": "bu2",
+          "what": "Sample read: the Bolex H16 entry (28 s per wind; spring-wound / Swiss)",
+          "question": "What does my Bolex H16 entry say?",
+          "expectRoute": "read",
+          "mustContain": [
+            [
+              "28 seconds",
+              "28-second",
+              "28 second"
+            ],
+            [
+              "spring",
+              "no batteries",
+              "switzerland",
+              "swiss"
+            ]
+          ],
+          "minFacts": 2
+        }
+      ]
+    },
+    {
+      "chat": "sl-r2",
+      "args": [
+        "-SampleSeedDemo"
+      ],
+      "cases": [
+        {
+          "id": "SL-R2",
+          "kind": "bu2",
+          "what": "Sample read: red lentil soup recipe (ingredients + the lemon fix)",
+          "question": "What's in my red lentil soup?",
+          "expectRoute": "read",
+          "mustContain": [
+            [
+              "onion"
+            ],
+            [
+              "carrot"
+            ],
+            [
+              "bay leaf",
+              "bay"
+            ],
+            [
+              "lemon"
+            ]
+          ],
+          "minFacts": 3
+        }
+      ]
+    },
+    {
+      "chat": "sl-f1",
+      "args": [
+        "-SampleSeedDemo"
+      ],
+      "cases": [
+        {
+          "id": "SL-F1",
+          "kind": "bu2",
+          "what": "Sample fact (typed field): roaster of the Ethiopia Guji → Metric",
+          "question": "Who roasted the Ethiopia Guji coffee I wrote about?",
+          "expectRoute": "",
+          "mustContain": [
+            [
+              "metric"
+            ]
+          ],
+          "minFacts": 1
+        }
+      ]
+    },
+    {
+      "chat": "sl-f2",
+      "args": [
+        "-SampleSeedDemo"
+      ],
+      "cases": [
+        {
+          "id": "SL-F2",
+          "kind": "bu2",
+          "what": "Sample fact (typed field): origin of the Sparrow coffee → Huehuetenango, Guatemala",
+          "question": "Where is the Sparrow coffee from?",
+          "expectRoute": "",
+          "mustContain": [
+            [
+              "huehuetenango",
+              "guatemala"
+            ]
+          ],
+          "minFacts": 1
+        }
+      ]
+    },
+    {
+      "chat": "sl-f3",
+      "args": [
+        "-SampleSeedDemo"
+      ],
+      "cases": [
+        {
+          "id": "SL-F3",
+          "kind": "bu2",
+          "what": "Sample fact (typed field): how I met Dolores → she trained me on the desk",
+          "question": "How did I meet Dolores?",
+          "expectRoute": "",
+          "mustContain": [
+            [
+              "trained"
+            ]
+          ],
+          "minFacts": 1
+        }
+      ]
+    },
+    {
+      "chat": "sl-f4",
+      "args": [
+        "-SampleSeedDemo"
+      ],
+      "cases": [
+        {
+          "id": "SL-F4",
+          "kind": "bu2",
+          "what": "Sample fact (prose): the dish for company → roast chicken",
+          "question": "What do I cook when someone comes over?",
+          "expectRoute": "",
+          "mustContain": [
+            [
+              "chicken"
+            ]
+          ],
+          "minFacts": 1
+        }
+      ]
+    },
+    {
+      "chat": "sl-d1",
+      "args": [
+        "-SampleSeedDemo"
+      ],
+      "cases": [
+        {
+          "id": "SL-D1",
+          "kind": "bu2",
+          "what": "Sample date: the Bolex arrived (diary 'bought it', 12 July 2026)",
+          "question": "When did my Bolex arrive?",
+          "expectRoute": "",
+          "mustContain": [
+            [
+              "july",
+              "jul ",
+              "2026-07"
+            ]
+          ],
+          "minFacts": 1
+        }
+      ]
+    },
+    {
+      "chat": "sl-d2",
+      "args": [
+        "-SampleSeedDemo"
+      ],
+      "cases": [
+        {
+          "id": "SL-D2",
+          "kind": "bu2",
+          "what": "Sample date: finished BG3 (3 September 2026)",
+          "question": "When did I finish Baldur's Gate 3?",
+          "expectRoute": "",
+          "mustContain": [
+            [
+              "september",
+              "sept",
+              "sep ",
+              "2026-09"
+            ]
+          ],
+          "minFacts": 1
+        }
+      ]
+    },
+    {
+      "chat": "sl-d3",
+      "args": [
+        "-SampleSeedDemo"
+      ],
+      "cases": [
+        {
+          "id": "SL-D3",
+          "kind": "bu2",
+          "what": "Sample date (typed field): last spoke to Mom → 4 September 2026",
+          "question": "When did I last speak to Mom?",
+          "expectRoute": "",
+          "mustContain": [
+            [
+              "september 4",
+              "sept 4",
+              "sep 4",
+              "4 september",
+              "september 4th",
+              "2026-09-04"
+            ]
+          ],
+          "minFacts": 1
+        }
+      ]
+    },
+    {
+      "chat": "sl-a1",
+      "args": [
+        "-SampleSeedDemo"
+      ],
+      "cases": [
+        {
+          "id": "SL-A1",
+          "kind": "bu2",
+          "what": "Sample absence: beekeeping (nothing exists) → says so, invents nothing",
+          "question": "Did I ever write about beekeeping?",
+          "expectRoute": "",
+          "mustContain": [
+            [
+              "no ",
+              "not ",
+              "n't",
+              "none",
+              "nothing"
+            ]
+          ],
+          "minFacts": 1,
+          "mustNotContain": [
+            "your beekeeping entry",
+            "you wrote about beekeeping"
+          ]
+        }
+      ]
+    },
+    {
+      "chat": "sl-a2",
+      "args": [
+        "-SampleSeedDemo"
+      ],
+      "cases": [
+        {
+          "id": "SL-A2",
+          "kind": "bu2",
+          "what": "Sample absence: skiing (nothing exists)",
+          "question": "Have I written anything about skiing?",
+          "expectRoute": "",
+          "mustContain": [
+            [
+              "no ",
+              "not ",
+              "n't",
+              "none",
+              "nothing"
+            ]
+          ],
+          "minFacts": 1,
+          "mustNotContain": [
+            "your skiing entry",
+            "you wrote about skiing"
+          ]
+        }
+      ]
+    },
+    {
+      "chat": "sl-m1",
+      "args": [
+        "-SampleSeedDemo"
+      ],
+      "cases": [
+        {
+          "id": "SL-M1a",
+          "kind": "bu2",
+          "what": "Sample multi-turn 1/3: BG3 (reloading saves; one ending)",
+          "question": "What have I written about Baldur's Gate 3?",
+          "expectRoute": "",
+          "mustContain": [
+            [
+              "reload",
+              "save"
+            ],
+            [
+              "ending",
+              "finished"
+            ]
+          ],
+          "minFacts": 1
+        },
+        {
+          "id": "SL-M1b",
+          "kind": "bu2",
+          "what": "Sample multi-turn 2/3: did I look at the other endings? → no",
+          "question": "Did I end up looking at the other endings?",
+          "expectRoute": "",
+          "mustContain": [
+            [
+              "didn't",
+              "did not",
+              "no,",
+              "no.",
+              "not look",
+              "never"
+            ]
+          ],
+          "minFacts": 1
+        },
+        {
+          "id": "SL-M1c",
+          "kind": "bu2",
+          "what": "Sample multi-turn 3/3: grounding → must cite the entry",
+          "question": "Which entry says that?",
+          "expectRoute": ""
+        }
+      ]
+    },
+    {
+      "chat": "sl-au1",
+      "args": [
+        "-SampleSeedDemo"
+      ],
+      "_probe": true,
+      "cases": [
+        {
+          "id": "SL-AU1",
+          "kind": "bu2",
+          "what": "audit: substring pin 'train'",
+          "question": "What have I written about training?",
+          "expectRoute": ""
+        }
+      ]
+    },
+    {
+      "chat": "sl-au2",
+      "args": [
+        "-SampleSeedDemo"
+      ],
+      "_probe": true,
+      "cases": [
+        {
+          "id": "SL-AU2",
+          "kind": "bu2",
+          "what": "audit: substring pin 'after'",
+          "question": "What did I do after the Bolex arrived?",
+          "expectRoute": ""
+        }
+      ]
+    },
+    {
+      "chat": "sl-au3",
+      "args": [
+        "-SampleSeedDemo"
+      ],
+      "_probe": true,
+      "cases": [
+        {
+          "id": "SL-AU3",
+          "kind": "bu2",
+          "what": "audit: count matcher filler terms",
+          "question": "How many times a day should I drink coffee?",
+          "expectRoute": ""
+        }
+      ]
+    },
+    {
+      "chat": "sl-au4",
+      "args": [
+        "-SampleSeedDemo"
+      ],
+      "_probe": true,
+      "cases": [
+        {
+          "id": "SL-AU4a",
+          "kind": "bu2",
+          "what": "audit: dominance carry 1/2",
+          "question": "What does my Bolex H16 entry say?",
+          "expectRoute": "read"
+        },
+        {
+          "id": "SL-AU4b",
+          "kind": "bu2",
+          "what": "audit: dominance carry 2/2",
+          "question": "What is the capital of France?",
+          "expectRoute": ""
+        }
+      ]
     }
   ]
 }

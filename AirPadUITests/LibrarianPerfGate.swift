@@ -13,7 +13,8 @@ final class LibrarianPerfGate: XCTestCase {
         let deadKey = Data(count: 32).base64EncodedString()
         var args = ["-UITestLibrary", "-UITestLibraryFresh", "-EmbedCPUOnly",
                     "-DebugHostURL", "http://127.0.0.1:1", "-DebugHostSecret", "lab", "-DebugHostPubKey", deadKey,
-                    "-GauntletTapDir", "app-tmp", "-OpenMap", "-GauntletUI", "YES", "-GauntletSeedChat", "100"]
+                    "-GauntletTapDir", "app-tmp", "-OpenMap", "-GauntletUI", "YES",
+                    "-GauntletSeedChat", ProcessInfo.processInfo.environment["PERF_TURNS"] ?? "100"]
         if let e = ProcessInfo.processInfo.environment["PERF_EXTRA"], !e.isEmpty {
             args += e.split(separator: " ").map(String.init)
         }
@@ -32,7 +33,18 @@ final class LibrarianPerfGate: XCTestCase {
         return nil
     }
 
-    func testOpenAndScroll100TurnChat() { run(label: "split: lazy history + eager live exchange (option 1, production)", extra: []) }
+    private func frames(_ app: XCUIApplication) -> (frames: Int, hitches: Int, hitchMs: Double, t: Double)? {
+        let l = app.descendants(matching: .any).matching(identifier: "gauntlet.frames").firstMatch
+        guard l.waitForExistence(timeout: 5) else { return nil }
+        var d: [String: Double] = [:]
+        for kv in l.label.split(separator: " ") { let p = kv.split(separator: "="); if p.count == 2 { d[String(p[0])] = Double(p[1]) } }
+        guard let f = d["frames"], let h = d["hitches"], let ms = d["hitchMs"], let t = d["t"] else { return nil }
+        return (Int(f), Int(h), ms, t)
+    }
+
+    func testOpenAndScroll100TurnChat() { run(label: "FREEZE FIX (production): all eager ≤ 40 messages, else option 1", extra: []) }
+    /// A/B baseline for the freeze fix: option 1 (lazy history + eager latest exchange only).
+    func testOpenAndScroll100TurnChatSplitBaseline() { run(label: "split: lazy history + eager live exchange (option 1)", extra: ["-TranscriptEagerAll", "0"]) }
     /// A/B baseline: the pre-fix LazyVStack on the same seeded chat (DEBUG `-FreezeLazyStack`).
     func testOpenAndScroll100TurnChatLazyBaseline() { run(label: "lazy-LazyVStack (pre-fix)", extra: ["-FreezeLazyStack", "YES"]) }
 
@@ -44,10 +56,19 @@ final class LibrarianPerfGate: XCTestCase {
         // Scroll hitches: drag (finger down) AND deceleration (the fling after release), both directions.
         let opts = XCTMeasureOptions(); opts.iterationCount = 5
         print("PERF [\(label)] measuring scroll")
+        let f0 = frames(app)
         measure(metrics: [XCTOSSignpostMetric.scrollDraggingMetric, XCTOSSignpostMetric.scrollDecelerationMetric], options: opts) {
             for _ in 0..<4 { app.swipeDown(velocity: .fast) }
             for _ in 0..<4 { app.swipeUp(velocity: .fast) }
         }
+        Thread.sleep(forTimeInterval: 1)
+        let f1 = frames(app)
+        // Simulator main-thread frame pacing over the whole scroll window (the device-only hitch metrics are absent here).
+        if let a = f0, let b = f1, b.t > a.t {
+            let secs = b.t - a.t
+            print(String(format: "PERF [\(label)] scroll frames: %.1f fps · %d hitches · %.0f ms/s hitch time over %.1f s",
+                         Double(b.frames - a.frames) / secs, b.hitches - a.hitches, (b.hitchMs - a.hitchMs) / secs, secs))
+        } else { print("PERF [\(label)] scroll frames: NO FRAME METER") }
 
         // Re-open: Back to the Librarian home, then Resume the chat.
         let back = app.buttons["Back to Librarian home"]

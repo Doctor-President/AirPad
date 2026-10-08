@@ -78,6 +78,7 @@
 		360EE907B4E87BD67CBC4F78 /* ChatTypography.swift in Sources */ = {isa = PBXBuildFile; fileRef = D953A7AAAC24875D5B6157C4 /* ChatTypography.swift */; };
 		3687E0F23E8567FA598FD175 /* AppearancePalette.swift in Sources */ = {isa = PBXBuildFile; fileRef = BD02B64092A916BBD65260B0 /* AppearancePalette.swift */; };
 		37C96334FF2E680609216C38 /* EntryVisualSettings.swift in Sources */ = {isa = PBXBuildFile; fileRef = 6F9B499A6DE0C5C10644FF16 /* EntryVisualSettings.swift */; };
+		38853CBE29DB65D5ED44A3F6 /* FlutedGlass.swift in Sources */ = {isa = PBXBuildFile; fileRef = F7AF6427A219BF4C6B063118 /* FlutedGlass.swift */; };
 		3B496945356A064AD86E3547 /* DocumentPickerView.swift in Sources */ = {isa = PBXBuildFile; fileRef = D06AD49C19B1632AA4F8E29C /* DocumentPickerView.swift */; };
 		3BAFE63927E0F48132A90141 /* latobold_msdf.png in Resources */ = {isa = PBXBuildFile; fileRef = F0B477059444D44B3E9DC03D /* latobold_msdf.png */; };
 		3C1C7C69B23FACE57AAD1E4D /* QRScannerView.swift in Sources */ = {isa = PBXBuildFile; fileRef = 5D1408F7F32D1B41467621B6 /* QRScannerView.swift */; };
@@ -648,6 +649,7 @@
 		F66D3DA4639568EA375AC13E /* SourceSerif4-Bold.ttf */ = {isa = PBXFileReference; lastKnownFileType = file; path = "SourceSerif4-Bold.ttf"; sourceTree = "<group>"; };
 		F6A18AD80C0FCB6B5E928844 /* TagCreationSheet.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = TagCreationSheet.swift; sourceTree = "<group>"; };
 		F7814673E5A10B9F5E391DA4 /* SettingsView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = SettingsView.swift; sourceTree = "<group>"; };
+		F7AF6427A219BF4C6B063118 /* FlutedGlass.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = FlutedGlass.swift; sourceTree = "<group>"; };
 		F98C5EDB7B8428ABB080668F /* UberNode.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = UberNode.swift; sourceTree = "<group>"; };
 		FA68215D2065B3D02251352C /* CardEmbeddingService.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = CardEmbeddingService.swift; sourceTree = "<group>"; };
 		FB7866DE5FB6758202EA3AB1 /* CameraCaptureView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = CameraCaptureView.swift; sourceTree = "<group>"; };
@@ -1225,6 +1227,7 @@
 				90F7805935A064BDC856B051 /* CaptureButtonLabel.swift */,
 				2D22141DDFC181FE31634680 /* CaretMeasure.swift */,
 				5A96FFE17D3D32F62010C786 /* FirstRunCallout.swift */,
+				F7AF6427A219BF4C6B063118 /* FlutedGlass.swift */,
 				8D3B404567771D9D41AB6936 /* FMFailureBanner.swift */,
 				CF2C09BA37847F1EB226638D /* GhostFieldOverlay.swift */,
 				E1CA7EBB8E00D6EB0B60EBCE /* KeyboardDismissModifier.swift */,
@@ -1609,6 +1612,7 @@
 				BBA0C41339806A487FD74C7C /* FieldValueSelfTest.swift in Sources */,
 				55858A9A690EA3D459DE82E9 /* FilterState.swift in Sources */,
 				B74D1E72B7F50E6DCB15A59C /* FirstRunCallout.swift in Sources */,
+				38853CBE29DB65D5ED44A3F6 /* FlutedGlass.swift in Sources */,
 				71FA4FF948901041E16802D4 /* FolksonomyDiagnostic.swift in Sources */,
 				9DE472F3C0CC2C7696196323 /* GalleryBody.swift in Sources */,
 				348CAEC8BA9B796ECC63C1B0 /* GalleryFullscreenViewer.swift in Sources */,

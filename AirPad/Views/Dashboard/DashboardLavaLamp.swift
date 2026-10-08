@@ -36,6 +36,7 @@ struct DashboardLavaLamp: View {
 
     private var darkLava: some View {
         let d = dark
+        let glass = FlutedGlass.shared.active(.dashboard)   // nil = both glass settings off → V1
         return BlobFieldView(parameters: .init(
             blobs: d.blobs.map {
                 .init(origin: CGPoint(x: $0.originX, y: $0.originY), radius: CGFloat($0.radius),
@@ -43,18 +44,20 @@ struct DashboardLavaLamp: View {
                       phase: CGFloat($0.phase), color: $0.color.color, peak: CGFloat($0.peak))
             },
             sharedField: d.sharedField
-        ))
+        ), glass: glass)
     }
 
     // MARK: - Light (#3 — mango pigment on parchment)
 
     private var lightPigment: some View {
         let s = light
+        let glass = FlutedGlass.shared.active(.dashboard)   // nil = both glass settings off → V1
         return GeometryReader { geo in
             BlobFieldView(cardBlobs: Self.mangoBlobs(size: geo.size, style: s),
                           animated: true,
                           noiseAmount: s.noiseAmount,
-                          noiseScale: s.noiseScale)
+                          noiseScale: s.noiseScale,
+                          glass: glass)
                 .pigmentOnParchment()
         }
     }

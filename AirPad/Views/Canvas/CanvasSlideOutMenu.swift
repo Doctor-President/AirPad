@@ -110,6 +110,9 @@ struct CanvasSlideOutMenu: View {
                     .pickerStyle(.segmented)
                     .padding(.horizontal, 16)
                     .padding(.vertical, 6)
+                    GlassAppearanceToggles(detailed: false)   // ws-fluted-glass — same settings as Settings → Appearance
+                        .padding(.horizontal, 20)
+                        .padding(.vertical, 8)
                 }
             }
             .padding(.bottom, 32)

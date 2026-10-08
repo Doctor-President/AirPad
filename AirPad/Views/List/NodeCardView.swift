@@ -238,7 +238,8 @@ struct NodeCardView: View {
                                       undulation: GradientBake.cardAmplitude,
                                       warpScale: GradientBake.cardScale,
                                       anchor: hasHero ? .bottom : .center,
-                                      blobExpr: 1)   // carousel/canvas (addendum D)
+                                      blobExpr: 1,   // carousel/canvas (addendum D)
+                                      glassSurface: hasHero ? .photoCard : .carousel)
                     if hasHero {
                         heroOverlay(width: geo.size.width, height: geo.size.height)
                     }
@@ -324,7 +325,8 @@ struct NodeCardView: View {
                                 blobScale: CGFloat(heroBlobScale),
                                 verticalSpread: CGFloat(heroBlobVSpread),
                                 horizontalOffset: CGFloat(heroBlobHOffset),
-                                overlap: CGFloat(heroBlobOverlap)))
+                                overlap: CGFloat(heroBlobOverlap)),
+                            glassSurface: .list)
                     }
                     // Optional traveling scrim over the editorial (right) column.
                     if heroLeftScrimOn {

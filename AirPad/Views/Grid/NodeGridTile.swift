@@ -275,7 +275,8 @@ struct NodeGridTile: View {
                 // Dense tiles now animate (motion is ~free on the GPU) but at
                 // slowed drift so small blobs breathe rather than shimmer.
                 driftSpeedScale: columnCount >= 3 ? Self.denseGradientDriftScale : 1.0,
-                blobExpr: 2   // grid (addendum D)
+                blobExpr: 2,   // grid (addendum D)
+                glassSurface: hasHero ? .photoCard : .grid
             )
             if hasHero {
                 heroOverlay

@@ -54,6 +54,12 @@ settings:
     # TestFlight uploads still get their unique number and this "1" is used only
     # by local GUI/dev builds (which never upload).
     CURRENT_PROJECT_VERSION: "1"
+    # The marketing version (CFBundleShortVersionString) for ALL three targets — the app and both
+    # extensions must match (App Store validation). Each Info.plist reads $(MARKETING_VERSION); a
+    # literal written into a plist is reset to xcodegen's "1.0" by the next `xcodegen generate`
+    # (ws-fluted-glass, 2026-10-07). A TestFlight-only version (e.g. a 1.1 spike) passes
+    # MARKETING_VERSION=<v> on the xcodebuild command line instead of editing plists.
+    MARKETING_VERSION: "1.0"
 
 packages:
   FloatingPanel:
@@ -188,6 +194,7 @@ targets:
         # The variable's default "floor" lives in the project-level settings.base
         # (see the note there) — keep this a variable, never a literal.
         CFBundleVersion: "$(CURRENT_PROJECT_VERSION)"
+        CFBundleShortVersionString: "$(MARKETING_VERSION)"   # see settings.base
         UIAppFonts:
           - Lato-Regular.ttf
           - Lato-Bold.ttf
@@ -293,6 +300,7 @@ targets:
         # variable therefore MUST keep a default floor in the project-level
         # settings.base; without it, Xcode GUI Build & Run can't install.
         CFBundleVersion: "$(CURRENT_PROJECT_VERSION)"
+        CFBundleShortVersionString: "$(MARKETING_VERSION)"   # must match the app; see settings.base
         # Export compliance — mirror the main app; only exempt encryption.
         ITSAppUsesNonExemptEncryption: false
         NSExtension:
@@ -349,6 +357,7 @@ targets:
         CFBundleDisplayName: AirPad
         # Same as the app + share extension — pin to the project version (never xcodegen's "1").
         CFBundleVersion: "$(CURRENT_PROJECT_VERSION)"
+        CFBundleShortVersionString: "$(MARKETING_VERSION)"   # must match the app; see settings.base
         ITSAppUsesNonExemptEncryption: false
         NSExtension:
           NSExtensionPointIdentifier: com.apple.widgetkit-extension

@@ -146,8 +146,12 @@ struct BlobFieldView: View {
     /// Imagery-derived bloom amount (card + hero styles). 0 (default) → no bloom →
     /// byte-identical. > 0 adds each blob's own soft additive colour halo (BlobField.metal).
     private let bloom: Float
+    /// Fluted glass (ws-fluted-glass). nil (default) → the V1 `blobField` shader runs, unchanged
+    /// (byte-identical). Callers pass `FlutedGlass.shared.active(_:)`, which is nil when both
+    /// Appearance glass settings are off.
+    private let glass: GlassRender?
 
-    init(parameters: Parameters) {
+    init(parameters: Parameters, glass: GlassRender? = nil) {
         self.style = .lava
         self.packed = Self.packLava(parameters.blobs)
         self.sharedField = parameters.sharedField
@@ -157,6 +161,7 @@ struct BlobFieldView: View {
         self.noiseAmount = 0
         self.noiseScale = 0
         self.bloom = 0
+        self.glass = glass
     }
 
     /// - Parameter animated: `false` renders a single still frame (time = 0)
@@ -172,7 +177,8 @@ struct BlobFieldView: View {
          frameInterval: Double = 1.0 / 30.0,
          noiseAmount: CGFloat = 0,
          noiseScale: CGFloat = 0,
-         bloom: CGFloat = 0) {
+         bloom: CGFloat = 0,
+         glass: GlassRender? = nil) {
         self.style = .card
         self.packed = Self.packCard(cardBlobs)
         self.sharedField = sharedField
@@ -182,13 +188,15 @@ struct BlobFieldView: View {
         self.noiseAmount = Float(noiseAmount)
         self.noiseScale = Float(noiseScale)
         self.bloom = Float(bloom)
+        self.glass = glass
     }
 
     init(heroBlobs: [HeroBlob],
          animated: Bool,
          sharedField: Bool = false,
          frameInterval: Double = 1.0 / 30.0,
-         bloom: CGFloat = 0) {
+         bloom: CGFloat = 0,
+         glass: GlassRender? = nil) {
         self.style = .hero
         self.packed = Self.packHero(heroBlobs)
         self.sharedField = sharedField
@@ -198,6 +206,7 @@ struct BlobFieldView: View {
         self.noiseAmount = 0
         self.noiseScale = 0
         self.bloom = Float(bloom)
+        self.glass = glass
     }
 
     var body: some View {
@@ -242,21 +251,30 @@ struct BlobFieldView: View {
     private func canvas(size: CGSize, origin: CGPoint, time: Float) -> some View {
         Rectangle()
             .fill(.black)
-            .colorEffect(
-                ShaderLibrary.blobField(
-                    .float(time),
-                    .float2(Float(size.width), Float(size.height)),
-                    .float2(Float(origin.x), Float(origin.y)),
-                    .float(sharedField ? 1 : 0),
-                    .float(style.shaderValue),
-                    .float2(Float(anchor.x), Float(anchor.y)),
-                    .float(noiseAmount),
-                    .float(noiseScale),
-                    .float(bloom),
-                    .float(blendValue),
-                    .floatArray(packed)
-                )
-            )
+            .colorEffect(shader(size: size, origin: origin, time: time))
+    }
+
+    /// No glass → the V1 `blobField` with its V1 arguments, untouched. Glass → the
+    /// separate `blobFieldGlass` entry point, same arguments + the glass buffer.
+    private func shader(size: CGSize, origin: CGPoint, time: Float) -> Shader {
+        let args: [Shader.Argument] = [
+            .float(time),
+            .float2(Float(size.width), Float(size.height)),
+            .float2(Float(origin.x), Float(origin.y)),
+            .float(sharedField ? 1 : 0),
+            .float(style.shaderValue),
+            .float2(Float(anchor.x), Float(anchor.y)),
+            .float(noiseAmount),
+            .float(noiseScale),
+            .float(bloom),
+            .float(blendValue),
+            .floatArray(packed),
+        ]
+        guard let glass else { return Shader(function: ShaderLibrary.blobField, arguments: args) }
+        // Tilt is read here, per TimelineView tick — a plain non-observed read.
+        return Shader(function: ShaderLibrary.blobFieldGlass, arguments: args + [
+            .floatArray(glass.packed(screenWidth: FlutedGlass.screenWidth, tilt: GlassMotion.shared.tilt))
+        ])
     }
 
     // MARK: Packing — order must match the layouts in BlobField.metal

@@ -1538,6 +1538,136 @@
           "expectRoute": ""
         }
       ]
+    },
+    {
+      "chat": "ui-web2",
+      "what": "CH Session 2 (T 2026-10-08) — web grounding through the REAL UI (General via the toggle): T's known-answer fact rows, today's news with a stale result ranked first by the provider, and a creative ask that must not search. Run with `--extra-arg -WebSearchMock --extra-arg YES` (key), without (no key: the general-knowledge line), and live with TEST_RUNNER_GAUNTLET_BRAVE_KEY.",
+      "cases": [
+        {
+          "id": "GK4",
+          "kind": "general",
+          "action": "general",
+          "what": "T's fact row: oarfish family = Regalecidae (factual → the app searches and reads the top result when a key exists)",
+          "question": "What family does the oarfish belong to?",
+          "expectRoute": "",
+          "mustContain": [
+            [
+              "regalecidae"
+            ]
+          ],
+          "minFacts": 1,
+          "knownAnswer": [
+            [
+              "regalecidae"
+            ]
+          ]
+        },
+        {
+          "id": "GK5",
+          "kind": "general",
+          "action": "general",
+          "what": "T's fact row: colossal squid = Mesonychoteuthis hamiltoni",
+          "question": "What is the scientific name of the colossal squid?",
+          "expectRoute": "",
+          "mustContain": [
+            [
+              "mesonychoteuthis hamiltoni"
+            ]
+          ],
+          "minFacts": 1,
+          "knownAnswer": [
+            [
+              "mesonychoteuthis hamiltoni"
+            ]
+          ],
+          "mustNotClaim": [
+            {
+              "pattern": "architeuthis",
+              "unless": "\\b(unlike|not|rather than|different|whereas|giant squid)\\b"
+            }
+          ]
+        },
+        {
+          "id": "GK6",
+          "kind": "general",
+          "action": "general",
+          "what": "T's fact row: Antarctica first sighted 1820, no landing then",
+          "question": "When was Antarctica first sighted, and did anyone land there at the time?",
+          "expectRoute": "",
+          "mustContain": [
+            [
+              "1820"
+            ]
+          ],
+          "minFacts": 1,
+          "knownAnswer": [
+            [
+              "1820"
+            ]
+          ],
+          "mustNotClaim": [
+            {
+              "sentenceHas": "1820",
+              "pattern": "\\b(landed|landing|set foot|went ashore|came ashore|stepped ashore)\\b",
+              "unless": "\\b(no|not|never|without|didn't|did not|wasn't|weren't|none|neither|nor|until|later)\\b"
+            }
+          ]
+        },
+        {
+          "id": "GW4",
+          "kind": "web",
+          "action": "general",
+          "webIntent": true,
+          "freshCheck": true,
+          "what": "T's case 2 — today's news: the provider lists a 106-day-old story first, an undated front page second, today's story last; the answer must lead with today's story and date any older one",
+          "question": "What's the top news in Lakeview today?",
+          "expectRoute": "",
+          "mustContain": [
+            [
+              "ferry"
+            ]
+          ],
+          "minFacts": 1,
+          "sentinel": false
+        },
+        {
+          "id": "GK7",
+          "kind": "general",
+          "action": "general",
+          "what": "a creative ask: not factual → no search → the general-knowledge line",
+          "question": "Write a haiku about rain.",
+          "expectRoute": ""
+        }
+      ]
+    },
+    {
+      "chat": "ui-web-live",
+      "_probe": true,
+      "what": "CH Session 2 — LIVE ONLY (TEST_RUNNER_GAUNTLET_BRAVE_KEY): T's real cases 2 and 3 re-asked on live Brave. No mock facts; graded by WF1/WF2/WD1/GL1, read by CC.",
+      "cases": [
+        {
+          "id": "GW5",
+          "kind": "web",
+          "action": "general",
+          "webIntent": true,
+          "freshCheck": true,
+          "sentinel": false,
+          "what": "T's case 2, verbatim shape: today's news for a country",
+          "question": "What's the top news in Mexico today?",
+          "expectRoute": ""
+        },
+        {
+          "id": "GW6",
+          "kind": "web",
+          "action": "general",
+          "webIntent": true,
+          "freshCheck": true,
+          "sentinel": false,
+          "what": "T's case 3 shape: a world-news round-up (the source list)",
+          "question": "What are the top world news stories today?",
+          "expectRoute": ""
+        }
+      ]
     }
   ]
 }

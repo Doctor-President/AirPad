@@ -169,6 +169,23 @@ final class GauntletTap: @unchecked Sendable {
         turn?["tools"] = tools
     }
 
+    /// CH Session 2 web grounding — every result a web tool returned this turn (URL, title, publication date), in
+    /// the order they were numbered, so the grader can tell a returned URL from an invented one and a stale result
+    /// from a fresh one. Plus any scalar the grader reads (`generalKnowledge`, `prefetch`, `prefetchMs`, `fetched`).
+    func noteToolLinks(_ links: [ToolLink]) {
+        guard isOn else { return }
+        lock.lock(); defer { lock.unlock() }
+        var all = (turn?["toolLinks"] as? [[String: String]]) ?? []
+        let df = ISO8601DateFormatter(); df.formatOptions = [.withFullDate]
+        all += links.map { ["url": $0.url, "title": $0.title, "published": $0.published.map { df.string(from: $0) } ?? ""] }
+        turn?["toolLinks"] = all
+    }
+    func noteValue(_ key: String, _ value: Any) {
+        guard isOn else { return }
+        lock.lock(); defer { lock.unlock() }
+        turn?[key] = value
+    }
+
     /// The model tag the app actually put on the wire (ModelRouter.streamHost).
     func noteModel(_ model: String) {
         guard isOn else { return }

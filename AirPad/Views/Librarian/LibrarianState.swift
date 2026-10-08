@@ -661,7 +661,7 @@ final class LibrarianState {
                 // FM (no tool API) → plain private chat, exactly as before.
                 Self.logGeneralTurn(query: query, scope: selectedScope, tool: "none", retry: false, store: store)
                 await chat.send(displayText: query, modelText: query,
-                                systemPrompt: privateSystemPrompt, citations: nil)
+                                systemPrompt: privateSystemPrompt, citations: nil, generalKnowledge: true)
                 return
             }
 
@@ -678,7 +678,7 @@ final class LibrarianState {
                     chat.appendWebSearchKeyNotice(userText: query)
                 } else {
                     await chat.send(displayText: query, modelText: query,
-                                    systemPrompt: privateSystemPrompt, citations: nil)
+                                    systemPrompt: privateSystemPrompt, citations: nil, generalKnowledge: true)
                 }
                 return
             }
@@ -697,12 +697,21 @@ final class LibrarianState {
             // That call also runs the refusal guard (a no-tool "I can't access the web"
             // answer on an intent turn → ONE web retry), returning whether it fired.
             let forceWeb = Self.looksLikeSearchIntent(query)
+            // CH Session 2 (T 2026-10-08) — the APP searches before the model answers: a current-information
+            // question is searched; a factual question is searched AND its top result read (page text, not just
+            // snippets). Anything else stays the model's call (and is labelled general knowledge if it doesn't search).
+            var prefetch: ChatSession.WebPrefetch = forceWeb ? .search : (WebGrounding.isFactualQuestion(query) ? .searchAndFetch : .none)
+            #if DEBUG
+            if UserDefaults.standard.string(forKey: "GeneralPrefetch") == "off" { prefetch = .none }   // A/B latency
+            #endif
             let didRetry = await chat.sendWithTools(displayText: query,
                                                     systemPrompt: toolChatSystemPrompt,
                                                     executor: WebSearchBackend.make(),
-                                                    forceWebSearch: forceWeb)
+                                                    forceWebSearch: forceWeb,
+                                                    prefetch: prefetch)
             Self.logGeneralTurn(query: query, scope: selectedScope,
-                                tool: forceWeb ? "required" : "declared", retry: didRetry, store: store)
+                                tool: prefetch != .none ? "app-\(prefetch.rawValue)" : (forceWeb ? "required" : "declared"),
+                                retry: didRetry, store: store)
             return
         }
 

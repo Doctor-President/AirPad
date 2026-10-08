@@ -85,6 +85,11 @@ GRADERS = {
     "GK1": "pillar 3 (general knowledge): a GENERAL-mode answer cites no library entry and states its facts",
     "GW1": "pillar 2 (web search), intent question: key → web_search fires, the answer cites a web result + the sentinel; no key → the app's no-key line, no model call",
     "GW2": "pillar 2 (web search), no intent word: key → the model searches (FLAG if not); no key → no invented date (FLAG, CC reads)",
+    "WF1": "web grounding (T 2026-10-08): every URL in a General answer was returned by THIS turn's web_search / fetch_url (or typed by the user) — no invented sources",
+    "WF2": "web grounding: the source list is the app's — no model-written Sources/References list, every web chip is cited in the prose, chips numbered by first mention",
+    "WD1": "web grounding: on a today/latest question a stale result is never presented as today's news (its citing sentence carries its date), and a fresh result leads",
+    "GF1": "general facts: the known answer is stated and no known-false claim is made (oarfish → Regalecidae; colossal squid → Mesonychoteuthis hamiltoni; Antarctica sighted 1820, no landing)",
+    "GL1": "general-knowledge line: a General answer with no web result behind it carries the app's 'general knowledge, may contain errors' line; a searched one does not",
     "R1": "repeat: 3/3 runs pass (aggregate)",
 }
 # Brief CH-A1b — the voice graders are named W* (not the brief's V1–V3: V* is run validity and ABORTs).
@@ -935,6 +940,130 @@ NOKEY_LINE = "Web search needs a Brave Search key"
 SENTINEL = re.compile(r"\b(?:19(?:th)? november,? 2031|november 19(?:th)?,? 2031|2031-11-19)\b", re.I)
 INVENTED_DATE = re.compile(r"\b(?:19|20)\d\d\b|\b(?:january|february|march|april|may|june|july|august|september|october|november|december) \d{1,2}\b", re.I)
 
+URL_RE = re.compile(r"(?:https?://|www\.)[^\s<>()\[\]{}\"'`]+", re.I)
+SRC_HEADING_RE = re.compile(r"^(?:sources?|references?|citations?|further reading|learn more|read more|more information|bibliography|links)\s*:?\s*$|^(?:sources?|references?|citations?|further reading|learn more|read more|bibliography)\s*:\s*\S")
+MARKER_LINE_RE = re.compile(r"^\s*(?:[-*•+]\s*|\d{1,2}[.)]\s*)?\[\s*\d{1,2}\s*\]")
+MONTH_NAMES = ["january", "february", "march", "april", "may", "june", "july", "august", "september", "october", "november", "december"]
+
+def norm_url(u):
+    """Same comparison as the app's `WebGrounding.normalize`: scheme, www., fragment and a trailing slash don't count."""
+    s = u.strip().rstrip(".,;:!?*_")
+    s = s.split("#", 1)[0]
+    s = re.sub(r"^[a-zA-Z][a-zA-Z0-9+.-]*://", "", s)
+    if s.lower().startswith("www."):
+        s = s[4:]
+    i = s.find("/")
+    s = (s.lower() if i < 0 else s[:i].lower() + s[i:]).rstrip("/")
+    return s
+
+def model_source_list(final):
+    """The lines of a source list the MODEL wrote (a Sources/References heading and what follows it, a one-line
+    'Sources: …', or a run of citation-led title lines that ends the answer)."""
+    lines = (final or "").split("\n")
+    plain = [re.sub(r"^[\s#>]+", "", re.sub(r"[*_]", "", l)).lower() for l in lines]
+    hits = [lines[i] for i, p in enumerate(plain) if SRC_HEADING_RE.search(p)]
+    tail = []
+    for l in reversed(lines):
+        if not l.strip():
+            continue
+        m = MARKER_LINE_RE.match(l)
+        rest = l[m.end():].strip(" :-–—") if m else ""
+        rest = re.sub(r"^(?:\s*,?\s*\[\s*\d{1,2}\s*\])*", "", rest).strip()
+        if m and (not rest or (not rest[0].islower() and len(rest) <= 160 and not re.search(r"[.!?]\s+\S", rest))):
+            tail.append(l)
+            continue
+        break
+    return hits + tail[::-1]
+
+def sentences(text):
+    return [s for s in re.split(r"(?<=[.!?])\s+|\n+", text or "") if s.strip()]
+
+def grade_web_grounding(exp, turn, final, cites, path, R, res, na):
+    """CH Session 2 (T 2026-10-08) — deterministic web grounding: WF1 invented URLs, WF2 the source list, WD1
+    stale-as-today, GF1 known facts, GL1 the general-knowledge line."""
+    links = turn.get("toolLinks") or []
+    fetched = turn.get("fetched")
+    allowed = {norm_url(l["url"]) for l in links} | ({norm_url(fetched)} if fetched else set()) \
+        | {norm_url(u) for u in URL_RE.findall(turn.get("userContent") or "")}
+    def ok_url(u):
+        n = norm_url(u)
+        return n in allowed or n.split("?", 1)[0] in allowed
+    if path == "nokey":
+        na("WF1", "the app's own line"); na("WF2", "the app's own line"); na("GL1", "the app's own line")
+    else:
+        bad = [u for u in URL_RE.findall(final) if not ok_url(u)]
+        res("WF1", not bad, ("URL(s) no tool returned: " + ", ".join(b[:60] for b in bad)) if bad else f"{len(URL_RE.findall(final))} URL(s), all returned")
+        lst = model_source_list(final)
+        web = [c for c in cites if c.get("url")]
+        order = []
+        for m in re.finditer(r"\[(\d{1,2})\]", final):
+            n = int(m.group(1))
+            if n not in order:
+                order.append(n)
+        problems = []
+        if lst:
+            problems.append("model-written source list: " + " | ".join(l.strip()[:40] for l in lst[:3]))
+        if web:
+            idx = [c.get("index") for c in web]
+            if sorted(idx) != list(range(1, len(idx) + 1)):
+                problems.append(f"chips not numbered 1…k: {idx}")
+            if order[:len(idx)] != sorted(idx) or set(order) != set(idx):
+                problems.append(f"prose cites {order} but the chips are {sorted(idx)}")
+        res("WF2", not problems, "; ".join(problems))
+        searched = bool(links)
+        gk = bool(turn.get("generalKnowledge"))
+        res("GL1", gk != searched, ("searched but labelled general knowledge" if searched and gk else
+                                    "no web result behind the answer and no general-knowledge line" if not searched and not gk else
+                                    ("searched — no label" if searched else "labelled general knowledge")))
+    # WD1 — stale-as-today (rows that ask for today's news)
+    if exp.get("freshCheck") and path != "nokey":
+        import datetime
+        try:
+            today = datetime.datetime.fromisoformat((turn.get("startedAt") or "").replace("Z", "+00:00")).astimezone().date()
+        except ValueError:
+            today = datetime.date.today()
+        pub = {}
+        for l in links:
+            if l.get("published"):
+                pub[norm_url(l["url"])] = datetime.date.fromisoformat(l["published"])
+        by_index = {c.get("index"): c for c in cites if c.get("url")}
+        problems, fresh_cited = [], False
+        for snt in sentences(final):
+            for m in re.finditer(r"\[(\d{1,2})\]", snt):
+                c = by_index.get(int(m.group(1)))
+                if not c:
+                    continue
+                d = pub.get(norm_url(c["url"]))
+                if d is None:
+                    if re.search(r"\b(today|this morning|tonight)\b", snt, re.I):
+                        problems.append(f"'today' claim backed only by an undated page [{m.group(1)}]")
+                    continue
+                age = (today - d).days
+                if age <= 1:
+                    fresh_cited = True
+                    continue
+                dated = MONTH_NAMES[d.month - 1] in snt.lower() or d.isoformat() in snt or re.search(r"\b\d+\s+(days|weeks|months)\s+ago\b|\bmonths? ago\b", snt, re.I)
+                if re.search(r"\b(today|this morning|tonight|breaking)\b", snt, re.I) or not dated:
+                    problems.append(f"a {age}-day-old result [{m.group(1)}] presented without its date: '{snt.strip()[:70]}'")
+        if any((today - d).days <= 1 for d in pub.values()) and not fresh_cited:
+            problems.append("a result from today exists but the answer cites none")
+        res("WD1", not problems, "; ".join(problems) or "stale results dated; a fresh result leads")
+    # GF1 — known facts (T's GK rows)
+    ka = exp.get("knownAnswer")
+    if ka:
+        low = final.lower()
+        missing = [alts[0] for alts in ka if not any(a.lower() in low for a in alts)]
+        false = []
+        for rule in exp.get("mustNotClaim") or []:
+            for snt in sentences(final):
+                if rule.get("sentenceHas") and rule["sentenceHas"].lower() not in snt.lower():
+                    continue
+                if re.search(rule["pattern"], snt, re.I) and not (rule.get("unless") and re.search(rule["unless"], snt, re.I)):
+                    false.append(snt.strip()[:80])
+        res("GF1", not missing and not false, "; ".join((["missing the known answer: " + ", ".join(missing)] if missing else [])
+                                                       + (["known-false claim: " + " | ".join(false)] if false else [])) or "known answer stated")
+
+
 def grade_pillar(exp, turn, ps, R, res, na):
     """T 2026-10-06 pillars 2 + 3 — GENERAL mode + WEB SEARCH rows. The turn's `path` (render tap) says which
     branch ran: "tools" = key present (the agent loop), "nokey" = the app-owned line (no model call), absent =
@@ -951,9 +1080,13 @@ def grade_pillar(exp, turn, ps, R, res, na):
     web_cites = [c for c in cites if c.get("url")]
     lib_cites = [c for c in cites if c.get("nodeID")]
     stats = {"route": f"general/{path}", "chips": len(cites), "webCites": len(web_cites), "tools": ",".join(tools) or "—",
-             "answerChars": len(final), "elapsedMs": turn.get("elapsedMs")}
+             "answerChars": len(final), "elapsedMs": turn.get("elapsedMs"),
+             "prefetch": turn.get("prefetch") or "—", "prefetchMs": turn.get("prefetchMs")}
+    grade_web_grounding(exp, turn, final, cites, path, R, res, na)
     facts = exp.get("mustContain") or []
-    if facts and exp.get("minFacts", 0) > 0:
+    if facts and exp.get("minFacts", 0) > 0 and path == "nokey":
+        na("A6", "the app's no-key line (no model answer to check)")
+    elif facts and exp.get("minFacts", 0) > 0:
         low = final.lower()
         got = sum(1 for alts in facts if any(a.lower() in low for a in alts))
         res("A6", got >= exp["minFacts"], f"facts {got}/{exp['minFacts']} required")
@@ -967,7 +1100,9 @@ def grade_pillar(exp, turn, ps, R, res, na):
         res("GW1" if intent else "GW2", intent and NOKEY_LINE in final,
             "no-key line shown" if intent else "no-key line on a NON-intent question (the app only owns intent turns)")
     elif path == "tools":
-        fired, cited, fact = "web_search" in tools, bool(web_cites), bool(SENTINEL.search(final))
+        # the telescope rows state the mock's sentinel date; other web rows (GW4) carry their own facts (A6)
+        fired, cited = "web_search" in tools, bool(web_cites)
+        fact = bool(SENTINEL.search(final)) if exp.get("sentinel", True) else True
         detail = f"web_search {'fired' if fired else 'NOT called'}; web cites {len(web_cites)}; sentinel fact {'stated' if fact else 'MISSING'}"
         if intent:
             res("GW1", fired and cited and fact, detail)

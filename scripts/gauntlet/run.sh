@@ -73,8 +73,11 @@ restore_real_host() {
       local now=$(curl -s $OLL/api/ps | python3 -c "import json,sys;print(' '.join(m['name'] for m in json.load(sys.stdin).get('models',[])))" 2>/dev/null)
       [[ "$now" == "$want" ]] && break; sleep 2
     done
+    # CH Session 2 (T, 2026-10-08): T's Host always goes back to Instruct resident + held, whatever was
+    # resident before the run (Session 1's restores put back qwen3:4b, and T's phone then picked Instruct).
+    $AIRPAD/scripts/gauntlet/restore_instruct.sh 2>&1 | while read -r l; do log "$l"; done
     curl -s $OLL/api/ps > "$RUN_DIR/residency-after.json"
-    log "resident after restore: $(python3 -c "import json;print([(m['name'],m.get('context_length'),m['expires_at'][:4]) for m in json.load(open('$RUN_DIR/residency-after.json')).get('models',[])])") (wanted: $want)"
+    log "resident after restore: $(python3 -c "import json;print([(m['name'],m.get('context_length'),m['expires_at'][:4]) for m in json.load(open('$RUN_DIR/residency-after.json')).get('models',[])])") (wanted: Instruct)"
   fi
 }
 trap restore_real_host EXIT

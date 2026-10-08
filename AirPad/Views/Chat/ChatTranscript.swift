@@ -147,6 +147,29 @@ struct ChatTranscript: View {
         session.messages.lastIndex(where: { $0.role == .user }) ?? session.messages.count
     }
 
+    /// FREEZE FIX (V1 mitigation, CH Session 2) — a chat of up to `eagerAllLimit` messages renders
+    /// EVERY row eagerly, so it has no lazy row at all and the lazy-stack layout loop cannot happen. Every
+    /// freeze observed so far was in such a chat: keyboard dismiss after the 5th turn (10 messages), the
+    /// turn-5 web chat (~14), the follow-up after a short answer. A longer chat keeps option 1 (lazy history
+    /// + eager latest exchange), which passed the 200-message scroll gate.
+    /// Measured and rejected (Session 2): "the newest 20 eager, the rest lazy" put the lazy/eager boundary
+    /// MID-content, and a fling through it looped (main thread busy 30 s, 2 of 2 runs, content 60,336 ↔
+    /// 60,436 pt at the boundary). The durable fix is the UIKit transcript (1.1).
+    /// DEBUG `-TranscriptEagerAll 0` = the old split everywhere (the A/B baseline).
+    #if DEBUG
+    private static let eagerAllLimit: Int = {
+        let d = UserDefaults.standard
+        return d.object(forKey: "TranscriptEagerAll") == nil ? 24 : max(0, d.integer(forKey: "TranscriptEagerAll"))
+    }()
+    #else
+    private static let eagerAllLimit = 24
+    #endif
+
+    /// Where the lazy history ends: nowhere in a short chat (all eager), else the latest exchange.
+    private var eagerStart: Int {
+        session.messages.count <= Self.eagerAllLimit ? 0 : liveStart
+    }
+
     /// The transcript rows (Brief CH follow-up freeze, 2026-10-04). Settled HISTORY stays in a
     /// `LazyVStack` (a long chat must scroll at full frame rate — an all-eager stack measured ~30 fps
     /// flings on a 100-turn chat); the LATEST exchange renders in an eager `VStack` below it. Why: on
@@ -174,7 +197,7 @@ struct ChatTranscript: View {
 
     @ViewBuilder
     private var splitRows: some View {
-        let split = liveStart
+        let split = eagerStart
         VStack(alignment: .leading, spacing: 18) {
             if split > 0 {
                 LazyVStack(alignment: .leading, spacing: 18) { historyRows(0..<split) }
@@ -230,8 +253,7 @@ struct ChatTranscript: View {
             .onAppear { DispatchQueue.main.async { GauntletMetrics.shared.transcriptLaidOut(messages: session.messages.count) } }
             .overlay(alignment: .topLeading) {
                 if GauntletTap.shared.isOn {
-                    Text(GauntletMetrics.shared.line).font(.system(size: 1)).opacity(0.02)
-                        .accessibilityIdentifier("gauntlet.metrics")
+                    GauntletMetricsLabels()   // its own view: a label update never re-renders the transcript
                 }
             }
             #endif
@@ -246,6 +268,7 @@ struct ChatTranscript: View {
             .onScrollGeometryChange(for: CGFloat.self) { geo in
                 #if DEBUG
                 FreezeProbe.hit("geo.transform", "content=\(Int(geo.contentSize.height)) container=\(Int(geo.containerSize.height)) offY=\(Int(geo.contentOffset.y)) visMaxY=\(Int(geo.visibleRect.maxY)) insetT=\(Int(geo.contentInsets.top)) insetB=\(Int(geo.contentInsets.bottom))")
+                StreamGeoRecorder.shared.note(content: geo.contentSize.height, offset: geo.contentOffset.y, streaming: session.isStreaming)
                 #endif
                 return geo.contentSize.height - geo.visibleRect.maxY
             } action: { _, distanceFromBottom in
@@ -785,7 +808,12 @@ struct ChatTranscript: View {
         FMFailureBanner(
             message: message,
             retryDisabled: session.isStreaming,
-            onRetry: { Task { await session.retryLastUserTurn() } },
+            retryTitle: session.loadOfferTag == nil ? "Retry" : "Load and ask",
+            onRetry: {
+                Task {
+                    if session.loadOfferTag != nil { await session.loadAndAsk() } else { await session.retryLastUserTurn() }
+                }
+            },
             onDismiss: { session.clearError() }
         )
     }

@@ -176,6 +176,13 @@ final class GauntletTap: @unchecked Sendable {
         turn?["modelRequested"] = model
     }
 
+    /// C4a — the ask hit a not-loaded refusal and the app loaded `model` before retrying.
+    func noteAskLoad(_ model: String) {
+        guard isOn else { return }
+        lock.lock(); defer { lock.unlock() }
+        turn?["askLoaded"] = model
+    }
+
     func rawDelta(thinking: Bool, _ s: String) {
         guard isOn else { return }
         lock.lock(); defer { lock.unlock() }
@@ -233,7 +240,10 @@ final class GauntletTap: @unchecked Sendable {
 
     /// The next recorded turn's deltas, or nil when not replaying / exhausted. Each delta is
     /// `["a"|"t", text]` (answer / thinking channel); `delayMs` paces them like a live stream.
-    func nextReplayTurn() -> (deltas: [(thinking: Bool, s: String)], delayMs: Int)? {
+    /// A recorded turn may also carry `"toolCalls": [{"name", "arguments": {…}}]` — the AGENT path's replay
+    /// (`ModelRouter.streamHostAgentTurn`): the recorded calls then run through the real tool executor (the
+    /// DEBUG `-WebSearchMock`), so the activity rows and web citations are produced by the app, not faked.
+    func nextReplayTurn() -> (deltas: [(thinking: Bool, s: String)], delayMs: Int, toolCalls: [(name: String, argumentsJSON: String)])? {
         lock.lock(); defer { lock.unlock() }
         guard replayCursor < replayTurns.count else { return nil }
         let t = replayTurns[replayCursor]; replayCursor += 1
@@ -253,7 +263,12 @@ final class GauntletTap: @unchecked Sendable {
             return out
         }
         let ds = (t["deltas"] as? [[String]] ?? []).map { (thinking: $0.first == "t", s: resolve($0.count > 1 ? $0[1] : "")) }
-        return (ds, t["delayMs"] as? Int ?? 12)
+        let calls = (t["toolCalls"] as? [[String: Any]] ?? []).compactMap { c -> (name: String, argumentsJSON: String)? in
+            guard let name = c["name"] as? String else { return nil }
+            let args = (try? JSONSerialization.data(withJSONObject: c["arguments"] ?? [:])).flatMap { String(data: $0, encoding: .utf8) } ?? "{}"
+            return (name, args)
+        }
+        return (ds, t["delayMs"] as? Int ?? 12, calls)
     }
 }
 
@@ -295,6 +310,53 @@ struct GauntletA11y: ViewModifier {
             let stall = GauntletTap.shared.maxGapSinceReset()
             self.line = "open#\(n) openMs=\(ms) stallMs=\(stall) messages=\(messages)"
             NSLog("[GauntletMetrics] %@", self.line)
+        }
+    }
+}
+
+/// The perf gate's hidden labels, in their OWN view so a label update re-renders only this view.
+struct GauntletMetricsLabels: View {
+    var body: some View {
+        VStack(spacing: 0) {
+            Text(GauntletMetrics.shared.line).font(.system(size: 1)).opacity(0.02)
+                .accessibilityIdentifier("gauntlet.metrics")
+            Text(FrameMeter.shared.line).font(.system(size: 1)).opacity(0.02)
+                .accessibilityIdentifier("gauntlet.frames")
+        }
+        .onAppear { FrameMeter.shared.start() }
+    }
+}
+
+/// Freeze-fix perf gate (Simulator) — main-thread frame pacing from a display link, since XCTest's scroll hitch
+/// metrics are device-only. Cumulative counters, published every 0.5 s as `frames=N hitches=H hitchMs=X t=S`; the
+/// test diffs two readings around its scroll. A hitch = a frame interval > 1.5 × the display's frame duration.
+@Observable final class FrameMeter {
+    static let shared = FrameMeter()
+    var line = ""
+    @ObservationIgnored private var link: CADisplayLink?
+    @ObservationIgnored private var last: CFTimeInterval = 0
+    @ObservationIgnored private var t0: CFTimeInterval = 0
+    @ObservationIgnored private var lastPublish: CFTimeInterval = 0
+    @ObservationIgnored private var frames = 0
+    @ObservationIgnored private var hitches = 0
+    @ObservationIgnored private var hitchTime: CFTimeInterval = 0
+    func start() {
+        guard link == nil else { return }
+        let l = CADisplayLink(target: self, selector: #selector(tick(_:)))
+        l.add(to: .main, forMode: .common)
+        link = l
+    }
+    @objc private func tick(_ l: CADisplayLink) {
+        let now = l.timestamp
+        if last > 0 {
+            frames += 1
+            let dt = now - last, expect = max(l.duration, 1.0 / 120)
+            if dt > expect * 1.5 { hitches += 1; hitchTime += dt - expect }
+        } else { t0 = now }
+        last = now
+        if now - lastPublish > 0.5 {
+            lastPublish = now
+            line = String(format: "frames=%d hitches=%d hitchMs=%.0f t=%.2f", frames, hitches, hitchTime * 1000, now - t0)
         }
     }
 }
@@ -359,6 +421,27 @@ final class FreezeProbe: @unchecked Sendable {
         p.counts[key, default: 0] += 1
         if let value { p.last[key] = "\(value)" }
         p.lock.unlock()
+    }
+}
+#endif
+
+#if DEBUG
+/// Freeze-fix gate — content-height CORRECTIONS and offset JUMPS while an answer streams. The streaming
+/// tail only grows (a line at a time), so a shrink, a ≥100 pt height step or a ≥200 pt offset step is a
+/// lazy row's estimate being replaced by its real size. Cumulative counts/points go to `probe.log`
+/// (`stream.heightDown` / `stream.heightJump` / `stream.offsetJump`). Inert unless the tap is on.
+final class StreamGeoRecorder {
+    static let shared = StreamGeoRecorder()
+    private var lastH: CGFloat?
+    private var lastOff: CGFloat?
+    private var downPt = 0, jumpPt = 0, offPt = 0
+    func note(content h: CGFloat, offset y: CGFloat, streaming: Bool) {
+        guard GauntletTap.shared.isOn else { return }
+        defer { lastH = h; lastOff = y }
+        guard streaming, let ph = lastH, let po = lastOff else { return }
+        if h < ph - 0.5 { downPt += Int(ph - h); FreezeProbe.hit("stream.heightDown", downPt) }
+        if abs(h - ph) >= 100 { jumpPt += Int(abs(h - ph)); FreezeProbe.hit("stream.heightJump", jumpPt) }
+        if abs(y - po) >= 200 { offPt += Int(abs(y - po)); FreezeProbe.hit("stream.offsetJump", offPt) }
     }
 }
 #endif

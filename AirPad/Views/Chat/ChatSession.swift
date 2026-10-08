@@ -431,7 +431,7 @@ final class ChatSession {
                 // Nothing streamed — a genuine failure. Classify it into a human
                 // banner (field findings #2/#3): unreachable/530 reads as "offline
                 // or asleep", and raw upstream HTML is never shown.
-                lastError = Self.humanError(for: error)
+                surface(error)
             }
         }
 
@@ -705,7 +705,7 @@ final class ChatSession {
             // Brief AF2 — route the agentic error through the SAME honest banner as the
             // plain path (AD2). Previously this used the raw errorDescription, which
             // leaked a Cloudflare 502 HTML page verbatim into the banner.
-            lastError = Self.humanError(for: error)
+            surface(error)
         }
 
         #if DEBUG
@@ -1003,6 +1003,33 @@ final class ChatSession {
     /// Dismiss the transient failure banner without retrying.
     func clearError() {
         lastError = nil
+        loadOfferTag = nil
+    }
+
+    /// ★ C4a — the model the banner offers to load ("Load and ask"), set only when the ask failed because
+    /// that model isn't loaded and the app did NOT load it (Hands-on, or the load itself failed). nil for
+    /// every other error. Read only while `lastError` is showing.
+    private(set) var loadOfferTag: String? = nil
+
+    /// Show a failed ask in the banner, with the one-tap load offer when the failure was "not loaded".
+    private func surface(_ error: Error) {
+        lastError = Self.humanError(for: error)
+        if case ModelRouter.RouterError.modelNotLoaded(let tag, _) = error { loadOfferTag = tag } else { loadOfferTag = nil }
+    }
+
+    /// C4a — the banner's "Load and ask": load the offered model through the picker's own funnel (so it
+    /// becomes the pick, exactly as if chosen in the sheet), then re-ask the same question. A failed load
+    /// shows the Host's reason instead.
+    func loadAndAsk() async {
+        guard let tag = loadOfferTag, !isStreaming else { return }
+        let catalog = HostCatalog.shared
+        await catalog.load(tag)
+        if let reason = catalog.lastActionError {
+            lastError = reason
+            return
+        }
+        clearError()
+        await retryLastUserTurn()
     }
 
     /// Re-attempt the most recent user turn after a failed send. On error we
@@ -1037,6 +1064,15 @@ final class ChatSession {
             out.append(Message(role: .assistant, text: body))
         }
         messages = out
+    }
+
+    /// CH item 4 — `-GauntletSeedPartial YES`: the last seeded answer "stopped early" (a third of its text,
+    /// `isPartial`), so the UI test can tap the real **Continue** control.
+    func debugMarkLastPartial() {
+        guard let i = messages.indices.last, messages[i].role == .assistant else { return }
+        let t = messages[i].text
+        messages[i].text = String(t.prefix(max(60, t.count / 3)))
+        messages[i].isPartial = true
     }
     #endif
 

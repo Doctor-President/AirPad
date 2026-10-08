@@ -111,6 +111,7 @@ struct ComposerSendControls: View {
 /// composer-like ground, so the before/after can be screenshotted headlessly in light + dark. A fake
 /// "Library" chip stands in for the Librarian's Corpus toggle (same leading footprint). Throwaway.
 struct PillGalleryView: View {
+    static let longName = "Qwen3 30B-A3B Instruct 2507 · Extended Context Long Name Edition"
     var body: some View {
         ZStack {
             Color(uiColor: .systemBackground).ignoresSafeArea()
@@ -123,6 +124,12 @@ struct PillGalleryView: View {
                     group("Qwen3 8B — Thinking on", tag: "qwen3:8b", display: "Qwen3 8B", toggleable: true, think: true)
                     group("Qwen3 30B-A3B — long name, centred + full", tag: "q30", display: "Qwen3 30B-A3B", toggleable: true, think: true)
                     group("Qwen3 4B — Thinking NOT toggleable (pill still centred)", tag: "x4", display: "Qwen3 4B", toggleable: false, think: false)
+                    // C4 (T, 2026-10-08) — a long name FADES inside the pill; Library and Thinking keep their size.
+                    group("C4 — long name fades; Library + Thinking keep their size", tag: "qwen3:long",
+                          display: Self.longName, toggleable: true, think: true)
+                    galleryRow(tag: "qwen3:long", display: Self.longName, toggleable: true, think: false)
+                        .frame(width: 300)
+                        .overlay(RoundedRectangle(cornerRadius: 12).stroke(AppearancePalette.ink.opacity(0.15)))
                     Text("Tight width → the compact icon toggle (same on/off state), still full name:")
                         .font(.system(size: 11)).foregroundStyle(AppearancePalette.ink.opacity(0.5))
                     galleryRow(tag: "qwen3:4b", display: "Qwen3 4B", toggleable: true, think: true)
@@ -217,7 +224,12 @@ struct ModelPillRow: View {
     /// space to the right of an external toggle. Chat View leaves it nil and uses `includePrivate`.
     var leading: AnyView? = nil
 
-    private var canToggleThinking: Bool { catalog.resident?.thinkingToggleable == true }
+    /// C4a — the toggle follows the model the next ask NAMES (`active`), not whichever happens to be resident.
+    private var canToggleThinking: Bool { catalog.active?.thinkingToggleable == true }
+
+    /// C4 — the longest a model name may run before it fades out inside the pill (tighter rows use less).
+    private static let nameCapWide: CGFloat = 150
+    private static let nameCapTight: CGFloat = 96
 
     var body: some View {
         // Brief CA — FIX the BZ regression (pill truncated "Q…4B", sat right-of-centre, "Thinking on"
@@ -228,10 +240,16 @@ struct ModelPillRow: View {
         // whole row; the pill is `fixedSize` + high `layoutPriority`, so it is NEVER compressed. The
         // BZ version competed for width with `.infinity` flanks that could squeeze the pill — hence the
         // truncation + wrap. `ViewThatFits` picks the widest Thinking variant that still fits.
+        //
+        // ★ C4 (T, 2026-10-08) — a long model name ("qwen3:4b-instruct-2507-q4_K_M" as fixedSize) pushed
+        // the flanks below their own width and "Library" wrapped one syllable per line. Now the NAME is
+        // what gives way: capped (`nameCap…`) and faded at the trailing edge inside the pill; the leading
+        // control and Thinking are `fixedSize` and never wrap, and Thinking never disappears (the last
+        // resort is its icon with a tighter name cap, not no toggle).
         ViewThatFits(in: .horizontal) {
-            row(thinking: AnyView(thinkingWordPill))   // preferred: the "Thinking on/off" word pill
-            row(thinking: AnyView(thinkingIconToggle)) // tight: a compact icon toggle (same on/off state)
-            row(thinking: AnyView(EmptyView()))        // last resort: never clip the pill or wrap a chip
+            row(thinking: AnyView(thinkingWordPill), nameCap: Self.nameCapWide)    // preferred: the word pill
+            row(thinking: AnyView(thinkingWordPill), nameCap: Self.nameCapTight)   // the NAME gives way first
+            row(thinking: AnyView(thinkingIconToggle), nameCap: Self.nameCapTight) // tightest: the compact icon toggle
         }
         .padding(.leading, 6)
         .onChange(of: canToggleThinking) { _, ok in if !ok { thinkEnabled = false } } // toggle can't work → force off
@@ -240,22 +258,21 @@ struct ModelPillRow: View {
     /// One row layout: leading flank · centred pill · trailing Thinking flank. The flanks each take
     /// `maxWidth: .infinity` so they balance and the pill lands on the true centre; the pill is
     /// `fixedSize` + prioritised so the flanks yield to it and the full name is never truncated.
-    @ViewBuilder private func row(thinking: AnyView) -> some View {
+    @ViewBuilder private func row(thinking: AnyView, nameCap: CGFloat) -> some View {
         HStack(spacing: 8) {
             HStack(spacing: 8) {
-                if let leading { leading }
-                if includePrivate { privatePill }
+                if let leading { leading.fixedSize() }
+                if includePrivate { privatePill.fixedSize() }
                 Spacer(minLength: 0)
             }
             .frame(maxWidth: .infinity, alignment: .leading)
 
-            modelPill
-                .fixedSize(horizontal: true, vertical: false)
+            modelPill(nameCap: nameCap)
                 .layoutPriority(1)
 
             HStack(spacing: 8) {
                 Spacer(minLength: 0)
-                if canToggleThinking { thinking }
+                if canToggleThinking { thinking.fixedSize() }
             }
             .frame(maxWidth: .infinity, alignment: .trailing)
         }
@@ -270,43 +287,49 @@ struct ModelPillRow: View {
         }
     }
 
-    private var dividerBar: some View {
-        Text("|").font(.system(size: 12)).foregroundStyle(AppearancePalette.ink.opacity(0.25))
-    }
-
-    @ViewBuilder private var modelPill: some View {
+    /// ★ C4a — the pill names the ACTIVE model (what the next ask will use, by routing's own derivation)
+    /// and shows ✓ only when that model is resident. Not resident → the name with a hollow circle, read
+    /// "not loaded yet" (the ask loads it), so the pill never claims a model the banner then contradicts.
+    @ViewBuilder private func modelPill(nameCap: CGFloat) -> some View {
         Button(action: onTapModel) {
             PickerPill {
                 HStack(spacing: 5) {
                     if let busy = catalog.busyTag, let m = catalog.models.first(where: { $0.tag == busy }) {
                         // Load emits no progress → SHIMMER "loading" (honest "in progress", not a fake %).
                         Text("loading").font(.system(size: 12, weight: .medium)).foregroundStyle(AppearancePalette.ink.opacity(0.5))
+                            .lineLimit(1).fixedSize()
                             .composerShimmer(catalog.busyPercent == nil)
                         dividerBar
-                        name(m.display)
-                    } else if let r = catalog.resident {
-                        Image(systemName: "checkmark").font(.system(size: 10, weight: .bold)).foregroundStyle(Color(hexString: "2E9E4F"))
-                        name(r.display)
+                        name(catalog.name(m), cap: nameCap)
+                    } else if let a = catalog.active {
+                        if a.isResident {
+                            Image(systemName: "checkmark").font(.system(size: 10, weight: .bold)).foregroundStyle(Color(hexString: "2E9E4F"))
+                        } else {
+                            Image(systemName: "circle").font(.system(size: 9, weight: .semibold)).foregroundStyle(AppearancePalette.ink.opacity(0.4))
+                        }
+                        name(catalog.name(a), cap: nameCap)
                     } else {
                         Text("No model").font(.system(size: 12, weight: .semibold)).foregroundStyle(AppearancePalette.ink.opacity(0.55))
+                            .lineLimit(1).fixedSize()
                     }
                 }
             }
         }
         .buttonStyle(.plain)
-        .accessibilityLabel(catalog.resident.map { "Model \($0.display), loaded" } ?? "No model loaded")
+        .accessibilityLabel(catalog.active.map { "Model \(catalog.name($0)), \($0.isResident ? "loaded" : "not loaded yet")" } ?? "No model loaded")
         // Brief AI2 — the callout ring hugs the MODEL chip ONLY (was the whole row, so it
         // spanned Thinking too). The anchor is harmless in Chat View (no overlay reads it).
         .firstRunCalloutTarget(FirstRunCalloutTargetID.librarianModelChip)
     }
 
-    // NO pill is ever taller than one text row (T). Brief CA — the name shows IN FULL, always: one
-    // line, `fixedSize` so it is never truncated ("Q…4B" was the BZ bug). The pill in `row()` carries
-    // the same `fixedSize` + priority, so the flanks yield to the name instead of squeezing it.
-    private func name(_ s: String) -> some View {
-        Text(s).font(.system(size: 12, weight: .semibold))
-            .foregroundStyle(AppearancePalette.ink.opacity(0.9))
-            .lineLimit(1).fixedSize()
+    private var dividerBar: some View {
+        Text("|").font(.system(size: 12)).foregroundStyle(AppearancePalette.ink.opacity(0.25))
+    }
+
+    // NO pill is ever taller than one text row (T). C4 — one line, never wrapped; up to `cap` wide, and
+    // a longer name FADES at the trailing edge inside the pill instead of pushing its neighbours.
+    private func name(_ s: String, cap: CGFloat) -> some View {
+        FadingName(text: s, cap: cap)
     }
 
     /// The full "Thinking on/off" word pill — one line, `fixedSize` so it never wraps (the BZ bug).
@@ -335,6 +358,48 @@ struct ModelPillRow: View {
         }
         .buttonStyle(.plain)
         .accessibilityLabel(thinkEnabled ? "Thinking on" : "Thinking off")
+    }
+}
+
+/// C4 — a one-line name that shows in full when it fits and otherwise runs to `cap` (or the space it is
+/// offered, if less) with a trailing fade, never an ellipsis and never a wrap.
+private struct FadingName: View {
+    let text: String
+    let cap: CGFloat
+    private var label: some View {
+        Text(text).font(.system(size: 12, weight: .semibold))
+            .foregroundStyle(AppearancePalette.ink.opacity(0.9))
+            .lineLimit(1).fixedSize()
+    }
+    var body: some View {
+        HugUpTo(cap: cap) {
+            ViewThatFits(in: .horizontal) {
+                label
+                label
+                    .frame(minWidth: 0, maxWidth: .infinity, alignment: .leading)
+                    .clipped()
+                    .mask(HStack(spacing: 0) {
+                        Rectangle()
+                        LinearGradient(colors: [.black, .clear], startPoint: .leading, endPoint: .trailing).frame(width: 18)
+                    })
+            }
+        }
+        .accessibilityLabel(text)
+    }
+}
+
+/// Sizes its child to the child's IDEAL width, but never wider than `cap` or the space offered — so a short name
+/// hugs (the pill stays snug and centred) and a long one stops at the cap (a plain `maxWidth` frame would instead
+/// take every point it is offered, stretching a short-name pill).
+private struct HugUpTo: Layout {
+    let cap: CGFloat
+    func sizeThatFits(proposal: ProposedViewSize, subviews: Subviews, cache: inout ()) -> CGSize {
+        guard let s = subviews.first else { return .zero }
+        let ideal = s.sizeThatFits(.unspecified)
+        return CGSize(width: min(ideal.width, cap, proposal.width ?? .infinity), height: ideal.height)
+    }
+    func placeSubviews(in bounds: CGRect, proposal: ProposedViewSize, subviews: Subviews, cache: inout ()) {
+        subviews.first?.place(at: bounds.origin, proposal: ProposedViewSize(width: bounds.width, height: bounds.height))
     }
 }
 
@@ -371,7 +436,7 @@ struct ModelPickerSheet: View {
     private func requestLoad(_ model: CatalogModel) {
         Task {
             if let notice = await catalog.previewLoad(model.tag) {
-                pendingLoad = PendingLoad(tag: model.tag, display: model.display, notice: notice)
+                pendingLoad = PendingLoad(tag: model.tag, display: catalog.name(model), notice: notice)
             } else {
                 await catalog.load(model.tag)
             }
@@ -400,17 +465,17 @@ struct ModelPickerSheet: View {
         if model.isResident {
             Task {
                 if let msg = await catalog.attemptDelete(model.tag) {
-                    pendingDelete = PendingDelete(tag: model.tag, display: model.display, sizeGB: gbInt(model.sizeBytes), hostRefusal: msg)
+                    pendingDelete = PendingDelete(tag: model.tag, display: catalog.name(model), sizeGB: gbInt(model.sizeBytes), hostRefusal: msg)
                 }
             }
         } else {
-            pendingDelete = PendingDelete(tag: model.tag, display: model.display, sizeGB: gbInt(model.sizeBytes), hostRefusal: nil)
+            pendingDelete = PendingDelete(tag: model.tag, display: catalog.name(model), sizeGB: gbInt(model.sizeBytes), hostRefusal: nil)
         }
     }
 
     // Same gate as the pill: the THINKING toggle appears only when the resident model actually
     // honors think:false (measured). A model that reasons regardless never shows a toggle.
-    private var canToggleThinking: Bool { catalog.resident?.thinkingToggleable == true }
+    private var canToggleThinking: Bool { catalog.active?.thinkingToggleable == true }
 
     var body: some View {
         ScrollView {
@@ -675,7 +740,7 @@ private struct ModelSheetRow: View {
     var body: some View {
         VStack(alignment: .leading, spacing: 6) {
             HStack(alignment: .firstTextBaseline, spacing: 8) {
-                Text(model.display).font(.system(size: 16, weight: .semibold)).foregroundStyle(AppearancePalette.ink)
+                Text(catalog.name(model)).font(.system(size: 16, weight: .semibold)).foregroundStyle(AppearancePalette.ink)
                     .lineLimit(1).truncationMode(.tail)
                 // Brief BZ — the V1 default / recommended-to-download model (Qwen3 4B). Green so it
                 // reads distinctly from the blue "in memory" state badge; the Host's `recommended` flag.

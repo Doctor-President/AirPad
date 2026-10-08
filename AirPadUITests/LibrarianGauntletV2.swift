@@ -384,6 +384,45 @@ final class OffPillarSmoke: XCTestCase {
         app.terminate()
     }
 
+    /// Pin a chat to an entry and unpin it again (the Chats list's long-press "Pin to entry…" → the entry picker).
+    /// Same scratch-library precondition as the rename/delete test.
+    func testChatPinToEntryAndUnpin() throws {
+        let app = XCUIApplication()
+        app.launchArguments = ["-OpenMap", "-OpenChatsList", "-UITestLibrary"]
+        app.launch()
+        XCTAssertTrue(app.navigationBars["Chats"].waitForExistence(timeout: 20), "Chats list never opened")
+        let row = app.buttons.matching(NSPredicate(format: "label CONTAINS 'What connections'")).firstMatch
+        XCTAssertTrue(row.waitForExistence(timeout: 10), "no chat row")
+        func menu(_ title: String) -> XCUIElement {
+            row.press(forDuration: 1.2)
+            return app.buttons[title].firstMatch
+        }
+        var pin = menu("Pin to entry…")
+        if !pin.waitForExistence(timeout: 3) {
+            // already pinned from an earlier run → unpin first, so the test starts unpinned
+            app.tap(); let change = menu("Change pin…")
+            XCTAssertTrue(change.waitForExistence(timeout: 5)); change.tap()
+            XCTAssertTrue(app.buttons["Unpin"].waitForExistence(timeout: 5)); app.buttons["Unpin"].tap()
+            pin = menu("Pin to entry…")
+        }
+        XCTAssertTrue(pin.waitForExistence(timeout: 5), "no 'Pin to entry…' in the long-press menu")
+        pin.tap()
+        XCTAssertTrue(app.navigationBars["Pin chat to an entry"].waitForExistence(timeout: 5), "entry picker never opened")
+        // The picker's list is the LAST collection view (the Chats list is still underneath the sheet).
+        let lists = app.collectionViews
+        let entry = lists.element(boundBy: max(0, lists.count - 1)).buttons.firstMatch
+        XCTAssertTrue(entry.waitForExistence(timeout: 5), "no entry to pin to")
+        entry.tap()
+        XCTAssertTrue(app.navigationBars["Pin chat to an entry"].waitForNonExistence(timeout: 5), "picker did not dismiss")
+        let change = menu("Change pin…")
+        XCTAssertTrue(change.waitForExistence(timeout: 5), "the pin did not stick (menu still says 'Pin to entry…')")
+        change.tap()
+        XCTAssertTrue(app.buttons["Unpin"].waitForExistence(timeout: 5), "no Unpin for a pinned chat")
+        app.buttons["Unpin"].tap()
+        XCTAssertTrue(menu("Pin to entry…").waitForExistence(timeout: 5), "unpin did not stick")
+        app.terminate()
+    }
+
     func testChatsListRenameAndDelete() throws {
         // Runs in the ISOLATED UI-test scratch library (`-UITestLibrary`: a throwaway caches container that never
         // touches a real library), which holds the chats earlier gauntlet captures left there (a fresh Simulator

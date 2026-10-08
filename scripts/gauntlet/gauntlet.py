@@ -169,6 +169,8 @@ def content_tokens(s):
 # Markers that are only reasoning at the START of a sentence ("Wait, the user…"); mid-sentence they are prose
 # ("…do they simply wait, like a forgotten scripture" — instruct A2, CH Session 1 UI ×1, a false F1/A2 FAIL).
 SENTENCE_START_ONLY = {"wait, "}
+# …and markers that are prose after an infinitive "to" ("You're right to double-check" — 30B 2b, Session 1 UI ×1).
+NOT_AFTER = {"double-check": "to "}
 
 def hits(text, needles):
     low = (text or "").lower()
@@ -176,6 +178,9 @@ def hits(text, needles):
     for n in needles:
         if n in SENTENCE_START_ONLY:
             if re.search(r"(?:^|[.!?:\n]\s*|[\"'“(]\s*)" + re.escape(n), low):
+                out.append(n)
+        elif n in NOT_AFTER:
+            if re.search(r"(?<!" + NOT_AFTER[n] + r")" + re.escape(n), low):
                 out.append(n)
         elif n in low:
             out.append(n)

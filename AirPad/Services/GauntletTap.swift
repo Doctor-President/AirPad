@@ -177,7 +177,8 @@ final class GauntletTap: @unchecked Sendable {
         lock.lock(); defer { lock.unlock() }
         var all = (turn?["toolLinks"] as? [[String: String]]) ?? []
         let df = ISO8601DateFormatter(); df.formatOptions = [.withFullDate]
-        all += links.map { ["url": $0.url, "title": $0.title, "published": $0.published.map { df.string(from: $0) } ?? ""] }
+        all += links.map { ["url": $0.url, "title": $0.title, "snippet": $0.snippet ?? "",
+                            "published": $0.published.map { df.string(from: $0) } ?? ""] }
         turn?["toolLinks"] = all
     }
     func noteValue(_ key: String, _ value: Any) {

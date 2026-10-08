@@ -41,6 +41,21 @@ enum WebGrounding {
         return false
     }
 
+    /// The keywords of a news question, for Brave's NEWS endpoint (which matches the whole question poorly: "What's
+    /// the top news in Mexico today?" returned U.S. live blogs; "Mexico" returns Mexican news). Empty → nil.
+    static func newsKeywords(_ q: String) -> [String] {
+        let stop: Set<String> = ["what", "whats", "what's", "is", "are", "was", "were", "the", "a", "an", "top", "latest", "newest",
+            "news", "today", "today's", "todays", "tonight", "in", "on", "about", "of", "for", "from", "stories", "story",
+            "headlines", "headline", "current", "currently", "recent", "recently", "breaking", "right", "now", "this", "morning",
+            "afternoon", "evening", "week", "yesterday", "most", "biggest", "main", "major", "happening", "going", "any",
+            "tell", "me", "give", "show", "search", "web", "for", "please", "up", "updates", "update", "there", "some", "with",
+            "and", "or", "to", "do", "does", "did", "i", "you", "can", "could", "would", "should", "find", "look", "lookup"]
+        return q.lowercased().replacingOccurrences(of: "’", with: "'")
+            .split(whereSeparator: { !($0.isLetter || $0.isNumber || $0 == "'" || $0 == "-") })
+            .map { String($0).trimmingCharacters(in: CharacterSet(charactersIn: "'-")) }
+            .filter { !$0.isEmpty && !stop.contains($0) }
+    }
+
     // MARK: - Dates
 
     /// Brave gives `page_age` (ISO, "2026-06-24T10:12:00") and/or `age` ("June 24, 2026", "3 days ago").
@@ -83,7 +98,30 @@ enum WebGrounding {
         return f.string(from: d)
     }
 
-    static func publishedLine(_ d: Date?, now: Date, freshness: Bool = false) -> String {
+    /// A section / front page (e.g. `reuters.com/world/`, `apnews.com/hub/mexico`, `cnn.com/world/americas/mexico`),
+    /// not an article, judged by URL shape: ≤ 3 path segments, none of them an article slug (≥ 2 hyphens), an id
+    /// (a 4+ digit run) or a page file (.html …). Search providers date such a page by its last UPDATE, so its
+    /// snippet can describe a months-old story under today's date (T's case 2: a 24 June Reuters story as 8 October news).
+    static func isSectionPage(_ url: String) -> Bool {
+        guard let u = URL(string: url), let host = u.host, !host.isEmpty else { return false }
+        let segs = u.path.split(separator: "/").map(String.init)
+        if segs.count > 3 || (u.query?.range(of: #"(^|&)(id|p|story|article)="#, options: .regularExpression) != nil) { return false }
+        for s in segs {
+            if ["article", "articles", "story", "stories", "news-story", "a", "p"].contains(s.lowercased()) { return false }
+            // an opaque id ("c4g8wz2y1xyo"): ≥ 8 chars mixing letters and digits
+            if s.count >= 8, s.contains(where: \.isNumber), s.contains(where: \.isLetter), !s.contains("-") { return false }
+            if s.filter({ $0 == "-" }).count >= 2 { return false }
+            if s.range(of: #"\d{4,}"#, options: .regularExpression) != nil { return false }
+            if s.range(of: #"\.(s?html?|php|aspx?)$"#, options: [.regularExpression, .caseInsensitive]) != nil { return false }
+        }
+        return true
+    }
+
+    static func publishedLine(_ d: Date?, now: Date, freshness: Bool = false, section: Bool = false) -> String {
+        if section, freshness {
+            let when = d.map { "updated \(daysOld($0, now: now) < 1 ? "today" : daysOld($0, now: now) == 1 ? "yesterday" : dayString($0))" } ?? "no date"
+            return "Not a dated news article — a section, front or reference page (\(when)): the stories in its snippet may be older than the page, so this is not a publication date."
+        }
         guard let d else {
             return freshness ? "Published: date unknown — this result carries no date (it may be a section or front page, not an article)."
                              : "Published: date unknown."
@@ -96,9 +134,12 @@ enum WebGrounding {
         }
     }
 
-    /// Fresh first: dated results newest → oldest, undated last; ties keep the provider's order.
+    /// Fresh first: dated ARTICLES newest → oldest, then section front pages, then undated; ties keep the
+    /// provider's order.
     static func rank(_ links: [ToolLink]) -> [ToolLink] {
         links.enumerated().sorted { a, b in
+            let sa = isSectionPage(a.element.url), sb = isSectionPage(b.element.url)
+            if sa != sb, a.element.published != nil || b.element.published != nil { return !sa }
             switch (a.element.published, b.element.published) {
             case let (x?, y?): return x != y ? x > y : a.offset < b.offset
             case (.some, nil): return true
@@ -113,19 +154,25 @@ enum WebGrounding {
     static func packet(_ links: [ToolLink], start: Int, now: Date, freshness: Bool) -> String {
         var out = "Today is \(dayString(now)).\n\n"
         out += links.enumerated().map { i, l in
-            "[\(start + i + 1)] \(l.title)\n\(l.url)\n\(publishedLine(l.published, now: now, freshness: freshness))\n\(l.snippet ?? "")"
+            "[\(start + i + 1)] \(l.title)\n\(l.url)\n\(publishedLine(l.published, now: now, freshness: freshness, section: isSectionPage(l.url)))\n\(l.snippet ?? "")"
         }.joined(separator: "\n\n")
         guard freshness else { return out }
-        let fresh = links.enumerated().filter { $0.element.published.map { daysOld($0, now: now) <= 1 } ?? false }
+        // only a dated ARTICLE counts as fresh — a front page's date is its last update
+        let fresh = links.enumerated().filter { e in !isSectionPage(e.element.url) && (e.element.published.map { daysOld($0, now: now) <= 1 } ?? false) }
             .map { "[\(start + $0.offset + 1)]" }
+        let sections = links.enumerated().filter { isSectionPage($0.element.url) }.map { "[\(start + $0.offset + 1)]" }
         if fresh.isEmpty {
-            out += "\n\nCOMPUTED FACT: none of these results is from today or yesterday. Say that you found no news from today, and give the date of any story you mention. Never present an older story as today's news."
+            out += "\n\nCOMPUTED FACT: none of these results is a news article from today or yesterday. Say that you found no article from today, and give the date of any story you mention. Never present an older story as today's news."
             // the model once called a 40-day-old result "the latest" with a 3-day-old one above it — say which is newest
-            if let newest = links.enumerated().filter({ $0.element.published != nil }).max(by: { $0.element.published! < $1.element.published! }) {
+            if let newest = links.enumerated().filter({ $0.element.published != nil && !isSectionPage($0.element.url) })
+                .max(by: { $0.element.published! < $1.element.published! }) {
                 out += " The newest result is [\(start + newest.offset + 1)], published \(dayString(newest.element.published!))."
             }
         } else {
-            out += "\n\nCOMPUTED FACT: only \(fresh.joined(separator: ", ")) \(fresh.count == 1 ? "is" : "are") from today or yesterday. Lead with \(fresh.count == 1 ? "it" : "those"), and give the date of any older story you mention."
+            out += "\n\nCOMPUTED FACT: only \(fresh.joined(separator: ", ")) \(fresh.count == 1 ? "is a news article" : "are news articles") from today or yesterday. Lead with \(fresh.count == 1 ? "it" : "those"), and give the date of any older story you mention."
+        }
+        if !sections.isEmpty {
+            out += " \(sections.joined(separator: ", ")) \(sections.count == 1 ? "is not a dated news article" : "are not dated news articles") (section, front or reference pages): if you mention a story from \(sections.count == 1 ? "it" : "them"), say it is listed on that page and do not call it today's news unless its snippet gives today's date."
         }
         return out
     }
@@ -527,18 +574,31 @@ enum WebGroundingSelfTest {
         check("page_age parsed", june.map { WebGrounding.daysOld($0, now: now) } == 106, "\(String(describing: june))")
         check("age text parsed", WebGrounding.parsePublished(pageAge: nil, age: "June 24, 2026", now: now) != nil)
         check("relative age parsed", WebGrounding.parsePublished(pageAge: nil, age: "3 days ago", now: now).map { WebGrounding.daysOld($0, now: now) } == 3)
-        let stale = ToolLink(title: "Mexico: Reuters world", url: "https://reuters.example/world/americas/mexico-june", snippet: "June story", published: june)
+        let stale = ToolLink(title: "Mexico: Reuters world", url: "https://reuters.example/world/americas/mexico-floods-june-24", snippet: "June story", published: june)
         let hub = ToolLink(title: "Mexico news | Reuters", url: "https://reuters.example/world/mexico/", snippet: "Latest headlines")
-        let fresh = ToolLink(title: "Today in Mexico", url: "https://news.example/mexico-today", snippet: "Today", published: now)
+        let fresh = ToolLink(title: "Today in Mexico", url: "https://news.example/mexico/floods-hit-the-north", snippet: "Today", published: now)
         let ranked = WebGrounding.rank([stale, hub, fresh])
         check("fresh ranked first, undated last", ranked.map(\.url) == [fresh.url, stale.url, hub.url], "\(ranked.map(\.title))")
         let pk = WebGrounding.packet(ranked, start: 0, now: now, freshness: true)
         check("packet: today's date", pk.hasPrefix("Today is 8 October 2026."), pk)
         check("packet: stale age stated", pk.contains("Published: 24 June 2026 — 106 days before today."), pk)
-        check("packet: undated flagged", pk.contains("date unknown"), pk)
-        check("packet: only [1] fresh", pk.contains("only [1] is from today or yesterday"), pk)
+        check("packet: undated flagged", WebGrounding.packet(ranked, start: 0, now: now, freshness: false).contains("Published: date unknown."), pk)
+        check("packet: only [1] fresh", pk.contains("only [1] is a news article from today or yesterday"), pk)
+        check("packet: front page flagged", pk.contains("[3] is not a dated news article") && pk.contains("reference page (no date)"), pk)
+        // T's case 2 mechanism: a front page dated TODAY must not rank above, or count as, a fresh article
+        let hubToday = ToolLink(title: "Mexico | Reuters", url: "https://www.reuters.example/world/americas/mexico/", snippet: "June story", published: now)
+        let r2 = WebGrounding.rank([hubToday, stale])
+        check("dated article above a front page dated today", r2.map(\.url) == [stale.url, hubToday.url], "\(r2.map(\.url))")
+        let pk3 = WebGrounding.packet(r2, start: 0, now: now, freshness: true)
+        check("front page dated today is not fresh", pk3.contains("none of these results is a news article from today") && pk3.contains("reference page (updated today)"), pk3)
+        for (u, want) in [("https://www.reuters.com/world/", true), ("https://apnews.com/hub/mexico", true), ("https://www.cnn.com/world/americas/mexico", true),
+                          ("https://www.bbc.com/news/world", true), ("https://www.reuters.com/world/americas/mexico-floods-kill-12-2026-10-08/", false),
+                          ("https://www.bbc.com/news/articles/c4g8wz2y1xyo", false), ("https://apnews.com/article/mexico-sheinbaum-water-8f3a2b", false),
+                          ("https://www.nytimes.com/2026/10/08/world/europe/france-protests.html", false)] {
+            check("section page: \(u)", WebGrounding.isSectionPage(u) == want)
+        }
         let pk2 = WebGrounding.packet([stale, hub], start: 3, now: now, freshness: true)
-        check("packet: none fresh, global numbering", pk2.contains("[4] Mexico: Reuters world") && pk2.contains("none of these results is from today"), pk2)
+        check("packet: none fresh, global numbering", pk2.contains("[4] Mexico: Reuters world") && pk2.contains("none of these results is a news article from today"), pk2)
         check("packet: names the newest result", pk2.contains("The newest result is [4], published 24 June 2026."), pk2)
 
         // 9. question shape
@@ -549,6 +609,9 @@ enum WebGroundingSelfTest {
             check("factual: \(q)", WebGrounding.isFactualQuestion(q) == want)
         }
         check("freshness: today's news", WebGrounding.isFreshnessQuestion("What's the top news in Mexico today?"))
+        check("news keywords: Mexico", WebGrounding.newsKeywords("What's the top news in Mexico today?") == ["mexico"], "\(WebGrounding.newsKeywords("What's the top news in Mexico today?"))")
+        check("news keywords: world", WebGrounding.newsKeywords("What are the top world news stories today?") == ["world"])
+        check("news keywords: telescope", WebGrounding.newsKeywords("What's the latest news about the Lakeview Observatory telescope?") == ["lakeview", "observatory", "telescope"])
         check("freshness: not a fact question", !WebGrounding.isFreshnessQuestion("What family does the oarfish belong to?"))
 
         return fails.isEmpty ? "PASS \(ran)/\(ran)" : "FAIL \(ran - fails.count)/\(ran)\n  " + fails.joined(separator: "\n  ")

@@ -1649,11 +1649,11 @@ struct WebSearchUnavailableExecutor: ToolExecutor {
 struct WebSearchMockExecutor: ToolExecutor {
     static let links = [
         ToolLink(title: "Lakeview Observatory sets first-light date for its new telescope",
-                 url: "https://news.gauntlet.example/lakeview-first-light",
+                 url: "https://news.gauntlet.example/lakeview-observatory-sets-first-light-date",
                  snippet: "The Lakeview Observatory announced that its new 4-metre telescope will see first light on 19 November 2031, director Ana Okafor said.",
                  published: Calendar.current.date(byAdding: .day, value: -3, to: Date())),
         ToolLink(title: "Lakeview telescope: what we know",
-                 url: "https://science.gauntlet.example/lakeview-explainer",
+                 url: "https://science.gauntlet.example/lakeview-telescope-what-we-know",
                  snippet: "First light is scheduled for 19 November 2031; the mirror was cast in 2029.",
                  published: Calendar.current.date(byAdding: .day, value: -40, to: Date())),
     ]
@@ -1664,14 +1664,14 @@ struct WebSearchMockExecutor: ToolExecutor {
         let c = Calendar.current, now = Date()
         return [
             ToolLink(title: "Lakeview council approves its 2027 budget",
-                     url: "https://news.gauntlet.example/lakeview/council-budget",
+                     url: "https://news.gauntlet.example/lakeview/council-approves-2027-budget",
                      snippet: "The Lakeview town council approved its 2027 budget on Tuesday after a four-hour session, raising the library fund by 6 percent.",
                      published: c.date(byAdding: .day, value: -106, to: now)),
             ToolLink(title: "Lakeview News — latest headlines",
                      url: "https://news.gauntlet.example/lakeview/",
                      snippet: "Breaking news, weather, traffic and sports from Lakeview and the lake district."),
             ToolLink(title: "Lakeview ferry resumes service after storm repairs",
-                     url: "https://news.gauntlet.example/lakeview/ferry-resumes",
+                     url: "https://news.gauntlet.example/lakeview/ferry-resumes-after-storm-repairs",
                      snippet: "The Lakeview ferry resumed service this morning after three weeks of storm repairs, the harbour office said.",
                      published: now),
         ]
@@ -1971,7 +1971,25 @@ final class BraveSearchToolExecutor: ToolExecutor, @unchecked Sendable {
                 return ToolResult(textForModel: "You have used your web search budget for this question (\(maxSearchesPerTurn) searches). Do NOT search again — answer now from the results you already have.", links: [])
             }
             searchCount += 1
-            let (links, rateLimited) = await braveSearch(query)
+            // CH Session 2 (T's case 2) — a today/latest question goes to Brave's NEWS endpoint first: it returns
+            // individual ARTICLES with their own dates (past day, then past week), where web search returns section
+            // front pages dated by their last update. Falls back to web search when news finds nothing or the plan
+            // doesn't include it.
+            var (links, rateLimited) = ([ToolLink](), false)
+            let keywords = WebGrounding.newsKeywords(query)
+            if WebGrounding.isFreshnessQuestion(query) {
+                // "<keywords> news": the bare keyword "world" matched Disney World and the World Championships
+                let newsQuery = keywords.isEmpty ? "top news" : keywords.joined(separator: " ") + " news"
+                for window in ["pd", "pw"] where links.isEmpty && !rateLimited {
+                    (links, rateLimited) = await braveNews(newsQuery, freshness: window)
+                    // relevance: at least one article must mention a keyword, else it isn't an answer
+                    if !keywords.isEmpty, !links.contains(where: { l in
+                        let hay = (l.title + " " + (l.snippet ?? "") + " " + l.url).lowercased()
+                        return keywords.contains { hay.contains($0) }
+                    }) { links = [] }
+                }
+            }
+            if links.isEmpty && !rateLimited { (links, rateLimited) = await braveSearch(query) }
             if rateLimited {
                 throttled = true
                 return ToolResult(textForModel: "Web search is temporarily rate-limited by the provider (too many requests in a short time). Do NOT keep retrying — answer from what you already have, or if you have nothing, tell the user web search is rate-limited right now and to try again shortly.", links: [], rateLimited: true)
@@ -2015,6 +2033,44 @@ final class BraveSearchToolExecutor: ToolExecutor, @unchecked Sendable {
         let status = (resp as? HTTPURLResponse)?.statusCode ?? -1
         if status == 429 { return ([], true) }  // Brave rate-limit → distinct signal
         return (Self.parseBrave(data), false)
+    }
+
+    /// Brave News Search → articles with `age` / `page_age`. Any non-2xx other than 429 (e.g. a plan without news
+    /// access) → empty, and the caller falls back to web search.
+    private func braveNews(_ query: String, freshness: String) async -> (links: [ToolLink], rateLimited: Bool) {
+        var comps = URLComponents(string: "https://api.search.brave.com/res/v1/news/search")
+        comps?.queryItems = [URLQueryItem(name: "q", value: query), URLQueryItem(name: "count", value: "5"),
+                             URLQueryItem(name: "freshness", value: freshness)]
+        guard let url = comps?.url else { return ([], false) }
+        var req = URLRequest(url: url)
+        req.setValue("application/json", forHTTPHeaderField: "Accept")
+        req.setValue("gzip", forHTTPHeaderField: "Accept-Encoding")
+        req.setValue(apiKey, forHTTPHeaderField: "X-Subscription-Token")
+        guard let (data, resp) = try? await URLSession.shared.data(for: req) else { return ([], false) }
+        let status = (resp as? HTTPURLResponse)?.statusCode ?? -1
+        #if DEBUG
+        GauntletTap.shared.noteValue("braveNews_\(freshness)", status)
+        #endif
+        if status == 429 { return ([], true) }
+        guard (200...299).contains(status) else { return ([], false) }
+        return (Self.parseBraveNews(data), false)
+    }
+
+    /// Brave News JSON (`results[].{title,url,description,age,page_age}`) → `ToolLink`, same caps as web.
+    static func parseBraveNews(_ data: Data) -> [ToolLink] {
+        guard let json = try? JSONSerialization.jsonObject(with: data) as? [String: Any],
+              let results = json["results"] as? [[String: Any]] else { return [] }
+        return results.prefix(5).compactMap { r -> ToolLink? in
+            guard let title = r["title"] as? String, let urlStr = r["url"] as? String, !urlStr.isEmpty else { return nil }
+            let cleanTitle = WebReadability.decodeEntities(WebReadability.stripTags(title)).trimmingCharacters(in: .whitespacesAndNewlines)
+            let snippet = (r["description"] as? String).map { raw -> String in
+                let clean = WebReadability.decodeEntities(WebReadability.stripTags(raw)).trimmingCharacters(in: .whitespacesAndNewlines)
+                return clean.count > 300 ? String(clean.prefix(300)) + "…" : clean
+            }
+            guard !cleanTitle.isEmpty else { return nil }
+            return ToolLink(title: cleanTitle, url: urlStr, snippet: snippet,
+                            published: WebGrounding.parsePublished(pageAge: r["page_age"] as? String, age: r["age"] as? String))
+        }
     }
 
     #if DEBUG

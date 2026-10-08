@@ -1642,7 +1642,6 @@
     },
     {
       "chat": "ui-web-live",
-      "_probe": true,
       "what": "CH Session 2 — LIVE ONLY (TEST_RUNNER_GAUNTLET_BRAVE_KEY): T's real cases 2 and 3 re-asked on live Brave. No mock facts; graded by WF1/WF2/WD1/GL1, read by CC.",
       "cases": [
         {
@@ -1667,7 +1666,8 @@
           "question": "What are the top world news stories today?",
           "expectRoute": ""
         }
-      ]
+      ],
+      "liveOnly": true
     }
   ]
 }

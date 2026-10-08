@@ -88,12 +88,13 @@ GRADERS = {
     "WF1": "web grounding (T 2026-10-08): every URL in a General answer was returned by THIS turn's web_search / fetch_url (or typed by the user) — no invented sources",
     "WF2": "web grounding: the source list is the app's — no model-written Sources/References list, every web chip is cited in the prose, chips numbered by first mention",
     "WD1": "web grounding: on a today/latest question a stale result is never presented as today's news (its citing sentence carries its date), and a fresh result leads",
+    "WD2": "web grounding: every month/date the answer states for a news story appears in a result (its date, title or snippet) or is today/yesterday — no invented dates (FLAG, CC reads)",
     "GF1": "general facts: the known answer is stated and no known-false claim is made (oarfish → Regalecidae; colossal squid → Mesonychoteuthis hamiltoni; Antarctica sighted 1820, no landing)",
     "GL1": "general-knowledge line: a General answer with no web result behind it carries the app's 'general knowledge, may contain errors' line; a searched one does not",
     "R1": "repeat: 3/3 runs pass (aggregate)",
 }
 # Brief CH-A1b — the voice graders are named W* (not the brief's V1–V3: V* is run validity and ABORTs).
-FLAG_ONLY = {"W2", "W3", "E2", "RF2"}   # (Q1 FLAGs only when an 'exactly' answer quotes nothing)   # a flag sends the row to CC's read; it never fails the row by itself
+FLAG_ONLY = {"W2", "W3", "E2", "RF2", "WD2"}   # (Q1 FLAGs only when an 'exactly' answer quotes nothing)   # a flag sends the row to CC's read; it never fails the row by itself
 
 
 # Reasoning prose — TIGHT. A clean answer addressed to the user never narrates these. (Kept narrow on
@@ -975,6 +976,25 @@ def model_source_list(final):
         break
     return hits + tail[::-1]
 
+def is_section_page(url):
+    """Mirror of the app's `WebGrounding.isSectionPage` (URL shape): a section / front / reference page, not a dated
+    article — its provider date is the page's last update, so its stories may be older."""
+    from urllib.parse import urlparse
+    u = urlparse(url)
+    if not u.netloc:
+        return False
+    segs = [x for x in u.path.split("/") if x]
+    if len(segs) > 3 or re.search(r"(^|&)(id|p|story|article)=", u.query or ""):
+        return False
+    for x in segs:
+        if x.lower() in ("article", "articles", "story", "stories", "news-story", "a", "p"):
+            return False
+        if len(x) >= 8 and re.search(r"\d", x) and re.search(r"[A-Za-z]", x) and "-" not in x:
+            return False
+        if x.count("-") >= 2 or re.search(r"\d{4,}", x) or re.search(r"\.(s?html?|php|aspx?)$", x, re.I):
+            return False
+    return True
+
 def sentences(text):
     return [s for s in re.split(r"(?<=[.!?])\s+|\n+", text or "") if s.strip()]
 
@@ -1028,26 +1048,57 @@ def grade_web_grounding(exp, turn, final, cites, path, R, res, na):
                 pub[norm_url(l["url"])] = datetime.date.fromisoformat(l["published"])
         by_index = {c.get("index"): c for c in cites if c.get("url")}
         problems, fresh_cited = [], False
-        for snt in sentences(final):
-            for m in re.finditer(r"\[(\d{1,2})\]", snt):
-                c = by_index.get(int(m.group(1)))
-                if not c:
-                    continue
-                d = pub.get(norm_url(c["url"]))
-                if d is None:
-                    if re.search(r"\b(today|this morning|tonight)\b", snt, re.I):
-                        problems.append(f"'today' claim backed only by an undated page [{m.group(1)}]")
-                    continue
-                age = (today - d).days
-                if age <= 1:
-                    fresh_cited = True
-                    continue
-                dated = MONTH_NAMES[d.month - 1] in snt.lower() or d.isoformat() in snt or re.search(r"\b\d+\s+(days|weeks|months)\s+ago\b|\bmonths? ago\b", snt, re.I)
-                if re.search(r"\b(today|this morning|tonight|breaking)\b", snt, re.I) or not dated:
-                    problems.append(f"a {age}-day-old result [{m.group(1)}] presented without its date: '{snt.strip()[:70]}'")
-        if any((today - d).days <= 1 for d in pub.values()) and not fresh_cited:
+        TODAY = r"\b(today|this morning|tonight|breaking)\b"
+        HEDGE = r"\b(listed|front page|section|headlines on|home ?page|page)\b"
+        def dated_for(snt, d):
+            return (MONTH_NAMES[d.month - 1] in snt.lower() or d.isoformat() in snt
+                    or re.search(r"\b(\d+|two|three|four|five|six|seven|several|a few)\s+(days?|weeks?|months?)\s+(ago|before|prior|earlier)\b", snt, re.I))
+        lead = ""   # the sentence a list hangs from ("The latest items are from 6 October: …") dates its bullets
+        for line in (final or "").split("\n"):
+            bullet = bool(re.match(r"^\s*(?:[-*•+]|\d{1,2}[.)])\s+", line))
+            for snt in sentences(line):
+                ctx = (lead + " " + snt) if bullet else snt
+                cited = []
+                for m in re.finditer(r"\[(\d{1,2})\]", snt):
+                    c = by_index.get(int(m.group(1)))
+                    if c:
+                        cited.append((m.group(1), c))
+                for n, c in cited:
+                    d = pub.get(norm_url(c["url"]))
+                    if is_section_page(c["url"]) or d is None:
+                        continue
+                    age = (today - d).days
+                    if age <= 1:
+                        fresh_cited = True
+                    elif not dated_for(ctx, d):
+                        problems.append(f"a {age}-day-old result [{n}] presented without its date: '{snt.strip()[:70]}'")
+                # T's case 2: a 'today' claim backed ONLY by section / front pages (or undated pages), with no
+                # "listed on that page" hedge — the page's date is its last update, not the story's
+                if cited and all(is_section_page(c["url"]) or pub.get(norm_url(c["url"])) is None for _, c in cited) \
+                        and re.search(TODAY, ctx, re.I) and not re.search(HEDGE, ctx, re.I) \
+                        and not re.search(r"\b(no|not|none|nothing|cannot|can't|couldn't|prior|before|earlier|ago)\b", ctx, re.I):
+                    problems.append(f"a 'today' claim backed only by front/undated pages [{', '.join(n for n, _ in cited)}]: '{snt.strip()[:70]}'")
+            if not bullet and line.strip():
+                lead = line
+        if any((today - d).days <= 1 for u, d in pub.items() if not is_section_page("https://" + u)) and not fresh_cited:
             problems.append("a result from today exists but the answer cites none")
         res("WD1", not problems, "; ".join(problems) or "stale results dated; a fresh result leads")
+        # WD2 — a month the answer states must come from a result (or be today's / yesterday's month)
+        import datetime as _dt
+        seen = " ".join((l.get("title", "") + " " + l.get("snippet", "")).lower() for l in links)
+        months_ok = {MONTH_NAMES[today.month - 1], MONTH_NAMES[(today - _dt.timedelta(days=1)).month - 1]}
+        for l in links:
+            if l.get("published"):
+                months_ok.add(MONTH_NAMES[_dt.date.fromisoformat(l["published"]).month - 1])
+        MN = "|".join(MONTH_NAMES)
+        # a month NAME used as a date (next to a day / year, or "in June") — not the modal "may"
+        date_re = re.compile(r"\b(" + MN + r")\s+\d{1,2}\b|\b\d{1,2}(?:st|nd|rd|th)?\s+(" + MN + r")\b|\b(" + MN + r")\s+\d{4}\b|\b(?:in|since|until|from|of)\s+(" + MN + r")\b", re.I)
+        stated = {next(g for g in m.groups() if g).lower() for m in date_re.finditer(final)}
+        invented = sorted(x for x in stated if x not in months_ok and x not in seen)
+        if invented:
+            R["WD2"] = ("FLAG", "month(s) no result carries: " + ", ".join(invented))
+        else:
+            R["WD2"] = ("PASS", "every stated month is in a result")
     # GF1 — known facts (T's GK rows)
     ka = exp.get("knownAnswer")
     if ka:
@@ -1703,6 +1754,8 @@ def plan(cases_path, model, digest, thinks, runs, out_dir, base_args, only=None,
             for chat in cm["chats"]:
                 if chat.get("_lab") or chat.get("_probe"):
                     continue   # lab-only chats run only when a replay variant names them; CI-0 probes are store-only
+                if chat.get("liveOnly") and not only:
+                    continue   # live-Brave rows (no mock facts) run only when named with --only
                 cs = [c for c in chat["cases"] if not only or c["id"] in only]
                 if not cs:
                     continue
@@ -1805,7 +1858,7 @@ def emit_md(cases_path):
          "One *chat* = one app launch = one fresh conversation; its cases run in order inside it (follow-ups, carries, re-asks).",
          "Every row is graded by every applicable grader below; the case only adds its own expectations.", "",
          "## Cases", "", "| # | kind | chat | question | expected route | case-specific checks |", "|---|---|---|---|---|---|"]
-    for chat in (c for c in cm["chats"] if not c.get("_lab") and not c.get("_probe")):
+    for chat in (c for c in cm["chats"] if not c.get("_lab") and not c.get("_probe") and not c.get("liveOnly")):
         for c in chat["cases"]:
             checks = []
             if c.get("facts") == "panel": checks.append(f"lab panel facts ≥{c['minFacts']}/7")

@@ -777,9 +777,9 @@ def web2(kb_dir, template_dir):
          finalText="Floods hit the north overnight [1] and markets rallied on the news [2].")
 
     # WD1 — T's case 2: a June story presented as today's news, sourced from a front page.
-    town = [{"url": "https://news.gauntlet.example/lakeview/council-budget", "title": "Lakeview council approves its 2027 budget", "published": "2026-06-24"},
+    town = [{"url": "https://news.gauntlet.example/lakeview/council-approves-2027-budget", "title": "Lakeview council approves its 2027 budget", "published": "2026-06-24"},
             {"url": "https://news.gauntlet.example/lakeview/", "title": "Lakeview News — latest headlines", "published": ""},
-            {"url": "https://news.gauntlet.example/lakeview/ferry-resumes", "title": "Lakeview ferry resumes service", "published": "2026-10-08"}]
+            {"url": "https://news.gauntlet.example/lakeview/ferry-resumes-after-storm-repairs", "title": "Lakeview ferry resumes service", "published": "2026-10-08"}]
     item("web-wd1-stale-as-today", "GW4", True, ["WD1"],
          "T's case 2 shape: a 106-day-old story presented as today's news; the fresh story not cited",
          path="tools", tools=search, toolLinks=town, citations=[cite(1, town[0]), cite(2, town[1])],
@@ -793,6 +793,35 @@ def web2(kb_dir, template_dir):
          path="tools", tools=search, toolLinks=town, citations=[cite(1, town[2]), cite(2, town[0])],
          finalText="The main story today: the Lakeview ferry resumed service this morning after storm repairs [1]. "
                    "An older story, from 24 June, is the council's 2027 budget [2].")
+
+    # WD1 — the live mechanism behind T's case 2: a section front page DATED TODAY whose story is older.
+    mx = [{"url": "https://www.reuters.com/world/americas/mexico/", "title": "Mexico | Reuters", "published": "2026-10-08"},
+          {"url": "https://apnews.com/hub/mexico", "title": "Mexico | AP News", "published": "2026-10-06"},
+          {"url": "https://www.reuters.com/world/americas/mexico-floods-kill-12-in-sinaloa-2026-10-08/", "title": "Floods kill 12 in Sinaloa", "published": "2026-10-08"}]
+    item("web-wd1-frontpage-as-today", "GW5", True, ["WD1"],
+         "T's case 2 (live mechanism): a story from a front page dated today (its last update) presented as today's news",
+         path="tools", tools=search, toolLinks=mx, citations=[cite(1, mx[0])],
+         finalText="Today's top story in Mexico: the government announced new water rationing in Guadalajara [1].")
+    item("web-wd1-frontpage-control", "GW5", False, ["WD1"],
+         "CONTROL: today's dated article leads; the front-page story is attributed to the page, not to today",
+         path="tools", tools=search, toolLinks=mx, citations=[cite(1, mx[2]), cite(2, mx[0])],
+         finalText="Floods killed 12 people in Sinaloa today [1]. The Reuters Mexico page also lists a story on water rationing in Guadalajara; its date isn't shown [2].")
+    item("web-wd1-list-control", "GW5", False, ["WD1"],
+         "CONTROL (live GW5 shape): the lead-in dates the list ('from 6 October … two days prior'), the bullets inherit it",
+         path="tools", tools=search, toolLinks=[{"url": "https://www.cnn.example/world/americas/mexico/floods-in-the-north-continue", "title": "Floods", "published": "2026-10-06"}],
+         citations=[{"index": 1, "nodeID": "", "url": "https://www.cnn.example/world/americas/mexico/floods-in-the-north-continue", "title": "Floods", "snippet": ""}],
+         finalText="I found no article from today. The latest items are from 6 October 2026, two days before today. These include:\n\n- Floods are still displacing people in the north [1].")
+
+    # WD2 — the live GW5 over-correction: an answer that invents a month for front-page stories.
+    gw5 = [{"url": "https://www.cnn.com/world/americas/mexico", "title": "Mexico | CNN", "snippet": "Water crisis in Guadalajara; Sheinbaum meets Jalisco's governor.", "published": "2026-10-06"},
+           {"url": "https://apnews.com/hub/mexico", "title": "Mexico | AP News", "snippet": "Northern Mexico recovers from Hurricane Polo.", "published": "2026-10-06"}]
+    item("web-wd2-invented-month", "GW5", True, ["WD2"],
+         "REAL live GW5 shape (new build, before the news endpoint): 'updated as of June 2026' for pages dated 6 October",
+         path="tools", tools=search, toolLinks=gw5, citations=[cite(1, gw5[0]), cite(2, gw5[1])],
+         finalText="I found no article from today. The water crisis in Guadalajara was updated as of June 2026 [1], and the floods after Hurricane Polo are from June 2026 [2].")
+    item("web-wd2-control", "GW5", False, ["WD2"], "CONTROL: the months stated are the results' own",
+         path="tools", tools=search, toolLinks=gw5, citations=[cite(1, gw5[0])],
+         finalText="I found no article from today; the CNN Mexico page, updated 6 October, lists the Guadalajara water crisis [1].")
 
     # GF1 — T's known-answer rows.
     item("web-gf1-oarfish-wrong", "GK4", True, ["GF1"], "synthetic: wrong family (Trachipteridae)",

@@ -166,9 +166,20 @@ def content_tokens(s):
     """Content words, stemmed to a 5-char prefix (relational ~ relationships)."""
     return {w[:5] for w in re.findall(r"[a-z]{4,}", (s or "").lower()) if w not in STOP}
 
+# Markers that are only reasoning at the START of a sentence ("Wait, the user…"); mid-sentence they are prose
+# ("…do they simply wait, like a forgotten scripture" — instruct A2, CH Session 1 UI ×1, a false F1/A2 FAIL).
+SENTENCE_START_ONLY = {"wait, "}
+
 def hits(text, needles):
     low = (text or "").lower()
-    return [n for n in needles if n in low]
+    out = []
+    for n in needles:
+        if n in SENTENCE_START_ONLY:
+            if re.search(r"(?:^|[.!?:\n]\s*|[\"'“(]\s*)" + re.escape(n), low):
+                out.append(n)
+        elif n in low:
+            out.append(n)
+    return out
 
 def sysprompt_echo(text, sysprompt):
     """Any CLAUSE of the system prompt (split at sentence/clause punctuation and dashes), ≥40 chars,
@@ -994,7 +1005,8 @@ def grade_row(exp, turn, ui, prev_turn, host, ps, versions, cases_meta, store=Fa
         if not store:
             # UI-level pillar rows (CH ruling 9): the screen must show the committed answer (A7, same letters-only
             # comparison as library rows) — the no-key line and the web tool loop render through their own paths.
-            letters = lambda x: re.sub(r"[^a-z]", "", (x or "").lower())
+            # a markdown link renders as its text only — drop the (target) before comparing (the no-key line)
+            letters = lambda x: re.sub(r"[^a-z]", "", re.sub(r"\]\([^)]*\)", "]", x or "").lower())
             ratio = difflib.SequenceMatcher(None, letters(ui.get("onScreenAnswer")), letters(turn.get("finalText")), autojunk=False).ratio()
             res("A7", ratio >= 0.9, f"similarity {ratio:.2f}")
             if exp.get("action") == "general":

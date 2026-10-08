@@ -721,6 +721,7 @@ struct DebugScreenHost: View {
         case "librarian": return .librarian
         case "privacy":   return .privacy
         case "about":     return .about
+        case "appearance": return .appearance   // ws-fluted-glass — the glass toggles
         default:          return nil
         }
     }
@@ -732,6 +733,9 @@ struct DebugScreenHost: View {
         // Brief AJ — screenshot each submenu: `-Screen settings-<dest>`.
         case let s where s.hasPrefix("settings-"):
             SettingsView(debugInitialDest: settingsDest(String(s.dropFirst("settings-".count))))
+        case "slideout":         // ws-fluted-glass — the canvas ≡ menu's Appearance section
+            CanvasSlideOutMenu(isPresented: .constant(true), filterActiveCount: 0, quarantineCount: 0,
+                               onAnalyze: {}, onFilter: {}, onSettings: {}, onQuarantineReview: {})
         case "substrate":        SubstrateInspectView()
         case "import":           ImportIdeasSheet()
         case "reviewqueue":      ReviewQueueSheet()

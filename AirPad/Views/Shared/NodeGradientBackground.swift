@@ -168,8 +168,23 @@ struct NodeGradientLayer: View {
         var overlap: CGFloat           // 0 = full spread … 1 = coincident (single wash)
     }
     var blobDistribution: BlobDistribution? = nil
+    /// Fluted glass (ws-fluted-glass) opt-in — which surface this is (its own baked size).
+    /// nil (default), or both Appearance glass settings off → the V1 shader, byte-identical.
+    var glassSurface: GlassSurface? = nil
+    private var glass: GlassRender? {
+        glassSurface.flatMap { FlutedGlass.shared.active($0) }
+    }
 
-    @State private var phase: Double = Double.random(in: 0...100)
+    @State private var phase: Double = Self.initialPhase()
+
+    /// Random per instance; pinned under the DEBUG `-GlassFreezeTime` still harness so two
+    /// builds' stills can be pixel-diffed (ws-fluted-glass).
+    private static func initialPhase() -> Double {
+        #if DEBUG
+        if UserDefaults.standard.object(forKey: "GlassFreezeTime") != nil { return 42 }
+        #endif
+        return Double.random(in: 0...100)
+    }
 
     /// Effective appearance — the SAME mechanism the shipped map/chrome theming
     /// uses (`AppearancePalette.mapBackground(dark: colorScheme == .dark)`). Dark
@@ -412,15 +427,15 @@ struct NodeGradientLayer: View {
             // Hero-LEFT: column-relative, vertically distributed blobs (measured).
             GeometryReader { g in
                 BlobFieldView(cardBlobs: distributedBlobs(colors: colors, dist: dist, size: g.size),
-                              animated: animated, anchor: .center)
+                              animated: animated, anchor: .center, glass: glass)
             }
         } else if blobSet == .hero {
             BlobFieldView(heroBlobs: heroBlobs(colors: colors, size: size),
-                          animated: animated)
+                          animated: animated, glass: glass)
         } else {
             BlobFieldView(cardBlobs: cardBlobs(colors: colors, size: size),
                           animated: animated,
-                          anchor: anchor)
+                          anchor: anchor, glass: glass)
         }
     }
 
@@ -450,7 +465,7 @@ struct NodeGradientLayer: View {
         ZStack {
             AppearancePalette.mapBackground(dark: true)
             BlobFieldView(heroBlobs: heroBlobs(colors: colors, size: size),
-                          animated: animated, bloom: bloom)
+                          animated: animated, bloom: bloom, glass: glass)
         }
     }
 
@@ -469,12 +484,12 @@ struct NodeGradientLayer: View {
             if let dist = blobDistribution {
                 GeometryReader { g in
                     BlobFieldView(cardBlobs: distributedBlobs(colors: colors, dist: dist, size: g.size),
-                                  animated: animated, anchor: .center, bloom: bloom)
+                                  animated: animated, anchor: .center, bloom: bloom, glass: glass)
                 }
             } else {
                 BlobFieldView(cardBlobs: cardBlobs(colors: colors, size: size),
                               animated: animated,
-                              anchor: anchor, bloom: bloom)
+                              anchor: anchor, bloom: bloom, glass: glass)
             }
         }
     }
@@ -760,7 +775,8 @@ struct BandGradientExpanded: View {
         NodeGradientLayer(node: node, circleScale: GradientBake.bandCircle,
                           vignette: GradientBake.bandVignette, glowStart: GradientBake.bandGlowStart, glowEnd: GradientBake.bandGlowEnd,
                           glowStrength: GradientBake.bandRadial, bloom: GradientBake.bandBloom,
-                          undulation: GradientBake.bandAmplitude, warpScale: GradientBake.bandScale, blobExpr: 3)
+                          undulation: GradientBake.bandAmplitude, warpScale: GradientBake.bandScale, blobExpr: 3,
+                          glassSurface: .entry)
             .frame(height: totalHeight)
             .overlay(BandScrim(top: BandGradient.scrimTop, bottom: BandGradient.scrimBottom))
             .clipShape(UnevenRoundedRectangle(bottomLeadingRadius: 30, bottomTrailingRadius: 30, style: .continuous))

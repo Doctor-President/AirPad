@@ -612,6 +612,7 @@ struct SettingsView: View {
                     Text("AirPad uses this typeface everywhere. An entry can still pick its own font from the editor toolbar.")
                         .font(appFont.font(size: 12, relativeTo: .caption1)).foregroundStyle(AppearancePalette.ink.opacity(0.4))
                 }
+                GlassAppearanceToggles(detailed: true)   // ws-fluted-glass
             }
         }
     }

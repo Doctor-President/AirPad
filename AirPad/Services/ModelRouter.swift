@@ -1726,6 +1726,9 @@ struct WebSearchMockExecutor: ToolExecutor {
     ]
 
     func execute(name: String, arguments: [String: Any]) async -> ToolResult {
+        // `-WebSearchMockDelayMs n` — a live search's latency, so a UI test can SEE the tool status line.
+        let delay = UserDefaults.standard.integer(forKey: "WebSearchMockDelayMs")
+        if delay > 0 { try? await Task.sleep(nanoseconds: UInt64(delay) * 1_000_000) }
         switch name {
         case AgentTools.webSearch:
             let query = (arguments["query"] as? String) ?? ""
@@ -1977,17 +1980,29 @@ final class BraveSearchToolExecutor: ToolExecutor, @unchecked Sendable {
             // doesn't include it.
             var (links, rateLimited) = ([ToolLink](), false)
             let keywords = WebGrounding.newsKeywords(query)
+            // CH (T device 2026-10-09) — a news question that names a country asks Brave for news FROM that country
+            // (`country=`), and a result that names it only inside another place ("New Mexico") is dropped.
+            // News questions only: "What's the capital of Mexico?" still searches the whole web.
+            let country = WebGrounding.isFreshnessQuestion(query) ? WebGrounding.newsCountry(query) : nil
+            #if DEBUG
+            if let c = country { GauntletTap.shared.noteValue("newsCountry", c.code) }
+            #endif
+            func hay(_ l: ToolLink) -> String { l.title + " " + (l.snippet ?? "") + " " + l.url }
             if WebGrounding.isFreshnessQuestion(query) {
                 // "<keywords> news": the bare keyword "world" matched Disney World and the World Championships
                 let newsQuery = keywords.isEmpty ? "top news" : keywords.joined(separator: " ") + " news"
                 for window in ["pd", "pw"] where links.isEmpty && !rateLimited {
-                    (links, rateLimited) = await braveNews(newsQuery, freshness: window)
-                    // relevance: at least one article must mention a keyword, else it isn't an answer
-                    if !keywords.isEmpty, !links.contains(where: { l in
-                        let hay = (l.title + " " + (l.snippet ?? "") + " " + l.url).lowercased()
-                        return keywords.contains { hay.contains($0) }
-                    }) { links = [] }
+                    (links, rateLimited) = await braveNews(newsQuery, freshness: window, country: country?.code)
+                    if let c = country { links.removeAll { WebGrounding.isFalseFriend(hay($0), for: c) } }
+                    // relevance: at least one article must mention a keyword, else it isn't an answer (the country
+                    // filter already makes a country's own news relevant, so its name needn't appear)
+                    let topical = keywords.filter { k in !(country?.terms.contains { $0.split(separator: " ").contains(Substring(k)) } ?? false) }
+                    if !topical.isEmpty, !links.contains(where: { l in topical.contains { hay(l).lowercased().contains($0) } }) { links = [] }
                 }
+            }
+            if links.isEmpty && !rateLimited, let c = country {
+                (links, rateLimited) = await braveSearch(query, country: c.code)
+                links.removeAll { WebGrounding.isFalseFriend(hay($0), for: c) }
             }
             if links.isEmpty && !rateLimited { (links, rateLimited) = await braveSearch(query) }
             if rateLimited {
@@ -2019,11 +2034,12 @@ final class BraveSearchToolExecutor: ToolExecutor, @unchecked Sendable {
     /// GET the Brave web-search API → `[{title,url,snippet}]`. HTTP 429 (Brave's own
     /// rate-limit) → the shared `rateLimited` signal. Descriptions can carry `<strong>`
     /// highlight tags → stripped via the shared HTML helpers.
-    private func braveSearch(_ query: String) async -> (links: [ToolLink], rateLimited: Bool) {
+    private func braveSearch(_ query: String, country: String? = nil) async -> (links: [ToolLink], rateLimited: Bool) {
         var comps = URLComponents(string: "https://api.search.brave.com/res/v1/web/search")
         // Brief AF2 (a) — top 5 (was 8): a smaller synthesis payload → faster first
         // token → the tunnel can't time the upstream out mid-answer.
         comps?.queryItems = [URLQueryItem(name: "q", value: query), URLQueryItem(name: "count", value: "5")]
+            + (country.map { [URLQueryItem(name: "country", value: $0)] } ?? [])
         guard let url = comps?.url else { return ([], false) }
         var req = URLRequest(url: url)
         req.setValue("application/json", forHTTPHeaderField: "Accept")
@@ -2037,10 +2053,11 @@ final class BraveSearchToolExecutor: ToolExecutor, @unchecked Sendable {
 
     /// Brave News Search → articles with `age` / `page_age`. Any non-2xx other than 429 (e.g. a plan without news
     /// access) → empty, and the caller falls back to web search.
-    private func braveNews(_ query: String, freshness: String) async -> (links: [ToolLink], rateLimited: Bool) {
+    private func braveNews(_ query: String, freshness: String, country: String? = nil) async -> (links: [ToolLink], rateLimited: Bool) {
         var comps = URLComponents(string: "https://api.search.brave.com/res/v1/news/search")
         comps?.queryItems = [URLQueryItem(name: "q", value: query), URLQueryItem(name: "count", value: "5"),
                              URLQueryItem(name: "freshness", value: freshness)]
+            + (country.map { [URLQueryItem(name: "country", value: $0)] } ?? [])
         guard let url = comps?.url else { return ([], false) }
         var req = URLRequest(url: url)
         req.setValue("application/json", forHTTPHeaderField: "Accept")

@@ -1489,9 +1489,9 @@ final class CorpusStore {
                           CitationReference.stripInvalidMarkers(in: "Generic [1][2][3][4][5] answer.", valid: []))
                     NSLog("[CitRegex-AC1] strip {1,3} of 'x [1, 9, 3] y' → '%@'",
                           CitationReference.stripInvalidMarkers(in: "x [1, 9, 3] y", valid: [1, 3]))
-                    // Brief AE3 — adjacent markers get a thin separator (␟ marks U+2009).
-                    // "[25][26]" (fused) and "[25, 26]" (list) both → "25␟26".
-                    var ae3 = AttributedString("x [25][26] y [25, 26] z")
+                    // Brief AE3 + CH 2026-10-09 — adjacent markers get a superscript comma.
+                    // "[25][26]" (fused) and "[25, 26]" (list) both → "25,26"; "1990[3]" (a year) → "19903".
+                    var ae3 = AttributedString("x [25][26] y [25, 26] z 1990[3] w [1][2][3] v")
                     CitationReference.styleInlineMarkers(in: &ae3, face: .fallback)  // diagnostic — face irrelevant
                     NSLog("[CitRegex-AE3] styled='%@'",
                           String(ae3.characters).replacingOccurrences(of: "\u{2009}", with: "␟"))

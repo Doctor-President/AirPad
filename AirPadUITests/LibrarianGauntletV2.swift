@@ -62,6 +62,7 @@ final class LibrarianGauntletV2: XCTestCase {
                 let t0 = Date()
                 var note = ""
                 var mode: String? = nil
+                var statusSeen: String? = nil
                 switch t.action {
                 case "look":
                     // No input: just let the screen settle and capture it (e.g. a REOPENED chat).
@@ -76,7 +77,21 @@ final class LibrarianGauntletV2: XCTestCase {
                     if app.buttons["General mode"].waitForExistence(timeout: 5) {
                         mode = "general"
                         ask(app, t.question)
+                        // CH (T 2026-10-09) — the live tool status line while a tool runs (`-WebSearchMockDelayMs`
+                        // makes the mock slow enough to see). Recorded, not asserted here; the grader reads it.
+                        let status = app.staticTexts.matching(NSPredicate(format: "label BEGINSWITH 'Searching the web' OR label BEGINSWITH 'Reading '")).firstMatch
+                        if status.waitForExistence(timeout: 8) { statusSeen = status.label }
                     } else { note = "NO MODE TOGGLE (could not switch to General)" }
+                case "library":
+                    // CH C2b (T 2026-10-09) — back to Library INSIDE the same chat (Library → General → Library).
+                    if !app.buttons["Library mode"].exists {
+                        let gen = app.buttons["General mode"]
+                        if gen.waitForExistence(timeout: 15) { gen.tap() }
+                    }
+                    if app.buttons["Library mode"].waitForExistence(timeout: 5) {
+                        mode = "library"
+                        ask(app, t.question)
+                    } else { note = "NO MODE TOGGLE (could not switch back to Library)" }
                 case "offer":
                     let offer = app.buttons["Read it in full"]
                     if offer.waitForExistence(timeout: 10) { offer.tap() } else { note = "NO OFFER BUTTON" }
@@ -114,6 +129,7 @@ final class LibrarianGauntletV2: XCTestCase {
                                           "wallSec": Date().timeIntervalSince(t0)]
                 if !note.isEmpty { rec["driverNote"] = note }
                 if let m = mode { rec["mode"] = m }
+                if let st = statusSeen { rec["statusSeen"] = st }
                 if let e = ejectedAt { rec["ejectedAtEpoch"] = e; ejectedAt = nil }
                 if hungNote == nil { rec.merge(captureScreen(app, row: t.row, out: isDevice ? nil : out)) { a, _ in a } }
                 if hungNote == nil, isDevice, app.state != .runningForeground {

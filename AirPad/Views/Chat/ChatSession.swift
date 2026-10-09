@@ -192,6 +192,20 @@ final class ChatSession {
             numberer.feed(filtered(t))
         }
         streamingText = numberer.displayText
+        if prefillNotice != nil, !streamingText.isEmpty { prefillNotice = nil }   // BW5 — the first shown token replaces the status line
+    }
+
+    /// CH (T device 2026-10-09) — the live status line WHILE a tool runs ("Searching the web…", "Reading en.wikipedia.org…"),
+    /// shown in the answer slot instead of the bare "Thinking…" until the result's card appears.
+    nonisolated static func toolStatus(_ name: String, _ arguments: [String: Any]) -> String? {
+        switch name {
+        case AgentTools.webSearch: return "Searching the web…"
+        case AgentTools.fetchURL:
+            guard let u = arguments["url"] as? String, var host = URL(string: u)?.host?.lowercased(), !host.isEmpty else { return "Reading the page…" }
+            if host.hasPrefix("www.") { host.removeFirst(4) }
+            return "Reading \(host)…"
+        default: return nil
+        }
     }
 
     /// CH Session 2 — General answers stream through `WebAnswerFilter` BEFORE the numberer (URLs no tool returned
@@ -338,8 +352,8 @@ final class ChatSession {
     /// lane — it appends the bubble, streams, and persists; it does NOT retrieve
     /// or build the grounded prompt (LibrarianState owns that — step 3/Ask hybrid).
     /// `generalKnowledge` (CH Session 2) — a General turn with no web search behind it: its answer streams through
-    /// `WebAnswerFilter` (no tool ran, so only a URL the user typed may appear) and carries the app's
-    /// general-knowledge line.
+    /// `WebAnswerFilter` (no tool ran, so only a URL the user typed may appear) and, when the question is FACTUAL
+    /// (T ruling 2026-10-09), carries the app's general-knowledge line.
     func send(displayText: String, modelText: String, systemPrompt: String, citations: [Message.Citation]? = nil, alwaysCiteIndices: Set<Int> = [], readReceipt: Message.ReadReceipt? = nil, generalKnowledge: Bool = false) async {
         guard !displayText.isEmpty, !isStreaming else { return }
 
@@ -435,11 +449,13 @@ final class ChatSession {
                     r = numberer.result(alwaysInclude: Set(titleMatched.map { $0.index }))
                 }
                 // Brief BN5 — the read/skim receipt renders even when the answer cited nothing inline.
+                // T ruling (2026-10-09): the general-knowledge line only under a FACTUAL question (not a pep talk).
+                let labelled = generalKnowledge && WebGrounding.isFactualQuestion(displayText)
                 messages.append(Message(id: streamingMessageID, role: .assistant, text: finalText,
                                         citations: r.citations.isEmpty ? nil : r.citations, readReceipt: readReceipt,
-                                        generalKnowledge: generalKnowledge ? true : nil))
+                                        generalKnowledge: labelled ? true : nil))
                 #if DEBUG
-                if generalKnowledge { GauntletTap.shared.noteValue("generalKnowledge", true) }
+                if labelled { GauntletTap.shared.noteValue("generalKnowledge", true) }
                 #endif
             }
         } catch {
@@ -628,7 +644,12 @@ final class ChatSession {
                         }
                     ])
                     for call in calls {
+                        prefillNotice = Self.toolStatus(call.name, call.arguments)
+                        #if DEBUG
+                        if let line = prefillNotice { GauntletTap.shared.noteStatus(line) }
+                        #endif
                         var result = await executor.execute(name: call.name, arguments: call.arguments)
+                        prefillNotice = nil
                         #if DEBUG
                         GauntletTap.shared.noteTool(call.name, (call.arguments["query"] as? String) ?? (call.arguments["url"] as? String) ?? "")
                         #endif
@@ -760,8 +781,9 @@ final class ChatSession {
                 let r = n.result()
                 if !r.text.isEmpty {
                     // No web result behind the answer (the model didn't search, or nothing came back) → the app's
-                    // general-knowledge line. A throttled turn's canned message is the app's own, so it gets none.
-                    let ungrounded = outcome.links.isEmpty && !outcome.rateLimited
+                    // general-knowledge line — only under a FACTUAL question (T ruling 2026-10-09: a pep talk gets
+                    // none). A throttled turn's canned message is the app's own, so it gets none.
+                    let ungrounded = outcome.links.isEmpty && !outcome.rateLimited && WebGrounding.isFactualQuestion(displayText)
                     messages.append(Message(role: .assistant, text: r.text,
                                             citations: r.citations.isEmpty ? nil : r.citations,
                                             generalKnowledge: ungrounded ? true : nil))
@@ -798,6 +820,7 @@ final class ChatSession {
         #endif
         streamingText = ""
         isStreaming = false
+        prefillNotice = nil   // a tool status line never outlives the turn
         flush()
         scheduleTitleGenerationIfNeeded()
         return didRetryWeb

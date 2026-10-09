@@ -37,21 +37,26 @@ enum CitationReference {
             let token = ns.substring(with: match.range)          // "[2]" or "[1, 2, 7]"
             guard let range = attr.range(of: token) else { break }
             // AC1 — one superscript per index in the bracket (deepseek writes
-            // `[1, 2, 7]`), each linked to its own citation. AE3 — a thin space
-            // separates adjacent numerals so consecutive markers never fuse: between
-            // indices of one bracket, AND before a token that abuts a prior citation
-            // numeral (`[25][26]` → "2526" → "²⁵ ²⁶"). The replacement carries no `[`,
-            // so the next `firstMatch` advances.
+            // `[1, 2, 7]`), each linked to its own citation. AE3 — a separator keeps
+            // consecutive markers from fusing: between indices of one bracket, AND before
+            // a token that abuts a prior citation numeral (`[25][26]`). CH (T device
+            // 2026-10-09): the thin space was too narrow at superscript size — "¹²³" read
+            // as 123 — so the separator is a superscript COMMA ("¹,²,³"). Only a prior
+            // CITATION numeral triggers it (a year like "1990[3]" stays "1990³"). The
+            // replacement carries no `[`, so the next `firstMatch` advances.
             func separator() -> AttributedString {
-                var sep = AttributedString("\u{2009}")   // thin space
+                var sep = AttributedString(",")
                 sep.font = ChatTypography.inlineCitationSuperscript(face)
                 sep.baselineOffset = ChatTypography.inlineCitationBaselineOffset
+                sep.foregroundColor = ChatTypography.bodyText
                 return sep
             }
             var replacement = AttributedString("")
-            if match.range.location > 0,
-               ns.substring(with: NSRange(location: match.range.location - 1, length: 1)).first?.isNumber == true {
-                replacement.append(separator())   // AE3 — abuts the previous marker
+            if range.lowerBound > attr.startIndex {
+                let prev = attr.characters.index(before: range.lowerBound)
+                if attr.characters[prev].isNumber, attr[prev..<range.lowerBound].runs.first?.baselineOffset != nil {
+                    replacement.append(separator())   // AE3 — abuts the previous marker
+                }
             }
             for (i, n) in indices(inToken: token).enumerated() {
                 if i > 0 { replacement.append(separator()) }

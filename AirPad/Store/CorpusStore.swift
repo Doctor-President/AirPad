@@ -1218,7 +1218,18 @@ final class CorpusStore {
                     let f2 = LibrarianState.looksLikeWorkingSetFollowUp("tell me more")
                     let f3 = !LibrarianState.looksLikeWorkingSetFollowUp("What have I been thinking about lately?")
                     let f4 = !LibrarianState.looksLikeWorkingSetFollowUp("How much did my Bolex camera cost?")
-                    let followOK = f1 && f2 && f3 && f4
+                    // S3 / BXe — the previous question folds into retrieval ONLY for a follow-up on it: "What is the
+                    // capital of France?" after the Bolex question retrieved the Bolex packet and the model answered
+                    // the Bolex question (2/2 on T's corpus).
+                    let bolex = "What did I write about my Bolex H16?"
+                    let p1 = LibrarianState.retrievalQuery(question: "What is the capital of France?", previousUserTurn: bolex) == "What is the capital of France?"
+                    let p2 = LibrarianState.retrievalQuery(question: "Which values are out of range?", previousUserTurn: "What do my lab test results reveal?").contains("lab test")
+                    let p3 = LibrarianState.retrievalQuery(question: "What insights can you derive from this?", previousUserTurn: bolex).contains("Bolex")
+                    let p4 = LibrarianState.retrievalQuery(question: "How long does one wind of my Bolex run?", previousUserTurn: bolex).contains("\n")
+                    let p5 = LibrarianState.retrievalQuery(question: "What is the capital of France?", previousUserTurn: nil) == "What is the capital of France?"
+                    NSLog("[LibrarianRoutingSelfTest] BXe prev-turn fold: newSubject-bare=%@ followUp-folds=%@ deictic-folds=%@ sameName-folds=%@ firstTurn-bare=%@",
+                          p1 ? "ok" : "BAD", p2 ? "ok" : "BAD", p3 ? "ok" : "BAD", p4 ? "ok" : "BAD", p5 ? "ok" : "BAD")
+                    let followOK = f1 && f2 && f3 && f4 && p1 && p2 && p3 && p4 && p5
                     // BN5 — receipt wording.
                     let r1 = ChatTranscript.readReceiptText(.init(readInFull: 1, skimmed: 6, partial: false))
                     let r2 = ChatTranscript.readReceiptText(.init(readInFull: 2, skimmed: 0, partial: false))

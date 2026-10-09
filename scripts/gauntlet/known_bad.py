@@ -14,6 +14,9 @@
       GF1 known facts, GL1 the general-knowledge line.
   s1 <kb_dir> <store_template_dir>
       CH 2026-10-07 Session 1 — W1 greeting openers, N1 (prose "entries 5, 8, 9"), F4 citation-only retraction.
+  store-item <kb_dir> <store_run_dir> <item_id> <cases> <expectRed|expectGreenOn> <graders> <what>
+      S3 (2026-10-09) — one store-pass capture as a manifest item: only the named cases' rows + turns, packet
+      text redacted (graders never read `userContent`); the item is added (or replaced) by id.
   doctor <replay_run_dir> <live_leak_run_dir> <kb_dir>
       Copies captured runs into kb_dir (packet text redacted), builds the "doctored-expectation" items
       for the run-validity (V*) and invariant (I*) graders, and writes kb_dir/manifest.json.
@@ -864,8 +867,37 @@ def web2(kb_dir, template_dir):
     print("wrote", len(items), "web-grounding items")
 
 
+def store_item(kb_dir, src, item_id, cases, mode, graders, what):
+    """S3 — copy the named cases of a store pass into kb_dir/<item_id> (redacted) and register the item."""
+    cases = cases.split(",")
+    dst = os.path.join(kb_dir, item_id)
+    shutil.rmtree(dst, ignore_errors=True)
+    os.makedirs(dst)
+    sr = json.load(open(os.path.join(src, "store-rows.json")))
+    sr["rows"] = [r for r in sr["rows"] if r["case"] in cases]
+    json.dump(sr, open(os.path.join(dst, "store-rows.json"), "w"), indent=1, ensure_ascii=False)
+    for r in sr["rows"]:
+        f = f"turn-{r['seq']:03d}.json"
+        t = json.load(open(os.path.join(src, f)))
+        t["userContent"] = f"<redacted: {len(t.get('userContent') or '')} chars of packet>"
+        json.dump(t, open(os.path.join(dst, f), "w"), indent=1, ensure_ascii=False)
+    for f in ("expected.json", "versions.json", "host.log", "ps.log"):
+        if os.path.exists(os.path.join(src, f)):
+            shutil.copy(os.path.join(src, f), os.path.join(dst, f))
+    think = "on" if sr.get("think") else "off"
+    item = {"id": item_id, "runDir": item_id, "store": True, "what": what,
+            mode: {f"{c}.{think}.store": graders.split(",") for c in cases}}
+    mp = os.path.join(kb_dir, "manifest.json")
+    man = json.load(open(mp))
+    man["items"] = [i for i in man["items"] if i["id"] != item_id] + [item]
+    json.dump(man, open(mp, "w"), indent=1, ensure_ascii=False)
+    print("wrote", item_id, len(sr["rows"]), "rows")
+
+
 if __name__ == "__main__":
     cmd = sys.argv[1]
+    if cmd == "store-item":
+        store_item(*sys.argv[2:9])
     if cmd == "replays":
         replays(sys.argv[2], sys.argv[3], open(sys.argv[4]).read())
     elif cmd == "doctor":

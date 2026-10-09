@@ -106,7 +106,23 @@ enum FieldValueFormatter {
         let f = DateFormatter()
         f.dateStyle = .medium
         f.timeStyle = hasTime ? .short : .none
-        return f.string(from: date)
+        return f.string(from: hasTime ? date : calendarDay(date))
+    }
+
+    /// S3 / SL-D3 — the ONE derivation of the calendar day a DATE-ONLY value names, returned as LOCAL noon of that
+    /// day (so formatting or seeding a DatePicker in the device's zone lands on it). Two storage conventions meet
+    /// here: the editor stores the LOCAL instant the user picked (any time of day), while ISO date-only data — the
+    /// Sample seed, imports — is UTC midnight ("2026-09-04T00:00:00Z"), which Chicago read as Sep 3 (the Mom entry's
+    /// "Last spoke" → the Librarian answered "September 3"). An instant at exactly 00:00:00 UTC is that UTC day;
+    /// anything else is the local day it falls on (a picked value is midnight UTC only by a sub-second coincidence,
+    /// and in UTC±0 both readings agree).
+    static func calendarDay(_ date: Date) -> Date {
+        var utc = Calendar(identifier: .gregorian); utc.timeZone = TimeZone(identifier: "UTC")!
+        var local = Calendar(identifier: .gregorian); local.timeZone = NSTimeZone.default   // the zone DateFormatter uses
+        let floating = date.timeIntervalSince1970.truncatingRemainder(dividingBy: 86_400) == 0
+        var c = (floating ? utc : local).dateComponents([.year, .month, .day], from: date)
+        c.hour = 12
+        return local.date(from: c) ?? date
     }
 
     static func moneyString(_ amount: Decimal, currencyCode: String) -> String {

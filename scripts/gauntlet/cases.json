@@ -152,6 +152,7 @@
         {
           "id": "8",
           "kind": "bu2",
+          "uncitedOk": true,
           "what": "general-knowledge question in Library mode → 'No matching entries', still answers (Session 3: a 1–2 card thin survey is allowed — route-agnostic)",
           "question": "What is the capital of France?",
           "expectRoute": "",
@@ -258,6 +259,7 @@
         {
           "id": "BXd",
           "kind": "bu2",
+          "uncitedOk": true,
           "what": "BX: names a different entry (Bolex) → switches, no lab carry (Session 3: T's own room has no Bolex entry — the Bolex entries are Sample Library; route-agnostic, no lab carry)",
           "question": "What did I write about my Bolex H16?",
           "expectRoute": "",
@@ -266,6 +268,7 @@
         {
           "id": "BXe",
           "kind": "bu2",
+          "uncitedOk": true,
           "what": "BX: 'capital of France' with a working set → answers Paris, no carry",
           "question": "What is the capital of France?",
           "expectRoute": "",

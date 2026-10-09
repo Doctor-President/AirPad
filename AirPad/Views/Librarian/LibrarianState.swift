@@ -856,7 +856,7 @@ final class LibrarianState {
 
         \(context)
         \(facts.map { "\n" + $0 + "\n" } ?? "")
-        Question: \(query)
+        \(Self.packetEnd)Question: \(query)
         """
         let chips = Self.citationChips(from: candidates, store: store)
         // Brief BS2 — an entry READ IN FULL is ALWAYS a source chip, even with no inline [n].
@@ -937,13 +937,10 @@ final class LibrarianState {
         let budget = fullBudget - Self.factsAllowance(budget: fullBudget)
 
         // S2 — retrieval query = current question + the previous USER turn in this chat (first turn:
-        // bare question), so a follow-up keeps its subject.
+        // bare question), so a follow-up keeps its subject — S3: only when it IS a follow-up (`retrievalQuery`).
         let previousUserTurn = chat.messages.last { $0.role == .user }?.text
             .trimmingCharacters(in: .whitespacesAndNewlines)
-        let retrievalQuery: String = {
-            if let prev = previousUserTurn, !prev.isEmpty { return "\(query)\n\(prev)" }
-            return query
-        }()
+        let retrievalQuery = Self.retrievalQuery(question: query, previousUserTurn: previousUserTurn)
 
         // BS3 — a one-shot forced read (the "Read … in full?" survey-lead offer was tapped) acts
         // exactly like a pin for THIS turn, then clears. Otherwise BN2 trigger #1 — PIN: a quoted
@@ -1297,6 +1294,32 @@ final class LibrarianState {
         return out
     }
 
+    /// ★ S3 / BXe — the packet's closing line. Without it the question ran straight on from the last passage and the
+    /// 4B read "Question: What is the capital of France?" as PART of a research note ("contains … a test question"),
+    /// then re-answered the previous question from the history. Graders split the packet on this prefix.
+    static let packetEndLine = "END OF NOTES. The question below is the newest message in this conversation — answer it, not an earlier one."
+    private static var packetEnd: String {
+        #if DEBUG
+        // S3 A/B — `-GauntletNoPacketEnd YES` measures the packet WITHOUT the closing line (the pre-S3 shape).
+        if UserDefaults.standard.bool(forKey: "GauntletNoPacketEnd") { return "" }
+        #endif
+        return packetEndLine + "\n\n"
+    }
+
+    /// S2 — the retrieval query: the current question + the previous USER turn, so a follow-up keeps its subject.
+    /// ★ S3 / BXe — ONLY for a follow-up. A question that NAMES something the previous question didn't is a new
+    /// subject: "What is the capital of France?" right after "What did I write about my Bolex H16?" retrieved the
+    /// Bolex packet and the model answered the Bolex question (2/2 on T's corpus). Deixis ("…from this?") always folds;
+    /// an un-named follow-up ("Which values are out of range?") still folds, so it keeps its subject.
+    static func retrievalQuery(question: String, previousUserTurn: String?) -> String {
+        guard let prev = previousUserTurn, !prev.isEmpty else { return question }
+        if !looksLikeWorkingSetFollowUp(question) {
+            let names = namedTerms(question)
+            if !names.isEmpty, !names.allSatisfy({ ComputedFacts.mentions(prev, $0) }) { return question }
+        }
+        return "\(question)\n\(prev)"
+    }
+
     static func looksLikeWorkingSetFollowUp(_ query: String) -> Bool {
         let q = query.lowercased()
         let phrases = ["that document", "this document", "that entry", "this entry", "the entry",
@@ -1342,10 +1365,10 @@ final class LibrarianState {
         // Per-item overhead = the numbered header line ("[n] document — Title — read in full") +
         // the "\n\n———\n\n" / "\n\n---\n\n" separators `buildAskContext` inserts. `sectionReserve`
         // covers the once-per-turn framing (up to three "SECTION:\n" headers + the "Some of your
-        // notes… Question:" wrapper) so the RENDERED packet never exceeds `budget` (BN3: never
+        // notes… END OF NOTES… Question:" wrapper) so the RENDERED packet never exceeds `budget` (BN3: never
         // overflow). Both are conservative — a slightly smaller packet is always safe.
         let overheadPerItem = 120
-        let sectionReserve = 320
+        let sectionReserve = 440   // S3 — +120 for `packetEndLine`
         let ranking = Self.entryRanking(passages: rankedPassages)
         func aggregate(_ nodeID: String) -> Float { ranking.first { $0.nodeID == nodeID }?.aggregate ?? 1.0 }
 

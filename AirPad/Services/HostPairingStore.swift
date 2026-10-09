@@ -13,12 +13,15 @@ extension HostPairing {
         guard let data = try? JSONEncoder().encode(self),
               let json = String(data: data, encoding: .utf8) else { return }
         KeychainHelper.save(key: Self.keychainKey, value: json)
+        NotificationCenter.default.post(name: .librarianRouteChanged, object: nil)   // C2c — re-derive who answers
     }
 
     /// Load the current pairing, if any.
     static func load() -> HostPairing? {
         #if DEBUG
-        if let dbg = debugLANHostPairing() { return dbg }
+        // `-DebugPersistLANPairing YES` (C2c test) — the LAN pairing was SAVED to the Keychain at launch, so Unpair
+        // really removes it; the launch-arg override must not resurrect it.
+        if !UserDefaults.standard.bool(forKey: "DebugPersistLANPairing"), let dbg = debugLANHostPairing() { return dbg }
         #endif
         guard let json = KeychainHelper.load(key: keychainKey) else { return nil }
         return parse(json)
@@ -52,5 +55,15 @@ extension HostPairing {
     /// Forget the pairing (unpair / revoke on the phone side).
     static func clear() {
         KeychainHelper.delete(key: keychainKey)
+        NotificationCenter.default.post(name: .librarianRouteChanged, object: nil)   // C2c — re-derive who answers
     }
+
+    #if DEBUG
+    /// C2c test hook — persist the `-DebugHost…` LAN pairing into the Keychain (like a real QR pairing).
+    static func debugPersistLANPairingIfRequested() {
+        guard UserDefaults.standard.bool(forKey: "DebugPersistLANPairing"), KeychainHelper.load(key: keychainKey) == nil,
+              let p = debugLANHostPairing() else { return }
+        p.persist()
+    }
+    #endif
 }

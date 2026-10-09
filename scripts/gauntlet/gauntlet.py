@@ -813,8 +813,9 @@ def fx1_violations(turn, plan):
     bad = []
     tm = re.search(r"Today is \w+, (\d{1,2}) (\w+) (\d{4})\.", sec)
     today = datetime.date(int(tm.group(3)), MONTHS[tm.group(2).lower()], int(tm.group(1))) if tm else None
-    if not today:
-        bad.append("no 'Today is' line")
+    # T ruling (2026-10-09): "Today is" only accompanies dates — required when the section has date lines or a window
+    if not today and ("\nDates: " in sec or re.search(r'^"[^"]+" = ', sec, re.M)):
+        bad.append("date lines without a 'Today is' line")
     sm = re.search(r"You are seeing (\d+) of the (\d+) entries", sec)
     nodes = {c.get("nodeID") for c in (plan.get("candidates") or [])}
     # T 2026-10-06: the "N of M" line appears ONLY on whole-library questions — its absence is correct elsewhere.
@@ -825,13 +826,15 @@ def fx1_violations(turn, plan):
     elif nodes and int(sm.group(1)) != len(nodes):
         bad.append(f"scope N={sm.group(1)} but the packet has {len(nodes)} entries")
     hdr = cand_dates(turn)
-    for m in re.finditer(r"\[(\d+)\] [^\n]*? — written (\d{4}-\d{2}-\d{2}), [^(]*\((\d+) days?\)", sec):
+    for m in re.finditer(r"\[(\d+)\] (?:(?!\[\d+\] )[^\n])*? — (?:written|added to the library) (\d{4}-\d{2}-\d{2}), [^(]*\((\d+) days?\)", sec):
         i, d, n = int(m.group(1)), m.group(2), int(m.group(3))
         if hdr.get(i) and hdr[i] != d:
             bad.append(f"[{i}] fact date {d} ≠ packet header {hdr[i]}")
         if today and (today - datetime.date.fromisoformat(d)).days != n:
             bad.append(f"[{i}] {n} days ≠ today−{d} = {(today - datetime.date.fromisoformat(d)).days}")
-    ref = lab_reference(uc)
+    # a cache-friendly follow-up's entry text is in the REPLAYED packet (history), not in this turn's packet
+    replayed = "\n".join(h.get("content", "") for h in (turn.get("history") or []) if h.get("role") == "user")
+    ref = lab_reference(uc + "\n" + replayed)
     for m in re.finditer(r"^- (.+?) (\d+(?:\.\d+)?)(?: ([^:]+?))?: reference (\S+) — (.+)\.$", sec, re.M):
         name, val, rng, status = m.group(1), float(m.group(2)), m.group(4), m.group(5)
         hit = None
@@ -844,7 +847,9 @@ def fx1_violations(turn, plan):
         if not row:
             # the analyte map is lab-keyword based; for any other name, verify the row VERBATIM in the packet
             # (value then range, as the entry wrote them) and recompute its bounds independently
-            vm = re.search(r"(?<![\d.])" + re.escape(m.group(2)) + r"\s+" + re.escape(rng) + r"(?![\d.])", uc)
+            # a cache-friendly follow-up points back to the entry: its text is in the REPLAYED packet in the history
+            hist = "\n".join(h.get("content", "") for h in (turn.get("history") or []) if h.get("role") == "user")
+            vm = re.search(r"(?<![\d.])" + re.escape(m.group(2)) + r"\s+" + re.escape(rng) + r"(?![\d.])", uc + "\n" + hist)
             if not vm:
                 bad.append(f"fact row '{name} {val} {rng}' does not appear in the packet")
                 continue
@@ -1006,6 +1011,39 @@ def sentences(text):
 # Librarian's own voice uses it).
 PERSONA_RE = re.compile(r"\b(my (take|idea|argument|view|premise|story|joke|point)\b|i (wrote|have written|'ve written|haven't written|have not written|never wrote|noted|jotted)\b|my [^.?!\n]{0,50}\b(entry|note|journal)\b)", re.I)
 
+# T ruling (2026-10-09, item 10) — a fact counts only when the answer STATES it: not inside a quotation of the entry
+# (SL-M1b quoted "Didn't look at the others" while answering "Yes — you did look") and not in a sentence that denies
+# having it (SL-F1 quoted "Metric" while saying "it doesn't say who roasted it"). A fact that IS a denial ("didn't",
+# "never") is judged on the quote rule only.
+DENIAL_RE = re.compile(r"\b(?:(?:doesn't|does not|don't|do not|didn't|did not|isn't|is not|wasn't|was not)\s+(?:\w+\s+){0,2}?"
+                       r"(?:say|says|mention|mentions|state|states|specify|specifies|include|includes|contain|contains|tell|tells|record|records|list|lists|stated|mentioned|specified|recorded|listed|given|named)"
+                       r"|no (?:information|mention|record|details?|entry|entries|data) (?:about|of|on|that|which|says)"
+                       r"|there (?:is|are|was|were) no (?:information|mention|record|entry|entries)"
+                       r"|(?:not|never) (?:mentioned|stated|specified|recorded|given|named|said))\b", re.I)
+NEGATION_FACT_RE = re.compile(r"\b(?:no|not|never|n't|none|nothing|didn't|did not|don't|haven't|hadn't)\b|n't", re.I)
+
+def fact_stated(text, fact):
+    t = (text or "").replace("’", "'")
+    t = re.sub(r"[“\"][^”\"]{0,600}[”\"]", " ", t)        # quotations of the entry
+    t = re.sub(r"(?m)^\s*>.*$", " ", t)                     # block quotes
+    t = re.sub(r"\*[^*\n]{0,400}\*", lambda m: m.group(0) if len(m.group(0)) < 40 else " ", t)   # long *italic* quotes
+    f = fact.lower().replace("’", "'")
+    for snt in re.split(r"(?<=[.!?])\s+|\n+", t):
+        if f in snt.lower() and (NEGATION_FACT_RE.search(f) or not DENIAL_RE.search(snt)):
+            return True
+    return False
+
+
+def opening_contradicts(text, polarity):
+    """A yes/no row whose known answer is `polarity` ("no"/"yes"): the answer's OPENING must not say the opposite
+    (SL-M1b: "Yes — you did look at the other endings, in a way…" when the entry says "Didn't look at the others")."""
+    if polarity not in ("yes", "no"):
+        return None
+    first = re.split(r"(?<=[.!?])\s+|\n+", (text or "").strip(), maxsplit=1)[0].replace("’", "'")
+    wrong = r"^\W*(?:yes\b|yeah\b|yep\b|you did\b(?! not)|you have\b(?! not)|indeed\b)" if polarity == "no" else r"^\W*(?:no\b|nope\b|you didn't|you did not|you haven't|you have not|none)"
+    return first[:60] if re.search(wrong, first, re.I) else None
+
+
 def persona_slip(text):
     t = re.sub(r"[“\"][^”\"]{0,400}[”\"]", " ", (text or "").replace("’", "'"))
     t = re.sub(r"(?m)^\s*>.*$", " ", t)   # block quotes
@@ -1047,14 +1085,18 @@ def grade_web_grounding(exp, turn, final, cites, path, R, res, na):
         res("WF2", not problems, "; ".join(problems))
         # T ruling (2026-10-09): the line goes ONLY under a FACTUAL question no web result backs (a pep talk or a
         # haiku gets none). `factual` is the case's ground truth, not the app's own classifier.
+        # T rulings (2026-10-09): the line goes under a FACTUAL question that no CITED web result backs — not searched,
+        # or searched but citing nothing (item 9) — never under a pep talk or haiku.
         searched = bool(links)
+        backed = searched and bool(web)
         factual = bool(exp.get("factual"))
         gk = bool(turn.get("generalKnowledge"))
-        want = factual and not searched
-        res("GL1", gk == want, ("searched but labelled general knowledge" if searched and gk else
+        want = factual and not backed
+        res("GL1", gk == want, ("cites web results but labelled general knowledge" if backed and gk else
                                 "not a factual question but labelled general knowledge" if gk and not factual else
-                                "a factual answer with no web result behind it and no general-knowledge line" if want and not gk else
-                                ("searched — no label" if searched else "labelled general knowledge" if gk else "not factual — no label")))
+                                ("searched but cited nothing, and no general-knowledge line" if searched else
+                                 "a factual answer with no web result behind it and no general-knowledge line") if want and not gk else
+                                ("cited web results — no label" if backed else "labelled general knowledge" if gk else "not factual — no label")))
     # WD1 — stale-as-today (rows that ask for today's news)
     if exp.get("freshCheck") and path != "nokey":
         import datetime
@@ -1122,8 +1164,7 @@ def grade_web_grounding(exp, turn, final, cites, path, R, res, na):
     # GF1 — known facts (T's GK rows)
     ka = exp.get("knownAnswer")
     if ka:
-        low = final.lower()
-        missing = [alts[0] for alts in ka if not any(a.lower() in low for a in alts)]
+        missing = [alts[0] for alts in ka if not any(fact_stated(final, a) for a in alts)]
         false = []
         for rule in exp.get("mustNotClaim") or []:
             for snt in sentences(final):
@@ -1163,9 +1204,8 @@ def grade_pillar(exp, turn, ps, R, res, na):
     if facts and exp.get("minFacts", 0) > 0 and path == "nokey":
         na("A6", "the app's no-key line (no model answer to check)")
     elif facts and exp.get("minFacts", 0) > 0:
-        low = final.lower()
-        got = sum(1 for alts in facts if any(a.lower() in low for a in alts))
-        res("A6", got >= exp["minFacts"], f"facts {got}/{exp['minFacts']} required")
+        got = sum(1 for alts in facts if any(fact_stated(final, a) for a in alts))
+        res("A6", got >= exp["minFacts"], f"facts {got}/{exp['minFacts']} required (stated, not quoted or denied)")
     if exp["kind"] == "general":
         res("GK1", not lib_cites and path != "nokey",
             ("cites library entries: " + ", ".join(c.get("title", "")[:24] for c in lib_cites) if lib_cites else "")
@@ -1366,9 +1406,10 @@ def grade_row(exp, turn, ui, prev_turn, host, ps, versions, cases_meta, store=Fa
     res("A5", not forb, f"forbidden {forb}" if forb else "")
     facts = exp.get("mustContain") or []
     if facts and exp.get("minFacts", 0) > 0:
-        low = both.lower()
-        got = sum(1 for syns in facts if any(s.lower() in low for s in syns))
-        res("A6", got >= exp["minFacts"], f"facts {got}/{exp['minFacts']} required")
+        got = sum(1 for syns in facts if any(fact_stated(both, s) for s in syns))
+        flip = opening_contradicts(final, exp.get("polarity"))
+        res("A6", got >= exp["minFacts"] and not flip, f"facts {got}/{exp['minFacts']} required (stated, not quoted or denied)"
+            + (f"; opens with the wrong answer: \"{flip}\"" if flip else ""))
     else:
         na("A6", "no required facts")
     if store:

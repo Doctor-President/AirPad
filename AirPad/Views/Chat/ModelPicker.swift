@@ -301,6 +301,10 @@ struct ModelPillRow: View {
                             .composerShimmer(catalog.busyPercent == nil)
                         dividerBar
                         name(catalog.name(m), cap: nameCap)
+                    } else if catalog.onDevice {
+                        // C4b2 — Apple Intelligence chosen in the menu (still paired).
+                        Image(systemName: "apple.logo").font(.system(size: 10, weight: .semibold)).foregroundStyle(AppearancePalette.ink.opacity(0.7))
+                        name(ModelRouter.foundationModelName, cap: nameCap)
                     } else if let a = catalog.active {
                         if a.isResident {
                             Image(systemName: "checkmark").font(.system(size: 10, weight: .bold)).foregroundStyle(Color(hexString: "2E9E4F"))
@@ -316,7 +320,8 @@ struct ModelPillRow: View {
             }
         }
         .buttonStyle(.plain)
-        .accessibilityLabel(catalog.active.map { "Model \(catalog.name($0)), \($0.isResident ? "loaded" : "not loaded yet")" } ?? "No model loaded")
+        .accessibilityLabel(catalog.onDevice ? "Model \(ModelRouter.foundationModelName), on this iPhone"
+                            : catalog.active.map { "Model \(catalog.name($0)), \($0.isResident ? "loaded" : "not loaded yet")" } ?? "No model loaded")
         // Brief AI2 — the callout ring hugs the MODEL chip ONLY (was the whole row, so it
         // spanned Thinking too). The anchor is harmless in Chat View (no overlay reads it).
         .firstRunCalloutTarget(FirstRunCalloutTargetID.librarianModelChip)
@@ -522,6 +527,33 @@ struct ModelPickerSheet: View {
                     }
                 }
 
+                // C4b2 (T 2026-10-09) — Apple Intelligence beside the Mac's models: choosing it routes the Librarian
+                // to this iPhone WITHOUT unpairing; picking a Mac model routes back.
+                if catalog.onDeviceAvailable, !fullControls {
+                    section("ON THIS IPHONE") {
+                        Button {
+                            catalog.useOnDevice()
+                            dismiss()
+                        } label: {
+                            HStack(spacing: 10) {
+                                Image(systemName: "apple.logo").font(.system(size: 15)).foregroundStyle(AppearancePalette.ink.opacity(0.8))
+                                VStack(alignment: .leading, spacing: 2) {
+                                    Text(ModelRouter.foundationModelName).font(.system(size: 16, weight: .semibold)).foregroundStyle(AppearancePalette.ink)
+                                    Text("Private, on this iPhone · short notes and quick questions")
+                                        .font(.system(size: 12)).foregroundStyle(AppearancePalette.ink.opacity(0.5))
+                                }
+                                Spacer()
+                                if catalog.onDevice {
+                                    Image(systemName: "checkmark").font(.system(size: 13, weight: .bold)).foregroundStyle(Color(hexString: "2E9E4F"))
+                                }
+                            }
+                            .padding(.vertical, 10)
+                            .contentShape(Rectangle())
+                        }
+                        .buttonStyle(.plain)
+                        .accessibilityIdentifier("picker.appleIntelligence")
+                    }
+                }
                 if !catalog.installed.isEmpty {
                     section("INSTALLED") { rows(catalog.installed) }
                     // Brief AJ3 — Eject-all is a FULL-controls (Settings) affordance only.
@@ -792,6 +824,9 @@ private struct ModelSheetRow: View {
                 .buttonStyle(.plain)
                 .disabled(busy || catalog.busyTag != nil)
             }
+        } else if model.isResident && catalog.onDevice {
+            // C4b2 — Apple Intelligence is answering; the loaded Mac model offers "Use" to route back (no reload).
+            actionPill("Use", ghost: false, busy: busy) { catalog.useMac(model.tag) }
         } else if model.isResident {
             actionPill("Eject", ghost: true, busy: busy) { await catalog.eject(model.tag) }
         } else if model.isInstalled {

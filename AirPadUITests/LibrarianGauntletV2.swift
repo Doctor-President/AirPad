@@ -49,7 +49,7 @@ final class LibrarianGauntletV2: XCTestCase {
             var ejectedAt: Double? = nil
             if g.eject == true { ejectedAt = ejectAllModels() }
             let app = XCUIApplication()
-            app.launchArguments = cfg.baseArgs + g.args + ["-OpenMap", "-GauntletUI", "YES", "-GauntletTapDir", isDevice ? "app-tmp" : cfg.outDir]
+            app.launchArguments = cfg.baseArgs + g.args + ["-OpenMap", "-GauntletUI", "YES", "-ResetLibrarianRoute", "YES", "-GauntletTapDir", isDevice ? "app-tmp" : cfg.outDir]
             // CH ruling 9 — the LIVE Brave run: T's key arrives only through the test runner's environment
             // (`TEST_RUNNER_GAUNTLET_BRAVE_KEY`), never through the run config, so it is never written to a file.
             if let k = env["GAUNTLET_BRAVE_KEY"], !k.isEmpty { app.launchArguments += ["-BraveTestKey", k] }
@@ -655,3 +655,165 @@ final class ModelPillChecks: XCTestCase {
     }
 }
 
+
+/// C2c / C4b2 (T device 2026-10-09: after unpairing, the pill still showed the raw Host tag and a question hung on
+/// "Thinking…" forever; Apple Intelligence was unreachable in practice). The ROUTE through the real UI: Apple
+/// Intelligence picked in the model menu WITHOUT unpairing, back to the Mac, then Unpair → the pill re-derives at once
+/// and the next ask answers on-device; and a dead Host fails fast. The Simulator has no Apple Intelligence, so
+/// `-StubOnDeviceModel YES` stands in for it (a canned answer) — the on-device model itself is the device check.
+/// Config via the runner environment: `TEST_RUNNER_C2C_HOSTARGS` = the scratch Host's `-DebugHost…` args.
+final class C2cAppleIntelligenceRoute: XCTestCase {
+    private func hostArgs() -> [String] {
+        (ProcessInfo.processInfo.environment["C2C_HOSTARGS"] ?? "").split(separator: " ").map(String.init)
+    }
+    private func askField(_ app: XCUIApplication) -> XCUIElement {
+        let pred = NSPredicate(format: "placeholderValue == 'Ask' OR label == 'Ask'")
+        let tf = app.textFields.matching(pred).firstMatch
+        if tf.waitForExistence(timeout: 20) { return tf }
+        return app.textViews.matching(pred).firstMatch
+    }
+    private func ask(_ app: XCUIApplication, _ q: String) {
+        let f = askField(app); f.tap()
+        if !app.keyboards.element.waitForExistence(timeout: 3) { Thread.sleep(forTimeInterval: 1); f.tap() }
+        f.typeText(q)
+        let send = app.buttons["Send"]; XCTAssertTrue(send.waitForExistence(timeout: 5)); send.tap()
+    }
+    private func pill(_ app: XCUIApplication) -> XCUIElement {
+        app.buttons.matching(NSPredicate(format: "label BEGINSWITH 'Model ' OR label == 'No model loaded'")).firstMatch
+    }
+    private func note(_ s: String) { let a = XCTAttachment(string: s); a.lifetime = .keepAlways; add(a); print("C2C \(s)") }
+    private func answer(_ app: XCUIApplication, containing s: String, timeout: TimeInterval) -> Bool {
+        app.descendants(matching: .any).matching(NSPredicate(format: "identifier == 'chat.answer' AND label CONTAINS %@", s)).firstMatch
+            .waitForExistence(timeout: timeout)
+    }
+
+    private func stubAnswered(_ app: XCUIApplication, timeout: TimeInterval) -> Bool {
+        app.descendants(matching: .any).matching(NSPredicate(format: "label CONTAINS 'Apple Intelligence on this iPhone (stub)'")).firstMatch
+            .waitForExistence(timeout: timeout)
+    }
+
+    /// C4b2 — Apple Intelligence in the model menu (still paired), then back to the Mac model.
+    func testPickAppleIntelligenceAndBack() {
+        let app = XCUIApplication()
+        app.launchArguments = hostArgs() + ["-ResetLibrarianRoute", "YES", "-StubOnDeviceModel", "YES", "-OpenMap", "-GauntletUI", "YES", "-EmbedCPUOnly"]
+        app.launch()
+        let p = pill(app)
+        XCTAssertTrue(p.waitForExistence(timeout: 30), "model pill missing")
+        _ = app.buttons.matching(NSPredicate(format: "label BEGINSWITH 'Model Qwen'")).firstMatch.waitForExistence(timeout: 20)
+        note("paired pill: \(pill(app).label)")
+        pill(app).tap()
+        let ai = app.buttons["picker.appleIntelligence"]
+        XCTAssertTrue(ai.waitForExistence(timeout: 10), "Apple Intelligence is not in the model menu")
+        ai.tap()
+        let aiPill = app.buttons["Model Apple Intelligence, on this iPhone"]
+        XCTAssertTrue(aiPill.waitForExistence(timeout: 10), "pill didn't switch to Apple Intelligence: \(pill(app).label)")
+        ask(app, "What is 17 times 23?")
+        let routed = stubAnswered(app, timeout: 30)
+        note("picked Apple Intelligence: pill ✓ · answer \(routed ? "from Apple Intelligence ✓" : "NOT from Apple Intelligence")")
+        XCTAssertTrue(routed, "the ask didn't route to Apple Intelligence")
+        aiPill.tap()
+        let macRow = app.descendants(matching: .any).matching(NSPredicate(format: "label CONTAINS 'Qwen3 4B' AND NOT (label BEGINSWITH 'Model ')")).firstMatch
+        XCTAssertTrue(macRow.waitForExistence(timeout: 15), "no Mac model row in the picker")
+        let use = app.buttons["Use"].firstMatch
+        if use.waitForExistence(timeout: 5) { use.tap() } else {
+            macRow.tap()
+            let load = app.buttons.matching(identifier: "Load").firstMatch; if load.waitForExistence(timeout: 3) { load.tap() }
+        }
+        let back = app.buttons.matching(NSPredicate(format: "label BEGINSWITH 'Model Qwen'")).firstMatch
+        let ok = back.waitForExistence(timeout: 60)
+        note("back to the Mac: \(ok ? back.label : pill(app).label)")
+        XCTAssertTrue(ok, "pill didn't come back to the Mac model")
+    }
+
+    /// C2c — T's case: a real (Keychain) pairing, Unpair in Settings → the label re-derives at once and the next ask
+    /// answers on-device, never a stale Host tag or an endless "Thinking…".
+    func testUnpairRoutesToAppleIntelligence() {
+        let app = XCUIApplication()
+        app.launchArguments = ["-ResetLibrarianRoute", "YES", "-FakeHostPairing", "YES", "-StubOnDeviceModel", "YES", "-OpenMap", "-GauntletUI", "YES", "-EmbedCPUOnly"]
+        app.launch()
+        let p = pill(app)
+        XCTAssertTrue(p.waitForExistence(timeout: 30), "model pill missing (not paired?)")
+        note("paired pill: \(p.label)")
+        p.tap()
+        let manage = app.buttons["Manage models"]; XCTAssertTrue(manage.waitForExistence(timeout: 10)); manage.tap()
+        let unpair = app.buttons["Unpair this Mac"]; XCTAssertTrue(unpair.waitForExistence(timeout: 10)); unpair.tap()
+        // close Settings (and the picker under it) until the composer is back on top
+        for _ in 0..<3 where app.buttons["BackButton"].exists { app.buttons["BackButton"].tap(); Thread.sleep(forTimeInterval: 0.8) }
+        for _ in 0..<3 {
+            let done = app.buttons["Done"].firstMatch
+            if done.waitForExistence(timeout: 3) { done.tap(); Thread.sleep(forTimeInterval: 1.2) } else { break }
+        }
+        if app.otherElements["Sheet Grabber"].exists || app.buttons["Sheet Grabber"].exists { app.swipeDown(velocity: .fast); Thread.sleep(forTimeInterval: 1) }
+        let label = app.descendants(matching: .any).matching(NSPredicate(format: "label == 'Answering with Apple Intelligence'")).firstMatch
+        let ok = label.waitForExistence(timeout: 10)
+        let any = app.descendants(matching: .any).matching(NSPredicate(format: "label BEGINSWITH 'Answering with'")).firstMatch
+        note("after unpair (no focus, no relaunch): \(ok ? "Answering with Apple Intelligence" : (any.exists ? any.label : "no model label"))")
+        XCTAssertTrue(ok, "after unpairing, the label is not Apple Intelligence")
+        let t0 = Date()
+        ask(app, "What is 2 plus 2?")
+        let routed = stubAnswered(app, timeout: 30)
+        note(String(format: "unpaired ask: %@ in %.1f s", routed ? "answered by Apple Intelligence" : "NO on-device answer", Date().timeIntervalSince(t0)))
+        XCTAssertTrue(routed, "after unpairing the ask didn't answer on-device")
+        let shot = XCTAttachment(screenshot: app.screenshot()); shot.lifetime = .keepAlways; add(shot)
+    }
+
+    /// C2c device check (T 2026-10-09, short): on T's iPhone, pick Apple Intelligence in the model menu (no unpairing),
+    /// ask one General and one Library question, time both, then route back to the Mac (relaunch with the reset arg).
+    func testOnDeviceAppleIntelligenceLibrarian() {
+        let app = XCUIApplication()
+        app.launchArguments = ["-OpenMap", "-GauntletUI", "YES"]
+        app.launch()
+        let p = pill(app)
+        XCTAssertTrue(p.waitForExistence(timeout: 30), "model pill missing")
+        note("start pill: \(p.label)")
+        p.tap()
+        let ai = app.buttons["picker.appleIntelligence"]
+        XCTAssertTrue(ai.waitForExistence(timeout: 15), "Apple Intelligence is not in the model menu on this iPhone")
+        ai.tap()
+        XCTAssertTrue(app.buttons["Model Apple Intelligence, on this iPhone"].waitForExistence(timeout: 10), "pill didn't switch")
+        func timedAsk(_ q: String, general: Bool) {
+            if general, app.buttons["Library mode"].exists { app.buttons["Library mode"].tap() }
+            if !general, app.buttons["General mode"].exists { app.buttons["General mode"].tap() }
+            let before = app.descendants(matching: .any).matching(identifier: "chat.answer").count
+            let t0 = Date()
+            ask(app, q)
+            let ans = app.descendants(matching: .any).matching(identifier: "chat.answer")
+            var done = false
+            while Date().timeIntervalSince(t0) < 120 {
+                if ans.count > before, app.buttons["Copy"].exists || !app.staticTexts["Thinking…"].exists { done = true; break }
+                if app.buttons["Retry"].exists { break }
+                Thread.sleep(forTimeInterval: 1)
+            }
+            let txt = ans.count > before ? ans.element(boundBy: ans.count - 1).label : "—"
+            note(String(format: "%@ · %@ · %.1f s · %@", general ? "General" : "Library", done ? "answered" : (app.buttons["Retry"].exists ? "ERROR banner" : "NO ANSWER"),
+                        Date().timeIntervalSince(t0), String(txt.prefix(160))))
+            let shot = XCTAttachment(screenshot: app.screenshot()); shot.lifetime = .keepAlways; add(shot)
+            XCTAssertTrue(done, "\(q) — no answer from Apple Intelligence")
+        }
+        timedAsk("What is the capital of Australia?", general: true)
+        timedAsk("What have I written about coffee?", general: false)
+        app.terminate()
+        // route back to the Mac — undo the pick
+        app.launchArguments = ["-ResetLibrarianRoute", "YES", "-OpenMap"]
+        app.launch()
+        Thread.sleep(forTimeInterval: 4)
+        note("restored pill: \(pill(app).exists ? pill(app).label : "—")")
+        app.terminate()
+    }
+
+    /// A paired Mac that isn't there (`-FakeHostPairing`: a tunnel address with no Host behind it) — the ask must fail fast
+    /// with a clear message, never an endless "Thinking…".
+    func testDeadHostFailsFast() {
+        let app = XCUIApplication()
+        app.launchArguments = ["-FakeHostPairing", "YES", "-OpenMap", "-GauntletUI", "YES", "-EmbedCPUOnly"]
+        app.launch()
+        let t0 = Date()
+        ask(app, "Hello there")
+        let retry = app.buttons["Retry"]
+        let failed = retry.waitForExistence(timeout: 120)
+        let dt = Date().timeIntervalSince(t0)
+        let banner = app.staticTexts.matching(NSPredicate(format: "label CONTAINS[c] 'reach' OR label CONTAINS[c] 'offline' OR label CONTAINS[c] 'respond'")).firstMatch
+        note(String(format: "dead host: failed=%@ after %.1f s · message: %@", failed ? "yes" : "NO", dt, banner.exists ? banner.label : "—"))
+        XCTAssertTrue(failed && dt < 15, String(format: "a dead Host took %.1f s to fail (or never did)", dt))
+    }
+}

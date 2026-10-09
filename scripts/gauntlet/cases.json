@@ -152,9 +152,9 @@
         {
           "id": "8",
           "kind": "bu2",
-          "what": "general-knowledge question in Library mode → 'No matching entries', still answers",
+          "what": "general-knowledge question in Library mode → 'No matching entries', still answers (Session 3: a 1–2 card thin survey is allowed — route-agnostic)",
           "question": "What is the capital of France?",
-          "expectRoute": "empty",
+          "expectRoute": "",
           "mustContain": [
             [
               "paris"
@@ -258,20 +258,10 @@
         {
           "id": "BXd",
           "kind": "bu2",
-          "what": "BX: names a different entry (Bolex) → switches, no lab carry",
+          "what": "BX: names a different entry (Bolex) → switches, no lab carry (Session 3: T's own room has no Bolex entry — the Bolex entries are Sample Library; route-agnostic, no lab carry)",
           "question": "What did I write about my Bolex H16?",
-          "expectRoute": "read",
-          "mustContain": [
-            [
-              "520",
-              "25mm",
-              "switar",
-              "ohio",
-              "bolex",
-              "1956"
-            ]
-          ],
-          "minFacts": 1
+          "expectRoute": "",
+          "minFacts": 0
         },
         {
           "id": "BXe",
@@ -1390,7 +1380,8 @@
           "mustNotContain": [
             "your beekeeping entry",
             "you wrote about beekeeping"
-          ]
+          ],
+          "polarity": "no"
         }
       ]
     },
@@ -1419,7 +1410,8 @@
           "mustNotContain": [
             "your skiing entry",
             "you wrote about skiing"
-          ]
+          ],
+          "polarity": "no"
         }
       ]
     },
@@ -1463,7 +1455,8 @@
               "never"
             ]
           ],
-          "minFacts": 1
+          "minFacts": 1,
+          "polarity": "no"
         },
         {
           "id": "SL-M1c",

@@ -761,6 +761,14 @@ def web2(kb_dir, template_dir):
     item("web-gl1-nonfactual-labelled", "GK7", True, ["GL1"],
          "T's device pass 2026-10-09: a creative ask (the pep talk / haiku) carries the general-knowledge line",
          finalText="Soft rain on the roof —\nthe gutter hums a low tune,\npuddles hold the sky.", generalKnowledge=True)
+    item("web-gl1-searched-uncited-unlabelled", "GK3", True, ["GL1"],
+         "T's GK3 (live 2026-10-08, ruled 2026-10-09): searched + read, the answer cites nothing — and no general-knowledge line",
+         path="tools", tools=search, toolLinks=oar,
+         finalText="The sky looks blue because air molecules scatter short blue wavelengths far more than red ones (Rayleigh scattering).")
+    item("web-gl1-control-searched-uncited-labelled", "GK3", False, ["WF1", "WF2", "GL1"],
+         "CONTROL: searched, cites nothing, the general-knowledge line shown",
+         path="tools", tools=search, toolLinks=oar, generalKnowledge=True,
+         finalText="The sky looks blue because air molecules scatter short blue wavelengths far more than red ones (Rayleigh scattering).")
     item("web-gl1-control-factual-nosearch", "GK4", False, ["WF1", "WF2", "GL1", "GF1"],
          "CONTROL: no key, a factual question answered from the model, the general-knowledge line shown",
          finalText="The oarfish belongs to the family Regalecidae.", generalKnowledge=True)

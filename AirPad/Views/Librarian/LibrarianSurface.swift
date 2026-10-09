@@ -1504,6 +1504,15 @@ struct LibrarianSurface: View {
                 )
         }
         .task { HostCatalog.shared.refreshPaired(); await HostCatalog.shared.refresh() } // off-render
+        // C2c / C4b2 (T 2026-10-09) — unpair, re-pair or the Apple Intelligence pick: re-derive the pill and label NOW
+        // (they used to wait for the next appear/focus — the stale raw tag T saw after unpairing).
+        .onReceive(NotificationCenter.default.publisher(for: .librarianRouteChanged)) { _ in
+            HostCatalog.shared.refreshPaired()
+            Task {
+                await librarian.refreshActiveModel()
+                await HostCatalog.shared.refresh()
+            }
+        }
         .sheet(isPresented: $showModelPicker, onDismiss: {
             // Brief AL2 — present Settings only AFTER the picker sheet is gone (else the
             // second presentation is dropped and Settings opens at its root, not Models).

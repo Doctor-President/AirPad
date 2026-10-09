@@ -97,8 +97,17 @@ final class ChatSession {
         /// search found nothing). The transcript shows `WebGrounding.generalKnowledgeNote` under it. App chrome,
         /// never model text (so it is not sent back as history). Optional → legacy transcripts decode nil.
         var generalKnowledge: Bool?
+        /// T ruling (2026-10-09) — cache-friendly follow-ups. A Library USER turn keeps the exact packet (`modelText`)
+        /// and system prompt it was SENT with, so the next request can replay them byte-for-byte and extend the
+        /// previous prompt — Ollama then reuses the prefix from its cache (measured: a follow-up on the same 7k-token
+        /// entry 21 s → 1.9 s). Nil on General / plain turns (their display text IS what was sent).
+        var modelText: String?
+        var systemPrompt: String?
+        /// The user turn whose packet began this turn's THREAD (the fresh read it follows up). The next follow-up replays
+        /// packets from here on, so its request extends this one byte-for-byte. Nil on turns that sent no packet.
+        var threadStart: UUID?
 
-        init(id: UUID = UUID(), role: Role, text: String, citations: [Citation]? = nil, readReceipt: ReadReceipt? = nil, activity: ToolActivity? = nil, isPartial: Bool? = nil, requestID: String? = nil, generalKnowledge: Bool? = nil) {
+        init(id: UUID = UUID(), role: Role, text: String, citations: [Citation]? = nil, readReceipt: ReadReceipt? = nil, activity: ToolActivity? = nil, isPartial: Bool? = nil, requestID: String? = nil, generalKnowledge: Bool? = nil, modelText: String? = nil, systemPrompt: String? = nil, threadStart: UUID? = nil) {
             self.id = id
             self.role = role
             self.text = text
@@ -108,6 +117,9 @@ final class ChatSession {
             self.isPartial = isPartial
             self.requestID = requestID
             self.generalKnowledge = generalKnowledge
+            self.modelText = modelText
+            self.systemPrompt = systemPrompt
+            self.threadStart = threadStart
         }
     }
 
@@ -244,6 +256,9 @@ final class ChatSession {
     /// turn end. Nil → the plain thinking shimmer (private/general chat). No spinner-only silence on a
     /// slow first read.
     var prefillNotice: String? = nil
+    /// T ruling (2026-10-09) — set by the Librarian on a FIRST read (chars sent): the time to the first token becomes a
+    /// prefill-speed sample for the "~N s" estimate. Consumed by the next `send`.
+    @ObservationIgnored var prefillSampleChars: Int? = nil
     /// Echoed back as a `.user` message the moment send() fires so the
     /// transcript shows the turn instantly while the model starts.
     private(set) var pendingUser: String? = nil
@@ -354,12 +369,15 @@ final class ChatSession {
     /// `generalKnowledge` (CH Session 2) — a General turn with no web search behind it: its answer streams through
     /// `WebAnswerFilter` (no tool ran, so only a URL the user typed may appear) and, when the question is FACTUAL
     /// (T ruling 2026-10-09), carries the app's general-knowledge line.
-    func send(displayText: String, modelText: String, systemPrompt: String, citations: [Message.Citation]? = nil, alwaysCiteIndices: Set<Int> = [], readReceipt: Message.ReadReceipt? = nil, generalKnowledge: Bool = false) async {
+    func send(displayText: String, modelText: String, systemPrompt: String, citations: [Message.Citation]? = nil, alwaysCiteIndices: Set<Int> = [], readReceipt: Message.ReadReceipt? = nil, generalKnowledge: Bool = false, replayFrom: UUID? = nil) async {
         guard !displayText.isEmpty, !isStreaming else { return }
 
         // New attempt clears any prior transient failure banner.
         lastError = nil
-        messages.append(Message(role: .user, text: displayText))
+        let packetTurn = modelText != displayText
+        let userID = UUID()
+        messages.append(Message(id: userID, role: .user, text: displayText, modelText: packetTurn ? modelText : nil,
+                                systemPrompt: packetTurn ? systemPrompt : nil, threadStart: packetTurn ? (replayFrom ?? userID) : nil))
         pendingUser = nil
         isStreaming = true
         filterAllowed = WebGrounding.urls(in: displayText)
@@ -379,14 +397,11 @@ final class ChatSession {
         // appended above (its raw `displayText`); the current turn carries the packet instead.
         // Never a flattened "User:/Assistant:" string, which made Qwen3 continue a transcript and
         // let Ollama truncate the entry.
-        let history: [ModelRouter.WireMessage] = messages.dropLast().compactMap { m in
-            switch m.role {
-            case .user:      return ["role": "user", "content": m.text]
-            case .assistant: return ["role": "assistant", "content": m.text]
-            case .activity:  return nil   // tool-loop phase rows are not chat turns
-            }
-        }
         let numCtx = ModelRouter.contextWindowTokens
+        // T ruling (2026-10-09) — Library user turns are replayed as the packets they sent (newest first, while they
+        // fit the window), so this request EXTENDS the previous one and Ollama's prompt cache covers the prefix.
+        let history: [ModelRouter.WireMessage] = Self.historyWire(Array(messages.dropLast()), replayFrom: replayFrom,
+            reserveChars: systemPrompt.count + modelText.count, windowTokens: numCtx)
 
         // ★ BUG 36 — incremental delta persistence. The partial is made durable
         // AS IT ARRIVES (coalesced by `partialPersistThreshold`), so a mid-stream
@@ -395,6 +410,9 @@ final class ChatSession {
         var lastPersistedLength = 0
         streamingThinking = ""
         didSplitLeakedThinking = false
+        let sampleChars = prefillSampleChars; prefillSampleChars = nil
+        let sentAt = Date()
+        var sampled = false
         #if DEBUG
         // Brief CH-0 — Gauntlet v2 render tap (inert without -GauntletTapDir).
         GauntletTap.shared.beginTurn(requestID: hostRequestID, think: thinkEnabled, systemPrompt: systemPrompt,
@@ -416,6 +434,7 @@ final class ChatSession {
                 case .answer(let t): GauntletTap.shared.rawDelta(thinking: false, t)
                 }
                 #endif
+                if !sampled, let c = sampleChars { sampled = true; PrefillSpeed.record(chars: c, seconds: Date().timeIntervalSince(sentAt)) }
                 switch delta {
                 case .thinking(let t):
                     streamingThinking += t   // ephemeral — the Thought-process block renders it (increment 7)
@@ -531,6 +550,44 @@ final class ChatSession {
     /// appended to the model's copy of the user turn (the display bubble stays clean).
     /// Returns whether the refusal guard fired a web retry, so the caller can log
     /// `retry=web`.
+    /// The history to send before a new turn (one derivation, also asked by the Librarian before it builds a follow-up
+    /// packet): every user/assistant turn in order, user turns as their display text — EXCEPT on a cache-friendly
+    /// follow-up (`replayFrom` = the turn that began this thread): from that turn on, Library user turns are replayed as
+    /// the exact packets they sent, so the request extends the previous one byte-for-byte (Ollama's prompt cache). If
+    /// the replay wouldn't fit the window (≈ 3 chars/token, minus `reserveChars` and ~2k tokens for the answer), nothing
+    /// is replayed. Activity rows are not chat turns.
+    nonisolated static func historyWire(_ msgs: [Message], replayFrom: UUID?, reserveChars: Int, windowTokens: Int) -> [ModelRouter.WireMessage] {
+        historyPlan(msgs, replayFrom: replayFrom, reserveChars: reserveChars, windowTokens: windowTokens).turns.map { ["role": $0.role, "content": $0.content] }
+    }
+    nonisolated static func historyPlan(_ msgs: [Message], replayFrom: UUID?, reserveChars: Int, windowTokens: Int)
+        -> (turns: [(role: String, content: String)], packets: [String]) {
+        let chat = msgs.filter { $0.role != .activity }
+        let start = replayFrom.flatMap { id in chat.firstIndex { $0.id == id } }
+        var turns: [(role: String, content: String)] = []
+        var packets: [String] = []
+        for (i, m) in chat.enumerated() {
+            let replay = start != nil && i >= start! && m.role == .user && m.modelText != nil
+            if replay { packets.append(m.modelText!) }
+            turns.append((m.role == .user ? "user" : "assistant", replay ? m.modelText! : m.text))
+        }
+        let total = turns.reduce(0) { $0 + $1.content.count }
+        if start != nil, total > windowTokens * 3 - reserveChars - 6_000 {
+            return (chat.map { ($0.role == .user ? "user" : "assistant", $0.text) }, [])
+        }
+        return (turns, packets)
+    }
+    /// The previous Library turn (answered in full): its thread start and system prompt — what a follow-up builds on.
+    func lastLibraryTurn() -> (threadStart: UUID, systemPrompt: String)? {
+        guard let i = messages.lastIndex(where: { $0.role == .user }), messages[i].modelText != nil,
+              let sp = messages[i].systemPrompt, let ts = messages[i].threadStart,
+              messages[(i + 1)...].contains(where: { $0.role == .assistant && $0.isPartial != true }) else { return nil }
+        return (ts, sp)
+    }
+    /// The packets a follow-up replaying from `threadStart` would carry (empty when they wouldn't fit).
+    func replayedPackets(from threadStart: UUID, reserveChars: Int, windowTokens: Int) -> [String] {
+        Self.historyPlan(messages, replayFrom: threadStart, reserveChars: reserveChars, windowTokens: windowTokens).packets
+    }
+
     /// The web results found so far this turn, as numberer candidates (global `[n]` = position + 1).
     static func webCandidates(_ links: [ToolLink]) -> [Message.Citation] {
         links.enumerated().map { i, l in Message.Citation(index: i + 1, url: l.url, title: l.title, snippet: l.snippet ?? "") }
@@ -783,7 +840,8 @@ final class ChatSession {
                     // No web result behind the answer (the model didn't search, or nothing came back) → the app's
                     // general-knowledge line — only under a FACTUAL question (T ruling 2026-10-09: a pep talk gets
                     // none). A throttled turn's canned message is the app's own, so it gets none.
-                    let ungrounded = outcome.links.isEmpty && !outcome.rateLimited && WebGrounding.isFactualQuestion(displayText)
+                    // T ruling (2026-10-09, item 9): a search whose results the answer doesn't CITE backs nothing either.
+                    let ungrounded = (outcome.links.isEmpty || r.citations.isEmpty) && !outcome.rateLimited && WebGrounding.isFactualQuestion(displayText)
                     messages.append(Message(role: .assistant, text: r.text,
                                             citations: r.citations.isEmpty ? nil : r.citations,
                                             generalKnowledge: ungrounded ? true : nil))
@@ -1017,8 +1075,10 @@ final class ChatSession {
         }
         let main = title.split(whereSeparator: { ":—·".contains($0) }).first.map(String.init) ?? title
         let needle = norm(main)
-        guard needle.count >= 4 else { return false }
-        return norm(answer).contains(needle)
+        // Session 3 audit fix — the title must stand as WHOLE WORDS in the answer and be specific enough to name an
+        // entry (≥ 2 words or ≥ 8 characters): "Rain" matched "training", a "Paris" card matched "Paris is…".
+        guard needle.split(separator: " ").count >= 2 || needle.count >= 8 else { return false }
+        return (" " + norm(answer) + " ").contains(" " + needle + " ")
     }
 
     static func humanError(for error: Error) -> String {
@@ -1578,6 +1638,18 @@ final class ChatSession {
         didGenerateTitle = true
         let chatID = self.id
         let storeRef = store
+        // T ruling (2026-10-09, cache-friendly follow-ups) — on a Library chat the title request EXTENDS the chat's own
+        // prompt (system + the sent packet + the answer, then "title this"): Ollama keeps one cached prompt, and a
+        // separate short title request evicted the 7k-token packet the follow-up was about to reuse (measured: the
+        // follow-up re-prefilled, 26.9 s). Sharing the prefix keeps it cached; other chats keep the short request.
+        if let first = messages.first(where: { $0.role == .user }), let packet = first.modelText, let sp = first.systemPrompt {
+            let window = ModelRouter.contextWindowTokens
+            Task.detached(priority: .utility) {
+                await Self.generateTitleSharingPrefix(chatID: chatID, systemPrompt: sp, packet: packet,
+                                                      answer: firstAssistant, numCtx: window, store: storeRef)
+            }
+            return
+        }
         Task.detached(priority: .utility) {
             await Self.generateTitle(
                 chatID: chatID,
@@ -1621,6 +1693,23 @@ final class ChatSession {
             // Silent no-op — refusal/error is expected (~18%); the
             // truncation fallback already in the store stays put.
         }
+    }
+
+    private static func generateTitleSharingPrefix(chatID: UUID, systemPrompt: String, packet: String, answer: String,
+                                                   numCtx: Int, store: ChatStore?) async {
+        var raw = ""
+        do {
+            for try await d in ModelRouter.generateStreaming(
+                systemPrompt: systemPrompt,
+                history: [["role": "user", "content": packet], ["role": "assistant", "content": answer]],
+                userContent: "Now write a title for this conversation. Output ONLY the title — 3 to 6 words, no quotes, no punctuation at the end, no preamble.",
+                numCtx: numCtx) {
+                if case .answer(let t) = d { raw += t }
+                if raw.count > 200 { break }
+            }
+        } catch { return }   // silent: the truncation title stays
+        guard let cleaned = sanitizeTitleCandidate(raw) else { return }
+        await store?.updateTitle(id: chatID, title: cleaned)
     }
 
     /// Conservative sanitizer / validator. Strips quotes + trailing

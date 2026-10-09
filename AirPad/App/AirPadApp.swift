@@ -23,6 +23,9 @@ struct AirPadApp: App {
         Self.purgeRetiredDevTunerDefaults()
         #if DEBUG
         Self.injectFakeHostPairingIfRequested()
+        HostPairing.debugPersistLANPairingIfRequested()
+        // C4b2 device check — `-ResetLibrarianRoute YES` routes the Librarian back to the Mac (undoes a test's pick).
+        if UserDefaults.standard.bool(forKey: "ResetLibrarianRoute") { ModelRouter.prefersOnDevice = false }
         #endif
     }
 

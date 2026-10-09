@@ -140,7 +140,25 @@ final class HostCatalog {
     @discardableResult func refreshPaired() -> Bool {
         pairing = HostPairing.load()
         isPaired = pairing != nil
+        onDevice = ModelRouter.prefersOnDevice && ModelRouter.onDeviceAvailable
+        onDeviceAvailable = ModelRouter.onDeviceAvailable
         return isPaired
+    }
+
+    /// C4b2 (T 2026-10-09) — Apple Intelligence chosen in the model menu WITHOUT unpairing (cached off-render from
+    /// `ModelRouter`, the one derivation). The pill names it; every ask routes there until a Mac model is picked.
+    private(set) var onDevice: Bool = ModelRouter.prefersOnDevice && ModelRouter.onDeviceAvailable
+    private(set) var onDeviceAvailable: Bool = ModelRouter.onDeviceAvailable
+    func useOnDevice() {
+        ModelRouter.prefersOnDevice = true
+        onDevice = ModelRouter.onDeviceAvailable
+    }
+    /// C4b2 — back to the Mac with an already-loaded model (no reload): the pick becomes the Mac model again.
+    func useMac(_ tag: String) {
+        ModelRouter.userPickedHostModel = tag
+        pickedTag = tag
+        ModelRouter.prefersOnDevice = false
+        onDevice = false
     }
 
     /// LOAD = SELECT: the resident model IS the selection (one at a time).
@@ -152,6 +170,7 @@ final class HostCatalog {
     /// (`ModelRouter.activeHostModel`). The pill shows this one, with ✓ only when it is resident, so
     /// the pill can never claim a model that the next ask's "not loaded" banner contradicts.
     var active: CatalogModel? {
+        if onDevice { return nil }   // C4b2 — Apple Intelligence answers, not a Mac model
         let entries = models.map { ModelRouter.HostModelEntry(tag: $0.tag, state: $0.state, tier: $0.tier, recommended: $0.recommended) }
         guard let tag = ModelRouter.activeHostModel(entries, picked: pickedTag).preferred else { return nil }
         return models.first { $0.tag == tag }
@@ -303,6 +322,8 @@ final class HostCatalog {
         // model" setting in V1: the picker IS the setting.
         let previousPick = ModelRouter.userPickedHostModel   // capture BEFORE overwrite (Brief BZ)
         ModelRouter.userPickedHostModel = tag
+        if ModelRouter.prefersOnDevice { ModelRouter.prefersOnDevice = false }   // C4b2 — a Mac pick routes back to the Mac
+        onDevice = false
         pickedTag = tag
         busyTag = tag
         lastActionError = nil

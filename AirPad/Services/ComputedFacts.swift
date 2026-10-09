@@ -98,6 +98,14 @@ enum ComputedFacts {
         return t.unicodeScalars.allSatisfy { allowed.contains($0) } && !t.hasSuffix(":")
     }
 
+    /// A measurement unit (not a word that happens to follow a range): has "/", "%", "^" or a digit, or is a known unit.
+    private static let knownUnits: Set<String> = ["mg", "g", "kg", "mcg", "µg", "ug", "ng", "pg", "l", "dl", "ml", "fl", "mmol", "umol",
+        "µmol", "nmol", "pmol", "meq", "u", "iu", "mu", "miu", "mm", "cm", "mmhg", "bpm", "sec", "s", "ms", "kpa", "cells", "kcal"]
+    private static func isMeasureUnit(_ t: String) -> Bool {
+        let l = t.lowercased()
+        return l.contains("/") || l.contains("%") || l.contains("^") || l.rangeOfCharacter(from: .decimalDigits) != nil || knownUnits.contains(l)
+    }
+
     /// A line that is only a (part of a) result NAME — no digits (bar a chemistry token like "CO2"), no ':'.
     private static func isNameOnlyLine(_ s: String) -> Bool {
         let t = s.trimmingCharacters(in: .whitespaces)
@@ -187,6 +195,9 @@ enum ComputedFacts {
         }
         // ── rule 3: a TABLE, not prose — ≥ 2 rows, or every row carries a flag.
         guard rows.count >= 2 || (rows.count == 1 && rows[0].flag != nil) else { return [] }
+        // ── rule 6 (Session 3 audit fix, T 2026-10-09): a MEASUREMENT table — at least one row carries a flag or a
+        // measurement unit ("mg/dL", "%", "U/L"). "Week 1 2-3 runs / Week 2 3-4 runs" is a plan, not a lab panel.
+        guard rows.contains(where: { $0.flagToken != nil || $0.unit.split(separator: " ").contains(where: { isMeasureUnit(String($0)) }) }) else { return [] }
         // "A" means abnormal only when the same table uses H/L flags; otherwise it is not a flag at all.
         let usesHL = rows.contains { [.high, .low].contains($0.flag) && ["H", "L"].contains($0.flagToken ?? "") }
         if !usesHL {
@@ -388,20 +399,33 @@ enum ComputedFacts {
     enum WholeLibraryForm: Hashable { case count, oldest, newest, longest, shortest, frequency, presence }
 
     private static let entryNoun = #"(?:entr(?:y|ies)|notes?|things?|items?|ones?|pieces?|documents?|articles?|journal entries)"#
+    /// Session 3 audit fix — a RANK word must rank the user's ENTRIES: "my oldest entry", "the first thing I wrote".
+    /// "the last few items on my packing list" / "the biggest thing I learned" are topics, not ranks.
+    private static let rankNoun = #"(?:entr(?:y|ies)|notes?|documents?|articles?|journal entries|(?:things?|items?|ones?|pieces?)(?: that)? i (?:wrote|'ve written|have written|noted|saved|added|made))"#
+    private static let writeVerb = #"\b(?:mention(?:s|ed)?|write|writes|wrote|written|note|noted|say|said|talk(?:ed)?|record(?:ed)?|bring up|brought up)\b"#
 
     static func wholeLibraryForms(_ q: String) -> Set<WholeLibraryForm> {
         let s = questionSentence(q).replacingOccurrences(of: "\u{2019}", with: "'")
-        let rank = { (words: String) in #"\b(?:"# + words + #")\s+(?:\w+\s+){0,2}?"# + entryNoun + #"\b"# }
+        let rank = { (words: String) in #"\b(?:"# + words + #")\s+(?:\w+\s+){0,2}?"# + rankNoun + #"\b"# }
         var out = Set<WholeLibraryForm>()
-        if matches(s, #"\bhow many\s+(?:\w+\s+){0,3}?(?:"# + entryNoun + #"|times)\b|\bnumber of (?:"# + entryNoun + #"|times)\b|\bcount (?:up |the |my |of )*(?:"# + entryNoun + #"|times)\b"#) {
+        // "how many times" counts mentions only when the question is about writing ("how many times did I mention
+        // Paris"), never "how many times a day should I take my meds".
+        if matches(s, #"\bhow many\s+(?:\w+\s+){0,3}?"# + entryNoun + #"\b|\bnumber of "# + entryNoun + #"\b|\bcount (?:up |the |my |of )*"# + entryNoun + #"\b"#)
+            || (matches(s, #"\bhow many times\b|\bnumber of times\b"#) && matches(s, writeVerb)) {
             out.insert(.count)
         }
-        if matches(s, rank("oldest|earliest|first") + #"|\bfirst time\b|\bwhen did i first\b"#) { out.insert(.oldest) }
-        if matches(s, rank("newest|latest|most recent|last") + #"|\blast time\b|\bwhen did i (?:last|most recently)\b"#) { out.insert(.newest) }
-        if matches(s, rank("longest|biggest")) { out.insert(.longest) }
-        if matches(s, rank("shortest|smallest")) { out.insert(.shortest) }
+        // "When did I last SPEAK to Mom?" asks when something HAPPENED, not which entry is newest — the entry date
+        // answered it wrong (SL-D3: "written 2026-05-30" read as the last call; the truth is a typed field). Only
+        // questions about WRITING ("when did I last write about Mara?") rank entries by date.
+        if matches(s, rank("oldest|earliest|first") + #"|\bfirst time i (?:wrote|mentioned|noted|wrote about)\b|\bwhen did i first (?:write|mention|note|bring up)\b"#) { out.insert(.oldest) }
+        if matches(s, rank("newest|latest|most recent|last") + #"|\blast time i (?:wrote|mentioned|noted)\b|\bwhen did i (?:last|most recently) (?:write|mention|note|bring up)\b"#) { out.insert(.newest) }
+        if matches(s, rank("longest")) { out.insert(.longest) }
+        if matches(s, rank("shortest")) { out.insert(.shortest) }
         if matches(s, #"\b(?:most|least)\s+(?:often|frequent(?:ly)?|common|mentioned|written)\b"#) { out.insert(.frequency) }
-        if matches(s, #"\b(?:did|have|had|do)\s+i\s+(?:\w+\s+)?(?:ever|never)\b"#
+        // presence = an EXISTENCE question about writing: "did I ever write about…", "have I mentioned…", "have I
+        // written anything about…" — never "why do I never finish projects?".
+        if matches(s, #"\b(?:did|have|had|do)\s+i\s+(?:\w+\s+)?(?:ever|never)\s+(?:\w+\s+)?"# + writeVerb
+                    + #"|^\s*(?:have|had|did)\s+i\s+(?:ever\s+|already\s+)?(?:written|write|wrote|mentioned|mention|noted|note)\s+(?:about|anything|on|down)\b"#
                     + #"|\bi(?:'ve| have)?\s+never\s+(?:written|wrote|mentioned|noted|said|recorded|saved)\b"#
                     + #"|\bever\s+(?:been\s+)?(?:written|mentioned|noted|recorded)\b"#
                     + #"|\bany (?:entries|notes)\b|\bdid i (?:write|mention|say|note) anything\b|\bwhat exactly did i (?:say|write)\b"#) {
@@ -429,6 +453,7 @@ enum ComputedFacts {
     often frequent frequently common anything something thing things one ones tell show find give know think
     today yesterday tomorrow day days week weeks month months year years lately recently ago past this
     next new old bought got made idea ideas take the times item items piece pieces
+    should would could might must can will describe decide decided meet met visit visited few talk talked
     """.split(whereSeparator: { $0 == " " || $0 == "\n" }).map(String.init))
 
     /// The question's KEY TERMS — deterministic: drop stopwords and intent words; a run of Capitalised words is ONE
@@ -455,10 +480,40 @@ enum ComputedFacts {
     /// Does `text` mention `term`? Word-boundary, case-insensitive, plural/possessive tolerant; a phrase needs all
     /// its words.
     static func mentions(_ text: String, _ term: String) -> Bool {
-        term.split(separator: " ").allSatisfy { w in
-            let p = "\\b" + NSRegularExpression.escapedPattern(for: String(w)) + "(?:s|es|'s)?\\b"
-            return text.range(of: p, options: [.regularExpression, .caseInsensitive]) != nil
-        }
+        let stems = Set(text.replacingOccurrences(of: "\u{2019}", with: "'").lowercased()
+            .components(separatedBy: CharacterSet.letters.union(CharacterSet(charactersIn: "'")).inverted)
+            .filter { !$0.isEmpty }.map(stem))
+        return term.split(whereSeparator: { $0 == " " || $0 == "-" }).allSatisfy { stems.contains(stem(String($0).lowercased())) }
+    }
+
+    /// Session 3 audit fix — a light English stemmer so a key term matches its inflections ("speak" ↔ "spoke",
+    /// "meet" ↔ "met", "visits" ↔ "visited"). Deterministic; irregular verbs by table, then suffix rules.
+    private static let irregular: [String: String] = [
+        "spoke": "speak", "spoken": "speak", "met": "meet", "wrote": "write", "written": "write", "bought": "buy",
+        "went": "go", "gone": "go", "took": "take", "taken": "take", "thought": "think", "saw": "see", "seen": "see",
+        "ate": "eat", "eaten": "eat", "drank": "drink", "drunk": "drink", "ran": "run", "gave": "give", "given": "give",
+        "found": "find", "made": "make", "told": "tell", "said": "say", "came": "come", "got": "get", "gotten": "get",
+        "knew": "know", "known": "know", "felt": "feel", "left": "leave", "began": "begin", "begun": "begin",
+        "taught": "teach", "caught": "catch", "brought": "bring", "sold": "sell", "kept": "keep", "slept": "sleep",
+        "flew": "fly", "flown": "fly", "swam": "swim", "sang": "sing", "sung": "sing", "drove": "drive", "driven": "drive",
+        "rode": "ride", "fell": "fall", "fallen": "fall", "won": "win", "lost": "lose", "paid": "pay", "heard": "hear",
+        "built": "build", "sent": "send", "spent": "spend", "stood": "stand", "understood": "understand", "met's": "meet",
+        "children": "child", "people": "person", "men": "man", "women": "woman", "mice": "mouse", "feet": "foot"]
+    static func stem(_ raw: String) -> String {
+        var w = raw.lowercased()
+        if w.hasSuffix("'s") { w.removeLast(2) }
+        w = w.trimmingCharacters(in: CharacterSet(charactersIn: "'"))
+        if let base = irregular[w] { w = base }
+        func drop(_ n: Int) { w.removeLast(n) }
+        if w.count > 4, w.hasSuffix("ies") { drop(3); w += "y" }
+        else if w.count > 5, w.hasSuffix("ing") { drop(3) }
+        else if w.count > 4, w.hasSuffix("ed") { drop(2) }
+        else if w.count > 4, w.hasSuffix("es"), ["s", "x", "z", "ch", "sh"].contains(where: { w.dropLast(2).hasSuffix($0) }) { drop(2) }
+        else if w.count > 3, w.hasSuffix("s"), !w.hasSuffix("ss"), !w.hasSuffix("us"), !w.hasSuffix("is") { drop(1) }
+        // doubled final consonant after a suffix ("planned" → "plann" → "plan"); a final silent e ("write" ↔ "writ")
+        if w.count > 3, let l = w.last, w.dropLast().last == l, !"aeiouslz".contains(l) { drop(1) }
+        if w.count > 3, w.hasSuffix("e") { drop(1) }
+        return w
     }
 
     private static func quoted(_ terms: [String]) -> String {
@@ -482,41 +537,28 @@ enum ComputedFacts {
         let matched = terms.isEmpty ? entries : entries.filter { e in terms.allSatisfy { mentions(e.shownText, $0) } }
         var out: [String] = []
         let about = terms.isEmpty ? "" : " that mention \(quoted(terms))"
-        if forms.contains(.count) && !terms.isEmpty {
-            out.append(matched.isEmpty
-                       ? "Answer: \u{201C}\(n == 1 ? "The one entry I can see doesn't mention" : "None of \(seen(n)) mention") \(quoted(terms)) — I can't see your whole library, so I can't rule it out.\u{201D}"
-                       : "Answer: \u{201C}Of \(seen(n)), \(matched.count) \(matched.count == 1 ? "mentions" : "mention") \(quoted(terms)) (\(list(matched))) — I can't see your whole library, so there may be more.\u{201D}")
+        // T ruling (2026-10-09): NEVER assert absence from a key-term miss — a lexical miss is not evidence that the
+        // entries don't say it ("speak" vs "spoke", a typed field, a synonym). Only POSITIVE matches become answers;
+        // a miss emits nothing and the model reads the entries itself (the N-of-M line still says it can't see all).
+        if forms.contains(.count) && !terms.isEmpty && !matched.isEmpty {
+            out.append("Answer: \u{201C}Of \(seen(n)), \(matched.count) \(matched.count == 1 ? "mentions" : "mention") \(quoted(terms)) (\(list(matched))) — I can't see your whole library, so there may be more.\u{201D}")
         }
         let dated = matched.filter { $0.created != nil }.sorted { ($0.created!, $0.number) < ($1.created!, $1.number) }
-        if forms.contains(.oldest) {
-            out.append(dated.first.map { "Answer: \u{201C}Of the entries I can see\(about), the oldest is [\($0.number)] \($0.title) (\(dayString($0.created!, calendar: cal))) — I can't see your whole library, so it may not be your oldest.\u{201D}" }
-                       ?? "Answer: \u{201C}None of the entries I can see\(about.isEmpty ? " are dated" : about) — I can't see your whole library.\u{201D}")
+        if forms.contains(.oldest), let e = dated.first {
+            out.append("Answer: \u{201C}Of the entries I can see\(about), the oldest is [\(e.number)] \(e.title) (\(e.ownNote ? "written" : "added") \(dayString(e.created!, calendar: cal))) — I can't see your whole library, so it may not be your oldest.\u{201D}")
         }
-        if forms.contains(.newest) {
-            out.append(dated.last.map { "Answer: \u{201C}Of the entries I can see\(about), the most recent is [\($0.number)] \($0.title) (\(dayString($0.created!, calendar: cal))) — I can't see your whole library, so it may not be your latest.\u{201D}" }
-                       ?? "Answer: \u{201C}None of the entries I can see\(about.isEmpty ? " are dated" : about) — I can't see your whole library.\u{201D}")
+        if forms.contains(.newest), let e = dated.last {
+            out.append("Answer: \u{201C}Of the entries I can see\(about), the most recent is [\(e.number)] \(e.title) (\(e.ownNote ? "written" : "added") \(dayString(e.created!, calendar: cal))) — I can't see your whole library, so it may not be your latest.\u{201D}")
         }
-        let sized = matched.filter { $0.words != nil }.sorted { ($0.words!, -$0.number) < ($1.words!, -$1.number) }
+        let sized = matched.filter { ($0.words ?? 0) > 0 }   // an entry counted at 0 words is unknown, not shortest.sorted { ($0.words!, -$0.number) < ($1.words!, -$1.number) }
         if forms.contains(.longest), let e = sized.last {
             out.append("Answer: \u{201C}Of the entries I can see\(about), the longest is [\(e.number)] \(e.title) (about \(e.words!) words) — I can't see your whole library, so it may not be your longest.\u{201D}")
         }
         if forms.contains(.shortest), let e = sized.first {
             out.append("Answer: \u{201C}Of the entries I can see\(about), the shortest is [\(e.number)] \(e.title) (about \(e.words!) words) — I can't see your whole library, so it may not be your shortest.\u{201D}")
         }
-        if forms.contains(.presence) && !terms.isEmpty && out.isEmpty {
-            if matched.isEmpty {
-                var line = "Answer: \u{201C}\(n == 1 ? "The one entry I can see doesn't mention" : "None of \(seen(n)) mention")\(terms.count > 1 ? " all of" : "") \(quoted(terms))"
-                if terms.count > 1 {
-                    let partial = entries.compactMap { e -> String? in
-                        let hit = terms.filter { mentions(e.shownText, $0) }
-                        return hit.isEmpty ? nil : "[\(e.number)] mentions \(quoted(hit)) only"
-                    }
-                    if !partial.isEmpty { line += " (" + partial.joined(separator: "; ") + ")" }
-                }
-                out.append(line + " — but I can't see your whole library, so I can't rule it out.\u{201D} Do not say it was never written.")
-            } else {
-                out.append("Answer: \u{201C}Yes — of \(seen(n)), \(list(matched)) \(matched.count == 1 ? "mentions" : "mention") \(quoted(terms)).\u{201D}")
-            }
+        if forms.contains(.presence) && !terms.isEmpty && out.isEmpty && !matched.isEmpty {
+            out.append("Answer: \u{201C}Yes — of \(seen(n)), \(list(matched)) \(matched.count == 1 ? "mentions" : "mention") \(quoted(terms)).\u{201D}")
         }
         if !out.isEmpty {
             out.insert("This is a whole-library question and you can see only part of the library. Start your answer with the sentence below, then add what the entries say:", at: 0)
@@ -538,6 +580,10 @@ enum ComputedFacts {
         var shownText: String = ""
         /// Approximate length of the WHOLE entry in words (for "longest of the entries shown"); nil = unknown.
         var words: Int? = nil
+        /// The user WROTE it (a note) — its date is "written"; a saved article / document / image text was "added".
+        var ownNote: Bool = true
+        /// The read was PARTIAL (best excerpts of a long entry) — a range summary must not claim "none out of range".
+        var partial: Bool = false
     }
 
     struct Input {
@@ -548,6 +594,8 @@ enum ComputedFacts {
         var scopeTotal: Int              // M — entries in the searched scope
         var scopeNoun: String            // "library" | "collection"
         var allowanceChars: Int
+        /// Range lines only for a RANGE question or a range-routed read (audit §3: they ran on any read entry).
+        var rangeQuestion: Bool = true
     }
 
     static let header = "COMPUTED FACTS (worked out by the app from the entries above — exact; trust them over your own reading or arithmetic):"
@@ -562,7 +610,11 @@ enum ComputedFacts {
         }
         guard !entries.isEmpty else { return nil }
 
-        var keep: [String] = [todayLine(input.today, calendar: cal)]
+        // T ruling (2026-10-09): "Today is …" ONLY on a date question. Right before "Question:" it captured a bare
+        // "that" ("Which entry says that?" → "none of the entries say that today is Friday…", 2 of 2 deictic follow-ups).
+        let window = relativeWindow(question: input.question, today: input.today, calendar: cal)
+        let wantDates = looksLikeTemporalQuestion(input.question) || looksLikeWholeLibraryQuestion(input.question)
+        var keep: [String] = (wantDates || window != nil) ? [todayLine(input.today, calendar: cal)] : []
         // "N of M" ONLY on whole-library questions (T 2026-10-06): on a single-entry read the models recited it
         // as chatter ("I'm seeing only 1 of 224 entries in your library" — thinking-4B 3/15 on test 3).
         if looksLikeWholeLibraryQuestion(input.question) {
@@ -570,7 +622,7 @@ enum ComputedFacts {
                 + " You cannot count, rank (oldest, newest, longest) or prove that something is absent across the whole \(input.scopeNoun) from these; if asked, say what these entries show and that it may not be everything.")
         }
         keep += packetAnswers(question: input.question, entries: entries, calendar: cal)
-        if let w = relativeWindow(question: input.question, today: input.today, calendar: cal) {
+        if let w = window {
             let inside = entries.filter { e in
                 guard let c = e.created else { return false }
                 let d = cal.startOfDay(for: c)
@@ -586,16 +638,15 @@ enum ComputedFacts {
         // date lines (droppable from the highest [n] down) — CI ruling 2: ONLY on temporal / whole-library questions
         // (on a 12-entry survey they were ~300 prompt tokens ≈ +1 s first token for nothing).
         var dateLines: [String] = []
-        let wantDates = looksLikeTemporalQuestion(input.question) || looksLikeWholeLibraryQuestion(input.question)
         for e in entries where wantDates {
             guard let c = e.created, let days = ageDays(created: c, today: input.today, calendar: cal),
                   let words = ageWords(created: c, today: input.today, calendar: cal) else { continue }
-            dateLines.append("[\(e.number)] \(e.title) — written \(dayString(c, calendar: cal)), \(words) (\(days) \(days == 1 ? "day" : "days")).")
+            dateLines.append("[\(e.number)] \(e.title) — \(e.ownNote ? "written" : "added to the library") \(dayString(c, calendar: cal)), \(words) (\(days) \(days == 1 ? "day" : "days")).")
         }
 
         // range groups, per read entry (per-value lines droppable beyond the first 30; summary never dropped)
         var rangeHeads: [String] = [], rangeValueLines: [[String]] = [], summaries: [String] = []
-        for e in entries {
+        for e in entries where input.rangeQuestion {
             guard let t = e.readText else { continue }
             let rows = rangeRows(in: t)
             guard !rows.isEmpty else { continue }
@@ -604,6 +655,11 @@ enum ComputedFacts {
             let out = rows.filter(\.isOutOfRange)
             let flaggedOnly = rows.filter(\.isFlaggedOnly)
             var s = "Out of range in [\(e.number)], among the \(rows.count) values above: "
+            // a PARTIAL read saw only some rows — "none" would be a claim about rows it never saw (audit §3)
+            if out.isEmpty && e.partial {
+                summaries.append(s + "none of these — but only part of this entry was included, so other values may be out of range; say so.")
+                continue
+            }
             s += out.isEmpty ? "none." : out.map { "\($0.name) \($0.value)\($0.flagToken.map { " (\($0))" } ?? "")" }.joined(separator: ", ") + "."
             let within = rows.count - out.count - flaggedOnly.count
             s += " The other \(within) \(within == 1 ? "is" : "are") within \(within == 1 ? "its range" : "their ranges")."
@@ -613,6 +669,7 @@ enum ComputedFacts {
             summaries.append(s)
         }
 
+        if keep.isEmpty && dateLines.isEmpty && rangeHeads.isEmpty { return nil }   // nothing to compute → no section
         func render(dates: [String], values: [[String]]) -> String {
             var lines = [header] + keep
             if !dates.isEmpty { lines.append("Dates: " + dates.joined(separator: " ")) }

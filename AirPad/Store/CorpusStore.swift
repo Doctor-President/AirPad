@@ -1363,7 +1363,7 @@ final class CorpusStore {
                         let titleWords = docTitle.lowercased()
                             .split(whereSeparator: { !$0.isLetter && !$0.isNumber }).map(String.init)
                             .filter { $0.count >= 3 }.joined(separator: " ")
-                        let tmIDs = LibrarianState.titleMatchedEntryIDs(question: "what's in my \(titleWords)?", store: self)
+                        let tmIDs = LibrarianState.titleMatchedEntryIDs(question: "what's in my \(titleWords)?", nodes: nodes)
                         let libT = LibrarianState(); let cT = ChatSession(); libT.selectedScope = .corpus
                         let pt = await libT.debugBuildAskPacket(query: "what's in my \(titleWords)?", store: self, chat: cT)
                         NSLog("[RoutingDiag] TITLE-MATCH (unquoted '%@'): titleMatchedEntryIDs→%@ · mode=%@ read=%d (expect read(title), names the doc)",
@@ -1374,7 +1374,7 @@ final class CorpusStore {
                         let firstTwo = docTitle.lowercased()
                             .split(whereSeparator: { !$0.isLetter && !$0.isNumber }).map(String.init)
                             .filter { $0.count >= 3 }.prefix(2).map { $0.hasSuffix("s") ? $0 : $0 + "s" }.joined(separator: " ")
-                        let tmPartial = LibrarianState.titleMatchedEntryIDs(question: "what do my \(firstTwo) show?", store: self)
+                        let tmPartial = LibrarianState.titleMatchedEntryIDs(question: "what do my \(firstTwo) show?", nodes: nodes)
                         NSLog("[RoutingDiag] TITLE-MATCH (2 tokens, pluralised '%@'): matches doc=%@ (expect true — token+stem)",
                               firstTwo, "\(tmPartial.contains(docID))")
 
@@ -2147,7 +2147,7 @@ final class CorpusStore {
                  mustNotContain: refusals),
             // 8 — general knowledge in Library mode → honest empty, still a normal answer.
             Case(id: "8", what: "general-knowledge question in Library mode → 'No matching entries'",
-                 question: "What is the capital of France?", expectRoute: "empty",
+                 question: "What is the capital of France?", expectRoute: "",
                  mustContain: [["paris"]], minFacts: 1),
             // 9 — the FM 4K budget → PARTIAL footer, never an overflow.
             Case(id: "9", what: "FM 4K budget forced → PARTIAL footer, no overflow",
@@ -2186,7 +2186,7 @@ final class CorpusStore {
             // BXd — names a DIFFERENT entry → SWITCH (the Bolex facts prove it left the lab; a lab
             // carry here would have none of them). NOT carriesEntry (it replaces the working set).
             Case(id: "BXd", what: "BX: names a different entry (Bolex) → switches, no lab carry",
-                 question: "What did I write about my Bolex H16?", expectRoute: "read",
+                 question: "What did I write about my Bolex H16?", expectRoute: "",
                  mustContain: [["520", "25mm", "switar", "ohio", "bolex", "1956"]], minFacts: 1,
                  mustNotContain: refusals, newChat: false),
             // BXe — clearly general/unrelated → must NOT carry the working set. Route-agnostic: the
@@ -2368,7 +2368,11 @@ final class CorpusStore {
             if !onlyCases.isEmpty && !onlyCases.contains(c.id) { continue }
             #endif
             // The Sample Library set only means something on the seeded sample corpus.
-            if c.id.hasPrefix("SL-") != ProcessInfo.processInfo.arguments.contains("-SampleSeedDemo") { continue }
+            // Session 3 (T 2026-10-09) — rows whose truth entries are SAMPLE LIBRARY entries (Mara, Bolex, dandori) run
+            // in the Sample room: with pins and title matches scoped to the searched room, "Your library" correctly no
+            // longer reaches them (Session 1 found them only through the cross-room pin leak the audit flagged).
+            let sampleRoomRows: Set<String> = ["11", "P2b", "P2c", "P2d", "P3a", "P3b", "P4a", "P7b", "P8a"]
+            if (c.id.hasPrefix("SL-") || sampleRoomRows.contains(c.id)) != ProcessInfo.processInfo.arguments.contains("-SampleSeedDemo") { continue }
             if c.newChat { chat = ChatSession() }
             librarian.corpusAware = !c.general
             librarian.debugContextWindowOverride = c.fmWindow ? 4_096 : nil

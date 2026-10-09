@@ -79,7 +79,10 @@ enum ModelRouter {
     /// remote path); then Ollama over FM when the endpoint parses; else FM so a malformed
     /// setting can't strand the user.
     static var active: Provider {
-        if let pairing = HostPairing.load() {
+        // C2c / C4b2 (T 2026-10-09) — ONE derivation of who answers: a paired Host wins UNLESS the user picked Apple
+        // Intelligence in the model menu (without unpairing). Unpaired → Ollama endpoint, else Apple Intelligence.
+        // The pill, Settings and every send read this same value, and re-read it on `.librarianRouteChanged`.
+        if let pairing = HostPairing.load(), !(prefersOnDevice && onDeviceAvailable) {
             return .host(pairing)
         }
         let endpoint = (KeychainHelper.load(key: "ollamaEndpoint") ?? "")
@@ -101,9 +104,28 @@ enum ModelRouter {
     /// result (LibrarianState.askUnavailable) — never from a `body`.
     static var askHasNoProvider: Bool {
         guard case .foundationModel = active else { return false }
-        if #available(iOS 26.0, *) { return !SystemLanguageModel.default.isAvailable }
-        return true
+        return !onDeviceAvailable
     }
+
+    /// C4b2 — the user picked Apple Intelligence in the model menu. Persisted; posts `.librarianRouteChanged`.
+    private static let onDeviceKey = "airpadLibrarianOnDevice"
+    static var prefersOnDevice: Bool {
+        get { UserDefaults.standard.bool(forKey: onDeviceKey) }
+        set {
+            UserDefaults.standard.set(newValue, forKey: onDeviceKey)
+            NotificationCenter.default.post(name: .librarianRouteChanged, object: nil)
+        }
+    }
+    /// Apple Intelligence can answer on this device. DEBUG `-StubOnDeviceModel YES` stands in for it in the Simulator
+    /// (which has none), so the ROUTE can be tested; the stub streams a canned answer.
+    static var onDeviceAvailable: Bool {
+        #if DEBUG
+        if UserDefaults.standard.bool(forKey: "StubOnDeviceModel") { return true }
+        #endif
+        if #available(iOS 26.0, *) { return SystemLanguageModel.default.isAvailable }
+        return false
+    }
+
 
     /// Brief BN3 — the active backend's real context window, in TOKENS. The Librarian's
     /// read-in-full budget is DERIVED from this (minus system prompt, history, and an answer
@@ -173,10 +195,7 @@ enum ModelRouter {
             // On iOS 18-25 / no Apple Intelligence, FM resolves as the provider but can't run,
             // so the chip must NOT claim "Apple Intelligence" (that contradicted the Ask
             // no-model notice). Fall back to the resting "No model" label.
-            if #available(iOS 26.0, *), SystemLanguageModel.default.isAvailable {
-                return foundationModelName
-            }
-            return remoteRestingName
+            return onDeviceAvailable ? foundationModelName : remoteRestingName
         case .ollama(let endpoint):
             guard let base = URL(string: endpoint) else { return remoteRestingName }
             return (try? await firstOllamaModel(base: base)) ?? remoteRestingName
@@ -308,6 +327,15 @@ enum ModelRouter {
                     #endif
                     switch active {
                     case .foundationModel:
+                        #if DEBUG
+                        if UserDefaults.standard.bool(forKey: "StubOnDeviceModel") {
+                            try await Task.sleep(for: .milliseconds(400))
+                            for w in "This answer comes from Apple Intelligence on this iPhone (stub).".split(separator: " ") {
+                                continuation.yield(.answer(String(w) + " ")); try await Task.sleep(for: .milliseconds(40))
+                            }
+                            continuation.finish(); return
+                        }
+                        #endif
                         guard #available(iOS 26.0, *) else {
                             throw RouterError.foundationModelUnavailable
                         }
@@ -395,9 +423,12 @@ enum ModelRouter {
         /// where loading is the user's call, or the load itself failed). `message` is the Host's own words;
         /// the transcript banner pairs it with a one-tap "Load and ask" for `tag`.
         case modelNotLoaded(tag: String, message: String)
+        /// C2c — Apple Intelligence produced no first token in 45 s.
+        case onDeviceTimeout
 
         var errorDescription: String? {
             switch self {
+            case .onDeviceTimeout: return "Apple Intelligence didn't respond. Try again."
             case .modelNotLoaded(_, let message): return message
             case .foundationModelUnavailable: return "Foundation Model not available on this device."
             case .localBadJSON(let s): return "The on-device model didn't return valid JSON: \(Self.truncate(s))"
@@ -632,9 +663,19 @@ enum ModelRouter {
         let session = LanguageModelSession()
         let combined = flattenForFM(messages)   // FM has no role API — fold (system leads, no "Assistant:" cue)
 
+        // C2c — fail fast: no first token in 45 s → a clear error, never an endless "Thinking…" (the 4K on-device
+        // model prefills in seconds; 45 s means it is stuck).
+        let firstToken = FirstTokenFlag()
+        let watchdog = Task {
+            try? await Task.sleep(for: .seconds(45))
+            if !(await firstToken.seen) { continuation.finish(throwing: RouterError.onDeviceTimeout) }
+        }
+        defer { watchdog.cancel() }
+
         // Snapshots are CUMULATIVE. Convert to deltas via suffix-diff.
         var emitted = ""
         for try await snapshot in session.streamResponse(to: combined) {
+            await firstToken.mark()
             let full = snapshot.content
             guard full.count > emitted.count else { continue }
             guard full.hasPrefix(emitted) else {
@@ -985,6 +1026,8 @@ enum ModelRouter {
     /// Deliberately NOT overwritten by whichever model happened to answer a turn — a fallback pick
     /// must never silently become the default (that is how `llama3.2` got sticky). Plain UserDefaults:
     /// a preference, not a secret.
+    /// The model tag the last Host chat request actually put on the wire (nil before the first one).
+    nonisolated(unsafe) static var lastWireModel: String? = nil
     private static let userPickedHostModelKey = "airpadUserPickedHostModel"
     static var userPickedHostModel: String? {
         get { UserDefaults.standard.string(forKey: userPickedHostModelKey) }
@@ -1077,6 +1120,7 @@ enum ModelRouter {
             model = try await firstHostModel(pairing: pairing)
         }
         #endif
+        lastWireModel = model   // the prefill-speed estimate is per model (T ruling 2026-10-09)
         #if DEBUG
         GauntletTap.shared.noteModel(model)   // Brief CH-0 — the tag actually put on the wire
         #endif
@@ -2161,4 +2205,49 @@ enum WebSearchBackend {
         let key = (KeychainHelper.load(key: keychainKey) ?? "").trimmingCharacters(in: .whitespacesAndNewlines)
         return key.isEmpty ? WebSearchUnavailableExecutor() : BraveSearchToolExecutor(apiKey: key)
     }
+}
+
+
+/// T ruling (2026-10-09) — "Reading <entry>… ~N s" on a first read. The estimate is the packet's tokens (≈ 3 chars per
+/// token) over THIS Mac's prefill speed for the answering model: measured from real first reads (send → first token on
+/// a ≥ 2k-token packet, a moving average), seeded from Session 2's measurements on an M1 Max (4B ≈ 330 tok/s, 8B ≈ 210)
+/// until the first sample. Measured prefill was ≥ 90% of the wait (Session 2 (f)), so tokens ÷ speed is the wait.
+enum PrefillSpeed {
+    private static let key = "airpadPrefillTokPerSec"
+    private static func model() -> String { ModelRouter.lastWireModel ?? ModelRouter.userPickedHostModel ?? "default" }
+    static func tokensPerSecond(for model: String? = nil) -> Double {
+        let m = model ?? Self.model()
+        if let d = UserDefaults.standard.dictionary(forKey: key) as? [String: Double], let v = d[m], v > 0 { return v }
+        let l = m.lowercased()
+        if l.contains("30b") || l.contains("32b") { return 150 }
+        if l.contains("8b") || l.contains("7b") { return 210 }
+        if l.contains("4b") || l.contains("3b") || l.contains("1.7b") { return 330 }
+        return 250
+    }
+    static func estimateSeconds(chars: Int) -> Int {
+        let s = Double(chars) / 3 / tokensPerSecond()
+        return s < 60 ? max(1, Int((s / 5).rounded()) * 5) : Int((s / 10).rounded()) * 10
+    }
+    /// One first-read sample: `chars` sent, `seconds` from send to the first token. Small packets (cache hits,
+    /// follow-ups) say nothing about prefill speed and are ignored.
+    static func record(chars: Int, seconds: Double) {
+        guard chars >= 6_000, seconds > 0.5 else { return }
+        let m = model(), observed = Double(chars) / 3 / seconds
+        var d = (UserDefaults.standard.dictionary(forKey: key) as? [String: Double]) ?? [:]
+        d[m] = d[m].map { 0.7 * $0 + 0.3 * observed } ?? observed
+        UserDefaults.standard.set(d, forKey: key)
+    }
+}
+
+
+extension Notification.Name {
+    /// C2c / C4b2 — who answers the Librarian may have changed (pair, unpair, or the Apple Intelligence pick):
+    /// the pill, the label and Settings re-derive from `ModelRouter.active`.
+    static let librarianRouteChanged = Notification.Name("airpadLibrarianRouteChanged")
+}
+
+/// C2c — "has the on-device model produced anything yet?", shared with the first-token watchdog.
+actor FirstTokenFlag {
+    private(set) var seen = false
+    func mark() { seen = true }
 }

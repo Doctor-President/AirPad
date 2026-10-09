@@ -393,20 +393,22 @@ struct CitationNumberer {
 
     // MARK: - Grammar
 
-    /// A prose reference by packet number: "entries 5, 8 and 9", "(entry 6)", "note #3".
+    /// A prose reference by packet number: "entries 5, 8 and 9", "(entry 6)". Session 3 audit fix (T 2026-10-09):
+    /// ENTRY/ENTRIES only — "your notes 3 times mention Mara" / "item 2 on your packing list" became chips to
+    /// unrelated packet entries [3]/[2].
     static let proseRefRegex = try! NSRegularExpression(
-        pattern: #"\b(?:entry|entries|note|notes|item|items)\s+#?\d{1,2}(?:\s*(?:,|and|&)\s*#?\d{1,2})*\b"#, options: [.caseInsensitive])
+        pattern: #"\b(?:entry|entries)\s+#?\d{1,2}(?:\s*(?:,|and|&)\s*#?\d{1,2})*\b"#, options: [.caseInsensitive])
     private static let numberRegex = try! NSRegularExpression(pattern: #"#?\d{1,2}"#)   // "#2" → "[n]"
     /// A PREFIX of a citation token at the end of the stream: `[`, `[E`, `[5, `, `[5, 1`.
     private static let bracketPrefixRegex = try! NSRegularExpression(
         pattern: #"\[\s*[Ee]?\s*(?:\d{1,2}\s*,\s*[Ee]?\s*)*\d{0,2}\s*\z"#)
     /// A prose-reference noun with its number list so far: "entries", "entries 5,", "entries 5, 8 an".
     private static let proseFragmentRegex = try! NSRegularExpression(
-        pattern: #"\b(?:entry|entries|note|notes|item|items)(?:\s+#?\d{1,2}(?:\s*(?:,|&|and)\s*#?\d{1,2})*)?(?:\s*(?:,|&|and|an|a)?\s*#?)?\z"#,
+        pattern: #"\b(?:entry|entries)(?:\s+#?\d{1,2}(?:\s*(?:,|&|and)\s*#?\d{1,2})*)?(?:\s*(?:,|&|and|an|a)?\s*#?)?\z"#,
         options: [.caseInsensitive])
-    /// The start of a noun that could become a prose reference: "e", "en", … "entrie", "no", "not", "i", "it", "ite".
+    /// The start of a noun that could become a prose reference: "e", "en", … "entrie".
     private static let partialNounRegex = try! NSRegularExpression(
-        pattern: #"\b(?:e|en|ent|entr|entri|entrie|n|no|not|i|it|ite)\z"#, options: [.caseInsensitive])
+        pattern: #"\b(?:e|en|ent|entr|entri|entrie)\z"#, options: [.caseInsensitive])
     private static let trailingSpaceRegex = try! NSRegularExpression(pattern: #"\s+\z"#)
 }
 
@@ -476,12 +478,17 @@ enum CitationNumberSelfTest {
         // 5. prose references rewritten through the same map, at first appearance
         for (i, ch) in chunkings("As entries 5, 8 and 9 show [6], and (entry 6) too; see note #2.").enumerated() {
             let r = stream("prose#\(i)", ch, forbidden: ["entries 5", "entry 6)"])
-            check("prose#\(i) text", r.text == "As entries [1], [2] and [3] show [4], and (entry [4]) too; see note [5].", r.text)
+            check("prose#\(i) text", r.text == "As entries [1], [2] and [3] show [4], and (entry [4]) too; see note #2.", r.text)
         }
         // 6. a number with no candidate is not a citation
         for (i, ch) in chunkings("Step item 2 of 3 and entries 5 and 7.").enumerated() {
             let r = stream("noref#\(i)", ch)
-            check("noref#\(i) text", r.text == "Step item [1] of 3 and entries 5 and 7.", r.text)
+            check("noref#\(i) text", r.text == "Step item 2 of 3 and entries 5 and 7.", r.text)
+        }
+        // Session 3 audit fix — "notes N" / "item N" are prose, never a citation
+        for (i, ch) in chunkings("Your notes 5 times mention Mara; item 8 on the list is the passport.").enumerated() {
+            let r = stream("notes-n#\(i)", ch)
+            check("notes-n#\(i) text", r.text == "Your notes 5 times mention Mara; item 8 on the list is the passport.", r.text)
         }
         let rNone = stream("noref-empty", ["Step item 2 of 3."], candidates: [C(index: 5, nodeID: "A", title: "", snippet: "")])
         check("item 2 of 3 left alone", rNone.text == "Step item 2 of 3.", rNone.text)

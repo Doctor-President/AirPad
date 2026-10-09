@@ -129,7 +129,7 @@ if (( ${#STORE_PASSES[@]} )); then
     PD="$RUN_DIR/$LABEL"; rm -rf "$PD"; mkdir -p "$PD"
     xcrun simctl terminate $SIM com.doctorpresident.airpad 2>/dev/null
     xcrun simctl install $SIM "$APP" || { log "install failed: $APP"; continue; }
-    ARGS=("${BASEARGS[@]}" -LibrarianGauntlet -GauntletTapDir "$PD" -DebugHostModel "$MODEL" -GauntletThink "$THINKF")
+    ARGS=("${BASEARGS[@]}" -ResetLibrarianRoute YES -LibrarianGauntlet -GauntletTapDir "$PD" -DebugHostModel "$MODEL" -GauntletThink "$THINKF")
     [[ -n $ONLYC ]] && ARGS+=(-GauntletOnly "$ONLYC")
     [[ -n ${PASSARGS:-} ]] && ARGS+=(${(z)PASSARGS})
     log "store pass $LABEL (think=$THINKF only=${ONLYC:-all}${PASSARGS:+ args=$PASSARGS}) …"

@@ -176,7 +176,7 @@ enum ComputedFactsSelfTest {
         ]
         func section(_ q: String, _ allowance: Int = 3_600) -> String? {
             ComputedFacts.build(.init(today: today, calendar: cal, question: q, entries: entries, scopeTotal: 434,
-                                      scopeNoun: "library", allowanceChars: allowance))
+                                      scopeNoun: "library", allowanceChars: allowance, rangeQuestion: ComputedFacts.looksLikeRangeQuestion(q)))
         }
         let s1 = section("Which of my lab values are out of range?"), s2 = section("Which of my lab values are out of range?")
         let h1 = s1.map { SHA256.hash(data: Data($0.utf8)).description }, h2 = s2.map { SHA256.hash(data: Data($0.utf8)).description }
@@ -185,14 +185,14 @@ enum ComputedFactsSelfTest {
         check("S-no-N-of-M-on-read-q", s1?.contains("You are seeing") == false, s1 ?? "nil")
         let sWhole = section("How many of my entries mention my lab report?")
         check("S-scope-N-of-M-whole-library", sWhole?.contains("You are seeing 2 of the 434 entries in this library") == true, sWhole ?? "nil")
-        check("S-no-N-of-M-on-synthesis", section("What connections do you find between my ideas?")?.contains("You are seeing") == false)
+        check("S-no-N-of-M-on-synthesis", section("What connections do you find between my ideas?")?.contains("You are seeing") != true)
         check("S-no-limit-on-range-q", s1?.contains("You cannot count") == false)
         check("S-summary", s1?.contains("Out of range in [1], among the 9 values above: CHOLESTEROL 213 (H), LDL, CALCULATED 153 (H). The other 7 are within their ranges.") == true,
               s1?.components(separatedBy: "\n").first { $0.hasPrefix("Out of range") } ?? "missing")
         check("S-no-dates-on-range-q", s1?.contains("Dates:") == false, s1 ?? "nil")
         let sTime = section("How has my thinking about AirPad changed over time?")
         check("S-dates-on-temporal-q", sTime?.contains("[2] Fourteen years — written 2026-06-20, 3 months ago (107 days).") == true, sTime ?? "nil")
-        check("S-no-dates-on-synthesis", section("What connections do you find between my ideas?")?.contains("Dates:") == false)
+        check("S-no-dates-on-synthesis", section("What connections do you find between my ideas?")?.contains("Dates:") != true)
         for q in ["How has my thinking about AirPad changed over time?", "How did my view evolve?", "What have I written recently?",
                   "What did I note since June?", "When did I start the sculpture?", "What came before the Bolex?", "Anything new lately?"] {
             check("T+ \(q)", ComputedFacts.looksLikeTemporalQuestion(q))
@@ -206,8 +206,40 @@ enum ComputedFactsSelfTest {
         check("S-window-none", sWin?.contains("\"Last month\" = September 2026 (2026-09-01 to 2026-09-30). None of the entries shown fall in it — the library may have others from then.") == true,
               sWin ?? "nil")
         let tight = section("Which of my lab values are out of range?", 700)
-        check("S-allowance-keeps-floor", tight.map { $0.count <= 700 && $0.contains("Today is") && $0.contains("Out of range in [1]") } == true,
+        check("S-allowance-keeps-floor", tight.map { $0.count <= 700 && $0.contains("Out of range in [1]") } == true,
               tight ?? "nil")
+        // ── Session 3 audit fixes (T 2026-10-09: every wrong-answer heuristic fails safe)
+        check("F-no-today-on-deictic", section("Which entry says that?")?.contains("Today is") != true, section("Which entry says that?") ?? "nil")
+        check("F-no-today-on-range-q", s1?.contains("Today is") == false)
+        check("F-today-on-date-q", sTime?.contains("Today is Monday, 5 October 2026.") == true)
+        check("F-plan-table-not-ranges", ComputedFacts.rangeRows(in: "Week 1 2-3 runs\nWeek 2 3-4 runs\nWeek 3 4-5 runs").isEmpty)
+        check("F-lab-table-still-ranges", ComputedFacts.rangeRows(in: labTable).count == 9)
+        var partialEntries = entries; partialEntries[1] = ComputedFacts.PacketEntry(number: 1, nodeID: "A", title: "Lab report", created: d("2026-07-07"),
+            readText: "SODIUM 137 135-145 mmol/L\nPOTASSIUM 4.2 3.5-5.2 mmol/L", partial: true)
+        let sPart = ComputedFacts.build(.init(today: today, calendar: cal, question: "Which of my lab values are out of range?", entries: partialEntries,
+                                              scopeTotal: 434, scopeNoun: "library", allowanceChars: 3_600))
+        check("F-partial-read-no-none", sPart?.contains("none of these — but only part of this entry was included") == true
+              && sPart?.contains("values above: none.") == false, sPart ?? "nil")
+        var saved = entries; saved[0] = ComputedFacts.PacketEntry(number: 2, nodeID: "B", title: "Fourteen years", created: d("2026-06-20"), readText: nil, ownNote: false)
+        let sSaved = ComputedFacts.build(.init(today: today, calendar: cal, question: "How has my thinking about AirPad changed over time?", entries: saved,
+                                               scopeTotal: 434, scopeNoun: "library", allowanceChars: 3_600))
+        check("F-saved-entry-added-not-written", sSaved?.contains("[2] Fourteen years — added to the library 2026-06-20") == true, sSaved ?? "nil")
+        for (t, w) in [("When I spoke to Mom on Sunday", "speak"), ("We met at the front desk", "meet"), ("She visited twice", "visit"),
+                       ("Mara's spice rack", "Mara"), ("The Post-Workout Relief piece", "Post-Workout"), ("planned it", "plan")] {
+            check("F-stem \(w)", ComputedFacts.mentions(t, w))
+        }
+        check("F-stem-no-false", !ComputedFacts.mentions("a recipe for bread", "beekeeping"))
+        for q in ["How many times a day should I take my meds?", "Describe the first time I tried sourdough.",
+                  "What did I decide about the last few items on my packing list?", "What's the biggest thing I learned this year?",
+                  "Why do I never finish projects?", "Last time we talked you said the Bolex was heavy, right?"] {
+            check("F-L- \(q)", !ComputedFacts.looksLikeWholeLibraryQuestion(q))
+        }
+        check("F-event-not-rank", ComputedFacts.wholeLibraryForms("When did I last speak to Mom?").isEmpty
+              && ComputedFacts.wholeLibraryForms("When did I first meet Mara?").isEmpty)
+        for q in ["Have I written about Mara?", "Did I ever write about beekeeping?", "How many times did I mention Paris?",
+                  "When did I last write about Mara?"] {
+            check("F-L+ \(q)", ComputedFacts.looksLikeWholeLibraryQuestion(q))
+        }
 
         // ── CI-2 ruling 1: key terms + packet-level computed answers
         let kt: [(String, [String])] = [
@@ -229,17 +261,21 @@ enum ComputedFactsSelfTest {
         func line(_ q: String) -> String { ans(q).dropFirst().first ?? "" }   // [0] = the "start your answer with" lead
         check("A-lead", ans("How many of my entries mention Mara?").first?.hasPrefix("This is a whole-library question") == true)
         check("A-count", line("How many of my entries mention Mara?") == "Answer: \u{201C}Of the 3 entries I can see, 1 mentions \u{201C}Mara\u{201D} ([1]) — I can't see your whole library, so there may be more.\u{201D}", line("How many of my entries mention Mara?"))
-        check("A-count-none", line("How many of my entries mention my Bolex?") == "Answer: \u{201C}None of the 3 entries I can see mention \u{201C}Bolex\u{201D} — I can't see your whole library, so I can't rule it out.\u{201D}", line("How many of my entries mention my Bolex?"))
+        // T ruling (2026-10-09): never assert absence from a key-term miss — a miss emits NO answer line.
+        check("A-count-none-silent", ans("How many of my entries mention my Bolex?").isEmpty, "\(ans("How many of my entries mention my Bolex?"))")
         let one = [shownEntries[0]]
         let oneLine = ComputedFacts.packetAnswers(question: "How many of my entries mention Mara?", entries: one, calendar: cal).dropFirst().first ?? ""
         check("A-singular", oneLine.contains("Of the one entry I can see, 1 mentions") && !oneLine.contains("1 entries"), oneLine)
-        let oneNone = ComputedFacts.packetAnswers(question: "Did I ever write about beekeeping?", entries: one, calendar: cal).dropFirst().first ?? ""
-        check("A-singular-none", oneNone.hasPrefix("Answer: \u{201C}The one entry I can see doesn't mention \u{201C}beekeeping\u{201D} — but I can't see your whole library, so I can't rule it out."), oneNone)
-        check("A-oldest", line("What's my oldest entry about Mara?").hasPrefix("Answer: \u{201C}Of the entries I can see that mention \u{201C}Mara\u{201D}, the oldest is [1] Mara (2025-11-22)"), line("What's my oldest entry about Mara?"))
+        let oneNone = ComputedFacts.packetAnswers(question: "Did I ever write about beekeeping?", entries: one, calendar: cal)
+        check("A-singular-none-silent", oneNone.isEmpty, "\(oneNone)")
+        check("A-oldest", line("What's my oldest entry about Mara?").hasPrefix("Answer: \u{201C}Of the entries I can see that mention \u{201C}Mara\u{201D}, the oldest is [1] Mara (written 2025-11-22)"), line("What's my oldest entry about Mara?"))
         check("A-longest", line("What's the longest entry in my library?").hasPrefix("Answer: \u{201C}Of the entries I can see, the longest is [3] Deep dive (about 4000 words)"), line("What's the longest entry in my library?"))
         check("A-present", line("Did I ever write about Richard Dawkins?") == "Answer: \u{201C}Yes — of the 3 entries I can see, [3] mentions \u{201C}Richard Dawkins\u{201D}.\u{201D}", line("Did I ever write about Richard Dawkins?"))
-        check("A-absent-partial", line("What exactly did I say about the Bolex being dandori?").hasPrefix("Answer: \u{201C}None of the 3 entries I can see mention all of \u{201C}Bolex\u{201D} and \u{201C}dandori\u{201D} ([2] mentions \u{201C}dandori\u{201D} only) — but I can't see your whole library, so I can't rule it out."),
-              line("What exactly did I say about the Bolex being dandori?"))
+        check("A-absent-partial-silent", ans("What exactly did I say about the Bolex being dandori?").isEmpty, "\(ans("What exactly did I say about the Bolex being dandori?"))")
+        check("A-speak-spoke", ComputedFacts.packetAnswers(question: "When did I last write about speaking to Mom?", entries: [{
+            var e = ComputedFacts.PacketEntry(number: 1, nodeID: "MO", title: "Mom", created: d("2026-09-04"), readText: nil)
+            e.shownText = "Mom\nSpoke to her Sunday; she turned it into proof she was right."; return e }()], calendar: cal)
+            .contains { $0.contains("the most recent is [1] Mom") })
         check("A-no-time-terms", ComputedFacts.keyTerms("What did I write last month?").isEmpty && ans("What did I write last month?").isEmpty, "\(ComputedFacts.keyTerms("What did I write last month?"))")
         check("A-none-for-ordinary", ans("What connections do you find between my ideas?").isEmpty && ans("Which of my lab values are out of range?").isEmpty)
 

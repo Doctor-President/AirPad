@@ -732,7 +732,22 @@ final class LibrarianState {
         // offer re-ask, and Retry/↻ via `resendHandler`), and hands the SAME plan's fields to the ONE
         // `chat.send` below — so the packet, the request, the chips, and the receipt cannot drift
         // apart (T's log: a 16,337-char read chosen, then a request sent without it).
-        let plan = makeTurnPlan(query: query, candidates: candidates, empty: empty, receipt: receipt, store: store)
+        let window = ModelRouter.contextWindowTokens
+        // Cache-friendly follow-ups: an entry already sent in full by a packet the history will replay is pointed
+        // back to, and the turn keeps the previous turn's system prompt. Only right after a Library turn (a General
+        // turn in between has its own prompt — the cached prefix is gone anyway).
+        var plan = makeTurnPlan(query: query, candidates: candidates, empty: empty, receipt: receipt, store: store)
+        var replayFrom: UUID? = nil
+        if let prev = chat.lastLibraryTurn() {
+            let threadPackets = chat.replayedPackets(from: prev.threadStart, reserveChars: plan.systemPrompt.count + 4_000, windowTokens: window)
+            let reuse = makeTurnPlan(query: query, candidates: candidates, empty: empty, receipt: receipt, store: store,
+                                     previous: (threadPackets, prev.systemPrompt))
+            // The reused text must really be in the history this request sends (same derivation as ChatSession.send).
+            let sent = chat.replayedPackets(from: prev.threadStart, reserveChars: reuse.systemPrompt.count + reuse.modelText.count, windowTokens: window)
+            if reuse.reusedEntries > 0, reuse.reusedHeaders.allSatisfy({ h in sent.contains { $0.contains(h) } }) {
+                plan = reuse; replayFrom = prev.threadStart
+            }
+        }
         #if DEBUG
         // The gauntlet asserts the BU1 invariants against the very object that ships.
         debugLastTurn = plan
@@ -747,9 +762,10 @@ final class LibrarianState {
         #endif
         // Brief BW5 — the "Reading <Title>…" / "Skimming your library…" line shown until the first token.
         chat.prefillNotice = plan.prefillNotice()
+        if plan.mode == "read", plan.reusedEntries == 0 { chat.prefillSampleChars = plan.systemPrompt.count + plan.modelText.count }
         await chat.send(displayText: plan.displayText, modelText: plan.modelText,
                         systemPrompt: plan.systemPrompt, citations: plan.citations,
-                        alwaysCiteIndices: plan.alwaysCiteIndices, readReceipt: plan.readReceipt)
+                        alwaysCiteIndices: plan.alwaysCiteIndices, readReceipt: plan.readReceipt, replayFrom: replayFrom)
         // Brief AI5 — Library mode never searches, but when the EMPTY room meets a current-information
         // question the app OFFERS the web under the answer (App UI only — never model text/citation).
         // Set after the answer commits; the surface renders the offer bar, tapping it flips to General
@@ -803,7 +819,8 @@ final class LibrarianState {
     /// `chat.send`; the DEBUG record and the trace read the SAME plan. This is what makes "the
     /// receipt claims a read the request doesn't carry" impossible by construction.
     func makeTurnPlan(query: String, candidates: [NumberedCandidate], empty: Bool,
-                      receipt: ChatSession.Message.ReadReceipt?, store: CorpusStore) -> TurnPlan {
+                      receipt: ChatSession.Message.ReadReceipt?, store: CorpusStore,
+                      previous: (packets: [String], systemPrompt: String)? = nil) -> TurnPlan {
         let window = ModelRouter.contextWindowTokens
         let budget = askContextCharBudget()
         // EMPTY room (Brief AB3/BU3 case 8) — the bare question under the honest empty-library prompt,
@@ -819,6 +836,16 @@ final class LibrarianState {
         }
         // READ / SURVEY — the retrieved context, then the question LAST (BU4: no volatile text at the
         // top; the stable system-prompt + packet prefix is what Ollama can KV-cache across turns).
+        // T ruling (2026-10-09) — CACHE-FRIENDLY FOLLOW-UPS. An entry the previous turn already sent IN FULL under the
+        // same [n] header is not sent again: the history replays that packet byte-for-byte, so the model still has the
+        // text and Ollama reuses the cached prefix. The turn then keeps the previous turn's system prompt too (any
+        // change there would break the prefix at its first byte). The caller checks the history really carries it.
+        let reusedCands = previous.map { prev in
+            candidates.filter { c in c.isEntryRead && prev.packets.contains { $0.contains(Self.entryReadHeader(for: c, store: store) + "\n") } }
+        } ?? []
+        let reused = Set(reusedCands.map(\.nodeID))
+        entriesSentAbove = reused
+        defer { entriesSentAbove = [] }
         let context = buildAskContext(candidates: candidates, store: store)
         // Brief CI — COMPUTED FACTS (today, ages, ranges, scope) at the TAIL, just before the question:
         // it carries today + ages (volatile daily), so it stays out of BU4's cacheable prefix.
@@ -836,13 +863,21 @@ final class LibrarianState {
         let alwaysCite = Set(candidates.filter { $0.isEntryRead }.map { $0.number })
         let readTitle = candidates.first(where: { $0.isEntryRead })
             .flatMap { c in store.nodes.first(where: { $0.id == c.nodeID })?.title }
-        return TurnPlan(
-            displayText: query, modelText: modelText,
-            systemPrompt: askSystemPrompt(hasReads: candidates.contains { $0.isEntryRead },
+        var freshSystem = askSystemPrompt(hasReads: candidates.contains { $0.isEntryRead },
                                           hasCards: candidates.contains { $0.isCard },
                                           hasPassages: candidates.contains { !$0.isCard && !$0.isEntryRead },
                                           hasPartial: receipt?.partial == true,
-                                          hasFacts: facts != nil),
+                                          hasFacts: facts != nil)
+        // Session 3 audit fix — a THIN survey (1–2 cards, no passages) used to be discarded as an empty room ("No entries
+        // match" with two Mara notes right there). It is sent now, with this line so a stray card isn't cited under an
+        // unrelated answer (measured: "Paris" under a Philosopher Recommendations chip).
+        let cardN = candidates.filter { $0.isCard }.count
+        if !candidates.contains(where: { !$0.isCard }), cardN > 0, cardN < 3 {
+            freshSystem += "\n\nOnly \(cardN == 1 ? "one loosely related entry" : "two loosely related entries") turned up for this question — they may not be about it at all. Use one only if it really answers the question; otherwise say you couldn't find a close match in their library and answer from general knowledge, without citing anything."
+        }
+        var plan = TurnPlan(
+            displayText: query, modelText: modelText,
+            systemPrompt: reused.isEmpty ? freshSystem : (previous?.systemPrompt ?? freshSystem),
             citations: chips, alwaysCiteIndices: alwaysCite, readReceipt: receipt,
             mode: (receipt?.readInFull ?? 0) > 0 ? "read" : "survey",
             readNodeIDs: candidates.filter { $0.isEntryRead }.map { $0.nodeID },
@@ -852,6 +887,13 @@ final class LibrarianState {
             cardNodeIDs: candidates.filter { $0.isCard }.sorted { $0.number < $1.number }.map { $0.nodeID },
             chipIndices: (chips ?? []).map { $0.index }.sorted(),
             windowTokens: window, budgetChars: budget, readTitle: readTitle)
+        plan.reusedEntries = reused.count
+        plan.reusedHeaders = reusedCands.map { Self.entryReadHeader(for: $0, store: store) + "\n" }
+        // T ruling (2026-10-09) — a FIRST read says how long it will take: tokens ÷ this Mac's measured prefill speed.
+        if plan.mode == "read", reused.isEmpty {
+            plan.estimateSeconds = PrefillSpeed.estimateSeconds(chars: plan.systemPrompt.count + plan.modelText.count)
+        }
+        return plan
     }
 
     #if DEBUG
@@ -911,14 +953,14 @@ final class LibrarianState {
         forcedReadNodeID = nil
         let pinnedIDs: [String] = {
             if let forcedID, store.nodes.contains(where: { $0.id == forcedID }) { return [forcedID] }
-            return Self.pinnedNodeIDs(question: query, store: store)
+            return Self.pinnedNodeIDs(question: query, nodes: store.nodes(in: selectedScope))
         }()
         let pinning = !pinnedIDs.isEmpty
         // BN2 trigger #2 — the question NAMES an entry by TITLE MATCH: looser than the strict
         // quoted/verbatim pin (punctuation-normalised, word-order-independent), so "what's in my
         // Medical Lab Tests?" names the "Medical – Lab Tests" entry even without quotes or the exact
         // en-dashed form. A pin wins when both fire (it's the more explicit signal).
-        let titleMatchedIDs = pinning ? [] : Self.titleMatchedEntryIDs(question: query, store: store)
+        let titleMatchedIDs = pinning ? [] : Self.titleMatchedEntryIDs(question: query, nodes: store.nodes(in: selectedScope))
         // A NAMED entry (pin OR title match) is an explicit single/few-entry focus → READ it, drop
         // the tangential card survey, hold non-named passages to the higher 0.70 bar.
         let namedIDs = pinning ? pinnedIDs : titleMatchedIDs
@@ -951,7 +993,19 @@ final class LibrarianState {
 
         // BN2 — rank ENTRIES by aggregate score, then decide READ vs SURVEY.
         let ranking = Self.entryRanking(passages: general)
-        let dominant = Self.dominantReadEntry(ranking: ranking, store: store)   // nil → no single dominator
+        // Session 3 audit fix (T 2026-10-09) — WHICH entry to read (dominance, the range table, the read-in-full offer) is
+        // decided on the CURRENT question alone. The prior-turn-augmented query re-read the previous entry: "What is
+        // the capital of France?" after a Bolex read answered "Paris" under a Bolex chip + "Read in full" footer.
+        // Retrieval breadth (passages, cards) still uses the augmented query, so a follow-up keeps its subject.
+        let decisionRanking: [(nodeID: String, aggregate: Float, top: Float, count: Int)]
+        // …except a deictic follow-up ("what insights can you derive from THIS?"): it IS about the previous turn.
+        if retrievalQuery != query, !Self.looksLikeWorkingSetFollowUp(query) {
+            let curVec = await CardEmbeddingService.shared.embed(query) ?? qvec
+            decisionRanking = Self.entryRanking(passages: await store.askMatches(query: query, scope: selectedScope, topK: 12, queryVector: curVec))
+        } else {
+            decisionRanking = ranking
+        }
+        let dominant = Self.dominantReadEntry(ranking: decisionRanking, store: store)   // nil → no single dominator
         // Brief CI §2.6 — a RANGE question reads its range TABLE. "Which of my lab values are out of range?"
         // shares one title token with "Medical – Lab Tests" (title match needs 2) and the terse table embeds
         // too weakly to dominate → it surveyed a "Result 17.6" fragment (CI-0 P1a, 9/9). Narrowed (Companion):
@@ -959,7 +1013,7 @@ final class LibrarianState {
         // range-bearing entry (≥3 parsed result rows) must be in the TOP-5 retrieved.
         let rangeTarget: String? = (named || dominant != nil || !Self.isRangeRoutingEnabled
                                     || !ComputedFacts.looksLikeRangeQuestion(query))
-            ? nil : await Self.rangeBearingTarget(ranking: ranking, cards: cards, store: store)
+            ? nil : await Self.rangeBearingTarget(ranking: decisionRanking, cards: cards, store: store)
 
         // ★ Brief BX — CARRY THE WORKING SET across follow-ups. When a prior turn left entries open, a
         // new turn RE-READS them (same targets → same packet prefix → Ollama KV-cached → fast) UNLESS
@@ -1004,7 +1058,19 @@ final class LibrarianState {
                   (!named && !dominantDifferent && (Self.looksLikeWorkingSetFollowUp(query) || wsStillRelevant)) ? "y":"n")
         }
         #endif
-        if !named, !dominantDifferent, !wsTargets.isEmpty, (Self.looksLikeWorkingSetFollowUp(query) || wsStillRelevant) {
+        // Session 3 audit fix — a non-deictic question that NAMES something the open entry doesn't contain is not a
+        // follow-up on it: "What did I write about my Bolex H16?" after the lab read (no Bolex in this room) carried the
+        // lab entry and answered "you didn't write about it" under a Medical – Lab Tests chip.
+        var namesSomethingElse = false
+        if !wsTargets.isEmpty, !Self.looksLikeWorkingSetFollowUp(query) {
+            let names = Self.namedTerms(query)
+            if !names.isEmpty {
+                var wsText = ""
+                for id in wsTargets { wsText += await store.fullEntryText(nodeID: id) + "\n" + (store.nodes.first { $0.id == id }?.title ?? "") }
+                namesSomethingElse = !names.allSatisfy { ComputedFacts.mentions(wsText, $0) }
+            }
+        }
+        if !named, !dominantDifferent, !namesSomethingElse, !wsTargets.isEmpty, (Self.looksLikeWorkingSetFollowUp(query) || wsStillRelevant) {
             let (candidates, receipt) = await buildReadPacket(
                 readTargets: wsTargets, rankedPassages: [], cards: [],
                 carried: carriedAll, budget: budget, queryVector: qvec, store: store)
@@ -1031,7 +1097,9 @@ final class LibrarianState {
                 if titleMatchedIDs.count <= 1 {
                     readTargets = titleMatchedIDs
                 } else {
-                    let ranked = titleMatchedIDs.sorted { agg($0) > agg($1) }
+                    // Session 3 audit fix — the TITLE score decides (IDF-weighted overlap, newest first on a tie);
+                    // the aggregate passage score was arbitrary when neither had passages ("Lab Tests 2024" vs "2025").
+                    let ranked = titleMatchedIDs
                     readTargets = [ranked[0]]
                     ambiguousChipIDs = Array(ranked.dropFirst().prefix(4))   // the other named entries → chips
                 }
@@ -1089,15 +1157,6 @@ final class LibrarianState {
             generalFiltered = generalFiltered.filter { isOwn($0.nodeID) } + generalFiltered.filter { !isOwn($0.nodeID) }
             orderedCards = orderedCards.filter { isOwn($0.nodeID) } + orderedCards.filter { !isOwn($0.nodeID) }
         }
-        #if DEBUG
-        // Session 2 measurement (a) — `-MeasureCardFloor 0.57`: survey cards below the floor are dropped, keeping at least 3
-        // (narrow queries top out ~0.53, so a floor alone would empty them). Measure only; nothing ships.
-        let measureFloor = UserDefaults.standard.double(forKey: "MeasureCardFloor")
-        if measureFloor > 0 {
-            let kept = orderedCards.filter { $0.score >= Float(measureFloor) }
-            orderedCards = kept.count >= 3 ? kept : Array(orderedCards.prefix(3))
-        }
-        #endif
         let newPassages = Array(generalFiltered.prefix(verdict.shape.passageBudget))
         let newCards = Array(orderedCards.prefix(verdict.shape.cardBudget))
         // Carry unions both kinds, but never a stale full-entry read into a survey (a survey is a new
@@ -1110,11 +1169,11 @@ final class LibrarianState {
         carriedChatID = chat.id
         chat.workingSet = []   // BN4 — a survey moves on; nothing stays open
 
-        // Brief AB3 — "empty" = a SURVEY that surfaced < 3 cards and no passages (or nothing at all).
-        let passageCount = candidates.filter { !$0.isCard }.count
-        let cardCount = candidates.count - passageCount
+        // Brief AB3 — "empty" = nothing at all. Session 3 audit fix (T 2026-10-09): a survey with 1–2 cards and no
+        // passages used to count as EMPTY too — the cards were discarded and the model told "No entries in this library
+        // match" while two Mara notes sat right there. A thin survey is still a survey (the prompt already says the
+        // entries may not all be relevant); only a truly empty room gets the empty prompt.
         let empty = candidates.isEmpty
-            || (passageCount == 0 && cardCount < 3 && verdict.shape == .survey)
 
         // Brief BS3 — a survey where ONE entry clearly leads offers "Read *Title* in full?" (so the
         // user need never learn to pin). Fires only when the lead is strong: top aggregate ≥ 1.3
@@ -1127,8 +1186,8 @@ final class LibrarianState {
         // (psychology)*, and accepting it read that article in full (receipt: "Read *Schema
         // (psychology)* in full"). Same rule, both paths: an entry the user SAVED is a locator, not
         // the authority on what the user thinks.
-        if !empty, let lead = ranking.first, lead.aggregate >= 1.3, lead.count >= 2,
-           (ranking.count == 1 || lead.aggregate >= 1.5 * (ranking[1].aggregate)),
+        if !empty, let lead = decisionRanking.first, lead.aggregate >= 1.3, lead.count >= 2,
+           (decisionRanking.count == 1 || lead.aggregate >= 1.5 * (decisionRanking[1].aggregate)),
            let node = store.nodes.first(where: { $0.id == lead.nodeID }),
            node.cardProvenance().kind != .savedLink {
             pendingReadInFullOffer = ReadInFullOffer(query: query, nodeID: lead.nodeID, title: node.title)
@@ -1223,6 +1282,21 @@ final class LibrarianState {
     /// phrase ("that document", "tell me more", "analyze it", "go deeper"…), OR a SHORT question
     /// (≤ 6 words) leaning on a bare deictic ("it", "that", "this", "those"). A fresh, self-contained
     /// question introduces its own nouns → matches none of these → routes normally (new topic).
+    /// The NAMES a question uses: capitalised words not at a sentence start ("Bolex", "Mara") and tokens mixing letters
+    /// and digits ("H16"). Empty for most questions.
+    static func namedTerms(_ q: String) -> [String] {
+        let words = q.replacingOccurrences(of: "\u{2019}", with: "'").split(whereSeparator: { $0 == " " || $0 == "\n" }).map(String.init)
+        var out: [String] = []
+        for (i, w) in words.enumerated() {
+            let core = w.trimmingCharacters(in: CharacterSet.alphanumerics.inverted).replacingOccurrences(of: "'s", with: "")
+            guard core.count >= 2 else { continue }
+            let atStart = i == 0 || (words[i - 1].last.map { ".!?".contains($0) } ?? false)
+            let mixed = core.rangeOfCharacter(from: .letters) != nil && core.rangeOfCharacter(from: .decimalDigits) != nil
+            if mixed || (!atStart && core.first?.isUppercase == true && core != "I") { out.append(core) }
+        }
+        return out
+    }
+
     static func looksLikeWorkingSetFollowUp(_ query: String) -> Bool {
         let q = query.lowercased()
         let phrases = ["that document", "this document", "that entry", "this entry", "the entry",
@@ -1232,6 +1306,9 @@ final class LibrarianState {
                        "expand on", "summarize it", "summarise it", "explain it", "explain that",
                        "what else", "read it", "read that", "in full"]
         if phrases.contains(where: { q.contains($0) }) { return true }
+        // a question that ENDS on a bare pointer ("…can you derive from this?", "…say about it?") points at the open entry
+        if let last = q.split(whereSeparator: { !$0.isLetter && !$0.isNumber }).last,
+           ["it", "that", "this", "them", "those", "these"].contains(String(last)) { return true }
         let words = q.split(whereSeparator: { !$0.isLetter && !$0.isNumber }).map(String.init)
         if words.count <= 6 {
             let deictics: Set<String> = ["it", "that", "this", "them", "those", "these"]
@@ -1368,12 +1445,19 @@ final class LibrarianState {
         }
         if blocks.isEmpty { blocks = await store.entryBlockTexts(nodeID: nodeID) }
         var out = ""
+        // Session 3 audit fix — a block longer than the budget is cut at a LINE boundary: a mid-line cut turned
+        // "Iron 50 10-150" into "Iron 50 10-15" ("ABOVE the range").
+        func cutAtLine(_ t: String, _ n: Int) -> String {
+            let head = String(t.prefix(n))
+            guard head.count < t.count, let nl = head.lastIndex(of: "\n") else { return head }
+            return String(head[..<nl])
+        }
         for b in blocks {
             let add = out.isEmpty ? b : "\n\n" + b
+            if out.isEmpty && b.count > max(budget, 200) { out = cutAtLine(b, max(budget, 200)); break }
             if !out.isEmpty && out.count + add.count > budget { break }
             out += add
         }
-        if out.isEmpty, let first = blocks.first { out = String(first.prefix(max(budget, 200))) }
         return out
     }
 
@@ -1916,23 +2000,46 @@ final class LibrarianState {
     /// two entries both match (ambiguous), the caller READS the top by passage score and lists the
     /// rest as chips (BS1). Empty for the common no-named-entry question. Never called when a pin
     /// fired.
-    static func titleMatchedEntryIDs(question: String, store: CorpusStore) -> [String] {
+    static func titleMatchedEntryIDs(question: String, nodes: [Node]) -> [String] {
         let q = contentTokens(question)
         guard !q.isEmpty else { return [] }
-        var matches: [(id: String, overlap: Int)] = []
-        for node in store.nodes {
-            let t = contentTokens(node.title)
+        // Session 3 audit fix (T 2026-10-09) — overlap is weighted by how DISTINCTIVE each title word is in this room
+        // (IDF over its titles), and must cover ≥ 60% of the title's weight. "What do my coffee entries keep coming back
+        // to?" shared {keep, coming, back} with "On the Voynich manuscript, and why I keep coming back" and READ it;
+        // "Ethiopia Guji coffee" read "How coffee got out of Ethiopia" over "Metric — Ethiopia Guji". Common words carry
+        // little weight now, so the rare ones (voynich, manuscript, guji) decide. Scoped to the searched room/collection.
+        let titled = nodes.map { ($0, contentTokens($0.title)) }
+        var df: [String: Int] = [:]
+        for (_, t) in titled { for w in t { df[w, default: 0] += 1 } }
+        let n = Double(max(titled.count, 1))
+        func idf(_ w: String) -> Double { log((n + 1) / Double((df[w] ?? 0) + 1)) + 1 }
+        var matches: [(node: Node, score: Double, coverage: Double)] = []
+        for (node, t) in titled {
             guard t.count >= 2 else { continue }   // single distinctive-token titles are too grabby
-            let overlap = t.intersection(q).count
-            guard overlap >= 1 else { continue }
-            let frac = Double(overlap) / Double(t.count)
-            if overlap >= 2 || frac >= 0.6 {
-                matches.append((node.id, overlap))
-            }
+            let shared = t.intersection(q)
+            guard shared.subtracting(Self.commonTitleWords).count >= 2 else { continue }   // ≥ 2 words that NAME something
+            let sharedW = shared.reduce(0) { $0 + idf($1) }, totalW = t.reduce(0) { $0 + idf($1) }
+            let coverage = sharedW / max(totalW, 0.0001)
+            if coverage >= 0.6 { matches.append((node, sharedW, coverage)) }
         }
-        // Best (most shared tokens) first — the caller reads the top and lists the rest as chips.
-        return matches.sorted { $0.overlap > $1.overlap }.map(\.id)
+        // Best first: the most distinctive shared weight, then coverage, then the NEWEST entry (a tie must not
+        // surface stale values as current).
+        return matches.sorted {
+            $0.score != $1.score ? $0.score > $1.score
+                : $0.coverage != $1.coverage ? $0.coverage > $1.coverage : $0.node.createdAt > $1.node.createdAt
+        }.map(\.node.id)
     }
+
+    /// Everyday words that appear in titles and questions alike ("keep coming back", "first time", "good way") — they
+    /// can't be the two shared words that make a title match.
+    static let commonTitleWords: Set<String> = [
+        "keep", "kept", "coming", "come", "came", "back", "going", "goe", "way", "time", "still", "again", "first", "last",
+        "new", "old", "good", "bad", "little", "long", "big", "small", "make", "made", "take", "took", "thing", "lot", "really",
+        "just", "like", "one", "two", "day", "year", "week", "today", "now", "then", "never", "always", "ever", "around", "out",
+        "off", "over", "after", "before", "about", "think", "thought", "know", "knew", "want", "need", "feel", "felt", "look",
+        "looking", "see", "saw", "write", "wrote", "written", "said", "tell", "told", "use", "used", "work", "worked", "start",
+        "started", "stop", "end", "ended", "try", "tried", "put", "set", "get", "getting", "doing", "done", "being", "having",
+        "why", "not", "but", "own", "mine", "more", "most", "less", "much", "many", "very", "too", "also", "only"]
 
     /// Distinctive, light-stemmed tokens of a string for title matching: lowercased, punctuation
     /// split out (so an en-dashed / parenthesised title tokenises the same as the question),
@@ -1970,12 +2077,12 @@ final class LibrarianState {
     /// in the question (the unquoted "my entry called X" case; short titles guarded
     /// to avoid over-pinning), else (3) a node title beginning with a quoted phrase.
     /// Empty for the common no-named-entry question. Order follows `store.nodes`.
-    private static func pinnedNodeIDs(question: String, store: CorpusStore) -> [String] {
+    private static func pinnedNodeIDs(question: String, nodes: [Node]) -> [String] {
         let q = question.lowercased()
         let quoted = extractQuotedPhrases(question)
             .map { $0.trimmingCharacters(in: .whitespacesAndNewlines).lowercased() }
             .filter { !$0.isEmpty }
-        let all: [(id: String, t: String)] = store.nodes.compactMap { n in
+        let all: [(id: String, t: String)] = nodes.compactMap { n in
             let t = n.title.trimmingCharacters(in: .whitespacesAndNewlines).lowercased()
             return t.isEmpty ? nil : (n.id, t)
         }
@@ -1983,7 +2090,22 @@ final class LibrarianState {
             let exact = all.filter { quoted.contains($0.t) }.map(\.id)
             if !exact.isEmpty { return exact }
         }
-        let contained = all.filter { $0.t.count >= 4 && q.contains($0.t) }.map(\.id)
+        // Session 3 audit fix — a verbatim title must stand as WORDS in the question (not a substring: the dream
+        // entry "train" pinned "training", the diary "after" pinned "after the Bolex arrived") and be specific
+        // enough to name an entry (≥ 2 words or ≥ 8 characters). Scoped to the searched room/collection.
+        // A one-word title also pins when the question writes it as a NAME — capitalised, not at a sentence start
+        // ("How did I meet Dolores?", "When did I last speak to Mom?"); "after the Bolex arrived" never pins "after".
+        let words = question.replacingOccurrences(of: "\u{2019}", with: "'").split(whereSeparator: { $0 == " " || $0 == "\n" }).map(String.init)
+        var names = Set<String>()
+        for (i, w) in words.enumerated() where i > 0 && !(words[i - 1].last.map { ".!?".contains($0) } ?? false) {
+            let core = w.trimmingCharacters(in: CharacterSet.letters.inverted)
+            if let f = core.first, f.isUppercase, core.count >= 3 { names.insert(core.lowercased()) }
+        }
+        let contained = all.filter { n in
+            (n.t.split(separator: " ").count >= 2 || n.t.count >= 8 || names.contains(n.t))
+                && q.range(of: "(?<![\\p{L}\\p{N}])" + NSRegularExpression.escapedPattern(for: n.t) + "(?![\\p{L}\\p{N}])",
+                           options: .regularExpression) != nil
+        }.map(\.id)
         if !contained.isEmpty { return contained }
         if !quoted.isEmpty {
             let prefixed = all.filter { n in quoted.contains { n.t.hasPrefix($0) } }.map(\.id)
@@ -2194,12 +2316,10 @@ final class LibrarianState {
         if hasPartial { use += " If a full entry is marked PARTIAL, only its best excerpts were included — answer from what's there and don't invent the rest." }
         // Brief CI §1.3 — one rules sentence (not voice), only when the packet carries a COMPUTED FACTS section.
         if hasFacts { use += " COMPUTED FACTS are worked out by the app from the entries: today's date, each entry's age, which values are in or out of their range, and how much of the library you are seeing. They are exact — use them instead of your own date math or range checks, and say what they say." }
-        #if DEBUG
-        // Session 2 measurements (a) and (d) — prompt lines under test (measure only; nothing ships).
-        if UserDefaults.standard.bool(forKey: "MeasureConnectLine") { use += " Use only the entries that genuinely connect; leaving some out is fine." }
-        if UserDefaults.standard.bool(forKey: "MeasurePersonaLine") { use += " You're not the author: when their entry says \"I…\", report it as \"you…\"." }
-        #endif
-        use += " Entries marked saved article, document or image text are things they collected, not their own words — for questions about their own views, answer from their entries and refer to collected sources as such. If an entry distinguishes an estimate from an actual figure, say which. Stay on what they asked: don't connect entries the question isn't about, and skip entries that don't help. If a fact isn't in the entries, say so briefly and answer from your general knowledge — that's a good answer. Never refuse, and never say you can't access the entries — just answer. Finish on your last sentence of prose — no References, Sources or Citations section; AirPad shows the citations itself."
+        // T ruling (2026-10-09, Session 2 (d): slips 38% → 21%) — the model is not the author; a first-person entry is
+        // reported as "you…". Graded by P1 (FLAG).
+        use += " You're not the author: when their entry says \"I…\", report it as \"you…\"."
+        use += " Entries marked saved article, document, image text or research notes are things they collected, not their own words or experience — for questions about their own views, answer from their entries and refer to collected sources as such. If an entry distinguishes an estimate from an actual figure, say which. Stay on what they asked: don't connect entries the question isn't about, and skip entries that don't help. If a fact isn't in the entries, say so briefly and answer from your general knowledge — that's a good answer. Never refuse, and never say you can't access the entries — just answer. Finish on your last sentence of prose — no References, Sources or Citations section; AirPad shows the citations itself."
         return [Self.librarianVoice, below, use, Self.librarianClosingVoice].joined(separator: "\n\n") + standingVoiceSuffix
     }
 
@@ -2218,7 +2338,9 @@ final class LibrarianState {
     /// reads "No matching entries" (BR3), and there are no candidates, so any fabricated `[n]` is
     /// stripped (AB3's own guard). Provenance stays honest while the user still gets an answer.
     private var emptyLibrarySystemPrompt: String {
-        let rules = "No entries in this library match this question. Open by saying that in one short sentence, then answer the question normally from your own general knowledge. Never imply the answer came from their entries, and never cite anything."
+        // Session 3 audit fix — "no entries match" is a claim the search can't make (it misses synonyms and aliases);
+        // say what happened instead: no CLOSE match was found.
+        let rules = "The search found no close match for this question in their library. Open by saying that in one short sentence — that you couldn't find a close match, not that they never wrote about it — then answer the question normally from your own general knowledge. Never imply the answer came from their entries, and never cite anything."
         return Self.librarianVoice + "\n\n" + rules + standingVoiceSuffix
     }
 
@@ -2366,6 +2488,9 @@ final class LibrarianState {
     /// TurnPlan: it carries no retrieval packet or receipt, so it has nothing to drift, and it flows
     /// through `sendWithTools` / the no-key notice, a different sink. The plan governs the grounded
     /// read/survey/empty turn, which is exactly where the drift lived.)
+    /// Entries whose full text the current plan points back to (set only while `makeTurnPlan` renders).
+    @ObservationIgnored private var entriesSentAbove: Set<String> = []
+
     struct TurnPlan {
         // The WIRE — exactly what ChatSession.send receives, all derived in makeTurnPlan.
         let displayText: String
@@ -2385,6 +2510,9 @@ final class LibrarianState {
         let windowTokens: Int       // the active backend's window
         let budgetChars: Int        // the derived char budget for this turn
         let readTitle: String?      // Brief BW5 — the read entry's title (resolved in makeTurnPlan)
+        var reusedEntries: Int = 0  // entries pointed back to (cache-friendly follow-up), not resent
+        var reusedHeaders: [String] = []   // their "[n] Title · … — read in full\n" headers (verified against the history)
+        var estimateSeconds: Int? = nil   // first read: estimated wait to the first token
         // Derived from the ONE modelText — the receipt/invariants read the SAME string that ships.
         var packetChars: Int { modelText.count }
         var estTokens: Int { modelText.count / LibrarianState.charsPerToken }   // conservative (3 chars/tok)
@@ -2396,7 +2524,10 @@ final class LibrarianState {
         /// needs no main-actor store access.
         func prefillNotice() -> String? {
             switch mode {
-            case "read":   return "Reading \(readTitle ?? "your entry")…"
+            case "read":
+                // T ruling (2026-10-09): "Reading <entry>… ~N s" on a first read worth waiting for (≥ 5 s).
+                if let s = estimateSeconds, s >= 5 { return "Reading \(readTitle ?? "your entry")… ~\(s) s" }
+                return "Reading \(readTitle ?? "your entry")…"
             case "survey": return "Skimming your library…"
             default:       return nil
             }
@@ -2511,27 +2642,37 @@ final class LibrarianState {
         }
         let entries: [ComputedFacts.PacketEntry] = candidates.map { c in
             let node = store.nodes.first { $0.id == c.nodeID }
-            var readText: String? = nil
-            if case .entry(let e) = c.payload { readText = e.text }
+            var readText: String? = nil, partial = false
+            if case .entry(let e) = c.payload { readText = e.text; partial = e.partial }
             var e = ComputedFacts.PacketEntry(number: c.number, nodeID: c.nodeID, title: node?.title ?? "Untitled",
                                               created: node?.createdAt, readText: readText)
             e.shownText = shown[c.nodeID] ?? ""
             e.words = node.map(Self.approximateWords)
+            e.ownNote = node.map { $0.cardProvenance().kind == .note } ?? true   // audit: a saved/imported entry was "added", not "written"
+            e.partial = partial
             return e
         }
         let noun: String = { if case .corpus = selectedScope { return "library" }; return "collection" }()
         return ComputedFacts.build(.init(today: today, calendar: cal, question: query, entries: entries,
                                          scopeTotal: store.nodes(in: selectedScope).count, scopeNoun: noun,
-                                         allowanceChars: allowance))
+                                         allowanceChars: allowance,
+                                         // Session 3: range lines on EVERY read entry with a measurement table — gating them to
+                                         // explicit range questions made "what do my lab results reveal?" misreport ranges (A6b
+                                         // 3 rows); the non-lab-table misfire is closed by the measurement-unit rule instead.
+                                         rangeQuestion: true))
     }
 
     /// CI-2 ruling 1 — an entry's approximate length in words (its text items + any document's extracted text), for
     /// "longest of the entries shown". Synchronous and deterministic; never shown as more than "about N words".
     static func approximateWords(_ node: Node) -> Int {
         var n = 0
+        // Session 3 audit fix — EVERY text the entry carries (a 2,000-word voice memo was "about 0 words").
+        func w(_ t: String?) -> Int { (t ?? "").split(whereSeparator: { $0.isWhitespace }).count }
         for item in node.items {
-            n += (item.content ?? "").split(whereSeparator: { $0.isWhitespace }).count
-            for d in item.documentItems ?? [] { n += (d.extractedText ?? "").split(whereSeparator: { $0.isWhitespace }).count }
+            n += w(item.content) + w(item.transcript) + w(item.preview) + w(item.ogDescription)
+            for d in item.documentItems ?? [] { n += w(d.extractedText) }
+            for l in item.linkItems ?? [] { n += w(l.description) }
+            for m in item.mediaItems ?? [] { n += w(m.analysis?.recognizedText) + w(m.caption) }
         }
         return n
     }
@@ -2548,7 +2689,10 @@ final class LibrarianState {
         if !reads.isEmpty {
             let blocks = reads.compactMap { c -> String? in
                 guard case .entry(let e) = c.payload else { return nil }
-                return "\(Self.entryReadHeader(for: c, store: store))\n\(e.text)"
+                if entriesSentAbove.contains(c.nodeID) {
+                    return "\(Self.entryReadHeader(for: c, store: store)) — its full text is in the earlier message above, unchanged"
+                }
+                return "\(Self.entryReadHeader(for: c, store: store))\n\(Self.stripFootnotes(e.text))"
             }.joined(separator: "\n\n———\n\n")
             sections.append("ENTRIES READ IN FULL (the complete text of your most relevant entries — answer from these):\n\(blocks)")
         }
@@ -2559,7 +2703,7 @@ final class LibrarianState {
         if !passages.isEmpty {
             let blocks = passages.compactMap { c -> String? in
                 guard case .passage(let m) = c.payload else { return nil }
-                return "\(Self.passageHeader(for: c, store: store))\n\(m.block.text)"
+                return "\(Self.passageHeader(for: c, store: store))\n\(Self.stripFootnotes(m.block.text))"
             }.joined(separator: "\n\n---\n\n")
             sections.append("PASSAGES:\n\(blocks)")
         }
@@ -2570,21 +2714,24 @@ final class LibrarianState {
     /// article as the user's OWN words: a note is "authored by you"; a saved link is "saved from
     /// <site>"; a document/image is something the user ADDED to their library. This is the
     /// "tell the model plainly whose words these are" half of BU4's grounding.
-    /// Session 2 measurement (c) — `-MeasureTagLabels YES`: each packet entry line also carries the entry's tags and
-    /// collection names verbatim (" · tags: Research, Science · collection: Field Notes"). DEBUG only; "" otherwise.
-    private static func measureTagSuffix(nodeID: String, store: CorpusStore) -> String {
-        #if DEBUG
-        guard UserDefaults.standard.bool(forKey: "MeasureTagLabels"), let n = store.nodes.first(where: { $0.id == nodeID }) else { return "" }
-        let cols = n.collectionIDs.compactMap { id in store.collections.first(where: { $0.id == id })?.name }
-        return (n.tags.isEmpty ? "" : " · tags: " + n.tags.joined(separator: ", ")) + (cols.isEmpty ? "" : " · collection: " + cols.joined(separator: ", "))
-        #else
-        return ""
-        #endif
+    /// Session 3 audit fix — a saved Wikipedia page carries its own "[3]" footnotes; quoted back, they parsed as OUR
+    /// citation markers (a chip to packet [3]). Bracketed numbers are removed from packet text before the model sees it.
+    static func stripFootnotes(_ t: String) -> String {
+        t.replacingOccurrences(of: #"\[\d{1,3}\]"#, with: "", options: .regularExpression)
     }
 
-    private static func ownershipLabel(kind: Node.BlockProvenance, domain: String?) -> String {
+    /// T ruling (2026-10-09) — an entry the user COMPILED rather than lived: tagged "Research" or titled "Deep Dive".
+    /// Measured before (Session 2 (c)): the linguistics deep dive, labelled "authored by you", was read as T's own
+    /// experience in 4 of 4 answers ("in [1], you describe how…").
+    static func isResearchNote(_ node: Node?) -> Bool {
+        guard let n = node else { return false }
+        return n.tags.contains { $0.trimmingCharacters(in: .whitespaces).caseInsensitiveCompare("Research") == .orderedSame }
+            || n.title.range(of: #"\bdeep[\s-]*dive\b"#, options: [.regularExpression, .caseInsensitive]) != nil
+    }
+
+    private static func ownershipLabel(kind: Node.BlockProvenance, domain: String?, research: Bool = false) -> String {
         switch kind {
-        case .note:      return "authored by you"
+        case .note:      return research ? "research notes you compiled" : "authored by you"
         case .savedLink: return "saved from \(domain ?? "the web")"
         case .document:  return "a document you added"
         case .imageText: return "text from your image"
@@ -2612,14 +2759,14 @@ final class LibrarianState {
         guard case .entry(let e) = c.payload else { return "" }
         let (kind, domain) = provenance(for: c, store: store)
         let tail = e.partial ? " — PARTIAL: best excerpts of a long entry" : " — read in full"
-        return "[\(c.number)] \(e.title) · \(ownershipLabel(kind: kind, domain: domain))\(measureTagSuffix(nodeID: c.nodeID, store: store)) · \(entryDate(for: c.nodeID, store: store))\(tail)"
+        return "[\(c.number)] \(e.title) · \(ownershipLabel(kind: kind, domain: domain, research: isResearchNote(store.nodes.first { $0.id == c.nodeID }))) · \(entryDate(for: c.nodeID, store: store))\(tail)"
     }
 
     /// Brief W1 + BU4 — a passage's header: `[n] <Title> · <ownership> · <date>`.
     private static func passageHeader(for c: NumberedCandidate, store: CorpusStore) -> String {
         let title = store.nodes.first { $0.id == c.nodeID }?.title ?? "Untitled"
         let (kind, domain) = provenance(for: c, store: store)
-        return "[\(c.number)] \(title) · \(ownershipLabel(kind: kind, domain: domain))\(measureTagSuffix(nodeID: c.nodeID, store: store)) · \(entryDate(for: c.nodeID, store: store))"
+        return "[\(c.number)] \(title) · \(ownershipLabel(kind: kind, domain: domain, research: isResearchNote(store.nodes.first { $0.id == c.nodeID }))) · \(entryDate(for: c.nodeID, store: store))"
     }
 
     /// Brief AA3 + BU4 — a card's ENTRIES-ON-THIS-TOPIC line:
@@ -2628,7 +2775,7 @@ final class LibrarianState {
         guard case .card(let card) = c.payload else { return "" }
         let title = store.nodes.first { $0.id == card.nodeID }?.title ?? "Untitled"
         let (kind, domain) = provenance(for: c, store: store)
-        return "[\(c.number)] \(title) · \(ownershipLabel(kind: kind, domain: domain))\(measureTagSuffix(nodeID: c.nodeID, store: store)) · \(entryDate(for: c.nodeID, store: store)) — \(card.gist)"
+        return "[\(c.number)] \(title) · \(ownershipLabel(kind: kind, domain: domain, research: isResearchNote(store.nodes.first { $0.id == c.nodeID }))) · \(entryDate(for: c.nodeID, store: store)) — \(card.gist)"
     }
 
     /// AA4 — compact card line for the S5 log (title only, gist omitted to keep the

@@ -1089,6 +1089,15 @@ final class LibrarianState {
             generalFiltered = generalFiltered.filter { isOwn($0.nodeID) } + generalFiltered.filter { !isOwn($0.nodeID) }
             orderedCards = orderedCards.filter { isOwn($0.nodeID) } + orderedCards.filter { !isOwn($0.nodeID) }
         }
+        #if DEBUG
+        // Session 2 measurement (a) — `-MeasureCardFloor 0.57`: survey cards below the floor are dropped, keeping at least 3
+        // (narrow queries top out ~0.53, so a floor alone would empty them). Measure only; nothing ships.
+        let measureFloor = UserDefaults.standard.double(forKey: "MeasureCardFloor")
+        if measureFloor > 0 {
+            let kept = orderedCards.filter { $0.score >= Float(measureFloor) }
+            orderedCards = kept.count >= 3 ? kept : Array(orderedCards.prefix(3))
+        }
+        #endif
         let newPassages = Array(generalFiltered.prefix(verdict.shape.passageBudget))
         let newCards = Array(orderedCards.prefix(verdict.shape.cardBudget))
         // Carry unions both kinds, but never a stale full-entry read into a survey (a survey is a new
@@ -2185,6 +2194,11 @@ final class LibrarianState {
         if hasPartial { use += " If a full entry is marked PARTIAL, only its best excerpts were included — answer from what's there and don't invent the rest." }
         // Brief CI §1.3 — one rules sentence (not voice), only when the packet carries a COMPUTED FACTS section.
         if hasFacts { use += " COMPUTED FACTS are worked out by the app from the entries: today's date, each entry's age, which values are in or out of their range, and how much of the library you are seeing. They are exact — use them instead of your own date math or range checks, and say what they say." }
+        #if DEBUG
+        // Session 2 measurements (a) and (d) — prompt lines under test (measure only; nothing ships).
+        if UserDefaults.standard.bool(forKey: "MeasureConnectLine") { use += " Use only the entries that genuinely connect; leaving some out is fine." }
+        if UserDefaults.standard.bool(forKey: "MeasurePersonaLine") { use += " You're not the author: when their entry says \"I…\", report it as \"you…\"." }
+        #endif
         use += " Entries marked saved article, document or image text are things they collected, not their own words — for questions about their own views, answer from their entries and refer to collected sources as such. If an entry distinguishes an estimate from an actual figure, say which. Stay on what they asked: don't connect entries the question isn't about, and skip entries that don't help. If a fact isn't in the entries, say so briefly and answer from your general knowledge — that's a good answer. Never refuse, and never say you can't access the entries — just answer. Finish on your last sentence of prose — no References, Sources or Citations section; AirPad shows the citations itself."
         return [Self.librarianVoice, below, use, Self.librarianClosingVoice].joined(separator: "\n\n") + standingVoiceSuffix
     }
@@ -2556,6 +2570,18 @@ final class LibrarianState {
     /// article as the user's OWN words: a note is "authored by you"; a saved link is "saved from
     /// <site>"; a document/image is something the user ADDED to their library. This is the
     /// "tell the model plainly whose words these are" half of BU4's grounding.
+    /// Session 2 measurement (c) — `-MeasureTagLabels YES`: each packet entry line also carries the entry's tags and
+    /// collection names verbatim (" · tags: Research, Science · collection: Field Notes"). DEBUG only; "" otherwise.
+    private static func measureTagSuffix(nodeID: String, store: CorpusStore) -> String {
+        #if DEBUG
+        guard UserDefaults.standard.bool(forKey: "MeasureTagLabels"), let n = store.nodes.first(where: { $0.id == nodeID }) else { return "" }
+        let cols = n.collectionIDs.compactMap { id in store.collections.first(where: { $0.id == id })?.name }
+        return (n.tags.isEmpty ? "" : " · tags: " + n.tags.joined(separator: ", ")) + (cols.isEmpty ? "" : " · collection: " + cols.joined(separator: ", "))
+        #else
+        return ""
+        #endif
+    }
+
     private static func ownershipLabel(kind: Node.BlockProvenance, domain: String?) -> String {
         switch kind {
         case .note:      return "authored by you"
@@ -2586,14 +2612,14 @@ final class LibrarianState {
         guard case .entry(let e) = c.payload else { return "" }
         let (kind, domain) = provenance(for: c, store: store)
         let tail = e.partial ? " — PARTIAL: best excerpts of a long entry" : " — read in full"
-        return "[\(c.number)] \(e.title) · \(ownershipLabel(kind: kind, domain: domain)) · \(entryDate(for: c.nodeID, store: store))\(tail)"
+        return "[\(c.number)] \(e.title) · \(ownershipLabel(kind: kind, domain: domain))\(measureTagSuffix(nodeID: c.nodeID, store: store)) · \(entryDate(for: c.nodeID, store: store))\(tail)"
     }
 
     /// Brief W1 + BU4 — a passage's header: `[n] <Title> · <ownership> · <date>`.
     private static func passageHeader(for c: NumberedCandidate, store: CorpusStore) -> String {
         let title = store.nodes.first { $0.id == c.nodeID }?.title ?? "Untitled"
         let (kind, domain) = provenance(for: c, store: store)
-        return "[\(c.number)] \(title) · \(ownershipLabel(kind: kind, domain: domain)) · \(entryDate(for: c.nodeID, store: store))"
+        return "[\(c.number)] \(title) · \(ownershipLabel(kind: kind, domain: domain))\(measureTagSuffix(nodeID: c.nodeID, store: store)) · \(entryDate(for: c.nodeID, store: store))"
     }
 
     /// Brief AA3 + BU4 — a card's ENTRIES-ON-THIS-TOPIC line:
@@ -2602,7 +2628,7 @@ final class LibrarianState {
         guard case .card(let card) = c.payload else { return "" }
         let title = store.nodes.first { $0.id == card.nodeID }?.title ?? "Untitled"
         let (kind, domain) = provenance(for: c, store: store)
-        return "[\(c.number)] \(title) · \(ownershipLabel(kind: kind, domain: domain)) · \(entryDate(for: c.nodeID, store: store)) — \(card.gist)"
+        return "[\(c.number)] \(title) · \(ownershipLabel(kind: kind, domain: domain))\(measureTagSuffix(nodeID: c.nodeID, store: store)) · \(entryDate(for: c.nodeID, store: store)) — \(card.gist)"
     }
 
     /// AA4 — compact card line for the S5 log (title only, gist omitted to keep the

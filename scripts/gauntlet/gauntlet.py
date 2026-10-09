@@ -68,6 +68,7 @@ GRADERS = {
     "N1": "citations: the prose never names an entry by number outside a bracket (\"entries 5, 8, 9\", \"(entry 6)\")",
     "W2": "voice: question tic — FLAG the RUN when > 50% of its answers end with a question back to the user",
     "W3": "voice: length fit — FLAG a fact/read answer over ~120 words or a broad answer under ~60 (CC reads it)",
+    "P1": "persona: FLAG an answer that speaks AS the user (\"My take is…\", \"I wrote that…\", \"my … entry\") instead of reporting their entry as \"you…\" (Session 2 measurement d)",
     "D1": "CI-0 dates: every entry the answer cites for a time window falls inside that window",
     "D2": "CI-0 dates: the answer's date AND age of the entry match its real date vs the test 'today'",
     "O1": "CI-0 ordering/recency: the answer names the right entry (oldest / newest / longest)",
@@ -95,7 +96,7 @@ GRADERS = {
     "R1": "repeat: 3/3 runs pass (aggregate)",
 }
 # Brief CH-A1b — the voice graders are named W* (not the brief's V1–V3: V* is run validity and ABORTs).
-FLAG_ONLY = {"W2", "W3", "E2", "RF2", "WD2"}   # (Q1 FLAGs only when an 'exactly' answer quotes nothing)   # a flag sends the row to CC's read; it never fails the row by itself
+FLAG_ONLY = {"W2", "W3", "E2", "RF2", "WD2", "P1"}   # (Q1 FLAGs only when an 'exactly' answer quotes nothing)   # a flag sends the row to CC's read; it never fails the row by itself
 
 
 # Reasoning prose — TIGHT. A clean answer addressed to the user never narrates these. (Kept narrow on
@@ -999,6 +1000,19 @@ def is_section_page(url):
 def sentences(text):
     return [s for s in re.split(r"(?<=[.!?])\s+|\n+", text or "") if s.strip()]
 
+# Session 2 measurement (d) — the persona slip (CH-A test 3: instruct 5/15): the answer continues in the ENTRY's
+# voice ("My take is…", "I wrote that…", "My Obama and HAARP Conspiracy entry claims…") instead of reporting it as
+# "you…". Quoted text is the entry's own words, so quotes are removed first. "I think …" is left alone (the
+# Librarian's own voice uses it).
+PERSONA_RE = re.compile(r"\b(my (take|idea|argument|view|premise|story|joke|point)\b|i (wrote|have written|'ve written|haven't written|have not written|never wrote|noted|jotted)\b|my [^.?!\n]{0,50}\b(entry|note|journal)\b)", re.I)
+
+def persona_slip(text):
+    t = re.sub(r"[“\"][^”\"]{0,400}[”\"]", " ", (text or "").replace("’", "'"))
+    t = re.sub(r"(?m)^\s*>.*$", " ", t)   # block quotes
+    m = PERSONA_RE.search(t)
+    return m.group(0) if m else None
+
+
 def grade_web_grounding(exp, turn, final, cites, path, R, res, na):
     """CH Session 2 (T 2026-10-08) — deterministic web grounding: WF1 invented URLs, WF2 the source list, WD1
     stale-as-today, GF1 known facts, GL1 the general-knowledge line."""
@@ -1451,6 +1465,8 @@ def grade_row(exp, turn, ui, prev_turn, host, ps, versions, cases_meta, store=Fa
     if norm_ws(final):
         op = sycophantic_opener(final)
         res("W1", not op, f"opens \"{op}…\"" if op else "")
+        slip = persona_slip(final)
+        R["P1"] = ("FLAG", f"speaks as the user: \"{slip}\"") if slip else ("PASS", "")
         wc, lc = word_count(final), length_class(exp)
         stats.update(words=wc, endsWithQuestion=ends_with_question(final))
         if lc == "short":
@@ -1460,7 +1476,7 @@ def grade_row(exp, turn, ui, prev_turn, host, ps, versions, cases_meta, store=Fa
         else:
             na("W3", "length not judged for this case")
     else:
-        na("W1", "no answer"); na("W3", "no answer")
+        na("W1", "no answer"); na("W3", "no answer"); na("P1", "no answer")
     na("W2", "run-level (see the table footer)")
 
     # ── C* citations

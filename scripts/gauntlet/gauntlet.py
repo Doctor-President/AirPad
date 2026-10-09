@@ -62,6 +62,7 @@ GRADERS = {
     "I4": "INV-budget: packet chars <= budget",
     "I5": "INV-bubble: a re-ask (Retry / offer) replaces the turn, never duplicates it",
     "I6": "INV-carry: a follow-up keeps the SAME entry open",
+    "I8": "INV-mode-switch: a Library turn after a General turn does not re-read an entry an earlier Library turn opened (C2b)",
     "I7": "survey shape: cards/passages within caps",
     "W1": "voice: no sycophantic or greeting opener (\"Great question\", \"What a fascinating…\", \"I'd be happy to\", \"Hey!\", \"Hi there,\")",
     "N1": "citations: the prose never names an entry by number outside a bracket (\"entries 5, 8, 9\", \"(entry 6)\")",
@@ -90,7 +91,7 @@ GRADERS = {
     "WD1": "web grounding: on a today/latest question a stale result is never presented as today's news (its citing sentence carries its date), and a fresh result leads",
     "WD2": "web grounding: every month/date the answer states for a news story appears in a result (its date, title or snippet) or is today/yesterday — no invented dates (FLAG, CC reads)",
     "GF1": "general facts: the known answer is stated and no known-false claim is made (oarfish → Regalecidae; colossal squid → Mesonychoteuthis hamiltoni; Antarctica sighted 1820, no landing)",
-    "GL1": "general-knowledge line: a General answer with no web result behind it carries the app's 'general knowledge, may contain errors' line; a searched one does not",
+    "GL1": "general-knowledge line: a FACTUAL General answer with no web result behind it carries the app's 'general knowledge, may contain errors' line; a searched one, or a non-factual ask (pep talk, haiku), does not",
     "R1": "repeat: 3/3 runs pass (aggregate)",
 }
 # Brief CH-A1b — the voice graders are named W* (not the brief's V1–V3: V* is run validity and ABORTs).
@@ -1030,11 +1031,16 @@ def grade_web_grounding(exp, turn, final, cites, path, R, res, na):
             if order[:len(idx)] != sorted(idx) or set(order) != set(idx):
                 problems.append(f"prose cites {order} but the chips are {sorted(idx)}")
         res("WF2", not problems, "; ".join(problems))
+        # T ruling (2026-10-09): the line goes ONLY under a FACTUAL question no web result backs (a pep talk or a
+        # haiku gets none). `factual` is the case's ground truth, not the app's own classifier.
         searched = bool(links)
+        factual = bool(exp.get("factual"))
         gk = bool(turn.get("generalKnowledge"))
-        res("GL1", gk != searched, ("searched but labelled general knowledge" if searched and gk else
-                                    "no web result behind the answer and no general-knowledge line" if not searched and not gk else
-                                    ("searched — no label" if searched else "labelled general knowledge")))
+        want = factual and not searched
+        res("GL1", gk == want, ("searched but labelled general knowledge" if searched and gk else
+                                "not a factual question but labelled general knowledge" if gk and not factual else
+                                "a factual answer with no web result behind it and no general-knowledge line" if want and not gk else
+                                ("searched — no label" if searched else "labelled general knowledge" if gk else "not factual — no label")))
     # WD1 — stale-as-today (rows that ask for today's news)
     if exp.get("freshCheck") and path != "nokey":
         import datetime
@@ -1109,7 +1115,12 @@ def grade_web_grounding(exp, turn, final, cites, path, R, res, na):
             for snt in sentences(final):
                 if rule.get("sentenceHas") and rule["sentenceHas"].lower() not in snt.lower():
                     continue
-                if re.search(rule["pattern"], snt, re.I) and not (rule.get("unless") and re.search(rule["unless"], snt, re.I)):
+                m = re.search(rule["pattern"], snt, re.I)
+                # `unlessOtherYear` — the claim is dated to a DIFFERENT year in the same sentence ("sighted in 1820, and
+                # the first landing was in 1892"), so it isn't the claim the rule forbids (a landing at the time).
+                if m and rule.get("unlessOtherYear") and any(y != rule.get("sentenceHas") for y in re.findall(r"\b(1[5-9]\d\d|20\d\d)\b", snt[m.start():])):
+                    continue
+                if m and not (rule.get("unless") and re.search(rule["unless"], snt, re.I)):
                     false.append(snt.strip()[:80])
         res("GF1", not missing and not false, "; ".join((["missing the known answer: " + ", ".join(missing)] if missing else [])
                                                        + (["known-false claim: " + " | ".join(false)] if false else [])) or "known answer stated")
@@ -1132,7 +1143,7 @@ def grade_pillar(exp, turn, ps, R, res, na):
     lib_cites = [c for c in cites if c.get("nodeID")]
     stats = {"route": f"general/{path}", "chips": len(cites), "webCites": len(web_cites), "tools": ",".join(tools) or "—",
              "answerChars": len(final), "elapsedMs": turn.get("elapsedMs"),
-             "prefetch": turn.get("prefetch") or "—", "prefetchMs": turn.get("prefetchMs")}
+             "prefetch": turn.get("prefetch") or "—", "prefetchMs": turn.get("prefetchMs"), "toolStatus": " → ".join(turn.get("toolStatus") or []) or "—"}
     grade_web_grounding(exp, turn, final, cites, path, R, res, na)
     facts = exp.get("mustContain") or []
     if facts and exp.get("minFacts", 0) > 0 and path == "nokey":
@@ -1202,7 +1213,16 @@ def grade_row(exp, turn, ui, prev_turn, host, ps, versions, cases_meta, store=Fa
             res("A7", ratio >= 0.9, f"similarity {ratio:.2f}")
             if exp.get("action") == "general":
                 res("V5", ui.get("mode") == "general", f"mode={ui.get('mode')} (the driver must have switched the Library toggle to General)", abort=True)
-        return grade_pillar(exp, turn, ps, R, res, na)
+            # C2b (T 2026-10-09) — a General turn must not end in the error banner either (mid-chat mode switches did)
+            banner = ui.get("errorBanner") or bool(turn.get("lastError"))
+            res("A1", bool(norm_ws(ui.get("onScreenAnswer"))) and bool(norm_ws(turn.get("finalText"))) and not banner,
+                f"shown={len(ui.get('onScreenAnswer') or '')} committed={len(turn.get('finalText') or '')} banner={banner} err={turn.get('lastError')}")
+        g = grade_pillar(exp, turn, ps, R, res, na)
+        if not store:
+            g["stats"]["statusSeen"] = (ui or {}).get("statusSeen") or "—"   # the live tool status line, on screen
+        return g
+    if exp.get("action") == "library" and not store:
+        res("V5", ui.get("mode") == "library", f"mode={ui.get('mode')} (the driver must have switched the toggle back to Library)", abort=True)
 
     plan = turn.get("plan") or {}
     final = turn.get("finalText") or ""
@@ -1582,6 +1602,16 @@ def grade_row(exp, turn, ui, prev_turn, host, ps, versions, cases_meta, store=Fa
         res("I6", bool(now) and bool(before) and now <= before, f"read {sorted(x[:8] for x in now)} vs open {sorted(x[:8] for x in before)}")
     else:
         na("I6")
+    if exp.get("notCarried"):
+        # C2b (T 2026-10-09) — a Library turn right after a General turn: "that" is the General topic, so no entry an
+        # EARLIER Library turn opened may be read again (the working set must not survive the mode switch).
+        now = set(plan.get("readNodeIDs") or [])
+        earlier = set()
+        for t in turn.get("_earlier") or []:
+            earlier |= set((t.get("plan") or {}).get("readNodeIDs") or [])
+        res("I8", not (now & earlier), f"re-read {sorted(x[:8] for x in now & earlier)} opened before the General turn" if now & earlier else f"read {sorted(x[:8] for x in now)}")
+    else:
+        na("I8")
     if route == "survey" and (exp.get("maxCards") or exp.get("maxPassages")):
         ok = plan.get("cardCount", 0) <= exp.get("maxCards", 99) and plan.get("passageCount", 0) <= exp.get("maxPassages", 99)
         res("I7", ok, f"cards={plan.get('cardCount')} passages={plan.get('passageCount')}")
@@ -1638,6 +1668,8 @@ def grade_dir(run_dir, quiet=False):
         prev = None
         if turn and (turn.get("seq", 0) - 1) in turns and turns[turn["seq"] - 1].get("launchID") == turn.get("launchID"):
             prev = turns[turn["seq"] - 1]
+        if turn:   # every earlier turn of the same chat (I8 — a mode switch must not carry an older entry)
+            turn = dict(turn, _earlier=[turns[s] for s in sorted(turns) if s < turn["seq"] and turns[s].get("launchID") == turn.get("launchID")])
         g = grade_row(e, turn, ui, prev, host, ps, versions, cases_meta)
         g["status"] = row_status(g, verdicts.get(row))
         g["verdict"] = verdicts.get(row)

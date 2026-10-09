@@ -644,6 +644,13 @@ final class LibrarianState {
         // stored+persisted property read live here, so a toggle flip lands on the
         // very next send.
         guard corpusAware else {
+            // C2b (T device 2026-10-09: switching Library ↔ General inside one chat "causes errors") — a General
+            // turn ENDS the Library thread: nothing a Library turn opened stays open, and the stable [n] carry
+            // restarts. Measured before this: Library (lab) → General (oarfish) → Library "do any of my entries
+            // mention that?" re-read the lab entry (BX carry) and cited it under an oarfish answer.
+            chat.workingSet = []
+            carriedCandidates = []
+            carriedChatID = nil
             // ★ Private mode. REMOTE endpoint → agentic web-search loop (the tool
             // schema is attached and the model may call web_search / fetch_url). FM
             // → plain chat with NO tools (different tool API, not the near-term
@@ -2287,7 +2294,17 @@ final class LibrarianState {
             ? true
             : UserDefaults.standard.bool(forKey: "librarianCorpusAware")
     }() {
-        didSet { UserDefaults.standard.set(corpusAware, forKey: "librarianCorpusAware") }
+        didSet {
+            UserDefaults.standard.set(corpusAware, forKey: "librarianCorpusAware")
+            // C2b (T 2026-10-09) — a mode flip retires every pending offer of the OTHER mode, structurally (every flip
+            // path lands here): a "Read … in full?" offer tapped in General re-asked the Library question as a General
+            // turn (replacing the Library answer) and left `forcedReadNodeID` armed for the next Library turn.
+            if oldValue != corpusAware {
+                pendingWebSearchOffer = nil
+                pendingReadInFullOffer = nil
+                forcedReadNodeID = nil
+            }
+        }
     }
     /// Phase 2 — per-session Thinking toggle, OFF by default. Ephemeral to the Librarian session
     /// (no persistent thread to store it on); the pill/sheet write it; `groundedSend` forwards it

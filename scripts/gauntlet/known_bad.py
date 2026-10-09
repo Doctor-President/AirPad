@@ -756,8 +756,14 @@ def web2(kb_dir, template_dir):
          path="tools", tools=search, toolLinks=oar, citations=[cite(1, oar[0])],
          finalText="The oarfish belongs to the family Regalecidae [1]. More at https://www.nationalgeographic.com/animals/fish/facts/oarfish")
     item("web-gl1-control-nosearch", "GK7", False, ["WF1", "WF2", "GL1"],
-         "CONTROL: no key, a creative ask, no URL, the general-knowledge line shown",
+         "CONTROL: no key, a creative ask, no URL, NO general-knowledge line (T 2026-10-09: the line only on factual questions)",
+         finalText="Soft rain on the roof —\nthe gutter hums a low tune,\npuddles hold the sky.")
+    item("web-gl1-nonfactual-labelled", "GK7", True, ["GL1"],
+         "T's device pass 2026-10-09: a creative ask (the pep talk / haiku) carries the general-knowledge line",
          finalText="Soft rain on the roof —\nthe gutter hums a low tune,\npuddles hold the sky.", generalKnowledge=True)
+    item("web-gl1-control-factual-nosearch", "GK4", False, ["WF1", "WF2", "GL1", "GF1"],
+         "CONTROL: no key, a factual question answered from the model, the general-knowledge line shown",
+         finalText="The oarfish belongs to the family Regalecidae.", generalKnowledge=True)
     item("web-gl1-searched-labelled", "GK4", True, ["GL1"],
          "synthetic: the answer IS backed by search results but carries the general-knowledge line",
          path="tools", tools=search, toolLinks=oar, citations=[cite(1, oar[0])], generalKnowledge=True,
@@ -837,6 +843,10 @@ def web2(kb_dir, template_dir):
          finalText="The colossal squid is Mesonychoteuthis hamiltoni — unlike the giant squid, Architeuthis dux.", generalKnowledge=True)
     item("web-gf1-control-antarctica", "GK6", False, ["GF1"], "CONTROL: 1820, no landing then",
          finalText="Antarctica was first sighted in January 1820. No one landed at the time; the first documented landing came in 1895.",
+         generalKnowledge=True)
+    item("web-gf1-control-antarctica-later-year", "GK6", False, ["GF1"],
+         "CONTROL (live instruct 2026-10-09, a grader false positive before `unlessOtherYear`): the landing is dated to 1892 in the 1820 sentence",
+         finalText="Thus, the first confirmed sighting of Antarctica occurred in **January 1820**, and the first confirmed landing was in **November 1892**.",
          generalKnowledge=True)
 
     mp = os.path.join(kb_dir, "manifest.json")

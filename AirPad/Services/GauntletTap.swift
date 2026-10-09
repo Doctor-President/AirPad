@@ -181,6 +181,13 @@ final class GauntletTap: @unchecked Sendable {
                             "published": $0.published.map { df.string(from: $0) } ?? ""] }
         turn?["toolLinks"] = all
     }
+    /// CH (T 2026-10-09) — each live tool status line the transcript showed this turn, in order.
+    func noteStatus(_ line: String) {
+        guard isOn else { return }
+        lock.lock(); defer { lock.unlock() }
+        let lines = ((turn?["toolStatus"] as? [String]) ?? []) + [line]
+        turn?["toolStatus"] = lines
+    }
     func noteValue(_ key: String, _ value: Any) {
         guard isOn else { return }
         lock.lock(); defer { lock.unlock() }

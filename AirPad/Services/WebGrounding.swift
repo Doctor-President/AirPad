@@ -56,6 +56,75 @@ enum WebGrounding {
             .filter { !$0.isEmpty && !stop.contains($0) }
     }
 
+    /// CH (T device 2026-10-09) — the country a news question names, as Brave's `country` code, so "top news in
+    /// Mexico" asks for news FROM Mexico (without it Brave's news returned New Mexico, USA stories). Country NAMES only
+    /// (no demonyms: "French fries", "Chinese EV makers"), and only countries Brave's news endpoint accepts. A name
+    /// inside a longer place name ("New Mexico", "North Korea", "Latin America") doesn't count; the bare "US" counts
+    /// only in capitals (lower-case "us" is the pronoun).
+    struct NewsCountry: Equatable { let code: String; let name: String; let terms: [String] }
+    private static let newsCountries: [NewsCountry] = [
+        .init(code: "AR", name: "Argentina", terms: ["argentina"]), .init(code: "AU", name: "Australia", terms: ["australia"]),
+        .init(code: "AT", name: "Austria", terms: ["austria"]), .init(code: "BE", name: "Belgium", terms: ["belgium"]),
+        .init(code: "BR", name: "Brazil", terms: ["brazil"]), .init(code: "CA", name: "Canada", terms: ["canada"]),
+        .init(code: "CL", name: "Chile", terms: ["chile"]), .init(code: "DK", name: "Denmark", terms: ["denmark"]),
+        .init(code: "FI", name: "Finland", terms: ["finland"]), .init(code: "FR", name: "France", terms: ["france"]),
+        .init(code: "DE", name: "Germany", terms: ["germany"]), .init(code: "HK", name: "Hong Kong", terms: ["hong kong"]),
+        .init(code: "IN", name: "India", terms: ["india"]), .init(code: "ID", name: "Indonesia", terms: ["indonesia"]),
+        .init(code: "IT", name: "Italy", terms: ["italy"]), .init(code: "JP", name: "Japan", terms: ["japan"]),
+        .init(code: "KR", name: "South Korea", terms: ["south korea", "korea"]), .init(code: "MY", name: "Malaysia", terms: ["malaysia"]),
+        .init(code: "MX", name: "Mexico", terms: ["mexico"]), .init(code: "NL", name: "Netherlands", terms: ["netherlands", "holland"]),
+        .init(code: "NZ", name: "New Zealand", terms: ["new zealand"]), .init(code: "NO", name: "Norway", terms: ["norway"]),
+        .init(code: "CN", name: "China", terms: ["china"]), .init(code: "PL", name: "Poland", terms: ["poland"]),
+        .init(code: "PT", name: "Portugal", terms: ["portugal"]), .init(code: "PH", name: "Philippines", terms: ["philippines"]),
+        .init(code: "RU", name: "Russia", terms: ["russia"]), .init(code: "SA", name: "Saudi Arabia", terms: ["saudi arabia"]),
+        .init(code: "ZA", name: "South Africa", terms: ["south africa"]), .init(code: "ES", name: "Spain", terms: ["spain"]),
+        .init(code: "SE", name: "Sweden", terms: ["sweden"]), .init(code: "CH", name: "Switzerland", terms: ["switzerland"]),
+        .init(code: "TW", name: "Taiwan", terms: ["taiwan"]), .init(code: "TR", name: "Turkey", terms: ["turkey", "türkiye", "turkiye"]),
+        .init(code: "GB", name: "United Kingdom", terms: ["united kingdom", "uk", "britain", "great britain", "england"]),
+        .init(code: "US", name: "United States", terms: ["united states", "usa", "us", "america"])]
+    /// A word right before / after a country name that makes it a different place or thing.
+    private static let notPreceded: [String: Set<String>] = ["mexico": ["new"], "england": ["new"], "korea": ["north"],
+                                                              "america": ["south", "latin", "central", "north"], "guinea": ["new"]]
+    private static let notFollowed: [String: Set<String>] = ["turkey": ["dinner", "recipe", "recipes", "sandwich", "breast", "day"],
+                                                              "china": ["plate", "plates", "cabinet", "set"], "chile": ["pepper", "peppers", "powder", "sauce"]]
+    /// The country a news question names, or nil.
+    static func newsCountry(_ q: String) -> NewsCountry? {
+        let raw = q.replacingOccurrences(of: "’", with: "'").split(whereSeparator: { !($0.isLetter || $0.isNumber) }).map(String.init)
+        let words = raw.map { $0.lowercased() }
+        let terms = newsCountries.flatMap { c in c.terms.map { (term: $0, country: c) } }
+            .sorted { $0.term.count > $1.term.count }   // "south korea" before "korea", "great britain" before "britain"
+        for i in words.indices {
+            for t in terms where genuine(words, i, t.term) {
+                if t.term == "us", raw[i] != "US" { continue }
+                return t.country
+            }
+        }
+        return nil
+    }
+    private static func genuine(_ words: [String], _ i: Int, _ term: String) -> Bool {
+        let parts = term.split(separator: " ").map(String.init)
+        guard i + parts.count <= words.count, Array(words[i..<i + parts.count]) == parts else { return false }
+        if i > 0, notPreceded[parts[0]]?.contains(words[i - 1]) == true { return false }
+        let after = i + parts.count
+        if after < words.count, notFollowed[parts.last!]?.contains(words[after]) == true { return false }
+        return true
+    }
+    /// A result that names the country ONLY inside a longer place name ("New Mexico" for Mexico) is about somewhere
+    /// else — dropped even when Brave's country filter let it through.
+    static func isFalseFriend(_ text: String, for country: NewsCountry) -> Bool {
+        let words = text.lowercased().split(whereSeparator: { !($0.isLetter || $0.isNumber) }).map(String.init)
+        var lookalike = false
+        for i in words.indices {
+            for term in country.terms where term != "us" {
+                let parts = term.split(separator: " ").map(String.init)
+                guard i + parts.count <= words.count, Array(words[i..<i + parts.count]) == parts else { continue }
+                if genuine(words, i, term) { return false }
+                lookalike = true
+            }
+        }
+        return lookalike
+    }
+
     // MARK: - Dates
 
     /// Brave gives `page_age` (ISO, "2026-06-24T10:12:00") and/or `age` ("June 24, 2026", "3 days ago").
@@ -613,6 +682,28 @@ enum WebGroundingSelfTest {
         check("news keywords: world", WebGrounding.newsKeywords("What are the top world news stories today?") == ["world"])
         check("news keywords: telescope", WebGrounding.newsKeywords("What's the latest news about the Lakeview Observatory telescope?") == ["lakeview", "observatory", "telescope"])
         check("freshness: not a fact question", !WebGrounding.isFreshnessQuestion("What family does the oarfish belong to?"))
+        check("factual: pep talk is not", !WebGrounding.isFactualQuestion("Write a two-line pep talk for a Monday."))
+        check("factual: give me a pep talk is not", !WebGrounding.isFactualQuestion("Give me a pep talk, I have a big day"))
+
+        // 10. CH (T 2026-10-09) — the country a news question names → Brave's `country` code.
+        for (q, want) in [("What's the top news in Mexico today?", "MX"), ("Latest news from New Mexico", nil),
+                          ("What's happening in South Korea today?", "KR"), ("North Korea latest news", nil),
+                          ("Top news in the US today", "US"), ("Can you tell us the latest news?", nil),
+                          ("What's the latest UK news?", "GB"), ("Latest Latin America news", nil),
+                          ("Breaking news in Turkey", "TR"), ("Latest turkey recipe news", nil),
+                          ("What are the top world news stories today?", nil), ("News from New Zealand today", "NZ")] {
+            check("news country: \(q)", WebGrounding.newsCountry(q)?.code == want, "\(WebGrounding.newsCountry(q)?.code ?? "nil")")
+        }
+        let mx = WebGrounding.newsCountry("Top news in Mexico")!
+        check("false friend: New Mexico only", WebGrounding.isFalseFriend("Two pipeline fires in New Mexico Tuesday", for: mx))
+        check("false friend: Mexico itself", !WebGrounding.isFalseFriend("Deadly riot at a prison in Mexico's Sinaloa state", for: mx))
+        check("false friend: both", !WebGrounding.isFalseFriend("New Mexico and Mexico sign a water deal", for: mx))
+        check("false friend: no mention", !WebGrounding.isFalseFriend("Puerto Vallarta placed under hurricane watch", for: mx))
+
+        // 11. CH (T 2026-10-09) — the live tool status line.
+        check("status: search", ChatSession.toolStatus(AgentTools.webSearch, ["query": "x"]) == "Searching the web…")
+        check("status: read", ChatSession.toolStatus(AgentTools.fetchURL, ["url": "https://www.example.org/wiki/Oarfish"]) == "Reading example.org…",
+              ChatSession.toolStatus(AgentTools.fetchURL, ["url": "https://www.example.org/wiki/Oarfish"]) ?? "nil")
 
         return fails.isEmpty ? "PASS \(ran)/\(ran)" : "FAIL \(ran - fails.count)/\(ran)\n  " + fails.joined(separator: "\n  ")
     }

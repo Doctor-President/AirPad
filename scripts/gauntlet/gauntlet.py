@@ -708,7 +708,7 @@ def packet_segments(turn):
     out, cur, buf = {}, None, []
     for line in (turn.get("userContent") or "").split("\n"):
         m = re.match(r"^\[(\d+)\] ", line)
-        if m or line.startswith(("COMPUTED FACTS", "Question:", "ENTRIES ", "PASSAGES:")):
+        if m or line.startswith(("COMPUTED FACTS", "Question:", "ENTRIES ", "PASSAGES:", "END OF NOTES")):
             if cur is not None:
                 out[cur] = out.get(cur, "") + "\n".join(buf)
             cur, buf = (int(m.group(1)) if m else None), [line]
@@ -809,7 +809,7 @@ def fx1_violations(turn, plan):
     uc = turn.get("userContent") or ""
     if "COMPUTED FACTS" not in uc:
         return None
-    sec = uc[uc.index("COMPUTED FACTS"):].split("\nQuestion:")[0]
+    sec = uc[uc.index("COMPUTED FACTS"):].split("\nQuestion:")[0].split("\nEND OF NOTES")[0]
     bad = []
     tm = re.search(r"Today is \w+, (\d{1,2}) (\w+) (\d{4})\.", sec)
     today = datetime.date(int(tm.group(3)), MONTHS[tm.group(2).lower()], int(tm.group(1))) if tm else None
@@ -1524,7 +1524,9 @@ def grade_row(exp, turn, ui, prev_turn, host, ps, versions, cases_meta, store=Fa
     c1 = re.findall(r"\bE\d+\b", both)
     res("C1", not c1, f"bare labels {sorted(set(c1))[:6]}" if c1 else "")
     grounded = route in ("read", "survey")
-    if grounded and norm_ws(final):
+    if exp.get("uncitedOk"):   # S3 — a general-knowledge case: no entry answers it, so citing one would be the bug
+        na("C2", "general-knowledge case (uncitedOk): an uncited answer is right")
+    elif grounded and norm_ws(final):
         res("C2", len(cites) >= 1, f"{len(cites)} chips on a {route} answer")
     else:
         na("C2", "not a grounded answer")

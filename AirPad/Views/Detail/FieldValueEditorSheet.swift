@@ -305,7 +305,7 @@ struct FieldValueEditorSheet: View {
         }
     }
     private static func seedDate(_ p: FieldPayload?) -> Date {
-        if case .date(let d, _)? = p { return d }
+        if case .date(let d, let hasTime)? = p { return hasTime ? d : FieldValueFormatter.calendarDay(d) }   // SL-D3 — same day the card shows
         return Date()
     }
     private static func seedAmount(_ p: FieldPayload?) -> String {

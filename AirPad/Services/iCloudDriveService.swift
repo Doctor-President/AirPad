@@ -216,9 +216,34 @@ actor iCloudDriveService {
             rootURL = root
             isAvailable = true
             usingLocalFallback = false   // cosmetic only (no "saving locally" banner during tests)
+            if ProcessInfo.processInfo.arguments.contains("-UITestSeedChats") { Self.seedUITestChats(root) }
             return true
         } catch {
             return false
+        }
+    }
+
+    /// CH-B — `-UITestSeedChats` (with `-UITestLibraryFresh`): the Chats-list XCUITests' precondition, written into
+    /// the scratch so they don't depend on chats an earlier run left there (the Quick Capture matrix's fresh wipe
+    /// removed them, so the rows passed or failed by test ORDER). One chat titled "What connections…" and one entry
+    /// to pin it to. Only when absent, so a test that renames or pins sees its own change on a relaunch.
+    private static func seedUITestChats(_ root: URL) {
+        let now = Date(timeIntervalSince1970: 1_760_000_000)
+        let chatsURL = root.appendingPathComponent("chats.json")
+        if !FileManager.default.fileExists(atPath: chatsURL.path) {
+            let q = "What connections do you find between my ideas?"
+            let chat = Chat(id: UUID(), title: q, createdAt: now, updatedAt: now, messages: [
+                ChatSession.Message(role: .user, text: q),
+                ChatSession.Message(role: .assistant, text: "A seeded answer for the Chats-list tests.")
+            ])
+            try? JSONEncoder.airPad.encode([chat]).write(to: chatsURL, options: .atomic)
+        }
+        let nodeDir = root.appendingPathComponent("nodes/uitest-seed-entry")
+        if !FileManager.default.fileExists(atPath: nodeDir.path) {
+            let node = Node(id: "uitest-seed-entry", createdAt: now, updatedAt: now,
+                            title: "Seeded entry", summary: "An entry to pin a chat to.", tags: [], entrySchemaVersion: 1)
+            try? FileManager.default.createDirectory(at: nodeDir, withIntermediateDirectories: true)
+            try? JSONEncoder.airPad.encode(node).write(to: nodeDir.appendingPathComponent("node.json"), options: .atomic)
         }
     }
     #endif

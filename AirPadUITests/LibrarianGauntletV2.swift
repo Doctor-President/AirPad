@@ -464,7 +464,7 @@ final class OffPillarSmoke: XCTestCase {
     /// Same scratch-library precondition as the rename/delete test.
     func testChatPinToEntryAndUnpin() throws {
         let app = XCUIApplication()
-        app.launchArguments = ["-OpenMap", "-OpenChatsList", "-UITestLibrary"]
+        app.launchArguments = ["-OpenMap", "-OpenChatsList", "-UITestLibrary", "-UITestLibraryFresh", "-UITestSeedChats"]
         app.launch()
         XCTAssertTrue(app.navigationBars["Chats"].waitForExistence(timeout: 20), "Chats list never opened")
         let row = app.buttons.matching(NSPredicate(format: "label CONTAINS 'What connections'")).firstMatch
@@ -501,11 +501,10 @@ final class OffPillarSmoke: XCTestCase {
 
     func testChatsListRenameAndDelete() throws {
         // Runs in the ISOLATED UI-test scratch library (`-UITestLibrary`: a throwaway caches container that never
-        // touches a real library), which holds the chats earlier gauntlet captures left there (a fresh Simulator
-        // needs that scratch copied in first — PRECONDITION: ≥ 1 chat titled 'What connections…'). (A chat seeded under
-        // -GauntletUI is not persisted — the seed path is not the product path, so it isn't used here.)
+        // touches a real library), wiped and SEEDED per launch (`-UITestLibraryFresh -UITestSeedChats`: one chat
+        // titled 'What connections…' + one entry), so the row no longer depends on chats an earlier run left behind.
         let app = XCUIApplication()
-        app.launchArguments = ["-OpenMap", "-OpenChatsList", "-UITestLibrary"]
+        app.launchArguments = ["-OpenMap", "-OpenChatsList", "-UITestLibrary", "-UITestLibraryFresh", "-UITestSeedChats"]
         app.launch()
         XCTAssertTrue(app.navigationBars["Chats"].waitForExistence(timeout: 20), "Chats list never opened")
         let rows = app.buttons.matching(NSPredicate(format: "label CONTAINS 'What connections'"))

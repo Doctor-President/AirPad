@@ -27,6 +27,8 @@ RelatedTapRepro/testDashboardRelatedPushNavigates
 ManageModelsRepro/testManageModelsLandsOnMacScreen
 OffPillarSmoke/testReadAloudTogglesPlayback
 OffPillarSmoke/testCopyAnswerToPasteboard
+OffPillarSmoke/testChatsListRenameAndDelete
+OffPillarSmoke/testChatPinToEntryAndUnpin
 ModelPillChecks/testGalleryLongNameKeepsThinking
 ModelPillChecks/testLongNameNeverSqueezesNeighbours
 C2cAppleIntelligenceRoute/testPillTappableUnpaired
@@ -37,9 +39,9 @@ C2cAppleIntelligenceRoute/testKeychainReadFailureKeepsPairing
 C2cAppleIntelligenceRoute/testUnreachableServerSkippedWhenNothingChosen
 C2cAppleIntelligenceRoute/testUnreachableServerGreyedInPicker
 C2cAppleIntelligenceRoute/testChosenServerShownNotReachable
-# NOT here (and why): OffPillarSmoke ChatsListRenameAndDelete / ChatPinToEntryAndUnpin (need ≥1 saved chat 'What
-# connections…' in the -UITestLibrary scratch; CDGhostAcceptanceMatrix's -UITestLibraryFresh wipes it → order-dependent;
-# run them after a seeded scratch, not in this set) · LibrarianPerfGate (timing — a quiet Mac only) · TestFlightRestore, CEControlRouting (device /
+# CH-B: the two OffPillarSmoke Chats rows now seed their own scratch (-UITestLibraryFresh -UITestSeedChats) — no longer
+# order-dependent. The 3 reds above were fixed in CH-B (gallery harness, reorder test, -RealCapturePlus waits for the load).
+# NOT here (and why): LibrarianPerfGate (timing — a quiet Mac only) · TestFlightRestore, CEControlRouting (device /
 # manual) · LibrarianGauntletV2 (Host + fixture) · OffPillarSmoke/testContinueResumesStoppedAnswer,
 # ModelPillChecks/testAskWithPickedModel, C2c PickAppleIntelligenceAndBack / PickerListsEverySource /
 # RoutePersists / ReachableServerStillUsed / OnDeviceAppleIntelligenceLibrarian (Host, stub server or device).

@@ -418,7 +418,7 @@ struct SettingsView: View {
         submenuScroll(header: { submenuHeader(icon: "cpu", tint: "7A3FF2", title: "Models",
             blurb: "Choose who answers. Apple Intelligence works right away — everything here is optional.") }) {
             VStack(alignment: .leading, spacing: 16) {
-                sectionHeader("On this iPhone")
+                sectionHeader("On this \(ModelRouter.deviceNoun)")
                 appleIntelligenceRow
                 localModelSubsection   // "Downloaded model"
             }

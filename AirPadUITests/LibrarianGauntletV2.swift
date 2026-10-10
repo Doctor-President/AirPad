@@ -215,13 +215,18 @@ final class LibrarianGauntletV2: XCTestCase {
         // latest footer, so 'Show N sources' is on-screen by frame but NOT hittable (CH-A UI ×1, screenshot
         // proven). `ask()` taps the field again before every question, so this is safe.
         let donePred = NSPredicate(format: "label == 'Done' OR identifier == 'Done'")
-        r["doneButtons"] = screenOrdered(app.descendants(matching: .any).matching(donePred)).map { e -> [String: Any] in
-            ["y": Int(e.frame.minY), "hittable": e.isHittable, "type": e.elementType.rawValue]
-        }
-        r["doneTree"] = app.debugDescription.split(separator: "\n").filter { $0.contains("Done") || $0.contains("Toolbar") }.prefix(12).map(String.init)
-        if app.keyboards.firstMatch.exists {
-            r["kbButtons"] = app.keyboards.firstMatch.buttons.allElementsBoundByIndex.prefix(60).map { "\($0.identifier)|\($0.label)|\(Int($0.frame.minY))" }
-            r["kbOther"] = app.keyboards.firstMatch.debugDescription.split(separator: "\n").filter { $0.contains("Done") || $0.contains("Dismiss") || $0.contains("Hide") || $0.contains("dismiss") }.prefix(10).map(String.init)
+        // Brief CJ — keyboard-hunt DIAGNOSTICS (no grader reads them) only when asked for: a full accessibility-tree
+        // dump per row cost ~15 s of every row's capture.
+        let env = ProcessInfo.processInfo.environment
+        if env["GAUNTLET_KB_DISMISS"] == "1" || env["GAUNTLET_DIAG"] == "1" {
+            r["doneButtons"] = screenOrdered(app.descendants(matching: .any).matching(donePred)).map { e -> [String: Any] in
+                ["y": Int(e.frame.minY), "hittable": e.isHittable, "type": e.elementType.rawValue]
+            }
+            r["doneTree"] = app.debugDescription.split(separator: "\n").filter { $0.contains("Done") || $0.contains("Toolbar") }.prefix(12).map(String.init)
+            if app.keyboards.firstMatch.exists {
+                r["kbButtons"] = app.keyboards.firstMatch.buttons.allElementsBoundByIndex.prefix(60).map { "\($0.identifier)|\($0.label)|\(Int($0.frame.minY))" }
+                r["kbOther"] = app.keyboards.firstMatch.debugDescription.split(separator: "\n").filter { $0.contains("Done") || $0.contains("Dismiss") || $0.contains("Hide") || $0.contains("dismiss") }.prefix(10).map(String.init)
+            }
         }
         var how = "none"
         // OPT-IN ONLY (`TEST_RUNNER_GAUNTLET_KB_DISMISS=1`): dismissing the keyboard after a long multi-turn chat
@@ -324,8 +329,15 @@ final class LibrarianGauntletV2: XCTestCase {
 
     /// Scrolls (slowly, so it settles) until `e` is hittable. `up` = the element is below the fold.
     private func reach(_ e: XCUIElement, _ app: XCUIApplication, up: Bool) -> Bool {
+        var last = CGRect.null, still = 0
         for _ in 0..<12 {
             if e.exists && e.isHittable { return true }
+            // Brief CJ — two swipes in a row that leave the element where it was mean the list is at its end (the
+            // footer sits under the keyboard-raised composer): more swipes can't make it hittable. Was: all 12
+            // swipes (~39 s) on 27 of 35 rows of a full run, then "unreachable" anyway.
+            let f = e.exists ? e.frame : .null
+            if f == last { still += 1; if still >= 2 { break } } else { still = 0 }
+            last = f
             if up { app.swipeUp(velocity: .slow) } else { app.swipeDown(velocity: .slow) }
             Thread.sleep(forTimeInterval: 0.4)
         }

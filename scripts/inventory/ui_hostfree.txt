@@ -1,0 +1,45 @@
+# Brief CJ — inventory UI rows that need NO Host, model, corpus fixture, stub server or key: they run in any Simulator
+# (locally in parallel; Xcode Cloud later). One `Class/testMethod` per line; `#` comments. Rows that need a Host stay
+# in host rows.
+# Validated 2026-10-10 (ws-librarian-ch @ fdbdfa5 + CJ): on the warm inventory Simulator (S265) 3 workers give the SAME
+# results as one at a time (27 pass · 1 skip · 3 red, all 3 red serially too: ArrangeGestureRepro/testBodyLongPressReorders,
+# CDGhostWhileTyping, ModelPillChecks/testGalleryLongNameKeepsThinking → open, resolve in the CH-B full inventory).
+# On a freshly ERASED Simulator (Xcode Cloud's start) the 5 CDGhostAcceptanceMatrix rows + C2c ForgetThisMac also fail
+# serially (the app doesn't reach Quick Capture / the first on-device answer in time) → not cloud-ready until fixed.
+ArrangeGestureRepro/testBodyLongPressReorders
+ArrangeGestureRepro/testGrabberDragResizesAndBodyTapInert
+HoldDragRepro/testGripIsTheOnlyDragEntry
+HoldDragRepro/testGripTapInertAndOptionsMenuOpens
+HoldDragRepro/testOptionsFixedXAcrossFold
+CardSwipeRepro/testBackReturn
+CardSwipeRepro/testDragDismissReturn
+CardSwipeRepro/testHorizontalSwipes
+CardSwipeRepro/testVerticalScrollGaps
+CaretTapTest/testMidNoteTap
+CaretTapTest/testTypingStillRestyles
+CDGhostWhileTyping/testPlusCaptureShowsGhostWhileTyping
+CDGhostAcceptanceMatrix/testQC_type_ghost_DoneCommitsBoth_reopenNoGhost
+CDGhostAcceptanceMatrix/testQC_noUserTitle_promotedTitleSurvivesDone
+CDGhostAcceptanceMatrix/testQC_userTypedTitle_survivesDone
+CDGhostAcceptanceMatrix/testQC_userClearedTitle_staysCleared
+CDGhostAcceptanceMatrix/testQC_twoIdenticalEntries_bothTitled
+RelatedTapRepro/testDashboardRelatedPushNavigates
+ManageModelsRepro/testManageModelsLandsOnMacScreen
+OffPillarSmoke/testReadAloudTogglesPlayback
+OffPillarSmoke/testCopyAnswerToPasteboard
+ModelPillChecks/testGalleryLongNameKeepsThinking
+ModelPillChecks/testLongNameNeverSqueezesNeighbours
+C2cAppleIntelligenceRoute/testPillTappableUnpaired
+C2cAppleIntelligenceRoute/testAppleIntelligenceNotReadyIsExplained
+C2cAppleIntelligenceRoute/testDeadHostFailsFast
+C2cAppleIntelligenceRoute/testForgetThisMacConfirmsThenRoutes
+C2cAppleIntelligenceRoute/testKeychainReadFailureKeepsPairing
+C2cAppleIntelligenceRoute/testUnreachableServerSkippedWhenNothingChosen
+C2cAppleIntelligenceRoute/testUnreachableServerGreyedInPicker
+C2cAppleIntelligenceRoute/testChosenServerShownNotReachable
+# NOT here (and why): OffPillarSmoke ChatsListRenameAndDelete / ChatPinToEntryAndUnpin (need ≥1 saved chat 'What
+# connections…' in the -UITestLibrary scratch; CDGhostAcceptanceMatrix's -UITestLibraryFresh wipes it → order-dependent;
+# run them after a seeded scratch, not in this set) · LibrarianPerfGate (timing — a quiet Mac only) · TestFlightRestore, CEControlRouting (device /
+# manual) · LibrarianGauntletV2 (Host + fixture) · OffPillarSmoke/testContinueResumesStoppedAnswer,
+# ModelPillChecks/testAskWithPickedModel, C2c PickAppleIntelligenceAndBack / PickerListsEverySource /
+# RoutePersists / ReachableServerStillUsed / OnDeviceAppleIntelligenceLibrarian (Host, stub server or device).

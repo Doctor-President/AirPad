@@ -18,7 +18,7 @@
 set -uo pipefail
 
 RUN_DIR=${1:?run_dir}; MODEL=${2:?model}; shift 2
-THINK=off,on; RUNS=3; ONLY=""; REPLAYS=(); EXPECT_DIGEST=""; BUILD=1; EXTRA=(); TT=900; STORE_PASSES=()
+THINK=off,on; RUNS=3; ONLY=""; REPLAYS=(); EXPECT_DIGEST=""; BUILD=1; EXTRA=(); TT=900; STORE_PASSES=(); SHARDS=1
 while (( $# )); do
   case $1 in
     --think) THINK=$2; shift 2;;
@@ -33,6 +33,9 @@ while (( $# )); do
     # is graded by `gauntlet.py grade-store` into <run_dir>/<label>/. Passes share ONE Host session.
     --store-pass) STORE_PASSES+=("$2"); shift 2;;
     --extra-arg) EXTRA+=("$2"); shift 2;;   # appended to every launch (e.g. an A/B switch)
+    # Brief CJ — CORRECTNESS runs only: drive the rows on N Simulators at once (clones of $SIM) against one Ollama
+    # started with OLLAMA_NUM_PARALLEL=N. Never for latency/perf runs (parallel requests change the timings).
+    --shards) SHARDS=$2; shift 2;;
     *) echo "unknown arg $1"; exit 2;;
   esac
 done
@@ -87,6 +90,9 @@ HOST_SHA=$(git -C $HOSTREPO rev-parse --short HEAD); HOST_BRANCH=$(git -C $HOSTR
 HOST_DIRTY=$(git -C $HOSTREPO status --porcelain | grep -v '^??' | wc -l | tr -d ' ')
 (cd $HOSTREPO && go build -o "$SCR/airpad-host" ./cmd/airpad-host) || { log "Host build FAILED"; exit 1; }
 SECRET=$(openssl rand -hex 32)
+# Brief CJ — the scratch Host spawns the shipping Ollama with THIS environment (T's Host and its Ollama were quit
+# above), so the parallel-request setting reaches it. Checked against Ollama's own "server config" line below.
+(( SHARDS > 1 )) && export OLLAMA_NUM_PARALLEL=$SHARDS
 HOST_SECRET=$SECRET "$SCR/airpad-host" --headless --observe --listen 127.0.0.1:$PORT --ollama 127.0.0.1:11434 \
   --ollama-bin "$SHIP_OLLAMA" --manifest $HOSTREPO/manifest.json \
   --identity "$SCR/identity.key" --secret-file "$SCR/secret" >> "$RUN_DIR/host.log" 2>&1 &
@@ -96,6 +102,12 @@ for i in {1..60}; do HPK=$(curl -s -m 3 127.0.0.1:$PORT/health -H "Authorization
 [[ -z ${HPK:-} ]] && { log "scratch Host never became healthy"; exit 1; }
 for i in {1..60}; do curl -s -m 2 $OLL/api/version >/dev/null && break; sleep 1; done
 log "scratch Host $HOST_BRANCH@$HOST_SHA (dirty=$HOST_DIRTY) pid=$SCRATCH_PID on :$PORT, shipping Ollama supervised"
+if (( SHARDS > 1 )); then
+  for i in {1..20}; do grep -q "OLLAMA_NUM_PARALLEL:" "$RUN_DIR/host.log" && break; sleep 1; done
+  NP=$(grep -o "OLLAMA_NUM_PARALLEL:[0-9]*" "$RUN_DIR/host.log" | tail -1)
+  [[ $NP == "OLLAMA_NUM_PARALLEL:$SHARDS" ]] || { log "Ollama did not start with NUM_PARALLEL=$SHARDS (saw '${NP:-nothing}': an Ollama was already running?) — ABORT"; exit 1; }
+  log "Ollama $NP for $SHARDS shards"
+fi
 
 # ── 3. Versions + digest + ps poller ────────────────────────────────────────────────────────────
 DIGEST=$(curl -s $OLL/api/tags | python3 -c "import json,sys;print(next((m['digest'] for m in json.load(sys.stdin)['models'] if m['name']=='$MODEL'),''))")
@@ -155,28 +167,12 @@ if (( BUILD )); then
   xcodebuild -project $AIRPAD/AirPad.xcodeproj -scheme AirPad -destination "platform=iOS Simulator,id=$SIM" \
     -derivedDataPath $DD build-for-testing > "$RUN_DIR/build.log" 2>&1 || { log "build-for-testing FAILED (see build.log)"; exit 1; }
 fi
-xcrun simctl boot $SIM 2>/dev/null; xcrun simctl bootstatus $SIM -b >/dev/null 2>&1
-log "driving the UI…"
-# Watchdog — a hung app (main-thread heartbeat stale > 60 s, app alive > 70 s) freezes the XCUITest driver
-# too (it waits for "idle" forever). Sample it as evidence, drop a hung-<epoch> marker (the driver turns that
-# into an A8 FAIL for the row), and terminate it so the run continues.
-( while true; do
-    sleep 10
-    [[ -f $RUN_DIR/heartbeat ]] || continue
-    APID=$(pgrep -f "Devices/$SIM/.*AirPad.app/AirPad" | head -1); [[ -n $APID ]] || continue
-    up=$(ps -o etime= -p $APID | awk -F'[:-]' '{n=NF; s=$n+($(n-1))*60; if(n>2)s+=$(n-2)*3600; print s}')
-    age=$(( $(date +%s) - $(cut -d. -f1 $RUN_DIR/heartbeat) ))
-    if (( age > 60 && up > 70 )); then
-      E=$(date +%s); sample $APID 3 -mayDie > "$RUN_DIR/hung-$E.sample.txt" 2>/dev/null
-      kill -9 $APID 2>/dev/null; touch "$RUN_DIR/hung-$E"   # kill THAT pid — never by bundle id (races the next launch)
-      print -r -- "[gauntlet $(date +%H:%M:%S)] WATCHDOG: app main thread stalled ${age}s — sampled + terminated" >> "$RUN_DIR/run.log"
-    fi
-  done ) &
-WATCH_PID=$!
-TEST_RUNNER_GAUNTLET_CONFIG="$RUN_DIR/config.json" xcodebuild -project $AIRPAD/AirPad.xcodeproj -scheme AirPad \
-  -destination "platform=iOS Simulator,id=$SIM" -derivedDataPath $DD \
-  -only-testing:AirPadUITests/LibrarianGauntletV2/testRunGauntlet test-without-building > "$RUN_DIR/xcuitest.log" 2>&1
-UIX=$?; kill $WATCH_PID 2>/dev/null
+log "driving the UI… (shards=$SHARDS)"
+source $AIRPAD/scripts/gauntlet/drive.zsh
+T0=$(date +%s)
+drive_ui "$RUN_DIR" $SIM $SHARDS 60 70
+UIX=$?
+log "UI drive wall $(( $(date +%s) - T0 ))s"
 log "UI drive exit=$UIX ($(grep -c 'GAUNTLET_V2 ROW' $RUN_DIR/xcuitest.log) rows captured)"
 
 # ── 5/6. Restore (trap) + grade ─────────────────────────────────────────────────────────────────

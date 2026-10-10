@@ -26,6 +26,8 @@ corpus_index.pre-*.json
 # SwiftPM build artifacts (harness sub-packages)
 .build/
 Package.resolved
+# Brief CJ — the APP's pins ARE tracked: Xcode Cloud resolves packages only from a committed Package.resolved.
+!AirPad.xcodeproj/project.xcworkspace/xcshareddata/swiftpm/Package.resolved
 
 # Python bytecode (scripts/ helpers)
 scripts/__pycache__/

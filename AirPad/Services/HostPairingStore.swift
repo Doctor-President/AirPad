@@ -13,18 +13,50 @@ extension HostPairing {
         guard let data = try? JSONEncoder().encode(self),
               let json = String(data: data, encoding: .utf8) else { return }
         KeychainHelper.save(key: Self.keychainKey, value: json)
+        Self.setCached(self)   // the pairing just made is the pairing, even if the Keychain write failed
         NotificationCenter.default.post(name: .librarianRouteChanged, object: nil)   // C2c — re-derive who answers
     }
 
+    /// C2c (T ruling 2026-10-09: pairing is durable) — what the phone knows about its Mac. `.unreadable` = the
+    /// Keychain refused the read (a locked phone, an XPC hiccup) before any read succeeded: NOT "unpaired" — callers
+    /// keep what they last knew.
+    enum Read { case paired(HostPairing), unpaired, unreadable }
+
     /// Load the current pairing, if any.
     static func load() -> HostPairing? {
+        if case .paired(let p) = read() { return p }
+        return nil
+    }
+
+    /// The pairing, read from the Keychain ONCE per launch and then served from memory (`persist` / `clear` keep the
+    /// cache current — nothing else writes the item). Was a Keychain read per call: ~86 a session, and any one that
+    /// failed made the app look unpaired. A failed read is logged and NOT cached, so the next call tries again.
+    static func read() -> Read {
         #if DEBUG
         // `-DebugPersistLANPairing YES` (C2c test) — the LAN pairing was SAVED to the Keychain at launch, so Unpair
         // really removes it; the launch-arg override must not resurrect it.
-        if !UserDefaults.standard.bool(forKey: "DebugPersistLANPairing"), let dbg = debugLANHostPairing() { return dbg }
+        if !UserDefaults.standard.bool(forKey: "DebugPersistLANPairing"), let dbg = debugLANHostPairing() { return .paired(dbg) }
         #endif
-        guard let json = KeychainHelper.load(key: keychainKey) else { return nil }
-        return parse(json)
+        cacheLock.lock(); defer { cacheLock.unlock() }
+        if let known = cached { return known.map(Read.paired) ?? .unpaired }
+        switch KeychainHelper.read(key: keychainKey) {
+        case .found(let json):
+            let p = parse(json)
+            cached = .some(p)
+            return p.map(Read.paired) ?? .unpaired
+        case .notFound:
+            cached = .some(nil)
+            return .unpaired
+        case .failed(let status):
+            NSLog("[Pairing] Keychain read failed (%d) — not treated as unpaired; will retry", status)
+            return .unreadable
+        }
+    }
+
+    private static let cacheLock = NSLock()
+    private static var cached: HostPairing?? = nil   // outer nil = not read yet this launch
+    private static func setCached(_ p: HostPairing?) {
+        cacheLock.lock(); cached = .some(p); cacheLock.unlock()
     }
 
     #if DEBUG
@@ -52,9 +84,10 @@ extension HostPairing {
     }
     #endif
 
-    /// Forget the pairing (unpair / revoke on the phone side).
+    /// Forget the pairing ("Forget this Mac" in Settings, after a confirmation — the ONLY way a pairing ends).
     static func clear() {
         KeychainHelper.delete(key: keychainKey)
+        setCached(nil)
         NotificationCenter.default.post(name: .librarianRouteChanged, object: nil)   // C2c — re-derive who answers
     }
 

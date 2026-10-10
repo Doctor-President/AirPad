@@ -22,10 +22,10 @@ final class ManageModelsRepro: XCTestCase {
         manage.tap()
 
         // After the picker dismisses, Settings must present AND land on the Mac screen.
-        // The Mac screen shows the "Your Mac" navigation title + an "Unpair this Mac" button;
+        // The Mac screen shows the "Your Mac" navigation title + a "Forget this Mac" button;
         // the Settings ROOT shows the top-level rows (e.g. a "Web search" row) and NO "Your Mac".
         let macTitle = app.staticTexts["Your Mac"]
-        let unpair = app.buttons["Unpair this Mac"]
+        let unpair = app.buttons["Forget this Mac"]
         let onMacScreen = macTitle.waitForExistence(timeout: 8) || unpair.waitForExistence(timeout: 2)
 
         // Diagnostic: what DID show (root leaks a "Web search" row / the "Models" header)?

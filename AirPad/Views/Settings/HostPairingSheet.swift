@@ -1,7 +1,7 @@
 // HostPairingSheet — "Connect to your computer". Scans the desktop AirPad Host's pairing
 // QR (or accepts a pasted code), parses it into a HostPairing, and persists it. Once paired,
 // the Librarian/chat routes through the Host over the tunnel with app-layer E2E (ModelRouter
-// resolves `.host` first). A paired state can be cleared here too (re-pair / unpair).
+// resolves `.host` first). A paired state can be cleared here too (re-pair / "Forget this Mac", confirmed).
 
 import AVFoundation
 import SwiftUI
@@ -10,6 +10,7 @@ struct HostPairingSheet: View {
     @Environment(\.dismiss) private var dismiss
 
     @State private var existing: HostPairing? = HostPairing.load()
+    @State private var confirmForget = false
     @State private var cameraAuthorized = AVCaptureDevice.authorizationStatus(for: .video) == .authorized
     @State private var pasteCode = ""
     @State private var error: String?
@@ -95,12 +96,14 @@ struct HostPairingSheet: View {
         row(icon: "checkmark.seal.fill", tint: .green,
             title: "Paired with \(p.displayHost)",
             subtitle: "Chats route to your computer's model, end-to-end encrypted.")
+        // C2c (T ruling 2026-10-09: pairing is durable) — the one way a pairing ends, and it asks first.
         Button(role: .destructive) {
-            HostPairing.clear(); existing = nil
+            confirmForget = true
         } label: {
-            Label("Unpair this computer", systemImage: "xmark.circle")
+            Label("Forget this Mac", systemImage: "xmark.circle")
                 .font(.subheadline.weight(.medium))
         }
+        .forgetMacAlert(isPresented: $confirmForget) { HostCatalog.shared.forgetMac(); existing = nil }
         Text("Re-scan a new QR to pair with a different computer (this rotates the secret).")
             .font(.caption2).foregroundStyle(AppearancePalette.ink.opacity(0.4))
         Divider().overlay(AppearancePalette.ink.opacity(0.1))

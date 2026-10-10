@@ -302,29 +302,45 @@ struct ModelPillRow: View {
                         dividerBar
                         name(catalog.name(m), cap: nameCap)
                     } else if catalog.onDevice {
-                        // C4b2 — Apple Intelligence chosen in the menu (still paired).
+                        // C4b2 — Apple Intelligence answers (picked, or no Mac/server to answer instead).
                         Image(systemName: "apple.logo").font(.system(size: 10, weight: .semibold)).foregroundStyle(AppearancePalette.ink.opacity(0.7))
                         name(ModelRouter.foundationModelName, cap: nameCap)
+                    } else if catalog.answerer == .endpoint {
+                        // C4b2 — the user's own server (the custom endpoint).
+                        Image(systemName: "server.rack").font(.system(size: 9, weight: .semibold)).foregroundStyle(AppearancePalette.ink.opacity(0.7))
+                        name(catalog.endpointName, cap: nameCap)
                     } else if let a = catalog.active {
-                        if a.isResident {
+                        if !catalog.reachable {
+                            // C4b2 — the Mac is away: its model, marked unreachable (never a ✓ it can't back up).
+                            Image(systemName: "wifi.slash").font(.system(size: 9, weight: .semibold)).foregroundStyle(AppearancePalette.ink.opacity(0.4))
+                        } else if a.isResident {
                             Image(systemName: "checkmark").font(.system(size: 10, weight: .bold)).foregroundStyle(Color(hexString: "2E9E4F"))
                         } else {
                             Image(systemName: "circle").font(.system(size: 9, weight: .semibold)).foregroundStyle(AppearancePalette.ink.opacity(0.4))
                         }
                         name(catalog.name(a), cap: nameCap)
                     } else {
-                        Text("No model").font(.system(size: 12, weight: .semibold)).foregroundStyle(AppearancePalette.ink.opacity(0.55))
+                        Text(catalog.answerer == .mac && !catalog.reachable ? "Mac not reachable" : "No model")
+                            .font(.system(size: 12, weight: .semibold)).foregroundStyle(AppearancePalette.ink.opacity(0.55))
                             .lineLimit(1).fixedSize()
                     }
                 }
             }
         }
         .buttonStyle(.plain)
-        .accessibilityLabel(catalog.onDevice ? "Model \(ModelRouter.foundationModelName), on this iPhone"
-                            : catalog.active.map { "Model \(catalog.name($0)), \($0.isResident ? "loaded" : "not loaded yet")" } ?? "No model loaded")
+        .accessibilityLabel(pillAccessibilityLabel)
         // Brief AI2 — the callout ring hugs the MODEL chip ONLY (was the whole row, so it
         // spanned Thinking too). The anchor is harmless in Chat View (no overlay reads it).
         .firstRunCalloutTarget(FirstRunCalloutTargetID.librarianModelChip)
+    }
+
+    private var pillAccessibilityLabel: String {
+        if catalog.onDevice { return "Model \(ModelRouter.foundationModelName), on this iPhone" }
+        if catalog.answerer == .endpoint { return "Model \(catalog.endpointName), on your server" }
+        if let a = catalog.active {
+            return "Model \(catalog.name(a)), " + (!catalog.reachable ? "Mac not reachable" : a.isResident ? "loaded" : "not loaded yet")
+        }
+        return "No model loaded"
     }
 
     private var dividerBar: some View {
@@ -417,11 +433,12 @@ struct ModelPickerSheet: View {
     /// Chat model-chip QUICK SWITCHER: selection + Thinking + in-memory badge, but NO
     /// Memory policy / Eject-all; instead a "Manage models" row (`onManageModels`) opens
     /// Settings → Models. `true` = Settings → Models → your Mac: the FULL surface (adds
-    /// Memory policy, Eject-all) plus a Mac header (`macName`) and Unpair (`onUnpair`).
+    /// Memory policy, Eject-all) plus a Mac header (`macName`) and "Forget this Mac" (`onForget`, confirmed first).
     var fullControls: Bool = false
     var macName: String? = nil
     var onManageModels: (() -> Void)? = nil
-    var onUnpair: (() -> Void)? = nil
+    var onForget: (() -> Void)? = nil
+    @State private var confirmForget = false
     @Environment(\.dismiss) private var dismiss
     /// EDIT MODE (T-ruled): the platform idiom for "destructive controls appear". In Edit, Load/Eject
     /// are suppressed and Delete shows on every installed row — so there's no third control in the
@@ -500,7 +517,7 @@ struct ModelPickerSheet: View {
                 if let err = catalog.lastActionError {
                     actionErrorBanner(err)
                 }
-                if !catalog.installed.isEmpty {
+                if catalog.reachable, !catalog.installed.isEmpty {
                     HStack {
                         Spacer()
                         Button(editing ? "Done" : "Edit") { withAnimation(.easeInOut(duration: 0.2)) { editing.toggle() } }
@@ -527,35 +544,36 @@ struct ModelPickerSheet: View {
                     }
                 }
 
-                // C4b2 (T 2026-10-09) — Apple Intelligence beside the Mac's models: choosing it routes the Librarian
-                // to this iPhone WITHOUT unpairing; picking a Mac model routes back.
-                if catalog.onDeviceAvailable, !fullControls {
+                // C4b2 (T ruling 2026-10-09: model choice is independent of pairing) — every source is listed whatever
+                // the pairing or the Mac's reachability: Apple Intelligence (with the reason when it isn't ready yet),
+                // the user's own server, then the Mac's models (greyed while it's away).
+                if !fullControls, catalog.onDeviceAvailable || catalog.onDeviceNote != nil {
                     section("ON THIS IPHONE") {
-                        Button {
+                        sourceRow(icon: "apple.logo", title: ModelRouter.foundationModelName,
+                                  subtitle: catalog.onDeviceNote ?? "Private, on this iPhone · short notes and quick questions",
+                                  chosen: catalog.onDevice, enabled: catalog.onDeviceAvailable, id: "picker.appleIntelligence") {
                             catalog.useOnDevice()
-                            dismiss()
-                        } label: {
-                            HStack(spacing: 10) {
-                                Image(systemName: "apple.logo").font(.system(size: 15)).foregroundStyle(AppearancePalette.ink.opacity(0.8))
-                                VStack(alignment: .leading, spacing: 2) {
-                                    Text(ModelRouter.foundationModelName).font(.system(size: 16, weight: .semibold)).foregroundStyle(AppearancePalette.ink)
-                                    Text("Private, on this iPhone · short notes and quick questions")
-                                        .font(.system(size: 12)).foregroundStyle(AppearancePalette.ink.opacity(0.5))
-                                }
-                                Spacer()
-                                if catalog.onDevice {
-                                    Image(systemName: "checkmark").font(.system(size: 13, weight: .bold)).foregroundStyle(Color(hexString: "2E9E4F"))
-                                }
-                            }
-                            .padding(.vertical, 10)
-                            .contentShape(Rectangle())
                         }
-                        .buttonStyle(.plain)
-                        .accessibilityIdentifier("picker.appleIntelligence")
                     }
+                }
+                if !fullControls, let endpoint = catalog.endpoint {
+                    section("YOUR SERVER") {
+                        sourceRow(icon: "server.rack", title: catalog.endpointName,
+                                  subtitle: URL(string: endpoint)?.host ?? endpoint,
+                                  chosen: catalog.answerer == .endpoint, enabled: true, id: "picker.endpoint") {
+                            catalog.useEndpoint()
+                        }
+                    }
+                }
+                if catalog.isPaired, !catalog.reachable {
+                    Text(catalog.models.isEmpty ? "Can't reach your Mac right now."
+                                                : "Can't reach your Mac right now. Its models are here for when it's back.")
+                        .font(.system(size: 13)).foregroundStyle(AppearancePalette.ink.opacity(0.55))
+                        .accessibilityIdentifier("picker.macUnreachable")
                 }
                 if !catalog.installed.isEmpty {
                     section("INSTALLED") { rows(catalog.installed) }
+                        .opacity(catalog.reachable ? 1 : 0.5)
                     // Brief AJ3 — Eject-all is a FULL-controls (Settings) affordance only.
                     if fullControls, catalog.installed.contains(where: { $0.isResident }) {
                         Button { Task { await catalog.ejectAll() } } label: {
@@ -579,15 +597,15 @@ struct ModelPickerSheet: View {
                         Text(catalog.residencyFine).font(.system(size: 11)).foregroundStyle(AppearancePalette.ink.opacity(0.4)).padding(.horizontal, 4)
                     }
                 }
-                if !catalog.available.isEmpty {
+                if catalog.reachable, !catalog.available.isEmpty {
                     section("AVAILABLE TO DOWNLOAD") {
                         rows(catalog.available)
                         divider
                         moreModelsStub
                     }
                 }
-                if catalog.models.isEmpty {
-                    Text(catalog.reachable ? "No models available for this Mac." : "Can't reach your Mac right now.")
+                if catalog.isPaired, catalog.reachable, catalog.models.isEmpty {
+                    Text("No models available for this Mac.")
                         .font(.system(size: 14)).foregroundStyle(AppearancePalette.ink.opacity(0.5))
                         .frame(maxWidth: .infinity).padding(.top, 40)
                 }
@@ -605,12 +623,13 @@ struct ModelPickerSheet: View {
                         .background(RoundedRectangle(cornerRadius: 12).fill(AppearancePalette.ink.opacity(0.05)))
                     }.buttonStyle(.plain)
                 }
-                // Brief AJ3 — full controls (Settings): Unpair lives at the bottom.
-                if fullControls, let onUnpair {
-                    Button(role: .destructive) { onUnpair() } label: {
+                // Brief AJ3 — full controls (Settings): "Forget this Mac" lives at the bottom. C2c (T ruling 2026-10-09:
+                // pairing is durable) — this is the ONLY way a pairing ends, and it asks first.
+                if fullControls, onForget != nil {
+                    Button(role: .destructive) { confirmForget = true } label: {
                         HStack {
                             Image(systemName: "xmark.circle")
-                            Text("Unpair this Mac").font(.system(size: 15, weight: .semibold))
+                            Text("Forget this Mac").font(.system(size: 15, weight: .semibold))
                             Spacer()
                         }
                         .foregroundStyle(.red.opacity(0.8))
@@ -622,6 +641,7 @@ struct ModelPickerSheet: View {
             .padding(20)
         }
         .background(AppearancePalette.bgElevated.ignoresSafeArea())
+        .forgetMacAlert(isPresented: $confirmForget) { onForget?() }
         // Exactly ONE grabber — the system's. A hand-drawn Capsule on top of the sheet's own
         // .automatic indicator was stacking two (T's screenshot); keep the standard system one.
         .presentationDragIndicator(.visible)
@@ -690,6 +710,35 @@ struct ModelPickerSheet: View {
         }
         .padding(12)
         .background(RoundedRectangle(cornerRadius: 12).fill(Color(hexString: "C2571B").opacity(0.10)))
+    }
+
+    /// C4b2 — one answer source the picker can switch to (Apple Intelligence, the user's server): ✓ when it's the one
+    /// answering; disabled — with its reason as the subtitle — when it can't answer yet.
+    private func sourceRow(icon: String, title: String, subtitle: String, chosen: Bool, enabled: Bool, id: String,
+                           _ pick: @escaping () -> Void) -> some View {
+        Button {
+            pick()
+            dismiss()
+        } label: {
+            HStack(spacing: 10) {
+                Image(systemName: icon).font(.system(size: 15)).foregroundStyle(AppearancePalette.ink.opacity(0.8))
+                VStack(alignment: .leading, spacing: 2) {
+                    Text(title).font(.system(size: 16, weight: .semibold)).foregroundStyle(AppearancePalette.ink)
+                    Text(subtitle).font(.system(size: 12)).foregroundStyle(AppearancePalette.ink.opacity(0.5))
+                        .fixedSize(horizontal: false, vertical: true)
+                }
+                Spacer()
+                if chosen {
+                    Image(systemName: "checkmark").font(.system(size: 13, weight: .bold)).foregroundStyle(Color(hexString: "2E9E4F"))
+                }
+            }
+            .padding(.vertical, 10)
+            .contentShape(Rectangle())
+            .opacity(enabled ? 1 : 0.5)
+        }
+        .buttonStyle(.plain)
+        .disabled(!enabled)
+        .accessibilityIdentifier(id)
     }
 
     @ViewBuilder private func rows(_ models: [CatalogModel]) -> some View {
@@ -811,7 +860,9 @@ private struct ModelSheetRow: View {
 
     @ViewBuilder private var action: some View {
         let busy = catalog.busyTag == model.tag
-        if editing {
+        if !catalog.reachable {
+            EmptyView()   // C4b2 — the Mac is away: its models are listed for reference, nothing to act on
+        } else if editing {
             // Edit mode (T-ruled): Load/Eject SUPPRESSED; Delete on every installed row. This is the
             // only place a third control lives, and it replaces the others — the row never crowds.
             if model.isInstalled {
@@ -824,8 +875,8 @@ private struct ModelSheetRow: View {
                 .buttonStyle(.plain)
                 .disabled(busy || catalog.busyTag != nil)
             }
-        } else if model.isResident && catalog.onDevice {
-            // C4b2 — Apple Intelligence is answering; the loaded Mac model offers "Use" to route back (no reload).
+        } else if model.isResident && catalog.answerer != .mac {
+            // C4b2 — Apple Intelligence or the server is answering; the loaded Mac model offers "Use" to route back (no reload).
             actionPill("Use", ghost: false, busy: busy) { catalog.useMac(model.tag) }
         } else if model.isResident {
             actionPill("Eject", ghost: true, busy: busy) { await catalog.eject(model.tag) }
@@ -905,6 +956,19 @@ struct ThoughtProcessBlock: View {
             withAnimation(.easeInOut(duration: 0.8).repeatForever(autoreverses: true)) { pulse = true }
         } else {
             pulse = false
+        }
+    }
+}
+
+extension View {
+    /// C2c (T ruling 2026-10-09) — the one confirmation before a pairing ends, shared by Settings → Your Mac and the
+    /// pairing sheet. DRAFT copy — for T's review.
+    func forgetMacAlert(isPresented: Binding<Bool>, forget: @escaping () -> Void) -> some View {
+        alert("Forget this Mac?", isPresented: isPresented) {
+            Button("Forget", role: .destructive) { forget() }
+            Button("Cancel", role: .cancel) {}
+        } message: {
+            Text("AirPad will stop using this Mac's models. To reconnect, you'll need to scan the QR code on your Mac again.")
         }
     }
 }

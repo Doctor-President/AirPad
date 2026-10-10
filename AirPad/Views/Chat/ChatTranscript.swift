@@ -90,14 +90,13 @@ struct ChatTranscript: View {
                 // ComposerScaffold — same spacing + field metrics as the Librarian's Ask composer.
                 Divider().overlay(AppearancePalette.ink.opacity(0.08))
                 ComposerScaffold {
-                    if HostCatalog.shared.isPaired {
-                        // Placement A (T-ruled): a persistent Private · Model · Thinking row above the field.
-                        ModelPillRow(
-                            catalog: HostCatalog.shared,
-                            thinkEnabled: Binding(get: { session.thinkEnabled }, set: { session.thinkEnabled = $0 }),
-                            onTapModel: { showPicker = true }
-                        )
-                    }
+                    // Placement A (T-ruled): a persistent Private · Model · Thinking row above the field.
+                    // C4b2 (T ruling 2026-10-09) — whatever the pairing: the pill always names who answers and opens the picker.
+                    ModelPillRow(
+                        catalog: HostCatalog.shared,
+                        thinkEnabled: Binding(get: { session.thinkEnabled }, set: { session.thinkEnabled = $0 }),
+                        onTapModel: { showPicker = true }
+                    )
                     inputRow
                 }
                 .background(AppearancePalette.bgBase)

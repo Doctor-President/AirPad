@@ -22,10 +22,14 @@ struct AirPadApp: App {
         AppDependencyManager.shared.add(dependency: appRouter)
         Self.purgeRetiredDevTunerDefaults()
         #if DEBUG
+        // C2c tests — `-ClearHostPairing YES` starts unpaired (the Simulator Keychain outlives app installs);
+        // `-DebugHostUnreachable YES` points the LAN pairing at a dead port (a Mac away from home).
+        if UserDefaults.standard.bool(forKey: "ClearHostPairing") { KeychainHelper.delete(key: HostPairing.keychainKey) }
+        if UserDefaults.standard.bool(forKey: "DebugHostUnreachable") { HostPairing.debugForceUnreachableHost = true }
         Self.injectFakeHostPairingIfRequested()
         HostPairing.debugPersistLANPairingIfRequested()
         // C4b2 device check — `-ResetLibrarianRoute YES` routes the Librarian back to the Mac (undoes a test's pick).
-        if UserDefaults.standard.bool(forKey: "ResetLibrarianRoute") { ModelRouter.prefersOnDevice = false }
+        if UserDefaults.standard.bool(forKey: "ResetLibrarianRoute") { ModelRouter.chosenRoute = nil }
         #endif
     }
 

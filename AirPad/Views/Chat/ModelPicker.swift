@@ -305,6 +305,10 @@ struct ModelPillRow: View {
                         // C4b2 — Apple Intelligence answers (picked, or no Mac/server to answer instead).
                         Image(systemName: "apple.logo").font(.system(size: 10, weight: .semibold)).foregroundStyle(AppearancePalette.ink.opacity(0.7))
                         name(ModelRouter.foundationModelName, cap: nameCap)
+                    } else if catalog.answerer == .endpoint, !catalog.endpointReachable {
+                        // C4b2 (T 2026-10-10) — the chosen server is away: say so, like the Mac (never a silent switch).
+                        Image(systemName: "wifi.slash").font(.system(size: 9, weight: .semibold)).foregroundStyle(AppearancePalette.ink.opacity(0.4))
+                        name("Server not reachable", cap: nameCap)
                     } else if catalog.answerer == .endpoint {
                         // C4b2 — the user's own server (the custom endpoint).
                         Image(systemName: "server.rack").font(.system(size: 9, weight: .semibold)).foregroundStyle(AppearancePalette.ink.opacity(0.7))
@@ -336,7 +340,9 @@ struct ModelPillRow: View {
 
     private var pillAccessibilityLabel: String {
         if catalog.onDevice { return "Model \(ModelRouter.foundationModelName), on this iPhone" }
-        if catalog.answerer == .endpoint { return "Model \(catalog.endpointName), on your server" }
+        if catalog.answerer == .endpoint {
+            return "Model \(catalog.endpointName), on your server" + (catalog.endpointReachable ? "" : ", not reachable")
+        }
         if let a = catalog.active {
             return "Model \(catalog.name(a)), " + (!catalog.reachable ? "Mac not reachable" : a.isResident ? "loaded" : "not loaded yet")
         }
@@ -559,8 +565,8 @@ struct ModelPickerSheet: View {
                 if !fullControls, let endpoint = catalog.endpoint {
                     section("YOUR SERVER") {
                         sourceRow(icon: "server.rack", title: catalog.endpointName,
-                                  subtitle: URL(string: endpoint)?.host ?? endpoint,
-                                  chosen: catalog.answerer == .endpoint, enabled: true, id: "picker.endpoint") {
+                                  subtitle: (catalog.endpointReachable ? "" : "Not reachable right now · ") + (URL(string: endpoint)?.host ?? endpoint),
+                                  chosen: catalog.answerer == .endpoint, enabled: catalog.endpointReachable, id: "picker.endpoint") {
                             catalog.useEndpoint()
                         }
                     }

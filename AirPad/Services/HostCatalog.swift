@@ -159,6 +159,8 @@ final class HostCatalog {
     /// The custom endpoint from Settings → Advanced (nil = none), and the first model it reports (resolved in `refresh`).
     private(set) var endpoint: String? = nil
     private(set) var endpointModel: String? = nil
+    /// The custom endpoint answered its last check (or hasn't been checked yet): greyed in the picker when not.
+    private(set) var endpointReachable = true
     /// The name the pill and picker give the custom endpoint.
     var endpointName: String { endpointModel ?? "Your server" }
 
@@ -166,6 +168,7 @@ final class HostCatalog {
         onDeviceAvailable = ModelRouter.onDeviceAvailable
         onDeviceNote = onDeviceAvailable ? nil : ModelRouter.onDeviceUnavailableNote
         endpoint = ModelRouter.configuredEndpoint
+        endpointReachable = !ModelRouter.endpointUnreachable
         switch ModelRouter.active {
         case .host:            answerer = .mac
         case .ollama:          answerer = .endpoint
@@ -293,6 +296,12 @@ final class HostCatalog {
     private func refreshEndpointModel() async {
         guard let e = endpoint, let base = URL(string: e) else { endpointModel = nil; return }
         endpointModel = try? await ModelRouter.firstOllamaModel(base: base)
+        // C4b2 (T 2026-10-10) — a server that doesn't answer is greyed, and skipped when nothing is chosen.
+        if ModelRouter.endpointUnreachable != (endpointModel == nil) {
+            ModelRouter.endpointUnreachable = endpointModel == nil
+            refreshRoute()
+            NotificationCenter.default.post(name: .librarianRouteChanged, object: nil)
+        }
     }
 
     private static func parse(_ data: Data) -> [CatalogModel] {

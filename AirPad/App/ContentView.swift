@@ -73,6 +73,11 @@ struct ContentView: View {
                 // canvas the "+" chrome is awkward to hit by coordinate; the ACTION is identical.)
                 if ProcessInfo.processInfo.arguments.contains("-RealCapturePlus") {
                     Task { @MainActor in
+                        // CH-B — act once the library is in memory, as a person's first tap would: at launch the
+                        // initial load REPLACES `store.nodes` wholesale, and a capture node made before it lands
+                        // came back with no note (no `noteEditor` on the Simulator; T's device was fine).
+                        for _ in 0..<40 where store.nodes.isEmpty { try? await Task.sleep(nanoseconds: 250_000_000) }
+                        try? await Task.sleep(nanoseconds: 500_000_000)
                         guard let node = await store.createCaptureNode() else { return }
                         router.isCapturing = true
                         router.captureNodeID = node.id

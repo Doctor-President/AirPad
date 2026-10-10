@@ -339,7 +339,7 @@ struct ModelPillRow: View {
     }
 
     private var pillAccessibilityLabel: String {
-        if catalog.onDevice { return "Model \(ModelRouter.foundationModelName), on this iPhone" }
+        if catalog.onDevice { return "Model \(ModelRouter.foundationModelName), on this \(ModelRouter.deviceNoun)" }
         if catalog.answerer == .endpoint {
             return "Model \(catalog.endpointName), on your server" + (catalog.endpointReachable ? "" : ", not reachable")
         }
@@ -554,9 +554,9 @@ struct ModelPickerSheet: View {
                 // the pairing or the Mac's reachability: Apple Intelligence (with the reason when it isn't ready yet),
                 // the user's own server, then the Mac's models (greyed while it's away).
                 if !fullControls, catalog.onDeviceAvailable || catalog.onDeviceNote != nil {
-                    section("ON THIS IPHONE") {
+                    section("ON THIS \(ModelRouter.deviceNoun.uppercased())") {
                         sourceRow(icon: "apple.logo", title: ModelRouter.foundationModelName,
-                                  subtitle: catalog.onDeviceNote ?? "Private, on this iPhone · short notes and quick questions",
+                                  subtitle: catalog.onDeviceNote ?? "Private, on this \(ModelRouter.deviceNoun) · short notes and quick questions",
                                   chosen: catalog.onDevice, enabled: catalog.onDeviceAvailable, id: "picker.appleIntelligence") {
                             catalog.useOnDevice()
                         }
@@ -968,13 +968,13 @@ struct ThoughtProcessBlock: View {
 
 extension View {
     /// C2c (T ruling 2026-10-09) — the one confirmation before a pairing ends, shared by Settings → Your Mac and the
-    /// pairing sheet. DRAFT copy — for T's review.
+    /// pairing sheet. Copy T-approved 2026-10-10.
     func forgetMacAlert(isPresented: Binding<Bool>, forget: @escaping () -> Void) -> some View {
         alert("Forget this Mac?", isPresented: isPresented) {
             Button("Forget", role: .destructive) { forget() }
             Button("Cancel", role: .cancel) {}
         } message: {
-            Text("AirPad will stop using this Mac's models. To reconnect, you'll need to scan the QR code on your Mac again.")
+            Text("AirPad will stop using its models. To reconnect, scan the QR code on your Mac.")   // T-approved 2026-10-10
         }
     }
 }

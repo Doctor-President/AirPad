@@ -1,4 +1,5 @@
 import Foundation
+import UIKit
 import FoundationModels
 
 /// The note-summary lever's result, provider-agnostic (`processNode`'s shape). Title + summary,
@@ -163,13 +164,17 @@ enum ModelRouter {
         return false
     }
 
+    /// Step 1 (T 2026-10-10) — the copy names the device AirPad runs on: iPhone, iPad, or Mac (the iPad app on a Mac).
+    static let deviceNoun: String = ProcessInfo.processInfo.isiOSAppOnMac ? "Mac"
+        : UIDevice.current.userInterfaceIdiom == .pad ? "iPad" : "iPhone"
+
     /// C4b2 — why Apple Intelligence can't answer YET on this iPhone, for the picker to say so instead of hiding the
     /// row; nil when it's ready, or when this iPhone can't run it at all (then it isn't listed). DEBUG
     /// `-StubOnDeviceUnavailable notReady|notEnabled` stands in for either state in the Simulator.
-    /// DRAFT copy — for T's review.
+    /// Copy T-approved 2026-10-10.
     static var onDeviceUnavailableNote: String? {
         let notEnabled = "Turn on Apple Intelligence in the Settings app to use it here."
-        let notReady = "Apple Intelligence is still getting ready on this iPhone. Try again in a little while."
+        let notReady = "Apple Intelligence is still getting ready on this \(deviceNoun). Try again in a little while."
         #if DEBUG
         switch UserDefaults.standard.string(forKey: "StubOnDeviceUnavailable") {
         case "notReady"?: return notReady

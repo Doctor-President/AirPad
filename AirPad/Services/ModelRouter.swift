@@ -94,9 +94,20 @@ enum ModelRouter {
             break
         }
         if let pairing = HostPairing.load() { return .host(pairing) }
-        if let endpoint { return .ollama(endpoint: endpoint) }
+        // C4b2 (T 2026-10-10) — with nothing chosen, a server that didn't answer is skipped (Apple Intelligence
+        // answers instead). A CHOSEN server stays chosen, shown "not reachable", like the Mac.
+        if let endpoint, !endpointUnreachable { return .ollama(endpoint: endpoint) }
         return .foundationModel
     }
+
+    /// C4b2 (T 2026-10-10) — the custom server didn't answer its last check (`HostCatalog.refreshEndpointModel`).
+    /// Not checked yet this launch counts as reachable.
+    static var endpointUnreachable: Bool {
+        get { endpointLock.lock(); defer { endpointLock.unlock() }; return _endpointUnreachable }
+        set { endpointLock.lock(); _endpointUnreachable = newValue; endpointLock.unlock() }
+    }
+    private static let endpointLock = NSLock()
+    private static var _endpointUnreachable = false
 
     /// The custom endpoint (Ollama / LM Studio) from Settings → Advanced, or nil when none is set (or it won't parse).
     static var configuredEndpoint: String? {
@@ -903,6 +914,9 @@ enum ModelRouter {
         let path = "api/v0/models"
         var request = URLRequest(url: base.appendingPathComponent(path))
         request.httpMethod = "GET"
+        // C4b2 (T 2026-10-10) — a model LIST answers at once; a server that's away (T's Tailscale LM Studio, phone
+        // off the tailnet) must not hold the probe, the label or an ask for URLSession's 60 s default.
+        request.timeoutInterval = 8
         applyEndpointAuth(&request)
 
         let (data, response) = try await runRequest(request, path: path)

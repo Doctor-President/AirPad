@@ -2572,6 +2572,7 @@ final class LibrarianState {
     /// Keychain (XPC) and a remote endpoint hits the network, neither of which
     /// belongs in `body`. Defaults to the FM name.
     private(set) var activeModelLabel: String = ModelRouter.foundationModelName
+    @ObservationIgnored private var labelGeneration = 0
 
     /// STATE 2 for the Ask field — no free-text provider exists (no ollama endpoint AND FM
     /// unavailable; the local model is NOT wired to Ask). Cached from `ModelRouter.askHasNoProvider`
@@ -2609,7 +2610,12 @@ final class LibrarianState {
             return
         }
         #endif
-        activeModelLabel = await ModelRouter.resolveActiveModelName()
+        // S3d (seen on T's phone) — a slow probe of a server picked a minute ago must not land over a newer label.
+        labelGeneration += 1
+        let generation = labelGeneration
+        let label = await ModelRouter.resolveActiveModelName()
+        guard generation == labelGeneration else { return }
+        activeModelLabel = label
         askUnavailable = ModelRouter.askHasNoProvider
         activeContextWindowTokens = ModelRouter.contextWindowTokens   // Brief BN3 — cache for the ring
     }

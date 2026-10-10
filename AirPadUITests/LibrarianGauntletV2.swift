@@ -853,13 +853,13 @@ final class C2cAppleIntelligenceRoute: XCTestCase {
     /// custom endpoint can be chosen while paired and stays chosen. Needs the scratch Host.
     func testRoutePersistsAcrossRelaunchAndOutage() {
         let app = XCUIApplication()
-        launch(app, hostArgs() + ["-ResetLibrarianRoute", "YES", "-DebugEndpointURL", "http://127.0.0.1:2"])
+        launch(app, hostArgs() + ["-ResetLibrarianRoute", "YES", "-DebugEndpointURL", "http://127.0.0.1:8798"])
         XCTAssertTrue(pill(app).waitForExistence(timeout: 30), "no model pill")
         pill(app).tap()
         let ai = app.buttons["picker.appleIntelligence"]; XCTAssertTrue(ai.waitForExistence(timeout: 10)); ai.tap()
         XCTAssertTrue(app.buttons["Model Apple Intelligence, on this iPhone"].waitForExistence(timeout: 10), "pick didn't take")
         app.terminate()
-        launch(app, hostArgs() + ["-DebugHostUnreachable", "YES", "-DebugEndpointURL", "http://127.0.0.1:2"])
+        launch(app, hostArgs() + ["-DebugHostUnreachable", "YES", "-DebugEndpointURL", "http://127.0.0.1:8798"])
         let kept = app.buttons["Model Apple Intelligence, on this iPhone"].waitForExistence(timeout: 30)
         note("after relaunch + Mac unreachable: \(kept ? "Apple Intelligence kept" : pill(app).label)")
         XCTAssertTrue(kept, "the Apple Intelligence pick did not survive relaunch + outage")
@@ -872,7 +872,7 @@ final class C2cAppleIntelligenceRoute: XCTestCase {
         XCTAssertTrue(listed, "the custom endpoint is not in the picker while paired")
         ep.tap()
         app.terminate()
-        launch(app, hostArgs() + ["-DebugEndpointURL", "http://127.0.0.1:2"])
+        launch(app, hostArgs() + ["-DebugEndpointURL", "http://127.0.0.1:8798"])
         let server = app.buttons.matching(NSPredicate(format: "label BEGINSWITH 'Model ' AND label ENDSWITH 'on your server'")).firstMatch
         let ok = server.waitForExistence(timeout: 30)
         note("endpoint pick after relaunch: \(ok ? server.label : pill(app).label)")
@@ -935,5 +935,60 @@ final class C2cAppleIntelligenceRoute: XCTestCase {
         note("after failing Keychain reads: \(kept ? "still paired with fake-mac" : "LOOKS UNPAIRED")")
         shot(app)
         XCTAssertTrue(kept, "a failed Keychain read made the app forget its Mac")
+    }
+
+    // C4b2 (T 2026-10-10, seen on his phone: a Tailscale LM Studio address saved, phone off the tailnet → "No model"
+    // and asks to a dead server, even after picking Apple Intelligence) — a server that doesn't answer is greyed, and
+    // skipped when nothing is chosen. `deadServer` refuses at once; `liveServer` is the stub the chain serves on :8798.
+    private let deadServer = "http://127.0.0.1:2", liveServer = "http://127.0.0.1:8798"
+
+    /// Nothing chosen, unpaired, the server is away → Apple Intelligence answers (was: the dead server, "No model").
+    func testUnreachableServerSkippedWhenNothingChosen() {
+        let app = XCUIApplication()
+        launch(app, ["-ResetLibrarianRoute", "YES", "-ClearHostPairing", "YES", "-DebugEndpointURL", deadServer])
+        let ai = app.buttons["Model Apple Intelligence, on this iPhone"]
+        let ok = ai.waitForExistence(timeout: 20)
+        note("dead server, nothing chosen: pill \(ok ? "Apple Intelligence" : pill(app).label)")
+        shot(app)
+        XCTAssertTrue(ok, "an unreachable server still answers when nothing is chosen")
+        ask(app, "What is 3 plus 4?")
+        XCTAssertTrue(stubAnswered(app, timeout: 30), "the ask didn't fall back to Apple Intelligence")
+    }
+
+    /// The server is away → its picker row is greyed with the reason, Apple Intelligence still listed.
+    func testUnreachableServerGreyedInPicker() {
+        let app = XCUIApplication()
+        launch(app, ["-ResetLibrarianRoute", "YES", "-ClearHostPairing", "YES", "-DebugEndpointURL", deadServer])
+        let p = pill(app); XCTAssertTrue(p.waitForExistence(timeout: 30), "no model pill")
+        Thread.sleep(forTimeInterval: 3)   // the server check runs off the pill's appear
+        pill(app).tap()
+        let ep = app.buttons["picker.endpoint"]
+        let listed = ep.waitForExistence(timeout: 10)
+        let why = app.staticTexts.matching(NSPredicate(format: "label CONTAINS[c] 'not reachable'")).firstMatch.exists
+        note("dead server row: \(listed ? (ep.isEnabled ? "enabled" : "greyed") : "MISSING") · reason \(why)")
+        shot(app)
+        XCTAssertTrue(listed && !ep.isEnabled && why, "an unreachable server must be listed greyed, with the reason")
+        XCTAssertTrue(app.buttons["picker.appleIntelligence"].isEnabled, "Apple Intelligence must stay choosable")
+    }
+
+    /// A CHOSEN server that's away stays chosen and says so (like the Mac) — no silent switch.
+    func testChosenServerShownNotReachable() {
+        let app = XCUIApplication()
+        launch(app, ["-airpadLibrarianRoute", "endpoint", "-ClearHostPairing", "YES", "-DebugEndpointURL", deadServer])
+        let away = app.buttons.matching(NSPredicate(format: "label BEGINSWITH 'Model ' AND label ENDSWITH 'not reachable'")).firstMatch
+        let ok = away.waitForExistence(timeout: 20)
+        note("chosen dead server: pill \(ok ? away.label : pill(app).label)")
+        shot(app)
+        XCTAssertTrue(ok, "a chosen server that's away must say it's not reachable")
+    }
+
+    /// Control: a server that answers is still used when nothing is chosen (the skip is about reachability only).
+    func testReachableServerStillUsed() {
+        let app = XCUIApplication()
+        launch(app, ["-ResetLibrarianRoute", "YES", "-ClearHostPairing", "YES", "-DebugEndpointURL", liveServer])
+        let server = app.buttons.matching(NSPredicate(format: "label == 'Model stub-server-model, on your server'")).firstMatch
+        let ok = server.waitForExistence(timeout: 20)
+        note("live server, nothing chosen: pill \(ok ? server.label : pill(app).label)")
+        XCTAssertTrue(ok, "a reachable server must still answer when nothing is chosen")
     }
 }

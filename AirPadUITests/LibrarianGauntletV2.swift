@@ -725,37 +725,8 @@ final class C2cAppleIntelligenceRoute: XCTestCase {
         XCTAssertTrue(ok, "pill didn't come back to the Mac model")
     }
 
-    /// C2c — T's case: a real (Keychain) pairing, Unpair in Settings → the label re-derives at once and the next ask
-    /// answers on-device, never a stale Host tag or an endless "Thinking…".
-    func testUnpairRoutesToAppleIntelligence() {
-        let app = XCUIApplication()
-        app.launchArguments = ["-ResetLibrarianRoute", "YES", "-FakeHostPairing", "YES", "-StubOnDeviceModel", "YES", "-OpenMap", "-GauntletUI", "YES", "-EmbedCPUOnly"]
-        app.launch()
-        let p = pill(app)
-        XCTAssertTrue(p.waitForExistence(timeout: 30), "model pill missing (not paired?)")
-        note("paired pill: \(p.label)")
-        p.tap()
-        let manage = app.buttons["Manage models"]; XCTAssertTrue(manage.waitForExistence(timeout: 10)); manage.tap()
-        let unpair = app.buttons["Unpair this Mac"]; XCTAssertTrue(unpair.waitForExistence(timeout: 10)); unpair.tap()
-        // close Settings (and the picker under it) until the composer is back on top
-        for _ in 0..<3 where app.buttons["BackButton"].exists { app.buttons["BackButton"].tap(); Thread.sleep(forTimeInterval: 0.8) }
-        for _ in 0..<3 {
-            let done = app.buttons["Done"].firstMatch
-            if done.waitForExistence(timeout: 3) { done.tap(); Thread.sleep(forTimeInterval: 1.2) } else { break }
-        }
-        if app.otherElements["Sheet Grabber"].exists || app.buttons["Sheet Grabber"].exists { app.swipeDown(velocity: .fast); Thread.sleep(forTimeInterval: 1) }
-        let label = app.descendants(matching: .any).matching(NSPredicate(format: "label == 'Answering with Apple Intelligence'")).firstMatch
-        let ok = label.waitForExistence(timeout: 10)
-        let any = app.descendants(matching: .any).matching(NSPredicate(format: "label BEGINSWITH 'Answering with'")).firstMatch
-        note("after unpair (no focus, no relaunch): \(ok ? "Answering with Apple Intelligence" : (any.exists ? any.label : "no model label"))")
-        XCTAssertTrue(ok, "after unpairing, the label is not Apple Intelligence")
-        let t0 = Date()
-        ask(app, "What is 2 plus 2?")
-        let routed = stubAnswered(app, timeout: 30)
-        note(String(format: "unpaired ask: %@ in %.1f s", routed ? "answered by Apple Intelligence" : "NO on-device answer", Date().timeIntervalSince(t0)))
-        XCTAssertTrue(routed, "after unpairing the ask didn't answer on-device")
-        let shot = XCTAttachment(screenshot: app.screenshot()); shot.lifetime = .keepAlways; add(shot)
-    }
+    // (testUnpairRoutesToAppleIntelligence → replaced by testForgetThisMacConfirmsThenRoutes: "Unpair" is now a
+    // confirmed "Forget this Mac", and the unpaired composer shows the pill, not the old "Answering with" label.)
 
     /// C2c device check (T 2026-10-09, short): on T's iPhone, pick Apple Intelligence in the model menu (no unpairing),
     /// ask one General and one Library question, time both, then route back to the Mac (relaunch with the reset arg).
@@ -815,5 +786,154 @@ final class C2cAppleIntelligenceRoute: XCTestCase {
         let banner = app.staticTexts.matching(NSPredicate(format: "label CONTAINS[c] 'reach' OR label CONTAINS[c] 'offline' OR label CONTAINS[c] 'respond'")).firstMatch
         note(String(format: "dead host: failed=%@ after %.1f s · message: %@", failed ? "yes" : "NO", dt, banner.exists ? banner.label : "—"))
         XCTAssertTrue(failed && dt < 15, String(format: "a dead Host took %.1f s to fail (or never did)", dt))
+    }
+
+    // MARK: - Durable pairing, independent model choice (T ruling 2026-10-09, relay 2026-10-09-companion-live-1)
+
+    private func launch(_ app: XCUIApplication, _ args: [String]) {
+        app.launchArguments = args + ["-StubOnDeviceModel", "YES", "-OpenMap", "-GauntletUI", "YES", "-EmbedCPUOnly"]
+        app.launch()
+    }
+    private func shot(_ app: XCUIApplication) { let a = XCTAttachment(screenshot: app.screenshot()); a.lifetime = .keepAlways; add(a) }
+
+    /// C4b2 — unpaired, the pill is still a button that opens the picker (T's phone: grey, untappable).
+    func testPillTappableUnpaired() {
+        let app = XCUIApplication()
+        launch(app, ["-ResetLibrarianRoute", "YES", "-ClearHostPairing", "YES"])
+        let p = pill(app)
+        let ok = p.waitForExistence(timeout: 30)
+        note("unpaired pill: \(ok ? p.label : "NOT a button")")
+        shot(app)
+        XCTAssertTrue(ok, "unpaired, the model pill is not a button")
+        p.tap()
+        XCTAssertTrue(app.buttons["picker.appleIntelligence"].waitForExistence(timeout: 10), "unpaired picker has no Apple Intelligence")
+    }
+
+    /// C4b2 — Apple Intelligence that isn't ready on this iPhone is LISTED with the reason, not hidden (T's phone: no
+    /// Apple Intelligence row, then "No model" with no explanation).
+    func testAppleIntelligenceNotReadyIsExplained() {
+        let app = XCUIApplication()
+        launch(app, ["-ResetLibrarianRoute", "YES", "-ClearHostPairing", "YES", "-StubOnDeviceUnavailable", "notReady"])
+        let p = pill(app)
+        XCTAssertTrue(p.waitForExistence(timeout: 30), "no tappable model pill")
+        note("not-ready pill: \(p.label)")
+        p.tap()
+        let ai = app.buttons["picker.appleIntelligence"]
+        let listed = ai.waitForExistence(timeout: 10)
+        let why = app.staticTexts.matching(NSPredicate(format: "label CONTAINS[c] 'getting ready'")).firstMatch
+        note("Apple Intelligence row: \(listed ? (ai.isEnabled ? "enabled" : "disabled") : "MISSING") · reason: \(why.exists ? why.label : "—")")
+        shot(app)
+        XCTAssertTrue(listed && !ai.isEnabled && why.exists, "a not-ready Apple Intelligence must be listed, disabled, with the reason")
+    }
+
+    /// C4b2 — Mac away from home: the picker still lists Apple Intelligence and the custom endpoint, and the Mac's
+    /// models (cached from the last visit) greyed as unreachable. Needs the scratch Host (`C2C_HOSTARGS`).
+    func testPickerListsEverySourceWhileMacUnreachable() {
+        let app = XCUIApplication()
+        launch(app, hostArgs() + ["-ResetLibrarianRoute", "YES"])
+        let mac = app.buttons.matching(NSPredicate(format: "label BEGINSWITH 'Model Qwen'")).firstMatch
+        XCTAssertTrue(mac.waitForExistence(timeout: 40), "first launch never named the Mac model: \(pill(app).label)")
+        app.terminate()
+        launch(app, hostArgs() + ["-DebugHostUnreachable", "YES", "-DebugEndpointURL", "http://127.0.0.1:2"])
+        let p = pill(app)
+        XCTAssertTrue(p.waitForExistence(timeout: 30), "no model pill")
+        note("unreachable pill: \(p.label)")
+        p.tap()
+        let ai = app.buttons["picker.appleIntelligence"].waitForExistence(timeout: 10)
+        let ep = app.buttons["picker.endpoint"].exists
+        let away = app.staticTexts["picker.macUnreachable"].waitForExistence(timeout: 5)
+        let rows = app.descendants(matching: .any).matching(NSPredicate(format: "label CONTAINS 'Qwen3' AND NOT (label BEGINSWITH 'Model ')")).count
+        let actions = app.buttons.matching(NSPredicate(format: "label IN {'Load','Eject','Download','Use'}")).count
+        note("picker while away: AI \(ai) · endpoint \(ep) · unreachable note \(away) · Mac rows \(rows) · Mac actions \(actions)")
+        shot(app)
+        XCTAssertTrue(ai && ep && away && rows > 0 && actions == 0, "away from the Mac the picker must list every source, Mac models greyed")
+    }
+
+    /// C4b2 — the pick survives a relaunch and a Host outage: Apple Intelligence stays chosen and answers, and the
+    /// custom endpoint can be chosen while paired and stays chosen. Needs the scratch Host.
+    func testRoutePersistsAcrossRelaunchAndOutage() {
+        let app = XCUIApplication()
+        launch(app, hostArgs() + ["-ResetLibrarianRoute", "YES", "-DebugEndpointURL", "http://127.0.0.1:2"])
+        XCTAssertTrue(pill(app).waitForExistence(timeout: 30), "no model pill")
+        pill(app).tap()
+        let ai = app.buttons["picker.appleIntelligence"]; XCTAssertTrue(ai.waitForExistence(timeout: 10)); ai.tap()
+        XCTAssertTrue(app.buttons["Model Apple Intelligence, on this iPhone"].waitForExistence(timeout: 10), "pick didn't take")
+        app.terminate()
+        launch(app, hostArgs() + ["-DebugHostUnreachable", "YES", "-DebugEndpointURL", "http://127.0.0.1:2"])
+        let kept = app.buttons["Model Apple Intelligence, on this iPhone"].waitForExistence(timeout: 30)
+        note("after relaunch + Mac unreachable: \(kept ? "Apple Intelligence kept" : pill(app).label)")
+        XCTAssertTrue(kept, "the Apple Intelligence pick did not survive relaunch + outage")
+        ask(app, "What is 6 times 7?")
+        XCTAssertTrue(stubAnswered(app, timeout: 30), "the kept pick didn't answer on-device")
+        pill(app).tap()
+        let ep = app.buttons["picker.endpoint"]
+        let listed = ep.waitForExistence(timeout: 10)
+        note("endpoint row while paired: \(listed)")
+        XCTAssertTrue(listed, "the custom endpoint is not in the picker while paired")
+        ep.tap()
+        app.terminate()
+        launch(app, hostArgs() + ["-DebugEndpointURL", "http://127.0.0.1:2"])
+        let server = app.buttons.matching(NSPredicate(format: "label BEGINSWITH 'Model ' AND label ENDSWITH 'on your server'")).firstMatch
+        let ok = server.waitForExistence(timeout: 30)
+        note("endpoint pick after relaunch: \(ok ? server.label : pill(app).label)")
+        shot(app)
+        XCTAssertTrue(ok, "the endpoint pick did not survive relaunch")
+        app.terminate()
+        launch(app, hostArgs() + ["-ResetLibrarianRoute", "YES"])   // leave the route on the Mac
+        app.terminate()
+    }
+
+    /// C2c — "Forget this Mac" asks first (the copy says reconnecting needs the QR code); Cancel keeps the pairing,
+    /// Forget unpairs and the next ask answers on-device at once.
+    func testForgetThisMacConfirmsThenRoutes() {
+        let app = XCUIApplication()
+        launch(app, ["-ResetLibrarianRoute", "YES", "-FakeHostPairing", "YES"])
+        let p = pill(app)
+        XCTAssertTrue(p.waitForExistence(timeout: 30), "model pill missing")
+        p.tap()
+        let manage = app.buttons["Manage models"]; XCTAssertTrue(manage.waitForExistence(timeout: 10)); manage.tap()
+        let forget = app.buttons["Forget this Mac"]
+        XCTAssertTrue(forget.waitForExistence(timeout: 10), "no \"Forget this Mac\" in Settings")
+        forget.tap()
+        let qr = app.staticTexts.matching(NSPredicate(format: "label CONTAINS[c] 'QR code'")).firstMatch
+        let asked = qr.waitForExistence(timeout: 5)
+        note("confirmation: \(asked ? qr.label : "NONE (forgot at once)")")
+        shot(app)
+        XCTAssertTrue(asked, "forgetting the Mac didn't ask first")
+        app.buttons["Cancel"].firstMatch.tap()
+        XCTAssertTrue(forget.waitForExistence(timeout: 5), "Cancel didn't keep the pairing")
+        forget.tap()
+        let confirm = app.buttons["Forget"].firstMatch; XCTAssertTrue(confirm.waitForExistence(timeout: 5)); confirm.tap()
+        for _ in 0..<3 where app.buttons["BackButton"].exists { app.buttons["BackButton"].tap(); Thread.sleep(forTimeInterval: 0.8) }
+        for _ in 0..<3 {
+            let done = app.buttons["Done"].firstMatch
+            if done.waitForExistence(timeout: 3) { done.tap(); Thread.sleep(forTimeInterval: 1.2) } else { break }
+        }
+        if app.otherElements["Sheet Grabber"].exists || app.buttons["Sheet Grabber"].exists { app.swipeDown(velocity: .fast); Thread.sleep(forTimeInterval: 1) }
+        let aiPill = app.buttons["Model Apple Intelligence, on this iPhone"]
+        let ok = aiPill.waitForExistence(timeout: 10)
+        note("after Forget: \(ok ? "pill Apple Intelligence" : pill(app).label)")
+        XCTAssertTrue(ok, "after forgetting the Mac the pill is not Apple Intelligence")
+        ask(app, "What is 2 plus 2?")
+        XCTAssertTrue(stubAnswered(app, timeout: 30), "after forgetting the Mac the ask didn't answer on-device")
+    }
+
+    /// C2c — a failed Keychain read (a locked phone's errSecInteractionNotAllowed) never reads as "unpaired": after the
+    /// first reads, every pairing read fails, and the app must still know its Mac.
+    func testKeychainReadFailureKeepsPairing() {
+        let app = XCUIApplication()
+        launch(app, ["-ResetLibrarianRoute", "YES", "-FakeHostPairing", "YES", "-StubPairingReadFailsAfter", "2"])
+        let p = pill(app)
+        XCTAssertTrue(p.waitForExistence(timeout: 30), "model pill missing")
+        for _ in 0..<2 {   // each open/close re-derives pairing (old code: a Keychain read each time)
+            pill(app).tap(); Thread.sleep(forTimeInterval: 1.5); app.swipeDown(velocity: .fast); Thread.sleep(forTimeInterval: 1)
+        }
+        pill(app).tap()
+        let manage = app.buttons["Manage models"]; XCTAssertTrue(manage.waitForExistence(timeout: 10)); manage.tap()
+        let mac = app.staticTexts.matching(NSPredicate(format: "label CONTAINS 'fake-mac.curiousobjects.co'")).firstMatch
+        let kept = mac.waitForExistence(timeout: 10)
+        note("after failing Keychain reads: \(kept ? "still paired with fake-mac" : "LOOKS UNPAIRED")")
+        shot(app)
+        XCTAssertTrue(kept, "a failed Keychain read made the app forget its Mac")
     }
 }

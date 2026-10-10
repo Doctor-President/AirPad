@@ -138,27 +138,76 @@ final class HostCatalog {
     /// Cheap off-render pairing check (Keychain) so a view can decide whether to show the picker
     /// without reading the Keychain from `body`. Also primes `isPaired` + `pairing`.
     @discardableResult func refreshPaired() -> Bool {
-        pairing = HostPairing.load()
-        isPaired = pairing != nil
-        onDevice = ModelRouter.prefersOnDevice && ModelRouter.onDeviceAvailable
-        onDeviceAvailable = ModelRouter.onDeviceAvailable
+        switch HostPairing.read() {
+        case .paired(let p): pairing = p; isPaired = true
+        case .unpaired:      pairing = nil; isPaired = false
+        case .unreadable:    break   // C2c — a failed Keychain read is not "unpaired": keep what we last knew
+        }
+        refreshRoute()
         return isPaired
     }
 
-    /// C4b2 (T 2026-10-09) — Apple Intelligence chosen in the model menu WITHOUT unpairing (cached off-render from
-    /// `ModelRouter`, the one derivation). The pill names it; every ask routes there until a Mac model is picked.
-    private(set) var onDevice: Bool = ModelRouter.prefersOnDevice && ModelRouter.onDeviceAvailable
+    /// C2c / C4b2 (T ruling 2026-10-09: model choice is independent of pairing) — who answers the next ask, cached
+    /// off-render from `ModelRouter.active` (the one derivation), so the pill and picker name what routing will use.
+    enum Answerer: Equatable { case mac, onDevice, endpoint, none }
+    private(set) var answerer: Answerer = .none
+    /// Apple Intelligence chosen (or the fallback) and ready: the pill names it.
+    var onDevice: Bool { answerer == .onDevice }
     private(set) var onDeviceAvailable: Bool = ModelRouter.onDeviceAvailable
+    /// Why Apple Intelligence can't answer yet (shown on its picker row); nil when ready or not supported here.
+    private(set) var onDeviceNote: String? = nil
+    /// The custom endpoint from Settings → Advanced (nil = none), and the first model it reports (resolved in `refresh`).
+    private(set) var endpoint: String? = nil
+    private(set) var endpointModel: String? = nil
+    /// The name the pill and picker give the custom endpoint.
+    var endpointName: String { endpointModel ?? "Your server" }
+
+    func refreshRoute() {
+        onDeviceAvailable = ModelRouter.onDeviceAvailable
+        onDeviceNote = onDeviceAvailable ? nil : ModelRouter.onDeviceUnavailableNote
+        endpoint = ModelRouter.configuredEndpoint
+        switch ModelRouter.active {
+        case .host:            answerer = .mac
+        case .ollama:          answerer = .endpoint
+        case .foundationModel: answerer = onDeviceAvailable ? .onDevice : .none
+        case .local:           answerer = .none
+        }
+    }
+
+    /// C4b2 — Apple Intelligence chosen in the model menu, whatever the pairing. Every ask routes there until another
+    /// source is picked; the pick persists across launches.
     func useOnDevice() {
-        ModelRouter.prefersOnDevice = true
-        onDevice = ModelRouter.onDeviceAvailable
+        ModelRouter.chosenRoute = .onDevice
+        refreshRoute()
+    }
+    /// C4b2 — the user's own server (the custom endpoint), chosen in the model menu while paired or not.
+    func useEndpoint() {
+        ModelRouter.chosenRoute = .endpoint
+        refreshRoute()
     }
     /// C4b2 — back to the Mac with an already-loaded model (no reload): the pick becomes the Mac model again.
     func useMac(_ tag: String) {
         ModelRouter.userPickedHostModel = tag
         pickedTag = tag
-        ModelRouter.prefersOnDevice = false
-        onDevice = false
+        ModelRouter.chosenRoute = .mac
+        refreshRoute()
+    }
+
+    /// C2c — "Forget this Mac" (Settings, after its confirmation): the one way a pairing ends. Drops the pairing, the
+    /// Mac's cached model list, and a Mac pick (the next ask goes to the server or Apple Intelligence).
+    func forgetMac() {
+        HostPairing.clear()
+        UserDefaults.standard.removeObject(forKey: Self.catalogCacheKey)
+        models = []
+        if ModelRouter.chosenRoute == .mac { ModelRouter.chosenRoute = nil }
+        refreshPaired()
+    }
+
+    /// C4b2 — the Mac's last model list, kept so a Mac that's away (or a cold launch away from home) still shows its
+    /// models in the picker, greyed, instead of nothing.
+    private static let catalogCacheKey = "airpadHostCatalogCache"
+    init() {
+        if let d = UserDefaults.standard.data(forKey: Self.catalogCacheKey) { models = Self.parse(d) }
     }
 
     /// LOAD = SELECT: the resident model IS the selection (one at a time).
@@ -170,7 +219,7 @@ final class HostCatalog {
     /// (`ModelRouter.activeHostModel`). The pill shows this one, with ✓ only when it is resident, so
     /// the pill can never claim a model that the next ask's "not loaded" banner contradicts.
     var active: CatalogModel? {
-        if onDevice { return nil }   // C4b2 — Apple Intelligence answers, not a Mac model
+        guard answerer == .mac else { return nil }   // C4b2 — Apple Intelligence or the server answers, not a Mac model
         let entries = models.map { ModelRouter.HostModelEntry(tag: $0.tag, state: $0.state, tier: $0.tier, recommended: $0.recommended) }
         guard let tag = ModelRouter.activeHostModel(entries, picked: pickedTag).preferred else { return nil }
         return models.first { $0.tag == tag }
@@ -219,10 +268,11 @@ final class HostCatalog {
     /// Fetch the catalog. Call OFF the render path (on sheet-open / pill-appear).
     func refresh() async {
         pickedTag = ModelRouter.userPickedHostModel
-        pairing = HostPairing.load()
-        isPaired = pairing != nil
-        guard let url = HostPairing.load()?.catalogURL, let req = authed(url, method: "GET", body: nil) else {
-            models = []; reachable = false; return
+        refreshPaired()
+        Task { await refreshEndpointModel() }   // never holds up the Mac's list behind a server that's away
+        guard isPaired else { models = []; reachable = false; return }
+        guard let url = pairing?.catalogURL, let req = authed(url, method: "GET", body: nil) else {
+            reachable = false; return   // C2c — pairing unreadable right now: keep the last known models
         }
         isLoading = true
         defer { isLoading = false }
@@ -233,9 +283,16 @@ final class HostCatalog {
             }
             reachable = true
             models = Self.parse(data)
+            UserDefaults.standard.set(data, forKey: Self.catalogCacheKey)
         } catch {
-            reachable = false
+            reachable = false   // C4b2 — the Mac is away: its last models stay listed, greyed
         }
+    }
+
+    /// The custom endpoint's first model id, for its name in the pill and picker ("Your server" when it doesn't answer).
+    private func refreshEndpointModel() async {
+        guard let e = endpoint, let base = URL(string: e) else { endpointModel = nil; return }
+        endpointModel = try? await ModelRouter.firstOllamaModel(base: base)
     }
 
     private static func parse(_ data: Data) -> [CatalogModel] {
@@ -322,8 +379,8 @@ final class HostCatalog {
         // model" setting in V1: the picker IS the setting.
         let previousPick = ModelRouter.userPickedHostModel   // capture BEFORE overwrite (Brief BZ)
         ModelRouter.userPickedHostModel = tag
-        if ModelRouter.prefersOnDevice { ModelRouter.prefersOnDevice = false }   // C4b2 — a Mac pick routes back to the Mac
-        onDevice = false
+        if ModelRouter.chosenRoute != .mac { ModelRouter.chosenRoute = .mac }   // C4b2 — a Mac pick routes back to the Mac
+        refreshRoute()
         pickedTag = tag
         busyTag = tag
         lastActionError = nil

@@ -1442,33 +1442,26 @@ struct LibrarianSurface: View {
             // legible, never hidden). Leading-aligned near the feather.
             // Brief CA — the Corpus toggle is handed INTO ModelPillRow as its `leading` control so the
             // whole row (Corpus · Model · Thinking) is ONE layout and the model pill centres on the
-            // SCREEN (the BZ regression centred it only in the space to the right of the toggle). The
-            // unpaired (FM/Ollama) case keeps its own simple leading-aligned row.
-            if HostCatalog.shared.isPaired {
-                ModelPillRow(
-                    catalog: HostCatalog.shared,
-                    thinkEnabled: Binding(get: { librarian.thinkEnabled }, set: { librarian.thinkEnabled = $0 }),
-                    onTapModel: {
-                        // AH3 — the FIRST model-chip tap teaches (coach-mark) instead of opening the
-                        // picker (a sheet would cover the callout); the next tap opens it.
-                        if !FirstRunCalloutKey.librarianModel.hasShown, activeCallout == nil {
-                            activeCallout = .librarianModel
-                        } else {
-                            showModelPicker = true
-                        }
-                    },
-                    includePrivate: false,
-                    leading: AnyView(corpusModeToggle(librarian: librarian))
-                )
-                // Brief AI2 — the ring target lives on the model pill INSIDE ModelPillRow.
-            } else {
-                HStack(spacing: 8) {
-                    corpusModeToggle(librarian: librarian)
-                    activeModelLabelView(librarian: librarian) // FM / Ollama: the plain label (unchanged)
-                    Spacer(minLength: 0)
-                }
-                .padding(.leading, 6)
-            }
+            // SCREEN (the BZ regression centred it only in the space to the right of the toggle).
+            // C4b2 (T ruling 2026-10-09) — ONE row whatever the pairing: the pill names who answers (Mac model, Apple
+            // Intelligence, the user's server) and is ALWAYS a button into the picker. Unpaired, it was a grey label
+            // that couldn't be tapped (T's phone), so Apple Intelligence couldn't be chosen or explained.
+            ModelPillRow(
+                catalog: HostCatalog.shared,
+                thinkEnabled: Binding(get: { librarian.thinkEnabled }, set: { librarian.thinkEnabled = $0 }),
+                onTapModel: {
+                    // AH3 — the FIRST model-chip tap teaches (coach-mark) instead of opening the
+                    // picker (a sheet would cover the callout); the next tap opens it.
+                    if !FirstRunCalloutKey.librarianModel.hasShown, activeCallout == nil {
+                        activeCallout = .librarianModel
+                    } else {
+                        showModelPicker = true
+                    }
+                },
+                includePrivate: false,
+                leading: AnyView(corpusModeToggle(librarian: librarian))
+            )
+            // Brief AI2 — the ring target lives on the model pill INSIDE ModelPillRow.
 
             // STATE 2 — no free-text model on this device: gate Ask (send disabled via
             // `sendIsEnabled`) and say so, routing to Settings. Honest capability boundary,
@@ -1653,28 +1646,6 @@ struct LibrarianSurface: View {
         .firstRunCalloutTarget(FirstRunCalloutTargetID.librarianModeChip)
         .accessibilityLabel(on ? "Library mode" : "General mode")
         .accessibilityHint("General mode — answers from the model; Library mode — reads and cites your entries.")
-    }
-
-    /// ★ Read-only active-model indicator — declares WHICH model will answer the
-    /// next Ask (FM friendly name, or the remote endpoint's model id). Quiet by
-    /// design (small, low-contrast ink) so it informs without competing with the
-    /// mode pill. Reads by TEXT (colourblind-safe); the value comes from
-    /// `librarian.activeModelLabel`, refreshed off-render (see `refreshActiveModel`),
-    /// never resolved in this body. NOT interactive — this pass declares, it doesn't
-    /// pick.
-    @ViewBuilder
-    private func activeModelLabelView(librarian: LibrarianState) -> some View {
-        HStack(spacing: 4) {
-            Image(systemName: "cpu")
-                .font(.system(size: 9, weight: .semibold))
-            Text(librarian.activeModelLabel)
-                .font(.system(size: 11, weight: .medium))
-                .lineLimit(1)
-                .truncationMode(.middle)   // long model ids degrade gracefully
-        }
-        .foregroundStyle(AppearancePalette.ink.opacity(0.4))
-        .accessibilityElement(children: .combine)
-        .accessibilityLabel("Answering with \(librarian.activeModelLabel)")
     }
 
     /// STATE 2 notice for the Ask composer — no free-text provider on this device. Honest

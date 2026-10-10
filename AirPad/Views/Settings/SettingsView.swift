@@ -499,17 +499,16 @@ struct SettingsView: View {
     }
 
     /// Settings → Models → your Mac: the FULL model-management surface (reuses
-    /// ModelPickerSheet with `fullControls: true`), plus Unpair (Brief AJ3).
+    /// ModelPickerSheet with `fullControls: true`), plus "Forget this Mac" (Brief AJ3; C2c renamed + confirmed).
     private var macModelsSubmenu: some View {
         ModelPickerSheet(
             catalog: HostCatalog.shared,
             thinkEnabled: $hostThinkingDefault,
             fullControls: true,
             macName: HostCatalog.shared.pairing?.displayHost ?? hostPairing?.displayHost,
-            onUnpair: {
-                HostPairing.clear()
+            onForget: {
+                HostCatalog.shared.forgetMac()
                 hostPairing = nil
-                HostCatalog.shared.refreshPaired()
                 if !path.isEmpty { path.removeLast() }
             }
         )

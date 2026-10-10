@@ -79,18 +79,34 @@ enum ModelRouter {
     /// remote path); then Ollama over FM when the endpoint parses; else FM so a malformed
     /// setting can't strand the user.
     static var active: Provider {
-        // C2c / C4b2 (T 2026-10-09) — ONE derivation of who answers: a paired Host wins UNLESS the user picked Apple
-        // Intelligence in the model menu (without unpairing). Unpaired → Ollama endpoint, else Apple Intelligence.
+        // C2c / C4b2 (T ruling 2026-10-09: pairing is durable, model choice is independent of it) — ONE derivation of
+        // who answers. The user's pick wins when it can answer: Apple Intelligence (when ready on this iPhone) or their
+        // own server (when configured). Otherwise a paired Mac, then the server, then Apple Intelligence. A Mac that's
+        // away still answers `.host` (the ask fails fast, saying so) — never a silent switch to another model.
         // The pill, Settings and every send read this same value, and re-read it on `.librarianRouteChanged`.
-        if let pairing = HostPairing.load(), !(prefersOnDevice && onDeviceAvailable) {
-            return .host(pairing)
+        let endpoint = configuredEndpoint
+        switch chosenRoute {
+        case .onDevice? where onDeviceAvailable:
+            return .foundationModel
+        case .endpoint?:
+            if let endpoint { return .ollama(endpoint: endpoint) }
+        default:
+            break
         }
-        let endpoint = (KeychainHelper.load(key: "ollamaEndpoint") ?? "")
-            .trimmingCharacters(in: .whitespacesAndNewlines)
-        if !endpoint.isEmpty, URL(string: endpoint) != nil {
-            return .ollama(endpoint: endpoint)
-        }
+        if let pairing = HostPairing.load() { return .host(pairing) }
+        if let endpoint { return .ollama(endpoint: endpoint) }
         return .foundationModel
+    }
+
+    /// The custom endpoint (Ollama / LM Studio) from Settings → Advanced, or nil when none is set (or it won't parse).
+    static var configuredEndpoint: String? {
+        var endpoint = (KeychainHelper.load(key: "ollamaEndpoint") ?? "")
+            .trimmingCharacters(in: .whitespacesAndNewlines)
+        #if DEBUG
+        if let e = UserDefaults.standard.string(forKey: "DebugEndpointURL"), !e.isEmpty { endpoint = e }   // C2c tests
+        #endif
+        guard !endpoint.isEmpty, URL(string: endpoint) != nil else { return nil }
+        return endpoint
     }
 
     /// STATE 2 for the free-text Ask/chat path: NO usable provider exists. True only when
@@ -107,12 +123,21 @@ enum ModelRouter {
         return !onDeviceAvailable
     }
 
-    /// C4b2 — the user picked Apple Intelligence in the model menu. Persisted; posts `.librarianRouteChanged`.
-    private static let onDeviceKey = "airpadLibrarianOnDevice"
-    static var prefersOnDevice: Bool {
-        get { UserDefaults.standard.bool(forKey: onDeviceKey) }
+    /// C4b2 (T ruling 2026-10-09) — who the user CHOSE to answer the Librarian, independent of pairing: their Mac,
+    /// Apple Intelligence on this iPhone, or their own server. nil = never chosen (the Mac when paired, else the
+    /// server, else Apple Intelligence). Persisted, so the pick survives relaunch and a Mac that's away; setting it
+    /// posts `.librarianRouteChanged`. (Later sources — PCC, frontier keys — join as more cases.)
+    enum Route: String { case mac, onDevice, endpoint }
+    private static let routeKey = "airpadLibrarianRoute"
+    private static let legacyOnDeviceKey = "airpadLibrarianOnDevice"   // the first C4b2 build's on/off switch
+    static var chosenRoute: Route? {
+        get {
+            if let r = UserDefaults.standard.string(forKey: routeKey).flatMap(Route.init(rawValue:)) { return r }
+            return UserDefaults.standard.bool(forKey: legacyOnDeviceKey) ? .onDevice : nil
+        }
         set {
-            UserDefaults.standard.set(newValue, forKey: onDeviceKey)
+            UserDefaults.standard.set(newValue?.rawValue, forKey: routeKey)
+            UserDefaults.standard.removeObject(forKey: legacyOnDeviceKey)
             NotificationCenter.default.post(name: .librarianRouteChanged, object: nil)
         }
     }
@@ -120,10 +145,35 @@ enum ModelRouter {
     /// (which has none), so the ROUTE can be tested; the stub streams a canned answer.
     static var onDeviceAvailable: Bool {
         #if DEBUG
+        if UserDefaults.standard.string(forKey: "StubOnDeviceUnavailable") != nil { return false }
         if UserDefaults.standard.bool(forKey: "StubOnDeviceModel") { return true }
         #endif
         if #available(iOS 26.0, *) { return SystemLanguageModel.default.isAvailable }
         return false
+    }
+
+    /// C4b2 — why Apple Intelligence can't answer YET on this iPhone, for the picker to say so instead of hiding the
+    /// row; nil when it's ready, or when this iPhone can't run it at all (then it isn't listed). DEBUG
+    /// `-StubOnDeviceUnavailable notReady|notEnabled` stands in for either state in the Simulator.
+    /// DRAFT copy — for T's review.
+    static var onDeviceUnavailableNote: String? {
+        let notEnabled = "Turn on Apple Intelligence in the Settings app to use it here."
+        let notReady = "Apple Intelligence is still getting ready on this iPhone. Try again in a little while."
+        #if DEBUG
+        switch UserDefaults.standard.string(forKey: "StubOnDeviceUnavailable") {
+        case "notReady"?: return notReady
+        case "notEnabled"?: return notEnabled
+        default: break
+        }
+        #endif
+        if #available(iOS 26.0, *) {
+            switch SystemLanguageModel.default.availability {
+            case .unavailable(.appleIntelligenceNotEnabled): return notEnabled
+            case .unavailable(.modelNotReady): return notReady
+            default: return nil
+            }
+        }
+        return nil
     }
 
 
@@ -846,7 +896,7 @@ enum ModelRouter {
         }
     }
 
-    private static func firstOllamaModel(base: URL) async throws -> String {
+    static func firstOllamaModel(base: URL) async throws -> String {
         // LM Studio moved model listing to api/v0/models in a recent update
         // and broke the OpenAI-compatible /v1/models endpoint. Response shape
         // (data array, each entry has an id string) is unchanged.

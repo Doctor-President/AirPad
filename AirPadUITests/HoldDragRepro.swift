@@ -163,11 +163,16 @@ final class ArrangeGestureRepro: XCTestCase {
         pt(app, fa.midX, fa.midY).press(forDuration: 0.7, thenDragTo: pt(app, ft.midX, ft.midY))
         Thread.sleep(forTimeInterval: 0.9)
         let afterReorder = hud.label
-        let aY1 = a.frame.midY
+        let fa1 = a.frame
+        let aY1 = fa1.midY
 
-        let msg = "REORDER — hud=[\(afterReorder)] m-type.midY \(Int(aY0))->\(Int(aY1))"
+        // The swap can be sideways: since ws-free-footprint the two .stacked tiles can share a row, so the
+        // check is that m-type MOVED (either axis), with every frame recorded — not that its Y changed.
+        let moved = abs(fa1.midX - fa.midX) + abs(fa1.midY - fa.midY)
+        let msg = "REORDER — hud=[\(afterReorder)] m-type \(fa.integral)->\(fa1.integral) target m-atk \(ft.integral) "
+            + "midY \(Int(aY0))->\(Int(aY1)) moved \(Int(moved))pt"
         attach(msg); print("REPRO_REORDER2 \(msg)")
         XCTAssertFalse(afterReorder.contains("r:0"), "long-press drag did NOT reorder — \(msg)")
-        XCTAssertNotEqual(Int(aY0), Int(aY1), "m-type did not visually move after reorder — \(msg)")
+        XCTAssertGreaterThan(moved, 20, "m-type did not visually move after reorder — \(msg)")
     }
 }

@@ -585,6 +585,12 @@ extension HostCatalog {
     static func galleryFake(resident: CatalogModel) -> HostCatalog {
         let c = HostCatalog()
         c.models = [resident]
+        // A paired, reachable Mac answers — since C4b2 (343d2a3) `active` names a Mac model only when the Mac is
+        // the answerer, and an unpaired fake read "No model loaded" on every gallery pill.
+        c.isPaired = true
+        c.reachable = true
+        c.answerer = .mac
+        c.pickedTag = resident.tag
         return c
     }
 }

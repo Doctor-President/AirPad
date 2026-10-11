@@ -830,6 +830,15 @@ struct ChatTranscript: View {
 
 // MARK: - Streaming tail (isolated sole reader of streamingText)
 
+/// The part of the append-only stream not yet displayed. Counted in Unicode scalars, not Characters: a scalar that
+/// arrives in a later delta can join the last shown Character (U+FE0F after "➡", a ZWJ emoji's next part, an
+/// accent), so a Character count drops it from the stream for the rest of the turn (CH-B gauntlet F4).
+enum StreamReveal {
+    static func undisplayed(_ full: String, shown: String) -> String {
+        String(full.unicodeScalars.dropFirst(shown.unicodeScalars.count))
+    }
+}
+
 /// The in-flight tail. Mounted only while streaming. As the SOLE view reading
 /// `session.streamingText`, a per-token mutation re-renders only this child —
 /// never the ForEach of settled bubbles.
@@ -874,8 +883,6 @@ private struct StreamingTail: View {
     /// Idle debounce: reveal the buffered remainder when tokens stop arriving.
     private static let idleFlush: TimeInterval = 0.2
     private static let fadeDuration: TimeInterval = 0.18
-
-    private var displayedLength: Int { revealedText.count + pendingText.count }
 
     var body: some View {
         Group {
@@ -947,7 +954,7 @@ private struct StreamingTail: View {
         }
         // streamingText is append-only within a turn, so the un-displayed part
         // is exactly the suffix past what we've shown.
-        let undisplayed = String(full.dropFirst(displayedLength))
+        let undisplayed = StreamReveal.undisplayed(full, shown: revealedText + pendingText)
         guard !undisplayed.isEmpty else { return }
 
         if let lastNewline = undisplayed.lastIndex(where: { $0.isNewline }) {
@@ -960,7 +967,7 @@ private struct StreamingTail: View {
     }
 
     private func revealAllRemaining(from full: String) {
-        let undisplayed = String(full.dropFirst(displayedLength))
+        let undisplayed = StreamReveal.undisplayed(full, shown: revealedText + pendingText)
         guard !undisplayed.isEmpty else { return }
         commit(chunk: undisplayed)
     }

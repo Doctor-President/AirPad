@@ -243,8 +243,9 @@ enum CitationReference {
 /// - Prose references by packet number ("entries 5, 8, 9", "(entry 6)") are rewritten through the same map into
 ///   bracket form with the noun kept ("entries [1], [2], [3]") — only when EVERY number is a valid packet index.
 /// - A trailing fragment that could still become a token is HELD BACK until it resolves: an open `[` that is a
-///   prefix of a citation token, a prose-reference noun with its number list so far, a partial noun ("entr"), and
-///   trailing whitespace (so an invalid marker can absorb the space before it). The hold is bounded (40 chars).
+///   prefix of a citation token, a prose-reference noun with its number list so far, a partial noun ("entr"), a
+///   list marker alone on its line, and trailing whitespace (so an invalid marker can absorb the space before
+///   it). The hold is bounded (40 chars).
 /// - `renumberBySource` stays the scheme's commit-time core for the paths that don't stream (the debug hook).
 struct CitationNumberer {
     typealias Citation = ChatSession.Message.Citation
@@ -318,7 +319,7 @@ struct CitationNumberer {
     static func holdStart(_ pending: NSString) -> Int? {
         let full = NSRange(location: 0, length: pending.length)
         var start: Int?
-        for re in [bracketPrefixRegex, proseFragmentRegex, partialNounRegex, trailingSpaceRegex] {
+        for re in [bracketPrefixRegex, proseFragmentRegex, partialNounRegex, listMarkerRegex, trailingSpaceRegex] {
             if let m = re.firstMatch(in: pending as String, range: full), m.range.length <= 40 {
                 start = min(start ?? m.range.location, m.range.location)
             }
@@ -410,6 +411,9 @@ struct CitationNumberer {
     private static let partialNounRegex = try! NSRegularExpression(
         pattern: #"\b(?:e|en|ent|entr|entri|entrie)\z"#, options: [.caseInsensitive])
     private static let trailingSpaceRegex = try! NSRegularExpression(pattern: #"\s+\z"#)
+    /// CH-B — a list marker alone at the end of a line ("-", "* "): shown alone it renders as a paragraph "-" and
+    /// then jumps into a "•" row once its item text arrives (gauntlet F4).
+    private static let listMarkerRegex = try! NSRegularExpression(pattern: #"(?m)^[ \t]*[-*][ \t]*\z"#)
 }
 
 #if DEBUG
@@ -514,6 +518,33 @@ enum CitationNumberSelfTest {
         check("holds a prose noun", n9.displayText == "The", n9.displayText)
         n9.feed(" were long.")
         check("releases when it can't be a reference", n9.displayText == "The entries were long.", n9.displayText)
+
+        // 10. CH-B — a list marker alone at the end of a line is held until its item text arrives: shown alone it
+        //     renders as a paragraph "-", then jumps into a "•" row (gauntlet F4, Instruct final A5/5/BXd, 8B BXc).
+        let bare = try! NSRegularExpression(pattern: #"(?m)^[ \t]*[-*][ \t]*\z"#)
+        for (i, ch) in chunkings("Key features:\n- Dashboard [5]\n* Map\n\n**Bold** 10 - 3 = 7.").enumerated() {
+            var n = CitationNumberer(candidates: packet)
+            var shownBare: String?
+            for c in ch {
+                n.feed(c)
+                let d = n.displayText as NSString
+                if shownBare == nil, bare.firstMatch(in: d as String, range: NSRange(location: 0, length: d.length)) != nil {
+                    shownBare = d as String
+                }
+            }
+            n.settleAll()
+            check("bullet#\(i) never shows a bare list marker", shownBare == nil, shownBare ?? "")
+            check("bullet#\(i) text", n.result().text == "Key features:\n- Dashboard [1]\n* Map\n\n**Bold** 10 - 3 = 7.", n.result().text)
+        }
+
+        // 11. CH-B — the streaming tail reveals the stream's unshown suffix: a combining scalar that arrives in a later
+        //     delta (U+FE0F after "➡", a ZWJ emoji's next part, an accent) must not be swallowed by the shown text
+        //     (gauntlet F4, Instruct final A5 r1: "➡" streamed, "➡️" committed).
+        for (shown, full) in [("Text ➡", "Text ➡\u{FE0F} Note"), ("Family 👨", "Family 👨\u{200D}👩 home"), ("Cafe", "Cafe\u{301} au lait")] {
+            let r = StreamReveal.undisplayed(full, shown: shown)
+            check("reveal suffix \(shown.unicodeScalars.map { String($0.value, radix: 16) })",
+                  (shown + r).unicodeScalars.elementsEqual(full.unicodeScalars), r.unicodeScalars.map { String($0.value, radix: 16) }.joined(separator: " "))
+        }
 
         return fails.isEmpty ? "PASS \(ran)/\(ran)" : "FAIL \(ran - fails.count)/\(ran)\n  " + fails.joined(separator: "\n  ")
     }

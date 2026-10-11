@@ -152,7 +152,7 @@ def title_norm(s):
 def title_main(title):
     return re.split(r"[:—·]", title or "")[0]
 
-def title_mentioned(title, text):
+def title_mentioned(title, text, as_name=False):
     """Mirror of ChatSession.titleMentioned — the main part of a title, normalized, ≥4 chars — EXCEPT a
     one-word main part ("Feature" of "[entry title]") is too generic to count as naming the entry:
     then the whole title is required (found as a false C3 in CH-A A1)."""
@@ -160,12 +160,18 @@ def title_mentioned(title, text):
     needle = title_norm(main if len(title_norm(main).split()) >= 2 or title_norm(main) == title_norm(title) else title)
     if len(needle) < 4:
         return False
-    if len(needle.split()) == 1:
+    lower = as_name and not any(ch.isupper() for ch in title)
+    if len(needle.split()) == 1 or lower:
         # A one-word title ("Hallucinations") is also an ordinary word: it NAMES the entry only when styled as a
         # name — wrapped in * " ' “ ‘ or capitalised mid-sentence (CH-A: "depicts elaborate hallucinations"
         # was a false C3). Lowercase prose use is not a reference.
+        # as_name (C3 — is the entry being NAMED?): a title written all-lowercase ("bought it", "28 seconds") reads
+        # as prose the same way, and only quoting or italics name it (C4's "discussed" still counts prose). "The
+        # day you bought it from eBay [1]" is not the entry "bought it" (CH-B SL-D1, qwen3:8b 2/3 off: false C3 —
+        # chip [1] held the purchase). Controls c3-lowercase-title-{control,styled}.
         w = re.escape(title.strip())
-        return bool(re.search(rf"[*\"'“‘_]{w}|(?<=[a-z,;:] ){w}\b", text or ""))
+        styled = rf"[*\"'“‘_]{w}"
+        return bool(re.search(styled if lower else rf"{styled}|(?<=[a-z,;:] ){w}\b", text or ""))
     return needle in title_norm(text)
 
 STOP = set("about above after again against their there these those which while would could should being other through between where what when with from into that this have your yours they them were will also than then just like only some such very more most much many each idea ideas entry entries note notes".split())
@@ -1532,7 +1538,7 @@ def grade_row(exp, turn, ui, prev_turn, host, ps, versions, cases_meta, store=Fa
         na("C2", "not a grounded answer")
     cite_by_idx = {c["index"]: c for c in cites}
     chip_nodes = {c.get("nodeID") for c in cites}
-    named = [c for c in cand if c.get("title") and title_mentioned(c["title"], final)]
+    named = [c for c in cand if c.get("title") and title_mentioned(c["title"], final, as_name=True)]
     # Two entries can share a title (T's corpus has two "[entry title]"); the prose
     # names the title once, so a chip on EITHER twin covers it. Found as a false FAIL on qwen3:8b MT1c in
     # CH-B (3/3 off, 2/2 on); known-bad control c3-dup-title-control.
@@ -1545,7 +1551,7 @@ def grade_row(exp, turn, ui, prev_turn, host, ps, versions, cases_meta, store=Fa
     # in the same sentence — "X and Y [3]" where [3] = Y is fine).
     for sent in re.split(r"(?<=[.!?\n])\s+", final):
         sent_l = title_norm(sent)
-        titled = [c for c in cand if c.get("title") and title_mentioned(c["title"], sent)]
+        titled = [c for c in cand if c.get("title") and title_mentioned(c["title"], sent, as_name=True)]
         if not titled:
             continue
         prev_end = 0
@@ -1565,7 +1571,7 @@ def grade_row(exp, turn, ui, prev_turn, host, ps, versions, cases_meta, store=Fa
             if len(tt & content_tokens(strip_markers(sent))) >= min(2, len(tt)):
                 continue
             pre = sent[seg_start:m.start()]
-            near = [c for c in titled if title_mentioned(c["title"], pre)]
+            near = [c for c in titled if title_mentioned(c["title"], pre, as_name=True)]
             if near:
                 c3.append(f"'{title_main(near[-1]['title'])[:28]}' [{n}] → chip is '{target.get('title','')[:28]}'")
     res("C3", not c3, "; ".join(c3[:3]))

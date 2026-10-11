@@ -5,6 +5,11 @@
 
 drive_one() {   # <dir> <sim> <stall_age> <min_uptime> — watchdog + one xcodebuild, as the single-sim path always did
   local dir=$1 sim=$2 stall=$3 up0=$4
+  # Never start on a Simulator another xcodebuild is still testing on: installing our runner kills its runner and
+  # it kills ours on its retry (CH-B 8b-top-off shard-2: 0 tests, 5 rows never driven).
+  while pgrep -f "xcodebuild.*id=$sim " > /dev/null; do
+    print -r -- "[drive $(date +%H:%M:%S)] waiting: another xcodebuild is testing on $sim" >> "$dir/run.log"; sleep 10
+  done
   xcrun simctl boot $sim 2>/dev/null; xcrun simctl bootstatus $sim -b >/dev/null 2>&1
   # Watchdog — a hung app (main-thread heartbeat stale, app alive) freezes the XCUITest driver too (it waits for
   # "idle" forever). Sample it as evidence, drop a hung-<epoch> marker (the driver turns that into an A8 FAIL for
@@ -65,6 +70,14 @@ drive_ui() {
     pids+=($!); log "  $name on ${sims[$k]}"; (( k++ ))
   done
   wait $pids
+  # `wait` has returned while a shard's xcodebuild was still driving (CH-B: 8B and 8b-top-on both merged when
+  # shard-1 ended; 8b-top-on's shard-2 ran on 2 min, and the next run's xcodebuild on the same Simulator killed
+  # both runners → rows never driven). Also wait on the xcodebuilds themselves, by result bundle.
+  local w=0
+  while pgrep -f "resultBundlePath $run_dir/shard-" > /dev/null; do
+    (( w++ % 12 )) || log "  a shard's xcodebuild is still running after wait — waiting for it"
+    sleep 5
+  done
   for name in $names; do [[ -f $run_dir/$name/run.log ]] && cat "$run_dir/$name/run.log" >> "$run_dir/run.log"; done
   python3 $AIRPAD/scripts/gauntlet/shard.py merge "$run_dir" | while read -r l; do log "$l"; done
 }

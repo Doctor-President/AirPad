@@ -434,7 +434,9 @@ final class FreezeProbe: @unchecked Sendable {
                 self.lock.unlock()
                 guard !line.isEmpty else { continue }
                 let s = String(format: "t=%.0f ", Date().timeIntervalSince(t0)) + line + "\n"
-                if let h = try? FileHandle(forWritingTo: url) { h.seekToEndOfFile(); h.write(s.data(using: .utf8)!); try? h.close() }
+                // Throwing write: the legacy write(_:) raises an ObjC exception on any write error (it aborted
+                // the app at a CH-B run's teardown).
+                if let h = try? FileHandle(forWritingTo: url) { _ = try? h.seekToEnd(); try? h.write(contentsOf: Data(s.utf8)); try? h.close() }
                 else { try? s.write(to: url, atomically: false, encoding: .utf8) }
             }
         }

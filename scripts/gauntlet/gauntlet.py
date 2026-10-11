@@ -1533,9 +1533,13 @@ def grade_row(exp, turn, ui, prev_turn, host, ps, versions, cases_meta, store=Fa
     cite_by_idx = {c["index"]: c for c in cites}
     chip_nodes = {c.get("nodeID") for c in cites}
     named = [c for c in cand if c.get("title") and title_mentioned(c["title"], final)]
+    # Two entries can share a title (T's corpus has two "[entry title]"); the prose
+    # names the title once, so a chip on EITHER twin covers it. Found as a false FAIL on qwen3:8b MT1c in
+    # CH-B (3/3 off, 2/2 on); known-bad control c3-dup-title-control.
+    chip_titles = {title_norm(c.get("title", "")) for c in cites if c.get("title")}
     c3 = []
     for c in named:
-        if c.get("nodeID") not in chip_nodes:
+        if c.get("nodeID") not in chip_nodes and title_norm(c["title"]) not in chip_titles:
             c3.append(f"names '{title_main(c['title'])[:30]}' but no chip for it")
     # [n] adjacent to a title must point at THAT title's entry (unless the cited entry is also named
     # in the same sentence — "X and Y [3]" where [3] = Y is fine).

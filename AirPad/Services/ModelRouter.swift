@@ -477,6 +477,30 @@ enum ModelRouter {
         return out
     }
 
+    /// ★ CH-B (8B Gauntlet, BXa) — a request that CONNECTED but failed. The Host sends its chat
+    /// headers only once the model's first token is ready, so a long prefill on a busy Mac trips the
+    /// idle timeout while the stream is still opening. Wrapped as `ollamaTransport`, that read
+    /// "offline or asleep" while the Mac was awake and answering (AD2: a timeout never reads offline).
+    /// Keep a connected-but-failed URLError as itself so `humanError` names it; a can't-connect stays
+    /// transport.
+    static func transportError(_ error: Error) -> Error {
+        if let u = error as? URLError, u.code == .timedOut || u.code == .networkConnectionLost { return u }
+        return RouterError.ollamaTransport(error.localizedDescription)
+    }
+
+    #if DEBUG
+    /// `-TransportBannerSelfTest` — open a real request to `url` (idle timeout `timeout` s) and
+    /// return the banner the user would see for its failure.
+    @MainActor static func debugTransportBanner(url: String, timeout: TimeInterval) async -> String {
+        guard let u = URL(string: url) else { return "bad url" }
+        var req = URLRequest(url: u, timeoutInterval: timeout)
+        req.httpMethod = "POST"
+        req.httpBody = Data("{}".utf8)
+        do { _ = try await URLSession.shared.bytes(for: req); return "no error" }
+        catch { return ChatSession.humanError(for: transportError(error)) }
+    }
+    #endif
+
     enum RouterError: LocalizedError {
         case foundationModelUnavailable
         case ollamaNoModels
@@ -861,7 +885,7 @@ enum ModelRouter {
             (bytes, response) = try await URLSession.shared.bytes(for: request)
         } catch {
             print("[ModelRouter] \(path) transport: \(error.localizedDescription)")
-            throw RouterError.ollamaTransport(error.localizedDescription)
+            throw transportError(error)
         }
 
         if let http = response as? HTTPURLResponse, !(200...299).contains(http.statusCode) {
@@ -950,7 +974,7 @@ enum ModelRouter {
             return try await URLSession.shared.data(for: request)
         } catch {
             print("[ModelRouter] \(path) transport: \(error.localizedDescription)")
-            throw RouterError.ollamaTransport(error.localizedDescription)
+            throw transportError(error)
         }
     }
 
@@ -1244,7 +1268,7 @@ enum ModelRouter {
 
         let (bytes, response): (URLSession.AsyncBytes, URLResponse)
         do { (bytes, response) = try await hostStreamSession.bytes(for: request) }
-        catch { throw RouterError.ollamaTransport(error.localizedDescription) }
+        catch { throw transportError(error) }
         if let http = response as? HTTPURLResponse, !(200...299).contains(http.statusCode) {
             var data = Data()
             for try await b in bytes { data.append(b) }
@@ -1538,7 +1562,7 @@ enum ModelRouter {
 
         let (bytes, response): (URLSession.AsyncBytes, URLResponse)
         do { (bytes, response) = try await hostStreamSession.bytes(for: request) }
-        catch { throw RouterError.ollamaTransport(error.localizedDescription) }
+        catch { throw transportError(error) }
 
         if let http = response as? HTTPURLResponse, !(200...299).contains(http.statusCode) {
             var data = Data()
@@ -1708,7 +1732,7 @@ extension ModelRouter {
         do {
             (bytes, response) = try await URLSession.shared.bytes(for: request)
         } catch {
-            throw RouterError.ollamaTransport(error.localizedDescription)
+            throw transportError(error)
         }
         if let http = response as? HTTPURLResponse, !(200...299).contains(http.statusCode) {
             var data = Data()

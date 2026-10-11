@@ -28,12 +28,22 @@ sim = lambda *x: subprocess.run(["xcrun", "simctl", *x], capture_output=True, te
 sim("boot", a.sim); sim("bootstatus", a.sim, "-b")
 r = sim("install", a.sim, a.app)
 if r.returncode: sys.exit(f"install failed: {r.stderr}")
+def stub_ports():
+    """needs=stub: a port that accepts and never answers ({STALL}) + a port with nothing listening ({CLOSED})."""
+    import socket, threading
+    srv = socket.socket(); srv.bind(("127.0.0.1", 0)); srv.listen(8)
+    held = []
+    threading.Thread(target=lambda: [held.append(srv.accept()) for _ in iter(int, 1)], daemon=True).start()
+    c = socket.socket(); c.bind(("127.0.0.1", 0)); closed = c.getsockname()[1]; c.close()
+    return srv.getsockname()[1], closed
+STALL, CLOSED = stub_ports()
 results, t_all = [], time.time()
 for row in rows:
     if only and row["name"] not in only: continue
     if row["needs"] == "host" and not a.with_host_args:
         results.append((row["name"], "SKIP", "needs a Host (--with-host-args)", 0)); continue
-    args = row["launch_args"].split() + (a.with_host_args.split() if row["needs"] == "host" else []) + ["-EmbedCPUOnly"]
+    args = row["launch_args"].replace("{STALL}", str(STALL)).replace("{CLOSED}", str(CLOSED)).split() \
+        + (a.with_host_args.split() if row["needs"] == "host" else []) + ["-EmbedCPUOnly"]
     log = os.path.join(a.out, row["name"] + ".log")
     sim("terminate", a.sim, BID)
     t0 = time.time()

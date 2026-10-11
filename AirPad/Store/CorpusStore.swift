@@ -1698,6 +1698,24 @@ final class CorpusStore {
                     NSLog("[ThinkBanner] stripThink → '%@' | cited=%@", stripped, "\(CitationReference.citedIndices(in: stripped).sorted())")
                     NSLog("[ThinkBanner] done")
                 }
+                // ★ CH-B — a request that CONNECTED but got no answer in time must not read "offline";
+                // a refused connection must. Real requests through the real wrap (`transportError`):
+                // `-TransportBannerSelfTest <stalled url> <closed url>` (a stub that accepts and never
+                // answers; a port with nothing listening).
+                if let i = ProcessInfo.processInfo.arguments.firstIndex(of: "-TransportBannerSelfTest"),
+                   i + 2 < ProcessInfo.processInfo.arguments.count {
+                    let args = ProcessInfo.processInfo.arguments
+                    Task {
+                        let offline = ChatSession.humanError(for: URLError(.cannotConnectToHost))
+                        let stalled = await ModelRouter.debugTransportBanner(url: args[i + 1], timeout: 3)
+                        let closed = await ModelRouter.debugTransportBanner(url: args[i + 2], timeout: 3)
+                        let ok1 = stalled != offline && stalled != "no error"
+                        let ok2 = closed == offline
+                        NSLog("[TransportBannerSelfTest] stalled → %@ (%@)", stalled, ok1 ? "ok" : "WRONG")
+                        NSLog("[TransportBannerSelfTest] closed → %@ (%@)", closed, ok2 ? "ok" : "WRONG")
+                        NSLog("[TransportBannerSelfTest] %@ (%d/2)", ok1 && ok2 ? "PASS" : "FAIL", (ok1 ? 1 : 0) + (ok2 ? 1 : 0))
+                    }
+                }
                 // Brief AF3 verify — the app-owned no-key web-search state, headless:
                 // (1) the search-intent matcher fires on the brief's five cues and NOT on
                 // an ordinary question; (2) with no Brave key, the no-key notice adds a

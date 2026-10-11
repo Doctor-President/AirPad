@@ -1549,11 +1549,13 @@ def grade_row(exp, turn, ui, prev_turn, host, ps, versions, cases_meta, store=Fa
     named = [c for c in cand if c.get("title") and title_mentioned(c["title"], final, as_name=True)]
     # Two entries can share a title (T's corpus has two "[entry title]"); the prose
     # names the title once, so a chip on EITHER twin covers it. Found as a false FAIL on qwen3:8b MT1c in
-    # CH-B (3/3 off, 2/2 on); known-bad control c3-dup-title-control.
-    chip_titles = {title_norm(c.get("title", "")) for c in cites if c.get("title")}
+    # CH-B (3/3 off, 2/2 on); known-bad control c3-dup-title-control. The same holds when two titles share
+    # their MAIN part ("Bolex H16" and "Bolex H16 — mine"): "your Bolex H16 entry" names both equally, so a
+    # chip on either covers it (SL-R1: qwen3:30b 3/3, Instruct + 8B 1/3; control c3-shared-main-title-control).
+    chip_titles = {title_norm(title_main(c.get("title", ""))) for c in cites if c.get("title")}
     c3 = []
     for c in named:
-        if c.get("nodeID") not in chip_nodes and title_norm(c["title"]) not in chip_titles:
+        if c.get("nodeID") not in chip_nodes and title_norm(title_main(c["title"])) not in chip_titles:
             c3.append(f"names '{title_main(c['title'])[:30]}' but no chip for it")
     # [n] adjacent to a title must point at THAT title's entry (unless the cited entry is also named
     # in the same sentence — "X and Y [3]" where [3] = Y is fine).

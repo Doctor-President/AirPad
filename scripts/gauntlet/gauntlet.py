@@ -152,6 +152,14 @@ def title_norm(s):
 def title_main(title):
     return re.split(r"[:—·]", title or "")[0]
 
+# Mirror of CitationReference.citationTokenRegex — a marker is "[2]" OR a group "[2, 3, 4]" (optional E prefix). Matching
+# only the literal "[n]" made a grouped citation look like a never-cited phantom chip (CH-B: qwen3:30b "… mirrors for
+# self-knowledge [2, 3, 4]" → false C4 on S1/S2/MT1a/A2/A3/S4). Known-bad control c4-grouped-marker-control.
+MARKER_TOKEN = re.compile(r"\[\s*[Ee]?\s*\d{1,2}(?:\s*,\s*[Ee]?\s*\d{1,2})*\s*\]")
+
+def marker_indices(text):
+    return {int(d) for tok in MARKER_TOKEN.findall(text or "") for d in re.findall(r"\d{1,2}", tok)}
+
 def title_mentioned(title, text, as_name=False):
     """Mirror of ChatSession.titleMentioned — the main part of a title, normalized, ≥4 chars — EXCEPT a
     one-word main part ("Feature" of "[entry title]") is too generic to count as naming the entry:
@@ -595,7 +603,7 @@ def probe_grade(probe, final, turn, cites, cand, R, res, na):
     idx_title = {c["index"]: c.get("title", "") for c in cand}
     if kind == "window":
         dates = cand_dates(turn)
-        cited = sorted({int(x) for x in re.findall(r"\[(\d+)\]", final)} | {c["index"] for c in cites})
+        cited = sorted(marker_indices(final) | {c["index"] for c in cites})
         named = [c["index"] for c in cand if c.get("title") and title_mentioned(c["title"], final)]
         used = sorted(set(cited) | set(named))
         dated = [(i, dates.get(i)) for i in used if dates.get(i)]
@@ -755,8 +763,8 @@ def c6_violations(final, turn, cand, question):
         # EXPLICIT anchors only: a [n] in the sentence, or "your note/entry from <date>". A bare title mention is
         # too weak (calibration: "You mentioned that Mara called…" restates the QUESTION, and "Mara" is a title).
         idx = set()
-        for x in re.findall(r"\[(\d+)\]", sent):
-            idx |= shown.get(int(x), {int(x)})
+        for x in marker_indices(sent):
+            idx |= shown.get(x, {x})
         for yy, mo, dd in (stated_dates(sent) if re.search(r"\byour (?:note|entry|journal)\b", sent, re.I) else []):
             for i, dstr in dates.items():
                 y2, m2, d2 = (int(x) for x in dstr.split("-"))
@@ -1577,7 +1585,7 @@ def grade_row(exp, turn, ui, prev_turn, host, ps, versions, cases_meta, store=Fa
     res("C3", not c3, "; ".join(c3[:3]))
     always = set(plan.get("alwaysCite") or [])
     read_nodes = set(plan.get("readNodeIDs") or [])
-    inline = {int(x) for x in re.findall(r"\[(\d+)\]", final)}
+    inline = marker_indices(final)
     # "Discussed" = named by title anywhere, OR read in full (always cited), OR a sentence that cites
     # its [n] actually talks about it (shares a title word, or ≥2 content words of its snippet). A bare
     # [n] on a sentence about something else is NOT discussion — that is the mis-citation family.
@@ -1589,7 +1597,7 @@ def grade_row(exp, turn, ui, prev_turn, host, ps, versions, cases_meta, store=Fa
     def discussed(c):
         if title_mentioned(c.get("title", ""), final) or c.get("nodeID") in read_nodes:
             return True
-        citing = [s for s in sentences if f"[{c['index']}]" in s]
+        citing = [s for s in sentences if c["index"] in marker_indices(s)]
         if not citing:
             return False                                   # (a) phantom
         tt, st = content_tokens(c.get("title", "")), content_tokens(c.get("snippet", ""))

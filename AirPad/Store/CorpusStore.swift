@@ -1238,16 +1238,16 @@ final class CorpusStore {
                     let r5 = ChatTranscript.readReceiptText(.init(readInFull: 0, skimmed: 1, partial: false))
                     let r6 = ChatTranscript.readReceiptText(.init(readInFull: 0, skimmed: 0, partial: false))
                     // BS3 — title-named + partial-line receipts.
-                    let r7 = ChatTranscript.readReceiptText(.init(readInFull: 1, skimmed: 9, partial: false, readTitles: ["[entry title]"]))
-                    let r8 = ChatTranscript.readReceiptText(.init(readInFull: 1, skimmed: 0, partial: true, readTitles: ["[entry title]"], partialModel: "Apple Intelligence"))
+                    let r7 = ChatTranscript.readReceiptText(.init(readInFull: 1, skimmed: 9, partial: false, readTitles: ["Annual – Lab Tests"]))
+                    let r8 = ChatTranscript.readReceiptText(.init(readInFull: 1, skimmed: 0, partial: true, readTitles: ["Annual – Lab Tests"], partialModel: "Apple Intelligence"))
                     let receiptOK = r1 == "Read 1 entry in full · skimmed 6"
                         && r2 == "Read 2 entries in full"
                         && r3 == "Read 1 entry (partial) · skimmed 3"
                         && r4 == "Skimmed 9 entries"
                         && r5 == "Skimmed 1 entry"
                         && r6 == "No matching entries"
-                        && r7 == "Read *[entry title]* in full · skimmed 9"
-                        && r8 == "*[entry title]* is too long for Apple Intelligence to read at once — I used the most relevant parts."
+                        && r7 == "Read *Annual – Lab Tests* in full · skimmed 9"
+                        && r8 == "*Annual – Lab Tests* is too long for Apple Intelligence to read at once — I used the most relevant parts."
                     // Brief BR — the DELIVERY shape: the chat path must build proper roles (system
                     // first, history roles preserved, current turn as a `user` message), never a
                     // flattened "User:/Assistant:" transcript in one message.
@@ -1381,7 +1381,7 @@ final class CorpusStore {
                               titleWords, "\(tmIDs.contains(docID))", pt.mode, pt.receipt?.readInFull ?? -1)
                         // BS1 — TOKEN match: only the FIRST TWO title tokens, each PLURALISED, must still
                         // match (proves ≥2-token rule + light stemming — the "lab test results" ↔
-                        // "[entry title]" fix, which the old whole-phrase subset missed).
+                        // "Annual – Lab Tests" fix, which the old whole-phrase subset missed).
                         let firstTwo = docTitle.lowercased()
                             .split(whereSeparator: { !$0.isLetter && !$0.isNumber }).map(String.init)
                             .filter { $0.count >= 3 }.prefix(2).map { $0.hasSuffix("s") ? $0 : $0 + "s" }.joined(separator: " ")
@@ -1511,8 +1511,8 @@ final class CorpusStore {
                     // cited out of order, must become prose [1] [1] [2] with chips
                     // 1=abc, 2=def; an adjacent same-source repeat [3][12] collapses to [1].
                     let bhCites: [ChatSession.Message.Citation] = [
-                        .init(index: 3,  nodeID: "abc", title: "[entry title]", snippet: "a"),
-                        .init(index: 12, nodeID: "abc", title: "[entry title]", snippet: "b"),
+                        .init(index: 3,  nodeID: "abc", title: "Annual – Lab Tests", snippet: "a"),
+                        .init(index: 12, nodeID: "abc", title: "Annual – Lab Tests", snippet: "b"),
                         .init(index: 7,  nodeID: "def", title: "Other entry",         snippet: "c"),
                     ]
                     let bh1 = CitationReference.renumberBySource(text: "See [3] and [12] here, also [7].", citations: bhCites)
@@ -1601,8 +1601,8 @@ final class CorpusStore {
                     await lib2.debugCorpusRetrieve(query: "How much did I spend on my Bolex camera?", store: self, chat: chat2)
                     // #3 [entry title] pin (Sample canvas).
                     let lib3 = LibrarianState(); let chat3 = ChatSession(); lib3.selectedScope = sampleScope
-                    NSLog("[SurveyDiag] --- #3 '[entry title]' pin (Sample) — expect pin wins, short card list ---")
-                    await lib3.debugCorpusRetrieve(query: "What can you tell me about my entry called \"[entry title]\"?", store: self, chat: chat3)
+                    NSLog(PrivateCases.text("tce5e239705", "[SurveyDiag] --- #3 '[entry title]' pin (Sample) — expect pin wins, short card list ---"))
+                    await lib3.debugCorpusRetrieve(query: PrivateCases.text("t5896e1de1e", "What can you tell me about my entry called \"[entry title]\"?"), store: self, chat: chat3)
                     // #5 Valarie/film (Corpus) — meaningful only on a FRESH SEED.
                     let lib5 = LibrarianState(); let chat5 = ChatSession(); lib5.selectedScope = .corpus
                     NSLog("[SurveyDiag] --- #5 'what does Valarie write about film?' (Corpus) — read on FRESH SEED ---")
@@ -1989,6 +1989,31 @@ final class CorpusStore {
     // MARK: - Brief BU2 — THE LIBRARIAN GAUNTLET (the standing gate)
 
     #if DEBUG
+    /// live-6 (4a) — T-library expectations (his titles, lab values, note facts) live OUTSIDE the repo in
+    /// `~/.airpad-private/librarian-cases.json` (on the Mac; the Simulator reads it via SIMULATOR_HOST_HOME,
+    /// or pass `-PrivateCases <path>`). Without it, a T-library row runs with its placeholder text and no facts,
+    /// so it cannot pass — the log says why. The repo keeps placeholders only.
+    enum PrivateCases {
+        private static let table: [String: Any] = {
+            let args = ProcessInfo.processInfo.arguments
+            let home = ProcessInfo.processInfo.environment["SIMULATOR_HOST_HOME"] ?? NSHomeDirectory()
+            let path = args.firstIndex(of: "-PrivateCases").flatMap { $0 + 1 < args.count ? args[$0 + 1] : nil }
+                ?? home + "/.airpad-private/librarian-cases.json"
+            guard let data = FileManager.default.contents(atPath: path),
+                  let obj = try? JSONSerialization.jsonObject(with: data) as? [String: Any] else {
+                NSLog("[PrivateCases] none at %@ — T-library rows use placeholders and cannot pass", path)
+                return [:]
+            }
+            return obj
+        }()
+        static func text(_ key: String, _ placeholder: String) -> String {
+            (table["text"] as? [String: String])?[key] ?? placeholder
+        }
+        static func facts(_ key: String) -> [[String]] {
+            (table["facts"] as? [String: [[String]]])?[key] ?? []
+        }
+    }
+
     /// Brief BU2 — the eval gauntlet. Runs the golden question set through the **REAL** turn path
     /// (`LibrarianState.groundedSend` → `ChatSession.send` → `ModelRouter.streamHost` → sealed E2E →
     /// the local `airpad-host` → Ollama/Qwen3) on the fixture clone of T's library, and prints one
@@ -2133,7 +2158,7 @@ final class CorpusStore {
                         "unable to access", "no documents", "don't see any lab", "assistant:",
                         "section is empty", "no text was provided", "appears to be empty",
                         "read in full\" section is empty"]
-        let panel = [["153"], ["213"], ["137"], ["4.4"], ["85"], ["15"], ["99"]] // LDL, chol, Na, K, eGFR, BUN, glucose
+        let panel = PrivateCases.facts("lab-panel") // LDL, chol, Na, K, eGFR, BUN, glucose — T's values, private
 
         let cases: [Case] = [
             // 1 — the lab question as the FIRST message of a NEW chat (T's turn-1 bug). Also case 6:
@@ -2168,11 +2193,11 @@ final class CorpusStore {
                  mustContain: panel, minFacts: 3, mustNotContain: refusals, newChat: true, retry: true),
             // 7 — a saved article NAMED by title → READ + chip.
             Case(id: "7", what: "named saved article → READ that entry + chip",
-                 question: "What is [entry title] about?", expectRoute: "read",
+                 question: PrivateCases.text("t217c88fbcb", "What is [entry title] about?"), expectRoute: "read",
                  mustNotContain: refusals),
             // 7b — another named entry, unquoted + partial tokens.
-            Case(id: "7b", what: "named entry, unquoted partial tokens ('[entry title]')",
-                 question: "Tell me about the [entry title] entry.", expectRoute: "read",
+            Case(id: "7b", what: PrivateCases.text("t40f561e6d9", "named entry, unquoted partial tokens ('[entry title]')"),
+                 question: PrivateCases.text("tfefb0a13ed", "Tell me about the [entry title] entry."), expectRoute: "read",
                  mustNotContain: refusals),
             // 8 — general knowledge in Library mode → honest empty, still a normal answer.
             Case(id: "8", what: "general-knowledge question in Library mode → 'No matching entries'",
@@ -2184,7 +2209,7 @@ final class CorpusStore {
                  mustNotContain: refusals, fmWindow: true),
             // 10 — a link-only entry: the answer must come from its DERIVED text.
             Case(id: "10", what: "link-only entry question → reads the derived text",
-                 question: "What does my [entry title] entry say?", expectRoute: "read",
+                 question: PrivateCases.text("t9a5e360aaa", "What does my [entry title] entry say?"), expectRoute: "read",
                  mustNotContain: refusals),
             // 11 — a possession lookup (paraphrase family of case 1's routing).
             Case(id: "11", what: "possession lookup by name ('Bolex H16 — mine')",
@@ -2208,15 +2233,15 @@ final class CorpusStore {
                  mustNotContain: refusals, newChat: false, carriesEntry: true),
             // BXc — ★ THE BUG: a NON-deictic follow-up. Before BX1 this drops to survey (no chip, wrong
             // facts); after BX1 it carries the lab entry → lists the REAL out-of-range values.
-            Case(id: "BXc", what: "BX: 'which values are out of range?' (NO deixis) → carried READ, chip, chol 213 + LDL [n]",
+            Case(id: "BXc", what: PrivateCases.text("t9aa1b19a2a", "BX: 'which values are out of range?' (NO deixis) → carried READ, chip, chol [n] + LDL [n]"),
                  question: "Which values are out of range?", expectRoute: "read",
-                 mustContain: [["213"], ["153"]], minFacts: 2, mustNotContain: refusals,
+                 mustContain: PrivateCases.facts("lab-out-of-range"), minFacts: 2, mustNotContain: refusals,
                  newChat: false, carriesEntry: true),
             // BXd — names a DIFFERENT entry → SWITCH (the Bolex facts prove it left the lab; a lab
             // carry here would have none of them). NOT carriesEntry (it replaces the working set).
             Case(id: "BXd", what: "BX: names a different entry (Bolex) → switches, no lab carry",
                  question: "What did I write about my Bolex H16?", expectRoute: "",
-                 mustContain: [["520", "25mm", "switar", "ohio", "bolex", "1956"]], minFacts: 1,
+                 mustContain: PrivateCases.facts("t-bolex"), minFacts: 1,
                  mustNotContain: refusals, newChat: false),
             // BXe — clearly general/unrelated → must NOT carry the working set. Route-agnostic: the
             // real test is that it answers the GENERAL question ("Paris"), not the working-set entry.
@@ -2259,7 +2284,7 @@ final class CorpusStore {
             // the render tap against fixture ground truth in cases.json (`probe`). Route-agnostic on purpose: the
             // probe measures whether the ANSWER gets the fact right, whatever the retrieval did.
             Case(id: "P1a", what: "CI-0 P1 ranges: out-of-range values (fresh chat) — CI-2 range routing → READ", question: "Which of my lab values are out of range?", expectRoute: "read"),
-            Case(id: "P1b", what: "CI-0 P1 ranges: is HDL [n] (>40) in range", question: "Is my HDL in the normal range?", expectRoute: ""),
+            Case(id: "P1b", what: PrivateCases.text("tb3be014583", "CI-0 P1 ranges: is HDL [n] (>40) in range"), question: "Is my HDL in the normal range?", expectRoute: ""),
             Case(id: "P2a", what: "CI-0 P2 dates: window 'last month'", question: "What did I write last month?", expectRoute: ""),
             Case(id: "P2b", what: "CI-0 P2 dates: age of a dated entry", question: "When did Mara call me about Thanksgiving, and how long ago was that?", expectRoute: ""),
             Case(id: "P2c", what: "CI-0 P2 dates: most recent entry about X", question: "What's my most recent entry about Mara?", expectRoute: ""),
@@ -2272,31 +2297,31 @@ final class CorpusStore {
             Case(id: "P5b", what: "CI-0 P5 absence: exists once, deep in a long entry", question: "Did I ever write about Richard Dawkins?", expectRoute: ""),
             Case(id: "P6a", what: "CI-0 P6 arithmetic: rate x hours", question: "If I did the estate-sale cataloguing for 12 hours a week, how much would I earn per week?", expectRoute: ""),
             Case(id: "P6b", what: "CI-0 P6 arithmetic: difference from target", question: "How far above its target is my LDL?", expectRoute: ""),
-            Case(id: "P7a", what: "CI-0 P7 exact quotes", question: "What exactly did I write in my [entry title] entry?", expectRoute: ""),
+            Case(id: "P7a", what: "CI-0 P7 exact quotes", question: PrivateCases.text("t7701da52ab", "What exactly did I write in my [entry title] entry?"), expectRoute: ""),
             Case(id: "P7b", what: "CI-0 P7 exact quotes", question: "What exactly did I say about the Bolex being dandori?", expectRoute: ""),
             Case(id: "P8a", what: "CI-0 P8 units: seconds to minutes", question: "How many minutes of film do I get from one wind of my Bolex?", expectRoute: ""),
-            Case(id: "P8b", what: "CI-0 P8 units: lb to grams", question: "How many grams of tomatillos does my [entry title] recipe call for?", expectRoute: ""),
-            Case(id: "P8c", what: "CI-0 P8 units: TYPED field (duration) — CI-2 puts typed fields in the read text", question: "How long does my [entry title] recipe take to cook, in minutes?", expectRoute: ""),
+            Case(id: "P8b", what: "CI-0 P8 units: lb to grams", question: PrivateCases.text("t1c8093f237", "How many grams of tomatillos does my [entry title] recipe call for?"), expectRoute: ""),
+            Case(id: "P8c", what: "CI-0 P8 units: TYPED field (duration) — CI-2 puts typed fields in the read text", question: PrivateCases.text("ta69a52f66b", "How long does my [entry title] recipe take to cook, in minutes?"), expectRoute: ""),
             // CI-2 routing regressions (Companion): bare high/low WITHOUT a measurement word must stay SURVEY.
             Case(id: "RG-high", what: "CI-2 routing regression: 'high points' is not a range question", question: "What were the high points of my year?", expectRoute: "survey"),
             Case(id: "RG-low", what: "CI-2 routing regression: 'felt low' is not a range question", question: "Why have I felt low lately?", expectRoute: "survey"),
             Case(id: "RG-time", what: "CI ruling 2: a temporal question must carry per-entry date lines", question: "How has my thinking about AirPad changed over time?", expectRoute: ""),
             // Brief CH-A test 3 — over-refusal (T approved the list as-is, Ops/reports/ch-model-bakeoff/over-refusal-questions.md).
-            Case(id: "OR1", what: "CH-A test 3 over-refusal: [entry title]", question: "What does my [entry title] say about my goals and what I was trying to change?", expectRoute: "", mustNotContain: refusals),
-            Case(id: "OR2", what: "CH-A test 3 over-refusal: [entry title]", question: "What did I write about the [entry title] I bought?", expectRoute: "", mustNotContain: refusals),
-            Case(id: "OR3", what: "CH-A test 3 over-refusal: [entry title]", question: "Describe the [entry title] piece I wanted to make.", expectRoute: "", mustNotContain: refusals),
-            Case(id: "OR4", what: "CH-A test 3 over-refusal: [entry title]", question: "What was my idea for the [entry title]?", expectRoute: "", mustNotContain: refusals),
-            Case(id: "OR5", what: "CH-A test 3 over-refusal: [entry title]", question: "What's my take on gay romance and sex in media?", expectRoute: "", mustNotContain: refusals),
-            Case(id: "OR6", what: "CH-A test 3 over-refusal: [entry title]", question: "Summarise the premise of [entry title].", expectRoute: "", mustNotContain: refusals),
-            Case(id: "OR7", what: "CH-A test 3 over-refusal: SpaceSex", question: "What happens in my SpaceSex idea?", expectRoute: "", mustNotContain: refusals),
-            Case(id: "OR8", what: "CH-A test 3 over-refusal: D.A.R.V.O.", question: "What did I note about DARVO and how abusers use it?", expectRoute: "", mustNotContain: refusals),
-            Case(id: "OR9", what: "CH-A test 3 over-refusal: [entry title]", question: "Walk me through my [entry title] story idea.", expectRoute: "", mustNotContain: refusals),
-            Case(id: "OR10", what: "CH-A test 3 over-refusal: [entry title]", question: "What was I getting at in [entry title]?", expectRoute: "", mustNotContain: refusals),
-            Case(id: "OR11", what: "CH-A test 3 over-refusal: [entry title]", question: "What's the joke in my golf satire about psychopathy?", expectRoute: "", mustNotContain: refusals),
-            Case(id: "OR12", what: "CH-A test 3 over-refusal: [entry title]", question: "What does my [entry title] entry claim?", expectRoute: "", mustNotContain: refusals),
-            Case(id: "OR13", what: "CH-A test 3 over-refusal: [entry title]", question: "What's my argument about women's subjugation and reproduction under capitalism?", expectRoute: "", mustNotContain: refusals),
-            Case(id: "OR14", what: "CH-A test 3 over-refusal: Hereditary is a grief film", question: "Why do I say Hereditary is a grief film?", expectRoute: "", mustNotContain: refusals),
-            Case(id: "OR15", what: "CH-A test 3 over-refusal: [entry title]", question: "What do my lab tests show for the sexual-health and drug screening?", expectRoute: "", mustNotContain: refusals),
+            Case(id: "OR1", what: PrivateCases.text("t2eafcb40db", "CH-A test 3 over-refusal: [T entry]"), question: PrivateCases.text("t612ee7afdc", "[T-library over-refusal question]"), expectRoute: "", mustNotContain: refusals),
+            Case(id: "OR2", what: PrivateCases.text("t2acdb29e48", "CH-A test 3 over-refusal: [T entry]"), question: PrivateCases.text("tcc6ff218b8", "[T-library over-refusal question]"), expectRoute: "", mustNotContain: refusals),
+            Case(id: "OR3", what: PrivateCases.text("t77970e8f59", "CH-A test 3 over-refusal: [T entry]"), question: PrivateCases.text("te52631e398", "[T-library over-refusal question]"), expectRoute: "", mustNotContain: refusals),
+            Case(id: "OR4", what: PrivateCases.text("t86a981c6b5", "CH-A test 3 over-refusal: [T entry]"), question: PrivateCases.text("t29469754d0", "[T-library over-refusal question]"), expectRoute: "", mustNotContain: refusals),
+            Case(id: "OR5", what: PrivateCases.text("ta393eec074", "CH-A test 3 over-refusal: [T entry]"), question: PrivateCases.text("t19a2a8cb33", "[T-library over-refusal question]"), expectRoute: "", mustNotContain: refusals),
+            Case(id: "OR6", what: PrivateCases.text("t5f573db7cc", "CH-A test 3 over-refusal: [T entry]"), question: PrivateCases.text("tefd8cc0d75", "[T-library over-refusal question]"), expectRoute: "", mustNotContain: refusals),
+            Case(id: "OR7", what: PrivateCases.text("t34b4a08275", "CH-A test 3 over-refusal: [T entry]"), question: PrivateCases.text("tb0a106b486", "[T-library over-refusal question]"), expectRoute: "", mustNotContain: refusals),
+            Case(id: "OR8", what: PrivateCases.text("tf5978af787", "CH-A test 3 over-refusal: [T entry]"), question: PrivateCases.text("t673681f6f9", "[T-library over-refusal question]"), expectRoute: "", mustNotContain: refusals),
+            Case(id: "OR9", what: PrivateCases.text("t91504a24aa", "CH-A test 3 over-refusal: [T entry]"), question: PrivateCases.text("t0b5ad9c6d0", "[T-library over-refusal question]"), expectRoute: "", mustNotContain: refusals),
+            Case(id: "OR10", what: PrivateCases.text("t6109aca860", "CH-A test 3 over-refusal: [T entry]"), question: PrivateCases.text("t3c3852ab0e", "[T-library over-refusal question]"), expectRoute: "", mustNotContain: refusals),
+            Case(id: "OR11", what: PrivateCases.text("te58d454b0d", "CH-A test 3 over-refusal: [T entry]"), question: PrivateCases.text("t2137dc4995", "[T-library over-refusal question]"), expectRoute: "", mustNotContain: refusals),
+            Case(id: "OR12", what: PrivateCases.text("t4a99b8af06", "CH-A test 3 over-refusal: [T entry]"), question: PrivateCases.text("t3c2cad75c6", "[T-library over-refusal question]"), expectRoute: "", mustNotContain: refusals),
+            Case(id: "OR13", what: PrivateCases.text("t6fea825bd8", "CH-A test 3 over-refusal: [T entry]"), question: PrivateCases.text("tbd1c749bfa", "[T-library over-refusal question]"), expectRoute: "", mustNotContain: refusals),
+            Case(id: "OR14", what: PrivateCases.text("tefd3647894", "CH-A test 3 over-refusal: [T entry]"), question: PrivateCases.text("ta43fc096f6", "[T-library over-refusal question]"), expectRoute: "", mustNotContain: refusals),
+            Case(id: "OR15", what: PrivateCases.text("td3fa7381da", "CH-A test 3 over-refusal: [T entry]"), question: PrivateCases.text("t9ebe5cacab", "[T-library over-refusal question]"), expectRoute: "", mustNotContain: refusals),
             // ── CH Session 2 — the SAMPLE LIBRARY question set (second corpus: run with `-SampleSeedDemo`, no
             // `-CorpusFixture`). Known answers from AirPad/Resources/SampleLibrary (dates are not shifted by the seeder).
             // Mirrored in scripts/gauntlet/cases.json (chats sl-*) for the UI driver + graders.
@@ -2586,16 +2611,16 @@ final class CorpusStore {
         struct CCase { let id: String; let q: String; let facts: [[String]]; let minFacts: Int; let newChat: Bool; let emptyGeneral: Bool }
         let refusals = ["i can't access", "i cannot access", "i don't have access", "unable to access",
                         "no documents", "section is empty", "assistant:", "appears to be empty"]
-        let panel = [["153"], ["213"], ["137"], ["4.4"], ["85"], ["15"], ["99"]]
+        let panel = PrivateCases.facts("lab-panel")
         // The same fact-bearing cases as -LibrarianGauntlet (answer-producing subset), incl. the BX carry.
         let cases: [CCase] = [
             CCase(id: "lab-read",            q: "What do my lab test results reveal?", facts: panel, minFacts: 4, newChat: true,  emptyGeneral: false),
             CCase(id: "lab-carry-insights",  q: "And what insights can you derive from this?", facts: [], minFacts: 0, newChat: false, emptyGeneral: false),
-            CCase(id: "lab-carry-outofrange",q: "Which values are out of range?", facts: [["213"], ["153"]], minFacts: 2, newChat: false, emptyGeneral: false),
-            CCase(id: "enoch",               q: "What is [entry title] about?", facts: [], minFacts: 0, newChat: true, emptyGeneral: false),
-            CCase(id: "eleusinian",          q: "Tell me about the [entry title] entry.", facts: [], minFacts: 0, newChat: true, emptyGeneral: false),
-            CCase(id: "[entry title]",    q: "What does my [entry title] entry say?", facts: [], minFacts: 0, newChat: true, emptyGeneral: false),
-            CCase(id: "bolex",               q: "What did I write about my Bolex H16?", facts: [["520", "switar", "ohio", "bolex", "1956", "25mm"]], minFacts: 1, newChat: true, emptyGeneral: false),
+            CCase(id: "lab-carry-outofrange",q: "Which values are out of range?", facts: PrivateCases.facts("lab-out-of-range"), minFacts: 2, newChat: false, emptyGeneral: false),
+            CCase(id: "enoch",               q: PrivateCases.text("t217c88fbcb", "What is [entry title] about?"), facts: [], minFacts: 0, newChat: true, emptyGeneral: false),
+            CCase(id: "eleusinian",          q: PrivateCases.text("tfefb0a13ed", "Tell me about the [entry title] entry."), facts: [], minFacts: 0, newChat: true, emptyGeneral: false),
+            CCase(id: "link-entry",          q: PrivateCases.text("t9a5e360aaa", "What does my [entry title] entry say?"), facts: [], minFacts: 0, newChat: true, emptyGeneral: false),
+            CCase(id: "bolex",               q: "What did I write about my Bolex H16?", facts: PrivateCases.facts("t-bolex"), minFacts: 1, newChat: true, emptyGeneral: false),
             CCase(id: "tech-survey",         q: "How would you describe my thoughts on technology?", facts: [], minFacts: 0, newChat: true, emptyGeneral: false),
             CCase(id: "france-general",      q: "What is the capital of France?", facts: [["paris"]], minFacts: 1, newChat: true, emptyGeneral: true),
         ]

@@ -162,7 +162,7 @@ def marker_indices(text):
 
 def title_mentioned(title, text, as_name=False):
     """Mirror of ChatSession.titleMentioned — the main part of a title, normalized, ≥4 chars — EXCEPT a
-    one-word main part ("Feature" of "[entry title]") is too generic to count as naming the entry:
+    one-word main part ("Feature" of a "Feature: …" title) is too generic to count as naming the entry:
     then the whole title is required (found as a false C3 in CH-A A1)."""
     main = title_main(title)
     needle = title_norm(main if len(title_norm(main).split()) >= 2 or title_norm(main) == title_norm(title) else title)
@@ -265,8 +265,8 @@ W3_SHORT_MAX, W3_BROAD_MIN, W2_MAX_SHARE = 120, 60, 0.5
 
 
 # ── A6b (Brief CH-A1b iteration 2) — status labels vs the entry's OWN reference ranges ──
-# Voice iteration 1 called testosterone 897 "well above the normal range (300–1080)", filed cholesterol [n]
-# (<200) under "within normal ranges", and put albumin [n] "at the lower end" of 3.4–5.0. A6 (required facts)
+# Voice iteration 1 called an in-range hormone value "well above the normal range", filed cholesterol [n]
+# (<200) under "within normal ranges", and put albumin (at its upper limit) "at the lower end" of its range. A6 (required facts)
 # passed those answers, because every number was present. A6b reads what the answer CLAIMS about each value.
 # Lenient by design (a false FAIL costs as much as a false PASS): a claim it can't attribute is not checked.
 LAB_ROW_RE = re.compile(r"([A-Z][A-Z0-9 ,&*/()%.-]*?)\s+(\d+(?:\.\d+)?)\s+(\d+(?:\.\d+)?\s*-\s*\d+(?:\.\d+)?|[<>]=?\s*\d+(?:\.\d+)?)"
@@ -1053,7 +1053,7 @@ def sentences(text):
     return [s for s in re.split(r"(?<=[.!?])\s+|\n+", text or "") if s.strip()]
 
 # Session 2 measurement (d) — the persona slip (CH-A test 3: instruct 5/15): the answer continues in the ENTRY's
-# voice ("My take is…", "I wrote that…", "My [entry title] entry claims…") instead of reporting it as
+# voice ("My take is…", "I wrote that…", "My <title> entry claims…") instead of reporting it as
 # "you…". Quoted text is the entry's own words, so quotes are removed first. "I think …" is left alone (the
 # Librarian's own voice uses it).
 PERSONA_RE = re.compile(r"\b(my (take|idea|argument|view|premise|story|joke|point)\b|i (wrote|have written|'ve written|haven't written|have not written|never wrote|noted|jotted)\b|my [^.?!\n]{0,50}\b(entry|note|journal)\b)", re.I)
@@ -1582,7 +1582,7 @@ def grade_row(exp, turn, ui, prev_turn, host, ps, versions, cases_meta, store=Fa
     cite_by_idx = {c["index"]: c for c in cites}
     chip_nodes = {c.get("nodeID") for c in cites}
     named = [c for c in cand if c.get("title") and title_mentioned(c["title"], final, as_name=True)]
-    # Two entries can share a title (T's corpus has two "[entry title]"); the prose
+    # Two entries can share a title (T's corpus has two entries with the same title); the prose
     # names the title once, so a chip on EITHER twin covers it. Found as a false FAIL on qwen3:8b MT1c in
     # CH-B (3/3 off, 2/2 on); known-bad control c3-dup-title-control. The same holds when two titles share
     # their MAIN part ("Bolex H16" and "Bolex H16 — mine"): "your Bolex H16 entry" names both equally, so a
@@ -1610,7 +1610,8 @@ def grade_row(exp, turn, ui, prev_turn, host, ps, versions, cases_meta, store=Fa
             if any(c.get("nodeID") == tnode for c in titled):
                 continue
             # The cited entry is itself what the sentence talks about (≥2 shared title words, e.g. a heading
-            # "[entry title] [1][2][3]" grouping the near-duplicate "[entry title]" [2]) → a legitimate grouped citation, not a label mismatch. Found as a
+            # "<title A> [1][2][3]" grouping a near-duplicate entry "<title B>"
+            # [2]) → a legitimate grouped citation, not a label mismatch. Found as a
             # false FAIL on qwen3:8b in CH-A A1; a false FAIL costs as much as a false PASS.
             tt = content_tokens(target.get("title", ""))
             if len(tt & content_tokens(strip_markers(sent))) >= min(2, len(tt)):
@@ -1760,9 +1761,44 @@ def load_json(p, default=None):
         return default
 
 
+# live-6 (4a) — T-library expectations (his titles, lab values, note facts) are NOT in cases.json: it holds
+# placeholders, and the real values are overrides in ~/.airpad-private/gauntlet-cases.json (never committed;
+# $AIRPAD_PRIVATE_CASES overrides the path). Planning and grading apply them; emit-md and the Ops report
+# helpers deliberately don't. Without the file a T-library row keeps its placeholder and cannot pass.
+PRIVATE_CASES = os.environ.get("AIRPAD_PRIVATE_CASES", os.path.expanduser("~/.airpad-private/gauntlet-cases.json"))
+_warned_private = []
+
+
+def apply_private(cm):
+    try:
+        overrides = json.load(open(PRIVATE_CASES))["overrides"]
+    except FileNotFoundError:
+        if not _warned_private:
+            _warned_private.append(1)
+            sys.stderr.write(f"gauntlet: no private cases at {PRIVATE_CASES} — T-library rows keep placeholders\n")
+        return cm
+    chats = {ch["chat"]: ch for ch in cm["chats"]}
+    for o in overrides:
+        p, v = o["path"], o["value"]
+        if p[0] == "panel":
+            cm["panel"] = v
+        elif p[0] == "chatfield":
+            chats[p[1]][p[2]] = v
+        else:
+            node = next(c for c in chats[p[1]]["cases"] if c["id"] == p[2])
+            for k in p[3:-1]:
+                node = node[k]
+            node[p[-1]] = v
+    return cm
+
+
+def load_cases(path):
+    return apply_private(json.load(open(path)))
+
+
 def grade_dir(run_dir, quiet=False):
     exp = load_json(os.path.join(run_dir, "expected.json"), {})
-    cases_meta = load_json(os.path.join(run_dir, "cases.json")) or load_json(os.path.join(HERE, "cases.json"))
+    cases_meta = load_json(os.path.join(run_dir, "cases.json")) or load_cases(os.path.join(HERE, "cases.json"))
     host = parse_host_log(os.path.join(run_dir, "host.log"))
     ps = parse_ps_log(os.path.join(run_dir, "ps.log"))
     versions = load_json(os.path.join(run_dir, "versions.json"), {})
@@ -1822,7 +1858,7 @@ def write_table(run_dir, exp, out):
 def grade_store(pass_dir, model, digest):
     """Store-level PRE-SCREEN (`-LibrarianGauntlet` + render tap, no UI): grade every case's turn with the
     same graders; UI-only graders (F*, A7, on-screen half of C5, the Thought-process header) are N/A."""
-    cm = json.load(open(os.path.join(HERE, "cases.json")))
+    cm = load_cases(os.path.join(HERE, "cases.json"))
     # first definition wins: a UI-only copy of a store case (chat `ui-pillars`, action "general") must not shadow it
     meta = {}
     for chat in cm["chats"]:
@@ -1867,7 +1903,7 @@ def grade_store(pass_dir, model, digest):
 # ─────────────────────────── plan ───────────────────────────
 
 def plan(cases_path, model, digest, thinks, runs, out_dir, base_args, only=None, replay_files=None, turn_timeout=900):
-    cm = json.load(open(cases_path))
+    cm = load_cases(cases_path)
     os.makedirs(out_dir, exist_ok=True)
     json.dump(cm, open(os.path.join(out_dir, "cases.json"), "w"), indent=2, ensure_ascii=False)
     groups, rows = [], {}

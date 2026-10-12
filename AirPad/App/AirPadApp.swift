@@ -338,7 +338,7 @@ private struct SpineGateView: View {
                     .accessibilityIdentifier("arrHUD")
                 #endif
 
-                // ALL-TALL regression repro (T's [entry title]): every tile h≥2, NO h==1 →
+                // ALL-TALL regression repro (a recipe entry): every tile h≥2, NO h==1 →
                 // the recess grid must NOT stretch ×h.
                 mewtwoCaption("ALL-TALL — every tile 1×3, no h==1 (recess must NOT stretch)")
                 VStack(alignment: .leading, spacing: 12) {
@@ -496,7 +496,7 @@ private struct SpineGateView: View {
                                          position: AttributeGridPosition(row: row, col: col))
         return it
     }
-    /// Repro for T's [entry title] regression: a node where EVERY tile is tall (h≥2), NO h==1
+    /// Repro for the recipe-entry regression: a node where EVERY tile is tall (h≥2), NO h==1
     /// tile → `AttributeGridRowHeight.unitHeight` fell back to a multi-row tile's FULL height,
     /// stretching the recess grid ×h.
     static func allTallItems() -> [NodeItem] {
@@ -504,7 +504,7 @@ private struct SpineGateView: View {
           spanItem("at2", def: "m-atk", .number(10), w: 1, h: 3, 0, 1),
           spanItem("at3", def: "m-hp", .number(45), w: 1, h: 3, 0, 2) ]
     }
-    /// OCCURRENCE-3 repro (T's [entry title] node is MIXED, not all-tall): ONE short h==1 tile
+    /// OCCURRENCE-3 repro (the recipe entry is MIXED, not all-tall): ONE short h==1 tile
     /// among several tall ones. The lone h==1 tile is exactly what the old `singles.max()`
     /// sampled — if its atomic `fillValue` inflated the tile's measured height, EVERY recess row
     /// stretched (~3×) at REST (the all-tall fix left this path untouched). With the constant unit

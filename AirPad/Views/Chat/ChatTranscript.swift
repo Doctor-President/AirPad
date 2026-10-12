@@ -511,7 +511,7 @@ struct ChatTranscript: View {
 
     /// Pure string builder for the receipt line (BN5/BS3) — `static` so a self-test can exercise the
     /// wording without a view. Returns MARKDOWN: an entry title is wrapped in `*…*` (rendered
-    /// italic). BS3: name the entry read ("Read *[entry title]* in full · skimmed 9"); a
+    /// italic). BS3: name the entry read ("Read *Lab Report* in full · skimmed 9"); a
     /// PARTIAL names the entry + model ("*Title* is too long for {model} to read at once — I used the
     /// most relevant parts."); a SURVEY says "Skimmed N entries"; nothing matched → "No matching
     /// entries". Falls back to counts when titles are absent (legacy receipts).

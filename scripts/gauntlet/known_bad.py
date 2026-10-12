@@ -21,6 +21,9 @@
       Copies captured runs into kb_dir (packet text redacted), builds the "doctored-expectation" items
       for the run-validity (V*) and invariant (I*) graders, and writes kb_dir/manifest.json.
 
+live-6 (4a): T's titles/values/note text in the control strings below are redacted; the original file is
+~/.airpad-private/known_bad.orig.py (re-running a builder against T's corpus needs it).
+
 Replay placeholders: `{{n:<title prefix>}}` → that entry's [n] in the live packet (GauntletTap).
 """
 import copy, json, os, shutil, sys
@@ -54,7 +57,7 @@ KG1 = ("Three threads run through these entries.\n\n"
        "Together they describe one arc: noise erodes meaning, and you keep reaching for tools and relationships "
        "that restore it.")
 
-KG2 = ("Your lab panel {{n:Medical}} is mostly in range. Sodium [n], potassium [n], glucose [n], BUN 15 and eGFR 85 "
+KG2 = ("Your lab panel {{n:Medical}} is mostly in range. Sodium [n], potassium [n], glucose [n], BUN [n] and eGFR [n] "
        "are all normal. Two values stand out: total cholesterol [n] and LDL [n] are above the usual targets, so the "
        "lipid panel is the one to discuss with your doctor.")
 

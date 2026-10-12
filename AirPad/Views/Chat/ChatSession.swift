@@ -55,7 +55,7 @@ final class ChatSession {
             let skimmed: Int
             let partial: Bool
             /// Brief BS3 — the TITLES of the entries read in full, so the footer names them
-            /// ("Read *[entry title]* in full · skimmed 9") instead of a bare count. Optional +
+            /// ("Read *Lab Report* in full · skimmed 9") instead of a bare count. Optional +
             /// synthesized Codable → legacy receipts decode with `readTitles == nil` (footer falls
             /// back to the count wording).
             var readTitles: [String]? = nil
@@ -251,7 +251,7 @@ final class ChatSession {
     /// it to the Host — the only path that honors `think`.
     var thinkEnabled: Bool = false
     /// Brief BW5 — a human line shown in the answer slot WHILE the model prefills, before the first
-    /// token: "Reading *[entry title]*…" (READ) / "Skimming your library…" (survey). Set per
+    /// token: "Reading *Lab Report*…" (READ) / "Skimming your library…" (survey). Set per
     /// turn by `LibrarianState.groundedSend`; cleared the moment the first answer token streams and on
     /// turn end. Nil → the plain thinking shimmer (private/general chat). No spinner-only silence on a
     /// slow first read.

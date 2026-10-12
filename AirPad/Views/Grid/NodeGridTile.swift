@@ -619,7 +619,7 @@ enum HyphenatedTextCache {
 
         // Only hyphenate words at/above this length. Short words wrap fine
         // at spaces; hyphenating them produces awkward breaks like
-        // "Sex Jour-nal" when "[entry title]" would be cleaner.
+        // "Dream Jour-nal" when "Dream" / "Journal" would be cleaner.
         let minHyphenatedLength = 10
 
         // Split into alternating whitespace/word runs, preserving exact

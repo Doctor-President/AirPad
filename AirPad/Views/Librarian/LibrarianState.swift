@@ -870,7 +870,7 @@ final class LibrarianState {
                                           hasFacts: facts != nil)
         // Session 3 audit fix — a THIN survey (1–2 cards, no passages) used to be discarded as an empty room ("No entries
         // match" with two Mara notes right there). It is sent now, with this line so a stray card isn't cited under an
-        // unrelated answer (measured: "Paris" under a [entry title] chip).
+        // unrelated answer (measured: "Paris" under a reading-list entry's chip).
         let cardN = candidates.filter { $0.isCard }.count
         if !candidates.contains(where: { !$0.isCard }), cardN > 0, cardN < 3 {
             freshSystem += "\n\nOnly \(cardN == 1 ? "one loosely related entry" : "two loosely related entries") turned up for this question — they may not be about it at all. Use one only if it really answers the question; otherwise say you couldn't find a close match in their library and answer from general knowledge, without citing anything."
@@ -955,7 +955,7 @@ final class LibrarianState {
         let pinning = !pinnedIDs.isEmpty
         // BN2 trigger #2 — the question NAMES an entry by TITLE MATCH: looser than the strict
         // quoted/verbatim pin (punctuation-normalised, word-order-independent), so "what's in my
-        // [entry title]?" names the "[entry title]" entry even without quotes or the exact
+        // Annual Lab Tests?" names the "Annual – Lab Tests" entry even without quotes or the exact
         // en-dashed form. A pin wins when both fire (it's the more explicit signal).
         let titleMatchedIDs = pinning ? [] : Self.titleMatchedEntryIDs(question: query, nodes: store.nodes(in: selectedScope))
         // A NAMED entry (pin OR title match) is an explicit single/few-entry focus → READ it, drop
@@ -1004,8 +1004,8 @@ final class LibrarianState {
         }
         let dominant = Self.dominantReadEntry(ranking: decisionRanking, store: store)   // nil → no single dominator
         // Brief CI §2.6 — a RANGE question reads its range TABLE. "Which of my lab values are out of range?"
-        // shares one title token with "[entry title]" (title match needs 2) and the terse table embeds
-        // too weakly to dominate → it surveyed a "Result 17.6" fragment (CI-0 P1a, 9/9). Narrowed (Companion):
+        // shares one title token with "Annual – Lab Tests" (title match needs 2) and the terse table embeds
+        // too weakly to dominate → it surveyed a "Result [n]" fragment (CI-0 P1a, 9/9). Narrowed (Companion):
         // explicit range phrasing, or a bare high/low/elevated/abnormal only WITH a measurement word; and the
         // range-bearing entry (≥3 parsed result rows) must be in the TOP-5 retrieved.
         let rangeTarget: String? = (named || dominant != nil || !Self.isRangeRoutingEnabled
@@ -1020,7 +1020,7 @@ final class LibrarianState {
         //   • it's clearly general/unrelated: NO working-set entry is among the retrieved passages AND
         //     it isn't a deictic follow-up → fall through to normal routing.
         // Otherwise the entry stays open, so a NON-deictic follow-up ("which values are out of
-        // range?") answers FROM the lab entry (chol 213 / LDL [n]) instead of the model's prior text
+        // range?") answers FROM the lab entry (chol [n] / LDL [n]) instead of the model's prior text
         // (T's glucose [n] "out of range" error). Carried lean (entry only, no fresh skim) so the
         // packet prefix matches the prior read and Ollama reuses the KV — the fast follow-up.
         let wsTargets = chat.workingSet.filter { id in store.nodes.contains { $0.id == id } }
@@ -1057,7 +1057,7 @@ final class LibrarianState {
         #endif
         // Session 3 audit fix — a non-deictic question that NAMES something the open entry doesn't contain is not a
         // follow-up on it: "What did I write about my Bolex H16?" after the lab read (no Bolex in this room) carried the
-        // lab entry and answered "you didn't write about it" under a [entry title] chip.
+        // lab entry and answered "you didn't write about it" under a Annual – Lab Tests chip.
         var namesSomethingElse = false
         if !wsTargets.isEmpty, !Self.looksLikeWorkingSetFollowUp(query) {
             let names = Self.namedTerms(query)
@@ -1140,7 +1140,8 @@ final class LibrarianState {
         var generalFiltered = general.filter { $0.score >= CorpusStore.minRelevanceScore }
         var orderedCards = cards
         // Brief BU3 — "MY …" QUESTIONS PUT THE USER'S OWN ENTRIES FIRST. Measured on the real path:
-        // "How would you describe my thoughts on technology?" ranked the saved article *[entry title])* above everything T wrote — its internal passage density is a document
+        // "How would you describe my thoughts on technology?" ranked a saved
+        // psychology article above everything T wrote — its internal passage density is a document
         // artefact (a long encyclopedia page has many on-topic blocks), not evidence that it holds
         // the user's thinking. A possessive question is ABOUT the user, so a thing they AUTHORED
         // outranks a thing they merely SAVED. This is a stable partition (relative order kept inside
@@ -1178,7 +1179,9 @@ final class LibrarianState {
         // Brief BU3 — a SAVED ARTICLE never triggers the offer. The dominance READ already gates on
         // provenance (BN2c: `.note`/`.document`, never `.savedLink`), but the offer did NOT — so the
         // one path that could still hand a whole Wikipedia page to the model as "the answer" was the
-        // friendly button under a survey. Measured: "my thoughts on technology" offered *[entry title])*, and accepting it read that article in full (receipt: "Read *[entry title])* in full"). Same rule, both paths: an entry the user SAVED is a locator, not
+        // friendly button under a survey. Measured: "my thoughts on technology" offered *a saved
+        // psychology article*, and accepting it read that article in full (receipt: "Read *a saved
+        // psychology article* in full"). Same rule, both paths: an entry the user SAVED is a locator, not
         // the authority on what the user thinks.
         if !empty, let lead = decisionRanking.first, lead.aggregate >= 1.3, lead.count >= 2,
            (decisionRanking.count == 1 || lead.aggregate >= 1.5 * (decisionRanking[1].aggregate)),
@@ -1220,7 +1223,7 @@ final class LibrarianState {
     ///       (`.document`), NOT a saved web article (`.savedLink`).
     /// (c) is the fixture discriminator (reported): "what do my lab test results reveal?" is
     /// dominated by the Medical *document* → READ; "what are my thoughts on technology?" is dominated
-    /// by the *[entry title])* saved article, whose internal passage density is a document
+    /// by the *a saved psychology article* saved article, whose internal passage density is a document
     /// artefact — a broad theme with many entries, not a single-entry target → stays SURVEY. (A named
     /// saved-article read, e.g. the Villanova link, still routes via a pin, not dominance.) Returns
     /// the dominant node id, or nil when no entry dominates.
@@ -1870,7 +1873,7 @@ final class LibrarianState {
     ///
     /// ★ Fixture-adjusted (2026-09-21, from the brief's "first guess"): the dominant
     /// node must be the user's OWN note. A long SAVED ARTICLE naturally puts several
-    /// of its own passages in the top 4 ([entry title]) contributes 3 of the
+    /// of its own passages in the top 4 (a saved psychology article contributes 3 of the
     /// top 4 for "What are my thoughts on technology?" — top 0.73, dup 3), but that
     /// internal density is a document artefact, not a lookup. Gating on own-note
     /// provenance keeps "technology" a SURVEY (dominant = a saved article) while a
@@ -2011,12 +2014,12 @@ final class LibrarianState {
 
     /// Brief BS1 (READ trigger #2) — the question NAMES an entry by its TITLE, matched on TOKEN
     /// OVERLAP (not the whole-phrase subset BN2 first shipped, which missed "what do my lab test
-    /// results reveal?" ↔ "[entry title]" because the question omits "medical" and says
+    /// results reveal?" ↔ "Annual – Lab Tests" because the question omits "annual" and says
     /// "test*s* results"). Now: lowercase, split punctuation (en-dash/parens/slash), drop stopwords +
     /// sub-3-char words, LIGHT-STEM (tests→test, results→result, studies→study). An entry with ≥ 2
     /// distinctive title tokens matches when **the question shares ≥ 2 of them, OR ≥ 60% of them**
-    /// (the reported rule). "lab test results" → {lab, test, result}; "[entry title]" →
-    /// {medical, lab, test}; overlap {lab, test} = 2 → MATCH. Returned BEST-FIRST by overlap; when
+    /// (the reported rule). "lab test results" → {lab, test, result}; "Annual – Lab Tests" →
+    /// {annual, lab, test}; overlap {lab, test} = 2 → MATCH. Returned BEST-FIRST by overlap; when
     /// two entries both match (ambiguous), the caller READS the top by passage score and lists the
     /// rest as chips (BS1). Empty for the common no-named-entry question. Never called when a pin
     /// fired.
@@ -2312,7 +2315,7 @@ final class LibrarianState {
     /// plainly that it has summaries + excerpts, that this is expected, and to synthesise across them.
     /// Brief CH-A1b — order: voice → what's below the question → how to use the entries → closing voice →
     /// the user's standing voice (when set). Iteration 2 (T: keep the voice, fix accuracy only): iteration 1
-    /// dropped LDL [n] and mislabelled in-range values (testosterone 897 "well above 300–1080", cholesterol
+    /// dropped LDL [n] and mislabelled in-range values (a hormone value "well above" its in-range band, cholesterol
     /// [n] filed as normal) and over-read synthesis ("it seals the connection… a ritual") → "thoroughly" is
     /// restored on read turns, plus a facts-first line and "say what the entries say before what you make
     /// of them". Graded by A6b (every high/low/normal label must match the entry's own range). Pass (c), T-approved:

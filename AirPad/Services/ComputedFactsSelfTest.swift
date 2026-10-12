@@ -11,16 +11,24 @@ enum ComputedFactsSelfTest {
 
     static let labTable = """
     Performing Lab:General Hospital, 12 Main Street, Springfield, IL
-    [note text removed]
-    [note text removed]
-    [note text removed]
-    LDL, CALCULATED [n] <130 MG/DL H
+    BLOOD UREA
+    NITROGEN
+    12 6-20 MG/DL N
+    SODIUM 140 135-145
+    MMOL/L
+    N
+    POTASSIUM 4.1 3.5-5.2 MMOL/L N
+    ALBUMIN 4.8 3.5-4.8 GM/DL N
+    CHOLESTEROL 228 <200 MG/DL H
+    HDL 52 >40 MG/DL N
+    LDL, CALCULATED 161 <130 MG/DL H
     ESTIMATED GLOMERULAR
     FILTRATION RATE
-    85 >=60
+    92 >=60
     mL/min/1.73m*2
     N
-    [note text removed]: Some Lab
+    TRANSFERRIN, PERCENT SATURATION
+    31 20-50 % N Performed By: Some Lab
     """
 
     @MainActor static func run() -> String {
@@ -35,34 +43,35 @@ enum ComputedFactsSelfTest {
         let rows = ComputedFacts.rangeRows(in: labTable)
         check("P-rowcount", rows.count == 9, "\(rows.count) rows: \(rows.map(\.name))")
         func row(_ n: String) -> ComputedFacts.RangeRow? { rows.first { $0.name == n } }
-        check("P-two-line-name", row("BLOOD UREA NITROGEN")?.value == "[n]", rows.map(\.name).joined(separator: " | "))
+        check("P-two-line-name", row("BLOOD UREA NITROGEN")?.value == "12", rows.map(\.name).joined(separator: " | "))
         check("P-wrapped-unit-flag", row("SODIUM")?.unit == "MMOL/L" && row("SODIUM")?.flagToken == "N")
         check("P-at-upper", row("ALBUMIN")?.status == .atUpper)
         check("P-above-H", row("CHOLESTEROL")?.status == .above && row("CHOLESTEROL")?.isOutOfRange == true)
         check("P-lower-bound", row("HDL")?.status == .within)
         check("P-ge", row("ESTIMATED GLOMERULAR FILTRATION RATE")?.status == .within && row("ESTIMATED GLOMERULAR FILTRATION RATE")?.unit == "mL/min/1.73m*2")
-        check("P-percent", row("TESTOSTERONE, PERCENTAGE FREE")?.unit == "%" && row("TESTOSTERONE, PERCENTAGE FREE")?.flagToken == "N")
+        check("P-percent", row("TRANSFERRIN, PERCENT SATURATION")?.unit == "%" && row("TRANSFERRIN, PERCENT SATURATION")?.flagToken == "N")
         check("P-no-address-name", !rows.contains { $0.name.contains("IL") && $0.name.contains("Springfield") })
-        check("P-line-albumin", ComputedFacts.rangeLine(row("ALBUMIN")!) == "- ALBUMIN [n] GM/DL: reference 3.4-5.0 — within the range, equal to its upper limit (5.0).",
+        check("P-line-albumin", ComputedFacts.rangeLine(row("ALBUMIN")!) == "- ALBUMIN 4.8 GM/DL: reference 3.5-4.8 — within the range, equal to its upper limit (4.8).",
               ComputedFacts.rangeLine(row("ALBUMIN")!))
-        check("P-line-chol", ComputedFacts.rangeLine(row("CHOLESTEROL")!) == "- CHOLESTEROL [n] MG/DL: reference <200 — ABOVE the range (the entry flags it H).",
+        check("P-line-chol", ComputedFacts.rangeLine(row("CHOLESTEROL")!) == "- CHOLESTEROL 228 MG/DL: reference <200 — ABOVE the range (the entry flags it H).",
               ComputedFacts.rangeLine(row("CHOLESTEROL")!))
 
         // ── §2.5 negatives: each on its own (and inside prose) must yield NO row
         let negatives = [
             "Serves 4–6",
             "- 2-3 serrano peppers (stemmed)",
-            "Cardio Activity: 15,000–22,000 steps/day",
-            "Body Fat %: Estimated 14–16%",
-            "[note text removed]",
-            "2026-05-05",
-            "Visit 2026 05-12",
-            "840 South Wood Street, Chicago, IL 60612",
-            "Ride time: ~30-40 min to Kreuzberg",
+            "Daily Walking: 8,000–12,000 steps/day",
+            "Body Water %: Estimated 55–60%",
+            "Order date: 04/18/2026",
+            "Reviewed date:04/21/2026 09:12:07 AM",
+            "2026-04-18",
+            "Visit 2026 04-21",
+            "77 Harbor Road, Springfield, IL 62701",
+            "Ride time: ~30-40 min to the station",
             "Simmer for 5-7 minutes",
-            "Training Frequency: 4–6 days per week",
-            "Result 17.6",
-            "[note text removed])",
+            "Practice Frequency: 3–5 days per week",
+            "Result 21.3",
+            "Magnesium 400 mg/day (split into 2 doses)",
             "The reading came back as 12 10-20 mg which surprised me.",
         ]
         for n in negatives {
@@ -77,15 +86,15 @@ enum ComputedFactsSelfTest {
         check("F-arrows", arrows.count == 2 && arrows[0].flag == .high && arrows[1].flag == .low && arrows.allSatisfy(\.isOutOfRange))
         let crit = ComputedFacts.rangeRows(in: "POTASSIUM 6.9 3.5-5.2 MMOL/L CRIT\nSODIUM 120 135-145 MMOL/L Critical")
         check("F-critical", crit.count == 2 && crit.allSatisfy { $0.flag == .critical } && crit.allSatisfy(\.isOutOfRange))
-        let star = ComputedFacts.rangeRows(in: "GLUCOSE [n] 70-110 MG/DL *\nCALCIUM [n] 8.6-10.6 MG/DL *")
+        let star = ComputedFacts.rangeRows(in: "GLUCOSE 104 70-110 MG/DL *\nCALCIUM 9.2 8.6-10.6 MG/DL *")
         check("F-star-not-flag", star.count == 2 && star.allSatisfy { $0.flagToken == nil })
         let aWithHL = ComputedFacts.rangeRows(in: "WBC 13.1 4.0-11.0 K/uL H\nRBC MORPH 1 0-0.5 /hpf A")
         check("F-A-with-HL", aWithHL.count == 2 && aWithHL[1].flag == .abnormal && !aWithHL[1].isOutOfRange && aWithHL[1].isFlaggedOnly)
         let aAlone = ComputedFacts.rangeRows(in: "CURRENT 3 1-2 mA A\nVOLTAGE 9 1-12 V A")
         check("F-A-alone-not-flag", aAlone.count == 2 && aAlone.allSatisfy { $0.flag == nil })
-        let disagree = ComputedFacts.rangeRows(in: "GLUCOSE [n] 70-110 MG/DL H\nCALCIUM [n] 8.6-10.6 MG/DL N")
+        let disagree = ComputedFacts.rangeRows(in: "GLUCOSE 104 70-110 MG/DL H\nCALCIUM 9.2 8.6-10.6 MG/DL N")
         check("F-disagree-quotes-flag", disagree.first?.disagrees == true
-              && ComputedFacts.rangeLine(disagree[0]) == "- GLUCOSE [n] MG/DL: reference 70-110 — the entry flags it H.",
+              && ComputedFacts.rangeLine(disagree[0]) == "- GLUCOSE 104 MG/DL: reference 70-110 — the entry flags it H.",
               disagree.first.map(ComputedFacts.rangeLine) ?? "")
 
         // ── ages (design §3): start-of-day calendar days, fixed time zone for the test
@@ -132,7 +141,7 @@ enum ComputedFactsSelfTest {
                   "What's the longest entry in my library?", "What exactly did I say about the Bolex being dandori?", "Have I ever mentioned Paris?"] {
             check("L+ \(q)", ComputedFacts.looksLikeWholeLibraryQuestion(q))
         }
-        for q in ["What did I write about my Bolex H16?", "What did I write about the [entry title] I bought?"] {
+        for q in ["What did I write about my Bolex H16?", "What did I write about the new bike lock I bought?"] {
             check("L- read-q \(q)", !ComputedFacts.looksLikeWholeLibraryQuestion(q) && ComputedFacts.packetAnswers(question: q, entries: [], calendar: ComputedFacts.calendar()).isEmpty)
         }
         check("L+ anything", ComputedFacts.looksLikeWholeLibraryQuestion("Did I write anything about beekeeping?"))
@@ -178,7 +187,7 @@ enum ComputedFactsSelfTest {
         check("S-scope-N-of-M-whole-library", sWhole?.contains("You are seeing 2 of the 434 entries in this library") == true, sWhole ?? "nil")
         check("S-no-N-of-M-on-synthesis", section("What connections do you find between my ideas?")?.contains("You are seeing") != true)
         check("S-no-limit-on-range-q", s1?.contains("You cannot count") == false)
-        check("S-summary", s1?.contains("Out of range in [1], among the 9 values above: CHOLESTEROL [n] (H), LDL, CALCULATED [n] (H). The other 7 are within their ranges.") == true,
+        check("S-summary", s1?.contains("Out of range in [1], among the 9 values above: CHOLESTEROL 228 (H), LDL, CALCULATED 161 (H). The other 7 are within their ranges.") == true,
               s1?.components(separatedBy: "\n").first { $0.hasPrefix("Out of range") } ?? "missing")
         check("S-no-dates-on-range-q", s1?.contains("Dates:") == false, s1 ?? "nil")
         let sTime = section("How has my thinking about AirPad changed over time?")
@@ -206,7 +215,7 @@ enum ComputedFactsSelfTest {
         check("F-plan-table-not-ranges", ComputedFacts.rangeRows(in: "Week 1 2-3 runs\nWeek 2 3-4 runs\nWeek 3 4-5 runs").isEmpty)
         check("F-lab-table-still-ranges", ComputedFacts.rangeRows(in: labTable).count == 9)
         var partialEntries = entries; partialEntries[1] = ComputedFacts.PacketEntry(number: 1, nodeID: "A", title: "Lab report", created: d("2026-07-07"),
-            readText: "SODIUM [n] 135-145 mmol/L\nPOTASSIUM 4.2 3.5-5.2 mmol/L", partial: true)
+            readText: "SODIUM 140 135-145 mmol/L\nPOTASSIUM 4.0 3.5-5.2 mmol/L", partial: true)
         let sPart = ComputedFacts.build(.init(today: today, calendar: cal, question: "Which of my lab values are out of range?", entries: partialEntries,
                                               scopeTotal: 434, scopeNoun: "library", allowanceChars: 3_600))
         check("F-partial-read-no-none", sPart?.contains("none of these — but only part of this entry was included") == true
@@ -216,7 +225,7 @@ enum ComputedFactsSelfTest {
                                                scopeTotal: 434, scopeNoun: "library", allowanceChars: 3_600))
         check("F-saved-entry-added-not-written", sSaved?.contains("[2] Fourteen years — added to the library 2026-06-20") == true, sSaved ?? "nil")
         for (t, w) in [("When I spoke to Mom on Sunday", "speak"), ("We met at the front desk", "meet"), ("She visited twice", "visit"),
-                       ("Mara's spice rack", "Mara"), ("The [entry title] piece", "Post-Workout"), ("planned it", "plan")] {
+                       ("Mara's spice rack", "Mara"), ("The Night-Market Sketch piece", "Night-Market"), ("planned it", "plan")] {
             check("F-stem \(w)", ComputedFacts.mentions(t, w))
         }
         check("F-stem-no-false", !ComputedFacts.mentions("a recipe for bread", "beekeeping"))

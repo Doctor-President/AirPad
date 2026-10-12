@@ -620,9 +620,9 @@ enum WebGroundingSelfTest {
         check("title-run then prose kept", filter("title-run-mid", mid) == mid)
         let sentence = "Nothing matched.\n\n[1] does not mention a Bolex."
         check("marker sentence kept", filter("marker-sentence", sentence) == sentence)
-        let inlineSrc = "Two values are high:\n- Cholesterol [n] [1]\n  *Source: the lab report*\n- LDL [n] [1]"
+        let inlineSrc = "Two values are high:\n- Cholesterol 241 [1]\n  *Source: the lab report*\n- LDL 171 [1]"
         let r5c = filter("inline-source", inlineSrc)
-        check("inline source line goes, the list stays", r5c == "Two values are high:\n- Cholesterol [n] [1]\n- LDL [n] [1]", r5c)
+        check("inline source line goes, the list stays", r5c == "Two values are high:\n- Cholesterol 241 [1]\n- LDL 171 [1]", r5c)
         let bullets = "The pattern:\n- [1][2][3] show the *origin* of it.\n- [4] shows its expression."
         check("marker bullets kept", filter("marker-bullets", bullets) == bullets)
 

@@ -224,7 +224,7 @@ struct ParityShotsView: View {
         ScrollView {
             VStack(alignment: .leading, spacing: 24) {
                 // The title reference — sits at the 20 pt column edge, unchanged.
-                Text("[entry title]")
+                Text("Field notes")
                     .font(.system(size: 30, weight: .bold, design: .serif))
                     .foregroundStyle(AppearancePalette.ink)
 

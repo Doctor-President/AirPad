@@ -206,6 +206,9 @@ struct LibrarianSurface: View {
         // against this live size so the field rides the panel's height
         // change as p climbs from 0→1.
         GeometryReader { geo in
+            #if DEBUG
+            let _ = FreezeProbe.hit("surface.body", "\(Int(geo.size.width))x\(Int(geo.size.height))")
+            #endif
             ZStack {
                 // Panel material — PER-MODE (T's decision 2026-07-24: the
                 // Librarian is NO LONGER dark-only; the "deliberately dark Solar
@@ -320,6 +323,36 @@ struct LibrarianSurface: View {
                 panelModel.expandToFull(animated: false)
                 DispatchQueue.main.asyncAfter(deadline: .now() + 0.6) {
                     Task { await librarian.groundedSend(query: q, store: store, chat: router.chat) }
+                }
+            }
+            // Brief CH-0 — Gauntlet v2 (XCUITest) entry: a FRESH chat, Library mode, the panel open on
+            // the chat with the Ask composer ready. The test then types + taps Send like T does.
+            // `-GauntletThink YES|NO` sets the per-chat Thinking toggle (the wire `think` is recorded by
+            // the tap and cross-checked against the Host log); `-GauntletFMWindow <n>` forces a window
+            // (BU2 case 9); `-GauntletFailFirstSend YES` points the FIRST send at a dead port (case 5's
+            // Retry); `-GauntletSynthOffer YES` = the store harness's case-4 synthesis when no offer fired.
+            if UserDefaults.standard.bool(forKey: "GauntletUI") {
+                FirstRunCalloutKey.allCases.forEach { $0.markShown() }   // no coach marks over the composer
+                activeCallout = nil
+                // `-GauntletKeepChat YES` — skip the fresh-chat reset so the persisted ACTIVE chat restores
+                // exactly as on a real relaunch (`restoreIfNeededFromStore`, the .task below).
+                if !UserDefaults.standard.bool(forKey: "GauntletKeepChat") { router.chat.reset() }
+                let seed = UserDefaults.standard.integer(forKey: "GauntletSeedChat")
+                if seed > 0 { router.chat.debugSeed(turns: seed) }
+                if seed > 0, UserDefaults.standard.bool(forKey: "GauntletSeedPartial") { router.chat.debugMarkLastPartial() }
+                librarian.corpusAware = true
+                librarian.selectedScope = .corpus
+                librarian.thinkEnabled = UserDefaults.standard.bool(forKey: "GauntletThink")
+                let w = UserDefaults.standard.integer(forKey: "GauntletFMWindow")
+                librarian.debugContextWindowOverride = w > 0 ? w : nil
+                if UserDefaults.standard.bool(forKey: "GauntletFailFirstSend") { HostPairing.debugForceUnreachableHost = true }
+                // After the entry screen settles (the test also passes `-OpenMap`, so the Librarian is
+                // mounted over the canvas, not hidden by Recents) — open on the chat with the composer.
+                DispatchQueue.main.asyncAfter(deadline: .now() + 1.0) {
+                    activeCallout = nil
+                    GauntletMetrics.shared.markOpen()
+                    isViewingActiveChat = true
+                    panelModel.expandToFull(animated: false)
                 }
             }
             // `-PersistCorpusAware YES` — flips the toggle ON via the real setter
@@ -912,7 +945,12 @@ struct LibrarianSurface: View {
                     },
                     topFadeFraction: cctTopFade,
                     bottomFadeFraction: cctBottomFade,
-                    onScrollTopOffset: { chatScrollTopOffset = $0 }
+                    onScrollTopOffset: {
+                        #if DEBUG
+                        FreezeProbe.hit("surface.scrollTop", $0)
+                        #endif
+                        chatScrollTopOffset = $0
+                    }
                 )
                 .frame(maxHeight: .infinity)
                 // Brief AI5 — the app-level "Search the web instead" offer, under the
@@ -1404,33 +1442,26 @@ struct LibrarianSurface: View {
             // legible, never hidden). Leading-aligned near the feather.
             // Brief CA — the Corpus toggle is handed INTO ModelPillRow as its `leading` control so the
             // whole row (Corpus · Model · Thinking) is ONE layout and the model pill centres on the
-            // SCREEN (the BZ regression centred it only in the space to the right of the toggle). The
-            // unpaired (FM/Ollama) case keeps its own simple leading-aligned row.
-            if HostCatalog.shared.isPaired {
-                ModelPillRow(
-                    catalog: HostCatalog.shared,
-                    thinkEnabled: Binding(get: { librarian.thinkEnabled }, set: { librarian.thinkEnabled = $0 }),
-                    onTapModel: {
-                        // AH3 — the FIRST model-chip tap teaches (coach-mark) instead of opening the
-                        // picker (a sheet would cover the callout); the next tap opens it.
-                        if !FirstRunCalloutKey.librarianModel.hasShown, activeCallout == nil {
-                            activeCallout = .librarianModel
-                        } else {
-                            showModelPicker = true
-                        }
-                    },
-                    includePrivate: false,
-                    leading: AnyView(corpusModeToggle(librarian: librarian))
-                )
-                // Brief AI2 — the ring target lives on the model pill INSIDE ModelPillRow.
-            } else {
-                HStack(spacing: 8) {
-                    corpusModeToggle(librarian: librarian)
-                    activeModelLabelView(librarian: librarian) // FM / Ollama: the plain label (unchanged)
-                    Spacer(minLength: 0)
-                }
-                .padding(.leading, 6)
-            }
+            // SCREEN (the BZ regression centred it only in the space to the right of the toggle).
+            // C4b2 (T ruling 2026-10-09) — ONE row whatever the pairing: the pill names who answers (Mac model, Apple
+            // Intelligence, the user's server) and is ALWAYS a button into the picker. Unpaired, it was a grey label
+            // that couldn't be tapped (T's phone), so Apple Intelligence couldn't be chosen or explained.
+            ModelPillRow(
+                catalog: HostCatalog.shared,
+                thinkEnabled: Binding(get: { librarian.thinkEnabled }, set: { librarian.thinkEnabled = $0 }),
+                onTapModel: {
+                    // AH3 — the FIRST model-chip tap teaches (coach-mark) instead of opening the
+                    // picker (a sheet would cover the callout); the next tap opens it.
+                    if !FirstRunCalloutKey.librarianModel.hasShown, activeCallout == nil {
+                        activeCallout = .librarianModel
+                    } else {
+                        showModelPicker = true
+                    }
+                },
+                includePrivate: false,
+                leading: AnyView(corpusModeToggle(librarian: librarian))
+            )
+            // Brief AI2 — the ring target lives on the model pill INSIDE ModelPillRow.
 
             // STATE 2 — no free-text model on this device: gate Ask (send disabled via
             // `sendIsEnabled`) and say so, routing to Settings. Honest capability boundary,
@@ -1466,6 +1497,15 @@ struct LibrarianSurface: View {
                 )
         }
         .task { HostCatalog.shared.refreshPaired(); await HostCatalog.shared.refresh() } // off-render
+        // C2c / C4b2 (T 2026-10-09) — unpair, re-pair or the Apple Intelligence pick: re-derive the pill and label NOW
+        // (they used to wait for the next appear/focus — the stale raw tag T saw after unpairing).
+        .onReceive(NotificationCenter.default.publisher(for: .librarianRouteChanged)) { _ in
+            HostCatalog.shared.refreshPaired()
+            Task {
+                await librarian.refreshActiveModel()
+                await HostCatalog.shared.refresh()
+            }
+        }
         .sheet(isPresented: $showModelPicker, onDismiss: {
             // Brief AL2 — present Settings only AFTER the picker sheet is gone (else the
             // second presentation is dropped and Settings opens at its root, not Models).
@@ -1606,28 +1646,6 @@ struct LibrarianSurface: View {
         .firstRunCalloutTarget(FirstRunCalloutTargetID.librarianModeChip)
         .accessibilityLabel(on ? "Library mode" : "General mode")
         .accessibilityHint("General mode — answers from the model; Library mode — reads and cites your entries.")
-    }
-
-    /// ★ Read-only active-model indicator — declares WHICH model will answer the
-    /// next Ask (FM friendly name, or the remote endpoint's model id). Quiet by
-    /// design (small, low-contrast ink) so it informs without competing with the
-    /// mode pill. Reads by TEXT (colourblind-safe); the value comes from
-    /// `librarian.activeModelLabel`, refreshed off-render (see `refreshActiveModel`),
-    /// never resolved in this body. NOT interactive — this pass declares, it doesn't
-    /// pick.
-    @ViewBuilder
-    private func activeModelLabelView(librarian: LibrarianState) -> some View {
-        HStack(spacing: 4) {
-            Image(systemName: "cpu")
-                .font(.system(size: 9, weight: .semibold))
-            Text(librarian.activeModelLabel)
-                .font(.system(size: 11, weight: .medium))
-                .lineLimit(1)
-                .truncationMode(.middle)   // long model ids degrade gracefully
-        }
-        .foregroundStyle(AppearancePalette.ink.opacity(0.4))
-        .accessibilityElement(children: .combine)
-        .accessibilityLabel("Answering with \(librarian.activeModelLabel)")
     }
 
     /// STATE 2 notice for the Ask composer — no free-text provider on this device. Honest
@@ -1773,7 +1791,12 @@ struct LibrarianSurface: View {
         // Item 1 — measure the live height to drive the Messages-style corner
         // (`askCornerRadius`). Read-only (feeds the corner, not the height), so no
         // ratchet. Grows/shrinks as the TextField wraps/unwraps (lineLimit 1...4).
-        .onGeometryChange(for: CGFloat.self) { $0.size.height } action: { askFieldHeight = $0 }
+        .onGeometryChange(for: CGFloat.self) { $0.size.height } action: {
+            #if DEBUG
+            FreezeProbe.hit("ask.height", $0)
+            #endif
+            askFieldHeight = $0
+        }
         .background(askFill)
         // Item 2 — mic/send/clear as a BOTTOM-TRAILING overlay (not an HStack
         // sibling). Optical: constrain the cluster to the LINE-BOX height and pin
@@ -1911,6 +1934,9 @@ struct LibrarianSurface: View {
         let isPinned = store.nodePinned(forChatID: router.chat.id) != nil
         return HStack(spacing: 10) {
             Button {
+                #if DEBUG
+                GauntletMetrics.shared.markOpen()   // perf gate: re-open timing
+                #endif
                 // Resume the chat: raise to full so the transcript shows
                 // (transcript ⟺ isViewingActiveChat && expanded), never a
                 // blank half. BUG 5 (A) — flip the mount-gate one runloop tick

@@ -1,4 +1,5 @@
 import Foundation
+import UIKit
 import FoundationModels
 
 /// The note-summary lever's result, provider-agnostic (`processNode`'s shape). Title + summary,
@@ -79,15 +80,45 @@ enum ModelRouter {
     /// remote path); then Ollama over FM when the endpoint parses; else FM so a malformed
     /// setting can't strand the user.
     static var active: Provider {
-        if let pairing = HostPairing.load() {
-            return .host(pairing)
+        // C2c / C4b2 (T ruling 2026-10-09: pairing is durable, model choice is independent of it) — ONE derivation of
+        // who answers. The user's pick wins when it can answer: Apple Intelligence (when ready on this iPhone) or their
+        // own server (when configured). Otherwise a paired Mac, then the server, then Apple Intelligence. A Mac that's
+        // away still answers `.host` (the ask fails fast, saying so) — never a silent switch to another model.
+        // The pill, Settings and every send read this same value, and re-read it on `.librarianRouteChanged`.
+        let endpoint = configuredEndpoint
+        switch chosenRoute {
+        case .onDevice? where onDeviceAvailable:
+            return .foundationModel
+        case .endpoint?:
+            if let endpoint { return .ollama(endpoint: endpoint) }
+        default:
+            break
         }
-        let endpoint = (KeychainHelper.load(key: "ollamaEndpoint") ?? "")
-            .trimmingCharacters(in: .whitespacesAndNewlines)
-        if !endpoint.isEmpty, URL(string: endpoint) != nil {
-            return .ollama(endpoint: endpoint)
-        }
+        if let pairing = HostPairing.load() { return .host(pairing) }
+        // C4b2 (T 2026-10-10) — with nothing chosen, a server that didn't answer is skipped (Apple Intelligence
+        // answers instead). A CHOSEN server stays chosen, shown "not reachable", like the Mac.
+        if let endpoint, !endpointUnreachable { return .ollama(endpoint: endpoint) }
         return .foundationModel
+    }
+
+    /// C4b2 (T 2026-10-10) — the custom server didn't answer its last check (`HostCatalog.refreshEndpointModel`).
+    /// Not checked yet this launch counts as reachable.
+    static var endpointUnreachable: Bool {
+        get { endpointLock.lock(); defer { endpointLock.unlock() }; return _endpointUnreachable }
+        set { endpointLock.lock(); _endpointUnreachable = newValue; endpointLock.unlock() }
+    }
+    private static let endpointLock = NSLock()
+    private static var _endpointUnreachable = false
+
+    /// The custom endpoint (Ollama / LM Studio) from Settings → Advanced, or nil when none is set (or it won't parse).
+    static var configuredEndpoint: String? {
+        var endpoint = (KeychainHelper.load(key: "ollamaEndpoint") ?? "")
+            .trimmingCharacters(in: .whitespacesAndNewlines)
+        #if DEBUG
+        if let e = UserDefaults.standard.string(forKey: "DebugEndpointURL"), !e.isEmpty { endpoint = e }   // C2c tests
+        #endif
+        guard !endpoint.isEmpty, URL(string: endpoint) != nil else { return nil }
+        return endpoint
     }
 
     /// STATE 2 for the free-text Ask/chat path: NO usable provider exists. True only when
@@ -101,9 +132,66 @@ enum ModelRouter {
     /// result (LibrarianState.askUnavailable) — never from a `body`.
     static var askHasNoProvider: Bool {
         guard case .foundationModel = active else { return false }
-        if #available(iOS 26.0, *) { return !SystemLanguageModel.default.isAvailable }
-        return true
+        return !onDeviceAvailable
     }
+
+    /// C4b2 (T ruling 2026-10-09) — who the user CHOSE to answer the Librarian, independent of pairing: their Mac,
+    /// Apple Intelligence on this iPhone, or their own server. nil = never chosen (the Mac when paired, else the
+    /// server, else Apple Intelligence). Persisted, so the pick survives relaunch and a Mac that's away; setting it
+    /// posts `.librarianRouteChanged`. (Later sources — PCC, frontier keys — join as more cases.)
+    enum Route: String { case mac, onDevice, endpoint }
+    private static let routeKey = "airpadLibrarianRoute"
+    private static let legacyOnDeviceKey = "airpadLibrarianOnDevice"   // the first C4b2 build's on/off switch
+    static var chosenRoute: Route? {
+        get {
+            if let r = UserDefaults.standard.string(forKey: routeKey).flatMap(Route.init(rawValue:)) { return r }
+            return UserDefaults.standard.bool(forKey: legacyOnDeviceKey) ? .onDevice : nil
+        }
+        set {
+            UserDefaults.standard.set(newValue?.rawValue, forKey: routeKey)
+            UserDefaults.standard.removeObject(forKey: legacyOnDeviceKey)
+            NotificationCenter.default.post(name: .librarianRouteChanged, object: nil)
+        }
+    }
+    /// Apple Intelligence can answer on this device. DEBUG `-StubOnDeviceModel YES` stands in for it in the Simulator
+    /// (which has none), so the ROUTE can be tested; the stub streams a canned answer.
+    static var onDeviceAvailable: Bool {
+        #if DEBUG
+        if UserDefaults.standard.string(forKey: "StubOnDeviceUnavailable") != nil { return false }
+        if UserDefaults.standard.bool(forKey: "StubOnDeviceModel") { return true }
+        #endif
+        if #available(iOS 26.0, *) { return SystemLanguageModel.default.isAvailable }
+        return false
+    }
+
+    /// Step 1 (T 2026-10-10) — the copy names the device AirPad runs on: iPhone, iPad, or Mac (the iPad app on a Mac).
+    static let deviceNoun: String = ProcessInfo.processInfo.isiOSAppOnMac ? "Mac"
+        : UIDevice.current.userInterfaceIdiom == .pad ? "iPad" : "iPhone"
+
+    /// C4b2 — why Apple Intelligence can't answer YET on this iPhone, for the picker to say so instead of hiding the
+    /// row; nil when it's ready, or when this iPhone can't run it at all (then it isn't listed). DEBUG
+    /// `-StubOnDeviceUnavailable notReady|notEnabled` stands in for either state in the Simulator.
+    /// Copy T-approved 2026-10-10.
+    static var onDeviceUnavailableNote: String? {
+        let notEnabled = "Turn on Apple Intelligence in the Settings app to use it here."
+        let notReady = "Apple Intelligence is still getting ready on this \(deviceNoun). Try again in a little while."
+        #if DEBUG
+        switch UserDefaults.standard.string(forKey: "StubOnDeviceUnavailable") {
+        case "notReady"?: return notReady
+        case "notEnabled"?: return notEnabled
+        default: break
+        }
+        #endif
+        if #available(iOS 26.0, *) {
+            switch SystemLanguageModel.default.availability {
+            case .unavailable(.appleIntelligenceNotEnabled): return notEnabled
+            case .unavailable(.modelNotReady): return notReady
+            default: return nil
+            }
+        }
+        return nil
+    }
+
 
     /// Brief BN3 — the active backend's real context window, in TOKENS. The Librarian's
     /// read-in-full budget is DERIVED from this (minus system prompt, history, and an answer
@@ -130,6 +218,14 @@ enum ModelRouter {
     ///     anyway; a safe floor for exhaustiveness.
     /// Reads the Keychain (XPC) via `active` — call OFF the SwiftUI render path.
     static var contextWindowTokens: Int {
+        #if DEBUG
+        // Brief CH-A (T ruling 3) — `-GauntletHostNumCtx <n>` measures resident memory + read pass rate at a
+        // smaller window with NO Host change: the app's num_ctx wins over the Host's `--num-ctx`, and the
+        // read budget derives from this same value, so one override moves both, as production would.
+        if case .host = active, UserDefaults.standard.integer(forKey: "GauntletHostNumCtx") > 0 {
+            return UserDefaults.standard.integer(forKey: "GauntletHostNumCtx")
+        }
+        #endif
         switch active {
         case .host:            return 20_480   // Brief BW3 — right-sized from 32768 (read cap is 12k; frees KV RAM)
         case .foundationModel: return 4_096
@@ -165,10 +261,7 @@ enum ModelRouter {
             // On iOS 18-25 / no Apple Intelligence, FM resolves as the provider but can't run,
             // so the chip must NOT claim "Apple Intelligence" (that contradicted the Ask
             // no-model notice). Fall back to the resting "No model" label.
-            if #available(iOS 26.0, *), SystemLanguageModel.default.isAvailable {
-                return foundationModelName
-            }
-            return remoteRestingName
+            return onDeviceAvailable ? foundationModelName : remoteRestingName
         case .ollama(let endpoint):
             guard let base = URL(string: endpoint) else { return remoteRestingName }
             return (try? await firstOllamaModel(base: base)) ?? remoteRestingName
@@ -285,8 +378,30 @@ enum ModelRouter {
         AsyncThrowingStream { continuation in
             Task {
                 do {
+                    #if DEBUG
+                    // Brief CH-0 — `-GauntletReplay`: stream a RECORDED turn instead of the model, so the
+                    // known-bad corpus runs through the real retrieval → ChatSession → UI capture path.
+                    if let replay = GauntletTap.shared.nextReplayTurn() {
+                        GauntletTap.shared.noteModel("replay")
+                        for d in replay.deltas {
+                            try await Task.sleep(for: .milliseconds(replay.delayMs))
+                            continuation.yield(d.thinking ? .thinking(d.s) : .answer(d.s))
+                        }
+                        continuation.finish()
+                        return
+                    }
+                    #endif
                     switch active {
                     case .foundationModel:
+                        #if DEBUG
+                        if UserDefaults.standard.bool(forKey: "StubOnDeviceModel") {
+                            try await Task.sleep(for: .milliseconds(400))
+                            for w in "This answer comes from Apple Intelligence on this iPhone (stub).".split(separator: " ") {
+                                continuation.yield(.answer(String(w) + " ")); try await Task.sleep(for: .milliseconds(40))
+                            }
+                            continuation.finish(); return
+                        }
+                        #endif
                         guard #available(iOS 26.0, *) else {
                             throw RouterError.foundationModelUnavailable
                         }
@@ -362,6 +477,30 @@ enum ModelRouter {
         return out
     }
 
+    /// ★ CH-B (8B Gauntlet, BXa) — a request that CONNECTED but failed. The Host sends its chat
+    /// headers only once the model's first token is ready, so a long prefill on a busy Mac trips the
+    /// idle timeout while the stream is still opening. Wrapped as `ollamaTransport`, that read
+    /// "offline or asleep" while the Mac was awake and answering (AD2: a timeout never reads offline).
+    /// Keep a connected-but-failed URLError as itself so `humanError` names it; a can't-connect stays
+    /// transport.
+    static func transportError(_ error: Error) -> Error {
+        if let u = error as? URLError, u.code == .timedOut || u.code == .networkConnectionLost { return u }
+        return RouterError.ollamaTransport(error.localizedDescription)
+    }
+
+    #if DEBUG
+    /// `-TransportBannerSelfTest` — open a real request to `url` (idle timeout `timeout` s) and
+    /// return the banner the user would see for its failure.
+    @MainActor static func debugTransportBanner(url: String, timeout: TimeInterval) async -> String {
+        guard let u = URL(string: url) else { return "bad url" }
+        var req = URLRequest(url: u, timeoutInterval: timeout)
+        req.httpMethod = "POST"
+        req.httpBody = Data("{}".utf8)
+        do { _ = try await URLSession.shared.bytes(for: req); return "no error" }
+        catch { return ChatSession.humanError(for: transportError(error)) }
+    }
+    #endif
+
     enum RouterError: LocalizedError {
         case foundationModelUnavailable
         case ollamaNoModels
@@ -370,9 +509,17 @@ enum ModelRouter {
         case ollamaHTTPError(path: String, status: Int, body: String)
         case ollamaBadResponse(path: String, body: String)
         case localBadJSON(String)
+        /// ★ C4a — the Host refused because `tag` isn't loaded and the app did NOT auto-load it (Hands-on,
+        /// where loading is the user's call, or the load itself failed). `message` is the Host's own words;
+        /// the transcript banner pairs it with a one-tap "Load and ask" for `tag`.
+        case modelNotLoaded(tag: String, message: String)
+        /// C2c — Apple Intelligence produced no first token in 45 s.
+        case onDeviceTimeout
 
         var errorDescription: String? {
             switch self {
+            case .onDeviceTimeout: return "Apple Intelligence didn't respond. Try again."
+            case .modelNotLoaded(_, let message): return message
             case .foundationModelUnavailable: return "Foundation Model not available on this device."
             case .localBadJSON(let s): return "The on-device model didn't return valid JSON: \(Self.truncate(s))"
             case .ollamaNoModels: return "Endpoint is reachable but no models are loaded. Load a model in LM Studio / pull one with `ollama pull <name>`."
@@ -606,9 +753,19 @@ enum ModelRouter {
         let session = LanguageModelSession()
         let combined = flattenForFM(messages)   // FM has no role API — fold (system leads, no "Assistant:" cue)
 
+        // C2c — fail fast: no first token in 45 s → a clear error, never an endless "Thinking…" (the 4K on-device
+        // model prefills in seconds; 45 s means it is stuck).
+        let firstToken = FirstTokenFlag()
+        let watchdog = Task {
+            try? await Task.sleep(for: .seconds(45))
+            if !(await firstToken.seen) { continuation.finish(throwing: RouterError.onDeviceTimeout) }
+        }
+        defer { watchdog.cancel() }
+
         // Snapshots are CUMULATIVE. Convert to deltas via suffix-diff.
         var emitted = ""
         for try await snapshot in session.streamResponse(to: combined) {
+            await firstToken.mark()
             let full = snapshot.content
             guard full.count > emitted.count else { continue }
             guard full.hasPrefix(emitted) else {
@@ -728,7 +885,7 @@ enum ModelRouter {
             (bytes, response) = try await URLSession.shared.bytes(for: request)
         } catch {
             print("[ModelRouter] \(path) transport: \(error.localizedDescription)")
-            throw RouterError.ollamaTransport(error.localizedDescription)
+            throw transportError(error)
         }
 
         if let http = response as? HTTPURLResponse, !(200...299).contains(http.statusCode) {
@@ -779,13 +936,16 @@ enum ModelRouter {
         }
     }
 
-    private static func firstOllamaModel(base: URL) async throws -> String {
+    static func firstOllamaModel(base: URL) async throws -> String {
         // LM Studio moved model listing to api/v0/models in a recent update
         // and broke the OpenAI-compatible /v1/models endpoint. Response shape
         // (data array, each entry has an id string) is unchanged.
         let path = "api/v0/models"
         var request = URLRequest(url: base.appendingPathComponent(path))
         request.httpMethod = "GET"
+        // C4b2 (T 2026-10-10) — a model LIST answers at once; a server that's away (T's Tailscale LM Studio, phone
+        // off the tailnet) must not hold the probe, the label or an ask for URLSession's 60 s default.
+        request.timeoutInterval = 8
         applyEndpointAuth(&request)
 
         let (data, response) = try await runRequest(request, path: path)
@@ -814,7 +974,7 @@ enum ModelRouter {
             return try await URLSession.shared.data(for: request)
         } catch {
             print("[ModelRouter] \(path) transport: \(error.localizedDescription)")
-            throw RouterError.ollamaTransport(error.localizedDescription)
+            throw transportError(error)
         }
     }
 
@@ -912,41 +1072,44 @@ enum ModelRouter {
             NSLog("[ModelRouter] catalog: unparseable (%d bytes) — cannot resolve the curated model", data.count)
             return (nil, nil)
         }
-        func tag(_ m: [String: Any]) -> String? { m["tag"] as? String }
-        func state(_ m: [String: Any]) -> String { (m["state"] as? String) ?? "" }
-        func tier(_ m: [String: Any]) -> Int { (m["tier"] as? Int) ?? 0 }
-        func isRecommended(_ m: [String: Any]) -> Bool { (m["recommended"] as? Bool) ?? false }
+        let entries = models.compactMap { m -> HostModelEntry? in
+            guard let tag = m["tag"] as? String, !tag.isEmpty else { return nil }
+            return HostModelEntry(tag: tag, state: (m["state"] as? String) ?? "", tier: (m["tier"] as? Int) ?? 0,
+                                  recommended: (m["recommended"] as? Bool) ?? false)
+        }
+        return activeHostModel(entries, picked: userPickedHostModel)
+    }
 
-        // ★ CURATED ONLY — every candidate below is filtered to `tier > 0`. An untiered entry
-        // (`llama3.2:latest`, `deepseek-r1`) is a deliberate dev/conformance fixture that the phone's
-        // picker never offers, so it can NEVER be "the user's model" — not even when it is RESIDENT.
-        // Measured: run 1's fallback loaded llama3.2, which left it `installed-loaded`, and honouring
-        // LOAD = SELECT then made the accident STICKY — a 3B fixture kept answering read-in-full lab
-        // questions on run 2. LOAD = SELECT still holds, but only over models the user could select.
-        let curated = models.filter { tier($0) > 0 }
-        let resident = curated.first(where: { state($0) == "installed-loaded" }).flatMap(tag)
-        let installed = curated.filter { state($0).hasPrefix("installed") }
-        // The model the USER PICKED in the phone's picker (T's ruling: that IS the default in V1 —
-        // no separate setting). Used only while it is still installed; an ejected-but-installed pick is
-        // fine (naming it makes Dynamic load it), a DELETED one falls through.
-        let picked = userPickedHostModel.flatMap { p in installed.first { tag($0) == p }.flatMap(tag) }
-        // The V1 DEFAULT when nothing was ever picked: the Host's RECOMMENDED model (Qwen3 4B) if
-        // installed, else the smallest curated shelf (`tier` = the GB shelf — fastest to load, least
-        // surprising to spend a load on unasked). Brief BZ replaced the bare smallest-tier proxy with
-        // the Host's explicit `recommended` flag so "the default" is a curated decision, not an accident.
-        let recommended = installed.first(where: isRecommended).flatMap(tag)
-        let smallestCurated = installed.min(by: { tier($0) < tier($1) }).flatMap(tag)
-        let defaultPick = recommended ?? smallestCurated
-        // ★ Brief BZ — the user's PICK WINS EVERYWHERE. When they picked a model (still installed),
-        // that is what every path names — chat, warm ping, title gen, Librarian — EVEN IF a different
-        // model is momentarily resident, so the Host loads/holds the pick and a stale 8B can't override
-        // a 4B pick (the field bug: picked 4B, 8B kept answering). Resident-first ONLY when NOTHING was
-        // ever picked (don't spend a load unasked; use what's warm). Nothing picked + nothing resident →
-        // the recommended default. Naming the pick also makes a Manual/Always-ready mode that can't
-        // serve it REFUSE HONESTLY (the Host's 409, surfaced) rather than silently answering as another
-        // model — "never silently switch". `resident` (first return) still drives the live label.
-        let preferred = picked ?? resident ?? defaultPick
-        return (resident, preferred)
+    /// One catalog row, as the active-model derivation needs it.
+    struct HostModelEntry: Equatable, Sendable {
+        let tag: String
+        let state: String       // installed-loaded | installed-ejected | not-installed
+        let tier: Int           // 0 = not a curated shelf (an off-manifest install, or a dev fixture)
+        let recommended: Bool
+    }
+
+    /// ★ C4a — THE active model: ONE pure derivation read by routing (every ask names `preferred`) AND by
+    /// the model pill (its name, and ✓ only when `preferred` is resident). T's field bug (2026-10-08) was
+    /// this value derived TWICE: the pill showed ✓ on whatever was resident (Instruct, off-manifest, tier
+    /// 0), while routing dropped the tier-0 pick and asked for the recommended `qwen3:4b`, which the pick's
+    /// own load had just ejected → 409 "No model is loaded", under a ✓.
+    ///
+    ///  - `preferred` = the user's PICK if it is still installed (curated OR an off-manifest install: the
+    ///    picker offers both, and an explicit choice is never silently swapped), else the resident CURATED
+    ///    model (a fallback must stay curated: a resident dev fixture like `llama3.2` must never become the
+    ///    answerer), else the Host's recommended default, else the smallest curated shelf.
+    ///  - `resident` = the resident curated model (nil if none).
+    ///
+    /// The user's PICK wins over a resident model (Brief BZ), so a stale 8B can't answer a 4B pick, and a
+    /// mode that can't serve the pick refuses honestly (or, C4a, the ask loads it).
+    static func activeHostModel(_ models: [HostModelEntry], picked: String?) -> (resident: String?, preferred: String?) {
+        let curated = models.filter { $0.tier > 0 }
+        let resident = curated.first(where: { $0.state == "installed-loaded" })?.tag
+        let pick = picked.flatMap { p in models.first { $0.tag == p && $0.state.hasPrefix("installed") }?.tag }
+        let installed = curated.filter { $0.state.hasPrefix("installed") }
+        let recommended = installed.first(where: \.recommended)?.tag
+        let smallestCurated = installed.min(by: { $0.tier < $1.tier })?.tag
+        return (resident, pick ?? resident ?? recommended ?? smallestCurated)
     }
 
     /// ★ The model the USER PICKED in the phone's model picker — T's ruling (2026-09-29): that IS the
@@ -956,6 +1119,8 @@ enum ModelRouter {
     /// Deliberately NOT overwritten by whichever model happened to answer a turn — a fallback pick
     /// must never silently become the default (that is how `llama3.2` got sticky). Plain UserDefaults:
     /// a preference, not a secret.
+    /// The model tag the last Host chat request actually put on the wire (nil before the first one).
+    nonisolated(unsafe) static var lastWireModel: String? = nil
     private static let userPickedHostModelKey = "airpadUserPickedHostModel"
     static var userPickedHostModel: String? {
         get { UserDefaults.standard.string(forKey: userPickedHostModelKey) }
@@ -1048,6 +1213,10 @@ enum ModelRouter {
             model = try await firstHostModel(pairing: pairing)
         }
         #endif
+        lastWireModel = model   // the prefill-speed estimate is per model (T ruling 2026-10-09)
+        #if DEBUG
+        GauntletTap.shared.noteModel(model)   // Brief CH-0 — the tag actually put on the wire
+        #endif
         // NOTE: deliberately does NOT write `userPickedHostModel` — the default is the user's PICKER
         // choice, not whatever a fallback happened to resolve to (see that property).
         // Brief BR — send REAL roles (system + history + user), never a folded "User:/Assistant:"
@@ -1064,25 +1233,8 @@ enum ModelRouter {
         // BUG 36 Pillar 2: a client-generated requestID (sealed inside the body — D1) opts this
         // generation into the Host's finish-and-hold, so a mid-stream drop can be resumed.
         if let requestID { body["requestID"] = requestID }
-        let plaintext = try JSONSerialization.data(withJSONObject: body)
-        let (envelope, session) = try HostE2E.sealRequest(master: pairing.master, hostStaticPub: hpk, plaintext: plaintext)
-
-        var request = URLRequest(url: chatURL)
-        request.httpMethod = "POST"
-        request.setValue("application/json", forHTTPHeaderField: "Content-Type")
-        request.setValue(hostUserAgent, forHTTPHeaderField: "User-Agent") // P8
-        request.setValue("Bearer \(pairing.authToken)", forHTTPHeaderField: "Authorization")
-        request.httpBody = try JSONEncoder().encode(envelope)
-
-        let (bytes, response): (URLSession.AsyncBytes, URLResponse)
-        do { (bytes, response) = try await hostStreamSession.bytes(for: request) }
-        catch { throw RouterError.ollamaTransport(error.localizedDescription) }
-
-        if let http = response as? HTTPURLResponse, !(200...299).contains(http.statusCode) {
-            var data = Data()
-            for try await b in bytes { data.append(b) }
-            throw RouterError.ollamaHTTPError(path: "v1/chat/completions", status: http.statusCode,
-                                              body: String(data: data, encoding: .utf8) ?? "")
+        let (bytes, session) = try await withAskLoad(pairing: pairing, model: model) {
+            try await openSealedChat(pairing: pairing, hpk: hpk, chatURL: chatURL, body: body)
         }
 
         // Sealed frames carry RAW upstream SSE byte-chunks (not line-aligned). Accumulate the
@@ -1098,6 +1250,96 @@ enum ModelRouter {
             buffer.append(try session.openFrame(ct))
             drainInnerSSE(&buffer, continuation)
         }
+    }
+
+    /// Seal one chat body and POST it; a non-2xx reads the Host's body into `ollamaHTTPError`.
+    private static func openSealedChat(pairing: HostPairing, hpk: Data, chatURL: URL, body: [String: Any])
+        async throws -> (URLSession.AsyncBytes, HostE2E.ClientSession)
+    {
+        let plaintext = try JSONSerialization.data(withJSONObject: body)
+        let (envelope, session) = try HostE2E.sealRequest(master: pairing.master, hostStaticPub: hpk, plaintext: plaintext)
+
+        var request = URLRequest(url: chatURL)
+        request.httpMethod = "POST"
+        request.setValue("application/json", forHTTPHeaderField: "Content-Type")
+        request.setValue(hostUserAgent, forHTTPHeaderField: "User-Agent") // P8
+        request.setValue("Bearer \(pairing.authToken)", forHTTPHeaderField: "Authorization")
+        request.httpBody = try JSONEncoder().encode(envelope)
+
+        let (bytes, response): (URLSession.AsyncBytes, URLResponse)
+        do { (bytes, response) = try await hostStreamSession.bytes(for: request) }
+        catch { throw transportError(error) }
+        if let http = response as? HTTPURLResponse, !(200...299).contains(http.statusCode) {
+            var data = Data()
+            for try await b in bytes { data.append(b) }
+            throw RouterError.ollamaHTTPError(path: "v1/chat/completions", status: http.statusCode,
+                                              body: String(data: data, encoding: .utf8) ?? "")
+        }
+        return (bytes, session)
+    }
+
+    // MARK: - C4a: asking IS choosing — a not-loaded refusal loads the asked-for model
+
+    /// ★ C4a (T, 2026-10-08) — run `open`; if the Host refuses with 409 `model_not_loaded`, the ask is the
+    /// user's choice of model, so load it and try ONCE more (Always-ready / Balanced). Hands-on ("load only
+    /// when you choose") is NOT overridden: it throws `modelNotLoaded`, and the banner offers a one-tap
+    /// "Load and ask". A failed load (pressure, won't fit) throws `modelNotLoaded` with the Host's reason,
+    /// so the banner never repeats "load it again" after we already tried.
+    private static func withAskLoad<T>(pairing: HostPairing, model: String, _ open: () async throws -> T) async throws -> T {
+        do {
+            return try await open()
+        } catch RouterError.ollamaHTTPError(_, 409, let body) where hostError(body)?.code == "model_not_loaded" {
+            let refusal = hostError(body)?.message ?? "This model isn't loaded on your Mac."
+            if await hostResidencyMode(pairing: pairing) == "manual" {
+                throw RouterError.modelNotLoaded(tag: model, message: refusal)
+            }
+            if let failure = await loadForAsk(pairing: pairing, model: model) {
+                throw RouterError.modelNotLoaded(tag: model, message: failure)
+            }
+            #if DEBUG
+            GauntletTap.shared.noteAskLoad(model)
+            #endif
+            return try await open()
+        }
+    }
+
+    /// The Host's `{error:{code,message}}` refusal envelope (plaintext, not sealed).
+    static func hostError(_ body: String) -> (code: String, message: String?)? {
+        guard let json = try? JSONSerialization.jsonObject(with: Data(body.utf8)) as? [String: Any],
+              let err = json["error"] as? [String: Any], let code = err["code"] as? String else { return nil }
+        return (code, err["message"] as? String)
+    }
+
+    /// The Mac's residency mode (`always-on` | `dynamic` | `manual`), or nil if unreadable.
+    private static func hostResidencyMode(pairing: HostPairing) async -> String? {
+        guard let url = pairing.residencyURL else { return nil }
+        var req = URLRequest(url: url)
+        req.setValue("Bearer \(pairing.authToken)", forHTTPHeaderField: "Authorization")
+        req.setValue(hostUserAgent, forHTTPHeaderField: "User-Agent")
+        guard let (data, resp) = try? await URLSession.shared.data(for: req),
+              let http = resp as? HTTPURLResponse, (200...299).contains(http.statusCode),
+              let json = try? JSONSerialization.jsonObject(with: data) as? [String: Any] else { return nil }
+        return json["mode"] as? String
+    }
+
+    /// Load `model` on the Host for an ask. nil = loaded; otherwise the Host's own reason (a pressure hold's
+    /// notice, a won't-fit refusal) or a plain line. The pill narrates it like a picker load (`busyTag`).
+    private static func loadForAsk(pairing: HostPairing, model: String) async -> String? {
+        guard let url = pairing.loadURL else { return "Couldn't reach your Mac. Try again." }
+        await MainActor.run { HostCatalog.shared.beginAskLoad(model) }
+        defer { Task { @MainActor in await HostCatalog.shared.endAskLoad() } }
+        var req = URLRequest(url: url, timeoutInterval: 180)   // a 30B load takes ~20 s
+        req.httpMethod = "POST"
+        req.setValue("application/json", forHTTPHeaderField: "Content-Type")
+        req.setValue("Bearer \(pairing.authToken)", forHTTPHeaderField: "Authorization")
+        req.setValue(hostUserAgent, forHTTPHeaderField: "User-Agent")
+        req.httpBody = try? JSONSerialization.data(withJSONObject: ["catalogId": model])
+        guard let (data, resp) = try? await URLSession.shared.data(for: req),
+              let http = resp as? HTTPURLResponse else { return "Couldn't reach your Mac. Try again." }
+        let json = (try? JSONSerialization.jsonObject(with: data)) as? [String: Any]
+        if (200...299).contains(http.statusCode), json?["result"] as? String == "loaded" { return nil }
+        if let notice = json?["notice"] as? [String: Any], let text = notice["text"] as? String, !text.isEmpty { return text }
+        return hostError(String(decoding: data, as: UTF8.self))?.message ?? "This model didn't load on your Mac. Try again."
     }
 
     // MARK: - Host agentic tool turn (web search over the SEALED path)
@@ -1148,6 +1390,22 @@ enum ModelRouter {
         onContentDelta: @Sendable @escaping (String) -> Void,
         onReasoningDelta: @Sendable @escaping (String) -> Void = { _ in }
     ) async throws -> AgentTurn {
+        #if DEBUG
+        // CH Session 2 — `-GauntletReplay` on the AGENT path: a recorded round streams its content and returns its
+        // recorded tool calls (which the loop then runs through the real executor / web mock). No Host, no model.
+        if let replay = GauntletTap.shared.nextReplayTurn() {
+            GauntletTap.shared.noteModel("replay")
+            var content = ""
+            for d in replay.deltas where !d.thinking {
+                try await Task.sleep(for: .milliseconds(replay.delayMs))
+                content += d.s
+                onContentDelta(d.s)
+            }
+            return AgentTurn(content: content, toolCalls: replay.toolCalls.enumerated().map {
+                ToolCall(id: "replay-\($0.offset)", name: $0.element.name, argumentsJSON: $0.element.argumentsJSON)
+            })
+        }
+        #endif
         guard let hpk = pairing.hostPublicKey, let chatURL = pairing.chatURL else {
             throw RouterError.ollamaBadEndpoint(pairing.tunnelURL)
         }
@@ -1156,35 +1414,35 @@ enum ModelRouter {
         // pick — so a General/web-search turn on a cold Host fell to `firstHostModel` (install order),
         // the uncurated-fixture trap. Now: pick > resident > recommended default, `firstHostModel` last.
         let model: String
+        #if DEBUG
+        // `-DebugHostModel` forces the SEARCH turn's model too (it only reached `streamHost`, so a gauntlet
+        // General/web row ran on the resolved default instead of the planned model). Release-inert.
+        let dbgArgs = ProcessInfo.processInfo.arguments
+        if let i = dbgArgs.firstIndex(of: "-DebugHostModel"), i + 1 < dbgArgs.count {
+            model = dbgArgs[i + 1]
+        } else if let pick = try await resolveHostModel(pairing: pairing).preferred {
+            model = pick
+        } else {
+            model = try await firstHostModel(pairing: pairing)
+        }
+        #else
         if let pick = try await resolveHostModel(pairing: pairing).preferred {
             model = pick
         } else {
             model = try await firstHostModel(pairing: pairing)
         }
+        #endif
+        #if DEBUG
+        GauntletTap.shared.noteModel(model)
+        #endif
         // Brief AL3 — honour the user's Thinking toggle on SEARCH turns too (was hardcoded
         // false, so a reasoning model never reasoned on the agent path). With `think` on, the
         // Host routes the thought process to the reasoning channel (rendered live via
         // `onReasoningDelta`), leaving the answer clean.
         var body: [String: Any] = ["model": model, "stream": true, "think": think, "messages": Self.nativizeToolMessages(messages)]
         if let tools { body["tools"] = tools }
-        let plaintext = try JSONSerialization.data(withJSONObject: body)
-        let (envelope, session) = try HostE2E.sealRequest(master: pairing.master, hostStaticPub: hpk, plaintext: plaintext)
-
-        var request = URLRequest(url: chatURL)
-        request.httpMethod = "POST"
-        request.setValue("application/json", forHTTPHeaderField: "Content-Type")
-        request.setValue(hostUserAgent, forHTTPHeaderField: "User-Agent") // P8
-        request.setValue("Bearer \(pairing.authToken)", forHTTPHeaderField: "Authorization")
-        request.httpBody = try JSONEncoder().encode(envelope)
-
-        let (bytes, response): (URLSession.AsyncBytes, URLResponse)
-        do { (bytes, response) = try await hostStreamSession.bytes(for: request) }
-        catch { throw RouterError.ollamaTransport(error.localizedDescription) }
-        if let http = response as? HTTPURLResponse, !(200...299).contains(http.statusCode) {
-            var data = Data()
-            for try await b in bytes { data.append(b) }
-            throw RouterError.ollamaHTTPError(path: "v1/chat/completions", status: http.statusCode,
-                                              body: String(data: data, encoding: .utf8) ?? "")
+        let (bytes, session) = try await withAskLoad(pairing: pairing, model: model) {
+            try await openSealedChat(pairing: pairing, hpk: hpk, chatURL: chatURL, body: body)
         }
 
         var buffer = Data()
@@ -1304,7 +1562,7 @@ enum ModelRouter {
 
         let (bytes, response): (URLSession.AsyncBytes, URLResponse)
         do { (bytes, response) = try await hostStreamSession.bytes(for: request) }
-        catch { throw RouterError.ollamaTransport(error.localizedDescription) }
+        catch { throw transportError(error) }
 
         if let http = response as? HTTPURLResponse, !(200...299).contains(http.statusCode) {
             var data = Data()
@@ -1358,6 +1616,9 @@ struct ToolLink: Codable, Hashable, Sendable, Identifiable {
     let title: String
     let url: String
     let snippet: String?
+    /// CH Session 2 — the result's publication date when the provider gives one (Brave `page_age` / `age`).
+    /// Goes into the packet as a computed fact and ranks fresh results first on a today/latest question.
+    var published: Date? = nil
     var id: String { url }
 }
 
@@ -1471,7 +1732,7 @@ extension ModelRouter {
         do {
             (bytes, response) = try await URLSession.shared.bytes(for: request)
         } catch {
-            throw RouterError.ollamaTransport(error.localizedDescription)
+            throw transportError(error)
         }
         if let http = response as? HTTPURLResponse, !(200...299).contains(http.statusCode) {
             var data = Data()
@@ -1515,6 +1776,126 @@ struct WebSearchUnavailableExecutor: ToolExecutor {
         ToolResult(textForModel: "Web search requires a Brave Search API key, which can be added in Settings.", links: [], unavailable: true)
     }
 }
+
+#if DEBUG
+/// Gauntlet v2 web-search rows (T 2026-10-06, pillar 2) — `-WebSearchMock YES`: a deterministic stand-in for Brave
+/// so the gate needs no key and no network. Every `web_search` returns the SAME two results carrying a SENTINEL
+/// fact no model can know (a fictional future date), so an answer that states it AND cites `gauntlet.example`
+/// proves the tool fired and its result was cited. Same wire as Brave (`[n] title / url / snippet`), same cap.
+/// Release-inert. The live Brave path is still exercised by `-BraveTestKey` (pass a real key).
+struct WebSearchMockExecutor: ToolExecutor {
+    static let links = [
+        ToolLink(title: "Lakeview Observatory sets first-light date for its new telescope",
+                 url: "https://news.gauntlet.example/lakeview-observatory-sets-first-light-date",
+                 snippet: "The Lakeview Observatory announced that its new 4-metre telescope will see first light on 19 November 2031, director Ana Okafor said.",
+                 published: Calendar.current.date(byAdding: .day, value: -3, to: Date())),
+        ToolLink(title: "Lakeview telescope: what we know",
+                 url: "https://science.gauntlet.example/lakeview-telescope-what-we-know",
+                 snippet: "First light is scheduled for 19 November 2031; the mirror was cast in 2029.",
+                 published: Calendar.current.date(byAdding: .day, value: -40, to: Date())),
+    ]
+
+    /// CH Session 2 — GW4 "today's news" (T's case 2): Brave-like order puts a 106-day-old story FIRST, an undated
+    /// section front page second, and the only story from today LAST — the app must rank and date them.
+    static var townNews: [ToolLink] {
+        let c = Calendar.current, now = Date()
+        return [
+            ToolLink(title: "Lakeview council approves its 2027 budget",
+                     url: "https://news.gauntlet.example/lakeview/council-approves-2027-budget",
+                     snippet: "The Lakeview town council approved its 2027 budget on Tuesday after a four-hour session, raising the library fund by 6 percent.",
+                     published: c.date(byAdding: .day, value: -106, to: now)),
+            ToolLink(title: "Lakeview News — latest headlines",
+                     url: "https://news.gauntlet.example/lakeview/",
+                     snippet: "Breaking news, weather, traffic and sports from Lakeview and the lake district."),
+            ToolLink(title: "Lakeview ferry resumes service after storm repairs",
+                     url: "https://news.gauntlet.example/lakeview/ferry-resumes-after-storm-repairs",
+                     snippet: "The Lakeview ferry resumed service this morning after three weeks of storm repairs, the harbour office said.",
+                     published: now),
+        ]
+    }
+
+    /// CH Session 2 — GK4–GK6 fact rows (T's known answers). Encyclopedia-style results + page text for the app's
+    /// fetch of the top result. The facts match the real world (the rows also run live with a Brave key).
+    struct FactPage { let match: String; let links: [ToolLink]; let page: String }
+    static let factPages: [FactPage] = [
+        FactPage(match: #"oarfish"#, links: [
+            ToolLink(title: "Oarfish — encyclopedia", url: "https://encyclopedia.gauntlet.example/wiki/Oarfish",
+                     snippet: "Oarfish are large, greatly elongated, pelagic lampriform fishes belonging to the small family Regalecidae."),
+            ToolLink(title: "Giant oarfish facts | Aquarium guide", url: "https://aquarium.gauntlet.example/giant-oarfish",
+                     snippet: "The giant oarfish (Regalecus glesne) is the longest bony fish alive, reported up to 8 metres."),
+        ], page: """
+            Oarfish are large, greatly elongated, pelagic lampriform fishes belonging to the small family Regalecidae. \
+            The family contains three species in two genera: Agrarius and Regalecus. One species, the giant oarfish \
+            (Regalecus glesne), is the longest bony fish alive, growing up to 8 metres in length. Oarfish live in the \
+            open ocean, usually in the mesopelagic zone between 200 and 1,000 metres deep, and are rarely seen at the \
+            surface. They have a long dorsal fin that runs the length of the body and red, crest-like rays on the head. \
+            They feed mainly on zooplankton such as krill and small crustaceans. Because they are seldom seen alive, \
+            much of what is known about them comes from specimens that wash ashore after storms or when sick or dying. \
+            Oarfish are sometimes linked in folklore with earthquakes, but no scientific study has found a reliable link.
+            """),
+        FactPage(match: #"colossal squid"#, links: [
+            ToolLink(title: "Colossal squid — encyclopedia", url: "https://encyclopedia.gauntlet.example/wiki/Colossal_squid",
+                     snippet: "The colossal squid (Mesonychoteuthis hamiltoni) is a species of very large squid in the glass squid family, Cranchiidae."),
+            ToolLink(title: "Colossal squid filmed in its natural habitat", url: "https://science.gauntlet.example/colossal-squid-footage",
+                     snippet: "Researchers recorded a juvenile colossal squid in the Southern Ocean."),
+        ], page: """
+            The colossal squid (Mesonychoteuthis hamiltoni) is a species of very large squid belonging to the family \
+            Cranchiidae, the glass squids. It is the only recognised member of the genus Mesonychoteuthis. It is believed \
+            to be the largest squid species by mass, with the heaviest recorded specimen weighing about 495 kilograms. \
+            It lives in the cold waters of the Southern Ocean around Antarctica. Unlike the giant squid (Architeuthis \
+            dux), whose arms and tentacles bear suckers lined with small teeth, the colossal squid's arms and tentacles \
+            carry sharp swivelling hooks. It also has the largest eyes documented in the animal kingdom. The species was \
+            first described in 1925 from parts found in the stomach of a sperm whale.
+            """),
+        FactPage(match: #"antarctica|antarctic"#, links: [
+            ToolLink(title: "History of Antarctica — encyclopedia", url: "https://encyclopedia.gauntlet.example/wiki/History_of_Antarctica",
+                     snippet: "The first confirmed sightings of mainland Antarctica were made in January 1820; no landing was made on those voyages."),
+            ToolLink(title: "Who discovered Antarctica? | Polar history", url: "https://polar.gauntlet.example/discovery",
+                     snippet: "Bellingshausen and Lazarev sighted an ice shelf on 27 January 1820; Bransfield sighted the Trinity Peninsula three days later."),
+        ], page: """
+            The first confirmed sightings of mainland Antarctica came in January 1820. On 27 January 1820 the Russian \
+            expedition of Fabian Gottlieb von Bellingshausen and Mikhail Lazarev sighted an ice shelf, and on 30 January \
+            1820 Edward Bransfield and William Smith of the Royal Navy sighted the Trinity Peninsula. Neither expedition \
+            made a landing on the continent. The first claimed landing on the mainland was by the American sealer John \
+            Davis on 7 February 1821, but historians dispute it. The first documented landing on the mainland took place \
+            on 24 January 1895, when a party from the Norwegian ship Antarctic went ashore at Cape Adare.
+            """),
+    ]
+
+    func execute(name: String, arguments: [String: Any]) async -> ToolResult {
+        // `-WebSearchMockDelayMs n` — a live search's latency, so a UI test can SEE the tool status line.
+        let delay = UserDefaults.standard.integer(forKey: "WebSearchMockDelayMs")
+        if delay > 0 { try? await Task.sleep(nanoseconds: UInt64(delay) * 1_000_000) }
+        switch name {
+        case AgentTools.webSearch:
+            let query = (arguments["query"] as? String) ?? ""
+            NSLog("[WebSearchMock] web_search query=%@", query)
+            func has(_ p: String) -> Bool { query.range(of: p, options: [.regularExpression, .caseInsensitive]) != nil }
+            func reply(_ links: [ToolLink]) -> ToolResult {
+                let text = links.enumerated().map { i, l in "[\(i + 1)] \(l.title)\n\(l.url)\n\(l.snippet ?? "")" }.joined(separator: "\n\n")
+                return ToolResult(textForModel: text, links: links)
+            }
+            // Only an on-topic query gets results; anything else gets Brave's own no-results reply — a search for
+            // "Pride and Prejudice author" must not come back with telescope news (first run: the model then cited
+            // an irrelevant [1] on a general-knowledge row — a mock artefact, not the model).
+            if has(#"observatory|telescope|first light"#) { return reply(Self.links) }
+            if has(#"lakeview"#), has(#"news|today|headline|happening"#) { return reply(Self.townNews) }
+            if let f = Self.factPages.first(where: { has($0.match) }) { return reply(f.links) }
+            return ToolResult(textForModel: "No results found for \"\(query)\".", links: [])
+        case AgentTools.fetchURL:
+            let url = (arguments["url"] as? String) ?? ""
+            NSLog("[WebSearchMock] fetch_url url=%@", url)
+            if let f = Self.factPages.first(where: { $0.links.contains { $0.url == url } }) {
+                return ToolResult(textForModel: f.page, links: [])
+            }
+            let all = Self.links + Self.townNews
+            return ToolResult(textForModel: all.first { $0.url == url }?.snippet ?? Self.links[0].snippet ?? "", links: [])
+        default:
+            return ToolResult(textForModel: "Unknown tool: \(name)", links: [])
+        }
+    }
+}
+#endif
 
 /// Shared web-content utilities (readability fetch + HTML cleanup). These formerly lived on
 /// the removed `WebSearchToolExecutor` (the keyless DDG scraper); `BraveSearchToolExecutor`
@@ -1730,7 +2111,37 @@ final class BraveSearchToolExecutor: ToolExecutor, @unchecked Sendable {
                 return ToolResult(textForModel: "You have used your web search budget for this question (\(maxSearchesPerTurn) searches). Do NOT search again — answer now from the results you already have.", links: [])
             }
             searchCount += 1
-            let (links, rateLimited) = await braveSearch(query)
+            // CH Session 2 (T's case 2) — a today/latest question goes to Brave's NEWS endpoint first: it returns
+            // individual ARTICLES with their own dates (past day, then past week), where web search returns section
+            // front pages dated by their last update. Falls back to web search when news finds nothing or the plan
+            // doesn't include it.
+            var (links, rateLimited) = ([ToolLink](), false)
+            let keywords = WebGrounding.newsKeywords(query)
+            // CH (T device 2026-10-09) — a news question that names a country asks Brave for news FROM that country
+            // (`country=`), and a result that names it only inside another place ("New Mexico") is dropped.
+            // News questions only: "What's the capital of Mexico?" still searches the whole web.
+            let country = WebGrounding.isFreshnessQuestion(query) ? WebGrounding.newsCountry(query) : nil
+            #if DEBUG
+            if let c = country { GauntletTap.shared.noteValue("newsCountry", c.code) }
+            #endif
+            func hay(_ l: ToolLink) -> String { l.title + " " + (l.snippet ?? "") + " " + l.url }
+            if WebGrounding.isFreshnessQuestion(query) {
+                // "<keywords> news": the bare keyword "world" matched Disney World and the World Championships
+                let newsQuery = keywords.isEmpty ? "top news" : keywords.joined(separator: " ") + " news"
+                for window in ["pd", "pw"] where links.isEmpty && !rateLimited {
+                    (links, rateLimited) = await braveNews(newsQuery, freshness: window, country: country?.code)
+                    if let c = country { links.removeAll { WebGrounding.isFalseFriend(hay($0), for: c) } }
+                    // relevance: at least one article must mention a keyword, else it isn't an answer (the country
+                    // filter already makes a country's own news relevant, so its name needn't appear)
+                    let topical = keywords.filter { k in !(country?.terms.contains { $0.split(separator: " ").contains(Substring(k)) } ?? false) }
+                    if !topical.isEmpty, !links.contains(where: { l in topical.contains { hay(l).lowercased().contains($0) } }) { links = [] }
+                }
+            }
+            if links.isEmpty && !rateLimited, let c = country {
+                (links, rateLimited) = await braveSearch(query, country: c.code)
+                links.removeAll { WebGrounding.isFalseFriend(hay($0), for: c) }
+            }
+            if links.isEmpty && !rateLimited { (links, rateLimited) = await braveSearch(query) }
             if rateLimited {
                 throttled = true
                 return ToolResult(textForModel: "Web search is temporarily rate-limited by the provider (too many requests in a short time). Do NOT keep retrying — answer from what you already have, or if you have nothing, tell the user web search is rate-limited right now and to try again shortly.", links: [], rateLimited: true)
@@ -1760,11 +2171,12 @@ final class BraveSearchToolExecutor: ToolExecutor, @unchecked Sendable {
     /// GET the Brave web-search API → `[{title,url,snippet}]`. HTTP 429 (Brave's own
     /// rate-limit) → the shared `rateLimited` signal. Descriptions can carry `<strong>`
     /// highlight tags → stripped via the shared HTML helpers.
-    private func braveSearch(_ query: String) async -> (links: [ToolLink], rateLimited: Bool) {
+    private func braveSearch(_ query: String, country: String? = nil) async -> (links: [ToolLink], rateLimited: Bool) {
         var comps = URLComponents(string: "https://api.search.brave.com/res/v1/web/search")
         // Brief AF2 (a) — top 5 (was 8): a smaller synthesis payload → faster first
         // token → the tunnel can't time the upstream out mid-answer.
         comps?.queryItems = [URLQueryItem(name: "q", value: query), URLQueryItem(name: "count", value: "5")]
+            + (country.map { [URLQueryItem(name: "country", value: $0)] } ?? [])
         guard let url = comps?.url else { return ([], false) }
         var req = URLRequest(url: url)
         req.setValue("application/json", forHTTPHeaderField: "Accept")
@@ -1774,6 +2186,45 @@ final class BraveSearchToolExecutor: ToolExecutor, @unchecked Sendable {
         let status = (resp as? HTTPURLResponse)?.statusCode ?? -1
         if status == 429 { return ([], true) }  // Brave rate-limit → distinct signal
         return (Self.parseBrave(data), false)
+    }
+
+    /// Brave News Search → articles with `age` / `page_age`. Any non-2xx other than 429 (e.g. a plan without news
+    /// access) → empty, and the caller falls back to web search.
+    private func braveNews(_ query: String, freshness: String, country: String? = nil) async -> (links: [ToolLink], rateLimited: Bool) {
+        var comps = URLComponents(string: "https://api.search.brave.com/res/v1/news/search")
+        comps?.queryItems = [URLQueryItem(name: "q", value: query), URLQueryItem(name: "count", value: "5"),
+                             URLQueryItem(name: "freshness", value: freshness)]
+            + (country.map { [URLQueryItem(name: "country", value: $0)] } ?? [])
+        guard let url = comps?.url else { return ([], false) }
+        var req = URLRequest(url: url)
+        req.setValue("application/json", forHTTPHeaderField: "Accept")
+        req.setValue("gzip", forHTTPHeaderField: "Accept-Encoding")
+        req.setValue(apiKey, forHTTPHeaderField: "X-Subscription-Token")
+        guard let (data, resp) = try? await URLSession.shared.data(for: req) else { return ([], false) }
+        let status = (resp as? HTTPURLResponse)?.statusCode ?? -1
+        #if DEBUG
+        GauntletTap.shared.noteValue("braveNews_\(freshness)", status)
+        #endif
+        if status == 429 { return ([], true) }
+        guard (200...299).contains(status) else { return ([], false) }
+        return (Self.parseBraveNews(data), false)
+    }
+
+    /// Brave News JSON (`results[].{title,url,description,age,page_age}`) → `ToolLink`, same caps as web.
+    static func parseBraveNews(_ data: Data) -> [ToolLink] {
+        guard let json = try? JSONSerialization.jsonObject(with: data) as? [String: Any],
+              let results = json["results"] as? [[String: Any]] else { return [] }
+        return results.prefix(5).compactMap { r -> ToolLink? in
+            guard let title = r["title"] as? String, let urlStr = r["url"] as? String, !urlStr.isEmpty else { return nil }
+            let cleanTitle = WebReadability.decodeEntities(WebReadability.stripTags(title)).trimmingCharacters(in: .whitespacesAndNewlines)
+            let snippet = (r["description"] as? String).map { raw -> String in
+                let clean = WebReadability.decodeEntities(WebReadability.stripTags(raw)).trimmingCharacters(in: .whitespacesAndNewlines)
+                return clean.count > 300 ? String(clean.prefix(300)) + "…" : clean
+            }
+            guard !cleanTitle.isEmpty else { return nil }
+            return ToolLink(title: cleanTitle, url: urlStr, snippet: snippet,
+                            published: WebGrounding.parsePublished(pageAge: r["page_age"] as? String, age: r["age"] as? String))
+        }
     }
 
     #if DEBUG
@@ -1811,7 +2262,8 @@ final class BraveSearchToolExecutor: ToolExecutor, @unchecked Sendable {
                 return clean.count > 300 ? String(clean.prefix(300)) + "…" : clean
             }
             guard !cleanTitle.isEmpty else { return nil }
-            return ToolLink(title: cleanTitle, url: urlStr, snippet: snippet)
+            return ToolLink(title: cleanTitle, url: urlStr, snippet: snippet,
+                            published: WebGrounding.parsePublished(pageAge: r["page_age"] as? String, age: r["age"] as? String))
         }
     }
 }
@@ -1831,6 +2283,7 @@ enum WebSearchBackend {
     static var hasKey: Bool {
         #if DEBUG
         if let k = UserDefaults.standard.string(forKey: "BraveTestKey"), !k.isEmpty { return true }
+        if UserDefaults.standard.bool(forKey: "WebSearchMock") { return true }
         #endif
         return !((KeychainHelper.load(key: keychainKey) ?? "").trimmingCharacters(in: .whitespacesAndNewlines).isEmpty)
     }
@@ -1840,8 +2293,54 @@ enum WebSearchBackend {
         if let k = UserDefaults.standard.string(forKey: "BraveTestKey"), !k.isEmpty {
             return BraveSearchToolExecutor(apiKey: k)
         }
+        if UserDefaults.standard.bool(forKey: "WebSearchMock") { return WebSearchMockExecutor() }
         #endif
         let key = (KeychainHelper.load(key: keychainKey) ?? "").trimmingCharacters(in: .whitespacesAndNewlines)
         return key.isEmpty ? WebSearchUnavailableExecutor() : BraveSearchToolExecutor(apiKey: key)
     }
+}
+
+
+/// T ruling (2026-10-09) — "Reading <entry>… ~N s" on a first read. The estimate is the packet's tokens (≈ 3 chars per
+/// token) over THIS Mac's prefill speed for the answering model: measured from real first reads (send → first token on
+/// a ≥ 2k-token packet, a moving average), seeded from Session 2's measurements on an M1 Max (4B ≈ 330 tok/s, 8B ≈ 210)
+/// until the first sample. Measured prefill was ≥ 90% of the wait (Session 2 (f)), so tokens ÷ speed is the wait.
+enum PrefillSpeed {
+    private static let key = "airpadPrefillTokPerSec"
+    private static func model() -> String { ModelRouter.lastWireModel ?? ModelRouter.userPickedHostModel ?? "default" }
+    static func tokensPerSecond(for model: String? = nil) -> Double {
+        let m = model ?? Self.model()
+        if let d = UserDefaults.standard.dictionary(forKey: key) as? [String: Double], let v = d[m], v > 0 { return v }
+        let l = m.lowercased()
+        if l.contains("30b") || l.contains("32b") { return 150 }
+        if l.contains("8b") || l.contains("7b") { return 210 }
+        if l.contains("4b") || l.contains("3b") || l.contains("1.7b") { return 330 }
+        return 250
+    }
+    static func estimateSeconds(chars: Int) -> Int {
+        let s = Double(chars) / 3 / tokensPerSecond()
+        return s < 60 ? max(1, Int((s / 5).rounded()) * 5) : Int((s / 10).rounded()) * 10
+    }
+    /// One first-read sample: `chars` sent, `seconds` from send to the first token. Small packets (cache hits,
+    /// follow-ups) say nothing about prefill speed and are ignored.
+    static func record(chars: Int, seconds: Double) {
+        guard chars >= 6_000, seconds > 0.5 else { return }
+        let m = model(), observed = Double(chars) / 3 / seconds
+        var d = (UserDefaults.standard.dictionary(forKey: key) as? [String: Double]) ?? [:]
+        d[m] = d[m].map { 0.7 * $0 + 0.3 * observed } ?? observed
+        UserDefaults.standard.set(d, forKey: key)
+    }
+}
+
+
+extension Notification.Name {
+    /// C2c / C4b2 — who answers the Librarian may have changed (pair, unpair, or the Apple Intelligence pick):
+    /// the pill, the label and Settings re-derive from `ModelRouter.active`.
+    static let librarianRouteChanged = Notification.Name("airpadLibrarianRouteChanged")
+}
+
+/// C2c — "has the on-device model produced anything yet?", shared with the first-token watchdog.
+actor FirstTokenFlag {
+    private(set) var seen = false
+    func mark() { seen = true }
 }

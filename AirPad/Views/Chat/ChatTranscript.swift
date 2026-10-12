@@ -76,6 +76,9 @@ struct ChatTranscript: View {
     private static let bottomFollowThreshold: CGFloat = 80
 
     var body: some View {
+        #if DEBUG
+        let _ = FreezeProbe.hit("transcript.body")
+        #endif
         VStack(spacing: 0) {
             transcript
             if let error = session.lastError {
@@ -87,14 +90,13 @@ struct ChatTranscript: View {
                 // ComposerScaffold — same spacing + field metrics as the Librarian's Ask composer.
                 Divider().overlay(AppearancePalette.ink.opacity(0.08))
                 ComposerScaffold {
-                    if HostCatalog.shared.isPaired {
-                        // Placement A (T-ruled): a persistent Private · Model · Thinking row above the field.
-                        ModelPillRow(
-                            catalog: HostCatalog.shared,
-                            thinkEnabled: Binding(get: { session.thinkEnabled }, set: { session.thinkEnabled = $0 }),
-                            onTapModel: { showPicker = true }
-                        )
-                    }
+                    // Placement A (T-ruled): a persistent Private · Model · Thinking row above the field.
+                    // C4b2 (T ruling 2026-10-09) — whatever the pairing: the pill always names who answers and opens the picker.
+                    ModelPillRow(
+                        catalog: HostCatalog.shared,
+                        thinkEnabled: Binding(get: { session.thinkEnabled }, set: { session.thinkEnabled = $0 }),
+                        onTapModel: { showPicker = true }
+                    )
                     inputRow
                 }
                 .background(AppearancePalette.bgBase)
@@ -127,36 +129,133 @@ struct ChatTranscript: View {
         }
     }
 
+    #if DEBUG
+    /// Measurement only (perf A/B + freeze repro): `-FreezeLazyStack YES` = the pre-fix all-lazy stack;
+    /// `-FreezeEagerAll YES` = every row eager (the first fix, which failed the scroll perf gate).
+    private static let freezeLazyStack = UserDefaults.standard.bool(forKey: "FreezeLazyStack")
+    private static let freezeEagerAll = UserDefaults.standard.bool(forKey: "FreezeEagerAll")
+    /// Hypothesis H3 — the streaming tail is the oscillating lazy row. Measurement only.
+    private static let freezeNoTail = UserDefaults.standard.bool(forKey: "FreezeNoTail")
+    #else
+    private static let freezeNoTail = false
+    #endif
+
+    /// Index of the LATEST exchange: the last user message onward (its answer, plus the live Thought
+    /// process / streaming tail while it streams).
+    private var liveStart: Int {
+        session.messages.lastIndex(where: { $0.role == .user }) ?? session.messages.count
+    }
+
+    /// FREEZE FIX (V1 mitigation, CH Session 2) — a chat of up to `eagerAllLimit` messages renders
+    /// EVERY row eagerly, so it has no lazy row at all and the lazy-stack layout loop cannot happen. Every
+    /// freeze observed so far was in such a chat: keyboard dismiss after the 5th turn (10 messages), the
+    /// turn-5 web chat (~14), the follow-up after a short answer. A longer chat keeps option 1 (lazy history
+    /// + eager latest exchange), which passed the 200-message scroll gate.
+    /// Measured and rejected (Session 2): "the newest 20 eager, the rest lazy" put the lazy/eager boundary
+    /// MID-content, and a fling through it looped (main thread busy 30 s, 2 of 2 runs, content 60,336 ↔
+    /// 60,436 pt at the boundary). The durable fix is the UIKit transcript (1.1).
+    /// DEBUG `-TranscriptEagerAll 0` = the old split everywhere (the A/B baseline).
+    #if DEBUG
+    private static let eagerAllLimit: Int = {
+        let d = UserDefaults.standard
+        return d.object(forKey: "TranscriptEagerAll") == nil ? 24 : max(0, d.integer(forKey: "TranscriptEagerAll"))
+    }()
+    #else
+    private static let eagerAllLimit = 24
+    #endif
+
+    /// Where the lazy history ends: nowhere in a short chat (all eager), else the latest exchange.
+    private var eagerStart: Int {
+        session.messages.count <= Self.eagerAllLimit ? 0 : liveStart
+    }
+
+    /// The transcript rows (Brief CH follow-up freeze, 2026-10-04). Settled HISTORY stays in a
+    /// `LazyVStack` (a long chat must scroll at full frame rate — an all-eager stack measured ~30 fps
+    /// flings on a 100-turn chat); the LATEST exchange renders in an eager `VStack` below it. Why: on
+    /// iOS 26+ a lazy stack whose trailing row (the 18 pt streaming tail, or the just-sent user bubble)
+    /// sits at the materialisation edge never reaches a layout fixed point — measured it shrinks the
+    /// stack, estimated (~ the average row height) it grows it, so materialisation flips every pass and
+    /// the main thread spins forever (Apple Forums 805306). The rows that appear and change size during a
+    /// turn are therefore never estimated.
+    @ViewBuilder
+    private var rows: some View {
+        #if DEBUG
+        if Self.freezeLazyStack {
+            LazyVStack(alignment: .leading, spacing: 18) { historyRows(0..<session.messages.count); liveTail }
+                .padding(.horizontal, 16).padding(.top, 16).padding(.bottom, 24)
+        } else if Self.freezeEagerAll {
+            VStack(alignment: .leading, spacing: 18) { historyRows(0..<session.messages.count); liveTail }
+                .padding(.horizontal, 16).padding(.top, 16).padding(.bottom, 24)
+        } else {
+            splitRows
+        }
+        #else
+        splitRows
+        #endif
+    }
+
+    @ViewBuilder
+    private var splitRows: some View {
+        let split = eagerStart
+        VStack(alignment: .leading, spacing: 18) {
+            if split > 0 {
+                LazyVStack(alignment: .leading, spacing: 18) { historyRows(0..<split) }
+            }
+            historyRows(split..<session.messages.count)
+            liveTail
+        }
+        .padding(.horizontal, 16).padding(.top, 16).padding(.bottom, 24)
+    }
+
+    @ViewBuilder
+    private func historyRows(_ range: Range<Int>) -> some View {
+        ForEach(session.messages[range]) { message in
+            bubble(for: message)
+                .id(message.id)
+                #if DEBUG
+                .freezeRowProbe("row.\(message.role)")
+                #endif
+        }
+    }
+
+    @ViewBuilder
+    private var liveTail: some View {
+        if session.isStreaming && !session.streamingThinking.isEmpty {
+            // Brief AE2 — while streaming, the thought process renders at the
+            // HEAD of the reply (before the answer tail). On completion it
+            // moves INTO the committed assistant bubble's top (same position),
+            // so it never jumps below the answer/sources.
+            ThoughtProcessBlock(session: session)
+                .id("__thought_process__")
+        }
+        if session.isStreaming && !Self.freezeNoTail {
+            // Isolated: the ONLY reader of streamingText. Its own id is the ↓
+            // jump anchor (Brief AE1 — no automatic follow-scroll).
+            StreamingTail(session: session)
+                .id(Self.tailAnchor)
+                #if DEBUG
+                .freezeRowProbe("row.tail")
+                #endif
+        }
+    }
+
     // MARK: - Transcript
 
     @ViewBuilder
     private var transcript: some View {
         ScrollViewReader { proxy in
             ScrollView {
-                LazyVStack(alignment: .leading, spacing: 18) {
-                    ForEach(session.messages) { message in
-                        bubble(for: message)
-                            .id(message.id)
-                    }
-                    if session.isStreaming && !session.streamingThinking.isEmpty {
-                        // Brief AE2 — while streaming, the thought process renders at the
-                        // HEAD of the reply (before the answer tail). On completion it
-                        // moves INTO the committed assistant bubble's top (same position),
-                        // so it never jumps below the answer/sources.
-                        ThoughtProcessBlock(session: session)
-                            .id("__thought_process__")
-                    }
-                    if session.isStreaming {
-                        // Isolated: the ONLY reader of streamingText. Its own id is the ↓
-                        // jump anchor (Brief AE1 — no automatic follow-scroll).
-                        StreamingTail(session: session)
-                            .id(Self.tailAnchor)
-                    }
-                }
-                .padding(.horizontal, 16)
-                .padding(.top, 16)
-                .padding(.bottom, 24)
+                rows
             }
+            #if DEBUG
+            // Perf gate: the first committed layout of the transcript (one runloop after mount).
+            .onAppear { DispatchQueue.main.async { GauntletMetrics.shared.transcriptLaidOut(messages: session.messages.count) } }
+            .overlay(alignment: .topLeading) {
+                if GauntletTap.shared.isOn {
+                    GauntletMetricsLabels()   // its own view: a label update never re-renders the transcript
+                }
+            }
+            #endif
             // Tap-to-dismiss the keyboard without swallowing scroll / selection.
             .simultaneousGesture(
                 TapGesture().onEnded { inputFocused = false }
@@ -166,8 +265,15 @@ struct ChatTranscript: View {
             // stream (whose per-token scrollTo keeps distance ≈ 0) never
             // invalidates this body — the ForEach of settled bubbles stays put.
             .onScrollGeometryChange(for: CGFloat.self) { geo in
-                geo.contentSize.height - geo.visibleRect.maxY
+                #if DEBUG
+                FreezeProbe.hit("geo.transform", "content=\(Int(geo.contentSize.height)) container=\(Int(geo.containerSize.height)) offY=\(Int(geo.contentOffset.y)) visMaxY=\(Int(geo.visibleRect.maxY)) insetT=\(Int(geo.contentInsets.top)) insetB=\(Int(geo.contentInsets.bottom))")
+                StreamGeoRecorder.shared.note(content: geo.contentSize.height, offset: geo.contentOffset.y, streaming: session.isStreaming)
+                #endif
+                return geo.contentSize.height - geo.visibleRect.maxY
             } action: { _, distanceFromBottom in
+                #if DEBUG
+                FreezeProbe.hit("transcript.distFromBottom", Int(distanceFromBottom))
+                #endif
                 let pinned = distanceFromBottom <= Self.bottomFollowThreshold
                 // Keep the guard — it stops per-frame body churn during a
                 // pinned stream. Animate so the scroll-to-latest arrow fades
@@ -181,9 +287,15 @@ struct ChatTranscript: View {
             .onScrollGeometryChange(for: CGFloat.self) { geo in
                 geo.visibleRect.minY
             } action: { _, topOffset in
+                #if DEBUG
+                FreezeProbe.hit("transcript.topOffset", Int(topOffset))
+                #endif
                 onScrollTopOffset?(topOffset)
             }
             .onChange(of: session.messages.count) { oldCount, newCount in
+                #if DEBUG
+                FreezeProbe.hit("transcript.msgCount", newCount)
+                #endif
                 // New user turn → reveal the query + START of the response near
                 // the TOP (read-from-top), not the bottom. Assistant commit →
                 // leave the user where they are (no yank). Bulk change (restore
@@ -191,9 +303,10 @@ struct ChatTranscript: View {
                 if newCount == oldCount + 1, let last = session.messages.last {
                     switch last.role {
                     case .user:
-                        withAnimation(.easeOut(duration: 0.25)) {
-                            proxy.scrollTo(last.id, anchor: .top)
-                        }
+                        // NOT animated (Brief CH follow-up freeze): the animated scroll-to-top moved the
+                        // trailing row across the lazy materialisation edge each frame and was one of the
+                        // triggers. A jump lands the question at the top in one layout.
+                        proxy.scrollTo(last.id, anchor: .top)
                     case .assistant:
                         break
                     case .activity:
@@ -314,8 +427,21 @@ struct ChatTranscript: View {
                 MarkdownBlockText(raw: message.text)
                     .frame(maxWidth: .infinity, alignment: .leading)
                     .padding(.trailing, 40)
+                    #if DEBUG
+                    .gauntletID("chat.answer", combine: true)   // Brief CH-0 — XCUITest reads the on-screen answer
+                    #endif
                 // Brief BN5 — "Read 1 entry in full · skimmed 6" / "Skimmed 9 entries".
                 readReceiptLine(message: message)
+                // CH Session 2 — a General answer no web result backs says so (app chrome, not model text).
+                if message.generalKnowledge == true {
+                    Text(WebGrounding.generalKnowledgeNote)
+                        .font(appFont.font(size: 13, relativeTo: .footnote))
+                        .foregroundStyle(ChatTypography.secondaryText)
+                        .padding(.top, 1)
+                        #if DEBUG
+                        .gauntletID("chat.generalKnowledge")
+                        #endif
+                }
                 // Piece 1 — collapsible grounded-Ask sources (chrome, not content).
                 citationFooter(message: message)
                 // ★ BUG 36 — a turn that stopped early (stream dropped while
@@ -494,6 +620,9 @@ struct ChatTranscript: View {
                             }
                             .buttonStyle(.plain)
                             .accessibilityHint(onOpenNode == nil ? "" : "Opens \(c.title)")
+                            #if DEBUG
+                            .gauntletID("chat.source")   // Brief CH-0 — the rendered citation chip
+                            #endif
                         }
                     }
                     .padding(.leading, 2)
@@ -688,13 +817,27 @@ struct ChatTranscript: View {
         FMFailureBanner(
             message: message,
             retryDisabled: session.isStreaming,
-            onRetry: { Task { await session.retryLastUserTurn() } },
+            retryTitle: session.loadOfferTag == nil ? "Retry" : "Load and ask",
+            onRetry: {
+                Task {
+                    if session.loadOfferTag != nil { await session.loadAndAsk() } else { await session.retryLastUserTurn() }
+                }
+            },
             onDismiss: { session.clearError() }
         )
     }
 }
 
 // MARK: - Streaming tail (isolated sole reader of streamingText)
+
+/// The part of the append-only stream not yet displayed. Counted in Unicode scalars, not Characters: a scalar that
+/// arrives in a later delta can join the last shown Character (U+FE0F after "➡", a ZWJ emoji's next part, an
+/// accent), so a Character count drops it from the stream for the rest of the turn (CH-B gauntlet F4).
+enum StreamReveal {
+    static func undisplayed(_ full: String, shown: String) -> String {
+        String(full.unicodeScalars.dropFirst(shown.unicodeScalars.count))
+    }
+}
 
 /// The in-flight tail. Mounted only while streaming. As the SOLE view reading
 /// `session.streamingText`, a per-token mutation re-renders only this child —
@@ -740,8 +883,6 @@ private struct StreamingTail: View {
     /// Idle debounce: reveal the buffered remainder when tokens stop arriving.
     private static let idleFlush: TimeInterval = 0.2
     private static let fadeDuration: TimeInterval = 0.18
-
-    private var displayedLength: Int { revealedText.count + pendingText.count }
 
     var body: some View {
         Group {
@@ -813,7 +954,7 @@ private struct StreamingTail: View {
         }
         // streamingText is append-only within a turn, so the un-displayed part
         // is exactly the suffix past what we've shown.
-        let undisplayed = String(full.dropFirst(displayedLength))
+        let undisplayed = StreamReveal.undisplayed(full, shown: revealedText + pendingText)
         guard !undisplayed.isEmpty else { return }
 
         if let lastNewline = undisplayed.lastIndex(where: { $0.isNewline }) {
@@ -826,7 +967,7 @@ private struct StreamingTail: View {
     }
 
     private func revealAllRemaining(from full: String) {
-        let undisplayed = String(full.dropFirst(displayedLength))
+        let undisplayed = StreamReveal.undisplayed(full, shown: revealedText + pendingText)
         guard !undisplayed.isEmpty else { return }
         commit(chunk: undisplayed)
     }
@@ -838,6 +979,9 @@ private struct StreamingTail: View {
         revealedText += pendingText
         pendingText = chunk
         lastFlush = Date()
+        #if DEBUG
+        GauntletTap.shared.answerFrame(revealedText + pendingText)   // Brief CH-0 — what the answer body DISPLAYS
+        #endif
 
         // Parse the CONCATENATION, never the two strings separately: the
         // revealed/pending split is a character boundary, not a block one, so

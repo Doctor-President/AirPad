@@ -487,6 +487,9 @@ struct MarkdownBlockText: View {
         // (cached) is cheap and body rarely re-evals. Bind once — topPad and
         // the ForEach both need the array.
         let blocks = Self.parse(raw)
+        #if DEBUG
+        let _ = FreezeProbe.hit("mdtext.body.\(raw.count)")
+        #endif
         // Contextual spacing: VStack(spacing:) can't vary per-gap, so the
         // container is spacing 0 and each block carries its own top pad via
         // the shared BlockSpacing resolver — identical logic in the stream

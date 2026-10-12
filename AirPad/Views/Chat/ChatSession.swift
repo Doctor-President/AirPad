@@ -93,8 +93,21 @@ final class ChatSession {
         /// partial with the authoritative full answer. Optional + Codable → survives an app
         /// kill (D3) and decodes nil on legacy transcripts.
         var requestID: String?
+        /// CH Session 2 (T 2026-10-08) — a General answer with no web result behind it (no key, no search, or the
+        /// search found nothing). The transcript shows `WebGrounding.generalKnowledgeNote` under it. App chrome,
+        /// never model text (so it is not sent back as history). Optional → legacy transcripts decode nil.
+        var generalKnowledge: Bool?
+        /// T ruling (2026-10-09) — cache-friendly follow-ups. A Library USER turn keeps the exact packet (`modelText`)
+        /// and system prompt it was SENT with, so the next request can replay them byte-for-byte and extend the
+        /// previous prompt — Ollama then reuses the prefix from its cache (measured: a follow-up on the same 7k-token
+        /// entry 21 s → 1.9 s). Nil on General / plain turns (their display text IS what was sent).
+        var modelText: String?
+        var systemPrompt: String?
+        /// The user turn whose packet began this turn's THREAD (the fresh read it follows up). The next follow-up replays
+        /// packets from here on, so its request extends this one byte-for-byte. Nil on turns that sent no packet.
+        var threadStart: UUID?
 
-        init(id: UUID = UUID(), role: Role, text: String, citations: [Citation]? = nil, readReceipt: ReadReceipt? = nil, activity: ToolActivity? = nil, isPartial: Bool? = nil, requestID: String? = nil) {
+        init(id: UUID = UUID(), role: Role, text: String, citations: [Citation]? = nil, readReceipt: ReadReceipt? = nil, activity: ToolActivity? = nil, isPartial: Bool? = nil, requestID: String? = nil, generalKnowledge: Bool? = nil, modelText: String? = nil, systemPrompt: String? = nil, threadStart: UUID? = nil) {
             self.id = id
             self.role = role
             self.text = text
@@ -103,6 +116,10 @@ final class ChatSession {
             self.activity = activity
             self.isPartial = isPartial
             self.requestID = requestID
+            self.generalKnowledge = generalKnowledge
+            self.modelText = modelText
+            self.systemPrompt = systemPrompt
+            self.threadStart = threadStart
         }
     }
 
@@ -156,6 +173,80 @@ final class ChatSession {
     /// The reasoning-model thought process of the LATEST turn — streamed live (rendered by the
     /// Thought-process block) and NEVER persisted; ephemeral by design. Reset at each stream start.
     private(set) var streamingThinking: String = ""
+    /// Set once per turn after `appendAnswerDelta` has split a leaked chain-of-thought off the answer
+    /// channel, so the answer can safely mention the word again. Reset at each stream/step start.
+    private var didSplitLeakedThinking = false
+
+    /// Append an ANSWER-channel delta, live-routing a leaked chain-of-thought into the Thought-process
+    /// block instead of the answer body. Models that ignore `think:false` (deepseek-r1, qwen3:4b) dump
+    /// their reasoning onto the answer channel terminated by a stray `</think>`; everything up to + that
+    /// first close is reasoning → `streamingThinking` (collapsed UI), the rest is the real answer. Clean
+    /// models never emit `</think>`, so this is a no-op for them. Idempotent per turn.
+    ///
+    /// Brief CH ruling 8 — the answer is shown THROUGH this turn's `CitationNumberer`: `streamingText` is its
+    /// display text (citation numbers final at first appearance, invalid markers never shown), while
+    /// `rawAnswer` keeps the model's own stream.
+    @MainActor
+    private func appendAnswerDelta(_ t: String) {
+        rawAnswer += t
+        if !didSplitLeakedThinking, let r = rawAnswer.range(of: "</think>") {
+            let reasoning = String(rawAnswer[..<r.upperBound])
+                .replacingOccurrences(of: "<think>", with: "")
+                .replacingOccurrences(of: "</think>", with: "")
+                .trimmingCharacters(in: .whitespacesAndNewlines)
+            if !reasoning.isEmpty { streamingThinking += reasoning }
+            rawAnswer = String(rawAnswer[r.upperBound...])
+            didSplitLeakedThinking = true
+            numberer = CitationNumberer(candidates: numbererCandidates)
+            if answerFilter != nil { answerFilter = WebAnswerFilter(allowed: filterAllowed) }
+            numberer.feed(filtered(rawAnswer))
+        } else {
+            numberer.feed(filtered(t))
+        }
+        streamingText = numberer.displayText
+        if prefillNotice != nil, !streamingText.isEmpty { prefillNotice = nil }   // BW5 — the first shown token replaces the status line
+    }
+
+    /// CH (T device 2026-10-09) — the live status line WHILE a tool runs ("Searching the web…", "Reading en.wikipedia.org…"),
+    /// shown in the answer slot instead of the bare "Thinking…" until the result's card appears.
+    nonisolated static func toolStatus(_ name: String, _ arguments: [String: Any]) -> String? {
+        switch name {
+        case AgentTools.webSearch: return "Searching the web…"
+        case AgentTools.fetchURL:
+            guard let u = arguments["url"] as? String, var host = URL(string: u)?.host?.lowercased(), !host.isEmpty else { return "Reading the page…" }
+            if host.hasPrefix("www.") { host.removeFirst(4) }
+            return "Reading \(host)…"
+        default: return nil
+        }
+    }
+
+    /// CH Session 2 — General answers stream through `WebAnswerFilter` BEFORE the numberer (URLs no tool returned
+    /// and the model's own source list never show); nil on Library turns (their packet decides what may be cited).
+    @ObservationIgnored private var answerFilter: WebAnswerFilter?
+    @ObservationIgnored private var filterAllowed: [String] = []
+    private func filtered(_ t: String) -> String {
+        guard answerFilter != nil else { return t }
+        return answerFilter!.feed(t)
+    }
+    /// Release what the filter still holds and settle the numberer (stream end).
+    private func settleAnswer() {
+        if answerFilter != nil { numberer.feed(answerFilter!.finish()) }
+        numberer.settleAll()
+    }
+
+    /// Brief CH ruling 8 — start a fresh answer stream numbered against `candidates` (the turn's packet
+    /// citations, or the web results found so far). Every stream start goes through here.
+    @MainActor
+    private func beginAnswerStream(candidates: [Message.Citation]?) {
+        streamingText = ""
+        rawAnswer = ""
+        numbererCandidates = candidates
+        numberer = CitationNumberer(candidates: candidates)
+        if answerFilter != nil { answerFilter = WebAnswerFilter(allowed: filterAllowed) }
+    }
+    @ObservationIgnored private var rawAnswer = ""
+    @ObservationIgnored private var numbererCandidates: [Message.Citation]?
+    @ObservationIgnored private var numberer = CitationNumberer(candidates: nil)
     /// Per-chat Thinking toggle, OFF by default. The picker sheet's toggle sets it; send() passes
     /// it to the Host — the only path that honors `think`.
     var thinkEnabled: Bool = false
@@ -165,6 +256,9 @@ final class ChatSession {
     /// turn end. Nil → the plain thinking shimmer (private/general chat). No spinner-only silence on a
     /// slow first read.
     var prefillNotice: String? = nil
+    /// T ruling (2026-10-09) — set by the Librarian on a FIRST read (chars sent): the time to the first token becomes a
+    /// prefill-speed sample for the "~N s" estimate. Consumed by the next `send`.
+    @ObservationIgnored var prefillSampleChars: Int? = nil
     /// Echoed back as a `.user` message the moment send() fires so the
     /// transcript shows the turn instantly while the model starts.
     private(set) var pendingUser: String? = nil
@@ -272,15 +366,23 @@ final class ChatSession {
     /// turns by `buildPrompt`); `systemPrompt` steers it. ChatSession stays a dumb
     /// lane — it appends the bubble, streams, and persists; it does NOT retrieve
     /// or build the grounded prompt (LibrarianState owns that — step 3/Ask hybrid).
-    func send(displayText: String, modelText: String, systemPrompt: String, citations: [Message.Citation]? = nil, alwaysCiteIndices: Set<Int> = [], readReceipt: Message.ReadReceipt? = nil) async {
+    /// `generalKnowledge` (CH Session 2) — a General turn with no web search behind it: its answer streams through
+    /// `WebAnswerFilter` (no tool ran, so only a URL the user typed may appear) and, when the question is FACTUAL
+    /// (T ruling 2026-10-09), carries the app's general-knowledge line.
+    func send(displayText: String, modelText: String, systemPrompt: String, citations: [Message.Citation]? = nil, alwaysCiteIndices: Set<Int> = [], readReceipt: Message.ReadReceipt? = nil, generalKnowledge: Bool = false, replayFrom: UUID? = nil) async {
         guard !displayText.isEmpty, !isStreaming else { return }
 
         // New attempt clears any prior transient failure banner.
         lastError = nil
-        messages.append(Message(role: .user, text: displayText))
+        let packetTurn = modelText != displayText
+        let userID = UUID()
+        messages.append(Message(id: userID, role: .user, text: displayText, modelText: packetTurn ? modelText : nil,
+                                systemPrompt: packetTurn ? systemPrompt : nil, threadStart: packetTurn ? (replayFrom ?? userID) : nil))
         pendingUser = nil
         isStreaming = true
-        streamingText = ""
+        filterAllowed = WebGrounding.urls(in: displayText)
+        answerFilter = generalKnowledge ? WebAnswerFilter(allowed: filterAllowed) : nil
+        beginAnswerStream(candidates: citations ?? [])
 
         streamingMessageID = UUID()
         // ★ BUG 36 Pillar 2 — a HOST turn gets a client-generated requestID (D1) so a
@@ -295,14 +397,11 @@ final class ChatSession {
         // appended above (its raw `displayText`); the current turn carries the packet instead.
         // Never a flattened "User:/Assistant:" string, which made Qwen3 continue a transcript and
         // let Ollama truncate the entry.
-        let history: [ModelRouter.WireMessage] = messages.dropLast().compactMap { m in
-            switch m.role {
-            case .user:      return ["role": "user", "content": m.text]
-            case .assistant: return ["role": "assistant", "content": m.text]
-            case .activity:  return nil   // tool-loop phase rows are not chat turns
-            }
-        }
         let numCtx = ModelRouter.contextWindowTokens
+        // T ruling (2026-10-09) — Library user turns are replayed as the packets they sent (newest first, while they
+        // fit the window), so this request EXTENDS the previous one and Ollama's prompt cache covers the prefix.
+        let history: [ModelRouter.WireMessage] = Self.historyWire(Array(messages.dropLast()), replayFrom: replayFrom,
+            reserveChars: systemPrompt.count + modelText.count, windowTokens: numCtx)
 
         // ★ BUG 36 — incremental delta persistence. The partial is made durable
         // AS IT ARRIVES (coalesced by `partialPersistThreshold`), so a mid-stream
@@ -310,6 +409,16 @@ final class ChatSession {
         // folds the in-flight `streamingText` into the persisted snapshot.
         var lastPersistedLength = 0
         streamingThinking = ""
+        didSplitLeakedThinking = false
+        let sampleChars = prefillSampleChars; prefillSampleChars = nil
+        let sentAt = Date()
+        var sampled = false
+        #if DEBUG
+        // Brief CH-0 — Gauntlet v2 render tap (inert without -GauntletTapDir).
+        GauntletTap.shared.beginTurn(requestID: hostRequestID, think: thinkEnabled, systemPrompt: systemPrompt,
+                                     history: history,
+                                     userContent: modelText, numCtx: numCtx)
+        #endif
         do {
             for try await delta in ModelRouter.generateStreaming(
                 systemPrompt: systemPrompt,
@@ -319,57 +428,54 @@ final class ChatSession {
                 requestID: hostRequestID,
                 think: thinkEnabled
             ) {
+                #if DEBUG
+                switch delta {
+                case .thinking(let t): GauntletTap.shared.rawDelta(thinking: true, t)
+                case .answer(let t): GauntletTap.shared.rawDelta(thinking: false, t)
+                }
+                #endif
+                if !sampled, let c = sampleChars { sampled = true; PrefillSpeed.record(chars: c, seconds: Date().timeIntervalSince(sentAt)) }
                 switch delta {
                 case .thinking(let t):
                     streamingThinking += t   // ephemeral — the Thought-process block renders it (increment 7)
                 case .answer(let t):
                     if prefillNotice != nil { prefillNotice = nil }   // BW5 — the first token replaces the "Reading…" line
-                    streamingText += t
+                    appendAnswerDelta(t)   // routes a leaked chain-of-thought to the Thought-process block, keeps the answer clean
                     if streamingText.count - lastPersistedLength >= Self.partialPersistThreshold {
                         lastPersistedLength = streamingText.count
                         flush()
                     }
                 }
             }
-            // Brief AD — a reasoning model routes its thoughts to the `reasoning`
-            // channel (→ `.thinking`), but one that instead dumps `<think>…</think>`
-            // INTO the answer must not have that chain-of-thought rendered — or its
-            // `[n]` parsed as a citation. Strip it before citation processing.
-            let streamed = Self.stripThinkTags(streamingText).trimmingCharacters(in: .whitespacesAndNewlines)
-            // Brief AB3 — STRIP any `[n]` whose index isn't a candidate this turn
-            // (a hallucinated marker: the empty-library branch passes no candidates,
-            // and a small model still fabricates [1]-[5]). Without this the renderer
-            // draws orphan superscripts with no chip behind them (T's build-B report).
-            let validIndices = Set((citations ?? []).map { $0.index })
-            let finalText = CitationReference.stripInvalidMarkers(in: streamed, valid: validIndices)
+            // Brief CH ruling 8 — the committed text IS what was on screen: the numberer's display text (numbers
+            // assigned at first appearance, invalid markers dropped at first sight — Brief AB3's strip, applied
+            // incrementally; the empty-library branch passes no candidates, so every marker is dropped). Brief AD — a
+            // model that dumps `<think>…</think>` INTO the answer must not have that chain-of-thought rendered.
+            settleAnswer()
+            var r = numberer.result(alwaysInclude: alwaysCiteIndices)
+            let finalText = Self.stripThinkTags(r.text).trimmingCharacters(in: .whitespacesAndNewlines)
             if !finalText.isEmpty {
-                // Keep ONLY the sources the answer actually cited inline ([n]).
-                // Retrieval hands over candidates; a passage becomes a citation
-                // only when the prose references it — so a turn that ignores the
-                // passages (or answers from general knowledge) can't render
-                // phantom "sources" under it (BUG 7 / Part 2).
-                // Brief BS2 — an entry READ IN FULL (its index in `alwaysCiteIndices`) is ALWAYS
-                // kept as a source chip, whether or not the model wrote its [n]; skimmed
-                // passages/cards still only survive when the prose cites them.
-                let citedOnly: [Message.Citation]? = citations.flatMap { candidates in
-                    let used = CitationReference.citedIndices(in: finalText)
-                    let kept = candidates.filter { used.contains($0.index) || alwaysCiteIndices.contains($0.index) }
-                    return kept.isEmpty ? nil : kept
+                // Sources are ONLY the ones the answer cited inline (BUG 7 / Part 2) — a passage becomes a
+                // citation only when the prose references it — plus the entries READ IN FULL (BS2/BU1), appended
+                // after the mentioned ones. One number per source (BH), so superscripts and chips always match.
+                if r.citations.isEmpty, let candidates = citations,
+                   case let titleMatched = candidates.filter({ Self.titleMentioned($0.title, in: finalText) }),
+                   !titleMatched.isEmpty {
+                    // Deterministic citation fallback (T 2026-10-04): the answer wrote NO [n] (small models
+                    // under-cite a free-form synthesis — qwen3:4b's connections turn). Attach a FOOTER chip
+                    // for every PACKET entry the answer NAMES by title (case/punctuation-tolerant). Only
+                    // `candidates` are considered, so a chip can never point at an entry not in the packet.
+                    r = numberer.result(alwaysInclude: Set(titleMatched.map { $0.index }))
                 }
-                // Brief BH — renumber to ONE number per source (1…k, first-mention order)
-                // so the inline superscripts and the node-deduped footer chips always match.
-                if let cited = citedOnly {
-                    // BU1 — carry the always-cite set INTO the renumber: keeping a chip past the
-                    // filter is not enough, the renumber rebuilds from prose mentions and would
-                    // drop an uncited read entry (BS2's guarantee, restored end-to-end).
-                    let r = CitationReference.renumberBySource(text: finalText, citations: cited,
-                                                               alwaysInclude: alwaysCiteIndices)
-                    messages.append(Message(id: streamingMessageID, role: .assistant, text: r.text, citations: r.citations, readReceipt: readReceipt))
-                } else {
-                    // Brief BN5 — the read/skim receipt renders even when the answer cited nothing
-                    // inline (a full read the model didn't superscript still "read 1 entry").
-                    messages.append(Message(id: streamingMessageID, role: .assistant, text: finalText, citations: nil, readReceipt: readReceipt))
-                }
+                // Brief BN5 — the read/skim receipt renders even when the answer cited nothing inline.
+                // T ruling (2026-10-09): the general-knowledge line only under a FACTUAL question (not a pep talk).
+                let labelled = generalKnowledge && WebGrounding.isFactualQuestion(displayText)
+                messages.append(Message(id: streamingMessageID, role: .assistant, text: finalText,
+                                        citations: r.citations.isEmpty ? nil : r.citations, readReceipt: readReceipt,
+                                        generalKnowledge: labelled ? true : nil))
+                #if DEBUG
+                if labelled { GauntletTap.shared.noteValue("generalKnowledge", true) }
+                #endif
             }
         } catch {
             // ★ BUG 36 — do NOT discard the partial. A mid-stream drop (the app
@@ -380,7 +486,8 @@ final class ChatSession {
             // Only when NOTHING streamed do we surface a failure banner, so a
             // genuine unreachable-Host error is still visible (and the trailing
             // `.user` message remains so retry can re-send it).
-            let partial = streamingText.trimmingCharacters(in: .whitespacesAndNewlines)
+            settleAnswer()
+            let partial = numberer.result().text.trimmingCharacters(in: .whitespacesAndNewlines)
             if !partial.isEmpty {
                 // Carry the requestID so foreground / relaunch can fetch the FULL answer. Keep the
                 // read receipt so a resumed partial still shows what it read (BN5).
@@ -389,10 +496,19 @@ final class ChatSession {
                 // Nothing streamed — a genuine failure. Classify it into a human
                 // banner (field findings #2/#3): unreachable/530 reads as "offline
                 // or asleep", and raw upstream HTML is never shown.
-                lastError = Self.humanError(for: error)
+                surface(error)
             }
         }
 
+        #if DEBUG
+        do {
+            let committed = messages.last.flatMap { $0.role == .assistant && $0.id == streamingMessageID ? $0 : nil }
+            GauntletTap.shared.endTurn(finalText: committed?.text, citations: committed?.citations,
+                                       receipt: committed?.readReceipt.map { ChatTranscript.readReceiptText($0) },
+                                       thinking: streamingThinking, lastError: lastError,
+                                       isPartial: committed?.isPartial == true)
+        }
+        #endif
         streamingText = ""
         isStreaming = false
         currentRequestID = nil
@@ -434,8 +550,58 @@ final class ChatSession {
     /// appended to the model's copy of the user turn (the display bubble stays clean).
     /// Returns whether the refusal guard fired a web retry, so the caller can log
     /// `retry=web`.
+    /// The history to send before a new turn (one derivation, also asked by the Librarian before it builds a follow-up
+    /// packet): every user/assistant turn in order, user turns as their display text — EXCEPT on a cache-friendly
+    /// follow-up (`replayFrom` = the turn that began this thread): from that turn on, Library user turns are replayed as
+    /// the exact packets they sent, so the request extends the previous one byte-for-byte (Ollama's prompt cache). If
+    /// the replay wouldn't fit the window (≈ 3 chars/token, minus `reserveChars` and ~2k tokens for the answer), nothing
+    /// is replayed. Activity rows are not chat turns.
+    nonisolated static func historyWire(_ msgs: [Message], replayFrom: UUID?, reserveChars: Int, windowTokens: Int) -> [ModelRouter.WireMessage] {
+        historyPlan(msgs, replayFrom: replayFrom, reserveChars: reserveChars, windowTokens: windowTokens).turns.map { ["role": $0.role, "content": $0.content] }
+    }
+    nonisolated static func historyPlan(_ msgs: [Message], replayFrom: UUID?, reserveChars: Int, windowTokens: Int)
+        -> (turns: [(role: String, content: String)], packets: [String]) {
+        let chat = msgs.filter { $0.role != .activity }
+        let start = replayFrom.flatMap { id in chat.firstIndex { $0.id == id } }
+        var turns: [(role: String, content: String)] = []
+        var packets: [String] = []
+        for (i, m) in chat.enumerated() {
+            let replay = start != nil && i >= start! && m.role == .user && m.modelText != nil
+            if replay { packets.append(m.modelText!) }
+            turns.append((m.role == .user ? "user" : "assistant", replay ? m.modelText! : m.text))
+        }
+        let total = turns.reduce(0) { $0 + $1.content.count }
+        if start != nil, total > windowTokens * 3 - reserveChars - 6_000 {
+            return (chat.map { ($0.role == .user ? "user" : "assistant", $0.text) }, [])
+        }
+        return (turns, packets)
+    }
+    /// The previous Library turn (answered in full): its thread start and system prompt — what a follow-up builds on.
+    func lastLibraryTurn() -> (threadStart: UUID, systemPrompt: String)? {
+        guard let i = messages.lastIndex(where: { $0.role == .user }), messages[i].modelText != nil,
+              let sp = messages[i].systemPrompt, let ts = messages[i].threadStart,
+              messages[(i + 1)...].contains(where: { $0.role == .assistant && $0.isPartial != true }) else { return nil }
+        return (ts, sp)
+    }
+    /// The packets a follow-up replaying from `threadStart` would carry (empty when they wouldn't fit).
+    func replayedPackets(from threadStart: UUID, reserveChars: Int, windowTokens: Int) -> [String] {
+        Self.historyPlan(messages, replayFrom: threadStart, reserveChars: reserveChars, windowTokens: windowTokens).packets
+    }
+
+    /// The web results found so far this turn, as numberer candidates (global `[n]` = position + 1).
+    static func webCandidates(_ links: [ToolLink]) -> [Message.Citation] {
+        links.enumerated().map { i, l in Message.Citation(index: i + 1, url: l.url, title: l.title, snippet: l.snippet ?? "") }
+    }
+
+    /// CH Session 2 (T 2026-10-08) — the APP runs the search before the model answers, instead of nudging the
+    /// model (`tool_choice` is inert on this stack, and instruct-2507 refused "latest news" even after the nudge
+    /// and its retry): `.search` for a current-information question, `.searchAndFetch` for a factual question —
+    /// search, then read the top result's page text.
+    enum WebPrefetch: String { case none, search, searchAndFetch }
+
     @discardableResult
-    func sendWithTools(displayText: String, systemPrompt: String, executor: ToolExecutor, forceWebSearch: Bool = false) async -> Bool {
+    func sendWithTools(displayText: String, systemPrompt: String, executor: ToolExecutor, forceWebSearch: Bool = false,
+                       prefetch: WebPrefetch = .none) async -> Bool {
         guard !displayText.isEmpty, !isStreaming else { return false }
         // The agentic tool loop runs over a direct .ollama endpoint OR the sealed .host pairing.
         // (It was .ollama-ONLY — the reason web search never worked over a paired Host: it was
@@ -445,7 +611,7 @@ final class ChatSession {
         switch toolProvider {
         case .ollama, .host: break
         default:
-            await send(displayText: displayText, modelText: displayText, systemPrompt: systemPrompt)
+            await send(displayText: displayText, modelText: displayText, systemPrompt: systemPrompt, generalKnowledge: true)
             return false
         }
 
@@ -453,9 +619,21 @@ final class ChatSession {
         messages.append(Message(role: .user, text: displayText))
         pendingUser = nil
         isStreaming = true
-        streamingText = ""
+        // CH Session 2 — only a URL this turn's tools return (or the user typed) may appear in the answer.
+        filterAllowed = WebGrounding.urls(in: displayText)
+        answerFilter = WebAnswerFilter(allowed: filterAllowed)
+        let freshness = WebGrounding.isFreshnessQuestion(displayText)
+        let now = Date()
+        beginAnswerStream(candidates: [])
         streamingThinking = ""   // Brief AL3 — clear any prior turn's thought process
 
+        #if DEBUG
+        // Gauntlet v2 pillar rows — the agent loop is a turn too (inert without -GauntletTapDir). Per-step Host
+        // requests aren't joined; the grader reads `path`, `tools` and the committed citations.
+        GauntletTap.shared.beginTurn(requestID: nil, think: false, systemPrompt: systemPrompt, history: [],
+                                     userContent: displayText, numCtx: ModelRouter.contextWindowTokens)
+        GauntletTap.shared.notePath("tools")
+        #endif
         let maxToolSteps = 5
         // Declared outside `do` so the `catch` can read it (Swift scoping).
         var producedActivity = false
@@ -475,7 +653,7 @@ final class ChatSession {
             }
             // Stream the assistant's partial answer into the live transcript (shared by both paths).
             let onDelta: @Sendable (String) -> Void = { [weak self] delta in
-                Task { @MainActor in self?.streamingText += delta }
+                Task { @MainActor in self?.appendAnswerDelta(delta) }   // route a leaked CoT to the Thought-process block
             }
             // Brief AL3 — the reasoning channel (Thinking on, Host path): stream the thought
             // process into `streamingThinking` (ephemeral; the Thought-process block renders it).
@@ -494,7 +672,7 @@ final class ChatSession {
                 for m in messages.dropLast() where m.role == .user || m.role == .assistant {
                     working.append(["role": m.role == .user ? "user" : "assistant", "content": m.text])
                 }
-                let userContent = nudge ? displayText + "\n\n(Use the web_search tool for this.)" : displayText
+                let userContent = nudge && prefetch == .none ? displayText + "\n\n(Use the web_search tool for this.)" : displayText
                 working.append(["role": "user", "content": userContent])
 
                 var finalAnswer = ""
@@ -507,9 +685,89 @@ final class ChatSession {
                 // can't retry a tool that cannot succeed — one attempt, one honest chip.
                 var sawUnavailable = false
                 var anyTool = false
+
+                /// Runs one assistant tool-call turn through the seam: records it in the working set, shows an activity
+                /// row per call, and feeds each result back. A web_search's results are ranked (fresh first on a
+                /// today/latest question), numbered GLOBALLY across the turn and dated in the packet; every URL a tool
+                /// returns joins the answer's allow-list.
+                func runCalls(_ calls: [ToolCall], content: String) async {
+                    anyTool = true
+                    working.append([
+                        "role": "assistant",
+                        "content": content,
+                        "tool_calls": calls.map { call in
+                            ["id": call.id, "type": "function",
+                             "function": ["name": call.name, "arguments": call.argumentsJSON]]
+                        }
+                    ])
+                    for call in calls {
+                        prefillNotice = Self.toolStatus(call.name, call.arguments)
+                        #if DEBUG
+                        if let line = prefillNotice { GauntletTap.shared.noteStatus(line) }
+                        #endif
+                        var result = await executor.execute(name: call.name, arguments: call.arguments)
+                        prefillNotice = nil
+                        #if DEBUG
+                        GauntletTap.shared.noteTool(call.name, (call.arguments["query"] as? String) ?? (call.arguments["url"] as? String) ?? "")
+                        #endif
+                        if result.rateLimited { sawRateLimit = true }
+                        if result.unavailable { sawUnavailable = true }
+                        let toolContent: String
+                        if call.name == AgentTools.webSearch, !result.links.isEmpty {
+                            let ranked = freshness ? WebGrounding.rank(result.links) : result.links
+                            toolContent = WebGrounding.packet(ranked, start: citationLinks.count, now: now, freshness: freshness)
+                            result = ToolResult(textForModel: result.textForModel, links: ranked,
+                                                rateLimited: result.rateLimited, unavailable: result.unavailable)
+                            citationLinks.append(contentsOf: ranked)
+                            filterAllowed += ranked.map(\.url)
+                            #if DEBUG
+                            GauntletTap.shared.noteToolLinks(ranked)
+                            #endif
+                        } else if call.name == AgentTools.fetchURL, let url = call.arguments["url"] as? String,
+                                  !result.textForModel.hasPrefix("Couldn't fetch"), !result.textForModel.hasPrefix("Invalid URL") {
+                            let n = citationLinks.firstIndex { WebGrounding.normalize($0.url) == WebGrounding.normalize(url) }
+                            toolContent = WebGrounding.fetchedPage(index: n.map { $0 + 1 }, title: n.map { citationLinks[$0].title },
+                                                                   url: url, text: result.textForModel)
+                            filterAllowed.append(url)
+                            #if DEBUG
+                            GauntletTap.shared.noteValue("fetched", url)
+                            #endif
+                        } else if call.id == "app_search", call.name == AgentTools.webSearch, result.links.isEmpty, !result.unavailable, !result.rateLimited {
+                            // The APP ran this search, not the model — an empty result read as the model's own failed
+                            // call ("I apologize for the error…"). Say plainly what happened.
+                            toolContent = "The web search found nothing for this question. Answer it from your own knowledge."
+                        } else {
+                            toolContent = result.textForModel
+                        }
+                        appendActivity(for: call, result: result)
+                        producedActivity = true
+                        working.append(["role": "tool", "tool_call_id": call.id, "content": toolContent])
+                    }
+                }
+
+                // CH Session 2 — the app searches (and reads the top result) BEFORE the model's first step.
+                if prefetch != .none {
+                    let t0 = Date()
+                    func call(_ id: String, _ name: String, _ args: [String: String]) -> ToolCall {
+                        let json = (try? JSONSerialization.data(withJSONObject: args)).flatMap { String(data: $0, encoding: .utf8) } ?? "{}"
+                        return ToolCall(id: id, name: name, argumentsJSON: json)
+                    }
+                    await runCalls([call("app_search", AgentTools.webSearch, ["query": displayText])], content: "")
+                    if prefetch == .searchAndFetch, !sawUnavailable, let top = citationLinks.first {
+                        await runCalls([call("app_fetch", AgentTools.fetchURL, ["url": top.url])], content: "")
+                    }
+                    #if DEBUG
+                    GauntletTap.shared.noteValue("prefetch", prefetch.rawValue)
+                    GauntletTap.shared.noteValue("prefetchMs", Int(Date().timeIntervalSince(t0) * 1000))
+                    #endif
+                }
+
                 for step in 0..<maxToolSteps {
-                    streamingText = ""
+                    // CH ruling 8/7 — each step streams through a numberer over the web results found so far,
+                    // so a marker with no result behind it (8B's "Jane Austen [1]" with no search) is never shown.
+                    beginAnswerStream(candidates: Self.webCandidates(citationLinks))
                     streamingThinking = ""   // AL3 — per step, so the panel shows THIS step's reasoning; the final (synthesis) step's is retained at commit
+                    didSplitLeakedThinking = false
                     // Withhold the tool schema once a tool reported it has no backend — the model
                     // can't retry a tool that can't succeed, so it answers honestly.
                     let turnTools = sawUnavailable ? nil : AgentTools.schema
@@ -538,48 +796,13 @@ final class ChatSession {
                     }
 
                     if turn.toolCalls.isEmpty {
-                        finalAnswer = turn.content.trimmingCharacters(in: .whitespacesAndNewlines)
+                        // Strip any leaked chain-of-thought from the settled agent answer (search turns run
+                        // think:false; a model that ignores it dumps reasoning into content → stray </think>).
+                        finalAnswer = Self.stripThinkTags(turn.content).trimmingCharacters(in: .whitespacesAndNewlines)
                         break
                     }
-                    anyTool = true
-
-                    // Record the assistant tool-call turn in the OpenAI working-set.
-                    working.append([
-                        "role": "assistant",
-                        "content": turn.content,
-                        "tool_calls": turn.toolCalls.map { call in
-                            ["id": call.id, "type": "function",
-                             "function": ["name": call.name, "arguments": call.argumentsJSON]]
-                        }
-                    ])
-                    streamingText = ""
-
-                    // Run each tool through the seam; show an activity row; feed results back.
-                    for call in turn.toolCalls {
-                        let result = await executor.execute(name: call.name, arguments: call.arguments)
-                        appendActivity(for: call, result: result)
-                        producedActivity = true
-                        if result.rateLimited { sawRateLimit = true }
-                        if result.unavailable { sawUnavailable = true }
-                        // Web results feed the answer's citations. Renumber GLOBALLY across
-                        // the turn so the model's [n] is unambiguous even across multiple
-                        // searches, and accumulate so cited [n] → {title, url}.
-                        let toolContent: String
-                        if call.name == AgentTools.webSearch, !result.links.isEmpty {
-                            let start = citationLinks.count
-                            toolContent = result.links.enumerated().map { i, l in
-                                "[\(start + i + 1)] \(l.title)\n\(l.url)\n\(l.snippet ?? "")"
-                            }.joined(separator: "\n\n")
-                            citationLinks.append(contentsOf: result.links)
-                        } else {
-                            toolContent = result.textForModel
-                        }
-                        working.append([
-                            "role": "tool",
-                            "tool_call_id": call.id,
-                            "content": toolContent
-                        ])
-                    }
+                    await runCalls(turn.toolCalls, content: turn.content)
+                    beginAnswerStream(candidates: Self.webCandidates(citationLinks))
 
                     if step == maxToolSteps - 1 {
                         // Loop backstop (the model never settled on an answer). Word it by
@@ -604,20 +827,28 @@ final class ChatSession {
 
             streamingText = ""
             if !outcome.answer.isEmpty {
-                // ★ Gate chips to CITED, not searched (the corpus rule via the SAME
-                // `citedIndices` parser): attach a web citation ONLY for the [n] the
-                // answer actually referenced, each mapped to its real scraped URL. No
-                // [n] → no footer, exactly like corpus.
-                let cited = CitationReference.citedIndices(in: outcome.answer)
-                let webCitations: [Message.Citation] = cited.sorted().compactMap { n in
-                    guard n >= 1, n <= outcome.links.count else { return nil }
-                    let link = outcome.links[n - 1]
-                    return Message.Citation(index: n, url: link.url, title: link.title, snippet: link.snippet ?? "")
+                // ★ Gate chips to CITED, not searched: a web citation ONLY for the [n] the answer actually
+                // referenced, each mapped to its real scraped URL; no [n] → no footer, exactly like corpus.
+                // CH ruling 7/8 — the SAME numberer as the corpus path, over the settled answer: an orphan
+                // marker (no result behind it) is stripped, numbers are one per source by first appearance —
+                // identical to what streamed (the step's deltas went through the same function).
+                var n = CitationNumberer(candidates: Self.webCandidates(outcome.links))
+                n.feed(WebAnswerFilter.apply(outcome.answer, allowed: filterAllowed))
+                n.settleAll()
+                let r = n.result()
+                if !r.text.isEmpty {
+                    // No web result behind the answer (the model didn't search, or nothing came back) → the app's
+                    // general-knowledge line — only under a FACTUAL question (T ruling 2026-10-09: a pep talk gets
+                    // none). A throttled turn's canned message is the app's own, so it gets none.
+                    // T ruling (2026-10-09, item 9): a search whose results the answer doesn't CITE backs nothing either.
+                    let ungrounded = (outcome.links.isEmpty || r.citations.isEmpty) && !outcome.rateLimited && WebGrounding.isFactualQuestion(displayText)
+                    messages.append(Message(role: .assistant, text: r.text,
+                                            citations: r.citations.isEmpty ? nil : r.citations,
+                                            generalKnowledge: ungrounded ? true : nil))
+                    #if DEBUG
+                    if ungrounded { GauntletTap.shared.noteValue("generalKnowledge", true) }
+                    #endif
                 }
-                // Brief BH — same renumber (one per source) so web chips match the prose.
-                let r = CitationReference.renumberBySource(text: outcome.answer, citations: webCitations)
-                messages.append(Message(role: .assistant, text: r.text,
-                                        citations: r.citations.isEmpty ? nil : r.citations))
             }
         } catch {
             // Degrade SILENTLY if the FIRST turn failed (e.g. the endpoint/model
@@ -635,11 +866,19 @@ final class ChatSession {
             // Brief AF2 — route the agentic error through the SAME honest banner as the
             // plain path (AD2). Previously this used the raw errorDescription, which
             // leaked a Cloudflare 502 HTML page verbatim into the banner.
-            lastError = Self.humanError(for: error)
+            surface(error)
         }
 
+        #if DEBUG
+        do {
+            let committed = messages.last.flatMap { $0.role == .assistant ? $0 : nil }
+            GauntletTap.shared.endTurn(finalText: committed?.text, citations: committed?.citations, receipt: nil,
+                                       thinking: "", lastError: lastError, isPartial: false)
+        }
+        #endif
         streamingText = ""
         isStreaming = false
+        prefillNotice = nil   // a tool status line never outlives the turn
         flush()
         scheduleTitleGenerationIfNeeded()
         return didRetryWeb
@@ -675,6 +914,12 @@ final class ChatSession {
             text: "Web search needs a Brave Search key. [Add one in Settings → Web search.](airpad-settings://websearch)"))
         pendingUser = nil
         flush()
+        #if DEBUG
+        GauntletTap.shared.beginTurn(requestID: nil, think: false, systemPrompt: "", history: [], userContent: text, numCtx: 0)
+        GauntletTap.shared.notePath("nokey")
+        GauntletTap.shared.endTurn(finalText: messages.last?.text, citations: nil, receipt: nil, thinking: "",
+                                   lastError: nil, isPartial: false)
+        #endif
     }
 
     /// Append a collapsible activity row for one completed tool call.
@@ -805,9 +1050,35 @@ final class ChatSession {
     /// chain-of-thought is never rendered and its `[n]` never parsed as a citation.
     /// No-op on the Host path (reasoning rides its own channel) and on plain answers.
     static func stripThinkTags(_ s: String) -> String {
-        var out = s.replacingOccurrences(of: #"(?is)<think>.*?</think>"#, with: "", options: .regularExpression)
-        out = out.replacingOccurrences(of: #"(?is)<think>.*$"#, with: "", options: .regularExpression)
-        return out.replacingOccurrences(of: "</think>", with: "")
+        var out = s.replacingOccurrences(of: #"(?is)<think>.*?</think>"#, with: "", options: .regularExpression)   // paired block
+        out = out.replacingOccurrences(of: #"(?is)<think>.*$"#, with: "", options: .regularExpression)             // unclosed <think> → EOS
+        // Reasoning dumped onto the ANSWER channel with NO opening <think> but terminated by a stray
+        // </think> (deepseek-r1 / qwen3:4b via Ollama with think:false ignore it and emit the full
+        // chain-of-thought as content ending in "…</think>\n<answer>"). Drop everything up to + including
+        // that first stray close — the preamble is the leaked reasoning; the real answer follows it.
+        out = out.replacingOccurrences(of: #"(?is)^.*?</think>"#, with: "", options: .regularExpression)
+        out = out.replacingOccurrences(of: "</think>", with: "")   // any residual bare close
+        return out.replacingOccurrences(of: "<think>", with: "")   // any residual bare open
+    }
+
+    /// Deterministic citation fallback — does `answer` NAME a packet entry titled `title`? Case- and
+    /// punctuation-tolerant: compares the title's MAIN part (before a ':', '—', or '·' subtitle) as a
+    /// normalized (lowercased, non-alphanumeric → space, collapsed) substring of the answer. Used ONLY when
+    /// the answer wrote no `[n]`, so a small model's uncited synthesis still gets footer chips for the
+    /// entries it mentions. Guarded at ≥4 chars so tiny/generic titles don't false-match.
+    static func titleMentioned(_ title: String, in answer: String) -> Bool {
+        func norm(_ s: String) -> String {
+            let scalars = s.lowercased().unicodeScalars.map {
+                CharacterSet.alphanumerics.contains($0) ? Character($0) : " "
+            }
+            return String(scalars).split(separator: " ").joined(separator: " ")
+        }
+        let main = title.split(whereSeparator: { ":—·".contains($0) }).first.map(String.init) ?? title
+        let needle = norm(main)
+        // Session 3 audit fix — the title must stand as WHOLE WORDS in the answer and be specific enough to name an
+        // entry (≥ 2 words or ≥ 8 characters): "Rain" matched "training", a "Paris" card matched "Paris is…".
+        guard needle.split(separator: " ").count >= 2 || needle.count >= 8 else { return false }
+        return (" " + norm(answer) + " ").contains(" " + needle + " ")
     }
 
     static func humanError(for error: Error) -> String {
@@ -896,6 +1167,33 @@ final class ChatSession {
     /// Dismiss the transient failure banner without retrying.
     func clearError() {
         lastError = nil
+        loadOfferTag = nil
+    }
+
+    /// ★ C4a — the model the banner offers to load ("Load and ask"), set only when the ask failed because
+    /// that model isn't loaded and the app did NOT load it (Hands-on, or the load itself failed). nil for
+    /// every other error. Read only while `lastError` is showing.
+    private(set) var loadOfferTag: String? = nil
+
+    /// Show a failed ask in the banner, with the one-tap load offer when the failure was "not loaded".
+    private func surface(_ error: Error) {
+        lastError = Self.humanError(for: error)
+        if case ModelRouter.RouterError.modelNotLoaded(let tag, _) = error { loadOfferTag = tag } else { loadOfferTag = nil }
+    }
+
+    /// C4a — the banner's "Load and ask": load the offered model through the picker's own funnel (so it
+    /// becomes the pick, exactly as if chosen in the sheet), then re-ask the same question. A failed load
+    /// shows the Host's reason instead.
+    func loadAndAsk() async {
+        guard let tag = loadOfferTag, !isStreaming else { return }
+        let catalog = HostCatalog.shared
+        await catalog.load(tag)
+        if let reason = catalog.lastActionError {
+            lastError = reason
+            return
+        }
+        clearError()
+        await retryLastUserTurn()
     }
 
     /// Re-attempt the most recent user turn after a failed send. On error we
@@ -914,6 +1212,33 @@ final class ChatSession {
     /// refusal that reads exactly like the Librarian losing access to the corpus. Nothing was broken
     /// about retrieval; the retry entry point simply never entered it.
     var resendHandler: ((String) async -> Void)?
+
+    #if DEBUG
+    /// Perf gate — `-GauntletSeedChat <n>`: replace the transcript with n synthetic turns (realistic answer
+    /// lengths + markdown) so opening/scrolling a long chat can be measured. Never persisted on its own.
+    func debugSeed(turns n: Int) {
+        let para = "Your entries return to the same few themes from different angles, and each one adds a detail the others leave out. "
+        var out: [Message] = []
+        for k in 0..<n {
+            out.append(Message(role: .user, text: "Question \(k + 1): what do my notes say about theme \(k % 7 + 1)?"))
+            let reps = 2 + (k * 5) % 11          // ~240 … 1,500 chars
+            var body = "**Theme \(k % 7 + 1).** " + String(repeating: para, count: reps / 2)
+            if k % 3 == 0 { body += "\n\n- First, " + para + "\n- Second, " + para + "\n- Third, " + para }
+            if k % 4 == 1 { body += "\n\n### What stands out\n\n" + String(repeating: para, count: 2) }
+            out.append(Message(role: .assistant, text: body))
+        }
+        messages = out
+    }
+
+    /// CH item 4 — `-GauntletSeedPartial YES`: the last seeded answer "stopped early" (a third of its text,
+    /// `isPartial`), so the UI test can tap the real **Continue** control.
+    func debugMarkLastPartial() {
+        guard let i = messages.indices.last, messages[i].role == .assistant else { return }
+        let t = messages[i].text
+        messages[i].text = String(t.prefix(max(60, t.count / 3)))
+        messages[i].isPartial = true
+    }
+    #endif
 
     func retryLastUserTurn() async {
         guard !isStreaming, let last = messages.last, last.role == .user else {
@@ -1313,6 +1638,18 @@ final class ChatSession {
         didGenerateTitle = true
         let chatID = self.id
         let storeRef = store
+        // T ruling (2026-10-09, cache-friendly follow-ups) — on a Library chat the title request EXTENDS the chat's own
+        // prompt (system + the sent packet + the answer, then "title this"): Ollama keeps one cached prompt, and a
+        // separate short title request evicted the 7k-token packet the follow-up was about to reuse (measured: the
+        // follow-up re-prefilled, 26.9 s). Sharing the prefix keeps it cached; other chats keep the short request.
+        if let first = messages.first(where: { $0.role == .user }), let packet = first.modelText, let sp = first.systemPrompt {
+            let window = ModelRouter.contextWindowTokens
+            Task.detached(priority: .utility) {
+                await Self.generateTitleSharingPrefix(chatID: chatID, systemPrompt: sp, packet: packet,
+                                                      answer: firstAssistant, numCtx: window, store: storeRef)
+            }
+            return
+        }
         Task.detached(priority: .utility) {
             await Self.generateTitle(
                 chatID: chatID,
@@ -1356,6 +1693,23 @@ final class ChatSession {
             // Silent no-op — refusal/error is expected (~18%); the
             // truncation fallback already in the store stays put.
         }
+    }
+
+    private static func generateTitleSharingPrefix(chatID: UUID, systemPrompt: String, packet: String, answer: String,
+                                                   numCtx: Int, store: ChatStore?) async {
+        var raw = ""
+        do {
+            for try await d in ModelRouter.generateStreaming(
+                systemPrompt: systemPrompt,
+                history: [["role": "user", "content": packet], ["role": "assistant", "content": answer]],
+                userContent: "Now write a title for this conversation. Output ONLY the title — 3 to 6 words, no quotes, no punctuation at the end, no preamble.",
+                numCtx: numCtx) {
+                if case .answer(let t) = d { raw += t }
+                if raw.count > 200 { break }
+            }
+        } catch { return }   // silent: the truncation title stays
+        guard let cleaned = sanitizeTitleCandidate(raw) else { return }
+        await store?.updateTitle(id: chatID, title: cleaned)
     }
 
     /// Conservative sanitizer / validator. Strips quotes + trailing

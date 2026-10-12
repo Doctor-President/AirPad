@@ -23,6 +23,7 @@ import Foundation
 ///   T5  — per-kind formatter output (duration flex, boolean, vocabulary join,
 ///         rating numeric, scalar range, measurement, text-empty→nil, unfilled→nil,
 ///         nodeReference via resolver; money/date asserted non-empty for locale).
+///   T11 — a date-only value shows its CALENDAR DAY in every time zone (UTC-midnight seed + local picks; SL-D3).
 ///   T6  — ★ vocabulary references VALUE IDs, not labels: renaming a value's
 ///         label reformats the SAME stored value (rename-safe / union-mergeable).
 @available(iOS 17.0, *)
@@ -286,6 +287,36 @@ enum FieldValueSelfTest {
                     failures.append("T10: nodeReference value lost")
                 }
             } catch { failures.append("T10: threw \(error)") }
+        }
+
+        // T11 — S3 / SL-D3: a date-only value names a CALENDAR DAY, in every time zone. The Sample seed stores
+        // "2026-09-04T00:00:00Z" (UTC midnight, ISO date-only) and Chicago showed "Sep 3" (the Mom entry's "Last
+        // spoke" → the Librarian answered September 3). A value the user picked in the editor is a LOCAL instant
+        // (any time of day) and must keep its local day — a naive "format in UTC" fix breaks Tokyo at 00:30.
+        do {
+            ran += 1
+            let saved = NSTimeZone.default
+            defer { NSTimeZone.default = saved }
+            func day(_ tz: String, _ y: Int, _ m: Int, _ d: Int, _ h: Int = 12, _ min: Int = 0) -> Date {
+                var c = Calendar(identifier: .gregorian); c.timeZone = TimeZone(identifier: tz)!
+                return c.date(from: DateComponents(year: y, month: m, day: d, hour: h, minute: min))!
+            }
+            let utcMidnight = Date(timeIntervalSince1970: 1_788_480_000)   // 2026-09-04T00:00:00Z
+            let cases: [(tz: String, stored: Date, label: String)] = [
+                ("America/Chicago", utcMidnight, "seed@Chicago"),
+                ("Pacific/Honolulu", utcMidnight, "seed@Honolulu"),
+                ("Asia/Tokyo", utcMidnight, "seed@Tokyo"),
+                ("America/Chicago", day("America/Chicago", 2026, 9, 4, 23, 30), "picked 23:30@Chicago"),
+                ("Asia/Tokyo", day("Asia/Tokyo", 2026, 9, 4, 0, 30), "picked 00:30@Tokyo"),
+            ]
+            for c in cases {
+                NSTimeZone.default = TimeZone(identifier: c.tz)!
+                let want = FieldValueFormatter.dateString(day(c.tz, 2026, 9, 4), hasTime: false)   // local noon, Sep 4
+                let def = byKind[.date]!
+                let got = FieldValueFormatter.display(FieldValue(definitionID: def.id, value: .date(c.stored, hasTime: false)),
+                                                      definition: def) ?? ""
+                if got != want { failures.append("T11[\(c.label)]: shows \"\(got)\", want \"\(want)\" (4 Sep 2026)") }
+            }
         }
 
         if failures.isEmpty {

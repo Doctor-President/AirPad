@@ -111,6 +111,7 @@ struct ComposerSendControls: View {
 /// composer-like ground, so the before/after can be screenshotted headlessly in light + dark. A fake
 /// "Library" chip stands in for the Librarian's Corpus toggle (same leading footprint). Throwaway.
 struct PillGalleryView: View {
+    static let longName = "Qwen3 30B-A3B Instruct 2507 · Extended Context Long Name Edition"
     var body: some View {
         ZStack {
             Color(uiColor: .systemBackground).ignoresSafeArea()
@@ -123,6 +124,12 @@ struct PillGalleryView: View {
                     group("Qwen3 8B — Thinking on", tag: "qwen3:8b", display: "Qwen3 8B", toggleable: true, think: true)
                     group("Qwen3 30B-A3B — long name, centred + full", tag: "q30", display: "Qwen3 30B-A3B", toggleable: true, think: true)
                     group("Qwen3 4B — Thinking NOT toggleable (pill still centred)", tag: "x4", display: "Qwen3 4B", toggleable: false, think: false)
+                    // C4 (T, 2026-10-08) — a long name FADES inside the pill; Library and Thinking keep their size.
+                    group("C4 — long name fades; Library + Thinking keep their size", tag: "qwen3:long",
+                          display: Self.longName, toggleable: true, think: true)
+                    galleryRow(tag: "qwen3:long", display: Self.longName, toggleable: true, think: false)
+                        .frame(width: 300)
+                        .overlay(RoundedRectangle(cornerRadius: 12).stroke(AppearancePalette.ink.opacity(0.15)))
                     Text("Tight width → the compact icon toggle (same on/off state), still full name:")
                         .font(.system(size: 11)).foregroundStyle(AppearancePalette.ink.opacity(0.5))
                     galleryRow(tag: "qwen3:4b", display: "Qwen3 4B", toggleable: true, think: true)
@@ -217,7 +224,12 @@ struct ModelPillRow: View {
     /// space to the right of an external toggle. Chat View leaves it nil and uses `includePrivate`.
     var leading: AnyView? = nil
 
-    private var canToggleThinking: Bool { catalog.resident?.thinkingToggleable == true }
+    /// C4a — the toggle follows the model the next ask NAMES (`active`), not whichever happens to be resident.
+    private var canToggleThinking: Bool { catalog.active?.thinkingToggleable == true }
+
+    /// C4 — the longest a model name may run before it fades out inside the pill (tighter rows use less).
+    private static let nameCapWide: CGFloat = 150
+    private static let nameCapTight: CGFloat = 96
 
     var body: some View {
         // Brief CA — FIX the BZ regression (pill truncated "Q…4B", sat right-of-centre, "Thinking on"
@@ -228,10 +240,16 @@ struct ModelPillRow: View {
         // whole row; the pill is `fixedSize` + high `layoutPriority`, so it is NEVER compressed. The
         // BZ version competed for width with `.infinity` flanks that could squeeze the pill — hence the
         // truncation + wrap. `ViewThatFits` picks the widest Thinking variant that still fits.
+        //
+        // ★ C4 (T, 2026-10-08) — a long model name ("qwen3:4b-instruct-2507-q4_K_M" as fixedSize) pushed
+        // the flanks below their own width and "Library" wrapped one syllable per line. Now the NAME is
+        // what gives way: capped (`nameCap…`) and faded at the trailing edge inside the pill; the leading
+        // control and Thinking are `fixedSize` and never wrap, and Thinking never disappears (the last
+        // resort is its icon with a tighter name cap, not no toggle).
         ViewThatFits(in: .horizontal) {
-            row(thinking: AnyView(thinkingWordPill))   // preferred: the "Thinking on/off" word pill
-            row(thinking: AnyView(thinkingIconToggle)) // tight: a compact icon toggle (same on/off state)
-            row(thinking: AnyView(EmptyView()))        // last resort: never clip the pill or wrap a chip
+            row(thinking: AnyView(thinkingWordPill), nameCap: Self.nameCapWide)    // preferred: the word pill
+            row(thinking: AnyView(thinkingWordPill), nameCap: Self.nameCapTight)   // the NAME gives way first
+            row(thinking: AnyView(thinkingIconToggle), nameCap: Self.nameCapTight) // tightest: the compact icon toggle
         }
         .padding(.leading, 6)
         .onChange(of: canToggleThinking) { _, ok in if !ok { thinkEnabled = false } } // toggle can't work → force off
@@ -240,22 +258,21 @@ struct ModelPillRow: View {
     /// One row layout: leading flank · centred pill · trailing Thinking flank. The flanks each take
     /// `maxWidth: .infinity` so they balance and the pill lands on the true centre; the pill is
     /// `fixedSize` + prioritised so the flanks yield to it and the full name is never truncated.
-    @ViewBuilder private func row(thinking: AnyView) -> some View {
+    @ViewBuilder private func row(thinking: AnyView, nameCap: CGFloat) -> some View {
         HStack(spacing: 8) {
             HStack(spacing: 8) {
-                if let leading { leading }
-                if includePrivate { privatePill }
+                if let leading { leading.fixedSize() }
+                if includePrivate { privatePill.fixedSize() }
                 Spacer(minLength: 0)
             }
             .frame(maxWidth: .infinity, alignment: .leading)
 
-            modelPill
-                .fixedSize(horizontal: true, vertical: false)
+            modelPill(nameCap: nameCap)
                 .layoutPriority(1)
 
             HStack(spacing: 8) {
                 Spacer(minLength: 0)
-                if canToggleThinking { thinking }
+                if canToggleThinking { thinking.fixedSize() }
             }
             .frame(maxWidth: .infinity, alignment: .trailing)
         }
@@ -270,43 +287,76 @@ struct ModelPillRow: View {
         }
     }
 
-    private var dividerBar: some View {
-        Text("|").font(.system(size: 12)).foregroundStyle(AppearancePalette.ink.opacity(0.25))
-    }
-
-    @ViewBuilder private var modelPill: some View {
+    /// ★ C4a — the pill names the ACTIVE model (what the next ask will use, by routing's own derivation)
+    /// and shows ✓ only when that model is resident. Not resident → the name with a hollow circle, read
+    /// "not loaded yet" (the ask loads it), so the pill never claims a model the banner then contradicts.
+    @ViewBuilder private func modelPill(nameCap: CGFloat) -> some View {
         Button(action: onTapModel) {
             PickerPill {
                 HStack(spacing: 5) {
                     if let busy = catalog.busyTag, let m = catalog.models.first(where: { $0.tag == busy }) {
                         // Load emits no progress → SHIMMER "loading" (honest "in progress", not a fake %).
                         Text("loading").font(.system(size: 12, weight: .medium)).foregroundStyle(AppearancePalette.ink.opacity(0.5))
+                            .lineLimit(1).fixedSize()
                             .composerShimmer(catalog.busyPercent == nil)
                         dividerBar
-                        name(m.display)
-                    } else if let r = catalog.resident {
-                        Image(systemName: "checkmark").font(.system(size: 10, weight: .bold)).foregroundStyle(Color(hexString: "2E9E4F"))
-                        name(r.display)
+                        name(catalog.name(m), cap: nameCap)
+                    } else if catalog.onDevice {
+                        // C4b2 — Apple Intelligence answers (picked, or no Mac/server to answer instead).
+                        Image(systemName: "apple.logo").font(.system(size: 10, weight: .semibold)).foregroundStyle(AppearancePalette.ink.opacity(0.7))
+                        name(ModelRouter.foundationModelName, cap: nameCap)
+                    } else if catalog.answerer == .endpoint, !catalog.endpointReachable {
+                        // C4b2 (T 2026-10-10) — the chosen server is away: say so, like the Mac (never a silent switch).
+                        Image(systemName: "wifi.slash").font(.system(size: 9, weight: .semibold)).foregroundStyle(AppearancePalette.ink.opacity(0.4))
+                        name("Server not reachable", cap: nameCap)
+                    } else if catalog.answerer == .endpoint {
+                        // C4b2 — the user's own server (the custom endpoint).
+                        Image(systemName: "server.rack").font(.system(size: 9, weight: .semibold)).foregroundStyle(AppearancePalette.ink.opacity(0.7))
+                        name(catalog.endpointName, cap: nameCap)
+                    } else if let a = catalog.active {
+                        if !catalog.reachable {
+                            // C4b2 — the Mac is away: its model, marked unreachable (never a ✓ it can't back up).
+                            Image(systemName: "wifi.slash").font(.system(size: 9, weight: .semibold)).foregroundStyle(AppearancePalette.ink.opacity(0.4))
+                        } else if a.isResident {
+                            Image(systemName: "checkmark").font(.system(size: 10, weight: .bold)).foregroundStyle(Color(hexString: "2E9E4F"))
+                        } else {
+                            Image(systemName: "circle").font(.system(size: 9, weight: .semibold)).foregroundStyle(AppearancePalette.ink.opacity(0.4))
+                        }
+                        name(catalog.name(a), cap: nameCap)
                     } else {
-                        Text("No model").font(.system(size: 12, weight: .semibold)).foregroundStyle(AppearancePalette.ink.opacity(0.55))
+                        Text(catalog.answerer == .mac && !catalog.reachable ? "Mac not reachable" : "No model")
+                            .font(.system(size: 12, weight: .semibold)).foregroundStyle(AppearancePalette.ink.opacity(0.55))
+                            .lineLimit(1).fixedSize()
                     }
                 }
             }
         }
         .buttonStyle(.plain)
-        .accessibilityLabel(catalog.resident.map { "Model \($0.display), loaded" } ?? "No model loaded")
+        .accessibilityLabel(pillAccessibilityLabel)
         // Brief AI2 — the callout ring hugs the MODEL chip ONLY (was the whole row, so it
         // spanned Thinking too). The anchor is harmless in Chat View (no overlay reads it).
         .firstRunCalloutTarget(FirstRunCalloutTargetID.librarianModelChip)
     }
 
-    // NO pill is ever taller than one text row (T). Brief CA — the name shows IN FULL, always: one
-    // line, `fixedSize` so it is never truncated ("Q…4B" was the BZ bug). The pill in `row()` carries
-    // the same `fixedSize` + priority, so the flanks yield to the name instead of squeezing it.
-    private func name(_ s: String) -> some View {
-        Text(s).font(.system(size: 12, weight: .semibold))
-            .foregroundStyle(AppearancePalette.ink.opacity(0.9))
-            .lineLimit(1).fixedSize()
+    private var pillAccessibilityLabel: String {
+        if catalog.onDevice { return "Model \(ModelRouter.foundationModelName), on this \(ModelRouter.deviceNoun)" }
+        if catalog.answerer == .endpoint {
+            return "Model \(catalog.endpointName), on your server" + (catalog.endpointReachable ? "" : ", not reachable")
+        }
+        if let a = catalog.active {
+            return "Model \(catalog.name(a)), " + (!catalog.reachable ? "Mac not reachable" : a.isResident ? "loaded" : "not loaded yet")
+        }
+        return "No model loaded"
+    }
+
+    private var dividerBar: some View {
+        Text("|").font(.system(size: 12)).foregroundStyle(AppearancePalette.ink.opacity(0.25))
+    }
+
+    // NO pill is ever taller than one text row (T). C4 — one line, never wrapped; up to `cap` wide, and
+    // a longer name FADES at the trailing edge inside the pill instead of pushing its neighbours.
+    private func name(_ s: String, cap: CGFloat) -> some View {
+        FadingName(text: s, cap: cap)
     }
 
     /// The full "Thinking on/off" word pill — one line, `fixedSize` so it never wraps (the BZ bug).
@@ -338,6 +388,48 @@ struct ModelPillRow: View {
     }
 }
 
+/// C4 — a one-line name that shows in full when it fits and otherwise runs to `cap` (or the space it is
+/// offered, if less) with a trailing fade, never an ellipsis and never a wrap.
+private struct FadingName: View {
+    let text: String
+    let cap: CGFloat
+    private var label: some View {
+        Text(text).font(.system(size: 12, weight: .semibold))
+            .foregroundStyle(AppearancePalette.ink.opacity(0.9))
+            .lineLimit(1).fixedSize()
+    }
+    var body: some View {
+        HugUpTo(cap: cap) {
+            ViewThatFits(in: .horizontal) {
+                label
+                label
+                    .frame(minWidth: 0, maxWidth: .infinity, alignment: .leading)
+                    .clipped()
+                    .mask(HStack(spacing: 0) {
+                        Rectangle()
+                        LinearGradient(colors: [.black, .clear], startPoint: .leading, endPoint: .trailing).frame(width: 18)
+                    })
+            }
+        }
+        .accessibilityLabel(text)
+    }
+}
+
+/// Sizes its child to the child's IDEAL width, but never wider than `cap` or the space offered — so a short name
+/// hugs (the pill stays snug and centred) and a long one stops at the cap (a plain `maxWidth` frame would instead
+/// take every point it is offered, stretching a short-name pill).
+private struct HugUpTo: Layout {
+    let cap: CGFloat
+    func sizeThatFits(proposal: ProposedViewSize, subviews: Subviews, cache: inout ()) -> CGSize {
+        guard let s = subviews.first else { return .zero }
+        let ideal = s.sizeThatFits(.unspecified)
+        return CGSize(width: min(ideal.width, cap, proposal.width ?? .infinity), height: ideal.height)
+    }
+    func placeSubviews(in bounds: CGRect, proposal: ProposedViewSize, subviews: Subviews, cache: inout ()) {
+        subviews.first?.place(at: bounds.origin, proposal: ProposedViewSize(width: bounds.width, height: bounds.height))
+    }
+}
+
 // MARK: - the sheet
 
 struct ModelPickerSheet: View {
@@ -347,11 +439,12 @@ struct ModelPickerSheet: View {
     /// Chat model-chip QUICK SWITCHER: selection + Thinking + in-memory badge, but NO
     /// Memory policy / Eject-all; instead a "Manage models" row (`onManageModels`) opens
     /// Settings → Models. `true` = Settings → Models → your Mac: the FULL surface (adds
-    /// Memory policy, Eject-all) plus a Mac header (`macName`) and Unpair (`onUnpair`).
+    /// Memory policy, Eject-all) plus a Mac header (`macName`) and "Forget this Mac" (`onForget`, confirmed first).
     var fullControls: Bool = false
     var macName: String? = nil
     var onManageModels: (() -> Void)? = nil
-    var onUnpair: (() -> Void)? = nil
+    var onForget: (() -> Void)? = nil
+    @State private var confirmForget = false
     @Environment(\.dismiss) private var dismiss
     /// EDIT MODE (T-ruled): the platform idiom for "destructive controls appear". In Edit, Load/Eject
     /// are suppressed and Delete shows on every installed row — so there's no third control in the
@@ -371,7 +464,7 @@ struct ModelPickerSheet: View {
     private func requestLoad(_ model: CatalogModel) {
         Task {
             if let notice = await catalog.previewLoad(model.tag) {
-                pendingLoad = PendingLoad(tag: model.tag, display: model.display, notice: notice)
+                pendingLoad = PendingLoad(tag: model.tag, display: catalog.name(model), notice: notice)
             } else {
                 await catalog.load(model.tag)
             }
@@ -400,17 +493,17 @@ struct ModelPickerSheet: View {
         if model.isResident {
             Task {
                 if let msg = await catalog.attemptDelete(model.tag) {
-                    pendingDelete = PendingDelete(tag: model.tag, display: model.display, sizeGB: gbInt(model.sizeBytes), hostRefusal: msg)
+                    pendingDelete = PendingDelete(tag: model.tag, display: catalog.name(model), sizeGB: gbInt(model.sizeBytes), hostRefusal: msg)
                 }
             }
         } else {
-            pendingDelete = PendingDelete(tag: model.tag, display: model.display, sizeGB: gbInt(model.sizeBytes), hostRefusal: nil)
+            pendingDelete = PendingDelete(tag: model.tag, display: catalog.name(model), sizeGB: gbInt(model.sizeBytes), hostRefusal: nil)
         }
     }
 
     // Same gate as the pill: the THINKING toggle appears only when the resident model actually
     // honors think:false (measured). A model that reasons regardless never shows a toggle.
-    private var canToggleThinking: Bool { catalog.resident?.thinkingToggleable == true }
+    private var canToggleThinking: Bool { catalog.active?.thinkingToggleable == true }
 
     var body: some View {
         ScrollView {
@@ -430,7 +523,7 @@ struct ModelPickerSheet: View {
                 if let err = catalog.lastActionError {
                     actionErrorBanner(err)
                 }
-                if !catalog.installed.isEmpty {
+                if catalog.reachable, !catalog.installed.isEmpty {
                     HStack {
                         Spacer()
                         Button(editing ? "Done" : "Edit") { withAnimation(.easeInOut(duration: 0.2)) { editing.toggle() } }
@@ -457,8 +550,36 @@ struct ModelPickerSheet: View {
                     }
                 }
 
+                // C4b2 (T ruling 2026-10-09: model choice is independent of pairing) — every source is listed whatever
+                // the pairing or the Mac's reachability: Apple Intelligence (with the reason when it isn't ready yet),
+                // the user's own server, then the Mac's models (greyed while it's away).
+                if !fullControls, catalog.onDeviceAvailable || catalog.onDeviceNote != nil {
+                    section("ON THIS \(ModelRouter.deviceNoun.uppercased())") {
+                        sourceRow(icon: "apple.logo", title: ModelRouter.foundationModelName,
+                                  subtitle: catalog.onDeviceNote ?? "Private, on this \(ModelRouter.deviceNoun) · short notes and quick questions",
+                                  chosen: catalog.onDevice, enabled: catalog.onDeviceAvailable, id: "picker.appleIntelligence") {
+                            catalog.useOnDevice()
+                        }
+                    }
+                }
+                if !fullControls, let endpoint = catalog.endpoint {
+                    section("YOUR SERVER") {
+                        sourceRow(icon: "server.rack", title: catalog.endpointName,
+                                  subtitle: (catalog.endpointReachable ? "" : "Not reachable right now · ") + (URL(string: endpoint)?.host ?? endpoint),
+                                  chosen: catalog.answerer == .endpoint, enabled: catalog.endpointReachable, id: "picker.endpoint") {
+                            catalog.useEndpoint()
+                        }
+                    }
+                }
+                if catalog.isPaired, !catalog.reachable {
+                    Text(catalog.models.isEmpty ? "Can't reach your Mac right now."
+                                                : "Can't reach your Mac right now. Its models are here for when it's back.")
+                        .font(.system(size: 13)).foregroundStyle(AppearancePalette.ink.opacity(0.55))
+                        .accessibilityIdentifier("picker.macUnreachable")
+                }
                 if !catalog.installed.isEmpty {
                     section("INSTALLED") { rows(catalog.installed) }
+                        .opacity(catalog.reachable ? 1 : 0.5)
                     // Brief AJ3 — Eject-all is a FULL-controls (Settings) affordance only.
                     if fullControls, catalog.installed.contains(where: { $0.isResident }) {
                         Button { Task { await catalog.ejectAll() } } label: {
@@ -482,15 +603,15 @@ struct ModelPickerSheet: View {
                         Text(catalog.residencyFine).font(.system(size: 11)).foregroundStyle(AppearancePalette.ink.opacity(0.4)).padding(.horizontal, 4)
                     }
                 }
-                if !catalog.available.isEmpty {
+                if catalog.reachable, !catalog.available.isEmpty {
                     section("AVAILABLE TO DOWNLOAD") {
                         rows(catalog.available)
                         divider
                         moreModelsStub
                     }
                 }
-                if catalog.models.isEmpty {
-                    Text(catalog.reachable ? "No models available for this Mac." : "Can't reach your Mac right now.")
+                if catalog.isPaired, catalog.reachable, catalog.models.isEmpty {
+                    Text("No models available for this Mac.")
                         .font(.system(size: 14)).foregroundStyle(AppearancePalette.ink.opacity(0.5))
                         .frame(maxWidth: .infinity).padding(.top, 40)
                 }
@@ -508,12 +629,13 @@ struct ModelPickerSheet: View {
                         .background(RoundedRectangle(cornerRadius: 12).fill(AppearancePalette.ink.opacity(0.05)))
                     }.buttonStyle(.plain)
                 }
-                // Brief AJ3 — full controls (Settings): Unpair lives at the bottom.
-                if fullControls, let onUnpair {
-                    Button(role: .destructive) { onUnpair() } label: {
+                // Brief AJ3 — full controls (Settings): "Forget this Mac" lives at the bottom. C2c (T ruling 2026-10-09:
+                // pairing is durable) — this is the ONLY way a pairing ends, and it asks first.
+                if fullControls, onForget != nil {
+                    Button(role: .destructive) { confirmForget = true } label: {
                         HStack {
                             Image(systemName: "xmark.circle")
-                            Text("Unpair this Mac").font(.system(size: 15, weight: .semibold))
+                            Text("Forget this Mac").font(.system(size: 15, weight: .semibold))
                             Spacer()
                         }
                         .foregroundStyle(.red.opacity(0.8))
@@ -525,6 +647,7 @@ struct ModelPickerSheet: View {
             .padding(20)
         }
         .background(AppearancePalette.bgElevated.ignoresSafeArea())
+        .forgetMacAlert(isPresented: $confirmForget) { onForget?() }
         // Exactly ONE grabber — the system's. A hand-drawn Capsule on top of the sheet's own
         // .automatic indicator was stacking two (T's screenshot); keep the standard system one.
         .presentationDragIndicator(.visible)
@@ -593,6 +716,35 @@ struct ModelPickerSheet: View {
         }
         .padding(12)
         .background(RoundedRectangle(cornerRadius: 12).fill(Color(hexString: "C2571B").opacity(0.10)))
+    }
+
+    /// C4b2 — one answer source the picker can switch to (Apple Intelligence, the user's server): ✓ when it's the one
+    /// answering; disabled — with its reason as the subtitle — when it can't answer yet.
+    private func sourceRow(icon: String, title: String, subtitle: String, chosen: Bool, enabled: Bool, id: String,
+                           _ pick: @escaping () -> Void) -> some View {
+        Button {
+            pick()
+            dismiss()
+        } label: {
+            HStack(spacing: 10) {
+                Image(systemName: icon).font(.system(size: 15)).foregroundStyle(AppearancePalette.ink.opacity(0.8))
+                VStack(alignment: .leading, spacing: 2) {
+                    Text(title).font(.system(size: 16, weight: .semibold)).foregroundStyle(AppearancePalette.ink)
+                    Text(subtitle).font(.system(size: 12)).foregroundStyle(AppearancePalette.ink.opacity(0.5))
+                        .fixedSize(horizontal: false, vertical: true)
+                }
+                Spacer()
+                if chosen {
+                    Image(systemName: "checkmark").font(.system(size: 13, weight: .bold)).foregroundStyle(Color(hexString: "2E9E4F"))
+                }
+            }
+            .padding(.vertical, 10)
+            .contentShape(Rectangle())
+            .opacity(enabled ? 1 : 0.5)
+        }
+        .buttonStyle(.plain)
+        .disabled(!enabled)
+        .accessibilityIdentifier(id)
     }
 
     @ViewBuilder private func rows(_ models: [CatalogModel]) -> some View {
@@ -675,7 +827,7 @@ private struct ModelSheetRow: View {
     var body: some View {
         VStack(alignment: .leading, spacing: 6) {
             HStack(alignment: .firstTextBaseline, spacing: 8) {
-                Text(model.display).font(.system(size: 16, weight: .semibold)).foregroundStyle(AppearancePalette.ink)
+                Text(catalog.name(model)).font(.system(size: 16, weight: .semibold)).foregroundStyle(AppearancePalette.ink)
                     .lineLimit(1).truncationMode(.tail)
                 // Brief BZ — the V1 default / recommended-to-download model (Qwen3 4B). Green so it
                 // reads distinctly from the blue "in memory" state badge; the Host's `recommended` flag.
@@ -714,7 +866,9 @@ private struct ModelSheetRow: View {
 
     @ViewBuilder private var action: some View {
         let busy = catalog.busyTag == model.tag
-        if editing {
+        if !catalog.reachable {
+            EmptyView()   // C4b2 — the Mac is away: its models are listed for reference, nothing to act on
+        } else if editing {
             // Edit mode (T-ruled): Load/Eject SUPPRESSED; Delete on every installed row. This is the
             // only place a third control lives, and it replaces the others — the row never crowds.
             if model.isInstalled {
@@ -727,6 +881,9 @@ private struct ModelSheetRow: View {
                 .buttonStyle(.plain)
                 .disabled(busy || catalog.busyTag != nil)
             }
+        } else if model.isResident && catalog.answerer != .mac {
+            // C4b2 — Apple Intelligence or the server is answering; the loaded Mac model offers "Use" to route back (no reload).
+            actionPill("Use", ghost: false, busy: busy) { catalog.useMac(model.tag) }
         } else if model.isResident {
             actionPill("Eject", ghost: true, busy: busy) { await catalog.eject(model.tag) }
         } else if model.isInstalled {
@@ -789,6 +946,9 @@ struct ThoughtProcessBlock: View {
                     .foregroundStyle(AppearancePalette.ink.opacity(0.5))
                     .fixedSize(horizontal: false, vertical: true)
                     .textSelection(.enabled)
+                    #if DEBUG
+                    .gauntletID("chat.thought")   // Brief CH-0 — the expanded Thought-process text
+                    #endif
             }
         }
         .padding(.horizontal, 12).padding(.vertical, 10)
@@ -802,6 +962,19 @@ struct ThoughtProcessBlock: View {
             withAnimation(.easeInOut(duration: 0.8).repeatForever(autoreverses: true)) { pulse = true }
         } else {
             pulse = false
+        }
+    }
+}
+
+extension View {
+    /// C2c (T ruling 2026-10-09) — the one confirmation before a pairing ends, shared by Settings → Your Mac and the
+    /// pairing sheet. Copy T-approved 2026-10-10.
+    func forgetMacAlert(isPresented: Binding<Bool>, forget: @escaping () -> Void) -> some View {
+        alert("Forget this Mac?", isPresented: isPresented) {
+            Button("Forget", role: .destructive) { forget() }
+            Button("Cancel", role: .cancel) {}
+        } message: {
+            Text("AirPad will stop using its models. To reconnect, scan the QR code on your Mac.")   // T-approved 2026-10-10
         }
     }
 }

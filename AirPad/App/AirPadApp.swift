@@ -21,8 +21,21 @@ struct AirPadApp: App {
         self.router = appRouter
         AppDependencyManager.shared.add(dependency: appRouter)
         Self.purgeRetiredDevTunerDefaults()
+        // Step 1 — off the launch path. (The DEBUG self-test runs the migration itself, on an item it seeds: a launch
+        // migration racing it could move that item first and fail the test falsely.)
+        if !UserDefaults.standard.bool(forKey: "KeychainMigrationSelfTest") {
+            Task.detached(priority: .utility) { KeychainHelper.migrateAccessibility() }
+        }
         #if DEBUG
+        // C2c tests — `-ClearHostPairing YES` starts unpaired (the Simulator Keychain outlives app installs);
+        // `-DebugHostUnreachable YES` points the LAN pairing at a dead port (a Mac away from home).
+        if UserDefaults.standard.bool(forKey: "ClearHostPairing") { KeychainHelper.delete(key: HostPairing.keychainKey) }
+        if UserDefaults.standard.bool(forKey: "DebugHostUnreachable") { HostPairing.debugForceUnreachableHost = true }
         Self.injectFakeHostPairingIfRequested()
+        HostPairing.debugPersistLANPairingIfRequested()
+        // C4b2 device check — `-ResetLibrarianRoute YES` routes the Librarian back to the Mac (undoes a test's pick).
+        if UserDefaults.standard.bool(forKey: "ResetLibrarianRoute") { ModelRouter.chosenRoute = nil }
+        if UserDefaults.standard.bool(forKey: "KeychainMigrationSelfTest") { KeychainHelper.runMigrationSelfTest() }
         #endif
     }
 

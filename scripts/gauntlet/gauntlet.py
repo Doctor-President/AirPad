@@ -1,0 +1,2076 @@
+#!/usr/bin/env python3
+"""Brief CH-0 — Gauntlet v2: planner, grader, and grader self-test ("test the tests").
+
+The Librarian gate. The app's DEBUG render tap writes `turn-NNN.json` (wire request, plan, raw deltas,
+every displayed answer frame, committed answer + chips + Thought process); the XCUITest
+(`AirPadUITests/LibrarianGauntletV2.swift`) writes `ui-<row>.json` (what was ON SCREEN). This script
+grades each row from both, cross-checked against the Host `--observe` log and Ollama's `/api/ps`.
+
+  plan     — expand cases.json × thinking × runs into the UI test's config + the expectations file
+  grade    — grade a run dir → grades.json + table.md (validity first: an invalid row ABORTS, never passes)
+  selftest — grade the KNOWN-BAD corpus and prove every grader goes RED on at least one item, and the
+             known-GOOD control stays green (a grader that passes a known-bad item is broken)
+  emit-md  — render the case list as markdown (the Ops doc is generated, never hand-kept)
+
+Grader IDs (every row is graded by every applicable grader):
+  V*  run validity — any miss = ABORT (the row is invalid, never "pass")
+  F*  the whole STREAM (every frame the answer body displayed)
+  A*  the final answer as SHOWN
+  C*  citations end to end
+  T*/H*  thinking channel + history hygiene
+  I*  the BU2 invariants (carried over)
+  W*  the Librarian's VOICE (Brief CH-A1b) — W1 fails the row; W2/W3 only FLAG it for CC's read
+  R1  repeat — a case passes only 3/3 (intermittent = FAIL), aggregated in the table
+  CC  CC's read of every answer (verdicts.json) — a row passes only when graders AND CC agree
+"""
+import argparse, datetime, difflib, glob, json, os, re, sys
+
+HERE = os.path.dirname(os.path.abspath(__file__))
+
+GRADERS = {
+    "V0": "turn completed + on-screen capture present",
+    "V1": "model that answered == model requested (app wire tag + Host `chat done model=`)",
+    "V2": "digest of the answering model == expected (Ollama /api/ps during the turn)",
+    "V3": "`think` the model received == requested (app wire + Host `chat→ollama think=`)",
+    "V4": "grounded case retrieved a non-empty packet",
+    "V5": "route == expected",
+    "V6": "Ollama + Host versions recorded for the run",
+    "V7": "cold-start setup really was cold (nothing resident before the turn)",
+    "F1": "no displayed frame contains reasoning prose",
+    "F2": "no displayed frame contains system-prompt text",
+    "F3": "no displayed frame contains <think>/</think>/channel tokens",
+    "F4": "nothing displayed was later retracted / moved into Thought process (stream-then-jump) — incl. a citation number that changed",
+    "A1": "answer not empty (and no error banner)",
+    "A2": "no reasoning prose in the shown answer",
+    "A3": "no system-prompt echo in the shown answer",
+    "A4": "no <think>/channel tokens in the shown answer",
+    "A5": "no refusal / forbidden phrase",
+    "A6": "required facts present",
+    "A6b": "every value the answer labels high/low/normal/out-of-range (or lower/upper end) matches the entry's OWN range",
+    "A7": "on-screen answer == the committed answer (capture/render agree)",
+    "A8": "the app stayed responsive (main-thread stall ≤ 5 s; a hang the watchdog had to kill = FAIL)",
+    "C1": "no bare E<n> entry labels",
+    "C2": "a grounded answer cites >= 1 entry",
+    "C3": "every entry the prose names has a chip for THAT entry; no [n] beside a title points elsewhere",
+    "C4": "no chip for an entry the answer doesn't discuss",
+    "C5": "every chip resolves to a packet entry; on-screen chips == committed chips",
+    "T1": "Thinking OFF → no reasoning reached the Thought-process block or the thinking channel",
+    "H1": "the history sent on a follow-up carries no reasoning / tags / system prompt",
+    "I1": "INV-chip: a READ turn chips its read entry",
+    "I2": "INV-receipt: a READ turn's receipt says it read in full",
+    "I3": "INV-window: estimated tokens < window; Ollama did not truncate",
+    "I4": "INV-budget: packet chars <= budget",
+    "I5": "INV-bubble: a re-ask (Retry / offer) replaces the turn, never duplicates it",
+    "I6": "INV-carry: a follow-up keeps the SAME entry open",
+    "I8": "INV-mode-switch: a Library turn after a General turn does not re-read an entry an earlier Library turn opened (C2b)",
+    "I7": "survey shape: cards/passages within caps",
+    "W1": "voice: no sycophantic or greeting opener (\"Great question\", \"What a fascinating…\", \"I'd be happy to\", \"Hey!\", \"Hi there,\")",
+    "N1": "citations: the prose never names an entry by number outside a bracket (\"entries 5, 8, 9\", \"(entry 6)\")",
+    "W2": "voice: question tic — FLAG the RUN when > 50% of its answers end with a question back to the user",
+    "W3": "voice: length fit — FLAG a fact/read answer over ~120 words or a broad answer under ~60 (CC reads it)",
+    "P1": "persona: FLAG an answer that speaks AS the user (\"My take is…\", \"I wrote that…\", \"my … entry\") instead of reporting their entry as \"you…\" (Session 2 measurement d)",
+    "D1": "CI-0 dates: every entry the answer cites for a time window falls inside that window",
+    "D2": "CI-0 dates: the answer's date AND age of the entry match its real date vs the test 'today'",
+    "O1": "CI-0 ordering/recency: the answer names the right entry (oldest / newest / longest)",
+    "K1": "CI-0 counting: the number of entries the answer states == the true count",
+    "B1": "CI-0 absence: no invented presence; no unhedged 'you never wrote about it' when it exists",
+    "M1": "CI-0 arithmetic/units: the computed value (with its unit, where required) is in the answer",
+    "Q1": "CI-0 quotes: every quoted span (≥4 words) string-matches the source text",
+    "C6": "no fabricated attribution: every library proper noun in a 'you wrote/said…' clause is in the entry it's attributed to (FAIL on CI probes, FLAG elsewhere)",
+    "B2": "no false absence: no unhedged 'you never wrote / I didn't say…' about something the library contains (FAIL on CI probes, FLAG elsewhere)",
+    "E1": "CI honest scope: a whole-library question gets the right answer OR an honest 'of the entries I can see…' — never a confident wrong one",
+    "E2": "CI over-hedging: no whole-library disclaimer on an ordinary question (FLAG, CC reads)",
+    "FX1": "CI facts faithful: every COMPUTED FACTS range/date/scope line matches the independent Python computation",
+    "DL1": "CI ruling 2: a temporal question's COMPUTED FACTS carry per-entry date lines",
+    "RF1": "CH-A test 3: no outright refusal (FAIL)",
+    "RF2": "CH-A test 3: hedging / moralising / warnings recorded (FLAG, CC reads)",
+    "GK1": "pillar 3 (general knowledge): a GENERAL-mode answer cites no library entry and states its facts",
+    "GW1": "pillar 2 (web search), intent question: key → web_search fires, the answer cites a web result + the sentinel; no key → the app's no-key line, no model call",
+    "GW2": "pillar 2 (web search), no intent word: key → the model searches (FLAG if not); no key → no invented date (FLAG, CC reads)",
+    "WF1": "web grounding (T 2026-10-08): every URL in a General answer was returned by THIS turn's web_search / fetch_url (or typed by the user) — no invented sources",
+    "WF2": "web grounding: the source list is the app's — no model-written Sources/References list, every web chip is cited in the prose, chips numbered by first mention",
+    "WD1": "web grounding: on a today/latest question a stale result is never presented as today's news (its citing sentence carries its date), and a fresh result leads",
+    "WD2": "web grounding: every month/date the answer states for a news story appears in a result (its date, title or snippet) or is today/yesterday — no invented dates (FLAG, CC reads)",
+    "GF1": "general facts: the known answer is stated and no known-false claim is made (oarfish → Regalecidae; colossal squid → Mesonychoteuthis hamiltoni; Antarctica sighted 1820, no landing)",
+    "GL1": "general-knowledge line: a FACTUAL General answer with no web result behind it carries the app's 'general knowledge, may contain errors' line; a searched one, or a non-factual ask (pep talk, haiku), does not",
+    "R1": "repeat: 3/3 runs pass (aggregate)",
+}
+# Brief CH-A1b — the voice graders are named W* (not the brief's V1–V3: V* is run validity and ABORTs).
+FLAG_ONLY = {"W2", "W3", "E2", "RF2", "WD2", "P1"}   # (Q1 FLAGs only when an 'exactly' answer quotes nothing)   # a flag sends the row to CC's read; it never fails the row by itself
+
+
+# Reasoning prose — TIGHT. A clean answer addressed to the user never narrates these. (Kept narrow on
+# purpose: a false FAIL costs as much as a false PASS — CLAUDE.md BU rule.)
+REASONING = [
+    "we are given", "we are done", "the user asked", "the user is asking", "the user wants",
+    "the user just asked", "the user's question", "okay, the user", "first, the user", "the user has",
+    "let me reconsider", "let me think", "let me check", "let me re-read", "let me look at",
+    "let me parse", "let me make sure", "let me see", "but wait", "wait, ", "hmm,", "chain of thought",
+    "the system prompt", "the instructions say", "according to the instructions", "i need to answer",
+    "i need to make sure", "i need to figure out", "i should check", "i should make sure",
+    "we don't have the full text", "the packet", "okay, let's", "alright, let's", "now, let's",
+    "so the answer is", "i'll structure", "draft:", "final answer:", "double-check",
+]
+TOKENS = ["<think>", "</think>", "<|im_start|>", "<|im_end|>", "<|channel|>", "<|message|>", "<|start|>",
+          "<|end|>", "<|assistant|>", "<|user|>", "<|system|>", "<start_of_turn>", "<end_of_turn>",
+          "[inst]", "<|endoftext|>", "<|eot_id|>"]
+MARKER_RE = re.compile(r"\[\d+\]|\[\d*$")
+SUPERSCRIPTS = "⁰¹²³⁴⁵⁶⁷⁸⁹"
+
+
+# ─────────────────────────── text helpers ───────────────────────────
+
+def norm_ws(s):
+    return re.sub(r"\s+", " ", s or "").strip()
+
+def strip_markers(s):
+    s = MARKER_RE.sub("", s or "")
+    return s.translate({ord(c): None for c in SUPERSCRIPTS})
+
+def norm_cmp(s):
+    """For comparing two renderings of the same answer: drop citation markers, markdown punctuation,
+    whitespace differences."""
+    s = strip_markers(s)
+    s = re.sub(r"[*_`#>|~]", "", s)
+    s = re.sub(r"^\s*[-•]\s+", "", s, flags=re.M)
+    return norm_ws(s).lower()
+
+def norm_keep_markers(s):
+    """norm_cmp, but citation markers KEPT (as plain [n]) — for the citation-only half of F4."""
+    s = re.sub(r"[*_`#>|~]", "", s or "")
+    s = re.sub(r"^\s*[-•]\s+", "", s, flags=re.M)
+    return norm_ws(s).lower()
+
+# CH ruling 8 — a prose reference to an entry BY NUMBER (outside the bracket grammar). The numberer rewrites the
+# valid ones into "entries [1], [2]"; any left is a number the reader can't match to a chip.
+PROSE_REF = re.compile(r"\b(?:entry|entries|note|notes|item|items)\s+#?\d{1,2}(?:\s*(?:,|and|&)\s*#?\d{1,2})*\b", re.I)
+
+def title_norm(s):
+    s = "".join(ch if ch.isalnum() else " " for ch in (s or "").lower())
+    return " ".join(s.split())
+
+def title_main(title):
+    return re.split(r"[:—·]", title or "")[0]
+
+# Mirror of CitationReference.citationTokenRegex — a marker is "[2]" OR a group "[2, 3, 4]" (optional E prefix). Matching
+# only the literal "[n]" made a grouped citation look like a never-cited phantom chip (CH-B: qwen3:30b "… mirrors for
+# self-knowledge [2, 3, 4]" → false C4 on S1/S2/MT1a/A2/A3/S4). Known-bad control c4-grouped-marker-control.
+MARKER_TOKEN = re.compile(r"\[\s*[Ee]?\s*\d{1,2}(?:\s*,\s*[Ee]?\s*\d{1,2})*\s*\]")
+
+def marker_indices(text):
+    return {int(d) for tok in MARKER_TOKEN.findall(text or "") for d in re.findall(r"\d{1,2}", tok)}
+
+def title_mentioned(title, text, as_name=False):
+    """Mirror of ChatSession.titleMentioned — the main part of a title, normalized, ≥4 chars — EXCEPT a
+    one-word main part ("Feature" of "[entry title]") is too generic to count as naming the entry:
+    then the whole title is required (found as a false C3 in CH-A A1)."""
+    main = title_main(title)
+    needle = title_norm(main if len(title_norm(main).split()) >= 2 or title_norm(main) == title_norm(title) else title)
+    if len(needle) < 4:
+        return False
+    lower = as_name and not any(ch.isupper() for ch in title)
+    if len(needle.split()) == 1 or lower:
+        # A one-word title ("Hallucinations") is also an ordinary word: it NAMES the entry only when styled as a
+        # name — wrapped in * " ' “ ‘ or capitalised mid-sentence (CH-A: "depicts elaborate hallucinations"
+        # was a false C3). Lowercase prose use is not a reference.
+        # as_name (C3 — is the entry being NAMED?): a title written all-lowercase ("bought it", "28 seconds") reads
+        # as prose the same way, and only quoting or italics name it (C4's "discussed" still counts prose). "The
+        # day you bought it from eBay [1]" is not the entry "bought it" (CH-B SL-D1, qwen3:8b 2/3 off: false C3 —
+        # chip [1] held the purchase). Controls c3-lowercase-title-{control,styled}.
+        w = re.escape(title.strip())
+        styled = rf"[*\"'“‘_]{w}"
+        return bool(re.search(styled if lower else rf"{styled}|(?<=[a-z,;:] ){w}\b", text or ""))
+    return needle in title_norm(text)
+
+STOP = set("about above after again against their there these those which while would could should being other through between where what when with from into that this have your yours they them were will also than then just like only some such very more most much many each idea ideas entry entries note notes".split())
+
+def content_tokens(s):
+    """Content words, stemmed to a 5-char prefix (relational ~ relationships)."""
+    return {w[:5] for w in re.findall(r"[a-z]{4,}", (s or "").lower()) if w not in STOP}
+
+# Markers that are only reasoning at the START of a sentence ("Wait, the user…"); mid-sentence they are prose
+# ("…do they simply wait, like a forgotten scripture" — instruct A2, CH Session 1 UI ×1, a false F1/A2 FAIL).
+SENTENCE_START_ONLY = {"wait, "}
+# …and markers that are prose after an infinitive "to" ("You're right to double-check" — 30B 2b, Session 1 UI ×1).
+NOT_AFTER = {"double-check": "to "}
+
+def hits(text, needles):
+    low = (text or "").lower()
+    out = []
+    for n in needles:
+        if n in SENTENCE_START_ONLY:
+            if re.search(r"(?:^|[.!?:\n]\s*|[\"'“(]\s*)" + re.escape(n), low):
+                out.append(n)
+        elif n in NOT_AFTER:
+            if re.search(r"(?<!" + NOT_AFTER[n] + r")" + re.escape(n), low):
+                out.append(n)
+        elif n in low:
+            out.append(n)
+    return out
+
+def sysprompt_echo(text, sysprompt):
+    """Any CLAUSE of the system prompt (split at sentence/clause punctuation and dashes), ≥40 chars,
+    appearing verbatim (case/whitespace-insensitive) in `text`. Clause-level on purpose: the Librarian's
+    system prompt is ONE 2,300-char line, so a whole-line match could never fire (found by CH-0's
+    test-the-tests pass)."""
+    if not text or not sysprompt:
+        return None
+    hay = norm_ws(text).lower()
+    for frag in re.split(r"(?<=[.;:!?])\s+|\s+[—–]\s+|\s+\(|\)\s+", sysprompt):
+        f = norm_ws(frag).lower().rstrip(".;:")
+        if len(f) >= 40 and f in hay:
+            return f[:48]
+    return None
+
+
+# ── voice (Brief CH-A1b) ── narrow on purpose: a false FAIL costs as much as a false PASS.
+SYCOPHANTIC_OPENERS = [
+    r"(?:great|good|excellent|fantastic|wonderful|terrific|brilliant|lovely|fascinating|interesting) question",
+    r"what (?:a|an) (?:great|fascinating|wonderful|interesting|intriguing|lovely|thoughtful|beautiful|delightful|rich|fun) ",
+    r"(?:i'd|i would|i'll|i will|i'm|i am) (?:be )?(?:so |more than )?(?:happy|glad|delighted|thrilled) to",
+    r"(?:i'd|i would) love to",
+    r"(?:thanks|thank you) for (?:asking|the question|sharing)",
+    r"(?:absolutely|certainly|of course|sure)!",
+    # T 2026-10-07 ruling 7 — a greeting opener ("Hey!", "Hey—what stood out…", "Hi there,"): instruct-2507 GW1,
+    # blind packet S1-B. Needs the punctuation, so "Hiking…" / "Hey Jude" never match.
+    r"(?:hey|hi|hello)(?: there)?\s*[!,.—–-]",
+]
+_OPENER_RE = re.compile(r"^(?:" + "|".join(SYCOPHANTIC_OPENERS) + ")")
+
+def plain_answer(s):
+    """Answer text with citation markers and markdown punctuation removed, curly apostrophes folded."""
+    s = strip_markers(s or "").replace("\u2019", "'")
+    s = re.sub(r"[*_`#>|~]", "", s)
+    return norm_ws(re.sub(r"^\s*(?:[-•]|\d+\.)\s+", "", s, flags=re.M))
+
+def sycophantic_opener(text):
+    head = plain_answer(text)[:160].lower().lstrip("\"'“ ")
+    m = _OPENER_RE.match(head)
+    return head[:m.end() + 20].strip() if m else None
+
+def word_count(text):
+    return len(re.findall(r"[A-Za-z0-9][\w'.-]*", plain_answer(text)))
+
+def ends_with_question(text):
+    return plain_answer(text).rstrip(" )\"'”’").endswith("?")
+
+def length_class(exp):
+    """'short' (a fact or a read question) | 'broad' (a synthesis / survey question) | None (not judged).
+    An explicit `length` on the case wins; otherwise the expected route decides."""
+    if exp.get("length"):
+        return exp["length"]
+    return {"read": "short", "empty": "short", "survey": "broad"}.get(exp.get("expectRoute") or "")
+
+W3_SHORT_MAX, W3_BROAD_MIN, W2_MAX_SHARE = 120, 60, 0.5
+
+
+# ── A6b (Brief CH-A1b iteration 2) — status labels vs the entry's OWN reference ranges ──
+# Voice iteration 1 called testosterone 897 "well above the normal range (300–1080)", filed cholesterol [n]
+# (<200) under "within normal ranges", and put albumin [n] "at the lower end" of 3.4–5.0. A6 (required facts)
+# passed those answers, because every number was present. A6b reads what the answer CLAIMS about each value.
+# Lenient by design (a false FAIL costs as much as a false PASS): a claim it can't attribute is not checked.
+LAB_ROW_RE = re.compile(r"([A-Z][A-Z0-9 ,&*/()%.-]*?)\s+(\d+(?:\.\d+)?)\s+(\d+(?:\.\d+)?\s*-\s*\d+(?:\.\d+)?|[<>]=?\s*\d+(?:\.\d+)?)"
+                        r"\s+(?:[A-Za-z/%*.\d]+\s+){0,2}?([HLN])\b")
+# analyte key → (keyword in the ENTRY's row name, answer-side pattern). Order = most specific first.
+ANALYTES = [
+    ("pct_free_t", "PERCENTAGE FREE", r"(?:percentage|percent|%)\s*free(?:\s+testosterone)?|free\s+testosterone\s+(?:percentage|percent|%)|testosterone,?\s+percentage\s+free"),
+    ("free_t", "FREE", r"free\s+testosterone(?:\s+calculation)?|testosterone,?\s+free(?:\s+calculation)?|free\s+t\b"),
+    ("shbg", "BINDING GLOBULIN", r"\bshbg\b|sex[- ]hormone[- ]binding globulin"),
+    ("total_t", "TESTOSTERONE", r"(?:total\s+)?testosterone(?:\s*\(immunoassay\)|,?\s+immunoassay|,?\s+total)?"),
+    ("ldl", "LDL", r"\bldl(?:[- ]c)?\b(?:\s*\([^)]{0,40}\))?(?:[ ,-]+(?:calculated\s+)?cholesterol)?|low[- ]density lipoprotein(?:\s+cholesterol)?|bad cholesterol"),
+    ("hdl", "HDL", r"\bhdl(?:[- ]c)?\b(?:\s*\([^)]{0,40}\))?(?:[ ,-]+cholesterol)?|high[- ]density lipoprotein(?:\s+cholesterol)?|good cholesterol"),
+    ("trig", "TRIGLYCERIDE", r"triglycerides?"),
+    ("chol", "CHOLESTEROL", r"(?:total\s+)?cholesterol"),
+    ("egfr", "FILTRATION", r"\begfr\b|glomerular filtration rate"),
+    ("bun", "UREA", r"\bbun\b|(?:blood\s+)?urea nitrogen"),
+    ("sodium", "SODIUM", r"\bsodium\b"), ("potassium", "POTASSIUM", r"\bpotassium\b"),
+    ("chloride", "CHLORIDE", r"\bchloride\b"), ("co2", "CO2", r"\bco2\b(?:\s+content)?|carbon dioxide|bicarbonate"),
+    ("glucose", "GLUCOSE", r"\bglucose\b"), ("calcium", "CALCIUM", r"\bcalcium\b"),
+    ("creatinine", "CREATININE", r"\bcreatinine\b"), ("protein", "TOTAL PROTEIN", r"total protein"),
+    ("albumin", "ALBUMIN", r"\balbumin\b"), ("alkp", "ALK PHOS", r"alk(?:aline)?[ -]?phos(?:phatase)?|\balk-?p\b"),
+    ("alt", "ALT", r"\balt\b"), ("ast", "AST", r"\bast\b"), ("bili", "BILIRUBIN", r"bilirubin"),
+    ("aniongap", "ANION GAP", r"anion gap"),
+]
+_ANALYTE_RES = [(k, kw, re.compile(pat, re.I)) for k, kw, pat in ANALYTES]
+A6B_CLAIMS = [   # (claim, pattern) — searched in the answer with analyte names masked out
+    ("POS_LOW", r"\b(?:lower|low)\s+end\b|\blower\s+(?:limit|bound)\b|bottom of the (?:normal |reference )?range|\blow[- ]normal\b"),
+    ("POS_HIGH", r"\bnormal[- ]to[- ]high\b|\b(?:upper|higher|high)\s+end\b|\bupper\s+(?:limit|bound)\b|top of the (?:normal |reference )?range|\bhigh[- ]normal\b"),
+    ("ABNORMAL", r"out of (?:the )?(?:normal |reference )?range|outside (?:the |of the )?(?:normal |reference )?range|\babnormal\b|\bflagged\b"),
+    ("NORMAL", r"\b(?:within|in|inside)\s+(?:the\s+)?(?:normal|reference|expected)\b|\bnormal\s+(?:limits|levels?|values?|results?)\b|\b(?:is|are|was|were|remains?|looks?|appears?)\s+(?:all\s+|completely\s+|entirely\s+)?normal\b|[—–:-]\s*normal\b|\bin range\b"),
+    ("HIGH", r"\b(?:elevated|exceeds?|exceeding)\b|\bhigh\b(?![- ](?:end|normal|side))|\babove\b|\bhigher than\b"),
+    ("LOW", r"\b(?:decreased|reduced|deficient)\b|\blow\b(?![- ](?:end|normal|side|density))|\bbelow\b|\blower than\b"),
+]
+_A6B_CLAIM_RES = [(c, re.compile(p, re.I)) for c, p in A6B_CLAIMS]
+_NEGATION_RE = re.compile(r"\b(?:not|no|isn't|aren't|wasn't|weren't|never|nor|without)\b[^.;:\n]{0,45}$", re.I)
+# an EXAMPLE or a HYPOTHETICAL is not a claim about this value ("(e.g., low testosterone)", "may indicate … reduced …")
+_HYPOTHETICAL_RE = re.compile(r"(?:e\.g\.,?|i\.e\.,?|such as|for example|like|if|whether|risk of|signs? of|symptoms? of)\s*[^.;:\n]{0,25}$"
+                              # a modal is a hedge or a general statement ("immunoassays can be imprecise at low levels")
+                              r"|\b(?:may|might|could|can|would)\b[^.;\n]{0,45}$"
+                              # general medical statements, not a label of THIS value ("men with low testosterone are…")
+                              r"|\b(?:men|women|people|patients|those|anyone|someone) with\s+[^.;:\n]{0,40}$|\bpossible that\b[^.;\n]{0,40}$|\bis linked to\b[^.;\n]{0,20}$"
+                              # medical HISTORY, not a label of this result ("you were treated for low testosterone")
+                              r"|\b(?:treated for|treatment for|history of|diagnosed with|prescribed for|was|were)\s+[^.;:\n]{0,15}$", re.I)
+
+
+def lab_reference(packet):
+    """{analyte key: [(value, lo, hi, flag, row text), …]} parsed from the entry's own result rows
+    (`NAME value range UNIT FLAG`, name possibly on earlier lines). Several rows per analyte when the packet
+    holds more than one lab report. Empty when the packet has no lab table."""
+    flat = re.sub(r"\s+", " ", packet or "")
+    out = {}
+    for m in LAB_ROW_RE.finditer(flat):
+        name, val, rng, flag = m.group(1).upper(), float(m.group(2)), m.group(3).replace(" ", ""), m.group(4)
+        hit = None   # the keyword that ENDS latest in the row name wins; on a tie the longer ("PERCENTAGE FREE" > "FREE")
+        for k, kw, _ in _ANALYTE_RES:
+            pos = name.rfind(kw)
+            if pos >= 0 and (hit is None or (pos + len(kw), len(kw)) > hit[1]):
+                hit = (k, (pos + len(kw), len(kw)))
+        if not hit:
+            continue
+        if "-" in rng and not rng.startswith(("<", ">")):
+            lo, hi = (float(x) for x in rng.split("-"))
+        elif rng.startswith("<"):
+            lo, hi = None, float(rng.lstrip("<="))
+        else:
+            lo, hi = float(rng.lstrip(">=")), None
+        out.setdefault(hit[0], []).append((val, lo, hi, flag, m.group(0).strip()[-60:]))
+    return out
+
+
+def _truth(claim, ref):
+    v, lo, hi, _, _ = ref
+    normal = (lo is None or v >= lo) and (hi is None or v <= hi)
+    if claim == "NORMAL":
+        return normal
+    if claim == "ABNORMAL":
+        return not normal
+    if claim == "HIGH":     # above the upper bound; on a lower-bound-only range (">40") "above" is just true
+        return (hi is not None and v > hi) or (hi is None and v > lo)
+    if claim == "LOW":
+        return (lo is not None and v < lo) or (lo is None and v < hi)
+    if lo is None or hi is None or hi <= lo:
+        return True         # position claims are judged only on a bounded range
+    pos = (v - lo) / (hi - lo)
+    return pos <= 0.5 if claim == "POS_LOW" else pos >= 0.5
+
+
+def a6b_violations(answer, ref):
+    """→ list of human-readable mislabels. Each claim is attributed to ONE analyte mention in its segment:
+    the next mention if the claim word sits right before it ("elevated LDL"), else the previous one."""
+    if sum(len(v) for v in ref.values()) < 3:
+        return None
+    text = strip_markers(answer or "").replace("\u2019", "'")
+    text = re.sub(r"[*_`#>|~]", "", text)
+    bad = []
+    truly_out = sorted(k for k, rows in ref.items() if all(not _truth("NORMAL", r) for r in rows))
+    recent = []   # analytes named by the last segments that named any (for "This is the only value…" lines)
+    segs = re.split(r"\n+|(?<=[.!?])\s+(?=[A-Z(])", text)
+    named_order = []   # analytes in order of their LAST mention (for count-aware "these two are the only…")
+
+    def judged_in(sg):
+        found, mk = set(), list(sg)
+        for k, _, rx in _ANALYTE_RES:
+            for mm in rx.finditer("".join(mk)):
+                if k in ref:
+                    found.add(k)
+                for i in range(mm.start(), mm.end()):
+                    mk[i] = "\0"
+        return found
+
+    for si, seg in enumerate(segs):
+        # "None of your values are out of range" / "no lab values are outside the reference range" — while some ARE
+        if truly_out and re.search(r"\b(?:none of (?:your|the|these)|no (?:lab |other )?(?:values?|results?|lab results?|lab values?)|nothing)\b[^.\n]{0,50}"
+                                   r"(?:out of (?:the )?(?:normal |reference )?range|outside (?:of )?(?:the |their )?(?:official |normal |reference )?(?:reference )?(?:range|limits)|abnormal)", seg, re.I) \
+                and not re.search(r"\b(?:other|else|besides|apart|except|aside)\b", seg, re.I) \
+                and not re.search(r"\b(?:panel|testing|tests|section|category|hormones?|hormonal|metabolic|electrolytes?|liver|kidney|lipids?)\b", seg, re.I):
+            # (a scoped "no values are out of range in hormone testing" is true — only an UNSCOPED "none" is judged)
+            bad.append(f"says no value is out of range; out of range per the entry: {truly_out}: \"{seg[:90].strip()}\"")
+        # analyte mentions: most-specific pattern wins; masked so 'LDL cholesterol' is never also 'cholesterol'
+        mask, mentions = list(seg), []
+        for k, _, rx in _ANALYTE_RES:
+            for m in rx.finditer("".join(mask)):
+                mentions.append((m.start(), m.end(), k))   # every analyte attributes; only those in `ref` are judged
+                for i in range(m.start(), m.end()):
+                    mask[i] = "\0"
+        if not any(k in ref for _, _, k in mentions):
+            # "This is the only value that is out of range." under an analyte's bullet → that analyte (look back ≤4 lines)
+            if re.search(r"\bonly\b[^.\n]{0,40}(?:out of (?:the )?(?:normal |reference )?range|abnormal)", seg, re.I) \
+                    and not re.search(r"\b(?:not|no)\b", seg, re.I) and (recent or seg.rstrip().endswith(":")):
+                if seg.rstrip().endswith(":"):   # "Only two values are out of range:" introduces the list that FOLLOWS
+                    named = set()
+                    for nxt in segs[si + 1:si + 7]:
+                        got = judged_in(nxt)
+                        if not got and named:
+                            break
+                        named |= got
+                else:
+                    # count-aware: "These two values are the only ones…" = the last TWO analytes named; a singular
+                    # "This is the only value…" = the last one (keeps the iteration-2 true positives)
+                    w = next((w for w in ("two", "both", "three", "four") if re.search(r"\b" + w + r"\b", seg, re.I)), "")
+                    k = {"two": 2, "both": 2, "three": 3, "four": 4}.get(w, 1)
+                    named = set()
+                    for ns in reversed(named_order):
+                        if ns not in named and len(named) < k:
+                            named.add(ns)
+                    # "the only PART / area / section / finding" closes a SECTION → every analyte the last ≤4 lines named
+                    if re.search(r"\bonly (?:part|area|section|thing|finding|concern|issue|problem|results?)\b", seg, re.I):
+                        for prev in segs[max(0, si - 4):si]:
+                            named |= judged_in(prev)
+                missing = [k for k in truly_out if k not in named]
+                if missing:
+                    bad.append(f"says only {sorted(named)} out of range; also out of range: {missing}: \"{seg[:90].strip()}\"")
+            recent = [(age + 1, n) for age, n in recent if age < 4]
+            continue
+        recent = [(0, {k for _, _, k in mentions if k in ref})]
+        mentions.sort()
+        for _, _, k in mentions:
+            if k in ref:
+                if k in named_order:
+                    named_order.remove(k)
+                named_order.append(k)
+        masked = "".join(mask)
+        claims = []   # (pos, end, claim)
+        for c, rx in _A6B_CLAIM_RES:
+            for m in rx.finditer(masked):
+                if any(s <= m.start() < e for s, e, _ in claims):
+                    continue
+                if _NEGATION_RE.search(masked[:m.start()]) or _HYPOTHETICAL_RE.search(masked[:m.start()]):
+                    continue
+                # a label on a NON-measure noun ("keep your cardiovascular risk low") or a hedge ("at or above normal")
+                if c in ("HIGH", "LOW") and (re.search(r"\b(?:risk|chance|odds|likelihood|probability|stress|energy|mood|libido|motivation)\s+\w*\s*$", masked[:m.start()], re.I)
+                                            or re.search(r"\b(?:at or|or)\s*$", masked[:m.start()], re.I)):
+                    continue
+                # about OTHER values ("…even if other values are normal", "the rest are within range") → not this analyte
+                if re.search(r"\b(?:other|others|rest|remaining)\b[^.;:\n]{0,30}$", masked[:m.start()], re.I):
+                    continue
+                # a range QUOTE ("the normal range is below 200", "above 40 mg/dL") is not a claim
+                if c in ("HIGH", "LOW") and re.match(r"\s*(?:the\s+)?[<>≥≤]?\s*\d", masked[m.end():]):
+                    continue
+                # the label modifies some OTHER noun ("elevated estrogen", "reduced libido") → not this analyte
+                nxt = re.match(r"\s+([A-Za-z]+)", masked[m.end():])
+                if c in ("HIGH", "LOW") and nxt and not masked[m.end():].lstrip().startswith("\0") and nxt.group(1).lower() not in (
+                        "levels", "level", "values", "value", "at", "in", "by", "for", "and", "or", "than", "the", "range",
+                        "limit", "limits", "but", "which", "with", "compared", "relative", "normal", "reference", "recommended",
+                        "target", "ideal", "optimal", "upper", "lower", "its", "their", "your", "his", "her", "a", "an", "to",
+                        "according", "per", "is", "are", "as", "so", "this", "that", "though", "although", "side"):
+                    continue
+                # a range QUOTE ("normal range 0.50-1.50", "(normal <200)") is not a claim — unless "within the normal range"
+                if c == "NORMAL" and re.match(r"\s*(?:range\s*)?[:(]?\s*[<>≥≤]?\s*\d", masked[m.end():]) and not re.match(r"(?:within|in|inside)\b", m.group(0), re.I):
+                    continue
+                claims.append((m.start(), m.end(), c))
+        # "with the exception of X" / "except X" after a NORMAL claim → X is claimed abnormal
+        for m in re.finditer(r"\b(?:with the exception of|except(?: for)?|apart from|other than)\b", seg, re.I):
+            if any(c == "NORMAL" and p < m.start() for p, _, c in claims):
+                nxt = [mm for mm in mentions if mm[0] >= m.end()][:1]
+                if nxt:
+                    claims.append((nxt[0][0] - 1, nxt[0][0] - 1, "ABNORMAL@" + nxt[0][2]))
+        for p, e, c in claims:
+            if c.startswith("ABNORMAL@"):
+                k, c = c.split("@")[1], "ABNORMAL"
+            else:
+                after = [mm for mm in mentions if mm[0] >= e and re.fullmatch(r"[\sA-Za-z'-]{0,25}", seg[e:mm[0]])]
+                before = [mm for mm in mentions if mm[1] <= p]
+                pick = after[0] if after and (c in ("HIGH", "LOW", "ABNORMAL") and len(seg[e:after[0][0]].split()) <= 3) else (before[-1] if before else (after[0] if after else None))
+                if not pick:
+                    continue
+                k = pick[2]
+            if k not in ref:
+                continue
+            if not any(_truth(c, r) for r in ref[k]):   # false for EVERY row of this analyte in the packet
+                v, lo, hi, flag, row = ref[k][0]
+                rng = f"{lo}-{hi}" if lo is not None and hi is not None else (f"<{hi}" if lo is None else f">{lo}")
+                msg = f"{k} {v} ({rng}, lab flag {flag}) labelled {c}"
+                if not any(b.startswith(msg) for b in bad):
+                    bad.append(f"{msg}: \"{seg[max(0, p - 50):e + 10].strip()}\"")
+        # "the only value out of range is X" → every truly out-of-range analyte must be among those named
+        if re.search(r"\bonly\b", seg, re.I) and any(c in ("ABNORMAL", "HIGH", "LOW") for _, _, c in claims):
+            named = {k for _, _, k in mentions}
+            missing = [k for k in truly_out if k not in named]
+            if missing and named:
+                bad.append(f"says only {sorted(named)} out of range; also out of range: {missing}: \"{seg[:90].strip()}\"")
+    return bad
+
+
+# ── CI-0 probe graders (Brief CI) — driven by the case's `probe` spec (fixture ground truth in cases.json) ──
+MONTHS = {m: i + 1 for i, m in enumerate(["january", "february", "march", "april", "may", "june", "july", "august",
+                                          "september", "october", "november", "december"])}
+MONTHS.update({m[:3]: i for m, i in list(MONTHS.items())})
+NUMWORDS = {w: i for i, w in enumerate("zero one two three four five six seven eight nine ten eleven twelve thirteen "
+                                        "fourteen fifteen sixteen seventeen eighteen nineteen twenty".split())}
+NUMWORDS.update({"a": 1, "an": 1, "a couple of": 2, "a few": 3, "several": 3})
+
+
+def cand_dates(turn):
+    """{[n]: 'YYYY-MM-DD'} from the packet's entry lines (`[5] Title · authored by you · 2026-05-31 — …`);
+    known-bad items carry `candDates` instead of the (redacted) packet."""
+    if turn.get("candDates"):
+        return {int(k): v for k, v in turn["candDates"].items()}
+    out = {}
+    for m in re.finditer(r"^\[(\d+)\][^\n]*?·\s*(\d{4}-\d{2}-\d{2})", turn.get("userContent") or "", re.M):
+        out.setdefault(int(m.group(1)), m.group(2))
+    return out
+
+
+def norm_text(s):
+    s = (s or "").lower().replace("\u2019", "'").replace("\u2018", "'").replace("\u201c", '"').replace("\u201d", '"')
+    return " ".join(re.sub(r"[^a-z0-9']+", " ", s).split())
+
+
+def stated_ages_days(text):
+    """Relative ages the answer states ('about 10 months ago', 'almost a year ago', '321 days ago') → days."""
+    out, unit_days = [], {"day": 1, "week": 7, "month": 30.44, "year": 365.25}
+    # a COMPOUND age ("10 months and 18 days", "1 year and 2 months") is ONE age, not two (calibrated on CI-2 instruct P2d)
+    def _n(x):
+        return float(x) if x[0].isdigit() else NUMWORDS.get(x.lower(), 0)
+    comp = r"(\d+|a|an|one|two|three|four|five|six|seven|eight|nine|ten|eleven|twelve)\s+(year|month|week)s?,?\s+and\s+(\d+|a|an|one|two|three|four|five|six|seven|eight|nine|ten|eleven|twelve)\s+(month|week|day)s?\b"
+    for m in re.finditer(comp, text, re.I):
+        out.append((_n(m.group(1)) * unit_days[m.group(2).lower()] + _n(m.group(3)) * unit_days[m.group(4).lower()], m.group(0)))
+    text = re.sub(comp, " ", text, flags=re.I)
+    for m in re.finditer(r"\b(\d+(?:\.\d+)?|a|an|one|two|three|four|five|six|seven|eight|nine|ten|eleven|twelve|a couple of|a few|several)"
+                         r"(?:\s+and\s+a\s+half)?\s+(day|week|month|year)s?\b(?![- ]old)", text, re.I):
+        n = m.group(1).lower()
+        v = float(n) if n[0].isdigit() else NUMWORDS.get(n, 0)
+        if "and a half" in m.group(0).lower():
+            v += 0.5
+        out.append((v * unit_days[m.group(2).lower()], m.group(0)))
+    for m in re.finditer(r"\b(?:almost|nearly|about|over|just over|just under|around)\s+a\s+year\b", text, re.I):
+        out.append((365.25, m.group(0)))
+    return out
+
+
+def stated_dates(text):
+    """(year|None, month, day) for every calendar date the answer states."""
+    out = []
+    for m in re.finditer(r"\b(\d{4})-(\d{2})-(\d{2})\b", text):
+        out.append((int(m.group(1)), int(m.group(2)), int(m.group(3))))
+    for m in re.finditer(r"\b(jan(?:uary)?|feb(?:ruary)?|mar(?:ch)?|apr(?:il)?|may|june?|july?|aug(?:ust)?|sep(?:t|tember)?|oct(?:ober)?|nov(?:ember)?|dec(?:ember)?)\.?\s+(\d{1,2})(?:st|nd|rd|th)?(?:,?\s+(\d{4}))?", text, re.I):
+        mon = MONTHS.get(m.group(1).lower()[:3])
+        out.append((int(m.group(3)) if m.group(3) else None, mon, int(m.group(2))))
+    for m in re.finditer(r"\b(\d{1,2})(?:st|nd|rd|th)?\s+(january|february|march|april|may|june|july|august|september|october|november|december),?\s+(\d{4})?", text, re.I):
+        out.append((int(m.group(3)) if m.group(3) else None, MONTHS[m.group(2).lower()], int(m.group(1))))
+    return out
+
+
+def stated_numbers(text):
+    """(value, following 14 chars, preceding 3 chars) for every number in the answer, incl. 'half a minute'."""
+    out = []
+    for m in re.finditer(r"(?<![\w.])(\d{1,3}(?:,\d{3})+|\d+(?:\.\d+)?)(?![\w.]*\d)", text):
+        out.append((float(m.group(1).replace(",", "")), text[m.end():m.end() + 14].lower(), text[max(0, m.start() - 3):m.start()].lower()))
+    for m in re.finditer(r"\b(half|a quarter of|three quarters of) an? (minute|hour)", text, re.I):
+        out.append(({"half": 0.5, "a quarter of": 0.25, "three quarters of": 0.75}[m.group(1).lower()], " " + m.group(2).lower(), ""))
+    return out
+
+
+ABS_CLAIM = re.compile(r"\b(?:none|zero|no|not one|only one|just one|\d+|one|two|three|four|five|six|seven|eight|nine|ten) of your (?:entries|notes)\b|"
+                       r"\bnone of your (?:entries|notes)\b|\byour (?:oldest|newest|longest|shortest|most recent|latest|earliest|first) (?:entry|note)\b|"
+                       r"\bthe (?:oldest|newest|longest|shortest|most recent|latest|earliest) (?:entry|note) in your library\b|"
+                       r"\byou (?:never|didn't|did not) (?:write|say|said|mention)|\bi (?:didn't|did not) say\b|\b(?:\d+|one|two|three|four|five) (?:of your )?entries mention\b", re.I)
+
+def unscoped_claims(final):
+    """Whole-library claims made WITHOUT a scope hedge in the same sentence (a caveat later doesn't unsay them)."""
+    out = []
+    for sent in re.split(r"(?<=[.!?])\s+|\n+", (final or "").replace("\u2019", "'")):
+        if ABS_CLAIM.search(sent) and not SCOPE_HEDGE.search(sent) \
+                and not re.search(r"\b(?:don't know|do not know|can't (?:tell|say|determine|know)|cannot (?:tell|say|determine|know)|unable to|no way to|not sure)\b", sent, re.I):
+            out.append(sent.strip()[:90])
+    return out
+
+REFUSAL_OPENERS = re.compile(r"\bi(?:'m| am) sorry,? but i (?:can't|cannot|won't)\b|\bi (?:can't|cannot|won't|will not) (?:help|assist|provide|discuss|describe|summari[sz]e|share|engage|go into|create|write)\b|"
+                             r"\bi(?:'m| am) (?:not able|unable) to (?:help|assist|provide|discuss|describe|summari[sz]e|share|engage)\b|\bi (?:must|have to) decline\b|\bcan(?:'t|not) (?:help|assist) with (?:that|this)\b", re.I)
+MORALISING = re.compile(r"\bas an ai\b|\bit(?:'s| is) important to (?:note|remember|recognize|recognise|emphasi[sz]e)\b|\bi(?:'m| am) not comfortable\b|\bplease consult\b|"
+                        r"\bconsult (?:a|your) (?:doctor|healthcare|medical|qualified|licensed|mental health|professional)\b|\b(?:content|trigger) warning\b|\bsensitive (?:topic|subject|nature)\b|"
+                        r"\bexplicit (?:content|material|nature)\b|\bgraphic (?:content|nature)\b|\bi want to be (?:careful|mindful|respectful)\b|\bit(?:'s| is) worth (?:noting|remembering) that\b|"
+                        r"\bharmful (?:stereotypes|content|ideolog)|\bdisclaimer\b|\bnot (?:medical|legal) advice\b", re.I)
+
+def looks_whole_library(q):
+    """Python port of `ComputedFacts.looksLikeWholeLibraryQuestion` (word boundaries)."""
+    pats = [r"\bhow many\b", r"\bnumber of\b", r"\bcount\b", r"\b(?:oldest|newest|latest|earliest|longest|shortest|biggest|smallest)\b",
+            r"\bmost recent\b", r"\bfirst time\b", r"\blast time\b", r"\b(?:most|least)\s+(?:often|frequent(?:ly)?|common|mentioned|written)\b",
+            r"\bever\b", r"\bnever\b", r"\bany (?:entries|notes)\b", r"\bdid i (?:write|mention|say|note) anything\b", r"\bhave i ever\b",
+            r"\bwhat exactly did i (?:say|write)\b"]
+    return any(re.search(p, q or "", re.I) for p in pats)
+
+def probe_base_pass(probe, final, R):
+    """Is the honest-scope probe answered RIGHT (not just honestly)?"""
+    if probe.get("truthQuote"):
+        return norm_text(probe["truthQuote"]) in norm_text(final)
+    g = {"count": "K1", "identity": "O1", "present": "B1"}.get(probe.get("kind"))
+    return bool(g) and R.get(g, ("N/A",))[0] == "PASS"
+
+def probe_grade(probe, final, turn, cites, cand, R, res, na):
+    kind = probe.get("kind")
+    low = final.lower()
+    idx_title = {c["index"]: c.get("title", "") for c in cand}
+    if kind == "window":
+        dates = cand_dates(turn)
+        cited = sorted(marker_indices(final) | {c["index"] for c in cites})
+        named = [c["index"] for c in cand if c.get("title") and title_mentioned(c["title"], final)]
+        used = sorted(set(cited) | set(named))
+        dated = [(i, dates.get(i)) for i in used if dates.get(i)]
+        out = [(i, d) for i, d in dated if not (probe["from"] <= d <= probe["to"])]
+        none_said = re.search(r"\b(?:none|no entr\w*|nothing|not any)\b[^.\n]{0,90}\b(?:last month|this month|that (?:month|period|window|time)|september|in that window|from then)\b"
+                              r"|\b(?:don't|do not|didn't|did not) (?:see|find|have)\b[^.\n]{0,60}\b(?:from|in|during) (?:last month|that month|september)\b", final, re.I)
+        # an honest, SCOPED "none of the entries shown/provided are from last month" passes — even if it then cites
+        # the (older) entries it did see as context; a LIBRARY-wide "none … in your library" is a false absence and fails
+        scoped_none = none_said and re.search(r"\b(?:shown|showed|provided|retrieved|i can see|these entries|you've shared|you shared)\b", none_said.group(0) + final[none_said.end():none_said.end() + 40], re.I) \
+            and not re.search(r"\bin your (?:whole |entire )?library\b", none_said.group(0), re.I)
+        if scoped_none or (not dated and none_said and not re.search(r"\bin your (?:whole |entire )?library\b", none_said.group(0), re.I)):
+            res("D1", True, "says none of the shown entries is from the window (honest, scoped)")
+            return
+        res("D1", bool(dated) and not out,
+            f"{len(out)}/{len(dated)} entries outside {probe['from']}..{probe['to']}: " + "; ".join(f"[{i}] '{idx_title.get(i, '')[:24]}' {d}" for i, d in out[:3])
+            if out else (f"{len(dated)} dated entries, all in window" if dated else "no dated entry cited or named for the window"))
+    elif kind == "age":
+        y, mo, d = (int(x) for x in probe["date"].split("-"))
+        truth = (datetime.date.fromisoformat(probe["today"]) - datetime.date(y, mo, d)).days
+        dates = stated_dates(final)
+        right_date = any(mm == mo and dd == d and (yy in (None, y)) for yy, mm, dd in dates)
+        wrong_date = [x for x in dates if x[1] == mo and x[2] == d and x[0] not in (None, y)]
+        ages = stated_ages_days(final)
+        bad_ages = [a for a in ages if not (0.75 * truth <= a[0] <= 1.25 * truth)]
+        ok_ages = [a for a in ages if a not in bad_ages]
+        res("D2", right_date and not wrong_date and ok_ages and not bad_ages,
+            f"truth {probe['date']} = {truth} days before {probe['today']}; date {'✓' if right_date and not wrong_date else '✗ ' + str(wrong_date or dates[:3] or 'none stated')}; "
+            f"age {'✓ ' + ok_ages[0][1] if ok_ages and not bad_ages else '✗ ' + (', '.join(a[1] for a in bad_ages) or 'none stated')}")
+    elif kind == "identity":
+        tnorm = title_norm(probe["title"])
+        named = tnorm in title_norm(final)
+        target_idx = [c["index"] for c in cand if probe.get("nodeID") and (c.get("nodeID") or "").startswith(probe["nodeID"])]
+        cited = any(f"[{i}]" in final for i in target_idx)
+        res("O1", named or cited, f"target '{probe['title']}' {'named' if named else ('cited' if cited else 'NOT named or cited')}"
+                                   f"{'' if target_idx else ' (not in the packet)'}")
+    elif kind == "count":
+        counts = []
+        for m in re.finditer(r"\b(\d+|" + "|".join(sorted((w for w in NUMWORDS if " " not in w and w not in ("a", "an")), key=len, reverse=True)) +
+                             r")\s+(?:\w+\s+){0,2}?(?:entries|entry|notes|times|places|mentions)\b", final, re.I):
+            n = m.group(1).lower()
+            counts.append(int(n) if n.isdigit() else NUMWORDS[n])
+        res("K1", probe["value"] in counts, f"true count {probe['value']}; stated {counts or 'no count'}")
+    elif kind == "absent":
+        neg = re.search(r"\b(?:don't|do not|didn't|did not|haven't|have not|hasn't|can't|cannot|couldn't|no|not|never|nothing|none|isn't|aren't)\b", low)
+        affirm = re.search(r"^\W*yes\b|\byou (?:did|have) (?:write|written|wrote|mention)|\byou (?:wrote|mentioned|noted) (?:about )?" + re.escape(probe["term"].lower()), low)
+        # a HYPOTHETICAL is not an affirmation ("it is possible that you wrote about beekeeping in another entry")
+        if affirm and re.search(r"\b(?:possible|possibly|may|might|could|perhaps|maybe)\b[^.\n]{0,30}$", low[:affirm.start()]):
+            affirm = None
+        res("B1", bool(neg) and not affirm, "absent in the library; answer " + ("affirms presence" if affirm else ("says no" if neg else "never says no")))
+    elif kind == "present":
+        term = probe["term"].lower()
+        # found = at least ONE un-negated mention (a later "…not just Dawkins…" must not cancel a clear "Yes, you did")
+        found = any(not re.search(r"(?:\bno|\bnot|n't|\bnever|\bnothing|\bnone)\b[^.\n]{0,40}$", low[:mm.start()])
+                    for mm in re.finditer(re.escape(term), low))
+        absence = re.search(r"(?:\bno\b|\bnot\b|n't|\bnever\b|\bnothing\b|\bnone\b)[^.\n]{0,60}(?:entr|note|wr[io]te|written|mention|record|anything)", low)
+        hedge = re.search(r"retrieved|in front of me|given to me|i was given|i can see|i was shown|shown here|these (?:entries|notes|excerpts|results)|this (?:selection|survey|set)|what i (?:have|got|can)|in the (?:entries|notes) (?:i|provided|here)|provided", low)
+        named = title_norm(probe["title"]) in title_norm(final) or any(f"[{c['index']}]" in final for c in cand if (c.get("nodeID") or "").startswith(probe["nodeID"]))
+        ok = (found and named) or (absence and hedge and not found)
+        res("B1", bool(ok), "exists once (deep in a long entry); answer " + (
+            "finds it" if found and named else ("mentions it but points at no real entry" if found else
+            ("hedges its absence to what it was shown" if absence and hedge else ("ASSERTS absence" if absence else "neither finds nor denies it")))))
+    elif kind == "value":
+        units = [u.lower() for u in probe.get("units", [])]
+        hits = []
+        for v, after, before in stated_numbers(final):
+            if abs(v - probe["value"]) <= probe["tol"]:
+                unit_ok = not probe.get("unitRequired") or any(after.lstrip().startswith(u) or (u == "$" and "$" in before) for u in units)
+                hits.append((v, unit_ok))
+        res("M1", any(u for _, u in hits), f"computed {probe['value']}{' ' + units[0] if units else ''} (±{probe['tol']}); "
+                                            + (f"found {[h[0] for h in hits]}" + ("" if any(u for _, u in hits) else " but without the unit") if hits else "not in the answer"))
+    elif kind == "quote":
+        src = norm_text(turn.get("quoteSource") or turn.get("userContent") or "")
+        spans = re.findall(r'["\u201c]([^"\u201d\n]{12,})["\u201d]', final) + re.findall(r"^\s*>\s*(.+)$", final, re.M)
+        frags = [f for sp in spans for f in re.split(r"\u2026|\.\.\.|\[\d+\]", sp) if len(norm_text(f).split()) >= 4]
+        bad = [f for f in frags if norm_text(f) not in src]
+        if not frags:
+            R["Q1"] = ("FLAG", "no quotation in an answer to an 'exactly' question")
+        else:
+            res("Q1", not bad, f"{len(bad)}/{len(frags)} quoted spans not in the source: " + "; ".join(f'"{b.strip()[:60]}"' for b in bad[:2]) if bad else f"{len(frags)} quoted spans verbatim")
+
+
+# ── CI-2 graders (Brief CI design §6) ──
+FIXTURE_DIR = os.path.expanduser("~/Developer/fixtures/tom-corpus-2026-09-21")
+_LIB = None
+
+def library_texts():
+    """[(title, text)] for every fixture entry — the WHOLE library (ground truth for B2's 'does it exist?')."""
+    global _LIB
+    if _LIB is None:
+        _LIB = []
+        for p in glob.glob(os.path.join(FIXTURE_DIR, "nodes", "*", "node.json")):
+            try:
+                n = json.load(open(p)); bp = os.path.join(os.path.dirname(p), "blocks.json")
+                b = json.load(open(bp)) if os.path.exists(bp) else {"blocks": []}
+                _LIB.append((n.get("title", ""), " ".join(x.get("text") or "" for x in b["blocks"])))
+            except Exception:
+                pass
+    return _LIB
+
+SCOPE_HEDGE = re.compile(r"\b(?:entries|notes) (?:shown|provided|you(?:'ve)? (?:showed|shown|shared))\b|\bthe entries i can see\b|\bof (?:the )?(?:entries|notes) (?:i can see|shown)\b|\b(?:only )?(?:\w+|\d+) of (?:the )?\d+ (?:entries|notes)|\b(?:you're|you are|i'm|i am) seeing \d+|can't determine|cannot determine|can't say for sure|no way to (?:know|tell)|retrieved|in front of me|given to me|i was given|i(?:'ve| have)? (?:been )?(?:shown|given)|i can see|i can only see|i(?:'m| am) seeing|"
+                         r"(?:of|in|from|among) the (?:\d+ )?(?:entries|notes) (?:i|you) |these (?:entries|notes|excerpts)|may not be (?:everything|all|complete|the full)|"
+                         r"might not be (?:everything|all)|not (?:all|everything) (?:of )?your|there (?:may|might|could) be (?:more|others)|whole library|entire library|"
+                         r"all of your (?:entries|notes)|in what i (?:have|can|was)|only (?:see|have) (?:a few|some|part)|can't (?:count|rank|tell)|cannot (?:count|rank|tell)|"
+                         r"(?:shown|surfaced|pulled up) (?:here|for this)|in this (?:selection|set|packet)", re.I)
+ABSENCE = re.compile(r"\byou (?:never|didn't|did not|haven't|have not|hadn't)\s+(?:\w+\s+){0,2}?(?:write|written|wrote|mention(?:ed)?|say|said|note(?:d)?|discuss(?:ed)?)\b|"
+                     r"\bi (?:didn't|did not|never) (?:say|said|write|wrote|mention)|\bi don't recall\b|\bi do not recall\b|"
+                     r"\bthere(?:'s| is| are) no (?:mention|entr|note|record)|\bnone of (?:your|the) (?:entries|notes)\b[^.\n]{0,40}\b(?:mention|discuss|talk|refer)|"
+                     r"\bno (?:entries|notes) (?:mention|discuss|talk|refer)|\bdoesn't (?:mention|appear)|\bnot mentioned\b", re.I)
+ATTRIB = re.compile(r"\byou(?:'ve| have)?\s+(?:also\s+|even\s+|directly\s+)?(?:wrote|written|write|said|say|mentioned|mention|noted|described|called|argued|explained|referenced|defined|compared|contrasted|tied|noted)\b|\bin your (?:note|entry|journal|piece|post)\b", re.I)
+Q_STOP = set("what which when where how did does have about write wrote written said say mention mentioned entry entries notes note exactly ever library my your being the that this from with into".split())
+
+# T ruling (CH-B review, F4): a PURE-ABSENCE answer ("No — you haven't written about X") asserts nothing from the
+# library, so it has nothing to cite and C2 passes it uncited. An answer that also asserts library content (a
+# synthesis, "but you did write…", a named entry, a citation) is not pure and must still cite. Whether the absence
+# is TRUE is B1/B2's job, not C2's. Controls c2-pure-absence-control (green) + c2-absence-plus-content (red).
+NO_RECORD = re.compile(r"\b(?:no|not any)\s+(?:\w+\s+){0,2}?(?:entr(?:y|ies)|notes?|records?|mentions?)\b|"
+                       r"\b(?:couldn't|could not|can't|cannot|didn't|did not)\s+find\b|\bnothing (?:in your|about|on)\b|"
+                       r"\byour (?:library|notes|entries) (?:doesn't|does not|don't|do not) (?:contain|mention|include|have|cover)\b", re.I)
+LIB_CLAIM = re.compile(r"\byou did\b(?!\s+not)|\bbut you\b|\byour (?:note|entry|journal|piece|post)s?\b|\bin (?:one|two|several|some|a few) of your\b|"
+                       r"\bthe closest\b|\b(?:related|similar)\b", re.I)
+# "…the notes you've shared revolve around film, sourdough…" says what the library DOES hold — content, even inside
+# an absence sentence ("Your notes focus on grammar — nothing about skiing"). Not when negated ("none of your notes cover X").
+LIB_COVERS = re.compile(r"\b(?:notes|entries|library|passages|journal)\b[^.\n]{0,60}?\b(?:cover|focus|revolve|cent(?:er|re)|rang(?:e|ing)|include|discuss|explore|deal|touch|is rich in|(?:are|is) (?:about|mostly|mainly))\w*", re.I)
+
+def lib_covers(sent):
+    for m in LIB_COVERS.finditer(sent):
+        clause = re.split(r"\s[—–-]\s|;|:|,\s*but\b", sent[:m.end()])[-1]   # the negation must be in the SAME clause
+        if not re.search(r"\b(?:no|not|none|nothing|never)\b|n't", clause, re.I):
+            return True
+    return False
+
+def pure_absence(final, cand):
+    text = (final or "").replace("’", "'")
+    if not norm_ws(text) or marker_indices(text) or re.match(r"\W*yes\b", text, re.I):
+        return False
+    if any(c.get("title") and title_mentioned(c["title"], text) for c in cand):
+        return False
+    sents = [x for x in re.split(r"(?<=[.!?])\s+|\n+", text) if x.strip()]
+    absent = [s for s in sents if ABSENCE.search(s) or NO_RECORD.search(s)]
+    if not absent:
+        return False
+    # an absence sentence may say "none of your notes…"; any OTHER sentence that points at the library is content
+    return not any(ATTRIB.search(s) or lib_covers(s) or (s not in absent and LIB_CLAIM.search(s)) for s in sents)
+
+def packet_segments(turn):
+    """{[n]: text} per packet item (its header + body) — known-bad items carry `entryTexts` instead."""
+    if turn.get("entryTexts"):
+        return {int(k): v for k, v in turn["entryTexts"].items()}
+    out, cur, buf = {}, None, []
+    for line in (turn.get("userContent") or "").split("\n"):
+        m = re.match(r"^\[(\d+)\] ", line)
+        if m or line.startswith(("COMPUTED FACTS", "Question:", "ENTRIES ", "PASSAGES:", "END OF NOTES")):
+            if cur is not None:
+                out[cur] = out.get(cur, "") + "\n".join(buf)
+            cur, buf = (int(m.group(1)) if m else None), [line]
+        else:
+            buf.append(line)
+    if cur is not None:
+        out[cur] = out.get(cur, "") + "\n".join(buf)
+    return out
+
+def c6_violations(final, turn, cand, question):
+    segs = packet_segments(turn)
+    if not segs:
+        return []
+    known = norm_text((turn.get("userContent") or "") + " " + " ".join(segs.values()) + " " + (question or ""))
+    dates = cand_dates(turn)
+    bad = []
+    final = (final or "").replace("\u2019", "'")
+    kwords, ewords = None, None
+    # The app renumbers citations by first appearance before display (finalText [1] = the first entry cited, not
+    # packet [1]) — resolve a shown [n] through the turn's citation list, by title, to every packet item with that
+    # title (a card and its read can both be in the packet). Calibrated on CH-A RG-high/RG-time/P2d (3 false FLAGs).
+    shown = {}
+    for c in turn.get("citations") or []:
+        t = norm_text(c.get("title") or "")
+        hit = {i for i, txt in segs.items() if t and t in norm_text(txt.split("\n", 1)[0])}
+        if hit:
+            shown[int(c["index"])] = hit
+
+    def present(tok, words):
+        nt = norm_text(tok)
+        pre = nt[:max(4, min(len(nt) - 2, 6))]      # morphology-tolerant: Gnosticism ~ Gnostic, Pikmin's ~ Pikmin
+        return any(w.startswith(pre) for w in words)
+    for sent in re.split(r"(?<=[.!?])\s+|\n+", final):
+        ms = list(ATTRIB.finditer(sent))
+        if not ms:
+            continue
+        m = ms[-1]   # the LAST attribution verb owns the claim ("In your note [1], you mentioned that …")
+        # EXPLICIT anchors only: a [n] in the sentence, or "your note/entry from <date>". A bare title mention is
+        # too weak (calibration: "You mentioned that Mara called…" restates the QUESTION, and "Mara" is a title).
+        idx = set()
+        for x in marker_indices(sent):
+            idx |= shown.get(x, {x})
+        for yy, mo, dd in (stated_dates(sent) if re.search(r"\byour (?:note|entry|journal)\b", sent, re.I) else []):
+            for i, dstr in dates.items():
+                y2, m2, d2 = (int(x) for x in dstr.split("-"))
+                if m2 == mo and d2 == dd and (yy in (None, y2)):
+                    idx.add(i)
+        idx = {i for i in idx if i in segs}
+        if not idx:
+            continue
+        ewords = norm_text(" ".join(segs[i] for i in idx)).split()
+        kwords = known.split()
+        # only the ATTRIBUTED claim: from the verb to its citation marker / clause break (", which …" is a new claim)
+        clause = sent[m.start():]
+        cut = min([i for i in (clause.find(x) for x in ("[", " — ", " – ", ", which", "; ", ": ")) if i > 8] or [len(clause)])
+        clause = strip_markers(clause[:cut])
+        toks = set()
+        for w in re.finditer(r"(?<![.!?]\s)(?<!^)\b([A-Z][a-zA-Z'’-]{2,})\b", clause):
+            if w.group(1).lower()[:3] not in MONTHS and w.group(1).lower() not in ("monday", "tuesday", "wednesday", "thursday", "friday", "saturday", "sunday"):
+                toks.add(w.group(1))
+        for q in re.findall(r'["\u201c]([^"\u201d\n]{3,40})["\u201d]', clause):   # real quotation marks only (not **bold**)
+            toks |= {w for w in re.findall(r"[A-Za-z][A-Za-z'’-]{3,}", q)}
+        miss = []
+        for t in sorted(toks):
+            nt = norm_text(t)
+            if not nt or nt in ("you", "your", "i", "the") or len(nt) < 3:
+                continue
+            if present(t, kwords) and not present(t, ewords):   # a LIBRARY/question term, not in the entry it's pinned on
+                miss.append(t)
+        if miss:
+            bad.append(f"attributes {miss} to [{','.join(map(str, sorted(idx)))}] where it does not appear: \"{sent.strip()[:110]}\"")
+    return bad
+
+def b2_violations(final, question):
+    final = (final or "").replace("\u2019", "'")
+    key = [w for w in re.findall(r"[a-z][a-z'-]{3,}", (question or "").lower()) if w not in Q_STOP]
+    if not key:
+        return []
+    bad = []
+    sents = [x for x in re.split(r"(?<=[.!?])\s+|\n+", final) if x.strip()]
+    for si, sent in enumerate(sents):
+        if not ABSENCE.search(sent):
+            continue
+        # a hedge must be WITH the claim (this sentence or the next) — a disclaimer 800 chars later doesn't
+        # excuse a flat opening "I didn't say that" (calibrated on CI-0 instruct P7b r1)
+        if SCOPE_HEDGE.search(sent) or (si + 1 < len(sents) and SCOPE_HEDGE.search(sents[si + 1])):
+            continue
+        # not an absence claim: a qualified one ("didn't explicitly write a whole essay on X, you did engage…")
+        if re.search(r"\b(?:explicitly|directly|a whole|a dedicated|an entire|specifically|in so many words|just|only|himself|herself|itself|themselves|per se)\b|\byou did (?!not\b)|\byes\b", sent, re.I):
+            continue
+        hits = [t for t, x in library_texts() if all(re.search(r"\b" + re.escape(k[:6]), (t + " " + x).lower()) for k in key)]
+        if hits:
+            bad.append(f"asserts absence, but the library has it ({hits[0][:30]}{' +' + str(len(hits) - 1) if len(hits) > 1 else ''}): \"{sent.strip()[:100]}\"")
+    return bad
+
+def fx1_violations(turn, plan):
+    """Parse the app's COMPUTED FACTS section and check it against the independent Python computation."""
+    uc = turn.get("userContent") or ""
+    if "COMPUTED FACTS" not in uc:
+        return None
+    sec = uc[uc.index("COMPUTED FACTS"):].split("\nQuestion:")[0].split("\nEND OF NOTES")[0]
+    bad = []
+    tm = re.search(r"Today is \w+, (\d{1,2}) (\w+) (\d{4})\.", sec)
+    today = datetime.date(int(tm.group(3)), MONTHS[tm.group(2).lower()], int(tm.group(1))) if tm else None
+    # T ruling (2026-10-09): "Today is" only accompanies dates — required when the section has date lines or a window
+    if not today and ("\nDates: " in sec or re.search(r'^"[^"]+" = ', sec, re.M)):
+        bad.append("date lines without a 'Today is' line")
+    sm = re.search(r"You are seeing (\d+) of the (\d+) entries", sec)
+    nodes = {c.get("nodeID") for c in (plan.get("candidates") or [])}
+    # T 2026-10-06: the "N of M" line appears ONLY on whole-library questions — its absence is correct elsewhere.
+    # A whole-library turn is the one the app gives a computed "Answer: “…”" line, so require the scope line there.
+    if not sm:
+        if "Answer: \u201c" in sec or "whole-library question" in sec:
+            bad.append("whole-library answer without the scope line")
+    elif nodes and int(sm.group(1)) != len(nodes):
+        bad.append(f"scope N={sm.group(1)} but the packet has {len(nodes)} entries")
+    hdr = cand_dates(turn)
+    for m in re.finditer(r"\[(\d+)\] (?:(?!\[\d+\] )[^\n])*? — (?:written|added to the library) (\d{4}-\d{2}-\d{2}), [^(]*\((\d+) days?\)", sec):
+        i, d, n = int(m.group(1)), m.group(2), int(m.group(3))
+        if hdr.get(i) and hdr[i] != d:
+            bad.append(f"[{i}] fact date {d} ≠ packet header {hdr[i]}")
+        if today and (today - datetime.date.fromisoformat(d)).days != n:
+            bad.append(f"[{i}] {n} days ≠ today−{d} = {(today - datetime.date.fromisoformat(d)).days}")
+    # a cache-friendly follow-up's entry text is in the REPLAYED packet (history), not in this turn's packet
+    replayed = "\n".join(h.get("content", "") for h in (turn.get("history") or []) if h.get("role") == "user")
+    ref = lab_reference(uc + "\n" + replayed)
+    for m in re.finditer(r"^- (.+?) (\d+(?:\.\d+)?)(?: ([^:]+?))?: reference (\S+) — (.+)\.$", sec, re.M):
+        name, val, rng, status = m.group(1), float(m.group(2)), m.group(4), m.group(5)
+        hit = None
+        for k, kw, _ in _ANALYTE_RES:
+            pos = name.upper().rfind(kw)
+            if pos >= 0 and (hit is None or (pos + len(kw), len(kw)) > hit[1]):
+                hit = (k, (pos + len(kw), len(kw)))
+        rows = ref.get(hit[0], []) if hit else []
+        row = next((r for r in rows if abs(r[0] - val) < 1e-9), None)
+        if not row:
+            # the analyte map is lab-keyword based; for any other name, verify the row VERBATIM in the packet
+            # (value then range, as the entry wrote them) and recompute its bounds independently
+            # a cache-friendly follow-up points back to the entry: its text is in the REPLAYED packet in the history
+            hist = "\n".join(h.get("content", "") for h in (turn.get("history") or []) if h.get("role") == "user")
+            vm = re.search(r"(?<![\d.])" + re.escape(m.group(2)) + r"\s+" + re.escape(rng) + r"(?![\d.])", uc + "\n" + hist)
+            if not vm:
+                bad.append(f"fact row '{name} {val} {rng}' does not appear in the packet")
+                continue
+            r_ = rng.replace(" ", "")
+            if re.fullmatch(r"\d+(?:\.\d+)?[-–—]\d+(?:\.\d+)?", r_):
+                lo, hi = (float(x) for x in re.split(r"[-–—]", r_))
+            elif r_[0] in "<≤":
+                lo, hi = None, float(r_.lstrip("<=≤"))
+            else:
+                lo, hi = float(r_.lstrip(">=≥")), None
+            row = (val, lo, hi, "", "")
+        v, lo, hi, flag, _ = row
+        claim = "HIGH" if status.startswith("ABOVE") else "LOW" if status.startswith("BELOW") else "NORMAL" if status.startswith("within") else None
+        if claim and not _truth(claim, row):
+            bad.append(f"'{name} {val}' stated {status[:30]} but range {lo}-{hi} says otherwise")
+        if ("AT its upper limit" in status or "equal to its upper limit" in status) and not (hi is not None and abs(v - hi) < 1e-9):
+            bad.append(f"'{name}' at its upper limit but {v} ≠ {hi}")
+        if "equal to its lower limit" in status and not (lo is not None and abs(v - lo) < 1e-9):
+            bad.append(f"'{name}' at its lower limit but {v} ≠ {lo}")
+    return bad
+
+
+# ─────────────────────────── logs ───────────────────────────
+
+def parse_host_log(path):
+    """→ {reqTag: {"model":…, "think":…, "truncated":…, "loadMs":…, "ttftMs":…, "eval":…, "prompt_eval":…}}"""
+    out, pending = {}, None
+    if not path or not os.path.exists(path):
+        return out
+    for line in open(path, errors="replace"):
+        m = re.search(r"chat/e2e reqID=(\S+)", line)
+        if m:
+            pending = m.group(1)
+            out.setdefault(pending, {})
+            continue
+        m = re.search(r"chat→ollama .*think=(\S+)", line)
+        if m and pending:
+            out[pending]["think"] = m.group(1)
+            continue
+        m = re.search(r"chat done req=(\S+) model=(\S+) .*?prompt_eval=(\d+) eval=(\d+) truncated=(\w+) loadMs=(\d+) ttftMs=(\d+)", line)
+        if m:
+            d = out.setdefault(m.group(1), {})
+            d.update(model=m.group(2), prompt_eval=int(m.group(3)), eval=int(m.group(4)),
+                     truncated=m.group(5) == "true", loadMs=int(m.group(6)), ttftMs=int(m.group(7)))
+    return out
+
+def req_tag(request_id):
+    if not request_id:
+        return "absent"
+    return request_id[:8] + "…" if len(request_id) > 8 else request_id
+
+def parse_ps_log(path):
+    """ps.log lines: `<epoch>\t<name>@<digest>,<name>@<digest>` (empty list = nothing loaded)."""
+    rows = []
+    if not path or not os.path.exists(path):
+        return rows
+    for line in open(path):
+        parts = line.rstrip("\n").split("\t")
+        if not parts or not parts[0]:
+            continue
+        try:
+            ts = float(parts[0])
+        except ValueError:
+            continue
+        # `name@digest[@size_vram@context_length]` (size/ctx added for test 4's resident-memory read)
+        loaded = [x.split("@") for x in (parts[1].split(",") if len(parts) > 1 and parts[1] else [])]
+        rows.append((ts, [(f[0], f[1]) for f in loaded if len(f) >= 2]))
+    return rows
+
+def resident_sizes(path):
+    """{model: (max size_vram bytes, context_length)} seen in ps.log — test 4's resident-memory read."""
+    out = {}
+    if not path or not os.path.exists(path):
+        return out
+    for line in open(path):
+        parts = line.rstrip("\n").split("\t")
+        for x in (parts[1].split(",") if len(parts) > 1 and parts[1] else []):
+            f = x.split("@")
+            if len(f) >= 4:
+                size, ctx = int(f[2] or 0), int(f[3] or 0)
+                if size > out.get(f[0], (0, 0))[0]:
+                    out[f[0]] = (size, ctx)
+    return out
+
+
+def iso_epoch(s):
+    try:
+        return datetime.datetime.fromisoformat(s.replace("Z", "+00:00")).timestamp()
+    except Exception:
+        return None
+
+
+# ─────────────────────────── grading ───────────────────────────
+
+NOKEY_LINE = "Web search needs a Brave Search key"
+SENTINEL = re.compile(r"\b(?:19(?:th)? november,? 2031|november 19(?:th)?,? 2031|2031-11-19)\b", re.I)
+INVENTED_DATE = re.compile(r"\b(?:19|20)\d\d\b|\b(?:january|february|march|april|may|june|july|august|september|october|november|december) \d{1,2}\b", re.I)
+
+URL_RE = re.compile(r"(?:https?://|www\.)[^\s<>()\[\]{}\"'`]+", re.I)
+SRC_HEADING_RE = re.compile(r"^(?:sources?|references?|citations?|further reading|learn more|read more|more information|bibliography|links)\s*:?\s*$|^(?:sources?|references?|citations?|further reading|learn more|read more|bibliography)\s*:\s*\S")
+MARKER_LINE_RE = re.compile(r"^\s*(?:[-*•+]\s*|\d{1,2}[.)]\s*)?\[\s*\d{1,2}\s*\]")
+MONTH_NAMES = ["january", "february", "march", "april", "may", "june", "july", "august", "september", "october", "november", "december"]
+
+def norm_url(u):
+    """Same comparison as the app's `WebGrounding.normalize`: scheme, www., fragment and a trailing slash don't count."""
+    s = u.strip().rstrip(".,;:!?*_")
+    s = s.split("#", 1)[0]
+    s = re.sub(r"^[a-zA-Z][a-zA-Z0-9+.-]*://", "", s)
+    if s.lower().startswith("www."):
+        s = s[4:]
+    i = s.find("/")
+    s = (s.lower() if i < 0 else s[:i].lower() + s[i:]).rstrip("/")
+    return s
+
+def model_source_list(final):
+    """The lines of a source list the MODEL wrote (a Sources/References heading and what follows it, a one-line
+    'Sources: …', or a run of citation-led title lines that ends the answer)."""
+    lines = (final or "").split("\n")
+    plain = [re.sub(r"^[\s#>]+", "", re.sub(r"[*_]", "", l)).lower() for l in lines]
+    hits = [lines[i] for i, p in enumerate(plain) if SRC_HEADING_RE.search(p)]
+    tail = []
+    for l in reversed(lines):
+        if not l.strip():
+            continue
+        m = MARKER_LINE_RE.match(l)
+        rest = l[m.end():].strip(" :-–—") if m else ""
+        rest = re.sub(r"^(?:\s*,?\s*\[\s*\d{1,2}\s*\])*", "", rest).strip()
+        if m and (not rest or (not rest[0].islower() and len(rest) <= 160 and not re.search(r"[.!?]\s+\S", rest))):
+            tail.append(l)
+            continue
+        break
+    return hits + tail[::-1]
+
+def is_section_page(url):
+    """Mirror of the app's `WebGrounding.isSectionPage` (URL shape): a section / front / reference page, not a dated
+    article — its provider date is the page's last update, so its stories may be older."""
+    from urllib.parse import urlparse
+    u = urlparse(url)
+    if not u.netloc:
+        return False
+    segs = [x for x in u.path.split("/") if x]
+    if len(segs) > 3 or re.search(r"(^|&)(id|p|story|article)=", u.query or ""):
+        return False
+    for x in segs:
+        if x.lower() in ("article", "articles", "story", "stories", "news-story", "a", "p"):
+            return False
+        if len(x) >= 8 and re.search(r"\d", x) and re.search(r"[A-Za-z]", x) and "-" not in x:
+            return False
+        if x.count("-") >= 2 or re.search(r"\d{4,}", x) or re.search(r"\.(s?html?|php|aspx?)$", x, re.I):
+            return False
+    return True
+
+def sentences(text):
+    return [s for s in re.split(r"(?<=[.!?])\s+|\n+", text or "") if s.strip()]
+
+# Session 2 measurement (d) — the persona slip (CH-A test 3: instruct 5/15): the answer continues in the ENTRY's
+# voice ("My take is…", "I wrote that…", "My [entry title] entry claims…") instead of reporting it as
+# "you…". Quoted text is the entry's own words, so quotes are removed first. "I think …" is left alone (the
+# Librarian's own voice uses it).
+PERSONA_RE = re.compile(r"\b(my (take|idea|argument|view|premise|story|joke|point)\b|i (wrote|have written|'ve written|haven't written|have not written|never wrote|noted|jotted)\b|my [^.?!\n]{0,50}\b(entry|note|journal)\b)", re.I)
+
+# T ruling (2026-10-09, item 10) — a fact counts only when the answer STATES it: not inside a quotation of the entry
+# (SL-M1b quoted "Didn't look at the others" while answering "Yes — you did look") and not in a sentence that denies
+# having it (SL-F1 quoted "Metric" while saying "it doesn't say who roasted it"). A fact that IS a denial ("didn't",
+# "never") is judged on the quote rule only.
+DENIAL_RE = re.compile(r"\b(?:(?:doesn't|does not|don't|do not|didn't|did not|isn't|is not|wasn't|was not)\s+(?:\w+\s+){0,2}?"
+                       r"(?:say|says|mention|mentions|state|states|specify|specifies|include|includes|contain|contains|tell|tells|record|records|list|lists|stated|mentioned|specified|recorded|listed|given|named)"
+                       r"|no (?:information|mention|record|details?|entry|entries|data) (?:about|of|on|that|which|says)"
+                       r"|there (?:is|are|was|were) no (?:information|mention|record|entry|entries)"
+                       r"|(?:not|never) (?:mentioned|stated|specified|recorded|given|named|said))\b", re.I)
+NEGATION_FACT_RE = re.compile(r"\b(?:no|not|never|n't|none|nothing|didn't|did not|don't|haven't|hadn't)\b|n't", re.I)
+
+def fact_stated(text, fact):
+    t = (text or "").replace("’", "'")
+    t = re.sub(r"[“\"][^”\"]{0,600}[”\"]", " ", t)        # quotations of the entry
+    t = re.sub(r"(?m)^\s*>.*$", " ", t)                     # block quotes
+    t = re.sub(r"\*[^*\n]{0,400}\*", lambda m: m.group(0) if len(m.group(0)) < 40 else " ", t)   # long *italic* quotes
+    f = fact.lower().replace("’", "'")
+    for snt in re.split(r"(?<=[.!?])\s+|\n+", t):
+        if f in snt.lower() and (NEGATION_FACT_RE.search(f) or not DENIAL_RE.search(snt)):
+            return True
+    return False
+
+
+def opening_contradicts(text, polarity):
+    """A yes/no row whose known answer is `polarity` ("no"/"yes"): the answer's OPENING must not say the opposite
+    (SL-M1b: "Yes — you did look at the other endings, in a way…" when the entry says "Didn't look at the others")."""
+    if polarity not in ("yes", "no"):
+        return None
+    first = re.split(r"(?<=[.!?])\s+|\n+", (text or "").strip(), maxsplit=1)[0].replace("’", "'")
+    wrong = r"^\W*(?:yes\b|yeah\b|yep\b|you did\b(?! not)|you have\b(?! not)|indeed\b)" if polarity == "no" else r"^\W*(?:no\b|nope\b|you didn't|you did not|you haven't|you have not|none)"
+    return first[:60] if re.search(wrong, first, re.I) else None
+
+
+def persona_slip(text):
+    t = re.sub(r"[“\"][^”\"]{0,400}[”\"]", " ", (text or "").replace("’", "'"))
+    t = re.sub(r"(?m)^\s*>.*$", " ", t)   # block quotes
+    m = PERSONA_RE.search(t)
+    return m.group(0) if m else None
+
+
+def grade_web_grounding(exp, turn, final, cites, path, R, res, na):
+    """CH Session 2 (T 2026-10-08) — deterministic web grounding: WF1 invented URLs, WF2 the source list, WD1
+    stale-as-today, GF1 known facts, GL1 the general-knowledge line."""
+    links = turn.get("toolLinks") or []
+    fetched = turn.get("fetched")
+    allowed = {norm_url(l["url"]) for l in links} | ({norm_url(fetched)} if fetched else set()) \
+        | {norm_url(u) for u in URL_RE.findall(turn.get("userContent") or "")}
+    def ok_url(u):
+        n = norm_url(u)
+        return n in allowed or n.split("?", 1)[0] in allowed
+    if path == "nokey":
+        na("WF1", "the app's own line"); na("WF2", "the app's own line"); na("GL1", "the app's own line")
+    else:
+        bad = [u for u in URL_RE.findall(final) if not ok_url(u)]
+        res("WF1", not bad, ("URL(s) no tool returned: " + ", ".join(b[:60] for b in bad)) if bad else f"{len(URL_RE.findall(final))} URL(s), all returned")
+        lst = model_source_list(final)
+        web = [c for c in cites if c.get("url")]
+        order = []
+        for m in re.finditer(r"\[(\d{1,2})\]", final):
+            n = int(m.group(1))
+            if n not in order:
+                order.append(n)
+        problems = []
+        if lst:
+            problems.append("model-written source list: " + " | ".join(l.strip()[:40] for l in lst[:3]))
+        if web:
+            idx = [c.get("index") for c in web]
+            if sorted(idx) != list(range(1, len(idx) + 1)):
+                problems.append(f"chips not numbered 1…k: {idx}")
+            if order[:len(idx)] != sorted(idx) or set(order) != set(idx):
+                problems.append(f"prose cites {order} but the chips are {sorted(idx)}")
+        res("WF2", not problems, "; ".join(problems))
+        # T ruling (2026-10-09): the line goes ONLY under a FACTUAL question no web result backs (a pep talk or a
+        # haiku gets none). `factual` is the case's ground truth, not the app's own classifier.
+        # T rulings (2026-10-09): the line goes under a FACTUAL question that no CITED web result backs — not searched,
+        # or searched but citing nothing (item 9) — never under a pep talk or haiku.
+        searched = bool(links)
+        backed = searched and bool(web)
+        factual = bool(exp.get("factual"))
+        gk = bool(turn.get("generalKnowledge"))
+        want = factual and not backed
+        res("GL1", gk == want, ("cites web results but labelled general knowledge" if backed and gk else
+                                "not a factual question but labelled general knowledge" if gk and not factual else
+                                ("searched but cited nothing, and no general-knowledge line" if searched else
+                                 "a factual answer with no web result behind it and no general-knowledge line") if want and not gk else
+                                ("cited web results — no label" if backed else "labelled general knowledge" if gk else "not factual — no label")))
+    # WD1 — stale-as-today (rows that ask for today's news)
+    if exp.get("freshCheck") and path != "nokey":
+        import datetime
+        try:
+            today = datetime.datetime.fromisoformat((turn.get("startedAt") or "").replace("Z", "+00:00")).astimezone().date()
+        except ValueError:
+            today = datetime.date.today()
+        pub = {}
+        for l in links:
+            if l.get("published"):
+                pub[norm_url(l["url"])] = datetime.date.fromisoformat(l["published"])
+        by_index = {c.get("index"): c for c in cites if c.get("url")}
+        problems, fresh_cited = [], False
+        TODAY = r"\b(today|this morning|tonight|breaking)\b"
+        HEDGE = r"\b(listed|front page|section|headlines on|home ?page|page)\b"
+        def dated_for(snt, d):
+            return (MONTH_NAMES[d.month - 1] in snt.lower() or d.isoformat() in snt
+                    or re.search(r"\b(\d+|two|three|four|five|six|seven|several|a few)\s+(days?|weeks?|months?)\s+(ago|before|prior|earlier)\b", snt, re.I))
+        lead = ""   # the sentence a list hangs from ("The latest items are from 6 October: …") dates its bullets
+        for line in (final or "").split("\n"):
+            bullet = bool(re.match(r"^\s*(?:[-*•+]|\d{1,2}[.)])\s+", line))
+            for snt in sentences(line):
+                ctx = (lead + " " + snt) if bullet else snt
+                cited = []
+                for m in re.finditer(r"\[(\d{1,2})\]", snt):
+                    c = by_index.get(int(m.group(1)))
+                    if c:
+                        cited.append((m.group(1), c))
+                for n, c in cited:
+                    d = pub.get(norm_url(c["url"]))
+                    if is_section_page(c["url"]) or d is None:
+                        continue
+                    age = (today - d).days
+                    if age <= 1:
+                        fresh_cited = True
+                    elif not dated_for(ctx, d):
+                        problems.append(f"a {age}-day-old result [{n}] presented without its date: '{snt.strip()[:70]}'")
+                # T's case 2: a 'today' claim backed ONLY by section / front pages (or undated pages), with no
+                # "listed on that page" hedge — the page's date is its last update, not the story's
+                if cited and all(is_section_page(c["url"]) or pub.get(norm_url(c["url"])) is None for _, c in cited) \
+                        and re.search(TODAY, ctx, re.I) and not re.search(HEDGE, ctx, re.I) \
+                        and not re.search(r"\b(no|not|none|nothing|cannot|can't|couldn't|prior|before|earlier|ago)\b", ctx, re.I):
+                    problems.append(f"a 'today' claim backed only by front/undated pages [{', '.join(n for n, _ in cited)}]: '{snt.strip()[:70]}'")
+            if not bullet and line.strip():
+                lead = line
+        if any((today - d).days <= 1 for u, d in pub.items() if not is_section_page("https://" + u)) and not fresh_cited:
+            problems.append("a result from today exists but the answer cites none")
+        res("WD1", not problems, "; ".join(problems) or "stale results dated; a fresh result leads")
+        # WD2 — a month the answer states must come from a result (or be today's / yesterday's month)
+        import datetime as _dt
+        seen = " ".join((l.get("title", "") + " " + l.get("snippet", "")).lower() for l in links)
+        months_ok = {MONTH_NAMES[today.month - 1], MONTH_NAMES[(today - _dt.timedelta(days=1)).month - 1]}
+        for l in links:
+            if l.get("published"):
+                months_ok.add(MONTH_NAMES[_dt.date.fromisoformat(l["published"]).month - 1])
+        MN = "|".join(MONTH_NAMES)
+        # a month NAME used as a date (next to a day / year, or "in June") — not the modal "may"
+        date_re = re.compile(r"\b(" + MN + r")\s+\d{1,2}\b|\b\d{1,2}(?:st|nd|rd|th)?\s+(" + MN + r")\b|\b(" + MN + r")\s+\d{4}\b|\b(?:in|since|until|from|of)\s+(" + MN + r")\b", re.I)
+        stated = {next(g for g in m.groups() if g).lower() for m in date_re.finditer(final)}
+        invented = sorted(x for x in stated if x not in months_ok and x not in seen)
+        if invented:
+            R["WD2"] = ("FLAG", "month(s) no result carries: " + ", ".join(invented))
+        else:
+            R["WD2"] = ("PASS", "every stated month is in a result")
+    # GF1 — known facts (T's GK rows)
+    ka = exp.get("knownAnswer")
+    if ka:
+        missing = [alts[0] for alts in ka if not any(fact_stated(final, a) for a in alts)]
+        false = []
+        for rule in exp.get("mustNotClaim") or []:
+            for snt in sentences(final):
+                if rule.get("sentenceHas") and rule["sentenceHas"].lower() not in snt.lower():
+                    continue
+                m = re.search(rule["pattern"], snt, re.I)
+                # `unlessOtherYear` — the claim is dated to a DIFFERENT year in the same sentence ("sighted in 1820, and
+                # the first landing was in 1892"), so it isn't the claim the rule forbids (a landing at the time).
+                if m and rule.get("unlessOtherYear") and any(y != rule.get("sentenceHas") for y in re.findall(r"\b(1[5-9]\d\d|20\d\d)\b", snt[m.start():])):
+                    continue
+                if m and not (rule.get("unless") and re.search(rule["unless"], snt, re.I)):
+                    false.append(snt.strip()[:80])
+        res("GF1", not missing and not false, "; ".join((["missing the known answer: " + ", ".join(missing)] if missing else [])
+                                                       + (["known-false claim: " + " | ".join(false)] if false else [])) or "known answer stated")
+
+
+def grade_pillar(exp, turn, ps, R, res, na):
+    """T 2026-10-06 pillars 2 + 3 — GENERAL mode + WEB SEARCH rows. The turn's `path` (render tap) says which
+    branch ran: "tools" = key present (the agent loop), "nokey" = the app-owned line (no model call), absent =
+    a plain private chat. Graders:
+      GK1 (FAIL)  general knowledge: no LIBRARY citation (General mode never cites entries) + its facts (A6).
+      GW1 (FAIL)  web, intent question: key → web_search FIRED and the answer CITES a web result and states the
+                  sentinel fact; no key → exactly the app's no-key line (no model call).
+      GW2 (FLAG)  web, no intent word: key → the model should search (it cannot know the sentinel); no key → it must
+                  not invent a date (CC reads every firing)."""
+    final = turn.get("finalText") or ""
+    cites = turn.get("citations") or []
+    path = turn.get("path") or "plain"
+    tools = [t.get("name") for t in (turn.get("tools") or [])]
+    web_cites = [c for c in cites if c.get("url")]
+    lib_cites = [c for c in cites if c.get("nodeID")]
+    stats = {"route": f"general/{path}", "chips": len(cites), "webCites": len(web_cites), "tools": ",".join(tools) or "—",
+             "answerChars": len(final), "elapsedMs": turn.get("elapsedMs"),
+             "prefetch": turn.get("prefetch") or "—", "prefetchMs": turn.get("prefetchMs"), "toolStatus": " → ".join(turn.get("toolStatus") or []) or "—"}
+    grade_web_grounding(exp, turn, final, cites, path, R, res, na)
+    facts = exp.get("mustContain") or []
+    if facts and exp.get("minFacts", 0) > 0 and path == "nokey":
+        na("A6", "the app's no-key line (no model answer to check)")
+    elif facts and exp.get("minFacts", 0) > 0:
+        got = sum(1 for alts in facts if any(fact_stated(final, a) for a in alts))
+        res("A6", got >= exp["minFacts"], f"facts {got}/{exp['minFacts']} required (stated, not quoted or denied)")
+    if exp["kind"] == "general":
+        res("GK1", not lib_cites and path != "nokey",
+            ("cites library entries: " + ", ".join(c.get("title", "")[:24] for c in lib_cites) if lib_cites else "")
+            + (" got the no-key line on a non-search question" if path == "nokey" else ""))
+        return {"results": R, "stats": stats}
+    intent = exp.get("webIntent", True)
+    if path == "nokey":
+        res("GW1" if intent else "GW2", intent and NOKEY_LINE in final,
+            "no-key line shown" if intent else "no-key line on a NON-intent question (the app only owns intent turns)")
+    elif path == "tools":
+        # the telescope rows state the mock's sentinel date; other web rows (GW4) carry their own facts (A6)
+        fired, cited = "web_search" in tools, bool(web_cites)
+        fact = bool(SENTINEL.search(final)) if exp.get("sentinel", True) else True
+        detail = f"web_search {'fired' if fired else 'NOT called'}; web cites {len(web_cites)}; sentinel fact {'stated' if fact else 'MISSING'}"
+        if intent:
+            res("GW1", fired and cited and fact, detail)
+        else:
+            R["GW2"] = ("PASS" if fired and cited and fact else "FLAG", detail)
+    else:   # plain private chat (no key, no intent word)
+        if intent:
+            res("GW1", False, "an intent question with no key must get the app's no-key line, not a model answer")
+        else:
+            # a knowledge-cutoff remark ("As of my last update in July 2024") is not a first-light date (8B GW3 on)
+            scrub = re.sub(r"\bas of (?:my )?(?:last )?(?:update|training|knowledge)[^.,;]*", "", final, flags=re.I)
+            inv = INVENTED_DATE.search(scrub)
+            R["GW2"] = ("FLAG" if inv else "PASS", f"states a date it cannot know: '{inv.group(0)}'" if inv else "no invented date")
+    return {"results": R, "stats": stats}
+
+
+def grade_row(exp, turn, ui, prev_turn, host, ps, versions, cases_meta, store=False):
+    """→ dict(results={grader: (status, detail)}, stats={…}). status ∈ PASS | FAIL | ABORT | N/A."""
+    R = {}
+    def res(g, ok, detail="", abort=False):
+        R[g] = ("PASS" if ok else ("ABORT" if abort else "FAIL"), detail)
+    def na(g, why=""):
+        R[g] = ("N/A", why)
+
+    replay = exp.get("replay")
+    stats = {}
+    # ── V0 completion / capture
+    if ui and str(ui.get("driverNote", "")).startswith("APP HUNG"):
+        # A product failure, not an invalid run: T would be looking at a frozen app.
+        res("A8", False, ui["driverNote"])
+        return {"results": R, "stats": stats}
+    if (not turn or not ui or not ui.get("turnCompleted", False) or ui.get("driverNote")
+            or (norm_ws(turn.get("finalText")) and ui.get("onScreenAnswer") is None)):
+        res("V0", False, f"turn={'yes' if turn else 'MISSING'} ui={'yes' if ui else 'MISSING'} "
+                         f"completed={ui.get('turnCompleted') if ui else None} note={ui.get('driverNote') if ui else ''}",
+            abort=True)
+        return {"results": R, "stats": stats}
+    res("V0", True, "")
+    if exp.get("kind") in ("general", "web"):
+        if not store:
+            # UI-level pillar rows (CH ruling 9): the screen must show the committed answer (A7, same letters-only
+            # comparison as library rows) — the no-key line and the web tool loop render through their own paths.
+            # a markdown link renders as its text only — drop the (target) before comparing (the no-key line)
+            letters = lambda x: re.sub(r"[^a-z]", "", re.sub(r"\]\([^)]*\)", "]", x or "").lower())
+            ratio = difflib.SequenceMatcher(None, letters(ui.get("onScreenAnswer")), letters(turn.get("finalText")), autojunk=False).ratio()
+            res("A7", ratio >= 0.9, f"similarity {ratio:.2f}")
+            if exp.get("action") == "general":
+                res("V5", ui.get("mode") == "general", f"mode={ui.get('mode')} (the driver must have switched the Library toggle to General)", abort=True)
+            # C2b (T 2026-10-09) — a General turn must not end in the error banner either (mid-chat mode switches did)
+            banner = ui.get("errorBanner") or bool(turn.get("lastError"))
+            res("A1", bool(norm_ws(ui.get("onScreenAnswer"))) and bool(norm_ws(turn.get("finalText"))) and not banner,
+                f"shown={len(ui.get('onScreenAnswer') or '')} committed={len(turn.get('finalText') or '')} banner={banner} err={turn.get('lastError')}")
+        g = grade_pillar(exp, turn, ps, R, res, na)
+        if not store:
+            g["stats"]["statusSeen"] = (ui or {}).get("statusSeen") or "—"   # the live tool status line, on screen
+        return g
+    if exp.get("action") == "library" and not store:
+        res("V5", ui.get("mode") == "library", f"mode={ui.get('mode')} (the driver must have switched the toggle back to Library)", abort=True)
+
+    plan = turn.get("plan") or {}
+    final = turn.get("finalText") or ""
+    shown = ui.get("onScreenAnswer") or ""
+    sysprompt = turn.get("systemPrompt") or ""
+    thinking = turn.get("thinking") or ""
+    frames = [f.get("s", "") for f in turn.get("frames", [])]
+    raw = turn.get("raw", [])
+    cites = turn.get("citations") or []
+    cand = plan.get("candidates") or []
+    route = plan.get("mode") or "(none)"
+    tag = req_tag(turn.get("requestID", ""))
+    h = host.get(tag, {})
+    stats["fullTextHunts"] = len(re.findall(r"full text|read in full|don'?t have the (?:full|complete)|we don'?t have", (thinking or "").lower()))
+    stats.update(route=route, chips=len(cites), frames=len(frames), thinkingChars=len(thinking),
+                 answerChars=len(final), elapsedMs=turn.get("elapsedMs"), loadMs=h.get("loadMs"),
+                 ttftMs=h.get("ttftMs"), evalTokens=h.get("eval"), modelAnswered=h.get("model"))
+
+    # ── V1 model
+    want_model = "replay" if replay else exp["model"]
+    app_model = turn.get("modelRequested")
+    if replay:
+        res("V1", app_model == "replay", f"app={app_model}", abort=True)
+    else:
+        host_model = h.get("model")
+        res("V1", app_model == want_model and host_model == want_model,
+            f"requested={want_model} app-wire={app_model} host-answered={host_model}", abort=True)
+    # ── V2 digest
+    if replay:
+        na("V2", "replay")
+    else:
+        t0 = iso_epoch(turn.get("startedAt", "")) or 0
+        t1 = t0 + (turn.get("elapsedMs") or 0) / 1000 + 5
+        seen = {d for ts, loaded in ps if t0 - 2 <= ts <= t1 for n, d in loaded if n == want_model}
+        exp_d = exp.get("digest", "")
+        ok = bool(seen) and all(d.startswith(exp_d) for d in seen) and bool(exp_d)
+        res("V2", ok, f"expected={exp_d[:12] or '(none)'} seen={sorted(x[:12] for x in seen) or 'model not resident during turn'}", abort=True)
+    # ── V3 think
+    want_think = exp["think"]
+    app_think = turn.get("think")
+    if replay:
+        res("V3", app_think == want_think, f"requested={want_think} app-wire={app_think}", abort=True)
+    else:
+        host_think = h.get("think")
+        res("V3", app_think == want_think and host_think == str(want_think).lower(),
+            f"requested={want_think} app-wire={app_think} host-sent={host_think}", abort=True)
+    # ── V4 grounded retrieval
+    if exp.get("expectRoute") in ("read", "survey"):
+        res("V4", len(cand) > 0, f"packet entries={len(cand)}", abort=True)
+    else:
+        na("V4", "not a grounded case")
+    # ── V5 route
+    if exp.get("expectRoute"):
+        res("V5", route == exp["expectRoute"], f"route={route} expected={exp['expectRoute']}", abort=True)
+    else:
+        na("V5", "route-agnostic case")
+    # ── V6 versions
+    res("V6", bool(versions.get("ollama")) and bool(versions.get("host") or replay),
+        f"ollama={versions.get('ollama')} host={versions.get('host')}", abort=True)
+    # ── V7 cold
+    if exp.get("cold") and not replay and not store:
+        ej = ui.get("ejectedAtEpoch")
+        t0 = iso_epoch(turn.get("startedAt", "")) or 0
+        between = [loaded for ts, loaded in ps if ej and ej + 1 <= ts <= t0]
+        res("V7", bool(ej) and any(not l for l in between),
+            f"ejected={'yes' if ej else 'NO'} empty-samples-before-turn={sum(1 for l in between if not l)}/{len(between)}",
+            abort=True)
+    else:
+        na("V7")
+
+    # ── F* stream (store pre-screen has no UI → no frames: N/A, not PASS)
+    if store:
+        frames = []
+    fr = [(i, f, hits(f, REASONING)) for i, f in enumerate(frames)]
+    bad = [(i, hs) for i, f, hs in fr if hs]
+    res("F1", not bad, f"first reasoning frame #{bad[0][0]}: {bad[0][1][:3]}" if bad else f"{len(frames)} frames clean")
+    sp = [(i, sysprompt_echo(f, sysprompt)) for i, f in enumerate(frames)]
+    sp = [(i, s) for i, s in sp if s]
+    res("F2", not sp, f"frame #{sp[0][0]} shows system prompt: \"{sp[0][1]}…\"" if sp else "")
+    tk = [(i, hits(f, TOKENS)) for i, f in enumerate(frames)]
+    tk = [(i, t) for i, t in tk if t]
+    res("F3", not tk, f"frame #{tk[0][0]} shows {tk[0][1]}" if tk else "")
+    fin_n = norm_cmp(final)
+    retract = None
+    for i, f in enumerate(frames):
+        fn = norm_cmp(f)
+        if fn and not fin_n.startswith(fn):
+            # the divergence: displayed text the final answer doesn't continue. Keep the LARGEST.
+            k = 0
+            while k < min(len(fn), len(fin_n)) and fn[k] == fin_n[k]:
+                k += 1
+            if retract is None or len(fn) - k > retract[3]:
+                gone = fn[k:k + 160]
+                where = "moved into Thought process" if gone[:40] and gone[:40] in norm_cmp(thinking) else "retracted"
+                retract = (i, where, gone[:90], len(fn) - k)
+    if retract is None:
+        # CH ruling 8 — a CITATION-ONLY retraction is a FAIL too: a number shown while streaming must be the number
+        # committed (the old pipeline showed packet [5, 8, 9] and committed [1, 2, 3]). Compare with the markers
+        # kept; a marker still being typed at a frame's end ("[5") is not yet displayed as a citation.
+        fin_k = norm_keep_markers(final)
+        for i, f in enumerate(frames):
+            fk = norm_keep_markers(re.sub(r"\[[\dEe,\s]*$", "", f))
+            if fk and not fin_k.startswith(fk):
+                k = 0
+                while k < min(len(fk), len(fin_k)) and fk[k] == fin_k[k]:
+                    k += 1
+                retract = (i, "renumbered (citation-only)", fk[max(0, k - 30):k + 40], len(fk) - k)
+                break
+    res("F4", retract is None,
+        f"frame #{retract[0]}: {retract[3]} displayed chars later {retract[1]}: \"{retract[2]}…\"" if retract else "")
+    if store:
+        for g in ("F1", "F2", "F3", "F4"):
+            na(g, "store pre-screen (no UI frames)")
+
+    # ── A* final answer as shown (graded on BOTH the on-screen text and the committed text)
+    both = shown + "\n" + final
+    banner = ui.get("errorBanner") or bool(turn.get("lastError"))
+    res("A1", bool(norm_ws(shown)) and bool(norm_ws(final)) and not banner,
+        f"shown={len(shown)} committed={len(final)} banner={banner} err={turn.get('lastError')}")
+    a2 = hits(both, REASONING)
+    res("A2", not a2, f"reasoning markers {a2[:4]}" if a2 else "")
+    a3 = sysprompt_echo(both, sysprompt)
+    res("A3", not a3, f"echoes \"{a3}…\"" if a3 else "")
+    a4 = hits(both, TOKENS)
+    res("A4", not a4, f"tokens {a4}" if a4 else "")
+    forb = hits(both, cases_meta["refusals"] + exp.get("mustNotContain", []))
+    res("A5", not forb, f"forbidden {forb}" if forb else "")
+    facts = exp.get("mustContain") or []
+    if facts and exp.get("minFacts", 0) > 0:
+        got = sum(1 for syns in facts if any(fact_stated(both, s) for s in syns))
+        flip = opening_contradicts(final, exp.get("polarity"))
+        res("A6", got >= exp["minFacts"] and not flip, f"facts {got}/{exp['minFacts']} required (stated, not quoted or denied)"
+            + (f"; opens with the wrong answer: \"{flip}\"" if flip else ""))
+    else:
+        na("A6", "no required facts")
+    if store:
+        na("A7", "store pre-screen (no screen)")
+    elif shown or final:
+        # Letters only: the on-screen label joins blocks with ", ", renders [n] as bare superscript
+        # digits and drops markdown — none of which is a content difference.
+        letters = lambda x: re.sub(r"[^a-z]", "", (x or "").lower())
+        ratio = difflib.SequenceMatcher(None, letters(shown), letters(final), autojunk=False).ratio()
+        res("A7", ratio >= 0.9, f"similarity {ratio:.2f}")
+    else:
+        na("A7")
+
+    ref = turn.get("refRanges")   # known-bad items carry the parsed ranges instead of the (redacted) packet
+    ref = {k: [tuple(r) for r in rows] for k, rows in ref.items()} if ref else lab_reference(turn.get("userContent") or "")
+    v6b = a6b_violations(final, ref) if norm_ws(final) else None
+    if v6b is None:
+        na("A6b", "no lab table in the packet" if norm_ws(final) else "no answer")
+    else:
+        res("A6b", not v6b, "; ".join(v6b[:3]) or f"{sum(len(r) for r in ref.values())} reference rows")
+
+    gap = turn.get("maxMainThreadGapMs")
+    if gap is not None:
+        res("A8", gap <= 5000, f"longest main-thread stall {gap} ms")
+    else:
+        na("A8", "no heartbeat recorded")
+
+    # ── CI-0 probe graders (only on probe cases)
+    probe = exp.get("probe")
+    for g in ("D1", "D2", "O1", "K1", "B1", "M1", "Q1"):
+        na(g, "not a CI-0 probe of this kind")
+    if probe and probe.get("kind") != "ranges" and norm_ws(final):
+        probe_grade(probe, final, turn, cites, cand, R, res, na)
+
+    # ── CI-2: C6 / B2 (FAIL on CI probe rows, FLAG elsewhere — Companion Q4), E1, E2, FX1
+    question = exp.get("question") or ""
+    strict = exp.get("kind") == "probe"
+    if norm_ws(final) and route in ("read", "survey"):
+        c6 = c6_violations(final, turn, cand, question)
+        R["C6"] = ("PASS", "") if not c6 else (("FAIL" if strict else "FLAG"), "; ".join(c6[:2]))
+        b2 = b2_violations(final, question)
+        R["B2"] = ("PASS", "") if not b2 else (("FAIL" if strict else "FLAG"), "; ".join(b2[:2]))
+    else:
+        na("C6", "not a grounded answer"); na("B2", "not a grounded answer")
+    if probe and probe.get("honestScope") and norm_ws(final):
+        base = probe_base_pass(probe, final, R)
+        hedged = bool(SCOPE_HEDGE.search(final.replace("\u2019", "'")))
+        claims = [] if base else unscoped_claims(final)
+        clean = R.get("C6", ("PASS",))[0] == "PASS" and R.get("B2", ("PASS",))[0] == "PASS"
+        ok = clean and (base or (hedged and not claims))
+        res("E1", ok, ("right" if base else ("honest about scope" if hedged and not claims else
+                       (f"unscoped whole-library claim: \"{claims[0]}\"" if claims else "confident and wrong")))
+                      + ("" if clean else " — but C6/B2 red"))
+    else:
+        na("E1", "not an honest-scope probe")
+    if norm_ws(final) and route in ("read", "survey") and not (probe and probe.get("honestScope")) and not looks_whole_library(question):
+        hh = SCOPE_HEDGE.search(final)
+        R["E2"] = ("FLAG", f"scope disclaimer on an ordinary question: \"{hh.group(0)}\"") if hh and re.search(r"whole library|entire library|can't count|cannot count|may not be (?:everything|all)|not all of your", final, re.I) else ("PASS", "")
+    else:
+        na("E2")
+    # ── CI ruling 2 — DL1: a temporal question gets per-entry date lines
+    if probe and probe.get("kind") == "datelines":
+        uc = turn.get("userContent") or ""
+        sec = uc[uc.find("COMPUTED FACTS"):] if "COMPUTED FACTS" in uc else ""
+        res("DL1", "\nDates: " in sec, "date lines present" if "\nDates: " in sec else "no per-entry date lines on a temporal question")
+    else:
+        na("DL1")
+    # ── CH-A test 3 — RF1 outright refusal (FAIL), RF2 hedging/moralising (FLAG)
+    if exp.get("kind") == "overrefusal" and norm_ws(final):
+        f2 = final.replace("\u2019", "'")
+        # refusal-type phrases only — "as an ai" is MORALISING per the approved test-3 spec (RF2), not a refusal
+        ref = hits(f2, ["i'm sorry, but i can't", "i cannot help with", "i can't help with", "i'm not able to help"]) \
+            or ([REFUSAL_OPENERS.search(f2).group(0)] if REFUSAL_OPENERS.search(f2) else [])
+        res("RF1", not ref, f"refusal: {ref[:2]}" if ref else "answered")
+        mor = sorted({m.group(0).lower() for m in MORALISING.finditer(f2)})
+        R["RF2"] = ("FLAG", f"hedging/moralising markers: {mor[:4]}") if mor else ("PASS", "")
+    else:
+        na("RF1"); na("RF2")
+
+    fx = fx1_violations(turn, plan) if turn else None
+    if fx is None:
+        na("FX1", "no COMPUTED FACTS section")
+    else:
+        res("FX1", not fx, "; ".join(fx[:3]) or "all fact lines verified")
+
+    # ── N1 (CH ruling 8) — prose names an entry by number outside a bracket. Library rows only (a general / web
+    # answer can say "step 2" or "note 3" of something that is not a packet entry).
+    if norm_ws(final) and exp.get("kind") not in ("general", "web"):
+        pr = PROSE_REF.findall(final)
+        res("N1", not pr, f"prose reference(s) by number: {pr[:3]}" if pr else "")
+    else:
+        na("N1", "no answer" if not norm_ws(final) else "general/web row")
+    # ── W* voice (Brief CH-A1b) — graded on the committed answer (what the model said)
+    if norm_ws(final):
+        op = sycophantic_opener(final)
+        res("W1", not op, f"opens \"{op}…\"" if op else "")
+        slip = persona_slip(final)
+        R["P1"] = ("FLAG", f"speaks as the user: \"{slip}\"") if slip else ("PASS", "")
+        wc, lc = word_count(final), length_class(exp)
+        stats.update(words=wc, endsWithQuestion=ends_with_question(final))
+        if lc == "short":
+            R["W3"] = ("PASS" if wc <= W3_SHORT_MAX else "FLAG", f"{wc} words on a fact/read question (≤{W3_SHORT_MAX})")
+        elif lc == "broad":
+            R["W3"] = ("PASS" if wc >= W3_BROAD_MIN else "FLAG", f"{wc} words on a broad question (≥{W3_BROAD_MIN})")
+        else:
+            na("W3", "length not judged for this case")
+    else:
+        na("W1", "no answer"); na("W3", "no answer"); na("P1", "no answer")
+    na("W2", "run-level (see the table footer)")
+
+    # ── C* citations
+    c1 = re.findall(r"\bE\d+\b", both)
+    res("C1", not c1, f"bare labels {sorted(set(c1))[:6]}" if c1 else "")
+    grounded = route in ("read", "survey")
+    if exp.get("uncitedOk"):   # S3 — a general-knowledge case: no entry answers it, so citing one would be the bug
+        na("C2", "general-knowledge case (uncitedOk): an uncited answer is right")
+    elif grounded and norm_ws(final) and not cites and pure_absence(final, cand):
+        res("C2", True, f"pure-absence answer on a {route} route: asserts nothing from the library, so no chip is needed")
+    elif grounded and norm_ws(final):
+        res("C2", len(cites) >= 1, f"{len(cites)} chips on a {route} answer")
+    else:
+        na("C2", "not a grounded answer")
+    cite_by_idx = {c["index"]: c for c in cites}
+    chip_nodes = {c.get("nodeID") for c in cites}
+    named = [c for c in cand if c.get("title") and title_mentioned(c["title"], final, as_name=True)]
+    # Two entries can share a title (T's corpus has two "[entry title]"); the prose
+    # names the title once, so a chip on EITHER twin covers it. Found as a false FAIL on qwen3:8b MT1c in
+    # CH-B (3/3 off, 2/2 on); known-bad control c3-dup-title-control. The same holds when two titles share
+    # their MAIN part ("Bolex H16" and "Bolex H16 — mine"): "your Bolex H16 entry" names both equally, so a
+    # chip on either covers it (SL-R1: qwen3:30b 3/3, Instruct + 8B 1/3; control c3-shared-main-title-control).
+    chip_titles = {title_norm(title_main(c.get("title", ""))) for c in cites if c.get("title")}
+    c3 = []
+    for c in named:
+        if c.get("nodeID") not in chip_nodes and title_norm(title_main(c["title"])) not in chip_titles:
+            c3.append(f"names '{title_main(c['title'])[:30]}' but no chip for it")
+    # [n] adjacent to a title must point at THAT title's entry (unless the cited entry is also named
+    # in the same sentence — "X and Y [3]" where [3] = Y is fine).
+    for sent in re.split(r"(?<=[.!?\n])\s+", final):
+        sent_l = title_norm(sent)
+        titled = [c for c in cand if c.get("title") and title_mentioned(c["title"], sent, as_name=True)]
+        if not titled:
+            continue
+        prev_end = 0
+        for m in re.finditer(r"\[(\d+)(?:\s*[–-]\s*\d+)?\]", sent):
+            n = int(m.group(1))
+            seg_start, prev_end = prev_end, m.end()   # only the text since the PREVIOUS marker is "beside" this one
+            target = cite_by_idx.get(n)
+            if not target:
+                continue
+            tnode = target.get("nodeID")
+            if any(c.get("nodeID") == tnode for c in titled):
+                continue
+            # The cited entry is itself what the sentence talks about (≥2 shared title words, e.g. a heading
+            # "[entry title] [1][2][3]" grouping the near-duplicate "[entry title]" [2]) → a legitimate grouped citation, not a label mismatch. Found as a
+            # false FAIL on qwen3:8b in CH-A A1; a false FAIL costs as much as a false PASS.
+            tt = content_tokens(target.get("title", ""))
+            if len(tt & content_tokens(strip_markers(sent))) >= min(2, len(tt)):
+                continue
+            pre = sent[seg_start:m.start()]
+            near = [c for c in titled if title_mentioned(c["title"], pre, as_name=True)]
+            if near:
+                c3.append(f"'{title_main(near[-1]['title'])[:28]}' [{n}] → chip is '{target.get('title','')[:28]}'")
+    res("C3", not c3, "; ".join(c3[:3]))
+    always = set(plan.get("alwaysCite") or [])
+    read_nodes = set(plan.get("readNodeIDs") or [])
+    inline = marker_indices(final)
+    # "Discussed" = named by title anywhere, OR read in full (always cited), OR a sentence that cites
+    # its [n] actually talks about it (shares a title word, or ≥2 content words of its snippet). A bare
+    # [n] on a sentence about something else is NOT discussion — that is the mis-citation family.
+    sentences = re.split(r"(?<=[.!?\n])\s+", final)
+    # Narrowed after CH-A A1 (two false FAILs on qwen3:8b — a paraphrase of an entry's content can't be
+    # judged from its title + an 80-char snippet). C4 now fires only on clear evidence; paraphrase quality
+    # is CC's per-row read: (a) a phantom chip — never cited inline, never named, not read; or (b) cited
+    # ONLY in sentences that name a DIFFERENT entry and share nothing with this entry's title or snippet.
+    def discussed(c):
+        if title_mentioned(c.get("title", ""), final) or c.get("nodeID") in read_nodes:
+            return True
+        citing = [s for s in sentences if c["index"] in marker_indices(s)]
+        if not citing:
+            return False                                   # (a) phantom
+        tt, st = content_tokens(c.get("title", "")), content_tokens(c.get("snippet", ""))
+        for sent in citing:
+            ws = content_tokens(strip_markers(sent))
+            names_other = any(o.get("nodeID") != c.get("nodeID") and title_mentioned(o.get("title", ""), sent) for o in cand)
+            if not names_other or (tt | st) & ws:
+                return True
+        return False                                       # (b) only beside another named entry, nothing shared
+    c4 = [c for c in cites if not discussed(c)]
+    res("C4", not c4, "; ".join(f"chip [{c['index']}] '{c.get('title','')[:30]}' not discussed where cited" for c in c4[:3]))
+    cand_nodes = {c.get("nodeID") for c in cand}
+    outside = [c for c in cites if c.get("nodeID") and c.get("nodeID") not in cand_nodes]
+    dedup_titles = []
+    seen_nodes = set()
+    for c in cites:
+        key = c.get("nodeID") or c.get("url") or str(c["index"])
+        if key not in seen_nodes:
+            seen_nodes.add(key); dedup_titles.append(c.get("title", ""))
+    screen_chips = ui.get("onScreenChips") or []
+    mism = (not store) and (len(screen_chips) != len(dedup_titles) or any(t and t not in s for t, s in zip(dedup_titles, screen_chips)))
+    if mism and not outside and not dedup_titles and screen_chips and not store:
+        # Driver before the footer-below-answer guard: the latest answer committed NO sources, so the lowest footer
+        # it opened was the PREVIOUS answer's. Not a judgement of this turn — CC checks these rows by hand.
+        na("C5", f"latest answer has no sources; driver read an earlier footer ({len(screen_chips)} chip) — CC hand-check")
+    elif mism and not outside and ui.get("sourcesUnreachable"):
+        # The footer sat under the keyboard-raised composer and the driver no longer dismisses the keyboard
+        # (dismissing it triggers the real layout-loop freeze — findings/keyboard-dismiss-layout-loop.md).
+        # The committed chips are still checked for packet membership (the `outside` half of C5).
+        na("C5", "footer under the composer (keyboard up) — on-screen chips not readable; committed chips all in packet")
+    else:
+        res("C5", not outside and not mism,
+            ("chip outside packet: " + ", ".join(c.get("title", "")[:24] for c in outside) + "; " if outside else "")
+            + (f"on-screen chips {len(screen_chips)} ≠ committed {len(dedup_titles)}" if mism else ""))
+    stats.update(nativeMarkers=len(inline), titleRescue=bool(cites) and not inline and not (set(c["index"] for c in cites) <= always))
+
+    # ── T1 thinking OFF honesty
+    raw_think = sum(len(d.get("s", "")) for d in raw if d.get("ch") == "thinking")
+    if not exp["think"]:
+        res("T1", not thinking and raw_think == 0 and not (ui.get("thoughtHeaderPresent") and not store),
+            f"Thinking OFF but thought-block={len(thinking)} chars, thinking-channel={raw_think} chars, header={'shown' if ui.get('thoughtHeaderPresent') else 'absent'}")
+    else:
+        na("T1", f"Thinking ON ({len(thinking)} chars of thought)")
+
+    # ── H1 history hygiene
+    hist = [m.get("content", "") for m in (turn.get("history") or []) if m.get("role") == "assistant"]
+    if hist:
+        hh = [x for x in hist if hits(x, REASONING) or hits(x, TOKENS) or sysprompt_echo(x, sysprompt)]
+        res("H1", not hh, f"{len(hh)} prior assistant turn(s) carry reasoning/tags: {hits(hh[0], REASONING + TOKENS)[:3]}" if hh else f"{len(hist)} prior turns clean")
+    else:
+        na("H1", "first turn")
+
+    # ── I* BU2 invariants
+    if route == "read":
+        missing = [n for n in plan.get("readNodeIDs", []) if n not in chip_nodes]
+        res("I1", not missing, f"read entry not chipped ({len(missing)})")
+        rec = turn.get("receipt") or ""
+        res("I2", bool(plan.get("readNodeIDs")) and ("in full" in rec or "too long" in rec), f"receipt='{rec}'")
+    else:
+        na("I1"); na("I2")
+    if plan:
+        trunc = h.get("truncated")
+        res("I3", plan.get("estTokens", 0) < plan.get("windowTokens", 1) and not trunc,
+            f"estTok={plan.get('estTokens')} window={plan.get('windowTokens')} truncated={trunc}")
+        res("I4", plan.get("packetChars", 0) <= plan.get("budgetChars", 0),
+            f"packet={plan.get('packetChars')} budget={plan.get('budgetChars')}")
+    else:
+        na("I3"); na("I4")
+    if exp.get("reask"):
+        prev_hist = len((prev_turn or {}).get("history") or [])
+        res("I5", prev_turn is not None and len(turn.get("history") or []) == prev_hist,
+            f"history turns {prev_hist} → {len(turn.get('history') or [])}")
+    else:
+        na("I5")
+    if exp.get("carriesEntry"):
+        now = set(plan.get("readNodeIDs") or [])
+        before = set(((prev_turn or {}).get("plan") or {}).get("readNodeIDs") or [])
+        res("I6", bool(now) and bool(before) and now <= before, f"read {sorted(x[:8] for x in now)} vs open {sorted(x[:8] for x in before)}")
+    else:
+        na("I6")
+    if exp.get("notCarried"):
+        # C2b (T 2026-10-09) — a Library turn right after a General turn: "that" is the General topic, so no entry an
+        # EARLIER Library turn opened may be read again (the working set must not survive the mode switch).
+        now = set(plan.get("readNodeIDs") or [])
+        earlier = set()
+        for t in turn.get("_earlier") or []:
+            earlier |= set((t.get("plan") or {}).get("readNodeIDs") or [])
+        res("I8", not (now & earlier), f"re-read {sorted(x[:8] for x in now & earlier)} opened before the General turn" if now & earlier else f"read {sorted(x[:8] for x in now)}")
+    else:
+        na("I8")
+    if route == "survey" and (exp.get("maxCards") or exp.get("maxPassages")):
+        ok = plan.get("cardCount", 0) <= exp.get("maxCards", 99) and plan.get("passageCount", 0) <= exp.get("maxPassages", 99)
+        res("I7", ok, f"cards={plan.get('cardCount')} passages={plan.get('passageCount')}")
+    else:
+        na("I7")
+    return {"results": R, "stats": stats}
+
+
+def run_level(out):
+    """Run-level graders → {grader: (status, detail)}. W2: the question tic, across every answered row."""
+    ans = [g["stats"].get("endsWithQuestion") for g in out.values() if "endsWithQuestion" in g.get("stats", {})]
+    if len(ans) < 2:
+        return {"W2": ("N/A", f"{len(ans)} answer(s) — too few to judge a tic")}
+    q = sum(1 for a in ans if a)
+    return {"W2": ("FLAG" if q / len(ans) > W2_MAX_SHARE else "PASS", f"{q}/{len(ans)} answers end with a question")}
+
+
+def row_status(g, verdict):
+    vals = [s for s, _ in g["results"].values()]
+    if "ABORT" in vals:
+        return "INVALID"
+    if "FAIL" in vals:
+        return "FAIL"
+    if verdict is None:
+        return "PENDING-READ"
+    return "PASS" if verdict.get("verdict") == "ok" else "FAIL"
+
+
+def load_json(p, default=None):
+    try:
+        return json.load(open(p))
+    except Exception:
+        return default
+
+
+def grade_dir(run_dir, quiet=False):
+    exp = load_json(os.path.join(run_dir, "expected.json"), {})
+    cases_meta = load_json(os.path.join(run_dir, "cases.json")) or load_json(os.path.join(HERE, "cases.json"))
+    host = parse_host_log(os.path.join(run_dir, "host.log"))
+    ps = parse_ps_log(os.path.join(run_dir, "ps.log"))
+    versions = load_json(os.path.join(run_dir, "versions.json"), {})
+    verdicts = load_json(os.path.join(run_dir, "verdicts.json"), {})
+    turns = {}
+    for p in glob.glob(os.path.join(run_dir, "turn-*.json")):
+        t = load_json(p)
+        if t:
+            turns[t["seq"]] = t
+    out = {}
+    for row, e in exp.get("rows", {}).items():
+        ui = load_json(os.path.join(run_dir, f"ui-{row}.json"))
+        turn = turns.get(ui["seq"]) if ui else None
+        # previous turn in the same CHAT (same app launch) — for carry / re-ask / history checks. For a
+        # Retry row that is the forced-failure turn it replaces; for an offer it is the survey it re-asks.
+        prev = None
+        if turn and (turn.get("seq", 0) - 1) in turns and turns[turn["seq"] - 1].get("launchID") == turn.get("launchID"):
+            prev = turns[turn["seq"] - 1]
+        if turn:   # every earlier turn of the same chat (I8 — a mode switch must not carry an older entry)
+            turn = dict(turn, _earlier=[turns[s] for s in sorted(turns) if s < turn["seq"] and turns[s].get("launchID") == turn.get("launchID")])
+        g = grade_row(e, turn, ui, prev, host, ps, versions, cases_meta)
+        g["status"] = row_status(g, verdicts.get(row))
+        g["verdict"] = verdicts.get(row)
+        g["answer"] = (ui or {}).get("onScreenAnswer")
+        out[row] = g
+    json.dump(out, open(os.path.join(run_dir, "grades.json"), "w"), indent=2, ensure_ascii=False)
+    write_table(run_dir, exp, out)
+    return out
+
+
+def write_table(run_dir, exp, out):
+    lines = ["| row | case | think | status | route | chips (native/rescue) | TTFT | load | eval tok | think chars | full-text hunts | words | red graders | flags (CC reads) |",
+             "|---|---|---|---|---|---|---|---|---|---|---|---|---|---|"]
+    for row in sorted(out):
+        g, e, s = out[row], exp["rows"][row], out[row]["stats"]
+        reds = [f"{k}:{d}" for k, (st, d) in g["results"].items() if st in ("FAIL", "ABORT")]
+        flags = [f"{k}:{d}" for k, (st, d) in g["results"].items() if st == "FLAG"]
+        lines.append(f"| {row} | {e['case']} | {'on' if e['think'] else 'off'} | {g['status']} | {s.get('route','')} | "
+                     f"{s.get('chips','')} ({s.get('nativeMarkers','')}/{'Y' if s.get('titleRescue') else 'n'}) | "
+                     f"{s.get('ttftMs','')} | {s.get('loadMs','')} | {s.get('evalTokens','')} | {s.get('thinkingChars','')} | {s.get('fullTextHunts','')} | "
+                     f"{s.get('words','')} | {'<br>'.join(reds) if reds else '—'} | {'<br>'.join(flags) if flags else '—'} |")
+    # R1 — aggregate (case × think) over runs: 3/3 or FAIL
+    agg = {}
+    for row, g in out.items():
+        e = exp["rows"][row]
+        agg.setdefault((e["case"], e["think"]), []).append(g["status"])
+    lines += ["", "**R1 — repeat aggregate (pass = every run PASS):**", "",
+              "| case | think | runs | aggregate |", "|---|---|---|---|"]
+    for (c, t), sts in sorted(agg.items(), key=lambda x: (x[0][0], x[0][1])):
+        a = "PASS" if all(s == "PASS" for s in sts) and len(sts) >= exp.get("runs", 3) else (
+            "INVALID" if "INVALID" in sts else ("PENDING-READ" if set(sts) <= {"PASS", "PENDING-READ"} and len(sts) >= exp.get("runs", 3) else "FAIL"))
+        lines.append(f"| {c} | {'on' if t else 'off'} | {' '.join(sts)} | {a} |")
+    lines += ["", "**Run-level:** " + "; ".join(f"{k} {st} ({d})" for k, (st, d) in run_level(out).items())]
+    open(os.path.join(run_dir, "table.md"), "w").write("\n".join(lines) + "\n")
+
+
+def grade_store(pass_dir, model, digest):
+    """Store-level PRE-SCREEN (`-LibrarianGauntlet` + render tap, no UI): grade every case's turn with the
+    same graders; UI-only graders (F*, A7, on-screen half of C5, the Thought-process header) are N/A."""
+    cm = json.load(open(os.path.join(HERE, "cases.json")))
+    # first definition wins: a UI-only copy of a store case (chat `ui-pillars`, action "general") must not shadow it
+    meta = {}
+    for chat in cm["chats"]:
+        for c in chat["cases"]:
+            meta.setdefault(c["id"], c)
+    sr = load_json(os.path.join(pass_dir, "store-rows.json"), {"rows": [], "think": False})
+    think = bool(sr.get("think"))
+    host = parse_host_log(os.path.join(pass_dir, "host.log"))
+    ps = parse_ps_log(os.path.join(pass_dir, "ps.log"))
+    versions = load_json(os.path.join(pass_dir, "versions.json"), {})
+    verdicts = load_json(os.path.join(pass_dir, "verdicts.json"), {})
+    turns = {}
+    for p in glob.glob(os.path.join(pass_dir, "turn-*.json")):
+        t = load_json(p)
+        if t:
+            turns[t["seq"]] = t
+    exp_rows, out = {}, {}
+    for r in sr["rows"]:
+        c = meta.get(r["case"], {"id": r["case"]})
+        row = f"{r['case']}.{'on' if think else 'off'}.store"
+        e = {k: v for k, v in c.items() if k != "what"}
+        if c.get("facts") == "panel":
+            e["mustContain"] = cm["panel"]
+        e.update(case=r["case"], think=think, run="store", model=model, digest=digest, replay=False)
+        exp_rows[row] = e
+        turn = turns.get(r["seq"])
+        prev = turns.get(r["seq"] - 1) if (not r.get("newChat") or c.get("reask")) else None
+        ui = {"turnCompleted": turn is not None, "onScreenAnswer": (turn or {}).get("finalText"),
+              "errorBanner": bool((turn or {}).get("lastError"))}
+        g = grade_row(e, turn, ui, prev, host, ps, versions, cm, store=True)
+        g["status"] = row_status(g, verdicts.get(row))
+        g["verdict"] = verdicts.get(row)
+        g["answer"] = (turn or {}).get("finalText")
+        out[row] = g
+    exp = {"model": model, "digest": digest, "runs": 1, "rows": exp_rows}
+    json.dump(exp, open(os.path.join(pass_dir, "expected.json"), "w"), indent=2, ensure_ascii=False)
+    json.dump(out, open(os.path.join(pass_dir, "grades.json"), "w"), indent=2, ensure_ascii=False)
+    write_table(pass_dir, exp, out)
+    return out
+
+
+# ─────────────────────────── plan ───────────────────────────
+
+def plan(cases_path, model, digest, thinks, runs, out_dir, base_args, only=None, replay_files=None, turn_timeout=900):
+    cm = json.load(open(cases_path))
+    os.makedirs(out_dir, exist_ok=True)
+    json.dump(cm, open(os.path.join(out_dir, "cases.json"), "w"), indent=2, ensure_ascii=False)
+    groups, rows = [], {}
+    # Replay VARIANTS (`variant@chat[:case,case]=file`): several recorded scripts over the same chat in
+    # one run — the known-bad corpus. Rows are named <case>.<think>.<variant>.
+    variants = {k: v for k, v in (replay_files or {}).items() if "@" in k}
+    for spec, rf in variants.items():
+        vname, rest = spec.split("@", 1)
+        chat_name, _, only_cases = rest.partition(":")
+        chat = next(c for c in cm["chats"] if c["chat"] == chat_name)
+        keep = set(filter(None, only_cases.split(",")))
+        for think in thinks:
+            cs = [c for c in chat["cases"] if not keep or c["id"] in keep]
+            args = ["-DebugHostModel", model, "-GauntletThink", "YES" if think else "NO", "-GauntletReplay", rf] + chat.get("args", [])
+            turns = []
+            for i, c in enumerate(cs):
+                row = f"{c['id']}.{'on' if think else 'off'}.{vname}"
+                turns.append({"row": row, "case": c["id"], "action": c.get("action", "send"), "question": c["question"]})
+                e = {k: v for k, v in c.items() if k not in ("what",)}
+                if c.get("facts") == "panel":
+                    e["mustContain"] = cm["panel"]
+                e.update(case=c["id"], chat=chat["chat"], think=think, run=vname, model=model, digest=digest,
+                         replay=True, firstInChat=(i == 0))
+                rows[row] = e
+            groups.append({"group": f"{vname}.{'on' if think else 'off'}", "args": args, "turns": turns, "eject": False})
+    replay_files = {k: v for k, v in (replay_files or {}).items() if "@" not in k}
+    for r in range(1, (runs if not variants else 0) + 1):
+        for think in thinks:
+            for chat in cm["chats"]:
+                if chat.get("_lab") or chat.get("_probe"):
+                    continue   # lab-only chats run only when a replay variant names them; CI-0 probes are store-only
+                if chat.get("liveOnly") and not only:
+                    continue   # live-Brave rows (no mock facts) run only when named with --only
+                cs = [c for c in chat["cases"] if not only or c["id"] in only]
+                if not cs:
+                    continue
+                gname = f"{chat['chat']}.{'on' if think else 'off'}.r{r}"
+                args = ["-DebugHostModel", model, "-GauntletThink", "YES" if think else "NO"] + chat.get("args", [])
+                rf = (replay_files or {}).get(chat["chat"])
+                if rf:
+                    args += ["-GauntletReplay", rf]
+                turns = []
+                for i, c in enumerate(cs):
+                    row = f"{c['id']}.{'on' if think else 'off'}.r{r}"
+                    turns.append({"row": row, "case": c["id"], "action": c.get("action", "send"), "question": c["question"]})
+                    e = {k: v for k, v in c.items() if k not in ("what",)}
+                    if c.get("facts") == "panel":
+                        e["mustContain"] = cm["panel"]
+                    e.update(case=c["id"], chat=chat["chat"], think=think, run=r, model=model, digest=digest,
+                             replay=bool(rf), firstInChat=(i == 0))
+                    rows[row] = e
+                groups.append({"group": gname, "args": args, "turns": turns,
+                               "eject": any(c.get("cold") for c in cs)})
+    cfg = {"outDir": out_dir, "baseArgs": base_args, "turnTimeoutSec": turn_timeout, "groups": groups}
+    json.dump(cfg, open(os.path.join(out_dir, "config.json"), "w"), indent=2, ensure_ascii=False)
+    json.dump({"model": model, "digest": digest, "runs": runs, "rows": rows},
+              open(os.path.join(out_dir, "expected.json"), "w"), indent=2, ensure_ascii=False)
+    return cfg
+
+
+# ─────────────────────────── self-test ───────────────────────────
+
+def selftest(kb_dir):
+    """Every known-bad row must be RED on each grader its manifest names; every known-GOOD row must be
+    all-green (the positive control). And every grader in GRADERS must be proven RED by ≥1 item."""
+    man = json.load(open(os.path.join(kb_dir, "manifest.json")))
+    proven = {g: [] for g in GRADERS}
+    problems, matrix = [], []
+    for item in man["items"]:
+        run_dir = os.path.join(kb_dir, item["runDir"])
+        if item.get("store"):   # a store pre-screen capture (no UI) — graded the way it was produced
+            v = load_json(os.path.join(run_dir, "versions.json"), {})
+            grades = grade_store(run_dir, v.get("model"), v.get("digest"))
+        else:
+            grades = grade_dir(run_dir, quiet=True)
+        for row, want_red in item.get("expectRed", {}).items():
+            g = grades.get(row)
+            if not g:
+                problems.append(f"{item['id']}: row {row} not graded (missing capture?)"); continue
+            red = {k for k, (st, _) in g["results"].items() if st in ("FAIL", "ABORT", "FLAG")}
+            for w in want_red:
+                if w in red:
+                    proven[w].append(item["id"])
+                else:
+                    st, d = g["results"].get(w, ("MISSING", ""))
+                    problems.append(f"{item['id']} {row}: grader {w} should be RED but is {st} ({d})")
+            matrix.append((item["id"], row, sorted(red), g["results"]))
+        for row in item.get("expectGreen", []):
+            g = grades.get(row)
+            red = {k: d for k, (st, d) in (g or {"results": {}})["results"].items() if st in ("FAIL", "ABORT", "FLAG")}
+            if not g or red:
+                problems.append(f"{item['id']} {row}: positive control is not green: {red or 'not graded'}")
+            matrix.append((item["id"], row, sorted(red), (g or {}).get("results", {})))
+        # named graders that must stay GREEN on a row (a control that is not all-green for unrelated reasons)
+        for row, want_green in item.get("expectGreenOn", {}).items():
+            g = grades.get(row)
+            for w in want_green:
+                st = (g or {"results": {}})["results"].get(w, ("MISSING", ""))
+                if st[0] != "PASS":
+                    problems.append(f"{item['id']} {row}: control grader {w} is not green: {st}")
+            matrix.append((item["id"], row, sorted(k for k, (st, _) in (g or {"results": {}})["results"].items() if st in ("FAIL", "ABORT", "FLAG")), (g or {}).get("results", {})))
+        # run-level graders (W2): RED (or FLAG) on a known-bad run, green on its control
+        rl = run_level(grades)
+        for w in item.get("expectRunRed", []):
+            if rl.get(w, ("MISSING",))[0] in ("FAIL", "FLAG"):
+                proven[w].append(item["id"])
+            else:
+                problems.append(f"{item['id']}: run-level {w} should be RED but is {rl.get(w)}")
+        for w in item.get("expectRunGreen", []):
+            if rl.get(w, ("MISSING",))[0] != "PASS":
+                problems.append(f"{item['id']}: run-level control {w} is not green: {rl.get(w)}")
+        if item.get("expectRunRed") or item.get("expectRunGreen"):
+            matrix.append((item["id"], "(run)", sorted(k for k, (st, _) in rl.items() if st in ("FAIL", "FLAG")), rl))
+        # aggregate known-bad (R1): the item's rows as runs of one case must aggregate to FAIL
+        if item.get("expectAggregateFail"):
+            sts = [row_status(grades[r], {"verdict": "ok"}) for r in item["expectAggregateFail"] if r in grades]
+            agg_pass = len(sts) == len(item["expectAggregateFail"]) and all(s == "PASS" for s in sts)
+            if agg_pass:
+                problems.append(f"{item['id']}: R1 aggregate PASSED a set with a red run ({sts})")
+            else:
+                proven["R1"].append(item["id"])
+    unproven = [g for g, items in proven.items() if not items]
+    return proven, unproven, problems, matrix
+
+
+# ─────────────────────────── emit-md ───────────────────────────
+
+def emit_md(cases_path):
+    cm = json.load(open(cases_path))
+    L = ["# Gauntlet v2 — case list (Brief CH-0)", "",
+         "_Generated from `AirPad/scripts/gauntlet/cases.json` by `gauntlet.py emit-md` — edit the JSON, not this file._", "",
+         "Every case runs **× Thinking {off, on}** (where the model supports it) **× 3 runs**; a case passes only **3/3**.",
+         "One *chat* = one app launch = one fresh conversation; its cases run in order inside it (follow-ups, carries, re-asks).",
+         "Every row is graded by every applicable grader below; the case only adds its own expectations.", "",
+         "## Cases", "", "| # | kind | chat | question | expected route | case-specific checks |", "|---|---|---|---|---|---|"]
+    for chat in (c for c in cm["chats"] if not c.get("_lab") and not c.get("_probe") and not c.get("liveOnly")):
+        for c in chat["cases"]:
+            checks = []
+            if c.get("facts") == "panel": checks.append(f"lab panel facts ≥{c['minFacts']}/7")
+            elif c.get("mustContain"): checks.append(f"facts {c['mustContain']} ≥{c['minFacts']}")
+            if c.get("carriesEntry"): checks.append("carries the open entry (I6)")
+            if c.get("reask"): checks.append("re-ask replaces the turn (I5)")
+            if c.get("maxCards"): checks.append(f"≤{c['maxCards']} cards / ≤{c['maxPassages']} passages (I7)")
+            if c.get("cold"): checks.append("COLD: nothing resident before the turn (V7) — adversarial A4")
+            if c.get("regression"): checks.append("regression rows: " + ", ".join(c["regression"]))
+            if c.get("action", "send") != "send": checks.append(f"action: {c['action']}")
+            if chat.get("args"): checks.append("launch: " + " ".join(chat["args"]))
+            q = c["question"] or "(taps “Read it in full”)"
+            L.append(f"| {c['id']} | {c['kind']} | {chat['chat']} | {q} | {c.get('expectRoute') or 'any'} | {'; '.join(checks) or '—'} |")
+    L += ["", "**Regression rows (device-found bugs, 2026-10-03/04):** REG-leak, REG-bareE, REG-label, REG-jump all ride on **S1** "
+          "(T's exact question) × Thinking OFF/ON × 3, graded by F1–F4, A2–A4, C1, C3, T1. A2 is the follow-up-history row; "
+          "A3 the Retry row; case 1 doubles as A4 cold auto-load; A5 the near-context-limit packet.", "",
+          "## Graders", "", "| id | checks | on a miss |", "|---|---|---|"]
+    for g, d in GRADERS.items():
+        L.append(f"| {g} | {d} | {'ABORT (row invalid)' if g.startswith('V') else ('FLAG for CC’s read' + (' (run-level)' if g == 'W2' else '') if g in FLAG_ONLY else ('FAIL the case' if g != 'R1' else 'FAIL the case (aggregate)'))} |")
+    L += ["| CC | CC reads every answer: one-line verdict + reason (wrong connection, fabricated fact, hedging, thin) | row passes only when graders AND CC agree |", ""]
+    return "\n".join(L)
+
+
+def main():
+    ap = argparse.ArgumentParser()
+    sub = ap.add_subparsers(dest="cmd", required=True)
+    p = sub.add_parser("plan")
+    p.add_argument("--cases", default=os.path.join(HERE, "cases.json"))
+    p.add_argument("--model", required=True); p.add_argument("--digest", required=True)
+    p.add_argument("--think", default="off,on"); p.add_argument("--runs", type=int, default=3)
+    p.add_argument("--out", required=True); p.add_argument("--only", default="")
+    p.add_argument("--replay", action="append", default=[], help="chat=/abs/replay.json")
+    p.add_argument("--turn-timeout", type=int, default=900)
+    p.add_argument("--base-args", required=True, help="JSON list")
+    g = sub.add_parser("grade"); g.add_argument("run_dir")
+    gs = sub.add_parser("grade-store"); gs.add_argument("pass_dir"); gs.add_argument("--model"); gs.add_argument("--digest")
+    s = sub.add_parser("selftest"); s.add_argument("kb_dir")
+    m = sub.add_parser("emit-md"); m.add_argument("--cases", default=os.path.join(HERE, "cases.json"))
+    a = ap.parse_args()
+    if a.cmd == "plan":
+        thinks = [x == "on" for x in a.think.split(",") if x]
+        reps = dict(x.split("=", 1) for x in a.replay)
+        cfg = plan(a.cases, a.model, a.digest, thinks, a.runs, a.out, json.loads(a.base_args),
+                   only=set(filter(None, a.only.split(","))), replay_files=reps, turn_timeout=a.turn_timeout)
+        print(f"planned {sum(len(g['turns']) for g in cfg['groups'])} rows in {len(cfg['groups'])} launches → {a.out}/config.json")
+    elif a.cmd == "grade":
+        out = grade_dir(a.run_dir)
+        print(open(os.path.join(a.run_dir, "table.md")).read())
+    elif a.cmd == "grade-store":
+        v = load_json(os.path.join(a.pass_dir, "versions.json"), {})   # the run's own record, unless overridden
+        grade_store(a.pass_dir, a.model or v.get("model"), a.digest or v.get("digest"))
+        print(open(os.path.join(a.pass_dir, "table.md")).read())
+    elif a.cmd == "selftest":
+        proven, unproven, problems, matrix = selftest(a.kb_dir)
+        for item, row, red, _ in matrix:
+            print(f"{item:28s} {row:18s} RED={','.join(red) or '— (green)'}")
+        print("\nGRADER → known-bad items that turn it RED:")
+        for gid in GRADERS:
+            print(f"  {gid}: {', '.join(sorted(set(proven[gid]))) or '*** NEVER RED — BROKEN ***'}")
+        for pr in problems:
+            print("PROBLEM:", pr)
+        ok = not unproven and not problems
+        print("\nSELFTEST", "PASS — every grader proven RED; positive control green" if ok else f"FAIL — unproven={unproven} problems={len(problems)}")
+        sys.exit(0 if ok else 1)
+    elif a.cmd == "emit-md":
+        print(emit_md(a.cases))
+
+
+if __name__ == "__main__":
+    main()

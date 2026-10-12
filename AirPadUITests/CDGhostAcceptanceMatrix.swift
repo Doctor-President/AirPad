@@ -42,6 +42,15 @@ final class CDGhostAcceptanceMatrix: XCTestCase {
 
     private func typeNote(_ app: XCUIApplication, _ text: String) {
         app.textViews["noteEditor"].typeText(text)
+        dismissKeyboardTip(app)
+    }
+
+    /// iOS shows a one-time "Speed up your typing by sliding your finger…" (QuickPath) sheet on a Simulator's first
+    /// keyboard use. It covers the Done pill, so Done never commits — the 2026-10-08 quiet-Mac failure of
+    /// `noUserTitle_promotedTitleSurvivesDone` (screenshot: ghost shown, tip over Done, nothing written in 60 s).
+    private func dismissKeyboardTip(_ app: XCUIApplication) {
+        let tip = app.staticTexts.matching(NSPredicate(format: "label CONTAINS 'sliding your finger'")).firstMatch
+        if tip.waitForExistence(timeout: 1), app.buttons["Continue"].exists { app.buttons["Continue"].tap() }
     }
 
     private func typeTitle(_ app: XCUIApplication, _ text: String) {
@@ -76,6 +85,7 @@ final class CDGhostAcceptanceMatrix: XCTestCase {
             app.textViews["noteEditor"].tap()
             _ = hide.waitForExistence(timeout: 3)
         }
+        dismissKeyboardTip(app)
         if hide.exists { hide.tap() }
         _ = app.keyboards.element.waitForNonExistence(timeout: 5)
         Thread.sleep(forTimeInterval: 0.8)                                            // let the pinned chrome settle up
@@ -88,8 +98,11 @@ final class CDGhostAcceptanceMatrix: XCTestCase {
     /// transient post-Done screen is unreliable to query, so: let the write persist, then COLD-LAUNCH to
     /// the default Recents screen (entryMode defaults to `.recents`) and open the newest row. This reads
     /// the PERSISTED node — the real test of "what Done committed to disk".
-    private func reopenNewestEntry(_ app: XCUIApplication) {
-        Thread.sleep(forTimeInterval: 15)  // Done's async promote+author+substrate+embed can take >5s on-device
+    private func reopenNewestEntry(_ app: XCUIApplication, expectTitle: Bool = true) {
+        // CONDITION wait (was a fixed 15 s sleep, which flaked under load — 3 busy Simulators + Ollama): poll the
+        // PERSISTED entry until Done's async write has landed — the stub summary (every Done here writes one) and,
+        // when this test expects one, the title. A relaunch before that kills the in-flight write.
+        waitForDoneOnDisk(expectTitle: expectTitle, timeout: 60)
         shot(app, "post-Done-before-relaunch")   // diagnostic: did the title land before we relaunch?
         // Reopen: keep the isolated library (NO -Fresh, so the entry just committed survives the relaunch).
         app.launchArguments = ["-StubAuthorModel", "-StubNonEmptyTitle", "-EmbedCPUOnly", "-UITestLibrary"]
@@ -98,6 +111,51 @@ final class CDGhostAcceptanceMatrix: XCTestCase {
         XCTAssertTrue(row.waitForExistence(timeout: 20), "the just-created entry should be in Recents")
         row.tap()
         XCTAssertTrue(field(app, "titleField").waitForExistence(timeout: 10), "detail should open with the title field")
+    }
+
+    // MARK: - disk (Simulator)
+
+    /// The newest entry in the app's `-UITestLibrary` scratch, read from disk. In the Simulator the test runner can
+    /// read its sibling app containers (`…/Containers/Data/Application/*/Library/Caches/AirPadUITestScratch`).
+    /// Returns nil where that isn't readable (a physical device).
+    private func newestPersistedNode() -> [String: Any]? {
+        let fm = FileManager.default
+        let apps = URL(fileURLWithPath: NSHomeDirectory()).deletingLastPathComponent()
+        guard let containers = try? fm.contentsOfDirectory(at: apps, includingPropertiesForKeys: nil) else { return nil }
+        var best: (Date, [String: Any])?
+        for c in containers {
+            let nodes = c.appendingPathComponent("Library/Caches/AirPadUITestScratch/nodes")
+            guard let ids = try? fm.contentsOfDirectory(at: nodes, includingPropertiesForKeys: nil) else { continue }
+            for id in ids {
+                let f = id.appendingPathComponent("node.json")
+                guard let attrs = try? fm.attributesOfItem(atPath: f.path), let m = attrs[.modificationDate] as? Date,
+                      let d = try? Data(contentsOf: f), let j = try? JSONSerialization.jsonObject(with: d) as? [String: Any] else { continue }
+                // newest by CREATION (`created_at`, ISO-8601) — a re-save of an older entry must not win
+                let key = (j["created_at"] as? String).flatMap { ISO8601DateFormatter().date(from: $0) } ?? m
+                if best == nil || key > best!.0 { best = (key, j) }
+            }
+        }
+        return best?.1
+    }
+
+    /// Poll until the newest persisted entry carries Done's write (summary, and the title when expected).
+    /// Falls back to the old fixed wait where the app's container isn't readable (device).
+    private func waitForDoneOnDisk(expectTitle: Bool, timeout: TimeInterval) {
+        guard newestPersistedNode() != nil else { Thread.sleep(forTimeInterval: 15); return }
+        let deadline = Date().addingTimeInterval(timeout)
+        let t0 = Date()
+        while Date() < deadline {
+            if let n = newestPersistedNode() {
+                let summary = (n["summary"] as? String) ?? "", title = (n["title"] as? String) ?? ""
+                if !summary.isEmpty && (!expectTitle || !title.isEmpty) {
+                    print("[CDGhost] Done landed on disk after \(String(format: "%.1f", Date().timeIntervalSince(t0))) s (title='\(title)')")
+                    Thread.sleep(forTimeInterval: 0.5)   // let the save finish flushing siblings (blocks.json)
+                    return
+                }
+            }
+            Thread.sleep(forTimeInterval: 0.5)
+        }
+        XCTFail("Done's write never reached disk within \(Int(timeout)) s (title/summary still empty)")
     }
 
     // MARK: - reads
@@ -176,7 +234,7 @@ final class CDGhostAcceptanceMatrix: XCTestCase {
         typeTitle(app, "Temp")
         clearTitle(app)
         tapDone(app)
-        reopenNewestEntry(app)
+        reopenNewestEntry(app, expectTitle: false)
         XCTAssertTrue(fieldValue(app, "titleField").isEmpty, "a user-cleared title must stay cleared")
     }
 

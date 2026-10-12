@@ -13,7 +13,7 @@ clinician names, lab-report identifiers), built by AirPad `scripts/privacy/make_
 Output names the path and the KIND of match only — never the matched text. A missing fingerprint file warns loudly
 and lets the commit through. Escape hatch for a confirmed false positive: `git commit --no-verify`.
 """
-import hashlib, json, os, re, subprocess, sys, unicodedata
+import hashlib, json, os, re, subprocess, sys, threading, unicodedata
 from collections import Counter, defaultdict
 
 SHINGLE = 8
@@ -148,7 +148,9 @@ def cmd_audit(fp, history, out_json):
         blobs = [l.split()[0] for l in chk if l.endswith(tuple("0123456789")) and " blob " in l
                  and int(l.split()[2]) <= 50_000_000]
         proc = subprocess.Popen(["git", "cat-file", "--batch"], stdin=subprocess.PIPE, stdout=subprocess.PIPE)
-        proc.stdin.write(("\n".join(blobs) + "\n").encode()); proc.stdin.close()
+        def feed():  # a thread: writing every id up front would deadlock once cat-file's output pipe fills
+            proc.stdin.write(("\n".join(blobs) + "\n").encode()); proc.stdin.close()
+        threading.Thread(target=feed, daemon=True).start()
         hit_blobs, per_path = set(), defaultdict(Counter)
         for _ in blobs:
             sha, _, size = proc.stdout.readline().decode().split()

@@ -1,0 +1,3 @@
+#!/bin/sh
+# live-6 (3): the same guard over the commit message
+exec python3 "$(git rev-parse --show-toplevel)/.githooks/fpscan.py" msg "$1"

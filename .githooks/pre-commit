@@ -1,0 +1,3 @@
+#!/bin/sh
+# live-6 (3): block commits that add T's library text (see fpscan.py). Enable: git config core.hooksPath .githooks
+exec python3 "$(git rev-parse --show-toplevel)/.githooks/fpscan.py" staged

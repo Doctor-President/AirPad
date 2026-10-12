@@ -715,6 +715,39 @@ ABSENCE = re.compile(r"\byou (?:never|didn't|did not|haven't|have not|hadn't)\s+
 ATTRIB = re.compile(r"\byou(?:'ve| have)?\s+(?:also\s+|even\s+|directly\s+)?(?:wrote|written|write|said|say|mentioned|mention|noted|described|called|argued|explained|referenced|defined|compared|contrasted|tied|noted)\b|\bin your (?:note|entry|journal|piece|post)\b", re.I)
 Q_STOP = set("what which when where how did does have about write wrote written said say mention mentioned entry entries notes note exactly ever library my your being the that this from with into".split())
 
+# T ruling (CH-B review, F4): a PURE-ABSENCE answer ("No — you haven't written about X") asserts nothing from the
+# library, so it has nothing to cite and C2 passes it uncited. An answer that also asserts library content (a
+# synthesis, "but you did write…", a named entry, a citation) is not pure and must still cite. Whether the absence
+# is TRUE is B1/B2's job, not C2's. Controls c2-pure-absence-control (green) + c2-absence-plus-content (red).
+NO_RECORD = re.compile(r"\b(?:no|not any)\s+(?:\w+\s+){0,2}?(?:entr(?:y|ies)|notes?|records?|mentions?)\b|"
+                       r"\b(?:couldn't|could not|can't|cannot|didn't|did not)\s+find\b|\bnothing (?:in your|about|on)\b|"
+                       r"\byour (?:library|notes|entries) (?:doesn't|does not|don't|do not) (?:contain|mention|include|have|cover)\b", re.I)
+LIB_CLAIM = re.compile(r"\byou did\b(?!\s+not)|\bbut you\b|\byour (?:note|entry|journal|piece|post)s?\b|\bin (?:one|two|several|some|a few) of your\b|"
+                       r"\bthe closest\b|\b(?:related|similar)\b", re.I)
+# "…the notes you've shared revolve around film, sourdough…" says what the library DOES hold — content, even inside
+# an absence sentence ("Your notes focus on grammar — nothing about skiing"). Not when negated ("none of your notes cover X").
+LIB_COVERS = re.compile(r"\b(?:notes|entries|library|passages|journal)\b[^.\n]{0,60}?\b(?:cover|focus|revolve|cent(?:er|re)|rang(?:e|ing)|include|discuss|explore|deal|touch|is rich in|(?:are|is) (?:about|mostly|mainly))\w*", re.I)
+
+def lib_covers(sent):
+    for m in LIB_COVERS.finditer(sent):
+        clause = re.split(r"\s[—–-]\s|;|:|,\s*but\b", sent[:m.end()])[-1]   # the negation must be in the SAME clause
+        if not re.search(r"\b(?:no|not|none|nothing|never)\b|n't", clause, re.I):
+            return True
+    return False
+
+def pure_absence(final, cand):
+    text = (final or "").replace("’", "'")
+    if not norm_ws(text) or marker_indices(text) or re.match(r"\W*yes\b", text, re.I):
+        return False
+    if any(c.get("title") and title_mentioned(c["title"], text) for c in cand):
+        return False
+    sents = [x for x in re.split(r"(?<=[.!?])\s+|\n+", text) if x.strip()]
+    absent = [s for s in sents if ABSENCE.search(s) or NO_RECORD.search(s)]
+    if not absent:
+        return False
+    # an absence sentence may say "none of your notes…"; any OTHER sentence that points at the library is content
+    return not any(ATTRIB.search(s) or lib_covers(s) or (s not in absent and LIB_CLAIM.search(s)) for s in sents)
+
 def packet_segments(turn):
     """{[n]: text} per packet item (its header + body) — known-bad items carry `entryTexts` instead."""
     if turn.get("entryTexts"):
@@ -1540,6 +1573,8 @@ def grade_row(exp, turn, ui, prev_turn, host, ps, versions, cases_meta, store=Fa
     grounded = route in ("read", "survey")
     if exp.get("uncitedOk"):   # S3 — a general-knowledge case: no entry answers it, so citing one would be the bug
         na("C2", "general-knowledge case (uncitedOk): an uncited answer is right")
+    elif grounded and norm_ws(final) and not cites and pure_absence(final, cand):
+        res("C2", True, f"pure-absence answer on a {route} route: asserts nothing from the library, so no chip is needed")
     elif grounded and norm_ws(final):
         res("C2", len(cites) >= 1, f"{len(cites)} chips on a {route} answer")
     else:

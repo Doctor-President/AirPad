@@ -741,7 +741,11 @@ final class C2cAppleIntelligenceRoute: XCTestCase {
 
     /// C2c device check (T 2026-10-09, short): on T's iPhone, pick Apple Intelligence in the model menu (no unpairing),
     /// ask one General and one Library question, time both, then route back to the Mac (relaunch with the reset arg).
-    func testOnDeviceAppleIntelligenceLibrarian() {
+    /// A DEVICE step only: the Simulator has no real Apple Intelligence model, so there it can only fail (CH-B review).
+    func testOnDeviceAppleIntelligenceLibrarian() throws {
+        #if targetEnvironment(simulator)
+        try XCTSkipIf(true, "device step — the Simulator has no real Apple Intelligence model")
+        #endif
         let app = XCUIApplication()
         app.launchArguments = ["-OpenMap", "-GauntletUI", "YES"]
         app.launch()

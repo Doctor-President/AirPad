@@ -25,6 +25,9 @@ struct NodeItem: Codable, Identifiable, Equatable {
     /// item's transcript in place. Non-nil ⇒ the item shows "Edited" and offers "Restore original". Nil when
     /// never edited (or edited back to the original). Additive optional — legacy JSON decodes as nil.
     var transcriptOriginal: String?
+    /// Arc B — on a text item made by "Extract as text": the Voice item it was copied from. While the two read
+    /// the same (whitespace-trimmed) the copy is not counted again (`Node.countedItems`). Additive optional.
+    var extractedFromItemID: String?
 
     // link
     var url: String?
@@ -215,6 +218,7 @@ struct NodeItem: Codable, Identifiable, Equatable {
         case createdAt = "created_at"
         case durationSeconds = "duration_seconds"
         case transcriptOriginal = "transcript_original"
+        case extractedFromItemID = "extracted_from_item_id"
         case specializedType = "specialized_type"
         case displayName = "display_name"
         case isExpanded = "is_expanded"

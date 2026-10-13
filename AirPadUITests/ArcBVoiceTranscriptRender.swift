@@ -82,4 +82,25 @@ final class ArcBVoiceTranscriptRender: XCTestCase {
         Thread.sleep(forTimeInterval: 0.6)
         shot(app, "10-restored")
     }
+
+    /// Arc B (T, 2026-10-13) — the Extract flash alone, for a short clip: open the entry, Extract, let the flash play out.
+    func testRenderExtractFlash() {
+        let app = XCUIApplication()
+        app.launchArguments = ["-UITestLibrary", "-UITestLibraryFresh", "-UITestSeedVoiceEntry", "-EmbedCPUOnly"]
+        app.launch()
+        let row = app.buttons.matching(NSPredicate(format: "identifier BEGINSWITH 'entryRow-'")).firstMatch
+        XCTAssertTrue(row.waitForExistence(timeout: 20), "the seeded entry should be in Recents")
+        Thread.sleep(forTimeInterval: 1)
+        row.tap()
+        let options = app.buttons.matching(identifier: "entryOptions").element(boundBy: 0)
+        XCTAssertTrue(options.waitForExistence(timeout: 10))
+        Thread.sleep(forTimeInterval: 1.5)
+        options.tap()
+        XCTAssertTrue(app.buttons["Extract as text"].waitForExistence(timeout: 5))
+        app.buttons["Extract as text"].tap()
+        Thread.sleep(forTimeInterval: 0.2)
+        shot(app, "11-flash-peak")
+        Thread.sleep(forTimeInterval: 2.5)
+        shot(app, "12-flash-settled")
+    }
 }

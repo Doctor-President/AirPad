@@ -370,12 +370,7 @@ struct EntryCard: View {
         // (reference ~16pt gap). Non-container types keep the original rhythm.
         .padding(.vertical, wearsContainer ? 0 : (item.type == .text ? visualSettings.noteVerticalPadding : visualSettings.cardVerticalPadding))
         // Arc B — the text item "Extract as text" / "Append to…" just wrote flashes once so the eye finds it.
-        .overlay {
-            RoundedRectangle(cornerRadius: 14)
-                .fill(Color(hexString: "1B59C2").opacity(store.recentlyExtractedItemID == item.id ? 0.14 : 0))
-                .allowsHitTesting(false)
-                .animation(.easeOut(duration: 0.9), value: store.recentlyExtractedItemID == item.id)
-        }
+        .overlay { ExtractFlash(active: store.recentlyExtractedItemID == item.id) }
         .scaleEffect(presentation.isLifted ? EntryReorderController.liftedScale : 1.0)
         .shadow(
             color: .black.opacity(presentation.isLifted ? EntryReorderController.liftedShadowOpacity : 0),
@@ -1140,3 +1135,26 @@ private struct EmptyMediaPlaceholder: View {
     }
 }
 
+/// Arc B (T, 2026-10-13: "more pronounced, peaking at an almost electric blue") — the flash on the text item that
+/// "Extract as text" / "Append to…" just wrote: a quick rise to a clearly visible Electric Cyan peak (fill + edge),
+/// a short hold, then a slow fade. One pulse per write; never hit-testable.
+private struct ExtractFlash: View {
+    let active: Bool
+    @State private var pulse = 0
+    static let rise = 0.12, hold = 0.30, fade = 1.10
+    static let peakFill = 0.38, peakEdge = 1.0
+
+    var body: some View {
+        RoundedRectangle(cornerRadius: 14)
+            .fill(Color(hexString: "00BFFF").opacity(Self.peakFill))
+            .overlay(RoundedRectangle(cornerRadius: 14).strokeBorder(Color(hexString: "00BFFF").opacity(Self.peakEdge), lineWidth: 2))
+            .keyframeAnimator(initialValue: 0.0, trigger: pulse) { content, level in content.opacity(level) } keyframes: { _ in
+                LinearKeyframe(1.0, duration: Self.rise)
+                LinearKeyframe(1.0, duration: Self.hold)
+                CubicKeyframe(0.0, duration: Self.fade)
+            }
+            .allowsHitTesting(false)
+            .onAppear { if active { pulse += 1 } }   // an extracted item appears already marked
+            .onChange(of: active) { _, on in if on { pulse += 1 } }
+    }
+}

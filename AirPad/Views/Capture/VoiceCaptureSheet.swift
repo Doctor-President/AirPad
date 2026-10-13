@@ -360,7 +360,7 @@ struct VoiceCaptureSheet: View {
 
         Task {
             if let targetID = targetNodeID {
-                // Append audio (+ transcript text) to existing node
+                // Append audio to the existing node (Arc B: the transcript lives in the Voice item only)
                 await store.appendItemToNodeWithAudio(nodeID: targetID, item: audioItem, audioURL: audioURL, audioItemID: audioItemID)
                 await store.processNodeWithAI(nodeID: targetID, posture: captureOwnsDone ? .propose : .captureDone)   // Brief BI / A2
             } else {

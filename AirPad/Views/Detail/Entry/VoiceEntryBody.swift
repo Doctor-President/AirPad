@@ -8,6 +8,8 @@ import SwiftUI
 /// Arc B (T, 2026-10-12) — the transcript is the Voice item's ONE copy of the words, editable in place: it
 /// reads at note size in the entry's font, and a tap puts the caret in it (same as a note). The edit commits
 /// when the field loses focus; the first edit keeps the recognised text for "Restore original" in the "…" menu.
+/// While typing, the words sit in `store.transcriptDrafts`, so a "…" action taken with the keyboard still up
+/// (Extract, Append to…, Restore) acts on the edited words; it commits them and the field ends editing.
 struct VoiceEntryBody: View {
 
     let item: NodeItem
@@ -35,11 +37,15 @@ struct VoiceEntryBody: View {
                 .padding(.horizontal, 12)
                 .accessibilityIdentifier("voiceTranscript")
                 .onAppear { draft = item.transcript ?? "" }
-                // An outside change (Restore original, a re-transcription) lands while not editing.
-                .onChange(of: item.transcript) { _, new in if !editing { draft = new ?? "" } }
+                // An outside change (Restore original, a re-transcription) shows unless the person is mid-edit.
+                .onChange(of: item.transcript) { _, new in
+                    if !editing || store.transcriptDrafts[item.id] == nil { draft = new ?? "" }
+                }
+                .onChange(of: draft) { _, text in if editing { store.transcriptDrafts[item.id] = text } }
+                // A "…" action committed the draft: the edit is in; stop editing so focus loss can't write it again.
+                .onChange(of: store.transcriptDrafts[item.id] == nil) { _, taken in if taken && editing { editing = false } }
                 .onChange(of: editing) { _, nowEditing in
-                    guard !nowEditing, draft != (item.transcript ?? "") else { return }
-                    let text = draft
+                    guard !nowEditing, let text = store.transcriptDrafts.removeValue(forKey: item.id) else { return }
                     Task { await store.updateTranscript(itemID: item.id, nodeID: nodeID, newText: text) }
                 }
         }

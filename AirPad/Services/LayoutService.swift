@@ -202,7 +202,7 @@ final class LayoutService {
     func significance(for node: Node, allNodes: [Node], neighborhoodCache: NeighborhoodCache?) -> Double {
         // Count words across all items
         var wordCount = 0
-        for item in node.items {
+        for item in node.countedItems {
             let text: String?
             switch item.type {
             case .text:

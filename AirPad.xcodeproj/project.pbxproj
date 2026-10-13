@@ -280,6 +280,7 @@
 		CA5580BF3FA789B9EF9D906C /* Speech.framework in Frameworks */ = {isa = PBXBuildFile; fileRef = 4339BD7FF5450195EDF70A95 /* Speech.framework */; };
 		CA78CCC70BD9A594AD079E7D /* GalleryItemTile.swift in Sources */ = {isa = PBXBuildFile; fileRef = 6CC9DA2E35A6A167254A44EC /* GalleryItemTile.swift */; };
 		CB2B608F43E8C59B2E14762E /* DocumentExtractionService.swift in Sources */ = {isa = PBXBuildFile; fileRef = 04C9DF59B5CB0AF40373A81B /* DocumentExtractionService.swift */; };
+		CC70FEE74EEC49EDEEE872E3 /* ArcBVoiceTranscript.swift in Sources */ = {isa = PBXBuildFile; fileRef = FE6C4DD3D4053E6FCA089177 /* ArcBVoiceTranscript.swift */; };
 		CCD5B920FFC2E6B349140203 /* HDBSCANLinkage.swift in Sources */ = {isa = PBXBuildFile; fileRef = DD83A4DC76F83C28E144AA6D /* HDBSCANLinkage.swift */; };
 		CD7F0605807BAAE61280B1B3 /* HDBSCANReachability.swift in Sources */ = {isa = PBXBuildFile; fileRef = ED287727ED25FF9291551213 /* HDBSCANReachability.swift */; };
 		CDB98919FE3A199E8BE0B80A /* TerritoryLayoutSnapshot.swift in Sources */ = {isa = PBXBuildFile; fileRef = 85995050BC812122755EEE8E /* TerritoryLayoutSnapshot.swift */; };
@@ -676,6 +677,7 @@
 		FCF40AB94344E8686EA92E8C /* FieldValueEditorSheet.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = FieldValueEditorSheet.swift; sourceTree = "<group>"; };
 		FD659A40CE161F15D371C285 /* NodeCardView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = NodeCardView.swift; sourceTree = "<group>"; };
 		FE1EBAEDC8000E69D6FA9699 /* TagNormalization.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = TagNormalization.swift; sourceTree = "<group>"; };
+		FE6C4DD3D4053E6FCA089177 /* ArcBVoiceTranscript.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ArcBVoiceTranscript.swift; sourceTree = "<group>"; };
 		FF17153136D015CF18EF722D /* SampleLibrary */ = {isa = PBXFileReference; lastKnownFileType = folder; name = SampleLibrary; path = AirPad/Resources/SampleLibrary; sourceTree = SOURCE_ROOT; };
 		FF5E2E9E140FAB95C76681A3 /* PeekPillStyle.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = PeekPillStyle.swift; sourceTree = "<group>"; };
 /* End PBXFileReference section */
@@ -771,6 +773,7 @@
 			isa = PBXGroup;
 			children = (
 				6D5DA85B1BF96EDBE819DEC3 /* ArcAVoiceDone.swift */,
+				FE6C4DD3D4053E6FCA089177 /* ArcBVoiceTranscript.swift */,
 				6968739D865F9DEBD9EA5A77 /* ArcBVoiceTranscriptRender.swift */,
 				B8D87927EAE11D669A11A825 /* CardSwipeRepro.swift */,
 				A9C57830B6D6683951BF3F6E /* CaretTapTest.swift */,
@@ -1532,6 +1535,7 @@
 			buildActionMask = 2147483647;
 			files = (
 				9C0E90AD9209954A7FDA17C0 /* ArcAVoiceDone.swift in Sources */,
+				CC70FEE74EEC49EDEEE872E3 /* ArcBVoiceTranscript.swift in Sources */,
 				DA8E3B99958921266293931B /* ArcBVoiceTranscriptRender.swift in Sources */,
 				2C84139C9AD63BE52CF57C6E /* CDGhostAcceptanceMatrix.swift in Sources */,
 				3F3D03BCB7B579A34CFA9B92 /* CDGhostWhileTyping.swift in Sources */,

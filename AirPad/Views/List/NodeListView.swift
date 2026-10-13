@@ -156,6 +156,7 @@ struct NodeListView: View {
                         // STRIP fills with the Klein→cyan focus gradient rather
                         // than an outline (T: the outline didn't hug the row —
                         // make the strip blue). Persists until the next touch.
+                        .accessibilityIdentifier("listRow-\(node.id)")   // A3 — one row per entry, findable by id
                         .listRowBackground(
                             Group {
                                 if selection.isSelected(node.id) {

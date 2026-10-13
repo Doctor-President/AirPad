@@ -11,6 +11,28 @@ enum SpeechVocabulary {
                                     "Sample Library", "Curious Objects"]
 }
 
+/// A3 (T, TF 202610131010) — the app's own words may reach a generated title or summary only when the entry itself
+/// uses them. Case-insensitive; "librarian" in a note about a librarian is the note's word, not a leak.
+enum AppTermLeak {
+    static let terms = SpeechVocabulary.contextualStrings
+    static func leaked(in output: String, content: String) -> [String] {
+        terms.filter { output.range(of: $0, options: .caseInsensitive) != nil && content.range(of: $0, options: .caseInsensitive) == nil }
+    }
+
+    /// `-AppTermLeakSelfTest` — synthetic rows only.
+    static func selfTest() -> String {
+        var rows: [String] = [], fails = 0
+        func row(_ name: String, _ ok: Bool) { rows.append("\(ok ? "PASS" : "FAIL") \(name)"); if !ok { fails += 1 } }
+        let spoken = "Walked the orchard with Sam after lunch; the first frost is due next week"
+        row("summary-naming-the-app-is-a-leak", leaked(in: "Sam and the Librarian enjoy autumn at the orchard", content: spoken) == ["Librarian"])
+        row("title-naming-the-app-is-a-leak", leaked(in: "AirPad orchard walk", content: spoken) == ["AirPad"])
+        row("clean-summary-passes", leaked(in: "An orchard walk with Sam before the first frost", content: spoken).isEmpty)
+        row("the-entry's-own-word-passes", leaked(in: "Returning books to the librarian", content: "Return the books to the librarian by Friday").isEmpty)
+        row("instructions-name-no-app-term", terms.allSatisfy { AIService.namingInstructions.range(of: $0, options: .caseInsensitive) == nil })
+        return "[AppTermLeakSelfTest] \(fails == 0 ? "PASS" : "FAIL") — \(rows.count - fails)/\(rows.count)\n" + rows.joined(separator: "\n")
+    }
+}
+
 /// Shared live-dictation engine. Buffer-based SFSpeechRecognizer +
 /// AVAudioEngine tap streaming partial results into a caller-supplied
 /// closure. ONE engine, owned as a singleton — the Librarian Search

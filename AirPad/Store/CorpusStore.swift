@@ -1029,7 +1029,21 @@ final class CorpusStore {
             for i in normalized.indices {
                 Self.normalizeAtomicsToFront(&normalized[i])
             }
-            nodes = normalized.sorted { $0.createdAt > $1.createdAt }
+            // A3 (T, TF 202610131010) — MERGE the disk snapshot into the live store; never replace it wholesale. A
+            // capture made during launch (Action Button → Quick Capture, cold) is saved, then inserted — and the load can
+            // read its file and land in between: replacing put the node in from disk AND the capture then inserted it
+            // again (one entry on disk, two rows in Recents, a stale blank card), or replaced the live copy with an older
+            // snapshot. Every write goes through the store, so a node already in memory is the live copy: it wins, and
+            // anything created while the load ran is kept.
+            let live = Dictionary(nodes.map { ($0.id, $0) }, uniquingKeysWith: { first, _ in first })
+            let loadedIDs = Set(normalized.map(\.id))
+            var merged = normalized.map { live[$0.id] ?? $0 }
+            merged += nodes.filter { !loadedIDs.contains($0.id) }
+            if !live.isEmpty {
+                print("[Store] A3 load merged into a live store: loaded=\(normalized.count) live=\(live.count) "
+                      + "liveKept=\(live.keys.filter(loadedIDs.contains).count) createdDuringLoad=\(live.keys.filter { !loadedIDs.contains($0) }.count)")
+            }
+            nodes = merged.sorted { $0.createdAt > $1.createdAt }
             canvasLayout = layout ?? CanvasLayout(version: 1, updatedAt: Date(), positions: [:])
             // Restore the persisted tag-anchored Map geography (map-relayout fix).
             // `try?` so a schema drift decodes to nil → the Map re-forms + re-persists
@@ -1151,6 +1165,9 @@ final class CorpusStore {
                 // Arc B — an extracted transcript copy counts once; Append to… lands at the end.
                 if ProcessInfo.processInfo.arguments.contains("-ArcBDedupSelfTest") {
                     NSLog("%@", await runArcBDedupSelfTest())
+                }
+                if ProcessInfo.processInfo.arguments.contains("-AppTermLeakSelfTest") {
+                    NSLog("%@", AppTermLeak.selfTest())
                 }
                 // Brief CF — rule 2: a SHOWING ghost must commit at Done for BOTH fields, even when
                 // the re-author blanks the title (duplicate content). Needs `-StubAuthorModel
@@ -2933,8 +2950,23 @@ final class CorpusStore {
         newLayout.updatedAt = Date()
         do {
             try await saveAndEnqueue(node)
+            #if DEBUG
+            // A3 — `-AddNodeLatencyMs <n>`: hold this capture's continuation between its save and its insert, as a busy
+            // main thread on device does at launch, so the initial load can land in between (the duplicate-entry race).
+            if let i = ProcessInfo.processInfo.arguments.firstIndex(of: "-AddNodeLatencyMs"),
+               i + 1 < ProcessInfo.processInfo.arguments.count, let ms = UInt64(ProcessInfo.processInfo.arguments[i + 1]) {
+                try? await Task.sleep(nanoseconds: ms * 1_000_000)
+            }
+            #endif
             try await service.saveCanvasLayout(newLayout)
-            nodes.insert(node, at: 0)
+            // A3 — one id, one node: if the launch load already brought this node in from disk (it read the file this
+            // call just saved), take that slot instead of inserting a second copy.
+            if let existing = nodes.firstIndex(where: { $0.id == node.id }) {
+                print("[Store] A3 addNode \(node.id) already in the store (the launch load read it) — replaced, not duplicated")
+                nodes[existing] = node
+            } else {
+                nodes.insert(node, at: 0)
+            }
             canvasLayout = newLayout
         } catch {
             print("[CorpusStore] Save error: \(error)")

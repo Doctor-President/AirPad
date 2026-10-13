@@ -318,6 +318,8 @@ final class CorpusStore {
     /// once consumed. Single-shot: only one entry can be pending at a time
     /// because the "+" menu can only fire one entry creation per tap.
     var pendingAutoFocusItemID: String? = nil
+    /// Arc B — the text item "Extract as text" just created: its card highlights briefly, then this clears.
+    var recentlyExtractedItemID: String? = nil
 
     /// Non-nil while a batch import is in progress. ContentView shows a progress banner.
     var importBatchProgress: (current: Int, total: Int)? = nil
@@ -3296,6 +3298,83 @@ final class CorpusStore {
         // scheduler — self-gates to text-bearing, un-enriched nodes, so it's a
         // no-op for media-only appends.
         scheduleEnrichment(nodeID: nodeID)
+    }
+
+    // MARK: - Voice transcript (Arc B, T 2026-10-12: one transcript, editable in place, extractable)
+
+    /// Edit a Voice item's transcript in place. The first edit keeps the recognised text in
+    /// `transcriptOriginal` (the "Edited" mark + "Restore original"); editing back to it clears the mark.
+    func updateTranscript(itemID: String, nodeID: String, newText: String) async {
+        await mutateNode(id: nodeID) { n in
+            guard let i = n.items.firstIndex(where: { $0.id == itemID && $0.type == .audio }) else { return }
+            let current = n.items[i].transcript ?? ""
+            guard current != newText else { return }
+            if n.items[i].transcriptOriginal == nil { n.items[i].transcriptOriginal = current }
+            n.items[i].transcript = newText
+            if newText == n.items[i].transcriptOriginal { n.items[i].transcriptOriginal = nil }
+            let now = Date()
+            n.items[i].updatedAt = now
+            n.updatedAt = now
+        }
+    }
+
+    /// "Restore original" — back to the recognised transcript; the mark goes away.
+    func restoreTranscript(itemID: String, nodeID: String) async {
+        await mutateNode(id: nodeID) { n in
+            guard let i = n.items.firstIndex(where: { $0.id == itemID && $0.type == .audio }),
+                  let original = n.items[i].transcriptOriginal else { return }
+            n.items[i].transcript = original
+            n.items[i].transcriptOriginal = nil
+            let now = Date()
+            n.items[i].updatedAt = now
+            n.updatedAt = now
+        }
+    }
+
+    /// "Extract as text" — copy the transcript into a NEW text item in the same entry, placed right below the
+    /// Voice item, and highlight it briefly. The Voice item keeps its transcript (a copy, never a move).
+    @discardableResult
+    func extractTranscript(itemID: String, nodeID: String) async -> String? {
+        guard let node = nodes.first(where: { $0.id == nodeID }),
+              let voice = node.items.first(where: { $0.id == itemID && $0.type == .audio }),
+              let text = voice.transcript, !text.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty else { return nil }
+        let now = Date()
+        var newItem = NodeItem(id: UUID().uuidString, type: .text, createdAt: now, content: text,
+                               displayName: nil, isExpanded: true, updatedAt: now)
+        newItem.firstParaExplicitBody = true   // a transcript reads as body text, not as the note's title line
+        await mutateNode(id: nodeID) { n in
+            let at = min((n.items.firstIndex(where: { $0.id == itemID }) ?? (n.items.count - 1)) + 1, n.items.count)
+            n.items.insert(newItem, at: at)
+            // Same side of the card fold as its Voice item (an authored fold is honoured; nil stays nil).
+            if let f = n.foldIndex, at <= f { n.foldIndex = f + 1 }   // voice above the fold ⇔ at ≤ f
+            n.updatedAt = now
+        }
+        recentlyExtractedItemID = newItem.id
+        Task { @MainActor [weak self] in
+            try? await Task.sleep(for: .seconds(1.6))
+            if self?.recentlyExtractedItemID == newItem.id { self?.recentlyExtractedItemID = nil }
+        }
+        return newItem.id
+    }
+
+    /// "Append to…" — add the transcript to the end of an existing text item in the same entry.
+    func appendTranscript(itemID: String, toTextItemID textID: String, nodeID: String) async {
+        guard let node = nodes.first(where: { $0.id == nodeID }),
+              let text = node.items.first(where: { $0.id == itemID && $0.type == .audio })?.transcript,
+              !text.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty else { return }
+        await mutateNode(id: nodeID) { n in
+            guard let t = n.items.firstIndex(where: { $0.id == textID && $0.type == .text }) else { return }
+            let existing = n.items[t].content ?? ""
+            n.items[t].content = existing.isEmpty ? text : existing + "\n\n" + text
+            let now = Date()
+            n.items[t].updatedAt = now
+            n.updatedAt = now
+        }
+        recentlyExtractedItemID = textID
+        Task { @MainActor [weak self] in
+            try? await Task.sleep(for: .seconds(1.6))
+            if self?.recentlyExtractedItemID == textID { self?.recentlyExtractedItemID = nil }
+        }
     }
 
     // MARK: - Chat pinning (ws-chat-lane §1–3)

@@ -369,6 +369,13 @@ struct EntryCard: View {
         // dropped; the inter-container gap comes purely from the list spacing
         // (reference ~16pt gap). Non-container types keep the original rhythm.
         .padding(.vertical, wearsContainer ? 0 : (item.type == .text ? visualSettings.noteVerticalPadding : visualSettings.cardVerticalPadding))
+        // Arc B — the text item "Extract as text" / "Append to…" just wrote flashes once so the eye finds it.
+        .overlay {
+            RoundedRectangle(cornerRadius: 14)
+                .fill(Color(hexString: "1B59C2").opacity(store.recentlyExtractedItemID == item.id ? 0.14 : 0))
+                .allowsHitTesting(false)
+                .animation(.easeOut(duration: 0.9), value: store.recentlyExtractedItemID == item.id)
+        }
         .scaleEffect(presentation.isLifted ? EntryReorderController.liftedScale : 1.0)
         .shadow(
             color: .black.opacity(presentation.isLifted ? EntryReorderController.liftedShadowOpacity : 0),
@@ -501,6 +508,29 @@ struct EntryCard: View {
                 Task { await store.setCoverImage(relativePath: file, nodeID: nodeID) }
             }
         }
+        // Arc B — the transcript never feels trapped in a voice memo: copy it out as text, or into a note
+        // this entry already has. Sending it to a DIFFERENT entry rides the Add-to-Entry picker (1.1).
+        if item.type == .audio, !(item.transcript ?? "").trimmingCharacters(in: .whitespacesAndNewlines).isEmpty {
+            Divider()
+            Button("Extract as text", systemImage: "text.badge.plus") {
+                Task { await store.extractTranscript(itemID: item.id, nodeID: nodeID) }
+            }
+            let notes = entryTextItems
+            if !notes.isEmpty {
+                Menu("Append to…", systemImage: "text.append") {
+                    ForEach(notes, id: \.id) { note in
+                        Button(Self.noteMenuName(note)) {
+                            Task { await store.appendTranscript(itemID: item.id, toTextItemID: note.id, nodeID: nodeID) }
+                        }
+                    }
+                }
+            }
+            if item.transcriptOriginal != nil {
+                Button("Restore original", systemImage: "arrow.uturn.backward") {
+                    Task { await store.restoreTranscript(itemID: item.id, nodeID: nodeID) }
+                }
+            }
+        }
         Divider()
         Button("Rename", action: beginRename)
         Button("Duplicate", action: duplicate)
@@ -554,12 +584,30 @@ struct EntryCard: View {
         case .document:
             if let n = item.documentItems?.count, n >= 2 { metaLabel("\(n)") }
         case .audio:
-            if let seconds = item.durationSeconds, seconds > 0 {
-                metaLabel(Self.durationString(seconds))
+            HStack(spacing: 6) {
+                // Arc B — the transcript was edited in place (the original is kept: "…" → Restore original).
+                if item.transcriptOriginal != nil { metaLabel("Edited").accessibilityIdentifier("voiceEditedMark") }
+                if let seconds = item.durationSeconds, seconds > 0 {
+                    metaLabel(Self.durationString(seconds))
+                }
             }
         default:
             EmptyView()
         }
+    }
+
+    /// Arc B — the entry's text items, for "Append to…".
+    private var entryTextItems: [NodeItem] {
+        store.nodes.first(where: { $0.id == nodeID })?.items.filter { $0.type == .text } ?? []
+    }
+
+    /// A note's name in "Append to…": its name, else its first line (short), else "Note".
+    private static func noteMenuName(_ note: NodeItem) -> String {
+        if let n = note.displayName?.trimmingCharacters(in: .whitespacesAndNewlines), !n.isEmpty { return n }
+        let first = (note.content ?? "").split(separator: "\n").first.map(String.init)?
+            .trimmingCharacters(in: CharacterSet(charactersIn: "#* ").union(.whitespaces)) ?? ""
+        if first.isEmpty { return "Note" }
+        return first.count > 32 ? String(first.prefix(31)) + "…" : first
     }
 
     private func metaLabel(_ text: String) -> some View {

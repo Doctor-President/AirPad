@@ -301,6 +301,7 @@
 		D95E1D3F124A19FDFFE80BF3 /* BackgroundGridView.swift in Sources */ = {isa = PBXBuildFile; fileRef = 5ACF91AFE4B56A560100046E /* BackgroundGridView.swift */; };
 		D9A7E5403FE45B08C51D6DB5 /* AirPadShare.appex in Embed Foundation Extensions */ = {isa = PBXBuildFile; fileRef = 20ED1D435BF9E254D634DF37 /* AirPadShare.appex */; settings = {ATTRIBUTES = (RemoveHeadersOnCopy, ); }; };
 		D9A9504C9BF0EA24F2476910 /* AIService.swift in Sources */ = {isa = PBXBuildFile; fileRef = E617FBB5C1757939CF37710B /* AIService.swift */; };
+		DA8E3B99958921266293931B /* ArcBVoiceTranscriptRender.swift in Sources */ = {isa = PBXBuildFile; fileRef = 6968739D865F9DEBD9EA5A77 /* ArcBVoiceTranscriptRender.swift */; };
 		DB17DF29488227C4C40E0A59 /* SourceSerif4-BoldItalic.ttf in Resources */ = {isa = PBXBuildFile; fileRef = 2130A9999E650B2EDAEFA80B /* SourceSerif4-BoldItalic.ttf */; };
 		DB46CA8486E8F66643FCFEE6 /* CardSurface.swift in Sources */ = {isa = PBXBuildFile; fileRef = 4B68E039D40EC6C7742E3CC7 /* CardSurface.swift */; };
 		DCBC7827653EB1DD100A5A46 /* LeverTray.swift in Sources */ = {isa = PBXBuildFile; fileRef = 43F51F2790A2E3165CF44645 /* LeverTray.swift */; };
@@ -500,6 +501,7 @@
 		67DA47C9C206AAD26121CA99 /* QuikCaptureView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = QuikCaptureView.swift; sourceTree = "<group>"; };
 		688537782A3AA4A7F0B436F9 /* CollectionView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = CollectionView.swift; sourceTree = "<group>"; };
 		68BC1C6F6322A33290F95FDE /* DocumentViewModeToggle.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = DocumentViewModeToggle.swift; sourceTree = "<group>"; };
+		6968739D865F9DEBD9EA5A77 /* ArcBVoiceTranscriptRender.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ArcBVoiceTranscriptRender.swift; sourceTree = "<group>"; };
 		69902D1D994B371BD68A2D71 /* AirPadWidgets.appex */ = {isa = PBXFileReference; includeInIndex = 0; lastKnownFileType = "wrapper.app-extension"; path = AirPadWidgets.appex; sourceTree = BUILT_PRODUCTS_DIR; };
 		6CA2C672B173696A7DD874CF /* SubstrateCanvasLayoutAdapter.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = SubstrateCanvasLayoutAdapter.swift; sourceTree = "<group>"; };
 		6CC9DA2E35A6A167254A44EC /* GalleryItemTile.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = GalleryItemTile.swift; sourceTree = "<group>"; };
@@ -769,6 +771,7 @@
 			isa = PBXGroup;
 			children = (
 				6D5DA85B1BF96EDBE819DEC3 /* ArcAVoiceDone.swift */,
+				6968739D865F9DEBD9EA5A77 /* ArcBVoiceTranscriptRender.swift */,
 				B8D87927EAE11D669A11A825 /* CardSwipeRepro.swift */,
 				A9C57830B6D6683951BF3F6E /* CaretTapTest.swift */,
 				D9EBCB0852E91FE9CD47F61F /* CDGhostAcceptanceMatrix.swift */,
@@ -1529,6 +1532,7 @@
 			buildActionMask = 2147483647;
 			files = (
 				9C0E90AD9209954A7FDA17C0 /* ArcAVoiceDone.swift in Sources */,
+				DA8E3B99958921266293931B /* ArcBVoiceTranscriptRender.swift in Sources */,
 				2C84139C9AD63BE52CF57C6E /* CDGhostAcceptanceMatrix.swift in Sources */,
 				3F3D03BCB7B579A34CFA9B92 /* CDGhostWhileTyping.swift in Sources */,
 				D60E7D32C5D648F9E1DDC7F1 /* CEControlRouting.swift in Sources */,

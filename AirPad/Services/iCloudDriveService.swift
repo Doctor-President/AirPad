@@ -283,7 +283,7 @@ actor iCloudDriveService {
 
     /// A mono AAC file whose loudness rises and falls like speech (syllable-rate envelope over a tone), so the
     /// waveform renders real bars.
-    private static func writeSpeechShapedTone(to url: URL, seconds: Double) {
+    static func writeSpeechShapedTone(to url: URL, seconds: Double) {   // also the recorder render's synthetic take
         let rate = 22_050.0
         guard let format = AVAudioFormat(standardFormatWithSampleRate: rate, channels: 1),
               let file = try? AVAudioFile(forWriting: url, settings: [AVFormatIDKey: kAudioFormatMPEG4AAC,

@@ -23,12 +23,18 @@ struct VoiceCaptureSheet: View {
     @Environment(CorpusStore.self) private var store
     @Environment(\.dismiss) private var dismiss
     @Environment(\.scenePhase) private var scenePhase
+    /// Recorder redesign (T, 2026-10-13) — the timer is set in the app's one content family (Lato by default).
+    @Environment(\.appBodyFont) private var appBodyFont
 
     // Recording state
     @State private var phase: RecordPhase = .requestingPermission
     @State private var levels: [Float] = Array(repeating: 0, count: 40)
     @State private var transcript: String = ""
     @State private var elapsedSeconds: Int = 0
+    /// Recorder redesign — the words as they're recognised while recording: `liveSettled` won't change again,
+    /// `liveVolatile` is the recogniser's current guess for the words still being spoken.
+    @State private var liveSettled = ""
+    @State private var liveVolatile = ""
 
     // Internals (class types, so we box them)
     @State private var box = RecorderBox()
@@ -92,15 +98,24 @@ struct VoiceCaptureSheet: View {
         VStack(spacing: 40) {
             Spacer()
 
-            // Elapsed time
+            // Elapsed time — the app's family, tabular digits so the numbers never jitter as they tick.
             Text(timeString(elapsedSeconds))
-                .font(.system(size: 48, weight: .thin, design: .monospaced))
+                .font(appBodyFont.font(size: 56, weight: .light))
+                .monospacedDigit()
                 .foregroundStyle(AppearancePalette.ink.opacity(0.85))
+                .accessibilityIdentifier("recorderTimer")
 
-            // Waveform
-            WaveformView(levels: levels)
-                .frame(height: 80)
-                .padding(.horizontal, 32)
+            VStack(spacing: 18) {
+                // Waveform
+                WaveformView(levels: levels)
+                    .frame(height: 80)
+                    .padding(.horizontal, 32)
+
+                // The words as they're spoken, right under the waveform; older lines rise and fade.
+                LiveTranscriptView(settled: liveSettled, volatile: liveVolatile,
+                                   font: appBodyFont.font(size: 20, relativeTo: .body))
+                    .padding(.horizontal, 32)
+            }
 
             Spacer()
 
@@ -169,6 +184,9 @@ struct VoiceCaptureSheet: View {
         guard micGranted else { phase = .permissionDenied; return }
 
         #if DEBUG
+        // Recorder render — `-StubLiveTranscript <text>`: synthetic words stream in as if spoken, the waveform is
+        // driven by a synthetic envelope, and the microphone is never opened (the take is a generated tone).
+        if Self.stubLiveTranscript != nil { startStubLiveRecording(); return }
         // Arc A — `-StubVoiceTranscript <text>`: the Simulator has no speech model, so the transcript is
         // canned (recording, the save, and everything after it are the real path). Skips the speech prompt.
         if Self.stubTranscript != nil { startRecording(); return }
@@ -234,6 +252,9 @@ struct VoiceCaptureSheet: View {
     }
 
     private func stopRecording() {
+        #if DEBUG
+        if Self.stubLiveTranscript != nil { stopStubLiveRecording(); return }
+        #endif
         // Capture duration before teardown nils the recorder.
         let duration = box.recorder?.currentTime ?? 0
         teardownAudio()
@@ -265,6 +286,50 @@ struct VoiceCaptureSheet: View {
     // MARK: - Transcription
 
     #if DEBUG
+    static var stubLiveTranscript: String? {
+        UserDefaults.standard.string(forKey: "StubLiveTranscript").flatMap { $0.isEmpty ? nil : $0 }
+    }
+
+    /// Recorder render: ~3 words a second arrive as the recogniser's guess, and settle a phrase at a time.
+    private func startStubLiveRecording() {
+        phase = .recording
+        let words = (Self.stubLiveTranscript ?? "").split(separator: " ").map(String.init)
+        let start = Date()
+        var next = 0
+        box.meterTimer = Timer.scheduledTimer(withTimeInterval: 0.05, repeats: true) { _ in
+            let t = Date().timeIntervalSince(start)
+            let syllable = max(0, sin(2 * .pi * 3.1 * t)) * (0.55 + 0.45 * sin(2 * .pi * 0.37 * t + 1.3))
+            let speaking = next < words.count && t.truncatingRemainder(dividingBy: 3.2) < 2.7
+            let level = Float(speaking ? 0.12 + 0.8 * syllable : 0.04)
+            let due = min(words.count, Int(t * 3.0))
+            DispatchQueue.main.async {
+                levels.append(level)
+                if levels.count > 40 { levels.removeFirst() }
+                elapsedSeconds = Int(t)
+                while next < due {
+                    liveVolatile += (liveVolatile.isEmpty ? "" : " ") + words[next]
+                    next += 1
+                    // A phrase settles once it's 5 words long, or at a sentence end.
+                    if liveVolatile.split(separator: " ").count >= 5 || words[next - 1].hasSuffix(".") {
+                        liveSettled += (liveSettled.isEmpty ? "" : " ") + liveVolatile
+                        liveVolatile = ""
+                    }
+                }
+            }
+        }
+    }
+
+    /// Done: the live words ARE the transcript — saved at once, no "Transcribing…" replay.
+    private func stopStubLiveRecording() {
+        let seconds = Double(max(1, elapsedSeconds))
+        box.meterTimer?.invalidate(); box.meterTimer = nil
+        let text = [liveSettled, liveVolatile].filter { !$0.isEmpty }.joined(separator: " ")
+        let url = FileManager.default.temporaryDirectory.appendingPathComponent(UUID().uuidString + ".m4a")
+        iCloudDriveService.writeSpeechShapedTone(to: url, seconds: seconds)
+        transcript = text
+        saveNode(transcript: text, audioURL: url, duration: seconds)
+    }
+
     static var stubTranscript: String? {
         UserDefaults.standard.string(forKey: "StubVoiceTranscript").flatMap { $0.isEmpty ? nil : $0 }
     }
@@ -383,6 +448,34 @@ struct VoiceCaptureSheet: View {
 
     private func timeString(_ seconds: Int) -> String {
         String(format: "%d:%02d", seconds / 60, seconds % 60)
+    }
+}
+
+// MARK: - Live transcript
+
+/// Recorder redesign (T, 2026-10-13) — the words as they're spoken, in a fixed-height block under the waveform.
+/// The newest line sits at the bottom; older lines are pushed up and fade out toward the top edge. Settled words
+/// read in ink, the recogniser's still-changing guess a little lighter.
+private struct LiveTranscriptView: View {
+    let settled: String
+    let volatile: String
+    let font: Font
+    static let height: CGFloat = 150
+
+    var body: some View {
+        let joiner = (settled.isEmpty || volatile.isEmpty) ? "" : " "
+        (Text(settled).foregroundStyle(AppearancePalette.ink.opacity(0.9))
+         + Text(joiner + volatile).foregroundStyle(AppearancePalette.ink.opacity(0.5)))
+            .font(font)
+            .lineSpacing(5)
+            .frame(maxWidth: .infinity, alignment: .leading)
+            .fixedSize(horizontal: false, vertical: true)
+            .frame(height: Self.height, alignment: .bottom)
+            .clipped()
+            .mask(LinearGradient(stops: [.init(color: .clear, location: 0), .init(color: .black, location: 0.55)],
+                                 startPoint: .top, endPoint: .bottom))
+            .animation(.easeOut(duration: 0.22), value: settled.count + volatile.count)
+            .accessibilityIdentifier("liveTranscript")
     }
 }
 

@@ -162,6 +162,12 @@ struct VoiceCaptureSheet: View {
         }
         guard micGranted else { phase = .permissionDenied; return }
 
+        #if DEBUG
+        // Arc A — `-StubVoiceTranscript <text>`: the Simulator has no speech model, so the transcript is
+        // canned (recording, the save, and everything after it are the real path). Skips the speech prompt.
+        if Self.stubTranscript != nil { startRecording(); return }
+        #endif
+
         // Speech recognition
         let speechStatus = await withCheckedContinuation { cont in
             SFSpeechRecognizer.requestAuthorization { status in
@@ -252,8 +258,23 @@ struct VoiceCaptureSheet: View {
 
     // MARK: - Transcription
 
+    #if DEBUG
+    static var stubTranscript: String? {
+        UserDefaults.standard.string(forKey: "StubVoiceTranscript").flatMap { $0.isEmpty ? nil : $0 }
+    }
+    #endif
+
     private func transcribe(url: URL, duration: TimeInterval) {
         phase = .transcribing
+        #if DEBUG
+        if let stub = Self.stubTranscript {
+            DispatchQueue.main.asyncAfter(deadline: .now() + 0.8) {
+                transcript = stub
+                saveNode(transcript: stub, audioURL: url, duration: duration)
+            }
+            return
+        }
+        #endif
 
         guard let recognizer = SFSpeechRecognizer(locale: Locale.current),
               recognizer.isAvailable else {
@@ -264,6 +285,7 @@ struct VoiceCaptureSheet: View {
 
         let request = SFSpeechURLRecognitionRequest(url: url)
         request.shouldReportPartialResults = true
+        request.contextualStrings = SpeechVocabulary.contextualStrings
 
         box.recognitionTask = recognizer.recognitionTask(with: request) { result, error in
             DispatchQueue.main.async {

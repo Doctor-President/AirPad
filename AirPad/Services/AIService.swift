@@ -208,7 +208,10 @@ actor AIService {
         if ProcessInfo.processInfo.arguments.contains("-StubAuthorModel") {
             let content = extractContent(from: node, authoredOnly: authoredOnly)
             guard !content.isEmpty else { return .failure(.noContent) }
-            try? await Task.sleep(nanoseconds: 150_000_000)
+            // Arc A — `-StubAuthorLatencyMs <n>`: the device model takes seconds, not 150 ms; a realistic
+            // latency is what opens the windows a Done can race.
+            let latencyMs = UserDefaults.standard.integer(forKey: "StubAuthorLatencyMs")
+            try? await Task.sleep(nanoseconds: UInt64(latencyMs > 0 ? latencyMs : 150) * 1_000_000)
             // ★ Faithfully REPRODUCE the real FM's failure mode: the prompt tells the model to
             // base the TITLE on what the user WROTE, so for a derived-only node (a link / an
             // article with no user prose) it returns an empty title while still summarising the

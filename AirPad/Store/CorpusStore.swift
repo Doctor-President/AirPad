@@ -3534,8 +3534,12 @@ final class CorpusStore {
         // (the Halloween note), the ghost's hash no longer matches → it's skipped and the gate below
         // re-authors from the whole entry.
         if posture == .automatic { await promoteMatchingProposals(nodeID: nodeID) }
-        guard let node = nodes.first(where: { $0.id == nodeID }) else { return }
+        guard let node = nodes.first(where: { $0.id == nodeID }) else {
+            bug17Log.notice("DONE node=\(nodeID, privacy: .public) moment=\(String(describing: moment), privacy: .public) NODE-GONE after promote")
+            return
+        }
         let needs = enrichmentNeeds(for: node, at: moment)
+        bug17Log.notice("DONE node=\(nodeID, privacy: .public) moment=\(String(describing: moment), privacy: .public) posture=\(posture.rawValue, privacy: .public) titleLen=\(node.title.count) tsrc=\(String(describing: node.titleSource), privacy: .public) summaryLen=\(node.summary.count) proposals=\(node.proposals?.count ?? 0) needsAuth=\(needs.authorship) needsSub=\(needs.substrate)")
         guard needs.any else {
             print("[Enrich] commit skip node=\(nodeID) — already current for this content")
             await markAIWorkSettled(nodeID: nodeID)
@@ -3567,9 +3571,13 @@ final class CorpusStore {
             // Never overwrite an authored aspect; promote ONLY a fresh proposal whose content hash
             // still matches (a stale/missing one is left for the gate to regenerate under .automatic).
             guard source == nil,
-                  let p = node.proposals?.first(where: { $0.kind == kind && $0.state == .fresh }),
-                  p.sourceContentHash == hash else { continue }
+                  let p = node.proposals?.first(where: { $0.kind == kind && $0.state == .fresh }) else { continue }
+            guard p.sourceContentHash == hash else {
+                bug17Log.notice("PROMO-SKIP node=\(nodeID, privacy: .public) kind=\(String(describing: kind), privacy: .public) hashNE")
+                continue
+            }
             print("[Enrich] PROMOTE node=\(nodeID) kind=\(kind) (no model call)")
+            bug17Log.notice("PROMOTE node=\(nodeID, privacy: .public) kind=\(String(describing: kind), privacy: .public)")
             await acceptProposal(nodeID: nodeID, kind: kind)
         }
     }
@@ -3588,6 +3596,7 @@ final class CorpusStore {
             let source: TagSource? = (kind == .title) ? node.titleSource : node.summarySource
             guard source == nil, node.surfacedProposal(kind: kind) != nil else { continue }
             print("[Enrich] GHOST-COMMIT node=\(nodeID) kind=\(kind) (rule 2 — showing ghost)")
+            bug17Log.notice("GHOST-COMMIT node=\(nodeID, privacy: .public) kind=\(String(describing: kind), privacy: .public)")
             await acceptProposal(nodeID: nodeID, kind: kind)
         }
     }
@@ -9335,6 +9344,7 @@ final class CorpusStore {
         guard let recognizer = SFSpeechRecognizer(locale: Locale.current), recognizer.isAvailable else { return "" }
         let request = SFSpeechURLRecognitionRequest(url: url)
         request.shouldReportPartialResults = false
+        request.contextualStrings = SpeechVocabulary.contextualStrings
         return await withCheckedContinuation { (cont: CheckedContinuation<String, Never>) in
             var resumed = false
             var task: SFSpeechRecognitionTask?

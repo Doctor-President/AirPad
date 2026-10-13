@@ -111,6 +111,8 @@ struct NodeDetailView: View {
     @State private var titleShimmer = 0
     @State private var summaryShimmer = 0
     private let ghostOpacity: Double = 0.45
+    /// Arc A — capture ghosts follow the delegate setting (see QuikCaptureView).
+    @AppStorage(AuthorshipPosture.delegateSettingKey) private var autoNameCaptures = true
 
     // "Add entry" floating "+" state. Stage 3.1a commit (c) replaced the
     // inline bottom composer triad with a single floating Menu button that
@@ -541,15 +543,17 @@ struct NodeDetailView: View {
                 // Brief CD — ghosts show on a FRESH capture only (rule 5b): this surface is a fresh
                 // capture exactly when `isCaptureMode`, so gate on it. A re-OPENED entry
                 // (isCaptureMode == false) never computes a ghost config → never shows a ghost.
-                let tGhostText = (isCaptureMode && editedTitle.isEmpty) ? node.surfacedProposal(kind: .title)?.text : nil
-                let sGhostText = (isCaptureMode && editedSummary.isEmpty) ? node.surfacedProposal(kind: .summary)?.text : nil
+                // Arc A — and only while Done names the entry (the delegate setting), as in Quick Capture.
+                let ghosts = isCaptureMode && autoNameCaptures
+                let tGhostText = (ghosts && editedTitle.isEmpty) ? node.surfacedProposal(kind: .title)?.text : nil
+                let sGhostText = (ghosts && editedSummary.isEmpty) ? node.surfacedProposal(kind: .summary)?.text : nil
                 CaptureHeader(
                     nodeID: nodeID,
                     showSummary: !editedSummary.isEmpty || node.summary.isEmpty,
                     showAttributes: isCaptureMode || atomicCount > 0,
                     // rule 6 — in capture mode the inline ghost plays the lever shimmer, so suppress the
                     // feather's. In NORMAL viewing (no ghost) the feather shimmer is the only signal — keep it.
-                    suppressLeverShimmer: isCaptureMode,
+                    suppressLeverShimmer: ghosts,
                     titleGhost: tGhostText.map {
                         GhostFieldConfig(text: $0, font: entryTitleFont, hidden: focusedField == .title,
                                          shimmerTrigger: titleShimmer, opacity: ghostOpacity)
@@ -1349,6 +1353,7 @@ struct NodeDetailView: View {
         } label: {
             CaptureButtonLabel() // shared visual — unified with the map/list/card capture button
         }
+        .accessibilityIdentifier("entryAddButton")   // Arc A — the "+"-capture voice XCUITest opens this menu
         .firstRunCalloutTarget(FirstRunCalloutTargetID.entryAddButton)  // Brief AJ6 — the entry.intro ring
     }
 

@@ -11,6 +11,9 @@ struct CameraCaptureView: View {
     /// If set, the captured image is appended to this node instead of creating a new one.
     var targetNodeID: String? = nil
 
+    /// Arc A2 — true when the target is an open capture screen whose own Done commits (see `VoiceCaptureSheet`).
+    var captureOwnsDone = false
+
     /// Dashboard Stage 4 — if set (and `targetNodeID` is nil), the newly
     /// created node is stamped with this collection ID and the collection is
     /// marked as recently used. Ignored when appending to an existing node.
@@ -190,7 +193,7 @@ struct CameraCaptureView: View {
         )
 
         if let nodeID = targetNodeID {
-            await store.processNodeWithAI(nodeID: nodeID, posture: .captureDone)   // Brief BI — photo capture is a Done
+            await store.processNodeWithAI(nodeID: nodeID, posture: captureOwnsDone ? .propose : .captureDone)   // Brief BI / A2
         } else if let newest = store.nodes.first {
             await store.processNodeWithAI(nodeID: newest.id, posture: .captureDone)
         }
@@ -252,7 +255,7 @@ struct CameraCaptureView: View {
         )
 
         if let nodeID = targetNodeID {
-            await store.processNodeWithAI(nodeID: nodeID, posture: .captureDone)   // Brief BI — photo capture is a Done
+            await store.processNodeWithAI(nodeID: nodeID, posture: captureOwnsDone ? .propose : .captureDone)   // Brief BI / A2
         } else if let newest = store.nodes.first {
             await store.processNodeWithAI(nodeID: newest.id, posture: .captureDone)
         }

@@ -9,6 +9,12 @@ struct VoiceCaptureSheet: View {
     /// If set, the captured audio is appended to this node instead of creating a new one.
     var targetNodeID: String? = nil
 
+    /// Arc A2 (T, TF 202610122311) — true when the target is an open CAPTURE screen (Quick Capture, the "+"
+    /// capture), whose own Done is the commit. Then this sheet only PROPOSES: the title + summary show as ghosts
+    /// while capturing and the capture's Done writes them. False (a standalone voice capture, or an entry
+    /// reopened for editing): this sheet's Done is the Done, as before.
+    var captureOwnsDone = false
+
     /// Dashboard Stage 4 — if set (and `targetNodeID` is nil), the newly
     /// created node is stamped with this collection ID and the collection is
     /// marked as recently used. Ignored when appending to an existing node.
@@ -358,7 +364,7 @@ struct VoiceCaptureSheet: View {
                 if !transcript.isEmpty {
                     await store.appendItemToNode(nodeID: targetID, item: .text(content: transcript))
                 }
-                await store.processNodeWithAI(nodeID: targetID, posture: .captureDone)   // Brief BI — voice capture is a Done
+                await store.processNodeWithAI(nodeID: targetID, posture: captureOwnsDone ? .propose : .captureDone)   // Brief BI / A2
             } else {
                 // Create new node
                 await store.addNodeWithAudio(node, audioURL: audioURL, audioItemID: audioItemID, position: position)

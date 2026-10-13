@@ -187,8 +187,8 @@ struct QuikCaptureView: View {
                     .onChange(of: editedSummary) { _, _ in if focusedField == .summary { summaryEdited = true } }
                     .sheet(item: $captureMode) { mode in
                         switch mode {
-                        case .voice:  VoiceCaptureSheet(targetNodeID: node.id)
-                        case .camera: CameraCaptureView(targetNodeID: node.id)
+                        case .voice:  VoiceCaptureSheet(targetNodeID: node.id, captureOwnsDone: true)
+                        case .camera: CameraCaptureView(targetNodeID: node.id, captureOwnsDone: true)
                         }
                     }
                     .sheet(isPresented: $showingNewTagSheet) {

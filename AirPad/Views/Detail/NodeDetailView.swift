@@ -387,8 +387,8 @@ struct NodeDetailView: View {
         }
         .sheet(item: $captureMode) { mode in
             switch mode {
-            case .voice:  VoiceCaptureSheet(targetNodeID: nodeID)
-            case .camera: CameraCaptureView(targetNodeID: nodeID)
+            case .voice:  VoiceCaptureSheet(targetNodeID: nodeID, captureOwnsDone: isCaptureMode)
+            case .camera: CameraCaptureView(targetNodeID: nodeID, captureOwnsDone: isCaptureMode)
             }
         }
         .sheet(item: $backlinkSource) { src in

@@ -65,6 +65,9 @@ final class ArcAVoiceDone: XCTestCase {
         let done = app.buttons["Done"].firstMatch
         XCTAssertTrue(done.waitForExistence(timeout: 8), "the capture's Done should exist")
         done.tap()
+        // A2 — a missed tap must fail loudly: under `-RealCapturePlus` alone the Librarian pill sat over Done, the tap
+        // opened the Librarian, and the live-8 "+" rows read the voice sheet's own write as Done's.
+        XCTAssertTrue(app.textViews["noteEditor"].waitForNonExistence(timeout: 8), "Done should close the capture screen")
     }
 
     // MARK: - disk (Simulator: the runner can read the app's scratch container)
@@ -140,8 +143,14 @@ final class ArcAVoiceDone: XCTestCase {
         openVoice(app)
         recordVoice(app)
         if delegateOn {
-            let ghost = ghostShowing(app).waitForExistence(timeout: 20)
-            print("[ArcA] \(label) ghost-before-Done=\(ghost) disk: \(describe(newestVoiceNode()))")
+            // A2 (T, TF 202610122311): with the setting ON the offer is a GHOST until Done — never written while capturing.
+            let ghost = ghostShowing(app).waitForExistence(timeout: 90)
+            Thread.sleep(forTimeInterval: 1.0)   // any eager write lands now
+            let before = newestVoiceNode()
+            print("[ArcA] \(label) ghost-before-Done=\(ghost) disk: \(describe(before))")
+            XCTAssertTrue(ghost, "\(label): with the setting ON the proposal shows as a ghost while capturing")
+            XCTAssertTrue(str(before, "title").isEmpty && str(before, "summary").isEmpty,
+                          "\(label): nothing is committed before Done — \(describe(before))")
         } else {
             // Wait until the model's offer is on disk: if a ghost were going to show, it shows now.
             let deadline = Date().addingTimeInterval(90)   // the Simulator's on-CPU substrate step can take tens of seconds
@@ -194,6 +203,9 @@ final class ArcAVoiceDone: XCTestCase {
     }
 
     private static let off = ["-library.autoNameCaptures", "<false/>"]
+    /// The "+" capture with its capture flag held (the Librarian ducked, as on the real "+" path). `-RealCapturePlus`
+    /// alone clears the flag (a Brief CD device repro), which raises the Librarian's pill over the capture's Done.
+    private static let plus = ["-RealCapturePlus", "-RealCapturePlusKeepFlag"]
 
     // MARK: - rows: setting OFF (T's phone)
 
@@ -231,7 +243,7 @@ final class ArcAVoiceDone: XCTestCase {
 
     /// The regular "+" capture.
     func testOff_plus() {
-        let app = launch(["-RealCapturePlus"] + Self.off)
+        let app = launch(Self.plus + Self.off)
         captureVoice(app, label: "off-plus", delegateOn: false, openVoice: plusCaptureVoice)
     }
 
@@ -253,7 +265,7 @@ final class ArcAVoiceDone: XCTestCase {
     }
 
     func testOn_plus() {
-        let app = launch(["-RealCapturePlus"])
+        let app = launch(Self.plus)
         captureVoice(app, label: "on-plus", delegateOn: true, openVoice: plusCaptureVoice)
     }
 

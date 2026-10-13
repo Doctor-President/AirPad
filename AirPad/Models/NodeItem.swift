@@ -28,6 +28,10 @@ struct NodeItem: Codable, Identifiable, Equatable {
     /// Arc B — on a text item made by "Extract as text": the Voice item it was copied from. While the two read
     /// the same (whitespace-trimmed) the copy is not counted again (`Node.countedItems`). Additive optional.
     var extractedFromItemID: String?
+    /// live-10 (4) — on an audio item: on-device recognition couldn't transcribe it (the language/device has no
+    /// on-device model, or the engine failed), so the transcript area says so instead of "Add a transcript". Speech
+    /// never falls back to Apple's server. Additive optional — legacy JSON decodes as nil.
+    var transcriptUnavailable: Bool?
 
     // link
     var url: String?
@@ -219,6 +223,7 @@ struct NodeItem: Codable, Identifiable, Equatable {
         case durationSeconds = "duration_seconds"
         case transcriptOriginal = "transcript_original"
         case extractedFromItemID = "extracted_from_item_id"
+        case transcriptUnavailable = "transcript_unavailable"
         case specializedType = "specialized_type"
         case displayName = "display_name"
         case isExpanded = "is_expanded"

@@ -1169,6 +1169,9 @@ final class CorpusStore {
                 if ProcessInfo.processInfo.arguments.contains("-AppTermLeakSelfTest") {
                     NSLog("%@", AppTermLeak.selfTest())
                 }
+                if ProcessInfo.processInfo.arguments.contains("-OnDeviceSpeechSelfTest") {
+                    NSLog("%@", OnDeviceSpeech.selfTest())
+                }
                 // Brief CF — rule 2: a SHOWING ghost must commit at Done for BOTH fields, even when
                 // the re-author blanks the title (duplicate content). Needs `-StubAuthorModel
                 // -StubBlankTitleAlways`. Two identical entries must each keep their title.
@@ -9509,7 +9512,16 @@ final class CorpusStore {
         for item in node.items where item.type == .audio {
             guard (item.transcript ?? "").isEmpty, let rel = item.file else { continue }
             guard let url = await service.resolveItemPath(nodeID: nodeID, relativePath: rel) else { continue }
-            let transcript = await Self.transcribeAudioFile(at: url)
+            let result = await Self.transcribeAudioFile(at: url)
+            if result.unavailable {
+                // live-10 (4) — on-device only: keep the audio; its transcript area says why there are no words.
+                await mutateNode(id: nodeID) { n in
+                    if let idx = n.items.firstIndex(where: { $0.id == item.id }) { n.items[idx].transcriptUnavailable = true }
+                }
+                print("[Import] audio item=\(item.id.suffix(4)) node=\(nodeID.suffix(4)) not transcribed — on-device recognition unavailable")
+                continue
+            }
+            let transcript = result.text
             guard !transcript.isEmpty else { continue }
             await mutateNode(id: nodeID) { n in
                 if let idx = n.items.firstIndex(where: { $0.id == item.id }) {
@@ -9523,31 +9535,32 @@ final class CorpusStore {
     }
 
     /// File-based speech-to-text, mirroring `VoiceCaptureSheet.transcribe`. Returns "" when
-    /// recognition is unavailable/denied (the entry then keeps a dated/"Voice note" fallback). The
+    /// recognition is denied or hears nothing (the entry then keeps a dated/"Voice note" fallback), and
+    /// `unavailable` when on-device recognition can't transcribe it (live-10 (4): never the server). The
     /// `-StubTranscription` launch arg returns a canned transcript so the Simulator logic-matrix can
     /// prove the WIRING without a real speech model (device proves transcription QUALITY).
-    nonisolated private static func transcribeAudioFile(at url: URL) async -> String {
+    nonisolated private static func transcribeAudioFile(at url: URL) async -> (text: String, unavailable: Bool) {
         if CommandLine.arguments.contains("-StubTranscription") {
-            return "stub transcript for share-import wiring"
+            return ("stub transcript for share-import wiring", false)
         }
         if SFSpeechRecognizer.authorizationStatus() != .authorized {
             let status = await withCheckedContinuation { (cont: CheckedContinuation<SFSpeechRecognizerAuthorizationStatus, Never>) in
                 SFSpeechRecognizer.requestAuthorization { cont.resume(returning: $0) }
             }
-            guard status == .authorized else { return "" }
+            guard status == .authorized else { return ("", false) }
         }
-        guard let recognizer = SFSpeechRecognizer(locale: Locale.current), recognizer.isAvailable else { return "" }
-        let request = SFSpeechURLRecognitionRequest(url: url)
-        request.shouldReportPartialResults = false
-        request.contextualStrings = SpeechVocabulary.contextualStrings
-        return await withCheckedContinuation { (cont: CheckedContinuation<String, Never>) in
+        guard let recognizer = OnDeviceSpeech.recognizer() else { return ("", true) }
+        let request = OnDeviceSpeech.fileRequest(url: url, partialResults: false)
+        return await withCheckedContinuation { (cont: CheckedContinuation<(text: String, unavailable: Bool), Never>) in
             var resumed = false
             var task: SFSpeechRecognitionTask?
             task = recognizer.recognitionTask(with: request) { result, error in
                 if let result, result.isFinal {
-                    if !resumed { resumed = true; cont.resume(returning: result.bestTranscription.formattedString) }
-                } else if error != nil {
-                    if !resumed { resumed = true; cont.resume(returning: "") }
+                    if !resumed { resumed = true; cont.resume(returning: (result.bestTranscription.formattedString, false)) }
+                } else if let error {
+                    let ns = error as NSError
+                    print("[Speech] shared audio recognition error domain=\(ns.domain) code=\(ns.code)")
+                    if !resumed { resumed = true; cont.resume(returning: ("", OnDeviceSpeech.meansUnavailable(error))) }
                 }
                 _ = task   // hold the task alive until the continuation resumes
             }

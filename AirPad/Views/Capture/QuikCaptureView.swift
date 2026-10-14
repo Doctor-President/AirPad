@@ -26,6 +26,9 @@ struct QuikCaptureView: View {
     /// Ghost suggestions (Brief CD) honour Reduce Motion: the glint sweep is dropped; the ghost's
     /// resting dimness carries the signal (the component falls back to a plain appearance).
     @Environment(\.accessibilityReduceMotion) private var reduceMotion
+    /// Arc A (T, 2026-10-12) — a capture GHOST promises that Done will write it, so ghosts follow the
+    /// delegate setting: OFF → no ghost, no "AirPad names it" tip, and the lever's feather carries the offer.
+    @AppStorage(AuthorshipPosture.delegateSettingKey) private var autoNameCaptures = true
 
     /// The capture node's id, created on appear. Nil until
     /// `createCaptureNode()` returns.
@@ -142,7 +145,7 @@ struct QuikCaptureView: View {
                     // Brief CD4 (BP4) — the one-time ghost tip, ringing the title field. Shows a beat
                     // after the first capture opens with an empty title; any tap dismisses + marks shown.
                     .overlayPreferenceValue(FirstRunCalloutTargetsKey.self) { anchors in
-                        if titleTipArmed, !FirstRunCalloutKey.captureTitle.hasShown {
+                        if titleTipArmed, autoNameCaptures, !FirstRunCalloutKey.captureTitle.hasShown {
                             FirstRunCalloutOverlay(key: .captureTitle, targetAnchors: anchors) {
                                 FirstRunCalloutKey.captureTitle.markShown()
                                 titleTipArmed = false
@@ -151,7 +154,7 @@ struct QuikCaptureView: View {
                         }
                     }
                     .task {
-                        guard !FirstRunCalloutKey.captureTitle.hasShown else { return }
+                        guard autoNameCaptures, !FirstRunCalloutKey.captureTitle.hasShown else { return }
                         try? await Task.sleep(for: .milliseconds(600))
                         // Only if the user hasn't already started titling it (don't coach over typing).
                         if !Task.isCancelled, editedTitle.isEmpty { titleTipArmed = true }
@@ -184,8 +187,8 @@ struct QuikCaptureView: View {
                     .onChange(of: editedSummary) { _, _ in if focusedField == .summary { summaryEdited = true } }
                     .sheet(item: $captureMode) { mode in
                         switch mode {
-                        case .voice:  VoiceCaptureSheet(targetNodeID: node.id)
-                        case .camera: CameraCaptureView(targetNodeID: node.id)
+                        case .voice:  VoiceCaptureSheet(targetNodeID: node.id, captureOwnsDone: true)
+                        case .camera: CameraCaptureView(targetNodeID: node.id, captureOwnsDone: true)
                         }
                     }
                     .sheet(isPresented: $showingNewTagSheet) {
@@ -340,15 +343,18 @@ struct QuikCaptureView: View {
                 // Brief CD — QuikCapture is ALWAYS a fresh capture, so it offers ghost configs
                 // unconditionally (gated only on the field being empty + a surfaced proposal). The
                 // SHARED header renders them, so the detail-view capture path gets the same ghosts.
-                let tGhostText = editedTitle.isEmpty ? node.surfacedProposal(kind: .title)?.text : nil
-                let sGhostText = editedSummary.isEmpty ? node.surfacedProposal(kind: .summary)?.text : nil
+                // Arc A — only while Done names the entry (the delegate setting); a ghost Done won't commit is a
+                // broken promise (T's device: ghost shown, Done left both fields blank).
+                let tGhostText = (autoNameCaptures && editedTitle.isEmpty) ? node.surfacedProposal(kind: .title)?.text : nil
+                let sGhostText = (autoNameCaptures && editedSummary.isEmpty) ? node.surfacedProposal(kind: .summary)?.text : nil
                 CaptureHeader(
                     nodeID: node.id,
                     showSummary: !editedSummary.isEmpty || node.summary.isEmpty,
                     showAttributes: true,
                     // rule 6 — the inline ghost plays the lever shimmer for title/summary here, so the
-                    // feather must NOT also shimmer for the same offer (no double signal).
-                    suppressLeverShimmer: true,
+                    // feather must NOT also shimmer for the same offer (no double signal). No ghost (setting
+                    // off) → the feather's shimmer is the offer's only signal, so keep it.
+                    suppressLeverShimmer: autoNameCaptures,
                     titleGhost: tGhostText.map {
                         GhostFieldConfig(text: $0, font: appFont.titleFont(size: visualSettings.nodeTitle.size),
                                          hidden: focusedField == .title, shimmerTrigger: titleShimmer, opacity: ghostOpacity)

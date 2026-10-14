@@ -3,6 +3,14 @@ import AVFoundation
 import Speech
 import Observation
 
+/// Arc A (T approved, 2026-10-12) — the app's own words, passed as `contextualStrings` on every speech
+/// request (voice capture, imported audio, live dictation) so the recognizer favours them: "AirPad" was
+/// transcribing as "ear pad(s)". App vocabulary only — never anything from a person's library.
+enum SpeechVocabulary {
+    static let contextualStrings = ["AirPad", "AirPad Host", "Librarian", "Quick Capture", "Recents",
+                                    "Sample Library", "Curious Objects"]
+}
+
 /// Shared live-dictation engine. Buffer-based SFSpeechRecognizer +
 /// AVAudioEngine tap streaming partial results into a caller-supplied
 /// closure. ONE engine, owned as a singleton — the Librarian Search
@@ -72,6 +80,7 @@ final class LiveDictationService {
 
         let req = SFSpeechAudioBufferRecognitionRequest()
         req.shouldReportPartialResults = true
+        req.contextualStrings = SpeechVocabulary.contextualStrings
         // On-device when the locale model is available: near-instant
         // partials + audio never leaves the device (privacy spine).
         // Falls back to default (server-capable) path when unsupported.

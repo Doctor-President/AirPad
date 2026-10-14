@@ -195,6 +195,12 @@ actor iCloudDriveService {
         }
     }
 
+    /// A `static let` initialiser runs exactly once, and a concurrent second caller waits for it to finish.
+    private static let uiTestScratchFreshWipe: Void = {
+        guard let caches = FileManager.default.urls(for: .cachesDirectory, in: .userDomainMask).first else { return }
+        try? FileManager.default.removeItem(at: caches.appendingPathComponent("AirPadUITestScratch"))
+    }()
+
     /// UI-first rule — an ISOLATED scratch container for device XCUITests (`-UITestLibrary`), so a
     /// real-UI test run never writes into T's Library. Writes land only here; the real/iCloud container
     /// is never resolved; no sample seed (gated in `CorpusStore.seedSampleLibraryIfNeeded`). It PERSISTS
@@ -205,10 +211,10 @@ actor iCloudDriveService {
         guard let caches = FileManager.default.urls(for: .cachesDirectory, in: .userDomainMask).first else { return false }
         let root = caches.appendingPathComponent("AirPadUITestScratch")
         do {
-            if ProcessInfo.processInfo.arguments.contains("-UITestLibraryFresh"),
-               FileManager.default.fileExists(atPath: root.path) {
-                try FileManager.default.removeItem(at: root)
-            }
+            // Arc A — wipe ONCE per process. CorpusStore and ChatStore each own a service and both run
+            // setup(); the second wipe deleted the scratch under the capture node's first save (a blank
+            // Quick Capture on a cold `-EntryQuikCapture` launch — harness-only, not the device path).
+            if ProcessInfo.processInfo.arguments.contains("-UITestLibraryFresh") { _ = Self.uiTestScratchFreshWipe }
             try FileManager.default.createDirectory(
                 at: root.appendingPathComponent("nodes"),
                 withIntermediateDirectories: true

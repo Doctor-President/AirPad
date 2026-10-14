@@ -9,6 +9,12 @@ struct VoiceCaptureSheet: View {
     /// If set, the captured audio is appended to this node instead of creating a new one.
     var targetNodeID: String? = nil
 
+    /// Arc A2 (T, TF 202610122311) — true when the target is an open CAPTURE screen (Quick Capture, the "+"
+    /// capture), whose own Done is the commit. Then this sheet only PROPOSES: the title + summary show as ghosts
+    /// while capturing and the capture's Done writes them. False (a standalone voice capture, or an entry
+    /// reopened for editing): this sheet's Done is the Done, as before.
+    var captureOwnsDone = false
+
     /// Dashboard Stage 4 — if set (and `targetNodeID` is nil), the newly
     /// created node is stamped with this collection ID and the collection is
     /// marked as recently used. Ignored when appending to an existing node.
@@ -162,6 +168,12 @@ struct VoiceCaptureSheet: View {
         }
         guard micGranted else { phase = .permissionDenied; return }
 
+        #if DEBUG
+        // Arc A — `-StubVoiceTranscript <text>`: the Simulator has no speech model, so the transcript is
+        // canned (recording, the save, and everything after it are the real path). Skips the speech prompt.
+        if Self.stubTranscript != nil { startRecording(); return }
+        #endif
+
         // Speech recognition
         let speechStatus = await withCheckedContinuation { cont in
             SFSpeechRecognizer.requestAuthorization { status in
@@ -252,8 +264,23 @@ struct VoiceCaptureSheet: View {
 
     // MARK: - Transcription
 
+    #if DEBUG
+    static var stubTranscript: String? {
+        UserDefaults.standard.string(forKey: "StubVoiceTranscript").flatMap { $0.isEmpty ? nil : $0 }
+    }
+    #endif
+
     private func transcribe(url: URL, duration: TimeInterval) {
         phase = .transcribing
+        #if DEBUG
+        if let stub = Self.stubTranscript {
+            DispatchQueue.main.asyncAfter(deadline: .now() + 0.8) {
+                transcript = stub
+                saveNode(transcript: stub, audioURL: url, duration: duration)
+            }
+            return
+        }
+        #endif
 
         guard let recognizer = SFSpeechRecognizer(locale: Locale.current),
               recognizer.isAvailable else {
@@ -264,6 +291,7 @@ struct VoiceCaptureSheet: View {
 
         let request = SFSpeechURLRecognitionRequest(url: url)
         request.shouldReportPartialResults = true
+        request.contextualStrings = SpeechVocabulary.contextualStrings
 
         box.recognitionTask = recognizer.recognitionTask(with: request) { result, error in
             DispatchQueue.main.async {
@@ -336,7 +364,7 @@ struct VoiceCaptureSheet: View {
                 if !transcript.isEmpty {
                     await store.appendItemToNode(nodeID: targetID, item: .text(content: transcript))
                 }
-                await store.processNodeWithAI(nodeID: targetID, posture: .captureDone)   // Brief BI — voice capture is a Done
+                await store.processNodeWithAI(nodeID: targetID, posture: captureOwnsDone ? .propose : .captureDone)   // Brief BI / A2
             } else {
                 // Create new node
                 await store.addNodeWithAudio(node, audioURL: audioURL, audioItemID: audioItemID, position: position)

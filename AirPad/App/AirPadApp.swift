@@ -27,6 +27,13 @@ struct AirPadApp: App {
             Task.detached(priority: .utility) { KeychainHelper.migrateAccessibility() }
         }
         #if DEBUG
+        // Arc A — `-StdoutToFile`: an XCUITest-launched app's print() goes nowhere; send it to
+        // Caches/stdout.log (unbuffered) so a UI test run keeps the app's own trace.
+        if CommandLine.arguments.contains("-StdoutToFile"),
+           let caches = FileManager.default.urls(for: .cachesDirectory, in: .userDomainMask).first {
+            freopen(caches.appendingPathComponent("stdout.log").path, "a", stdout)
+            setvbuf(stdout, nil, _IONBF, 0)
+        }
         // C2c tests — `-ClearHostPairing YES` starts unpaired (the Simulator Keychain outlives app installs);
         // `-DebugHostUnreachable YES` points the LAN pairing at a dead port (a Mac away from home).
         if UserDefaults.standard.bool(forKey: "ClearHostPairing") { KeychainHelper.delete(key: HostPairing.keychainKey) }

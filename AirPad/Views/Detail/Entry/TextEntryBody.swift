@@ -91,7 +91,11 @@ struct TextEntryBody: View {
         }
         // Capture-mode live signal + substrate mirror — hoisted off the editor so
         // it fires in spine mode whether the note is expanded or collapsed.
-        .onChange(of: editingText) { _, newValue in
+        .onChange(of: editingText) { oldValue, newValue in
+            let added = newValue.utf16.count - oldValue.utf16.count
+            #if DEBUG
+            PasteProbe.shared.notePaste(added: added)
+            #endif
             store.mirrorPendingItemEdit(itemID: item.id, text: newValue)
             // Brief CD fix — gate on the ROBUST composing signal, not `router.isCapturing` (which the
             // detail-exit handler clears during the "+"→push, so on device typing/pasting never committed
@@ -100,7 +104,9 @@ struct TextEntryBody: View {
             router.captureDraftHasText = !newValue.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty
             // Commit the live note text on a ~1 s pause (typing OR paste — both fire editingText via
             // textViewDidChange) so a ghost suggestion appears WHILE you compose, not only after Done.
-            store.scheduleCaptureLiveCommit(itemID: item.id, nodeID: nodeID, text: newValue)
+            // live-11 (2) — a paste is a piece landing: commit (and name) now, not after the pause.
+            store.scheduleCaptureLiveCommit(itemID: item.id, nodeID: nodeID, text: newValue,
+                                            pieceLanded: added > CorpusStore.pieceLandingChars)
         }
         .onAppear {
             // DISPLAY-TRIM leading blank lines so the first non-empty line (the

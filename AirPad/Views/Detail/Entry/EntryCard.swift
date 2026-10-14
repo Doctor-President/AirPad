@@ -1065,13 +1065,14 @@ struct EntryContainerStyle: ViewModifier {
             .background { fill.allowsHitTesting(false) }
             .clipShape(RoundedRectangle(cornerRadius: Self.radius, style: .continuous))
             // Top rim light — same as the note panel's (`rimOpacity 0.10`).
+            // live-11 (2) — a SOLID stroke faded by a gradient MASK, not a gradient-filled stroke: the same pixels
+            // (white 0.10 → 0, top to bottom), but SwiftUI painted the gradient stroke on the CPU into a backing store
+            // as tall as the panel — ~230 ms of the main thread on a 20k-character paste (Time Profiler:
+            // `PaintShapeLayer.draw` → `CGContextDrawLinearGradient`).
             .overlay(
                 RoundedRectangle(cornerRadius: Self.radius, style: .continuous)
-                    .strokeBorder(
-                        LinearGradient(colors: [Color.white.opacity(0.10), Color.white.opacity(0)],
-                                       startPoint: .top, endPoint: .bottom),
-                        lineWidth: 1
-                    )
+                    .strokeBorder(Color.white.opacity(0.10), lineWidth: 1)
+                    .mask(LinearGradient(colors: [.black, .clear], startPoint: .top, endPoint: .bottom))
                     .allowsHitTesting(false)
             )
             .shadow(color: shadow, radius: shadowRadius, x: 0, y: shadowY)

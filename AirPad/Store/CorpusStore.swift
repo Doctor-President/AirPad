@@ -1176,6 +1176,11 @@ final class CorpusStore {
                 if ProcessInfo.processInfo.arguments.contains("-OnDeviceSpeechSelfTest") {
                     NSLog("%@", OnDeviceSpeech.selfTest())
                 }
+                // live-11 (3) — HTML extraction's web view makes zero network loads (loopback-counted, synthetic
+                // fixtures). Detached so its ~20 s of fixtures never holds up the launch load.
+                if ProcessInfo.processInfo.arguments.contains("-DocExtractOfflineSelfTest") {
+                    Task.detached { NSLog("%@", await DocumentExtractionService.offlineSelfTest()) }
+                }
                 // Brief CF — rule 2: a SHOWING ghost must commit at Done for BOTH fields, even when
                 // the re-author blanks the title (duplicate content). Needs `-StubAuthorModel
                 // -StubBlankTitleAlways`. Two identical entries must each keep their title.

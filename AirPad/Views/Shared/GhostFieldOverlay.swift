@@ -56,11 +56,19 @@ struct GhostFieldOverlay: View {
         // `shimmerTrigger` only when the model proposes NEW text, so onChange fires exactly once per
         // new suggestion (rule 2) — never on a focus toggle, scroll, or field re-empty (no remount play).
         .onChange(of: shimmerTrigger) { _, _ in play() }
+        #if DEBUG
+        // live-11 (2) — `-PasteProbe` timing: when a ghost first reaches the screen (Foundation only, so the share
+        // extension compiles this file unchanged).
+        .onAppear { if !text.isEmpty { NotificationCenter.default.post(name: .ghostProbe, object: "ghost") } }
+        #endif
     }
 
     /// Start a single sweep. Reduce Motion shows the ghost with no glint (just the resting dimness).
     private func play() {
         guard !reduceMotion else { return }
+        #if DEBUG
+        NotificationCenter.default.post(name: .ghostProbe, object: "shimmer")
+        #endif
         playStart = Date()
         playing = true
         let ns = UInt64((shimmerDuration + 0.15) * 1_000_000_000)
@@ -96,3 +104,10 @@ struct GhostFieldOverlay: View {
             }
     }
 }
+
+#if DEBUG
+extension Notification.Name {
+    /// live-11 (2) — a ghost appeared ("ghost") or its shimmer played ("shimmer"); read by `-PasteProbe`.
+    static let ghostProbe = Notification.Name("AirPadGhostProbe")
+}
+#endif

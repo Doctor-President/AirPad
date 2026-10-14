@@ -6,6 +6,9 @@
 # CDGhostWhileTyping, ModelPillChecks/testGalleryLongNameKeepsThinking → open, resolve in the CH-B full inventory).
 # On a freshly ERASED Simulator (Xcode Cloud's start) the 5 CDGhostAcceptanceMatrix rows + C2c ForgetThisMac also fail
 # serially (the app doesn't reach Quick Capture / the first on-device answer in time) → not cloud-ready until fixed.
+# live-11 (2) — `LongPaste` (10 rows: paste 0.5k–20k chars into a Quick Capture note / an existing note; main-thread
+# stalls < 250 ms, ghost ≤ 1 s, naming ≤ 3,200 chars) is a PERF row: it runs SERIALLY on a quiet Simulator, not in this
+# parallel list (SCHEMA test tiers: latency/perf runs stay serial). Run: -only-testing:AirPadUITests/LongPaste.
 ArrangeGestureRepro/testBodyLongPressReorders
 ArrangeGestureRepro/testGrabberDragResizesAndBodyTapInert
 HoldDragRepro/testGripIsTheOnlyDragEntry

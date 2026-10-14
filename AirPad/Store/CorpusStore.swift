@@ -395,6 +395,10 @@ final class CorpusStore {
     /// Target 1–3 eager passes per typical capture (BP0 measured 7 for a long note).
     static let eagerTypingPause: TimeInterval = 2.0   // the "settle" window (was 500 ms — fired on every micro-pause)
     static let minEagerInterval: TimeInterval = 9.0   // floor between eager fires (BP2 "~8–10 s")
+    /// live-11 (2) — one editor change that adds more than this many characters is a PASTE: a piece landing, not typing.
+    /// It commits at once and the eager pass skips the typing-pause (the floor above still applies), so the ghost follows
+    /// the paste instead of waiting ~3 s for a pause that already happened.
+    static let pieceLandingChars = 200
     private var lastEagerFireAt: [String: Date] = [:]
 
     /// Brief BP3 — node IDs whose Done ran while the content wasn't ready yet (a link whose OG
@@ -3511,7 +3515,7 @@ final class CorpusStore {
     /// No-op if the node or item is missing, or the content is unchanged.
     /// Bumps the item's `updatedAt` alongside the node's — the per-entry
     /// timestamp field shipped in Stage 3.1a commit (a) and is now live.
-    func updateTextItem(itemID: String, newContent: String, nodeID: String) async {
+    func updateTextItem(itemID: String, newContent: String, nodeID: String, pieceLanded: Bool = false) async {
         // Race-safe: read fresh + apply inside mutateNode so a concurrent whole-
         // node writer (saveIfChanged, enrichment) can't clobber this body edit.
         var removedImageIDs: Set<String> = []
@@ -3543,7 +3547,7 @@ final class CorpusStore {
         // title/summary (the tile falls back to raw first-words). Scheduled
         // (debounced, fresh-read) rather than fired inline so it can't run against
         // a not-yet-committed body during the Map surface's capture churn.
-        scheduleEnrichment(nodeID: nodeID)
+        scheduleEnrichment(nodeID: nodeID, pieceLanded: pieceLanded)
     }
 
     // MARK: - Pending note-body edits (commit-before-fire)
@@ -3587,13 +3591,14 @@ final class CorpusStore {
     /// so a re-opened entry is unchanged (still commits on end-editing). Safe against the editor: the
     /// `onChange(item.content)` guard (TextEntryBody) only resyncs when the user hasn't diverged, so a
     /// mid-edit persist never resets the caret. CD3's enrichment floor still caps how often it fires.
-    func scheduleCaptureLiveCommit(itemID: String, nodeID: String, text: String) {
+    /// live-11 (2) — `pieceLanded` (a paste): commit now, not after the pause; the eager pass skips its settle too.
+    func scheduleCaptureLiveCommit(itemID: String, nodeID: String, text: String, pieceLanded: Bool = false) {
         captureLiveCommitTasks[itemID]?.cancel()
         captureLiveCommitTasks[itemID] = Task(priority: .userInitiated) { @MainActor [weak self] in
-            try? await Task.sleep(for: .seconds(1.0))
+            if !pieceLanded { try? await Task.sleep(for: .seconds(1.0)) }
             guard let self, !Task.isCancelled else { return }
             self.captureLiveCommitTasks[itemID] = nil
-            await self.updateTextItem(itemID: itemID, newContent: text, nodeID: nodeID)
+            await self.updateTextItem(itemID: itemID, newContent: text, nodeID: nodeID, pieceLanded: pieceLanded)
         }
     }
 
@@ -4243,13 +4248,14 @@ final class CorpusStore {
     /// races the commit or overwrites an authored/edited note. Per-node only; never
     /// corpus-wide analysis (stays decoupled from the Analyze/idle territory pass).
     /// Quiet: no tag sheet.
-    func scheduleEnrichment(nodeID: String) {
+    func scheduleEnrichment(nodeID: String, pieceLanded: Bool = false) {
         bug17Log.notice("SCHEDULED node=\(nodeID, privacy: .public)")
         enrichmentTasks[nodeID]?.cancel()
         enrichmentTasks[nodeID] = Task(priority: .userInitiated) { @MainActor [weak self] in
             // CD3 (BP2) — wait out the typing-PAUSE window, not a micro-pause. Re-arming on each edit
-            // cancels this, so a fire only follows a genuine settle (or a piece landing).
-            try? await Task.sleep(for: .seconds(Self.eagerTypingPause))
+            // cancels this, so a fire only follows a genuine settle (or a piece landing — live-11 (2): a paste
+            // needs no settle).
+            if !pieceLanded { try? await Task.sleep(for: .seconds(Self.eagerTypingPause)) }
             guard let self, !Task.isCancelled else { return }
             defer { self.enrichmentTasks[nodeID] = nil }
             guard let node = self.nodes.first(where: { $0.id == nodeID }) else { return }

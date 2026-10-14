@@ -356,7 +356,7 @@ final class LibrarianState {
     /// RELATED's snippet logic — so a hit inside a 900-word note shows the region
     /// around the term, not the summary.
     private static func bodyMatchSnippet(node: Node, q: String, query: String) -> String? {
-        for item in node.items {
+        for item in node.countedItems {
             let text: String
             switch item.type {
             case .text:              text = item.content ?? ""
@@ -2697,7 +2697,7 @@ final class LibrarianState {
         var n = 0
         // Session 3 audit fix — EVERY text the entry carries (a 2,000-word voice memo was "about 0 words").
         func w(_ t: String?) -> Int { (t ?? "").split(whereSeparator: { $0.isWhitespace }).count }
-        for item in node.items {
+        for item in node.countedItems {   // Arc B — a verbatim extracted copy counts once
             n += w(item.content) + w(item.transcript) + w(item.preview) + w(item.ogDescription)
             for d in item.documentItems ?? [] { n += w(d.extractedText) }
             for l in item.linkItems ?? [] { n += w(l.description) }

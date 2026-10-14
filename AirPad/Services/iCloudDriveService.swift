@@ -1,4 +1,7 @@
 import Foundation
+#if DEBUG
+import AVFoundation
+#endif
 
 /// Handles all read/write operations for AirPad's iCloud Drive storage.
 /// Falls back to the local Documents directory when iCloud is unavailable.
@@ -223,6 +226,7 @@ actor iCloudDriveService {
             isAvailable = true
             usingLocalFallback = false   // cosmetic only (no "saving locally" banner during tests)
             if ProcessInfo.processInfo.arguments.contains("-UITestSeedChats") { Self.seedUITestChats(root) }
+            if ProcessInfo.processInfo.arguments.contains("-UITestSeedVoiceEntry") { Self.seedUITestVoiceEntry(root) }
             return true
         } catch {
             return false
@@ -251,6 +255,49 @@ actor iCloudDriveService {
             try? FileManager.default.createDirectory(at: nodeDir, withIntermediateDirectories: true)
             try? JSONEncoder.airPad.encode(node).write(to: nodeDir.appendingPathComponent("node.json"), options: .atomic)
         }
+    }
+    #endif
+
+    #if DEBUG
+    /// Arc B renders — `-UITestSeedVoiceEntry`: one entry holding a Voice item (a generated, speech-shaped tone so
+    /// the waveform has peaks; a synthetic transcript) and a note, so the transcript flow can be rendered and
+    /// recorded headlessly. Written only when absent. Synthetic content only.
+    private static func seedUITestVoiceEntry(_ root: URL) {
+        let nodeID = "uitest-voice-entry", audioID = "uitest-voice-audio", noteID = "uitest-voice-note"
+        let nodeDir = root.appendingPathComponent("nodes/\(nodeID)")
+        guard !FileManager.default.fileExists(atPath: nodeDir.path) else { return }
+        try? FileManager.default.createDirectory(at: nodeDir.appendingPathComponent("items"), withIntermediateDirectories: true)
+        let seconds = 9.0
+        writeSpeechShapedTone(to: nodeDir.appendingPathComponent("items/\(audioID).m4a"), seconds: seconds)
+        let now = Date(timeIntervalSince1970: 1_760_300_000)
+        let transcript = "Pick up the prints from the lab on Thursday, and ask whether they can rescan the second roll at a higher resolution."
+        var voice = NodeItem.audio(itemID: audioID, file: "items/\(audioID).m4a", transcript: transcript, duration: seconds)
+        voice.displayName = "Voice"; voice.isExpanded = true; voice.updatedAt = now
+        let note = NodeItem(id: noteID, type: .text, createdAt: now, content: "Darkroom list\nFixer, stop bath, two boxes of paper.",
+                            displayName: nil, isExpanded: true, updatedAt: now)
+        let node = Node(id: nodeID, createdAt: now, updatedAt: now, title: "Film lab errands",
+                        summary: "Prints to collect and a rescan to ask about.", tags: [],
+                        items: [voice, note], entrySchemaVersion: 1)
+        try? JSONEncoder.airPad.encode(node).write(to: nodeDir.appendingPathComponent("node.json"), options: .atomic)
+    }
+
+    /// A mono AAC file whose loudness rises and falls like speech (syllable-rate envelope over a tone), so the
+    /// waveform renders real bars.
+    private static func writeSpeechShapedTone(to url: URL, seconds: Double) {
+        let rate = 22_050.0
+        guard let format = AVAudioFormat(standardFormatWithSampleRate: rate, channels: 1),
+              let file = try? AVAudioFile(forWriting: url, settings: [AVFormatIDKey: kAudioFormatMPEG4AAC,
+                                                                       AVSampleRateKey: rate, AVNumberOfChannelsKey: 1]),
+              let buf = AVAudioPCMBuffer(pcmFormat: format, frameCapacity: AVAudioFrameCount(rate * seconds)) else { return }
+        buf.frameLength = buf.frameCapacity
+        let out = buf.floatChannelData![0]
+        for i in 0..<Int(buf.frameLength) {
+            let t = Double(i) / rate
+            let syllable = max(0, sin(2 * .pi * 3.1 * t)) * (0.55 + 0.45 * sin(2 * .pi * 0.37 * t + 1.3))
+            let phrase = (t.truncatingRemainder(dividingBy: 3.2) < 2.7) ? 1.0 : 0.08
+            out[i] = Float(0.6 * syllable * phrase * sin(2 * .pi * 180 * t))
+        }
+        try? file.write(from: buf)
     }
     #endif
 

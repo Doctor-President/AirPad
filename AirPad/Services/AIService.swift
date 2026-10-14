@@ -882,7 +882,7 @@ actor AIService {
     static func classifyContent(from node: Node) -> (authored: [String], derived: [String]) {
         var authored: [String] = []
         var derived: [String] = []
-        for item in node.items {
+        for item in node.countedItems {   // Arc B — a verbatim extracted copy counts once
             switch item.type {
             case .text:
                 if let c = meaningfulText(item.content) { authored.append(c) }

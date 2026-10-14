@@ -768,13 +768,28 @@ extension Node {
     /// (T: "it is Valarie's own note containing a link"). The W1 danger (quoting a
     /// collected article as the user's own) doesn't apply when the collected body is
     /// ~0 and the node IS the user's words.
+    /// Arc B (T, 2026-10-13) — the items whose words COUNT: every item except a text item made by "Extract as
+    /// text" that still reads the same as its Voice item's transcript (a verbatim copy counts once — search
+    /// blocks, the Librarian's read, naming, the content hash). The Voice item keeps the words, so extracting
+    /// changes nothing those readers see; editing either side makes the copy count on its own. Earlier
+    /// duplicate transcript items (no `extractedFromItemID`) are left as they are.
+    var countedItems: [NodeItem] {
+        guard items.contains(where: { $0.extractedFromItemID != nil }) else { return items }
+        func norm(_ s: String?) -> String { (s ?? "").trimmingCharacters(in: .whitespacesAndNewlines) }
+        return items.filter { item in
+            guard item.type == .text, let src = item.extractedFromItemID,
+                  let voice = items.first(where: { $0.id == src && $0.type == .audio }) else { return true }
+            return norm(item.content) != norm(voice.transcript)
+        }
+    }
+
     func cardProvenance() -> (kind: BlockProvenance, domain: String?) {
         var typedLen = 0
         var collectedLen = 0
         var linkDomain: String? = nil
         var hasDocument = false
         var hasImage = false
-        for item in items {
+        for item in countedItems {
             switch item.type {
             case .text:
                 typedLen += (item.content ?? "").count

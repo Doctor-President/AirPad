@@ -72,7 +72,7 @@ enum BlockChunker {
     /// skip rather than empty blocks. Sub-`minRealChars` (junk) blocks are
     /// dropped by the quality gate.
     static func chunk(_ node: Node) -> [BlockChunkSpec] {
-        node.items.flatMap { chunk(item: $0) }.filter { hasQualitySignal($0.text) }
+        node.countedItems.flatMap { chunk(item: $0) }   // Arc B — a verbatim extracted copy counts once.filter { hasQualitySignal($0.text) }
     }
 
     static func chunk(item: NodeItem) -> [BlockChunkSpec] {

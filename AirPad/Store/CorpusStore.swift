@@ -318,6 +318,11 @@ final class CorpusStore {
     /// once consumed. Single-shot: only one entry can be pending at a time
     /// because the "+" menu can only fire one entry creation per tap.
     var pendingAutoFocusItemID: String? = nil
+    /// Arc B — the text item "Extract as text" just created: its card highlights briefly, then this clears.
+    var recentlyExtractedItemID: String? = nil
+    /// Arc B — a Voice transcript being typed (Voice item id → text), not yet committed. The "…" actions commit it
+    /// first (`commitTranscriptDraft`), so what they copy or restore is what the person sees on screen.
+    var transcriptDrafts: [String: String] = [:]
 
     /// Non-nil while a batch import is in progress. ContentView shows a progress banner.
     var importBatchProgress: (current: Int, total: Int)? = nil
@@ -1142,6 +1147,10 @@ final class CorpusStore {
                 // duplicate must not suppress the second entry's ghost). Needs `-StubAuthorModel`.
                 if ProcessInfo.processInfo.arguments.contains("-DupProposalSelfTest") {
                     NSLog("[DupProposalSelfTest] %@", await runDupProposalSelfTest())
+                }
+                // Arc B — an extracted transcript copy counts once; Append to… lands at the end.
+                if ProcessInfo.processInfo.arguments.contains("-ArcBDedupSelfTest") {
+                    NSLog("%@", await runArcBDedupSelfTest())
                 }
                 // Brief CF — rule 2: a SHOWING ghost must commit at Done for BOTH fields, even when
                 // the re-author blanks the title (duplicate content). Needs `-StubAuthorModel
@@ -3298,6 +3307,101 @@ final class CorpusStore {
         scheduleEnrichment(nodeID: nodeID)
     }
 
+    // MARK: - Voice transcript (Arc B, T 2026-10-12: one transcript, editable in place, extractable)
+
+    /// Edit a Voice item's transcript in place. The first edit keeps the recognised text in
+    /// `transcriptOriginal` (the "Edited" mark + "Restore original"); editing back to it clears the mark.
+    func updateTranscript(itemID: String, nodeID: String, newText: String) async {
+        var didChange = false
+        await mutateNode(id: nodeID) { n in
+            guard let i = n.items.firstIndex(where: { $0.id == itemID && $0.type == .audio }) else { return }
+            let current = n.items[i].transcript ?? ""
+            guard current != newText else { return }
+            didChange = true
+            if n.items[i].transcriptOriginal == nil { n.items[i].transcriptOriginal = current }
+            n.items[i].transcript = newText
+            if newText == n.items[i].transcriptOriginal { n.items[i].transcriptOriginal = nil }
+            let now = Date()
+            n.items[i].updatedAt = now
+            n.updatedAt = now
+        }
+        // The transcript is the Voice item's words, edited like a note's: the same quiet re-offer a note edit gets.
+        if didChange { scheduleEnrichment(nodeID: nodeID) }
+    }
+
+    /// Commit a transcript still being typed (the field keeps focus while a "…" menu opens). Removing the draft
+    /// tells the field its words were taken: it ends editing and shows the store's text from then on.
+    func commitTranscriptDraft(itemID: String, nodeID: String) async {
+        guard let text = transcriptDrafts.removeValue(forKey: itemID) else { return }
+        await updateTranscript(itemID: itemID, nodeID: nodeID, newText: text)
+    }
+
+    /// "Restore original" — back to the recognised transcript; the mark goes away.
+    func restoreTranscript(itemID: String, nodeID: String) async {
+        await commitTranscriptDraft(itemID: itemID, nodeID: nodeID)
+        var didChange = false
+        await mutateNode(id: nodeID) { n in
+            guard let i = n.items.firstIndex(where: { $0.id == itemID && $0.type == .audio }),
+                  let original = n.items[i].transcriptOriginal else { return }
+            n.items[i].transcript = original
+            n.items[i].transcriptOriginal = nil
+            let now = Date()
+            n.items[i].updatedAt = now
+            n.updatedAt = now
+            didChange = true
+        }
+        if didChange { scheduleEnrichment(nodeID: nodeID) }
+    }
+
+    /// "Extract as text" — copy the transcript into a NEW text item in the same entry, placed right below the
+    /// Voice item, and highlight it briefly. The Voice item keeps its transcript (a copy, never a move).
+    @discardableResult
+    func extractTranscript(itemID: String, nodeID: String) async -> String? {
+        await commitTranscriptDraft(itemID: itemID, nodeID: nodeID)
+        guard let node = nodes.first(where: { $0.id == nodeID }),
+              let voice = node.items.first(where: { $0.id == itemID && $0.type == .audio }),
+              let text = voice.transcript, !text.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty else { return nil }
+        let now = Date()
+        var newItem = NodeItem(id: UUID().uuidString, type: .text, createdAt: now, content: text,
+                               displayName: nil, isExpanded: true, updatedAt: now)
+        newItem.firstParaExplicitBody = true   // a transcript reads as body text, not as the note's title line
+        newItem.extractedFromItemID = itemID   // counts once while it reads the same (`Node.countedItems`)
+        await mutateNode(id: nodeID) { n in
+            let at = min((n.items.firstIndex(where: { $0.id == itemID }) ?? (n.items.count - 1)) + 1, n.items.count)
+            n.items.insert(newItem, at: at)
+            // Same side of the card fold as its Voice item (an authored fold is honoured; nil stays nil).
+            if let f = n.foldIndex, at <= f { n.foldIndex = f + 1 }   // voice above the fold ⇔ at ≤ f
+            n.updatedAt = now
+        }
+        recentlyExtractedItemID = newItem.id
+        Task { @MainActor [weak self] in
+            try? await Task.sleep(for: .seconds(1.6))
+            if self?.recentlyExtractedItemID == newItem.id { self?.recentlyExtractedItemID = nil }
+        }
+        return newItem.id
+    }
+
+    /// "Append to…" — add the transcript to the end of an existing text item in the same entry.
+    func appendTranscript(itemID: String, toTextItemID textID: String, nodeID: String) async {
+        await commitTranscriptDraft(itemID: itemID, nodeID: nodeID)
+        guard let node = nodes.first(where: { $0.id == nodeID }),
+              let text = node.items.first(where: { $0.id == itemID && $0.type == .audio })?.transcript,
+              !text.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty else { return }
+        await mutateNode(id: nodeID) { n in
+            guard let t = n.items.firstIndex(where: { $0.id == textID && $0.type == .text }) else { return }
+            let existing = n.items[t].content ?? ""
+            n.items[t].content = existing.isEmpty ? text : existing + "\n\n" + text
+            let now = Date()
+            n.items[t].updatedAt = now
+            n.updatedAt = now
+        }
+        recentlyExtractedItemID = textID
+        Task { @MainActor [weak self] in
+            try? await Task.sleep(for: .seconds(1.6))
+            if self?.recentlyExtractedItemID == textID { self?.recentlyExtractedItemID = nil }
+        }
+    }
+
     // MARK: - Chat pinning (ws-chat-lane §1–3)
 
     /// The node a chat is pinned to — its session id appears in that node's
@@ -3686,6 +3790,65 @@ final class CorpusStore {
             : "FAIL — a duplicate suppressed a proposal: dup-a=\(got[0]) dup-b=\(got[1])"
     }
 
+    /// Arc B — an extracted copy of a Voice item's transcript counts ONCE (search blocks, the Librarian's word
+    /// count + snippet, naming, the content hash) while it reads the same, and on its own once either side is
+    /// edited; "Append to…" lands at the end of the chosen note and leaves the transcript alone; a pre-Arc-B
+    /// duplicate transcript note is untouched. Synthetic entry; the real store paths; cleaned up after.
+    func runArcBDedupSelfTest() async -> String {
+        let spoken = "Pick up the contact sheets from the lab on Thursday and ask whether they can push two stops"
+        let id = "arcb-dedup", vID = id + "-v", nID = id + "-n"
+        var node = Node(id: id, createdAt: Date(), updatedAt: Date(), title: "", summary: "", tags: [])
+        node.items = [NodeItem(id: vID, type: .audio, createdAt: Date(), transcript: spoken),
+                      NodeItem(id: nID, type: .text, createdAt: Date(), content: "Darkroom list")]
+        node.entrySchemaVersion = 1
+        await addNode(node, position: .zero)
+        var rows: [String] = [], fails = 0
+        func row(_ name: String, _ ok: Bool, _ detail: String) { rows.append("\(ok ? "PASS" : "FAIL") \(name) — \(detail)"); if !ok { fails += 1 } }
+        func cur() -> Node? { nodes.first(where: { $0.id == id }) }
+        func measure(_ n: Node) -> (blocks: [String], content: String, authored: Int, words: Int) {
+            (BlockChunker.chunk(n).map(\.text), extractNodeContent(n), AIService.classifyContent(from: n).authored.count,
+             LibrarianState.approximateWords(n) - LibrarianState.approximateWords(Node(id: "", createdAt: Date(), updatedAt: Date(), title: "", summary: "", tags: [])))
+        }
+        guard let n0 = cur() else { return "[ArcBDedupSelfTest] FAIL — fixture not added" }
+        let before = measure(n0)
+        let copyID = await extractTranscript(itemID: vID, nodeID: id)
+        if let n1 = cur(), let copyID {
+            let after = measure(n1)
+            row("extract-adds-item", n1.items.contains { $0.id == copyID && $0.extractedFromItemID == vID }, "items=\(n1.items.count)")
+            row("blocks-once", after.blocks == before.blocks, "blocks \(before.blocks.count)→\(after.blocks.count)")
+            row("content-hash-unchanged", after.content == before.content, "len \(before.content.count)→\(after.content.count)")
+            row("naming-once", after.authored == before.authored, "authored \(before.authored)→\(after.authored)")
+            row("librarian-words-once", after.words == before.words, "words \(before.words)→\(after.words)")
+            // Editing the copy makes it count on its own.
+            await updateTextItem(itemID: copyID, newContent: spoken + " Bring the negatives.", nodeID: id)
+            if let n2 = cur() {
+                let m = measure(n2)
+                row("edited-copy-counts", m.authored == before.authored + 1 && m.blocks.count > before.blocks.count,
+                    "authored \(m.authored) blocks \(m.blocks.count)")
+            }
+            await updateTextItem(itemID: copyID, newContent: spoken, nodeID: id)   // verbatim again → once again
+            if let n3 = cur() { row("verbatim-again-once", measure(n3).authored == before.authored, "authored \(measure(n3).authored)") }
+            // Editing the TRANSCRIPT also separates them; Restore original rejoins them.
+            await updateTranscript(itemID: vID, nodeID: id, newText: spoken + " Call first.")
+            if let n4 = cur() { row("edited-transcript-separates", measure(n4).authored == before.authored + 1, "authored \(measure(n4).authored)") }
+            await restoreTranscript(itemID: vID, nodeID: id)
+            if let n5 = cur() { row("restore-rejoins", measure(n5).authored == before.authored, "authored \(measure(n5).authored)") }
+        } else { row("extract-adds-item", false, "extractTranscript returned nil") }
+        // Append to… — the end of the chosen note; the Voice item's transcript (and its original) untouched.
+        await appendTranscript(itemID: vID, toTextItemID: nID, nodeID: id)
+        if let n6 = cur(), let note = n6.items.first(where: { $0.id == nID }), let v = n6.items.first(where: { $0.id == vID }) {
+            row("append-at-end", (note.content ?? "").hasPrefix("Darkroom list") && (note.content ?? "").hasSuffix(spoken), "note len \((note.content ?? "").count)")
+            row("append-transcript-unchanged", v.transcript == spoken && v.transcriptOriginal == nil, "edited=\(v.transcriptOriginal != nil)")
+        }
+        // A pre-Arc-B duplicate (no extractedFromItemID) still counts — existing entries are left as they are.
+        var legacy = Node(id: id + "-legacy", createdAt: Date(), updatedAt: Date(), title: "", summary: "", tags: [])
+        legacy.items = [NodeItem(id: id + "-lv", type: .audio, createdAt: Date(), transcript: spoken),
+                        NodeItem(id: id + "-lt", type: .text, createdAt: Date(), content: spoken)]
+        row("legacy-duplicate-untouched", AIService.classifyContent(from: legacy).authored.count == 2, "authored \(AIService.classifyContent(from: legacy).authored.count)")
+        await deleteNode(id: id)
+        return "[ArcBDedupSelfTest] \(fails == 0 ? "PASS" : "FAIL") — \(rows.count - fails)/\(rows.count)\n" + rows.joined(separator: "\n")
+    }
+
     /// Brief CF — rule 2 regression: whatever ghost is SHOWING at Done must commit, for BOTH
     /// title and summary, and TWO entries with identical text + an identical title proposal must
     /// EACH keep their title (no cross-entry title-uniqueness blanking — two entries may share a
@@ -4057,7 +4220,7 @@ final class CorpusStore {
             guard let node = self.nodes.first(where: { $0.id == nodeID }) else { return }
             let title = node.title.trimmingCharacters(in: .whitespacesAndNewlines)
             let summary = node.summary.trimmingCharacters(in: .whitespacesAndNewlines)
-            let content = node.items.compactMap { item -> String? in
+            let content = node.countedItems.compactMap { item -> String? in
                 switch item.type {
                 // Brief BL2 — a link block's DERIVED text (title + preview) counts as content so
                 // a link-only entry offers a title WHILE COMPOSING (the feather lights). Mirrors
@@ -8981,7 +9144,7 @@ final class CorpusStore {
                         guard let node = await self.nodes.first(where: { $0.id == nodeID }) else {
                             return (nodeID, nil)
                         }
-                        let text = node.items.compactMap { item -> String? in
+                        let text = node.countedItems.compactMap { item -> String? in
                             switch item.type {
                             case .text: return item.content
                             case .audio, .video: return item.transcript
@@ -10669,7 +10832,7 @@ final class CorpusStore {
     /// `AIService.extractContent` but stays on @MainActor so the sampler can
     /// call it without an actor hop.
     private func extractNodeContent(_ node: Node) -> String {
-        node.items.compactMap { item -> String? in
+        node.countedItems.compactMap { item -> String? in   // Arc B — a verbatim extracted copy counts once
             // Brief BQ2 — `meaningfulText` trims whitespace/newlines so a blank scaffold Note
             // doesn't shift the content hash (a stray `\n` used to make the hash differ from the
             // matrices' scaffold-less nodes AND count as authored content).

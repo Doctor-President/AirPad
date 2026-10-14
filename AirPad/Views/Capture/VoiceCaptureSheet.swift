@@ -336,13 +336,14 @@ struct VoiceCaptureSheet: View {
             provenance: nil,
             threads: [],
             location: nil,
+            // Arc B (T, 2026-10-12) — ONE transcript, inside the Voice item (editable in place there). New
+            // captures no longer add a duplicate text item; entries that already have one keep it.
             items: [
                 .audio(itemID: audioItemID,
                        file: audioFile,
                        transcript: transcript,
-                       duration: duration),
-                transcript.isEmpty ? nil : .text(content: transcript)
-            ].compactMap { $0 },
+                       duration: duration)
+            ],
             domain: nil,
             domainConfirmed: false,
             needsAIProcessing: false,
@@ -359,11 +360,8 @@ struct VoiceCaptureSheet: View {
 
         Task {
             if let targetID = targetNodeID {
-                // Append audio (+ transcript text) to existing node
+                // Append audio to the existing node (Arc B: the transcript lives in the Voice item only)
                 await store.appendItemToNodeWithAudio(nodeID: targetID, item: audioItem, audioURL: audioURL, audioItemID: audioItemID)
-                if !transcript.isEmpty {
-                    await store.appendItemToNode(nodeID: targetID, item: .text(content: transcript))
-                }
                 await store.processNodeWithAI(nodeID: targetID, posture: captureOwnsDone ? .propose : .captureDone)   // Brief BI / A2
             } else {
                 // Create new node

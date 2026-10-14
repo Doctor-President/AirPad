@@ -54,3 +54,5 @@ ArcAVoiceDone/testOn_QC_cold
 ArcAVoiceDone/testOn_QC_warm
 ArcAVoiceDone/testOn_plus
 ArcAVoiceDone/testOn_QC_cold_fullLibrary
+ArcBVoiceTranscript/testAppendTo_landsAtEnd_restoreLeavesNote
+ArcBVoiceTranscript/testAppendTo_afterEditStillTyping

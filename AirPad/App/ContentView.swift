@@ -131,6 +131,17 @@ struct ContentView: View {
             if ProcessInfo.processInfo.arguments.contains("-GhostGallery") {
                 GhostGalleryView()
             }
+            // A3 — `-StoreProbe`: the live store's shape for an XCUITest (which can read the disk but not memory):
+            // node count, unique-id count, and each node's id + committed title. Invisible, never hit-testable.
+            if ProcessInfo.processInfo.arguments.contains("-StoreProbe") {
+                let ids = store.nodes.map(\.id)
+                Color.clear.frame(width: 1, height: 1)
+                    .accessibilityElement()
+                    .accessibilityIdentifier("storeProbe")
+                    .accessibilityLabel("nodes=\(ids.count) unique=\(Set(ids).count)")
+                    .accessibilityValue(store.nodes.map { "\($0.id)=\($0.title)" }.joined(separator: "\n"))
+                    .allowsHitTesting(false)
+            }
             #endif
         }
         // Chats list sheet — shared by the Dashboard header bubble and

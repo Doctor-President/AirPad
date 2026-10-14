@@ -17,11 +17,15 @@ final class CDGhostAcceptanceMatrix: XCTestCase {
         let app = XCUIApplication()
         // `-UITestLibrary` = isolated scratch (never T's real Library); `-UITestLibraryFresh` wipes it
         // at the START of each test so the newest entry is unambiguously this test's.
-        app.launchArguments = ["-StubAuthorModel", "-StubNonEmptyTitle", "-EmbedCPUOnly",
+        app.launchArguments = ["-StubAuthorModel", "-StubNonEmptyTitle", "-EmbedCPUOnly", "-StoreProbe",
                                "-UITestLibrary", "-UITestLibraryFresh"] + extra
+        baseline = OneEntryInvariant.scratchIDs()
         app.launch()
         return app
     }
+
+    /// A3 — ids on disk before this capture (the one-entry invariant counts what Done added).
+    private var baseline: Set<String> = []
 
     /// Enter Quick Capture via its production entry (the `entryMode = .quikCapture` deep-link line),
     /// with the note auto-focused (`-EntryQuikCapture`) so typing is deterministic.
@@ -104,6 +108,8 @@ final class CDGhostAcceptanceMatrix: XCTestCase {
         // when this test expects one, the title. A relaunch before that kills the in-flight write.
         waitForDoneOnDisk(expectTitle: expectTitle, timeout: 60)
         shot(app, "post-Done-before-relaunch")   // diagnostic: did the title land before we relaunch?
+        // A3 — still in the capture's own process: one entry, the same committed title in store / disk / Recents / Card / List.
+        OneEntryInvariant.assert(app, in: self, label: name, baseline: baseline)
         // Reopen: keep the isolated library (NO -Fresh, so the entry just committed survives the relaunch).
         app.launchArguments = ["-StubAuthorModel", "-StubNonEmptyTitle", "-EmbedCPUOnly", "-UITestLibrary"]
         app.launch()
@@ -252,7 +258,8 @@ final class CDGhostAcceptanceMatrix: XCTestCase {
         // entry B — a COLD relaunch re-runs the production quikCapture entry; the persisted corpus
         // (entry A, just confirmed) reloads. (`launch()` terminates the running instance.)
         // Entry B: keep the isolated library (NO -Fresh) so entry A survives for the both-titled check.
-        app.launchArguments = ["-StubAuthorModel", "-StubNonEmptyTitle", "-EmbedCPUOnly", "-UITestLibrary", "-EntryQuikCapture"]
+        app.launchArguments = ["-StubAuthorModel", "-StubNonEmptyTitle", "-EmbedCPUOnly", "-StoreProbe", "-UITestLibrary", "-EntryQuikCapture"]
+        baseline = OneEntryInvariant.scratchIDs()
         app.launch()
         enterQuickCapture(app)
         typeNote(app, noteText)

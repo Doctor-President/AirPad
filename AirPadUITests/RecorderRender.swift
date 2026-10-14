@@ -1,7 +1,8 @@
 import XCTest
 
 /// Recorder redesign — RENDER ONLY (T, 2026-10-13). Quick Capture → Voice with a synthetic live feed
-/// (`-StubLiveTranscript`: words arrive as if spoken; no microphone, the take is a generated tone). Stills at the
+/// (`-StubLiveTranscript`: words arrive as if spoken over a speech-shaped waveform envelope). live-11 (4): the same
+/// harness now drives the BUILT recorder (real microphone + file; render-parity stills vs the approved renders). Stills at the
 /// start, mid-stream, a full block (older lines fading under the waveform) and the end state after Done.
 /// Appearance + screen recording are set by the caller. Synthetic content, isolated library.
 final class RecorderRender: XCTestCase {
@@ -25,7 +26,12 @@ final class RecorderRender: XCTestCase {
         let voice = app.buttons["Voice"].firstMatch
         XCTAssertTrue(voice.waitForExistence(timeout: 10))
         voice.tap()
-        XCTAssertTrue(app.staticTexts["recorderTimer"].waitForExistence(timeout: 10), "the recorder should be up")
+        addUIInterruptionMonitor(withDescription: "mic") { alert in
+            for label in ["Allow", "OK"] where alert.buttons[label].exists { alert.buttons[label].tap(); return true }
+            return false
+        }
+        app.tap()   // the built recorder opens the microphone (the render stub never did)
+        XCTAssertTrue(app.staticTexts["recorderTimer"].waitForExistence(timeout: 15), "the recorder should be up")
         Thread.sleep(forTimeInterval: 1.2); shot(app, "r1-start")
         Thread.sleep(forTimeInterval: 3.5); shot(app, "r2-streaming")
         Thread.sleep(forTimeInterval: 6.0); shot(app, "r3-block-fading")

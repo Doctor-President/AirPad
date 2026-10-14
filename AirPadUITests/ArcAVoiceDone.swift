@@ -318,6 +318,78 @@ final class ArcAVoiceDone: XCTestCase {
         OneEntryInvariant.assert(app, in: self, label: "on-QC-unavailable", baseline: baseline)
     }
 
+    // MARK: - live-11 (4) — the recorder: live words while recording, Done saves them at once, no length cliff
+
+    private let spoken = "Remember to water the fern on the landing before Friday. The tall one by the window needs a bigger "
+        + "pot, so pick up some compost and a terracotta pot on the way home."
+
+    /// Quick Capture → Voice with the live feed stubbed (`-StubLiveTranscript`: the Simulator has no speech model; the
+    /// microphone, the file, the save and everything after are the real path).
+    private func launchRecorder() -> XCUIApplication {
+        let app = XCUIApplication()
+        markBaseline()
+        var args = baseArgs(150)
+        if let i = args.firstIndex(of: "-StubVoiceTranscript") { args.removeSubrange(i...(i + 1)) }
+        app.launchArguments = args + ["-UITestLibraryFresh", "-EntryQuikCapture", "-StubLiveTranscript", spoken]
+        app.launch()
+        quickCaptureVoice(app)
+        let voice = app.buttons["Voice"].firstMatch
+        XCTAssertTrue(voice.waitForExistence(timeout: 10), "the Voice capture button should exist")
+        voice.tap()
+        addUIInterruptionMonitor(withDescription: "mic") { alert in
+            for label in ["Allow", "OK"] where alert.buttons[label].exists { alert.buttons[label].tap(); return true }
+            return false
+        }
+        app.tap()   // lets the interruption monitor answer a first-run microphone prompt
+        XCTAssertTrue(app.staticTexts["recorderTimer"].waitForExistence(timeout: 15), "the recorder should be up")
+        return app
+    }
+
+    private func audioItem(_ n: [String: Any]?) -> [String: Any]? {
+        ((n?["items"] as? [[String: Any]]) ?? []).first { ($0["type"] as? String) == "audio" }
+    }
+
+    /// The recorder's Done → no "Transcribing…" replay → the Voice item holds the live words → capture Done → one entry.
+    private func finishTake(_ app: XCUIApplication, label: String, minSeconds: Double) {
+        app.buttons["Done"].firstMatch.tap()
+        XCTAssertFalse(app.staticTexts["Transcribing…"].waitForExistence(timeout: 2), "\(label): Done saves the live words — no replay")
+        XCTAssertTrue(app.descendants(matching: .any).matching(identifier: "voiceTranscript").firstMatch.waitForExistence(timeout: 10),
+                      "\(label): the Voice item shows in the capture")
+        var n = newestVoiceNode()
+        _ = OneEntryInvariant.eventually(10) { n = newestVoiceNode(); return ((audioItem(n)?["transcript"] as? String) ?? "") == spoken }
+        let item = audioItem(n)
+        let duration = (item?["duration_seconds"] as? Double) ?? 0
+        print("[ArcA] \(label) disk: \(describe(n)) transcriptMatches=\(((item?["transcript"] as? String) ?? "") == spoken) duration=\(duration)")
+        XCTAssertEqual(item?["transcript"] as? String, spoken, "\(label): the saved transcript is the live words, whole")
+        XCTAssertNotNil(item?["file"] as? String, "\(label): the recording is kept")
+        XCTAssertGreaterThanOrEqual(duration, minSeconds, "\(label): the whole take is saved (\(duration) s)")
+        shot(app, "\(label)-before-capture-Done")
+        tapCaptureDone(app)
+        OneEntryInvariant.assert(app, in: self, label: label, baseline: baseline)
+    }
+
+    func testRecorder_liveWordsWhileRecording_DoneSavesThem() {
+        let app = launchRecorder()
+        let live = app.descendants(matching: .any).matching(identifier: "liveTranscript").firstMatch
+        let streaming = OneEntryInvariant.eventually(10) { live.label.contains("Remember to water") }
+        XCTAssertTrue(streaming, "the words appear while recording (live: '\(live.label.prefix(60))')")
+        shot(app, "recorder-live-words")
+        Thread.sleep(forTimeInterval: 4)
+        finishTake(app, label: "recorder-live", minSeconds: 5)
+    }
+
+    /// ≥ 3 minutes: the take, the file and the timer keep going — no recording-length cliff in the capture path. (The
+    /// recogniser's own long-form run is the Mac bench: the app's engine over a 210 s clip.)
+    func testRecorder_threeMinutes_noCliff() {
+        let app = launchRecorder()
+        Thread.sleep(forTimeInterval: 185)
+        let timer = app.staticTexts["recorderTimer"].label
+        print("[ArcA] recorder-3min timer=\(timer)")
+        XCTAssertTrue(timer.hasPrefix("3:"), "the timer is still running past 3 minutes (\(timer))")
+        shot(app, "recorder-3min")
+        finishTake(app, label: "recorder-3min", minSeconds: 180)
+    }
+
     func testOn_QC_warm() {
         let app = launch(["-EntryQuikCapture"])
         captureVoice(app, label: "on-QC-warm-1", delegateOn: true, openVoice: quickCaptureVoice)

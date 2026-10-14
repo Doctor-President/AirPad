@@ -47,6 +47,53 @@ enum OnDeviceSpeech {
         return r
     }
 
+    /// live-11 (4) — the recorder's iOS 26 transcriber. `DictationTranscriber` keeps the AirPad vocabulary (Apple:
+    /// contextual strings help only `DictationTranscriber`); on the Mac bench `SpeechTranscriber` read synthetic speech
+    /// more accurately (WER 6.8% vs 12.2%) but recognised fewer app terms (13/21 vs 17/21). T decides; this line switches.
+    static let liveModel: LiveSpeechModel = .dictation
+
+    /// The recorder's long-form on-device analyzer for `locale`, or nil — unsupported language, or the model isn't on
+    /// this iPhone yet (the recorder then uses the on-device `SFSpeechRecognizer` path, or says unavailable). A missing
+    /// model is fetched in the background for next time: Apple's model download, no audio and no words leave the phone.
+    @available(iOS 26.0, macOS 26.0, *)
+    static func liveAnalyzer(locale: Locale = .current) async -> (SpeechAnalyzer, LiveModule)? {
+        #if DEBUG
+        if CommandLine.arguments.contains("-StubSpeechUnavailable") { return nil }
+        #endif
+        let live: LiveModule
+        switch liveModel {
+        case .dictation:
+            guard let loc = await DictationTranscriber.supportedLocale(equivalentTo: locale) else { return nil }
+            live = .dictation(DictationTranscriber(locale: loc, contentHints: [], transcriptionOptions: [.punctuation],
+                                                   reportingOptions: [.volatileResults], attributeOptions: []))
+        case .speech:
+            guard let loc = await SpeechTranscriber.supportedLocale(equivalentTo: locale) else { return nil }
+            live = .speech(SpeechTranscriber(locale: loc, transcriptionOptions: [], reportingOptions: [.volatileResults],
+                                             attributeOptions: []))
+        }
+        // The model counts as installed for THIS app only once the app has reserved the locale and asked for it (the
+        // Mac bench: a model already on disk read "supported" to a new binary until then). No request back ⇒ it's already
+        // here and is now ours; a request ⇒ it must be downloaded first — fetched in the background for next time.
+        var status = await AssetInventory.status(forModules: [live.module])
+        if status != .installed {
+            _ = try? await AssetInventory.reserve(locale: live.locale)
+            if let request = try? await AssetInventory.assetInstallationRequest(supporting: [live.module]) {
+                print("[Speech] recorder model not on this iPhone — on-device fallback this take; fetching it for next time")
+                Task.detached { try? await request.downloadAndInstall() }
+            } else {
+                status = await AssetInventory.status(forModules: [live.module])
+            }
+        }
+        guard status == .installed else { return nil }
+        let analyzer = SpeechAnalyzer(modules: [live.module])
+        if case .dictation = live {
+            let context = AnalysisContext()
+            context.contextualStrings = [.general: SpeechVocabulary.contextualStrings]
+            try? await analyzer.setContext(context)
+        }
+        return (analyzer, live)
+    }
+
     private static func configure(_ r: SFSpeechRecognitionRequest) {
         r.requiresOnDeviceRecognition = true
         r.contextualStrings = SpeechVocabulary.contextualStrings
@@ -84,6 +131,10 @@ enum OnDeviceSpeech {
         let json = (try? enc.encode(item)).flatMap { String(data: $0, encoding: .utf8) } ?? ""
         let back = (try? enc.encode(item)).flatMap { try? dec.decode(NodeItem.self, from: $0) }
         let legacy = try? dec.decode(NodeItem.self, from: Data(#"{"id":"a","type":"audio","created_at":0}"#.utf8))
+        // live-11 (4) — the recorder: segments rotate before Apple's ~1 min task limit; text joins across segments.
+        row("recorder-segments-rotate-before-one-minute", SegmentedLiveTranscriber.segmentSeconds < 60)
+        row("recorder-text-joins-segments", LiveText.join(["Call the landlord", " on Tuesday", ", then", "", "the boiler."])
+            == "Call the landlord on Tuesday, then the boiler.")
         row("unavailable-mark-round-trips", json.contains("\"transcript_unavailable\":true") && back?.transcriptUnavailable == true
             && legacy != nil && legacy?.transcriptUnavailable == nil)
         return "[OnDeviceSpeechSelfTest] \(fails == 0 ? "PASS" : "FAIL") — \(rows.count - fails)/\(rows.count)\n" + rows.joined(separator: "\n")

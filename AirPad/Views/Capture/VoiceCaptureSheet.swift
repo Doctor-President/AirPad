@@ -43,6 +43,13 @@ struct VoiceCaptureSheet: View {
 
     private var elapsedSeconds: Int { Int(recorder.elapsed) }
 
+    private var testingEngineNote: String? {
+        let choice = SpeechEngineTesting.choice
+        guard SpeechEngineTesting.isOffered, choice != .automatic, let ran = recorder.tier else { return nil }
+        return ran.rawValue == choice.rawValue ? "Speech engine (testing): \(ran.label)"
+            : "Speech engine (testing): \(choice.label) couldn't run → \(ran.label)"
+    }
+
     // MARK: - Body
 
     var body: some View {
@@ -108,6 +115,14 @@ struct VoiceCaptureSheet: View {
                 LiveTranscriptView(settled: recorder.settled, volatile: recorder.volatile,
                                    font: appBodyFont.font(size: 20, relativeTo: .body))
                     .padding(.horizontal, 32)
+
+                // live-12 (2) — TestFlight/DEBUG only, and only while an engine is forced: which tier this take runs.
+                if let note = testingEngineNote {
+                    Text(note)
+                        .font(appBodyFont.font(size: 12, relativeTo: .caption1))
+                        .foregroundStyle(AppearancePalette.ink.opacity(0.4))
+                        .accessibilityIdentifier("recorderTestingEngine")
+                }
             }
 
             Spacer()
@@ -152,9 +167,11 @@ struct VoiceCaptureSheet: View {
         #if DEBUG
         // `-StubVoiceTranscript` / `-StubLiveTranscript <text>`: the Simulator has no speech model, so the words are
         // canned and arrive as if spoken (the microphone, the file, the save and everything after are the real path).
-        // `-StubSpeechUnavailable`: no on-device recognition (the unavailable path). Neither needs the speech prompt.
+        // `-StubSpeechUnavailable` / `-speechEngineTesting unavailable`: no recognition (the unavailable path). None needs the
+        // speech prompt.
         if Self.stubTranscript != nil || Self.stubLiveTranscript != nil
-            || CommandLine.arguments.contains("-StubSpeechUnavailable") { await startRecording(); return }
+            || CommandLine.arguments.contains("-StubSpeechUnavailable")
+            || SpeechEngineTesting.choice == .unavailable { await startRecording(); return }
         #endif
 
         // Speech recognition

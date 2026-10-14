@@ -163,6 +163,7 @@
 		7B5E835B2655C01AC63A3F3C /* LibrarianPerfGate.swift in Sources */ = {isa = PBXBuildFile; fileRef = 9C2FF3FB474EB570C6F67185 /* LibrarianPerfGate.swift */; };
 		7CE4D30F31BD74E94FB87500 /* SpeechSynthesisService.swift in Sources */ = {isa = PBXBuildFile; fileRef = 4496FF91A72DB981ED791A85 /* SpeechSynthesisService.swift */; };
 		7D662BACA7CB206841C5BA3D /* CardSwipeRepro.swift in Sources */ = {isa = PBXBuildFile; fileRef = B8D87927EAE11D669A11A825 /* CardSwipeRepro.swift */; };
+		804248449DE978D3C6F76331 /* SpeechEngineSwitch.swift in Sources */ = {isa = PBXBuildFile; fileRef = ED924ABE8CD119DCD5194981 /* SpeechEngineSwitch.swift */; };
 		80929F37D80B349FBF52A58E /* NodeConnection.swift in Sources */ = {isa = PBXBuildFile; fileRef = 555A2F390CA8E4777AAE7CB6 /* NodeConnection.swift */; };
 		811D96167D624FC5CEA113E7 /* Lora-OFL.txt in Resources */ = {isa = PBXBuildFile; fileRef = F3D0F984EFB676B8DEF23CF1 /* Lora-OFL.txt */; };
 		81BA2F196401E0FAACA38EF6 /* SpaceGrotesk-OFL.txt in Resources */ = {isa = PBXBuildFile; fileRef = 419893A1B7CDFFFFF7BF2B5B /* SpaceGrotesk-OFL.txt */; };
@@ -327,6 +328,7 @@
 		E4563A24FEE837F3F34E65B0 /* RenameCollectionSheet.swift in Sources */ = {isa = PBXBuildFile; fileRef = A9247083C950538B08FD4D00 /* RenameCollectionSheet.swift */; };
 		E76F2F630607772910AA020A /* ModelProcessingIndicator.swift in Sources */ = {isa = PBXBuildFile; fileRef = 03E923FC9841272766621A1B /* ModelProcessingIndicator.swift */; };
 		E862499ADFEA34CD14EEC082 /* SubstrateInspectView.swift in Sources */ = {isa = PBXBuildFile; fileRef = F06786CD0AD508D09A0C5570 /* SubstrateInspectView.swift */; };
+		E99562E5610FC634D94D7F84 /* SpeechEngineTesting.swift in Sources */ = {isa = PBXBuildFile; fileRef = 31C88155071A46620445C439 /* SpeechEngineTesting.swift */; };
 		E9CFDDDCF539C54F7C483DE8 /* TagSuggestionService.swift in Sources */ = {isa = PBXBuildFile; fileRef = 9C20470AE11E1FAF10AF1071 /* TagSuggestionService.swift */; };
 		EB83AF3EBDB104973AB2160B /* SourceSerif4-Bold.ttf in Resources */ = {isa = PBXBuildFile; fileRef = F66D3DA4639568EA375AC13E /* SourceSerif4-Bold.ttf */; };
 		EC2D01F833BB64A23B8CEC24 /* ChatSession.swift in Sources */ = {isa = PBXBuildFile; fileRef = 0C38EEC0DB9F051F85839CCE /* ChatSession.swift */; };
@@ -436,6 +438,7 @@
 		2D22141DDFC181FE31634680 /* CaretMeasure.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = CaretMeasure.swift; sourceTree = "<group>"; };
 		2E92C2D35B0BE6D96A64B830 /* FieldCreationSheet.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = FieldCreationSheet.swift; sourceTree = "<group>"; };
 		31AC6EC9380F63E183E91CFC /* HDBSCANTree.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = HDBSCANTree.swift; sourceTree = "<group>"; };
+		31C88155071A46620445C439 /* SpeechEngineTesting.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = SpeechEngineTesting.swift; sourceTree = "<group>"; };
 		31D68FA628B933D53B524B98 /* WidgetKit.framework */ = {isa = PBXFileReference; lastKnownFileType = wrapper.framework; name = WidgetKit.framework; path = System/Library/Frameworks/WidgetKit.framework; sourceTree = SDKROOT; };
 		321F93F7630A107A8A1266EF /* CardDocumentTile.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = CardDocumentTile.swift; sourceTree = "<group>"; };
 		328B8A79A32590B1D037ABEA /* BackgroundModelDownloader.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = BackgroundModelDownloader.swift; sourceTree = "<group>"; };
@@ -667,6 +670,7 @@
 		ECFED59D749E91B63D80BF73 /* BigShouldersDisplay-OFL.txt */ = {isa = PBXFileReference; lastKnownFileType = text; path = "BigShouldersDisplay-OFL.txt"; sourceTree = "<group>"; };
 		ED287727ED25FF9291551213 /* HDBSCANReachability.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = HDBSCANReachability.swift; sourceTree = "<group>"; };
 		ED83A2DE515939345223CDCB /* ClipboardContentRouterDiagnostic.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ClipboardContentRouterDiagnostic.swift; sourceTree = "<group>"; };
+		ED924ABE8CD119DCD5194981 /* SpeechEngineSwitch.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = SpeechEngineSwitch.swift; sourceTree = "<group>"; };
 		F009B8D59EF84BA40BB5B4A6 /* EmptyStateOverlay.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = EmptyStateOverlay.swift; sourceTree = "<group>"; };
 		F017F0A0FBF6A049612B0607 /* ViewModeToggle.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ViewModeToggle.swift; sourceTree = "<group>"; };
 		F06786CD0AD508D09A0C5570 /* SubstrateInspectView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = SubstrateInspectView.swift; sourceTree = "<group>"; };
@@ -800,6 +804,7 @@
 				78BE389CD3124C9CAA5D01C3 /* OneEntryInvariant.swift */,
 				87ABAE5EF1669794E0C9F8F8 /* RecorderRender.swift */,
 				331D29B33502CD4329D9797D /* RelatedTapRepro.swift */,
+				ED924ABE8CD119DCD5194981 /* SpeechEngineSwitch.swift */,
 				CB533693BAEAB8B5A5A69BC9 /* TestFlightRestore.swift */,
 			);
 			path = AirPadUITests;
@@ -873,6 +878,7 @@
 				9C401DD21DDB057255BB02AD /* SampleLibrarySeederSelfTest.swift */,
 				92F8312336CC2A7C1C2763EF /* SelectionService.swift */,
 				977A952D9380005BE5E53A93 /* ShimmerSelfTest.swift */,
+				31C88155071A46620445C439 /* SpeechEngineTesting.swift */,
 				4496FF91A72DB981ED791A85 /* SpeechSynthesisService.swift */,
 				780B6A68830590DBDA5189D1 /* StrandService.swift */,
 				1AB3E0DAA09EAAB03B140BC7 /* SubstrateBagLayout.swift */,
@@ -1568,6 +1574,7 @@
 				3BF81C58D40F6C131CDCDA99 /* OneEntryInvariant.swift in Sources */,
 				8D6452684E76A0BC003DB116 /* RecorderRender.swift in Sources */,
 				E33D0E04DA7D961FF7E4F164 /* RelatedTapRepro.swift in Sources */,
+				804248449DE978D3C6F76331 /* SpeechEngineSwitch.swift in Sources */,
 				70696C7DE6DCC44361DBCC54 /* TestFlightRestore.swift in Sources */,
 			);
 			runOnlyForDeploymentPostprocessing = 0;
@@ -1767,6 +1774,7 @@
 				7289AE336C9540B5885CD057 /* ShimmerSelfTest.swift in Sources */,
 				B0C29E98DF6C6DBE11E29DF1 /* SingleMediaBody.swift in Sources */,
 				F37D50BEE893123479290739 /* SolarFlareTuning.swift in Sources */,
+				E99562E5610FC634D94D7F84 /* SpeechEngineTesting.swift in Sources */,
 				7CE4D30F31BD74E94FB87500 /* SpeechSynthesisService.swift in Sources */,
 				9BBBB45D21CADBD3E042E4E9 /* StrandService.swift in Sources */,
 				9787E9E6519D8AE627C866E3 /* SubstrateBagLayout.swift in Sources */,

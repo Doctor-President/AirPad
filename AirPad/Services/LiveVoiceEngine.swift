@@ -7,14 +7,35 @@ import Speech
 // The microphone tap feeds a `LiveTranscribing` while it writes the file; the words appear as they're spoken and the
 // live text IS the saved transcript (no replay after Done). Every recogniser is built by `OnDeviceSpeech`, so nothing
 // here can reach Apple's server:
-//   • iOS 26+: `SpeechAnalyzer` + `DictationTranscriber` (or `SpeechTranscriber` — `OnDeviceSpeech.liveModel`, T's call
-//     after the WER numbers). Long-form by design: one session for the whole take, no recording-length cliff.
-//   • iOS 18–25, or iOS 26 before the model is on the phone: `SFSpeechRecognizer` on-device buffer requests, rotated
-//     every `segmentSeconds` (Apple caps a task at about a minute) with each segment's final words carried over.
+// live-12 (1) — T ruled the Speech chain (2026-10-14), tried best first for each take (`SpeechTier`):
+//   1. iOS 26+: `SpeechAnalyzer` + `SpeechTranscriber` — most accurate; takes no vocabulary hints.
+//   2. iOS 26+ without it (device/locale/model): the same analyzer session with `DictationTranscriber` + the app words.
+//      Long-form by design: one session for the whole take, no recording-length cliff.
+//   3. iOS 18–25, or iOS 26 before a model is on the phone: `SFSpeechRecognizer` on-device buffer requests, rotated
+//      every `segmentSeconds` (Apple caps a task at about a minute) with each segment's final words carried over.
+//   4. none of them: "Transcript unavailable — …"; the audio is kept.
 // Platform-neutral (Foundation + AVFoundation + Speech) so the Mac bench compiles this exact file.
 
-/// Which iOS 26 transcriber the recorder uses.
-enum LiveSpeechModel: String { case dictation, speech }
+/// live-12 (1) — the recorder's on-device speech tiers, best first. Chosen per take from Apple's availability checks
+/// (OS, locale, model on the phone), never from the device model.
+enum SpeechTier: String, CaseIterable, Sendable {
+    case speech, dictation, olderRecognizer, unavailable
+    var label: String {
+        switch self {
+        case .speech: return "Speech"
+        case .dictation: return "Dictation"
+        case .olderRecognizer: return "Older recognizer"
+        case .unavailable: return "Unavailable"
+        }
+    }
+}
+
+/// live-12 (2) — the TestFlight-only "Speech engine (testing)" switch (`SpeechEngineTesting`): Automatic runs the chain;
+/// a forced tier starts the chain AT that tier (it still falls to the next one if it can't run, as a real user's would).
+enum SpeechEngineChoice: String, CaseIterable, Sendable {
+    case automatic, speech, dictation, olderRecognizer, unavailable
+    var label: String { self == .automatic ? "Automatic" : SpeechTier(rawValue: rawValue)?.label ?? rawValue }
+}
 
 /// The words so far: `settled` won't change again; `volatile` is the recogniser's current guess for what's still being
 /// spoken. Safe from any thread (results arrive on the recogniser's queues); `onUpdate` gets every change.
@@ -60,7 +81,7 @@ protocol LiveTranscribing: AnyObject, Sendable {
     func cancel()
 }
 
-// MARK: - iOS 26: SpeechAnalyzer
+// MARK: - Tiers 1–2 — iOS 26: SpeechAnalyzer
 
 @available(iOS 26.0, macOS 26.0, *)
 enum LiveModule {
@@ -155,7 +176,7 @@ final class AnalyzerLiveTranscriber: LiveTranscribing, @unchecked Sendable {
     }
 }
 
-// MARK: - iOS 18–25 (and iOS 26 before the model is installed): SFSpeechRecognizer, rotated
+// MARK: - Tier 3 — iOS 18–25 (and iOS 26 before a model is installed): SFSpeechRecognizer, rotated
 
 final class SegmentedLiveTranscriber: LiveTranscribing, @unchecked Sendable {
     /// Apple documents roughly a one-minute limit per recognition task; rotate well before it.

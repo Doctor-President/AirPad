@@ -1176,6 +1176,9 @@ final class CorpusStore {
                 if ProcessInfo.processInfo.arguments.contains("-OnDeviceSpeechSelfTest") {
                     NSLog("%@", OnDeviceSpeech.selfTest())
                 }
+                if ProcessInfo.processInfo.arguments.contains("-SpeechEngineTestingSelfTest") {
+                    NSLog("%@", SpeechEngineTesting.selfTest())
+                }
                 // live-11 (3) — HTML extraction's web view makes zero network loads (loopback-counted, synthetic
                 // fixtures). Detached so its ~20 s of fixtures never holds up the launch load.
                 if ProcessInfo.processInfo.arguments.contains("-DocExtractOfflineSelfTest") {

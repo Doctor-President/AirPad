@@ -14,6 +14,8 @@ final class LiveVoiceRecorder {
     private(set) var elapsed: TimeInterval = 0
     /// No on-device recognition for this take (language/device/model): the audio is kept, the item says so.
     private(set) var unavailable = false
+    /// live-12 — the speech tier this take runs (nil until the recorder starts).
+    private(set) var tier: SpeechTier?
 
     struct Take { let url: URL; let transcript: String; let duration: TimeInterval; let transcriptUnavailable: Bool }
 
@@ -46,10 +48,12 @@ final class LiveVoiceRecorder {
             print("[VoiceCapture] file error: \(error)"); return false
         }
 
-        let transcriber = await Self.makeTranscriber(micFormat: format) { [weak self] settled, volatile in
+        let (tier, transcriber) = await Self.makeTranscriber(micFormat: format) { [weak self] settled, volatile in
             Task { @MainActor in self?.settled = settled; self?.volatile = volatile }
         }
         unavailable = transcriber == nil
+        self.tier = tier
+        SpeechEngineTesting.lastTake = tier
         self.transcriber = transcriber
 
         #if DEBUG
@@ -117,27 +121,39 @@ final class LiveVoiceRecorder {
         return Float(t.truncatingRemainder(dividingBy: 3.2) < 2.7 ? 0.12 + 0.8 * syllable : 0.04)
     }
 
-    /// The recogniser for this take, always on-device (built by `OnDeviceSpeech`): the iOS 26 analyzer when its model is
-    /// on the phone, else the on-device `SFSpeechRecognizer`, else nil (unavailable — the audio is still kept).
+    /// The recogniser for this take, always on-device (built by `OnDeviceSpeech`): live-12 (1) T's Speech chain, best
+    /// tier first (`OnDeviceSpeech.chain`), the first that can run wins; none ⇒ nil (unavailable — the audio is still kept).
+    /// Logs the tier that ran — the tier only, never words.
     private static func makeTranscriber(micFormat: AVAudioFormat,
-                                        onUpdate: @escaping @Sendable (String, String) -> Void) async -> (any LiveTranscribing)? {
+                                        onUpdate: @escaping @Sendable (String, String) -> Void) async -> (tier: SpeechTier, transcriber: (any LiveTranscribing)?) {
         #if DEBUG
-        if CommandLine.arguments.contains("-StubSpeechUnavailable") { return nil }
+        if CommandLine.arguments.contains("-StubSpeechUnavailable") { return (.unavailable, nil) }
         if let stub = VoiceCaptureSheet.stubTranscript ?? VoiceCaptureSheet.stubLiveTranscript {
-            return StubLiveTranscriber(stub: stub, onUpdate: onUpdate)
+            return (.speech, StubLiveTranscriber(stub: stub, onUpdate: onUpdate))
         }
         #endif
-        if #available(iOS 26.0, *), let (analyzer, live) = await OnDeviceSpeech.liveAnalyzer(),
-           let t = await AnalyzerLiveTranscriber.start(analyzer: analyzer, live: live, micFormat: micFormat, onUpdate: onUpdate) {
-            print("[Speech] recorder: on-device analyzer (\(OnDeviceSpeech.liveModel.rawValue))")
-            return t
+        let choice = SpeechEngineTesting.choice
+        var analyzerOS = false
+        if #available(iOS 26.0, *) { analyzerOS = true }
+        for tier in OnDeviceSpeech.chain(choice, analyzerOS: analyzerOS) {
+            switch tier {
+            case .speech, .dictation:
+                if #available(iOS 26.0, *), let (analyzer, live) = await OnDeviceSpeech.liveAnalyzer(tier),
+                   let t = await AnalyzerLiveTranscriber.start(analyzer: analyzer, live: live, micFormat: micFormat, onUpdate: onUpdate) {
+                    print("[Speech] recorder tier=\(tier.rawValue) choice=\(choice.rawValue)")
+                    return (tier, t)
+                }
+            case .olderRecognizer:
+                if let recognizer = OnDeviceSpeech.recognizer() {
+                    print("[Speech] recorder tier=\(tier.rawValue) choice=\(choice.rawValue)")
+                    return (tier, SegmentedLiveTranscriber(recognizer: recognizer, onUpdate: onUpdate))
+                }
+            case .unavailable:
+                break
+            }
         }
-        if let recognizer = OnDeviceSpeech.recognizer() {
-            print("[Speech] recorder: on-device SFSpeechRecognizer (segmented)")
-            return SegmentedLiveTranscriber(recognizer: recognizer, onUpdate: onUpdate)
-        }
-        print("[Speech] recorder: on-device recognition unavailable — audio only")
-        return nil
+        print("[Speech] recorder tier=unavailable choice=\(choice.rawValue) — audio only")
+        return (.unavailable, nil)
     }
 }
 

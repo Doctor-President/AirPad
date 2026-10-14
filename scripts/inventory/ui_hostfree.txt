@@ -62,5 +62,8 @@ ArcAVoiceDone/testOn_QC_cold_slowLoad
 ArcAVoiceDone/testOn_QC_cold_loadLandsMidCapture
 ArcAVoiceDone/testRecorder_liveWordsWhileRecording_DoneSavesThem
 ArcAVoiceDone/testRecorder_threeMinutes_noCliff
+ArcAVoiceDone/testRecorder_forcedUnavailable_keepsAudioAndSays
+# live-12 (2) — the TestFlight-only speech-engine switch (About → long-press the version).
+SpeechEngineSwitch/testSwitch_fiveChoices_pickPersists_backToAutomatic
 ArcBVoiceTranscript/testAppendTo_landsAtEnd_restoreLeavesNote
 ArcBVoiceTranscript/testAppendTo_afterEditStillTyping

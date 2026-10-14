@@ -77,6 +77,7 @@ struct SettingsView: View {
 
     // Frontier API keys (loaded from Keychain on appear)
     @State private var anthropicKey = ""
+    @State private var showSpeechEngineTesting = false
     @State private var openAIKey = ""
     @State private var deepSeekKey = ""
     @State private var braveSearchKey = ""
@@ -642,9 +643,13 @@ struct SettingsView: View {
                 if let version = Bundle.main.object(forInfoDictionaryKey: "CFBundleShortVersionString") as? String,
                    let build = Bundle.main.object(forInfoDictionaryKey: "CFBundleVersion") as? String {
                     Text("Version \(version) (\(build))").font(appFont.font(size: 11, relativeTo: .caption2)).foregroundStyle(AppearancePalette.ink.opacity(0.25))
+                        .accessibilityIdentifier("aboutVersion")
+                        // live-12 (2) — TestFlight/DEBUG only: long-press → "Speech engine (testing)"; a no-op in App Store builds.
+                        .onLongPressGesture { if SpeechEngineTesting.isOffered { showSpeechEngineTesting = true } }
                 }
             }
         }
+        .sheet(isPresented: $showSpeechEngineTesting) { SpeechEngineTestingPanel() }
     }
 
     /// Brief AG3 — moved to the Librarian submenu (Brief AJ2). Brings back every callout.

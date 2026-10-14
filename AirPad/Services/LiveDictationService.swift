@@ -47,30 +47,63 @@ enum OnDeviceSpeech {
         return r
     }
 
-    /// live-11 (4) — the recorder's iOS 26 transcriber. `DictationTranscriber` keeps the AirPad vocabulary (Apple:
-    /// contextual strings help only `DictationTranscriber`); on the Mac bench `SpeechTranscriber` read synthetic speech
-    /// more accurately (WER 6.8% vs 12.2%) but recognised fewer app terms (13/21 vs 17/21). T decides; this line switches.
-    static let liveModel: LiveSpeechModel = .dictation
+    /// live-12 (1) — T's Speech chain: the tiers this take tries, best first. Automatic = Speech → Dictation → the older
+    /// recognizer; a forced choice (the TestFlight switch) starts the chain at that tier; Unavailable tries none. Before
+    /// iOS 26 only the older recognizer exists. The recorder walks the list and runs the first tier that can.
+    static func chain(_ choice: SpeechEngineChoice, analyzerOS: Bool) -> [SpeechTier] {
+        let all: [SpeechTier] = analyzerOS ? [.speech, .dictation, .olderRecognizer] : [.olderRecognizer]
+        guard choice != .automatic else { return all }
+        guard let forced = SpeechTier(rawValue: choice.rawValue), let i = all.firstIndex(of: forced) else {
+            return choice == .unavailable ? [] : all.filter { $0 == .olderRecognizer }
+        }
+        return Array(all[i...])
+    }
 
-    /// The recorder's long-form on-device analyzer for `locale`, or nil — unsupported language, or the model isn't on
-    /// this iPhone yet (the recorder then uses the on-device `SFSpeechRecognizer` path, or says unavailable). A missing
-    /// model is fetched in the background for next time: Apple's model download, no audio and no words leave the phone.
+    /// Tiers 1–2: the analyzer module for `tier` in `locale` (already resolved to a supported one). Tier 1 is
+    /// `SpeechTranscriber` (no vocabulary hints — Apple: contextual strings help only `DictationTranscriber`); tier 2 is
+    /// `DictationTranscriber` with punctuation. Nil for tiers 3–4.
     @available(iOS 26.0, macOS 26.0, *)
-    static func liveAnalyzer(locale: Locale = .current) async -> (SpeechAnalyzer, LiveModule)? {
+    static func liveModule(_ tier: SpeechTier, locale: Locale) -> LiveModule? {
+        switch tier {
+        case .speech:
+            return .speech(SpeechTranscriber(locale: locale, transcriptionOptions: [], reportingOptions: [.volatileResults],
+                                             attributeOptions: []))
+        case .dictation:
+            return .dictation(DictationTranscriber(locale: locale, contentHints: [], transcriptionOptions: [.punctuation],
+                                                   reportingOptions: [.volatileResults], attributeOptions: []))
+        case .olderRecognizer, .unavailable:
+            return nil
+        }
+    }
+
+    /// The app words for an analyzer session: tier 2 only (tier 1 takes none).
+    @available(iOS 26.0, macOS 26.0, *)
+    static func analysisContext(for live: LiveModule) -> AnalysisContext? {
+        guard case .dictation = live else { return nil }
+        let context = AnalysisContext()
+        context.contextualStrings = [.general: SpeechVocabulary.contextualStrings]
+        return context
+    }
+
+    /// Tiers 1–2: a ready on-device analyzer for `tier` in `locale`, or nil — this device/locale doesn't support it, or
+    /// its model isn't on this iPhone yet (the recorder then tries the next tier). A missing model is fetched in the
+    /// background for next time: Apple's model download, no audio and no words leave the phone.
+    @available(iOS 26.0, macOS 26.0, *)
+    static func liveAnalyzer(_ tier: SpeechTier, locale: Locale = .current) async -> (SpeechAnalyzer, LiveModule)? {
         #if DEBUG
         if CommandLine.arguments.contains("-StubSpeechUnavailable") { return nil }
         #endif
-        let live: LiveModule
-        switch liveModel {
-        case .dictation:
-            guard let loc = await DictationTranscriber.supportedLocale(equivalentTo: locale) else { return nil }
-            live = .dictation(DictationTranscriber(locale: loc, contentHints: [], transcriptionOptions: [.punctuation],
-                                                   reportingOptions: [.volatileResults], attributeOptions: []))
+        let supported: Locale?
+        switch tier {
         case .speech:
-            guard let loc = await SpeechTranscriber.supportedLocale(equivalentTo: locale) else { return nil }
-            live = .speech(SpeechTranscriber(locale: loc, transcriptionOptions: [], reportingOptions: [.volatileResults],
-                                             attributeOptions: []))
+            guard SpeechTranscriber.isAvailable else { return nil }
+            supported = await SpeechTranscriber.supportedLocale(equivalentTo: locale)
+        case .dictation:
+            supported = await DictationTranscriber.supportedLocale(equivalentTo: locale)
+        case .olderRecognizer, .unavailable:
+            return nil
         }
+        guard let supported, let live = liveModule(tier, locale: supported) else { return nil }
         // The model counts as installed for THIS app only once the app has reserved the locale and asked for it (the
         // Mac bench: a model already on disk read "supported" to a new binary until then). No request back ⇒ it's already
         // here and is now ours; a request ⇒ it must be downloaded first — fetched in the background for next time.
@@ -78,7 +111,7 @@ enum OnDeviceSpeech {
         if status != .installed {
             _ = try? await AssetInventory.reserve(locale: live.locale)
             if let request = try? await AssetInventory.assetInstallationRequest(supporting: [live.module]) {
-                print("[Speech] recorder model not on this iPhone — on-device fallback this take; fetching it for next time")
+                print("[Speech] recorder tier=\(tier.rawValue) model not on this iPhone — next tier this take; fetching it for next time")
                 Task.detached { try? await request.downloadAndInstall() }
             } else {
                 status = await AssetInventory.status(forModules: [live.module])
@@ -86,11 +119,7 @@ enum OnDeviceSpeech {
         }
         guard status == .installed else { return nil }
         let analyzer = SpeechAnalyzer(modules: [live.module])
-        if case .dictation = live {
-            let context = AnalysisContext()
-            context.contextualStrings = [.general: SpeechVocabulary.contextualStrings]
-            try? await analyzer.setContext(context)
-        }
+        if let context = analysisContext(for: live) { try? await analyzer.setContext(context) }
         return (analyzer, live)
     }
 
@@ -137,6 +166,32 @@ enum OnDeviceSpeech {
             == "Call the landlord on Tuesday, then the boiler.")
         row("unavailable-mark-round-trips", json.contains("\"transcript_unavailable\":true") && back?.transcriptUnavailable == true
             && legacy != nil && legacy?.transcriptUnavailable == nil)
+        // live-12 (1) — T's Speech chain, each tier forced as the TestFlight switch forces it.
+        row("chain-automatic-speech-dictation-older", chain(.automatic, analyzerOS: true) == [.speech, .dictation, .olderRecognizer])
+        row("chain-before-ios26-older-only", chain(.automatic, analyzerOS: false) == [.olderRecognizer])
+        row("force-speech-starts-at-tier-1", chain(.speech, analyzerOS: true) == [.speech, .dictation, .olderRecognizer])
+        row("force-dictation-starts-at-tier-2", chain(.dictation, analyzerOS: true) == [.dictation, .olderRecognizer])
+        row("force-older-recognizer-is-tier-3-only", chain(.olderRecognizer, analyzerOS: true) == [.olderRecognizer])
+        row("force-unavailable-tries-nothing", chain(.unavailable, analyzerOS: true).isEmpty && chain(.unavailable, analyzerOS: false).isEmpty)
+        if #available(iOS 26.0, macOS 26.0, *) {
+            let en = Locale(identifier: "en-US")
+            let t1 = liveModule(.speech, locale: en), t2 = liveModule(.dictation, locale: en)
+            var t1IsSpeech = false, t2IsDictation = false
+            if case .speech = t1 { t1IsSpeech = true }
+            if case .dictation = t2 { t2IsDictation = true }
+            row("tier1-builds-SpeechTranscriber", t1IsSpeech)
+            row("tier2-builds-DictationTranscriber", t2IsDictation)
+            row("tiers-3-4-build-no-analyzer-module", liveModule(.olderRecognizer, locale: en) == nil && liveModule(.unavailable, locale: en) == nil)
+            row("tier1-no-vocabulary", t1.map { analysisContext(for: $0) == nil } ?? false)
+            row("tier2-vocabulary-set", t2.flatMap { analysisContext(for: $0) }?.contextualStrings[.general] == SpeechVocabulary.contextualStrings)
+        } else {
+            rows.append("SKIP tiers-1-2-modules (needs iOS 26)")
+        }
+        let tier3 = bufferRequest()                                   // SegmentedLiveTranscriber's request
+        row("tier3-on-device-required", tier3.requiresOnDeviceRecognition)
+        row("tier3-vocabulary-set", tier3.contextualStrings == SpeechVocabulary.contextualStrings)
+        // Tier 4 keeping the audio + the message is the recorder end to end: ArcAVoiceDone/testRecorder_forcedUnavailable.
+        row("tier4-message-says-unavailable", unavailableMessage.hasPrefix("Transcript unavailable"))
         return "[OnDeviceSpeechSelfTest] \(fails == 0 ? "PASS" : "FAIL") — \(rows.count - fails)/\(rows.count)\n" + rows.joined(separator: "\n")
     }
 }

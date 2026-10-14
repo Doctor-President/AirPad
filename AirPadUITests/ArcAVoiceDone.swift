@@ -40,7 +40,7 @@ final class ArcAVoiceDone: XCTestCase {
     }
 
     /// Voice button → the real voice sheet records → its Done → the (stubbed) transcript is saved by the real `saveNode`.
-    private func recordVoice(_ app: XCUIApplication) {
+    private func recordVoice(_ app: XCUIApplication, engineNote: String? = nil) {
         let voice = app.buttons["Voice"].firstMatch
         XCTAssertTrue(voice.waitForExistence(timeout: 10), "the Voice capture button should exist")
         voice.tap()
@@ -52,6 +52,11 @@ final class ArcAVoiceDone: XCTestCase {
         let stop = app.buttons["Done"].firstMatch
         XCTAssertTrue(stop.waitForExistence(timeout: 10), "the voice sheet should be recording")
         Thread.sleep(forTimeInterval: 2.0)   // its Done enables after 1 s of audio
+        if let engineNote {   // live-12 (2) — a forced engine names the tier this take runs
+            let note = app.staticTexts["recorderTestingEngine"]
+            XCTAssertTrue(note.waitForExistence(timeout: 3), "the recorder names the forced engine")
+            XCTAssertEqual(note.label, engineNote)
+        }
         shot(app, "voice-recording")
         stop.tap()
     }
@@ -289,33 +294,44 @@ final class ArcAVoiceDone: XCTestCase {
     /// no on-device recognizer; nothing falls back to Apple's server), the voice is still saved, the Voice item is
     /// marked, and its transcript area says why. Still exactly one entry.
     func testOn_QC_cold_speechUnavailable() {
+        speechUnavailable(["-StubSpeechUnavailable"], label: "on-QC-unavailable")
+    }
+
+    /// live-12 (1)–(2) — tier 4 through the TestFlight switch's own setting (`-speechEngineTesting unavailable` = the
+    /// stored choice): the recorder tries no tier, keeps the audio, and the transcript area says why. One entry.
+    func testRecorder_forcedUnavailable_keepsAudioAndSays() {
+        speechUnavailable(["-speechEngineTesting", "unavailable"], label: "forced-unavailable",
+                          engineNote: "Speech engine (testing): Unavailable")
+    }
+
+    private func speechUnavailable(_ extra: [String], label: String, engineNote: String? = nil) {
         let app = XCUIApplication()
         markBaseline()
         var args = baseArgs(2500)
         if let i = args.firstIndex(of: "-StubVoiceTranscript") { args.removeSubrange(i...(i + 1)) }
-        app.launchArguments = args + ["-UITestLibraryFresh", "-EntryQuikCapture", "-StubSpeechUnavailable"]
+        app.launchArguments = args + ["-UITestLibraryFresh", "-EntryQuikCapture"] + extra
         app.launch()
         quickCaptureVoice(app)
-        recordVoice(app)
+        recordVoice(app, engineNote: engineNote)
         let field = app.descendants(matching: .any).matching(identifier: "voiceTranscript").firstMatch
         XCTAssertTrue(field.waitForExistence(timeout: 15), "the Voice item shows in the capture")
         let message = "Transcript unavailable — this iPhone can't transcribe this language on-device."
         let says = OneEntryInvariant.eventually(10) {
             app.staticTexts.matching(identifier: "voiceTranscriptUnavailable").firstMatch.label == message
         }
-        print("[ArcA] on-QC-unavailable transcript area says unavailable=\(says)")
+        print("[ArcA] \(label) transcript area says unavailable=\(says)")
         XCTAssertTrue(says, "the transcript area says on-device transcription is unavailable")
         var n = newestVoiceNode()
         let audio: () -> [String: Any]? = { ((n?["items"] as? [[String: Any]]) ?? []).first { ($0["type"] as? String) == "audio" } }
         _ = OneEntryInvariant.eventually(10) { n = newestVoiceNode(); return audio()?["transcript_unavailable"] as? Bool == true }
         let voiceItem = audio()
-        print("[ArcA] on-QC-unavailable disk: \(describe(n)) mark=\(voiceItem?["transcript_unavailable"] as? Bool ?? false)")
+        print("[ArcA] \(label) disk: \(describe(n)) mark=\(voiceItem?["transcript_unavailable"] as? Bool ?? false)")
         XCTAssertNotNil(voiceItem?["file"] as? String, "the recording is kept")
         XCTAssertEqual(voiceItem?["transcript_unavailable"] as? Bool, true, "the Voice item is marked transcript-unavailable")
         XCTAssertTrue(((voiceItem?["transcript"] as? String) ?? "").isEmpty, "no words were made up")
-        shot(app, "on-QC-unavailable-before-Done")
+        shot(app, "\(label)-before-Done")
         tapCaptureDone(app)
-        OneEntryInvariant.assert(app, in: self, label: "on-QC-unavailable", baseline: baseline)
+        OneEntryInvariant.assert(app, in: self, label: label, baseline: baseline)
     }
 
     // MARK: - live-11 (4) — the recorder: live words while recording, Done saves them at once, no length cliff

@@ -47,6 +47,7 @@ C2cAppleIntelligenceRoute/testChosenServerShownNotReachable
 # RoutePersists / ReachableServerStillUsed / OnDeviceAppleIntelligenceLibrarian (Host, stub server or device).
 # Arc A (2026-10-12) — voice capture × {Quick Capture cold/warm, "+"} × the auto-name setting on/off, through the real UI.
 ArcAVoiceDone/testOff_QC_cold
+ArcAVoiceDone/testOn_QC_cold_speechUnavailable
 ArcAVoiceDone/testOff_QC_warm
 ArcAVoiceDone/testOff_plus
 ArcAVoiceDone/testOff_QC_cold_leverOffersAfterReopen
@@ -54,5 +55,7 @@ ArcAVoiceDone/testOn_QC_cold
 ArcAVoiceDone/testOn_QC_warm
 ArcAVoiceDone/testOn_plus
 ArcAVoiceDone/testOn_QC_cold_fullLibrary
+ArcAVoiceDone/testOn_QC_cold_slowLoad
+ArcAVoiceDone/testOn_QC_cold_loadLandsMidCapture
 ArcBVoiceTranscript/testAppendTo_landsAtEnd_restoreLeavesNote
 ArcBVoiceTranscript/testAppendTo_afterEditStillTyping

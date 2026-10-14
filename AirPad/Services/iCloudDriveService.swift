@@ -393,6 +393,14 @@ actor iCloudDriveService {
             options: .skipsHiddenFiles
         )
 
+        #if DEBUG
+        // A3 — `-LoadLatencyMs <n>`: hold the listed load for n ms, as a slow iCloud read on device does (T's library
+        // takes seconds to load there), so a capture made during launch meets the load mid-flight.
+        if let i = ProcessInfo.processInfo.arguments.firstIndex(of: "-LoadLatencyMs"),
+           i + 1 < ProcessInfo.processInfo.arguments.count, let ms = Double(ProcessInfo.processInfo.arguments[i + 1]) {
+            Thread.sleep(forTimeInterval: ms / 1000)
+        }
+        #endif
         // Decode every `<dir>/node.json`, remembering its directory for conflict diagnosis.
         // (A file-level iCloud conflict copy — `node 2.json` — is IGNORED here because we only
         //  read `node.json`; a DIRECTORY-level conflict — `nodes/<id> 2/node.json` — is not, and

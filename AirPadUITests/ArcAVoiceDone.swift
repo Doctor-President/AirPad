@@ -11,7 +11,7 @@ final class ArcAVoiceDone: XCTestCase {
     private let transcript = "Remind me to book the piano tuner before the recital next month and ask about the pedal squeak"
 
     private func baseArgs(_ latencyMs: Int) -> [String] {
-        ["-StubAuthorModel", "-EmbedCPUOnly", "-UITestLibrary", "-StdoutToFile",
+        ["-StubAuthorModel", "-EmbedCPUOnly", "-UITestLibrary", "-StdoutToFile", "-StoreProbe",
          "-StubVoiceTranscript", transcript, "-StubAuthorLatencyMs", String(latencyMs)]
     }
 
@@ -186,9 +186,29 @@ final class ArcAVoiceDone: XCTestCase {
                           "\(label): with the setting OFF Done writes nothing — \(describe(n))")
             XCTAssertGreaterThan(proposals(n), 0, "\(label): the offer stays for the lever — \(describe(n))")
         }
+        OneEntryInvariant.assert(app, in: self, label: label, baseline: baseline)   // A3
     }
 
     private func quickCaptureVoice(_ app: XCUIApplication) { awaitCaptureScreen(app) }
+
+    /// A3 — a WARM Quick Capture: the app goes to the background and the SYSTEM opens the deep link, so the running
+    /// process is foregrounded (the Action Button with the app suspended). `XCUIApplication.open(_:)` RELAUNCHED the app
+    /// with its launch arguments (incl. `-UITestLibraryFresh`), so live-9's "warm" rows were a second cold launch.
+    private func openQuickCaptureWarm(_ app: XCUIApplication) {
+        let before = OneEntryInvariant.storeProbe(app)?.count ?? -1
+        XCUIDevice.shared.press(.home)
+        Thread.sleep(forTimeInterval: 1)
+        markBaseline()
+        XCUIDevice.shared.system.open(URL(string: "airpad://quikcapture")!)
+        let confirm = XCUIApplication(bundleIdentifier: "com.apple.springboard").buttons["Open"]
+        if confirm.waitForExistence(timeout: 3) { confirm.tap() }
+        XCTAssertTrue(app.wait(for: .runningForeground, timeout: 10), "the running app comes forward")
+        // Same process: the store still holds the first capture (+ the new capture node once the screen opens).
+        XCTAssertTrue(app.textViews["noteEditor"].waitForExistence(timeout: 20), "Quick Capture should open")
+        let after = OneEntryInvariant.storeProbe(app)?.count ?? -1
+        print("[ArcA3] warm reopen store nodes before=\(before) after-open=\(after)")
+        XCTAssertGreaterThanOrEqual(after, before, "a warm open keeps the library in memory (no relaunch)")
+    }
 
     /// The regular "+" capture (`-RealCapturePlus` runs the exact "+" action: a capture node pushed in the entry
     /// editor). Its Voice lives in the entry's "+" menu.
@@ -234,10 +254,7 @@ final class ArcAVoiceDone: XCTestCase {
     func testOff_QC_warm() {
         let app = launch(["-EntryQuikCapture"] + Self.off)
         captureVoice(app, label: "off-QC-warm-1", delegateOn: false, openVoice: quickCaptureVoice)
-        XCUIDevice.shared.press(.home)
-        Thread.sleep(forTimeInterval: 1)
-        markBaseline()
-        app.open(URL(string: "airpad://quikcapture")!)
+        openQuickCaptureWarm(app)
         captureVoice(app, label: "off-QC-warm-2", delegateOn: false, openVoice: quickCaptureVoice)
     }
 
@@ -254,13 +271,57 @@ final class ArcAVoiceDone: XCTestCase {
         captureVoice(app, label: "on-QC-cold", delegateOn: true, openVoice: quickCaptureVoice)
     }
 
+    /// A3 — cold, with the library load as slow as on T's device (seconds over iCloud), so the Quick Capture node is
+    /// created while the initial load is still in flight (the CH-B race).
+    func testOn_QC_cold_slowLoad() {
+        let app = launch(["-EntryQuikCapture", "-LoadLatencyMs", "3000"])
+        captureVoice(app, label: "on-QC-cold-slow", delegateOn: true, openVoice: quickCaptureVoice)
+    }
+
+    /// A3 — cold, with the launch load landing BETWEEN the capture node's save and its insert into the store (the
+    /// ordering a busy main thread produces on device; held open here by `-AddNodeLatencyMs`).
+    func testOn_QC_cold_loadLandsMidCapture() {
+        let app = launch(["-EntryQuikCapture", "-AddNodeLatencyMs", "2500"])
+        captureVoice(app, label: "on-QC-cold-race", delegateOn: true, openVoice: quickCaptureVoice)
+    }
+
+    /// live-10 (4) — speech is on-device only. When this iPhone can't transcribe on-device (`-StubSpeechUnavailable`:
+    /// no on-device recognizer; nothing falls back to Apple's server), the voice is still saved, the Voice item is
+    /// marked, and its transcript area says why. Still exactly one entry.
+    func testOn_QC_cold_speechUnavailable() {
+        let app = XCUIApplication()
+        markBaseline()
+        var args = baseArgs(2500)
+        if let i = args.firstIndex(of: "-StubVoiceTranscript") { args.removeSubrange(i...(i + 1)) }
+        app.launchArguments = args + ["-UITestLibraryFresh", "-EntryQuikCapture", "-StubSpeechUnavailable"]
+        app.launch()
+        quickCaptureVoice(app)
+        recordVoice(app)
+        let field = app.descendants(matching: .any).matching(identifier: "voiceTranscript").firstMatch
+        XCTAssertTrue(field.waitForExistence(timeout: 15), "the Voice item shows in the capture")
+        let message = "Transcript unavailable — this iPhone can't transcribe this language on-device."
+        let says = OneEntryInvariant.eventually(10) {
+            app.staticTexts.matching(identifier: "voiceTranscriptUnavailable").firstMatch.label == message
+        }
+        print("[ArcA] on-QC-unavailable transcript area says unavailable=\(says)")
+        XCTAssertTrue(says, "the transcript area says on-device transcription is unavailable")
+        var n = newestVoiceNode()
+        let audio: () -> [String: Any]? = { ((n?["items"] as? [[String: Any]]) ?? []).first { ($0["type"] as? String) == "audio" } }
+        _ = OneEntryInvariant.eventually(10) { n = newestVoiceNode(); return audio()?["transcript_unavailable"] as? Bool == true }
+        let voiceItem = audio()
+        print("[ArcA] on-QC-unavailable disk: \(describe(n)) mark=\(voiceItem?["transcript_unavailable"] as? Bool ?? false)")
+        XCTAssertNotNil(voiceItem?["file"] as? String, "the recording is kept")
+        XCTAssertEqual(voiceItem?["transcript_unavailable"] as? Bool, true, "the Voice item is marked transcript-unavailable")
+        XCTAssertTrue(((voiceItem?["transcript"] as? String) ?? "").isEmpty, "no words were made up")
+        shot(app, "on-QC-unavailable-before-Done")
+        tapCaptureDone(app)
+        OneEntryInvariant.assert(app, in: self, label: "on-QC-unavailable", baseline: baseline)
+    }
+
     func testOn_QC_warm() {
         let app = launch(["-EntryQuikCapture"])
         captureVoice(app, label: "on-QC-warm-1", delegateOn: true, openVoice: quickCaptureVoice)
-        XCUIDevice.shared.press(.home)
-        Thread.sleep(forTimeInterval: 1)
-        markBaseline()
-        app.open(URL(string: "airpad://quikcapture")!)
+        openQuickCaptureWarm(app)
         captureVoice(app, label: "on-QC-warm-2", delegateOn: true, openVoice: quickCaptureVoice)
     }
 

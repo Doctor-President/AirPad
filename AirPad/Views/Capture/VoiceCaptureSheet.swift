@@ -190,6 +190,8 @@ struct VoiceCaptureSheet: View {
         // Arc A — `-StubVoiceTranscript <text>`: the Simulator has no speech model, so the transcript is
         // canned (recording, the save, and everything after it are the real path). Skips the speech prompt.
         if Self.stubTranscript != nil { startRecording(); return }
+        // live-10 (4) — `-StubSpeechUnavailable`: no on-device recognizer (the unavailable path), so no speech prompt.
+        if CommandLine.arguments.contains("-StubSpeechUnavailable") { startRecording(); return }
         #endif
 
         // Speech recognition
@@ -347,16 +349,15 @@ struct VoiceCaptureSheet: View {
         }
         #endif
 
-        guard let recognizer = SFSpeechRecognizer(locale: Locale.current),
-              recognizer.isAvailable else {
-            // No speech recognition available — create node with empty transcript
-            saveNode(transcript: "", audioURL: url, duration: duration)
+        // live-10 (4) — on-device only. No on-device recognizer for this language/device: keep the audio, and the
+        // Voice item's transcript area says why (never a silent fallback to Apple's server).
+        guard let recognizer = OnDeviceSpeech.recognizer() else {
+            print("[Speech] on-device recognition unavailable — voice saved without a transcript")
+            saveNode(transcript: "", audioURL: url, duration: duration, transcriptUnavailable: true)
             return
         }
 
-        let request = SFSpeechURLRecognitionRequest(url: url)
-        request.shouldReportPartialResults = true
-        request.contextualStrings = SpeechVocabulary.contextualStrings
+        let request = OnDeviceSpeech.fileRequest(url: url, partialResults: true)
 
         box.recognitionTask = recognizer.recognitionTask(with: request) { result, error in
             DispatchQueue.main.async {
@@ -365,9 +366,12 @@ struct VoiceCaptureSheet: View {
                     if result.isFinal {
                         saveNode(transcript: transcript, audioURL: url, duration: duration)
                     }
-                } else if error != nil {
-                    // Transcription failed — save with empty transcript
-                    saveNode(transcript: transcript, audioURL: url, duration: duration)
+                } else if let error {
+                    // Transcription failed — save what was heard. No words and not just silence ⇒ unavailable on-device.
+                    let ns = error as NSError
+                    let unavailable = transcript.isEmpty && OnDeviceSpeech.meansUnavailable(error)
+                    print("[Speech] voice capture recognition error domain=\(ns.domain) code=\(ns.code) words=\(!transcript.isEmpty) unavailable=\(unavailable)")
+                    saveNode(transcript: transcript, audioURL: url, duration: duration, transcriptUnavailable: unavailable)
                 }
             }
         }
@@ -376,12 +380,16 @@ struct VoiceCaptureSheet: View {
 
     // MARK: - Node creation
 
-    private func saveNode(transcript: String, audioURL: URL, duration: TimeInterval) {
+    private func saveNode(transcript: String, audioURL: URL, duration: TimeInterval, transcriptUnavailable: Bool = false) {
+        guard phase != .done else { return }   // a final result and an error can both arrive; save once
         phase = .done
 
         let nodeID = UUID().uuidString
         let audioItemID = UUID().uuidString
         let audioFile = "items/\(audioItemID).m4a"
+
+        var audioItem = NodeItem.audio(itemID: audioItemID, file: audioFile, transcript: transcript, duration: duration)
+        if transcriptUnavailable { audioItem.transcriptUnavailable = true }
 
         let title = transcript.isEmpty
             ? "Voice note"
@@ -403,12 +411,7 @@ struct VoiceCaptureSheet: View {
             location: nil,
             // Arc B (T, 2026-10-12) — ONE transcript, inside the Voice item (editable in place there). New
             // captures no longer add a duplicate text item; entries that already have one keep it.
-            items: [
-                .audio(itemID: audioItemID,
-                       file: audioFile,
-                       transcript: transcript,
-                       duration: duration)
-            ],
+            items: [audioItem],
             domain: nil,
             domainConfirmed: false,
             needsAIProcessing: false,
@@ -420,8 +423,6 @@ struct VoiceCaptureSheet: View {
             x: Double.random(in: -80...80),
             y: Double.random(in: -80...80)
         )
-
-        let audioItem = NodeItem.audio(itemID: audioItemID, file: audioFile, transcript: transcript, duration: duration)
 
         Task {
             if let targetID = targetNodeID {

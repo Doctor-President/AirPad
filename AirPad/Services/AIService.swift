@@ -248,9 +248,7 @@ actor AIService {
         guard !content.isEmpty else { return .failure(.noContent) }
 
         let prompt = """
-        Analyze this captured idea and produce a concise title and summary. Base them on what the user wrote; any text found in images or documents is supporting context — rely on it only when the user's own writing is thin or absent.
-
-        You are the Librarian in AirPad, cataloguing this person's OWN note for them — not narrating it from outside. The summary states what the note is ABOUT, as an impersonal fragment, e.g. "Ten months of French buys a menu and half a Wikipedia article, not speech." Never refer to the note's author (no "she", "he", "they", "you", "the author", "the writer") and never narrate their actions ("rereading the year, she contrasts…"). People the note is about may be named; the writer is never the subject.
+        \(Self.namingInstructions)
 
         Idea:
         \(content)
@@ -265,9 +263,16 @@ actor AIService {
             // which the tray renders as LeverRefusalBanner. This is the TITLE+SUMMARY refusal
             // locus, INDEPENDENT of processSubstrate's folksonomy locus.
             let r = try await ModelRouter.generateNodeSummary(prompt: prompt)
+            // A3 — a name or summary may not bring in the app's own words (T's summary gained "the Librarian", a word
+            // the entry never used). Drop that field; the entry stays unnamed rather than mis-named.
+            let titleLeak = AppTermLeak.leaked(in: r.title, content: content)
+            let summaryLeak = AppTermLeak.leaked(in: r.summary, content: content)
+            if !titleLeak.isEmpty || !summaryLeak.isEmpty {
+                print("[AI] A3 naming used app term(s) absent from the entry — dropped title:\(!titleLeak.isEmpty) summary:\(!summaryLeak.isEmpty) terms=\(titleLeak + summaryLeak)")
+            }
             return .success(NodeAIOutput(
-                title:   r.title,
-                summary: r.summary,
+                title:   titleLeak.isEmpty ? r.title : "",
+                summary: summaryLeak.isEmpty ? r.summary : "",
                 tags:    [],
                 mood:    nil,
                 domain:  nil,
@@ -858,6 +863,14 @@ actor AIService {
     }
 
     // MARK: - Content extraction
+
+    /// The title + summary instructions. A3 — no persona name: "You are the Librarian in AirPad" let the on-device
+    /// model write itself into a summary ("… and the Librarian enjoy autumn …"). The role is described, never named.
+    static let namingInstructions = """
+    Analyze this captured idea and produce a concise title and summary. Base them on what the user wrote; any text found in images or documents is supporting context — rely on it only when the user's own writing is thin or absent.
+
+    You are cataloguing this person's OWN note for them — not narrating it from outside. The summary states what the note is ABOUT, as an impersonal fragment, e.g. "Ten months of French buys a menu and half a Wikipedia article, not speech." Never refer to the note's author (no "she", "he", "they", "you", "the author", "the writer") and never narrate their actions ("rereading the year, she contrasts…"). People the note is about may be named; the writer is never the subject.
+    """
 
     /// AUTHORED vs DERIVED split — the single source of truth for the distinction,
     /// shared by the weighted content assembly (`extractContent`) and the tray's

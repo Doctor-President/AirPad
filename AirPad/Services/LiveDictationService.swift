@@ -11,6 +11,107 @@ enum SpeechVocabulary {
                                     "Sample Library", "Curious Objects"]
 }
 
+/// live-10 (4) — ★ T approved 2026-10-13: speech never leaves the device. Every recognition request in the app is
+/// built here and requires on-device recognition. When this iPhone can't transcribe the language on-device, the
+/// audio is still kept and its transcript area says so — there is no silent fallback to Apple's server.
+enum OnDeviceSpeech {
+    static let unavailableMessage = "Transcript unavailable — this iPhone can't transcribe this language on-device."
+
+    /// The current locale's recognizer, only when it can transcribe on-device. Nil ⇒ unavailable (never the server).
+    static func recognizer(locale: Locale = .current) -> SFSpeechRecognizer? {
+        #if DEBUG
+        if CommandLine.arguments.contains("-StubSpeechUnavailable") { return nil }
+        #endif
+        guard let r = SFSpeechRecognizer(locale: locale), canTranscribe(supportsOnDevice: r.supportsOnDeviceRecognition) else { return nil }
+        return r
+    }
+
+    /// On-device support is the whole test. `isAvailable` is deliberately not consulted: it can read false offline (it
+    /// tracks the server path), and offline — airplane mode — is exactly where on-device must still work. If the
+    /// on-device engine then can't run, the task errors and the item is marked unavailable.
+    static func canTranscribe(supportsOnDevice: Bool) -> Bool { supportsOnDevice }
+
+    /// A recorded file (voice capture, shared-in audio).
+    static func fileRequest(url: URL, partialResults: Bool) -> SFSpeechURLRecognitionRequest {
+        let r = SFSpeechURLRecognitionRequest(url: url)
+        r.shouldReportPartialResults = partialResults
+        configure(r)
+        return r
+    }
+
+    /// Live microphone buffers (Librarian Search / Ask dictation).
+    static func bufferRequest() -> SFSpeechAudioBufferRecognitionRequest {
+        let r = SFSpeechAudioBufferRecognitionRequest()
+        r.shouldReportPartialResults = true
+        configure(r)
+        return r
+    }
+
+    private static func configure(_ r: SFSpeechRecognitionRequest) {
+        r.requiresOnDeviceRecognition = true
+        r.contextualStrings = SpeechVocabulary.contextualStrings
+    }
+
+    /// A recognition error that ended with no words reads as "unavailable on-device" — unless it was only silence
+    /// or a cancel. The domain/code is logged (never the audio or words) so a device log shows which it was.
+    static func meansUnavailable(_ error: Error) -> Bool {
+        let e = error as NSError
+        if e.domain == "kAFAssistantErrorDomain", [1110, 216, 301].contains(e.code) { return false }   // no speech · cancelled
+        if e.domain == NSCocoaErrorDomain, e.code == NSUserCancelledError { return false }
+        return true
+    }
+
+    /// `-OnDeviceSpeechSelfTest` — every request builder the app uses, plus the unavailable path. Synthetic only.
+    static func selfTest() -> String {
+        var rows: [String] = [], fails = 0
+        func row(_ name: String, _ ok: Bool) { rows.append("\(ok ? "PASS" : "FAIL") \(name)"); if !ok { fails += 1 } }
+        let url = FileManager.default.temporaryDirectory.appendingPathComponent("selftest.m4a")
+        let voice = fileRequest(url: url, partialResults: true)      // VoiceCaptureSheet.transcribe
+        let shared = fileRequest(url: url, partialResults: false)    // CorpusStore.transcribeAudioFile
+        let dictation = bufferRequest()                              // LiveDictationService.start
+        row("voice-capture-request-on-device", voice.requiresOnDeviceRecognition)
+        row("shared-audio-request-on-device", shared.requiresOnDeviceRecognition)
+        row("dictation-request-on-device", dictation.requiresOnDeviceRecognition)
+        row("vocabulary-kept-on-every-request",
+            [voice, shared, dictation].allSatisfy { $0.contextualStrings == SpeechVocabulary.contextualStrings })
+        row("no-server-fallback-when-unsupported", !canTranscribe(supportsOnDevice: false))
+        row("on-device-capable-transcribes", canTranscribe(supportsOnDevice: true))
+        row("silence-is-not-unavailable", !meansUnavailable(NSError(domain: "kAFAssistantErrorDomain", code: 1110)))
+        row("engine-error-is-unavailable", meansUnavailable(NSError(domain: "kLSRErrorDomain", code: 300)))
+        var item = NodeItem.audio(file: "items/x.m4a", transcript: "", duration: 3)
+        item.transcriptUnavailable = true
+        let enc = JSONEncoder(), dec = JSONDecoder()
+        let json = (try? enc.encode(item)).flatMap { String(data: $0, encoding: .utf8) } ?? ""
+        let back = (try? enc.encode(item)).flatMap { try? dec.decode(NodeItem.self, from: $0) }
+        let legacy = try? dec.decode(NodeItem.self, from: Data(#"{"id":"a","type":"audio","created_at":0}"#.utf8))
+        row("unavailable-mark-round-trips", json.contains("\"transcript_unavailable\":true") && back?.transcriptUnavailable == true
+            && legacy != nil && legacy?.transcriptUnavailable == nil)
+        return "[OnDeviceSpeechSelfTest] \(fails == 0 ? "PASS" : "FAIL") — \(rows.count - fails)/\(rows.count)\n" + rows.joined(separator: "\n")
+    }
+}
+
+/// A3 (T, TF 202610131010) — the app's own words may reach a generated title or summary only when the entry itself
+/// uses them. Case-insensitive; "librarian" in a note about a librarian is the note's word, not a leak.
+enum AppTermLeak {
+    static let terms = SpeechVocabulary.contextualStrings
+    static func leaked(in output: String, content: String) -> [String] {
+        terms.filter { output.range(of: $0, options: .caseInsensitive) != nil && content.range(of: $0, options: .caseInsensitive) == nil }
+    }
+
+    /// `-AppTermLeakSelfTest` — synthetic rows only.
+    static func selfTest() -> String {
+        var rows: [String] = [], fails = 0
+        func row(_ name: String, _ ok: Bool) { rows.append("\(ok ? "PASS" : "FAIL") \(name)"); if !ok { fails += 1 } }
+        let spoken = "Walked the orchard with Sam after lunch; the first frost is due next week"
+        row("summary-naming-the-app-is-a-leak", leaked(in: "Sam and the Librarian enjoy autumn at the orchard", content: spoken) == ["Librarian"])
+        row("title-naming-the-app-is-a-leak", leaked(in: "AirPad orchard walk", content: spoken) == ["AirPad"])
+        row("clean-summary-passes", leaked(in: "An orchard walk with Sam before the first frost", content: spoken).isEmpty)
+        row("the-entry's-own-word-passes", leaked(in: "Returning books to the librarian", content: "Return the books to the librarian by Friday").isEmpty)
+        row("instructions-name-no-app-term", terms.allSatisfy { AIService.namingInstructions.range(of: $0, options: .caseInsensitive) == nil })
+        return "[AppTermLeakSelfTest] \(fails == 0 ? "PASS" : "FAIL") — \(rows.count - fails)/\(rows.count)\n" + rows.joined(separator: "\n")
+    }
+}
+
 /// Shared live-dictation engine. Buffer-based SFSpeechRecognizer +
 /// AVAudioEngine tap streaming partial results into a caller-supplied
 /// closure. ONE engine, owned as a singleton — the Librarian Search
@@ -34,7 +135,6 @@ final class LiveDictationService {
     private(set) var activeToken: String? = nil
 
     private let engine = AVAudioEngine()
-    private let recognizer = SFSpeechRecognizer(locale: Locale.current)
     private var request: SFSpeechAudioBufferRecognitionRequest?
     private var task: SFSpeechRecognitionTask?
 
@@ -63,8 +163,12 @@ final class LiveDictationService {
         let speech = await withCheckedContinuation { c in
             SFSpeechRecognizer.requestAuthorization { c.resume(returning: $0) }
         }
-        guard speech == .authorized,
-              let recognizer, recognizer.isAvailable else { return }
+        guard speech == .authorized else { return }
+        // live-10 (4) — on-device only: no on-device recognizer for this language/device ⇒ no dictation (never the server).
+        guard let recognizer = OnDeviceSpeech.recognizer() else {
+            print("[Speech] dictation not started — on-device recognition unavailable")
+            return
+        }
 
         self.baseline = baseline
         self.onUpdate = onUpdate
@@ -78,15 +182,8 @@ final class LiveDictationService {
             return
         }
 
-        let req = SFSpeechAudioBufferRecognitionRequest()
-        req.shouldReportPartialResults = true
-        req.contextualStrings = SpeechVocabulary.contextualStrings
-        // On-device when the locale model is available: near-instant
-        // partials + audio never leaves the device (privacy spine).
-        // Falls back to default (server-capable) path when unsupported.
-        if recognizer.supportsOnDeviceRecognition {
-            req.requiresOnDeviceRecognition = true
-        }
+        // On-device only (live-10 (4)): near-instant partials + audio never leaves the device (privacy spine).
+        let req = OnDeviceSpeech.bufferRequest()
         self.request = req
 
         let node = engine.inputNode

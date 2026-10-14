@@ -570,6 +570,7 @@ struct DashboardView: View {
                         onRename: canManage(collection) ? { renameTarget = collection } : nil,
                         onDelete: canDelete(collection) ? { deleteTarget = collection } : nil
                     )
+                    .accessibilityIdentifier("collectionRow-\(collection.id)")   // A3 — the user's Library row, not the sample's
                     // Hairline after every collection row. The final
                     // collection row sits above NewCollectionButton (not
                     // the section end), so a divider here is correct;

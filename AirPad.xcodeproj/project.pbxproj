@@ -82,6 +82,7 @@
 		38853CBE29DB65D5ED44A3F6 /* FlutedGlass.swift in Sources */ = {isa = PBXBuildFile; fileRef = F7AF6427A219BF4C6B063118 /* FlutedGlass.swift */; };
 		3B496945356A064AD86E3547 /* DocumentPickerView.swift in Sources */ = {isa = PBXBuildFile; fileRef = D06AD49C19B1632AA4F8E29C /* DocumentPickerView.swift */; };
 		3BAFE63927E0F48132A90141 /* latobold_msdf.png in Resources */ = {isa = PBXBuildFile; fileRef = F0B477059444D44B3E9DC03D /* latobold_msdf.png */; };
+		3BF81C58D40F6C131CDCDA99 /* OneEntryInvariant.swift in Sources */ = {isa = PBXBuildFile; fileRef = 78BE389CD3124C9CAA5D01C3 /* OneEntryInvariant.swift */; };
 		3C1C7C69B23FACE57AAD1E4D /* QRScannerView.swift in Sources */ = {isa = PBXBuildFile; fileRef = 5D1408F7F32D1B41467621B6 /* QRScannerView.swift */; };
 		3EAA7FF97CF618DCA595A383 /* FieldValueFormatter.swift in Sources */ = {isa = PBXBuildFile; fileRef = E650D0049F1C1E20D3E562B1 /* FieldValueFormatter.swift */; };
 		3F3D03BCB7B579A34CFA9B92 /* CDGhostWhileTyping.swift in Sources */ = {isa = PBXBuildFile; fileRef = 1B6BEF2C32FEEC7F6D57FD03 /* CDGhostWhileTyping.swift */; };
@@ -519,6 +520,7 @@
 		770199F6D56D0EDB0BCA874A /* LinkViewModeToggle.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = LinkViewModeToggle.swift; sourceTree = "<group>"; };
 		780B6A68830590DBDA5189D1 /* StrandService.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = StrandService.swift; sourceTree = "<group>"; };
 		782CAEDAAAAE280B4F2A8D91 /* vocab.txt */ = {isa = PBXFileReference; lastKnownFileType = text; path = vocab.txt; sourceTree = "<group>"; };
+		78BE389CD3124C9CAA5D01C3 /* OneEntryInvariant.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = OneEntryInvariant.swift; sourceTree = "<group>"; };
 		7910DE998349210AB2623D42 /* Lora-Italic.ttf */ = {isa = PBXFileReference; lastKnownFileType = file; path = "Lora-Italic.ttf"; sourceTree = "<group>"; };
 		7917C14BA2EB5AE11F600CA0 /* SubstrateLayoutService.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = SubstrateLayoutService.swift; sourceTree = "<group>"; };
 		79694583DE4ADDFCDD62B5F6 /* SceneDelegate.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = SceneDelegate.swift; sourceTree = "<group>"; };
@@ -786,6 +788,7 @@
 				47D13AA6D276BABAF0A77D8B /* LibrarianGauntletV2.swift */,
 				9C2FF3FB474EB570C6F67185 /* LibrarianPerfGate.swift */,
 				DD915DF68A27E1ED37382E19 /* ManageModelsRepro.swift */,
+				78BE389CD3124C9CAA5D01C3 /* OneEntryInvariant.swift */,
 				87ABAE5EF1669794E0C9F8F8 /* RecorderRender.swift */,
 				331D29B33502CD4329D9797D /* RelatedTapRepro.swift */,
 				CB533693BAEAB8B5A5A69BC9 /* TestFlightRestore.swift */,
@@ -1549,6 +1552,7 @@
 				385D05CF17B9D82F1F6D8A2D /* LibrarianGauntletV2.swift in Sources */,
 				7B5E835B2655C01AC63A3F3C /* LibrarianPerfGate.swift in Sources */,
 				570D62A8CEA2A19CC44B383D /* ManageModelsRepro.swift in Sources */,
+				3BF81C58D40F6C131CDCDA99 /* OneEntryInvariant.swift in Sources */,
 				8D6452684E76A0BC003DB116 /* RecorderRender.swift in Sources */,
 				E33D0E04DA7D961FF7E4F164 /* RelatedTapRepro.swift in Sources */,
 				70696C7DE6DCC44361DBCC54 /* TestFlightRestore.swift in Sources */,

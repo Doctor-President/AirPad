@@ -256,6 +256,9 @@ struct NodeGridView: View {
                             }
                             // #3 — shared focus glow (matches the tile's 14pt clip).
                             .focusHighlight(nodeID: node.id, cornerRadius: 14)
+                            // A3 — one tile per entry, findable by id (the duplicate-entry check).
+                            .accessibilityElement(children: .contain)
+                            .accessibilityIdentifier("cardTile-\(node.id)")
                         }
                     }
                     .padding(.leading, tileSpacing)

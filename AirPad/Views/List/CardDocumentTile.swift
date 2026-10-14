@@ -69,7 +69,7 @@ struct CardDocumentTile: View {
     }
 
     private var displayTitle: String {
-        documentItem.documentTitle ?? documentItem.fileName
+        documentItem.displayName
     }
 
     private var metricsLine: String? {

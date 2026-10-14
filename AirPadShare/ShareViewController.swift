@@ -151,7 +151,8 @@ final class ShareViewController: UIViewController {
             provider.loadItem(forTypeIdentifier: UTType.url.identifier) { item, _ in
                 guard let url = item as? URL else { completion(nil); return }
                 if url.isFileURL {
-                    completion(makeFileItem(fromFileURL: url, nodeID: nodeID, now: now, type: .document, description: url.lastPathComponent))
+                    completion(makeFileItem(fromFileURL: url, nodeID: nodeID, now: now, type: .document,
+                                            description: DocumentNaming.realName(suggested: provider.suggestedName, url: url)))
                 } else {
                     completion(makeLinkItem(url: url, now: now))
                 }
@@ -170,7 +171,10 @@ final class ShareViewController: UIViewController {
                 if (ext == "txt" || ext == "md"), let content = try? String(contentsOf: url, encoding: .utf8) {
                     completion(makeTextItem(text: content, now: now))
                 } else {
-                    completion(makeFileItem(fromFileURL: url, nodeID: nodeID, now: now, type: .document, description: url.lastPathComponent))
+                    // live-13 (4) — the document's real name: the provider's suggested name, else the vended file's
+                    // (a temp/UUID one is no name — the app then shows the PDF title or the date).
+                    completion(makeFileItem(fromFileURL: url, nodeID: nodeID, now: now, type: .document,
+                                            description: DocumentNaming.realName(suggested: provider.suggestedName, url: url)))
                 }
             }
         } else {

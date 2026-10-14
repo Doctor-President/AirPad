@@ -66,7 +66,10 @@ enum OnDeviceSpeech {
     static func liveModule(_ tier: SpeechTier, locale: Locale) -> LiveModule? {
         switch tier {
         case .speech:
-            return .speech(SpeechTranscriber(locale: locale, transcriptionOptions: [], reportingOptions: [.volatileResults],
+            // live-13 (2) — `.fastResults`: measured on T's iPhone (iOS 26.6, synthetic speech, online and offline alike)
+            // the first words came 4.0–4.1 s after speech began without it, 1.1–1.2 s with it, and the error rate didn't
+            // move (4.2% on a 71 s take). Without it tier 1 trailed Dictation and the older recognizer by seconds.
+            return .speech(SpeechTranscriber(locale: locale, transcriptionOptions: [], reportingOptions: [.volatileResults, .fastResults],
                                              attributeOptions: []))
         case .dictation:
             return .dictation(DictationTranscriber(locale: locale, contentHints: [], transcriptionOptions: [.punctuation],
@@ -88,36 +91,49 @@ enum OnDeviceSpeech {
     /// Tiers 1–2: a ready on-device analyzer for `tier` in `locale`, or nil — this device/locale doesn't support it, or
     /// its model isn't on this iPhone yet (the recorder then tries the next tier). A missing model is fetched in the
     /// background for next time: Apple's model download, no audio and no words leave the phone.
+    /// live-13 (2) — choosing the tier never waits on the network: only the installed status is read (local; 2–26 ms on
+    /// T's iPhone, online or in airplane mode). Reserving the locale and asking for / downloading the model — the calls
+    /// that go through Apple's asset catalog — run in the background, never before a take starts.
     @available(iOS 26.0, macOS 26.0, *)
     static func liveAnalyzer(_ tier: SpeechTier, locale: Locale = .current) async -> (SpeechAnalyzer, LiveModule)? {
         #if DEBUG
         if CommandLine.arguments.contains("-StubSpeechUnavailable") { return nil }
         #endif
+        // live-13 (2) — each awaited step's time goes in the log (times only, never words), so an offline take shows
+        // which call waited.
+        var clock = ContinuousClock.now, steps: [String] = []
+        func lap(_ name: String) { steps.append("\(name)=\(millis(since: clock))ms"); clock = .now }
+        defer { print("[Speech] assets tier=\(tier.rawValue) \(steps.joined(separator: " "))") }
         let supported: Locale?
         switch tier {
         case .speech:
-            guard SpeechTranscriber.isAvailable else { return nil }
+            guard SpeechTranscriber.isAvailable else { steps.append("isAvailable=false"); return nil }
             supported = await SpeechTranscriber.supportedLocale(equivalentTo: locale)
         case .dictation:
             supported = await DictationTranscriber.supportedLocale(equivalentTo: locale)
         case .olderRecognizer, .unavailable:
             return nil
         }
-        guard let supported, let live = liveModule(tier, locale: supported) else { return nil }
+        lap("supportedLocale")
+        guard let supported, let live = liveModule(tier, locale: supported) else { steps.append("unsupported"); return nil }
         // The model counts as installed for THIS app only once the app has reserved the locale and asked for it (the
-        // Mac bench: a model already on disk read "supported" to a new binary until then). No request back ⇒ it's already
-        // here and is now ours; a request ⇒ it must be downloaded first — fetched in the background for next time.
-        var status = await AssetInventory.status(forModules: [live.module])
-        if status != .installed {
-            _ = try? await AssetInventory.reserve(locale: live.locale)
-            if let request = try? await AssetInventory.assetInstallationRequest(supporting: [live.module]) {
-                print("[Speech] recorder tier=\(tier.rawValue) model not on this iPhone — next tier this take; fetching it for next time")
-                Task.detached { try? await request.downloadAndInstall() }
-            } else {
-                status = await AssetInventory.status(forModules: [live.module])
+        // Mac bench: a model already on disk read "supported" to a new binary until then). Not installed ⇒ this take
+        // uses the next tier, and the reservation + request (+ download if it's missing) run in the background, so the
+        // next take finds it installed.
+        let status = await AssetInventory.status(forModules: [live.module])
+        lap("status")
+        steps.append("installed=\(status == .installed)")
+        guard status == .installed else {
+            print("[Speech] recorder tier=\(tier.rawValue) model not ready for this app — next tier this take; preparing it in the background")
+            let module = live.module, reserveLocale = live.locale
+            Task.detached {
+                _ = try? await AssetInventory.reserve(locale: reserveLocale)
+                if let request = try? await AssetInventory.assetInstallationRequest(supporting: [module]) {
+                    try? await request.downloadAndInstall()
+                }
             }
+            return nil
         }
-        guard status == .installed else { return nil }
         let analyzer = SpeechAnalyzer(modules: [live.module])
         if let context = analysisContext(for: live) { try? await analyzer.setContext(context) }
         return (analyzer, live)
@@ -132,7 +148,8 @@ enum OnDeviceSpeech {
     /// or a cancel. The domain/code is logged (never the audio or words) so a device log shows which it was.
     static func meansUnavailable(_ error: Error) -> Bool {
         let e = error as NSError
-        if e.domain == "kAFAssistantErrorDomain", [1110, 216, 301].contains(e.code) { return false }   // no speech · cancelled
+        // no speech · cancelled. live-13: iOS 26.6 reports the on-device recogniser's cancel as kLSRErrorDomain 301.
+        if ["kAFAssistantErrorDomain", "kLSRErrorDomain"].contains(e.domain), [1110, 216, 301].contains(e.code) { return false }
         if e.domain == NSCocoaErrorDomain, e.code == NSUserCancelledError { return false }
         return true
     }

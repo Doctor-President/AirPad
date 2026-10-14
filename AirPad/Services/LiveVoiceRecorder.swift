@@ -22,10 +22,14 @@ final class LiveVoiceRecorder {
     @ObservationIgnored private let engine = AVAudioEngine()
     @ObservationIgnored private var sink: TapSink?
     @ObservationIgnored private var transcriber: (any LiveTranscribing)?
+    /// live-13 (1) — the take's ONE text, for every tier: `settled`/`volatile` show it, Done saves it.
+    @ObservationIgnored private var text: LiveText?
+    @ObservationIgnored private var firstWordLogged = false
     @ObservationIgnored private var take: Take?
 
     /// Opens the microphone and starts listening. False ⇒ the microphone couldn't start (nothing to save).
     func start() async -> Bool {
+        let pressed = ContinuousClock.now
         do {
             let session = AVAudioSession.sharedInstance()
             try session.setCategory(.record, mode: .default, options: .duckOthers)
@@ -48,12 +52,24 @@ final class LiveVoiceRecorder {
             print("[VoiceCapture] file error: \(error)"); return false
         }
 
-        let (tier, transcriber) = await Self.makeTranscriber(micFormat: format) { [weak self] settled, volatile in
-            Task { @MainActor in self?.settled = settled; self?.volatile = volatile }
+        let text = LiveText { [weak self] settled, volatile in
+            Task { @MainActor in
+                guard let self else { return }
+                self.settled = settled; self.volatile = volatile
+                // live-13 (2) — time to the first word, from the press (a time, never the words).
+                if !self.firstWordLogged, !(settled.isEmpty && volatile.isEmpty) {
+                    self.firstWordLogged = true
+                    let ms = millis(since: pressed)
+                    SpeechEngineTesting.lastTake?.firstWordMs = ms
+                    print("[Speech] recorder first words after \(ms)ms tier=\(self.tier?.rawValue ?? "?")")
+                }
+            }
         }
+        self.text = text
+        let (tier, transcriber) = await Self.makeTranscriber(micFormat: format, text: text)
         unavailable = transcriber == nil
         self.tier = tier
-        SpeechEngineTesting.lastTake = tier
+        SpeechEngineTesting.lastTake = .init(tier: tier, readyMs: millis(since: pressed))
         self.transcriber = transcriber
 
         #if DEBUG
@@ -90,11 +106,13 @@ final class LiveVoiceRecorder {
         guard let sink else { return nil }
         stopEngine()
         let (url, duration) = sink.close()
-        let result = await transcriber?.finish() ?? (text: "", unavailable: true)
+        let failed = await transcriber?.finish() ?? true
         transcriber = nil
         deactivateSession()
-        let t = Take(url: url, transcript: result.text, duration: duration,
-                     transcriptUnavailable: unavailable || (result.unavailable && result.text.isEmpty))
+        // Saved = shown: the same LiveText the screen was showing, whichever tier ran.
+        let words = text?.full ?? ""
+        let t = Take(url: url, transcript: words, duration: duration,
+                     transcriptUnavailable: unavailable || (failed && words.isEmpty))
         take = t
         return t
     }
@@ -125,35 +143,40 @@ final class LiveVoiceRecorder {
     /// tier first (`OnDeviceSpeech.chain`), the first that can run wins; none ⇒ nil (unavailable — the audio is still kept).
     /// Logs the tier that ran — the tier only, never words.
     private static func makeTranscriber(micFormat: AVAudioFormat,
-                                        onUpdate: @escaping @Sendable (String, String) -> Void) async -> (tier: SpeechTier, transcriber: (any LiveTranscribing)?) {
+                                        text: LiveText) async -> (tier: SpeechTier, transcriber: (any LiveTranscribing)?) {
         #if DEBUG
         if CommandLine.arguments.contains("-StubSpeechUnavailable") { return (.unavailable, nil) }
         if let stub = VoiceCaptureSheet.stubTranscript ?? VoiceCaptureSheet.stubLiveTranscript {
-            return (.speech, StubLiveTranscriber(stub: stub, onUpdate: onUpdate))
+            return (.speech, StubLiveTranscriber(stub: stub, text: text))
         }
         #endif
         let choice = SpeechEngineTesting.choice
         var analyzerOS = false
         if #available(iOS 26.0, *) { analyzerOS = true }
+        let started = ContinuousClock.now
         for tier in OnDeviceSpeech.chain(choice, analyzerOS: analyzerOS) {
-            switch tier {
-            case .speech, .dictation:
-                if #available(iOS 26.0, *), let (analyzer, live) = await OnDeviceSpeech.liveAnalyzer(tier),
-                   let t = await AnalyzerLiveTranscriber.start(analyzer: analyzer, live: live, micFormat: micFormat, onUpdate: onUpdate) {
-                    print("[Speech] recorder tier=\(tier.rawValue) choice=\(choice.rawValue)")
-                    return (tier, t)
-                }
-            case .olderRecognizer:
-                if let recognizer = OnDeviceSpeech.recognizer() {
-                    print("[Speech] recorder tier=\(tier.rawValue) choice=\(choice.rawValue)")
-                    return (tier, SegmentedLiveTranscriber(recognizer: recognizer, onUpdate: onUpdate))
-                }
-            case .unavailable:
-                break
+            if let t = await transcriber(for: tier, micFormat: micFormat, text: text) {
+                print("[Speech] recorder tier=\(tier.rawValue) choice=\(choice.rawValue) ready=\(millis(since: started))ms")
+                return (tier, t)
             }
         }
         print("[Speech] recorder tier=unavailable choice=\(choice.rawValue) — audio only")
         return (.unavailable, nil)
+    }
+
+    /// One tier's recogniser, or nil when it can't run on this iPhone now. (Also `-RecorderDeviceBench`.)
+    static func transcriber(for tier: SpeechTier, micFormat: AVAudioFormat, text: LiveText) async -> (any LiveTranscribing)? {
+        switch tier {
+        case .speech, .dictation:
+            if #available(iOS 26.0, *), let (analyzer, live) = await OnDeviceSpeech.liveAnalyzer(tier) {
+                return await AnalyzerLiveTranscriber.start(analyzer: analyzer, live: live, micFormat: micFormat, text: text)
+            }
+        case .olderRecognizer:
+            if let recognizer = OnDeviceSpeech.recognizer() { return SegmentedLiveTranscriber(recognizer: recognizer, text: text) }
+        case .unavailable:
+            break
+        }
+        return nil
     }
 }
 

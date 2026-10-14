@@ -122,7 +122,7 @@ struct DocumentGalleryTile: View {
                 Label("Share", systemImage: "square.and.arrow.up")
             }
             Button {
-                UIPasteboard.general.string = documentItem.fileName
+                UIPasteboard.general.string = documentItem.displayName
             } label: {
                 Label("Copy filename", systemImage: "doc.on.doc")
             }
@@ -183,7 +183,7 @@ struct DocumentGalleryTile: View {
     }
 
     private var displayTitle: String {
-        documentItem.documentTitle ?? documentItem.fileName
+        documentItem.displayName
     }
 
     private var metricsLine: String? {

@@ -42,8 +42,17 @@ enum SpeechEngineTesting {
         else { UserDefaults.standard.set(c.rawValue, forKey: key) }
     }
 
-    /// The tier the last recorder take ran (this launch only) — shown in the panel, so Automatic's pick is visible.
-    @MainActor static var lastTake: SpeechTier?
+    /// The last recorder take (this launch only) — shown in the panel, so Automatic's pick is visible, with how long
+    /// the take took to be ready and to show its first words (live-13 (2): T can compare online vs airplane mode).
+    struct LastTake {
+        var tier: SpeechTier
+        var readyMs: Int
+        var firstWordMs: Int?
+        var summary: String {
+            "\(tier.label) · ready \(readyMs) ms · first words " + (firstWordMs.map { "\($0) ms" } ?? "none yet")
+        }
+    }
+    @MainActor static var lastTake: LastTake?
 
     /// `-SpeechEngineTestingSelfTest` — the gate, the stored-choice guard, and the forced chains. Pure.
     static func selfTest() -> String {
@@ -102,11 +111,11 @@ struct SpeechEngineTestingPanel: View {
                          + "that can't run falls to the next one, as it would for anyone.")
                 }
                 Section {
-                    Text("Last take: \(SpeechEngineTesting.lastTake?.label ?? "none yet")")
+                    Text("Last take: \(SpeechEngineTesting.lastTake?.summary ?? "none yet")")
                         .accessibilityIdentifier("speechEngineLastTake")
                     Button(copied ? "Copied" : "Copy values") {
                         UIPasteboard.general.string = "Speech engine (testing): \(choice.label)\n"
-                            + "Last take: \(SpeechEngineTesting.lastTake?.label ?? "none yet")"
+                            + "Last take: \(SpeechEngineTesting.lastTake?.summary ?? "none yet")"
                         copied = true
                         DispatchQueue.main.asyncAfter(deadline: .now() + 1.6) { copied = false }
                     }

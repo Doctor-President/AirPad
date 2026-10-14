@@ -1179,6 +1179,26 @@ final class CorpusStore {
                 if ProcessInfo.processInfo.arguments.contains("-SpeechEngineTestingSelfTest") {
                     NSLog("%@", SpeechEngineTesting.selfTest())
                 }
+                // live-13 (1) — Done saves what the recorder showed, on every tier (tier 3 driven by injected results).
+                if ProcessInfo.processInfo.arguments.contains("-RecorderSaveSelfTest") {
+                    NSLog("%@", await RecorderSaveSelfTest.run())
+                }
+                // live-13 (3) — Paste Pad sorts a paste by what it is (a selection is text; only files are documents).
+                if ProcessInfo.processInfo.arguments.contains("-PastePadTypeSelfTest") {
+                    NSLog("%@", await PastePadTypeSelfTest.run())
+                }
+                // live-13 (4) — imported documents are named from their real name, on every import path.
+                if ProcessInfo.processInfo.arguments.contains("-DocumentNamingSelfTest") {
+                    NSLog("%@", await runDocumentNamingSelfTest())
+                }
+                // live-13 — real recognisers on a real iPhone, fed synthetic speech files (CC copies them in).
+                if let i = ProcessInfo.processInfo.arguments.firstIndex(of: "-RecorderDeviceBench"),
+                   i + 1 < ProcessInfo.processInfo.arguments.count {
+                    let args = ProcessInfo.processInfo.arguments
+                    let tiers = args[i + 1].split(separator: ",").compactMap { SpeechTier(rawValue: String($0)) }
+                    let label = args.firstIndex(of: "-BenchLabel").flatMap { $0 + 1 < args.count ? args[$0 + 1] : nil } ?? "run"
+                    Task.detached { await RecorderDeviceBench.run(tiers: tiers, label: label) }
+                }
                 // live-11 (3) — HTML extraction's web view makes zero network loads (loopback-counted, synthetic
                 // fixtures). Detached so its ~20 s of fixtures never holds up the launch load.
                 if ProcessInfo.processInfo.arguments.contains("-DocExtractOfflineSelfTest") {
@@ -6316,7 +6336,7 @@ final class CorpusStore {
                 DocumentItem(
                     id: itemID,
                     filePath: "items/\(itemID).\(ext)",
-                    fileName: originalFilename,
+                    fileName: DocumentNaming.storedName(originalFilename),   // live-13 (4): never a temp/UUID name
                     fileType: ext,
                     documentTitle: nil,
                     extractedText: nil,
@@ -6428,7 +6448,7 @@ final class CorpusStore {
                 DocumentItem(
                     id: docItemID,
                     filePath: "items/\(docItemID).\(ext)",
-                    fileName: originalFilename,
+                    fileName: DocumentNaming.storedName(originalFilename),   // live-13 (4): never a temp/UUID name
                     fileType: ext,
                     documentTitle: nil,
                     extractedText: nil,

@@ -86,8 +86,15 @@ final class DocumentHandoffName: XCTestCase {
         row.tap()
         let target = app.descendants(matching: .any).matching(identifier: "documentOpen-\(doc.id)").firstMatch
         XCTAssertTrue(target.waitForExistence(timeout: 15), "\(doc.display): its open target")
-        for _ in 0..<3 where !target.isHittable {
+        // On screen by FRAME (asking `isHittable` before the carousel settles throws on a busy clone).
+        Thread.sleep(forTimeInterval: 1)
+        func onScreen() -> Bool {
+            let f = target.frame, w = app.frame
+            return !f.isEmpty && w.contains(CGPoint(x: f.midX, y: f.midY))
+        }
+        for _ in 0..<3 where !onScreen() {
             app.descendants(matching: .any).matching(identifier: "documentOpen-\(Self.docs[1].id)").firstMatch.swipeLeft()
+            Thread.sleep(forTimeInterval: 0.5)
         }
         return target
     }

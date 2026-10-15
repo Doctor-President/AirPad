@@ -24,7 +24,6 @@ import Foundation
 // Self-tests live in `HDBSCANSelfTest.swift`, surfaced via the
 // `SubstrateInspectView` dev affordance.
 
-@available(iOS 17.0, *)
 enum HDBSCAN {
     // Top-level `fit` lands at 4b.4 once all four phases compose.
     // For 4b.1 the public surface is the mutual reachability primitives

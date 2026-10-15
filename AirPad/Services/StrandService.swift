@@ -9,7 +9,6 @@ import CoreGraphics
 /// the same signal `SubstrateThreadService` uses. Thresholds are lower than the
 /// threading thresholds — strands are ephemeral + engagement-scoped, so a lower
 /// floor is honest (sparse rings are valid output).
-@available(iOS 17.0, *)
 @MainActor
 enum StrandService {
 

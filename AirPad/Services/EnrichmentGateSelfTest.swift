@@ -21,7 +21,6 @@ import Foundation
 /// `AuthorshipPosture.propose`, where the FM never writes `title`/`summary` — it
 /// records an offer. That is precisely why the old emptiness predicate could never
 /// go false, and why the before-column numbers grow with the number of pauses.
-@available(iOS 17.0, *)
 enum EnrichmentGateSelfTest {
 
     private static let date0 = Date(timeIntervalSince1970: 1_700_000_000)

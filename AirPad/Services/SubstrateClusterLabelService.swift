@@ -28,7 +28,6 @@ import Observation
 /// **Wiring.** This commit lands the service in isolation — no callers
 /// yet. Commit D wires invocation from the canvas view (where corpus +
 /// layout service both live) and renders the label overlay.
-@available(iOS 17.0, *)
 @Observable
 @MainActor
 final class SubstrateClusterLabelService {

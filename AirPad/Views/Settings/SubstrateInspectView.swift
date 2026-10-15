@@ -17,7 +17,6 @@ import SwiftUI
 /// 5. Self-tests — runs the synthetic pair-similarity assertions.
 /// 6. Export — dump corpus-wide diagnostic JSON (means + per-node substrate +
 ///    top-5 neighbors) to Documents and offer share-sheet export.
-@available(iOS 17.0, *)
 struct SubstrateInspectView: View {
 
     @Environment(CorpusStore.self) private var store
@@ -711,7 +710,7 @@ struct SubstrateInspectView: View {
                     .frame(maxWidth: .infinity, alignment: .leading)
             }
             Button {
-                if #available(iOS 17.0, *) { fieldValueSelfTestResult = FieldValueSelfTest.run() }
+                fieldValueSelfTestResult = FieldValueSelfTest.run()
             } label: {
                 Text("Run field-value self-tests")
                     .font(.caption2)

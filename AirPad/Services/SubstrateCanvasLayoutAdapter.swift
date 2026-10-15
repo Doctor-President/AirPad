@@ -19,7 +19,6 @@ import CoreGraphics
 ///
 /// **Stateless:** holds no model. Caller re-derives placements when
 /// `SubstrateLayoutService.generation` bumps.
-@available(iOS 17.0, *)
 enum SubstrateCanvasLayoutAdapter {
 
     /// Target span of the longer axis after mapping (canvas points).

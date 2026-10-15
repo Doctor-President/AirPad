@@ -28,7 +28,6 @@ import UIKit
 ///   .lifted    → .engaged          (drag canceled — returns to held state
 ///                                   only if we ever wire cancel; today
 ///                                   release is the only ending per brief)
-@available(iOS 17.0, *)
 @MainActor
 @Observable
 final class EntryReorderController {

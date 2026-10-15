@@ -22,7 +22,6 @@ import Observation
 /// **Threading:** `@MainActor` matches `SubstrateService`. The heavy
 /// `fit()` call dispatches its inner compute to `Task.detached` so we
 /// don't block main; the actor itself owns state mutation back on main.
-@available(iOS 17.0, *)
 @Observable
 @MainActor
 final class SubstrateLayoutService {

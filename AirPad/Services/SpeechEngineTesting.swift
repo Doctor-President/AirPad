@@ -132,7 +132,7 @@ struct SpeechEngineTestingPanel: View {
         case .automatic: return "Speech, else Dictation, else the older recognizer"
         case .speech: return "SpeechTranscriber — most accurate, no app vocabulary"
         case .dictation: return "DictationTranscriber + the app's words"
-        case .olderRecognizer: return "SFSpeechRecognizer, ~50 s segments — the iOS 18–25 path"
+        case .olderRecognizer: return "SFSpeechRecognizer, ~50 s segments — the no-model fallback"
         case .unavailable: return "No transcript; the audio is kept"
         }
     }

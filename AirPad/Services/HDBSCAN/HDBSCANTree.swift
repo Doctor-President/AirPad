@@ -47,7 +47,6 @@ import Foundation
 // Validated against
 // `hdbscan-reference-harness/scripts/swift_condense_tree_parity.swift`.
 
-@available(iOS 17.0, *)
 extension HDBSCAN {
 
     /// One row of the condensed tree edge list.

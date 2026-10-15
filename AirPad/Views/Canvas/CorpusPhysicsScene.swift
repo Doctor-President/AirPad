@@ -4105,8 +4105,7 @@ final class CorpusPhysicsScene: SKScene {
         // is on and the substrate has computed an HSB for this node, render
         // it. Otherwise fall through to the legacy neighborhood palette so
         // non-rankable / meta / pre-fit corpora keep their tag-driven colors.
-        if #available(iOS 17.0, *),
-           FeatureFlags.substrateLayout,
+        if FeatureFlags.substrateLayout,
            let hsb = SubstrateLayoutService.shared.colorHSB?[node.id] {
             return UIColor(
                 hue: CGFloat(hsb.hue),

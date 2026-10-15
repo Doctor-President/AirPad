@@ -727,11 +727,7 @@ struct CoverFlowTuningPanel: View {
 private struct CoverFlowWidgetSurface: ViewModifier {
     func body(content: Content) -> some View {
         let shape = RoundedRectangle(cornerRadius: 18, style: .continuous)
-        if #available(iOS 26, *) {
-            content.glassEffect(.regular.interactive(), in: shape)
-        } else {
-            content.background(.thinMaterial, in: shape)
-        }
+        content.glassEffect(.regular.interactive(), in: shape)
     }
 }
 #endif

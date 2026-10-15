@@ -3,7 +3,7 @@ name: AirPad
 options:
   bundleIdPrefix: com.doctorpresident
   deploymentTarget:
-    iOS: "18.0"
+    iOS: "26.0"
   createIntermediateGroups: true
   groupSortPosition: top
 
@@ -37,7 +37,7 @@ settings:
     # Automatic is what Xcode expects; archive/Distribution is picked automatically.
     CODE_SIGN_STYLE: Automatic
     CODE_SIGN_IDENTITY: "Apple Development"
-    IPHONEOS_DEPLOYMENT_TARGET: "18.0"
+    IPHONEOS_DEPLOYMENT_TARGET: "26.0"
     # Default build-number "floor" for CFBundleVersion. Both Info.plists set
     # CFBundleVersion to $(CURRENT_PROJECT_VERSION); this is the ONLY place that
     # gives the variable a value for builds that don't pass it on the command
@@ -93,7 +93,7 @@ targets:
   AirPad:
     type: application
     platform: iOS
-    deploymentTarget: "18.0"
+    deploymentTarget: "26.0"
     sources:
       - path: AirPad
         excludes:
@@ -265,7 +265,7 @@ targets:
   AirPadShare:
     type: app-extension
     platform: iOS
-    deploymentTarget: "18.0"
+    deploymentTarget: "26.0"
     sources:
       - path: AirPadShare
         excludes:
@@ -325,7 +325,7 @@ targets:
   AirPadWidgets:
     type: app-extension
     platform: iOS
-    deploymentTarget: "18.0"
+    deploymentTarget: "26.0"
     sources:
       - path: AirPadWidgets
         excludes:
@@ -369,7 +369,7 @@ targets:
   AirPadUITests:
     type: bundle.ui-testing
     platform: iOS
-    deploymentTarget: "18.0"
+    deploymentTarget: "26.0"
     sources:
       - path: AirPadUITests
     dependencies:

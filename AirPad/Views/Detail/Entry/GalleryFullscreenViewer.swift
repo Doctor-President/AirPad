@@ -927,11 +927,7 @@ private struct FullscreenVideoPlayer: View {
 private struct ViewerGlassCircle: ViewModifier {
     @ViewBuilder
     func body(content: Content) -> some View {
-        if #available(iOS 26.0, *) {
-            content.glassEffect(.regular.interactive(), in: .circle)
-        } else {
-            content.background(Circle().fill(.ultraThinMaterial))
-        }
+        content.glassEffect(.regular.interactive(), in: .circle)
     }
 }
 

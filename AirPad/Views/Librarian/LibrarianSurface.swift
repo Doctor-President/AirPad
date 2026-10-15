@@ -1472,7 +1472,7 @@ struct LibrarianSurface: View {
 
             // STATE 2 — no free-text model on this device: gate Ask (send disabled via
             // `sendIsEnabled`) and say so, routing to Settings. Honest capability boundary,
-            // no Retry. (v1-gates § A item 1 — the Ask half of the iOS-18 floor.)
+            // no Retry. (v1-gates § A item 1 — a device with no Ask model.)
             if librarian.askUnavailable {
                 askNoModelNotice
             }

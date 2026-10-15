@@ -85,7 +85,6 @@ import Foundation
 ///        nil-thumbnail as `thumb.""` (or that always called the
 ///        sidecar delete unconditionally) would surface here either as
 ///        a thrown error or as a phantom delete attempt.
-@available(iOS 17.0, *)
 @MainActor
 enum EntryDeletionDiagnostic {
 

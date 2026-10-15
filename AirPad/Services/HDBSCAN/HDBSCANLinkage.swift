@@ -40,7 +40,6 @@ import Foundation
 // Validated against
 // `hdbscan-reference-harness/scripts/swift_single_linkage_tree_parity.swift`.
 
-@available(iOS 17.0, *)
 extension HDBSCAN {
 
     /// MST edge in Prim discovery order. `a` is the most-recently-added

@@ -29,7 +29,6 @@ import Foundation
 // lightweight regression tripwires: small inputs where expected values are
 // obvious by inspection or follow from invariants.
 
-@available(iOS 17.0, *)
 @MainActor
 enum HDBSCANSelfTest {
 

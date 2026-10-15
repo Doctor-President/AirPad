@@ -27,7 +27,6 @@ import Foundation
 /// `AIService.processSubstrate`. (v1 was NLContextual 512-d — the version ALSO used by
 /// `CardEmbeddingService` to mean something else entirely, which is why the authoritative signal is
 /// now `VectorBasis`, not this integer. The bump exists so a backfill can still find v1 vectors.)
-@available(iOS 17.0, *)
 @MainActor
 final class SubstrateService {
 

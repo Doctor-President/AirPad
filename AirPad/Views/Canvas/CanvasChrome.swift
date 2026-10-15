@@ -1146,11 +1146,7 @@ private struct BatchActionBar: View {
 extension View {
     @ViewBuilder
     func chromeSurface<S: Shape>(_ shape: S) -> some View {
-        if #available(iOS 26, *) {
-            glassEffect(.regular.interactive(), in: shape)
-        } else {
-            background(.thinMaterial, in: shape)
-        }
+        glassEffect(.regular.interactive(), in: shape)
     }
 }
 

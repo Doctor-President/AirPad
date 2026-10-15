@@ -2732,30 +2732,19 @@ struct SwipeBackProxy: UIViewRepresentable {
     }
 }
 
-/// Glass-or-material background helpers. Deployment target is iOS 18 but
-/// `GlassEffectContainer` / `.glassEffect(_:in:)` are iOS 26+ APIs, so
-/// they need availability gates. On iOS 18 we fall back to the prior
-/// `.ultraThinMaterial` fill so the buttons still read as frosted
-/// circles/capsules (just without the gradient-refracting lensing).
+/// Glass background helpers (`GlassEffectContainer` / `.glassEffect(_:in:)`; the iOS 26 floor retired their
+/// `.ultraThinMaterial` fallbacks, live-19).
 private struct InteractiveGlassCircle: ViewModifier {
     @ViewBuilder
     func body(content: Content) -> some View {
-        if #available(iOS 26.0, *) {
-            content.glassEffect(.regular.interactive(), in: .circle)
-        } else {
-            content.background(Circle().fill(.ultraThinMaterial))
-        }
+        content.glassEffect(.regular.interactive(), in: .circle)
     }
 }
 
 private struct InteractiveGlassCapsule: ViewModifier {
     @ViewBuilder
     func body(content: Content) -> some View {
-        if #available(iOS 26.0, *) {
-            content.glassEffect(.regular.interactive(), in: .capsule)
-        } else {
-            content.background(Capsule().fill(.ultraThinMaterial))
-        }
+        content.glassEffect(.regular.interactive(), in: .capsule)
     }
 }
 
@@ -2763,11 +2752,7 @@ private struct GlassRowContainer<Content: View>: View {
     @ViewBuilder var content: () -> Content
 
     var body: some View {
-        if #available(iOS 26.0, *) {
-            GlassEffectContainer { content() }
-        } else {
-            content()
-        }
+        GlassEffectContainer { content() }
     }
 }
 

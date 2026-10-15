@@ -151,10 +151,8 @@ final class LiveVoiceRecorder {
         }
         #endif
         let choice = SpeechEngineTesting.choice
-        var analyzerOS = false
-        if #available(iOS 26.0, *) { analyzerOS = true }
         let started = ContinuousClock.now
-        for tier in OnDeviceSpeech.chain(choice, analyzerOS: analyzerOS) {
+        for tier in OnDeviceSpeech.chain(choice) {
             if let t = await transcriber(for: tier, micFormat: micFormat, text: text) {
                 print("[Speech] recorder tier=\(tier.rawValue) choice=\(choice.rawValue) ready=\(millis(since: started))ms")
                 return (tier, t)
@@ -168,7 +166,7 @@ final class LiveVoiceRecorder {
     static func transcriber(for tier: SpeechTier, micFormat: AVAudioFormat, text: LiveText) async -> (any LiveTranscribing)? {
         switch tier {
         case .speech, .dictation:
-            if #available(iOS 26.0, *), let (analyzer, live) = await OnDeviceSpeech.liveAnalyzer(tier) {
+            if let (analyzer, live) = await OnDeviceSpeech.liveAnalyzer(tier) {
                 return await AnalyzerLiveTranscriber.start(analyzer: analyzer, live: live, micFormat: micFormat, text: text)
             }
         case .olderRecognizer:

@@ -160,8 +160,7 @@ enum ModelRouter {
         if UserDefaults.standard.string(forKey: "StubOnDeviceUnavailable") != nil { return false }
         if UserDefaults.standard.bool(forKey: "StubOnDeviceModel") { return true }
         #endif
-        if #available(iOS 26.0, *) { return SystemLanguageModel.default.isAvailable }
-        return false
+        return SystemLanguageModel.default.isAvailable
     }
 
     /// Step 1 (T 2026-10-10) — the copy names the device AirPad runs on: iPhone, iPad, or Mac (the iPad app on a Mac).
@@ -182,14 +181,11 @@ enum ModelRouter {
         default: break
         }
         #endif
-        if #available(iOS 26.0, *) {
-            switch SystemLanguageModel.default.availability {
-            case .unavailable(.appleIntelligenceNotEnabled): return notEnabled
-            case .unavailable(.modelNotReady): return notReady
-            default: return nil
-            }
+        switch SystemLanguageModel.default.availability {
+        case .unavailable(.appleIntelligenceNotEnabled): return notEnabled
+        case .unavailable(.modelNotReady): return notReady
+        default: return nil
         }
-        return nil
     }
 
 
@@ -258,7 +254,7 @@ enum ModelRouter {
         switch active {
         case .foundationModel:
             // STEP 2 — honest on the floor: the FM name ONLY when FM is actually usable.
-            // On iOS 18-25 / no Apple Intelligence, FM resolves as the provider but can't run,
+            // With no Apple Intelligence, FM resolves as the provider but can't run,
             // so the chip must NOT claim "Apple Intelligence" (that contradicted the Ask
             // no-model notice). Fall back to the resting "No model" label.
             return onDeviceAvailable ? foundationModelName : remoteRestingName
@@ -402,9 +398,6 @@ enum ModelRouter {
                             continuation.finish(); return
                         }
                         #endif
-                        guard #available(iOS 26.0, *) else {
-                            throw RouterError.foundationModelUnavailable
-                        }
                         try await streamFoundationModel(messages: messages, continuation: continuation)
                         continuation.finish()
                     case .ollama(let endpoint):
@@ -424,7 +417,6 @@ enum ModelRouter {
                         // Unreachable via `active`: the on-device model serves only the structured
                         // enrichment levers (generateNodeSummary / generateSubstrate), not the
                         // free-text Librarian path. Defensive → FM.
-                        guard #available(iOS 26.0, *) else { throw RouterError.foundationModelUnavailable }
                         try await streamFoundationModel(messages: messages, continuation: continuation)
                         continuation.finish()
                     }
@@ -580,11 +572,9 @@ enum ModelRouter {
             // structuredProvider() only ever returns .foundationModel/.local; .ollama/.host are
             // unreachable here (they're free-text chat providers, not the enrichment lever) but
             // handled for exhaustiveness → the FM path.
-            // The FM branch requires iOS 26; the `.local` branch above runs on the iOS 18
-            // floor (LocalModelService has no OS floor, only a runtime Metal-GPU check). This
-            // is GAP 27's shape in the type system — the availability guard belongs on the FM
+            // The `.local` branch above runs without Apple Intelligence (LocalModelService has
+            // only a runtime Metal-GPU check) — GAP 27: FM availability is checked on the FM
             // branch, not around the whole router method.
-            guard #available(iOS 26.0, *) else { throw RouterError.foundationModelUnavailable }
             return try await nodeSummaryFoundationModel(prompt: prompt)
         }
     }
@@ -596,7 +586,6 @@ enum ModelRouter {
         try await nodeSummaryLocal(prompt: prompt)
     }
 
-    @available(iOS 26.0, *)
     private static func nodeSummaryFoundationModel(prompt: String) async throws -> NodeSummaryResult {
         guard SystemLanguageModel.default.isAvailable else { throw RouterError.foundationModelUnavailable }
         let session = LanguageModelSession()
@@ -610,8 +599,8 @@ enum ModelRouter {
     }
 
     // No @available: the on-device model path touches NO FoundationModels type — only
-    // LocalModelService (Metal-gated at runtime, no OS floor) + JSON decode. Gating it to
-    // iOS 26 is what stranded the local model on the floor where it's the ONLY option.
+    // LocalModelService (Metal-gated at runtime) + JSON decode — it's the ONLY option on a
+    // device without Apple Intelligence.
     private static func nodeSummaryLocal(prompt: String) async throws -> NodeSummaryResult {
         let jsonInstruction = """
         Respond with ONLY a single minified JSON object and nothing else — no prose, no code fences, no commentary. Use exactly these keys:
@@ -648,8 +637,6 @@ enum ModelRouter {
             // structuredProvider() only ever returns .foundationModel/.local; .ollama/.host are
             // unreachable here (they're free-text chat providers, not the enrichment lever) but
             // handled for exhaustiveness → the FM path.
-            // The FM branch requires iOS 26; the `.local` branch above runs on the iOS 18 floor.
-            guard #available(iOS 26.0, *) else { throw RouterError.foundationModelUnavailable }
             return try await substrateFoundationModel(prompt: prompt)
         }
     }
@@ -660,7 +647,6 @@ enum ModelRouter {
         try await substrateLocal(prompt: prompt, responseLanguage: responseLanguage)
     }
 
-    @available(iOS 26.0, *)
     private static func substrateFoundationModel(prompt: String) async throws -> SubstrateResult {
         guard SystemLanguageModel.default.isAvailable else { throw RouterError.foundationModelUnavailable }
         let session = LanguageModelSession()
@@ -721,9 +707,6 @@ enum ModelRouter {
     // MARK: - Foundation Model
 
     private static func generateFoundationModel(systemPrompt: String, userPrompt: String) async throws -> String {
-        guard #available(iOS 26.0, *) else {
-            throw RouterError.foundationModelUnavailable
-        }
         guard SystemLanguageModel.default.isAvailable else {
             throw RouterError.foundationModelUnavailable
         }
@@ -742,7 +725,6 @@ enum ModelRouter {
     /// sees the same delta contract the Ollama path already provides
     /// (`ChatSession.send` does `streamingText += delta`); a snapshot must
     /// never leak upward or it duplicates exponentially.
-    @available(iOS 26.0, *)
     private static func streamFoundationModel(
         messages: [WireMessage],
         continuation: AsyncThrowingStream<ModelDelta, Error>.Continuation

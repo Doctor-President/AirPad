@@ -25,10 +25,8 @@ final class EntryVisualSettings {
 
     // MARK: - Body treatment
 
-    /// Background fill style applied behind every `EntryCard`. iOS 26
-    /// glass variants render via `.glassEffect()`; on iOS 18-25 they fall
-    /// back to `.regularMaterial` so the picker still produces a
-    /// recognisable result on older devices.
+    /// Background fill style applied behind every `EntryCard`. The glass
+    /// variants render via `.glassEffect()` (the iOS 26 floor, live-19).
     enum BodyTreatment: String, CaseIterable, Identifiable {
         case semiOpacity       = "Semi-opacity"
         case thinMaterial      = "Thin material"
@@ -469,9 +467,7 @@ final class EntryVisualSettings {
 // MARK: - Body treatment view
 
 /// Renders the active body treatment as a SwiftUI view, ready to drop into
-/// `EntryCard`'s background slot. Branches at the iOS 26 boundary for the
-/// glass variants so the codebase still builds against an iOS 18
-/// deployment target.
+/// `EntryCard`'s background slot.
 struct EntryCardBackground: View {
 
     let treatment: EntryVisualSettings.BodyTreatment
@@ -499,15 +495,9 @@ struct EntryCardBackground: View {
     /// (Klein Blue #1B59C2, Mango #E8820A, Electric Cyan #00BFFF).
     @ViewBuilder
     private var glassBackground: some View {
-        if #available(iOS 26.0, *) {
-            glassEffectView
-        } else {
-            Rectangle()
-                .fill(.regularMaterial)
-        }
+        glassEffectView
     }
 
-    @available(iOS 26.0, *)
     @ViewBuilder
     private var glassEffectView: some View {
         switch treatment {

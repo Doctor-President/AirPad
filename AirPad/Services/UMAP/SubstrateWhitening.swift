@@ -32,7 +32,6 @@ import Accelerate
 /// **Numerics.** SVD runs in Double via LAPACK `dgesvd_` for stability;
 /// the persisted matrix is cast back to Float at storage (same precision
 /// floor `UMAPFittedModel.trainingPoints[*].coordND` already accepts).
-@available(iOS 17.0, *)
 enum SubstrateWhitening {
 
     struct Transform {

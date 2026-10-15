@@ -280,16 +280,14 @@ enum ComputedFactsSelfTest {
         check("A-none-for-ordinary", ans("What connections do you find between my ideas?").isEmpty && ans("Which of my lab values are out of range?").isEmpty)
 
         // ── typed fields line (every kind, via the shared field fixture)
-        if #available(iOS 17.0, *) {
-            let defs = FieldValueSelfTest.fixtureDefinitions()
-            let node = FieldValueSelfTest.fixtureNode(defs: defs)
-            let line = ComputedFacts.fieldsLine(items: node.items, definition: { id in defs.first { $0.id == id } },
-                                                resolveNodeTitle: { _ in "Charmander" })
-            check("T-fields-line", line?.hasPrefix("Fields: Serves: 4–6") == true && line?.contains("Cook time: ") == true
-                  && line?.contains("Type: Fire") == true, line ?? "nil")
-            let missingDef = ComputedFacts.fieldsLine(items: node.items, definition: { _ in nil }, resolveNodeTitle: { _ in nil })
-            check("T-missing-definition-omitted", missingDef == nil || missingDef?.contains("def-") == false, missingDef ?? "nil")
-        }
+        let defs = FieldValueSelfTest.fixtureDefinitions()
+        let node = FieldValueSelfTest.fixtureNode(defs: defs)
+        let line = ComputedFacts.fieldsLine(items: node.items, definition: { id in defs.first { $0.id == id } },
+                                            resolveNodeTitle: { _ in "Charmander" })
+        check("T-fields-line", line?.hasPrefix("Fields: Serves: 4–6") == true && line?.contains("Cook time: ") == true
+              && line?.contains("Type: Fire") == true, line ?? "nil")
+        let missingDef = ComputedFacts.fieldsLine(items: node.items, definition: { _ in nil }, resolveNodeTitle: { _ in nil })
+        check("T-missing-definition-omitted", missingDef == nil || missingDef?.contains("def-") == false, missingDef ?? "nil")
 
         return fails.isEmpty ? "PASS \(ran)/\(ran)" : "FAIL \(ran - fails.count)/\(ran)\n  " + fails.joined(separator: "\n  ")
     }

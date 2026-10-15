@@ -163,7 +163,8 @@ Authoritative operating conventions for any Claude Code session in this repo. Re
 - Never choose or describe a color by how it looks, and never ask T to confirm a color visually.
 
 ## Environment
-- Repo: `~/Developer/AirPad`. Test device: iPhone 17 Pro Max, iOS 26.x. Team ID `8XM4B5F42Y`. Bundle ID `com.doctorpresident.airpad`.
+- Repo: `~/Developer/AirPad`. Test device: iPhone 17 Pro Max, iOS 27.x (T moved 2026-10-15). Team ID `8XM4B5F42Y`. Bundle ID `com.doctorpresident.airpad`.
+- **Deployment floor: iOS 26.0** for every target (T ruled 2026-10-15; was 18.0). Don't add `#available`/`@available` checks at or below 26.0 or pre-26 fallbacks. TestFlight builds use Xcode 27 = the iOS 27 SDK.
 
 ---
 This file is the authoritative convention source. Incidental code-facts (canonical helpers like `MediaThumbnailLoader.shared`, framework quirks found in passing) belong in CC's auto-memory; durable rules belong here; live state belongs in the Ops repo.

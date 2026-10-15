@@ -180,9 +180,7 @@ struct CameraCaptureView: View {
         let isSingleImage = pending.count == 1 && pending[0].mediaType == .image
         var description = ""
         if isSingleImage, let firstImageData {
-            if #available(iOS 26.0, *) {
-                description = await AIService().describeImage(firstImageData) ?? ""
-            }
+            description = await AIService().describeImage(firstImageData) ?? ""
         }
 
         let position = CGPoint(x: Double.random(in: -80...80), y: Double.random(in: -80...80))
@@ -231,11 +229,7 @@ struct CameraCaptureView: View {
         }
 
         let description: String
-        if #available(iOS 26.0, *) {
-            description = await AIService().describeImage(data) ?? ""
-        } else {
-            description = ""
-        }
+        description = await AIService().describeImage(data) ?? ""
 
         // OCR is not written as a sibling `.text` item — it lands on
         // `GalleryItem.analysis` via `addMediaItems` → `enqueueImageOCR` and is

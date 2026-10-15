@@ -217,6 +217,12 @@ struct NodeItem: Codable, Identifiable, Equatable {
     /// non-text item and on legacy JSON — no `entrySchemaVersion` bump.
     var firstParaExplicitBody: Bool?
 
+    /// live-19 (2) — a photo shared INTO AirPad keeps its own file name: the share extension stages a bare `.image`
+    /// item and records the provider's `suggestedName` here (UUID/temp names dropped, `DocumentNaming.realName`).
+    /// Carried into `GalleryItem.originalName` when the item becomes a gallery item (`coalesceImportedGallery`, the
+    /// v1→v2 entry migration). Optional + decode-tolerant: nil on everything else.
+    var originalName: String?
+
     enum CodingKeys: String, CodingKey {
         case id, type, content, file, description, transcript, url, title, preview
         case createdAt = "created_at"
@@ -244,6 +250,7 @@ struct NodeItem: Codable, Identifiable, Equatable {
         case field
         case attributeTile = "attribute_tile"
         case firstParaExplicitBody = "first_para_explicit_body"
+        case originalName = "original_name"
     }
 }
 

@@ -9568,7 +9568,8 @@ final class CorpusStore {
                         mediaType: item.type == .image ? .image : .video,
                         file: file,
                         aspectRatio: nil,
-                        capturedAt: item.createdAt
+                        capturedAt: item.createdAt,
+                        originalName: item.originalName   // live-19 (2): a shared-in photo's own name
                     ))
                 }
             default:
@@ -9751,6 +9752,19 @@ final class CorpusStore {
             cgShareItem(a1, .audio, file: "items/\(a1).m4a")
         ]), media: [(a1, Data("fake-audio".utf8), "m4a")])
 
+        // live-19 (2) — photos shared IN keep their names: items built by the extension's own factory, with the
+        // provider's `suggestedName` ("IMG_4012"; a UUID-looking one is no name). A single photo and a pair.
+        let named1NodeID = UUID().uuidString, n1 = UUID().uuidString
+        cgStage(cgShareNode(id: named1NodeID, items: [
+            ShareImportItems.imageItem(itemID: n1, ext: "jpg", suggestedName: "IMG_4012", sourceURL: nil, now: Date())
+        ]), media: [(n1, jpeg, "jpg")])
+        let named2NodeID = UUID().uuidString, n2 = UUID().uuidString, n3 = UUID().uuidString
+        cgStage(cgShareNode(id: named2NodeID, items: [
+            ShareImportItems.imageItem(itemID: n2, ext: "jpg", suggestedName: "IMG_4013", sourceURL: nil, now: Date()),
+            ShareImportItems.imageItem(itemID: n3, ext: "jpg", suggestedName: "5E7A1C93-2B4D-4F18-9A6E-0C3D8B1F0099",
+                                       sourceURL: nil, now: Date())
+        ]), media: [(n2, jpeg, "jpg"), (n3, jpeg, "jpg")])
+
         // Run the REAL import (coalesce → transcribe → route-name).
         await importFromAppGroupInbox()
 
@@ -9782,6 +9796,23 @@ final class CorpusStore {
             row("photo-dated-fallback", n.title.hasPrefix("Photos · "),
                 "title=\"\(n.title)\" (want prefix \"Photos · \")")
         } else { row("photos", false, "node missing after import") }
+
+        // live-19 (2) — the single photo is migrated when its entry is first OPENED (`ensureEntrySchema`, the lazy path).
+        await ensureEntrySchema(forNodeID: named1NodeID)
+        func sharedOutName(_ g: GalleryItem?) -> String { g.map { DocumentHandoff.displayName(for: $0) } ?? "nil" }
+        if let n = nodes.first(where: { $0.id == named1NodeID }) {
+            let g = n.items.first(where: { $0.type == .imageVideo })?.mediaItems?.first
+            row("shared-photo-keeps-its-name", g?.originalName == "IMG_4012" && sharedOutName(g) == "IMG_4012",
+                "originalName=\(g?.originalName ?? "nil") shares as \"\(sharedOutName(g))\" (want IMG_4012)")
+        } else { row("shared-photo", false, "node missing after import") }
+        if let n = nodes.first(where: { $0.id == named2NodeID }) {
+            let media = n.items.first(where: { $0.type == .imageVideo })?.mediaItems ?? []
+            let named = media.first { $0.id == n2 }, unnamed = media.first { $0.id == n3 }
+            row("shared-pair-keeps-names", media.count == 2 && named?.originalName == "IMG_4013" && unnamed?.originalName == nil
+                && sharedOutName(unnamed).hasPrefix("Photo · "),
+                "names=\(media.map { $0.originalName ?? "nil" }) share as \(media.map(sharedOutName)) (want IMG_4013 + \"Photo · <date>\"; a UUID name is no name)")
+            row("shared-pair-still-dated-title", n.title.hasPrefix("Photos · "), "title=\"\(n.title)\"")
+        } else { row("shared-pair", false, "node missing after import") }
 
         // Case 3 — transcription wiring (stub) + named from the transcript.
         if let n = nodes.first(where: { $0.id == audioNodeID }) {

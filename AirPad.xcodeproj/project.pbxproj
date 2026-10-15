@@ -167,6 +167,7 @@
 		738349B24610F0BADC5B82A3 /* FloatingPanel in Frameworks */ = {isa = PBXBuildFile; productRef = F0F15B30974A69BF628C7BE6 /* FloatingPanel */; };
 		766BF82341F128E5B35B7345 /* ChatView.swift in Sources */ = {isa = PBXBuildFile; fileRef = 33412943BFC78174C4CB7437 /* ChatView.swift */; };
 		774AD9C545FED85D651CA8D7 /* VideoEntryBody.swift in Sources */ = {isa = PBXBuildFile; fileRef = DF61433D19DB8098D7096F3D /* VideoEntryBody.swift */; };
+		782107DF917EB5B3B2AAA139 /* ShareImportItems.swift in Sources */ = {isa = PBXBuildFile; fileRef = 5CBFC13F8D66EB937FAA1B1E /* ShareImportItems.swift */; };
 		790E62A06880D73E5FE759EA /* HostPairingSheet.swift in Sources */ = {isa = PBXBuildFile; fileRef = 93FCE9DB8410C90A3B0EFAC0 /* HostPairingSheet.swift */; };
 		79EBBD07CEAF35CA5E4CF8A3 /* Neighborhood.swift in Sources */ = {isa = PBXBuildFile; fileRef = AE402981E931009EBB3F93EE /* Neighborhood.swift */; };
 		7A35344BA88803818AB82661 /* cinzelbold_msdf.png in Resources */ = {isa = PBXBuildFile; fileRef = A041B55F9CB72A7C37989EF0 /* cinzelbold_msdf.png */; };
@@ -281,6 +282,7 @@
 		BBA0C41339806A487FD74C7C /* FieldValueSelfTest.swift in Sources */ = {isa = PBXBuildFile; fileRef = 3555E8AE351646CB6D4A2886 /* FieldValueSelfTest.swift */; };
 		BC4D8EDC2E3EC93B74EF342F /* PeekPillStyle.swift in Sources */ = {isa = PBXBuildFile; fileRef = FF5E2E9E140FAB95C76681A3 /* PeekPillStyle.swift */; };
 		BCA2CD4B3F9EBD7C2D4FF631 /* GauntletTap.swift in Sources */ = {isa = PBXBuildFile; fileRef = 23ECDDE27DD9E25B6ED253D9 /* GauntletTap.swift */; };
+		BCD5DDC7AA4CF6AB59A82FFA /* ShareImportItems.swift in Sources */ = {isa = PBXBuildFile; fileRef = 5CBFC13F8D66EB937FAA1B1E /* ShareImportItems.swift */; };
 		BCEA38610D7EEB032A314769 /* DocumentImportNaming.swift in Sources */ = {isa = PBXBuildFile; fileRef = 41588CCE3CAAFC09130BFE25 /* DocumentImportNaming.swift */; };
 		BE627965C351C4931B1BB439 /* LibrarianSheetDetentState.swift in Sources */ = {isa = PBXBuildFile; fileRef = 7357D7DC38554C54BB982B6E /* LibrarianSheetDetentState.swift */; };
 		BE64A66D74375B372C7F4013 /* Lato-OFL.txt in Resources */ = {isa = PBXBuildFile; fileRef = CAB00D11EDA08830EC33C8EC /* Lato-OFL.txt */; };
@@ -524,6 +526,7 @@
 		5ACF91AFE4B56A560100046E /* BackgroundGridView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = BackgroundGridView.swift; sourceTree = "<group>"; };
 		5B3AEF4D4309C19AB2068A9E /* AirPadApp.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = AirPadApp.swift; sourceTree = "<group>"; };
 		5CA786FE73ACBE100B4FAA56 /* HoldDragRepro.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = HoldDragRepro.swift; sourceTree = "<group>"; };
+		5CBFC13F8D66EB937FAA1B1E /* ShareImportItems.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ShareImportItems.swift; sourceTree = "<group>"; };
 		5D1408F7F32D1B41467621B6 /* QRScannerView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = QRScannerView.swift; sourceTree = "<group>"; };
 		6005A33A7E6D6D1064AE551C /* LibrarianSurface.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = LibrarianSurface.swift; sourceTree = "<group>"; };
 		60D13A13B22F4512A523EB58 /* ParityShots.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ParityShots.swift; sourceTree = "<group>"; };
@@ -1160,6 +1163,7 @@
 				7ED3DACE683F20031A4F5E03 /* NodeItemType.swift */,
 				3DFC577B59F540670E2A5588 /* Proposal.swift */,
 				463DA699C1C0AF251F9242D9 /* RejectedBlock.swift */,
+				5CBFC13F8D66EB937FAA1B1E /* ShareImportItems.swift */,
 				CB4204EBBDB6AEFAC59BB313 /* SubstrateCoord2D.swift */,
 				39E6876F450FCAC6F6B1A9CF /* Tag.swift */,
 				F98C5EDB7B8428ABB080668F /* UberNode.swift */,
@@ -1844,6 +1848,7 @@
 				1F75D3242F7280C70C2158C5 /* SceneDelegate.swift in Sources */,
 				84D3297B82B6407D4F3DA4C4 /* SelectionService.swift in Sources */,
 				ACA7B702683CE03A268E743D /* SettingsView.swift in Sources */,
+				BCD5DDC7AA4CF6AB59A82FFA /* ShareImportItems.swift in Sources */,
 				7289AE336C9540B5885CD057 /* ShimmerSelfTest.swift in Sources */,
 				B0C29E98DF6C6DBE11E29DF1 /* SingleMediaBody.swift in Sources */,
 				F37D50BEE893123479290739 /* SolarFlareTuning.swift in Sources */,
@@ -1929,6 +1934,7 @@
 				F59A93CA70C8FE71BC12E118 /* NodeItemType.swift in Sources */,
 				D3C90777ED37BE68C4A0D8BF /* Proposal.swift in Sources */,
 				D5EB544A1177511F99074F74 /* RejectedBlock.swift in Sources */,
+				782107DF917EB5B3B2AAA139 /* ShareImportItems.swift in Sources */,
 				82E46E44615798A6EAF8F8EF /* ShareViewController.swift in Sources */,
 				0E65AFD08082B04CE1E21753 /* SubstrateCoord2D.swift in Sources */,
 				2733262BA259E300B3613CF3 /* Tag.swift in Sources */,

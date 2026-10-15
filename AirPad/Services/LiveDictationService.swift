@@ -231,6 +231,11 @@ enum AppTermLeak {
         row("clean-summary-passes", leaked(in: "An orchard walk with Sam before the first frost", content: spoken).isEmpty)
         row("the-entry's-own-word-passes", leaked(in: "Returning books to the librarian", content: "Return the books to the librarian by Friday").isEmpty)
         row("instructions-name-no-app-term", terms.allSatisfy { AIService.namingInstructions.range(of: $0, options: .caseInsensitive) == nil })
+        // live-15 (1) — the instructions' own example, reworded into a name, is dropped (both fields); the entry's own word passes.
+        let echoed = AIService.guardedNaming(title: "Purchase of Menus and Wikipedia Articles", summary: "A brief.", content: "quarterly-brief.pdf")
+        row("example-echo-drops-both-fields", echoed.title.isEmpty && echoed.summary.isEmpty)
+        let ownWord = AIService.guardedNaming(title: "Lunch menu", summary: "The cafe's lunch menu.", content: "Cafe lunch menu: soup, bread")
+        row("example-word-in-the-entry-passes", ownWord.title == "Lunch menu" && ownWord.summary == "The cafe's lunch menu.")
         return "[AppTermLeakSelfTest] \(fails == 0 ? "PASS" : "FAIL") — \(rows.count - fails)/\(rows.count)\n" + rows.joined(separator: "\n")
     }
 }

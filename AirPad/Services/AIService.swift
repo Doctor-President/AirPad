@@ -219,6 +219,17 @@ actor AIService {
             // supporting text. `-StubEmptyTitleOnDerived` (default ON for the matrix) mimics that
             // so the "summary fills, title empty" device bug is reproducible headlessly; pass
             // `-StubNonEmptyTitle` to force a title for the wiring-only baseline.
+            // live-15 (1) — `-StubEchoInput`: the title and summary are made of the words the naming call was GIVEN, so a
+            // test can assert what reached the model. Given less than a summary's worth (the device case: a PDF's 22-char
+            // file name), it answers as T's device did — a title reworded from the instructions' example, no summary —
+            // through the same example-echo guard as the real path.
+            if ProcessInfo.processInfo.arguments.contains("-StubEchoInput") {
+                let words = content.split(whereSeparator: { !$0.isLetter }).map(String.init).filter { $0.count >= 4 }
+                let r = content.count < 64
+                    ? (title: "Purchase of Menus and Wikipedia Articles", summary: "")
+                    : (title: words.prefix(5).joined(separator: " "), summary: words.prefix(16).joined(separator: " ") + ".")
+                return .success(Self.guardedNaming(title: r.title, summary: r.summary, content: content))
+            }
             let (authored, _) = Self.classifyContent(from: node)
             let forceTitle = ProcessInfo.processInfo.arguments.contains("-StubNonEmptyTitle")
             // ★ Brief CF — `-StubBlankTitleAlways` blanks the title even for PROSE, mimicking the
@@ -269,21 +280,7 @@ actor AIService {
             // which the tray renders as LeverRefusalBanner. This is the TITLE+SUMMARY refusal
             // locus, INDEPENDENT of processSubstrate's folksonomy locus.
             let r = try await ModelRouter.generateNodeSummary(prompt: prompt)
-            // A3 — a name or summary may not bring in the app's own words (T's summary gained "the Librarian", a word
-            // the entry never used). Drop that field; the entry stays unnamed rather than mis-named.
-            let titleLeak = AppTermLeak.leaked(in: r.title, content: content)
-            let summaryLeak = AppTermLeak.leaked(in: r.summary, content: content)
-            if !titleLeak.isEmpty || !summaryLeak.isEmpty {
-                print("[AI] A3 naming used app term(s) absent from the entry — dropped title:\(!titleLeak.isEmpty) summary:\(!summaryLeak.isEmpty) terms=\(titleLeak + summaryLeak)")
-            }
-            return .success(NodeAIOutput(
-                title:   titleLeak.isEmpty ? r.title : "",
-                summary: summaryLeak.isEmpty ? r.summary : "",
-                tags:    [],
-                mood:    nil,
-                domain:  nil,
-                neighborhoodID: nil
-            ))
+            return .success(Self.guardedNaming(title: r.title, summary: r.summary, content: content))
         } catch {
             print("[FM][processNode] FAILURE: \(error)")
             // nodeFailure inspects FM error types (iOS 26). On the floor the throw can only
@@ -299,8 +296,7 @@ actor AIService {
                     do {
                         let r = try await ModelRouter.nodeSummaryLocalForced(prompt: prompt)
                         print("[FM][processNode] refusal → on-device model authored (title/summary)")
-                        return .success(NodeAIOutput(title: r.title, summary: r.summary,
-                                                     tags: [], mood: nil, domain: nil, neighborhoodID: nil))
+                        return .success(Self.guardedNaming(title: r.title, summary: r.summary, content: content))
                     } catch {
                         print("[FM][processNode] refusal → on-device retry also failed: \(error)")
                     }
@@ -880,6 +876,29 @@ actor AIService {
     You are cataloguing this person's OWN note for them — not narrating it from outside. The summary states what the note is ABOUT, as an impersonal fragment, e.g. "Ten months of French buys a menu and half a Wikipedia article, not speech." Never refer to the note's author (no "she", "he", "they", "you", "the author", "the writer") and never narrate their actions ("rereading the year, she contrasts…"). People the note is about may be named; the writer is never the subject.
     """
 
+    /// What the model's name + summary may keep, checked against the content it was given.
+    /// A3 — a name or summary may not bring in the app's own words (T's summary gained "the Librarian", a word the entry
+    /// never used). Drop that field; the entry stays unnamed rather than mis-named.
+    /// live-15 (1) — echoing the instructions' example means the model didn't name THIS entry: drop BOTH fields.
+    static func guardedNaming(title: String, summary: String, content: String) -> NodeAIOutput {
+        let echo = exampleEcho(in: title + " " + summary, content: content)
+        let titleLeak = AppTermLeak.leaked(in: title, content: content) + echo
+        let summaryLeak = AppTermLeak.leaked(in: summary, content: content) + echo
+        if !titleLeak.isEmpty || !summaryLeak.isEmpty {
+            print("[AI] naming used term(s) absent from the entry — dropped title:\(!titleLeak.isEmpty) summary:\(!summaryLeak.isEmpty) terms=\(titleLeak + summaryLeak)")
+        }
+        return NodeAIOutput(title: titleLeak.isEmpty ? title : "", summary: summaryLeak.isEmpty ? summary : "",
+                            tags: [], mood: nil, domain: nil, neighborhoodID: nil)
+    }
+
+    /// live-15 (1) — the instructions' example summary's own words. Given almost nothing to read, the model reworded
+    /// that example into a title (T's PDF: "Purchase of Menus and Wikipedia Articles"). A name or summary carrying one
+    /// of these words that the entry itself doesn't contain is the example, not the entry: both fields are dropped.
+    static let exampleTerms = ["menu", "Wikipedia", "French"]
+    static func exampleEcho(in output: String, content: String) -> [String] {
+        exampleTerms.filter { output.range(of: $0, options: .caseInsensitive) != nil && content.range(of: $0, options: .caseInsensitive) == nil }
+    }
+
     /// AUTHORED vs DERIVED split — the single source of truth for the distinction,
     /// shared by the weighted content assembly (`extractContent`) and the tray's
     /// provenance signal (`contentProvenance`) so the two can't drift.
@@ -909,8 +928,10 @@ actor AIService {
                 if let c = meaningfulText(item.content) { authored.append(c) }
             case .audio, .video:
                 if let t = meaningfulText(item.transcript) { authored.append(t) }
-            case .image, .document:
+            case .image:
                 if let d = meaningfulText(item.description) { derived.append(d) }
+            case .document:
+                if let d = documentText(item) { derived.append(d) }
             case .link:
                 if let s = meaningfulText([item.title, item.preview].compactMap { $0 }.joined(separator: " ")) { derived.append(s) }
             case .imageVideo:
@@ -938,6 +959,14 @@ actor AIService {
             }
         }
         return (authored, derived)
+    }
+
+    /// live-15 (1) — a document item's text for naming and the content hash: what was extracted from its file(s), else
+    /// its description (the file name). It used to be the description ALWAYS, so an 11-page PDF was named from its
+    /// 22-character file name and the model invented the rest.
+    static func documentText(_ item: NodeItem) -> String? {
+        let extracted = (item.documentItems ?? []).compactMap { meaningfulText($0.extractedText) }
+        return extracted.isEmpty ? meaningfulText(item.description) : extracted.joined(separator: "\n")
     }
 
     /// Whether a node carries each kind of text. Drives the tray's provenance line,

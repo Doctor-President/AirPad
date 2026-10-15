@@ -1,4 +1,5 @@
 import Foundation
+import UIKit
 #if DEBUG
 import AVFoundation
 #endif
@@ -227,6 +228,7 @@ actor iCloudDriveService {
             usingLocalFallback = false   // cosmetic only (no "saving locally" banner during tests)
             if ProcessInfo.processInfo.arguments.contains("-UITestSeedChats") { Self.seedUITestChats(root) }
             if ProcessInfo.processInfo.arguments.contains("-UITestSeedVoiceEntry") { Self.seedUITestVoiceEntry(root) }
+            if ProcessInfo.processInfo.arguments.contains("-UITestSeedHeroEntries") { Self.seedUITestHeroEntries(root) }
             return true
         } catch {
             return false
@@ -279,6 +281,38 @@ actor iCloudDriveService {
                         summary: "Prints to collect and a rescan to ask about.", tags: [],
                         items: [voice, note], entrySchemaVersion: 1)
         try? JSONEncoder.airPad.encode(node).write(to: nodeDir.appendingPathComponent("node.json"), options: .atomic)
+    }
+
+    /// live-14 — `-UITestSeedHeroEntries`: two entries with a hero image — a LARGE photo-sized one (6000×4500, busy, so
+    /// its decode takes real time, as T's big photos do) and a small one (400×300) — for the hero glass-flash row.
+    /// Synthetic pixels only; written only when absent.
+    private static func seedUITestHeroEntries(_ root: URL) {
+        for (id, w, h, title) in [("uitest-hero-large", 6000, 4500, "Harbour wall at low tide"),
+                                  ("uitest-hero-small", 400, 300, "Shelf of jars")] {
+            let nodeDir = root.appendingPathComponent("nodes/\(id)")
+            guard !FileManager.default.fileExists(atPath: nodeDir.path) else { continue }
+            try? FileManager.default.createDirectory(at: nodeDir.appendingPathComponent("items"), withIntermediateDirectories: true)
+            let format = UIGraphicsImageRendererFormat(); format.scale = 1
+            let jpeg = UIGraphicsImageRenderer(size: CGSize(width: w, height: h), format: format).jpegData(withCompressionQuality: 0.9) { ctx in
+                var x: UInt64 = 0x9E3779B97F4A7C15
+                for _ in 0..<(w * h / 4000) {   // a busy, photo-like field so the JPEG is big and slow to decode
+                    x = x &* 6364136223846793005 &+ 1442695040888963407
+                    let r = CGFloat(x >> 40 & 0xFF) / 255, g = CGFloat(x >> 32 & 0xFF) / 255, b = CGFloat(x >> 24 & 0xFF) / 255
+                    UIColor(red: r, green: g, blue: b, alpha: 1).setFill()
+                    let px = CGFloat(x >> 8 & 0xFFFF) / 65535 * CGFloat(w), py = CGFloat(x >> 16 & 0xFFFF) / 65535 * CGFloat(h)
+                    ctx.fill(CGRect(x: px, y: py, width: CGFloat(w) / 40, height: CGFloat(h) / 40))
+                }
+            }
+            let cover = "items/cover-\(id).jpg"
+            try? jpeg.write(to: nodeDir.appendingPathComponent(cover), options: .atomic)
+            let now = Date(timeIntervalSince1970: 1_760_300_000)
+            let note = NodeItem(id: id + "-note", type: .text, createdAt: now, content: "A synthetic photo entry.",
+                                displayName: nil, isExpanded: true, updatedAt: now)
+            var node = Node(id: id, createdAt: now, updatedAt: now, title: title, summary: "A synthetic hero entry.", tags: [],
+                            items: [note], entrySchemaVersion: 1)
+            node.coverImageRelativePath = cover
+            try? JSONEncoder.airPad.encode(node).write(to: nodeDir.appendingPathComponent("node.json"), options: .atomic)
+        }
     }
 
     /// A mono AAC file whose loudness rises and falls like speech (syllable-rate envelope over a tone), so the

@@ -2827,6 +2827,8 @@ private struct HeroImageBanner: View {
 
     @State private var image: UIImage? = nil
     @State private var aspect: CGFloat? = nil
+    /// live-14 — the image could not be resolved or decoded (vs still loading). Only a failure shows the no-hero look.
+    @State private var loadFailed = false
     /// Detail-View pass — hero visible-height cap, dialed via the dev panel
     /// (default 420 = the prior literal). Gradient fallback keeps its fixed 200.
     @State private var visualSettings = EntryVisualSettings.shared
@@ -3015,11 +3017,16 @@ private struct HeroImageBanner: View {
                             if isAdjusting { adjustDoneButton }
                         }
                 }
+            } else if loadFailed {
+                // Resolve-or-decode failure (e.g. an evicted file not yet back): still a hero entry, so still never the
+                // glass (that is the no-hero look) — the same neutral band as while loading, at 200 + topInset.
+                BandGradientExpanded(node: node, totalHeight: 200 + topInset, glass: false)
+                    .onAppear { HeroHeaderProbe.note(node.id, "failed") }
             } else {
-                // Loading / resolve-or-decode failure: fall back to the
-                // gradient banner at its natural 200 + topInset height.
-                let totalHeight: CGFloat = 200 + topInset
-                BandGradientExpanded(node: node, totalHeight: totalHeight)
+                // live-14 — LOADING: this entry HAS a hero (the node says so), so never the glass — the band without it,
+                // as before the glass became the header (T saw the glass flash before big photos decoded).
+                BandGradientExpanded(node: node, totalHeight: 200 + topInset, glass: false)
+                    .onAppear { HeroHeaderProbe.note(node.id, "loading") }
             }
         }
         // Scroll-collapsed band — report the visible content height (and keep it
@@ -3035,8 +3042,9 @@ private struct HeroImageBanner: View {
             // image lingering during the new resolve.
             image = nil
             aspect = nil
+            loadFailed = false
             guard node.coverImageRelativePath != nil,
-                  let url = await store.coverImageURL(for: node) else { return }
+                  let url = await store.coverImageURL(for: node) else { loadFailed = true; return }
             // PERF FIX 1B — downsample at decode time via ImageIO instead
             // of `UIImage(data:)`, which held the full original bitmap and
             // forced a main-thread resample on every composite (one of the
@@ -3064,9 +3072,10 @@ private struct HeroImageBanner: View {
                 let aspect = CGFloat(cg.width) / CGFloat(cg.height)
                 return (img, aspect)
             }.value
-            guard let decoded else { return }
+            guard let decoded else { loadFailed = true; return }
             image = decoded.0
             aspect = decoded.1
+            HeroHeaderProbe.note(node.id, "image")
         }
     }
 

@@ -1150,9 +1150,10 @@ private struct QuikCaptureHeroImageBanner: View {
                         )
                     )
             } else {
+                // live-14 — a hero entry never shows the glass: loading or failed, the band without it.
                 let totalHeight: CGFloat = 200 + topInset
                 NodeGradientLayer(node: node, circleScale: 1.3, undulation: 1.0, blobSet: .hero,
-                              glassSurface: .entry)
+                              glassSurface: nil)
                     .frame(height: totalHeight)
                     .clipShape(
                         UnevenRoundedRectangle(

@@ -771,12 +771,15 @@ struct BandScrim: View {
 struct BandGradientExpanded: View {
     let node: Node
     let totalHeight: CGFloat
+    /// live-14 — false = the band without the fluted glass: the hero's LOADING placeholder. An entry with a hero must
+    /// never show the glass (that is the no-hero look), so while its image decodes it shows this, as before the glass.
+    var glass = true
     var body: some View {
         NodeGradientLayer(node: node, circleScale: GradientBake.bandCircle,
                           vignette: GradientBake.bandVignette, glowStart: GradientBake.bandGlowStart, glowEnd: GradientBake.bandGlowEnd,
                           glowStrength: GradientBake.bandRadial, bloom: GradientBake.bandBloom,
                           undulation: GradientBake.bandAmplitude, warpScale: GradientBake.bandScale, blobExpr: 3,
-                          glassSurface: .entry)
+                          glassSurface: glass ? .entry : nil)
             .frame(height: totalHeight)
             .overlay(BandScrim(top: BandGradient.scrimTop, bottom: BandGradient.scrimBottom))
             .clipShape(UnevenRoundedRectangle(bottomLeadingRadius: 30, bottomTrailingRadius: 30, style: .continuous))

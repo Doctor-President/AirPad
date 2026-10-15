@@ -1056,9 +1056,15 @@ private struct CardHeroImage: View, Equatable {
         l.node.heroCrop == r.node.heroCrop
     }
 
+    /// live-16 — this frame's photo: its own decode, else one already in the shared cache at this size or larger
+    /// (scrolling back to a card, or another surface showed it), so a recycled card never blinks empty.
+    private var shown: UIImage? {
+        image ?? DisplayImageCache.coverKey(node).flatMap { DisplayImageCache.shared.image(path: $0, atLeast: DisplaySize.card) }
+    }
+
     var body: some View {
         Group {
-            if let image {
+            if let image = shown {
                 // #7 — apply the node's hero crop so the card framing matches
                 // what the user dialed in the detail banner. Fast path (no
                 // GeometryReader) whenever there's no non-zero crop — the common
@@ -1084,11 +1090,10 @@ private struct CardHeroImage: View, Equatable {
             image = nil
             guard node.coverImageRelativePath != nil,
                   let url = await store.coverImageURL(for: node) else { return }
-            let decoded: UIImage? = await Task.detached(priority: .userInitiated) {
-                guard let data = try? Data(contentsOf: url),
-                      let img = UIImage(data: data) else { return nil }
-                return img
-            }.value
+            // live-16 — decoded at display size through the ONE shared cache (was the full original via
+            // `UIImage(data:)`); the detail hero opened from this card renders this decode on its first frame.
+            guard let key = DisplayImageCache.coverKey(node) else { return }
+            let decoded = await DisplayImageCache.shared.load(path: key, url: url, pixels: DisplaySize.card)
             if let decoded { image = decoded }
         }
     }

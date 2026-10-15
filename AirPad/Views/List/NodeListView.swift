@@ -123,7 +123,8 @@ struct NodeListView: View {
                                 selection.toggle(node.id)
                             } else {
                                 navHaptic.impactOccurred()
-                                navigationPath.append(node)
+                                // live-16 — decode its hero + first gallery photos now; an uncached hero holds the push ≤ 300 ms.
+                                store.openAfterPrewarm(node) { navigationPath.append(node) }
                             }
                         } label: {
                             RecentNodeRow(node: node, timestamp: node.updatedAt,

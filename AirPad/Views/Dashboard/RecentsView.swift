@@ -143,7 +143,8 @@ struct RecentsView: View {
                         VStack(spacing: 0) {
                             ForEach(Array(bucket.nodes.enumerated()), id: \.element.id) { index, node in
                                 Button {
-                                    onOpenNode(node)
+                                    // live-16 — decode its hero + first gallery photos now; an uncached hero holds the push ≤ 300 ms.
+                                    store.openAfterPrewarm(node) { onOpenNode(node) }
                                 } label: {
                                     RecentNodeRow(node: node, timestamp: date(for: node),
                                                   ink: AppearancePalette.ink, appFont: appFont)

@@ -59,14 +59,30 @@ struct GalleryItemTile: View {
     @Environment(CorpusStore.self) private var store
 
     @State private var image: UIImage? = nil
+    /// live-16 — the file couldn't be resolved or decoded: only then the media glyph (never while a local photo loads).
+    @State private var loadFailed = false
+    /// live-16 — whether the tile's first frame already had its picture (from the cache); if not, it fades in.
+    @State private var appearedWithImage = false
+
+    /// live-16 — the shared-cache key for this item's file.
+    private var cacheKey: String { DisplayImageCache.key(nodeID: nodeID, relativePath: galleryItem.file) }
+
+    /// live-16 — this frame's picture: its own decode, else a photo already decoded at gallery size or larger in the
+    /// shared cache (the tap's prewarm, or an earlier open), so the first row is there on the detail's first frame.
+    private var shown: UIImage? {
+        if let image { return image }
+        guard galleryItem.mediaType == .image else { return nil }
+        return DisplayImageCache.shared.image(path: cacheKey, atLeast: DisplaySize.galleryTile)
+    }
 
     var body: some View {
         ZStack {
-            if let image {
+            if let image = shown {
                 Image(uiImage: image)
                     .resizable()
                     .scaledToFill()
                     .clipped()
+                    .transition(.opacity)   // a thumbnail that lands after the first frame fades in
                 if galleryItem.mediaType == .video && showVideoBadge {
                     Image(systemName: "play.circle.fill")
                         .font(.title)
@@ -74,15 +90,24 @@ struct GalleryItemTile: View {
                         .shadow(color: .black.opacity(0.4), radius: 2, y: 1)
                 }
             } else {
+                // live-16 — a neutral tile while the photo decodes; the media glyph only when it truly can't load.
                 Rectangle()
                     .fill(AppearancePalette.ink.opacity(0.08))
                     .overlay {
-                        Image(systemName: galleryItem.mediaType == .video ? "video" : "photo")
-                            .foregroundStyle(AppearancePalette.ink.opacity(0.3))
+                        if loadFailed || galleryItem.mediaType == .video {
+                            Image(systemName: galleryItem.mediaType == .video ? "video" : "photo")
+                                .foregroundStyle(AppearancePalette.ink.opacity(0.3))
+                        }
                     }
             }
         }
         .overlay(alignment: .bottom) { captionStrip }
+        // live-16 — the tile as RENDERED: the first frame's state, then each change (`HeroHeaderFlash`).
+        .onAppear {
+            appearedWithImage = shown != nil
+            HeroHeaderProbe.tile(nodeID, galleryItem.id, appearedWithImage ? "image" : "placeholder")
+        }
+        .onChange(of: shown != nil) { _, isShown in HeroHeaderProbe.tile(nodeID, galleryItem.id, isShown ? "image" : "placeholder") }
         .task(id: galleryItem.id) {
             await resolveAndLoad()
         }
@@ -120,7 +145,7 @@ struct GalleryItemTile: View {
             nodeID: nodeID,
             fallbackParentItem: parentItem
         )
-        guard let url else { return }
+        guard let url else { loadFailed = true; return }
         switch galleryItem.mediaType {
         case .image:
             await loadImage(from: url)
@@ -130,16 +155,13 @@ struct GalleryItemTile: View {
     }
 
     private func loadImage(from url: URL) async {
-        // Off-main decode — Data(contentsOf:) + UIImage(data:) both block,
-        // and at gallery-tile scale (potentially many tiles per card) doing
-        // this on MainActor stalls the scroll. Detached task keeps decode
-        // off main; commit the @State write + aspect callback together on
-        // main so a re-render can't observe an image without its aspect.
-        let decoded: UIImage? = await Task.detached(priority: .userInitiated) {
-            guard let data = try? Data(contentsOf: url) else { return nil }
-            return UIImage(data: data)
-        }.value
-        guard let decoded else { return }
+        // Off-main decode, at gallery-tile size (live-16: ImageIO downsampling through the ONE shared cache — was the
+        // full original via `UIImage(data:)`). Commit the @State write + aspect callback together on main so a
+        // re-render can't observe an image without its aspect.
+        guard let decoded = await DisplayImageCache.shared.load(path: cacheKey, url: url, pixels: DisplaySize.galleryTile) else {
+            loadFailed = true
+            return
+        }
         commitLoaded(decoded)
     }
 
@@ -150,7 +172,12 @@ struct GalleryItemTile: View {
 
     @MainActor
     private func commitLoaded(_ loaded: UIImage) {
-        self.image = loaded
+        // live-16 — already on screen from the cache: no change; arriving after the first frame: fade in.
+        if image == nil && !appearedWithImage {
+            withAnimation(.easeOut(duration: 0.2)) { self.image = loaded }
+        } else {
+            self.image = loaded
+        }
         guard let onMeasuredAspect, loaded.size.height > 0 else { return }
         let aspect = Double(loaded.size.width / loaded.size.height)
         // Skip the callback when the persisted aspect already matches —

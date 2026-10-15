@@ -1195,6 +1195,10 @@ final class CorpusStore {
                 if ProcessInfo.processInfo.arguments.contains("-DocumentNamingInputSelfTest") {
                     NSLog("%@", await runDocumentNamingInputSelfTest())
                 }
+                // live-16 — the shared display-image cache: decode time/memory, hit + hand-off, peak, memory warning.
+                if ProcessInfo.processInfo.arguments.contains("-DisplayImageCacheSelfTest") {
+                    NSLog("%@", await DisplayImageCacheSelfTest.run(store: self))
+                }
                 // live-13 — real recognisers on a real iPhone, fed synthetic speech files (CC copies them in).
                 if let i = ProcessInfo.processInfo.arguments.firstIndex(of: "-RecorderDeviceBench"),
                    i + 1 < ProcessInfo.processInfo.arguments.count {

@@ -101,7 +101,7 @@ struct DocumentEntryBody: View {
             }
         }
         .sheet(item: $previewIdentity) { identity in
-            DocumentQuickLookViewer(handoff: identity)
+            DocumentViewerSheet(handoff: identity)
                 .ignoresSafeArea()
         }
         .sheet(item: $shareIdentity) { identity in

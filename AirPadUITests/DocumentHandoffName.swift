@@ -101,8 +101,16 @@ final class DocumentHandoffName: XCTestCase {
 
     /// Closes the viewer / share sheet and checks the named copy was removed (none left on disk).
     private func closeAndCheckReleased(_ app: XCUIApplication, _ doc: Doc, button: String) {
-        let close = app.buttons[button].firstMatch
-        if close.waitForExistence(timeout: 5) { close.tap() } else { app.swipeDown(velocity: .fast) }
+        // The viewer: QuickLook's own Done (iOS 26) or our Close (iOS 27, live-19); the share sheet: its close button.
+        let candidates = button == "Done" ? ["Done", "documentViewerClose", "Close"] : ["header.closeButton", button]
+        let found = candidates.lazy.compactMap { id -> (String, XCUIElement)? in
+            let e = app.descendants(matching: .any).matching(identifier: id).firstMatch
+            if e.waitForExistence(timeout: 2) { return (id, e) }
+            let b = app.buttons[id].firstMatch   // by label (QuickLook's own Done on iOS 26)
+            return b.exists ? (id + " (label)", b) : nil
+        }.first
+        print("[DocumentHandoffName] closing \(doc.display) via \(found?.0 ?? "swipe")")
+        if let (_, e) = found { e.tap() } else { app.swipeDown(velocity: .fast) }
         let deadline = Date().addingTimeInterval(8)
         var released: [String] = []
         while Date() < deadline {
@@ -165,7 +173,9 @@ final class DocumentHandoffName: XCTestCase {
             XCTAssertEqual(Self.field(handed, "files"), "\(doc.display).\(doc.ext)",
                            "\(doc.display): the share sheet is handed <name>.<ext> (\(handed))")
             XCTAssertFalse(sheetTexts.contains { $0.contains(String(doc.id.prefix(8))) }, "\(doc.display): no UUID on the share sheet (saw \(sheetTexts))")
-            XCTAssertTrue(sheetTexts.contains(doc.display), "\(doc.display): the share sheet's header shows the name (saw \(sheetTexts.prefix(6)))")
+            // iOS 26 shows the name; iOS 27's header shows it WITH the extension.
+            XCTAssertTrue(sheetTexts.contains(doc.display) || sheetTexts.contains("\(doc.display).\(doc.ext)"),
+                          "\(doc.display): the share sheet's header shows the name (saw \(sheetTexts.prefix(6)))")
             closeAndCheckReleased(app, doc, button: "Close")
             app.terminate()
         }

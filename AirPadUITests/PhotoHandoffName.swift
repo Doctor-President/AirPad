@@ -88,7 +88,7 @@ final class PhotoHandoffName: XCTestCase {
             XCTAssertEqual(files, "\(photo.display).jpg", "\(photo.display): the share sheet is handed <name>.jpg (\(handed))")
             XCTAssertFalse(sheetTexts.contains { $0.contains(String(photo.id.prefix(8))) },
                            "\(photo.display): no UUID on the share sheet (saw \(sheetTexts.prefix(12)))")
-            XCTAssertTrue(sheetTexts.contains(photo.display),
+            XCTAssertTrue(sheetTexts.contains(photo.display) || sheetTexts.contains("\(photo.display).jpg"),   // iOS 27: with extension
                           "\(photo.display): the share sheet's header shows the name (saw \(sheetTexts.prefix(6)))")
             // The share sheet's own Close, by its identifier (over the full-screen viewer, its type flips between Button
             // and PopUpButton, so a `buttons` query misses it).

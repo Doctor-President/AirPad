@@ -62,7 +62,7 @@ struct DocumentGalleryTile: View {
         .overlay(alignment: .topTrailing) { tileMenu }
         .task { await extractIfNeeded() }
         .sheet(item: $previewIdentity) { identity in
-            DocumentQuickLookViewer(handoff: identity)
+            DocumentViewerSheet(handoff: identity)
                 .ignoresSafeArea()
         }
         .sheet(item: $shareIdentity) { identity in

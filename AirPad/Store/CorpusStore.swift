@@ -1993,6 +1993,12 @@ final class CorpusStore {
                 s.viewMode = .grid
                 setFilterState(s, for: .corpus)
             }
+            // live-19 (3a) — `-OpenListView`: the List surface directly.
+            if ProcessInfo.processInfo.arguments.contains("-OpenListView") {
+                var s = filterState(for: .corpus)
+                s.viewMode = .list
+                setFilterState(s, for: .corpus)
+            }
             // Brief AS — `-OpenMap` opens the Map (System Graph) directly for headless verification
             // (comp render + the layer-export harness), without driving the view-switcher menu.
             if ProcessInfo.processInfo.arguments.contains("-OpenMap") {

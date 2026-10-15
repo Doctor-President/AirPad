@@ -72,6 +72,9 @@ struct GalleryFullscreenViewer: View {
 
     @State private var currentIndex: Int
     @State private var pendingDelete: GalleryItem? = nil
+    #if DEBUG
+    @State private var restProbe = PagedRestProbe()   // live-19 (3d)
+    #endif
     /// live-18 (0b) — the item's named copy for the share sheet (never the stored UUID file).
     @State private var shareHandoff: DocumentHandoff? = nil
     /// Photos-style tap-to-toggle chrome (briefs/media-viewer-chrome.md).
@@ -335,6 +338,9 @@ struct GalleryFullscreenViewer: View {
                             onRequestPlay: { playingItem = gItem }
                         )
                         .containerRelativeFrame([.horizontal, .vertical])
+                        #if DEBUG
+                        .pagedRestProbe(restProbe, index: idx)
+                        #endif
                         .id(idx)
                     }
                 }
@@ -342,6 +348,9 @@ struct GalleryFullscreenViewer: View {
             }
             .scrollIndicators(.hidden)
             .scrollTargetBehavior(.paging)
+            #if DEBUG
+            .pagedRestLogger(restProbe, "viewer", leading: 0, pitch: nil, count: galleryItems.count)
+            #endif
             .scrollPosition(id: scrollPositionBinding)
             // Paging-only-at-zoom==1: when the visible page is zoomed,
             // its inner UIScrollView swallows horizontal drag to pan

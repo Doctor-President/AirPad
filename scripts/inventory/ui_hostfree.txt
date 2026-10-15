@@ -85,3 +85,14 @@ PhotoHandoffName/testShareHandsThePhotosName
 RangeCitationChips/testRangeMarkersRenderAsChips
 # live-18 (1) — Card view's coverflow: at EVERY rest (slow drags past card 20 and back, fast drags, flicks) the centred card is flat + centred (< 0.5 pt, < 0.1°) and the track's snapped slot is centred. RED on iOS 27 before the one-stride track.
 CarouselRestGeometry/testEveryRestIsFlatAndCentred
+# live-19 (3a) — iOS 27 `scrollTo` (FB24968838): the real focus request at five far, never-realised rows lands on screen
+# on the vertical cards, the grid and the List; a long synthetic chat opens on its last answer.
+ScrollToLanding/testVerticalCardsLand
+ScrollToLanding/testGridLands
+ScrollToLanding/testListLands
+ScrollToLanding/testLongChatOpensOnItsLastAnswer
+# live-19 (3b) — a tap on a superscript citation inside selectable answer text reaches its handler (not a selection).
+SelectableTextTaps/testSuperscriptTapReachesItsCitation
+# live-19 (3d) — every rest of the photo viewer's pager and a document carousel sits aligned, exact pitch.
+PagedRestGeometry/testPhotoViewerPagesRestAligned
+PagedRestGeometry/testDocumentCarouselRestsAligned

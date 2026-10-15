@@ -231,6 +231,8 @@ actor iCloudDriveService {
             if ProcessInfo.processInfo.arguments.contains("-UITestSeedHeroEntries") { Self.seedUITestHeroEntries(root) }
             if ProcessInfo.processInfo.arguments.contains("-UITestSeedDocumentEntries") { Self.seedUITestDocumentEntries(root) }
             if ProcessInfo.processInfo.arguments.contains("-UITestSeedPhotoEntries") { Self.seedUITestPhotoEntries(root) }
+            if ProcessInfo.processInfo.arguments.contains("-UITestSeedLongChat") { Self.seedUITestLongChat(root) }
+            if ProcessInfo.processInfo.arguments.contains("-UITestSeedManyDocuments") { Self.seedUITestManyDocuments(root) }
             return true
         } catch {
             return false
@@ -382,6 +384,49 @@ actor iCloudDriveService {
                             tags: [], items: [entry], entrySchemaVersion: 4)
             try? JSONEncoder.airPad.encode(node).write(to: nodeDir.appendingPathComponent("node.json"), options: .atomic)
         }
+    }
+
+    /// live-19 (3d) — `-UITestSeedManyDocuments`: one entry (`uitest-doc-many`) holding 14 small synthetic PDFs in the
+    /// document carousel, so paging it crosses the lazy window (`PagedRestGeometry`). Written only when absent.
+    private static func seedUITestManyDocuments(_ root: URL) {
+        let now = Date(timeIntervalSince1970: 1_760_300_000)
+        let nodeID = "uitest-doc-many"
+        let nodeDir = root.appendingPathComponent("nodes/\(nodeID)")
+        guard !FileManager.default.fileExists(atPath: nodeDir.appendingPathComponent("node.json").path) else { return }
+        try? FileManager.default.createDirectory(at: nodeDir.appendingPathComponent("items"), withIntermediateDirectories: true)
+        let items: [DocumentItem] = (1...14).map { i in
+            let id = String(format: "D0C5A11E-0000-4000-8000-%012d", i)
+            let data = UIGraphicsPDFRenderer(bounds: CGRect(x: 0, y: 0, width: 612, height: 792)).pdfData { ctx in
+                ctx.beginPage()
+                ("Tide log \(i)" as NSString).draw(at: CGPoint(x: 72, y: 72), withAttributes: [.font: UIFont.systemFont(ofSize: 22)])
+            }
+            try? data.write(to: nodeDir.appendingPathComponent("items/\(id).pdf"), options: .atomic)
+            return DocumentItem(id: id, filePath: "items/\(id).pdf", fileName: "Tide log \(i).pdf", fileType: "pdf",
+                                documentTitle: nil, extractedText: nil, thumbnailFile: nil, pageCount: nil, wordCount: nil,
+                                capturedAt: now)
+        }
+        var entry = NodeItem(id: nodeID + "-docs", type: .document, createdAt: now, file: items[0].filePath,
+                             displayName: "Documents", isExpanded: true, updatedAt: now, documentItems: items)
+        entry.documentViewMode = .carousel
+        let node = Node(id: nodeID, createdAt: now, updatedAt: now, title: "Fourteen tide logs", summary: "A synthetic document entry.",
+                        tags: [], items: [entry], entrySchemaVersion: 4)
+        try? JSONEncoder.airPad.encode(node).write(to: nodeDir.appendingPathComponent("node.json"), options: .atomic)
+    }
+
+    /// live-19 (3a) — `-UITestSeedLongChat`: one 80-message synthetic chat ("Long synthetic chat"), long enough that its
+    /// early turns sit in the transcript's lazy history and its last answer starts far below the first screen. The last
+    /// answer ends "…the end of the long chat." (`ScrollToLanding` checks it's on screen when the chat opens).
+    private static func seedUITestLongChat(_ root: URL) {
+        let now = Date(timeIntervalSince1970: 1_760_000_000)
+        var messages: [ChatSession.Message] = []
+        for i in 1...40 {
+            messages.append(ChatSession.Message(role: .user, text: "Synthetic question \(i): what did the tide tables say about week \(i)?"))
+            let para = "Week \(i) had two high waters a day at the north wall, with the spring tide arriving mid-week and the neap at the end. "
+            messages.append(ChatSession.Message(role: .assistant,
+                text: String(repeating: para, count: 4) + (i == 40 ? "This is the end of the long chat." : "")))
+        }
+        let chat = Chat(id: UUID(), title: "Long synthetic chat", createdAt: now, updatedAt: now, messages: messages)
+        try? JSONEncoder.airPad.encode([chat]).write(to: root.appendingPathComponent("chats.json"), options: .atomic)
     }
 
     /// live-18 (0b) — `-UITestSeedPhotoEntries`: a two-photo gallery stored the way an import stores it, under UUID file

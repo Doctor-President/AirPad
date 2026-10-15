@@ -29,8 +29,25 @@ struct ContentView: View {
             // `-OpenCardView` companion — `entryMode` defaults to `.recents`, so the
             // viewMode seed alone never reaches the canvas.
             Color.clear.frame(width: 0, height: 0).onAppear {
-                if ProcessInfo.processInfo.arguments.contains("-OpenCardView"),
+                if ProcessInfo.processInfo.arguments.contains("-OpenCardView") || ProcessInfo.processInfo.arguments.contains("-OpenListView"),
                    router.entryMode != .canvas { router.entryMode = .canvas }
+                // live-19 (3a) — `-DebugFocusSweep`: once the library is up, fire the REAL focus request (the one a
+                // Librarian search row fires) at five nodes spread across it, 5 s apart — far rows the surface has
+                // never realised. `ScrollToLanding` asserts each lands on screen (iOS 27: FB24968838 reports
+                // `scrollTo` missing unrealised lazy rows).
+                if ProcessInfo.processInfo.arguments.contains("-DebugFocusSweep") {
+                    Task { @MainActor in
+                        for _ in 0..<120 where store.nodes.count < 50 { try? await Task.sleep(nanoseconds: 250_000_000) }
+                        try? await Task.sleep(nanoseconds: 8_000_000_000)
+                        let ids = store.nodes.map(\.id).sorted()
+                        for (k, i) in [30, 90, 150, 200, ids.count - 1].enumerated() where i < ids.count {
+                            print("[FocusSweep] request k=\(k) id=\(ids[i])")
+                            router.requestFocus(ids[i])
+                            try? await Task.sleep(nanoseconds: 5_000_000_000)
+                        }
+                        print("[FocusSweep] done")
+                    }
+                }
                 // Brief AS — `-OpenMap` lands on the canvas (Map) for headless verification.
                 if ProcessInfo.processInfo.arguments.contains("-OpenMap"),
                    router.entryMode != .canvas { router.entryMode = .canvas }

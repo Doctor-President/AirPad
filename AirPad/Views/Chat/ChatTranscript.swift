@@ -458,6 +458,9 @@ struct ChatTranscript: View {
             // onOpenNode (same closure the footer circles use). Non-citation
             // links fall through to the system handler.
             .environment(\.openURL, OpenURLAction { url in
+                #if DEBUG
+                print("[CitationTap] url=\(url.absoluteString)")   // live-19 (3b) — SelectableTextTaps
+                #endif
                 // Brief AF3 — the no-key web-search notice's tap: open Settings on the
                 // Web-search row. Checked before citations (distinct scheme).
                 if url.scheme == "airpad-settings", url.host == "websearch" {

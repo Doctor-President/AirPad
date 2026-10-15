@@ -169,6 +169,10 @@ final class CorpusStore {
         didSet { Self.saveTagLastUsedAt(tagLastUsedAt) }
     }
     var canvasLayout: CanvasLayout = CanvasLayout(version: 1, updatedAt: Date(), positions: [:])
+    /// live-17 (2c) — true once the launch `load()` has assigned the layout from disk. Until then a capture's position
+    /// lives in memory only and the load merges + persists it: saving earlier would write a layout holding just that
+    /// capture over every saved position (the cold-launch race).
+    private var canvasLayoutLoaded = false
 
     /// Persisted CARD-basis geography for the tag-anchored Map, so a relaunch
     /// RESTORES the last layout verbatim instead of re-deriving + animating it
@@ -1048,7 +1052,19 @@ final class CorpusStore {
                       + "liveKept=\(live.keys.filter(loadedIDs.contains).count) createdDuringLoad=\(live.keys.filter { !loadedIDs.contains($0) }.count)")
             }
             nodes = merged.sorted { $0.createdAt > $1.createdAt }
-            canvasLayout = layout ?? CanvasLayout(version: 1, updatedAt: Date(), positions: [:])
+            // live-17 (2c) — MERGE the disk layout with the live one, like the nodes above: a position added while the
+            // load ran (a capture during launch) is the live copy and wins; every saved position is kept. When the merge
+            // differs from disk, persist it — the capture held off saving (it had only its own position).
+            var mergedLayout = layout ?? CanvasLayout(version: 1, updatedAt: Date(), positions: [:])
+            mergedLayout.positions.merge(canvasLayout.positions) { _, live in live }
+            let layoutChanged = mergedLayout.positions != (layout?.positions ?? [:])
+            if layoutChanged { mergedLayout.updatedAt = Date() }
+            canvasLayout = mergedLayout
+            canvasLayoutLoaded = true
+            if layoutChanged {
+                print("[Store] live-17 load merged the canvas layout: disk=\(layout?.positions.count ?? 0) merged=\(mergedLayout.positions.count)")
+                try? await service.saveCanvasLayout(canvasLayout)
+            }
             // Restore the persisted tag-anchored Map geography (map-relayout fix).
             // `try?` so a schema drift decodes to nil → the Map re-forms + re-persists
             // rather than crashing on a stale artifact (the brief's "loads silently
@@ -1194,6 +1210,11 @@ final class CorpusStore {
                 // live-15 (1) — a document is named from its own text, right after another capture, on every import path.
                 if ProcessInfo.processInfo.arguments.contains("-DocumentNamingInputSelfTest") {
                     NSLog("%@", await runDocumentNamingInputSelfTest())
+                }
+                // live-17 (2c) — a capture during the launch load keeps every saved canvas position.
+                if ProcessInfo.processInfo.arguments.contains("-CanvasLayoutRaceSelfTest"), !Self.canvasLayoutRaceStarted {
+                    Self.canvasLayoutRaceStarted = true   // the test calls load() itself, which lands back here
+                    NSLog("%@", await runCanvasLayoutRaceSelfTest())
                 }
                 // live-16 — the shared display-image cache: decode time/memory, hit + hand-off, peak, memory warning.
                 if ProcessInfo.processInfo.arguments.contains("-DisplayImageCacheSelfTest") {
@@ -2987,10 +3008,23 @@ final class CorpusStore {
         await addNode(node, position: position)
     }
 
+    #if DEBUG
+    /// live-17 (2c) — `CanvasLayoutRaceSelfTest`: the store's memory as at a cold launch (no entries, the default empty
+    /// layout), the disk untouched.
+    func debugColdLaunchState() {
+        nodes = []
+        canvasLayout = CanvasLayout(version: 1, updatedAt: Date(), positions: [:])
+        canvasLayoutLoaded = false
+    }
+    func debugDiskCanvasLayout() async throws -> CanvasLayout? { try await service.loadCanvasLayout() }
+    func debugWriteDiskCanvasLayout(_ layout: CanvasLayout) async throws { try await service.saveCanvasLayout(layout) }
+    #endif
+
     func addNode(_ node: Node, position: CGPoint) async {
-        var newLayout = canvasLayout
-        newLayout.positions[node.id] = CanvasPosition(x: Double(position.x), y: Double(position.y))
-        newLayout.updatedAt = Date()
+        // live-17 (2c) — no copy of `canvasLayout` before the awaits: a capture during the launch load copied the EMPTY
+        // default and saved a layout holding only itself over every saved position. The position goes into the LIVE
+        // layout after the save; it's persisted now if the layout has loaded, else the load merges and persists it.
+        let newPosition = CanvasPosition(x: Double(position.x), y: Double(position.y))
         do {
             try await saveAndEnqueue(node)
             #if DEBUG
@@ -3001,7 +3035,13 @@ final class CorpusStore {
                 try? await Task.sleep(nanoseconds: ms * 1_000_000)
             }
             #endif
-            try await service.saveCanvasLayout(newLayout)
+            canvasLayout.positions[node.id] = newPosition
+            canvasLayout.updatedAt = Date()
+            if canvasLayoutLoaded {
+                try await service.saveCanvasLayout(canvasLayout)
+            } else {
+                print("[Store] live-17 addNode \(node.id) during the launch load — its position joins the loaded layout")
+            }
             // A3 — one id, one node: if the launch load already brought this node in from disk (it read the file this
             // call just saved), take that slot instead of inserting a second copy.
             if let existing = nodes.firstIndex(where: { $0.id == node.id }) {
@@ -3010,7 +3050,6 @@ final class CorpusStore {
             } else {
                 nodes.insert(node, at: 0)
             }
-            canvasLayout = newLayout
         } catch {
             print("[CorpusStore] Save error: \(error)")
         }

@@ -85,6 +85,12 @@ struct CatalogModel: Identifiable, Sendable, Equatable {
         if toggleMeasured { return thinkingToggleable ? "Thinking optional" : "Thinking always on" }
         return "Can think"
     }
+    /// live-17 (2b) — the plain memory note for a model that needs a big Mac: the catalog's memory TIER (GB; the 30B is
+    /// tier 32), not its name, so any future 32 GB model gets it too. nil below 32 GB (the 4B and 8B are tier 16).
+    /// Wording for T to review on device.
+    var memoryNote: String? {
+        tier >= 32 ? "For Macs with \(tier) GB of memory or more. Runs best with nothing else loaded." : nil
+    }
     /// Tool-use, MEASURED not inherited — the sheet says WHICH (the last claim on this surface made
     /// honest). nil when the model neither claims nor supports tools (don't mention it at all).
     var toolsCopy: String? {
@@ -633,6 +639,18 @@ extension HostCatalog {
         check("deleted pick falls through", r5.preferred == "qwen3:4b", "\(r5)")
         // 6. Nothing installed → nil.
         check("nothing installed → nil", ModelRouter.activeHostModel([e("qwen3:4b", "not-installed", tier: 16, rec: true)], picked: nil).preferred == nil)
+
+        // live-17 (2b) — the 30B's memory note keys on the catalog tier (32), never on the name; the 16 GB models have none.
+        func cm(_ tag: String, tier: Int) -> CatalogModel {
+            CatalogModel(tag: tag, display: tag, state: "installed-ejected", sizeBytes: 0, tier: tier, recommended: false,
+                         capabilities: [], verified: true, note: "", supportsThinking: false, thinkingMeasured: true,
+                         thinkingToggleable: false, toggleMeasured: true, supportsTools: false, toolsMeasured: true,
+                         capability: "", posture: "")
+        }
+        check("30B memory note", cm("qwen3:30b-a3b-instruct-2507-q4_K_M", tier: 32).memoryNote
+              == "For Macs with 32 GB of memory or more. Runs best with nothing else loaded.")
+        check("no memory note on a 16 GB model", cm(ins, tier: 16).memoryNote == nil && cm("qwen3:8b", tier: 16).memoryNote == nil)
+        check("no memory note off-manifest (tier 0)", cm("llama3.2:latest", tier: 0).memoryNote == nil)
 
         // Friendly names: never the raw tag.
         let names: [(String, String)] = [

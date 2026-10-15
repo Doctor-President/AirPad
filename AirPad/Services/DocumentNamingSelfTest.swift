@@ -96,6 +96,14 @@ extension CorpusStore {
         row("legacy-uuid-name-shows-dated", shownDocumentName(d), dated)
         // The PDF's Title metadata, read from a real synthetic PDF.
         row("pdf-title-metadata-is-read", DocumentNaming.pdfTitle(data: titled) ?? "none", "Synthetic Harbour Report")
+        // live-17 — the file name a document goes out under (viewer / share): `<display name>.<ext>`, sanitised.
+        row("handoff-name-is-display-name-dot-ext", DocumentHandoff.fileName("Harbour Survey", ext: "pdf"), "Harbour Survey.pdf")
+        row("handoff-name-drops-separators", DocumentHandoff.fileName("Q3/Q4: tide\nnotes", ext: "html"), "Q3 Q4 tide notes.html")
+        row("handoff-name-no-leading-dot", DocumentHandoff.fileName("..hidden", ext: "txt"), "hidden.txt")
+        row("handoff-name-empty-is-document", DocumentHandoff.fileName("  /  ", ext: "pdf"), "Document.pdf")
+        row("handoff-name-keeps-one-extension", DocumentHandoff.fileName("Report.PDF", ext: "pdf"), "Report.PDF")
+        row("handoff-name-dated-fallback", DocumentHandoff.fileName("PDF · Oct 15, 2026", ext: "pdf"), "PDF · Oct 15, 2026.pdf")
+        row("handoff-name-capped-200-bytes", "\(DocumentHandoff.fileName(String(repeating: "潮", count: 150), ext: "pdf").utf8.count <= 204)", "true")
 
         rows.append("INFO drag-and-drop: the app has no drop target (no onDrop/dropDestination) — no path to name")
         return "[DocumentNamingSelfTest] \(fails == 0 ? "PASS" : "FAIL") — \(rows.count - 1 - fails)/\(rows.count - 1)\n"

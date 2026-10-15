@@ -229,6 +229,7 @@ actor iCloudDriveService {
             if ProcessInfo.processInfo.arguments.contains("-UITestSeedChats") { Self.seedUITestChats(root) }
             if ProcessInfo.processInfo.arguments.contains("-UITestSeedVoiceEntry") { Self.seedUITestVoiceEntry(root) }
             if ProcessInfo.processInfo.arguments.contains("-UITestSeedHeroEntries") { Self.seedUITestHeroEntries(root) }
+            if ProcessInfo.processInfo.arguments.contains("-UITestSeedDocumentEntries") { Self.seedUITestDocumentEntries(root) }
             return true
         } catch {
             return false
@@ -328,6 +329,57 @@ actor iCloudDriveService {
                             summary: "A synthetic gallery entry.", tags: [], items: [gallery], entrySchemaVersion: 1)
             node.coverImageRelativePath = media[0].file
             write(node, gDir)
+        }
+    }
+
+    /// live-17 — `-UITestSeedDocumentEntries`: documents stored the way an import stores them, under UUID file names
+    /// (`items/<UUID>.<ext>`), for the `DocumentHandoffName` rows. T saw "F1062A75-5970-…" as the viewer's title.
+    ///   - `uitest-doc-single`: one PDF whose real name is "Harbour Survey Notes.pdf" (its PDF Title metadata says
+    ///     something else, so the real name must win);
+    ///   - `uitest-doc-gallery`: two documents — an HTML page with no real name (shown by its `<title>`, "Tide Table
+    ///     Primer") and a PDF named "Mooring Checklist.pdf".
+    /// Synthetic content only. Written only when its `node.json` (written last) is absent.
+    private static func seedUITestDocumentEntries(_ root: URL) {
+        let now = Date(timeIntervalSince1970: 1_760_300_000)
+        func pdf(_ lines: [String], title: String) -> Data {
+            let format = UIGraphicsPDFRendererFormat()
+            format.documentInfo = [kCGPDFContextTitle as String: title]
+            return UIGraphicsPDFRenderer(bounds: CGRect(x: 0, y: 0, width: 612, height: 792), format: format).pdfData { ctx in
+                ctx.beginPage()
+                for (i, line) in lines.enumerated() {
+                    (line as NSString).draw(at: CGPoint(x: 72, y: 72 + 28 * i),
+                                            withAttributes: [.font: UIFont.systemFont(ofSize: i == 0 ? 22 : 14)])
+                }
+            }
+        }
+        func doc(_ id: String, _ ext: String, _ name: String, _ title: String?, _ data: Data, in dir: URL) -> DocumentItem {
+            try? data.write(to: dir.appendingPathComponent("items/\(id).\(ext)"), options: .atomic)
+            return DocumentItem(id: id, filePath: "items/\(id).\(ext)", fileName: name, fileType: ext, documentTitle: title,
+                                extractedText: nil, thumbnailFile: nil, pageCount: nil, wordCount: nil, capturedAt: now)
+        }
+        let entries: [(String, String, [(String, String, String, String?, Data)])] = [
+            ("uitest-doc-single", "Harbour survey", [
+                ("F1062A75-5970-4E1B-9C3A-2B7D51C0A001", "pdf", "Harbour Survey Notes.pdf", nil,
+                 pdf(["Harbour Survey Notes", "Soundings taken at the north wall, three tides.",
+                      "Silt depth rising near the slipway."], title: "HS-draft-2"))]),
+            ("uitest-doc-gallery", "Mooring prep", [
+                ("C4BDC027-DC8E-4F7A-8E21-6A0B3D9E0002", "html", "", "Tide Table Primer",
+                 Data("<html><head><title>Tide Table Primer</title></head><body><h1>Tide Table Primer</h1><p>How to read high and low water times for a small harbour.</p></body></html>".utf8)),
+                ("9B2E4D61-0C7A-4B85-A3F9-1E6D2C8B0003", "pdf", "Mooring Checklist.pdf", nil,
+                 pdf(["Mooring Checklist", "Check the chain, the shackle pin and the swivel."], title: "MC"))]),
+        ]
+        for (nodeID, title, docs) in entries {
+            let nodeDir = root.appendingPathComponent("nodes/\(nodeID)")
+            guard !FileManager.default.fileExists(atPath: nodeDir.appendingPathComponent("node.json").path) else { continue }
+            try? FileManager.default.createDirectory(at: nodeDir.appendingPathComponent("items"), withIntermediateDirectories: true)
+            let items = docs.map { doc($0.0, $0.1, $0.2, $0.3, $0.4, in: nodeDir) }
+            var entry = NodeItem(id: nodeID + "-docs", type: .document, createdAt: now, file: items[0].filePath,
+                                 displayName: items.count >= 2 ? "Documents" : nil, isExpanded: true, updatedAt: now,
+                                 documentItems: items)
+            entry.documentViewMode = items.count >= 2 ? .carousel : nil
+            let node = Node(id: nodeID, createdAt: now, updatedAt: now, title: title, summary: "A synthetic document entry.",
+                            tags: [], items: [entry], entrySchemaVersion: 4)
+            try? JSONEncoder.airPad.encode(node).write(to: nodeDir.appendingPathComponent("node.json"), options: .atomic)
         }
     }
 

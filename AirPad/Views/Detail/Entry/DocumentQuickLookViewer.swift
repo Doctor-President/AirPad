@@ -24,8 +24,11 @@ import QuickLook
 /// nowhere to render and the sheet becomes undismissable (QL's
 /// full-screen content consumes the swipe-down gesture too). Future
 /// reader: do not "harmonize" by removing the wrap.
+///
+/// live-17 — handed a `DocumentHandoff`: QuickLook titles the viewer with the document's display name and its own Share
+/// button sends the named copy, never the stored UUID file. The copy is removed when the viewer closes.
 struct DocumentQuickLookViewer: UIViewControllerRepresentable {
-    let url: URL
+    let handoff: DocumentHandoff
 
     func makeUIViewController(context: Context) -> UINavigationController {
         let preview = QLPreviewController()
@@ -35,26 +38,29 @@ struct DocumentQuickLookViewer: UIViewControllerRepresentable {
 
     func updateUIViewController(_ controller: UINavigationController, context: Context) {}
 
-    func makeCoordinator() -> Coordinator { Coordinator(url: url) }
+    static func dismantleUIViewController(_ controller: UINavigationController, coordinator: Coordinator) {
+        coordinator.item.handoff.release()
+    }
+
+    func makeCoordinator() -> Coordinator { Coordinator(handoff: handoff) }
+
+    /// The item QuickLook shows: the named copy, titled with the display name.
+    final class PreviewItem: NSObject, QLPreviewItem {
+        let handoff: DocumentHandoff
+        init(handoff: DocumentHandoff) { self.handoff = handoff }
+        var previewItemURL: URL? { handoff.url }
+        var previewItemTitle: String? { handoff.title }
+    }
 
     final class Coordinator: NSObject, QLPreviewControllerDataSource {
-        let url: URL
-        init(url: URL) { self.url = url }
+        let item: PreviewItem
+        init(handoff: DocumentHandoff) { item = PreviewItem(handoff: handoff) }
 
         func numberOfPreviewItems(in controller: QLPreviewController) -> Int { 1 }
 
         func previewController(_ controller: QLPreviewController, previewItemAt index: Int) -> QLPreviewItem {
-            url as NSURL
+            DocumentHandoffProbe.preview(doc: item.handoff.documentID, title: item.handoff.title, url: item.handoff.url)
+            return item
         }
     }
-}
-
-/// Stage 4.6 commit 4 — identity wrapper for `.sheet(item:)` drivers in
-/// `DocumentGalleryTile` and `DocumentEntryBody`. `URL` doesn't conform
-/// to `Identifiable`; wrapping in a fresh-id struct lets the sheet
-/// re-present cleanly even if the user taps the same document twice in
-/// a row.
-struct DocumentPreviewIdentity: Identifiable, Equatable {
-    let id = UUID()
-    let url: URL
 }

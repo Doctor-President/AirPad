@@ -219,17 +219,32 @@ enum CitationReference {
     /// entry-label form `[E7]`, `[E1, E2]` (the packet now labels items `[E<n>]`); adjacency
     /// (`[n][m]`) and `[n], [m]` are two tokens. Shared by the renderer, `citedIndices`,
     /// `stripInvalidMarkers`, and `renumberBySource` so parser/renderer/stripper can't disagree.
-    /// `indexRegex` extracts only the DIGITS, so `[E7]` → index 7; `renumberBySource` rewrites every
+    /// `indices` extracts only the DIGITS, so `[E7]` → index 7; `renumberBySource` rewrites every
     /// surviving token to a plain `[n]`, so the committed prose (and its superscripts/tap targets)
     /// stay numeric — the `E` lives only in the model-facing packet + the model's raw reply.
-    static let citationTokenRegex = try! NSRegularExpression(pattern: #"\[\s*[Ee]?\s*\d{1,2}(?:\s*,\s*[Ee]?\s*\d{1,2})*\s*\]"#)
-    private static let indexRegex = try! NSRegularExpression(pattern: #"\d{1,2}"#)
+    ///
+    /// live-17 (2a) — an element may also be a RANGE, `[1–3]` / `[1-12]` / `[E1–E3]` / `[2, 5-7]` (any hyphen or dash),
+    /// which `indices` expands to every index it covers — so a range renders and cites exactly like `[1, 2, 3]`.
+    static let citationTokenRegex = try! NSRegularExpression(
+        pattern: #"\[\s*[Ee]?\s*\d{1,2}(?:\s*[-‐‑–—−]\s*[Ee]?\s*\d{1,2})?(?:\s*,\s*[Ee]?\s*\d{1,2}(?:\s*[-‐‑–—−]\s*[Ee]?\s*\d{1,2})?)*\s*\]"#)
+    /// One element of a token: an index, or a range `a–b` (live-17).
+    private static let elementRegex = try! NSRegularExpression(pattern: #"(\d{1,2})(?:\s*[-‐‑–—−]\s*[Ee]?\s*(\d{1,2}))?"#)
+    /// The widest range expanded (`[1-12]` is 12); a wider or backwards one keeps just its two ends.
+    static let maxRangeSpan = 20
 
-    /// All indices inside a citation token, in order (`"[1, 2, 7]"` → `[1, 2, 7]`).
+    /// All indices inside a citation token, in order (`"[1, 2, 7]"` → `[1, 2, 7]`; `"[1–3]"` → `[1, 2, 3]`).
     static func indices(inToken token: String) -> [Int] {
         let ns = token as NSString
-        return indexRegex.matches(in: token, range: NSRange(location: 0, length: ns.length))
-            .compactMap { Int(ns.substring(with: $0.range)) }
+        var out: [Int] = []
+        for m in elementRegex.matches(in: token, range: NSRange(location: 0, length: ns.length)) {
+            guard let a = Int(ns.substring(with: m.range(at: 1))) else { continue }
+            if m.range(at: 2).location != NSNotFound, let b = Int(ns.substring(with: m.range(at: 2))) {
+                if b > a, b - a < maxRangeSpan { out += Array(a...b) } else { out += [a, b] }
+            } else {
+                out.append(a)
+            }
+        }
+        return out
     }
 }
 
@@ -401,8 +416,9 @@ struct CitationNumberer {
         pattern: #"\b(?:entry|entries)\s+#?\d{1,2}(?:\s*(?:,|and|&)\s*#?\d{1,2})*\b"#, options: [.caseInsensitive])
     private static let numberRegex = try! NSRegularExpression(pattern: #"#?\d{1,2}"#)   // "#2" → "[n]"
     /// A PREFIX of a citation token at the end of the stream: `[`, `[E`, `[5, `, `[5, 1`.
+    /// live-17 (2a) — also a range in progress: `[1–`, `[1-1`, `[2, 5-`.
     private static let bracketPrefixRegex = try! NSRegularExpression(
-        pattern: #"\[\s*[Ee]?\s*(?:\d{1,2}\s*,\s*[Ee]?\s*)*\d{0,2}\s*\z"#)
+        pattern: #"\[\s*[Ee]?\s*(?:\d{1,2}(?:\s*[-‐‑–—−]\s*[Ee]?\s*\d{1,2})?\s*,\s*[Ee]?\s*)*(?:\d{1,2}\s*[-‐‑–—−]\s*[Ee]?\s*)?\d{0,2}\s*\z"#)
     /// A prose-reference noun with its number list so far: "entries", "entries 5,", "entries 5, 8 an".
     private static let proseFragmentRegex = try! NSRegularExpression(
         pattern: #"\b(?:entry|entries)(?:\s+#?\d{1,2}(?:\s*(?:,|&|and)\s*#?\d{1,2})*)?(?:\s*(?:,|&|and|an|a)?\s*#?)?\z"#,
@@ -450,6 +466,21 @@ enum CitationNumberSelfTest {
             [[s], s.split(separator: " ", omittingEmptySubsequences: false).enumerated().map { $0.offset == 0 ? String($0.element) : " " + $0.element },
              s.map { String($0) }]
         }
+
+        // live-17 (2a) — RANGE markers ("[1–3]" en dash, "[1-12]" hyphen) render like "[1, 2, 3]": one number per
+        // entry the range covers, at first sight, in every chunking (never a raw range on screen, never renumbered).
+        let twelve: [C] = (1...12).map { C(index: $0, nodeID: "R\($0)", title: "TR\($0)", snippet: "") }
+        for (i, chunks) in chunkings("Low water [1–3]. The swivel [1-12].").enumerated() {
+            let r = stream("range-\(i)", chunks, candidates: twelve, forbidden: ["–", "1-"])
+            check("range-\(i) text", r.text == "Low water [1, 2, 3]. The swivel [1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12].", r.text)
+            check("range-\(i) chips", r.citations.count == 12, "\(r.citations.count)")
+        }
+        let rangeInvalid = stream("range-partly-invalid", ["See [2–6]."])   // packet: 4 has no candidate, 3 is entry N3
+        check("range-partly-invalid text", rangeInvalid.text == "See [1, 2, 3, 4].", rangeInvalid.text)
+        check("range-indices", CitationReference.indices(inToken: "[E1–E3]") == [1, 2, 3]
+              && CitationReference.indices(inToken: "[2, 5-7]") == [2, 5, 6, 7]
+              && CitationReference.indices(inToken: "[7–3]") == [7, 3], "\(CitationReference.indices(inToken: "[E1–E3]"))")
+        check("range-cited-indices", CitationReference.citedIndices(in: "x [1–3] y") == [1, 2, 3])
 
         // 1. markers split across chunks
         let r1 = stream("split", ["Plastic Beach ", "[", "5", ", 8]", " and Roger Rabbit [", "9]."])

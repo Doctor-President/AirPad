@@ -26,6 +26,8 @@ struct AirPadApp: App {
         if !UserDefaults.standard.bool(forKey: "KeychainMigrationSelfTest") {
             Task.detached(priority: .utility) { KeychainHelper.migrateAccessibility() }
         }
+        // live-17 — a document's named hand-off copies (viewer / share) a crash left behind; none is in use at launch.
+        Task.detached(priority: .utility) { DocumentHandoff.purgeAll() }
         #if DEBUG
         // Arc A — `-StdoutToFile`: an XCUITest-launched app's print() goes nowhere; send it to
         // Caches/stdout.log (unbuffered) so a UI test run keeps the app's own trace.

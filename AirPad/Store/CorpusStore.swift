@@ -1256,6 +1256,15 @@ final class CorpusStore {
             if ProcessInfo.processInfo.arguments.contains("-BODoneMatrix") {
                 NSLog("[BODoneMatrix] %@", await runBODoneMatrix())
             }
+            // live-19 (4) — the Map's numerics after the LAPACK-interface move: the SVD checks + the Substrate / UMAP / HDBSCAN suites
+            // (otherwise only reachable from Settings → substrate inspector buttons). One summary line for the inventory.
+            if ProcessInfo.processInfo.arguments.contains("-MapNumericSelfTest") {
+                let svd = LapackSVDSelfTest.run(), sub = SubstrateSelfTest.run(), umap = UMAPSelfTest.run(), hdb = HDBSCANSelfTest.run()
+                let ok = svd.contains("] PASS") && sub.hasPrefix("OK") && !umap.contains("FAIL") && hdb.contains("OK")
+                NSLog("[MapNumericSelfTest] %@ — svd: %@ · substrate: %@ · umap: %@ · hdbscan: %@", ok ? "PASS" : "FAIL",
+                      svd.components(separatedBy: "\n").first ?? svd, sub, String(umap.prefix(160)), hdb)
+                NSLog("%@", svd)
+            }
             // Brief CG — the share-import logic matrix (gallery coalesce · link page-title +
             // captcha filter · photo dated fallback · audio transcription wiring). Run with
             // `-StubAuthorModel -StubNonEmptyTitle -StubTranscription -UITestLibrary(Fresh)`.

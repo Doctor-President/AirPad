@@ -4,29 +4,23 @@ import SwiftUI
 /// tier so T's one iOS 26 iPhone can exercise every tier of the chain (`OnDeviceSpeech.chain`). Settings → About →
 /// long-press the version. Every choice is on-device; there is no server option to force.
 ///
-/// ⚠ GATE — it must not exist in App Store builds. It is offered in DEBUG, and in a Release build only when the app's
-/// receipt is TestFlight's sandbox receipt. That is a runtime receipt inference — the kind T removed from
-/// `InternalBuild.showsDevTuners` on 2026-08-09 for the dev tuners, which stays structural (`#if DEBUG`) and untouched.
-/// This one control re-introduces it because T needs it ON in TestFlight, and it fails safe:
-///   • only the exact name "sandboxReceipt" opens it — an App Store receipt ("receipt"), no receipt, or anything
-///     unexpected keeps it absent;
-///   • when the gate is closed a stored choice is ignored: the recorder runs Automatic (`effective`);
-///   • at worst (the inference wrong on an App Store install) someone could pick a less accurate ON-DEVICE tier —
-///     no tier sends audio or words off the phone.
-/// `-SpeechEngineTestingSelfTest` proves the gate.
+/// ⚠ GATE — it must not exist in App Store builds. live-19 (4): the gate is STRUCTURAL, at compile time (it was a
+/// runtime receipt inference — `appStoreReceiptURL` == "sandboxReceipt" — deprecated in iOS 18, and the kind T removed
+/// from the dev tuners on 2026-08-09). It exists in DEBUG and in builds compiled with the `TESTFLIGHT` condition, which
+/// `scripts/testflight_upload.sh` sets (`AIRPAD_TF_FLAG=TESTFLIGHT`) unless `AIRPAD_APP_STORE_BUILD=1` — the launch
+/// submission is archived that way, and then the long-press, the panel and every stored choice are compiled out
+/// (the recorder runs Automatic). `-SpeechEngineTestingSelfTest` proves the gate's logic.
 enum SpeechEngineTesting {
     static let key = "speechEngineTesting"
 
+    /// Compile-time: DEBUG or a TestFlight archive.
     static let isOffered: Bool = {
-        #if DEBUG
-        let debug = true
+        #if DEBUG || TESTFLIGHT
+        return true
         #else
-        let debug = false
+        return false
         #endif
-        return offered(debug: debug, receiptName: Bundle.main.appStoreReceiptURL?.lastPathComponent)
     }()
-
-    static func offered(debug: Bool, receiptName: String?) -> Bool { debug || receiptName == "sandboxReceipt" }
 
     /// The choice this take runs: the stored one only when the switch is offered, else Automatic.
     static var choice: SpeechEngineChoice { effective(stored: UserDefaults.standard.string(forKey: key), offered: isOffered) }
@@ -58,26 +52,22 @@ enum SpeechEngineTesting {
     static func selfTest() -> String {
         var rows: [String] = [], fails = 0
         func row(_ name: String, _ ok: Bool) { rows.append("\(ok ? "PASS" : "FAIL") \(name)"); if !ok { fails += 1 } }
-        row("app-store-receipt-absent", !offered(debug: false, receiptName: "receipt"))
-        row("testflight-sandbox-receipt-present", offered(debug: false, receiptName: "sandboxReceipt"))
-        row("no-receipt-release-absent", !offered(debug: false, receiptName: nil))
-        row("unexpected-receipt-name-absent", !offered(debug: false, receiptName: "sandboxReceipt.bak"))
-        row("debug-or-simulator-present", offered(debug: true, receiptName: nil))
         row("closed-gate-ignores-stored-choice", effective(stored: "dictation", offered: false) == .automatic)
         row("open-gate-uses-stored-choice", effective(stored: "olderRecognizer", offered: true) == .olderRecognizer)
         row("unknown-stored-value-is-automatic", effective(stored: "server", offered: true) == .automatic)
         row("no-server-choice-exists", SpeechEngineChoice.allCases.map(\.rawValue)
             == ["automatic", "speech", "dictation", "olderRecognizer", "unavailable"])
-        #if DEBUG
-        row("this-build-offers-it (DEBUG)", isOffered)
+        #if DEBUG || TESTFLIGHT
+        row("this-build-offers-it (DEBUG / TESTFLIGHT)", isOffered)
         #else
-        row("this-build-matches-its-receipt", isOffered == (Bundle.main.appStoreReceiptURL?.lastPathComponent == "sandboxReceipt"))
+        row("this-build-hides-it (App Store)", !isOffered)
         #endif
         return "[SpeechEngineTestingSelfTest] \(fails == 0 ? "PASS" : "FAIL") — \(rows.count - fails)/\(rows.count)\n"
             + rows.joined(separator: "\n")
     }
 }
 
+#if DEBUG || TESTFLIGHT
 /// The panel behind the long-press. Plain system list: it only exists in TestFlight and DEBUG builds.
 struct SpeechEngineTestingPanel: View {
     @Environment(\.dismiss) private var dismiss
@@ -137,3 +127,4 @@ struct SpeechEngineTestingPanel: View {
         }
     }
 }
+#endif

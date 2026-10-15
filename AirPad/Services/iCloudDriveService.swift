@@ -1,4 +1,5 @@
 import Foundation
+import UIKit
 #if DEBUG
 import AVFoundation
 #endif
@@ -227,6 +228,7 @@ actor iCloudDriveService {
             usingLocalFallback = false   // cosmetic only (no "saving locally" banner during tests)
             if ProcessInfo.processInfo.arguments.contains("-UITestSeedChats") { Self.seedUITestChats(root) }
             if ProcessInfo.processInfo.arguments.contains("-UITestSeedVoiceEntry") { Self.seedUITestVoiceEntry(root) }
+            if ProcessInfo.processInfo.arguments.contains("-UITestSeedHeroEntries") { Self.seedUITestHeroEntries(root) }
             return true
         } catch {
             return false
@@ -279,6 +281,69 @@ actor iCloudDriveService {
                         summary: "Prints to collect and a rescan to ask about.", tags: [],
                         items: [voice, note], entrySchemaVersion: 1)
         try? JSONEncoder.airPad.encode(node).write(to: nodeDir.appendingPathComponent("node.json"), options: .atomic)
+    }
+
+    /// live-14/16 — `-UITestSeedHeroEntries`: entries with photos for the no-flash rows (`HeroHeaderFlash`):
+    ///   - `uitest-hero-large`: a LARGE photo-sized hero (6000×4500, busy, so its decode takes real time, as T's big
+    ///     photos do);
+    ///   - `uitest-hero-small`: a small hero (400×300);
+    ///   - `uitest-gallery-31`: a 31-photo gallery (2400×1800 each), its first photo also the hero.
+    /// Synthetic pixels only. Each entry is written only when its `node.json` (written LAST) is absent, so a launch killed
+    /// mid-seed redoes the entry instead of leaving it without a `node.json`.
+    private static func seedUITestHeroEntries(_ root: URL) {
+        let now = Date(timeIntervalSince1970: 1_760_300_000)
+        func write(_ node: Node, _ nodeDir: URL) {
+            try? JSONEncoder.airPad.encode(node).write(to: nodeDir.appendingPathComponent("node.json"), options: .atomic)
+        }
+        for (id, w, h, title) in [("uitest-hero-large", 6000, 4500, "Harbour wall at low tide"),
+                                  ("uitest-hero-small", 400, 300, "Shelf of jars")] {
+            let nodeDir = root.appendingPathComponent("nodes/\(id)")
+            guard !FileManager.default.fileExists(atPath: nodeDir.appendingPathComponent("node.json").path) else { continue }
+            try? FileManager.default.createDirectory(at: nodeDir.appendingPathComponent("items"), withIntermediateDirectories: true)
+            let cover = "items/cover-\(id).jpg"
+            try? syntheticPhotoJPEG(width: w, height: h, seed: 0x9E3779B97F4A7C15).write(to: nodeDir.appendingPathComponent(cover), options: .atomic)
+            let note = NodeItem(id: id + "-note", type: .text, createdAt: now, content: "A synthetic photo entry.",
+                                displayName: nil, isExpanded: true, updatedAt: now)
+            var node = Node(id: id, createdAt: now, updatedAt: now, title: title, summary: "A synthetic hero entry.", tags: [],
+                            items: [note], entrySchemaVersion: 1)
+            node.coverImageRelativePath = cover
+            write(node, nodeDir)
+        }
+        let gid = "uitest-gallery-31"
+        let gDir = root.appendingPathComponent("nodes/\(gid)")
+        if !FileManager.default.fileExists(atPath: gDir.appendingPathComponent("node.json").path) {
+            try? FileManager.default.createDirectory(at: gDir.appendingPathComponent("items"), withIntermediateDirectories: true)
+            let media: [GalleryItem] = (0..<31).map { i in
+                let file = "items/\(gid)-g\(String(format: "%02d", i)).jpg"
+                try? syntheticPhotoJPEG(width: 2400, height: 1800, seed: 0xD1B54A32D192ED03 &+ UInt64(i))
+                    .write(to: gDir.appendingPathComponent(file), options: .atomic)
+                return GalleryItem(id: "\(gid)-g\(String(format: "%02d", i))", mediaType: .image, file: file,
+                                   aspectRatio: 4.0 / 3.0, capturedAt: now)
+            }
+            var gallery = NodeItem(id: gid + "-media", type: .imageVideo, createdAt: now)
+            gallery.displayName = "Contact sheet"
+            gallery.mediaItems = media
+            gallery.isExpanded = true
+            var node = Node(id: gid, createdAt: now, updatedAt: now, title: "Thirty-one tide pools",
+                            summary: "A synthetic gallery entry.", tags: [], items: [gallery], entrySchemaVersion: 1)
+            node.coverImageRelativePath = media[0].file
+            write(node, gDir)
+        }
+    }
+
+    /// A busy, photo-like synthetic JPEG (random coloured squares), so it is big and slow to decode like a real photo.
+    private static func syntheticPhotoJPEG(width w: Int, height h: Int, seed: UInt64) -> Data {
+        let format = UIGraphicsImageRendererFormat(); format.scale = 1
+        return UIGraphicsImageRenderer(size: CGSize(width: w, height: h), format: format).jpegData(withCompressionQuality: 0.9) { ctx in
+            var x = seed
+            for _ in 0..<(w * h / 4000) {
+                x = x &* 6364136223846793005 &+ 1442695040888963407
+                let r = CGFloat(x >> 40 & 0xFF) / 255, g = CGFloat(x >> 32 & 0xFF) / 255, b = CGFloat(x >> 24 & 0xFF) / 255
+                UIColor(red: r, green: g, blue: b, alpha: 1).setFill()
+                let px = CGFloat(x >> 8 & 0xFFFF) / 65535 * CGFloat(w), py = CGFloat(x >> 16 & 0xFFFF) / 65535 * CGFloat(h)
+                ctx.fill(CGRect(x: px, y: py, width: CGFloat(w) / 40, height: CGFloat(h) / 40))
+            }
+        }
     }
 
     /// A mono AAC file whose loudness rises and falls like speech (syllable-rate envelope over a tone), so the

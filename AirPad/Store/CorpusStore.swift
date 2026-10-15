@@ -1191,6 +1191,14 @@ final class CorpusStore {
                 if ProcessInfo.processInfo.arguments.contains("-DocumentNamingSelfTest") {
                     NSLog("%@", await runDocumentNamingSelfTest())
                 }
+                // live-15 (1) — a document is named from its own text, right after another capture, on every import path.
+                if ProcessInfo.processInfo.arguments.contains("-DocumentNamingInputSelfTest") {
+                    NSLog("%@", await runDocumentNamingInputSelfTest())
+                }
+                // live-16 — the shared display-image cache: decode time/memory, hit + hand-off, peak, memory warning.
+                if ProcessInfo.processInfo.arguments.contains("-DisplayImageCacheSelfTest") {
+                    NSLog("%@", await DisplayImageCacheSelfTest.run(store: self))
+                }
                 // live-13 — real recognisers on a real iPhone, fed synthetic speech files (CC copies them in).
                 if let i = ProcessInfo.processInfo.arguments.firstIndex(of: "-RecorderDeviceBench"),
                    i + 1 < ProcessInfo.processInfo.arguments.count {
@@ -3643,7 +3651,8 @@ final class CorpusStore {
     func enrichmentNeeds(for node: Node, at moment: EnrichmentGate.Moment) -> EnrichmentGate.Needs {
         let substratePresent = !((node.substrateSummary?.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty ?? true)
             || (node.folksonomy?.isEmpty ?? true))
-        return EnrichmentGate.needs(proposals: node.proposals,
+        // live-15 (1) — another entry's proposal is no answer for this one: the gate sees only this entry's own.
+        return EnrichmentGate.needs(proposals: node.proposals?.filter { node.isBound($0) },
                                     titleSource: node.titleSource,
                                     summarySource: node.summarySource,
                                     substrateIsPresent: substratePresent,
@@ -3744,7 +3753,7 @@ final class CorpusStore {
             // still matches (a stale/missing one is left for the gate to regenerate under .automatic).
             guard source == nil,
                   let p = node.proposals?.first(where: { $0.kind == kind && $0.state == .fresh }) else { continue }
-            guard p.sourceContentHash == hash else {
+            guard p.sourceContentHash == hash, node.isBound(p) else {   // live-15 (1): this entry, this content
                 bug17Log.notice("PROMO-SKIP node=\(nodeID, privacy: .public) kind=\(String(describing: kind), privacy: .public) hashNE")
                 continue
             }
@@ -3762,11 +3771,19 @@ final class CorpusStore {
     /// SHOWING at Done must commit, for BOTH fields. So for any still-unset aspect whose ghost is
     /// surfacing, commit it. FILLS ONLY — a field the promote/author already wrote has a non-nil
     /// source and is skipped, so this never blanks or overrides.
+    /// live-15 (1) — a ghost commits only if it was made for THIS entry's CURRENT content. A ghost left from before
+    /// the content moved (e.g. proposed from a document's file name before its text was extracted) is never committed:
+    /// the re-author above is the answer for the current content, even when it leaves the field empty.
     private func commitShowingGhosts(nodeID: String) async {
         guard let node = nodes.first(where: { $0.id == nodeID }) else { return }
+        let hash = cardContentHash(for: node)
         for kind in EnrichmentGate.authoredAspects {
             let source: TagSource? = (kind == .title) ? node.titleSource : node.summarySource
-            guard source == nil, node.surfacedProposal(kind: kind) != nil else { continue }
+            guard source == nil, let ghost = node.surfacedProposal(kind: kind) else { continue }
+            guard ghost.sourceContentHash == hash else {
+                print("[Enrich] GHOST-SKIP node=\(nodeID) kind=\(kind) — made for content that has since changed")
+                continue
+            }
             print("[Enrich] GHOST-COMMIT node=\(nodeID) kind=\(kind) (rule 2 — showing ghost)")
             bug17Log.notice("GHOST-COMMIT node=\(nodeID, privacy: .public) kind=\(String(describing: kind), privacy: .public)")
             await acceptProposal(nodeID: nodeID, kind: kind)
@@ -3933,20 +3950,22 @@ final class CorpusStore {
         let priorSetting = UserDefaults.standard.object(forKey: AuthorshipPosture.delegateSettingKey)
         UserDefaults.standard.set(true, forKey: AuthorshipPosture.delegateSettingKey)
         defer { UserDefaults.standard.set(priorSetting, forKey: AuthorshipPosture.delegateSettingKey) }
+        // live-15 (1) — rule 2 narrowed: the SHOWING ghost commits at Done only if it was made for the CURRENT content.
+        // dtc-a's ghost carries a STALE hash (made for text the entry no longer has) → it must NOT commit, even when the
+        // re-author blanks the title. dtc-b's ghost was made for the current content → it commits.
         let ids = ["dtc-a", "dtc-b"]
         for id in ids {
             var n = Node(id: id, createdAt: Date(), updatedAt: Date(), title: "", summary: "", tags: [])
             n.items = [NodeItem(id: id + "-t", type: .text, createdAt: Date(), content: text)]
             n.entrySchemaVersion = 1
             await addNode(n, position: .zero)
-            // A SURFACING ghost with a STALE hash: it SHOWS (surfacedProposal ignores the hash) but
-            // promote SKIPS it (hash mismatch) — the exact device asymmetry rule 2 is about.
+            let hash = id == "dtc-a" ? "STALE-EAGER-HASH" : cardContentHash(for: n)
             await mutateNode(id: id) { m in
                 _ = m.recordProposal(kind: .title, text: sharedTitle, currentSource: nil,
-                                     sourceEmbedding: nil, sourceContentHash: "STALE-EAGER-HASH",
+                                     sourceEmbedding: nil, sourceContentHash: hash,
                                      posture: .propose, generatedAt: Date())
                 _ = m.recordProposal(kind: .summary, text: "A shared summary ghost.", currentSource: nil,
-                                     sourceEmbedding: nil, sourceContentHash: "STALE-EAGER-HASH",
+                                     sourceEmbedding: nil, sourceContentHash: hash,
                                      posture: .propose, generatedAt: Date())
             }
         }
@@ -3955,19 +3974,17 @@ final class CorpusStore {
             guard let n = nodes.first(where: { $0.id == id }) else { return ("<gone>", nil, "<gone>", nil) }
             return (n.title, n.titleSource, n.summary, n.summarySource)
         }
-        let rows = ids.map { ($0, read($0)) }
+        let a = read("dtc-a"), b = read("dtc-b")
         for id in ids { await deleteNode(id: id) }
         var fails: [String] = []
-        for (id, r) in rows {
-            if r.t.isEmpty || r.ts != .model {
-                fails.append("\(id) title=\(r.t.isEmpty ? "<EMPTY>" : "\"\(r.t)\"")[\(r.ts.map { "\($0)" } ?? "nil")]")
-            }
-            if r.s.isEmpty || r.ss != .model { fails.append("\(id) summary empty/not-model") }
-            if blankStub && r.t != sharedTitle { fails.append("\(id) title not the surfaced ghost (got \"\(r.t)\")") }
+        if a.t == sharedTitle || a.s == "A shared summary ghost." {
+            fails.append("dtc-a committed a ghost made for other content (title=\"\(a.t)\")")
         }
+        if b.t != sharedTitle || b.ts != .model { fails.append("dtc-b title not its current ghost (got \"\(b.t)\")") }
+        if b.s != "A shared summary ghost." || b.ss != .model { fails.append("dtc-b summary not its current ghost") }
         let head = blankStub ? "stub=blankTitle" : "stub=plain ⚠ pass -StubBlankTitleAlways to exercise the fallback"
         return fails.isEmpty
-            ? "PASS [\(head)] — both identical-content entries committed their SHOWING title+summary ghost at Done"
+            ? "PASS [\(head)] — a ghost made for the current content commits at Done; one made for other content never does"
             : "FAIL [\(head)] — \(fails.joined(separator: "; "))"
     }
 
@@ -4373,7 +4390,8 @@ final class CorpusStore {
     /// TextField updates without the tray touching it.
     func acceptProposal(nodeID: String, kind: Proposal.Kind) async {
         await mutateNode(id: nodeID) { n in
-            guard let p = n.proposals?.first(where: { $0.kind == kind && $0.state == .fresh }) else { return }
+            guard let p = n.proposals?.first(where: { $0.kind == kind && $0.state == .fresh }),
+                  n.isBound(p) else { return }   // live-15 (1): never another entry's proposal
             switch kind {
             case .title:   n.title = p.text;   n.titleSource = .model
             case .summary: n.summary = p.text; n.summarySource = .model
@@ -6551,6 +6569,27 @@ final class CorpusStore {
         await updateNode(updated)
     }
 
+    /// live-15 (1) — extracts every document in the entry that has never been attempted, through the same service and
+    /// write-back the document's screen uses (`DocumentEntryBody.extractIfNeeded`). Naming awaits this so a document is
+    /// named from its text, whichever path imported it (Files, Paste Pad, the share sheet) and whether or not its
+    /// screen has appeared yet. A shared document only becomes a `DocumentItem` when the entry is migrated (until now:
+    /// when it was first opened), so migrate first; the migration's own fire-and-forget kickoff may extract the same
+    /// file in parallel — same result, written twice.
+    func extractPendingDocuments(nodeID: String) async {
+        await ensureEntrySchema(forNodeID: nodeID)
+        guard let node = nodes.first(where: { $0.id == nodeID }) else { return }
+        for item in node.items where item.type == .document {
+            for doc in item.documentItems ?? [] where doc.extractionAttemptedAt == nil {
+                let type = doc.fileType.lowercased()
+                guard DocumentExtractionService.supportedExtensions.contains(type),
+                      let url = await documentFileURL(for: doc, nodeID: nodeID) else { continue }
+                let extraction = await DocumentExtractionService().extract(fileURL: url, fileType: type)
+                await applyDocumentExtraction(nodeID: nodeID, entryID: item.id, documentItemID: doc.id, extraction: extraction)
+                print("[AI] extracted \(type) before naming for \(nodeID): \(extraction?.extractedText?.count ?? 0) chars")
+            }
+        }
+    }
+
     /// Stage 4.6 — resolves the on-disk URL for a `DocumentItem`'s
     /// captured file. Parallel to `ogImageFileURL` for link OG images.
     /// Used by `DocumentEntryBody`'s `.task` extraction backfill and by
@@ -8239,6 +8278,11 @@ final class CorpusStore {
         // on-device model) has no OS floor — so an iOS 18–25 user who opted into the local
         // model must reach it. FM-availability is now enforced INSIDE the routed calls (which
         // return .unavailable / model_unavailable when FM is the resolved provider and absent).
+        // live-15 (1) — a document is named from its OWN text. Extraction is started by the screen that shows the
+        // document, so naming used to run before the text existed and the model saw only the file name (T: an 11-page
+        // PDF titled from 22 characters). Finish any never-attempted extraction first (bounded by the service's own
+        // timeout); a file with no extractable text still names from what the entry has.
+        await extractPendingDocuments(nodeID: nodeID)
         guard let node = nodes.first(where: { $0.id == nodeID }) else { return nil }
 
         let currentTags = tags
@@ -8263,6 +8307,15 @@ final class CorpusStore {
         let suppressSummary = meaningfulContentLen < Self.minSummaryContentChars
         if suppressSummary {
             print("[AI] thin content (\(meaningfulContentLen) < \(Self.minSummaryContentChars)) — title only, summary suppressed for \(nodeID)")
+        }
+        // live-15 (1) — …and with nothing the user wrote either (a document with no extractable text, so only its file
+        // name; a short caption), there is nothing to name from: the model invents (T's PDF got a title echoing the
+        // prompt's own example). Title and summary are then BOTH withheld — never a title without its summary here.
+        // Empty content is not this case: it keeps the `.noContent` path (the late-OG link author, BP3).
+        let withholdNaming = suppressSummary && meaningfulContentLen > 0
+            && AIService.classifyContent(from: node).authored.isEmpty
+        if withholdNaming {
+            print("[AI] thin derived-only content (\(meaningfulContentLen) chars, nothing written by the user) — title and summary withheld for \(nodeID)")
         }
 
         // SB126 Stage 2 — corpus-aware tagging path. Behind a feature flag so
@@ -8305,7 +8358,9 @@ final class CorpusStore {
         // records no proposal, whatever `aspects` says.
         let nodeEmbedding: [Float]? = (needsAuthorship && useCorpusAware) ? computeNodeEmbedding(for: node) : nil
         let result: NodeAIOutput?
-        if needsAuthorship {
+        if needsAuthorship, withholdNaming {
+            result = nil
+        } else if needsAuthorship {
             var aiOutcome: NodeAIOutcome
             bug17Log.notice("FM-RAN node=\(nodeID, privacy: .public) path=\(useCorpusAware ? "corpusAware" : "legacy", privacy: .public) suppressTagSheet=\(suppressTagSheet)")
             if useCorpusAware {
@@ -10918,7 +10973,8 @@ final class CorpusStore {
             switch item.type {
             case .text:              return AIService.meaningfulText(item.content)
             case .audio, .video:     return AIService.meaningfulText(item.transcript)
-            case .image, .document:  return AIService.meaningfulText(item.description)
+            case .image:             return AIService.meaningfulText(item.description)
+            case .document:          return AIService.documentText(item)   // live-15 (1): its extracted text
             case .link:              return AIService.meaningfulText([item.title, item.preview].compactMap { $0 }.joined(separator: " "))
             case .imageVideo:        return nil
             case .rating, .field, .chats:  return nil

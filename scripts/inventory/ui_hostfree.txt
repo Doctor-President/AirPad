@@ -67,3 +67,12 @@ ArcAVoiceDone/testRecorder_forcedUnavailable_keepsAudioAndSays
 SpeechEngineSwitch/testSwitch_fiveChoices_pickPersists_backToAutomatic
 ArcBVoiceTranscript/testAppendTo_landsAtEnd_restoreLeavesNote
 ArcBVoiceTranscript/testAppendTo_afterEditStillTyping
+# live-15 (1) — `DocumentImportNaming` (2 rows: after a typed capture, a PDF via the real Files picker / the real share
+# sheet from the Files app is named from its own text) drives SYSTEM UI, which a fresh parallel clone doesn't settle in
+# time (2026-10-14: both failed on Clone 1 — the picked file never landed / AirPad not in the share sheet — and both
+# passed serially on the base Simulator) → runs SERIALLY, like LongPaste. Run: -only-testing:AirPadUITests/DocumentImportNaming.
+# live-14/16 — an entry with photos opens with the photo at its FIRST frame (no glass, no band) and its gallery's
+# first row populated, from Card view, List view and Recents.
+HeroHeaderFlash/testOpenFromCardView_firstFrameIsThePhoto
+HeroHeaderFlash/testOpenFromListView_firstFrameIsThePhoto
+HeroHeaderFlash/testOpenFromRecents_firstFrameIsThePhoto

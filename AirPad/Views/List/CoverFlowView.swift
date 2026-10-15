@@ -223,7 +223,8 @@ struct CoverFlowView: View {
                                     selection.toggle(node.id)
                                 } else {
                                     navHaptic.impactOccurred()
-                                    navigationPath.append(node)
+                                    // live-16 — the tile showed the cover (cached → pushes at once); prewarm the gallery's first photos.
+                                    store.openAfterPrewarm(node) { navigationPath.append(node) }
                                 }
                             }
                     }

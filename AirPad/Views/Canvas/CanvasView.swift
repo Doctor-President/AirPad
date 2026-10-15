@@ -1054,6 +1054,8 @@ struct CanvasView: View {
                                 .contentShape(RoundedRectangle(cornerRadius: cardCorner))
                                 .onTapGesture {
                                     MapHaptics.detail()   // the set's arrival tick
+                                    // live-16 — the card showed the cover (cached); prewarm the gallery's first photos.
+                                    Task { await store.prewarmOpening(node) }
                                     canvasState.pendingNavigationNodeID = id  // → NodeDetailView (verified route)
                                     canvasState.cardedNodeID = nil
                                 }

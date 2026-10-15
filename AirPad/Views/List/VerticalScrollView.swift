@@ -257,7 +257,8 @@ struct VerticalScrollView: View {
                                 selection.toggle(real.id)
                             } else {
                                 navHaptic.impactOccurred()
-                                navigationPath.append(real)
+                                // live-16 — the tile showed the cover (cached → pushes at once); prewarm the gallery's first photos.
+                                store.openAfterPrewarm(real) { navigationPath.append(real) }
                             }
                         }
                     }

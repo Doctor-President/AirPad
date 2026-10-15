@@ -70,6 +70,11 @@ struct Proposal: Codable, Equatable, Identifiable {
     /// Optional only for decode tolerance — a proposal persisted before this field
     /// decodes as nil, reads as stale, and is regenerated once. Self-healing.
     var sourceContentHash: String?
+    /// live-15 (1) — the entry this proposal was made FOR (`Node.id`, stamped by `recordProposal`). With
+    /// `sourceContentHash` it binds the proposal to one entry + one content: it never commits to another entry, nor
+    /// after that entry's content moved without a new proposal. Nil only for a proposal persisted before this field
+    /// (it still needs the content-hash match to commit).
+    var sourceEntryID: String? = nil
 
     enum CodingKeys: String, CodingKey {
         case id
@@ -80,6 +85,7 @@ struct Proposal: Codable, Equatable, Identifiable {
         case state
         case solicited
         case sourceContentHash = "source_content_hash"
+        case sourceEntryID = "source_entry_id"
     }
 }
 
@@ -98,6 +104,7 @@ extension Proposal {
         state           = try c.decode(State.self,  forKey: .state)
         solicited       = try c.decodeIfPresent(Bool.self, forKey: .solicited) ?? false
         sourceContentHash = try c.decodeIfPresent(String.self, forKey: .sourceContentHash)
+        sourceEntryID   = try c.decodeIfPresent(String.self, forKey: .sourceEntryID)
     }
 }
 
@@ -219,7 +226,8 @@ extension Node {
                                  sourceEmbedding: sourceEmbedding,
                                  state: .fresh,
                                  solicited: solicited,
-                                 sourceContentHash: sourceContentHash))
+                                 sourceContentHash: sourceContentHash,
+                                 sourceEntryID: id))
             proposals = list
         }
         // ★ The WRITE is never bypassed by `solicited`: user-authored fields still
@@ -241,7 +249,7 @@ extension Node {
     /// shows (consent came from initiating). ONE predicate so the button and tray
     /// can't disagree.
     func surfacedProposal(kind: Proposal.Kind) -> Proposal? {
-        guard let p = proposals?.first(where: { $0.kind == kind && $0.state == .fresh }) else { return nil }
+        guard let p = proposals?.first(where: { $0.kind == kind && $0.state == .fresh }), isBound(p) else { return nil }
         let source: TagSource?
         switch kind {
         case .title:   source = titleSource
@@ -251,4 +259,9 @@ extension Node {
         if source == .user && !p.solicited { return nil }
         return p
     }
+
+    /// live-15 (1) — was this proposal made for THIS entry? A proposal made for another entry is never shown or
+    /// committed here. A pre-live-15 proposal (no entry id) counts as this entry's; it still needs the content-hash
+    /// match to commit, which a proposal made for different content can't have.
+    func isBound(_ p: Proposal) -> Bool { p.sourceEntryID == nil || p.sourceEntryID == id }
 }

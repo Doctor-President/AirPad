@@ -1132,9 +1132,18 @@ private struct QuikCaptureHeroImageBanner: View {
     @State private var image: UIImage? = nil
     @State private var aspect: CGFloat? = nil
 
+    /// live-16 — its own decode, else a decode of this cover already in the shared cache (first frame).
+    private var shown: (image: UIImage, aspect: CGFloat)? {
+        if let image, let aspect { return (image, aspect) }
+        guard let key = DisplayImageCache.coverKey(node), let c = DisplayImageCache.shared.best(path: key),
+              c.size.height > 0 else { return nil }
+        return (c, c.size.width / c.size.height)
+    }
+
     var body: some View {
         Group {
-            if let image, let aspect {
+            if let shown {
+                let image = shown.image, aspect = shown.aspect
                 let visibleHeight = max(200, min(420, width / max(aspect, 0.01)))
                 let totalHeight = visibleHeight + topInset
                 Image(uiImage: image)
@@ -1150,9 +1159,10 @@ private struct QuikCaptureHeroImageBanner: View {
                         )
                     )
             } else {
+                // live-14 — a hero entry never shows the glass: loading or failed, the band without it.
                 let totalHeight: CGFloat = 200 + topInset
                 NodeGradientLayer(node: node, circleScale: 1.3, undulation: 1.0, blobSet: .hero,
-                              glassSurface: .entry)
+                              glassSurface: nil)
                     .frame(height: totalHeight)
                     .clipShape(
                         UnevenRoundedRectangle(
@@ -1166,27 +1176,13 @@ private struct QuikCaptureHeroImageBanner: View {
         .task(id: node.coverImageRelativePath) {
             image = nil
             aspect = nil
-            guard node.coverImageRelativePath != nil,
+            // live-16 — display-size decode (ImageIO, off main) through the ONE shared cache.
+            guard let key = DisplayImageCache.coverKey(node),
                   let url = await store.coverImageURL(for: node) else { return }
-            let scale = UIScreen.main.scale
-            let maxPixel = Int(max(width, 420) * scale)
-            let decoded: (UIImage, CGFloat)? = await Task.detached(priority: .userInitiated) {
-                guard let src = CGImageSourceCreateWithURL(url as CFURL, nil) else { return nil }
-                let opts: [CFString: Any] = [
-                    kCGImageSourceCreateThumbnailFromImageAlways: true,
-                    kCGImageSourceCreateThumbnailWithTransform: true,
-                    kCGImageSourceShouldCacheImmediately: true,
-                    kCGImageSourceThumbnailMaxPixelSize: maxPixel
-                ]
-                guard let cg = CGImageSourceCreateThumbnailAtIndex(src, 0, opts as CFDictionary),
-                      cg.height > 0 else { return nil }
-                let img = UIImage(cgImage: cg, scale: scale, orientation: .up)
-                let aspect = CGFloat(cg.width) / CGFloat(cg.height)
-                return (img, aspect)
-            }.value
-            guard let decoded else { return }
-            image = decoded.0
-            aspect = decoded.1
+            guard let decoded = await DisplayImageCache.shared.load(path: key, url: url, pixels: DisplaySize.hero),
+                  decoded.size.height > 0 else { return }
+            image = decoded
+            aspect = decoded.size.width / decoded.size.height
         }
     }
 }

@@ -2213,7 +2213,8 @@ struct AsyncImageFromURL: View {
 
     var body: some View {
         Group {
-            if let image {
+            // live-16 — a decode already in the shared cache shows on the first frame.
+            if let image = image ?? DisplayImageCache.shared.image(path: url.path, atLeast: DisplaySize.card) {
                 Image(uiImage: image)
                     .resizable()
                     .scaledToFit()
@@ -2225,12 +2226,10 @@ struct AsyncImageFromURL: View {
                     .overlay(ProgressView().tint(AppearancePalette.ink))
             }
         }
-        .onAppear {
-            Task {
-                if let data = try? Data(contentsOf: url) {
-                    image = UIImage(data: data)
-                }
-            }
+        .task(id: url) {
+            // live-16 — display-size decode off the main thread through the ONE shared cache (was the full original,
+            // read in a main-actor Task).
+            image = await DisplayImageCache.shared.load(path: url.path, url: url, pixels: DisplaySize.card)
         }
     }
 }
@@ -2630,7 +2629,8 @@ private struct HeroPickerCell: View {
         ZStack {
             RoundedRectangle(cornerRadius: 10, style: .continuous)
                 .fill(Color.white.opacity(0.08))
-            if let image {
+            if let image = image ?? DisplayImageCache.shared.image(
+                path: DisplayImageCache.key(nodeID: nodeID, relativePath: galleryItem.file), atLeast: DisplaySize.galleryTile) {
                 Image(uiImage: image)
                     .resizable()
                     .scaledToFill()
@@ -2652,12 +2652,9 @@ private struct HeroPickerCell: View {
             nodeID: nodeID,
             fallbackParentItem: parentItem
         ) else { return }
-        let decoded: UIImage? = await Task.detached(priority: .userInitiated) {
-            guard let data = try? Data(contentsOf: url) else { return nil }
-            return UIImage(data: data)
-        }.value
-        guard let decoded else { return }
-        image = decoded
+        // live-16 — display-size decode through the ONE shared cache (was the full original).
+        image = await DisplayImageCache.shared.load(path: DisplayImageCache.key(nodeID: nodeID, relativePath: galleryItem.file),
+                                                    url: url, pixels: DisplaySize.galleryTile)
     }
 }
 
@@ -2827,6 +2824,8 @@ private struct HeroImageBanner: View {
 
     @State private var image: UIImage? = nil
     @State private var aspect: CGFloat? = nil
+    /// live-14 — the image could not be resolved or decoded (vs still loading). Only a failure shows the no-hero look.
+    @State private var loadFailed = false
     /// Detail-View pass — hero visible-height cap, dialed via the dev panel
     /// (default 420 = the prior literal). Gradient fallback keeps its fixed 200.
     @State private var visualSettings = EntryVisualSettings.shared
@@ -2855,7 +2854,7 @@ private struct HeroImageBanner: View {
     /// (the threshold basis). 200 (the gradient placeholder height) until the
     /// image decodes. Mirrors the height math in `body` exactly.
     private var heroVisibleContentHeight: CGFloat {
-        guard let aspect else { return 200 }
+        guard let aspect = shown?.aspect else { return 200 }
         let naturalHeight = width / max(aspect, 0.01)
         switch baseCrop.fit {
         case .fullHeight:
@@ -2867,9 +2866,23 @@ private struct HeroImageBanner: View {
         }
     }
 
+    /// live-16 — the photo this frame shows: this banner's own decode, else — on its FIRST frame — the hand-off: the
+    /// largest decode of this cover already in the shared cache (the card / tile the entry was opened from showed it).
+    /// The banner then upgrades to its own size in place, never through a placeholder.
+    private var shown: (image: UIImage, aspect: CGFloat)? {
+        if let image, let aspect { return (image, aspect) }
+        guard let key = DisplayImageCache.coverKey(node),
+              let handOff = DisplayImageCache.shared.best(path: key), handOff.size.height > 0 else { return nil }
+        return (handOff, handOff.size.width / handOff.size.height)
+    }
+
+    /// live-16 — what the header is rendering, for `HeroHeaderProbe`.
+    private var probeState: String { shown != nil ? "image" : (loadFailed ? "failed" : "loading") }
+
     var body: some View {
         Group {
-            if let image, let aspect {
+            if let shown {
+                let image = shown.image, aspect = shown.aspect
                 let naturalHeight = width / max(aspect, 0.01)
                 if baseCrop.fit == .fullHeight {
                     // BUG 24 round 4 — TRUE top-edge mirror + chrome-clearing inset.
@@ -3015,13 +3028,22 @@ private struct HeroImageBanner: View {
                             if isAdjusting { adjustDoneButton }
                         }
                 }
+            } else if loadFailed {
+                // Resolve-or-decode failure (e.g. an evicted file not yet back): still a hero entry, so still never the
+                // glass (that is the no-hero look) — the same neutral band as while loading, at 200 + topInset.
+                BandGradientExpanded(node: node, totalHeight: 200 + topInset, glass: false)
             } else {
-                // Loading / resolve-or-decode failure: fall back to the
-                // gradient banner at its natural 200 + topInset height.
-                let totalHeight: CGFloat = 200 + topInset
-                BandGradientExpanded(node: node, totalHeight: totalHeight)
+                // live-14 — LOADING: this entry HAS a hero (the node says so), so never the glass — the band without it,
+                // as before the glass became the header (T saw the glass flash before big photos decoded).
+                BandGradientExpanded(node: node, totalHeight: 200 + topInset, glass: false)
             }
         }
+        // live-16 — the header state as RENDERED: the first frame's state, then each change (`HeroHeaderFlash`).
+        .onAppear {
+            HeroHeaderProbe.note(node.id, probeState)
+            if shown == nil { print("[DisplayImage] hero fallback node=\(node.id): nothing cached — the band shows until the decode lands") }
+        }
+        .onChange(of: probeState) { _, state in HeroHeaderProbe.note(node.id, state) }
         // Scroll-collapsed band — report the visible content height (and keep it
         // current as the image decodes or the fit toggles). `initial: true` fires
         // the 200 placeholder immediately so the host has a threshold before the
@@ -3035,38 +3057,24 @@ private struct HeroImageBanner: View {
             // image lingering during the new resolve.
             image = nil
             aspect = nil
-            guard node.coverImageRelativePath != nil,
-                  let url = await store.coverImageURL(for: node) else { return }
-            // PERF FIX 1B — downsample at decode time via ImageIO instead
-            // of `UIImage(data:)`, which held the full original bitmap and
-            // forced a main-thread resample on every composite (one of the
-            // two `argb32_image_mark` sources in the CA-commit hot stack).
-            // `kCGImageSourceThumbnailMaxPixelSize` is the banner's max
-            // display pixel size (capped by the wider of `width` or the
-            // 420pt visibleHeight clamp, × screen scale). The image lands
-            // already at display resolution so the downstream
-            // `Image(uiImage:).resizable().scaledToFill().clipShape(...)`
-            // composites without resampling. Decode stays off the main
-            // thread; the placeholder gradient bridges the gap.
-            let scale = UIScreen.main.scale
-            let maxPixel = Int(max(width, visualSettings.heroMaxHeight) * scale)
-            let decoded: (UIImage, CGFloat)? = await Task.detached(priority: .userInitiated) {
-                guard let src = CGImageSourceCreateWithURL(url as CFURL, nil) else { return nil }
-                let opts: [CFString: Any] = [
-                    kCGImageSourceCreateThumbnailFromImageAlways: true,
-                    kCGImageSourceCreateThumbnailWithTransform: true,
-                    kCGImageSourceShouldCacheImmediately: true,
-                    kCGImageSourceThumbnailMaxPixelSize: maxPixel
-                ]
-                guard let cg = CGImageSourceCreateThumbnailAtIndex(src, 0, opts as CFDictionary),
-                      cg.height > 0 else { return nil }
-                let img = UIImage(cgImage: cg, scale: scale, orientation: .up)
-                let aspect = CGFloat(cg.width) / CGFloat(cg.height)
-                return (img, aspect)
-            }.value
-            guard let decoded else { return }
-            image = decoded.0
-            aspect = decoded.1
+            loadFailed = false
+            // PERF FIX 1B / live-16 — decode at the banner's display size (ImageIO downsampling, off the main thread)
+            // through the ONE shared cache: an exact-or-larger decode already there (the card / tile it was opened
+            // from, or the tap's prewarm) is used as is; otherwise decoded at the banner's max pixel size (the wider
+            // of `width` or the visible-height cap, × screen scale) and cached for every surface.
+            guard let key = DisplayImageCache.coverKey(node) else { loadFailed = true; return }
+            let maxPixel = Int(max(width, visualSettings.heroMaxHeight) * UIScreen.main.scale)
+            let decoded: UIImage?
+            if let hit = DisplayImageCache.shared.image(path: key, atLeast: maxPixel) {
+                decoded = hit
+            } else if let url = await store.coverImageURL(for: node) {
+                decoded = await DisplayImageCache.shared.load(path: key, url: url, pixels: maxPixel)
+            } else {
+                decoded = nil
+            }
+            guard let decoded, decoded.size.height > 0 else { loadFailed = true; return }
+            image = decoded
+            aspect = decoded.size.width / decoded.size.height
         }
     }
 

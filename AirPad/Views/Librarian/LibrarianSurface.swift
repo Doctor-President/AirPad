@@ -2392,11 +2392,9 @@ private struct SearchHeroRow: View {
         .padding(.vertical, 6)
         .task(id: node.coverImageRelativePath) {
             guard let url = await store.coverImageURL(for: node) else { return }
-            let decoded: UIImage? = await Task.detached(priority: .userInitiated) {
-                guard let data = try? Data(contentsOf: url) else { return nil }
-                return UIImage(data: data)
-            }.value
-            image = decoded
+            // live-16 — a 52 pt thumbnail: decoded at that size through the ONE shared cache (was the full original).
+            guard let key = DisplayImageCache.coverKey(node) else { return }
+            image = await DisplayImageCache.shared.load(path: key, url: url, pixels: Int(52 * UIScreen.main.scale))
         }
     }
 }

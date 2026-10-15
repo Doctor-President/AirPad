@@ -102,6 +102,7 @@ struct GalleryItemTile: View {
             }
         }
         .overlay(alignment: .bottom) { captionStrip }
+        .accessibilityIdentifier("galleryTile-\(galleryItem.id)")   // live-18 (0b) — PhotoHandoffName
         // live-16 — the tile as RENDERED: the first frame's state, then each change (`HeroHeaderFlash`).
         .onAppear {
             appearedWithImage = shown != nil

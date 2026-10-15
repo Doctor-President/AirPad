@@ -65,6 +65,9 @@ struct CoverFlowView: View {
     // centerFraction = (offset + edgeMargin) / stride — NOT offset/stride,
     // which left every card edgeMargin/stride (~0.16 card) off-centre (the
     // e9e6baf askew bug, reverted, then proven-and-fixed via the spike).
+    // live-18 (1): the TRACK now has no spacing — each slot is exactly one
+    // `cardStride` wide — so the snap pitch and the deck's stride are the SAME
+    // number (see `trackMargin` in `carousel`).
     @State private var snappedID: String?
     @State private var centerFraction: CGFloat = 0
 
@@ -72,6 +75,8 @@ struct CoverFlowView: View {
     private let pickHaptic = UIImpactFeedbackGenerator(style: .medium)
 
     #if DEBUG
+    /// live-18 (1) — `-CoverFlowProbe` measurements (a plain box: writing it never re-renders).
+    @State private var probe = CoverFlowProbe()
     @State private var showTuningPanel = false
     @State private var tuningPanelOffset: CGSize = .zero
     @State private var showCardTuning = false
@@ -182,10 +187,20 @@ struct CoverFlowView: View {
         // sits at x = (k − centerFraction)·stride from the deck centre.
         let cardStride = cardWidth + CGFloat(cardSpacing)
 
-        // Symmetric inset so the first/last card can settle at centre under
-        // .viewAligned. contentOffset at rest on card 0 is −edgeMargin, so the
-        // centred index adds it back (proven by the spike; see the @State note).
-        let edgeMargin = (screenW - cardWidth) / 2
+        // live-18 (1) — ONE stride for snapping and drawing. T (iOS 27): after ~5
+        // cards every card came to rest 46 pt off-centre and tilted ~7°, until
+        // card 0. The track was a `LazyHStack(spacing: cardSpacing)` of
+        // card-wide slots, and the deck ASSUMED slot k sits at k·cardStride. On
+        // iOS 27 the lazy stack drops ONE (negative) spacing once its leading
+        // slots leave the lazy window (content width 63383 → 63337 pt): every
+        // later snap lands 46 pt short of the assumed position, so the centred
+        // index read 5.85 for card 6 (`CarouselRestGeometry`). Now each slot IS
+        // one stride wide with no spacing — the track's pitch is `cardStride` by
+        // construction, nothing for a layout engine to drop — and the snapped
+        // slot is centred by a symmetric inset of (screenW − cardStride)/2.
+        // contentOffset at rest on card k is k·cardStride − trackMargin, so the
+        // centred index is (offset + trackMargin)/cardStride, exactly k.
+        let trackMargin = (screenW - cardStride) / 2
         let centerFraction = self.centerFraction
 
         // Visible window: centre ± 2 (everything else stays unmounted).
@@ -211,10 +226,15 @@ struct CoverFlowView: View {
             // overlay deck below, driven by the live scroll offset. Taps on a
             // slot open its node (drags scroll); the overlay is non-interactive.
             ScrollView(.horizontal, showsIndicators: false) {
-                LazyHStack(spacing: CGFloat(cardSpacing)) {
+                LazyHStack(spacing: 0) {
                     ForEach(Array(nodes.enumerated()), id: \.element.id) { _, node in
                         Color.clear
-                            .frame(width: cardWidth, height: cardHeight)
+                            .frame(width: cardStride, height: cardHeight)
+                            #if DEBUG
+                            .onGeometryChange(for: CGFloat.self) { $0.frame(in: .named(CoverFlowProbe.track)).midX } action: { midX in
+                                if CoverFlowProbe.enabled { probe.slotMidX[node.id] = midX }
+                            }
+                            #endif
                             .id(node.id)
                             .contentShape(Rectangle())
                             .onTapGesture {
@@ -230,17 +250,36 @@ struct CoverFlowView: View {
                     }
                 }
                 .scrollTargetLayout()
+                #if DEBUG
+                .coordinateSpace(.named(CoverFlowProbe.track))
+                #endif
             }
             .scrollClipDisabled()
-            .contentMargins(.horizontal, edgeMargin, for: .scrollContent)
+            .contentMargins(.horizontal, trackMargin, for: .scrollContent)
             .scrollTargetBehavior(.viewAligned)
             .scrollPosition(id: $snappedID)
-            // Live scroll offset → continuous centred-card index. VERIFIED
-            // mapping: (offset + edgeMargin) / stride (raw offset/stride left
-            // every card ~0.16 off-centre — the reverted e9e6baf bug).
+            // Live scroll offset → continuous centred-card index:
+            // (offset + trackMargin) / cardStride — the track's own pitch and
+            // inset (raw offset/stride left every card ~0.16 off-centre — the
+            // reverted e9e6baf bug; a stride the track didn't have — live-18).
             .onScrollGeometryChange(for: CGFloat.self) { $0.contentOffset.x } action: { _, offsetX in
-                self.centerFraction = cardStride > 0 ? (offsetX + edgeMargin) / cardStride : 0
+                self.centerFraction = cardStride > 0 ? (offsetX + trackMargin) / cardStride : 0
             }
+            #if DEBUG
+            .onScrollGeometryChange(for: ScrollGeometry.self) { $0 } action: { _, g in
+                if CoverFlowProbe.enabled { probe.geometry = g }
+            }
+            .onScrollPhaseChange { _, phase in
+                guard CoverFlowProbe.enabled, phase == .idle else { return }
+                // Read after the last offset → centerFraction write lands.
+                DispatchQueue.main.asyncAfter(deadline: .now() + 0.25) {
+                    probe.logRest(nodes: nodes, snappedID: snappedID, centerFraction: self.centerFraction,
+                                  cardWidth: cardWidth, cardStride: cardStride, edgeMargin: trackMargin,
+                                  spacing: CGFloat(cardSpacing), viewportWidth: screenW,
+                                  rotationMaxDegrees: rotationMaxDegrees)
+                }
+            }
+            #endif
             // One light tap per snap-to-new-card.
             .onChange(of: snappedID) { _, newID in
                 if newID != nil { UIImpactFeedbackGenerator(style: .light).impactOccurred() }
@@ -362,6 +401,50 @@ struct CoverFlowView: View {
     }
     #endif
 }
+
+// MARK: - CoverFlowProbe (DEBUG)
+
+#if DEBUG
+/// live-18 (1) — T (iPhone, iOS 27): after ~5 cards the carousel's cards come to REST skewed (tilted + off-centre), and
+/// only card 0 resets it. `-CoverFlowProbe` logs each rest: which card the deck draws at centre, how far its visual
+/// offset (`dist · cardStride`) and rake (`−clamp(dist) · rotationMax`) are from flat-and-centred, and the TRACK's own
+/// geometry — where the snapped slot really sits in the viewport and the real slot pitch — so a disagreement between the
+/// two strides is a number, not a guess. Read by `CarouselRestGeometry` (stdout file).
+final class CoverFlowProbe {
+    static let enabled = ProcessInfo.processInfo.arguments.contains("-CoverFlowProbe")
+    /// The track's content space: a slot's position here is where the scroll view really laid it out.
+    static let track = "coverflow.track"
+    var slotMidX: [String: CGFloat] = [:]
+    var geometry: ScrollGeometry?
+
+    func logRest(nodes: [Node], snappedID: String?, centerFraction: CGFloat, cardWidth: CGFloat, cardStride: CGFloat,
+                 edgeMargin: CGFloat, spacing: CGFloat, viewportWidth: CGFloat, rotationMaxDegrees: Double) {
+        guard !nodes.isEmpty else { return }
+        let idx = max(0, min(nodes.count - 1, Int(centerFraction.rounded())))
+        let dist = CGFloat(idx) - centerFraction
+        let offsetPt = dist * cardStride
+        let deg = -Double(max(-1, min(1, dist))) * rotationMaxDegrees
+        let snapped = snappedID.flatMap { id in nodes.firstIndex { $0.id == id } } ?? -1
+        // Independent of the deck's maths: the centred slot's real midpoint vs the viewport's centre, both in the track's
+        // content space (the viewport's centre there = contentOffset + half the scroll view's width).
+        let viewportMid = (geometry?.contentOffset.x ?? .nan) + viewportWidth / 2
+        let slotFromCentre = slotMidX[nodes[idx].id].map { $0 - viewportMid } ?? .nan
+        // Real slot pitch: adjacent measured slots around the centred one.
+        var pitch = CGFloat.nan
+        for (a, b) in [(idx, idx + 1), (idx - 1, idx)] where a >= 0 && b < nodes.count {
+            if let x0 = slotMidX[nodes[a].id], let x1 = slotMidX[nodes[b].id] { pitch = x1 - x0; break }
+        }
+        let g = geometry
+        print(String(format: "[CoverFlow] rest idx=%d snapped=%d n=%d cf=%.4f offsetPt=%.2f deg=%.2f slotFromCentre=%.2f "
+                     + "stride=%.2f pitch=%.2f cardW=%.2f spacing=%.1f edge=%.2f offX=%.2f contentW=%.2f insetL=%.2f "
+                     + "containerW=%.2f os=%@",
+                     idx, snapped, nodes.count, centerFraction, offsetPt, deg, slotFromCentre, cardStride, pitch, cardWidth,
+                     spacing, edgeMargin, g?.contentOffset.x ?? .nan, g?.contentSize.width ?? .nan,
+                     g?.contentInsets.leading ?? .nan, g?.containerSize.width ?? .nan,
+                     UIDevice.current.systemVersion))
+    }
+}
+#endif
 
 // MARK: - CoverFlowCell
 // Per-card wrapper. Owns the fixed frame and the rake (scale + Y-axis

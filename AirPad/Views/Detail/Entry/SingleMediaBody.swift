@@ -276,12 +276,14 @@ struct SingleMediaBody: View {
                 // Copy the ORIGINAL bytes — no decode, no re-encode. The photo
                 // keeps its source format (HEIC/JPEG/PNG/RAW) at full quality.
                 if let (tmpURL, ext) = await MediaPickerWrapper.loadOriginalImageFile(from: provider) {
-                    pending.append(.init(itemID: UUID().uuidString, mediaType: .image, sourceURL: tmpURL, fileExtension: ext))
+                    pending.append(.init(itemID: UUID().uuidString, mediaType: .image, sourceURL: tmpURL, fileExtension: ext,
+                                         originalName: DocumentNaming.realName(suggested: provider.suggestedName, url: nil)))   // live-18 (0b)
                 } else {
                     failures += 1   // e.g. iCloud-hosted original that failed to download
                 }
             } else if let (tmpURL, ext) = await MediaPickerWrapper.loadVideo(from: provider) {
-                pending.append(.init(itemID: UUID().uuidString, mediaType: .video, sourceURL: tmpURL, fileExtension: ext))
+                pending.append(.init(itemID: UUID().uuidString, mediaType: .video, sourceURL: tmpURL, fileExtension: ext,
+                                     originalName: DocumentNaming.realName(suggested: provider.suggestedName, url: nil)))   // live-18 (0b)
             } else {
                 failures += 1
             }

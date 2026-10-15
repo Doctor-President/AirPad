@@ -2880,7 +2880,9 @@ final class CorpusStore {
         #if DEBUG
         // UI-first rule — the `-UITestLibrary` scratch must stay EMPTY so a real-UI test's "newest
         // entry" is always the one IT just created; never seed the onboarding sample into it.
-        if ProcessInfo.processInfo.arguments.contains("-UITestLibrary") { return }
+        // live-18 (1) — `-UITestSampleLibrary` opts a scratch library INTO the sample (the carousel rows need ≥ 20 cards).
+        if ProcessInfo.processInfo.arguments.contains("-UITestLibrary"),
+           !ProcessInfo.processInfo.arguments.contains("-UITestSampleLibrary") { return }
         #endif
         guard let root = await service.containerRootURL() else { return }
         guard nodes.isEmpty,
@@ -6671,6 +6673,8 @@ final class CorpusStore {
         let mediaType: GalleryItem.MediaType
         let sourceURL: URL
         let fileExtension: String
+        /// live-18 (0b) — the source's own name for it, when it has a real one (→ `GalleryItem.originalName`).
+        var originalName: String? = nil
     }
 
     /// Creates a new `.imageVideo` node — or appends a `.imageVideo` entry to
@@ -6707,7 +6711,8 @@ final class CorpusStore {
                 mediaType: m.mediaType,
                 file: "items/\(m.itemID).\(m.fileExtension)",
                 aspectRatio: nil,
-                capturedAt: now
+                capturedAt: now,
+                originalName: m.originalName
             )
         }
 
@@ -6829,7 +6834,8 @@ final class CorpusStore {
                 mediaType: m.mediaType,
                 file: "items/\(m.itemID).\(m.fileExtension)",
                 aspectRatio: nil,
-                capturedAt: now
+                capturedAt: now,
+                originalName: m.originalName
             )
         }
         let existing = updated.items[itemIdx].mediaItems ?? []

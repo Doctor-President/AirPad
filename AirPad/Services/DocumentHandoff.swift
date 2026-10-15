@@ -70,8 +70,27 @@ struct DocumentHandoff: Identifiable, Equatable {
     }
 
     static func make(for doc: DocumentItem, storedURL: URL) async -> DocumentHandoff {
-        let title = doc.displayName
-        let ext = doc.fileType.isEmpty ? storedURL.pathExtension : doc.fileType
+        await make(id: doc.id, title: doc.displayName, ext: doc.fileType.isEmpty ? storedURL.pathExtension : doc.fileType,
+                   storedURL: storedURL)
+    }
+
+    /// live-18 (0b) — a photo's or video's name when it leaves the gallery viewer: its own file name (the Photos picker's
+    /// "IMG_4012", minus the extension), else "Photo · <date>" / "Video · <date>" (the date it was added).
+    static func displayName(for item: GalleryItem) -> String {
+        if let n = item.originalName.flatMap({ DocumentNaming.realName(suggested: $0, url: nil) }) {
+            let base = (n as NSString).deletingPathExtension.trimmingCharacters(in: .whitespacesAndNewlines)
+            if !base.isEmpty { return base }
+        }
+        return (item.mediaType == .video ? "Video" : "Photo") + " · " + item.capturedAt.formatted(date: .abbreviated, time: .omitted)
+    }
+
+    /// live-18 (0b) — T (live-17 report): a photo shared from the gallery viewer went out as `<UUID>.jpg`. Now as
+    /// `<displayName(for:)>.<stored ext>`, the same named-copy hand-off as a document.
+    static func make(for item: GalleryItem, storedURL: URL) async -> DocumentHandoff {
+        await make(id: item.id, title: displayName(for: item), ext: storedURL.pathExtension, storedURL: storedURL)
+    }
+
+    private static func make(id: String, title: String, ext: String, storedURL: URL) async -> DocumentHandoff {
         let name = fileName(title, ext: ext)
         let folder = root.appendingPathComponent(UUID().uuidString, isDirectory: true)
         let copy = folder.appendingPathComponent(name)
@@ -81,12 +100,12 @@ struct DocumentHandoff: Identifiable, Equatable {
                 try FileManager.default.copyItem(at: storedURL, to: copy)
                 return true
             } catch {
-                print("[DocHandoff] copy failed doc=\(doc.id) — the stored file goes out: \(error.localizedDescription)")
+                print("[DocHandoff] copy failed doc=\(id) — the stored file goes out: \(error.localizedDescription)")
                 try? FileManager.default.removeItem(at: folder)
                 return false
             }
         }.value
-        return DocumentHandoff(documentID: doc.id, url: ok ? copy : storedURL, title: title, folder: ok ? folder : nil)
+        return DocumentHandoff(documentID: id, url: ok ? copy : storedURL, title: title, folder: ok ? folder : nil)
     }
 
     /// Removes the named copy. Idempotent.

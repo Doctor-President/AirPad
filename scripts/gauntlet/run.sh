@@ -13,7 +13,8 @@
 #   3. Records versions (Ollama server, Host commit, app commit, Xcode) + the model's digest; polls
 #      `/api/ps` every 2 s into ps.log for the digest/cold checks.
 #   4. Plans rows (gauntlet.py plan) and drives the REAL Librarian UI via XCUITest (LibrarianGauntletV2).
-#   5. Stops the scratch Host, relaunches T's Host app, verifies the model it held is resident again.
+#   5. Stops the scratch Host, then restore_host.sh: relaunches T's Host (again, if it came back attached to the scratch
+#      Ollama), Instruct resident + held, every other model resident before the run back, all VERIFIED.
 #   6. Grades (gauntlet.py grade) → grades.json + table.md.
 set -uo pipefail
 
@@ -57,6 +58,7 @@ START=$(date +%s)
 
 # ── 1. T's real Host: record, then quit ──────────────────────────────────────────────────────────
 curl -s $OLL/api/ps > "$RUN_DIR/residency-before.json" 2>/dev/null || echo '{}' > "$RUN_DIR/residency-before.json"
+cp ~/.airpad-host/residency.json "$RUN_DIR/held-before.json" 2>/dev/null || echo '{}' > "$RUN_DIR/held-before.json"   # which were HELD (live-18 0a)
 REAL_HOST_PID=$(pgrep -f "/Applications/AirPad Host.app/Contents/MacOS/airpad-host" || true)
 log "T's Host pid=${REAL_HOST_PID:-none}; resident before: $(python3 -c "import json;print([m['name'] for m in json.load(open('$RUN_DIR/residency-before.json')).get('models',[])])")"
 if [[ -n $REAL_HOST_PID ]]; then
@@ -70,17 +72,13 @@ restore_real_host() {
   pkill -f "$SCR/airpad-host" 2>/dev/null; pkill -f "$SHIP_OLLAMA serve" 2>/dev/null; sleep 2
   [[ -n ${POLL_PID:-} ]] && kill $POLL_PID 2>/dev/null
   if [[ -n $REAL_HOST_PID ]]; then
-    open -a "AirPad Host"; log "relaunched T's Host; waiting for its held model…"
-    local want=$(python3 -c "import json;print(' '.join(m['name'] for m in json.load(open('$RUN_DIR/residency-before.json')).get('models',[])))")
-    for i in {1..90}; do
-      local now=$(curl -s $OLL/api/ps | python3 -c "import json,sys;print(' '.join(m['name'] for m in json.load(sys.stdin).get('models',[])))" 2>/dev/null)
-      [[ "$now" == "$want" ]] && break; sleep 2
-    done
-    # CH Session 2 (T, 2026-10-08): T's Host always goes back to Instruct resident + held, whatever was
-    # resident before the run (Session 1's restores put back qwen3:4b, and T's phone then picked Instruct).
-    $AIRPAD/scripts/gauntlet/restore_instruct.sh 2>&1 | while read -r l; do log "$l"; done
+    # live-18 (0a): restore_host.sh relaunches T's Host if it came back attached to the (now stopped) scratch Ollama,
+    # restores Instruct (held) + every other model resident before the run, and VERIFIES it (non-zero + FAIL if not).
+    RESTORE_HELD_BEFORE="$RUN_DIR/held-before.json" $AIRPAD/scripts/gauntlet/restore_host.sh "$RUN_DIR/residency-before.json" 2>&1 \
+      | while read -r l; do log "$l"; done
+    (( ${pipestatus[1]} == 0 )) || log "⚠️  T's HOST IS NOT RESTORED — see the restore lines above; fix it before anything else"
     curl -s $OLL/api/ps > "$RUN_DIR/residency-after.json"
-    log "resident after restore: $(python3 -c "import json;print([(m['name'],m.get('context_length'),m['expires_at'][:4]) for m in json.load(open('$RUN_DIR/residency-after.json')).get('models',[])])") (wanted: Instruct)"
+    log "resident after restore: $(python3 -c "import json;print([(m['name'],m.get('context_length'),m['expires_at'][:4]) for m in json.load(open('$RUN_DIR/residency-after.json')).get('models',[])])")"
   fi
 }
 trap restore_real_host EXIT

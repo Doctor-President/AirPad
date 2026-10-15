@@ -230,6 +230,7 @@ actor iCloudDriveService {
             if ProcessInfo.processInfo.arguments.contains("-UITestSeedVoiceEntry") { Self.seedUITestVoiceEntry(root) }
             if ProcessInfo.processInfo.arguments.contains("-UITestSeedHeroEntries") { Self.seedUITestHeroEntries(root) }
             if ProcessInfo.processInfo.arguments.contains("-UITestSeedDocumentEntries") { Self.seedUITestDocumentEntries(root) }
+            if ProcessInfo.processInfo.arguments.contains("-UITestSeedPhotoEntries") { Self.seedUITestPhotoEntries(root) }
             return true
         } catch {
             return false
@@ -381,6 +382,32 @@ actor iCloudDriveService {
                             tags: [], items: [entry], entrySchemaVersion: 4)
             try? JSONEncoder.airPad.encode(node).write(to: nodeDir.appendingPathComponent("node.json"), options: .atomic)
         }
+    }
+
+    /// live-18 (0b) — `-UITestSeedPhotoEntries`: a two-photo gallery stored the way an import stores it, under UUID file
+    /// names (`items/<UUID>.jpg`), for the `PhotoHandoffName` row: one photo picked from Photos (its own name,
+    /// "IMG_4012") and one with no name (a camera capture or a pasted image → "Photo · <date>"). Synthetic pixels only.
+    /// Written only when its `node.json` (written last) is absent.
+    private static func seedUITestPhotoEntries(_ root: URL) {
+        let now = Date(timeIntervalSince1970: 1_760_300_000)
+        let nodeID = "uitest-photo-gallery"
+        let nodeDir = root.appendingPathComponent("nodes/\(nodeID)")
+        guard !FileManager.default.fileExists(atPath: nodeDir.appendingPathComponent("node.json").path) else { return }
+        try? FileManager.default.createDirectory(at: nodeDir.appendingPathComponent("items"), withIntermediateDirectories: true)
+        let media: [GalleryItem] = [("5E7A1C93-2B4D-4F18-9A6E-0C3D8B1F0004", "IMG_4012"),
+                                    ("A08F2D5B-7C61-4E39-B2D4-6F1E9C3A0005", nil)].enumerated().map { i, p in
+            let file = "items/\(p.0).jpg"
+            try? syntheticPhotoJPEG(width: 1200, height: 900, seed: 0x5851F42D4C957F2D &+ UInt64(i))
+                .write(to: nodeDir.appendingPathComponent(file), options: .atomic)
+            return GalleryItem(id: p.0, mediaType: .image, file: file, aspectRatio: 4.0 / 3.0, capturedAt: now, originalName: p.1)
+        }
+        var gallery = NodeItem(id: nodeID + "-media", type: .imageVideo, createdAt: now)
+        gallery.displayName = "Photos"
+        gallery.mediaItems = media
+        gallery.isExpanded = true
+        let node = Node(id: nodeID, createdAt: now, updatedAt: now, title: "Slipway photos",
+                        summary: "A synthetic photo entry.", tags: [], items: [gallery], entrySchemaVersion: 4)
+        try? JSONEncoder.airPad.encode(node).write(to: nodeDir.appendingPathComponent("node.json"), options: .atomic)
     }
 
     /// A busy, photo-like synthetic JPEG (random coloured squares), so it is big and slow to decode like a real photo.

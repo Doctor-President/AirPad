@@ -33,6 +33,7 @@
 		0DD473436C9C5CAAAC0E3654 /* ViewModeToggle.swift in Sources */ = {isa = PBXBuildFile; fileRef = F017F0A0FBF6A049612B0607 /* ViewModeToggle.swift */; };
 		0E65AFD08082B04CE1E21753 /* SubstrateCoord2D.swift in Sources */ = {isa = PBXBuildFile; fileRef = CB4204EBBDB6AEFAC59BB313 /* SubstrateCoord2D.swift */; };
 		0EEF4CACE92EAACFFD043499 /* OGPreviewView.swift in Sources */ = {isa = PBXBuildFile; fileRef = BBA68756B325BB81B3EDBA12 /* OGPreviewView.swift */; };
+		0F4F8C758E92903FD2A05D23 /* PhotoHandoffName.swift in Sources */ = {isa = PBXBuildFile; fileRef = 4771A71BAAF540EA68EAB025 /* PhotoHandoffName.swift */; };
 		10EE8C518BC6A4AE6ECB3745 /* VectorBasis.swift in Sources */ = {isa = PBXBuildFile; fileRef = CF8F89C6F77EFD27FB9CDB99 /* VectorBasis.swift */; };
 		1121953E0B7C6CA81992C90F /* CardDocumentTile.swift in Sources */ = {isa = PBXBuildFile; fileRef = 321F93F7630A107A8A1266EF /* CardDocumentTile.swift */; };
 		11D8040AE3C48E6498A1F6A6 /* UMAPSelfTest.swift in Sources */ = {isa = PBXBuildFile; fileRef = D80918E8E0CCC9ECFE36A664 /* UMAPSelfTest.swift */; };
@@ -304,6 +305,7 @@
 		CCD5B920FFC2E6B349140203 /* HDBSCANLinkage.swift in Sources */ = {isa = PBXBuildFile; fileRef = DD83A4DC76F83C28E144AA6D /* HDBSCANLinkage.swift */; };
 		CD7F0605807BAAE61280B1B3 /* HDBSCANReachability.swift in Sources */ = {isa = PBXBuildFile; fileRef = ED287727ED25FF9291551213 /* HDBSCANReachability.swift */; };
 		CDB98919FE3A199E8BE0B80A /* TerritoryLayoutSnapshot.swift in Sources */ = {isa = PBXBuildFile; fileRef = 85995050BC812122755EEE8E /* TerritoryLayoutSnapshot.swift */; };
+		CDF7BE9BFF7123EF7570F832 /* CarouselRestGeometry.swift in Sources */ = {isa = PBXBuildFile; fileRef = 9247174F6D1DFF19EAE7805C /* CarouselRestGeometry.swift */; };
 		CE1698BA8F2CB57ED11C37F8 /* CaptureIntent.swift in Sources */ = {isa = PBXBuildFile; fileRef = C8376D171BB956C6EA17E5F9 /* CaptureIntent.swift */; };
 		CEC993D6DECF8273EFFFB647 /* ChatsListView.swift in Sources */ = {isa = PBXBuildFile; fileRef = 3B63639E3606E8D188FB55AD /* ChatsListView.swift */; };
 		CEC9C7F4431D0776A1A4DC13 /* AirPad.icon in Resources */ = {isa = PBXBuildFile; fileRef = D86D98BB8BD1E493F884909C /* AirPad.icon */; };
@@ -496,6 +498,7 @@
 		45A1B85265CDBCD7A2E66288 /* VerticalScrollView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = VerticalScrollView.swift; sourceTree = "<group>"; };
 		463DA699C1C0AF251F9242D9 /* RejectedBlock.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = RejectedBlock.swift; sourceTree = "<group>"; };
 		46B2E50D5AC047E8D52B2013 /* Lora-Regular.ttf */ = {isa = PBXFileReference; lastKnownFileType = file; path = "Lora-Regular.ttf"; sourceTree = "<group>"; };
+		4771A71BAAF540EA68EAB025 /* PhotoHandoffName.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = PhotoHandoffName.swift; sourceTree = "<group>"; };
 		47A0CAFA204942881B2074E6 /* MediaEntryChrome.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = MediaEntryChrome.swift; sourceTree = "<group>"; };
 		47D13AA6D276BABAF0A77D8B /* LibrarianGauntletV2.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = LibrarianGauntletV2.swift; sourceTree = "<group>"; };
 		48DBCBFAFA7298D82C3BB0FF /* FilterState.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = FilterState.swift; sourceTree = "<group>"; };
@@ -591,6 +594,7 @@
 		90E38D75A30514BED99D2082 /* sourceserifbold_msdf.png */ = {isa = PBXFileReference; lastKnownFileType = image.png; path = sourceserifbold_msdf.png; sourceTree = "<group>"; };
 		90F7805935A064BDC856B051 /* CaptureButtonLabel.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = CaptureButtonLabel.swift; sourceTree = "<group>"; };
 		9113DD140BEEB334F5D52DA8 /* LiveDictationService.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = LiveDictationService.swift; sourceTree = "<group>"; };
+		9247174F6D1DFF19EAE7805C /* CarouselRestGeometry.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = CarouselRestGeometry.swift; sourceTree = "<group>"; };
 		92F8312336CC2A7C1C2763EF /* SelectionService.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = SelectionService.swift; sourceTree = "<group>"; };
 		9348EE6BAC36DA4236BB5780 /* CanvasState.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = CanvasState.swift; sourceTree = "<group>"; };
 		93FCE9DB8410C90A3B0EFAC0 /* HostPairingSheet.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = HostPairingSheet.swift; sourceTree = "<group>"; };
@@ -826,6 +830,7 @@
 				6968739D865F9DEBD9EA5A77 /* ArcBVoiceTranscriptRender.swift */,
 				B8D87927EAE11D669A11A825 /* CardSwipeRepro.swift */,
 				A9C57830B6D6683951BF3F6E /* CaretTapTest.swift */,
+				9247174F6D1DFF19EAE7805C /* CarouselRestGeometry.swift */,
 				D9EBCB0852E91FE9CD47F61F /* CDGhostAcceptanceMatrix.swift */,
 				1B6BEF2C32FEEC7F6D57FD03 /* CDGhostWhileTyping.swift */,
 				A662760759EB979E56CF6090 /* CEControlRouting.swift */,
@@ -839,6 +844,7 @@
 				24A6A32F900316F628EEF046 /* LongPaste.swift */,
 				DD915DF68A27E1ED37382E19 /* ManageModelsRepro.swift */,
 				78BE389CD3124C9CAA5D01C3 /* OneEntryInvariant.swift */,
+				4771A71BAAF540EA68EAB025 /* PhotoHandoffName.swift */,
 				84A5A86127573E1A97D3BB7D /* RangeCitationChips.swift */,
 				87ABAE5EF1669794E0C9F8F8 /* RecorderRender.swift */,
 				331D29B33502CD4329D9797D /* RelatedTapRepro.swift */,
@@ -1615,6 +1621,7 @@
 				D60E7D32C5D648F9E1DDC7F1 /* CEControlRouting.swift in Sources */,
 				7D662BACA7CB206841C5BA3D /* CardSwipeRepro.swift in Sources */,
 				DDFA466B1F065DAF3DC13799 /* CaretTapTest.swift in Sources */,
+				CDF7BE9BFF7123EF7570F832 /* CarouselRestGeometry.swift in Sources */,
 				BA9035AA679FB65F2C403ECE /* DeviceRecorderTier.swift in Sources */,
 				F89E6B927D36543A7B3D7D9F /* DocumentHandoffName.swift in Sources */,
 				BCEA38610D7EEB032A314769 /* DocumentImportNaming.swift in Sources */,
@@ -1625,6 +1632,7 @@
 				6CEA0A9E6957A4D316649C54 /* LongPaste.swift in Sources */,
 				570D62A8CEA2A19CC44B383D /* ManageModelsRepro.swift in Sources */,
 				3BF81C58D40F6C131CDCDA99 /* OneEntryInvariant.swift in Sources */,
+				0F4F8C758E92903FD2A05D23 /* PhotoHandoffName.swift in Sources */,
 				4D5DE03C0D6096C8DA1D7B6D /* RangeCitationChips.swift in Sources */,
 				8D6452684E76A0BC003DB116 /* RecorderRender.swift in Sources */,
 				E33D0E04DA7D961FF7E4F164 /* RelatedTapRepro.swift in Sources */,

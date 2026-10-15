@@ -353,6 +353,11 @@ struct GalleryItem: Codable, Identifiable, Equatable {
     /// iOS-27-gated FM description — slot in alongside without a migration.
     /// Optional + decode-tolerant: absent on every existing item.
     var analysis: ImageAnalysis? = nil
+    /// live-18 (0b) — the photo's / video's own file name where the source offered one (the Photos picker's
+    /// `suggestedName`, e.g. "IMG_4012"; a shared file's name), never a machine-made one. Share hands the item out
+    /// under it (`DocumentHandoff.make(for: GalleryItem…)`), else "Photo · <date>". Optional + decode-tolerant:
+    /// absent on every existing item, and on camera captures and pasted images (they have no name).
+    var originalName: String? = nil
 
     enum CodingKeys: String, CodingKey {
         case id, file, caption
@@ -360,6 +365,7 @@ struct GalleryItem: Codable, Identifiable, Equatable {
         case aspectRatio = "aspect_ratio"
         case capturedAt = "captured_at"
         case analysis = "image_analysis"
+        case originalName = "original_name"
     }
 }
 

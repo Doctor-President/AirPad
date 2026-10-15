@@ -206,8 +206,9 @@ actor AIService {
         // returns a deterministic, NON-empty title + summary so the write-back, promote, and
         // gate all run exactly as in production. Launch-arg gated → Release excludes it (#if DEBUG).
         if ProcessInfo.processInfo.arguments.contains("-StubAuthorModel") {
-            let content = extractContent(from: node, authoredOnly: authoredOnly)
+            let content = Self.namingSlice(extractContent(from: node, authoredOnly: authoredOnly))
             guard !content.isEmpty else { return .failure(.noContent) }
+            PasteProbe.noteNaming(chars: content.count)
             // Arc A — `-StubAuthorLatencyMs <n>`: the device model takes seconds, not 150 ms; a realistic
             // latency is what opens the windows a Done can race.
             let latencyMs = UserDefaults.standard.integer(forKey: "StubAuthorLatencyMs")
@@ -244,8 +245,11 @@ actor AIService {
             }
         }
 
-        let content = extractContent(from: node, authoredOnly: authoredOnly)
+        let content = Self.namingSlice(extractContent(from: node, authoredOnly: authoredOnly))
         guard !content.isEmpty else { return .failure(.noContent) }
+        #if DEBUG
+        PasteProbe.noteNaming(chars: content.count)
+        #endif
 
         let prompt = """
         \(Self.namingInstructions)
@@ -254,7 +258,9 @@ actor AIService {
         \(content)
         """
 
-        if #available(iOS 26.0, *) { await logFMTokens("ProcessNode", prompt: prompt) }
+        // live-11 (2) — the token count is a log line, not an input: counting it is a model call of its own, and awaiting
+        // it held the capture's naming back (longer the longer the note). Off the critical path.
+        if #available(iOS 26.0, *) { Task { await logFMTokens("ProcessNode", prompt: prompt) } }
         do {
             // ws-local-model Stage 2 — one of the TWO live capture calls routed through
             // ModelRouter (the other is processSubstrate). Foundation Model (guided generation,
@@ -709,7 +715,9 @@ actor AIService {
         // instruction-laden prompt) so the LOCAL model can be pinned to it. FM ignores this.
         let responseLanguage = Self.substrateResponseLanguage(for: truncated)
 
-        if #available(iOS 26.0, *) { await logFMTokens("ProcessSubstrate", prompt: prompt) }
+        // live-11 (2) — the token count is a log line, not an input: counting it is a model call of its own, and awaiting
+        // it held the capture's naming back (longer the longer the note). Off the critical path.
+        if #available(iOS 26.0, *) { Task { await logFMTokens("ProcessSubstrate", prompt: prompt) } }
         do {
             // ws-local-model Stage 2 — the SECOND live capture call routed through ModelRouter,
             // a SEPARATE refusal locus from processNode. Foundation Model (guided generation,
@@ -940,6 +948,14 @@ actor AIService {
     static func contentProvenance(for node: Node) -> (hasAuthored: Bool, hasDerived: Bool) {
         let c = classifyContent(from: node)
         return (!c.authored.isEmpty, !c.derived.isEmpty)
+    }
+
+    /// live-11 (2) — naming (title + summary) reads at most this many characters: the head of the entry, then " […]".
+    /// Same ~800-token budget as the substrate and corpus-aware calls. It was uncapped, so a 20k-character paste sent all
+    /// of it to the on-device model (T: the auto-title took ~10 s); a title and a 1–2 sentence summary come from the head.
+    static let namingContentCap = 3200
+    static func namingSlice(_ s: String) -> String {
+        s.count > namingContentCap ? String(s.prefix(namingContentCap)) + " […]" : s
     }
 
     /// Derived-text budget when authored text is ALSO present (~200-token proxy).

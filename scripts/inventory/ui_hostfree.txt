@@ -6,6 +6,9 @@
 # CDGhostWhileTyping, ModelPillChecks/testGalleryLongNameKeepsThinking → open, resolve in the CH-B full inventory).
 # On a freshly ERASED Simulator (Xcode Cloud's start) the 5 CDGhostAcceptanceMatrix rows + C2c ForgetThisMac also fail
 # serially (the app doesn't reach Quick Capture / the first on-device answer in time) → not cloud-ready until fixed.
+# live-11 (2) — `LongPaste` (10 rows: paste 0.5k–20k chars into a Quick Capture note / an existing note; main-thread
+# stalls < 250 ms, ghost ≤ 1 s, naming ≤ 3,200 chars) is a PERF row: it runs SERIALLY on a quiet Simulator, not in this
+# parallel list (SCHEMA test tiers: latency/perf runs stay serial). Run: -only-testing:AirPadUITests/LongPaste.
 ArrangeGestureRepro/testBodyLongPressReorders
 ArrangeGestureRepro/testGrabberDragResizesAndBodyTapInert
 HoldDragRepro/testGripIsTheOnlyDragEntry
@@ -57,5 +60,10 @@ ArcAVoiceDone/testOn_plus
 ArcAVoiceDone/testOn_QC_cold_fullLibrary
 ArcAVoiceDone/testOn_QC_cold_slowLoad
 ArcAVoiceDone/testOn_QC_cold_loadLandsMidCapture
+ArcAVoiceDone/testRecorder_liveWordsWhileRecording_DoneSavesThem
+ArcAVoiceDone/testRecorder_threeMinutes_noCliff
+ArcAVoiceDone/testRecorder_forcedUnavailable_keepsAudioAndSays
+# live-12 (2) — the TestFlight-only speech-engine switch (About → long-press the version).
+SpeechEngineSwitch/testSwitch_fiveChoices_pickPersists_backToAutomatic
 ArcBVoiceTranscript/testAppendTo_landsAtEnd_restoreLeavesNote
 ArcBVoiceTranscript/testAppendTo_afterEditStillTyping

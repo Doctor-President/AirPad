@@ -172,7 +172,7 @@ struct DocumentEntryBody: View {
 
     private var displayTitle: String {
         if let docItem = documentItem {
-            return docItem.documentTitle ?? docItem.fileName
+            return docItem.displayName
         }
         return item.file?.components(separatedBy: "/").last ?? "Document"
     }
@@ -203,7 +203,7 @@ struct DocumentEntryBody: View {
             }
             Button {
                 guard let docItem = documentItem else { return }
-                UIPasteboard.general.string = docItem.fileName
+                UIPasteboard.general.string = docItem.displayName
             } label: {
                 Label("Copy filename", systemImage: "doc.on.doc")
             }

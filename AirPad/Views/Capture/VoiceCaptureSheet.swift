@@ -3,7 +3,8 @@ import AVFoundation
 import Speech
 
 /// Full-screen voice recording sheet.
-/// Records via AVAudioRecorder → transcribes via SFSpeechRecognizer → saves Node.
+/// live-11 (4) — records through `LiveVoiceRecorder` (one AVAudioEngine tap → the file, the waveform and the live
+/// on-device recogniser); the words appear as they're spoken and Done saves them at once → saves Node.
 struct VoiceCaptureSheet: View {
 
     /// If set, the captured audio is appended to this node instead of creating a new one.
@@ -23,22 +24,30 @@ struct VoiceCaptureSheet: View {
     @Environment(CorpusStore.self) private var store
     @Environment(\.dismiss) private var dismiss
     @Environment(\.scenePhase) private var scenePhase
+    /// Recorder redesign (T, 2026-10-13) — the timer is set in the app's one content family (Lato by default).
+    @Environment(\.appBodyFont) private var appBodyFont
 
     // Recording state
     @State private var phase: RecordPhase = .requestingPermission
-    @State private var levels: [Float] = Array(repeating: 0, count: 40)
-    @State private var transcript: String = ""
-    @State private var elapsedSeconds: Int = 0
-
-    // Internals (class types, so we box them)
-    @State private var box = RecorderBox()
+    /// live-11 (4) — the take: microphone, file, waveform levels, and the words as they're recognised
+    /// (`settled` won't change again; `volatile` is the recogniser's guess for what's still being spoken).
+    @State private var recorder = LiveVoiceRecorder()
 
     enum RecordPhase {
         case requestingPermission
         case permissionDenied
         case recording
-        case transcribing
+        case finishing          // Done tapped: the last words land (the recording screen stays as it was)
         case done               // brief flash before dismiss
+    }
+
+    private var elapsedSeconds: Int { Int(recorder.elapsed) }
+
+    private var testingEngineNote: String? {
+        let choice = SpeechEngineTesting.choice
+        guard SpeechEngineTesting.isOffered, choice != .automatic, let ran = recorder.tier else { return nil }
+        return ran.rawValue == choice.rawValue ? "Speech engine (testing): \(ran.label)"
+            : "Speech engine (testing): \(choice.label) couldn't run → \(ran.label)"
     }
 
     // MARK: - Body
@@ -55,11 +64,8 @@ struct VoiceCaptureSheet: View {
             case .permissionDenied:
                 PermissionDeniedView { dismiss() }
 
-            case .recording:
+            case .recording, .finishing:
                 recordingBody
-
-            case .transcribing:
-                transcribingBody
 
             case .done:
                 AppearancePalette.bgBase.ignoresSafeArea()
@@ -70,18 +76,18 @@ struct VoiceCaptureSheet: View {
         }
         // BUG 8 — every teardown path frees the mic. `.onDisappear` catches the
         // swipe-to-dismiss (and any programmatic dismiss) that the Cancel button
-        // handler alone would miss; `teardownAudio()` is idempotent so a save
+        // handler alone would miss; `recorder.teardown()` is idempotent so a save
         // that already tore down is a harmless no-op here.
         .onDisappear {
-            teardownAudio()
+            recorder.teardown()
         }
         // Backgrounding mid-record must not leave the mic live. Gate on
         // `.background` only (not `.inactive`) so a transient control-center
         // pull doesn't kill an in-progress take; the partial recording stays
-        // saveable (recordingURL is preserved) via Done on return.
+        // saveable via Done on return (`stop()` keeps the take; a second call returns it).
         .onChange(of: scenePhase) { _, newPhase in
             if newPhase == .background && phase == .recording {
-                teardownAudio()
+                Task { _ = await recorder.stop() }
             }
         }
     }
@@ -92,15 +98,32 @@ struct VoiceCaptureSheet: View {
         VStack(spacing: 40) {
             Spacer()
 
-            // Elapsed time
+            // Elapsed time — the app's family, tabular digits so the numbers never jitter as they tick.
             Text(timeString(elapsedSeconds))
-                .font(.system(size: 48, weight: .thin, design: .monospaced))
+                .font(appBodyFont.font(size: 56, weight: .light))
+                .monospacedDigit()
                 .foregroundStyle(AppearancePalette.ink.opacity(0.85))
+                .accessibilityIdentifier("recorderTimer")
 
-            // Waveform
-            WaveformView(levels: levels)
-                .frame(height: 80)
-                .padding(.horizontal, 32)
+            VStack(spacing: 18) {
+                // Waveform
+                WaveformView(levels: recorder.levels)
+                    .frame(height: 80)
+                    .padding(.horizontal, 32)
+
+                // The words as they're spoken, right under the waveform; older lines rise and fade.
+                LiveTranscriptView(settled: recorder.settled, volatile: recorder.volatile,
+                                   font: appBodyFont.font(size: 20, relativeTo: .body))
+                    .padding(.horizontal, 32)
+
+                // live-12 (2) — TestFlight/DEBUG only, and only while an engine is forced: which tier this take runs.
+                if let note = testingEngineNote {
+                    Text(note)
+                        .font(appBodyFont.font(size: 12, relativeTo: .caption1))
+                        .foregroundStyle(AppearancePalette.ink.opacity(0.4))
+                        .accessibilityIdentifier("recorderTestingEngine")
+                }
+            }
 
             Spacer()
 
@@ -115,45 +138,18 @@ struct VoiceCaptureSheet: View {
                     .background(.white)
                     .clipShape(Capsule())
             }
-            .disabled(elapsedSeconds < 1)
+            .disabled(elapsedSeconds < 1 || phase != .recording)
             .opacity(elapsedSeconds < 1 ? 0.4 : 1)
 
             Button("Cancel") {
                 // Free the mic the instant Cancel is tapped (BUG 8) — don't wait
                 // for the dismiss animation. `.onDisappear` re-runs it as a belt.
-                teardownAudio()
+                recorder.teardown()
                 dismiss()
             }
                 .font(.body)
                 .foregroundStyle(AppearancePalette.ink.opacity(0.45))
                 .padding(.bottom, 40)
-        }
-    }
-
-    // MARK: - Transcribing UI
-
-    private var transcribingBody: some View {
-        VStack(spacing: 24) {
-            Spacer()
-
-            ProgressView()
-                .tint(AppearancePalette.ink)
-                .scaleEffect(1.2)
-
-            Text("Transcribing…")
-                .font(.subheadline)
-                .foregroundStyle(AppearancePalette.ink.opacity(0.5))
-
-            if !transcript.isEmpty {
-                Text(transcript)
-                    .font(.body)
-                    .foregroundStyle(AppearancePalette.ink.opacity(0.8))
-                    .multilineTextAlignment(.center)
-                    .padding(.horizontal, 32)
-                    .lineLimit(6)
-            }
-
-            Spacer()
         }
     }
 
@@ -169,11 +165,13 @@ struct VoiceCaptureSheet: View {
         guard micGranted else { phase = .permissionDenied; return }
 
         #if DEBUG
-        // Arc A — `-StubVoiceTranscript <text>`: the Simulator has no speech model, so the transcript is
-        // canned (recording, the save, and everything after it are the real path). Skips the speech prompt.
-        if Self.stubTranscript != nil { startRecording(); return }
-        // live-10 (4) — `-StubSpeechUnavailable`: no on-device recognizer (the unavailable path), so no speech prompt.
-        if CommandLine.arguments.contains("-StubSpeechUnavailable") { startRecording(); return }
+        // `-StubVoiceTranscript` / `-StubLiveTranscript <text>`: the Simulator has no speech model, so the words are
+        // canned and arrive as if spoken (the microphone, the file, the save and everything after are the real path).
+        // `-StubSpeechUnavailable` / `-speechEngineTesting unavailable`: no recognition (the unavailable path). None needs the
+        // speech prompt.
+        if Self.stubTranscript != nil || Self.stubLiveTranscript != nil
+            || CommandLine.arguments.contains("-StubSpeechUnavailable")
+            || SpeechEngineTesting.choice == .unavailable { await startRecording(); return }
         #endif
 
         // Speech recognition
@@ -184,134 +182,36 @@ struct VoiceCaptureSheet: View {
         }
         guard speechStatus == .authorized else { phase = .permissionDenied; return }
 
-        startRecording()
+        await startRecording()
     }
 
     // MARK: - Recording
 
-    private func startRecording() {
-        do {
-            let session = AVAudioSession.sharedInstance()
-            try session.setCategory(.record, mode: .default, options: .duckOthers)
-            try session.setActive(true, options: .notifyOthersOnDeactivation)
-        } catch {
-            print("[VoiceCapture] Audio session error: \(error)")
-        }
-
-        let url = FileManager.default.temporaryDirectory
-            .appendingPathComponent(UUID().uuidString + ".m4a")
-
-        let settings: [String: Any] = [
-            AVFormatIDKey: Int(kAudioFormatMPEG4AAC),
-            AVSampleRateKey: 44100,
-            AVNumberOfChannelsKey: 1,
-            AVEncoderAudioQualityKey: AVAudioQuality.high.rawValue
-        ]
-
-        do {
-            let recorder = try AVAudioRecorder(url: url, settings: settings)
-            recorder.isMeteringEnabled = true
-            recorder.record()
-            box.recorder = recorder
-            box.recordingURL = url
-        } catch {
-            print("[VoiceCapture] Recorder init error: \(error)")
-            return
-        }
-
+    private func startRecording() async {
+        guard await recorder.start() else { dismiss(); return }
         phase = .recording
-
-        // Metering timer
-        box.meterTimer = Timer.scheduledTimer(withTimeInterval: 0.05, repeats: true) { _ in
-            guard let rec = box.recorder, rec.isRecording else { return }
-            rec.updateMeters()
-            let raw = rec.averagePower(forChannel: 0)  // dB: ~-60 to 0
-            let normalized = Float(max(0, min(1, (raw + 50) / 50)))
-            DispatchQueue.main.async {
-                levels.append(normalized)
-                if levels.count > 40 { levels.removeFirst() }
-                elapsedSeconds = Int(rec.currentTime)
-            }
-        }
     }
 
+    /// Done: the live words ARE the transcript — saved as soon as the last ones land, no "Transcribing…" replay.
     private func stopRecording() {
-        // Capture duration before teardown nils the recorder.
-        let duration = box.recorder?.currentTime ?? 0
-        teardownAudio()
-
-        guard let url = box.recordingURL else { dismiss(); return }
-        transcribe(url: url, duration: duration)
-    }
-
-    /// BUG 8 — idempotent audio teardown. Stops the metering timer and recorder
-    /// and deactivates the shared session with `.notifyOthersOnDeactivation` so
-    /// the mic is released and other audio apps can resume. Every exit path —
-    /// Done/save, Cancel, swipe-dismiss, background mid-record — routes through
-    /// here, so no path can leave the microphone live. Deliberately does NOT
-    /// touch the recognition task (it's a file-based request that never opens the
-    /// mic) or `recordingURL` (so a backgrounded take stays saveable). Safe to
-    /// call repeatedly.
-    private func teardownAudio() {
-        box.meterTimer?.invalidate()
-        box.meterTimer = nil
-        box.recorder?.stop()
-        box.recorder = nil
-        do {
-            try AVAudioSession.sharedInstance().setActive(false, options: .notifyOthersOnDeactivation)
-        } catch {
-            print("[VoiceCapture] Session deactivate error: \(error)")
+        guard phase == .recording else { return }
+        phase = .finishing
+        Task {
+            guard let take = await recorder.stop() else { dismiss(); return }
+            saveNode(transcript: take.transcript, audioURL: take.url, duration: take.duration,
+                     transcriptUnavailable: take.transcriptUnavailable)
         }
     }
-
-    // MARK: - Transcription
 
     #if DEBUG
     static var stubTranscript: String? {
         UserDefaults.standard.string(forKey: "StubVoiceTranscript").flatMap { $0.isEmpty ? nil : $0 }
     }
-    #endif
-
-    private func transcribe(url: URL, duration: TimeInterval) {
-        phase = .transcribing
-        #if DEBUG
-        if let stub = Self.stubTranscript {
-            DispatchQueue.main.asyncAfter(deadline: .now() + 0.8) {
-                transcript = stub
-                saveNode(transcript: stub, audioURL: url, duration: duration)
-            }
-            return
-        }
-        #endif
-
-        // live-10 (4) — on-device only. No on-device recognizer for this language/device: keep the audio, and the
-        // Voice item's transcript area says why (never a silent fallback to Apple's server).
-        guard let recognizer = OnDeviceSpeech.recognizer() else {
-            print("[Speech] on-device recognition unavailable — voice saved without a transcript")
-            saveNode(transcript: "", audioURL: url, duration: duration, transcriptUnavailable: true)
-            return
-        }
-
-        let request = OnDeviceSpeech.fileRequest(url: url, partialResults: true)
-
-        box.recognitionTask = recognizer.recognitionTask(with: request) { result, error in
-            DispatchQueue.main.async {
-                if let result {
-                    transcript = result.bestTranscription.formattedString
-                    if result.isFinal {
-                        saveNode(transcript: transcript, audioURL: url, duration: duration)
-                    }
-                } else if let error {
-                    // Transcription failed — save what was heard. No words and not just silence ⇒ unavailable on-device.
-                    let ns = error as NSError
-                    let unavailable = transcript.isEmpty && OnDeviceSpeech.meansUnavailable(error)
-                    print("[Speech] voice capture recognition error domain=\(ns.domain) code=\(ns.code) words=\(!transcript.isEmpty) unavailable=\(unavailable)")
-                    saveNode(transcript: transcript, audioURL: url, duration: duration, transcriptUnavailable: unavailable)
-                }
-            }
-        }
-        box.recognitionRequest = request
+    /// Recorder render — words stream in as if spoken and the waveform follows a speech-shaped envelope.
+    static var stubLiveTranscript: String? {
+        UserDefaults.standard.string(forKey: "StubLiveTranscript").flatMap { $0.isEmpty ? nil : $0 }
     }
+    #endif
 
     // MARK: - Node creation
 
@@ -387,6 +287,34 @@ struct VoiceCaptureSheet: View {
     }
 }
 
+// MARK: - Live transcript
+
+/// Recorder redesign (T, 2026-10-13) — the words as they're spoken, in a fixed-height block under the waveform.
+/// The newest line sits at the bottom; older lines are pushed up and fade out toward the top edge. Settled words
+/// read in ink, the recogniser's still-changing guess a little lighter.
+private struct LiveTranscriptView: View {
+    let settled: String
+    let volatile: String
+    let font: Font
+    static let height: CGFloat = 150
+
+    var body: some View {
+        let joiner = (settled.isEmpty || volatile.isEmpty) ? "" : " "
+        (Text(settled).foregroundStyle(AppearancePalette.ink.opacity(0.9))
+         + Text(joiner + volatile).foregroundStyle(AppearancePalette.ink.opacity(0.5)))
+            .font(font)
+            .lineSpacing(5)
+            .frame(maxWidth: .infinity, alignment: .leading)
+            .fixedSize(horizontal: false, vertical: true)
+            .frame(height: Self.height, alignment: .bottom)
+            .clipped()
+            .mask(LinearGradient(stops: [.init(color: .clear, location: 0), .init(color: .black, location: 0.55)],
+                                 startPoint: .top, endPoint: .bottom))
+            .animation(.easeOut(duration: 0.22), value: settled.count + volatile.count)
+            .accessibilityIdentifier("liveTranscript")
+    }
+}
+
 // MARK: - Waveform
 
 private struct WaveformView: View {
@@ -437,14 +365,4 @@ private struct PermissionDeniedView: View {
                 .foregroundStyle(AppearancePalette.ink.opacity(0.45))
         }
     }
-}
-
-// MARK: - Reference box (holds class types for AVFoundation objects)
-
-private final class RecorderBox {
-    var recorder: AVAudioRecorder?
-    var recordingURL: URL?
-    var meterTimer: Timer?
-    var recognitionTask: SFSpeechRecognitionTask?
-    var recognitionRequest: SFSpeechURLRecognitionRequest?
 }

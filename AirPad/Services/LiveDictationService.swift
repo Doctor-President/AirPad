@@ -47,6 +47,98 @@ enum OnDeviceSpeech {
         return r
     }
 
+    /// live-12 (1) — T's Speech chain: the tiers this take tries, best first. Automatic = Speech → Dictation → the older
+    /// recognizer; a forced choice (the TestFlight switch) starts the chain at that tier; Unavailable tries none. Before
+    /// iOS 26 only the older recognizer exists. The recorder walks the list and runs the first tier that can.
+    static func chain(_ choice: SpeechEngineChoice, analyzerOS: Bool) -> [SpeechTier] {
+        let all: [SpeechTier] = analyzerOS ? [.speech, .dictation, .olderRecognizer] : [.olderRecognizer]
+        guard choice != .automatic else { return all }
+        guard let forced = SpeechTier(rawValue: choice.rawValue), let i = all.firstIndex(of: forced) else {
+            return choice == .unavailable ? [] : all.filter { $0 == .olderRecognizer }
+        }
+        return Array(all[i...])
+    }
+
+    /// Tiers 1–2: the analyzer module for `tier` in `locale` (already resolved to a supported one). Tier 1 is
+    /// `SpeechTranscriber` (no vocabulary hints — Apple: contextual strings help only `DictationTranscriber`); tier 2 is
+    /// `DictationTranscriber` with punctuation. Nil for tiers 3–4.
+    @available(iOS 26.0, macOS 26.0, *)
+    static func liveModule(_ tier: SpeechTier, locale: Locale) -> LiveModule? {
+        switch tier {
+        case .speech:
+            // live-13 (2) — `.fastResults`: measured on T's iPhone (iOS 26.6, synthetic speech, online and offline alike)
+            // the first words came 4.0–4.1 s after speech began without it, 1.1–1.2 s with it, and the error rate didn't
+            // move (4.2% on a 71 s take). Without it tier 1 trailed Dictation and the older recognizer by seconds.
+            return .speech(SpeechTranscriber(locale: locale, transcriptionOptions: [], reportingOptions: [.volatileResults, .fastResults],
+                                             attributeOptions: []))
+        case .dictation:
+            return .dictation(DictationTranscriber(locale: locale, contentHints: [], transcriptionOptions: [.punctuation],
+                                                   reportingOptions: [.volatileResults], attributeOptions: []))
+        case .olderRecognizer, .unavailable:
+            return nil
+        }
+    }
+
+    /// The app words for an analyzer session: tier 2 only (tier 1 takes none).
+    @available(iOS 26.0, macOS 26.0, *)
+    static func analysisContext(for live: LiveModule) -> AnalysisContext? {
+        guard case .dictation = live else { return nil }
+        let context = AnalysisContext()
+        context.contextualStrings = [.general: SpeechVocabulary.contextualStrings]
+        return context
+    }
+
+    /// Tiers 1–2: a ready on-device analyzer for `tier` in `locale`, or nil — this device/locale doesn't support it, or
+    /// its model isn't on this iPhone yet (the recorder then tries the next tier). A missing model is fetched in the
+    /// background for next time: Apple's model download, no audio and no words leave the phone.
+    /// live-13 (2) — choosing the tier never waits on the network: only the installed status is read (local; 2–26 ms on
+    /// T's iPhone, online or in airplane mode). Reserving the locale and asking for / downloading the model — the calls
+    /// that go through Apple's asset catalog — run in the background, never before a take starts.
+    @available(iOS 26.0, macOS 26.0, *)
+    static func liveAnalyzer(_ tier: SpeechTier, locale: Locale = .current) async -> (SpeechAnalyzer, LiveModule)? {
+        #if DEBUG
+        if CommandLine.arguments.contains("-StubSpeechUnavailable") { return nil }
+        #endif
+        // live-13 (2) — each awaited step's time goes in the log (times only, never words), so an offline take shows
+        // which call waited.
+        var clock = ContinuousClock.now, steps: [String] = []
+        func lap(_ name: String) { steps.append("\(name)=\(millis(since: clock))ms"); clock = .now }
+        defer { print("[Speech] assets tier=\(tier.rawValue) \(steps.joined(separator: " "))") }
+        let supported: Locale?
+        switch tier {
+        case .speech:
+            guard SpeechTranscriber.isAvailable else { steps.append("isAvailable=false"); return nil }
+            supported = await SpeechTranscriber.supportedLocale(equivalentTo: locale)
+        case .dictation:
+            supported = await DictationTranscriber.supportedLocale(equivalentTo: locale)
+        case .olderRecognizer, .unavailable:
+            return nil
+        }
+        lap("supportedLocale")
+        guard let supported, let live = liveModule(tier, locale: supported) else { steps.append("unsupported"); return nil }
+        // The model counts as installed for THIS app only once the app has reserved the locale and asked for it (the
+        // Mac bench: a model already on disk read "supported" to a new binary until then). Not installed ⇒ this take
+        // uses the next tier, and the reservation + request (+ download if it's missing) run in the background, so the
+        // next take finds it installed.
+        let status = await AssetInventory.status(forModules: [live.module])
+        lap("status")
+        steps.append("installed=\(status == .installed)")
+        guard status == .installed else {
+            print("[Speech] recorder tier=\(tier.rawValue) model not ready for this app — next tier this take; preparing it in the background")
+            let module = live.module, reserveLocale = live.locale
+            Task.detached {
+                _ = try? await AssetInventory.reserve(locale: reserveLocale)
+                if let request = try? await AssetInventory.assetInstallationRequest(supporting: [module]) {
+                    try? await request.downloadAndInstall()
+                }
+            }
+            return nil
+        }
+        let analyzer = SpeechAnalyzer(modules: [live.module])
+        if let context = analysisContext(for: live) { try? await analyzer.setContext(context) }
+        return (analyzer, live)
+    }
+
     private static func configure(_ r: SFSpeechRecognitionRequest) {
         r.requiresOnDeviceRecognition = true
         r.contextualStrings = SpeechVocabulary.contextualStrings
@@ -56,7 +148,8 @@ enum OnDeviceSpeech {
     /// or a cancel. The domain/code is logged (never the audio or words) so a device log shows which it was.
     static func meansUnavailable(_ error: Error) -> Bool {
         let e = error as NSError
-        if e.domain == "kAFAssistantErrorDomain", [1110, 216, 301].contains(e.code) { return false }   // no speech · cancelled
+        // no speech · cancelled. live-13: iOS 26.6 reports the on-device recogniser's cancel as kLSRErrorDomain 301.
+        if ["kAFAssistantErrorDomain", "kLSRErrorDomain"].contains(e.domain), [1110, 216, 301].contains(e.code) { return false }
         if e.domain == NSCocoaErrorDomain, e.code == NSUserCancelledError { return false }
         return true
     }
@@ -84,8 +177,38 @@ enum OnDeviceSpeech {
         let json = (try? enc.encode(item)).flatMap { String(data: $0, encoding: .utf8) } ?? ""
         let back = (try? enc.encode(item)).flatMap { try? dec.decode(NodeItem.self, from: $0) }
         let legacy = try? dec.decode(NodeItem.self, from: Data(#"{"id":"a","type":"audio","created_at":0}"#.utf8))
+        // live-11 (4) — the recorder: segments rotate before Apple's ~1 min task limit; text joins across segments.
+        row("recorder-segments-rotate-before-one-minute", SegmentedLiveTranscriber.segmentSeconds < 60)
+        row("recorder-text-joins-segments", LiveText.join(["Call the landlord", " on Tuesday", ", then", "", "the boiler."])
+            == "Call the landlord on Tuesday, then the boiler.")
         row("unavailable-mark-round-trips", json.contains("\"transcript_unavailable\":true") && back?.transcriptUnavailable == true
             && legacy != nil && legacy?.transcriptUnavailable == nil)
+        // live-12 (1) — T's Speech chain, each tier forced as the TestFlight switch forces it.
+        row("chain-automatic-speech-dictation-older", chain(.automatic, analyzerOS: true) == [.speech, .dictation, .olderRecognizer])
+        row("chain-before-ios26-older-only", chain(.automatic, analyzerOS: false) == [.olderRecognizer])
+        row("force-speech-starts-at-tier-1", chain(.speech, analyzerOS: true) == [.speech, .dictation, .olderRecognizer])
+        row("force-dictation-starts-at-tier-2", chain(.dictation, analyzerOS: true) == [.dictation, .olderRecognizer])
+        row("force-older-recognizer-is-tier-3-only", chain(.olderRecognizer, analyzerOS: true) == [.olderRecognizer])
+        row("force-unavailable-tries-nothing", chain(.unavailable, analyzerOS: true).isEmpty && chain(.unavailable, analyzerOS: false).isEmpty)
+        if #available(iOS 26.0, macOS 26.0, *) {
+            let en = Locale(identifier: "en-US")
+            let t1 = liveModule(.speech, locale: en), t2 = liveModule(.dictation, locale: en)
+            var t1IsSpeech = false, t2IsDictation = false
+            if case .speech = t1 { t1IsSpeech = true }
+            if case .dictation = t2 { t2IsDictation = true }
+            row("tier1-builds-SpeechTranscriber", t1IsSpeech)
+            row("tier2-builds-DictationTranscriber", t2IsDictation)
+            row("tiers-3-4-build-no-analyzer-module", liveModule(.olderRecognizer, locale: en) == nil && liveModule(.unavailable, locale: en) == nil)
+            row("tier1-no-vocabulary", t1.map { analysisContext(for: $0) == nil } ?? false)
+            row("tier2-vocabulary-set", t2.flatMap { analysisContext(for: $0) }?.contextualStrings[.general] == SpeechVocabulary.contextualStrings)
+        } else {
+            rows.append("SKIP tiers-1-2-modules (needs iOS 26)")
+        }
+        let tier3 = bufferRequest()                                   // SegmentedLiveTranscriber's request
+        row("tier3-on-device-required", tier3.requiresOnDeviceRecognition)
+        row("tier3-vocabulary-set", tier3.contextualStrings == SpeechVocabulary.contextualStrings)
+        // Tier 4 keeping the audio + the message is the recorder end to end: ArcAVoiceDone/testRecorder_forcedUnavailable.
+        row("tier4-message-says-unavailable", unavailableMessage.hasPrefix("Transcript unavailable"))
         return "[OnDeviceSpeechSelfTest] \(fails == 0 ? "PASS" : "FAIL") — \(rows.count - fails)/\(rows.count)\n" + rows.joined(separator: "\n")
     }
 }

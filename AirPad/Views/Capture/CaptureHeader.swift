@@ -132,17 +132,19 @@ struct CaptureHeader<Title: View, Summary: View, Collections: View, Tags: View, 
     /// would clip a two-line suggestion — the ZStack sizes to the union so the field reserves the full
     /// wrapped height; the field grows past it once the user types. Placeholder suppression + the
     /// shimmer trigger live in the host (it builds the TextField); this only renders the ghost.
+    ///
+    /// live-11 (2) — the field sits in the SAME ZStack whether or not a ghost shows. It used to move between an
+    /// `if`/`else` branch, so the first suggestion re-created the TextField: its `onChange(of: proposal)` (the host's
+    /// shimmer trigger) never saw the change, and the first ghost of every capture appeared without its shimmer.
     @ViewBuilder private func withGhost<V: View>(_ field: V, _ cfg: GhostFieldConfig?) -> some View {
-        if let cfg {
-            ZStack(alignment: .topLeading) {
+        ZStack(alignment: .topLeading) {
+            if let cfg {
                 GhostFieldOverlay(text: cfg.text, font: cfg.font, ink: AppearancePalette.ink,
                                   opacity: cfg.opacity, shimmerTrigger: cfg.shimmerTrigger,
                                   reduceMotion: reduceMotion)
                     .opacity(cfg.hidden ? 0 : 1)                               // tap → clears (rule 3)
                     .animation(.easeInOut(duration: 0.18), value: cfg.hidden)
-                field
             }
-        } else {
             field
         }
     }

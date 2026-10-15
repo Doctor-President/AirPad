@@ -142,6 +142,8 @@ struct ContentView: View {
                     .accessibilityValue(store.nodes.map { "\($0.id)=\($0.title)" }.joined(separator: "\n"))
                     .allowsHitTesting(false)
             }
+            // live-11 (2) — `-PasteProbe`: main-thread stalls + paste → naming → ghost times for a long paste.
+            if PasteProbe.enabled { PasteProbeView() }
             #endif
         }
         // Chats list sheet — shared by the Dashboard header bubble and

@@ -279,10 +279,12 @@ private func migrateEntrySchemaV3ToV4(_ node: inout Node) {
         // recognizable label.
         let onDiskName = (file as NSString).lastPathComponent
         let ext = (onDiskName as NSString).pathExtension.lowercased()
+        // live-13 (4) — the share sheet stages a document with the name it was given in `description`; keep that.
+        // The on-disk `<UUID>.<ext>` is never a name (empty ⇒ the shown name falls back to the PDF title / date).
         let documentItem = DocumentItem(
             id: item.id,
             filePath: file,
-            fileName: onDiskName,
+            fileName: DocumentNaming.storedName(item.description),
             fileType: ext,
             documentTitle: nil,
             extractedText: nil,

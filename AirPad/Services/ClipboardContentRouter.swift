@@ -140,6 +140,14 @@ enum ClipboardContentRouter {
             return .url(url)
         }
 
+        // 1b. live-13 (3) — a copied SELECTION is text. Safari's selection carries a web archive (and Notes' a private
+        //     rich type) beside its plain/rich text: data that isn't `public.text`, so path 4 took it for a document
+        //     and T's Wikipedia paste arrived as a `<UUID>.webarchive` document. Text present and no real file ⇒ text.
+        if isSelection(types), let text = selectionText(pasteboard, types: types, in: indexSet) {
+            if let parsed = parseHTTPURL(from: text) { return .url(parsed) }
+            return .text(text)
+        }
+
         // 2. Image.
         if conforms(types, to: .image),
            let imageTypeID = types.first(where: { UTType($0)?.conforms(to: .image) == true }),
@@ -162,7 +170,7 @@ enum ClipboardContentRouter {
         if let videoTypeID = types.first(where: { UTType($0)?.conforms(to: .movie) == true }) {
             if let data = firstData(pasteboard, type: videoTypeID, in: indexSet) {
                 let ext = UTType(videoTypeID)?.preferredFilenameExtension ?? "mov"
-                if let tempURL = writeTempFile(data: data, ext: ext) {
+                if let tempURL = writeTempFile(data: data, ext: ext, name: suggestedName(pasteboard, at: index)) {
                     return .video(tempURL)
                 }
             }
@@ -193,7 +201,7 @@ enum ClipboardContentRouter {
         }),
         let data = firstData(pasteboard, type: fileTypeID, in: indexSet) {
             let ext = UTType(fileTypeID)?.preferredFilenameExtension ?? "bin"
-            if let tempURL = writeTempFile(data: data, ext: ext) {
+            if let tempURL = writeTempFile(data: data, ext: ext, name: suggestedName(pasteboard, at: index)) {
                 return .file(tempURL, fileType: ext)
             }
         }
@@ -203,7 +211,7 @@ enum ClipboardContentRouter {
         //    pasteboard (instead of the typed-data shape Files.app
         //    uses). Files.app paste does not reach this branch in
         //    practice — path 4 catches it.
-        if let fileURL = firstValue(pasteboard, type: UTType.fileURL.identifier, in: indexSet) as? URL {
+        if let fileURL = fileURLValue(pasteboard, in: indexSet) {
             let ext = fileURL.pathExtension.lowercased()
             return .file(fileURL, fileType: ext)
         }
@@ -265,6 +273,11 @@ enum ClipboardContentRouter {
             return .url
         }
 
+        // 1b. A copied selection (text present, no real file) — mirrors `classifyItem` path 1b.
+        if isSelection(types) {
+            return .text
+        }
+
         // 2. Image.
         if conforms(types, to: .image) {
             return .image
@@ -304,6 +317,67 @@ enum ClipboardContentRouter {
         return .empty
     }
 
+    // MARK: - Selections vs files (live-13 (3))
+
+    /// Rich-text forms a copied selection carries besides `public.text` (they conform to `public.data`, not text):
+    /// Safari's web archive, RTFD, UIKit's attributed string.
+    private static let richTextCarriers: [UTType] = [.webArchive, .flatRTFD, .rtfd]
+        + [UTType("com.apple.uikit.attributedstring")].compactMap { $0 }
+
+    /// Types that only a real file has — a document a person copied from Files (or a file URL), never a selection.
+    private static let realFileTypes: [UTType] = [.fileURL, .pdf, .spreadsheet, .presentation, .epub, .archive]
+        + ["org.openxmlformats.wordprocessingml.document", "com.microsoft.word.doc", "com.apple.iwork.pages.pages",
+           "com.apple.iwork.numbers.numbers", "com.apple.iwork.keynote.key"].compactMap { UTType($0) }
+
+    /// A copied selection: plain or rich text is present and nothing on the item is a real file. Types only — no
+    /// content read, so `detectKind` can use it without the paste prompt.
+    static func isSelection(_ types: [String]) -> Bool {
+        let uts = types.compactMap { UTType($0) }
+        let hasText = uts.contains { ut in ut.conforms(to: .text) || richTextCarriers.contains { ut.conforms(to: $0) } }
+        guard hasText else { return false }
+        return !uts.contains { ut in
+            !richTextCarriers.contains { ut.conforms(to: $0) } && realFileTypes.contains { ut.conforms(to: $0) }
+        }
+    }
+
+    /// The selection's words: its plain text, else its RTF/RTFD as plain text. Nil when neither yields any.
+    private static func selectionText(_ pasteboard: UIPasteboard, types: [String], in set: IndexSet) -> String? {
+        if conforms(types, to: .plainText) || conforms(types, to: .text),
+           let s = firstValue(pasteboard, type: UTType.text.identifier, in: set) as? String,
+           !s.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty {
+            return s
+        }
+        for (ut, doc) in [(UTType.rtf, NSAttributedString.DocumentType.rtf), (.flatRTFD, .rtfd)] {
+            if let id = types.first(where: { UTType($0)?.conforms(to: ut) == true }),
+               let data = firstData(pasteboard, type: id, in: set),
+               let a = try? NSAttributedString(data: data, options: [.documentType: doc], documentAttributes: nil),
+               !a.string.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty {
+                return a.string
+            }
+        }
+        return nil
+    }
+
+    /// `public.file-url` as a URL, whichever form the pasteboard hands it back in.
+    private static func fileURLValue(_ pasteboard: UIPasteboard, in set: IndexSet) -> URL? {
+        switch firstValue(pasteboard, type: UTType.fileURL.identifier, in: set) {
+        case let url as URL: return url.isFileURL ? url : nil
+        case let data as Data:
+            // UIPasteboard hands a file URL back as a binary plist (["file:///…", base]) or as the URL's bytes.
+            let plist = try? PropertyListSerialization.propertyList(from: data, format: nil)
+            let string = (plist as? [Any])?.first as? String ?? plist as? String ?? String(data: data, encoding: .utf8)
+            return string.flatMap { URL(string: $0) }.flatMap { $0.isFileURL ? $0 : nil }
+        case let string as String: return URL(string: string).flatMap { $0.isFileURL ? $0 : nil }
+        default: return nil
+        }
+    }
+
+    /// The source's name for item `index` (e.g. Files' "Report"), when it offers one.
+    private static func suggestedName(_ pasteboard: UIPasteboard, at index: Int) -> String? {
+        let providers = pasteboard.itemProviders
+        return index < providers.count ? providers[index].suggestedName : nil
+    }
+
     // MARK: - Helpers
 
     /// Returns true when any UTType identifier in `types` conforms to
@@ -330,8 +404,15 @@ enum ClipboardContentRouter {
     /// with the source. Returns nil on a write failure — caller falls
     /// through to the next classification branch (`.empty` in the worst
     /// case).
-    private static func writeTempFile(data: Data, ext: String) -> URL? {
-        let url = FileManager.default.temporaryDirectory.appendingPathComponent("\(UUID().uuidString).\(ext)")
+    /// live-13 (4): named after the item's real name when the source offers one (`suggestedName`), inside a fresh
+    /// folder so names never collide — the document keeps that name; a bare `<UUID>.<ext>` read as random to T.
+    private static func writeTempFile(data: Data, ext: String, name: String? = nil) -> URL? {
+        var url = FileManager.default.temporaryDirectory.appendingPathComponent("\(UUID().uuidString).\(ext)")
+        if let real = DocumentNaming.realName(suggested: name, url: url) {
+            let dir = FileManager.default.temporaryDirectory.appendingPathComponent(UUID().uuidString, isDirectory: true)
+            try? FileManager.default.createDirectory(at: dir, withIntermediateDirectories: true)
+            url = dir.appendingPathComponent(real.replacingOccurrences(of: "/", with: "-"))
+        }
         do {
             try data.write(to: url)
             return url

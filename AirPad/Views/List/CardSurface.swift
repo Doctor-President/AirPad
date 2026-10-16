@@ -160,17 +160,31 @@ enum CardSurfaceFlag: String, CaseIterable, Identifiable {
 /// Separation is carried by LUMINANCE and EDGE, not occlusion — which is also the
 /// colorblind-safe register.
 ///
+/// ★ live-22 (1) — T's picks from the live-21 renders (2026-10-16): palette L2 (cards #FBF9F5), field F2
+/// (#F4F2ED), the card edge a 0.5 pt black hairline @0.16 on all edges in place of the white top rim, and the drop
+/// shadow at 25% of today's strength (0.262 → 0.0655; radius 12.5 and y 11 unchanged — at a quarter strength the
+/// same radius still reads as a soft lift, so it stays). The emboss is unchanged.
+///
 /// ⚠️ LIGHT-MODE ONLY. Every dark resolver returns a shipped literal and cannot
 /// read these values (see `CardSurfaceResolved`), so dark is untouched by this bake.
 enum CardSurfaceDefaults {
+    /// live-22 — the shadow alpha T's "25% of today" is measured against (live-21's S1; the appearance tuner's 100%).
+    static let referenceShadowAlpha = 0.262
+    /// live-22 — the card edge before the hairline (the white top rim); the appearance tuner's "hairline off".
+    static let priorRimHex = "FFFFFF"
+    static let priorRimOpacity = 0.95
+    static let priorRimWidth = 1.25
+    /// live-22 — the hairline's colour (live-21's S4: black, all edges).
+    static let hairlineHex = "000000"
+
     static func value(_ d: CardSurfaceDial) -> Double {
         switch d {
-        case .baseLightness:    return 1.100   // T (was 0.98) → card resolves #FFFFFA
-        case .shadowAlpha:      return 0.262   // T device-final 2026-09-14, see Ops/reference/tuner-state-accepted.md (was 0.07)
+        case .baseLightness:    return 1.000   // live-22 (1) T: L2 — the paper #FBF9F5 IS the card face (was 1.100 → #FFFFFA on L1)
+        case .shadowAlpha:      return referenceShadowAlpha * 0.25   // live-22 (1) T: 25% of today's 0.262 = 0.0655 (radius + y unchanged)
         case .shadowRadius:     return 12.50   // T (was 12.0)
         case .shadowY:          return 11.00   // T (was 4.0) — falls further/softer
-        case .rimOpacity:       return 0.95    // T (was 0.24) — strong edge
-        case .rimWidth:         return 1.25    // T (was 1.5)
+        case .rimOpacity:       return 0.16    // live-22 (1) T: the 0.5 pt hairline (was the white rim @0.95 — priorRimOpacity)
+        case .rimWidth:         return 0.50    // live-22 (1) T: hairline 0.5 pt (was 1.25 — priorRimWidth)
         case .embossLightAlpha: return 0.47    // T (was 0.35)
         case .embossDarkAlpha:  return 0.13    // T (was 0.25)
         case .embossInset:      return 0.00    // T (was 2.0)
@@ -180,9 +194,9 @@ enum CardSurfaceDefaults {
 
     static func hex(_ h: CardSurfaceHex) -> String {
         switch h {
-        case .shadowHex:      return "434343"  // T device-final 2026-09-14, see Ops/reference/tuner-state-accepted.md (was 43372A)
-        case .groundHex:      return "DDDDDD"  // T device-final 2026-09-14, see Ops/reference/tuner-state-accepted.md (was F4EFE3) — map + card ground
-        case .rimHex:         return "FFFFFF"  // T kept white
+        case .shadowHex:      return "3F3A33"  // live-22 (1) T: L2's warm shadow (was 434343)
+        case .groundHex:      return "F4F2ED"  // live-22 (1) T: L2 · F2, one step lighter than L2's #EFECE6 (was DDDDDD) — map + card ground
+        case .rimHex:         return hairlineHex   // live-22 (1) T: the hairline is black (was FFFFFF — priorRimHex)
         case .embossLightHex: return "FFFFFF"  // T kept white
         case .embossDarkHex:  return "43372A"  // T kept the warm brown-gray
         }
@@ -190,7 +204,7 @@ enum CardSurfaceDefaults {
 
     static func flag(_ f: CardSurfaceFlag) -> Bool {
         switch f {
-        case .rimTopOnly:    return true       // T kept the top→bottom fade
+        case .rimTopOnly:    return false      // live-22 (1) T: the hairline runs all edges (was the top→bottom fade)
         case .embossEnabled: return true       // ★ T turned the emboss ON
         case .embossRaised:  return true       // light top / dark bottom
         }
@@ -199,14 +213,21 @@ enum CardSurfaceDefaults {
 
 // MARK: - Store
 
-/// No tuner ships in this build, so there is no write path and no reason to read
-/// UserDefaults: the compiled-in `CardSurfaceDefaults` ARE the shipped values, for
-/// every build and every install. (This also means a Simulator carrying keys from
-/// an earlier dialing session cannot contaminate a verification run.)
+/// An App Store build has no tuner, so there is no write path and no UserDefaults read: the compiled-in
+/// `CardSurfaceDefaults` ARE the shipped values. live-22 (2): in DEBUG / TestFlight the on-device appearance tuner
+/// (`AppearanceTuning`) can vary the LIGHT values live; at its defaults it returns exactly `CardSurfaceDefaults`
+/// (`-AppearanceTuningSelfTest`), and in DEBUG it is only live with `-AppearanceTuner YES`, so a Simulator carrying
+/// keys from an earlier dialing session still cannot contaminate a verification run.
 enum CardSurfaceStore {
+    #if DEBUG || TESTFLIGHT
+    static func read(_ d: CardSurfaceDial) -> Double { AppearanceTuning.light(d, baked: CardSurfaceDefaults.value(d)) }
+    static func read(_ h: CardSurfaceHex) -> String { AppearanceTuning.light(h, baked: CardSurfaceDefaults.hex(h)) }
+    static func read(_ f: CardSurfaceFlag) -> Bool { AppearanceTuning.light(f, baked: CardSurfaceDefaults.flag(f)) }
+    #else
     static func read(_ d: CardSurfaceDial) -> Double { CardSurfaceDefaults.value(d) }
     static func read(_ h: CardSurfaceHex) -> String { CardSurfaceDefaults.hex(h) }
     static func read(_ f: CardSurfaceFlag) -> Bool { CardSurfaceDefaults.flag(f) }
+    #endif
 }
 
 // MARK: - Resolvers (the ONLY readers the live surfaces use)
@@ -254,9 +275,13 @@ enum CardSurfaceResolved {
     static var cardShadow: Color {
         let bakedHex = CardSurfaceStore.read(.shadowHex)
         let bakedAlpha = CardSurfaceStore.read(.shadowAlpha)
+        var darkAlpha: CGFloat = 0.742   // T device-final 2026-09-14, see Ops/reference/tuner-state-accepted.md
+        #if DEBUG || TESTFLIGHT
+        darkAlpha = CGFloat(AppearanceTuning.darkShadowAlpha(baked: Double(darkAlpha)))   // live-22 (2) — read here, in body
+        #endif
         return Color(UIColor { trait in
             if trait.userInterfaceStyle == .dark {
-                return UIColor(red: 0, green: 0, blue: 0, alpha: 0.742)   // T device-final 2026-09-14, see Ops/reference/tuner-state-accepted.md
+                return UIColor(red: 0, green: 0, blue: 0, alpha: darkAlpha)
             }
             let (r, g, b) = rgb(bakedHex)
             return UIColor(red: r, green: g, blue: b, alpha: CGFloat(bakedAlpha))
@@ -270,7 +295,10 @@ enum CardSurfaceResolved {
     /// appearance is exactly the shipped `black @ 0.32` — unchanged.
     /// Light-only geometry. DARK keeps the shipped `12` / `4` exactly.
     static func shadowRadius(dark: Bool) -> CGFloat {
-        dark ? 12 : CGFloat(CardSurfaceStore.read(.shadowRadius))
+        #if DEBUG || TESTFLIGHT
+        if dark { return AppearanceTuning.darkShadowRadius(baked: 12) }   // live-22 (2)
+        #endif
+        return dark ? 12 : CGFloat(CardSurfaceStore.read(.shadowRadius))
     }
     static func shadowY(dark: Bool) -> CGFloat {
         dark ? 4 : CGFloat(CardSurfaceStore.read(.shadowY))
@@ -281,7 +309,10 @@ enum CardSurfaceResolved {
     /// Dark branch is the shipped literal `#111115`, byte-identical.
     static func ground(dark: Bool) -> Color {
         let baked = dark ? "161616" : CardSurfaceStore.read(.groundHex)   // dark: T device-final 2026-09-14, see Ops/reference/tuner-state-accepted.md
-        let hex = baked
+        var hex = baked
+        #if DEBUG || TESTFLIGHT
+        if dark { hex = AppearanceTuning.darkGroundHex(baked: baked) }   // live-22 (2)
+        #endif
         let (r, g, b) = rgb(hex)
         return Color(red: Double(r), green: Double(g), blue: Double(b))
     }
@@ -292,6 +323,9 @@ enum CardSurfaceResolved {
     /// `Color.white.opacity(0.24)` → `Color.white.opacity(0)` — so splitting the
     /// rim per-mode leaves dark byte-identical.
     static func rimStops(dark: Bool) -> [Color] {
+        #if DEBUG || TESTFLIGHT
+        if dark, let h = AppearanceTuning.darkHairline { return [Color.white.opacity(h.opacity), Color.white.opacity(0)] }   // live-22 (2)
+        #endif
         if dark { return [Color.white.opacity(0.24), Color.white.opacity(0)] }
         let (r, g, b) = rgb(CardSurfaceStore.read(.rimHex))
         let base = Color(red: Double(r), green: Double(g), blue: Double(b))
@@ -299,12 +333,18 @@ enum CardSurfaceResolved {
     }
 
     static func rimWidth(dark: Bool) -> CGFloat {
-        dark ? 1.5 : CGFloat(CardSurfaceStore.read(.rimWidth))
+        #if DEBUG || TESTFLIGHT
+        if dark, let h = AppearanceTuning.darkHairline { return CGFloat(h.width) }   // live-22 (2)
+        #endif
+        return dark ? 1.5 : CGFloat(CardSurfaceStore.read(.rimWidth))
     }
 
     /// Top-only (the shipped fade) vs all-edges. Dark is always the shipped
     /// top-only gradient.
     static func rimIsTopOnly(dark: Bool) -> Bool {
+        #if DEBUG || TESTFLIGHT
+        if dark, AppearanceTuning.darkHairline != nil { return false }   // live-22 (2): a dark hairline runs all edges
+        #endif
         if dark { return true }
         return CardSurfaceStore.read(.rimTopOnly)
     }

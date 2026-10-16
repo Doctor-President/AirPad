@@ -121,6 +121,9 @@ struct LibrarianSurface: View {
     @State private var activeAccent: Color? = nil
 
     @Environment(\.accessibilityReduceMotion) private var reduceMotion
+    #if DEBUG || TESTFLIGHT
+    @Environment(\.colorScheme) private var colorScheme   // live-22 (2) — the appearance tuner's glass controls are per mode
+    #endif
 
     @AppStorage(SolarFlareTuningKey.bloomOn) private var sfBloomOn: Bool = SolarFlareTuningDefaults.bloomOn
 
@@ -1698,6 +1701,20 @@ struct LibrarianSurface: View {
     // `ComposerSendControls`, mounted as the field's bottom-trailing overlay above. T's
     // correction: the send control is shared idiom, not Librarian identity.
 
+    /// The Ask field's fill — live-22 (2): real Liquid Glass when the appearance tuner (TestFlight) asks for glass controls.
+    @ViewBuilder
+    private func askBackground(fill: Color, shape: RoundedRectangle) -> some View {
+        #if DEBUG || TESTFLIGHT
+        if AppearanceTuning.glassControls(dark: colorScheme == .dark) {
+            Color.clear.glassEffect(.regular, in: shape)
+        } else {
+            fill
+        }
+        #else
+        fill
+        #endif
+    }
+
     /// The Ask input row — the panel's persistent bottom composer. The one
     /// flexing element — chat-app convention: history scrolls above,
     /// typing happens at the bottom near the keyboard.
@@ -1811,7 +1828,7 @@ struct LibrarianSurface: View {
             #endif
             askFieldHeight = $0
         }
-        .background(askFill)
+        .background { askBackground(fill: askFill, shape: askShape) }
         // Item 2 — mic/send/clear as a BOTTOM-TRAILING overlay (not an HStack
         // sibling). Optical: constrain the cluster to the LINE-BOX height and pin
         // it `askTextVPad` from the bottom, so the glyph centres on the LAST line's

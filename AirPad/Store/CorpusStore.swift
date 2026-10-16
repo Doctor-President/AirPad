@@ -1194,6 +1194,10 @@ final class CorpusStore {
             if ProcessInfo.processInfo.arguments.contains("-SpeechEngineTestingSelfTest") {
                 NSLog("%@", SpeechEngineTesting.selfTest())
             }
+            // live-22 — T's light picks are what ships; the appearance tuner's gate, storage, presets and export.
+            if ProcessInfo.processInfo.arguments.contains("-AppearanceTuningSelfTest") {
+                NSLog("%@", AppearanceTuning.selfTest())
+            }
             // live-13 (1) — Done saves what the recorder showed, on every tier (tier 3 driven by injected results).
             if ProcessInfo.processInfo.arguments.contains("-RecorderSaveSelfTest") {
                 NSLog("%@", await RecorderSaveSelfTest.run())

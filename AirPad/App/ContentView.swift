@@ -18,6 +18,9 @@ struct ContentView: View {
     private let panelLayout = LibrarianPanelLayout()
     // Brief AT5 — app-wide Appearance override (System / Light / Dark), applied to the window(s).
     @AppStorage(AppearanceOverride.storageKey) private var appearanceRaw = AppearanceOverride.system.rawValue
+    #if DEBUG || TESTFLIGHT
+    @Environment(\.colorScheme) private var colorScheme   // live-22 (2) — the tuner's dim is per mode
+    #endif
 
     var body: some View {
         @Bindable var routerBinding = router
@@ -25,6 +28,11 @@ struct ContentView: View {
             // Brief AT5 — pin the window appearance to the user's choice (System = follow iOS). Live.
             AppearanceApplier(style: (AppearanceOverride(rawValue: appearanceRaw) ?? .system).uiStyle)
                 .frame(width: 0, height: 0)
+            #if DEBUG || TESTFLIGHT
+            // live-22 (2) — the on-device appearance tuner floats in its own pass-through window, over every view,
+            // sheet and the Librarian panel (TestFlight only; in DEBUG only with `-AppearanceTuner YES`).
+            if AppearanceTuning.isLive { AppearanceTunerInstaller().frame(width: 0, height: 0) }
+            #endif
             #if DEBUG
             // `-OpenCardView` companion — `entryMode` defaults to `.recents`, so the
             // viewMode seed alone never reaches the canvas.
@@ -139,6 +147,14 @@ struct ContentView: View {
                     CanvasChrome(scope: .nodeIDs(store.sampleNodeIDs))
                 }
             }
+            #if DEBUG || TESTFLIGHT
+            // live-22 (2) — the appearance tuner's "dim content behind": black over the content (not the panel), scaled
+            // by how far the Librarian is up, so the peek dims nothing.
+            .overlay {
+                let dim = AppearanceTuning.dimAmount(dark: colorScheme == .dark) * Double(panelState.progress.peekProgress)
+                if dim > 0 { Color.black.opacity(dim).ignoresSafeArea().allowsHitTesting(false) }
+            }
+            #endif
             #if DEBUG
             // Brief CA — headless screenshot harness for the model pill; renders on top of everything.
             if ProcessInfo.processInfo.arguments.contains("-PillGallery") {

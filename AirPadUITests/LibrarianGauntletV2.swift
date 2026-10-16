@@ -630,6 +630,29 @@ final class ModelPillChecks: XCTestCase {
         app.terminate()
     }
 
+    /// live-17 (2b) — the model sheet says plainly which Mac the 30B needs: its row carries the memory note (keyed on the
+    /// catalog's 32 GB tier); the 16 GB models' rows don't. Screenshot attached for T's wording review.
+    func testThirtyBMemoryNoteInSheet() throws {
+        let note = "For Macs with 32 GB of memory or more. Runs best with nothing else loaded."
+        let app = try launch([])
+        let p = pill(app)
+        XCTAssertTrue(p.waitForExistence(timeout: 30), "no model pill")
+        p.tap()
+        let manage = app.buttons.matching(NSPredicate(format: "label CONTAINS 'Manage models'")).firstMatch
+        XCTAssertTrue(manage.waitForExistence(timeout: 10), "no Manage models in the model menu")
+        manage.tap()
+        let name = app.staticTexts["Qwen3 30B-A3B"].firstMatch
+        XCTAssertTrue(name.waitForExistence(timeout: 30), "no 30B row in the sheet")
+        let text = app.staticTexts.matching(NSPredicate(format: "label CONTAINS %@", note)).firstMatch
+        for _ in 0..<4 where !text.exists || !text.isHittable { app.swipeUp() }
+        let shot = XCTAttachment(screenshot: app.screenshot()); shot.name = "model-sheet-30B-note"; shot.lifetime = .keepAlways; add(shot)
+        XCTAssertTrue(text.exists, "the 30B row shows the memory note")
+        let notes = app.staticTexts.matching(NSPredicate(format: "label CONTAINS %@", "Runs best with nothing else loaded")).count
+        print("[ThirtyBNote] notes on screen=\(notes) 30B frame=\(name.frame) note frame=\(text.frame)")
+        XCTAssertEqual(notes, 1, "only the 30B carries the note")
+        app.terminate()
+    }
+
     /// C4a — the cases the script prepares on the scratch Host (residency + residents):
     ///   A "pick-resident"  Always-ready; pick = Instruct (resident, off-manifest); curated qwen3:4b NOT resident. T's bug.
     ///   B "autoload"       Always-ready; pick = a model that is NOT resident → the ask loads it and answers.

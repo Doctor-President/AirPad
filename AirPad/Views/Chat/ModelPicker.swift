@@ -845,6 +845,12 @@ private struct ModelSheetRow: View {
                 action
             }
             Text(meta).font(.system(size: 12)).foregroundStyle(AppearancePalette.ink.opacity(0.55))
+            // live-17 (2b) — the 30B: which Mac it needs, said plainly, above the curated prose.
+            if let note = model.memoryNote {
+                Label(note, systemImage: "memorychip")
+                    .font(.system(size: 13, weight: .medium)).foregroundStyle(AppearancePalette.ink.opacity(0.75))
+                    .fixedSize(horizontal: false, vertical: true)
+            }
             if !model.capability.isEmpty {
                 Text(model.capability).font(.system(size: 13)).foregroundStyle(AppearancePalette.ink.opacity(0.75))
                     .fixedSize(horizontal: false, vertical: true)

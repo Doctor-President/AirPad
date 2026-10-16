@@ -64,6 +64,14 @@ say "Xcode: $(xcodebuild -version | head -1)  |  Key $ASC_KEY_ID  Team $TEAM_ID 
 #         distribution cert + App Store profile headlessly on first run.
 rm -rf "$ARCHIVE_PATH" "$EXPORT_DIR"
 DEV_TUNER_ARGS=()
+# live-19 (4) — TestFlight-only code (the speech-engine switch) compiles in via the TESTFLIGHT condition. The LAUNCH
+# submission must be archived with AIRPAD_APP_STORE_BUILD=1 so it is compiled out (App Review never sees it).
+if [[ "${AIRPAD_APP_STORE_BUILD:-0}" == "1" ]]; then
+  say "App Store build: TestFlight-only code compiled OUT"
+else
+  say "TestFlight build: TESTFLIGHT condition on (the speech-engine switch is compiled in)"
+  DEV_TUNER_ARGS+=("AIRPAD_TF_FLAG=TESTFLIGHT")
+fi
 if [[ "${AIRPAD_TF_DEV_TUNERS:-0}" == "1" ]]; then
   say "dev tuners: ON — DEBUG code compiled into the Release archive"
   DEV_TUNER_ARGS+=("SWIFT_ACTIVE_COMPILATION_CONDITIONS=\$(inherited) DEBUG")

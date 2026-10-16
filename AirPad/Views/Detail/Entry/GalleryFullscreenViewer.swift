@@ -72,7 +72,11 @@ struct GalleryFullscreenViewer: View {
 
     @State private var currentIndex: Int
     @State private var pendingDelete: GalleryItem? = nil
-    @State private var shareIdentity: ShareIdentity? = nil
+    #if DEBUG
+    @State private var restProbe = PagedRestProbe()   // live-19 (3d)
+    #endif
+    /// live-18 (0b) — the item's named copy for the share sheet (never the stored UUID file).
+    @State private var shareHandoff: DocumentHandoff? = nil
     /// Photos-style tap-to-toggle chrome (briefs/media-viewer-chrome.md).
     /// Both image and video poster pages flip this via their single-tap
     /// handlers; the play button on a poster page is a separate tap
@@ -334,6 +338,9 @@ struct GalleryFullscreenViewer: View {
                             onRequestPlay: { playingItem = gItem }
                         )
                         .containerRelativeFrame([.horizontal, .vertical])
+                        #if DEBUG
+                        .pagedRestProbe(restProbe, index: idx)
+                        #endif
                         .id(idx)
                     }
                 }
@@ -341,6 +348,9 @@ struct GalleryFullscreenViewer: View {
             }
             .scrollIndicators(.hidden)
             .scrollTargetBehavior(.paging)
+            #if DEBUG
+            .pagedRestLogger(restProbe, "viewer", leading: 0, pitch: nil, count: galleryItems.count)
+            #endif
             .scrollPosition(id: scrollPositionBinding)
             // Paging-only-at-zoom==1: when the visible page is zoomed,
             // its inner UIScrollView swallows horizontal drag to pan
@@ -461,8 +471,8 @@ struct GalleryFullscreenViewer: View {
             }
             Button("Cancel", role: .cancel) { pendingDelete = nil }
         }
-        .sheet(item: $shareIdentity) { identity in
-            ShareSheet(items: [identity.url])
+        .sheet(item: $shareHandoff) { handoff in
+            DocumentShareSheet(handoff: handoff)
         }
         // Release the playback audio session when the viewer is torn down.
         // Per-page pauses already happen on scroll-off / disappear, but the
@@ -650,6 +660,7 @@ struct GalleryFullscreenViewer: View {
             chromeGlyphButton("square.and.arrow.up") {
                 Task { await resolveAndShare(item) }
             }
+            .accessibilityIdentifier("galleryShare-\(item.id)")
             Spacer()
             chromeGlyphButton("trash", tint: .red) {
                 pendingDelete = item
@@ -693,7 +704,8 @@ struct GalleryFullscreenViewer: View {
             nodeID: nodeID,
             fallbackParentItem: parentItem
         ) else { return }
-        await MainActor.run { shareIdentity = ShareIdentity(url: url) }
+        let handoff = await DocumentHandoff.make(for: item, storedURL: url)
+        await MainActor.run { shareHandoff = handoff }
     }
 
     private func resolveAndCopy(_ item: GalleryItem) async {
@@ -924,11 +936,7 @@ private struct FullscreenVideoPlayer: View {
 private struct ViewerGlassCircle: ViewModifier {
     @ViewBuilder
     func body(content: Content) -> some View {
-        if #available(iOS 26.0, *) {
-            content.glassEffect(.regular.interactive(), in: .circle)
-        } else {
-            content.background(Circle().fill(.ultraThinMaterial))
-        }
+        content.glassEffect(.regular.interactive(), in: .circle)
     }
 }
 
@@ -963,21 +971,6 @@ private struct VideoPlayerRepresentable: UIViewControllerRepresentable {
             controller.player = player
         }
     }
-}
-
-/// Identity wrapper so `.sheet(item:)` re-presents cleanly if the user
-/// taps Share multiple times for the same URL.
-private struct ShareIdentity: Identifiable, Equatable {
-    let id = UUID()
-    let url: URL
-}
-
-private struct ShareSheet: UIViewControllerRepresentable {
-    let items: [Any]
-    func makeUIViewController(context: Context) -> UIActivityViewController {
-        UIActivityViewController(activityItems: items, applicationActivities: nil)
-    }
-    func updateUIViewController(_ controller: UIActivityViewController, context: Context) {}
 }
 
 /// Identity wrapper for `GalleryBody`'s viewer-start state. Wrapping the

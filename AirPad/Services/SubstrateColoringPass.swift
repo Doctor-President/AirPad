@@ -24,7 +24,6 @@ import CoreGraphics
 /// **Determinism:** node ordering inside loops is sorted by node ID, not
 /// dictionary order, so the same input produces the same output across
 /// launches.
-@available(iOS 17.0, *)
 enum SubstrateColoringPass {
 
     // MARK: - Tunables

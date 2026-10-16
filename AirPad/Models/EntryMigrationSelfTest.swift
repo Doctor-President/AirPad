@@ -32,7 +32,6 @@ import Foundation
 ///         (type preserved, mediaItems stays nil)
 ///   T14 — image entry without `file` (malformed legacy) converts to
 ///         `.imageVideo` with an empty mediaItems array — handled gracefully
-@available(iOS 17.0, *)
 @MainActor
 enum EntryMigrationSelfTest {
 

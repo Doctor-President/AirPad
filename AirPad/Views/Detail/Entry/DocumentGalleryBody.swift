@@ -106,17 +106,23 @@ private struct DocumentGalleryCarousel: View {
 
     private static let tileHeight: CGFloat = 180
     private static let tileWidth: CGFloat = 240
+    #if DEBUG
+    @State private var restProbe = PagedRestProbe()   // live-19 (3d)
+    #endif
 
     var body: some View {
         ScrollView(.horizontal, showsIndicators: false) {
             LazyHStack(spacing: 8) {
-                ForEach(documentItems) { documentItem in
+                ForEach(Array(documentItems.enumerated()), id: \.element.id) { i, documentItem in
                     DocumentGalleryTile(
                         documentItem: documentItem,
                         entryID: entryID,
                         nodeID: nodeID
                     )
                     .frame(width: Self.tileWidth, height: Self.tileHeight)
+                    #if DEBUG
+                    .pagedRestProbe(restProbe, index: i)
+                    #endif
                 }
             }
             .padding(.horizontal, 2)
@@ -124,6 +130,10 @@ private struct DocumentGalleryCarousel: View {
         }
         .frame(height: Self.tileHeight)
         .scrollTargetBehavior(.viewAligned)
+        #if DEBUG
+        .pagedRestLogger(restProbe, "documents", leading: 2,   // the content's .padding(.horizontal, 2)
+         pitch: Self.tileWidth + 8, count: documentItems.count)
+        #endif
     }
 }
 

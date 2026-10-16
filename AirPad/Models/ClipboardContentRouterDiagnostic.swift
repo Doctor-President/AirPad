@@ -50,7 +50,6 @@ import UniformTypeIdentifiers
 ///        `.movie`-conforming identifier rather than querying the
 ///        abstract `public.movie` (which returns nil on the typed-
 ///        data store).
-@available(iOS 17.0, *)
 @MainActor
 enum ClipboardContentRouterDiagnostic {
 

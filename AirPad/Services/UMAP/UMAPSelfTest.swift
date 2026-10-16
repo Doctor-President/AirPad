@@ -26,7 +26,6 @@ import Foundation
 // values are obvious by inspection or follow from invariants, catching
 // algorithmic regressions before they reach the slower host tests.
 
-@available(iOS 17.0, *)
 @MainActor
 enum UMAPSelfTest {
 

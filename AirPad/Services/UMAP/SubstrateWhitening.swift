@@ -32,7 +32,6 @@ import Accelerate
 /// **Numerics.** SVD runs in Double via LAPACK `dgesvd_` for stability;
 /// the persisted matrix is cast back to Float at storage (same precision
 /// floor `UMAPFittedModel.trainingPoints[*].coordND` already accepts).
-@available(iOS 17.0, *)
 enum SubstrateWhitening {
 
     struct Transform {
@@ -202,40 +201,37 @@ enum SubstrateWhitening {
     /// The input buffer is overwritten by LAPACK (standard convention) —
     /// caller passes `&` and treats the buffer as consumed.
     ///
-    /// Uses the legacy Fortran-style `dgesvd_` symbol from clapack.h.
-    /// The new C-style API in lapack.h has the same semantics but a
-    /// different prototype; the legacy symbol is still exported in
-    /// iOS 26 SDK and matches the pointer-passing convention this file
-    /// already needs for the LDA/LDU integer parameters.
-    private static func lapackSVD(
+    /// live-19 (4): Accelerate's current LAPACK interface (`-DACCELERATE_NEW_LAPACK`, set on the app target) — same
+    /// Fortran-style pointer convention, `__LAPACK_int` integers; the CLAPACK interface is deprecated since iOS 16.4.
+    static func lapackSVD(   // internal for LapackSVDSelfTest (live-19)
         matrix: inout [Double],
         rows: Int,
         cols: Int
     ) -> (uColMajor: [Double], singulars: [Double])? {
         var jobu: CChar = CChar(UInt8(ascii: "S"))
         var jobvt: CChar = CChar(UInt8(ascii: "N"))
-        var m = __CLPK_integer(rows)
-        var n = __CLPK_integer(cols)
-        var lda = __CLPK_integer(rows)
+        var m = __LAPACK_int(rows)
+        var n = __LAPACK_int(cols)
+        var lda = __LAPACK_int(rows)
         let kSV = min(rows, cols)
         var s = [Double](repeating: 0, count: kSV)
         var u = [Double](repeating: 0, count: rows * kSV)
-        var ldu = __CLPK_integer(rows)
+        var ldu = __LAPACK_int(rows)
         var vt = [Double](repeating: 0, count: 1)  // unused; jobvt='N'
-        var ldvt = __CLPK_integer(1)
-        var info: __CLPK_integer = 0
+        var ldvt = __LAPACK_int(1)
+        var info: __LAPACK_int = 0
 
         // Workspace query: lwork=-1 asks LAPACK to write the optimal
         // workspace size to work[0] without touching anything else.
         var workspaceQuery: Double = 0
-        var lworkQuery = __CLPK_integer(-1)
+        var lworkQuery = __LAPACK_int(-1)
         dgesvd_(&jobu, &jobvt, &m, &n, &matrix, &lda, &s,
                 &u, &ldu, &vt, &ldvt, &workspaceQuery, &lworkQuery, &info)
         guard info == 0 else { return nil }
 
         let optimalSize = max(1, Int(workspaceQuery))
         var work = [Double](repeating: 0, count: optimalSize)
-        var lwork = __CLPK_integer(optimalSize)
+        var lwork = __LAPACK_int(optimalSize)
         dgesvd_(&jobu, &jobvt, &m, &n, &matrix, &lda, &s,
                 &u, &ldu, &vt, &ldvt, &work, &lwork, &info)
         guard info == 0 else { return nil }

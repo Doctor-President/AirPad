@@ -27,7 +27,6 @@ import Foundation
 ///   6 — under `.automatic` the summary is still written (no behaviour change);
 ///       under `.propose` the write is withheld but the proposal is still recorded
 ///       (the posture seam is wired for Stage 3).
-@available(iOS 17.0, *)
 enum ProposalSelfTest {
 
     private static let date0 = Date(timeIntervalSince1970: 1_700_000_000)

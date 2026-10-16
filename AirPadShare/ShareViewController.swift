@@ -145,7 +145,7 @@ final class ShareViewController: UIViewController {
             }
         } else if provider.hasItemConformingToTypeIdentifier(UTType.image.identifier) {
             provider.loadItem(forTypeIdentifier: UTType.image.identifier) { item, _ in
-                completion(makeImageItem(from: item, nodeID: nodeID, now: now))
+                completion(makeImageItem(from: item, nodeID: nodeID, now: now, suggestedName: provider.suggestedName))
             }
         } else if provider.hasItemConformingToTypeIdentifier(UTType.url.identifier) {
             provider.loadItem(forTypeIdentifier: UTType.url.identifier) { item, _ in
@@ -204,17 +204,15 @@ final class ShareViewController: UIViewController {
         )
     }
 
-    private static func makeImageItem(from item: NSSecureCoding?, nodeID: String, now: Date) -> NodeItem? {
+    private static func makeImageItem(from item: NSSecureCoding?, nodeID: String, now: Date, suggestedName: String?) -> NodeItem? {
         var data: Data?
         if let url = item as? URL { data = try? Data(contentsOf: url) }
         else if let image = item as? UIImage { data = image.jpegData(compressionQuality: 0.85) }
         guard let data else { return nil }
         let itemID = UUID().uuidString
         stageMedia(nodeID: nodeID, itemID: itemID, data: data, ext: "jpg")
-        return NodeItem(
-            id: itemID, type: .image, createdAt: now, content: nil, file: "items/\(itemID).jpg",
-            description: nil, transcript: nil, durationSeconds: nil, url: nil, title: nil, preview: nil
-        )
+        return ShareImportItems.imageItem(itemID: itemID, ext: "jpg", suggestedName: suggestedName,
+                                          sourceURL: item as? URL, now: now)
     }
 
     /// Video / audio / documents — copied by file URL, never read into memory.

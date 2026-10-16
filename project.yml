@@ -3,7 +3,7 @@ name: AirPad
 options:
   bundleIdPrefix: com.doctorpresident
   deploymentTarget:
-    iOS: "18.0"
+    iOS: "26.0"
   createIntermediateGroups: true
   groupSortPosition: top
 
@@ -30,6 +30,12 @@ settings:
   base:
     SWIFT_VERSION: "5.9"
     DEVELOPMENT_TEAM: 8XM4B5F42Y
+    # live-19 (4) — empty here; `scripts/testflight_upload.sh` passes AIRPAD_TF_FLAG=TESTFLIGHT on the command line for
+    # TestFlight archives (not with AIRPAD_APP_STORE_BUILD=1). The APP target adds it to its compilation conditions, so
+    # TestFlight-only code (`#if DEBUG || TESTFLIGHT`: the speech-engine switch) is compiled out of App Store builds.
+    # A custom setting, not SWIFT_ACTIVE_COMPILATION_CONDITIONS itself: a command-line override of that would replace
+    # every target's own value (the widget extension's WIDGET_EXTENSION).
+    AIRPAD_TF_FLAG: ""
     # Pin automatic signing with the CURRENT identity. Without this, xcodegen
     # defaults CODE_SIGN_IDENTITY to the deprecated "iPhone Developer", which the
     # CoreDevice installer rejects on device with "The executable is not
@@ -37,7 +43,7 @@ settings:
     # Automatic is what Xcode expects; archive/Distribution is picked automatically.
     CODE_SIGN_STYLE: Automatic
     CODE_SIGN_IDENTITY: "Apple Development"
-    IPHONEOS_DEPLOYMENT_TARGET: "18.0"
+    IPHONEOS_DEPLOYMENT_TARGET: "26.0"
     # Default build-number "floor" for CFBundleVersion. Both Info.plists set
     # CFBundleVersion to $(CURRENT_PROJECT_VERSION); this is the ONLY place that
     # gives the variable a value for builds that don't pass it on the command
@@ -93,7 +99,7 @@ targets:
   AirPad:
     type: application
     platform: iOS
-    deploymentTarget: "18.0"
+    deploymentTarget: "26.0"
     sources:
       - path: AirPad
         excludes:
@@ -155,6 +161,10 @@ targets:
       base:
         PRODUCT_BUNDLE_IDENTIFIER: com.doctorpresident.airpad
         TARGETED_DEVICE_FAMILY: "1"
+        SWIFT_ACTIVE_COMPILATION_CONDITIONS: "$(inherited) $(AIRPAD_TF_FLAG)"   # live-19 (4) — see AIRPAD_TF_FLAG
+        # live-19 (4) — Accelerate's current LAPACK interface (the CLAPACK one is deprecated since iOS 16.4): the Map's
+        # SVDs (SubstrateWhitening, SubstrateBagLayout) call `dgesvd_` with `__LAPACK_int`.
+        OTHER_SWIFT_FLAGS: "$(inherited) -Xcc -DACCELERATE_NEW_LAPACK"
         CODE_SIGN_ENTITLEMENTS: AirPad/AirPad.entitlements
         DEVELOPMENT_TEAM: 8XM4B5F42Y
         # Re-pin signing at the TARGET level too. The project-level pin (see
@@ -265,7 +275,7 @@ targets:
   AirPadShare:
     type: app-extension
     platform: iOS
-    deploymentTarget: "18.0"
+    deploymentTarget: "26.0"
     sources:
       - path: AirPadShare
         excludes:
@@ -325,7 +335,7 @@ targets:
   AirPadWidgets:
     type: app-extension
     platform: iOS
-    deploymentTarget: "18.0"
+    deploymentTarget: "26.0"
     sources:
       - path: AirPadWidgets
         excludes:
@@ -369,7 +379,7 @@ targets:
   AirPadUITests:
     type: bundle.ui-testing
     platform: iOS
-    deploymentTarget: "18.0"
+    deploymentTarget: "26.0"
     sources:
       - path: AirPadUITests
     dependencies:

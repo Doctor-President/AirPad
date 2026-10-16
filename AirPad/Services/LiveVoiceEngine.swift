@@ -11,7 +11,7 @@ import Speech
 //   1. iOS 26+: `SpeechAnalyzer` + `SpeechTranscriber` — most accurate; takes no vocabulary hints.
 //   2. iOS 26+ without it (device/locale/model): the same analyzer session with `DictationTranscriber` + the app words.
 //      Long-form by design: one session for the whole take, no recording-length cliff.
-//   3. iOS 18–25, or iOS 26 before a model is on the phone: `SFSpeechRecognizer` on-device buffer requests, rotated
+//   3. Before a Speech / Dictation model is on the phone: `SFSpeechRecognizer` on-device buffer requests, rotated
 //      every `segmentSeconds` (Apple caps a task at about a minute) with each segment's final words carried over.
 //   4. none of them: "Transcript unavailable — …"; the audio is kept.
 // Platform-neutral (Foundation + AVFoundation + Speech) so the Mac bench compiles this exact file.
@@ -153,7 +153,6 @@ protocol LiveTranscribing: AnyObject, Sendable {
 
 // MARK: - Tiers 1–2 — iOS 26: SpeechAnalyzer
 
-@available(iOS 26.0, macOS 26.0, *)
 enum LiveModule {
     case dictation(DictationTranscriber)
     case speech(SpeechTranscriber)
@@ -166,7 +165,6 @@ enum LiveModule {
     }
 }
 
-@available(iOS 26.0, macOS 26.0, *)
 final class AnalyzerLiveTranscriber: LiveTranscribing, @unchecked Sendable {
     private let analyzer: SpeechAnalyzer
     private let live: LiveModule
@@ -247,7 +245,7 @@ final class AnalyzerLiveTranscriber: LiveTranscribing, @unchecked Sendable {
     }
 }
 
-// MARK: - Tier 3 — iOS 18–25 (and iOS 26 before a model is installed): SFSpeechRecognizer, rotated
+// MARK: - Tier 3 — before a Speech / Dictation model is installed: SFSpeechRecognizer, rotated
 
 /// One tier-3 recogniser callback, reduced to what the transcriber uses (injectable: `-RecorderSaveSelfTest`).
 struct RecognizerEvent: Sendable {

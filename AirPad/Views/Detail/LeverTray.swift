@@ -92,8 +92,8 @@ struct LeverTray: View {
             : "AirPad's optional private model handles a wider range of subjects."
     }
 
-    /// STATE 2 (no provider) copy — NO model exists to run on this device (iOS 18–25 / no
-    /// Apple Intelligence, private model not downloaded). Distinct from a refusal (nothing ran,
+    /// STATE 2 (no provider) copy — NO model exists to run on this device (no Apple
+    /// Intelligence, private model not downloaded). Distinct from a refusal (nothing ran,
     /// so NO Apple attribution) and from an error (not retryable). Offers the download; the "Set
     /// up the private model" CTA is supplied by `onSetUp`. ★ T's wording (2026-08-14): "this
     /// device" (a hardware fact, not a possession); names the three concrete capabilities, not
@@ -128,7 +128,7 @@ struct LeverTray: View {
                         )
                         .clipShape(RoundedRectangle(cornerRadius: 12))
                     } else if case .unavailable = failure {
-                        // STATE 2 — NO model exists to run (iOS 18–25 / no Apple Intelligence,
+                        // STATE 2 — NO model exists to run (no Apple Intelligence,
                         // private model not downloaded). NOT a refusal (nothing ran, nothing
                         // declined → no Apple attribution) and NOT an error to retry (there is no
                         // provider to retry against). Reuse the capability-boundary SURFACE: it

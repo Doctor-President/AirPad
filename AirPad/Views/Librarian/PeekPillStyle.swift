@@ -35,11 +35,7 @@ enum PeekPillMaterial {
         case .ultraThin: shape.fill(.ultraThinMaterial)
         case .regular:   shape.fill(.regularMaterial)
         case .glass:
-            if #available(iOS 26.0, *) {
-                Color.clear.glassEffect(.regular, in: shape)
-            } else {
-                shape.fill(.regularMaterial)
-            }
+            Color.clear.glassEffect(.regular, in: shape)
         }
     }
 }

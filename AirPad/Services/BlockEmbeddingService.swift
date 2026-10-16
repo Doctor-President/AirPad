@@ -14,7 +14,6 @@ import Foundation
 /// **Threading:** `@MainActor` to match `CorpusStore`. The actual BGE inference
 /// runs off-main on the `CardEmbeddingService` actor; `rebuild` still yields 5ms
 /// between embeds so a many-block node's main-actor orchestration stays smooth.
-@available(iOS 17.0, *)
 @MainActor
 final class BlockEmbeddingService {
 

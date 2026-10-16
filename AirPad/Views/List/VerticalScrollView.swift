@@ -201,6 +201,8 @@ struct VerticalScrollView: View {
                             shadowOpacity: cardShadowOpacity
                         )
                         .frame(height: cardHeight)
+                        .accessibilityElement(children: .contain)   // live-19 (3a) — findable by id, like the grid's tiles
+                        .accessibilityIdentifier("verticalCard-\(node.id)")
                         // #3 — shared focus glow (matches NodeCardView's 30pt face).
                         .focusHighlight(nodeID: node.id, cornerRadius: 30)
                         // BUG 10 — shared selection treatment (checkmark + Klein outline).

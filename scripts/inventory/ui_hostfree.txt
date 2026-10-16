@@ -76,3 +76,23 @@ ArcBVoiceTranscript/testAppendTo_afterEditStillTyping
 HeroHeaderFlash/testOpenFromCardView_firstFrameIsThePhoto
 HeroHeaderFlash/testOpenFromListView_firstFrameIsThePhoto
 HeroHeaderFlash/testOpenFromRecents_firstFrameIsThePhoto
+# live-17 (1) — a document leaves its card under its display name: the viewer's title bar, what the viewer (and its own
+# Share) is handed, and the item's "…" → Share all read `<display name>.<ext>`, never the stored UUID; the copy is removed.
+DocumentHandoffName/testViewerTitleIsTheDocumentsName
+DocumentHandoffName/testShareHandsTheDocumentsName
+PhotoHandoffName/testShareHandsThePhotosName
+# live-17 (2a) — a Librarian answer citing by RANGE ("[1–3]", "[1-12]") renders superscripts + one chip per entry covered.
+RangeCitationChips/testRangeMarkersRenderAsChips
+# live-18 (1) — Card view's coverflow: at EVERY rest (slow drags past card 20 and back, fast drags, flicks) the centred card is flat + centred (< 0.5 pt, < 0.1°) and the track's snapped slot is centred. RED on iOS 27 before the one-stride track.
+CarouselRestGeometry/testEveryRestIsFlatAndCentred
+# live-19 (3a) — iOS 27 `scrollTo` (FB24968838): the real focus request at five far, never-realised rows lands on screen
+# on the vertical cards, the grid and the List; a long synthetic chat opens on its last answer.
+ScrollToLanding/testVerticalCardsLand
+ScrollToLanding/testGridLands
+ScrollToLanding/testListLands
+ScrollToLanding/testLongChatOpensOnItsLastAnswer
+# live-19 (3b) — a tap on a superscript citation inside selectable answer text reaches its handler (not a selection).
+SelectableTextTaps/testSuperscriptTapReachesItsCitation
+# live-19 (3d) — every rest of the photo viewer's pager and a document carousel sits aligned, exact pitch.
+PagedRestGeometry/testPhotoViewerPagesRestAligned
+PagedRestGeometry/testDocumentCarouselRestsAligned

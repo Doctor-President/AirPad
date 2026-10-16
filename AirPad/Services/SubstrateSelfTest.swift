@@ -10,7 +10,6 @@ import Foundation
 ///
 /// Returns a one-line summary string suitable for inline display. Every
 /// failure is described; on full pass, returns `"OK · N tests"`.
-@available(iOS 17.0, *)
 @MainActor
 enum SubstrateSelfTest {
 

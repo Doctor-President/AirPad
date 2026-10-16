@@ -7,7 +7,7 @@ import UIKit
 /// **Why a UIViewRepresentable, not pure SwiftUI:** iOS 17's SwiftUI
 /// ScrollView has no public API for per-frame programmatic content-offset
 /// mutation. `ScrollViewReader.scrollTo(_:anchor:)` only jumps to known
-/// IDs; iOS 18's `ScrollPosition` would work but we target iOS 17. The
+/// IDs; iOS 18's `ScrollPosition` would work but we targeted iOS 17 when this was written. The
 /// pragmatic path is to introspect for the enclosing UIScrollView (walk
 /// up `superview` from a 1-pt sentinel view embedded in the list content)
 /// and drive `contentOffset.y` directly via a `CADisplayLink` while the
@@ -18,7 +18,6 @@ import UIKit
 /// this to `dragTranslation` for both the lifted card's visual offset and
 /// the slot-shift math, so the card advances through slots as the list
 /// scrolls past it — exactly equivalent to the user moving the finger.
-@available(iOS 17.0, *)
 @MainActor
 struct AutoScrollDriver: UIViewRepresentable {
 

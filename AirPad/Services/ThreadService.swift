@@ -24,7 +24,6 @@ struct ThreadSuggestion: Identifiable, Equatable {
 /// thread. Tag-friction and convergent threads are deferred per the brief.
 ///
 /// All work is deterministic. No FM call in the threads path.
-@available(iOS 17.0, *)
 @MainActor
 enum SubstrateThreadService {
 

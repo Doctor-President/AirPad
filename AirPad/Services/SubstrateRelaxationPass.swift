@@ -44,7 +44,6 @@ import CoreGraphics
 /// **Coordinate space:** inputs and outputs are canvas-point space (the
 /// same `CanvasPosition` units `SubstrateCanvasLayoutAdapter.Mapped`
 /// emits). Node radii are in points. No UMAP-space conversion needed.
-@available(iOS 17.0, *)
 enum SubstrateRelaxationPass {
 
     // MARK: - Tunables

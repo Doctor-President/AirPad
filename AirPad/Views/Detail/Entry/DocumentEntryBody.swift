@@ -26,7 +26,7 @@ import UIKit
 /// intend either append or new entry.
 ///
 /// Stage 4.6 commit 4 — preview-block tap → Quick Look via
-/// `DocumentQuickLookViewer` sheet driven by `DocumentPreviewIdentity`
+/// `DocumentQuickLookViewer` sheet driven by a `DocumentHandoff` (live-17)
 /// (`@State` so each tap presents fresh, same pattern as
 /// `DocumentGalleryTile`). Top-right overlaid `…` menu surfaces Open /
 /// Share / Copy filename — Delete intentionally omitted on the
@@ -66,8 +66,8 @@ struct DocumentEntryBody: View {
 
     @State private var thumbnail: UIImage? = nil
     @State private var showingAppendSheet = false
-    @State private var previewIdentity: DocumentPreviewIdentity? = nil
-    @State private var shareIdentity: DocumentShareIdentity? = nil
+    @State private var previewIdentity: DocumentHandoff? = nil
+    @State private var shareIdentity: DocumentHandoff? = nil
 
     private static let thumbnailHeight: CGFloat = 120
 
@@ -101,11 +101,11 @@ struct DocumentEntryBody: View {
             }
         }
         .sheet(item: $previewIdentity) { identity in
-            DocumentQuickLookViewer(url: identity.url)
+            DocumentViewerSheet(handoff: identity)
                 .ignoresSafeArea()
         }
         .sheet(item: $shareIdentity) { identity in
-            DocumentShareSheet(items: [identity.url])
+            DocumentShareSheet(handoff: identity)
         }
         .task { await extractIfNeeded() }
     }
@@ -126,6 +126,7 @@ struct DocumentEntryBody: View {
             }
         }
         .frame(height: Self.thumbnailHeight)
+        .accessibilityIdentifier("documentOpen-\(documentItem?.id ?? item.id)")
         .clipShape(RoundedRectangle(cornerRadius: 8))
         .contentShape(Rectangle())
         .onTapGesture { Task { await openInQuickLook() } }
@@ -219,20 +220,19 @@ struct DocumentEntryBody: View {
         }
         .padding(6)
         .accessibilityLabel("Document options")
+        .accessibilityIdentifier("documentMenu-\(documentItem?.id ?? item.id)")
     }
 
     @MainActor
     private func openInQuickLook() async {
         guard let docItem = documentItem else { return }
-        guard let url = await store.documentFileURL(for: docItem, nodeID: nodeID) else { return }
-        previewIdentity = DocumentPreviewIdentity(url: url)
+        previewIdentity = await store.documentHandoff(for: docItem, nodeID: nodeID)
     }
 
     @MainActor
     private func prepareShare() async {
         guard let docItem = documentItem else { return }
-        guard let url = await store.documentFileURL(for: docItem, nodeID: nodeID) else { return }
-        shareIdentity = DocumentShareIdentity(url: url)
+        shareIdentity = await store.documentHandoff(for: docItem, nodeID: nodeID)
     }
 
     private func extractIfNeeded() async {

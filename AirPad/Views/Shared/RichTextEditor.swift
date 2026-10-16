@@ -2541,7 +2541,7 @@ final class RichTextUIView: UITextView {
     //   • textDidChange → user typing / inline growth (Stage 2.1 contract).
     //   • NSTextStorage.didProcessEditing → programmatic storage edits (applyInPlace
     //     re-style, which does not post textDidChange).
-    //   • traitCollectionDidChange (preferredContentSizeCategory) → Dynamic Type;
+    //   • a preferredContentSizeCategory trait change (registered in init) → Dynamic Type;
     //     headings scale live (c71416e).
     //   • WIDTH is NOT invalidated — it's part of the KEY (rotation / iPad split →
     //     new width → automatic miss).
@@ -2600,6 +2600,11 @@ final class RichTextUIView: UITextView {
     override init(frame: CGRect, textContainer: NSTextContainer?) {
         super.init(frame: frame, textContainer: textContainer)
         setupPlaceholder()
+        // Dynamic Type → heights change (c71416e). live-19 (4): trait registration (`traitCollectionDidChange` is
+        // deprecated since iOS 17); fires only when the content size category changes.
+        registerForTraitChanges([UITraitPreferredContentSizeCategory.self]) { (view: Self, _: UITraitCollection) in
+            view.invalidateLayoutHeightCache()
+        }
         NotificationCenter.default.addObserver(
             self,
             selector: #selector(textDidChangeNotification),
@@ -2651,13 +2656,6 @@ final class RichTextUIView: UITextView {
         cacheVersion = layoutVersion
         cacheFit = fit
         return fit
-    }
-
-    override func traitCollectionDidChange(_ previous: UITraitCollection?) {
-        super.traitCollectionDidChange(previous)
-        if previous?.preferredContentSizeCategory != traitCollection.preferredContentSizeCategory {
-            invalidateLayoutHeightCache()   // Dynamic Type → heights change (c71416e)
-        }
     }
 
     private func setupPlaceholder() {

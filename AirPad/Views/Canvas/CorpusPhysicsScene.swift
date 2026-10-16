@@ -778,8 +778,9 @@ final class CorpusPhysicsScene: SKScene {
                 let home = nodeRestingPositions[nodeID] ?? sprite.position
                 let sy = (home.y - camPos.y) / max(cameraScale, 0.0001)
                 let yn = Float(min(max(0.5 - sy / size.height, 0), 1))
-                sprite.setValue(SKAttributeValue(float: MapCompTuning.defocus(yn) * readingWeight),
-                                forAttribute: "a_defocus")
+                // live-19 (4): the per-node attribute API lives on SKSpriteNode (SKNode's is deprecated since iOS 10).
+                (sprite as? SKSpriteNode)?.setValue(SKAttributeValue(float: MapCompTuning.defocus(yn) * readingWeight),
+                                                    forAttribute: "a_defocus")
             }
             guard let intrinsic = nodeIntrinsicRadii[nodeID] else { continue }
             // On-screen diameter (pt) = worldDiameter · spriteScale / cameraScale.
@@ -865,8 +866,10 @@ final class CorpusPhysicsScene: SKScene {
     /// larger UV feather (still ~1px on screen). `a_geom.x` (stroke width) is PRESERVED —
     /// it's the orb's visual weight, not the softness. Called only in `applyOrbScales`,
     /// which already runs per-frame ONLY when the zoom changed (or the annulus is on).
-    private func updateOrbEdgeAA(_ sprite: SKNode, onScreen: CGFloat) {
-        guard let geom = sprite.value(forAttributeNamed: "a_geom")?.vectorFloat2Value else { return }
+    private func updateOrbEdgeAA(_ node: SKNode, onScreen: CGFloat) {
+        // live-19 (4): the per-node attribute API lives on SKSpriteNode (SKNode's is deprecated since iOS 10).
+        guard let sprite = node as? SKSpriteNode,
+              let geom = sprite.value(forAttributeNamed: "a_geom")?.vectorFloat2Value else { return }
         let csf = glyphContentScale
         let onScreenPx = max(onScreen * csf, 0.5)
         let aa = min(Self.orbEdgeMaxAA, max(Self.orbEdgeMinAA, Float(csf / onScreenPx)))
@@ -4105,8 +4108,7 @@ final class CorpusPhysicsScene: SKScene {
         // is on and the substrate has computed an HSB for this node, render
         // it. Otherwise fall through to the legacy neighborhood palette so
         // non-rankable / meta / pre-fit corpora keep their tag-driven colors.
-        if #available(iOS 17.0, *),
-           FeatureFlags.substrateLayout,
+        if FeatureFlags.substrateLayout,
            let hsb = SubstrateLayoutService.shared.colorHSB?[node.id] {
             return UIColor(
                 hue: CGFloat(hsb.hue),

@@ -30,7 +30,6 @@ import Observation
 /// **Lifecycle:** lazy-load on first method call; persist after every
 /// `resolvePersistentIDs`. Mirrors `SubstrateLayoutService` so a single
 /// service-init flow doesn't have to know about both.
-@available(iOS 17.0, *)
 struct SubstrateClusterIdentity: Codable, Hashable, Identifiable {
     /// Stable across refits. Assigned at first appearance, never reused.
     let id: UUID
@@ -83,14 +82,12 @@ extension SubstrateClusterIdentity {
 /// `.honest` is the coherence-gate fallback: applied when the cluster is
 /// too incoherent for FM to name without inventing a theme (typically
 /// "Mixed (N notes)" or top-tag concatenation).
-@available(iOS 17.0, *)
 enum LabelSource: String, Codable, Hashable {
     case fm
     case user
     case honest
 }
 
-@available(iOS 17.0, *)
 private struct SubstrateClusterRegistryFile: Codable {
     /// File schema version. Bump on migration; today only 1.
     var formatVersion: Int
@@ -110,7 +107,6 @@ private struct SubstrateClusterRegistryFile: Codable {
     var matchThreshold: Double?
 }
 
-@available(iOS 17.0, *)
 @Observable
 @MainActor
 final class SubstrateClusterRegistry {

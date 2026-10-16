@@ -217,6 +217,12 @@ struct NodeItem: Codable, Identifiable, Equatable {
     /// non-text item and on legacy JSON — no `entrySchemaVersion` bump.
     var firstParaExplicitBody: Bool?
 
+    /// live-19 (2) — a photo shared INTO AirPad keeps its own file name: the share extension stages a bare `.image`
+    /// item and records the provider's `suggestedName` here (UUID/temp names dropped, `DocumentNaming.realName`).
+    /// Carried into `GalleryItem.originalName` when the item becomes a gallery item (`coalesceImportedGallery`, the
+    /// v1→v2 entry migration). Optional + decode-tolerant: nil on everything else.
+    var originalName: String?
+
     enum CodingKeys: String, CodingKey {
         case id, type, content, file, description, transcript, url, title, preview
         case createdAt = "created_at"
@@ -244,6 +250,7 @@ struct NodeItem: Codable, Identifiable, Equatable {
         case field
         case attributeTile = "attribute_tile"
         case firstParaExplicitBody = "first_para_explicit_body"
+        case originalName = "original_name"
     }
 }
 
@@ -353,6 +360,11 @@ struct GalleryItem: Codable, Identifiable, Equatable {
     /// iOS-27-gated FM description — slot in alongside without a migration.
     /// Optional + decode-tolerant: absent on every existing item.
     var analysis: ImageAnalysis? = nil
+    /// live-18 (0b) — the photo's / video's own file name where the source offered one (the Photos picker's
+    /// `suggestedName`, e.g. "IMG_4012"; a shared file's name), never a machine-made one. Share hands the item out
+    /// under it (`DocumentHandoff.make(for: GalleryItem…)`), else "Photo · <date>". Optional + decode-tolerant:
+    /// absent on every existing item, and on camera captures and pasted images (they have no name).
+    var originalName: String? = nil
 
     enum CodingKeys: String, CodingKey {
         case id, file, caption
@@ -360,6 +372,7 @@ struct GalleryItem: Codable, Identifiable, Equatable {
         case aspectRatio = "aspect_ratio"
         case capturedAt = "captured_at"
         case analysis = "image_analysis"
+        case originalName = "original_name"
     }
 }
 

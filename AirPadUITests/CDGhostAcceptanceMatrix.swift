@@ -57,15 +57,27 @@ final class CDGhostAcceptanceMatrix: XCTestCase {
         if tip.waitForExistence(timeout: 1), app.buttons["Continue"].exists { app.buttons["Continue"].tap() }
     }
 
+    /// live-19 — after the note is typed the screen has scrolled and the title can sit under the status bar (y ≈ 0); a
+    /// tap there is the status bar's scroll-to-top on iOS 27, not the field (2 of 4 iOS 27 runs). Bring it down first.
+    private func revealTitle(_ app: XCUIApplication, _ title: XCUIElement) {
+        for _ in 0..<3 where title.frame.minY < 80 {
+            app.coordinate(withNormalizedOffset: CGVector(dx: 0.5, dy: 0.22))
+                .press(forDuration: 0.05, thenDragTo: app.coordinate(withNormalizedOffset: CGVector(dx: 0.5, dy: 0.5)))
+            Thread.sleep(forTimeInterval: 0.4)
+        }
+    }
+
     private func typeTitle(_ app: XCUIApplication, _ text: String) {
         let title = field(app, "titleField")
         XCTAssertTrue(title.waitForExistence(timeout: 5), "title field should exist")
+        revealTitle(app, title)
         title.tap()
         title.typeText(text)
     }
 
     private func clearTitle(_ app: XCUIApplication) {
         let title = field(app, "titleField")
+        revealTitle(app, title)
         title.tap()
         // Select-all + delete via the keyboard: works on the focused title field.
         if let current = title.value as? String, !current.isEmpty, current != "Title" {

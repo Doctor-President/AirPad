@@ -1028,6 +1028,30 @@ final class ChatSession {
         messages.append(Message(role: .assistant, text: r.text, citations: r.citations.isEmpty ? nil : r.citations))
     }
 
+    /// live-17 (2a) — `-RangeCitationDemo YES`: a synthetic Library answer that cites by RANGE ("[1–3]" with an en
+    /// dash, "[1-12]" with a hyphen), streamed CHARACTER BY CHARACTER through the real answer path
+    /// (`beginAnswerStream` → `appendAnswerDelta` → `settleAnswer` → `numberer.result`) against a synthetic 12-entry
+    /// packet, then committed the way a live turn is. Logs every displayed state that showed a raw range.
+    @MainActor
+    func debugRangeCitationTurn() {
+        let packet = (1...12).map {
+            Message.Citation(index: $0, nodeID: "demo-range-\($0)", title: "Harbour note \($0)", snippet: "A synthetic packet entry.")
+        }
+        let answer = "Low water at the north wall shows up in three of your surveys [1–3]. Every mooring note mentions the swivel [1-12]."
+        messages.append(Message(role: .user, text: "What do my harbour notes say about low water?"))
+        beginAnswerStream(candidates: packet)
+        var rawShown = 0
+        for ch in answer {
+            appendAnswerDelta(String(ch))
+            if streamingText.range(of: #"\[\s*\d{1,2}\s*[-‐‑–—−]"#, options: .regularExpression) != nil { rawShown += 1 }
+        }
+        settleAnswer()
+        let r = numberer.result()
+        streamingText = ""
+        print("[RangeCitationDemo] committed=\(r.text) chips=\(r.citations.count) rawRangeFramesWhileStreaming=\(rawShown)")
+        messages.append(Message(role: .assistant, text: r.text, citations: r.citations.isEmpty ? nil : r.citations))
+    }
+
     /// Headless verification hook — inject a completed activity row (from a REAL
     /// executor run) so `-Screen` can screenshot the scrape + the collapsible row
     /// without a live LM Studio loop.

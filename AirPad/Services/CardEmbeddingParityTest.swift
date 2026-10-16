@@ -12,7 +12,6 @@ import Foundation
 /// Fired on demand from the dev inspect view (mirrors `SubstrateSelfTest`). A
 /// token-ID mismatch is a tokenizer bug: it is reported with the diverging text,
 /// not patched around.
-@available(iOS 17.0, *)
 enum CardEmbeddingParityTest {
 
     private struct Fixture: Decodable {

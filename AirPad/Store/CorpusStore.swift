@@ -169,6 +169,10 @@ final class CorpusStore {
         didSet { Self.saveTagLastUsedAt(tagLastUsedAt) }
     }
     var canvasLayout: CanvasLayout = CanvasLayout(version: 1, updatedAt: Date(), positions: [:])
+    /// live-17 (2c) — true once the launch `load()` has assigned the layout from disk. Until then a capture's position
+    /// lives in memory only and the load merges + persists it: saving earlier would write a layout holding just that
+    /// capture over every saved position (the cold-launch race).
+    private var canvasLayoutLoaded = false
 
     /// Persisted CARD-basis geography for the tag-anchored Map, so a relaunch
     /// RESTORES the last layout verbatim instead of re-deriving + animating it
@@ -1048,7 +1052,19 @@ final class CorpusStore {
                       + "liveKept=\(live.keys.filter(loadedIDs.contains).count) createdDuringLoad=\(live.keys.filter { !loadedIDs.contains($0) }.count)")
             }
             nodes = merged.sorted { $0.createdAt > $1.createdAt }
-            canvasLayout = layout ?? CanvasLayout(version: 1, updatedAt: Date(), positions: [:])
+            // live-17 (2c) — MERGE the disk layout with the live one, like the nodes above: a position added while the
+            // load ran (a capture during launch) is the live copy and wins; every saved position is kept. When the merge
+            // differs from disk, persist it — the capture held off saving (it had only its own position).
+            var mergedLayout = layout ?? CanvasLayout(version: 1, updatedAt: Date(), positions: [:])
+            mergedLayout.positions.merge(canvasLayout.positions) { _, live in live }
+            let layoutChanged = mergedLayout.positions != (layout?.positions ?? [:])
+            if layoutChanged { mergedLayout.updatedAt = Date() }
+            canvasLayout = mergedLayout
+            canvasLayoutLoaded = true
+            if layoutChanged {
+                print("[Store] live-17 load merged the canvas layout: disk=\(layout?.positions.count ?? 0) merged=\(mergedLayout.positions.count)")
+                try? await service.saveCanvasLayout(canvasLayout)
+            }
             // Restore the persisted tag-anchored Map geography (map-relayout fix).
             // `try?` so a schema drift decodes to nil → the Map re-forms + re-persists
             // rather than crashing on a stale artifact (the brief's "loads silently
@@ -1111,881 +1127,898 @@ final class CorpusStore {
             // prints the schema/formatter self-test result; `-FieldFixtureNode`
             // injects the twelve-kind fixture (definitions + one node) so the
             // card stat line and Attributes section can be screenshotted.
-            if #available(iOS 17.0, *) {
-                if ProcessInfo.processInfo.arguments.contains("-FieldSelfTest") {
-                    // NSLog (not print) so the result flushes unbuffered to the
-                    // console even when the harness kills the app before exit.
-                    NSLog("[FieldValueSelfTest] %@", FieldValueSelfTest.run())
+            if ProcessInfo.processInfo.arguments.contains("-FieldSelfTest") {
+                // NSLog (not print) so the result flushes unbuffered to the
+                // console even when the harness kills the app before exit.
+                NSLog("[FieldValueSelfTest] %@", FieldValueSelfTest.run())
+            }
+            // THE LEVER — Stage 1 (ws-lever.md § C6). Pure in-memory schema /
+            // recordProposal self-test; writes nothing to the corpus.
+            // Brief CI (CI-2) — the computed-facts layer's pure self-test (parser, ages, windows, matchers,
+            // fields line, determinism). Pure in-memory; no corpus access.
+            if ProcessInfo.processInfo.arguments.contains("-ComputedFactsSelfTest") {
+                NSLog("[ComputedFactsSelfTest] %@", ComputedFactsSelfTest.run())
+            }
+            // Brief CH ruling 8 — the citation numberer (prefix invariant, orphan strip, prose references).
+            if ProcessInfo.processInfo.arguments.contains("-CitationNumberSelfTest") {
+                NSLog("[CitationNumberSelfTest] %@", CitationNumberSelfTest.run())
+            }
+            // CH Session 2 — web grounding: URL / source-list filter (prefix invariant), dates, ranking, question shape.
+            if ProcessInfo.processInfo.arguments.contains("-WebGroundingSelfTest") {
+                NSLog("[WebGroundingSelfTest] %@", WebGroundingSelfTest.run())
+            }
+            // CH Session 2 (C4 / C4a) — the shared active-model derivation + friendly names.
+            if ProcessInfo.processInfo.arguments.contains("-ModelPickSelfTest") {
+                NSLog("[ModelPickSelfTest] %@", await MainActor.run { ModelPickSelfTest.run() })
+            }
+            if ProcessInfo.processInfo.arguments.contains("-ProposalSelfTest") {
+                NSLog("[ProposalSelfTest] %@", ProposalSelfTest.run())
+            }
+            // THE LEVER — Stage 2b. Pure firing/variant-resolution self-test
+            // for the shipped-empty state (config-independent logic).
+            if ProcessInfo.processInfo.arguments.contains("-ShimmerSelfTest") {
+                NSLog("[ShimmerSelfTest] %@", ShimmerSelfTest.run())
+            }
+            // THE ENRICHMENT GATE — replays the four capture scenarios against
+            // the real predicate and reports FM calls per note, before vs after.
+            // Pure in-memory; no FM, no corpus access.
+            if ProcessInfo.processInfo.arguments.contains("-EnrichmentGateSelfTest") {
+                NSLog("[EnrichmentGateSelfTest] %@", EnrichmentGateSelfTest.run())
+            }
+            // Brief CD3 (BP2) — trigger tightening: eager PASSES per capture, before vs after the
+            // 2 s pause + 9 s floor, over three capture timelines. Pure; no FM, no corpus.
+            if ProcessInfo.processInfo.arguments.contains("-GhostTriggerSelfTest") {
+                NSLog("[GhostTriggerSelfTest] %@", GhostTriggerSelfTest.run())
+            }
+            // Brief BL — pure link follow-up logic (cleanTitle every source, article-first
+            // readable, linkItems lift + snapshot preservation, gate input). No net/FM.
+            if ProcessInfo.processInfo.arguments.contains("-BLLinkSelfTest") {
+                NSLog("[LinkFollowupsSelfTest] %@", LinkFollowupsSelfTest.run())
+            }
+            #if DEBUG
+            // Brief CD #1 — identical text in TWO entries must each get their OWN proposals (a
+            // duplicate must not suppress the second entry's ghost). Needs `-StubAuthorModel`.
+            if ProcessInfo.processInfo.arguments.contains("-DupProposalSelfTest") {
+                NSLog("[DupProposalSelfTest] %@", await runDupProposalSelfTest())
+            }
+            // Arc B — an extracted transcript copy counts once; Append to… lands at the end.
+            if ProcessInfo.processInfo.arguments.contains("-ArcBDedupSelfTest") {
+                NSLog("%@", await runArcBDedupSelfTest())
+            }
+            if ProcessInfo.processInfo.arguments.contains("-AppTermLeakSelfTest") {
+                NSLog("%@", AppTermLeak.selfTest())
+            }
+            if ProcessInfo.processInfo.arguments.contains("-OnDeviceSpeechSelfTest") {
+                NSLog("%@", OnDeviceSpeech.selfTest())
+            }
+            if ProcessInfo.processInfo.arguments.contains("-SpeechEngineTestingSelfTest") {
+                NSLog("%@", SpeechEngineTesting.selfTest())
+            }
+            // live-13 (1) — Done saves what the recorder showed, on every tier (tier 3 driven by injected results).
+            if ProcessInfo.processInfo.arguments.contains("-RecorderSaveSelfTest") {
+                NSLog("%@", await RecorderSaveSelfTest.run())
+            }
+            // live-13 (3) — Paste Pad sorts a paste by what it is (a selection is text; only files are documents).
+            if ProcessInfo.processInfo.arguments.contains("-PastePadTypeSelfTest") {
+                NSLog("%@", await PastePadTypeSelfTest.run())
+            }
+            // live-13 (4) — imported documents are named from their real name, on every import path.
+            if ProcessInfo.processInfo.arguments.contains("-DocumentNamingSelfTest") {
+                NSLog("%@", await runDocumentNamingSelfTest())
+            }
+            // live-15 (1) — a document is named from its own text, right after another capture, on every import path.
+            if ProcessInfo.processInfo.arguments.contains("-DocumentNamingInputSelfTest") {
+                NSLog("%@", await runDocumentNamingInputSelfTest())
+            }
+            // live-17 (2c) — a capture during the launch load keeps every saved canvas position.
+            if ProcessInfo.processInfo.arguments.contains("-CanvasLayoutRaceSelfTest"), !Self.canvasLayoutRaceStarted {
+                Self.canvasLayoutRaceStarted = true   // the test calls load() itself, which lands back here
+                NSLog("%@", await runCanvasLayoutRaceSelfTest())
+            }
+            // live-16 — the shared display-image cache: decode time/memory, hit + hand-off, peak, memory warning.
+            if ProcessInfo.processInfo.arguments.contains("-DisplayImageCacheSelfTest") {
+                NSLog("%@", await DisplayImageCacheSelfTest.run(store: self))
+            }
+            // live-13 — real recognisers on a real iPhone, fed synthetic speech files (CC copies them in).
+            if let i = ProcessInfo.processInfo.arguments.firstIndex(of: "-RecorderDeviceBench"),
+               i + 1 < ProcessInfo.processInfo.arguments.count {
+                let args = ProcessInfo.processInfo.arguments
+                let tiers = args[i + 1].split(separator: ",").compactMap { SpeechTier(rawValue: String($0)) }
+                let label = args.firstIndex(of: "-BenchLabel").flatMap { $0 + 1 < args.count ? args[$0 + 1] : nil } ?? "run"
+                Task.detached { await RecorderDeviceBench.run(tiers: tiers, label: label) }
+            }
+            // live-11 (3) — HTML extraction's web view makes zero network loads (loopback-counted, synthetic
+            // fixtures). Detached so its ~20 s of fixtures never holds up the launch load.
+            if ProcessInfo.processInfo.arguments.contains("-DocExtractOfflineSelfTest") {
+                Task.detached { NSLog("%@", await DocumentExtractionService.offlineSelfTest()) }
+            }
+            // Brief CF — rule 2: a SHOWING ghost must commit at Done for BOTH fields, even when
+            // the re-author blanks the title (duplicate content). Needs `-StubAuthorModel
+            // -StubBlankTitleAlways`. Two identical entries must each keep their title.
+            if ProcessInfo.processInfo.arguments.contains("-DupTitleCommitSelfTest") {
+                NSLog("[DupTitleCommitSelfTest] %@", await runDupTitleCommitSelfTest())
+            }
+            // UI-first cleanup — LIST (dry-run) or PURGE the entries the UI test suite created in
+            // T's REAL Library. Run WITHOUT -UITestLibrary so it targets the real corpus; marker-
+            // matched; -ListTestEntries always runs first so T sees exactly what -PurgeTestEntries
+            // would delete. One-off remediation for runs made before the isolated library landed.
+            if ProcessInfo.processInfo.arguments.contains("-ListTestEntries") {
+                NSLog("[ListTestEntries]\n%@", await listOrPurgeTestEntries(purge: false))
+            }
+            if ProcessInfo.processInfo.arguments.contains("-PurgeTestEntries") {
+                NSLog("[PurgeTestEntries]\n%@", await listOrPurgeTestEntries(purge: true))
+            }
+            // Brief BM0 — the Done-matrix driver (needs `-StubAuthorModel` alongside).
+            if ProcessInfo.processInfo.arguments.contains("-BMDoneMatrix") {
+                NSLog("[BMDoneMatrix] %@", await runBMDoneMatrix())
+            }
+            // Brief BO0 — the real-timing Done matrix (variants a–d; needs `-StubAuthorModel`).
+            if ProcessInfo.processInfo.arguments.contains("-BODoneMatrix") {
+                NSLog("[BODoneMatrix] %@", await runBODoneMatrix())
+            }
+            // live-19 (4) — the Map's numerics after the LAPACK-interface move: the SVD checks + the Substrate / UMAP / HDBSCAN suites
+            // (otherwise only reachable from Settings → substrate inspector buttons). One summary line for the inventory.
+            if ProcessInfo.processInfo.arguments.contains("-MapNumericSelfTest") {
+                let svd = LapackSVDSelfTest.run(), sub = SubstrateSelfTest.run(), umap = UMAPSelfTest.run(), hdb = HDBSCANSelfTest.run()
+                let ok = svd.contains("] PASS") && sub.hasPrefix("OK") && !umap.contains("FAIL") && hdb.contains("OK")
+                NSLog("[MapNumericSelfTest] %@ — svd: %@ · substrate: %@ · umap: %@ · hdbscan: %@", ok ? "PASS" : "FAIL",
+                      svd.components(separatedBy: "\n").first ?? svd, sub, String(umap.prefix(160)), hdb)
+                NSLog("%@", svd)
+            }
+            // Brief CG — the share-import logic matrix (gallery coalesce · link page-title +
+            // captcha filter · photo dated fallback · audio transcription wiring). Run with
+            // `-StubAuthorModel -StubNonEmptyTitle -StubTranscription -UITestLibrary(Fresh)`.
+            if ProcessInfo.processInfo.arguments.contains("-CGShareImportMatrix") {
+                NSLog("[CGShareImportMatrix]\n%@", await runCGShareImportMatrix())
+            }
+            // Brief BN0 — the load-boundary dedup keeps the NEWEST duplicate + drops the rest.
+            if ProcessInfo.processInfo.arguments.contains("-BN0DedupSelfTest") {
+                let d0 = Date(timeIntervalSince1970: 0), d1 = Date(timeIntervalSince1970: 100)
+                let older = Node(id: "dup", createdAt: d0, updatedAt: d0, title: "OLD", summary: "", tags: [])
+                let newer = Node(id: "dup", createdAt: d0, updatedAt: d1, title: "NEW", summary: "", tags: [])
+                let solo  = Node(id: "solo", createdAt: d0, updatedAt: d0, title: "S", summary: "", tags: [])
+                let out = iCloudDriveService.dedupById([(older, "dup"), (newer, "dup 2"), (solo, "solo")])
+                let keptNew = out.first(where: { $0.id == "dup" })?.title == "NEW"
+                let ok = out.count == 2 && keptNew && out.contains(where: { $0.id == "solo" })
+                NSLog("[BN0DedupSelfTest] %@ (kept=%d dup→%@)", ok ? "PASS" : "FAIL", out.count, out.first(where: { $0.id == "dup" })?.title ?? "?")
+            }
+            // Brief BN2–BN5 — PURE routing/budget/receipt self-test (no corpus, no embedder, no
+            // model — runs headless in the Simulator). Covers: (BN3) the model-derived budget
+            // degrades — a 32K Host window fits a ~16k-char entry while a 4K FM window can't;
+            // (BN2) entry ranking is by aggregate SUM so a multi-passage entry leads a stronger
+            // single passage; (BN4) the follow-up matcher fires on deixis, not on a fresh topic;
+            // (BN5) the receipt wording (singular/plural · partial · survey).
+            if ProcessInfo.processInfo.arguments.contains("-LibrarianRoutingSelfTest") {
+                let lib = LibrarianState()
+                let medicalChars = 16_090   // BJ's fixture Medical entry (~4,022 tokens)
+                let hostBudget = lib.askContextCharBudget(windowOverride: 32_768)
+                let fmBudget   = lib.askContextCharBudget(windowOverride: 4_096)
+                // BT2 — the Host budget FITS a whole entry (≥ medical) yet is CAPPED well below the
+                // window (≤ ~13k tokens ≈ 39k chars at 3 chars/token — never fills 32,768, which BT1
+                // showed overflows at ~44k tokens). FM's tight window still forces a partial (< entry).
+                let hostTokens = hostBudget / LibrarianState.charsPerToken
+                let budgetOK = hostBudget >= medicalChars
+                    && hostTokens <= LibrarianState.readContextTargetTokens + 200
+                    && hostTokens < 32_768
+                    && fmBudget < medicalChars && fmBudget >= 2_000
+                // BN2 — ranking. Entry A: 3 passages summing 0.66+0.64+0.62=1.92; Entry B: one 0.82.
+                func bm(_ node: String, _ score: Float, _ bid: String) -> BlockMatch {
+                    BlockMatch(block: NodeBlock(blockID: bid, itemID: "i", chunkIndex: 0, text: "t",
+                                                embedding: [], embeddingBasis: nil, sourceHash: "s",
+                                                embedderVersion: 0, charLocation: 0, charLength: 1),
+                               nodeID: node, score: score)
                 }
-                // THE LEVER — Stage 1 (ws-lever.md § C6). Pure in-memory schema /
-                // recordProposal self-test; writes nothing to the corpus.
-                // Brief CI (CI-2) — the computed-facts layer's pure self-test (parser, ages, windows, matchers,
-                // fields line, determinism). Pure in-memory; no corpus access.
-                if ProcessInfo.processInfo.arguments.contains("-ComputedFactsSelfTest") {
-                    NSLog("[ComputedFactsSelfTest] %@", ComputedFactsSelfTest.run())
+                let ranking = LibrarianState.entryRanking(passages: [
+                    bm("A", 0.66, "a1"), bm("A", 0.64, "a2"), bm("A", 0.62, "a3"), bm("B", 0.82, "b1")])
+                let rankOK = ranking.first?.nodeID == "A" && (ranking.first?.count ?? 0) == 3
+                // BN4 — follow-up vs fresh topic.
+                let f1 = LibrarianState.looksLikeWorkingSetFollowUp("analyze that document")
+                let f2 = LibrarianState.looksLikeWorkingSetFollowUp("tell me more")
+                let f3 = !LibrarianState.looksLikeWorkingSetFollowUp("What have I been thinking about lately?")
+                let f4 = !LibrarianState.looksLikeWorkingSetFollowUp("How much did my Bolex camera cost?")
+                // S3 / BXe — the previous question folds into retrieval ONLY for a follow-up on it: "What is the
+                // capital of France?" after the Bolex question retrieved the Bolex packet and the model answered
+                // the Bolex question (2/2 on T's corpus).
+                let bolex = "What did I write about my Bolex H16?"
+                let p1 = LibrarianState.retrievalQuery(question: "What is the capital of France?", previousUserTurn: bolex) == "What is the capital of France?"
+                let p2 = LibrarianState.retrievalQuery(question: "Which values are out of range?", previousUserTurn: "What do my lab test results reveal?").contains("lab test")
+                let p3 = LibrarianState.retrievalQuery(question: "What insights can you derive from this?", previousUserTurn: bolex).contains("Bolex")
+                let p4 = LibrarianState.retrievalQuery(question: "How long does one wind of my Bolex run?", previousUserTurn: bolex).contains("\n")
+                let p5 = LibrarianState.retrievalQuery(question: "What is the capital of France?", previousUserTurn: nil) == "What is the capital of France?"
+                NSLog("[LibrarianRoutingSelfTest] BXe prev-turn fold: newSubject-bare=%@ followUp-folds=%@ deictic-folds=%@ sameName-folds=%@ firstTurn-bare=%@",
+                      p1 ? "ok" : "BAD", p2 ? "ok" : "BAD", p3 ? "ok" : "BAD", p4 ? "ok" : "BAD", p5 ? "ok" : "BAD")
+                let followOK = f1 && f2 && f3 && f4 && p1 && p2 && p3 && p4 && p5
+                // BN5 — receipt wording.
+                let r1 = ChatTranscript.readReceiptText(.init(readInFull: 1, skimmed: 6, partial: false))
+                let r2 = ChatTranscript.readReceiptText(.init(readInFull: 2, skimmed: 0, partial: false))
+                let r3 = ChatTranscript.readReceiptText(.init(readInFull: 1, skimmed: 3, partial: true))
+                let r4 = ChatTranscript.readReceiptText(.init(readInFull: 0, skimmed: 9, partial: false))
+                let r5 = ChatTranscript.readReceiptText(.init(readInFull: 0, skimmed: 1, partial: false))
+                let r6 = ChatTranscript.readReceiptText(.init(readInFull: 0, skimmed: 0, partial: false))
+                // BS3 — title-named + partial-line receipts.
+                let r7 = ChatTranscript.readReceiptText(.init(readInFull: 1, skimmed: 9, partial: false, readTitles: ["Annual – Lab Tests"]))
+                let r8 = ChatTranscript.readReceiptText(.init(readInFull: 1, skimmed: 0, partial: true, readTitles: ["Annual – Lab Tests"], partialModel: "Apple Intelligence"))
+                let receiptOK = r1 == "Read 1 entry in full · skimmed 6"
+                    && r2 == "Read 2 entries in full"
+                    && r3 == "Read 1 entry (partial) · skimmed 3"
+                    && r4 == "Skimmed 9 entries"
+                    && r5 == "Skimmed 1 entry"
+                    && r6 == "No matching entries"
+                    && r7 == "Read *Annual – Lab Tests* in full · skimmed 9"
+                    && r8 == "*Annual – Lab Tests* is too long for Apple Intelligence to read at once — I used the most relevant parts."
+                // Brief BR — the DELIVERY shape: the chat path must build proper roles (system
+                // first, history roles preserved, current turn as a `user` message), never a
+                // flattened "User:/Assistant:" transcript in one message.
+                let wire = ModelRouter.debugWireMessages(
+                    systemPrompt: "SYS", history: [["role": "user", "content": "q1"], ["role": "assistant", "content": "a1"]],
+                    userContent: "PACKET")
+                let deliveryOK = wire.count == 4
+                    && wire[0]["role"] == "system" && wire[0]["content"] == "SYS"
+                    && wire[1]["role"] == "user" && wire[2]["role"] == "assistant"
+                    && wire[3]["role"] == "user" && wire[3]["content"] == "PACKET"
+                    && !wire.contains { ($0["content"] ?? "").contains("\nAssistant:") }
+                let all = budgetOK && rankOK && followOK && receiptOK && deliveryOK
+                NSLog("[LibrarianRoutingSelfTest] %@ · budget(host=%d fm=%d medical=%d)=%@ rank=%@ followup=%@ receipt=%@ delivery=%@",
+                      all ? "PASS" : "FAIL", hostBudget, fmBudget, medicalChars,
+                      budgetOK ? "ok" : "BAD", rankOK ? "ok" : "BAD", followOK ? "ok" : "BAD", receiptOK ? "ok" : "BAD", deliveryOK ? "ok" : "BAD")
+                if !receiptOK { NSLog("[LibrarianRoutingSelfTest] receipt strings: r1='%@' r2='%@' r3='%@' r4='%@' r5='%@'", r1, r2, r3, r4, r5) }
+            }
+            #endif
+            // MAP-RELAYOUT GATE (ws-map-relayout). Pins the persist/restore
+            // decision logic so a re-introduced on-launch reform fails here
+            // instead of shipping quietly (the third resurrection).
+            if ProcessInfo.processInfo.arguments.contains("-TerritoryRestoreSelfTest") {
+                NSLog("[TerritoryRestoreSelfTest] %@", TerritoryLayoutRestoreSelfTest.run())
+            }
+            // SAMPLE LIBRARY (Brief N §2). Isolated end-to-end: seeds the bundle
+            // into a THROWAWAY temp dir, injects a fake user node, runs removal,
+            // and asserts the user node (and a tag it shares) survive while every
+            // seeded node/collection is gone. Never touches the real container.
+            if ProcessInfo.processInfo.arguments.contains("-SampleSeedSelfTest") {
+                NSLog("[SampleSeedSelfTest] %@", SampleLibrarySeederSelfTest.run())
+            }
+            // Brief R Step 4 — READ-ONLY block-retrieval probe. Runs
+            // findRelevantBlocks for a fixed query over ALL node ids (corpus
+            // scope) and logs the top-3 (score, node id, title). Writes
+            // nothing. Needs blocks.json present + the BGE query embed (which
+            // needs .cpuOnly on the Simulator, same as the card bake).
+            if ProcessInfo.processInfo.arguments.contains("-AskMatchDiag") {
+                let q = "How much did my Bolex cost?"
+                let ids = nodes.map { $0.id }
+                let matches = await blockEmbedding.findRelevantBlocks(query: q, candidateNodeIDs: ids, topK: 5)
+                NSLog("[AskMatchDiag] query=%@ candidates=%d matches=%d", q, ids.count, matches.count)
+                for m in matches {
+                    let title = nodes.first(where: { $0.id == m.nodeID })?.title ?? "?"
+                    let snip = String(m.block.text.trimmingCharacters(in: .whitespacesAndNewlines).prefix(60))
+                    NSLog("[AskMatchDiag] score=%.3f node=%@ title=%@ :: %@", m.score, m.nodeID, title, snip)
                 }
-                // Brief CH ruling 8 — the citation numberer (prefix invariant, orphan strip, prose references).
-                if ProcessInfo.processInfo.arguments.contains("-CitationNumberSelfTest") {
-                    NSLog("[CitationNumberSelfTest] %@", CitationNumberSelfTest.run())
+                if matches.isEmpty { NSLog("[AskMatchDiag] NO MATCHES") }
+            }
+            // Brief S verify (S2/S3/S5) — READ-ONLY Librarian retrieval probe.
+            // Drives corpus-Ask retrieval WITHOUT the model: a two-turn Bolex
+            // exchange (S2 carry) then a named-entry pin (S3), so `log stream`
+            // over category "librarian" shows the candidate log. cpuOnly on the
+            // Simulator (same as the bake) for the BGE query embed.
+            #if DEBUG
+            if ProcessInfo.processInfo.arguments.contains("-LibrarianRetrievalDiag") {
+                let lib = LibrarianState()
+                let chat1 = ChatSession()
+                NSLog("[LibDiag] --- two-turn Bolex (S2 carry + stable [n]) ---")
+                await lib.debugCorpusRetrieve(query: "How much did my Bolex cost?", store: self, chat: chat1)
+                await lib.debugCorpusRetrieve(query: "But is that what I ultimately paid for it?", store: self, chat: chat1)
+                let chat2 = ChatSession()
+                NSLog("[LibDiag] --- named-entry pin (S3), stand-in title ---")
+                await lib.debugCorpusRetrieve(query: "What can you tell me about my entry called \"The Kuleshov Effect\"?", store: self, chat: chat2)
+                NSLog("[LibDiag] done")
+            }
+            // Brief BN2–BN5 — the find-then-read ROUTER over the fixture (needs -CorpusFixture
+            // + -EmbedCPUOnly). Drives the real pipeline WITHOUT the model and logs the routing
+            // (mode · read/skim · budget) for each verify case: (1) the lab question → READ the
+            // Medical document in full; (2) "analyze that document" → READ the SAME entry, NO new
+            // retrieval (working set); (3) a broad question → SURVEY; (4) a named-entry pin →
+            // READ(pin); (5) the lab question at a forced FM 4K window → READ but PARTIAL (no
+            // overflow). The `librarian` Logger category also carries the per-turn `mode=…` record.
+            if ProcessInfo.processInfo.arguments.contains("-LibrarianRoutingDiag") {
+                // Auto-select LOADED nodes (this fixture clone drops some entries at load, incl.
+                // BJ's Medical doc — an app-load quirk of the scratch copy, not routing). We verify
+                // the machinery on whatever loaded: a big DOCUMENT (for the read + dominance), a
+                // SAVED ARTICLE (for the dominance provenance gate), and a plain-title node (pin).
+                var docID: String? = nil; var docTitle = ""; var docChars = 0
+                for n in userNodes where n.cardProvenance().kind == .document {
+                    let chars = (await fullEntryText(nodeID: n.id)).count
+                    if chars > 2_000 { docID = n.id; docTitle = n.title; docChars = chars; break }
                 }
-                // CH Session 2 — web grounding: URL / source-list filter (prefix invariant), dates, ranking, question shape.
-                if ProcessInfo.processInfo.arguments.contains("-WebGroundingSelfTest") {
-                    NSLog("[WebGroundingSelfTest] %@", WebGroundingSelfTest.run())
-                }
-                // CH Session 2 (C4 / C4a) — the shared active-model derivation + friendly names.
-                if ProcessInfo.processInfo.arguments.contains("-ModelPickSelfTest") {
-                    NSLog("[ModelPickSelfTest] %@", await MainActor.run { ModelPickSelfTest.run() })
-                }
-                if ProcessInfo.processInfo.arguments.contains("-ProposalSelfTest") {
-                    NSLog("[ProposalSelfTest] %@", ProposalSelfTest.run())
-                }
-                // THE LEVER — Stage 2b. Pure firing/variant-resolution self-test
-                // for the shipped-empty state (config-independent logic).
-                if ProcessInfo.processInfo.arguments.contains("-ShimmerSelfTest") {
-                    NSLog("[ShimmerSelfTest] %@", ShimmerSelfTest.run())
-                }
-                // THE ENRICHMENT GATE — replays the four capture scenarios against
-                // the real predicate and reports FM calls per note, before vs after.
-                // Pure in-memory; no FM, no corpus access.
-                if ProcessInfo.processInfo.arguments.contains("-EnrichmentGateSelfTest") {
-                    NSLog("[EnrichmentGateSelfTest] %@", EnrichmentGateSelfTest.run())
-                }
-                // Brief CD3 (BP2) — trigger tightening: eager PASSES per capture, before vs after the
-                // 2 s pause + 9 s floor, over three capture timelines. Pure; no FM, no corpus.
-                if ProcessInfo.processInfo.arguments.contains("-GhostTriggerSelfTest") {
-                    NSLog("[GhostTriggerSelfTest] %@", GhostTriggerSelfTest.run())
-                }
-                // Brief BL — pure link follow-up logic (cleanTitle every source, article-first
-                // readable, linkItems lift + snapshot preservation, gate input). No net/FM.
-                if ProcessInfo.processInfo.arguments.contains("-BLLinkSelfTest") {
-                    NSLog("[LinkFollowupsSelfTest] %@", LinkFollowupsSelfTest.run())
-                }
-                #if DEBUG
-                // Brief CD #1 — identical text in TWO entries must each get their OWN proposals (a
-                // duplicate must not suppress the second entry's ghost). Needs `-StubAuthorModel`.
-                if ProcessInfo.processInfo.arguments.contains("-DupProposalSelfTest") {
-                    NSLog("[DupProposalSelfTest] %@", await runDupProposalSelfTest())
-                }
-                // Arc B — an extracted transcript copy counts once; Append to… lands at the end.
-                if ProcessInfo.processInfo.arguments.contains("-ArcBDedupSelfTest") {
-                    NSLog("%@", await runArcBDedupSelfTest())
-                }
-                if ProcessInfo.processInfo.arguments.contains("-AppTermLeakSelfTest") {
-                    NSLog("%@", AppTermLeak.selfTest())
-                }
-                if ProcessInfo.processInfo.arguments.contains("-OnDeviceSpeechSelfTest") {
-                    NSLog("%@", OnDeviceSpeech.selfTest())
-                }
-                if ProcessInfo.processInfo.arguments.contains("-SpeechEngineTestingSelfTest") {
-                    NSLog("%@", SpeechEngineTesting.selfTest())
-                }
-                // live-13 (1) — Done saves what the recorder showed, on every tier (tier 3 driven by injected results).
-                if ProcessInfo.processInfo.arguments.contains("-RecorderSaveSelfTest") {
-                    NSLog("%@", await RecorderSaveSelfTest.run())
-                }
-                // live-13 (3) — Paste Pad sorts a paste by what it is (a selection is text; only files are documents).
-                if ProcessInfo.processInfo.arguments.contains("-PastePadTypeSelfTest") {
-                    NSLog("%@", await PastePadTypeSelfTest.run())
-                }
-                // live-13 (4) — imported documents are named from their real name, on every import path.
-                if ProcessInfo.processInfo.arguments.contains("-DocumentNamingSelfTest") {
-                    NSLog("%@", await runDocumentNamingSelfTest())
-                }
-                // live-15 (1) — a document is named from its own text, right after another capture, on every import path.
-                if ProcessInfo.processInfo.arguments.contains("-DocumentNamingInputSelfTest") {
-                    NSLog("%@", await runDocumentNamingInputSelfTest())
-                }
-                // live-16 — the shared display-image cache: decode time/memory, hit + hand-off, peak, memory warning.
-                if ProcessInfo.processInfo.arguments.contains("-DisplayImageCacheSelfTest") {
-                    NSLog("%@", await DisplayImageCacheSelfTest.run(store: self))
-                }
-                // live-13 — real recognisers on a real iPhone, fed synthetic speech files (CC copies them in).
-                if let i = ProcessInfo.processInfo.arguments.firstIndex(of: "-RecorderDeviceBench"),
-                   i + 1 < ProcessInfo.processInfo.arguments.count {
-                    let args = ProcessInfo.processInfo.arguments
-                    let tiers = args[i + 1].split(separator: ",").compactMap { SpeechTier(rawValue: String($0)) }
-                    let label = args.firstIndex(of: "-BenchLabel").flatMap { $0 + 1 < args.count ? args[$0 + 1] : nil } ?? "run"
-                    Task.detached { await RecorderDeviceBench.run(tiers: tiers, label: label) }
-                }
-                // live-11 (3) — HTML extraction's web view makes zero network loads (loopback-counted, synthetic
-                // fixtures). Detached so its ~20 s of fixtures never holds up the launch load.
-                if ProcessInfo.processInfo.arguments.contains("-DocExtractOfflineSelfTest") {
-                    Task.detached { NSLog("%@", await DocumentExtractionService.offlineSelfTest()) }
-                }
-                // Brief CF — rule 2: a SHOWING ghost must commit at Done for BOTH fields, even when
-                // the re-author blanks the title (duplicate content). Needs `-StubAuthorModel
-                // -StubBlankTitleAlways`. Two identical entries must each keep their title.
-                if ProcessInfo.processInfo.arguments.contains("-DupTitleCommitSelfTest") {
-                    NSLog("[DupTitleCommitSelfTest] %@", await runDupTitleCommitSelfTest())
-                }
-                // UI-first cleanup — LIST (dry-run) or PURGE the entries the UI test suite created in
-                // T's REAL Library. Run WITHOUT -UITestLibrary so it targets the real corpus; marker-
-                // matched; -ListTestEntries always runs first so T sees exactly what -PurgeTestEntries
-                // would delete. One-off remediation for runs made before the isolated library landed.
-                if ProcessInfo.processInfo.arguments.contains("-ListTestEntries") {
-                    NSLog("[ListTestEntries]\n%@", await listOrPurgeTestEntries(purge: false))
-                }
-                if ProcessInfo.processInfo.arguments.contains("-PurgeTestEntries") {
-                    NSLog("[PurgeTestEntries]\n%@", await listOrPurgeTestEntries(purge: true))
-                }
-                // Brief BM0 — the Done-matrix driver (needs `-StubAuthorModel` alongside).
-                if ProcessInfo.processInfo.arguments.contains("-BMDoneMatrix") {
-                    NSLog("[BMDoneMatrix] %@", await runBMDoneMatrix())
-                }
-                // Brief BO0 — the real-timing Done matrix (variants a–d; needs `-StubAuthorModel`).
-                if ProcessInfo.processInfo.arguments.contains("-BODoneMatrix") {
-                    NSLog("[BODoneMatrix] %@", await runBODoneMatrix())
-                }
-                // Brief CG — the share-import logic matrix (gallery coalesce · link page-title +
-                // captcha filter · photo dated fallback · audio transcription wiring). Run with
-                // `-StubAuthorModel -StubNonEmptyTitle -StubTranscription -UITestLibrary(Fresh)`.
-                if ProcessInfo.processInfo.arguments.contains("-CGShareImportMatrix") {
-                    NSLog("[CGShareImportMatrix]\n%@", await runCGShareImportMatrix())
-                }
-                // Brief BN0 — the load-boundary dedup keeps the NEWEST duplicate + drops the rest.
-                if ProcessInfo.processInfo.arguments.contains("-BN0DedupSelfTest") {
-                    let d0 = Date(timeIntervalSince1970: 0), d1 = Date(timeIntervalSince1970: 100)
-                    let older = Node(id: "dup", createdAt: d0, updatedAt: d0, title: "OLD", summary: "", tags: [])
-                    let newer = Node(id: "dup", createdAt: d0, updatedAt: d1, title: "NEW", summary: "", tags: [])
-                    let solo  = Node(id: "solo", createdAt: d0, updatedAt: d0, title: "S", summary: "", tags: [])
-                    let out = iCloudDriveService.dedupById([(older, "dup"), (newer, "dup 2"), (solo, "solo")])
-                    let keptNew = out.first(where: { $0.id == "dup" })?.title == "NEW"
-                    let ok = out.count == 2 && keptNew && out.contains(where: { $0.id == "solo" })
-                    NSLog("[BN0DedupSelfTest] %@ (kept=%d dup→%@)", ok ? "PASS" : "FAIL", out.count, out.first(where: { $0.id == "dup" })?.title ?? "?")
-                }
-                // Brief BN2–BN5 — PURE routing/budget/receipt self-test (no corpus, no embedder, no
-                // model — runs headless in the Simulator). Covers: (BN3) the model-derived budget
-                // degrades — a 32K Host window fits a ~16k-char entry while a 4K FM window can't;
-                // (BN2) entry ranking is by aggregate SUM so a multi-passage entry leads a stronger
-                // single passage; (BN4) the follow-up matcher fires on deixis, not on a fresh topic;
-                // (BN5) the receipt wording (singular/plural · partial · survey).
-                if ProcessInfo.processInfo.arguments.contains("-LibrarianRoutingSelfTest") {
-                    let lib = LibrarianState()
-                    let medicalChars = 16_090   // BJ's fixture Medical entry (~4,022 tokens)
-                    let hostBudget = lib.askContextCharBudget(windowOverride: 32_768)
-                    let fmBudget   = lib.askContextCharBudget(windowOverride: 4_096)
-                    // BT2 — the Host budget FITS a whole entry (≥ medical) yet is CAPPED well below the
-                    // window (≤ ~13k tokens ≈ 39k chars at 3 chars/token — never fills 32,768, which BT1
-                    // showed overflows at ~44k tokens). FM's tight window still forces a partial (< entry).
-                    let hostTokens = hostBudget / LibrarianState.charsPerToken
-                    let budgetOK = hostBudget >= medicalChars
-                        && hostTokens <= LibrarianState.readContextTargetTokens + 200
-                        && hostTokens < 32_768
-                        && fmBudget < medicalChars && fmBudget >= 2_000
-                    // BN2 — ranking. Entry A: 3 passages summing 0.66+0.64+0.62=1.92; Entry B: one 0.82.
-                    func bm(_ node: String, _ score: Float, _ bid: String) -> BlockMatch {
-                        BlockMatch(block: NodeBlock(blockID: bid, itemID: "i", chunkIndex: 0, text: "t",
-                                                    embedding: [], embeddingBasis: nil, sourceHash: "s",
-                                                    embedderVersion: 0, charLocation: 0, charLength: 1),
-                                   nodeID: node, score: score)
-                    }
-                    let ranking = LibrarianState.entryRanking(passages: [
-                        bm("A", 0.66, "a1"), bm("A", 0.64, "a2"), bm("A", 0.62, "a3"), bm("B", 0.82, "b1")])
-                    let rankOK = ranking.first?.nodeID == "A" && (ranking.first?.count ?? 0) == 3
-                    // BN4 — follow-up vs fresh topic.
-                    let f1 = LibrarianState.looksLikeWorkingSetFollowUp("analyze that document")
-                    let f2 = LibrarianState.looksLikeWorkingSetFollowUp("tell me more")
-                    let f3 = !LibrarianState.looksLikeWorkingSetFollowUp("What have I been thinking about lately?")
-                    let f4 = !LibrarianState.looksLikeWorkingSetFollowUp("How much did my Bolex camera cost?")
-                    // S3 / BXe — the previous question folds into retrieval ONLY for a follow-up on it: "What is the
-                    // capital of France?" after the Bolex question retrieved the Bolex packet and the model answered
-                    // the Bolex question (2/2 on T's corpus).
-                    let bolex = "What did I write about my Bolex H16?"
-                    let p1 = LibrarianState.retrievalQuery(question: "What is the capital of France?", previousUserTurn: bolex) == "What is the capital of France?"
-                    let p2 = LibrarianState.retrievalQuery(question: "Which values are out of range?", previousUserTurn: "What do my lab test results reveal?").contains("lab test")
-                    let p3 = LibrarianState.retrievalQuery(question: "What insights can you derive from this?", previousUserTurn: bolex).contains("Bolex")
-                    let p4 = LibrarianState.retrievalQuery(question: "How long does one wind of my Bolex run?", previousUserTurn: bolex).contains("\n")
-                    let p5 = LibrarianState.retrievalQuery(question: "What is the capital of France?", previousUserTurn: nil) == "What is the capital of France?"
-                    NSLog("[LibrarianRoutingSelfTest] BXe prev-turn fold: newSubject-bare=%@ followUp-folds=%@ deictic-folds=%@ sameName-folds=%@ firstTurn-bare=%@",
-                          p1 ? "ok" : "BAD", p2 ? "ok" : "BAD", p3 ? "ok" : "BAD", p4 ? "ok" : "BAD", p5 ? "ok" : "BAD")
-                    let followOK = f1 && f2 && f3 && f4 && p1 && p2 && p3 && p4 && p5
-                    // BN5 — receipt wording.
-                    let r1 = ChatTranscript.readReceiptText(.init(readInFull: 1, skimmed: 6, partial: false))
-                    let r2 = ChatTranscript.readReceiptText(.init(readInFull: 2, skimmed: 0, partial: false))
-                    let r3 = ChatTranscript.readReceiptText(.init(readInFull: 1, skimmed: 3, partial: true))
-                    let r4 = ChatTranscript.readReceiptText(.init(readInFull: 0, skimmed: 9, partial: false))
-                    let r5 = ChatTranscript.readReceiptText(.init(readInFull: 0, skimmed: 1, partial: false))
-                    let r6 = ChatTranscript.readReceiptText(.init(readInFull: 0, skimmed: 0, partial: false))
-                    // BS3 — title-named + partial-line receipts.
-                    let r7 = ChatTranscript.readReceiptText(.init(readInFull: 1, skimmed: 9, partial: false, readTitles: ["Annual – Lab Tests"]))
-                    let r8 = ChatTranscript.readReceiptText(.init(readInFull: 1, skimmed: 0, partial: true, readTitles: ["Annual – Lab Tests"], partialModel: "Apple Intelligence"))
-                    let receiptOK = r1 == "Read 1 entry in full · skimmed 6"
-                        && r2 == "Read 2 entries in full"
-                        && r3 == "Read 1 entry (partial) · skimmed 3"
-                        && r4 == "Skimmed 9 entries"
-                        && r5 == "Skimmed 1 entry"
-                        && r6 == "No matching entries"
-                        && r7 == "Read *Annual – Lab Tests* in full · skimmed 9"
-                        && r8 == "*Annual – Lab Tests* is too long for Apple Intelligence to read at once — I used the most relevant parts."
-                    // Brief BR — the DELIVERY shape: the chat path must build proper roles (system
-                    // first, history roles preserved, current turn as a `user` message), never a
-                    // flattened "User:/Assistant:" transcript in one message.
-                    let wire = ModelRouter.debugWireMessages(
-                        systemPrompt: "SYS", history: [["role": "user", "content": "q1"], ["role": "assistant", "content": "a1"]],
-                        userContent: "PACKET")
-                    let deliveryOK = wire.count == 4
-                        && wire[0]["role"] == "system" && wire[0]["content"] == "SYS"
-                        && wire[1]["role"] == "user" && wire[2]["role"] == "assistant"
-                        && wire[3]["role"] == "user" && wire[3]["content"] == "PACKET"
-                        && !wire.contains { ($0["content"] ?? "").contains("\nAssistant:") }
-                    let all = budgetOK && rankOK && followOK && receiptOK && deliveryOK
-                    NSLog("[LibrarianRoutingSelfTest] %@ · budget(host=%d fm=%d medical=%d)=%@ rank=%@ followup=%@ receipt=%@ delivery=%@",
-                          all ? "PASS" : "FAIL", hostBudget, fmBudget, medicalChars,
-                          budgetOK ? "ok" : "BAD", rankOK ? "ok" : "BAD", followOK ? "ok" : "BAD", receiptOK ? "ok" : "BAD", deliveryOK ? "ok" : "BAD")
-                    if !receiptOK { NSLog("[LibrarianRoutingSelfTest] receipt strings: r1='%@' r2='%@' r3='%@' r4='%@' r5='%@'", r1, r2, r3, r4, r5) }
-                }
-                #endif
-                // MAP-RELAYOUT GATE (ws-map-relayout). Pins the persist/restore
-                // decision logic so a re-introduced on-launch reform fails here
-                // instead of shipping quietly (the third resurrection).
-                if ProcessInfo.processInfo.arguments.contains("-TerritoryRestoreSelfTest") {
-                    NSLog("[TerritoryRestoreSelfTest] %@", TerritoryLayoutRestoreSelfTest.run())
-                }
-                // SAMPLE LIBRARY (Brief N §2). Isolated end-to-end: seeds the bundle
-                // into a THROWAWAY temp dir, injects a fake user node, runs removal,
-                // and asserts the user node (and a tag it shares) survive while every
-                // seeded node/collection is gone. Never touches the real container.
-                if ProcessInfo.processInfo.arguments.contains("-SampleSeedSelfTest") {
-                    NSLog("[SampleSeedSelfTest] %@", SampleLibrarySeederSelfTest.run())
-                }
-                // Brief R Step 4 — READ-ONLY block-retrieval probe. Runs
-                // findRelevantBlocks for a fixed query over ALL node ids (corpus
-                // scope) and logs the top-3 (score, node id, title). Writes
-                // nothing. Needs blocks.json present + the BGE query embed (which
-                // needs .cpuOnly on the Simulator, same as the card bake).
-                if ProcessInfo.processInfo.arguments.contains("-AskMatchDiag") {
-                    let q = "How much did my Bolex cost?"
-                    let ids = nodes.map { $0.id }
-                    let matches = await blockEmbedding.findRelevantBlocks(query: q, candidateNodeIDs: ids, topK: 5)
-                    NSLog("[AskMatchDiag] query=%@ candidates=%d matches=%d", q, ids.count, matches.count)
-                    for m in matches {
-                        let title = nodes.first(where: { $0.id == m.nodeID })?.title ?? "?"
-                        let snip = String(m.block.text.trimmingCharacters(in: .whitespacesAndNewlines).prefix(60))
-                        NSLog("[AskMatchDiag] score=%.3f node=%@ title=%@ :: %@", m.score, m.nodeID, title, snip)
-                    }
-                    if matches.isEmpty { NSLog("[AskMatchDiag] NO MATCHES") }
-                }
-                // Brief S verify (S2/S3/S5) — READ-ONLY Librarian retrieval probe.
-                // Drives corpus-Ask retrieval WITHOUT the model: a two-turn Bolex
-                // exchange (S2 carry) then a named-entry pin (S3), so `log stream`
-                // over category "librarian" shows the candidate log. cpuOnly on the
-                // Simulator (same as the bake) for the BGE query embed.
-                #if DEBUG
-                if ProcessInfo.processInfo.arguments.contains("-LibrarianRetrievalDiag") {
-                    let lib = LibrarianState()
-                    let chat1 = ChatSession()
-                    NSLog("[LibDiag] --- two-turn Bolex (S2 carry + stable [n]) ---")
-                    await lib.debugCorpusRetrieve(query: "How much did my Bolex cost?", store: self, chat: chat1)
-                    await lib.debugCorpusRetrieve(query: "But is that what I ultimately paid for it?", store: self, chat: chat1)
-                    let chat2 = ChatSession()
-                    NSLog("[LibDiag] --- named-entry pin (S3), stand-in title ---")
-                    await lib.debugCorpusRetrieve(query: "What can you tell me about my entry called \"The Kuleshov Effect\"?", store: self, chat: chat2)
-                    NSLog("[LibDiag] done")
-                }
-                // Brief BN2–BN5 — the find-then-read ROUTER over the fixture (needs -CorpusFixture
-                // + -EmbedCPUOnly). Drives the real pipeline WITHOUT the model and logs the routing
-                // (mode · read/skim · budget) for each verify case: (1) the lab question → READ the
-                // Medical document in full; (2) "analyze that document" → READ the SAME entry, NO new
-                // retrieval (working set); (3) a broad question → SURVEY; (4) a named-entry pin →
-                // READ(pin); (5) the lab question at a forced FM 4K window → READ but PARTIAL (no
-                // overflow). The `librarian` Logger category also carries the per-turn `mode=…` record.
-                if ProcessInfo.processInfo.arguments.contains("-LibrarianRoutingDiag") {
-                    // Auto-select LOADED nodes (this fixture clone drops some entries at load, incl.
-                    // BJ's Medical doc — an app-load quirk of the scratch copy, not routing). We verify
-                    // the machinery on whatever loaded: a big DOCUMENT (for the read + dominance), a
-                    // SAVED ARTICLE (for the dominance provenance gate), and a plain-title node (pin).
-                    var docID: String? = nil; var docTitle = ""; var docChars = 0
-                    for n in userNodes where n.cardProvenance().kind == .document {
-                        let chars = (await fullEntryText(nodeID: n.id)).count
-                        if chars > 2_000 { docID = n.id; docTitle = n.title; docChars = chars; break }
-                    }
-                    let linkNode = userNodes.first { $0.cardProvenance().kind == .savedLink }
-                    NSLog("[RoutingDiag] fixture: loaded=%d userRoom=%d · picked document=%@ (%d chars) · savedArticle=%@",
-                          nodes.count, userNodes.count, docTitle.isEmpty ? "NONE" : docTitle, docChars, linkNode?.title ?? "NONE")
+                let linkNode = userNodes.first { $0.cardProvenance().kind == .savedLink }
+                NSLog("[RoutingDiag] fixture: loaded=%d userRoom=%d · picked document=%@ (%d chars) · savedArticle=%@",
+                      nodes.count, userNodes.count, docTitle.isEmpty ? "NONE" : docTitle, docChars, linkNode?.title ?? "NONE")
 
-                    // ── BN2 DOMINANCE provenance gate against REAL fixture nodes (embedding-independent).
-                    // Same synthetic ranking shape (top 0.75, 3 passages); a DOCUMENT leads → READ, a
-                    // SAVED ARTICLE leads → nil (its internal passage density is a document artefact).
-                    func rank(_ id: String) -> [(nodeID: String, aggregate: Float, top: Float, count: Int)] {
-                        [(id, 2.1, 0.75, 3), ("other", 0.9, 0.62, 1)]
-                    }
-                    if let docID {
-                        let domDoc = LibrarianState.dominantReadEntry(ranking: rank(docID), store: self)
-                        NSLog("[RoutingDiag] DOMINANCE document→%@ (expect READ = the doc id)", domDoc ?? "nil")
-                    }
-                    if let link = linkNode {
-                        let domLink = LibrarianState.dominantReadEntry(ranking: rank(link.id), store: self)
-                        NSLog("[RoutingDiag] DOMINANCE savedArticle→%@ (expect nil)", domLink ?? "nil")
-                    }
-                    // Weak-signal (below 0.70) never dominates, whatever the provenance.
-                    if let docID {
-                        let weak: [(nodeID: String, aggregate: Float, top: Float, count: Int)] = [(docID, 1.2, 0.55, 2)]
-                        NSLog("[RoutingDiag] DOMINANCE weak(top 0.55)→%@ (expect nil)", LibrarianState.dominantReadEntry(ranking: weak, store: self) ?? "nil")
-                    }
+                // ── BN2 DOMINANCE provenance gate against REAL fixture nodes (embedding-independent).
+                // Same synthetic ranking shape (top 0.75, 3 passages); a DOCUMENT leads → READ, a
+                // SAVED ARTICLE leads → nil (its internal passage density is a document artefact).
+                func rank(_ id: String) -> [(nodeID: String, aggregate: Float, top: Float, count: Int)] {
+                    [(id, 2.1, 0.75, 3), ("other", 0.9, 0.62, 1)]
+                }
+                if let docID {
+                    let domDoc = LibrarianState.dominantReadEntry(ranking: rank(docID), store: self)
+                    NSLog("[RoutingDiag] DOMINANCE document→%@ (expect READ = the doc id)", domDoc ?? "nil")
+                }
+                if let link = linkNode {
+                    let domLink = LibrarianState.dominantReadEntry(ranking: rank(link.id), store: self)
+                    NSLog("[RoutingDiag] DOMINANCE savedArticle→%@ (expect nil)", domLink ?? "nil")
+                }
+                // Weak-signal (below 0.70) never dominates, whatever the provenance.
+                if let docID {
+                    let weak: [(nodeID: String, aggregate: Float, top: Float, count: Int)] = [(docID, 1.2, 0.55, 2)]
+                    NSLog("[RoutingDiag] DOMINANCE weak(top 0.55)→%@ (expect nil)", LibrarianState.dominantReadEntry(ranking: weak, store: self) ?? "nil")
+                }
 
-                    if let docID {
-                        // ── BN3 READ-IN-FULL: HOST 32K reads the WHOLE entry; FM 4K degrades to a
-                        // PARTIAL best-passages read, and the packet never exceeds the derived budget.
-                        let libHost = LibrarianState()
-                        let host = await libHost.debugForceReadPacket(readTargets: [docID], store: self, windowOverride: 32_768)
-                        NSLog("[RoutingDiag] HOST read: read=%d skim=%d partial=%@ contextChars=%d fullChars=%d (expect read=1 partial=false, contextChars≥fullChars)",
-                              host.receipt.readInFull, host.receipt.skimmed, "\(host.receipt.partial)", host.context.count, docChars)
-                        let libFM = LibrarianState()
-                        let fmBudget = libFM.askContextCharBudget(windowOverride: 4_096)
-                        let fm = await libFM.debugForceReadPacket(readTargets: [docID], store: self, windowOverride: 4_096)
-                        let fmOverflow = fm.context.count > fmBudget
-                        NSLog("[RoutingDiag] FM 4K read: read=%d partial=%@ contextChars=%d budget=%d overflow=%@ (expect partial=%@, no overflow)",
-                              fm.receipt.readInFull, "\(fm.receipt.partial)", fm.context.count, fmBudget, "\(fmOverflow)", docChars > fmBudget ? "true" : "false")
+                if let docID {
+                    // ── BN3 READ-IN-FULL: HOST 32K reads the WHOLE entry; FM 4K degrades to a
+                    // PARTIAL best-passages read, and the packet never exceeds the derived budget.
+                    let libHost = LibrarianState()
+                    let host = await libHost.debugForceReadPacket(readTargets: [docID], store: self, windowOverride: 32_768)
+                    NSLog("[RoutingDiag] HOST read: read=%d skim=%d partial=%@ contextChars=%d fullChars=%d (expect read=1 partial=false, contextChars≥fullChars)",
+                          host.receipt.readInFull, host.receipt.skimmed, "\(host.receipt.partial)", host.context.count, docChars)
+                    let libFM = LibrarianState()
+                    let fmBudget = libFM.askContextCharBudget(windowOverride: 4_096)
+                    let fm = await libFM.debugForceReadPacket(readTargets: [docID], store: self, windowOverride: 4_096)
+                    let fmOverflow = fm.context.count > fmBudget
+                    NSLog("[RoutingDiag] FM 4K read: read=%d partial=%@ contextChars=%d budget=%d overflow=%@ (expect partial=%@, no overflow)",
+                          fm.receipt.readInFull, "\(fm.receipt.partial)", fm.context.count, fmBudget, "\(fmOverflow)", docChars > fmBudget ? "true" : "false")
 
-                        // ── BN2 TRIGGER #2 — the question NAMES the entry by title WITHOUT quotes
-                        // (punctuation-normalised, word-order-independent) → read(title). Build a
-                        // natural naming question from the title's own words.
-                        let titleWords = docTitle.lowercased()
-                            .split(whereSeparator: { !$0.isLetter && !$0.isNumber }).map(String.init)
-                            .filter { $0.count >= 3 }.joined(separator: " ")
-                        let tmIDs = LibrarianState.titleMatchedEntryIDs(question: "what's in my \(titleWords)?", nodes: nodes)
-                        let libT = LibrarianState(); let cT = ChatSession(); libT.selectedScope = .corpus
-                        let pt = await libT.debugBuildAskPacket(query: "what's in my \(titleWords)?", store: self, chat: cT)
-                        NSLog("[RoutingDiag] TITLE-MATCH (unquoted '%@'): titleMatchedEntryIDs→%@ · mode=%@ read=%d (expect read(title), names the doc)",
-                              titleWords, "\(tmIDs.contains(docID))", pt.mode, pt.receipt?.readInFull ?? -1)
-                        // BS1 — TOKEN match: only the FIRST TWO title tokens, each PLURALISED, must still
-                        // match (proves ≥2-token rule + light stemming — the "lab test results" ↔
-                        // "Annual – Lab Tests" fix, which the old whole-phrase subset missed).
-                        let firstTwo = docTitle.lowercased()
-                            .split(whereSeparator: { !$0.isLetter && !$0.isNumber }).map(String.init)
-                            .filter { $0.count >= 3 }.prefix(2).map { $0.hasSuffix("s") ? $0 : $0 + "s" }.joined(separator: " ")
-                        let tmPartial = LibrarianState.titleMatchedEntryIDs(question: "what do my \(firstTwo) show?", nodes: nodes)
-                        NSLog("[RoutingDiag] TITLE-MATCH (2 tokens, pluralised '%@'): matches doc=%@ (expect true — token+stem)",
-                              firstTwo, "\(tmPartial.contains(docID))")
+                    // ── BN2 TRIGGER #2 — the question NAMES the entry by title WITHOUT quotes
+                    // (punctuation-normalised, word-order-independent) → read(title). Build a
+                    // natural naming question from the title's own words.
+                    let titleWords = docTitle.lowercased()
+                        .split(whereSeparator: { !$0.isLetter && !$0.isNumber }).map(String.init)
+                        .filter { $0.count >= 3 }.joined(separator: " ")
+                    let tmIDs = LibrarianState.titleMatchedEntryIDs(question: "what's in my \(titleWords)?", nodes: nodes)
+                    let libT = LibrarianState(); let cT = ChatSession(); libT.selectedScope = .corpus
+                    let pt = await libT.debugBuildAskPacket(query: "what's in my \(titleWords)?", store: self, chat: cT)
+                    NSLog("[RoutingDiag] TITLE-MATCH (unquoted '%@'): titleMatchedEntryIDs→%@ · mode=%@ read=%d (expect read(title), names the doc)",
+                          titleWords, "\(tmIDs.contains(docID))", pt.mode, pt.receipt?.readInFull ?? -1)
+                    // BS1 — TOKEN match: only the FIRST TWO title tokens, each PLURALISED, must still
+                    // match (proves ≥2-token rule + light stemming — the "lab test results" ↔
+                    // "Annual – Lab Tests" fix, which the old whole-phrase subset missed).
+                    let firstTwo = docTitle.lowercased()
+                        .split(whereSeparator: { !$0.isLetter && !$0.isNumber }).map(String.init)
+                        .filter { $0.count >= 3 }.prefix(2).map { $0.hasSuffix("s") ? $0 : $0 + "s" }.joined(separator: " ")
+                    let tmPartial = LibrarianState.titleMatchedEntryIDs(question: "what do my \(firstTwo) show?", nodes: nodes)
+                    NSLog("[RoutingDiag] TITLE-MATCH (2 tokens, pluralised '%@'): matches doc=%@ (expect true — token+stem)",
+                          firstTwo, "\(tmPartial.contains(docID))")
 
-                        // ── BN2 PIN + BN4 WORKING SET + follow-up + moved-on (deterministic; pin=title-match).
-                        let libP = LibrarianState(); let cP = ChatSession(); libP.selectedScope = .corpus
-                        let p1 = await libP.debugBuildAskPacket(query: "Tell me about my entry \"\(docTitle)\".", store: self, chat: cP)
-                        NSLog("[RoutingDiag] PIN '%@': mode=%@ read=%d skim=%d workingSet=%@ (expect read, workingSet=[that entry])",
-                              docTitle, p1.mode, p1.receipt?.readInFull ?? -1, p1.receipt?.skimmed ?? -1, "\(cP.workingSet == [docID])")
-                        let p2 = await libP.debugBuildAskPacket(query: "analyze that document", store: self, chat: cP)
-                        NSLog("[RoutingDiag] FOLLOWUP: mode=%@ read=%d workingSetUnchanged=%@ (expect read(followup), no new retrieval)",
-                              p2.mode, p2.receipt?.readInFull ?? -1, "\(cP.workingSet == [docID])")
-                        let p3 = await libP.debugBuildAskPacket(query: "What have I been thinking about lately?", store: self, chat: cP)
-                        NSLog("[RoutingDiag] MOVED-ON: mode=%@ skim=%d workingSetCleared=%@ (expect survey, working set cleared)",
-                              p3.mode, p3.receipt?.skimmed ?? -1, "\(cP.workingSet.isEmpty)")
+                    // ── BN2 PIN + BN4 WORKING SET + follow-up + moved-on (deterministic; pin=title-match).
+                    let libP = LibrarianState(); let cP = ChatSession(); libP.selectedScope = .corpus
+                    let p1 = await libP.debugBuildAskPacket(query: "Tell me about my entry \"\(docTitle)\".", store: self, chat: cP)
+                    NSLog("[RoutingDiag] PIN '%@': mode=%@ read=%d skim=%d workingSet=%@ (expect read, workingSet=[that entry])",
+                          docTitle, p1.mode, p1.receipt?.readInFull ?? -1, p1.receipt?.skimmed ?? -1, "\(cP.workingSet == [docID])")
+                    let p2 = await libP.debugBuildAskPacket(query: "analyze that document", store: self, chat: cP)
+                    NSLog("[RoutingDiag] FOLLOWUP: mode=%@ read=%d workingSetUnchanged=%@ (expect read(followup), no new retrieval)",
+                          p2.mode, p2.receipt?.readInFull ?? -1, "\(cP.workingSet == [docID])")
+                    let p3 = await libP.debugBuildAskPacket(query: "What have I been thinking about lately?", store: self, chat: cP)
+                    NSLog("[RoutingDiag] MOVED-ON: mode=%@ skim=%d workingSetCleared=%@ (expect survey, working set cleared)",
+                          p3.mode, p3.receipt?.skimmed ?? -1, "\(cP.workingSet.isEmpty)")
 
-                        // BT3 — the FIRST message of a BRAND-NEW chat. `corpusAware` defaults OFF
-                        // (Library mode is opt-in, T-ruled 2026-08) → a first turn sent in General
-                        // mode never reaches corpusCandidates → the "I can't access your records"
-                        // refusal + no footer T saw 3 builds running. Here we log that default AND
-                        // prove that WITH Library on, a fresh chat's FIRST send routes (receipt present).
-                        let libN = LibrarianState(); let cN = ChatSession(); libN.selectedScope = .corpus
-                        let freshDefault = LibrarianState().corpusAware
-                        let turn1 = await libN.debugBuildAskPacket(query: "what do my \(firstTwo) show?", store: self, chat: cN)
-                        NSLog("[RoutingDiag] TURN-1 fresh chat: corpusAware default=%@ · library-on first-send mode=%@ read=%d receipt=%@ (expect routes → receipt; default OFF explains the General-mode turn-1 refusal)",
-                              "\(freshDefault)", turn1.mode, turn1.receipt?.readInFull ?? -1, turn1.receipt != nil ? "present" : "nil")
-                    } else {
-                        NSLog("[RoutingDiag] no big document loaded — skipped read-in-full/pin checks")
-                    }
-                    NSLog("[RoutingDiag] done")
+                    // BT3 — the FIRST message of a BRAND-NEW chat. `corpusAware` defaults OFF
+                    // (Library mode is opt-in, T-ruled 2026-08) → a first turn sent in General
+                    // mode never reaches corpusCandidates → the "I can't access your records"
+                    // refusal + no footer T saw 3 builds running. Here we log that default AND
+                    // prove that WITH Library on, a fresh chat's FIRST send routes (receipt present).
+                    let libN = LibrarianState(); let cN = ChatSession(); libN.selectedScope = .corpus
+                    let freshDefault = LibrarianState().corpusAware
+                    let turn1 = await libN.debugBuildAskPacket(query: "what do my \(firstTwo) show?", store: self, chat: cN)
+                    NSLog("[RoutingDiag] TURN-1 fresh chat: corpusAware default=%@ · library-on first-send mode=%@ read=%d receipt=%@ (expect routes → receipt; default OFF explains the General-mode turn-1 refusal)",
+                          "\(freshDefault)", turn1.mode, turn1.receipt?.readInFull ?? -1, turn1.receipt != nil ? "present" : "nil")
+                } else {
+                    NSLog("[RoutingDiag] no big document loaded — skipped read-in-full/pin checks")
                 }
-                // Brief BU2 — THE GAUNTLET. Drives the REAL grounded send through the sealed local
-                // Host for the golden question set and prints the table. The standing gate.
-                if ProcessInfo.processInfo.arguments.contains("-LibrarianGauntlet") {
-                    await runLibrarianGauntlet()
-                }
-                // Thinking-leak verification matrix (T, 2026-10-03): {qwen3:4b, qwen3:8b, deepseek-r1}
-                // × Thinking{off,on} × 3 questions through the REAL turn path — no reasoning trace / no
-                // system-prompt echo / citations resolve.
-                if ProcessInfo.processInfo.arguments.contains("-LibrarianLeakMatrix") {
-                    await runLibrarianLeakMatrix()
-                }
-                // Brief BY — the residency-mode gauntlet (Dynamic/Manual/Always-ready + the idle-eject repro).
-                if ProcessInfo.processInfo.arguments.contains("-LibrarianResidencyGauntlet") {
-                    await runResidencyGauntlet()
-                }
-                // 4B-vs-8B fair comparison (T, 2026-09-30) — same cases × Thinking off/on × 3 runs +
-                // unsupported-claim check. One launch per model via -DebugHostModel.
-                if ProcessInfo.processInfo.arguments.contains("-LibrarianCompare") {
-                    await runLibrarianCompare()
-                }
-                // Brief U verify (READ-ONLY) — the sample/user SPLIT. Logs the node
-                // partition, which collections land in COLLECTIONS vs the sample
-                // region, and that the capture picker hides the sample's collections
-                // (a user note can't be filed into one). No mutation.
-                if ProcessInfo.processInfo.arguments.contains("-SampleSplitDiag") {
-                    let userCollections = collections.filter { !sampleCollectionIDs.contains($0.id) }.map { $0.id }
-                    let sampleCollections = collections.filter { sampleCollectionIDs.contains($0.id) }.map { $0.id }
-                    NSLog("[SplitDiag] total=%d userNodes=%d sampleNodes=%d", nodes.count, userNodes.count, sampleNodeIDs.count)
-                    NSLog("[SplitDiag] COLLECTIONS(non-sample)=[%@]", userCollections.joined(separator: ", "))
-                    NSLog("[SplitDiag] SAMPLE region collections=[%@]", sampleCollections.joined(separator: ", "))
-                    let priority = priorityNodes.filter { isSample($0.id) }.count
-                    let recents = userNodes.filter { isSample($0.id) }.count
-                    NSLog("[SplitDiag] sample nodes leaking into Priority=%d Recents/userNodes=%d (expect 0/0)", priority, recents)
-                    NSLog("[SplitDiag] every collection picker hides %d sample collection(s) → a user note can't be filed into one", sampleCollectionIDs.count)
-                }
-                // Brief W1 verify (READ-ONLY, no query embed) — derive provenance for
-                // every seeded block from its real itemID and log the non-`note` ones
-                // (with domain) + a histogram, so the item-kind → provenance mapping is
-                // observable without needing cpuOnly BGE on the Simulator.
-                if ProcessInfo.processInfo.arguments.contains("-ProvenanceDiag") {
-                    var hist: [String: Int] = [:]
-                    for node in nodes {
-                        guard let index = await blockIndex(forNodeID: node.id) else { continue }
-                        for block in index.blocks {
-                            let (kind, domain) = node.blockProvenance(forItemID: block.itemID)
-                            hist[kind.rawValue, default: 0] += 1
-                            if kind != .note {
-                                NSLog("[ProvDiag] %@ — %@ (%@) :: %@", node.title, kind.rawValue,
-                                      domain ?? "-", String(block.text.prefix(48)))
-                            }
-                        }
-                    }
-                    NSLog("[ProvDiag] histogram=%@", "\(hist.sorted { $0.key < $1.key })")
-                    // Brief AA3 — CARD-level (whole-node) provenance, no blocks needed.
-                    // Verifies `cardProvenance` labels saved-article nodes as collected
-                    // (incl. the sample's `link_items[].url` shape, not just `item.url`).
-                    var cardHist: [String: Int] = [:]
-                    for node in nodes {
-                        let (kind, domain) = node.cardProvenance()
-                        cardHist[kind.rawValue, default: 0] += 1
+                NSLog("[RoutingDiag] done")
+            }
+            // Brief BU2 — THE GAUNTLET. Drives the REAL grounded send through the sealed local
+            // Host for the golden question set and prints the table. The standing gate.
+            if ProcessInfo.processInfo.arguments.contains("-LibrarianGauntlet") {
+                await runLibrarianGauntlet()
+            }
+            // Thinking-leak verification matrix (T, 2026-10-03): {qwen3:4b, qwen3:8b, deepseek-r1}
+            // × Thinking{off,on} × 3 questions through the REAL turn path — no reasoning trace / no
+            // system-prompt echo / citations resolve.
+            if ProcessInfo.processInfo.arguments.contains("-LibrarianLeakMatrix") {
+                await runLibrarianLeakMatrix()
+            }
+            // Brief BY — the residency-mode gauntlet (Dynamic/Manual/Always-ready + the idle-eject repro).
+            if ProcessInfo.processInfo.arguments.contains("-LibrarianResidencyGauntlet") {
+                await runResidencyGauntlet()
+            }
+            // 4B-vs-8B fair comparison (T, 2026-09-30) — same cases × Thinking off/on × 3 runs +
+            // unsupported-claim check. One launch per model via -DebugHostModel.
+            if ProcessInfo.processInfo.arguments.contains("-LibrarianCompare") {
+                await runLibrarianCompare()
+            }
+            // Brief U verify (READ-ONLY) — the sample/user SPLIT. Logs the node
+            // partition, which collections land in COLLECTIONS vs the sample
+            // region, and that the capture picker hides the sample's collections
+            // (a user note can't be filed into one). No mutation.
+            if ProcessInfo.processInfo.arguments.contains("-SampleSplitDiag") {
+                let userCollections = collections.filter { !sampleCollectionIDs.contains($0.id) }.map { $0.id }
+                let sampleCollections = collections.filter { sampleCollectionIDs.contains($0.id) }.map { $0.id }
+                NSLog("[SplitDiag] total=%d userNodes=%d sampleNodes=%d", nodes.count, userNodes.count, sampleNodeIDs.count)
+                NSLog("[SplitDiag] COLLECTIONS(non-sample)=[%@]", userCollections.joined(separator: ", "))
+                NSLog("[SplitDiag] SAMPLE region collections=[%@]", sampleCollections.joined(separator: ", "))
+                let priority = priorityNodes.filter { isSample($0.id) }.count
+                let recents = userNodes.filter { isSample($0.id) }.count
+                NSLog("[SplitDiag] sample nodes leaking into Priority=%d Recents/userNodes=%d (expect 0/0)", priority, recents)
+                NSLog("[SplitDiag] every collection picker hides %d sample collection(s) → a user note can't be filed into one", sampleCollectionIDs.count)
+            }
+            // Brief W1 verify (READ-ONLY, no query embed) — derive provenance for
+            // every seeded block from its real itemID and log the non-`note` ones
+            // (with domain) + a histogram, so the item-kind → provenance mapping is
+            // observable without needing cpuOnly BGE on the Simulator.
+            if ProcessInfo.processInfo.arguments.contains("-ProvenanceDiag") {
+                var hist: [String: Int] = [:]
+                for node in nodes {
+                    guard let index = await blockIndex(forNodeID: node.id) else { continue }
+                    for block in index.blocks {
+                        let (kind, domain) = node.blockProvenance(forItemID: block.itemID)
+                        hist[kind.rawValue, default: 0] += 1
                         if kind != .note {
-                            NSLog("[ProvDiag] CARD %@ — %@ (%@)", node.title, kind.rawValue, domain ?? "-")
+                            NSLog("[ProvDiag] %@ — %@ (%@) :: %@", node.title, kind.rawValue,
+                                  domain ?? "-", String(block.text.prefix(48)))
                         }
                     }
-                    NSLog("[ProvDiag] CARD histogram=%@", "\(cardHist.sorted { $0.key < $1.key })")
                 }
-                // Brief W3 verify — the ONE shared citation pattern `\[(\d{1,2})\]`
-                // (chip parser == inline superscript styler). `[237]`/`[12a]` must
-                // yield NO indices (→ plain text, no chip, no superscript); `[2] [3]`
-                // and `[12]` are chips.
-                if ProcessInfo.processInfo.arguments.contains("-CitationRegexDiag") {
-                    func idx(_ s: String) -> String { "\(CitationReference.citedIndices(in: s).sorted())" }
-                    NSLog("[CitRegex] [237]=%@ [12a]=%@ [2] [3]=%@ [12]=%@ [2][3][7]=%@",
-                          idx("x [237] y"), idx("z [12a] z"), idx("a [2] b [3]"), idx("n [12] n"), idx("r [2][3][7]"))
-                    // Brief AC1 — the FIVE forms must all parse (deepseek writes lists).
-                    NSLog("[CitRegex-AC1] [7]=%@ · [1, 2, 7]=%@ · [1,2]=%@ · [7][8]=%@ · [3], [4]=%@",
-                          idx("a [7] b"), idx("a [1, 2, 7] b"), idx("a [1,2] b"), idx("a [7][8] b"), idx("a [3], [4] b"))
-                    // Brief AB3/AC1 — invalid indices stripped INDIVIDUALLY inside a list.
-                    NSLog("[CitRegex] strip {1,3} of 'See [1] and [9] plus [3].' → '%@'",
-                          CitationReference.stripInvalidMarkers(in: "See [1] and [9] plus [3].", valid: [1, 3]))
-                    NSLog("[CitRegex] strip {} of 'Generic [1][2][3][4][5] answer.' → '%@'",
-                          CitationReference.stripInvalidMarkers(in: "Generic [1][2][3][4][5] answer.", valid: []))
-                    NSLog("[CitRegex-AC1] strip {1,3} of 'x [1, 9, 3] y' → '%@'",
-                          CitationReference.stripInvalidMarkers(in: "x [1, 9, 3] y", valid: [1, 3]))
-                    // Brief AE3 + CH 2026-10-09 — adjacent markers get a superscript comma.
-                    // "[25][26]" (fused) and "[25, 26]" (list) both → "25,26"; "1990[3]" (a year) → "19903".
-                    var ae3 = AttributedString("x [25][26] y [25, 26] z 1990[3] w [1][2][3] v")
-                    CitationReference.styleInlineMarkers(in: &ae3, face: .fallback)  // diagnostic — face irrelevant
-                    NSLog("[CitRegex-AE3] styled='%@'",
-                          String(ae3.characters).replacingOccurrences(of: "\u{2009}", with: "␟"))
-                    // Brief BH — renumber to ONE number per SOURCE. Two passages of one
-                    // entry ([3],[12] → nodeID "abc") + one of another ([7] → "def"),
-                    // cited out of order, must become prose [1] [1] [2] with chips
-                    // 1=abc, 2=def; an adjacent same-source repeat [3][12] collapses to [1].
-                    let bhCites: [ChatSession.Message.Citation] = [
-                        .init(index: 3,  nodeID: "abc", title: "Annual – Lab Tests", snippet: "a"),
-                        .init(index: 12, nodeID: "abc", title: "Annual – Lab Tests", snippet: "b"),
-                        .init(index: 7,  nodeID: "def", title: "Other entry",         snippet: "c"),
-                    ]
-                    let bh1 = CitationReference.renumberBySource(text: "See [3] and [12] here, also [7].", citations: bhCites)
-                    NSLog("[CitRegex-BH] in='See [3] and [12] here, also [7].' out='%@' chips=%@",
-                          bh1.text, bh1.citations.map { "\($0.index):\($0.nodeID ?? $0.url ?? "?")" }.joined(separator: ","))
-                    let bh2 = CitationReference.renumberBySource(text: "X [3][12] Y [7] Z.", citations: bhCites)
-                    NSLog("[CitRegex-BH] fused in='X [3][12] Y [7] Z.' out='%@'", bh2.text)
+                NSLog("[ProvDiag] histogram=%@", "\(hist.sorted { $0.key < $1.key })")
+                // Brief AA3 — CARD-level (whole-node) provenance, no blocks needed.
+                // Verifies `cardProvenance` labels saved-article nodes as collected
+                // (incl. the sample's `link_items[].url` shape, not just `item.url`).
+                var cardHist: [String: Int] = [:]
+                for node in nodes {
+                    let (kind, domain) = node.cardProvenance()
+                    cardHist[kind.rawValue, default: 0] += 1
+                    if kind != .note {
+                        NSLog("[ProvDiag] CARD %@ — %@ (%@)", node.title, kind.rawValue, domain ?? "-")
+                    }
                 }
-                // Brief Y Part E verify — search-index coverage + the technology
-                // question over the USER's corpus (Corpus scope). The candidate list
-                // settles whether Brief W's single-source answer was a PARTIAL INDEX
-                // (coverage < total) or RANKING (coverage full, list still lopsided).
-                // Needs cpuOnly for the BGE query embed on the Simulator.
-                if #available(iOS 17.0, *),
-                   ProcessInfo.processInfo.arguments.contains("-IndexDiag") {
-                    await refreshBlockIndexCoverage()
-                    let cov = blockIndexCoverage
-                    NSLog("[IndexDiag] coverage current=%d total=%d v%d | userNodes=%d sampleNodes=%d",
-                          cov?.current ?? -1, cov?.total ?? -1, BlockEmbeddingService.currentEmbedderVersion,
-                          userNodes.count, sampleNodeIDs.count)
+                NSLog("[ProvDiag] CARD histogram=%@", "\(cardHist.sorted { $0.key < $1.key })")
+            }
+            // Brief W3 verify — the ONE shared citation pattern `\[(\d{1,2})\]`
+            // (chip parser == inline superscript styler). `[237]`/`[12a]` must
+            // yield NO indices (→ plain text, no chip, no superscript); `[2] [3]`
+            // and `[12]` are chips.
+            if ProcessInfo.processInfo.arguments.contains("-CitationRegexDiag") {
+                func idx(_ s: String) -> String { "\(CitationReference.citedIndices(in: s).sorted())" }
+                NSLog("[CitRegex] [237]=%@ [12a]=%@ [2] [3]=%@ [12]=%@ [2][3][7]=%@",
+                      idx("x [237] y"), idx("z [12a] z"), idx("a [2] b [3]"), idx("n [12] n"), idx("r [2][3][7]"))
+                // Brief AC1 — the FIVE forms must all parse (deepseek writes lists).
+                NSLog("[CitRegex-AC1] [7]=%@ · [1, 2, 7]=%@ · [1,2]=%@ · [7][8]=%@ · [3], [4]=%@",
+                      idx("a [7] b"), idx("a [1, 2, 7] b"), idx("a [1,2] b"), idx("a [7][8] b"), idx("a [3], [4] b"))
+                // Brief AB3/AC1 — invalid indices stripped INDIVIDUALLY inside a list.
+                NSLog("[CitRegex] strip {1,3} of 'See [1] and [9] plus [3].' → '%@'",
+                      CitationReference.stripInvalidMarkers(in: "See [1] and [9] plus [3].", valid: [1, 3]))
+                NSLog("[CitRegex] strip {} of 'Generic [1][2][3][4][5] answer.' → '%@'",
+                      CitationReference.stripInvalidMarkers(in: "Generic [1][2][3][4][5] answer.", valid: []))
+                NSLog("[CitRegex-AC1] strip {1,3} of 'x [1, 9, 3] y' → '%@'",
+                      CitationReference.stripInvalidMarkers(in: "x [1, 9, 3] y", valid: [1, 3]))
+                // Brief AE3 + CH 2026-10-09 — adjacent markers get a superscript comma.
+                // "[25][26]" (fused) and "[25, 26]" (list) both → "25,26"; "1990[3]" (a year) → "19903".
+                var ae3 = AttributedString("x [25][26] y [25, 26] z 1990[3] w [1][2][3] v")
+                CitationReference.styleInlineMarkers(in: &ae3, face: .fallback)  // diagnostic — face irrelevant
+                NSLog("[CitRegex-AE3] styled='%@'",
+                      String(ae3.characters).replacingOccurrences(of: "\u{2009}", with: "␟"))
+                // Brief BH — renumber to ONE number per SOURCE. Two passages of one
+                // entry ([3],[12] → nodeID "abc") + one of another ([7] → "def"),
+                // cited out of order, must become prose [1] [1] [2] with chips
+                // 1=abc, 2=def; an adjacent same-source repeat [3][12] collapses to [1].
+                let bhCites: [ChatSession.Message.Citation] = [
+                    .init(index: 3,  nodeID: "abc", title: "Annual – Lab Tests", snippet: "a"),
+                    .init(index: 12, nodeID: "abc", title: "Annual – Lab Tests", snippet: "b"),
+                    .init(index: 7,  nodeID: "def", title: "Other entry",         snippet: "c"),
+                ]
+                let bh1 = CitationReference.renumberBySource(text: "See [3] and [12] here, also [7].", citations: bhCites)
+                NSLog("[CitRegex-BH] in='See [3] and [12] here, also [7].' out='%@' chips=%@",
+                      bh1.text, bh1.citations.map { "\($0.index):\($0.nodeID ?? $0.url ?? "?")" }.joined(separator: ","))
+                let bh2 = CitationReference.renumberBySource(text: "X [3][12] Y [7] Z.", citations: bhCites)
+                NSLog("[CitRegex-BH] fused in='X [3][12] Y [7] Z.' out='%@'", bh2.text)
+            }
+            // Brief Y Part E verify — search-index coverage + the technology
+            // question over the USER's corpus (Corpus scope). The candidate list
+            // settles whether Brief W's single-source answer was a PARTIAL INDEX
+            // (coverage < total) or RANKING (coverage full, list still lopsided).
+            // Needs cpuOnly for the BGE query embed on the Simulator.
+            if ProcessInfo.processInfo.arguments.contains("-IndexDiag") {
+                await refreshBlockIndexCoverage()
+                let cov = blockIndexCoverage
+                NSLog("[IndexDiag] coverage current=%d total=%d v%d | userNodes=%d sampleNodes=%d",
+                      cov?.current ?? -1, cov?.total ?? -1, BlockEmbeddingService.currentEmbedderVersion,
+                      userNodes.count, sampleNodeIDs.count)
+                let lib = LibrarianState()
+                let chat = ChatSession()
+                NSLog("[IndexDiag] --- 'What are my thoughts on technology?' (Corpus scope) ---")
+                await lib.debugCorpusRetrieve(query: "What are my thoughts on technology?", store: self, chat: chat)
+                NSLog("[IndexDiag] done")
+            }
+            // Brief AA1 verify — MEASURE the card floor. For 4 broad + 4 narrow
+            // probes over the USER's corpus room (Corpus scope), score every card
+            // (floor: -1 = unfloored) and log the distribution: query-vector norm
+            // (positive control — a ~0 norm means the Sim returned a ZERO embed and
+            // the numbers are meaningless), count, top, and how many cards clear a
+            // ladder of candidate floors. Broad probes also dump their top 25 titles
+            // so "relevant" is eyeball-checkable. Read the log, pick the floor where
+            // broad keep ≥ 20 and narrow keep ≤ 8, then bake `cardRelevanceFloor`.
+            if ProcessInfo.processInfo.arguments.contains("-CardFloorDiag") {
+                let ladder: [Float] = [0.45, 0.48, 0.50, 0.52, 0.54, 0.56, 0.58, 0.60]
+                let broad = ["What are my thoughts on technology?",
+                             "What are my thoughts on film?",
+                             "What is AirPad?",
+                             "What have I written about Spanish?"]
+                let narrow = ["How much did I spend on my Bolex camera?",
+                              "What is the Kuleshov Effect?",
+                              "What did I do on New Year's Eve?",
+                              "What are my notes about my father?"]
+                func probe(_ q: String, kind: String, dumpTop: Bool) async {
+                    let qvec = await CardEmbeddingService.shared.embed(q) ?? []
+                    var norm: Float = 0; for x in qvec { norm += x * x }; norm = norm.squareRoot()
+                    let all = await cardMatches(query: q, scope: .corpus, floor: -1, queryVector: qvec)
+                    let scores = all.map { $0.score }.sorted(by: >)
+                    func atLeast(_ t: Float) -> Int { scores.filter { $0 >= t }.count }
+                    let counts = ladder.map { "\(String(format: "%.2f", $0)):\(atLeast($0))" }.joined(separator: " ")
+                    let p50 = scores.isEmpty ? 0 : scores[scores.count / 2]
+                    NSLog("[CardFloor] %@ q=\"%@\" qnorm=%.3f scored=%d top=%.3f p50=%.3f | %@",
+                          kind, q, norm, scores.count, scores.first ?? 0, p50, counts)
+                    if dumpTop {
+                        for m in all.prefix(25) {
+                            let title = nodes.first { $0.id == m.nodeID }?.title ?? "?"
+                            NSLog("[CardFloor]   %.3f  %@", m.score, title)
+                        }
+                    }
+                }
+                NSLog("[CardFloor] === BROAD (target: keep >= 20 relevant) ===")
+                for q in broad { await probe(q, kind: "BROAD", dumpTop: true) }
+                NSLog("[CardFloor] === NARROW (target: keep <= 8) ===")
+                for q in narrow { await probe(q, kind: "NARROW", dumpTop: false) }
+                NSLog("[CardFloor] done")
+            }
+            // Brief AA verify — drive the FULL survey pipeline (shape + cards +
+            // assembly + S5 log) for the five verify scenarios, WITHOUT the model.
+            // The per-turn candidate list lands in the `librarian` Logger category
+            // (`turn N · shape=…`); the `[SurveyDiag]` markers below (NSLog) label
+            // each scenario. Read #1–#4 from the -CorpusFixture launch and #5 from a
+            // FRESH-SEED launch (`-SampleSeedDemo`, where Corpus == the sample).
+            // Needs -EmbedCPUOnly on the Simulator.
+            if ProcessInfo.processInfo.arguments.contains("-SurveyRetrievalDiag") {
+                let sampleScope: CanvasScope = .nodeIDs(sampleNodeIDs)
+                // #1 technology (Corpus) then #4 turn 2 carry, same lib/chat.
+                let lib1 = LibrarianState(); let chat1 = ChatSession(); lib1.selectedScope = .corpus
+                NSLog("[SurveyDiag] --- #1 technology (Corpus) — expect shape=survey, many cards ---")
+                await lib1.debugCorpusRetrieve(query: "What are my thoughts on technology?", store: self, chat: chat1)
+                NSLog("[SurveyDiag] --- #4 turn2 'which of those are about AI?' (carry — numbers must hold) ---")
+                await lib1.debugCorpusRetrieve(query: "Which of those are about AI?", store: self, chat: chat1)
+                // #2 Bolex (Sample canvas).
+                let lib2 = LibrarianState(); let chat2 = ChatSession(); lib2.selectedScope = sampleScope
+                NSLog("[SurveyDiag] --- #2 Bolex (Sample) — expect shape=lookup, passages lead ---")
+                await lib2.debugCorpusRetrieve(query: "How much did I spend on my Bolex camera?", store: self, chat: chat2)
+                // #3 [entry title] pin (Sample canvas).
+                let lib3 = LibrarianState(); let chat3 = ChatSession(); lib3.selectedScope = sampleScope
+                NSLog(PrivateCases.text("tce5e239705", "[SurveyDiag] --- #3 '[entry title]' pin (Sample) — expect pin wins, short card list ---"))
+                await lib3.debugCorpusRetrieve(query: PrivateCases.text("t5896e1de1e", "What can you tell me about my entry called \"[entry title]\"?"), store: self, chat: chat3)
+                // #5 Valarie/film (Corpus) — meaningful only on a FRESH SEED.
+                let lib5 = LibrarianState(); let chat5 = ChatSession(); lib5.selectedScope = .corpus
+                NSLog("[SurveyDiag] --- #5 'what does Valarie write about film?' (Corpus) — read on FRESH SEED ---")
+                await lib5.debugCorpusRetrieve(query: "What does Valarie write about film?", store: self, chat: chat5)
+                NSLog("[SurveyDiag] done")
+            }
+            // Brief AB1 — REPRODUCE the sample-room miss + log the resolved scope
+            // per turn. The Librarian sheet seeds `selectedScope` from the host
+            // (`ContentView.hostScope`): sampleCanvas → .nodeIDs(sample);
+            // canvas/dashboard/entry → .corpus; collectionCanvas(id) → .collection(id).
+            // The bug T hit in the SAMPLE room: a scope of `.corpus` resolves to the
+            // USER room once a sample is seeded, and a SAMPLE-collection miss retries
+            // into the USER corpus. This runs the French question at each and the S5
+            // log now prints `scope=…` (the resolved room). Needs -EmbedCPUOnly.
+            if ProcessInfo.processInfo.arguments.contains("-ScopeReproDiag") {
+                let q = "What do I have on learning French?"
+                NSLog("[ScopeRepro] hostScope: sampleCanvas→nodeIDs:%d · canvas/dashboard/entry→corpus(→%@ room) · collectionCanvas(id)→collection:id",
+                      sampleNodeIDs.count, (sampleLibraryPresent && !userNodes.isEmpty) ? "user" : "sample")
+                // A) .corpus — what the Dashboard / user canvas / entry open with. On a
+                // seeded install with user notes this IS the user room → the French MISS.
+                let a = LibrarianState(); let ca = ChatSession(); a.selectedScope = .corpus
+                NSLog("[ScopeRepro] --- A) scope=.corpus (Dashboard/canvas/entry default) — expect USER room, French MISS ---")
+                await a.debugCorpusRetrieve(query: q, store: self, chat: ca)
+                // B) .nodeIDs(sample) — what the SAMPLE canvas opens with. Correct room.
+                let b = LibrarianState(); let cb = ChatSession(); b.selectedScope = .nodeIDs(sampleNodeIDs)
+                NSLog("[ScopeRepro] --- B) scope=.nodeIDs(sample) (sampleCanvas default) — expect sample French cards ---")
+                await b.debugCorpusRetrieve(query: q, store: self, chat: cb)
+                // C) a SAMPLE collection — observe the collection-miss retry. If the
+                // sample's passages are absent (device: no blocks.json / BUG 41) the
+                // <0.60 miss retries into the USER corpus (a room crossing). On the
+                // fixture the sample HAS blocks, so this shows the non-leaking case.
+                if let fr = collections.first(where: { sampleCollectionIDs.contains($0.id) && $0.name.lowercased().contains("french") }) {
+                    let c = LibrarianState(); let cc = ChatSession(); c.selectedScope = .collection(fr.id)
+                    NSLog("[ScopeRepro] --- C) scope=.collection(%@)[sample] — watch for a retry into the USER corpus ---", fr.id)
+                    await c.debugCorpusRetrieve(query: q, store: self, chat: cc)
+                } else {
+                    NSLog("[ScopeRepro] (no sample French collection found for C)")
+                }
+                // D) AB3 empty branch over a LARGE room — BGE anisotropy floods
+                // ≥floor cards for any string, so a 224-note corpus is NOT empty by
+                // the count rule (expect empty=false; the scope fix, not the empty
+                // prompt, is what fixes a wrong-room miss).
+                let d = LibrarianState(); let cd = ChatSession(); d.selectedScope = .corpus
+                NSLog("[ScopeRepro] --- D) gibberish over .corpus (224) — expect empty=FALSE (anisotropy floods cards) ---")
+                await d.debugCorpusRetrieve(query: "xzqf plorktangle vurnbelsplat quomby", store: self, chat: cd)
+                // E) AB3 empty branch positive control — a genuinely SMALL room
+                // (2 nodes) + off-topic query → < 3 cards, no passages → empty=TRUE.
+                let e = LibrarianState(); let ce = ChatSession(); e.selectedScope = .nodeIDs(Set(sampleNodeIDs.prefix(2)))
+                NSLog("[ScopeRepro] --- E) gibberish over a 2-node room — expect empty=TRUE ---")
+                await e.debugCorpusRetrieve(query: "xzqf plorktangle vurnbelsplat quomby", store: self, chat: ce)
+                // F) AC2 — the user-room miss T reported on device (build C). Canvas,
+                // Dashboard, and entry ALL open with hostScope=.corpus (→ user room),
+                // so one probe covers all three. Report scope/empty/shape/counts: if the
+                // fixture returns cards (no miss), the device cause is the MODEL or the
+                // [n]-list rendering (AC1), NOT retrieval — STOP + wait for T's log.
+                let f = LibrarianState(); let cf = ChatSession(); f.selectedScope = .corpus
+                NSLog("[ScopeRepro] --- F) AC2 'What is my thinking on technology?' over .corpus (canvas/dashboard/entry) ---")
+                await f.debugCorpusRetrieve(query: "What is my thinking on technology?", store: self, chat: cf)
+                NSLog("[ScopeRepro] done")
+            }
+            // Brief AC5 — resolve the pinned transcripts' [n] citations to sample
+            // node ids: run each question at scope=nodeIDs(sample) and log
+            // number → nodeID · title. Cross-check the French numbering against T's
+            // device chip list; map 10/17 + Silent Hill + coffee by position.
+            if ProcessInfo.processInfo.arguments.contains("-PinResolveDiag") {
+                let scope: CanvasScope = .nodeIDs(sampleNodeIDs)
+                let qs = ["What do I have on learning French?",
+                          "What can you tell me about my entry called \"Silent Hill 2's fog\"?",
+                          "How did coffee spread out of Ethiopia?"]
+                for q in qs {
                     let lib = LibrarianState()
-                    let chat = ChatSession()
-                    NSLog("[IndexDiag] --- 'What are my thoughts on technology?' (Corpus scope) ---")
-                    await lib.debugCorpusRetrieve(query: "What are my thoughts on technology?", store: self, chat: chat)
-                    NSLog("[IndexDiag] done")
-                }
-                // Brief AA1 verify — MEASURE the card floor. For 4 broad + 4 narrow
-                // probes over the USER's corpus room (Corpus scope), score every card
-                // (floor: -1 = unfloored) and log the distribution: query-vector norm
-                // (positive control — a ~0 norm means the Sim returned a ZERO embed and
-                // the numbers are meaningless), count, top, and how many cards clear a
-                // ladder of candidate floors. Broad probes also dump their top 25 titles
-                // so "relevant" is eyeball-checkable. Read the log, pick the floor where
-                // broad keep ≥ 20 and narrow keep ≤ 8, then bake `cardRelevanceFloor`.
-                if ProcessInfo.processInfo.arguments.contains("-CardFloorDiag") {
-                    let ladder: [Float] = [0.45, 0.48, 0.50, 0.52, 0.54, 0.56, 0.58, 0.60]
-                    let broad = ["What are my thoughts on technology?",
-                                 "What are my thoughts on film?",
-                                 "What is AirPad?",
-                                 "What have I written about Spanish?"]
-                    let narrow = ["How much did I spend on my Bolex camera?",
-                                  "What is the Kuleshov Effect?",
-                                  "What did I do on New Year's Eve?",
-                                  "What are my notes about my father?"]
-                    func probe(_ q: String, kind: String, dumpTop: Bool) async {
-                        let qvec = await CardEmbeddingService.shared.embed(q) ?? []
-                        var norm: Float = 0; for x in qvec { norm += x * x }; norm = norm.squareRoot()
-                        let all = await cardMatches(query: q, scope: .corpus, floor: -1, queryVector: qvec)
-                        let scores = all.map { $0.score }.sorted(by: >)
-                        func atLeast(_ t: Float) -> Int { scores.filter { $0 >= t }.count }
-                        let counts = ladder.map { "\(String(format: "%.2f", $0)):\(atLeast($0))" }.joined(separator: " ")
-                        let p50 = scores.isEmpty ? 0 : scores[scores.count / 2]
-                        NSLog("[CardFloor] %@ q=\"%@\" qnorm=%.3f scored=%d top=%.3f p50=%.3f | %@",
-                              kind, q, norm, scores.count, scores.first ?? 0, p50, counts)
-                        if dumpTop {
-                            for m in all.prefix(25) {
-                                let title = nodes.first { $0.id == m.nodeID }?.title ?? "?"
-                                NSLog("[CardFloor]   %.3f  %@", m.score, title)
-                            }
-                        }
-                    }
-                    NSLog("[CardFloor] === BROAD (target: keep >= 20 relevant) ===")
-                    for q in broad { await probe(q, kind: "BROAD", dumpTop: true) }
-                    NSLog("[CardFloor] === NARROW (target: keep <= 8) ===")
-                    for q in narrow { await probe(q, kind: "NARROW", dumpTop: false) }
-                    NSLog("[CardFloor] done")
-                }
-                // Brief AA verify — drive the FULL survey pipeline (shape + cards +
-                // assembly + S5 log) for the five verify scenarios, WITHOUT the model.
-                // The per-turn candidate list lands in the `librarian` Logger category
-                // (`turn N · shape=…`); the `[SurveyDiag]` markers below (NSLog) label
-                // each scenario. Read #1–#4 from the -CorpusFixture launch and #5 from a
-                // FRESH-SEED launch (`-SampleSeedDemo`, where Corpus == the sample).
-                // Needs -EmbedCPUOnly on the Simulator.
-                if ProcessInfo.processInfo.arguments.contains("-SurveyRetrievalDiag") {
-                    let sampleScope: CanvasScope = .nodeIDs(sampleNodeIDs)
-                    // #1 technology (Corpus) then #4 turn 2 carry, same lib/chat.
-                    let lib1 = LibrarianState(); let chat1 = ChatSession(); lib1.selectedScope = .corpus
-                    NSLog("[SurveyDiag] --- #1 technology (Corpus) — expect shape=survey, many cards ---")
-                    await lib1.debugCorpusRetrieve(query: "What are my thoughts on technology?", store: self, chat: chat1)
-                    NSLog("[SurveyDiag] --- #4 turn2 'which of those are about AI?' (carry — numbers must hold) ---")
-                    await lib1.debugCorpusRetrieve(query: "Which of those are about AI?", store: self, chat: chat1)
-                    // #2 Bolex (Sample canvas).
-                    let lib2 = LibrarianState(); let chat2 = ChatSession(); lib2.selectedScope = sampleScope
-                    NSLog("[SurveyDiag] --- #2 Bolex (Sample) — expect shape=lookup, passages lead ---")
-                    await lib2.debugCorpusRetrieve(query: "How much did I spend on my Bolex camera?", store: self, chat: chat2)
-                    // #3 [entry title] pin (Sample canvas).
-                    let lib3 = LibrarianState(); let chat3 = ChatSession(); lib3.selectedScope = sampleScope
-                    NSLog(PrivateCases.text("tce5e239705", "[SurveyDiag] --- #3 '[entry title]' pin (Sample) — expect pin wins, short card list ---"))
-                    await lib3.debugCorpusRetrieve(query: PrivateCases.text("t5896e1de1e", "What can you tell me about my entry called \"[entry title]\"?"), store: self, chat: chat3)
-                    // #5 Valarie/film (Corpus) — meaningful only on a FRESH SEED.
-                    let lib5 = LibrarianState(); let chat5 = ChatSession(); lib5.selectedScope = .corpus
-                    NSLog("[SurveyDiag] --- #5 'what does Valarie write about film?' (Corpus) — read on FRESH SEED ---")
-                    await lib5.debugCorpusRetrieve(query: "What does Valarie write about film?", store: self, chat: chat5)
-                    NSLog("[SurveyDiag] done")
-                }
-                // Brief AB1 — REPRODUCE the sample-room miss + log the resolved scope
-                // per turn. The Librarian sheet seeds `selectedScope` from the host
-                // (`ContentView.hostScope`): sampleCanvas → .nodeIDs(sample);
-                // canvas/dashboard/entry → .corpus; collectionCanvas(id) → .collection(id).
-                // The bug T hit in the SAMPLE room: a scope of `.corpus` resolves to the
-                // USER room once a sample is seeded, and a SAMPLE-collection miss retries
-                // into the USER corpus. This runs the French question at each and the S5
-                // log now prints `scope=…` (the resolved room). Needs -EmbedCPUOnly.
-                if ProcessInfo.processInfo.arguments.contains("-ScopeReproDiag") {
-                    let q = "What do I have on learning French?"
-                    NSLog("[ScopeRepro] hostScope: sampleCanvas→nodeIDs:%d · canvas/dashboard/entry→corpus(→%@ room) · collectionCanvas(id)→collection:id",
-                          sampleNodeIDs.count, (sampleLibraryPresent && !userNodes.isEmpty) ? "user" : "sample")
-                    // A) .corpus — what the Dashboard / user canvas / entry open with. On a
-                    // seeded install with user notes this IS the user room → the French MISS.
-                    let a = LibrarianState(); let ca = ChatSession(); a.selectedScope = .corpus
-                    NSLog("[ScopeRepro] --- A) scope=.corpus (Dashboard/canvas/entry default) — expect USER room, French MISS ---")
-                    await a.debugCorpusRetrieve(query: q, store: self, chat: ca)
-                    // B) .nodeIDs(sample) — what the SAMPLE canvas opens with. Correct room.
-                    let b = LibrarianState(); let cb = ChatSession(); b.selectedScope = .nodeIDs(sampleNodeIDs)
-                    NSLog("[ScopeRepro] --- B) scope=.nodeIDs(sample) (sampleCanvas default) — expect sample French cards ---")
-                    await b.debugCorpusRetrieve(query: q, store: self, chat: cb)
-                    // C) a SAMPLE collection — observe the collection-miss retry. If the
-                    // sample's passages are absent (device: no blocks.json / BUG 41) the
-                    // <0.60 miss retries into the USER corpus (a room crossing). On the
-                    // fixture the sample HAS blocks, so this shows the non-leaking case.
-                    if let fr = collections.first(where: { sampleCollectionIDs.contains($0.id) && $0.name.lowercased().contains("french") }) {
-                        let c = LibrarianState(); let cc = ChatSession(); c.selectedScope = .collection(fr.id)
-                        NSLog("[ScopeRepro] --- C) scope=.collection(%@)[sample] — watch for a retry into the USER corpus ---", fr.id)
-                        await c.debugCorpusRetrieve(query: q, store: self, chat: cc)
-                    } else {
-                        NSLog("[ScopeRepro] (no sample French collection found for C)")
-                    }
-                    // D) AB3 empty branch over a LARGE room — BGE anisotropy floods
-                    // ≥floor cards for any string, so a 224-note corpus is NOT empty by
-                    // the count rule (expect empty=false; the scope fix, not the empty
-                    // prompt, is what fixes a wrong-room miss).
-                    let d = LibrarianState(); let cd = ChatSession(); d.selectedScope = .corpus
-                    NSLog("[ScopeRepro] --- D) gibberish over .corpus (224) — expect empty=FALSE (anisotropy floods cards) ---")
-                    await d.debugCorpusRetrieve(query: "xzqf plorktangle vurnbelsplat quomby", store: self, chat: cd)
-                    // E) AB3 empty branch positive control — a genuinely SMALL room
-                    // (2 nodes) + off-topic query → < 3 cards, no passages → empty=TRUE.
-                    let e = LibrarianState(); let ce = ChatSession(); e.selectedScope = .nodeIDs(Set(sampleNodeIDs.prefix(2)))
-                    NSLog("[ScopeRepro] --- E) gibberish over a 2-node room — expect empty=TRUE ---")
-                    await e.debugCorpusRetrieve(query: "xzqf plorktangle vurnbelsplat quomby", store: self, chat: ce)
-                    // F) AC2 — the user-room miss T reported on device (build C). Canvas,
-                    // Dashboard, and entry ALL open with hostScope=.corpus (→ user room),
-                    // so one probe covers all three. Report scope/empty/shape/counts: if the
-                    // fixture returns cards (no miss), the device cause is the MODEL or the
-                    // [n]-list rendering (AC1), NOT retrieval — STOP + wait for T's log.
-                    let f = LibrarianState(); let cf = ChatSession(); f.selectedScope = .corpus
-                    NSLog("[ScopeRepro] --- F) AC2 'What is my thinking on technology?' over .corpus (canvas/dashboard/entry) ---")
-                    await f.debugCorpusRetrieve(query: "What is my thinking on technology?", store: self, chat: cf)
-                    NSLog("[ScopeRepro] done")
-                }
-                // Brief AC5 — resolve the pinned transcripts' [n] citations to sample
-                // node ids: run each question at scope=nodeIDs(sample) and log
-                // number → nodeID · title. Cross-check the French numbering against T's
-                // device chip list; map 10/17 + Silent Hill + coffee by position.
-                if ProcessInfo.processInfo.arguments.contains("-PinResolveDiag") {
-                    let scope: CanvasScope = .nodeIDs(sampleNodeIDs)
-                    let qs = ["What do I have on learning French?",
-                              "What can you tell me about my entry called \"Silent Hill 2's fog\"?",
-                              "How did coffee spread out of Ethiopia?"]
-                    for q in qs {
-                        let lib = LibrarianState()
-                        let cands = await lib.debugNumberedCandidates(query: q, scope: scope, store: self)
-                        NSLog("[PinResolve] === %@ (%d cand) ===", q, cands.count)
-                        for (n, id) in cands {
-                            let title = nodes.first { $0.id == id }?.title ?? "?"
-                            NSLog("[PinResolve]   [%d] %@ :: %@", n, id, title)
-                        }
-                    }
-                    NSLog("[PinResolve] done")
-                }
-                // Brief AD2 verify — the banner classifier: a genuine can't-connect →
-                // "offline"; a timeout / mid-flight drop / HTTP status → its OWN message
-                // (never "offline"). Plus the AD `<think>` strip (CoT never a citation).
-                if ProcessInfo.processInfo.arguments.contains("-ThinkBannerDiag") {
-                    func banner(_ e: Error) -> String { ChatSession.humanError(for: e) }
-                    NSLog("[ThinkBanner] cannotConnectToHost → %@", banner(URLError(.cannotConnectToHost)))
-                    NSLog("[ThinkBanner] notConnectedToInternet → %@", banner(URLError(.notConnectedToInternet)))
-                    NSLog("[ThinkBanner] timedOut → %@", banner(URLError(.timedOut)))
-                    NSLog("[ThinkBanner] networkConnectionLost → %@", banner(URLError(.networkConnectionLost)))
-                    NSLog("[ThinkBanner] HTTP 500 → %@", banner(ModelRouter.RouterError.ollamaHTTPError(path: "v1/chat/completions", status: 500, body: "internal error\n<html>oops</html>")))
-                    NSLog("[ThinkBanner] HTTP 530 → %@", banner(ModelRouter.RouterError.ollamaHTTPError(path: "v1/chat/completions", status: 530, body: "<!DOCTYPE html><title>error</title>")))
-                    let stripped = ChatSession.stripThinkTags("<think>secret reasoning citing [9]</think>The real answer [1].")
-                    NSLog("[ThinkBanner] stripThink → '%@' | cited=%@", stripped, "\(CitationReference.citedIndices(in: stripped).sorted())")
-                    NSLog("[ThinkBanner] done")
-                }
-                // ★ CH-B — a request that CONNECTED but got no answer in time must not read "offline";
-                // a refused connection must. Real requests through the real wrap (`transportError`):
-                // `-TransportBannerSelfTest <stalled url> <closed url>` (a stub that accepts and never
-                // answers; a port with nothing listening).
-                if let i = ProcessInfo.processInfo.arguments.firstIndex(of: "-TransportBannerSelfTest"),
-                   i + 2 < ProcessInfo.processInfo.arguments.count {
-                    let args = ProcessInfo.processInfo.arguments
-                    Task {
-                        let offline = ChatSession.humanError(for: URLError(.cannotConnectToHost))
-                        let stalled = await ModelRouter.debugTransportBanner(url: args[i + 1], timeout: 3)
-                        let closed = await ModelRouter.debugTransportBanner(url: args[i + 2], timeout: 3)
-                        let ok1 = stalled != offline && stalled != "no error"
-                        let ok2 = closed == offline
-                        NSLog("[TransportBannerSelfTest] stalled → %@ (%@)", stalled, ok1 ? "ok" : "WRONG")
-                        NSLog("[TransportBannerSelfTest] closed → %@ (%@)", closed, ok2 ? "ok" : "WRONG")
-                        NSLog("[TransportBannerSelfTest] %@ (%d/2)", ok1 && ok2 ? "PASS" : "FAIL", (ok1 ? 1 : 0) + (ok2 ? 1 : 0))
+                    let cands = await lib.debugNumberedCandidates(query: q, scope: scope, store: self)
+                    NSLog("[PinResolve] === %@ (%d cand) ===", q, cands.count)
+                    for (n, id) in cands {
+                        let title = nodes.first { $0.id == id }?.title ?? "?"
+                        NSLog("[PinResolve]   [%d] %@ :: %@", n, id, title)
                     }
                 }
-                // Brief AF3 verify — the app-owned no-key web-search state, headless:
-                // (1) the search-intent matcher fires on the brief's five cues and NOT on
-                // an ordinary question; (2) with no Brave key, the no-key notice adds a
-                // user turn + ONE assistant line carrying the Settings link, makes NO
-                // model call, and leaves the session idle. Pure logic — no network.
-                if ProcessInfo.processInfo.arguments.contains("-WebSearchKeyDiag") {
-                    func expect(_ cond: Bool, _ label: String) {
-                        NSLog("[WebKeyDiag] %@ %@", cond ? "PASS" : "FAIL", label)
-                    }
-                    let positives = ["search for the news", "can you look up the weather",
-                                     "what's the latest on the election", "today's news please",
-                                     "what's the current bitcoin price"]
-                    let negatives = ["explain photosynthesis", "write me a haiku about rain",
-                                     "what is 2 + 2"]
-                    for q in positives { expect(LibrarianState.looksLikeSearchIntent(q), "intent+ \(q)") }
-                    for q in negatives { expect(!LibrarianState.looksLikeSearchIntent(q), "intent- \(q)") }
-                    // Brief AI4 — the broadened current-information cue set fires on the new
-                    // cues (weather / price / score / who won / what happened) and NOT on a
-                    // library-scoped or coding question.
-                    let ai4Positives = ["who won the game last night", "what's the weather today",
-                                        "what happened at the summit", "the score of the match",
-                                        "look up the price of gold"]
-                    for q in ai4Positives { expect(LibrarianState.looksLikeSearchIntent(q), "AI4 intent+ \(q)") }
-                    let ai4Negatives = ["summarise my notes on stoicism", "how do I write a for loop"]
-                    for q in ai4Negatives { expect(!LibrarianState.looksLikeSearchIntent(q), "AI4 intent- \(q)") }
-                    // Brief AI4 refusal guard — the trained "no live web" reflex is detected,
-                    // a genuine answer is not (so a real search result never triggers a retry).
-                    let refusals = ["I don't have real-time data about that.",
-                                    "As of my training data, I can't access the internet.",
-                                    "I cannot browse the web to check current prices."]
-                    for r in refusals { expect(ChatSession.looksLikeWebRefusal(r), "refusal+ \(r)") }
-                    let nonRefusals = ["The UN Security Council met today and passed a resolution [1].",
-                                       "Paris is the capital of France."]
-                    for r in nonRefusals { expect(!ChatSession.looksLikeWebRefusal(r), "refusal- \(r)") }
-                    NSLog("[WebKeyDiag] hasKey=%@ (expect false on a fresh sim)", "\(WebSearchBackend.hasKey)")
-                    let cs = ChatSession()
-                    cs.appendWebSearchKeyNotice(userText: "search for today's headlines")
-                    expect(cs.messages.count == 2, "notice adds exactly user+assistant (no model turn)")
-                    expect(cs.isStreaming == false, "session stays idle (no model call)")
-                    expect(cs.messages.first?.role == .user, "first turn is the user's query")
-                    let reply = cs.messages.last
-                    expect(reply?.role == .assistant, "second turn is the app reply")
-                    expect(reply?.text.contains("airpad-settings://websearch") == true, "reply carries the Settings tap link")
-                    expect(reply?.text.contains("Brave Search key") == true, "reply names the missing Brave key")
-                    NSLog("[WebKeyDiag] done")
+                NSLog("[PinResolve] done")
+            }
+            // Brief AD2 verify — the banner classifier: a genuine can't-connect →
+            // "offline"; a timeout / mid-flight drop / HTTP status → its OWN message
+            // (never "offline"). Plus the AD `<think>` strip (CoT never a citation).
+            if ProcessInfo.processInfo.arguments.contains("-ThinkBannerDiag") {
+                func banner(_ e: Error) -> String { ChatSession.humanError(for: e) }
+                NSLog("[ThinkBanner] cannotConnectToHost → %@", banner(URLError(.cannotConnectToHost)))
+                NSLog("[ThinkBanner] notConnectedToInternet → %@", banner(URLError(.notConnectedToInternet)))
+                NSLog("[ThinkBanner] timedOut → %@", banner(URLError(.timedOut)))
+                NSLog("[ThinkBanner] networkConnectionLost → %@", banner(URLError(.networkConnectionLost)))
+                NSLog("[ThinkBanner] HTTP 500 → %@", banner(ModelRouter.RouterError.ollamaHTTPError(path: "v1/chat/completions", status: 500, body: "internal error\n<html>oops</html>")))
+                NSLog("[ThinkBanner] HTTP 530 → %@", banner(ModelRouter.RouterError.ollamaHTTPError(path: "v1/chat/completions", status: 530, body: "<!DOCTYPE html><title>error</title>")))
+                let stripped = ChatSession.stripThinkTags("<think>secret reasoning citing [9]</think>The real answer [1].")
+                NSLog("[ThinkBanner] stripThink → '%@' | cited=%@", stripped, "\(CitationReference.citedIndices(in: stripped).sorted())")
+                NSLog("[ThinkBanner] done")
+            }
+            // ★ CH-B — a request that CONNECTED but got no answer in time must not read "offline";
+            // a refused connection must. Real requests through the real wrap (`transportError`):
+            // `-TransportBannerSelfTest <stalled url> <closed url>` (a stub that accepts and never
+            // answers; a port with nothing listening).
+            if let i = ProcessInfo.processInfo.arguments.firstIndex(of: "-TransportBannerSelfTest"),
+               i + 2 < ProcessInfo.processInfo.arguments.count {
+                let args = ProcessInfo.processInfo.arguments
+                Task {
+                    let offline = ChatSession.humanError(for: URLError(.cannotConnectToHost))
+                    let stalled = await ModelRouter.debugTransportBanner(url: args[i + 1], timeout: 3)
+                    let closed = await ModelRouter.debugTransportBanner(url: args[i + 2], timeout: 3)
+                    let ok1 = stalled != offline && stalled != "no error"
+                    let ok2 = closed == offline
+                    NSLog("[TransportBannerSelfTest] stalled → %@ (%@)", stalled, ok1 ? "ok" : "WRONG")
+                    NSLog("[TransportBannerSelfTest] closed → %@ (%@)", closed, ok2 ? "ok" : "WRONG")
+                    NSLog("[TransportBannerSelfTest] %@ (%d/2)", ok1 && ok2 ? "PASS" : "FAIL", (ok1 ? 1 : 0) + (ok2 ? 1 : 0))
                 }
-                // Brief AH2 verify — carry-forward is keyed to the chat id, so a NEW chat
-                // (what a room change starts) begins with an EMPTY candidate carry:
-                // candidates can never cross rooms. Seed a carry for chat A, then read it
-                // back for A (carries) and for a fresh chat B (empty). Pure logic.
-                if ProcessInfo.processInfo.arguments.contains("-RoomChatDiag") {
-                    func expect(_ cond: Bool, _ label: String) {
-                        NSLog("[RoomChatDiag] %@ %@", cond ? "PASS" : "FAIL", label)
-                    }
-                    let lib = LibrarianState()
-                    let chatA = UUID()
-                    let chatB = UUID()
-                    lib.debugSeedCarry(count: 5, chatID: chatA)
-                    expect(lib.debugCarriedCount(forChatID: chatA) == 5, "same chat keeps its carry (5)")
-                    expect(lib.debugCarriedCount(forChatID: chatB) == 0, "a NEW chat (new room) starts with empty carry")
-                    NSLog("[RoomChatDiag] done")
+            }
+            // Brief AF3 verify — the app-owned no-key web-search state, headless:
+            // (1) the search-intent matcher fires on the brief's five cues and NOT on
+            // an ordinary question; (2) with no Brave key, the no-key notice adds a
+            // user turn + ONE assistant line carrying the Settings link, makes NO
+            // model call, and leaves the session idle. Pure logic — no network.
+            if ProcessInfo.processInfo.arguments.contains("-WebSearchKeyDiag") {
+                func expect(_ cond: Bool, _ label: String) {
+                    NSLog("[WebKeyDiag] %@ %@", cond ? "PASS" : "FAIL", label)
                 }
-                // Brief AJ4 / build K — the SEALED room-scoped tag edit, on a FIXTURE
-                // CLONE (fabricated nodes; `self` / the real container is NEVER touched).
-                // Proves all four cases (delete/rename × user-only/shared) and that ZERO
-                // Sample Library entries change. `TagRoomEdit` is the SAME pure core the
-                // store's delete/rename call.
-                if ProcessInfo.processInfo.arguments.contains("-TagCrudDiag") {
-                    func expect(_ c: Bool, _ l: String) { NSLog("[TagCrudDiag] %@ %@", c ? "PASS" : "FAIL", l) }
-                    let ep = Date(timeIntervalSince1970: 1_700_000_000)
-                    func fnode(_ id: String, _ tags: [String]) -> Node {
-                        Node(id: id, createdAt: ep, updatedAt: ep, title: id, summary: "", tags: tags)
-                    }
-                    let sampleIDs: Set<String> = ["s1", "s2"]
-                    // "coffee" = user-only; "film" = shared (user u1 + sample s1).
-                    let fixture = [fnode("u1", ["coffee", "film"]), fnode("u2", ["coffee"]),
-                                   fnode("s1", ["film"]), fnode("s2", ["horror"])]
-                    let sampleBefore = fixture.filter { sampleIDs.contains($0.id) }.map { $0.tags }
-                    func sampleAfter(_ ns: [Node]) -> [[String]] { ns.filter { sampleIDs.contains($0.id) }.map { $0.tags } }
-                    func tagsOf(_ ns: [Node], _ id: String) -> [String] { ns.first { $0.id == id }?.tags ?? [] }
+                let positives = ["search for the news", "can you look up the weather",
+                                 "what's the latest on the election", "today's news please",
+                                 "what's the current bitcoin price"]
+                let negatives = ["explain photosynthesis", "write me a haiku about rain",
+                                 "what is 2 + 2"]
+                for q in positives { expect(LibrarianState.looksLikeSearchIntent(q), "intent+ \(q)") }
+                for q in negatives { expect(!LibrarianState.looksLikeSearchIntent(q), "intent- \(q)") }
+                // Brief AI4 — the broadened current-information cue set fires on the new
+                // cues (weather / price / score / who won / what happened) and NOT on a
+                // library-scoped or coding question.
+                let ai4Positives = ["who won the game last night", "what's the weather today",
+                                    "what happened at the summit", "the score of the match",
+                                    "look up the price of gold"]
+                for q in ai4Positives { expect(LibrarianState.looksLikeSearchIntent(q), "AI4 intent+ \(q)") }
+                let ai4Negatives = ["summarise my notes on stoicism", "how do I write a for loop"]
+                for q in ai4Negatives { expect(!LibrarianState.looksLikeSearchIntent(q), "AI4 intent- \(q)") }
+                // Brief AI4 refusal guard — the trained "no live web" reflex is detected,
+                // a genuine answer is not (so a real search result never triggers a retry).
+                let refusals = ["I don't have real-time data about that.",
+                                "As of my training data, I can't access the internet.",
+                                "I cannot browse the web to check current prices."]
+                for r in refusals { expect(ChatSession.looksLikeWebRefusal(r), "refusal+ \(r)") }
+                let nonRefusals = ["The UN Security Council met today and passed a resolution [1].",
+                                   "Paris is the capital of France."]
+                for r in nonRefusals { expect(!ChatSession.looksLikeWebRefusal(r), "refusal- \(r)") }
+                NSLog("[WebKeyDiag] hasKey=%@ (expect false on a fresh sim)", "\(WebSearchBackend.hasKey)")
+                let cs = ChatSession()
+                cs.appendWebSearchKeyNotice(userText: "search for today's headlines")
+                expect(cs.messages.count == 2, "notice adds exactly user+assistant (no model turn)")
+                expect(cs.isStreaming == false, "session stays idle (no model call)")
+                expect(cs.messages.first?.role == .user, "first turn is the user's query")
+                let reply = cs.messages.last
+                expect(reply?.role == .assistant, "second turn is the app reply")
+                expect(reply?.text.contains("airpad-settings://websearch") == true, "reply carries the Settings tap link")
+                expect(reply?.text.contains("Brave Search key") == true, "reply names the missing Brave key")
+                NSLog("[WebKeyDiag] done")
+            }
+            // Brief AH2 verify — carry-forward is keyed to the chat id, so a NEW chat
+            // (what a room change starts) begins with an EMPTY candidate carry:
+            // candidates can never cross rooms. Seed a carry for chat A, then read it
+            // back for A (carries) and for a fresh chat B (empty). Pure logic.
+            if ProcessInfo.processInfo.arguments.contains("-RoomChatDiag") {
+                func expect(_ cond: Bool, _ label: String) {
+                    NSLog("[RoomChatDiag] %@ %@", cond ? "PASS" : "FAIL", label)
+                }
+                let lib = LibrarianState()
+                let chatA = UUID()
+                let chatB = UUID()
+                lib.debugSeedCarry(count: 5, chatID: chatA)
+                expect(lib.debugCarriedCount(forChatID: chatA) == 5, "same chat keeps its carry (5)")
+                expect(lib.debugCarriedCount(forChatID: chatB) == 0, "a NEW chat (new room) starts with empty carry")
+                NSLog("[RoomChatDiag] done")
+            }
+            // Brief AJ4 / build K — the SEALED room-scoped tag edit, on a FIXTURE
+            // CLONE (fabricated nodes; `self` / the real container is NEVER touched).
+            // Proves all four cases (delete/rename × user-only/shared) and that ZERO
+            // Sample Library entries change. `TagRoomEdit` is the SAME pure core the
+            // store's delete/rename call.
+            if ProcessInfo.processInfo.arguments.contains("-TagCrudDiag") {
+                func expect(_ c: Bool, _ l: String) { NSLog("[TagCrudDiag] %@ %@", c ? "PASS" : "FAIL", l) }
+                let ep = Date(timeIntervalSince1970: 1_700_000_000)
+                func fnode(_ id: String, _ tags: [String]) -> Node {
+                    Node(id: id, createdAt: ep, updatedAt: ep, title: id, summary: "", tags: tags)
+                }
+                let sampleIDs: Set<String> = ["s1", "s2"]
+                // "coffee" = user-only; "film" = shared (user u1 + sample s1).
+                let fixture = [fnode("u1", ["coffee", "film"]), fnode("u2", ["coffee"]),
+                               fnode("s1", ["film"]), fnode("s2", ["horror"])]
+                let sampleBefore = fixture.filter { sampleIDs.contains($0.id) }.map { $0.tags }
+                func sampleAfter(_ ns: [Node]) -> [[String]] { ns.filter { sampleIDs.contains($0.id) }.map { $0.tags } }
+                func tagsOf(_ ns: [Node], _ id: String) -> [String] { ns.first { $0.id == id }?.tags ?? [] }
 
-                    let d1 = TagRoomEdit.delete(tagName: "coffee", from: fixture, sampleIDs: sampleIDs)
-                    expect(Set(d1.changedUserIDs) == ["u1", "u2"], "delete user-only: u1,u2 changed")
-                    expect(d1.keepVocabulary == false, "delete user-only: Tag dropped (now unused)")
-                    expect(!tagsOf(d1.nodes, "u1").contains("coffee"), "delete user-only: coffee gone from u1")
-                    expect(sampleAfter(d1.nodes) == sampleBefore, "delete user-only: ZERO sample entries changed")
+                let d1 = TagRoomEdit.delete(tagName: "coffee", from: fixture, sampleIDs: sampleIDs)
+                expect(Set(d1.changedUserIDs) == ["u1", "u2"], "delete user-only: u1,u2 changed")
+                expect(d1.keepVocabulary == false, "delete user-only: Tag dropped (now unused)")
+                expect(!tagsOf(d1.nodes, "u1").contains("coffee"), "delete user-only: coffee gone from u1")
+                expect(sampleAfter(d1.nodes) == sampleBefore, "delete user-only: ZERO sample entries changed")
 
-                    let d2 = TagRoomEdit.delete(tagName: "film", from: fixture, sampleIDs: sampleIDs)
-                    expect(d2.changedUserIDs == ["u1"], "delete shared: only u1 changed")
-                    expect(d2.keepVocabulary == true, "delete shared: Tag KEPT for the sample")
-                    expect(sampleAfter(d2.nodes) == sampleBefore, "delete shared: ZERO sample entries changed")
+                let d2 = TagRoomEdit.delete(tagName: "film", from: fixture, sampleIDs: sampleIDs)
+                expect(d2.changedUserIDs == ["u1"], "delete shared: only u1 changed")
+                expect(d2.keepVocabulary == true, "delete shared: Tag KEPT for the sample")
+                expect(sampleAfter(d2.nodes) == sampleBefore, "delete shared: ZERO sample entries changed")
 
-                    let r1 = TagRoomEdit.rename(old: "coffee", to: "brew", in: fixture, sampleIDs: sampleIDs)
-                    expect(Set(r1.changedUserIDs) == ["u1", "u2"], "rename user-only: u1,u2 changed")
-                    expect(r1.shared == false, "rename user-only: rename-in-place (not shared)")
-                    expect(tagsOf(r1.nodes, "u1").contains("brew") && !tagsOf(r1.nodes, "u1").contains("coffee"), "rename user-only: coffee→brew on u1")
-                    expect(sampleAfter(r1.nodes) == sampleBefore, "rename user-only: ZERO sample entries changed")
+                let r1 = TagRoomEdit.rename(old: "coffee", to: "brew", in: fixture, sampleIDs: sampleIDs)
+                expect(Set(r1.changedUserIDs) == ["u1", "u2"], "rename user-only: u1,u2 changed")
+                expect(r1.shared == false, "rename user-only: rename-in-place (not shared)")
+                expect(tagsOf(r1.nodes, "u1").contains("brew") && !tagsOf(r1.nodes, "u1").contains("coffee"), "rename user-only: coffee→brew on u1")
+                expect(sampleAfter(r1.nodes) == sampleBefore, "rename user-only: ZERO sample entries changed")
 
-                    let r2 = TagRoomEdit.rename(old: "film", to: "cinema", in: fixture, sampleIDs: sampleIDs)
-                    expect(r2.changedUserIDs == ["u1"], "rename shared: only u1 changed")
-                    expect(r2.shared == true, "rename shared: SPLIT (sample keeps old name)")
-                    expect(tagsOf(r2.nodes, "u1").contains("cinema"), "rename shared: u1 now 'cinema'")
-                    expect(tagsOf(r2.nodes, "s1") == ["film"], "rename shared: sample s1 still 'film'")
-                    expect(sampleAfter(r2.nodes) == sampleBefore, "rename shared: ZERO sample entries changed")
+                let r2 = TagRoomEdit.rename(old: "film", to: "cinema", in: fixture, sampleIDs: sampleIDs)
+                expect(r2.changedUserIDs == ["u1"], "rename shared: only u1 changed")
+                expect(r2.shared == true, "rename shared: SPLIT (sample keeps old name)")
+                expect(tagsOf(r2.nodes, "u1").contains("cinema"), "rename shared: u1 now 'cinema'")
+                expect(tagsOf(r2.nodes, "s1") == ["film"], "rename shared: sample s1 still 'film'")
+                expect(sampleAfter(r2.nodes) == sampleBefore, "rename shared: ZERO sample entries changed")
 
-                    // BATCH delete {coffee (user-only), film (shared)} — u1 carries BOTH,
-                    // so it must be written ONCE; u2 carries coffee. film's Tag survives
-                    // (sample s1); coffee's does not.
-                    let b = TagRoomEdit.delete(tagNames: ["coffee", "film"], from: fixture, sampleIDs: sampleIDs)
-                    expect(Set(b.changedUserIDs) == ["u1", "u2"] && b.changedUserIDs.count == 2, "batch: u1,u2 each written once (u1 had both)")
-                    expect(tagsOf(b.nodes, "u1").isEmpty, "batch: u1 lost both coffee+film")
-                    expect(b.keepVocabulary["coffee"] == false && b.keepVocabulary["film"] == true, "batch: coffee dropped, film kept (sample)")
-                    expect(sampleAfter(b.nodes) == sampleBefore, "batch: ZERO sample entries changed")
-                    NSLog("[TagCrudDiag] done")
-                }
-                // Pre-build-L integration check — run the REAL store methods against a
-                // SCRATCH COPY of T's library (`-CorpusFixture` root) + the seeded Sample
-                // Library, in three phases so the shell can diff the on-disk files between
-                // launches + confirm persistence. GUARDED to the corpus-fixture scratch so
-                // it can NEVER touch iCloud or a real container.
-                let tfKind = await service.storageDiagnostic().kind
-                if tfKind == "corpus-fixture" {
-                    let ep0 = Date(timeIntervalSince1970: 1_700_000_000)
-                    if ProcessInfo.processInfo.arguments.contains("-TFSeed") {
-                        await addSampleLibrary()   // Sample Library brings coffee / film / … tags
-                        func inject(_ id: String, _ tag: String) async {
-                            let n = Node(id: id, createdAt: ep0, updatedAt: ep0, title: id, summary: "", tags: [tag])
-                            try? await service.saveNode(n)
-                            if !nodes.contains(where: { $0.id == id }) { nodes.append(n) }
-                        }
-                        await inject("ccfx-user-del", "ccfx_useronly_del")   // user-only
-                        await inject("ccfx-user-ren", "ccfx_useronly_ren")   // user-only
-                        await inject("ccfx-shared-del", "coffee")            // shared w/ sample
-                        await inject("ccfx-shared-ren", "film")              // shared w/ sample
-                        await inject("ccfx-batch-a", "ccfx_batch_a")         // batch, user-only
-                        await inject("ccfx-batch-b", "horror")               // batch, shared w/ sample
-                        for name in ["ccfx_useronly_del", "ccfx_useronly_ren", "ccfx_batch_a"] where !tags.contains(where: { $0.name == name }) {
-                            tags.append(Tag(id: UUID(), name: name, colorHex: "#1B59C2", createdAt: ep0, useCount: 0))
-                        }
-                        await persistTags()
-                        NSLog("[TF] seeded — userNodes=%d sampleNodes=%d coffeeInSample=%@ filmInSample=%@",
-                              userNodes.count, sampleNodeIDs.count,
-                              "\(nodes.contains { isSample($0.id) && $0.tags.contains("coffee") })",
-                              "\(nodes.contains { isSample($0.id) && $0.tags.contains("film") })")
-                        NSLog("[TF] seed done")
+                // BATCH delete {coffee (user-only), film (shared)} — u1 carries BOTH,
+                // so it must be written ONCE; u2 carries coffee. film's Tag survives
+                // (sample s1); coffee's does not.
+                let b = TagRoomEdit.delete(tagNames: ["coffee", "film"], from: fixture, sampleIDs: sampleIDs)
+                expect(Set(b.changedUserIDs) == ["u1", "u2"] && b.changedUserIDs.count == 2, "batch: u1,u2 each written once (u1 had both)")
+                expect(tagsOf(b.nodes, "u1").isEmpty, "batch: u1 lost both coffee+film")
+                expect(b.keepVocabulary["coffee"] == false && b.keepVocabulary["film"] == true, "batch: coffee dropped, film kept (sample)")
+                expect(sampleAfter(b.nodes) == sampleBefore, "batch: ZERO sample entries changed")
+                NSLog("[TagCrudDiag] done")
+            }
+            // Pre-build-L integration check — run the REAL store methods against a
+            // SCRATCH COPY of T's library (`-CorpusFixture` root) + the seeded Sample
+            // Library, in three phases so the shell can diff the on-disk files between
+            // launches + confirm persistence. GUARDED to the corpus-fixture scratch so
+            // it can NEVER touch iCloud or a real container.
+            let tfKind = await service.storageDiagnostic().kind
+            if tfKind == "corpus-fixture" {
+                let ep0 = Date(timeIntervalSince1970: 1_700_000_000)
+                if ProcessInfo.processInfo.arguments.contains("-TFSeed") {
+                    await addSampleLibrary()   // Sample Library brings coffee / film / … tags
+                    func inject(_ id: String, _ tag: String) async {
+                        let n = Node(id: id, createdAt: ep0, updatedAt: ep0, title: id, summary: "", tags: [tag])
+                        try? await service.saveNode(n)
+                        if !nodes.contains(where: { $0.id == id }) { nodes.append(n) }
                     }
-                    if ProcessInfo.processInfo.arguments.contains("-TFRun") {
-                        func tag(_ n: String) -> Tag? { tags.first { $0.name == n } }
-                        if let t = tag("ccfx_useronly_del") { let c = await deleteTagInUserRoom(t); NSLog("[TF] delete user-only → %d user entries; tagGone=%@", c, "\(!tags.contains { $0.name == "ccfx_useronly_del" })") }
-                        if let t = tag("coffee") { let c = await deleteTagInUserRoom(t); NSLog("[TF] delete shared 'coffee' → %d user entries; tagKept=%@", c, "\(tags.contains { $0.name == "coffee" })") }
-                        if let t = tag("ccfx_useronly_ren") { let c = await renameTagInUserRoom(t, to: "ccfx_renamed"); NSLog("[TF] rename user-only → %d user entries; renamed=%@", c, "\(tags.contains { $0.name == "ccfx_renamed" } && !tags.contains { $0.name == "ccfx_useronly_ren" })") }
-                        if let t = tag("film") { let c = await renameTagInUserRoom(t, to: "ccfx_cinema"); NSLog("[TF] rename shared 'film'→'ccfx_cinema' → %d user entries; filmKept=%@ cinemaMade=%@", c, "\(tags.contains { $0.name == "film" })", "\(tags.contains { $0.name == "ccfx_cinema" })") }
-                        let batch = [tag("ccfx_batch_a"), tag("horror")].compactMap { $0 }
-                        let bres = await deleteTagsInUserRoom(batch)
-                        NSLog("[TF] BATCH delete {ccfx_batch_a, horror} → %d user entries, %d tags removed; horrorKept=%@ batchAgone=%@", bres.entries, bres.tagsRemoved, "\(tags.contains { $0.name == "horror" })", "\(!tags.contains { $0.name == "ccfx_batch_a" })")
-                        NSLog("[TF] run done")
+                    await inject("ccfx-user-del", "ccfx_useronly_del")   // user-only
+                    await inject("ccfx-user-ren", "ccfx_useronly_ren")   // user-only
+                    await inject("ccfx-shared-del", "coffee")            // shared w/ sample
+                    await inject("ccfx-shared-ren", "film")              // shared w/ sample
+                    await inject("ccfx-batch-a", "ccfx_batch_a")         // batch, user-only
+                    await inject("ccfx-batch-b", "horror")               // batch, shared w/ sample
+                    for name in ["ccfx_useronly_del", "ccfx_useronly_ren", "ccfx_batch_a"] where !tags.contains(where: { $0.name == name }) {
+                        tags.append(Tag(id: UUID(), name: name, colorHex: "#1B59C2", createdAt: ep0, useCount: 0))
                     }
-                    if ProcessInfo.processInfo.arguments.contains("-TFCheck") {
-                        func tg(_ id: String) -> String { (nodes.first { $0.id == id }?.tags ?? []).joined(separator: ",") }
-                        NSLog("[TF] CHECK user-del=[%@] (want empty) · user-ren=[%@] (want ccfx_renamed)", tg("ccfx-user-del"), tg("ccfx-user-ren"))
-                        NSLog("[TF] CHECK shared-del=[%@] (want empty) · shared-ren=[%@] (want ccfx_cinema)", tg("ccfx-shared-del"), tg("ccfx-shared-ren"))
-                        NSLog("[TF] CHECK batch-a=[%@] (want empty) · batch-b=[%@] (want empty)", tg("ccfx-batch-a"), tg("ccfx-batch-b"))
-                        NSLog("[TF] CHECK vocab coffee=%@ film=%@ cinema=%@ renamed=%@ useronly_del=%@",
-                              "\(tags.contains { $0.name == "coffee" })", "\(tags.contains { $0.name == "film" })",
-                              "\(tags.contains { $0.name == "ccfx_cinema" })", "\(tags.contains { $0.name == "ccfx_renamed" })",
-                              "\(tags.contains { $0.name == "ccfx_useronly_del" })")
-                        NSLog("[TF] check done")
+                    await persistTags()
+                    NSLog("[TF] seeded — userNodes=%d sampleNodes=%d coffeeInSample=%@ filmInSample=%@",
+                          userNodes.count, sampleNodeIDs.count,
+                          "\(nodes.contains { isSample($0.id) && $0.tags.contains("coffee") })",
+                          "\(nodes.contains { isSample($0.id) && $0.tags.contains("film") })")
+                    NSLog("[TF] seed done")
+                }
+                if ProcessInfo.processInfo.arguments.contains("-TFRun") {
+                    func tag(_ n: String) -> Tag? { tags.first { $0.name == n } }
+                    if let t = tag("ccfx_useronly_del") { let c = await deleteTagInUserRoom(t); NSLog("[TF] delete user-only → %d user entries; tagGone=%@", c, "\(!tags.contains { $0.name == "ccfx_useronly_del" })") }
+                    if let t = tag("coffee") { let c = await deleteTagInUserRoom(t); NSLog("[TF] delete shared 'coffee' → %d user entries; tagKept=%@", c, "\(tags.contains { $0.name == "coffee" })") }
+                    if let t = tag("ccfx_useronly_ren") { let c = await renameTagInUserRoom(t, to: "ccfx_renamed"); NSLog("[TF] rename user-only → %d user entries; renamed=%@", c, "\(tags.contains { $0.name == "ccfx_renamed" } && !tags.contains { $0.name == "ccfx_useronly_ren" })") }
+                    if let t = tag("film") { let c = await renameTagInUserRoom(t, to: "ccfx_cinema"); NSLog("[TF] rename shared 'film'→'ccfx_cinema' → %d user entries; filmKept=%@ cinemaMade=%@", c, "\(tags.contains { $0.name == "film" })", "\(tags.contains { $0.name == "ccfx_cinema" })") }
+                    let batch = [tag("ccfx_batch_a"), tag("horror")].compactMap { $0 }
+                    let bres = await deleteTagsInUserRoom(batch)
+                    NSLog("[TF] BATCH delete {ccfx_batch_a, horror} → %d user entries, %d tags removed; horrorKept=%@ batchAgone=%@", bres.entries, bres.tagsRemoved, "\(tags.contains { $0.name == "horror" })", "\(!tags.contains { $0.name == "ccfx_batch_a" })")
+                    NSLog("[TF] run done")
+                }
+                if ProcessInfo.processInfo.arguments.contains("-TFCheck") {
+                    func tg(_ id: String) -> String { (nodes.first { $0.id == id }?.tags ?? []).joined(separator: ",") }
+                    NSLog("[TF] CHECK user-del=[%@] (want empty) · user-ren=[%@] (want ccfx_renamed)", tg("ccfx-user-del"), tg("ccfx-user-ren"))
+                    NSLog("[TF] CHECK shared-del=[%@] (want empty) · shared-ren=[%@] (want ccfx_cinema)", tg("ccfx-shared-del"), tg("ccfx-shared-ren"))
+                    NSLog("[TF] CHECK batch-a=[%@] (want empty) · batch-b=[%@] (want empty)", tg("ccfx-batch-a"), tg("ccfx-batch-b"))
+                    NSLog("[TF] CHECK vocab coffee=%@ film=%@ cinema=%@ renamed=%@ useronly_del=%@",
+                          "\(tags.contains { $0.name == "coffee" })", "\(tags.contains { $0.name == "film" })",
+                          "\(tags.contains { $0.name == "ccfx_cinema" })", "\(tags.contains { $0.name == "ccfx_renamed" })",
+                          "\(tags.contains { $0.name == "ccfx_useronly_del" })")
+                    NSLog("[TF] check done")
+                }
+            }
+            #endif
+            // THE TAG PRODUCER — Step 0 (ws-lever.md). READ-ONLY corpus diagnostic
+            // (folksonomy coverage / recurrence / long tail / fragmentation / tag
+            // overlap + BGE-micro cosine calibration). Writes NOTHING to the corpus.
+            if ProcessInfo.processInfo.arguments.contains("-FolksonomyDiagnostic") {
+                // Log line-by-line — a single NSLog truncates at the ~1KB os_log limit.
+                Task {
+                    let report = await FolksonomyDiagnostic.run(store: self)
+                    for line in report.split(separator: "\n", omittingEmptySubsequences: false) {
+                        NSLog("[FolkDiag] %@", String(line))
                     }
                 }
-                #endif
-                // THE TAG PRODUCER — Step 0 (ws-lever.md). READ-ONLY corpus diagnostic
-                // (folksonomy coverage / recurrence / long tail / fragmentation / tag
-                // overlap + BGE-micro cosine calibration). Writes NOTHING to the corpus.
-                if ProcessInfo.processInfo.arguments.contains("-FolksonomyDiagnostic") {
-                    // Log line-by-line — a single NSLog truncates at the ~1KB os_log limit.
-                    Task {
-                        let report = await FolksonomyDiagnostic.run(store: self)
-                        for line in report.split(separator: "\n", omittingEmptySubsequences: false) {
-                            NSLog("[FolkDiag] %@", String(line))
-                        }
-                    }
-                }
-                // `-OpenCardView` — open Card View directly so the card surface is
-                // reachable in the Simulator without driving the view-switcher menu.
-                if ProcessInfo.processInfo.arguments.contains("-OpenCardView") {
-                    var s = filterState(for: .corpus)
-                    s.viewMode = .grid
-                    setFilterState(s, for: .corpus)
-                }
-                // Brief AS — `-OpenMap` opens the Map (System Graph) directly for headless verification
-                // (comp render + the layer-export harness), without driving the view-switcher menu.
-                if ProcessInfo.processInfo.arguments.contains("-OpenMap") {
-                    var s = filterState(for: .corpus)
-                    s.viewMode = .systemGraph
-                    setFilterState(s, for: .corpus)
-                }
-                if ProcessInfo.processInfo.arguments.contains("-FieldFixtureNode") {
-                    let defs = FieldValueSelfTest.fixtureDefinitions()
-                    fieldDefinitions = defs
-                    nodes.insert(FieldValueSelfTest.fixtureNode(defs: defs), at: 0)
-                }
+            }
+            // `-OpenCardView` — open Card View directly so the card surface is
+            // reachable in the Simulator without driving the view-switcher menu.
+            if ProcessInfo.processInfo.arguments.contains("-OpenCardView") {
+                var s = filterState(for: .corpus)
+                s.viewMode = .grid
+                setFilterState(s, for: .corpus)
+            }
+            // live-19 (3a) — `-OpenListView`: the List surface directly.
+            if ProcessInfo.processInfo.arguments.contains("-OpenListView") {
+                var s = filterState(for: .corpus)
+                s.viewMode = .list
+                setFilterState(s, for: .corpus)
+            }
+            // Brief AS — `-OpenMap` opens the Map (System Graph) directly for headless verification
+            // (comp render + the layer-export harness), without driving the view-switcher menu.
+            if ProcessInfo.processInfo.arguments.contains("-OpenMap") {
+                var s = filterState(for: .corpus)
+                s.viewMode = .systemGraph
+                setFilterState(s, for: .corpus)
+            }
+            if ProcessInfo.processInfo.arguments.contains("-FieldFixtureNode") {
+                let defs = FieldValueSelfTest.fixtureDefinitions()
+                fieldDefinitions = defs
+                nodes.insert(FieldValueSelfTest.fixtureNode(defs: defs), at: 0)
             }
             #endif
         } catch {
@@ -2035,21 +2068,19 @@ final class CorpusStore {
         // SB139 Stage 1 — recompute substrate corpus means from whatever
         // vectors landed in storage. Cheap (one pass over nodes) and avoids
         // persisting means to disk. Skipped silently if iOS < 17.
-        if #available(iOS 17.0, *) {
-            SubstrateService.shared.recomputeMeans(from: nodes)
-            // SB139 Stage 2 — first surface for substrate-driven threads.
-            // Means must be fresh first; that's the line above.
-            refreshSubstrateThreadCandidates()
-            // SB139 Stage 4c1 — substrate-as-baseline: load any saved UMAP fit
-            // from disk and cluster it on the way in so the canvas sees a
-            // placed corpus on first paint. Auto-fit when no model exists yet
-            // is triggered by CanvasView on appear (not here — load() must not
-            // block on a synchronous fit).
-            do {
-                _ = try SubstrateLayoutService.shared.load()
-            } catch {
-                print("[CorpusStore] Substrate model load error: \(error)")
-            }
+        SubstrateService.shared.recomputeMeans(from: nodes)
+        // SB139 Stage 2 — first surface for substrate-driven threads.
+        // Means must be fresh first; that's the line above.
+        refreshSubstrateThreadCandidates()
+        // SB139 Stage 4c1 — substrate-as-baseline: load any saved UMAP fit
+        // from disk and cluster it on the way in so the canvas sees a
+        // placed corpus on first paint. Auto-fit when no model exists yet
+        // is triggered by CanvasView on appear (not here — load() must not
+        // block on a synchronous fit).
+        do {
+            _ = try SubstrateLayoutService.shared.load()
+        } catch {
+            print("[CorpusStore] Substrate model load error: \(error)")
         }
         // Process any nodes that were captured by the share extension (no AI ran at capture time)
         await scanForUnprocessedNodes()
@@ -2859,7 +2890,9 @@ final class CorpusStore {
         #if DEBUG
         // UI-first rule — the `-UITestLibrary` scratch must stay EMPTY so a real-UI test's "newest
         // entry" is always the one IT just created; never seed the onboarding sample into it.
-        if ProcessInfo.processInfo.arguments.contains("-UITestLibrary") { return }
+        // live-18 (1) — `-UITestSampleLibrary` opts a scratch library INTO the sample (the carousel rows need ≥ 20 cards).
+        if ProcessInfo.processInfo.arguments.contains("-UITestLibrary"),
+           !ProcessInfo.processInfo.arguments.contains("-UITestSampleLibrary") { return }
         #endif
         guard let root = await service.containerRootURL() else { return }
         guard nodes.isEmpty,
@@ -2930,7 +2963,7 @@ final class CorpusStore {
             applySampleManifest(manifest)
             print("[SampleSeed] on-demand seeded \(manifest.nodeIDs.count) node(s), \(manifest.collectionIDs.count) collection(s)")
             armCatalogBackfill()
-            if #available(iOS 17.0, *) { armBlockBackfill() }
+            armBlockBackfill()
         } catch {
             print("[SampleSeed] on-demand seed error: \(error)")
         }
@@ -2987,10 +3020,23 @@ final class CorpusStore {
         await addNode(node, position: position)
     }
 
+    #if DEBUG
+    /// live-17 (2c) — `CanvasLayoutRaceSelfTest`: the store's memory as at a cold launch (no entries, the default empty
+    /// layout), the disk untouched.
+    func debugColdLaunchState() {
+        nodes = []
+        canvasLayout = CanvasLayout(version: 1, updatedAt: Date(), positions: [:])
+        canvasLayoutLoaded = false
+    }
+    func debugDiskCanvasLayout() async throws -> CanvasLayout? { try await service.loadCanvasLayout() }
+    func debugWriteDiskCanvasLayout(_ layout: CanvasLayout) async throws { try await service.saveCanvasLayout(layout) }
+    #endif
+
     func addNode(_ node: Node, position: CGPoint) async {
-        var newLayout = canvasLayout
-        newLayout.positions[node.id] = CanvasPosition(x: Double(position.x), y: Double(position.y))
-        newLayout.updatedAt = Date()
+        // live-17 (2c) — no copy of `canvasLayout` before the awaits: a capture during the launch load copied the EMPTY
+        // default and saved a layout holding only itself over every saved position. The position goes into the LIVE
+        // layout after the save; it's persisted now if the layout has loaded, else the load merges and persists it.
+        let newPosition = CanvasPosition(x: Double(position.x), y: Double(position.y))
         do {
             try await saveAndEnqueue(node)
             #if DEBUG
@@ -3001,7 +3047,13 @@ final class CorpusStore {
                 try? await Task.sleep(nanoseconds: ms * 1_000_000)
             }
             #endif
-            try await service.saveCanvasLayout(newLayout)
+            canvasLayout.positions[node.id] = newPosition
+            canvasLayout.updatedAt = Date()
+            if canvasLayoutLoaded {
+                try await service.saveCanvasLayout(canvasLayout)
+            } else {
+                print("[Store] live-17 addNode \(node.id) during the launch load — its position joins the loaded layout")
+            }
             // A3 — one id, one node: if the launch load already brought this node in from disk (it read the file this
             // call just saved), take that slot instead of inserting a second copy.
             if let existing = nodes.firstIndex(where: { $0.id == node.id }) {
@@ -3010,7 +3062,6 @@ final class CorpusStore {
             } else {
                 nodes.insert(node, at: 0)
             }
-            canvasLayout = newLayout
         } catch {
             print("[CorpusStore] Save error: \(error)")
         }
@@ -4847,7 +4898,6 @@ final class CorpusStore {
         blockBackfillTask = Task.detached(priority: .background) { [weak self] in
             try? await Task.sleep(for: .seconds(5))
             guard let self, !Task.isCancelled else { return }
-            guard #available(iOS 17.0, *) else { return }
             let pairs = await self.backfillFingerprintPairs()
             let fingerprint = CorpusStore.blockFingerprint(pairs)
             if fingerprint == CorpusStore.loadBlockFingerprint() {
@@ -4862,7 +4912,6 @@ final class CorpusStore {
     /// fingerprint, but salted with the BLOCK embedder version and stored under
     /// its OWN key — so a block-version bump forces one re-scan without touching
     /// the catalog signature, and vice versa.
-    @available(iOS 17.0, *)
     nonisolated static func blockFingerprint(_ pairs: [(id: String, updatedAt: Date)]) -> String {
         let body = pairs
             .sorted { $0.id < $1.id }
@@ -4886,7 +4935,6 @@ final class CorpusStore {
     /// (reuses fresh blocks by (itemID, sourceHash) at the current version), so
     /// it re-embeds only the blocks that actually changed. Never touches
     /// `saveAndEnqueue`/`enqueueRebuild` or the Librarian.
-    @available(iOS 17.0, *)
     // MARK: - Brief Y Part E — search-index coverage dial (Settings)
 
     /// True while the block reconciler is running (launch pass OR a foreground
@@ -4900,7 +4948,6 @@ final class CorpusStore {
     /// index present + current at the live embedder version? I/O-heavy (loads each
     /// sidecar), so it runs off the render path — the Settings row calls it on appear
     /// and after a rebuild, never per-frame.
-    @available(iOS 17.0, *)
     func refreshBlockIndexCoverage() async {
         let snapshot = nodes
         var total = 0, current = 0
@@ -4916,7 +4963,6 @@ final class CorpusStore {
     /// Foreground "Rebuild now" — the same reconciler, same 40ms pacing, run to
     /// completion with the coverage refreshed after. Safe to tap repeatedly (a
     /// fresh index rebuilds nothing).
-    @available(iOS 17.0, *)
     func rebuildBlockIndexNow() async {
         await backfillBlockIndex()
         await refreshBlockIndexCoverage()
@@ -4951,7 +4997,6 @@ final class CorpusStore {
     /// True when the on-disk index already covers exactly the current chunk specs
     /// at the current embedder version — nothing to rebuild. Missing index or any
     /// drift ⇒ false (rebuild).
-    @available(iOS 17.0, *)
     private func blockIndexIsFresh(_ node: Node, specs: [BlockChunkSpec]) async -> Bool {
         guard let index = try? await service.loadBlockIndex(forNodeID: node.id) else { return false }
         let want = Set(specs.map { "\($0.itemID)|\($0.sourceHash)" })
@@ -6632,6 +6677,8 @@ final class CorpusStore {
         let mediaType: GalleryItem.MediaType
         let sourceURL: URL
         let fileExtension: String
+        /// live-18 (0b) — the source's own name for it, when it has a real one (→ `GalleryItem.originalName`).
+        var originalName: String? = nil
     }
 
     /// Creates a new `.imageVideo` node — or appends a `.imageVideo` entry to
@@ -6668,7 +6715,8 @@ final class CorpusStore {
                 mediaType: m.mediaType,
                 file: "items/\(m.itemID).\(m.fileExtension)",
                 aspectRatio: nil,
-                capturedAt: now
+                capturedAt: now,
+                originalName: m.originalName
             )
         }
 
@@ -6790,7 +6838,8 @@ final class CorpusStore {
                 mediaType: m.mediaType,
                 file: "items/\(m.itemID).\(m.fileExtension)",
                 aspectRatio: nil,
-                capturedAt: now
+                capturedAt: now,
+                originalName: m.originalName
             )
         }
         let existing = updated.items[itemIdx].mediaItems ?? []
@@ -8273,10 +8322,10 @@ final class CorpusStore {
                            posture: AuthorshipPosture = .propose,
                            aspects: Set<Proposal.Kind> = [.title, .summary]) async -> NodeAIFailure? {
         print("[AI] processNodeWithAI called for \(nodeID) suppressTagSheet=\(suppressTagSheet) needsAuthorship=\(needsAuthorship) needsSubstrate=\(needsSubstrate) solicited=\(solicited)")
-        // GAP 27 shape at the caller layer: DON'T bail here on !iOS26. `processNode` and
+        // GAP 27 shape at the caller layer: DON'T bail here when FM is absent. `processNode` and
         // `runSubstratePipeline` route through ModelRouter, whose `.local` branch (the
-        // on-device model) has no OS floor — so an iOS 18–25 user who opted into the local
-        // model must reach it. FM-availability is now enforced INSIDE the routed calls (which
+        // on-device model) needs no Apple Intelligence — so a user without it who opted into
+        // the local model must reach it. FM-availability is now enforced INSIDE the routed calls (which
         // return .unavailable / model_unavailable when FM is the resolved provider and absent).
         // live-15 (1) — a document is named from its OWN text. Extraction is started by the screen that shows the
         // document, so naming used to run before the text existed and the model saw only the file name (T: an 11-page
@@ -8325,15 +8374,9 @@ final class CorpusStore {
         // single FM call producing all per-node fields plus an FM-suggested
         // neighborhood id.
         // The corpus-aware path is FM-only (own LanguageModelSession) AND DEBUG-dormant
-        // (default-false flag, unreachable in Release), so it never runs on the iOS 18–25
-        // floor — force it off there so every downstream `if useCorpusAware` block is
-        // consistently skipped and the routed legacy path (processNode) is taken.
+        // (default-false flag, unreachable in Release).
         let useCorpusAware: Bool
-        if #available(iOS 26.0, *) {
-            useCorpusAware = forceCorpusAware ?? FeatureFlags.useCorpusAwareTagging
-        } else {
-            useCorpusAware = false
-        }
+        useCorpusAware = forceCorpusAware ?? FeatureFlags.useCorpusAwareTagging
         // ★★ WHICH GATE GOVERNS WHAT — read this before adding a third.
         // There are TWO overlapping controls here, and the fact that one of them sat
         // unread for a whole arc is how the eager pass came to re-run both FM calls at
@@ -8364,23 +8407,17 @@ final class CorpusStore {
             var aiOutcome: NodeAIOutcome
             bug17Log.notice("FM-RAN node=\(nodeID, privacy: .public) path=\(useCorpusAware ? "corpusAware" : "legacy", privacy: .public) suppressTagSheet=\(suppressTagSheet)")
             if useCorpusAware {
-                if #available(iOS 26.0, *) {
-                    let neighborhoodDigests = prefilterNeighborhoods(for: node, nodeEmbedding: nodeEmbedding, K: 5)
-                    let tagDigests = topTagsForProcessNode(N: 12)
-                    let vocabulary = currentTags.map { $0.name }
-                    print("[AI][SB126] Corpus-aware path for \(nodeID): \(neighborhoodDigests.count) neighborhoods, \(tagDigests.count) tag digests")
-                    aiOutcome = await aiSvc.processNodeCorpusAware(
-                        node: node,
-                        neighborhoodDigests: neighborhoodDigests,
-                        tagDigests: tagDigests,
-                        fullVocabulary: vocabulary,
-                        authoredOnly: authoredOnly
-                    )
-                } else {
-                    // Unreachable: useCorpusAware is false pre-iOS-26 (set above). Present only so
-                    // the compiler sees a definite assignment without the FM-only call on the floor.
-                    aiOutcome = await aiSvc.processNode(node, tagVocabulary: currentTags, authoredOnly: authoredOnly)
-                }
+                let neighborhoodDigests = prefilterNeighborhoods(for: node, nodeEmbedding: nodeEmbedding, K: 5)
+                let tagDigests = topTagsForProcessNode(N: 12)
+                let vocabulary = currentTags.map { $0.name }
+                print("[AI][SB126] Corpus-aware path for \(nodeID): \(neighborhoodDigests.count) neighborhoods, \(tagDigests.count) tag digests")
+                aiOutcome = await aiSvc.processNodeCorpusAware(
+                    node: node,
+                    neighborhoodDigests: neighborhoodDigests,
+                    tagDigests: tagDigests,
+                    fullVocabulary: vocabulary,
+                    authoredOnly: authoredOnly
+                )
             } else {
                 aiOutcome = await aiSvc.processNode(node, tagVocabulary: currentTags, authoredOnly: authoredOnly)
             }
@@ -8603,7 +8640,7 @@ final class CorpusStore {
         // thread candidates now that this node's substrate is current. The
         // batch-import path suppresses this per-node refresh and triggers
         // one combined refresh at the end of Phase 4 (see batchImportText).
-        if !suppressTagSheet, #available(iOS 17.0, *) {
+        if !suppressTagSheet {
             refreshSubstrateThreadCandidates()
         }
         // Brief BP1 — a `.automatic` pass is a Done: commit any fresh GHOST (the link-title ghost,
@@ -8739,7 +8776,6 @@ final class CorpusStore {
     /// (no card pre-filter — see `cardNarrowedCandidates`), with sub-threshold
     /// matches dropped so a query with nothing close returns [] → the UI's
     /// "nothing close" state.
-    @available(iOS 17.0, *)
     func findRelevantBlocks(query: String, topK: Int = 10) async -> [BlockMatch] {
         guard let qvec = await CardEmbeddingService.shared.embed(query), !qvec.isEmpty else { return [] }
         let candidateIDs = nodes.map { $0.id }
@@ -8762,7 +8798,6 @@ final class CorpusStore {
     /// Per-rebuild yields are handled inside the service (5ms between embeds);
     /// this loop adds one more 5ms yield between nodes so a large corpus
     /// doesn't lock the main thread between sidecar writes.
-    @available(iOS 17.0, *)
     func backfillBlockEmbeddings() async {
         let start = Date()
         let total = nodes.count
@@ -8818,7 +8853,6 @@ final class CorpusStore {
     /// ws-card-catalog step 3b — dev readout of block-embedding coverage at the
     /// current embedder version (BGE v2). Loads each sidecar, so it's I/O-heavy —
     /// for the inspect view only.
-    @available(iOS 17.0, *)
     func blockStatusSummary() async -> String {
         let total = nodes.count
         var nodesWithV2 = 0
@@ -8890,8 +8924,7 @@ final class CorpusStore {
     /// of outcome, so this node won't be re-attempted by backfill until the
     /// version constant bumps.
     // No @available: the substrate FM runs ONLY via `aiSvc.processSubstrate`, routed through
-    // ModelRouter (the `.local` branch has no OS floor). Touches no FM type directly, so it
-    // must be callable on the iOS 18–25 floor.
+    // ModelRouter (the `.local` branch needs no Apple Intelligence). Touches no FM type directly.
     private func runSubstratePipeline(on node: inout Node, aiSvc: AIService) async {
         let substrate = SubstrateService.shared
         let loaded = await substrate.ensureLoaded()
@@ -9005,7 +9038,6 @@ final class CorpusStore {
     /// `batchSize` defaults to 10 per the brief; pass `Int.max` for a full
     /// corpus run. Recomputes means once at the end so similarity is fresh.
     func backfillSubstrate(batchSize: Int = 10) async {
-        guard #available(iOS 26.0, *) else { return }
         let pending = nodes
             .filter { $0.embeddingVersion < SubstrateService.currentEmbeddingVersion }
             .sorted { $0.createdAt < $1.createdAt }
@@ -9027,7 +9059,6 @@ final class CorpusStore {
     /// Used by the "Backfill refused-node fallback" affordance in
     /// `SubstrateInspectView` to bring the existing refused population onto
     /// the new chain without forcing a full re-capture.
-    @available(iOS 17.0, *)
     func backfillRefusedNodesFallback() async {
         let substrate = SubstrateService.shared
         _ = await substrate.ensureLoaded()
@@ -9103,7 +9134,6 @@ final class CorpusStore {
     /// we don't re-process the 132 healthy nodes. Useful for distinguishing
     /// transient FM unavailability from systematic prompt/schema issues.
     func retrySubstrateFMErrors(batchSize: Int = Int.max) async {
-        guard #available(iOS 26.0, *) else { return }
         let pending = nodes
             .filter { $0.embeddingFailureReason == "fm_error" }
             .sorted { $0.createdAt < $1.createdAt }
@@ -9117,7 +9147,6 @@ final class CorpusStore {
     /// Shared loop body for backfill and targeted retry. `pending` is the full
     /// candidate set (used for `pendingAfter` accounting); the batch is
     /// `prefix(batchSize)` of that set.
-    @available(iOS 26.0, *)
     private func runSubstrateBatch(label: String, pending: [Node], batchSize: Int) async {
         let aiSvc = AIService()
         let substrate = SubstrateService.shared
@@ -9247,10 +9276,6 @@ final class CorpusStore {
     /// - Incoherent: set needsReview flag for user confirmation
     /// - Model unavailable: treat as pass (don't block)
     private func processDeferredNodesWithFM(nodeIDs: [String]) async {
-        guard #available(iOS 26.0, *) else {
-            print("[FM] iOS 26.0 unavailable — skipping FM check for \(nodeIDs.count) nodes")
-            return
-        }
 
         print("[FM] Starting FM coherence check for \(nodeIDs.count) deferred nodes")
         let aiSvc = AIService()
@@ -9336,7 +9361,6 @@ final class CorpusStore {
     /// always what surfaces next. Dismiss/pull triggers a refresh that
     /// removes the just-handled pair (dismissal via session set, pull via
     /// the new meta-node landing in `alreadyConnectedPairs`).
-    @available(iOS 17.0, *)
     private func refreshSubstrateThreadCandidates() {
         // Brief Z R2 — threads over the corpus ROOM (the sample is a guest).
         let suggestions = SubstrateThreadService.candidates(
@@ -9401,9 +9425,7 @@ final class CorpusStore {
         // SB139 Stage 2 — the just-pulled pair now lands in
         // `alreadyConnectedPairs` (via the new meta-node's provenance), so a
         // refresh drops it from the queue and surfaces the next candidate.
-        if #available(iOS 17.0, *) {
-            refreshSubstrateThreadCandidates()
-        }
+        refreshSubstrateThreadCandidates()
     }
 
     /// Dismiss a thread suggestion. Per the SB139 Stage 2 brief, dismissal
@@ -9412,8 +9434,7 @@ final class CorpusStore {
     /// this session, but the candidate stays in the pool and may surface
     /// again after relaunch.
     func dismissThread(_ suggestion: ThreadSuggestion) {
-        if suggestion.nodeIDs.count == 2,
-           #available(iOS 17.0, *) {
+        if suggestion.nodeIDs.count == 2 {
             let key = SubstrateThreadService.pairKey(suggestion.nodeIDs[0], suggestion.nodeIDs[1])
             dismissedThreadPairKeys.insert(key)
         }
@@ -9562,7 +9583,8 @@ final class CorpusStore {
                         mediaType: item.type == .image ? .image : .video,
                         file: file,
                         aspectRatio: nil,
-                        capturedAt: item.createdAt
+                        capturedAt: item.createdAt,
+                        originalName: item.originalName   // live-19 (2): a shared-in photo's own name
                     ))
                 }
             default:
@@ -9745,6 +9767,19 @@ final class CorpusStore {
             cgShareItem(a1, .audio, file: "items/\(a1).m4a")
         ]), media: [(a1, Data("fake-audio".utf8), "m4a")])
 
+        // live-19 (2) — photos shared IN keep their names: items built by the extension's own factory, with the
+        // provider's `suggestedName` ("IMG_4012"; a UUID-looking one is no name). A single photo and a pair.
+        let named1NodeID = UUID().uuidString, n1 = UUID().uuidString
+        cgStage(cgShareNode(id: named1NodeID, items: [
+            ShareImportItems.imageItem(itemID: n1, ext: "jpg", suggestedName: "IMG_4012", sourceURL: nil, now: Date())
+        ]), media: [(n1, jpeg, "jpg")])
+        let named2NodeID = UUID().uuidString, n2 = UUID().uuidString, n3 = UUID().uuidString
+        cgStage(cgShareNode(id: named2NodeID, items: [
+            ShareImportItems.imageItem(itemID: n2, ext: "jpg", suggestedName: "IMG_4013", sourceURL: nil, now: Date()),
+            ShareImportItems.imageItem(itemID: n3, ext: "jpg", suggestedName: "5E7A1C93-2B4D-4F18-9A6E-0C3D8B1F0099",
+                                       sourceURL: nil, now: Date())
+        ]), media: [(n2, jpeg, "jpg"), (n3, jpeg, "jpg")])
+
         // Run the REAL import (coalesce → transcribe → route-name).
         await importFromAppGroupInbox()
 
@@ -9776,6 +9811,23 @@ final class CorpusStore {
             row("photo-dated-fallback", n.title.hasPrefix("Photos · "),
                 "title=\"\(n.title)\" (want prefix \"Photos · \")")
         } else { row("photos", false, "node missing after import") }
+
+        // live-19 (2) — the single photo is migrated when its entry is first OPENED (`ensureEntrySchema`, the lazy path).
+        await ensureEntrySchema(forNodeID: named1NodeID)
+        func sharedOutName(_ g: GalleryItem?) -> String { g.map { DocumentHandoff.displayName(for: $0) } ?? "nil" }
+        if let n = nodes.first(where: { $0.id == named1NodeID }) {
+            let g = n.items.first(where: { $0.type == .imageVideo })?.mediaItems?.first
+            row("shared-photo-keeps-its-name", g?.originalName == "IMG_4012" && sharedOutName(g) == "IMG_4012",
+                "originalName=\(g?.originalName ?? "nil") shares as \"\(sharedOutName(g))\" (want IMG_4012)")
+        } else { row("shared-photo", false, "node missing after import") }
+        if let n = nodes.first(where: { $0.id == named2NodeID }) {
+            let media = n.items.first(where: { $0.type == .imageVideo })?.mediaItems ?? []
+            let named = media.first { $0.id == n2 }, unnamed = media.first { $0.id == n3 }
+            row("shared-pair-keeps-names", media.count == 2 && named?.originalName == "IMG_4013" && unnamed?.originalName == nil
+                && sharedOutName(unnamed).hasPrefix("Photo · "),
+                "names=\(media.map { $0.originalName ?? "nil" }) share as \(media.map(sharedOutName)) (want IMG_4013 + \"Photo · <date>\"; a UUID name is no name)")
+            row("shared-pair-still-dated-title", n.title.hasPrefix("Photos · "), "title=\"\(n.title)\"")
+        } else { row("shared-pair", false, "node missing after import") }
 
         // Case 3 — transcription wiring (stub) + named from the transcript.
         if let n = nodes.first(where: { $0.id == audioNodeID }) {
@@ -9942,9 +9994,7 @@ final class CorpusStore {
             // gate retired with the FM threads path — substrate works on
             // any corpus size and just returns no candidates if nothing
             // qualifies.
-            if #available(iOS 17.0, *) {
-                refreshSubstrateThreadCandidates()
-            }
+            refreshSubstrateThreadCandidates()
         }
 
         // Phase 5 — Async FM coherence check for deferred entries
@@ -10421,9 +10471,7 @@ final class CorpusStore {
             try? await Task.sleep(for: .seconds(2))
             guard let self, !Task.isCancelled else { return }
             self.regenerateNeighborhoodMetaIfNeeded(priorSnapshot: priorSnapshot)
-            if #available(iOS 26.0, *) {
-                await self.refreshCorpusSummaryIfNeeded()
-            }
+            await self.refreshCorpusSummaryIfNeeded()
         }
     }
 
@@ -10708,7 +10756,6 @@ final class CorpusStore {
         let prevCount = corpusIndex.summary?.nodeCount ?? 0
         let needsRefresh = corpusIndex.summary == nil || abs(room.count - prevCount) >= 20
         guard needsRefresh else { return }
-        guard #available(iOS 26.0, *) else { return }
         let aiSvc = AIService()
         let cutoff = Calendar.current.date(byAdding: .day, value: -14, to: Date()) ?? Date.distantPast
         let recentCaptureCount = room.reduce(into: 0) { acc, node in
@@ -10783,7 +10830,6 @@ final class CorpusStore {
         print("[Neighborhood][SB126] Trigger fired for \(candidateIDs.count) of \(corpusIndex.neighborhoods.count) neighborhoods")
 
         Task {
-            guard #available(iOS 26.0, *) else { return }
             let embedder = NLEmbedding.sentenceEmbedding(for: .english)
             if embedder == nil {
                 print("[Neighborhood][SB126] NLEmbedding unavailable — descriptions land but embeddings won't")
@@ -10804,7 +10850,6 @@ final class CorpusStore {
     /// Per-neighborhood orchestration: sample → Call A → embed → Call B → persist.
     /// Each successful step writes back to `corpusIndex.neighborhoods` and saves a
     /// snapshot so partial progress survives interruption.
-    @available(iOS 26.0, *)
     private func runNeighborhoodChain(
         neighborhoodID: String,
         priorSnapshot: [String: NeighborhoodIndexEntry],
@@ -11106,7 +11151,6 @@ final class CorpusStore {
         let existingNames = tags.map { $0.name }.filter { $0 != tagName }
         guard !existingNames.isEmpty else { return }
         Task {
-            guard #available(iOS 26.0, *) else { return }
             let aiSvc = AIService()
             guard let relations = await aiSvc.computeTagSimilarity(newTag: tagName, existingTags: existingNames) else { return }
             let similarities: [TagSimilarity] = relations.map {

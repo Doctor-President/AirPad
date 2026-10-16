@@ -48,10 +48,11 @@ enum OnDeviceSpeech {
     }
 
     /// live-12 (1) — T's Speech chain: the tiers this take tries, best first. Automatic = Speech → Dictation → the older
-    /// recognizer; a forced choice (the TestFlight switch) starts the chain at that tier; Unavailable tries none. Before
-    /// iOS 26 only the older recognizer exists. The recorder walks the list and runs the first tier that can.
-    static func chain(_ choice: SpeechEngineChoice, analyzerOS: Bool) -> [SpeechTier] {
-        let all: [SpeechTier] = analyzerOS ? [.speech, .dictation, .olderRecognizer] : [.olderRecognizer]
+    /// recognizer; a forced choice (the TestFlight switch) starts the chain at that tier; Unavailable tries none. The
+    /// recorder walks the list and runs the first tier that can — the older recognizer is the fallback when no Speech /
+    /// Dictation model is on the phone yet (live-19: the iOS 26 floor retired its "before iOS 26" role).
+    static func chain(_ choice: SpeechEngineChoice) -> [SpeechTier] {
+        let all: [SpeechTier] = [.speech, .dictation, .olderRecognizer]
         guard choice != .automatic else { return all }
         guard let forced = SpeechTier(rawValue: choice.rawValue), let i = all.firstIndex(of: forced) else {
             return choice == .unavailable ? [] : all.filter { $0 == .olderRecognizer }
@@ -62,7 +63,6 @@ enum OnDeviceSpeech {
     /// Tiers 1–2: the analyzer module for `tier` in `locale` (already resolved to a supported one). Tier 1 is
     /// `SpeechTranscriber` (no vocabulary hints — Apple: contextual strings help only `DictationTranscriber`); tier 2 is
     /// `DictationTranscriber` with punctuation. Nil for tiers 3–4.
-    @available(iOS 26.0, macOS 26.0, *)
     static func liveModule(_ tier: SpeechTier, locale: Locale) -> LiveModule? {
         switch tier {
         case .speech:
@@ -80,7 +80,6 @@ enum OnDeviceSpeech {
     }
 
     /// The app words for an analyzer session: tier 2 only (tier 1 takes none).
-    @available(iOS 26.0, macOS 26.0, *)
     static func analysisContext(for live: LiveModule) -> AnalysisContext? {
         guard case .dictation = live else { return nil }
         let context = AnalysisContext()
@@ -94,7 +93,6 @@ enum OnDeviceSpeech {
     /// live-13 (2) — choosing the tier never waits on the network: only the installed status is read (local; 2–26 ms on
     /// T's iPhone, online or in airplane mode). Reserving the locale and asking for / downloading the model — the calls
     /// that go through Apple's asset catalog — run in the background, never before a take starts.
-    @available(iOS 26.0, macOS 26.0, *)
     static func liveAnalyzer(_ tier: SpeechTier, locale: Locale = .current) async -> (SpeechAnalyzer, LiveModule)? {
         #if DEBUG
         if CommandLine.arguments.contains("-StubSpeechUnavailable") { return nil }
@@ -184,26 +182,21 @@ enum OnDeviceSpeech {
         row("unavailable-mark-round-trips", json.contains("\"transcript_unavailable\":true") && back?.transcriptUnavailable == true
             && legacy != nil && legacy?.transcriptUnavailable == nil)
         // live-12 (1) — T's Speech chain, each tier forced as the TestFlight switch forces it.
-        row("chain-automatic-speech-dictation-older", chain(.automatic, analyzerOS: true) == [.speech, .dictation, .olderRecognizer])
-        row("chain-before-ios26-older-only", chain(.automatic, analyzerOS: false) == [.olderRecognizer])
-        row("force-speech-starts-at-tier-1", chain(.speech, analyzerOS: true) == [.speech, .dictation, .olderRecognizer])
-        row("force-dictation-starts-at-tier-2", chain(.dictation, analyzerOS: true) == [.dictation, .olderRecognizer])
-        row("force-older-recognizer-is-tier-3-only", chain(.olderRecognizer, analyzerOS: true) == [.olderRecognizer])
-        row("force-unavailable-tries-nothing", chain(.unavailable, analyzerOS: true).isEmpty && chain(.unavailable, analyzerOS: false).isEmpty)
-        if #available(iOS 26.0, macOS 26.0, *) {
-            let en = Locale(identifier: "en-US")
-            let t1 = liveModule(.speech, locale: en), t2 = liveModule(.dictation, locale: en)
-            var t1IsSpeech = false, t2IsDictation = false
-            if case .speech = t1 { t1IsSpeech = true }
-            if case .dictation = t2 { t2IsDictation = true }
-            row("tier1-builds-SpeechTranscriber", t1IsSpeech)
-            row("tier2-builds-DictationTranscriber", t2IsDictation)
-            row("tiers-3-4-build-no-analyzer-module", liveModule(.olderRecognizer, locale: en) == nil && liveModule(.unavailable, locale: en) == nil)
-            row("tier1-no-vocabulary", t1.map { analysisContext(for: $0) == nil } ?? false)
-            row("tier2-vocabulary-set", t2.flatMap { analysisContext(for: $0) }?.contextualStrings[.general] == SpeechVocabulary.contextualStrings)
-        } else {
-            rows.append("SKIP tiers-1-2-modules (needs iOS 26)")
-        }
+        row("chain-automatic-speech-dictation-older", chain(.automatic) == [.speech, .dictation, .olderRecognizer])
+        row("force-speech-starts-at-tier-1", chain(.speech) == [.speech, .dictation, .olderRecognizer])
+        row("force-dictation-starts-at-tier-2", chain(.dictation) == [.dictation, .olderRecognizer])
+        row("force-older-recognizer-is-tier-3-only", chain(.olderRecognizer) == [.olderRecognizer])
+        row("force-unavailable-tries-nothing", chain(.unavailable).isEmpty)
+        let en = Locale(identifier: "en-US")
+        let t1 = liveModule(.speech, locale: en), t2 = liveModule(.dictation, locale: en)
+        var t1IsSpeech = false, t2IsDictation = false
+        if case .speech = t1 { t1IsSpeech = true }
+        if case .dictation = t2 { t2IsDictation = true }
+        row("tier1-builds-SpeechTranscriber", t1IsSpeech)
+        row("tier2-builds-DictationTranscriber", t2IsDictation)
+        row("tiers-3-4-build-no-analyzer-module", liveModule(.olderRecognizer, locale: en) == nil && liveModule(.unavailable, locale: en) == nil)
+        row("tier1-no-vocabulary", t1.map { analysisContext(for: $0) == nil } ?? false)
+        row("tier2-vocabulary-set", t2.flatMap { analysisContext(for: $0) }?.contextualStrings[.general] == SpeechVocabulary.contextualStrings)
         let tier3 = bufferRequest()                                   // SegmentedLiveTranscriber's request
         row("tier3-on-device-required", tier3.requiresOnDeviceRecognition)
         row("tier3-vocabulary-set", tier3.contextualStrings == SpeechVocabulary.contextualStrings)

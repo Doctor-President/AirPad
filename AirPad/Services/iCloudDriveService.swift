@@ -229,6 +229,10 @@ actor iCloudDriveService {
             if ProcessInfo.processInfo.arguments.contains("-UITestSeedChats") { Self.seedUITestChats(root) }
             if ProcessInfo.processInfo.arguments.contains("-UITestSeedVoiceEntry") { Self.seedUITestVoiceEntry(root) }
             if ProcessInfo.processInfo.arguments.contains("-UITestSeedHeroEntries") { Self.seedUITestHeroEntries(root) }
+            if ProcessInfo.processInfo.arguments.contains("-UITestSeedDocumentEntries") { Self.seedUITestDocumentEntries(root) }
+            if ProcessInfo.processInfo.arguments.contains("-UITestSeedPhotoEntries") { Self.seedUITestPhotoEntries(root) }
+            if ProcessInfo.processInfo.arguments.contains("-UITestSeedLongChat") { Self.seedUITestLongChat(root) }
+            if ProcessInfo.processInfo.arguments.contains("-UITestSeedManyDocuments") { Self.seedUITestManyDocuments(root) }
             return true
         } catch {
             return false
@@ -329,6 +333,126 @@ actor iCloudDriveService {
             node.coverImageRelativePath = media[0].file
             write(node, gDir)
         }
+    }
+
+    /// live-17 — `-UITestSeedDocumentEntries`: documents stored the way an import stores them, under UUID file names
+    /// (`items/<UUID>.<ext>`), for the `DocumentHandoffName` rows. T saw "F1062A75-5970-…" as the viewer's title.
+    ///   - `uitest-doc-single`: one PDF whose real name is "Harbour Survey Notes.pdf" (its PDF Title metadata says
+    ///     something else, so the real name must win);
+    ///   - `uitest-doc-gallery`: two documents — an HTML page with no real name (shown by its `<title>`, "Tide Table
+    ///     Primer") and a PDF named "Mooring Checklist.pdf".
+    /// Synthetic content only. Written only when its `node.json` (written last) is absent.
+    private static func seedUITestDocumentEntries(_ root: URL) {
+        let now = Date(timeIntervalSince1970: 1_760_300_000)
+        func pdf(_ lines: [String], title: String) -> Data {
+            let format = UIGraphicsPDFRendererFormat()
+            format.documentInfo = [kCGPDFContextTitle as String: title]
+            return UIGraphicsPDFRenderer(bounds: CGRect(x: 0, y: 0, width: 612, height: 792), format: format).pdfData { ctx in
+                ctx.beginPage()
+                for (i, line) in lines.enumerated() {
+                    (line as NSString).draw(at: CGPoint(x: 72, y: 72 + 28 * i),
+                                            withAttributes: [.font: UIFont.systemFont(ofSize: i == 0 ? 22 : 14)])
+                }
+            }
+        }
+        func doc(_ id: String, _ ext: String, _ name: String, _ title: String?, _ data: Data, in dir: URL) -> DocumentItem {
+            try? data.write(to: dir.appendingPathComponent("items/\(id).\(ext)"), options: .atomic)
+            return DocumentItem(id: id, filePath: "items/\(id).\(ext)", fileName: name, fileType: ext, documentTitle: title,
+                                extractedText: nil, thumbnailFile: nil, pageCount: nil, wordCount: nil, capturedAt: now)
+        }
+        let entries: [(String, String, [(String, String, String, String?, Data)])] = [
+            ("uitest-doc-single", "Harbour survey", [
+                ("F1062A75-5970-4E1B-9C3A-2B7D51C0A001", "pdf", "Harbour Survey Notes.pdf", nil,
+                 pdf(["Harbour Survey Notes", "Soundings taken at the north wall, three tides.",
+                      "Silt depth rising near the slipway."], title: "HS-draft-2"))]),
+            ("uitest-doc-gallery", "Mooring prep", [
+                ("C4BDC027-DC8E-4F7A-8E21-6A0B3D9E0002", "html", "", "Tide Table Primer",
+                 Data("<html><head><title>Tide Table Primer</title></head><body><h1>Tide Table Primer</h1><p>How to read high and low water times for a small harbour.</p></body></html>".utf8)),
+                ("9B2E4D61-0C7A-4B85-A3F9-1E6D2C8B0003", "pdf", "Mooring Checklist.pdf", nil,
+                 pdf(["Mooring Checklist", "Check the chain, the shackle pin and the swivel."], title: "MC"))]),
+        ]
+        for (nodeID, title, docs) in entries {
+            let nodeDir = root.appendingPathComponent("nodes/\(nodeID)")
+            guard !FileManager.default.fileExists(atPath: nodeDir.appendingPathComponent("node.json").path) else { continue }
+            try? FileManager.default.createDirectory(at: nodeDir.appendingPathComponent("items"), withIntermediateDirectories: true)
+            let items = docs.map { doc($0.0, $0.1, $0.2, $0.3, $0.4, in: nodeDir) }
+            var entry = NodeItem(id: nodeID + "-docs", type: .document, createdAt: now, file: items[0].filePath,
+                                 displayName: items.count >= 2 ? "Documents" : nil, isExpanded: true, updatedAt: now,
+                                 documentItems: items)
+            entry.documentViewMode = items.count >= 2 ? .carousel : nil
+            let node = Node(id: nodeID, createdAt: now, updatedAt: now, title: title, summary: "A synthetic document entry.",
+                            tags: [], items: [entry], entrySchemaVersion: 4)
+            try? JSONEncoder.airPad.encode(node).write(to: nodeDir.appendingPathComponent("node.json"), options: .atomic)
+        }
+    }
+
+    /// live-19 (3d) — `-UITestSeedManyDocuments`: one entry (`uitest-doc-many`) holding 14 small synthetic PDFs in the
+    /// document carousel, so paging it crosses the lazy window (`PagedRestGeometry`). Written only when absent.
+    private static func seedUITestManyDocuments(_ root: URL) {
+        let now = Date(timeIntervalSince1970: 1_760_300_000)
+        let nodeID = "uitest-doc-many"
+        let nodeDir = root.appendingPathComponent("nodes/\(nodeID)")
+        guard !FileManager.default.fileExists(atPath: nodeDir.appendingPathComponent("node.json").path) else { return }
+        try? FileManager.default.createDirectory(at: nodeDir.appendingPathComponent("items"), withIntermediateDirectories: true)
+        let items: [DocumentItem] = (1...14).map { i in
+            let id = String(format: "D0C5A11E-0000-4000-8000-%012d", i)
+            let data = UIGraphicsPDFRenderer(bounds: CGRect(x: 0, y: 0, width: 612, height: 792)).pdfData { ctx in
+                ctx.beginPage()
+                ("Tide log \(i)" as NSString).draw(at: CGPoint(x: 72, y: 72), withAttributes: [.font: UIFont.systemFont(ofSize: 22)])
+            }
+            try? data.write(to: nodeDir.appendingPathComponent("items/\(id).pdf"), options: .atomic)
+            return DocumentItem(id: id, filePath: "items/\(id).pdf", fileName: "Tide log \(i).pdf", fileType: "pdf",
+                                documentTitle: nil, extractedText: nil, thumbnailFile: nil, pageCount: nil, wordCount: nil,
+                                capturedAt: now)
+        }
+        var entry = NodeItem(id: nodeID + "-docs", type: .document, createdAt: now, file: items[0].filePath,
+                             displayName: "Documents", isExpanded: true, updatedAt: now, documentItems: items)
+        entry.documentViewMode = .carousel
+        let node = Node(id: nodeID, createdAt: now, updatedAt: now, title: "Fourteen tide logs", summary: "A synthetic document entry.",
+                        tags: [], items: [entry], entrySchemaVersion: 4)
+        try? JSONEncoder.airPad.encode(node).write(to: nodeDir.appendingPathComponent("node.json"), options: .atomic)
+    }
+
+    /// live-19 (3a) — `-UITestSeedLongChat`: one 80-message synthetic chat ("Long synthetic chat"), long enough that its
+    /// early turns sit in the transcript's lazy history and its last answer starts far below the first screen. The last
+    /// answer ends "…the end of the long chat." (`ScrollToLanding` checks it's on screen when the chat opens).
+    private static func seedUITestLongChat(_ root: URL) {
+        let now = Date(timeIntervalSince1970: 1_760_000_000)
+        var messages: [ChatSession.Message] = []
+        for i in 1...40 {
+            messages.append(ChatSession.Message(role: .user, text: "Synthetic question \(i): what did the tide tables say about week \(i)?"))
+            let para = "Week \(i) had two high waters a day at the north wall, with the spring tide arriving mid-week and the neap at the end. "
+            messages.append(ChatSession.Message(role: .assistant,
+                text: String(repeating: para, count: 4) + (i == 40 ? "This is the end of the long chat." : "")))
+        }
+        let chat = Chat(id: UUID(), title: "Long synthetic chat", createdAt: now, updatedAt: now, messages: messages)
+        try? JSONEncoder.airPad.encode([chat]).write(to: root.appendingPathComponent("chats.json"), options: .atomic)
+    }
+
+    /// live-18 (0b) — `-UITestSeedPhotoEntries`: a two-photo gallery stored the way an import stores it, under UUID file
+    /// names (`items/<UUID>.jpg`), for the `PhotoHandoffName` row: one photo picked from Photos (its own name,
+    /// "IMG_4012") and one with no name (a camera capture or a pasted image → "Photo · <date>"). Synthetic pixels only.
+    /// Written only when its `node.json` (written last) is absent.
+    private static func seedUITestPhotoEntries(_ root: URL) {
+        let now = Date(timeIntervalSince1970: 1_760_300_000)
+        let nodeID = "uitest-photo-gallery"
+        let nodeDir = root.appendingPathComponent("nodes/\(nodeID)")
+        guard !FileManager.default.fileExists(atPath: nodeDir.appendingPathComponent("node.json").path) else { return }
+        try? FileManager.default.createDirectory(at: nodeDir.appendingPathComponent("items"), withIntermediateDirectories: true)
+        let media: [GalleryItem] = [("5E7A1C93-2B4D-4F18-9A6E-0C3D8B1F0004", "IMG_4012"),
+                                    ("A08F2D5B-7C61-4E39-B2D4-6F1E9C3A0005", nil)].enumerated().map { i, p in
+            let file = "items/\(p.0).jpg"
+            try? syntheticPhotoJPEG(width: 1200, height: 900, seed: 0x5851F42D4C957F2D &+ UInt64(i))
+                .write(to: nodeDir.appendingPathComponent(file), options: .atomic)
+            return GalleryItem(id: p.0, mediaType: .image, file: file, aspectRatio: 4.0 / 3.0, capturedAt: now, originalName: p.1)
+        }
+        var gallery = NodeItem(id: nodeID + "-media", type: .imageVideo, createdAt: now)
+        gallery.displayName = "Photos"
+        gallery.mediaItems = media
+        gallery.isExpanded = true
+        let node = Node(id: nodeID, createdAt: now, updatedAt: now, title: "Slipway photos",
+                        summary: "A synthetic photo entry.", tags: [], items: [gallery], entrySchemaVersion: 4)
+        try? JSONEncoder.airPad.encode(node).write(to: nodeDir.appendingPathComponent("node.json"), options: .atomic)
     }
 
     /// A busy, photo-like synthetic JPEG (random coloured squares), so it is big and slow to decode like a real photo.

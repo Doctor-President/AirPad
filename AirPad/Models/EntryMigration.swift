@@ -130,7 +130,8 @@ private func migrateEntrySchemaV1ToV2(_ node: inout Node) {
                     mediaType: mediaType,
                     file: file,
                     aspectRatio: nil,
-                    capturedAt: item.createdAt
+                    capturedAt: item.createdAt,
+                    originalName: item.originalName   // live-19 (2): a shared-in photo's own name
                 )
                 node.items[i].mediaItems = [galleryItem]
             } else {

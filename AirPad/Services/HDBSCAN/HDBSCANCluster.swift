@@ -51,7 +51,6 @@ import Foundation
 // Validated against
 // `hdbscan-reference-harness/scripts/swift_cluster_parity.swift`.
 
-@available(iOS 17.0, *)
 extension HDBSCAN {
 
     // MARK: - Public result envelope

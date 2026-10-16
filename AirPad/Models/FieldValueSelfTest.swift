@@ -26,7 +26,6 @@ import Foundation
 ///   T11 — a date-only value shows its CALENDAR DAY in every time zone (UTC-midnight seed + local picks; SL-D3).
 ///   T6  — ★ vocabulary references VALUE IDs, not labels: renaming a value's
 ///         label reformats the SAME stored value (rename-safe / union-mergeable).
-@available(iOS 17.0, *)
 @MainActor
 enum FieldValueSelfTest {
 

@@ -385,6 +385,13 @@ struct LibrarianSurface: View {
                 panelModel.expandToFull(animated: false)
                 router.chat.debugScrollDemo(streaming: true)
             }
+            // live-17 (2a) — `-RangeCitationDemo YES`: a synthetic answer citing "[1–3]" and "[1-12]", streamed through
+            // the real numberer, so the `RangeCitationChips` UI test reads what renders.
+            if UserDefaults.standard.bool(forKey: "RangeCitationDemo") {
+                isViewingActiveChat = true
+                panelModel.expandToFull(animated: false)
+                router.chat.debugRangeCitationTurn()
+            }
             // `-PartialTurnTest YES` — inject a user turn + a PARTIAL assistant turn
             // (BUG 36: the stream dropped mid-answer) so `-Screen` can confirm the calm
             // "Stopped early / Continue" affordance renders on the dropped turn — NOT a
@@ -1465,7 +1472,7 @@ struct LibrarianSurface: View {
 
             // STATE 2 — no free-text model on this device: gate Ask (send disabled via
             // `sendIsEnabled`) and say so, routing to Settings. Honest capability boundary,
-            // no Retry. (v1-gates § A item 1 — the Ask half of the iOS-18 floor.)
+            // no Retry. (v1-gates § A item 1 — a device with no Ask model.)
             if librarian.askUnavailable {
                 askNoModelNotice
             }

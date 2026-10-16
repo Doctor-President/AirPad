@@ -432,31 +432,31 @@ enum SubstrateBagLayout {
     /// matrix (column-major, N×N) and singular values descending.
     /// For symmetric PSD inputs singular values = eigenvalues and U
     /// columns = eigenvectors. Pattern mirrors `SubstrateWhitening`.
-    private static func lapackSVDSymmetric(
+    static func lapackSVDSymmetric(   // internal for LapackSVDSelfTest (live-19)
         matrix: inout [Double],
         n: Int
     ) -> (uColMajor: [Double], singulars: [Double])? {
         var jobu: CChar = CChar(UInt8(ascii: "A"))   // full U
         var jobvt: CChar = CChar(UInt8(ascii: "N"))  // V not needed
-        var m_ = __CLPK_integer(n)
-        var n_ = __CLPK_integer(n)
-        var lda = __CLPK_integer(n)
+        var m_ = __LAPACK_int(n)
+        var n_ = __LAPACK_int(n)
+        var lda = __LAPACK_int(n)
         var s = [Double](repeating: 0, count: n)
         var u = [Double](repeating: 0, count: n * n)
-        var ldu = __CLPK_integer(n)
+        var ldu = __LAPACK_int(n)
         var vt = [Double](repeating: 0, count: 1)
-        var ldvt = __CLPK_integer(1)
-        var info: __CLPK_integer = 0
+        var ldvt = __LAPACK_int(1)
+        var info: __LAPACK_int = 0
 
         var workspaceQuery: Double = 0
-        var lworkQuery = __CLPK_integer(-1)
+        var lworkQuery = __LAPACK_int(-1)
         dgesvd_(&jobu, &jobvt, &m_, &n_, &matrix, &lda, &s,
                 &u, &ldu, &vt, &ldvt, &workspaceQuery, &lworkQuery, &info)
         guard info == 0 else { return nil }
 
         let optimalSize = max(1, Int(workspaceQuery))
         var work = [Double](repeating: 0, count: optimalSize)
-        var lwork = __CLPK_integer(optimalSize)
+        var lwork = __LAPACK_int(optimalSize)
         dgesvd_(&jobu, &jobvt, &m_, &n_, &matrix, &lda, &s,
                 &u, &ldu, &vt, &ldvt, &work, &lwork, &info)
         guard info == 0 else { return nil }

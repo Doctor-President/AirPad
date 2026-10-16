@@ -24,7 +24,6 @@ import Foundation
 //
 // Validated against `hdbscan-reference-harness/scripts/swift_mutual_reachability_parity.swift`.
 
-@available(iOS 17.0, *)
 extension HDBSCAN {
 
     /// Compute the pairwise Euclidean distance matrix.

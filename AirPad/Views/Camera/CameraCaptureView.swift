@@ -154,11 +154,13 @@ struct CameraCaptureView: View {
                     print("[CameraCapture] Image temp write error: \(error)")
                     continue
                 }
-                pending.append(.init(itemID: itemID, mediaType: .image, sourceURL: tmpURL, fileExtension: "jpg"))
+                pending.append(.init(itemID: itemID, mediaType: .image, sourceURL: tmpURL, fileExtension: "jpg",
+                                     originalName: DocumentNaming.realName(suggested: result.itemProvider.suggestedName, url: nil)))   // live-18 (0b)
                 if firstImageData == nil { firstImageData = data }
             } else if result.itemProvider.hasItemConformingToTypeIdentifier(UTType.movie.identifier) {
                 guard let (tmpURL, ext) = await MediaPickerWrapper.loadVideo(from: result.itemProvider) else { continue }
-                pending.append(.init(itemID: UUID().uuidString, mediaType: .video, sourceURL: tmpURL, fileExtension: ext))
+                pending.append(.init(itemID: UUID().uuidString, mediaType: .video, sourceURL: tmpURL, fileExtension: ext,
+                                     originalName: DocumentNaming.realName(suggested: result.itemProvider.suggestedName, url: nil)))   // live-18 (0b)
             }
         }
 
@@ -178,9 +180,7 @@ struct CameraCaptureView: View {
         let isSingleImage = pending.count == 1 && pending[0].mediaType == .image
         var description = ""
         if isSingleImage, let firstImageData {
-            if #available(iOS 26.0, *) {
-                description = await AIService().describeImage(firstImageData) ?? ""
-            }
+            description = await AIService().describeImage(firstImageData) ?? ""
         }
 
         let position = CGPoint(x: Double.random(in: -80...80), y: Double.random(in: -80...80))
@@ -229,11 +229,7 @@ struct CameraCaptureView: View {
         }
 
         let description: String
-        if #available(iOS 26.0, *) {
-            description = await AIService().describeImage(data) ?? ""
-        } else {
-            description = ""
-        }
+        description = await AIService().describeImage(data) ?? ""
 
         // OCR is not written as a sibling `.text` item — it lands on
         // `GalleryItem.analysis` via `addMediaItems` → `enqueueImageOCR` and is

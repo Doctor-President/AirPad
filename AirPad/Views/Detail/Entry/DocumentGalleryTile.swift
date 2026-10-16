@@ -25,7 +25,7 @@ import UIKit
 /// files; they serialize at the `DocumentExtractionService` actor.
 ///
 /// Stage 4.6 commit 4 — tap → Quick Look via
-/// `DocumentQuickLookViewer` sheet driven by `DocumentPreviewIdentity`
+/// `DocumentQuickLookViewer` sheet driven by a `DocumentHandoff` (live-17)
 /// (`@State` so each tap presents fresh). Top-right overlaid `…` menu
 /// surfaces Open / Share / Copy filename / Delete. Same chrome posture
 /// as `LinkGalleryTile`: `.contentShape(Rectangle()) + .onTapGesture`
@@ -42,8 +42,8 @@ struct DocumentGalleryTile: View {
     @Environment(CorpusStore.self) private var store
 
     @State private var thumbnail: UIImage? = nil
-    @State private var previewIdentity: DocumentPreviewIdentity? = nil
-    @State private var shareIdentity: DocumentShareIdentity? = nil
+    @State private var previewIdentity: DocumentHandoff? = nil
+    @State private var shareIdentity: DocumentHandoff? = nil
 
     private static let thumbnailHeight: CGFloat = 100
 
@@ -62,11 +62,11 @@ struct DocumentGalleryTile: View {
         .overlay(alignment: .topTrailing) { tileMenu }
         .task { await extractIfNeeded() }
         .sheet(item: $previewIdentity) { identity in
-            DocumentQuickLookViewer(url: identity.url)
+            DocumentViewerSheet(handoff: identity)
                 .ignoresSafeArea()
         }
         .sheet(item: $shareIdentity) { identity in
-            DocumentShareSheet(items: [identity.url])
+            DocumentShareSheet(handoff: identity)
         }
     }
 
@@ -86,6 +86,7 @@ struct DocumentGalleryTile: View {
             }
         }
         .frame(height: Self.thumbnailHeight)
+        .accessibilityIdentifier("documentOpen-\(documentItem.id)")
         .task(id: documentItem.thumbnailFile) {
             thumbnail = nil
             guard let url = await store.documentThumbnailFileURL(for: documentItem, nodeID: nodeID) else { return }
@@ -149,6 +150,7 @@ struct DocumentGalleryTile: View {
         }
         .padding(6)
         .accessibilityLabel("Document options")
+        .accessibilityIdentifier("documentMenu-\(documentItem.id)")
     }
 
     // MARK: - Quick Look / Share triggers
@@ -161,14 +163,12 @@ struct DocumentGalleryTile: View {
     /// surface" stance.
     @MainActor
     private func openInQuickLook() async {
-        guard let url = await store.documentFileURL(for: documentItem, nodeID: nodeID) else { return }
-        previewIdentity = DocumentPreviewIdentity(url: url)
+        previewIdentity = await store.documentHandoff(for: documentItem, nodeID: nodeID)
     }
 
     @MainActor
     private func prepareShare() async {
-        guard let url = await store.documentFileURL(for: documentItem, nodeID: nodeID) else { return }
-        shareIdentity = DocumentShareIdentity(url: url)
+        shareIdentity = await store.documentHandoff(for: documentItem, nodeID: nodeID)
     }
 
     private var documentIconName: String {
@@ -235,17 +235,6 @@ struct DocumentGalleryTile: View {
     }
 }
 
-/// Stage 4.6 commit 4 — identity wrapper for the share sheet's
-/// `.sheet(item:)` driver. Same pattern as `DocumentPreviewIdentity`
-/// (fresh id per tap) so repeated taps re-present cleanly. Lives in
-/// this file because it's shared between `DocumentGalleryTile` and
-/// `DocumentEntryBody`; the two views import this file transitively
-/// through the shared compilation unit.
-struct DocumentShareIdentity: Identifiable, Equatable {
-    let id = UUID()
-    let url: URL
-}
-
 /// Stage 4.6 commit 4 — thin `UIViewControllerRepresentable` around
 /// `UIActivityViewController`. Duplicated from
 /// `GalleryFullscreenViewer`'s private `ShareSheet` rather than
@@ -254,9 +243,16 @@ struct DocumentShareIdentity: Identifiable, Equatable {
 /// (small helpers each own their copy so neither file depends on the
 /// other's internals).
 struct DocumentShareSheet: UIViewControllerRepresentable {
-    let items: [Any]
+    /// live-17 — the document's named copy goes out (`<display name>.<ext>`), never the stored UUID file; it is
+    /// removed when the sheet closes.
+    let handoff: DocumentHandoff
     func makeUIViewController(context: Context) -> UIActivityViewController {
-        UIActivityViewController(activityItems: items, applicationActivities: nil)
+        DocumentHandoffProbe.share(doc: handoff.documentID, urls: [handoff.url])
+        return UIActivityViewController(activityItems: [handoff.url], applicationActivities: nil)
     }
     func updateUIViewController(_ controller: UIActivityViewController, context: Context) {}
+    func makeCoordinator() -> DocumentHandoff { handoff }
+    static func dismantleUIViewController(_ controller: UIActivityViewController, coordinator: DocumentHandoff) {
+        coordinator.release()
+    }
 }

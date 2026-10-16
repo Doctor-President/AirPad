@@ -8,8 +8,9 @@ import Foundation
 ///   • the parser + refusal classifier rows (`AppleNaming.selfTestRows`);
 ///   • Proposals sheet: a decline is a REFUSAL (the honest copy + the settings link), not an error to retry;
 ///   • Proposals sheet, on-device model installed: it names the entry, and the proposal says so;
-///   • Done with auto-naming ON: the entry is left unnamed (no fragment title, no proposal), and its tags decline is
-///     recorded; with the on-device model installed, it names and tags the entry.
+///   • Done with auto-naming ON: the entry gets its first words as its title (T's B1 fragment rule, which T kept for
+///     declines too — live-21), no proposal, and its tags decline is recorded; with the on-device model installed, it
+///     names and tags the entry.
 /// Runs in the `-UITestLibrary` scratch; synthetic words only.
 extension CorpusStore {
 
@@ -71,13 +72,14 @@ extension CorpusStore {
             row("sheet-decline-on-device-names", reason == nil && p == "On-device stub title", "reason=\(describe(reason)) proposal=\(p ?? "nil")")
             row("sheet-decline-on-device-says-so", proposalSaysOnDevice(id, .title))
         }
-        // 3. Done with auto-naming ON, no on-device model → left unnamed; the tags decline is recorded.
+        // 3. Done with auto-naming ON, no on-device model → B1: its first words are its title; the tags decline is recorded.
         defaults.set(false, forKey: "StubLocalModelReady")
         do {
             let id = await newEntry()
             await enrichIfNeeded(nodeID: id, at: .committed)
             let n = node(id)
-            row("done-decline-left-unnamed", n?.title == "" && n?.summary == "", "title=\"\(n?.title ?? "nil")\" summary=\"\(n?.summary ?? "nil")\"")
+            row("done-decline-fragment-title", n?.title == String(Self.declineText.prefix(40)) && n?.summary == "",
+                "title=\"\(n?.title ?? "nil")\" summary=\"\(n?.summary ?? "nil")\"")
             row("done-decline-no-ghost", n?.surfacedProposal(kind: .title) == nil && n?.surfacedProposal(kind: .summary) == nil)
             row("done-decline-tags-recorded", n?.embeddingFailureReason == "guardrail_refused", "reason=\(n?.embeddingFailureReason ?? "nil")")
         }

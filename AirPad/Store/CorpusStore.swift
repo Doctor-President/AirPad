@@ -1210,7 +1210,7 @@ final class CorpusStore {
             if ProcessInfo.processInfo.arguments.contains("-DocumentReextractSelfTest") {
                 NSLog("%@", await runDocumentReextractSelfTest())
             }
-            // live-20 (1) — Apple Intelligence declines: a refusal (not Retry), the on-device model takes over, Done leaves it unnamed.
+            // live-20 (1) — Apple Intelligence declines: a refusal (not Retry), the on-device model takes over; Done → B1 fragment title (live-21).
             if ProcessInfo.processInfo.arguments.contains("-AppleDeclineSelfTest") {
                 NSLog("%@", await runAppleDeclineSelfTest())
             }
@@ -8456,10 +8456,9 @@ final class CorpusStore {
                 result = nil
                 namingFailure = reason
                 bug17Log.notice("FM-RETURNED node=\(nodeID, privacy: .public) FAILED reason=\(String(describing: reason), privacy: .public)")
-                // live-20 (1) — Apple Intelligence DECLINED (and no on-device model took over): the entry is left
-                // unnamed. No fragment of its text becomes its title, no ghost, no error — the Proposals sheet says why.
-                var declined = false
-                if case .refused = reason { declined = true }
+                // live-21 (0) — a DECLINE (Apple Intelligence refused, no on-device model took over) follows B1 like every
+                // other failure: under auto-naming its first words become its title (T, 2026-10-16). The Proposals sheet
+                // still says why (the decline line + Open Settings).
                 // Fallback title from raw content so the node isn't blank on FM
                 // failure. Race-safe read-modify-write; never touches `.items`.
                 //
@@ -8493,7 +8492,7 @@ final class CorpusStore {
                         }
                     }.first(where: { !$0.isEmpty })
                     let mayFillBlank = n.title.isEmpty && posture == .automatic
-                    if !declined, let fallback, mayFillBlank || n.title == "Photo" || n.title == "Voice note" {
+                    if let fallback, mayFillBlank || n.title == "Photo" || n.title == "Voice note" {
                         n.title = String(fallback.prefix(40))
                     }
                     n.needsAIProcessing = false

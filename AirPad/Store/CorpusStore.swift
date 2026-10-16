@@ -1206,6 +1206,10 @@ final class CorpusStore {
             if ProcessInfo.processInfo.arguments.contains("-DocumentNamingSelfTest") {
                 NSLog("%@", await runDocumentNamingSelfTest())
             }
+            // live-20 (2) — a failed weekly re-extraction keeps the document's title, text, thumbnail and page count.
+            if ProcessInfo.processInfo.arguments.contains("-DocumentReextractSelfTest") {
+                NSLog("%@", await runDocumentReextractSelfTest())
+            }
             // live-20 (1) — Apple Intelligence declines: a refusal (not Retry), the on-device model takes over, Done leaves it unnamed.
             if ProcessInfo.processInfo.arguments.contains("-AppleDeclineSelfTest") {
                 NSLog("%@", await runAppleDeclineSelfTest())
@@ -6557,11 +6561,14 @@ final class CorpusStore {
     ///
     /// `extraction == nil` is the "extraction service couldn't produce
     /// anything" path (timeout, unsupported format, malformed file). We
-    /// still write back so the entry-side `.task` gate sees a populated
-    /// `documentTitle` (falling back to `fileName`) and stops re-firing
-    /// on every render — otherwise a broken PDF would burn a 10s
-    /// timeout every time the user opens the node. Same invariant as
+    /// still write back the attempt time so the entry-side `.task` gate
+    /// stops re-firing on every render — otherwise a broken PDF would burn
+    /// a 10s timeout every time the user opens the node. Same invariant as
     /// `applyOGFetch` stamping `ogFetchedAt` even on nil metadata.
+    ///
+    /// ★ live-20 (2) — a pass NEVER wipes: a failed one changes nothing but the attempt time, and a partial one keeps
+    /// every field it didn't produce. This is also the WEEKLY re-extraction's write-back, and a file unreadable for the
+    /// moment used to nil the title, text, thumbnail and page count until the next week's pass.
     ///
     /// Silently bails on missing node/entry/documentItem so a node
     /// deleted mid-extraction doesn't crash.
@@ -6597,11 +6604,11 @@ final class CorpusStore {
         }
 
         var docItem = docItems[docIdx]
-        docItem.documentTitle = extraction?.documentTitle
-        docItem.extractedText = extraction?.extractedText
-        docItem.thumbnailFile = thumbnailRelativePath
-        docItem.pageCount = extraction?.pageCount
-        docItem.wordCount = extraction?.wordCount
+        docItem.documentTitle = extraction?.documentTitle ?? docItem.documentTitle
+        docItem.extractedText = extraction?.extractedText ?? docItem.extractedText
+        docItem.thumbnailFile = thumbnailRelativePath ?? docItem.thumbnailFile
+        docItem.pageCount = extraction?.pageCount ?? docItem.pageCount
+        docItem.wordCount = extraction?.wordCount ?? docItem.wordCount
         // Stage 4.6 commit 2 fix — stamp the staleness marker on every
         // completion, success and failure alike. The gate in
         // `DocumentEntryBody.extractIfNeeded` and the migration-driven

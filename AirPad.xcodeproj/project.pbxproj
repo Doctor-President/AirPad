@@ -139,6 +139,7 @@
 		59DD09A4F2DB7EE37185D5E5 /* ComputedFacts.swift in Sources */ = {isa = PBXBuildFile; fileRef = A9BA50DDB57EE55DCCBE7FF1 /* ComputedFacts.swift */; };
 		5A03FDA3ADA663B72A753A5C /* CollectionCreationSheet.swift in Sources */ = {isa = PBXBuildFile; fileRef = 6123D1D38AF585588EBDF3F2 /* CollectionCreationSheet.swift */; };
 		5A4ACFE6BDA35A2F9B792DDD /* KeyboardDismissModifier.swift in Sources */ = {isa = PBXBuildFile; fileRef = E1CA7EBB8E00D6EB0B60EBCE /* KeyboardDismissModifier.swift */; };
+		5DA34D8F82456B890694DBE4 /* DocumentReextractSelfTest.swift in Sources */ = {isa = PBXBuildFile; fileRef = A48FA73530D4DCADC394E232 /* DocumentReextractSelfTest.swift */; };
 		5E5D595A3C1F9CA4851D05A1 /* LibrarianSurface.swift in Sources */ = {isa = PBXBuildFile; fileRef = 6005A33A7E6D6D1064AE551C /* LibrarianSurface.swift */; };
 		5F8E37E87E6B3DAC5C0E38A9 /* Lora-Regular.ttf in Resources */ = {isa = PBXBuildFile; fileRef = 46B2E50D5AC047E8D52B2013 /* Lora-Regular.ttf */; };
 		60B0574C17FE538E06EC22B6 /* SampleLibrarySeederSelfTest.swift in Sources */ = {isa = PBXBuildFile; fileRef = 9C401DD21DDB057255BB02AD /* SampleLibrarySeederSelfTest.swift */; };
@@ -628,6 +629,7 @@
 		9F73B6E69C451D7E42EC38C6 /* LiveVoiceRecorder.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = LiveVoiceRecorder.swift; sourceTree = "<group>"; };
 		A041B55F9CB72A7C37989EF0 /* cinzelbold_msdf.png */ = {isa = PBXFileReference; lastKnownFileType = image.png; path = cinzelbold_msdf.png; sourceTree = "<group>"; };
 		A1213E716A9E302D0B777EDD /* EntryCard.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = EntryCard.swift; sourceTree = "<group>"; };
+		A48FA73530D4DCADC394E232 /* DocumentReextractSelfTest.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = DocumentReextractSelfTest.swift; sourceTree = "<group>"; };
 		A662760759EB979E56CF6090 /* CEControlRouting.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = CEControlRouting.swift; sourceTree = "<group>"; };
 		A68F48BA8AA932943F118533 /* CardEmbeddingParityTest.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = CardEmbeddingParityTest.swift; sourceTree = "<group>"; };
 		A78147F82EB55E186C5934A2 /* AlphabetScrubber.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = AlphabetScrubber.swift; sourceTree = "<group>"; };
@@ -924,6 +926,7 @@
 				2A1EEB4C2D26F752F843736C /* DocumentHandoff.swift */,
 				D64A6E1AD17AAB5CA64D4C88 /* DocumentNamingInputSelfTest.swift */,
 				C3E4914CEA3AE2C4DC0C085C /* DocumentNamingSelfTest.swift */,
+				A48FA73530D4DCADC394E232 /* DocumentReextractSelfTest.swift */,
 				BC2397AFB193E7A4EF7411E4 /* EnrichmentGateSelfTest.swift */,
 				6CEB84A4A23D03CBE6C82507 /* FolksonomyDiagnostic.swift */,
 				23ECDDE27DD9E25B6ED253D9 /* GauntletTap.swift */,
@@ -1757,6 +1760,7 @@
 				31F513F9A5A97E3E7D7D2086 /* DocumentNamingSelfTest.swift in Sources */,
 				3B496945356A064AD86E3547 /* DocumentPickerView.swift in Sources */,
 				868B804EAA857627DC429F67 /* DocumentQuickLookViewer.swift in Sources */,
+				5DA34D8F82456B890694DBE4 /* DocumentReextractSelfTest.swift in Sources */,
 				60B79436916BF6C740B9DBCF /* DocumentViewModeToggle.swift in Sources */,
 				918876676560C61205991A10 /* EditMapSheet.swift in Sources */,
 				AD075AAA15B8DF36B4830D0D /* EmptyStateOverlay.swift in Sources */,

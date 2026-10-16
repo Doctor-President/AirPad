@@ -175,6 +175,7 @@
 		766BF82341F128E5B35B7345 /* ChatView.swift in Sources */ = {isa = PBXBuildFile; fileRef = 33412943BFC78174C4CB7437 /* ChatView.swift */; };
 		774AD9C545FED85D651CA8D7 /* VideoEntryBody.swift in Sources */ = {isa = PBXBuildFile; fileRef = DF61433D19DB8098D7096F3D /* VideoEntryBody.swift */; };
 		782107DF917EB5B3B2AAA139 /* ShareImportItems.swift in Sources */ = {isa = PBXBuildFile; fileRef = 5CBFC13F8D66EB937FAA1B1E /* ShareImportItems.swift */; };
+		78579A9C8D4E96E338BD9557 /* TextRunsGallery.swift in Sources */ = {isa = PBXBuildFile; fileRef = D9CF8F72B3DFB4EC66DDD986 /* TextRunsGallery.swift */; };
 		790E62A06880D73E5FE759EA /* HostPairingSheet.swift in Sources */ = {isa = PBXBuildFile; fileRef = 93FCE9DB8410C90A3B0EFAC0 /* HostPairingSheet.swift */; };
 		79EBBD07CEAF35CA5E4CF8A3 /* Neighborhood.swift in Sources */ = {isa = PBXBuildFile; fileRef = AE402981E931009EBB3F93EE /* Neighborhood.swift */; };
 		7A35344BA88803818AB82661 /* cinzelbold_msdf.png in Resources */ = {isa = PBXBuildFile; fileRef = A041B55F9CB72A7C37989EF0 /* cinzelbold_msdf.png */; };
@@ -697,6 +698,7 @@
 		D92B43ACAA1EFEADD262281A /* ChatStore.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ChatStore.swift; sourceTree = "<group>"; };
 		D953A7AAAC24875D5B6157C4 /* ChatTypography.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ChatTypography.swift; sourceTree = "<group>"; };
 		D9792DA964AD5BC6DF0B2F6C /* EditMapSheet.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = EditMapSheet.swift; sourceTree = "<group>"; };
+		D9CF8F72B3DFB4EC66DDD986 /* TextRunsGallery.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = TextRunsGallery.swift; sourceTree = "<group>"; };
 		D9EBCB0852E91FE9CD47F61F /* CDGhostAcceptanceMatrix.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = CDGhostAcceptanceMatrix.swift; sourceTree = "<group>"; };
 		DA3C21B9BBF3AC6D802175E4 /* DocumentEntryBody.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = DocumentEntryBody.swift; sourceTree = "<group>"; };
 		DB4EAC09C3FD8068935123CA /* PagedRestGeometry.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = PagedRestGeometry.swift; sourceTree = "<group>"; };
@@ -1377,6 +1379,7 @@
 				CB9627DA5A37E1126FD4446D /* QuarantineReviewSheet.swift */,
 				4D40352362C258CC93E604E2 /* RegionPalette.swift */,
 				F135F708282671E607C7C84B /* RichTextEditor.swift */,
+				D9CF8F72B3DFB4EC66DDD986 /* TextRunsGallery.swift */,
 			);
 			path = Shared;
 			sourceTree = "<group>";
@@ -1916,6 +1919,7 @@
 				CDB98919FE3A199E8BE0B80A /* TerritoryLayoutSnapshot.swift in Sources */,
 				2303084ED2267E83C85ED87E /* TextCaptureSheet.swift in Sources */,
 				019EF67755B6DCAB5D16F595 /* TextEntryBody.swift in Sources */,
+				78579A9C8D4E96E338BD9557 /* TextRunsGallery.swift in Sources */,
 				8A4950423895F7ECE2B4D88E /* ThreadService.swift in Sources */,
 				E4343E9BFBA0EAAF7E3C9D5B /* ThreadSuggestionCard.swift in Sources */,
 				26E14B3E298318D333114703 /* TodayCardView.swift in Sources */,

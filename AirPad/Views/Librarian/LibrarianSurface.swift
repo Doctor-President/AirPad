@@ -318,6 +318,13 @@ struct LibrarianSurface: View {
             // be smoke-tested headlessly: screenshot the transcript to see the answer
             // + whether a citation footer appears. Expands to full so the transcript
             // is visible.
+            // live-20 (3) — `-OpenSeededChat YES`: open the seeded chat at full (the read-in-full offer's still).
+            if UserDefaults.standard.bool(forKey: "OpenSeededChat") {
+                DispatchQueue.main.asyncAfter(deadline: .now() + 1.0) {
+                    isViewingActiveChat = true
+                    panelModel.expandToFull(animated: false)
+                }
+            }
             if let q = UserDefaults.standard.string(forKey: "AskAutoSend"), !q.isEmpty {
                 isViewingActiveChat = true
                 panelModel.expandToFull(animated: false)
@@ -1590,7 +1597,7 @@ struct LibrarianSurface: View {
             Image(systemName: "book")
                 .font(.system(size: 13, weight: .semibold))
                 .foregroundStyle(AppearancePalette.ink.opacity(0.55))
-            (Text("One entry stands out: ") + Text(offer.title).italic())
+            Text("One entry stands out: \(Text(offer.title).italic())")
                 .font(.system(size: 13))
                 .foregroundStyle(AppearancePalette.ink.opacity(0.7))
                 .fixedSize(horizontal: false, vertical: true)
@@ -2401,7 +2408,7 @@ private struct SearchHeroRow: View {
             guard let url = await store.coverImageURL(for: node) else { return }
             // live-16 — a 52 pt thumbnail: decoded at that size through the ONE shared cache (was the full original).
             guard let key = DisplayImageCache.coverKey(node) else { return }
-            image = await DisplayImageCache.shared.load(path: key, url: url, pixels: Int(52 * UIScreen.main.scale))
+            image = await DisplayImageCache.shared.load(path: key, url: url, pixels: Int(52 * DisplaySize.scale))
         }
     }
 }

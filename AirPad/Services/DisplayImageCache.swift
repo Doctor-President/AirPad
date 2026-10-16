@@ -179,8 +179,15 @@ final class DisplayImageCache: NSObject, NSCacheDelegate, @unchecked Sendable {
 
 @MainActor
 enum DisplaySize {
-    static var scale: CGFloat { UIScreen.main.scale }
-    static var screenWidth: CGFloat { UIScreen.main.bounds.width }
+    /// live-20 (3) — the foreground window scene's screen (was `UIScreen.main`, deprecated in iOS 26; on iPhone it is
+    /// the same screen). Every former `UIScreen.main` read in the app goes through here.
+    static var screen: UIScreen? {
+        let scenes = UIApplication.shared.connectedScenes.compactMap { $0 as? UIWindowScene }
+        return (scenes.first { $0.activationState == .foregroundActive } ?? scenes.first)?.screen
+    }
+    static var scale: CGFloat { screen?.scale ?? UITraitCollection.current.displayScale }
+    static var screenWidth: CGFloat { screen?.bounds.width ?? 0 }
+    static var screenHeight: CGFloat { screen?.bounds.height ?? 0 }
     /// The detail hero (and Quick Capture's): the banner's width or its height cap, whichever is larger.
     static var hero: Int { Int(max(screenWidth, EntryVisualSettings.shared.heroMaxHeight) * scale) }
     /// A full-width card (Card view's carousel / vertical cards, the Map's card): the same bucket as the hero, so the

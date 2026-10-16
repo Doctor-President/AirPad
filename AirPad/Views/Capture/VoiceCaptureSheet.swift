@@ -292,7 +292,7 @@ struct VoiceCaptureSheet: View {
 /// Recorder redesign (T, 2026-10-13) — the words as they're spoken, in a fixed-height block under the waveform.
 /// The newest line sits at the bottom; older lines are pushed up and fade out toward the top edge. Settled words
 /// read in ink, the recogniser's still-changing guess a little lighter.
-private struct LiveTranscriptView: View {
+struct LiveTranscriptView: View {   // internal: live-20 (3) stills (TextRunsGallery)
     let settled: String
     let volatile: String
     let font: Font
@@ -300,8 +300,7 @@ private struct LiveTranscriptView: View {
 
     var body: some View {
         let joiner = (settled.isEmpty || volatile.isEmpty) ? "" : " "
-        (Text(settled).foregroundStyle(AppearancePalette.ink.opacity(0.9))
-         + Text(joiner + volatile).foregroundStyle(AppearancePalette.ink.opacity(0.5)))
+        Text("\(Text(settled).foregroundStyle(AppearancePalette.ink.opacity(0.9)))\(Text(joiner + volatile).foregroundStyle(AppearancePalette.ink.opacity(0.5)))")
             .font(font)
             .lineSpacing(5)
             .frame(maxWidth: .infinity, alignment: .leading)

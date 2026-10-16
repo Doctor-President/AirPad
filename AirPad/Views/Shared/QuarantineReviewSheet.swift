@@ -119,10 +119,7 @@ private struct QuarantineEntryRow: View {
 
                 Spacer()
 
-                Text(entry.importedAt, style: .relative)
-                    .font(.caption2)
-                    .foregroundStyle(AppearancePalette.ink.opacity(0.25))
-                + Text(" ago")
+                Text("\(entry.importedAt, style: .relative) ago")
                     .font(.caption2)
                     .foregroundStyle(AppearancePalette.ink.opacity(0.25))
             }

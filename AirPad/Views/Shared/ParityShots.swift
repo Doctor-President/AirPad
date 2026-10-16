@@ -612,7 +612,8 @@ struct DebugScreenHost: View {
         // so the Librarian FloatingPanel is mounted over the map (the panel's real
         // home). `-LibrarianDetent tip|half|full` (handled in ContentView) drives
         // the detent for peek/half/full shots.
-        if screen == "librarian" { router.entryMode = .canvas }
+        if screen == "librarian" || screen == "textruns-offer" { router.entryMode = .canvas }
+        if screen.hasPrefix("textruns-") { TextRunsGallery.seed(screen: screen, store: store, router: router, quarantine: quarantineStore) }
         // Capture harness — seed the live capture state so both capture surfaces
         // render (they were blank because `createCaptureNode()` is async + needs
         // iCloud). `captureNodeID` points at a seeded node so content resolves
@@ -695,7 +696,7 @@ struct DebugScreenHost: View {
         // transcript): a real user turn + a cited assistant answer, so the chat
         // ink / user bubble / sources footer / scroll arrow all render for the
         // light-mode legibility check.
-        if screen == "chatview" || screen == "librarian" {
+        if screen == "chatview" || screen == "librarian" || screen == "textruns-offer" {
             let cites = [ChatSession.Message.Citation(
                 index: 1, nodeID: "seed-0", title: "On the Gerund",
                 snippet: "A gerund is a verbal noun formed with -ing.")]
@@ -762,6 +763,12 @@ struct DebugScreenHost: View {
         case "capturemodefull":  NavigationStack { NodeDetailView(nodeID: "seed-cap") }   // detail capture WITH content
         case "chatview":         NavigationStack { ChatView() }   // real chat transcript
         case "managemodels":     ManageModelsReproView()          // Brief AM3 — the REAL picker→Settings flow
+        // live-20 (3) — the eight `Text + Text` surfaces, for before/after stills (TextRunsGallery.swift).
+        case "textruns-reviewqueue": ReviewQueueSheet()
+        case "textruns-quarantine":  QuarantineReviewSheet()
+        case "textruns-entrycard":   NavigationStack { NodeDetailView(nodeID: "seed-runs") }
+        case "textruns-offer":       ContentView()
+        case _ where screen.hasPrefix("textruns-"): TextRunsGallery(page: String(screen.dropFirst("textruns-".count)))
         default:                 Text("unknown -Screen: \(screen)")
         }
     }

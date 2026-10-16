@@ -44,6 +44,7 @@
 		14CCCFDE746CB2FA0459B622 /* CanvasView.swift in Sources */ = {isa = PBXBuildFile; fileRef = 66610DC5B90AC2729F2B6F1D /* CanvasView.swift */; };
 		1539FED677BC12C88E719D24 /* SubstrateService.swift in Sources */ = {isa = PBXBuildFile; fileRef = AA69D329E4CBB77BDB1B9345 /* SubstrateService.swift */; };
 		16FBFD3D0D3D8FB758DAFEF2 /* RegionPalette.swift in Sources */ = {isa = PBXBuildFile; fileRef = 4D40352362C258CC93E604E2 /* RegionPalette.swift */; };
+		175B746967365892C2A892EA /* AppleDeclineSelfTest.swift in Sources */ = {isa = PBXBuildFile; fileRef = C73070A0B2F7E88665FE6A1C /* AppleDeclineSelfTest.swift */; };
 		17F85DF35043F1C03EB655BD /* CaretMeasure.swift in Sources */ = {isa = PBXBuildFile; fileRef = 2D22141DDFC181FE31634680 /* CaretMeasure.swift */; };
 		180A5BBD985A33703EA64E74 /* UMAP.swift in Sources */ = {isa = PBXBuildFile; fileRef = D685E8AE8B6D8F7C0D614C65 /* UMAP.swift */; };
 		1A4B4683A0B01732DEC94DBF /* FieldDefinition.swift in Sources */ = {isa = PBXBuildFile; fileRef = 003CEDBA7C8C183191D81F3E /* FieldDefinition.swift */; };
@@ -146,6 +147,7 @@
 		61D32212DD37FB3544769B8A /* CanvasChrome.swift in Sources */ = {isa = PBXBuildFile; fileRef = E0B45CEB1C0E9FEB4B20A4F4 /* CanvasChrome.swift */; };
 		62343BA6D7974D3B5B7001CF /* LibrarianFloatingPanel.swift in Sources */ = {isa = PBXBuildFile; fileRef = 296A6F341B3C366497500A55 /* LibrarianFloatingPanel.swift */; };
 		629990192B6017CAA6D5DF1D /* UberNode.swift in Sources */ = {isa = PBXBuildFile; fileRef = F98C5EDB7B8428ABB080668F /* UberNode.swift */; };
+		63AAFF05F80D2F390E77DC86 /* AppleNaming.swift in Sources */ = {isa = PBXBuildFile; fileRef = E04317C484DBF0C7715402A4 /* AppleNaming.swift */; };
 		6527693949A1FC7B2109F80A /* bigshouldersbold_msdf.png in Resources */ = {isa = PBXBuildFile; fileRef = BFEEDFEDD44210E97589A4FE /* bigshouldersbold_msdf.png */; };
 		65A69E4D8B9E7A2263AA3ED2 /* HeroHeaderProbe.swift in Sources */ = {isa = PBXBuildFile; fileRef = F3B14548B9E3EEA51AD548E6 /* HeroHeaderProbe.swift */; };
 		679810DFF18BC3D51A25E8E0 /* NodeCardView.swift in Sources */ = {isa = PBXBuildFile; fileRef = FD659A40CE161F15D371C285 /* NodeCardView.swift */; };
@@ -307,6 +309,7 @@
 		CA5580BF3FA789B9EF9D906C /* Speech.framework in Frameworks */ = {isa = PBXBuildFile; fileRef = 4339BD7FF5450195EDF70A95 /* Speech.framework */; };
 		CA78CCC70BD9A594AD079E7D /* GalleryItemTile.swift in Sources */ = {isa = PBXBuildFile; fileRef = 6CC9DA2E35A6A167254A44EC /* GalleryItemTile.swift */; };
 		CB2B608F43E8C59B2E14762E /* DocumentExtractionService.swift in Sources */ = {isa = PBXBuildFile; fileRef = 04C9DF59B5CB0AF40373A81B /* DocumentExtractionService.swift */; };
+		CC3FB83DF61C359226638CF2 /* AppleDeclineSheet.swift in Sources */ = {isa = PBXBuildFile; fileRef = C444FABBF789F31A3347DE13 /* AppleDeclineSheet.swift */; };
 		CC70FEE74EEC49EDEEE872E3 /* ArcBVoiceTranscript.swift in Sources */ = {isa = PBXBuildFile; fileRef = FE6C4DD3D4053E6FCA089177 /* ArcBVoiceTranscript.swift */; };
 		CCD5B920FFC2E6B349140203 /* HDBSCANLinkage.swift in Sources */ = {isa = PBXBuildFile; fileRef = DD83A4DC76F83C28E144AA6D /* HDBSCANLinkage.swift */; };
 		CD7F0605807BAAE61280B1B3 /* HDBSCANReachability.swift in Sources */ = {isa = PBXBuildFile; fileRef = ED287727ED25FF9291551213 /* HDBSCANReachability.swift */; };
@@ -659,9 +662,11 @@
 		C3E4914CEA3AE2C4DC0C085C /* DocumentNamingSelfTest.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = DocumentNamingSelfTest.swift; sourceTree = "<group>"; };
 		C3FFA73288300E8E7B5FBA46 /* FeatureFlags.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = FeatureFlags.swift; sourceTree = "<group>"; };
 		C438DCDE3DCF26ECB6207FEA /* SourceSerif4-OFL.txt */ = {isa = PBXFileReference; lastKnownFileType = text; path = "SourceSerif4-OFL.txt"; sourceTree = "<group>"; };
+		C444FABBF789F31A3347DE13 /* AppleDeclineSheet.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = AppleDeclineSheet.swift; sourceTree = "<group>"; };
 		C49FE808E3476860F4E68D4F /* CoverFlowView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = CoverFlowView.swift; sourceTree = "<group>"; };
 		C6CE4B33C6F4682BF9799EC2 /* SpriteKit.framework */ = {isa = PBXFileReference; lastKnownFileType = wrapper.framework; name = SpriteKit.framework; path = System/Library/Frameworks/SpriteKit.framework; sourceTree = SDKROOT; };
 		C729D9028EBF447A0241ABFD /* KeychainHelper.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = KeychainHelper.swift; sourceTree = "<group>"; };
+		C73070A0B2F7E88665FE6A1C /* AppleDeclineSelfTest.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = AppleDeclineSelfTest.swift; sourceTree = "<group>"; };
 		C754F682AD01FF5801808F72 /* QuickCaptureControl.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = QuickCaptureControl.swift; sourceTree = "<group>"; };
 		C824F739A24F35A1EE96F481 /* CollectionPillRail.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = CollectionPillRail.swift; sourceTree = "<group>"; };
 		C8376D171BB956C6EA17E5F9 /* CaptureIntent.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = CaptureIntent.swift; sourceTree = "<group>"; };
@@ -700,6 +705,7 @@
 		DD915DF68A27E1ED37382E19 /* ManageModelsRepro.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ManageModelsRepro.swift; sourceTree = "<group>"; };
 		DEE52A59E0B190ECA764DE9A /* MediaThumbnailLoader.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = MediaThumbnailLoader.swift; sourceTree = "<group>"; };
 		DF61433D19DB8098D7096F3D /* VideoEntryBody.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = VideoEntryBody.swift; sourceTree = "<group>"; };
+		E04317C484DBF0C7715402A4 /* AppleNaming.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = AppleNaming.swift; sourceTree = "<group>"; };
 		E0B45CEB1C0E9FEB4B20A4F4 /* CanvasChrome.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = CanvasChrome.swift; sourceTree = "<group>"; };
 		E1CA7EBB8E00D6EB0B60EBCE /* KeyboardDismissModifier.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = KeyboardDismissModifier.swift; sourceTree = "<group>"; };
 		E2AD296B35A1F56E8CF30BCA /* LiveVoiceEngine.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = LiveVoiceEngine.swift; sourceTree = "<group>"; };
@@ -838,6 +844,7 @@
 		1FD4D705EF0E64DD9326D5C6 /* AirPadUITests */ = {
 			isa = PBXGroup;
 			children = (
+				C444FABBF789F31A3347DE13 /* AppleDeclineSheet.swift */,
 				6D5DA85B1BF96EDBE819DEC3 /* ArcAVoiceDone.swift */,
 				FE6C4DD3D4053E6FCA089177 /* ArcBVoiceTranscript.swift */,
 				6968739D865F9DEBD9EA5A77 /* ArcBVoiceTranscriptRender.swift */,
@@ -901,6 +908,8 @@
 				7A44945C77B8E8010F9421AC /* HDBSCAN */,
 				78757359D9135582165FEA36 /* UMAP */,
 				E617FBB5C1757939CF37710B /* AIService.swift */,
+				C73070A0B2F7E88665FE6A1C /* AppleDeclineSelfTest.swift */,
+				E04317C484DBF0C7715402A4 /* AppleNaming.swift */,
 				328B8A79A32590B1D037ABEA /* BackgroundModelDownloader.swift */,
 				34AC513418FD53025E45C9B6 /* BlockChunker.swift */,
 				4011A4175698F1BD8BAECF08 /* BlockEmbeddingService.swift */,
@@ -1632,6 +1641,7 @@
 			isa = PBXSourcesBuildPhase;
 			buildActionMask = 2147483647;
 			files = (
+				CC3FB83DF61C359226638CF2 /* AppleDeclineSheet.swift in Sources */,
 				9C0E90AD9209954A7FDA17C0 /* ArcAVoiceDone.swift in Sources */,
 				CC70FEE74EEC49EDEEE872E3 /* ArcBVoiceTranscript.swift in Sources */,
 				DA8E3B99958921266293931B /* ArcBVoiceTranscriptRender.swift in Sources */,
@@ -1674,6 +1684,8 @@
 				B42B66E904E381DFE892340C /* AppFont.swift in Sources */,
 				C333CD1EB11BAB691BB68679 /* AppRouter.swift in Sources */,
 				3687E0F23E8567FA598FD175 /* AppearancePalette.swift in Sources */,
+				175B746967365892C2A892EA /* AppleDeclineSelfTest.swift in Sources */,
+				63AAFF05F80D2F390E77DC86 /* AppleNaming.swift in Sources */,
 				FFD48E6B856977AF776488D7 /* AttributeTile.swift in Sources */,
 				536D8F5AEBC887BD1A87C990 /* AutoScrollDriver.swift in Sources */,
 				48043B3C310828936B349842 /* BGEMicro.mlpackage in Sources */,

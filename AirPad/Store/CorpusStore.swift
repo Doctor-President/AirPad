@@ -1206,6 +1206,10 @@ final class CorpusStore {
             if ProcessInfo.processInfo.arguments.contains("-DocumentNamingSelfTest") {
                 NSLog("%@", await runDocumentNamingSelfTest())
             }
+            // live-20 (1) — Apple Intelligence declines: a refusal (not Retry), the on-device model takes over, Done leaves it unnamed.
+            if ProcessInfo.processInfo.arguments.contains("-AppleDeclineSelfTest") {
+                NSLog("%@", await runAppleDeclineSelfTest())
+            }
             // live-15 (1) — a document is named from its own text, right after another capture, on every import path.
             if ProcessInfo.processInfo.arguments.contains("-DocumentNamingInputSelfTest") {
                 NSLog("%@", await runDocumentNamingInputSelfTest())
@@ -8401,6 +8405,9 @@ final class CorpusStore {
         // records no proposal, whatever `aspects` says.
         let nodeEmbedding: [Float]? = (needsAuthorship && useCorpusAware) ? computeNodeEmbedding(for: node) : nil
         let result: NodeAIOutput?
+        // live-20 (1) — why naming produced nothing, returned at the END: the tags + search pass below still runs.
+        // (It used to return here, so an entry Apple Intelligence declined never got tags or search vectors.)
+        var namingFailure: NodeAIFailure?
         if needsAuthorship, withholdNaming {
             result = nil
         } else if needsAuthorship {
@@ -8439,7 +8446,13 @@ final class CorpusStore {
                 result = r
                 bug17Log.notice("FM-RETURNED node=\(nodeID, privacy: .public) ok summaryLen=\(r.summary.count) titleLen=\(r.title.count)")
             case .failure(let reason):
+                result = nil
+                namingFailure = reason
                 bug17Log.notice("FM-RETURNED node=\(nodeID, privacy: .public) FAILED reason=\(String(describing: reason), privacy: .public)")
+                // live-20 (1) — Apple Intelligence DECLINED (and no on-device model took over): the entry is left
+                // unnamed. No fragment of its text becomes its title, no ghost, no error — the Proposals sheet says why.
+                var declined = false
+                if case .refused = reason { declined = true }
                 // Fallback title from raw content so the node isn't blank on FM
                 // failure. Race-safe read-modify-write; never touches `.items`.
                 //
@@ -8473,7 +8486,7 @@ final class CorpusStore {
                         }
                     }.first(where: { !$0.isEmpty })
                     let mayFillBlank = n.title.isEmpty && posture == .automatic
-                    if let fallback, mayFillBlank || n.title == "Photo" || n.title == "Voice note" {
+                    if !declined, let fallback, mayFillBlank || n.title == "Photo" || n.title == "Voice note" {
                         n.title = String(fallback.prefix(40))
                     }
                     n.needsAIProcessing = false
@@ -8488,7 +8501,6 @@ final class CorpusStore {
                    AIService.classifyContent(from: n).authored.isEmpty {
                     pendingLinkAuthor.insert(nodeID)
                 }
-                return reason
             }
         } else {
             // The gate found a proposal already recorded against this exact content
@@ -8560,7 +8572,8 @@ final class CorpusStore {
                                     sourceEmbedding: sourceEmbedding,
                                     sourceContentHash: promptContentHash,
                                     posture: posture, generatedAt: generatedAt,
-                                    solicited: solicited) {
+                                    solicited: solicited,
+                                    onDeviceAfterDecline: result.namedOnDeviceAfterDecline) {
                     n.title = result.title
                     n.titleSource = .model
                 }
@@ -8570,7 +8583,8 @@ final class CorpusStore {
                                     sourceEmbedding: sourceEmbedding,
                                     sourceContentHash: promptContentHash,
                                     posture: posture, generatedAt: generatedAt,
-                                    solicited: solicited) {
+                                    solicited: solicited,
+                                    onDeviceAfterDecline: result.namedOnDeviceAfterDecline) {
                     n.summary = result.summary
                     n.summarySource = .model
                 }
@@ -8650,7 +8664,7 @@ final class CorpusStore {
         // there's nothing fresh left. The eager `.propose` compose pass never reaches this (it
         // proposes, it doesn't commit).
         if posture == .automatic { await promoteMatchingProposals(nodeID: nodeID) }
-        return nil   // F3 — authorship succeeded (proposals recorded / fields written)
+        return namingFailure   // F3 — nil: authorship succeeded (proposals recorded / fields written); else why not
     }
 
     /// One-time migration: re-runs AI processing on nodes that have empty tag

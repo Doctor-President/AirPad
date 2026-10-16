@@ -31,7 +31,7 @@ private struct LocalNodeSummaryJSON: Decodable {
 }
 
 /// Decoding shape for the on-device model's substrate JSON. Both fields optional; `tags` is the
-/// free-form folksonomy (no fixed vocabulary — matches `SubstrateInterpretation`).
+/// free-form folksonomy (no fixed vocabulary — the same shape as `AppleNaming.substrate`).
 private struct LocalSubstrateJSON: Decodable {
     var summary: String?
     var tags: [String]?
@@ -560,9 +560,10 @@ enum ModelRouter {
     // hid the substrate producer for months) or protocol gymnastics over two @Generable types.
     // Two small methods keep each locus honest and separate.
 
-    /// THE NOTE-SUMMARY LEVER — title + summary (`processNode`'s shape). FM uses guided generation
-    /// (`NodeAIResult` is @Generable), so a refusal arrives as a catchable `GenerationError` and is
-    /// thrown UP for the caller to surface — the ONE provider difference, exposed not worked around.
+    /// THE NOTE-SUMMARY LEVER — title + summary (`processNode`'s shape). FM answers a plain String under the
+    /// permissive guardrails, parsed by `AppleNaming` (live-20 (1): guided generation always uses the default
+    /// guardrails, so it refused sexual-health, medical and political entries). A refusal still arrives as a catchable
+    /// error and is thrown UP for the caller to surface — the ONE provider difference, exposed not worked around.
     /// The local model is prompted for strict JSON and parsed; it effectively does not refuse.
     static func generateNodeSummary(prompt: String) async throws -> NodeSummaryResult {
         switch await structuredProvider() {
@@ -588,10 +589,8 @@ enum ModelRouter {
 
     private static func nodeSummaryFoundationModel(prompt: String) async throws -> NodeSummaryResult {
         guard SystemLanguageModel.default.isAvailable else { throw RouterError.foundationModelUnavailable }
-        let session = LanguageModelSession()
-        // KEEP guided generation: NodeAIResult is @Generable, so a refusal arrives as a catchable
-        // GenerationError, thrown up to `AIService.processNode` → `nodeFailure` → `.refused`.
-        let r = try await session.respond(to: prompt, generating: NodeAIResult.self).content
+        // A refusal (or a reply that declined in prose) throws up to `AIService.processNode` → `nodeFailure` → `.refused`.
+        let r = try await AppleNaming.name(prompt: prompt)
         return NodeSummaryResult(
             title:   r.title.trimmingCharacters(in: .whitespacesAndNewlines),
             summary: r.summary.trimmingCharacters(in: .whitespacesAndNewlines)
@@ -623,8 +622,8 @@ enum ModelRouter {
     /// proposes whatever words fit; there is NO vocabulary enum and NO picklist, because
     /// normalization + embedding-match against existing tags happen deterministically downstream
     /// (ws-lever.md § THE TAG PRODUCER). Constraining this call with an enum would reverse that.
-    /// FM's guided generation throws its refusal up (→ `processSubstrate` → `.guardrailRefused`);
-    /// the local model is prompted for JSON and parsed.
+    /// FM's refusal throws up (→ `processSubstrate` → `.guardrailRefused`); FM answers a plain String under the
+    /// permissive guardrails (`AppleNaming.substrate`, live-20), the local model is prompted for JSON; both parsed.
     /// `responseLanguage` (item 2) pins the LOCAL model's output to the note's own language
     /// (an English display name, e.g. "Spanish"); nil = don't constrain. The FM path ignores
     /// it — Apple's guided generation doesn't exhibit the Chinese-drift and its prompt is
@@ -649,10 +648,8 @@ enum ModelRouter {
 
     private static func substrateFoundationModel(prompt: String) async throws -> SubstrateResult {
         guard SystemLanguageModel.default.isAvailable else { throw RouterError.foundationModelUnavailable }
-        let session = LanguageModelSession()
-        // KEEP guided generation: SubstrateInterpretation is @Generable, so a refusal arrives as a
-        // catchable GenerationError, thrown up to `processSubstrate` → `.guardrailRefused`.
-        let r = try await session.respond(to: prompt, generating: SubstrateInterpretation.self).content
+        // A refusal throws up to `processSubstrate` → `.guardrailRefused`.
+        let r = try await AppleNaming.substrate(prompt: prompt)
         return SubstrateResult(
             summary: r.summary.trimmingCharacters(in: .whitespacesAndNewlines),
             folksonomy: r.tags

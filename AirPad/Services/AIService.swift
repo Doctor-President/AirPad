@@ -29,18 +29,9 @@ fileprivate func measureTokens(prompt: String) async -> Int {
 
 // MARK: - Structured output types
 
-/// Requires iOS 26.0 — @Generable and its synthesised types (GenerationSchema,
-/// GeneratedContent, ConvertibleToGeneratedContent) are all iOS 26.0+.
-/// Gating the actor at the same version means the macro expansion is always
-/// inside an @available(iOS 26.0, *) context, avoiding beta compiler leakage.
-@Generable
-struct NodeAIResult {
-    @Guide(description: "Concise idea title, under 60 characters. Functional, not poetic.")
-    var title: String
-
-    @Guide(description: "One or two sentences stating what the note is ABOUT — an impersonal catalogue fragment. Never refer to the note's own author (no 'she', 'he', 'they', 'you', 'the author', 'the writer') and never narrate the author's actions; people the note is about may be named, but the writer is never the subject.")
-    var summary: String
-}
+// live-20 (1) — title + summary, tags, the neighbourhood description + name, the coherence check and the corpus
+// summary are plain-String replies under the permissive guardrails (AppleNaming). Guided generation always uses the
+// default guardrails, so `@Generable` stays only on the DEBUG-dormant corpus-aware type below.
 
 /// SB126 Stage 2 — output of the corpus-aware `processNode` FM call. Mirrors
 /// `NodeAIResult`'s shape (title, summary, tags, mood, domain) so the corpus
@@ -68,20 +59,6 @@ struct ProcessNodeResult {
     var neighborhoodID: String
 }
 
-/// SB139 Stage 1 — output of the substrate FM call. One prompt, two outputs:
-/// `summary` becomes the seed for `summaryEmbedding`; `tags` (folksonomy) is
-/// joined comma-space and embedded as `folksonomyEmbedding`. The substrate's
-/// summary is intentionally separate from the tag pipeline's `summary` —
-/// sharing would defeat the lens separation the substrate is built on.
-@Generable
-struct SubstrateInterpretation {
-    @Guide(description: "One or two sentences stating what the note is ABOUT, specific to the actual content (this seeds the embedding, so accuracy matters). An impersonal fragment: never refer to the note's own author (no 'she'/'he'/'they'/'you'/'the author') and never narrate their actions; name people the note is about, but never the writer.")
-    var summary: String
-
-    @Guide(description: "Free-form tags describing this idea. Pick whatever words best capture the content — no fixed vocabulary, no schema list. Aim for 3 to 8 short tags. Concrete nouns and topical phrases work better than abstract single words.")
-    var tags: [String]
-}
-
 /// SB139 Stage 1 — outcome envelope for the substrate FM call. Models guardrail
 /// refusals as a normal outcome (~4% of nodes per harness data) so the caller
 /// can record the reason on the node and fall back to the content embedding.
@@ -96,44 +73,17 @@ enum SubstrateFMOutcome {
     case otherError(FMErrorDetail)
 }
 
-@Generable
-struct CoherenceCheck {
-    @Guide(description: "Is this a complete, standalone idea? Reply with exactly 'Yes' or 'No'.")
-    var answer: String
-}
-
-/// Output of `nameNeighborhood` Call A. The description is the load-bearing
-/// derived field for SB126 Stage 1 — persisted on the neighborhood entry,
-/// embedded for Stage 2's prefilter, and reused as input to Call B.
-@Generable
-struct NeighborhoodCharacterization {
-    @Guide(description: "1-2 sentence description of what unifies these ideas. Concrete and specific to the actual content, not generic. Under ~80 tokens.")
-    var summary: String
-}
-
-/// Output of `nameNeighborhood` Call B. Short evocative label that survives
-/// across refreshes once stable.
-@Generable
-struct NeighborhoodNaming {
-    @Guide(description: "A 2-4 word name for the cluster. Distinct from the sibling cluster names. No quotes, no punctuation, just the words.")
-    var name: String
-}
-
-@Generable
+/// The corpus summary (live-20 (1): parsed from a plain-String reply; was `@Generable`).
 struct CorpusSummaryResult {
-    @Guide(description: "2-3 sentence synthesis of what this corpus is about right now. Second person. Be specific.")
+    /// 2-3 sentence synthesis of what this corpus is about right now. Second person.
     var summaryText: String
-
-    @Guide(description: "Top 5 recurring themes as short phrases, most frequent first.")
+    /// Top 5 recurring themes as short phrases, most frequent first.
     var dominantThemes: [String]
-
-    @Guide(description: "Tags or themes most active in the last 30 days.")
+    /// Tags or themes most active in the last 30 days.
     var recentDominantTags: [String]
-
-    @Guide(description: "Tags that appear rarely or may be stale.")
+    /// Tags that appear rarely or may be stale.
     var staleTags: [String]
-
-    @Guide(description: "Approximate count of nodes that don't fit clearly into any cluster.")
+    /// Approximate count of nodes that don't fit clearly into any cluster.
     var floaterCount: Int
 }
 
@@ -196,7 +146,7 @@ actor AIService {
         // real `.noContent` guard so a content-starved link still reproduces faithfully; then
         // returns a deterministic, NON-empty title + summary so the write-back, promote, and
         // gate all run exactly as in production. Launch-arg gated → Release excludes it (#if DEBUG).
-        if ProcessInfo.processInfo.arguments.contains("-StubAuthorModel") {
+        if ProcessInfo.processInfo.arguments.contains("-StubAuthorModel"), !Self.stubAppleDeclines {
             let content = Self.namingSlice(extractContent(from: node, authoredOnly: authoredOnly))
             guard !content.isEmpty else { return .failure(.noContent) }
             PasteProbe.noteNaming(chars: content.count)
@@ -236,7 +186,7 @@ actor AIService {
         // GAP 27 — consult the router BEFORE the FM guard. This call routes through
         // `ModelRouter.generateNodeSummary`, which sends `.local` to the on-device model,
         // so the FM-availability guard applies only when FM is the resolved provider.
-        if await structuredCallNeedsFoundationModel() {
+        if !Self.stubAppleDeclines, await structuredCallNeedsFoundationModel() {
             // FM is the resolved provider: it must be available on this device.
             guard SystemLanguageModel.default.isAvailable else { return .failure(.unavailable) }
         }
@@ -247,23 +197,21 @@ actor AIService {
         PasteProbe.noteNaming(chars: content.count)
         #endif
 
-        let prompt = """
-        \(Self.namingInstructions)
-
-        Idea:
-        \(content)
-        """
+        let prompt = AppleNaming.namingPrompt(content: content)
 
         // live-11 (2) — the token count is a log line, not an input: counting it is a model call of its own, and awaiting
         // it held the capture's naming back (longer the longer the note). Off the critical path.
         Task { await logFMTokens("ProcessNode", prompt: prompt) }
         do {
             // ws-local-model Stage 2 — one of the TWO live capture calls routed through
-            // ModelRouter (the other is processSubstrate). Foundation Model (guided generation,
-            // unchanged) by default, or the on-device model when the user opted in and it's ready.
+            // ModelRouter (the other is processSubstrate). Apple Intelligence (plain String, permissive
+            // guardrails — live-20) by default, or the on-device model when the user opted in and it's ready.
             // FM's catchable refusal still arrives via the throw below → nodeFailure → .refused,
             // which the tray renders as LeverRefusalBanner. This is the TITLE+SUMMARY refusal
             // locus, INDEPENDENT of processSubstrate's folksonomy locus.
+            #if DEBUG
+            if Self.stubAppleDeclines { throw Self.stubDeclineError() }
+            #endif
             let r = try await ModelRouter.generateNodeSummary(prompt: prompt)
             return .success(Self.guardedNaming(title: r.title, summary: r.summary, content: content))
         } catch {
@@ -276,11 +224,13 @@ actor AIService {
             // INSTALLED (.ready — not necessarily opted in), silently retry with it rather than
             // stranding the capture, and log which model authored. If it isn't installed, or the
             // retry also fails, surface the ORIGINAL refusal (→ LeverRefusalBanner / capture note).
-            if case .refused = failure, await LocalModelService.shared.state == .ready {
+            if case .refused = failure, await Self.localModelReadyForFallback() {
                 do {
-                    let r = try await ModelRouter.nodeSummaryLocalForced(prompt: prompt)
+                    let r = try await Self.nodeSummaryLocalForced(prompt: prompt)
                     print("[FM][processNode] refusal → on-device model authored (title/summary)")
-                    return .success(Self.guardedNaming(title: r.title, summary: r.summary, content: content))
+                    var out = Self.guardedNaming(title: r.title, summary: r.summary, content: content)
+                    out.namedOnDeviceAfterDecline = true   // live-20 (1) — the Proposals sheet says so in one line
+                    return .success(out)
                 } catch {
                     print("[FM][processNode] refusal → on-device retry also failed: \(error)")
                 }
@@ -416,22 +366,21 @@ actor AIService {
     /// same derivation the chat surface uses. Do NOT re-add a bucketing classifier.
     private func nodeFailure(from error: any Error, prompt: String) async -> NodeAIFailure {
         let message = (error as? LocalizedError)?.errorDescription ?? error.localizedDescription
-        if let g = error as? LanguageModelSession.GenerationError {
-            switch g {
-            case .exceededContextWindowSize:
-                var tokens = -1
-                if #available(iOS 26.4, macOS 26.4, visionOS 26.4, *) {
-                    tokens = (try? await SystemLanguageModel.default.tokenCount(for: prompt)) ?? -1
-                }
-                return .contextOverflow(promptTokens: tokens,
-                                        contextSize: SystemLanguageModel.default.contextSize)
-            case .refusal, .guardrailViolation:
-                // Same pair processSubstrate routes to `guardrailRefused`. Keep the verbatim
-                // message; the distinct case only lets the tray offer the on-device model.
-                return .refused(message: message)
-            default:
-                break
+        // live-20 (1) — iOS 27 throws `LanguageModelError`, not `GenerationError`: AppleNaming recognises both. (It
+        // used to check `GenerationError` only, so on T's iOS 27 phone a decline read as an error to retry, and the
+        // installed on-device model was never asked.)
+        if AppleNaming.isContextOverflow(error) {
+            var tokens = -1
+            if #available(iOS 26.4, macOS 26.4, visionOS 26.4, *) {
+                tokens = (try? await SystemLanguageModel.default.tokenCount(for: prompt)) ?? -1
             }
+            return .contextOverflow(promptTokens: tokens,
+                                    contextSize: SystemLanguageModel.default.contextSize)
+        }
+        if AppleNaming.isRefusal(error) {
+            // Same set processSubstrate routes to `guardrailRefused`. Keep the verbatim message for the log; the
+            // distinct case lets the tray say so plainly and offer the on-device model.
+            return .refused(message: message)
         }
         return .failed(message: message)
     }
@@ -495,9 +444,7 @@ actor AIService {
 
         await logFMTokens("GenerateCorpusSummary", prompt: prompt)
         do {
-            let session = LanguageModelSession()
-            let response = try await session.respond(to: prompt, generating: CorpusSummaryResult.self)
-            return response.content
+            return try await AppleNaming.ask(instructions: Self.corpusSummaryFormat, prompt: prompt, parse: Self.parseCorpusSummary)
         } catch { return nil }
     }
 
@@ -554,10 +501,8 @@ actor AIService {
         """
         await logFMTokens("CharacterizeNeighborhood", prompt: prompt)
         do {
-            let session = LanguageModelSession()
-            let response = try await session.respond(to: prompt, generating: NeighborhoodCharacterization.self)
-            let summary = response.content.summary.trimmingCharacters(in: .whitespacesAndNewlines)
-            return summary.isEmpty ? nil : summary
+            return try await AppleNaming.ask(instructions: Self.plainFieldFormat("a 1-2 sentence description, under about 80 tokens"),
+                                             prompt: prompt, parse: { AppleNaming.parseSingle($0, maxChars: AppleNaming.summaryMax) })
         } catch { return nil }
     }
 
@@ -600,10 +545,8 @@ actor AIService {
         """
         await logFMTokens("NameNeighborhood", prompt: prompt)
         do {
-            let session = LanguageModelSession()
-            let response = try await session.respond(to: prompt, generating: NeighborhoodNaming.self)
-            let name = response.content.name.trimmingCharacters(in: .whitespacesAndNewlines)
-            return name.isEmpty ? nil : name
+            return try await AppleNaming.ask(instructions: Self.plainFieldFormat("a 2-4 word name with no quotes and no punctuation"),
+                                             prompt: prompt, parse: { AppleNaming.parseSingle($0, maxChars: 40) })
         } catch { return nil }
     }
 
@@ -638,7 +581,7 @@ actor AIService {
         #if DEBUG
         // Brief BM0 — stub the SECOND capture model call too, so a `-StubAuthorModel` pass
         // completes deterministically end-to-end (substrate summary + folksonomy) without FM.
-        if ProcessInfo.processInfo.arguments.contains("-StubAuthorModel") {
+        if ProcessInfo.processInfo.arguments.contains("-StubAuthorModel"), !Self.stubAppleDeclines {
             guard !content.isEmpty else { return .otherError(FMErrorDetail(errorType: "empty_content", debugDescription: nil)) }
             try? await Task.sleep(nanoseconds: 100_000_000)
             return .ok(summary: "Stub substrate summary.", folksonomy: ["stub", "test"])
@@ -648,7 +591,7 @@ actor AIService {
         // through `ModelRouter.generateSubstrate`, which sends `.local` to the on-device
         // model; returning `model_unavailable` here without asking the router meant the local
         // model was never consulted and the tray rendered a refusal that never happened.
-        if await structuredCallNeedsFoundationModel() {
+        if !Self.stubAppleDeclines, await structuredCallNeedsFoundationModel() {
             // FM is the resolved provider: it must be available on this device.
             guard SystemLanguageModel.default.isAvailable else {
                 return .otherError(FMErrorDetail(errorType: "model_unavailable", debugDescription: nil))
@@ -667,15 +610,7 @@ actor AIService {
             truncated = content
         }
 
-        let prompt = """
-        Interpret this captured idea. Two outputs:
-
-        1. summary — 1 to 2 sentences capturing what this idea is actually about. Be concrete and specific to the content; no generic filler. This is the seed for downstream embedding, so accuracy matters more than style. Write it as an impersonal fragment stating what the note is about — never refer to the note's own author (no "she"/"he"/"they"/"you"/"the author") and never narrate their actions; name people the note is about, but never the writer.
-        2. tags — free-form folksonomy. Pick whatever short tags best describe this idea. No fixed vocabulary; use the words that actually fit. Concrete topical phrases beat abstract single words. 3 to 8 tags.
-
-        Idea:
-        \(truncated)
-        """
+        let prompt = AppleNaming.substratePrompt(content: truncated)
 
         // Item 2 — detect the note's OWN language from the raw content (not the
         // instruction-laden prompt) so the LOCAL model can be pinned to it. FM ignores this.
@@ -692,6 +627,9 @@ actor AIService {
             // filters. A refusal still throws GenerationError up, so the catch below maps it to
             // `.guardrailRefused` → persisted as the node's "guardrail_refused" reason, which is
             // what lets the tray tell a refused-tags node apart from a genuinely-empty one.
+            #if DEBUG
+            if Self.stubAppleDeclines { throw Self.stubDeclineError() }
+            #endif
             let r = try await ModelRouter.generateSubstrate(prompt: prompt, responseLanguage: responseLanguage)
             if r.summary.isEmpty && r.folksonomy.isEmpty {
                 return .otherError(FMErrorDetail(errorType: "empty_output", debugDescription: nil))
@@ -710,27 +648,24 @@ actor AIService {
             // and `classifyFMError` captures the type + debugDescription
             // for diagnosis on `Node.fmErrorDetail`.
             // A local-path throw is never a GenerationError, so it skips this.
-            if let genErr = error as? LanguageModelSession.GenerationError {
-                switch genErr {
-                case .refusal, .guardrailViolation:
-                    print("[FM][processSubstrate] guardrail refusal: \(error)")
-                    // Brief CD5 (BP5) — silent retry with the installed on-device model, same gate as
-                    // processNode. On success the substrate is authored locally; else surface the refusal.
-                    if await LocalModelService.shared.state == .ready {
-                        do {
-                            let r = try await ModelRouter.substrateLocalForced(prompt: prompt, responseLanguage: responseLanguage)
-                            if !(r.summary.isEmpty && r.folksonomy.isEmpty) {
-                                print("[FM][processSubstrate] refusal → on-device model authored (substrate)")
-                                return .ok(summary: r.summary, folksonomy: r.folksonomy)
-                            }
-                        } catch {
-                            print("[FM][processSubstrate] refusal → on-device retry also failed: \(error)")
+            // live-20 (1) — `AppleNaming.isRefusal`: iOS 26's GenerationError pair, iOS 27's LanguageModelError pair, and a
+            // plain-String reply that declined in prose.
+            if AppleNaming.isRefusal(error) {
+                print("[FM][processSubstrate] guardrail refusal: \(error)")
+                // Brief CD5 (BP5) — silent retry with the installed on-device model, same gate as
+                // processNode. On success the substrate is authored locally; else surface the refusal.
+                if await Self.localModelReadyForFallback() {
+                    do {
+                        let r = try await Self.substrateLocalForced(prompt: prompt, responseLanguage: responseLanguage)
+                        if !(r.summary.isEmpty && r.folksonomy.isEmpty) {
+                            print("[FM][processSubstrate] refusal → on-device model authored (substrate)")
+                            return .ok(summary: r.summary, folksonomy: r.folksonomy)
                         }
+                    } catch {
+                        print("[FM][processSubstrate] refusal → on-device retry also failed: \(error)")
                     }
-                    return .guardrailRefused
-                default:
-                    break
                 }
+                return .guardrailRefused
             }
             print("[FM][processSubstrate] FAILURE: \(error)")
             return .otherError(classifyFMError(error))
@@ -792,7 +727,7 @@ actor AIService {
         """
         await logFMTokens("ComputeTagSimilarity", prompt: prompt)
         do {
-            let session = LanguageModelSession()
+            let session = LanguageModelSession(model: AppleNaming.model)   // live-20 (1) — the user's own tag names
             let response = try await session.respond(to: prompt)
             let text = response.content
                 .trimmingCharacters(in: .whitespacesAndNewlines)
@@ -816,9 +751,10 @@ actor AIService {
         guard SystemLanguageModel.default.isAvailable else { return nil }
         let prompt = "Is this a complete, standalone idea? Yes or No.\n\n\(text)"
         do {
-            let session = LanguageModelSession()
-            let response = try await session.respond(to: prompt, generating: CoherenceCheck.self)
-            return response.content.answer.lowercased().hasPrefix("yes")
+            return try await AppleNaming.ask(instructions: Self.plainFieldFormat("exactly Yes or No"), prompt: prompt, parse: { raw in
+                let a = raw.trimmingCharacters(in: .whitespacesAndNewlines).lowercased()
+                return a.hasPrefix("yes") ? true : a.hasPrefix("no") ? false : nil
+            })
         } catch {
             return nil
         }
@@ -833,15 +769,77 @@ actor AIService {
         return nil
     }
 
+    // MARK: - When Apple declines (live-20 (1))
+
+    /// Is the on-device model installed to name what Apple Intelligence declined? (`.ready` — opted in or not.)
+    static func localModelReadyForFallback() async -> Bool {
+        #if DEBUG
+        if stubAppleDeclines { return UserDefaults.standard.bool(forKey: "StubLocalModelReady") }
+        #endif
+        return await LocalModelService.shared.state == .ready
+    }
+
+    static func nodeSummaryLocalForced(prompt: String) async throws -> NodeSummaryResult {
+        #if DEBUG
+        if stubAppleDeclines { return NodeSummaryResult(title: "On-device stub title", summary: "On-device stub summary.") }
+        #endif
+        return try await ModelRouter.nodeSummaryLocalForced(prompt: prompt)
+    }
+
+    static func substrateLocalForced(prompt: String, responseLanguage: String?) async throws -> SubstrateResult {
+        #if DEBUG
+        if stubAppleDeclines { return SubstrateResult(summary: "On-device stub substrate.", folksonomy: ["on-device", "stub"]) }
+        #endif
+        return try await ModelRouter.substrateLocalForced(prompt: prompt, responseLanguage: responseLanguage)
+    }
+
+    /// `-StubAppleDeclines YES` (DEBUG): Apple Intelligence declines every naming + tags call with the error the OS
+    /// throws — iOS 27's `LanguageModelError.guardrailViolation` (T's device), iOS 26's `GenerationError` — into the
+    /// REAL catch path. `StubLocalModelReady` says whether the on-device model is installed to take over.
+    static var stubAppleDeclines: Bool {
+        #if DEBUG
+        return UserDefaults.standard.bool(forKey: "StubAppleDeclines")
+        #else
+        return false
+        #endif
+    }
+
+    #if DEBUG
+    static func stubDeclineError() -> any Error {
+        if #available(iOS 27.0, *) {
+            return LanguageModelError.guardrailViolation(.init(debugDescription: "stub: Apple Intelligence declined"))
+        }
+        return LanguageModelSession.GenerationError.guardrailViolation(.init(debugDescription: "stub: Apple Intelligence declined"))
+    }
+    #endif
+
     // MARK: - Content extraction
 
-    /// The title + summary instructions. A3 — no persona name: "You are the Librarian in AirPad" let the on-device
-    /// model write itself into a summary ("… and the Librarian enjoy autumn …"). The role is described, never named.
-    static let namingInstructions = """
-    Analyze this captured idea and produce a concise title and summary. Base them on what the user wrote; any text found in images or documents is supporting context — rely on it only when the user's own writing is thin or absent.
+    /// The title + summary instructions (live-20: they live in `AppleNaming`, which the Mac harness compiles).
+    static var namingInstructions: String { AppleNaming.namingInstructions }
 
-    You are cataloguing this person's OWN note for them — not narrating it from outside. The summary states what the note is ABOUT, as an impersonal fragment, e.g. "Ten months of French buys a menu and half a Wikipedia article, not speech." Never refer to the note's author (no "she", "he", "they", "you", "the author", "the writer") and never narrate their actions ("rereading the year, she contrasts…"). People the note is about may be named; the writer is never the subject.
+    /// live-20 (1) — a one-field plain-String reply's format (the neighbourhood description + name, the coherence check).
+    static func plainFieldFormat(_ what: String) -> String {
+        "You describe groups of a person's private notes, which may cover any subject; describe them plainly and neutrally. Reply with \(what), and nothing else."
+    }
+
+    static let corpusSummaryFormat = """
+    You describe a person's private notes, which may cover any subject; describe them plainly and neutrally.
+    Reply with exactly five lines and nothing else. Line 1 starts with "SUMMARY: " followed by a 2-3 sentence synthesis of what this corpus is about right now, in the second person, specific. Line 2 starts with "THEMES: " followed by the top 5 recurring themes as short phrases, most frequent first, separated by commas. Line 3 starts with "RECENT: " followed by the tags or themes most active in the last 30 days, separated by commas. Line 4 starts with "STALE: " followed by tags that appear rarely or may be stale, separated by commas. Line 5 starts with "FLOATERS: " followed by the approximate number of notes that don't fit clearly into any cluster.
     """
+
+    static func parseCorpusSummary(_ raw: String) -> CorpusSummaryResult? {
+        let f = AppleNaming.labelledLines(raw, labels: ["SUMMARY", "THEMES", "RECENT", "STALE", "FLOATERS"])
+        let summary = AppleNaming.clean(f["SUMMARY"])
+        guard !summary.isEmpty, !AppleNaming.looksLikeDecline(summary) else { return nil }
+        func list(_ k: String) -> [String] {
+            (f[k] ?? "").split(separator: ",").map { AppleNaming.clean(String($0)) }
+                .filter { !$0.isEmpty && $0.lowercased() != "none" }
+        }
+        let floaters = Int((f["FLOATERS"] ?? "").filter(\.isNumber)) ?? 0
+        return CorpusSummaryResult(summaryText: summary, dominantThemes: Array(list("THEMES").prefix(5)),
+                                   recentDominantTags: list("RECENT"), staleTags: list("STALE"), floaterCount: floaters)
+    }
 
     /// What the model's name + summary may keep, checked against the content it was given.
     /// A3 — a name or summary may not bring in the app's own words (T's summary gained "the Librarian", a word the entry
@@ -1001,6 +999,8 @@ struct NodeAIOutput {
     /// legacy `processNode`. Stored on the node as metadata; not consumed in
     /// Stage 2 itself.
     let neighborhoodID: String?
+    /// live-20 (1) — Apple Intelligence declined and the installed on-device model named it instead.
+    var namedOnDeviceAfterDecline: Bool = false
 }
 
 // MARK: - THE LEVER — Stage 2 F3 · typed generate outcome
@@ -1028,13 +1028,13 @@ enum NodeAIFailure: Equatable {
     /// (F5b; -1 if the count was unavailable).
     case contextOverflow(promptTokens: Int, contextSize: Int)
     /// Everything else the session throws — carries the error's OWN description
-    /// (same derivation the chat surface uses), shown verbatim. Refusals arrive
-    /// here as `GenerationError.refusal` (there is NO separate `LanguageModelError`
-    /// type in this SDK); `GenerationError: LocalizedError`, so its text renders.
+    /// (same derivation the chat surface uses), shown verbatim. A refusal is NOT
+    /// this case (`.refused` below — iOS 26's `GenerationError` and iOS 27's
+    /// `LanguageModelError` alike, via `AppleNaming.isRefusal`).
     case failed(message: String)
-    /// ws-local-model Stage 2 — Foundation Model declined (`GenerationError.refusal`
-    /// / `.guardrailViolation`, the SAME pair `processSubstrate` routes to
-    /// `guardrailRefused`). Still carries the framework's VERBATIM message (no info
+    /// ws-local-model Stage 2 — Foundation Model declined (`AppleNaming.isRefusal`: the
+    /// refusal / guardrail pair on iOS 26 and 27, or a reply that declined in prose — the SAME set
+    /// `processSubstrate` routes to `guardrailRefused`). Still carries the framework's VERBATIM message (no info
     /// lost — this is NOT re-bucketing) so the tray can show it; the distinct case
     /// only adds the product action: offer AirPad's optional on-device model, which
     /// effectively does not refuse. Local's own technical failures do NOT land here.

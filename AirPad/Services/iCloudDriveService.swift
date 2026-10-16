@@ -233,6 +233,7 @@ actor iCloudDriveService {
             if ProcessInfo.processInfo.arguments.contains("-UITestSeedPhotoEntries") { Self.seedUITestPhotoEntries(root) }
             if ProcessInfo.processInfo.arguments.contains("-UITestSeedLongChat") { Self.seedUITestLongChat(root) }
             if ProcessInfo.processInfo.arguments.contains("-UITestSeedManyDocuments") { Self.seedUITestManyDocuments(root) }
+            if ProcessInfo.processInfo.arguments.contains("-UITestSeedDeclineEntry") { Self.seedUITestDeclineEntry(root) }
             return true
         } catch {
             return false
@@ -410,6 +411,20 @@ actor iCloudDriveService {
         entry.documentViewMode = .carousel
         let node = Node(id: nodeID, createdAt: now, updatedAt: now, title: "Fourteen tide logs", summary: "A synthetic document entry.",
                         tags: [], items: [entry], entrySchemaVersion: 4)
+        try? JSONEncoder.airPad.encode(node).write(to: nodeDir.appendingPathComponent("node.json"), options: .atomic)
+    }
+
+    /// live-20 (1) — `-UITestSeedDeclineEntry`: one untitled typed entry about a clinic follow-up (adult, non-graphic,
+    /// synthetic), for `AppleDeclineSheet`: with `-StubAppleDeclines YES` Apple Intelligence declines to name it.
+    private static func seedUITestDeclineEntry(_ root: URL) {
+        let now = Date(timeIntervalSince1970: 1_760_400_000)
+        let nodeID = "uitest-decline-entry"
+        let nodeDir = root.appendingPathComponent("nodes/\(nodeID)")
+        guard !FileManager.default.fileExists(atPath: nodeDir.appendingPathComponent("node.json").path) else { return }
+        try? FileManager.default.createDirectory(at: nodeDir, withIntermediateDirectories: true)
+        let text = NodeItem(id: nodeID + "-text", type: .text, createdAt: now,
+                            content: "Clinic follow-up today. The STI panel came back negative; the nurse said to retest in three months with a new partner.")
+        let node = Node(id: nodeID, createdAt: now, updatedAt: now, title: "", summary: "", tags: [], items: [text], entrySchemaVersion: 4)
         try? JSONEncoder.airPad.encode(node).write(to: nodeDir.appendingPathComponent("node.json"), options: .atomic)
     }
 

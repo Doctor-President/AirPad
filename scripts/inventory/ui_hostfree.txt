@@ -96,3 +96,5 @@ SelectableTextTaps/testSuperscriptTapReachesItsCitation
 # live-19 (3d) — every rest of the photo viewer's pager and a document carousel sits aligned, exact pitch.
 PagedRestGeometry/testPhotoViewerPagesRestAligned
 PagedRestGeometry/testDocumentCarouselRestsAligned
+AppleDeclineSheet/testDeclineSaysSoAndOffersTheSetting
+AppleDeclineSheet/testOnDeviceModelNamesItAndSaysSo

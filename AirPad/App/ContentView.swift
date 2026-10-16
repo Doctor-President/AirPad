@@ -140,6 +140,12 @@ struct ContentView: View {
                 }
             }
             #if DEBUG
+            // live-21 (1) render-only — variant E: the content behind dims and recedes while the panel is up.
+            .scaleEffect(RenderVariant.panel == "E" ? 1 - 0.04 * panelState.progress.peekProgress : 1)
+            .overlay(Color.black.opacity(RenderVariant.panel == "E" ? 0.14 * panelState.progress.peekProgress : 0)
+                        .ignoresSafeArea().allowsHitTesting(false))
+            #endif
+            #if DEBUG
             // Brief CA — headless screenshot harness for the model pill; renders on top of everything.
             if ProcessInfo.processInfo.arguments.contains("-PillGallery") {
                 PillGalleryView()
@@ -253,6 +259,7 @@ struct ContentView: View {
                     case "full": proxy.controller.move(to: .full, animated: false)
                     default:     break
                     }
+                    if RenderVariant.hideChrome { proxy.controller.move(to: .hidden, animated: false) }   // live-21 (1)
                     #endif
                 }
         }

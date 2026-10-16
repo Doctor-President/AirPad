@@ -75,7 +75,10 @@ enum AppearancePalette {
     /// dark value — a NEUTRAL gray, R=G=B, not "warm"). Light: warm parchment,
     /// Tomoe River register — NOT stark white (`.systemBackground` would glare).
     static var bgBase: Color {
-        dynamic(dark: "000000", light: "F4EFE3")   // T device-final 2026-09-14, see Ops/reference/tuner-state-accepted.md
+        #if DEBUG
+        if RenderVariant.palette != "L1" { return dynamic(dark: "000000", light: RenderVariant.current.detailGround) }
+        #endif
+        return dynamic(dark: "000000", light: "F4EFE3")   // T device-final 2026-09-14, see Ops/reference/tuner-state-accepted.md
     }
 
     /// `--bg-elevated` — the raised note panel.
@@ -83,7 +86,10 @@ enum AppearancePalette {
     /// color). Light: a hair brighter/warmer than the ground so it lifts by
     /// luminance (transmissive — light falls ONTO the paper).
     static var bgElevated: Color {
-        dynamic(dark: "0D0D0D", light: "FAF6EC")   // T device-final 2026-09-14, see Ops/reference/tuner-state-accepted.md
+        #if DEBUG
+        if RenderVariant.palette != "L1" { return dynamic(dark: "0D0D0D", light: RenderVariant.current.elevated) }
+        #endif
+        return dynamic(dark: "0D0D0D", light: "FAF6EC")   // T device-final 2026-09-14, see Ops/reference/tuner-state-accepted.md
     }
 
     /// Primary foreground — text and icons. Used directly and at the same
@@ -192,7 +198,10 @@ enum AppearancePalette {
     /// visible but not assertive" on parchment. This is only the hue/luma floor
     /// — the exact PRESENCE is T's to dial via the tuner's dot-opacity slider.
     static func mapGridDotRGB(dark: Bool) -> (r: Float, g: Float, b: Float) {
-        let hex = dark ? "FFFFFF" : "2E3A40"
+        var hex = dark ? "FFFFFF" : "2E3A40"
+        #if DEBUG
+        if !dark, RenderVariant.palette != "L1" { hex = RenderVariant.current.dot }
+        #endif
         let (r, g, b) = rgb(hex)
         return (Float(r), Float(g), Float(b))
     }
@@ -212,7 +221,10 @@ enum AppearancePalette {
     /// with cards/rows: dark 30% / light 65% of the Map's 0.809 / 0.805. Split from `mapGridDotOpacity`
     /// so the Map's grid stays byte-for-byte unchanged (fixes the shared-token regression on TF 202610021917).
     static func libraryGridDotOpacity(dark: Bool) -> Float {
-        dark ? 0.243 : 0.523
+        #if DEBUG
+        if RenderVariant.hideDots { return 0 }
+        #endif
+        return dark ? 0.243 : 0.523
     }
 
     /// The Map canvas background. Dark: `#111115` (T's dialed near-black — a
@@ -233,7 +245,12 @@ enum AppearancePalette {
     /// bake: a bare (transparent-between) blob field composited OVER parchment
     /// with `.plusDarker`, so saturated colour reads as pigment DARKENING the
     /// paper rather than lighting it.
-    static let cwParchmentHex = "F4EFE3"
+    static var cwParchmentHex: String {
+        #if DEBUG
+        if RenderVariant.palette != "L1" { return RenderVariant.current.cardPaper }   // live-21 (1) render-only
+        #endif
+        return "F4EFE3"
+    }
     static let cwBaseLightness: CGFloat = 0.98
     static let cwPigmentStrength: CGFloat = 1.0
     static let cwTransferMode: BlendMode = .plusDarker

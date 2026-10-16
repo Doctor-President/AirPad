@@ -319,6 +319,17 @@ struct LibrarianSurface: View {
             // + whether a citation footer appears. Expands to full so the transcript
             // is visible.
             // live-20 (3) — `-OpenSeededChat YES`: open the seeded chat at full (the read-in-full offer's still).
+            // live-21 (1) — `-RenderLongAnswer YES`: open a synthetic four-paragraph answer at full (panel renders).
+            if RenderVariant.longAnswer {
+                router.chat.load(RenderVariant.longAnswerChat)
+                print("[Render] reduceTransparency=\(UIAccessibility.isReduceTransparencyEnabled) increaseContrast=\(UIAccessibility.isDarkerSystemColorsEnabled)")
+                // `-RenderAnimateOpen YES` (the clips): hold at peek, then open with the real spring.
+                let animate = UserDefaults.standard.bool(forKey: "RenderAnimateOpen")
+                DispatchQueue.main.asyncAfter(deadline: .now() + (animate ? 2.5 : 1.0)) {
+                    isViewingActiveChat = true
+                    panelModel.expandToFull(animated: animate)
+                }
+            }
             if UserDefaults.standard.bool(forKey: "OpenSeededChat") {
                 DispatchQueue.main.asyncAfter(deadline: .now() + 1.0) {
                     isViewingActiveChat = true
@@ -967,6 +978,9 @@ struct LibrarianSurface: View {
                     }
                 )
                 .frame(maxHeight: .infinity)
+                #if DEBUG
+                .opacity(UserDefaults.standard.bool(forKey: "RenderHideText") ? 0 : 1)   // live-21 (1): backdrop-only still for contrast
+                #endif
                 // Brief AI5 — the app-level "Search the web instead" offer, under the
                 // answer and above the composer (app UI, not model text / not a citation).
                 if let offer = librarian.pendingWebSearchOffer {

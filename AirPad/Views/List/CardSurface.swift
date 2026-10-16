@@ -204,9 +204,16 @@ enum CardSurfaceDefaults {
 /// every build and every install. (This also means a Simulator carrying keys from
 /// an earlier dialing session cannot contaminate a verification run.)
 enum CardSurfaceStore {
+    #if DEBUG
+    // live-21 (1) — render-only variants (`RenderVariant`); identical to the defaults without a -Render* argument.
+    static func read(_ d: CardSurfaceDial) -> Double { RenderVariant.dial(d, baked: CardSurfaceDefaults.value(d)) }
+    static func read(_ h: CardSurfaceHex) -> String { RenderVariant.hex(h, baked: CardSurfaceDefaults.hex(h)) }
+    static func read(_ f: CardSurfaceFlag) -> Bool { RenderVariant.flag(f, baked: CardSurfaceDefaults.flag(f)) }
+    #else
     static func read(_ d: CardSurfaceDial) -> Double { CardSurfaceDefaults.value(d) }
     static func read(_ h: CardSurfaceHex) -> String { CardSurfaceDefaults.hex(h) }
     static func read(_ f: CardSurfaceFlag) -> Bool { CardSurfaceDefaults.flag(f) }
+    #endif
 }
 
 // MARK: - Resolvers (the ONLY readers the live surfaces use)

@@ -193,6 +193,9 @@ struct CanvasChrome: View {
             // excluded — List stays untreated per T. `!isInDetailView` hides it under a pushed detail.
             if filterState.viewMode == .grid && !store.isInDetailView {
                 ChromeEdgeBands()
+                    #if DEBUG
+                    .opacity(RenderVariant.hideChrome ? 0 : 1)
+                    #endif
             }
 
             // Overlays that live above the canvas but behind the fan — these all
@@ -372,6 +375,9 @@ struct CanvasChrome: View {
                 }
 
             }
+            #if DEBUG
+            .opacity(RenderVariant.hideChrome ? 0 : 1)   // live-21 (1) render-only: the layered export has no chrome
+            #endif
 
             // Slide-out menu sits outside any blur scope so it stays sharp.
             CanvasSlideOutMenu(
@@ -390,7 +396,7 @@ struct CanvasChrome: View {
             // the menu, batch bar, banners). Both pieces are zero-cost
             // when the spike is removed; just delete this block + the
             // two #if DEBUG @State props above.
-            solarFlareTuningTrigger
+            if !RenderVariant.active { solarFlareTuningTrigger }   // live-21 (1): no dev icons in the renders
             if showSolarFlareTuningPanel {
                 floatingSolarFlareTuningPanel
             }

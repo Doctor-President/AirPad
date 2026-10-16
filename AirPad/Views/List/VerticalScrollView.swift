@@ -67,7 +67,7 @@ struct VerticalScrollView: View {
                     cardScrollContent(containerHeight: geo.size.height)
 
                     #if DEBUG
-                    cardTuningTrigger
+                    if !RenderVariant.active { cardTuningTrigger }   // live-21 (1): no dev icons in the renders
                     if showCardTuning {
                         floatingCardTuningPanel
                     }

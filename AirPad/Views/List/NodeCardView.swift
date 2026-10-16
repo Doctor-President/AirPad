@@ -184,6 +184,15 @@ struct NodeCardView: View {
     }
 
     var body: some View {
+        #if DEBUG
+        if RenderVariant.hideCards { Color.clear } else { shippedBody }   // live-21 (1) field-only layer pass
+        #else
+        shippedBody
+        #endif
+    }
+
+    @ViewBuilder
+    private var shippedBody: some View {
         if animateEntry {
             cardBody
                 .transition(.scale(scale: 0.85, anchor: .center).combined(with: .opacity))
@@ -246,6 +255,9 @@ struct NodeCardView: View {
                     travelingScrim
                     editorialContent(cardHeight: geo.size.height)
                     sheen
+                    #if DEBUG
+                    if RenderVariant.faceIsGround { Color(hexString: RenderVariant.layerBGHex) }   // live-21 (1) layer pass
+                    #endif
                 }
                 // Pin the face to the GeometryReader's proposal. Without this the
                 // ZStack grows to content whenever editorialContent's intrinsic
@@ -338,6 +350,9 @@ struct NodeCardView: View {
                     editorialContent(cardHeight: geo.size.height, topInsetOverride: 20)
                         .frame(width: textWidth, height: geo.size.height, alignment: .topLeading)
                         .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .trailing)
+                    #if DEBUG
+                    if RenderVariant.faceIsGround { Color(hexString: RenderVariant.layerBGHex) }   // live-21 (1) layer pass
+                    #endif
                 }
                 .frame(width: geo.size.width, height: geo.size.height)
                 .clipShape(RoundedRectangle(cornerRadius: Self.cornerRadius))

@@ -96,7 +96,7 @@ struct CoverFlowView: View {
                 carousel
 
                 #if DEBUG
-                tuningTrigger
+                if !RenderVariant.active { tuningTrigger }   // live-21 (1): no dev icons in the renders
                 if showTuningPanel {
                     floatingTuningPanel
                 }

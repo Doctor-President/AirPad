@@ -664,11 +664,21 @@ struct LibrarianPanelMaterial: View {
     @Environment(\.colorScheme) private var colorScheme
 
     var body: some View {
+        #if DEBUG
+        if let v = RenderVariant.panel, v != "A" {   // live-21 (1) render-only panel variants
+            RenderPanelMaterial(variant: v)
+        } else if colorScheme == .dark {
+            SolarFlareMaterial(isDragging: isDragging, activeAccent: activeAccent)
+        } else {
+            LibrarianLightMaterial()
+        }
+        #else
         if colorScheme == .dark {
             SolarFlareMaterial(isDragging: isDragging, activeAccent: activeAccent)
         } else {
             LibrarianLightMaterial()
         }
+        #endif
     }
 }
 
@@ -683,18 +693,25 @@ struct LibrarianPanelMaterial: View {
 /// warm stroke. The -150 bottom pad + ignoresSafeArea match SolarFlareMaterial so
 /// the morph geometry is identical across modes.
 struct LibrarianLightMaterial: View {
+    #if DEBUG
+    static var tintHex: String { RenderVariant.palette == "L1" ? "F4EFE3" : RenderVariant.current.panelTint }   // live-21 (1)
+    static var strokeHex: String { RenderVariant.palette == "L1" ? "CEBBA2" : RenderVariant.current.panelStroke }
+    #else
+    static let tintHex = "F4EFE3"
+    static let strokeHex = "CEBBA2"
+    #endif
     var body: some View {
         let shape = RoundedRectangle(cornerRadius: 40, style: .continuous)
         ZStack {
             ZStack {
                 shape.fill(.ultraThinMaterial)                         // material: ultraThin
-                shape.fill(Color(hexString: "F4EFE3").opacity(0.35))   // tint: Cream @ 0.350
+                shape.fill(Color(hexString: Self.tintHex).opacity(0.35))   // tint: Cream @ 0.350
             }
             // shadow: Brown @ 0.150, radius 24, offset (3, 2)
             .shadow(color: Color(hexString: "43372A").opacity(0.15), radius: 24, x: 3, y: 2)
 
             // stroke: Warm Tan, width 1.2
-            shape.strokeBorder(Color(hexString: "CEBBA2"), lineWidth: 1.2)
+            shape.strokeBorder(Color(hexString: Self.strokeHex), lineWidth: 1.2)
         }
         .padding(.bottom, -150)
         .ignoresSafeArea(.container, edges: .bottom)

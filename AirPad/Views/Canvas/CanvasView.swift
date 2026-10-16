@@ -58,6 +58,9 @@ struct CanvasView: View {
     /// empty in Release.
     private var mapDebugOptions: SpriteView.DebugOptions {
         #if DEBUG
+        if UserDefaults.standard.object(forKey: "RenderPanel") != nil || UserDefaults.standard.object(forKey: "RenderPalette") != nil {
+            return []   // live-21 (1) render stills: no counters
+        }
         return [.showsFPS, .showsDrawCount, .showsNodeCount]
         #else
         return []

@@ -93,7 +93,13 @@ struct PeekPillBackground<S: InsettableShape>: ViewModifier {
     var visibility: Double = 1
     @Environment(\.colorScheme) private var colorScheme
 
-    private var style: PeekPillStyle { colorScheme == .dark ? .dark : .light }
+    private var style: PeekPillStyle {
+        var s: PeekPillStyle = colorScheme == .dark ? .dark : .light
+        #if DEBUG
+        if let v = RenderVariant.panel, ["C", "D", "E"].contains(v) { s.material = .glass }   // live-21 (1): controls as Liquid Glass
+        #endif
+        return s
+    }
 
     func body(content: Content) -> some View {
         let s = style

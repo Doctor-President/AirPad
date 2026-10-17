@@ -3,7 +3,8 @@ import XCTest
 /// live-24 (4) — on a REAL "+" tap (the canvas chrome's `captureButton`, not the `-RealCapturePlus` harness), does the
 /// Librarian's search pill sit over the "+" Capture bar's Delete / Done? live-23 saw it in the harness only (which
 /// clears `isCapturing` on purpose, a Brief CD device repro). Synthetic showcase entries (the Sample Library opens read-only, with no "+"), isolated scratch library.
-/// Fails if the pill is on screen and hittable over either button, or if Done doesn't close the capture.
+/// Fails if the pill is on screen and hittable over either button, or if Done doesn't close the capture, or (live-25 (2))
+/// if the new card's title shows Markdown `**`.
 final class PlusCaptureOverlap: XCTestCase {
     private func shot(_ app: XCUIApplication, _ name: String) {
         let s = XCTAttachment(screenshot: app.screenshot()); s.name = name; s.lifetime = .keepAlways; add(s)
@@ -61,5 +62,11 @@ final class PlusCaptureOverlap: XCTestCase {
         done.tap()
         XCTAssertTrue(editor.waitForNonExistence(timeout: 8), "Done should close the \"+\" capture — \(report)")
         shot(app, "plus-capture-after-done")
+        // live-25 (2) — the "+" Capture stores its typed first line as `**…**`; the new card's derived title must not
+        // show the stars (main 28d7974 did).
+        let stars = app.staticTexts.containing(NSPredicate(format: "label CONTAINS '**'")).firstMatch
+        XCTAssertTrue(app.staticTexts.containing(NSPredicate(format: "label CONTAINS 'harbour office'")).firstMatch
+            .waitForExistence(timeout: 8), "the new card shows the note's words")
+        XCTAssertFalse(stars.exists, "no `**` in the new card's title — saw \(stars.exists ? stars.label : "")")
     }
 }

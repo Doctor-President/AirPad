@@ -2456,7 +2456,7 @@ final class CorpusPhysicsScene: SKScene {
         shape.userData?["neighborhoodID"] = neighborhoodCache?.neighborhoodID(forNodeID: node.id)
         shape.userData?["radius"] = radius
 
-        let displayText = node.title.isEmpty ? (node.items.first?.content ?? "") : node.title
+        let displayText = node.title.isEmpty ? (node.untitledDisplayText ?? "") : node.title
         let labelSprite = makeTitleSprite(text: displayText, radius: radius, fillColor: bubbleColor(for: node))
         shape.addChild(labelSprite)
 
@@ -2536,7 +2536,7 @@ final class CorpusPhysicsScene: SKScene {
         // edited title re-wraps in glyph-space.
         if let titleNode = shape.children.first(where: { $0.name == "titleLabel" }),
            let oldTitle = titleNode.userData?["fullTitle"] as? String {
-            let displayText = node.title.isEmpty ? (node.items.first?.content ?? "") : node.title
+            let displayText = node.title.isEmpty ? (node.untitledDisplayText ?? "") : node.title
             if oldTitle != displayText {
                 titleNode.removeFromParent()
                 let radius = nodeIntrinsicRadii[node.id] ?? bubbleRadius(for: node)
@@ -3992,7 +3992,7 @@ final class CorpusPhysicsScene: SKScene {
             guard let shape = nodeSprites[node.id],
                   let titleNode = shape.children.first(where: { $0.name == "titleLabel" }),
                   MSDFLabel.isGlyphContainer(titleNode) else { continue }
-            let displayText = node.title.isEmpty ? (node.items.first?.content ?? "") : node.title
+            let displayText = node.title.isEmpty ? (node.untitledDisplayText ?? "") : node.title
             titleNode.removeFromParent()
             let radius = nodeIntrinsicRadii[node.id] ?? bubbleRadius(for: node)
             shape.addChild(makeTitleSprite(text: displayText, radius: radius,

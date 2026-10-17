@@ -65,6 +65,7 @@
 		24F92F9144D4A8D7F4000BC2 /* CardShowcaseGallery.swift in Sources */ = {isa = PBXBuildFile; fileRef = 2E3B055A71B3FC37FD3282CA /* CardShowcaseGallery.swift */; };
 		26E14B3E298318D333114703 /* TodayCardView.swift in Sources */ = {isa = PBXBuildFile; fileRef = 9AA8521DD3D6E9D3A98EF6EB /* TodayCardView.swift */; };
 		2733262BA259E300B3613CF3 /* Tag.swift in Sources */ = {isa = PBXBuildFile; fileRef = 39E6876F450FCAC6F6B1A9CF /* Tag.swift */; };
+		275BD5B726DBB39C6BA60352 /* MarkdownPlain.swift in Sources */ = {isa = PBXBuildFile; fileRef = 33042BED1052082E19821C5B /* MarkdownPlain.swift */; };
 		2813856C0295021A410E3FE1 /* ModelRouter.swift in Sources */ = {isa = PBXBuildFile; fileRef = FCC9C2D2D1F417F790A23C5F /* ModelRouter.swift */; };
 		299AECA5A73FE92E7FB0378B /* ImageEntryBody.swift in Sources */ = {isa = PBXBuildFile; fileRef = 1051A2630769178DF195B38B /* ImageEntryBody.swift */; };
 		2B4E58DDB1092B8D07102CC3 /* RelatednessService.swift in Sources */ = {isa = PBXBuildFile; fileRef = 988F66299DD79745A824B3A0 /* RelatednessService.swift */; };
@@ -111,6 +112,7 @@
 		4A9066CFF7C8F4CF3B9EE689 /* VoiceEntryBody.swift in Sources */ = {isa = PBXBuildFile; fileRef = EB1C4F8AC8EFA42414AB9073 /* VoiceEntryBody.swift */; };
 		4AA3817844E35B02AC0C24F1 /* CardEmbeddingService.swift in Sources */ = {isa = PBXBuildFile; fileRef = FA68215D2065B3D02251352C /* CardEmbeddingService.swift */; };
 		4AE2D248C48ADBF459F1048D /* BlobFieldView.swift in Sources */ = {isa = PBXBuildFile; fileRef = B29B3F0F3BBB31D0715043DC /* BlobFieldView.swift */; };
+		4B2E282A8A74937A179298DA /* MarkdownPlain.swift in Sources */ = {isa = PBXBuildFile; fileRef = 33042BED1052082E19821C5B /* MarkdownPlain.swift */; };
 		4B9B295B512914F6DF2CEE86 /* DocumentGalleryTile.swift in Sources */ = {isa = PBXBuildFile; fileRef = 495540C7C08695DEA4B137D3 /* DocumentGalleryTile.swift */; };
 		4B9C908546B44C7D1416ADAB /* AlphabetScrubber.swift in Sources */ = {isa = PBXBuildFile; fileRef = A78147F82EB55E186C5934A2 /* AlphabetScrubber.swift */; };
 		4D418B5B931D8B8170E67A3A /* Lato-Regular.ttf in Resources */ = {isa = PBXBuildFile; fileRef = 26DA962A10457FCFA38D1141 /* Lato-Regular.ttf */; };
@@ -494,6 +496,7 @@
 		31D68FA628B933D53B524B98 /* WidgetKit.framework */ = {isa = PBXFileReference; lastKnownFileType = wrapper.framework; name = WidgetKit.framework; path = System/Library/Frameworks/WidgetKit.framework; sourceTree = SDKROOT; };
 		321F93F7630A107A8A1266EF /* CardDocumentTile.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = CardDocumentTile.swift; sourceTree = "<group>"; };
 		328B8A79A32590B1D037ABEA /* BackgroundModelDownloader.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = BackgroundModelDownloader.swift; sourceTree = "<group>"; };
+		33042BED1052082E19821C5B /* MarkdownPlain.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = MarkdownPlain.swift; sourceTree = "<group>"; };
 		331D29B33502CD4329D9797D /* RelatedTapRepro.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = RelatedTapRepro.swift; sourceTree = "<group>"; };
 		33412943BFC78174C4CB7437 /* ChatView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ChatView.swift; sourceTree = "<group>"; };
 		3366166820015E0F584466E9 /* OGMetadataService.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = OGMetadataService.swift; sourceTree = "<group>"; };
@@ -1213,6 +1216,7 @@
 				8587B8FB965733F87A837170 /* FieldValue.swift */,
 				E650D0049F1C1E20D3E562B1 /* FieldValueFormatter.swift */,
 				3555E8AE351646CB6D4A2886 /* FieldValueSelfTest.swift */,
+				33042BED1052082E19821C5B /* MarkdownPlain.swift */,
 				AE402981E931009EBB3F93EE /* Neighborhood.swift */,
 				1866B7173FCC4A9B1AE81AF1 /* Node.swift */,
 				376265F2CCAF46EDE2216E54 /* NodeBlock.swift */,
@@ -1885,6 +1889,7 @@
 				BB9BDB30E58DC2856238105B /* MSDFLabel.swift in Sources */,
 				D231EBAD8B8B3B58C951FEDE /* MarkdownBlock.swift in Sources */,
 				0D0F9BF7BDE19BC6BF4E9A29 /* MarkdownBlockParserSelfTest.swift in Sources */,
+				4B2E282A8A74937A179298DA /* MarkdownPlain.swift in Sources */,
 				B9CDAD910A082B35B8407337 /* MediaEntryChrome.swift in Sources */,
 				588C140B790E7DD63A55BCC1 /* MediaPickerWrapper.swift in Sources */,
 				2066C6BE5B2E00550E919724 /* MediaThumbnailLoader.swift in Sources */,
@@ -2014,6 +2019,7 @@
 				D2F3CB50F971A325ED172AD3 /* FieldValue.swift in Sources */,
 				E015CC503DCD0442457638C9 /* FieldValueFormatter.swift in Sources */,
 				B41BE6EEABE45AC1655AD699 /* GhostFieldOverlay.swift in Sources */,
+				275BD5B726DBB39C6BA60352 /* MarkdownPlain.swift in Sources */,
 				1AB937D63FE8F452D767344B /* Neighborhood.swift in Sources */,
 				0498E0EE7559CBC6D217A2AA /* Node.swift in Sources */,
 				07C8518A53FA5439187CAE4B /* NodeBlock.swift in Sources */,

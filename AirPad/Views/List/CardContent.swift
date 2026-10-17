@@ -154,7 +154,7 @@ struct CardContentSummary: Equatable {
                 if rows.count >= 2 {
                     offer(100 + rows.count, .list(rows: Array(rows.prefix(3)), more: max(rows.count - 3, 0)))
                 } else if let first = paragraphs(content).first {
-                    offer(min(content.count / 8, 70), .text(first))
+                    offer(min(content.count / 8, 70), .text(MarkdownPlain.text(first)))   // live-25 (2): plain
                 }
             case .audio:
                 let line = item.transcript.flatMap { t in
@@ -186,13 +186,13 @@ struct CardContentSummary: Equatable {
         s.split(whereSeparator: \.isNewline).compactMap { raw in
             let line = raw.trimmingCharacters(in: .whitespaces)
             for (prefix, checked) in [("- [ ] ", false), ("- [x] ", true), ("- [X] ", true)] where line.hasPrefix(prefix) {
-                return ListRow(marker: .check(checked), text: String(line.dropFirst(prefix.count)))
+                return ListRow(marker: .check(checked), text: MarkdownPlain.inline(String(line.dropFirst(prefix.count))))
             }
             if line.hasPrefix("- ") || line.hasPrefix("* ") || line.hasPrefix("• ") {
-                return ListRow(marker: .bullet, text: String(line.dropFirst(2)))
+                return ListRow(marker: .bullet, text: MarkdownPlain.inline(String(line.dropFirst(2))))
             }
             if let dot = line.firstIndex(of: "."), let n = Int(line[..<dot]), line[line.index(after: dot)...].hasPrefix(" ") {
-                return ListRow(marker: .number(n), text: String(line[line.index(dot, offsetBy: 2)...]))
+                return ListRow(marker: .number(n), text: MarkdownPlain.inline(String(line[line.index(dot, offsetBy: 2)...])))
             }
             return nil
         }
@@ -390,6 +390,29 @@ extension CardContentSummary {
         row("attributes-are-not-in-the-strip", make(node([NodeItem(id: "r", type: .rating, createdAt: t, rating: Rating(value: 3))]),
                                                      hasHero: false).strip.isEmpty)
         row("empty-entry-has-no-strip-no-preview", make(node([]), hasHero: false) == CardContentSummary(strip: [], preview: nil))
+        // live-25 (2) — Markdown syntax never shows in a derived title / preview (the "+" Capture stores its typed first
+        // line as `**…**`; the card showed the stars). Display and derivation only: the stored text is untouched.
+        var untitled = node([text("**Ask the harbour office about the mooring.**")]); untitled.title = ""
+        row("untitled-card-title-drops-bold", untitled.untitledDisplayText == "Ask the harbour office about the mooring.",
+            untitled.untitledDisplayText ?? "nil")
+        row("stored-text-is-unchanged", untitled.items.first?.content == "**Ask the harbour office about the mooring.**")
+        let md: [(String, String)] = [
+            ("**Feb 2** — cut the water", "Feb 2 — cut the water"), ("__bold__ and *it* and _it_", "bold and it and it"),
+            ("***both***", "both"), ("`code` here", "code here"), ("# Heading", "Heading"), ("> quoted", "quoted"),
+            ("- [ ] Body — **$400–700** used", "Body — $400–700 used"), ("- item", "item"), ("1. first", "first"),
+            ("see [the tide table](https://example.com/t) now", "see the tide table now"), ("![a heron](f.jpg)", "a heron"),
+            (#"\*not emphasis\*"#, "*not emphasis*"), ("snake_case_name stays", "snake_case_name stays"),
+            ("5 * 3 * 2", "5 * 3 * 2"), ("**cut mid-span", "cut mid-span"), ("a plain sentence.", "a plain sentence."),
+        ]
+        let mdFails = md.filter { MarkdownPlain.text($0.0) != $0.1 }.map { "\($0.0) → \(MarkdownPlain.text($0.0))" }
+        row("markdown-syntax-drops-link-text-stays (\(md.count) cases)", mdFails.isEmpty, mdFails.joined(separator: " | "))
+        row("done-fragment-title-is-plain (B1)", MarkdownPlain.fragmentTitle("**Ask the harbour office about the mooring.**")
+            == "Ask the harbour office about the mooring", MarkdownPlain.fragmentTitle("**Ask the harbour office about the mooring.**"))
+        let prose = make(node([text("**Feb 2** — cut the water by half a cup and put the lemon in at the end")]), hasHero: true)
+        row("proposal-prose-preview-is-plain", prose.preview == .text("Feb 2 — cut the water by half a cup and put the lemon in at the end"),
+            "\(String(describing: prose.preview))")
+        let rowsMd = listRows("- [ ] Body — **$400–700** used\n- [ ] Lens — **$150+**")
+        row("proposal-list-rows-are-plain", rowsMd.map(\.text) == ["Body — $400–700 used", "Lens — $150+"], "\(rowsMd.map(\.text))")
         row("app-store-and-plain-debug-render-today",
             UserDefaults.standard.string(forKey: "CardContent") == "proposal" || UserDefaults.standard.bool(forKey: "AppearanceTuner")
             || !CardContentPresentation.isProposal)

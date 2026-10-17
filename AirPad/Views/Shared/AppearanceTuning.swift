@@ -317,6 +317,13 @@ final class AppearanceTuner {
             state = .defaults
             UserDefaults.standard.removeObject(forKey: AppearanceTuning.openSectionKey)
         }
+        // live-25 (3) — `-AppearanceTunerImportFile <name>`: a Copy values paste (in the app's Documents) loaded for stills.
+        if let name = UserDefaults.standard.string(forKey: "AppearanceTunerImportFile"),
+           let dir = FileManager.default.urls(for: .documentDirectory, in: .userDomainMask).first,
+           let json = try? String(contentsOf: dir.appendingPathComponent(name), encoding: .utf8),
+           let imported = AppearanceTuning.importExport(json) {
+            state = imported
+        }
         // live-24 (5) stills — `-AppearanceTuner YES -AppearanceTunerReset YES -GlassPresetRender siriPill|gradedPanel|both`.
         if let raw = UserDefaults.standard.string(forKey: "GlassPresetRender") {
             if let p = LibrarianGlassPreset(rawValue: raw) {
@@ -532,6 +539,46 @@ extension AppearanceTuning {
     }
 }
 
+// MARK: - Import (assessment only)
+
+extension AppearanceTuning {
+    /// live-25 (3) — a Copy values paste → the stored state, decoded by the REAL decoder, so live-24's shared pill keys
+    /// (`pillVariant` / `pillGrade` / `pillRim`) take the tuner brief's migration into Peek, Search and Ask. Keys the
+    /// paste lacks keep the appearance's TestFlight default. For assessing T's values on a build (DEBUG
+    /// `-AppearanceTunerImportFile`); it never becomes a default and never touches Reset. Pure.
+    static func importExport(_ json: String) -> AppearanceTuningState? {
+        guard let top = (try? JSONSerialization.jsonObject(with: Data(json.utf8))) as? [String: Any] else { return nil }
+        func block(_ b: [String: Any]?, dark: Bool) -> [String: Any]? {
+            guard let b, let base = try? JSONSerialization.jsonObject(with: JSONEncoder().encode(
+                dark ? AppearanceTuningValues.darkDefault : .lightDefault)) as? [String: Any] else { return nil }
+            var o = base
+            // A live-24 paste carries the shared pill keys: let the decoder migrate them (drop the defaults' new keys).
+            if b["peekPill"] == nil && (b["pillGrade"] != nil || b["pillVariant"] != nil || b["pillRim"] != nil) {
+                for k in ["peekPill", "searchPill", "askPill", "askMatchesSearch"] { o.removeValue(forKey: k) }
+            }
+            let renamed = ["shadow": "shadowStrength", "tint": "tintOpacity"]
+            for k in ["palette", "fieldStep", "shadow", "shadowRadius", "hairline", "hairlineWidth", "hairlineOpacity", "panel",
+                      "tint", "blur", "saturation", "glassControls", "fadeLength", "fadeCurve", "panelMode", "panelGrade",
+                      "pillGrade", "pillVariant", "pillRim", "peekPill", "searchPill", "askPill", "askMatchesSearch"] {
+                if let v = b[k] { o[renamed[k] ?? k] = v }
+            }
+            if let dim = b["dim"] as? Double { o["dimBehind"] = dim > 0; if dim > 0 { o["dimAmount"] = dim } }
+            var glass = o["glass"] as? [String: Any] ?? [:]
+            for (from, to) in [("glassVariant", "variant"), ("glassTint", "tint"), ("glassTintStrength", "tintStrength"), ("veil", "veil")] {
+                if let v = b[from] { glass[to] = v }
+            }
+            o["glass"] = glass
+            return o
+        }
+        guard let l = block(top["light"] as? [String: Any], dark: false), let d = block(top["dark"] as? [String: Any], dark: true)
+        else { return nil }
+        var st: [String: Any] = ["light": l, "dark": d]
+        for k in ["cardContent", "captureControls"] { if let v = top[k] { st[k] = v } }
+        guard let data = try? JSONSerialization.data(withJSONObject: st) else { return nil }
+        return try? JSONDecoder().decode(AppearanceTuningState.self, from: data)
+    }
+}
+
 // MARK: - Self-test
 
 extension AppearanceTuning {
@@ -710,6 +757,43 @@ extension AppearanceTuning {
             && sp.peekPill == spP && sp.askPill == spP && sp.glassLook.ask == spP && sp.glassLook.peek == spP
             && sp.panelMode == L.panelMode && !sp.panelGrade.on, "\(spP)")
         row("siri-pill-text-turns-light", LibrarianGlassLook.pillScheme(spP.grade) == .dark)
+        // live-25 (1) — the glyphs beside the pill text flip with it. The Ask bar's × (ink at 40%) on a grade is then no
+        // worse than on the plain pill of the same appearance (light #FBF9F5 / dark #141414 page under the pill). The
+        // 40% × itself is ~2.4:1 on the plain light pill — under 3:1 before any grade (reported, not changed here).
+        func rgb(_ h: String) -> [Double] {
+            var v: UInt64 = 0; Scanner(string: h).scanHexInt64(&v)
+            return [Double((v >> 16) & 0xFF), Double((v >> 8) & 0xFF), Double(v & 0xFF)].map { $0 / 255 }
+        }
+        func lum(_ c: [Double]) -> Double {
+            let l = c.map { $0 <= 0.04045 ? $0 / 12.92 : pow(($0 + 0.055) / 1.055, 2.4) }
+            return 0.2126 * l[0] + 0.7152 * l[1] + 0.0722 * l[2]
+        }
+        func mix(_ a: [Double], _ b: [Double], _ t: Double) -> [Double] { zip(a, b).map { $0 + ($1 - $0) * t } }
+        func ratio(_ a: [Double], _ b: [Double]) -> Double { let x = lum(a), y = lum(b); return (max(x, y) + 0.05) / (min(x, y) + 0.05) }
+        func clearGlyph(_ g: GradedTint, _ appearance: ColorScheme) -> Double {
+            let ink = rgb(LibrarianPillChrome.inkHex(LibrarianPillChrome.controlsScheme(g, appearance: appearance, glassControls: true)))
+            let page = rgb(LibrarianGlassAccessibility.solidHex(dark: appearance == .dark))
+            let back = g.on ? mix(page, rgb(g.color.hex), g.alpha(at: 0.5)) : page
+            return ratio(mix(back, ink, 0.4), back)
+        }
+        // The grades T chooses between: the Siri-style pill, and T's 2026-10-17 pills (light: off-white 0.71 → 0.15 from
+        // 0.5; dark: near-black 1 → 0.25 from 0.27).
+        let t17L = GradedTint(on: true, top: 0.71, bottom: 0.15, start: 0.5, softness: 1, direction: .vertical, color: .offWhite)
+        let t17D = GradedTint(on: true, top: 1, bottom: 0.25, start: 0.27, softness: 1, direction: .vertical, color: .nearBlack)
+        var flipOK = true
+        for g in [spP.grade, t17L, t17D, GradedTint.off] {
+            for appearance in [ColorScheme.light, .dark] where LibrarianPillChrome.controlsScheme(g, appearance: appearance, glassControls: true)
+                != LibrarianPillChrome.textScheme(g, appearance: appearance, glassControls: true) { flipOK = false }
+        }
+        var glyphRows: [String] = [], glyphOK = true
+        for (name, g, appearance) in [("siri", spP.grade, ColorScheme.light), ("siri", spP.grade, .dark), ("t1017", t17L, .light),
+                                      ("t1017", t17D, .dark)] {
+            let r = clearGlyph(g, appearance), plain = clearGlyph(.off, appearance)
+            if r < plain - 0.05 { glyphOK = false }
+            glyphRows.append("\(name)/\(appearance == .dark ? "dark" : "light")=\(String(format: "%.2f", r)) (plain \(String(format: "%.2f", plain)))")
+        }
+        row("pill-glyphs-flip-with-the-text (× send mic stop)", flipOK)
+        row("ask-clear-glyph-no-worse-on-a-grade-than-on-the-plain-pill", glyphOK, glyphRows.joined(separator: " "))
         // live-24 (3) — light text needs the grade dense through the WHOLE text line (a one-line pill's text spans
         // ~0.25–0.75 of its height, descenders included): ≥ 0.6 near-black keeps white text AA over a white backdrop.
         let band = stride(from: 0.2, through: 0.75, by: 0.05).map { spP.grade.alpha(at: $0) }
@@ -800,6 +884,31 @@ extension AppearanceTuning {
         let none = LibrarianGlassAccessibility.resolve(reduceTransparency: false, increaseContrast: false)
         row("reduce-transparency-is-solid-increase-contrast-firms-the-veil", rt.solid && !ic.solid && !none.solid
             && ic.veilFloor >= 0.85 && none.veilFloor == 0 && ic.strokeOpacity > none.strokeOpacity)
+
+        // live-25 (3) — T's 2026-10-17 paste (TF 202610170354, Ops reference/appearance-tuning-2026-10-17.md), loaded
+        // through the migration: one pill look into Peek, Search and Ask; dark's rim (off, "shimmer") → no shimmer.
+        // Assessment only: it is not the default.
+        let t17 = ##"{"airpadAppearance":1,"build":"202610170354","editing":"light","cardContent":"proposal","captureControls":"glass","light":{"palette":"L2","field":"F2","fieldStep":1,"fieldHex":"#F4F2ED","shadow":0.5,"shadowAlpha":0.131,"shadowRadius":24,"hairline":true,"hairlineWidth":0.5,"hairlineOpacity":0.25,"panel":"custom","tint":0.56,"blur":2,"saturation":0.4,"glassControls":true,"dim":0.105,"fadeLength":0.6,"fadeCurve":1,"panelMode":"glass","glassVariant":"regular","glassTint":"offWhite","glassTintHex":"#FBF9F5","glassTintStrength":0.61,"veil":0.08,"panelGrade":{"on":false,"top":0.1,"bottom":0.75,"start":0.04,"softness":0.4,"direction":"vertical","color":"offWhite","hex":"#FBF9F5"},"pillGrade":{"on":true,"top":0.71,"bottom":0.15,"start":0.5,"softness":1,"direction":"vertical","color":"offWhite","hex":"#FBF9F5"},"pillVariant":"clear","pillRim":{"on":true,"width":1,"brightness":0.8,"color":"white","hex":"#FFFFFF","animation":"off"}},"dark":{"field":"F+0.50","fieldStep":0.5,"fieldHex":"#1A1A1A","shadow":1,"shadowAlpha":0.742,"shadowRadius":12,"hairline":true,"hairlineWidth":1,"hairlineOpacity":0.12,"panel":"custom","tint":0.77,"blur":1.01,"saturation":0.05,"glassControls":true,"dim":0.2,"fadeLength":0.35,"fadeCurve":0.15,"panelMode":"glass","glassVariant":"regular","glassTint":"nearBlack","glassTintHex":"#0A0A0A","glassTintStrength":0.2,"veil":0.79,"panelGrade":{"on":true,"top":0.73,"bottom":0.32,"start":0.04,"softness":0.22,"direction":"vertical","color":"nearBlack","hex":"#0A0A0A"},"pillGrade":{"on":true,"top":1,"bottom":0.25,"start":0.27,"softness":1,"direction":"vertical","color":"nearBlack","hex":"#0A0A0A"},"pillVariant":"clear","pillRim":{"on":false,"width":0.5,"brightness":0.11,"color":"white","hex":"#FFFFFF","animation":"shimmer"}}}"##
+        if let imp = importExport(t17) {
+            let L17 = imp.light, D17 = imp.dark
+            let wantL17 = PillLook(variant: .clear, grade: GradedTint(on: true, top: 0.71, bottom: 0.15, start: 0.5, softness: 1,
+                                                                     direction: .vertical, color: .offWhite),
+                                   rim: PillRim(rest: .static, width: 1, brightness: 0.8, color: .white, active: .none, activeBrightness: 1))
+            row("t1017-paste-loads-into-peek-search-ask-alike", L17.peekPill == wantL17 && L17.searchPill == wantL17 && L17.askPill == wantL17
+                && L17.askMatchesSearch && D17.peekPill == D17.searchPill && D17.searchPill == D17.askPill
+                && D17.searchPill.grade == GradedTint(on: true, top: 1, bottom: 0.25, start: 0.27, softness: 1, direction: .vertical, color: .nearBlack),
+                "light peek=\(L17.peekPill)")
+            row("t1017-dark-rim-off-with-shimmer-is-no-shimmer", D17.searchPill.rim.rest == .off && D17.searchPill.rim.active == .none
+                && !D17.searchPill.rim.isUsed, "\(D17.searchPill.rim)")
+            row("t1017-paste-keeps-its-other-values", L17.panelMode == .glass && L17.glass == PanelGlass(variant: .regular, tint: .offWhite,
+                tintStrength: 0.61, veil: 0.08) && close(L17.tintOpacity, 0.56) && close(L17.blur, 2) && close(L17.saturation, 0.4)
+                && close(L17.dimAmount, 0.105) && D17.panelGrade.on && close(D17.glass.veil, 0.79) && close(D17.fadeCurve, 0.15)
+                && D17.hairline && imp.cardContent == .proposal && imp.captureControls == .glass)
+            row("t1017-paste-is-not-baked", imp != .defaults && AppearanceTuningState.defaults.light.glassLook.panelGlass == nil
+                && LibrarianGlassLook.shipped.search == .off)
+        } else {
+            row("t1017-paste-loads-into-peek-search-ask-alike", false, "the paste didn't import")
+        }
 
         // Export — at the defaults, Copy values reads back T's reference JSON verbatim (with this build's number).
         let json = exportJSON(.defaults, editing: "light", build: "202610161756")

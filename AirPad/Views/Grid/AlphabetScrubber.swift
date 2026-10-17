@@ -357,7 +357,7 @@ extension AlphabetScrubber {
         let title: String
         if !node.title.isEmpty {
             title = node.title
-        } else if let first = node.items.first?.content, !first.isEmpty {
+        } else if let first = node.untitledDisplayText {
             title = first
         } else {
             title = "Untitled"

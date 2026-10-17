@@ -1734,8 +1734,13 @@ struct LibrarianSurface: View {
     private var glassLook: LibrarianGlassLook { LibrarianGlassLook.current(dark: colorScheme == .dark) }
     /// Text on a pill with a dense graded tint takes the tint's side (light text on near-black); else as is.
     private func pillTextScheme(_ grade: GradedTint) -> ColorScheme {
-        LibrarianSurfaceSpec.glassControls(dark: colorScheme == .dark)
-            ? (LibrarianGlassLook.pillScheme(grade) ?? colorScheme) : colorScheme
+        LibrarianPillChrome.textScheme(grade, appearance: colorScheme,
+                                       glassControls: LibrarianSurfaceSpec.glassControls(dark: colorScheme == .dark))
+    }
+    /// live-25 (1) — the glyphs beside the text (× / send / mic / stop) flip with it.
+    private func pillControlsScheme(_ grade: GradedTint) -> ColorScheme {
+        LibrarianPillChrome.controlsScheme(grade, appearance: colorScheme,
+                                           glassControls: LibrarianSurfaceSpec.glassControls(dark: colorScheme == .dark))
     }
 
     /// The Ask field's fill — real Liquid Glass with glass controls (live-23 (1): T's tuning, both modes).
@@ -1892,6 +1897,11 @@ struct LibrarianSurface: View {
             .frame(height: askLineHeight)
             .padding(.trailing, 10)
             .padding(.bottom, askTextVPad)
+            // live-25 (1) — the × / send / mic / stop take the same light/dark side as the Ask text.
+            .environment(\.colorScheme, pillControlsScheme(glassLook.ask.grade))
+            #if DEBUG
+            .opacity(UserDefaults.standard.bool(forKey: "RenderHideText") ? 0 : 1)   // backdrop-only still (contrast)
+            #endif
         }
         // Whole-capsule tap target — single-tap focuses Ask from
         // anywhere on the pill (icons, the padded gap to the right of

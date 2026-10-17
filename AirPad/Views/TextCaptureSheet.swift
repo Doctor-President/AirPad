@@ -90,7 +90,7 @@ struct TextCaptureSheet: View {
             return
         }
 
-        let title = String(trimmed.prefix(40))
+        let title = MarkdownPlain.fragmentTitle(trimmed)   // live-25 (2): plain, never `**`
         let now = Date()
         let stamp = NodeCollection.captureStamp(forCollectionID: targetCollectionID)
         let node = Node(

@@ -578,7 +578,7 @@ final class CorpusStore {
     /// "Untitled" so the alphabetical bucket has a stable last group.
     private static func sortTitle(for node: Node) -> String {
         if !node.title.isEmpty { return node.title }
-        if let firstText = node.items.first?.content, !firstText.isEmpty { return firstText }
+        if let firstText = node.untitledDisplayText { return firstText }   // live-25 (2): plain, never `**`
         return "Untitled"
     }
 
@@ -8505,7 +8505,7 @@ final class CorpusStore {
                     }.first(where: { !$0.isEmpty })
                     let mayFillBlank = n.title.isEmpty && posture == .automatic
                     if let fallback, mayFillBlank || n.title == "Photo" || n.title == "Voice note" {
-                        n.title = String(fallback.prefix(40))
+                        n.title = MarkdownPlain.fragmentTitle(fallback)   // live-25 (2): plain, never `**`
                     }
                     n.needsAIProcessing = false
                 }

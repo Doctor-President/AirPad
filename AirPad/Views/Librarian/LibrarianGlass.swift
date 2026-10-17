@@ -265,6 +265,22 @@ struct LibrarianGlassLook: Equatable {
     static func searchShare(peekVisibility: Double) -> Double { min(max(1 - peekVisibility, 0), 1) }
 }
 
+/// live-25 (1) — which light/dark side the text and the glyphs on a pill resolve to. On a dense graded tint the text
+/// flips (light text on near-black); the glyphs beside it (the Ask bar's × / send / mic / stop, the search pill's
+/// magnifier, × and mic) must flip WITH it, or a light-mode × in dark ink sits on near-black, nearly invisible.
+enum LibrarianPillChrome {
+    /// The pill text's scheme.
+    static func textScheme(_ grade: GradedTint, appearance: ColorScheme, glassControls: Bool) -> ColorScheme {
+        glassControls ? (LibrarianGlassLook.pillScheme(grade) ?? appearance) : appearance
+    }
+    /// The glyphs' scheme (the Ask bar's send-controls overlay sits outside the text row, so it's set on its own).
+    static func controlsScheme(_ grade: GradedTint, appearance: ColorScheme, glassControls: Bool) -> ColorScheme {
+        textScheme(grade, appearance: appearance, glassControls: glassControls)
+    }
+    /// `AppearancePalette.ink` on each side (the × is this ink at 40%).
+    static func inkHex(_ scheme: ColorScheme) -> String { scheme == .dark ? "FFFFFF" : "232A2E" }
+}
+
 /// Reduce Transparency / Increase Contrast, resolved once (pure, for the self-test).
 struct LibrarianGlassAccessibility: Equatable {
     var solid: Bool            // Reduce Transparency: an opaque panel + pills instead of glass

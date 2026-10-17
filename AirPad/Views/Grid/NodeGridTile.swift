@@ -586,7 +586,7 @@ struct NodeGridTile: View {
 
     private var displayTitle: String {
         if !node.title.isEmpty { return node.title }
-        if let firstText = node.items.first?.content, !firstText.isEmpty { return firstText }
+        if let firstText = node.untitledDisplayText { return firstText }   // live-25 (2): plain, never `**`
         return "Untitled"
     }
 }

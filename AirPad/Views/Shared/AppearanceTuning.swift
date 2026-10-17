@@ -27,6 +27,14 @@ enum AppearanceTuning {
 
 // MARK: - Values
 
+extension PillLook {
+    /// The 2026-10-17 brief: T's light pills on TF 202610170354 — a white rim at rest, 1 pt at 80%, on all three
+    /// (dark: no rim). TestFlight defaults only; what ships stays `PillLook.off`.
+    static let tunedLight1017 = PillLook(variant: .regular, grade: .off,
+                                         rim: PillRim(rest: .static, width: 1, brightness: 0.8, color: .white, active: .none,
+                                                      activeBrightness: 1))
+}
+
 /// The Librarian surface presets (live-22 directive (2)).
 enum LibrarianPanelPreset: String, Codable, CaseIterable, Identifiable {
     case today, frost35, frost50, frost65, frost50Glass, liquidGlass, custom
@@ -93,9 +101,11 @@ struct AppearanceTuningValues: Codable, Equatable {
     var panelMode: LibrarianPanelMode = .frost
     var glass: PanelGlass = .lightDefault
     var panelGrade: GradedTint = .off
-    var pillGrade: GradedTint = .off
-    var pillVariant: GlassVariant = .regular
-    var pillRim: PillRim = .off
+    // The three pills, each its own look (2026-10-17 brief). Peek + Search are one morphing view; Ask can mirror Search.
+    var peekPill: PillLook = .off
+    var searchPill: PillLook = .off
+    var askPill: PillLook = .off
+    var askMatchesSearch: Bool = true
 
     var heroFade: CardHeroFade.Shape {
         CardHeroFade.Shape(length: fadeLength, curve: fadeCurve, overshoot: CardHeroFade.baked.overshoot)
@@ -108,7 +118,8 @@ struct AppearanceTuningValues: Codable, Equatable {
         palette: "L2", fieldStep: 1, shadowStrength: 0.5, shadowRadius: 24,
         hairline: true, hairlineWidth: 0.5, hairlineOpacity: 0.25,
         panel: .custom, tintOpacity: 0.85, blur: 1.74, saturation: 1, glassControls: true,
-        dimBehind: true, dimAmount: 0.10)
+        dimBehind: true, dimAmount: 0.10,
+        peekPill: .tunedLight1017, searchPill: .tunedLight1017, askPill: .tunedLight1017)
 
     /// ★ live-23 (1) — dark: the field half a step lighter (#1A1A1A), the shadow and top rim as before; the Librarian a
     /// real frost (tint 0.56, blur 2, colour at 40%) with glass controls, the content behind dimmed 20%.
@@ -126,8 +137,20 @@ struct AppearanceTuningValues: Codable, Equatable {
 
     /// live-24 — the glass + graded-tint look these values render.
     var glassLook: LibrarianGlassLook {
-        LibrarianGlassLook(panelGlass: panelMode == .glass ? glass : nil, panelGrade: panelGrade, pillGrade: pillGrade,
-                           pillVariant: pillVariant, rim: pillRim)
+        LibrarianGlassLook(panelGlass: panelMode == .glass ? glass : nil, panelGrade: panelGrade, peek: peekPill,
+                           search: searchPill, ask: askLook)
+    }
+    /// The Ask bar's look as it renders: Search's while "Match Search" is on.
+    var askLook: PillLook { askMatchesSearch ? searchPill : askPill }
+
+    /// "Match Search" off copies Search's look into Ask, which then diverges; on mirrors Search again.
+    mutating func setAskMatchesSearch(_ on: Bool) {
+        if !on && askMatchesSearch { askPill = searchPill }
+        askMatchesSearch = on
+    }
+    /// Every pill at once (the presets, "All off").
+    mutating func editPills(_ change: (inout PillLook) -> Void) {
+        change(&peekPill); change(&searchPill); change(&askPill)
     }
 
     /// A frost slider: the panel becomes a custom frost.
@@ -147,11 +170,14 @@ struct AppearanceTuningValues: Codable, Equatable {
             // T's reference: a near-black grade dense across the top and centre where the text sits, thinning to the
             // bottom edge; a thin white rim; a clearer glass beneath. The fade starts BELOW the text line (0.75): light
             // text on a grade that thins inside the line fails AA over a light page (live-24 (3): worst 2.85).
+            // All three pills (peek, search, Ask).
             glassControls = true
-            pillVariant = .clear
-            pillGrade = GradedTint(on: true, top: 0.9, bottom: 0.15, start: 0.75, softness: 1, direction: .vertical,
-                                   color: .nearBlack)
-            pillRim = PillRim(on: true, width: 1, brightness: 0.8, color: .white, animation: .off)
+            editPills {
+                $0.variant = .clear
+                $0.grade = GradedTint(on: true, top: 0.9, bottom: 0.15, start: 0.75, softness: 1, direction: .vertical,
+                                      color: .nearBlack)
+                $0.rim = PillRim(rest: .static, width: 1, brightness: 0.8, color: .white, active: .none, activeBrightness: 1)
+            }
         case .gradedPanel:
             // Real glass, the grade densest behind the transcript and thinning toward the top edge (where the
             // content behind still lenses through).
@@ -209,9 +235,26 @@ extension AppearanceTuningValues {
         panelMode = try c.decodeIfPresent(LibrarianPanelMode.self, forKey: .panelMode) ?? (panel == .liquidGlass ? .glass : .frost)
         glass = try c.decodeIfPresent(PanelGlass.self, forKey: .glass) ?? .lightDefault
         panelGrade = try c.decodeIfPresent(GradedTint.self, forKey: .panelGrade) ?? .off
-        pillGrade = try c.decodeIfPresent(GradedTint.self, forKey: .pillGrade) ?? .off
-        pillVariant = try c.decodeIfPresent(GlassVariant.self, forKey: .pillVariant) ?? .regular
-        pillRim = try c.decodeIfPresent(PillRim.self, forKey: .pillRim) ?? .off
+        // 2026-10-17 brief: the three pills. live-24's one shared pill look (TF 202610170354: `pillVariant`,
+        // `pillGrade`, `pillRim`) loads into all three, Ask mirroring Search, so T's stored look renders as it did.
+        let legacy = LegacyPillKeys.decode(from: decoder)
+        peekPill = (try? c.decodeIfPresent(PillLook.self, forKey: .peekPill)) ?? legacy ?? .off
+        searchPill = (try? c.decodeIfPresent(PillLook.self, forKey: .searchPill)) ?? legacy ?? .off
+        askPill = (try? c.decodeIfPresent(PillLook.self, forKey: .askPill)) ?? legacy ?? .off
+        askMatchesSearch = (try? c.decodeIfPresent(Bool.self, forKey: .askMatchesSearch)) ?? true
+    }
+}
+
+/// live-24's shared pill keys, read only to migrate them (never written).
+private enum LegacyPillKeys: String, CodingKey {
+    case pillVariant, pillGrade, pillRim
+
+    static func decode(from decoder: Decoder) -> PillLook? {
+        guard let c = try? decoder.container(keyedBy: LegacyPillKeys.self),
+              c.contains(.pillVariant) || c.contains(.pillGrade) || c.contains(.pillRim) else { return nil }
+        return PillLook(variant: (try? c.decodeIfPresent(GlassVariant.self, forKey: .pillVariant)) ?? .regular,
+                        grade: (try? c.decodeIfPresent(GradedTint.self, forKey: .pillGrade)) ?? .off,
+                        rim: (try? c.decodeIfPresent(PillRim.self, forKey: .pillRim)) ?? .off)
     }
 }
 
@@ -270,7 +313,10 @@ final class AppearanceTuner {
         state = AppearanceTuning.effective(stored: UserDefaults.standard.data(forKey: AppearanceTuning.storageKey),
                                            offered: AppearanceTuning.isLive)
         #if DEBUG
-        if UserDefaults.standard.bool(forKey: "AppearanceTunerReset") { state = .defaults }   // UI tests start from (1)
+        if UserDefaults.standard.bool(forKey: "AppearanceTunerReset") {   // UI tests start from (1), every section closed
+            state = .defaults
+            UserDefaults.standard.removeObject(forKey: AppearanceTuning.openSectionKey)
+        }
         // live-24 (5) stills — `-AppearanceTuner YES -AppearanceTunerReset YES -GlassPresetRender siriPill|gradedPanel|both`.
         if let raw = UserDefaults.standard.string(forKey: "GlassPresetRender") {
             if let p = LibrarianGlassPreset(rawValue: raw) {
@@ -278,10 +324,14 @@ final class AppearanceTuner {
             } else if raw == "glass" {   // the Liquid Glass mode at its defaults, nothing graded
                 state.light.editGlass { _ in }; state.dark.editGlass { _ in }
             }
-            // `-RimAnimationRender shimmer|pulse` — the rim's "while answering" motion (with `-RenderGenerating YES`).
-            if let a = UserDefaults.standard.string(forKey: "RimAnimationRender").flatMap(PillRimAnimation.init(rawValue:)) {
-                state.light.pillRim.animation = a; state.dark.pillRim.animation = a
-            }
+        }
+        // `-RimAnimationRender shimmer|breathe` — the rim's "while answering" motion on Search + Ask (with
+        // `-RenderGenerating YES`); `-RimRestRender off|static|dim` — the rim at rest on all three pills.
+        if let a = UserDefaults.standard.string(forKey: "RimAnimationRender").flatMap(PillRimActive.init(rawValue:)) {
+            for d in [false, true] { update(dark: d) { $0.searchPill.rim.active = a; $0.askPill.rim.active = a } }
+        }
+        if let r = UserDefaults.standard.string(forKey: "RimRestRender").flatMap(PillRimRest.init(rawValue:)) {
+            for d in [false, true] { update(dark: d) { $0.editPills { $0.rim.rest = r } } }
         }
         #endif
     }
@@ -297,6 +347,8 @@ final class AppearanceTuner {
 
 extension AppearanceTuning {
     static let storageKey = "appearanceTuning.v1"
+    /// Which tuner section is open (the sheet's accordion), so it reopens where T left it.
+    static let openSectionKey = "AppearanceTunerOpenSection"
 
     /// A TestFlight build: always live. DEBUG: only with `-AppearanceTuner YES`, so Simulator runs (self-tests,
     /// stills, UI tests) render exactly what ships and can't be contaminated by values left from a tuning session.
@@ -441,6 +493,14 @@ extension AppearanceTuning {
                 + "\"softness\":\(num(g.softness)),\"direction\":\"\(g.direction.rawValue)\",\"color\":\"\(g.color.rawValue)\","
                 + "\"hex\":\"#\(g.color.hex)\"}"
         }
+        func rim(_ r: PillRim) -> String {
+            "{\"rest\":\"\(r.rest.rawValue)\",\"width\":\(num(r.width)),\"brightness\":\(num(r.brightness)),"
+                + "\"color\":\"\(r.color.rawValue)\",\"hex\":\"#\(r.color.hex)\",\"active\":\"\(r.active.rawValue)\","
+                + "\"activeBrightness\":\(num(r.activeBrightness))}"
+        }
+        func pill(_ p: PillLook) -> String {
+            "{\"variant\":\"\(p.variant.rawValue)\",\"grade\":\(grade(p.grade)),\"rim\":\(rim(p.rim))}"
+        }
         func block(_ v: AppearanceTuningValues, dark: Bool) -> String {
             let reference = dark ? darkShadowAlpha : CardSurfaceDefaults.referenceShadowAlpha
             var parts: [String] = []
@@ -460,10 +520,10 @@ extension AppearanceTuning {
                 "\"panelMode\":\"\(v.panelMode.rawValue)\"", "\"glassVariant\":\"\(v.glass.variant.rawValue)\"",
                 "\"glassTint\":\"\(v.glass.tint.rawValue)\"", "\"glassTintHex\":\"#\(v.glass.tint.hex)\"",
                 "\"glassTintStrength\":\(num(v.glass.tintStrength))", "\"veil\":\(num(v.glass.veil))",
-                "\"panelGrade\":\(grade(v.panelGrade))", "\"pillGrade\":\(grade(v.pillGrade))",
-                "\"pillVariant\":\"\(v.pillVariant.rawValue)\"",
-                "\"pillRim\":{\"on\":\(v.pillRim.on),\"width\":\(num(v.pillRim.width)),\"brightness\":\(num(v.pillRim.brightness)),"
-                    + "\"color\":\"\(v.pillRim.color.rawValue)\",\"hex\":\"#\(v.pillRim.color.hex)\",\"animation\":\"\(v.pillRim.animation.rawValue)\"}",
+                "\"panelGrade\":\(grade(v.panelGrade))",
+                // 2026-10-17 brief — the three pills (live-24's shared pillVariant / pillGrade / pillRim are gone)
+                "\"peekPill\":\(pill(v.peekPill))", "\"searchPill\":\(pill(v.searchPill))", "\"askPill\":\(pill(v.askPill))",
+                "\"askMatchesSearch\":\(v.askMatchesSearch)",
             ]
             return "{" + parts.joined(separator: ",") + "}"
         }
@@ -609,15 +669,27 @@ extension AppearanceTuning {
         var fz = g; fz.editFrost { $0.tintOpacity = 0.5 }
         row("a-frost-slider-is-the-frost-mode", fz.panelMode == .frost && fz.panel == .custom && fz.glassLook.panelGlass == nil)
         row("glass-tint-colours-are-the-three-hexes", GlassTintColor.allCases.map(\.hex) == ["FBF9F5", "0A0A0A", "0E2D61"])
-        row("ships-unchanged (glass, grades, rim all off)", L.glassLook == .shipped && Dk.glassLook == .shipped
+        row("ships-unchanged (glass, grades, rims all off)", LibrarianGlassLook.shipped == LibrarianGlassLook(panelGlass: nil,
+            panelGrade: .off, peek: .off, search: .off, ask: .off) && PillLook.off.rim.rest == .off && !PillLook.off.grade.on
+            && Dk.glassLook == .shipped
             && (isLive || LibrarianGlassLook.current(dark: false) == .shipped && LibrarianGlassLook.current(dark: true) == .shipped))
+        // The 2026-10-17 brief: the TestFlight defaults are T's look on TF 202610170354 (light: a white rim, 1 pt at
+        // 80%, on all three pills; dark: none); everything else as live-24.
+        let wantRim = PillRim(rest: .static, width: 1, brightness: 0.8, color: .white, active: .none, activeBrightness: 1)
+        row("tuner-light-defaults-are-T's-1017-pills (white rim 1 pt 80%, dark none)",
+            [L.peekPill, L.searchPill, L.askPill].allSatisfy { $0.rim == wantRim && !$0.grade.on && $0.variant == .regular }
+            && L.askMatchesSearch && L.glassLook.panelGlass == nil && !L.glassLook.panelGrade.on
+            && [Dk.peekPill, Dk.searchPill, Dk.askPill].allSatisfy { $0 == .off })
         if var legacyGlass = (try? JSONSerialization.jsonObject(with: (try? JSONEncoder().encode(
             AppearanceTuningState(light: { var x = L; x.apply(.liquidGlass); return x }(), dark: Dk))) ?? Data())) as? [String: Any],
            var lg = legacyGlass["light"] as? [String: Any] {
-            for k in ["panelMode", "glass", "panelGrade", "pillGrade", "pillVariant", "pillRim"] { lg.removeValue(forKey: k) }
+            for k in ["panelMode", "glass", "panelGrade", "peekPill", "searchPill", "askPill", "askMatchesSearch"] {
+                lg.removeValue(forKey: k)
+            }
             legacyGlass["light"] = lg
             let back = effective(stored: try? JSONSerialization.data(withJSONObject: legacyGlass), offered: true)
-            row("a-stored-live-23-liquid-glass-opens-in-glass-mode", back.light.panelMode == .glass && back.dark.glassLook == .shipped,
+            row("a-stored-live-23-liquid-glass-opens-in-glass-mode", back.light.panelMode == .glass && back.dark.glassLook == .shipped
+                && back.light.searchPill == .off,
                 "light mode=\(back.light.panelMode)")
         } else {
             row("a-stored-live-23-liquid-glass-opens-in-glass-mode", false, "couldn't build the blob")
@@ -631,35 +703,96 @@ extension AppearanceTuning {
             && gt.alpha(at: 0.3) > 0.85, "samples=\(samples.map { String(format: "%.2f", $0) })")
         row("graded-tint-stops-carry-the-curve", gt.stops.count == 17 && close(Double(gt.stops.last!.location), 1))
         var sp = L; sp.apply(.siriPill, dark: false)
-        row("preset-siri-pill (near-black 0.9 → 0.15, white rim 1 pt)", sp.pillGrade.on && sp.pillGrade.color == .nearBlack
-            && close(sp.pillGrade.top, 0.9) && close(sp.pillGrade.bottom, 0.15) && sp.pillGrade.direction == .vertical
-            && sp.pillRim.on && sp.pillRim.color == .white && close(sp.pillRim.width, 1) && sp.glassControls
-            && sp.panelMode == L.panelMode && !sp.panelGrade.on, "\(sp.pillGrade) \(sp.pillRim)")
-        row("siri-pill-text-turns-light", LibrarianGlassLook.pillScheme(sp.pillGrade) == .dark)
+        let spP = sp.searchPill
+        row("preset-siri-pill (near-black 0.9 → 0.15, white rim 1 pt) on all three pills", spP.grade.on && spP.grade.color == .nearBlack
+            && close(spP.grade.top, 0.9) && close(spP.grade.bottom, 0.15) && spP.grade.direction == .vertical && spP.variant == .clear
+            && spP.rim.rest == .static && spP.rim.color == .white && close(spP.rim.width, 1) && sp.glassControls
+            && sp.peekPill == spP && sp.askPill == spP && sp.glassLook.ask == spP && sp.glassLook.peek == spP
+            && sp.panelMode == L.panelMode && !sp.panelGrade.on, "\(spP)")
+        row("siri-pill-text-turns-light", LibrarianGlassLook.pillScheme(spP.grade) == .dark)
         // live-24 (3) — light text needs the grade dense through the WHOLE text line (a one-line pill's text spans
         // ~0.25–0.75 of its height, descenders included): ≥ 0.6 near-black keeps white text AA over a white backdrop.
-        let band = stride(from: 0.2, through: 0.75, by: 0.05).map { sp.pillGrade.alpha(at: $0) }
+        let band = stride(from: 0.2, through: 0.75, by: 0.05).map { spP.grade.alpha(at: $0) }
         row("siri-pill-dense-through-the-text-line (≥ 0.6 from 0.20 to 0.75)", band.allSatisfy { $0 >= 0.6 },
             "band=\(band.map { String(format: "%.2f", $0) })")
         var gpL = L; gpL.apply(.gradedPanel, dark: false)
         var gpD = Dk; gpD.apply(.gradedPanel, dark: true)
         row("preset-graded-panel (glass, denser behind the transcript, thinning to the top)",
             gpL.panelMode == .glass && gpL.panelGrade.on && gpL.panelGrade.top < gpL.panelGrade.bottom
-            && gpL.panelGrade.color == .offWhite && gpD.panelGrade.color == .nearBlack && !gpL.pillGrade.on,
+            && gpL.panelGrade.color == .offWhite && gpD.panelGrade.color == .nearBlack && gpL.searchPill == L.searchPill,
             "\(gpL.panelGrade)")
         var both = L; both.apply(.both, dark: false)
-        row("preset-both = siri pill + graded panel", both.pillGrade == sp.pillGrade && both.pillRim == sp.pillRim
+        row("preset-both = siri pill + graded panel", both.peekPill == spP && both.searchPill == spP && both.askPill == spP
             && both.panelGrade == gpL.panelGrade && both.panelMode == .glass)
         row("presets-are-marked-when-applied", sp.matches(.siriPill, dark: false) && !sp.matches(.gradedPanel, dark: false)
             && both.matches(.both, dark: false) && !L.matches(.siriPill, dark: false))
         row("rim-colours-are-airpad's-palette-only (no Apple Intelligence multicolour)",
             Set(PillRimColor.allCases.map(\.hex)) == ["FFFFFF", "1B59C2", "00BFFF", "E8820A"])
-        let anim = PillRim(on: true, width: 1, brightness: 0.8, color: .cyan, animation: .shimmer)
+        let anim = PillRim(rest: .static, width: 1, brightness: 0.8, color: .cyan, active: .shimmer, activeBrightness: 1)
         row("rim-moves-only-while-generating-never-under-reduce-motion",
             PillRim.animates(anim, generating: true, reduceMotion: false)
             && !PillRim.animates(anim, generating: false, reduceMotion: false)
             && !PillRim.animates(anim, generating: true, reduceMotion: true)
-            && !PillRim.animates({ var r = anim; r.animation = .off; return r }(), generating: true, reduceMotion: false))
+            && !PillRim.animates({ var r = anim; r.active = .none; return r }(), generating: true, reduceMotion: false))
+
+        // 2026-10-17 brief (B) — the rim's rest and its "while answering" motion are independent: off at rest, shimmer
+        // while thinking (T couldn't set that on TF 202610170354: the shimmer only ran on a rim that was on).
+        let thinking = PillRim(rest: .off, width: 1, brightness: 0.8, color: .white, active: .shimmer, activeBrightness: 1)
+        row("rim-off-at-rest-shimmers-only-while-generating", thinking.isUsed && thinking.rest.share == 0
+            && PillRim.animates(thinking, generating: true, reduceMotion: false)
+            && !PillRim.animates(thinking, generating: false, reduceMotion: false)
+            && !PillRim.animates(thinking, generating: true, reduceMotion: true))
+        row("rim-rest-dim-is-quieter-than-on", PillRimRest.dim.share > 0 && PillRimRest.dim.share < PillRimRest.static.share
+            && PillRimRest.off.share == 0 && !PillRim.off.isUsed)
+
+        // 2026-10-17 brief (A) — peek, search and Ask each have their own look; Ask mirrors Search until it's let go.
+        var ind = Dk
+        ind.peekPill.grade.on = true; ind.searchPill.variant = .clear
+        row("pills-are-independent (peek · search · Ask)", ind.glassLook.peek.grade.on && !ind.glassLook.search.grade.on
+            && ind.glassLook.search.variant == .clear && ind.glassLook.peek.variant == .regular && !ind.glassLook.ask.grade.on,
+            "peek=\(ind.glassLook.peek.grade.on) search=\(ind.glassLook.search.grade.on)")
+        var mir = Dk
+        mir.searchPill.rim.rest = .dim
+        let mirrored = mir.glassLook.ask.rim.rest == .dim && mir.askMatchesSearch
+        mir.setAskMatchesSearch(false)
+        let copied = mir.askPill == mir.searchPill
+        mir.askPill.grade.on = true
+        row("ask-mirrors-search-then-diverges", mirrored && copied && mir.glassLook.ask.grade.on && !mir.glassLook.search.grade.on
+            && mir.glassLook.ask.rim.rest == .dim, "mirrored=\(mirrored) copied=\(copied)")
+        let shim = PillLook(variant: .regular, grade: .off, rim: thinking)
+        let same = LibrarianPillGlass<Capsule>.layers(pill: shim, from: shim, share: 1)
+        let atPeek = LibrarianPillGlass<Capsule>.layers(pill: shim, from: shim, share: 0)
+        let mixed = LibrarianPillGlass<Capsule>.layers(pill: shim, from: .off, share: 0.4)
+        row("only-the-search-side-of-the-morphing-pill-moves", same.count == 1 && same[0].2 && atPeek.count == 1 && !atPeek[0].2
+            && mixed.count == 2 && !mixed[0].2 && mixed[1].2 && close(mixed[1].1, 0.4)
+            && LibrarianPillGlass<Capsule>.layers(pill: shim, from: nil, share: 1).first?.2 == true)
+        row("the-morphing-pill-hands-peek-to-search", LibrarianGlassLook.searchShare(peekVisibility: 1) == 0
+            && LibrarianGlassLook.searchShare(peekVisibility: 0) == 1 && LibrarianGlassLook.searchShare(peekVisibility: 0.5) == 0.5)
+
+        // 2026-10-17 brief (C) — live-24's stored shared pill look (TF 202610170354) loads into all three pills.
+        let legacyPill = ##"{"pillVariant":"clear","pillGrade":{"on":true,"top":0.9,"bottom":0.15,"start":0.75,"softness":1,"direction":"vertical","color":"nearBlack"},"pillRim":{"on":true,"width":1.5,"brightness":0.6,"color":"cyan","animation":"pulse"}}"##
+        if var st = (try? JSONSerialization.jsonObject(with: JSONEncoder().encode(AppearanceTuningState(light: L, dark: Dk)))) as? [String: Any],
+           var ll = st["light"] as? [String: Any], var dd = st["dark"] as? [String: Any],
+           let extra = (try? JSONSerialization.jsonObject(with: Data(legacyPill.utf8))) as? [String: Any] {
+            for k in ["peekPill", "searchPill", "askPill", "askMatchesSearch"] { ll.removeValue(forKey: k); dd.removeValue(forKey: k) }
+            for (k, v) in extra { ll[k] = v }
+            dd["pillRim"] = ["on": false, "width": 1, "brightness": 0.8, "color": "white", "animation": "shimmer"]
+            st["light"] = ll; st["dark"] = dd
+            let back = effective(stored: try? JSONSerialization.data(withJSONObject: st), offered: true)
+            let wantL = PillLook(variant: .clear, grade: spP.grade,
+                                 rim: PillRim(rest: .static, width: 1.5, brightness: 0.6, color: .cyan, active: .breathe, activeBrightness: 1))
+            row("live-24-stored-pill-look-loads-into-all-three", back.light.peekPill == wantL && back.light.searchPill == wantL
+                && back.light.askPill == wantL && back.light.askMatchesSearch && back.light.fieldStep == L.fieldStep,
+                "peek=\(back.light.peekPill)")
+            row("live-24-off-rim-with-shimmer-stays-still", back.dark.searchPill.rim.rest == .off
+                && back.dark.searchPill.rim.active == .none && !back.dark.searchPill.rim.isUsed, "\(back.dark.searchPill.rim)")
+        } else {
+            row("live-24-stored-pill-look-loads-into-all-three", false, "couldn't build the blob")
+        }
+        var trip = AppearanceTuningState(light: sp, dark: mir)
+        trip.dark.peekPill.rim = thinking
+        let tripBack = (try? JSONEncoder().encode(trip)).flatMap { try? JSONDecoder().decode(AppearanceTuningState.self, from: $0) }
+        row("stored-values-round-trip", tripBack == trip)
 
         // live-24 (3) — Reduce Transparency → solid; Increase Contrast → a firm veil + edge.
         let rt = LibrarianGlassAccessibility.resolve(reduceTransparency: true, increaseContrast: false)
@@ -685,10 +818,22 @@ extension AppearanceTuning {
         row("copy-values-at-defaults-reads-back-T's-reference", !ref.isEmpty && mismatches.isEmpty,
             mismatches.joined(separator: "; "))
         let newKeys = ["panelMode", "glassVariant", "glassTint", "glassTintHex", "glassTintStrength", "veil", "panelGrade",
-                       "pillGrade", "pillVariant", "pillRim"]
+                       "peekPill", "searchPill", "askPill", "askMatchesSearch"]
         let lightOut = parsed?["light"] as? [String: Any] ?? [:]
-        row("copy-values-carries-the-live-24-keys", newKeys.allSatisfy { lightOut[$0] != nil },
+        row("copy-values-carries-the-pill-keys", newKeys.allSatisfy { lightOut[$0] != nil }
+            && ["pillGrade", "pillVariant", "pillRim"].allSatisfy { lightOut[$0] == nil },
             "missing: \(newKeys.filter { lightOut[$0] == nil })")
+        // Copy values round-trips: each exported pill reads back as the look it was copied from.
+        let rtJSON = exportJSON(trip, editing: "dark", build: "0")
+        let rtOut = (try? JSONSerialization.jsonObject(with: Data(rtJSON.utf8))) as? [String: Any] ?? [:]
+        func pillBack(_ mode: String, _ key: String) -> PillLook? {
+            guard let m = rtOut[mode] as? [String: Any], let o = m[key],
+                  let d = try? JSONSerialization.data(withJSONObject: o) else { return nil }
+            return try? JSONDecoder().decode(PillLook.self, from: d)
+        }
+        row("copy-values-pills-read-back", pillBack("light", "peekPill") == trip.light.peekPill
+            && pillBack("dark", "peekPill") == trip.dark.peekPill && pillBack("dark", "askPill") == trip.dark.askPill
+            && pillBack("dark", "searchPill") == trip.dark.searchPill, rtJSON)
 
         #if DEBUG || TESTFLIGHT
         row("this-build-offers-it (DEBUG / TESTFLIGHT)", isOffered)

@@ -7,8 +7,9 @@
 set -uo pipefail
 A=${0:A:h:h}; OUT=${1:-$A/build/tuner-gate}; mkdir -p $OUT
 # live-23: "saturationBlendMode" left the probes — the frost backdrop ships now (T's tuned Librarian, `LibrarianSurfaceSpec`).
+# 2026-10-17 brief: the per-pill sections + the accordion (live-24's "Graded tint on the pills" / "Ask pill + search pill" left the sheet).
 # live-24: + the graded-tint section and the reading veil (LibrarianGlass types ship; their tuner does not). Probes must be > 15 bytes: Swift keeps shorter strings inline in code, invisible to `strings`.
-PROBES=("Appearance tuner" "appearanceTuning.v1" "AppearanceTunerWindow" "Frost 50% + glass" "Before = thin material" "Fade length (of the hero zone)" "tunerCaptureControls" "tunerCardContent" "Graded tint on the pills" "Ask pill + search pill" "Reading veil (behind the transcript)")
+PROBES=("Appearance tuner" "appearanceTuning.v1" "AppearanceTunerWindow" "Frost 50% + glass" "Before = thin material" "Fade length (of the hero zone)" "tunerCaptureControls" "tunerCardContent" "Graded presets (all three pills + the panel)" "The Ask bar mirrors the search pill" "Reading veil (behind the transcript)" "Rim while answering" "AppearanceTunerOpenSection")
 export DEVELOPER_DIR=/Applications/Xcode.app/Contents/Developer
 fail=0
 for mode in testflight appstore; do

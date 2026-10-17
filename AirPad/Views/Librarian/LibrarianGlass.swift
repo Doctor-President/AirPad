@@ -70,14 +70,36 @@ enum PillRimColor: String, Codable, CaseIterable, Identifiable {
     var color: Color { Color(hexString: hex) }
 }
 
-enum PillRimAnimation: String, Codable, CaseIterable, Identifiable {
-    case off, shimmer, pulse
+/// What the rim shows while the pill is idle (2026-10-17 brief: "off at rest, shimmer while thinking").
+enum PillRimRest: String, Codable, CaseIterable, Identifiable {
+    case off, `static`, dim
     var id: String { rawValue }
     var label: String {
         switch self {
-        case .off:     return "Off"
+        case .off:    return "Off"
+        case .static: return "On"
+        case .dim:    return "Dim"
+        }
+    }
+    /// The rest stroke's share of the rim's brightness.
+    var share: Double {
+        switch self {
+        case .off:    return 0
+        case .static: return 1
+        case .dim:    return 0.4
+        }
+    }
+}
+
+/// What the rim does while an answer is generating (never under Reduce Motion).
+enum PillRimActive: String, Codable, CaseIterable, Identifiable {
+    case none, shimmer, breathe
+    var id: String { rawValue }
+    var label: String {
+        switch self {
+        case .none:    return "Off"
         case .shimmer: return "Slow shimmer"
-        case .pulse:   return "Pulse"
+        case .breathe: return "Breathe"
         }
     }
 }
@@ -138,32 +160,92 @@ struct GradedTint: Codable, Equatable {
     var alphaBehindText: Double { direction == .radial ? alpha(at: 0) : alpha(at: 0.5) }
 }
 
-/// The pill's rim.
+/// The pill's rim: what it shows at rest, and what it does while an answer is generating. The two are independent, so
+/// a rim can be off at rest and shimmer only while the Librarian thinks.
 struct PillRim: Codable, Equatable {
-    var on: Bool
-    var width: Double          // 0.5…2 pt
-    var brightness: Double     // 0…1
+    var rest: PillRimRest
+    var width: Double            // 0.5…2 pt
+    var brightness: Double       // 0…1, the rest stroke
     var color: PillRimColor
-    var animation: PillRimAnimation
+    var active: PillRimActive
+    var activeBrightness: Double // 0…1, the shimmer's peak / the breath's top
 
-    static let off = PillRim(on: false, width: 1, brightness: 0.8, color: .white, animation: .off)
+    static let off = PillRim(rest: .off, width: 1, brightness: 0.8, color: .white, active: .none, activeBrightness: 1)
+
+    init(rest: PillRimRest, width: Double, brightness: Double, color: PillRimColor, active: PillRimActive,
+         activeBrightness: Double) {
+        self.rest = rest; self.width = width; self.brightness = brightness; self.color = color
+        self.active = active; self.activeBrightness = activeBrightness
+    }
 
     /// The rim moves only while an answer is generating, never under Reduce Motion. Pure.
     static func animates(_ r: PillRim, generating: Bool, reduceMotion: Bool) -> Bool {
-        r.on && r.animation != .off && generating && !reduceMotion
+        r.active != .none && generating && !reduceMotion
+    }
+
+    /// Anything of the rim can show (at rest, or while generating).
+    var isUsed: Bool { rest != .off || active != .none }
+
+    private enum CodingKeys: String, CodingKey { case rest, width, brightness, color, active, activeBrightness, on, animation }
+
+    /// live-24's rim (`on` + `animation`, TF 202610170354) loads as it rendered: on → a rim at rest, and the
+    /// animation only where the rim was on (an off rim never moved).
+    init(from decoder: Decoder) throws {
+        let c = try decoder.container(keyedBy: CodingKeys.self)
+        width = try c.decodeIfPresent(Double.self, forKey: .width) ?? 1
+        brightness = try c.decodeIfPresent(Double.self, forKey: .brightness) ?? 0.8
+        color = (try? c.decodeIfPresent(PillRimColor.self, forKey: .color)) ?? .white
+        activeBrightness = try c.decodeIfPresent(Double.self, forKey: .activeBrightness) ?? 1
+        if let r = try? c.decodeIfPresent(PillRimRest.self, forKey: .rest) {
+            rest = r
+            active = (try? c.decodeIfPresent(PillRimActive.self, forKey: .active)) ?? .none
+        } else {
+            let on = (try? c.decodeIfPresent(Bool.self, forKey: .on)) ?? false
+            rest = on ? .static : .off
+            let old = (try? c.decodeIfPresent(String.self, forKey: .animation)) ?? "off"
+            active = !on ? .none : old == "shimmer" ? .shimmer : old == "pulse" ? .breathe : .none
+        }
+    }
+    func encode(to encoder: Encoder) throws {
+        var c = encoder.container(keyedBy: CodingKeys.self)
+        try c.encode(rest, forKey: .rest); try c.encode(width, forKey: .width); try c.encode(brightness, forKey: .brightness)
+        try c.encode(color, forKey: .color); try c.encode(active, forKey: .active)
+        try c.encode(activeBrightness, forKey: .activeBrightness)
     }
 }
 
-/// Everything live-24 adds to the Librarian's look, for one appearance.
+/// One pill's look (the peek pill, the search pill, the Ask bar each have their own; 2026-10-17 brief).
+struct PillLook: Codable, Equatable {
+    var variant: GlassVariant
+    var grade: GradedTint
+    var rim: PillRim
+
+    static let off = PillLook(variant: .regular, grade: .off, rim: .off)
+
+    init(variant: GlassVariant, grade: GradedTint, rim: PillRim) {
+        self.variant = variant; self.grade = grade; self.rim = rim
+    }
+    private enum CodingKeys: String, CodingKey { case variant, grade, rim }
+    init(from decoder: Decoder) throws {
+        let c = try decoder.container(keyedBy: CodingKeys.self)
+        variant = (try? c.decodeIfPresent(GlassVariant.self, forKey: .variant)) ?? .regular
+        grade = (try? c.decodeIfPresent(GradedTint.self, forKey: .grade)) ?? .off
+        rim = (try? c.decodeIfPresent(PillRim.self, forKey: .rim)) ?? .off
+    }
+}
+
+/// Everything live-24 adds to the Librarian's look, for one appearance. The three pills are independent: the peek pill
+/// and the search pill are ONE morphing view (`LibrarianSurface.morphingField`), so its look blends from `peek` to
+/// `search` as the panel opens; the Ask bar has `ask`.
 struct LibrarianGlassLook: Equatable {
     var panelGlass: PanelGlass?      // nil = the frost (LibrarianSurfaceSpec)
     var panelGrade: GradedTint
-    var pillGrade: GradedTint
-    var pillVariant: GlassVariant
-    var rim: PillRim
+    var peek: PillLook
+    var search: PillLook
+    var ask: PillLook
 
     /// What ships: the frost, nothing graded, no rim — the App Store build never changes.
-    static let shipped = LibrarianGlassLook(panelGlass: nil, panelGrade: .off, pillGrade: .off, pillVariant: .regular, rim: .off)
+    static let shipped = LibrarianGlassLook(panelGlass: nil, panelGrade: .off, peek: .off, search: .off, ask: .off)
 
     /// What renders: the tuner's values in DEBUG (with `-AppearanceTuner YES`) / TestFlight, else `shipped`.
     static func current(dark: Bool) -> LibrarianGlassLook {
@@ -173,11 +255,14 @@ struct LibrarianGlassLook: Equatable {
         return .shipped
     }
 
-    /// Text over the pill: a dense dark grade wants light text, a dense light one dark text; nil = the appearance's.
+    /// Text over a pill: a dense dark grade wants light text, a dense light one dark text; nil = the appearance's.
     static func pillScheme(_ g: GradedTint) -> ColorScheme? {
         guard g.on, g.alphaBehindText >= 0.5 else { return nil }
         return g.color.isDark ? .dark : .light
     }
+
+    /// The morphing pill's share of the search look: 0 at peek, 1 once the peek styling has faded (p ≈ 0.35). Pure.
+    static func searchShare(peekVisibility: Double) -> Double { min(max(1 - peekVisibility, 0), 1) }
 }
 
 /// Reduce Transparency / Increase Contrast, resolved once (pure, for the self-test).
@@ -293,37 +378,59 @@ struct ReadingVeil: View {
     }
 }
 
-/// A pill face (the search pill / the Ask bar) on real Liquid Glass with the optional graded tint and rim. Used by
-/// `PeekPillBackground` and the Ask bar when glass controls are on.
+/// A pill face on real Liquid Glass with its optional graded tint and rim. The Ask bar draws one look; the morphing
+/// peek → search pill passes `from` (the peek look) and `share` (0 at peek → 1 expanded), and the two cross-fade.
 struct LibrarianPillGlass<S: InsettableShape>: View {
     let shape: S
-    let look: LibrarianGlassLook
+    let pill: PillLook
     var generating = false
+    var from: PillLook? = nil
+    var share: Double = 1
     @Environment(\.accessibilityReduceTransparency) private var reduceTransparency
     @Environment(\.accessibilityReduceMotion) private var reduceMotion
     @Environment(\.colorScheme) private var colorScheme
 
+    /// The look that dominates now (the variant + the solid fallback can't blend).
+    private var dominant: PillLook { (from != nil && share < 0.5) ? from! : pill }
+    private var layers: [(PillLook, Double, Bool)] { Self.layers(pill: pill, from: from, share: share) }
+
+    /// The layers to draw: (look, opacity, can animate). One when there's nothing to blend. Pure (self-tested).
+    static func layers(pill: PillLook, from: PillLook?, share: Double) -> [(PillLook, Double, Bool)] {
+        // Identical looks: one layer, which moves once the pill is the search field (the peek pill never answers).
+        guard let f = from, f != pill else { return [(pill, 1, from == nil || share >= 0.5)] }
+        let t = min(max(share, 0), 1)
+        return [(f, 1 - t, false), (pill, t, true)].filter { $0.1 > 0.001 }
+    }
+
     var body: some View {
+        let d = dominant
         ZStack {
             // Reduce Transparency: a graded pill turns solid (its grade colour when dark, else the panel's). The plain
             // glass pill that ships keeps the system's own Reduce Transparency treatment.
-            if reduceTransparency && look.pillGrade.on {
-                shape.fill(Color(hexString: look.pillGrade.color.isDark ? look.pillGrade.color.hex
+            if reduceTransparency && d.grade.on {
+                shape.fill(Color(hexString: d.grade.color.isDark ? d.grade.color.hex
                                  : LibrarianGlassAccessibility.solidHex(dark: colorScheme == .dark)))
             } else {
-                Color.clear.glassEffect(look.pillVariant.glass, in: shape)
-                if look.pillGrade.on { GradedTintFill(shape: shape, grade: look.pillGrade) }
+                Color.clear.glassEffect(d.variant.glass, in: shape)
+                ForEach(Array(layers.enumerated()), id: \.offset) { _, l in
+                    if l.0.grade.on { GradedTintFill(shape: shape, grade: l.0.grade).opacity(l.1) }
+                }
             }
         }
         .overlay {
-            if look.rim.on { PillRimView(shape: shape, rim: look.rim,
-                                         animating: PillRim.animates(look.rim, generating: generating, reduceMotion: reduceMotion)) }
+            ForEach(Array(layers.enumerated()), id: \.offset) { _, l in
+                if l.0.rim.isUsed {
+                    PillRimView(shape: shape, rim: l.0.rim,
+                                animating: l.2 && PillRim.animates(l.0.rim, generating: generating, reduceMotion: reduceMotion))
+                        .opacity(l.1)
+                }
+            }
         }
     }
 }
 
-/// The thin rim: static, or (only while generating) a slow light running around it / a gentle brightness pulse.
-/// The animation stops cleanly — the view falls back to the static rim the frame generation ends.
+/// The thin rim: its rest stroke (off / on / dim), and — only while generating — a slow light running around it or a
+/// gentle breath. Start and stop fade over 0.2 s, so a rim that's off at rest never pops in or out.
 struct PillRimView<S: InsettableShape>: View {
     let shape: S
     let rim: PillRim
@@ -331,25 +438,30 @@ struct PillRimView<S: InsettableShape>: View {
 
     var body: some View {
         let w = CGFloat(min(max(rim.width, 0.5), 2))
-        let base = rim.color.color.opacity(min(max(rim.brightness, 0), 1))
-        if animating {
-            TimelineView(.animation) { ctx in
-                let t = ctx.date.timeIntervalSinceReferenceDate
-                switch rim.animation {
-                case .shimmer:
-                    let angle = Angle.degrees((t.truncatingRemainder(dividingBy: 4) / 4) * 360)   // one lap / 4 s
-                    shape.strokeBorder(AngularGradient(stops: [
-                        .init(color: base.opacity(0.35), location: 0), .init(color: base, location: 0.08),
-                        .init(color: base.opacity(0.35), location: 0.22), .init(color: base.opacity(0.35), location: 1),
-                    ], center: .center, angle: angle), lineWidth: w)
-                default:
-                    let k = 0.65 + 0.35 * (0.5 + 0.5 * sin(t * 2 * .pi / 1.6))                   // 1.6 s breath
-                    shape.strokeBorder(base.opacity(k), lineWidth: w)
+        let color = rim.color.color
+        let restAlpha = min(max(rim.brightness, 0), 1) * rim.rest.share
+        let peak = color.opacity(min(max(rim.activeBrightness, 0), 1))
+        ZStack {
+            if restAlpha > 0 { shape.strokeBorder(color.opacity(restAlpha), lineWidth: w).opacity(animating ? 0 : 1) }
+            if animating {
+                TimelineView(.animation) { ctx in
+                    let t = ctx.date.timeIntervalSinceReferenceDate
+                    switch rim.active {
+                    case .shimmer:
+                        let angle = Angle.degrees((t.truncatingRemainder(dividingBy: 4) / 4) * 360)   // one lap / 4 s
+                        shape.strokeBorder(AngularGradient(stops: [
+                            .init(color: peak.opacity(0.35), location: 0), .init(color: peak, location: 0.08),
+                            .init(color: peak.opacity(0.35), location: 0.22), .init(color: peak.opacity(0.35), location: 1),
+                        ], center: .center, angle: angle), lineWidth: w)
+                    default:
+                        let k = 0.35 + 0.65 * (0.5 + 0.5 * sin(t * 2 * .pi / 1.6))                   // 1.6 s breath
+                        shape.strokeBorder(peak.opacity(k), lineWidth: w)
+                    }
                 }
+                .transition(.opacity)
             }
-        } else {
-            shape.strokeBorder(base, lineWidth: w)
         }
+        .animation(.easeInOut(duration: 0.2), value: animating)
     }
 }
 

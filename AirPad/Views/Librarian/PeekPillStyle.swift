@@ -101,6 +101,9 @@ struct PeekPillBackground<S: InsettableShape>: ViewModifier {
     }
 
     private var look: LibrarianGlassLook { LibrarianGlassLook.current(dark: colorScheme == .dark) }
+    /// 0 at peek → 1 once the pill is the search field.
+    private var searchShare: Double { LibrarianGlassLook.searchShare(peekVisibility: visibility) }
+    private var dominant: PillLook { searchShare < 0.5 ? look.peek : look.search }
 
     func body(content: Content) -> some View {
         let s = style
@@ -111,9 +114,12 @@ struct PeekPillBackground<S: InsettableShape>: ViewModifier {
                 // backed shape — no opaque fill behind it.
                 ZStack {
                     if s.material == .glass {
-                        // live-24 — real Liquid Glass + the tuner's graded tint / rim (all off in what ships).
-                        LibrarianPillGlass(shape: shape, look: look, generating: generating)
-                        if !look.pillGrade.on { shape.fill(s.tintColor.opacity(s.tintOpacity)) }   // tint wash (dark only)
+                        // live-24 — real Liquid Glass + the tuner's graded tint / rim (all off in what ships). This
+                        // one view is the peek pill AND the search pill (it morphs): the peek look hands over to the
+                        // search look as the peek styling fades (2026-10-17 brief).
+                        LibrarianPillGlass(shape: shape, pill: look.search, generating: generating, from: look.peek,
+                                           share: searchShare)
+                        if !dominant.grade.on { shape.fill(s.tintColor.opacity(s.tintOpacity)) }   // tint wash (dark only)
                     } else {
                         s.material.faceView(shape)                      // translucent
                         shape.fill(s.tintColor.opacity(s.tintOpacity))  // tint wash (dark only)
@@ -123,7 +129,8 @@ struct PeekPillBackground<S: InsettableShape>: ViewModifier {
                         radius: s.shadowRadius, x: s.shadowOffsetX, y: s.shadowOffsetY)
             }
             .overlay {
-                if s.strokeEnabled && visibility > 0.01 && !(s.material == .glass && look.rim.on) {
+                // The peek stroke gives way to a rim that shows at rest; a rim off at rest brings it back.
+                if s.strokeEnabled && visibility > 0.01 && !(s.material == .glass && look.peek.rim.rest != .off) {
                     shape.strokeBorder(s.strokeColorResolved.opacity(visibility),
                                        lineWidth: s.strokeWidth)
                 }

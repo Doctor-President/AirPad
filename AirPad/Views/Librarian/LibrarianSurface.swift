@@ -652,6 +652,8 @@ struct LibrarianSurface: View {
         // they hit full Mango so the field reads as Search clearly.
         let mango = Color(hexString: "E8820A")
         let iconOpacity = lerpD(0.66, 1.0, p)
+        // The tuner's peek look hands over to the search look as the peek styling fades (by p ≈ 0.35).
+        let pillSearchShare = LibrarianGlassLook.searchShare(peekVisibility: max(0, min(1, 1 - Double(p) / 0.35)))
         // Within-family top→bottom gradient: amber lifted top, mango
         // grounded bottom. Reads richer than a flat fill while staying
         // inside the Mango family, paired with the Klein/cyan grad on
@@ -748,8 +750,9 @@ struct LibrarianSurface: View {
             .padding(.horizontal, 16)
             .frame(maxWidth: .infinity)
             .frame(height: fieldH)
-            // live-24 — light text on a dense dark graded tint (the Siri-style pill), dark on a light one.
-            .environment(\.colorScheme, pillTextScheme)
+            // live-24 — light text on a dense dark graded tint (the Siri-style pill), dark on a light one. Peek's grade
+            // until the pill has mostly become the search field, then Search's.
+            .environment(\.colorScheme, pillTextScheme(pillSearchShare < 0.5 ? glassLook.peek.grade : glassLook.search.grade))
             #if DEBUG
             .opacity(UserDefaults.standard.bool(forKey: "RenderHideText") ? 0 : 1)   // backdrop-only still (contrast)
             #endif
@@ -1729,10 +1732,10 @@ struct LibrarianSurface: View {
 
     /// live-24 — the tuner's glass + graded-tint look for this appearance (`.shipped` outside the tuner).
     private var glassLook: LibrarianGlassLook { LibrarianGlassLook.current(dark: colorScheme == .dark) }
-    /// Text on a pill with a dense graded tint takes the tint's side (light text on near-black); nil = as is.
-    private var pillTextScheme: ColorScheme {
+    /// Text on a pill with a dense graded tint takes the tint's side (light text on near-black); else as is.
+    private func pillTextScheme(_ grade: GradedTint) -> ColorScheme {
         LibrarianSurfaceSpec.glassControls(dark: colorScheme == .dark)
-            ? (LibrarianGlassLook.pillScheme(glassLook.pillGrade) ?? colorScheme) : colorScheme
+            ? (LibrarianGlassLook.pillScheme(grade) ?? colorScheme) : colorScheme
     }
 
     /// The Ask field's fill — real Liquid Glass with glass controls (live-23 (1): T's tuning, both modes).
@@ -1740,7 +1743,7 @@ struct LibrarianSurface: View {
     private func askBackground(fill: Color, shape: RoundedRectangle) -> some View {
         if LibrarianSurfaceSpec.glassControls(dark: colorScheme == .dark) {
             // live-24 — real Liquid Glass + the tuner's graded tint / rim (all off in what ships).
-            LibrarianPillGlass(shape: shape, look: glassLook, generating: isGenerating)
+            LibrarianPillGlass(shape: shape, pill: glassLook.ask, generating: isGenerating)
         } else {
             fill
         }
@@ -1844,7 +1847,7 @@ struct LibrarianSurface: View {
 
         }
         // live-24 — light text on a dense dark graded tint (the Siri-style pill), dark on a light one.
-        .environment(\.colorScheme, pillTextScheme)
+        .environment(\.colorScheme, pillTextScheme(glassLook.ask.grade))
         #if DEBUG
         .opacity(UserDefaults.standard.bool(forKey: "RenderHideText") ? 0 : 1)   // backdrop-only still (contrast)
         #endif
@@ -1910,7 +1913,8 @@ struct LibrarianSurface: View {
         .clipShape(askShape)
         .overlay(
             askShape.strokeBorder(askStroke, lineWidth: 1)
-                .opacity(glassLook.rim.on && LibrarianSurfaceSpec.glassControls(dark: colorScheme == .dark) ? 0 : 1)
+                // A rim that shows at rest replaces the resting stroke; a rim off at rest brings the stroke back.
+                .opacity(glassLook.ask.rim.rest != .off && LibrarianSurfaceSpec.glassControls(dark: colorScheme == .dark) ? 0 : 1)
         )
     }
 

@@ -28,6 +28,21 @@ final class AppearanceTunerUI: XCTestCase {
     private func readout(_ app: XCUIApplication, _ id: String) -> String {
         app.staticTexts["tunerReadout-\(id)"].firstMatch.label
     }
+    /// 2026-10-17 brief — the sheet is an accordion, every section closed when it opens: open one to reach its controls.
+    private func open(_ app: XCUIApplication, _ section: String) {
+        let header = app.buttons["tunerSection-\(section)"].firstMatch
+        XCTAssertTrue(header.waitForExistence(timeout: 5), "the \(section) header")
+        if header.value as? String != "open" { header.tap() }
+    }
+    /// The tuner's sliders move only from their knob (22 pt, inset 11 pt each end): drag it from one fraction of the
+    /// range to another.
+    private func dragKnob(_ slider: XCUIElement, from: Double, to: Double) {
+        let w = slider.frame.width
+        func at(_ f: Double) -> XCUICoordinate { slider.coordinate(withNormalizedOffset: CGVector(dx: (11 + f * (w - 22)) / w, dy: 0.5)) }
+        at(from).press(forDuration: 0.05, thenDragTo: at(to))
+    }
+    static let sections = ["cardContent", "captureControls", "librarian", "peekPill", "searchPill", "askPill", "panelGrade",
+                           "cards", "heroFade"]
 
     func testHandleFloatsOverEveryView() {
         let views: [(String, [String])] = [
@@ -69,13 +84,17 @@ final class AppearanceTunerUI: XCTestCase {
         h.tap()
         XCTAssertTrue(app.descendants(matching: .any)["appearanceTunerSheet"].waitForExistence(timeout: 10), "the sheet opens")
         XCTAssertEqual(app.staticTexts["tunerEditingMode"].label, "Editing Light — follows the system")
+        open(app, "librarian")
         XCTAssertEqual(readout(app, "tint"), "0.85", "T's tuned tint (live-23 default)")
         XCTAssertEqual(readout(app, "blur"), "1.74 passes")
+        shot(app, "sheet-default")
         // live-23 — the card-content switch (Today by default) and the hero fade at its baked shape.
+        open(app, "cardContent")
         XCTAssertTrue(app.segmentedControls["tunerCardContent"].buttons["Today"].isSelected, "Card content starts on Today")
+        open(app, "heroFade")
         XCTAssertEqual(readout(app, "fadeLength"), "0.60", "the baked fade length")
         XCTAssertEqual(readout(app, "fadeCurve"), "smoothstep", "the baked fade curve")
-        shot(app, "sheet-default")
+        open(app, "librarian")
         app.buttons["tunerPreset-frost50"].tap()
         XCTAssertEqual(readout(app, "tint"), "0.50", "Frost 50% moves the tint")
         XCTAssertEqual(readout(app, "blur"), "2.00 passes", "heavy blur")
@@ -90,6 +109,7 @@ final class AppearanceTunerUI: XCTestCase {
         app.buttons["tunerClose"].tap()
         let chevron = app.descendants(matching: .any).matching(identifier: "appearanceTunerHandle").firstMatch
         chevron.tap()
+        open(app, "cards")
         app.segmentedControls["tunerPalette"].buttons["L1"].tap()
         XCTAssertEqual(readout(app, "field"), "F2 · #E8E8E8", "L1's F2")
         app.buttons["tunerClose"].tap()
@@ -98,8 +118,9 @@ final class AppearanceTunerUI: XCTestCase {
         chevron.tap()
         app.buttons["tunerReset"].tap()
         app.buttons["tunerReset"].tap()
-        XCTAssertEqual(readout(app, "tint"), "0.85", "Reset restores T's tuned values")
         XCTAssertEqual(readout(app, "field"), "F2 · #F4F2ED", "Reset restores T's field")
+        open(app, "librarian")
+        XCTAssertEqual(readout(app, "tint"), "0.85", "Reset restores T's tuned values")
         app.buttons["tunerClose"].tap()
         XCTAssertTrue(h.waitForExistence(timeout: 5), "closing returns to the handle")
     }
@@ -113,14 +134,15 @@ final class AppearanceTunerUI: XCTestCase {
         XCTAssertTrue(h.waitForExistence(timeout: 30))
         h.tap()
         XCTAssertTrue(app.descendants(matching: .any)["appearanceTunerSheet"].waitForExistence(timeout: 10), "the sheet opens")
+        open(app, "librarian")
         let mode = app.segmentedControls["tunerPanelMode"]
         XCTAssertTrue(mode.buttons["Frost"].isSelected, "the panel starts as T's frost")
         mode.buttons["Liquid Glass"].tap()
         app.segmentedControls["tunerGlassVariant"].buttons["Clear"].tap()
         app.segmentedControls["tunerGlassTint"].buttons["Deep Klein"].tap()
         XCTAssertEqual(app.staticTexts["tunerGlassTint-hex"].firstMatch.label, "#0E2D61", "the tint shows its hex")
-        app.sliders["tunerSlider-glassTintStrength"].adjust(toNormalizedSliderPosition: 0.75)
-        app.sliders["tunerSlider-veil"].adjust(toNormalizedSliderPosition: 0.8)
+        dragKnob(app.descendants(matching: .any)["tunerSlider-glassTintStrength"].firstMatch, from: 0.30 / 0.80, to: 0.75)
+        dragKnob(app.descendants(matching: .any)["tunerSlider-veil"].firstMatch, from: 0.40, to: 0.8)
         XCTAssertTrue(mode.buttons["Liquid Glass"].isSelected, "every glass control keeps the Liquid Glass mode")
         XCTAssertTrue(app.segmentedControls["tunerGlassVariant"].buttons["Clear"].isSelected, "the variant stuck")
         XCTAssertNotEqual(readout(app, "glassTintStrength"), "40%", "the tint strength moved")
@@ -129,14 +151,99 @@ final class AppearanceTunerUI: XCTestCase {
         XCTAssertTrue(siri.waitForExistence(timeout: 5))
         siri.tap()
         XCTAssertTrue(siri.isSelected, "the Siri-style pill preset is marked once applied")
-        XCTAssertEqual(app.switches["tunerToggle-pillGrade"].firstMatch.value as? String, "1", "the pill grade is on")
-        XCTAssertEqual(app.switches["tunerToggle-pillRim"].firstMatch.value as? String, "1", "the rim is on")
         XCTAssertTrue(mode.buttons["Liquid Glass"].isSelected, "a pill preset leaves the panel mode alone")
+        // The preset sets all three pills (2026-10-17 brief).
+        for pill in ["peek", "search"] {
+            open(app, "\(pill)Pill")
+            XCTAssertEqual(app.switches["tunerToggle-\(pill)Grade"].firstMatch.value as? String, "1", "the \(pill) grade is on")
+            XCTAssertTrue(app.segmentedControls["tunerRimRest-\(pill)"].buttons["On"].isSelected, "the \(pill) rim is on at rest")
+        }
         app.buttons["tunerCopy"].tap()
         XCTAssertTrue(app.buttons["Copied"].waitForExistence(timeout: 3), "Copy values ran")
         app.buttons["tunerClose"].tap()
         sleep(1)
         shot(app, "liquid-glass-clear-deep-klein-with-siri-pill")
+    }
+
+    /// 2026-10-17 brief (D) + (A) — T scrolled a lot and brushed sliders by accident (TF 202610170354). The sheet opens
+    /// with every section closed; opening one closes the others; a swipe across a slider's track never moves it, a drag
+    /// from its knob does; the lock freezes every control; the peek pill, search pill and Ask bar are tuned apart.
+    func testSectionsStartClosedAndSlidersMoveOnlyByTheKnob() {
+        let app = launch(["-OpenCardView", "-gridColumnCount", "2", "-LibrarianDetent", "half"])
+        let h = handle(app)
+        XCTAssertTrue(h.waitForExistence(timeout: 30))
+        h.tap()
+        XCTAssertTrue(app.descendants(matching: .any)["appearanceTunerSheet"].waitForExistence(timeout: 10), "the sheet opens")
+        for s in Self.sections {
+            XCTAssertTrue(app.buttons["tunerSection-\(s)"].firstMatch.exists, "the \(s) header")
+            XCTAssertEqual(app.buttons["tunerSection-\(s)"].firstMatch.value as? String, "closed", "\(s) starts closed")
+        }
+        XCTAssertFalse(app.descendants(matching: .any)["tunerSlider-tint"].exists, "only headers: no slider is reachable")
+        XCTAssertFalse(app.segmentedControls["tunerPanelMode"].exists, "only headers: no picker either")
+        XCTAssertTrue(app.buttons["tunerCopy"].isHittable, "Copy values stays pinned")
+        shot(app, "sheet-closed")
+
+        // The accordion.
+        open(app, "librarian")
+        XCTAssertTrue(app.descendants(matching: .any)["tunerSlider-tint"].waitForExistence(timeout: 3))
+        open(app, "peekPill")
+        XCTAssertFalse(app.descendants(matching: .any)["tunerSlider-tint"].exists, "opening Peek pill closes Librarian surface")
+        XCTAssertTrue(app.segmentedControls["tunerRimRest-peek"].exists, "the peek rim at rest")
+        XCTAssertFalse(app.segmentedControls["tunerRimActive-peek"].exists, "the peek pill never answers")
+
+        // Sliders: the track takes no touches; the knob drags.
+        open(app, "librarian")
+        let tint = app.descendants(matching: .any)["tunerSlider-tint"].firstMatch
+        XCTAssertEqual(readout(app, "tint"), "0.85")
+        XCTAssertGreaterThan(tint.frame.width, 200, "the slider element has the row's real frame: \(tint.frame)")
+        let track = tint.coordinate(withNormalizedOffset: CGVector(dx: 0.12, dy: 0.5))
+        track.press(forDuration: 0.05, thenDragTo: tint.coordinate(withNormalizedOffset: CGVector(dx: 0.55, dy: 0.5)))
+        XCTAssertEqual(readout(app, "tint"), "0.85", "a swipe across the track leaves the value alone")
+        dragKnob(tint, from: 0.85, to: 0.5)
+        XCTAssertNotEqual(readout(app, "tint"), "0.85", "a drag from the knob moves it")
+        let moved = readout(app, "tint")
+
+        // The lock.
+        app.buttons["tunerLock"].tap()
+        XCTAssertFalse(tint.isEnabled, "locked: the slider is disabled")
+        dragKnob(tint, from: Double(moved) ?? 0.5, to: 0.95)
+        XCTAssertEqual(readout(app, "tint"), moved, "locked: a knob drag changes nothing")
+        app.buttons["tunerLock"].tap()
+
+        // A scroll swipe that starts on the track scrolls the sheet and leaves the value alone.
+        let yBefore = tint.frame.minY
+        tint.coordinate(withNormalizedOffset: CGVector(dx: 0.2, dy: 0.5))
+            .press(forDuration: 0.05, thenDragTo: tint.coordinate(withNormalizedOffset: CGVector(dx: 0.2, dy: -3)))
+        sleep(2)
+        XCTAssertLessThan(tint.frame.minY, yBefore - 20, "the swipe scrolled the sheet (\(yBefore) → \(tint.frame.minY))")
+        XCTAssertEqual(readout(app, "tint"), moved, "and the value stayed")
+        shot(app, "after-scroll-swipe-over-a-slider")
+        app.buttons["tunerLock"].tap()
+        open(app, "cards")
+        XCTAssertTrue(app.descendants(matching: .any)["tunerSlider-field"].waitForExistence(timeout: 3), "locked: sections still open")
+        shot(app, "sheet-locked")
+        app.buttons["tunerLock"].tap()   // unlock
+
+        // Per-pill looks: Peek's grade leaves Search alone; Ask mirrors Search until "Match Search" is off.
+        open(app, "peekPill")
+        app.switches["tunerToggle-peekGrade"].firstMatch.switches.firstMatch.tap()
+        XCTAssertEqual(app.switches["tunerToggle-peekGrade"].firstMatch.value as? String, "1", "the peek grade is on")
+        open(app, "searchPill")
+        XCTAssertEqual(app.switches["tunerToggle-searchGrade"].firstMatch.value as? String, "0", "the search grade is not")
+        // Search: off at rest, shimmer while answering.
+        app.segmentedControls["tunerRimRest-search"].buttons["Off"].tap()
+        app.segmentedControls["tunerRimActive-search"].buttons["Slow shimmer"].tap()
+        XCTAssertTrue(app.descendants(matching: .any)["tunerSlider-searchRimActiveBrightness"].waitForExistence(timeout: 3),
+                      "the shimmer's peak")
+        open(app, "askPill")
+        let match = app.switches["tunerToggle-askMatchesSearch"].firstMatch
+        XCTAssertEqual(match.value as? String, "1", "Ask matches Search by default")
+        XCTAssertFalse(app.segmentedControls["tunerRimRest-ask"].exists, "while matching, Ask has no controls of its own")
+        match.switches.firstMatch.tap()
+        XCTAssertTrue(app.segmentedControls["tunerRimRest-ask"].waitForExistence(timeout: 3), "let go, Ask has its own")
+        XCTAssertTrue(app.segmentedControls["tunerRimRest-ask"].buttons["Off"].isSelected, "and starts from Search's values")
+        XCTAssertTrue(app.segmentedControls["tunerRimActive-ask"].buttons["Slow shimmer"].isSelected)
+        shot(app, "sheet-ask-own")
     }
 
     func testLongPressHidesUntilRelaunch() {

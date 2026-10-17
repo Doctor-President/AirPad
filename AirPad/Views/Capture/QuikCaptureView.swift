@@ -421,8 +421,9 @@ struct QuikCaptureView: View {
                 if node.embeddingFailureReason == "guardrail_refused",
                    LocalModelService.shared.state != .ready, !refusalNoteDismissed {
                     LeverRefusalBanner(
-                        message: "Apple Intelligence declined to name this one. AirPad's optional private model handles a wider range of subjects.",
+                        message: "Apple Intelligence won't name this entry. Turn on the on-device model in Settings to name sensitive entries.",
                         onSetUp: { showRefusalSettings = true },
+                        setUpLabel: "Open Settings",
                         onDismiss: { withAnimation(.easeInOut(duration: 0.2)) { refusalNoteDismissed = true } }
                     )
                     .clipShape(RoundedRectangle(cornerRadius: 14, style: .continuous))

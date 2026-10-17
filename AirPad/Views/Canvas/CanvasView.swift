@@ -1606,7 +1606,7 @@ struct CanvasView: View {
 
 // MARK: - Node detail overlay (animated gradient card, morphs from circle)
 
-private struct NodeDetailOverlay: View {
+struct NodeDetailOverlay: View {   // internal: live-20 (3) stills (TextRunsGallery)
     let node: Node
     @Bindable var canvasState: CanvasState
     @Binding var isDismissing: Bool
@@ -1628,7 +1628,7 @@ private struct NodeDetailOverlay: View {
 
     // Overlay dimensions: screen width minus 80pt (40pt padding each side)
     private var finalWidth: CGFloat {
-        UIScreen.main.bounds.width - 80
+        DisplaySize.screenWidth - 80
     }
 
     private var finalHeight: CGFloat {
@@ -1682,10 +1682,7 @@ private struct NodeDetailOverlay: View {
                     HStack(spacing: 16) {
                         ItemCountsRow(items: node.items)
 
-                        Text(node.createdAt, style: .relative)
-                            .font(.caption)
-                            .foregroundStyle(AppearancePalette.ink.opacity(0.65))
-                        + Text(" ago")
+                        Text("\(node.createdAt, style: .relative) ago")
                             .font(.caption)
                             .foregroundStyle(AppearancePalette.ink.opacity(0.65))
                     }

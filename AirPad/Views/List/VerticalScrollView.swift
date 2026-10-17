@@ -45,7 +45,7 @@ struct VerticalScrollView: View {
     @AppStorage(CardTuningKey.key(.vertical, .spacing))
     private var cardSpacingRaw: Double = CardTuningDefaults.value(.vertical, .spacing)
 
-    private var cardHeight: CGFloat { UIScreen.main.bounds.width * CGFloat(heightRatio) }
+    private var cardHeight: CGFloat { DisplaySize.screenWidth * CGFloat(heightRatio) }
     private var cardSpacing: CGFloat { CGFloat(cardSpacingRaw) }
     private let topBarHeight: CGFloat = 110  // top chrome row + padding from ContentView
     private let haptic = UIImpactFeedbackGenerator(style: .medium)
@@ -184,6 +184,7 @@ struct VerticalScrollView: View {
     private func cardScrollContent(containerHeight: CGFloat) -> some View {
         let margin = max(60, (containerHeight - cardHeight) / 2)
         let screenMidY = containerHeight / 2.0
+        let screenHeight = DisplaySize.screenHeight   // read here: the visualEffect closure below is Sendable
 
         return ScrollViewReader { proxy in
             ScrollView(.vertical, showsIndicators: false) {
@@ -214,7 +215,6 @@ struct VerticalScrollView: View {
                         .id(node.id)
                         .visualEffect { content, proxy in
                             let frame = proxy.frame(in: .global)
-                            let screenHeight = UIScreen.main.bounds.height
                             let screenMidY = screenHeight / 2.0
 
                             // Vignette effect — top and bottom chrome zones
@@ -265,7 +265,7 @@ struct VerticalScrollView: View {
                         }
                     }
                 }
-                .padding(.horizontal, UIScreen.main.bounds.width * 0.05)
+                .padding(.horizontal, DisplaySize.screenWidth * 0.05)
                 .scrollTargetLayout()
             }
             .contentMargins(.vertical, margin, for: .scrollContent)

@@ -321,10 +321,7 @@ struct RecentNodeRow: View, Equatable {
                     .font(appFont.font(size: 15, weight: .medium, relativeTo: .subheadline))
                     .foregroundStyle(ink)
                     .lineLimit(1)
-                Text(timestamp, style: .relative)
-                    .font(.caption)
-                    .foregroundStyle(ink.opacity(0.4))
-                + Text(" ago")
+                Text("\(timestamp, style: .relative) ago")
                     .font(.caption)
                     .foregroundStyle(ink.opacity(0.4))
             }

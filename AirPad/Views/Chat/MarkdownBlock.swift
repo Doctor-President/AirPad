@@ -384,13 +384,7 @@ struct MarkdownBlockView: View {
     /// value goes through the SAME inline parse as prose so bold / italic /
     /// citations survive inside cells.
     private func labeledCell(header: String, value: String) -> some View {
-        (Text(header.isEmpty ? "" : header + ": ")
-            .font(bodyFont)
-            .fontWeight(.semibold)
-            .foregroundStyle(ChatTypography.secondaryText)
-         + Text(Self.inline(value, face: appFont))
-            .font(bodyFont)
-            .foregroundStyle(ChatTypography.bodyText))
+        Text("\(Text(header.isEmpty ? "" : header + ": ").font(bodyFont).fontWeight(.semibold).foregroundStyle(ChatTypography.secondaryText))\(Text(Self.inline(value, face: appFont)).font(bodyFont).foregroundStyle(ChatTypography.bodyText))")
             .lineSpacing(ChatTypography.bodyLine)
             .frame(maxWidth: .infinity, alignment: .leading)
     }

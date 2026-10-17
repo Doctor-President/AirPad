@@ -41,10 +41,10 @@ struct CardBlurTest: View {
                                     summary: "Between states of being, transformation quietly unfolds.",
                                     containerHeight: container.size.height)
                     }
-                    .frame(width: UIScreen.main.bounds.width, alignment: .center)
+                    .frame(width: DisplaySize.screenWidth, alignment: .center)
                     .padding(.vertical, 40)
                 }
-                .frame(width: UIScreen.main.bounds.width)
+                .frame(width: DisplaySize.screenWidth)
             }
         }
     }
@@ -130,7 +130,7 @@ struct CardItemView: View {
             .scaleEffect(scale)
             .opacity(opacity)
             .animation(.spring(response: 0.38, dampingFraction: 0.72), value: distance)
-            .padding(.horizontal, (UIScreen.main.bounds.width - 360) / 2)
+            .padding(.horizontal, (DisplaySize.screenWidth - 360) / 2)
             .onAppear {
                 if cachedGlow == nil {
                     cachedGlow = buildGlow()

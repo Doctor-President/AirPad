@@ -121,6 +121,9 @@ struct LibrarianSurface: View {
     @State private var activeAccent: Color? = nil
 
     @Environment(\.accessibilityReduceMotion) private var reduceMotion
+    #if DEBUG || TESTFLIGHT
+    @Environment(\.colorScheme) private var colorScheme   // live-22 (2) — the appearance tuner's glass controls are per mode
+    #endif
 
     @AppStorage(SolarFlareTuningKey.bloomOn) private var sfBloomOn: Bool = SolarFlareTuningDefaults.bloomOn
 
@@ -318,6 +321,13 @@ struct LibrarianSurface: View {
             // be smoke-tested headlessly: screenshot the transcript to see the answer
             // + whether a citation footer appears. Expands to full so the transcript
             // is visible.
+            // live-20 (3) — `-OpenSeededChat YES`: open the seeded chat at full (the read-in-full offer's still).
+            if UserDefaults.standard.bool(forKey: "OpenSeededChat") {
+                DispatchQueue.main.asyncAfter(deadline: .now() + 1.0) {
+                    isViewingActiveChat = true
+                    panelModel.expandToFull(animated: false)
+                }
+            }
             if let q = UserDefaults.standard.string(forKey: "AskAutoSend"), !q.isEmpty {
                 isViewingActiveChat = true
                 panelModel.expandToFull(animated: false)
@@ -1590,7 +1600,7 @@ struct LibrarianSurface: View {
             Image(systemName: "book")
                 .font(.system(size: 13, weight: .semibold))
                 .foregroundStyle(AppearancePalette.ink.opacity(0.55))
-            (Text("One entry stands out: ") + Text(offer.title).italic())
+            Text("One entry stands out: \(Text(offer.title).italic())")
                 .font(.system(size: 13))
                 .foregroundStyle(AppearancePalette.ink.opacity(0.7))
                 .fixedSize(horizontal: false, vertical: true)
@@ -1690,6 +1700,20 @@ struct LibrarianSurface: View {
     // (was askTrailingControls) — the inline send/mic/clear cluster is now the SHARED
     // `ComposerSendControls`, mounted as the field's bottom-trailing overlay above. T's
     // correction: the send control is shared idiom, not Librarian identity.
+
+    /// The Ask field's fill — live-22 (2): real Liquid Glass when the appearance tuner (TestFlight) asks for glass controls.
+    @ViewBuilder
+    private func askBackground(fill: Color, shape: RoundedRectangle) -> some View {
+        #if DEBUG || TESTFLIGHT
+        if AppearanceTuning.glassControls(dark: colorScheme == .dark) {
+            Color.clear.glassEffect(.regular, in: shape)
+        } else {
+            fill
+        }
+        #else
+        fill
+        #endif
+    }
 
     /// The Ask input row — the panel's persistent bottom composer. The one
     /// flexing element — chat-app convention: history scrolls above,
@@ -1804,7 +1828,7 @@ struct LibrarianSurface: View {
             #endif
             askFieldHeight = $0
         }
-        .background(askFill)
+        .background { askBackground(fill: askFill, shape: askShape) }
         // Item 2 — mic/send/clear as a BOTTOM-TRAILING overlay (not an HStack
         // sibling). Optical: constrain the cluster to the LINE-BOX height and pin
         // it `askTextVPad` from the bottom, so the glyph centres on the LAST line's
@@ -2401,7 +2425,7 @@ private struct SearchHeroRow: View {
             guard let url = await store.coverImageURL(for: node) else { return }
             // live-16 — a 52 pt thumbnail: decoded at that size through the ONE shared cache (was the full original).
             guard let key = DisplayImageCache.coverKey(node) else { return }
-            image = await DisplayImageCache.shared.load(path: key, url: url, pixels: Int(52 * UIScreen.main.scale))
+            image = await DisplayImageCache.shared.load(path: key, url: url, pixels: Int(52 * DisplaySize.scale))
         }
     }
 }

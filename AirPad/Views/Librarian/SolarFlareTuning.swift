@@ -664,6 +664,19 @@ struct LibrarianPanelMaterial: View {
     @Environment(\.colorScheme) private var colorScheme
 
     var body: some View {
+        #if DEBUG || TESTFLIGHT
+        // live-22 (2) — the on-device appearance tuner's surface, unless it's on Today.
+        if let v = AppearanceTuning.librarian(dark: colorScheme == .dark) {
+            LibrarianTunedMaterial(values: v, dark: colorScheme == .dark)
+        } else {
+            shipped
+        }
+        #else
+        shipped
+        #endif
+    }
+
+    @ViewBuilder private var shipped: some View {
         if colorScheme == .dark {
             SolarFlareMaterial(isDragging: isDragging, activeAccent: activeAccent)
         } else {
@@ -675,7 +688,8 @@ struct LibrarianPanelMaterial: View {
 /// LIGHT panel surface — Cucumber Water, **BAKED from T's on-device dial
 /// (2026-07-24, device-approved; the tuner has been deleted)**. Literals below are
 /// verbatim as dialled — do NOT snap to palette constants:
-///   material ultraThin · tint Cream #F4EFE3 @ 0.350 · sheen 0.000
+///   material ultraThin · tint @ 0.350 · sheen 0.000 — the tint + stroke hex come from the light palette
+///   (live-22 (1): L2 → tint #FBF9F5, stroke #DCD6CC; was Cream #F4EFE3 / Warm Tan #CEBBA2 on L1)
 ///   shadow Brown #43372A, radius 24, opacity 0.150, offset x 3 y 2
 ///   stroke ON, Warm Tan #CEBBA2, width 1.200 · corner 40
 /// Three elements (sheen 0 → no sheen layer): translucent ultraThin material +
@@ -688,13 +702,13 @@ struct LibrarianLightMaterial: View {
         ZStack {
             ZStack {
                 shape.fill(.ultraThinMaterial)                         // material: ultraThin
-                shape.fill(Color(hexString: "F4EFE3").opacity(0.35))   // tint: Cream @ 0.350
+                shape.fill(Color(hexString: AppearancePalette.light.panelTint).opacity(0.35))   // tint @ 0.350 (live-22: the palette's)
             }
             // shadow: Brown @ 0.150, radius 24, offset (3, 2)
             .shadow(color: Color(hexString: "43372A").opacity(0.15), radius: 24, x: 3, y: 2)
 
             // stroke: Warm Tan, width 1.2
-            shape.strokeBorder(Color(hexString: "CEBBA2"), lineWidth: 1.2)
+            shape.strokeBorder(Color(hexString: AppearancePalette.light.panelStroke), lineWidth: 1.2)
         }
         .padding(.bottom, -150)
         .ignoresSafeArea(.container, edges: .bottom)

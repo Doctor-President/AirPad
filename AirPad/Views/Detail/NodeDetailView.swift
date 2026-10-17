@@ -2845,7 +2845,7 @@ private struct HeroImageBanner: View {
         case .fullHeight:
             // The crisp card only — the mirror inset (topInset + 64) is chrome
             // clearance behind the band, deliberately excluded.
-            return min(naturalHeight, UIScreen.main.bounds.height * 0.72)
+            return min(naturalHeight, DisplaySize.screenHeight * 0.72)
         case .fill:
             return max(200, min(visualSettings.heroMaxHeight, naturalHeight))
         }
@@ -2886,7 +2886,7 @@ private struct HeroImageBanner: View {
                     // ambient blurred fill (the mirror is a TOP-edge treatment). No
                     // reposition (no overflow to pan; ••• hides it). `chromeClearance`
                     // 64 / `mirrorSourceFraction` 0.06 / `0.72` ceiling = proposed dials.
-                    let ceiling = UIScreen.main.bounds.height * 0.72
+                    let ceiling = DisplaySize.screenHeight * 0.72
                     let contentHeight = min(naturalHeight, ceiling)
                     let chromeClearance: CGFloat = 64            // 48pt back button + breathing
                     let insetHeight = topInset + chromeClearance
@@ -3048,7 +3048,7 @@ private struct HeroImageBanner: View {
             // from, or the tap's prewarm) is used as is; otherwise decoded at the banner's max pixel size (the wider
             // of `width` or the visible-height cap, × screen scale) and cached for every surface.
             guard let key = DisplayImageCache.coverKey(node) else { loadFailed = true; return }
-            let maxPixel = Int(max(width, visualSettings.heroMaxHeight) * UIScreen.main.scale)
+            let maxPixel = Int(max(width, visualSettings.heroMaxHeight) * DisplaySize.scale)
             let decoded: UIImage?
             if let hit = DisplayImageCache.shared.image(path: key, atLeast: maxPixel) {
                 decoded = hit
@@ -3141,7 +3141,7 @@ private struct BandHeroBackdrop: View {
         .task(id: coverPath) {
             image = nil
             guard let url = await store.coverImageURL(for: node) else { return }
-            let scale = UIScreen.main.scale
+            let scale = DisplaySize.scale
             // The band is short; downsample to its own pixel box (blurred anyway).
             let maxPixel = Int(max(width, height) * scale)
             let leftFraction = sampleLeftFraction

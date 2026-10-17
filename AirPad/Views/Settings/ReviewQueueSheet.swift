@@ -110,10 +110,7 @@ private struct ReviewBlockRow: View {
 
                 Spacer()
 
-                Text(block.rejectedAt, style: .relative)
-                    .font(.caption2)
-                    .foregroundStyle(AppearancePalette.ink.opacity(0.25))
-                + Text(" ago")
+                Text("\(block.rejectedAt, style: .relative) ago")
                     .font(.caption2)
                     .foregroundStyle(AppearancePalette.ink.opacity(0.25))
             }

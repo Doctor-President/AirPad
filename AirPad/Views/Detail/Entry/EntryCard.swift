@@ -895,14 +895,11 @@ private struct EntryTitleRow: View {
 
     /// Muted relative timestamp shown under the display name. Sized one step
     /// smaller than the title and dropped to 0.4 opacity so the eye reads
-    /// display name first, timestamp second. Concatenation matches the
-    /// pre-3.1a per-row footer treatment so the "5 minutes ago" phrasing
-    /// is unchanged. Font is the Section Timestamp role from the dev panel.
+    /// display name first, timestamp second. One interpolated Text (was two
+    /// joined with `+`, deprecated in iOS 26) keeps the pre-3.1a "5 minutes ago"
+    /// phrasing. Font is the Section Timestamp role from the dev panel.
     private var timestampLabel: some View {
-        Text(timestamp, style: .relative)
-            .font(timestampFont)
-            .foregroundStyle(AppearancePalette.ink.opacity(0.4))
-        + Text(" ago")
+        Text("\(timestamp, style: .relative) ago")
             .font(timestampFont)
             .foregroundStyle(AppearancePalette.ink.opacity(0.4))
     }

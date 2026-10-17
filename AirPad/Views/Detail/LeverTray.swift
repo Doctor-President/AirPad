@@ -86,10 +86,21 @@ struct LeverTray: View {
 
     /// Trailing sentence of a refusal banner: pitch the private model when it isn't set up,
     /// or note it's already active when it is. (Wording held for T.)
-    private var privateModelPitch: String {
-        localModelReady
-            ? "Your private model isn't limited the same way."
-            : "AirPad's optional private model handles a wider range of subjects."
+    /// live-20 (1) — installed at all (opted in or not). Installed, it names what Apple Intelligence declines by itself,
+    /// so a decline that still reaches the sheet means it couldn't either.
+    private var localModelInstalled: Bool { LocalModelService.shared.state == .ready }
+
+    /// live-20 (1) — the decline copy (T judges the wording): plain, honest, and it offers the fix.
+    private var namingDeclineMessage: String {
+        localModelInstalled
+            ? "Apple Intelligence won't name this entry, and the on-device model couldn't either."
+            : "Apple Intelligence won't name this entry. Turn on the on-device model in Settings to name sensitive entries."
+    }
+
+    /// Apple Intelligence declined and the on-device model wrote the proposal shown.
+    private var namedOnDevice: Bool {
+        guard let node else { return false }
+        return [Proposal.Kind.title, .summary].contains { node.surfacedProposal(kind: $0)?.onDeviceAfterDecline == true }
     }
 
     /// STATE 2 (no provider) copy — NO model exists to run on this device (no Apple
@@ -115,18 +126,22 @@ struct LeverTray: View {
                 // Retry + dismiss). A framework throw shows its OWN message
                 // verbatim; Retry re-runs the generate; × clears it.
                 if let failure, generatingAspect == nil {
-                    if case .refused(let msg) = failure {
+                    if case .refused = failure {
                         // FM DECLINED the TITLE+SUMMARY call (`processNode`, ws-local-model
                         // Stage 2). Not an error to retry — offer AirPad's optional on-device
                         // model and route into Settings to set it up. The tags locus has its
                         // own, separate notice in `tagsSection`.
+                        // live-20 (1) — no framework text ("The model's safety guardrails were triggered."): it
+                        // said nothing the user could act on. Settings opens at the model.
                         LeverRefusalBanner(
-                            message: "Apple Intelligence declined to summarize this one. \(privateModelPitch)",
-                            frameworkMessage: msg,
-                            onSetUp: localModelReady ? nil : { showSettings = true },
+                            message: namingDeclineMessage,
+                            onSetUp: localModelInstalled ? nil : { showSettings = true },
+                            setUpLabel: "Open Settings",
                             onDismiss: { self.failure = nil }
                         )
                         .clipShape(RoundedRectangle(cornerRadius: 12))
+                        .accessibilityElement(children: .contain)
+                        .accessibilityIdentifier("namingDeclineBanner")
                     } else if case .unavailable = failure {
                         // STATE 2 — NO model exists to run (no Apple Intelligence,
                         // private model not downloaded). NOT a refusal (nothing ran, nothing
@@ -149,6 +164,15 @@ struct LeverTray: View {
                         )
                         .clipShape(RoundedRectangle(cornerRadius: 12))
                     }
+                }
+
+                if namedOnDevice, generatingAspect == nil {
+                    // live-20 (1) — one line: who wrote the proposal below, and why.
+                    Text("Named by the on-device model — Apple Intelligence declined this entry.")
+                        .font(.system(size: 12))
+                        .foregroundStyle(AppearancePalette.ink.opacity(0.55))
+                        .fixedSize(horizontal: false, vertical: true)
+                        .accessibilityIdentifier("namedOnDeviceNote")
                 }
 
                 if let node {
@@ -187,7 +211,7 @@ struct LeverTray: View {
         // Nested sheet OVER the tray — the refusal surface's "set up" route lands the
         // user in AirPad's own Settings (local-model download + enable). No AppRouter
         // plumbing, no dismiss-then-present race; closing returns to the tray.
-        .sheet(isPresented: $showSettings) { SettingsView() }
+        .sheet(isPresented: $showSettings) { SettingsView(initialAnchor: .models) }
     }
 
     // MARK: - Rows
@@ -462,7 +486,8 @@ struct LeverTray: View {
                 // still has a summary — and don't claim so if it doesn't (both refused).
                 LeverRefusalBanner(
                     message: tagsRefusalMessage,
-                    onSetUp: localModelReady ? nil : { showSettings = true }
+                    onSetUp: localModelInstalled ? nil : { showSettings = true },
+                    setUpLabel: "Open Settings"
                 )
                 .clipShape(RoundedRectangle(cornerRadius: 12))
             } else if tagSuggestions.isEmpty && newTier.shown.isEmpty {
@@ -612,9 +637,13 @@ struct LeverTray: View {
     /// total failure, and never falsely claims they survived when both calls refused.
     private var tagsRefusalMessage: String {
         let hasSummary = !((node?.summary ?? "").trimmingCharacters(in: .whitespacesAndNewlines).isEmpty)
+        // live-20 (1) — the same plain copy as the naming decline.
+        if localModelInstalled {
+            return "Apple Intelligence won't suggest tags for this entry, and the on-device model couldn't either."
+        }
         return hasSummary
-            ? "Apple Intelligence declined to suggest tags for this entry — its title and summary are unaffected. \(privateModelPitch)"
-            : "Apple Intelligence declined to suggest tags for this entry. \(privateModelPitch)"
+            ? "Apple Intelligence won't suggest tags for this entry; its title and summary are unaffected. Turn on the on-device model in Settings to tag sensitive entries."
+            : "Apple Intelligence won't suggest tags for this entry. Turn on the on-device model in Settings to tag sensitive entries."
     }
 
     private func loadTagSuggestions() async {
@@ -799,6 +828,7 @@ struct LeverRefusalBanner: View {
     /// Nil HIDES the "Set up the private model" CTA — used when the local model is already
     /// opted in + ready, so the banner never routes the user to something they've done.
     var onSetUp: (() -> Void)? = nil
+    var setUpLabel: String = "Set up the private model"
     var onDismiss: (() -> Void)? = nil
 
     var body: some View {
@@ -834,7 +864,7 @@ struct LeverRefusalBanner: View {
                 Button(action: onSetUp) {
                     HStack(spacing: 6) {
                         Image(systemName: "gearshape.fill").font(.system(size: 12))
-                        Text("Set up the private model").font(.system(size: 13, weight: .semibold))
+                        Text(setUpLabel).font(.system(size: 13, weight: .semibold))
                     }
                     .foregroundStyle(Color(hexString: "00BFFF"))
                 }

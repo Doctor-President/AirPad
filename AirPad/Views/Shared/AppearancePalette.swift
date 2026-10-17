@@ -68,6 +68,18 @@ enum AppearancePalette {
         })
     }
 
+    // MARK: - The light palette (live-22 (1))
+
+    /// The light-mode palette every light token below reads. `LightPalette.shipped` in an App Store build; in DEBUG /
+    /// TestFlight the on-device appearance tuner can swap it live (`AppearanceTuning`).
+    static var light: LightPalette {
+        #if DEBUG || TESTFLIGHT
+        return AppearanceTuning.lightPalette
+        #else
+        return .shipped
+        #endif
+    }
+
     // MARK: - Tokens
 
     /// `--bg-base` — the detail ground.
@@ -75,7 +87,7 @@ enum AppearancePalette {
     /// dark value — a NEUTRAL gray, R=G=B, not "warm"). Light: warm parchment,
     /// Tomoe River register — NOT stark white (`.systemBackground` would glare).
     static var bgBase: Color {
-        dynamic(dark: "000000", light: "F4EFE3")   // T device-final 2026-09-14, see Ops/reference/tuner-state-accepted.md
+        dynamic(dark: "000000", light: light.detailGround)   // live-22 (1): the light palette's detail ground
     }
 
     /// `--bg-elevated` — the raised note panel.
@@ -83,7 +95,7 @@ enum AppearancePalette {
     /// color). Light: a hair brighter/warmer than the ground so it lifts by
     /// luminance (transmissive — light falls ONTO the paper).
     static var bgElevated: Color {
-        dynamic(dark: "0D0D0D", light: "FAF6EC")   // T device-final 2026-09-14, see Ops/reference/tuner-state-accepted.md
+        dynamic(dark: "0D0D0D", light: light.elevated)   // live-22 (1): the light palette's raised panel
     }
 
     /// Primary foreground — text and icons. Used directly and at the same
@@ -192,7 +204,7 @@ enum AppearancePalette {
     /// visible but not assertive" on parchment. This is only the hue/luma floor
     /// — the exact PRESENCE is T's to dial via the tuner's dot-opacity slider.
     static func mapGridDotRGB(dark: Bool) -> (r: Float, g: Float, b: Float) {
-        let hex = dark ? "FFFFFF" : "2E3A40"
+        let hex = dark ? "FFFFFF" : light.dot   // live-22 (1): the light palette's dot hue
         let (r, g, b) = rgb(hex)
         return (Float(r), Float(g), Float(b))
     }
@@ -233,7 +245,7 @@ enum AppearancePalette {
     /// bake: a bare (transparent-between) blob field composited OVER parchment
     /// with `.plusDarker`, so saturated colour reads as pigment DARKENING the
     /// paper rather than lighting it.
-    static let cwParchmentHex = "F4EFE3"
+    static var cwParchmentHex: String { light.cardPaper }   // live-22 (1): the light palette's card paper
     static let cwBaseLightness: CGFloat = 0.98
     static let cwPigmentStrength: CGFloat = 1.0
     static let cwTransferMode: BlendMode = .plusDarker
@@ -282,6 +294,45 @@ extension View {
         )
     }
 }
+
+// MARK: - Light palettes (live-21 renders → live-22 (1))
+
+/// One light-mode palette: one temperature for the field, the cards, the detail ground and the Librarian panel.
+/// L1 is the look before live-22 (cool grey field under warm cream cards); T picked L2 on 2026-10-16 (live-21 renders,
+/// `Ops/design-refs/surface-palette-shadows-2026-10-16/`).
+struct LightPalette: Equatable {
+    let name: String
+    let field: String          // the library/Map ground at F1
+    let fieldSteps: [String]   // F2 (one step lighter), F3 (two lighter), F4 (one darker)
+    let cardPaper: String      // the card face's paper (× cardLightness = the card face)
+    let cardLightness: Double
+    let detailGround: String   // bgBase
+    let elevated: String       // bgElevated
+    let panelTint: String      // the Librarian light panel's tint
+    let panelStroke: String
+    let dot: String            // the dot grid's hue
+    let shadow: String         // the card shadow's colour
+
+    /// What ships — live-22 (1): T picked L2 (2026-10-16).
+    static let shipped = l2
+
+    static let l1 = LightPalette(name: "L1", field: "DDDDDD", fieldSteps: ["E8E8E8", "F3F3F3", "D2D2D2"],
+                                 cardPaper: "F4EFE3", cardLightness: 1.100, detailGround: "F4EFE3", elevated: "FAF6EC",
+                                 panelTint: "F4EFE3", panelStroke: "CEBBA2", dot: "2E3A40", shadow: "434343")
+    /// Warm off-white: one warm family for field, cards and panel.
+    static let l2 = LightPalette(name: "L2", field: "EFECE6", fieldSteps: ["F4F2ED", "F8F6F2", "E6E2DA"],
+                                 cardPaper: "FBF9F5", cardLightness: 1.0, detailGround: "EFECE6", elevated: "FBF9F5",
+                                 panelTint: "FBF9F5", panelStroke: "DCD6CC", dot: "3B362F", shadow: "3F3A33")
+}
+
+#if DEBUG || TESTFLIGHT
+extension LightPalette {
+    /// L2, cooler — the appearance tuner's third palette.
+    static let l3 = LightPalette(name: "L3", field: "ECECEA", fieldSteps: ["F1F1EF", "F6F6F4", "E3E3E0"],
+                                 cardPaper: "FAFAF8", cardLightness: 1.0, detailGround: "ECECEA", elevated: "FAFAF8",
+                                 panelTint: "FAFAF8", panelStroke: "D6D6D2", dot: "33383B", shadow: "3B3C3D")
+}
+#endif
 
 // MARK: - Brief AT5 — Appearance override (System / Light / Dark)
 

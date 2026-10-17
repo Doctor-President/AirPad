@@ -1194,6 +1194,10 @@ final class CorpusStore {
             if ProcessInfo.processInfo.arguments.contains("-SpeechEngineTestingSelfTest") {
                 NSLog("%@", SpeechEngineTesting.selfTest())
             }
+            // live-22 — T's light picks are what ships; the appearance tuner's gate, storage, presets and export.
+            if ProcessInfo.processInfo.arguments.contains("-AppearanceTuningSelfTest") {
+                NSLog("%@", AppearanceTuning.selfTest())
+            }
             // live-13 (1) — Done saves what the recorder showed, on every tier (tier 3 driven by injected results).
             if ProcessInfo.processInfo.arguments.contains("-RecorderSaveSelfTest") {
                 NSLog("%@", await RecorderSaveSelfTest.run())
@@ -1205,6 +1209,14 @@ final class CorpusStore {
             // live-13 (4) — imported documents are named from their real name, on every import path.
             if ProcessInfo.processInfo.arguments.contains("-DocumentNamingSelfTest") {
                 NSLog("%@", await runDocumentNamingSelfTest())
+            }
+            // live-20 (2) — a failed weekly re-extraction keeps the document's title, text, thumbnail and page count.
+            if ProcessInfo.processInfo.arguments.contains("-DocumentReextractSelfTest") {
+                NSLog("%@", await runDocumentReextractSelfTest())
+            }
+            // live-20 (1) — Apple Intelligence declines: a refusal (not Retry), the on-device model takes over; Done → B1 fragment title (live-21).
+            if ProcessInfo.processInfo.arguments.contains("-AppleDeclineSelfTest") {
+                NSLog("%@", await runAppleDeclineSelfTest())
             }
             // live-15 (1) — a document is named from its own text, right after another capture, on every import path.
             if ProcessInfo.processInfo.arguments.contains("-DocumentNamingInputSelfTest") {
@@ -6553,11 +6565,14 @@ final class CorpusStore {
     ///
     /// `extraction == nil` is the "extraction service couldn't produce
     /// anything" path (timeout, unsupported format, malformed file). We
-    /// still write back so the entry-side `.task` gate sees a populated
-    /// `documentTitle` (falling back to `fileName`) and stops re-firing
-    /// on every render — otherwise a broken PDF would burn a 10s
-    /// timeout every time the user opens the node. Same invariant as
+    /// still write back the attempt time so the entry-side `.task` gate
+    /// stops re-firing on every render — otherwise a broken PDF would burn
+    /// a 10s timeout every time the user opens the node. Same invariant as
     /// `applyOGFetch` stamping `ogFetchedAt` even on nil metadata.
+    ///
+    /// ★ live-20 (2) — a pass NEVER wipes: a failed one changes nothing but the attempt time, and a partial one keeps
+    /// every field it didn't produce. This is also the WEEKLY re-extraction's write-back, and a file unreadable for the
+    /// moment used to nil the title, text, thumbnail and page count until the next week's pass.
     ///
     /// Silently bails on missing node/entry/documentItem so a node
     /// deleted mid-extraction doesn't crash.
@@ -6593,11 +6608,11 @@ final class CorpusStore {
         }
 
         var docItem = docItems[docIdx]
-        docItem.documentTitle = extraction?.documentTitle
-        docItem.extractedText = extraction?.extractedText
-        docItem.thumbnailFile = thumbnailRelativePath
-        docItem.pageCount = extraction?.pageCount
-        docItem.wordCount = extraction?.wordCount
+        docItem.documentTitle = extraction?.documentTitle ?? docItem.documentTitle
+        docItem.extractedText = extraction?.extractedText ?? docItem.extractedText
+        docItem.thumbnailFile = thumbnailRelativePath ?? docItem.thumbnailFile
+        docItem.pageCount = extraction?.pageCount ?? docItem.pageCount
+        docItem.wordCount = extraction?.wordCount ?? docItem.wordCount
         // Stage 4.6 commit 2 fix — stamp the staleness marker on every
         // completion, success and failure alike. The gate in
         // `DocumentEntryBody.extractIfNeeded` and the migration-driven
@@ -8401,6 +8416,9 @@ final class CorpusStore {
         // records no proposal, whatever `aspects` says.
         let nodeEmbedding: [Float]? = (needsAuthorship && useCorpusAware) ? computeNodeEmbedding(for: node) : nil
         let result: NodeAIOutput?
+        // live-20 (1) — why naming produced nothing, returned at the END: the tags + search pass below still runs.
+        // (It used to return here, so an entry Apple Intelligence declined never got tags or search vectors.)
+        var namingFailure: NodeAIFailure?
         if needsAuthorship, withholdNaming {
             result = nil
         } else if needsAuthorship {
@@ -8439,7 +8457,12 @@ final class CorpusStore {
                 result = r
                 bug17Log.notice("FM-RETURNED node=\(nodeID, privacy: .public) ok summaryLen=\(r.summary.count) titleLen=\(r.title.count)")
             case .failure(let reason):
+                result = nil
+                namingFailure = reason
                 bug17Log.notice("FM-RETURNED node=\(nodeID, privacy: .public) FAILED reason=\(String(describing: reason), privacy: .public)")
+                // live-21 (0) — a DECLINE (Apple Intelligence refused, no on-device model took over) follows B1 like every
+                // other failure: under auto-naming its first words become its title (T, 2026-10-16). The Proposals sheet
+                // still says why (the decline line + Open Settings).
                 // Fallback title from raw content so the node isn't blank on FM
                 // failure. Race-safe read-modify-write; never touches `.items`.
                 //
@@ -8488,7 +8511,6 @@ final class CorpusStore {
                    AIService.classifyContent(from: n).authored.isEmpty {
                     pendingLinkAuthor.insert(nodeID)
                 }
-                return reason
             }
         } else {
             // The gate found a proposal already recorded against this exact content
@@ -8560,7 +8582,8 @@ final class CorpusStore {
                                     sourceEmbedding: sourceEmbedding,
                                     sourceContentHash: promptContentHash,
                                     posture: posture, generatedAt: generatedAt,
-                                    solicited: solicited) {
+                                    solicited: solicited,
+                                    onDeviceAfterDecline: result.namedOnDeviceAfterDecline) {
                     n.title = result.title
                     n.titleSource = .model
                 }
@@ -8570,7 +8593,8 @@ final class CorpusStore {
                                     sourceEmbedding: sourceEmbedding,
                                     sourceContentHash: promptContentHash,
                                     posture: posture, generatedAt: generatedAt,
-                                    solicited: solicited) {
+                                    solicited: solicited,
+                                    onDeviceAfterDecline: result.namedOnDeviceAfterDecline) {
                     n.summary = result.summary
                     n.summarySource = .model
                 }
@@ -8650,7 +8674,7 @@ final class CorpusStore {
         // there's nothing fresh left. The eager `.propose` compose pass never reaches this (it
         // proposes, it doesn't commit).
         if posture == .automatic { await promoteMatchingProposals(nodeID: nodeID) }
-        return nil   // F3 — authorship succeeded (proposals recorded / fields written)
+        return namingFailure   // F3 — nil: authorship succeeded (proposals recorded / fields written); else why not
     }
 
     /// One-time migration: re-runs AI processing on nodes that have empty tag

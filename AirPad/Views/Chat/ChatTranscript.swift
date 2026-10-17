@@ -38,6 +38,8 @@ struct ChatTranscript: View {
     /// the Web-search row. nil for hosts that don't present Settings (ChatView) — the
     /// link then falls through harmlessly.
     var onOpenWebSearchSettings: (() -> Void)? = nil
+    /// live-23 (5b) — a declined turn's "Switch model" opens the model picker (the Librarian's pill sheet).
+    var onSwitchModel: (() -> Void)? = nil
     /// #1-followup (chat chrome reclaim) — scroll-edge fade lengths as fractions
     /// of the transcript height. Bottom defaults to the shipped 0.06 (the old
     /// hardcoded 0.94 stop); top defaults to 0 (no top fade) so other hosts
@@ -424,12 +426,16 @@ struct ChatTranscript: View {
                 // gutter (the block VStack is greedy — its bullet rows use
                 // maxWidth:.infinity — so it takes an explicit frame + trailing
                 // padding rather than an HStack Spacer, which it would fight).
+                if message.declined == true {
+                    declinedRow(message: message)   // live-23 (5b) — an honest decline, not an answer
+                } else {
                 MarkdownBlockText(raw: message.text)
                     .frame(maxWidth: .infinity, alignment: .leading)
                     .padding(.trailing, 40)
                     #if DEBUG
                     .gauntletID("chat.answer", combine: true)   // Brief CH-0 — XCUITest reads the on-screen answer
                     #endif
+                }
                 // Brief BN5 — "Read 1 entry in full · skimmed 6" / "Skimmed 9 entries".
                 readReceiptLine(message: message)
                 // CH Session 2 — a General answer no web result backs says so (app chrome, not model text).
@@ -643,6 +649,39 @@ struct ChatTranscript: View {
     /// shape not hue — T is colorblind), never the red failure banner. "Continue"
     /// resumes onto this same bubble; shown only on the trailing turn (that's
     /// what `continuePartial()` merges onto), older partials just read as stopped.
+    /// live-23 (5b) — Apple Intelligence declined: one line saying so, then Try again (the same question, fresh — the
+    /// decline is never history) and Switch model (the model picker, one tap). No "general knowledge" label.
+    @ViewBuilder
+    private func declinedRow(message: ChatSession.Message) -> some View {
+        let isLast = message.id == session.messages.last?.id
+        VStack(alignment: .leading, spacing: 8) {
+            Label(AppleChat.declineLine, systemImage: "hand.raised")
+                .font(appFont.font(size: 15, relativeTo: .body))
+                .foregroundStyle(ChatTypography.secondaryText)
+                .fixedSize(horizontal: false, vertical: true)
+                .accessibilityIdentifier("chat.declined")
+            if isLast {
+                HStack(spacing: 16) {
+                    Button { Task { await session.regenerateLast() } } label: {
+                        Label("Try again", systemImage: "arrow.clockwise").font(.system(size: 13, weight: .semibold))
+                    }
+                    .disabled(session.isStreaming)
+                    .accessibilityIdentifier("chat.declined.retry")
+                    if let onSwitchModel {
+                        Button(action: onSwitchModel) {
+                            Label("Switch model", systemImage: "cpu").font(.system(size: 13, weight: .semibold))
+                        }
+                        .accessibilityIdentifier("chat.declined.switchModel")
+                    }
+                }
+                .buttonStyle(.plain)
+                .foregroundStyle(Color(hexString: "00BFFF"))
+            }
+        }
+        .frame(maxWidth: .infinity, alignment: .leading)
+        .padding(.trailing, 40)
+    }
+
     @ViewBuilder
     private func partialResumeControl(message: ChatSession.Message) -> some View {
         let isLast = message.id == session.messages.last?.id

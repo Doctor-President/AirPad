@@ -1198,6 +1198,14 @@ final class CorpusStore {
             if ProcessInfo.processInfo.arguments.contains("-AppearanceTuningSelfTest") {
                 NSLog("%@", AppearanceTuning.selfTest())
             }
+            // live-23 (5b) — Apple Intelligence chat: request shape, refusal detection, declines never go back / never title.
+            if ProcessInfo.processInfo.arguments.contains("-AppleChatSelfTest") {
+                NSLog("%@", AppleChat.selfTest())
+            }
+            // live-23 (4) — the card-content proposal's strip + preview choice.
+            if ProcessInfo.processInfo.arguments.contains("-CardContentSelfTest") {
+                NSLog("%@", CardContentSummary.selfTest())
+            }
             // live-13 (1) — Done saves what the recorder showed, on every tier (tier 3 driven by injected results).
             if ProcessInfo.processInfo.arguments.contains("-RecorderSaveSelfTest") {
                 NSLog("%@", await RecorderSaveSelfTest.run())

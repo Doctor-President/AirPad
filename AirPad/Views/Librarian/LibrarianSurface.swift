@@ -121,9 +121,7 @@ struct LibrarianSurface: View {
     @State private var activeAccent: Color? = nil
 
     @Environment(\.accessibilityReduceMotion) private var reduceMotion
-    #if DEBUG || TESTFLIGHT
-    @Environment(\.colorScheme) private var colorScheme   // live-22 (2) — the appearance tuner's glass controls are per mode
-    #endif
+    @Environment(\.colorScheme) private var colorScheme   // live-23 (1) — glass controls are per mode
 
     @AppStorage(SolarFlareTuningKey.bloomOn) private var sfBloomOn: Bool = SolarFlareTuningDefaults.bloomOn
 
@@ -960,6 +958,7 @@ struct LibrarianSurface: View {
                         // the Web-search row (same sheet the capability boundary uses).
                         settingsPresentation = .at(.webSearch)
                     },
+                    onSwitchModel: { showModelPicker = true },   // live-23 (5b) — a decline's model switch
                     topFadeFraction: cctTopFade,
                     bottomFadeFraction: cctBottomFade,
                     onScrollTopOffset: {
@@ -1701,18 +1700,14 @@ struct LibrarianSurface: View {
     // `ComposerSendControls`, mounted as the field's bottom-trailing overlay above. T's
     // correction: the send control is shared idiom, not Librarian identity.
 
-    /// The Ask field's fill — live-22 (2): real Liquid Glass when the appearance tuner (TestFlight) asks for glass controls.
+    /// The Ask field's fill — real Liquid Glass with glass controls (live-23 (1): T's tuning, both modes).
     @ViewBuilder
     private func askBackground(fill: Color, shape: RoundedRectangle) -> some View {
-        #if DEBUG || TESTFLIGHT
-        if AppearanceTuning.glassControls(dark: colorScheme == .dark) {
+        if LibrarianSurfaceSpec.glassControls(dark: colorScheme == .dark) {
             Color.clear.glassEffect(.regular, in: shape)
         } else {
             fill
         }
-        #else
-        fill
-        #endif
     }
 
     /// The Ask input row — the panel's persistent bottom composer. The one

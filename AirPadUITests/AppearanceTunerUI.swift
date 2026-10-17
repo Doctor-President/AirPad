@@ -7,7 +7,8 @@ import XCTest
 /// Sample Library in a scratch library. Simulator.
 final class AppearanceTunerUI: XCTestCase {
 
-    static let base = ["-UITestLibrary", "-UITestSampleLibrary", "-EmbedCPUOnly", "-AppearanceTuner", "YES",
+    // live-23: fresh, so a scratch library another run seeded (the card showcase) can't keep the sample from seeding.
+    static let base = ["-UITestLibrary", "-UITestLibraryFresh", "-UITestSampleLibrary", "-EmbedCPUOnly", "-AppearanceTuner", "YES",
                        "-AppearanceTunerReset", "YES"]
 
     override func setUp() { continueAfterFailure = true }
@@ -68,9 +69,13 @@ final class AppearanceTunerUI: XCTestCase {
         h.tap()
         XCTAssertTrue(app.descendants(matching: .any)["appearanceTunerSheet"].waitForExistence(timeout: 10), "the sheet opens")
         XCTAssertEqual(app.staticTexts["tunerEditingMode"].label, "Editing Light — follows the system")
-        XCTAssertEqual(readout(app, "tint"), "0.35", "Today's tint")
-        XCTAssertEqual(readout(app, "blur"), "1.00 pass")
-        shot(app, "sheet-today")
+        XCTAssertEqual(readout(app, "tint"), "0.85", "T's tuned tint (live-23 default)")
+        XCTAssertEqual(readout(app, "blur"), "1.74 passes")
+        // live-23 — the card-content switch (Today by default) and the hero fade at its baked shape.
+        XCTAssertTrue(app.segmentedControls["tunerCardContent"].buttons["Today"].isSelected, "Card content starts on Today")
+        XCTAssertEqual(readout(app, "fadeLength"), "0.60", "the baked fade length")
+        XCTAssertEqual(readout(app, "fadeCurve"), "smoothstep", "the baked fade curve")
+        shot(app, "sheet-default")
         app.buttons["tunerPreset-frost50"].tap()
         XCTAssertEqual(readout(app, "tint"), "0.50", "Frost 50% moves the tint")
         XCTAssertEqual(readout(app, "blur"), "2.00 passes", "heavy blur")
@@ -93,7 +98,7 @@ final class AppearanceTunerUI: XCTestCase {
         chevron.tap()
         app.buttons["tunerReset"].tap()
         app.buttons["tunerReset"].tap()
-        XCTAssertEqual(readout(app, "tint"), "0.35", "Reset restores Today")
+        XCTAssertEqual(readout(app, "tint"), "0.85", "Reset restores T's tuned values")
         XCTAssertEqual(readout(app, "field"), "F2 · #F4F2ED", "Reset restores T's field")
         app.buttons["tunerClose"].tap()
         XCTAssertTrue(h.waitForExistence(timeout: 5), "closing returns to the handle")

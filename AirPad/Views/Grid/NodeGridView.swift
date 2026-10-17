@@ -73,7 +73,7 @@ struct NodeGridView: View {
 
     /// Faint glassy highlight at the tile's top edge, fading out fast. Applied
     /// pre-clip so it's masked to the rounded tile shape.
-    private static var tileSheen: some View {
+    static var tileSheen: some View {   // internal: the live-23 card showcase renders the same tile
         LinearGradient(
             stops: [
                 .init(color: Color.white.opacity(tileSheenOpacity),        location: 0.0),

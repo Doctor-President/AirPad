@@ -664,19 +664,16 @@ struct LibrarianPanelMaterial: View {
     @Environment(\.colorScheme) private var colorScheme
 
     var body: some View {
-        #if DEBUG || TESTFLIGHT
-        // live-22 (2) — the on-device appearance tuner's surface, unless it's on Today.
-        if let v = AppearanceTuning.librarian(dark: colorScheme == .dark) {
-            LibrarianTunedMaterial(values: v, dark: colorScheme == .dark)
+        // live-23 (1) — T's tuned frost in both modes (`LibrarianSurfaceSpec`); nil = the tuner's "Before" preset.
+        if let spec = LibrarianSurfaceSpec.current(dark: colorScheme == .dark) {
+            LibrarianTunedMaterial(spec: spec, dark: colorScheme == .dark)
         } else {
-            shipped
+            before
         }
-        #else
-        shipped
-        #endif
     }
 
-    @ViewBuilder private var shipped: some View {
+    /// The panel before live-23: Solar Flare (dark) / Cucumber Water (light). Only the tuner's "Before" preset shows it.
+    @ViewBuilder private var before: some View {
         if colorScheme == .dark {
             SolarFlareMaterial(isDragging: isDragging, activeAccent: activeAccent)
         } else {

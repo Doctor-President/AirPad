@@ -130,6 +130,13 @@ enum ModelRouter {
     /// user with a working endpoint is never told they have no model.
     /// ⚠️ Reads the Keychain (XPC) via `active`; call OFF the SwiftUI render path and cache the
     /// result (LibrarianState.askUnavailable) — never from a `body`.
+    /// live-23 (5b) — Apple Intelligence is answering the Librarian (its refusals are detected and shown as declines).
+    /// Reads `active` (Keychain, XPC) — call at send time, never from a `body`.
+    static var isAppleIntelligenceActive: Bool {
+        if case .foundationModel = active { return true }
+        return false
+    }
+
     static var askHasNoProvider: Bool {
         guard case .foundationModel = active else { return false }
         return !onDeviceAvailable
@@ -392,7 +399,18 @@ enum ModelRouter {
                         #if DEBUG
                         if UserDefaults.standard.bool(forKey: "StubOnDeviceModel") {
                             try await Task.sleep(for: .milliseconds(400))
-                            for w in "This answer comes from Apple Intelligence on this iPhone (stub).".split(separator: " ") {
+                            var stubText = "This answer comes from Apple Intelligence on this iPhone (stub)."
+                            // live-23 (5b) — `-StubOnDeviceRefusal YES`: a "presidents" question gets T's refusal; any
+                            // other answer reports how many refusals the history it was SENT carried (must be 0).
+                            if UserDefaults.standard.bool(forKey: "StubOnDeviceRefusal") {
+                                let r = AppleChat.request(messages)
+                                if r.prompt.lowercased().contains("presidents") {
+                                    stubText = "I cannot fulfill that request. I cannot provide information on that topic."
+                                } else {
+                                    stubText += " History refusals: \(r.history.filter { AppleChat.isRefusalText($0.content) }.count)."
+                                }
+                            }
+                            for w in stubText.split(separator: " ") {
                                 continuation.yield(.answer(String(w) + " ")); try await Task.sleep(for: .milliseconds(40))
                             }
                             continuation.finish(); return
@@ -427,26 +445,8 @@ enum ModelRouter {
         }
     }
 
-    /// Fold a message array into a single prompt for a provider with NO role API (Foundation
-    /// Model). System text leads; prior turns are labelled; the final user turn is raw. FM is the
-    /// on-device fallback (not the reported Host bug) and has no chat-messages API, so a fold is
-    /// unavoidable here — but it keeps the system prompt intact and doesn't append an "Assistant:"
-    /// continuation cue.
-    private static func flattenForFM(_ messages: [WireMessage]) -> String {
-        var parts: [String] = []
-        for (i, m) in messages.enumerated() {
-            let c = (m["content"] ?? "").trimmingCharacters(in: .whitespacesAndNewlines)
-            guard !c.isEmpty else { continue }
-            let isLast = i == messages.count - 1
-            switch m["role"] {
-            case "system":    parts.append(c)
-            case "assistant": parts.append("Assistant: \(c)")
-            case "user":      parts.append(isLast ? c : "User: \(c)")
-            default:          parts.append(c)
-            }
-        }
-        return parts.joined(separator: "\n\n")
-    }
+    // live-23 (5b) — `flattenForFM` (one folded "User:/Assistant:" string for Apple Intelligence) is gone: the session
+    // now gets real instructions + a transcript (`AppleChat`), and declined turns never go back.
 
     /// For the DIRECT `/v1/chat/completions` path: fold a leading `system` message into the first
     /// user turn (some local chat templates — legacy Mistral — HTTP-400 on a standalone system
@@ -729,8 +729,10 @@ enum ModelRouter {
         guard SystemLanguageModel.default.isAvailable else {
             throw RouterError.foundationModelUnavailable
         }
-        let session = LanguageModelSession()
-        let combined = flattenForFM(messages)   // FM has no role API — fold (system leads, no "Assistant:" cue)
+        // live-23 (5b) — the system prompt as the session's instructions and prior turns as a real transcript (Apple's
+        // guidance for over-blocking: a clear role at the start of the instructions); was one folded string.
+        let request = AppleChat.request(messages)
+        let session = AppleChat.session(request)
 
         // C2c — fail fast: no first token in 45 s → a clear error, never an endless "Thinking…" (the 4K on-device
         // model prefills in seconds; 45 s means it is stuck).
@@ -743,7 +745,7 @@ enum ModelRouter {
 
         // Snapshots are CUMULATIVE. Convert to deltas via suffix-diff.
         var emitted = ""
-        for try await snapshot in session.streamResponse(to: combined) {
+        for try await snapshot in session.streamResponse(to: request.prompt) {
             await firstToken.mark()
             let full = snapshot.content
             guard full.count > emitted.count else { continue }

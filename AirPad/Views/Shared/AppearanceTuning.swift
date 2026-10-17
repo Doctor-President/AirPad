@@ -33,7 +33,7 @@ enum LibrarianPanelPreset: String, Codable, CaseIterable, Identifiable {
     var id: String { rawValue }
     var label: String {
         switch self {
-        case .today:        return "Today"
+        case .today:        return "Before"   // live-23: the pre-live-23 panel (Cucumber Water / Solar Flare)
         case .frost35:      return "Frost 35%"
         case .frost50:      return "Frost 50%"
         case .frost65:      return "Frost 65%"
@@ -64,21 +64,36 @@ struct AppearanceTuningValues: Codable, Equatable {
     var glassControls: Bool      // the search pill + Ask bar as real Liquid Glass
     var dimBehind: Bool
     var dimAmount: Double        // 0…0.20 black over the content behind, scaled by how far the panel is up
+    // Hero photo fade (live-23 (3)) — carousel + grid cards
+    var fadeLength: Double = CardHeroFade.baked.length   // fraction of the hero zone the photo fades over
+    var fadeCurve: Double = CardHeroFade.baked.curve     // 0 linear · 1 smoothstep · 2 smootherstep
 
-    /// ★ live-22 (1) — T's picks (2026-10-16): L2, F2, a 0.5 pt hairline, the shadow at 25% of today's strength.
-    /// The Librarian is today's surface.
+    var heroFade: CardHeroFade.Shape {
+        CardHeroFade.Shape(length: fadeLength, curve: fadeCurve, overshoot: CardHeroFade.baked.overshoot)
+    }
+
+    /// ★ live-23 (1) — T's on-device tuning (2026-10-16, Ops `reference/appearance-tuning-2026-10-16.md`), = what
+    /// ships: L2 · F2, the shadow at 50% with radius 24, the hairline 0.5 pt @ 0.25; the Librarian a near-solid frost
+    /// (tint 0.85, blur 1.74, full colour) with glass controls, the content behind dimmed 10%.
     static let lightDefault = AppearanceTuningValues(
-        palette: "L2", fieldStep: 1, shadowStrength: 0.25, shadowRadius: 12.5,
-        hairline: true, hairlineWidth: 0.5, hairlineOpacity: 0.16,
-        panel: .today, tintOpacity: 0.35, blur: 1, saturation: 1, glassControls: false,
-        dimBehind: false, dimAmount: 0.10)
+        palette: "L2", fieldStep: 1, shadowStrength: 0.5, shadowRadius: 24,
+        hairline: true, hairlineWidth: 0.5, hairlineOpacity: 0.25,
+        panel: .custom, tintOpacity: 0.85, blur: 1.74, saturation: 1, glassControls: true,
+        dimBehind: true, dimAmount: 0.10)
 
-    /// Dark is unchanged by live-22: today's shadow (black 0.742, radius 12), today's top rim, the Solar Flare panel.
+    /// ★ live-23 (1) — dark: the field half a step lighter (#1A1A1A), the shadow and top rim as before; the Librarian a
+    /// real frost (tint 0.56, blur 2, colour at 40%) with glass controls, the content behind dimmed 20%.
     static let darkDefault = AppearanceTuningValues(
-        palette: "L2", fieldStep: 0, shadowStrength: 1, shadowRadius: 12,
+        palette: "L2", fieldStep: 0.5, shadowStrength: 1, shadowRadius: 12,
         hairline: false, hairlineWidth: 0.5, hairlineOpacity: 0.12,
-        panel: .today, tintOpacity: 0.35, blur: 1, saturation: 1, glassControls: false,
-        dimBehind: false, dimAmount: 0.10)
+        panel: .custom, tintOpacity: 0.56, blur: 2, saturation: 0.4, glassControls: true,
+        dimBehind: true, dimAmount: 0.20)
+
+    /// The Librarian surface these values render (live-23).
+    var librarianSpec: LibrarianSurfaceSpec {
+        LibrarianSurfaceSpec(tint: tintOpacity, blur: blur, saturation: saturation, glassControls: glassControls,
+                             dim: dimBehind ? min(max(dimAmount, 0), 0.20) : 0, wholePanelGlass: panel == .liquidGlass)
+    }
 
     /// Set the Librarian sliders to a preset. Dim is left as it is (it's its own toggle).
     mutating func apply(_ preset: LibrarianPanelPreset) {
@@ -95,10 +110,61 @@ struct AppearanceTuningValues: Codable, Equatable {
     }
 }
 
+extension AppearanceTuningValues {
+    /// Keys added after a build T tuned on (live-23: the fade) decode to their defaults, so his stored values survive.
+    init(from decoder: Decoder) throws {
+        let c = try decoder.container(keyedBy: CodingKeys.self)
+        palette = try c.decode(String.self, forKey: .palette)
+        fieldStep = try c.decode(Double.self, forKey: .fieldStep)
+        shadowStrength = try c.decode(Double.self, forKey: .shadowStrength)
+        shadowRadius = try c.decode(Double.self, forKey: .shadowRadius)
+        hairline = try c.decode(Bool.self, forKey: .hairline)
+        hairlineWidth = try c.decode(Double.self, forKey: .hairlineWidth)
+        hairlineOpacity = try c.decode(Double.self, forKey: .hairlineOpacity)
+        panel = try c.decode(LibrarianPanelPreset.self, forKey: .panel)
+        tintOpacity = try c.decode(Double.self, forKey: .tintOpacity)
+        blur = try c.decode(Double.self, forKey: .blur)
+        saturation = try c.decode(Double.self, forKey: .saturation)
+        glassControls = try c.decode(Bool.self, forKey: .glassControls)
+        dimBehind = try c.decode(Bool.self, forKey: .dimBehind)
+        dimAmount = try c.decode(Double.self, forKey: .dimAmount)
+        fadeLength = try c.decodeIfPresent(Double.self, forKey: .fadeLength) ?? CardHeroFade.baked.length
+        fadeCurve = try c.decodeIfPresent(Double.self, forKey: .fadeCurve) ?? CardHeroFade.baked.curve
+    }
+}
+
+/// Which card content the faces render (live-23 (4)): today's, or the proposal T compares it with.
+enum CardContentMode: String, Codable, CaseIterable, Identifiable {
+    case today, proposal
+    var id: String { rawValue }
+    var label: String { self == .today ? "Today" : "Proposal" }
+}
+
+/// Which capture controls render (live-23 (5c)): today's solid pills, or Liquid Glass.
+enum CaptureControlsMode: String, Codable, CaseIterable, Identifiable {
+    case today, glass
+    var id: String { rawValue }
+    var label: String { self == .today ? "Today" : "Glass" }
+}
+
 struct AppearanceTuningState: Codable, Equatable {
     var light: AppearanceTuningValues
     var dark: AppearanceTuningValues
+    var cardContent: CardContentMode = .today
+    var captureControls: CaptureControlsMode = .today
     static let defaults = AppearanceTuningState(light: .lightDefault, dark: .darkDefault)
+
+    init(light: AppearanceTuningValues, dark: AppearanceTuningValues, cardContent: CardContentMode = .today,
+         captureControls: CaptureControlsMode = .today) {
+        self.light = light; self.dark = dark; self.cardContent = cardContent; self.captureControls = captureControls
+    }
+    init(from decoder: Decoder) throws {
+        let c = try decoder.container(keyedBy: CodingKeys.self)
+        light = try c.decode(AppearanceTuningValues.self, forKey: .light)
+        dark = try c.decode(AppearanceTuningValues.self, forKey: .dark)
+        cardContent = try c.decodeIfPresent(CardContentMode.self, forKey: .cardContent) ?? .today
+        captureControls = try c.decodeIfPresent(CaptureControlsMode.self, forKey: .captureControls) ?? .today
+    }
 }
 
 // MARK: - The live store
@@ -265,18 +331,7 @@ extension AppearanceTuning {
         return (v.hairlineOpacity, v.hairlineWidth)
     }
 
-    // Librarian
-
-    /// The Librarian surface values for an appearance, or nil when the tuner isn't live or it's on Today.
-    static func librarian(dark: Bool) -> AppearanceTuningValues? {
-        guard let v = values(dark: dark), v.panel != .today else { return nil }
-        return v
-    }
-    static func glassControls(dark: Bool) -> Bool { values(dark: dark)?.glassControls ?? false }
-    static func dimAmount(dark: Bool) -> Double {
-        guard let v = values(dark: dark), v.dimBehind else { return 0 }
-        return min(max(v.dimAmount, 0), 0.20)
-    }
+    // Librarian: `LibrarianSurfaceSpec.current(dark:)` / `.glassControls(dark:)` / `.dimAmount(dark:)` read the tuner.
 
     // MARK: Copy values
 
@@ -301,10 +356,11 @@ extension AppearanceTuning {
                 "\"panel\":\"\(v.panel.rawValue)\"", "\"tint\":\(num(v.tintOpacity))", "\"blur\":\(num(v.blur))",
                 "\"saturation\":\(num(v.saturation))", "\"glassControls\":\(v.glassControls)",
                 "\"dim\":\(v.dimBehind ? num(v.dimAmount) : "0")",
+                "\"fadeLength\":\(num(v.fadeLength))", "\"fadeCurve\":\(num(v.fadeCurve))",
             ]
             return "{" + parts.joined(separator: ",") + "}"
         }
-        return "{\"airpadAppearance\":1,\"build\":\"\(build)\",\"editing\":\"\(mode)\","
+        return "{\"airpadAppearance\":1,\"build\":\"\(build)\",\"editing\":\"\(mode)\",\"cardContent\":\"\(s.cardContent.rawValue)\",\"captureControls\":\"\(s.captureControls.rawValue)\","
             + "\"light\":\(block(s.light, dark: false)),\"dark\":\(block(s.dark, dark: true))}"
     }
 }
@@ -328,17 +384,18 @@ extension AppearanceTuning {
             return String(format: "%02X%02X%02X", Int((r * 255).rounded()), Int((g * 255).rounded()), Int((b * 255).rounded()))
         }
 
-        // (1) — T's picks are the baked light defaults (what an App Store build renders).
+        // live-23 (1) — T's on-device tuning (2026-10-16, Ops reference/appearance-tuning-2026-10-16.md) is what ships.
         let D = CardSurfaceDefaults.self
         row("baked-palette-is-L2", LightPalette.shipped == .l2, "shipped=\(LightPalette.shipped.name)")
         row("baked-field-is-L2-F2", D.hex(.groundHex) == "F4F2ED", "ground=\(D.hex(.groundHex))")
         row("baked-card-face-FBF9F5", CardSurfaceResolved.resolvedCardBackgroundHex == "#FBF9F5",
             "card=\(CardSurfaceResolved.resolvedCardBackgroundHex)")
-        row("baked-shadow-quarter-of-0.262", close(D.value(.shadowAlpha), 0.262 * 0.25), "alpha=\(D.value(.shadowAlpha))")
-        row("baked-shadow-radius-y-unchanged", D.value(.shadowRadius) == 12.5 && D.value(.shadowY) == 11)
+        row("baked-shadow-half-of-0.262 (0.131)", close(D.value(.shadowAlpha), 0.131), "alpha=\(D.value(.shadowAlpha))")
+        row("baked-shadow-radius-24-y-11", D.value(.shadowRadius) == 24 && D.value(.shadowY) == 11,
+            "radius=\(D.value(.shadowRadius)) y=\(D.value(.shadowY))")
         row("baked-shadow-hex-L2", D.hex(.shadowHex) == "3F3A33", "shadowHex=\(D.hex(.shadowHex))")
-        row("baked-hairline-0.5pt-black-0.16-all-edges",
-            D.hex(.rimHex) == "000000" && close(D.value(.rimOpacity), 0.16) && D.value(.rimWidth) == 0.5 && !D.flag(.rimTopOnly),
+        row("baked-hairline-0.5pt-black-0.25-all-edges",
+            D.hex(.rimHex) == "000000" && close(D.value(.rimOpacity), 0.25) && D.value(.rimWidth) == 0.5 && !D.flag(.rimTopOnly),
             "rim=\(D.hex(.rimHex))@\(D.value(.rimOpacity)) w\(D.value(.rimWidth)) topOnly=\(D.flag(.rimTopOnly))")
         row("baked-detail-ground-EFECE6", hex(AppearancePalette.bgBase, dark: false) == "EFECE6",
             "bgBase=\(hex(AppearancePalette.bgBase, dark: false))")
@@ -348,12 +405,20 @@ extension AppearanceTuning {
             LightPalette.shipped.panelTint == "FBF9F5" && LightPalette.shipped.panelStroke == "DCD6CC")
         row("baked-dots-L2-hue-same-opacity",
             LightPalette.shipped.dot == "3B362F" && AppearancePalette.libraryGridDotOpacity(dark: false) == 0.523)
-        row("dark-unchanged", hex(CardSurfaceResolved.ground(dark: true), dark: true) == "161616"
-            && CardSurfaceResolved.shadowRadius(dark: true) == 12 && CardSurfaceResolved.rimWidth(dark: true) == 1.5
-            && CardSurfaceResolved.rimIsTopOnly(dark: true)
+        row("baked-dark-field-1A1A1A (F+0.50)", hex(CardSurfaceResolved.ground(dark: true), dark: true) == "1A1A1A",
+            "dark ground=\(hex(CardSurfaceResolved.ground(dark: true), dark: true))")
+        row("dark-shadow-and-rim-unchanged", CardSurfaceResolved.shadowRadius(dark: true) == 12
+            && CardSurfaceResolved.rimWidth(dark: true) == 1.5 && CardSurfaceResolved.rimIsTopOnly(dark: true)
             && hex(AppearancePalette.bgBase, dark: true) == "000000")
+        let bl = LibrarianSurfaceSpec.baked(dark: false), bd = LibrarianSurfaceSpec.baked(dark: true)
+        row("baked-librarian-light-tint-0.85-blur-1.74-sat-1-glass-dim-0.10",
+            close(bl.tint, 0.85) && close(bl.blur, 1.74) && close(bl.saturation, 1) && bl.glassControls && close(bl.dim, 0.10)
+            && !bl.wholePanelGlass, "\(bl)")
+        row("baked-librarian-dark-tint-0.56-blur-2-sat-0.4-glass-dim-0.20",
+            close(bd.tint, 0.56) && close(bd.blur, 2) && close(bd.saturation, 0.4) && bd.glassControls && close(bd.dim, 0.20)
+            && !bd.wholePanelGlass, "\(bd)")
 
-        // (2) — the tuner at its defaults renders exactly what ships.
+        // The tuner at its defaults renders exactly what ships ("Reset to defaults" = T's values).
         let L = AppearanceTuningValues.lightDefault
         let dialsMatch = CardSurfaceDial.allCases.allSatisfy { close(resolve($0, L, baked: D.value($0)), D.value($0)) }
         let hexesMatch = CardSurfaceHex.allCases.allSatisfy { resolve($0, L, baked: D.hex($0)) == D.hex($0) }
@@ -361,18 +426,57 @@ extension AppearanceTuning {
         row("tuner-defaults-render-what-ships", dialsMatch && hexesMatch && flagsMatch && palette(named: L.palette) == .shipped,
             "dials=\(dialsMatch) hexes=\(hexesMatch) flags=\(flagsMatch)")
         let Dk = AppearanceTuningValues.darkDefault
-        row("tuner-dark-defaults-are-today", fieldHex(Dk, dark: true) == "161616" && close(darkShadowAlpha * Dk.shadowStrength, 0.742)
-            && Dk.shadowRadius == 12 && !Dk.hairline && Dk.panel == .today)
+        row("tuner-dark-defaults-are-T's", fieldHex(Dk, dark: true) == "1A1A1A" && close(darkShadowAlpha * Dk.shadowStrength, 0.742)
+            && Dk.shadowRadius == 12 && !Dk.hairline)
+        row("tuner-librarian-defaults-are-what-ships", L.librarianSpec == bl && Dk.librarianSpec == bd,
+            "light=\(L.librarianSpec) dark=\(Dk.librarianSpec)")
         row("field-steps-hit-the-render-hexes", fieldHex(withStep(L, -1), dark: false) == "E6E2DA"
             && fieldHex(withStep(L, 0), dark: false) == "EFECE6" && fieldHex(withStep(L, 1), dark: false) == "F4F2ED"
             && fieldHex(withStep(L, 2), dark: false) == "F8F6F2")
         row("hairline-off-is-the-prior-rim", resolve(.rimHex, noHairline(L), baked: "") == "FFFFFF"
             && resolve(.rimOpacity, noHairline(L), baked: 0) == 0.95 && resolve(.rimTopOnly, noHairline(L), baked: false))
 
+        // live-23 (3) — the hero photo's fade into the card body: longer and eased, like the fluted cards' blend.
+        let F = CardHeroFade.self, fb = F.baked
+        row("hero-fade-baked-0.60-of-the-zone-smoothstep-past-the-edge-0.10",
+            close(fb.length, 0.60) && close(fb.curve, 1) && close(fb.overshoot, 0.10), "\(fb)")
+        // A quarter of the way into the fade the photo is still mostly there (eased, not a linear ramp).
+        let fadeTop = 1 - fb.length / (1 + fb.overshoot)
+        let quarter = F.alpha(fb, at: fadeTop + (1 - fadeTop) * 0.25), half = F.alpha(fb, at: fadeTop + (1 - fadeTop) * 0.5)
+        row("hero-fade-is-eased", quarter > 0.8 && abs(half - 0.5) < 0.02, "quarter=\(quarter) half=\(half)")
+        row("hero-fade-opaque-above-clear-at-the-end", close(F.alpha(fb, at: fadeTop - 0.01), 1) && close(F.alpha(fb, at: 1), 0))
+        let st = F.stops(fb)
+        row("hero-fade-stops-monotone-and-match-alpha", st.count >= 8 && zip(st, st.dropFirst()).allSatisfy { $0.location <= $1.location }
+            && st.allSatisfy { s in abs(F.alpha(fb, at: Double(s.location)) - Double(UIColor(s.color).cgColor.alpha)) < 0.02 },
+            "stops=\(st.count)")
+        let old = F.stops(F.live22)
+        row("hero-fade-live22-shape-is-the-old-mask", old.count == 3 && old[1].location == 0.78
+            && close(F.alpha(F.live22, at: 0.89), 0.5))
+        // live-23 (4) + (5c) — the taste switches start on Today; an App Store build (and plain DEBUG) render Today.
+        row("card-content-and-capture-controls-start-on-today",
+            AppearanceTuningState.defaults.cardContent == .today && AppearanceTuningState.defaults.captureControls == .today)
+        row("plain-debug-renders-today-capture-controls",
+            UserDefaults.standard.string(forKey: "CaptureControls") == "glass" || isLive || !CaptureControlsStyle.glassChosen)
+        row("tuner-fade-defaults-are-baked", L.heroFade == fb && Dk.heroFade == fb, "\(L.heroFade) \(Dk.heroFade)")
+
         // Gate + storage.
         let stored = try? JSONEncoder().encode(AppearanceTuningState(light: withStep(L, 2), dark: Dk))
         row("closed-gate-ignores-stored-values", effective(stored: stored, offered: false) == .defaults)
         row("open-gate-uses-stored-values", effective(stored: stored, offered: true).light.fieldStep == 2)
+        // T's stored values from TF 202610161756 (no fade / card-content keys) survive live-23's new keys.
+        if var legacy = (try? JSONSerialization.jsonObject(with: stored ?? Data())) as? [String: Any],
+           var l = legacy["light"] as? [String: Any] {
+            l.removeValue(forKey: "fadeLength"); l.removeValue(forKey: "fadeCurve"); legacy["light"] = l
+            var dd = legacy["dark"] as? [String: Any] ?? [:]
+            dd.removeValue(forKey: "fadeLength"); dd.removeValue(forKey: "fadeCurve"); legacy["dark"] = dd
+            legacy.removeValue(forKey: "cardContent"); legacy.removeValue(forKey: "captureControls")
+            let data = try? JSONSerialization.data(withJSONObject: legacy)
+            let back = effective(stored: data, offered: true)
+            row("live-22-stored-values-survive-new-keys", back.light.fieldStep == 2 && back.light.heroFade == CardHeroFade.baked
+                && back.cardContent == .today && back.captureControls == .today)
+        } else {
+            row("live-22-stored-values-survive-new-keys", false, "couldn't build the legacy blob")
+        }
         row("unreadable-stored-value-is-defaults", effective(stored: Data("{\"light\":1}".utf8), offered: true) == .defaults)
         #if DEBUG
         row("debug-sim-runs-render-what-ships (no -AppearanceTuner)",
@@ -383,16 +487,27 @@ extension AppearanceTuning {
         var p = L
         p.apply(.frost65); let f65 = p
         p.apply(.frost50Glass); let f50g = p
-        p.apply(.today)
+        p.apply(.today); let before = p
         row("presets-set-their-values", close(f65.tintOpacity, 0.65) && close(f65.saturation, 0.4) && !f65.glassControls
-            && f50g.glassControls && close(f50g.tintOpacity, 0.5) && p == L)
+            && f50g.glassControls && close(f50g.tintOpacity, 0.5)
+            && before.panel == .today && close(before.tintOpacity, 0.35) && close(before.blur, 1) && !before.glassControls)
 
-        // Export.
-        let json = exportJSON(.defaults, editing: "light", build: "0")
+        // Export — at the defaults, Copy values reads back T's reference JSON verbatim (with this build's number).
+        let json = exportJSON(.defaults, editing: "light", build: "202610161756")
         let parsed = (try? JSONSerialization.jsonObject(with: Data(json.utf8))) as? [String: Any]
-        let light = parsed?["light"] as? [String: Any]
-        row("copy-values-is-json-with-both-modes", parsed?["dark"] != nil && light?["fieldHex"] as? String == "#F4F2ED"
-            && light?["shadowAlpha"] as? Double == 0.066, json)
+        row("copy-values-is-json-with-both-modes", parsed?["dark"] != nil && parsed?["light"] != nil, json)
+        let reference = ##"{"airpadAppearance":1,"build":"202610161756","editing":"light","light":{"palette":"L2","field":"F2","fieldStep":1,"fieldHex":"#F4F2ED","shadow":0.5,"shadowAlpha":0.131,"shadowRadius":24,"hairline":true,"hairlineWidth":0.5,"hairlineOpacity":0.25,"panel":"custom","tint":0.85,"blur":1.74,"saturation":1,"glassControls":true,"dim":0.1},"dark":{"field":"F+0.50","fieldStep":0.5,"fieldHex":"#1A1A1A","shadow":1,"shadowAlpha":0.742,"shadowRadius":12,"hairline":false,"hairlineWidth":0.5,"hairlineOpacity":0.12,"panel":"custom","tint":0.56,"blur":2,"saturation":0.4,"glassControls":true,"dim":0.2}}"##
+        // Every key T's export carried reads back the same value (live-23 adds keys; none of T's may change).
+        let ref = (try? JSONSerialization.jsonObject(with: Data(reference.utf8))) as? [String: Any] ?? [:]
+        var mismatches: [String] = []
+        for mode in ["light", "dark"] {
+            let want = ref[mode] as? [String: Any] ?? [:], got = parsed?[mode] as? [String: Any] ?? [:]
+            for (k, v) in want where !(got[k].map { "\($0)" == "\(v)" } ?? false) {
+                mismatches.append("\(mode).\(k): want \(v) got \(got[k].map { "\($0)" } ?? "—")")
+            }
+        }
+        row("copy-values-at-defaults-reads-back-T's-reference", !ref.isEmpty && mismatches.isEmpty,
+            mismatches.joined(separator: "; "))
 
         #if DEBUG || TESTFLIGHT
         row("this-build-offers-it (DEBUG / TESTFLIGHT)", isOffered)

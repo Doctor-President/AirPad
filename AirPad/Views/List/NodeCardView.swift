@@ -219,15 +219,15 @@ struct NodeCardView: View {
                 // editorial topInset uses, so the gradient and the title band
                 // stay in sync.
                 let heroZoneHeight = geo.size.height * hero
-                let gradientCenterY: CGFloat = hasHero
-                    ? 0
-                    : (heroZoneHeight - geo.size.height) / 2
+                let gradientCenterY: CGFloat = (heroZoneHeight - geo.size.height) / 2
                 ZStack {
                     // Hero-image cards anchor the gradient to the floor so the
                     // color pools beneath the photo instead of washing up into
                     // it. No-hero cards keep the full-bleed centered look.
                     // glow-parity dev tuner (CARD group) — carousel + list + canvas all render
                     // this body; defaults = today's literals, byte-identical until T dials.
+                    // live-23 (2) — a photo card renders the same layers with no colour field (`showsBlobs`), so its
+                    // body is the gradient card's body (was: blobs anchored `.bottom`, pooling colour under the text).
                     NodeGradientLayer(node: node,
                                       vignette: GradientBake.cardVignette,
                                       glowStart: GradientBake.cardGlowStart,
@@ -237,9 +237,10 @@ struct NodeCardView: View {
                                       centerYOffset: gradientCenterY,
                                       undulation: GradientBake.cardAmplitude,
                                       warpScale: GradientBake.cardScale,
-                                      anchor: hasHero ? .bottom : .center,
+                                      anchor: .center,
                                       blobExpr: 1,   // carousel/canvas (addendum D)
-                                      glassSurface: hasHero ? .photoCard : .carousel)
+                                      glassSurface: hasHero ? .photoCard : .carousel,
+                                      showsBlobs: !hasHero)
                     if hasHero {
                         heroOverlay(width: geo.size.width, height: geo.size.height)
                     }
@@ -290,16 +291,24 @@ struct NodeCardView: View {
                 let heroWidth = geo.size.width * CGFloat(heroLeftWidthFrac)
                 let textWidth = geo.size.width - heroWidth
                 let hasHero = node.coverImageRelativePath != nil
-                // Resolved card surface, LIGHT path. Dark falls back to ground.
-                let paper: Color = colorScheme == .dark
-                    ? CardSurfaceResolved.ground(dark: true)
-                    : Color(hexString: CardSurfaceResolved.resolvedCardBackgroundHex)
                 ZStack(alignment: .topLeading) {
                     if hasHero {
-                        // COVER card: image confined to the LEFT of the paper surface,
-                        // its right edge easing into the paper between the two fade
-                        // positions (independent of where the text column starts).
-                        paper
+                        // COVER card: image confined to the LEFT, its right edge easing into the card body between
+                        // the two fade positions. live-23 (2) — the body is the gradient card's own layers with no
+                        // colour field (was `paper` = the FIELD token `CardSurfaceResolved.ground(dark: true)`,
+                        // #161616 → #1A1A1A, which nothing darkened: the charcoal body T saw beside true-black cards).
+                        NodeGradientLayer(
+                            node: node,
+                            vignette: GradientBake.cardVignette,
+                            glowStart: GradientBake.cardGlowStart,
+                            glowEnd: GradientBake.cardGlowEnd,
+                            glowStrength: GradientBake.cardRadial,
+                            bloom: GradientBake.cardBloom,
+                            undulation: GradientBake.cardAmplitude,
+                            warpScale: GradientBake.cardScale,
+                            blobExpr: 0,
+                            glassSurface: .list,
+                            showsBlobs: false)
                         heroCoverColumn(cardWidth: geo.size.width, height: geo.size.height)
                             .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .leading)
                     } else {
@@ -395,23 +404,15 @@ struct NodeCardView: View {
 
     @ViewBuilder
     private func heroOverlay(width: CGFloat, height: CGFloat) -> some View {
-        let heroHeight = height * hero
+        // live-23 (3) — a longer, eased fade into the card body (`CardHeroFade`; was linear over the zone's last 22%).
+        let fade = CardHeroFade.current(dark: colorScheme == .dark)
+        let heroHeight = CardHeroFade.frameHeight(zone: height * hero, fade)
         VStack(spacing: 0) {
             CardHeroImage(node: node)
                 .equatable()
                 .frame(width: width, height: heroHeight)
                 .clipped()
-                .mask(
-                    LinearGradient(
-                        stops: [
-                            .init(color: .black,  location: 0.0),
-                            .init(color: .black,  location: 0.78),
-                            .init(color: .clear,  location: 1.0)
-                        ],
-                        startPoint: .top,
-                        endPoint: .bottom
-                    )
-                )
+                .mask(LinearGradient(stops: CardHeroFade.stops(fade), startPoint: .top, endPoint: .bottom))
             Spacer(minLength: 0)
         }
     }
@@ -455,7 +456,17 @@ struct NodeCardView: View {
 
     // MARK: - Editorial content
 
+    /// live-23 (4) — Today, or the card-content proposal (`CardContent.swift`) behind the tuner's switch.
+    @ViewBuilder
     private func editorialContent(cardHeight: CGFloat, topInsetOverride: CGFloat? = nil) -> some View {
+        if CardContentPresentation.isProposal {
+            proposalEditorial(cardHeight: cardHeight, topInsetOverride: topInsetOverride)
+        } else {
+            todayEditorial(cardHeight: cardHeight, topInsetOverride: topInsetOverride)
+        }
+    }
+
+    private func todayEditorial(cardHeight: CGFloat, topInsetOverride: CGFloat? = nil) -> some View {
         let category = node.primaryTag
         let titleText = displayTitle
         let showDeck = node.descriptionOnCard && !node.summary.isEmpty
@@ -608,6 +619,125 @@ struct NodeCardView: View {
         // 1.0 = identical). Faint hairlines/shadows ride along, acceptable
         // for a face-tuning knob.
         .opacity(textOpacity)
+    }
+
+    // MARK: - live-23 (4) — the card-content proposal (carousel = vertical: same components, only the space differs)
+
+    private func proposalEditorial(cardHeight: CGFloat, topInsetOverride: CGFloat?) -> some View {
+        let topInset: CGFloat = topInsetOverride ?? (cardHeight * hero + 18)
+        let isVertical = presentation == .vertical
+        let summary = CardContentSummary.make(node, hasHero: node.coverImageRelativePath != nil)
+        let atomics = Array(node.items.prefix(while: { $0.type.isAtomic }))
+        let showDeck = node.descriptionOnCard && !node.summary.isEmpty
+        let tagList = Array(node.tags.prefix(3))
+        return VStack(alignment: .leading, spacing: 0) {
+            HStack(alignment: .firstTextBaseline, spacing: 8) {
+                if let category = node.primaryTag {
+                    Text(category).font(cardFont(12 * fs)).italic().foregroundColor(Self.inkMeta).lineLimit(1)
+                }
+                Spacer(minLength: 8)
+                Text(node.relativeTimestamp.uppercased())
+                    .font(cardFont(10 * fs)).tracking(2.2).foregroundColor(Self.inkMeta).lineLimit(1)
+            }
+            .shadow(color: inkHalo.opacity(0.4), radius: 2, x: 0, y: 1)
+
+            Rectangle().fill(Self.hairline).frame(height: 0.5).padding(.top, 8).padding(.bottom, 12)
+
+            Text(displayTitle)
+                .font(cardFont(23 * fs, weight: .bold))
+                .tracking(-0.35)
+                .foregroundColor(Self.inkTitle)
+                .shadow(color: inkHalo.opacity(0.45), radius: 3, x: 0, y: 1)
+                .lineLimit(isVertical ? 2 : 3)
+                .minimumScaleFactor(0.85)
+                .multilineTextAlignment(.leading)
+                .fixedSize(horizontal: false, vertical: true)
+
+            if showDeck {
+                Text(node.summary)
+                    .font(cardFont(14 * fs)).italic()
+                    .foregroundColor(Self.inkDeck)
+                    .shadow(color: inkHalo.opacity(0.4), radius: 2, x: 0, y: 1)
+                    .lineSpacing(3)
+                    .lineLimit(isVertical ? 2 : 3)
+                    .padding(.top, 6)
+            }
+
+            if !atomics.isEmpty {
+                statLineView(atomics).padding(.top, 10)   // attributes: today's row
+            }
+
+            // ONE preview from the richest item, in whatever space is left (it steps down rather than clipping).
+            Group {
+                if let preview = summary.preview {
+                    ViewThatFits(in: .vertical) {
+                        previewView(preview, rows: 3, lines: 2)
+                        previewView(preview, rows: 2, lines: 1)
+                        previewView(preview, rows: 1, lines: 1)
+                        Color.clear.frame(height: 0)
+                    }
+                    .padding(.top, 12)
+                }
+            }
+            .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .topLeading)
+            .clipped()
+
+            if !summary.strip.isEmpty {
+                CardContentStrip(counts: summary.strip, size: 11 * fs, ink: Self.inkMeta, halo: inkHalo)
+                    .padding(.top, 8)
+                    .padding(.bottom, tagList.isEmpty ? 0 : 10)
+            }
+            if !tagList.isEmpty {
+                Rectangle().fill(Self.hairline).frame(height: 0.5).padding(.bottom, 10)
+                Text(tagList.map { $0.uppercased() }.joined(separator: " · "))
+                    .font(cardFont(10 * fs, weight: .medium)).tracking(2.0)
+                    .foregroundColor(Self.inkMeta)
+                    .shadow(color: inkHalo.opacity(0.4), radius: 2, x: 0, y: 1)
+                    .lineLimit(1)
+            }
+        }
+        .padding(.horizontal, 22)
+        .padding(.top, topInset)
+        .padding(.bottom, 22)
+        .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .top)
+        .opacity(textOpacity)
+    }
+
+    @ViewBuilder
+    private func previewView(_ p: CardContentSummary.Preview, rows: Int, lines: Int) -> some View {
+        switch p {
+        case .list(let all, let more):
+            CardListPreview(rows: Array(all.prefix(rows)), more: more + max(all.count - rows, 0), size: 13,
+                            ink: Self.inkDeck, markerInk: Self.inkMeta, halo: inkHalo)
+        case .voice(let duration, let firstLine):
+            CardVoicePreview(duration: duration, firstLine: firstLine, size: 13, lines: lines,
+                             ink: Self.inkDeck, markerInk: Self.inkMeta, halo: inkHalo)
+        case .text(let t):
+            Text(t)
+                .font(cardFont(13)).foregroundColor(Self.inkDeck)
+                .shadow(color: inkHalo.opacity(0.35), radius: 2, x: 0, y: 1)
+                .lineSpacing(2)
+                .lineLimit(rows + 1)
+                .fixedSize(horizontal: false, vertical: true)
+        case .photos(let itemID):
+            if let item = node.items.first(where: { $0.id == itemID }), let media = item.mediaItems {
+                HStack(spacing: 6) {
+                    ForEach(media.prefix(rows >= 2 ? 4 : 3)) { g in
+                        GalleryItemTile(galleryItem: g, nodeID: node.id, parentItem: item, showVideoBadge: true, onMeasuredAspect: nil)
+                            .frame(width: 56, height: 56).clipped()
+                            .clipShape(RoundedRectangle(cornerRadius: 8))
+                    }
+                }
+            }
+        case .document(let itemID):
+            if let d = node.items.first(where: { $0.id == itemID })?.documentItems?.first {
+                CardDocumentTile(documentItem: d, nodeID: node.id)
+            }
+        case .link(let itemID):
+            if let l = node.items.first(where: { $0.id == itemID })?.linkItems?.first {
+                CardLinkTile(linkItem: l, nodeID: node.id)
+            }
+        }
     }
 
     // MARK: - Entry stream — stat line, payload card-forms, overflow

@@ -234,6 +234,7 @@ actor iCloudDriveService {
             if ProcessInfo.processInfo.arguments.contains("-UITestSeedLongChat") { Self.seedUITestLongChat(root) }
             if ProcessInfo.processInfo.arguments.contains("-UITestSeedManyDocuments") { Self.seedUITestManyDocuments(root) }
             if ProcessInfo.processInfo.arguments.contains("-UITestSeedDeclineEntry") { Self.seedUITestDeclineEntry(root) }
+            if ProcessInfo.processInfo.arguments.contains("-UITestSeedCardShowcase") { Self.seedUITestCardShowcase(root) }
             return true
         } catch {
             return false
@@ -468,6 +469,269 @@ actor iCloudDriveService {
         let node = Node(id: nodeID, createdAt: now, updatedAt: now, title: "Slipway photos",
                         summary: "A synthetic photo entry.", tags: [], items: [gallery], entrySchemaVersion: 4)
         try? JSONEncoder.airPad.encode(node).write(to: nodeDir.appendingPathComponent("node.json"), options: .atomic)
+    }
+
+    /// live-23 — `-UITestSeedCardShowcase` (with `-UITestLibraryFresh`): synthetic entries covering what a card has to
+    /// present, for the card-content renders (BEFORE vs PROPOSAL) and the dark-body / hero-fade checks: a 1-word and an
+    /// 80-character title, a list-heavy note (bullets, numbers, a checklist), a 31-photo gallery, a voice memo, an
+    /// 11-page document, a recipe with attributes, a link entry, text-only notes, and an entry holding a bit of
+    /// everything. Hero photos are smooth synthetic landscapes (sky, sun, hills), so a fade reads as it would on a real
+    /// photo. Synthetic content only. Written only when the library has no `node.json` for the entry.
+    private static func seedUITestCardShowcase(_ root: URL) {
+        let base = Date(timeIntervalSince1970: 1_760_500_000)
+        var order = 0
+        func when() -> Date { order += 1; return base.addingTimeInterval(TimeInterval(-3600 * order)) }
+        func dir(_ id: String) -> URL? {
+            let d = root.appendingPathComponent("nodes/\(id)")
+            guard !FileManager.default.fileExists(atPath: d.appendingPathComponent("node.json").path) else { return nil }
+            try? FileManager.default.createDirectory(at: d.appendingPathComponent("items"), withIntermediateDirectories: true)
+            return d
+        }
+        func save(_ node: Node, _ d: URL) {
+            try? JSONEncoder.airPad.encode(node).write(to: d.appendingPathComponent("node.json"), options: .atomic)
+        }
+        func text(_ id: String, _ s: String, _ t: Date) -> NodeItem {
+            NodeItem(id: id, type: .text, createdAt: t, content: s, displayName: nil, isExpanded: true, updatedAt: t)
+        }
+        func landscape(_ d: URL, _ name: String, seed: Int, w: Int = 1600, h: Int = 1200) -> String {
+            let file = "items/\(name).jpg"
+            try? syntheticLandscapeJPEG(width: w, height: h, seed: seed).write(to: d.appendingPathComponent(file), options: .atomic)
+            return file
+        }
+        // Recipe attributes are corpus-level definitions.
+        let defsURL = root.appendingPathComponent("field_definitions.json")
+        if !FileManager.default.fileExists(atPath: defsURL.path) {
+            let defs = FieldDefinitionStore(definitions: [
+                FieldDefinition(id: "fd_showcase_serves", displayName: "Serves", kind: .number),
+                FieldDefinition(id: "fd_showcase_cook", displayName: "Cook time", kind: .duration),
+                FieldDefinition(id: "fd_showcase_rating", displayName: "Rating", kind: .rating,
+                                config: FieldConfig(ratingScale: 5, ratingStyle: .stars)),
+            ])
+            try? JSONEncoder.airPad.encode(defs).write(to: defsURL, options: .atomic)
+        }
+
+        // 1 — a 31-photo gallery with a hero and a short note.
+        if let d = dir("showcase-gallery") {
+            let t = when()
+            let media: [GalleryItem] = (0..<31).map { i in
+                let f = landscape(d, "tide-\(String(format: "%02d", i))", seed: 40 + i, w: 1200, h: 900)
+                return GalleryItem(id: "showcase-gallery-\(i)", mediaType: .image, file: f, aspectRatio: 4.0 / 3.0, capturedAt: t)
+            }
+            var g = NodeItem(id: "showcase-gallery-media", type: .imageVideo, createdAt: t)
+            g.displayName = "Tide pools"; g.mediaItems = media; g.isExpanded = true
+            var n = Node(id: "showcase-gallery", createdAt: t, updatedAt: t, title: "Thirty-one tide pools",
+                         summary: "Every pool on the north reef at the lowest tide of the year.", tags: ["coast"],
+                         items: [text("showcase-gallery-note", "Low water at 06:12. Started at the slipway and worked north.", t), g],
+                         entrySchemaVersion: 4)
+            n.coverImageRelativePath = media[0].file
+            save(n, d)
+        }
+        // 2 — a one-word title, hero, text only.
+        if let d = dir("showcase-fig") {
+            let t = when()
+            var n = Node(id: "showcase-fig", createdAt: t, updatedAt: t, title: "Fig",
+                         summary: "The tree by the back wall finally fruited.", tags: ["garden"],
+                         items: [text("showcase-fig-note", "Eleven figs, three split. Net goes on tomorrow before the birds find them.", t)],
+                         entrySchemaVersion: 4)
+            n.coverImageRelativePath = landscape(d, "fig-cover", seed: 7)
+            save(n, d)
+        }
+        // 3 — a list-heavy note: bullets, a numbered list, a checklist.
+        if let d = dir("showcase-lists") {
+            let t = when()
+            let body = """
+            - [x] Book the cottage
+            - [x] Ask Sam about the boat
+            - [ ] Print the reef map
+            - [ ] Pack the macro lens
+
+            - Waders and the spare socks
+            - Head torch, charged
+            - Tide table for the week
+            - Two flasks
+            - The good notebook
+
+            1. Leave by half five
+            2. Park at the slipway, not the beach
+            3. Walk north on the falling tide
+            """
+            let n = Node(id: "showcase-lists", createdAt: t, updatedAt: t, title: "Packing for the coast",
+                         summary: "What to bring, the plan for the morning, and what's still to do.", tags: ["coast", "lists"],
+                         items: [text("showcase-lists-note", body, t)], entrySchemaVersion: 4)
+            save(n, d)
+        }
+        // 4 — a voice memo (0:28) with a transcript.
+        if let d = dir("showcase-voice") {
+            let t = when()
+            let seconds = 28.0
+            writeSpeechShapedTone(to: d.appendingPathComponent("items/showcase-voice.m4a"), seconds: seconds)
+            var v = NodeItem.audio(itemID: "showcase-voice-audio", file: "items/showcase-voice.m4a",
+                                   transcript: "Note to self from the car: the light on the reef was best just after the turn, so next time start an hour later and work south instead.",
+                                   duration: seconds)
+            v.displayName = "Voice"; v.isExpanded = true; v.updatedAt = t
+            let n = Node(id: "showcase-voice", createdAt: t, updatedAt: t, title: "Said out loud on the drive back",
+                         summary: "Start later next time and work south.", tags: ["coast"], items: [v], entrySchemaVersion: 4)
+            save(n, d)
+        }
+        // 5 — an 11-page document.
+        if let d = dir("showcase-doc") {
+            let t = when()
+            let id = "5C0A5E11-0000-4000-8000-000000000011"
+            let data = UIGraphicsPDFRenderer(bounds: CGRect(x: 0, y: 0, width: 612, height: 792)).pdfData { ctx in
+                for page in 1...11 {
+                    ctx.beginPage()
+                    ("Reef survey — page \(page)" as NSString).draw(at: CGPoint(x: 72, y: 72),
+                                                                  withAttributes: [.font: UIFont.systemFont(ofSize: 22)])
+                }
+            }
+            try? data.write(to: d.appendingPathComponent("items/\(id).pdf"), options: .atomic)
+            let doc = DocumentItem(id: id, filePath: "items/\(id).pdf", fileName: "Reef Survey 2026.pdf", fileType: "pdf",
+                                   documentTitle: nil, extractedText: nil, thumbnailFile: nil, pageCount: 11, wordCount: nil,
+                                   capturedAt: t)
+            let item = NodeItem(id: "showcase-doc-item", type: .document, createdAt: t, file: doc.filePath,
+                                displayName: nil, isExpanded: true, updatedAt: t, documentItems: [doc])
+            let n = Node(id: "showcase-doc", createdAt: t, updatedAt: t, title: "Reef survey",
+                         summary: "The council's survey of the north reef, all eleven pages.", tags: ["coast"],
+                         items: [item], entrySchemaVersion: 4)
+            save(n, d)
+        }
+        // 6 — a recipe with attributes (serves, cook time, rating), a hero, ingredients and method.
+        if let d = dir("showcase-recipe") {
+            let t = when()
+            var serves = NodeItem(id: "showcase-recipe-serves", type: .field, createdAt: t,
+                                  field: FieldValue(definitionID: "fd_showcase_serves", value: .number(4)))
+            serves.updatedAt = t
+            let cook = NodeItem(id: "showcase-recipe-cook", type: .field, createdAt: t,
+                                field: FieldValue(definitionID: "fd_showcase_cook", value: .duration(seconds: 40 * 60)))
+            let rating = NodeItem(id: "showcase-recipe-rating", type: .field, createdAt: t,
+                                  field: FieldValue(definitionID: "fd_showcase_rating", value: .rating(4)))
+            let ingredients = """
+            - 250 g red lentils
+            - 1 onion, 2 carrots
+            - 1 tsp cumin, 1 tsp smoked paprika
+            - 1.2 L stock
+            - Lemon to finish
+            """
+            var n = Node(id: "showcase-recipe", createdAt: t, updatedAt: t, title: "Red lentil soup",
+                         summary: "The weeknight one. Better the next day.", tags: ["recipes"],
+                         items: [serves, cook, rating, text("showcase-recipe-ingredients", ingredients, t),
+                                 text("showcase-recipe-method", "Soften the onion and carrot, add the spices, then the lentils and stock. Simmer twenty-five minutes and blend half.", t)],
+                         entrySchemaVersion: 4)
+            n.coverImageRelativePath = landscape(d, "soup-cover", seed: 19)
+            save(n, d)
+        }
+        // 7 — a link entry (two links, cached page titles).
+        if let d = dir("showcase-links") {
+            let t = when()
+            var l = NodeItem(id: "showcase-links-item", type: .link, createdAt: t)
+            l.displayName = "Reading"
+            l.linkItems = [
+                LinkItem(id: "showcase-link-1", url: "https://example.com/tides", title: "How spring tides work",
+                         siteName: "example.com", capturedAt: t),
+                LinkItem(id: "showcase-link-2", url: "https://example.org/reefs", title: "A field guide to rock pools",
+                         siteName: "example.org", capturedAt: t),
+            ]
+            l.isExpanded = true
+            let n = Node(id: "showcase-links", createdAt: t, updatedAt: t, title: "Tides, explained",
+                         summary: "Two pieces to read before the trip.", tags: ["coast"], items: [l], entrySchemaVersion: 4)
+            save(n, d)
+        }
+        // 8 — an 80-character title, text only, no hero.
+        if let d = dir("showcase-long-title") {
+            let t = when()
+            let title = "Notes from the long walk between the harbour wall and the lighthouse at low tide"
+            let n = Node(id: "showcase-long-title", createdAt: t, updatedAt: t, title: title,
+                         summary: "What the reef looked like with the water all the way out.", tags: ["coast", "walks"],
+                         items: [text("showcase-long-title-1", "The sand bar showed for about forty minutes. Oystercatchers on the far end, a seal in the channel.", t),
+                                 text("showcase-long-title-2", "Came back along the wall as the tide turned; the last stretch was ankle deep.", t),
+                                 text("showcase-long-title-3", "Worth doing again in September with the bigger tides.", t)],
+                         entrySchemaVersion: 4)
+            save(n, d)
+        }
+        // 9 — a bit of everything: three paragraphs, six photos, a voice note, a link; hero.
+        if let d = dir("showcase-mixed") {
+            let t = when()
+            let media: [GalleryItem] = (0..<6).map { i in
+                GalleryItem(id: "showcase-mixed-\(i)", mediaType: .image, file: landscape(d, "slip-\(i)", seed: 90 + i, w: 1200, h: 900),
+                            aspectRatio: 4.0 / 3.0, capturedAt: t)
+            }
+            var g = NodeItem(id: "showcase-mixed-media", type: .imageVideo, createdAt: t)
+            g.displayName = "Photos"; g.mediaItems = media; g.isExpanded = true
+            writeSpeechShapedTone(to: d.appendingPathComponent("items/showcase-mixed.m4a"), seconds: 12)
+            var v = NodeItem.audio(itemID: "showcase-mixed-audio", file: "items/showcase-mixed.m4a",
+                                   transcript: "The winch on the slipway still works if you lift the pawl first.", duration: 12)
+            v.displayName = "Voice"; v.isExpanded = true; v.updatedAt = t
+            var l = NodeItem(id: "showcase-mixed-link", type: .link, createdAt: t)
+            l.linkItems = [LinkItem(id: "showcase-mixed-link-1", url: "https://example.net/slipways", title: "Old slipways of the coast",
+                                    siteName: "example.net", capturedAt: t)]
+            var n = Node(id: "showcase-mixed", createdAt: t, updatedAt: t, title: "Saturday at the slipway",
+                         summary: "Boats out, the winch, and who was there.", tags: ["coast"],
+                         items: [text("showcase-mixed-1", "Three boats out before eight. The club tractor is back from repair.", t),
+                                 text("showcase-mixed-2", "Sam showed me the trick with the winch.", t),
+                                 text("showcase-mixed-3", "Tea at the hut after; someone had made flapjacks.", t),
+                                 g, v, l],
+                         entrySchemaVersion: 4)
+            n.coverImageRelativePath = media[0].file
+            save(n, d)
+        }
+        // 11 — a numbered list.
+        if let d = dir("showcase-steps") {
+            let t = base.addingTimeInterval(-3600 * 11)
+            let steps = """
+            1. Check the forecast and the tide
+            2. Bail the dinghy and fit the bung
+            3. Oars, lifejackets, the anchor
+            4. Launch from the slip on the rising tide
+            5. Tie off at the mooring and log the time
+            """
+            let n = Node(id: "showcase-steps", createdAt: t, updatedAt: t, title: "Launching the dinghy",
+                         summary: "The order that works.", tags: ["boats"],
+                         items: [text("showcase-steps-note", steps, t)], entrySchemaVersion: 4)
+            save(n, d)
+        }
+        // 10 — a short text-only note, no hero.
+        if let d = dir("showcase-short-note") {
+            let t = when()
+            let n = Node(id: "showcase-short-note", createdAt: t, updatedAt: t, title: "Ask about the mooring",
+                         summary: "", tags: [],
+                         items: [text("showcase-short-note-1", "Harbour office opens at nine on Mondays.", t)], entrySchemaVersion: 4)
+            save(n, d)
+        }
+    }
+
+    /// A smooth photo-like landscape: a sky gradient, a sun, three hill bands, a darker foreground. `seed` varies the hue
+    /// and the hill lines.
+    private static func syntheticLandscapeJPEG(width w: Int, height h: Int, seed: Int) -> Data {
+        let format = UIGraphicsImageRendererFormat(); format.scale = 1
+        let W = CGFloat(w), H = CGFloat(h)
+        let hue = CGFloat((seed * 37) % 100) / 100
+        func c(_ dh: CGFloat, _ s: CGFloat, _ b: CGFloat) -> UIColor {
+            var x = hue + dh; x -= floor(x)
+            return UIColor(hue: x, saturation: s, brightness: b, alpha: 1)
+        }
+        return UIGraphicsImageRenderer(size: CGSize(width: w, height: h), format: format).jpegData(withCompressionQuality: 0.85) { ctx in
+            let cg = ctx.cgContext
+            let sky = CGGradient(colorsSpace: CGColorSpaceCreateDeviceRGB(),
+                                 colors: [c(0.55, 0.55, 0.85).cgColor, c(0.05, 0.45, 0.98).cgColor] as CFArray, locations: [0, 1])!
+            cg.drawLinearGradient(sky, start: .zero, end: CGPoint(x: 0, y: H * 0.62), options: [.drawsAfterEndLocation])
+            c(0.08, 0.35, 1).setFill()
+            let sx = W * (0.25 + CGFloat(seed % 5) * 0.12)
+            cg.fillEllipse(in: CGRect(x: sx - W * 0.07, y: H * 0.30, width: W * 0.14, height: W * 0.14))
+            for band in 0..<3 {
+                let top = H * (0.48 + CGFloat(band) * 0.12)
+                let path = UIBezierPath()
+                path.move(to: CGPoint(x: 0, y: H))
+                for i in 0...40 {
+                    let x = W * CGFloat(i) / 40
+                    let y = top + sin(CGFloat(i) * 0.35 + CGFloat(seed + band * 3)) * H * 0.04
+                        + sin(CGFloat(i) * 0.11 + CGFloat(seed)) * H * 0.03
+                    path.addLine(to: CGPoint(x: x, y: y))
+                }
+                path.addLine(to: CGPoint(x: W, y: H)); path.close()
+                c(0.30 + CGFloat(band) * 0.04, 0.45, 0.62 - CGFloat(band) * 0.17).setFill()
+                path.fill()
+            }
+        }
     }
 
     /// A busy, photo-like synthetic JPEG (random coloured squares), so it is big and slow to decode like a real photo.

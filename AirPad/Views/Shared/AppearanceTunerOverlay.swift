@@ -157,8 +157,11 @@ struct AppearanceTunerSheet<G: Gesture>: View {
             Divider().opacity(0.5)
             ScrollView {
                 VStack(alignment: .leading, spacing: 14) {
+                    cardContentSection
+                    captureControlsSection
                     librarianSection
                     cardsSection
+                    heroFadeSection
                     actions
                 }
                 .padding(.horizontal, 14)
@@ -219,8 +222,8 @@ struct AppearanceTunerSheet<G: Gesture>: View {
             }
             .scrollIndicators(.hidden)
             if v.panel == .today {
-                note(dark ? "Today is the Solar Flare panel. A slider starts a custom frost." :
-                            "Today: thin material, tint 0.35. A slider starts a custom frost.")
+                note(dark ? "Before = the Solar Flare panel (before live-23). A slider starts a custom frost." :
+                            "Before = thin material, tint 0.35 (before live-23). A slider starts a custom frost.")
             } else if v.panel == .liquidGlass {
                 note("The whole panel is Liquid Glass (regular). The sliders below build a frost instead.")
             }
@@ -286,6 +289,63 @@ struct AppearanceTunerSheet<G: Gesture>: View {
         }
     }
 
+    // Card content (live-23 (4)) — both appearances
+
+    private var cardContentSection: some View {
+        VStack(alignment: .leading, spacing: 8) {
+            sectionTitle("Card content", value: tuner.state.cardContent.label)
+            Picker("Card content", selection: Binding(get: { tuner.state.cardContent }, set: { tuner.state.cardContent = $0 })) {
+                ForEach(CardContentMode.allCases) { Text($0.label).tag($0) }
+            }
+            .pickerStyle(.segmented)
+            .accessibilityIdentifier("tunerCardContent")
+            note(tuner.state.cardContent == .today
+                 ? "Today: the faces as they ship. Proposal: a content strip (type symbols + counts), one preview, real list markers."
+                 : "Proposal: content strip, one preview from the richest item, real list markers; grid 3-col adapts its title.")
+        }
+    }
+
+    // Capture controls (live-23 (5c)) — both appearances
+
+    private var captureControlsSection: some View {
+        VStack(alignment: .leading, spacing: 8) {
+            sectionTitle("Capture controls", value: tuner.state.captureControls.label)
+            Picker("Capture controls", selection: Binding(get: { tuner.state.captureControls },
+                                                         set: { tuner.state.captureControls = $0 })) {
+                ForEach(CaptureControlsMode.allCases) { Text($0.label).tag($0) }
+            }
+            .pickerStyle(.segmented)
+            .accessibilityIdentifier("tunerCaptureControls")
+            note("Quick Capture, \"+\" Capture and the voice recorder. Glass: item types in one glass cluster, Done "
+                 + "prominent, Delete red-tinted, Cancel plain. Reduce Transparency / Increase Contrast keep Today's pills.")
+        }
+    }
+
+    // Hero photo fade (live-23 (3)) — carousel + grid cards
+
+    private var heroFadeSection: some View {
+        let f = v.heroFade
+        return VStack(alignment: .leading, spacing: 10) {
+            sectionTitle("Hero photo fade", value: dark ? "dark" : "light")
+            slider("Fade length (of the hero zone)", v.fadeLength, 0.1...1.0, 0.01,
+                   String(format: "%.2f", v.fadeLength), id: "fadeLength") { x in set { $0.fadeLength = x } }
+            slider("Fade curve", v.fadeCurve, 0...2, 0.05, fadeCurveReadout(v.fadeCurve), id: "fadeCurve") { x in
+                set { $0.fadeCurve = x }
+            }
+            note(String(format: "The photo runs %.0f%% past the hero zone and fades over its last %.0f%%. live-22 was linear over the last 22%%.",
+                        f.overshoot * 100, f.length * 100))
+        }
+    }
+
+    private func fadeCurveReadout(_ c: Double) -> String {
+        switch c {
+        case ..<0.025: return "linear"
+        case 0.975..<1.025: return "smoothstep"
+        case 1.975...: return "smootherstep"
+        default: return String(format: "%.2f", c)
+        }
+    }
+
     // Copy + reset
 
     private var actions: some View {
@@ -308,7 +368,7 @@ struct AppearanceTunerSheet<G: Gesture>: View {
                 .buttonStyle(.bordered)
                 .accessibilityIdentifier("tunerReset")
             }
-            note("Copy values copies both appearances as JSON. Reset restores T's picks (light) and today (dark), both modes. "
+            note("Copy values copies both appearances as JSON. Reset restores T's tuned values (2026-10-16), both modes. "
                  + "Drag the header to move this sheet; long-press the handle to hide it until the next launch. "
                  + "Values stay on this iPhone. TestFlight only.")
         }

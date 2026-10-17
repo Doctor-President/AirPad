@@ -18,9 +18,7 @@ struct ContentView: View {
     private let panelLayout = LibrarianPanelLayout()
     // Brief AT5 — app-wide Appearance override (System / Light / Dark), applied to the window(s).
     @AppStorage(AppearanceOverride.storageKey) private var appearanceRaw = AppearanceOverride.system.rawValue
-    #if DEBUG || TESTFLIGHT
-    @Environment(\.colorScheme) private var colorScheme   // live-22 (2) — the tuner's dim is per mode
-    #endif
+    @Environment(\.colorScheme) private var colorScheme   // live-23 (1) — the Librarian's dim is per mode
 
     var body: some View {
         @Bindable var routerBinding = router
@@ -147,18 +145,20 @@ struct ContentView: View {
                     CanvasChrome(scope: .nodeIDs(store.sampleNodeIDs))
                 }
             }
-            #if DEBUG || TESTFLIGHT
-            // live-22 (2) — the appearance tuner's "dim content behind": black over the content (not the panel), scaled
-            // by how far the Librarian is up, so the peek dims nothing.
+            // live-23 (1) — "dim content behind" (T's tuning: light 10%, dark 20%): black over the content (not the
+            // panel), scaled by how far the Librarian is up, so the peek dims nothing.
             .overlay {
-                let dim = AppearanceTuning.dimAmount(dark: colorScheme == .dark) * Double(panelState.progress.peekProgress)
+                let dim = LibrarianSurfaceSpec.dimAmount(dark: colorScheme == .dark) * Double(panelState.progress.peekProgress)
                 if dim > 0 { Color.black.opacity(dim).ignoresSafeArea().allowsHitTesting(false) }
             }
-            #endif
             #if DEBUG
             // Brief CA — headless screenshot harness for the model pill; renders on top of everything.
             if ProcessInfo.processInfo.arguments.contains("-PillGallery") {
                 PillGalleryView()
+            }
+            // live-23 — the card showcase: every synthetic case as the real card faces, for the contact sheets.
+            if ProcessInfo.processInfo.arguments.contains("-CardShowcase") {
+                CardShowcaseGallery()
             }
             // Brief CD1 — ghost-suggestion look options (opacity × font × light/dark + shimmer).
             if ProcessInfo.processInfo.arguments.contains("-GhostGallery") {

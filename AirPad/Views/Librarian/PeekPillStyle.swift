@@ -95,9 +95,7 @@ struct PeekPillBackground<S: InsettableShape>: ViewModifier {
 
     private var style: PeekPillStyle {
         var s: PeekPillStyle = colorScheme == .dark ? .dark : .light
-        #if DEBUG || TESTFLIGHT
-        if AppearanceTuning.glassControls(dark: colorScheme == .dark) { s.material = .glass }   // live-22 (2)
-        #endif
+        if LibrarianSurfaceSpec.glassControls(dark: colorScheme == .dark) { s.material = .glass }   // live-23 (1): T's tuning
         return s
     }
 

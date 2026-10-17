@@ -97,6 +97,10 @@ final class ChatSession {
         /// search found nothing). The transcript shows `WebGrounding.generalKnowledgeNote` under it. App chrome,
         /// never model text (so it is not sent back as history). Optional → legacy transcripts decode nil.
         var generalKnowledge: Bool?
+        /// live-23 (5b) — Apple Intelligence declined this turn (its refusal string, or a guardrail / refusal error).
+        /// The bubble shows `AppleChat.declineLine` instead of the "general knowledge" label; the turn (and the
+        /// question that drew it) is never sent back as history, and never titles the chat. Optional → legacy nil.
+        var declined: Bool?
         /// T ruling (2026-10-09) — cache-friendly follow-ups. A Library USER turn keeps the exact packet (`modelText`)
         /// and system prompt it was SENT with, so the next request can replay them byte-for-byte and extend the
         /// previous prompt — Ollama then reuses the prefix from its cache (measured: a follow-up on the same 7k-token
@@ -107,7 +111,8 @@ final class ChatSession {
         /// packets from here on, so its request extends this one byte-for-byte. Nil on turns that sent no packet.
         var threadStart: UUID?
 
-        init(id: UUID = UUID(), role: Role, text: String, citations: [Citation]? = nil, readReceipt: ReadReceipt? = nil, activity: ToolActivity? = nil, isPartial: Bool? = nil, requestID: String? = nil, generalKnowledge: Bool? = nil, modelText: String? = nil, systemPrompt: String? = nil, threadStart: UUID? = nil) {
+        init(id: UUID = UUID(), role: Role, text: String, citations: [Citation]? = nil, readReceipt: ReadReceipt? = nil, activity: ToolActivity? = nil, isPartial: Bool? = nil, requestID: String? = nil, generalKnowledge: Bool? = nil, declined: Bool? = nil, modelText: String? = nil, systemPrompt: String? = nil, threadStart: UUID? = nil) {
+            self.declined = declined
             self.id = id
             self.role = role
             self.text = text
@@ -469,10 +474,13 @@ final class ChatSession {
                 }
                 // Brief BN5 — the read/skim receipt renders even when the answer cited nothing inline.
                 // T ruling (2026-10-09): the general-knowledge line only under a FACTUAL question (not a pep talk).
-                let labelled = generalKnowledge && WebGrounding.isFactualQuestion(displayText)
+                // live-23 (5b) — Apple Intelligence's refusal string is a decline, not an answer: no general-knowledge
+                // label, never sent back as history, never a title.
+                let declined = ModelRouter.isAppleIntelligenceActive && AppleChat.isRefusalText(finalText)
+                let labelled = !declined && generalKnowledge && WebGrounding.isFactualQuestion(displayText)
                 messages.append(Message(id: streamingMessageID, role: .assistant, text: finalText,
                                         citations: r.citations.isEmpty ? nil : r.citations, readReceipt: readReceipt,
-                                        generalKnowledge: labelled ? true : nil))
+                                        generalKnowledge: labelled ? true : nil, declined: declined ? true : nil))
                 #if DEBUG
                 if labelled { GauntletTap.shared.noteValue("generalKnowledge", true) }
                 #endif
@@ -492,6 +500,10 @@ final class ChatSession {
                 // Carry the requestID so foreground / relaunch can fetch the FULL answer. Keep the
                 // read receipt so a resumed partial still shows what it read (BN5).
                 messages.append(Message(id: streamingMessageID, role: .assistant, text: partial, readReceipt: readReceipt, isPartial: true, requestID: hostRequestID))
+            } else if ModelRouter.isAppleIntelligenceActive && AppleNaming.isRefusal(error) {
+                // live-23 (5b) — a guardrail / refusal error from Apple Intelligence is a decline, shown as one (not a
+                // red failure banner), and kept out of history like a refusal string.
+                messages.append(Message(id: streamingMessageID, role: .assistant, text: AppleChat.declineLine, declined: true))
             } else {
                 // Nothing streamed — a genuine failure. Classify it into a human
                 // banner (field findings #2/#3): unreachable/530 reads as "offline
@@ -561,7 +573,9 @@ final class ChatSession {
     }
     nonisolated static func historyPlan(_ msgs: [Message], replayFrom: UUID?, reserveChars: Int, windowTokens: Int)
         -> (turns: [(role: String, content: String)], packets: [String]) {
-        let chat = msgs.filter { $0.role != .activity }
+        // live-23 (5b) — a declined turn and the question that drew it never go back to the model (a refusal in the
+        // history made Apple Intelligence repeat it, verbatim, on unrelated follow-ups).
+        let chat = withoutDeclined(msgs.filter { $0.role != .activity })
         let start = replayFrom.flatMap { id in chat.firstIndex { $0.id == id } }
         var turns: [(role: String, content: String)] = []
         var packets: [String] = []
@@ -576,6 +590,19 @@ final class ChatSession {
         }
         return (turns, packets)
     }
+    /// The chat minus every declined assistant turn and the user turn right before it.
+    nonisolated static func withoutDeclined(_ msgs: [Message]) -> [Message] {
+        var out: [Message] = []
+        for m in msgs {
+            if m.role == .assistant && m.declined == true {
+                if let last = out.last, last.role == .user { out.removeLast() }
+                continue
+            }
+            out.append(m)
+        }
+        return out
+    }
+
     /// The previous Library turn (answered in full): its thread start and system prompt — what a follow-up builds on.
     func lastLibraryTurn() -> (threadStart: UUID, systemPrompt: String)? {
         guard let i = messages.lastIndex(where: { $0.role == .user }), messages[i].modelText != nil,
@@ -1657,8 +1684,11 @@ final class ChatSession {
     /// failure / refusal / no-op leaves the fallback title intact.
     private func scheduleTitleGenerationIfNeeded() {
         guard !didGenerateTitle, !suppressTitleGeneration else { return }
-        guard let firstUser = messages.first(where: { $0.role == .user })?.text else { return }
-        guard let firstAssistant = messages.first(where: { $0.role == .assistant })?.text else { return }
+        // live-23 (5b) — titles come from the first ANSWERED exchange; a declined turn never titles a chat (T saw
+        // "Unable to work with that request"). Until something is answered the chat keeps its fallback title.
+        let answered = Self.withoutDeclined(messages.filter { $0.role != .activity })
+        guard let firstUser = answered.first(where: { $0.role == .user })?.text else { return }
+        guard let firstAssistant = answered.first(where: { $0.role == .assistant && $0.isPartial != true })?.text else { return }
         didGenerateTitle = true
         let chatID = self.id
         let storeRef = store
@@ -1666,7 +1696,7 @@ final class ChatSession {
         // prompt (system + the sent packet + the answer, then "title this"): Ollama keeps one cached prompt, and a
         // separate short title request evicted the 7k-token packet the follow-up was about to reuse (measured: the
         // follow-up re-prefilled, 26.9 s). Sharing the prefix keeps it cached; other chats keep the short request.
-        if let first = messages.first(where: { $0.role == .user }), let packet = first.modelText, let sp = first.systemPrompt {
+        if let first = answered.first(where: { $0.role == .user }), let packet = first.modelText, let sp = first.systemPrompt {
             let window = ModelRouter.contextWindowTokens
             Task.detached(priority: .utility) {
                 await Self.generateTitleSharingPrefix(chatID: chatID, systemPrompt: sp, packet: packet,
@@ -1760,7 +1790,9 @@ final class ChatSession {
             "i'm sorry", "im sorry", "i am sorry",
             "i cannot", "i can't", "i can not",
             "as an", "as a language model",
-            "sure,", "here is", "here's", "title:"
+            "sure,", "here is", "here's", "title:",
+            // live-23 (5b) — a refusal paraphrased as a title ("Unable to work with that request").
+            "unable to", "cannot ", "can't ", "declined", "request denied", "not able to"
         ]
         for p in refusalPrefixes {
             if lower.hasPrefix(p) { return nil }
@@ -1782,4 +1814,9 @@ final class ChatSession {
         if s.count < 2 { return nil }
         return s
     }
+
+    #if DEBUG
+    /// live-23 (5b) — the title sanitizer, for `-AppleChatSelfTest`.
+    static func debugSanitizeTitle(_ raw: String) -> String? { sanitizeTitleCandidate(raw) }
+    #endif
 }

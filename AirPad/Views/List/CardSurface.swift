@@ -165,6 +165,11 @@ enum CardSurfaceFlag: String, CaseIterable, Identifiable {
 /// shadow at 25% of today's strength (0.262 → 0.0655; radius 12.5 and y 11 unchanged — at a quarter strength the
 /// same radius still reads as a soft lift, so it stays). The emboss is unchanged.
 ///
+/// ★ live-23 (1) — T tuned it on the phone with the live-22 tuner (2026-10-16, Ops
+/// `reference/appearance-tuning-2026-10-16.md`): the shadow back up to 50% (0.131) with a much wider radius (24 —
+/// a wide, soft lift rather than a tight one), the hairline at 0.25. The dark field is half a step lighter (#1A1A1A,
+/// `CardSurfaceResolved.ground`); the rest of dark is unchanged.
+///
 /// ⚠️ LIGHT-MODE ONLY. Every dark resolver returns a shipped literal and cannot
 /// read these values (see `CardSurfaceResolved`), so dark is untouched by this bake.
 enum CardSurfaceDefaults {
@@ -180,10 +185,10 @@ enum CardSurfaceDefaults {
     static func value(_ d: CardSurfaceDial) -> Double {
         switch d {
         case .baseLightness:    return 1.000   // live-22 (1) T: L2 — the paper #FBF9F5 IS the card face (was 1.100 → #FFFFFA on L1)
-        case .shadowAlpha:      return referenceShadowAlpha * 0.25   // live-22 (1) T: 25% of today's 0.262 = 0.0655 (radius + y unchanged)
-        case .shadowRadius:     return 12.50   // T (was 12.0)
+        case .shadowAlpha:      return referenceShadowAlpha * 0.5    // live-23 (1) T tuned on device: 50% of 0.262 = 0.131 (live-22: 25%)
+        case .shadowRadius:     return 24.00   // live-23 (1) T tuned on device: a wide, soft lift (was 12.5)
         case .shadowY:          return 11.00   // T (was 4.0) — falls further/softer
-        case .rimOpacity:       return 0.16    // live-22 (1) T: the 0.5 pt hairline (was the white rim @0.95 — priorRimOpacity)
+        case .rimOpacity:       return 0.25    // live-23 (1) T tuned on device (live-22: 0.16; before that the white rim @0.95 — priorRimOpacity)
         case .rimWidth:         return 0.50    // live-22 (1) T: hairline 0.5 pt (was 1.25 — priorRimWidth)
         case .embossLightAlpha: return 0.47    // T (was 0.35)
         case .embossDarkAlpha:  return 0.13    // T (was 0.25)
@@ -308,7 +313,8 @@ enum CardSurfaceResolved {
 
     /// Dark branch is the shipped literal `#111115`, byte-identical.
     static func ground(dark: Bool) -> Color {
-        let baked = dark ? "161616" : CardSurfaceStore.read(.groundHex)   // dark: T device-final 2026-09-14, see Ops/reference/tuner-state-accepted.md
+        // dark: live-23 (1) T tuned on device — half a step lighter, #1A1A1A (was #161616, T device-final 2026-09-14)
+        let baked = dark ? "1A1A1A" : CardSurfaceStore.read(.groundHex)
         var hex = baked
         #if DEBUG || TESTFLIGHT
         if dark { hex = AppearanceTuning.darkGroundHex(baked: baked) }   // live-22 (2)
@@ -416,5 +422,68 @@ struct CardEmbossOverlay: View {
             .blur(radius: blur)
             .allowsHitTesting(false)
         }
+    }
+}
+
+// MARK: - Hero photo fade (live-23 (3))
+
+/// The fade of a card's hero photo into the card body (carousel + grid). T (2026-10-17): live-22's fade was "too
+/// severe" — a linear ramp over the last 22% of the hero zone. The fluted cards, which blend seamlessly, ease their
+/// colour out over the lower half of the zone with a short tail past its edge (measured on the live-22 carousel: 76%
+/// of peak at the zone's middle, 43% at 0.8, 10% at its edge, 6% just past it). So the photo now runs 10% past the
+/// zone and fades over the last 60% of the zone on a smoothstep. The TestFlight appearance tuner varies length and
+/// curve live (per appearance); an App Store build renders `baked`.
+enum CardHeroFade {
+    /// `length`: the fraction of the hero zone the photo fades over. `curve`: 0 linear · 1 smoothstep ·
+    /// 2 smootherstep (between: a blend). `overshoot`: how far past the zone the photo runs, as a fraction of it.
+    struct Shape: Equatable, CustomStringConvertible {
+        var length: Double; var curve: Double; var overshoot: Double
+        var description: String { String(format: "length %.2f curve %.2f overshoot %.2f", length, curve, overshoot) }
+    }
+    static let baked = Shape(length: 0.60, curve: 1, overshoot: 0.10)
+    /// live-22's mask (for the "before" stills and the self-test).
+    static let live22 = Shape(length: 0.22, curve: 0, overshoot: 0)
+
+    static func current(dark: Bool) -> Shape {
+        #if DEBUG || TESTFLIGHT
+        if let v = AppearanceTuning.values(dark: dark) { return v.heroFade }
+        #endif
+        return baked
+    }
+
+    /// The photo frame's height for a hero zone.
+    static func frameHeight(zone: CGFloat, _ s: Shape) -> CGFloat { zone * CGFloat(1 + max(s.overshoot, 0)) }
+
+    /// Where the fade starts, as a fraction of the photo frame.
+    static func fadeTop(_ s: Shape) -> Double {
+        min(max(1 - min(max(s.length, 0.02), 1 + s.overshoot) / (1 + s.overshoot), 0), 0.98)
+    }
+
+    static func ease(_ p: Double, curve: Double) -> Double {
+        let p = min(max(p, 0), 1)
+        let smooth = p * p * (3 - 2 * p), smoother = p * p * p * (p * (6 * p - 15) + 10)
+        let c = min(max(curve, 0), 2)
+        return c <= 1 ? p + (smooth - p) * c : smooth + (smoother - smooth) * (c - 1)
+    }
+
+    /// Opacity of the photo at `y` (0 = top of the photo frame … 1 = its bottom).
+    static func alpha(_ s: Shape, at y: Double) -> Double {
+        let top = fadeTop(s)
+        return y <= top ? 1 : 1 - ease((y - top) / (1 - top), curve: s.curve)
+    }
+
+    /// The mask's stops, top → bottom. Linear needs only its two ends (live-22's three-stop mask); an eased fade is
+    /// sampled at 16 points.
+    static func stops(_ s: Shape) -> [Gradient.Stop] {
+        let top = fadeTop(s)
+        if s.curve <= 0 {
+            return [.init(color: .black, location: 0), .init(color: .black, location: top), .init(color: .clear, location: 1)]
+        }
+        var out: [Gradient.Stop] = [.init(color: .black, location: 0)]
+        for i in 0...15 {
+            let y = top + (1 - top) * Double(i) / 15
+            out.append(.init(color: .black.opacity(alpha(s, at: y)), location: CGFloat(y)))
+        }
+        return out
     }
 }

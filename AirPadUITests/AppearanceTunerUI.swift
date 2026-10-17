@@ -41,6 +41,14 @@ final class AppearanceTunerUI: XCTestCase {
         func at(_ f: Double) -> XCUICoordinate { slider.coordinate(withNormalizedOffset: CGVector(dx: (11 + f * (w - 22)) / w, dy: 0.5)) }
         at(from).press(forDuration: 0.05, thenDragTo: at(to))
     }
+    /// Turn a tuner switch to `value` ("1" / "0"), tapping again only if a tap didn't take (parallel runs are slow).
+    private func flip(_ sw: XCUIElement, to value: String) {
+        for _ in 0..<3 where sw.value as? String != value {
+            sw.switches.firstMatch.tap()
+            let deadline = Date().addingTimeInterval(2)
+            while Date() < deadline && sw.value as? String != value { Thread.sleep(forTimeInterval: 0.2) }
+        }
+    }
     static let sections = ["cardContent", "captureControls", "librarian", "peekPill", "searchPill", "askPill", "panelGrade",
                            "cards", "heroFade"]
 
@@ -226,7 +234,7 @@ final class AppearanceTunerUI: XCTestCase {
 
         // Per-pill looks: Peek's grade leaves Search alone; Ask mirrors Search until "Match Search" is off.
         open(app, "peekPill")
-        app.switches["tunerToggle-peekGrade"].firstMatch.switches.firstMatch.tap()
+        flip(app.switches["tunerToggle-peekGrade"].firstMatch, to: "1")
         XCTAssertEqual(app.switches["tunerToggle-peekGrade"].firstMatch.value as? String, "1", "the peek grade is on")
         open(app, "searchPill")
         XCTAssertEqual(app.switches["tunerToggle-searchGrade"].firstMatch.value as? String, "0", "the search grade is not")
@@ -239,7 +247,7 @@ final class AppearanceTunerUI: XCTestCase {
         let match = app.switches["tunerToggle-askMatchesSearch"].firstMatch
         XCTAssertEqual(match.value as? String, "1", "Ask matches Search by default")
         XCTAssertFalse(app.segmentedControls["tunerRimRest-ask"].exists, "while matching, Ask has no controls of its own")
-        match.switches.firstMatch.tap()
+        flip(match, to: "0")
         XCTAssertTrue(app.segmentedControls["tunerRimRest-ask"].waitForExistence(timeout: 3), "let go, Ask has its own")
         XCTAssertTrue(app.segmentedControls["tunerRimRest-ask"].buttons["Off"].isSelected, "and starts from Search's values")
         XCTAssertTrue(app.segmentedControls["tunerRimActive-ask"].buttons["Slow shimmer"].isSelected)

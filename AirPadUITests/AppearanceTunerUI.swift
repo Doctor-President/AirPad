@@ -104,6 +104,41 @@ final class AppearanceTunerUI: XCTestCase {
         XCTAssertTrue(h.waitForExistence(timeout: 5), "closing returns to the handle")
     }
 
+    /// live-24 (1)+(2) — T found every slider kicked the old "Liquid Glass" preset out to Custom. Now Liquid Glass is a
+    /// panel mode: its variant, tint colour, tint strength and veil all move without leaving it; the Siri-style pill
+    /// preset turns the pill grade + rim on and is marked as chosen.
+    func testLiquidGlassModeStaysGlassAndPresetsApply() {
+        let app = launch(["-OpenCardView", "-gridColumnCount", "2", "-LibrarianDetent", "half"])
+        let h = handle(app)
+        XCTAssertTrue(h.waitForExistence(timeout: 30))
+        h.tap()
+        XCTAssertTrue(app.descendants(matching: .any)["appearanceTunerSheet"].waitForExistence(timeout: 10), "the sheet opens")
+        let mode = app.segmentedControls["tunerPanelMode"]
+        XCTAssertTrue(mode.buttons["Frost"].isSelected, "the panel starts as T's frost")
+        mode.buttons["Liquid Glass"].tap()
+        app.segmentedControls["tunerGlassVariant"].buttons["Clear"].tap()
+        app.segmentedControls["tunerGlassTint"].buttons["Deep Klein"].tap()
+        XCTAssertEqual(app.staticTexts["tunerGlassTint-hex"].firstMatch.label, "#0E2D61", "the tint shows its hex")
+        app.sliders["tunerSlider-glassTintStrength"].adjust(toNormalizedSliderPosition: 0.75)
+        app.sliders["tunerSlider-veil"].adjust(toNormalizedSliderPosition: 0.8)
+        XCTAssertTrue(mode.buttons["Liquid Glass"].isSelected, "every glass control keeps the Liquid Glass mode")
+        XCTAssertTrue(app.segmentedControls["tunerGlassVariant"].buttons["Clear"].isSelected, "the variant stuck")
+        XCTAssertNotEqual(readout(app, "glassTintStrength"), "40%", "the tint strength moved")
+        shot(app, "sheet-liquid-glass-tuned")
+        let siri = app.buttons["tunerGlassPreset-siriPill"].firstMatch
+        XCTAssertTrue(siri.waitForExistence(timeout: 5))
+        siri.tap()
+        XCTAssertTrue(siri.isSelected, "the Siri-style pill preset is marked once applied")
+        XCTAssertEqual(app.switches["tunerToggle-pillGrade"].firstMatch.value as? String, "1", "the pill grade is on")
+        XCTAssertEqual(app.switches["tunerToggle-pillRim"].firstMatch.value as? String, "1", "the rim is on")
+        XCTAssertTrue(mode.buttons["Liquid Glass"].isSelected, "a pill preset leaves the panel mode alone")
+        app.buttons["tunerCopy"].tap()
+        XCTAssertTrue(app.buttons["Copied"].waitForExistence(timeout: 3), "Copy values ran")
+        app.buttons["tunerClose"].tap()
+        sleep(1)
+        shot(app, "liquid-glass-clear-deep-klein-with-siri-pill")
+    }
+
     func testLongPressHidesUntilRelaunch() {
         let app = launch(["-OpenCardView", "-gridColumnCount", "2"])
         let h = handle(app)

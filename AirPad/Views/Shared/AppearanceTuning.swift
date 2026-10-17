@@ -43,7 +43,29 @@ enum LibrarianPanelPreset: String, Codable, CaseIterable, Identifiable {
         }
     }
     /// The presets the sheet offers (Custom is what a slider edit becomes).
-    static let offered: [LibrarianPanelPreset] = [.today, .frost35, .frost50, .frost65, .frost50Glass, .liquidGlass]
+    /// The frost presets the sheet offers (Custom is what a slider edit becomes). live-24: Liquid Glass is its own
+    /// panel mode now (`LibrarianPanelMode`), not a preset a slider can kick out of; `.liquidGlass` stays decodable.
+    static let offered: [LibrarianPanelPreset] = [.today, .frost35, .frost50, .frost65, .frost50Glass]
+}
+
+/// live-24 (1) — the Librarian panel is a frost (our blur + tint) or real Liquid Glass (Apple's knobs + our veil).
+enum LibrarianPanelMode: String, Codable, CaseIterable, Identifiable {
+    case frost, glass
+    var id: String { rawValue }
+    var label: String { self == .frost ? "Frost" : "Liquid Glass" }
+}
+
+/// live-24 (2) — the graded-tint presets (T's reference: iOS 27's Spotlight / Siri "Search or Ask" pill).
+enum LibrarianGlassPreset: String, CaseIterable, Identifiable {
+    case siriPill, gradedPanel, both
+    var id: String { rawValue }
+    var label: String {
+        switch self {
+        case .siriPill:    return "Siri-style pill"
+        case .gradedPanel: return "Graded panel"
+        case .both:        return "Both"
+        }
+    }
 }
 
 /// One appearance's tuner values. Light and dark each have their own; the tuner edits the one on screen.
@@ -67,6 +89,13 @@ struct AppearanceTuningValues: Codable, Equatable {
     // Hero photo fade (live-23 (3)) — carousel + grid cards
     var fadeLength: Double = CardHeroFade.baked.length   // fraction of the hero zone the photo fades over
     var fadeCurve: Double = CardHeroFade.baked.curve     // 0 linear · 1 smoothstep · 2 smootherstep
+    // Liquid Glass + graded tint (live-24) — all off in what ships
+    var panelMode: LibrarianPanelMode = .frost
+    var glass: PanelGlass = .lightDefault
+    var panelGrade: GradedTint = .off
+    var pillGrade: GradedTint = .off
+    var pillVariant: GlassVariant = .regular
+    var pillRim: PillRim = .off
 
     var heroFade: CardHeroFade.Shape {
         CardHeroFade.Shape(length: fadeLength, curve: fadeCurve, overshoot: CardHeroFade.baked.overshoot)
@@ -87,12 +116,57 @@ struct AppearanceTuningValues: Codable, Equatable {
         palette: "L2", fieldStep: 0.5, shadowStrength: 1, shadowRadius: 12,
         hairline: false, hairlineWidth: 0.5, hairlineOpacity: 0.12,
         panel: .custom, tintOpacity: 0.56, blur: 2, saturation: 0.4, glassControls: true,
-        dimBehind: true, dimAmount: 0.20)
+        dimBehind: true, dimAmount: 0.20, glass: .darkDefault)
 
     /// The Librarian surface these values render (live-23).
     var librarianSpec: LibrarianSurfaceSpec {
         LibrarianSurfaceSpec(tint: tintOpacity, blur: blur, saturation: saturation, glassControls: glassControls,
                              dim: dimBehind ? min(max(dimAmount, 0), 0.20) : 0, wholePanelGlass: panel == .liquidGlass)
+    }
+
+    /// live-24 — the glass + graded-tint look these values render.
+    var glassLook: LibrarianGlassLook {
+        LibrarianGlassLook(panelGlass: panelMode == .glass ? glass : nil, panelGrade: panelGrade, pillGrade: pillGrade,
+                           pillVariant: pillVariant, rim: pillRim)
+    }
+
+    /// A frost slider: the panel becomes a custom frost.
+    mutating func editFrost(_ change: (inout AppearanceTuningValues) -> Void) {
+        change(&self); panel = .custom; panelMode = .frost
+    }
+    /// A Liquid Glass control (variant, tint colour + strength, veil): the panel STAYS Liquid Glass (live-24 (1): T
+    /// found every slider flipped the old "Liquid Glass" preset to Custom).
+    mutating func editGlass(_ change: (inout PanelGlass) -> Void) {
+        change(&glass); panelMode = .glass
+    }
+
+    /// The graded-tint presets. `dark` picks the panel's grade colour (light: off-white, so the dark text keeps reading).
+    mutating func apply(_ preset: LibrarianGlassPreset, dark: Bool) {
+        switch preset {
+        case .siriPill:
+            // T's reference: a near-black grade dense across the top and centre where the text sits, thinning to the
+            // bottom edge; a thin white rim; a clearer glass beneath. The fade starts BELOW the text line (0.75): light
+            // text on a grade that thins inside the line fails AA over a light page (live-24 (3): worst 2.85).
+            glassControls = true
+            pillVariant = .clear
+            pillGrade = GradedTint(on: true, top: 0.9, bottom: 0.15, start: 0.75, softness: 1, direction: .vertical,
+                                   color: .nearBlack)
+            pillRim = PillRim(on: true, width: 1, brightness: 0.8, color: .white, animation: .off)
+        case .gradedPanel:
+            // Real glass, the grade densest behind the transcript and thinning toward the top edge (where the
+            // content behind still lenses through).
+            panelMode = .glass
+            glass = PanelGlass(variant: .regular, tint: dark ? .nearBlack : .offWhite, tintStrength: 0.2, veil: 0.3)
+            panelGrade = GradedTint(on: true, top: 0.1, bottom: dark ? 0.7 : 0.75, start: 0.04, softness: 0.4,
+                                    direction: .vertical, color: dark ? .nearBlack : .offWhite)
+        case .both:
+            apply(.siriPill, dark: dark); apply(.gradedPanel, dark: dark)
+        }
+    }
+
+    /// Whether these values are a preset as it was applied (so the sheet can mark it).
+    func matches(_ preset: LibrarianGlassPreset, dark: Bool) -> Bool {
+        var p = self; p.apply(preset, dark: dark); return p == self
     }
 
     /// Set the Librarian sliders to a preset. Dim is left as it is (it's its own toggle).
@@ -104,9 +178,10 @@ struct AppearanceTuningValues: Codable, Equatable {
         case .frost50:      tintOpacity = 0.50; blur = 2; saturation = 0.4; glassControls = false
         case .frost65:      tintOpacity = 0.65; blur = 2; saturation = 0.4; glassControls = false
         case .frost50Glass: tintOpacity = 0.50; blur = 2; saturation = 0.4; glassControls = true
-        case .liquidGlass:  glassControls = true
+        case .liquidGlass:  glassControls = true; panelMode = .glass; return
         case .custom:       break
         }
+        if preset != .custom { panelMode = .frost }
     }
 }
 
@@ -130,6 +205,13 @@ extension AppearanceTuningValues {
         dimAmount = try c.decode(Double.self, forKey: .dimAmount)
         fadeLength = try c.decodeIfPresent(Double.self, forKey: .fadeLength) ?? CardHeroFade.baked.length
         fadeCurve = try c.decodeIfPresent(Double.self, forKey: .fadeCurve) ?? CardHeroFade.baked.curve
+        // live-24: a stored "Liquid Glass" preset (TF 202610162306) opens in the Liquid Glass mode.
+        panelMode = try c.decodeIfPresent(LibrarianPanelMode.self, forKey: .panelMode) ?? (panel == .liquidGlass ? .glass : .frost)
+        glass = try c.decodeIfPresent(PanelGlass.self, forKey: .glass) ?? .lightDefault
+        panelGrade = try c.decodeIfPresent(GradedTint.self, forKey: .panelGrade) ?? .off
+        pillGrade = try c.decodeIfPresent(GradedTint.self, forKey: .pillGrade) ?? .off
+        pillVariant = try c.decodeIfPresent(GlassVariant.self, forKey: .pillVariant) ?? .regular
+        pillRim = try c.decodeIfPresent(PillRim.self, forKey: .pillRim) ?? .off
     }
 }
 
@@ -189,6 +271,18 @@ final class AppearanceTuner {
                                            offered: AppearanceTuning.isLive)
         #if DEBUG
         if UserDefaults.standard.bool(forKey: "AppearanceTunerReset") { state = .defaults }   // UI tests start from (1)
+        // live-24 (5) stills — `-AppearanceTuner YES -AppearanceTunerReset YES -GlassPresetRender siriPill|gradedPanel|both`.
+        if let raw = UserDefaults.standard.string(forKey: "GlassPresetRender") {
+            if let p = LibrarianGlassPreset(rawValue: raw) {
+                state.light.apply(p, dark: false); state.dark.apply(p, dark: true)
+            } else if raw == "glass" {   // the Liquid Glass mode at its defaults, nothing graded
+                state.light.editGlass { _ in }; state.dark.editGlass { _ in }
+            }
+            // `-RimAnimationRender shimmer|pulse` — the rim's "while answering" motion (with `-RenderGenerating YES`).
+            if let a = UserDefaults.standard.string(forKey: "RimAnimationRender").flatMap(PillRimAnimation.init(rawValue:)) {
+                state.light.pillRim.animation = a; state.dark.pillRim.animation = a
+            }
+        }
         #endif
     }
 
@@ -342,6 +436,11 @@ extension AppearanceTuning {
             while t.contains(".") && (t.hasSuffix("0") || t.hasSuffix(".")) { t.removeLast() }
             return t == "-0" ? "0" : t
         }
+        func grade(_ g: GradedTint) -> String {
+            "{\"on\":\(g.on),\"top\":\(num(g.top)),\"bottom\":\(num(g.bottom)),\"start\":\(num(g.start)),"
+                + "\"softness\":\(num(g.softness)),\"direction\":\"\(g.direction.rawValue)\",\"color\":\"\(g.color.rawValue)\","
+                + "\"hex\":\"#\(g.color.hex)\"}"
+        }
         func block(_ v: AppearanceTuningValues, dark: Bool) -> String {
             let reference = dark ? darkShadowAlpha : CardSurfaceDefaults.referenceShadowAlpha
             var parts: [String] = []
@@ -357,6 +456,14 @@ extension AppearanceTuning {
                 "\"saturation\":\(num(v.saturation))", "\"glassControls\":\(v.glassControls)",
                 "\"dim\":\(v.dimBehind ? num(v.dimAmount) : "0")",
                 "\"fadeLength\":\(num(v.fadeLength))", "\"fadeCurve\":\(num(v.fadeCurve))",
+                // live-24 — Liquid Glass + the graded tint + the pill rim
+                "\"panelMode\":\"\(v.panelMode.rawValue)\"", "\"glassVariant\":\"\(v.glass.variant.rawValue)\"",
+                "\"glassTint\":\"\(v.glass.tint.rawValue)\"", "\"glassTintHex\":\"#\(v.glass.tint.hex)\"",
+                "\"glassTintStrength\":\(num(v.glass.tintStrength))", "\"veil\":\(num(v.glass.veil))",
+                "\"panelGrade\":\(grade(v.panelGrade))", "\"pillGrade\":\(grade(v.pillGrade))",
+                "\"pillVariant\":\"\(v.pillVariant.rawValue)\"",
+                "\"pillRim\":{\"on\":\(v.pillRim.on),\"width\":\(num(v.pillRim.width)),\"brightness\":\(num(v.pillRim.brightness)),"
+                    + "\"color\":\"\(v.pillRim.color.rawValue)\",\"hex\":\"#\(v.pillRim.color.hex)\",\"animation\":\"\(v.pillRim.animation.rawValue)\"}",
             ]
             return "{" + parts.joined(separator: ",") + "}"
         }
@@ -492,6 +599,75 @@ extension AppearanceTuning {
             && f50g.glassControls && close(f50g.tintOpacity, 0.5)
             && before.panel == .today && close(before.tintOpacity, 0.35) && close(before.blur, 1) && !before.glassControls)
 
+        // live-24 (1) — the Liquid Glass mode: Apple's knobs (variant, tint) + our veil; no slider kicks it out.
+        var g = L; g.panelMode = .glass
+        g.editGlass { $0.variant = .clear }; g.editGlass { $0.tint = .deepKlein }
+        g.editGlass { $0.tintStrength = 0.6 }; g.editGlass { $0.veil = 0.8 }
+        row("liquid-glass-mode-survives-every-glass-control", g.panelMode == .glass
+            && g.glass == PanelGlass(variant: .clear, tint: .deepKlein, tintStrength: 0.6, veil: 0.8)
+            && g.glassLook.panelGlass == g.glass, "mode=\(g.panelMode) panel=\(g.panel)")
+        var fz = g; fz.editFrost { $0.tintOpacity = 0.5 }
+        row("a-frost-slider-is-the-frost-mode", fz.panelMode == .frost && fz.panel == .custom && fz.glassLook.panelGlass == nil)
+        row("glass-tint-colours-are-the-three-hexes", GlassTintColor.allCases.map(\.hex) == ["FBF9F5", "0A0A0A", "0E2D61"])
+        row("ships-unchanged (glass, grades, rim all off)", L.glassLook == .shipped && Dk.glassLook == .shipped
+            && (isLive || LibrarianGlassLook.current(dark: false) == .shipped && LibrarianGlassLook.current(dark: true) == .shipped))
+        if var legacyGlass = (try? JSONSerialization.jsonObject(with: (try? JSONEncoder().encode(
+            AppearanceTuningState(light: { var x = L; x.apply(.liquidGlass); return x }(), dark: Dk))) ?? Data())) as? [String: Any],
+           var lg = legacyGlass["light"] as? [String: Any] {
+            for k in ["panelMode", "glass", "panelGrade", "pillGrade", "pillVariant", "pillRim"] { lg.removeValue(forKey: k) }
+            legacyGlass["light"] = lg
+            let back = effective(stored: try? JSONSerialization.data(withJSONObject: legacyGlass), offered: true)
+            row("a-stored-live-23-liquid-glass-opens-in-glass-mode", back.light.panelMode == .glass && back.dark.glassLook == .shipped,
+                "light mode=\(back.light.panelMode)")
+        } else {
+            row("a-stored-live-23-liquid-glass-opens-in-glass-mode", false, "couldn't build the blob")
+        }
+
+        // live-24 (2) — the graded tint + the presets.
+        let gt = GradedTint(on: true, top: 0.9, bottom: 0.15, start: 0.2, softness: 1, direction: .vertical, color: .nearBlack)
+        let samples = stride(from: 0.0, through: 1.0, by: 0.05).map { gt.alpha(at: $0) }
+        row("graded-tint-top-then-eased-to-bottom", close(gt.alpha(at: 0), 0.9) && close(gt.alpha(at: 0.2), 0.9)
+            && close(gt.alpha(at: 1), 0.15) && zip(samples, samples.dropFirst()).allSatisfy { $0 >= $1 - 1e-9 }
+            && gt.alpha(at: 0.3) > 0.85, "samples=\(samples.map { String(format: "%.2f", $0) })")
+        row("graded-tint-stops-carry-the-curve", gt.stops.count == 17 && close(Double(gt.stops.last!.location), 1))
+        var sp = L; sp.apply(.siriPill, dark: false)
+        row("preset-siri-pill (near-black 0.9 → 0.15, white rim 1 pt)", sp.pillGrade.on && sp.pillGrade.color == .nearBlack
+            && close(sp.pillGrade.top, 0.9) && close(sp.pillGrade.bottom, 0.15) && sp.pillGrade.direction == .vertical
+            && sp.pillRim.on && sp.pillRim.color == .white && close(sp.pillRim.width, 1) && sp.glassControls
+            && sp.panelMode == L.panelMode && !sp.panelGrade.on, "\(sp.pillGrade) \(sp.pillRim)")
+        row("siri-pill-text-turns-light", LibrarianGlassLook.pillScheme(sp.pillGrade) == .dark)
+        // live-24 (3) — light text needs the grade dense through the WHOLE text line (a one-line pill's text spans
+        // ~0.25–0.75 of its height, descenders included): ≥ 0.6 near-black keeps white text AA over a white backdrop.
+        let band = stride(from: 0.2, through: 0.75, by: 0.05).map { sp.pillGrade.alpha(at: $0) }
+        row("siri-pill-dense-through-the-text-line (≥ 0.6 from 0.20 to 0.75)", band.allSatisfy { $0 >= 0.6 },
+            "band=\(band.map { String(format: "%.2f", $0) })")
+        var gpL = L; gpL.apply(.gradedPanel, dark: false)
+        var gpD = Dk; gpD.apply(.gradedPanel, dark: true)
+        row("preset-graded-panel (glass, denser behind the transcript, thinning to the top)",
+            gpL.panelMode == .glass && gpL.panelGrade.on && gpL.panelGrade.top < gpL.panelGrade.bottom
+            && gpL.panelGrade.color == .offWhite && gpD.panelGrade.color == .nearBlack && !gpL.pillGrade.on,
+            "\(gpL.panelGrade)")
+        var both = L; both.apply(.both, dark: false)
+        row("preset-both = siri pill + graded panel", both.pillGrade == sp.pillGrade && both.pillRim == sp.pillRim
+            && both.panelGrade == gpL.panelGrade && both.panelMode == .glass)
+        row("presets-are-marked-when-applied", sp.matches(.siriPill, dark: false) && !sp.matches(.gradedPanel, dark: false)
+            && both.matches(.both, dark: false) && !L.matches(.siriPill, dark: false))
+        row("rim-colours-are-airpad's-palette-only (no Apple Intelligence multicolour)",
+            Set(PillRimColor.allCases.map(\.hex)) == ["FFFFFF", "1B59C2", "00BFFF", "E8820A"])
+        let anim = PillRim(on: true, width: 1, brightness: 0.8, color: .cyan, animation: .shimmer)
+        row("rim-moves-only-while-generating-never-under-reduce-motion",
+            PillRim.animates(anim, generating: true, reduceMotion: false)
+            && !PillRim.animates(anim, generating: false, reduceMotion: false)
+            && !PillRim.animates(anim, generating: true, reduceMotion: true)
+            && !PillRim.animates({ var r = anim; r.animation = .off; return r }(), generating: true, reduceMotion: false))
+
+        // live-24 (3) — Reduce Transparency → solid; Increase Contrast → a firm veil + edge.
+        let rt = LibrarianGlassAccessibility.resolve(reduceTransparency: true, increaseContrast: false)
+        let ic = LibrarianGlassAccessibility.resolve(reduceTransparency: false, increaseContrast: true)
+        let none = LibrarianGlassAccessibility.resolve(reduceTransparency: false, increaseContrast: false)
+        row("reduce-transparency-is-solid-increase-contrast-firms-the-veil", rt.solid && !ic.solid && !none.solid
+            && ic.veilFloor >= 0.85 && none.veilFloor == 0 && ic.strokeOpacity > none.strokeOpacity)
+
         // Export — at the defaults, Copy values reads back T's reference JSON verbatim (with this build's number).
         let json = exportJSON(.defaults, editing: "light", build: "202610161756")
         let parsed = (try? JSONSerialization.jsonObject(with: Data(json.utf8))) as? [String: Any]
@@ -508,6 +684,11 @@ extension AppearanceTuning {
         }
         row("copy-values-at-defaults-reads-back-T's-reference", !ref.isEmpty && mismatches.isEmpty,
             mismatches.joined(separator: "; "))
+        let newKeys = ["panelMode", "glassVariant", "glassTint", "glassTintHex", "glassTintStrength", "veil", "panelGrade",
+                       "pillGrade", "pillVariant", "pillRim"]
+        let lightOut = parsed?["light"] as? [String: Any] ?? [:]
+        row("copy-values-carries-the-live-24-keys", newKeys.allSatisfy { lightOut[$0] != nil },
+            "missing: \(newKeys.filter { lightOut[$0] == nil })")
 
         #if DEBUG || TESTFLIGHT
         row("this-build-offers-it (DEBUG / TESTFLIGHT)", isOffered)

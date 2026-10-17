@@ -664,9 +664,17 @@ struct LibrarianPanelMaterial: View {
     @Environment(\.colorScheme) private var colorScheme
 
     var body: some View {
-        // live-23 (1) — T's tuned frost in both modes (`LibrarianSurfaceSpec`); nil = the tuner's "Before" preset.
-        if let spec = LibrarianSurfaceSpec.current(dark: colorScheme == .dark) {
-            LibrarianTunedMaterial(spec: spec, dark: colorScheme == .dark)
+        let dark = colorScheme == .dark
+        // live-24 — the tuner's Liquid Glass mode (Apple's glass + our reading veil), and a graded tint over either.
+        let look = LibrarianGlassLook.current(dark: dark)
+        if let glass = look.panelGlass {
+            LibrarianGlassPanel(glass: glass, grade: look.panelGrade, dark: dark)
+        } else if let spec = LibrarianSurfaceSpec.current(dark: dark) {
+            // live-23 (1) — T's tuned frost in both modes (`LibrarianSurfaceSpec`); nil = the tuner's "Before" preset.
+            ZStack {
+                LibrarianTunedMaterial(spec: spec, dark: dark)
+                LibrarianPanelGradeOverlay(grade: look.panelGrade)
+            }
         } else {
             before
         }

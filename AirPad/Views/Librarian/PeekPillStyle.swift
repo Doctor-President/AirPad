@@ -92,12 +92,15 @@ struct PeekPillBackground<S: InsettableShape>: ViewModifier {
     /// material + tint always render. Default 1 for non-morphing call sites.
     var visibility: Double = 1
     @Environment(\.colorScheme) private var colorScheme
+    @Environment(\.librarianGenerating) private var generating
 
     private var style: PeekPillStyle {
         var s: PeekPillStyle = colorScheme == .dark ? .dark : .light
         if LibrarianSurfaceSpec.glassControls(dark: colorScheme == .dark) { s.material = .glass }   // live-23 (1): T's tuning
         return s
     }
+
+    private var look: LibrarianGlassLook { LibrarianGlassLook.current(dark: colorScheme == .dark) }
 
     func body(content: Content) -> some View {
         let s = style
@@ -107,14 +110,20 @@ struct PeekPillBackground<S: InsettableShape>: ViewModifier {
                 // backdrop). The shadow/separation is applied to the material-
                 // backed shape — no opaque fill behind it.
                 ZStack {
-                    s.material.faceView(shape)                      // translucent
-                    shape.fill(s.tintColor.opacity(s.tintOpacity))  // tint wash (dark only)
+                    if s.material == .glass {
+                        // live-24 — real Liquid Glass + the tuner's graded tint / rim (all off in what ships).
+                        LibrarianPillGlass(shape: shape, look: look, generating: generating)
+                        if !look.pillGrade.on { shape.fill(s.tintColor.opacity(s.tintOpacity)) }   // tint wash (dark only)
+                    } else {
+                        s.material.faceView(shape)                      // translucent
+                        shape.fill(s.tintColor.opacity(s.tintOpacity))  // tint wash (dark only)
+                    }
                 }
                 .shadow(color: s.shadow.color.opacity(s.shadowOpacity * visibility),
                         radius: s.shadowRadius, x: s.shadowOffsetX, y: s.shadowOffsetY)
             }
             .overlay {
-                if s.strokeEnabled && visibility > 0.01 {
+                if s.strokeEnabled && visibility > 0.01 && !(s.material == .glass && look.rim.on) {
                     shape.strokeBorder(s.strokeColorResolved.opacity(visibility),
                                        lineWidth: s.strokeWidth)
                 }

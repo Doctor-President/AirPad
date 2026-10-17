@@ -146,10 +146,6 @@ struct AppearanceTunerSheet<G: Gesture>: View {
     private var dark: Bool { colorScheme == .dark }
     private var v: AppearanceTuningValues { tuner.values(dark: dark) }
     private func set(_ change: @escaping (inout AppearanceTuningValues) -> Void) { tuner.update(dark: dark, change) }
-    /// A Librarian slider turns a preset into Custom (Liquid Glass and Today aren't slider-built).
-    private func setPanel(_ change: @escaping (inout AppearanceTuningValues) -> Void) {
-        set { change(&$0); $0.panel = .custom }
-    }
 
     var body: some View {
         VStack(spacing: 0) {
@@ -160,6 +156,7 @@ struct AppearanceTunerSheet<G: Gesture>: View {
                     cardContentSection
                     captureControlsSection
                     librarianSection
+                    gradedSection
                     cardsSection
                     heroFadeSection
                     actions
@@ -200,40 +197,21 @@ struct AppearanceTunerSheet<G: Gesture>: View {
         .gesture(headerDrag)
     }
 
-    // Librarian surface
+    // Librarian surface — live-24 (1): two modes. Frost = our blur + tint; Liquid Glass = Apple's glass (variant +
+    // tint) + our reading veil. A glass control never kicks the panel out of Liquid Glass.
 
     private var librarianSection: some View {
         VStack(alignment: .leading, spacing: 10) {
-            sectionTitle("Librarian surface", value: v.panel.label + (v.glassControls ? " · glass controls" : ""))
-            ScrollView(.horizontal) {
-                HStack(spacing: 6) {
-                    ForEach(LibrarianPanelPreset.offered) { p in
-                        Button { set { $0.apply(p) } } label: {
-                            Text(p.label).font(.caption.weight(.medium))
-                                .padding(.horizontal, 10).padding(.vertical, 6)
-                                .background(Capsule().fill(Color.primary.opacity(v.panel == p ? 0.16 : 0.06)))
-                                .overlay(Capsule().strokeBorder(Color.primary.opacity(v.panel == p ? 0.5 : 0), lineWidth: 1))
-                        }
-                        .buttonStyle(.plain)
-                        .accessibilityIdentifier("tunerPreset-\(p.rawValue)")
-                        .accessibilityAddTraits(v.panel == p ? .isSelected : [])
-                    }
-                }
+            sectionTitle("Librarian surface", value: (v.panelMode == .glass ? "Liquid Glass" : v.panel.label)
+                         + (v.glassControls ? " · glass controls" : ""))
+            Picker("Panel", selection: Binding(get: { v.panelMode }, set: { m in
+                set { $0.panelMode = m; if m == .frost && $0.panel == .liquidGlass { $0.panel = .custom } }
+            })) {
+                ForEach(LibrarianPanelMode.allCases) { Text($0.label).tag($0) }
             }
-            .scrollIndicators(.hidden)
-            if v.panel == .today {
-                note(dark ? "Before = the Solar Flare panel (before live-23). A slider starts a custom frost." :
-                            "Before = thin material, tint 0.35 (before live-23). A slider starts a custom frost.")
-            } else if v.panel == .liquidGlass {
-                note("The whole panel is Liquid Glass (regular). The sliders below build a frost instead.")
-            }
-            slider("Tint opacity", v.tintOpacity, 0...1, 0.01, String(format: "%.2f", v.tintOpacity), id: "tint") { x in
-                setPanel { $0.tintOpacity = x }
-            }
-            slider("Blur", v.blur, 0...3, 0.01, blurReadout(v.blur), id: "blur") { x in setPanel { $0.blur = x } }
-            slider("Backdrop saturation", v.saturation, 0...1, 0.01, String(format: "%.0f%%", v.saturation * 100), id: "saturation") { x in
-                setPanel { $0.saturation = x }
-            }
+            .pickerStyle(.segmented)
+            .accessibilityIdentifier("tunerPanelMode")
+            if v.panelMode == .frost { frostControls } else { glassControls }
             toggle("Glass controls (search pill + Ask bar)", v.glassControls, id: "glassControls") { b in set { $0.glassControls = b } }
             toggle("Dim content behind", v.dimBehind, id: "dim") { b in set { $0.dimBehind = b } }
             if v.dimBehind {
@@ -242,6 +220,157 @@ struct AppearanceTunerSheet<G: Gesture>: View {
                 }
             }
         }
+    }
+
+    @ViewBuilder private var frostControls: some View {
+        ScrollView(.horizontal) {
+            HStack(spacing: 6) {
+                ForEach(LibrarianPanelPreset.offered) { p in
+                    chip(p.label, selected: v.panel == p, id: "tunerPreset-\(p.rawValue)") { set { $0.apply(p) } }
+                }
+            }
+        }
+        .scrollIndicators(.hidden)
+        if v.panel == .today {
+            note(dark ? "Before = the Solar Flare panel (before live-23). A slider starts a custom frost." :
+                        "Before = thin material, tint 0.35 (before live-23). A slider starts a custom frost.")
+        }
+        slider("Tint opacity", v.tintOpacity, 0...1, 0.01, String(format: "%.2f", v.tintOpacity), id: "tint") { x in
+            set { $0.editFrost { $0.tintOpacity = x } }
+        }
+        slider("Blur", v.blur, 0...3, 0.01, blurReadout(v.blur), id: "blur") { x in set { $0.editFrost { $0.blur = x } } }
+        slider("Backdrop saturation", v.saturation, 0...1, 0.01, String(format: "%.0f%%", v.saturation * 100), id: "saturation") { x in
+            set { $0.editFrost { $0.saturation = x } }
+        }
+    }
+
+    @ViewBuilder private var glassControls: some View {
+        let g = v.glass
+        Picker("Variant", selection: Binding(get: { g.variant }, set: { x in set { $0.editGlass { $0.variant = x } } })) {
+            ForEach(GlassVariant.allCases) { Text($0.label).tag($0) }
+        }
+        .pickerStyle(.segmented)
+        .accessibilityIdentifier("tunerGlassVariant")
+        tintColorPicker("Glass tint", g.tint, id: "tunerGlassTint") { c in set { $0.editGlass { $0.tint = c } } }
+        slider("Tint strength", g.tintStrength, 0...0.80, 0.01, String(format: "%.0f%%", g.tintStrength * 100), id: "glassTintStrength") { x in
+            set { $0.editGlass { $0.tintStrength = x } }
+        }
+        slider("Reading veil (behind the transcript)", g.veil, 0...1, 0.01, String(format: "%.0f%%", g.veil * 100), id: "veil") { x in
+            set { $0.editGlass { $0.veil = x } }
+        }
+        note("Apple's Liquid Glass offers a variant and a tint only; blur and refraction are the system's (and iOS 27's "
+             + "Liquid Glass slider in Settings). The veil is ours: a soft-edged layer behind the text, edges left lensing.")
+    }
+
+    // Graded tint — live-24 (2): the Siri-style pill and the graded panel.
+
+    private var gradedSection: some View {
+        VStack(alignment: .leading, spacing: 10) {
+            sectionTitle("Graded tint", value: [v.pillGrade.on ? "pill" : nil, v.panelGrade.on ? "panel" : nil,
+                                                v.pillRim.on ? "rim" : nil].compactMap { $0 }.joined(separator: " · ").ifEmpty("off"))
+            ScrollView(.horizontal) {
+                HStack(spacing: 6) {
+                    ForEach(LibrarianGlassPreset.allCases) { p in
+                        chip(p.label, selected: v.matches(p, dark: dark), id: "tunerGlassPreset-\(p.rawValue)") {
+                            set { $0.apply(p, dark: dark) }
+                        }
+                    }
+                    chip("All off", selected: false, id: "tunerGlassPreset-off") {
+                        set { $0.pillGrade.on = false; $0.panelGrade.on = false; $0.pillRim.on = false }
+                    }
+                }
+            }
+            .scrollIndicators(.hidden)
+
+            Text("Ask pill + search pill").font(.caption.weight(.semibold))
+            toggle("Graded tint on the pills", v.pillGrade.on, id: "pillGrade") { b in set { $0.pillGrade.on = b } }
+            if v.pillGrade.on {
+                gradeControls(v.pillGrade, id: "pill") { change in set { change(&$0.pillGrade) } }
+                Picker("Pill glass", selection: Binding(get: { v.pillVariant }, set: { x in set { $0.pillVariant = x } })) {
+                    ForEach(GlassVariant.allCases) { Text("Glass: " + $0.label).tag($0) }
+                }
+                .pickerStyle(.segmented)
+                .accessibilityIdentifier("tunerPillVariant")
+            }
+            toggle("Luminous rim", v.pillRim.on, id: "pillRim") { b in set { $0.pillRim.on = b } }
+            if v.pillRim.on {
+                slider("Rim width", v.pillRim.width, 0.5...2, 0.05, String(format: "%.2f pt", v.pillRim.width), id: "rimWidth") { x in
+                    set { $0.pillRim.width = x }
+                }
+                slider("Rim brightness", v.pillRim.brightness, 0...1, 0.01, String(format: "%.0f%%", v.pillRim.brightness * 100),
+                       id: "rimBrightness") { x in set { $0.pillRim.brightness = x } }
+                HStack {
+                    Text("Rim colour").font(.caption)
+                    Spacer()
+                    Text("#" + v.pillRim.color.hex).font(.caption.monospacedDigit()).foregroundStyle(Color.primary.opacity(0.62))
+                        .accessibilityIdentifier("tunerReadout-rimColor")
+                }
+                Picker("Rim colour", selection: Binding(get: { v.pillRim.color }, set: { c in set { $0.pillRim.color = c } })) {
+                    ForEach(PillRimColor.allCases) { Text($0 == .cyan ? "Cyan" : $0.label).tag($0) }
+                }
+                .pickerStyle(.segmented)
+                .accessibilityIdentifier("tunerRimColor")
+                Picker("While answering", selection: Binding(get: { v.pillRim.animation }, set: { a in set { $0.pillRim.animation = a } })) {
+                    ForEach(PillRimAnimation.allCases) { Text($0.label).tag($0) }
+                }
+                .pickerStyle(.segmented)
+                .accessibilityIdentifier("tunerRimAnimation")
+                note("AirPad's palette only — never Apple's multicolour Apple Intelligence edge. The rim moves only while an "
+                     + "answer is generating, and stays still with Reduce Motion.")
+            }
+
+            Text("Panel").font(.caption.weight(.semibold))
+            toggle("Graded tint on the panel", v.panelGrade.on, id: "panelGrade") { b in set { $0.panelGrade.on = b } }
+            if v.panelGrade.on {
+                gradeControls(v.panelGrade, id: "panel") { change in set { change(&$0.panelGrade) } }
+            }
+        }
+    }
+
+    @ViewBuilder
+    private func gradeControls(_ g: GradedTint, id: String, _ edit: @escaping (@escaping (inout GradedTint) -> Void) -> Void) -> some View {
+        slider("Tint at the top", g.top, 0...1, 0.01, String(format: "%.0f%%", g.top * 100), id: "\(id)GradeTop") { x in edit { $0.top = x } }
+        slider("Tint at the bottom", g.bottom, 0...1, 0.01, String(format: "%.0f%%", g.bottom * 100), id: "\(id)GradeBottom") { x in
+            edit { $0.bottom = x }
+        }
+        slider("Fade start", g.start, 0...1, 0.01, String(format: "%.2f", g.start), id: "\(id)GradeStart") { x in edit { $0.start = x } }
+        slider("Softness", g.softness, 0...1, 0.01, String(format: "%.2f", g.softness), id: "\(id)GradeSoftness") { x in
+            edit { $0.softness = x }
+        }
+        Picker("Direction", selection: Binding(get: { g.direction }, set: { d in edit { $0.direction = d } })) {
+            ForEach(GradeDirection.allCases) { Text($0.label).tag($0) }
+        }
+        .pickerStyle(.segmented)
+        .accessibilityIdentifier("tuner\(id.capitalized)GradeDirection")
+        tintColorPicker("Grade colour", g.color, id: "tuner\(id.capitalized)GradeColor") { c in edit { $0.color = c } }
+    }
+
+    private func tintColorPicker(_ label: String, _ c: GlassTintColor, id: String, _ onChange: @escaping (GlassTintColor) -> Void) -> some View {
+        VStack(alignment: .leading, spacing: 4) {
+            HStack {
+                Text(label).font(.caption)
+                Spacer()
+                Text("#" + c.hex).font(.caption.monospacedDigit()).foregroundStyle(Color.primary.opacity(0.62))
+                    .accessibilityIdentifier(id + "-hex")
+            }
+            Picker(label, selection: Binding(get: { c }, set: onChange)) {
+                ForEach(GlassTintColor.allCases) { Text($0.label).tag($0) }
+            }
+            .pickerStyle(.segmented)
+            .accessibilityIdentifier(id)
+        }
+    }
+
+    private func chip(_ label: String, selected: Bool, id: String, _ action: @escaping () -> Void) -> some View {
+        Button(action: action) {
+            Text(label).font(.caption.weight(.medium))
+                .padding(.horizontal, 10).padding(.vertical, 6)
+                .background(Capsule().fill(Color.primary.opacity(selected ? 0.16 : 0.06)))
+                .overlay(Capsule().strokeBorder(Color.primary.opacity(selected ? 0.5 : 0), lineWidth: 1))
+        }
+        .buttonStyle(.plain)
+        .accessibilityIdentifier(id)
+        .accessibilityAddTraits(selected ? .isSelected : [])
     }
 
     private func blurReadout(_ b: Double) -> String {
@@ -410,5 +539,8 @@ struct AppearanceTunerSheet<G: Gesture>: View {
             .controlSize(.small)
             .accessibilityIdentifier("tunerToggle-\(id)")
     }
+}
+private extension String {
+    func ifEmpty(_ fallback: String) -> String { isEmpty ? fallback : self }
 }
 #endif

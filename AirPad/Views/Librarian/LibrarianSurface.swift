@@ -286,6 +286,8 @@ struct LibrarianSurface: View {
                 }
             }
         }
+        // live-24 — the pill rim's "while answering" animation reads this.
+        .environment(\.librarianGenerating, isGenerating)
         .onAppear {
             startWhisperCycle()
             seedScopeFromHostIfNeeded(librarian: librarian)
@@ -319,6 +321,15 @@ struct LibrarianSurface: View {
             // be smoke-tested headlessly: screenshot the transcript to see the answer
             // + whether a citation footer appears. Expands to full so the transcript
             // is visible.
+            // live-24 (3)+(5) — `-RenderLongAnswer YES`: open a synthetic four-paragraph answer at full (the preset
+            // stills + the contrast backdrops, with `-RenderHideText YES`). Ported from live-21's render hooks.
+            if UserDefaults.standard.bool(forKey: "RenderLongAnswer") {
+                router.chat.load(LibrarianRenderHooks.longAnswerChat)
+                DispatchQueue.main.asyncAfter(deadline: .now() + 1.0) {
+                    isViewingActiveChat = true
+                    panelModel.expandToFull(animated: false)
+                }
+            }
             // live-20 (3) — `-OpenSeededChat YES`: open the seeded chat at full (the read-in-full offer's still).
             if UserDefaults.standard.bool(forKey: "OpenSeededChat") {
                 DispatchQueue.main.asyncAfter(deadline: .now() + 1.0) {
@@ -737,6 +748,11 @@ struct LibrarianSurface: View {
             .padding(.horizontal, 16)
             .frame(maxWidth: .infinity)
             .frame(height: fieldH)
+            // live-24 — light text on a dense dark graded tint (the Siri-style pill), dark on a light one.
+            .environment(\.colorScheme, pillTextScheme)
+            #if DEBUG
+            .opacity(UserDefaults.standard.bool(forKey: "RenderHideText") ? 0 : 1)   // backdrop-only still (contrast)
+            #endif
         }
         .frame(width: fieldW, height: fieldH)
         // Whole-capsule tap target — single-tap focuses Search from
@@ -969,6 +985,9 @@ struct LibrarianSurface: View {
                     }
                 )
                 .frame(maxHeight: .infinity)
+                #if DEBUG
+                .opacity(UserDefaults.standard.bool(forKey: "RenderHideText") ? 0 : 1)   // live-24 (3): backdrop-only still (contrast)
+                #endif
                 // Brief AI5 — the app-level "Search the web instead" offer, under the
                 // answer and above the composer (app UI, not model text / not a citation).
                 if let offer = librarian.pendingWebSearchOffer {
@@ -1700,11 +1719,28 @@ struct LibrarianSurface: View {
     // `ComposerSendControls`, mounted as the field's bottom-trailing overlay above. T's
     // correction: the send control is shared idiom, not Librarian identity.
 
+    /// live-24 — an answer is generating (the pill rim's "while answering" animation runs only then).
+    private var isGenerating: Bool {
+        #if DEBUG
+        if UserDefaults.standard.bool(forKey: "RenderGenerating") { return true }   // stills / clips of the rim
+        #endif
+        return router.chat.isStreaming || router.librarian.isStreaming
+    }
+
+    /// live-24 — the tuner's glass + graded-tint look for this appearance (`.shipped` outside the tuner).
+    private var glassLook: LibrarianGlassLook { LibrarianGlassLook.current(dark: colorScheme == .dark) }
+    /// Text on a pill with a dense graded tint takes the tint's side (light text on near-black); nil = as is.
+    private var pillTextScheme: ColorScheme {
+        LibrarianSurfaceSpec.glassControls(dark: colorScheme == .dark)
+            ? (LibrarianGlassLook.pillScheme(glassLook.pillGrade) ?? colorScheme) : colorScheme
+    }
+
     /// The Ask field's fill — real Liquid Glass with glass controls (live-23 (1): T's tuning, both modes).
     @ViewBuilder
     private func askBackground(fill: Color, shape: RoundedRectangle) -> some View {
         if LibrarianSurfaceSpec.glassControls(dark: colorScheme == .dark) {
-            Color.clear.glassEffect(.regular, in: shape)
+            // live-24 — real Liquid Glass + the tuner's graded tint / rim (all off in what ships).
+            LibrarianPillGlass(shape: shape, look: glassLook, generating: isGenerating)
         } else {
             fill
         }
@@ -1807,6 +1843,11 @@ struct LibrarianSurface: View {
                 .lineLimit(1...4)
 
         }
+        // live-24 — light text on a dense dark graded tint (the Siri-style pill), dark on a light one.
+        .environment(\.colorScheme, pillTextScheme)
+        #if DEBUG
+        .opacity(UserDefaults.standard.bool(forKey: "RenderHideText") ? 0 : 1)   // backdrop-only still (contrast)
+        #endif
         // Height parity with the Search field (morphingField expandedH = 52) so
         // the two composers read as siblings. minHeight (not fixed) so Ask can
         // still grow with multi-line input.
@@ -1869,6 +1910,7 @@ struct LibrarianSurface: View {
         .clipShape(askShape)
         .overlay(
             askShape.strokeBorder(askStroke, lineWidth: 1)
+                .opacity(glassLook.rim.on && LibrarianSurfaceSpec.glassControls(dark: colorScheme == .dark) ? 0 : 1)
         )
     }
 

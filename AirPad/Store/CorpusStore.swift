@@ -1206,6 +1206,14 @@ final class CorpusStore {
             if ProcessInfo.processInfo.arguments.contains("-CardContentSelfTest") {
                 NSLog("%@", CardContentSummary.selfTest())
             }
+            // live-26 (3) — a note's first line (shown as its title) stores plain; bold the user chose stays.
+            if ProcessInfo.processInfo.arguments.contains("-NoteTitleStorageSelfTest") {
+                NSLog("%@", NoteTitleStorageSelfTest.run())
+            }
+            // live-26 (3f) — answer tables: a grid, every fixture whole, Copy as Markdown / CSV, VoiceOver records.
+            if ProcessInfo.processInfo.arguments.contains("-ChatTableSelfTest") {
+                NSLog("%@", ChatTableSelfTest.run())
+            }
             // live-13 (1) — Done saves what the recorder showed, on every tier (tier 3 driven by injected results).
             if ProcessInfo.processInfo.arguments.contains("-RecorderSaveSelfTest") {
                 NSLog("%@", await RecorderSaveSelfTest.run())

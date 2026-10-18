@@ -223,7 +223,7 @@ enum BacklinkLabels {
     static func entry(_ item: NodeItem) -> String {
         switch item.type {
         case .text:
-            let s = (item.content ?? "").trimmingCharacters(in: .whitespacesAndNewlines)
+            let s = MarkdownPlain.text(item.content ?? "").trimmingCharacters(in: .whitespacesAndNewlines)   // live-26 (3b)
             let first = s.split(separator: "\n").first.map(String.init) ?? ""
             return first.isEmpty ? "Note" : String(first.prefix(60))
         case .audio:              return "Voice note"

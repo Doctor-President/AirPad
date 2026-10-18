@@ -17,11 +17,9 @@ enum MarkdownBlock: Hashable {
     case bullet(String)
     case numbered(index: Int, text: String)
     case codeBlock(String)
-    /// A GitHub-style pipe table, REFLOWED at render into header-labelled
-    /// key:value groups — one group per row, no grid/borders (chat width can't
-    /// hold real columns; T's call, ws-instant-search.md). Cells are already
-    /// split + trimmed; raggedness (row cell-count ≠ header count) is handled
-    /// at render (falls back to a plain line rather than mis-labelling).
+    /// A GitHub-style pipe table, rendered as a grid (`ChatTableView`, live-26 (3f); it was reflowed into key:value
+    /// groups until then). Cells are already split + trimmed; a ragged row is padded / joined to the header's count by
+    /// `ChatTable`.
     case table(headers: [String], rows: [[String]])
 }
 
@@ -109,7 +107,10 @@ enum MarkdownBlockParser {
                     while j < lines.count {
                         let rs = stripped(lines[j])
                         if rs.isEmpty { break }                    // blank ends the table
-                        guard isTableRowCandidate(rs) else { break } // non-pipe ends it
+                        // live-26 (3f): a row a model left without its closing pipe still belongs — unless it's the
+                        // LAST line (then it may be a row still streaming, held as before).
+                        let unclosed = rs.hasPrefix("|") && rs.filter({ $0 == "|" }).count >= 2 && j + 1 < lines.count
+                        guard isTableRowCandidate(rs) || unclosed else { break } // non-pipe ends it
                         rows.append(splitCells(rs))
                         j += 1
                     }
@@ -243,11 +244,13 @@ enum MarkdownBlockParser {
     /// cells are PRESERVED so the cell count matches the header for raggedness
     /// checks; the renderer skips empties.
     private static func splitCells(_ s: String) -> [String] {
-        var t = Substring(s)
+        // live-26 (3f): an escaped `\|` is a pipe inside a cell, not a border.
+        let held = "\u{E0F0}"
+        var t = Substring(s.replacingOccurrences(of: "\\|", with: held))
         if t.first == "|" { t = t.dropFirst() }
         if t.last == "|" { t = t.dropLast() }
         return t.split(separator: "|", omittingEmptySubsequences: false)
-                .map { $0.trimmingCharacters(in: .whitespaces) }
+                .map { $0.trimmingCharacters(in: .whitespaces).replacingOccurrences(of: held, with: "|") }
     }
 }
 
@@ -305,6 +308,8 @@ enum BlockSpacing {
 /// for free. Parse is cached, keyed by the block's text.
 struct MarkdownBlockView: View {
     let block: MarkdownBlock
+    /// live-26 (3f) — tables render as a grid (`ChatTableView`); stacked records are only VoiceOver's reading order.
+    static let tablePresentation: ChatTablePresentation = .grid
 
     /// Brief BF — the app-wide content face; the Librarian answer/headings follow it.
     @Environment(\.appBodyFont) private var appFont
@@ -344,49 +349,11 @@ struct MarkdownBlockView: View {
                 )
 
         case let .table(headers, rows):
-            // Reflowed table — one header-labelled group per row, no grid /
-            // borders (chat width can't hold columns). Plain + typographic.
-            VStack(alignment: .leading, spacing: ChatTypography.blockSpacing) {
-                ForEach(Array(rows.enumerated()), id: \.offset) { pair in
-                    reflowedRow(headers: headers, cells: pair.element)
-                }
-            }
-            .frame(maxWidth: .infinity, alignment: .leading)
-            .textSelection(.enabled)
+            // live-26 (3f) — a real grid (header row, hairlines, tabular numerals, sideways scroll with the header and
+            // first column staying put, tap → full screen). The 2026-07-29 reflow is gone from the visual; VoiceOver
+            // still reads each row as a record ("column: value").
+            ChatTableView(table: ChatTable(headers: headers, rows: rows))
         }
-    }
-
-    /// One table row → a header-labelled key:value group. Escape hatch: a
-    /// RAGGED row (cell count ≠ header count) renders as a plain middot-joined
-    /// line rather than mis-labelling against the wrong headers.
-    @ViewBuilder
-    private func reflowedRow(headers: [String], cells: [String]) -> some View {
-        if cells.count != headers.count {
-            Text(Self.inline(cells.filter { !$0.isEmpty }.joined(separator: "  ·  "), face: appFont))
-                .font(bodyFont)
-                .foregroundStyle(ChatTypography.bodyText)
-                .lineSpacing(ChatTypography.bodyLine)
-                .frame(maxWidth: .infinity, alignment: .leading)
-        } else {
-            VStack(alignment: .leading, spacing: ChatTypography.listSpacing) {
-                ForEach(Array(zip(headers, cells).enumerated()), id: \.offset) { item in
-                    // Empty cells skipped — a labelled row of blanks is noise.
-                    if !item.element.1.isEmpty {
-                        labeledCell(header: item.element.0, value: item.element.1)
-                    }
-                }
-            }
-            .frame(maxWidth: .infinity, alignment: .leading)
-        }
-    }
-
-    /// `Header: value` on one wrapping line. Header is semibold/secondary; the
-    /// value goes through the SAME inline parse as prose so bold / italic /
-    /// citations survive inside cells.
-    private func labeledCell(header: String, value: String) -> some View {
-        Text("\(Text(header.isEmpty ? "" : header + ": ").font(bodyFont).fontWeight(.semibold).foregroundStyle(ChatTypography.secondaryText))\(Text(Self.inline(value, face: appFont)).font(bodyFont).foregroundStyle(ChatTypography.bodyText))")
-            .lineSpacing(ChatTypography.bodyLine)
-            .frame(maxWidth: .infinity, alignment: .leading)
     }
 
     private func headingFont(_ level: Int) -> Font {

@@ -139,12 +139,13 @@ struct AppearanceTunerRoot: View {
 /// The sheet's sections — an accordion (2026-10-17 brief: T scrolled a lot and brushed sliders by accident). All start
 /// closed; opening one closes the others; the open one is remembered (`AppearanceTuning.openSectionKey`).
 enum TunerSection: String, CaseIterable, Identifiable {
-    case cardContent, captureControls, librarian, peekPill, searchPill, askPill, panelGrade, cards, heroFade
+    case cardContent, captureControls, floatingButtons, librarian, peekPill, searchPill, askPill, panelGrade, cards, heroFade
     var id: String { rawValue }
     var title: String {
         switch self {
         case .cardContent:     return "Card content"
         case .captureControls: return "Capture controls"
+        case .floatingButtons: return "Floating buttons"
         case .librarian:       return "Librarian surface"
         case .peekPill:        return "Peek pill"
         case .searchPill:      return "Search pill"
@@ -276,6 +277,7 @@ struct AppearanceTunerSheet<G: Gesture>: View {
         switch section {
         case .cardContent:     cardContentSection
         case .captureControls: captureControlsSection
+        case .floatingButtons: floatingButtonsSection
         case .librarian:       librarianSection
         case .peekPill:        pillSection(.peek)
         case .searchPill:      pillSection(.search)
@@ -291,13 +293,14 @@ struct AppearanceTunerSheet<G: Gesture>: View {
         switch section {
         case .cardContent:     return tuner.state.cardContent.label
         case .captureControls: return tuner.state.captureControls.label
+        case .floatingButtons: return tuner.state.floatingButtons.label
         case .librarian:       return (v.panelMode == .glass ? "Liquid Glass" : v.panel.label) + (v.glassControls ? " · glass controls" : "")
         case .peekPill:        return pillSummary(v.peekPill, answering: false)
         case .searchPill:      return pillSummary(v.searchPill, answering: true)
         case .askPill:         return v.askMatchesSearch ? "matches Search" : pillSummary(v.askPill, answering: true)
         case .panelGrade:      return v.panelGrade.on ? String(format: "%.0f%% → %.0f%%", v.panelGrade.top * 100, v.panelGrade.bottom * 100) : "off"
         case .cards:           return dark ? "dark" : v.palette
-        case .heroFade:        return String(format: "%.2f · %@", v.fadeLength, fadeCurveReadout(v.fadeCurve))
+        case .heroFade:        return String(format: "%.2f · %@ · into %.0f%%", v.fadeLength, fadeCurveReadout(v.fadeCurve), v.fadeIntoBody * 100)
         }
     }
 
@@ -322,7 +325,8 @@ struct AppearanceTunerSheet<G: Gesture>: View {
         toggle("Glass controls (the pills + Ask bar)", v.glassControls, id: "glassControls") { b in set { $0.glassControls = b } }
         toggle("Dim content behind", v.dimBehind, id: "dim") { b in set { $0.dimBehind = b } }
         if v.dimBehind {
-            slider("Dim", v.dimAmount, 0...0.20, 0.005, String(format: "%.0f%%", v.dimAmount * 100), id: "dimAmount") { x in
+            slider("Dim", v.dimAmount, 0...0.20, 0.005, String(format: (v.dimAmount * 1000).rounded().truncatingRemainder(dividingBy: 10) == 0
+                                                                 ? "%.0f%%" : "%.1f%%", v.dimAmount * 100), id: "dimAmount") { x in
                 set { $0.dimAmount = x }
             }
         }
@@ -582,8 +586,8 @@ struct AppearanceTunerSheet<G: Gesture>: View {
         .pickerStyle(.segmented)
         .accessibilityIdentifier("tunerCardContent")
         note(tuner.state.cardContent == .today
-             ? "Today: the faces as they ship. Proposal: a content strip (type symbols + counts), one preview, real list markers."
-             : "Proposal: content strip, one preview from the richest item, real list markers; grid 3-col adapts its title.")
+             ? "Before: the faces before live-23. Proposal (what ships): a content strip (type symbols + counts), one preview, real list markers."
+             : "Proposal (what ships): content strip, one preview from the richest item, real list markers; grid 3-col adapts its title.")
     }
 
     // Capture controls (live-23 (5c)) — both appearances
@@ -595,8 +599,22 @@ struct AppearanceTunerSheet<G: Gesture>: View {
         }
         .pickerStyle(.segmented)
         .accessibilityIdentifier("tunerCaptureControls")
-        note("Quick Capture, \"+\" Capture and the voice recorder. Glass: item types in one glass cluster, Done "
-             + "prominent, Delete red-tinted, Cancel plain. Reduce Transparency / Increase Contrast keep Today's pills.")
+        note("Quick Capture, \"+\" Capture and the voice recorder. Glass (what ships): item types in one glass cluster, Done "
+             + "prominent, Delete red-tinted, Cancel plain. Before: the solid pills, which Reduce Transparency / Increase Contrast keep.")
+    }
+
+    // Floating buttons (live-26 (3d)) — both appearances
+
+    @ViewBuilder private var floatingButtonsSection: some View {
+        Picker("Floating buttons", selection: Binding(get: { tuner.state.floatingButtons },
+                                                     set: { tuner.state.floatingButtons = $0 })) {
+            ForEach(FloatingButtonsMode.allCases) { Text($0.label).tag($0) }
+        }
+        .pickerStyle(.segmented)
+        .accessibilityIdentifier("tunerFloatingButtons")
+        note("The \"+\" and the view switcher, bottom right. Glass: \"+\" prominent glass (the primary action), the view "
+             + "switcher regular glass like the top bar, merged as one. Today: two solid ink discs (what the App Store build "
+             + "shows until you confirm Glass). Reduce Transparency / Increase Contrast keep the discs.")
     }
 
     // Hero photo fade (live-23 (3)) — carousel + grid cards
@@ -608,8 +626,18 @@ struct AppearanceTunerSheet<G: Gesture>: View {
         slider("Fade curve", v.fadeCurve, 0...2, 0.05, fadeCurveReadout(v.fadeCurve), id: "fadeCurve") { x in
             set { $0.fadeCurve = x }
         }
-        note(String(format: "The photo runs %.0f%% past the hero zone and fades over its last %.0f%%. live-22 was linear over the last 22%%.",
-                    f.overshoot * 100, f.length * 100))
+        // live-26 (3c) — how far the photo carries down into the body (0 = before live-26 … 1 = to the title block's bottom).
+        slider("Fade into body", v.fadeIntoBody, 0...1, 0.01, String(format: "%.0f%%", v.fadeIntoBody * 100), id: "fadeIntoBody") { x in
+            set { $0.fadeIntoBody = x }
+        }
+        let m = CardHeroFade.matchFluted(dark: dark)
+        chip("Match fluted", selected: v.fadeLength == m.length && v.fadeCurve == m.curve && v.fadeIntoBody == m.intoBody,
+             id: "tunerFadeMatchFluted") {
+            set { $0.fadeLength = m.length; $0.fadeCurve = m.curve; $0.fadeIntoBody = m.intoBody }
+        }
+        note(String(format: "The photo runs %.0f%% past the hero zone and fades over %.0f%% of it. Fade into body carries it down "
+                    + "toward the title block (100%% = to its bottom). Match fluted = the fluted cards' measured fade.",
+                    CardHeroFade.run(f) * 100, f.length * 100))
     }
 
     private func fadeCurveReadout(_ c: Double) -> String {

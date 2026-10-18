@@ -18,13 +18,15 @@ import UIKit
 enum CardContentPresentation {
     static var isProposal: Bool {
         #if DEBUG
-        if UserDefaults.standard.string(forKey: "CardContent") == "proposal" { return true }
+        if let forced = UserDefaults.standard.string(forKey: "CardContent") { return forced == "proposal" }   // stills: proposal | today
         #endif
         #if DEBUG || TESTFLIGHT
         if AppearanceTuning.isLive { return AppearanceTuner.shared.state.cardContent == .proposal }
         #endif
-        return false
+        return bakedProposal
     }
+    /// What an App Store build renders.
+    static let bakedProposal = true   // live-26 (1): T chose the proposal (2026-10-18)
 }
 
 // MARK: - The summary (pure)
@@ -67,13 +69,27 @@ struct CardContentSummary: Equatable {
     struct ListRow: Equatable {
         enum Marker: Equatable { case bullet, number(Int), check(Bool) }
         let marker: Marker
+        /// The row as plain text (accessibility, comparisons).
         let text: String
+        /// live-26 (3b) — the row as stored (its inline markup), so the face can render underline / bold / italic / strike.
+        var source: String? = nil
+        static func == (a: ListRow, b: ListRow) -> Bool { a.marker == b.marker && a.text == b.text }
+    }
+
+    /// live-26 (3b) — prose for the preview: plain (compared, read aloud) + the paragraph as stored (rendered styled).
+    struct PreviewText: Equatable, ExpressibleByStringLiteral, CustomStringConvertible {
+        let plain: String
+        var source: String? = nil
+        init(plain: String, source: String? = nil) { self.plain = plain; self.source = source }
+        init(stringLiteral value: String) { plain = value }
+        static func == (a: PreviewText, b: PreviewText) -> Bool { a.plain == b.plain }
+        var description: String { plain }
     }
 
     enum Preview: Equatable {
         case list(rows: [ListRow], more: Int)
         case voice(duration: String?, firstLine: String?)
-        case text(String)
+        case text(PreviewText)
         case photos(itemID: String)
         case document(itemID: String)
         case link(itemID: String)
@@ -154,7 +170,7 @@ struct CardContentSummary: Equatable {
                 if rows.count >= 2 {
                     offer(100 + rows.count, .list(rows: Array(rows.prefix(3)), more: max(rows.count - 3, 0)))
                 } else if let first = paragraphs(content).first {
-                    offer(min(content.count / 8, 70), .text(MarkdownPlain.text(first)))   // live-25 (2): plain
+                    offer(min(content.count / 8, 70), .text(PreviewText(plain: MarkdownPlain.text(first), source: first)))   // live-25 (2) / live-26 (3b)
                 }
             case .audio:
                 let line = item.transcript.flatMap { t in
@@ -181,18 +197,19 @@ struct CardContentSummary: Equatable {
             .filter { !$0.isEmpty }
     }
 
-    /// Every list row in a note body: `- ` / `* ` bullets, `1. ` numbers, `- [ ] ` / `- [x] ` checklist items.
+    /// Every list row in a note body: `- ` / `* ` / `+ ` / `• ` bullets, `1. ` numbers, and checklist items in every
+    /// spelling the writers store (live-26 (3b): the editor's escaped `- \[ ] `, raw `- [ ] ` / `* [x] `, a bare `[ ]`,
+    /// `1. [ ] ` — `MarkdownPlain.checkbox`).
     static func listRows(_ s: String) -> [ListRow] {
         s.split(whereSeparator: \.isNewline).compactMap { raw in
             let line = raw.trimmingCharacters(in: .whitespaces)
-            for (prefix, checked) in [("- [ ] ", false), ("- [x] ", true), ("- [X] ", true)] where line.hasPrefix(prefix) {
-                return ListRow(marker: .check(checked), text: MarkdownPlain.inline(String(line.dropFirst(prefix.count))))
-            }
-            if line.hasPrefix("- ") || line.hasPrefix("* ") || line.hasPrefix("• ") {
-                return ListRow(marker: .bullet, text: MarkdownPlain.inline(String(line.dropFirst(2))))
+            func row(_ m: ListRow.Marker, _ rest: String) -> ListRow { ListRow(marker: m, text: MarkdownPlain.inline(rest), source: rest) }
+            if let cb = MarkdownPlain.checkbox(line) { return row(.check(cb.done), cb.text) }
+            if line.hasPrefix("- ") || line.hasPrefix("* ") || line.hasPrefix("+ ") || line.hasPrefix("• ") {
+                return row(.bullet, String(line.dropFirst(2)))
             }
             if let dot = line.firstIndex(of: "."), let n = Int(line[..<dot]), line[line.index(after: dot)...].hasPrefix(" ") {
-                return ListRow(marker: .number(n), text: MarkdownPlain.inline(String(line[line.index(dot, offsetBy: 2)...])))
+                return row(.number(n), String(line[line.index(dot, offsetBy: 2)...]))
             }
             return nil
         }
@@ -259,7 +276,7 @@ struct CardListPreview: View {
                 HStack(alignment: .firstTextBaseline, spacing: size * 0.45) {
                     marker(row.marker)
                         .frame(width: size * 1.1, alignment: .leading)
-                    Text(inline(row.text))
+                    Text(row.source.map(MarkdownPlain.styled) ?? AttributedString(row.text))   // live-26 (3b)
                         .font(appFont.font(size: size))
                         .foregroundColor(ink)
                         .strikethrough(row.marker == .check(true), color: markerInk)
@@ -292,11 +309,6 @@ struct CardListPreview: View {
         }
     }
 
-    /// Inline markdown (bold / italic) without the raw asterisks.
-    private func inline(_ s: String) -> AttributedString {
-        (try? AttributedString(markdown: s, options: .init(interpretedSyntax: .inlineOnlyPreservingWhitespace)))
-            ?? AttributedString(s)
-    }
 }
 
 /// A voice item: the waveform glyph, its duration, the first transcript line.
@@ -399,7 +411,7 @@ extension CardContentSummary {
         let md: [(String, String)] = [
             ("**Feb 2** — cut the water", "Feb 2 — cut the water"), ("__bold__ and *it* and _it_", "bold and it and it"),
             ("***both***", "both"), ("`code` here", "code here"), ("# Heading", "Heading"), ("> quoted", "quoted"),
-            ("- [ ] Body — **$400–700** used", "Body — $400–700 used"), ("- item", "item"), ("1. first", "first"),
+            ("- [ ] Body — **$400–700** used", "☐ Body — $400–700 used"), ("- item", "item"), ("1. first", "first"),
             ("see [the tide table](https://example.com/t) now", "see the tide table now"), ("![a heron](f.jpg)", "a heron"),
             (#"\*not emphasis\*"#, "*not emphasis*"), ("snake_case_name stays", "snake_case_name stays"),
             ("5 * 3 * 2", "5 * 3 * 2"), ("**cut mid-span", "cut mid-span"), ("a plain sentence.", "a plain sentence."),
@@ -413,9 +425,60 @@ extension CardContentSummary {
             "\(String(describing: prose.preview))")
         let rowsMd = listRows("- [ ] Body — **$400–700** used\n- [ ] Lens — **$150+**")
         row("proposal-list-rows-are-plain", rowsMd.map(\.text) == ["Body — $400–700 used", "Lens — $150+"], "\(rowsMd.map(\.text))")
-        row("app-store-and-plain-debug-render-today",
-            UserDefaults.standard.string(forKey: "CardContent") == "proposal" || UserDefaults.standard.bool(forKey: "AppearanceTuner")
-            || !CardContentPresentation.isProposal)
+        // live-26 (3b) — markup never leaks into a derived label. Fixtures = what the writers really store (Ops report:
+        // the editor escapes a checklist's bracket (`- \[ ] `) and writes underline as `<u>…</u>`; the share extension and
+        // paste store raw text, any spelling).
+        let checks = listRows([#"- \[ ] a"#, #"- \[x] b"#, "- [ ] c", "- [X] d", "* [ ] e", "+ [x] f", "• [ ] g", "[ ] h", "[x] i",
+                               "1. [ ] j", #"  - \[ ] k"#].joined(separator: "\n"))
+        row("checklist-every-spelling-is-a-checkbox (11)", checks.map(\.marker) == [.check(false), .check(true), .check(false),
+            .check(true), .check(false), .check(true), .check(false), .check(false), .check(true), .check(false), .check(false)]
+            && checks.map(\.text) == ["a", "b", "c", "d", "e", "f", "g", "h", "i", "j", "k"],
+            checks.map { "\($0.marker):\($0.text)" }.joined(separator: " "))
+        let glyphs: [(String, String)] = [(#"- \[ ] Buy milk"#, "☐ Buy milk"), ("- [x] Done it", "☑ Done it"), ("[ ] bare", "☐ bare"),
+                                          ("1. [X] numbered", "☑ numbered"), ("• [ ] dot", "☐ dot")]
+        let glyphFails = glyphs.filter { MarkdownPlain.text($0.0) != $0.1 }.map { "\($0.0) → \(MarkdownPlain.text($0.0))" }
+        row("checklist-in-a-plain-label-is-the-glyph (\(glyphs.count))", glyphFails.isEmpty, glyphFails.joined(separator: " | "))
+        let html: [(String, String)] = [
+            ("<u>word</u> more", "word more"),
+            ("<b>b</b> <strong>s</strong> <i>i</i> <em>e</em> <s>x</s> <del>d</del> <mark>m</mark>", "b s i e x d m"),
+            ("line<br>next<br/>last<br />end", "line next last end"), (#"<span style="color:#1B59C2">blue</span> word"#, "blue word"),
+            ("<font face=x>f</font>", "f"), ("[<u>site</u>](https://example.com)", "site"), ("**<u>both</u>**", "both"),
+            ("~~gone~~ stays", "gone stays"), ("a &amp; b &lt;c&gt; &quot;q&quot; it&#39;s&nbsp;here &#8212; &#x2014;", "a & b <c> \"q\" it's here — —"),
+            ("&amp;lt; once", "&lt; once"),
+        ]
+        let htmlFails = html.filter { MarkdownPlain.text($0.0) != $0.1 }.map { "\($0.0) → \(MarkdownPlain.text($0.0))" }
+        row("inline-html-and-entities-never-show (\(html.count))", htmlFails.isEmpty, htmlFails.joined(separator: " | "))
+        let literal: [(String, String)] = [("a < b", "a < b"), ("<3 this", "<3 this"), ("x > y", "x > y"),
+                                           ("mail <sam@example.com>", "mail <sam@example.com>"), ("see <https://example.com>", "see <https://example.com>"),
+                                           (#"typed \<u> by hand"#, "typed <u> by hand"), (#"a \< b"#, "a < b"), ("5 < 6 > 4", "5 < 6 > 4")]
+        let litFails = literal.filter { MarkdownPlain.text($0.0) != $0.1 }.map { "\($0.0) → \(MarkdownPlain.text($0.0))" }
+        row("typed-angle-brackets-stay (\(literal.count))", litFails.isEmpty, litFails.joined(separator: " | "))
+        let st = MarkdownPlain.styled("<u>under</u> **bold** *it* ~~gone~~ <b>tag</b> &amp;")
+        func styleAt(_ word: String) -> String {
+            guard let r = st.range(of: word) else { return "missing" }
+            let run = st[r].runs.first!
+            var f: [String] = []
+            if run.underlineStyle != nil { f.append("u") }
+            if run.strikethroughStyle != nil || run.inlinePresentationIntent?.contains(.strikethrough) == true { f.append("s") }
+            if run.inlinePresentationIntent?.contains(.stronglyEmphasized) == true { f.append("b") }
+            if run.inlinePresentationIntent?.contains(.emphasized) == true { f.append("i") }
+            return f.joined()
+        }
+        let stOK = String(st.characters) == "under bold it gone tag &" && styleAt("under") == "u" && styleAt("bold") == "b"
+            && styleAt("it") == "i" && styleAt("gone") == "s" && styleAt("tag") == "b"
+        row("styled-labels-render-underline-bold-italic-strike", stOK,
+            "\(String(st.characters)) u=\(styleAt("under")) b=\(styleAt("bold")) i=\(styleAt("it")) s=\(styleAt("gone")) tag=\(styleAt("tag"))")
+        let ul = node([text("<u>Ask</u> the harbour &amp; the yard")])
+        row("untitled-title-drops-html", ul.untitledDisplayText == "Ask the harbour & the yard", ul.untitledDisplayText ?? "nil")
+        let edPreview = make(node([text(#"- \[ ] Print the reef map"# + "\n" + #"- \[x] Book the cottage"# + "\n" + "- <u>Waders</u>")]), hasHero: true)
+        row("editor-checklist-previews-as-checkboxes", edPreview.preview == .list(rows: [
+            ListRow(marker: .check(false), text: "Print the reef map"), ListRow(marker: .check(true), text: "Book the cottage"),
+            ListRow(marker: .bullet, text: "Waders")], more: 0), "\(String(describing: edPreview.preview))")
+
+        // live-26 (1): T chose the proposal (2026-10-18) — an App Store build and plain DEBUG render it.
+        row("app-store-and-plain-debug-render-the-proposal",
+            UserDefaults.standard.string(forKey: "CardContent") != nil || UserDefaults.standard.bool(forKey: "AppearanceTuner")
+            || CardContentPresentation.isProposal)
         return "[CardContentSelfTest] \(fails == 0 ? "PASS" : "FAIL") — \(rows.count - fails)/\(rows.count)\n" + rows.joined(separator: "\n")
     }
 }

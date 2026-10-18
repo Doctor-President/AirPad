@@ -14,6 +14,8 @@ final class PlusCaptureOverlap: XCTestCase {
         let app = XCUIApplication()
         app.launchArguments = ["-UITestLibrary", "-UITestLibraryFresh", "-UITestSeedCardShowcase",
                                "-EmbedCPUOnly", "-OpenCardView", "-gridColumnCount", "2"]
+        // live-26 (3): `TEST_RUNNER_PLUS_FONT=sourceSerif4 xcodebuild test …` runs it in another note font.
+        if let font = ProcessInfo.processInfo.environment["PLUS_FONT"] { app.launchArguments += ["-entry.defaultBodyFont", font] }
         app.launch()
 
         let pill = app.textFields["Search"].firstMatch
@@ -38,7 +40,9 @@ final class PlusCaptureOverlap: XCTestCase {
             editor.tap()
             if app.keyboards.element.waitForExistence(timeout: 3) { break }
         }
-        editor.typeText("Ask the harbour office about the mooring.")
+        // live-26 (3): two lines, so the stored text shows the first (title) line and a body line (read from the scratch
+        // library afterwards: no `**` may be stored for either).
+        editor.typeText("Ask the harbour office about the mooring.\nBring the forms on Thursday.")
         let hide = app.buttons["keyboard.chevron.compact.down"]
         if hide.waitForExistence(timeout: 3) { hide.tap() }
         _ = app.keyboards.element.waitForNonExistence(timeout: 5)

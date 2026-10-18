@@ -12,11 +12,11 @@ struct LibrarianSurfaceSpec: Equatable, CustomStringConvertible {
     var dim: Double             // 0…0.20 black over the content behind, × how far the panel is up
     var wholePanelGlass = false // the tuner's "Liquid Glass" preset
 
-    /// Light: near-solid (85% tint) at full colour, with real Liquid Glass controls over it; the content behind dims 10%.
-    static let light = LibrarianSurfaceSpec(tint: 0.85, blur: 1.74, saturation: 1, glassControls: true, dim: 0.10)
-    /// Dark: a genuine frost (56% tint, colour pulled to 40%), glass controls, the content behind dims 20%.
-    /// Replaces the Solar Flare panel as dark's default (T moved dark off "Today" on device).
-    static let dark = LibrarianSurfaceSpec(tint: 0.56, blur: 2, saturation: 0.4, glassControls: true, dim: 0.20)
+    /// ★ live-26 (1) — T's 2026-10-18 values. Both panels ship on Liquid Glass (`LibrarianGlassLook.shipped(dark:)`), so
+    /// the frost numbers here are kept as T left them but don't render; what does: the glass controls, and the content
+    /// behind dimmed 10.5% in light, not at all in dark.
+    static let light = LibrarianSurfaceSpec(tint: 0.51, blur: 0.58, saturation: 0.4, glassControls: true, dim: 0.105)
+    static let dark = LibrarianSurfaceSpec(tint: 0.5, blur: 1.53, saturation: 0.4, glassControls: true, dim: 0)
     static func baked(dark: Bool) -> LibrarianSurfaceSpec { dark ? .dark : .light }
 
     /// What renders: in DEBUG / TestFlight the on-device tuner's values when it's live (nil = its "Before" preset —

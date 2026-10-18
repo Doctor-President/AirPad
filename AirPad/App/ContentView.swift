@@ -375,7 +375,9 @@ struct ContentView: View {
         // so views without a direct handle on `panelState` can gate
         // themselves on peek vs raised — the "+" capture trigger in
         // CanvasView / VerticalScrollView uses this.
-        .onChange(of: panelState.state) { _, newState in
+        // live-26 (3d): `initial` — a launch that starts at peek mirrors it too (else the floating buttons stayed hidden
+        // until the panel first moved; seen in every -Open* still).
+        .onChange(of: panelState.state, initial: true) { _, newState in
             router.librarianAtPeek = (newState == .tip)
         }
     }

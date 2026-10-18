@@ -292,6 +292,9 @@ struct NodeGridTile: View {
             }
             travelingScrim
             identityContent
+                #if DEBUG
+                .opacity(UserDefaults.standard.bool(forKey: "CardHideText") ? 0 : 1)   // live-26 (3c): backdrop-only stills
+                #endif
         }
     }
 
@@ -395,7 +398,7 @@ struct NodeGridTile: View {
                 .frame(maxWidth: .infinity, alignment: .leading)
 
             if showDeck {
-                Text(HyphenatedTextCache.attributed(node.summary))
+                Text(HyphenatedTextCache.attributed(MarkdownPlain.inline(node.summary)))
                     .font(tileFont(scaled(t.deckBaseSize)))
                     .italic()
                     .foregroundColor(Self.inkDeck)
@@ -496,7 +499,7 @@ struct NodeGridTile: View {
                 .fixedSize(horizontal: false, vertical: true)
                 .frame(maxWidth: .infinity, alignment: .leading)
             if showDeck {
-                Text(HyphenatedTextCache.attributed(node.summary))
+                Text(HyphenatedTextCache.attributed(MarkdownPlain.inline(node.summary)))
                     .font(tileFont(scaled(t.deckBaseSize))).italic()
                     .foregroundColor(Self.inkDeck)
                     .shadow(color: Self.inkShadow.opacity(0.4), radius: 2, x: 0, y: 1)

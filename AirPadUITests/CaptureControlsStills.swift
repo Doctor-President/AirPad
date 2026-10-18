@@ -26,7 +26,7 @@ final class CaptureControlsStills: XCTestCase {
         let mode = glass ? "glass" : "today"
         var base = ["-UITestLibrary", "-UITestLibraryFresh", "-UITestSampleLibrary", "-StubAuthorModel", "-EmbedCPUOnly",
                     "-StubLiveTranscript", "Pick up the prints on Thursday and ask about the rescan."]
-        if glass { base += ["-CaptureControls", "glass"] }
+        base += ["-CaptureControls", mode]   // live-26: glass ships, so "today" (Before) is forced too
 
         // Quick Capture
         let app = XCUIApplication()

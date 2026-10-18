@@ -84,8 +84,8 @@ struct RichTextEditor: UIViewRepresentable {
     /// SPIKE v3 (spike-entry-spine) Model C — when true, the note's FIRST non-empty
     /// PARAGRAPH is styled in the entry-title role (the pairing's bold body face, Brief
     /// BA1) in place, so the heading IS line 1 of the editor (no separate copy). Display-only:
-    /// it sets a FONT, never `.airpadHeadingLevel`, so `encode` emits no `#` and
-    /// storage is unchanged. Re-derived on every keystroke (after `applyInPlace`), so
+    /// it sets a FONT, never `.airpadHeadingLevel`, so `encode` emits no `#`, and marks the bold it
+    /// adds (`.airpadTitleBold`, live-26 (3)) so `encode` emits no `**` either — storage is unchanged. Re-derived on every keystroke (after `applyInPlace`), so
     /// deleting paragraph 1 promotes the next paragraph live. Only notes opt in.
     var firstParagraphAsTitle: Bool = false
 
@@ -771,6 +771,7 @@ struct RichTextEditor: UIViewRepresentable {
                !NoteTypography.caretInFirstParagraph(textView) {
                 var typing = textView.typingAttributes
                 typing[.font] = NoteTypographyHelper.bodyFont   // applyFont re-faces to the body serif next keystroke
+                typing.removeValue(forKey: .airpadTitleBold)    // live-26 (3): body text is never title-marked
                 textView.typingAttributes = typing
                 state.isBold = false; state.isItalic = false   // toolbar must not show the stale title traits
             }
@@ -1986,6 +1987,20 @@ extension NSAttributedString.Key {
     /// title/heading/subheading/monospaced; absence means body (default).
     static let airpadHeadingLevel = NSAttributedString.Key("airpadHeadingLevel")
 
+    /// live-26 (3) — on a run whose bold comes ONLY from the entry-title face (`styleFirstParagraphAsEntryTitle`): the
+    /// title's bold is display, so `encode` stores the run plain. A bold the user chose (format bar, or a note stored
+    /// with `**…**` before) never carries it, and is stored as before.
+    static let airpadTitleBold = NSAttributedString.Key("airpadTitleBold")
+
+    /// live-26 (3) — on a plain run Source Serif's body lifts from regular to semibold (`applyFont`). Semibold sets
+    /// `.traitBold`, so without this the whole body of a Serif note was stored as `**…**`. Display weight, stored plain.
+    static let airpadBodyLift = NSAttributedString.Key("airpadBodyLift")
+
+    /// live-26 (3) — on a run decoded from stored `**…**`: the user's bold. It survives the title line (a note stored with
+    /// a bold first line is never rewritten) and Source Serif's lift (where it now shows at Bold, not the body's
+    /// Semibold). UIKit drops custom keys from typing attributes, so the editor never relies on them for this.
+    static let airpadOwnBold = NSAttributedString.Key("airpadOwnBold")
+
     /// Stage 2.3 — marker on the single display-form checklist glyph char.
     /// In the current SF Symbol path the glyph is an NSTextAttachment
     /// (`NSAttachmentCharacter` U+FFFC); legacy sessions may have left
@@ -2992,7 +3007,12 @@ enum MarkdownCodec {
             let linkURL = attrs[.link] as? URL
             let font = (attrs[.font] as? UIFont) ?? UIFont.preferredFont(forTextStyle: .body)
             let userTraits = font.fontDescriptor.symbolicTraits.subtracting(headingTraits)
-            let isBold = userTraits.contains(.traitBold)
+            // live-26 (3) — display weights are never `**`: the entry title's face (`.airpadTitleBold`) and Source
+            // Serif's semibold body lift (`.airpadBodyLift`). A bold from storage (`.airpadOwnBold`) always is; a
+            // format-bar bold outside the title line carries no display mark, so it is too.
+            let own = (attrs[.airpadOwnBold] as? Bool) == true
+            let displayOnly = (attrs[.airpadTitleBold] as? Bool) == true || (attrs[.airpadBodyLift] as? Bool) == true
+            let isBold = userTraits.contains(.traitBold) && (own || !displayOnly)
             let isItalic = userTraits.contains(.traitItalic)
             let isUnderline = (attrs[.underlineStyle] as? Int).map { $0 != 0 } ?? false
             let isStrike = (attrs[.strikethroughStyle] as? Int).map { $0 != 0 } ?? false
@@ -3603,6 +3623,7 @@ enum MarkdownCodec {
             .font: font,
             .foregroundColor: UIColor.white
         ]
+        if state.bold { attrs[.airpadOwnBold] = true }   // live-26 (3): the user's bold, from storage
         if state.underline {
             attrs[.underlineStyle] = NSUnderlineStyle.single.rawValue
         }
@@ -3925,8 +3946,11 @@ enum NoteTypography {
         let bodySize = NoteTypographyHelper.bodyFont.pointSize * ratio
         let full = NSRange(location: 0, length: mut.length)
         var runs: [(NSRange, UIFont)] = []
-        mut.enumerateAttribute(.font, in: full, options: []) { value, r, _ in
-            let current = (value as? UIFont) ?? UIFont.preferredFont(forTextStyle: .body)
+        var lift: [NSRange] = [], unlift: [NSRange] = []
+        mut.enumerateAttributes(in: full, options: []) { attrs, r, _ in
+            let current = (attrs[.font] as? UIFont) ?? UIFont.preferredFont(forTextStyle: .body)
+            let wasLifted = (attrs[.airpadBodyLift] as? Bool) == true
+            let ownBold = (attrs[.airpadOwnBold] as? Bool) == true
             let symbolic = current.fontDescriptor.symbolicTraits
             // Absolute size from role — headings from their level, else body-sized.
             var size = bodySize
@@ -3947,12 +3971,26 @@ enum NoteTypography {
             // are lifted to the body weight; heavier runs (bold, Bold headings) keep
             // theirs. SF Pro / New York body stays at its natural (regular) weight — no
             // lift — so a clean sans/serif body doesn't read heavy.
-            if choice == .sourceSerif4 { weight = max(weight, UIFont.Weight.semibold.rawValue) }
+            // live-26 (3): a lifted run is marked (`.airpadBodyLift`) so `encode` stores it plain; the mark goes when the
+            // run turns heavier (a user's bold) or the face changes (the run drops back to regular).
+            let semibold = UIFont.Weight.semibold.rawValue
+            if choice == .sourceSerif4 {
+                if ownBold && weight >= semibold - 0.01 {
+                    weight = max(weight, UIFont.Weight.bold.rawValue)   // a stored bold shows Bold (was the body's Semibold)
+                    if wasLifted { unlift.append(r) }
+                } else if weight <= semibold + 0.01 {
+                    weight = semibold; if !wasLifted { lift.append(r) }   // the body (typed text inherits it unmarked)
+                } else if wasLifted { unlift.append(r) }                // heavier: a format-bar bold, the title face
+            } else if wasLifted {
+                weight = UIFont.Weight.regular.rawValue; unlift.append(r)
+            }
             guard let swapped = choice.resolveFont(size: size, weight: weight,
                                                    italic: symbolic.contains(.traitItalic)) else { return }
             runs.append((r, swapped))
         }
         for (r, f) in runs { mut.addAttribute(.font, value: f, range: r) }
+        for r in lift { mut.addAttribute(.airpadBodyLift, value: true, range: r) }
+        for r in unlift { mut.removeAttribute(.airpadBodyLift, range: r) }
     }
 
     // MARK: - SPIKE v3 (spike-entry-spine) Model C — first paragraph = entry title
@@ -3976,20 +4014,40 @@ enum NoteTypography {
                 stop.pointee = true
             }
         }
-        guard let fr = firstRange, fr.length > 0 else { return }
         // Brief BA2 — DEFAULT, not mandate — only dress a PLAIN BODY first paragraph as the
         // title. If it's a list item (bullet/numbered/checklist), an inline-code span, or an
         // explicit heading level (Title/Heading/Subhead/Mono), honor that EXACTLY: skip so
         // `applyFont`'s styling stands and the Format sheet reflects + can change it. The
         // collapsed static row still renders the derived text in the title face (its bullet
         // glyph stripped) — that divergence on a non-plain first line is the intended fold.
-        guard firstParagraphIsPlain(storage, range: fr) else { return }
+        let titleRange = firstRange.flatMap { $0.length > 0 && firstParagraphIsPlain(storage, range: $0) ? $0 : nil }
         storage.beginEditing()
+        // live-26 (3) — text that WAS title (Return inside the title line, the title line deleted or made a list) and
+        // is no longer: back to the body weight, unmarked, so what shows is what's stored.
+        var demoted: [NSRange] = []
+        storage.enumerateAttribute(.airpadTitleBold, in: NSRange(location: 0, length: ns.length), options: []) { value, r, _ in
+            guard (value as? Bool) == true else { return }
+            for part in subtract(r, titleRange) { demoted.append(part) }
+        }
+        for r in demoted {
+            storage.enumerateAttributes(in: r, options: []) { attrs, r2, _ in
+                let existing = (attrs[.font] as? UIFont) ?? NoteTypographyHelper.bodyFont
+                let own = (attrs[.airpadOwnBold] as? Bool) == true
+                let italic = existing.fontDescriptor.symbolicTraits.contains(.traitItalic)
+                storage.addAttribute(.font, value: bodyWeightFont(choice: choice, italic: italic, bold: own), range: r2)
+                if choice == .sourceSerif4 && !own { storage.addAttribute(.airpadBodyLift, value: true, range: r2) }
+            }
+            storage.removeAttribute(.airpadTitleBold, range: r)
+        }
+        guard let fr = titleRange else { storage.endEditing(); return }
         storage.enumerateAttribute(.font, in: fr, options: []) { value, r, _ in
             let existing = (value as? UIFont) ?? NoteTypographyHelper.bodyFont
             let italic = existing.fontDescriptor.symbolicTraits.contains(.traitItalic)
             storage.addAttribute(.font, value: entryTitleFont(choice: choice, italic: italic), range: r)
         }
+        // live-26 (3) — the whole title line is display weight (re-marked on every pass, so typed text needs no typing
+        // attribute); a stored bold inside it (`.airpadOwnBold`) is still stored bold.
+        storage.addAttribute(.airpadTitleBold, value: true, range: fr)
         storage.endEditing()
         // Type in the title font while the caret sits in paragraph 1 — but only for a
         // plain-Body first paragraph (a user-styled one keeps its own typing font).
@@ -3997,6 +4055,25 @@ enum NoteTypography {
         if caret >= fr.location && caret <= fr.location + fr.length {
             textView.typingAttributes[.font] = entryTitleFont(choice: choice, italic: false)
         }
+    }
+
+    /// `r` minus `cut` (0, 1 or 2 ranges).
+    private static func subtract(_ r: NSRange, _ cut: NSRange?) -> [NSRange] {
+        guard let c = cut, let i = r.intersection(c), i.length > 0 else { return [r] }
+        var out: [NSRange] = []
+        if i.location > r.location { out.append(NSRange(location: r.location, length: i.location - r.location)) }
+        if NSMaxRange(i) < NSMaxRange(r) { out.append(NSRange(location: NSMaxRange(i), length: NSMaxRange(r) - NSMaxRange(i))) }
+        return out
+    }
+
+    /// The body face at the body size and the weight `applyFont` gives the run: a plain run regular (Source Serif lifted
+    /// to semibold), a stored bold Bold.
+    private static func bodyWeightFont(choice: NoteFontChoice, italic: Bool, bold: Bool = false) -> UIFont {
+        let size = NoteTypographyHelper.bodyFont.pointSize * NoteTypographyHelper.bodyPointSizeRatio
+        let weight = bold ? UIFont.Weight.bold.rawValue
+            : choice == .sourceSerif4 ? UIFont.Weight.semibold.rawValue : UIFont.Weight.regular.rawValue
+        return choice.resolveFont(size: size, weight: weight, italic: italic)
+            ?? NoteTypographyHelper.styledFont(weight: weight, italic: italic, like: NoteTypographyHelper.bodyFont.withSize(size))
     }
 
     /// Brief BA2 — true when the first non-empty paragraph is a PLAIN paragraph, hence

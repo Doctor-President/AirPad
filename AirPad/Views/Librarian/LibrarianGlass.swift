@@ -13,7 +13,7 @@ import SwiftUI
 ///   • on the pills, an optional thin rim in AirPad's own palette, which can move while an answer is generating.
 ///     Never Apple's Apple Intelligence multicolour edge: that marks Apple Intelligence, and this pill may be fronting
 ///     Qwen through the Host.
-/// Everything here is OFF in what ships (`LibrarianGlassLook.shipped`); only the TestFlight tuner turns it on.
+/// live-26 (1): what ships is T's 2026-10-18 tuning (`LibrarianGlassLook.shipped(dark:)`); the TestFlight tuner varies it live.
 
 // MARK: - Choices
 
@@ -234,6 +234,22 @@ struct PillLook: Codable, Equatable {
     }
 }
 
+/// live-26 (1) — T's 2026-10-18 pills, verbatim (the Ask bar ships Search's: "Match Search" is on).
+extension PillLook {
+    static let shippedLightPeek = PillLook(variant: .clear,
+        grade: GradedTint(on: true, top: 0.9, bottom: 0.05, start: 0.3, softness: 1, direction: .vertical, color: .offWhite),
+        rim: PillRim(rest: .dim, width: 1, brightness: 0.8, color: .white, active: .none, activeBrightness: 1))
+    static let shippedLightSearch = PillLook(variant: .clear,
+        grade: GradedTint(on: false, top: 0.9, bottom: 0.42, start: 0.59, softness: 0.66, direction: .vertical, color: .offWhite),
+        rim: PillRim(rest: .off, width: 1, brightness: 0.8, color: .cyan, active: .shimmer, activeBrightness: 1))
+    static let shippedDarkPeek = PillLook(variant: .clear,
+        grade: GradedTint(on: true, top: 1, bottom: 0.25, start: 0.27, softness: 1, direction: .vertical, color: .nearBlack),
+        rim: PillRim(rest: .dim, width: 0.75, brightness: 0.41, color: .white, active: .none, activeBrightness: 1))
+    static let shippedDarkSearch = PillLook(variant: .clear,
+        grade: GradedTint(on: true, top: 0.72, bottom: 0.44, start: 0.27, softness: 1, direction: .vertical, color: .nearBlack),
+        rim: PillRim(rest: .off, width: 0.5, brightness: 0.11, color: .cyan, active: .shimmer, activeBrightness: 1))
+}
+
 /// Everything live-24 adds to the Librarian's look, for one appearance. The three pills are independent: the peek pill
 /// and the search pill are ONE morphing view (`LibrarianSurface.morphingField`), so its look blends from `peek` to
 /// `search` as the panel opens; the Ask bar has `ask`.
@@ -244,15 +260,31 @@ struct LibrarianGlassLook: Equatable {
     var search: PillLook
     var ask: PillLook
 
-    /// What ships: the frost, nothing graded, no rim — the App Store build never changes.
-    static let shipped = LibrarianGlassLook(panelGlass: nil, panelGrade: .off, peek: .off, search: .off, ask: .off)
+    /// The frost, nothing graded, no rim (live-24's App Store look; the tuner's "All off").
+    static let allOff = LibrarianGlassLook(panelGlass: nil, panelGrade: .off, peek: .off, search: .off, ask: .off)
+
+    /// What an App Store build renders for an appearance.
+    /// ★ live-26 (1) — T's final tuning (2026-10-18, TF 202610171546, Ops `reference/appearance-tuning-2026-10-18.md`),
+    /// light and dark alike in kind: the panel on Liquid Glass (Regular, tint 20%, reading veil 30%) with a graded tint;
+    /// every pill Clear; Peek graded with a dim white rim at rest; Search (and the Ask bar, which matches it) no rim at
+    /// rest, a cyan #00BFFF shimmer only while answering. Light: off-white #FBF9F5, Search ungraded. Dark: near-black
+    /// #0A0A0A, Search graded.
+    static func shipped(dark: Bool) -> LibrarianGlassLook { dark ? shippedDark : shippedLight }
+    static let shippedLight = LibrarianGlassLook(
+        panelGlass: PanelGlass(variant: .regular, tint: .offWhite, tintStrength: 0.2, veil: 0.3),
+        panelGrade: GradedTint(on: true, top: 0.1, bottom: 0.75, start: 0.04, softness: 0.4, direction: .vertical, color: .offWhite),
+        peek: .shippedLightPeek, search: .shippedLightSearch, ask: .shippedLightSearch)
+    static let shippedDark = LibrarianGlassLook(
+        panelGlass: PanelGlass(variant: .regular, tint: .nearBlack, tintStrength: 0.2, veil: 0.3),
+        panelGrade: GradedTint(on: true, top: 0.73, bottom: 0.32, start: 0.04, softness: 0.22, direction: .vertical, color: .nearBlack),
+        peek: .shippedDarkPeek, search: .shippedDarkSearch, ask: .shippedDarkSearch)
 
     /// What renders: the tuner's values in DEBUG (with `-AppearanceTuner YES`) / TestFlight, else `shipped`.
     static func current(dark: Bool) -> LibrarianGlassLook {
         #if DEBUG || TESTFLIGHT
         if let v = AppearanceTuning.values(dark: dark) { return v.glassLook }
         #endif
-        return .shipped
+        return shipped(dark: dark)
     }
 
     /// Text over a pill: a dense dark grade wants light text, a dense light one dark text; nil = the appearance's.
@@ -277,8 +309,37 @@ enum LibrarianPillChrome {
     static func controlsScheme(_ grade: GradedTint, appearance: ColorScheme, glassControls: Bool) -> ColorScheme {
         textScheme(grade, appearance: appearance, glassControls: glassControls)
     }
-    /// `AppearancePalette.ink` on each side (the × is this ink at 40%).
+    /// `AppearancePalette.ink` on each side (the × is this ink at `clearGlyphOpacity`).
     static func inkHex(_ scheme: ColorScheme) -> String { scheme == .dark ? "FFFFFF" : "232A2E" }
+
+    // live-26 (2) — the pill glyphs and placeholders reach WCAG non-text 3:1 / text 4.5:1 on T's baked look (measured
+    // in the Simulator over a busy Card grid, light + dark; Ops design-refs/live26-*/contrast.md).
+    /// The ×'s ink opacity (Ask bar, search pill, composer).
+    static func clearGlyphOpacity(_ scheme: ColorScheme) -> Double { sweep("PillClearOpacity", scheme) ?? (scheme == .light ? 0.6 : 0.4) }   // light: was 0.4 (2.02:1); 0.55 = 2.77, 0.60 = 3.14
+    /// The resting search pill's magnifier ink (× the pill's 0.66 → 1 icon fade).
+    static func peekMagnifierOpacity(_ scheme: ColorScheme) -> Double { sweep("PillMagnifierOpacity", scheme) ?? (scheme == .light ? 0.9 : 0.85) }   // light: was 0.85 (2.87:1); 0.90 = 3.07
+    /// The "Search" / "Ask" placeholders' ink opacity (nil = the system placeholder colour).
+    static func placeholderOpacity(_ scheme: ColorScheme) -> Double? { sweep("PillPlaceholderOpacity", scheme) ?? (scheme == .light ? 0.8 : 0.55) }   // was the system colour (1.6 / 2.0:1); light 0.75 = 4.45
+    /// Send / feather / mic / stop: light → solid Klein (the cyan top of the gradient is ~1.8:1 on a light pill).
+    static func accentIsSolidKlein(_ scheme: ColorScheme) -> Bool { scheme == .light }
+    /// DEBUG `-<key>Light 0.75` / `-<key>Dark 0.55`: an opacity sweep for the contrast stills. Nil otherwise.
+    private static func sweep(_ key: String, _ scheme: ColorScheme) -> Double? {
+        #if DEBUG
+        let k = key + (scheme == .light ? "Light" : "Dark")
+        if UserDefaults.standard.object(forKey: k) != nil { return UserDefaults.standard.double(forKey: k) }
+        #endif
+        return nil
+    }
+    /// A placeholder in the pill's ink at `placeholderOpacity`.
+    static func placeholder(_ text: String, _ scheme: ColorScheme) -> Text {
+        guard let o = placeholderOpacity(scheme) else { return Text(text) }
+        return Text(text).foregroundStyle(Color(hexString: inkHex(scheme)).opacity(o))
+    }
+    static func accent(_ scheme: ColorScheme) -> AnyShapeStyle {
+        accentIsSolidKlein(scheme) ? AnyShapeStyle(Color(hexString: "1B59C2"))
+            : AnyShapeStyle(LinearGradient(colors: [Color(hexString: "00BFFF"), Color(hexString: "1B59C2")],
+                                           startPoint: .top, endPoint: .bottom))
+    }
 }
 
 /// Reduce Transparency / Increase Contrast, resolved once (pure, for the self-test).

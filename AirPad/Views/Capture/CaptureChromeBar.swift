@@ -207,13 +207,15 @@ private struct PinnedCaptureBarModifier<Bar: View>: ViewModifier {
 enum CaptureControlsStyle {
     static var glassChosen: Bool {
         #if DEBUG
-        if UserDefaults.standard.string(forKey: "CaptureControls") == "glass" { return true }
+        if let forced = UserDefaults.standard.string(forKey: "CaptureControls") { return forced == "glass" }   // stills: glass | today
         #endif
         #if DEBUG || TESTFLIGHT
         if AppearanceTuning.isLive { return AppearanceTuner.shared.state.captureControls == .glass }
         #endif
-        return false
+        return bakedGlass
     }
+    /// What an App Store build renders.
+    static let bakedGlass = true   // live-26 (1): T chose Glass (2026-10-18)
 }
 
 /// Glass is on when chosen AND the person hasn't asked for less transparency or more contrast.

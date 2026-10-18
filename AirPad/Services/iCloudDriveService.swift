@@ -235,6 +235,8 @@ actor iCloudDriveService {
             if ProcessInfo.processInfo.arguments.contains("-UITestSeedManyDocuments") { Self.seedUITestManyDocuments(root) }
             if ProcessInfo.processInfo.arguments.contains("-UITestSeedDeclineEntry") { Self.seedUITestDeclineEntry(root) }
             if ProcessInfo.processInfo.arguments.contains("-UITestSeedCardShowcase") { Self.seedUITestCardShowcase(root) }
+            if ProcessInfo.processInfo.arguments.contains("-UITestSeedMarkupShowcase") { Self.seedUITestMarkupShowcase(root) }
+            if ProcessInfo.processInfo.arguments.contains("-UITestSeedFadeShowcase") { Self.seedUITestFadeShowcase(root) }
             return true
         } catch {
             return false
@@ -477,6 +479,108 @@ actor iCloudDriveService {
     /// 11-page document, a recipe with attributes, a link entry, text-only notes, and an entry holding a bit of
     /// everything. Hero photos are smooth synthetic landscapes (sky, sun, hills), so a fade reads as it would on a real
     /// photo. Synthetic content only. Written only when the library has no `node.json` for the entry.
+    /// live-26 (3b) — `-UITestSeedMarkupShowcase`: synthetic entries holding every markup a note can store (Ops report,
+    /// live-26 (3b) format inventory): the editor's escaped checklist (`- \[ ] `) and `<u>` underline, the share
+    /// extension's / a paste's raw checklist spellings (`* [ ]`, `+ [x]`, `• [ ]`, `1. [ ]`, a bare `[X]`), inline HTML
+    /// (`<b>`, `<i>`, `<s>`, `<br>`, `<span …>`) and entities, text typed with `<` / `>` on purpose, an untitled entry
+    /// whose first line is underlined, styled list rows, and a summary with markup. Synthetic content only.
+    private static func seedUITestMarkupShowcase(_ root: URL) {
+        let base = Date(timeIntervalSince1970: 1_760_600_000)
+        let entries: [(id: String, title: String, summary: String, body: String)] = [
+            ("markup-checklist-editor", "Reef morning", "Still to do before Saturday.",
+             #"- \[ ] Print the reef map"# + "\n" + #"- \[x] Book the cottage"# + "\n" + #"- \[ ] Pack the macro lens"# + "\n"
+                + #"- \[x] Ask Sam about the boat"#),
+            ("markup-checklist-raw", "Shared from Notes", "A list pasted in from another app.",
+             "* [ ] Charge the head torch\n+ [x] Fill both flasks\n• [ ] Find the tide table\n1. [ ] Leave by six\n[X] Waders dried"),
+            ("markup-html", "Harbour office", "",
+             #"<u>Harbour</u> office opens at <b>nine</b>; bring <i>both</i> forms &amp; the <s>old</s> permit.<br>Ask for <span style="color:#1B59C2">Sam</span> at the desk &#8212; not the café."#),
+            ("markup-literal", "Depths", "",
+             #"At low water a \< b and x > y; <3 the view. Mail <sam@example.com> or see <https://example.com/tides>. Typed \<u> stays."#),
+            ("markup-untitled", "", "", #"<u>Mooring</u> fees &amp; dates"# + "\nAsk at the office."),
+            ("markup-list-styled", "Kit", "",
+             "- <u>Waders</u> and spare socks\n- **Head torch**, charged\n- ~~Two flasks~~ one flask\n- *The good notebook*"),
+            ("markup-summary", "Summary with markup", "**Low water** at 06:12 &amp; <u>north</u> reef first.",
+             "Started at the slipway and worked north."),
+        ]
+        for (i, e) in entries.enumerated() {
+            let d = root.appendingPathComponent("nodes/\(e.id)")
+            guard !FileManager.default.fileExists(atPath: d.appendingPathComponent("node.json").path) else { continue }
+            try? FileManager.default.createDirectory(at: d.appendingPathComponent("items"), withIntermediateDirectories: true)
+            let t = base.addingTimeInterval(TimeInterval(-3600 * (i + 1)))
+            let item = NodeItem(id: "\(e.id)-note", type: .text, createdAt: t, content: e.body, displayName: nil, isExpanded: true, updatedAt: t)
+            var n = Node(id: e.id, createdAt: t, updatedAt: t, title: e.title, summary: e.summary, tags: ["markup"], items: [item],
+                         entrySchemaVersion: 4)
+            if !e.summary.isEmpty { n.descriptionOnCard = true }
+            try? JSONEncoder.airPad.encode(n).write(to: d.appendingPathComponent("node.json"), options: .atomic)
+        }
+    }
+
+    /// live-26 (3c) — `-UITestSeedFadeShowcase`: the hero-fade fixtures, each with a two-line title and a summary — a BUSY
+    /// synthetic photo (hard-edged bright and dark blocks + stripes: the worst case for text over the extended fade), a
+    /// smooth synthetic landscape, a synthetic gradient-art cover, and a fluted card (no cover: the colour field under the
+    /// fluted glass, the reference). Synthetic content only.
+    private static func seedUITestFadeShowcase(_ root: URL) {
+        let base = Date(timeIntervalSince1970: 1_760_700_000)
+        let entries: [(id: String, title: String, cover: Int)] = [
+            ("fade-photo-busy", "Harbour wall at low tide, west end", 1), ("fade-photo-landscape", "Ridge path above the north bay", 2),
+            ("fade-gradient-art", "Poster for the autumn tide fair", 3), ("fade-fluted", "Notes from the slipway this morning", 0),
+        ]
+        for (i, e) in entries.enumerated() {
+            let d = root.appendingPathComponent("nodes/\(e.id)")
+            guard !FileManager.default.fileExists(atPath: d.appendingPathComponent("node.json").path) else { continue }
+            try? FileManager.default.createDirectory(at: d.appendingPathComponent("items"), withIntermediateDirectories: true)
+            let t = base.addingTimeInterval(TimeInterval(-3600 * (i + 1)))
+            let item = NodeItem(id: "\(e.id)-note", type: .text, createdAt: t,
+                                content: "Low water at 06:12. Started at the slipway and worked north along the wall.",
+                                displayName: nil, isExpanded: true, updatedAt: t)
+            var n = Node(id: e.id, createdAt: t, updatedAt: t, title: e.title, summary: "Every pool on the north reef at the lowest tide of the year.",
+                         tags: ["coast"], items: [item], entrySchemaVersion: 4)
+            n.descriptionOnCard = true
+            let jpeg: Data? = e.cover == 1 ? syntheticBusyJPEG(width: 1600, height: 1200, seed: 11)
+                : e.cover == 2 ? syntheticLandscapeJPEG(width: 1600, height: 1200, seed: 7)
+                : e.cover == 3 ? syntheticGradientArtJPEG(width: 1600, height: 1200) : nil
+            if let jpeg {
+                try? jpeg.write(to: d.appendingPathComponent("items/cover.jpg"), options: .atomic)
+                n.coverImageRelativePath = "items/cover.jpg"
+            }
+            try? JSONEncoder.airPad.encode(n).write(to: d.appendingPathComponent("node.json"), options: .atomic)
+        }
+    }
+
+    /// A busy synthetic photo: hard-edged blocks from near-white to near-black in many hues, with thin stripes over them.
+    private static func syntheticBusyJPEG(width w: Int, height h: Int, seed: Int) -> Data {
+        let format = UIGraphicsImageRendererFormat(); format.scale = 1
+        var g = UInt64(seed) &* 6364136223846793005 &+ 1442695040888963407
+        func rnd() -> CGFloat { g = g &* 6364136223846793005 &+ 1442695040888963407; return CGFloat((g >> 33) % 10_000) / 10_000 }
+        return UIGraphicsImageRenderer(size: CGSize(width: w, height: h), format: format).jpegData(withCompressionQuality: 0.9) { ctx in
+            let W = CGFloat(w), H = CGFloat(h), cell = W / 16
+            for row in 0..<Int(H / cell) + 1 {
+                for col in 0..<16 {
+                    UIColor(hue: rnd(), saturation: 0.3 + rnd() * 0.7, brightness: rnd() < 0.5 ? 0.08 + rnd() * 0.2 : 0.8 + rnd() * 0.2,
+                            alpha: 1).setFill()
+                    ctx.fill(CGRect(x: CGFloat(col) * cell, y: CGFloat(row) * cell, width: cell, height: cell))
+                }
+            }
+            for i in stride(from: 0, to: Int(W), by: 23) {
+                (i / 23 % 2 == 0 ? UIColor.white : UIColor.black).withAlphaComponent(0.55).setFill()
+                ctx.fill(CGRect(x: CGFloat(i), y: 0, width: 4, height: H))
+            }
+        }
+    }
+
+    /// A synthetic gradient-art cover: a smooth diagonal sweep through several saturated hues.
+    private static func syntheticGradientArtJPEG(width w: Int, height h: Int) -> Data {
+        let format = UIGraphicsImageRendererFormat(); format.scale = 1
+        return UIGraphicsImageRenderer(size: CGSize(width: w, height: h), format: format).jpegData(withCompressionQuality: 0.9) { ctx in
+            let colors = ["FF5F6D", "FFC371", "00BFFF", "1B59C2", "8E2DE2"].map { hex -> CGColor in
+                var v: UInt64 = 0; Scanner(string: hex).scanHexInt64(&v)
+                return UIColor(red: CGFloat((v >> 16) & 0xFF) / 255, green: CGFloat((v >> 8) & 0xFF) / 255, blue: CGFloat(v & 0xFF) / 255, alpha: 1).cgColor
+            }
+            let grad = CGGradient(colorsSpace: CGColorSpaceCreateDeviceRGB(), colors: colors as CFArray, locations: [0, 0.25, 0.5, 0.75, 1])!
+            ctx.cgContext.drawLinearGradient(grad, start: .zero, end: CGPoint(x: CGFloat(w), y: CGFloat(h)), options: [])
+        }
+    }
+
     private static func seedUITestCardShowcase(_ root: URL) {
         let base = Date(timeIntervalSince1970: 1_760_500_000)
         var order = 0

@@ -15,8 +15,16 @@ struct CardShowcaseGallery: View {
     private var kind: String { UserDefaults.standard.string(forKey: "CardShowcase") ?? "grid2" }
     private var page: Int { UserDefaults.standard.integer(forKey: "CardShowcasePage") }
 
+    /// live-26 (3b) — `-CardShowcaseSet markup`: the markup fixtures (`-UITestSeedMarkupShowcase`) instead.
+    /// live-26 (3c) — `-CardShowcaseSet fade`: the hero-fade fixtures (`-UITestSeedFadeShowcase`).
+    static let fadeOrder = ["fade-photo-busy", "fade-photo-landscape", "fade-gradient-art", "fade-fluted"]
+    static let markupOrder = ["markup-checklist-editor", "markup-checklist-raw", "markup-html", "markup-literal",
+                              "markup-untitled", "markup-list-styled", "markup-summary"]
+
     private var nodes: [Node] {
-        Self.order.compactMap { id in store.nodes.first { $0.id == id } }
+        let set = UserDefaults.standard.string(forKey: "CardShowcaseSet")
+        let order = set == "markup" ? Self.markupOrder : set == "fade" ? Self.fadeOrder : Self.order
+        return order.compactMap { id in store.nodes.first { $0.id == id } }
     }
 
     var body: some View {

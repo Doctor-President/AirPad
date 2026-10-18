@@ -582,6 +582,12 @@ struct CanvasView: View {
             scene.canvasState = canvasState
             scene.selection = selection
             store.canvasState = canvasState
+            #if DEBUG
+            // live-26 (3b) — `-MapCardNode <id>`: open that entry's card on the Map (the popover still), as a tap would.
+            if let id = UserDefaults.standard.string(forKey: "MapCardNode") {
+                DispatchQueue.main.asyncAfter(deadline: .now() + 3) { canvasState.cardedNodeID = id }
+            }
+            #endif
             store.detailViewDepth = navigationPath.count
             previousNodeIDs = Set(store.filteredNodes(in: scope).map { $0.id })
             // .onAppear RENDERS — it must never re-derive territories. A

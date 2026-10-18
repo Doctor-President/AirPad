@@ -24,5 +24,14 @@ enum LibrarianRenderHooks {
                     messages: [.init(role: .user, text: "What threads run through my notes, and where should I start?"),
                                .init(role: .assistant, text: answer, citations: cites)])
     }()
+
+    /// live-26 (3f) — `-RenderTableAnswer 2x3|5x46|8x10|1col`: a synthetic answer holding that table (ChatTableFixtures).
+    static func tableChat(_ name: String) -> Chat? {
+        guard let f = ChatTableFixtures.all.first(where: { $0.name == name }) else { return nil }
+        let epoch = Date(timeIntervalSince1970: 1_760_600_000)
+        let answer = "Here is the table you asked for.\n\n" + f.md + "\n\nTap the table to open it full screen."
+        return Chat(id: UUID(), title: "A table (\(name))", createdAt: epoch, updatedAt: epoch,
+                    messages: [.init(role: .user, text: "Make me a table."), .init(role: .assistant, text: answer)])
+    }
 }
 #endif

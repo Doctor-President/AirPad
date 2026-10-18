@@ -246,6 +246,9 @@ struct NodeCardView: View {
                     }
                     travelingScrim
                     editorialContent(cardHeight: geo.size.height)
+                        #if DEBUG
+                        .opacity(UserDefaults.standard.bool(forKey: "CardHideText") ? 0 : 1)   // live-26 (3c): backdrop-only stills
+                        #endif
                     sheen
                 }
                 // Pin the face to the GeometryReader's proposal. Without this the
@@ -529,7 +532,7 @@ struct NodeCardView: View {
                 if hasFoldedPayload {
                     // Folded entries own the flex slot below — keep the deck a
                     // capped 3-line lede so the body has room.
-                    Text(node.summary)
+                    Text(MarkdownPlain.inline(node.summary))
                         .font(cardFont(14 * fs))
                         .italic()
                         .foregroundColor(Self.inkDeck)
@@ -545,7 +548,7 @@ struct NodeCardView: View {
                     // GeometryReader used to hold — stat line + tags still pin
                     // to the bottom.
                     fitLinesText(
-                        node.summary,
+                        MarkdownPlain.inline(node.summary),
                         fontSize: 14 * fs,
                         italic: true,
                         lineSpacing: 3,
@@ -654,7 +657,7 @@ struct NodeCardView: View {
                 .fixedSize(horizontal: false, vertical: true)
 
             if showDeck {
-                Text(node.summary)
+                Text(MarkdownPlain.inline(node.summary))
                     .font(cardFont(14 * fs)).italic()
                     .foregroundColor(Self.inkDeck)
                     .shadow(color: inkHalo.opacity(0.4), radius: 2, x: 0, y: 1)
@@ -713,7 +716,7 @@ struct NodeCardView: View {
             CardVoicePreview(duration: duration, firstLine: firstLine, size: 13, lines: lines,
                              ink: Self.inkDeck, markerInk: Self.inkMeta, halo: inkHalo)
         case .text(let t):
-            Text(t)
+            Text(t.source.map(MarkdownPlain.styled) ?? AttributedString(t.plain))   // live-26 (3b): styled, never raw markup
                 .font(cardFont(13)).foregroundColor(Self.inkDeck)
                 .shadow(color: inkHalo.opacity(0.35), radius: 2, x: 0, y: 1)
                 .lineSpacing(2)
@@ -1095,15 +1098,26 @@ struct NodeCardView: View {
     private static func markdownBody(_ markdown: String, fontSize: CGFloat,
                                      weight: UIFont.Weight, italic baseItalic: Bool,
                                      face: EntryBodyFont) -> AttributedString {
-        let ns = MarkdownCodec.decode(markdown)
-        guard ns.length > 0 else { return AttributedString(markdown) }
+        let ns = MarkdownCodec.decode(MarkdownPlain.forDecoder(markdown))   // live-26 (3b): other tags + entities too
+        guard ns.length > 0 else { return AttributedString(MarkdownPlain.text(markdown)) }
         var out = AttributedString()
+        var strikeLine = false   // live-26 (3b): a done checklist row is struck through to its line's end
         ns.enumerateAttributes(in: NSRange(location: 0, length: ns.length), options: []) { attrs, range, _ in
-            // Strip attachment placeholders (U+FFFC); Text can't render attachments.
-            let seg = (ns.string as NSString).substring(with: range)
-                .replacingOccurrences(of: "\u{FFFC}", with: "")
+            // Strip attachment placeholders (U+FFFC); Text can't render attachments. live-26 (3b): a checklist box is an
+            // attachment too — it shows as the checkbox glyph instead of vanishing.
+            var seg = (ns.string as NSString).substring(with: range)
+            if let checked = attrs[.airpadChecklistGlyph] as? Int {
+                seg = seg.replacingOccurrences(of: "\u{FFFC}", with: checked == 1 ? MarkdownPlain.checkedGlyph : MarkdownPlain.uncheckedGlyph)
+                strikeLine = checked == 1
+            }
+            seg = seg.replacingOccurrences(of: "\u{FFFC}", with: "")
             guard !seg.isEmpty else { return }
             var piece = AttributedString(seg)
+            if strikeLine, attrs[.airpadChecklistGlyph] == nil {
+                let cut = piece.characters.firstIndex(of: "\n") ?? piece.endIndex
+                piece[piece.startIndex..<cut].strikethroughStyle = .single
+                if cut != piece.endIndex { strikeLine = false }
+            }
             let traits = (attrs[.font] as? UIFont)?.fontDescriptor.symbolicTraits ?? []
             let isBold = traits.contains(.traitBold)
             let isItalic = traits.contains(.traitItalic) || baseItalic

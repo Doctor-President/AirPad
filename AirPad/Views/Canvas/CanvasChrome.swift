@@ -87,7 +87,7 @@ struct CanvasChrome: View {
                 router.pendingNodeNavigationID = node.id
             }
         } label: {
-            CaptureButtonLabel() // shared visual — see CaptureButtonLabel.swift
+            CanvasCircleButtonLabel(systemName: "plus", glassRole: .primary)   // shared visual (CaptureButtonLabel.swift); live-26 (3d)
         }
         .buttonStyle(.plain)
         .firstRunCalloutTarget(FirstRunCalloutTargetID.captureButton)
@@ -104,7 +104,7 @@ struct CanvasChrome: View {
         Menu {
             ViewSwitchMenuContent(scope: scope, onEditMap: { showEditMap = true })
         } label: {
-            CanvasCircleButtonLabel(systemName: viewSwitchGlyph, glyphSize: 22)
+            CanvasCircleButtonLabel(systemName: viewSwitchGlyph, glyphSize: 22, glassRole: .secondary)
         }
         .accessibilityLabel("View: \(ViewSwitchMenuContent.destination(for: filterState.viewMode).label)")
         .accessibilityHint("Switches between Map, List and Card View")
@@ -303,9 +303,12 @@ struct CanvasChrome: View {
                             Spacer()
                             // The view switcher rides directly above "+", at the SAME 10pt gap "+"
                             // keeps to the search pill (`peekOverlayClearance` = peek height + 10).
-                            VStack(spacing: 10) {
-                                viewSwitchButton
-                                captureTriggerButton
+                            // live-26 (3d) — one GlassEffectContainer, so in Glass the pair merges as one.
+                            GlassEffectContainer(spacing: 10) {
+                                VStack(spacing: 10) {
+                                    viewSwitchButton
+                                    captureTriggerButton
+                                }
                             }
                         }
                         .padding(.horizontal, 16)

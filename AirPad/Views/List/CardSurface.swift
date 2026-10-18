@@ -325,13 +325,21 @@ enum CardSurfaceResolved {
 
     // 4 — RIM -----------------------------------------------------------------
 
+    /// An App Store build's dark card edge (live-26 (1), T 2026-10-18): a white hairline on every edge, 1 pt at 12%.
+    /// nil would be the top-only white fade (0.24, 1.5 pt) dark had before.
+    static let bakedDarkHairline: (opacity: Double, width: Double)? = (0.12, 1)
+
     /// The rim gradient's two stops. ★ DARK IS EXACTLY THE SHIPPED PAIR —
     /// `Color.white.opacity(0.24)` → `Color.white.opacity(0)` — so splitting the
     /// rim per-mode leaves dark byte-identical.
     static func rimStops(dark: Bool) -> [Color] {
         #if DEBUG || TESTFLIGHT
-        if dark, let h = AppearanceTuning.darkHairline { return [Color.white.opacity(h.opacity), Color.white.opacity(0)] }   // live-22 (2)
+        if AppearanceTuning.isLive {
+            if dark, let h = AppearanceTuning.darkHairline { return [Color.white.opacity(h.opacity), Color.white.opacity(0)] }   // live-22 (2)
+            if dark { return [Color.white.opacity(0.24), Color.white.opacity(0)] }
+        }
         #endif
+        if dark, let h = bakedDarkHairline { return [Color.white.opacity(h.opacity), Color.white.opacity(0)] }
         if dark { return [Color.white.opacity(0.24), Color.white.opacity(0)] }
         let (r, g, b) = rgb(CardSurfaceStore.read(.rimHex))
         let base = Color(red: Double(r), green: Double(g), blue: Double(b))
@@ -340,8 +348,9 @@ enum CardSurfaceResolved {
 
     static func rimWidth(dark: Bool) -> CGFloat {
         #if DEBUG || TESTFLIGHT
-        if dark, let h = AppearanceTuning.darkHairline { return CGFloat(h.width) }   // live-22 (2)
+        if dark, AppearanceTuning.isLive { return AppearanceTuning.darkHairline.map { CGFloat($0.width) } ?? 1.5 }   // live-22 (2)
         #endif
+        if dark, let h = bakedDarkHairline { return CGFloat(h.width) }
         return dark ? 1.5 : CGFloat(CardSurfaceStore.read(.rimWidth))
     }
 
@@ -349,9 +358,9 @@ enum CardSurfaceResolved {
     /// top-only gradient.
     static func rimIsTopOnly(dark: Bool) -> Bool {
         #if DEBUG || TESTFLIGHT
-        if dark, AppearanceTuning.darkHairline != nil { return false }   // live-22 (2): a dark hairline runs all edges
+        if dark, AppearanceTuning.isLive { return AppearanceTuning.darkHairline == nil }   // live-22 (2): a dark hairline runs all edges
         #endif
-        if dark { return true }
+        if dark { return bakedDarkHairline == nil }
         return CardSurfaceStore.read(.rimTopOnly)
     }
 
@@ -438,25 +447,66 @@ enum CardHeroFade {
     /// 2 smootherstep (between: a blend). `overshoot`: how far past the zone the photo runs, as a fraction of it.
     struct Shape: Equatable, CustomStringConvertible {
         var length: Double; var curve: Double; var overshoot: Double
-        var description: String { String(format: "length %.2f curve %.2f overshoot %.2f", length, curve, overshoot) }
+        /// live-26 (3c) — "Fade into body": how far the photo carries down into the card body, 0 (today) … 1 (to the
+        /// bottom of the title block, `titleDepth` of the zone further down). The fade keeps its length and curve and
+        /// moves down with it.
+        var intoBody: Double = 0
+        /// live-26 (3c) — the veil behind the card text where the photo now runs: from 0.95 zones down the photo's opacity
+        /// is × (1 − scrim). Set by `current(dark:)` (`textScrim` × `intoBody`), so today's fade (into 0) has none.
+        var scrim: Double = 0
+        var description: String {
+            String(format: "length %.2f curve %.2f overshoot %.2f into %.2f scrim %.2f", length, curve, overshoot, intoBody, scrim)
+        }
     }
-    static let baked = Shape(length: 0.60, curve: 1, overshoot: 0.10)
+    /// How far past the photo's overshoot the title block ends, as a fraction of the zone: measured title-block bottoms
+    /// at 1.36 (carousel, one-line title) · 1.44 (grid 3) · 1.60 (grid 2) · 1.66 (Map) zones from the card top, so
+    /// "Fade into body" at 100% ends the photo at 1.6 zones (live-26 (3c)).
+    static let titleDepth: Double = 0.5
+    /// The photo's run past the zone, as a fraction of it: the overshoot plus the "Fade into body" extension.
+    static func run(_ s: Shape) -> Double { max(s.overshoot, 0) + min(max(s.intoBody, 0), 1) * titleDepth }
+    static let bakedLight = Shape(length: 0.60, curve: 1, overshoot: 0.10)
+    /// live-26 (1) — T's dark fade (2026-10-18): over 35% of the zone, nearly linear (curve 0.15).
+    static let bakedDark = Shape(length: 0.35, curve: 0.15, overshoot: 0.10)
+    /// What an App Store build renders for an appearance.
+    static func baked(dark: Bool) -> Shape { dark ? bakedDark : bakedLight }
+    /// live-26 (3c) — "Match fluted": the photo fade fitted (least squares over 0.5–2.2 zones) to the fluted cards'
+    /// measured fade on the carousel, grid 2 / 3 and Map faces (Ops design-refs/live26-*/fade-profiles.md). Dark: 50% at
+    /// 0.96 zones, 5% at 1.21 (T's dark fade: 0.98 / 1.08). Light: 50% at 1.21, 5% at 1.52 (today: 0.85 / 1.03).
+    static func matchFluted(dark: Bool) -> Shape {
+        dark ? Shape(length: 0.80, curve: 1.9, overshoot: 0.10, intoBody: 0.50)
+             : Shape(length: 0.80, curve: 0.8, overshoot: 0.10, intoBody: 1.00)
+    }
     /// live-22's mask (for the "before" stills and the self-test).
     static let live22 = Shape(length: 0.22, curve: 0, overshoot: 0)
 
     static func current(dark: Bool) -> Shape {
+        var s = baked(dark: dark)
         #if DEBUG || TESTFLIGHT
-        if let v = AppearanceTuning.values(dark: dark) { return v.heroFade }
+        if let v = AppearanceTuning.values(dark: dark) { s = v.heroFade }
         #endif
-        return baked
+        s.scrim = textScrim(dark: dark) * min(max(s.intoBody, 0), 1)
+        return s
+    }
+
+    /// live-26 (3c) — the least veil that keeps every card text line AA (4.5:1, or no worse than on today's fade where
+    /// that's already under) at "Match fluted" and at "Fade into body" 100%, measured on busy synthetic photos, light +
+    /// dark (Ops design-refs/live26-*/fade-contrast.md). DEBUG `-FadeScrimLight` / `-FadeScrimDark` override it (sweeps).
+    static func textScrim(dark: Bool) -> Double {
+        #if DEBUG
+        let k = dark ? "FadeScrimDark" : "FadeScrimLight"
+        if UserDefaults.standard.object(forKey: k) != nil { return UserDefaults.standard.double(forKey: k) }
+        #endif
+        // Measured (live-26 (3c)): dark 0.45 (0.30 left the gradient-art source row at 3.9); light 1.0 — the light
+        // source/time row is 3.74:1 on the plain body already, so any photo behind it is worse (0.85 → 3.53).
+        return dark ? 0.45 : 1.0
     }
 
     /// The photo frame's height for a hero zone.
-    static func frameHeight(zone: CGFloat, _ s: Shape) -> CGFloat { zone * CGFloat(1 + max(s.overshoot, 0)) }
+    static func frameHeight(zone: CGFloat, _ s: Shape) -> CGFloat { zone * CGFloat(1 + run(s)) }
 
     /// Where the fade starts, as a fraction of the photo frame.
     static func fadeTop(_ s: Shape) -> Double {
-        min(max(1 - min(max(s.length, 0.02), 1 + s.overshoot) / (1 + s.overshoot), 0), 0.98)
+        min(max(1 - min(max(s.length, 0.02), 1 + run(s)) / (1 + run(s)), 0), 0.98)
     }
 
     static func ease(_ p: Double, curve: Double) -> Double {
@@ -469,21 +519,24 @@ enum CardHeroFade {
     /// Opacity of the photo at `y` (0 = top of the photo frame … 1 = its bottom).
     static func alpha(_ s: Shape, at y: Double) -> Double {
         let top = fadeTop(s)
-        return y <= top ? 1 : 1 - ease((y - top) / (1 - top), curve: s.curve)
+        let a = y <= top ? 1 : 1 - ease((y - top) / (1 - top), curve: s.curve)
+        guard s.scrim > 0 else { return a }
+        return a * (1 - min(max(s.scrim, 0), 1) * ease((y * (1 + run(s)) - 0.95) / 0.10, curve: 1))
     }
 
     /// The mask's stops, top → bottom. Linear needs only its two ends (live-22's three-stop mask); an eased fade is
     /// sampled at 16 points.
     static func stops(_ s: Shape) -> [Gradient.Stop] {
         let top = fadeTop(s)
-        if s.curve <= 0 {
+        if s.curve <= 0 && s.scrim <= 0 {
             return [.init(color: .black, location: 0), .init(color: .black, location: top), .init(color: .clear, location: 1)]
         }
-        var out: [Gradient.Stop] = [.init(color: .black, location: 0)]
-        for i in 0...15 {
-            let y = top + (1 - top) * Double(i) / 15
-            out.append(.init(color: .black.opacity(alpha(s, at: y)), location: CGFloat(y)))
+        var ys = (0...15).map { top + (1 - top) * Double($0) / 15 }
+        if s.scrim > 0 {   // the veil's ramp (0.95 → 1.05 zones), sampled too
+            ys += (0...4).map { (0.95 + 0.025 * Double($0)) / (1 + run(s)) }.filter { $0 > 0 && $0 < 1 }
         }
+        var out: [Gradient.Stop] = [.init(color: .black, location: 0)]
+        for y in Set(ys).sorted() { out.append(.init(color: .black.opacity(alpha(s, at: y)), location: CGFloat(y))) }
         return out
     }
 }

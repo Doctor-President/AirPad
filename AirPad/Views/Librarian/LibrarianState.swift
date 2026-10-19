@@ -2397,8 +2397,10 @@ final class LibrarianState {
     "now", "today" or a date as if you knew today's state.
     """
     /// live-27 (3) — the General instructions (Apple Intelligence, and a Host without a search key) end with one plain
-    /// line about dated knowledge; the harness checks it doesn't raise Apple's refusal-shaped rate.
-    static let generalPromptBase = plainVoice + " Answer the user's question clearly and accurately from your own knowledge. Be specific and genuinely useful; don't pad the answer. If a fact may have changed recently, say your information may be out of date."
+    /// line about dated knowledge; the harness checks it doesn't raise Apple's refusal-shaped rate. live-28 (A5): "say
+    /// your information may be out of date" read as the USER's information (T: "based on your entries and the latest
+    /// data"); it now says what YOU know (harness 5 runs × 17 turns: refusals + errors 4 → 4, claims 1 → 0).
+    static let generalPromptBase = plainVoice + " Answer the user's question clearly and accurately from your own knowledge. Be specific and genuinely useful; don't pad the answer. If a fact may have changed recently, say that what you know may be out of date."
 
     /// ★ Tool-loop system prompt (private + REMOTE). Distinct from `privateSystemPrompt`
     /// because a web search has ALREADY run — the model must synthesize from the LIVE

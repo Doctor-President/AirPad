@@ -118,6 +118,17 @@ enum ChatTableSelfTest {
         let E = ChatTableView.fadeEdges
         row("fade-on-the-side(s)-that-can-scroll", E(0, 400, 900) == (false, true) && E(200, 400, 900) == (true, true)
             && E(500, 400, 900) == (true, false) && E(0, 400, 400) == (false, false))
+        // live-28 (A4) — a narrow index first column ("#", row numbers) pins the first two columns, so the name stays put.
+        let pins: [(String, ChatTable, Int)] = [
+            ("presidents (#)", table(ChatTableFixtures.presidents).map { ChatTable(headers: $0.headers, rows: $0.rows) } ?? ChatTable(headers: [], rows: []), 2),
+            ("row numbers, no header", ChatTable(headers: ["", "Mayor", "Term"], rows: [["1", "Ada", "1801"], ["2", "Bram", "1805"], ["3", "Cora", "1809"]]), 2),
+            ("No.", ChatTable(headers: ["No.", "Lighthouse", "Lit"], rows: [["1", "Pellworth", "1871"], ["2", "Skerry", "1880"]]), 2),
+            ("a year column isn't an index", ChatTable(headers: ["Year", "Event", "Place"], rows: [["1801", "Flood", "Quay"], ["1805", "Fire", "Mill"]]), 1),
+            ("2 × 3 (Tide, Height)", ChatTable(headers: ["Tide", "Height"], rows: [["Low", "0.4 m"], ["High", "4.1 m"]]), 1),
+            ("#, Name only — never pin every column", ChatTable(headers: ["#", "Name"], rows: [["1", "Ada"], ["2", "Bram"]]), 1),
+        ]
+        let pinOut = pins.map { "\($0.0)=\($0.1.pinnedColumns)" }
+        row("a-narrow-index-first-column-pins-two", pins.allSatisfy { $0.1.pinnedColumns == $0.2 }, pinOut.joined(separator: " · "))
         let half = MarkdownBlockParser.parse("| A | B |\n|---|---|\n| 1 | 2 |\n| 3 | 4")
         if case let .table(_, r)? = half.first { row("a-half-arrived-last-row-is-held-mid-stream", r.count == 1, "\(r)") }
         else { row("a-half-arrived-last-row-is-held-mid-stream", false, "\(half)") }

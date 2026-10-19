@@ -129,6 +129,11 @@ enum AppearancePalette {
     /// The card face's secondary ink: dark = the warm cream at the face's own `opacity` (byte-identical), light = the ink
     /// at `cardMetaLightAlpha`.
     static func cardMetaInk(_ opacity: CGFloat) -> Color { cardCreamInk(opacity, light: cardMetaLightAlpha ?? opacity) }
+    /// live-28 (A1) — the dateline row's ink: with light's A / B band it may run darker than the other meta text.
+    static func cardDatelineInk(_ opacity: CGFloat) -> Color {
+        guard let band = CardHeroFade.datelineBand(dark: false) else { return cardMetaInk(opacity) }
+        return cardCreamInk(opacity, light: CGFloat(band.ink))
+    }
 
     static func cardCreamInk(_ opacity: CGFloat) -> Color { cardCreamInk(opacity, light: opacity) }
 

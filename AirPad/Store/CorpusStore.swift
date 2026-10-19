@@ -1147,6 +1147,14 @@ final class CorpusStore {
             if ProcessInfo.processInfo.arguments.contains("-WebGroundingSelfTest") {
                 NSLog("[WebGroundingSelfTest] %@", WebGroundingSelfTest.run())
             }
+            // live-28 (A3) — Title Case for model-written titles.
+            if ProcessInfo.processInfo.arguments.contains("-TitleCaseSelfTest") {
+                NSLog("[TitleCaseSelfTest] %@", TitleCaseSelfTest.run())
+            }
+            // live-28 (1) — answer caps: the loop guard, the budgets by route, num_predict on the Host bodies.
+            if ProcessInfo.processInfo.arguments.contains("-AnswerCapSelfTest") {
+                NSLog("[AnswerCapSelfTest] %@", AnswerCapSelfTest.run())
+            }
             // live-27 (4e) — the RELATED list never shows one entry twice.
             if ProcessInfo.processInfo.arguments.contains("-SearchRelatedSelfTest") {
                 NSLog("[SearchRelatedSelfTest] %@", SearchRelatedSelfTest.run())

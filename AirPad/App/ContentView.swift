@@ -69,6 +69,16 @@ struct ContentView: View {
                 // ws-fluted-glass still harness — `-OpenFirstGradientEntry` pushes the detail of
                 // the first gradient-only (no cover image) entry, so the entry hero is reachable
                 // headlessly. Waits for the corpus to load.
+                // live-28 (5) — `-OpenEntryTitled <title>`: push that entry's detail (the Sample Library attribute stills).
+                if let title = UserDefaults.standard.string(forKey: "OpenEntryTitled"), !title.isEmpty {
+                    Task { @MainActor in
+                        for _ in 0..<40 where !store.nodes.contains(where: { $0.title == title }) {
+                            try? await Task.sleep(nanoseconds: 250_000_000)
+                        }
+                        try? await Task.sleep(nanoseconds: 1_000_000_000)
+                        if let node = store.nodes.first(where: { $0.title == title }) { router.pendingNodeNavigationID = node.id }
+                    }
+                }
                 if ProcessInfo.processInfo.arguments.contains("-OpenFirstGradientEntry") {
                     Task { @MainActor in
                         for _ in 0..<40 where store.nodes.isEmpty {

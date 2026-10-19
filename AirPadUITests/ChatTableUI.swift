@@ -21,6 +21,10 @@ final class ChatTableUI: XCTestCase {
         let window = app.windows.firstMatch.frame
         XCTAssertGreaterThan(table.frame.maxX, window.maxX - 24, "the grid reaches the answer's right edge")
         XCTAssertTrue(app.buttons["chatTableExpand"].firstMatch.exists, "an expand control on the table's corner")
+        // live-28 (A4) — the expand control sits on the corner just ABOVE the grid, never over a header cell.
+        let expand = app.buttons["chatTableExpand"].firstMatch
+        XCTAssertLessThanOrEqual(expand.frame.maxY, table.frame.minY + 1, "the expand control is above the grid (\(expand.frame) vs \(table.frame))")
+        XCTAssertGreaterThan(expand.frame.midX, table.frame.midX, "… on its trailing corner")
         // The first column stays put while the grid scrolls sideways: the "1" cell keeps its x, "Party" moves.
         let first = app.staticTexts["Ada Marlow"].firstMatch
         let firstNum = table.staticTexts.matching(NSPredicate(format: "label == '#'")).firstMatch

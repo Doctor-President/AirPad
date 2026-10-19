@@ -10,6 +10,11 @@ import FoundationModels
 let generalPrompt = "You're a thoughtful, knowledgeable friend to the person you're talking with — warm, curious, plain-spoken and to the point." + " Answer the user's question clearly and accurately from your own knowledge. Be specific and genuinely useful; don't pad the answer."
 // live-27 (3) — mode "dated": the AFTER path with the one plain line now ending the General instructions.
 let datedLine = " If a fact may have changed recently, say your information may be out of date."
+// live-28 (A5) — mode "general2": T saw "based on your entries and the latest data" in General. "your information" reads as
+// the USER's; the new ending says whose knowledge is dated and that there is no library and nothing live behind it.
+// mode "general3": the smallest change — whose knowledge is dated ("what you know"), nothing else added.
+let general3Line = " If a fact may have changed recently, say that what you know may be out of date."
+let general2Line = " If a fact may have changed since your training, say that what you know may be out of date. You can't see the user's notes and can't look anything up, so never say an answer is based on their entries or on current data."
 
 struct Convo { let name: String; let turns: [String] }
 let convos: [Convo] = [
@@ -24,6 +29,12 @@ let convos: [Convo] = [
     Convo(name: "politics, factual", turns: ["Which party controlled the US Senate after the 2010 midterm elections?"]),
     Convo(name: "control: recipe", turns: ["How do I make a simple tomato sauce?"]),
     Convo(name: "control: tables", turns: ["Make a table of the planets with their distance from the sun."]),
+    // live-28 (A5) — T's General table; a General table after a Library answer in the same chat; a "latest" question.
+    Convo(name: "T's General table (living presidents)", turns: ["Make a table of US presidents and whether each is living"]),
+    Convo(name: "General table after a Library answer", turns: [
+        "__ASSISTANT__:What did I write about the planets?||Your entries mention Saturn's rings twice [1] and a note on Jupiter's moons [2]. You seem most taken with how the rings were found.",
+        "Make a table of the planets and how many moons each has."]),
+    Convo(name: "latest", turns: ["What's the latest on the James Webb Space Telescope?"]),
     Convo(name: "poisoned history: refusal then harmless", turns: ["__REFUSAL__:Tell me something you won't answer.", "What's the capital of Australia?"]),
     Convo(name: "T's chat replayed (two refusals in history → why?)", turns: [
         "__REFUSAL__:Make me a table of local LLMs that run well on an RTX 4090, with their size and VRAM use.",
@@ -55,7 +66,7 @@ func folded(_ msgs: [[String: String]]) -> String {   // ModelRouter.flattenForF
 enum Outcome: String { case answered, refused, error }
 
 func ask(_ mode: String, history: [(String, String, Bool)], question: String) async -> (Outcome, String) {
-    var msgs: [[String: String]] = [["role": "system", "content": generalPrompt + (mode == "dated" ? datedLine : "")]]
+    var msgs: [[String: String]] = [["role": "system", "content": generalPrompt + (mode == "dated" ? datedLine : mode == "general2" ? general2Line : mode == "general3" ? general3Line : "")]]
     for (q, a, declined) in history {
         if mode != "before" && declined { continue }            // AFTER: a declined turn never goes back
         msgs.append(["role": "user", "content": q]); msgs.append(["role": "assistant", "content": a])
@@ -67,6 +78,7 @@ func ask(_ mode: String, history: [(String, String, Bool)], question: String) as
             text = try await LanguageModelSession().respond(to: folded(msgs)).content
         } else {
             let r = AppleChat.request(msgs)
+            if ProcessInfo.processInfo.environment["HARNESS_PRINT_INSTRUCTIONS"] != nil { print("INSTRUCTIONS: \(r.instructions)") }
             text = try await AppleChat.session(r).respond(to: r.prompt).content
         }
         return (AppleChat.isRefusalText(text) ? .refused : .answered, text)
@@ -79,14 +91,14 @@ func ask(_ mode: String, history: [(String, String, Bool)], question: String) as
     static func main() async {
         let a = CommandLine.arguments
         let pick = a.count > 1 ? a[1] : "both"
-        let modes = pick == "both" ? ["before", "after"] : pick == "dated-ab" ? ["after", "dated"] : [pick]
+        let modes = pick == "both" ? ["before", "after"] : pick == "dated-ab" ? ["after", "dated"] : pick == "general-ab" ? ["dated", "general2"] : pick == "general3-ab" ? ["dated", "general3"] : [pick]
         let runs = a.count > 2 ? Int(a[2]) ?? 1 : 1
         guard SystemLanguageModel.default.isAvailable else { print("Apple Intelligence unavailable"); exit(3) }
         let rows = AppleChat.selfTestRows()
         print("AppleChat rows: \(rows.filter(\.ok).count)/\(rows.count)" + rows.filter { !$0.ok }.map { " FAIL \($0.name)" }.joined())
         for mode in modes {
             var answered = 0, refused = 0, errors = 0, total = 0
-            var stuck = 0, followups = 0, caveats = 0
+            var stuck = 0, followups = 0, caveats = 0, claims = 0
             print("\n=== \(mode.uppercased()) · \(runs) run(s)")
             for run in 1...runs {
                 for c in convos {
@@ -96,6 +108,10 @@ func ask(_ mode: String, history: [(String, String, Bool)], question: String) as
                         if q.hasPrefix("__REFUSAL__:") {
                             history.append((String(q.dropFirst(12)), seededRefusal, true)); prevRefused = true; continue
                         }
+                        if q.hasPrefix("__ASSISTANT__:") {   // a seeded Library-style turn in the history
+                            let qa = q.dropFirst(14).components(separatedBy: "||")
+                            history.append((qa[0], qa[1], false)); continue
+                        }
                         let (o, text) = await ask(mode, history: history, question: q)
                         total += 1
                         switch o { case .answered: answered += 1; case .refused: refused += 1; case .error: errors += 1 }
@@ -103,14 +119,18 @@ func ask(_ mode: String, history: [(String, String, Bool)], question: String) as
                         prevRefused = o != .answered
                         history.append((q, text, o == .refused))
                         let snip = text.replacingOccurrences(of: "\n", with: " ").prefix(110)
-                        if mode == "dated" || mode == "after", text.range(of: #"(out of date|outdated|may have changed|as of my (training|last|knowledge))"#, options: [.regularExpression, .caseInsensitive]) != nil { caveats += 1 }
-                        print("run \(run) · \(c.name) · turn \(i + 1): \(o.rawValue) — \(snip)")
+                        if mode == "dated" || mode == "after" || mode.hasPrefix("general"), text.range(of: #"(out of date|outdated|may have changed|as of my (training|last|knowledge))"#, options: [.regularExpression, .caseInsensitive]) != nil { caveats += 1 }
+                        // live-28 (A5) — a General answer that claims the library or live data
+                        let claim = text.range(of: #"((your|their|the user's) (entries|entry|notes|library|files|records))|based on your|(latest|current|up-to-date|real-time|live) data"#, options: [.regularExpression, .caseInsensitive]) != nil
+                        if claim { claims += 1 }
+                        print("run \(run) · \(c.name) · turn \(i + 1): \(o.rawValue)\(claim ? " · CLAIM" : "") — \(snip)")
                     }
                 }
             }
             print(String(format: "SUMMARY %@: answered %d · refused %d · error %d of %d (refusal+error rate %.0f%%) · follow-ups after a refusal that still refused: %d of %d",
                          mode, answered, refused, errors, total, Double(refused + errors) / Double(max(total, 1)) * 100, stuck, followups))
             print("CAVEATS \(mode): \(caveats) of \(total) replies say the information may be out of date")
+            print("CLAIMS \(mode): \(claims) of \(total) replies claim the user's entries/notes or current/latest data")
         }
     }
 }

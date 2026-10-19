@@ -122,6 +122,7 @@ struct LibrarianSurface: View {
 
     @Environment(\.accessibilityReduceMotion) private var reduceMotion
     @Environment(\.colorScheme) private var colorScheme   // live-23 (1) — glass controls are per mode
+    @Environment(\.colorSchemeContrast) private var colorSchemeContrast   // live-28 (4)
 
     @AppStorage(SolarFlareTuningKey.bloomOn) private var sfBloomOn: Bool = SolarFlareTuningDefaults.bloomOn
 
@@ -703,7 +704,9 @@ struct LibrarianSurface: View {
                         .opacity(Double(1 - p))
                     Image(systemName: "magnifyingglass")
                         .font(.system(size: 19, weight: .regular))
-                        .foregroundStyle(mangoGrad)
+                        // live-28 (4) — Increase Contrast in light: the pill's ink (Mango is 2.6:1 on the solid pill).
+                        .foregroundStyle(LibrarianPillChrome.searchMagnifierUsesInk(searchScheme, increaseContrast: colorSchemeContrast == .increased)
+                                         ? AnyShapeStyle(AppearancePalette.ink) : AnyShapeStyle(mangoGrad))
                         .opacity(Double(p))
                 }
                 .opacity(iconOpacity)
@@ -1874,9 +1877,12 @@ struct LibrarianSurface: View {
                     librarian.inputText = ""
                     isViewingActiveChat = true
                     panelModel.expandToFull(animated: true)
-                    Task { await librarian.groundedSend(query: text, store: store, chat: router.chat) }
+                    let chat = router.chat
+                    chat.startTurn { await librarian.groundedSend(query: text, store: store, chat: chat) }
                 },
-                dictationToken: "ask"
+                dictationToken: "ask",
+                isAnswering: router.chat.isStreaming,
+                onStop: { router.chat.stopAnswer() }
             )
             .frame(height: askLineHeight)
             .padding(.trailing, 10)

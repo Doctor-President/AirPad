@@ -463,6 +463,14 @@ struct ChatTranscript: View {
                 }
                 // Brief BN5 — "Read 1 entry in full · skimmed 6" / "Skimmed 9 entries".
                 readReceiptLine(message: message)
+                // live-28 (1) — an answer a cap or Stop ended early says so, under what arrived.
+                if let stop = message.stopped {
+                    Text(AnswerCap.line(for: stop))
+                        .font(appFont.font(size: 13, relativeTo: .footnote))
+                        .foregroundStyle(ChatTypography.secondaryText)
+                        .padding(.top, 1)
+                        .accessibilityIdentifier("chat.stopped")
+                }
                 // CH Session 2 — a General answer no web result backs says so (app chrome, not model text).
                 if message.generalKnowledge == true {
                     Text(message.datedKnowledge == true ? WebGrounding.datedKnowledgeNote : WebGrounding.generalKnowledgeNote)
@@ -869,9 +877,11 @@ struct ChatTranscript: View {
                     onSend: {
                         let text = input.trimmingCharacters(in: .whitespacesAndNewlines)
                         input = ""
-                        if let onSend { Task { await onSend(text) } } else { Task { await session.send(text) } }
+                        if let onSend { session.startTurn { await onSend(text) } } else { session.startTurn { await session.send(text) } }
                     },
-                    dictationToken: "chat"
+                    dictationToken: "chat",
+                    isAnswering: session.isStreaming,
+                    onStop: { session.stopAnswer() }
                 )
                 .frame(height: ComposerMetrics.fieldLineHeight)
                 .padding(.trailing, 10)

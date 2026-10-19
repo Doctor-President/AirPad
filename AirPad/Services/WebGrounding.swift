@@ -752,8 +752,11 @@ enum WebGroundingSelfTest {
         check("tool prompt: changing facts as of the training data, offer a search", tool.contains("as of my training data")
               && tool.contains("who holds an office") && tool.lowercased().contains("offer to search"))
         check("tool prompt: never 'as of <today>' without this turn's search result", tool.contains("Never write \"as of"))
-        check("general prompt (Apple + Host without a key): the dated-knowledge line",
-              LibrarianState.generalPromptBase.contains("If a fact may have changed recently, say your information may be out of date."))
+        // live-28 (A5) — "your information" read as the USER's (T: "based on your entries and the latest data"): the line
+        // says whose knowledge is dated, and General never mentions the user's information.
+        check("general prompt (Apple + Host without a key): the dated-knowledge line says what YOU know may be out of date",
+              LibrarianState.generalPromptBase.contains("If a fact may have changed recently, say that what you know may be out of date.")
+              && !LibrarianState.generalPromptBase.contains("your information"))
         // live-27 (3) — the gauntlet's DK1 (search off, qwen3:4b): the one line was ignored ("As of now (June 2024)", no
         // caveat). The Host without a key gets the full dated paragraph (Apple keeps the one plain line), and the app says
         // it under any current-state answer no search backs.

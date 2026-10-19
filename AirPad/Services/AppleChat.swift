@@ -123,7 +123,7 @@ extension AppleChat {
                                              reserveChars: 0, windowTokens: 4_096).count == 2))
         rows.append(("refusal-never-titles-a-chat", ChatSession.debugSanitizeTitle("Unable to work with that request") == nil
                      && ChatSession.debugSanitizeTitle("I cannot help with that") == nil
-                     && ChatSession.debugSanitizeTitle("US presidents by party") == "US presidents by party"))
+                     && ChatSession.debugSanitizeTitle("US presidents by party") == "US Presidents by Party"))
         rows.append(("decline-line-is-honest", declineLine.hasPrefix("Apple Intelligence declined this")
                      && declineLine.contains("switch model") && !declineLine.contains("general knowledge")))
         let fails = rows.filter { !$0.ok }.count

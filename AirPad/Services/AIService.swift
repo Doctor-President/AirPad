@@ -852,7 +852,8 @@ actor AIService {
         if !titleLeak.isEmpty || !summaryLeak.isEmpty {
             print("[AI] naming used term(s) absent from the entry — dropped title:\(!titleLeak.isEmpty) summary:\(!summaryLeak.isEmpty) terms=\(titleLeak + summaryLeak)")
         }
-        return NodeAIOutput(title: titleLeak.isEmpty ? title : "", summary: summaryLeak.isEmpty ? summary : "",
+        // live-28 (A3) — a model-written title is Title Case, in code (the summary stays sentence case).
+        return NodeAIOutput(title: titleLeak.isEmpty ? TitleCase.apply(title) : "", summary: summaryLeak.isEmpty ? summary : "",
                             tags: [], mood: nil, domain: nil, neighborhoodID: nil)
     }
 

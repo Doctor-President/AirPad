@@ -81,6 +81,10 @@ struct SettingsView: View {
     @State private var openAIKey = ""
     @State private var deepSeekKey = ""
     @State private var braveSearchKey = ""
+    @State private var tavilySearchKey = ""   // live-28 (A2)
+    /// live-28 (A2) — Web search on/off (the keys stay in the Keychain) and the provider.
+    @AppStorage(WebSearchBackend.enabledKey) private var webSearchEnabled = true
+    @AppStorage(WebSearchBackend.providerKey) private var webSearchProvider = WebSearchBackend.Provider.brave.rawValue
     @State private var ollamaEndpoint = ""
     // Optional bearer token sent as `Authorization: Bearer <token>` on every request to
     // the endpoint above. Empty = today's behavior (no auth header). Needed for the
@@ -560,11 +564,33 @@ struct SettingsView: View {
         submenuScroll(header: { submenuHeader(icon: "magnifyingglass", tint: "2E9E4F", title: "Web search",
             blurb: "Lets the Librarian look things up in General mode.") }) {
             VStack(alignment: .leading, spacing: 6) {
-                apiKeyField(label: "Brave Search API key", placeholder: "BSA...", text: $braveSearchKey)
-                Text("Web search uses Brave's Search API. Brave gives a monthly credit that covers normal use, but needs an account with a card on file. Paste your key here.")
-                    .font(appFont.font(size: 12, relativeTo: .caption1)).foregroundStyle(AppearancePalette.ink.opacity(0.4))
-                Link("Get a Brave Search API key", destination: URL(string: "https://brave.com/search/api/")!)
-                    .font(appFont.font(size: 12, weight: .semibold, relativeTo: .caption1)).tint(Color(hexString: "E8820A"))
+                // live-28 (A2) — off keeps every key: General then answers as with no key (no search, the dated line).
+                Toggle("Web search", isOn: $webSearchEnabled)
+                    .font(appFont.font(size: 15, relativeTo: .body))
+                    .accessibilityIdentifier("settings.webSearchSwitch")
+                if webSearchEnabled {
+                    Picker("Provider", selection: $webSearchProvider) {
+                        ForEach(WebSearchBackend.Provider.allCases, id: \.rawValue) { Text($0.label).tag($0.rawValue) }
+                    }
+                    .pickerStyle(.segmented)
+                    .accessibilityIdentifier("settings.webSearchProvider")
+                    if webSearchProvider == WebSearchBackend.Provider.tavily.rawValue {
+                        apiKeyField(label: "Tavily API key", placeholder: "tvly-...", text: $tavilySearchKey)
+                        Text("Tavily's free plan covers 1,000 searches a month and needs no card. Paste your key here.")
+                            .font(appFont.font(size: 12, relativeTo: .caption1)).foregroundStyle(AppearancePalette.ink.opacity(0.4))
+                        Link("Get a free Tavily key", destination: URL(string: "https://app.tavily.com")!)
+                            .font(appFont.font(size: 12, weight: .semibold, relativeTo: .caption1)).tint(Color(hexString: "E8820A"))
+                    } else {
+                        apiKeyField(label: "Brave Search API key", placeholder: "BSA...", text: $braveSearchKey)
+                        Text("Web search uses Brave's Search API. Brave gives a monthly credit that covers normal use, but needs an account with a card on file. Paste your key here.")
+                            .font(appFont.font(size: 12, relativeTo: .caption1)).foregroundStyle(AppearancePalette.ink.opacity(0.4))
+                        Link("Get a Brave Search API key", destination: URL(string: "https://brave.com/search/api/")!)
+                            .font(appFont.font(size: 12, weight: .semibold, relativeTo: .caption1)).tint(Color(hexString: "E8820A"))
+                    }
+                } else {
+                    Text("Off: the Librarian answers General questions from the model's own knowledge and never searches. Your keys are kept.")
+                        .font(appFont.font(size: 12, relativeTo: .caption1)).foregroundStyle(AppearancePalette.ink.opacity(0.4))
+                }
             }
         }
     }
@@ -1422,6 +1448,7 @@ struct SettingsView: View {
             deepSeekKey    = KeychainHelper.load(key: "deepSeekAPIKey")    ?? ""
         }
         braveSearchKey = KeychainHelper.load(key: WebSearchBackend.keychainKey) ?? ""
+        tavilySearchKey = KeychainHelper.load(key: WebSearchBackend.tavilyKeychainKey) ?? ""
         ollamaEndpoint = KeychainHelper.load(key: "ollamaEndpoint")    ?? ""
         ollamaAPIToken = KeychainHelper.load(key: "ollamaAPIToken")    ?? ""
         hostPairing    = HostPairing.load()
@@ -1434,6 +1461,7 @@ struct SettingsView: View {
             persistKey("deepSeekAPIKey",  value: deepSeekKey)
         }
         persistKey(WebSearchBackend.keychainKey, value: braveSearchKey)
+        persistKey(WebSearchBackend.tavilyKeychainKey, value: tavilySearchKey)
         persistKey("ollamaEndpoint",  value: ollamaEndpoint)
         persistKey("ollamaAPIToken",  value: ollamaAPIToken)
     }

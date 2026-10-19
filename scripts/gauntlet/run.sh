@@ -56,6 +56,10 @@ SCR=${GAUNTLET_SCRATCH:-${TMPDIR:-/tmp}/gauntlet-host-$$}; mkdir -p "$SCR"   # H
 log() { print -r -- "[gauntlet $(date +%H:%M:%S)] $*" | tee -a "$RUN_DIR/run.log"; }
 START=$(date +%s)
 
+# ── 0. live-28 (2): never start a gauntlet under 30 GB free (live-27 took the Mac to 0 bytes mid-run) ───────────
+$AIRPAD/scripts/disk/disk_hygiene.sh --check ${GAUNTLET_MIN_FREE_GB:-30} | tee -a "$RUN_DIR/run.log"
+(( ${pipestatus[1]} == 0 )) || { log "STOP: not enough free disk for a gauntlet — run scripts/disk/disk_hygiene.sh, then report"; exit 1; }
+
 # ── 1. T's real Host: record, then quit ──────────────────────────────────────────────────────────
 curl -s $OLL/api/ps > "$RUN_DIR/residency-before.json" 2>/dev/null || echo '{}' > "$RUN_DIR/residency-before.json"
 cp ~/.airpad-host/residency.json "$RUN_DIR/held-before.json" 2>/dev/null || echo '{}' > "$RUN_DIR/held-before.json"   # which were HELD (live-18 0a)

@@ -635,6 +635,16 @@ struct AppearanceTunerSheet<G: Gesture>: View {
              id: "tunerFadeMatchFluted") {
             set { $0.fadeLength = m.length; $0.fadeCurve = m.curve; $0.fadeIntoBody = m.intoBody }
         }
+        // live-28 (A1) — light only: Today / A / B (the App Store build keeps Today until you pick).
+        if !dark {
+            Picker("Light fade", selection: Binding(get: { tuner.state.lightFade }, set: { tuner.state.lightFade = $0 })) {
+                ForEach(LightFadeMode.allCases) { Text($0.label).tag($0) }
+            }
+            .pickerStyle(.segmented)
+            .accessibilityIdentifier("tunerLightFade")
+            note("Light fade. Today: the veil behind the card text starts inside the hero zone. A: only a soft band behind the "
+                 + "dateline; above it, your fade alone. B: A, and the fade holds the photo longer, then falls faster.")
+        }
         note(String(format: "The photo runs %.0f%% past the hero zone and fades over %.0f%% of it. Fade into body carries it down "
                     + "toward the title block (100%% = to its bottom). Match fluted = the fluted cards' measured fade.",
                     CardHeroFade.run(f) * 100, f.length * 100))

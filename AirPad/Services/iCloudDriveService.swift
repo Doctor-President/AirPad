@@ -254,7 +254,10 @@ actor iCloudDriveService {
             let q = "What connections do you find between my ideas?"
             let chat = Chat(id: UUID(), title: q, createdAt: now, updatedAt: now, messages: [
                 ChatSession.Message(role: .user, text: q),
-                ChatSession.Message(role: .assistant, text: "A seeded answer for the Chats-list tests.")
+                // live-28 (3) — the answer cites the seeded entry, so the Chat view's citation tap has something to open.
+                ChatSession.Message(role: .assistant, text: "A seeded answer for the Chats-list tests [1].",
+                                    citations: [.init(index: 1, nodeID: "uitest-seed-entry", title: "Seeded entry",
+                                                      snippet: "An entry to pin a chat to.")])
             ])
             try? JSONEncoder.airPad.encode([chat]).write(to: chatsURL, options: .atomic)
         }

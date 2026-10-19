@@ -14,6 +14,8 @@ struct ChatView: View {
     @Environment(\.scenePhase) private var scenePhase
     @State private var didRestoreOnAppear: Bool = false
     @State private var showingPinSheet: Bool = false
+    /// live-28 (3) — the entry a citation opened, pushed on this chat's own stack (Back returns to the chat).
+    @State private var openedNodeID: String?
 
     private var session: ChatSession { router.chat }
     private var isPinned: Bool { store.nodePinned(forChatID: session.id) != nil }
@@ -24,9 +26,14 @@ struct ChatView: View {
             // live-27 (4b) — the Librarian's General / Library toggle (it replaces the "Private" label, which meant only
             // "no library": every route — the Mac, Apple Intelligence, a server — answered it) and the Librarian's send,
             // so a turn here routes exactly as it would in the Librarian (they share the conversation and the setting).
+            // live-28 (3) — a citation (inline marker or source row) opens its entry, as in the Librarian.
             ChatTranscript(session: session,
+                           onOpenNode: { openedNodeID = $0 },
                            leadingControl: AnyView(CorpusModeToggle(librarian: router.librarian, identifier: "chat.scopeToggle")),
                            onSend: { text in await router.librarian.groundedSend(query: text, store: store, chat: session) })
+        }
+        .navigationDestination(item: $openedNodeID) { nodeID in
+            NodeDetailView(nodeID: nodeID)
         }
         .task {
             guard !didRestoreOnAppear else { return }

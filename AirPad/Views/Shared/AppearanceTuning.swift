@@ -302,6 +302,8 @@ struct AppearanceTuningState: Codable, Equatable {
     /// live-26 (3d) / live-27 (0) — T chose Glass (2026-10-18 (b)): the tuner starts there and the App Store build
     /// renders it (`FloatingButtonsStyle.bakedGlass`); Today stays in the tuner.
     var floatingButtons: FloatingButtonsMode = .glass
+    /// live-28 (A1) — the TestFlight tuner starts on B.
+    var lightFade: LightFadeMode = .perceptual
     static let defaults = AppearanceTuningState(light: .lightDefault, dark: .darkDefault)
 
     init(light: AppearanceTuningValues, dark: AppearanceTuningValues, cardContent: CardContentMode = .proposal,
@@ -316,6 +318,7 @@ struct AppearanceTuningState: Codable, Equatable {
         cardContent = try c.decodeIfPresent(CardContentMode.self, forKey: .cardContent) ?? .proposal
         captureControls = try c.decodeIfPresent(CaptureControlsMode.self, forKey: .captureControls) ?? .glass
         floatingButtons = try c.decodeIfPresent(FloatingButtonsMode.self, forKey: .floatingButtons) ?? .glass
+        lightFade = try c.decodeIfPresent(LightFadeMode.self, forKey: .lightFade) ?? .perceptual
     }
 }
 
@@ -572,7 +575,7 @@ extension AppearanceTuning {
             ]
             return "{" + parts.joined(separator: ",") + "}"
         }
-        return "{\"airpadAppearance\":1,\"build\":\"\(build)\",\"editing\":\"\(mode)\",\"cardContent\":\"\(s.cardContent.rawValue)\",\"captureControls\":\"\(s.captureControls.rawValue)\",\"floatingButtons\":\"\(s.floatingButtons.rawValue)\","
+        return "{\"airpadAppearance\":1,\"build\":\"\(build)\",\"editing\":\"\(mode)\",\"cardContent\":\"\(s.cardContent.rawValue)\",\"captureControls\":\"\(s.captureControls.rawValue)\",\"floatingButtons\":\"\(s.floatingButtons.rawValue)\",\"lightFade\":\"\(s.lightFade.rawValue)\","
             + "\"light\":\(block(s.light, dark: false)),\"dark\":\(block(s.dark, dark: true))}"
     }
 }
@@ -611,7 +614,7 @@ extension AppearanceTuning {
         guard let l = block(top["light"] as? [String: Any], dark: false), let d = block(top["dark"] as? [String: Any], dark: true)
         else { return nil }
         var st: [String: Any] = ["light": l, "dark": d]
-        for k in ["cardContent", "captureControls", "floatingButtons"] { if let v = top[k] { st[k] = v } }
+        for k in ["cardContent", "captureControls", "floatingButtons", "lightFade"] { if let v = top[k] { st[k] = v } }
         guard let data = try? JSONSerialization.data(withJSONObject: st) else { return nil }
         return try? JSONDecoder().decode(AppearanceTuningState.self, from: data)
     }
@@ -1056,11 +1059,32 @@ extension AppearanceTuning {
             // Copy values at the defaults → T's file, every key (build + editing are the session's, not values).
             let back = (try? JSONSerialization.jsonObject(with: Data(exportJSON(.defaults, editing: "dark", build: "202610180346").utf8)))
             let file = try? JSONSerialization.jsonObject(with: Data(t18b.utf8))
-            // T's (b) file has every key this build writes (fadeIntoBody, floatingButtons included): all compared, none added.
-            let d = keyDiff(back, file, "")
+            // T's (b) file has every key this build writes (fadeIntoBody, floatingButtons included): all compared, none added
+            // — except live-28 (A1)'s `lightFade`, which the file predates (its own rows below).
+            let d = keyDiff(back, file, "", ["lightFade"])
             row("copy-values-at-defaults-is-T's-1018b-file", d.isEmpty, d.joined(separator: "; "))
         } else {
             row("reset-is-T's-1018b-values", false, "the paste didn't import")
+        }
+
+        // live-28 (A1) — light fade Today / A / B: the tuner starts on B, the App Store build stays Today until T picks;
+        // Copy values carries it; A and B drop the full-width veil (above the dateline the photo is T's fade alone) and
+        // protect the dateline with a band that reaches at most 8 pt above its row; B holds the photo longer, same end.
+        row("light-fade-tuner-B-app-store-today", AppearanceTuningState.defaults.lightFade == .perceptual
+            && CardHeroFade.bakedLightMode == .today && LightFadeMode.allCases.map(\.label) == ["Today", "A", "B"])
+        do {
+            var st = AppearanceTuningState.defaults; st.lightFade = .band
+            let j = exportJSON(st, editing: "light", build: "x")
+            row("copy-values-carries-lightFade", j.contains("\"lightFade\":\"band\"") && importExport(j)?.lightFade == .band, String(j.prefix(160)))
+        }
+        do {
+            var plain = CardHeroFade.bakedLight; plain.scrim = 0
+            var b = plain; b.perceptual = true
+            let ys = (0...100).map { Double($0) / 100 }
+            let holds = ys.allSatisfy { CardHeroFade.alpha(b, at: $0) >= CardHeroFade.alpha(plain, at: $0) - 1e-9 }
+            row("B-holds-the-photo-longer-and-ends-where-T's-fade-ends", holds && CardHeroFade.alpha(b, at: 1) < 1e-6
+                && CardHeroFade.alpha(b, at: CardHeroFade.fadeTop(b)) == 1)
+            row("A/B-band-feather-at-most-8pt-above-the-row", CardHeroFade.bandFeather <= 8)
         }
 
         // live-26 (3c) — "Fade into body": 0 is the pre-live-26 mask exactly; 100% ends the photo at 1.6 zones; "Match
@@ -1136,6 +1160,16 @@ extension AppearanceTuning {
         row("increase-contrast-pills-solid-too", LibrarianGlassAccessibility.pillIsSolid(reduceTransparency: false, increaseContrast: true)
             && LibrarianGlassAccessibility.pillIsSolid(reduceTransparency: true, increaseContrast: false)
             && !LibrarianGlassAccessibility.pillIsSolid(reduceTransparency: false, increaseContrast: false))
+        // live-28 (4) — Increase Contrast only: the light open-search magnifier takes the ink (≥ 3:1 on the solid pill).
+        do {
+            let fill = rgb(LibrarianGlassAccessibility.solidHex(dark: false))
+            let ink = ratio(rgb(LibrarianPillChrome.inkHex(.light)), fill), mango = ratio(rgb("E8820A"), fill)
+            row("increase-contrast-light-magnifier-is-ink", LibrarianPillChrome.searchMagnifierUsesInk(.light, increaseContrast: true)
+                && ink >= 3 && !LibrarianPillChrome.searchMagnifierUsesInk(.light, increaseContrast: false)
+                && !LibrarianPillChrome.searchMagnifierUsesInk(.dark, increaseContrast: true)
+                && !LibrarianPillChrome.searchMagnifierUsesInk(.dark, increaseContrast: false),
+                String(format: "ink %.2f · Mango %.2f on #FBF9F5", ink, mango))
+        }
         row("floating-buttons-solid-under-reduce-transparency-and-increase-contrast",
             FloatingButtonsStyle.isOn(chosen: true, reduceTransparency: false, increaseContrast: false)
             && !FloatingButtonsStyle.isOn(chosen: true, reduceTransparency: true, increaseContrast: false)

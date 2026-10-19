@@ -320,6 +320,9 @@ enum LibrarianPillChrome {
     static func peekMagnifierOpacity(_ scheme: ColorScheme) -> Double { sweep("PillMagnifierOpacity", scheme) ?? (scheme == .light ? 0.9 : 0.85) }   // light: was 0.85 (2.87:1); 0.90 = 3.07
     /// The "Search" / "Ask" placeholders' ink opacity (nil = the system placeholder colour).
     static func placeholderOpacity(_ scheme: ColorScheme) -> Double? { sweep("PillPlaceholderOpacity", scheme) ?? (scheme == .light ? 0.8 : 0.55) }   // was the system colour (1.6 / 2.0:1); light 0.75 = 4.45
+    /// live-28 (4) — the open search pill's magnifier under Increase Contrast in light takes the pill's ink (Mango on the
+    /// solid light pill measured 2.09:1; ink is 15:1). Everyone else keeps Mango (T: "keep it").
+    static func searchMagnifierUsesInk(_ scheme: ColorScheme, increaseContrast: Bool) -> Bool { increaseContrast && scheme == .light }
     /// Send / feather / mic / stop: light → solid Klein (the cyan top of the gradient is ~1.8:1 on a light pill).
     static func accentIsSolidKlein(_ scheme: ColorScheme) -> Bool { scheme == .light }
     /// DEBUG `-<key>Light 0.75` / `-<key>Dark 0.55`: an opacity sweep for the contrast stills. Nil otherwise.

@@ -130,7 +130,8 @@ struct NodeCardView: View {
 
     private static let inkTitle = ink(cream, 0.98)
     private static let inkDeck  = ink(cream, 0.86)
-    private static let inkMeta  = AppearancePalette.cardMetaInk(0.68)   // live-27 (1): light reaches AA
+    private static let inkMetaOpacity: CGFloat = 0.68
+    private static let inkMeta  = AppearancePalette.cardMetaInk(inkMetaOpacity)   // live-27 (1): light reaches AA
     private static let inkOverflow = AppearancePalette.cardMetaInk(0.68 * 0.85)
     private static let hairline = ink(creamHair, 0.22)
 
@@ -250,6 +251,8 @@ struct NodeCardView: View {
                         #if DEBUG
                         .opacity(UserDefaults.standard.bool(forKey: "CardHideText") ? 0 : 1)   // live-26 (3c): backdrop-only stills
                         #endif
+                        // live-28 (A1) — light A / B: the band behind the dateline (under the text, kept in backdrop stills)
+                        .backgroundPreferenceValue(DatelineRowKey.self) { DatelineBand(anchor: hasHero ? $0 : nil) }
                     sheen
                 }
                 // Pin the face to the GeometryReader's proposal. Without this the
@@ -504,17 +507,18 @@ struct NodeCardView: View {
                     Text(category)
                         .font(cardFont(12 * fs))
                         .italic()
-                        .foregroundColor(Self.inkMeta)
+                        .foregroundColor(AppearancePalette.cardDatelineInk(Self.inkMetaOpacity))
                         .lineLimit(1)
                 }
                 Spacer(minLength: 8)
                 Text(node.relativeTimestamp.uppercased())
                     .font(cardFont(10 * fs))
                     .tracking(2.2)
-                    .foregroundColor(Self.inkMeta)
+                    .foregroundColor(AppearancePalette.cardDatelineInk(Self.inkMetaOpacity))
                     .lineLimit(1)
             }
             .shadow(color: inkHalo.opacity(0.4), radius: 2, x: 0, y: 1)
+            .anchorPreference(key: DatelineRowKey.self, value: .bounds) { $0 }   // live-28 (A1): the band behind it
 
             Rectangle()
                 .fill(Self.hairline)
@@ -640,13 +644,14 @@ struct NodeCardView: View {
         return VStack(alignment: .leading, spacing: 0) {
             HStack(alignment: .firstTextBaseline, spacing: 8) {
                 if let category = node.primaryTag {
-                    Text(category).font(cardFont(12 * fs)).italic().foregroundColor(Self.inkMeta).lineLimit(1)
+                    Text(category).font(cardFont(12 * fs)).italic().foregroundColor(AppearancePalette.cardDatelineInk(Self.inkMetaOpacity)).lineLimit(1)
                 }
                 Spacer(minLength: 8)
                 Text(node.relativeTimestamp.uppercased())
-                    .font(cardFont(10 * fs)).tracking(2.2).foregroundColor(Self.inkMeta).lineLimit(1)
+                    .font(cardFont(10 * fs)).tracking(2.2).foregroundColor(AppearancePalette.cardDatelineInk(Self.inkMetaOpacity)).lineLimit(1)
             }
             .shadow(color: inkHalo.opacity(0.4), radius: 2, x: 0, y: 1)
+            .anchorPreference(key: DatelineRowKey.self, value: .bounds) { $0 }   // live-28 (A1): the band behind it
 
             Rectangle().fill(Self.hairline).frame(height: 0.5).padding(.top, 8).padding(.bottom, 12)
 

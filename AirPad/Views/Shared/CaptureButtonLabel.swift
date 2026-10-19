@@ -58,12 +58,12 @@ struct CanvasCircleButtonLabel: View {
     }
 }
 
-/// live-26 (3d) — which floating buttons render. An App Store build renders Today (`bakedGlass`) until T confirms Glass on
-/// device; DEBUG / TestFlight read the tuner's "Floating buttons" switch (and DEBUG `-FloatingButtons glass|today`, for
+/// live-26 (3d) — which floating buttons render. An App Store build renders Glass (`bakedGlass`, T's call 2026-10-18 (b),
+/// live-27 (0)); DEBUG / TestFlight read the tuner's "Floating buttons" switch (and DEBUG `-FloatingButtons glass|today`, for
 /// the stills). Reduce Transparency and Increase Contrast always get Today's solid discs.
 enum FloatingButtonsStyle {
     enum Role { case primary, secondary }
-    static let bakedGlass = false
+    static let bakedGlass = true
     static var glassChosen: Bool {
         #if DEBUG
         if let forced = UserDefaults.standard.string(forKey: "FloatingButtons") { return forced == "glass" }

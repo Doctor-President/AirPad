@@ -45,8 +45,10 @@ struct CardShowcaseGallery: View {
         switch kind {
         case "coverflow":
             // The carousel face: 0.79 × width, 1.95 × that tall (clamped to 640 on a Pro Max), shown at 0.6.
+            // live-27 (1) — `-CardShowcaseFull YES`: one card per page at its real size (the meta-ink measurements).
             let w = W * 0.79, h = min(w * CGFloat(CardTuningDefaults.value(.carousel, .height)), 640)
-            pageGrid(columns: 2, rows: 2, cell: CGSize(width: w, height: h), scale: 0.6) { node in
+            let full = UserDefaults.standard.bool(forKey: "CardShowcaseFull")
+            pageGrid(columns: full ? 1 : 2, rows: full ? 1 : 2, cell: CGSize(width: w, height: h), scale: full ? 1 : 0.6) { node in
                 NodeCardView(nodeID: node.id, fallbackNode: node, animateEntry: false, presentation: .carousel)
             }
         case "vertical":

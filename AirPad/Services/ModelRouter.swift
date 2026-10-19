@@ -394,8 +394,26 @@ enum ModelRouter {
                         return
                     }
                     #endif
+                    #if DEBUG
+                    // live-27 (4) — `-StubAnswerModels "apple,qwen3:4b-instruct-2507-q4_K_M"`: the n-th answer of the
+                    // launch comes from the n-th entry (cycling), "apple" = Apple Intelligence, anything else = that tag
+                    // on the Host — a model switch mid-chat, deterministic, with no Mac (the provenance UI row).
+                    if let list = UserDefaults.standard.string(forKey: "StubAnswerModels"), !list.isEmpty {
+                        let models = list.split(separator: ",").map { String($0).trimmingCharacters(in: .whitespaces) }
+                        let pick = models[stubAnswerCount % models.count]; stubAnswerCount += 1
+                        lastAnswerSource = pick == "apple" ? AnswerSource(route: .apple, model: foundationModelName)
+                                                           : AnswerSource(route: .host, model: pick)
+                        try await Task.sleep(for: .milliseconds(300))
+                        let who = pick == "apple" ? foundationModelName : pick
+                        for w in "This answer was written by \(who) (stub).".split(separator: " ") {
+                            continuation.yield(.answer(String(w) + " ")); try await Task.sleep(for: .milliseconds(30))
+                        }
+                        continuation.finish(); return
+                    }
+                    #endif
                     switch active {
                     case .foundationModel:
+                        lastAnswerSource = AnswerSource(route: .apple, model: foundationModelName)
                         #if DEBUG
                         if UserDefaults.standard.bool(forKey: "StubOnDeviceModel") {
                             try await Task.sleep(for: .milliseconds(400))
@@ -842,6 +860,7 @@ enum ModelRouter {
             throw RouterError.ollamaBadEndpoint(endpoint)
         }
         let modelName = try await firstOllamaModel(base: base)
+        lastAnswerSource = AnswerSource(route: .server, model: modelName)   // live-27 (4)
 
         let path = "v1/chat/completions"
         var request = URLRequest(url: base.appendingPathComponent(path))
@@ -1102,6 +1121,20 @@ enum ModelRouter {
     /// a preference, not a secret.
     /// The model tag the last Host chat request actually put on the wire (nil before the first one).
     nonisolated(unsafe) static var lastWireModel: String? = nil
+
+    /// live-27 (4) — who is writing the answer being streamed: every ANSWER path sets it just before its request goes
+    /// out (the route + the model tag put on the wire); `ChatSession` reads it when it commits the answer into the
+    /// message's provenance. Titles / enrichment go through `generate`, which never sets it.
+    struct AnswerSource: Equatable, Sendable { var route: ChatProvenance.Route; var model: String }
+    private static let answerLock = NSLock()
+    #if DEBUG
+    nonisolated(unsafe) static var stubAnswerCount = 0
+    #endif
+    nonisolated(unsafe) private static var _lastAnswerSource: AnswerSource?
+    static var lastAnswerSource: AnswerSource? {
+        get { answerLock.lock(); defer { answerLock.unlock() }; return _lastAnswerSource }
+        set { answerLock.lock(); _lastAnswerSource = newValue; answerLock.unlock() }
+    }
     private static let userPickedHostModelKey = "airpadUserPickedHostModel"
     static var userPickedHostModel: String? {
         get { UserDefaults.standard.string(forKey: userPickedHostModelKey) }
@@ -1195,6 +1228,7 @@ enum ModelRouter {
         }
         #endif
         lastWireModel = model   // the prefill-speed estimate is per model (T ruling 2026-10-09)
+        lastAnswerSource = AnswerSource(route: .host, model: model)   // live-27 (4)
         #if DEBUG
         GauntletTap.shared.noteModel(model)   // Brief CH-0 — the tag actually put on the wire
         #endif
@@ -1420,6 +1454,7 @@ enum ModelRouter {
         // false, so a reasoning model never reasoned on the agent path). With `think` on, the
         // Host routes the thought process to the reasoning channel (rendered live via
         // `onReasoningDelta`), leaving the answer clean.
+        lastAnswerSource = AnswerSource(route: .host, model: model)   // live-27 (4)
         var body: [String: Any] = ["model": model, "stream": true, "think": think, "messages": Self.nativizeToolMessages(messages)]
         if let tools { body["tools"] = tools }
         let (bytes, session) = try await withAskLoad(pairing: pairing, model: model) {
@@ -1705,6 +1740,7 @@ extension ModelRouter {
         request.httpMethod = "POST"
         request.setValue("application/json", forHTTPHeaderField: "Content-Type")
         applyEndpointAuth(&request)
+        lastAnswerSource = AnswerSource(route: .server, model: model)   // live-27 (4)
         var body: [String: Any] = ["model": model, "stream": true, "messages": messages]
         if let tools { body["tools"] = tools }
         request.httpBody = try JSONSerialization.data(withJSONObject: body)

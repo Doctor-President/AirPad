@@ -21,7 +21,12 @@ struct ChatView: View {
     var body: some View {
         ZStack {
             AppearancePalette.bgBase.ignoresSafeArea()
-            ChatTranscript(session: session)
+            // live-27 (4b) — the Librarian's General / Library toggle (it replaces the "Private" label, which meant only
+            // "no library": every route — the Mac, Apple Intelligence, a server — answered it) and the Librarian's send,
+            // so a turn here routes exactly as it would in the Librarian (they share the conversation and the setting).
+            ChatTranscript(session: session,
+                           leadingControl: AnyView(CorpusModeToggle(librarian: router.librarian, identifier: "chat.scopeToggle")),
+                           onSend: { text in await router.librarian.groundedSend(query: text, store: store, chat: session) })
         }
         .task {
             guard !didRestoreOnAppear else { return }

@@ -115,8 +115,9 @@ struct AppearanceTuningValues: Codable, Equatable {
         CardHeroFade.Shape(length: fadeLength, curve: fadeCurve, overshoot: CardHeroFade.bakedLight.overshoot, intoBody: fadeIntoBody)
     }
 
-    /// ★ live-26 (1) — T's final tuning (2026-10-18, TF 202610171546, Ops `reference/appearance-tuning-2026-10-18.md`),
-    /// verbatim = Reset = what ships. Light: L2 · F2, the shadow at 50% with radius 24, the hairline 0.5 pt @ 0.25; the
+    /// ★ live-26 (1) / live-27 (0) — T's tuning (2026-10-18 (b), TF 202610180346, Ops
+    /// `reference/appearance-tuning-2026-10-18-b.md`), verbatim = Reset = what ships. The hero fade over 39% of the zone,
+    /// curve 0.5, carried 14% into the body. Light: L2 · F2, the shadow at 50% with radius 24, the hairline 0.5 pt @ 0.25; the
     /// Librarian on Liquid Glass (Regular, off-white #FBF9F5 at 20%, veil 30%) with a panel grade 0.10 → 0.75, the
     /// content behind dimmed 10.5%; the pills as `LibrarianGlassLook.shippedLight`. The frost numbers (tint 0.51,
     /// blur 0.58, saturation 0.4) are kept as T left them; they show only if the panel is switched to Frost.
@@ -124,19 +125,19 @@ struct AppearanceTuningValues: Codable, Equatable {
         palette: "L2", fieldStep: 1, shadowStrength: 0.5, shadowRadius: 24,
         hairline: true, hairlineWidth: 0.5, hairlineOpacity: 0.25,
         panel: .custom, tintOpacity: 0.51, blur: 0.58, saturation: 0.4, glassControls: true,
-        dimBehind: true, dimAmount: 0.105, fadeLength: 0.6, fadeCurve: 1,
+        dimBehind: true, dimAmount: 0.105, fadeLength: 0.39, fadeCurve: 0.5, fadeIntoBody: 0.14,
         panelMode: .glass, glass: LibrarianGlassLook.shippedLight.panelGlass!, panelGrade: LibrarianGlassLook.shippedLight.panelGrade,
         peekPill: .shippedLightPeek, searchPill: .shippedLightSearch, askPill: .t1018LightAskStored, askMatchesSearch: true)
 
     /// ★ live-26 (1) — dark: the field half a step lighter (#1A1A1A), the shadow as before, a white hairline 1 pt @ 12% on
     /// every edge; the Librarian on Liquid Glass (Regular, near-black #0A0A0A at 20%, veil 30%) with a panel grade
-    /// 0.73 → 0.32, nothing dimmed; the hero fade over 35%, nearly linear (curve 0.15). The frost numbers (tint 0.5, blur
+    /// 0.73 → 0.32, nothing dimmed; the hero fade over 35%, nearly linear (curve 0.15), carried 18% into the body. The frost numbers (tint 0.5, blur
     /// 1.53, saturation 0.4) and the dim amount (0.20, with dim off) are kept but don't render.
     static let darkDefault = AppearanceTuningValues(
         palette: "L2", fieldStep: 0.5, shadowStrength: 1, shadowRadius: 12,
         hairline: true, hairlineWidth: 1, hairlineOpacity: 0.12,
         panel: .custom, tintOpacity: 0.5, blur: 1.53, saturation: 0.4, glassControls: true,
-        dimBehind: false, dimAmount: 0.20, fadeLength: 0.35, fadeCurve: 0.15,
+        dimBehind: false, dimAmount: 0.20, fadeLength: 0.35, fadeCurve: 0.15, fadeIntoBody: 0.18,
         panelMode: .glass, glass: LibrarianGlassLook.shippedDark.panelGlass!, panelGrade: LibrarianGlassLook.shippedDark.panelGrade,
         peekPill: .shippedDarkPeek, searchPill: .shippedDarkSearch, askPill: .t1018DarkAskStored, askMatchesSearch: true)
 
@@ -298,8 +299,8 @@ struct AppearanceTuningState: Codable, Equatable {
     var dark: AppearanceTuningValues
     var cardContent: CardContentMode = .proposal
     var captureControls: CaptureControlsMode = .glass
-    /// live-26 (3d) — T agreed the direction, so the TestFlight tuner starts on Glass; the App Store build stays Today
-    /// (`FloatingButtonsStyle.bakedGlass`) until T confirms it on device.
+    /// live-26 (3d) / live-27 (0) — T chose Glass (2026-10-18 (b)): the tuner starts there and the App Store build
+    /// renders it (`FloatingButtonsStyle.bakedGlass`); Today stays in the tuner.
     var floatingButtons: FloatingButtonsMode = .glass
     static let defaults = AppearanceTuningState(light: .lightDefault, dark: .darkDefault)
 
@@ -692,13 +693,17 @@ extension AppearanceTuning {
 
         // live-23 (3) — the hero photo's fade into the card body: longer and eased, like the fluted cards' blend.
         let F = CardHeroFade.self, fb = F.bakedLight
-        row("hero-fade-baked-0.60-of-the-zone-smoothstep-past-the-edge-0.10",
-            close(fb.length, 0.60) && close(fb.curve, 1) && close(fb.overshoot, 0.10), "\(fb)")
-        // A quarter of the way into the fade the photo is still mostly there (eased, not a linear ramp).
-        let fadeTop = 1 - fb.length / (1 + fb.overshoot)
-        let quarter = F.alpha(fb, at: fadeTop + (1 - fadeTop) * 0.25), half = F.alpha(fb, at: fadeTop + (1 - fadeTop) * 0.5)
+        // live-27 (0) — T's light fade (10-18 (b)): over 39% of the zone, curve 0.5, carried 14% into the body.
+        row("hero-fade-baked-light-0.39-curve-0.5-into-0.14-past-the-edge-0.10",
+            close(fb.length, 0.39) && close(fb.curve, 0.5) && close(fb.intoBody, 0.14) && close(fb.overshoot, 0.10), "\(fb)")
+        // The easing itself, on live-23's smoothstep shape: a quarter of the way into the fade the photo is still mostly
+        // there (eased, not a linear ramp).
+        let e = CardHeroFade.Shape(length: 0.60, curve: 1, overshoot: 0.10)
+        let fadeTop = 1 - e.length / (1 + e.overshoot)
+        let quarter = F.alpha(e, at: fadeTop + (1 - fadeTop) * 0.25), half = F.alpha(e, at: fadeTop + (1 - fadeTop) * 0.5)
         row("hero-fade-is-eased", quarter > 0.8 && abs(half - 0.5) < 0.02, "quarter=\(quarter) half=\(half)")
-        row("hero-fade-opaque-above-clear-at-the-end", close(F.alpha(fb, at: fadeTop - 0.01), 1) && close(F.alpha(fb, at: 1), 0))
+        row("hero-fade-opaque-above-clear-at-the-end", close(F.alpha(e, at: fadeTop - 0.01), 1) && close(F.alpha(e, at: 1), 0)
+            && close(F.alpha(fb, at: 1), 0))
         let st = F.stops(fb)
         row("hero-fade-stops-monotone-and-match-alpha", st.count >= 8 && zip(st, st.dropFirst()).allSatisfy { $0.location <= $1.location }
             && st.allSatisfy { s in abs(F.alpha(fb, at: Double(s.location)) - Double(UIColor(s.color).cgColor.alpha)) < 0.02 },
@@ -859,6 +864,20 @@ extension AppearanceTuning {
         row("light-send-feather-mic-solid-klein (dark keeps the gradient)", LibrarianPillChrome.accentIsSolidKlein(.light)
             && !LibrarianPillChrome.accentIsSolidKlein(.dark) && klein >= 3, String(format: "klein on the light pill %.2f", klein))
         row("ask-clear-glyph-3:1-on-every-grade (siri · T 10-17, light + dark)", glyphOK, glyphRows.joined(separator: " "))
+        // live-27 (1) — the light card faces' secondary text (source/time, counts, tags, list markers, "+N more", link
+        // sites, document pages) is the ink at the swept alpha; on the plain light card body (#FBF9F5) its stills' solid
+        // core (85% of full ink, the measurement's floor) reaches 4.5:1. Swept on real renders: 0.74 → 4.31, 0.76 → 4.55.
+        // Dark's meta ink passes (≥ 5.5 measured) and stays the cream at each face's own opacity.
+        let metaA = Double(AppearancePalette.bakedMetaLightAlpha)
+        let cardBody = rgb("FBF9F5"), cardInk = rgb("232A2E")
+        let metaCore = ratio(mix(cardBody, cardInk, metaA * 0.85), cardBody)
+        let darkMeta = UIColor(AppearancePalette.cardMetaInk(0.68)).resolvedColor(with: UITraitCollection(userInterfaceStyle: .dark))
+        let lightMeta = UIColor(AppearancePalette.cardMetaInk(0.55)).resolvedColor(with: UITraitCollection(userInterfaceStyle: .light))
+        row("light-card-meta-ink-AA (the swept 0.76; core ≥ 4.5 on the plain body; dark unchanged)",
+            close(metaA, 0.76) && metaCore >= 4.5 && close(Double(darkMeta.cgColor.alpha), 0.68)
+            && (AppearancePalette.cardMetaLightAlpha == nil || close(Double(lightMeta.cgColor.alpha), metaA)),
+            String(format: "alpha %.2f core %.2f · dark alpha %.2f · light (0.55 face) alpha %.2f", metaA, metaCore,
+                   darkMeta.cgColor.alpha, lightMeta.cgColor.alpha))
         // live-24 (3) — light text needs the grade dense through the WHOLE text line (a one-line pill's text spans
         // ~0.25–0.75 of its height, descenders included): ≥ 0.6 near-black keeps white text AA over a white backdrop.
         let band = stride(from: 0.2, through: 0.75, by: 0.05).map { spP.grade.alpha(at: $0) }
@@ -979,9 +998,11 @@ extension AppearanceTuning {
             row("t1017-paste-loads-into-peek-search-ask-alike", false, "the paste didn't import")
         }
 
-        // live-26 (1) — ★ T's final paste (2026-10-18, TF 202610171546, Ops reference/appearance-tuning-2026-10-18.md, verbatim)
-        // is BOTH Reset and the App Store look, light and dark; Copy values at the defaults reads it back.
+        // live-27 (0) — ★ T's latest paste (2026-10-18 (b), TF 202610180346, Ops reference/appearance-tuning-2026-10-18-b.md,
+        // verbatim) is BOTH Reset and the App Store look, light and dark; Copy values at the defaults reads it back. It
+        // supersedes the 10-18 file (live-26 (1)), which still loads.
         let t18 = ##"{"airpadAppearance":1,"build":"202610171546","editing":"dark","cardContent":"proposal","captureControls":"glass","light":{"palette":"L2","field":"F2","fieldStep":1,"fieldHex":"#F4F2ED","shadow":0.5,"shadowAlpha":0.131,"shadowRadius":24,"hairline":true,"hairlineWidth":0.5,"hairlineOpacity":0.25,"panel":"custom","tint":0.51,"blur":0.58,"saturation":0.4,"glassControls":true,"dim":0.105,"fadeLength":0.6,"fadeCurve":1,"panelMode":"glass","glassVariant":"regular","glassTint":"offWhite","glassTintHex":"#FBF9F5","glassTintStrength":0.2,"veil":0.3,"panelGrade":{"on":true,"top":0.1,"bottom":0.75,"start":0.04,"softness":0.4,"direction":"vertical","color":"offWhite","hex":"#FBF9F5"},"peekPill":{"variant":"clear","grade":{"on":true,"top":0.9,"bottom":0.05,"start":0.3,"softness":1,"direction":"vertical","color":"offWhite","hex":"#FBF9F5"},"rim":{"rest":"dim","width":1,"brightness":0.8,"color":"white","hex":"#FFFFFF","active":"none","activeBrightness":1}},"searchPill":{"variant":"clear","grade":{"on":false,"top":0.9,"bottom":0.42,"start":0.59,"softness":0.66,"direction":"vertical","color":"offWhite","hex":"#FBF9F5"},"rim":{"rest":"off","width":1,"brightness":0.8,"color":"cyan","hex":"#00BFFF","active":"shimmer","activeBrightness":1}},"askPill":{"variant":"clear","grade":{"on":false,"top":0.9,"bottom":0.15,"start":0.75,"softness":1,"direction":"vertical","color":"nearBlack","hex":"#0A0A0A"},"rim":{"rest":"off","width":1,"brightness":0.8,"color":"white","hex":"#FFFFFF","active":"none","activeBrightness":1}},"askMatchesSearch":true},"dark":{"field":"F+0.50","fieldStep":0.5,"fieldHex":"#1A1A1A","shadow":1,"shadowAlpha":0.742,"shadowRadius":12,"hairline":true,"hairlineWidth":1,"hairlineOpacity":0.12,"panel":"custom","tint":0.5,"blur":1.53,"saturation":0.4,"glassControls":true,"dim":0,"fadeLength":0.35,"fadeCurve":0.15,"panelMode":"glass","glassVariant":"regular","glassTint":"nearBlack","glassTintHex":"#0A0A0A","glassTintStrength":0.2,"veil":0.3,"panelGrade":{"on":true,"top":0.73,"bottom":0.32,"start":0.04,"softness":0.22,"direction":"vertical","color":"nearBlack","hex":"#0A0A0A"},"peekPill":{"variant":"clear","grade":{"on":true,"top":1,"bottom":0.25,"start":0.27,"softness":1,"direction":"vertical","color":"nearBlack","hex":"#0A0A0A"},"rim":{"rest":"dim","width":0.75,"brightness":0.41,"color":"white","hex":"#FFFFFF","active":"none","activeBrightness":1}},"searchPill":{"variant":"clear","grade":{"on":true,"top":0.72,"bottom":0.44,"start":0.27,"softness":1,"direction":"vertical","color":"nearBlack","hex":"#0A0A0A"},"rim":{"rest":"off","width":0.5,"brightness":0.11,"color":"cyan","hex":"#00BFFF","active":"shimmer","activeBrightness":1}},"askPill":{"variant":"clear","grade":{"on":true,"top":1,"bottom":0.25,"start":0.27,"softness":1,"direction":"vertical","color":"nearBlack","hex":"#0A0A0A"},"rim":{"rest":"off","width":0.5,"brightness":0.11,"color":"white","hex":"#FFFFFF","active":"none","activeBrightness":1}},"askMatchesSearch":true}}"##
+        let t18b = ##"{"airpadAppearance":1,"build":"202610180346","editing":"dark","cardContent":"proposal","captureControls":"glass","floatingButtons":"glass","light":{"palette":"L2","field":"F2","fieldStep":1,"fieldHex":"#F4F2ED","shadow":0.5,"shadowAlpha":0.131,"shadowRadius":24,"hairline":true,"hairlineWidth":0.5,"hairlineOpacity":0.25,"panel":"custom","tint":0.51,"blur":0.58,"saturation":0.4,"glassControls":true,"dim":0.105,"fadeLength":0.39,"fadeCurve":0.5,"fadeIntoBody":0.14,"panelMode":"glass","glassVariant":"regular","glassTint":"offWhite","glassTintHex":"#FBF9F5","glassTintStrength":0.2,"veil":0.3,"panelGrade":{"on":true,"top":0.1,"bottom":0.75,"start":0.04,"softness":0.4,"direction":"vertical","color":"offWhite","hex":"#FBF9F5"},"peekPill":{"variant":"clear","grade":{"on":true,"top":0.9,"bottom":0.05,"start":0.3,"softness":1,"direction":"vertical","color":"offWhite","hex":"#FBF9F5"},"rim":{"rest":"dim","width":1,"brightness":0.8,"color":"white","hex":"#FFFFFF","active":"none","activeBrightness":1}},"searchPill":{"variant":"clear","grade":{"on":false,"top":0.9,"bottom":0.42,"start":0.59,"softness":0.66,"direction":"vertical","color":"offWhite","hex":"#FBF9F5"},"rim":{"rest":"off","width":1,"brightness":0.8,"color":"cyan","hex":"#00BFFF","active":"shimmer","activeBrightness":1}},"askPill":{"variant":"clear","grade":{"on":false,"top":0.9,"bottom":0.15,"start":0.75,"softness":1,"direction":"vertical","color":"nearBlack","hex":"#0A0A0A"},"rim":{"rest":"off","width":1,"brightness":0.8,"color":"white","hex":"#FFFFFF","active":"none","activeBrightness":1}},"askMatchesSearch":true},"dark":{"field":"F+0.50","fieldStep":0.5,"fieldHex":"#1A1A1A","shadow":1,"shadowAlpha":0.742,"shadowRadius":12,"hairline":true,"hairlineWidth":1,"hairlineOpacity":0.12,"panel":"custom","tint":0.5,"blur":1.53,"saturation":0.4,"glassControls":true,"dim":0,"fadeLength":0.35,"fadeCurve":0.15,"fadeIntoBody":0.18,"panelMode":"glass","glassVariant":"regular","glassTint":"nearBlack","glassTintHex":"#0A0A0A","glassTintStrength":0.2,"veil":0.3,"panelGrade":{"on":true,"top":0.73,"bottom":0.32,"start":0.04,"softness":0.22,"direction":"vertical","color":"nearBlack","hex":"#0A0A0A"},"peekPill":{"variant":"clear","grade":{"on":true,"top":1,"bottom":0.25,"start":0.27,"softness":1,"direction":"vertical","color":"nearBlack","hex":"#0A0A0A"},"rim":{"rest":"dim","width":0.75,"brightness":0.41,"color":"white","hex":"#FFFFFF","active":"none","activeBrightness":1}},"searchPill":{"variant":"clear","grade":{"on":true,"top":0.72,"bottom":0.44,"start":0.27,"softness":1,"direction":"vertical","color":"nearBlack","hex":"#0A0A0A"},"rim":{"rest":"off","width":0.5,"brightness":0.11,"color":"cyan","hex":"#00BFFF","active":"shimmer","activeBrightness":1}},"askPill":{"variant":"clear","grade":{"on":true,"top":1,"bottom":0.25,"start":0.27,"softness":1,"direction":"vertical","color":"nearBlack","hex":"#0A0A0A"},"rim":{"rest":"off","width":0.5,"brightness":0.11,"color":"white","hex":"#FFFFFF","active":"none","activeBrightness":1}},"askMatchesSearch":true}}"##
         func keyDiff(_ a: Any?, _ b: Any?, _ path: String, _ skip: Set<String> = []) -> [String] {
             if let x = a as? [String: Any], let y = b as? [String: Any] {
                 return Set(x.keys).union(y.keys).sorted().filter { !skip.contains($0) }
@@ -993,8 +1014,17 @@ extension AppearanceTuning {
         func encoded(_ s: AppearanceTuningState) -> Any? {
             (try? JSONEncoder().encode(s)).flatMap { try? JSONSerialization.jsonObject(with: $0) }
         }
-        if let imp = importExport(t18) {
-            row("reset-is-T's-1018-values", imp == AppearanceTuningState.defaults,
+        if let old = importExport(t18) {
+            // The 10-18 file differs from the defaults only in what (b) changed: the floating buttons and the fades.
+            let d = keyDiff(encoded(old), encoded(.defaults), "")
+            row("t1018-paste-is-superseded-by-1018b", old != .defaults && d.allSatisfy {
+                $0.hasPrefix("floatingButtons:") || $0.hasPrefix("light.fade") || $0.hasPrefix("dark.fade") },
+                d.joined(separator: "; "))
+        } else {
+            row("t1018-paste-is-superseded-by-1018b", false, "the 10-18 paste didn't import")
+        }
+        if let imp = importExport(t18b) {
+            row("reset-is-T's-1018b-values", imp == AppearanceTuningState.defaults,
                 keyDiff(encoded(imp), encoded(.defaults), "").joined(separator: "; "))
             for dark in [false, true] {
                 let v = dark ? imp.dark : imp.light, mode = dark ? "dark" : "light"
@@ -1017,54 +1047,95 @@ extension AppearanceTuning {
                         && palette(named: v.palette) == .shipped
                     if !ok { off.append("cards / field") }
                 }
-                row("app-store-look-is-T's-1018-\(mode)", off.isEmpty, off.joined(separator: "; "))
+                row("app-store-look-is-T's-1018b-\(mode)", off.isEmpty, off.joined(separator: "; "))
             }
-            row("app-store-card-content-proposal-capture-controls-glass", CardContentPresentation.bakedProposal
-                && CaptureControlsStyle.bakedGlass && imp.cardContent == .proposal && imp.captureControls == .glass,
-                "proposal=\(CardContentPresentation.bakedProposal) glass=\(CaptureControlsStyle.bakedGlass)")
+            row("app-store-card-content-proposal-capture-controls-glass-floating-glass", CardContentPresentation.bakedProposal
+                && CaptureControlsStyle.bakedGlass && FloatingButtonsStyle.bakedGlass && imp.cardContent == .proposal
+                && imp.captureControls == .glass && imp.floatingButtons == .glass,
+                "proposal=\(CardContentPresentation.bakedProposal) glass=\(CaptureControlsStyle.bakedGlass) floating=\(FloatingButtonsStyle.bakedGlass)")
             // Copy values at the defaults → T's file, every key (build + editing are the session's, not values).
-            let back = (try? JSONSerialization.jsonObject(with: Data(exportJSON(.defaults, editing: "dark", build: "202610171546").utf8)))
-            let file = try? JSONSerialization.jsonObject(with: Data(t18.utf8))
-            // Keys this build adds after T's paste (live-26 (3c) fadeIntoBody, (3d) floatingButtons) aren't in his file:
-            // listed, not compared. Every key his file has must read back the same.
+            let back = (try? JSONSerialization.jsonObject(with: Data(exportJSON(.defaults, editing: "dark", build: "202610180346").utf8)))
+            let file = try? JSONSerialization.jsonObject(with: Data(t18b.utf8))
+            // T's (b) file has every key this build writes (fadeIntoBody, floatingButtons included): all compared, none added.
             let d = keyDiff(back, file, "")
-            let added = d.filter { $0.hasSuffix("≠ —") }, changed = d.filter { !$0.hasSuffix("≠ —") }
-            row("copy-values-at-defaults-is-T's-1018-file", changed.isEmpty && added.allSatisfy {
-                $0.hasPrefix("floatingButtons:") || $0.hasPrefix("light.fadeIntoBody:") || $0.hasPrefix("dark.fadeIntoBody:") },
-                (changed + ["added: "] + added).joined(separator: "; "))
+            row("copy-values-at-defaults-is-T's-1018b-file", d.isEmpty, d.joined(separator: "; "))
         } else {
-            row("reset-is-T's-1018-values", false, "the paste didn't import")
+            row("reset-is-T's-1018b-values", false, "the paste didn't import")
         }
 
-        // live-26 (3c) — "Fade into body": 0 is today's mask exactly; 100% ends the photo at 1.6 zones; the default stays
-        // today's (not in T's 10-18 values); "Match fluted" is the measured fit per appearance; the text veil only comes
-        // with the extension.
+        // live-26 (3c) — "Fade into body": 0 is the pre-live-26 mask exactly; 100% ends the photo at 1.6 zones; "Match
+        // fluted" is the measured fit per appearance; the text veil only comes with the extension.
         let F0 = CardHeroFade.self
         var today0 = fb; today0.intoBody = 0
-        row("fade-into-body-0-is-today's-mask", F0.stops(today0).map(\.location) == F0.stops(fb).map(\.location)
-            && abs(Double(F0.frameHeight(zone: 100, today0)) - 110) < 0.001 && L.fadeIntoBody == 0 && Dk.fadeIntoBody == 0
-            && CardHeroFade.baked(dark: false).intoBody == 0 && CardHeroFade.baked(dark: true).intoBody == 0)
+        row("fade-into-body-0-is-the-plain-mask", F0.stops(today0).map(\.location)
+            == F0.stops(CardHeroFade.Shape(length: fb.length, curve: fb.curve, overshoot: fb.overshoot)).map(\.location)
+            && abs(Double(F0.frameHeight(zone: 100, today0)) - 110) < 0.001)
+        // live-27 (0) — T's 10-18 (b) values carry the photo into the body: light 0.14, dark 0.18 (Reset + App Store).
+        row("fade-into-body-defaults-are-T's (light 0.14 · dark 0.18)", close(L.fadeIntoBody, 0.14) && close(Dk.fadeIntoBody, 0.18)
+            && close(CardHeroFade.baked(dark: false).intoBody, 0.14) && close(CardHeroFade.baked(dark: true).intoBody, 0.18),
+            "tuner \(L.fadeIntoBody) / \(Dk.fadeIntoBody) · baked \(CardHeroFade.baked(dark: false).intoBody) / \(CardHeroFade.baked(dark: true).intoBody)")
         var full = fb; full.intoBody = 1
         row("fade-into-body-100%-ends-the-photo-at-1.6-zones", abs(Double(F0.frameHeight(zone: 100, full)) - 160) < 0.01
-            && close(F0.alpha(full, at: 1), 0) && F0.alpha(full, at: 1.05 / 1.6) > F0.alpha(fb, at: min(1.05 / 1.1, 1)),
+            && close(F0.alpha(full, at: 1), 0) && F0.alpha(full, at: 1.05 / 1.6) > F0.alpha(today0, at: min(1.05 / 1.1, 1)),
             "\(F0.frameHeight(zone: 100, full))")
         let mfD = F0.matchFluted(dark: true), mfL = F0.matchFluted(dark: false)
         row("match-fluted-is-the-measured-fit (dark 0.80/1.9/0.50 · light 0.80/0.8/1.00)",
             close(mfD.length, 0.80) && close(mfD.curve, 1.9) && close(mfD.intoBody, 0.50)
             && close(mfL.length, 0.80) && close(mfL.curve, 0.8) && close(mfL.intoBody, 1.00))
         var veiled = full; veiled.scrim = 0.5
-        row("the-text-veil-only-with-the-extension", (isLive || CardHeroFade.current(dark: false).scrim == 0 && CardHeroFade.current(dark: true).scrim == 0)
+        let curL = CardHeroFade.current(dark: false), curD = CardHeroFade.current(dark: true)
+        row("the-text-veil-only-with-the-extension", close(curL.scrim, CardHeroFade.veil(intoBody: curL.intoBody, dark: false))
+            && close(curD.scrim, CardHeroFade.veil(intoBody: curD.intoBody, dark: true))
+            && CardHeroFade.veil(intoBody: 0, dark: false) == 0 && CardHeroFade.veil(intoBody: 0, dark: true) == 0
             && close(F0.alpha(veiled, at: 1.2 / 1.6) / max(F0.alpha(full, at: 1.2 / 1.6), 1e-9), 0.5)
             && close(F0.alpha(veiled, at: 0.5 / 1.6), F0.alpha(full, at: 0.5 / 1.6)))
+        // live-27 (1) — the light veil re-fit with the AA meta ink, on the stills (Ops design-refs/live27-*/fade-veil.md): at
+        // T's 0.14 the least is 0.9 (0.8 leaves the landscape dateline at 4.49); at Match fluted and 100% it's still 1.0
+        // (0.9 → 4.38 / 4.29). So light's veil comes in fully by 10% of the extension; dark scales with it as before
+        // (0.45 at 100%; T's 0.18 → 0.08 passes, ≥ 6.2).
+        row("light-veil-full-from-10%-(T's 0.14 → 1.0) dark-scales (0.18 → 0.08)",
+            close(CardHeroFade.veil(intoBody: 0.14, dark: false), 1) && close(CardHeroFade.veil(intoBody: 1, dark: false), 1)
+            && close(CardHeroFade.veil(intoBody: 0.05, dark: false), 0.5) && close(CardHeroFade.veil(intoBody: 0.18, dark: true), 0.081)
+            && close(CardHeroFade.veil(intoBody: 1, dark: true), 0.45),
+            String(format: "light 0.14 → %.2f · dark 0.18 → %.3f", CardHeroFade.veil(intoBody: 0.14, dark: false),
+                   CardHeroFade.veil(intoBody: 0.18, dark: true)))
         var withFade = AppearanceTuningState.defaults; withFade.light.fadeIntoBody = 0.37; withFade.floatingButtons = .today
         let fadeJSON = exportJSON(withFade, editing: "light", build: "0")
         let fadeBack = importExport(fadeJSON)
         row("copy-values-carries-fadeIntoBody-and-floatingButtons", fadeJSON.contains("\"fadeIntoBody\":0.37")
             && fadeJSON.contains("\"floatingButtons\":\"today\"") && fadeBack?.light.fadeIntoBody == 0.37 && fadeBack?.floatingButtons == .today)
-        // live-26 (3d) — the floating buttons: the tuner starts on Glass, the App Store build stays Today; Reduce
-        // Transparency / Increase Contrast keep the solid discs.
-        row("floating-buttons-tuner-glass-app-store-today", AppearanceTuningState.defaults.floatingButtons == .glass
-            && !FloatingButtonsStyle.bakedGlass && FloatingButtonsMode.today.label == "Today")
+        // live-27 (0) — the floating buttons: T chose Glass (10-18 (b)), in the tuner and the App Store build; Today stays
+        // in the tuner; Reduce Transparency / Increase Contrast keep the solid discs.
+        row("floating-buttons-glass-in-tuner-and-app-store", AppearanceTuningState.defaults.floatingButtons == .glass
+            && FloatingButtonsStyle.bakedGlass && FloatingButtonsMode.today.label == "Today")
+        // live-27 (4d) — T (device, TF 202610180346): Reduce Transparency in LIGHT turned the open search pill and the Ask
+        // bar solid dark charcoal under dark ink. Under RT every pill is a solid fill on the side its text resolves to, at
+        // T's baked values and at each preset, light and dark: text ≥ 4.5, glyphs (× at its ink opacity) ≥ 3.
+        var rtRows: [String] = [], rtOK = true
+        for appearance in [ColorScheme.light, .dark] {
+            let dk = appearance == .dark
+            var looks: [(String, AppearanceTuningValues)] = [("baked", dk ? Dk : L)]
+            for p in LibrarianGlassPreset.allCases { var v = dk ? Dk : L; v.apply(p, dark: dk); looks.append((p.rawValue, v)) }
+            for (name, v) in looks {
+                for (pill, look) in [("peek", v.peekPill), ("search", v.searchPill), ("ask", v.askLook)] {
+                    let scheme = LibrarianPillChrome.textScheme(look.grade, appearance: appearance, glassControls: true)
+                    let ink = rgb(LibrarianPillChrome.inkHex(scheme))
+                    guard let fillHex = LibrarianGlassAccessibility.solidPillHex(look, appearance: appearance) else {
+                        rtOK = false; rtRows.append("\(dk ? "dark" : "light")/\(name)/\(pill)=system glass"); continue
+                    }
+                    let fill = rgb(fillHex.replacingOccurrences(of: "#", with: ""))
+                    let text = ratio(ink, fill), glyph = ratio(mix(fill, ink, LibrarianPillChrome.clearGlyphOpacity(scheme)), fill)
+                    if text < 4.5 || glyph < 3 {
+                        rtOK = false; rtRows.append(String(format: "%@/%@/%@ text %.2f glyph %.2f", dk ? "dark" : "light", name, pill, text, glyph))
+                    }
+                }
+            }
+        }
+        row("reduce-transparency-every-pill-solid-and-readable (baked + presets, light + dark)", rtOK, rtRows.joined(separator: " · "))
+        // Increase Contrast too: the system's high-contrast Clear glass is dark charcoal in light as well (stills, (4d)).
+        row("increase-contrast-pills-solid-too", LibrarianGlassAccessibility.pillIsSolid(reduceTransparency: false, increaseContrast: true)
+            && LibrarianGlassAccessibility.pillIsSolid(reduceTransparency: true, increaseContrast: false)
+            && !LibrarianGlassAccessibility.pillIsSolid(reduceTransparency: false, increaseContrast: false))
         row("floating-buttons-solid-under-reduce-transparency-and-increase-contrast",
             FloatingButtonsStyle.isOn(chosen: true, reduceTransparency: false, increaseContrast: false)
             && !FloatingButtonsStyle.isOn(chosen: true, reduceTransparency: true, increaseContrast: false)

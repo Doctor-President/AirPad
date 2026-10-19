@@ -59,6 +59,13 @@ struct ChatTable: Equatable {
         }
     }
 
+    /// live-27 (4c) — widths that fill `width` when the table is narrower (the extra shared in proportion).
+    static func fill(_ widths: [CGFloat], to width: CGFloat) -> [CGFloat] {
+        let sum = widths.reduce(0, +)
+        guard sum > 0, width > sum else { return widths }
+        return widths.map { $0 * width / sum }
+    }
+
     /// Each row's height when its cells wrap inside `widths` (the tallest cell), plus the vertical padding.
     func rowHeights(font: UIFont, widths: [CGFloat], header headerFont: UIFont, padding: CGFloat = 20, vPadding: CGFloat = 14) -> (header: CGFloat, rows: [CGFloat]) {
         func h(_ cells: [String], _ f: UIFont) -> CGFloat {
@@ -79,6 +86,15 @@ enum ChatTablePresentation { case grid, stackedRecords }
 /// panel → it scrolls sideways inside the answer with the header row and the first column staying put; taller than
 /// `maxHeight` → it scrolls down inside its frame, the header staying put. Never wider than the panel. A tap opens it
 /// full screen (`ChatTableFullScreen`: landscape, Copy as Markdown / CSV). VoiceOver reads each row as a record.
+/// live-27 (4c) — the clear space the transcript keeps right of an answer's prose; an answer's table reclaims it.
+private struct ChatAnswerGutterKey: EnvironmentKey { static let defaultValue: CGFloat = 0 }
+extension EnvironmentValues {
+    var chatAnswerGutter: CGFloat {
+        get { self[ChatAnswerGutterKey.self] }
+        set { self[ChatAnswerGutterKey.self] = newValue }
+    }
+}
+
 struct ChatTableView: View {
     let table: ChatTable
     var maxHeight: CGFloat? = 380
@@ -86,14 +102,25 @@ struct ChatTableView: View {
 
     @Environment(\.appBodyFont) private var appFont
     @State private var offset: CGPoint = .zero
+    @State private var viewport: CGFloat = 0   // live-27 (4c) — the grid's visible width
     @State private var showFull = false
+    /// live-27 (4c) — the answer's trailing gutter (the transcript keeps 40 pt clear of prose); the grid reclaims it.
+    @Environment(\.chatAnswerGutter) private var gutter
 
     static let cellSize: CGFloat = 16
+    /// live-27 (4c) — which sides fade: the side(s) the grid can still scroll to.
+    static func fadeEdges(_ offsetX: CGFloat, _ container: CGFloat, _ content: CGFloat) -> (Bool, Bool) {
+        (offsetX > 1, offsetX + container < content - 1)
+    }
+    private static let fadeWidth: CGFloat = 28
     private static let hPad: CGFloat = 10, vPad: CGFloat = 7
 
     var body: some View {
         let cellFont = appFont.uiFont(size: Self.cellSize), headFont = appFont.uiFont(size: Self.cellSize, weight: .semibold)
-        let widths = table.columnWidths(font: headFont, padding: Self.hPad * 2)
+        // live-27 (4c) — a table narrower than the answer fills its width; a wider one keeps its widths and scrolls.
+        let widths = ChatTable.fill(table.columnWidths(font: headFont, padding: Self.hPad * 2), to: viewport)
+        let contentWidth = widths.reduce(0, +)
+        let edges = Self.fadeEdges(offset.x, viewport, contentWidth)
         let heights = table.rowHeights(font: cellFont, widths: widths, header: headFont, padding: Self.hPad * 2, vPadding: Self.vPad * 2)
         let total = heights.header + heights.rows.reduce(0, +) + CGFloat(table.rows.count) * 0.5
         let sticky = Color(UIColor { $0.userInterfaceStyle == .dark ? UIColor(Color(hexString: "141414")) : UIColor(Color(hexString: "FBF9F5")) })
@@ -118,13 +145,45 @@ struct ChatTableView: View {
             }
         }
         .onScrollGeometryChange(for: CGPoint.self) { $0.contentOffset } action: { _, new in offset = new }
+        .onScrollGeometryChange(for: CGFloat.self) { $0.containerSize.width } action: { _, w in viewport = w }
         .scrollBounceBehavior(.basedOnSize, axes: [.horizontal, .vertical])
+        // live-27 (4c) — the side(s) the grid can still scroll to fade out, so a cell cut at the edge reads as "more
+        // this way"; the leading fade starts after the pinned first column.
+        .mask {
+            HStack(spacing: 0) {
+                Rectangle().frame(width: edges.0 ? min(widths.first ?? 0, max(viewport - Self.fadeWidth * 2, 0)) : 0)
+                LinearGradient(colors: [edges.0 ? .clear : .black, .black], startPoint: .leading, endPoint: .trailing)
+                    .frame(width: Self.fadeWidth)
+                Rectangle()
+                LinearGradient(colors: [.black, edges.1 ? .clear : .black], startPoint: .leading, endPoint: .trailing)
+                    .frame(width: Self.fadeWidth)
+            }
+        }
         .frame(maxWidth: .infinity, alignment: .leading)
         .frame(height: maxHeight.map { min(total + 1, $0) })
+        .padding(.trailing, -gutter)
         .contentShape(Rectangle())
         .onTapGesture { if opensFullScreen { showFull = true } }
         .accessibilityAction(named: "Open the table full screen") { if opensFullScreen { showFull = true } }
         .accessibilityIdentifier("chatTable")
+        .overlay(alignment: .topTrailing) {
+            // live-27 (4c) — the full screen, discoverable: a small expand control on the table's corner (after the
+            // table's own accessibility, so it stays its own button).
+            if opensFullScreen {
+                Button { showFull = true } label: {
+                    Image(systemName: "arrow.up.left.and.arrow.down.right")
+                        .font(.system(size: 12, weight: .semibold))
+                        .foregroundStyle(ChatTypography.bodyText)
+                        .frame(width: 30, height: 30)
+                        .background(.ultraThinMaterial, in: Circle())
+                        .overlay(Circle().strokeBorder(AppearancePalette.ink.opacity(0.12), lineWidth: 1))
+                }
+                .buttonStyle(.plain)
+                .padding(4)
+                .accessibilityLabel("Open the table full screen")
+                .accessibilityIdentifier("chatTableExpand")
+            }
+        }
         .fullScreenCover(isPresented: $showFull) { ChatTableFullScreen(table: table) }
     }
 

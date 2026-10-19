@@ -1147,6 +1147,14 @@ final class CorpusStore {
             if ProcessInfo.processInfo.arguments.contains("-WebGroundingSelfTest") {
                 NSLog("[WebGroundingSelfTest] %@", WebGroundingSelfTest.run())
             }
+            // live-27 (4e) — the RELATED list never shows one entry twice.
+            if ProcessInfo.processInfo.arguments.contains("-SearchRelatedSelfTest") {
+                NSLog("[SearchRelatedSelfTest] %@", SearchRelatedSelfTest.run())
+            }
+            // live-27 (4) — chat provenance: who wrote each answer, the caption, the switch divider.
+            if ProcessInfo.processInfo.arguments.contains("-ChatProvenanceSelfTest") {
+                Task { @MainActor in NSLog("[ChatProvenanceSelfTest] %@", await ChatProvenanceSelfTest.run()) }
+            }
             // CH Session 2 (C4 / C4a) — the shared active-model derivation + friendly names.
             if ProcessInfo.processInfo.arguments.contains("-ModelPickSelfTest") {
                 NSLog("[ModelPickSelfTest] %@", await MainActor.run { ModelPickSelfTest.run() })

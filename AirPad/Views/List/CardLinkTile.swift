@@ -20,7 +20,7 @@ struct CardLinkTile: View {
     // AppearancePalette.ink so chip text reads on parchment (was cream in both →
     // illegible in light). Mirrors the NodeCardView row-title fix.
     private static let inkTitle = AppearancePalette.cardCreamInk(0.95)
-    private static let inkMeta  = AppearancePalette.cardCreamInk(0.55)
+    private static let inkMeta  = AppearancePalette.cardMetaInk(0.55)   // live-27 (1): light reaches AA
 
     var body: some View {
         HStack(spacing: 10) {

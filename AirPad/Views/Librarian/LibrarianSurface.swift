@@ -329,9 +329,18 @@ struct LibrarianSurface: View {
             // stills + the contrast backdrops, with `-RenderHideText YES`). Ported from live-21's render hooks.
             if let t = UserDefaults.standard.string(forKey: "RenderTableAnswer").flatMap(LibrarianRenderHooks.tableChat) {
                 router.chat.load(t)
-                DispatchQueue.main.asyncAfter(deadline: .now() + 1.0) {
-                    isViewingActiveChat = true
-                    panelModel.expandToFull(animated: false)
+                if UserDefaults.standard.bool(forKey: "RenderInChatView") {
+                    // live-27 (4c) — `-RenderInChatView YES`: the same answer in the Chat view (Chats → the chat).
+                    router.chat.flush()
+                    DispatchQueue.main.asyncAfter(deadline: .now() + 1.0) {
+                        router.pendingChatToOpen = router.chat.id
+                        router.showChatsList = true
+                    }
+                } else {
+                    DispatchQueue.main.asyncAfter(deadline: .now() + 1.0) {
+                        isViewingActiveChat = true
+                        panelModel.expandToFull(animated: false)
+                    }
                 }
             } else if UserDefaults.standard.bool(forKey: "RenderLongAnswer") {
                 router.chat.load(LibrarianRenderHooks.longAnswerChat)
@@ -1657,44 +1666,16 @@ struct LibrarianSurface: View {
         .transition(.opacity)
     }
 
-    @ViewBuilder
     private func corpusModeToggle(librarian: LibrarianState) -> some View {
-        let on = librarian.corpusAware
-        Button {
-            librarian.pendingWebSearchOffer = nil   // AI5 — a manual mode flip retires any stale offer
-            librarian.corpusAware.toggle()   // stored + persisted (didSet → UserDefaults)
+        // live-27 (4b) — the toggle is one shared view: the Chat view shows the same one.
+        CorpusModeToggle(librarian: librarian, identifier: "librarian.scopeToggle") {
             // AH3 — teach the toggle the first time it's used (once). The morph above
             // still plays; the coach-mark's ring pulses once (AH4).
             if !FirstRunCalloutKey.librarianMode.hasShown, activeCallout == nil {
                 activeCallout = .librarianMode
             }
-        } label: {
-            HStack(spacing: 5) {
-                Image(systemName: on ? "books.vertical.fill" : "globe")
-                    .font(.system(size: 11, weight: .semibold))
-                    .contentTransition(.symbolEffect(.replace))
-                Text(on ? "Library" : "General")
-                    .font(.system(size: 12, weight: .semibold))
-                    .contentTransition(.opacity)
-            }
-            .foregroundStyle(AppearancePalette.ink.opacity(on ? 0.9 : 0.55))
-            .padding(.horizontal, 11)
-            .padding(.vertical, 5)
-            .background(
-                Capsule().fill(AppearancePalette.ink.opacity(on ? 0.12 : 0.05))
-            )
-            .overlay(
-                // Stroke ONLY in Library mode — a grayscale-legible shape cue for "on".
-                Capsule().strokeBorder(AppearancePalette.ink.opacity(on ? 0.28 : 0), lineWidth: 1)
-            )
-            .contentShape(Capsule())
-            // AH4 — one-shot crossfade of icon + label; Reduce Motion swaps instantly.
-            .animation(reduceMotion ? nil : .spring(response: 0.25, dampingFraction: 0.75), value: on)
         }
-        .buttonStyle(.plain)
         .firstRunCalloutTarget(FirstRunCalloutTargetID.librarianModeChip)
-        .accessibilityLabel(on ? "Library mode" : "General mode")
-        .accessibilityHint("General mode — answers from the model; Library mode — reads and cites your entries.")
     }
 
     /// STATE 2 notice for the Ask composer — no free-text provider on this device. Honest

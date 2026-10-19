@@ -14,6 +14,14 @@ enum WebGrounding {
 
     /// The app's line under a General answer that no web result backs (no key, no search, or nothing found).
     static let generalKnowledgeNote = "From the model's general knowledge, may contain errors."
+    /// live-27 (3) — the line under a current-state answer no web result backs (who holds an office, who is living, the
+    /// latest …): the app says it, whatever the model wrote (qwen3:4b ignored the prompt's caveat on the Host path).
+    static let datedKnowledgeNote = "From the model's training data — may be out of date."
+    /// The app's line under a General answer no web result backs: dated for a current-state request, the general one for
+    /// a factual question, none otherwise (a pep talk).
+    static func ungroundedNote(for q: String) -> String? {
+        asksCurrentState(q) ? datedKnowledgeNote : isFactualQuestion(q) ? generalKnowledgeNote : nil
+    }
 
     // MARK: - Question shape
 
@@ -38,6 +46,21 @@ enum WebGrounding {
         if has(#"^how (many|much|long|old|big|far|tall|deep|fast|high|large|heavy|often|does|do|did|is|are|was|were)\b"#) { return true }
         if has(#"^(explain|describe|define|tell me about)\b"#) { return true }
         if has(#"^(is|are|was|were|did|does|do|has|have|had|can|could|will)\b"#) && t.hasSuffix("?") { return true }
+        return false
+    }
+
+    /// live-27 (3) — a request about the CURRENT state of the world (who holds an office now, who is living, the latest
+    /// model, this year's figures), make / list / table requests included: searched first when search is on.
+    /// Not a request to write something (a poem about "the latest" isn't a lookup). Deliberately simple, like
+    /// `isFactualQuestion`: a false positive costs one search; a miss is answered from training data, dated as such.
+    static func asksCurrentState(_ q: String) -> Bool {
+        let t = q.lowercased().replacingOccurrences(of: "’", with: "'")
+        func has(_ p: String) -> Bool { t.range(of: p, options: .regularExpression) != nil }
+        if has(#"^(please\s+)?(write|draft|compose|rewrite|rephrase|translate|summari[sz]e|brainstorm|imagine|pretend)\b"#) { return false }
+        // The state of the world now.
+        if has(#"\b(current(ly)?|living|alive|still|latest|newest|now|nowadays|today|this year|incumbent|sitting)\b"#) { return true }
+        // The people holding an office (who holds it changes).
+        if has(#"\b(presidents?|prime ministers?|premiers?|chancellors?|governors?|mayors?|senators?|ceos?|monarchs?|kings?|queens?|popes?|secretar(y|ies)[- ]general|chief justices?|world champions?|record holders?)\b"#) { return true }
         return false
     }
 
@@ -549,7 +572,7 @@ struct WebAnswerFilter {
 /// committed text, a model-written source list never reaches the numberer, and fresh results rank first. Each
 /// group carries a CONTROL (the unfiltered text must contain what the filter removes — the check has teeth).
 enum WebGroundingSelfTest {
-    static func run() -> String {
+    @MainActor static func run() -> String {
         var fails: [String] = [], ran = 0
         func check(_ name: String, _ ok: Bool, _ detail: String = "") {
             ran += 1
@@ -704,6 +727,44 @@ enum WebGroundingSelfTest {
         check("status: search", ChatSession.toolStatus(AgentTools.webSearch, ["query": "x"]) == "Searching the web…")
         check("status: read", ChatSession.toolStatus(AgentTools.fetchURL, ["url": "https://www.example.org/wiki/Oarfish"]) == "Reading example.org…",
               ChatSession.toolStatus(AgentTools.fetchURL, ["url": "https://www.example.org/wiki/Oarfish"]) ?? "nil")
+
+        // 12. live-27 (3) — current-state requests, make / list / table included, are searched when search is on; the
+        // no-key notice keeps its own narrow cues (a presidents table still answers without a key).
+        for (q, want) in [("Make a table of US presidents and whether each is living", true),
+                          ("Who is the current prime minister of Japan?", true),
+                          ("List the latest phones from the big three makers", true),
+                          ("Is the Lakeview Observatory telescope still the largest in the state?", true),
+                          ("What does a dozen eggs cost now?", true),
+                          ("Which teams are in the league this year?", true),
+                          ("Make a table of the planets with their distance from the sun", false),
+                          ("Write a short poem about the sea", false),
+                          ("What caused the fall of the Western Roman Empire?", false),
+                          ("How do I make a simple tomato sauce?", false),
+                          ("Explain how a heat pump works", false),
+                          ("Is the colossal squid bigger than the giant squid?", false)] {
+            check("current-state: \(q)", WebGrounding.asksCurrentState(q) == want)
+        }
+        check("no-key notice stays narrow (the presidents table answers)",
+              !LibrarianState.looksLikeSearchIntent("Make a table of US presidents and whether each is living"))
+        let tool = LibrarianState.toolChatBase(today: "Sunday, October 18, 2026")
+        check("tool prompt keeps today's date", tool.contains("Today's real date is Sunday, October 18, 2026"))
+        check("tool prompt no longer forbids a cutoff", !tool.lowercased().contains("knowledge cutoff") || !tool.contains("Do NOT claim"), tool)
+        check("tool prompt: changing facts as of the training data, offer a search", tool.contains("as of my training data")
+              && tool.contains("who holds an office") && tool.lowercased().contains("offer to search"))
+        check("tool prompt: never 'as of <today>' without this turn's search result", tool.contains("Never write \"as of"))
+        check("general prompt (Apple + Host without a key): the dated-knowledge line",
+              LibrarianState.generalPromptBase.contains("If a fact may have changed recently, say your information may be out of date."))
+        // live-27 (3) — the gauntlet's DK1 (search off, qwen3:4b): the one line was ignored ("As of now (June 2024)", no
+        // caveat). The Host without a key gets the full dated paragraph (Apple keeps the one plain line), and the app says
+        // it under any current-state answer no search backs.
+        let hostNoKey = LibrarianState.hostGeneralPromptBase
+        check("host prompt without a key dates its knowledge", hostNoKey.contains("as of my training data")
+              && hostNoKey.contains("who holds an office") && hostNoKey.contains("Never present such a fact as current"), hostNoKey)
+        check("apple keeps the one plain line", !LibrarianState.generalPromptBase.contains("DATED KNOWLEDGE"))
+        check("ungrounded current-state answer → the dated note",
+              WebGrounding.ungroundedNote(for: "Make a table of US presidents and whether each is living") == WebGrounding.datedKnowledgeNote
+              && WebGrounding.ungroundedNote(for: "Who wrote Pride and Prejudice?") == WebGrounding.generalKnowledgeNote
+              && WebGrounding.ungroundedNote(for: "Write a two-line pep talk for a Monday.") == nil)
 
         return fails.isEmpty ? "PASS \(ran)/\(ran)" : "FAIL \(ran - fails.count)/\(ran)\n  " + fails.joined(separator: "\n  ")
     }

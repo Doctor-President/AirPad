@@ -464,9 +464,11 @@ enum CardHeroFade {
     static let titleDepth: Double = 0.5
     /// The photo's run past the zone, as a fraction of it: the overshoot plus the "Fade into body" extension.
     static func run(_ s: Shape) -> Double { max(s.overshoot, 0) + min(max(s.intoBody, 0), 1) * titleDepth }
-    static let bakedLight = Shape(length: 0.60, curve: 1, overshoot: 0.10)
-    /// live-26 (1) — T's dark fade (2026-10-18): over 35% of the zone, nearly linear (curve 0.15).
-    static let bakedDark = Shape(length: 0.35, curve: 0.15, overshoot: 0.10)
+    /// live-27 (0) — T's light fade (2026-10-18 (b)): over 39% of the zone, curve 0.5, carried 14% into the body.
+    static let bakedLight = Shape(length: 0.39, curve: 0.5, overshoot: 0.10, intoBody: 0.14)
+    /// live-26 (1) — T's dark fade (2026-10-18): over 35% of the zone, nearly linear (curve 0.15); live-27 (0): carried
+    /// 18% into the body.
+    static let bakedDark = Shape(length: 0.35, curve: 0.15, overshoot: 0.10, intoBody: 0.18)
     /// What an App Store build renders for an appearance.
     static func baked(dark: Bool) -> Shape { dark ? bakedDark : bakedLight }
     /// live-26 (3c) — "Match fluted": the photo fade fitted (least squares over 0.5–2.2 zones) to the fluted cards'
@@ -484,9 +486,17 @@ enum CardHeroFade {
         #if DEBUG || TESTFLIGHT
         if let v = AppearanceTuning.values(dark: dark) { s = v.heroFade }
         #endif
-        s.scrim = textScrim(dark: dark) * min(max(s.intoBody, 0), 1)
+        s.scrim = veil(intoBody: s.intoBody, dark: dark)
         return s
     }
+
+    /// The veil behind the card text for a "Fade into body" setting (0 = today's fade: none). live-27 (1): dark scales
+    /// with the extension (0.45 at 100%; T's 0.18 → 0.08 passes); light comes in fully by 10% of it — at T's 0.14 the least
+    /// that keeps the dateline AA is 0.9, at Match fluted / 100% 1.0 (stills, Ops design-refs/live27-*/fade-veil.md).
+    static func veil(intoBody: Double, dark: Bool) -> Double {
+        textScrim(dark: dark) * min(max(intoBody, 0) / veilRamp(dark: dark), 1)
+    }
+    static func veilRamp(dark: Bool) -> Double { dark ? 1 : 0.10 }
 
     /// live-26 (3c) — the least veil that keeps every card text line AA (4.5:1, or no worse than on today's fade where
     /// that's already under) at "Match fluted" and at "Fade into body" 100%, measured on busy synthetic photos, light +
@@ -497,7 +507,8 @@ enum CardHeroFade {
         if UserDefaults.standard.object(forKey: k) != nil { return UserDefaults.standard.double(forKey: k) }
         #endif
         // Measured (live-26 (3c)): dark 0.45 (0.30 left the gradient-art source row at 3.9); light 1.0 — the light
-        // source/time row is 3.74:1 on the plain body already, so any photo behind it is worse (0.85 → 3.53).
+        // source/time row was 3.74:1 on the plain body. live-27 (1): with the meta ink at AA (4.55) light still needs 1.0
+        // at Match fluted / 100% (0.9 → 4.38 / 4.29): the ink clears AA by a hair, so any photo behind it is under.
         return dark ? 0.45 : 1.0
     }
 

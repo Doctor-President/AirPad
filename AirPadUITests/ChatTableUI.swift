@@ -16,6 +16,11 @@ final class ChatTableUI: XCTestCase {
         let table = app.descendants(matching: .any)["chatTable"].firstMatch
         XCTAssertTrue(table.waitForExistence(timeout: 30), "the answer's table renders as the grid")
         sleep(1); shot(app, "inline")
+        // live-27 (4c) — the grid uses the full answer width (to the transcript's 16 pt margin) and shows an expand
+        // control on its corner.
+        let window = app.windows.firstMatch.frame
+        XCTAssertGreaterThan(table.frame.maxX, window.maxX - 24, "the grid reaches the answer's right edge")
+        XCTAssertTrue(app.buttons["chatTableExpand"].firstMatch.exists, "an expand control on the table's corner")
         // The first column stays put while the grid scrolls sideways: the "1" cell keeps its x, "Party" moves.
         let first = app.staticTexts["Ada Marlow"].firstMatch
         let firstNum = table.staticTexts.matching(NSPredicate(format: "label == '#'")).firstMatch
@@ -24,8 +29,8 @@ final class ChatTableUI: XCTestCase {
         table.swipeLeft(velocity: .slow)
         sleep(1); shot(app, "scrolled-sideways")
         if firstNum.exists { XCTAssertEqual(firstNum.frame.minX, headerX0, accuracy: 2, "the first column stays put") }
-        // Tap → full screen, then landscape.
-        table.tap()
+        // The expand control → full screen, then landscape.
+        app.buttons["chatTableExpand"].firstMatch.tap()
         let copy = app.buttons["chatTableCopy"].firstMatch
         XCTAssertTrue(copy.waitForExistence(timeout: 8), "a tap opens the table full screen")
         sleep(1); shot(app, "full-screen")

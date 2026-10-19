@@ -150,9 +150,8 @@ final class LibrarianState {
     }
     var searchImageMatches: [SearchImageMatch] = []
 
-    /// Semantic-search results (RELATED). Block-level granularity:
-    /// multiple blocks from the same node each get their own row with
-    /// a distinct pull quote. Repopulated by `kickOffSemanticSearch`
+    /// Semantic-search results (RELATED): one row per entry, its best-ranked block's pull quote (live-27 (4e); was one
+    /// row per block, so an entry could appear twice). Repopulated by `kickOffSemanticSearch`
     /// after a short debounce on each `searchText` change.
     struct SearchRelated: Identifiable, Sendable {
         let id: String        // blockID
@@ -381,8 +380,7 @@ final class LibrarianState {
     /// total budget (debounce + embed + rank) targets the 100-300ms
     /// fast-follow window after MATCHES.
     ///
-    /// Block-level: multiple blocks from the same node each get a row
-    /// with a distinct pull quote. No dedup against `searchMatches` —
+    /// One row per entry (live-27 (4e), `relatedRows`). No dedup against `searchMatches` —
     /// "this note's title matches" and "this passage is semantically
     /// related" are distinct signals worth showing separately.
     func kickOffSemanticSearch(store: CorpusStore) {
@@ -400,34 +398,44 @@ final class LibrarianState {
             let matches = await store.findRelevantBlocks(query: query, topK: 10)
             if Task.isCancelled { return }
             guard let self else { return }
-            self.searchRelated = matches.map { match in
-                // ws-related-scoring Change 2 — snippet floor + fallback (display
-                // only; the match/ranking is unchanged). A degenerate matched
-                // block (e.g. a bare "-" bullet, or a sub-20-char / punctuation-
-                // only fragment) renders as a blank/dash body, so fall back to the
-                // node's summary for the row text.
-                let blockText = match.block.text.trimmingCharacters(in: .whitespacesAndNewlines)
-                let isDegenerate = blockText.count < 20
-                    || !blockText.contains(where: { $0.isLetter || $0.isNumber })
-                let snippet: String
-                if isDegenerate,
-                   let node = store.nodes.first(where: { $0.id == match.nodeID }) {
-                    let summary = (node.substrateSummary?.isEmpty == false ? node.substrateSummary! : node.summary)
-                        .trimmingCharacters(in: .whitespacesAndNewlines)
-                    snippet = summary.isEmpty
-                        ? Self.pullQuote(from: match.block.text, query: query)
-                        : summary
-                } else {
-                    snippet = Self.pullQuote(from: match.block.text, query: query)
-                }
-                return SearchRelated(
-                    id: match.block.blockID,
-                    nodeID: match.nodeID,
-                    snippet: snippet,
-                    score: match.score
-                )
-            }
+            self.searchRelated = Self.relatedRows(matches, node: { id in store.nodes.first(where: { $0.id == id }) }, query: query)
             self.searchSemanticInFlight = false
+        }
+    }
+
+    /// RELATED rows from the block matches. live-27 (4e) — one row per entry, its best-ranked block: T's screenshots showed
+    /// one entry twice with an identical snippet (two degenerate blocks of the same entry — bare bullets, < 20 chars — both
+    /// fall back to its summary; distinct blocks of one entry were also listed separately by design). Pure (self-tested).
+    static func relatedRows(_ matches: [BlockMatch], node: (String) -> Node?, query: String) -> [SearchRelated] {
+        // One row per entry: its best-ranked block (the matches arrive best first; sorted again so it can't depend on that).
+        var seen = Set<String>()
+        let best = matches.sorted { $0.score > $1.score }.filter { seen.insert($0.nodeID).inserted }
+        return best.map { match in
+            // ws-related-scoring Change 2 — snippet floor + fallback (display
+            // only; the match/ranking is unchanged). A degenerate matched
+            // block (e.g. a bare "-" bullet, or a sub-20-char / punctuation-
+            // only fragment) renders as a blank/dash body, so fall back to the
+            // node's summary for the row text.
+            let blockText = match.block.text.trimmingCharacters(in: .whitespacesAndNewlines)
+            let isDegenerate = blockText.count < 20
+                || !blockText.contains(where: { $0.isLetter || $0.isNumber })
+            let snippet: String
+            if isDegenerate,
+               let node = node(match.nodeID) {
+                let summary = (node.substrateSummary?.isEmpty == false ? node.substrateSummary! : node.summary)
+                    .trimmingCharacters(in: .whitespacesAndNewlines)
+                snippet = summary.isEmpty
+                    ? Self.pullQuote(from: match.block.text, query: query)
+                    : summary
+            } else {
+                snippet = Self.pullQuote(from: match.block.text, query: query)
+            }
+            return SearchRelated(
+                id: match.block.blockID,
+                nodeID: match.nodeID,
+                snippet: snippet,
+                score: match.score
+            )
         }
     }
 
@@ -685,7 +693,7 @@ final class LibrarianState {
                     chat.appendWebSearchKeyNotice(userText: query)
                 } else {
                     await chat.send(displayText: query, modelText: query,
-                                    systemPrompt: privateSystemPrompt, citations: nil, generalKnowledge: true)
+                                    systemPrompt: hostPrivateSystemPrompt, citations: nil, generalKnowledge: true)
                 }
                 return
             }
@@ -703,7 +711,9 @@ final class LibrarianState {
             // is a NUDGE appended to the model turn — `sendWithTools(forceWebSearch:)`.
             // That call also runs the refusal guard (a no-tool "I can't access the web"
             // answer on an intent turn → ONE web retry), returning whether it fired.
-            let forceWeb = Self.looksLikeSearchIntent(query)
+            // live-27 (3) — a request about the current state of the world (who holds an office, who is living, the
+            // latest, this year — make / list / table requests included) is searched too.
+            let forceWeb = Self.looksLikeSearchIntent(query) || WebGrounding.asksCurrentState(query)
             // CH Session 2 (T 2026-10-08) — the APP searches before the model answers: a current-information
             // question is searched; a factual question is searched AND its top result read (page text, not just
             // snippets). Anything else stays the model's call (and is labelled general knowledge if it doesn't search).
@@ -2374,10 +2384,21 @@ final class LibrarianState {
     /// confuses a small model; this is the LM-Studio-quality private-chat experience.
     /// Keeps the standing voice because it is about tone, not grounding — it applies to both modes.
     /// Brief CH-A1b — opens with the Librarian's corpus-free voice line; the standing voice comes LAST.
-    private var privateSystemPrompt: String {
-        let base = Self.plainVoice + " Answer the user's question clearly and accurately from your own knowledge. Be specific and genuinely useful; don't pad the answer."
-        return base + standingVoiceSuffix
-    }
+    private var privateSystemPrompt: String { Self.generalPromptBase + standingVoiceSuffix }
+    /// live-27 (3) — General on a Host with NO search key (search off). The one plain line wasn't enough there: qwen3:4b
+    /// answered T's presidents table "as of now (June 2024)" with no caveat (gauntlet DK1). So this path gets the full
+    /// dated paragraph; Apple Intelligence keeps the one line (its refusal rate is the constraint there).
+    private var hostPrivateSystemPrompt: String { Self.hostGeneralPromptBase + standingVoiceSuffix }
+    static let hostGeneralPromptBase = generalPromptBase + """
+
+    DATED KNOWLEDGE: what you know comes from training data that stops at a cutoff, and you can't search. Facts that \
+    change — who holds an office, who is living, prices, records, recent events — answer as of your training data and \
+    say so plainly ("as of my training data, …"). Never present such a fact as current: don't write "currently", \
+    "now", "today" or a date as if you knew today's state.
+    """
+    /// live-27 (3) — the General instructions (Apple Intelligence, and a Host without a search key) end with one plain
+    /// line about dated knowledge; the harness checks it doesn't raise Apple's refusal-shaped rate.
+    static let generalPromptBase = plainVoice + " Answer the user's question clearly and accurately from your own knowledge. Be specific and genuinely useful; don't pad the answer. If a fact may have changed recently, say your information may be out of date."
 
     /// ★ Tool-loop system prompt (private + REMOTE). Distinct from `privateSystemPrompt`
     /// because a web search has ALREADY run — the model must synthesize from the LIVE
@@ -2386,30 +2407,40 @@ final class LibrarianState {
     /// it injects the REAL current date (the model otherwise guesses its training-cutoff
     /// year) and explicitly counters the trained "as an AI I don't have real-time access"
     /// reflex. Read fresh at send time so the date is always today's.
+    /// live-27 (3) — T's stale presidents table ("as of October 2026" from training data): the date stays (for relative
+    /// dates), "Do NOT claim a knowledge cutoff" is gone, and facts that change are answered as of the training data with
+    /// an offer to search — never "as of <today>" unless this turn's search result supports it.
     private var toolChatSystemPrompt: String {
         let df = DateFormatter()
         df.locale = Locale(identifier: "en_US")
         df.dateFormat = "EEEE, MMMM d, yyyy"
-        let today = df.string(from: Date())
-        let base = """
+        return Self.toolChatBase(today: df.string(from: Date())) + standingVoiceSuffix
+    }
+    static func toolChatBase(today: String) -> String {
+        """
         \(Self.plainVoice) You can search the web with the web_search tool \
         when the user asks for current information or explicitly asks you to search (and fetch_url reads \
-        a page you found). Today's real date is \(today). When a question needs current, local, or \
-        factual information, call the tools.
+        a page you found). Today's real date is \(today); use it for relative dates ("how long ago", \
+        "next Tuesday"). When a question needs current, local, or factual information, call the tools.
+
+        DATED KNOWLEDGE: without a search result in this conversation, what you know comes from training data \
+        that stops at a cutoff. Facts that change — who holds an office, who is living, prices, records, recent \
+        events — answer as of your training data and say so plainly ("as of my training data, …"), then offer \
+        to search the web for the current answer. Never write "as of \(today)", "currently" or "now" about such \
+        a fact unless a search result in this turn supports it.
 
         CRITICAL — how to use tool results: any tool results already present in this conversation were \
         fetched JUST NOW. They are live, current, and authoritative. Answer FROM those results, not from \
-        your training data. Do NOT say you lack real-time access. Do NOT claim a knowledge cutoff. Do NOT \
-        guess or invent the date — today is \(today), and the current information is already in front of \
-        you. If the results genuinely don't cover the question, say what you found and what is missing — \
-        but never refuse on the grounds that you cannot access the web, because you just did.
+        your training data. Do NOT say you lack real-time access — you can search. Do NOT guess or invent \
+        the date — today is \(today). If the results genuinely don't cover the question, say what you found \
+        and what is missing — but never refuse on the grounds that you cannot access the web, because you \
+        just did.
 
         CITING SOURCES: the search results are numbered ([1], [2], …). When you use a result, cite it \
         inline with its bracket number like [1] or [2] matching that numbered result. Do NOT paste raw \
         URLs into your prose — the app renders the real links from your [n] citations, and any URL you \
         type yourself will be shown as plain, non-clickable text.
         """
-        return base + standingVoiceSuffix
     }
 
     #if DEBUG
@@ -2885,3 +2916,33 @@ final class LibrarianState {
     }
 
 }
+
+#if DEBUG
+/// `-SearchRelatedSelfTest` — live-27 (4e): the RELATED list never shows one entry twice. Synthetic: an entry whose two
+/// matched blocks are bare bullets (both fall back to its summary — T's identical-snippet case), a block of another
+/// entry between them, and a second, weaker block of that other entry.
+enum SearchRelatedSelfTest {
+    @MainActor static func run() -> String {
+        var rows: [(String, Bool, String)] = []
+        func row(_ n: String, _ ok: Bool, _ d: String = "") { rows.append((n, ok, d)) }
+        func block(_ id: String, _ item: String, _ text: String) -> NodeBlock {
+            NodeBlock(blockID: id, itemID: item, chunkIndex: 0, text: text, embedding: [], embeddingBasis: nil, sourceHash: "x",
+                      embedderVersion: 1, charLocation: 0, charLength: text.count)
+        }
+        let t = Date(timeIntervalSince1970: 1_760_600_000)
+        let a = Node(id: "rel-a", createdAt: t, updatedAt: t, title: "Tide tables", summary: "Low and high water for the week.", tags: [], items: [])
+        let b = Node(id: "rel-b", createdAt: t, updatedAt: t, title: "Harbour wall", summary: "Notes from the west end.", tags: [], items: [])
+        let matches = [BlockMatch(block: block("a1", "a-note", "-"), nodeID: "rel-a", score: 0.81),
+                       BlockMatch(block: block("b1", "b-note", "The harbour wall at low tide shows every pool along the west end."), nodeID: "rel-b", score: 0.74),
+                       BlockMatch(block: block("a2", "a-note", "- "), nodeID: "rel-a", score: 0.70),
+                       BlockMatch(block: block("b2", "b-note", "Weed on the lower steps; the ladder is loose near the top rung."), nodeID: "rel-b", score: 0.52)]
+        let out = LibrarianState.relatedRows(matches, node: { id in [a, b].first(where: { $0.id == id }) }, query: "harbour")
+        row("one-row-per-entry", out.map(\.nodeID) == ["rel-a", "rel-b"], "\(out.map { "\($0.nodeID):\($0.id)" })")
+        row("keeps-the-best-ranked-row", out.first?.id == "a1" && out.last?.id == "b1" && out.first?.score == 0.81)
+        row("the-summary-fallback-still-applies", out.first?.snippet == "Low and high water for the week.")
+        let fails = rows.filter { !$0.1 }
+        return (fails.isEmpty ? "PASS — \(rows.count)/\(rows.count)" : "FAIL — \(rows.count - fails.count)/\(rows.count)")
+            + rows.map { "\n\($0.1 ? "PASS" : "FAIL") \($0.0)\($0.2.isEmpty ? "" : " — \($0.2)")" }.joined()
+    }
+}
+#endif

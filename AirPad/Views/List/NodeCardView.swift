@@ -130,7 +130,8 @@ struct NodeCardView: View {
 
     private static let inkTitle = ink(cream, 0.98)
     private static let inkDeck  = ink(cream, 0.86)
-    private static let inkMeta  = ink(cream, 0.68)
+    private static let inkMeta  = AppearancePalette.cardMetaInk(0.68)   // live-27 (1): light reaches AA
+    private static let inkOverflow = AppearancePalette.cardMetaInk(0.68 * 0.85)
     private static let hairline = ink(creamHair, 0.22)
 
     // Legibility shadow behind ink. Dark: black (the shipped scrim substitute —
@@ -348,6 +349,9 @@ struct NodeCardView: View {
                     }
                     // Editorial column, pinned RIGHT. Dateline starts here; topInset dropped.
                     editorialContent(cardHeight: geo.size.height, topInsetOverride: 20)
+                        #if DEBUG
+                        .opacity(UserDefaults.standard.bool(forKey: "CardHideText") ? 0 : 1)   // live-27 (1): backdrop-only stills
+                        #endif
                         .frame(width: textWidth, height: geo.size.height, alignment: .topLeading)
                         .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .trailing)
                 }
@@ -878,7 +882,7 @@ struct NodeCardView: View {
         Text("+\(count) more")
             .font(cardFont(11))
             .italic()
-            .foregroundColor(Self.inkMeta.opacity(0.85))
+            .foregroundColor(Self.inkOverflow)
             .shadow(color: inkHalo.opacity(0.35), radius: 2, x: 0, y: 1)
     }
 

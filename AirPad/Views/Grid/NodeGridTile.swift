@@ -202,7 +202,7 @@ struct NodeGridTile: View {
 
     private static let inkTitle = ink(cream, 0.98)
     private static let inkDeck  = ink(cream, 0.86)
-    private static let inkMeta  = ink(cream, 0.68)
+    private static let inkMeta  = AppearancePalette.cardMetaInk(0.68)   // live-27 (1): light reaches AA
     // Full-alpha base; the body multiplies by `t.hairlineOpacity`.
     private static let hairlineColor = ink(creamHair, 1.0)
 

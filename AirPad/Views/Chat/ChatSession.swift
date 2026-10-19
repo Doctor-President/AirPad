@@ -110,6 +110,12 @@ final class ChatSession {
         /// The user turn whose packet began this turn's THREAD (the fresh read it follows up). The next follow-up replays
         /// packets from here on, so its request extends this one byte-for-byte. Nil on turns that sent no packet.
         var threadStart: UUID?
+        /// live-27 (4) — who wrote this answer (route, model, web / library). Nil on user turns, app notices, and answers
+        /// saved before live-27 (decode-tolerant: those show no caption).
+        var provenance: ChatProvenance?
+        /// live-27 (3) — the general-knowledge line is the DATED one ("From the model's training data — may be out of
+        /// date."): a current-state request no web result backs. Nil on everything else (legacy decodes nil).
+        var datedKnowledge: Bool?
 
         init(id: UUID = UUID(), role: Role, text: String, citations: [Citation]? = nil, readReceipt: ReadReceipt? = nil, activity: ToolActivity? = nil, isPartial: Bool? = nil, requestID: String? = nil, generalKnowledge: Bool? = nil, declined: Bool? = nil, modelText: String? = nil, systemPrompt: String? = nil, threadStart: UUID? = nil) {
             self.declined = declined
@@ -343,6 +349,13 @@ final class ChatSession {
     /// trigger; this threshold only adds crash/kill safety between backgroundings.
     private static let partialPersistThreshold = 240
 
+    /// live-27 (4) — the provenance of the answer being committed, from whichever path wrote it (nil if none said).
+    static func answerProvenance(web: Bool, library: Bool) -> ChatProvenance? {
+        guard let s = ModelRouter.lastAnswerSource else { return nil }
+        return ChatProvenance(route: s.route, model: s.model, name: ChatProvenance.displayName(route: s.route, model: s.model),
+                              web: web ? true : nil, library: library ? true : nil)
+    }
+
     static let systemPrompt = """
     You are a thoughtful conversational assistant. The user is thinking out loud \
     and will ask follow-up questions that depend on earlier turns — always take \
@@ -390,6 +403,7 @@ final class ChatSession {
         beginAnswerStream(candidates: citations ?? [])
 
         streamingMessageID = UUID()
+        ModelRouter.lastAnswerSource = nil   // live-27 (4) — set by the path that writes this answer
         // ★ BUG 36 Pillar 2 — a HOST turn gets a client-generated requestID (D1) so a
         // mid-stream drop can be RESUMED (the Host holds the full answer). Only the host
         // path uses it; FM/Ollama ignore it. `currentRequestID` lets flush() tag a partial
@@ -477,12 +491,17 @@ final class ChatSession {
                 // live-23 (5b) — Apple Intelligence's refusal string is a decline, not an answer: no general-knowledge
                 // label, never sent back as history, never a title.
                 let declined = ModelRouter.isAppleIntelligenceActive && AppleChat.isRefusalText(finalText)
-                let labelled = !declined && generalKnowledge && WebGrounding.isFactualQuestion(displayText)
-                messages.append(Message(id: streamingMessageID, role: .assistant, text: finalText,
-                                        citations: r.citations.isEmpty ? nil : r.citations, readReceipt: readReceipt,
-                                        generalKnowledge: labelled ? true : nil, declined: declined ? true : nil))
+                let note = WebGrounding.ungroundedNote(for: displayText)   // live-27 (3): dated for a current-state request
+                let labelled = !declined && generalKnowledge && note != nil
+                var answer = Message(id: streamingMessageID, role: .assistant, text: finalText,
+                                     citations: r.citations.isEmpty ? nil : r.citations, readReceipt: readReceipt,
+                                     generalKnowledge: labelled ? true : nil, declined: declined ? true : nil)
+                answer.provenance = Self.answerProvenance(web: false, library: packetTurn)
+                if labelled && note == WebGrounding.datedKnowledgeNote { answer.datedKnowledge = true }
+                messages.append(answer)
                 #if DEBUG
                 if labelled { GauntletTap.shared.noteValue("generalKnowledge", true) }
+                GauntletTap.shared.noteValue("provenance", answer.provenance?.caption ?? "none")   // live-27 (4)
                 #endif
             }
         } catch {
@@ -499,11 +518,15 @@ final class ChatSession {
             if !partial.isEmpty {
                 // Carry the requestID so foreground / relaunch can fetch the FULL answer. Keep the
                 // read receipt so a resumed partial still shows what it read (BN5).
-                messages.append(Message(id: streamingMessageID, role: .assistant, text: partial, readReceipt: readReceipt, isPartial: true, requestID: hostRequestID))
+                var kept = Message(id: streamingMessageID, role: .assistant, text: partial, readReceipt: readReceipt, isPartial: true, requestID: hostRequestID)
+                kept.provenance = Self.answerProvenance(web: false, library: packetTurn)
+                messages.append(kept)
             } else if ModelRouter.isAppleIntelligenceActive && AppleNaming.isRefusal(error) {
                 // live-23 (5b) — a guardrail / refusal error from Apple Intelligence is a decline, shown as one (not a
                 // red failure banner), and kept out of history like a refusal string.
-                messages.append(Message(id: streamingMessageID, role: .assistant, text: AppleChat.declineLine, declined: true))
+                var decline = Message(id: streamingMessageID, role: .assistant, text: AppleChat.declineLine, declined: true)
+                decline.provenance = Self.answerProvenance(web: false, library: packetTurn)
+                messages.append(decline)
             } else {
                 // Nothing streamed — a genuine failure. Classify it into a human
                 // banner (field findings #2/#3): unreachable/530 reads as "offline
@@ -653,6 +676,7 @@ final class ChatSession {
         let now = Date()
         beginAnswerStream(candidates: [])
         streamingThinking = ""   // Brief AL3 — clear any prior turn's thought process
+        ModelRouter.lastAnswerSource = nil   // live-27 (4)
 
         #if DEBUG
         // Gauntlet v2 pillar rows — the agent loop is a turn too (inert without -GauntletTapDir). Per-step Host
@@ -868,10 +892,17 @@ final class ChatSession {
                     // general-knowledge line — only under a FACTUAL question (T ruling 2026-10-09: a pep talk gets
                     // none). A throttled turn's canned message is the app's own, so it gets none.
                     // T ruling (2026-10-09, item 9): a search whose results the answer doesn't CITE backs nothing either.
-                    let ungrounded = (outcome.links.isEmpty || r.citations.isEmpty) && !outcome.rateLimited && WebGrounding.isFactualQuestion(displayText)
-                    messages.append(Message(role: .assistant, text: r.text,
-                                            citations: r.citations.isEmpty ? nil : r.citations,
-                                            generalKnowledge: ungrounded ? true : nil))
+                    let note = WebGrounding.ungroundedNote(for: displayText)   // live-27 (3): dated for a current-state request
+                    let ungrounded = (outcome.links.isEmpty || r.citations.isEmpty) && !outcome.rateLimited && note != nil
+                    var answer = Message(role: .assistant, text: r.text,
+                                         citations: r.citations.isEmpty ? nil : r.citations,
+                                         generalKnowledge: ungrounded ? true : nil)
+                    answer.provenance = Self.answerProvenance(web: !outcome.links.isEmpty, library: false)   // live-27 (4)
+                    if ungrounded && note == WebGrounding.datedKnowledgeNote { answer.datedKnowledge = true }
+                    messages.append(answer)
+                    #if DEBUG
+                    GauntletTap.shared.noteValue("provenance", answer.provenance?.caption ?? "none")
+                    #endif
                     #if DEBUG
                     if ungrounded { GauntletTap.shared.noteValue("generalKnowledge", true) }
                     #endif

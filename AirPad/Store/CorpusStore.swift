@@ -578,7 +578,7 @@ final class CorpusStore {
     /// "Untitled" so the alphabetical bucket has a stable last group.
     private static func sortTitle(for node: Node) -> String {
         if !node.title.isEmpty { return node.title }
-        if let firstText = node.items.first?.content, !firstText.isEmpty { return firstText }
+        if let firstText = node.untitledDisplayText { return firstText }   // live-25 (2): plain, never `**`
         return "Untitled"
     }
 
@@ -1197,6 +1197,22 @@ final class CorpusStore {
             // live-22 — T's light picks are what ships; the appearance tuner's gate, storage, presets and export.
             if ProcessInfo.processInfo.arguments.contains("-AppearanceTuningSelfTest") {
                 NSLog("%@", AppearanceTuning.selfTest())
+            }
+            // live-23 (5b) — Apple Intelligence chat: request shape, refusal detection, declines never go back / never title.
+            if ProcessInfo.processInfo.arguments.contains("-AppleChatSelfTest") {
+                NSLog("%@", AppleChat.selfTest())
+            }
+            // live-23 (4) — the card-content proposal's strip + preview choice.
+            if ProcessInfo.processInfo.arguments.contains("-CardContentSelfTest") {
+                NSLog("%@", CardContentSummary.selfTest())
+            }
+            // live-26 (3) — a note's first line (shown as its title) stores plain; bold the user chose stays.
+            if ProcessInfo.processInfo.arguments.contains("-NoteTitleStorageSelfTest") {
+                NSLog("%@", NoteTitleStorageSelfTest.run())
+            }
+            // live-26 (3f) — answer tables: a grid, every fixture whole, Copy as Markdown / CSV, VoiceOver records.
+            if ProcessInfo.processInfo.arguments.contains("-ChatTableSelfTest") {
+                NSLog("%@", ChatTableSelfTest.run())
             }
             // live-13 (1) — Done saves what the recorder showed, on every tier (tier 3 driven by injected results).
             if ProcessInfo.processInfo.arguments.contains("-RecorderSaveSelfTest") {
@@ -8497,7 +8513,7 @@ final class CorpusStore {
                     }.first(where: { !$0.isEmpty })
                     let mayFillBlank = n.title.isEmpty && posture == .automatic
                     if let fallback, mayFillBlank || n.title == "Photo" || n.title == "Voice note" {
-                        n.title = String(fallback.prefix(40))
+                        n.title = MarkdownPlain.fragmentTitle(fallback)   // live-25 (2): plain, never `**`
                     }
                     n.needsAIProcessing = false
                 }

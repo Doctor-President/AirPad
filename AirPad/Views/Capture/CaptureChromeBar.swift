@@ -47,10 +47,23 @@ struct CaptureChromeBar<Leading: View>: View {
     @ViewBuilder var leading: Leading
 
     @State private var showDeleteConfirmation = false
+    @Environment(\.accessibilityReduceTransparency) private var reduceTransparency
+    @Environment(\.colorSchemeContrast) private var contrast
 
     private typealias M = CaptureChromeMetrics
+    private var glass: Bool { CaptureGlass(reduceTransparency: reduceTransparency, contrast: contrast).isOn }
 
     var body: some View {
+        // live-23 (5c) — with glass, the whole bar is ONE glass container, so the item-type cluster and the actions
+        // merge and morph as Delete appears beside Done. Sizes and positions are today's.
+        if glass {
+            GlassEffectContainer(spacing: M.itemSpacing) { bar }
+        } else {
+            bar
+        }
+    }
+
+    private var bar: some View {
         HStack(spacing: M.itemSpacing) {
             leading
             Spacer(minLength: M.itemSpacing)
@@ -63,12 +76,14 @@ struct CaptureChromeBar<Leading: View>: View {
                     pill(title: "Delete",
                          fill: Color(hexString: "FF3B30"),
                          ink: Color(hexString: "FFFFFF"),
+                         glassTint: Color(hexString: "FF3B30"),   // glass tinted the destructive red, not a solid capsule
                          action: { showDeleteConfirmation = true })
                         .accessibilityLabel("Delete capture")
                 }
                 pill(title: hasContent ? "Done" : "Cancel",
                      fill: hasContent ? AppearancePalette.ink : AppearancePalette.ink.opacity(0.14),
                      ink: hasContent ? AppearancePalette.onInk : AppearancePalette.ink,
+                     glassTint: hasContent ? AppearancePalette.ink : nil,   // Done = prominent glass; Cancel = plain glass
                      action: { if hasContent { onDone() } else { onDiscard() } })
             }
         }
@@ -87,16 +102,20 @@ struct CaptureChromeBar<Leading: View>: View {
 
     /// A capsule pill at the SHARED `barHeight`; the word is non-compressible so it
     /// always renders in full (`lineLimit(1)` + `fixedSize`).
-    private func pill(title: String, fill: Color, ink: Color, action: @escaping () -> Void) -> some View {
+    private func pill(title: String, fill: Color, ink: Color, glassTint: Color?, action: @escaping () -> Void) -> some View {
         Button(action: action) {
-            Text(title)
+            let label = Text(title)
                 .font(.headline)
                 .lineLimit(1)
                 .fixedSize(horizontal: true, vertical: false)
                 .foregroundStyle(ink)
                 .padding(.horizontal, M.pillHPadding)
                 .frame(height: M.barHeight)
-                .background(fill, in: Capsule())
+            if glass {
+                label.captureGlassPill(tint: glassTint)
+            } else {
+                label.background(fill, in: Capsule())
+            }
         }
         .buttonStyle(.plain)
     }
@@ -111,10 +130,24 @@ extension View {
     /// off-white page in light, #FFFFFF@8% over the dark page in dark), so all three
     /// stay locked to one source. Height = the shared `barHeight`.
     func capturePrimitivesContainer() -> some View {
-        self
+        modifier(CapturePrimitivesContainer())
+    }
+}
+
+/// The item-type pill: today's muted capsule, or (live-23 (5c), behind the tuner) one interactive glass capsule inside
+/// the bar's glass container.
+private struct CapturePrimitivesContainer: ViewModifier {
+    @Environment(\.accessibilityReduceTransparency) private var reduceTransparency
+    @Environment(\.colorSchemeContrast) private var contrast
+    func body(content: Content) -> some View {
+        let padded = content
             .padding(.horizontal, CaptureChromeMetrics.primitivesHPadding)
             .frame(height: CaptureChromeMetrics.barHeight)
-            .background(AppearancePalette.ink.opacity(0.08), in: Capsule())
+        if CaptureGlass(reduceTransparency: reduceTransparency, contrast: contrast).isOn {
+            padded.glassEffect(.regular.interactive(), in: Capsule())
+        } else {
+            padded.background(AppearancePalette.ink.opacity(0.08), in: Capsule())
+        }
     }
 }
 
@@ -163,5 +196,38 @@ private struct PinnedCaptureBarModifier<Bar: View>: ViewModifier {
             .ignoresSafeArea(.keyboard, edges: .bottom)   // ★ THE PIN (full-height ignoring layer)
         }
         .onPreferenceChange(CaptureBarHeightKey.self) { height = $0 }
+    }
+}
+
+// MARK: - live-23 (5c) — capture controls on Liquid Glass (TASTE, behind the tuner; Today by default)
+
+/// Which capture controls render. An App Store build always renders Today; DEBUG / TestFlight read the appearance
+/// tuner's "Capture controls" switch (and DEBUG `-CaptureControls glass`, for the stills). Reduce Transparency and
+/// Increase Contrast always get Today's solid pills (`CaptureGlass.isOn`).
+enum CaptureControlsStyle {
+    static var glassChosen: Bool {
+        #if DEBUG
+        if let forced = UserDefaults.standard.string(forKey: "CaptureControls") { return forced == "glass" }   // stills: glass | today
+        #endif
+        #if DEBUG || TESTFLIGHT
+        if AppearanceTuning.isLive { return AppearanceTuner.shared.state.captureControls == .glass }
+        #endif
+        return bakedGlass
+    }
+    /// What an App Store build renders.
+    static let bakedGlass = true   // live-26 (1): T chose Glass (2026-10-18)
+}
+
+/// Glass is on when chosen AND the person hasn't asked for less transparency or more contrast.
+struct CaptureGlass {
+    let reduceTransparency: Bool
+    let contrast: ColorSchemeContrast
+    var isOn: Bool { CaptureControlsStyle.glassChosen && !reduceTransparency && contrast != .increased }
+}
+
+extension View {
+    /// A capture action as glass: `prominent` tints it (Done), `tint` colours it (Delete's red), plain otherwise.
+    func captureGlassPill(tint: Color?) -> some View {
+        glassEffect(tint.map { Glass.regular.tint($0).interactive() } ?? Glass.regular.interactive(), in: Capsule())
     }
 }

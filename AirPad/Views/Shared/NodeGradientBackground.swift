@@ -171,6 +171,10 @@ struct NodeGradientLayer: View {
     /// Fluted glass (ws-fluted-glass) opt-in — which surface this is (its own baked size).
     /// nil (default), or both Appearance glass settings off → the V1 shader, byte-identical.
     var glassSurface: GlassSurface? = nil
+    /// live-23 (2) — false = the card body without its colour field: the SAME base, radial glow, vignette (and, at the
+    /// call site, scrim) a gradient card's body renders, with no blobs. Hero (photo) cards use it so their body is the
+    /// fluted cards' body by construction, and the photo fades straight into it (T: one body colour in every view).
+    var showsBlobs: Bool = true
     private var glass: GlassRender? {
         glassSurface.flatMap { FlutedGlass.shared.active($0) }
     }
@@ -421,6 +425,11 @@ struct NodeGradientLayer: View {
     /// premultiplied source-over), so the blend leaves bare paper untouched.
     @ViewBuilder
     private var pigmentField: some View {
+        if showsBlobs { pigmentBlobs } else { Color.clear }
+    }
+
+    @ViewBuilder
+    private var pigmentBlobs: some View {
         let colors = effectiveColors
         let size: CGFloat = 180 * circleScale
         if let dist = blobDistribution {
@@ -481,7 +490,9 @@ struct NodeGradientLayer: View {
             // gradient-only card read blacker than a hero card (whose `paper` already used this
             // token). Routed through the one resolver so the two card paths can't drift again.
             AppearancePalette.mapBackground(dark: true)
-            if let dist = blobDistribution {
+            if !showsBlobs {
+                EmptyView()   // live-23 (2) — a hero card's body: the base alone
+            } else if let dist = blobDistribution {
                 GeometryReader { g in
                     BlobFieldView(cardBlobs: distributedBlobs(colors: colors, dist: dist, size: g.size),
                                   animated: animated, anchor: .center, bloom: bloom, glass: glass)

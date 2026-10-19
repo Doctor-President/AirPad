@@ -68,10 +68,11 @@ struct ComposerSendControls: View {
     let onSend: () -> Void
     let dictationToken: String
     @State private var dictation = LiveDictationService.shared
+    @Environment(\.colorScheme) private var colorScheme
 
-    /// The send/mic tint — identical on both surfaces (cyan→klein), so it's shared, not identity.
-    private static let accent = LinearGradient(
-        colors: [Color(hexString: "00BFFF"), Color(hexString: "1B59C2")], startPoint: .top, endPoint: .bottom)
+    /// The send/mic tint — identical on both surfaces, so it's shared, not identity. live-26 (2): solid Klein in light
+    /// (the gradient's cyan top failed 3:1 on a light pill), cyan→Klein in dark.
+    private var accent: AnyShapeStyle { LibrarianPillChrome.accent(colorScheme) }
 
     var body: some View {
         let hasText = !text.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty
@@ -80,23 +81,23 @@ struct ComposerSendControls: View {
             if hasText {
                 Button { text = "" } label: {
                     Image(systemName: "xmark.circle.fill").font(.system(size: 16))
-                        .foregroundStyle(AppearancePalette.ink.opacity(0.4))
+                        .foregroundStyle(AppearancePalette.ink.opacity(LibrarianPillChrome.clearGlyphOpacity(colorScheme)))
                 }.buttonStyle(.plain).accessibilityLabel("Clear input")
                 Button {
                     if isHot { dictation.stop() }
                     onSend()
                 } label: {
                     Image(systemName: "arrow.up.circle.fill").font(.system(size: 28))
-                        .foregroundStyle(sendEnabled ? AnyShapeStyle(Self.accent)
+                        .foregroundStyle(sendEnabled ? accent
                                                      : AnyShapeStyle(AppearancePalette.ink.opacity(0.2)))
                 }.buttonStyle(.plain).disabled(!sendEnabled).accessibilityLabel("Send")
             } else if isHot {
                 Button { dictation.toggle(token: dictationToken, baseline: text, onUpdate: { text = $0 }) } label: {
-                    Image(systemName: "stop.fill").font(.system(size: 22)).foregroundStyle(Self.accent)
+                    Image(systemName: "stop.fill").font(.system(size: 22)).foregroundStyle(accent)
                 }.buttonStyle(.plain).accessibilityLabel("Stop dictation")
             } else {
                 Button { dictation.toggle(token: dictationToken, baseline: text, onUpdate: { text = $0 }) } label: {
-                    Image(systemName: "mic.fill").font(.system(size: 22)).foregroundStyle(Self.accent).opacity(0.8)
+                    Image(systemName: "mic.fill").font(.system(size: 22)).foregroundStyle(accent).opacity(0.8)
                 }.buttonStyle(.plain).accessibilityLabel("Dictate")
             }
         }

@@ -582,6 +582,12 @@ struct CanvasView: View {
             scene.canvasState = canvasState
             scene.selection = selection
             store.canvasState = canvasState
+            #if DEBUG
+            // live-26 (3b) — `-MapCardNode <id>`: open that entry's card on the Map (the popover still), as a tap would.
+            if let id = UserDefaults.standard.string(forKey: "MapCardNode") {
+                DispatchQueue.main.asyncAfter(deadline: .now() + 3) { canvasState.cardedNodeID = id }
+            }
+            #endif
             store.detailViewDepth = navigationPath.count
             previousNodeIDs = Set(store.filteredNodes(in: scope).map { $0.id })
             // .onAppear RENDERS — it must never re-derive territories. A
@@ -972,7 +978,7 @@ struct CanvasView: View {
                 // just crossfades, so it doesn't reflow/scale as the node grows in.
                 let finalDiameter = canvasState.focalNodeFinalDiameter > 0
                     ? canvasState.focalNodeFinalDiameter : diameter
-                let displayTitle = node.title.isEmpty ? (node.items.first?.content ?? "") : node.title
+                let displayTitle = node.title.isEmpty ? (node.untitledDisplayText ?? "") : node.title
 
                 // MORPH-TO-CARD — one clock (focalMorph): the focal grows as a
                 // bubble, then morphs into the node's actual Card View face in
@@ -1659,7 +1665,7 @@ struct NodeDetailOverlay: View {   // internal: live-20 (3) stills (TextRunsGall
                 // dark-palette nodes. Opacity ratios (1.0 / 0.85 / 0.65) preserved.
                 VStack(alignment: .leading, spacing: 12) {
                     // Title
-                    Text(node.title.isEmpty ? (node.items.first?.content ?? "Untitled") : node.title)
+                    Text(node.title.isEmpty ? (node.untitledDisplayText ?? "Untitled") : node.title)
                         .font(.system(size: 24, weight: .semibold))
                         .foregroundStyle(AppearancePalette.ink)
                         .lineLimit(2)

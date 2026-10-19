@@ -26,6 +26,8 @@ struct VoiceCaptureSheet: View {
     @Environment(\.scenePhase) private var scenePhase
     /// Recorder redesign (T, 2026-10-13) — the timer is set in the app's one content family (Lato by default).
     @Environment(\.appBodyFont) private var appBodyFont
+    @Environment(\.accessibilityReduceTransparency) private var reduceTransparency   // live-23 (5c) — glass falls back
+    @Environment(\.colorSchemeContrast) private var contrast
 
     // Recording state
     @State private var phase: RecordPhase = .requestingPermission
@@ -127,29 +129,50 @@ struct VoiceCaptureSheet: View {
 
             Spacer()
 
-            // Done button
+            // Done button — live-23 (5c): prominent glass behind the tuner's "Capture controls: Glass" (same size).
+            let glass = CaptureGlass(reduceTransparency: reduceTransparency, contrast: contrast).isOn
             Button {
                 stopRecording()
             } label: {
-                Text("Done")
-                    .font(.title3.weight(.semibold))
-                    .foregroundStyle(.black)
-                    .frame(width: 120, height: 48)
-                    .background(.white)
-                    .clipShape(Capsule())
+                if glass {
+                    Text("Done")
+                        .font(.title3.weight(.semibold))
+                        .foregroundStyle(AppearancePalette.onInk)
+                        .frame(width: 120, height: 48)
+                        .captureGlassPill(tint: AppearancePalette.ink)
+                } else {
+                    Text("Done")
+                        .font(.title3.weight(.semibold))
+                        .foregroundStyle(.black)
+                        .frame(width: 120, height: 48)
+                        .background(.white)
+                        .clipShape(Capsule())
+                }
             }
             .disabled(elapsedSeconds < 1 || phase != .recording)
             .opacity(elapsedSeconds < 1 ? 0.4 : 1)
 
-            Button("Cancel") {
+            Button {
                 // Free the mic the instant Cancel is tapped (BUG 8) — don't wait
                 // for the dismiss animation. `.onDisappear` re-runs it as a belt.
                 recorder.teardown()
                 dismiss()
+            } label: {
+                if glass {
+                    Text("Cancel")   // plain glass, same place
+                        .font(.body)
+                        .foregroundStyle(AppearancePalette.ink.opacity(0.8))
+                        .padding(.horizontal, 18)
+                        .frame(height: 40)
+                        .captureGlassPill(tint: nil)
+                } else {
+                    Text("Cancel")
+                        .font(.body)
+                        .foregroundStyle(AppearancePalette.ink.opacity(0.45))
+                }
             }
-                .font(.body)
-                .foregroundStyle(AppearancePalette.ink.opacity(0.45))
-                .padding(.bottom, 40)
+            .buttonStyle(.plain)
+            .padding(.bottom, 40)
         }
     }
 

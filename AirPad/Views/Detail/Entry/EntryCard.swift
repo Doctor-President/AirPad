@@ -599,8 +599,8 @@ struct EntryCard: View {
     /// A note's name in "Append to…": its name, else its first line (short), else "Note".
     private static func noteMenuName(_ note: NodeItem) -> String {
         if let n = note.displayName?.trimmingCharacters(in: .whitespacesAndNewlines), !n.isEmpty { return n }
-        let first = (note.content ?? "").split(separator: "\n").first.map(String.init)?
-            .trimmingCharacters(in: CharacterSet(charactersIn: "#* ").union(.whitespaces)) ?? ""
+        let first = MarkdownPlain.text(note.content ?? "").split(separator: "\n").first.map(String.init)?   // live-26 (3b)
+            .trimmingCharacters(in: .whitespaces) ?? ""
         if first.isEmpty { return "Note" }
         return first.count > 32 ? String(first.prefix(31)) + "…" : first
     }

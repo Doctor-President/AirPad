@@ -438,7 +438,7 @@ final class LibrarianState {
     /// the first sentence when no overlap is found, and truncates at
     /// ~240 chars so row height stays bounded for very long sentences.
     static func pullQuote(from text: String, query: String) -> String {
-        let trimmed = text.trimmingCharacters(in: .whitespacesAndNewlines)
+        let trimmed = MarkdownPlain.text(text).trimmingCharacters(in: .whitespacesAndNewlines)   // live-26 (3b): no markup
         guard !trimmed.isEmpty else { return "" }
 
         let tokenizer = NLTokenizer(unit: .sentence)

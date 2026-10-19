@@ -39,6 +39,7 @@ struct NodeGridTile: View {
     private static let denseGradientDriftScale: CGFloat = 0.4
 
     @Environment(CorpusStore.self) private var store
+    @Environment(\.colorScheme) private var colorScheme   // live-23 (3) — the hero fade is per appearance (tuner)
 
     /// Brief BF — the app-wide content face. Grid tiles were `.system(design: .serif)`
     /// (New York) at every text site; each now resolves through the registry via
@@ -172,7 +173,14 @@ struct NodeGridTile: View {
 
     /// Reserved top zone for hero-or-gradient. Hero and gradient-only tiles
     /// share one silhouette: text always starts below this height.
-    private var heroZoneHeight: CGFloat { cellHeight * tuning.heroPercent }
+    private var heroZoneHeight: CGFloat { cellHeight * zoneFraction }
+
+    /// live-23 (4) — the proposal's 3-col tile without a photo gives its colour zone up to the title (52% → 40%), so a
+    /// 3-line title and the icon strip fit; with a photo the zone (and the photo) keep their size and the title gets 2.
+    private var zoneFraction: CGFloat {
+        if CardContentPresentation.isProposal && !isEditorial && !hasHero { return 0.40 }
+        return tuning.heroPercent
+    }
 
     // Adaptive ink palette — trait-dynamic port of NodeCardView's (the tile had
     // copied NodeCardView's OLD static cream, before the card went adaptive). Dark
@@ -252,9 +260,7 @@ struct NodeGridTile: View {
         // a gradient-only tile and a hero tile share the same silhouette:
         // color form on top, dark text band below. Derived from the
         // current heroPercent + cellHeight — not a separate knob (yet).
-        let gradientCenterY: CGFloat = hasHero
-            ? 0
-            : (heroZoneHeight - cellHeight) / 2
+        let gradientCenterY: CGFloat = (heroZoneHeight - cellHeight) / 2
         return ZStack {
             NodeGradientLayer(
                 node: node,
@@ -271,41 +277,39 @@ struct NodeGridTile: View {
                 centerYOffset: gradientCenterY,
                 animated:      animateGradient,
                 // Hero tiles pool the gradient at the floor beneath the photo.
-                anchor:        hasHero ? .bottom : .center,
+                anchor:        .center,
                 // Dense tiles now animate (motion is ~free on the GPU) but at
                 // slowed drift so small blobs breathe rather than shimmer.
                 driftSpeedScale: columnCount >= 3 ? Self.denseGradientDriftScale : 1.0,
                 blobExpr: 2,   // grid (addendum D)
-                glassSurface: hasHero ? .photoCard : .grid
+                glassSurface: hasHero ? .photoCard : .grid,
+                // live-23 (2) — a photo tile's body is the gradient tile's body: same layers, no colour field
+                // (was: blobs anchored `.bottom`, pooling colour under the text).
+                showsBlobs: !hasHero
             )
             if hasHero {
                 heroOverlay
             }
             travelingScrim
             identityContent
+                #if DEBUG
+                .opacity(UserDefaults.standard.bool(forKey: "CardHideText") ? 0 : 1)   // live-26 (3c): backdrop-only stills
+                #endif
         }
     }
 
     // MARK: - Hero overlay
 
     private var heroOverlay: some View {
-        let heroHeight = heroZoneHeight
+        // live-23 (3) — a longer, eased fade into the tile body (`CardHeroFade`; was linear over the zone's last 22%).
+        let fade = CardHeroFade.current(dark: colorScheme == .dark)
+        let heroHeight = CardHeroFade.frameHeight(zone: heroZoneHeight, fade)
         return VStack(spacing: 0) {
             GridTileHeroImage(node: node)
                 .equatable()
                 .frame(width: cellWidth, height: heroHeight)
                 .clipped()
-                .mask(
-                    LinearGradient(
-                        stops: [
-                            .init(color: .black,  location: 0.0),
-                            .init(color: .black,  location: 0.78),
-                            .init(color: .clear,  location: 1.0)
-                        ],
-                        startPoint: .top,
-                        endPoint: .bottom
-                    )
-                )
+                .mask(LinearGradient(stops: CardHeroFade.stops(fade), startPoint: .top, endPoint: .bottom))
             Spacer(minLength: 0)
         }
     }
@@ -336,7 +340,9 @@ struct NodeGridTile: View {
         // air gap (`heroBottomPadding`) so the leading line clears the fade.
         let topInset: CGFloat = heroZoneHeight + tuning.heroBottomPadding
 
-        if isEditorial {
+        if CardContentPresentation.isProposal {
+            if isEditorial { proposal2col(topInset: topInset) } else { proposal3col(topInset: topInset) }
+        } else if isEditorial {
             editorialContent(topInset: topInset)
         } else {
             titleOnlyContent(topInset: topInset)
@@ -392,7 +398,7 @@ struct NodeGridTile: View {
                 .frame(maxWidth: .infinity, alignment: .leading)
 
             if showDeck {
-                Text(HyphenatedTextCache.attributed(node.summary))
+                Text(HyphenatedTextCache.attributed(MarkdownPlain.inline(node.summary)))
                     .font(tileFont(scaled(t.deckBaseSize)))
                     .italic()
                     .foregroundColor(Self.inkDeck)
@@ -463,6 +469,86 @@ struct NodeGridTile: View {
         .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .top)
     }
 
+    // MARK: - live-23 (4) — the card-content proposal
+
+    /// 2-col: dateline · title (2 lines) · summary (2 lines) · the content strip with counts.
+    private func proposal2col(topInset: CGFloat) -> some View {
+        let t = tuning
+        let summary = CardContentSummary.make(node, hasHero: hasHero)
+        let showDeck = node.descriptionOnCard && !node.summary.isEmpty
+        return VStack(alignment: .leading, spacing: 0) {
+            HStack(alignment: .firstTextBaseline, spacing: 8) {
+                if let category = node.primaryTag {
+                    Text(category).font(tileFont(scaled(t.metaBaseSize))).italic().foregroundColor(Self.inkMeta).lineLimit(1)
+                }
+                Spacer(minLength: 8)
+                Text(node.relativeTimestamp.uppercased())
+                    .font(tileFont(scaled(t.metaBaseSize))).tracking(t.metaTracking).foregroundColor(Self.inkMeta).lineLimit(1)
+            }
+            .shadow(color: Self.inkShadow.opacity(0.4), radius: 2, x: 0, y: 1)
+            Rectangle().fill(Self.hairlineColor.opacity(t.hairlineOpacity)).frame(height: 0.5)
+                .padding(.top, 8).padding(.bottom, t.spacingDatelineToTitle)
+            Text(HyphenatedTextCache.attributed(displayTitle))
+                .font(tileFont(scaled(t.titleBaseSize), weight: .bold))
+                .tracking(t.titleTracking)
+                .foregroundColor(Self.inkTitle)
+                .shadow(color: Self.inkShadow.opacity(0.45), radius: 3, x: 0, y: 1)
+                .lineLimit(2)
+                .minimumScaleFactor(0.85)
+                .multilineTextAlignment(.leading)
+                .fixedSize(horizontal: false, vertical: true)
+                .frame(maxWidth: .infinity, alignment: .leading)
+            if showDeck {
+                Text(HyphenatedTextCache.attributed(MarkdownPlain.inline(node.summary)))
+                    .font(tileFont(scaled(t.deckBaseSize))).italic()
+                    .foregroundColor(Self.inkDeck)
+                    .shadow(color: Self.inkShadow.opacity(0.4), radius: 2, x: 0, y: 1)
+                    .lineSpacing(t.deckLineSpacing)
+                    .lineLimit(2)
+                    .padding(.top, 6)
+                    .frame(maxWidth: .infinity, alignment: .leading)
+            }
+            Spacer(minLength: 6)
+            if !summary.strip.isEmpty {
+                Rectangle().fill(Self.hairlineColor.opacity(t.hairlineOpacity)).frame(height: 0.5).padding(.bottom, 8)
+                CardContentStrip(counts: summary.strip, size: scaled(9.5), ink: Self.inkMeta, halo: Self.inkShadow)
+            }
+        }
+        .padding(.horizontal, t.titleHPadding)
+        .padding(.top, topInset)
+        .padding(.bottom, t.bottomPadding)
+        .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .top)
+    }
+
+    /// 3-col: an adaptive title — up to 3 lines without a photo, 2 with one, scaling to 0.85 before it truncates —
+    /// and the strip as icons only for the 2–3 most-present types, pinned to the bottom so every tile reads level.
+    private func proposal3col(topInset: CGFloat) -> some View {
+        let t = tuning
+        let summary = CardContentSummary.make(node, hasHero: hasHero)
+        let title = displayTitle
+        return VStack(alignment: .leading, spacing: 0) {
+            Text(HyphenatedTextCache.attributed(title))
+                .font(tileFont(scaled(t.titleBaseSize * titleScaleFactor(for: title, maxScale: 1.4)), weight: .bold))
+                .tracking(t.titleTracking)
+                .foregroundColor(Self.inkTitle)
+                .shadow(color: Self.inkShadow.opacity(0.45), radius: 3, x: 0, y: 1)
+                .lineLimit(hasHero ? 2 : 3)
+                .minimumScaleFactor(0.85)
+                .truncationMode(.tail)
+                .multilineTextAlignment(.leading)
+                .frame(maxWidth: .infinity, alignment: .leading)
+            Spacer(minLength: 4)
+            if !summary.strip.isEmpty {
+                CardContentStrip(counts: summary.mostPresent(3), iconsOnly: true, size: 11, ink: Self.inkMeta,
+                                 halo: Self.inkShadow)
+            }
+        }
+        .padding(.horizontal, t.titleHPadding)
+        .padding(.top, topInset)
+        .padding(.bottom, 10)
+        .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .top)
+    }
+
     // MARK: - Badge manifest
     // Aggregate per-payload-type content counts across all of node.items.
     // Text and rating are excluded by design.
@@ -503,7 +589,7 @@ struct NodeGridTile: View {
 
     private var displayTitle: String {
         if !node.title.isEmpty { return node.title }
-        if let firstText = node.items.first?.content, !firstText.isEmpty { return firstText }
+        if let firstText = node.untitledDisplayText { return firstText }   // live-25 (2): plain, never `**`
         return "Untitled"
     }
 }

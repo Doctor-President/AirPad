@@ -112,7 +112,7 @@ struct CitationSheet: View {
                 .font(.system(size: 11, weight: .semibold, design: .monospaced))
                 .foregroundStyle(AppearancePalette.ink.opacity(0.4))
 
-            Text(match.block.text)
+            Text(MarkdownPlain.text(match.block.text))   // live-26 (3b): the stored block's markup never shows
                 .font(.system(size: 15))
                 .foregroundStyle(AppearancePalette.ink.opacity(0.88))
                 .lineSpacing(4)

@@ -14,10 +14,20 @@ struct ChatView: View {
     @Environment(\.scenePhase) private var scenePhase
     @State private var didRestoreOnAppear: Bool = false
     @State private var showingPinSheet: Bool = false
-    /// live-28 (3) — the entry a citation opened, pushed on this chat's own stack (Back returns to the chat).
-    @State private var openedNodeID: String?
 
     private var session: ChatSession { router.chat }
+
+    /// live-29 (B2) — the Librarian's citation path from the Chat view.
+    private func openCitation(_ nodeID: String) {
+        session.flush()
+        UIApplication.shared.sendAction(#selector(UIResponder.resignFirstResponder), to: nil, from: nil, for: nil)
+        guard router.showChatsList else { router.citedEntryToOpen = nodeID; return }
+        router.showChatsList = false   // the Chats sheet closes first, then the surface underneath pushes the entry
+        Task { @MainActor in
+            try? await Task.sleep(for: .milliseconds(450))
+            router.citedEntryToOpen = nodeID
+        }
+    }
     private var isPinned: Bool { store.nodePinned(forChatID: session.id) != nil }
 
     var body: some View {
@@ -26,14 +36,14 @@ struct ChatView: View {
             // live-27 (4b) — the Librarian's General / Library toggle (it replaces the "Private" label, which meant only
             // "no library": every route — the Mac, Apple Intelligence, a server — answered it) and the Librarian's send,
             // so a turn here routes exactly as it would in the Librarian (they share the conversation and the setting).
-            // live-28 (3) — a citation (inline marker or source row) opens its entry, as in the Librarian.
+            // live-28 (3) / live-29 (B2) — a citation (inline marker or source row) opens its entry in the app's normal
+            // Detail View, exactly as a Librarian citation does (T: pushing it inside this chat's stack "is wrong"): the
+            // Chats sheet closes and the surface underneath pushes the entry; Back returns to that surface. On the
+            // Dashboard's stack the Dashboard pushes it (as a Recents card tap does); Back returns to this chat.
             ChatTranscript(session: session,
-                           onOpenNode: { openedNodeID = $0 },
+                           onOpenNode: { openCitation($0) },
                            leadingControl: AnyView(CorpusModeToggle(librarian: router.librarian, identifier: "chat.scopeToggle")),
                            onSend: { text in await router.librarian.groundedSend(query: text, store: store, chat: session) })
-        }
-        .navigationDestination(item: $openedNodeID) { nodeID in
-            NodeDetailView(nodeID: nodeID)
         }
         .task {
             guard !didRestoreOnAppear else { return }

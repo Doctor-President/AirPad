@@ -1147,6 +1147,10 @@ final class CorpusStore {
             if ProcessInfo.processInfo.arguments.contains("-WebGroundingSelfTest") {
                 NSLog("[WebGroundingSelfTest] %@", WebGroundingSelfTest.run())
             }
+            // live-29 (1) — "what did I write about X" reads what names X; the absence guard.
+            if ProcessInfo.processInfo.arguments.contains("-SubjectLookupSelfTest") {
+                NSLog("[SubjectLookupSelfTest] %@", SubjectLookupSelfTest.run())
+            }
             // live-28 (A3) — Title Case for model-written titles.
             if ProcessInfo.processInfo.arguments.contains("-TitleCaseSelfTest") {
                 NSLog("[TitleCaseSelfTest] %@", TitleCaseSelfTest.run())
@@ -1158,6 +1162,10 @@ final class CorpusStore {
             // live-27 (4e) — the RELATED list never shows one entry twice.
             if ProcessInfo.processInfo.arguments.contains("-SearchRelatedSelfTest") {
                 NSLog("[SearchRelatedSelfTest] %@", SearchRelatedSelfTest.run())
+            }
+            // live-29 (B5) — Apple Intelligence + web, app-routed (with -StubOnDeviceModel YES -WebSearchMock YES).
+            if ProcessInfo.processInfo.arguments.contains("-AppleWebSelfTest") {
+                Task { @MainActor in NSLog("[AppleWebSelfTest] %@", await AppleWebSelfTest.run(store: self)) }
             }
             // live-27 (4) — chat provenance: who wrote each answer, the caption, the switch divider.
             if ProcessInfo.processInfo.arguments.contains("-ChatProvenanceSelfTest") {

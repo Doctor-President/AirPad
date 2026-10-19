@@ -74,6 +74,9 @@ struct CardContentSummary: Equatable {
         /// live-26 (3b) — the row as stored (its inline markup), so the face can render underline / bold / italic / strike.
         var source: String? = nil
         static func == (a: ListRow, b: ListRow) -> Bool { a.marker == b.marker && a.text == b.text }
+        /// live-29 (B4) — what the card's face renders for this row (the one path the view uses, so the self-test
+        /// checks what shows, not just `text`).
+        var rendered: AttributedString { source.map(MarkdownPlain.styledLines) ?? AttributedString(text) }
     }
 
     /// live-26 (3b) — prose for the preview: plain (compared, read aloud) + the paragraph as stored (rendered styled).
@@ -84,6 +87,9 @@ struct CardContentSummary: Equatable {
         init(stringLiteral value: String) { plain = value }
         static func == (a: PreviewText, b: PreviewText) -> Bool { a.plain == b.plain }
         var description: String { plain }
+        /// live-29 (B4) — what the card's face renders (the one path the view uses). T's device showed a preview line
+        /// beginning "### " although `plain` was clean: the face rendered `source` through the inline-only styler.
+        var rendered: AttributedString { source.map(MarkdownPlain.styledLines) ?? AttributedString(plain) }
     }
 
     enum Preview: Equatable {
@@ -276,7 +282,7 @@ struct CardListPreview: View {
                 HStack(alignment: .firstTextBaseline, spacing: size * 0.45) {
                     marker(row.marker)
                         .frame(width: size * 1.1, alignment: .leading)
-                    Text(row.source.map(MarkdownPlain.styled) ?? AttributedString(row.text))   // live-26 (3b)
+                    Text(row.rendered)   // live-26 (3b) / live-29 (B4)
                         .font(appFont.font(size: size))
                         .foregroundColor(ink)
                         .strikethrough(row.marker == .check(true), color: markerInk)
@@ -453,6 +459,25 @@ extension CardContentSummary {
                                            (#"typed \<u> by hand"#, "typed <u> by hand"), (#"a \< b"#, "a < b"), ("5 < 6 > 4", "5 < 6 > 4")]
         let litFails = literal.filter { MarkdownPlain.text($0.0) != $0.1 }.map { "\($0.0) → \(MarkdownPlain.text($0.0))" }
         row("typed-angle-brackets-stay (\(literal.count))", litFails.isEmpty, litFails.joined(separator: " | "))
+        // live-29 (B4) — what the card RENDERS never starts with a heading / quote / list marker, in every spelling a
+        // note can hold: T's device (Proposal card, light) showed a preview line "### " + all-caps text. Synthetic fixtures.
+        let headings: [(String, String)] = [
+            ("### PROPOSAL OUTLINE\nThe plan is to cut the water by half", "PROPOSAL OUTLINE\nThe plan is to cut the water by half"),
+            ("## Weekly menu", "Weekly menu"), ("# One", "One"), ("###### Six", "Six"),
+            ("    ### INDENTED FOUR", "INDENTED FOUR"), ("\u{00A0}### NBSP LEAD", "NBSP LEAD"), ("### NBSP\u{00A0}AFTER", "NBSP\u{00A0}AFTER"),
+            ("\u{FEFF}### BOM LEAD", "BOM LEAD"), ("\u{200B}## ZERO WIDTH", "ZERO WIDTH"), ("### CR LINE\r", "CR LINE"),
+            ("###NO SPACE", "NO SPACE"), ("##Tight", "Tight"), ("> ### Quoted heading", "Quoted heading"),
+            ("### **Bold heading**", "Bold heading"), ("#hashtag stays", "#hashtag stays"), ("#1 priority stays", "#1 priority stays"),
+        ]
+        func shownText(_ src: String) -> String {
+            guard case .text(let t)? = make(node([text(src)]), hasHero: true).preview else { return "(no text preview)" }
+            return String(t.rendered.characters).trimmingCharacters(in: .whitespacesAndNewlines)
+        }
+        let headFails = headings.filter { shownText($0.0) != $0.1 }.map { "\($0.0.debugDescription) → \(shownText($0.0).debugDescription)" }
+        row("card-preview-renders-no-heading-marker (\(headings.count))", headFails.isEmpty, headFails.joined(separator: " | "))
+        let listHead = listRows("- ### HEADED ROW\n- plain row")
+        row("card-list-row-renders-no-heading-marker", listHead.map { String($0.rendered.characters) } == ["HEADED ROW", "plain row"],
+            listHead.map { String($0.rendered.characters) }.joined(separator: " | "))
         let st = MarkdownPlain.styled("<u>under</u> **bold** *it* ~~gone~~ <b>tag</b> &amp;")
         func styleAt(_ word: String) -> String {
             guard let r = st.range(of: word) else { return "missing" }

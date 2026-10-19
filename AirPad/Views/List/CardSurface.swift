@@ -477,10 +477,10 @@ enum CardHeroFade {
     /// The photo's run past the zone, as a fraction of it: the overshoot plus the "Fade into body" extension.
     static func run(_ s: Shape) -> Double { max(s.overshoot, 0) + min(max(s.intoBody, 0), 1) * titleDepth }
     /// live-27 (0) — T's light fade (2026-10-18 (b)): over 39% of the zone, curve 0.5, carried 14% into the body.
-    static let bakedLight = Shape(length: 0.39, curve: 0.5, overshoot: 0.10, intoBody: 0.14)
+    static let bakedLight = Shape(length: 0.25, curve: 2, overshoot: 0.10, intoBody: 0.15)   // live-29 (B1): T's 10-19
     /// live-26 (1) — T's dark fade (2026-10-18): over 35% of the zone, nearly linear (curve 0.15); live-27 (0): carried
     /// 18% into the body.
-    static let bakedDark = Shape(length: 0.35, curve: 0.15, overshoot: 0.10, intoBody: 0.18)
+    static let bakedDark = Shape(length: 0.35, curve: 0.15, overshoot: 0.10, intoBody: 0)   // live-29 (B1): T's 10-19
     /// What an App Store build renders for an appearance.
     static func baked(dark: Bool) -> Shape { dark ? bakedDark : bakedLight }
     /// live-26 (3c) — "Match fluted": the photo fade fitted (least squares over 0.5–2.2 zones) to the fluted cards'
@@ -506,7 +506,7 @@ enum CardHeroFade {
     }
 
     /// live-28 (A1) — light's fade in an App Store build until T picks on device.
-    static let bakedLightMode: LightFadeMode = .today
+    static let bakedLightMode: LightFadeMode = .band   // live-29 (B1): T picked A (10-19)
     static var lightMode: LightFadeMode {
         #if DEBUG
         if let f = UserDefaults.standard.string(forKey: "LightFade"), let m = LightFadeMode(rawValue: f) { return m }

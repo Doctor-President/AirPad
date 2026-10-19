@@ -145,6 +145,8 @@ struct ChatTranscript: View {
     private static let freezeEagerAll = UserDefaults.standard.bool(forKey: "FreezeEagerAll")
     /// Hypothesis H3 — the streaming tail is the oscillating lazy row. Measurement only.
     private static let freezeNoTail = UserDefaults.standard.bool(forKey: "FreezeNoTail")
+    /// live-29 (C1) — per-change scroll geometry to stdout (see the transcript's geometry observer).
+    private static let scrollGeoLog = UserDefaults.standard.bool(forKey: "ScrollGeoLog")
     #else
     private static let freezeNoTail = false
     #endif
@@ -277,8 +279,20 @@ struct ChatTranscript: View {
             // invalidates this body — the ForEach of settled bubbles stays put.
             .onScrollGeometryChange(for: CGFloat.self) { geo in
                 #if DEBUG
+                // live-29 (C1) — `-ScrollGeoLog YES -StdoutToFile`: the scroll view's content height / offset / insets
+                // every time they change (to see which element changes the height after layout, and where a jump lands).
+                if Self.scrollGeoLog {
+                    print(String(format: "[ScrollGeo] t=%.3f content=%.1f container=%.1f offY=%.1f visMaxY=%.1f insetT=%.1f insetB=%.1f n=%d",
+                                 Date().timeIntervalSince1970, geo.contentSize.height, geo.containerSize.height, geo.contentOffset.y,
+                                 geo.visibleRect.maxY, geo.contentInsets.top, geo.contentInsets.bottom, session.messages.count))
+                }
                 FreezeProbe.hit("geo.transform", "content=\(Int(geo.contentSize.height)) container=\(Int(geo.containerSize.height)) offY=\(Int(geo.contentOffset.y)) visMaxY=\(Int(geo.visibleRect.maxY)) insetT=\(Int(geo.contentInsets.top)) insetB=\(Int(geo.contentInsets.bottom))")
                 StreamGeoRecorder.shared.note(content: geo.contentSize.height, offset: geo.contentOffset.y, streaming: session.isStreaming)
+                #endif
+                #if DEBUG || TESTFLIGHT
+                ChatScrollTrace.shared.geometry(content: geo.contentSize.height, container: geo.containerSize.height,
+                                                offY: geo.contentOffset.y, insetB: geo.contentInsets.bottom,
+                                                messages: session.messages.count)   // live-29 (C1): the device trace
                 #endif
                 return geo.contentSize.height - geo.visibleRect.maxY
             } action: { _, distanceFromBottom in
@@ -311,6 +325,9 @@ struct ChatTranscript: View {
                 // the TOP (read-from-top), not the bottom. Assistant commit →
                 // leave the user where they are (no yank). Bulk change (restore
                 // / switch) → jump to the latest.
+                #if DEBUG || TESTFLIGHT
+                ChatScrollTrace.shared.event("messages \(oldCount)→\(newCount)", messages: newCount)
+                #endif
                 if newCount == oldCount + 1, let last = session.messages.last {
                     switch last.role {
                     case .user:
@@ -331,6 +348,9 @@ struct ChatTranscript: View {
                 }
             }
             .onAppear {
+                #if DEBUG || TESTFLIGHT
+                ChatScrollTrace.shared.event("transcript opened", messages: session.messages.count)
+                #endif
                 if let last = session.messages.last {
                     proxy.scrollTo(last.id, anchor: .bottom)
                 }
@@ -356,6 +376,9 @@ struct ChatTranscript: View {
             .overlay(alignment: .bottom) {
                 if !isPinnedToBottom {
                     Button {
+                        #if DEBUG || TESTFLIGHT
+                        ChatScrollTrace.shared.event("↓ arrow tapped", messages: session.messages.count)
+                        #endif
                         // Branch the whole call — the tail anchor is a String
                         // and a message id is a UUID, which can't share one
                         // ternary argument.
@@ -375,6 +398,8 @@ struct ChatTranscript: View {
                             .overlay(Circle().strokeBorder(AppearancePalette.ink.opacity(0.12), lineWidth: 1))
                     }
                     .buttonStyle(.plain)
+                    .accessibilityLabel("Scroll to the latest message")   // live-29 (C1): it had no label (VoiceOver read "Down Arrow")
+                    .accessibilityIdentifier("chat.scrollToLatest")
                     .padding(.bottom, 12)
                     .transition(.opacity.combined(with: .scale(scale: 0.9)))
                 }
@@ -473,7 +498,8 @@ struct ChatTranscript: View {
                 }
                 // CH Session 2 — a General answer no web result backs says so (app chrome, not model text).
                 if message.generalKnowledge == true {
-                    Text(message.datedKnowledge == true ? WebGrounding.datedKnowledgeNote : WebGrounding.generalKnowledgeNote)
+                    Text(message.searchUnconfirmed == true ? WebGrounding.searchUnconfirmedNote
+                         : message.datedKnowledge == true ? WebGrounding.datedKnowledgeNote : WebGrounding.generalKnowledgeNote)
                         .font(appFont.font(size: 13, relativeTo: .footnote))
                         .foregroundStyle(ChatTypography.secondaryText)
                         .padding(.top, 1)

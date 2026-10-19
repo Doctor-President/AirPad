@@ -227,6 +227,8 @@ struct CaptureAttributesSection: View {
     @Binding var showFieldSheet: Bool
     /// So the header's "ATTRIBUTES" text can be measured for the parity table.
     var measured: Bool = false
+    /// live-29 (4) — the detail view hides empty fields (Quick Capture shows them to be filled in).
+    var hidesEmptyFields: Bool = false
 
     @Environment(CorpusStore.self) private var store
     @State private var editingItem: NodeItem? = nil
@@ -247,7 +249,7 @@ struct CaptureAttributesSection: View {
         VStack(alignment: .leading, spacing: 14) {
             sectionHeader
             if !fieldItems.isEmpty {
-                FieldPairsGrid(nodeID: nodeID, fieldItems: fieldItems, isArranging: isArranging)
+                FieldPairsGrid(nodeID: nodeID, fieldItems: fieldItems, isArranging: isArranging, hidesEmptyFields: hidesEmptyFields)
             }
             if !nonFieldAtomics.isEmpty {
                 VStack(alignment: .leading, spacing: 0) {

@@ -5,7 +5,7 @@
 set -uo pipefail
 OUT=${1:?out_dir}; shift; W=3; SIM=1E797E28-B816-4CA3-B6B5-5E640671067D; ERASE=0; BUILD=1
 while (( $# )); do case $1 in --workers) W=$2; shift 2;; --sim) SIM=$2; shift 2;; --erase) ERASE=1; shift;; --no-build) BUILD=0; shift;; *) echo "unknown $1"; exit 2;; esac; done
-A=~/Developer/AirPad; DD=${INVENTORY_DD:-$A/build/gauntlet-dd}; export DEVELOPER_DIR=/Applications/Xcode.app/Contents/Developer
+A=${0:A:h:h:h}; DD=${INVENTORY_DD:-$A/build/gauntlet-dd}; export DEVELOPER_DIR=/Applications/Xcode.app/Contents/Developer
 mkdir -p $OUT; OUT=$(cd $OUT && pwd)
 ONLY=(${(f)"$(grep -v '^#' $A/scripts/inventory/ui_hostfree.txt | grep . | sed 's|^|-only-testing:AirPadUITests/|')"})
 if (( BUILD )); then

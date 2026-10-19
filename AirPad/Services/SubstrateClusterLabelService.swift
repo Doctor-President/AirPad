@@ -358,6 +358,7 @@ final class SubstrateClusterLabelService {
     /// produced" tooltip (Commit E adjacent), and for ad-hoc verification
     /// on device until a XCTest target exists.
     static func sanitize(_ raw: String) -> String {
+        let raw = raw.split(whereSeparator: \.isNewline).map { MarkdownPlain.label(String($0)) }.joined(separator: "\n")   // live-29 (B4): "### " never a label word
         // Comma-list amputation FIRST, on the raw FM bytes — before any
         // newline-pick, prefix-strip, or quote-trim. FM has been
         // returning comma-separated tag lists even after the system

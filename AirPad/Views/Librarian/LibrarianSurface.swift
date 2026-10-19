@@ -2404,8 +2404,8 @@ private struct SearchMatchRow: View {
 
     private var displaySnippet: String {
         if let snippet, !snippet.isEmpty { return snippet }
-        if let s = node.substrateSummary, !s.isEmpty { return s }
-        return node.summary
+        if let s = node.substrateSummary, !s.isEmpty { return MarkdownPlain.label(s) }   // live-29 (B4)
+        return MarkdownPlain.label(node.summary)
     }
 
     var body: some View {

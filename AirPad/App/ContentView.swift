@@ -76,7 +76,12 @@ struct ContentView: View {
                             try? await Task.sleep(nanoseconds: 250_000_000)
                         }
                         try? await Task.sleep(nanoseconds: 1_000_000_000)
-                        if let node = store.nodes.first(where: { $0.title == title }) { router.pendingNodeNavigationID = node.id }
+                        // live-29 (4) — three "Sid" and two "Linda" entries share a title; the one with attributes is
+                        // the one these stills are about (live-28's sheet opened a field-less "Sid" and read it as broken).
+                        let titled = store.nodes.filter { $0.title == title }
+                        if let node = titled.first(where: { $0.items.contains { $0.type == .field } }) ?? titled.first {
+                            router.pendingNodeNavigationID = node.id
+                        }
                     }
                 }
                 if ProcessInfo.processInfo.arguments.contains("-OpenFirstGradientEntry") {
@@ -341,6 +346,14 @@ struct ContentView: View {
         // synchronously with `dismiss()` for chevron, at release for
         // swipe), so the duck animates alongside the pop without a
         // separate early-restore signal.
+        // live-29 (B2) — a Chat-view citation: the Librarian's own choreography (`openNode`): a full panel drops to half,
+        // then the surface pushes the entry's Detail View.
+        .onChange(of: router.citedEntryToOpen) { _, id in
+            guard let id else { return }
+            router.citedEntryToOpen = nil
+            if panelState.state == .full { panelState.dropToHalf(animated: true) }
+            router.pendingNodeNavigationID = id
+        }
         .onChange(of: store.isInDetailView) { _, inDetail in
             if inDetail {
                 // Rescue-raise ONLY when the current surface actually wants the

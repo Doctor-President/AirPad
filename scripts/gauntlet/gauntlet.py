@@ -689,19 +689,28 @@ def probe_grade(probe, final, turn, cites, cand, R, res, na):
 FIXTURE_DIR = os.path.expanduser("~/Developer/fixtures/tom-corpus-2026-09-21")
 _LIB = None
 
-def library_texts():
-    """[(title, text)] for every fixture entry — the WHOLE library (ground truth for B2's 'does it exist?')."""
+def library_texts(scope="all"):
+    """[(title, text)] for the fixture entries in `scope` — ground truth for B2's 'does it exist?'.
+    live-29 (1): B2 asked the WHOLE fixture, but a chat searches ONE room: without -SampleSeedDemo the Librarian reads
+    the user's own notes (CorpusStore.corpusRoomNodes = the fixture minus the Sample Library's nodes); with it, a scratch
+    container seeded with the Sample Library only. Case 11 ("…my Bolex H16?") was flagged because the five Bolex
+    entries are Sample Library entries, never in that room. scope = "user" | "sample" | "all"."""
     global _LIB
     if _LIB is None:
         _LIB = []
+        try:
+            sample = set(json.load(open(os.path.join(FIXTURE_DIR, "sample_library.json"))).get("nodeIDs", []))
+        except Exception:
+            sample = set()
         for p in glob.glob(os.path.join(FIXTURE_DIR, "nodes", "*", "node.json")):
             try:
                 n = json.load(open(p)); bp = os.path.join(os.path.dirname(p), "blocks.json")
                 b = json.load(open(bp)) if os.path.exists(bp) else {"blocks": []}
-                _LIB.append((n.get("title", ""), " ".join(x.get("text") or "" for x in b["blocks"])))
+                nid = os.path.basename(os.path.dirname(p))
+                _LIB.append((n.get("title", ""), " ".join(x.get("text") or "" for x in b["blocks"]), nid in sample))
             except Exception:
                 pass
-    return _LIB
+    return [(t, x) for t, x, smp in _LIB if scope == "all" or (scope == "sample") == smp]
 
 SCOPE_HEDGE = re.compile(r"\b(?:entries|notes) (?:shown|provided|you(?:'ve)? (?:showed|shown|shared))\b|\bthe entries i can see\b|\bof (?:the )?(?:entries|notes) (?:i can see|shown)\b|\b(?:only )?(?:\w+|\d+) of (?:the )?\d+ (?:entries|notes)|\b(?:you're|you are|i'm|i am) seeing \d+|can't determine|cannot determine|can't say for sure|no way to (?:know|tell)|retrieved|in front of me|given to me|i was given|i(?:'ve| have)? (?:been )?(?:shown|given)|i can see|i can only see|i(?:'m| am) seeing|"
                          r"(?:of|in|from|among) the (?:\d+ )?(?:entries|notes) (?:i|you) |these (?:entries|notes|excerpts)|may not be (?:everything|all|complete|the full)|"
@@ -829,12 +838,18 @@ def c6_violations(final, turn, cand, question):
             bad.append(f"attributes {miss} to [{','.join(map(str, sorted(idx)))}] where it does not appear: \"{sent.strip()[:110]}\"")
     return bad
 
-def b2_violations(final, question):
+def b2_violations(final, question, scope="all"):
     final = (final or "").replace("\u2019", "'")
     key = [w for w in re.findall(r"[a-z][a-z'-]{3,}", (question or "").lower()) if w not in Q_STOP]
     if not key:
         return []
     bad = []
+    # live-29 (1) — a multi-word NAME is also written by its initials: "Baldur's Gate 3" → "BG3" (the Sample Library's
+    # two BG3 entries never say "Baldur"). Initials of the question's capitalised words (not at its start) + its digits.
+    qwords = re.findall(r"[A-Za-z0-9][A-Za-z0-9'’]*", question or "")[1:]
+    caps = [w for w in qwords if w[0].isupper() and w not in ("I",)]
+    acr = ("".join(w[0] for w in caps) + "".join(w for w in qwords if w.isdigit())) if len(caps) >= 2 else ""
+    acr = acr if len(acr) >= 3 else ""
     sents = [x for x in re.split(r"(?<=[.!?])\s+|\n+", final) if x.strip()]
     for si, sent in enumerate(sents):
         if not ABSENCE.search(sent):
@@ -846,7 +861,8 @@ def b2_violations(final, question):
         # not an absence claim: a qualified one ("didn't explicitly write a whole essay on X, you did engage…")
         if re.search(r"\b(?:explicitly|directly|a whole|a dedicated|an entire|specifically|in so many words|just|only|himself|herself|itself|themselves|per se)\b|\byou did (?!not\b)|\byes\b", sent, re.I):
             continue
-        hits = [t for t, x in library_texts() if all(re.search(r"\b" + re.escape(k[:6]), (t + " " + x).lower()) for k in key)]
+        hits = [t for t, x in library_texts(scope) if all(re.search(r"\b" + re.escape(k[:6]), (t + " " + x).lower()) for k in key)
+                or (acr and re.search(r"(?<![A-Za-z0-9])" + re.escape(acr) + r"(?![A-Za-z0-9])", t + " " + x))]
         if hits:
             bad.append(f"asserts absence, but the library has it ({hits[0][:30]}{' +' + str(len(hits) - 1) if len(hits) > 1 else ''}): \"{sent.strip()[:100]}\"")
     return bad
@@ -1347,6 +1363,10 @@ def grade_row(exp, turn, ui, prev_turn, host, ps, versions, cases_meta, store=Fa
     app_model = turn.get("modelRequested")
     if replay:
         res("V1", app_model == "replay", f"app={app_model}", abort=True)
+    elif route == "none":
+        # live-29 (1b) — the app's own answer (nothing in the searched room names the subject): no model is asked, so
+        # there is no model on the wire to check; the answer is graded on what it says.
+        na("V1", "app-written answer (no model call)")
     else:
         host_model = h.get("model")
         res("V1", app_model == want_model and host_model == want_model,
@@ -1354,6 +1374,8 @@ def grade_row(exp, turn, ui, prev_turn, host, ps, versions, cases_meta, store=Fa
     # ── V2 digest
     if replay:
         na("V2", "replay")
+    elif route == "none":
+        na("V2", "app-written answer (no model call)")
     else:
         t0 = iso_epoch(turn.get("startedAt", "")) or 0
         t1 = t0 + (turn.get("elapsedMs") or 0) / 1000 + 5
@@ -1366,6 +1388,8 @@ def grade_row(exp, turn, ui, prev_turn, host, ps, versions, cases_meta, store=Fa
     app_think = turn.get("think")
     if replay:
         res("V3", app_think == want_think, f"requested={want_think} app-wire={app_think}", abort=True)
+    elif route == "none":
+        na("V3", "app-written answer (no model call)")
     else:
         host_think = h.get("think")
         res("V3", app_think == want_think and host_think == str(want_think).lower(),
@@ -1497,7 +1521,7 @@ def grade_row(exp, turn, ui, prev_turn, host, ps, versions, cases_meta, store=Fa
     if norm_ws(final) and route in ("read", "survey"):
         c6 = c6_violations(final, turn, cand, question)
         R["C6"] = ("PASS", "") if not c6 else (("FAIL" if strict else "FLAG"), "; ".join(c6[:2]))
-        b2 = b2_violations(final, question)
+        b2 = b2_violations(final, question, "sample" if exp.get("sampleScope") else "user")
         R["B2"] = ("PASS", "") if not b2 else (("FAIL" if strict else "FLAG"), "; ".join(b2[:2]))
     else:
         na("C6", "not a grounded answer"); na("B2", "not a grounded answer")
@@ -1953,7 +1977,8 @@ def plan(cases_path, model, digest, thinks, runs, out_dir, base_args, only=None,
                     if c.get("facts") == "panel":
                         e["mustContain"] = cm["panel"]
                     e.update(case=c["id"], chat=chat["chat"], think=think, run=r, model=model, digest=digest,
-                             replay=bool(rf), firstInChat=(i == 0))
+                             replay=bool(rf), firstInChat=(i == 0),
+                             sampleScope="-SampleSeedDemo" in chat.get("args", []))
                     rows[row] = e
                 groups.append({"group": gname, "args": args, "turns": turns,
                                "eject": any(c.get("cold") for c in cs)})

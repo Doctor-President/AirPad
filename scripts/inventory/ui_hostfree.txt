@@ -111,3 +111,15 @@ ChatProvenanceUI/testEveryAnswerSaysWhoWroteItLight
 ChatProvenanceUI/testEveryAnswerSaysWhoWroteItDark
 ChatViewScopeUI/testChatViewHasTheLibrarianScopeToggleAndRoutesTheSame
 ChatViewCitationUI/testChatViewCitationOpensItsEntry
+# live-29 (C1) — the chat scrolls to its real end (seeded chats 8–200 messages, every element)
+ChatScrollEndUI/test08
+ChatScrollEndUI/test10
+ChatScrollEndUI/test12
+ChatScrollEndUI/test10Plain
+ChatScrollEndUI/test12Table
+ChatScrollEndUI/test12Sources
+ChatScrollEndUI/test12Dated
+ChatScrollEndUI/test30
+ChatScrollEndUI/test30All
+ChatScrollEndUI/test80All
+ChatScrollEndUI/test200All

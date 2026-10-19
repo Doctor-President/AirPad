@@ -107,10 +107,10 @@ final class AppearanceTunerUI: XCTestCase {
         XCTAssertTrue(app.segmentedControls["tunerCardContent"].buttons["Proposal"].isSelected, "Card content starts on Proposal")
         XCTAssertTrue(app.segmentedControls["tunerCardContent"].buttons["Before"].exists, "Before stays in the tuner")
         open(app, "heroFade")
-        // live-27 (0) — T's 10-18 (b) light fade: 0.39, curve 0.5, carried 14% into the body.
-        XCTAssertEqual(readout(app, "fadeLength"), "0.39", "the baked fade length")
-        XCTAssertEqual(readout(app, "fadeCurve"), "0.50", "the baked fade curve")
-        XCTAssertEqual(readout(app, "fadeIntoBody"), "14%", "the baked Fade into body")
+        // live-29 (B1) — T's 10-19 light fade: 0.25, curve 2, carried 15% into the body.
+        XCTAssertEqual(readout(app, "fadeLength"), "0.25", "the baked fade length")
+        XCTAssertEqual(readout(app, "fadeCurve"), "smootherstep", "the baked fade curve (2 reads as smootherstep)")
+        XCTAssertEqual(readout(app, "fadeIntoBody"), "15%", "the baked Fade into body")
         open(app, "librarian")
         app.buttons["tunerPreset-frost50"].tap()
         XCTAssertEqual(readout(app, "tint"), "0.50", "Frost 50% moves the tint")

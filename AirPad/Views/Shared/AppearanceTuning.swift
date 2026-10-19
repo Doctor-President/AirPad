@@ -125,7 +125,7 @@ struct AppearanceTuningValues: Codable, Equatable {
         palette: "L2", fieldStep: 1, shadowStrength: 0.5, shadowRadius: 24,
         hairline: true, hairlineWidth: 0.5, hairlineOpacity: 0.25,
         panel: .custom, tintOpacity: 0.51, blur: 0.58, saturation: 0.4, glassControls: true,
-        dimBehind: true, dimAmount: 0.105, fadeLength: 0.39, fadeCurve: 0.5, fadeIntoBody: 0.14,
+        dimBehind: true, dimAmount: 0.105, fadeLength: 0.25, fadeCurve: 2, fadeIntoBody: 0.15,   // live-29 (B1): T's 10-19
         panelMode: .glass, glass: LibrarianGlassLook.shippedLight.panelGlass!, panelGrade: LibrarianGlassLook.shippedLight.panelGrade,
         peekPill: .shippedLightPeek, searchPill: .shippedLightSearch, askPill: .t1018LightAskStored, askMatchesSearch: true)
 
@@ -137,7 +137,7 @@ struct AppearanceTuningValues: Codable, Equatable {
         palette: "L2", fieldStep: 0.5, shadowStrength: 1, shadowRadius: 12,
         hairline: true, hairlineWidth: 1, hairlineOpacity: 0.12,
         panel: .custom, tintOpacity: 0.5, blur: 1.53, saturation: 0.4, glassControls: true,
-        dimBehind: false, dimAmount: 0.20, fadeLength: 0.35, fadeCurve: 0.15, fadeIntoBody: 0.18,
+        dimBehind: false, dimAmount: 0.20, fadeLength: 0.35, fadeCurve: 0.15, fadeIntoBody: 0,   // live-29 (B1): T's 10-19
         panelMode: .glass, glass: LibrarianGlassLook.shippedDark.panelGlass!, panelGrade: LibrarianGlassLook.shippedDark.panelGrade,
         peekPill: .shippedDarkPeek, searchPill: .shippedDarkSearch, askPill: .t1018DarkAskStored, askMatchesSearch: true)
 
@@ -302,8 +302,8 @@ struct AppearanceTuningState: Codable, Equatable {
     /// live-26 (3d) / live-27 (0) — T chose Glass (2026-10-18 (b)): the tuner starts there and the App Store build
     /// renders it (`FloatingButtonsStyle.bakedGlass`); Today stays in the tuner.
     var floatingButtons: FloatingButtonsMode = .glass
-    /// live-28 (A1) — the TestFlight tuner starts on B.
-    var lightFade: LightFadeMode = .perceptual
+    /// live-28 (A1) / live-29 (B1) — T picked A (10-19): the tuner starts there and the App Store build ships it.
+    var lightFade: LightFadeMode = .band
     static let defaults = AppearanceTuningState(light: .lightDefault, dark: .darkDefault)
 
     init(light: AppearanceTuningValues, dark: AppearanceTuningValues, cardContent: CardContentMode = .proposal,
@@ -318,7 +318,7 @@ struct AppearanceTuningState: Codable, Equatable {
         cardContent = try c.decodeIfPresent(CardContentMode.self, forKey: .cardContent) ?? .proposal
         captureControls = try c.decodeIfPresent(CaptureControlsMode.self, forKey: .captureControls) ?? .glass
         floatingButtons = try c.decodeIfPresent(FloatingButtonsMode.self, forKey: .floatingButtons) ?? .glass
-        lightFade = try c.decodeIfPresent(LightFadeMode.self, forKey: .lightFade) ?? .perceptual
+        lightFade = try c.decodeIfPresent(LightFadeMode.self, forKey: .lightFade) ?? .band
     }
 }
 
@@ -696,9 +696,9 @@ extension AppearanceTuning {
 
         // live-23 (3) — the hero photo's fade into the card body: longer and eased, like the fluted cards' blend.
         let F = CardHeroFade.self, fb = F.bakedLight
-        // live-27 (0) — T's light fade (10-18 (b)): over 39% of the zone, curve 0.5, carried 14% into the body.
-        row("hero-fade-baked-light-0.39-curve-0.5-into-0.14-past-the-edge-0.10",
-            close(fb.length, 0.39) && close(fb.curve, 0.5) && close(fb.intoBody, 0.14) && close(fb.overshoot, 0.10), "\(fb)")
+        // live-29 (B1) — T's light fade (10-19): over 25% of the zone, curve 2, carried 15% into the body.
+        row("hero-fade-baked-light-0.25-curve-2-into-0.15-past-the-edge-0.10",
+            close(fb.length, 0.25) && close(fb.curve, 2) && close(fb.intoBody, 0.15) && close(fb.overshoot, 0.10), "\(fb)")
         // The easing itself, on live-23's smoothstep shape: a quarter of the way into the fade the photo is still mostly
         // there (eased, not a linear ramp).
         let e = CardHeroFade.Shape(length: 0.60, curve: 1, overshoot: 0.10)
@@ -1001,11 +1001,11 @@ extension AppearanceTuning {
             row("t1017-paste-loads-into-peek-search-ask-alike", false, "the paste didn't import")
         }
 
-        // live-27 (0) — ★ T's latest paste (2026-10-18 (b), TF 202610180346, Ops reference/appearance-tuning-2026-10-18-b.md,
-        // verbatim) is BOTH Reset and the App Store look, light and dark; Copy values at the defaults reads it back. It
-        // supersedes the 10-18 file (live-26 (1)), which still loads.
-        let t18 = ##"{"airpadAppearance":1,"build":"202610171546","editing":"dark","cardContent":"proposal","captureControls":"glass","light":{"palette":"L2","field":"F2","fieldStep":1,"fieldHex":"#F4F2ED","shadow":0.5,"shadowAlpha":0.131,"shadowRadius":24,"hairline":true,"hairlineWidth":0.5,"hairlineOpacity":0.25,"panel":"custom","tint":0.51,"blur":0.58,"saturation":0.4,"glassControls":true,"dim":0.105,"fadeLength":0.6,"fadeCurve":1,"panelMode":"glass","glassVariant":"regular","glassTint":"offWhite","glassTintHex":"#FBF9F5","glassTintStrength":0.2,"veil":0.3,"panelGrade":{"on":true,"top":0.1,"bottom":0.75,"start":0.04,"softness":0.4,"direction":"vertical","color":"offWhite","hex":"#FBF9F5"},"peekPill":{"variant":"clear","grade":{"on":true,"top":0.9,"bottom":0.05,"start":0.3,"softness":1,"direction":"vertical","color":"offWhite","hex":"#FBF9F5"},"rim":{"rest":"dim","width":1,"brightness":0.8,"color":"white","hex":"#FFFFFF","active":"none","activeBrightness":1}},"searchPill":{"variant":"clear","grade":{"on":false,"top":0.9,"bottom":0.42,"start":0.59,"softness":0.66,"direction":"vertical","color":"offWhite","hex":"#FBF9F5"},"rim":{"rest":"off","width":1,"brightness":0.8,"color":"cyan","hex":"#00BFFF","active":"shimmer","activeBrightness":1}},"askPill":{"variant":"clear","grade":{"on":false,"top":0.9,"bottom":0.15,"start":0.75,"softness":1,"direction":"vertical","color":"nearBlack","hex":"#0A0A0A"},"rim":{"rest":"off","width":1,"brightness":0.8,"color":"white","hex":"#FFFFFF","active":"none","activeBrightness":1}},"askMatchesSearch":true},"dark":{"field":"F+0.50","fieldStep":0.5,"fieldHex":"#1A1A1A","shadow":1,"shadowAlpha":0.742,"shadowRadius":12,"hairline":true,"hairlineWidth":1,"hairlineOpacity":0.12,"panel":"custom","tint":0.5,"blur":1.53,"saturation":0.4,"glassControls":true,"dim":0,"fadeLength":0.35,"fadeCurve":0.15,"panelMode":"glass","glassVariant":"regular","glassTint":"nearBlack","glassTintHex":"#0A0A0A","glassTintStrength":0.2,"veil":0.3,"panelGrade":{"on":true,"top":0.73,"bottom":0.32,"start":0.04,"softness":0.22,"direction":"vertical","color":"nearBlack","hex":"#0A0A0A"},"peekPill":{"variant":"clear","grade":{"on":true,"top":1,"bottom":0.25,"start":0.27,"softness":1,"direction":"vertical","color":"nearBlack","hex":"#0A0A0A"},"rim":{"rest":"dim","width":0.75,"brightness":0.41,"color":"white","hex":"#FFFFFF","active":"none","activeBrightness":1}},"searchPill":{"variant":"clear","grade":{"on":true,"top":0.72,"bottom":0.44,"start":0.27,"softness":1,"direction":"vertical","color":"nearBlack","hex":"#0A0A0A"},"rim":{"rest":"off","width":0.5,"brightness":0.11,"color":"cyan","hex":"#00BFFF","active":"shimmer","activeBrightness":1}},"askPill":{"variant":"clear","grade":{"on":true,"top":1,"bottom":0.25,"start":0.27,"softness":1,"direction":"vertical","color":"nearBlack","hex":"#0A0A0A"},"rim":{"rest":"off","width":0.5,"brightness":0.11,"color":"white","hex":"#FFFFFF","active":"none","activeBrightness":1}},"askMatchesSearch":true}}"##
+        // live-29 (B1) — ★ T's latest paste (2026-10-19, TF 202610191107, Ops reference/appearance-tuning-2026-10-19.md,
+        // verbatim) is BOTH Reset and the App Store look, light and dark, with Light fade A; Copy values at the defaults
+        // reads it back, every key. It supersedes 10-18 (b) (live-27 (0)), which still loads.
         let t18b = ##"{"airpadAppearance":1,"build":"202610180346","editing":"dark","cardContent":"proposal","captureControls":"glass","floatingButtons":"glass","light":{"palette":"L2","field":"F2","fieldStep":1,"fieldHex":"#F4F2ED","shadow":0.5,"shadowAlpha":0.131,"shadowRadius":24,"hairline":true,"hairlineWidth":0.5,"hairlineOpacity":0.25,"panel":"custom","tint":0.51,"blur":0.58,"saturation":0.4,"glassControls":true,"dim":0.105,"fadeLength":0.39,"fadeCurve":0.5,"fadeIntoBody":0.14,"panelMode":"glass","glassVariant":"regular","glassTint":"offWhite","glassTintHex":"#FBF9F5","glassTintStrength":0.2,"veil":0.3,"panelGrade":{"on":true,"top":0.1,"bottom":0.75,"start":0.04,"softness":0.4,"direction":"vertical","color":"offWhite","hex":"#FBF9F5"},"peekPill":{"variant":"clear","grade":{"on":true,"top":0.9,"bottom":0.05,"start":0.3,"softness":1,"direction":"vertical","color":"offWhite","hex":"#FBF9F5"},"rim":{"rest":"dim","width":1,"brightness":0.8,"color":"white","hex":"#FFFFFF","active":"none","activeBrightness":1}},"searchPill":{"variant":"clear","grade":{"on":false,"top":0.9,"bottom":0.42,"start":0.59,"softness":0.66,"direction":"vertical","color":"offWhite","hex":"#FBF9F5"},"rim":{"rest":"off","width":1,"brightness":0.8,"color":"cyan","hex":"#00BFFF","active":"shimmer","activeBrightness":1}},"askPill":{"variant":"clear","grade":{"on":false,"top":0.9,"bottom":0.15,"start":0.75,"softness":1,"direction":"vertical","color":"nearBlack","hex":"#0A0A0A"},"rim":{"rest":"off","width":1,"brightness":0.8,"color":"white","hex":"#FFFFFF","active":"none","activeBrightness":1}},"askMatchesSearch":true},"dark":{"field":"F+0.50","fieldStep":0.5,"fieldHex":"#1A1A1A","shadow":1,"shadowAlpha":0.742,"shadowRadius":12,"hairline":true,"hairlineWidth":1,"hairlineOpacity":0.12,"panel":"custom","tint":0.5,"blur":1.53,"saturation":0.4,"glassControls":true,"dim":0,"fadeLength":0.35,"fadeCurve":0.15,"fadeIntoBody":0.18,"panelMode":"glass","glassVariant":"regular","glassTint":"nearBlack","glassTintHex":"#0A0A0A","glassTintStrength":0.2,"veil":0.3,"panelGrade":{"on":true,"top":0.73,"bottom":0.32,"start":0.04,"softness":0.22,"direction":"vertical","color":"nearBlack","hex":"#0A0A0A"},"peekPill":{"variant":"clear","grade":{"on":true,"top":1,"bottom":0.25,"start":0.27,"softness":1,"direction":"vertical","color":"nearBlack","hex":"#0A0A0A"},"rim":{"rest":"dim","width":0.75,"brightness":0.41,"color":"white","hex":"#FFFFFF","active":"none","activeBrightness":1}},"searchPill":{"variant":"clear","grade":{"on":true,"top":0.72,"bottom":0.44,"start":0.27,"softness":1,"direction":"vertical","color":"nearBlack","hex":"#0A0A0A"},"rim":{"rest":"off","width":0.5,"brightness":0.11,"color":"cyan","hex":"#00BFFF","active":"shimmer","activeBrightness":1}},"askPill":{"variant":"clear","grade":{"on":true,"top":1,"bottom":0.25,"start":0.27,"softness":1,"direction":"vertical","color":"nearBlack","hex":"#0A0A0A"},"rim":{"rest":"off","width":0.5,"brightness":0.11,"color":"white","hex":"#FFFFFF","active":"none","activeBrightness":1}},"askMatchesSearch":true}}"##
+        let t1019 = ##"{"airpadAppearance":1,"build":"202610191107","editing":"light","cardContent":"proposal","captureControls":"glass","floatingButtons":"glass","lightFade":"band","light":{"palette":"L2","field":"F2","fieldStep":1,"fieldHex":"#F4F2ED","shadow":0.5,"shadowAlpha":0.131,"shadowRadius":24,"hairline":true,"hairlineWidth":0.5,"hairlineOpacity":0.25,"panel":"custom","tint":0.51,"blur":0.58,"saturation":0.4,"glassControls":true,"dim":0.105,"fadeLength":0.25,"fadeCurve":2,"fadeIntoBody":0.15,"panelMode":"glass","glassVariant":"regular","glassTint":"offWhite","glassTintHex":"#FBF9F5","glassTintStrength":0.2,"veil":0.3,"panelGrade":{"on":true,"top":0.1,"bottom":0.75,"start":0.04,"softness":0.4,"direction":"vertical","color":"offWhite","hex":"#FBF9F5"},"peekPill":{"variant":"clear","grade":{"on":true,"top":0.9,"bottom":0.05,"start":0.3,"softness":1,"direction":"vertical","color":"offWhite","hex":"#FBF9F5"},"rim":{"rest":"dim","width":1,"brightness":0.8,"color":"white","hex":"#FFFFFF","active":"none","activeBrightness":1}},"searchPill":{"variant":"clear","grade":{"on":false,"top":0.9,"bottom":0.42,"start":0.59,"softness":0.66,"direction":"vertical","color":"offWhite","hex":"#FBF9F5"},"rim":{"rest":"off","width":1,"brightness":0.8,"color":"cyan","hex":"#00BFFF","active":"shimmer","activeBrightness":1}},"askPill":{"variant":"clear","grade":{"on":false,"top":0.9,"bottom":0.15,"start":0.75,"softness":1,"direction":"vertical","color":"nearBlack","hex":"#0A0A0A"},"rim":{"rest":"off","width":1,"brightness":0.8,"color":"white","hex":"#FFFFFF","active":"none","activeBrightness":1}},"askMatchesSearch":true},"dark":{"field":"F+0.50","fieldStep":0.5,"fieldHex":"#1A1A1A","shadow":1,"shadowAlpha":0.742,"shadowRadius":12,"hairline":true,"hairlineWidth":1,"hairlineOpacity":0.12,"panel":"custom","tint":0.5,"blur":1.53,"saturation":0.4,"glassControls":true,"dim":0,"fadeLength":0.35,"fadeCurve":0.15,"fadeIntoBody":0,"panelMode":"glass","glassVariant":"regular","glassTint":"nearBlack","glassTintHex":"#0A0A0A","glassTintStrength":0.2,"veil":0.3,"panelGrade":{"on":true,"top":0.73,"bottom":0.32,"start":0.04,"softness":0.22,"direction":"vertical","color":"nearBlack","hex":"#0A0A0A"},"peekPill":{"variant":"clear","grade":{"on":true,"top":1,"bottom":0.25,"start":0.27,"softness":1,"direction":"vertical","color":"nearBlack","hex":"#0A0A0A"},"rim":{"rest":"dim","width":0.75,"brightness":0.41,"color":"white","hex":"#FFFFFF","active":"none","activeBrightness":1}},"searchPill":{"variant":"clear","grade":{"on":true,"top":0.72,"bottom":0.44,"start":0.27,"softness":1,"direction":"vertical","color":"nearBlack","hex":"#0A0A0A"},"rim":{"rest":"off","width":0.5,"brightness":0.11,"color":"cyan","hex":"#00BFFF","active":"shimmer","activeBrightness":1}},"askPill":{"variant":"clear","grade":{"on":true,"top":1,"bottom":0.25,"start":0.27,"softness":1,"direction":"vertical","color":"nearBlack","hex":"#0A0A0A"},"rim":{"rest":"off","width":0.5,"brightness":0.11,"color":"white","hex":"#FFFFFF","active":"none","activeBrightness":1}},"askMatchesSearch":true}}"##
         func keyDiff(_ a: Any?, _ b: Any?, _ path: String, _ skip: Set<String> = []) -> [String] {
             if let x = a as? [String: Any], let y = b as? [String: Any] {
                 return Set(x.keys).union(y.keys).sorted().filter { !skip.contains($0) }
@@ -1017,17 +1017,18 @@ extension AppearanceTuning {
         func encoded(_ s: AppearanceTuningState) -> Any? {
             (try? JSONEncoder().encode(s)).flatMap { try? JSONSerialization.jsonObject(with: $0) }
         }
-        if let old = importExport(t18) {
-            // The 10-18 file differs from the defaults only in what (b) changed: the floating buttons and the fades.
+        if let old = importExport(t18b) {
+            // The 10-18 (b) file differs from the defaults only in what 10-19 changed: the light fade, its mode, and dark's
+            // Fade into body.
             let d = keyDiff(encoded(old), encoded(.defaults), "")
-            row("t1018-paste-is-superseded-by-1018b", old != .defaults && d.allSatisfy {
-                $0.hasPrefix("floatingButtons:") || $0.hasPrefix("light.fade") || $0.hasPrefix("dark.fade") },
+            row("t1018b-paste-is-superseded-by-1019", old != .defaults && d.allSatisfy {
+                $0.hasPrefix("lightFade:") || $0.hasPrefix("light.fade") || $0.hasPrefix("dark.fadeIntoBody") },
                 d.joined(separator: "; "))
         } else {
-            row("t1018-paste-is-superseded-by-1018b", false, "the 10-18 paste didn't import")
+            row("t1018b-paste-is-superseded-by-1019", false, "the 10-18 (b) paste didn't import")
         }
-        if let imp = importExport(t18b) {
-            row("reset-is-T's-1018b-values", imp == AppearanceTuningState.defaults,
+        if let imp = importExport(t1019) {
+            row("reset-is-T's-1019-values", imp == AppearanceTuningState.defaults,
                 keyDiff(encoded(imp), encoded(.defaults), "").joined(separator: "; "))
             for dark in [false, true] {
                 let v = dark ? imp.dark : imp.light, mode = dark ? "dark" : "light"
@@ -1050,28 +1051,28 @@ extension AppearanceTuning {
                         && palette(named: v.palette) == .shipped
                     if !ok { off.append("cards / field") }
                 }
-                row("app-store-look-is-T's-1018b-\(mode)", off.isEmpty, off.joined(separator: "; "))
+                row("app-store-look-is-T's-1019-\(mode)", off.isEmpty, off.joined(separator: "; "))
             }
             row("app-store-card-content-proposal-capture-controls-glass-floating-glass", CardContentPresentation.bakedProposal
                 && CaptureControlsStyle.bakedGlass && FloatingButtonsStyle.bakedGlass && imp.cardContent == .proposal
                 && imp.captureControls == .glass && imp.floatingButtons == .glass,
                 "proposal=\(CardContentPresentation.bakedProposal) glass=\(CaptureControlsStyle.bakedGlass) floating=\(FloatingButtonsStyle.bakedGlass)")
             // Copy values at the defaults → T's file, every key (build + editing are the session's, not values).
-            let back = (try? JSONSerialization.jsonObject(with: Data(exportJSON(.defaults, editing: "dark", build: "202610180346").utf8)))
-            let file = try? JSONSerialization.jsonObject(with: Data(t18b.utf8))
-            // T's (b) file has every key this build writes (fadeIntoBody, floatingButtons included): all compared, none added
-            // — except live-28 (A1)'s `lightFade`, which the file predates (its own rows below).
-            let d = keyDiff(back, file, "", ["lightFade"])
-            row("copy-values-at-defaults-is-T's-1018b-file", d.isEmpty, d.joined(separator: "; "))
+            let back = (try? JSONSerialization.jsonObject(with: Data(exportJSON(.defaults, editing: "light", build: "202610191107").utf8)))
+            let file = try? JSONSerialization.jsonObject(with: Data(t1019.utf8))
+            // T's 10-19 file has every key this build writes (lightFade included): all compared, none skipped, none added.
+            let d = keyDiff(back, file, "")
+            row("copy-values-at-defaults-is-T's-1019-file", d.isEmpty, d.joined(separator: "; "))
         } else {
-            row("reset-is-T's-1018b-values", false, "the paste didn't import")
+            row("reset-is-T's-1019-values", false, "the paste didn't import")
         }
 
         // live-28 (A1) — light fade Today / A / B: the tuner starts on B, the App Store build stays Today until T picks;
         // Copy values carries it; A and B drop the full-width veil (above the dateline the photo is T's fade alone) and
         // protect the dateline with a band that reaches at most 8 pt above its row; B holds the photo longer, same end.
-        row("light-fade-tuner-B-app-store-today", AppearanceTuningState.defaults.lightFade == .perceptual
-            && CardHeroFade.bakedLightMode == .today && LightFadeMode.allCases.map(\.label) == ["Today", "A", "B"])
+        // live-29 (B1) — T picked A (10-19): the tuner starts on A and the App Store build ships A.
+        row("light-fade-A-in-tuner-and-app-store", AppearanceTuningState.defaults.lightFade == .band
+            && CardHeroFade.bakedLightMode == .band && LightFadeMode.allCases.map(\.label) == ["Today", "A", "B"])
         do {
             var st = AppearanceTuningState.defaults; st.lightFade = .band
             let j = exportJSON(st, editing: "light", build: "x")
@@ -1094,9 +1095,9 @@ extension AppearanceTuning {
         row("fade-into-body-0-is-the-plain-mask", F0.stops(today0).map(\.location)
             == F0.stops(CardHeroFade.Shape(length: fb.length, curve: fb.curve, overshoot: fb.overshoot)).map(\.location)
             && abs(Double(F0.frameHeight(zone: 100, today0)) - 110) < 0.001)
-        // live-27 (0) — T's 10-18 (b) values carry the photo into the body: light 0.14, dark 0.18 (Reset + App Store).
-        row("fade-into-body-defaults-are-T's (light 0.14 · dark 0.18)", close(L.fadeIntoBody, 0.14) && close(Dk.fadeIntoBody, 0.18)
-            && close(CardHeroFade.baked(dark: false).intoBody, 0.14) && close(CardHeroFade.baked(dark: true).intoBody, 0.18),
+        // live-29 (B1) — T's 10-19 values: light carries the photo 15% into the body, dark not at all (Reset + App Store).
+        row("fade-into-body-defaults-are-T's (light 0.15 · dark 0)", close(L.fadeIntoBody, 0.15) && close(Dk.fadeIntoBody, 0)
+            && close(CardHeroFade.baked(dark: false).intoBody, 0.15) && close(CardHeroFade.baked(dark: true).intoBody, 0),
             "tuner \(L.fadeIntoBody) / \(Dk.fadeIntoBody) · baked \(CardHeroFade.baked(dark: false).intoBody) / \(CardHeroFade.baked(dark: true).intoBody)")
         var full = fb; full.intoBody = 1
         row("fade-into-body-100%-ends-the-photo-at-1.6-zones", abs(Double(F0.frameHeight(zone: 100, full)) - 160) < 0.01
@@ -1108,7 +1109,9 @@ extension AppearanceTuning {
             && close(mfL.length, 0.80) && close(mfL.curve, 0.8) && close(mfL.intoBody, 1.00))
         var veiled = full; veiled.scrim = 0.5
         let curL = CardHeroFade.current(dark: false), curD = CardHeroFade.current(dark: true)
-        row("the-text-veil-only-with-the-extension", close(curL.scrim, CardHeroFade.veil(intoBody: curL.intoBody, dark: false))
+        // live-29 (B1) — light ships A (10-19): A / B carry no full-width veil (live-28 (A1)); Today keeps it.
+        let lightVeil = CardHeroFade.lightMode == .today ? CardHeroFade.veil(intoBody: curL.intoBody, dark: false) : 0
+        row("the-text-veil-only-with-the-extension (light A: none)", close(curL.scrim, lightVeil)
             && close(curD.scrim, CardHeroFade.veil(intoBody: curD.intoBody, dark: true))
             && CardHeroFade.veil(intoBody: 0, dark: false) == 0 && CardHeroFade.veil(intoBody: 0, dark: true) == 0
             && close(F0.alpha(veiled, at: 1.2 / 1.6) / max(F0.alpha(full, at: 1.2 / 1.6), 1e-9), 0.5)

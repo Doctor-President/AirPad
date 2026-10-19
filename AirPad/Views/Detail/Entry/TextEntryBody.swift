@@ -315,7 +315,7 @@ struct TextEntryBody: View {
     /// tags removed, the display bullet glyph + image attachments dropped,
     /// whitespace collapsed. A pure-markup / blank line renders empty.
     private func plainTextRender(_ line: String) -> String {
-        var s = MarkdownCodec.decode(line).string
+        var s = MarkdownCodec.decode(MarkdownPlain.block(line)).string   // live-29 (B4): "####", "> ", indented "###" too
         s = s.replacingOccurrences(of: "\u{FFFC}", with: "")           // image attachment glyph
         if s.hasPrefix("• ") { s = String(s.dropFirst(2)) }             // display bullet glyph
         s = s.replacingOccurrences(of: "<[^>]+>", with: "", options: .regularExpression)  // HTML tags

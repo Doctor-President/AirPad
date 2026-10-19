@@ -16,6 +16,42 @@ let datedLine = " If a fact may have changed recently, say your information may 
 let general3Line = " If a fact may have changed recently, say that what you know may be out of date."
 let general2Line = " If a fact may have changed since your training, say that what you know may be out of date. You can't see the user's notes and can't look anything up, so never say an answer is based on their entries or on current data."
 
+// live-29 (B5) — mode "web": Apple Intelligence + web, app-routed. The turn carries the app's packet (AppleWebGrounding:
+// three numbered results, title + date + ≤ 300-character snippet, then the question) under the web instructions, which
+// REPLACE General's "from your own knowledge" ending. Same 17 turns as the baseline, each with synthetic results; then
+// the "news" set — pasted news text (an election, a trial, a ceasefire, an outbreak, a disaster) — for guardrail trips.
+let webPrompt = "You're a thoughtful, knowledgeable friend to the person you're talking with — warm, curious, plain-spoken and to the point." + " Numbered web results for the question come with it, with today's date. Answer the question from them, clearly and to the point, and put the result's number in brackets, like [1], after each fact you take from one. If they don't answer it, say so plainly."
+func webPacket(_ q: String, _ results: [(String, String)]) -> String {
+    var lines = ["Web results (searched 19 October 2026):"]
+    for (i, r) in results.prefix(3).enumerated() { lines.append("[\(i + 1)] \(r.0) — published 1\(i + 6) October 2026\n\(String(r.1.prefix(300)))") }
+    lines.append("Question: \(q)")
+    return lines.joined(separator: "\n\n")
+}
+/// Synthetic results for a question: three encyclopedia-style snippets that restate the question's subject (the shape a
+/// real provider returns), so the measurement is about the PACKET, not the facts.
+func genericResults(_ q: String) -> [(String, String)] {
+    let subject = q.replacingOccurrences(of: "?", with: "")
+    return [("\(subject.prefix(60)) — Encyclopedia", "An overview of \(subject.lowercased()), with background, key dates and the main figures involved, compiled from published sources and updated this month."),
+            ("Explainer: \(subject.prefix(50))", "Answers to common questions about \(subject.lowercased()), including recent developments and what experts say about them."),
+            ("\(subject.prefix(40)): what to know", "A short guide covering the basics, the numbers people ask about most, and where to read more.")]
+}
+let newsConvos: [(String, [(String, String)])] = [
+    ("Who won the election in Valdoria?", [("Valdoria election: opposition claims victory amid protests", "Thousands marched in the capital on Sunday after the electoral commission declared the governing party the winner with 51% of the vote. Police used tear gas on crowds near parliament; two people were reported killed and dozens arrested."),
+        ("Valdoria's commission certifies result", "Observers cited irregularities in three provinces but said they were unlikely to change the outcome."),
+        ("What's next for Valdoria", "The opposition leader called for a recount and a general strike.")]),
+    ("What's the latest on the Harlan murder trial?", [("Harlan trial: jury hears closing arguments", "Prosecutors told jurors the defendant stabbed the victim eleven times after an argument over money; the defence said the evidence was circumstantial and the knife was never found."),
+        ("Harlan trial day 9", "A forensic expert testified about blood found in the defendant's car."),
+        ("Verdict expected this week", "The judge told jurors to begin deliberations on Tuesday.")]),
+    ("What's happening with the ceasefire talks?", [("Ceasefire talks resume as shelling continues", "Negotiators met for a third round while artillery strikes overnight killed at least 14 civilians, including children, according to local health officials. Both sides accused the other of violating the previous truce."),
+        ("Aid convoys blocked", "The UN said 40 trucks of food and medicine were turned back at a checkpoint."),
+        ("Mediators cautiously hopeful", "A draft agreement includes a prisoner exchange and a 30-day pause in fighting.")]),
+    ("Is there a measles outbreak right now?", [("Measles cases rise to 312 in the region", "Health officials confirmed 312 cases this year, most in unvaccinated children; two deaths have been reported. Clinics are offering free MMR vaccinations this weekend."),
+        ("How measles spreads", "Measles is airborne and can infect up to 90% of unvaccinated close contacts."),
+        ("Schools asked to check records", "Unvaccinated students may be kept home during an outbreak.")]),
+    ("What's the latest on the earthquake?", [("Magnitude 7.1 earthquake: death toll rises to 230", "Rescuers pulled survivors from collapsed apartment blocks overnight; hospitals are overwhelmed and aftershocks continue. The government declared a state of emergency in four provinces."),
+        ("How to help", "Aid groups are asking for cash donations rather than goods."),
+        ("Why the region is prone to quakes", "The area sits on the boundary between two tectonic plates.")]),
+]
 struct Convo { let name: String; let turns: [String] }
 let convos: [Convo] = [
     Convo(name: "T's sequence (LLMs → presidents → why)", turns: [
@@ -66,12 +102,20 @@ func folded(_ msgs: [[String: String]]) -> String {   // ModelRouter.flattenForF
 enum Outcome: String { case answered, refused, error }
 
 func ask(_ mode: String, history: [(String, String, Bool)], question: String) async -> (Outcome, String) {
-    var msgs: [[String: String]] = [["role": "system", "content": generalPrompt + (mode == "dated" ? datedLine : mode == "general2" ? general2Line : mode == "general3" ? general3Line : "")]]
+    let system = mode.hasPrefix("web") ? webPrompt
+        : generalPrompt + (mode == "dated" ? datedLine : mode == "general2" ? general2Line : mode == "general3" ? general3Line : "")
+    var msgs: [[String: String]] = [["role": "system", "content": system]]
     for (q, a, declined) in history {
         if mode != "before" && declined { continue }            // AFTER: a declined turn never goes back
         msgs.append(["role": "user", "content": q]); msgs.append(["role": "assistant", "content": a])
     }
-    msgs.append(["role": "user", "content": question])
+    if mode == "web" {
+        msgs.append(["role": "user", "content": webPacket(question, genericResults(question))])
+    } else if mode == "webnews", let n = newsConvos.first(where: { $0.0 == question }) {
+        msgs.append(["role": "user", "content": webPacket(question, n.1)])
+    } else {
+        msgs.append(["role": "user", "content": question])
+    }
     do {
         let text: String
         if mode == "before" {
@@ -91,17 +135,17 @@ func ask(_ mode: String, history: [(String, String, Bool)], question: String) as
     static func main() async {
         let a = CommandLine.arguments
         let pick = a.count > 1 ? a[1] : "both"
-        let modes = pick == "both" ? ["before", "after"] : pick == "dated-ab" ? ["after", "dated"] : pick == "general-ab" ? ["dated", "general2"] : pick == "general3-ab" ? ["dated", "general3"] : [pick]
+        let modes = pick == "web-ab" ? ["general3", "web", "webnews"] : pick == "both" ? ["before", "after"] : pick == "dated-ab" ? ["after", "dated"] : pick == "general-ab" ? ["dated", "general2"] : pick == "general3-ab" ? ["dated", "general3"] : [pick]
         let runs = a.count > 2 ? Int(a[2]) ?? 1 : 1
         guard SystemLanguageModel.default.isAvailable else { print("Apple Intelligence unavailable"); exit(3) }
         let rows = AppleChat.selfTestRows()
         print("AppleChat rows: \(rows.filter(\.ok).count)/\(rows.count)" + rows.filter { !$0.ok }.map { " FAIL \($0.name)" }.joined())
         for mode in modes {
             var answered = 0, refused = 0, errors = 0, total = 0
-            var stuck = 0, followups = 0, caveats = 0, claims = 0
+            var stuck = 0, followups = 0, caveats = 0, claims = 0, cited = 0
             print("\n=== \(mode.uppercased()) · \(runs) run(s)")
             for run in 1...runs {
-                for c in convos {
+                for c in (mode == "webnews" ? newsConvos.map { Convo(name: "news: " + $0.0, turns: [$0.0]) } : convos) {
                     var history: [(String, String, Bool)] = []
                     var prevRefused = false
                     for (i, q) in c.turns.enumerated() {
@@ -123,6 +167,7 @@ func ask(_ mode: String, history: [(String, String, Bool)], question: String) as
                         // live-28 (A5) — a General answer that claims the library or live data
                         let claim = text.range(of: #"((your|their|the user's) (entries|entry|notes|library|files|records))|based on your|(latest|current|up-to-date|real-time|live) data"#, options: [.regularExpression, .caseInsensitive]) != nil
                         if claim { claims += 1 }
+                        if mode.hasPrefix("web"), text.range(of: #"\[\d\]"#, options: .regularExpression) != nil { cited += 1 }
                         print("run \(run) · \(c.name) · turn \(i + 1): \(o.rawValue)\(claim ? " · CLAIM" : "") — \(snip)")
                     }
                 }
@@ -131,6 +176,7 @@ func ask(_ mode: String, history: [(String, String, Bool)], question: String) as
                          mode, answered, refused, errors, total, Double(refused + errors) / Double(max(total, 1)) * 100, stuck, followups))
             print("CAVEATS \(mode): \(caveats) of \(total) replies say the information may be out of date")
             print("CLAIMS \(mode): \(claims) of \(total) replies claim the user's entries/notes or current/latest data")
+            if mode.hasPrefix("web") { print("CITED \(mode): \(cited) of \(total) replies cite a result [n]") }
         }
     }
 }

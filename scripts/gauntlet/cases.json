@@ -177,9 +177,16 @@
         {
           "id": "11",
           "kind": "bu2",
-          "what": "possession lookup by name ('Bolex H16 — mine')",
+          "what": "possession lookup by name in T's OWN room ('Bolex H16 — mine'). live-29 (1): T's room has no Bolex entry — the five Bolex entries are the Sample Library's, a separate scope — so the honest answer is 'nothing in your notes', and it must say where the entries are (the Sample Library)",
           "question": "What did I write about my Bolex H16?",
-          "expectRoute": "read"
+          "expectRoute": "",
+          "uncitedOk": true,
+          "mustContain": [
+            [
+              "sample library"
+            ]
+          ],
+          "minFacts": 1
         }
       ]
     },
@@ -1064,6 +1071,39 @@
       ]
     },
     {
+      "chat": "sl-11",
+      "args": [
+        "-SampleSeedDemo"
+      ],
+      "cases": [
+        {
+          "id": "SL-11",
+          "kind": "bu2",
+          "what": "live-29 (1): case 11's question where the Bolex entries ARE in the searched room (the Sample Library) → READ them, never 'you didn't write anything'",
+          "question": "What did I write about my Bolex H16?",
+          "expectRoute": "read",
+          "mustContain": [
+            [
+              "28 seconds",
+              "28-second",
+              "28 second",
+              "spring",
+              "swiss",
+              "switzerland",
+              "no batteries",
+              "$520",
+              "ebay",
+              "ohio",
+              "heavier",
+              "thread",
+              "dandori"
+            ]
+          ],
+          "minFacts": 1
+        }
+      ]
+    },
+    {
       "chat": "sl-r1",
       "args": [
         "-SampleSeedDemo"
@@ -1350,9 +1390,9 @@
         {
           "id": "SL-M1a",
           "kind": "bu2",
-          "what": "Sample multi-turn 1/3: BG3 (reloading saves; one ending)",
+          "what": "Sample multi-turn 1/3: BG3 (reloading saves; one ending). live-29 (1): the entries say 'BG3', never 'Baldur's Gate' — a 'what have I written about X' question READS them (X's initials), never asserts absence",
           "question": "What have I written about Baldur's Gate 3?",
-          "expectRoute": "",
+          "expectRoute": "read",
           "mustContain": [
             [
               "reload",

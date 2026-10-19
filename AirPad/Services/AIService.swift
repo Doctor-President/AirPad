@@ -853,7 +853,9 @@ actor AIService {
             print("[AI] naming used term(s) absent from the entry — dropped title:\(!titleLeak.isEmpty) summary:\(!summaryLeak.isEmpty) terms=\(titleLeak + summaryLeak)")
         }
         // live-28 (A3) — a model-written title is Title Case, in code (the summary stays sentence case).
-        return NodeAIOutput(title: titleLeak.isEmpty ? TitleCase.apply(title) : "", summary: summaryLeak.isEmpty ? summary : "",
+        // live-29 (B4) — a model's Markdown never reaches a title or summary (every label, the Proposals sheet, the ghosts).
+        return NodeAIOutput(title: titleLeak.isEmpty ? TitleCase.apply(MarkdownPlain.label(title)) : "",
+                            summary: summaryLeak.isEmpty ? MarkdownPlain.text(summary).trimmingCharacters(in: .whitespacesAndNewlines) : "",
                             tags: [], mood: nil, domain: nil, neighborhoodID: nil)
     }
 

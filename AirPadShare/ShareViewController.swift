@@ -256,7 +256,12 @@ final class ShareViewController: UIViewController {
     private static func placeholderTitle(for items: [NodeItem]) -> String {
         guard items.count == 1, let first = items.first else { return "" }
         switch first.type {
-        case .text:     return String((first.content ?? "").prefix(40))
+        // live-29 (B4) — shared Markdown (Bear, Obsidian…) never titles an entry "### Heading": the first line, plain.
+        case .text:
+            let firstLine = (first.content ?? "").split(whereSeparator: \.isNewline).first.map(String.init) ?? ""
+            let plain = firstLine.replacingOccurrences(of: #"^[\s>]*(#{1,6}\s*|[-*+•]\s+)?"#, with: "", options: .regularExpression)
+                .replacingOccurrences(of: #"\*\*|__|`"#, with: "", options: .regularExpression)
+            return String(plain.trimmingCharacters(in: .whitespaces).prefix(40))
         case .document: return (first.description as NSString?)?.deletingPathExtension ?? ""
         default:        return ""   // link, image, video, audio → named on import
         }

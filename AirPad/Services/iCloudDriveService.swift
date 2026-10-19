@@ -232,6 +232,7 @@ actor iCloudDriveService {
             if ProcessInfo.processInfo.arguments.contains("-UITestSeedDocumentEntries") { Self.seedUITestDocumentEntries(root) }
             if ProcessInfo.processInfo.arguments.contains("-UITestSeedPhotoEntries") { Self.seedUITestPhotoEntries(root) }
             if ProcessInfo.processInfo.arguments.contains("-UITestSeedLongChat") { Self.seedUITestLongChat(root) }
+            if let spec = UserDefaults.standard.string(forKey: "UITestSeedScrollChat") { Self.seedUITestScrollChat(root, spec: spec) }
             if ProcessInfo.processInfo.arguments.contains("-UITestSeedManyDocuments") { Self.seedUITestManyDocuments(root) }
             if ProcessInfo.processInfo.arguments.contains("-UITestSeedDeclineEntry") { Self.seedUITestDeclineEntry(root) }
             if ProcessInfo.processInfo.arguments.contains("-UITestSeedCardShowcase") { Self.seedUITestCardShowcase(root) }
@@ -447,6 +448,49 @@ actor iCloudDriveService {
                 text: String(repeating: para, count: 4) + (i == 40 ? "This is the end of the long chat." : "")))
         }
         let chat = Chat(id: UUID(), title: "Long synthetic chat", createdAt: now, updatedAt: now, messages: messages)
+        try? JSONEncoder.airPad.encode([chat]).write(to: root.appendingPathComponent("chats.json"), options: .atomic)
+    }
+
+    /// live-29 (C1) — `-UITestSeedScrollChat "<messages>[:table,prov,sources,dated,divider]"`: ONE synthetic chat
+    /// ("Scroll chat <n>") of exactly <messages> messages (user / assistant alternating), for the scroll-to-the-end
+    /// rows. Elements on request: `table` = a 46-row Markdown table in the second-to-last answer; `prov` = a provenance
+    /// caption on every answer; `divider` = the model switches mid-chat ("Switched to …"); `sources` = web citations
+    /// (a "Show n sources" box) on every answer; `dated` = the dated general-knowledge line on the last answer. The last
+    /// answer ends "END OF SCROLL CHAT." Synthetic text only.
+    private static func seedUITestScrollChat(_ root: URL, spec: String) {
+        let parts = spec.split(separator: ":", maxSplits: 1).map(String.init)
+        let n = max(2, Int(parts.first ?? "10") ?? 10)
+        let f = Set((parts.count > 1 ? parts[1] : "").split(separator: ",").map(String.init))
+        let now = Date(timeIntervalSince1970: 1_760_000_000)
+        var messages: [ChatSession.Message] = []
+        let turns = n / 2
+        for i in 1...turns {
+            messages.append(ChatSession.Message(role: .user, text: "Scroll question \(i): what did the harbour log say about week \(i)?"))
+            var text = "Week \(i) had two high waters a day at the north wall, with the spring tide mid-week and the neap at the end. "
+                + "The harbour master logged the moorings, the dredger's hours and the ferry's delays. "
+                + "The slipway was closed for two mornings while the crane was serviced."
+            if f.contains("sources") { text += " The log agrees with the tide table [1] and the notice to mariners [2]." }
+            if f.contains("table") && i == turns - 1 {
+                text += "\n\n| # | Keeper | Years | Living? |\n|---|---|---|---|\n"
+                    + (1...46).map { "| \($0) | Keeper \($0) | \(1780 + $0)–\(1830 + $0) | No |" }.joined(separator: "\n")
+            }
+            if i == turns { text += "\n\nEND OF SCROLL CHAT." }
+            var a = ChatSession.Message(role: .assistant, text: text)
+            if f.contains("sources") {
+                a.citations = [.init(index: 1, url: "https://tides.gauntlet.example/week-\(i)", title: "Tide table, week \(i)",
+                                     snippet: "High water 06:12 and 18:40 at the north wall."),
+                               .init(index: 2, url: "https://notices.gauntlet.example/\(i)", title: "Notice to mariners \(i)",
+                                     snippet: "The slipway is closed for crane servicing.")]
+            }
+            if f.contains("prov") || f.contains("divider") {
+                let switched = f.contains("divider") && i > turns / 2
+                a.provenance = ChatProvenance(route: switched ? .apple : .host, model: switched ? "Apple Intelligence" : "qwen3:4b-instruct-2507-q4_K_M",
+                                              name: switched ? "Apple Intelligence" : "Qwen3 4B", web: f.contains("sources") ? true : nil)
+            }
+            if f.contains("dated") && i == turns { a.generalKnowledge = true; a.datedKnowledge = true }
+            messages.append(a)
+        }
+        let chat = Chat(id: UUID(), title: "Scroll chat \(n)", createdAt: now, updatedAt: now, messages: messages)
         try? JSONEncoder.airPad.encode([chat]).write(to: root.appendingPathComponent("chats.json"), options: .atomic)
     }
 

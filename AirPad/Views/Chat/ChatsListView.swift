@@ -251,20 +251,17 @@ struct ChatsListView: View {
     /// empty (e.g. a chat whose first turn errored before commit).
     private func displayTitle(for chat: Chat) -> String {
         let trimmed = chat.title.trimmingCharacters(in: .whitespacesAndNewlines)
-        if !trimmed.isEmpty { return trimmed }
+        if !trimmed.isEmpty { return MarkdownPlain.label(trimmed) }   // live-29 (B4)
         if let firstUser = chat.messages.first(where: { $0.role == .user }) {
             let t = firstUser.text.trimmingCharacters(in: .whitespacesAndNewlines)
-            return t.isEmpty ? "Untitled chat" : String(t.prefix(40))
+            return t.isEmpty ? "Untitled chat" : String(MarkdownPlain.label(t).prefix(40))   // live-29 (B4)
         }
         return "Untitled chat"
     }
 
     private func preview(for chat: Chat) -> String {
         guard let last = chat.messages.last else { return "" }
-        let collapsed = last.text
-            .replacingOccurrences(of: "\n", with: " ")
-            .trimmingCharacters(in: .whitespaces)
-        return collapsed
+        return MarkdownPlain.label(last.text)   // live-29 (B4): an answer's "## " / "**" / "- " never shows in the row
     }
 
     private func relativeTime(_ date: Date) -> String {

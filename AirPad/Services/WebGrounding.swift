@@ -23,7 +23,39 @@ enum WebGrounding {
         asksCurrentState(q) ? datedKnowledgeNote : isFactualQuestion(q) ? generalKnowledgeNote : nil
     }
 
+    /// live-29 (B3) — the line under an answer whose search ran but which no result supports (it cites none). Proposed
+    /// wording; T's call. Never the training-data line once a search ran.
+    static let searchUnconfirmedNote = "The search results didn't confirm this."
+
+    /// live-29 (B3) — the ONE decision for the app's line under a General answer: which note, if any.
+    /// `searchRan` = a web search executed this turn (the app's prefetch or the model's call), whatever came back.
+    static func answerNote(question q: String, searchRan: Bool, resultCount: Int, citedCount: Int, rateLimited: Bool)
+        -> (text: String, dated: Bool, unconfirmed: Bool)? {
+        guard !rateLimited else { return nil }
+        // After a search ran: never the training-data line. Cited → nothing to add; uncited (or nothing came back) →
+        // the honest "didn't confirm" line. (T 2026-10-19: Tavily, 3 results, "+ web", and "From the model's training
+        // data" under it — the answer cited none of them, and the old rule read that as "no search behind it".)
+        if searchRan { return citedCount > 0 ? nil : (searchUnconfirmedNote, false, true) }
+        guard let note = ungroundedNote(for: q) else { return nil }
+        return (note, note == datedKnowledgeNote, false)
+    }
+
+    /// live-29 (B3) — a result's title / snippet as the app shows it and hands it to the model: tags and entities gone.
+    static func cleanResultText(_ raw: String, cap: Int? = nil) -> String {
+        let clean = MarkdownPlain.label(WebReadability.decodeEntities(WebReadability.stripTags(raw)))   // "#### Tags" never shows
+        guard let cap, clean.count > cap else { return clean }
+        return String(clean.prefix(cap)) + "…"
+    }
+
     // MARK: - Question shape
+
+    /// live-29 (B3) — a NEWS-shaped question: asks a provider's news endpoint / topic first (Brave news, Tavily
+    /// "news"); everything else searches the general web first.
+    static func isNewsQuestion(_ q: String) -> Bool {
+        q.range(of: #"\b(news|headlines?|breaking|happen(ed|ing)|today|tonight|yesterday|this (morning|afternoon|evening|week))\b"#,
+                options: [.regularExpression, .caseInsensitive]) != nil
+            || q.range(of: #"\blatest (on|about|from|in)\b"#, options: [.regularExpression, .caseInsensitive]) != nil
+    }
 
     /// A today/latest question: rank fresh results first and state each result's age.
     static func isFreshnessQuestion(_ q: String) -> Bool {
@@ -185,7 +217,7 @@ enum WebGrounding {
         return c.dateComponents([.day], from: c.startOfDay(for: d), to: c.startOfDay(for: now)).day ?? 0
     }
 
-    private static func dayString(_ d: Date) -> String {
+    static func dayString(_ d: Date) -> String {   // live-29 (B5): AppleWebGrounding dates its packet the same way
         let f = DateFormatter(); f.locale = Locale(identifier: "en_GB"); f.dateFormat = "d MMMM yyyy"
         return f.string(from: d)
     }
@@ -716,6 +748,33 @@ enum WebGroundingSelfTest {
                           ("Breaking news in Turkey", "TR"), ("Latest turkey recipe news", nil),
                           ("What are the top world news stories today?", nil), ("News from New Zealand today", "NZ")] {
             check("news country: \(q)", WebGrounding.newsCountry(q)?.code == want, "\(WebGrounding.newsCountry(q)?.code ?? "nil")")
+        }
+        // 11. live-29 (B3) — T (Tavily): "Who is the current president of the United States" went to the NEWS topic
+        // (midterm articles), and the answer that searched showed the training-data line.
+        for (q, want) in [("Who is the current president of the United States", false), ("Who is the current president?", false),
+                          ("What's the current population of Chicago?", false), ("Who is the prime minister of Canada right now?", false),
+                          ("What's the latest iPhone?", false), ("What's the top news in Mexico today?", true),
+                          ("What are the headlines this morning?", true), ("Latest news on the Lakeview Observatory", true),
+                          ("What happened in Turkey yesterday?", true), ("Breaking news in Turkey", true)] {
+            check("news-shaped: \(q)", WebGrounding.isNewsQuestion(q) == want)
+        }
+        let pres = "Who is the current president of the United States?"
+        let cited = WebGrounding.answerNote(question: pres, searchRan: true, resultCount: 3, citedCount: 2, rateLimited: false)
+        let uncited = WebGrounding.answerNote(question: pres, searchRan: true, resultCount: 3, citedCount: 0, rateLimited: false)
+        let empty = WebGrounding.answerNote(question: pres, searchRan: true, resultCount: 0, citedCount: 0, rateLimited: false)
+        let none = WebGrounding.answerNote(question: pres, searchRan: false, resultCount: 0, citedCount: 0, rateLimited: false)
+        check("searched + cited → no line", cited == nil)
+        check("searched, nothing cited → 'didn't confirm', never training data", uncited?.unconfirmed == true && uncited?.dated == false
+              && uncited?.text == WebGrounding.searchUnconfirmedNote, uncited?.text ?? "nil")
+        check("searched, no results → 'didn't confirm', never training data", empty?.unconfirmed == true && empty?.dated == false,
+              empty?.text ?? "nil")
+        check("no search → the dated line, as before", none?.dated == true && none?.text == WebGrounding.datedKnowledgeNote, none?.text ?? "nil")
+        for (raw, want) in [("#### Tags\nThe 47th president took office in January.", "Tags The 47th president took office in January."),
+                            ("## Who is the president? | Encyclopedia", "Who is the president? | Encyclopedia"),
+                            ("**Joe** — *served* 2021–2025 [details](https://example.com)", "Joe — served 2021–2025 details"),
+                            ("Plain snippet &amp; more", "Plain snippet & more")] {
+            let got = WebGrounding.cleanResultText(raw)
+            check("result text has no markdown: \(raw.prefix(20))", got == want, got)
         }
         let mx = WebGrounding.newsCountry("Top news in Mexico")!
         check("false friend: New Mexico only", WebGrounding.isFalseFriend("Two pipeline fires in New Mexico Tuesday", for: mx))

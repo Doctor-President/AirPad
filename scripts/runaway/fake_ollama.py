@@ -10,6 +10,9 @@
 # live-28 (A2) — it also stands in for the web-search providers (the app's DEBUG -WebSearchBaseURL points both here):
 #   GET /res/v1/web/search, /res/v1/news/search (Brave) and POST /search (Tavily) return 3 synthetic results and log
 #   {provider, query} to <dir>/web.jsonl — the switch rows count them (off → none).
+# live-29 (B3) — it also logs WHICH endpoint / topic was asked (Brave web|news, Tavily general|news) and serves it back on
+#   GET /weblog; a "president" query's results carry Markdown in title and snippet ("#### Tags"), and a "president"
+#   question gets a model answer that cites none of them (T's Tavily case: 3 results, "+ web", the training-data line).
 #   fake_ollama.py <port> <dir> [tokens_per_sec=60]
 import json, sys, time, threading
 from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
@@ -20,15 +23,35 @@ CEILING_SEC = 900
 lock = threading.Lock()
 active = {}   # streams still generating: id → {mode, num_predict, tokens, started}
 seq = [0]
+webq = []   # live-29 (B3) — every web request: {provider, endpoint, query}
 def log(rec):
     with lock, open(f"{DIR}/streams.jsonl", "a") as f: f.write(json.dumps(rec) + "\n")
 
 def web_results(q):
+    if "president" in q.lower():   # live-29 (B3) — Markdown in a result, as T's Tavily snippet had
+        return [{"title": f"### President of the United States ({k})", "url": f"https://encyclopedia.gauntlet.example/president-{k}",
+                 "description": f"#### Tags\nThe sitting president (synthetic result {k}).",
+                 "content": f"#### Tags\nThe sitting president (synthetic result {k})."} for k in (1, 2, 3)]
     return [{"title": f"Lakeview Gazette: {q[:40]} ({k})", "url": f"https://news.gauntlet.example/{k}",
              "description": f"Synthetic result {k} about {q[:60]}.", "content": f"Synthetic result {k} about {q[:60]}."}
             for k in (1, 2, 3)]
 
 def tokens(mode):
+    if mode == "president":   # live-29 (B3) — an answer that cites none of the results
+        yield from ["The", " sitting", " president", " is", " named", " in", " the", " results", "."]
+        return
+    if mode.startswith("long"):   # live-29 (C1) — a realistic multi-paragraph answer, ending with the turn's marker
+        k = mode[4:] or "?"
+        paras = [f"The harbour log for week {k} records two high waters a day at the north wall.",
+                 f"In week {k} the spring tide arrived mid-week and the neap came at the end.",
+                 f"The harbour master noted {k} moorings changing hands and a new buoy at the bar.",
+                 f"Rain kept the fishing fleet in on day {k} of the month, and the crane was serviced.",
+                 f"By the weekend of week {k} the ferry was back on its timetable."]   # distinct lines: the loop guard stays quiet
+        body = ("## What the log says\n\n" + " ".join(paras[:3]) + "\n\n- The dredger worked four mornings.\n- The ferry ran late twice.\n"
+                "- The slipway closed for crane servicing.\n\n" + " ".join(paras[3:]) + "\n\nEnd of answer " + k + ".")
+        for w in body.split(" "):
+            yield w + " "
+        return
     if mode == "normal":
         yield from ["A", " tide", " pool", " is", " a", " rocky", " hollow", " the", " sea", " refills", " twice", " a", " day", "."]
         return
@@ -50,18 +73,22 @@ class H(BaseHTTPRequestHandler):
         b = json.dumps(obj).encode(); self.send_response(200)
         self.send_header("Content-Type", "application/json"); self.send_header("Content-Length", str(len(b)))
         self.end_headers(); self.wfile.write(b)
-    def log_web(self, provider, q):
-        with lock, open(f"{DIR}/web.jsonl", "a") as f:
-            f.write(json.dumps({"provider": provider, "query": q, "at": time.strftime("%H:%M:%S")}) + "\n")
+    def log_web(self, provider, q, endpoint=""):
+        rec = {"provider": provider, "endpoint": endpoint, "query": q, "at": time.strftime("%H:%M:%S")}
+        with lock:
+            webq.append(rec)
+            with open(f"{DIR}/web.jsonl", "a") as f: f.write(json.dumps(rec) + "\n")
     def do_GET(self):
         if self.path.startswith("/res/v1/"):   # Brave web / news
             from urllib.parse import urlparse, parse_qs
             q = parse_qs(urlparse(self.path).query).get("q", [""])[0]
-            self.log_web("brave", q)
+            self.log_web("brave", q, "news" if "/news/" in self.path else "web")
             r = web_results(q)
             self.send_json({"web": {"results": r}} if "/web/" in self.path else {"results": r}); return
         model = {"name": MODEL, "model": MODEL, "digest": "fake", "size": 1, "size_vram": 1, "context_length": 20480,
                  "expires_at": "2319-01-01T00:00:00Z", "details": {"family": "qwen3", "parameter_size": "4.0B"}}
+        if self.path.startswith("/weblog"):
+            with lock: self.send_json(list(webq)); return
         if self.path.startswith("/status"):   # what is still generating right now (the Mac's view)
             now = time.time()
             with lock: self.send_json([{**v, "ageSec": round(now - v["started"], 1)} for v in active.values()]); return
@@ -73,12 +100,14 @@ class H(BaseHTTPRequestHandler):
         n = int(self.headers.get("Content-Length") or 0)
         body = json.loads(self.rfile.read(n) or b"{}")
         if self.path.startswith("/search"):   # Tavily
-            self.log_web("tavily", body.get("query", ""))
+            self.log_web("tavily", body.get("query", ""), body.get("topic", ""))
             self.send_json({"results": web_results(body.get("query", ""))}); return
         if not self.path.startswith("/api/chat"):
             self.send_json({"done": True, "model": MODEL}); return
         q = next((m.get("content", "") for m in reversed(body.get("messages", [])) if m.get("role") == "user"), "").lower()
-        mode = "loop" if "presidents" in q else "unique" if "every lighthouse" in q else "slow" if "slowly" in q else "normal"
+        import re as _re
+        lm = _re.search(r"harbour log turn (\d+)", q)
+        mode = ("long" + lm.group(1)) if lm else "president" if "current president" in q else "loop" if "presidents" in q else "unique" if "every lighthouse" in q else "slow" if "slowly" in q else "normal"
         opts = body.get("options") or {}
         limit = opts.get("num_predict") if mode != "slow" else None
         rate = 5.0 if mode == "slow" else RATE

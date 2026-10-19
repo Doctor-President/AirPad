@@ -4,7 +4,7 @@
 #   scripts/runaway/run.sh <out_dir> <xctestrun> [test ids, comma-separated, default all of RunawayAnswerUI]
 set -uo pipefail
 OUT=${1:?out_dir}; XCTR=${2:?xctestrun}; ONLY=${3:-}
-AIRPAD=~/Developer/AirPad; HOSTREPO=~/Developer/airpad-host
+AIRPAD=${0:A:h:h:h}; HOSTREPO=${RUNAWAY_HOSTREPO:-~/Developer/airpad-host}   # live-29: 0.1.2 from its worktree, 0.1.1 = main
 SIM=${RUNAWAY_SIM:-0CEF9A50-F6A1-4CEF-BCFF-624421778F76}
 FP=11600; HP=8798
 mkdir -p "$OUT"; OUT=$(cd "$OUT" && pwd); SCR=$(mktemp -d "${TMPDIR:-/tmp}/runaway-host.XXXX")
@@ -33,7 +33,7 @@ DEVELOPER_DIR=/Applications/Xcode.app/Contents/Developer \
 TEST_RUNNER_WEBSWITCH_RED=${WEBSWITCH_RED:-0} TEST_RUNNER_RUNAWAY_FAKE_URL=http://127.0.0.1:$FP \
 TEST_RUNNER_RUNAWAY_HOST_ARGS="-DebugHostURL http://127.0.0.1:$HP -DebugHostSecret $SECRET -DebugHostPubKey $HPK" \
   xcodebuild test-without-building -xctestrun "$XCTR" -destination "id=$SIM" "${TESTS[@]}" \
-  -resultBundlePath "$OUT/result.xcresult" > "$OUT/xcuitest.log" 2>&1
+  -resultBundlePath "$OUT/result.xcresult" -collect-test-diagnostics never > "$OUT/xcuitest.log" 2>&1
 log "xcodebuild exit $?"
 /usr/bin/grep -E "\[Runaway\]|Test Case .*(passed|failed)" "$OUT/xcuitest.log" | /usr/bin/grep -v "^\s*t = " | tee -a "$OUT/run.log"
 sleep ${RUNAWAY_AFTER_SEC:-20}

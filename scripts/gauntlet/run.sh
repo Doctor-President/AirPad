@@ -41,8 +41,8 @@ while (( $# )); do
   esac
 done
 
-AIRPAD=~/Developer/AirPad
-HOSTREPO=~/Developer/airpad-host
+AIRPAD=${GAUNTLET_AIRPAD:-${0:A:h:h:h}}   # live-29: the checkout this script is in (a worktree builds its own source)
+HOSTREPO=${GAUNTLET_HOSTREPO:-~/Developer/airpad-host}
 FIXTURE=~/Developer/fixtures/tom-corpus-2026-09-21
 SIM=${GAUNTLET_SIM:-CC2D6B5F-A6C2-494F-AC5E-555F8FF3C73A}   # iPhone 17 Pro Max, iOS 27.0
 DD=${GAUNTLET_DD:-$AIRPAD/build/gauntlet-dd}   # override for an A/B against another build

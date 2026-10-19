@@ -89,6 +89,11 @@ final class AppRouter {
     /// in-detail links stack. Don't route link-following through this field.
     var pendingNodeNavigationID: String? = nil
 
+    /// live-29 (B2) — a citation tapped OUTSIDE the Librarian panel (the Chat view) opens its entry exactly as a Librarian
+    /// citation does (`LibrarianSurface.openNode`): ContentView drops a full panel to half, then hands the id to
+    /// `pendingNodeNavigationID`, so the surface underneath pushes the normal Detail View and Back returns to that surface.
+    var citedEntryToOpen: String? = nil
+
     /// Monotonic "pop the current surface's detail stack back to root" request.
     /// Sole producer: a Librarian search-result ROW tap (`focusNode`) — it flies
     /// the camera / scrolls to the node on the underlying surface, but that focus

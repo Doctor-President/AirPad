@@ -104,6 +104,83 @@ final class RunawayAnswerUI: XCTestCase {
         XCTAssertFalse(stop.exists, "Stop is still showing after the turn ended")
     }
 
+    // MARK: live-29 (2) — Stop frees the Mac (Host 0.1.2 `/v1/chat/cancel`)
+
+    /// What the fake Ollama is still generating right now (`/status`): the streams that began after `since` (seconds
+    /// since 1970), so an earlier row's abandoned stream never counts. The chat's TITLE request (64 tokens, its own short
+    /// request, fired when the first answer ends) isn't the stopped answer and is left out.
+    private func macStillGenerating(since: TimeInterval) -> Int? {
+        guard let base = ProcessInfo.processInfo.environment["RUNAWAY_FAKE_URL"], let url = URL(string: base + "/status") else { return nil }
+        let sem = DispatchSemaphore(value: 0); var out: Int?
+        URLSession.shared.dataTask(with: url) { data, _, _ in
+            if let data, let arr = try? JSONSerialization.jsonObject(with: data) as? [[String: Any]] {
+                out = arr.filter { (($0["started"] as? Double) ?? 0) >= since - 1 && (($0["num_predict"] as? Int) ?? Int.max) > 64 }.count
+            }
+            sem.signal()
+        }.resume()
+        _ = sem.wait(timeout: .now() + 5)
+        return out
+    }
+    /// Polls until nothing this row started is still generating; the seconds that took, or nil after `limit`.
+    private func secondsUntilMacStops(since: TimeInterval, limit: TimeInterval) -> TimeInterval? {
+        let t0 = Date()
+        while Date().timeIntervalSince(t0) < limit {
+            if macStillGenerating(since: since) == 0 { return Date().timeIntervalSince(t0) }
+            Thread.sleep(forTimeInterval: 0.25)
+        }
+        return nil
+    }
+
+    /// After a Stop, the Mac stops generating within 2 s (before: it kept going to num_predict, ≈ 70 s at the fake's
+    /// 60 tok/s for a 4,096-token table).
+    func testStopFreesTheMac() throws {
+        let app = try launch()
+        let since = Date().timeIntervalSince1970
+        askGeneral(app, "Make a table of every lighthouse on the coast")
+        let stop = app.buttons["Stop answer"]
+        XCTAssertTrue(stop.waitForExistence(timeout: 30), "no Stop while the answer streams")
+        _ = app.descendants(matching: .any).matching(identifier: "chat.answer").firstMatch.waitForExistence(timeout: 30)
+        Thread.sleep(forTimeInterval: 3)
+        XCTAssertEqual(macStillGenerating(since: since), 1, "precondition: the Mac should be generating this answer")
+        stop.tap()
+        XCTAssertTrue(stoppedLine(app).waitForExistence(timeout: 10), "Stop left no line")
+        let sec = secondsUntilMacStops(since: since, limit: 2)
+        note("stop-frees-mac: the Mac \(sec.map { "stopped \(String(format: "%.2f", $0)) s after the line" } ?? "STILL generating 2 s after the line (\(macStillGenerating(since: since) ?? -1) stream)")")
+        XCTAssertNotNil(sec, "the Mac kept generating after Stop")
+        XCTAssertFalse(app.staticTexts.matching(identifier: "chat.errorBanner").firstMatch.exists, "Stop showed an error")
+    }
+
+    /// The loop guard ends an answer on the phone; the Mac stops within 2 s too.
+    func testLoopGuardFreesTheMac() throws {
+        let app = try launch()
+        let since = Date().timeIntervalSince1970
+        askGeneral(app, "Make a table of US presidents and whether each is living")
+        let line = stoppedLine(app)
+        XCTAssertTrue(line.waitForExistence(timeout: 60), "the loop guard didn't stop it")
+        let sec = secondsUntilMacStops(since: since, limit: 2)
+        note("guard-frees-mac: the Mac \(sec.map { "stopped \(String(format: "%.2f", $0)) s after the line" } ?? "STILL generating 2 s after the line")")
+        XCTAssertNotNil(sec, "the Mac kept generating after the loop guard")
+    }
+
+    /// A Host without the cancel route (0.1.1): Stop behaves as today — the line, what arrived kept, no error.
+    func testStopAgainstHostWithoutCancel() throws {
+        let app = try launch()
+        askGeneral(app, "Make a table of every lighthouse on the coast")
+        let stop = app.buttons["Stop answer"]
+        XCTAssertTrue(stop.waitForExistence(timeout: 30), "no Stop while the answer streams")
+        _ = app.descendants(matching: .any).matching(identifier: "chat.answer").firstMatch.waitForExistence(timeout: 30)
+        Thread.sleep(forTimeInterval: 3)
+        stop.tap()
+        let line = stoppedLine(app)
+        XCTAssertTrue(line.waitForExistence(timeout: 10), "Stop left no line")
+        XCTAssertEqual(line.label, "Stopped")
+        XCTAssertFalse(answerText(app).isEmpty, "Stop dropped what had arrived")
+        Thread.sleep(forTimeInterval: 3)   // the cancel's 404 has come back by now
+        let banner = app.descendants(matching: .any).matching(NSPredicate(format: "identifier CONTAINS[c] 'error' OR label CONTAINS[c] 'couldn'")).firstMatch
+        note("stop-old-host: line '\(line.label)' · error shown: \(banner.exists)")
+        XCTAssertFalse(banner.exists, "a Host without /v1/chat/cancel showed an error")
+    }
+
     /// A normal answer is untouched: no line, no Stop left over.
     func testNormalAnswerUntouched() throws {
         let app = try launch()

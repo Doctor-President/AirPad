@@ -426,7 +426,7 @@ final class LibrarianState {
                     .trimmingCharacters(in: .whitespacesAndNewlines)
                 snippet = summary.isEmpty
                     ? Self.pullQuote(from: match.block.text, query: query)
-                    : summary
+                    : MarkdownPlain.label(summary)   // live-29 (B4)
             } else {
                 snippet = Self.pullQuote(from: match.block.text, query: query)
             }
@@ -673,6 +673,20 @@ final class LibrarianState {
             default: toolCapable = false
             }
             guard toolCapable else {
+                // live-29 (B5) — Apple Intelligence + web: the APP searches (`AppleWebGrounding`) — the same rule, switch and
+                // "Web search is off" as the Host path; the on-device model only reads the numbered results.
+                if AppleWebGrounding.shouldSearch(query, searchIntent: Self.looksLikeSearchIntent(query)) {
+                    if WebSearchBackend.hasKey {
+                        Self.logGeneralTurn(query: query, scope: selectedScope, tool: "app-apple-search", retry: false, store: store)
+                        await appleWebSend(query: query, chat: chat)
+                        return
+                    }
+                    if Self.looksLikeSearchIntent(query) {
+                        Self.logGeneralTurn(query: query, scope: selectedScope, tool: "none", retry: false, store: store)
+                        chat.appendWebSearchKeyNotice(userText: query)
+                        return
+                    }
+                }
                 // FM (no tool API) → plain private chat, exactly as before.
                 Self.logGeneralTurn(query: query, scope: selectedScope, tool: "none", retry: false, store: store)
                 await chat.send(displayText: query, modelText: query,
@@ -737,6 +751,19 @@ final class LibrarianState {
         // BN4 working set), then send with the read/skim receipt (BN5).
         let (candidates, empty, receipt) = await corpusCandidates(query: query, store: store, chat: chat)
 
+        // live-29 (1b) — nothing in the room names what the question asks about: the app says so itself (and where the
+        // entries are, if the Sample Library has them). No model call — an unrelated survey is what a model misreads.
+        if let nothing = lookupNothingFound {
+            lookupNothingFound = nil
+            #if DEBUG
+            GauntletTap.shared.notePlan(mode: "none", readNodeIDs: [], candidates: [], cardCount: 0, passageCount: 0,
+                                        packetChars: 0, estTokens: 0, windowTokens: ModelRouter.contextWindowTokens,
+                                        budgetChars: askContextCharBudget(), alwaysCite: [])
+            #endif
+            chat.appendLibraryNotice(userText: query, text: nothing)
+            return
+        }
+
         // ★ Brief BU1 — ONE plan for the grounded turn (READ, SURVEY, or EMPTY), built by the single
         // `makeTurnPlan` constructor. Every entry point reaches HERE (composer, the "Read it in full"
         // offer re-ask, and Retry/↻ via `resendHandler`), and hands the SAME plan's fields to the ONE
@@ -773,9 +800,21 @@ final class LibrarianState {
         // Brief BW5 — the "Reading <Title>…" / "Skimming your library…" line shown until the first token.
         chat.prefillNotice = plan.prefillNotice()
         if plan.mode == "read", plan.reusedEntries == 0 { chat.prefillSampleChars = plan.systemPrompt.count + plan.modelText.count }
+        // live-29 (1b) — the absence guard: entries in this room name what was asked about, so an answer that still says
+        // there are none is replaced by the list of what was found (best first, as routed).
+        var absenceGuard: AbsenceGuard? = nil
+        if let subject = lookupSubject, !lookupFoundIDs.isEmpty, let chips = plan.citations {
+            var seen = Set<String>()
+            let found = lookupFoundIDs.compactMap { id -> ChatSession.Message.Citation? in
+                guard !seen.contains(id), let c = chips.first(where: { $0.nodeID == id }) else { return nil }
+                seen.insert(id); return c
+            }
+            if !found.isEmpty { absenceGuard = AbsenceGuard(subject: subject, found: found) }
+        }
         await chat.send(displayText: plan.displayText, modelText: plan.modelText,
                         systemPrompt: plan.systemPrompt, citations: plan.citations,
-                        alwaysCiteIndices: plan.alwaysCiteIndices, readReceipt: plan.readReceipt, replayFrom: replayFrom)
+                        alwaysCiteIndices: plan.alwaysCiteIndices, readReceipt: plan.readReceipt, replayFrom: replayFrom,
+                        absenceGuard: absenceGuard)
         // Brief AI5 — Library mode never searches, but when the EMPTY room meets a current-information
         // question the app OFFERS the web under the answer (App UI only — never model text/citation).
         // Set after the answer commits; the surface renders the offer bar, tapping it flips to General
@@ -792,6 +831,24 @@ final class LibrarianState {
             NSLog("[GauntletTap] synthesized Read-in-full offer → '%@'", lead.title)
         }
         #endif
+    }
+
+    /// live-29 (B5) — one Apple Intelligence turn grounded in the active provider's top results (`AppleWebGrounding`).
+    /// Nothing back (or throttled) → the plain turn; nothing back still counts as a search (never the training-data line).
+    private func appleWebSend(query: String, chat: ChatSession) async {
+        let result = await WebSearchBackend.make().execute(name: AgentTools.webSearch,
+                                                           arguments: ["query": AppleWebGrounding.query(for: query)])
+        let links = WebGrounding.isFreshnessQuestion(query) ? WebGrounding.rank(result.links) : result.links
+        guard !links.isEmpty else {
+            let searched = !result.unavailable && !result.rateLimited
+            await chat.send(displayText: query, modelText: query, systemPrompt: privateSystemPrompt, citations: nil,
+                            generalKnowledge: true, webResults: searched ? 0 : nil)
+            return
+        }
+        let pk = AppleWebGrounding.packet(question: query, links: links)
+        await chat.send(displayText: query, modelText: pk.text,
+                        systemPrompt: Self.plainVoice + " " + AppleWebGrounding.instructions + standingVoiceSuffix,
+                        citations: pk.citations, generalKnowledge: true, webResults: pk.citations.count)
     }
 
     /// Brief AI5 — the user tapped "Search the web instead" under an empty Library
@@ -963,11 +1020,42 @@ final class LibrarianState {
             return Self.pinnedNodeIDs(question: query, nodes: store.nodes(in: selectedScope))
         }()
         let pinning = !pinnedIDs.isEmpty
+        // live-29 (1) — "What did I write / note / save about X?" (`LibrarianSubjectLookup.swift`): the entries in this
+        // room that NAME X are found by their words (or X's initials), not left to the embedding — the best read in
+        // full, the rest chips; many → a survey over just them; none, when X is a name → the app says so itself (no
+        // model call, no unrelated survey to misread). "My <collection> entries…" surveys that collection (SL-S2).
+        lookupSubject = nil; lookupFoundIDs = []; lookupNothingFound = nil
+        var lookupRead: [String] = []
+        var surveyOnly: Set<String>? = nil
+        if !pinning, Self.isSubjectLookupEnabled {
+            let roomNodes = store.nodes(in: selectedScope)
+            if let subject = Self.writtenAboutSubject(query), let lookup = SubjectLookup(subject: subject) {
+                let (strong, weak) = await Self.entriesNaming(lookup, nodes: roomNodes, store: store)
+                let primary = strong.isEmpty ? weak : strong
+                if !primary.isEmpty {
+                    lookupSubject = subject
+                    lookupFoundIDs = primary + (strong.isEmpty ? [] : weak)
+                    if primary.count <= 6 { lookupRead = primary } else { surveyOnly = Set(primary) }
+                } else if lookup.isName {
+                    lookupNothingFound = Self.nothingFoundAnswer(subject: subject, roomName: lookupRoomName(store: store),
+                                                                 sampleCount: await sampleEntriesNaming(lookup, store: store))
+                    carriedCandidates = []; carriedChatID = chat.id
+                    chat.workingSet = []   // nothing found → nothing stays open
+                    NSLog("[LibrarianRouting] turn=%d mode=none(subject) subject=\"%@\" room=%@", chat.messages.filter { $0.role == .user }.count + 1,
+                          subject, lookupRoomName(store: store))
+                    return ([], true, nil)
+                }
+            } else if let members = Self.collectionSurveyMembers(query, store: store, roomNodes: roomNodes) {
+                surveyOnly = members
+            }
+        }
+        let searchScope: CanvasScope = surveyOnly.map { .nodeIDs($0) } ?? selectedScope
         // BN2 trigger #2 — the question NAMES an entry by TITLE MATCH: looser than the strict
         // quoted/verbatim pin (punctuation-normalised, word-order-independent), so "what's in my
         // Annual Lab Tests?" names the "Annual – Lab Tests" entry even without quotes or the exact
         // en-dashed form. A pin wins when both fire (it's the more explicit signal).
-        let titleMatchedIDs = pinning ? [] : Self.titleMatchedEntryIDs(question: query, nodes: store.nodes(in: selectedScope))
+        let titleMatchedIDs = (pinning || !lookupRead.isEmpty || surveyOnly != nil) ? []
+            : Self.titleMatchedEntryIDs(question: query, nodes: store.nodes(in: selectedScope))
         // A NAMED entry (pin OR title match) is an explicit single/few-entry focus → READ it, drop
         // the tangential card survey, hold non-named passages to the higher 0.70 bar.
         let namedIDs = pinning ? pinnedIDs : titleMatchedIDs
@@ -988,15 +1076,40 @@ final class LibrarianState {
         // embed failure → both re-embed and also fail → no candidates → bare question, as before).
         let qvec = await CardEmbeddingService.shared.embed(retrievalQuery) ?? []
 
+        // live-29 (1) — a subject lookup that found ≤ 6 entries naming X READS them: the best one (and a second if it
+        // fits) in full, the others as passages / chips. No carry: the question named its own subject.
+        if !lookupRead.isEmpty {
+            let readTargets = Array(lookupRead.prefix(2))
+            let readSet = Set(readTargets)
+            let rest = lookupFoundIDs.filter { !readSet.contains($0) }
+            let restPassages = rest.isEmpty ? [] : await store.blocksForNodes(query: query, nodeIDs: rest, topK: 12, queryVector: qvec)
+            var restCards: [CardMatch] = []
+            for id in rest.prefix(4) {
+                guard let node = store.nodes.first(where: { $0.id == id }) else { continue }
+                let gist = node.substrateSummary?.isEmpty == false ? node.substrateSummary! : node.summary
+                restCards.append(CardMatch(nodeID: id, gist: gist.isEmpty ? node.title : gist, score: 0))
+            }
+            let (candidates, receipt) = await buildReadPacket(
+                readTargets: readTargets, rankedPassages: restPassages, cards: restCards,
+                carried: carriedAll.filter { !$0.isCard }, budget: budget, queryVector: qvec, store: store)
+            carriedCandidates = candidates; carriedChatID = chat.id
+            chat.workingSet = candidates.filter { $0.isEntryRead }.map { $0.nodeID }
+            let empty = candidates.isEmpty
+            Self.logRouting(turnIndex: turnIndex, query: retrievalQuery, mode: "read(subject)",
+                            candidates: candidates, receipt: receipt, budget: budget,
+                            scope: selectedScope, store: store)
+            return (candidates, empty, empty ? nil : receipt)
+        }
+
         // Passages (DEPTH), diversified ≤3/node. These FIND the relevant entries; they are not the
-        // answer surface.
-        let general = await store.askMatches(query: retrievalQuery, scope: selectedScope, topK: 12, queryVector: qvec)
+        // answer surface. live-29 (1): `searchScope` narrows to the found entries / the named collection.
+        let general = await store.askMatches(query: retrievalQuery, scope: searchScope, topK: 12, queryVector: qvec)
 
         // A NAMED entry (pin or title match) suppresses cards (AA); otherwise the room's cards
         // carry the survey/skim breadth.
         let cards: [CardMatch] = named
             ? []
-            : await store.cardMatches(query: retrievalQuery, scope: selectedScope, queryVector: qvec)
+            : await store.cardMatches(query: retrievalQuery, scope: searchScope, queryVector: qvec)
 
         // BN2 — rank ENTRIES by aggregate score, then decide READ vs SURVEY.
         let ranking = Self.entryRanking(passages: general)
@@ -1012,13 +1125,14 @@ final class LibrarianState {
         } else {
             decisionRanking = ranking
         }
-        let dominant = Self.dominantReadEntry(ranking: decisionRanking, store: store)   // nil → no single dominator
+        // live-29 (1) — a survey of the found entries / a named collection is a survey: no single entry takes it over.
+        let dominant = surveyOnly != nil ? nil : Self.dominantReadEntry(ranking: decisionRanking, store: store)   // nil → no single dominator
         // Brief CI §2.6 — a RANGE question reads its range TABLE. "Which of my lab values are out of range?"
         // shares one title token with "Annual – Lab Tests" (title match needs 2) and the terse table embeds
         // too weakly to dominate → it surveyed a "Result [n]" fragment (CI-0 P1a, 9/9). Narrowed (Companion):
         // explicit range phrasing, or a bare high/low/elevated/abnormal only WITH a measurement word; and the
         // range-bearing entry (≥3 parsed result rows) must be in the TOP-5 retrieved.
-        let rangeTarget: String? = (named || dominant != nil || !Self.isRangeRoutingEnabled
+        let rangeTarget: String? = (named || dominant != nil || surveyOnly != nil || !Self.isRangeRoutingEnabled
                                     || !ComputedFacts.looksLikeRangeQuestion(query))
             ? nil : await Self.rangeBearingTarget(ranking: decisionRanking, cards: cards, store: store)
 
@@ -1077,7 +1191,7 @@ final class LibrarianState {
                 namesSomethingElse = !names.allSatisfy { ComputedFacts.mentions(wsText, $0) }
             }
         }
-        if !named, !dominantDifferent, !namesSomethingElse, !wsTargets.isEmpty, (Self.looksLikeWorkingSetFollowUp(query) || wsStillRelevant) {
+        if !named, !dominantDifferent, !namesSomethingElse, surveyOnly == nil, !wsTargets.isEmpty, (Self.looksLikeWorkingSetFollowUp(query) || wsStillRelevant) {
             let (candidates, receipt) = await buildReadPacket(
                 readTargets: wsTargets, rankedPassages: [], cards: [],
                 carried: carriedAll, budget: budget, queryVector: qvec, store: store)
@@ -1194,6 +1308,7 @@ final class LibrarianState {
         // psychology article* in full"). Same rule, both paths: an entry the user SAVED is a locator, not
         // the authority on what the user thinks.
         if !empty, let lead = decisionRanking.first, lead.aggregate >= 1.3, lead.count >= 2,
+           surveyOnly?.contains(lead.nodeID) ?? true,   // live-29 (1): a narrowed survey never offers an entry outside it
            (decisionRanking.count == 1 || lead.aggregate >= 1.5 * (decisionRanking[1].aggregate)),
            let node = store.nodes.first(where: { $0.id == lead.nodeID }),
            node.cardProvenance().kind != .savedLink {
@@ -1618,11 +1733,12 @@ final class LibrarianState {
             // provenance prefix only for COLLECTED sources (a plain note is unlabelled).
             let body: String
             switch c.payload {
-            case .passage(let m): body = String(m.block.text.trimmingCharacters(in: .whitespacesAndNewlines).prefix(140))
-            case .card(let card): body = card.gist
+            // live-29 (B4) — a source row is a label: the note's Markdown never shows in it.
+            case .passage(let m): body = String(MarkdownPlain.label(m.block.text).prefix(140))
+            case .card(let card): body = MarkdownPlain.label(card.gist)
             // BN3 — a full-entry read chip carries a lead-in snippet of the entry (+ "read in full").
             case .entry(let e):
-                let lead = String(e.text.trimmingCharacters(in: .whitespacesAndNewlines).prefix(140))
+                let lead = String(MarkdownPlain.label(e.text).prefix(140))
                 body = e.partial ? "read (partial) · \(lead)" : "read in full · \(lead)"
             }
             let snippet = (kind == .note) ? body : "\(provenanceChipPrefix(kind)) · \(body)"
@@ -2529,6 +2645,13 @@ final class LibrarianState {
     /// treats this node exactly like a pin (READ it in full) for the single re-asked turn, then it's
     /// cleared. Lets the survey-lead offer re-read an entry the router had only skimmed.
     @ObservationIgnored var forcedReadNodeID: String? = nil
+
+    /// live-29 (1) — this turn's subject lookup (`LibrarianSubjectLookup.swift`), set by `corpusCandidates` and read by
+    /// `groundedSend`: the subject + the entries in the room that name it (→ the absence guard), or the app's own
+    /// "nothing found" answer when none does.
+    @ObservationIgnored var lookupSubject: String? = nil
+    @ObservationIgnored var lookupFoundIDs: [String] = []
+    @ObservationIgnored var lookupNothingFound: String? = nil
 
     /// ★ Brief BU1 — the TURN PLAN: the ONE immutable object every GROUNDED Library turn is built
     /// from. `makeTurnPlan` is the single constructor; `groundedSend` (reached by every send entry

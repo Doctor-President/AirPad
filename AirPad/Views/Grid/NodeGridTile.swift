@@ -402,7 +402,7 @@ struct NodeGridTile: View {
                 .frame(maxWidth: .infinity, alignment: .leading)
 
             if showDeck {
-                Text(HyphenatedTextCache.attributed(MarkdownPlain.inline(node.summary)))
+                Text(HyphenatedTextCache.attributed(MarkdownPlain.label(node.summary)))
                     .font(tileFont(scaled(t.deckBaseSize)))
                     .italic()
                     .foregroundColor(Self.inkDeck)
@@ -504,7 +504,7 @@ struct NodeGridTile: View {
                 .fixedSize(horizontal: false, vertical: true)
                 .frame(maxWidth: .infinity, alignment: .leading)
             if showDeck {
-                Text(HyphenatedTextCache.attributed(MarkdownPlain.inline(node.summary)))
+                Text(HyphenatedTextCache.attributed(MarkdownPlain.label(node.summary)))
                     .font(tileFont(scaled(t.deckBaseSize))).italic()
                     .foregroundColor(Self.inkDeck)
                     .shadow(color: Self.inkShadow.opacity(0.4), radius: 2, x: 0, y: 1)

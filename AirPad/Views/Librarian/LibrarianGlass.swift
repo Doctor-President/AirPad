@@ -320,6 +320,9 @@ enum LibrarianPillChrome {
     static func peekMagnifierOpacity(_ scheme: ColorScheme) -> Double { sweep("PillMagnifierOpacity", scheme) ?? (scheme == .light ? 0.9 : 0.85) }   // light: was 0.85 (2.87:1); 0.90 = 3.07
     /// The "Search" / "Ask" placeholders' ink opacity (nil = the system placeholder colour).
     static func placeholderOpacity(_ scheme: ColorScheme) -> Double? { sweep("PillPlaceholderOpacity", scheme) ?? (scheme == .light ? 0.8 : 0.55) }   // was the system colour (1.6 / 2.0:1); light 0.75 = 4.45
+    /// live-28 (4) — the open search pill's magnifier under Increase Contrast in light takes the pill's ink (Mango on the
+    /// solid light pill measured 2.09:1; ink is 15:1). Everyone else keeps Mango (T: "keep it").
+    static func searchMagnifierUsesInk(_ scheme: ColorScheme, increaseContrast: Bool) -> Bool { increaseContrast && scheme == .light }
     /// Send / feather / mic / stop: light → solid Klein (the cyan top of the gradient is ~1.8:1 on a light pill).
     static func accentIsSolidKlein(_ scheme: ColorScheme) -> Bool { scheme == .light }
     /// DEBUG `-<key>Light 0.75` / `-<key>Dark 0.55`: an opacity sweep for the contrast stills. Nil otherwise.
@@ -354,6 +357,19 @@ struct LibrarianGlassAccessibility: Equatable {
     }
     /// The solid fallback's fill: the panel tint of the appearance.
     static func solidHex(dark: Bool) -> String { dark ? "141414" : "FBF9F5" }
+    /// live-27 (4d) — the solid fill a pill takes under Reduce Transparency: ALWAYS ours, on the side its text and glyphs
+    /// resolve to (`LibrarianGlassLook.pillScheme`, else the appearance) — a dense dark grade keeps its colour, everything
+    /// else is the panel's solid. T (TF 202610180346): light's ungraded Search / Ask pills fell to the system's own RT
+    /// glass, solid dark charcoal under dark ink. (Non-optional; the optional return is kept for the self-test's shape.)
+    /// Whether a pill drops its glass for `solidPillHex`.
+    /// Reduce Transparency or Increase Contrast (live-27 (4d): the system's high-contrast Clear glass is dark charcoal
+    /// in light as well).
+    static func pillIsSolid(reduceTransparency: Bool, increaseContrast: Bool) -> Bool { reduceTransparency || increaseContrast }
+    static func solidPillHex(_ look: PillLook, appearance: ColorScheme) -> String? {
+        let side = LibrarianGlassLook.pillScheme(look.grade) ?? appearance
+        if side == .dark { return look.grade.on && look.grade.color.isDark ? look.grade.color.hex : solidHex(dark: true) }
+        return solidHex(dark: false)
+    }
 }
 
 // MARK: - Views
@@ -466,6 +482,7 @@ struct LibrarianPillGlass<S: InsettableShape>: View {
     @Environment(\.accessibilityReduceTransparency) private var reduceTransparency
     @Environment(\.accessibilityReduceMotion) private var reduceMotion
     @Environment(\.colorScheme) private var colorScheme
+    @Environment(\.colorSchemeContrast) private var contrast
 
     /// The look that dominates now (the variant + the solid fallback can't blend).
     private var dominant: PillLook { (from != nil && share < 0.5) ? from! : pill }
@@ -482,11 +499,11 @@ struct LibrarianPillGlass<S: InsettableShape>: View {
     var body: some View {
         let d = dominant
         ZStack {
-            // Reduce Transparency: a graded pill turns solid (its grade colour when dark, else the panel's). The plain
-            // glass pill that ships keeps the system's own Reduce Transparency treatment.
-            if reduceTransparency && d.grade.on {
-                shape.fill(Color(hexString: d.grade.color.isDark ? d.grade.color.hex
-                                 : LibrarianGlassAccessibility.solidHex(dark: colorScheme == .dark)))
+            // Reduce Transparency: every pill turns solid on the side its text resolves to (live-27 (4d): the system's own
+            // RT glass was dark charcoal under light's dark ink).
+            if LibrarianGlassAccessibility.pillIsSolid(reduceTransparency: reduceTransparency, increaseContrast: contrast == .increased),
+               let hex = LibrarianGlassAccessibility.solidPillHex(d, appearance: colorScheme) {
+                shape.fill(Color(hexString: hex))
             } else {
                 Color.clear.glassEffect(d.variant.glass, in: shape)
                 ForEach(Array(layers.enumerated()), id: \.offset) { _, l in

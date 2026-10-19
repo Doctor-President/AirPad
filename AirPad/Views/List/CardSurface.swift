@@ -442,6 +442,15 @@ struct CardEmbossOverlay: View {
 /// of peak at the zone's middle, 43% at 0.8, 10% at its edge, 6% just past it). So the photo now runs 10% past the
 /// zone and fades over the last 60% of the zone on a smoothstep. The TestFlight appearance tuner varies length and
 /// curve live (per appearance); an App Store build renders `baked`.
+/// live-28 (A1) — light's hero fade: Today (live-27's full-width veil), A (a band behind the dateline only), B (A plus a
+/// perceptual fade). The App Store build keeps Today until T picks (`CardHeroFade.bakedLightMode`).
+/// Compiled into every build (the App Store build reads `bakedLightMode`); the tuner sets it in DEBUG / TestFlight.
+enum LightFadeMode: String, Codable, CaseIterable, Identifiable {
+    case today, band, perceptual
+    var id: String { rawValue }
+    var label: String { self == .today ? "Today" : self == .band ? "A" : "B" }
+}
+
 enum CardHeroFade {
     /// `length`: the fraction of the hero zone the photo fades over. `curve`: 0 linear · 1 smoothstep ·
     /// 2 smootherstep (between: a blend). `overshoot`: how far past the zone the photo runs, as a fraction of it.
@@ -454,6 +463,9 @@ enum CardHeroFade {
         /// live-26 (3c) — the veil behind the card text where the photo now runs: from 0.95 zones down the photo's opacity
         /// is × (1 − scrim). Set by `current(dark:)` (`textScrim` × `intoBody`), so today's fade (into 0) has none.
         var scrim: Double = 0
+        /// live-28 (A1) B — light's perceptual fade: the opacity re-shaped by `perceptualGamma` (the photo holds longer,
+        /// then falls faster to the same end).
+        var perceptual = false
         var description: String {
             String(format: "length %.2f curve %.2f overshoot %.2f into %.2f scrim %.2f", length, curve, overshoot, intoBody, scrim)
         }
@@ -464,9 +476,11 @@ enum CardHeroFade {
     static let titleDepth: Double = 0.5
     /// The photo's run past the zone, as a fraction of it: the overshoot plus the "Fade into body" extension.
     static func run(_ s: Shape) -> Double { max(s.overshoot, 0) + min(max(s.intoBody, 0), 1) * titleDepth }
-    static let bakedLight = Shape(length: 0.60, curve: 1, overshoot: 0.10)
-    /// live-26 (1) — T's dark fade (2026-10-18): over 35% of the zone, nearly linear (curve 0.15).
-    static let bakedDark = Shape(length: 0.35, curve: 0.15, overshoot: 0.10)
+    /// live-27 (0) — T's light fade (2026-10-18 (b)): over 39% of the zone, curve 0.5, carried 14% into the body.
+    static let bakedLight = Shape(length: 0.39, curve: 0.5, overshoot: 0.10, intoBody: 0.14)
+    /// live-26 (1) — T's dark fade (2026-10-18): over 35% of the zone, nearly linear (curve 0.15); live-27 (0): carried
+    /// 18% into the body.
+    static let bakedDark = Shape(length: 0.35, curve: 0.15, overshoot: 0.10, intoBody: 0.18)
     /// What an App Store build renders for an appearance.
     static func baked(dark: Bool) -> Shape { dark ? bakedDark : bakedLight }
     /// live-26 (3c) — "Match fluted": the photo fade fitted (least squares over 0.5–2.2 zones) to the fluted cards'
@@ -484,9 +498,57 @@ enum CardHeroFade {
         #if DEBUG || TESTFLIGHT
         if let v = AppearanceTuning.values(dark: dark) { s = v.heroFade }
         #endif
-        s.scrim = textScrim(dark: dark) * min(max(s.intoBody, 0), 1)
+        s.scrim = veil(intoBody: s.intoBody, dark: dark)
+        // live-28 (A1) — A / B in light: no full-width veil (it washed the photo out above the dateline, inside the hero
+        // zone); the dateline gets its own band (`datelineBand`). B also re-shapes the fade.
+        if !dark && lightMode != .today { s.scrim = 0; s.perceptual = lightMode == .perceptual }
         return s
     }
+
+    /// live-28 (A1) — light's fade in an App Store build until T picks on device.
+    static let bakedLightMode: LightFadeMode = .today
+    static var lightMode: LightFadeMode {
+        #if DEBUG
+        if let f = UserDefaults.standard.string(forKey: "LightFade"), let m = LightFadeMode(rawValue: f) { return m }
+        #endif
+        #if DEBUG || TESTFLIGHT
+        if AppearanceTuning.isLive { return AppearanceTuner.shared.state.lightFade }
+        #endif
+        return bakedLightMode
+    }
+    /// B's re-shaping power on the photo's opacity (< 1 keeps the photo longer). DEBUG `-PerceptualGamma`.
+    static var perceptualGamma: Double {
+        #if DEBUG
+        if UserDefaults.standard.object(forKey: "PerceptualGamma") != nil { return UserDefaults.standard.double(forKey: "PerceptualGamma") }
+        #endif
+        return 0.45
+    }
+    /// The band's feather above and below the dateline row: it never reaches further than this above the row's top.
+    static let bandFeather: CGFloat = 8
+    /// live-28 (A1) — A / B in light: the band behind the dateline row (its strength over the card body colour) and the
+    /// dateline row's own ink (the other meta text keeps 76%). Nil = no band (Today, and dark).
+    /// DEBUG `-DatelineBand` / `-DatelineInk` (the sweeps).
+    static func datelineBand(dark: Bool) -> (strength: Double, ink: Double)? {
+        guard !dark, lightMode != .today else { return nil }
+        var band = lightMode == .band ? bandStrengthA : bandStrengthB, ink = lightMode == .band ? datelineInkA : datelineInkB
+        #if DEBUG
+        if UserDefaults.standard.object(forKey: "DatelineBand") != nil { band = UserDefaults.standard.double(forKey: "DatelineBand") }
+        if UserDefaults.standard.object(forKey: "DatelineInk") != nil { ink = UserDefaults.standard.double(forKey: "DatelineInk") }
+        #endif
+        return (band, ink)
+    }
+    /// Measured (live-28 (A1), the hero-fade fixtures on the carousel, grid 2 / 3 and Map, light, every dateline ≥ 4.5): the
+    /// least band at each dateline ink — A: 76% → 0.9, 85% → 0, 100% → 0; B: 76% → over 0.9, 85% → 0.6, 100% → 0. A darker
+    /// dateline cuts the band to nothing, so neither needs one: A's dateline is 85% ink (worst 5.30), B's 100% (worst 4.92).
+    static let bandStrengthA = 0.0, bandStrengthB = 0.0, datelineInkA = 0.85, datelineInkB = 1.0
+
+    /// The veil behind the card text for a "Fade into body" setting (0 = today's fade: none). live-27 (1): dark scales
+    /// with the extension (0.45 at 100%; T's 0.18 → 0.08 passes); light comes in fully by 10% of it — at T's 0.14 the least
+    /// that keeps the dateline AA is 0.9, at Match fluted / 100% 1.0 (stills, Ops design-refs/live27-*/fade-veil.md).
+    static func veil(intoBody: Double, dark: Bool) -> Double {
+        textScrim(dark: dark) * min(max(intoBody, 0) / veilRamp(dark: dark), 1)
+    }
+    static func veilRamp(dark: Bool) -> Double { dark ? 1 : 0.10 }
 
     /// live-26 (3c) — the least veil that keeps every card text line AA (4.5:1, or no worse than on today's fade where
     /// that's already under) at "Match fluted" and at "Fade into body" 100%, measured on busy synthetic photos, light +
@@ -497,7 +559,8 @@ enum CardHeroFade {
         if UserDefaults.standard.object(forKey: k) != nil { return UserDefaults.standard.double(forKey: k) }
         #endif
         // Measured (live-26 (3c)): dark 0.45 (0.30 left the gradient-art source row at 3.9); light 1.0 — the light
-        // source/time row is 3.74:1 on the plain body already, so any photo behind it is worse (0.85 → 3.53).
+        // source/time row was 3.74:1 on the plain body. live-27 (1): with the meta ink at AA (4.55) light still needs 1.0
+        // at Match fluted / 100% (0.9 → 4.38 / 4.29): the ink clears AA by a hair, so any photo behind it is under.
         return dark ? 0.45 : 1.0
     }
 
@@ -519,7 +582,8 @@ enum CardHeroFade {
     /// Opacity of the photo at `y` (0 = top of the photo frame … 1 = its bottom).
     static func alpha(_ s: Shape, at y: Double) -> Double {
         let top = fadeTop(s)
-        let a = y <= top ? 1 : 1 - ease((y - top) / (1 - top), curve: s.curve)
+        var a = y <= top ? 1 : 1 - ease((y - top) / (1 - top), curve: s.curve)
+        if s.perceptual { a = pow(a, perceptualGamma) }
         guard s.scrim > 0 else { return a }
         return a * (1 - min(max(s.scrim, 0), 1) * ease((y * (1 + run(s)) - 0.95) / 0.10, curve: 1))
     }
@@ -528,7 +592,7 @@ enum CardHeroFade {
     /// sampled at 16 points.
     static func stops(_ s: Shape) -> [Gradient.Stop] {
         let top = fadeTop(s)
-        if s.curve <= 0 && s.scrim <= 0 {
+        if s.curve <= 0 && s.scrim <= 0 && !s.perceptual {
             return [.init(color: .black, location: 0), .init(color: .black, location: top), .init(color: .clear, location: 1)]
         }
         var ys = (0...15).map { top + (1 - top) * Double($0) / 15 }
@@ -538,5 +602,34 @@ enum CardHeroFade {
         var out: [Gradient.Stop] = [.init(color: .black, location: 0)]
         for y in Set(ys).sorted() { out.append(.init(color: .black.opacity(alpha(s, at: y)), location: CGFloat(y))) }
         return out
+    }
+}
+
+
+/// live-28 (A1) — the dateline row's frame, for the band behind it.
+struct DatelineRowKey: PreferenceKey {
+    static let defaultValue: Anchor<CGRect>? = nil
+    static func reduce(value: inout Anchor<CGRect>?, nextValue: () -> Anchor<CGRect>?) { value = value ?? nextValue() }
+}
+
+/// live-28 (A1) — A / B in light: a soft band of the card body colour (#FBF9F5) behind the dateline row only, the row's
+/// height plus `bandFeather` above and below, across the card. Drawn under the card text (and outside `-CardHideText`,
+/// so the backdrop stills keep it). Nothing above the row's top minus the feather: the hero zone keeps T's fade.
+struct DatelineBand: View {
+    let anchor: Anchor<CGRect>?
+    @Environment(\.colorScheme) private var scheme
+    var body: some View {
+        GeometryReader { g in
+            if let anchor, let band = CardHeroFade.datelineBand(dark: scheme == .dark), band.strength > 0 {
+                let r = g[anchor], f = CardHeroFade.bandFeather, h = r.height + 2 * f
+                let c = Color(hexString: "FBF9F5")
+                LinearGradient(stops: [.init(color: c.opacity(0), location: 0), .init(color: c.opacity(band.strength), location: f / h),
+                                       .init(color: c.opacity(band.strength), location: 1 - f / h), .init(color: c.opacity(0), location: 1)],
+                               startPoint: .top, endPoint: .bottom)
+                    .frame(width: g.size.width + 80, height: h)
+                    .position(x: g.size.width / 2, y: r.midY)
+            }
+        }
+        .allowsHitTesting(false)
     }
 }

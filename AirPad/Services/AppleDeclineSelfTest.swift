@@ -69,7 +69,7 @@ extension CorpusStore {
             let id = await newEntry()
             let reason = await processNodeWithAI(nodeID: id, suppressTagSheet: true, solicited: true, aspects: [.title])
             let p = node(id)?.surfacedProposal(kind: .title)?.text
-            row("sheet-decline-on-device-names", reason == nil && p == "On-device stub title", "reason=\(describe(reason)) proposal=\(p ?? "nil")")
+            row("sheet-decline-on-device-names", reason == nil && p == "On-Device Stub Title", "reason=\(describe(reason)) proposal=\(p ?? "nil")")
             row("sheet-decline-on-device-says-so", proposalSaysOnDevice(id, .title))
         }
         // 3. Done with auto-naming ON, no on-device model → B1: its first words are its title; the tags decline is recorded.
@@ -89,7 +89,7 @@ extension CorpusStore {
             let id = await newEntry()
             await enrichIfNeeded(nodeID: id, at: .committed)
             let n = node(id)
-            row("done-decline-on-device-names", n?.title == "On-device stub title" && n?.summary == "On-device stub summary.",
+            row("done-decline-on-device-names", n?.title == "On-Device Stub Title" && n?.summary == "On-device stub summary.",
                 "title=\"\(n?.title ?? "nil")\" summary=\"\(n?.summary ?? "nil")\"")
             row("done-decline-on-device-tags", n?.folksonomy == ["on-device", "stub"], "folksonomy=\(n?.folksonomy ?? [])")
         }

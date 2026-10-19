@@ -130,7 +130,9 @@ struct NodeCardView: View {
 
     private static let inkTitle = ink(cream, 0.98)
     private static let inkDeck  = ink(cream, 0.86)
-    private static let inkMeta  = ink(cream, 0.68)
+    private static let inkMetaOpacity: CGFloat = 0.68
+    private static let inkMeta  = AppearancePalette.cardMetaInk(inkMetaOpacity)   // live-27 (1): light reaches AA
+    private static let inkOverflow = AppearancePalette.cardMetaInk(0.68 * 0.85)
     private static let hairline = ink(creamHair, 0.22)
 
     // Legibility shadow behind ink. Dark: black (the shipped scrim substitute —
@@ -249,6 +251,8 @@ struct NodeCardView: View {
                         #if DEBUG
                         .opacity(UserDefaults.standard.bool(forKey: "CardHideText") ? 0 : 1)   // live-26 (3c): backdrop-only stills
                         #endif
+                        // live-28 (A1) — light A / B: the band behind the dateline (under the text, kept in backdrop stills)
+                        .backgroundPreferenceValue(DatelineRowKey.self) { DatelineBand(anchor: hasHero ? $0 : nil) }
                     sheen
                 }
                 // Pin the face to the GeometryReader's proposal. Without this the
@@ -348,6 +352,9 @@ struct NodeCardView: View {
                     }
                     // Editorial column, pinned RIGHT. Dateline starts here; topInset dropped.
                     editorialContent(cardHeight: geo.size.height, topInsetOverride: 20)
+                        #if DEBUG
+                        .opacity(UserDefaults.standard.bool(forKey: "CardHideText") ? 0 : 1)   // live-27 (1): backdrop-only stills
+                        #endif
                         .frame(width: textWidth, height: geo.size.height, alignment: .topLeading)
                         .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .trailing)
                 }
@@ -500,17 +507,18 @@ struct NodeCardView: View {
                     Text(category)
                         .font(cardFont(12 * fs))
                         .italic()
-                        .foregroundColor(Self.inkMeta)
+                        .foregroundColor(AppearancePalette.cardDatelineInk(Self.inkMetaOpacity))
                         .lineLimit(1)
                 }
                 Spacer(minLength: 8)
                 Text(node.relativeTimestamp.uppercased())
                     .font(cardFont(10 * fs))
                     .tracking(2.2)
-                    .foregroundColor(Self.inkMeta)
+                    .foregroundColor(AppearancePalette.cardDatelineInk(Self.inkMetaOpacity))
                     .lineLimit(1)
             }
             .shadow(color: inkHalo.opacity(0.4), radius: 2, x: 0, y: 1)
+            .anchorPreference(key: DatelineRowKey.self, value: .bounds) { $0 }   // live-28 (A1): the band behind it
 
             Rectangle()
                 .fill(Self.hairline)
@@ -636,13 +644,14 @@ struct NodeCardView: View {
         return VStack(alignment: .leading, spacing: 0) {
             HStack(alignment: .firstTextBaseline, spacing: 8) {
                 if let category = node.primaryTag {
-                    Text(category).font(cardFont(12 * fs)).italic().foregroundColor(Self.inkMeta).lineLimit(1)
+                    Text(category).font(cardFont(12 * fs)).italic().foregroundColor(AppearancePalette.cardDatelineInk(Self.inkMetaOpacity)).lineLimit(1)
                 }
                 Spacer(minLength: 8)
                 Text(node.relativeTimestamp.uppercased())
-                    .font(cardFont(10 * fs)).tracking(2.2).foregroundColor(Self.inkMeta).lineLimit(1)
+                    .font(cardFont(10 * fs)).tracking(2.2).foregroundColor(AppearancePalette.cardDatelineInk(Self.inkMetaOpacity)).lineLimit(1)
             }
             .shadow(color: inkHalo.opacity(0.4), radius: 2, x: 0, y: 1)
+            .anchorPreference(key: DatelineRowKey.self, value: .bounds) { $0 }   // live-28 (A1): the band behind it
 
             Rectangle().fill(Self.hairline).frame(height: 0.5).padding(.top, 8).padding(.bottom, 12)
 
@@ -878,7 +887,7 @@ struct NodeCardView: View {
         Text("+\(count) more")
             .font(cardFont(11))
             .italic()
-            .foregroundColor(Self.inkMeta.opacity(0.85))
+            .foregroundColor(Self.inkOverflow)
             .shadow(color: inkHalo.opacity(0.35), radius: 2, x: 0, y: 1)
     }
 

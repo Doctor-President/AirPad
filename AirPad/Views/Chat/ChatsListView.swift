@@ -61,6 +61,10 @@ struct ChatsListView: View {
                 if let chat = chatStore.chats.first(where: { $0.id == openID }) {
                     session.load(chat)
                     path = [openID]
+                } else {
+                    #if DEBUG
+                    if openID == session.id { path = [openID] }   // live-27 (4c) `-RenderInChatView`: the loaded chat
+                    #endif
                 }
             }
         }
@@ -236,6 +240,8 @@ struct ChatsListView: View {
                     .font(.system(size: 16, weight: .semibold))
                     .foregroundStyle(AppearancePalette.ink)
             }
+            .accessibilityLabel("New chat")
+            .accessibilityIdentifier("chats.new")
         }
     }
 

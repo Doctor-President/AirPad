@@ -1727,6 +1727,43 @@
           "notCarried": true
         }
       ]
+    },
+    {
+      "chat": "ui-dated",
+      "what": "live-27 (3) — T's stale presidents table (TF 202610171546: Qwen wrote 'as of October 2026' from its training data). General via the real toggle. Without a key (search off) the answer must date its knowledge and never claim today's date for a training-data fact; with `--extra-arg -WebSearchMock --extra-arg YES` (search on) the current-state request is searched.",
+      "cases": [
+        {
+          "id": "DK1",
+          "kind": "general",
+          "action": "general",
+          "what": "dated knowledge: a current-state table request, search off → the caveat, no 'as of <today>'",
+          "question": "Make a table of US presidents and whether each is living",
+          "expectRoute": "",
+          "mustContain": [
+            [
+              "training data",
+              "out of date",
+              "may have changed",
+              "as of my",
+              "cutoff",
+              "may not be current",
+              "outdated",
+              "not be up to date",
+              "may not reflect"
+            ]
+          ],
+          "minFacts": 1,
+          "mustNotClaim": [
+            {
+              "pattern": "as of (today|now|october\\s+2026|oct\\.?\\s+2026|2026|october\\s+18)"
+            },
+            {
+              "pattern": "\\b(current(ly)? as of|up to date as of) (october|2026)"
+            }
+          ],
+          "factual": true
+        }
+      ]
     }
   ]
 }

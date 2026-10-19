@@ -51,6 +51,11 @@ struct ChatTranscript: View {
     /// (`visibleRect.minY`) so the host can drive a scroll-collapsing title.
     /// nil for hosts that don't want it (ChatView).
     var onScrollTopOffset: ((CGFloat) -> Void)? = nil
+    /// live-27 (4b) — the composer row's leading control (the Chat view hands in the Librarian's General / Library
+    /// toggle; it replaces the old "Private" label) and the send that routes a turn (the Librarian's `groundedSend`).
+    /// nil = the plain chat lane (`ChatSession.send`).
+    var leadingControl: AnyView? = nil
+    var onSend: ((String) async -> Void)? = nil
 
     @State private var speech = SpeechSynthesisService.shared
     @State private var input: String = ""
@@ -97,7 +102,9 @@ struct ChatTranscript: View {
                     ModelPillRow(
                         catalog: HostCatalog.shared,
                         thinkEnabled: Binding(get: { session.thinkEnabled }, set: { session.thinkEnabled = $0 }),
-                        onTapModel: { showPicker = true }
+                        onTapModel: { showPicker = true },
+                        includePrivate: leadingControl == nil,
+                        leading: leadingControl
                     )
                     inputRow
                 }
@@ -211,7 +218,9 @@ struct ChatTranscript: View {
 
     @ViewBuilder
     private func historyRows(_ range: Range<Int>) -> some View {
+        let switches = ChatProvenance.switches(in: session.messages)   // live-27 (4) — O(n), no I/O
         ForEach(session.messages[range]) { message in
+            if let s = switches[message.id] { modelSwitchDivider(s) }
             bubble(for: message)
                 .id(message.id)
                 #if DEBUG
@@ -384,6 +393,21 @@ struct ChatTranscript: View {
             && !session.streamingThinking.isEmpty
     }
 
+    /// live-27 (4) — a quiet divider where the model changes mid-chat: "Switched to <model>".
+    private func modelSwitchDivider(_ text: String) -> some View {
+        HStack(spacing: 10) {
+            Rectangle().fill(ChatTypography.secondaryText.opacity(0.35)).frame(height: 0.5)
+            Text(text)
+                .font(appFont.font(size: 12, relativeTo: .caption1))
+                .foregroundStyle(ChatTypography.secondaryText)
+                .lineLimit(1)
+                .fixedSize()
+            Rectangle().fill(ChatTypography.secondaryText.opacity(0.35)).frame(height: 0.5)
+        }
+        .accessibilityElement(children: .combine)
+        .accessibilityIdentifier("chat.modelSwitch")
+    }
+
     @ViewBuilder
     private func bubble(for message: ChatSession.Message) -> some View {
         switch message.role {
@@ -430,6 +454,7 @@ struct ChatTranscript: View {
                     declinedRow(message: message)   // live-23 (5b) — an honest decline, not an answer
                 } else {
                 MarkdownBlockText(raw: message.text)
+                    .environment(\.chatAnswerGutter, 40)   // live-27 (4c) — a table reclaims the gutter
                     .frame(maxWidth: .infinity, alignment: .leading)
                     .padding(.trailing, 40)
                     #if DEBUG
@@ -438,15 +463,33 @@ struct ChatTranscript: View {
                 }
                 // Brief BN5 — "Read 1 entry in full · skimmed 6" / "Skimmed 9 entries".
                 readReceiptLine(message: message)
+                // live-28 (1) — an answer a cap or Stop ended early says so, under what arrived.
+                if let stop = message.stopped {
+                    Text(AnswerCap.line(for: stop))
+                        .font(appFont.font(size: 13, relativeTo: .footnote))
+                        .foregroundStyle(ChatTypography.secondaryText)
+                        .padding(.top, 1)
+                        .accessibilityIdentifier("chat.stopped")
+                }
                 // CH Session 2 — a General answer no web result backs says so (app chrome, not model text).
                 if message.generalKnowledge == true {
-                    Text(WebGrounding.generalKnowledgeNote)
+                    Text(message.datedKnowledge == true ? WebGrounding.datedKnowledgeNote : WebGrounding.generalKnowledgeNote)
                         .font(appFont.font(size: 13, relativeTo: .footnote))
                         .foregroundStyle(ChatTypography.secondaryText)
                         .padding(.top, 1)
                         #if DEBUG
                         .gauntletID("chat.generalKnowledge")
                         #endif
+                }
+                // live-27 (4) — who wrote this answer (app chrome, the meta style). None on answers saved before live-27;
+                // a decline already names Apple Intelligence.
+                if let p = message.provenance, message.declined != true {
+                    Text(p.caption)
+                        .font(appFont.font(size: 12, relativeTo: .caption1))
+                        .foregroundStyle(ChatTypography.secondaryText)
+                        .lineLimit(1)
+                        .accessibilityLabel("Written by \(p.caption)")
+                        .accessibilityIdentifier("chat.provenance")
                 }
                 // Piece 1 — collapsible grounded-Ask sources (chrome, not content).
                 citationFooter(message: message)
@@ -515,6 +558,7 @@ struct ChatTranscript: View {
                 .foregroundStyle(ChatTypography.secondaryText)
                 .padding(.top, 1)
                 .accessibilityLabel(md.replacingOccurrences(of: "*", with: ""))
+                .accessibilityIdentifier("chat.readReceipt")   // live-27 (4b) — the Library route's mark
         }
     }
 
@@ -833,9 +877,11 @@ struct ChatTranscript: View {
                     onSend: {
                         let text = input.trimmingCharacters(in: .whitespacesAndNewlines)
                         input = ""
-                        Task { await session.send(text) }
+                        if let onSend { session.startTurn { await onSend(text) } } else { session.startTurn { await session.send(text) } }
                     },
-                    dictationToken: "chat"
+                    dictationToken: "chat",
+                    isAnswering: session.isStreaming,
+                    onStop: { session.stopAnswer() }
                 )
                 .frame(height: ComposerMetrics.fieldLineHeight)
                 .padding(.trailing, 10)
@@ -964,6 +1010,7 @@ private struct StreamingTail: View {
                                 headingSpaceBefore: ChatTypography.headingSpaceBefore))
                     }
                 }
+                .environment(\.chatAnswerGutter, 40)   // live-27 (4c) — matches the settled bubble
                 .frame(maxWidth: .infinity, alignment: .leading)
                 .padding(.trailing, 40)
             }

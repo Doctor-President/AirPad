@@ -50,6 +50,17 @@ enum ChatTableFixtures {
         return lines.joined(separator: "\n")
     }
 
+    /// live-27 (4c) — a table whose last column wraps (long notes) while the first ones are short: the rows grow, the
+    /// visible cells sit at the top of theirs (the stills check it reads as intended). Stills only (`-RenderTableAnswer wrap`).
+    static let wrapping = """
+    | Pool | Depth | Found | Notes |
+    |---|---|---|---|
+    | North 1 | 0.4 m | Anemones | Two beadlet anemones on the west wall, one closed; a shore crab under the ledge that ran when the light reached it |
+    | North 2 | 0.7 m | Blenny | Fast |
+    | North 3 | 0.2 m | Limpets | A dozen on the rim, none in the water; the pool was warm by noon and smelled of weed, and a gull had been at the edge |
+    | Slipway | 1.1 m | Wrack | Bladder wrack only |
+    """
+
     static let oneColumn = """
     | Packing |
     |---|
@@ -98,6 +109,26 @@ enum ChatTableSelfTest {
         } else {
             row("irregular-pipes-still-five-cells", false, "the 5 × 46 table didn't parse whole: \(table(ChatTableFixtures.presidents).map { "\($0.rows.count) rows" } ?? "none")")
         }
+        // live-27 (4c) — a table narrower than the answer fills its width (the extra shared by the columns); a wider one
+        // fades the side(s) it can scroll to (the leading fade starts after the pinned first column).
+        let filled = ChatTable.fill([60, 100, 40], to: 400)
+        row("a-narrow-table-fills-the-answer-width", abs(filled.reduce(0, +) - 400) < 0.5 && filled[1] > filled[0] && filled[0] > 60,
+            "\(filled)")
+        row("a-wide-table-keeps-its-widths", ChatTable.fill([300, 300], to: 400) == [300, 300])
+        let E = ChatTableView.fadeEdges
+        row("fade-on-the-side(s)-that-can-scroll", E(0, 400, 900) == (false, true) && E(200, 400, 900) == (true, true)
+            && E(500, 400, 900) == (true, false) && E(0, 400, 400) == (false, false))
+        // live-28 (A4) — a narrow index first column ("#", row numbers) pins the first two columns, so the name stays put.
+        let pins: [(String, ChatTable, Int)] = [
+            ("presidents (#)", table(ChatTableFixtures.presidents).map { ChatTable(headers: $0.headers, rows: $0.rows) } ?? ChatTable(headers: [], rows: []), 2),
+            ("row numbers, no header", ChatTable(headers: ["", "Mayor", "Term"], rows: [["1", "Ada", "1801"], ["2", "Bram", "1805"], ["3", "Cora", "1809"]]), 2),
+            ("No.", ChatTable(headers: ["No.", "Lighthouse", "Lit"], rows: [["1", "Pellworth", "1871"], ["2", "Skerry", "1880"]]), 2),
+            ("a year column isn't an index", ChatTable(headers: ["Year", "Event", "Place"], rows: [["1801", "Flood", "Quay"], ["1805", "Fire", "Mill"]]), 1),
+            ("2 × 3 (Tide, Height)", ChatTable(headers: ["Tide", "Height"], rows: [["Low", "0.4 m"], ["High", "4.1 m"]]), 1),
+            ("#, Name only — never pin every column", ChatTable(headers: ["#", "Name"], rows: [["1", "Ada"], ["2", "Bram"]]), 1),
+        ]
+        let pinOut = pins.map { "\($0.0)=\($0.1.pinnedColumns)" }
+        row("a-narrow-index-first-column-pins-two", pins.allSatisfy { $0.1.pinnedColumns == $0.2 }, pinOut.joined(separator: " · "))
         let half = MarkdownBlockParser.parse("| A | B |\n|---|---|\n| 1 | 2 |\n| 3 | 4")
         if case let .table(_, r)? = half.first { row("a-half-arrived-last-row-is-held-mid-stream", r.count == 1, "\(r)") }
         else { row("a-half-arrived-last-row-is-held-mid-stream", false, "\(half)") }

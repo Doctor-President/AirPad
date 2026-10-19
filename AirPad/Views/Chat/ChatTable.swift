@@ -51,12 +51,30 @@ struct ChatTable: Equatable {
 
     /// Each column's width: its widest cell (plain text, one line, at `font`) plus the cell padding, between `minWidth`
     /// and `maxWidth` — a longer cell wraps inside its column.
+    /// live-28 (A4) — how many leading columns stay put while the grid scrolls sideways: 2 when the first column is a narrow
+    /// index ("#", "No.", row numbers), so the name beside it stays visible; otherwise 1. Never every column.
+    var pinnedColumns: Int {
+        guard headers.count >= 3 else { return 1 }
+        let h = MarkdownPlain.inline(headers[0]).trimmingCharacters(in: .whitespaces).lowercased()
+        guard ["", "#", "no", "no.", "nr", "nr.", "number", "rank"].contains(h) else { return 1 }
+        let firstColumn = rows.map { ($0.first ?? "").trimmingCharacters(in: .whitespaces) }
+        let isIndex = firstColumn.allSatisfy { $0.count <= 5 && $0.allSatisfy { $0.isNumber || "/.-–".contains($0) } }
+        return isIndex ? 2 : 1
+    }
+
     func columnWidths(font: UIFont, minWidth: CGFloat = 44, maxWidth: CGFloat = 220, padding: CGFloat = 20) -> [CGFloat] {
         (0..<headers.count).map { c in
             let cells = [headers[c]] + rows.map { $0[c] }
             let widest = cells.map { (MarkdownPlain.inline($0) as NSString).size(withAttributes: [.font: font]).width }.max() ?? 0
             return min(max(ceil(widest) + padding, minWidth), maxWidth)
         }
+    }
+
+    /// live-27 (4c) — widths that fill `width` when the table is narrower (the extra shared in proportion).
+    static func fill(_ widths: [CGFloat], to width: CGFloat) -> [CGFloat] {
+        let sum = widths.reduce(0, +)
+        guard sum > 0, width > sum else { return widths }
+        return widths.map { $0 * width / sum }
     }
 
     /// Each row's height when its cells wrap inside `widths` (the tallest cell), plus the vertical padding.
@@ -79,6 +97,15 @@ enum ChatTablePresentation { case grid, stackedRecords }
 /// panel → it scrolls sideways inside the answer with the header row and the first column staying put; taller than
 /// `maxHeight` → it scrolls down inside its frame, the header staying put. Never wider than the panel. A tap opens it
 /// full screen (`ChatTableFullScreen`: landscape, Copy as Markdown / CSV). VoiceOver reads each row as a record.
+/// live-27 (4c) — the clear space the transcript keeps right of an answer's prose; an answer's table reclaims it.
+private struct ChatAnswerGutterKey: EnvironmentKey { static let defaultValue: CGFloat = 0 }
+extension EnvironmentValues {
+    var chatAnswerGutter: CGFloat {
+        get { self[ChatAnswerGutterKey.self] }
+        set { self[ChatAnswerGutterKey.self] = newValue }
+    }
+}
+
 struct ChatTableView: View {
     let table: ChatTable
     var maxHeight: CGFloat? = 380
@@ -86,57 +113,100 @@ struct ChatTableView: View {
 
     @Environment(\.appBodyFont) private var appFont
     @State private var offset: CGPoint = .zero
+    @State private var viewport: CGFloat = 0   // live-27 (4c) — the grid's visible width
     @State private var showFull = false
+    /// live-27 (4c) — the answer's trailing gutter (the transcript keeps 40 pt clear of prose); the grid reclaims it.
+    @Environment(\.chatAnswerGutter) private var gutter
 
     static let cellSize: CGFloat = 16
+    /// live-27 (4c) — which sides fade: the side(s) the grid can still scroll to.
+    static func fadeEdges(_ offsetX: CGFloat, _ container: CGFloat, _ content: CGFloat) -> (Bool, Bool) {
+        (offsetX > 1, offsetX + container < content - 1)
+    }
+    private static let fadeWidth: CGFloat = 28
     private static let hPad: CGFloat = 10, vPad: CGFloat = 7
 
     var body: some View {
         let cellFont = appFont.uiFont(size: Self.cellSize), headFont = appFont.uiFont(size: Self.cellSize, weight: .semibold)
-        let widths = table.columnWidths(font: headFont, padding: Self.hPad * 2)
+        // live-27 (4c) — a table narrower than the answer fills its width; a wider one keeps its widths and scrolls.
+        let widths = ChatTable.fill(table.columnWidths(font: headFont, padding: Self.hPad * 2), to: viewport)
+        let contentWidth = widths.reduce(0, +)
+        let edges = Self.fadeEdges(offset.x, viewport, contentWidth)
         let heights = table.rowHeights(font: cellFont, widths: widths, header: headFont, padding: Self.hPad * 2, vPadding: Self.vPad * 2)
         let total = heights.header + heights.rows.reduce(0, +) + CGFloat(table.rows.count) * 0.5
         let sticky = Color(UIColor { $0.userInterfaceStyle == .dark ? UIColor(Color(hexString: "141414")) : UIColor(Color(hexString: "FBF9F5")) })
-        ScrollView([.horizontal, .vertical]) {
-            LazyVStack(alignment: .leading, spacing: 0, pinnedViews: [.sectionHeaders]) {
-                Section {
-                    ForEach(table.rows.indices, id: \.self) { i in
-                        row(table.rows[i], widths: widths, height: heights.rows[i], header: false, sticky: sticky)
-                            .accessibilityElement(children: .ignore)
-                            .accessibilityLabel(table.spokenRow(i))
-                        Rectangle().fill(ChatTypography.secondaryText.opacity(0.3)).frame(height: 0.5)
+        let pinnedWidth = widths.prefix(table.pinnedColumns).reduce(0, +)
+        // live-28 (A4) — the expand control sits on the corner just ABOVE the grid, so it never covers a header cell.
+        VStack(alignment: .trailing, spacing: 4) {
+            if opensFullScreen {
+                Button { showFull = true } label: {
+                    Image(systemName: "arrow.up.left.and.arrow.down.right")
+                        .font(.system(size: 12, weight: .semibold))
+                        .foregroundStyle(ChatTypography.bodyText)
+                        .frame(width: 30, height: 30)
+                        .background(.ultraThinMaterial, in: Circle())
+                        .overlay(Circle().strokeBorder(AppearancePalette.ink.opacity(0.12), lineWidth: 1))
+                }
+                .buttonStyle(.plain)
+                .accessibilityLabel("Open the table full screen")
+                .accessibilityIdentifier("chatTableExpand")
+            }
+            ScrollView([.horizontal, .vertical]) {
+                LazyVStack(alignment: .leading, spacing: 0, pinnedViews: [.sectionHeaders]) {
+                    Section {
+                        ForEach(table.rows.indices, id: \.self) { i in
+                            row(table.rows[i], widths: widths, height: heights.rows[i], header: false, sticky: sticky)
+                                .accessibilityElement(children: .ignore)
+                                .accessibilityLabel(table.spokenRow(i))
+                            Rectangle().fill(ChatTypography.secondaryText.opacity(0.3)).frame(height: 0.5)
+                        }
+                    } header: {
+                        VStack(spacing: 0) {
+                            row(table.headers, widths: widths, height: heights.header, header: true, sticky: sticky)
+                            Rectangle().fill(ChatTypography.secondaryText.opacity(0.6)).frame(height: 1)
+                        }
+                        .background(sticky)
+                        .accessibilityElement(children: .ignore)
+                        .accessibilityLabel("Table, \(table.rows.count) rows. Columns: \(table.headers.map { MarkdownPlain.inline($0) }.joined(separator: ", "))")
                     }
-                } header: {
-                    VStack(spacing: 0) {
-                        row(table.headers, widths: widths, height: heights.header, header: true, sticky: sticky)
-                        Rectangle().fill(ChatTypography.secondaryText.opacity(0.6)).frame(height: 1)
-                    }
-                    .background(sticky)
-                    .accessibilityElement(children: .ignore)
-                    .accessibilityLabel("Table, \(table.rows.count) rows. Columns: \(table.headers.map { MarkdownPlain.inline($0) }.joined(separator: ", "))")
                 }
             }
+            .onScrollGeometryChange(for: CGPoint.self) { $0.contentOffset } action: { _, new in offset = new }
+            .onScrollGeometryChange(for: CGFloat.self) { $0.containerSize.width } action: { _, w in viewport = w }
+            .scrollBounceBehavior(.basedOnSize, axes: [.horizontal, .vertical])
+            // live-27 (4c) — the side(s) the grid can still scroll to fade out, so a cell cut at the edge reads as "more
+            // this way"; the leading fade starts after the pinned first column.
+            .mask {
+                HStack(spacing: 0) {
+                    Rectangle().frame(width: edges.0 ? min(pinnedWidth, max(viewport - Self.fadeWidth * 2, 0)) : 0)
+                    LinearGradient(colors: [edges.0 ? .clear : .black, .black], startPoint: .leading, endPoint: .trailing)
+                        .frame(width: Self.fadeWidth)
+                    Rectangle()
+                    LinearGradient(colors: [.black, edges.1 ? .clear : .black], startPoint: .leading, endPoint: .trailing)
+                        .frame(width: Self.fadeWidth)
+                }
+            }
+            .frame(maxWidth: .infinity, alignment: .leading)
+            .frame(height: maxHeight.map { min(total + 1, $0) })
+            .contentShape(Rectangle())
+            .onTapGesture { if opensFullScreen { showFull = true } }
+            .accessibilityAction(named: "Open the table full screen") { if opensFullScreen { showFull = true } }
+            .accessibilityIdentifier("chatTable")
         }
-        .onScrollGeometryChange(for: CGPoint.self) { $0.contentOffset } action: { _, new in offset = new }
-        .scrollBounceBehavior(.basedOnSize, axes: [.horizontal, .vertical])
-        .frame(maxWidth: .infinity, alignment: .leading)
-        .frame(height: maxHeight.map { min(total + 1, $0) })
-        .contentShape(Rectangle())
-        .onTapGesture { if opensFullScreen { showFull = true } }
-        .accessibilityAction(named: "Open the table full screen") { if opensFullScreen { showFull = true } }
-        .accessibilityIdentifier("chatTable")
+        .padding(.trailing, -gutter)
         .fullScreenCover(isPresented: $showFull) { ChatTableFullScreen(table: table) }
     }
 
-    /// One row: the first cell rides the horizontal scroll back (`offset.x`) so the first column stays put; the others
-    /// slide under it.
+    /// One row: the pinned cells (the first column; the first two after a narrow index, live-28 (A4)) ride the
+    /// horizontal scroll back (`offset.x`) so they stay put; the others slide under them.
     private func row(_ cells: [String], widths: [CGFloat], height: CGFloat, header: Bool, sticky: Color) -> some View {
-        HStack(alignment: .top, spacing: 0) {
+        let pinned = table.pinnedColumns
+        return HStack(alignment: .top, spacing: 0) {
             ForEach(cells.indices, id: \.self) { c in
                 cell(cells[c], width: widths[c], height: height, header: header)
-                    .background(c == 0 ? sticky : .clear)
-                    .offset(x: c == 0 ? max(offset.x, 0) : 0)
-                    .zIndex(c == 0 ? 1 : 0)
+                    .background(c < pinned ? sticky : .clear)
+                    .offset(x: c < pinned ? max(offset.x, 0) : 0)
+                    .zIndex(c < pinned ? 1 : 0)
             }
         }
     }

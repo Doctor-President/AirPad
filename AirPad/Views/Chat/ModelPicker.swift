@@ -67,6 +67,9 @@ struct ComposerSendControls: View {
     let sendEnabled: Bool
     let onSend: () -> Void
     let dictationToken: String
+    /// live-28 (1) — while an answer streams, the control is Stop (keeps what arrived, ends the turn).
+    var isAnswering = false
+    var onStop: () -> Void = {}
     @State private var dictation = LiveDictationService.shared
     @Environment(\.colorScheme) private var colorScheme
 
@@ -78,7 +81,11 @@ struct ComposerSendControls: View {
         let hasText = !text.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty
         let isHot = dictation.isListening && dictation.activeToken == dictationToken
         HStack(spacing: 8) {
-            if hasText {
+            if isAnswering {
+                Button { onStop() } label: {
+                    Image(systemName: "stop.circle.fill").font(.system(size: 28)).foregroundStyle(accent)
+                }.buttonStyle(.plain).accessibilityLabel("Stop answer")
+            } else if hasText {
                 Button { text = "" } label: {
                     Image(systemName: "xmark.circle.fill").font(.system(size: 16))
                         .foregroundStyle(AppearancePalette.ink.opacity(LibrarianPillChrome.clearGlyphOpacity(colorScheme)))

@@ -110,6 +110,16 @@ final class ChatSession {
         /// The user turn whose packet began this turn's THREAD (the fresh read it follows up). The next follow-up replays
         /// packets from here on, so its request extends this one byte-for-byte. Nil on turns that sent no packet.
         var threadStart: UUID?
+        /// live-27 (4) — who wrote this answer (route, model, web / library). Nil on user turns, app notices, and answers
+        /// saved before live-27 (decode-tolerant: those show no caption).
+        var provenance: ChatProvenance?
+        /// live-27 (3) — the general-knowledge line is the DATED one ("From the model's training data — may be out of
+        /// date."): a current-state request no web result backs. Nil on everything else (legacy decodes nil).
+        var datedKnowledge: Bool?
+        /// live-28 (1) — the answer stopped early: a cap (`AnswerCap`: its budget, the loop guard, the turn limit) or the
+        /// user's Stop. It keeps what arrived; the transcript shows `AnswerCap.line(for:)` under it. Not a partial (no
+        /// Continue, no resume). Nil on complete answers (legacy decodes nil).
+        var stopped: AnswerCap.Stop?
 
         init(id: UUID = UUID(), role: Role, text: String, citations: [Citation]? = nil, readReceipt: ReadReceipt? = nil, activity: ToolActivity? = nil, isPartial: Bool? = nil, requestID: String? = nil, generalKnowledge: Bool? = nil, declined: Bool? = nil, modelText: String? = nil, systemPrompt: String? = nil, threadStart: UUID? = nil) {
             self.declined = declined
@@ -167,6 +177,49 @@ final class ChatSession {
     /// True while a response is streaming in. The view uses this to swap
     /// the send glyph for a streaming indicator and disable input.
     private(set) var isStreaming: Bool = false
+    /// live-28 (1) — why the in-flight answer is being stopped (a cap, or the user's Stop); nil while it runs freely.
+    private(set) var stopRequest: AnswerCap.Stop?
+    /// The task running the current turn when it was started with `startTurn` (the Ask bars), so Stop and the turn
+    /// limit can cancel it even while the Mac is still reading the packet (no token has arrived to check against).
+    private var turnTask: Task<Void, Never>?
+    /// The turn limit's timer (`AnswerCap.wallClockSeconds`).
+    private var turnWatchdog: Task<Void, Never>?
+    /// The loop guard for a search turn's answer (its deltas arrive on a `@Sendable` callback, so it lives here).
+    private var toolRunaway = RunawayGuard()
+
+    /// Run a turn the user can Stop. The Ask bars send through this.
+    func startTurn(_ work: @escaping @MainActor () async -> Void) {
+        turnTask = Task { await work() }
+    }
+
+    /// The Ask bar's Stop while an answer streams: keep what arrived, mark it stopped, end the turn.
+    func stopAnswer() {
+        guard isStreaming else { return }
+        stop(.user)
+    }
+
+    private func stop(_ reason: AnswerCap.Stop) {
+        if stopRequest == nil { stopRequest = reason }
+        turnTask?.cancel()
+    }
+
+    /// Arm the turn limit for a new turn (and clear any stop left from the last one).
+    private func armTurnLimit() {
+        stopRequest = nil
+        turnWatchdog?.cancel()
+        let limit = AnswerCap.wallClockSeconds
+        turnWatchdog = Task { [weak self] in
+            try? await Task.sleep(for: .seconds(limit))
+            guard !Task.isCancelled, let self, self.isStreaming else { return }
+            self.stop(.tooLong)
+        }
+    }
+
+    private func endTurnLimit() {
+        turnWatchdog?.cancel(); turnWatchdog = nil
+        turnTask = nil
+    }
+
     /// ★ BUG 36 Pillar 2 — true while auto-re-attaching to a HELD Host result on
     /// foreground (fetching the full answer to replace a dropped partial). Distinct
     /// from `isStreaming` (a new turn): the view shows a quiet "Resuming…" state on the
@@ -343,6 +396,13 @@ final class ChatSession {
     /// trigger; this threshold only adds crash/kill safety between backgroundings.
     private static let partialPersistThreshold = 240
 
+    /// live-27 (4) — the provenance of the answer being committed, from whichever path wrote it (nil if none said).
+    static func answerProvenance(web: Bool, library: Bool) -> ChatProvenance? {
+        guard let s = ModelRouter.lastAnswerSource else { return nil }
+        return ChatProvenance(route: s.route, model: s.model, name: ChatProvenance.displayName(route: s.route, model: s.model),
+                              web: web ? true : nil, library: library ? true : nil)
+    }
+
     static let systemPrompt = """
     You are a thoughtful conversational assistant. The user is thinking out loud \
     and will ask follow-up questions that depend on earlier turns — always take \
@@ -390,6 +450,7 @@ final class ChatSession {
         beginAnswerStream(candidates: citations ?? [])
 
         streamingMessageID = UUID()
+        ModelRouter.lastAnswerSource = nil   // live-27 (4) — set by the path that writes this answer
         // ★ BUG 36 Pillar 2 — a HOST turn gets a client-generated requestID (D1) so a
         // mid-stream drop can be RESUMED (the Host holds the full answer). Only the host
         // path uses it; FM/Ollama ignore it. `currentRequestID` lets flush() tag a partial
@@ -407,6 +468,10 @@ final class ChatSession {
         // fit the window), so this request EXTENDS the previous one and Ollama's prompt cache covers the prefix.
         let history: [ModelRouter.WireMessage] = Self.historyWire(Array(messages.dropLast()), replayFrom: replayFrom,
             reserveChars: systemPrompt.count + modelText.count, windowTokens: numCtx)
+        // live-28 (1) — the answer budget for this route, the loop guard, and the turn limit.
+        let maxTokens = AnswerCap.maxTokens(AnswerCap.route(question: displayText, library: packetTurn), think: thinkEnabled)
+        var runaway = RunawayGuard()
+        armTurnLimit()
 
         // ★ BUG 36 — incremental delta persistence. The partial is made durable
         // AS IT ARRIVES (coalesced by `partialPersistThreshold`), so a mid-stream
@@ -430,6 +495,7 @@ final class ChatSession {
                 history: history,
                 userContent: modelText,
                 numCtx: numCtx,
+                maxTokens: maxTokens,
                 requestID: hostRequestID,
                 think: thinkEnabled
             ) {
@@ -437,6 +503,7 @@ final class ChatSession {
                 switch delta {
                 case .thinking(let t): GauntletTap.shared.rawDelta(thinking: true, t)
                 case .answer(let t): GauntletTap.shared.rawDelta(thinking: false, t)
+                case .finished: break
                 }
                 #endif
                 if !sampled, let c = sampleChars { sampled = true; PrefillSpeed.record(chars: c, seconds: Date().timeIntervalSince(sentAt)) }
@@ -450,7 +517,11 @@ final class ChatSession {
                         lastPersistedLength = streamingText.count
                         flush()
                     }
+                    if runaway.feed(t) { stopRequest = stopRequest ?? .tooLong }
+                case .finished(let reason):
+                    if reason == "length" { stopRequest = stopRequest ?? .tooLong }   // Ollama hit num_predict
                 }
+                if stopRequest != nil { break }
             }
             // Brief CH ruling 8 — the committed text IS what was on screen: the numberer's display text (numbers
             // assigned at first appearance, invalid markers dropped at first sight — Brief AB3's strip, applied
@@ -477,13 +548,25 @@ final class ChatSession {
                 // live-23 (5b) — Apple Intelligence's refusal string is a decline, not an answer: no general-knowledge
                 // label, never sent back as history, never a title.
                 let declined = ModelRouter.isAppleIntelligenceActive && AppleChat.isRefusalText(finalText)
-                let labelled = !declined && generalKnowledge && WebGrounding.isFactualQuestion(displayText)
-                messages.append(Message(id: streamingMessageID, role: .assistant, text: finalText,
-                                        citations: r.citations.isEmpty ? nil : r.citations, readReceipt: readReceipt,
-                                        generalKnowledge: labelled ? true : nil, declined: declined ? true : nil))
+                let note = WebGrounding.ungroundedNote(for: displayText)   // live-27 (3): dated for a current-state request
+                let labelled = !declined && generalKnowledge && note != nil
+                var answer = Message(id: streamingMessageID, role: .assistant, text: finalText,
+                                     citations: r.citations.isEmpty ? nil : r.citations, readReceipt: readReceipt,
+                                     generalKnowledge: labelled ? true : nil, declined: declined ? true : nil)
+                answer.provenance = Self.answerProvenance(web: false, library: packetTurn)
+                if labelled && note == WebGrounding.datedKnowledgeNote { answer.datedKnowledge = true }
+                answer.stopped = stopRequest
+                messages.append(answer)
                 #if DEBUG
                 if labelled { GauntletTap.shared.noteValue("generalKnowledge", true) }
+                GauntletTap.shared.noteValue("provenance", answer.provenance?.caption ?? "none")   // live-27 (4)
                 #endif
+            } else if let stop = stopRequest {
+                // live-28 (1) — stopped before any text arrived: the line alone, never a blank turn.
+                var kept = Message(id: streamingMessageID, role: .assistant, text: "", readReceipt: readReceipt)
+                kept.provenance = Self.answerProvenance(web: false, library: packetTurn)
+                kept.stopped = stop
+                messages.append(kept)
             }
         } catch {
             // ★ BUG 36 — do NOT discard the partial. A mid-stream drop (the app
@@ -496,14 +579,27 @@ final class ChatSession {
             // `.user` message remains so retry can re-send it).
             settleAnswer()
             let partial = numberer.result().text.trimmingCharacters(in: .whitespacesAndNewlines)
-            if !partial.isEmpty {
+            if let stop = stopRequest {
+                // live-28 (1) — stopped (a cap or the user): keep what arrived as a STOPPED answer, never a partial — no
+                // Continue, no resume of the held runaway. Nothing arrived yet → the line alone, never a blank.
+                let r = numberer.result()
+                var kept = Message(id: streamingMessageID, role: .assistant, text: partial,
+                                   citations: partial.isEmpty || r.citations.isEmpty ? nil : r.citations, readReceipt: readReceipt)
+                kept.provenance = Self.answerProvenance(web: false, library: packetTurn)
+                kept.stopped = stop
+                messages.append(kept)
+            } else if !partial.isEmpty {
                 // Carry the requestID so foreground / relaunch can fetch the FULL answer. Keep the
                 // read receipt so a resumed partial still shows what it read (BN5).
-                messages.append(Message(id: streamingMessageID, role: .assistant, text: partial, readReceipt: readReceipt, isPartial: true, requestID: hostRequestID))
+                var kept = Message(id: streamingMessageID, role: .assistant, text: partial, readReceipt: readReceipt, isPartial: true, requestID: hostRequestID)
+                kept.provenance = Self.answerProvenance(web: false, library: packetTurn)
+                messages.append(kept)
             } else if ModelRouter.isAppleIntelligenceActive && AppleNaming.isRefusal(error) {
                 // live-23 (5b) — a guardrail / refusal error from Apple Intelligence is a decline, shown as one (not a
                 // red failure banner), and kept out of history like a refusal string.
-                messages.append(Message(id: streamingMessageID, role: .assistant, text: AppleChat.declineLine, declined: true))
+                var decline = Message(id: streamingMessageID, role: .assistant, text: AppleChat.declineLine, declined: true)
+                decline.provenance = Self.answerProvenance(web: false, library: packetTurn)
+                messages.append(decline)
             } else {
                 // Nothing streamed — a genuine failure. Classify it into a human
                 // banner (field findings #2/#3): unreachable/530 reads as "offline
@@ -515,6 +611,7 @@ final class ChatSession {
         #if DEBUG
         do {
             let committed = messages.last.flatMap { $0.role == .assistant && $0.id == streamingMessageID ? $0 : nil }
+            GauntletTap.shared.noteValue("stopped", committed?.stopped?.rawValue ?? "none")   // live-28 (1), before the turn closes
             GauntletTap.shared.endTurn(finalText: committed?.text, citations: committed?.citations,
                                        receipt: committed?.readReceipt.map { ChatTranscript.readReceiptText($0) },
                                        thinking: streamingThinking, lastError: lastError,
@@ -523,6 +620,7 @@ final class ChatSession {
         #endif
         streamingText = ""
         isStreaming = false
+        endTurnLimit()
         currentRequestID = nil
         prefillNotice = nil   // BW5 — never let a "Reading…" line outlive the turn
 
@@ -590,11 +688,12 @@ final class ChatSession {
         }
         return (turns, packets)
     }
-    /// The chat minus every declined assistant turn and the user turn right before it.
+    /// The chat minus every declined assistant turn and the user turn right before it. live-28 (1): an answer stopped
+    /// before any text arrived goes the same way (an empty assistant turn says nothing to the model).
     nonisolated static func withoutDeclined(_ msgs: [Message]) -> [Message] {
         var out: [Message] = []
         for m in msgs {
-            if m.role == .assistant && m.declined == true {
+            if m.role == .assistant && (m.declined == true || (m.stopped != nil && m.text.isEmpty)) {
                 if let last = out.last, last.role == .user { out.removeLast() }
                 continue
             }
@@ -653,6 +752,11 @@ final class ChatSession {
         let now = Date()
         beginAnswerStream(candidates: [])
         streamingThinking = ""   // Brief AL3 — clear any prior turn's thought process
+        ModelRouter.lastAnswerSource = nil   // live-27 (4)
+        // live-28 (1) — the same caps as a plain turn: the route's budget per model step, the loop guard, the turn limit.
+        let maxTokens = AnswerCap.maxTokens(AnswerCap.route(question: displayText, library: false), think: false)
+        toolRunaway = RunawayGuard()
+        armTurnLimit()
 
         #if DEBUG
         // Gauntlet v2 pillar rows — the agent loop is a turn too (inert without -GauntletTapDir). Per-step Host
@@ -680,7 +784,11 @@ final class ChatSession {
             }
             // Stream the assistant's partial answer into the live transcript (shared by both paths).
             let onDelta: @Sendable (String) -> Void = { [weak self] delta in
-                Task { @MainActor in self?.appendAnswerDelta(delta) }   // route a leaked CoT to the Thought-process block
+                Task { @MainActor in
+                    guard let self else { return }
+                    self.appendAnswerDelta(delta)   // route a leaked CoT to the Thought-process block
+                    if self.toolRunaway.feed(delta) { self.stop(.tooLong) }
+                }
             }
             // Brief AL3 — the reasoning channel (Thinking on, Host path): stream the thought
             // process into `streamingThinking` (ephemeral; the Thought-process block renders it).
@@ -818,9 +926,10 @@ final class ChatSession {
                         // an AM1-style live-Host replay first.
                         turn = try await ModelRouter.streamHostAgentTurn(
                             pairing: pairing, messages: working,
-                            tools: turnTools, think: false,
+                            tools: turnTools, think: false, maxTokens: maxTokens,
                             onContentDelta: onDelta, onReasoningDelta: onReasoning)
                     }
+                    if turn.hitLength { stopRequest = stopRequest ?? .tooLong }   // Ollama stopped it at num_predict
 
                     if turn.toolCalls.isEmpty {
                         // Strip any leaked chain-of-thought from the settled agent answer (search turns run
@@ -868,15 +977,32 @@ final class ChatSession {
                     // general-knowledge line — only under a FACTUAL question (T ruling 2026-10-09: a pep talk gets
                     // none). A throttled turn's canned message is the app's own, so it gets none.
                     // T ruling (2026-10-09, item 9): a search whose results the answer doesn't CITE backs nothing either.
-                    let ungrounded = (outcome.links.isEmpty || r.citations.isEmpty) && !outcome.rateLimited && WebGrounding.isFactualQuestion(displayText)
-                    messages.append(Message(role: .assistant, text: r.text,
-                                            citations: r.citations.isEmpty ? nil : r.citations,
-                                            generalKnowledge: ungrounded ? true : nil))
+                    let note = WebGrounding.ungroundedNote(for: displayText)   // live-27 (3): dated for a current-state request
+                    let ungrounded = (outcome.links.isEmpty || r.citations.isEmpty) && !outcome.rateLimited && note != nil
+                    var answer = Message(role: .assistant, text: r.text,
+                                         citations: r.citations.isEmpty ? nil : r.citations,
+                                         generalKnowledge: ungrounded ? true : nil)
+                    answer.provenance = Self.answerProvenance(web: !outcome.links.isEmpty, library: false)   // live-27 (4)
+                    if ungrounded && note == WebGrounding.datedKnowledgeNote { answer.datedKnowledge = true }
+                    answer.stopped = stopRequest
+                    messages.append(answer)
+                    #if DEBUG
+                    GauntletTap.shared.noteValue("provenance", answer.provenance?.caption ?? "none")
+                    #endif
                     #if DEBUG
                     if ungrounded { GauntletTap.shared.noteValue("generalKnowledge", true) }
                     #endif
                 }
             }
+        } catch where stopRequest != nil {
+            // live-28 (1) — stopped mid-turn (Stop, the loop guard, the turn limit): keep what streamed, with the line.
+            settleAnswer()
+            let r = numberer.result()
+            let text = WebAnswerFilter.apply(r.text, allowed: filterAllowed).trimmingCharacters(in: .whitespacesAndNewlines)
+            var kept = Message(role: .assistant, text: text, citations: text.isEmpty || r.citations.isEmpty ? nil : r.citations)
+            kept.provenance = Self.answerProvenance(web: !(r.citations.isEmpty), library: false)
+            kept.stopped = stopRequest
+            messages.append(kept)
         } catch {
             // Degrade SILENTLY if the FIRST turn failed (e.g. the endpoint/model
             // doesn't advertise tool support and 400s on the `tools` param): drop the
@@ -905,6 +1031,7 @@ final class ChatSession {
         #endif
         streamingText = ""
         isStreaming = false
+        endTurnLimit()
         prefillNotice = nil   // a tool status line never outlives the turn
         flush()
         scheduleTitleGenerationIfNeeded()
@@ -938,7 +1065,10 @@ final class ChatSession {
         lastError = nil
         messages.append(Message(role: .user, text: text))
         messages.append(Message(role: .assistant,
-            text: "Web search needs a Brave Search key. [Add one in Settings → Web search.](airpad-settings://websearch)"))
+            // live-28 (A2) — the switch off reads as off (the key is kept); on with no key names the chosen provider.
+            text: WebSearchBackend.isEnabled
+                ? "Web search needs a \(WebSearchBackend.provider.keyName) key. [Add one in Settings → Web search.](airpad-settings://websearch)"
+                : "Web search is off. [Turn it on in Settings → Web search.](airpad-settings://websearch)"))
         pendingUser = nil
         flush()
         #if DEBUG
@@ -1445,6 +1575,7 @@ final class ChatSession {
                 switch delta {
                 case .thinking(let t): streamingThinking += t
                 case .answer(let t): streamingText += t
+                case .finished: break
                 }
             }
             mergeContinuation(tail: streamingText, complete: true)
@@ -1757,7 +1888,7 @@ final class ChatSession {
                 systemPrompt: systemPrompt,
                 history: [["role": "user", "content": packet], ["role": "assistant", "content": answer]],
                 userContent: "Now write a title for this conversation. Output ONLY the title — 3 to 6 words, no quotes, no punctuation at the end, no preamble.",
-                numCtx: numCtx) {
+                numCtx: numCtx, maxTokens: 64) {   // live-28 (1) — a title is a few words; never an open-ended generation
                 if case .answer(let t) = d { raw += t }
                 if raw.count > 200 { break }
             }
@@ -1812,7 +1943,7 @@ final class ChatSession {
         s = s.trimmingCharacters(in: .whitespacesAndNewlines)
         // Tiny / pure-punctuation results — reject.
         if s.count < 2 { return nil }
-        return s
+        return TitleCase.apply(s)   // live-28 (A3) — a model-written chat title is Title Case (the fallback isn't)
     }
 
     #if DEBUG

@@ -59,7 +59,7 @@ final class AppleDeclineSheet: XCTestCase {
         XCTAssertTrue(note.waitForExistence(timeout: 15), "the one-line on-device note")
         shot(app, "on-device-named")
         XCTAssertEqual(note.label, "Named by the on-device model — Apple Intelligence declined this entry.")
-        XCTAssertTrue(app.staticTexts["On-device stub title"].exists, "the on-device model's proposal is shown")
+        XCTAssertTrue(app.staticTexts["On-Device Stub Title"].exists, "the on-device model's proposal is shown (live-28 A3: Title Case)")
         XCTAssertFalse(app.descendants(matching: .any).matching(identifier: "namingDeclineBanner").firstMatch.exists, "no decline banner")
     }
 }

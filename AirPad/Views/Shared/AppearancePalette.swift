@@ -113,11 +113,35 @@ enum AppearancePalette {
     /// text reads on Cucumber-Water parchment. Same opacity either way — the ink
     /// flip is coupled plumbing, not a judged knob. Mirrors NodeCardView's local
     /// `ink()`; shared here so the body chips can't drift from it.
-    static func cardCreamInk(_ opacity: CGFloat) -> Color {
+    /// live-27 (1) — secondary text on a LIGHT card face (the source/time row, type-strip counts, tags, list markers and
+    /// "+N more", a link's site, a document's pages): `#232A2E` at this alpha, the least that reaches 4.5:1 on the plain
+    /// light card body, swept on real renders (Ops design-refs/live27-*/meta-ink.md). Before, each face used its own
+    /// opacity (0.68 · 0.58 · 0.55 → 3.70–4.17:1). `nil` = each face's own (DEBUG `-MetaInkLight before`); DEBUG
+    /// `-MetaInkLight <alpha>` sweeps it. Read once (a `static let`), never in a body.
+    static let cardMetaLightAlpha: CGFloat? = {
+        #if DEBUG
+        if let s = UserDefaults.standard.string(forKey: "MetaInkLight") { return s == "before" ? nil : CGFloat(Double(s) ?? 0.68) }
+        #endif
+        return bakedMetaLightAlpha
+    }()
+    static let bakedMetaLightAlpha: CGFloat = 0.76   // live-27 (1): swept — 0.74 → 4.31, 0.76 → 4.55
+
+    /// The card face's secondary ink: dark = the warm cream at the face's own `opacity` (byte-identical), light = the ink
+    /// at `cardMetaLightAlpha`.
+    static func cardMetaInk(_ opacity: CGFloat) -> Color { cardCreamInk(opacity, light: cardMetaLightAlpha ?? opacity) }
+    /// live-28 (A1) — the dateline row's ink: with light's A / B band it may run darker than the other meta text.
+    static func cardDatelineInk(_ opacity: CGFloat) -> Color {
+        guard let band = CardHeroFade.datelineBand(dark: false) else { return cardMetaInk(opacity) }
+        return cardCreamInk(opacity, light: CGFloat(band.ink))
+    }
+
+    static func cardCreamInk(_ opacity: CGFloat) -> Color { cardCreamInk(opacity, light: opacity) }
+
+    private static func cardCreamInk(_ opacity: CGFloat, light lightOpacity: CGFloat) -> Color {
         let dark = UIColor(Color(red: 1.0, green: 0.976, blue: 0.941)).withAlphaComponent(opacity)
         let light = UIColor(ink)
             .resolvedColor(with: UITraitCollection(userInterfaceStyle: .light))
-            .withAlphaComponent(opacity)
+            .withAlphaComponent(lightOpacity)
         return Color(UIColor { $0.userInterfaceStyle == .dark ? dark : light })
     }
 

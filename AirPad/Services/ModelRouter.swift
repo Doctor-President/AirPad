@@ -307,6 +307,8 @@ enum ModelRouter {
     enum ModelDelta: Sendable {
         case answer(String)
         case thinking(String)
+        /// live-28 (1) — the Host's terminal `finish_reason` ("stop", "length" = Ollama hit `num_predict`).
+        case finished(String)
     }
 
     /// Streaming text generation. Yields incremental deltas as they arrive. For Ollama this is
@@ -347,6 +349,7 @@ enum ModelRouter {
         history: [WireMessage],
         userContent: String,
         numCtx: Int?,
+        maxTokens: Int? = nil,
         requestID: String? = nil,
         think: Bool = false
     ) -> AsyncThrowingStream<ModelDelta, Error> {
@@ -354,7 +357,7 @@ enum ModelRouter {
         if !systemPrompt.isEmpty { msgs.append(["role": "system", "content": systemPrompt]) }
         msgs.append(contentsOf: history)
         msgs.append(["role": "user", "content": userContent])
-        return generateStreaming(messages: msgs, numCtx: numCtx, requestID: requestID, think: think)
+        return generateStreaming(messages: msgs, numCtx: numCtx, maxTokens: maxTokens, requestID: requestID, think: think)
     }
 
     #if DEBUG
@@ -372,14 +375,16 @@ enum ModelRouter {
     #endif
 
     /// The streaming dispatcher — every provider consumes the SAME message array + `numCtx`.
+    /// live-28 (1): `maxTokens` is the answer budget (`AnswerCap`), sent to the Host as `options.num_predict`.
     static func generateStreaming(
         messages: [WireMessage],
         numCtx: Int?,
+        maxTokens: Int? = nil,
         requestID: String? = nil,
         think: Bool = false
     ) -> AsyncThrowingStream<ModelDelta, Error> {
         AsyncThrowingStream { continuation in
-            Task {
+            let producer = Task {
                 do {
                     #if DEBUG
                     // Brief CH-0 — `-GauntletReplay`: stream a RECORDED turn instead of the model, so the
@@ -394,8 +399,26 @@ enum ModelRouter {
                         return
                     }
                     #endif
+                    #if DEBUG
+                    // live-27 (4) — `-StubAnswerModels "apple,qwen3:4b-instruct-2507-q4_K_M"`: the n-th answer of the
+                    // launch comes from the n-th entry (cycling), "apple" = Apple Intelligence, anything else = that tag
+                    // on the Host — a model switch mid-chat, deterministic, with no Mac (the provenance UI row).
+                    if let list = UserDefaults.standard.string(forKey: "StubAnswerModels"), !list.isEmpty {
+                        let models = list.split(separator: ",").map { String($0).trimmingCharacters(in: .whitespaces) }
+                        let pick = models[stubAnswerCount % models.count]; stubAnswerCount += 1
+                        lastAnswerSource = pick == "apple" ? AnswerSource(route: .apple, model: foundationModelName)
+                                                           : AnswerSource(route: .host, model: pick)
+                        try await Task.sleep(for: .milliseconds(300))
+                        let who = pick == "apple" ? foundationModelName : pick
+                        for w in "This answer was written by \(who) (stub).".split(separator: " ") {
+                            continuation.yield(.answer(String(w) + " ")); try await Task.sleep(for: .milliseconds(30))
+                        }
+                        continuation.finish(); return
+                    }
+                    #endif
                     switch active {
                     case .foundationModel:
+                        lastAnswerSource = AnswerSource(route: .apple, model: foundationModelName)
                         #if DEBUG
                         if UserDefaults.standard.bool(forKey: "StubOnDeviceModel") {
                             try await Task.sleep(for: .milliseconds(400))
@@ -426,6 +449,7 @@ enum ModelRouter {
                             pairing: pairing,
                             messages: messages,
                             numCtx: numCtx,
+                            maxTokens: maxTokens,
                             requestID: requestID, // BUG 36: opt this turn into hold-and-resume
                             think: think,
                             continuation: continuation
@@ -442,6 +466,9 @@ enum ModelRouter {
                     continuation.finish(throwing: error)
                 }
             }
+            // live-28 (1) — the consumer stopped reading (Stop, the loop guard, the turn limit): cancel the request, so the
+            // connection closes instead of streaming on into nothing.
+            continuation.onTermination = { _ in producer.cancel() }
         }
     }
 
@@ -842,6 +869,7 @@ enum ModelRouter {
             throw RouterError.ollamaBadEndpoint(endpoint)
         }
         let modelName = try await firstOllamaModel(base: base)
+        lastAnswerSource = AnswerSource(route: .server, model: modelName)   // live-27 (4)
 
         let path = "v1/chat/completions"
         var request = URLRequest(url: base.appendingPathComponent(path))
@@ -1102,6 +1130,20 @@ enum ModelRouter {
     /// a preference, not a secret.
     /// The model tag the last Host chat request actually put on the wire (nil before the first one).
     nonisolated(unsafe) static var lastWireModel: String? = nil
+
+    /// live-27 (4) — who is writing the answer being streamed: every ANSWER path sets it just before its request goes
+    /// out (the route + the model tag put on the wire); `ChatSession` reads it when it commits the answer into the
+    /// message's provenance. Titles / enrichment go through `generate`, which never sets it.
+    struct AnswerSource: Equatable, Sendable { var route: ChatProvenance.Route; var model: String }
+    private static let answerLock = NSLock()
+    #if DEBUG
+    nonisolated(unsafe) static var stubAnswerCount = 0
+    #endif
+    nonisolated(unsafe) private static var _lastAnswerSource: AnswerSource?
+    static var lastAnswerSource: AnswerSource? {
+        get { answerLock.lock(); defer { answerLock.unlock() }; return _lastAnswerSource }
+        set { answerLock.lock(); _lastAnswerSource = newValue; answerLock.unlock() }
+    }
     private static let userPickedHostModelKey = "airpadUserPickedHostModel"
     static var userPickedHostModel: String? {
         get { UserDefaults.standard.string(forKey: userPickedHostModelKey) }
@@ -1126,7 +1168,9 @@ enum ModelRouter {
         let stream = AsyncThrowingStream<ModelDelta, Error> { cont in
             Task {
                 do {
-                    try await streamHost(pairing: pairing, messages: msgs, numCtx: contextWindowTokens, continuation: cont)
+                    // live-28 (1) — one-shot Host answers (titles, summaries, cluster labels) get the General budget too.
+                    try await streamHost(pairing: pairing, messages: msgs, numCtx: contextWindowTokens,
+                                         maxTokens: AnswerCap.maxTokens(.general, think: false), continuation: cont)
                     cont.finish()
                 } catch { cont.finish(throwing: error) }
             }
@@ -1163,6 +1207,7 @@ enum ModelRouter {
         pairing: HostPairing,
         messages: [WireMessage],
         numCtx: Int?,
+        maxTokens: Int? = nil,
         requestID: String? = nil,
         think: Bool = false,
         continuation: AsyncThrowingStream<ModelDelta, Error>.Continuation
@@ -1195,6 +1240,7 @@ enum ModelRouter {
         }
         #endif
         lastWireModel = model   // the prefill-speed estimate is per model (T ruling 2026-10-09)
+        lastAnswerSource = AnswerSource(route: .host, model: model)   // live-27 (4)
         #if DEBUG
         GauntletTap.shared.noteModel(model)   // Brief CH-0 — the tag actually put on the wire
         #endif
@@ -1205,15 +1251,13 @@ enum ModelRouter {
         // for the read-in-full packet (else it truncates to the model's 4096 default). The Host's
         // `ollamaChatBody` forwards `messages` + `options` raw to Ollama's native /api/chat.
         // `think` (per-chat, off by default) is honored only by that /api/chat path.
-        var body: [String: Any] = ["model": model, "stream": true, "think": think, "messages": messages]
-        if let numCtx { body["options"] = ["num_ctx": numCtx] }
+        let body = hostChatBody(model: model, messages: messages, numCtx: numCtx, maxTokens: maxTokens, think: think, requestID: requestID)
         // ★ Brief BY — the app does NOT send `keep_alive`. The Host's RESIDENCY MODE owns retention and
         // applies it on the chat path (Always-ready/Manual = -1, Dynamic = the idle default). BW's
         // app-side keep_alive=30m overrode Always-ready's -1 hold → the held model idle-ejected → every
         // ask was then refused. One owner (the Mac's mode), no override from the phone.
         // BUG 36 Pillar 2: a client-generated requestID (sealed inside the body — D1) opts this
         // generation into the Host's finish-and-hold, so a mid-stream drop can be resumed.
-        if let requestID { body["requestID"] = requestID }
         let (bytes, session) = try await withAskLoad(pairing: pairing, model: model) {
             try await openSealedChat(pairing: pairing, hpk: hpk, chatURL: chatURL, body: body)
         }
@@ -1229,8 +1273,30 @@ enum ModelRouter {
             if let epk = obj["epk"] as? String { try session.setHostEphemeral(epk); continue }
             guard let ct = obj["ct"] as? String else { continue }
             buffer.append(try session.openFrame(ct))
-            drainInnerSSE(&buffer, continuation)
+            drainInnerSSE(&buffer) { continuation.yield($0) }
         }
+    }
+
+    /// The sealed Host chat body: real roles, `options.num_ctx` (Brief BR) and, live-28 (1), `options.num_predict` — the
+    /// route's answer budget, enforced by Ollama on the Mac. `requestID` opts into hold-and-resume (BUG 36).
+    static func hostChatBody(model: String, messages: [WireMessage], numCtx: Int?, maxTokens: Int?, think: Bool,
+                             requestID: String?) -> [String: Any] {
+        var body: [String: Any] = ["model": model, "stream": true, "think": think, "messages": messages]
+        var options: [String: Any] = [:]
+        if let numCtx { options["num_ctx"] = numCtx }
+        if let maxTokens { options["num_predict"] = maxTokens }
+        if !options.isEmpty { body["options"] = options }
+        if let requestID { body["requestID"] = requestID }
+        return body
+    }
+
+    /// The sealed Host body for one search-loop turn (tools, no hold), with the same answer budget.
+    static func hostAgentBody(model: String, messages: [[String: Any]], tools: [[String: Any]]?, think: Bool,
+                              maxTokens: Int?) -> [String: Any] {
+        var body: [String: Any] = ["model": model, "stream": true, "think": think, "messages": nativizeToolMessages(messages)]
+        if let tools { body["tools"] = tools }
+        if let maxTokens { body["options"] = ["num_predict": maxTokens] }
+        return body
     }
 
     /// Seal one chat body and POST it; a non-2xx reads the Host's body into `ollamaHTTPError`.
@@ -1368,6 +1434,7 @@ enum ModelRouter {
         messages: [[String: Any]],
         tools: [[String: Any]]?,
         think: Bool = false,
+        maxTokens: Int? = nil,
         onContentDelta: @Sendable @escaping (String) -> Void,
         onReasoningDelta: @Sendable @escaping (String) -> Void = { _ in }
     ) async throws -> AgentTurn {
@@ -1420,8 +1487,8 @@ enum ModelRouter {
         // false, so a reasoning model never reasoned on the agent path). With `think` on, the
         // Host routes the thought process to the reasoning channel (rendered live via
         // `onReasoningDelta`), leaving the answer clean.
-        var body: [String: Any] = ["model": model, "stream": true, "think": think, "messages": Self.nativizeToolMessages(messages)]
-        if let tools { body["tools"] = tools }
+        lastAnswerSource = AnswerSource(route: .host, model: model)   // live-27 (4)
+        let body = hostAgentBody(model: model, messages: messages, tools: tools, think: think, maxTokens: maxTokens)
         let (bytes, session) = try await withAskLoad(pairing: pairing, model: model) {
             try await openSealedChat(pairing: pairing, hpk: hpk, chatURL: chatURL, body: body)
         }
@@ -1429,6 +1496,7 @@ enum ModelRouter {
         var buffer = Data()
         var content = ""
         var accum: [Int: (id: String, name: String, args: String)] = [:]
+        var hitLength = false
         for try await line in bytes.lines {
             guard line.hasPrefix("data: ") else { continue }
             let payload = String(line.dropFirst(6))
@@ -1437,12 +1505,12 @@ enum ModelRouter {
             if let epk = obj["epk"] as? String { try session.setHostEphemeral(epk); continue }
             guard let ct = obj["ct"] as? String else { continue }
             buffer.append(try session.openFrame(ct))
-            drainInnerAgentSSE(&buffer, content: &content, accum: &accum, onContentDelta: onContentDelta, onReasoningDelta: onReasoningDelta)
+            drainInnerAgentSSE(&buffer, content: &content, accum: &accum, hitLength: &hitLength, onContentDelta: onContentDelta, onReasoningDelta: onReasoningDelta)
         }
         let toolCalls = accum.sorted { $0.key < $1.key }.map { idx, e in
             ToolCall(id: e.id.isEmpty ? "call_\(idx)" : e.id, name: e.name, argumentsJSON: e.args)
         }
-        return AgentTurn(content: content, toolCalls: toolCalls)
+        return AgentTurn(content: content, toolCalls: toolCalls, hitLength: hitLength)
     }
 
     /// Parse complete inner `data:` lines out of the decrypted buffer, ACCUMULATING content +
@@ -1451,6 +1519,7 @@ enum ModelRouter {
         _ buffer: inout Data,
         content: inout String,
         accum: inout [Int: (id: String, name: String, args: String)],
+        hitLength: inout Bool,
         onContentDelta: @Sendable (String) -> Void,
         onReasoningDelta: @Sendable (String) -> Void = { _ in }
     ) {
@@ -1466,6 +1535,7 @@ enum ModelRouter {
                let choices = obj["choices"] as? [[String: Any]],
                let delta = choices.first?["delta"] as? [String: Any] {
                 accumulateAgentDelta(delta, content: &content, accum: &accum, onContentDelta: onContentDelta, onReasoningDelta: onReasoningDelta)
+                if choices.first?["finish_reason"] as? String == "length" { hitLength = true }   // live-28 (1)
             }
         }
     }
@@ -1562,12 +1632,29 @@ enum ModelRouter {
             if let epk = obj["epk"] as? String { try session.setHostEphemeral(epk); continue }
             guard let ct = obj["ct"] as? String else { continue }
             buffer.append(try session.openFrame(ct))
-            drainInnerSSE(&buffer, continuation)
+            drainInnerSSE(&buffer) { continuation.yield($0) }
         }
     }
 
     /// Parse complete inner `data:` lines out of the decrypted buffer, yielding assistant deltas.
-    private static func drainInnerSSE(_ buffer: inout Data, _ continuation: AsyncThrowingStream<ModelDelta, Error>.Continuation) {
+    #if DEBUG
+    /// live-28 (1) self-test — what `drainInnerSSE` yields for decrypted inner SSE text.
+    static func debugInnerSSE(_ text: String) -> [ModelDelta] {
+        var out: [ModelDelta] = []
+        var buf = Data(text.utf8)
+        drainInnerSSE(&buf) { out.append($0) }
+        return out
+    }
+    /// … and what the search-turn parser accumulates.
+    static func debugInnerAgentSSE(_ text: String) -> (content: String, hitLength: Bool) {
+        var buf = Data(text.utf8); var content = ""; var accum: [Int: (id: String, name: String, args: String)] = [:]
+        var hitLength = false
+        drainInnerAgentSSE(&buf, content: &content, accum: &accum, hitLength: &hitLength, onContentDelta: { _ in })
+        return (content, hitLength)
+    }
+    #endif
+
+    private static func drainInnerSSE(_ buffer: inout Data, _ yield: (ModelDelta) -> Void) {
         while let nl = buffer.firstIndex(of: 0x0A) {
             let lineData = buffer[buffer.startIndex..<nl]
             buffer = Data(buffer[buffer.index(after: nl)...])
@@ -1581,8 +1668,10 @@ enum ModelRouter {
                let delta = choices.first?["delta"] as? [String: Any] {
                 // Two channels (Host /api/chat, translated): reasoning = thought process, content
                 // = the answer. `.thinking` is rendered live + discarded; `.answer` is the reply.
-                if let r = delta["reasoning"] as? String, !r.isEmpty { continuation.yield(.thinking(r)) }
-                if let c = delta["content"] as? String, !c.isEmpty { continuation.yield(.answer(c)) }
+                if let r = delta["reasoning"] as? String, !r.isEmpty { yield(.thinking(r)) }
+                if let c = delta["content"] as? String, !c.isEmpty { yield(.answer(c)) }
+                // live-28 (1) — the Host's terminal frame: "length" = Ollama stopped at num_predict.
+                if let reason = choices.first?["finish_reason"] as? String { yield(.finished(reason)) }
             }
         }
     }
@@ -1639,6 +1728,8 @@ struct ToolCall: Sendable {
 struct AgentTurn: Sendable {
     let content: String
     let toolCalls: [ToolCall]
+    /// live-28 (1) — the Host said `finish_reason: "length"`: Ollama stopped this turn at its `num_predict`.
+    var hitLength = false
 }
 
 /// ★ THE LOAD-BEARING SEAM. The agent loop is identical whether a BYO-key backend or a
@@ -1705,6 +1796,7 @@ extension ModelRouter {
         request.httpMethod = "POST"
         request.setValue("application/json", forHTTPHeaderField: "Content-Type")
         applyEndpointAuth(&request)
+        lastAnswerSource = AnswerSource(route: .server, model: model)   // live-27 (4)
         var body: [String: Any] = ["model": model, "stream": true, "messages": messages]
         if let tools { body["tools"] = tools }
         request.httpBody = try JSONSerialization.data(withJSONObject: body)
@@ -2153,7 +2245,7 @@ final class BraveSearchToolExecutor: ToolExecutor, @unchecked Sendable {
     /// rate-limit) → the shared `rateLimited` signal. Descriptions can carry `<strong>`
     /// highlight tags → stripped via the shared HTML helpers.
     private func braveSearch(_ query: String, country: String? = nil) async -> (links: [ToolLink], rateLimited: Bool) {
-        var comps = URLComponents(string: "https://api.search.brave.com/res/v1/web/search")
+        var comps = URLComponents(string: WebSearchBackend.base("https://api.search.brave.com") + "/res/v1/web/search")
         // Brief AF2 (a) — top 5 (was 8): a smaller synthesis payload → faster first
         // token → the tunnel can't time the upstream out mid-answer.
         comps?.queryItems = [URLQueryItem(name: "q", value: query), URLQueryItem(name: "count", value: "5")]
@@ -2172,7 +2264,7 @@ final class BraveSearchToolExecutor: ToolExecutor, @unchecked Sendable {
     /// Brave News Search → articles with `age` / `page_age`. Any non-2xx other than 429 (e.g. a plan without news
     /// access) → empty, and the caller falls back to web search.
     private func braveNews(_ query: String, freshness: String, country: String? = nil) async -> (links: [ToolLink], rateLimited: Bool) {
-        var comps = URLComponents(string: "https://api.search.brave.com/res/v1/news/search")
+        var comps = URLComponents(string: WebSearchBackend.base("https://api.search.brave.com") + "/res/v1/news/search")
         comps?.queryItems = [URLQueryItem(name: "q", value: query), URLQueryItem(name: "count", value: "5"),
                              URLQueryItem(name: "freshness", value: freshness)]
             + (country.map { [URLQueryItem(name: "country", value: $0)] } ?? [])
@@ -2249,35 +2341,164 @@ final class BraveSearchToolExecutor: ToolExecutor, @unchecked Sendable {
     }
 }
 
-/// Selects the web-search backend BEHIND the seam: Brave when the user configured a key,
-/// else `WebSearchUnavailableExecutor` — web search REQUIRES a user-supplied Brave key,
-/// there is no keyless fallback (T's ruling 2026-08-14). The loop calls `make()` per turn
-/// and never knows which backend it got.
+/// live-28 (A2) — Tavily (free plan: 1,000 credits a month, no card; 1 credit per basic search) behind the SAME seam as
+/// Brave: the same per-turn budget and rate-limit signal, results mapped to the same `ToolLink` {title, url, snippet,
+/// published} the citation chips use. A news-shaped question asks Tavily's news topic (past week) first.
+final class TavilySearchToolExecutor: ToolExecutor, @unchecked Sendable {
+    private let apiKey: String
+    init(apiKey: String) { self.apiKey = apiKey }
+    private let maxSearchesPerTurn = 2
+    private var searchCount = 0
+    private var throttled = false
+
+    func execute(name: String, arguments: [String: Any]) async -> ToolResult {
+        switch name {
+        case AgentTools.webSearch:
+            let query = (arguments["query"] as? String ?? "").trimmingCharacters(in: .whitespacesAndNewlines)
+            guard !query.isEmpty else { return ToolResult(textForModel: "No query provided.", links: []) }
+            if throttled {
+                return ToolResult(textForModel: "Web search is temporarily rate-limited by the provider. Do NOT search again this turn — answer now from the results you already have; if you have none, tell the user web search is rate-limited right now and to try again shortly.", links: [], rateLimited: true)
+            }
+            if searchCount >= maxSearchesPerTurn {
+                return ToolResult(textForModel: "You have used your web search budget for this question (\(maxSearchesPerTurn) searches). Do NOT search again — answer now from the results you already have.", links: [])
+            }
+            searchCount += 1
+            var (links, rateLimited) = ([ToolLink](), false)
+            if WebGrounding.isFreshnessQuestion(query) { (links, rateLimited) = await search(query, news: true) }
+            if links.isEmpty && !rateLimited { (links, rateLimited) = await search(query, news: false) }
+            if rateLimited {
+                throttled = true
+                return ToolResult(textForModel: "Web search is temporarily rate-limited by the provider (too many requests in a short time). Do NOT keep retrying — answer from what you already have, or if you have nothing, tell the user web search is rate-limited right now and to try again shortly.", links: [], rateLimited: true)
+            }
+            guard !links.isEmpty else { return ToolResult(textForModel: "No results found for \"\(query)\".", links: []) }
+            let text = links.enumerated().map { i, l in "[\(i + 1)] \(l.title)\n\(l.url)\n\(l.snippet ?? "")" }.joined(separator: "\n\n")
+            return ToolResult(textForModel: text, links: links)
+        case AgentTools.fetchURL:
+            let raw = (arguments["url"] as? String ?? "").trimmingCharacters(in: .whitespacesAndNewlines)
+            guard let url = URL(string: raw), url.scheme?.hasPrefix("http") == true else {
+                return ToolResult(textForModel: "Invalid URL: \(raw)", links: [])
+            }
+            return ToolResult(textForModel: await WebReadability.fetchReadable(url), links: [])
+        default:
+            return ToolResult(textForModel: "Unknown tool: \(name)", links: [])
+        }
+    }
+
+    /// POST /search (Bearer key) → `[ToolLink]`. 429 / 432 (Tavily's plan limit) → the shared `rateLimited` signal.
+    private func search(_ query: String, news: Bool) async -> (links: [ToolLink], rateLimited: Bool) {
+        guard let url = URL(string: WebSearchBackend.base("https://api.tavily.com") + "/search") else { return ([], false) }
+        var req = URLRequest(url: url)
+        req.httpMethod = "POST"
+        req.setValue("application/json", forHTTPHeaderField: "Content-Type")
+        req.setValue("Bearer \(apiKey)", forHTTPHeaderField: "Authorization")
+        var body: [String: Any] = ["query": query, "max_results": 5, "search_depth": "basic", "topic": news ? "news" : "general"]
+        if news { body["days"] = 7 }
+        req.httpBody = try? JSONSerialization.data(withJSONObject: body)
+        guard let (data, resp) = try? await URLSession.shared.data(for: req) else { return ([], false) }
+        let status = (resp as? HTTPURLResponse)?.statusCode ?? -1
+        #if DEBUG
+        GauntletTap.shared.noteValue("tavily_\(news ? "news" : "web")", status)
+        #endif
+        if status == 429 || status == 432 { return ([], true) }
+        guard (200...299).contains(status) else { return ([], false) }
+        return (Self.parse(data), false)
+    }
+
+    /// Tavily JSON (`results[].{title,url,content,published_date}`) → `ToolLink`, the same caps as Brave (5, 300 chars).
+    static func parse(_ data: Data) -> [ToolLink] {
+        guard let json = try? JSONSerialization.jsonObject(with: data) as? [String: Any],
+              let results = json["results"] as? [[String: Any]] else { return [] }
+        return results.prefix(5).compactMap { r -> ToolLink? in
+            guard let title = r["title"] as? String, let urlStr = r["url"] as? String, !urlStr.isEmpty else { return nil }
+            let cleanTitle = WebReadability.decodeEntities(WebReadability.stripTags(title)).trimmingCharacters(in: .whitespacesAndNewlines)
+            guard !cleanTitle.isEmpty else { return nil }
+            let snippet = (r["content"] as? String).map { raw -> String in
+                let clean = WebReadability.decodeEntities(WebReadability.stripTags(raw)).trimmingCharacters(in: .whitespacesAndNewlines)
+                return clean.count > 300 ? String(clean.prefix(300)) + "…" : clean
+            }
+            return ToolLink(title: cleanTitle, url: urlStr, snippet: snippet, published: parseDate(r["published_date"] as? String))
+        }
+    }
+
+    /// Tavily dates come as RFC 1123 ("Mon, 13 Oct 2026 08:00:00 GMT") or ISO 8601.
+    static func parseDate(_ s: String?) -> Date? {
+        guard let s, !s.isEmpty else { return nil }
+        let iso = ISO8601DateFormatter()
+        if let d = iso.date(from: s) { return d }
+        iso.formatOptions = [.withInternetDateTime, .withFractionalSeconds]
+        if let d = iso.date(from: s) { return d }
+        let f = DateFormatter(); f.locale = Locale(identifier: "en_US_POSIX"); f.dateFormat = "EEE, dd MMM yyyy HH:mm:ss zzz"
+        if let d = f.date(from: s) { return d }
+        f.dateFormat = "yyyy-MM-dd"
+        return f.date(from: s)
+    }
+}
+
+/// Selects the web-search backend BEHIND the seam. The loop calls `make()` per turn and never knows which backend it
+/// got. live-28 (A2): Settings → Web search has a switch and a provider picker; each provider keeps its own Keychain key,
+/// and turning search off keeps both. Off — or on with no key for the chosen provider — is the no-key state: no search
+/// request at all (there is no keyless fallback; T's ruling 2026-08-14).
 enum WebSearchBackend {
     static let keychainKey = "braveSearchAPIKey"
+    static let tavilyKeychainKey = "tavilySearchAPIKey"
+    static let enabledKey = "webSearchEnabled"
+    static let providerKey = "webSearchProvider"
 
-    /// Brief AF1/AF3 — is a usable Brave key configured? The caller (LibrarianState)
-    /// reads this BEFORE composing a turn so it can withhold the tool entirely (declare
-    /// nothing, say nothing) when there's no key, rather than letting the model call a
-    /// tool that can only report "unavailable". Mirrors `make()`'s key resolution so the
-    /// two can't disagree (the DEBUG test-key overrides both).
-    static var hasKey: Bool {
+    enum Provider: String, CaseIterable, Sendable {
+        case tavily, brave
+        var label: String { self == .tavily ? "Tavily (free, no card)" : "Brave" }
+        var keyName: String { self == .tavily ? "Tavily" : "Brave Search" }
+        var keychainKey: String { self == .tavily ? WebSearchBackend.tavilyKeychainKey : WebSearchBackend.keychainKey }
+    }
+
+    /// The Web search switch (default on, so a key added before live-28 keeps working).
+    static var isEnabled: Bool {
         #if DEBUG
-        if let k = UserDefaults.standard.string(forKey: "BraveTestKey"), !k.isEmpty { return true }
+        if UserDefaults.standard.bool(forKey: "WebSearchSwitchIgnored") { return true }   // the RED row: main's rule (a key → search)
+        #endif
+        return UserDefaults.standard.object(forKey: enabledKey) == nil ? true : UserDefaults.standard.bool(forKey: enabledKey)
+    }
+    /// The chosen provider (default Brave: the only one before live-28).
+    static var provider: Provider { Provider(rawValue: UserDefaults.standard.string(forKey: providerKey) ?? "") ?? .brave }
+
+    /// A provider's key (DEBUG `-BraveTestKey` / `-TavilyTestKey` stand in for the Keychain).
+    static func key(_ p: Provider) -> String? {
+        #if DEBUG
+        if let k = UserDefaults.standard.string(forKey: p == .brave ? "BraveTestKey" : "TavilyTestKey"), !k.isEmpty { return k }
+        #endif
+        let k = (KeychainHelper.load(key: p.keychainKey) ?? "").trimmingCharacters(in: .whitespacesAndNewlines)
+        return k.isEmpty ? nil : k
+    }
+
+    /// Brief AF1/AF3 — can a General turn search? The caller (LibrarianState) reads this BEFORE composing a turn so it
+    /// can withhold the tool entirely when not. live-28 (A2): the switch is on AND the chosen provider has a key.
+    /// Mirrors `make()` so the two can't disagree.
+    static var hasKey: Bool {
+        guard isEnabled else { return false }
+        #if DEBUG
         if UserDefaults.standard.bool(forKey: "WebSearchMock") { return true }
         #endif
-        return !((KeychainHelper.load(key: keychainKey) ?? "").trimmingCharacters(in: .whitespacesAndNewlines).isEmpty)
+        return key(provider) != nil
     }
 
     static func make() -> ToolExecutor {
+        guard isEnabled else { return WebSearchUnavailableExecutor() }
         #if DEBUG
-        if let k = UserDefaults.standard.string(forKey: "BraveTestKey"), !k.isEmpty {
-            return BraveSearchToolExecutor(apiKey: k)
-        }
+        if provider == .brave, let k = UserDefaults.standard.string(forKey: "BraveTestKey"), !k.isEmpty { return BraveSearchToolExecutor(apiKey: k) }
         if UserDefaults.standard.bool(forKey: "WebSearchMock") { return WebSearchMockExecutor() }
         #endif
-        let key = (KeychainHelper.load(key: keychainKey) ?? "").trimmingCharacters(in: .whitespacesAndNewlines)
-        return key.isEmpty ? WebSearchUnavailableExecutor() : BraveSearchToolExecutor(apiKey: key)
+        switch provider {
+        case .brave: return key(.brave).map { BraveSearchToolExecutor(apiKey: $0) } ?? WebSearchUnavailableExecutor()
+        case .tavily: return key(.tavily).map { TavilySearchToolExecutor(apiKey: $0) } ?? WebSearchUnavailableExecutor()
+        }
+    }
+
+    /// A provider's API host. DEBUG `-WebSearchBaseURL http://127.0.0.1:<port>` points both at a stub (the switch rows).
+    static func base(_ real: String) -> String {
+        #if DEBUG
+        if let b = UserDefaults.standard.string(forKey: "WebSearchBaseURL"), !b.isEmpty { return b }
+        #endif
+        return real
     }
 }
 

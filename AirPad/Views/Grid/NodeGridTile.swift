@@ -202,7 +202,8 @@ struct NodeGridTile: View {
 
     private static let inkTitle = ink(cream, 0.98)
     private static let inkDeck  = ink(cream, 0.86)
-    private static let inkMeta  = ink(cream, 0.68)
+    private static let inkMetaOpacity: CGFloat = 0.68
+    private static let inkMeta  = AppearancePalette.cardMetaInk(inkMetaOpacity)   // live-27 (1): light reaches AA
     // Full-alpha base; the body multiplies by `t.hairlineOpacity`.
     private static let hairlineColor = ink(creamHair, 1.0)
 
@@ -295,6 +296,8 @@ struct NodeGridTile: View {
                 #if DEBUG
                 .opacity(UserDefaults.standard.bool(forKey: "CardHideText") ? 0 : 1)   // live-26 (3c): backdrop-only stills
                 #endif
+                // live-28 (A1) — light A / B: the band behind the dateline (under the text, kept in backdrop stills)
+                .backgroundPreferenceValue(DatelineRowKey.self) { DatelineBand(anchor: hasHero ? $0 : nil) }
         }
     }
 
@@ -365,17 +368,18 @@ struct NodeGridTile: View {
                     Text(category)
                         .font(tileFont(scaled(t.metaBaseSize)))
                         .italic()
-                        .foregroundColor(Self.inkMeta)
+                        .foregroundColor(AppearancePalette.cardDatelineInk(Self.inkMetaOpacity))
                         .lineLimit(1)
                 }
                 Spacer(minLength: 8)
                 Text(node.relativeTimestamp.uppercased())
                     .font(tileFont(scaled(t.metaBaseSize)))
                     .tracking(t.metaTracking)
-                    .foregroundColor(Self.inkMeta)
+                    .foregroundColor(AppearancePalette.cardDatelineInk(Self.inkMetaOpacity))
                     .lineLimit(1)
             }
             .shadow(color: Self.inkShadow.opacity(0.4), radius: 2, x: 0, y: 1)
+            .anchorPreference(key: DatelineRowKey.self, value: .bounds) { $0 }   // live-28 (A1): the band behind it
 
             Rectangle()
                 .fill(Self.hairlineColor.opacity(t.hairlineOpacity))
@@ -479,13 +483,14 @@ struct NodeGridTile: View {
         return VStack(alignment: .leading, spacing: 0) {
             HStack(alignment: .firstTextBaseline, spacing: 8) {
                 if let category = node.primaryTag {
-                    Text(category).font(tileFont(scaled(t.metaBaseSize))).italic().foregroundColor(Self.inkMeta).lineLimit(1)
+                    Text(category).font(tileFont(scaled(t.metaBaseSize))).italic().foregroundColor(AppearancePalette.cardDatelineInk(Self.inkMetaOpacity)).lineLimit(1)
                 }
                 Spacer(minLength: 8)
                 Text(node.relativeTimestamp.uppercased())
-                    .font(tileFont(scaled(t.metaBaseSize))).tracking(t.metaTracking).foregroundColor(Self.inkMeta).lineLimit(1)
+                    .font(tileFont(scaled(t.metaBaseSize))).tracking(t.metaTracking).foregroundColor(AppearancePalette.cardDatelineInk(Self.inkMetaOpacity)).lineLimit(1)
             }
             .shadow(color: Self.inkShadow.opacity(0.4), radius: 2, x: 0, y: 1)
+            .anchorPreference(key: DatelineRowKey.self, value: .bounds) { $0 }   // live-28 (A1): the band behind it
             Rectangle().fill(Self.hairlineColor.opacity(t.hairlineOpacity)).frame(height: 0.5)
                 .padding(.top, 8).padding(.bottom, t.spacingDatelineToTitle)
             Text(HyphenatedTextCache.attributed(displayTitle))

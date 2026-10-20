@@ -675,7 +675,9 @@ final class LibrarianState {
             guard toolCapable else {
                 // live-29 (B5) — Apple Intelligence + web: the APP searches (`AppleWebGrounding`) — the same rule, switch and
                 // "Web search is off" as the Host path; the on-device model only reads the numbered results.
-                if AppleWebGrounding.shouldSearch(query, searchIntent: Self.looksLikeSearchIntent(query)) {
+                // live-30 (A1) — a real follow-up question to an answer that searched is searched again (not "thanks").
+                let followUpRule = !AppleWebGrounding.live29 && AppleWebGrounding.lastAnswerSearched(chat) && AppleWebQuery.isFollowUpQuestion(query)
+                if AppleWebGrounding.shouldSearch(query, searchIntent: Self.looksLikeSearchIntent(query)) || followUpRule {
                     if WebSearchBackend.hasKey {
                         Self.logGeneralTurn(query: query, scope: selectedScope, tool: "app-apple-search", retry: false, store: store)
                         await appleWebSend(query: query, chat: chat)
@@ -835,20 +837,32 @@ final class LibrarianState {
 
     /// live-29 (B5) — one Apple Intelligence turn grounded in the active provider's top results (`AppleWebGrounding`).
     /// Nothing back (or throttled) → the plain turn; nothing back still counts as a search (never the training-data line).
+    /// live-30 (A1) — a follow-up searches a standalone query; the results are labelled as the app's search (never "you
+    /// provided"); the provider is asked for 8 so three remain without social hosts; the turn shows the search row.
     private func appleWebSend(query: String, chat: ChatSession) async {
+        let (searchQuery, how) = await AppleWebGrounding.searchQuery(for: query, chat: chat)
+        #if DEBUG
+        AppleWebGrounding.debugLastQuery = searchQuery
+        AppleWebGrounding.debugLastHow = how
+        NSLog("[AppleWeb] query (%@): %@", how, searchQuery)
+        #endif
         let result = await WebSearchBackend.make().execute(name: AgentTools.webSearch,
-                                                           arguments: ["query": AppleWebGrounding.query(for: query)])
-        let links = WebGrounding.isFreshnessQuestion(query) ? WebGrounding.rank(result.links) : result.links
+                                                           arguments: ["query": searchQuery, "count": AppleWebQuery.requestCount])
+        let links = (WebGrounding.isFreshnessQuestion(query) ? WebGrounding.rank(result.links) : result.links)
+            .filter { AppleWebGrounding.live29 || !AppleWebQuery.isSocial($0.url) }
+        let searched = !result.unavailable && !result.rateLimited
+        let row = ChatSession.ToolActivity(icon: "magnifyingglass", label: links.isEmpty ? "Searched the web — no results" : "Searched the web",
+                                           detail: searchQuery, links: links)
         guard !links.isEmpty else {
-            let searched = !result.unavailable && !result.rateLimited
             await chat.send(displayText: query, modelText: query, systemPrompt: privateSystemPrompt, citations: nil,
-                            generalKnowledge: true, webResults: searched ? 0 : nil)
+                            generalKnowledge: true, webResults: searched ? 0 : nil, searchActivity: searched && !AppleWebGrounding.live29 ? row : nil)
             return
         }
-        let pk = AppleWebGrounding.packet(question: query, links: links)
-        await chat.send(displayText: query, modelText: pk.text,
-                        systemPrompt: Self.plainVoice + " " + AppleWebGrounding.instructions + standingVoiceSuffix,
-                        citations: pk.citations, generalKnowledge: true, webResults: pk.citations.count)
+        let pk = AppleWebGrounding.packet(links: links)
+        let turn = AppleWebGrounding.turn(question: query, query: searchQuery, results: pk.results, voice: Self.plainVoice + standingVoiceSuffix)
+        await chat.send(displayText: query, modelText: turn.modelText, systemPrompt: turn.systemPrompt,
+                        citations: pk.citations, generalKnowledge: true, webResults: pk.citations.count,
+                        searchActivity: AppleWebGrounding.live29 ? nil : row)
     }
 
     /// Brief AI5 — the user tapped "Search the web instead" under an empty Library

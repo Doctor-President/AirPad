@@ -106,6 +106,17 @@ extension EnvironmentValues {
     }
 }
 
+/// live-30 (1) — the transcript's cells are hosting configurations, which have no view controller to present from, so a
+/// table in an answer asks the transcript to present its full-screen viewer. nil (the default) = present it here.
+struct ChatTablePresenter { let open: (ChatTable) -> Void }
+private struct ChatTablePresenterKey: EnvironmentKey { static let defaultValue: ChatTablePresenter? = nil }
+extension EnvironmentValues {
+    var chatTablePresenter: ChatTablePresenter? {
+        get { self[ChatTablePresenterKey.self] }
+        set { self[ChatTablePresenterKey.self] = newValue }
+    }
+}
+
 struct ChatTableView: View {
     let table: ChatTable
     var maxHeight: CGFloat? = 380
@@ -117,6 +128,8 @@ struct ChatTableView: View {
     @State private var showFull = false
     /// live-27 (4c) — the answer's trailing gutter (the transcript keeps 40 pt clear of prose); the grid reclaims it.
     @Environment(\.chatAnswerGutter) private var gutter
+    @Environment(\.chatTablePresenter) private var presenter
+    private func openFull() { if let presenter { presenter.open(table) } else { showFull = true } }
 
     static let cellSize: CGFloat = 16
     /// live-27 (4c) — which sides fade: the side(s) the grid can still scroll to.
@@ -139,7 +152,7 @@ struct ChatTableView: View {
         // live-28 (A4) — the expand control sits on the corner just ABOVE the grid, so it never covers a header cell.
         VStack(alignment: .trailing, spacing: 4) {
             if opensFullScreen {
-                Button { showFull = true } label: {
+                Button { openFull() } label: {
                     Image(systemName: "arrow.up.left.and.arrow.down.right")
                         .font(.system(size: 12, weight: .semibold))
                         .foregroundStyle(ChatTypography.bodyText)
@@ -189,8 +202,8 @@ struct ChatTableView: View {
             .frame(maxWidth: .infinity, alignment: .leading)
             .frame(height: maxHeight.map { min(total + 1, $0) })
             .contentShape(Rectangle())
-            .onTapGesture { if opensFullScreen { showFull = true } }
-            .accessibilityAction(named: "Open the table full screen") { if opensFullScreen { showFull = true } }
+            .onTapGesture { if opensFullScreen { openFull() } }
+            .accessibilityAction(named: "Open the table full screen") { if opensFullScreen { openFull() } }
             .accessibilityIdentifier("chatTable")
         }
         .padding(.trailing, -gutter)

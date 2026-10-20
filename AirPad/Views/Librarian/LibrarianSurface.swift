@@ -1001,6 +1001,7 @@ struct LibrarianSurface: View {
                         settingsPresentation = .at(.webSearch)
                     },
                     onSwitchModel: { showModelPicker = true },   // live-23 (5b) — a decline's model switch
+                    hiddenFromAccessibility: !panelModel.contentRevealed,   // live-30 — faded out at peek
                     topFadeFraction: cctTopFade,
                     bottomFadeFraction: cctBottomFade,
                     onScrollTopOffset: {

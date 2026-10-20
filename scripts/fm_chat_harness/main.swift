@@ -35,6 +35,7 @@ func genericResults(_ q: String) -> [(String, String)] {
             ("Explainer: \(subject.prefix(50))", "Answers to common questions about \(subject.lowercased()), including recent developments and what experts say about them."),
             ("\(subject.prefix(40)): what to know", "A short guide covering the basics, the numbers people ask about most, and where to read more.")]
 }
+let voice = "You're a thoughtful, knowledgeable friend to the person you're talking with — warm, curious, plain-spoken and to the point."
 let newsConvos: [(String, [(String, String)])] = [
     ("Who won the election in Valdoria?", [("Valdoria election: opposition claims victory amid protests", "Thousands marched in the capital on Sunday after the electoral commission declared the governing party the winner with 51% of the vote. Police used tear gas on crowds near parliament; two people were reported killed and dozens arrested."),
         ("Valdoria's commission certifies result", "Observers cited irregularities in three provinces but said they were unlikely to change the outcome."),
@@ -109,7 +110,13 @@ func ask(_ mode: String, history: [(String, String, Bool)], question: String) as
         if mode != "before" && declined { continue }            // AFTER: a declined turn never goes back
         msgs.append(["role": "user", "content": q]); msgs.append(["role": "assistant", "content": a])
     }
-    if mode == "web" {
+    if mode == "webturn" || mode == "webturnnews" {
+        // live-30 (A1) variant B — the results in the turn, labelled as the app's search the user hasn't seen.
+        let res = mode == "webturn" ? genericResults(question) : (newsConvos.first(where: { $0.0 == question })?.1 ?? [])
+        msgs[0] = ["role": "system", "content": voice + " " + AppleWebQuery.turnInstructions]
+        msgs.append(["role": "user", "content": AppleWebQuery.turnPacket(day: "20 October 2026", query: question, question: question,
+            results: res.prefix(3).enumerated().map { i, r in (r.0, "1\(i + 6) October 2026", String(r.1.prefix(300))) })])
+    } else if mode == "web" {
         msgs.append(["role": "user", "content": webPacket(question, genericResults(question))])
     } else if mode == "webnews", let n = newsConvos.first(where: { $0.0 == question }) {
         msgs.append(["role": "user", "content": webPacket(question, n.1)])
@@ -135,17 +142,18 @@ func ask(_ mode: String, history: [(String, String, Bool)], question: String) as
     static func main() async {
         let a = CommandLine.arguments
         let pick = a.count > 1 ? a[1] : "both"
-        let modes = pick == "web-ab" ? ["general3", "web", "webnews"] : pick == "both" ? ["before", "after"] : pick == "dated-ab" ? ["after", "dated"] : pick == "general-ab" ? ["dated", "general2"] : pick == "general3-ab" ? ["dated", "general3"] : [pick]
+        if pick == "followup" { await followUps(runs: a.count > 2 ? Int(a[2]) ?? 1 : 1); return }
+        let modes = pick == "web-ab" ? ["general3", "web", "webnews"] : pick == "webturn-ab" ? ["webturn", "webturnnews"] : pick == "both" ? ["before", "after"] : pick == "dated-ab" ? ["after", "dated"] : pick == "general-ab" ? ["dated", "general2"] : pick == "general3-ab" ? ["dated", "general3"] : [pick]
         let runs = a.count > 2 ? Int(a[2]) ?? 1 : 1
         guard SystemLanguageModel.default.isAvailable else { print("Apple Intelligence unavailable"); exit(3) }
         let rows = AppleChat.selfTestRows()
         print("AppleChat rows: \(rows.filter(\.ok).count)/\(rows.count)" + rows.filter { !$0.ok }.map { " FAIL \($0.name)" }.joined())
         for mode in modes {
             var answered = 0, refused = 0, errors = 0, total = 0
-            var stuck = 0, followups = 0, caveats = 0, claims = 0, cited = 0
+            var stuck = 0, followups = 0, caveats = 0, claims = 0, cited = 0, provided = 0
             print("\n=== \(mode.uppercased()) · \(runs) run(s)")
             for run in 1...runs {
-                for c in (mode == "webnews" ? newsConvos.map { Convo(name: "news: " + $0.0, turns: [$0.0]) } : convos) {
+                for c in (mode.hasPrefix("webnews") || mode == "webturnnews" ? newsConvos.map { Convo(name: "news: " + $0.0, turns: [$0.0]) } : convos) {
                     var history: [(String, String, Bool)] = []
                     var prevRefused = false
                     for (i, q) in c.turns.enumerated() {
@@ -168,6 +176,7 @@ func ask(_ mode: String, history: [(String, String, Bool)], question: String) as
                         let claim = text.range(of: #"((your|their|the user's) (entries|entry|notes|library|files|records))|based on your|(latest|current|up-to-date|real-time|live) data"#, options: [.regularExpression, .caseInsensitive]) != nil
                         if claim { claims += 1 }
                         if mode.hasPrefix("web"), text.range(of: #"\[\d\]"#, options: .regularExpression) != nil { cited += 1 }
+                        if mode.hasPrefix("web"), saysProvided(text) { provided += 1 }
                         print("run \(run) · \(c.name) · turn \(i + 1): \(o.rawValue)\(claim ? " · CLAIM" : "") — \(snip)")
                     }
                 }
@@ -176,7 +185,102 @@ func ask(_ mode: String, history: [(String, String, Bool)], question: String) as
                          mode, answered, refused, errors, total, Double(refused + errors) / Double(max(total, 1)) * 100, stuck, followups))
             print("CAVEATS \(mode): \(caveats) of \(total) replies say the information may be out of date")
             print("CLAIMS \(mode): \(claims) of \(total) replies claim the user's entries/notes or current/latest data")
-            if mode.hasPrefix("web") { print("CITED \(mode): \(cited) of \(total) replies cite a result [n]") }
+            if mode.hasPrefix("web") { print("CITED \(mode): \(cited) of \(total) replies cite a result [n] · \"you provided\": \(provided)") }
         }
     }
+}
+
+// MARK: - live-30 (A1) — follow-ups: the standalone query rewrite, then the answer, on synthetic two-turn chats
+
+func saysProvided(_ t: String) -> Bool {
+    t.range(of: #"\byou(('|’)ve| have)? (provided|shared|given|supplied|sent)\b|\byour (sources|results|search results|links)\b"#,
+            options: [.regularExpression, .caseInsensitive]) != nil
+}
+/// Longest run of consecutive words the answer shares with any snippet (copying, not paraphrase).
+func longestCopiedRun(_ answer: String, _ snippets: [String]) -> Int {
+    func words(_ s: String) -> [String] { s.lowercased().split(whereSeparator: { !$0.isLetter && !$0.isNumber }).map(String.init) }
+    let a = words(answer); var best = 0
+    for sn in snippets {
+        let b = words(sn); guard !a.isEmpty, !b.isEmpty else { continue }
+        var prev = [Int](repeating: 0, count: b.count + 1)
+        for i in 1...a.count {
+            var cur = [Int](repeating: 0, count: b.count + 1)
+            for j in 1...b.count where a[i - 1] == b[j - 1] { cur[j] = prev[j - 1] + 1; best = max(best, cur[j]) }
+            prev = cur
+        }
+    }
+    return best
+}
+func currentState(_ q: String) -> Bool { q.range(of: #"\b(now|current(ly)?|latest|still|today|nowadays)\b"#, options: [.regularExpression, .caseInsensitive]) != nil }
+
+/// Ten synthetic chats: a current-events or history question, then a vague follow-up. `keys` = what an on-topic query names.
+let followUpChats: [(q1: String, f: String, keys: [String])] = [
+    ("What's the latest on the Artemis II mission?", "So where does it stand now?", ["artemis"]),
+    ("What happened at the Battle of Hastings?", "What happened next?", ["hastings", "norman", "william"]),
+    ("Who played in the last Champions League final?", "Who won?", ["champions league", "final"]),
+    ("What are the current Panama Canal water restrictions?", "So where does it stand now?", ["panama"]),
+    ("Tell me about the Apollo 13 mission.", "What happened next?", ["apollo"]),
+    ("What's going on with the Voyager 1 probe?", "Is it still working?", ["voyager"]),
+    ("What was the Treaty of Versailles?", "How did Germany react?", ["versailles", "germany", "german"]),
+    ("Who is playing in this year's World Chess Championship match?", "Who won?", ["chess"]),
+    ("What's the latest on the James Webb Space Telescope?", "Anything new since then?", ["webb", "jwst"]),
+    ("What caused the 2008 financial crisis?", "How did governments respond?", ["2008", "financial crisis", "crisis", "bailout", "recession"]),
+]
+
+func rewrite(history: [(String, String)], latest: String) async -> (query: String?, raw: String, refused: Bool, timedOut: Bool) {
+    let session = LanguageModelSession(instructions: AppleWebQuery.rewriteInstructions)
+    let prompt = AppleWebQuery.rewritePrompt(turns: history.map { (question: $0.0, answer: $0.1) }, latest: latest)
+    let work = Task { try await session.respond(to: prompt, options: GenerationOptions(maximumResponseTokens: 40)).content }
+    let timer = Task { try? await Task.sleep(for: .seconds(6)); work.cancel() }
+    defer { timer.cancel() }
+    do {
+        let raw = try await work.value
+        return (AppleWebQuery.cleanRewrite(raw), raw, AppleChat.isRefusalText(raw), false)
+    } catch is CancellationError { return (nil, "", false, true) }
+    catch { return (nil, "\(error)", true, false) }
+}
+
+func answer(history: [(String, String)], question: String, query: String) async -> (Outcome, String, [String]) {
+    let res = genericResults(query)
+    // live-30 (A1) — the app's framing (variant C): the results in the turn, labelled as the app's search.
+    var msgs: [[String: String]] = [["role": "system", "content": voice + " " + AppleWebQuery.turnInstructions]]
+    for (q, a) in history { msgs.append(["role": "user", "content": q]); msgs.append(["role": "assistant", "content": a]) }
+    msgs.append(["role": "user", "content": AppleWebQuery.turnPacket(day: "20 October 2026", query: query, question: question,
+        results: res.prefix(3).enumerated().map { i, r in (r.0, "1\(i + 6) October 2026", String(r.1.prefix(300))) })])
+    let r = AppleChat.request(msgs)
+    do {
+        let text = try await AppleChat.session(r).respond(to: r.prompt).content
+        return (AppleChat.isRefusalText(text) ? .refused : .answered, text, res.map { String($0.1.prefix(300)) })
+    } catch { return (.error, "\(type(of: error))", []) }
+}
+
+func followUps(runs: Int) async {
+    print("\n=== FOLLOW-UP · \(followUpChats.count) two-turn chats · \(runs) run(s)")
+    var allProvided = 0, allRefused = 0, allErrors = 0, allAnswers = 0, longest = 0
+    for run in 1...runs {
+        var onTopic = 0, fallbacks = 0, rewriteRefusals = 0, timeouts = 0
+        for c in followUpChats {
+            let q1Query = AppleWebQuery.applyYearRule(c.q1, userText: c.q1, currentState: currentState(c.q1))
+            let (o1, a1, s1) = await answer(history: [], question: c.q1, query: q1Query)
+            let rw = await rewrite(history: [(c.q1, a1)], latest: c.f)
+            var query: String
+            if let q = rw.query { query = q } else { fallbacks += 1; query = AppleWebQuery.fallbackQuery(previousQuery: q1Query, question: c.f) }
+            if rw.refused { rewriteRefusals += 1 }
+            if rw.timedOut { timeouts += 1 }
+            query = AppleWebQuery.applyYearRule(query, userText: c.q1 + " " + c.f, currentState: currentState(c.f) || currentState(query))
+            let on = c.keys.contains { query.lowercased().contains($0) }
+            if on { onTopic += 1 }
+            let (o2, a2, s2) = await answer(history: [(c.q1, a1)], question: c.f, query: query)
+            for (o, t, sn) in [(o1, a1, s1), (o2, a2, s2)] {
+                allAnswers += 1
+                if o == .refused { allRefused += 1 }
+                if o == .error { allErrors += 1 }
+                if saysProvided(t) { allProvided += 1; print("  PROVIDED: \(t.prefix(160))") }
+                longest = max(longest, longestCopiedRun(t, sn))
+            }
+            print("run \(run) · \(c.f) ← \(c.q1.prefix(50)) → query \"\(query)\" \(on ? "ON-TOPIC" : "OFF-TOPIC")\(rw.query == nil ? " (fallback; raw: \(rw.raw.prefix(60)))" : "") · answers \(o1.rawValue)/\(o2.rawValue) — \(a2.replacingOccurrences(of: "\n", with: " ").prefix(100))")
+        }
+        print("RUN \(run): follow-up queries on topic \(onTopic)/\(followUpChats.count) · rewrite fallbacks \(fallbacks) (refused \(rewriteRefusals), timed out \(timeouts))")
+    }
+    print("SUMMARY FOLLOW-UP: answers \(allAnswers) · refused \(allRefused) · errors \(allErrors) · \"you provided\" \(allProvided) · longest run copied from a snippet \(longest) words")
 }

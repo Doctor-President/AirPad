@@ -12,8 +12,9 @@ A=${0:A:h:h}; OUT=${1:-$A/build/tuner-gate}; mkdir -p $OUT
 # live-24: + the graded-tint section and the reading veil (LibrarianGlass types ship; their tuner does not). Probes must be > 15 bytes: Swift keeps shorter strings inline in code, invisible to `strings`.
 PROBES=("Appearance tuner" "appearanceTuning.v1" "AppearanceTunerWindow" "Frost 50% + glass" "Before = thin material" "Fade length (of the hero zone)" "tunerCaptureControls" "tunerCardContent" "Graded presets (all three pills + the panel)" "The Ask bar mirrors the search pill" "Reading veil (behind the transcript)" "Rim while answering" "AppearanceTunerOpenSection" "tunerFloatingButtons" "tunerFadeMatchFluted" "Fade into body carries it down" "dateline; above it, your fade alone" "chat scroll trace (live-29 C1)")
 # live-28 — DEBUG-only hooks must be in NEITHER Release build; the shipped caps line must be in BOTH (the positive control).
-DEBUG_PROBES=("AnswerWallClockSec" "WebSearchSwitchIgnored" "WebSearchBaseURL" "[AnswerCapSelfTest]" "[TitleCaseSelfTest]")
-SHIPPED_PROBES=("Stopped: the answer ran too long" "Tavily (free, no card)" "Web search is off. [Turn it on")
+# live-30 — + the (A1) RED switch and the transcript open trace (DEBUG-only); the (A1) framing line ships in both.
+DEBUG_PROBES=("AnswerWallClockSec" "WebSearchSwitchIgnored" "WebSearchBaseURL" "[AnswerCapSelfTest]" "[TitleCaseSelfTest]" "AppleWebFollowUpOff" "TranscriptOpenTrace")
+SHIPPED_PROBES=("Stopped: the answer ran too long" "Tavily (free, no card)" "Web search is off. [Turn it on" "they come from the app's search, not from the user")
 export DEVELOPER_DIR=/Applications/Xcode.app/Contents/Developer
 fail=0
 for mode in testflight appstore; do

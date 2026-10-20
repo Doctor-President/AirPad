@@ -13,12 +13,12 @@ import UIKit   // UIPasteboard — footer copy + user-bubble long-press copy
 ///  1. STREAMING-TAIL ISOLATION — `StreamingTail` is the SOLE reader of
 ///     `session.streamingText`. This body depends on `session.messages` and
 ///     `session.isStreaming` (a Bool) but NOT `streamingText`, so a per-token
-///     mutation re-renders only the tail child, never the ForEach of settled
-///     bubbles. Streaming stays O(1) per token, not O(transcript length).
-///  2. READ-FROM-TOP SCROLL — a new turn reveals the query + start of the
-///     answer near the TOP; the tail is followed to the bottom ONLY while the
-///     user is pinned there. Scrolling up cancels follow; returning re-arms it.
-///     Turn commit never yanks the viewport.
+///     mutation re-renders only the tail cell, never the settled rows.
+///     Streaming stays O(1) per token, not O(transcript length).
+///  2. THE END IS A STATE (live-30) — the transcript is a `UICollectionView`
+///     (`ChatTranscriptCollection`) whose layout keeps the reader at the end
+///     through every height change while they are there, and keeps their place
+///     when they have scrolled up (a new turn never yanks them down).
 struct ChatTranscript: View {
 
     let session: ChatSession
@@ -40,6 +40,9 @@ struct ChatTranscript: View {
     var onOpenWebSearchSettings: (() -> Void)? = nil
     /// live-23 (5b) — a declined turn's "Switch model" opens the model picker (the Librarian's pill sheet).
     var onSwitchModel: (() -> Void)? = nil
+    /// live-30 — the host shows the transcript but it isn't on screen (the Librarian keeps it mounted at peek, faded
+    /// to 0): its UIKit cells leave the accessibility tree, as the SwiftUI rows did when faded out.
+    var hiddenFromAccessibility: Bool = false
     /// #1-followup (chat chrome reclaim) — scroll-edge fade lengths as fractions
     /// of the transcript height. Bottom defaults to the shipped 0.06 (the old
     /// hardcoded 0.94 stop); top defaults to 0 (no top fade) so other hosts
@@ -57,30 +60,21 @@ struct ChatTranscript: View {
     var leadingControl: AnyView? = nil
     var onSend: ((String) async -> Void)? = nil
 
-    @State private var speech = SpeechSynthesisService.shared
     @State private var input: String = ""
     @FocusState private var inputFocused: Bool
-    /// Ambient URL opener — web-citation chips (real scraped URLs) open through this.
-    /// (Corpus chips navigate to a node via `onOpenNode` instead.)
-    @Environment(\.openURL) private var openURL
-    /// Brief BN5 — the app-wide Font (serif/SF face), so the read/skim receipt line follows the Font.
+    /// Brief BN5 — the app-wide Font; the cells get it through `rowContext` (a cell has no environment of its own).
     @Environment(\.appBodyFont) private var appFont
-    /// Live "is the user reading at/near the bottom?" — gates the stream-follow.
-    /// Assigned ONLY on change (below) so scroll geometry callbacks don't churn
-    /// this body (and re-parse settled bubbles) on every frame.
+    /// Is the reader at (or within 80 pt of) the end? Drives the ↓ arrow; the collection view reports it on change.
     @State private var isPinnedToBottom = true
-    /// Per-message copy confirmation — the footer copy icon shows a checkmark
-    /// for ~1.2s on the message whose id matches, then clears (mirrors
-    /// SolarFlareTuningPanel.justCopied).
-    @State private var copiedMessageID: UUID?
-    /// Piece 1 — assistant turns whose citation footer is expanded. Collapsed by
-    /// default (Claude-style); tapping toggles. No navigation yet (Piece 2).
-    @State private var expandedCitations: Set<UUID> = []
+    /// live-30 (1) — what every cell shares: the host's actions, per-turn UI state (sources expanded, copied), the Font.
+    @State private var rowContext = TranscriptRowContext()
+    @State private var scroller = TranscriptScroller()
+    /// A table's full-screen viewer, presented here for the cell that asked (`ChatTablePresenter`).
+    @State private var presentedTable: PresentedTable?
     /// Phase 2 — the model-picker sheet (opened by tapping the Model pill).
     @State private var showPicker = false
 
-    private static let tailAnchor = "__chat_transcript_tail__"
-    private static let bottomFollowThreshold: CGFloat = 80
+    private struct PresentedTable: Identifiable { let id = UUID(); let table: ChatTable }
 
     var body: some View {
         #if DEBUG
@@ -125,6 +119,7 @@ struct ChatTranscript: View {
             input = ""
             isPinnedToBottom = true
         }
+        .fullScreenCover(item: $presentedTable) { ChatTableFullScreen(table: $0.table) }
         // ★ BUG 36 Pillar 2 — foreground re-attach for EVERY chat host. This is the
         // shared component behind both ChatView and the Librarian's "Ask" panel; the
         // Librarian is a FloatingPanel-hosted VC where `@Environment(\.scenePhase)` does
@@ -139,454 +134,121 @@ struct ChatTranscript: View {
     }
 
     #if DEBUG
-    /// Measurement only (perf A/B + freeze repro): `-FreezeLazyStack YES` = the pre-fix all-lazy stack;
-    /// `-FreezeEagerAll YES` = every row eager (the first fix, which failed the scroll perf gate).
-    private static let freezeLazyStack = UserDefaults.standard.bool(forKey: "FreezeLazyStack")
-    private static let freezeEagerAll = UserDefaults.standard.bool(forKey: "FreezeEagerAll")
-    /// Hypothesis H3 — the streaming tail is the oscillating lazy row. Measurement only.
+    /// Hypothesis H3 (2026-10-05 freeze lab) — no streaming tail. Measurement only.
     private static let freezeNoTail = UserDefaults.standard.bool(forKey: "FreezeNoTail")
-    /// live-29 (C1) — per-change scroll geometry to stdout (see the transcript's geometry observer).
-    private static let scrollGeoLog = UserDefaults.standard.bool(forKey: "ScrollGeoLog")
+    /// live-29 (C1) — per-change scroll geometry to stdout (`ChatTranscriptCollection` prints it).
+    static let scrollGeoLog = UserDefaults.standard.bool(forKey: "ScrollGeoLog")
+    /// live-30 — `-TranscriptOpenTrace YES`: what the first open of a long chat spends its time on (stdout).
+    static let openTrace = UserDefaults.standard.bool(forKey: "TranscriptOpenTrace")
     #else
     private static let freezeNoTail = false
     #endif
 
-    /// Index of the LATEST exchange: the last user message onward (its answer, plus the live Thought
-    /// process / streaming tail while it streams).
-    private var liveStart: Int {
-        session.messages.lastIndex(where: { $0.role == .user }) ?? session.messages.count
+    /// The transcript's rows, oldest first: every message, then — while an answer streams — the live Thought process
+    /// and the streaming answer (Brief AE2: the thought process heads the reply).
+    private var items: [TranscriptItem] {
+        var out = session.messages.map { TranscriptItem.message($0.id) }
+        if session.isStreaming && !session.streamingThinking.isEmpty { out.append(.thought) }
+        if session.isStreaming && !Self.freezeNoTail { out.append(.tail) }
+        return out
     }
 
-    /// FREEZE FIX (V1 mitigation, CH Session 2) — a chat of up to `eagerAllLimit` messages renders
-    /// EVERY row eagerly, so it has no lazy row at all and the lazy-stack layout loop cannot happen. Every
-    /// freeze observed so far was in such a chat: keyboard dismiss after the 5th turn (10 messages), the
-    /// turn-5 web chat (~14), the follow-up after a short answer. A longer chat keeps option 1 (lazy history
-    /// + eager latest exchange), which passed the 200-message scroll gate.
-    /// Measured and rejected (Session 2): "the newest 20 eager, the rest lazy" put the lazy/eager boundary
-    /// MID-content, and a fling through it looped (main thread busy 30 s, 2 of 2 runs, content 60,336 ↔
-    /// 60,436 pt at the boundary). The durable fix is the UIKit transcript (1.1).
-    /// DEBUG `-TranscriptEagerAll 0` = the old split everywhere (the A/B baseline).
-    #if DEBUG
-    private static let eagerAllLimit: Int = {
-        let d = UserDefaults.standard
-        return d.object(forKey: "TranscriptEagerAll") == nil ? 24 : max(0, d.integer(forKey: "TranscriptEagerAll"))
-    }()
-    #else
-    private static let eagerAllLimit = 24
-    #endif
-
-    /// Where the lazy history ends: nowhere in a short chat (all eager), else the latest exchange.
-    private var eagerStart: Int {
-        session.messages.count <= Self.eagerAllLimit ? 0 : liveStart
-    }
-
-    /// The transcript rows (Brief CH follow-up freeze, 2026-10-04). Settled HISTORY stays in a
-    /// `LazyVStack` (a long chat must scroll at full frame rate — an all-eager stack measured ~30 fps
-    /// flings on a 100-turn chat); the LATEST exchange renders in an eager `VStack` below it. Why: on
-    /// iOS 26+ a lazy stack whose trailing row (the 18 pt streaming tail, or the just-sent user bubble)
-    /// sits at the materialisation edge never reaches a layout fixed point — measured it shrinks the
-    /// stack, estimated (~ the average row height) it grows it, so materialisation flips every pass and
-    /// the main thread spins forever (Apple Forums 805306). The rows that appear and change size during a
-    /// turn are therefore never estimated.
-    @ViewBuilder
-    private var rows: some View {
-        #if DEBUG
-        if Self.freezeLazyStack {
-            LazyVStack(alignment: .leading, spacing: 18) { historyRows(0..<session.messages.count); liveTail }
-                .padding(.horizontal, 16).padding(.top, 16).padding(.bottom, 24)
-        } else if Self.freezeEagerAll {
-            VStack(alignment: .leading, spacing: 18) { historyRows(0..<session.messages.count); liveTail }
-                .padding(.horizontal, 16).padding(.top, 16).padding(.bottom, 24)
-        } else {
-            splitRows
-        }
-        #else
-        splitRows
-        #endif
-    }
-
-    @ViewBuilder
-    private var splitRows: some View {
-        let split = eagerStart
-        VStack(alignment: .leading, spacing: 18) {
-            if split > 0 {
-                LazyVStack(alignment: .leading, spacing: 18) { historyRows(0..<split) }
-            }
-            historyRows(split..<session.messages.count)
-            liveTail
-        }
-        .padding(.horizontal, 16).padding(.top, 16).padding(.bottom, 24)
-    }
-
-    @ViewBuilder
-    private func historyRows(_ range: Range<Int>) -> some View {
+    /// The cells read these; refreshed in place each render (closures and the Font can change with the host).
+    private func refreshRowContext() {
+        rowContext.onOpenNode = onOpenNode
+        rowContext.onOpenWebSearchSettings = onOpenWebSearchSettings
+        rowContext.onSwitchModel = onSwitchModel
+        rowContext.onOpenTable = { presentedTable = PresentedTable(table: $0) }
+        if rowContext.appFont != appFont { rowContext.appFont = appFont }
         let switches = ChatProvenance.switches(in: session.messages)   // live-27 (4) — O(n), no I/O
-        ForEach(session.messages[range]) { message in
-            if let s = switches[message.id] { modelSwitchDivider(s) }
-            bubble(for: message)
-                .id(message.id)
-                #if DEBUG
-                .freezeRowProbe("row.\(message.role)")
-                #endif
-        }
-    }
-
-    @ViewBuilder
-    private var liveTail: some View {
-        if session.isStreaming && !session.streamingThinking.isEmpty {
-            // Brief AE2 — while streaming, the thought process renders at the
-            // HEAD of the reply (before the answer tail). On completion it
-            // moves INTO the committed assistant bubble's top (same position),
-            // so it never jumps below the answer/sources.
-            ThoughtProcessBlock(session: session)
-                .id("__thought_process__")
-        }
-        if session.isStreaming && !Self.freezeNoTail {
-            // Isolated: the ONLY reader of streamingText. Its own id is the ↓
-            // jump anchor (Brief AE1 — no automatic follow-scroll).
-            StreamingTail(session: session)
-                .id(Self.tailAnchor)
-                #if DEBUG
-                .freezeRowProbe("row.tail")
-                #endif
-        }
+        if rowContext.switches != switches { rowContext.switches = switches }
     }
 
     // MARK: - Transcript
 
+    /// live-30 (1) — the UIKit transcript (`ChatTranscriptCollection`): the end is a state the layout keeps, so opening a
+    /// chat, ↓, a drag to the end, a streaming answer and a table appearing all stay on the last line. Asking while
+    /// scrolled up doesn't move the reader; coming back to the end follows the answer again.
     @ViewBuilder
     private var transcript: some View {
-        ScrollViewReader { proxy in
-            ScrollView {
-                rows
-            }
-            #if DEBUG
-            // Perf gate: the first committed layout of the transcript (one runloop after mount).
-            .onAppear { DispatchQueue.main.async { GauntletMetrics.shared.transcriptLaidOut(messages: session.messages.count) } }
-            .overlay(alignment: .topLeading) {
-                if GauntletTap.shared.isOn {
-                    GauntletMetricsLabels()   // its own view: a label update never re-renders the transcript
-                }
-            }
-            #endif
-            // Tap-to-dismiss the keyboard without swallowing scroll / selection.
-            .simultaneousGesture(
-                TapGesture().onEnded { inputFocused = false }
-            )
-            .scrollDismissesKeyboard(.interactively)
-            // Live bottom-pinned tracking. Assign only on change so a pinned
-            // stream (whose per-token scrollTo keeps distance ≈ 0) never
-            // invalidates this body — the ForEach of settled bubbles stays put.
-            .onScrollGeometryChange(for: CGFloat.self) { geo in
+        let _ = refreshRowContext()
+        ChatTranscriptCollection(
+            session: session,
+            items: items,
+            context: rowContext,
+            scroller: scroller,
+            onAtEndChange: { atEnd in
                 #if DEBUG
-                // live-29 (C1) — `-ScrollGeoLog YES -StdoutToFile`: the scroll view's content height / offset / insets
-                // every time they change (to see which element changes the height after layout, and where a jump lands).
-                if Self.scrollGeoLog {
-                    print(String(format: "[ScrollGeo] t=%.3f content=%.1f container=%.1f offY=%.1f visMaxY=%.1f insetT=%.1f insetB=%.1f n=%d",
-                                 Date().timeIntervalSince1970, geo.contentSize.height, geo.containerSize.height, geo.contentOffset.y,
-                                 geo.visibleRect.maxY, geo.contentInsets.top, geo.contentInsets.bottom, session.messages.count))
-                }
-                FreezeProbe.hit("geo.transform", "content=\(Int(geo.contentSize.height)) container=\(Int(geo.containerSize.height)) offY=\(Int(geo.contentOffset.y)) visMaxY=\(Int(geo.visibleRect.maxY)) insetT=\(Int(geo.contentInsets.top)) insetB=\(Int(geo.contentInsets.bottom))")
-                StreamGeoRecorder.shared.note(content: geo.contentSize.height, offset: geo.contentOffset.y, streaming: session.isStreaming)
+                FreezeProbe.hit("transcript.atEnd", atEnd ? 1 : 0)
                 #endif
-                #if DEBUG || TESTFLIGHT
-                ChatScrollTrace.shared.geometry(content: geo.contentSize.height, container: geo.containerSize.height,
-                                                offY: geo.contentOffset.y, insetB: geo.contentInsets.bottom,
-                                                messages: session.messages.count)   // live-29 (C1): the device trace
-                #endif
-                return geo.contentSize.height - geo.visibleRect.maxY
-            } action: { _, distanceFromBottom in
-                #if DEBUG
-                FreezeProbe.hit("transcript.distFromBottom", Int(distanceFromBottom))
-                #endif
-                let pinned = distanceFromBottom <= Self.bottomFollowThreshold
-                // Keep the guard — it stops per-frame body churn during a
-                // pinned stream. Animate so the scroll-to-latest arrow fades
-                // in/out rather than snapping.
-                if pinned != isPinnedToBottom {
-                    withAnimation(.easeOut(duration: 0.18)) { isPinnedToBottom = pinned }
-                }
-            }
-            // #1-followup — report scroll distance from the TOP so the host can
-            // drive a scroll-collapsing title. Only wired when a host opts in.
-            .onScrollGeometryChange(for: CGFloat.self) { geo in
-                geo.visibleRect.minY
-            } action: { _, topOffset in
-                #if DEBUG
-                FreezeProbe.hit("transcript.topOffset", Int(topOffset))
-                #endif
-                onScrollTopOffset?(topOffset)
-            }
-            .onChange(of: session.messages.count) { oldCount, newCount in
-                #if DEBUG
-                FreezeProbe.hit("transcript.msgCount", newCount)
-                #endif
-                // New user turn → reveal the query + START of the response near
-                // the TOP (read-from-top), not the bottom. Assistant commit →
-                // leave the user where they are (no yank). Bulk change (restore
-                // / switch) → jump to the latest.
-                #if DEBUG || TESTFLIGHT
-                ChatScrollTrace.shared.event("messages \(oldCount)→\(newCount)", messages: newCount)
-                #endif
-                if newCount == oldCount + 1, let last = session.messages.last {
-                    switch last.role {
-                    case .user:
-                        // NOT animated (Brief CH follow-up freeze): the animated scroll-to-top moved the
-                        // trailing row across the lazy materialisation edge each frame and was one of the
-                        // triggers. A jump lands the question at the top in one layout.
-                        proxy.scrollTo(last.id, anchor: .top)
-                    case .assistant:
-                        break
-                    case .activity:
-                        // Reveal each tool phase as it lands so the search is visible.
-                        withAnimation(.easeOut(duration: 0.2)) {
-                            proxy.scrollTo(last.id, anchor: .bottom)
-                        }
-                    }
-                } else if let last = session.messages.last {
-                    proxy.scrollTo(last.id, anchor: .bottom)
-                }
-            }
-            .onAppear {
-                #if DEBUG || TESTFLIGHT
-                ChatScrollTrace.shared.event("transcript opened", messages: session.messages.count)
-                #endif
-                if let last = session.messages.last {
-                    proxy.scrollTo(last.id, anchor: .bottom)
-                }
-            }
-            // Scroll-edge fades — bottom always on; top on only when the host
-            // asks (Librarian, reclaimed space). On the ScrollView ONLY (the
-            // composer lives outside it and stays solid). Fractions are the
-            // tunables (#1-followup). topFadeFraction == 0 collapses the first
-            // two stops to the same location → no top fade (default).
-            .mask(
-                LinearGradient(
-                    stops: [
-                        .init(color: .clear, location: 0),
-                        .init(color: .black, location: topFadeFraction),
-                        .init(color: .black, location: 1 - bottomFadeFraction),
-                        .init(color: .clear, location: 1.0)
-                    ],
-                    startPoint: .top, endPoint: .bottom
-                )
-            )
-            // Scroll-to-latest arrow — applied AFTER the mask so it never
-            // fades. Uses the existing isPinnedToBottom state (no new tracking).
-            .overlay(alignment: .bottom) {
-                if !isPinnedToBottom {
-                    Button {
-                        #if DEBUG || TESTFLIGHT
-                        ChatScrollTrace.shared.event("↓ arrow tapped", messages: session.messages.count)
-                        #endif
-                        // Branch the whole call — the tail anchor is a String
-                        // and a message id is a UUID, which can't share one
-                        // ternary argument.
-                        withAnimation(.easeOut(duration: 0.25)) {
-                            if session.isStreaming {
-                                proxy.scrollTo(Self.tailAnchor, anchor: .bottom)
-                            } else if let last = session.messages.last {
-                                proxy.scrollTo(last.id, anchor: .bottom)
-                            }
-                        }
-                    } label: {
-                        Image(systemName: "arrow.down")
-                            .font(.system(size: 14, weight: .semibold))
-                            .foregroundStyle(ChatTypography.bodyText)
-                            .frame(width: 36, height: 36)
-                            .background(.ultraThinMaterial, in: Circle())
-                            .overlay(Circle().strokeBorder(AppearancePalette.ink.opacity(0.12), lineWidth: 1))
-                    }
-                    .buttonStyle(.plain)
-                    .accessibilityLabel("Scroll to the latest message")   // live-29 (C1): it had no label (VoiceOver read "Down Arrow")
-                    .accessibilityIdentifier("chat.scrollToLatest")
-                    .padding(.bottom, 12)
-                    .transition(.opacity.combined(with: .scale(scale: 0.9)))
-                }
-            }
-        }
-    }
-
-    /// Brief AE2 — the latest turn's ephemeral thought process renders inside its
-    /// (now-committed) assistant bubble, at the top. True only for the LAST message
-    /// once streaming has ended and thinking was captured; on the next send
-    /// `streamingThinking` resets and this prior turn's panel disappears (ephemeral).
-    private func showsCompletedThoughtProcess(_ message: ChatSession.Message) -> Bool {
-        message.role == .assistant
-            && !session.isStreaming
-            && message.id == session.messages.last?.id
-            && !session.streamingThinking.isEmpty
-    }
-
-    /// live-27 (4) — a quiet divider where the model changes mid-chat: "Switched to <model>".
-    private func modelSwitchDivider(_ text: String) -> some View {
-        HStack(spacing: 10) {
-            Rectangle().fill(ChatTypography.secondaryText.opacity(0.35)).frame(height: 0.5)
-            Text(text)
-                .font(appFont.font(size: 12, relativeTo: .caption1))
-                .foregroundStyle(ChatTypography.secondaryText)
-                .lineLimit(1)
-                .fixedSize()
-            Rectangle().fill(ChatTypography.secondaryText.opacity(0.35)).frame(height: 0.5)
-        }
-        .accessibilityElement(children: .combine)
-        .accessibilityIdentifier("chat.modelSwitch")
-    }
-
-    @ViewBuilder
-    private func bubble(for message: ChatSession.Message) -> some View {
-        switch message.role {
-        case .user:
-            HStack {
-                Spacer(minLength: 40)
-                Text(message.text)
-                    .font(ChatTypography.userBody)
-                    .foregroundStyle(ChatTypography.userBubbleText)
-                    .lineSpacing(ChatTypography.userLine)
-                    .padding(.horizontal, 14)
-                    .padding(.vertical, 10)
-                    .background(
-                        RoundedRectangle(cornerRadius: 16, style: .continuous)
-                            // Per-mode (ChatTypography): dark cyan@0.18 byte-identical;
-                            // light bolder cyan@0.90 so the bubble reads on cream.
-                            .fill(ChatTypography.userBubbleFillResolved)
-                    )
-                    // On the bubble composite (its textSelection is off), so the
-                    // long-press has no selection gesture to fight.
-                    .contextMenu {
-                        Button {
-                            UIPasteboard.general.string = message.text
-                        } label: {
-                            Label("Copy", systemImage: "doc.on.doc")
-                        }
-                    }
-            }
-        case .assistant:
-            VStack(alignment: .leading, spacing: 10) {
-                // Brief AE2 — the just-completed turn's thought process stays at the
-                // HEAD of the reply (above the answer), the same place it streamed;
-                // it does NOT relocate below the sources. Ephemeral `streamingThinking`
-                // is retained until the next send, and `ThoughtProcessBlock` reads it
-                // statically (isStreaming == false → collapsed one-line header).
-                if showsCompletedThoughtProcess(message) {
-                    ThoughtProcessBlock(session: session)
-                }
-                // Block-laid-out markdown. Full width minus a 40pt right
-                // gutter (the block VStack is greedy — its bullet rows use
-                // maxWidth:.infinity — so it takes an explicit frame + trailing
-                // padding rather than an HStack Spacer, which it would fight).
-                if message.declined == true {
-                    declinedRow(message: message)   // live-23 (5b) — an honest decline, not an answer
-                } else {
-                MarkdownBlockText(raw: message.text)
-                    .environment(\.chatAnswerGutter, 40)   // live-27 (4c) — a table reclaims the gutter
-                    .frame(maxWidth: .infinity, alignment: .leading)
-                    .padding(.trailing, 40)
+                // Animate so the scroll-to-latest arrow fades in/out rather than snapping.
+                withAnimation(.easeOut(duration: 0.18)) { isPinnedToBottom = atEnd }
+            },
+            onScrollTopOffset: onScrollTopOffset.map { report in
+                { topOffset in
                     #if DEBUG
-                    .gauntletID("chat.answer", combine: true)   // Brief CH-0 — XCUITest reads the on-screen answer
+                    FreezeProbe.hit("transcript.topOffset", Int(topOffset))
                     #endif
+                    report(topOffset)
                 }
-                // Brief BN5 — "Read 1 entry in full · skimmed 6" / "Skimmed 9 entries".
-                readReceiptLine(message: message)
-                // live-28 (1) — an answer a cap or Stop ended early says so, under what arrived.
-                if let stop = message.stopped {
-                    Text(AnswerCap.line(for: stop))
-                        .font(appFont.font(size: 13, relativeTo: .footnote))
-                        .foregroundStyle(ChatTypography.secondaryText)
-                        .padding(.top, 1)
-                        .accessibilityIdentifier("chat.stopped")
-                }
-                // CH Session 2 — a General answer no web result backs says so (app chrome, not model text).
-                if message.generalKnowledge == true {
-                    Text(message.searchUnconfirmed == true ? WebGrounding.searchUnconfirmedNote
-                         : message.datedKnowledge == true ? WebGrounding.datedKnowledgeNote : WebGrounding.generalKnowledgeNote)
-                        .font(appFont.font(size: 13, relativeTo: .footnote))
-                        .foregroundStyle(ChatTypography.secondaryText)
-                        .padding(.top, 1)
-                        #if DEBUG
-                        .gauntletID("chat.generalKnowledge")
-                        #endif
-                }
-                // live-27 (4) — who wrote this answer (app chrome, the meta style). None on answers saved before live-27;
-                // a decline already names Apple Intelligence.
-                if let p = message.provenance, message.declined != true {
-                    Text(p.caption)
-                        .font(appFont.font(size: 12, relativeTo: .caption1))
-                        .foregroundStyle(ChatTypography.secondaryText)
-                        .lineLimit(1)
-                        .accessibilityLabel("Written by \(p.caption)")
-                        .accessibilityIdentifier("chat.provenance")
-                }
-                // Piece 1 — collapsible grounded-Ask sources (chrome, not content).
-                citationFooter(message: message)
-                // ★ BUG 36 — a turn that stopped early (stream dropped while
-                // backgrounded): calm resume affordance, never a red banner.
-                if message.isPartial == true {
-                    partialResumeControl(message: message)
-                }
-                // Per-turn read-aloud on settled assistant bubbles — each turn
-                // independently replayable via its per-message UUID token.
-                readAloudControl(message: message)
+            },
+            onTap: { inputFocused = false },   // tap-to-dismiss the keyboard without swallowing scroll / selection
+            hiddenFromAccessibility: hiddenFromAccessibility
+        )
+        #if DEBUG
+        .overlay(alignment: .topLeading) {
+            if GauntletTap.shared.isOn {
+                GauntletMetricsLabels()   // its own view: a label update never re-renders the transcript
             }
-            // Piece 2 — inline superscript taps arrive as `airpad-citation://n`
-            // links. Resolve n against THIS turn's citations → source node →
-            // onOpenNode (same closure the footer circles use). Non-citation
-            // links fall through to the system handler.
-            .environment(\.openURL, OpenURLAction { url in
-                #if DEBUG
-                print("[CitationTap] url=\(url.absoluteString)")   // live-19 (3b) — SelectableTextTaps
-                #endif
-                // Brief AF3 — the no-key web-search notice's tap: open Settings on the
-                // Web-search row. Checked before citations (distinct scheme).
-                if url.scheme == "airpad-settings", url.host == "websearch" {
-                    onOpenWebSearchSettings?()
-                    return .handled
+        }
+        #endif
+        .onAppear {
+            #if DEBUG || TESTFLIGHT
+            ChatScrollTrace.shared.event("transcript opened", messages: session.messages.count)
+            #endif
+        }
+        // Scroll-edge fades — bottom always on; top on only when the host
+        // asks (Librarian, reclaimed space). On the transcript ONLY (the
+        // composer lives outside it and stays solid). Fractions are the
+        // tunables (#1-followup). topFadeFraction == 0 collapses the first
+        // two stops to the same location → no top fade (default).
+        .mask(
+            LinearGradient(
+                stops: [
+                    .init(color: .clear, location: 0),
+                    .init(color: .black, location: topFadeFraction),
+                    .init(color: .black, location: 1 - bottomFadeFraction),
+                    .init(color: .clear, location: 1.0)
+                ],
+                startPoint: .top, endPoint: .bottom
+            )
+        )
+        // Scroll-to-latest arrow — applied AFTER the mask so it never fades.
+        .overlay(alignment: .bottom) {
+            if !isPinnedToBottom {
+                Button {
+                    #if DEBUG || TESTFLIGHT
+                    ChatScrollTrace.shared.event("↓ arrow tapped", messages: session.messages.count)
+                    #endif
+                    scroller.scrollToEnd()
+                } label: {
+                    Image(systemName: "arrow.down")
+                        .font(.system(size: 14, weight: .semibold))
+                        .foregroundStyle(ChatTypography.bodyText)
+                        .frame(width: 36, height: 36)
+                        .background(.ultraThinMaterial, in: Circle())
+                        .overlay(Circle().strokeBorder(AppearancePalette.ink.opacity(0.12), lineWidth: 1))
                 }
-                if let n = CitationReference.index(from: url),
-                   let cite = message.citations?.first(where: { $0.index == n }) {
-                    // Web citation → open the real scraped URL; corpus citation →
-                    // navigate to the node (as today).
-                    if let nodeID = cite.nodeID {
-                        onOpenNode?(nodeID)
-                        return .handled
-                    }
-                    if let urlStr = cite.url, let real = URL(string: urlStr) {
-                        return .systemAction(real)
-                    }
-                }
-                return .systemAction
-            })
-        case .activity:
-            // Tool-loop phase (web search / fetch) — a collapsible activity strip,
-            // collapsed by default, expandable to the query + tappable links.
-            if let activity = message.activity {
-                ActivityRow(activity: activity)
+                .buttonStyle(.plain)
+                .accessibilityLabel("Scroll to the latest message")   // live-29 (C1): it had no label (VoiceOver read "Down Arrow")
+                .accessibilityIdentifier("chat.scrollToLatest")
+                .padding(.bottom, 12)
+                .transition(.opacity.combined(with: .scale(scale: 0.9)))
             }
         }
     }
 
     // MARK: - Read/skim receipt (Brief BN5 — what the Librarian read)
-
-    /// Brief BN5 — under the answer: "Read 1 entry in full · skimmed 6" on a READ turn (singular/
-    /// plural, and "(partial)" when the focus entry didn't fully fit the budget), or "Skimmed 9
-    /// entries" on a SURVEY turn. Counts come from the packet (`Message.ReadReceipt`), independent of
-    /// the citation chips — a full read the model didn't superscript still reads "Read 1 entry".
-    /// Follows the app Font (serif/SF face), matching the answer's voice; warm-grey like the sources
-    /// header. Rendered only for Librarian turns that carry a receipt (plain/General chat has none).
-    @ViewBuilder
-    private func readReceiptLine(message: ChatSession.Message) -> some View {
-        if let r = message.readReceipt {
-            // BS3 — the entry title is emphasised (markdown `*…*`); the whole line follows the Font.
-            let md = Self.readReceiptText(r)
-            let attributed = (try? AttributedString(markdown: md)) ?? AttributedString(md)
-            Text(attributed)
-                .font(appFont.font(size: 13, relativeTo: .footnote))
-                .foregroundStyle(ChatTypography.secondaryText)
-                .padding(.top, 1)
-                .accessibilityLabel(md.replacingOccurrences(of: "*", with: ""))
-                .accessibilityIdentifier("chat.readReceipt")   // live-27 (4b) — the Library route's mark
-        }
-    }
 
     /// Pure string builder for the receipt line (BN5/BS3) — `static` so a self-test can exercise the
     /// wording without a view. Returns MARKDOWN: an entry title is wrapped in `*…*` (rendered
@@ -617,263 +279,6 @@ struct ChatTranscript: View {
         // silently vanishes (which read as a plain chat, not a library that looked and found nothing).
         if r.skimmed == 0 { return "No matching entries" }
         return "Skimmed \(entries(r.skimmed))"
-    }
-
-    // MARK: - Citation footer (Piece 1 — collapsible grounded sources)
-
-    @ViewBuilder
-    private func citationFooter(message: ChatSession.Message) -> some View {
-        if let citations = message.citations, !citations.isEmpty {
-            // Citations are stored PER-BLOCK (each inline [n] carries its own
-            // nodeID) so inline taps resolve. The footer, though, lists SOURCES —
-            // dedup by node (first occurrence wins its circle number) so two
-            // passages from one node read as one source, not two.
-            let sources: [ChatSession.Message.Citation] = {
-                var seen = Set<String>()
-                // Dedup by source identity — nodeID (corpus) or url (web); fall back to
-                // the index so a malformed citation still shows once.
-                return citations.filter { seen.insert($0.nodeID ?? $0.url ?? "\($0.index)").inserted }
-            }()
-            #if DEBUG
-            // `-CitationExpand YES` — start expanded so `-Screen` can shoot the chips.
-            let forceExpand = UserDefaults.standard.bool(forKey: "CitationExpand")
-            #else
-            let forceExpand = false
-            #endif
-            let isExpanded = forceExpand || expandedCitations.contains(message.id)
-            VStack(alignment: .leading, spacing: 8) {
-                Button {
-                    if isExpanded { expandedCitations.remove(message.id) }
-                    else { expandedCitations.insert(message.id) }
-                } label: {
-                    HStack(spacing: 6) {
-                        // Tapping the header only expands/collapses. Navigation
-                        // lives on the individual source rows (Piece 2).
-                        Text("◇ \(sources.count) source\(sources.count == 1 ? "" : "s")")
-                            .font(.system(size: 13, weight: .medium))
-                        Image(systemName: "chevron.right")
-                            .font(.system(size: 10, weight: .semibold))
-                            .rotationEffect(.degrees(isExpanded ? 90 : 0))
-                    }
-                    .foregroundStyle(AppearancePalette.ink.opacity(0.5))
-                    .contentShape(Rectangle())
-                }
-                .buttonStyle(.plain)
-                .accessibilityLabel(isExpanded ? "Hide sources" : "Show \(sources.count) sources")
-
-                if isExpanded {
-                    VStack(alignment: .leading, spacing: 8) {
-                        ForEach(sources) { c in
-                            // Piece 2 — tapping a source row opens its node,
-                            // identical to tapping the inline superscript. Both
-                            // route through onOpenNode. No-op when the host
-                            // didn't supply one (ChatView).
-                            Button {
-                                // Web chip → open the real scraped URL; corpus chip →
-                                // navigate to the node.
-                                if let urlStr = c.url, let real = URL(string: urlStr) {
-                                    openURL(real)
-                                } else if let nodeID = c.nodeID {
-                                    onOpenNode?(nodeID)
-                                }
-                            } label: {
-                                HStack(alignment: .top, spacing: 8) {
-                                    // Footer marker: solid ENCIRCLED number (the
-                                    // destination), distinct from the light inline
-                                    // superscript. Monochrome. No brackets.
-                                    Image(systemName: CitationReference.footerSymbolName(c.index))
-                                        .font(.system(size: 15))
-                                        .foregroundStyle(AppearancePalette.ink.opacity(0.55))
-                                    VStack(alignment: .leading, spacing: 2) {
-                                        Text(c.title)
-                                            .font(.system(size: 13, weight: .medium))
-                                            .foregroundStyle(AppearancePalette.ink.opacity(0.75))
-                                        Text(c.snippet)
-                                            .font(.system(size: 12))
-                                            .foregroundStyle(AppearancePalette.ink.opacity(0.45))
-                                            .lineLimit(2)
-                                    }
-                                    .frame(maxWidth: .infinity, alignment: .leading)
-                                }
-                                .contentShape(Rectangle())
-                            }
-                            .buttonStyle(.plain)
-                            .accessibilityHint(onOpenNode == nil ? "" : "Opens \(c.title)")
-                            #if DEBUG
-                            .gauntletID("chat.source")   // Brief CH-0 — the rendered citation chip
-                            #endif
-                        }
-                    }
-                    .padding(.leading, 2)
-                }
-            }
-            .padding(.top, 2)
-        }
-    }
-
-    // MARK: - Partial-turn resume (BUG 36)
-
-    /// A turn that stopped early — the stream dropped while the app was
-    /// backgrounded, so the text shown is what arrived before the drop, KEPT
-    /// (not discarded) and persisted. Calm, quiet affordance (icon + word,
-    /// shape not hue — T is colorblind), never the red failure banner. "Continue"
-    /// resumes onto this same bubble; shown only on the trailing turn (that's
-    /// what `continuePartial()` merges onto), older partials just read as stopped.
-    /// live-23 (5b) — Apple Intelligence declined: one line saying so, then Try again (the same question, fresh — the
-    /// decline is never history) and Switch model (the model picker, one tap). No "general knowledge" label.
-    @ViewBuilder
-    private func declinedRow(message: ChatSession.Message) -> some View {
-        let isLast = message.id == session.messages.last?.id
-        VStack(alignment: .leading, spacing: 8) {
-            Label(AppleChat.declineLine, systemImage: "hand.raised")
-                .font(appFont.font(size: 15, relativeTo: .body))
-                .foregroundStyle(ChatTypography.secondaryText)
-                .fixedSize(horizontal: false, vertical: true)
-                .accessibilityIdentifier("chat.declined")
-            if isLast {
-                HStack(spacing: 16) {
-                    Button { Task { await session.regenerateLast() } } label: {
-                        Label("Try again", systemImage: "arrow.clockwise").font(.system(size: 13, weight: .semibold))
-                    }
-                    .disabled(session.isStreaming)
-                    .accessibilityIdentifier("chat.declined.retry")
-                    if let onSwitchModel {
-                        Button(action: onSwitchModel) {
-                            Label("Switch model", systemImage: "cpu").font(.system(size: 13, weight: .semibold))
-                        }
-                        .accessibilityIdentifier("chat.declined.switchModel")
-                    }
-                }
-                .buttonStyle(.plain)
-                .foregroundStyle(Color(hexString: "00BFFF"))
-            }
-        }
-        .frame(maxWidth: .infinity, alignment: .leading)
-        .padding(.trailing, 40)
-    }
-
-    @ViewBuilder
-    private func partialResumeControl(message: ChatSession.Message) -> some View {
-        let isLast = message.id == session.messages.last?.id
-        HStack(spacing: 10) {
-            if isLast && session.isResuming {
-                // ★ BUG 36 Pillar 2 — auto re-attaching to the held FULL answer on the Host.
-                ProgressView().controlSize(.mini)
-                Text("Resuming…")
-                    .font(.system(size: 12, weight: .medium))
-                    .foregroundStyle(AppearancePalette.ink.opacity(0.5))
-            } else {
-                Label("Stopped early", systemImage: "pause.circle")
-                    .font(.system(size: 12, weight: .medium))
-                    .foregroundStyle(AppearancePalette.ink.opacity(0.5))
-                if isLast {
-                    Button {
-                        Task { await session.continuePartial() }
-                    } label: {
-                        Label("Continue", systemImage: "arrow.turn.down.right")
-                            .labelStyle(.titleAndIcon)
-                            .font(.system(size: 12, weight: .semibold))
-                            .foregroundStyle(Color(hexString: "00BFFF"))
-                    }
-                    .buttonStyle(.plain)
-                    .disabled(session.isStreaming || session.isResuming)
-                    .accessibilityLabel("Continue the answer")
-                }
-            }
-        }
-        .padding(.top, 2)
-    }
-
-    // MARK: - Read-aloud (per settled assistant turn)
-
-    @ViewBuilder
-    private func readAloudControl(message: ChatSession.Message) -> some View {
-        if !message.text.isEmpty {
-            let token = message.id.uuidString
-            let isActive = speech.activeToken == token
-            let showPause = isActive && speech.isSpeaking && !speech.isPaused
-            // Drives the AVSpeech voice the service reads aloud with — this
-            // footer IS the real control, not a parallel one.
-            let systemSelection = Binding<String?>(
-                get: { speech.selectedVoiceIdentifier },
-                set: { speech.selectedVoiceIdentifier = $0 }
-            )
-            HStack(spacing: 14) {
-                Button {
-                    speech.toggle(token: token, text: message.text)
-                } label: {
-                    Image(systemName: showPause ? "pause" : "play")
-                        .font(.system(size: 22))
-                        .foregroundStyle(AppearancePalette.ink.opacity(0.6))
-                        .frame(width: 36, height: 36)
-                        .contentShape(Rectangle())
-                }
-                .buttonStyle(.plain)
-                .accessibilityLabel(showPause ? "Pause" : "Play")
-
-                Menu {
-                    Picker("Voice", selection: systemSelection) {
-                        Text("Best available").tag(String?.none)
-                        ForEach(SpeechSynthesisService.availableVoices, id: \.identifier) { v in
-                            Text(Self.voiceLabel(v)).tag(Optional(v.identifier))
-                        }
-                    }
-                } label: {
-                    Image(systemName: "person.wave.2")
-                        .font(.system(size: 15))
-                        .foregroundStyle(AppearancePalette.ink.opacity(0.45))
-                        .frame(width: 32, height: 32)
-                        .contentShape(Rectangle())
-                }
-                .buttonStyle(.plain)
-                .accessibilityLabel("Choose voice")
-
-                // Copy the assistant turn's plain text; icon confirms for ~1.2s.
-                Button {
-                    UIPasteboard.general.string = message.text
-                    copiedMessageID = message.id
-                    Task { @MainActor in
-                        try? await Task.sleep(for: .milliseconds(1200))
-                        if copiedMessageID == message.id { copiedMessageID = nil }
-                    }
-                } label: {
-                    Image(systemName: copiedMessageID == message.id ? "checkmark" : "doc.on.doc")
-                        .font(ChatTypography.footerIcon)
-                        .foregroundStyle(ChatTypography.secondaryText)
-                        .frame(width: 36, height: 36)
-                        .contentShape(Rectangle())
-                }
-                .buttonStyle(.plain)
-                .accessibilityLabel("Copy message")
-
-                // Regenerate — LAST assistant turn only; disabled mid-stream.
-                if message.id == session.messages.last?.id {
-                    Button {
-                        Task { await session.regenerateLast() }
-                    } label: {
-                        Image(systemName: "arrow.clockwise")
-                            .font(ChatTypography.footerIcon)
-                            .foregroundStyle(ChatTypography.secondaryText)
-                            .frame(width: 36, height: 36)
-                            .contentShape(Rectangle())
-                    }
-                    .buttonStyle(.plain)
-                    .disabled(session.isStreaming || session.isResuming)
-                    .accessibilityLabel("Regenerate response")
-                }
-            }
-            .padding(.top, 2)
-        }
-    }
-
-    private static func voiceLabel(_ v: AVSpeechSynthesisVoice) -> String {
-        let q: String
-        switch v.quality {
-        case .premium:  q = "Premium"
-        case .enhanced: q = "Enhanced"
-        default:        q = "Default"
-        }
-        return "\(v.name) — \(q)"
     }
 
     // MARK: - Composer
@@ -972,7 +377,7 @@ enum StreamReveal {
 /// the only programmatic scroll per exchange is the send→question-to-top; content
 /// appends below the fold without moving anything above it, and the ↓ affordance is
 /// the sole way to jump to the newest text.
-private struct StreamingTail: View {
+struct StreamingTail: View {
     let session: ChatSession
     @Environment(\.appBodyFont) private var appFont
 
@@ -1165,9 +570,10 @@ private struct ThinkingShimmerView: View {
 /// expands to the query/url + TAPPABLE result links. Reads by ICON + LABEL + chevron
 /// shape (colourblind-safe), not colour. Reuses the panel `AppearancePalette.ink`
 /// chrome; renders in both appearance modes.
-private struct ActivityRow: View {
+struct ActivityRow: View {
     let activity: ChatSession.ToolActivity
-    @State private var expanded = false
+    /// live-30 — held by the transcript (`TranscriptRowContext`), so an opened box stays open when its cell is reused.
+    @Binding var expanded: Bool
     @Environment(\.openURL) private var openURL
 
     var body: some View {

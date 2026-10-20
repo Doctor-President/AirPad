@@ -437,7 +437,7 @@ final class ChatSession {
     /// `generalKnowledge` (CH Session 2) — a General turn with no web search behind it: its answer streams through
     /// `WebAnswerFilter` (no tool ran, so only a URL the user typed may appear) and, when the question is FACTUAL
     /// (T ruling 2026-10-09), carries the app's general-knowledge line.
-    func send(displayText: String, modelText: String, systemPrompt: String, citations: [Message.Citation]? = nil, alwaysCiteIndices: Set<Int> = [], readReceipt: Message.ReadReceipt? = nil, generalKnowledge: Bool = false, replayFrom: UUID? = nil, absenceGuard: AbsenceGuard? = nil, webResults: Int? = nil) async {
+    func send(displayText: String, modelText: String, systemPrompt: String, citations: [Message.Citation]? = nil, alwaysCiteIndices: Set<Int> = [], readReceipt: Message.ReadReceipt? = nil, generalKnowledge: Bool = false, replayFrom: UUID? = nil, absenceGuard: AbsenceGuard? = nil, webResults: Int? = nil, searchActivity: ToolActivity? = nil) async {
         guard !displayText.isEmpty, !isStreaming else { return }
 
         // New attempt clears any prior transient failure banner.
@@ -448,6 +448,8 @@ final class ChatSession {
         let userID = UUID()
         messages.append(Message(id: userID, role: .user, text: displayText, modelText: packetTurn ? modelText : nil,
                                 systemPrompt: packetTurn ? systemPrompt : nil, threadStart: packetTurn ? (replayFrom ?? userID) : nil))
+        // live-30 (A1) — an app-routed search shows the same "Searched the web" row the Host path's tool call does.
+        if let searchActivity { messages.append(Message(role: .activity, text: searchActivity.label, activity: searchActivity)) }
         pendingUser = nil
         isStreaming = true
         filterAllowed = WebGrounding.urls(in: displayText) + (webResults != nil ? (citations ?? []).compactMap(\.url) : [])
@@ -471,7 +473,7 @@ final class ChatSession {
         let numCtx = ModelRouter.contextWindowTokens
         // T ruling (2026-10-09) — Library user turns are replayed as the packets they sent (newest first, while they
         // fit the window), so this request EXTENDS the previous one and Ollama's prompt cache covers the prefix.
-        let history: [ModelRouter.WireMessage] = Self.historyWire(Array(messages.dropLast()), replayFrom: replayFrom,
+        let history: [ModelRouter.WireMessage] = Self.historyWire(Array(messages.dropLast(searchActivity == nil ? 1 : 2)), replayFrom: replayFrom,
             reserveChars: systemPrompt.count + modelText.count, windowTokens: numCtx)
         // live-28 (1) — the answer budget for this route, the loop guard, and the turn limit.
         let maxTokens = AnswerCap.maxTokens(AnswerCap.route(question: displayText, library: packetTurn), think: thinkEnabled)
@@ -564,6 +566,12 @@ final class ChatSession {
                 // live-23 (5b) — Apple Intelligence's refusal string is a decline, not an answer: no general-knowledge
                 // label, never sent back as history, never a title.
                 let declined = ModelRouter.isAppleIntelligenceActive && AppleChat.isRefusalText(finalText)
+                // live-30 (A1) — after an app-routed search, an answer that opens by saying the results don't answer the
+                // question is unconfirmed: its [n] aren't support (no chips, no markers), and the "didn't confirm" line shows.
+                if webResults != nil, guardedCitations == nil, !AppleWebGrounding.live29, AppleWebQuery.saysResultsDontAnswer(finalText) {
+                    finalText = AppleWebQuery.strippingCitationMarkers(finalText)
+                    r.citations = []
+                }
                 // live-29 (B3/B5) — the ONE decision for the line (`WebGrounding.answerNote`): after an app-routed search,
                 // never the training-data line.
                 let line = WebGrounding.answerNote(question: displayText, searchRan: webResults != nil, resultCount: webResults ?? 0,
@@ -625,6 +633,8 @@ final class ChatSession {
                 // Nothing streamed — a genuine failure. Classify it into a human
                 // banner (field findings #2/#3): unreachable/530 reads as "offline
                 // or asleep", and raw upstream HTML is never shown.
+                // live-30 (A1) — the trailing user turn stays last (Retry re-sends it; the search runs again).
+                if searchActivity != nil, messages.last?.role == .activity { messages.removeLast() }
                 surface(error)
             }
         }
@@ -1462,6 +1472,7 @@ final class ChatSession {
             var body = "**Theme \(k % 7 + 1).** " + String(repeating: para, count: reps / 2)
             if k % 3 == 0 { body += "\n\n- First, " + para + "\n- Second, " + para + "\n- Third, " + para }
             if k % 4 == 1 { body += "\n\n### What stands out\n\n" + String(repeating: para, count: 2) }
+            if k == n - 1 { body += "\n\nEnd of seeded chat." }   // live-30 — the transcript-end rows find the last line
             out.append(Message(role: .assistant, text: body))
         }
         messages = out

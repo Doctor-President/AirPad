@@ -123,3 +123,9 @@ ChatScrollEndUI/test30
 ChatScrollEndUI/test30All
 ChatScrollEndUI/test80All
 ChatScrollEndUI/test200All
+# live-30 (1) — the UIKit transcript: open / ↓ at 12 and 200 messages (Chat view + Librarian), the end holding through a
+# streaming answer and a table, asking while scrolled up, and the cell-hosted controls + reading order.
+ChatTranscriptEndUI/test1_OpenAndArrowLandOnTheLastLine_12
+ChatTranscriptEndUI/test2_OpenAndArrowLandOnTheLastLine_200_andThePanelDrags
+ChatTranscriptEndUI/test3_TheEndHoldsWhileAnAnswerStreamsAndATableAppears
+ChatTranscriptEndUI/test4_CellsKeepTheirControlsAndReadingOrder

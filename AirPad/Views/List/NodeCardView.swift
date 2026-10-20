@@ -540,7 +540,7 @@ struct NodeCardView: View {
                 if hasFoldedPayload {
                     // Folded entries own the flex slot below — keep the deck a
                     // capped 3-line lede so the body has room.
-                    Text(MarkdownPlain.inline(node.summary))
+                    Text(MarkdownPlain.label(node.summary))
                         .font(cardFont(14 * fs))
                         .italic()
                         .foregroundColor(Self.inkDeck)
@@ -556,7 +556,7 @@ struct NodeCardView: View {
                     // GeometryReader used to hold — stat line + tags still pin
                     // to the bottom.
                     fitLinesText(
-                        MarkdownPlain.inline(node.summary),
+                        MarkdownPlain.label(node.summary),
                         fontSize: 14 * fs,
                         italic: true,
                         lineSpacing: 3,
@@ -666,7 +666,7 @@ struct NodeCardView: View {
                 .fixedSize(horizontal: false, vertical: true)
 
             if showDeck {
-                Text(MarkdownPlain.inline(node.summary))
+                Text(MarkdownPlain.label(node.summary))
                     .font(cardFont(14 * fs)).italic()
                     .foregroundColor(Self.inkDeck)
                     .shadow(color: inkHalo.opacity(0.4), radius: 2, x: 0, y: 1)
@@ -725,7 +725,7 @@ struct NodeCardView: View {
             CardVoicePreview(duration: duration, firstLine: firstLine, size: 13, lines: lines,
                              ink: Self.inkDeck, markerInk: Self.inkMeta, halo: inkHalo)
         case .text(let t):
-            Text(t.source.map(MarkdownPlain.styled) ?? AttributedString(t.plain))   // live-26 (3b): styled, never raw markup
+            Text(t.rendered)   // live-26 (3b): styled, never raw markup — live-29 (B4): the one rendered path
                 .font(cardFont(13)).foregroundColor(Self.inkDeck)
                 .shadow(color: inkHalo.opacity(0.35), radius: 2, x: 0, y: 1)
                 .lineSpacing(2)

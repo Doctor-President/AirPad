@@ -65,10 +65,10 @@ struct ChatsEntryBody: View {
     /// display as renamed. Falls back to the first user message when empty.
     static func displayTitle(_ chat: Chat) -> String {
         let t = chat.title.trimmingCharacters(in: .whitespacesAndNewlines)
-        if !t.isEmpty { return t }
+        if !t.isEmpty { return MarkdownPlain.label(t) }   // live-29 (B4)
         if let firstUser = chat.messages.first(where: { $0.role == .user }) {
             let s = firstUser.text.trimmingCharacters(in: .whitespacesAndNewlines)
-            return s.isEmpty ? "Untitled chat" : String(s.prefix(40))
+            return s.isEmpty ? "Untitled chat" : String(MarkdownPlain.label(s).prefix(40))
         }
         return "Untitled chat"
     }

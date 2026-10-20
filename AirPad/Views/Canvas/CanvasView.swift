@@ -1027,7 +1027,7 @@ struct CanvasView: View {
                                 .lineLimit(2)
 
                             if !node.summary.isEmpty {
-                                Text(node.summary)
+                                Text(MarkdownPlain.label(node.summary))   // live-29 (B4)
                                     .font(appFont.font(size: finalDiameter * 0.05))
                                     .foregroundStyle(ink)
                                     .shadow(color: halo, radius: 3)
@@ -1674,7 +1674,7 @@ struct NodeDetailOverlay: View {   // internal: live-20 (3) stills (TextRunsGall
 
                     // Summary
                     if !node.summary.isEmpty {
-                        Text(node.summary)
+                        Text(MarkdownPlain.label(node.summary))   // live-29 (B4)
                             .font(.system(size: 16))
                             .foregroundStyle(AppearancePalette.ink.opacity(0.85))
                             .lineLimit(3)

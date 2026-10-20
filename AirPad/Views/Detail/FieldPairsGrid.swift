@@ -63,6 +63,9 @@ struct FieldPairsGrid: View {
     /// Field-name label style. BAKED default = serif italic (T, 2026-08-25 — echoes the
     /// app's serif titles). A gate overrides it to sample alternatives.
     var labelStyle: AttrLabelStyle = .serifItalic
+    /// live-29 (4) — the detail view hides an EMPTY field (no bare "—" tile); the quiet "Add" line under the grid
+    /// still fills it. Arrange mode and Quick Capture (where fields are filled in) show every field.
+    var hidesEmptyFields: Bool = false
 
     @Environment(CorpusStore.self) private var store
     @State private var editingItem: NodeItem?
@@ -147,7 +150,49 @@ struct FieldPairsGrid: View {
         var row: Int; var col: Int; var w: Int; var h: Int; var flexible: Bool
     }
 
+    /// live-29 (4) — the fields the detail hides because they're empty, in order.
+    private var hiddenEmptyItems: [NodeItem] {
+        guard hidesEmptyFields, !isArranging else { return [] }
+        return fieldItems.filter { item in
+            guard let fv = item.field, store.fieldDefinition(id: fv.definitionID) != nil else { return false }
+            return fv.value == nil
+        }
+    }
+
     var body: some View {
+        VStack(alignment: .leading, spacing: 8) {
+            if !resolvedTiles.isEmpty { grid }
+            // live-29 (4) — an empty field never draws a bare "—" tile; it's one quiet, tappable name here instead.
+            if !hiddenEmptyItems.isEmpty {
+                HStack(spacing: 6) {
+                    Text("Add")
+                        .font(.system(size: 11, weight: .medium, design: .rounded))
+                        .foregroundStyle(AppearancePalette.ink.opacity(0.45))
+                    ForEach(hiddenEmptyItems, id: \.id) { item in
+                        if let fv = item.field, let def = store.fieldDefinition(id: fv.definitionID) {
+                            Button { editingItem = item } label: {
+                                Text(def.displayName)
+                                    .font(.system(size: 11, weight: .semibold, design: .rounded))
+                                    .foregroundStyle(AppearancePalette.ink.opacity(0.62))
+                                    .padding(.horizontal, 8).padding(.vertical, 3)
+                                    .background(AppearancePalette.ink.opacity(0.06), in: Capsule())
+                            }
+                            .buttonStyle(.plain)
+                            .accessibilityLabel("Add \(def.displayName)")
+                        }
+                    }
+                }
+                .accessibilityIdentifier("attrEmptyFields")
+            }
+        }
+        .sheet(item: $editingItem) { item in
+            if let fv = item.field, let def = store.fieldDefinition(id: fv.definitionID) {
+                FieldValueEditorSheet(nodeID: nodeID, item: item, definition: def)
+            }
+        }
+    }
+
+    @ViewBuilder private var grid: some View {
         let placements = resolveLayout()
         // P4 — reserve the phantom "next page" row(s) in the LAYOUT while arranging so the
         // panel grows to hold them (kept off the background overlay, which can't size its
@@ -200,11 +245,6 @@ struct FieldPairsGrid: View {
         // when nothing is lifted, and idempotent against `.onEnded` for a real drop.
         .onChange(of: isReorderPressing) { _, pressing in
             if !pressing && draggingID != nil { endReorder() }
-        }
-        .sheet(item: $editingItem) { item in
-            if let fv = item.field, let def = store.fieldDefinition(id: fv.definitionID) {
-                FieldValueEditorSheet(nodeID: nodeID, item: item, definition: def)
-            }
         }
         .onChange(of: isArranging) { _, arranging in
             if arranging {
@@ -854,6 +894,7 @@ struct FieldPairsGrid: View {
         // identity + the homing tiebreak for position-less tiles.
         fieldItems.compactMap { item in
             guard let fv = item.field, let def = store.fieldDefinition(id: fv.definitionID) else { return nil }
+            if hidesEmptyFields, !isArranging, fv.value == nil { return nil }   // live-29 (4)
             // Span resolution (a display rule, no data write): the in-flight arrange choice
             // wins; else the node's stored span; else the kind's default (proposed, not a
             // ceiling). Clamped defensively to the grid (w ≤ columns, h ≥ 1).
@@ -924,6 +965,9 @@ struct FieldPairCell: View {
     }
 
     private var isTextKind: Bool { definition.kind == .text }
+    /// live-29 (4) — a date on a full row reads like the text rows beside it (14 pt, one line), not a value that
+    /// fills a 1-high box at 32 pt.
+    private var isDate: Bool { definition.kind == .date }
     /// PROSE (text) reads from the top; every other kind is an ATOMIC-style value that
     /// centres. The anchoring split, §5.
     private var isProse: Bool { isTextKind }
@@ -941,7 +985,8 @@ struct FieldPairCell: View {
             // content position both.
             .frame(maxWidth: .infinity, alignment: isProse ? .leading : .center)
             .padding(.horizontal, 12)
-            .padding(.vertical, treatment == .large ? 14 : 10)
+            // live-29 (4) — a text / date ROW gets 8 pt so two 14 pt lines fit the fixed 52 pt row.
+            .padding(.vertical, treatment == .large ? 14 : (treatment == .row && (isProse || isDate) ? 8 : 10))
             // maxHeight fills the tile's reserved cell height (any h) so a value has no dead
             // gap below it; content anchors per the split above.
             .frame(minHeight: treatment == .large ? 84 : (treatment == .compact ? 44 : 52),
@@ -1043,7 +1088,7 @@ struct FieldPairCell: View {
                 .font(.system(size: 14 * typeScale, weight: .semibold))
                 .foregroundStyle(AppearancePalette.ink.opacity(0.3))
                 .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: isProse ? .topLeading : .center)
-        } else if isTextKind {
+        } else if isTextKind || (isDate && treatment == .row) {
             proseFill
         } else {
             fillValue
@@ -1081,11 +1126,19 @@ struct FieldPairCell: View {
             Text(displayText ?? "\u{2014}")
                 .font(.system(size: size, weight: .semibold))
                 .foregroundStyle(AppearancePalette.ink)
-                .lineLimit(max(1, Int((geo.size.height + 0.5) / lineH)))
+                // live-29 (4) — whole lines only (a partly-fitting line was clipped mid-word, no ellipsis: "hates wh"),
+                // at most two in a 1-high tile, then the ellipsis.
+                .lineLimit(Self.proseLines(height: geo.size.height, lineHeight: lineH, large: treatment == .large))
                 .truncationMode(.tail)
                 .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .topLeading)
         }
         .frame(maxHeight: .infinity)
+    }
+
+    /// live-29 (4) — how many whole prose lines a value gets: as many as fit, at most two outside a LARGE tile.
+    static func proseLines(height: CGFloat, lineHeight: CGFloat, large: Bool) -> Int {
+        let fit = max(1, Int(floor(height / max(lineHeight, 1))))
+        return large ? fit : min(fit, 2)
     }
 
     private func label(large: Bool) -> some View {

@@ -723,9 +723,11 @@ struct SettingsView: View {
         VStack(alignment: .leading, spacing: 6) {
             Button {
                 let log = LibrarianState.recentCandidateLog
-                UIPasteboard.general.string = log.isEmpty
-                    ? "(no Librarian Library-mode turns yet this session)"
-                    : log.joined(separator: "\n\n")
+                var text = log.isEmpty ? "(no Librarian Library-mode turns yet this session)" : log.joined(separator: "\n\n")
+                #if DEBUG || TESTFLIGHT
+                text += "\n\n" + ChatScrollTrace.shared.text()   // live-29 (C1) — the chat scroll trace (TestFlight only)
+                #endif
+                UIPasteboard.general.string = text
                 librarianLogCopied = true
                 DispatchQueue.main.asyncAfter(deadline: .now() + 1.6) { librarianLogCopied = false }
             } label: {

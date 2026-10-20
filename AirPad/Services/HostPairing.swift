@@ -42,6 +42,8 @@ struct HostPairing: Codable, Equatable {
     var chatURL: URL? { endpoint("v1/chat/completions") }
     /// The resume endpoint (BUG 36 Pillar 2 — collect a HELD result after a mid-stream drop).
     var resumeURL: URL? { endpoint("v1/chat/resume") }
+    /// live-29 (2) — Host 0.1.2: stop a HELD generation (Stop, the loop guard, the turn limit). 0.1.1 answers 404.
+    var cancelURL: URL? { endpoint("v1/chat/cancel") }
     /// The filtered model-list endpoint on the tunnel.
     var modelsURL: URL? { endpoint("v1/models") }
     /// The curated catalog endpoint (per-model state/size/capabilities/copy) — the picker's data

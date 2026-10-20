@@ -1001,6 +1001,7 @@ struct LibrarianSurface: View {
                         settingsPresentation = .at(.webSearch)
                     },
                     onSwitchModel: { showModelPicker = true },   // live-23 (5b) — a decline's model switch
+                    hiddenFromAccessibility: !panelModel.contentRevealed,   // live-30 — faded out at peek
                     topFadeFraction: cctTopFade,
                     bottomFadeFraction: cctBottomFade,
                     onScrollTopOffset: {
@@ -2404,8 +2405,8 @@ private struct SearchMatchRow: View {
 
     private var displaySnippet: String {
         if let snippet, !snippet.isEmpty { return snippet }
-        if let s = node.substrateSummary, !s.isEmpty { return s }
-        return node.summary
+        if let s = node.substrateSummary, !s.isEmpty { return MarkdownPlain.label(s) }   // live-29 (B4)
+        return MarkdownPlain.label(node.summary)
     }
 
     var body: some View {

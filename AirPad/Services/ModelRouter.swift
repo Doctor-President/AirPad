@@ -285,14 +285,15 @@ enum ModelRouter {
     /// role for Ollama (OpenAI chat-completions shape); for FM it's
     /// concatenated since `LanguageModelSession` doesn't expose a system
     /// channel today.
-    static func generate(systemPrompt: String, userPrompt: String) async throws -> String {
+    /// live-29 (2) — `maxTokens` caps a one-shot Host answer below the General budget (a chat title: 64).
+    static func generate(systemPrompt: String, userPrompt: String, maxTokens: Int? = nil) async throws -> String {
         switch active {
         case .foundationModel:
             return try await generateFoundationModel(systemPrompt: systemPrompt, userPrompt: userPrompt)
         case .ollama(let endpoint):
             return try await generateOllama(endpoint: endpoint, systemPrompt: systemPrompt, userPrompt: userPrompt)
         case .host(let pairing):
-            return try await generateHost(pairing: pairing, systemPrompt: systemPrompt, userPrompt: userPrompt)
+            return try await generateHost(pairing: pairing, systemPrompt: systemPrompt, userPrompt: userPrompt, maxTokens: maxTokens)
         case .local:
             // Unreachable: `active` never resolves to .local — the on-device model serves only the
             // enrichment lever via `generateStructured`, not the free-text Librarian path. Defensive → FM.
@@ -420,9 +421,20 @@ enum ModelRouter {
                     case .foundationModel:
                         lastAnswerSource = AnswerSource(route: .apple, model: foundationModelName)
                         #if DEBUG
+                        debugLastApplePrompt = AppleChat.request(messages).prompt   // live-29 (B5) — what the turn carried
+                        debugLastAppleInstructions = AppleChat.request(messages).instructions   // live-30 (A1) — where the results go
                         if UserDefaults.standard.bool(forKey: "StubOnDeviceModel") {
                             try await Task.sleep(for: .milliseconds(400))
                             var stubText = "This answer comes from Apple Intelligence on this iPhone (stub)."
+                            // live-29 (B5) — a web-grounded turn: cite the first result, except a "lighthouse" question
+                            // (the row for an answer no result supports).
+                            // live-30 (A1) — "reopen" = an answer that cites the results only to say they don't answer it.
+                            let req = AppleChat.request(messages), p = req.prompt.lowercased()
+                            if req.prompt.hasPrefix("Web results") {
+                                stubText = p.contains("lighthouse") ? "The lighthouse keeps its old schedule (stub, no citation)."
+                                    : p.contains("reopen") ? "The search results [1] and [2] don't say when it reopens. It may reopen in spring (stub)."
+                                    : "The observatory set its first-light date (stub) [1]."
+                            }
                             // live-23 (5b) — `-StubOnDeviceRefusal YES`: a "presidents" question gets T's refusal; any
                             // other answer reports how many refusals the history it was SENT carried (must be 0).
                             if UserDefaults.standard.bool(forKey: "StubOnDeviceRefusal") {
@@ -1006,6 +1018,12 @@ enum ModelRouter {
 
     /// Pinned browser User-Agent on every Host request (P8): Cloudflare's edge bot-management
     /// 403s unusual UAs (measured). Kept identical to the UA the Host itself pins.
+    #if DEBUG
+    /// live-29 (B5) — the last prompt an Apple Intelligence turn carried (`-AppleWebSelfTest`).
+    static var debugLastApplePrompt = ""
+    static var debugLastAppleInstructions = ""
+    #endif
+
     private static let hostUserAgent =
         "Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/605.1.15 (KHTML, like Gecko) Version/17.0 Safari/605.1.15"
 
@@ -1160,7 +1178,7 @@ enum ModelRouter {
     /// after the first Librarian answer, every session thrashed 32768⇄4096 and each question paid a
     /// full cold prefill. One shared `num_ctx` keeps ONE resident instance; a small label prompt fits
     /// 32768 trivially. (T's "the model needed to be loaded again.")
-    private static func generateHost(pairing: HostPairing, systemPrompt: String, userPrompt: String) async throws -> String {
+    private static func generateHost(pairing: HostPairing, systemPrompt: String, userPrompt: String, maxTokens: Int? = nil) async throws -> String {
         var msgs: [WireMessage] = []
         if !systemPrompt.isEmpty { msgs.append(["role": "system", "content": systemPrompt]) }
         msgs.append(["role": "user", "content": userPrompt])
@@ -1170,7 +1188,7 @@ enum ModelRouter {
                 do {
                     // live-28 (1) — one-shot Host answers (titles, summaries, cluster labels) get the General budget too.
                     try await streamHost(pairing: pairing, messages: msgs, numCtx: contextWindowTokens,
-                                         maxTokens: AnswerCap.maxTokens(.general, think: false), continuation: cont)
+                                         maxTokens: maxTokens ?? AnswerCap.maxTokens(.general, think: false), continuation: cont)
                     cont.finish()
                 } catch { cont.finish(throwing: error) }
             }
@@ -1589,6 +1607,30 @@ enum ModelRouter {
                     continuation.finish()
                 } catch { continuation.finish(throwing: error) }
             }
+        }
+    }
+
+    /// live-29 (2) — tell the Host to stop a HELD generation the phone no longer wants: the user's Stop, the loop
+    /// guard, the turn limit. A held generation runs detached from the phone's connection on purpose (BUG 36), so
+    /// hanging up never reached the Mac; without this it kept generating until num_predict (≈ 2.5 min for a table on
+    /// qwen3:4b). Sealed like resume: the plaintext {"requestID"} rides in the E2E envelope, so the edge sees neither
+    /// the id nor which answer was stopped. Best effort and silent: a Host 0.1.1 has no such route (404) — that's
+    /// today's behaviour, never an error the user sees. Fire-and-forget; returns at once.
+    static func cancelHostGeneration(pairing: HostPairing, requestID: String) {
+        Task.detached(priority: .utility) {
+            guard let hpk = pairing.hostPublicKey, let url = pairing.cancelURL,
+                  let plaintext = try? JSONSerialization.data(withJSONObject: ["requestID": requestID]),
+                  let sealed = try? HostE2E.sealRequest(master: pairing.master, hostStaticPub: hpk, plaintext: plaintext),
+                  let body = try? JSONEncoder().encode(sealed.0) else { return }
+            var request = URLRequest(url: url, timeoutInterval: 10)
+            request.httpMethod = "POST"
+            request.setValue("application/json", forHTTPHeaderField: "Content-Type")
+            request.setValue(hostUserAgent, forHTTPHeaderField: "User-Agent") // P8
+            request.setValue("Bearer \(pairing.authToken)", forHTTPHeaderField: "Authorization")
+            request.httpBody = body
+            let status = ((try? await URLSession.shared.data(for: request))?.1 as? HTTPURLResponse)?.statusCode ?? -1
+            NSLog("[HostCancel] requestID=%@ status=%d%@", String(requestID.prefix(8)), status,
+                  status == 404 ? " (Host without /v1/chat/cancel — 0.1.1: the Mac finishes at num_predict)" : "")
         }
     }
 
@@ -2189,20 +2231,21 @@ final class BraveSearchToolExecutor: ToolExecutor, @unchecked Sendable {
             // front pages dated by their last update. Falls back to web search when news finds nothing or the plan
             // doesn't include it.
             var (links, rateLimited) = ([ToolLink](), false)
+            let count = (arguments["count"] as? Int) ?? 5   // live-30 (A1): the Apple path asks for more (social hosts are dropped)
             let keywords = WebGrounding.newsKeywords(query)
             // CH (T device 2026-10-09) — a news question that names a country asks Brave for news FROM that country
             // (`country=`), and a result that names it only inside another place ("New Mexico") is dropped.
             // News questions only: "What's the capital of Mexico?" still searches the whole web.
-            let country = WebGrounding.isFreshnessQuestion(query) ? WebGrounding.newsCountry(query) : nil
+            let country = WebGrounding.isNewsQuestion(query) ? WebGrounding.newsCountry(query) : nil
             #if DEBUG
             if let c = country { GauntletTap.shared.noteValue("newsCountry", c.code) }
             #endif
             func hay(_ l: ToolLink) -> String { l.title + " " + (l.snippet ?? "") + " " + l.url }
-            if WebGrounding.isFreshnessQuestion(query) {
+            if WebGrounding.isNewsQuestion(query) {   // live-29 (B3): news-shaped only; "who is the current …" → web
                 // "<keywords> news": the bare keyword "world" matched Disney World and the World Championships
                 let newsQuery = keywords.isEmpty ? "top news" : keywords.joined(separator: " ") + " news"
                 for window in ["pd", "pw"] where links.isEmpty && !rateLimited {
-                    (links, rateLimited) = await braveNews(newsQuery, freshness: window, country: country?.code)
+                    (links, rateLimited) = await braveNews(newsQuery, freshness: window, country: country?.code, count: count)
                     if let c = country { links.removeAll { WebGrounding.isFalseFriend(hay($0), for: c) } }
                     // relevance: at least one article must mention a keyword, else it isn't an answer (the country
                     // filter already makes a country's own news relevant, so its name needn't appear)
@@ -2211,10 +2254,10 @@ final class BraveSearchToolExecutor: ToolExecutor, @unchecked Sendable {
                 }
             }
             if links.isEmpty && !rateLimited, let c = country {
-                (links, rateLimited) = await braveSearch(query, country: c.code)
+                (links, rateLimited) = await braveSearch(query, country: c.code, count: count)
                 links.removeAll { WebGrounding.isFalseFriend(hay($0), for: c) }
             }
-            if links.isEmpty && !rateLimited { (links, rateLimited) = await braveSearch(query) }
+            if links.isEmpty && !rateLimited { (links, rateLimited) = await braveSearch(query, count: count) }
             if rateLimited {
                 throttled = true
                 return ToolResult(textForModel: "Web search is temporarily rate-limited by the provider (too many requests in a short time). Do NOT keep retrying — answer from what you already have, or if you have nothing, tell the user web search is rate-limited right now and to try again shortly.", links: [], rateLimited: true)
@@ -2244,11 +2287,11 @@ final class BraveSearchToolExecutor: ToolExecutor, @unchecked Sendable {
     /// GET the Brave web-search API → `[{title,url,snippet}]`. HTTP 429 (Brave's own
     /// rate-limit) → the shared `rateLimited` signal. Descriptions can carry `<strong>`
     /// highlight tags → stripped via the shared HTML helpers.
-    private func braveSearch(_ query: String, country: String? = nil) async -> (links: [ToolLink], rateLimited: Bool) {
+    private func braveSearch(_ query: String, country: String? = nil, count: Int = 5) async -> (links: [ToolLink], rateLimited: Bool) {
         var comps = URLComponents(string: WebSearchBackend.base("https://api.search.brave.com") + "/res/v1/web/search")
         // Brief AF2 (a) — top 5 (was 8): a smaller synthesis payload → faster first
         // token → the tunnel can't time the upstream out mid-answer.
-        comps?.queryItems = [URLQueryItem(name: "q", value: query), URLQueryItem(name: "count", value: "5")]
+        comps?.queryItems = [URLQueryItem(name: "q", value: query), URLQueryItem(name: "count", value: "\(count)")]
             + (country.map { [URLQueryItem(name: "country", value: $0)] } ?? [])
         guard let url = comps?.url else { return ([], false) }
         var req = URLRequest(url: url)
@@ -2263,9 +2306,9 @@ final class BraveSearchToolExecutor: ToolExecutor, @unchecked Sendable {
 
     /// Brave News Search → articles with `age` / `page_age`. Any non-2xx other than 429 (e.g. a plan without news
     /// access) → empty, and the caller falls back to web search.
-    private func braveNews(_ query: String, freshness: String, country: String? = nil) async -> (links: [ToolLink], rateLimited: Bool) {
+    private func braveNews(_ query: String, freshness: String, country: String? = nil, count: Int = 5) async -> (links: [ToolLink], rateLimited: Bool) {
         var comps = URLComponents(string: WebSearchBackend.base("https://api.search.brave.com") + "/res/v1/news/search")
-        comps?.queryItems = [URLQueryItem(name: "q", value: query), URLQueryItem(name: "count", value: "5"),
+        comps?.queryItems = [URLQueryItem(name: "q", value: query), URLQueryItem(name: "count", value: "\(count)"),
                              URLQueryItem(name: "freshness", value: freshness)]
             + (country.map { [URLQueryItem(name: "country", value: $0)] } ?? [])
         guard let url = comps?.url else { return ([], false) }
@@ -2289,11 +2332,8 @@ final class BraveSearchToolExecutor: ToolExecutor, @unchecked Sendable {
               let results = json["results"] as? [[String: Any]] else { return [] }
         return results.prefix(5).compactMap { r -> ToolLink? in
             guard let title = r["title"] as? String, let urlStr = r["url"] as? String, !urlStr.isEmpty else { return nil }
-            let cleanTitle = WebReadability.decodeEntities(WebReadability.stripTags(title)).trimmingCharacters(in: .whitespacesAndNewlines)
-            let snippet = (r["description"] as? String).map { raw -> String in
-                let clean = WebReadability.decodeEntities(WebReadability.stripTags(raw)).trimmingCharacters(in: .whitespacesAndNewlines)
-                return clean.count > 300 ? String(clean.prefix(300)) + "…" : clean
-            }
+            let cleanTitle = WebGrounding.cleanResultText(title)   // live-29 (B3)
+            let snippet = (r["description"] as? String).map { WebGrounding.cleanResultText($0, cap: 300) }   // live-29 (B3)
             guard !cleanTitle.isEmpty else { return nil }
             return ToolLink(title: cleanTitle, url: urlStr, snippet: snippet,
                             published: WebGrounding.parsePublished(pageAge: r["page_age"] as? String, age: r["age"] as? String))
@@ -2329,11 +2369,8 @@ final class BraveSearchToolExecutor: ToolExecutor, @unchecked Sendable {
         // Brief AF2 (a) — cap at 5 results, snippet ≤ 300 chars, never a page body.
         return results.prefix(5).compactMap { r -> ToolLink? in
             guard let title = r["title"] as? String, let urlStr = r["url"] as? String, !urlStr.isEmpty else { return nil }
-            let cleanTitle = WebReadability.decodeEntities(WebReadability.stripTags(title)).trimmingCharacters(in: .whitespacesAndNewlines)
-            let snippet = (r["description"] as? String).map { raw -> String in
-                let clean = WebReadability.decodeEntities(WebReadability.stripTags(raw)).trimmingCharacters(in: .whitespacesAndNewlines)
-                return clean.count > 300 ? String(clean.prefix(300)) + "…" : clean
-            }
+            let cleanTitle = WebGrounding.cleanResultText(title)   // live-29 (B3)
+            let snippet = (r["description"] as? String).map { WebGrounding.cleanResultText($0, cap: 300) }   // live-29 (B3)
             guard !cleanTitle.isEmpty else { return nil }
             return ToolLink(title: cleanTitle, url: urlStr, snippet: snippet,
                             published: WebGrounding.parsePublished(pageAge: r["page_age"] as? String, age: r["age"] as? String))
@@ -2364,8 +2401,9 @@ final class TavilySearchToolExecutor: ToolExecutor, @unchecked Sendable {
             }
             searchCount += 1
             var (links, rateLimited) = ([ToolLink](), false)
-            if WebGrounding.isFreshnessQuestion(query) { (links, rateLimited) = await search(query, news: true) }
-            if links.isEmpty && !rateLimited { (links, rateLimited) = await search(query, news: false) }
+            let count = (arguments["count"] as? Int) ?? 5   // live-30 (A1): the Apple path asks for more (social hosts are dropped)
+            if WebGrounding.isNewsQuestion(query) { (links, rateLimited) = await search(query, news: true, count: count) }   // live-29 (B3)
+            if links.isEmpty && !rateLimited { (links, rateLimited) = await search(query, news: false, count: count) }
             if rateLimited {
                 throttled = true
                 return ToolResult(textForModel: "Web search is temporarily rate-limited by the provider (too many requests in a short time). Do NOT keep retrying — answer from what you already have, or if you have nothing, tell the user web search is rate-limited right now and to try again shortly.", links: [], rateLimited: true)
@@ -2385,13 +2423,13 @@ final class TavilySearchToolExecutor: ToolExecutor, @unchecked Sendable {
     }
 
     /// POST /search (Bearer key) → `[ToolLink]`. 429 / 432 (Tavily's plan limit) → the shared `rateLimited` signal.
-    private func search(_ query: String, news: Bool) async -> (links: [ToolLink], rateLimited: Bool) {
+    private func search(_ query: String, news: Bool, count: Int = 5) async -> (links: [ToolLink], rateLimited: Bool) {
         guard let url = URL(string: WebSearchBackend.base("https://api.tavily.com") + "/search") else { return ([], false) }
         var req = URLRequest(url: url)
         req.httpMethod = "POST"
         req.setValue("application/json", forHTTPHeaderField: "Content-Type")
         req.setValue("Bearer \(apiKey)", forHTTPHeaderField: "Authorization")
-        var body: [String: Any] = ["query": query, "max_results": 5, "search_depth": "basic", "topic": news ? "news" : "general"]
+        var body: [String: Any] = ["query": query, "max_results": count, "search_depth": "basic", "topic": news ? "news" : "general"]
         if news { body["days"] = 7 }
         req.httpBody = try? JSONSerialization.data(withJSONObject: body)
         guard let (data, resp) = try? await URLSession.shared.data(for: req) else { return ([], false) }
@@ -2410,12 +2448,9 @@ final class TavilySearchToolExecutor: ToolExecutor, @unchecked Sendable {
               let results = json["results"] as? [[String: Any]] else { return [] }
         return results.prefix(5).compactMap { r -> ToolLink? in
             guard let title = r["title"] as? String, let urlStr = r["url"] as? String, !urlStr.isEmpty else { return nil }
-            let cleanTitle = WebReadability.decodeEntities(WebReadability.stripTags(title)).trimmingCharacters(in: .whitespacesAndNewlines)
+            let cleanTitle = WebGrounding.cleanResultText(title)   // live-29 (B3)
             guard !cleanTitle.isEmpty else { return nil }
-            let snippet = (r["content"] as? String).map { raw -> String in
-                let clean = WebReadability.decodeEntities(WebReadability.stripTags(raw)).trimmingCharacters(in: .whitespacesAndNewlines)
-                return clean.count > 300 ? String(clean.prefix(300)) + "…" : clean
-            }
+            let snippet = (r["content"] as? String).map { WebGrounding.cleanResultText($0, cap: 300) }   // live-29 (B3)
             return ToolLink(title: cleanTitle, url: urlStr, snippet: snippet, published: parseDate(r["published_date"] as? String))
         }
     }

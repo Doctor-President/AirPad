@@ -616,7 +616,7 @@ struct NodeDetailView: View {
                 } tags: {
                     tagsRow
                 } attributes: {
-                    CaptureAttributesSection(nodeID: nodeID, showFieldSheet: $showFieldSheet, measured: true)
+                    CaptureAttributesSection(nodeID: nodeID, showFieldSheet: $showFieldSheet, measured: true, hidesEmptyFields: true)
                 }
 
                 VStack(alignment: .leading, spacing: visualSettings.interCardSpacing) {

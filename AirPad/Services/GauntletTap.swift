@@ -324,8 +324,12 @@ struct GauntletA11y: ViewModifier {
     var line = ""
     @ObservationIgnored private var openT0: Date? = nil
     @ObservationIgnored private var opens = 0
-    func markOpen() { openT0 = Date(); GauntletTap.shared.resetGap() }
+    func markOpen() {
+        openT0 = Date(); GauntletTap.shared.resetGap()
+        if ChatTranscript.openTrace { ChatTranscriptCollectionView.trace("markOpen") }
+    }
     func transcriptLaidOut(messages: Int) {
+        if ChatTranscript.openTrace { ChatTranscriptCollectionView.trace("transcriptLaidOut") }
         guard let t0 = openT0 else { return }
         openT0 = nil
         let ms = Int(Date().timeIntervalSince(t0) * 1000)

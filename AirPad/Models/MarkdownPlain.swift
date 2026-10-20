@@ -17,8 +17,14 @@ enum MarkdownPlain {
         var l = line
         if l.range(of: #"^\s*([-*_])(\s*\1){2,}\s*$"#, options: .regularExpression) != nil { return "" }
         if let cb = checkbox(l) { return (cb.done ? checkedGlyph : uncheckedGlyph) + " " + cb.text }
-        l = replace(l, #"^\s{0,3}#{1,6}\s+"#, "")
-        while let r = l.range(of: #"^\s*>\s?"#, options: .regularExpression) { l.removeSubrange(r) }
+        // live-29 (B4) — a label line never starts with a heading marker, however the note spells it: any indentation,
+        // a no-break space, a BOM / zero-width space before it, inside a quote, a trailing "\r", or "###" with no space
+        // (2+ hashes; a lone "#hashtag" / "#1" stays).
+        l = replace(l, #"^[\s\x{FEFF}\x{200B}]+"#, "")
+        while let r = l.range(of: #"^>\s?"#, options: .regularExpression) { l.removeSubrange(r) }
+        l = replace(l, #"^#{1,6}(?:[\s\x{00A0}]+|$)"#, "")
+        l = replace(l, #"^#{2,6}(?=[^\s#])"#, "")
+        l = replace(l, #"\r$"#, "")
         l = replace(l, #"^\s*(?:[-*+•]|\d{1,3}[.)])\s+"#, "")
         return l
     }
@@ -148,6 +154,24 @@ enum MarkdownPlain {
             t = t.replacingOccurrences(of: String(UnicodeScalar(0xE000 + i)!), with: String(ch))
         }
         return t
+    }
+
+    /// live-29 (B4) — THE label sanitizer: any text lifted into a one-line label (a search result's title or snippet, a
+    /// source row, a derived preview) — Markdown block + inline syntax gone, then one line (newlines → spaces).
+    static func label(_ s: String) -> String {
+        text(s).components(separatedBy: .newlines).map { $0.trimmingCharacters(in: .whitespaces) }
+            .filter { !$0.isEmpty }.joined(separator: " ")
+    }
+
+    /// live-29 (B4) — a multi-line label WITH its styling: each line's block markers go first (`block`), then the inline
+    /// styler. `styled` alone is inline-only, which is how a "### " heading reached a card's preview line on T's device.
+    static func styledLines(_ s: String) -> AttributedString {
+        var out = AttributedString()
+        for (i, line) in s.components(separatedBy: "\n").enumerated() {
+            if i > 0 { out.append(AttributedString("\n")) }
+            out.append(styled(block(line)))
+        }
+        return out
     }
 
     /// Done's first-words title (B1): the plain text of the note, trimmed, its first 40 characters.

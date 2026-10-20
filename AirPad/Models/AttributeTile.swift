@@ -149,7 +149,9 @@ extension FieldKind {
     /// Migration + creation default (T's ratified defaults: existing stacked pairs →
     /// 1×2 `.stacked`; long text → full-row `.row`). Guaranteed to be a member of
     /// `supportedSizeClasses`.
+    /// live-29 (4) — a date defaults to a full row too, so it sits on the same column grid as the text rows beside it
+    /// (a half-width date box between full-width rows broke every column edge — Sample Library People and Coffee).
     var defaultSizeClass: AttributeSizeClass {
-        self == .text ? .row : .stacked
+        (self == .text || self == .date) ? .row : .stacked
     }
 }

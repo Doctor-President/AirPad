@@ -120,6 +120,9 @@ final class ChatSession {
         /// user's Stop. It keeps what arrived; the transcript shows `AnswerCap.line(for:)` under it. Not a partial (no
         /// Continue, no resume). Nil on complete answers (legacy decodes nil).
         var stopped: AnswerCap.Stop?
+        /// live-29 (B3) — the answer's search ran but no result supports it: the line is `searchUnconfirmedNote`, never
+        /// the training-data one. Nil elsewhere (legacy decodes nil).
+        var searchUnconfirmed: Bool?
 
         init(id: UUID = UUID(), role: Role, text: String, citations: [Citation]? = nil, readReceipt: ReadReceipt? = nil, activity: ToolActivity? = nil, isPartial: Bool? = nil, requestID: String? = nil, generalKnowledge: Bool? = nil, declined: Bool? = nil, modelText: String? = nil, systemPrompt: String? = nil, threadStart: UUID? = nil) {
             self.declined = declined
@@ -434,18 +437,22 @@ final class ChatSession {
     /// `generalKnowledge` (CH Session 2) — a General turn with no web search behind it: its answer streams through
     /// `WebAnswerFilter` (no tool ran, so only a URL the user typed may appear) and, when the question is FACTUAL
     /// (T ruling 2026-10-09), carries the app's general-knowledge line.
-    func send(displayText: String, modelText: String, systemPrompt: String, citations: [Message.Citation]? = nil, alwaysCiteIndices: Set<Int> = [], readReceipt: Message.ReadReceipt? = nil, generalKnowledge: Bool = false, replayFrom: UUID? = nil) async {
+    func send(displayText: String, modelText: String, systemPrompt: String, citations: [Message.Citation]? = nil, alwaysCiteIndices: Set<Int> = [], readReceipt: Message.ReadReceipt? = nil, generalKnowledge: Bool = false, replayFrom: UUID? = nil, absenceGuard: AbsenceGuard? = nil, webResults: Int? = nil, searchActivity: ToolActivity? = nil) async {
         guard !displayText.isEmpty, !isStreaming else { return }
 
         // New attempt clears any prior transient failure banner.
         lastError = nil
-        let packetTurn = modelText != displayText
+        // live-29 (B5) — `webResults` (non-nil) = an app-routed web search ran for this General turn (Apple Intelligence +
+        // web), with that many results in `modelText`. Its packet isn't a Library packet (never replayed as history).
+        let packetTurn = modelText != displayText && webResults == nil
         let userID = UUID()
         messages.append(Message(id: userID, role: .user, text: displayText, modelText: packetTurn ? modelText : nil,
                                 systemPrompt: packetTurn ? systemPrompt : nil, threadStart: packetTurn ? (replayFrom ?? userID) : nil))
+        // live-30 (A1) — an app-routed search shows the same "Searched the web" row the Host path's tool call does.
+        if let searchActivity { messages.append(Message(role: .activity, text: searchActivity.label, activity: searchActivity)) }
         pendingUser = nil
         isStreaming = true
-        filterAllowed = WebGrounding.urls(in: displayText)
+        filterAllowed = WebGrounding.urls(in: displayText) + (webResults != nil ? (citations ?? []).compactMap(\.url) : [])
         answerFilter = generalKnowledge ? WebAnswerFilter(allowed: filterAllowed) : nil
         beginAnswerStream(candidates: citations ?? [])
 
@@ -466,7 +473,7 @@ final class ChatSession {
         let numCtx = ModelRouter.contextWindowTokens
         // T ruling (2026-10-09) — Library user turns are replayed as the packets they sent (newest first, while they
         // fit the window), so this request EXTENDS the previous one and Ollama's prompt cache covers the prefix.
-        let history: [ModelRouter.WireMessage] = Self.historyWire(Array(messages.dropLast()), replayFrom: replayFrom,
+        let history: [ModelRouter.WireMessage] = Self.historyWire(Array(messages.dropLast(searchActivity == nil ? 1 : 2)), replayFrom: replayFrom,
             reserveChars: systemPrompt.count + modelText.count, windowTokens: numCtx)
         // live-28 (1) — the answer budget for this route, the loop guard, and the turn limit.
         let maxTokens = AnswerCap.maxTokens(AnswerCap.route(question: displayText, library: packetTurn), think: thinkEnabled)
@@ -529,7 +536,18 @@ final class ChatSession {
             // model that dumps `<think>…</think>` INTO the answer must not have that chain-of-thought rendered.
             settleAnswer()
             var r = numberer.result(alwaysInclude: alwaysCiteIndices)
-            let finalText = Self.stripThinkTags(r.text).trimmingCharacters(in: .whitespacesAndNewlines)
+            var finalText = Self.stripThinkTags(r.text).trimmingCharacters(in: .whitespacesAndNewlines)
+            // live-29 (1b) — the absence guard: entries in the room name what was asked about, so an answer that says
+            // there are none never reaches the transcript; what was found is listed instead (each entry cited).
+            var guardedCitations: [Message.Citation]? = nil
+            if let absenceGuard, stopRequest == nil, let found = absenceGuard.apply(to: finalText) {
+                finalText = found.text
+                guardedCitations = found.citations
+                #if DEBUG
+                GauntletTap.shared.noteValue("absenceGuard", "fired")
+                #endif
+                NSLog("[AbsenceGuard] fired subject=\"%@\" found=%d", absenceGuard.subject, found.citations.count)
+            }
             if !finalText.isEmpty {
                 // Sources are ONLY the ones the answer cited inline (BUG 7 / Part 2) — a passage becomes a
                 // citation only when the prose references it — plus the entries READ IN FULL (BS2/BU1), appended
@@ -548,13 +566,24 @@ final class ChatSession {
                 // live-23 (5b) — Apple Intelligence's refusal string is a decline, not an answer: no general-knowledge
                 // label, never sent back as history, never a title.
                 let declined = ModelRouter.isAppleIntelligenceActive && AppleChat.isRefusalText(finalText)
-                let note = WebGrounding.ungroundedNote(for: displayText)   // live-27 (3): dated for a current-state request
-                let labelled = !declined && generalKnowledge && note != nil
+                // live-30 (A1) — after an app-routed search, an answer that opens by saying the results don't answer the
+                // question is unconfirmed: its [n] aren't support (no chips, no markers), and the "didn't confirm" line shows.
+                if webResults != nil, guardedCitations == nil, !AppleWebGrounding.live29, AppleWebQuery.saysResultsDontAnswer(finalText) {
+                    finalText = AppleWebQuery.strippingCitationMarkers(finalText)
+                    r.citations = []
+                }
+                // live-29 (B3/B5) — the ONE decision for the line (`WebGrounding.answerNote`): after an app-routed search,
+                // never the training-data line.
+                let line = WebGrounding.answerNote(question: displayText, searchRan: webResults != nil, resultCount: webResults ?? 0,
+                                                   citedCount: r.citations.count, rateLimited: false)
+                let labelled = !declined && generalKnowledge && line != nil
+                if let guardedCitations { r.citations = guardedCitations }
                 var answer = Message(id: streamingMessageID, role: .assistant, text: finalText,
                                      citations: r.citations.isEmpty ? nil : r.citations, readReceipt: readReceipt,
                                      generalKnowledge: labelled ? true : nil, declined: declined ? true : nil)
-                answer.provenance = Self.answerProvenance(web: false, library: packetTurn)
-                if labelled && note == WebGrounding.datedKnowledgeNote { answer.datedKnowledge = true }
+                answer.provenance = Self.answerProvenance(web: webResults != nil, library: packetTurn)
+                if labelled && line?.dated == true { answer.datedKnowledge = true }
+                if labelled && line?.unconfirmed == true { answer.searchUnconfirmed = true }
                 answer.stopped = stopRequest
                 messages.append(answer)
                 #if DEBUG
@@ -604,10 +633,20 @@ final class ChatSession {
                 // Nothing streamed — a genuine failure. Classify it into a human
                 // banner (field findings #2/#3): unreachable/530 reads as "offline
                 // or asleep", and raw upstream HTML is never shown.
+                // live-30 (A1) — the trailing user turn stays last (Retry re-sends it; the search runs again).
+                if searchActivity != nil, messages.last?.role == .activity { messages.removeLast() }
                 surface(error)
             }
         }
 
+        // live-29 (2) — a stopped answer (the user's Stop, the loop guard, the turn limit, num_predict) frees the Mac: the
+        // Host's held generation outlives this connection by design, so it's told to stop. Silent on a Host without it.
+        if stopRequest != nil, let rid = hostRequestID, case .host(let pairing) = ModelRouter.active {
+            ModelRouter.cancelHostGeneration(pairing: pairing, requestID: rid)
+            #if DEBUG
+            GauntletTap.shared.noteValue("cancelSent", true)
+            #endif
+        }
         #if DEBUG
         do {
             let committed = messages.last.flatMap { $0.role == .assistant && $0.id == streamingMessageID ? $0 : nil }
@@ -800,7 +839,7 @@ final class ChatSession {
             // turn's user content (the display transcript keeps the clean question). It
             // returns the settled answer, its GLOBALLY-numbered citation links, whether
             // ANY tool ran, and whether a provider throttle was seen (for honest wording).
-            func runToolLoop(nudge: Bool) async throws -> (answer: String, links: [ToolLink], anyTool: Bool, rateLimited: Bool) {
+            func runToolLoop(nudge: Bool) async throws -> (answer: String, links: [ToolLink], anyTool: Bool, rateLimited: Bool, searched: Bool) {
                 // OpenAI working-set (system + prior chat turns + this turn). Activity
                 // rows are display-only — skipped here.
                 var working: [[String: Any]] = [["role": "system", "content": systemPrompt]]
@@ -820,6 +859,7 @@ final class ChatSession {
                 // can't retry a tool that cannot succeed — one attempt, one honest chip.
                 var sawUnavailable = false
                 var anyTool = false
+                var searched = false   // live-29 (B3) — a web search really ran (a provider was asked), whatever came back
 
                 /// Runs one assistant tool-call turn through the seam: records it in the working set, shows an activity
                 /// row per call, and feeds each result back. A web_search's results are ranked (fresh first on a
@@ -847,6 +887,7 @@ final class ChatSession {
                         #endif
                         if result.rateLimited { sawRateLimit = true }
                         if result.unavailable { sawUnavailable = true }
+                        if call.name == AgentTools.webSearch, !result.unavailable { searched = true }
                         let toolContent: String
                         if call.name == AgentTools.webSearch, !result.links.isEmpty {
                             let ranked = freshness ? WebGrounding.rank(result.links) : result.links
@@ -948,7 +989,7 @@ final class ChatSession {
                             : "I reached the tool-step limit (\(maxToolSteps)) for this question. Here's what I have so far — ask me to continue if you'd like."
                     }
                 }
-                return (finalAnswer, citationLinks, anyTool, sawRateLimit)
+                return (finalAnswer, citationLinks, anyTool, sawRateLimit, searched)
             }
 
             var outcome = try await runToolLoop(nudge: forceWebSearch)
@@ -977,13 +1018,18 @@ final class ChatSession {
                     // general-knowledge line — only under a FACTUAL question (T ruling 2026-10-09: a pep talk gets
                     // none). A throttled turn's canned message is the app's own, so it gets none.
                     // T ruling (2026-10-09, item 9): a search whose results the answer doesn't CITE backs nothing either.
-                    let note = WebGrounding.ungroundedNote(for: displayText)   // live-27 (3): dated for a current-state request
-                    let ungrounded = (outcome.links.isEmpty || r.citations.isEmpty) && !outcome.rateLimited && note != nil
+                    // live-29 (B3) — ONE decision (`WebGrounding.answerNote`): after a search ran, never the training-data
+                    // line; an answer no result supports says "The search results didn't confirm this."
+                    let line = WebGrounding.answerNote(question: displayText, searchRan: outcome.searched || !outcome.links.isEmpty,
+                                                       resultCount: outcome.links.count, citedCount: r.citations.count,
+                                                       rateLimited: outcome.rateLimited)
+                    let ungrounded = line != nil
                     var answer = Message(role: .assistant, text: r.text,
                                          citations: r.citations.isEmpty ? nil : r.citations,
                                          generalKnowledge: ungrounded ? true : nil)
                     answer.provenance = Self.answerProvenance(web: !outcome.links.isEmpty, library: false)   // live-27 (4)
-                    if ungrounded && note == WebGrounding.datedKnowledgeNote { answer.datedKnowledge = true }
+                    if line?.dated == true { answer.datedKnowledge = true }
+                    if line?.unconfirmed == true { answer.searchUnconfirmed = true }
                     answer.stopped = stopRequest
                     messages.append(answer)
                     #if DEBUG
@@ -1059,6 +1105,26 @@ final class ChatSession {
     /// the turn shows the user's message + a single assistant line whose tap opens
     /// Settings → Web search (`airpad-settings://websearch`, intercepted by
     /// `ChatTranscript`'s `openURL`). Persisted like any turn so it survives a resume.
+    /// live-29 (1b) — a Library answer the APP writes (no model call): "nothing in your notes mentions X". Recorded like
+    /// a Library turn (a 0/0 receipt → "No matching entries"), never sent back as a packet.
+    func appendLibraryNotice(userText: String, text: String) {
+        let q = userText.trimmingCharacters(in: .whitespacesAndNewlines)
+        guard !q.isEmpty, !isStreaming else { return }
+        lastError = nil
+        messages.append(Message(role: .user, text: q))
+        var answer = Message(role: .assistant, text: text, readReceipt: .init(readInFull: 0, skimmed: 0, partial: false))
+        answer.provenance = Self.answerProvenance(web: false, library: true)
+        messages.append(answer)
+        pendingUser = nil
+        flush()
+        #if DEBUG
+        GauntletTap.shared.beginTurn(requestID: nil, think: false, systemPrompt: "", history: [], userContent: q, numCtx: 0)
+        GauntletTap.shared.notePath("library-notice")
+        GauntletTap.shared.endTurn(finalText: text, citations: nil, receipt: ChatTranscript.readReceiptText(answer.readReceipt!),
+                                   thinking: "", lastError: nil, isPartial: false)
+        #endif
+    }
+
     func appendWebSearchKeyNotice(userText: String) {
         let text = userText.trimmingCharacters(in: .whitespacesAndNewlines)
         guard !text.isEmpty, !isStreaming else { return }
@@ -1406,6 +1472,7 @@ final class ChatSession {
             var body = "**Theme \(k % 7 + 1).** " + String(repeating: para, count: reps / 2)
             if k % 3 == 0 { body += "\n\n- First, " + para + "\n- Second, " + para + "\n- Third, " + para }
             if k % 4 == 1 { body += "\n\n### What stands out\n\n" + String(repeating: para, count: 2) }
+            if k == n - 1 { body += "\n\nEnd of seeded chat." }   // live-30 — the transcript-end rows find the last line
             out.append(Message(role: .assistant, text: body))
         }
         messages = out
@@ -1870,7 +1937,8 @@ final class ChatSession {
         do {
             let raw = try await ModelRouter.generate(
                 systemPrompt: titleSystemPrompt,
-                userPrompt: userPrompt
+                userPrompt: userPrompt,
+                maxTokens: 64   // live-29 (2) — a title is a few words (the shared-prefix title is capped the same)
             )
             guard let cleaned = sanitizeTitleCandidate(raw) else { return }
             await store?.updateTitle(id: chatID, title: cleaned)
@@ -1903,6 +1971,7 @@ final class ChatSession {
     /// sentence-shaped result. When unsure, reject → keep the fallback.
     private static func sanitizeTitleCandidate(_ raw: String) -> String? {
         var s = raw.trimmingCharacters(in: .whitespacesAndNewlines)
+        if let firstLine = s.split(whereSeparator: { $0.isNewline }).first { s = MarkdownPlain.label(String(firstLine)) }   // live-29 (B4): "## Title" / "**Title**"
         // First line only — guards against multi-paragraph refusals
         // that happen to start with a plausible-looking phrase.
         if let firstLine = s.split(whereSeparator: { $0.isNewline }).first {

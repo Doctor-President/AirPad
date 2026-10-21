@@ -31,7 +31,7 @@ final class LiveWebUI: XCTestCase {
         for (i, chat) in chats.enumerated() {
             let app = XCUIApplication()
             app.launchArguments = ["-UITestLibrary", "-UITestLibraryFresh", "-OpenMap", "-GauntletUI", "YES", "-EmbedCPUOnly",
-                                   "-LibrarianDetent", "full", "-WebTrace", "YES", "-webSearchEnabled", "YES"]
+                                   "-LibrarianDetent", "full", "-WebTrace", "YES", "-webSearchEnabled", "YES", "-WikipediaLive", "YES"]
                 + (env["LIVE_ARGS"] ?? "").split(separator: " ").map(String.init)
             if let k = env["LIVE_KEY"], !k.isEmpty, let arg = env["LIVE_KEY_ARG"] { app.launchArguments += [arg, k] }
             app.launch()

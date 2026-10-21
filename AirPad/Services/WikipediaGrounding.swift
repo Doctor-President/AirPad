@@ -43,7 +43,11 @@ enum WikipediaGrounding {
     static var isOn: Bool {
         #if DEBUG
         // The gauntlet's mock provider serves synthetic facts: real Wikipedia stays out unless asked for (`-WikipediaLive YES`).
-        if UserDefaults.standard.bool(forKey: "WebSearchMock"), !UserDefaults.standard.bool(forKey: "WikipediaLive") { return false }
+        let d = UserDefaults.standard
+        if d.bool(forKey: "WebSearchMock"), !d.bool(forKey: "WikipediaLive") { return false }
+        // UI tests stay off the real site: on only when the stub stands in (`-WebSearchBaseURL`) or a live run asks.
+        if ProcessInfo.processInfo.arguments.contains("-UITestLibrary"), !d.bool(forKey: "WikipediaLive"),
+           (d.string(forKey: "WebSearchBaseURL") ?? "").isEmpty, (d.string(forKey: "WikipediaBaseURL") ?? "").isEmpty { return false }
         #endif
         return !live31 && WebSearchBackend.isEnabled
     }

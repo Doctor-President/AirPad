@@ -13,7 +13,8 @@
    ],
    "stale": [
     "biden is (the )?(current|sitting|incumbent|46th and current)",
-    "president (is|remains) joe biden"
+    "president (is|remains) joe biden",
+    "current (u\\.?s\\.? )?president (is|remains) (joe )?biden"
    ]
   },
   {
@@ -76,7 +77,7 @@
    ],
    "stale": [
     "francis is (the )?(current )?pope",
-    "current pope[^.]{0,40}francis"
+    "current pope (is )?(pope )?francis"
    ]
   },
   {
@@ -176,7 +177,8 @@
     "biden[^.\\n|]{0,30}(–|-|—|to) ?present",
     "\\|\\s*present\\s*\\|[^\\n]*biden|biden[^\\n]*\\|\\s*(present|incumbent)",
     "assuming (that )?joe biden",
-    "biden is (the )?(current|sitting|incumbent)"
+    "biden is (the )?(current|sitting|incumbent)",
+    "current (u\\.?s\\.? )?president (is|remains) (joe )?biden"
    ]
   }
  ]

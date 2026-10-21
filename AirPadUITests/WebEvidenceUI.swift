@@ -116,4 +116,20 @@ final class WebEvidenceUI: XCTestCase {
         XCTAssertFalse(leaked, "the model's thinking reached the answer")
         app.terminate()
     }
+
+    /// The Server route with no key: the Wikipedia turn goes through the plain stream, which honours the chat's Thinking
+    /// switch (off by default) — every request asks for thinking off, nothing of it in the answer, the holder named.
+    func testServerNoKeyThinkingOff() throws {
+        let c0 = get("/chatlog").count
+        let app = try launch(["-ClearHostPairing", "YES", "-airpadLibrarianRoute", "endpoint", "-DebugEndpointURL", fakeURL])
+        ask(app, q1, first: true)
+        let all = get("/chatlog").dropFirst(c0).filter { $0["route"] as? String == "server" }
+        shot(app, "server-no-key")
+        note("server, no key: requests \(all.map { "\($0["reasoning_effort"] ?? "nil"): \("\($0["user_head"] ?? "")".prefix(50))" }) · Ilsa Vane \(shown(app, "Ilsa Vane")) · thinking shown \(shown(app, "Thinking Process"))")
+        XCTAssertFalse(all.isEmpty, "the server wasn't asked")
+        XCTAssertTrue(all.allSatisfy { $0["reasoning_effort"] as? String == "none" }, "a request left the server model thinking")
+        XCTAssertTrue(shown(app, "Ilsa Vane"), "the answer doesn't name the current holder")
+        XCTAssertFalse(shown(app, "Thinking Process"), "the model's thinking reached the answer")
+        app.terminate()
+    }
 }

@@ -29,7 +29,7 @@ def norm(u): return re.sub(r"^https?://(www\.)?", "", u or "").rstrip("/").lower
 def grade_turn(c, t):
     ans = next((r for r in t["rows"] if r["kind"] == "answer"), None) if t else None
     text = (ans or {}).get("text", "")
-    low = text.lower()
+    low = re.sub(r"[*_`]", "", text.lower())   # **Joe Biden** is still a stale claim
     groups = c["any"]
     names = bool(text) and all(any(k in low for k in g) for g in groups)
     stale = [p for p in c.get("stale", []) if re.search(p, low)]

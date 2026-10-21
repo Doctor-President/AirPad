@@ -454,7 +454,7 @@ enum ModelRouter {
                         try await streamFoundationModel(messages: messages, continuation: continuation)
                         continuation.finish()
                     case .ollama(let endpoint):
-                        try await streamOllama(endpoint: endpoint, messages: messages, numCtx: numCtx, continuation: continuation)
+                        try await streamOllama(endpoint: endpoint, messages: messages, numCtx: numCtx, think: think, continuation: continuation)
                         continuation.finish()
                     case .host(let pairing):
                         try await streamHost(
@@ -878,12 +878,17 @@ enum ModelRouter {
         endpoint: String,
         messages: [WireMessage],
         numCtx: Int?,
+        think: Bool = false,
         continuation: AsyncThrowingStream<ModelDelta, Error>.Continuation
     ) async throws {
         guard let base = URL(string: endpoint) else {
             throw RouterError.ollamaBadEndpoint(endpoint)
         }
         let modelName = try await firstOllamaModel(base: base)
+        // live-32 (2) — the chat's Thinking switch (off by default) now reaches a server model too: off asks for its
+        // thinking off where the server offers it (T's qwen/qwen3.5-9b thought ~25 s per answer and, on a long table,
+        // ran out of its 8,192-token context); on, its reasoning streams into the Thought process.
+        let effort = think || WikipediaGrounding.live31 ? nil : await serverReasoningOff(base: base, model: modelName)
         lastAnswerSource = AnswerSource(route: .server, model: modelName)   // live-27 (4)
 
         let path = "v1/chat/completions"
@@ -902,6 +907,7 @@ enum ModelRouter {
         // Best-effort context window (Ollama's /v1 accepts an `options` passthrough; ignored by
         // strict OpenAI servers, harmless). The Host path is where num_ctx is load-bearing.
         if let numCtx { body["options"] = ["num_ctx": numCtx] }
+        if let effort { body["reasoning_effort"] = effort }
         request.httpBody = try JSONSerialization.data(withJSONObject: body)
 
         let (bytes, response): (URLSession.AsyncBytes, URLResponse)

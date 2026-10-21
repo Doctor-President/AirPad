@@ -127,5 +127,5 @@ ChatScrollEndUI/test200All
 # streaming answer and a table, asking while scrolled up, and the cell-hosted controls + reading order.
 ChatTranscriptEndUI/test1_OpenAndArrowLandOnTheLastLine_12
 ChatTranscriptEndUI/test2_OpenAndArrowLandOnTheLastLine_200_andThePanelDrags
-ChatTranscriptEndUI/test3_TheEndHoldsWhileAnAnswerStreamsAndATableAppears
+ChatTranscriptEndUI/test3_StreamingNeverMovesTheView
 ChatTranscriptEndUI/test4_CellsKeepTheirControlsAndReadingOrder

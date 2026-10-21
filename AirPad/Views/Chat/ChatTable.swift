@@ -94,8 +94,9 @@ struct ChatTable: Equatable {
 enum ChatTablePresentation { case grid, stackedRecords }
 
 /// The grid: a header row, hairline row dividers, tabular numerals, cells wrapping inside their column. Wider than the
-/// panel → it scrolls sideways inside the answer with the header row and the first column staying put; taller than
-/// `maxHeight` → it scrolls down inside its frame, the header staying put. Never wider than the panel. A tap opens it
+/// panel → it scrolls sideways inside the answer with the first column staying put. live-31 (2): in the chat it shows at
+/// its full height (no vertical scroll inside the chat's scroll — a nested one traps the gesture; it was capped at 380 pt
+/// since live-26); only the full-screen viewer scrolls down, the header staying put. Never wider than the panel. A tap opens it
 /// full screen (`ChatTableFullScreen`: landscape, Copy as Markdown / CSV). VoiceOver reads each row as a record.
 /// live-27 (4c) — the clear space the transcript keeps right of an answer's prose; an answer's table reclaims it.
 private struct ChatAnswerGutterKey: EnvironmentKey { static let defaultValue: CGFloat = 0 }
@@ -119,7 +120,7 @@ extension EnvironmentValues {
 
 struct ChatTableView: View {
     let table: ChatTable
-    var maxHeight: CGFloat? = 380
+    /// In an answer (true): full height, sideways scroll only, a tap opens the viewer. The viewer itself: false.
     var opensFullScreen = true
 
     @Environment(\.appBodyFont) private var appFont
@@ -132,6 +133,12 @@ struct ChatTableView: View {
     private func openFull() { if let presenter { presenter.open(table) } else { showFull = true } }
 
     static let cellSize: CGFloat = 16
+    /// DEBUG `-ChatTableCapped YES` — live-26…30's 380 pt box in the chat (the perf A/B for full height). Release: false.
+    #if DEBUG
+    static let debugCapped = UserDefaults.standard.bool(forKey: "ChatTableCapped")
+    #else
+    static let debugCapped = false
+    #endif
     /// live-27 (4c) — which sides fade: the side(s) the grid can still scroll to.
     static func fadeEdges(_ offsetX: CGFloat, _ container: CGFloat, _ content: CGFloat) -> (Bool, Bool) {
         (offsetX > 1, offsetX + container < content - 1)
@@ -164,7 +171,7 @@ struct ChatTableView: View {
                 .accessibilityLabel("Open the table full screen")
                 .accessibilityIdentifier("chatTableExpand")
             }
-            ScrollView([.horizontal, .vertical]) {
+            ScrollView(opensFullScreen && !Self.debugCapped ? [.horizontal] : [.horizontal, .vertical]) {
                 LazyVStack(alignment: .leading, spacing: 0, pinnedViews: [.sectionHeaders]) {
                     Section {
                         ForEach(table.rows.indices, id: \.self) { i in
@@ -200,7 +207,7 @@ struct ChatTableView: View {
                 }
             }
             .frame(maxWidth: .infinity, alignment: .leading)
-            .frame(height: maxHeight.map { min(total + 1, $0) })
+            .frame(height: opensFullScreen ? (Self.debugCapped ? min(total + 1, 380) : total + 1) : nil)
             .contentShape(Rectangle())
             .onTapGesture { if opensFullScreen { openFull() } }
             .accessibilityAction(named: "Open the table full screen") { if opensFullScreen { openFull() } }
@@ -273,7 +280,7 @@ struct ChatTableFullScreen: View {
 
     private var content: some View {
         NavigationStack {
-            ChatTableView(table: table, maxHeight: nil, opensFullScreen: false)
+            ChatTableView(table: table, opensFullScreen: false)
                 .padding(.horizontal, 12)
                 .navigationTitle("\(table.rows.count) rows · \(table.headers.count) columns")
                 .navigationBarTitleDisplayMode(.inline)

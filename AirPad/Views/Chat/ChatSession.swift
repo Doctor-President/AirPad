@@ -766,7 +766,7 @@ final class ChatSession {
 
     @discardableResult
     func sendWithTools(displayText: String, systemPrompt: String, executor: ToolExecutor, forceWebSearch: Bool = false,
-                       prefetch: WebPrefetch = .none) async -> Bool {
+                       prefetch: WebPrefetch = .none, appQuery: String? = nil) async -> Bool {
         guard !displayText.isEmpty, !isStreaming else { return false }
         // The agentic tool loop runs over a direct .ollama endpoint OR the sealed .host pairing.
         // (It was .ollama-ONLY — the reason web search never worked over a paired Host: it was
@@ -865,8 +865,11 @@ final class ChatSession {
                 /// row per call, and feeds each result back. A web_search's results are ranked (fresh first on a
                 /// today/latest question), numbered GLOBALLY across the turn and dated in the packet; every URL a tool
                 /// returns joins the answer's allow-list.
-                func runCalls(_ calls: [ToolCall], content: String) async {
+                /// live-31 (3) — `intoTurn`: the APP's search, whose results go into this turn's user message (labelled as
+                /// the app's search today, `WebGrounding.appSearchTurn`) instead of a tool exchange the model didn't make.
+                func runCalls(_ calls: [ToolCall], content: String, intoTurn: Bool = false) async {
                     anyTool = true
+                    let before = working.count
                     working.append([
                         "role": "assistant",
                         "content": content,
@@ -880,14 +883,23 @@ final class ChatSession {
                         #if DEBUG
                         if let line = prefillNotice { GauntletTap.shared.noteStatus(line) }
                         #endif
-                        var result = await executor.execute(name: call.name, arguments: call.arguments)
+                        // live-31 (3) — ask for more so the top five remain without social / video hosts (as on the Apple path).
+                        var args = call.arguments
+                        if call.name == AgentTools.webSearch, !WebGrounding.live30 { args["count"] = AppleWebQuery.requestCount }
+                        var result = await executor.execute(name: call.name, arguments: args)
+                        if call.name == AgentTools.webSearch {
+                            result = ToolResult(textForModel: result.textForModel, links: WebGrounding.hostLinks(result.links),
+                                                rateLimited: result.rateLimited, unavailable: result.unavailable, failed: result.failed)
+                        }
                         prefillNotice = nil
                         #if DEBUG
                         GauntletTap.shared.noteTool(call.name, (call.arguments["query"] as? String) ?? (call.arguments["url"] as? String) ?? "")
                         #endif
                         if result.rateLimited { sawRateLimit = true }
                         if result.unavailable { sawUnavailable = true }
-                        if call.name == AgentTools.webSearch, !result.unavailable { searched = true }
+                        // live-31 (3) — a provider that didn't answer (or throttled) searched nothing: the answer is the model's own.
+                        if call.name == AgentTools.webSearch, !result.unavailable,
+                           WebGrounding.live30 || (!result.failed && !result.rateLimited) { searched = true }
                         let toolContent: String
                         if call.name == AgentTools.webSearch, !result.links.isEmpty {
                             let ranked = freshness ? WebGrounding.rank(result.links) : result.links
@@ -908,7 +920,8 @@ final class ChatSession {
                             #if DEBUG
                             GauntletTap.shared.noteValue("fetched", url)
                             #endif
-                        } else if call.id == "app_search", call.name == AgentTools.webSearch, result.links.isEmpty, !result.unavailable, !result.rateLimited {
+                        } else if call.id == "app_search", call.name == AgentTools.webSearch, result.links.isEmpty, !result.unavailable, !result.rateLimited,
+                                  !result.failed {
                             // The APP ran this search, not the model — an empty result read as the model's own failed
                             // call ("I apologize for the error…"). Say plainly what happened.
                             toolContent = "The web search found nothing for this question. Answer it from your own knowledge."
@@ -917,6 +930,15 @@ final class ChatSession {
                         }
                         appendActivity(for: call, result: result)
                         producedActivity = true
+                        if intoTurn, call.name == AgentTools.webSearch, !result.links.isEmpty {
+                            // The results join the question in the user's turn; the system prompt says whose search it was.
+                            working.removeSubrange(before...)
+                            let q = (call.arguments["query"] as? String) ?? displayText
+                            working[working.count - 1]["content"] = WebGrounding.appSearchTurn(query: q, question: displayText,
+                                                                                               links: result.links, now: now, freshness: freshness)
+                            working[0]["content"] = systemPrompt + "\n\n" + WebGrounding.appSearchClause
+                            continue
+                        }
                         working.append(["role": "tool", "tool_call_id": call.id, "content": toolContent])
                     }
                 }
@@ -928,7 +950,8 @@ final class ChatSession {
                         let json = (try? JSONSerialization.data(withJSONObject: args)).flatMap { String(data: $0, encoding: .utf8) } ?? "{}"
                         return ToolCall(id: id, name: name, argumentsJSON: json)
                     }
-                    await runCalls([call("app_search", AgentTools.webSearch, ["query": displayText])], content: "")
+                    await runCalls([call("app_search", AgentTools.webSearch, ["query": appQuery ?? displayText])], content: "",
+                                   intoTurn: !WebGrounding.live30)
                     if prefetch == .searchAndFetch, !sawUnavailable, let top = citationLinks.first {
                         await runCalls([call("app_fetch", AgentTools.fetchURL, ["url": top.url])], content: "")
                     }
@@ -1022,7 +1045,10 @@ final class ChatSession {
                     // line; an answer no result supports says "The search results didn't confirm this."
                     let line = WebGrounding.answerNote(question: displayText, searchRan: outcome.searched || !outcome.links.isEmpty,
                                                        resultCount: outcome.links.count, citedCount: r.citations.count,
-                                                       rateLimited: outcome.rateLimited)
+                                                       // live-31 (3): only the app's own throttle message goes without a line;
+                                                       // an answer written after a throttled search is the model's own (dated).
+                                                       rateLimited: outcome.rateLimited && (WebGrounding.live30
+                                                           || r.text.hasPrefix("Web search is temporarily rate-limited")))
                     let ungrounded = line != nil
                     var answer = Message(role: .assistant, text: r.text,
                                          citations: r.citations.isEmpty ? nil : r.citations,
@@ -1472,6 +1498,12 @@ final class ChatSession {
             var body = "**Theme \(k % 7 + 1).** " + String(repeating: para, count: reps / 2)
             if k % 3 == 0 { body += "\n\n- First, " + para + "\n- Second, " + para + "\n- Third, " + para }
             if k % 4 == 1 { body += "\n\n### What stands out\n\n" + String(repeating: para, count: 2) }
+            // live-31 (2) — `-GauntletSeedTable <rows>`: every 5th answer carries a table that tall (the full-height perf A/B).
+            let tableRows = UserDefaults.standard.integer(forKey: "GauntletSeedTable")
+            if tableRows > 0, k % 5 == 2 {
+                body += "\n\n| # | Name | Party | Term | Note |\n|---|---|---|---|---|\n"
+                    + (1...tableRows).map { "| \($0) | Person \($0) of answer \(k + 1) | Party \($0 % 4) | \(1800 + $0)–\(1804 + $0) | Row \($0) |" }.joined(separator: "\n")
+            }
             if k == n - 1 { body += "\n\nEnd of seeded chat." }   // live-30 — the transcript-end rows find the last line
             out.append(Message(role: .assistant, text: body))
         }

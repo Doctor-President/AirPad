@@ -3,6 +3,7 @@ import XCTest
 /// live-26 (3f) — a synthetic presidents-shaped 5 × 46 answer table (`-RenderTableAnswer 5x46`) on the real Librarian:
 /// it's a grid that scrolls sideways with the first column staying put, a tap opens it full screen, the full screen turns
 /// to landscape, and it offers Copy as Markdown / CSV. Stills attached (inline, scrolled, full screen, landscape).
+/// live-31 (2): in the chat it shows at its full height (no vertical scroll inside the chat).
 final class ChatTableUI: XCTestCase {
     private func shot(_ app: XCUIApplication, _ name: String) {
         let s = XCTAttachment(screenshot: app.screenshot()); s.name = name; s.lifetime = .keepAlways; add(s)
@@ -25,6 +26,11 @@ final class ChatTableUI: XCTestCase {
         let expand = app.buttons["chatTableExpand"].firstMatch
         XCTAssertLessThanOrEqual(expand.frame.maxY, table.frame.minY + 1, "the expand control is above the grid (\(expand.frame) vs \(table.frame))")
         XCTAssertGreaterThan(expand.frame.midX, table.frame.midX, "… on its trailing corner")
+        // live-31 (2) — in the chat the table shows at its full height (46 rows ≈ 1,600 pt), not a 380 pt box that
+        // scrolls down inside the chat's own scroll.
+        let tableHeight = table.frame.height
+        print("[ChatTableUI] table height \(tableHeight) pt")
+        XCTAssertGreaterThan(tableHeight, 1_000, "the table is a \(tableHeight) pt box, not its full height")
         // The first column stays put while the grid scrolls sideways: the "1" cell keeps its x, "Party" moves.
         let first = app.staticTexts["Ada Marlow"].firstMatch
         let firstNum = table.staticTexts.matching(NSPredicate(format: "label == '#'")).firstMatch
@@ -33,8 +39,16 @@ final class ChatTableUI: XCTestCase {
         table.swipeLeft(velocity: .slow)
         sleep(1); shot(app, "scrolled-sideways")
         if firstNum.exists { XCTAssertEqual(firstNum.frame.minX, headerX0, accuracy: 2, "the first column stays put") }
-        // The expand control → full screen, then landscape.
-        app.buttons["chatTableExpand"].firstMatch.tap()
+        // The expand control → full screen, then landscape. (live-31: at full height the table's top — and the control
+        // above it — can be off screen; scroll back up to it.)
+        let expandControl = app.buttons["chatTableExpand"].firstMatch
+        var pulls = 0
+        while !expandControl.isHittable && pulls < 10 {
+            app.coordinate(withNormalizedOffset: CGVector(dx: 0.5, dy: 0.3))
+                .press(forDuration: 0.05, thenDragTo: app.coordinate(withNormalizedOffset: CGVector(dx: 0.5, dy: 0.6)))
+            pulls += 1
+        }
+        expandControl.tap()
         let copy = app.buttons["chatTableCopy"].firstMatch
         XCTAssertTrue(copy.waitForExistence(timeout: 8), "a tap opens the table full screen")
         sleep(1); shot(app, "full-screen")

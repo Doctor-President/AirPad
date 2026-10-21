@@ -1804,6 +1804,57 @@
           "factual": true
         }
       ]
+    },
+    {
+      "chat": "ui-current",
+      "what": "live-31 (3) — T's shape (TF 202610201518, Host path): a list of people some of whom died recently came back unsearched, leaving out one who died after the model's training. Synthetic: the presidents of the (fictional) Lakeview Republic, the last of whom died in December 2024 — only the results say so. General via the real toggle, with `--extra-arg -WebSearchMock --extra-arg YES`: the app searches up front, the answer states the death from the results, cites them, and never a social / video host; the follow-up (no cue word) is searched again.",
+      "cases": [
+        {
+          "id": "CS1",
+          "kind": "web",
+          "action": "general",
+          "webIntent": true,
+          "sentinel": false,
+          "factual": true,
+          "what": "a current-state list (who died) is searched up front and answered from the results",
+          "question": "Make a table of the presidents of the Lakeview Republic, their parties and their causes of death",
+          "expectRoute": "",
+          "mustContain": [
+            [
+              "quill"
+            ],
+            [
+              "2024"
+            ]
+          ],
+          "minFacts": 2,
+          "noHosts": [
+            "youtube.com",
+            "instagram.com"
+          ]
+        },
+        {
+          "id": "CS2",
+          "kind": "web",
+          "action": "general",
+          "webIntent": true,
+          "sentinel": false,
+          "factual": true,
+          "what": "its follow-up, no cue word: searched again with the topic carried (the A1 rewrite / fallback)",
+          "question": "And which of them was the most recent to go?",
+          "expectRoute": "",
+          "mustContain": [
+            [
+              "quill"
+            ]
+          ],
+          "minFacts": 1,
+          "noHosts": [
+            "youtube.com",
+            "instagram.com"
+          ]
+        }
+      ]
     }
   ]
 }

@@ -5,8 +5,8 @@ import XCTest
 ///  1. 12 messages: the Chat view and the Librarian open on the last line, and ↓ lands on it again after scrolling up.
 ///  2. 200 messages (table, captions, sources, dated line, divider): the same, plus the Librarian panel still drags
 ///     half ↔ full.
-///  3. A live answer: the end holds while it streams and while a table appears; asking while scrolled up doesn't move
-///     the reader; ↓ then follows the answer to its end.
+///  3. live-31 — a live answer: on send the question moves near the top once; nothing on screen moves while the answer
+///     streams beneath it; ↓ appears when it passes the bottom and doesn't follow; asking while scrolled up moves nothing.
 /// "On the last line" = the last answer's bottom is above the composer (the Ask / Message field).
 final class ChatTranscriptEndUI: XCTestCase {
     private func note(_ s: String) { let a = XCTAttachment(string: s); a.lifetime = .keepAlways; add(a); print("[TranscriptEnd] \(s)") }
@@ -124,7 +124,7 @@ final class ChatTranscriptEndUI: XCTestCase {
         app.terminate()
     }
 
-    /// Two streamed answers: prose, then a 24-row table, then the marker line; 120 / 220 ms between deltas (~7 / 13 s).
+    /// Two streamed answers: prose, then a 48- / 24-row table, then the marker line; 200 / 160 ms between deltas (~16 / 9 s).
     private static func replay() -> String {
         func turn(_ k: Int) -> [String: Any] {
             var d: [[String]] = []
@@ -137,9 +137,9 @@ final class ChatTranscriptEndUI: XCTestCase {
                           "and the \(c) closed out ", "the \(p + 1)th entry of the log.\n\n"] { d.append(["a", w]) }
             }
             d.append(["a", "| Week | High water | Low water |\n|---|---|---|\n"])
-            for r in 1...24 { d.append(["a", "| \(r) | 06:\(10 + r) | 12:\(20 + r) |\n"]) }
+            for r in 1...(k == 1 ? 48 : 24) { d.append(["a", "| \(r) | 06:\(10 + r) | 12:\(20 + r) |\n"]) }
             d.append(["a", "\nEND OF STREAMED ANSWER \(k)."])
-            return ["deltas": d, "delayMs": k == 1 ? 120 : 220]
+            return ["deltas": d, "delayMs": k == 1 ? 200 : 160]
         }
         let data = try! JSONSerialization.data(withJSONObject: ["turns": [turn(1), turn(2)]])
         return data.base64EncodedString()
@@ -153,30 +153,83 @@ final class ChatTranscriptEndUI: XCTestCase {
         app.buttons["Send"].tap()
     }
 
-    func test3_TheEndHoldsWhileAnAnswerStreamsAndATableAppears() {
-        let app = librarian(turns: 6, name: "stream", extra: ["-GauntletReplayB64", Self.replay()], keepOpen: true)
-        let arrow = app.buttons["chat.scrollToLatest"], stop = app.buttons["Stop answer"]
-
-        // (a) At the end, ask: the end holds as the answer streams and as its table appears.
-        send(app, "What connections do you find between my ideas?")
-        XCTAssertTrue(stop.waitForExistence(timeout: 15), "no answer started")
-        var samples = 0, arrowSeen = 0, tableSeenAtEnd = false
-        let t0 = Date()
-        while stop.exists && Date().timeIntervalSince(t0) < 60 {
-            samples += 1
-            if arrow.exists { arrowSeen += 1; shot(app, "stream-a-arrow-\(samples)") }
-            if !tableSeenAtEnd, app.descendants(matching: .any).matching(identifier: "chatTable").firstMatch.exists, !arrow.exists { tableSeenAtEnd = true; shot(app, "stream-a-table") }
-            Thread.sleep(forTimeInterval: 0.6)
+    /// live-31 (1) — the in-app motion recorder's last line (`-TranscriptMotionLog YES`), as numbers.
+    private func motion(_ app: XCUIApplication) -> [String: Double] {
+        let e = app.descendants(matching: .any).matching(identifier: "transcript.motion").firstMatch
+        guard e.exists else { return [:] }
+        var out: [String: Double] = [:]
+        for part in e.label.split(separator: " ") {
+            let kv = part.split(separator: "=")
+            if kv.count == 2, let v = Double(kv[1]) { out[String(kv[0])] = v }
         }
-        Thread.sleep(forTimeInterval: 1.5)
-        let endA = atEnd(app, "END OF STREAMED ANSWER 1")
-        shot(app, "stream-a-done")
-        note("stream (a): \(samples) samples while streaming, ↓ shown in \(arrowSeen) · table seen at the end: \(tableSeenAtEnd) · after: \(endA.ok ? "AT END" : "SHORT") — \(endA.detail)")
-        XCTAssertEqual(arrowSeen, 0, "the end didn't hold while the answer streamed (↓ appeared in \(arrowSeen) of \(samples) samples)")
-        XCTAssertTrue(tableSeenAtEnd, "the table never showed at the end")
-        XCTAssertTrue(endA.ok, "the streamed answer ends short of the end — \(endA.detail)")
+        return out
+    }
+    /// `TRANSCRIPT_RED=1` (TEST_RUNNER_TRANSCRIPT_RED) — the same rows on live-30's contract (`-TranscriptLive30 YES`).
+    private var red: [String] { ProcessInfo.processInfo.environment["TRANSCRIPT_RED"] == "1" ? ["-TranscriptLive30", "YES"] : [] }
 
-        // (b) Scrolled up, ask: the reader isn't moved. Then ↓: it follows the answer to its end.
+    /// live-31 (1) — streaming never moves the view (T ruled 2026-10-20). At the end, ask: ONE scroll brings the question
+    /// near the top; while the answer streams beneath it nothing on screen moves (a watched line — the question — stays
+    /// put, and the in-app recorder sees no offset / cell movement); ↓ appears once the answer passes the bottom; ↓ goes
+    /// to the end once and doesn't follow (the answer keeps growing below, ↓ comes back). Scrolled up, ask: nothing moves.
+    func test3_StreamingNeverMovesTheView() {
+        let app = librarian(turns: 6, name: "stream", extra: ["-GauntletReplayB64", Self.replay(), "-TranscriptMotionLog", "YES"] + red, keepOpen: true)
+        let arrow = app.buttons["chat.scrollToLatest"], stop = app.buttons["Stop answer"]
+        let transcript = app.descendants(matching: .any).matching(identifier: "chat.transcript").firstMatch
+        let q1 = "What connections do you find between my ideas?"
+
+        // (a) At the end, ask: the question lands near the top, then stays put while the answer streams.
+        send(app, q1)
+        let tSend = Date()
+        XCTAssertTrue(stop.waitForExistence(timeout: 15), "no answer started")
+        Thread.sleep(forTimeInterval: 1.2)   // the one scroll (0.3 s) and the first lines
+        let bubble = app.staticTexts[q1].firstMatch
+        let top0 = transcript.frame.minY
+        let y0 = bubble.exists ? bubble.frame.minY : -1
+        shot(app, "stream-a-question-at-top")
+        // Cheap polls only while it streams (a frame query costs seconds on a streaming screen): ↓'s arrival; the question
+        // is read once more when ↓ shows, and the in-app recorder covers every frame in between.
+        var arrowAt = -1, samples = 0
+        let t0 = Date()
+        while stop.exists && Date().timeIntervalSince(t0) < 60 && arrowAt < 0 {
+            samples += 1
+            if arrow.exists { arrowAt = samples }
+            else { Thread.sleep(forTimeInterval: 0.3) }
+        }
+        let tArrow = Date().timeIntervalSince(tSend)
+        // ↓ mid-stream at once: to the end once, no following — the answer keeps growing below and ↓ comes back.
+        if arrow.exists { arrow.tap() }
+        Thread.sleep(forTimeInterval: 0.6)
+        var arrowBack = false, polls = 0
+        let t1 = Date()
+        while Date().timeIntervalSince(t1) < 60 {
+            polls += 1
+            let streaming = stop.exists, shown = arrow.exists
+            print(String(format: "[TranscriptEnd] poll %d at %.1f s: streaming %@ ↓ %@", polls, Date().timeIntervalSince(tSend), streaming ? "yes" : "no", shown ? "yes" : "no"))
+            if shown, streaming { arrowBack = true; break }
+            if !streaming { break }
+            Thread.sleep(forTimeInterval: 0.3)
+        }
+        let tBack = Date().timeIntervalSince(tSend)
+        if arrowBack { shot(app, "stream-a-arrow-back") }
+        while stop.exists && Date().timeIntervalSince(t1) < 60 { Thread.sleep(forTimeInterval: 0.4) }
+        Thread.sleep(forTimeInterval: 1.5)
+        let m = motion(app)
+        shot(app, "stream-a-done")
+        note(String(format: "stream (a): question top %.0f (transcript top %.0f, %.0f below it) · ↓ appeared %.1f s after send (poll %d), tapped · ↓ came back: %@ (%.1f s after send) · motion over the whole answer %@",
+                    y0, top0, y0 - top0, tArrow, arrowAt, arrowBack ? "yes" : "no", tBack, "\(m)"))
+        XCTAssertGreaterThan(y0, 0, "the question isn't on screen after send")
+        XCTAssertLessThanOrEqual(y0 - top0, 110, "the question didn't land near the top (\(y0 - top0) pt below the transcript top)")
+        XCTAssertGreaterThan(arrowAt, 0, "no ↓ when the answer passed the bottom")
+        // ↓ coming back is read from the in-app recorder (a UI query right after the tap can take longer than the stream).
+        XCTAssertGreaterThanOrEqual(m["down"] ?? 0, 1, "↓ wasn't tapped mid-stream: \(m)")
+        XCTAssertGreaterThanOrEqual(m["back"] ?? 0, 1, "after ↓ mid-stream, ↓ never came back: the view followed the answer (\(m))")
+        XCTAssertGreaterThan(m["frames"] ?? 0, 100, "the recorder saw no stream: \(m)")
+        XCTAssertLessThanOrEqual(m["offset"] ?? 99, 0.5, "the offset moved while the answer streamed: \(m)")
+        XCTAssertLessThanOrEqual(m["above"] ?? 99, 0.5, "a cell above the answer moved (the question included): \(m)")
+        XCTAssertLessThanOrEqual(m["tailTop"] ?? 99, 0.5, "the streaming answer's top moved: \(m)")
+        XCTAssertLessThanOrEqual(m["inCell"] ?? 99, 1, "the streaming answer shifted inside its cell: \(m)")
+
+        // (b) Scrolled up, ask: nothing moves (live-30, kept), ↓ shows.
         let f = field(app)
         if !app.keyboards.element.exists { f.tap(); _ = app.keyboards.element.waitForExistence(timeout: 3) }
         for _ in 0..<2 {   // short pulls above the keyboard (a pull into it would dismiss it)
@@ -185,37 +238,36 @@ final class ChatTranscriptEndUI: XCTestCase {
         }
         Thread.sleep(forTimeInterval: 1)
         if !app.keyboards.element.exists { f.tap(); _ = app.keyboards.element.waitForExistence(timeout: 3); Thread.sleep(forTimeInterval: 1) }
-        let refs = app.staticTexts.allElementsBoundByIndex
-            .filter { $0.frame.minY > 150 && $0.frame.maxY < f.frame.minY - 20 && $0.label.count > 20 }
-        let ref = refs.first
+        // A transcript line (never the recorders' invisible labels, which don't scroll).
+        let texts = app.staticTexts.allElementsBoundByIndex
+            .filter { $0.identifier != "transcript.motion" && !$0.identifier.hasPrefix("gauntlet.") && !$0.label.hasPrefix("streams=") }
+        let refs = texts.filter { $0.frame.minY > 150 && $0.frame.maxY < f.frame.minY - 20 && $0.label.count > 20 }
+        let ref = refs.first ?? texts.first { $0.frame.minY > 120 && $0.frame.maxY < 760 && $0.label.count > 20 }
         let refY0 = ref?.frame.minY ?? -1
         f.typeText("Which of those connections is the strongest, and why?")
         app.buttons["Send"].tap()
         XCTAssertTrue(stop.waitForExistence(timeout: 15), "no second answer started")
         Thread.sleep(forTimeInterval: 3)
         let refY1 = ref?.frame.minY ?? -1
-        let refLabel = String((ref?.label ?? "").prefix(40))
         let arrowWhileUp = arrow.exists
         shot(app, "stream-b-scrolled-up")
-        note(String(format: "stream (b): reference line '%@' minY %.0f → %.0f after asking while scrolled up · ↓ shown %@", refLabel, refY0, refY1, arrowWhileUp ? "yes" : "no"))
+        note(String(format: "stream (b): reference line '%@' minY %.0f → %.0f after asking while scrolled up · ↓ shown %@",
+                    String((ref?.label ?? "").prefix(40)), refY0, refY1, arrowWhileUp ? "yes" : "no"))
         XCTAssertNotNil(ref, "no line on screen to watch")
         XCTAssertLessThanOrEqual(abs(refY1 - refY0), 2, "asking while scrolled up moved the reader (\(refY0) → \(refY1))")
         XCTAssertTrue(arrowWhileUp, "no ↓ while scrolled up")
-        arrow.tap()
-        Thread.sleep(forTimeInterval: 1)
-        var arrowAgain = 0, followSamples = 0
-        let t1 = Date()
-        while stop.exists && Date().timeIntervalSince(t1) < 60 {
-            followSamples += 1
-            if arrow.exists { arrowAgain += 1 }
-            Thread.sleep(forTimeInterval: 0.6)
-        }
+        let t2 = Date()
+        while stop.exists && Date().timeIntervalSince(t2) < 60 { Thread.sleep(forTimeInterval: 0.5) }
+        let refY2 = ref?.frame.minY ?? -1
+        note(String(format: "stream (b): after the answer, the reference line at %.0f", refY2))
+        XCTAssertLessThanOrEqual(abs(refY2 - refY0), 2, "the reader moved while the answer streamed below (\(refY0) → \(refY2))")
+        // ↓ after the answer: the last line, and the end holds again.
+        if arrow.exists { arrow.tap() }
         Thread.sleep(forTimeInterval: 1.5)
         let endB = atEnd(app, "END OF STREAMED ANSWER 2")
         shot(app, "stream-b-done")
-        note("stream (b): after ↓, \(followSamples) samples, ↓ shown again in \(arrowAgain) · after: \(endB.ok ? "AT END" : "SHORT") — \(endB.detail)")
-        XCTAssertEqual(arrowAgain, 0, "after ↓ the transcript didn't follow the answer")
-        XCTAssertTrue(endB.ok, "after ↓ the answer ends short of the end — \(endB.detail)")
+        note("stream (b): ↓ after the answer: \(endB.ok ? "AT END" : "SHORT") — \(endB.detail)")
+        XCTAssertTrue(endB.ok, "↓ after the answer lands short of the end — \(endB.detail)")
         app.terminate()
     }
 

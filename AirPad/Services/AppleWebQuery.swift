@@ -33,6 +33,8 @@ enum AppleWebQuery {
         for prefix in ["search query:", "query:", "search:", "standalone query:"] where line.lowercased().hasPrefix(prefix) {
             line = String(line.dropFirst(prefix.count)).trimmingCharacters(in: .whitespaces)
         }
+        // live-31 — an answer instead of a query (seen on the Simulator: an HTML table of presidents): no query.
+        if line.range(of: #"</?[a-zA-Z][^>]*>"#, options: .regularExpression) != nil || line.filter({ $0 == "|" }).count >= 2 { return nil }
         line = line.replacingOccurrences(of: #"[\[\]{}<>]"#, with: "", options: .regularExpression)   // "[Panama Canal] …" (seen)
             .trimmingCharacters(in: CharacterSet(charactersIn: "\"'“”‘’`*_. "))
         // live-31 — a JSON-shaped reply ({"query": "…"}, seen on the Simulator): the key goes, the value stays.
@@ -63,12 +65,30 @@ enum AppleWebQuery {
 
     /// When the rewrite fails, refuses, times out or comes back empty: the previous search's query plus the new question
     /// (the topic carries; the question says what is wanted now). No previous search → the question as written.
+    /// live-31: only the previous query's FIRST question carries (a fallback of a fallback snowballed — the gauntlet's
+    /// chat searched "oarfish? squid? Antarctica? news?" for its fourth question).
     static func fallbackQuery(previousQuery: String?, question: String) -> String {
         let q = question.trimmingCharacters(in: .whitespacesAndNewlines)
         guard let p = previousQuery?.trimmingCharacters(in: .whitespacesAndNewlines), !p.isEmpty else { return q }
-        return p.replacingOccurrences(of: yearPattern, with: "", options: .regularExpression)
+        var topic = p.replacingOccurrences(of: yearPattern, with: "", options: .regularExpression)
             .replacingOccurrences(of: #"\s{2,}"#, with: " ", options: .regularExpression)
-            .trimmingCharacters(in: .whitespaces) + " " + q
+            .trimmingCharacters(in: .whitespaces)
+        if let mark = topic.firstIndex(of: "?") { topic = String(topic[...mark]) }
+        return topic + " " + q
+    }
+
+    /// live-31 — does the question lean on the conversation (a pronoun for something said before, an elliptical opener,
+    /// or a few words)? "Who built it?", "And which of them…", "So where does it stand now?", "who won" do; "What is the
+    /// scientific name of the colossal squid?" asked after an oarfish answer doesn't, and is searched as written (the
+    /// gauntlet: such questions were rewritten / prefixed with the previous topic and answered from its results).
+    static func needsContext(_ q: String) -> Bool {
+        let t = q.lowercased().replacingOccurrences(of: "’", with: "'").trimmingCharacters(in: .whitespacesAndNewlines)
+        let words = t.split(whereSeparator: { !$0.isLetter && !$0.isNumber && $0 != "'" }).map(String.init)
+        if words.count <= 4 { return true }
+        if t.range(of: #"^(and|so|but|also|then|what about|how about|why|more on|any more|what else)\b"#, options: .regularExpression) != nil { return true }
+        let refs: Set<String> = ["it", "it's", "its", "they", "they're", "them", "their", "theirs", "those", "these", "he", "she", "him", "her", "his", "hers"]
+        if words.contains(where: { refs.contains($0) }) { return true }
+        return t.range(of: #"\b(which of|the other|the same|the latter|the former|that one|this one)\b"#, options: .regularExpression) != nil
     }
 
     /// "Thanks", "ok", "great, got it" — not a question to search again.
@@ -81,10 +101,11 @@ enum AppleWebQuery {
         return words.count <= 5 && phrases.contains { t == $0 || t.hasPrefix($0 + " ") || t.hasSuffix(" " + $0) }
     }
 
-    /// A real follow-up question (searched again after a turn that searched): asks something, and isn't chit-chat.
+    /// A real follow-up question (searched again after a turn that searched): asks something, isn't chit-chat, and
+    /// leans on the conversation (live-31, `needsContext`) — a new standalone question is judged on its own.
     static func isFollowUpQuestion(_ q: String) -> Bool {
         let t = q.lowercased().trimmingCharacters(in: .whitespacesAndNewlines)
-        guard !isChitChat(t) else { return false }
+        guard !isChitChat(t), needsContext(t) else { return false }
         if t.hasSuffix("?") { return true }
         let openers = ["what", "who", "when", "where", "why", "how", "which", "is ", "are ", "was ", "were ", "did ", "does ",
                        "do ", "can ", "could ", "will ", "would ", "has ", "have ", "so ", "and ", "tell me", "any ", "more on"]
@@ -157,10 +178,18 @@ enum AppleWebQuery {
             cleanRewrite("Search query: \"Artemis II launch date\".") ?? "nil")
         row("rewrite-json-shape", cleanRewrite("{\"query\": \"list of US presidents, their parties and causes of death\"}") == "list of US presidents, their parties and causes of death",
             cleanRewrite("{\"query\": \"list of US presidents, their parties and causes of death\"}") ?? "nil")
+        row("rewrite-that-is-a-table-is-no-query", cleanRewrite("<table><tr><th>US President</th><th>Party</th></tr></table>") == nil
+            && cleanRewrite("| President | Party |") == nil)
         row("rewrite-brackets-dropped", cleanRewrite("[Panama Canal] water restrictions current status") == "Panama Canal water restrictions current status")
         row("rewrite-refusal-is-no-query", cleanRewrite("I'm sorry, but I can't help with that.") == nil && cleanRewrite("  ") == nil)
         row("fallback-carries-the-previous-query", fallbackQuery(previousQuery: "Lakeview Observatory telescope 2026", question: "Who won?")
             == "Lakeview Observatory telescope Who won?", fallbackQuery(previousQuery: "Lakeview Observatory telescope 2026", question: "Who won?"))
+        row("a-standalone-question-isn't-a-follow-up", !isFollowUpQuestion("What is the scientific name of the colossal squid?")
+            && !isFollowUpQuestion("When was Antarctica first sighted, and did anyone land there at the time?")
+            && isFollowUpQuestion("And which of them was the most recent to go?") && isFollowUpQuestion("Who built it?"))
+        row("fallback-never-snowballs", fallbackQuery(previousQuery: "What family does the oarfish belong to? What is the squid? 2026", question: "Who named it?")
+            == "What family does the oarfish belong to? Who named it?",
+            fallbackQuery(previousQuery: "What family does the oarfish belong to? What is the squid? 2026", question: "Who named it?"))
         row("follow-up-vs-chit-chat", isFollowUpQuestion("so where does it stand now?") && isFollowUpQuestion("What happened next?")
             && isFollowUpQuestion("who won") && !isFollowUpQuestion("Thanks!") && !isFollowUpQuestion("ok cool") && !isFollowUpQuestion("Great, got it."))
         row("social-hosts-out", isSocial("https://www.instagram.com/p/abc") && isSocial("https://m.youtube.com/watch?v=1") && isSocial("https://x.com/a/status/1")

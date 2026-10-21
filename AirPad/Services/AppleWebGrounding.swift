@@ -31,7 +31,7 @@ enum AppleWebGrounding {
         return t + " " + String(Calendar(identifier: .gregorian).component(.year, from: now))
     }
 
-    /// live-30 (A1) — the query this turn searches, and how it was made ("first turn" · "rewritten" · "fallback").
+    /// live-30 (A1) — the query this turn searches, and how it was made ("first turn" · "standalone" · "rewritten" · "fallback").
     /// First turn of a chat: the question (`query(for:)`, unchanged). A follow-up: a short separate on-device call
     /// rewrites it into a standalone query from the last few turns (`AppleWebQuery`); then the app's year rule (a year
     /// the user typed anywhere in the chat stays, any other goes, today's on a current-state request). The rewrite fails,
@@ -39,6 +39,8 @@ enum AppleWebGrounding {
     @MainActor static func searchQuery(for question: String, chat: ChatSession, now: Date = Date()) async -> (query: String, how: String) {
         let prior = priorTurns(chat)
         guard !prior.isEmpty, !live29 else { return (query(for: question, now: now), "first turn") }
+        // live-31 — a question that doesn't lean on the chat is searched as written (no rewrite, no previous topic).
+        guard AppleWebQuery.needsContext(question) else { return (query(for: question, now: now), "standalone") }
         let typed = (prior.map(\.question) + [question]).joined(separator: " ")
         if let rewritten = await rewrite(turns: prior, latest: question) {
             let current = WebGrounding.asksCurrentState(question) || WebGrounding.asksCurrentState(rewritten)

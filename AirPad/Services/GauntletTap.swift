@@ -351,6 +351,8 @@ struct GauntletMetricsLabels: View {
                 .accessibilityIdentifier("gauntlet.metrics")
             Text(FrameMeter.shared.line).font(.system(size: 1)).opacity(0.02)
                 .accessibilityIdentifier("gauntlet.frames")
+            Text(TranscriptMotion.shared.line).font(.system(size: 1)).opacity(0.02)
+                .accessibilityIdentifier("transcript.motion")   // live-31 (1)
         }
         .onAppear { FrameMeter.shared.start() }
     }

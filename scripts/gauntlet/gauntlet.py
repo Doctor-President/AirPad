@@ -1274,6 +1274,12 @@ def grade_pillar(exp, turn, ps, R, res, na):
             ("cites library entries: " + ", ".join(c.get("title", "")[:24] for c in lib_cites) if lib_cites else "")
             + (" got the no-key line on a non-search question" if path == "nokey" else ""))
         return {"results": R, "stats": stats}
+    # live-31 (3) — WS1: a social / video host is never a source (the app drops them before the model sees results)
+    if exp.get("noHosts"):
+        hosts = exp["noHosts"]
+        bad = [c.get("url") for c in web_cites if any(h in (c.get("url") or "") for h in hosts)] \
+            + [l.get("url") for l in (turn.get("toolLinks") or []) if any(h in (l.get("url") or "") for h in hosts)]
+        res("WS1", not bad, ("social/video host reached the answer: " + ", ".join(b[:50] for b in bad)) if bad else "no social/video host")
     intent = exp.get("webIntent", True)
     if path == "nokey":
         res("GW1" if intent else "GW2", intent and NOKEY_LINE in final,

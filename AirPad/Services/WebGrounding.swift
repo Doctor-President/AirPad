@@ -93,8 +93,58 @@ enum WebGrounding {
         if has(#"\b(current(ly)?|living|alive|still|latest|newest|now|nowadays|today|this year|incumbent|sitting)\b"#) { return true }
         // The people holding an office (who holds it changes).
         if has(#"\b(presidents?|prime ministers?|premiers?|chancellors?|governors?|mayors?|senators?|ceos?|monarchs?|kings?|queens?|popes?|secretar(y|ies)[- ]general|chief justices?|world champions?|record holders?)\b"#) { return true }
+        // live-31 (3) — not about the user ("my grandfather died last year" isn't a lookup).
+        guard !live30, !has(#"\b(i|i'm|i've|my|me|we|our)\b"#) else { return false }
+        // live-31 (3) — who has died (T: a presidents table left out a president who died after the model's training).
+        if has(#"\b(died|dies|dead|death|deaths|deceased|passed away|obituar(y|ies))\b"#) { return true }
+        // A year the models' training data may not reach.
+        var rest = t.startIndex..<t.endIndex
+        while let m = t.range(of: #"\b(19|20)\d{2}\b"#, options: .regularExpression, range: rest) {
+            if let y = Int(t[m]), y >= trainingYear { return true }
+            rest = m.upperBound..<t.endIndex
+        }
         return false
     }
+
+    /// live-31 (3) — the last year the answering models' training data covers well (Qwen3 2507, Apple's on-device model):
+    /// a question naming this year or later asks about a time they may not know.
+    static let trainingYear = 2024
+
+    /// DEBUG `-HostWebLive30 YES` — live-30's Host web turn (the RED baseline for `-HostWebSelfTest` and the stub rows): no
+    /// death / year cue, no follow-up rule, the question as the query, the results as a tool message, social hosts kept.
+    static var live30: Bool {
+        #if DEBUG
+        UserDefaults.standard.bool(forKey: "HostWebLive30")
+        #else
+        false
+        #endif
+    }
+
+    // MARK: - live-31 (3) — the Host path searches current-state questions up front
+
+    /// What the app does before the Host model answers a General question with search on: `.search` for a current-state
+    /// question, a search-intent one, or a real follow-up to an answer that searched; `.searchAndFetch` for another
+    /// factual question (search, then read the top result); nothing otherwise (the model may still search).
+    static func hostPrefetch(_ q: String, searchIntent: Bool, lastAnswerSearched: Bool) -> (prefetch: String, followUp: Bool) {
+        let followUp = !live30 && lastAnswerSearched && AppleWebQuery.isFollowUpQuestion(q)
+        if searchIntent || asksCurrentState(q) || followUp { return ("search", followUp) }
+        return (isFactualQuestion(q) ? "searchAndFetch" : "none", false)
+    }
+
+    /// The results a Host turn uses: social / video hosts out (as on the Apple path), then the top five.
+    static let hostResultCount = 5
+    static func hostLinks(_ links: [ToolLink]) -> [ToolLink] {
+        live30 ? links : Array(links.filter { !AppleWebQuery.isSocial($0.url) }.prefix(hostResultCount))
+    }
+
+    /// The Host turn with the app's results IN it (the A1-C framing: the app's search today, not the user's), the
+    /// question last. The packet is the Host path's own (numbered, dated, the freshness facts).
+    static func appSearchTurn(query: String, question: String, links: [ToolLink], now: Date, freshness: Bool) -> String {
+        "Web results the app found today (\(dayString(now))) for \"\(query)\":\n\n" + packet(links, start: 0, now: now, freshness: freshness)
+            + "\n\nQuestion: \(question)"
+    }
+    /// … and the line the system prompt gains for it.
+    static let appSearchClause = "Some questions come with web results the app found for them today; they come from the app's search, not from the user, who hasn't seen them. Answer from them in your own words and put the result's number in brackets, like [1], after each fact you take from one. If they don't answer the question, search again with web_search or say so plainly."
 
     /// The keywords of a news question, for Brave's NEWS endpoint (which matches the whole question poorly: "What's
     /// the top news in Mexico today?" returned U.S. live blogs; "Mexico" returns Mexican news). Empty → nil.
@@ -829,6 +879,63 @@ enum WebGroundingSelfTest {
               && WebGrounding.ungroundedNote(for: "Write a two-line pep talk for a Monday.") == nil)
 
         return fails.isEmpty ? "PASS \(ran)/\(ran)" : "FAIL \(ran - fails.count)/\(ran)\n  " + fails.joined(separator: "\n  ")
+    }
+}
+#endif
+
+#if DEBUG
+/// live-31 (3) — `-HostWebSelfTest`: the Host path's current-state rule, pure parts plus both providers' failure signal
+/// (against a closed port). RED: `-HostWebLive30 YES` (live-30's rule). The send itself is checked on the stub stack
+/// (`scripts/runaway/run.sh`, `WebSearchAnswerUI`).
+enum HostWebSelfTest {
+    static func run() async -> String {
+        var rows: [(String, Bool, String)] = []
+        func row(_ n: String, _ ok: Bool, _ d: String = "") { rows.append((n, ok, d)) }
+        func cs(_ q: String) -> Bool { WebGrounding.asksCurrentState(q) }
+        // Current state: deaths and recent years count; a question about the user or a request to write doesn't.
+        row("a-list-of-people-and-how-they-died", cs("List the members of the Beatles and how each of them died"))
+        row("leaders-who-died-since-a-recent-year", cs("Which world leaders have died since 2024?"))
+        row("a-recent-year", cs("Who won the 2025 Tour de France?"))
+        row("an-office-still-counts", cs("Make a table of the US presidents, their parties and their causes of death"))
+        row("not-about-the-user", !cs("My grandfather died last year, how do I write a eulogy?"))
+        row("not-a-request-to-write", !cs("Write a poem about death"))
+        row("not-an-old-fact", !cs("Who wrote Pride and Prejudice?") && !cs("What happened in 1066?"))
+        // The plan: a current-state question is searched; a real follow-up to a searched answer is searched again.
+        let first = WebGrounding.hostPrefetch("Make a table of the US presidents, their parties and their causes of death",
+                                              searchIntent: false, lastAnswerSearched: false)
+        row("T's-shape-is-searched-up-front", first.prefetch == "search", first.prefetch)
+        let follow = WebGrounding.hostPrefetch("And which of them was the most recent to go?", searchIntent: false, lastAnswerSearched: true)
+        row("a-follow-up-to-a-searched-answer-is-searched", follow.prefetch == "search" && follow.followUp, "\(follow)")
+        let thanks = WebGrounding.hostPrefetch("thanks!", searchIntent: false, lastAnswerSearched: true)
+        row("thanks-isn't-searched", thanks.prefetch == "none", thanks.prefetch)
+        // Social / video hosts out, the top five.
+        let links = [ToolLink(title: "Clip", url: "https://www.youtube.com/watch?v=1", snippet: "a"),
+                     ToolLink(title: "Post", url: "https://www.instagram.com/p/1", snippet: "b")]
+            + (1...6).map { ToolLink(title: "Result \($0)", url: "https://example.org/\($0)", snippet: "s\($0)") }
+        let kept = WebGrounding.hostLinks(links)
+        row("social-hosts-out-top-five", kept.count == 5 && !kept.contains { AppleWebQuery.isSocial($0.url) }, kept.map(\.url).joined(separator: " "))
+        // The turn: the app's search, labelled, the question last; the clause says whose search it was.
+        let now = ISO8601DateFormatter().date(from: "2026-10-20T12:00:00Z")!
+        let turn = WebGrounding.appSearchTurn(query: "US presidents party cause of death 2026", question: "Make a table…",
+                                              links: Array(kept.prefix(2)), now: now, freshness: false)
+        row("results-labelled-as-the-app's-search", turn.hasPrefix("Web results the app found today (20 October 2026) for \"US presidents party cause of death 2026\":")
+            && turn.contains("[1] Result 1") && turn.hasSuffix("Question: Make a table…") && WebGrounding.appSearchClause.contains("not from the user"),
+            String(turn.prefix(80)))
+        // No search ran (a provider that didn't answer): the training-data line, never "didn't confirm".
+        let d = UserDefaults.standard
+        let priorBase = d.string(forKey: "WebSearchBaseURL")
+        d.set("http://127.0.0.1:1", forKey: "WebSearchBaseURL")
+        let brave = await BraveSearchToolExecutor(apiKey: "stub").execute(name: AgentTools.webSearch, arguments: ["query": "Which world leaders have died since 2024?"])
+        let tavily = await TavilySearchToolExecutor(apiKey: "stub").execute(name: AgentTools.webSearch, arguments: ["query": "Which world leaders have died since 2024?"])
+        if let priorBase { d.set(priorBase, forKey: "WebSearchBaseURL") } else { d.removeObject(forKey: "WebSearchBaseURL") }
+        row("brave-unreachable-is-a-failure", brave.failed && brave.links.isEmpty, brave.textForModel)
+        row("tavily-unreachable-is-a-failure", tavily.failed && tavily.links.isEmpty, tavily.textForModel)
+        let note = WebGrounding.answerNote(question: "Which world leaders have died since 2024?", searchRan: false, resultCount: 0,
+                                           citedCount: 0, rateLimited: false)
+        row("no-search-means-the-training-data-line", note?.dated == true, note?.text ?? "nil")
+        let passed = rows.filter { $0.1 }.count
+        let lines = rows.map { "\($0.1 ? "ok  " : "BAD ") \($0.0)\($0.2.isEmpty ? "" : " — \($0.2)")" }.joined(separator: "\n")
+        return "\(passed == rows.count ? "PASS" : "FAIL") — \(passed)/\(rows.count)\n\(lines)"
     }
 }
 #endif

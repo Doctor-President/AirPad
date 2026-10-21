@@ -38,6 +38,9 @@ final class TranscriptRowContext {
 
 /// The content of one cell.
 struct TranscriptItemView: View {
+    #if DEBUG
+    static let cellSpace = "transcriptCell"
+    #endif
     let item: TranscriptItem
     let session: ChatSession
     let context: TranscriptRowContext
@@ -63,13 +66,42 @@ struct TranscriptItemView: View {
                 StreamingTail(session: session)
                     #if DEBUG
                     .freezeRowProbe("row.tail")
+                    .onGeometryChange(for: CGFloat.self) { $0.frame(in: .named(TranscriptItemView.cellSpace)).minY } action: { y in
+                        if TranscriptMotion.on { TranscriptMotion.shared.tailContentY = y }   // live-31 — a shift inside the cell
+                    }
                     #endif
             }
         }
         .padding(.horizontal, 16)
         .frame(maxWidth: .infinity, alignment: .leading)
+        .modifier(TopPinnedInCell())
+        #if DEBUG
+        .coordinateSpace(.named(Self.cellSpace))
+        #endif
         .environment(\.appBodyFont, context.appFont)
         .environment(\.chatTablePresenter, context.onOpenTable.map { open in ChatTablePresenter(open: open) })
+    }
+}
+
+/// live-31 (1) — a cell's content hangs from the cell's TOP. When an answer grows, SwiftUI lays out the taller content a
+/// frame before UIKit resizes the cell, and the hosting view centres content that doesn't fit its bounds: the streaming
+/// text jumped up by half the new line, then back (measured on the recording: up to ~15 pt per line while the question
+/// above stayed on the same pixel row — T's "swim"). So the root reports the cell's own height when it is being placed
+/// in one (a finite proposal), with the content pinned to its top: the extra height only reaches downward, into the
+/// space the cell is about to take. Measuring (no height, or an unbounded one) still returns the content's own height.
+private struct TopPinnedInCell: ViewModifier {
+    func body(content: Content) -> some View {
+        if ChatTranscriptCollection.Coordinator.live30 { content } else { TopPinned { content } }
+    }
+}
+private struct TopPinned: Layout {
+    func sizeThatFits(proposal: ProposedViewSize, subviews: Subviews, cache: inout ()) -> CGSize {
+        let own = subviews.first?.sizeThatFits(ProposedViewSize(width: proposal.width, height: nil)) ?? .zero
+        guard let h = proposal.height, h > 1, h < 100_000 else { return own }
+        return CGSize(width: own.width, height: h)
+    }
+    func placeSubviews(in bounds: CGRect, proposal: ProposedViewSize, subviews: Subviews, cache: inout ()) {
+        subviews.first?.place(at: bounds.origin, anchor: .topLeading, proposal: ProposedViewSize(width: bounds.width, height: nil))
     }
 }
 

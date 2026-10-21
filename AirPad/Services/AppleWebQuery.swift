@@ -35,6 +35,9 @@ enum AppleWebQuery {
         }
         line = line.replacingOccurrences(of: #"[\[\]{}<>]"#, with: "", options: .regularExpression)   // "[Panama Canal] …" (seen)
             .trimmingCharacters(in: CharacterSet(charactersIn: "\"'“”‘’`*_. "))
+        // live-31 — a JSON-shaped reply ({"query": "…"}, seen on the Simulator): the key goes, the value stays.
+        line = line.replacingOccurrences(of: #"^(search[ _]?)?query"?\s*:\s*"?"#, with: "", options: [.regularExpression, .caseInsensitive])
+            .trimmingCharacters(in: CharacterSet(charactersIn: "\"'“”‘’`*_. "))
         let lower = line.lowercased()
         let refusal = ["i cannot", "i can't", "i'm sorry", "i am sorry", "sorry", "i'm unable", "i am unable", "as an ai"]
         guard line.count >= 3, line.count <= 160, !refusal.contains(where: { lower.hasPrefix($0) }) else { return nil }
@@ -152,6 +155,8 @@ enum AppleWebQuery {
         row("year-rule-keeps-a-year-the-user-typed", r2 == "Treaty of Westphalia 1648 aftermath", r2)
         row("rewrite-cleaned", cleanRewrite("Search query: \"Artemis II launch date\".\nThis finds…") == "Artemis II launch date",
             cleanRewrite("Search query: \"Artemis II launch date\".") ?? "nil")
+        row("rewrite-json-shape", cleanRewrite("{\"query\": \"list of US presidents, their parties and causes of death\"}") == "list of US presidents, their parties and causes of death",
+            cleanRewrite("{\"query\": \"list of US presidents, their parties and causes of death\"}") ?? "nil")
         row("rewrite-brackets-dropped", cleanRewrite("[Panama Canal] water restrictions current status") == "Panama Canal water restrictions current status")
         row("rewrite-refusal-is-no-query", cleanRewrite("I'm sorry, but I can't help with that.") == nil && cleanRewrite("  ") == nil)
         row("fallback-carries-the-previous-query", fallbackQuery(previousQuery: "Lakeview Observatory telescope 2026", question: "Who won?")

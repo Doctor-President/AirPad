@@ -729,19 +729,36 @@ final class LibrarianState {
             // answer on an intent turn → ONE web retry), returning whether it fired.
             // live-27 (3) — a request about the current state of the world (who holds an office, who is living, the
             // latest, this year — make / list / table requests included) is searched too.
-            let forceWeb = Self.looksLikeSearchIntent(query) || WebGrounding.asksCurrentState(query)
             // CH Session 2 (T 2026-10-08) — the APP searches before the model answers: a current-information
             // question is searched; a factual question is searched AND its top result read (page text, not just
             // snippets). Anything else stays the model's call (and is labelled general knowledge if it doesn't search).
-            var prefetch: ChatSession.WebPrefetch = forceWeb ? .search : (WebGrounding.isFactualQuestion(query) ? .searchAndFetch : .none)
+            // live-31 (3) — the same rule as the Apple path (T: a presidents / causes-of-death list came back unsearched,
+            // missing a president who died after the model's training): deaths and recent years count as current state,
+            // a real follow-up to an answer that searched is searched again, and the query is the app's — the A1
+            // standalone rewrite for a follow-up, the year rule — with the results handed over IN the turn.
+            let plan = WebGrounding.hostPrefetch(query, searchIntent: Self.looksLikeSearchIntent(query),
+                                                 lastAnswerSearched: AppleWebGrounding.lastAnswerSearched(chat))
+            let forceWeb = plan.prefetch == "search"
+            var prefetch = ChatSession.WebPrefetch(rawValue: plan.prefetch) ?? .none
             #if DEBUG
             if UserDefaults.standard.string(forKey: "GeneralPrefetch") == "off" { prefetch = .none }   // A/B latency
             #endif
+            var appQuery: String? = nil
+            if prefetch != .none, !WebGrounding.live30 {
+                let (q, how) = await AppleWebGrounding.searchQuery(for: query, chat: chat)
+                appQuery = q
+                #if DEBUG
+                AppleWebGrounding.debugLastQuery = q
+                AppleWebGrounding.debugLastHow = how
+                NSLog("[HostWeb] query (%@%@): %@", how, plan.followUp ? ", follow-up" : "", q)
+                #endif
+            }
             let didRetry = await chat.sendWithTools(displayText: query,
                                                     systemPrompt: toolChatSystemPrompt,
                                                     executor: WebSearchBackend.make(),
                                                     forceWebSearch: forceWeb,
-                                                    prefetch: prefetch)
+                                                    prefetch: prefetch,
+                                                    appQuery: appQuery)
             Self.logGeneralTurn(query: query, scope: selectedScope,
                                 tool: prefetch != .none ? "app-\(prefetch.rawValue)" : (forceWeb ? "required" : "declared"),
                                 retry: didRetry, store: store)

@@ -1167,6 +1167,10 @@ final class CorpusStore {
             if ProcessInfo.processInfo.arguments.contains("-AppleWebSelfTest") {
                 Task { @MainActor in NSLog("[AppleWebSelfTest] %@", await AppleWebSelfTest.run(store: self)) }
             }
+            // live-31 (3) — the Host path searches current-state questions up front (pure rules + both providers' failure).
+            if ProcessInfo.processInfo.arguments.contains("-HostWebSelfTest") {
+                Task { @MainActor in NSLog("[HostWebSelfTest] %@", await HostWebSelfTest.run()) }
+            }
             // live-27 (4) — chat provenance: who wrote each answer, the caption, the switch divider.
             if ProcessInfo.processInfo.arguments.contains("-ChatProvenanceSelfTest") {
                 Task { @MainActor in NSLog("[ChatProvenanceSelfTest] %@", await ChatProvenanceSelfTest.run()) }

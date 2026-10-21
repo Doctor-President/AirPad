@@ -11,6 +11,8 @@
 #   GET /res/v1/web/search, /res/v1/news/search (Brave) and POST /search (Tavily) return 3 synthetic results and log
 #   {provider, query} to <dir>/web.jsonl — the switch rows count them (off → none).
 # live-29 (B3) — it also logs WHICH endpoint / topic was asked (Brave web|news, Tavily general|news) and serves it back on
+#   live-31 (3): GET /chatlog — per chat request, whether the user turn carried the app's results ("Web results the app
+#   found today …"), the system prompt the "not from the user" clause, and any social / video host anywhere in it.
 #   GET /weblog; a "president" query's results carry Markdown in title and snippet ("#### Tags"), and a "president"
 #   question gets a model answer that cites none of them (T's Tavily case: 3 results, "+ web", the training-data line).
 #   fake_ollama.py <port> <dir> [tokens_per_sec=60]
@@ -24,10 +26,24 @@ lock = threading.Lock()
 active = {}   # streams still generating: id → {mode, num_predict, tokens, started}
 seq = [0]
 webq = []   # live-29 (B3) — every web request: {provider, endpoint, query}
+chatq = []  # live-31 (3) — every chat request: did the user turn carry the app's results, the system prompt the clause, any social host
 def log(rec):
     with lock, open(f"{DIR}/streams.jsonl", "a") as f: f.write(json.dumps(rec) + "\n")
 
 def web_results(q):
+    ql = q.lower()
+    if "presidents" in ql and any(w in ql for w in ("death", "died", "recent")):
+        # live-31 (3) — T's shape: a list of people, some of whom died recently. Two social / video hosts lead (the app drops
+        # them), then six synthetic encyclopedia results; the first names the most recent death.
+        social = [{"title": "VIDEO CLIP presidents (synthetic)", "url": "https://www.youtube.com/watch?v=synthetic",
+                   "description": "A clip.", "content": "A clip."},
+                  {"title": "SOCIAL POST presidents (synthetic)", "url": "https://www.instagram.com/p/synthetic",
+                   "description": "A post.", "content": "A post."}]
+        enc = [{"title": f"Presidents and how they died — part {k} (synthetic)", "url": f"https://encyclopedia.gauntlet.example/presidents-{k}",
+                "description": "Ezra Pine (synthetic), the most recent president to die, died on 29 December 2024." if k == 1 else f"Synthetic result {k} on the presidents.",
+                "content": "Ezra Pine (synthetic), the most recent president to die, died on 29 December 2024." if k == 1 else f"Synthetic result {k} on the presidents."}
+               for k in range(1, 7)]
+        return social + enc
     if "president" in q.lower():   # live-29 (B3) — Markdown in a result, as T's Tavily snippet had
         return [{"title": f"### President of the United States ({k})", "url": f"https://encyclopedia.gauntlet.example/president-{k}",
                  "description": f"#### Tags\nThe sitting president (synthetic result {k}).",
@@ -37,6 +53,10 @@ def web_results(q):
             for k in (1, 2, 3)]
 
 def tokens(mode):
+    if mode == "deaths":   # live-31 (3) — an answer from the results, citing [1]
+        yield from ["According", " to", " the", " results", ",", " Ezra", " Pine", " was", " the", " most", " recent", " to", " die",
+                    ",", " on", " 29", " December", " 2024", " [1]", "."]
+        return
     if mode == "president":   # live-29 (B3) — an answer that cites none of the results
         yield from ["The", " sitting", " president", " is", " named", " in", " the", " results", "."]
         return
@@ -89,6 +109,8 @@ class H(BaseHTTPRequestHandler):
                  "expires_at": "2319-01-01T00:00:00Z", "details": {"family": "qwen3", "parameter_size": "4.0B"}}
         if self.path.startswith("/weblog"):
             with lock: self.send_json(list(webq)); return
+        if self.path.startswith("/chatlog"):
+            with lock: self.send_json(list(chatq)); return
         if self.path.startswith("/status"):   # what is still generating right now (the Mac's view)
             now = time.time()
             with lock: self.send_json([{**v, "ageSec": round(now - v["started"], 1)} for v in active.values()]); return
@@ -107,7 +129,14 @@ class H(BaseHTTPRequestHandler):
         q = next((m.get("content", "") for m in reversed(body.get("messages", [])) if m.get("role") == "user"), "").lower()
         import re as _re
         lm = _re.search(r"harbour log turn (\d+)", q)
-        mode = ("long" + lm.group(1)) if lm else "president" if "current president" in q else "loop" if "presidents" in q else "unique" if "every lighthouse" in q else "slow" if "slowly" in q else "normal"
+        msgs = body.get("messages", [])
+        allc = " ".join(str(m.get("content", "")) for m in msgs).lower()
+        sysc = next((str(m.get("content", "")) for m in msgs if m.get("role") == "system"), "")
+        with lock: chatq.append({"user_head": q[:140], "app_results": q.startswith("web results the app found today"),
+                                 "clause": "not from the user" in sysc, "social": "youtube.com" in allc or "instagram.com" in allc,
+                                 "tool_messages": sum(1 for m in msgs if m.get("role") == "tool"), "at": time.strftime("%H:%M:%S")})
+        deaths = ("cause" in q and "death" in q) or "most recent to go" in q
+        mode = ("long" + lm.group(1)) if lm else "president" if "current president" in q else "deaths" if deaths else "loop" if "presidents" in q else "unique" if "every lighthouse" in q else "slow" if "slowly" in q else "normal"
         opts = body.get("options") or {}
         limit = opts.get("num_predict") if mode != "slow" else None
         rate = 5.0 if mode == "slow" else RATE

@@ -1749,6 +1749,9 @@ struct ToolResult: Sendable {
     /// "no results", which would assert a search that didn't happen — and withholds the tool
     /// schema from the rest of the turn, so the model can't retry a tool that cannot succeed.
     var unavailable: Bool = false
+    /// live-31 (3) — the provider was asked and didn't answer (no connection, a 5xx / 4xx other than its throttle): NO
+    /// search result came of it, so the answer is the model's own and carries the training-data line, not "didn't confirm".
+    var failed: Bool = false
 }
 
 /// One tool call the model requested (OpenAI shape). `argumentsJSON` is the raw
@@ -1961,6 +1964,22 @@ struct WebSearchMockExecutor: ToolExecutor {
             dux), whose arms and tentacles bear suckers lined with small teeth, the colossal squid's arms and tentacles \
             carry sharp swivelling hooks. It also has the largest eyes documented in the animal kingdom. The species was \
             first described in 1925 from parts found in the stomach of a sperm whale.
+            """),
+        // live-31 (3) — T's shape with synthetic people: a list some of whom died recently (only the results know it).
+        FactPage(match: #"lakeview republic|presidents.*(most recent|go\b|died|death)"#, links: [
+            ToolLink(title: "Every president of the Lakeview Republic, in one video", url: "https://www.youtube.com/watch?v=lakeview-presidents",
+                     snippet: "A clip about the presidents of the Lakeview Republic."),
+            ToolLink(title: "Remembering President Quill", url: "https://www.instagram.com/p/lakeview-quill",
+                     snippet: "A post about Mara Quill."),
+            ToolLink(title: "Presidents of the Lakeview Republic — encyclopedia", url: "https://encyclopedia.gauntlet.example/wiki/Lakeview_Republic_presidents",
+                     snippet: "Four presidents: Otto Fenn (Harbour Party, died of pneumonia in 1987), Ines Varga (Union Party, died of heart failure in 2009), Mara Quill (Harbour Party, died of natural causes on 29 December 2024, aged 100) and Tomas Reyl (Union Party, in office, living)."),
+            ToolLink(title: "Former Lakeview president Mara Quill dies at 100", url: "https://news.gauntlet.example/2024/12/29/mara-quill-dies",
+                     snippet: "Mara Quill, president of the Lakeview Republic from 1977 to 1981, died on 29 December 2024 at her home, aged 100."),
+        ], page: """
+            The Lakeview Republic has had four presidents. Otto Fenn (Harbour Party, 1961–1969) died of pneumonia in 1987. \
+            Ines Varga (Union Party, 1969–1977) died of heart failure in 2009. Mara Quill (Harbour Party, 1977–1981) died of \
+            natural causes on 29 December 2024, aged 100: she was the most recent president to die. Tomas Reyl (Union \
+            Party, since 1981) is in office and living.
             """),
         FactPage(match: #"antarctica|antarctic"#, links: [
             ToolLink(title: "History of Antarctica — encyclopedia", url: "https://encyclopedia.gauntlet.example/wiki/History_of_Antarctica",
@@ -2213,6 +2232,8 @@ final class BraveSearchToolExecutor: ToolExecutor, @unchecked Sendable {
     private let maxSearchesPerTurn = 2
     private var searchCount = 0
     private var throttled = false
+    /// live-31 (3) — this search's request to the provider failed (`ToolResult.failed`).
+    private var requestFailed = false
 
     func execute(name: String, arguments: [String: Any]) async -> ToolResult {
         switch name {
@@ -2226,6 +2247,7 @@ final class BraveSearchToolExecutor: ToolExecutor, @unchecked Sendable {
                 return ToolResult(textForModel: "You have used your web search budget for this question (\(maxSearchesPerTurn) searches). Do NOT search again — answer now from the results you already have.", links: [])
             }
             searchCount += 1
+            requestFailed = false
             // CH Session 2 (T's case 2) — a today/latest question goes to Brave's NEWS endpoint first: it returns
             // individual ARTICLES with their own dates (past day, then past week), where web search returns section
             // front pages dated by their last update. Falls back to web search when news finds nothing or the plan
@@ -2262,9 +2284,7 @@ final class BraveSearchToolExecutor: ToolExecutor, @unchecked Sendable {
                 throttled = true
                 return ToolResult(textForModel: "Web search is temporarily rate-limited by the provider (too many requests in a short time). Do NOT keep retrying — answer from what you already have, or if you have nothing, tell the user web search is rate-limited right now and to try again shortly.", links: [], rateLimited: true)
             }
-            guard !links.isEmpty else {
-                return ToolResult(textForModel: "No results found for \"\(query)\".", links: [])
-            }
+            guard !links.isEmpty else { return Self.nothing(query, failed: requestFailed) }
             let text = links.enumerated().map { i, l in
                 "[\(i + 1)] \(l.title)\n\(l.url)\n\(l.snippet ?? "")"
             }.joined(separator: "\n\n")
@@ -2284,6 +2304,12 @@ final class BraveSearchToolExecutor: ToolExecutor, @unchecked Sendable {
         }
     }
 
+    /// No results, or (live-31) a provider that didn't answer — said plainly, and flagged so the app's line is honest.
+    static func nothing(_ query: String, failed: Bool) -> ToolResult {
+        failed && !WebGrounding.live30 ? ToolResult(textForModel: "The web search didn't go through (the search provider didn't answer). Answer from your own knowledge and say it may be out of date.", links: [], failed: true)
+               : ToolResult(textForModel: "No results found for \"\(query)\".", links: [])
+    }
+
     /// GET the Brave web-search API → `[{title,url,snippet}]`. HTTP 429 (Brave's own
     /// rate-limit) → the shared `rateLimited` signal. Descriptions can carry `<strong>`
     /// highlight tags → stripped via the shared HTML helpers.
@@ -2298,10 +2324,11 @@ final class BraveSearchToolExecutor: ToolExecutor, @unchecked Sendable {
         req.setValue("application/json", forHTTPHeaderField: "Accept")
         req.setValue("gzip", forHTTPHeaderField: "Accept-Encoding")
         req.setValue(apiKey, forHTTPHeaderField: "X-Subscription-Token")
-        guard let (data, resp) = try? await URLSession.shared.data(for: req) else { return ([], false) }
+        guard let (data, resp) = try? await URLSession.shared.data(for: req) else { requestFailed = true; return ([], false) }
         let status = (resp as? HTTPURLResponse)?.statusCode ?? -1
         if status == 429 { return ([], true) }  // Brave rate-limit → distinct signal
-        return (Self.parseBrave(data), false)
+        guard (200...299).contains(status) else { requestFailed = true; return ([], false) }   // live-31 (3)
+        return (Self.parseBrave(data, cap: count), false)
     }
 
     /// Brave News Search → articles with `age` / `page_age`. Any non-2xx other than 429 (e.g. a plan without news
@@ -2323,14 +2350,14 @@ final class BraveSearchToolExecutor: ToolExecutor, @unchecked Sendable {
         #endif
         if status == 429 { return ([], true) }
         guard (200...299).contains(status) else { return ([], false) }
-        return (Self.parseBraveNews(data), false)
+        return (Self.parseBraveNews(data, cap: count), false)
     }
 
     /// Brave News JSON (`results[].{title,url,description,age,page_age}`) → `ToolLink`, same caps as web.
-    static func parseBraveNews(_ data: Data) -> [ToolLink] {
+    static func parseBraveNews(_ data: Data, cap: Int = 5) -> [ToolLink] {
         guard let json = try? JSONSerialization.jsonObject(with: data) as? [String: Any],
               let results = json["results"] as? [[String: Any]] else { return [] }
-        return results.prefix(5).compactMap { r -> ToolLink? in
+        return results.prefix(cap).compactMap { r -> ToolLink? in
             guard let title = r["title"] as? String, let urlStr = r["url"] as? String, !urlStr.isEmpty else { return nil }
             let cleanTitle = WebGrounding.cleanResultText(title)   // live-29 (B3)
             let snippet = (r["description"] as? String).map { WebGrounding.cleanResultText($0, cap: 300) }   // live-29 (B3)
@@ -2362,12 +2389,13 @@ final class BraveSearchToolExecutor: ToolExecutor, @unchecked Sendable {
 
     /// Map Brave JSON (`web.results[].{title,url,description}`) → `ToolLink`. Static +
     /// internal so it's unit-testable via the DEBUG hook without a live key.
-    static func parseBrave(_ data: Data) -> [ToolLink] {
+    static func parseBrave(_ data: Data, cap: Int = 5) -> [ToolLink] {
         guard let json = try? JSONSerialization.jsonObject(with: data) as? [String: Any],
               let web = json["web"] as? [String: Any],
               let results = web["results"] as? [[String: Any]] else { return [] }
-        // Brief AF2 (a) — cap at 5 results, snippet ≤ 300 chars, never a page body.
-        return results.prefix(5).compactMap { r -> ToolLink? in
+        // Brief AF2 (a) — cap at what was asked for (5 by default; live-31: the Apple path's 8 were cut to 5 here, so
+        // the social filter left fewer than intended), snippet ≤ 300 chars, never a page body.
+        return results.prefix(cap).compactMap { r -> ToolLink? in
             guard let title = r["title"] as? String, let urlStr = r["url"] as? String, !urlStr.isEmpty else { return nil }
             let cleanTitle = WebGrounding.cleanResultText(title)   // live-29 (B3)
             let snippet = (r["description"] as? String).map { WebGrounding.cleanResultText($0, cap: 300) }   // live-29 (B3)
@@ -2387,6 +2415,8 @@ final class TavilySearchToolExecutor: ToolExecutor, @unchecked Sendable {
     private let maxSearchesPerTurn = 2
     private var searchCount = 0
     private var throttled = false
+    /// live-31 (3) — this search's request to the provider failed (`ToolResult.failed`).
+    private var requestFailed = false
 
     func execute(name: String, arguments: [String: Any]) async -> ToolResult {
         switch name {
@@ -2400,6 +2430,7 @@ final class TavilySearchToolExecutor: ToolExecutor, @unchecked Sendable {
                 return ToolResult(textForModel: "You have used your web search budget for this question (\(maxSearchesPerTurn) searches). Do NOT search again — answer now from the results you already have.", links: [])
             }
             searchCount += 1
+            requestFailed = false
             var (links, rateLimited) = ([ToolLink](), false)
             let count = (arguments["count"] as? Int) ?? 5   // live-30 (A1): the Apple path asks for more (social hosts are dropped)
             if WebGrounding.isNewsQuestion(query) { (links, rateLimited) = await search(query, news: true, count: count) }   // live-29 (B3)
@@ -2408,7 +2439,7 @@ final class TavilySearchToolExecutor: ToolExecutor, @unchecked Sendable {
                 throttled = true
                 return ToolResult(textForModel: "Web search is temporarily rate-limited by the provider (too many requests in a short time). Do NOT keep retrying — answer from what you already have, or if you have nothing, tell the user web search is rate-limited right now and to try again shortly.", links: [], rateLimited: true)
             }
-            guard !links.isEmpty else { return ToolResult(textForModel: "No results found for \"\(query)\".", links: []) }
+            guard !links.isEmpty else { return BraveSearchToolExecutor.nothing(query, failed: requestFailed) }
             let text = links.enumerated().map { i, l in "[\(i + 1)] \(l.title)\n\(l.url)\n\(l.snippet ?? "")" }.joined(separator: "\n\n")
             return ToolResult(textForModel: text, links: links)
         case AgentTools.fetchURL:
@@ -2432,21 +2463,21 @@ final class TavilySearchToolExecutor: ToolExecutor, @unchecked Sendable {
         var body: [String: Any] = ["query": query, "max_results": count, "search_depth": "basic", "topic": news ? "news" : "general"]
         if news { body["days"] = 7 }
         req.httpBody = try? JSONSerialization.data(withJSONObject: body)
-        guard let (data, resp) = try? await URLSession.shared.data(for: req) else { return ([], false) }
+        guard let (data, resp) = try? await URLSession.shared.data(for: req) else { if !news { requestFailed = true }; return ([], false) }
         let status = (resp as? HTTPURLResponse)?.statusCode ?? -1
         #if DEBUG
         GauntletTap.shared.noteValue("tavily_\(news ? "news" : "web")", status)
         #endif
         if status == 429 || status == 432 { return ([], true) }
-        guard (200...299).contains(status) else { return ([], false) }
-        return (Self.parse(data), false)
+        guard (200...299).contains(status) else { if !news { requestFailed = true }; return ([], false) }   // live-31 (3)
+        return (Self.parse(data, cap: count), false)
     }
 
     /// Tavily JSON (`results[].{title,url,content,published_date}`) → `ToolLink`, the same caps as Brave (5, 300 chars).
-    static func parse(_ data: Data) -> [ToolLink] {
+    static func parse(_ data: Data, cap: Int = 5) -> [ToolLink] {
         guard let json = try? JSONSerialization.jsonObject(with: data) as? [String: Any],
               let results = json["results"] as? [[String: Any]] else { return [] }
-        return results.prefix(5).compactMap { r -> ToolLink? in
+        return results.prefix(cap).compactMap { r -> ToolLink? in
             guard let title = r["title"] as? String, let urlStr = r["url"] as? String, !urlStr.isEmpty else { return nil }
             let cleanTitle = WebGrounding.cleanResultText(title)   // live-29 (B3)
             guard !cleanTitle.isEmpty else { return nil }

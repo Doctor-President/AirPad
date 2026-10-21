@@ -19,6 +19,8 @@ import UIKit   // UIPasteboard — footer copy + user-bubble long-press copy
 ///     (`ChatTranscriptCollection`) whose layout keeps the reader at the end
 ///     through every height change while they are there, and keeps their place
 ///     when they have scrolled up (a new turn never yanks them down).
+///     live-31: on send the question moves near the top ONCE; while the answer
+///     streams nothing on screen moves (it grows beneath; ↓ when it passes the bottom).
 struct ChatTranscript: View {
 
     let session: ChatSession
@@ -167,8 +169,8 @@ struct ChatTranscript: View {
     // MARK: - Transcript
 
     /// live-30 (1) — the UIKit transcript (`ChatTranscriptCollection`): the end is a state the layout keeps, so opening a
-    /// chat, ↓, a drag to the end, a streaming answer and a table appearing all stay on the last line. Asking while
-    /// scrolled up doesn't move the reader; coming back to the end follows the answer again.
+    /// chat, ↓ and a drag to the end stay on the last line. live-31 (1): on send the question moves near the top once and
+    /// the answer streams beneath it without moving anything; asking while scrolled up moves nothing at all.
     @ViewBuilder
     private var transcript: some View {
         let _ = refreshRowContext()
@@ -193,7 +195,8 @@ struct ChatTranscript: View {
                 }
             },
             onTap: { inputFocused = false },   // tap-to-dismiss the keyboard without swallowing scroll / selection
-            hiddenFromAccessibility: hiddenFromAccessibility
+            hiddenFromAccessibility: hiddenFromAccessibility,
+            topFadeFraction: topFadeFraction
         )
         #if DEBUG
         .overlay(alignment: .topLeading) {

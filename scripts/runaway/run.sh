@@ -30,7 +30,7 @@ else TESTS=(-only-testing:AirPadUITests/RunawayAnswerUI); fi
 xcrun simctl boot $SIM 2>/dev/null; xcrun simctl bootstatus $SIM -b >/dev/null 2>&1
 rm -rf "$OUT/result.xcresult"
 DEVELOPER_DIR=/Applications/Xcode.app/Contents/Developer \
-TEST_RUNNER_WEBSWITCH_RED=${WEBSWITCH_RED:-0} TEST_RUNNER_HOSTWEB_RED=${HOSTWEB_RED:-0} TEST_RUNNER_RUNAWAY_FAKE_URL=http://127.0.0.1:$FP \
+TEST_RUNNER_WEBSWITCH_RED=${WEBSWITCH_RED:-0} TEST_RUNNER_HOSTWEB_RED=${HOSTWEB_RED:-0} TEST_RUNNER_WEBEV_RED=${WEBEV_RED:-0} TEST_RUNNER_RUNAWAY_FAKE_URL=http://127.0.0.1:$FP \
 TEST_RUNNER_RUNAWAY_HOST_ARGS="-DebugHostURL http://127.0.0.1:$HP -DebugHostSecret $SECRET -DebugHostPubKey $HPK" \
   xcodebuild test-without-building -xctestrun "$XCTR" -destination "id=$SIM" "${TESTS[@]}" \
   -resultBundlePath "$OUT/result.xcresult" -collect-test-diagnostics never > "$OUT/xcuitest.log" 2>&1

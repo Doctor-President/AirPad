@@ -74,6 +74,8 @@ enum AppleWebQuery {
             .replacingOccurrences(of: #"\s{2,}"#, with: " ", options: .regularExpression)
             .trimmingCharacters(in: .whitespaces)
         if let mark = topic.firstIndex(of: "?") { topic = String(topic[...mark]) }
+        // live-32 — a correction searches the topic's current state, not the correction's words.
+        if !WikipediaGrounding.live31, isCorrection(q) { return topic + " current" }
         return topic + " " + q
     }
 
@@ -82,6 +84,7 @@ enum AppleWebQuery {
     /// scientific name of the colossal squid?" asked after an oarfish answer doesn't, and is searched as written (the
     /// gauntlet: such questions were rewritten / prefixed with the previous topic and answered from its results).
     static func needsContext(_ q: String) -> Bool {
+        if !WikipediaGrounding.live31, isCorrection(q) { return true }   // live-32 — a correction is about the last answer
         let t = q.lowercased().replacingOccurrences(of: "’", with: "'").trimmingCharacters(in: .whitespacesAndNewlines)
         let words = t.split(whereSeparator: { !$0.isLetter && !$0.isNumber && $0 != "'" }).map(String.init)
         if words.count <= 4 { return true }
@@ -89,6 +92,21 @@ enum AppleWebQuery {
         let refs: Set<String> = ["it", "it's", "its", "they", "they're", "them", "their", "theirs", "those", "these", "he", "she", "him", "her", "his", "hers"]
         if words.contains(where: { refs.contains($0) }) { return true }
         return t.range(of: #"\b(which of|the other|the same|the latter|the former|that one|this one)\b"#, options: .regularExpression) != nil
+    }
+
+    /// live-32 — the user corrects the last answer ("you're not showing the current president. Joe Biden is no longer
+    /// president" — T): it leans on the chat, so it's searched again as a follow-up (live-31 searched its literal words
+    /// and got Quora threads and "is Biden in hospice?" pages).
+    static func isCorrection(_ q: String) -> Bool {
+        let t = q.lowercased().replacingOccurrences(of: "’", with: "'").trimmingCharacters(in: .whitespacesAndNewlines)
+        let patterns = [
+            #"^(no|nope|wrong|incorrect|not quite|not true|actually)\b"#,
+            #"^you('re| are|'ve| have)? ?(not|wrong|mistaken|missing|forgot|missed|left|skipped|omitted|didn't|did not|haven't|have not|got|aren't|are not)\b"#,
+            #"^(that's|that is|this is|it's|it is|that was|this was) (wrong|not right|incorrect|outdated|out of date|old|not (true|correct|current|accurate|up to date))\b"#,
+            #"\b(is|are|was|were) no longer\b"#,
+            #"\b(out of date|outdated|not up to date)\b"#,
+        ]
+        return patterns.contains { t.range(of: $0, options: .regularExpression) != nil }
     }
 
     /// "Thanks", "ok", "great, got it" — not a question to search again.
@@ -106,7 +124,7 @@ enum AppleWebQuery {
     static func isFollowUpQuestion(_ q: String) -> Bool {
         let t = q.lowercased().trimmingCharacters(in: .whitespacesAndNewlines)
         guard !isChitChat(t), needsContext(t) else { return false }
-        if t.hasSuffix("?") { return true }
+        if t.hasSuffix("?") || (!WikipediaGrounding.live31 && isCorrection(t)) { return true }
         let openers = ["what", "who", "when", "where", "why", "how", "which", "is ", "are ", "was ", "were ", "did ", "does ",
                        "do ", "can ", "could ", "will ", "would ", "has ", "have ", "so ", "and ", "tell me", "any ", "more on"]
         return openers.contains { t.hasPrefix($0) }
@@ -132,8 +150,11 @@ enum AppleWebQuery {
     /// session instructions instead → citing 77/85 and the measles text tripping the guardrail 4 of 5; in the turn
     /// without "not from the user" → "you provided" 5 times; this → 0 refusals, 83/85 cite, 0 "you provided", news 25/25.
     static let turnInstructions = "Each question comes with web results the app found for it today; they come from the app's search, not from the user, who hasn't seen them. Answer the question from them in your own words, not by copying their sentences, and put the result's number in brackets, like [1], after each fact you take from one. If they don't answer it, say so plainly."
+    /// live-32 (2) — the knowledge-conflict rule, short (Apple's refusal rate is the constraint): the results win over
+    /// memory, and a recently edited reference page counts.
+    static let evidenceInstruction = "Where they disagree with what you remember, they are right: they are newer than your training. A reference page such as Wikipedia, edited recently, is current."
     static func turnPacket(day: String, query: String, question: String, results: [(title: String, date: String?, snippet: String)]) -> String {
-        let list = results.enumerated().map { i, r in "[\(i + 1)] \(r.title)\(r.date.map { " — published " + $0 } ?? "")\n\(r.snippet)" }
+        let list = results.enumerated().map { i, r in "[\(i + 1)] \(r.title)\(r.date.map { " — " + $0 } ?? "")\n\(r.snippet)" }
         return (["Web results the app found today (\(day)) for \"\(query)\":"] + list + ["Question: \(question)"]).joined(separator: "\n\n")
     }
 
@@ -201,7 +222,7 @@ enum AppleWebQuery {
             && !saysResultsDontAnswer("The telescope saw first light in November [1]."))
         row("markers-stripped", strippingCitationMarkers("They don't say [1], [2]. Nor [3]–[4].") == "They don't say. Nor.",
             strippingCitationMarkers("They don't say [1], [2]. Nor [3]–[4]."))
-        let pk = turnPacket(day: "20 October 2026", query: "q", question: "Q?", results: [("T", "19 October 2026", "S")])
+        let pk = turnPacket(day: "20 October 2026", query: "q", question: "Q?", results: [("T", "published 19 October 2026", "S")])
         row("framed-as-the-app's-search", pk.hasPrefix("Web results the app found today (20 October 2026) for \"q\":")
             && pk.contains("[1] T — published 19 October 2026\nS") && pk.hasSuffix("Question: Q?")
             && turnInstructions.contains("not from the user") && turnInstructions.contains("own words"))

@@ -683,6 +683,12 @@ final class LibrarianState {
                         await appleWebSend(query: query, chat: chat)
                         return
                     }
+                    // live-32 (2) — no search key: Wikipedia alone grounds a factual or current-state question (keyless);
+                    // the "add a key" notice only when Wikipedia has nothing for it.
+                    if WikipediaGrounding.isOn, await appleWebSend(query: query, chat: chat, webKey: false) {
+                        Self.logGeneralTurn(query: query, scope: selectedScope, tool: "app-wikipedia", retry: false, store: store)
+                        return
+                    }
                     if Self.looksLikeSearchIntent(query) {
                         Self.logGeneralTurn(query: query, scope: selectedScope, tool: "none", retry: false, store: store)
                         chat.appendWebSearchKeyNotice(userText: query)
@@ -705,7 +711,14 @@ final class LibrarianState {
             //     so the model never advertises a capability it can't use.
             guard WebSearchBackend.hasKey else {
                 Self.logGeneralTurn(query: query, scope: selectedScope, tool: "none", retry: false, store: store)
-                if Self.looksLikeSearchIntent(query) {
+                if WikipediaGrounding.isOn,
+                   WebGrounding.hostPrefetch(query, searchIntent: Self.looksLikeSearchIntent(query),
+                                             lastAnswerSearched: AppleWebGrounding.lastAnswerSearched(chat)).prefetch != "none",
+                   await appleWebSend(query: query, chat: chat, webKey: false) {
+                    // live-32 (2) — no search key: Wikipedia alone grounds a factual or current-state question (keyless),
+                    // through the app-routed turn the Apple path uses (the passage in the turn, the search row, [n] chips);
+                    // the "add a key" notice only when Wikipedia has nothing for it.
+                } else if Self.looksLikeSearchIntent(query) {
                     chat.appendWebSearchKeyNotice(userText: query)
                 } else {
                     await chat.send(displayText: query, modelText: query,
@@ -743,6 +756,14 @@ final class LibrarianState {
             #if DEBUG
             if UserDefaults.standard.string(forKey: "GeneralPrefetch") == "off" { prefetch = .none }   // A/B latency
             #endif
+            #if DEBUG
+            WebTrace.shared.beginTurn(query)
+            WebTrace.shared.note("plan", ["prefetch": plan.prefetch, "followUp": plan.followUp,
+                                          "asksCurrentState": WebGrounding.asksCurrentState(query),
+                                          "searchIntent": Self.looksLikeSearchIntent(query),
+                                          "factual": WebGrounding.isFactualQuestion(query),
+                                          "freshness": WebGrounding.isFreshnessQuestion(query)])
+            #endif
             var appQuery: String? = nil
             if prefetch != .none, !WebGrounding.live30 {
                 let (q, how) = await AppleWebGrounding.searchQuery(for: query, chat: chat)
@@ -751,6 +772,7 @@ final class LibrarianState {
                 AppleWebGrounding.debugLastQuery = q
                 AppleWebGrounding.debugLastHow = how
                 NSLog("[HostWeb] query (%@%@): %@", how, plan.followUp ? ", follow-up" : "", q)
+                WebTrace.shared.note("query", ["query": q, "how": how])
                 #endif
             }
             let didRetry = await chat.sendWithTools(displayText: query,
@@ -856,30 +878,61 @@ final class LibrarianState {
     /// Nothing back (or throttled) → the plain turn; nothing back still counts as a search (never the training-data line).
     /// live-30 (A1) — a follow-up searches a standalone query; the results are labelled as the app's search (never "you
     /// provided"); the provider is asked for 8 so three remain without social hosts; the turn shows the search row.
-    private func appleWebSend(query: String, chat: ChatSession) async {
+    /// `webKey: false` (live-32) — no search key: Wikipedia only; nothing is sent (false) when it has no passage.
+    @discardableResult
+    private func appleWebSend(query: String, chat: ChatSession, webKey: Bool = true) async -> Bool {
         let (searchQuery, how) = await AppleWebGrounding.searchQuery(for: query, chat: chat)
         #if DEBUG
         AppleWebGrounding.debugLastQuery = searchQuery
         AppleWebGrounding.debugLastHow = how
         NSLog("[AppleWeb] query (%@): %@", how, searchQuery)
+        WebTrace.shared.beginTurn(query)
+        WebTrace.shared.note("query", ["query": searchQuery, "how": how, "path": webKey ? "app-search" : "wikipedia-only"])
         #endif
-        let result = await WebSearchBackend.make().execute(name: AgentTools.webSearch,
+        // live-32 (2) — Wikipedia alongside the search (keyless; the same switch).
+        async let wikiPassage = WikipediaGrounding.passage(question: query, query: searchQuery)
+        var result = ToolResult(textForModel: "", links: [])
+        if webKey {
+            result = await WebSearchBackend.make().execute(name: AgentTools.webSearch,
                                                            arguments: ["query": searchQuery, "count": AppleWebQuery.requestCount])
-        let links = (WebGrounding.isFreshnessQuestion(query) ? WebGrounding.rank(result.links) : result.links)
+        }
+        let news = WebGrounding.wantsNews(query)
+        var links = (news ? WebGrounding.rank(result.links) : result.links)
             .filter { AppleWebGrounding.live29 || !AppleWebQuery.isSocial($0.url) }
-        let searched = !result.unavailable && !result.rateLimited
-        let row = ChatSession.ToolActivity(icon: "magnifyingglass", label: links.isEmpty ? "Searched the web — no results" : "Searched the web",
-                                           detail: searchQuery, links: links)
+        let wiki = await wikiPassage
+        #if DEBUG
+        WebTrace.shared.note("tool", ["name": "web_search", "id": "app_search", "startMs": 0, "args": ["query": searchQuery],
+                                      "links": WebTrace.links(result.links), "failed": result.failed, "rateLimited": result.rateLimited, "text": ""])
+        if let wiki { WebTrace.shared.note("tool", ["name": "wikipedia", "id": "app_wiki", "startMs": 0, "url": wiki.url, "args": ["title": wiki.title],
+                                                    "links": WebTrace.links([WikipediaGrounding.link(wiki)]), "failed": false, "rateLimited": false, "text": wiki.text]) }
+        #endif
+        if !WikipediaGrounding.live31 {
+            let current = WebGrounding.asksCurrentState(query) || WebGrounding.asksCurrentState(searchQuery) || AppleWebQuery.isCorrection(query)
+            let terms = WebGrounding.evidenceTerms(searchQuery)
+            links = links.map { l in
+                ToolLink(title: l.title, url: l.url, snippet: l.snippet.map { WebGrounding.relevantWindow($0, terms: terms, cap: AppleWebGrounding.snippetCap) },
+                         published: l.published)
+            }
+            if let wiki { links = [WikipediaGrounding.link(wiki)] + links.filter { WebGrounding.normalize($0.url) != WebGrounding.normalize(wiki.url) } }
+            if current { links = WebGrounding.currentStateLinks(links, now: Date()) }
+        }
+        if !webKey && wiki == nil { return false }
+        let searched = webKey ? !result.unavailable && !result.rateLimited : true
+        let label = links.isEmpty ? "Searched the web — no results"
+            : wiki != nil ? (webKey ? "Searched the web and Wikipedia" : "Read Wikipedia") : "Searched the web"
+        // the row shows the query (a follow-up's fallback carries it as the topic — `previousSearchQuery`)
+        let row = ChatSession.ToolActivity(icon: "magnifyingglass", label: label, detail: searchQuery, links: links)
         guard !links.isEmpty else {
             await chat.send(displayText: query, modelText: query, systemPrompt: privateSystemPrompt, citations: nil,
                             generalKnowledge: true, webResults: searched ? 0 : nil, searchActivity: searched && !AppleWebGrounding.live29 ? row : nil)
-            return
+            return true
         }
         let pk = AppleWebGrounding.packet(links: links)
         let turn = AppleWebGrounding.turn(question: query, query: searchQuery, results: pk.results, voice: Self.plainVoice + standingVoiceSuffix)
         await chat.send(displayText: query, modelText: turn.modelText, systemPrompt: turn.systemPrompt,
                         citations: pk.citations, generalKnowledge: true, webResults: pk.citations.count,
                         searchActivity: AppleWebGrounding.live29 ? nil : row)
+        return true
     }
 
     /// Brief AI5 — the user tapped "Search the web instead" under an empty Library
@@ -2589,7 +2642,7 @@ final class LibrarianState {
         inline with its bracket number like [1] or [2] matching that numbered result. Do NOT paste raw \
         URLs into your prose — the app renders the real links from your [n] citations, and any URL you \
         type yourself will be shown as plain, non-clickable text.
-        """
+        """ + (WikipediaGrounding.live31 ? "" : "\n\n" + WebGrounding.evidenceRules)   // live-32 (2)
     }
 
     #if DEBUG

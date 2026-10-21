@@ -16,6 +16,8 @@ enum AppleWebGrounding {
     /// How many results go into the turn (Apple's on-device window is small; three snippets ≈ 1,200 characters).
     static let maxResults = 3
     static let snippetCap = 300
+    /// live-32 (2) — a Wikipedia passage's share of the turn (with two snippets ≈ 1,500 characters).
+    static let wikiCap = 900
 
     /// Does this General question get searched first? The Host path's rule: a search-intent or current-state request,
     /// or a factual question (the Host path also reads the top page for those; here the snippets are the packet).
@@ -129,9 +131,14 @@ enum AppleWebGrounding {
         for (i, l) in top.enumerated() {
             let title = MarkdownPlain.label(l.title)
             let snippet = MarkdownPlain.label(l.snippet ?? "")
-            let clipped = snippet.count > snippetCap ? String(snippet.prefix(snippetCap)) + "…" : snippet
-            results.append((title, l.published.map { WebGrounding.dayString($0) }, clipped))
-            cites.append(.init(index: i + 1, url: l.url, title: title, snippet: clipped))
+            // live-32 (2) — a Wikipedia passage keeps more (it is the answer's evidence), dated by its last edit.
+            let wiki = WikipediaGrounding.isPassage(l)
+            let cap = wiki ? wikiCap : snippetCap
+            let clipped = snippet.count > cap ? String(snippet.prefix(cap)) + "…" : snippet
+            let date = wiki ? l.published.map { "Wikipedia, last edited " + WebGrounding.dayString($0) }
+                            : l.published.map { "published " + WebGrounding.dayString($0) }
+            results.append((title, date, clipped))
+            cites.append(.init(index: i + 1, url: l.url, title: title, snippet: String(clipped.prefix(snippetCap))))
         }
         return (results, cites)
     }
@@ -140,7 +147,7 @@ enum AppleWebGrounding {
     /// own search today; the question at the end. (Kept short: refusal rate is the constraint — live-23.)
     static func turn(question: String, query: String, results: [(title: String, date: String?, snippet: String)],
                      voice: String, now: Date = Date()) -> (systemPrompt: String, modelText: String) {
-        (voice + " " + AppleWebQuery.turnInstructions,
+        (voice + " " + AppleWebQuery.turnInstructions + (WikipediaGrounding.live31 ? "" : " " + AppleWebQuery.evidenceInstruction),
          AppleWebQuery.turnPacket(day: WebGrounding.dayString(now), query: query, question: question, results: results))
     }
 }

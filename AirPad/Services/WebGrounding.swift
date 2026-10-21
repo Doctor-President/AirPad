@@ -156,6 +156,11 @@ enum WebGrounding {
     /// win (a small model trusts its training over retrieved text — the known RAG "knowledge conflict"); a remembered fact
     /// is never presented as current; a recently edited reference page is current evidence; no results that say → say so
     /// in one line; and the answer is the answer, not the model's thinking.
+    /// Only for a current-state turn: on every web turn the block cost qwen3:4b its citations on a plain factual question
+    /// (the gauntlet's GW3: cited [1] 3/3 on live-31's prompt, 0/3 with the block).
+    static func withEvidenceRules(_ systemPrompt: String, currentState: Bool) -> String {
+        currentState && !WikipediaGrounding.live31 ? systemPrompt + "\n\n" + evidenceRules : systemPrompt
+    }
     static let evidenceRules = "WHEN THE RESULTS AND YOUR MEMORY DISAGREE, THE RESULTS ARE RIGHT: your training data stops at a cutoff, and who holds an office, who is living and who won change after it. Never present something you remember as the current state. A reference page (Wikipedia, an encyclopedia, a government site) edited recently is current evidence even though it is not a news article. If the results don't say who holds it now, say that in one plain sentence instead of answering from memory. Write only your final answer: don't think out loud, second-guess or correct yourself in it."
 
     /// The today's-news framing (fresh articles first, "no article from today" when there's none) is for a NEWS question.

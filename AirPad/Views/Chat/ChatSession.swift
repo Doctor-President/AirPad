@@ -859,7 +859,7 @@ final class ChatSession {
             func runToolLoop(nudge: Bool) async throws -> (answer: String, links: [ToolLink], anyTool: Bool, rateLimited: Bool, searched: Bool) {
                 // OpenAI working-set (system + prior chat turns + this turn). Activity
                 // rows are display-only — skipped here.
-                var working: [[String: Any]] = [["role": "system", "content": systemPrompt]]
+                var working: [[String: Any]] = [["role": "system", "content": WebGrounding.withEvidenceRules(systemPrompt, currentState: currentState)]]
                 for m in messages.dropLast() where m.role == .user || m.role == .assistant {
                     working.append(["role": m.role == .user ? "user" : "assistant", "content": m.text])
                 }
@@ -982,7 +982,7 @@ final class ChatSession {
                             let q = (call.arguments["query"] as? String) ?? displayText
                             working[working.count - 1]["content"] = WebGrounding.appSearchTurn(query: q, question: displayText,
                                                                                                links: result.links, now: now, freshness: freshness)
-                            working[0]["content"] = systemPrompt + "\n\n" + WebGrounding.appSearchClause
+                            working[0]["content"] = WebGrounding.withEvidenceRules(systemPrompt, currentState: currentState) + "\n\n" + WebGrounding.appSearchClause
                             continue
                         }
                         working.append(["role": "tool", "tool_call_id": call.id, "content": toolContent])
@@ -1589,13 +1589,26 @@ final class ChatSession {
     }
     #endif
 
+    /// live-32 (A1) — the latest exchange: the last user turn and the rows after it, which belong to it (the "Searched the
+    /// web" row, the answer). T: "regenerate sometimes does nothing" — ↻ and the banner's Retry required the question
+    /// DIRECTLY above the answer (or to be the last row), so on any turn that searched (question → search row → answer) the
+    /// tap silently did nothing; older than live-31 (the search row came with web search). nil = no such exchange.
+    func lastExchange() -> (start: Int, answered: Bool)? {
+        guard let i = messages.lastIndex(where: { $0.role == .user }),
+              messages[(i + 1)...].allSatisfy({ $0.role == .assistant || $0.role == .activity }) else { return nil }
+        return (i, messages[(i + 1)...].contains { $0.role == .assistant })
+    }
+
     func retryLastUserTurn() async {
-        guard !isStreaming, let last = messages.last, last.role == .user else {
+        guard !isStreaming, let ex = lastExchange(), !ex.answered else {
+            RetryTrace.note("Retry rejected: \(isStreaming ? "a turn is streaming" : "no unanswered question")", rows: messages)
             lastError = nil
             return
         }
-        messages.removeLast()
-        if let resend = resendHandler { await resend(last.text) } else { await send(last.text) }
+        RetryTrace.note("Retry accepted", rows: messages)
+        let text = messages[ex.start].text
+        messages.removeSubrange(ex.start...)   // the question and its own rows (a search row before the failure)
+        if let resend = resendHandler { await resend(text) } else { await send(text) }
     }
 
     /// Brief BU1 — prepare a RE-ASK of the SAME question with a different plan (the "Read it in full"
@@ -1610,11 +1623,8 @@ final class ChatSession {
     /// case the caller just sends normally.
     @discardableResult
     func prepareForReask() -> Bool {
-        guard !isStreaming, messages.count >= 2,
-              messages.last?.role == .assistant,
-              messages[messages.count - 2].role == .user else { return false }
-        messages.removeLast()   // the answer being replaced
-        messages.removeLast()   // the user turn (re-appended by send)
+        guard !isStreaming, messages.last?.role == .assistant, let ex = lastExchange(), ex.answered else { return false }
+        messages.removeSubrange(ex.start...)   // the user turn (re-appended by send), its rows and the answer being replaced
         return true
     }
 
@@ -1625,12 +1635,13 @@ final class ChatSession {
     /// `didGenerateTitle` — the chat is already titled and send()'s title
     /// hook is a no-op once that guard is set, so regenerate never re-titles.
     func regenerateLast() async {
-        guard !isStreaming else { return }
-        guard messages.count >= 2,
-              messages.last?.role == .assistant,
-              messages[messages.count - 2].role == .user else { return }
-        messages.removeLast()               // assistant
-        let userText = messages.removeLast().text
+        guard !isStreaming else { RetryTrace.note("↻ rejected: a turn is streaming", rows: messages); return }
+        guard messages.last?.role == .assistant, let ex = lastExchange(), ex.answered else {
+            RetryTrace.note("↻ rejected: the chat doesn't end in an answered question", rows: messages); return
+        }
+        RetryTrace.note("↻ accepted", rows: messages)
+        let userText = messages[ex.start].text
+        messages.removeSubrange(ex.start...)   // the question, its search row(s) and the answer (send re-appends the question)
         // BU1 — ↻ is a re-send too: route it through the owning pipeline, not the plain lane.
         if let resend = resendHandler { await resend(userText) } else { await send(userText) }
     }
@@ -2120,4 +2131,26 @@ final class ChatSession {
     /// live-23 (5b) — the title sanitizer, for `-AppleChatSelfTest`.
     static func debugSanitizeTitle(_ raw: String) -> String? { sanitizeTitleCandidate(raw) }
     #endif
+}
+
+/// live-32 (A1) — every ↻ / Retry tap, accepted or rejected with the reason and the last rows' kinds (never their text),
+/// for "Copy Librarian log" on TestFlight (T: "regenerate sometimes does nothing" — the next dead tap explains itself).
+enum RetryTrace {
+    nonisolated(unsafe) private static var lines: [String] = []
+    private static let lock = NSLock()
+    @MainActor static func note(_ what: String, rows: [ChatSession.Message]) {
+        #if DEBUG || TESTFLIGHT
+        let f = DateFormatter(); f.dateFormat = "HH:mm:ss"
+        let tail = rows.suffix(4).map { m -> String in
+            m.role == .assistant ? (m.stopped != nil ? "answer(stopped)" : m.isPartial == true ? "answer(partial)" : "answer") : m.role.rawValue
+        }.joined(separator: " → ")
+        lock.withLock {
+            lines.append("\(f.string(from: Date())) \(what) · last rows: \(tail)")
+            if lines.count > 20 { lines.removeFirst(lines.count - 20) }
+        }
+        #endif
+    }
+    static func text() -> String {
+        lock.withLock { lines.isEmpty ? "(no regenerate / retry taps yet)" : "Regenerate / retry taps:\n" + lines.joined(separator: "\n") }
+    }
 }

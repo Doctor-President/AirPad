@@ -146,8 +146,8 @@ enum AppleWebGrounding {
     /// The answer turn (`AppleWebQuery.turnPacket` / `turnInstructions`): the results in the turn, labelled as the app's
     /// own search today; the question at the end. (Kept short: refusal rate is the constraint — live-23.)
     static func turn(question: String, query: String, results: [(title: String, date: String?, snippet: String)],
-                     voice: String, now: Date = Date()) -> (systemPrompt: String, modelText: String) {
-        (voice + " " + AppleWebQuery.turnInstructions + (WikipediaGrounding.live31 ? "" : " " + AppleWebQuery.evidenceInstruction),
+                     voice: String, currentState: Bool = true, now: Date = Date()) -> (systemPrompt: String, modelText: String) {
+        (voice + " " + AppleWebQuery.turnInstructions + (WikipediaGrounding.live31 || !currentState ? "" : " " + AppleWebQuery.evidenceInstruction),
          AppleWebQuery.turnPacket(day: WebGrounding.dayString(now), query: query, question: question, results: results))
     }
 }

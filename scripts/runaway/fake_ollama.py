@@ -33,6 +33,7 @@ lock = threading.Lock()
 active = {}   # streams still generating: id → {mode, num_predict, tokens, started}
 seq = [0]
 webq = []   # live-29 (B3) — every web request: {provider, endpoint, query}
+failed_once = set()   # live-32 (A1) — a "flaky" question fails its first request (HTTP 500), then answers
 chatq = []  # live-31 (3) — every chat request: did the user turn carry the app's results, the system prompt the clause, any social host
 def log(rec):
     with lock, open(f"{DIR}/streams.jsonl", "a") as f: f.write(json.dumps(rec) + "\n")
@@ -192,6 +193,13 @@ class H(BaseHTTPRequestHandler):
         if not self.path.startswith("/api/chat"):
             self.send_json({"done": True, "model": MODEL}); return
         q = next((m.get("content", "") for m in reversed(body.get("messages", [])) if m.get("role") == "user"), "").lower()
+        if "flaky" in q:   # live-32 (A1)
+            with lock:
+                first = q not in failed_once; failed_once.add(q)
+                chatq.append({"user_head": q[:140], "flaky": True, "failed": first, "at": time.strftime("%H:%M:%S")})
+            if first:
+                b = b'{"error":"synthetic failure"}'; self.send_response(500); self.send_header("Content-Type", "application/json")
+                self.send_header("Content-Length", str(len(b))); self.end_headers(); self.wfile.write(b); return
         import re as _re
         lm = _re.search(r"harbour log turn (\d+)", q)
         msgs = body.get("messages", [])

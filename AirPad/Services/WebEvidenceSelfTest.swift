@@ -86,9 +86,11 @@ enum WebEvidenceSelfTest {
         row("never-empties", WebGrounding.currentStateLinks([links[0]], now: now).count == 1)
 
         // The weighing: results over memory, reference pages count, no thinking aloud.
-        let sys = LibrarianState.toolChatBase(today: "Tuesday, October 20, 2026")
+        let base = LibrarianState.toolChatBase(today: "Tuesday, October 20, 2026")
+        let sys = WebGrounding.withEvidenceRules(base, currentState: true)
         row("prompt-results-over-memory", sys.contains("THE RESULTS ARE RIGHT") && sys.contains("edited recently is current evidence")
-            && sys.contains("don't think out loud"))
+            && sys.contains("don't think out loud") && WebGrounding.withEvidenceRules(base, currentState: false) == base,
+            "a plain factual turn keeps the base prompt")
         let apple = AppleWebGrounding.turn(question: "Q?", query: "q", results: [], voice: "V.")
         row("apple-prompt-results-over-memory", apple.systemPrompt.contains("they are right") && apple.systemPrompt.contains("Wikipedia"))
 

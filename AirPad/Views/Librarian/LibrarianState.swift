@@ -906,8 +906,9 @@ final class LibrarianState {
         if let wiki { WebTrace.shared.note("tool", ["name": "wikipedia", "id": "app_wiki", "startMs": 0, "url": wiki.url, "args": ["title": wiki.title],
                                                     "links": WebTrace.links([WikipediaGrounding.link(wiki)]), "failed": false, "rateLimited": false, "text": wiki.text]) }
         #endif
+        let current = !WikipediaGrounding.live31
+            && (WebGrounding.asksCurrentState(query) || WebGrounding.asksCurrentState(searchQuery) || AppleWebQuery.isCorrection(query))
         if !WikipediaGrounding.live31 {
-            let current = WebGrounding.asksCurrentState(query) || WebGrounding.asksCurrentState(searchQuery) || AppleWebQuery.isCorrection(query)
             let terms = WebGrounding.evidenceTerms(searchQuery)
             links = links.map { l in
                 ToolLink(title: l.title, url: l.url, snippet: l.snippet.map { WebGrounding.relevantWindow($0, terms: terms, cap: AppleWebGrounding.snippetCap) },
@@ -928,7 +929,8 @@ final class LibrarianState {
             return true
         }
         let pk = AppleWebGrounding.packet(links: links)
-        let turn = AppleWebGrounding.turn(question: query, query: searchQuery, results: pk.results, voice: Self.plainVoice + standingVoiceSuffix)
+        let turn = AppleWebGrounding.turn(question: query, query: searchQuery, results: pk.results, voice: Self.plainVoice + standingVoiceSuffix,
+                                          currentState: current)
         await chat.send(displayText: query, modelText: turn.modelText, systemPrompt: turn.systemPrompt,
                         citations: pk.citations, generalKnowledge: true, webResults: pk.citations.count,
                         searchActivity: AppleWebGrounding.live29 ? nil : row)
@@ -2642,7 +2644,7 @@ final class LibrarianState {
         inline with its bracket number like [1] or [2] matching that numbered result. Do NOT paste raw \
         URLs into your prose — the app renders the real links from your [n] citations, and any URL you \
         type yourself will be shown as plain, non-clickable text.
-        """ + (WikipediaGrounding.live31 ? "" : "\n\n" + WebGrounding.evidenceRules)   // live-32 (2)
+        """
     }
 
     #if DEBUG

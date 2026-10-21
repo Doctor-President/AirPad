@@ -402,6 +402,7 @@
 		EC60DCF76DE4CB0896EE04F4 /* TitleCase.swift in Sources */ = {isa = PBXBuildFile; fileRef = E0D34E62139AB741F9EC03C3 /* TitleCase.swift */; };
 		ED263E6AF87CC57F7DF48FA2 /* CaptureHeader.swift in Sources */ = {isa = PBXBuildFile; fileRef = 7382A39FD7A3008B7F5F0790 /* CaptureHeader.swift */; };
 		ED2897F4A493372C37245794 /* AppleWebGrounding.swift in Sources */ = {isa = PBXBuildFile; fileRef = DAF63C3BDCDEC950CAF7DEBC /* AppleWebGrounding.swift */; };
+		EFE768526206D4EDA8B50911 /* RegenerateUI.swift in Sources */ = {isa = PBXBuildFile; fileRef = 2F23E239FD3DA51B1D798086 /* RegenerateUI.swift */; };
 		F1CC4C613799AD49459896D5 /* LiveWebUI.swift in Sources */ = {isa = PBXBuildFile; fileRef = C24E73996610B9E23DEB38A1 /* LiveWebUI.swift */; };
 		F2C9E94362C505F3F61061DF /* TerritoryLayoutRestoreSelfTest.swift in Sources */ = {isa = PBXBuildFile; fileRef = 9C34AEE42CAC269D68078D15 /* TerritoryLayoutRestoreSelfTest.swift */; };
 		F3459186A31EB4A8E14182C2 /* LibrarianGlass.swift in Sources */ = {isa = PBXBuildFile; fileRef = 5B35336B21B2B5161C241D7D /* LibrarianGlass.swift */; };
@@ -527,6 +528,7 @@
 		2E3B055A71B3FC37FD3282CA /* CardShowcaseGallery.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = CardShowcaseGallery.swift; sourceTree = "<group>"; };
 		2E92C2D35B0BE6D96A64B830 /* FieldCreationSheet.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = FieldCreationSheet.swift; sourceTree = "<group>"; };
 		2F1E6D3E3DA257A138353F43 /* RecorderDeviceBench.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = RecorderDeviceBench.swift; sourceTree = "<group>"; };
+		2F23E239FD3DA51B1D798086 /* RegenerateUI.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = RegenerateUI.swift; sourceTree = "<group>"; };
 		31AC6EC9380F63E183E91CFC /* HDBSCANTree.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = HDBSCANTree.swift; sourceTree = "<group>"; };
 		31C88155071A46620445C439 /* SpeechEngineTesting.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = SpeechEngineTesting.swift; sourceTree = "<group>"; };
 		31D68FA628B933D53B524B98 /* WidgetKit.framework */ = {isa = PBXFileReference; lastKnownFileType = wrapper.framework; name = WidgetKit.framework; path = System/Library/Frameworks/WidgetKit.framework; sourceTree = SDKROOT; };
@@ -970,6 +972,7 @@
 				FB2DFB50C4CBFDAC9D650DE9 /* PlusCaptureOverlap.swift */,
 				84A5A86127573E1A97D3BB7D /* RangeCitationChips.swift */,
 				87ABAE5EF1669794E0C9F8F8 /* RecorderRender.swift */,
+				2F23E239FD3DA51B1D798086 /* RegenerateUI.swift */,
 				331D29B33502CD4329D9797D /* RelatedTapRepro.swift */,
 				2862477F5C82A15C1E3883BA /* RunawayAnswerUI.swift */,
 				B24415EEC2FE0C0731396540 /* ScrollToLanding.swift */,
@@ -1811,6 +1814,7 @@
 				8F858857A22B2EBF7D206FCC /* PlusCaptureOverlap.swift in Sources */,
 				4D5DE03C0D6096C8DA1D7B6D /* RangeCitationChips.swift in Sources */,
 				8D6452684E76A0BC003DB116 /* RecorderRender.swift in Sources */,
+				EFE768526206D4EDA8B50911 /* RegenerateUI.swift in Sources */,
 				E33D0E04DA7D961FF7E4F164 /* RelatedTapRepro.swift in Sources */,
 				056A020E66E5F71C7A5A7609 /* RunawayAnswerUI.swift in Sources */,
 				E156385D2623E42684842387 /* ScrollToLanding.swift in Sources */,

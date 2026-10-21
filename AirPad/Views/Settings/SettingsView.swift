@@ -726,6 +726,7 @@ struct SettingsView: View {
                 var text = log.isEmpty ? "(no Librarian Library-mode turns yet this session)" : log.joined(separator: "\n\n")
                 #if DEBUG || TESTFLIGHT
                 text += "\n\n" + ChatScrollTrace.shared.text()   // live-29 (C1) — the chat scroll trace (TestFlight only)
+                text += "\n\n" + RetryTrace.text()   // live-32 (A1) — every ↻ / Retry tap and why it was refused
                 #endif
                 UIPasteboard.general.string = text
                 librarianLogCopied = true

@@ -42,7 +42,7 @@ def table_rows(ans):
     data = [l for l in t if not re.match(r"^\|[\s:|-]+\|?$", l)]
     return max(0, len(data) - 1) if t else None   # minus the header
 def list_items(ans):
-    return len([l for l in ans.splitlines() if re.match(r"^\s*(\d+[.)]|[-*•])\s+\S", l)])
+    return len([l for l in ans.splitlines() if re.match(r"^(\d+[.)]|[-*•])\s+\S", l)])   # top-level items only
 
 def received(t):
     """What the model got: the first model step's messages (Host / server) or Apple's prompt."""

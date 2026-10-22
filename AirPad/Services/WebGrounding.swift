@@ -29,13 +29,21 @@ enum WebGrounding {
 
     /// live-29 (B3) — the ONE decision for the app's line under a General answer: which note, if any.
     /// `searchRan` = a web search executed this turn (the app's prefetch or the model's call), whatever came back.
-    static func answerNote(question q: String, searchRan: Bool, resultCount: Int, citedCount: Int, rateLimited: Bool)
+    /// live-34 (2) — `supported`: whether the passages the model got back the answer's names and years
+    /// (`EvidenceSupport`); nil when it states none to check.
+    static func answerNote(question q: String, searchRan: Bool, resultCount: Int, citedCount: Int, rateLimited: Bool,
+                           supported: Bool? = nil)
         -> (text: String, dated: Bool, unconfirmed: Bool)? {
         guard !rateLimited else { return nil }
-        // After a search ran: never the training-data line. Cited → nothing to add; uncited (or nothing came back) →
-        // the honest "didn't confirm" line. (T 2026-10-19: Tavily, 3 results, "+ web", and "From the model's training
-        // data" under it — the answer cited none of them, and the old rule read that as "no search behind it".)
-        if searchRan { return citedCount > 0 ? nil : (searchUnconfirmedNote, false, true) }
+        // After a search ran: never the training-data line. (T 2026-10-19: Tavily, 3 results, "+ web", and "From the
+        // model's training data" under it — the answer cited none of them, and the old rule read that as "no search
+        // behind it".) live-34 (2): the passages decide — supported → nothing to add, not supported → the honest
+        // "didn't confirm" line, whatever [n] it wrote (T's correct table had none, and got the line). No passages, or
+        // nothing to check → as before: cited → nothing; uncited → the line.
+        if searchRan {
+            if !Live34.red, resultCount > 0, let supported { return supported ? nil : (searchUnconfirmedNote, false, true) }
+            return citedCount > 0 ? nil : (searchUnconfirmedNote, false, true)
+        }
         guard let note = ungroundedNote(for: q) else { return nil }
         return (note, note == datedKnowledgeNote, false)
     }
@@ -142,7 +150,9 @@ enum WebGrounding {
     }
     /// … and the lines the system prompt gains for it (live-33: the whole of the web rules — where the results come from,
     /// that they beat memory, the citation, the honest line).
-    static let appSearchClause = "Some questions come with web results the app found for them today; they come from the app's search, not from the user, who hasn't seen them. " + sourcesRule + " Answer from them in your own words and put the result's number in brackets, like [1], after each fact you take from one. If they don't answer the question, search again with web_search or say so plainly."
+    static let appSearchClause = "Some questions come with web results the app found for them today; they come from the app's search, not from the user, who hasn't seen them. " + sourcesRule + " Answer from them in your own words and put the result's number in brackets, like [1], after each fact you take from one. " + tableSourcesRule + " If they don't answer the question, search again with web_search or say so plainly."
+    /// live-34 (2) — a table's cells carry no [n]; the answer says where the table came from.
+    static let tableSourcesRule = "If you answer with a table, end with a short line naming the results it came from, like \"Sources: [1], [2]\"."
     /// live-33 — the one knowledge-conflict line (it replaces live-32's evidence block).
     static let sourcesRule = "When the results and what you remember disagree, the results are right: they are newer than your training."
 
@@ -853,3 +863,194 @@ enum HostWebSelfTest {
     }
 }
 #endif
+
+// MARK: - live-34 — the standard levers: provider freshness, evidence-judged confirmation, the training cutoff
+
+/// DEBUG `-Live33Web YES` — live-33's behaviour (the RED baseline for the live-34 rows): today's year pasted into a
+/// current-state query, no provider freshness, the "didn't confirm" line judged by [n] marks, no training-cutoff line.
+/// Always false in Release.
+enum Live34 {
+    static var red: Bool {
+        #if DEBUG
+        UserDefaults.standard.bool(forKey: "Live33Web")
+        #else
+        false
+        #endif
+    }
+}
+
+/// live-34 (1) — the provider's own freshness filter replaces the year live-27…33 pasted into the query (that caused
+/// "…from to 2026" and pulled 2026 news into reference questions). Tavily: `time_range` on a general search, `topic:
+/// "news"` with `days` for news; Brave: `freshness` (pd / pw / pm / py). Wikipedia has none.
+enum SearchFreshness: String, Sendable {
+    case none, day, week, month, year
+
+    /// Brave's `freshness` value.
+    var brave: String? {
+        switch self {
+        case .none: nil
+        case .day: "pd"
+        case .week: "pw"
+        case .month: "pm"
+        case .year: "py"
+        }
+    }
+    /// Tavily's `time_range` (a general search).
+    var tavilyRange: String? { self == .none ? nil : rawValue }
+    /// Tavily's `days` (the news topic).
+    var tavilyDays: Int {
+        switch self {
+        case .day: 1
+        case .week, .none: 7
+        case .month: 30
+        case .year: 365
+        }
+    }
+
+    /// The window for a current-state question ("who is the chancellor of Germany?"). A reference page with no publish
+    /// date can fall out of a time filter, so this was measured on the 12 conversational questions (live-34): see
+    /// Ops `design-refs/live34-2026-10-21/`.
+    static var currentState: SearchFreshness {
+        #if DEBUG
+        if let s = UserDefaults.standard.string(forKey: "WebFreshnessCurrent"), let f = SearchFreshness(rawValue: s) { return f }
+        #endif
+        return .none
+    }
+
+    /// A general web search for a "today" question looks back a week (pages aren't dated to the hour like news).
+    var general: SearchFreshness { self == .day ? .week : self }
+
+    /// The window for one search: the app's pick (`"freshness"` in the call's arguments), else from the query itself
+    /// (the model's own web_search call).
+    static func window(_ arguments: [String: Any], query: String) -> SearchFreshness {
+        guard !Live34.red else { return .none }
+        if let s = arguments["freshness"] as? String, let f = SearchFreshness(rawValue: s) { return f }
+        return pick(query)
+    }
+
+    /// The app's own search for a turn. News is decided by the search query, as before live-34 (the user's "…up until
+    /// today" in T's presidents request is not news; live-34's first build read it as news and searched the past day).
+    /// The user's words narrow a news search to today; any current-state cue in either makes it `currentState`.
+    static func forTurn(question: String, query: String?) -> SearchFreshness {
+        guard !Live34.red else { return .none }
+        let q = query ?? question
+        if WebGrounding.isNewsQuestion(q) { return asksToday(question + " " + q) ? .day : .week }
+        return WebGrounding.asksCurrentState(question) || WebGrounding.asksCurrentState(q) ? currentState : .none
+    }
+
+    static func asksToday(_ s: String) -> Bool {
+        s.range(of: #"\b(today|tonight|this (morning|afternoon|evening)|right now|breaking)\b"#,
+                options: [.regularExpression, .caseInsensitive]) != nil
+    }
+
+    /// The window a question needs: news → today's (day) or this week's; the current state of something → `currentState`;
+    /// anything timeless → none.
+    static func pick(_ q: String) -> SearchFreshness {
+        guard !Live34.red else { return .none }
+        if WebGrounding.isNewsQuestion(q) { return asksToday(q) ? .day : .week }
+        return WebGrounding.asksCurrentState(q) ? currentState : .none
+    }
+}
+
+/// live-34 (2) — "The search results didn't confirm this." judged by the evidence, not by [n] marks (T's correct, uncited
+/// presidents table got the line). The answer's names and years — table cells included — are looked up in the passages
+/// the model got. Names and years the question already says, today's year, months and weekdays don't count (they aren't
+/// evidence). Supported: a table with ≥ half its cells' names/years found; prose with ≥ half its lead sentence's and
+/// ≥ 60% of all of them found. No names or years at all → nil (the caller falls back to whether it cited).
+/// Calibrated on live-33's traces: every right answer ≥ 0.62; the memory answer (Biden "current", from off-topic pages)
+/// 0.57. A year after this one that the passages don't have → not supported. A memory answer whose every name and year
+/// is also in the passages (Biden "current" in a list that has Trump) isn't caught.
+enum EvidenceSupport {
+    private static let skip: Set<String> = Set(("january february march april may june july august september october november december "
+        + "jan feb mar apr jun jul aug sep sept oct nov dec monday tuesday wednesday thursday friday saturday sunday "
+        + "the this that these those here there based as in on at for and but or if while however note yes no it its he she "
+        + "they we you a an present today sources source certainly sure also according").split(separator: " ").map(String.init))
+
+    static func fold(_ s: String) -> String {
+        s.folding(options: [.diacriticInsensitive, .caseInsensitive], locale: Locale(identifier: "en_US_POSIX"))
+    }
+    private static func all(_ p: String, _ s: String) -> [String] {
+        guard let re = try? NSRegularExpression(pattern: p) else { return [] }
+        return re.matches(in: s, range: NSRange(s.startIndex..., in: s)).compactMap { Range($0.range, in: s).map { String(s[$0]) } }
+    }
+    private static let capWord = #"[A-Z][\p{L}\p{N}'’.\-]*"#
+    private static let yearWord = #"\b(?:1[0-9]{3}|20[0-9]{2})\b"#
+    private static let sentenceSplit = #"(?<=[.!?])\s+|\n"#
+
+    /// The claims (folded names and years) in one stretch of text. `initialCounts`: a table cell's first word is a name;
+    /// a sentence's first word is just capitalised.
+    static func claims(_ s: String, initialCounts: Bool, question: Set<String>, year: Int) -> [String] {
+        let s = s.replacingOccurrences(of: #"[*_`#]"#, with: "", options: .regularExpression)
+        var words = all(capWord, s)
+        if !initialCounts, let first = s.range(of: #"^\s*"# + capWord, options: .regularExpression),
+           let w = words.first, s[first].trimmingCharacters(in: .whitespaces) == w { words.removeFirst() }
+        words += all(yearWord, s)
+        return words.compactMap { w in
+            var f = fold(w).replacingOccurrences(of: ".", with: "")   // "U.S." is "us"
+            f = f.trimmingCharacters(in: CharacterSet(charactersIn: "'’-"))
+            if f.hasSuffix("'s") || f.hasSuffix("’s") { f = String(f.dropLast(2)) }
+            guard f.count >= 2, !skip.contains(f), !question.contains(f), f != String(year) else { return nil }
+            return f
+        }
+    }
+
+    /// The share of distinct claims found in the passages (nil: no claims).
+    static func share(_ cs: [String], in hay: String) -> Double? {
+        let set = Set(cs)
+        guard !set.isEmpty else { return nil }
+        let found = set.filter { hay.range(of: #"(?<![a-z0-9])"# + NSRegularExpression.escapedPattern(for: $0) + #"(?![a-z0-9])"#,
+                                           options: .regularExpression) != nil }
+        return Double(found.count) / Double(set.count)
+    }
+
+    /// The passages as one text to search (each link's title and the passages the model saw).
+    static func text(_ links: [ToolLink]) -> String { links.map { $0.title + "\n" + ($0.snippet ?? "") }.joined(separator: "\n") }
+
+    /// Is the answer supported by the passages? nil = it states no names or years to check.
+    static func supported(answer: String, question: String, passages: String, now: Date = Date()) -> Bool? {
+        let year = Calendar(identifier: .gregorian).component(.year, from: now)
+        let q = Set(all(#"[\p{L}\p{N}]+"#, fold(question).replacingOccurrences(of: ".", with: "")))
+        let hay = fold(passages).replacingOccurrences(of: ".", with: "")
+        // A year after this one that the passages don't have is a claim only the evidence could make (Apple Intelligence's
+        // stale table: "Joe Biden | 2021 | 2029", every other name and year also in the presidents list it got).
+        if all(yearWord, answer).contains(where: { (Int($0) ?? 0) > year && share([$0], in: hay) == 0 }) { return false }
+        let lines = answer.components(separatedBy: "\n")
+        let isRow = { (l: String) in l.trimmingCharacters(in: .whitespaces).hasPrefix("|") }
+        let rows = lines.filter(isRow)
+        let prose = lines.filter { !isRow($0) }.joined(separator: "\n")
+        if rows.count >= 3 {
+            // the header row and the |---| rule aren't claims
+            let body = rows.dropFirst().filter { $0.range(of: #"^\s*\|[\s:|\-]+\|?\s*$"#, options: .regularExpression) == nil }
+            let cells = body.flatMap { $0.split(separator: "|").map { claims(String($0).trimmingCharacters(in: .whitespaces), initialCounts: true, question: q, year: year) } }.flatMap { $0 }
+            if let s = share(cells, in: hay) { return s >= 0.5 }
+        }
+        let sentences = prose.components(separatedBy: "\n").flatMap { l in
+            l.replacingOccurrences(of: sentenceSplit, with: "\u{1}", options: .regularExpression).components(separatedBy: "\u{1}")
+        }.map { $0.replacingOccurrences(of: #"^\s*(?:[-*•]|\d+[.)])\s*"#, with: "", options: .regularExpression) }
+        let per = sentences.map { claims($0, initialCounts: false, question: q, year: year) }
+        guard let lead = per.first(where: { !$0.isEmpty }), let sa = share(per.flatMap { $0 }, in: hay),
+              let sl = share(lead, in: hay) else { return nil }
+        return sl >= 0.5 && sa >= 0.6
+    }
+}
+
+/// live-34 (3) — the model's training cutoff next to today's date (the standard line in chat system prompts), for the
+/// approved shelf models only. Alibaba publishes no cutoff for Qwen3 (model cards and the Qwen3 technical report state
+/// none; the 2507 builds shipped July 2025), so the year is the app's own `WebGrounding.trainingYear` (live-31). Apple
+/// publishes none for its on-device model, and a server's model is unknown (T's ruling): no line for either.
+enum TrainingCutoff {
+    static let shelf = ["qwen3:4b-instruct-2507", "qwen3:8b", "qwen3:30b-a3b-instruct-2507"]
+
+    static func cutoff(model: String) -> String? {
+        guard !Live34.red else { return nil }
+        let m = model.lowercased()
+        return shelf.contains { m == $0 || m.hasPrefix($0 + "-") } ? String(WebGrounding.trainingYear) : nil
+    }
+
+    /// The tool-loop prompt's date sentence ("Today's real date is …") becomes "Your training data ends around 2024;
+    /// today's real date is …" for a shelf model; every other prompt is unchanged.
+    static func stamp(_ systemPrompt: String, model: String) -> String {
+        guard let c = cutoff(model: model), let r = systemPrompt.range(of: "Today's real date is ") else { return systemPrompt }
+        return systemPrompt.replacingCharacters(in: r, with: "Your training data ends around \(c); today's real date is ")
+    }
+}

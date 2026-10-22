@@ -17,10 +17,11 @@ PROBES=("Appearance tuner" "appearanceTuning.v1" "AppearanceTunerWindow" "Frost 
 # and the provider-failed line (shipped).
 # live-28 — DEBUG-only hooks must be in NEITHER Release build; the shipped caps line must be in BOTH (the positive control).
 # live-30 — + the (A1) RED switch and the transcript open trace (DEBUG-only); the (A1) framing line ships in both.
-DEBUG_PROBES=("AnswerWallClockSec" "WebSearchSwitchIgnored" "WebSearchBaseURL" "[AnswerCapSelfTest]" "[TitleCaseSelfTest]" "AppleWebFollowUpOff" "TranscriptOpenTrace" "TranscriptLive30" "TranscriptMotionLog" "[HostWebSelfTest]" "GauntletSeedTable" "Live31Web" "WebTrace" "[WebEvidenceSelfTest]" "DebugEndpointModel" "WikipediaBaseURL" "WikipediaLive")
+DEBUG_PROBES=("AnswerWallClockSec" "WebSearchSwitchIgnored" "WebSearchBaseURL" "[AnswerCapSelfTest]" "[TitleCaseSelfTest]" "AppleWebFollowUpOff" "TranscriptOpenTrace" "TranscriptLive30" "TranscriptMotionLog" "[HostWebSelfTest]" "GauntletSeedTable" "Live31Web" "WebTrace" "[WebEvidenceSelfTest]" "DebugEndpointModel" "WikipediaBaseURL" "WikipediaLive" "WebFreshnessCurrent")
+# live-34: + the freshness override (DEBUG-only); the training-cutoff line and the tables' Sources rule (shipped).
 # live-33: the one sources-over-memory line replaced live-32's evidence block. (A probe with non-ASCII — "—" — never
 # matches: `strings` reports ASCII runs.)
-SHIPPED_PROBES=("Stopped: the answer ran too long" "Tavily (free, no card)" "Web search is off. [Turn it on" "they come from the app's search, not from the user" "The web search didn't go through" "they are newer than your training" "Searched the web and Wikipedia" "reasoning_effort")
+SHIPPED_PROBES=("Stopped: the answer ran too long" "Tavily (free, no card)" "Web search is off. [Turn it on" "they come from the app's search, not from the user" "The web search didn't go through" "they are newer than your training" "Searched the web and Wikipedia" "reasoning_effort" "Your training data ends around" "If you answer with a table, end with a short line")
 export DEVELOPER_DIR=/Applications/Xcode.app/Contents/Developer
 fail=0
 for mode in testflight appstore; do

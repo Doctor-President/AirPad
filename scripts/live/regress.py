@@ -21,7 +21,9 @@ THINK = re.compile(r"\b(wait|hmm+|actually,|let me (check|think|re-?check|verify
 
 turns, cur = [], None
 for r in rows:
-    if r["kind"] == "turn": cur = {"q": r["question"], "rows": [r]}; turns.append(cur)
+    # a second "turn" row for the same question before any answer is the same turn (two trace points mark it)
+    if r["kind"] == "turn" and not (cur and cur["q"] == r["question"] and not any(x["kind"] == "answer" for x in cur["rows"])):
+        cur = {"q": r["question"], "rows": [r]}; turns.append(cur)
     elif cur: cur["rows"].append(r)
 
 def take(q, used):
@@ -82,7 +84,7 @@ def grade(c, ts):
                    note="searched!" if searched else "no search"); return out
     ctx, path = received(t)
     lctx = low(ctx)
-    gold = c.get("gold", c["any"])
+    gold = c.get("gold", [] if c.get("abstain") else c["any"])
     # retrieval
     if c.get("recentDays"):
         rr = next((r for r in trows if r["kind"] == "rerank"), None)
@@ -93,6 +95,8 @@ def grade(c, ts):
             except Exception: pass
         recent = [d for d in dated if d <= c["recentDays"]]
         out["retrieval"] = bool(recent); out["retrievalNote"] = f"{len(recent)} of {len(dated)} dated passed sources ≤ {c['recentDays']} d"
+    elif gold and not searched:
+        out["retrieval"] = None; out["retrievalNote"] = "not searched (answered from memory)"
     elif gold:
         miss = missing(lctx, gold, rx)
         out["retrieval"] = not miss
@@ -106,6 +110,9 @@ def grade(c, ts):
     probs = []
     if stale: probs.append("stale: " + "; ".join(stale))
     if think: probs.append("thinking aloud: " + ", ".join(think))
+    if c.get("strictAny"):
+        miss_s = missing(a, c["strictAny"], rx)
+        if miss_s: probs.append("missing: " + ", ".join(g[0] for g in miss_s))
     if c.get("rows"):
         n = c["rows"]["n"]
         got = table_rows(ans) if c["rows"].get("kind") == "table" or table_rows(ans) else list_items(ans)

@@ -697,10 +697,6 @@ final class LibrarianState {
                 }
                 // FM (no tool API) → plain private chat, exactly as before.
                 Self.logGeneralTurn(query: query, scope: selectedScope, tool: "none", retry: false, store: store)
-                #if DEBUG
-                WebTrace.shared.beginTurn(query)   // live-36 — an unsearched Apple turn is its own trace turn (the yardstick)
-                WebTrace.shared.note("plan", ["prefetch": "none", "path": "apple-private"])
-                #endif
                 await chat.send(displayText: query, modelText: query,
                                 systemPrompt: privateSystemPrompt, citations: nil, generalKnowledge: true)
                 return

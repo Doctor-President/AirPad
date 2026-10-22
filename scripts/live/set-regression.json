@@ -148,9 +148,35 @@
     "breyer is",
     "breyer \\(.*present"
    ],
-   "rows": {
-    "n": 9
-   }
+   "strictAny": [
+    [
+     "roberts"
+    ],
+    [
+     "thomas"
+    ],
+    [
+     "alito"
+    ],
+    [
+     "sotomayor"
+    ],
+    [
+     "kagan"
+    ],
+    [
+     "gorsuch"
+    ],
+    [
+     "kavanaugh"
+    ],
+    [
+     "barrett"
+    ],
+    [
+     "jackson"
+    ]
+   ]
   },
   {
    "id": "LIST-T-SENTENCE",
@@ -478,7 +504,7 @@
     ]
    ],
    "official": "apple.com",
-   "review": "price matches apple.com's current MacBook Air price"
+   "review": "a specific current US price from a 2026 source (apple.com's own price wasn't extractable for the gold; strict needs the apple.com source)"
   },
   {
    "id": "PRODUCT-PS5-PRO",
@@ -486,10 +512,10 @@
    "turns": [
     "How much is a PlayStation 5 Pro?"
    ],
-   "rubric": "the current US price after the March 2026 change (blog.playstation.com)",
+   "rubric": "$899.99 (US, since 2 April 2026, blog.playstation.com)",
    "any": [
     [
-     "$"
+     "899"
     ]
    ],
    "gold": [
@@ -499,7 +525,11 @@
     ]
    ],
    "official": "playstation.com",
-   "review": "uses the 2026 price, not $699.99 / $749.99 if those were replaced"
+   "stale": [
+    "\\$?699\\.99",
+    "\\$?749\\.99",
+    "\\$700\\b"
+   ]
   },
   {
    "id": "PRODUCT-PIXEL",
@@ -908,7 +938,12 @@
      "1955"
     ]
    ],
-   "abstain": true
+   "abstain": true,
+   "gold": [
+    [
+     "1955"
+    ]
+   ]
   },
   {
    "id": "FALSE-IPHONE-DISCONTINUED",

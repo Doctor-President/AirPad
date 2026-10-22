@@ -76,7 +76,8 @@ def grade_turn(c, t):
     # live-34 (2) — the app's "didn't confirm" line under the answer; on an answer that names the right thing it is a false alarm
     line = "unconfirmed: true" in (ans or {}).get("line", "")
     st["freshness"] = ", ".join(f'{r["name"]} {r["freshness"]}' for r in (t["rows"] if t else []) if r["kind"] == "provider")
-    return {"line": line, "falseAlarm": line and names and not stale, "wiki": wiki, "sources": seen_hosts,"answered": bool(text), "names": names, "cites": bool(supports), "passedAny": len(passed_any), "stale": stale,
+    # a false alarm: the line under a right answer whose names are in what the model saw (the passages back it)
+    return {"line": line, "falseAlarm": line and names and not stale and not think and bool(passed_any), "wiki": wiki, "sources": seen_hosts,"answered": bool(text), "names": names, "cites": bool(supports), "passedAny": len(passed_any), "stale": stale,
             "thinking": think, "pass": ok, "stages": st, "answer": text[:1500], "cited": cited}
 
 out = []

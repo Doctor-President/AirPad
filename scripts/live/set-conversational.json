@@ -2,7 +2,7 @@
  "_doc": "live-33 (3) — 12 questions phrased the way people talk (one run each, before vs after). `any`: the graded turn's answer must name one of each group; `stale`: regexes it must not match; `wiki`: Wikipedia should be among the sources; `nosearch`: a Library question that must not search (first turn starts with LIB:, the test stays in Library mode). Answers as checked for live-32 (2026-10-21).",
  "chats": [
   {"id": "T-SENTENCE", "turns": ["Can you print for me a table of the last 10 US presidents up until today"], "any": [["trump"]], "wiki": true,
-   "stale": ["biden is (the )?(current|sitting|incumbent)", "\\(?2021\\s*[–-]\\s*present"]},
+   "stale": ["biden is (the )?(current|sitting|incumbent)", "\\(?2021\\s*[–-]\\s*present", "biden[^\\n]*\\|\\s*present"]},
   {"id": "LIST-POPES", "turns": ["could you make me a list of the last five popes?"], "any": [["leo xiv", "leo the fourteenth", "pope leo"]], "wiki": true,
    "stale": ["francis is (the )?(current|reigning)", "francis \\(?2013\\s*[–-]\\s*present"]},
   {"id": "SHOW-SCOTUS", "turns": ["show me the current justices of the US Supreme Court"], "any": [["jackson"], ["barrett"]], "wiki": true, "stale": ["breyer is"]},
@@ -10,7 +10,7 @@
    "stale": ["stoltenberg is (the )?(current|secretary)"]},
   {"id": "FOLLOW-UP", "turns": ["Who is the chancellor of Germany?", "how long has he been in office?"], "any": [["may 2025", "2025"]], "stale": ["scholz"]},
   {"id": "CORRECTION", "turns": ["a table of the last ten US presidents", "you're not showing the current president. Joe Biden is no longer president"],
-   "any": [["trump"]], "wiki": true, "stale": ["biden is (the )?(current|sitting|incumbent)"]},
+   "any": [["trump"]], "wiki": true, "stale": ["biden is (the )?(current|sitting|incumbent)", "biden is still", "biden[^\\n]*\\|\\s*present"]},
   {"id": "PLAIN-FACT", "turns": ["What is the capital of Australia?"], "any": [["canberra"]], "wiki": true},
   {"id": "HOLDER", "turns": ["Who is Japan's prime minister?"], "any": [["takaichi"]], "wiki": true, "stale": ["ishiba is (the )?(current|prime minister)", "kishida is (the )?current"]},
   {"id": "DEATH", "turns": ["Is Pope Francis still alive?"], "any": [["died", "passed away", "death", "no longer alive", "is not alive"]], "wiki": true,

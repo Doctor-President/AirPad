@@ -928,22 +928,26 @@ enum SearchFreshness: String, Sendable {
         return pick(query)
     }
 
-    /// The app's own search for a turn: the user's words say what the question needs ("today", "current"); a follow-up
-    /// that doesn't ("how long has he been in office?") takes its query's.
+    /// The app's own search for a turn. News is decided by the search query, as before live-34 (the user's "…up until
+    /// today" in T's presidents request is not news; live-34's first build read it as news and searched the past day).
+    /// The user's words narrow a news search to today; any current-state cue in either makes it `currentState`.
     static func forTurn(question: String, query: String?) -> SearchFreshness {
-        let f = pick(question)
-        return f == .none ? query.map(pick) ?? .none : f
+        guard !Live34.red else { return .none }
+        let q = query ?? question
+        if WebGrounding.isNewsQuestion(q) { return asksToday(question + " " + q) ? .day : .week }
+        return WebGrounding.asksCurrentState(question) || WebGrounding.asksCurrentState(q) ? currentState : .none
+    }
+
+    static func asksToday(_ s: String) -> Bool {
+        s.range(of: #"\b(today|tonight|this (morning|afternoon|evening)|right now|breaking)\b"#,
+                options: [.regularExpression, .caseInsensitive]) != nil
     }
 
     /// The window a question needs: news → today's (day) or this week's; the current state of something → `currentState`;
     /// anything timeless → none.
     static func pick(_ q: String) -> SearchFreshness {
         guard !Live34.red else { return .none }
-        if WebGrounding.isNewsQuestion(q) {
-            let today = q.range(of: #"\b(today|tonight|this (morning|afternoon|evening)|right now|breaking)\b"#,
-                                options: [.regularExpression, .caseInsensitive]) != nil
-            return today ? .day : .week
-        }
+        if WebGrounding.isNewsQuestion(q) { return asksToday(q) ? .day : .week }
         return WebGrounding.asksCurrentState(q) ? currentState : .none
     }
 }

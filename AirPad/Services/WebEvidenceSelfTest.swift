@@ -57,6 +57,12 @@ enum WebEvidenceSelfTest {
             fr.map { "\($0.0) → \(SearchFreshness.pick($0.0).rawValue)" }.joined(separator: " · "))
         row("follow-up-takes-its-query's-window", SearchFreshness.forTurn(question: "how long has he been in office?",
                                                                           query: "latest news Lakeview First Minister today") == .day)
+        // live-34 — T's sentence says "up until today" but isn't news: its search is a current-state one (the first
+        // build searched Tavily news for the past day and got one off-topic page)
+        row("T's-'up-until-today'-is-not-news", SearchFreshness.forTurn(question: tSentence, query: "List of US presidents") == SearchFreshness.currentState
+            && SearchFreshness.forTurn(question: "what happened in the news today?", query: "top news headlines today") == .day
+            && SearchFreshness.forTurn(question: "what happened in the news today?", query: "world news headlines") == .day,
+            SearchFreshness.forTurn(question: tSentence, query: "List of US presidents").rawValue)
         row("provider-values", SearchFreshness.day.brave == "pd" && SearchFreshness.week.brave == "pw" && SearchFreshness.year.brave == "py"
             && SearchFreshness.none.brave == nil && SearchFreshness.month.tavilyRange == "month" && SearchFreshness.day.tavilyDays == 1
             && SearchFreshness.day.general == .week)

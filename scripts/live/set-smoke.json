@@ -1,0 +1,395 @@
+{
+ "about": "live-37 (4) — the SMOKE SET: live-36's 10 worst failures + T's cases (presidents table, iPhone price + follow-up, chancellor days, Japan's PM, Carter, the presidents follow-up and correction) + 2 stable controls + 1 Library control. Same rubrics and gold as set-regression.json (copied). `canned` = the live-36 qwen3:4b answer to each earlier turn (what a retrieval-only run's follow-up sees). Re-run: scripts/live/smoke.sh <apple|4b|8b|30b> [--retrieval].",
+ "chats": [
+  {
+   "id": "LIST-T-SENTENCE",
+   "cat": "list",
+   "turns": [
+    "Can you print for me a table of the last 10 US presidents up until today"
+   ],
+   "rubric": "a table with exactly 10 rows, Ford … Trump (2025–present); no off-topic (car-buying) source. T's failure (live-32: car-buying page; TF 202610220954: 5 rows)",
+   "any": [
+    [
+     "trump"
+    ],
+    [
+     "biden"
+    ],
+    [
+     "obama"
+    ],
+    [
+     "bush"
+    ],
+    [
+     "clinton"
+    ],
+    [
+     "reagan"
+    ],
+    [
+     "carter"
+    ],
+    [
+     "ford"
+    ]
+   ],
+   "gold": [
+    [
+     "trump"
+    ],
+    [
+     "biden"
+    ],
+    [
+     "obama"
+    ],
+    [
+     "bush"
+    ],
+    [
+     "clinton"
+    ],
+    [
+     "reagan"
+    ],
+    [
+     "carter"
+    ],
+    [
+     "ford"
+    ]
+   ],
+   "stale": [
+    "biden[^\\n|]*\\|\\s*(present|incumbent|current)",
+    "biden is (the )?(current|president)"
+   ],
+   "rows": {
+    "n": 10,
+    "kind": "table"
+   },
+   "offTopic": "\\b(car|cars|vehicle|dealership)\\b",
+   "tFailure": true
+  },
+  {
+   "id": "PRODUCT-IPHONE",
+   "cat": "product",
+   "turns": [
+    "What's the price of an iPhone?"
+   ],
+   "rubric": "names the current lineup (iPhone 18 Pro / 18 Pro Max / iPhone Duo …) with prices; an apple.com source. T's failure (TF 202610220954)",
+   "any": [
+    [
+     "18 pro",
+     "iphone duo"
+    ],
+    [
+     "$"
+    ]
+   ],
+   "gold": [
+    [
+     "18 pro",
+     "iphone duo"
+    ]
+   ],
+   "stale": [
+    "iphone 17 (pro )?is (apple's )?(the )?(newest|latest)"
+   ],
+   "official": "apple.com",
+   "tFailure": true
+  },
+  {
+   "id": "FU-IPHONE-NEWER",
+   "cat": "followup",
+   "turns": [
+    "What's the price of an iPhone?",
+    "you didn't list the newer models' prices"
+   ],
+   "rubric": "prices for the newest models (iPhone 18 Pro / Pro Max / Duo); never 'couldn't find'. T's failure (TF 202610220954)",
+   "any": [
+    [
+     "18 pro",
+     "iphone duo"
+    ],
+    [
+     "$"
+    ]
+   ],
+   "gold": [
+    [
+     "18 pro",
+     "iphone duo"
+    ]
+   ],
+   "stale": [
+    "(couldn't|could not|unable to) find"
+   ],
+   "official": "apple.com",
+   "tFailure": true,
+   "canned": [
+    "The price of an iPhone depends on the specific model and whether it's a new release or an older model. Based on the most recent information available:\n\n- The **iPhone 15** starts at **$799** [1].\n- The **iPhone 15+** is priced at **$899** [1].\n- The **iPhone 15 Pro** is priced at **$496.75** [2].\n- The **iPhone 15 Pro Max** is priced at **$583.72** [2].\n\nAdditionally, Apple has raised prices on older models:\n- The **iPhone 17** now starts at **$899** (up from $799) [2].\n- The **iPhone 16** is listed at **$799** (up from $699) [2].\n\nNote: The pricing listed in the results reflects data from 2023–2024, and while the sources provide current market values and prices as of 2026, the most up-to-date official pricing may have changed. For the most accurate and real-time pricing, it's best to check Apple’s official website."
+   ]
+  },
+  {
+   "id": "FU-CHANCELLOR-DAYS",
+   "cat": "followup",
+   "turns": [
+    "how many days has the German chancellor been in office?"
+   ],
+   "rubric": "534 days as of 2026-10-22 (sworn in 6 May 2025; 533–535 accepted). T's TF 202610220047 step 3",
+   "any": [
+    [
+     "53[345]"
+    ]
+   ],
+   "gold": [
+    [
+     "merz"
+    ],
+    [
+     "may 6",
+     "6 may"
+    ]
+   ],
+   "regex": true,
+   "tFailure": true,
+   "dateSensitive": "2026-10-22"
+  },
+  {
+   "id": "HOLDER-JAPAN",
+   "cat": "holder",
+   "turns": [
+    "Who is Japan's prime minister?"
+   ],
+   "rubric": "names Sanae Takaichi as the current prime minister (T's failure, live-34/35)",
+   "any": [
+    [
+     "takaichi"
+    ]
+   ],
+   "stale": [
+    "ishiba is (the )?(current|prime minister)",
+    "kishida is (the )?(current|prime minister)",
+    "prime minister (of japan )?is (shigeru ishiba|fumio kishida|ishiba|kishida)"
+   ],
+   "tFailure": true
+  },
+  {
+   "id": "LIST-CARTER",
+   "cat": "list",
+   "turns": [
+    "Make a table of the US presidents since 1974 with their party and, if they have died, the cause of death"
+   ],
+   "rubric": "Ford … Trump with parties; Carter shown as died (Dec 29, 2024). T's live-30 failure (paraphrased: his exact wording wasn't recorded)",
+   "any": [
+    [
+     "carter"
+    ],
+    [
+     "ford"
+    ],
+    [
+     "trump"
+    ]
+   ],
+   "gold": [
+    [
+     "carter"
+    ],
+    [
+     "2024"
+    ]
+   ],
+   "stale": [
+    "carter[^\\n]*\\|\\s*(living|alive|n/?a|—|-)\\s*\\|?\\s*$",
+    "carter is (still )?(alive|living)"
+   ],
+   "review": "Carter's row says he died in 2024; parties right",
+   "tFailure": true
+  },
+  {
+   "id": "FU-PRES-SERVED",
+   "cat": "followup",
+   "turns": [
+    "Can you print for me a table of the last 10 US presidents up until today",
+    "How long has he served?"
+   ],
+   "rubric": "Trump; current term since 20 January 2025 (~1 year 9 months); may also count his first term. T's live-33 step 2",
+   "any": [
+    [
+     "trump",
+     "he has",
+     "he's"
+    ],
+    [
+     "2025"
+    ]
+   ],
+   "gold": [
+    [
+     "january 20, 2025",
+     "20 january 2025",
+     "jan 20, 2025",
+     "january 2025"
+    ]
+   ],
+   "tFailure": true,
+   "canned": [
+    "Certainly! Based on the most recent information available as of today, October 22, 2026, here is a table of the last 10 U.S. presidents, including those from George H. W. Bush to Joe Biden and beyond, with the most current updates reflecting the 2025–present term of Donald Trump (re-elected). Note: As of now, Donald Trump is serving his second term, and Joe Biden's term ended in January 2025.\n\n| Number | President            | Term in Office                          |\n|--------|---------------------|----------------------------------------|\n| 41     | George H. W. Bush   | January 20, 1989 – January 20, 1993    |\n| 42     | William J. Clinton  | January 20, 1993 – January 20, 2001    |\n| 43     | George W. Bush      | January 20, 2001 – January 20, 2009    |\n| 44     | Barack Obama        | January 20, 2009 – January 20, 2017    |\n| 45     | Donald Trump        | January 20, 2017 – January 20, 2021    |\n| 46     | Joe Biden           | January 20, 2021 – January 20, 2025    |\n| 47     | Donald Trump        | January 20, 2025 – Present (2026)     |\n\nThis list includes the last 10 U.S. presidents, with George H. W. Bush being the first in this sequence. The table reflects the official terms as recorded in public sources, including the White House archives and historical records [1], [2], [3]."
+   ]
+  },
+  {
+   "id": "FU-CORRECTION",
+   "cat": "followup",
+   "turns": [
+    "a table of the last ten US presidents",
+    "you're not showing the current president. Joe Biden is no longer president"
+   ],
+   "rubric": "a corrected table ending with Trump (2025–present)",
+   "any": [
+    [
+     "trump"
+    ],
+    [
+     "2025"
+    ]
+   ],
+   "stale": [
+    "biden is still",
+    "biden[^\\n|]*\\|\\s*(present|incumbent|current)"
+   ],
+   "canned": [
+    "Here is a table of the last ten U.S. presidents, based on the most recent information available as of October 22, 2026:\n\n| Number | President         | Term Start       | Term End         | Notes |\n|--------|------------------|------------------|------------------|-------|\n| 43     | George W. Bush   | Jan. 20, 2001    | Jan. 20, 2009    | First term: 2001–2009 |\n| 44     | Barack Obama     | Jan. 20, 2009    | Jan. 20, 2017    | First term: 2009–2017 |\n| 45     | Donald Trump     | Jan. 20, 2017    | Jan. 20, 2021    | First term: 2017–2021 |\n| 46     | Joe Biden        | Jan. 20, 2021    | Jan. 20, 2025    | First term: 2021–2025 |\n| 47     | Donald Trump     | Jan. 20, 2025    | Present (2025–)   | Second term: 2025–present |\n\nNote: As of October 22, 2026, Donald Trump is serving his second term, beginning on January 20, 2025. This is in line with the information from the \"US Presidents List\" website [1], which shows the current term as ongoing. The list includes the non-consecutive terms of Grover Cleveland and Donald Trump, which explains the count of 47 presidents despite only 45 individuals having served in total [1].\n\nSources: [1] US Presidents List, https://www.presidentsusa.net/uspresidents.html; [2] Wikipedia: List of presidents of the United States, https://en.wikipedia.org/wiki/List_of_presidents_of_the_United_States"
+   ]
+  },
+  {
+   "id": "LIST-JAPAN-PMS",
+   "cat": "list",
+   "turns": [
+    "Make a table of Japan's last five prime ministers"
+   ],
+   "rubric": "5 rows: Takaichi, Ishiba, Kishida, Suga, Abe",
+   "any": [
+    [
+     "takaichi"
+    ],
+    [
+     "ishiba"
+    ],
+    [
+     "kishida"
+    ],
+    [
+     "suga"
+    ],
+    [
+     "abe"
+    ]
+   ],
+   "rows": {
+    "n": 5,
+    "kind": "table"
+   }
+  },
+  {
+   "id": "PRODUCT-PS5-PRO",
+   "cat": "product",
+   "turns": [
+    "How much is a PlayStation 5 Pro?"
+   ],
+   "rubric": "$899.99 (US, since 2 April 2026, blog.playstation.com)",
+   "any": [
+    [
+     "899"
+    ]
+   ],
+   "gold": [
+    [
+     "ps5 pro",
+     "playstation 5 pro"
+    ]
+   ],
+   "official": "playstation.com",
+   "stale": [
+    "\\$?699\\.99",
+    "\\$?749\\.99",
+    "\\$700\\b"
+   ]
+  },
+  {
+   "id": "HOLDER-UNNATO",
+   "cat": "holder",
+   "turns": [
+    "what are the names of the UN secretary-general and NATO's secretary general right now?"
+   ],
+   "rubric": "names António Guterres and Mark Rutte",
+   "any": [
+    [
+     "guterres"
+    ],
+    [
+     "rutte"
+    ]
+   ],
+   "stale": [
+    "stoltenberg is"
+   ]
+  },
+  {
+   "id": "PRODUCT-PIXEL",
+   "cat": "product",
+   "turns": [
+    "What's the newest Google Pixel phone?"
+   ],
+   "rubric": "names the Pixel 11 (store.google.com)",
+   "any": [
+    [
+     "pixel 11"
+    ]
+   ],
+   "stale": [
+    "pixel (9|10) is (google's )?(the )?(newest|latest)"
+   ]
+  },
+  {
+   "id": "STABLE-CANBERRA",
+   "cat": "stable",
+   "turns": [
+    "What is the capital of Australia?"
+   ],
+   "rubric": "Canberra",
+   "any": [
+    [
+     "canberra"
+    ]
+   ],
+   "stale": [
+    "capital (of australia )?is sydney"
+   ]
+  },
+  {
+   "id": "STABLE-AUSTEN",
+   "cat": "stable",
+   "turns": [
+    "Who wrote Pride and Prejudice?"
+   ],
+   "rubric": "Jane Austen",
+   "any": [
+    [
+     "austen"
+    ]
+   ]
+  },
+  {
+   "id": "LIB-1",
+   "cat": "library",
+   "turns": [
+    "LIB:What have I saved about tide pools?"
+   ],
+   "rubric": "answered from the Library; no web search",
+   "any": [],
+   "nosearch": true
+  }
+ ]
+}

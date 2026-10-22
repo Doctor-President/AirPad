@@ -883,34 +883,9 @@ final class LibrarianState {
     private func appleWebSend(query: String, chat: ChatSession, webKey: Bool = true) async -> Bool {
         // live-33 — the pipeline (`WebEvidence`): the rewrite's query → the provider's results with their text + the
         // Wikipedia articles for the same query → the passages reranked by meaning on-device → those, numbered by source.
-        let sq = await WebEvidence.searchQuery(for: query, chat: chat)
+        let (sq, result, rr) = await WebEvidence.appleEvidence(question: query, chat: chat, webKey: webKey)
         let searchQuery = sq.query
-        #if DEBUG
-        AppleWebGrounding.debugLastQuery = searchQuery
-        AppleWebGrounding.debugLastHow = sq.how
-        NSLog("[AppleWeb] query (%@): %@", sq.how, searchQuery)
-        WebTrace.shared.beginTurn(query)
-        WebTrace.shared.note("query", ["query": searchQuery, "wikiQuery": sq.wikiQuery, "how": sq.how, "rewriteMs": sq.ms,
-                                       "path": webKey ? "app-search" : "wikipedia-only"])
-        let fetchStart = WebTrace.shared.ms
-        #endif
-        async let wikiSources = WikipediaGrounding.sources(query: sq.wikiQuery)
-        var result = ToolResult(textForModel: "", links: [])
-        if webKey {
-            result = await WebSearchBackend.make().execute(name: AgentTools.webSearch,
-                                                           arguments: ["query": searchQuery, "count": AppleWebQuery.requestCount,
-                                                                       "freshness": SearchFreshness.forTurn(question: query, query: searchQuery).rawValue])
-        }
-        let web = result.links.filter { AppleWebGrounding.live29 || !AppleWebQuery.isSocial($0.url) }
-        let wiki = await wikiSources
-        // the meaning to match: the query without the app's freshness year (that is for the provider)
-        let rr = await WebEvidence.rerank(query: sq.wikiQuery, sources: wiki + web.map(WebEvidence.source), budget: WebEvidence.appleBudget)
         let links = rr.links
-        #if DEBUG
-        WebTrace.shared.note("tool", ["name": "web_search", "id": "app_search", "startMs": fetchStart, "args": ["query": searchQuery],
-                                      "links": WebTrace.links(result.links), "failed": result.failed, "rateLimited": result.rateLimited, "text": ""])
-        WebTrace.shared.note("rerank", WebTrace.rerank(rr))
-        #endif
         if !webKey && links.isEmpty { return false }
         let searched = webKey ? !result.unavailable && !result.rateLimited : true
         let hasWiki = links.contains(where: WikipediaGrounding.isPassage)

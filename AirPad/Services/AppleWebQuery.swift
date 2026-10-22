@@ -53,6 +53,41 @@ enum AppleWebQuery {
 
     private static let yearPattern = #"\b(19|20)\d{2}\b"#
 
+    /// live-37 (1) — what the rewrite ADDED: a name (a capitalised word past the first) or a number that the conversation
+    /// doesn't have. Years are the year rule's (a model year goes, a typed one stays). A word counts as said when the
+    /// conversation has it or a word sharing its stem ("Germany" / "German", "iPhones" / "iPhone"); dots go ("U.S." = "US");
+    /// number words count as their figures ("ten" = "10"). live-36's rewrites: "Price of iPhone 15" → ["15"]; "How many
+    /// days has Angela Merkel been in office" → ["Angela", "Merkel"]; "List of US presidents from George H. W. Bush to Joe
+    /// Biden" → ["George", …]; "Japan prime minister" → [].
+    static func addedTerms(_ rewrite: String, conversation: String) -> [String] {
+        func words(_ s: String) -> [String] {
+            s.replacingOccurrences(of: "’", with: "'").replacingOccurrences(of: #"(?<=\w)\.(?=\w)|(?<=\b\w)\.(?=\s|$)"#, with: "", options: .regularExpression)
+                .split(whereSeparator: { !$0.isLetter && !$0.isNumber && $0 != "'" && $0 != "-" })
+                .map { String($0).replacingOccurrences(of: #"'s$"#, with: "", options: .regularExpression).trimmingCharacters(in: CharacterSet(charactersIn: "'-")) }
+                .filter { !$0.isEmpty }
+        }
+        let numberWords = ["one": "1", "two": "2", "three": "3", "four": "4", "five": "5", "six": "6", "seven": "7", "eight": "8",
+                           "nine": "9", "ten": "10", "eleven": "11", "twelve": "12", "fifteen": "15", "twenty": "20"]
+        let said = Set(words(conversation).flatMap { w -> [String] in let l = w.lowercased(); return [l] + (numberWords[l].map { [$0] } ?? []) })
+        func isSaid(_ w: String) -> Bool {
+            let l = w.lowercased()
+            if said.contains(l) { return true }
+            guard l.count >= 4, !l.contains(where: \.isNumber) else { return false }
+            return said.contains { $0.count >= 4 && (l.hasPrefix($0) || $0.hasPrefix(l)) && min(l.count, $0.count) >= max(l.count, $0.count) - 3 }
+        }
+        var added: [String] = []
+        for (i, w) in words(rewrite).enumerated() {
+            let isNumber = w.contains(where: \.isNumber)
+            if isNumber, w.range(of: #"^(19|20)\d{2}$"#, options: .regularExpression) != nil { continue }   // the year rule's
+            let isName = !isNumber && i > 0 && w.first?.isUppercase == true
+                || !isNumber && w.dropFirst().contains(where: \.isUppercase)   // "iPhone", "PlayStation" anywhere
+            guard isNumber || isName, !isSaid(w), !added.contains(w) else { continue }
+            added.append(w)
+        }
+        return added
+    }
+
+
     /// The app's year rule on any query: a year the user typed stays; any other year the model wrote goes; a current-state
     /// request gets today's year ("…so where does it stand now?" → "… 2026"), so the provider favours this year.
     static func applyYearRule(_ query: String, userText: String, currentState: Bool, now: Date = Date()) -> String {
@@ -209,6 +244,16 @@ enum AppleWebQuery {
         row("rewrite-url-dropped", cleanRewrite("Japan Prime Minister(https://www.japantimes.co.jp/news/leaders/prime-minister/)") == "Japan Prime Minister",
             cleanRewrite("Japan Prime Minister(https://www.japantimes.co.jp/news/leaders/prime-minister/)") ?? "nil")
         row("rewrite-brackets-dropped", cleanRewrite("[Panama Canal] water restrictions current status") == "Panama Canal water restrictions current status")
+        // live-37 (1) — live-36's rewrites that added what the user never said; and the ones that only resolved.
+        row("rewrite-added-a-model-number", addedTerms("Price of iPhone 15", conversation: "What's the price of an iPhone?") == ["15"],
+            addedTerms("Price of iPhone 15", conversation: "What's the price of an iPhone?").joined(separator: ","))
+        row("rewrite-added-a-name", addedTerms("How many days has Angela Merkel been in office", conversation: "how many days has the German chancellor been in office?") == ["Angela", "Merkel"]
+            && !addedTerms("List of US presidents from George H. W. Bush to Joe Biden", conversation: "Can you print for me a table of the last 10 US presidents up until today").isEmpty)
+        row("rewrite-that-only-resolves-is-kept", addedTerms("Japan prime minister", conversation: "Who is Japan's prime minister?").isEmpty
+            && addedTerms("Germany chancellor days in office", conversation: "how many days has the German chancellor been in office?").isEmpty
+            && addedTerms("Friedrich Merz time in office", conversation: "Who is the chancellor of Germany?\nFriedrich Merz is the chancellor of Germany.\nhow long has he been in office?").isEmpty
+            && addedTerms("Last 10 U.S. presidents list 2024", conversation: "a table of the last ten US presidents").isEmpty,
+            addedTerms("Last 10 U.S. presidents list 2024", conversation: "a table of the last ten US presidents").joined(separator: ","))
         row("rewrite-refusal-is-no-query", cleanRewrite("I'm sorry, but I can't help with that.") == nil && cleanRewrite("  ") == nil)
         row("fallback-carries-the-previous-query", fallbackQuery(previousQuery: "Lakeview Observatory telescope 2026", question: "Who won?")
             == "Lakeview Observatory telescope Who won?", fallbackQuery(previousQuery: "Lakeview Observatory telescope 2026", question: "Who won?"))

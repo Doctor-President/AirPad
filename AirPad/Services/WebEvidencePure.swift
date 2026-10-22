@@ -100,19 +100,107 @@ enum WebEvidence {
     /// The selection, pure (the self-test drives it with fixed scores): passages at or above the floor, best first, at most
     /// `topK` and `perSource` per source, within `budget` characters. Returns the kept flags.
     static func select(_ scored: [Scored], floor: Float, budget: Int) -> [Scored] {
+        select(scored, floor: floor, budget: Budget(chars: budget, topK: topK, perSource: perSource, label: "fixed"))
+    }
+    static func select(_ scored: [Scored], floor: Float, budget b: Budget) -> [Scored] {
         var out = scored
         var perSrc: [Int: Int] = [:], n = 0, chars = 0
         for i in out.indices.sorted(by: { out[$0].score > out[$1].score }) {
             let p = out[i]
-            guard p.score >= floor, n < topK, perSrc[p.source, default: 0] < perSource, chars + p.text.count <= budget else { continue }
+            guard p.score >= floor, n < b.topK, perSrc[p.source, default: 0] < b.perSource, chars + p.text.count <= b.chars else { continue }
             out[i].kept = true; n += 1; chars += p.text.count; perSrc[p.source, default: 0] += 1
         }
         return out
     }
+
+    /// live-37 (2) — how much evidence the model sees, sized to its window (live-36: "cut by top-k / budget" was the largest
+    /// loss stage on every Host tier while prompts used ~10% of the Host's 20,480 and Apple a median 649 of 4,096 tokens).
+    /// Tokens of passages: Apple on-device ~2,000 (room left for a 10-row table answer), the 4B / 8B ~6,000, the 30B-A3B
+    /// ~10,000. Characters per token measured on the smoke runs (Ops `design-refs/live37-2026-10-22/`).
+    struct Budget: Sendable, Equatable {
+        let chars: Int
+        let topK: Int
+        /// Sane for a two-entity question (live-36: the UN + NATO question lost Rutte to a cap of 3 per source and 6 in all).
+        let perSource: Int
+        let label: String
+    }
+    static let appleTokens = 2_000, hostSmallTokens = 6_000, hostLargeTokens = 10_000
+    /// Apple's tokenizer on the evidence text, measured on the first retrieval-only smoke run (`tokenCount(for:)`, 14
+    /// searched turns): 2.9–3.6 characters a token, ~3.4 overall. Qwen's: from the Host's prompt_eval on the answer run.
+    static let appleCharsPerToken = 3.4, qwenCharsPerToken = 4.0
+    static func budget(tokens: Int, charsPerToken: Double, label: String) -> Budget {
+        let chars = Int(Double(tokens) * charsPerToken)
+        let k = max(topK, chars / (passageChars * 3 / 4))   // passages run ~¾ of `passageChars`
+        return Budget(chars: chars, topK: k, perSource: max(perSource, k / 3), label: label)
+    }
+    /// Apple Intelligence on-device (4,096-token window).
+    static var appleWebBudget: Budget {
+        Live37.selection ? budget(tokens: appleTokens, charsPerToken: appleCharsPerToken, label: "apple ~\(appleTokens) tok")
+            : Budget(chars: appleBudget, topK: topK, perSource: perSource, label: "live-36 apple")
+    }
+    /// A Host / server model by its tag: the 30B-A3B class (≥ 14B parameters, or an MoE "a3b") gets the larger budget.
+    static func hostWebBudget(model: String?) -> Budget {
+        guard Live37.selection else { return Budget(chars: hostBudget, topK: topK, perSource: perSource, label: "live-36 host") }
+        let m = (model ?? "").lowercased()
+        let size = m.range(of: #"(\d+(\.\d+)?)b"#, options: .regularExpression).flatMap { Double(m[$0].dropLast()) } ?? 0
+        return size >= 14 ? budget(tokens: hostLargeTokens, charsPerToken: qwenCharsPerToken, label: "host large ~\(hostLargeTokens) tok")
+            : budget(tokens: hostSmallTokens, charsPerToken: qwenCharsPerToken, label: "host ~\(hostSmallTokens) tok")
+    }
+
+    /// live-37 (2) — the order the model reads the sources in: the best first, the second best LAST, and so on inward
+    /// (models use the start and the end of a long context best — "lost in the middle"). `ranked` is best first.
+    static func edgesFirst<T>(_ ranked: [T]) -> [T] {
+        guard Live37.selection, ranked.count > 2 else { return ranked }
+        var front: [T] = [], back: [T] = []
+        for (i, x) in ranked.enumerated() { if i % 2 == 0 { front.append(x) } else { back.insert(x, at: 0) } }
+        return front + back
+    }
+
+    /// live-37 (3) — page boilerplate: navigation, menus, link lists, footer text ("Skip Navigation Markets Pre-Markets
+    /// U.S.", "Markets Currencies … Funds & ETFs Business Economy" outranked "iPhone 18 Pro will start at $1,199" in
+    /// live-36). The jusText-style test (Pomikálek 2011, the standard boilerplate classifier): a block of text that is
+    /// mostly short capitalised fragments with almost no function words isn't prose. Figures keep a passage (a table row
+    /// of names and years has no function words either: "Joe Biden 2021 2025 Democratic").
+    static func isBoilerplate(_ passage: String) -> Bool {
+        let words = passage.split(whereSeparator: { $0.isWhitespace }).map { $0.trimmingCharacters(in: .punctuationCharacters).lowercased() }
+            .filter { !$0.isEmpty }
+        guard !words.isEmpty else { return true }
+        let digits = words.filter { $0.contains(where: \.isNumber) }.count
+        if Double(digits) / Double(words.count) >= 0.12 { return false }
+        let stop = words.filter { stopwords.contains($0) }.count
+        let density = Double(stop) / Double(words.count)
+        // a short fragment: a menu item, a button, a breadcrumb — unless it ends like a sentence ("Ilsa Vane took office.")
+        let sentence = passage.trimmingCharacters(in: .whitespaces).range(of: #"[a-z0-9)%]["”’)]?[.!?]$"#, options: .regularExpression) != nil
+        if words.count < 8 { return density < 0.15 && !sentence }
+        return density < 0.10
+    }
+    static let stopwords: Set<String> = ["the", "a", "an", "of", "to", "in", "is", "was", "and", "for", "on", "with", "at", "by",
+        "from", "as", "are", "were", "be", "been", "has", "have", "had", "it", "its", "that", "this", "which", "who", "he", "she",
+        "they", "his", "her", "their", "will", "would", "not", "but", "or", "after", "before", "since", "into", "than", "also",
+        "can", "about", "over", "more", "when", "while", "there", "these", "those", "said", "says", "did", "does", "do", "one"]
 
     /// The characters of passages the model sees: the Host / server turn, and Apple's smaller window.
     static let hostBudget = 3_000
     /// How much of a read page's text joins the rerank.
     static let pageChars = 6_000
     static let appleBudget = 1_500
+}
+
+/// live-37 — the three fixes, each on unless DEBUG `-Live37Off query,selection,boilerplate,title` (`rerank` = both, `all`) turns it off (the RED baselines; the
+/// smoke runs measure each step). Always on in Release.
+enum Live37 {
+    static func on(_ name: String) -> Bool {
+        #if DEBUG
+        return !(UserDefaults.standard.string(forKey: "Live37Off") ?? "").split(separator: ",").contains { $0 == name || $0 == "all" }
+        #else
+        return true
+        #endif
+    }
+    /// (1) the rewrite may not add names or numbers; a shorter rewrite timeout; "until today" isn't news.
+    static var query: Bool { on("query") }
+    /// (2) the evidence budget sized to the model; best sources first and last.
+    static var selection: Bool { on("selection") }
+    /// (3) boilerplate passages out (`boilerplate`); the passage embedded without its page title (`title`).
+    static var boilerplate: Bool { on("rerank") && on("boilerplate") }
+    static var titleOut: Bool { on("rerank") && on("title") }
 }

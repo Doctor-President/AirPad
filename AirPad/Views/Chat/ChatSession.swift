@@ -902,6 +902,8 @@ final class ChatSession {
                         if call.name == AgentTools.webSearch, !WebGrounding.live30 { args["count"] = AppleWebQuery.requestCount }
                         #if DEBUG
                         let callStart = WebTrace.shared.ms
+                        #else
+                        let callStart = 0
                         #endif
                         var result = await executor.execute(name: call.name, arguments: args)
                         #if DEBUG
@@ -914,29 +916,13 @@ final class ChatSession {
                             // Social / video hosts out; then the pipeline: the app's search adds the Wikipedia articles and,
                             // for a factual question, the top page's text (the read); every passage is reranked by meaning
                             // against the query and only those above the floor reach the model, numbered by source.
-                            let web = WebGrounding.hostLinks(result.links)
-                            var sources = web.map(WebEvidence.source)
-                            if call.id == "app_search" {
-                                if prefetch == .searchAndFetch, let top = web.first {
-                                    let page = await executor.execute(name: AgentTools.fetchURL, arguments: ["url": top.url])
-                                    if !page.failed, !page.textForModel.hasPrefix("Couldn't fetch"), !page.textForModel.hasPrefix("Invalid URL") {
-                                        sources[0] = WebEvidence.Source(title: top.title, url: top.url, published: top.published, wikipedia: false,
-                                                                        text: (top.snippet ?? "") + "\n" + String(page.textForModel.prefix(WebEvidence.pageChars)))
-                                    }
-                                    #if DEBUG
-                                    WebTrace.shared.note("tool", ["name": AgentTools.fetchURL, "id": "app_fetch", "startMs": callStart, "url": top.url,
-                                                                  "args": ["url": top.url], "links": [], "failed": page.failed, "rateLimited": false,
-                                                                  "text": String(page.textForModel.prefix(4_000))])
-                                    #endif
-                                }
-                                if let wiki = await wikiTask?.value { sources = wiki + sources }
-                            }
                             // the meaning to match: the app's query without its freshness year (that is for the provider)
                             let q = call.id == "app_search" ? (wikiQuery ?? appQuery ?? displayText) : (call.arguments["query"] as? String) ?? displayText
-                            let rr = await WebEvidence.rerank(query: q, sources: sources, budget: WebEvidence.hostBudget)
-                            #if DEBUG
-                            WebTrace.shared.note("rerank", WebTrace.rerank(rr))
-                            #endif
+                            // live-37 (2) — the evidence sized to the answering model's window
+                            let budget = WebEvidence.hostWebBudget(model: await ModelRouter.webEvidenceModel())
+                            let wiki = call.id == "app_search" ? await wikiTask?.value : nil
+                            let rr = await WebEvidence.hostEvidence(result, appSearch: call.id == "app_search", fetchTop: prefetch == .searchAndFetch,
+                                                                    executor: executor, wiki: wiki, query: q, budget: budget, callStart: callStart)
                             result = ToolResult(textForModel: result.textForModel, links: rr.links, rateLimited: result.rateLimited,
                                                 unavailable: result.unavailable, failed: result.failed)
                         }
@@ -1281,6 +1267,13 @@ final class ChatSession {
     /// model-authored inline URLs render de-linked / plain).
     func debugAppendAssistant(_ text: String) {
         messages.append(Message(role: .assistant, text: text))
+    }
+
+    /// live-37 (4) — `-WebRetrievalRun`: a settled answer that did (or didn't) come from a search, as a follow-up sees it.
+    func debugAppendAnswer(_ text: String, web: Bool) {
+        var m = Message(role: .assistant, text: text)
+        m.provenance = ChatProvenance(route: .host, model: "", name: "", web: web)
+        messages.append(m)
     }
 
     /// Brief AE — inject a long reply + a thought process + adjacent citations so

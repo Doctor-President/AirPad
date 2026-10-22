@@ -1,4 +1,5 @@
 import Foundation
+import FoundationModels
 
 #if DEBUG
 /// live-32 (2) — `-WebEvidenceSelfTest`: the evidence, its weighing and the server model's reasoning, pure parts (synthetic
@@ -35,7 +36,8 @@ enum WebEvidenceSelfTest {
         let q2 = await WebEvidence.searchQuery(for: tSentence, chat: fresh, now: now)
         AppleWebGrounding.debugRewriteFails = false
         row("no-rewrite-→-request-words-removed-never-the-raw-sentence", q2.how == "request words removed"
-            && q2.query == "the last 10 US presidents up until today", "\(q2.how): \(q2.query)")
+            // live-37 (1): "up until today" isn't news any more, so T's list is a current-state query (today's year on it)
+            && q2.query == "the last 10 US presidents up until today" + (Live37.query && !Live35.red ? " 2026" : ""), "\(q2.how): \(q2.query)")
         row("request-words", WebEvidence.strippedQuestion("could you make me a list of the last five popes?") == "the last five popes"
             && WebEvidence.strippedQuestion("show me the current justices of the US Supreme Court") == "current justices of the US Supreme Court"
             && WebEvidence.strippedQuestion("Who is Japan's prime minister?") == "Who is Japan's prime minister",
@@ -46,11 +48,11 @@ enum WebEvidenceSelfTest {
         // live-34 (1) — provider freshness instead of a pasted year: the model's stale years still go, a typed year stays.
         WebEvidence.debugRewrite = .some("List of US presidents from 1977 to 2024")
         let q3 = await WebEvidence.searchQuery(for: tSentence, chat: fresh, now: now)
-        WebEvidence.debugRewrite = .some("Treaty of Westphalia 1648 aftermath")
+        WebEvidence.debugRewrite = .some("Aftermath of the 1648 treaty")   // live-37: a rewrite that names no one the user didn't
         let q4 = await WebEvidence.searchQuery(for: "What happened after the 1648 treaty?", chat: fresh, now: now)
         WebEvidence.debugRewrite = nil
         row("model-years-stripped-typed-year-kept", q3.query == "List of US presidents" + (Live35.red ? "" : " 2026")
-            && q4.query == "Treaty of Westphalia 1648 aftermath", "\(q3.query) | \(q4.query)")
+            && q4.query == "Aftermath of the 1648 treaty", "\(q3.query) | \(q4.query)")
         // live-35 (1) — today's year back on a current-state query only: news keeps the provider window (no year),
         // timeless gets neither; Wikipedia never gets the year.
         var yr: [String] = []
@@ -155,20 +157,20 @@ enum WebEvidenceSelfTest {
                                           // the article's lead as Wikipedia served it on 2026-10-21 (its first two paragraphs)
                                           text: "The president of the United States is the head of state and head of government of the United States, indirectly elected to a four-year term via the Electoral College. Under the U.S. Constitution, the officeholder leads the executive branch of the federal government and is the commander-in-chief of the United States Armed Forces.\nThe first president, George Washington, won a unanimous vote of the Electoral College. The incumbent president is Donald Trump, who assumed office on January 20, 2025. Since the office was established in 1789, 45 men have served in 47 presidencies. The discrepancy is due to the nonconsecutive terms of Grover Cleveland (counted as the 22nd and 24th president) and Donald Trump (counted as the 45th and 47th president).")
         // the query the on-device rewrite wrote for T's sentence (the Mac harness, live-33)
-        let rr = await WebEvidence.rerank(query: "List of US presidents from the last 10 up to today", sources: [car, wikiPres], budget: WebEvidence.hostBudget)
+        let rr = await WebEvidence.rerank(query: "List of US presidents from the last 10 up to today", sources: [car, wikiPres], budget: WebEvidence.hostWebBudget(model: "qwen3:4b-instruct-2507-q4_K_M"))
         let scores = rr.scored.map { "\($0.source == 0 ? "car" : "wiki") \(String(format: "%.3f", $0.score))\($0.kept ? "*" : "")" }.joined(separator: ", ")
         row("rerank-floor-drops-an-off-topic-page", rr.links.map(\.url) == [wikiPres.url] && rr.links.first.map(WikipediaGrounding.isPassage) == true
             && rr.links.first?.snippet?.contains("The incumbent president is Donald Trump") == true, "\(scores) · \(rr.ms) ms")
-        let lone = await WebEvidence.rerank(query: "List of US presidents from the last 10 up to today", sources: [car], budget: WebEvidence.hostBudget)
+        let lone = await WebEvidence.rerank(query: "List of US presidents from the last 10 up to today", sources: [car], budget: WebEvidence.hostWebBudget(model: "qwen3:4b-instruct-2507-q4_K_M"))
         row("a-lone-off-topic-page-is-never-passed", lone.links.isEmpty, lone.scored.map { String(format: "%.3f", $0.score) }.joined(separator: ", "))
         let dupe = await WebEvidence.rerank(query: "last 10 US presidents", sources: [wikiPres, WebEvidence.Source(title: "List of presidents of the United States - Wikipedia",
             url: "https://en.wikipedia.org/wiki/List_of_presidents_of_the_United_States/", published: nil, wikipedia: false, text: "Joe Biden served as the 46th president from 2021 to 2025.")],
-            budget: WebEvidence.hostBudget)
+            budget: WebEvidence.hostWebBudget(model: "qwen3:4b-instruct-2507-q4_K_M"))
         row("one-source-per-page", dupe.links.count == 1 && dupe.sources.count == 1 && dupe.links.first.map(WikipediaGrounding.isPassage) == true, "\(dupe.links.map(\.url))")
         let filler = String(repeating: "Portraits and biographies of every holder of the office hang in the assembly hall. ", count: 10)
         let lake = WebEvidence.Source(title: "First Minister of the Lakeview Republic", url: "https://lakeview.example.gov/first-minister", published: nil,
                                       wikipedia: false, text: filler + "Ilsa Vane became First Minister of the Lakeview Republic on 14 March 2026, succeeding Mara Quill.")
-        let rl = await WebEvidence.rerank(query: "current First Minister of the Lakeview Republic", sources: [lake], budget: WebEvidence.hostBudget)
+        let rl = await WebEvidence.rerank(query: "current First Minister of the Lakeview Republic", sources: [lake], budget: WebEvidence.hostWebBudget(model: "qwen3:4b-instruct-2507-q4_K_M"))
         row("the-passage-that-answers-is-kept", rl.links.first?.snippet?.contains("Ilsa Vane became First Minister") == true,
             rl.scored.map { "\(String(format: "%.3f", $0.score))\($0.kept ? "*" : "")" }.joined(separator: ", "))
         // calibration (diagnostic): more pairs, the scores logged
@@ -188,6 +190,31 @@ enum WebEvidenceSelfTest {
         let sel = WebEvidence.select(pure, floor: 0.5, budget: 2_000)
         row("select-top-k-per-source-budget", sel.filter(\.kept).count == 5 && sel.filter { $0.kept && $0.source == 0 }.count == 3,
             "\(sel.filter(\.kept).count) kept")
+        // live-37 (2) — the budget by the model's window; the best sources first and last.
+        let b4 = WebEvidence.hostWebBudget(model: "qwen3:4b-instruct-2507-q4_K_M"), b30 = WebEvidence.hostWebBudget(model: "qwen3:30b-a3b-instruct-2507-q4_K_M")
+        let ba = WebEvidence.appleWebBudget
+        row("budget-sized-to-the-model", Live37.selection ? (b4.chars == 24_000 && b30.chars == 40_000 && ba.chars == 6_800
+            && b4.topK > 6 && b30.topK > b4.topK && ba.topK > 6 && ba.perSource >= 3) : (b4.chars == 3_000 && ba.chars == 1_500 && b4.topK == 6),
+            "apple \(ba.chars)/\(ba.topK)/\(ba.perSource) · 4b \(b4.chars)/\(b4.topK)/\(b4.perSource) · 30b \(b30.chars)/\(b30.topK)/\(b30.perSource)")
+        row("best-first-and-last", WebEvidence.edgesFirst([1, 2, 3, 4, 5]) == (Live37.selection ? [1, 3, 5, 4, 2] : [1, 2, 3, 4, 5]),
+            "\(WebEvidence.edgesFirst([1, 2, 3, 4, 5]))")
+        // live-37 (3) — the boilerplate test on live-36's CNBC menu passages; prose, a table row and a price line stay.
+        let menus = ["Skip Navigation Markets Pre-Markets U.S.",
+                     "Markets Currencies Prediction Markets Cryptocurrency Futures & Commodities Bonds Funds & ETFs Business Economy Finance Health & Science Media Real Estate Energy Climate Transportation Investigations Industrials Retail Wealth Sports Life Small Business Investing",
+                     "Schedule CNBC Podcasts CEO Interv…"]
+        let prose = ["The new iPhone 18 Pro will start at $1,199, while the iPhone 18 Pro Max will start at $1,299, Apple announced Wednesday.",
+                       "Joe Biden 46th 2021 2025 Democratic Kamala Harris", "Ilsa Vane took office.",
+                       "The incumbent president is Donald Trump, who assumed office on January 20, 2025."]
+        row("boilerplate-out-content-kept", menus.allSatisfy(WebEvidence.isBoilerplate) && !prose.contains(where: WebEvidence.isBoilerplate),
+            (menus + prose).map { WebEvidence.isBoilerplate($0) ? "B" : "c" }.joined())
+        let cnbc = WebEvidence.Source(title: "Apple reveals iPhone 15 pricing: $799 for base model and $899 for iPhone 15+", url: "https://www.cnbc.com/video/x",
+                                      published: nil, wikipedia: false, text: menus.joined(separator: "\n"))
+        let news = WebEvidence.Source(title: "Apple raises iPhone prices", url: "https://www.newsnationnow.com/x", published: nil, wikipedia: false,
+                                      text: prose[0])
+        let rc = await WebEvidence.rerank(query: "price of an iPhone", sources: [cnbc, news], budget: WebEvidence.Budget(chars: 3_000, topK: 1, perSource: 1, label: "top-1"))
+        row("the-answer-outranks-the-menu", rc.scored.first(where: \.kept)?.text == prose[0],
+            rc.scored.map { "\($0.source == 0 ? "menu" : "answer") \(String(format: "%.3f", $0.score))\($0.kept ? "*" : "")" }.joined(separator: ", "))
+
         let ps = WebEvidence.passages(filler + "Ilsa Vane took office.")
         row("passages-on-sentence-boundaries", ps.count >= 2 && ps.allSatisfy { $0.count <= WebEvidence.passageChars } && ps.last?.hasSuffix("Ilsa Vane took office.") == true,
             "\(ps.count) passages")
@@ -242,5 +269,92 @@ private final class ReasoningBox: @unchecked Sendable {
     private let lock = NSLock(); private var s = ""
     func add(_ r: String) { lock.withLock { s += r } }
     var text: String { lock.withLock { s } }
+}
+
+/// live-37 (4) — `-WebRetrievalRun <cases.json> -RetrievalTier apple|4b|8b|30b` (with `-WebTrace YES`): the fast loop.
+/// Each chat's turns go through what a live turn does up to the model — whether it searches, the query, the provider +
+/// Wikipedia (+ the page read on the Host path), the rerank within the tier's budget — and the trace gets an `evidence`
+/// row with the text the model would receive. No answer is generated: a follow-up sees the chat's canned answer
+/// (`canned`, the earlier turn's live-36 qwen3:4b answer). `scripts/live/smoke.sh --retrieval` grades it.
+/// The tier sets the budget (and for the Host tiers, the Host's decision to read the top page); every tier's query is the
+/// on-device rewrite here (the Host's own rewrite runs only where Apple Intelligence is unavailable).
+enum WebRetrievalRun {
+    static let models = ["4b": "qwen3:4b-instruct-2507-q4_K_M", "8b": "qwen3:8b-q4_K_M", "30b": "qwen3:30b-a3b-instruct-2507-q4_K_M"]
+
+    @MainActor static func run(path: String, tier: String) async -> String {
+        let t0 = Date()
+        guard let data = FileManager.default.contents(atPath: path),
+              let json = try? JSONSerialization.jsonObject(with: data) as? [String: Any],
+              let chats = json["chats"] as? [[String: Any]] else { return "FAIL — can't read \(path)" }
+        let apple = tier == "apple"
+        var turns = 0, searched = 0
+        // The on-device model's first call after launch is cold (the first smoke run: 5.0 s, timed out; later ones
+        // 0.8–1.9 s); one untraced rewrite first, so every measured turn's rewrite runs warm.
+        _ = await WebEvidence.searchQuery(for: "Who wrote Hamlet?", chat: ChatSession())
+        for c in chats {
+            let qs = c["turns"] as? [String] ?? []
+            let canned = c["canned"] as? [String] ?? []
+            let chat = ChatSession()
+            for (k, q0) in qs.enumerated() {
+                turns += 1
+                if q0.hasPrefix("LIB:") {   // a Library question never reaches the web pipeline (Library mode)
+                    WebTrace.shared.beginTurn(String(q0.dropFirst(4)))
+                    WebTrace.shared.note("evidence", ["tier": tier, "path": "library", "text": "", "searched": false])
+                    continue
+                }
+                let q = q0
+                let intent = LibrarianState.looksLikeSearchIntent(q)
+                var text = "", query = "", links: [ToolLink] = [], didSearch = false
+                if apple {
+                    let followUp = !AppleWebGrounding.live29 && AppleWebGrounding.lastAnswerSearched(chat) && AppleWebQuery.isFollowUpQuestion(q)
+                    if AppleWebGrounding.shouldSearch(q, searchIntent: intent) || followUp {
+                        let (sq, _, rr) = await WebEvidence.appleEvidence(question: q, chat: chat, webKey: true)
+                        query = sq.query; links = rr.links; didSearch = true
+                        let pk = AppleWebGrounding.packet(links: links)
+                        text = links.isEmpty ? "" : AppleWebGrounding.turn(question: q, query: sq.query, results: pk.results, voice: "").modelText
+                    } else {
+                        WebTrace.shared.beginTurn(q)
+                    }
+                } else {
+                    let plan = WebGrounding.hostPrefetch(q, searchIntent: intent, lastAnswerSearched: AppleWebGrounding.lastAnswerSearched(chat))
+                    WebTrace.shared.beginTurn(q)
+                    WebTrace.shared.note("plan", ["prefetch": plan.prefetch, "followUp": plan.followUp])
+                    if plan.prefetch != "none" {
+                        let sq = await WebEvidence.searchQuery(for: q, chat: chat)
+                        WebTrace.shared.note("query", ["query": sq.query, "wikiQuery": sq.wikiQuery, "how": sq.how, "rewriteMs": sq.ms])
+                        async let wiki = WikipediaGrounding.isOn ? WikipediaGrounding.sources(query: sq.wikiQuery) : []
+                        let executor = WebSearchBackend.make()
+                        let args: [String: Any] = ["query": sq.query, "count": AppleWebQuery.requestCount,
+                                                   "freshness": SearchFreshness.forTurn(question: q, query: sq.query).rawValue]
+                        let start = WebTrace.shared.ms
+                        let result = await executor.execute(name: AgentTools.webSearch, arguments: args)
+                        WebTrace.shared.note("tool", ["name": AgentTools.webSearch, "id": "app_search", "startMs": start,
+                                                      "args": args.mapValues { "\($0)" }, "links": WebTrace.links(result.links),
+                                                      "failed": result.failed, "rateLimited": result.rateLimited, "text": ""])
+                        let rr = await WebEvidence.hostEvidence(result, appSearch: true, fetchTop: plan.prefetch == "searchAndFetch",
+                                                                executor: executor, wiki: await wiki, query: sq.wikiQuery,
+                                                                budget: WebEvidence.hostWebBudget(model: models[tier]), callStart: start)
+                        query = sq.query; links = rr.links; didSearch = true
+                        text = links.isEmpty ? "" : WebGrounding.appSearchTurn(query: sq.query, question: q, links: links, now: Date())
+                    }
+                }
+                var tokens = -1
+                if apple, !text.isEmpty, #available(iOS 26.4, *) {
+                    tokens = (try? await SystemLanguageModel.default.tokenCount(for: AppleWebQuery.turnInstructions + "\n\n" + text)) ?? -1
+                }
+                let passages = links.map { $0.snippet ?? "" }.joined(separator: "\n")
+                WebTrace.shared.note("evidence", ["tier": tier, "searched": didSearch, "query": query, "text": text, "chars": text.count,
+                                                  "passageChars": passages.count, "sources": links.count, "appleTokens": tokens])
+                if didSearch { searched += 1 }
+                // what the next turn sees: the question, the search row, the answer (canned)
+                chat.debugAppendUser(q)
+                if didSearch {
+                    chat.debugAppendActivity(icon: "magnifyingglass", label: "Searched the web", detail: query, links: links)
+                }
+                chat.debugAppendAnswer(k < canned.count ? canned[k] : "(answer)", web: didSearch)
+            }
+        }
+        return "DONE — \(turns) turns, \(searched) searched, tier \(tier), \(Int(Date().timeIntervalSince(t0))) s"
+    }
 }
 #endif

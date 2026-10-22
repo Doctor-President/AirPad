@@ -40,8 +40,11 @@ final class WebTrace: @unchecked Sendable {
         let sources = r.sources
         return ["ms": r.ms, "floor": WebEvidence.floor, "kept": r.scored.filter(\.kept).count, "passages": r.scored.map { p in
             ["url": sources.indices.contains(p.source) ? sources[p.source].url : "", "score": Double(p.score), "kept": p.kept,
-             "text": String(p.text.prefix(160))] as [String: Any]
-        }, "links": links(r.links)]
+             "text": p.text] as [String: Any]   // live-36 — whole, to say where a fact was lost
+        }, "links": links(r.links),
+        // live-36 — every source the rerank got (provider results AND the Wikipedia articles), whole, as fetched
+        "sources": sources.map { ["title": $0.title, "url": $0.url, "wikipedia": $0.wikipedia, "chars": $0.text.count, "text": $0.text,
+                                  "published": $0.published.map { ISO8601DateFormatter().string(from: $0) } ?? ""] as [String: Any] }]
     }
     static func links(_ links: [ToolLink]) -> [[String: Any]] {
         links.map { l in

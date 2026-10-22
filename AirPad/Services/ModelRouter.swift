@@ -423,6 +423,18 @@ enum ModelRouter {
                         #if DEBUG
                         debugLastApplePrompt = AppleChat.request(messages).prompt   // live-29 (B5) — what the turn carried
                         debugLastAppleInstructions = AppleChat.request(messages).instructions   // live-30 (A1) — where the results go
+                        if WebTrace.shared.on {   // live-36 (1)/(2) — the exact request, the window and its size in tokens
+                            let req = AppleChat.request(messages)
+                            let whole = ([req.instructions] + req.history.map { $0.content } + [req.prompt]).joined(separator: "\n\n")
+                            var tokens = -1, window = -1
+                            if #available(iOS 26.4, *) {
+                                tokens = (try? await SystemLanguageModel.default.tokenCount(for: whole)) ?? -1
+                                window = SystemLanguageModel.default.contextSize
+                            }
+                            WebTrace.shared.note("applePrompt", ["instructions": req.instructions, "prompt": req.prompt,
+                                                                 "history": req.history.map { "\($0.role): \($0.content)" },
+                                                                 "contextSize": window, "tokenCount": tokens, "chars": whole.count])
+                        }
                         if UserDefaults.standard.bool(forKey: "StubOnDeviceModel") {
                             try await Task.sleep(for: .milliseconds(400))
                             var stubText = "This answer comes from Apple Intelligence on this iPhone (stub)."

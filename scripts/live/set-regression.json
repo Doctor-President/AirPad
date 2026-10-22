@@ -1,0 +1,999 @@
+{
+ "about": "live-36 (3) — the fixed regression set (the yardstick). Rubrics, not fixed answers: `any` = groups the answer must hit (relaxed), `stale` = wrong claims (strict fails), `rows` = exact list/table rows (strict), `gold` = groups that must be in what the model RECEIVED (retrieval; defaults to `any`), `official` = a host the sources should include, `review` = what a reviewer checks by reading. Gold as of 2026-10-22 (apple.com: iPhone 18 Pro / 18 Pro Max / iPhone Duo / Air / 17 / 17e / 16). General knowledge only; the LIB questions run on the UI-test sample library.",
+ "chats": [
+  {
+   "id": "HOLDER-JAPAN",
+   "cat": "holder",
+   "turns": [
+    "Who is Japan's prime minister?"
+   ],
+   "rubric": "names Sanae Takaichi as the current prime minister (T's failure, live-34/35)",
+   "any": [
+    [
+     "takaichi"
+    ]
+   ],
+   "stale": [
+    "ishiba is (the )?(current|prime minister)",
+    "kishida is (the )?(current|prime minister)",
+    "prime minister (of japan )?is (shigeru ishiba|fumio kishida|ishiba|kishida)"
+   ],
+   "tFailure": true
+  },
+  {
+   "id": "HOLDER-GERMANY",
+   "cat": "holder",
+   "turns": [
+    "Who is the chancellor of Germany?"
+   ],
+   "rubric": "names Friedrich Merz",
+   "any": [
+    [
+     "merz"
+    ]
+   ],
+   "stale": [
+    "scholz is (the )?(current|chancellor)",
+    "chancellor (of germany )?is (olaf )?scholz"
+   ]
+  },
+  {
+   "id": "HOLDER-POPE",
+   "cat": "holder",
+   "turns": [
+    "Who is the current pope?"
+   ],
+   "rubric": "names Pope Leo XIV",
+   "any": [
+    [
+     "leo xiv",
+     "leo the fourteenth",
+     "pope leo"
+    ]
+   ],
+   "stale": [
+    "(pope )?francis is (the )?(current|pope)"
+   ]
+  },
+  {
+   "id": "HOLDER-NATO",
+   "cat": "holder",
+   "turns": [
+    "Who is the secretary general of NATO?"
+   ],
+   "rubric": "names Mark Rutte",
+   "any": [
+    [
+     "rutte"
+    ]
+   ],
+   "stale": [
+    "stoltenberg is (the )?(current|secretary)"
+   ]
+  },
+  {
+   "id": "HOLDER-USPRES",
+   "cat": "holder",
+   "turns": [
+    "Who is the president of the United States?"
+   ],
+   "rubric": "names Donald Trump (47th, since January 2025)",
+   "any": [
+    [
+     "trump"
+    ]
+   ],
+   "stale": [
+    "biden is (the )?(current|president)",
+    "president (of the united states )?is joe biden"
+   ]
+  },
+  {
+   "id": "HOLDER-CANADA",
+   "cat": "holder",
+   "turns": [
+    "Who is the prime minister of Canada?"
+   ],
+   "rubric": "names Mark Carney",
+   "any": [
+    [
+     "carney"
+    ]
+   ],
+   "stale": [
+    "trudeau is (the )?(current|prime minister)"
+   ]
+  },
+  {
+   "id": "HOLDER-UNNATO",
+   "cat": "holder",
+   "turns": [
+    "what are the names of the UN secretary-general and NATO's secretary general right now?"
+   ],
+   "rubric": "names António Guterres and Mark Rutte",
+   "any": [
+    [
+     "guterres"
+    ],
+    [
+     "rutte"
+    ]
+   ],
+   "stale": [
+    "stoltenberg is"
+   ]
+  },
+  {
+   "id": "HOLDER-SCOTUS",
+   "cat": "holder",
+   "turns": [
+    "show me the current justices of the US Supreme Court"
+   ],
+   "rubric": "lists the nine sitting justices incl. Jackson and Barrett, not Breyer as sitting",
+   "any": [
+    [
+     "jackson"
+    ],
+    [
+     "barrett"
+    ],
+    [
+     "roberts"
+    ],
+    [
+     "kavanaugh"
+    ]
+   ],
+   "stale": [
+    "breyer is",
+    "breyer \\(.*present"
+   ],
+   "rows": {
+    "n": 9
+   }
+  },
+  {
+   "id": "LIST-T-SENTENCE",
+   "cat": "list",
+   "turns": [
+    "Can you print for me a table of the last 10 US presidents up until today"
+   ],
+   "rubric": "a table with exactly 10 rows, Ford … Trump (2025–present); no off-topic (car-buying) source. T's failure (live-32: car-buying page; TF 202610220954: 5 rows)",
+   "any": [
+    [
+     "trump"
+    ],
+    [
+     "biden"
+    ],
+    [
+     "obama"
+    ],
+    [
+     "bush"
+    ],
+    [
+     "clinton"
+    ],
+    [
+     "reagan"
+    ],
+    [
+     "carter"
+    ],
+    [
+     "ford"
+    ]
+   ],
+   "gold": [
+    [
+     "trump"
+    ],
+    [
+     "biden"
+    ],
+    [
+     "obama"
+    ],
+    [
+     "bush"
+    ],
+    [
+     "clinton"
+    ],
+    [
+     "reagan"
+    ],
+    [
+     "carter"
+    ],
+    [
+     "ford"
+    ]
+   ],
+   "stale": [
+    "biden[^\\n|]*\\|\\s*(present|incumbent|current)",
+    "biden is (the )?(current|president)"
+   ],
+   "rows": {
+    "n": 10,
+    "kind": "table"
+   },
+   "offTopic": "\\b(car|cars|vehicle|dealership)\\b",
+   "tFailure": true
+  },
+  {
+   "id": "LIST-TEN-TABLE",
+   "cat": "list",
+   "turns": [
+    "a table of the last ten US presidents"
+   ],
+   "rubric": "a table with exactly 10 rows ending with Trump (2025–present)",
+   "any": [
+    [
+     "trump"
+    ],
+    [
+     "biden"
+    ],
+    [
+     "obama"
+    ],
+    [
+     "bush"
+    ],
+    [
+     "clinton"
+    ],
+    [
+     "reagan"
+    ],
+    [
+     "carter"
+    ],
+    [
+     "ford"
+    ]
+   ],
+   "gold": [
+    [
+     "trump"
+    ],
+    [
+     "biden"
+    ],
+    [
+     "obama"
+    ],
+    [
+     "bush"
+    ],
+    [
+     "clinton"
+    ],
+    [
+     "reagan"
+    ],
+    [
+     "carter"
+    ],
+    [
+     "ford"
+    ]
+   ],
+   "stale": [
+    "biden[^\\n|]*\\|\\s*(present|incumbent|current)"
+   ],
+   "rows": {
+    "n": 10,
+    "kind": "table"
+   }
+  },
+  {
+   "id": "LIST-POPES",
+   "cat": "list",
+   "turns": [
+    "could you make me a list of the last five popes?"
+   ],
+   "rubric": "5 popes: Leo XIV, Francis, Benedict XVI, John Paul II, John Paul I",
+   "any": [
+    [
+     "leo xiv",
+     "leo the fourteenth",
+     "pope leo"
+    ],
+    [
+     "francis"
+    ],
+    [
+     "benedict"
+    ],
+    [
+     "john paul ii",
+     "john paul 2"
+    ]
+   ],
+   "rows": {
+    "n": 5
+   }
+  },
+  {
+   "id": "LIST-CHANCELLORS",
+   "cat": "list",
+   "turns": [
+    "List the last five German chancellors"
+   ],
+   "rubric": "Merz, Scholz, Merkel, Schröder, Kohl",
+   "any": [
+    [
+     "merz"
+    ],
+    [
+     "scholz"
+    ],
+    [
+     "merkel"
+    ],
+    [
+     "schröder",
+     "schroeder"
+    ],
+    [
+     "kohl"
+    ]
+   ],
+   "rows": {
+    "n": 5
+   }
+  },
+  {
+   "id": "LIST-JAPAN-PMS",
+   "cat": "list",
+   "turns": [
+    "Make a table of Japan's last five prime ministers"
+   ],
+   "rubric": "5 rows: Takaichi, Ishiba, Kishida, Suga, Abe",
+   "any": [
+    [
+     "takaichi"
+    ],
+    [
+     "ishiba"
+    ],
+    [
+     "kishida"
+    ],
+    [
+     "suga"
+    ],
+    [
+     "abe"
+    ]
+   ],
+   "rows": {
+    "n": 5,
+    "kind": "table"
+   }
+  },
+  {
+   "id": "LIST-CARTER",
+   "cat": "list",
+   "turns": [
+    "Make a table of the US presidents since 1974 with their party and, if they have died, the cause of death"
+   ],
+   "rubric": "Ford … Trump with parties; Carter shown as died (Dec 29, 2024). T's live-30 failure (paraphrased: his exact wording wasn't recorded)",
+   "any": [
+    [
+     "carter"
+    ],
+    [
+     "ford"
+    ],
+    [
+     "trump"
+    ]
+   ],
+   "gold": [
+    [
+     "carter"
+    ],
+    [
+     "2024"
+    ]
+   ],
+   "stale": [
+    "carter[^\\n]*\\|\\s*(living|alive|n/?a|—|-)\\s*\\|?\\s*$",
+    "carter is (still )?(alive|living)"
+   ],
+   "review": "Carter's row says he died in 2024; parties right",
+   "tFailure": true
+  },
+  {
+   "id": "PRODUCT-IPHONE",
+   "cat": "product",
+   "turns": [
+    "What's the price of an iPhone?"
+   ],
+   "rubric": "names the current lineup (iPhone 18 Pro / 18 Pro Max / iPhone Duo …) with prices; an apple.com source. T's failure (TF 202610220954)",
+   "any": [
+    [
+     "18 pro",
+     "iphone duo"
+    ],
+    [
+     "$"
+    ]
+   ],
+   "gold": [
+    [
+     "18 pro",
+     "iphone duo"
+    ]
+   ],
+   "stale": [
+    "iphone 17 (pro )?is (apple's )?(the )?(newest|latest)"
+   ],
+   "official": "apple.com",
+   "tFailure": true
+  },
+  {
+   "id": "PRODUCT-IPHONE-COST",
+   "cat": "product",
+   "turns": [
+    "what does a new iPhone cost?"
+   ],
+   "rubric": "current lineup prices (iPhone 18 Pro from $1,199 for 256 GB …); an apple.com source",
+   "any": [
+    [
+     "18 pro",
+     "iphone duo"
+    ],
+    [
+     "$"
+    ]
+   ],
+   "gold": [
+    [
+     "18 pro",
+     "iphone duo"
+    ]
+   ],
+   "official": "apple.com"
+  },
+  {
+   "id": "PRODUCT-MACBOOK-AIR",
+   "cat": "product",
+   "turns": [
+    "How much does a MacBook Air cost?"
+   ],
+   "rubric": "a current US price from apple.com",
+   "any": [
+    [
+     "$"
+    ]
+   ],
+   "gold": [
+    [
+     "macbook air"
+    ]
+   ],
+   "official": "apple.com",
+   "review": "price matches apple.com's current MacBook Air price"
+  },
+  {
+   "id": "PRODUCT-PS5-PRO",
+   "cat": "product",
+   "turns": [
+    "How much is a PlayStation 5 Pro?"
+   ],
+   "rubric": "the current US price after the March 2026 change (blog.playstation.com)",
+   "any": [
+    [
+     "$"
+    ]
+   ],
+   "gold": [
+    [
+     "ps5 pro",
+     "playstation 5 pro"
+    ]
+   ],
+   "official": "playstation.com",
+   "review": "uses the 2026 price, not $699.99 / $749.99 if those were replaced"
+  },
+  {
+   "id": "PRODUCT-PIXEL",
+   "cat": "product",
+   "turns": [
+    "What's the newest Google Pixel phone?"
+   ],
+   "rubric": "names the Pixel 11 (store.google.com)",
+   "any": [
+    [
+     "pixel 11"
+    ]
+   ],
+   "stale": [
+    "pixel (9|10) is (google's )?(the )?(newest|latest)"
+   ]
+  },
+  {
+   "id": "NEWS-1",
+   "cat": "news",
+   "turns": [
+    "what happened in the news today?"
+   ],
+   "rubric": "names at least one story from today/this week; sources dated within the last 7 days",
+   "any": [],
+   "recentDays": 7,
+   "review": "answer reports dated recent items, not stale ones"
+  },
+  {
+   "id": "NEWS-2",
+   "cat": "news",
+   "turns": [
+    "What's the latest news about NASA's Artemis program?"
+   ],
+   "rubric": "recent (≤ 30 days) Artemis status from dated sources",
+   "any": [],
+   "recentDays": 30,
+   "review": "answer reports dated recent items, not stale ones"
+  },
+  {
+   "id": "NEWS-3",
+   "cat": "news",
+   "turns": [
+    "Any news on the US economy this week?"
+   ],
+   "rubric": "this week's stories, dated sources",
+   "any": [],
+   "recentDays": 7,
+   "review": "answer reports dated recent items, not stale ones"
+  },
+  {
+   "id": "NEWS-4",
+   "cat": "news",
+   "turns": [
+    "What are the top tech headlines today?"
+   ],
+   "rubric": "today's / this week's tech headlines, dated sources",
+   "any": [],
+   "recentDays": 7,
+   "review": "answer reports dated recent items, not stale ones"
+  },
+  {
+   "id": "STABLE-CANBERRA",
+   "cat": "stable",
+   "turns": [
+    "What is the capital of Australia?"
+   ],
+   "rubric": "Canberra",
+   "any": [
+    [
+     "canberra"
+    ]
+   ],
+   "stale": [
+    "capital (of australia )?is sydney"
+   ]
+  },
+  {
+   "id": "STABLE-SKY",
+   "cat": "stable",
+   "turns": [
+    "Why is the sky blue?"
+   ],
+   "rubric": "Rayleigh scattering",
+   "any": [
+    [
+     "scatter",
+     "rayleigh",
+     "bounce",
+     "spread"
+    ]
+   ],
+   "nocite": true,
+   "gold": [
+    [
+     "scatter"
+    ]
+   ]
+  },
+  {
+   "id": "STABLE-AUSTEN",
+   "cat": "stable",
+   "turns": [
+    "Who wrote Pride and Prejudice?"
+   ],
+   "rubric": "Jane Austen",
+   "any": [
+    [
+     "austen"
+    ]
+   ]
+  },
+  {
+   "id": "STABLE-BOIL",
+   "cat": "stable",
+   "turns": [
+    "At what temperature does water boil at sea level in Fahrenheit?"
+   ],
+   "rubric": "212 °F",
+   "any": [
+    [
+     "212"
+    ]
+   ]
+  },
+  {
+   "id": "STABLE-EVEREST",
+   "cat": "stable",
+   "turns": [
+    "What is the tallest mountain on Earth?"
+   ],
+   "rubric": "Mount Everest (8,849 m)",
+   "any": [
+    [
+     "everest"
+    ]
+   ]
+  },
+  {
+   "id": "STABLE-LIGHT",
+   "cat": "stable",
+   "turns": [
+    "How fast is the speed of light in km per second?"
+   ],
+   "rubric": "about 299,792 km/s",
+   "any": [
+    [
+     "299,792",
+     "299792",
+     "299 792",
+     "300,000"
+    ]
+   ]
+  },
+  {
+   "id": "FU-CHANCELLOR-TENURE",
+   "cat": "followup",
+   "turns": [
+    "Who is the chancellor of Germany?",
+    "how long has he been in office?"
+   ],
+   "rubric": "Merz, since 6 May 2025",
+   "any": [
+    [
+     "2025"
+    ]
+   ],
+   "gold": [
+    [
+     "merz"
+    ],
+    [
+     "may"
+    ]
+   ],
+   "stale": [
+    "scholz"
+   ]
+  },
+  {
+   "id": "FU-CHANCELLOR-DAYS",
+   "cat": "followup",
+   "turns": [
+    "how many days has the German chancellor been in office?"
+   ],
+   "rubric": "534 days as of 2026-10-22 (sworn in 6 May 2025; 533–535 accepted). T's TF 202610220047 step 3",
+   "any": [
+    [
+     "53[345]"
+    ]
+   ],
+   "gold": [
+    [
+     "merz"
+    ],
+    [
+     "may 6",
+     "6 may"
+    ]
+   ],
+   "regex": true,
+   "tFailure": true,
+   "dateSensitive": "2026-10-22"
+  },
+  {
+   "id": "FU-PRES-SERVED",
+   "cat": "followup",
+   "turns": [
+    "Can you print for me a table of the last 10 US presidents up until today",
+    "How long has he served?"
+   ],
+   "rubric": "Trump; current term since 20 January 2025 (~1 year 9 months); may also count his first term. T's live-33 step 2",
+   "any": [
+    [
+     "trump",
+     "he has",
+     "he's"
+    ],
+    [
+     "2025"
+    ]
+   ],
+   "gold": [
+    [
+     "january 20, 2025",
+     "20 january 2025",
+     "jan 20, 2025",
+     "january 2025"
+    ]
+   ],
+   "tFailure": true
+  },
+  {
+   "id": "FU-IPHONE-NEWER",
+   "cat": "followup",
+   "turns": [
+    "What's the price of an iPhone?",
+    "you didn't list the newer models' prices"
+   ],
+   "rubric": "prices for the newest models (iPhone 18 Pro / Pro Max / Duo); never 'couldn't find'. T's failure (TF 202610220954)",
+   "any": [
+    [
+     "18 pro",
+     "iphone duo"
+    ],
+    [
+     "$"
+    ]
+   ],
+   "gold": [
+    [
+     "18 pro",
+     "iphone duo"
+    ]
+   ],
+   "stale": [
+    "(couldn't|could not|unable to) find"
+   ],
+   "official": "apple.com",
+   "tFailure": true
+  },
+  {
+   "id": "FU-CORRECTION",
+   "cat": "followup",
+   "turns": [
+    "a table of the last ten US presidents",
+    "you're not showing the current president. Joe Biden is no longer president"
+   ],
+   "rubric": "a corrected table ending with Trump (2025–present)",
+   "any": [
+    [
+     "trump"
+    ],
+    [
+     "2025"
+    ]
+   ],
+   "stale": [
+    "biden is still",
+    "biden[^\\n|]*\\|\\s*(present|incumbent|current)"
+   ]
+  },
+  {
+   "id": "FU-JAPAN-SINCE",
+   "cat": "followup",
+   "turns": [
+    "Who is Japan's prime minister?",
+    "when did she take office?"
+   ],
+   "rubric": "Takaichi, October 2025",
+   "any": [
+    [
+     "october 2025",
+     "oct 2025",
+     "2025"
+    ]
+   ],
+   "gold": [
+    [
+     "takaichi"
+    ],
+    [
+     "october"
+    ]
+   ],
+   "stale": [
+    "ishiba",
+    "kishida"
+   ]
+  },
+  {
+   "id": "FU-POPE-BORN",
+   "cat": "followup",
+   "turns": [
+    "Who is the current pope?",
+    "where was he born?"
+   ],
+   "rubric": "Leo XIV, born in Chicago",
+   "any": [
+    [
+     "chicago"
+    ]
+   ],
+   "stale": [
+    "buenos aires",
+    "argentina"
+   ]
+  },
+  {
+   "id": "FALSE-MARS",
+   "cat": "unanswerable",
+   "turns": [
+    "Who was the first person to walk on Mars?"
+   ],
+   "rubric": "says no one has walked on Mars",
+   "any": [
+    [
+     "no one",
+     "nobody",
+     "no human",
+     "no person",
+     "hasn't",
+     "has not",
+     "have not",
+     "haven't",
+     "yet to"
+    ]
+   ],
+   "abstain": true
+  },
+  {
+   "id": "FALSE-CANADA-EU",
+   "cat": "unanswerable",
+   "turns": [
+    "When did Canada join the European Union?"
+   ],
+   "rubric": "says Canada is not an EU member",
+   "any": [
+    [
+     "not a member",
+     "has not joined",
+     "hasn't joined",
+     "never joined",
+     "is not part",
+     "isn't part",
+     "not part of",
+     "did not join",
+     "didn't join",
+     "is not in",
+     "isn't in"
+    ]
+   ],
+   "abstain": true
+  },
+  {
+   "id": "FALSE-LAKEVIEW",
+   "cat": "unanswerable",
+   "turns": [
+    "What is the capital of the Lakeview Republic?"
+   ],
+   "rubric": "says there is no such country (or can't find it), doesn't invent a capital",
+   "any": [
+    [
+     "no ",
+     "not ",
+     "couldn't",
+     "could not",
+     "fictional",
+     "doesn't exist",
+     "does not exist",
+     "unable"
+    ]
+   ],
+   "abstain": true,
+   "review": "no invented capital"
+  },
+  {
+   "id": "FALSE-EINSTEIN",
+   "cat": "unanswerable",
+   "turns": [
+    "What did Einstein say in his 1975 Nobel Prize speech?"
+   ],
+   "rubric": "says Einstein died in 1955 / gave no 1975 speech",
+   "any": [
+    [
+     "1955"
+    ]
+   ],
+   "abstain": true
+  },
+  {
+   "id": "FALSE-IPHONE-DISCONTINUED",
+   "cat": "unanswerable",
+   "turns": [
+    "Why did Apple discontinue the iPhone in 2024?"
+   ],
+   "rubric": "says Apple didn't discontinue the iPhone",
+   "any": [
+    [
+     "didn't",
+     "did not",
+     "hasn't",
+     "has not",
+     "not discontinued",
+     "no longer",
+     "still"
+    ]
+   ],
+   "abstain": true,
+   "review": "corrects the premise"
+  },
+  {
+   "id": "HOLDER-NBA",
+   "cat": "holder",
+   "turns": [
+    "Who won the latest NBA championship?"
+   ],
+   "rubric": "the 2026 champion (New York Knicks, per the live-33 runs' sources)",
+   "any": [
+    [
+     "knicks"
+    ]
+   ]
+  },
+  {
+   "id": "HOLDER-DEATH-FRANCIS",
+   "cat": "holder",
+   "turns": [
+    "Is Pope Francis still alive?"
+   ],
+   "rubric": "says he died (21 April 2025)",
+   "any": [
+    [
+     "died",
+     "passed away",
+     "death",
+     "no longer alive",
+     "is not alive"
+    ]
+   ],
+   "stale": [
+    "(he )?is (still )?alive",
+    "is still living"
+   ]
+  },
+  {
+   "id": "LIB-1",
+   "cat": "library",
+   "turns": [
+    "LIB:What have I saved about tide pools?"
+   ],
+   "rubric": "answered from the Library; no web search",
+   "any": [],
+   "nosearch": true
+  },
+  {
+   "id": "LIB-2",
+   "cat": "library",
+   "turns": [
+    "LIB:What did I write about coffee?"
+   ],
+   "rubric": "answered from the Library; no web search",
+   "any": [],
+   "nosearch": true
+  },
+  {
+   "id": "LIB-3",
+   "cat": "library",
+   "turns": [
+    "LIB:Summarize my notes about travel"
+   ],
+   "rubric": "answered from the Library; no web search",
+   "any": [],
+   "nosearch": true
+  }
+ ]
+}

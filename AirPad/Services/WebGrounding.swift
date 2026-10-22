@@ -958,7 +958,8 @@ enum SearchFreshness: String, Sendable {
 /// evidence). Supported: a table with ≥ half its cells' names/years found; prose with ≥ half its lead sentence's and
 /// ≥ 60% of all of them found. No names or years at all → nil (the caller falls back to whether it cited).
 /// Calibrated on live-33's traces: every right answer ≥ 0.62; the memory answer (Biden "current", from off-topic pages)
-/// 0.57. A memory answer whose every name and year is also in the passages (Biden in a list that has Trump) isn't caught.
+/// 0.57. A year after this one that the passages don't have → not supported. A memory answer whose every name and year
+/// is also in the passages (Biden "current" in a list that has Trump) isn't caught.
 enum EvidenceSupport {
     private static let skip: Set<String> = Set(("january february march april may june july august september october november december "
         + "jan feb mar apr jun jul aug sep sept oct nov dec monday tuesday wednesday thursday friday saturday sunday "
@@ -1010,6 +1011,9 @@ enum EvidenceSupport {
         let year = Calendar(identifier: .gregorian).component(.year, from: now)
         let q = Set(all(#"[\p{L}\p{N}]+"#, fold(question).replacingOccurrences(of: ".", with: "")))
         let hay = fold(passages).replacingOccurrences(of: ".", with: "")
+        // A year after this one that the passages don't have is a claim only the evidence could make (Apple Intelligence's
+        // stale table: "Joe Biden | 2021 | 2029", every other name and year also in the presidents list it got).
+        if all(yearWord, answer).contains(where: { (Int($0) ?? 0) > year && share([$0], in: hay) == 0 }) { return false }
         let lines = answer.components(separatedBy: "\n")
         let isRow = { (l: String) in l.trimmingCharacters(in: .whitespaces).hasPrefix("|") }
         let rows = lines.filter(isRow)

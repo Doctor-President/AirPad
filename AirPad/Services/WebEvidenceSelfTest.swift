@@ -114,6 +114,10 @@ enum WebEvidenceSelfTest {
         let sky = "The sky looks blue because molecules in Earth's atmosphere scatter blue sunlight more than red light."
         let n5 = note(sky, "Why is the sky blue?", "Why is the sky blue? | NASA Space Place\nBlue light is scattered in all directions by the tiny molecules of air in Earth's atmosphere.", results: 1, cited: 0)
         row("timeless-uncited-answer-from-the-passages-→-no-line", n5 == "none", n5)
+        // Apple Intelligence's stale table (live-34 run): every name in the passages, but a term ending in 2029
+        let staleTable = "| President | Term Start | Term End |\n|---|---|---|\n| Joe Biden | 2021 | 2029 |\n| Donald Trump | 2017 | 2021 |\n| Barack Obama | 2009 | 2017 |\n| George W. Bush | 2001 | 2009 |"
+        let n6 = note(staleTable, tSentence, presPassages, results: 2, cited: 0)
+        row("a-future-year-the-passages-don't-have-→-the-line", n6 == WebGrounding.searchUnconfirmedNote, n6)
         row("tables-end-with-a-sources-line", WebGrounding.appSearchClause.contains("Sources: [1], [2]")
             && AppleWebQuery.turnInstructions.contains("Sources: [1], [2]"))
 

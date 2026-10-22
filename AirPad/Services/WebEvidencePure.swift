@@ -186,7 +186,7 @@ enum WebEvidence {
     static let appleBudget = 1_500
 }
 
-/// live-37 — the three fixes, each on unless DEBUG `-Live37Off query,selection,boilerplate,title` (`rerank` = both, `all`) turns it off (the RED baselines; the
+/// live-37 — the three fixes, each on unless DEBUG `-Live37Off query,selection,boilerplate` (`rerank` = boilerplate, `all`) turns it off (the RED baselines; the
 /// smoke runs measure each step). Always on in Release.
 enum Live37 {
     static func on(_ name: String) -> Bool {
@@ -200,7 +200,19 @@ enum Live37 {
     static var query: Bool { on("query") }
     /// (2) the evidence budget sized to the model; best sources first and last.
     static var selection: Bool { on("selection") }
-    /// (3) boilerplate passages out (`boilerplate`); the passage embedded without its page title (`title`).
+    /// (3) boilerplate passages out (`boilerplate`).
     static var boilerplate: Bool { on("rerank") && on("boilerplate") }
-    static var titleOut: Bool { on("rerank") && on("title") }
+    /// (3) the passage embedded without its page title — OFF (DEBUG `-Live37TitleOut YES` turns it on). Measured on the
+    /// smoke runs: it lowers every passage's score (median 0.69 → 0.63) against a floor calibrated WITH titles, so 81–88%
+    /// of passages cleared the floor before and 62–68% after; the Wikipedia lead "The incumbent president is Donald Trump…"
+    /// fell to 0.593 (the self-test row). Recall: Apple 12 → 13, 4B 14 → 13 (neither attributable). The menus it was for
+    /// are dropped by the boilerplate test (≈30 passages a run; the iPhone price passes on both tiers without it). Taking
+    /// the title out needs the floor recalibrated first — a call for the next round.
+    static var titleOut: Bool {
+        #if DEBUG
+        return UserDefaults.standard.bool(forKey: "Live37TitleOut")
+        #else
+        return false
+        #endif
+    }
 }

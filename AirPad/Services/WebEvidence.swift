@@ -254,8 +254,9 @@ extension WebEvidence {
         }
         let sources = merged
         // every passage, with its source's title (it says what the page is about; the model sees the passage only)
-        // live-37 (3) — the passage alone: the title embedded with every passage lifted a page's menu text with it (CNBC's
-        // "Skip Navigation Markets…" under an iPhone-pricing title scored 0.82, the answer 0.75); boilerplate passages out.
+        // live-37 (3) — boilerplate passages out: the title embedded with every passage lifted a page's menu text with it
+        // (CNBC's "Skip Navigation Markets…" under an iPhone-pricing title scored 0.82, the answer 0.75). The passage alone
+        // (`Live37.titleOut`) is measured but off: it needs the floor recalibrated.
         // (Kept in the scores at 0, never embedded, so the trace shows what was dropped.)
         let all = sources.enumerated().flatMap { i, s in passages(s.text).map { (source: i, text: $0) } }
         let boiler = all.filter { Live37.boilerplate && isBoilerplate($0.text) }

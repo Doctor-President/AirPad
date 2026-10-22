@@ -16,7 +16,9 @@ enum AppleWebQuery {
     // MARK: The standalone query
 
     /// The rewrite call's instructions (kept short: Apple's refusal rate is the constraint — live-23).
-    static let rewriteInstructions = "You write web search queries. Given a conversation and the user's latest question, write one standalone search query that would find the answer, naming what the question refers to. Reply with the query only."
+    /// live-33 — every search uses it (a first turn too), so it also leaves out how the answer should be laid out (T's
+    /// "print for me a table of…" was rewritten "Table of the last 10 U.S. presidents…", and the provider returned news).
+    static let rewriteInstructions = "You write web search queries. Given a conversation and the user's latest question, write one standalone search query that would find the answer, naming what the question refers to. Leave out how the answer should be laid out, such as a table or a chart. Reply with the query only."
 
     /// The rewrite call's prompt: the last few turns (each question and the start of its answer), then the latest question.
     static func rewritePrompt(turns: [(question: String, answer: String)], latest: String) -> String {
@@ -35,6 +37,9 @@ enum AppleWebQuery {
         }
         // live-31 — an answer instead of a query (seen on the Simulator: an HTML table of presidents): no query.
         if line.range(of: #"</?[a-zA-Z][^>]*>"#, options: .regularExpression) != nil || line.filter({ $0 == "|" }).count >= 2 { return nil }
+        // live-33 — a URL in the query ("Japan Prime Minister(https://www.japantimes.co.jp/…)", seen on the Simulator)
+        line = line.replacingOccurrences(of: #"\(?\s*https?://\S+?\s*\)?(?=\s|$)"#, with: " ", options: .regularExpression)
+            .replacingOccurrences(of: #"\s{2,}"#, with: " ", options: .regularExpression).trimmingCharacters(in: .whitespaces)
         line = line.replacingOccurrences(of: #"[\[\]{}<>]"#, with: "", options: .regularExpression)   // "[Panama Canal] …" (seen)
             .trimmingCharacters(in: CharacterSet(charactersIn: "\"'“”‘’`*_. "))
         // live-31 — a JSON-shaped reply ({"query": "…"}, seen on the Simulator): the key goes, the value stays.
@@ -54,16 +59,19 @@ enum AppleWebQuery {
         let typed = Set(matches(yearPattern, in: userText))
         var q = query
         for y in Set(matches(yearPattern, in: query)) where !typed.contains(y) {
-            q = q.replacingOccurrences(of: #"\b\#(y)\b"#, with: "", options: .regularExpression)
+            // live-33 — the year's preposition goes with it ("…presidents from 1977 to 2026" read "…from to 2026")
+            q = q.replacingOccurrences(of: #"(?i)\b(?:(?:from|between|since|in|of|until|till|to|and|through|during)\s+)?\#(y)\b"#, with: "", options: .regularExpression)
         }
-        q = q.replacingOccurrences(of: #"\s{2,}"#, with: " ", options: .regularExpression).trimmingCharacters(in: .whitespaces)
+        q = q.replacingOccurrences(of: #"\s{2,}"#, with: " ", options: .regularExpression)
+            .replacingOccurrences(of: #"\s+([?.!,])"#, with: "$1", options: .regularExpression).trimmingCharacters(in: .whitespaces)
         if currentState, matches(yearPattern, in: q).isEmpty {
             q += " " + String(Calendar(identifier: .gregorian).component(.year, from: now))
         }
         return q
     }
 
-    /// When the rewrite fails, refuses, times out or comes back empty: the previous search's query plus the new question
+    /// When no rewrite is available (live-33: the last resort, `WebEvidence.searchQuery`, with the question's request words
+    /// removed): the previous search's query plus the new question
     /// (the topic carries; the question says what is wanted now). No previous search → the question as written.
     /// live-31: only the previous query's FIRST question carries (a fallback of a fallback snowballed — the gauntlet's
     /// chat searched "oarfish? squid? Antarctica? news?" for its fourth question).
@@ -74,8 +82,6 @@ enum AppleWebQuery {
             .replacingOccurrences(of: #"\s{2,}"#, with: " ", options: .regularExpression)
             .trimmingCharacters(in: .whitespaces)
         if let mark = topic.firstIndex(of: "?") { topic = String(topic[...mark]) }
-        // live-32 — a correction searches the topic's current state, not the correction's words.
-        if !WikipediaGrounding.live31, isCorrection(q) { return topic + " current" }
         return topic + " " + q
     }
 
@@ -149,10 +155,7 @@ enum AppleWebQuery {
     /// instructions say where they come from and how to use them. Measured on this Mac (synthetic, ×5): results in the
     /// session instructions instead → citing 77/85 and the measles text tripping the guardrail 4 of 5; in the turn
     /// without "not from the user" → "you provided" 5 times; this → 0 refusals, 83/85 cite, 0 "you provided", news 25/25.
-    static let turnInstructions = "Each question comes with web results the app found for it today; they come from the app's search, not from the user, who hasn't seen them. Answer the question from them in your own words, not by copying their sentences, and put the result's number in brackets, like [1], after each fact you take from one. If they don't answer it, say so plainly."
-    /// live-32 (2) — the knowledge-conflict rule, short (Apple's refusal rate is the constraint): the results win over
-    /// memory, and a recently edited reference page counts.
-    static let evidenceInstruction = "Where they disagree with what you remember, they are right: they are newer than your training. A reference page such as Wikipedia, edited recently, is current."
+    static let turnInstructions = "Each question comes with web results the app found for it today; they come from the app's search, not from the user, who hasn't seen them. Answer the question from them in your own words, not by copying their sentences, and put the result's number in brackets, like [1], after each fact you take from one. Where they disagree with what you remember, they are right: they are newer than your training. If they don't answer it, say so plainly."
     static func turnPacket(day: String, query: String, question: String, results: [(title: String, date: String?, snippet: String)]) -> String {
         let list = results.enumerated().map { i, r in "[\(i + 1)] \(r.title)\(r.date.map { " — " + $0 } ?? "")\n\(r.snippet)" }
         return (["Web results the app found today (\(day)) for \"\(query)\":"] + list + ["Question: \(question)"]).joined(separator: "\n\n")
@@ -194,6 +197,8 @@ enum AppleWebQuery {
         let r1 = applyYearRule("Lakeview Observatory telescope status 2024", userText: "So where does it stand now?", currentState: true, now: now)
         row("year-rule-drops-a-model-year-and-adds-today's", r1 == "Lakeview Observatory telescope status \(y)", r1)
         let r2 = applyYearRule("Treaty of Westphalia 1648 aftermath", userText: "What happened after the 1648 treaty?", currentState: false, now: now)
+        let r3 = applyYearRule("List of US presidents from 1977 to 2026", userText: "Can you print for me a table of the last 10 US presidents up until today", currentState: true, now: now)
+        row("year-rule-takes-the-year's-preposition-too", r3 == "List of US presidents \(y)", r3)
         row("year-rule-keeps-a-year-the-user-typed", r2 == "Treaty of Westphalia 1648 aftermath", r2)
         row("rewrite-cleaned", cleanRewrite("Search query: \"Artemis II launch date\".\nThis finds…") == "Artemis II launch date",
             cleanRewrite("Search query: \"Artemis II launch date\".") ?? "nil")
@@ -201,6 +206,8 @@ enum AppleWebQuery {
             cleanRewrite("{\"query\": \"list of US presidents, their parties and causes of death\"}") ?? "nil")
         row("rewrite-that-is-a-table-is-no-query", cleanRewrite("<table><tr><th>US President</th><th>Party</th></tr></table>") == nil
             && cleanRewrite("| President | Party |") == nil)
+        row("rewrite-url-dropped", cleanRewrite("Japan Prime Minister(https://www.japantimes.co.jp/news/leaders/prime-minister/)") == "Japan Prime Minister",
+            cleanRewrite("Japan Prime Minister(https://www.japantimes.co.jp/news/leaders/prime-minister/)") ?? "nil")
         row("rewrite-brackets-dropped", cleanRewrite("[Panama Canal] water restrictions current status") == "Panama Canal water restrictions current status")
         row("rewrite-refusal-is-no-query", cleanRewrite("I'm sorry, but I can't help with that.") == nil && cleanRewrite("  ") == nil)
         row("fallback-carries-the-previous-query", fallbackQuery(previousQuery: "Lakeview Observatory telescope 2026", question: "Who won?")

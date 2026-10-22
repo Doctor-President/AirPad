@@ -86,12 +86,14 @@ final class RegenerateUI: XCTestCase {
                 // The reported frame isn't where ↻ is drawn (the Chats sheet: ~18 pt above — ChatViewCitationUI; a settled
                 // Librarian transcript: ~55 pt below, under the model pill). Tap where a finger would: from the reported
                 // spot upward, never onto the pill below it; the first tap that re-asks is where ↻ really is.
-                for dy in [0.0, 18, -18, -36, -46, -55, -64] where requests(q) <= before {
-                    let p = CGPoint(x: r.frame.midX, y: r.frame.midY + dy)
+                // live-33: the frame is read once — a re-ask starts with the query rewrite, so ↻ goes before the count moves.
+                let frame = r.frame
+                for dy in [0.0, 18, -18, -36, -46, -55, -64] where requests(q) <= before && r.exists {
+                    let p = CGPoint(x: frame.midX, y: frame.midY + dy)
                     if dy > 0 && app.buttons.matching(NSPredicate(format: "label BEGINSWITH 'Model '")).firstMatch.frame.contains(p) { continue }
                     app.coordinate(withNormalizedOffset: .zero).withOffset(CGVector(dx: p.x, dy: p.y)).tap()
                     Thread.sleep(forTimeInterval: 1.5)
-                    if requests(q) > before { note("\(label): the tap that re-asked was \(Int(dy)) pt from ↻'s reported centre") }
+                    if requests(q) > before || !r.exists { note("\(label): the tap that re-asked was \(Int(dy)) pt from ↻'s reported centre") }
                 }
             }
         }
@@ -147,7 +149,8 @@ final class RegenerateUI: XCTestCase {
         XCTAssertTrue(stop.waitForExistence(timeout: 20), "never streamed")
         Thread.sleep(forTimeInterval: 3); stop.tap(); Thread.sleep(forTimeInterval: 2)
         XCTAssertTrue(regenerate(app, q, "after-stop"), "↻ after Stop did nothing")
-        app.buttons["Stop answer"].firstMatch.tap()
+        let stop2 = app.buttons["Stop answer"].firstMatch
+        if stop2.exists { stop2.tap() }   // the re-ask may already be over
         app.terminate()
     }
 

@@ -1,5 +1,4 @@
 import Foundation
-import FoundationModels
 
 /// live-29 (B5) — Apple Intelligence + web, option (a): APP-ROUTED grounding. The on-device model never calls a tool
 /// here: live-28 (A6) measured it calling a FoundationModels tool 30 / 30 times but writing stale years into its own
@@ -12,44 +11,16 @@ import FoundationModels
 /// live-30 (A1) — follow-ups search a standalone query (rewritten on-device, `searchQuery`); the results are labelled as
 /// the app's own search today, not something the user provided (`AppleWebQuery.turnPacket`); social / video hosts are
 /// left out; the turn shows the "Searched the web" row; an answer that says the results don't answer it is unconfirmed.
+/// live-33 — every search's query is the rewrite and the turn carries the reranked passages (`WebEvidence`), within
+/// `WebEvidence.appleBudget` (Apple's on-device window is small).
 enum AppleWebGrounding {
-    /// How many results go into the turn (Apple's on-device window is small; three snippets ≈ 1,200 characters).
-    static let maxResults = 3
-    static let snippetCap = 300
-    /// live-32 (2) — a Wikipedia passage's share of the turn (with two snippets ≈ 1,500 characters).
-    static let wikiCap = 900
+    /// A citation chip's snippet.
+    static let citationSnippetCap = 300
 
     /// Does this General question get searched first? The Host path's rule: a search-intent or current-state request,
     /// or a factual question (the Host path also reads the top page for those; here the snippets are the packet).
     static func shouldSearch(_ q: String, searchIntent: Bool) -> Bool {
         searchIntent || WebGrounding.asksCurrentState(q) || WebGrounding.isFactualQuestion(q)
-    }
-
-    /// The query the app writes: the question, plus today's year on a current-state request that names no year
-    /// ("Who is the current president?" → "Who is the current president? 2026"), so the provider favours this year.
-    static func query(for q: String, now: Date = Date()) -> String {
-        let t = q.trimmingCharacters(in: .whitespacesAndNewlines)
-        guard WebGrounding.asksCurrentState(t), t.range(of: #"\b(19|20)\d{2}\b"#, options: .regularExpression) == nil else { return t }
-        return t + " " + String(Calendar(identifier: .gregorian).component(.year, from: now))
-    }
-
-    /// live-30 (A1) — the query this turn searches, and how it was made ("first turn" · "standalone" · "rewritten" · "fallback").
-    /// First turn of a chat: the question (`query(for:)`, unchanged). A follow-up: a short separate on-device call
-    /// rewrites it into a standalone query from the last few turns (`AppleWebQuery`); then the app's year rule (a year
-    /// the user typed anywhere in the chat stays, any other goes, today's on a current-state request). The rewrite fails,
-    /// refuses, times out or comes back empty → the previous search's query + the new question.
-    @MainActor static func searchQuery(for question: String, chat: ChatSession, now: Date = Date()) async -> (query: String, how: String) {
-        let prior = priorTurns(chat)
-        guard !prior.isEmpty, !live29 else { return (query(for: question, now: now), "first turn") }
-        // live-31 — a question that doesn't lean on the chat is searched as written (no rewrite, no previous topic).
-        guard AppleWebQuery.needsContext(question) else { return (query(for: question, now: now), "standalone") }
-        let typed = (prior.map(\.question) + [question]).joined(separator: " ")
-        if let rewritten = await rewrite(turns: prior, latest: question) {
-            let current = WebGrounding.asksCurrentState(question) || WebGrounding.asksCurrentState(rewritten)
-            return (AppleWebQuery.applyYearRule(rewritten, userText: typed, currentState: current, now: now), "rewritten")
-        }
-        let fallback = AppleWebQuery.fallbackQuery(previousQuery: previousSearchQuery(chat), question: question)
-        return (AppleWebQuery.applyYearRule(fallback, userText: typed, currentState: WebGrounding.asksCurrentState(question), now: now), "fallback")
     }
 
     /// Did the latest answer come from a search? (A follow-up to it is searched again — `AppleWebQuery.isFollowUpQuestion`.)
@@ -96,49 +67,19 @@ enum AppleWebGrounding {
     static var debugLastHow = ""
     #endif
 
-    /// The rewrite call: on-device, no tools, ≤ 40 tokens, 5 s. nil = no usable query.
-    private static func rewrite(turns: [(question: String, answer: String)], latest: String) async -> String? {
-        #if DEBUG
-        if debugRewriteFails { return nil }
-        if UserDefaults.standard.bool(forKey: "StubOnDeviceModel") {
-            // Stub: names the earlier topic and writes a STALE year (the year rule must take it out).
-            return turns.contains { $0.question.contains("Lakeview") } ? "Lakeview Observatory telescope status 2024" : nil
-        }
-        #endif
-        guard SystemLanguageModel.default.isAvailable else { return nil }
-        let prompt = AppleWebQuery.rewritePrompt(turns: turns, latest: latest)
-        let raw: String? = await withTaskGroup(of: String?.self) { group in
-            group.addTask {
-                let session = LanguageModelSession(instructions: AppleWebQuery.rewriteInstructions)
-                return try? await session.respond(to: prompt, options: GenerationOptions(maximumResponseTokens: 40)).content
-            }
-            group.addTask { try? await Task.sleep(for: .seconds(5)); return nil }
-            let first = await group.next() ?? nil
-            group.cancelAll()
-            return first
-        }
-        guard let raw, !AppleChat.isRefusalText(raw) else { return nil }
-        return AppleWebQuery.cleanRewrite(raw)
-    }
-
-    /// The results that go into the turn: social / video hosts out (`AppleWebQuery.isSocial`), then the top three —
-    /// title, date, ≤ 300-character snippet — and the citations they become.
+    /// The reranked sources that go into the turn (`WebEvidence`, social / video hosts already out), their passages as
+    /// the snippet, and the citations they become.
     static func packet(links: [ToolLink], now: Date = Date())
         -> (results: [(title: String, date: String?, snippet: String)], citations: [ChatSession.Message.Citation]) {
-        let top = Array(links.filter { live29 || !AppleWebQuery.isSocial($0.url) }.prefix(maxResults))
         var results: [(title: String, date: String?, snippet: String)] = []
         var cites: [ChatSession.Message.Citation] = []
-        for (i, l) in top.enumerated() {
+        for (i, l) in links.filter({ live29 || !AppleWebQuery.isSocial($0.url) }).enumerated() {
             let title = MarkdownPlain.label(l.title)
             let snippet = MarkdownPlain.label(l.snippet ?? "")
-            // live-32 (2) — a Wikipedia passage keeps more (it is the answer's evidence), dated by its last edit.
-            let wiki = WikipediaGrounding.isPassage(l)
-            let cap = wiki ? wikiCap : snippetCap
-            let clipped = snippet.count > cap ? String(snippet.prefix(cap)) + "…" : snippet
-            let date = wiki ? l.published.map { "Wikipedia, last edited " + WebGrounding.dayString($0) }
-                            : l.published.map { "published " + WebGrounding.dayString($0) }
-            results.append((title, date, clipped))
-            cites.append(.init(index: i + 1, url: l.url, title: title, snippet: String(clipped.prefix(snippetCap))))
+            let date = WikipediaGrounding.isPassage(l) ? l.published.map { "Wikipedia, last edited " + WebGrounding.dayString($0) }
+                : l.published.map { "published " + WebGrounding.dayString($0) }
+            results.append((title, date, snippet))
+            cites.append(.init(index: i + 1, url: l.url, title: title, snippet: String(snippet.prefix(citationSnippetCap))))
         }
         return (results, cites)
     }
@@ -146,8 +87,8 @@ enum AppleWebGrounding {
     /// The answer turn (`AppleWebQuery.turnPacket` / `turnInstructions`): the results in the turn, labelled as the app's
     /// own search today; the question at the end. (Kept short: refusal rate is the constraint — live-23.)
     static func turn(question: String, query: String, results: [(title: String, date: String?, snippet: String)],
-                     voice: String, currentState: Bool = true, now: Date = Date()) -> (systemPrompt: String, modelText: String) {
-        (voice + " " + AppleWebQuery.turnInstructions + (WikipediaGrounding.live31 || !currentState ? "" : " " + AppleWebQuery.evidenceInstruction),
+                     voice: String, now: Date = Date()) -> (systemPrompt: String, modelText: String) {
+        (voice + " " + AppleWebQuery.turnInstructions,
          AppleWebQuery.turnPacket(day: WebGrounding.dayString(now), query: query, question: question, results: results))
     }
 }
@@ -170,20 +111,17 @@ enum AppleWebSelfTest {
 
         // Pure parts.
         let fixedNow = ISO8601DateFormatter().date(from: "2026-10-19T12:00:00Z")!
-        row("query-adds-the-year-to-a-current-state-request", AppleWebGrounding.query(for: "Who is the current president?", now: fixedNow)
-            == "Who is the current president? 2026", AppleWebGrounding.query(for: "Who is the current president?", now: fixedNow))
-        row("query-keeps-a-fact-question", AppleWebGrounding.query(for: "Who wrote Pride and Prejudice?", now: fixedNow) == "Who wrote Pride and Prejudice?")
         let links = (1...5).map { ToolLink(title: "#### Result \($0)", url: "https://example.com/\($0)",
                                            snippet: "**Snippet** \($0) " + String(repeating: "x", count: 400)) }
         let pk = AppleWebGrounding.packet(links: links, now: fixedNow)
-        row("packet-is-top-3-plain-capped", pk.citations.count == 3 && pk.results.allSatisfy { !$0.title.contains("####") && !$0.snippet.contains("**") }
-            && pk.results[2].title == "Result 3" && pk.citations.allSatisfy { $0.snippet.count <= 301 }, pk.results.map(\.title).joined(separator: ", "))
+        row("packet-is-plain-chips-capped", pk.citations.count == 5 && pk.results.allSatisfy { !$0.title.contains("####") && !$0.snippet.contains("**") }
+            && pk.results[2].title == "Result 3" && pk.citations.allSatisfy { $0.snippet.count <= 300 }, pk.results.map(\.title).joined(separator: ", "))
         // live-30 (A1) — pure rows (also run by the Mac harness).
         for r in AppleWebQuery.selfTestRows(now: fixedNow) { row(r.name, r.ok, r.detail) }
         let social = [ToolLink(title: "Clip", url: "https://www.youtube.com/watch?v=1", snippet: "a"),
                       ToolLink(title: "Post", url: "https://www.instagram.com/p/1", snippet: "b")] + links
         let pkS = AppleWebGrounding.packet(links: social, now: fixedNow)
-        row("social-hosts-never-reach-the-packet", pkS.citations.count == 3 && !pkS.citations.contains { AppleWebQuery.isSocial($0.url ?? "") },
+        row("social-hosts-never-reach-the-packet", pkS.citations.count == 5 && !pkS.citations.contains { AppleWebQuery.isSocial($0.url ?? "") },
             "\(pkS.citations.map { $0.url ?? "-" })")
 
         // The real send path — Apple Intelligence (stub) + the mock provider.
@@ -192,7 +130,9 @@ enum AppleWebSelfTest {
         let q1 = "What is the latest news about the Lakeview Observatory telescope?"
         await lib.groundedSend(query: q1, store: store, chat: chat)
         let a1 = chat.messages.last { $0.role == .assistant }
-        row("first-turn-query-unchanged", AppleWebGrounding.debugLastQuery == AppleWebGrounding.query(for: q1) && AppleWebGrounding.debugLastHow == "first turn",
+        // live-33 — a first turn is rewritten too; the stub rewrites only a Lakeview follow-up, so this is the last resort.
+        row("first-turn-query-is-the-pipeline's", AppleWebGrounding.debugLastQuery == WebEvidence.strippedQuestion(q1) + " 2026"
+            && AppleWebGrounding.debugLastHow == "request words removed",
             "\(AppleWebGrounding.debugLastHow): \(AppleWebGrounding.debugLastQuery)")
         row("results-are-labelled-as-the-app's-search", ModelRouter.debugLastApplePrompt.hasPrefix("Web results the app found today")
             && ModelRouter.debugLastApplePrompt.contains("[1] ") && ModelRouter.debugLastApplePrompt.hasSuffix("Question: \(q1)")
@@ -208,7 +148,7 @@ enum AppleWebSelfTest {
         // A vague follow-up: searched again, with the rewrite (stub: names the topic, writes a stale 2024) + the year rule.
         await lib.groundedSend(query: "So where does it stand now?", store: store, chat: chat)
         let y = String(Calendar(identifier: .gregorian).component(.year, from: Date()))
-        row("follow-up-searches-the-rewrite", AppleWebGrounding.debugLastHow == "rewritten" && AppleWebGrounding.debugLastQuery.contains("Lakeview"),
+        row("follow-up-searches-the-rewrite", AppleWebGrounding.debugLastHow == "rewritten on-device" && AppleWebGrounding.debugLastQuery.contains("Lakeview"),
             "\(AppleWebGrounding.debugLastHow): \(AppleWebGrounding.debugLastQuery)")
         row("year-rule-on-the-rewrite", !AppleWebGrounding.debugLastQuery.contains("2024") && AppleWebGrounding.debugLastQuery.hasSuffix(y),
             AppleWebGrounding.debugLastQuery)
@@ -217,8 +157,8 @@ enum AppleWebSelfTest {
         AppleWebGrounding.debugRewriteFails = true
         await lib.groundedSend(query: "Who built it?", store: store, chat: chat)
         AppleWebGrounding.debugRewriteFails = false
-        row("rewrite-fails-falls-back", AppleWebGrounding.debugLastHow == "fallback"
-            && AppleWebGrounding.debugLastQuery == AppleWebQuery.fallbackQuery(previousQuery: before, question: "Who built it?"),
+        row("rewrite-fails-falls-back", AppleWebGrounding.debugLastHow == "request words removed"
+            && AppleWebGrounding.debugLastQuery == AppleWebQuery.fallbackQuery(previousQuery: before, question: "Who built it"),
             "\(AppleWebGrounding.debugLastHow): \(AppleWebGrounding.debugLastQuery)")
         // Chit-chat after a search isn't searched.
         let rows0 = chat.messages.filter { $0.role == .activity }.count

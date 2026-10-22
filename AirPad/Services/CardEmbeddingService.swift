@@ -80,6 +80,29 @@ actor CardEmbeddingService {
         return vector
     }
 
+    /// live-33 — many texts in ONE Core ML batch prediction (the web rerank embeds ~40 passages a turn; one call lets
+    /// Core ML schedule them together instead of 40 round trips). Same vectors as `embed`; nil entries for empty texts
+    /// or a failed prediction.
+    func embedBatch(_ texts: [String]) async -> [[Float]?] {
+        guard ensureLoaded(), let model, let tokenizer, !texts.isEmpty else { return texts.map { _ in nil } }
+        var providers: [MLFeatureProvider] = [], slot: [Int?] = []
+        for t in texts {
+            guard !t.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty else { slot.append(nil); continue }
+            let (ids, mask) = tokenizer.encode(t, maxLength: sequenceLength)
+            guard let a = makeInt32Array(ids), let m = makeInt32Array(mask),
+                  let f = try? MLDictionaryFeatureProvider(dictionary: ["input_ids": MLFeatureValue(multiArray: a),
+                                                                       "attention_mask": MLFeatureValue(multiArray: m)]) else { slot.append(nil); continue }
+            slot.append(providers.count); providers.append(f)
+        }
+        guard let out = try? model.predictions(from: MLArrayBatchProvider(array: providers), options: MLPredictionOptions()) else {
+            return texts.map { _ in nil }
+        }
+        return slot.map { i in
+            guard let i, let e = out.features(at: i).featureValue(for: "embedding")?.multiArrayValue else { return nil }
+            return (0..<e.count).map { e[$0].floatValue }
+        }
+    }
+
     private func makeInt32Array(_ values: [Int32]) -> MLMultiArray? {
         guard let array = try? MLMultiArray(shape: [1, NSNumber(value: values.count)], dataType: .int32) else {
             return nil

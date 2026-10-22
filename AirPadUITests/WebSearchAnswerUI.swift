@@ -144,7 +144,9 @@ final class WebSearchAnswerUI: XCTestCase {
         let web2 = Array(allWeb().dropFirst(mid.web)), chat2 = Array(chatlog().dropFirst(mid.chat))
         shot(app, "current-state-\(provider)-follow-up")
         note("\(provider) follow-up: web queries \(web2) · model requests \(chat2)")
-        XCTAssertTrue(web2.contains { $0.lowercased().contains("presidents") && !$0.lowercased().contains("query") },
+        // live-33: the rewrite is a model's (the Simulator's on-device model where this Mac has Apple Intelligence): it may
+        // name the topic ("presidents") or the person the first answer named ("Ezra Pine cause of death") — both carry it.
+        XCTAssertTrue(web2.contains { ($0.lowercased().contains("presidents") || $0.lowercased().contains("ezra pine")) && !$0.lowercased().contains("query") },
                       "the follow-up wasn't searched with the topic carried (a clean query): \(web2)")
         XCTAssertEqual(chat2.first?["app_results"] as? Bool, true, "the follow-up's results weren't in the model's turn")
         app.terminate()

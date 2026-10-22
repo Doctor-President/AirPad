@@ -774,7 +774,7 @@ final class ChatSession {
 
     @discardableResult
     func sendWithTools(displayText: String, systemPrompt: String, executor: ToolExecutor, forceWebSearch: Bool = false,
-                       prefetch: WebPrefetch = .none, appQuery: String? = nil) async -> Bool {
+                       prefetch: WebPrefetch = .none, appQuery: String? = nil, wikiQuery: String? = nil) async -> Bool {
         guard !displayText.isEmpty, !isStreaming else { return false }
         // The agentic tool loop runs over a direct .ollama endpoint OR the sealed .host pairing.
         // (It was .ollama-ONLY — the reason web search never worked over a paired Host: it was
@@ -795,16 +795,10 @@ final class ChatSession {
         // CH Session 2 — only a URL this turn's tools return (or the user typed) may appear in the answer.
         filterAllowed = WebGrounding.urls(in: displayText)
         answerFilter = WebAnswerFilter(allowed: filterAllowed)
-        // live-32 (2) — the today's-news framing is for a NEWS question (live-31 gave it to any "current" question, and
-        // T's follow-up was told to say it found no article from today); a current-state question gets the evidence rules:
-        // the Wikipedia passage, each result's relevant part, reputable and recent sources first.
-        let freshness = WebGrounding.wantsNews(displayText)
-        let currentState = !WikipediaGrounding.live31 && prefetch != .none
-            && (WebGrounding.asksCurrentState(displayText) || appQuery.map(WebGrounding.asksCurrentState) == true || AppleWebQuery.isCorrection(displayText))
-        let evidenceTerms = WebGrounding.evidenceTerms(appQuery ?? displayText)
-        // Wikipedia runs alongside the app's search, not after it (two requests, ~0.5 s; its own task so neither waits).
-        let wikiTask: Task<WikipediaGrounding.Passage?, Never>? = prefetch != .none && WikipediaGrounding.isOn
-            ? Task { await WikipediaGrounding.passage(question: displayText, query: appQuery) } : nil
+        // live-33 — the app's search brings the Wikipedia articles for the same query (alongside, not after it); every
+        // search's results are reranked by meaning before the model sees them (`WebEvidence`).
+        let wikiTask: Task<[WebEvidence.Source], Never>? = prefetch != .none && WikipediaGrounding.isOn
+            ? Task { await WikipediaGrounding.sources(query: wikiQuery ?? appQuery ?? displayText) } : nil
         let now = Date()
         beginAnswerStream(candidates: [])
         streamingThinking = ""   // Brief AL3 — clear any prior turn's thought process
@@ -859,7 +853,7 @@ final class ChatSession {
             func runToolLoop(nudge: Bool) async throws -> (answer: String, links: [ToolLink], anyTool: Bool, rateLimited: Bool, searched: Bool) {
                 // OpenAI working-set (system + prior chat turns + this turn). Activity
                 // rows are display-only — skipped here.
-                var working: [[String: Any]] = [["role": "system", "content": WebGrounding.withEvidenceRules(systemPrompt, currentState: currentState)]]
+                var working: [[String: Any]] = [["role": "system", "content": systemPrompt]]
                 for m in messages.dropLast() where m.role == .user || m.role == .assistant {
                     working.append(["role": m.role == .user ? "user" : "assistant", "content": m.text])
                 }
@@ -914,27 +908,33 @@ final class ChatSession {
                                                       "text": String(result.textForModel.prefix(12_000))])
                         #endif
                         if call.name == AgentTools.webSearch {
-                            result = ToolResult(textForModel: result.textForModel, links: WebGrounding.hostLinks(result.links),
-                                                rateLimited: result.rateLimited, unavailable: result.unavailable, failed: result.failed)
-                        }
-                        // live-32 (2) — each result's part that answers; the app's search gets the Wikipedia passage as [1];
-                        // a current-state question keeps reputable and recent sources first.
-                        if call.name == AgentTools.webSearch, !WikipediaGrounding.live31 {
-                            let cap = WebGrounding.packetSnippetCap(currentState: currentState)
-                            var ls = result.links.map { l in
-                                ToolLink(title: l.title, url: l.url, snippet: l.snippet.map { WebGrounding.relevantWindow($0, terms: evidenceTerms, cap: cap) },
-                                         published: l.published)
+                            // Social / video hosts out; then the pipeline: the app's search adds the Wikipedia articles and,
+                            // for a factual question, the top page's text (the read); every passage is reranked by meaning
+                            // against the query and only those above the floor reach the model, numbered by source.
+                            let web = WebGrounding.hostLinks(result.links)
+                            var sources = web.map(WebEvidence.source)
+                            if call.id == "app_search" {
+                                if prefetch == .searchAndFetch, let top = web.first {
+                                    let page = await executor.execute(name: AgentTools.fetchURL, arguments: ["url": top.url])
+                                    if !page.failed, !page.textForModel.hasPrefix("Couldn't fetch"), !page.textForModel.hasPrefix("Invalid URL") {
+                                        sources[0] = WebEvidence.Source(title: top.title, url: top.url, published: top.published, wikipedia: false,
+                                                                        text: (top.snippet ?? "") + "\n" + String(page.textForModel.prefix(WebEvidence.pageChars)))
+                                    }
+                                    #if DEBUG
+                                    WebTrace.shared.note("tool", ["name": AgentTools.fetchURL, "id": "app_fetch", "startMs": callStart, "url": top.url,
+                                                                  "args": ["url": top.url], "links": [], "failed": page.failed, "rateLimited": false,
+                                                                  "text": String(page.textForModel.prefix(4_000))])
+                                    #endif
+                                }
+                                if let wiki = await wikiTask?.value { sources = wiki + sources }
                             }
-                            if call.id == "app_search", let p = await wikiTask?.value {
-                                ls = [WikipediaGrounding.link(p)] + ls.filter { WebGrounding.normalize($0.url) != WebGrounding.normalize(p.url) }
-                                #if DEBUG
-                                WebTrace.shared.note("tool", ["name": "wikipedia", "id": "app_wiki", "startMs": callStart, "url": p.url,
-                                                              "args": ["title": p.title], "links": WebTrace.links([WikipediaGrounding.link(p)]),
-                                                              "failed": false, "rateLimited": false, "text": p.text])
-                                #endif
-                            }
-                            if currentState { ls = WebGrounding.currentStateLinks(ls, now: now) }
-                            result = ToolResult(textForModel: result.textForModel, links: ls, rateLimited: result.rateLimited,
+                            // the meaning to match: the app's query without its freshness year (that is for the provider)
+                            let q = call.id == "app_search" ? (wikiQuery ?? appQuery ?? displayText) : (call.arguments["query"] as? String) ?? displayText
+                            let rr = await WebEvidence.rerank(query: q, sources: sources, budget: WebEvidence.hostBudget)
+                            #if DEBUG
+                            WebTrace.shared.note("rerank", WebTrace.rerank(rr))
+                            #endif
+                            result = ToolResult(textForModel: result.textForModel, links: rr.links, rateLimited: result.rateLimited,
                                                 unavailable: result.unavailable, failed: result.failed)
                         }
                         prefillNotice = nil
@@ -948,8 +948,8 @@ final class ChatSession {
                            WebGrounding.live30 || (!result.failed && !result.rateLimited) { searched = true }
                         let toolContent: String
                         if call.name == AgentTools.webSearch, !result.links.isEmpty {
-                            let ranked = freshness ? WebGrounding.rank(result.links) : result.links
-                            toolContent = WebGrounding.packet(ranked, start: citationLinks.count, now: now, freshness: freshness)
+                            let ranked = result.links
+                            toolContent = WebGrounding.packet(ranked, start: citationLinks.count, now: now)
                             result = ToolResult(textForModel: result.textForModel, links: ranked,
                                                 rateLimited: result.rateLimited, unavailable: result.unavailable)
                             citationLinks.append(contentsOf: ranked)
@@ -981,8 +981,8 @@ final class ChatSession {
                             working.removeSubrange(before...)
                             let q = (call.arguments["query"] as? String) ?? displayText
                             working[working.count - 1]["content"] = WebGrounding.appSearchTurn(query: q, question: displayText,
-                                                                                               links: result.links, now: now, freshness: freshness)
-                            working[0]["content"] = WebGrounding.withEvidenceRules(systemPrompt, currentState: currentState) + "\n\n" + WebGrounding.appSearchClause
+                                                                                               links: result.links, now: now)
+                            working[0]["content"] = systemPrompt + "\n\n" + WebGrounding.appSearchClause
                             continue
                         }
                         working.append(["role": "tool", "tool_call_id": call.id, "content": toolContent])
@@ -998,11 +998,7 @@ final class ChatSession {
                     }
                     await runCalls([call("app_search", AgentTools.webSearch, ["query": appQuery ?? displayText])], content: "",
                                    intoTurn: !WebGrounding.live30)
-                    // live-32 (2) — a Wikipedia passage already in the turn is the page read (no second page, no wait).
-                    if prefetch == .searchAndFetch, !sawUnavailable, let top = citationLinks.first,
-                       WikipediaGrounding.live31 || !WikipediaGrounding.isPassage(top) {
-                        await runCalls([call("app_fetch", AgentTools.fetchURL, ["url": top.url])], content: "")
-                    }
+                    // live-33 — the top page's read is part of the app's search (its text joins the rerank), not a second step.
                     #if DEBUG
                     GauntletTap.shared.noteValue("prefetch", prefetch.rawValue)
                     GauntletTap.shared.noteValue("prefetchMs", Int(Date().timeIntervalSince(t0) * 1000))
@@ -1253,7 +1249,7 @@ final class ChatSession {
                 label = result.textForModel
             } else {
                 let wiki = result.links.contains(where: WikipediaGrounding.isPassage)
-                label = result.links.isEmpty ? "Searched the web — no results"
+                label = result.links.isEmpty ? "Searched the web — nothing relevant"   // live-33: none cleared the rerank
                     : wiki ? (result.links.count == 1 ? "Read Wikipedia" : "Searched the web and Wikipedia") : "Searched the web"
             }
             detail = call.arguments["query"] as? String

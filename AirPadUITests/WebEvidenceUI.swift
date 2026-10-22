@@ -100,6 +100,28 @@ final class WebEvidenceUI: XCTestCase {
         app.terminate()
     }
 
+    /// live-33 — T (TF 202610211551): the raw sentence was searched and the one result left (a car-buying page) went to the
+    /// model, which answered from memory. Now the search uses the rewrite's query (the stub model writes it), and a page
+    /// nothing in which clears the rerank's floor never reaches the model: no results in its turn, "nothing relevant".
+    /// RED: `-Live32Web YES` (with `WEBEV_RED=1`).
+    func testOffTopicPageNeverReachesTheModel() throws {
+        let w0 = get("/weblog").count, c0 = get("/chatlog").count
+        let app = try launch(["-TavilyTestKey", "stub-key", "-webSearchProvider", "tavily"] + (red.isEmpty ? [] : ["-Live32Web", "YES"]))
+        let q = "Can you print for me a table of the last 10 Lakeview harbour masters up until today"
+        ask(app, q, first: true)
+        let searched = get("/weblog").dropFirst(w0).filter { $0["provider"] as? String == "tavily" }.compactMap { $0["query"] as? String }
+        let answer = get("/chatlog").dropFirst(c0).filter { ($0["user_head"] as? String ?? "").contains("harbour") || $0["app_results"] as? Bool == true }
+        let carInTurn = answer.contains { $0["app_results"] as? Bool == true }
+        shot(app, "off-topic-never-passed")
+        note("off-topic: searched \(searched) · model requests \(answer.map { "\($0["app_results"] ?? "-"): \("\($0["user_head"] ?? "")".prefix(60))" }) · row \(shown(app, "nothing relevant"))")
+        // the rewrite is a model's (the Simulator's on-device model where this Mac has Apple Intelligence, else the stub's)
+        XCTAssertTrue(!searched.isEmpty && searched.allSatisfy { $0.lowercased().contains("harbour master") }, "the search didn't use a rewrite's query: \(searched)")
+        XCTAssertFalse(searched.contains { $0.lowercased().hasPrefix("can you print") }, "the raw sentence was searched")
+        XCTAssertFalse(carInTurn, "the off-topic page reached the model")
+        XCTAssertTrue(shown(app, "nothing relevant"), "no 'nothing relevant' search row")
+        app.terminate()
+    }
+
     /// The Server route (an LM Studio-style thinking model): a web turn asks for reasoning off, and no thinking reaches the answer.
     func testServerThinkingOff() throws {
         let c0 = get("/chatlog").count

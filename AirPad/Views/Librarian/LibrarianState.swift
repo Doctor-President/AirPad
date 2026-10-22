@@ -761,18 +761,18 @@ final class LibrarianState {
             WebTrace.shared.note("plan", ["prefetch": plan.prefetch, "followUp": plan.followUp,
                                           "asksCurrentState": WebGrounding.asksCurrentState(query),
                                           "searchIntent": Self.looksLikeSearchIntent(query),
-                                          "factual": WebGrounding.isFactualQuestion(query),
-                                          "freshness": WebGrounding.isFreshnessQuestion(query)])
+                                          "factual": WebGrounding.isFactualQuestion(query)])
             #endif
-            var appQuery: String? = nil
+            // live-33 — every search the app runs is the rewrite's query (`WebEvidence.searchQuery`), Wikipedia the same.
+            var appQuery: (query: String, wikiQuery: String)? = nil
             if prefetch != .none, !WebGrounding.live30 {
-                let (q, how) = await AppleWebGrounding.searchQuery(for: query, chat: chat)
-                appQuery = q
+                let q = await WebEvidence.searchQuery(for: query, chat: chat)
+                appQuery = (q.query, q.wikiQuery)
                 #if DEBUG
-                AppleWebGrounding.debugLastQuery = q
-                AppleWebGrounding.debugLastHow = how
-                NSLog("[HostWeb] query (%@%@): %@", how, plan.followUp ? ", follow-up" : "", q)
-                WebTrace.shared.note("query", ["query": q, "how": how])
+                AppleWebGrounding.debugLastQuery = q.query
+                AppleWebGrounding.debugLastHow = q.how
+                NSLog("[HostWeb] query (%@%@): %@", q.how, plan.followUp ? ", follow-up" : "", q.query)
+                WebTrace.shared.note("query", ["query": q.query, "wikiQuery": q.wikiQuery, "how": q.how, "rewriteMs": q.ms])
                 #endif
             }
             let didRetry = await chat.sendWithTools(displayText: query,
@@ -780,7 +780,7 @@ final class LibrarianState {
                                                     executor: WebSearchBackend.make(),
                                                     forceWebSearch: forceWeb,
                                                     prefetch: prefetch,
-                                                    appQuery: appQuery)
+                                                    appQuery: appQuery?.query, wikiQuery: appQuery?.wikiQuery)
             Self.logGeneralTurn(query: query, scope: selectedScope,
                                 tool: prefetch != .none ? "app-\(prefetch.rawValue)" : (forceWeb ? "required" : "declared"),
                                 retry: didRetry, store: store)
@@ -881,47 +881,41 @@ final class LibrarianState {
     /// `webKey: false` (live-32) — no search key: Wikipedia only; nothing is sent (false) when it has no passage.
     @discardableResult
     private func appleWebSend(query: String, chat: ChatSession, webKey: Bool = true) async -> Bool {
-        let (searchQuery, how) = await AppleWebGrounding.searchQuery(for: query, chat: chat)
+        // live-33 — the pipeline (`WebEvidence`): the rewrite's query → the provider's results with their text + the
+        // Wikipedia articles for the same query → the passages reranked by meaning on-device → those, numbered by source.
+        let sq = await WebEvidence.searchQuery(for: query, chat: chat)
+        let searchQuery = sq.query
         #if DEBUG
         AppleWebGrounding.debugLastQuery = searchQuery
-        AppleWebGrounding.debugLastHow = how
-        NSLog("[AppleWeb] query (%@): %@", how, searchQuery)
+        AppleWebGrounding.debugLastHow = sq.how
+        NSLog("[AppleWeb] query (%@): %@", sq.how, searchQuery)
         WebTrace.shared.beginTurn(query)
-        WebTrace.shared.note("query", ["query": searchQuery, "how": how, "path": webKey ? "app-search" : "wikipedia-only"])
+        WebTrace.shared.note("query", ["query": searchQuery, "wikiQuery": sq.wikiQuery, "how": sq.how, "rewriteMs": sq.ms,
+                                       "path": webKey ? "app-search" : "wikipedia-only"])
+        let fetchStart = WebTrace.shared.ms
         #endif
-        // live-32 (2) — Wikipedia alongside the search (keyless; the same switch).
-        async let wikiPassage = WikipediaGrounding.passage(question: query, query: searchQuery)
+        async let wikiSources = WikipediaGrounding.sources(query: sq.wikiQuery)
         var result = ToolResult(textForModel: "", links: [])
         if webKey {
             result = await WebSearchBackend.make().execute(name: AgentTools.webSearch,
                                                            arguments: ["query": searchQuery, "count": AppleWebQuery.requestCount])
         }
-        let news = WebGrounding.wantsNews(query)
-        var links = (news ? WebGrounding.rank(result.links) : result.links)
-            .filter { AppleWebGrounding.live29 || !AppleWebQuery.isSocial($0.url) }
-        let wiki = await wikiPassage
+        let web = result.links.filter { AppleWebGrounding.live29 || !AppleWebQuery.isSocial($0.url) }
+        let wiki = await wikiSources
+        // the meaning to match: the query without the app's freshness year (that is for the provider)
+        let rr = await WebEvidence.rerank(query: sq.wikiQuery, sources: wiki + web.map(WebEvidence.source), budget: WebEvidence.appleBudget)
+        let links = rr.links
         #if DEBUG
-        WebTrace.shared.note("tool", ["name": "web_search", "id": "app_search", "startMs": 0, "args": ["query": searchQuery],
+        WebTrace.shared.note("tool", ["name": "web_search", "id": "app_search", "startMs": fetchStart, "args": ["query": searchQuery],
                                       "links": WebTrace.links(result.links), "failed": result.failed, "rateLimited": result.rateLimited, "text": ""])
-        if let wiki { WebTrace.shared.note("tool", ["name": "wikipedia", "id": "app_wiki", "startMs": 0, "url": wiki.url, "args": ["title": wiki.title],
-                                                    "links": WebTrace.links([WikipediaGrounding.link(wiki)]), "failed": false, "rateLimited": false, "text": wiki.text]) }
+        WebTrace.shared.note("rerank", WebTrace.rerank(rr))
         #endif
-        let current = !WikipediaGrounding.live31
-            && (WebGrounding.asksCurrentState(query) || WebGrounding.asksCurrentState(searchQuery) || AppleWebQuery.isCorrection(query))
-        if !WikipediaGrounding.live31 {
-            let terms = WebGrounding.evidenceTerms(searchQuery)
-            links = links.map { l in
-                ToolLink(title: l.title, url: l.url, snippet: l.snippet.map { WebGrounding.relevantWindow($0, terms: terms, cap: AppleWebGrounding.snippetCap) },
-                         published: l.published)
-            }
-            if let wiki { links = [WikipediaGrounding.link(wiki)] + links.filter { WebGrounding.normalize($0.url) != WebGrounding.normalize(wiki.url) } }
-            if current { links = WebGrounding.currentStateLinks(links, now: Date()) }
-        }
-        if !webKey && wiki == nil { return false }
+        if !webKey && links.isEmpty { return false }
         let searched = webKey ? !result.unavailable && !result.rateLimited : true
-        let label = links.isEmpty ? "Searched the web — no results"
-            : wiki != nil ? (webKey ? "Searched the web and Wikipedia" : "Read Wikipedia") : "Searched the web"
-        // the row shows the query (a follow-up's fallback carries it as the topic — `previousSearchQuery`)
+        let hasWiki = links.contains(where: WikipediaGrounding.isPassage)
+        let label = links.isEmpty ? "Searched the web — nothing relevant"   // nothing came back, or nothing cleared the rerank
+            : hasWiki ? (webKey ? "Searched the web and Wikipedia" : "Read Wikipedia") : "Searched the web"
+        // the row shows the query and the sources the model saw
         let row = ChatSession.ToolActivity(icon: "magnifyingglass", label: label, detail: searchQuery, links: links)
         guard !links.isEmpty else {
             await chat.send(displayText: query, modelText: query, systemPrompt: privateSystemPrompt, citations: nil,
@@ -929,8 +923,7 @@ final class LibrarianState {
             return true
         }
         let pk = AppleWebGrounding.packet(links: links)
-        let turn = AppleWebGrounding.turn(question: query, query: searchQuery, results: pk.results, voice: Self.plainVoice + standingVoiceSuffix,
-                                          currentState: current)
+        let turn = AppleWebGrounding.turn(question: query, query: searchQuery, results: pk.results, voice: Self.plainVoice + standingVoiceSuffix)
         await chat.send(displayText: query, modelText: turn.modelText, systemPrompt: turn.systemPrompt,
                         citations: pk.citations, generalKnowledge: true, webResults: pk.citations.count,
                         searchActivity: AppleWebGrounding.live29 ? nil : row)

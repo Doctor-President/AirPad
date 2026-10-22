@@ -7,8 +7,11 @@ import XCTest
 final class LiveWebUI: XCTestCase {
     private var env: [String: String] { ProcessInfo.processInfo.environment }
 
-    private func askGeneral(_ app: XCUIApplication, _ q: String, first: Bool) {
-        if first {
+    /// live-33 — a question starting "LIB:" is asked in Library mode (it must not search).
+    private func askGeneral(_ app: XCUIApplication, _ q0: String, first: Bool) {
+        let library = q0.hasPrefix("LIB:")
+        let q = library ? String(q0.dropFirst(4)) : q0
+        if first && !library {
             let lib = app.buttons["Library mode"]
             if lib.waitForExistence(timeout: 30) { lib.tap() }
             XCTAssertTrue(app.buttons["General mode"].waitForExistence(timeout: 5), "could not switch to General")

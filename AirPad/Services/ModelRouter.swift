@@ -2453,8 +2453,8 @@ final class BraveSearchToolExecutor: ToolExecutor, @unchecked Sendable {
         return results.prefix(cap).compactMap { r -> ToolLink? in
             guard let title = r["title"] as? String, let urlStr = r["url"] as? String, !urlStr.isEmpty else { return nil }
             let cleanTitle = WebGrounding.cleanResultText(title)   // live-29 (B3)
-            // live-32 (2) — the description and Brave's extra snippets, up to `resultTextCap`: the packet keeps the part that
-            // answers (`WebGrounding.relevantWindow`), not the first 300 characters.
+            // live-32 (2) — the description and Brave's extra snippets, up to `resultTextCap`: live-33's rerank keeps the
+            // passages that answer (`WebEvidence`), not the first 300 characters.
             let extra = WikipediaGrounding.live31 ? [] : (r["extra_snippets"] as? [String] ?? [])
             let raw = ([(r["description"] as? String) ?? ""] + extra).filter { !$0.isEmpty }.joined(separator: " … ")
             let snippet = raw.isEmpty ? nil : WebGrounding.cleanResultText(raw, cap: WebGrounding.resultTextCap)   // live-29 (B3)

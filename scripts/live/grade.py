@@ -20,6 +20,7 @@ for r in rows:
     elif cur: cur["rows"].append(r)
 
 def turn_for(q, used):
+    q = q[4:] if q.startswith("LIB:") else q
     for i, t in enumerate(turns):
         if i not in used and t["q"].strip() == q.strip(): used.add(i); return t
     return None
@@ -37,7 +38,7 @@ def grade_turn(c, t):
     # what each source said: search results' snippets, read pages' text
     said = {}
     for r in (t["rows"] if t else []):
-        if r["kind"] == "tool":
+        if r["kind"] in ("tool", "rerank"):   # live-33: the passages the model saw are in the rerank row
             for l in r.get("links", []):
                 u = norm(l["url"]); said[u] = said.get(u, "") + " " + (l.get("title", "") + " " + l.get("snippet", "")).lower()
             if r.get("name") in ("fetch_url", "wikipedia") or r.get("url"):
@@ -56,8 +57,23 @@ def grade_turn(c, t):
         st["model"] = next((r.get("model") for r in t["rows"] if r["kind"] == "step"), "")
         st["query"] = q["query"] if q else ""
         st["prefetch"] = next((r.get("prefetch") for r in t["rows"] if r["kind"] == "plan"), "")
-    ok = names and bool(supports) and not stale and not think
-    return {"answered": bool(text), "names": names, "cites": bool(supports), "passedAny": len(passed_any), "stale": stale,
+    # live-33 — what the answer was given: the query, each source passed (Wikipedia among them?), a Library turn unsearched
+    srcs = [l for r in (t["rows"] if t else []) if r["kind"] == "tool" for l in r.get("links", [])]
+    # what the model saw: the URLs in the first model step's request (the results in the turn, or tool messages)
+    step = next((r for r in (t["rows"] if t else []) if r["kind"] == "step"), None)
+    seen = " ".join(m.get("content", "") for m in (step or {}).get("messages", []) if m.get("role") in ("user", "tool"))
+    seen_hosts = []
+    for u in re.findall(r"https?://[^\s)\]]+", seen):
+        h = re.sub(r"^https?://(www\.)?", "", u).split("/")[0]
+        if h not in seen_hosts: seen_hosts.append(h)
+    wiki = any("wikipedia.org" in h for h in seen_hosts)
+    searched = any(r["kind"] == "tool" for r in (t["rows"] if t else []))
+    if c.get("nosearch"):
+        return {"answered": True, "names": True, "cites": True, "passedAny": 0, "stale": [], "thinking": [], "pass": not searched,
+                "stages": {"query": "(searched!)" if searched else "(no search)"}, "answer": text[:300], "cited": [], "wiki": False,
+                "sources": []}
+    ok = names and (bool(supports) or c.get("nocite", False)) and not stale and not think and (wiki or not c.get("wiki"))
+    return {"wiki": wiki, "sources": seen_hosts,"answered": bool(text), "names": names, "cites": bool(supports), "passedAny": len(passed_any), "stale": stale,
             "thinking": think, "pass": ok, "stages": st, "answer": text[:1500], "cited": cited}
 
 out = []
@@ -70,10 +86,10 @@ for c in cases:
         if t is None: g["note"] = "turn not in trace"
         out.append(g)
 json.dump(out, open(os.path.join(OUT, "grades.json"), "w"), indent=1, ensure_ascii=False)
-lines = ["| case | pass | names | cites | stale | thinking | total | query | stages |", "|---|---|---|---|---|---|---|---|---|"]
+lines = ["| case | pass | names | cites | wiki | stale | thinking | total | query | sources | stages |", "|---|---|---|---|---|---|---|---|---|---|---|"]
 for g in out:
     s = g["stages"]
-    lines.append(f'| {g["id"]} | {"PASS" if g["pass"] else "FAIL"} | {"y" if g["names"] else "n"} | {"y" if g["cites"] else "n"} ({g["passedAny"]} sources name it) | {"; ".join(g["stale"]) or "-"} | {", ".join(g["thinking"]) or "-"} | {s.get("total_s")} s | {s.get("query","")} | rewrite {s.get("rewrite_s")} s · {", ".join(s.get("tools", []))} · steps {"; ".join(s.get("steps", []))} |')
+    lines.append(f'| {g["id"]} | {"PASS" if g["pass"] else "FAIL"} | {"y" if g["names"] else "n"} | {"y" if g["cites"] else "n"} ({g["passedAny"]} sources name it) | {"y" if g.get("wiki") else "n"} | {"; ".join(g["stale"]) or "-"} | {", ".join(g["thinking"]) or "-"} | {s.get("total_s")} s | {s.get("query","")} | {", ".join(g.get("sources", []))} | rewrite {s.get("rewrite_s")} s · {", ".join(s.get("tools", []))} · steps {"; ".join(s.get("steps", []))} |')
 lines.append(f'\n**{sum(g["pass"] for g in out)}/{len(out)} pass** · names {sum(g["names"] for g in out)} · cites {sum(g["cites"] for g in out)} · stale {sum(bool(g["stale"]) for g in out)} · thinking {sum(bool(g["thinking"]) for g in out)}')
 open(os.path.join(OUT, "table.md"), "w").write("\n".join(lines) + "\n")
 print("\n".join(lines))

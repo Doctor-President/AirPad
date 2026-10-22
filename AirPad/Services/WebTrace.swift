@@ -35,6 +35,14 @@ final class WebTrace: @unchecked Sendable {
         else { try? data.write(to: url) }
     }
 
+    /// live-33 — the rerank: every passage's source, score and whether the model saw it; the time it took.
+    static func rerank(_ r: (links: [ToolLink], scored: [WebEvidence.Scored], ms: Int, sources: [WebEvidence.Source])) -> [String: Any] {
+        let sources = r.sources
+        return ["ms": r.ms, "floor": WebEvidence.floor, "kept": r.scored.filter(\.kept).count, "passages": r.scored.map { p in
+            ["url": sources.indices.contains(p.source) ? sources[p.source].url : "", "score": Double(p.score), "kept": p.kept,
+             "text": String(p.text.prefix(160))] as [String: Any]
+        }, "links": links(r.links)]
+    }
     static func links(_ links: [ToolLink]) -> [[String: Any]] {
         links.map { l in
             ["title": l.title, "url": l.url, "host": URL(string: l.url)?.host ?? "", "snippet": l.snippet ?? "",

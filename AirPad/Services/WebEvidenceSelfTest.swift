@@ -28,7 +28,8 @@ enum WebEvidenceSelfTest {
         WebEvidence.debugRewrite = .some("US presidents list")
         let q1 = await WebEvidence.searchQuery(for: tSentence, chat: fresh, now: now)
         WebEvidence.debugRewrite = nil
-        row("every-search-uses-the-rewrite-no-year-added", q1.how.hasPrefix("rewritten") && q1.query == "US presidents list" && q1.wikiQuery == "US presidents list",
+        row("every-search-uses-the-rewrite", q1.how.hasPrefix("rewritten") && q1.query == "US presidents list" + (Live35.red ? "" : " 2026")
+            && q1.wikiQuery == "US presidents list",
             "\(q1.how): \(q1.query) | wiki: \(q1.wikiQuery)")
         AppleWebGrounding.debugRewriteFails = true
         let q2 = await WebEvidence.searchQuery(for: tSentence, chat: fresh, now: now)
@@ -48,8 +49,23 @@ enum WebEvidenceSelfTest {
         WebEvidence.debugRewrite = .some("Treaty of Westphalia 1648 aftermath")
         let q4 = await WebEvidence.searchQuery(for: "What happened after the 1648 treaty?", chat: fresh, now: now)
         WebEvidence.debugRewrite = nil
-        row("model-years-stripped-no-year-added-typed-year-kept", q3.query == "List of US presidents" && q4.query == "Treaty of Westphalia 1648 aftermath",
-            "\(q3.query) | \(q4.query)")
+        row("model-years-stripped-typed-year-kept", q3.query == "List of US presidents" + (Live35.red ? "" : " 2026")
+            && q4.query == "Treaty of Westphalia 1648 aftermath", "\(q3.query) | \(q4.query)")
+        // live-35 (1) — today's year back on a current-state query only: news keeps the provider window (no year),
+        // timeless gets neither; Wikipedia never gets the year.
+        var yr: [String] = []
+        for (question, rewrite) in [(tSentence, "List of US presidents"), ("Who is Japan's prime minister?", "Japan prime minister"),
+                                    ("what happened in the news today?", "top news headlines today"),
+                                    ("Why is the sky blue?", "why is the sky blue")] {
+            WebEvidence.debugRewrite = .some(rewrite)
+            let r = await WebEvidence.searchQuery(for: question, chat: fresh, now: now)
+            yr.append(r.query + " | wiki: " + r.wikiQuery)
+        }
+        WebEvidence.debugRewrite = nil
+        row("year-back-on-current-state-only-not-news-not-timeless",
+            yr == ["List of US presidents 2026 | wiki: List of US presidents", "Japan prime minister 2026 | wiki: Japan prime minister",
+                   "top news headlines today | wiki: top news headlines today", "why is the sky blue | wiki: why is the sky blue"],
+            yr.joined(separator: " · "))
         let fr = [("what happened in the news today?", SearchFreshness.day), ("any news on the Lakeview election this week?", .week),
                   ("Who is the chancellor of Germany?", SearchFreshness.currentState), ("Why is the sky blue?", .none),
                   ("What is the capital of Australia?", .none)]
@@ -218,7 +234,7 @@ enum WebEvidenceSelfTest {
 
         let passed = rows.filter { $0.1 }.count
         let lines = rows.map { "\($0.1 ? "ok  " : "BAD ") \($0.0)\($0.2.isEmpty ? "" : " — \($0.2)")" }.joined(separator: "\n")
-        return "\(passed == rows.count ? "PASS" : "FAIL") — \(passed)/\(rows.count)\(red ? " (RED: -Live32Web)" : Live34.red ? " (RED: -Live33Web)" : "")\n\(lines)"
+        return "\(passed == rows.count ? "PASS" : "FAIL") — \(passed)/\(rows.count)\(red ? " (RED: -Live32Web)" : Live34.red ? " (RED: -Live33Web)" : Live35.red ? " (RED: -Live34Web)" : "")\n\(lines)"
     }
 }
 

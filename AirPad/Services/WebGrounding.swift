@@ -1054,3 +1054,17 @@ enum TrainingCutoff {
         return systemPrompt.replacingCharacters(in: r, with: "Your training data ends around \(c); today's real date is ")
     }
 }
+
+// MARK: - live-35
+
+/// DEBUG `-Live34Web YES` — live-34's behaviour (the RED baseline for the live-35 rows): no year on a current-state
+/// query, and inline math shown as the model wrote it (raw `$…$`). Always false in Release.
+enum Live35 {
+    static var red: Bool {
+        #if DEBUG
+        UserDefaults.standard.bool(forKey: "Live34Web")
+        #else
+        false
+        #endif
+    }
+}

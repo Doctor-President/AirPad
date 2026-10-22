@@ -270,3 +270,73 @@ enum MarkdownBlockParserSelfTest {
         }
     }
 }
+
+/// live-35 (2) — inline math renders as plain text, dollar amounts never do. Launch arg `-MathTextSelfTest`;
+/// RED `-Live34Web YES` (raw `$…$`, as live-34 showed it).
+enum MathTextSelfTest {
+    static func run() -> String {
+        var rows: [(String, Bool, String)] = []
+        func row(_ name: String, _ ok: Bool, _ detail: String) { rows.append((name, ok, detail)) }
+        func text(_ blocks: [MarkdownBlock]) -> [String] {
+            blocks.map {
+                switch $0 {
+                case let .heading(_, t), let .paragraph(t), let .bullet(t), let .numbered(_, t): return t
+                case let .codeBlock(c): return "CODE[" + c + "]"
+                case let .table(h, r): return (h + r.flatMap { $0 }).joined(separator: " | ")
+                }
+            }
+        }
+        func p(_ s: String, settled: Bool = true) -> [String] { text(MarkdownBlockParser.parse(s, settled: settled)) }
+
+        // T's three lines (TF 202610220047, the server's working for "how many days")
+        let t = p("- October: $31 - 6 = 25$ days\n- Months since: $25 + 30 + 31 + 31 + 30 + 22 = 169$\n- Total: $365 + 169 =$ **534 days**")
+        row("T's-working-without-dollar-signs", t == ["October: 31 - 6 = 25 days", "Months since: 25 + 30 + 31 + 31 + 30 + 22 = 169",
+                                                      "Total: 365 + 169 = **534 days**"], t.joined(separator: " ¶ "))
+        // Dollar amounts are never math.
+        let money = ["$5 and $10", "it costs $1,200.", "between $5-$10 a month, or $50/$100 a year", "US$5 or US$10"]
+        let m = money.flatMap { p($0) }
+        row("dollar-amounts-unchanged", m == money, m.joined(separator: " ¶ "))
+        // A Library answer with a price (the corpus path renders through the same parser).
+        let lib = "The lamp in **Living room ideas** costs $45 [1], and the shade is $12.50 — $57.50 in all [2]."
+        row("library-answer-with-a-price-unchanged", p(lib) == [lib], p(lib).joined())
+        // Display blocks: simple → a paragraph of plain text; complex → a monospaced block.
+        let d = p("The total:\n\n$$\n365 + 169 = 534\n$$\n\nand\n\n\\[ \\frac{a}{b} \\times 2 \\]\n\n$$\\int_0^1 x\\,dx$$")
+        row("display-blocks", d == ["The total:", "365 + 169 = 534", "and", "a/b × 2", "CODE[\\int_0^1 x\\,dx]"], d.joined(separator: " ¶ "))
+        // Common commands → their symbols; \( … \) too.
+        let c = p("$2 \\times 3 \\div 4 \\cdot 5$, $a \\le b \\ge c \\neq d \\approx e \\pm f$, $x^2 + y^3$, $\\sqrt{16} = 4$, "
+                  + "$\\frac{1}{2}$, $\\text{days} = 534$ and \\(3 \\times 4 = 12\\)")
+        row("commands-mapped", c == ["2 × 3 ÷ 4 · 5, a ≤ b ≥ c ≠ d ≈ e ± f, x² + y³, √16 = 4, 1/2, days = 534 and 3 × 4 = 12"], c.joined())
+        // Anything more complex → a code span (monospaced), never raw `$`; a code span stays as written.
+        let x = p("Area: $\\int_0^1 f(x)\\,dx$; shell: `echo $HOME$`")
+        row("complex-→-monospaced-code-stays", x == ["Area: `\\int_0^1 f(x)\\,dx`; shell: `echo $HOME$`"], x.joined())
+        // A table cell.
+        let tb = p("| Step | Working |\n|---|---|\n| 1 | $31 - 6 = 25$ |")
+        row("table-cell", tb == ["Step | Working | 1 | 31 - 6 = 25"], tb.joined())
+        // Streaming: every prefix of the answer, as the tail parses it — math appears once its closing `$` is confirmed
+        // and never flips back; "$5 and $1…" never becomes math.
+        func stream(_ full: String, final: String, inlineCloser: Bool) -> (ok: Bool, detail: String) {
+            var converted = false, flips = 0, early = 0
+            let ch = Array(full)
+            for k in 1...ch.count {
+                let s = String(ch[0..<k]), out = p(s, settled: false).joined(separator: " ¶ ")
+                let isMath = !out.contains("$") && s.contains("$")
+                if converted && !isMath { flips += 1 }
+                if inlineCloser && isMath && s.hasSuffix("$") { early += 1 }   // a closing `$` that is the last character must wait
+                converted = converted || isMath
+            }
+            let last = p(full).joined()
+            return (flips == 0 && early == 0 && last == final, "flips=\(flips) early=\(early) final=\(last)")
+        }
+        let s1 = stream("So $31 - 6 = 25$ days.", final: "So 31 - 6 = 25 days.", inlineCloser: true)
+        var s2ok = true
+        for k in 1...10 { if p(String(Array("$5 and $10.")[0..<k]), settled: false).joined().contains("5 and") && !p(String(Array("$5 and $10.")[0..<k]), settled: false).joined().contains("$") { s2ok = false } }
+        let s3 = stream("Intro.\n\n$$\n365 + 169 = 534\n$$\n\nDone.", final: "Intro.365 + 169 = 534Done.", inlineCloser: false)
+        let held = p("Intro.\n\n$$\n365 + 169", settled: false)
+        row("streaming-no-flicker", s1.ok && s2ok && s3.ok && held == ["Intro."],
+            "\(s1.detail) · money=\(s2ok) · display \(s3.detail) · held=\(held)")
+
+        let passed = rows.filter(\.1).count
+        let lines = rows.map { "\($0.1 ? "✓" : "✗") \($0.0) — \($0.2)" }.joined(separator: "\n")
+        return "\(passed == rows.count ? "PASS" : "FAIL") — \(passed)/\(rows.count)\(Live35.red ? " (RED: -Live34Web)" : "")\n\(lines)"
+    }
+}

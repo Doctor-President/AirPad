@@ -44,7 +44,9 @@ final class LiveWebUI: XCTestCase {
             for (n, q) in chat.enumerated() {
                 askGeneral(app, q, first: n == 0)
                 let t0 = Date()
-                _ = stop.waitForExistence(timeout: 15)
+                // live-36 — a slow model (30B-A3B: rewrite + search + prefill) can take > 15 s to start answering; the turn
+                // isn't over until its Stop button has come and gone
+                _ = stop.waitForExistence(timeout: Double(env["LIVE_START_TIMEOUT"] ?? "") ?? 90)
                 while stop.exists && Date().timeIntervalSince(t0) < turnTimeout { Thread.sleep(forTimeInterval: 1) }
                 let secs = Int(Date().timeIntervalSince(t0))
                 let done = !stop.exists

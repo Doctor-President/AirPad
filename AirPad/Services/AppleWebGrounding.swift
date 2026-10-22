@@ -150,9 +150,10 @@ enum AppleWebSelfTest {
         let y = String(Calendar(identifier: .gregorian).component(.year, from: Date()))
         row("follow-up-searches-the-rewrite", AppleWebGrounding.debugLastHow == "rewritten on-device" && AppleWebGrounding.debugLastQuery.contains("Lakeview"),
             "\(AppleWebGrounding.debugLastHow): \(AppleWebGrounding.debugLastQuery)")
-        // live-34 (1): the model's stale year goes and none is added (the provider's freshness filter does that job)
+        // live-35 (1): the model's stale year goes and, on this current-state follow-up ("…now?"), today's year is added
+        // (live-34 added none; the first turn above is news → no year)
         row("year-rule-on-the-rewrite", !AppleWebGrounding.debugLastQuery.contains("2024")
-            && (Live34.red ? AppleWebGrounding.debugLastQuery.hasSuffix(y) : !AppleWebGrounding.debugLastQuery.contains(y)),
+            && (Live34.red || !Live35.red ? AppleWebGrounding.debugLastQuery.hasSuffix(y) : !AppleWebGrounding.debugLastQuery.contains(y)),
             AppleWebGrounding.debugLastQuery)
         // The rewrite fails → the previous search's query + the new question.
         let before = AppleWebGrounding.debugLastQuery

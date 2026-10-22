@@ -1171,6 +1171,9 @@ final class CorpusStore {
             if ProcessInfo.processInfo.arguments.contains("-HostWebSelfTest") {
                 Task { @MainActor in NSLog("[HostWebSelfTest] %@", await HostWebSelfTest.run()) }
             }
+            if ProcessInfo.processInfo.arguments.contains("-MathTextSelfTest") {   // live-35 (2)
+                NSLog("[MathTextSelfTest] %@", MathTextSelfTest.run())
+            }
             if ProcessInfo.processInfo.arguments.contains("-WebEvidenceSelfTest") {   // live-32 (2)
                 Task { @MainActor in NSLog("[WebEvidenceSelfTest] %@", await WebEvidenceSelfTest.run()) }
             }

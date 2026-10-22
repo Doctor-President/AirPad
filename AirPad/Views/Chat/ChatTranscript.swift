@@ -509,7 +509,7 @@ struct StreamingTail: View {
         // Parse the CONCATENATION, never the two strings separately: the
         // revealed/pending split is a character boundary, not a block one, so
         // parsing apart would split one paragraph into two blocks with a seam.
-        let newBlocks = MarkdownBlockParser.parse(revealedText + pendingText)
+        let newBlocks = MarkdownBlockParser.parse(revealedText + pendingText, settled: false)
         // Fade off BLOCK COUNT, not chunk arrival: a chunk that only extends
         // the current last block must not re-fade text the user is reading.
         let gainedBlock = newBlocks.count > blocks.count

@@ -6,8 +6,8 @@ import Foundation
 /// - Only a URL this turn's `web_search` / `fetch_url` returned (or the user typed) may appear in an answer; every
 ///   other URL is stripped, and a source list the model writes itself is removed — the app builds the source list
 ///   from the results the answer cited (`WebAnswerFilter`).
-/// - Each result's age goes into the packet as a computed fact, and on a today/latest question fresh results are
-///   ranked first in code (`packet`, `rank`).
+/// - Each result's date goes into the packet (`packet`). (live-33: the fresh-first ranking and its computed-fact notes
+///   went — the passages are reranked by meaning, `WebEvidence`.)
 /// - A factual question with a key is searched and its top result read before the model answers
 ///   (`isFactualQuestion`); an answer with no web result behind it carries `generalKnowledgeNote`.
 enum WebGrounding {
@@ -57,12 +57,6 @@ enum WebGrounding {
             || q.range(of: #"\blatest (on|about|from|in)\b"#, options: [.regularExpression, .caseInsensitive]) != nil
     }
 
-    /// A today/latest question: rank fresh results first and state each result's age.
-    static func isFreshnessQuestion(_ q: String) -> Bool {
-        q.range(of: #"\b(today|tonight|this (morning|afternoon|evening|week)|yesterday|latest|newest|most recent|recent(ly)?|current(ly)?|right now|breaking|news|headlines?)\b"#,
-                options: [.regularExpression, .caseInsensitive]) != nil
-    }
-
     /// A question about the world that a web page can answer: a wh-/yes-no question or "explain/describe/define/tell
     /// me about …". NOT arithmetic, NOT about the user (I/my/we), NOT a request to make something (write, translate,
     /// plan, recommend …) or for an opinion. Deliberately simple — a miss only means the turn isn't searched up front.
@@ -93,6 +87,8 @@ enum WebGrounding {
         if has(#"\b(current(ly)?|living|alive|still|latest|newest|now|nowadays|today|this year|incumbent|sitting)\b"#) { return true }
         // The people holding an office (who holds it changes).
         if has(#"\b(presidents?|prime ministers?|premiers?|chancellors?|governors?|mayors?|senators?|ceos?|monarchs?|kings?|queens?|popes?|secretar(y|ies)[- ]general|chief justices?|world champions?|record holders?)\b"#) { return true }
+        // live-32 — "the most recent Super Bowl", "the reigning champion": who holds it now (qwen3:4b answered 2023's winner).
+        if !WikipediaGrounding.live31, has(#"\b(most recent|reigning|defending champions?|title holders?)\b"#) { return true }
         // live-31 (3) — not about the user ("my grandfather died last year" isn't a lookup).
         guard !live30, !has(#"\b(i|i'm|i've|my|me|we|our)\b"#) else { return false }
         // live-31 (3) — who has died (T: a presidents table left out a president who died after the model's training).
@@ -126,25 +122,33 @@ enum WebGrounding {
     /// question, a search-intent one, or a real follow-up to an answer that searched; `.searchAndFetch` for another
     /// factual question (search, then read the top result); nothing otherwise (the model may still search).
     static func hostPrefetch(_ q: String, searchIntent: Bool, lastAnswerSearched: Bool) -> (prefetch: String, followUp: Bool) {
-        let followUp = !live30 && lastAnswerSearched && AppleWebQuery.isFollowUpQuestion(q)
+        let followUp = !live30 && lastAnswerSearched
+            && (AppleWebQuery.isFollowUpQuestion(q) || (!WikipediaGrounding.live31 && AppleWebQuery.isCorrection(q)))
         if searchIntent || asksCurrentState(q) || followUp { return ("search", followUp) }
         return (isFactualQuestion(q) ? "searchAndFetch" : "none", false)
     }
 
-    /// The results a Host turn uses: social / video hosts out (as on the Apple path), then the top five.
-    static let hostResultCount = 5
+    /// The results a Host turn uses: social / video hosts out (as on the Apple path). live-33: no top-five cut — the
+    /// rerank picks the passages (`WebEvidence`).
     static func hostLinks(_ links: [ToolLink]) -> [ToolLink] {
-        live30 ? links : Array(links.filter { !AppleWebQuery.isSocial($0.url) }.prefix(hostResultCount))
+        live30 ? links : links.filter { !AppleWebQuery.isSocial($0.url) }
     }
 
     /// The Host turn with the app's results IN it (the A1-C framing: the app's search today, not the user's), the
-    /// question last. The packet is the Host path's own (numbered, dated, the freshness facts).
-    static func appSearchTurn(query: String, question: String, links: [ToolLink], now: Date, freshness: Bool) -> String {
-        "Web results the app found today (\(dayString(now))) for \"\(query)\":\n\n" + packet(links, start: 0, now: now, freshness: freshness)
+    /// question last. The packet is the Host path's own (numbered by source, dated).
+    static func appSearchTurn(query: String, question: String, links: [ToolLink], now: Date) -> String {
+        "Web results the app found today (\(dayString(now))) for \"\(query)\":\n\n" + packet(links, start: 0, now: now)
             + "\n\nQuestion: \(question)"
     }
-    /// … and the line the system prompt gains for it.
-    static let appSearchClause = "Some questions come with web results the app found for them today; they come from the app's search, not from the user, who hasn't seen them. Answer from them in your own words and put the result's number in brackets, like [1], after each fact you take from one. If they don't answer the question, search again with web_search or say so plainly."
+    /// … and the lines the system prompt gains for it (live-33: the whole of the web rules — where the results come from,
+    /// that they beat memory, the citation, the honest line).
+    static let appSearchClause = "Some questions come with web results the app found for them today; they come from the app's search, not from the user, who hasn't seen them. " + sourcesRule + " Answer from them in your own words and put the result's number in brackets, like [1], after each fact you take from one. If they don't answer the question, search again with web_search or say so plainly."
+    /// live-33 — the one knowledge-conflict line (it replaces live-32's evidence block).
+    static let sourcesRule = "When the results and what you remember disagree, the results are right: they are newer than your training."
+
+    /// How much of a result's text the parsers keep (live-31: 300); the rerank then keeps the passages that answer.
+    static var resultTextCap: Int { WikipediaGrounding.live31 ? 300 : 1_200 }
+
 
     /// The keywords of a news question, for Brave's NEWS endpoint (which matches the whole question poorly: "What's
     /// the top news in Mexico today?" returned U.S. live blogs; "Mexico" returns Mexican news). Empty → nil.
@@ -272,83 +276,15 @@ enum WebGrounding {
         return f.string(from: d)
     }
 
-    /// A section / front page (e.g. `reuters.com/world/`, `apnews.com/hub/mexico`, `cnn.com/world/americas/mexico`),
-    /// not an article, judged by URL shape: ≤ 3 path segments, none of them an article slug (≥ 2 hyphens), an id
-    /// (a 4+ digit run) or a page file (.html …). Search providers date such a page by its last UPDATE, so its
-    /// snippet can describe a months-old story under today's date (T's case 2: a 24 June Reuters story as 8 October news).
-    static func isSectionPage(_ url: String) -> Bool {
-        guard let u = URL(string: url), let host = u.host, !host.isEmpty else { return false }
-        let segs = u.path.split(separator: "/").map(String.init)
-        if segs.count > 3 || (u.query?.range(of: #"(^|&)(id|p|story|article)="#, options: .regularExpression) != nil) { return false }
-        for s in segs {
-            if ["article", "articles", "story", "stories", "news-story", "a", "p"].contains(s.lowercased()) { return false }
-            // an opaque id ("c4g8wz2y1xyo"): ≥ 8 chars mixing letters and digits
-            if s.count >= 8, s.contains(where: \.isNumber), s.contains(where: \.isLetter), !s.contains("-") { return false }
-            if s.filter({ $0 == "-" }).count >= 2 { return false }
-            if s.range(of: #"\d{4,}"#, options: .regularExpression) != nil { return false }
-            if s.range(of: #"\.(s?html?|php|aspx?)$"#, options: [.regularExpression, .caseInsensitive]) != nil { return false }
-        }
-        return true
-    }
-
-    static func publishedLine(_ d: Date?, now: Date, freshness: Bool = false, section: Bool = false) -> String {
-        if section, freshness {
-            let when = d.map { "updated \(daysOld($0, now: now) < 1 ? "today" : daysOld($0, now: now) == 1 ? "yesterday" : dayString($0))" } ?? "no date"
-            return "Not a dated news article — a section, front or reference page (\(when)): the stories in its snippet may be older than the page, so this is not a publication date."
-        }
-        guard let d else {
-            return freshness ? "Published: date unknown — this result carries no date (it may be a section or front page, not an article)."
-                             : "Published: date unknown."
-        }
-        let n = daysOld(d, now: now)
-        switch n {
-        case ..<1: return "Published: today (\(dayString(d)))."
-        case 1: return "Published: yesterday (\(dayString(d)))."
-        default: return "Published: \(dayString(d)) — \(n) days before today."
-        }
-    }
-
-    /// Fresh first: dated ARTICLES newest → oldest, then section front pages, then undated; ties keep the
-    /// provider's order.
-    static func rank(_ links: [ToolLink]) -> [ToolLink] {
-        links.enumerated().sorted { a, b in
-            let sa = isSectionPage(a.element.url), sb = isSectionPage(b.element.url)
-            if sa != sb, a.element.published != nil || b.element.published != nil { return !sa }
-            switch (a.element.published, b.element.published) {
-            case let (x?, y?): return x != y ? x > y : a.offset < b.offset
-            case (.some, nil): return true
-            case (nil, .some): return false
-            case (nil, nil): return a.offset < b.offset
-            }
-        }.map(\.element)
-    }
-
-    /// The tool message for one `web_search`: today's date, each result numbered GLOBALLY across the turn with its
-    /// publication date as a computed fact, and — on a today/latest question — which results are actually fresh.
-    static func packet(_ links: [ToolLink], start: Int, now: Date, freshness: Bool) -> String {
-        var out = "Today is \(dayString(now)).\n\n"
-        out += links.enumerated().map { i, l in
-            "[\(start + i + 1)] \(l.title)\n\(l.url)\n\(publishedLine(l.published, now: now, freshness: freshness, section: isSectionPage(l.url)))\n\(l.snippet ?? "")"
+    /// The tool message for one `web_search`: today's date, then each source numbered GLOBALLY across the turn with its
+    /// date and its passages. live-33: no computed-fact notes (fresh / section page / "no article from today") — the date
+    /// is stated, and the rerank decides what is relevant.
+    static func packet(_ links: [ToolLink], start: Int, now: Date) -> String {
+        "Today is \(dayString(now)).\n\n" + links.enumerated().map { i, l in
+            let date = WikipediaGrounding.isPassage(l) ? WikipediaGrounding.editedLine(l.published, now: now)
+                : l.published.map { "Published \(dayString($0))." } ?? ""
+            return ["[\(start + i + 1)] \(l.title)", l.url, date, l.snippet ?? ""].filter { !$0.isEmpty }.joined(separator: "\n")
         }.joined(separator: "\n\n")
-        guard freshness else { return out }
-        // only a dated ARTICLE counts as fresh — a front page's date is its last update
-        let fresh = links.enumerated().filter { e in !isSectionPage(e.element.url) && (e.element.published.map { daysOld($0, now: now) <= 1 } ?? false) }
-            .map { "[\(start + $0.offset + 1)]" }
-        let sections = links.enumerated().filter { isSectionPage($0.element.url) }.map { "[\(start + $0.offset + 1)]" }
-        if fresh.isEmpty {
-            out += "\n\nCOMPUTED FACT: none of these results is a news article from today or yesterday. Say that you found no article from today, and give the date of any story you mention. Never present an older story as today's news."
-            // the model once called a 40-day-old result "the latest" with a 3-day-old one above it — say which is newest
-            if let newest = links.enumerated().filter({ $0.element.published != nil && !isSectionPage($0.element.url) })
-                .max(by: { $0.element.published! < $1.element.published! }) {
-                out += " The newest result is [\(start + newest.offset + 1)], published \(dayString(newest.element.published!))."
-            }
-        } else {
-            out += "\n\nCOMPUTED FACT: only \(fresh.joined(separator: ", ")) \(fresh.count == 1 ? "is a news article" : "are news articles") from today or yesterday. Lead with \(fresh.count == 1 ? "it" : "those"), and give the date of any older story you mention."
-        }
-        if !sections.isEmpty {
-            out += " \(sections.joined(separator: ", ")) \(sections.count == 1 ? "is not a dated news article" : "are not dated news articles") (section, front or reference pages): if you mention a story from \(sections.count == 1 ? "it" : "them"), say it is listed on that page and do not call it today's news unless its snippet gives today's date."
-        }
-        return out
     }
 
     /// The tool message for a `fetch_url` of a numbered result.
@@ -750,30 +686,10 @@ enum WebGroundingSelfTest {
         check("relative age parsed", WebGrounding.parsePublished(pageAge: nil, age: "3 days ago", now: now).map { WebGrounding.daysOld($0, now: now) } == 3)
         let stale = ToolLink(title: "Mexico: Reuters world", url: "https://reuters.example/world/americas/mexico-floods-june-24", snippet: "June story", published: june)
         let hub = ToolLink(title: "Mexico news | Reuters", url: "https://reuters.example/world/mexico/", snippet: "Latest headlines")
-        let fresh = ToolLink(title: "Today in Mexico", url: "https://news.example/mexico/floods-hit-the-north", snippet: "Today", published: now)
-        let ranked = WebGrounding.rank([stale, hub, fresh])
-        check("fresh ranked first, undated last", ranked.map(\.url) == [fresh.url, stale.url, hub.url], "\(ranked.map(\.title))")
-        let pk = WebGrounding.packet(ranked, start: 0, now: now, freshness: true)
+        let pk = WebGrounding.packet([stale, hub], start: 3, now: now)
         check("packet: today's date", pk.hasPrefix("Today is 8 October 2026."), pk)
-        check("packet: stale age stated", pk.contains("Published: 24 June 2026 — 106 days before today."), pk)
-        check("packet: undated flagged", WebGrounding.packet(ranked, start: 0, now: now, freshness: false).contains("Published: date unknown."), pk)
-        check("packet: only [1] fresh", pk.contains("only [1] is a news article from today or yesterday"), pk)
-        check("packet: front page flagged", pk.contains("[3] is not a dated news article") && pk.contains("reference page (no date)"), pk)
-        // T's case 2 mechanism: a front page dated TODAY must not rank above, or count as, a fresh article
-        let hubToday = ToolLink(title: "Mexico | Reuters", url: "https://www.reuters.example/world/americas/mexico/", snippet: "June story", published: now)
-        let r2 = WebGrounding.rank([hubToday, stale])
-        check("dated article above a front page dated today", r2.map(\.url) == [stale.url, hubToday.url], "\(r2.map(\.url))")
-        let pk3 = WebGrounding.packet(r2, start: 0, now: now, freshness: true)
-        check("front page dated today is not fresh", pk3.contains("none of these results is a news article from today") && pk3.contains("reference page (updated today)"), pk3)
-        for (u, want) in [("https://www.reuters.com/world/", true), ("https://apnews.com/hub/mexico", true), ("https://www.cnn.com/world/americas/mexico", true),
-                          ("https://www.bbc.com/news/world", true), ("https://www.reuters.com/world/americas/mexico-floods-kill-12-2026-10-08/", false),
-                          ("https://www.bbc.com/news/articles/c4g8wz2y1xyo", false), ("https://apnews.com/article/mexico-sheinbaum-water-8f3a2b", false),
-                          ("https://www.nytimes.com/2026/10/08/world/europe/france-protests.html", false)] {
-            check("section page: \(u)", WebGrounding.isSectionPage(u) == want)
-        }
-        let pk2 = WebGrounding.packet([stale, hub], start: 3, now: now, freshness: true)
-        check("packet: none fresh, global numbering", pk2.contains("[4] Mexico: Reuters world") && pk2.contains("none of these results is a news article from today"), pk2)
-        check("packet: names the newest result", pk2.contains("The newest result is [4], published 24 June 2026."), pk2)
+        check("packet: the date stated, global numbering", pk.contains("[4] Mexico: Reuters world\nhttps://reuters.example/world/americas/mexico-floods-june-24\nPublished 24 June 2026.\nJune story"), pk)
+        check("packet: no computed-fact notes", !pk.contains("COMPUTED FACT") && !pk.contains("date unknown") && pk.contains("[5] Mexico news | Reuters\nhttps://reuters.example/world/mexico/\nLatest headlines"), pk)
 
         // 9. question shape
         for (q, want) in [("What family does the oarfish belong to?", true), ("Who wrote Pride and Prejudice?", true),
@@ -782,11 +698,9 @@ enum WebGroundingSelfTest {
                           ("Should I learn Swift or Kotlin?", false), ("hello", false), ("Is the colossal squid bigger than the giant squid?", true)] {
             check("factual: \(q)", WebGrounding.isFactualQuestion(q) == want)
         }
-        check("freshness: today's news", WebGrounding.isFreshnessQuestion("What's the top news in Mexico today?"))
         check("news keywords: Mexico", WebGrounding.newsKeywords("What's the top news in Mexico today?") == ["mexico"], "\(WebGrounding.newsKeywords("What's the top news in Mexico today?"))")
         check("news keywords: world", WebGrounding.newsKeywords("What are the top world news stories today?") == ["world"])
         check("news keywords: telescope", WebGrounding.newsKeywords("What's the latest news about the Lakeview Observatory telescope?") == ["lakeview", "observatory", "telescope"])
-        check("freshness: not a fact question", !WebGrounding.isFreshnessQuestion("What family does the oarfish belong to?"))
         check("factual: pep talk is not", !WebGrounding.isFactualQuestion("Write a two-line pep talk for a Monday."))
         check("factual: give me a pep talk is not", !WebGrounding.isFactualQuestion("Give me a pep talk, I have a big day"))
 
@@ -908,16 +822,16 @@ enum HostWebSelfTest {
         row("a-follow-up-to-a-searched-answer-is-searched", follow.prefetch == "search" && follow.followUp, "\(follow)")
         let thanks = WebGrounding.hostPrefetch("thanks!", searchIntent: false, lastAnswerSearched: true)
         row("thanks-isn't-searched", thanks.prefetch == "none", thanks.prefetch)
-        // Social / video hosts out, the top five.
+        // Social / video hosts out (live-33: the rerank picks the passages, no top-five cut).
         let links = [ToolLink(title: "Clip", url: "https://www.youtube.com/watch?v=1", snippet: "a"),
                      ToolLink(title: "Post", url: "https://www.instagram.com/p/1", snippet: "b")]
             + (1...6).map { ToolLink(title: "Result \($0)", url: "https://example.org/\($0)", snippet: "s\($0)") }
         let kept = WebGrounding.hostLinks(links)
-        row("social-hosts-out-top-five", kept.count == 5 && !kept.contains { AppleWebQuery.isSocial($0.url) }, kept.map(\.url).joined(separator: " "))
+        row("social-hosts-out", kept.count == 6 && !kept.contains { AppleWebQuery.isSocial($0.url) }, kept.map(\.url).joined(separator: " "))
         // The turn: the app's search, labelled, the question last; the clause says whose search it was.
         let now = ISO8601DateFormatter().date(from: "2026-10-20T12:00:00Z")!
         let turn = WebGrounding.appSearchTurn(query: "US presidents party cause of death 2026", question: "Make a table…",
-                                              links: Array(kept.prefix(2)), now: now, freshness: false)
+                                              links: Array(kept.prefix(2)), now: now)
         row("results-labelled-as-the-app's-search", turn.hasPrefix("Web results the app found today (20 October 2026) for \"US presidents party cause of death 2026\":")
             && turn.contains("[1] Result 1") && turn.hasSuffix("Question: Make a table…") && WebGrounding.appSearchClause.contains("not from the user"),
             String(turn.prefix(80)))

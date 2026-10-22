@@ -442,6 +442,10 @@ final class ChatSession {
 
         // New attempt clears any prior transient failure banner.
         lastError = nil
+        #if DEBUG
+        // live-32 — a General turn with no app search (an app-routed one began its trace row already).
+        if generalKnowledge && webResults == nil { WebTrace.shared.beginTurn(displayText); WebTrace.shared.note("plan", ["prefetch": "none", "path": "plain"]) }
+        #endif
         // live-29 (B5) — `webResults` (non-nil) = an app-routed web search ran for this General turn (Apple Intelligence +
         // web), with that many results in `modelText`. Its packet isn't a Library packet (never replayed as history).
         let packetTurn = modelText != displayText && webResults == nil
@@ -587,6 +591,10 @@ final class ChatSession {
                 answer.stopped = stopRequest
                 messages.append(answer)
                 #if DEBUG
+                if generalKnowledge {
+                    WebTrace.shared.note("answer", ["text": finalText, "cited": r.citations.compactMap(\.url), "line": line.map { "\($0)" } ?? "",
+                                                    "caption": answer.provenance?.caption ?? "", "stopped": stopRequest.map { "\($0)" } ?? ""])
+                }
                 if labelled { GauntletTap.shared.noteValue("generalKnowledge", true) }
                 GauntletTap.shared.noteValue("provenance", answer.provenance?.caption ?? "none")   // live-27 (4)
                 #endif
@@ -766,7 +774,7 @@ final class ChatSession {
 
     @discardableResult
     func sendWithTools(displayText: String, systemPrompt: String, executor: ToolExecutor, forceWebSearch: Bool = false,
-                       prefetch: WebPrefetch = .none, appQuery: String? = nil) async -> Bool {
+                       prefetch: WebPrefetch = .none, appQuery: String? = nil, wikiQuery: String? = nil) async -> Bool {
         guard !displayText.isEmpty, !isStreaming else { return false }
         // The agentic tool loop runs over a direct .ollama endpoint OR the sealed .host pairing.
         // (It was .ollama-ONLY — the reason web search never worked over a paired Host: it was
@@ -787,7 +795,10 @@ final class ChatSession {
         // CH Session 2 — only a URL this turn's tools return (or the user typed) may appear in the answer.
         filterAllowed = WebGrounding.urls(in: displayText)
         answerFilter = WebAnswerFilter(allowed: filterAllowed)
-        let freshness = WebGrounding.isFreshnessQuestion(displayText)
+        // live-33 — the app's search brings the Wikipedia articles for the same query (alongside, not after it); every
+        // search's results are reranked by meaning before the model sees them (`WebEvidence`).
+        let wikiTask: Task<[WebEvidence.Source], Never>? = prefetch != .none && WikipediaGrounding.isOn
+            ? Task { await WikipediaGrounding.sources(query: wikiQuery ?? appQuery ?? displayText) } : nil
         let now = Date()
         beginAnswerStream(candidates: [])
         streamingThinking = ""   // Brief AL3 — clear any prior turn's thought process
@@ -886,10 +897,45 @@ final class ChatSession {
                         // live-31 (3) — ask for more so the top five remain without social / video hosts (as on the Apple path).
                         var args = call.arguments
                         if call.name == AgentTools.webSearch, !WebGrounding.live30 { args["count"] = AppleWebQuery.requestCount }
+                        #if DEBUG
+                        let callStart = WebTrace.shared.ms
+                        #endif
                         var result = await executor.execute(name: call.name, arguments: args)
+                        #if DEBUG
+                        WebTrace.shared.note("tool", ["name": call.name, "id": call.id, "startMs": callStart,
+                                                      "args": args.mapValues { "\($0)" }, "links": WebTrace.links(result.links),
+                                                      "failed": result.failed, "rateLimited": result.rateLimited,
+                                                      "text": String(result.textForModel.prefix(12_000))])
+                        #endif
                         if call.name == AgentTools.webSearch {
-                            result = ToolResult(textForModel: result.textForModel, links: WebGrounding.hostLinks(result.links),
-                                                rateLimited: result.rateLimited, unavailable: result.unavailable, failed: result.failed)
+                            // Social / video hosts out; then the pipeline: the app's search adds the Wikipedia articles and,
+                            // for a factual question, the top page's text (the read); every passage is reranked by meaning
+                            // against the query and only those above the floor reach the model, numbered by source.
+                            let web = WebGrounding.hostLinks(result.links)
+                            var sources = web.map(WebEvidence.source)
+                            if call.id == "app_search" {
+                                if prefetch == .searchAndFetch, let top = web.first {
+                                    let page = await executor.execute(name: AgentTools.fetchURL, arguments: ["url": top.url])
+                                    if !page.failed, !page.textForModel.hasPrefix("Couldn't fetch"), !page.textForModel.hasPrefix("Invalid URL") {
+                                        sources[0] = WebEvidence.Source(title: top.title, url: top.url, published: top.published, wikipedia: false,
+                                                                        text: (top.snippet ?? "") + "\n" + String(page.textForModel.prefix(WebEvidence.pageChars)))
+                                    }
+                                    #if DEBUG
+                                    WebTrace.shared.note("tool", ["name": AgentTools.fetchURL, "id": "app_fetch", "startMs": callStart, "url": top.url,
+                                                                  "args": ["url": top.url], "links": [], "failed": page.failed, "rateLimited": false,
+                                                                  "text": String(page.textForModel.prefix(4_000))])
+                                    #endif
+                                }
+                                if let wiki = await wikiTask?.value { sources = wiki + sources }
+                            }
+                            // the meaning to match: the app's query without its freshness year (that is for the provider)
+                            let q = call.id == "app_search" ? (wikiQuery ?? appQuery ?? displayText) : (call.arguments["query"] as? String) ?? displayText
+                            let rr = await WebEvidence.rerank(query: q, sources: sources, budget: WebEvidence.hostBudget)
+                            #if DEBUG
+                            WebTrace.shared.note("rerank", WebTrace.rerank(rr))
+                            #endif
+                            result = ToolResult(textForModel: result.textForModel, links: rr.links, rateLimited: result.rateLimited,
+                                                unavailable: result.unavailable, failed: result.failed)
                         }
                         prefillNotice = nil
                         #if DEBUG
@@ -902,8 +948,8 @@ final class ChatSession {
                            WebGrounding.live30 || (!result.failed && !result.rateLimited) { searched = true }
                         let toolContent: String
                         if call.name == AgentTools.webSearch, !result.links.isEmpty {
-                            let ranked = freshness ? WebGrounding.rank(result.links) : result.links
-                            toolContent = WebGrounding.packet(ranked, start: citationLinks.count, now: now, freshness: freshness)
+                            let ranked = result.links
+                            toolContent = WebGrounding.packet(ranked, start: citationLinks.count, now: now)
                             result = ToolResult(textForModel: result.textForModel, links: ranked,
                                                 rateLimited: result.rateLimited, unavailable: result.unavailable)
                             citationLinks.append(contentsOf: ranked)
@@ -935,7 +981,7 @@ final class ChatSession {
                             working.removeSubrange(before...)
                             let q = (call.arguments["query"] as? String) ?? displayText
                             working[working.count - 1]["content"] = WebGrounding.appSearchTurn(query: q, question: displayText,
-                                                                                               links: result.links, now: now, freshness: freshness)
+                                                                                               links: result.links, now: now)
                             working[0]["content"] = systemPrompt + "\n\n" + WebGrounding.appSearchClause
                             continue
                         }
@@ -952,9 +998,7 @@ final class ChatSession {
                     }
                     await runCalls([call("app_search", AgentTools.webSearch, ["query": appQuery ?? displayText])], content: "",
                                    intoTurn: !WebGrounding.live30)
-                    if prefetch == .searchAndFetch, !sawUnavailable, let top = citationLinks.first {
-                        await runCalls([call("app_fetch", AgentTools.fetchURL, ["url": top.url])], content: "")
-                    }
+                    // live-33 — the top page's read is part of the app's search (its text joins the rerank), not a second step.
                     #if DEBUG
                     GauntletTap.shared.noteValue("prefetch", prefetch.rawValue)
                     GauntletTap.shared.noteValue("prefetchMs", Int(Date().timeIntervalSince(t0) * 1000))
@@ -971,11 +1015,20 @@ final class ChatSession {
                     // can't retry a tool that can't succeed, so it answers honestly.
                     let turnTools = sawUnavailable ? nil : AgentTools.schema
                     let turn: AgentTurn
+                    #if DEBUG
+                    let traceStep = WebTraceStep(), stepStart = WebTrace.shared.ms
+                    let stepDelta: @Sendable (String) -> Void = { d in traceStep.content(); onDelta(d) }
+                    let stepReasoning: @Sendable (String) -> Void = { r in traceStep.reasoning(r); onReasoning(r) }
+                    #else
+                    let stepDelta = onDelta, stepReasoning = onReasoning
+                    #endif
                     switch backend {
                     case .ollama(let endpoint, let model):
                         turn = try await ModelRouter.streamAgentTurn(
                             endpoint: endpoint, model: model, messages: working,
-                            tools: turnTools, onContentDelta: onDelta, onReasoningDelta: onReasoning)
+                            // live-32 (2) — a web turn on a server model runs with its thinking off where the server
+                            // offers it (T's qwen/qwen3.5-9b thought ~25 s before its first word, every step).
+                            tools: turnTools, onContentDelta: stepDelta, reasoningOff: true, onReasoningDelta: stepReasoning)
                     case .host(let pairing):
                         // Brief AM1 — REVERTED AL3's `think: thinkEnabled` forwarding on the
                         // agent/search path back to `false`. Ollama itself finishes a
@@ -991,9 +1044,17 @@ final class ChatSession {
                         turn = try await ModelRouter.streamHostAgentTurn(
                             pairing: pairing, messages: working,
                             tools: turnTools, think: false, maxTokens: maxTokens,
-                            onContentDelta: onDelta, onReasoningDelta: onReasoning)
+                            onContentDelta: stepDelta, onReasoningDelta: stepReasoning)
                     }
                     if turn.hitLength { stopRequest = stopRequest ?? .tooLong }   // Ollama stopped it at num_predict
+                    #if DEBUG
+                    WebTrace.shared.note("step", ["step": step, "startMs": stepStart, "model": ModelRouter.lastAnswerSource?.model ?? "",
+                                                  "firstContentMs": traceStep.firstContentMs ?? -1,
+                                                  "firstReasoningMs": traceStep.firstReasoningMs ?? -1,
+                                                  "reasoningChars": traceStep.reasoningChars, "reasoning": traceStep.reasoning,
+                                                  "content": turn.content, "toolCalls": turn.toolCalls.map { "\($0.name) \($0.argumentsJSON)" },
+                                                  "messages": working.map { m in m.mapValues { "\($0)" } }])
+                    #endif
 
                     if turn.toolCalls.isEmpty {
                         // Strip any leaked chain-of-thought from the settled agent answer (search turns run
@@ -1060,6 +1121,8 @@ final class ChatSession {
                     messages.append(answer)
                     #if DEBUG
                     GauntletTap.shared.noteValue("provenance", answer.provenance?.caption ?? "none")
+                    WebTrace.shared.note("answer", ["text": r.text, "cited": r.citations.map(\.url), "line": line.map { "\($0)" } ?? "",
+                                                    "caption": answer.provenance?.caption ?? "", "stopped": stopRequest.map { "\($0)" } ?? ""])
                     #endif
                     #if DEBUG
                     if ungrounded { GauntletTap.shared.noteValue("generalKnowledge", true) }
@@ -1185,7 +1248,9 @@ final class ChatSession {
                 // which would assert a search that never happened).
                 label = result.textForModel
             } else {
-                label = result.links.isEmpty ? "Searched the web — no results" : "Searched the web"
+                let wiki = result.links.contains(where: WikipediaGrounding.isPassage)
+                label = result.links.isEmpty ? "Searched the web — nothing relevant"   // live-33: none cleared the rerank
+                    : wiki ? (result.links.count == 1 ? "Read Wikipedia" : "Searched the web and Wikipedia") : "Searched the web"
             }
             detail = call.arguments["query"] as? String
         case AgentTools.fetchURL:
@@ -1520,13 +1585,26 @@ final class ChatSession {
     }
     #endif
 
+    /// live-32 (A1) — the latest exchange: the last user turn and the rows after it, which belong to it (the "Searched the
+    /// web" row, the answer). T: "regenerate sometimes does nothing" — ↻ and the banner's Retry required the question
+    /// DIRECTLY above the answer (or to be the last row), so on any turn that searched (question → search row → answer) the
+    /// tap silently did nothing; older than live-31 (the search row came with web search). nil = no such exchange.
+    func lastExchange() -> (start: Int, answered: Bool)? {
+        guard let i = messages.lastIndex(where: { $0.role == .user }),
+              messages[(i + 1)...].allSatisfy({ $0.role == .assistant || $0.role == .activity }) else { return nil }
+        return (i, messages[(i + 1)...].contains { $0.role == .assistant })
+    }
+
     func retryLastUserTurn() async {
-        guard !isStreaming, let last = messages.last, last.role == .user else {
+        guard !isStreaming, let ex = lastExchange(), !ex.answered else {
+            RetryTrace.note("Retry rejected: \(isStreaming ? "a turn is streaming" : "no unanswered question")", rows: messages)
             lastError = nil
             return
         }
-        messages.removeLast()
-        if let resend = resendHandler { await resend(last.text) } else { await send(last.text) }
+        RetryTrace.note("Retry accepted", rows: messages)
+        let text = messages[ex.start].text
+        messages.removeSubrange(ex.start...)   // the question and its own rows (a search row before the failure)
+        if let resend = resendHandler { await resend(text) } else { await send(text) }
     }
 
     /// Brief BU1 — prepare a RE-ASK of the SAME question with a different plan (the "Read it in full"
@@ -1541,11 +1619,8 @@ final class ChatSession {
     /// case the caller just sends normally.
     @discardableResult
     func prepareForReask() -> Bool {
-        guard !isStreaming, messages.count >= 2,
-              messages.last?.role == .assistant,
-              messages[messages.count - 2].role == .user else { return false }
-        messages.removeLast()   // the answer being replaced
-        messages.removeLast()   // the user turn (re-appended by send)
+        guard !isStreaming, messages.last?.role == .assistant, let ex = lastExchange(), ex.answered else { return false }
+        messages.removeSubrange(ex.start...)   // the user turn (re-appended by send), its rows and the answer being replaced
         return true
     }
 
@@ -1556,12 +1631,13 @@ final class ChatSession {
     /// `didGenerateTitle` — the chat is already titled and send()'s title
     /// hook is a no-op once that guard is set, so regenerate never re-titles.
     func regenerateLast() async {
-        guard !isStreaming else { return }
-        guard messages.count >= 2,
-              messages.last?.role == .assistant,
-              messages[messages.count - 2].role == .user else { return }
-        messages.removeLast()               // assistant
-        let userText = messages.removeLast().text
+        guard !isStreaming else { RetryTrace.note("↻ rejected: a turn is streaming", rows: messages); return }
+        guard messages.last?.role == .assistant, let ex = lastExchange(), ex.answered else {
+            RetryTrace.note("↻ rejected: the chat doesn't end in an answered question", rows: messages); return
+        }
+        RetryTrace.note("↻ accepted", rows: messages)
+        let userText = messages[ex.start].text
+        messages.removeSubrange(ex.start...)   // the question, its search row(s) and the answer (send re-appends the question)
         // BU1 — ↻ is a re-send too: route it through the owning pipeline, not the plain lane.
         if let resend = resendHandler { await resend(userText) } else { await send(userText) }
     }
@@ -2051,4 +2127,26 @@ final class ChatSession {
     /// live-23 (5b) — the title sanitizer, for `-AppleChatSelfTest`.
     static func debugSanitizeTitle(_ raw: String) -> String? { sanitizeTitleCandidate(raw) }
     #endif
+}
+
+/// live-32 (A1) — every ↻ / Retry tap, accepted or rejected with the reason and the last rows' kinds (never their text),
+/// for "Copy Librarian log" on TestFlight (T: "regenerate sometimes does nothing" — the next dead tap explains itself).
+enum RetryTrace {
+    nonisolated(unsafe) private static var lines: [String] = []
+    private static let lock = NSLock()
+    @MainActor static func note(_ what: String, rows: [ChatSession.Message]) {
+        #if DEBUG || TESTFLIGHT
+        let f = DateFormatter(); f.dateFormat = "HH:mm:ss"
+        let tail = rows.suffix(4).map { m -> String in
+            m.role == .assistant ? (m.stopped != nil ? "answer(stopped)" : m.isPartial == true ? "answer(partial)" : "answer") : m.role.rawValue
+        }.joined(separator: " → ")
+        lock.withLock {
+            lines.append("\(f.string(from: Date())) \(what) · last rows: \(tail)")
+            if lines.count > 20 { lines.removeFirst(lines.count - 20) }
+        }
+        #endif
+    }
+    static func text() -> String {
+        lock.withLock { lines.isEmpty ? "(no regenerate / retry taps yet)" : "Regenerate / retry taps:\n" + lines.joined(separator: "\n") }
+    }
 }

@@ -454,7 +454,7 @@ enum ModelRouter {
                         try await streamFoundationModel(messages: messages, continuation: continuation)
                         continuation.finish()
                     case .ollama(let endpoint):
-                        try await streamOllama(endpoint: endpoint, messages: messages, numCtx: numCtx, continuation: continuation)
+                        try await streamOllama(endpoint: endpoint, messages: messages, numCtx: numCtx, think: think, continuation: continuation)
                         continuation.finish()
                     case .host(let pairing):
                         try await streamHost(
@@ -835,13 +835,16 @@ enum ModelRouter {
         let foldedUserContent = systemPrompt.isEmpty
             ? userPrompt
             : "\(systemPrompt)\n\n\(userPrompt)"
-        let body: [String: Any] = [
+        var body: [String: Any] = [
             "model": modelName,
             "stream": false,
             "messages": [
                 ["role": "user", "content": foldedUserContent]
             ]
         ]
+        // live-32 (2) — a one-shot call (a chat title, a name) never needs a server model's thinking (T's qwen/qwen3.5-9b
+        // thought ~30 s in the background for each chat's title).
+        if !WikipediaGrounding.live31, let effort = await serverReasoningOff(base: base, model: modelName) { body["reasoning_effort"] = effort }
         request.httpBody = try JSONSerialization.data(withJSONObject: body)
 
         let (data, response) = try await runRequest(request, path: path)
@@ -875,12 +878,17 @@ enum ModelRouter {
         endpoint: String,
         messages: [WireMessage],
         numCtx: Int?,
+        think: Bool = false,
         continuation: AsyncThrowingStream<ModelDelta, Error>.Continuation
     ) async throws {
         guard let base = URL(string: endpoint) else {
             throw RouterError.ollamaBadEndpoint(endpoint)
         }
         let modelName = try await firstOllamaModel(base: base)
+        // live-32 (2) — the chat's Thinking switch (off by default) now reaches a server model too: off asks for its
+        // thinking off where the server offers it (T's qwen/qwen3.5-9b thought ~25 s per answer and, on a long table,
+        // ran out of its 8,192-token context); on, its reasoning streams into the Thought process.
+        let effort = think || WikipediaGrounding.live31 ? nil : await serverReasoningOff(base: base, model: modelName)
         lastAnswerSource = AnswerSource(route: .server, model: modelName)   // live-27 (4)
 
         let path = "v1/chat/completions"
@@ -899,6 +907,7 @@ enum ModelRouter {
         // Best-effort context window (Ollama's /v1 accepts an `options` passthrough; ignored by
         // strict OpenAI servers, harmless). The Host path is where num_ctx is load-bearing.
         if let numCtx { body["options"] = ["num_ctx": numCtx] }
+        if let effort { body["reasoning_effort"] = effort }
         request.httpBody = try JSONSerialization.data(withJSONObject: body)
 
         let (bytes, response): (URLSession.AsyncBytes, URLResponse)
@@ -925,9 +934,12 @@ enum ModelRouter {
             if let data = payload.data(using: .utf8),
                let parsed = try? JSONSerialization.jsonObject(with: data) as? [String: Any],
                let choices = parsed["choices"] as? [[String: Any]],
-               let delta = choices.first?["delta"] as? [String: Any],
-               let content = delta["content"] as? String {
-                continuation.yield(.answer(content))
+               let delta = choices.first?["delta"] as? [String: Any] {
+                // live-32 (2) — a server model's reasoning goes to the Thought process, never into the answer.
+                if !WikipediaGrounding.live31, let r = (delta["reasoning_content"] as? String) ?? (delta["reasoning"] as? String), !r.isEmpty {
+                    continuation.yield(.thinking(r))
+                }
+                if let content = delta["content"] as? String { continuation.yield(.answer(content)) }
             }
         }
     }
@@ -958,6 +970,10 @@ enum ModelRouter {
     }
 
     static func firstOllamaModel(base: URL) async throws -> String {
+        #if DEBUG
+        // live-32 (1) — pin the server's model (T's LM Studio lists another loaded model first).
+        if let m = UserDefaults.standard.string(forKey: "DebugEndpointModel"), !m.isEmpty { return m }
+        #endif
         // LM Studio moved model listing to api/v0/models in a recent update
         // and broke the OpenAI-compatible /v1/models endpoint. Response shape
         // (data array, each entry has an id string) is unchanged.
@@ -1571,7 +1587,9 @@ enum ModelRouter {
         // Brief AL3 — the reasoning channel on the agent path (Host /api/chat, translated).
         // Previously dropped here, so Thinking-on SEARCH turns showed no thought process even
         // when the model reasoned. Streamed live (ephemeral), never folded into the answer.
-        if let r = delta["reasoning"] as? String, !r.isEmpty {
+        // live-32 (2) — LM Studio sends a thinking model's reasoning as `reasoning_content` (T's qwen/qwen3.5-9b): it was
+        // dropped here, so the Thought process stayed empty while the model thought for ~25 s before its first word.
+        if let r = (delta["reasoning"] as? String) ?? (WikipediaGrounding.live31 ? nil : delta["reasoning_content"] as? String), !r.isEmpty {
             onReasoningDelta(r)
         }
         if let c = delta["content"] as? String, !c.isEmpty {
@@ -1833,9 +1851,11 @@ extension ModelRouter {
         messages: [[String: Any]],
         tools: [[String: Any]]?,
         onContentDelta: @Sendable @escaping (String) -> Void,
+        reasoningOff: Bool = false,
         onReasoningDelta: @Sendable @escaping (String) -> Void = { _ in }
     ) async throws -> AgentTurn {
         guard let base = URL(string: endpoint) else { throw RouterError.ollamaBadEndpoint(endpoint) }
+        let effort = reasoningOff && !WikipediaGrounding.live31 ? await serverReasoningOff(base: base, model: model) : nil
         let path = "v1/chat/completions"
         var request = URLRequest(url: base.appendingPathComponent(path))
         request.httpMethod = "POST"
@@ -1844,6 +1864,7 @@ extension ModelRouter {
         lastAnswerSource = AnswerSource(route: .server, model: model)   // live-27 (4)
         var body: [String: Any] = ["model": model, "stream": true, "messages": messages]
         if let tools { body["tools"] = tools }
+        if let effort { body["reasoning_effort"] = effort }
         request.httpBody = try JSONSerialization.data(withJSONObject: body)
 
         let (bytes, response): (URLSession.AsyncBytes, URLResponse)
@@ -1877,6 +1898,39 @@ extension ModelRouter {
             ToolCall(id: e.id.isEmpty ? "call_\(idx)" : e.id, name: e.name, argumentsJSON: e.args)
         }
         return AgentTurn(content: content, toolCalls: toolCalls)
+    }
+}
+
+extension ModelRouter {
+    /// live-32 (2) — the `reasoning_effort` that turns a server model's thinking off (or as low as it goes), from LM Studio's
+    /// model list (`/api/v1/models` → `capabilities.reasoning.allowed_options`): "off" → "none", else "low" when offered;
+    /// nil for a model without the option or a server without the list (Ollama). Measured on T's qwen/qwen3.5-9b: a
+    /// one-line answer took 29 s thinking by default (an 800-token cap was all reasoning, no answer), 1.4 s with "none".
+    static func reasoningEffort(allowedOptions: [String]) -> String? {
+        let o = Set(allowedOptions.map { $0.lowercased() })
+        if o.contains("off") || o.contains("none") { return "none" }
+        if o.contains("minimal") { return "minimal" }
+        return o.contains("low") ? "low" : nil
+    }
+    private static let effortLock = NSLock()
+    nonisolated(unsafe) private static var effortCache: [String: String?] = [:]
+    static func serverReasoningOff(base: URL, model: String) async -> String? {
+        let key = base.absoluteString + "|" + model
+        if let hit = effortLock.withLock({ effortCache[key] }) { return hit }
+        var req = URLRequest(url: base.appendingPathComponent("api/v1/models"))
+        req.timeoutInterval = 3
+        applyEndpointAuth(&req)
+        var effort: String? = nil
+        if let (data, resp) = try? await URLSession.shared.data(for: req), (resp as? HTTPURLResponse)?.statusCode == 200,
+           let json = try? JSONSerialization.jsonObject(with: data) as? [String: Any],
+           let models = json["models"] as? [[String: Any]],
+           let m = models.first(where: { ($0["key"] as? String) == model
+               || (($0["loaded_instances"] as? [[String: Any]])?.contains { ($0["id"] as? String) == model } ?? false) }),
+           let opts = ((m["capabilities"] as? [String: Any])?["reasoning"] as? [String: Any])?["allowed_options"] as? [String] {
+            effort = reasoningEffort(allowedOptions: opts)
+        }
+        effortLock.withLock { effortCache[key] = .some(effort) }
+        return effort
     }
 }
 
@@ -2319,6 +2373,7 @@ final class BraveSearchToolExecutor: ToolExecutor, @unchecked Sendable {
         // token → the tunnel can't time the upstream out mid-answer.
         comps?.queryItems = [URLQueryItem(name: "q", value: query), URLQueryItem(name: "count", value: "\(count)")]
             + (country.map { [URLQueryItem(name: "country", value: $0)] } ?? [])
+            + (WikipediaGrounding.live31 ? [] : [URLQueryItem(name: "extra_snippets", value: "true")])   // live-32 (2)
         guard let url = comps?.url else { return ([], false) }
         var req = URLRequest(url: url)
         req.setValue("application/json", forHTTPHeaderField: "Accept")
@@ -2398,7 +2453,11 @@ final class BraveSearchToolExecutor: ToolExecutor, @unchecked Sendable {
         return results.prefix(cap).compactMap { r -> ToolLink? in
             guard let title = r["title"] as? String, let urlStr = r["url"] as? String, !urlStr.isEmpty else { return nil }
             let cleanTitle = WebGrounding.cleanResultText(title)   // live-29 (B3)
-            let snippet = (r["description"] as? String).map { WebGrounding.cleanResultText($0, cap: 300) }   // live-29 (B3)
+            // live-32 (2) — the description and Brave's extra snippets, up to `resultTextCap`: live-33's rerank keeps the
+            // passages that answer (`WebEvidence`), not the first 300 characters.
+            let extra = WikipediaGrounding.live31 ? [] : (r["extra_snippets"] as? [String] ?? [])
+            let raw = ([(r["description"] as? String) ?? ""] + extra).filter { !$0.isEmpty }.joined(separator: " … ")
+            let snippet = raw.isEmpty ? nil : WebGrounding.cleanResultText(raw, cap: WebGrounding.resultTextCap)   // live-29 (B3)
             guard !cleanTitle.isEmpty else { return nil }
             return ToolLink(title: cleanTitle, url: urlStr, snippet: snippet,
                             published: WebGrounding.parsePublished(pageAge: r["page_age"] as? String, age: r["age"] as? String))
@@ -2481,7 +2540,7 @@ final class TavilySearchToolExecutor: ToolExecutor, @unchecked Sendable {
             guard let title = r["title"] as? String, let urlStr = r["url"] as? String, !urlStr.isEmpty else { return nil }
             let cleanTitle = WebGrounding.cleanResultText(title)   // live-29 (B3)
             guard !cleanTitle.isEmpty else { return nil }
-            let snippet = (r["content"] as? String).map { WebGrounding.cleanResultText($0, cap: 300) }   // live-29 (B3)
+            let snippet = (r["content"] as? String).map { WebGrounding.cleanResultText($0, cap: WebGrounding.resultTextCap) }   // live-29 (B3), live-32 (2)
             return ToolLink(title: cleanTitle, url: urlStr, snippet: snippet, published: parseDate(r["published_date"] as? String))
         }
     }

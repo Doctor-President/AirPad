@@ -11,12 +11,16 @@ A=${0:A:h:h}; OUT=${1:-$A/build/tuner-gate}; mkdir -p $OUT
 # 2026-10-17 brief: the per-pill sections + the accordion (live-24's "Graded tint on the pills" / "Ask pill + search pill" left the sheet).
 # live-24: + the graded-tint section and the reading veil (LibrarianGlass types ship; their tuner does not). Probes must be > 15 bytes: Swift keeps shorter strings inline in code, invisible to `strings`.
 PROBES=("Appearance tuner" "appearanceTuning.v1" "AppearanceTunerWindow" "Frost 50% + glass" "Before = thin material" "Fade length (of the hero zone)" "tunerCaptureControls" "tunerCardContent" "Graded presets (all three pills + the panel)" "The Ask bar mirrors the search pill" "Reading veil (behind the transcript)" "Rim while answering" "AppearanceTunerOpenSection" "tunerFloatingButtons" "tunerFadeMatchFluted" "Fade into body carries it down" "dateline; above it, your fade alone" "chat scroll trace (live-29 C1)")
+# live-32: + the live-31 web baseline, the web trace, the evidence self-test, the server model pin, the Wikipedia stub
+# switches (DEBUG-only) and the evidence rules, the Wikipedia row, the server reasoning switch (shipped).
 # live-31: + the transcript's live-30 baseline / motion recorder, the Host web self-test, the table perf seed (DEBUG-only)
 # and the provider-failed line (shipped).
 # live-28 — DEBUG-only hooks must be in NEITHER Release build; the shipped caps line must be in BOTH (the positive control).
 # live-30 — + the (A1) RED switch and the transcript open trace (DEBUG-only); the (A1) framing line ships in both.
-DEBUG_PROBES=("AnswerWallClockSec" "WebSearchSwitchIgnored" "WebSearchBaseURL" "[AnswerCapSelfTest]" "[TitleCaseSelfTest]" "AppleWebFollowUpOff" "TranscriptOpenTrace" "TranscriptLive30" "TranscriptMotionLog" "[HostWebSelfTest]" "GauntletSeedTable")
-SHIPPED_PROBES=("Stopped: the answer ran too long" "Tavily (free, no card)" "Web search is off. [Turn it on" "they come from the app's search, not from the user" "The web search didn't go through")
+DEBUG_PROBES=("AnswerWallClockSec" "WebSearchSwitchIgnored" "WebSearchBaseURL" "[AnswerCapSelfTest]" "[TitleCaseSelfTest]" "AppleWebFollowUpOff" "TranscriptOpenTrace" "TranscriptLive30" "TranscriptMotionLog" "[HostWebSelfTest]" "GauntletSeedTable" "Live31Web" "WebTrace" "[WebEvidenceSelfTest]" "DebugEndpointModel" "WikipediaBaseURL" "WikipediaLive")
+# live-33: the one sources-over-memory line replaced live-32's evidence block. (A probe with non-ASCII — "—" — never
+# matches: `strings` reports ASCII runs.)
+SHIPPED_PROBES=("Stopped: the answer ran too long" "Tavily (free, no card)" "Web search is off. [Turn it on" "they come from the app's search, not from the user" "The web search didn't go through" "they are newer than your training" "Searched the web and Wikipedia" "reasoning_effort")
 export DEVELOPER_DIR=/Applications/Xcode.app/Contents/Developer
 fail=0
 for mode in testflight appstore; do

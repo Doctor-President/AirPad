@@ -143,6 +143,23 @@ func ask(_ mode: String, history: [(String, String, Bool)], question: String) as
         let a = CommandLine.arguments
         let pick = a.count > 1 ? a[1] : "both"
         if pick == "followup" { await followUps(runs: a.count > 2 ? Int(a[2]) ?? 1 : 1); return }
+        if pick == "embed-timing" {   // live-33 — the rerank's embedding cost: 42 passages, one by one vs one batch, per compute unit
+            guard let app = ProcessInfo.processInfo.environment["HARNESS_APP"] else { exit(2) }
+            let texts = (0..<42).map { "Passage \($0): " + String(repeating: "The president of the United States is the head of state and government. ", count: 5) }
+            for (name, u) in [("all (ANE/GPU)", MLComputeUnits.all), ("cpuOnly", .cpuOnly)] {
+                guard let b = BGE(app: app, units: u) else { continue }
+                _ = b.embed("warm up")
+                var t = Date(); for x in texts { _ = b.embed(x) }; let seq = Date().timeIntervalSince(t)
+                t = Date(); let v = b.embedBatch(texts); let bat = Date().timeIntervalSince(t)
+                print("\(name): 42 one by one \(Int(seq * 1000)) ms · one batch \(Int(bat * 1000)) ms (\(v.count) vectors)")
+            }
+            return
+        }
+        if pick == "pipeline" {   // live-33
+            guard let app = ProcessInfo.processInfo.environment["HARNESS_APP"], let bge = BGE(app: app) else { print("needs HARNESS_APP (an AirPad.app with BGEMicro.mlmodelc)"); exit(2) }
+            for q in a.dropFirst(2) { await pipelineRun(question: q, bge: bge) }
+            return
+        }
         let modes = pick == "web-ab" ? ["general3", "web", "webnews"] : pick == "webturn-ab" ? ["webturn", "webturnnews"] : pick == "both" ? ["before", "after"] : pick == "dated-ab" ? ["after", "dated"] : pick == "general-ab" ? ["dated", "general2"] : pick == "general3-ab" ? ["dated", "general3"] : [pick]
         let runs = a.count > 2 ? Int(a[2]) ?? 1 : 1
         guard SystemLanguageModel.default.isAvailable else { print("Apple Intelligence unavailable"); exit(3) }
@@ -284,3 +301,117 @@ func followUps(runs: Int) async {
     }
     print("SUMMARY FOLLOW-UP: answers \(allAnswers) · refused \(allRefused) · errors \(allErrors) · \"you provided\" \(allProvided) · longest run copied from a snippet \(longest) words")
 }
+
+// MARK: - live-33 — the pipeline on Apple Intelligence (T's TF 202610211551 sentence): the on-device rewrite (timed), the
+// year rule, Tavily + Wikipedia (the leads of the top three articles for the same query), the BGE rerank (the app's
+// model and tokenizer; Core ML on this Mac), the answer turn as the app builds it. The Tavily key comes from the
+// environment (run.sh reads the Keychain); it's never printed. (Not here: the infobox facts — they're in an app file.)
+
+import CoreML
+
+final class BGE {
+    let model: MLModel, tok: WordPieceTokenizer
+    init?(app: String, units: MLComputeUnits = .all) {
+        let c = MLModelConfiguration(); c.computeUnits = units
+        guard let t = WordPieceTokenizer(vocabURL: URL(fileURLWithPath: app + "/vocab.txt")),
+              let m = try? MLModel(contentsOf: URL(fileURLWithPath: app + "/BGEMicro.mlmodelc"), configuration: c) else { return nil }
+        model = m; tok = t
+    }
+    /// The app's batch call (`CardEmbeddingService.embedBatch`).
+    func embedBatch(_ texts: [String]) -> [[Float]] {
+        let ps: [MLFeatureProvider] = texts.compactMap { t in
+            let (ids, mask) = tok.encode(t, maxLength: 512)
+            func arr(_ v: [Int32]) -> MLMultiArray? {
+                guard let a = try? MLMultiArray(shape: [1, NSNumber(value: v.count)], dataType: .int32) else { return nil }
+                let p = a.dataPointer.bindMemory(to: Int32.self, capacity: v.count); for i in 0..<v.count { p[i] = v[i] }; return a
+            }
+            guard let i = arr(ids), let m = arr(mask) else { return nil }
+            return try? MLDictionaryFeatureProvider(dictionary: ["input_ids": MLFeatureValue(multiArray: i), "attention_mask": MLFeatureValue(multiArray: m)])
+        }
+        guard let o = try? model.predictions(from: MLArrayBatchProvider(array: ps), options: MLPredictionOptions()) else { return [] }
+        return (0..<o.count).compactMap { k in o.features(at: k).featureValue(for: "embedding")?.multiArrayValue.map { e in (0..<e.count).map { e[$0].floatValue } } }
+    }
+    func embed(_ s: String) -> [Float]? {
+        let (ids, mask) = tok.encode(s, maxLength: 512)
+        func arr(_ v: [Int32]) -> MLMultiArray? {
+            guard let a = try? MLMultiArray(shape: [1, NSNumber(value: v.count)], dataType: .int32) else { return nil }
+            let p = a.dataPointer.bindMemory(to: Int32.self, capacity: v.count); for i in 0..<v.count { p[i] = v[i] }; return a
+        }
+        guard let i = arr(ids), let m = arr(mask),
+              let f = try? MLDictionaryFeatureProvider(dictionary: ["input_ids": MLFeatureValue(multiArray: i), "attention_mask": MLFeatureValue(multiArray: m)]),
+              let o = try? model.prediction(from: f), let e = o.featureValue(for: "embedding")?.multiArrayValue else { return nil }
+        return (0..<e.count).map { e[$0].floatValue }
+    }
+}
+
+func getJSON(_ req: URLRequest) async -> [String: Any]? {
+    guard let (d, r) = try? await URLSession.shared.data(for: req), (r as? HTTPURLResponse)?.statusCode == 200 else { return nil }
+    return try? JSONSerialization.jsonObject(with: d) as? [String: Any]
+}
+
+func pipelineRun(question: String, bge: BGE) async {
+    let t0 = Date()
+    let rw = await rewrite(history: [], latest: question)
+    let rewriteMs = Int(Date().timeIntervalSince(t0) * 1000)
+    let base = rw.query ?? WebEvidence.strippedQuestion(question)
+    let query = AppleWebQuery.applyYearRule(base, userText: question, currentState: true)
+    let wikiQuery = AppleWebQuery.applyYearRule(base, userText: question, currentState: false)
+    var sources: [WebEvidence.Source] = []
+    // Wikipedia, the app's request
+    var c = URLComponents(string: "https://en.wikipedia.org/w/api.php")!
+    c.queryItems = [("action", "query"), ("generator", "search"), ("gsrsearch", wikiQuery), ("gsrlimit", "3"), ("prop", "extracts|revisions"),
+                    ("exintro", "1"), ("explaintext", "1"), ("exlimit", "3"), ("rvprop", "timestamp"), ("redirects", "1"), ("format", "json"), ("formatversion", "2")]
+        .map { URLQueryItem(name: $0.0, value: $0.1) }
+    var wr = URLRequest(url: c.url!); wr.setValue("AirPad/1.0 (iOS; https://github.com/Doctor-President/AirPad)", forHTTPHeaderField: "User-Agent")
+    if let pages = (await getJSON(wr))?["query"] as? [String: Any], let ps = pages["pages"] as? [[String: Any]] {
+        for p in ps.sorted(by: { ($0["index"] as? Int ?? 9) < ($1["index"] as? Int ?? 9) }) {
+            guard let t = p["title"] as? String, let x = p["extract"] as? String, !x.isEmpty else { continue }
+            let ts = ((p["revisions"] as? [[String: Any]])?.first?["timestamp"] as? String).flatMap { ISO8601DateFormatter().date(from: $0) }
+            sources.append(.init(title: t, url: "https://en.wikipedia.org/wiki/" + t.replacingOccurrences(of: " ", with: "_"), published: ts, wikipedia: true, text: x))
+        }
+    }
+    // Tavily, the app's request
+    if let key = ProcessInfo.processInfo.environment["HARNESS_TAVILY_KEY"], !key.isEmpty {
+        var tr = URLRequest(url: URL(string: "https://api.tavily.com/search")!); tr.httpMethod = "POST"
+        tr.setValue("application/json", forHTTPHeaderField: "Content-Type"); tr.setValue("Bearer \(key)", forHTTPHeaderField: "Authorization")
+        tr.httpBody = try? JSONSerialization.data(withJSONObject: ["query": query, "max_results": 8, "search_depth": "basic", "topic": "general"])
+        for r in ((await getJSON(tr))?["results"] as? [[String: Any]]) ?? [] {
+            guard let t = r["title"] as? String, let u = r["url"] as? String, !AppleWebQuery.isSocial(u) else { continue }
+            sources.append(.init(title: t, url: u, published: nil, wikipedia: false, text: String(((r["content"] as? String) ?? "").prefix(1_200))))
+        }
+    }
+    let fetchMs = Int(Date().timeIntervalSince(t0) * 1000) - rewriteMs
+    // the rerank
+    let t1 = Date()
+    var scored: [WebEvidence.Scored] = []
+    if let qv = bge.embed(query) {
+        for (i, s) in sources.enumerated() {
+            for p in WebEvidence.passages(s.text) { if let v = bge.embed(s.title + ". " + p) { scored.append(.init(source: i, text: p, score: WebEvidence.cosine(qv, v), kept: false)) } }
+        }
+    }
+    scored = WebEvidence.select(scored, floor: WebEvidence.floor, budget: WebEvidence.appleBudget)
+    let rerankMs = Int(Date().timeIntervalSince(t1) * 1000)
+    let kept = scored.filter(\.kept)
+    let best = Dictionary(grouping: kept, by: \.source).mapValues { $0.map(\.score).max() ?? 0 }
+    let order = best.keys.sorted { best[$0]! > best[$1]! }
+    let df = DateFormatter(); df.locale = Locale(identifier: "en_GB"); df.dateFormat = "d MMMM yyyy"
+    let results = order.map { i in
+        (title: (sources[i].wikipedia ? "Wikipedia: " : "") + sources[i].title,
+         date: sources[i].published.map { (sources[i].wikipedia ? "Wikipedia, last edited " : "published ") + df.string(from: $0) } as String?,
+         snippet: kept.filter { $0.source == i }.map(\.text).joined(separator: " … "))
+    }
+    print("Q: \(question)\n  query (\(rw.query == nil ? "request words removed" : "rewritten on-device")) \"\(query)\" · wiki \"\(wikiQuery)\" · rewrite \(rewriteMs) ms · fetch \(fetchMs) ms · rerank \(scored.count) passages \(rerankMs) ms (floor \(WebEvidence.floor))")
+    for i in order { print("  kept [\(order.firstIndex(of: i)! + 1)] \(sources[i].url) best \(String(format: "%.3f", best[i]!))") }
+    let dropped = Set(scored.map(\.source)).subtracting(order).map { i in
+        "\(sources[i].url.prefix(60)) \(String(format: "%.3f", scored.filter { $0.source == i }.map(\.score).max() ?? 0))" }
+    print("  dropped: \(dropped.joined(separator: " · "))")
+    var msgs: [[String: String]] = [["role": "system", "content": voice + " " + AppleWebQuery.turnInstructions]]
+    msgs.append(["role": "user", "content": AppleWebQuery.turnPacket(day: df.string(from: Date()), query: query, question: question, results: results)])
+    let r = AppleChat.request(msgs)
+    let t2 = Date()
+    let text = (try? await AppleChat.session(r).respond(to: r.prompt).content) ?? "(error)"
+    print("  answer (\(Int(Date().timeIntervalSince(t2) * 1000)) ms, refusal \(AppleChat.isRefusalText(text))):\n" + text.split(separator: "\n").map { "    " + $0 }.joined(separator: "\n"))
+}
+
+/// live-32 — `AppleWebQuery` reads live-31's RED switch from an app file; here it is always off.
+enum WikipediaGrounding { static let live31 = false }

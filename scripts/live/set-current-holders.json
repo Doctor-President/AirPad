@@ -1,0 +1,185 @@
+{
+ "_doc": "live-32 (3) — current holders whose answers changed in 2024–2026 (general knowledge only; checked on the web 2026-10-21). `any`: the answer must name one; `stale`: a regex the answer must not match (a memory presented as current). One chat per entry; T's case is two turns.",
+ "chats": [
+  {
+   "id": "US",
+   "turns": [
+    "Who is the current president of the United States?"
+   ],
+   "any": [
+    [
+     "trump"
+    ]
+   ],
+   "stale": [
+    "biden is (the )?(current|sitting|incumbent|46th and current)",
+    "president (is|remains) joe biden",
+    "current (u\\.?s\\.? )?president (is|remains) (joe )?biden"
+   ]
+  },
+  {
+   "id": "UK",
+   "turns": [
+    "Who is the prime minister of the United Kingdom?"
+   ],
+   "any": [
+    [
+     "burnham"
+    ]
+   ],
+   "stale": [
+    "starmer is (the )?(current|sitting|prime minister)",
+    "sunak is (the )?(current|prime minister)",
+    "current prime minister[^.]{0,40}(starmer|sunak)"
+   ]
+  },
+  {
+   "id": "CA",
+   "turns": [
+    "Who is the prime minister of Canada right now?"
+   ],
+   "any": [
+    [
+     "carney"
+    ]
+   ],
+   "stale": [
+    "trudeau is (the )?(current|prime minister)",
+    "current prime minister[^.]{0,40}trudeau"
+   ]
+  },
+  {
+   "id": "DE",
+   "turns": [
+    "Who is the chancellor of Germany?"
+   ],
+   "any": [
+    [
+     "merz"
+    ]
+   ],
+   "stale": [
+    "scholz is (the )?(current|chancellor)",
+    "current chancellor[^.]{0,40}scholz"
+   ]
+  },
+  {
+   "id": "POPE",
+   "turns": [
+    "Who is the pope?"
+   ],
+   "any": [
+    [
+     "leo xiv",
+     "leo the fourteenth",
+     "pope leo"
+    ]
+   ],
+   "stale": [
+    "francis is (the )?(current )?pope",
+    "current pope (is )?(pope )?francis"
+   ]
+  },
+  {
+   "id": "JP",
+   "turns": [
+    "Who is Japan's prime minister?"
+   ],
+   "any": [
+    [
+     "takaichi"
+    ]
+   ],
+   "stale": [
+    "ishiba is (the )?(current|prime minister)",
+    "kishida is (the )?(current|prime minister)",
+    "current prime minister[^.]{0,40}(ishiba|kishida)"
+   ]
+  },
+  {
+   "id": "KR",
+   "turns": [
+    "Who is the president of South Korea?"
+   ],
+   "any": [
+    [
+     "lee jae-myung",
+     "lee jae myung"
+    ]
+   ],
+   "stale": [
+    "yoon suk[- ]yeol is (the )?(current|president)",
+    "current president[^.]{0,40}yoon"
+   ]
+  },
+  {
+   "id": "FRANCIS",
+   "turns": [
+    "Is Pope Francis still alive?"
+   ],
+   "any": [
+    [
+     "died",
+     "passed away",
+     "death",
+     "no longer alive",
+     "is not alive"
+    ]
+   ],
+   "stale": [
+    "(yes|francis)[^.]{0,30}(is|remains) (still )?alive",
+    "is still living"
+   ]
+  },
+  {
+   "id": "SB",
+   "turns": [
+    "Who won the most recent Super Bowl?"
+   ],
+   "any": [
+    [
+     "seahawks",
+     "seattle"
+    ]
+   ],
+   "stale": [
+    "(eagles|chiefs) (won|are the (reigning|defending|current))"
+   ]
+  },
+  {
+   "id": "NBA",
+   "turns": [
+    "Who won the latest NBA championship?"
+   ],
+   "any": [
+    [
+     "knicks"
+    ]
+   ],
+   "stale": [
+    "(thunder|celtics|nuggets) (won|are the (reigning|defending|current))"
+   ]
+  },
+  {
+   "id": "T1",
+   "turns": [
+    "a table of the last ten US presidents",
+    "you're not showing the current president. Joe Biden is no longer president"
+   ],
+   "any": [
+    [
+     "trump"
+    ]
+   ],
+   "anyEach": true,
+   "stale": [
+    "biden[^.\\n]{0,60}(through|until) 2026",
+    "biden[^.\\n|]{0,30}(–|-|—|to) ?present",
+    "\\|\\s*present\\s*\\|[^\\n]*biden|biden[^\\n]*\\|\\s*(present|incumbent)",
+    "assuming (that )?joe biden",
+    "biden is (the )?(current|sitting|incumbent)",
+    "current (u\\.?s\\.? )?president (is|remains) (joe )?biden"
+   ]
+  }
+ ]
+}

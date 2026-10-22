@@ -51,9 +51,11 @@ extension WebEvidence {
             how = "request words removed"
         }
         let base = raw ?? question
-        let current = WebGrounding.asksCurrentState(question) || WebGrounding.asksCurrentState(base)
+        // live-34 (1) — no year is added: the provider's freshness filter does that job (`SearchFreshness`). The model's
+        // stale years still go; a year the user typed stays. (live-33 RED: today's year on a current-state query.)
+        let current = Live34.red && (WebGrounding.asksCurrentState(question) || WebGrounding.asksCurrentState(base))
         let q = AppleWebQuery.applyYearRule(base, userText: typed, currentState: current, now: now)
-        // Wikipedia's search takes the same query without the freshness year (it would favour "2026 in …" articles).
+        // Wikipedia's search takes the same query without a freshness year (it would favour "2026 in …" articles).
         let wq = AppleWebQuery.applyYearRule(base, userText: typed, currentState: false, now: now)
         let ms = Int(Date().timeIntervalSince(t0) * 1000)
         #if DEBUG

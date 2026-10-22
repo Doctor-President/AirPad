@@ -131,7 +131,7 @@ enum AppleWebSelfTest {
         await lib.groundedSend(query: q1, store: store, chat: chat)
         let a1 = chat.messages.last { $0.role == .assistant }
         // live-33 — a first turn is rewritten too; the stub rewrites only a Lakeview follow-up, so this is the last resort.
-        row("first-turn-query-is-the-pipeline's", AppleWebGrounding.debugLastQuery == WebEvidence.strippedQuestion(q1) + " 2026"
+        row("first-turn-query-is-the-pipeline's", AppleWebGrounding.debugLastQuery == WebEvidence.strippedQuestion(q1) + (Live34.red ? " 2026" : "")   // live-34: no year added
             && AppleWebGrounding.debugLastHow == "request words removed",
             "\(AppleWebGrounding.debugLastHow): \(AppleWebGrounding.debugLastQuery)")
         row("results-are-labelled-as-the-app's-search", ModelRouter.debugLastApplePrompt.hasPrefix("Web results the app found today")
@@ -150,7 +150,9 @@ enum AppleWebSelfTest {
         let y = String(Calendar(identifier: .gregorian).component(.year, from: Date()))
         row("follow-up-searches-the-rewrite", AppleWebGrounding.debugLastHow == "rewritten on-device" && AppleWebGrounding.debugLastQuery.contains("Lakeview"),
             "\(AppleWebGrounding.debugLastHow): \(AppleWebGrounding.debugLastQuery)")
-        row("year-rule-on-the-rewrite", !AppleWebGrounding.debugLastQuery.contains("2024") && AppleWebGrounding.debugLastQuery.hasSuffix(y),
+        // live-34 (1): the model's stale year goes and none is added (the provider's freshness filter does that job)
+        row("year-rule-on-the-rewrite", !AppleWebGrounding.debugLastQuery.contains("2024")
+            && (Live34.red ? AppleWebGrounding.debugLastQuery.hasSuffix(y) : !AppleWebGrounding.debugLastQuery.contains(y)),
             AppleWebGrounding.debugLastQuery)
         // The rewrite fails → the previous search's query + the new question.
         let before = AppleWebGrounding.debugLastQuery

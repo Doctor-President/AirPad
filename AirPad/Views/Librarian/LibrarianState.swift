@@ -898,7 +898,8 @@ final class LibrarianState {
         var result = ToolResult(textForModel: "", links: [])
         if webKey {
             result = await WebSearchBackend.make().execute(name: AgentTools.webSearch,
-                                                           arguments: ["query": searchQuery, "count": AppleWebQuery.requestCount])
+                                                           arguments: ["query": searchQuery, "count": AppleWebQuery.requestCount,
+                                                                       "freshness": SearchFreshness.forTurn(question: query, query: searchQuery).rawValue])
         }
         let web = result.links.filter { AppleWebGrounding.live29 || !AppleWebQuery.isSocial($0.url) }
         let wiki = await wikiSources
@@ -926,7 +927,8 @@ final class LibrarianState {
         let turn = AppleWebGrounding.turn(question: query, query: searchQuery, results: pk.results, voice: Self.plainVoice + standingVoiceSuffix)
         await chat.send(displayText: query, modelText: turn.modelText, systemPrompt: turn.systemPrompt,
                         citations: pk.citations, generalKnowledge: true, webResults: pk.citations.count,
-                        searchActivity: AppleWebGrounding.live29 ? nil : row)
+                        searchActivity: AppleWebGrounding.live29 ? nil : row,
+                        webPassages: EvidenceSupport.text(links))   // live-34 (2): the line is judged by these
         return true
     }
 

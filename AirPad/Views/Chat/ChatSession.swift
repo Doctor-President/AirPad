@@ -437,7 +437,7 @@ final class ChatSession {
     /// `generalKnowledge` (CH Session 2) — a General turn with no web search behind it: its answer streams through
     /// `WebAnswerFilter` (no tool ran, so only a URL the user typed may appear) and, when the question is FACTUAL
     /// (T ruling 2026-10-09), carries the app's general-knowledge line.
-    func send(displayText: String, modelText: String, systemPrompt: String, citations: [Message.Citation]? = nil, alwaysCiteIndices: Set<Int> = [], readReceipt: Message.ReadReceipt? = nil, generalKnowledge: Bool = false, replayFrom: UUID? = nil, absenceGuard: AbsenceGuard? = nil, webResults: Int? = nil, searchActivity: ToolActivity? = nil) async {
+    func send(displayText: String, modelText: String, systemPrompt: String, citations: [Message.Citation]? = nil, alwaysCiteIndices: Set<Int> = [], readReceipt: Message.ReadReceipt? = nil, generalKnowledge: Bool = false, replayFrom: UUID? = nil, absenceGuard: AbsenceGuard? = nil, webResults: Int? = nil, searchActivity: ToolActivity? = nil, webPassages: String? = nil) async {
         guard !displayText.isEmpty, !isStreaming else { return }
 
         // New attempt clears any prior transient failure banner.
@@ -572,14 +572,17 @@ final class ChatSession {
                 let declined = ModelRouter.isAppleIntelligenceActive && AppleChat.isRefusalText(finalText)
                 // live-30 (A1) — after an app-routed search, an answer that opens by saying the results don't answer the
                 // question is unconfirmed: its [n] aren't support (no chips, no markers), and the "didn't confirm" line shows.
+                var saysNoAnswer = false
                 if webResults != nil, guardedCitations == nil, !AppleWebGrounding.live29, AppleWebQuery.saysResultsDontAnswer(finalText) {
                     finalText = AppleWebQuery.strippingCitationMarkers(finalText)
                     r.citations = []
+                    saysNoAnswer = true
                 }
                 // live-29 (B3/B5) — the ONE decision for the line (`WebGrounding.answerNote`): after an app-routed search,
                 // never the training-data line.
                 let line = WebGrounding.answerNote(question: displayText, searchRan: webResults != nil, resultCount: webResults ?? 0,
-                                                   citedCount: r.citations.count, rateLimited: false)
+                                                   citedCount: r.citations.count, rateLimited: false,
+                                                   supported: saysNoAnswer ? false : webPassages.flatMap { EvidenceSupport.supported(answer: finalText, question: displayText, passages: $0) })
                 let labelled = !declined && generalKnowledge && line != nil
                 if let guardedCitations { r.citations = guardedCitations }
                 var answer = Message(id: streamingMessageID, role: .assistant, text: finalText,
@@ -996,7 +999,8 @@ final class ChatSession {
                         let json = (try? JSONSerialization.data(withJSONObject: args)).flatMap { String(data: $0, encoding: .utf8) } ?? "{}"
                         return ToolCall(id: id, name: name, argumentsJSON: json)
                     }
-                    await runCalls([call("app_search", AgentTools.webSearch, ["query": appQuery ?? displayText])], content: "",
+                    await runCalls([call("app_search", AgentTools.webSearch, ["query": appQuery ?? displayText,
+                                                                              "freshness": SearchFreshness.forTurn(question: displayText, query: appQuery).rawValue])], content: "",
                                    intoTurn: !WebGrounding.live30)
                     // live-33 — the top page's read is part of the app's search (its text joins the rerank), not a second step.
                     #if DEBUG
@@ -1109,7 +1113,10 @@ final class ChatSession {
                                                        // live-31 (3): only the app's own throttle message goes without a line;
                                                        // an answer written after a throttled search is the model's own (dated).
                                                        rateLimited: outcome.rateLimited && (WebGrounding.live30
-                                                           || r.text.hasPrefix("Web search is temporarily rate-limited")))
+                                                           || r.text.hasPrefix("Web search is temporarily rate-limited")),
+                                                       // live-34 (2) — judged by the passages the model got
+                                                       supported: EvidenceSupport.supported(answer: r.text, question: displayText,
+                                                                                            passages: EvidenceSupport.text(outcome.links)))
                     let ungrounded = line != nil
                     var answer = Message(role: .assistant, text: r.text,
                                          citations: r.citations.isEmpty ? nil : r.citations,

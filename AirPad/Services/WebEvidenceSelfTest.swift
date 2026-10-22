@@ -28,19 +28,97 @@ enum WebEvidenceSelfTest {
         WebEvidence.debugRewrite = .some("US presidents list")
         let q1 = await WebEvidence.searchQuery(for: tSentence, chat: fresh, now: now)
         WebEvidence.debugRewrite = nil
-        row("every-search-uses-the-rewrite", q1.how.hasPrefix("rewritten") && q1.query == "US presidents list 2026" && q1.wikiQuery == "US presidents list",
+        row("every-search-uses-the-rewrite-no-year-added", q1.how.hasPrefix("rewritten") && q1.query == "US presidents list" && q1.wikiQuery == "US presidents list",
             "\(q1.how): \(q1.query) | wiki: \(q1.wikiQuery)")
         AppleWebGrounding.debugRewriteFails = true
         let q2 = await WebEvidence.searchQuery(for: tSentence, chat: fresh, now: now)
         AppleWebGrounding.debugRewriteFails = false
         row("no-rewrite-→-request-words-removed-never-the-raw-sentence", q2.how == "request words removed"
-            && q2.query == "the last 10 US presidents up until today 2026", "\(q2.how): \(q2.query)")
+            && q2.query == "the last 10 US presidents up until today", "\(q2.how): \(q2.query)")
         row("request-words", WebEvidence.strippedQuestion("could you make me a list of the last five popes?") == "the last five popes"
             && WebEvidence.strippedQuestion("show me the current justices of the US Supreme Court") == "current justices of the US Supreme Court"
             && WebEvidence.strippedQuestion("Who is Japan's prime minister?") == "Who is Japan's prime minister",
             [WebEvidence.strippedQuestion("could you make me a list of the last five popes?"),
              WebEvidence.strippedQuestion("show me the current justices of the US Supreme Court")].joined(separator: " | "))
         row("rewrite-ms-measured", q1.ms >= 0, "\(q1.ms) ms (self-test seam)")
+
+        // live-34 (1) — provider freshness instead of a pasted year: the model's stale years still go, a typed year stays.
+        WebEvidence.debugRewrite = .some("List of US presidents from 1977 to 2024")
+        let q3 = await WebEvidence.searchQuery(for: tSentence, chat: fresh, now: now)
+        WebEvidence.debugRewrite = .some("Treaty of Westphalia 1648 aftermath")
+        let q4 = await WebEvidence.searchQuery(for: "What happened after the 1648 treaty?", chat: fresh, now: now)
+        WebEvidence.debugRewrite = nil
+        row("model-years-stripped-no-year-added-typed-year-kept", q3.query == "List of US presidents" && q4.query == "Treaty of Westphalia 1648 aftermath",
+            "\(q3.query) | \(q4.query)")
+        let fr = [("what happened in the news today?", SearchFreshness.day), ("any news on the Lakeview election this week?", .week),
+                  ("Who is the chancellor of Germany?", SearchFreshness.currentState), ("Why is the sky blue?", .none),
+                  ("What is the capital of Australia?", .none)]
+        row("freshness-window-from-what-the-question-needs", fr.allSatisfy { SearchFreshness.pick($0.0) == $0.1 },
+            fr.map { "\($0.0) → \(SearchFreshness.pick($0.0).rawValue)" }.joined(separator: " · "))
+        row("follow-up-takes-its-query's-window", SearchFreshness.forTurn(question: "how long has he been in office?",
+                                                                          query: "latest news Lakeview First Minister today") == .day)
+        row("provider-values", SearchFreshness.day.brave == "pd" && SearchFreshness.week.brave == "pw" && SearchFreshness.year.brave == "py"
+            && SearchFreshness.none.brave == nil && SearchFreshness.month.tavilyRange == "month" && SearchFreshness.day.tavilyDays == 1
+            && SearchFreshness.day.general == .week)
+
+        // live-34 (2) — "didn't confirm" judged by the passages, not by [n] marks. T's TF 202610212033 case: a correct table
+        // with no [n] at all (passages as the server's turn had them).
+        let presPassages = """
+        US Presidents List
+        | 43 | George W. Bush | Jan. 20, 2001-Jan. 20, 2009 | | 44 | Barack Obama | Jan. 20, 2009-Jan. 20, 2017 | | 45 | Donald Trump | Jan. 20, 2017-Jan. 20, 2021 | | 46 | Joe Biden | Jan. 20, 2021-Jan. 20, 2025 | | 47 | Donald Trump | Jan. 20, 2025-present |
+        Wikipedia: List of presidents of the United States
+        Gerald Ford (1974–1977) 39. Jimmy Carter (1977–1981) 40. Ronald Reagan (1981–1989) 41. George H. W. Bush (1989–1993) 42. Bill Clinton (1993–2001) 43. George W. Bush (2001–2009) 44. Barack Obama (2009–2017) 45. Donald Trump (2017–2021) 46. Joe Biden (2021–2025) 47. Donald Trump (2025–present)
+        """
+        let tTable = """
+        Here is the list of the last 10 U.S. Presidents up to October 21, 2026:
+
+        | # | President | Term Start | Term End |
+        |---|-----------|------------|----------|
+        | 38 | Gerald Ford | Aug. 9, 1974 | Jan. 20, 1977 |
+        | 39 | Jimmy Carter | Jan. 20, 1977 | Jan. 20, 1981 |
+        | 40 | Ronald Reagan | Jan. 20, 1981 | Jan. 20, 1989 |
+        | 41 | George H.W. Bush | Jan. 20, 1989 | Jan. 20, 1993 |
+        | 42 | Bill Clinton | Jan. 20, 1993 | Jan. 20, 2001 |
+        | 43 | George W. Bush | Jan. 20, 2001 | Jan. 20, 2009 |
+        | 44 | Barack Obama | Jan. 20, 2009 | Jan. 20, 2017 |
+        | 45 | Donald Trump | Jan. 20, 2017 | Jan. 20, 2021 |
+        | 46 | Joe Biden | Jan. 20, 2021 | Jan. 20, 2025 |
+        | 47 | Donald Trump | Jan. 20, 2025 | Present |
+
+        Donald Trump appears twice because he served two non-consecutive terms.
+        """
+        func note(_ answer: String, _ q: String, _ passages: String, results: Int, cited: Int) -> String {
+            let sup = EvidenceSupport.supported(answer: answer, question: q, passages: passages, now: now)
+            return WebGrounding.answerNote(question: q, searchRan: true, resultCount: results, citedCount: cited, rateLimited: false,
+                                           supported: sup)?.text ?? "none"
+        }
+        let n1 = note(tTable, tSentence, presPassages, results: 2, cited: 0)
+        row("T's-correct-uncited-table-→-no-line", n1 == "none", n1)
+        let lakePassages = "Wikipedia: First Minister of the Lakeview Republic\nIlsa Vane took office as First Minister of the Lakeview Republic on 3 March 2026, after the snap election."
+        let memory = "The First Minister of the Lakeview Republic is Tomas Reed of the Harbour Party, who has led the government since 2019."
+        let n2 = note(memory, "Who is the First Minister of the Lakeview Republic?", lakePassages, results: 1, cited: 0)
+        let n2c = note(memory + " [1]", "Who is the First Minister of the Lakeview Republic?", lakePassages, results: 1, cited: 1)
+        row("memory-answer-contradicting-the-passages-→-the-line-even-cited", n2 == WebGrounding.searchUnconfirmedNote
+            && n2c == WebGrounding.searchUnconfirmedNote, "\(n2) | cited: \(n2c)")
+        let right = "The First Minister of the Lakeview Republic is Ilsa Vane, in office since 3 March 2026."
+        let n3 = note(right, "Who is the First Minister of the Lakeview Republic?", lakePassages, results: 1, cited: 0)
+        row("right-uncited-prose-→-no-line", n3 == "none", n3)
+        let n4 = note(right, "Who is the First Minister of the Lakeview Republic?", "", results: 0, cited: 0)
+        row("no-web-passages-→-the-honest-line-as-before", n4 == WebGrounding.searchUnconfirmedNote, n4)
+        let sky = "The sky looks blue because molecules in Earth's atmosphere scatter blue sunlight more than red light."
+        let n5 = note(sky, "Why is the sky blue?", "Why is the sky blue? | NASA Space Place\nBlue light is scattered in all directions by the tiny molecules of air in Earth's atmosphere.", results: 1, cited: 0)
+        row("timeless-uncited-answer-from-the-passages-→-no-line", n5 == "none", n5)
+        row("tables-end-with-a-sources-line", WebGrounding.appSearchClause.contains("Sources: [1], [2]")
+            && AppleWebQuery.turnInstructions.contains("Sources: [1], [2]"))
+
+        // live-34 (3) — the training cutoff beside today's date: shelf models only (Apple and server models: none).
+        let base = LibrarianState.toolChatBase(today: "Tuesday, October 20, 2026")
+        let shelf = TrainingCutoff.stamp(base, model: "qwen3:4b-instruct-2507-q4_K_M")
+        row("shelf-model-gets-the-cutoff-line", shelf.contains("Your training data ends around 2024; today's real date is Tuesday, October 20, 2026")
+            && TrainingCutoff.cutoff(model: "qwen3:8b-q4_K_M") == "2024" && TrainingCutoff.cutoff(model: "qwen3:30b-a3b-instruct-2507-q4_K_M") == "2024",
+            String(shelf.prefix(0)))
+        row("server-or-unknown-model-no-cutoff-line", TrainingCutoff.stamp(base, model: "qwen3.6-35b-a3b") == base
+            && TrainingCutoff.cutoff(model: "llama3.2:latest") == nil && TrainingCutoff.cutoff(model: "qwen3.5:9b") == nil)
 
         // 3. The rerank: passages, the floor, the selection.
         let car = WebEvidence.Source(title: "When Is the Best Time to Buy a New Car? | Edmunds", url: "https://www.edmunds.com/car-buying/best-time",
@@ -130,7 +208,7 @@ enum WebEvidenceSelfTest {
 
         let passed = rows.filter { $0.1 }.count
         let lines = rows.map { "\($0.1 ? "ok  " : "BAD ") \($0.0)\($0.2.isEmpty ? "" : " — \($0.2)")" }.joined(separator: "\n")
-        return "\(passed == rows.count ? "PASS" : "FAIL") — \(passed)/\(rows.count)\(red ? " (RED: -Live32Web)" : "")\n\(lines)"
+        return "\(passed == rows.count ? "PASS" : "FAIL") — \(passed)/\(rows.count)\(red ? " (RED: -Live32Web)" : Live34.red ? " (RED: -Live33Web)" : "")\n\(lines)"
     }
 }
 

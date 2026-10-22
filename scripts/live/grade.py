@@ -73,7 +73,10 @@ def grade_turn(c, t):
                 "stages": {"query": "(searched!)" if searched else "(no search)"}, "answer": text[:300], "cited": [], "wiki": False,
                 "sources": []}
     ok = names and (bool(supports) or c.get("nocite", False)) and not stale and not think and (wiki or not c.get("wiki"))
-    return {"wiki": wiki, "sources": seen_hosts,"answered": bool(text), "names": names, "cites": bool(supports), "passedAny": len(passed_any), "stale": stale,
+    # live-34 (2) — the app's "didn't confirm" line under the answer; on an answer that names the right thing it is a false alarm
+    line = "unconfirmed: true" in (ans or {}).get("line", "")
+    st["freshness"] = ", ".join(f'{r["name"]} {r["freshness"]}' for r in (t["rows"] if t else []) if r["kind"] == "provider")
+    return {"line": line, "falseAlarm": line and names and not stale, "wiki": wiki, "sources": seen_hosts,"answered": bool(text), "names": names, "cites": bool(supports), "passedAny": len(passed_any), "stale": stale,
             "thinking": think, "pass": ok, "stages": st, "answer": text[:1500], "cited": cited}
 
 out = []
@@ -86,10 +89,10 @@ for c in cases:
         if t is None: g["note"] = "turn not in trace"
         out.append(g)
 json.dump(out, open(os.path.join(OUT, "grades.json"), "w"), indent=1, ensure_ascii=False)
-lines = ["| case | pass | names | cites | wiki | stale | thinking | total | query | sources | stages |", "|---|---|---|---|---|---|---|---|---|---|---|"]
+lines = ["| case | pass | names | cites | wiki | stale | thinking | didn't-confirm line | total | query | freshness | sources | stages |", "|---|---|---|---|---|---|---|---|---|---|---|---|---|"]
 for g in out:
     s = g["stages"]
-    lines.append(f'| {g["id"]} | {"PASS" if g["pass"] else "FAIL"} | {"y" if g["names"] else "n"} | {"y" if g["cites"] else "n"} ({g["passedAny"]} sources name it) | {"y" if g.get("wiki") else "n"} | {"; ".join(g["stale"]) or "-"} | {", ".join(g["thinking"]) or "-"} | {s.get("total_s")} s | {s.get("query","")} | {", ".join(g.get("sources", []))} | rewrite {s.get("rewrite_s")} s · {", ".join(s.get("tools", []))} · steps {"; ".join(s.get("steps", []))} |')
-lines.append(f'\n**{sum(g["pass"] for g in out)}/{len(out)} pass** · names {sum(g["names"] for g in out)} · cites {sum(g["cites"] for g in out)} · stale {sum(bool(g["stale"]) for g in out)} · thinking {sum(bool(g["thinking"]) for g in out)}')
+    lines.append(f'| {g["id"]} | {"PASS" if g["pass"] else "FAIL"} | {"y" if g["names"] else "n"} | {"y" if g["cites"] else "n"} ({g["passedAny"]} sources name it) | {"y" if g.get("wiki") else "n"} | {"; ".join(g["stale"]) or "-"} | {", ".join(g["thinking"]) or "-"} | {("FALSE ALARM" if g.get("falseAlarm") else "shown") if g.get("line") else "-"} | {s.get("total_s")} s | {s.get("query","")} | {s.get("freshness","")} | {", ".join(g.get("sources", []))} | rewrite {s.get("rewrite_s")} s · {", ".join(s.get("tools", []))} · steps {"; ".join(s.get("steps", []))} |')
+lines.append(f'\n**{sum(g["pass"] for g in out)}/{len(out)} pass** · names {sum(g["names"] for g in out)} · cites {sum(g["cites"] for g in out)} · stale {sum(bool(g["stale"]) for g in out)} · thinking {sum(bool(g["thinking"]) for g in out)} · didn\'t-confirm lines {sum(bool(g.get("line")) for g in out)} (false alarms {sum(bool(g.get("falseAlarm")) for g in out)})')
 open(os.path.join(OUT, "table.md"), "w").write("\n".join(lines) + "\n")
 print("\n".join(lines))

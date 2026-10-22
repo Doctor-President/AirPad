@@ -1285,6 +1285,8 @@ enum ModelRouter {
         // for the read-in-full packet (else it truncates to the model's 4096 default). The Host's
         // `ollamaChatBody` forwards `messages` + `options` raw to Ollama's native /api/chat.
         // `think` (per-chat, off by default) is honored only by that /api/chat path.
+        // live-34 (3) — the training cutoff beside today's date, for a shelf model (`TrainingCutoff`)
+        let messages = messages.map { m in m["role"] == "system" ? m.merging(["content": TrainingCutoff.stamp(m["content"] ?? "", model: model)]) { $1 } : m }
         let body = hostChatBody(model: model, messages: messages, numCtx: numCtx, maxTokens: maxTokens, think: think, requestID: requestID)
         // ★ Brief BY — the app does NOT send `keep_alive`. The Host's RESIDENCY MODE owns retention and
         // applies it on the chat path (Always-ready/Manual = -1, Dynamic = the idle default). BW's
@@ -1522,6 +1524,11 @@ enum ModelRouter {
         // Host routes the thought process to the reasoning channel (rendered live via
         // `onReasoningDelta`), leaving the answer clean.
         lastAnswerSource = AnswerSource(route: .host, model: model)   // live-27 (4)
+        // live-34 (3) — the training cutoff beside today's date, for a shelf model (`TrainingCutoff`)
+        let messages = messages.map { m -> [String: Any] in
+            guard m["role"] as? String == "system", let c = m["content"] as? String else { return m }
+            var m = m; m["content"] = TrainingCutoff.stamp(c, model: model); return m
+        }
         let body = hostAgentBody(model: model, messages: messages, tools: tools, think: think, maxTokens: maxTokens)
         let (bytes, session) = try await withAskLoad(pairing: pairing, model: model) {
             try await openSealedChat(pairing: pairing, hpk: hpk, chatURL: chatURL, body: body)
@@ -2308,6 +2315,7 @@ final class BraveSearchToolExecutor: ToolExecutor, @unchecked Sendable {
             // doesn't include it.
             var (links, rateLimited) = ([ToolLink](), false)
             let count = (arguments["count"] as? Int) ?? 5   // live-30 (A1): the Apple path asks for more (social hosts are dropped)
+            let window = SearchFreshness.window(arguments, query: query)   // live-34 (1)
             let keywords = WebGrounding.newsKeywords(query)
             // CH (T device 2026-10-09) — a news question that names a country asks Brave for news FROM that country
             // (`country=`), and a result that names it only inside another place ("New Mexico") is dropped.
@@ -2320,8 +2328,8 @@ final class BraveSearchToolExecutor: ToolExecutor, @unchecked Sendable {
             if WebGrounding.isNewsQuestion(query) {   // live-29 (B3): news-shaped only; "who is the current …" → web
                 // "<keywords> news": the bare keyword "world" matched Disney World and the World Championships
                 let newsQuery = keywords.isEmpty ? "top news" : keywords.joined(separator: " ") + " news"
-                for window in ["pd", "pw"] where links.isEmpty && !rateLimited {
-                    (links, rateLimited) = await braveNews(newsQuery, freshness: window, country: country?.code, count: count)
+                for news in (window == .week ? ["pw"] : ["pd", "pw"]) where links.isEmpty && !rateLimited {
+                    (links, rateLimited) = await braveNews(newsQuery, freshness: news, country: country?.code, count: count)
                     if let c = country { links.removeAll { WebGrounding.isFalseFriend(hay($0), for: c) } }
                     // relevance: at least one article must mention a keyword, else it isn't an answer (the country
                     // filter already makes a country's own news relevant, so its name needn't appear)
@@ -2330,10 +2338,10 @@ final class BraveSearchToolExecutor: ToolExecutor, @unchecked Sendable {
                 }
             }
             if links.isEmpty && !rateLimited, let c = country {
-                (links, rateLimited) = await braveSearch(query, country: c.code, count: count)
+                (links, rateLimited) = await braveSearch(query, country: c.code, count: count, freshness: window.general)
                 links.removeAll { WebGrounding.isFalseFriend(hay($0), for: c) }
             }
-            if links.isEmpty && !rateLimited { (links, rateLimited) = await braveSearch(query, count: count) }
+            if links.isEmpty && !rateLimited { (links, rateLimited) = await braveSearch(query, count: count, freshness: window.general) }
             if rateLimited {
                 throttled = true
                 return ToolResult(textForModel: "Web search is temporarily rate-limited by the provider (too many requests in a short time). Do NOT keep retrying — answer from what you already have, or if you have nothing, tell the user web search is rate-limited right now and to try again shortly.", links: [], rateLimited: true)
@@ -2367,14 +2375,18 @@ final class BraveSearchToolExecutor: ToolExecutor, @unchecked Sendable {
     /// GET the Brave web-search API → `[{title,url,snippet}]`. HTTP 429 (Brave's own
     /// rate-limit) → the shared `rateLimited` signal. Descriptions can carry `<strong>`
     /// highlight tags → stripped via the shared HTML helpers.
-    private func braveSearch(_ query: String, country: String? = nil, count: Int = 5) async -> (links: [ToolLink], rateLimited: Bool) {
+    private func braveSearch(_ query: String, country: String? = nil, count: Int = 5, freshness: SearchFreshness = .none) async -> (links: [ToolLink], rateLimited: Bool) {
         var comps = URLComponents(string: WebSearchBackend.base("https://api.search.brave.com") + "/res/v1/web/search")
         // Brief AF2 (a) — top 5 (was 8): a smaller synthesis payload → faster first
         // token → the tunnel can't time the upstream out mid-answer.
         comps?.queryItems = [URLQueryItem(name: "q", value: query), URLQueryItem(name: "count", value: "\(count)")]
             + (country.map { [URLQueryItem(name: "country", value: $0)] } ?? [])
             + (WikipediaGrounding.live31 ? [] : [URLQueryItem(name: "extra_snippets", value: "true")])   // live-32 (2)
+            + (freshness.brave.map { [URLQueryItem(name: "freshness", value: $0)] } ?? [])   // live-34 (1)
         guard let url = comps?.url else { return ([], false) }
+        #if DEBUG
+        WebTrace.shared.note("provider", ["name": "brave-web", "freshness": freshness.brave ?? "none"])
+        #endif
         var req = URLRequest(url: url)
         req.setValue("application/json", forHTTPHeaderField: "Accept")
         req.setValue("gzip", forHTTPHeaderField: "Accept-Encoding")
@@ -2492,8 +2504,13 @@ final class TavilySearchToolExecutor: ToolExecutor, @unchecked Sendable {
             requestFailed = false
             var (links, rateLimited) = ([ToolLink](), false)
             let count = (arguments["count"] as? Int) ?? 5   // live-30 (A1): the Apple path asks for more (social hosts are dropped)
-            if WebGrounding.isNewsQuestion(query) { (links, rateLimited) = await search(query, news: true, count: count) }   // live-29 (B3)
-            if links.isEmpty && !rateLimited { (links, rateLimited) = await search(query, news: false, count: count) }
+            let window = SearchFreshness.window(arguments, query: query)   // live-34 (1)
+            if WebGrounding.isNewsQuestion(query) || window == .day || window == .week {   // live-29 (B3)
+                for days in (window == .day ? [1, 7] : [7]) where links.isEmpty && !rateLimited {
+                    (links, rateLimited) = await search(query, news: true, count: count, days: days)
+                }
+            }
+            if links.isEmpty && !rateLimited { (links, rateLimited) = await search(query, news: false, count: count, window: window) }
             if rateLimited {
                 throttled = true
                 return ToolResult(textForModel: "Web search is temporarily rate-limited by the provider (too many requests in a short time). Do NOT keep retrying — answer from what you already have, or if you have nothing, tell the user web search is rate-limited right now and to try again shortly.", links: [], rateLimited: true)
@@ -2513,14 +2530,19 @@ final class TavilySearchToolExecutor: ToolExecutor, @unchecked Sendable {
     }
 
     /// POST /search (Bearer key) → `[ToolLink]`. 429 / 432 (Tavily's plan limit) → the shared `rateLimited` signal.
-    private func search(_ query: String, news: Bool, count: Int = 5) async -> (links: [ToolLink], rateLimited: Bool) {
+    private func search(_ query: String, news: Bool, count: Int = 5, days: Int = 7, window: SearchFreshness = .none) async -> (links: [ToolLink], rateLimited: Bool) {
         guard let url = URL(string: WebSearchBackend.base("https://api.tavily.com") + "/search") else { return ([], false) }
         var req = URLRequest(url: url)
         req.httpMethod = "POST"
         req.setValue("application/json", forHTTPHeaderField: "Content-Type")
         req.setValue("Bearer \(apiKey)", forHTTPHeaderField: "Authorization")
         var body: [String: Any] = ["query": query, "max_results": count, "search_depth": "basic", "topic": news ? "news" : "general"]
-        if news { body["days"] = 7 }
+        if news { body["days"] = days }
+        // live-34 (1) — the provider's freshness filter on a general search (news → this week; the current state → measured)
+        if !news, let r = window.general.tavilyRange { body["time_range"] = r }
+        #if DEBUG
+        WebTrace.shared.note("provider", ["name": news ? "tavily-news" : "tavily-web", "freshness": news ? "days=\(days)" : (body["time_range"] as? String ?? "none")])
+        #endif
         req.httpBody = try? JSONSerialization.data(withJSONObject: body)
         guard let (data, resp) = try? await URLSession.shared.data(for: req) else { if !news { requestFailed = true }; return ([], false) }
         let status = (resp as? HTTPURLResponse)?.statusCode ?? -1

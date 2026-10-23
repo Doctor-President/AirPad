@@ -304,6 +304,8 @@ struct AppearanceTuningState: Codable, Equatable {
     var floatingButtons: FloatingButtonsMode = .glass
     /// live-28 (A1) / live-29 (B1) — T picked A (10-19): the tuner starts there and the App Store build ships it.
     var lightFade: LightFadeMode = .band
+    /// live-39 — the Map in dark mode: background, highlights, flat ↔ Fresnel orbs.
+    var mapDark: MapDarkTuning = .today
     static let defaults = AppearanceTuningState(light: .lightDefault, dark: .darkDefault)
 
     init(light: AppearanceTuningValues, dark: AppearanceTuningValues, cardContent: CardContentMode = .proposal,
@@ -319,6 +321,7 @@ struct AppearanceTuningState: Codable, Equatable {
         captureControls = try c.decodeIfPresent(CaptureControlsMode.self, forKey: .captureControls) ?? .glass
         floatingButtons = try c.decodeIfPresent(FloatingButtonsMode.self, forKey: .floatingButtons) ?? .glass
         lightFade = try c.decodeIfPresent(LightFadeMode.self, forKey: .lightFade) ?? .band
+        mapDark = (try? c.decodeIfPresent(MapDarkTuning.self, forKey: .mapDark)) ?? .today
     }
 }
 
@@ -377,6 +380,24 @@ final class AppearanceTuner {
         // `-RenderGenerating YES`); `-RimRestRender off|static|dim` — the rim at rest on all three pills.
         if let a = UserDefaults.standard.string(forKey: "RimAnimationRender").flatMap(PillRimActive.init(rawValue:)) {
             for d in [false, true] { update(dark: d) { $0.searchPill.rim.active = a; $0.askPill.rim.active = a } }
+        }
+        // live-39 stills — `-MapOrbRender flat|subtle|medium|strong` and `-MapGroundRender <hex>`.
+        if let o = UserDefaults.standard.string(forKey: "MapOrbRender") {
+            state.mapDark.orbLook = o == "flat" ? .flat : .fresnel
+            if let p = FresnelLook.presets.first(where: { $0.0.lowercased() == o }) { state.mapDark.fresnel = p.1 }
+        }
+        if let g = UserDefaults.standard.string(forKey: "MapGroundRender") { state.mapDark.ground = TunerHSL(hex: g) }
+        // `-MapOrbCycle <start-s>`: one launch steps flat → subtle → medium → strong every 4 s from <start-s> (same layout +
+        // framing for the comparison stills); NSLog `[MAPCYCLE] <look>` at each step.
+        if let start = UserDefaults.standard.string(forKey: "MapOrbCycle").flatMap(Double.init) {
+            let steps: [(String, FresnelLook?)] = [("flat", nil)] + FresnelLook.presets.map { ($0.0.lowercased(), $0.1) }
+            for (i, step) in steps.enumerated() {
+                DispatchQueue.main.asyncAfter(deadline: .now() + start + Double(i) * 4) { [weak self] in
+                    if let f = step.1 { self?.state.mapDark.orbLook = .fresnel; self?.state.mapDark.fresnel = f }
+                    else { self?.state.mapDark.orbLook = .flat }
+                    NSLog("[MAPCYCLE] %@", step.0)
+                }
+            }
         }
         if let r = UserDefaults.standard.string(forKey: "RimRestRender").flatMap(PillRimRest.init(rawValue:)) {
             for d in [false, true] { update(dark: d) { $0.editPills { $0.rim.rest = r } } }
@@ -576,7 +597,7 @@ extension AppearanceTuning {
             return "{" + parts.joined(separator: ",") + "}"
         }
         return "{\"airpadAppearance\":1,\"build\":\"\(build)\",\"editing\":\"\(mode)\",\"cardContent\":\"\(s.cardContent.rawValue)\",\"captureControls\":\"\(s.captureControls.rawValue)\",\"floatingButtons\":\"\(s.floatingButtons.rawValue)\",\"lightFade\":\"\(s.lightFade.rawValue)\","
-            + "\"light\":\(block(s.light, dark: false)),\"dark\":\(block(s.dark, dark: true))}"
+            + "\"light\":\(block(s.light, dark: false)),\"dark\":\(block(s.dark, dark: true)),\"mapDark\":\(mapDarkJSON(s.mapDark))}"
     }
 }
 
@@ -1058,7 +1079,9 @@ extension AppearanceTuning {
                 && imp.captureControls == .glass && imp.floatingButtons == .glass,
                 "proposal=\(CardContentPresentation.bakedProposal) glass=\(CaptureControlsStyle.bakedGlass) floating=\(FloatingButtonsStyle.bakedGlass)")
             // Copy values at the defaults → T's file, every key (build + editing are the session's, not values).
-            let back = (try? JSONSerialization.jsonObject(with: Data(exportJSON(.defaults, editing: "light", build: "202610191107").utf8)))
+            var back = (try? JSONSerialization.jsonObject(with: Data(exportJSON(.defaults, editing: "light", build: "202610191107").utf8)))
+            // live-39's Map (dark) block postdates the 10-19 file (its own rows check it: map-dark-*).
+            if var o = back as? [String: Any] { o.removeValue(forKey: "mapDark"); back = o }
             let file = try? JSONSerialization.jsonObject(with: Data(t1019.utf8))
             // T's 10-19 file has every key this build writes (lightFade included): all compared, none skipped, none added.
             let d = keyDiff(back, file, "")
@@ -1204,6 +1227,7 @@ extension AppearanceTuning {
 
         #if DEBUG || TESTFLIGHT
         row("this-build-offers-it (DEBUG / TESTFLIGHT)", isOffered)
+        for (name, ok, detail) in mapDarkSelfTestRows() { row(name, ok, detail) }
         #endif
         return "[AppearanceTuningSelfTest] \(fails == 0 ? "PASS" : "FAIL") — \(rows.count - fails)/\(rows.count)\n"
             + rows.joined(separator: "\n")
@@ -1214,6 +1238,168 @@ extension AppearanceTuning {
     }
     private static func noHairline(_ v: AppearanceTuningValues) -> AppearanceTuningValues {
         var c = v; c.hairline = false; return c
+    }
+}
+
+#endif
+
+// MARK: - live-39 — the Map in dark mode (background, highlights, Fresnel orbs)
+
+#if DEBUG || TESTFLIGHT
+
+/// A tuner colour held as HSL (so a hue survives a trip through grey) with its 8-bit hex derived. Defaults are built
+/// from today's hex and round-trip to it exactly.
+struct TunerHSL: Codable, Equatable {
+    var h: Double   // 0…360
+    var s: Double   // 0…1
+    var l: Double   // 0…1
+
+    init(h: Double, s: Double, l: Double) { self.h = h; self.s = s; self.l = l }
+    init(hex: String) {
+        var v: UInt64 = 0
+        Scanner(string: hex).scanHexInt64(&v)
+        let r = Double((v >> 16) & 0xFF) / 255, g = Double((v >> 8) & 0xFF) / 255, b = Double(v & 0xFF) / 255
+        let mx = max(r, g, b), mn = min(r, g, b), d = mx - mn
+        l = (mx + mn) / 2
+        s = d == 0 ? 0 : d / (1 - abs(2 * l - 1))
+        var hue: Double = 0
+        if d != 0 {
+            if mx == r { hue = ((g - b) / d).truncatingRemainder(dividingBy: 6) }
+            else if mx == g { hue = (b - r) / d + 2 }
+            else { hue = (r - g) / d + 4 }
+        }
+        hue *= 60; if hue < 0 { hue += 360 }
+        h = hue
+    }
+    /// 0…1 sRGB.
+    var rgb: (r: Double, g: Double, b: Double) {
+        let c = (1 - abs(2 * l - 1)) * s, hp = (h.truncatingRemainder(dividingBy: 360)) / 60
+        let x = c * (1 - abs(hp.truncatingRemainder(dividingBy: 2) - 1)), m = l - c / 2
+        let (r1, g1, b1): (Double, Double, Double)
+        switch hp {
+        case ..<1: (r1, g1, b1) = (c, x, 0)
+        case ..<2: (r1, g1, b1) = (x, c, 0)
+        case ..<3: (r1, g1, b1) = (0, c, x)
+        case ..<4: (r1, g1, b1) = (0, x, c)
+        case ..<5: (r1, g1, b1) = (x, 0, c)
+        default:   (r1, g1, b1) = (c, 0, x)
+        }
+        func q(_ v: Double) -> Double { (min(max(v + m, 0), 1) * 255).rounded() / 255 }   // snapped to 8 bits = the hex
+        return (q(r1), q(g1), q(b1))
+    }
+    var hex: String {
+        let c = rgb
+        return String(format: "%02X%02X%02X", Int((c.r * 255).rounded()), Int((c.g * 255).rounded()), Int((c.b * 255).rounded()))
+    }
+    var uiColor: UIColor { let c = rgb; return UIColor(red: c.r, green: c.g, blue: c.b, alpha: 1) }
+    var color: Color { Color(uiColor) }
+    var simd: SIMD3<Float> { let c = rgb; return SIMD3(Float(c.r), Float(c.g), Float(c.b)) }
+}
+
+/// The dark Map's orb look: today's flat emissive fill, or a dark bubble lit at its rim (Fresnel).
+enum MapOrbLook: String, Codable, CaseIterable, Identifiable {
+    case flat, fresnel
+    var id: String { rawValue }
+    var label: String { self == .flat ? "Flat (today)" : "Fresnel" }
+}
+
+/// The Fresnel orb: a dark body near the background, tinted by the orb's family colour, with a rim that glows in the
+/// orb's colour and falls off toward the centre (rim = f(radius)^power). All global → the orbs stay one batch.
+struct FresnelLook: Codable, Equatable {
+    var bodyTint: Double        // 0 = the background · 1 = the orb's colour
+    var bodyDarkness: Double    // 0 = as tinted · 1 = black
+    var rimBrightness: Double   // rim colour = orb colour × this
+    var rimWidth: Double        // fraction of the radius the rim reaches in from the edge (1 = to the centre)
+    var rimPower: Double        // falloff exponent
+    var rimIntensity: Double
+    var innerGlow: Double       // a soft glow in the orb's colour at the centre
+    var highlight: Double       // a faint top-left light
+    var label: TunerHSL         // title ink on a dark body
+
+    static let subtle = FresnelLook(bodyTint: 0.14, bodyDarkness: 0.25, rimBrightness: 1.0, rimWidth: 0.45, rimPower: 2.6,
+                                    rimIntensity: 0.55, innerGlow: 0.0, highlight: 0.0, label: TunerHSL(hex: "F5F2EC"))
+    static let medium = FresnelLook(bodyTint: 0.20, bodyDarkness: 0.15, rimBrightness: 1.25, rimWidth: 0.65, rimPower: 2.2,
+                                    rimIntensity: 0.95, innerGlow: 0.06, highlight: 0.10, label: TunerHSL(hex: "FFFCF5"))
+    static let strong = FresnelLook(bodyTint: 0.28, bodyDarkness: 0.05, rimBrightness: 1.6, rimWidth: 0.85, rimPower: 1.7,
+                                    rimIntensity: 1.5, innerGlow: 0.14, highlight: 0.22, label: TunerHSL(hex: "FFFFFF"))
+    static let presets: [(String, FresnelLook)] = [("Subtle", .subtle), ("Medium", .medium), ("Strong", .strong)]
+}
+
+/// live-39 — every dark-Map colour T can dial. Defaults = what ships today, so an untouched tuner renders today's Map.
+struct MapDarkTuning: Codable, Equatable {
+    var ground = TunerHSL(hex: "111115")          // the grid's opaque ground (BackgroundGridNode u_ground_color)
+    var ambientAmount = 0.067                     // the mass-field ripple: mix toward the ambient colour away from orbs
+    var ambient = TunerHSL(hex: "FFFFFF")
+    var dot = TunerHSL(hex: "FFFFFF")             // the dot grid
+    var dotOpacity = 0.809
+    var pillTint = TunerHSL(hex: "FFFFFF")        // a tint laid over the territory pill's glass (0 = none)
+    var pillTintAmount = 0.0
+    var pillOutlineCustom = false                 // false = each territory's own colour (today)
+    var pillOutline = TunerHSL(hex: "FFFFFF")
+    var pillOutlineOpacity = 0.95
+    var pillOutlineWidth = 1.5
+    var pillTextOpacity = 0.95
+    var focusRing = TunerHSL(hex: "00BFFF")       // the focused orb's ring
+    var selectionRing = TunerHSL(hex: "1B59C2")   // the multi-select ring
+    var orbGlow = TunerHSL(hex: "FFFFFF")         // every orb's edge glow (AE inner glow)
+    var orbGlowOpacity = 0.12
+    var orbLook: MapOrbLook = .flat
+    var fresnel: FresnelLook = .medium
+
+    static let today = MapDarkTuning()
+
+    /// What the Map's background shows. The ripple mixes the ground toward (R × ambient colour) at `ambientAmount`, with
+    /// R = 0 within reach of orbs (6 orb radii — measured: nearly the whole screen, `#101014` today) and R = 1 only in
+    /// open space past every orb's reach (`#212125` today).
+    var fieldHex: String { mixHex(r: 0) }
+    var openSpaceHex: String { mixHex(r: 1) }
+    private func mixHex(r: Double) -> String {
+        let g = ground.rgb, a = ambient.rgb, t = ambientAmount
+        func m(_ x: Double, _ y: Double) -> Int { Int(((x * (1 - t) + y * r * t) * 255).rounded()) }
+        return String(format: "%02X%02X%02X", m(g.r, a.r), m(g.g, a.g), m(g.b, a.b))
+    }
+}
+
+extension AppearanceTuning {
+    /// The dark Map's tuner values, or nil when the tuner isn't live (the Map then renders its baked literals).
+    static var mapDark: MapDarkTuning? { isLive ? AppearanceTuner.shared.state.mapDark : nil }
+
+    static func mapDarkJSON(_ m: MapDarkTuning) -> String {
+        func n(_ x: Double) -> String {
+            var t = String(format: "%.3f", x)
+            while t.contains(".") && (t.hasSuffix("0") || t.hasSuffix(".")) { t.removeLast() }
+            return t
+        }
+        func c(_ x: TunerHSL) -> String { "\"#\(x.hex)\"" }
+        let f = m.fresnel
+        return "{\"ground\":\(c(m.ground)),\"field\":\"#\(m.fieldHex)\",\"openSpace\":\"#\(m.openSpaceHex)\",\"ambient\":\(n(m.ambientAmount)),"
+            + "\"ambientColor\":\(c(m.ambient)),\"dots\":\(c(m.dot)),\"dotOpacity\":\(n(m.dotOpacity)),"
+            + "\"pillTint\":\(c(m.pillTint)),\"pillTintAmount\":\(n(m.pillTintAmount)),"
+            + "\"pillOutline\":\(m.pillOutlineCustom ? c(m.pillOutline) : "\"territory\""),"
+            + "\"pillOutlineOpacity\":\(n(m.pillOutlineOpacity)),\"pillOutlineWidth\":\(n(m.pillOutlineWidth)),"
+            + "\"pillTextOpacity\":\(n(m.pillTextOpacity)),\"focusRing\":\(c(m.focusRing)),\"selectionRing\":\(c(m.selectionRing)),"
+            + "\"orbGlow\":\(c(m.orbGlow)),\"orbGlowOpacity\":\(n(m.orbGlowOpacity)),\"orbLook\":\"\(m.orbLook.rawValue)\","
+            + "\"fresnel\":{\"bodyTint\":\(n(f.bodyTint)),\"bodyDarkness\":\(n(f.bodyDarkness)),\"rimBrightness\":\(n(f.rimBrightness)),"
+            + "\"rimWidth\":\(n(f.rimWidth)),\"rimPower\":\(n(f.rimPower)),\"rimIntensity\":\(n(f.rimIntensity)),"
+            + "\"innerGlow\":\(n(f.innerGlow)),\"highlight\":\(n(f.highlight)),\"label\":\(c(f.label))}}"
+    }
+
+    /// `-AppearanceTuningSelfTest` rows for the Map section (pure).
+    static func mapDarkSelfTestRows() -> [(String, Bool, String)] {
+        let t = MapDarkTuning.today
+        let hexes = ["111115", "FFFFFF", "00BFFF", "1B59C2", "1A1A1A", "0B0B0E", "F5F2EC"]
+        let trips = hexes.allSatisfy { TunerHSL(hex: $0).hex == $0 }
+        return [
+            ("map-dark-hsl-round-trips-today's-hexes", trips, hexes.map { "\($0)→\(TunerHSL(hex: $0).hex)" }.joined(separator: " ")),
+            ("map-dark-defaults-are-today (ground 111115 · ripple 0.067 · dots FFFFFF@0.809 · focus 00BFFF · select 1B59C2 · glow FFFFFF@0.12 · flat)",
+             t.ground.hex == "111115" && t.ambientAmount == 0.067 && t.dot.hex == "FFFFFF" && t.dotOpacity == 0.809
+                && t.focusRing.hex == "00BFFF" && t.selectionRing.hex == "1B59C2" && t.orbGlow.hex == "FFFFFF"
+                && t.orbGlowOpacity == 0.12 && t.orbLook == .flat && t.pillTintAmount == 0 && !t.pillOutlineCustom
+                && t.pillOutlineOpacity == 0.95 && t.pillOutlineWidth == 1.5 && t.pillTextOpacity == 0.95, ""),
+            ("map-dark-field-today-101014-open-space-212125 (measured on a Sim still: 101014)",
+             t.fieldHex == "101014" && t.openSpaceHex == "212125", "\(t.fieldHex) / \(t.openSpaceHex)"),
+            ("map-dark-export-parses", (try? JSONSerialization.jsonObject(with: Data(mapDarkJSON(t).utf8))) != nil, mapDarkJSON(t)),
+        ]
     }
 }
 

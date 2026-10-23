@@ -257,6 +257,9 @@ final class CorpusPhysicsScene: SKScene {
         // contrast over the old white. Distinct from the focus ring's cyan #00BFFF
         // (the two never coexist — entering selection is a touch that clears focus).
         outline.strokeColor = UIColor(red: 0x1B / 255.0, green: 0x59 / 255.0, blue: 0xC2 / 255.0, alpha: 1)
+        #if DEBUG || TESTFLIGHT
+        if !currentIsLight, let m = AppearanceTuning.mapDark { outline.strokeColor = m.selectionRing.uiColor }   // live-39
+        #endif
         outline.fillColor = .clear
         outline.lineWidth = 3
         outline.zPosition = 1.0
@@ -295,6 +298,9 @@ final class CorpusPhysicsScene: SKScene {
         let radius = (sprite.userData?["radius"] as? CGFloat) ?? 30
         let outline = SKShapeNode(circleOfRadius: radius + 6)
         outline.strokeColor = UIColor(red: 0x00 / 255.0, green: 0xBF / 255.0, blue: 0xFF / 255.0, alpha: 1)
+        #if DEBUG || TESTFLIGHT
+        if !currentIsLight, let m = AppearanceTuning.mapDark { outline.strokeColor = m.focusRing.uiColor }   // live-39
+        #endif
         outline.fillColor = .clear
         outline.lineWidth = 4
         outline.zPosition = 1.0
@@ -850,8 +856,47 @@ final class CorpusPhysicsScene: SKScene {
             // Restore the dark ripple ground (#111115) after any light→dark flip left the light hex here.
             gridNode?.fillShader?.uniforms.first { $0.name == "u_ground_color" }?
                 .vectorFloat3Value = vector_float3(0.0667, 0.0667, 0.0824)
+            #if DEBUG || TESTFLIGHT
+            if let m = AppearanceTuning.mapDark { applyMapDarkTuning(m) }
+            #endif
+        }
+        #if DEBUG || TESTFLIGHT
+        if currentIsLight { orbSpriteShader.uniforms.first { $0.name == "u_fr_on" }?.floatValue = 0 }
+        #endif
+    }
+
+    #if DEBUG || TESTFLIGHT
+    /// live-39 — the TestFlight tuner's dark-Map values over the baked ones (pushed per frame; dark only).
+    private func applyMapDarkTuning(_ m: MapDarkTuning) {
+        func orb(_ n: String) -> SKUniform? { orbSpriteShader.uniforms.first { $0.name == n } }
+        func grid(_ n: String) -> SKUniform? { gridNode?.fillShader?.uniforms.first { $0.name == n } }
+        let f = m.fresnel
+        orb("u_ar_glow_op")?.floatValue = Float(m.orbGlowOpacity)
+        orb("u_ar_glow_col")?.vectorFloat3Value = m.orbGlow.simd
+        orb("u_fr_on")?.floatValue = m.orbLook == .fresnel ? 1 : 0
+        orb("u_fr_a")?.vectorFloat4Value = vector_float4(Float(f.bodyTint), Float(f.bodyDarkness), Float(f.rimBrightness), Float(f.rimWidth))
+        orb("u_fr_b")?.vectorFloat4Value = vector_float4(Float(f.rimPower), Float(f.rimIntensity), Float(f.innerGlow), Float(f.highlight))
+        orb("u_ground_color")?.vectorFloat3Value = m.ground.simd   // the dark branch reads it only for Fresnel
+        grid("u_ground_color")?.vectorFloat3Value = m.ground.simd
+        grid("u_ripple_amt")?.floatValue = Float(m.ambientAmount)
+        grid("u_ripple_color")?.vectorFloat3Value = m.ambient.simd
+        // Title ink + rings follow the tuner live; recolour only when their inputs change.
+        let inkKey = m.orbLook == .fresnel ? "\(f)\(m.ground.hex)" : "flat"
+        if inkKey != lastTitleInkKey { lastTitleInkKey = inkKey; restyleLabels() }
+        let ringKey = m.focusRing.hex + m.selectionRing.hex
+        if ringKey != lastRingKey {
+            lastRingKey = ringKey
+            for (_, sprite) in nodeSprites {
+                for c in sprite.children {
+                    if c.name == "focusOutline" { (c as? SKShapeNode)?.strokeColor = m.focusRing.uiColor }
+                    if c.name == "selectionOutline" { (c as? SKShapeNode)?.strokeColor = m.selectionRing.uiColor }
+                }
+            }
         }
     }
+    private var lastTitleInkKey = "flat"
+    private var lastRingKey = ""
+    #endif
 
     // Orb edge feather (a_geom.y) clamps — screen-constant AA, tunable.
     private static let orbEdgeMinAA: Float = 0.0003   // floor: avoid a razor-hard / aliased edge
@@ -1798,9 +1843,14 @@ final class CorpusPhysicsScene: SKScene {
             // appearance the SwiftUI canvas background flips on. (Dot geometry is
             // baked at construction; the tuner is gone.)
             let dotDark = view?.traitCollection.userInterfaceStyle != .light
-            let dot = AppearancePalette.mapGridDotRGB(dark: dotDark)
-            BackgroundGridNode.setDotAppearance(grid, r: dot.r, g: dot.g, b: dot.b,
-                                                opacity: AppearancePalette.mapGridDotOpacity(dark: dotDark))
+            var dot = AppearancePalette.mapGridDotRGB(dark: dotDark)
+            var dotOpacity = AppearancePalette.mapGridDotOpacity(dark: dotDark)
+            #if DEBUG || TESTFLIGHT
+            if dotDark, let m = AppearanceTuning.mapDark {   // live-39 — the tuner's dark dots
+                let c = m.dot.simd; dot = (c.x, c.y, c.z); dotOpacity = Float(m.dotOpacity)
+            }
+            #endif
+            BackgroundGridNode.setDotAppearance(grid, r: dot.r, g: dot.g, b: dot.b, opacity: dotOpacity)
         }
 
         // Re-theme unfocused orbs when the appearance flips (light ↔ dark). Fires
@@ -3350,8 +3400,7 @@ final class CorpusPhysicsScene: SKScene {
                   (titleNode.userData?["isFocal"] as? Bool) != true
             else { continue }
             let fillColor = currentNodes.first(where: { $0.id == nodeID }).map { bubbleColor(for: $0) } ?? .gray
-            let inkFill = currentIsLight ? lightCompFill(fillColor) : applyDarkOrbBoost(fillColor)
-            MSDFLabel.recolor(container: titleNode, color: legibleInk(over: inkFill).ink)
+            MSDFLabel.recolor(container: titleNode, color: orbTitleInk(fillColor))
         }
     }
 
@@ -3475,6 +3524,24 @@ final class CorpusPhysicsScene: SKScene {
                 hsv.z = clamp(hsv.z * (1.0 - u_defocus_val * a_defocus), 0.0, 1.0);
                 vec3 col = hsv2rgb(hsv);
 
+                if (u_fr_on > 0.5) {
+                    // live-39 — FRESNEL (TestFlight tuner only; u_fr_on = 0 everywhere else → the flat path below).
+                    // A dark body near the ground tinted by the orb's colour, with a rim in the orb's colour that
+                    // falls off toward the centre: rim = (edge ramp over u_fr_a.w of the radius)^power. Recedes with
+                    // the orb in the focus band. a = (body tint, body darkness, rim brightness, rim width);
+                    // b = (power, rim intensity, inner glow, top-left highlight). All global → still one batch.
+                    float rr = clamp(d / R, 0.0, 1.0);
+                    float fDim = 1.0 - u_defocus_val * a_defocus;
+                    vec3 body = mix(u_ground_color, col, u_fr_a.x) * (1.0 - u_fr_a.y);
+                    float rimT = clamp((rr - (1.0 - u_fr_a.w)) / max(u_fr_a.w, 0.001), 0.0, 1.0);
+                    float rimF = pow(rimT, u_fr_b.x) * u_fr_b.y;
+                    vec3 fc = body + col * u_fr_a.z * rimF * fDim;
+                    float cIn = 1.0 - rr;
+                    fc += col * u_fr_b.z * cIn * cIn * fDim;
+                    float hs = smoothstep(0.24, 0.0, distance(p, vec2(-0.19, 0.21)));
+                    fc += vec3(u_fr_b.w * hs * hs * fDim);
+                    fillRGB = clamp(fc, 0.0, 1.0);
+                } else {
                 vec2 ldir = normalize(u_light_dir);
                 float shade = dot(normalize(p + vec2(1e-4)), ldir);          // 3. sphere-shade (-1..1, volume)
                 col *= (1.0 + u_dark_sphere * shade);
@@ -3497,9 +3564,10 @@ final class CorpusPhysicsScene: SKScene {
                 float edgeIn = clamp((R - d) / max(u_glow_size, 1e-4), 0.0, 1.0);   // 0 edge → 1 at Size inward
                 float gf = 1.0 - edgeIn; gf = gf * gf * (3.0 - 2.0 * gf);           // Softer (smoothstep) falloff
                 float gDim = 1.0 - u_defocus_val * a_defocus;
-                col = mix(col, vec3(1.0), u_ar_glow_op * gf * gDim);
+                col = mix(col, u_ar_glow_col, u_ar_glow_op * gf * gDim);   // live-39: colour tunable (white = today)
 
                 fillRGB = clamp(col, 0.0, 1.0);
+                }
             }
 
             float fa = disc * fillC.a;
@@ -3543,6 +3611,11 @@ final class CorpusPhysicsScene: SKScene {
             SKUniform(name: "u_defocus_sat", float: MapCompTuning.desat * MapCompTuning.defFocusStrength),
             SKUniform(name: "u_ar_glow_op",  float: MapCompTuning.defGlowOpacity),
             SKUniform(name: "u_glow_size",   float: MapCompTuning.glowSizeRel),
+            // live-39 — the edge glow's colour (white = today) + the Fresnel look (off = today). TestFlight tuner only.
+            SKUniform(name: "u_ar_glow_col", vectorFloat3: vector_float3(1, 1, 1)),
+            SKUniform(name: "u_fr_on", float: 0),
+            SKUniform(name: "u_fr_a", vectorFloat4: vector_float4(0, 0, 0, 0)),
+            SKUniform(name: "u_fr_b", vectorFloat4: vector_float4(1, 0, 0, 0)),
             // Brief AT — LIGHT comp levers (light branch only). Dark holds them inert: u_orb_opacity = 1
             // (byte-identical premultiply), and the dark branch never reads the hue/sat/focus/palette/ground.
             // `applyMapComp` re-pushes them per appearance. Rim + pool uniforms were removed at the lock.
@@ -3668,6 +3741,27 @@ final class CorpusPhysicsScene: SKScene {
         } else {
             return (black, UIColor(white: 1.0, alpha: 0.6))   // dark ink, light halo
         }
+    }
+
+    /// The orb title's ink for a node's base fill: the legible-ink rule over the rendered tone. live-39: under the
+    /// TestFlight tuner's Fresnel look (dark) the tone is the dark body (+ the centre's inner glow), and the ink is the
+    /// tuner's label colour unless near-black reads better there.
+    private func orbTitleInk(_ fillColor: UIColor) -> UIColor {
+        #if DEBUG || TESTFLIGHT
+        if !currentIsLight, let m = AppearanceTuning.mapDark, m.orbLook == .fresnel {
+            let f = m.fresnel, g = m.ground.rgb
+            var r: CGFloat = 0, gg: CGFloat = 0, b: CGFloat = 0, a: CGFloat = 0
+            applyDarkOrbBoost(fillColor).getRed(&r, green: &gg, blue: &b, alpha: &a)
+            func ch(_ grd: Double, _ c: CGFloat) -> CGFloat {
+                min(1, CGFloat(grd + (Double(c) - grd) * f.bodyTint) * CGFloat(1 - f.bodyDarkness) + c * CGFloat(f.innerGlow))
+            }
+            let body = UIColor(red: ch(g.r, r), green: ch(g.g, gg), blue: ch(g.b, b), alpha: 1)
+            let label = f.label.uiColor, black = UIColor(red: 0.08, green: 0.07, blue: 0.06, alpha: 1)
+            return Self.wcagContrast(label, body) >= Self.wcagContrast(black, body) ? label : black
+        }
+        #endif
+        let inkFill = currentIsLight ? lightCompFill(fillColor) : applyDarkOrbBoost(fillColor)
+        return legibleInk(over: inkFill).ink
     }
 
     /// WCAG 2.x relative luminance (sRGB linearised) + contrast ratio (hi+0.05)/(lo+0.05).
@@ -3975,10 +4069,9 @@ final class CorpusPhysicsScene: SKScene {
         let (glyphFont, lines) = resolveTitleLines(text, box: side) { s, f in
             MSDFLabel.textWidth(s, pointSize: f.pointSize, font: font)
         }
-        let inkFill = currentIsLight ? lightCompFill(fillColor) : applyDarkOrbBoost(fillColor)
         // Title ink: T device-final 2026-09-14 is `titleColour=(auto)` + `titleOpacity=1.000`,
         // i.e. the legible-ink rule with no override — so the auto value IS the shipped value.
-        let titleColor = legibleInk(over: inkFill).ink
+        let titleColor = orbTitleInk(fillColor)
         return MSDFLabel.makeContainer(lines: lines, pointSize: glyphFont.pointSize,
                                        color: titleColor, fullTitle: text, font: font)
     }

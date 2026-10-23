@@ -115,8 +115,9 @@ enum WebEvidence {
 
     /// live-37 (2) — how much evidence the model sees, sized to its window (live-36: "cut by top-k / budget" was the largest
     /// loss stage on every Host tier while prompts used ~10% of the Host's 20,480 and Apple a median 649 of 4,096 tokens).
-    /// Tokens of passages: Apple on-device ~2,000 (room left for a 10-row table answer), the 4B / 8B ~6,000, the 30B-A3B
-    /// ~10,000. Characters per token measured on the smoke runs (Ops `design-refs/live37-2026-10-22/`).
+    /// Tokens of passages: Apple on-device ~1,200, the 4B / 8B ~3,000, the 30B-A3B ~5,000 (live-38: live-37's 2,000 / 6,000 /
+    /// 10,000 took the 4B's first word from 5.7 to 15.7 s; T felt it on TestFlight). Characters per token measured on the
+    /// smoke runs (Ops `design-refs/live37-2026-10-22/`).
     struct Budget: Sendable, Equatable {
         let chars: Int
         let topK: Int
@@ -124,7 +125,7 @@ enum WebEvidence {
         let perSource: Int
         let label: String
     }
-    static let appleTokens = 2_000, hostSmallTokens = 6_000, hostLargeTokens = 10_000
+    static let appleTokens = 1_200, hostSmallTokens = 3_000, hostLargeTokens = 5_000
     /// Apple's tokenizer on the evidence text, measured on the first retrieval-only smoke run (`tokenCount(for:)`, 14
     /// searched turns): 2.9–3.6 characters a token, ~3.4 overall. Qwen's: from the Host's prompt_eval on the answer run.
     static let appleCharsPerToken = 3.4, qwenCharsPerToken = 4.0

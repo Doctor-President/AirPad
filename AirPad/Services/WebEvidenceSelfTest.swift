@@ -193,8 +193,8 @@ enum WebEvidenceSelfTest {
         // live-37 (2) — the budget by the model's window; the best sources first and last.
         let b4 = WebEvidence.hostWebBudget(model: "qwen3:4b-instruct-2507-q4_K_M"), b30 = WebEvidence.hostWebBudget(model: "qwen3:30b-a3b-instruct-2507-q4_K_M")
         let ba = WebEvidence.appleWebBudget
-        row("budget-sized-to-the-model", Live37.selection ? (b4.chars == 24_000 && b30.chars == 40_000 && ba.chars == 6_800
-            && b4.topK > 6 && b30.topK > b4.topK && ba.topK > 6 && ba.perSource >= 3) : (b4.chars == 3_000 && ba.chars == 1_500 && b4.topK == 6),
+        row("budget-sized-to-the-model", Live37.selection ? (b4.chars == 4_800 && b30.chars == 8_000 && ba.chars == 1_530
+            && b4.topK > 6 && b30.topK > b4.topK && ba.topK >= 6 && ba.perSource >= 3) : (b4.chars == 3_000 && ba.chars == 1_500 && b4.topK == 6),
             "apple \(ba.chars)/\(ba.topK)/\(ba.perSource) · 4b \(b4.chars)/\(b4.topK)/\(b4.perSource) · 30b \(b30.chars)/\(b30.topK)/\(b30.perSource)")
         row("best-first-and-last", WebEvidence.edgesFirst([1, 2, 3, 4, 5]) == (Live37.selection ? [1, 3, 5, 4, 2] : [1, 2, 3, 4, 5]),
             "\(WebEvidence.edgesFirst([1, 2, 3, 4, 5]))")

@@ -293,7 +293,7 @@ struct AppearanceTunerSheet<G: Gesture>: View {
     /// The one-line value a closed header shows.
     private func summary(_ section: TunerSection) -> String {
         switch section {
-        case .mapDark:         return "#\(m.fieldHex) · " + (m.orbLook == .flat ? "flat" : "Fresnel")
+        case .mapDark:         return "#\(m.fieldHex) · " + (m.orbLook == .flat ? "flat" : m.orbLook == .fresnel ? "Fresnel" : "Glass")
         case .cardContent:     return tuner.state.cardContent.label
         case .captureControls: return tuner.state.captureControls.label
         case .floatingButtons: return tuner.state.floatingButtons.label
@@ -585,6 +585,7 @@ struct AppearanceTunerSheet<G: Gesture>: View {
     private var m: MapDarkTuning { tuner.state.mapDark }
     private func setMap(_ change: (inout MapDarkTuning) -> Void) { change(&tuner.state.mapDark) }
     private func setF(_ change: (inout FresnelLook) -> Void) { change(&tuner.state.mapDark.fresnel) }
+    private func setG(_ change: (inout GlassLook) -> Void) { change(&tuner.state.mapDark.glass) }
     private func pct(_ x: Double) -> String { String(format: "%.0f%%", x * 100) }
 
     @ViewBuilder private var mapDarkSection: some View {
@@ -607,6 +608,17 @@ struct AppearanceTunerSheet<G: Gesture>: View {
         slider("Dot opacity", m.dotOpacity, 0...1, 0.005, String(format: "%.3f", m.dotOpacity), id: "mapDotOpacity") { x in
             setMap { $0.dotOpacity = x }
         }
+        toggle("Dots shrink under orbs (off = uniform dots)", m.dotShrinkOn, id: "mapDotShrinkOn") { b in setMap { $0.dotShrinkOn = b } }
+        if m.dotShrinkOn {
+            slider("Shrink amount", m.dotShrink, 0...2, 0.01, String(format: "%.2f", m.dotShrink), id: "mapDotShrink") { x in
+                setMap { $0.dotShrink = x }
+            }
+        }
+        slider("Reach (orb radii)", m.shrinkReach, 1...12, 0.1, String(format: "%.1f", m.shrinkReach), id: "mapShrinkReach") { x in
+            setMap { $0.shrinkReach = x }
+        }
+        note("The dots shrink and gather toward orbs within the reach (today: on, 1.00, 6.0 orb radii). The Glass orbs show the same "
+             + "dots. Reach also sets where the ambient glow starts.")
         subhead("Territory label pills (the glass stays)")
         TunerColorRow(label: "Pill tint", color: m.pillTint, defaultHex: "FFFFFF", id: "mapPillTint") { c in setMap { $0.pillTint = c } }
         slider("Pill tint amount", m.pillTintAmount, 0...0.6, 0.01, pct(m.pillTintAmount), id: "mapPillTintAmount") { x in
@@ -644,6 +656,7 @@ struct AppearanceTunerSheet<G: Gesture>: View {
         .pickerStyle(.segmented)
         .accessibilityIdentifier("tunerMapOrbLook")
         if m.orbLook == .fresnel { fresnelControls }
+        if m.orbLook == .glass { orbGlassControls }
         Button("Reset the Map section", role: .destructive) { setMap { $0 = .today } }
             .font(.caption).buttonStyle(.bordered).controlSize(.small)
             .accessibilityIdentifier("tunerMapReset")
@@ -673,6 +686,49 @@ struct AppearanceTunerSheet<G: Gesture>: View {
         }
         note("Rim = orb colour × brightness, strongest at the edge and falling off toward the centre (rim width, then the power). "
              + "Labels use the label colour unless dark text would read better on a light body.")
+    }
+
+    @ViewBuilder private var orbGlassControls: some View {
+        let g = m.glass
+        HStack(spacing: 6) {
+            ForEach(GlassLook.presets, id: \.0) { p in
+                chip(p.0, selected: g == p.1, id: "tunerGlass-\(p.0)") { setMap { $0.glass = p.1 } }
+            }
+        }
+        subhead("Lens")
+        slider("Refraction strength", g.refraction, 0...2, 0.01, String(format: "%.2f", g.refraction), id: "glRefraction") { x in
+            setG { $0.refraction = x }
+        }
+        slider("Lens curve", g.lensCurve, 1...6, 0.05, String(format: "%.2f", g.lensCurve), id: "glCurve") { x in setG { $0.lensCurve = x } }
+        slider("Magnification", g.magnification, 0.7...2, 0.01, String(format: "×%.2f", g.magnification), id: "glMag") { x in
+            setG { $0.magnification = x }
+        }
+        subhead("Body")
+        slider("Tint (orb colour)", g.tint, 0...1, 0.01, pct(g.tint), id: "glTint") { x in setG { $0.tint = x } }
+        slider("Body brightness", g.brightness, 0...0.5, 0.005, pct(g.brightness), id: "glBright") { x in setG { $0.brightness = x } }
+        slider("Frost (soften the dots)", g.frost, 0...1, 0.01, pct(g.frost), id: "glFrost") { x in setG { $0.frost = x } }
+        subhead("Edge")
+        slider("Edge line", g.edge, 0...2, 0.01, String(format: "%.2f", g.edge), id: "glEdge") { x in setG { $0.edge = x } }
+        slider("Inner shadow", g.innerShadow, 0...1, 0.01, pct(g.innerShadow), id: "glShadow") { x in setG { $0.innerShadow = x } }
+        slider("Colour fringe (dispersion)", g.dispersion, 0...1, 0.01, pct(g.dispersion), id: "glDispersion") { x in
+            setG { $0.dispersion = x }
+        }
+        subhead("Highlight")
+        slider("Highlight size", g.highlightSize, 0.05...0.6, 0.01, String(format: "%.2f", g.highlightSize), id: "glHlSize") { x in
+            setG { $0.highlightSize = x }
+        }
+        slider("Highlight intensity", g.highlightIntensity, 0...1.5, 0.01, String(format: "%.2f", g.highlightIntensity), id: "glHlInt") { x in
+            setG { $0.highlightIntensity = x }
+        }
+        slider("Tilt response", g.tiltResponse, -1.5...1.5, 0.05, String(format: "%.2f", g.tiltResponse), id: "glTilt") { x in
+            setG { $0.tiltResponse = x }
+        }
+        TunerColorRow(label: "Label colour", color: g.label, defaultHex: GlassLook.medium.label.hex, id: "glLabel") { c in
+            setG { $0.label = c }
+        }
+        note("Inside each orb you see the dot grid behind it through a lens: little bend at the centre, more toward the rim. "
+             + "The highlight follows the phone's tilt (negative response = the other way). It stays put in Low Power Mode, with "
+             + "Reduce Motion, or with Appearance → Move with tilt off. Labels use the label colour unless dark text reads better.")
     }
 
     // Card content (live-23 (4)) — both appearances

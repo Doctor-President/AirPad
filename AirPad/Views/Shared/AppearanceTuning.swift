@@ -383,21 +383,45 @@ final class AppearanceTuner {
         }
         // live-39 stills — `-MapOrbRender flat|subtle|medium|strong` and `-MapGroundRender <hex>`.
         if let o = UserDefaults.standard.string(forKey: "MapOrbRender") {
-            state.mapDark.orbLook = o == "flat" ? .flat : .fresnel
-            if let p = FresnelLook.presets.first(where: { $0.0.lowercased() == o }) { state.mapDark.fresnel = p.1 }
+            // live-40: `glass-subtle|glass-medium|glass-strong` too.
+            if o.hasPrefix("glass") {
+                state.mapDark.orbLook = .glass
+                if let p = GlassLook.presets.first(where: { "glass-" + $0.0.lowercased() == o }) { state.mapDark.glass = p.1 }
+            } else {
+                state.mapDark.orbLook = o == "flat" ? .flat : .fresnel
+                if let p = FresnelLook.presets.first(where: { $0.0.lowercased() == o }) { state.mapDark.fresnel = p.1 }
+            }
         }
+        // live-40 stills — `-MapShrinkRender off` (uniform dots); `-MapGlassTilt x,y` (a simulated tilt, −1…1).
+        if UserDefaults.standard.string(forKey: "MapShrinkRender") == "off" { state.mapDark.dotShrinkOn = false }
         if let g = UserDefaults.standard.string(forKey: "MapGroundRender") { state.mapDark.ground = TunerHSL(hex: g) }
         // `-MapOrbCycle <start-s>`: one launch steps flat → subtle → medium → strong every 4 s from <start-s> (same layout +
         // framing for the comparison stills); NSLog `[MAPCYCLE] <look>` at each step.
+        // live-40: the cycle is flat → Fresnel medium → Glass subtle/medium/strong → Glass medium at two simulated tilts →
+        // Glass medium with the dot shrink off.
         if let start = UserDefaults.standard.string(forKey: "MapOrbCycle").flatMap(Double.init) {
-            let steps: [(String, FresnelLook?)] = [("flat", nil)] + FresnelLook.presets.map { ($0.0.lowercased(), $0.1) }
+            typealias Step = (String, (inout MapDarkTuning) -> Void)
+            let steps: [Step] = [
+                ("flat", { $0.orbLook = .flat }),
+                ("fresnel-medium", { $0.orbLook = .fresnel; $0.fresnel = .medium }),
+                ("glass-subtle", { $0.orbLook = .glass; $0.glass = .subtle }),
+                ("glass-medium", { $0.orbLook = .glass; $0.glass = .medium }),
+                ("glass-strong", { $0.orbLook = .glass; $0.glass = .strong }),
+                ("glass-medium-tilt-left-up", { $0.glass = .medium; MapGlassDebug.tilt = SIMD2(-1, 1) }),
+                ("glass-medium-tilt-right-down", { _ in MapGlassDebug.tilt = SIMD2(1, -1) }),
+                ("glass-medium-shrink-off", { $0.dotShrinkOn = false; MapGlassDebug.tilt = .zero }),
+            ]
             for (i, step) in steps.enumerated() {
                 DispatchQueue.main.asyncAfter(deadline: .now() + start + Double(i) * 4) { [weak self] in
-                    if let f = step.1 { self?.state.mapDark.orbLook = .fresnel; self?.state.mapDark.fresnel = f }
-                    else { self?.state.mapDark.orbLook = .flat }
+                    guard let self else { return }
+                    step.1(&self.state.mapDark)
                     NSLog("[MAPCYCLE] %@", step.0)
                 }
             }
+        }
+        if let t = UserDefaults.standard.string(forKey: "MapGlassTilt") {
+            let v = t.split(separator: ",").compactMap { Float($0) }
+            if v.count == 2 { MapGlassDebug.tilt = SIMD2(v[0], v[1]) }
         }
         if let r = UserDefaults.standard.string(forKey: "RimRestRender").flatMap(PillRimRest.init(rawValue:)) {
             for d in [false, true] { update(dark: d) { $0.editPills { $0.rim.rest = r } } }
@@ -1296,11 +1320,45 @@ struct TunerHSL: Codable, Equatable {
     var simd: SIMD3<Float> { let c = rgb; return SIMD3(Float(c.r), Float(c.g), Float(c.b)) }
 }
 
-/// The dark Map's orb look: today's flat emissive fill, or a dark bubble lit at its rim (Fresnel).
+/// The dark Map's orb look: today's flat emissive fill, a dark bubble lit at its rim (Fresnel), or a glass bead that
+/// shows the dot grid behind it, bent by a lens (Glass).
 enum MapOrbLook: String, Codable, CaseIterable, Identifiable {
-    case flat, fresnel
+    case flat, fresnel, glass
     var id: String { rawValue }
-    var label: String { self == .flat ? "Flat (today)" : "Fresnel" }
+    var label: String {
+        switch self { case .flat: "Flat (today)"; case .fresnel: "Fresnel"; case .glass: "Glass" }
+    }
+}
+
+/// live-40 — the Glass orb: the orb shader redraws the dot grid (same spacing, dots, shrink and ambient as the
+/// background) through a lens — little bend at the centre, strong toward the rim, so the rim shows grid from beyond
+/// the edge, compressed — then a light tint of the orb's family colour, a thin bright edge over a soft inner shadow,
+/// and a highlight + rim glint that follow the phone's tilt. All global → the orbs stay one batch.
+struct GlassLook: Codable, Equatable {
+    var refraction: Double          // how far the rim reaches beyond the edge for what it shows (orb radii)
+    var lensCurve: Double           // exponent: higher = a flatter centre, the bend gathered at the rim
+    var magnification: Double       // zoom at the centre (1 = none)
+    var tint: Double                // the orb's family colour over the refracted grid
+    var brightness: Double          // a light frosted lift of the body
+    var frost: Double               // softens the refracted dots
+    var edge: Double                // the thin bright edge line
+    var innerShadow: Double         // a soft shadow just inside the rim (depth)
+    var dispersion: Double          // a colour fringe at the rim
+    var highlightSize: Double
+    var highlightIntensity: Double  // the broad highlight; the rim glint rides with it
+    var tiltResponse: Double        // −1…1: how far the highlight follows the phone's tilt (negative = the other way)
+    var label: TunerHSL             // title ink
+
+    static let subtle = GlassLook(refraction: 0.25, lensCurve: 3.0, magnification: 1.05, tint: 0.14, brightness: 0.03,
+                                  frost: 0.1, edge: 0.35, innerShadow: 0.25, dispersion: 0.0, highlightSize: 0.22,
+                                  highlightIntensity: 0.22, tiltResponse: 0.6, label: TunerHSL(hex: "FFFFFF"))
+    static let medium = GlassLook(refraction: 0.55, lensCurve: 2.4, magnification: 1.15, tint: 0.22, brightness: 0.04,
+                                  frost: 0.15, edge: 0.6, innerShadow: 0.4, dispersion: 0.15, highlightSize: 0.28,
+                                  highlightIntensity: 0.42, tiltResponse: 0.8, label: TunerHSL(hex: "FFFFFF"))
+    static let strong = GlassLook(refraction: 0.95, lensCurve: 1.9, magnification: 1.3, tint: 0.32, brightness: 0.08,
+                                  frost: 0.3, edge: 0.9, innerShadow: 0.55, dispersion: 0.3, highlightSize: 0.34,
+                                  highlightIntensity: 0.65, tiltResponse: 1.0, label: TunerHSL(hex: "FFFFFF"))
+    static let presets: [(String, GlassLook)] = [("Subtle", .subtle), ("Medium", .medium), ("Strong", .strong)]
 }
 
 /// The Fresnel orb: a dark body near the background, tinted by the orb's family colour, with a rim that glows in the
@@ -1345,8 +1403,34 @@ struct MapDarkTuning: Codable, Equatable {
     var orbGlowOpacity = 0.12
     var orbLook: MapOrbLook = .flat
     var fresnel: FresnelLook = .medium
+    var glass: GlassLook = .medium
+    // live-40 — the grid's dots shrink under/near orbs (mass field). Drives the background AND the grid inside Glass orbs.
+    var dotShrinkOn = true
+    var dotShrink = 1.0                           // GridWarpTuning.dotShrink(dark) — today
+    var shrinkReach = 6.0                         // GridWarpTuning.reachOrbRadii — today (the field also drives the ripple)
 
     static let today = MapDarkTuning()
+    init() {}
+
+    /// Every field optional, so values saved by an older build (live-39 had no Glass / shrink) keep T's dialled colours.
+    init(from decoder: Decoder) throws {
+        let c = try decoder.container(keyedBy: CodingKeys.self)
+        let d = MapDarkTuning()
+        func v<T: Decodable>(_ k: CodingKeys, _ def: T) -> T { ((try? c.decodeIfPresent(T.self, forKey: k)) ?? nil) ?? def }
+        ground = v(.ground, d.ground); ambientAmount = v(.ambientAmount, d.ambientAmount); ambient = v(.ambient, d.ambient)
+        dot = v(.dot, d.dot); dotOpacity = v(.dotOpacity, d.dotOpacity)
+        pillTint = v(.pillTint, d.pillTint); pillTintAmount = v(.pillTintAmount, d.pillTintAmount)
+        pillOutlineCustom = v(.pillOutlineCustom, d.pillOutlineCustom); pillOutline = v(.pillOutline, d.pillOutline)
+        pillOutlineOpacity = v(.pillOutlineOpacity, d.pillOutlineOpacity); pillOutlineWidth = v(.pillOutlineWidth, d.pillOutlineWidth)
+        pillTextOpacity = v(.pillTextOpacity, d.pillTextOpacity)
+        focusRing = v(.focusRing, d.focusRing); selectionRing = v(.selectionRing, d.selectionRing)
+        orbGlow = v(.orbGlow, d.orbGlow); orbGlowOpacity = v(.orbGlowOpacity, d.orbGlowOpacity)
+        orbLook = v(.orbLook, d.orbLook); fresnel = v(.fresnel, d.fresnel); glass = v(.glass, d.glass)
+        dotShrinkOn = v(.dotShrinkOn, d.dotShrinkOn); dotShrink = v(.dotShrink, d.dotShrink); shrinkReach = v(.shrinkReach, d.shrinkReach)
+    }
+
+    /// The shrink the grid shader receives (0 = uniform dots).
+    var effectiveShrink: Double { dotShrinkOn ? dotShrink : 0 }
 
     /// What the Map's background shows. The ripple mixes the ground toward (R × ambient colour) at `ambientAmount`, with
     /// R = 0 within reach of orbs (6 orb radii — measured: nearly the whole screen, `#101014` today) and R = 1 only in
@@ -1360,6 +1444,11 @@ struct MapDarkTuning: Codable, Equatable {
     }
 }
 
+#if DEBUG
+/// live-40 stills — a simulated tilt for the Glass highlight (the Simulator has no gyro). nil = the real tilt.
+enum MapGlassDebug { static var tilt: SIMD2<Float>? }
+#endif
+
 extension AppearanceTuning {
     /// The dark Map's tuner values, or nil when the tuner isn't live (the Map then renders its baked literals).
     static var mapDark: MapDarkTuning? { isLive ? AppearanceTuner.shared.state.mapDark : nil }
@@ -1371,7 +1460,7 @@ extension AppearanceTuning {
             return t
         }
         func c(_ x: TunerHSL) -> String { "\"#\(x.hex)\"" }
-        let f = m.fresnel
+        let f = m.fresnel, g = m.glass
         return "{\"ground\":\(c(m.ground)),\"field\":\"#\(m.fieldHex)\",\"openSpace\":\"#\(m.openSpaceHex)\",\"ambient\":\(n(m.ambientAmount)),"
             + "\"ambientColor\":\(c(m.ambient)),\"dots\":\(c(m.dot)),\"dotOpacity\":\(n(m.dotOpacity)),"
             + "\"pillTint\":\(c(m.pillTint)),\"pillTintAmount\":\(n(m.pillTintAmount)),"
@@ -1381,7 +1470,12 @@ extension AppearanceTuning {
             + "\"orbGlow\":\(c(m.orbGlow)),\"orbGlowOpacity\":\(n(m.orbGlowOpacity)),\"orbLook\":\"\(m.orbLook.rawValue)\","
             + "\"fresnel\":{\"bodyTint\":\(n(f.bodyTint)),\"bodyDarkness\":\(n(f.bodyDarkness)),\"rimBrightness\":\(n(f.rimBrightness)),"
             + "\"rimWidth\":\(n(f.rimWidth)),\"rimPower\":\(n(f.rimPower)),\"rimIntensity\":\(n(f.rimIntensity)),"
-            + "\"innerGlow\":\(n(f.innerGlow)),\"highlight\":\(n(f.highlight)),\"label\":\(c(f.label))}}"
+            + "\"innerGlow\":\(n(f.innerGlow)),\"highlight\":\(n(f.highlight)),\"label\":\(c(f.label))},"
+            + "\"dotShrinkOn\":\(m.dotShrinkOn),\"dotShrink\":\(n(m.dotShrink)),\"shrinkReach\":\(n(m.shrinkReach)),"
+            + "\"glass\":{\"refraction\":\(n(g.refraction)),\"lensCurve\":\(n(g.lensCurve)),\"magnification\":\(n(g.magnification)),"
+            + "\"tint\":\(n(g.tint)),\"brightness\":\(n(g.brightness)),\"frost\":\(n(g.frost)),\"edge\":\(n(g.edge)),"
+            + "\"innerShadow\":\(n(g.innerShadow)),\"dispersion\":\(n(g.dispersion)),\"highlightSize\":\(n(g.highlightSize)),"
+            + "\"highlightIntensity\":\(n(g.highlightIntensity)),\"tiltResponse\":\(n(g.tiltResponse)),\"label\":\(c(g.label))}}"
     }
 
     /// `-AppearanceTuningSelfTest` rows for the Map section (pure).
@@ -1398,6 +1492,13 @@ extension AppearanceTuning {
                 && t.pillOutlineOpacity == 0.95 && t.pillOutlineWidth == 1.5 && t.pillTextOpacity == 0.95, ""),
             ("map-dark-field-today-101014-open-space-212125 (measured on a Sim still: 101014)",
              t.fieldHex == "101014" && t.openSpaceHex == "212125", "\(t.fieldHex) / \(t.openSpaceHex)"),
+            ("map-dark-shrink-defaults-are-today (on · 1.0 · reach 6 orb radii)",
+             t.dotShrinkOn && t.dotShrink == 1.0 && t.shrinkReach == 6.0 && t.effectiveShrink == 1.0, ""),
+            ("map-dark-live39-saved-values-decode (no glass/shrink keys → ground kept, glass = medium)", {
+                let old = #"{"ground":{"h":240,"s":0.1,"l":0.04},"orbLook":"fresnel"}"#
+                guard let m = try? JSONDecoder().decode(MapDarkTuning.self, from: Data(old.utf8)) else { return false }
+                return m.orbLook == .fresnel && m.ground.l == 0.04 && m.glass == .medium && m.dotShrinkOn
+            }(), ""),
             ("map-dark-export-parses", (try? JSONSerialization.jsonObject(with: Data(mapDarkJSON(t).utf8))) != nil, mapDarkJSON(t)),
         ]
     }

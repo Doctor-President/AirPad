@@ -873,15 +873,28 @@ final class CorpusPhysicsScene: SKScene {
         let f = m.fresnel
         orb("u_ar_glow_op")?.floatValue = Float(m.orbGlowOpacity)
         orb("u_ar_glow_col")?.vectorFloat3Value = m.orbGlow.simd
-        orb("u_fr_on")?.floatValue = m.orbLook == .fresnel ? 1 : 0
-        orb("u_fr_a")?.vectorFloat4Value = vector_float4(Float(f.bodyTint), Float(f.bodyDarkness), Float(f.rimBrightness), Float(f.rimWidth))
-        orb("u_fr_b")?.vectorFloat4Value = vector_float4(Float(f.rimPower), Float(f.rimIntensity), Float(f.innerGlow), Float(f.highlight))
-        orb("u_ground_color")?.vectorFloat3Value = m.ground.simd   // the dark branch reads it only for Fresnel
+        // Columns a, b of u_gl_look (c, d = Glass's highlight + dots, written by syncGlassOrbs).
+        if let u = orb("u_gl_look") {
+            var look = u.matrixFloat4x4Value
+            if m.orbLook == .glass {
+                let g = m.glass
+                orb("u_fr_on")?.floatValue = 2
+                look.columns.0 = vector_float4(Float(g.refraction), Float(g.lensCurve), Float(g.magnification), Float(g.tint))
+                look.columns.1 = vector_float4(Float(g.brightness), Float(g.edge), Float(g.innerShadow), Float(g.dispersion))
+            } else {
+                orb("u_fr_on")?.floatValue = m.orbLook == .fresnel ? 1 : 0
+                look.columns.0 = vector_float4(Float(f.bodyTint), Float(f.bodyDarkness), Float(f.rimBrightness), Float(f.rimWidth))
+                look.columns.1 = vector_float4(Float(f.rimPower), Float(f.rimIntensity), Float(f.innerGlow), Float(f.highlight))
+            }
+            if look != u.matrixFloat4x4Value { u.matrixFloat4x4Value = look }
+        }
+        grid("u_warp_shrink")?.floatValue = Float(m.effectiveShrink)   // live-40 — "Dots shrink under orbs" (mode 0 ignores it)
+        orb("u_ground_color")?.vectorFloat3Value = m.ground.simd   // the dark branch reads it only for Fresnel + Glass
         grid("u_ground_color")?.vectorFloat3Value = m.ground.simd
         grid("u_ripple_amt")?.floatValue = Float(m.ambientAmount)
         grid("u_ripple_color")?.vectorFloat3Value = m.ambient.simd
         // Title ink + rings follow the tuner live; recolour only when their inputs change.
-        let inkKey = m.orbLook == .fresnel ? "\(f)\(m.ground.hex)" : "flat"
+        let inkKey = m.orbLook == .fresnel ? "\(f)\(m.ground.hex)" : m.orbLook == .glass ? "\(m.glass)\(m.ground.hex)" : "flat"
         if inkKey != lastTitleInkKey { lastTitleInkKey = inkKey; restyleLabels() }
         let ringKey = m.focusRing.hex + m.selectionRing.hex
         if ringKey != lastRingKey {
@@ -896,7 +909,59 @@ final class CorpusPhysicsScene: SKScene {
     }
     private var lastTitleInkKey = "flat"
     private var lastRingKey = ""
+
+    /// live-40 — per frame while the Glass look is on (dark): copy the grid's live uniforms into the orb shader so the
+    /// refracted dots are the background's own (camera, spacing, dots, relocation, shrink, ambient), point the highlight
+    /// along the phone's tilt (Dashboard fluted-glass tilt: same integrator, off in Low Power / Reduce Motion → centred),
+    /// and refresh each orb's world centre + radius (a_orb) where it changed. Runs after the band relaxation.
+    private func syncGlassOrbs() {
+        guard !currentIsLight, let m = AppearanceTuning.mapDark, m.orbLook == .glass,
+              let gs = gridNode?.fillShader else { glassOrbCache.removeAll(); return }
+        func g(_ n: String) -> SKUniform? { gs.uniforms.first { $0.name == n } }
+        func o(_ n: String) -> SKUniform? { orbSpriteShader.uniforms.first { $0.name == n } }
+        func f(_ n: String) -> Float { g(n)?.floatValue ?? 0 }
+        let cam = g("u_camera_position")?.vectorFloat2Value ?? .zero
+        let vp = g("u_viewport_size")?.vectorFloat2Value ?? vector_float2(1, 1)
+        let amb = g("u_ripple_color")?.vectorFloat3Value ?? vector_float3(1, 1, 1)
+        func b8(_ x: Float) -> Float { (min(max(x, 0), 1) * 255).rounded() }
+        let packedAmb = b8(amb.x) * 65536 + b8(amb.y) * 256 + b8(amb.z)
+        o("u_gl_grid")?.matrixFloat4x4Value = simd_float4x4(columns: (
+            vector_float4(cam.x, cam.y, f("u_camera_scale"), packedAmb),
+            vector_float4(vp.x, vp.y, f("u_dot_base_px"), f("u_dot_opacity")),
+            vector_float4(f("u_period1"), f("u_ratio"), f("u_warp_mode") > 2.5 ? f("u_warp_strength") : 0, f("u_warp_sign")),
+            vector_float4(f("u_warp_shrink"), f("u_warp_mass_range"), f("u_ripple_amt"), 0)))
+        let dot = g("u_dot_color")?.vectorFloat3Value ?? vector_float3(1, 1, 1)
+        if let t = g("u_disp_field")?.textureValue, let u = o("u_disp_field"), u.textureValue !== t { u.textureValue = t }
+
+        var tilt = FlutedGlass.shared.tiltRunning ? GlassMotion.shared.tilt : .zero
+        #if DEBUG
+        if let t = MapGlassDebug.tilt { tilt = t }
+        #endif
+        let k = Float(m.glass.tiltResponse) * 0.16
+        var hc = SIMD2<Float>(-0.16 + tilt.x * k, 0.19 + tilt.y * k)
+        let hl = simd_length(hc); if hl > 0.33 { hc *= 0.33 / hl }   // keep it on the bead
+        if let u = o("u_gl_look") {
+            var look = u.matrixFloat4x4Value
+            if simd_distance(SIMD2(look.columns.2.z, look.columns.2.w), hc) > 0.002 { glassWake = true }
+            look.columns.2 = vector_float4(Float(m.glass.highlightSize), Float(m.glass.highlightIntensity), hc.x, hc.y)
+            look.columns.3 = vector_float4(dot.x, dot.y, dot.z, Float(m.glass.frost))
+            if look != u.matrixFloat4x4Value { u.matrixFloat4x4Value = look }
+        }
+
+        for (id, node) in nodeSprites {
+            guard let sprite = node as? SKSpriteNode else { continue }
+            let v = vector_float3(Float(sprite.position.x), Float(sprite.position.y),
+                                  Float((nodeIntrinsicRadii[id] ?? sprite.size.width / 2) * sprite.xScale))
+            if glassOrbCache[id] != v {
+                glassOrbCache[id] = v
+                sprite.setValue(SKAttributeValue(vectorFloat3: v), forAttribute: "a_orb")
+            }
+        }
+    }
+    private var glassOrbCache: [String: vector_float3] = [:]
     #endif
+    /// live-40 — the Glass highlight moved with the tilt → keep the map awake (it otherwise idles at rest).
+    private var glassWake = false
 
     // Orb edge feather (a_geom.y) clamps — screen-constant AA, tunable.
     private static let orbEdgeMinAA: Float = 0.0003   // floor: avoid a razor-hard / aliased edge
@@ -1637,7 +1702,8 @@ final class CorpusPhysicsScene: SKScene {
         let cardMoving = abs(cardProgress - lastCardProgressForIdle) > 0.0005
         lastCamPosForIdle = cam; lastCamScaleForIdle = scale; lastCardProgressForIdle = cardProgress
         let wasAnimating = animatingThisFrame
-        let active = isTouchingMap || coastVelocity != .zero || camMoved || cardMoving || wasAnimating
+        let active = isTouchingMap || coastVelocity != .zero || camMoved || cardMoving || wasAnimating || glassWake
+        glassWake = false
         if active { lastActivityTime = currentTime }
         orbsMovedLastFrame = wasAnimating   // latch for next frame's updateGridWarp dirty check
         animatingThisFrame = false
@@ -1878,6 +1944,9 @@ final class CorpusPhysicsScene: SKScene {
         // the base layout), so nodes settle home as they leave the band.
         applyOrbScales()
         applyBandRelaxation()
+        #if DEBUG || TESTFLIGHT
+        syncGlassOrbs()        // live-40 — Glass orbs (tuner only)
+        #endif
 
         updateCardPresentation()   // tap-driven card morph → SwiftUI overlay
         syncClusterCentroidsToCanvasState()
@@ -3167,6 +3236,8 @@ final class CorpusPhysicsScene: SKScene {
     private var lastFieldCamPos: CGPoint = .zero      // gated by fieldBuiltOnce → init value is inert
     private var lastFieldCamScale: CGFloat = -1
     private var lastFieldOrbCount = -1
+    private var lastFieldMeasuredCount = -1                      // live-40 — see the dirty check
+    private var lastFieldReach = GridWarpTuning.reachOrbRadii   // live-40 — the tuner's reach rebuilds the field
     private var orbsMovedLastFrame = false   // latched from animatingThisFrame each frame (band ease)
 
     /// Cached corpus-wide resting-radius references (the grid-warp mass normalisers). Invalidated by
@@ -3198,12 +3269,21 @@ final class CorpusPhysicsScene: SKScene {
         let camMovedSinceField = !fieldBuiltOnce
             || abs(camPos.x - lastFieldCamPos.x) > 0.01 || abs(camPos.y - lastFieldCamPos.y) > 0.01
             || abs(cameraScale - lastFieldCamScale) > 0.0001
-        let orbsChanged = nodeSprites.count != lastFieldOrbCount
-        if !(camMovedSinceField || orbsChanged || orbsMovedLastFrame) {
+        // live-40 — the field's sizes come from applyOrbScales, which runs AFTER this; on the first frames that cache is
+        // empty, so the first build sees no orbs (warp off) and, with a still camera, was never redone. Rebuild once the
+        // measured count changes.
+        let orbsChanged = nodeSprites.count != lastFieldOrbCount || nodeOnScreenDiameter.count != lastFieldMeasuredCount
+        var reachChanged = false
+        #if DEBUG || TESTFLIGHT
+        let tunedReach = isLight ? GridWarpTuning.reachOrbRadii : (AppearanceTuning.mapDark?.shrinkReach ?? GridWarpTuning.reachOrbRadii)
+        reachChanged = tunedReach != lastFieldReach; lastFieldReach = tunedReach
+        #endif
+        if !(camMovedSinceField || orbsChanged || orbsMovedLastFrame || reachChanged) {
             return   // field inputs unchanged → last texture + uniforms stand
         }
         fieldBuiltOnce = true
         lastFieldCamPos = camPos; lastFieldCamScale = cameraScale; lastFieldOrbCount = nodeSprites.count
+        lastFieldMeasuredCount = nodeOnScreenDiameter.count
 
         // ── ORB-UNIT BASIS (2026-09-14) ───────────────────────────────────────────────────────────
         // Reach and depth are dialled in ORB UNITS, converted to px per frame from each orb's ACTUAL
@@ -3223,7 +3303,10 @@ final class CorpusPhysicsScene: SKScene {
         // folds in restingScale), so a resting orb draws at refs.linear × ramp / cs — the same formula
         // applyOrbScales uses per orb (onScreen ÷ 2), for the mean. This is the encode base.
         let refScreen = refs.linear * ramp / cs
-        let reachUnits = GridWarpTuning.reachOrbRadii             // ORB RADII
+        var reachUnits = GridWarpTuning.reachOrbRadii             // ORB RADII
+        #if DEBUG || TESTFLIGHT
+        if !isLight, let m = AppearanceTuning.mapDark { reachUnits = m.shrinkReach }   // live-40 — tuner reach (dark)
+        #endif
         // DEFENSIVE CEILING on a single orb's reach. `buildWarpField` early-exits per texel with
         // `dist > o.reach`, which is what keeps its cost bounded; reach in ORB UNITS grows with the
         // orb's on-screen size, so zoomed close enough one orb's ring can cover the whole viewport
@@ -3473,6 +3556,9 @@ final class CorpusPhysicsScene: SKScene {
             return clamp(vec3(l2s(lin.r), l2s(lin.g), l2s(lin.b)), 0.0, 1.0);
         }
         void main() {
+            // live-40 — the Fresnel/Glass look levers ride ONE mat4 (one buffer binding; the shader sits near Metal's
+            // 31-binding cap): columns a, b, c, d.
+            vec4 lk_a = u_gl_look[0]; vec4 lk_b = u_gl_look[1]; vec4 lk_c = u_gl_look[2]; vec4 lk_d = u_gl_look[3];
             vec2 p = v_tex_coord - vec2(0.5);
             float d = sdRoundBox(p, vec2(0.5), u_corner_radius) + 0.5;
             float R = 0.5;
@@ -3524,22 +3610,106 @@ final class CorpusPhysicsScene: SKScene {
                 hsv.z = clamp(hsv.z * (1.0 - u_defocus_val * a_defocus), 0.0, 1.0);
                 vec3 col = hsv2rgb(hsv);
 
-                if (u_fr_on > 0.5) {
+                if (u_fr_on > 1.5) {
+                    // live-40 — GLASS (TestFlight tuner only). The orb shows the DOT GRID behind it, bent by a lens:
+                    // this fragment shows world point S = centre + offset/magnification + an outward bend that grows
+                    // as rr^curve, so the rim shows grid from beyond the edge, compressed (a glass bead). The grid at
+                    // S is BackgroundGridNode's mode-C evaluation verbatim — same camera, spacing, dots, relocation,
+                    // SHRINK and ambient ripple, copied from the grid's uniforms each frame (u_gl_grid, lk_d,
+                    // u_disp_field) — so the refracted dots always agree with the background. Then a light family
+                    // tint + frost, a soft inner shadow and a thin bright edge (with an optional colour fringe), and
+                    // a broad highlight + rim glint at lk_c.zw, which follows the phone's tilt.
+                    // a = (refraction, lens curve, magnification, tint); b = (brightness, edge, inner shadow,
+                    // dispersion); c = (highlight size, intensity, highlight centre xy); d = (dot rgb, frost).
+                    // a_orb = (world centre xy, world radius). All but a_orb global → still one batch.
+                    float rr = clamp(d / R, 0.0, 1.0);
+                    float pl = length(p);
+                    vec2 dir = pl > 0.0001 ? p / pl : vec2(0.0, 1.0);
+                    float gDim = 1.0 - u_defocus_val * a_defocus;
+                    vec4 G0 = u_gl_grid[0]; vec4 G1 = u_gl_grid[1]; vec4 G2 = u_gl_grid[2]; vec4 G3 = u_gl_grid[3];
+                    float camS = G0.z;
+                    float Rw = a_orb.z;
+                    float bend = lk_a.x * pow(rr, lk_a.y);
+                    vec2 S = a_orb.xy + p * (2.0 * Rw) / max(lk_a.z, 0.05) + dir * (Rw * bend);
+
+                    float baseR = G1.z * camS;
+                    float feather = 0.75 * camS * (1.0 + 5.0 * lk_d.w);
+                    float q1 = G2.x; float q0 = q1 / G2.y; float q2 = q1 * G2.y;
+                    float qs[3]; qs[0] = q0; qs[1] = q1; qs[2] = q2;
+                    float las[3];
+                    las[0] = clamp(1.0 - abs(log2((q0 / camS) / 60.0)) * 0.3, 0.0, 1.0);
+                    las[1] = clamp(1.0 - abs(log2((q1 / camS) / 60.0)) * 0.3, 0.0, 1.0);
+                    las[2] = clamp(1.0 - abs(log2((q2 / camS) / 60.0)) * 0.3, 0.0, 1.0);
+                    float kBase = G2.z * camS;
+                    float warpOn = step(0.000001, kBase);
+                    float cov = 0.0;
+                    for (int L = 0; L < 3; L++) {
+                        float qq = qs[L];
+                        float maxOff = 0.9 * qq;
+                        vec2 cell = floor(S / qq);
+                        float cv = 0.0;
+                        for (int ny = -1; ny <= 1; ny++) {
+                            for (int nx = -1; nx <= 1; nx++) {
+                                vec2 cc = (cell + vec2(float(nx), float(ny)) + 0.5) * qq;
+                                vec2 ccUV = ((cc - G0.xy) / camS) / G1.xy + vec2(0.5);
+                                vec2 pull = (texture2D(u_disp_field, ccUV).rg - vec2(0.5)) * (2.0 * G3.y) * warpOn;
+                                float pullLen = length(pull);
+                                float off = pullLen * kBase;
+                                float k = off > maxOff ? kBase * (maxOff / off) : kBase;
+                                vec2 moved = cc - pull * (k * G2.w);
+                                float shrink = clamp(1.0 - G3.x * pullLen, 0.15, 1.0);
+                                float dd = length(S - moved) - baseR * shrink;
+                                cv = max(cv, 1.0 - smoothstep(0.0, feather, dd));
+                            }
+                        }
+                        cov = max(cov, cv * las[L]);
+                    }
+                    float dotA = clamp(cov * G1.w * (1.0 - 0.35 * lk_d.w), 0.0, 1.0);
+                    vec3 bg = u_ground_color * (1.0 - dotA) + lk_d.rgb * dotA;
+                    vec2 sUV = ((S - G0.xy) / camS) / G1.xy + vec2(0.5);
+                    float Rf = texture2D(u_disp_field, sUV).b;
+                    float pk = G0.w;   // the ambient colour, packed 8-bit RGB
+                    vec3 amb = vec3(floor(pk / 65536.0), floor(mod(pk, 65536.0) / 256.0), mod(pk, 256.0)) / 255.0;
+                    bg = mix(bg, vec3(Rf) * amb, G3.z);
+
+                    // Family tint, heavier toward the rim (glass reads clear face-on and coloured at grazing angles);
+                    // recedes with the focus band.
+                    vec3 gc = mix(bg, col, lk_a.w * gDim * mix(0.4, 1.0, rr * rr));
+                    gc = mix(gc, vec3(1.0), lk_b.x);                // frosted lift
+                    vec2 hc = lk_c.zw;
+                    vec2 ld = normalize(hc + vec2(0.0001));
+                    float ldd = dot(dir, ld);
+                    float lit = ldd * 0.5 + 0.5;
+                    float aaR = 2.0 * aa;                             // ~1px in rr units
+                    gc *= 1.0 - lk_b.z * smoothstep(0.6, 0.97, rr) * mix(1.0, 0.35, lit);   // inner shadow
+                    float hs = smoothstep(lk_c.x, 0.0, distance(p, hc));
+                    gc += vec3(lk_c.y * hs * hs * gDim);            // broad highlight
+                    float rimBand = smoothstep(0.9 - 4.0 * aaR, 1.0 - 2.0 * aaR, rr);
+                    float glint = pow(max(ldd, 0.0), 6.0) + 0.35 * pow(max(-ldd, 0.0), 6.0);
+                    gc += vec3(lk_c.y * 1.3 * rimBand * glint * gDim);   // rim glint (+ a faint one opposite)
+                    float ew = 1.0 - 2.5 * aaR;
+                    float sh = lk_b.w * 3.0 * aaR;
+                    vec3 eL = vec3(smoothstep(ew - aaR + sh, ew + sh, rr),
+                                   smoothstep(ew - aaR, ew, rr),
+                                   smoothstep(ew - aaR - sh, ew - sh, rr));
+                    gc += lk_b.y * mix(0.5, 1.0, lit) * gDim * eL * mix(col, vec3(1.0), 0.7);   // thin bright edge
+                    fillRGB = clamp(gc, 0.0, 1.0);
+                } else if (u_fr_on > 0.5) {
                     // live-39 — FRESNEL (TestFlight tuner only; u_fr_on = 0 everywhere else → the flat path below).
                     // A dark body near the ground tinted by the orb's colour, with a rim in the orb's colour that
-                    // falls off toward the centre: rim = (edge ramp over u_fr_a.w of the radius)^power. Recedes with
+                    // falls off toward the centre: rim = (edge ramp over lk_a.w of the radius)^power. Recedes with
                     // the orb in the focus band. a = (body tint, body darkness, rim brightness, rim width);
                     // b = (power, rim intensity, inner glow, top-left highlight). All global → still one batch.
                     float rr = clamp(d / R, 0.0, 1.0);
                     float fDim = 1.0 - u_defocus_val * a_defocus;
-                    vec3 body = mix(u_ground_color, col, u_fr_a.x) * (1.0 - u_fr_a.y);
-                    float rimT = clamp((rr - (1.0 - u_fr_a.w)) / max(u_fr_a.w, 0.001), 0.0, 1.0);
-                    float rimF = pow(rimT, u_fr_b.x) * u_fr_b.y;
-                    vec3 fc = body + col * u_fr_a.z * rimF * fDim;
+                    vec3 body = mix(u_ground_color, col, lk_a.x) * (1.0 - lk_a.y);
+                    float rimT = clamp((rr - (1.0 - lk_a.w)) / max(lk_a.w, 0.001), 0.0, 1.0);
+                    float rimF = pow(rimT, lk_b.x) * lk_b.y;
+                    vec3 fc = body + col * lk_a.z * rimF * fDim;
                     float cIn = 1.0 - rr;
-                    fc += col * u_fr_b.z * cIn * cIn * fDim;
+                    fc += col * lk_b.z * cIn * cIn * fDim;
                     float hs = smoothstep(0.24, 0.0, distance(p, vec2(-0.19, 0.21)));
-                    fc += vec3(u_fr_b.w * hs * hs * fDim);
+                    fc += vec3(lk_b.w * hs * hs * fDim);
                     fillRGB = clamp(fc, 0.0, 1.0);
                 } else {
                 vec2 ldir = normalize(u_light_dir);
@@ -3585,7 +3755,8 @@ final class CorpusPhysicsScene: SKScene {
             SKAttribute(name: "a_stroke_color", type: .vectorFloat4),
             SKAttribute(name: "a_geom", type: .vectorFloat2),
             SKAttribute(name: "a_wash", type: .vectorFloat4),   // rgb = wash pigment, a = peak strength
-            SKAttribute(name: "a_defocus", type: .float)        // Brief AS — tilt-shift matte D (0 focus → 1)
+            SKAttribute(name: "a_defocus", type: .float),       // Brief AS — tilt-shift matte D (0 focus → 1)
+            SKAttribute(name: "a_orb", type: .vectorFloat3)     // live-40 Glass — world centre xy + world radius
         ]
         // u_corner_radius: 0.5 = circle. Held at 0.5 — the morph to rounded square
         // (cornerMin) is retired to dormant; the uniform + sdRoundBox stay inert for
@@ -3614,8 +3785,12 @@ final class CorpusPhysicsScene: SKScene {
             // live-39 — the edge glow's colour (white = today) + the Fresnel look (off = today). TestFlight tuner only.
             SKUniform(name: "u_ar_glow_col", vectorFloat3: vector_float3(1, 1, 1)),
             SKUniform(name: "u_fr_on", float: 0),
-            SKUniform(name: "u_fr_a", vectorFloat4: vector_float4(0, 0, 0, 0)),
-            SKUniform(name: "u_fr_b", vectorFloat4: vector_float4(1, 0, 0, 0)),
+            // live-40 — the look levers as one mat4 (columns a, b, c, d — see main()), then Glass's copy of the grid's
+            // uniforms (per frame) and the grid's field texture.
+            SKUniform(name: "u_gl_look", matrixFloat4x4: simd_float4x4(columns: (vector_float4(0, 0, 0, 0), vector_float4(1, 0, 0, 0),
+                                                                                  vector_float4(0.2, 0, -0.16, 0.19), vector_float4(1, 1, 1, 0)))),
+            SKUniform(name: "u_gl_grid", matrixFloat4x4: matrix_identity_float4x4),
+            SKUniform(name: "u_disp_field", texture: SKTexture(data: Data(count: 4), size: CGSize(width: 1, height: 1))),
             // Brief AT — LIGHT comp levers (light branch only). Dark holds them inert: u_orb_opacity = 1
             // (byte-identical premultiply), and the dark branch never reads the hue/sat/focus/palette/ground.
             // `applyMapComp` re-pushes them per appearance. Rim + pool uniforms were removed at the lock.
@@ -3661,6 +3836,8 @@ final class CorpusPhysicsScene: SKScene {
                         forAttribute: "a_wash")
         // Brief AS — 0 until applyOrbScales sets the per-orb focus matte (dark only; light ignores it).
         sprite.setValue(SKAttributeValue(float: 0), forAttribute: "a_defocus")
+        // live-40 — Glass reads it (set per frame by syncGlassOrbs while Glass is on).
+        sprite.setValue(SKAttributeValue(vectorFloat3: vector_float3(0, 0, Float(radius))), forAttribute: "a_orb")
     }
 
 
@@ -3757,6 +3934,19 @@ final class CorpusPhysicsScene: SKScene {
             }
             let body = UIColor(red: ch(g.r, r), green: ch(g.g, gg), blue: ch(g.b, b), alpha: 1)
             let label = f.label.uiColor, black = UIColor(red: 0.08, green: 0.07, blue: 0.06, alpha: 1)
+            return Self.wcagContrast(label, body) >= Self.wcagContrast(black, body) ? label : black
+        }
+        if !currentIsLight, let m = AppearanceTuning.mapDark, m.orbLook == .glass {
+            // CPU twin of the Glass body away from the highlight: the background (ground + ~a dot) tinted, then frosted.
+            let gl = m.glass, g = m.ground.rgb
+            var r: CGFloat = 0, gg: CGFloat = 0, b: CGFloat = 0, a: CGFloat = 0
+            applyDarkOrbBoost(fillColor).getRed(&r, green: &gg, blue: &b, alpha: &a)
+            func ch(_ grd: Double, _ c: CGFloat) -> CGFloat {
+                let t = grd + (Double(c) - grd) * gl.tint * 0.55   // the tint around the label (≈ 40% centre → rim)
+                return CGFloat(min(1, t + (1 - t) * gl.brightness))
+            }
+            let body = UIColor(red: ch(g.r, r), green: ch(g.g, gg), blue: ch(g.b, b), alpha: 1)
+            let label = gl.label.uiColor, black = UIColor(red: 0.08, green: 0.07, blue: 0.06, alpha: 1)
             return Self.wcagContrast(label, body) >= Self.wcagContrast(black, body) ? label : black
         }
         #endif

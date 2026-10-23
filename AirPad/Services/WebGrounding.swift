@@ -59,8 +59,13 @@ enum WebGrounding {
 
     /// live-29 (B3) — a NEWS-shaped question: asks a provider's news endpoint / topic first (Brave news, Tavily
     /// "news"); everything else searches the general web first.
+    /// live-37 (1) — "…up until today" bounds a list, it isn't news (live-36: Apple's rewrite kept "the last 10 US presidents
+    /// up until today" → the news endpoint, past day, 2 results): "until / up to / as of / through today" and "to date"
+    /// don't make a question news.
     static func isNewsQuestion(_ q: String) -> Bool {
-        q.range(of: #"\b(news|headlines?|breaking|happen(ed|ing)|today|tonight|yesterday|this (morning|afternoon|evening|week))\b"#,
+        let q = Live37.query ? q.replacingOccurrences(of: #"(?i)\b((up )?un)?till? today\b|\b(up to|as of|through|thru) today\b|\bto date\b"#,
+                                                      with: " ", options: .regularExpression) : q
+        return q.range(of: #"\b(news|headlines?|breaking|happen(ed|ing)|today|tonight|yesterday|this (morning|afternoon|evening|week))\b"#,
                 options: [.regularExpression, .caseInsensitive]) != nil
             || q.range(of: #"\blatest (on|about|from|in)\b"#, options: [.regularExpression, .caseInsensitive]) != nil
     }
@@ -729,7 +734,10 @@ enum WebGroundingSelfTest {
                           ("What's the current population of Chicago?", false), ("Who is the prime minister of Canada right now?", false),
                           ("What's the latest iPhone?", false), ("What's the top news in Mexico today?", true),
                           ("What are the headlines this morning?", true), ("Latest news on the Lakeview Observatory", true),
-                          ("What happened in Turkey yesterday?", true), ("Breaking news in Turkey", true)] {
+                          ("What happened in Turkey yesterday?", true), ("Breaking news in Turkey", true),
+                          // live-37 (1) — T's sentence: "up until today" bounds the list (Apple's rewrite kept it → news, past day)
+                          ("Can you print for me a table of the last 10 US presidents up until today", !Live37.query),
+                          ("the last 10 US presidents up until today", !Live37.query), ("What happened today?", true)] {
             check("news-shaped: \(q)", WebGrounding.isNewsQuestion(q) == want)
         }
         let pres = "Who is the current president of the United States?"

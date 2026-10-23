@@ -17,6 +17,7 @@ cases = json.load(open(SET))["chats"]
 only = [x for x in os.environ.get("LIVE_ONLY", "").split(",") if x]
 if only: cases = [c for c in cases if c["id"] in only]
 rows = [json.loads(l) for l in open(TRACE)] if os.path.exists(TRACE) else []
+RONLY = os.environ.get("RETRIEVAL_ONLY") == "1"   # live-37 (4): grade retrieval only (scripts/live/smoke.sh --retrieval)
 THINK = re.compile(r"\b(wait|hmm+|actually,|let me (check|think|re-?check|verify|recount)|on second thought|re-?checking|double-check)\b|\(wait", re.I)
 
 turns, cur = [], None
@@ -45,7 +46,10 @@ def list_items(ans):
     return len([l for l in ans.splitlines() if re.match(r"^(\d+[.)]|[-*•])\s+\S", l)])   # top-level items only
 
 def received(t):
-    """What the model got: the first model step's messages (Host / server) or Apple's prompt."""
+    """What the model got: the first model step's messages (Host / server) or Apple's prompt — or, in a retrieval-only run
+    (live-37), the evidence the model would have got."""
+    ev = next((r for r in t["rows"] if r["kind"] == "evidence"), None)
+    if ev: return ev.get("text", ""), "evidence"
     step = next((r for r in t["rows"] if r["kind"] == "step"), None)
     if step: return " \n".join(m.get("content", "") for m in step.get("messages", [])), "host"
     ap = next((r for r in t["rows"] if r["kind"] == "applePrompt"), None)
@@ -64,6 +68,7 @@ def loss_stage(g, t, rx):
     floor = float((rr or {}).get("floor", 0.6))
     with_fact = [p for p in ps if any(hit(low(p.get("text", "")), k, rx) for k in g)]
     if not with_fact: return "fetched, in no passage (split / cut from the page)"
+    if all(p["score"] == 0 for p in with_fact): return "dropped as boilerplate"
     if not any(p["score"] >= floor for p in with_fact): return f"below the floor (best {max(p['score'] for p in with_fact):.2f})"
     if not any(p.get("kept") for p in with_fact): return "above the floor but cut (top-k / per-source / budget)"
     return "kept but not in the prompt"
@@ -79,6 +84,17 @@ def grade(c, ts):
     ans = (ans_row or {}).get("text", "")
     a = low(ans)
     searched = any(r["kind"] == "tool" for r in trows)
+    ev = next((r for r in trows if r["kind"] == "evidence"), None)
+    if RONLY:   # live-37 (4) — retrieval only: no answer to grade
+        if c.get("nosearch") or (ev or {}).get("path") == "library":
+            out.update(retrieval=None, relaxed=None, strict=None, note=("searched!" if searched else "no search") if c.get("nosearch") else "library (no web step)", answer="")
+            return out
+        out.update(relaxed=None, strict=None, answer="", sources=[], searched=searched,
+                   query=next((r.get("query") for r in trows if r["kind"] == "query"), ""),
+                   how=next((r.get("how") for r in trows if r["kind"] == "query"), ""),
+                   rewriteMs=next((r.get("rewriteMs") for r in trows if r["kind"] == "query"), None),
+                   evidenceChars=(ev or {}).get("chars"), passageChars=(ev or {}).get("passageChars"),
+                   appleTokens=(ev or {}).get("appleTokens"), nSources=(ev or {}).get("sources"))
     if c.get("nosearch"):
         out.update(retrieval=None, relaxed=not searched, strict=not searched, searched=searched, answer=ans[:600],
                    note="searched!" if searched else "no search"); return out
@@ -103,6 +119,7 @@ def grade(c, ts):
         out["lost"] = {" / ".join(g): loss_stage(g, t, rx) for g in miss}
     else:
         out["retrieval"] = None
+    if RONLY: return out
     # answer
     relaxed = bool(ans) and groups_ok(a, c["any"], rx) if c["any"] else bool(ans)
     stale = [p for p in c.get("stale", []) if re.search(p, a)]
@@ -150,9 +167,15 @@ os.makedirs(OUT, exist_ok=True)
 json.dump(res, open(os.path.join(OUT, "grades.json"), "w"), indent=1, ensure_ascii=False)
 yn = lambda v: "-" if v is None else ("y" if v else "n")
 L = [f"# {TIER} — {len(res)} questions", "", "| id | cat | retrieval | strict | relaxed | lost / problems | query | sources |", "|---|---|---|---|---|---|---|---|"]
+if RONLY:
+    L = [f"# {TIER} — {len(res)} questions", "", "| id | cat | retrieval | lost | query (how, rewrite ms) | evidence chars · sources · Apple tokens |", "|---|---|---|---|---|---|"]
 for g in res:
     why = "; ".join([f"{k}: {v}" for k, v in (g.get("lost") or {}).items()] + g.get("problems", []) + ([g["retrievalNote"]] if g.get("retrievalNote") else [])
                     + ([f"REVIEW: {g['review']}" + (f" → {g['reviewed']}" if g.get("reviewed") else "")] if g.get("review") else []) + ([g["note"]] if g.get("note") else []))
+    if RONLY:
+        L.append(f"| {g['id']}{' ★' if g.get('tFailure') else ''} | {g['cat']} | {yn(g.get('retrieval'))} | {why.replace('|', '/')} | "
+                 f"{(g.get('query') or '').replace('|', '/')} ({g.get('how', '')}, {g.get('rewriteMs')}) | {g.get('evidenceChars')} · {g.get('nSources')} · {g.get('appleTokens')} |")
+        continue
     L.append(f"| {g['id']}{' ★' if g.get('tFailure') else ''} | {g['cat']} | {yn(g.get('retrieval'))} | {yn(g['strict'])} | {yn(g['relaxed'])} | {why.replace('|', '/')} | {(g.get('query') or '').replace('|', '/')} | {', '.join(g.get('sources', []))} |")
 open(os.path.join(OUT, "table.md"), "w").write("\n".join(L) + "\n")
 cats = []
@@ -162,6 +185,6 @@ S = [f"# {TIER} — summary", "", "| category | n | retrieval recall | strict | 
 def frac(xs): xs = [x for x in xs if x is not None]; return f"{sum(xs)}/{len(xs)}" if xs else "-"
 for k in cats + ["ALL"]:
     gs = [g for g in res if k == "ALL" or g["cat"] == k]
-    S.append(f"| {k} | {len(gs)} | {frac([g.get('retrieval') for g in gs])} | {frac([g['strict'] for g in gs])} | {frac([g['relaxed'] for g in gs])} |")
+    S.append(f"| {k} | {len(gs)} | {frac([g.get('retrieval') for g in gs])} | {frac([g.get('strict') for g in gs])} | {frac([g.get('relaxed') for g in gs])} |")
 open(os.path.join(OUT, "summary.md"), "w").write("\n".join(S) + "\n")
 print("\n".join(S))

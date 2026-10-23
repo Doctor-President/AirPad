@@ -238,7 +238,7 @@
     ]
    ],
    "stale": [
-    "biden[^\\n|]*\\|\\s*(present|incumbent|current)",
+    "\\|[^\\n]*biden[^\\n]*\\|[^\\n]*(present|incumbent|current)",
     "biden is (the )?(current|president)"
    ],
    "rows": {
@@ -308,7 +308,7 @@
     ]
    ],
    "stale": [
-    "biden[^\\n|]*\\|\\s*(present|incumbent|current)"
+    "\\|[^\\n]*biden[^\\n]*\\|[^\\n]*(present|incumbent|current)"
    ],
    "rows": {
     "n": 10,
@@ -809,7 +809,7 @@
    ],
    "stale": [
     "biden is still",
-    "biden[^\\n|]*\\|\\s*(present|incumbent|current)"
+    "\\|[^\\n]*biden[^\\n]*\\|[^\\n]*(present|incumbent|current)"
    ]
   },
   {

@@ -1177,6 +1177,18 @@ enum ModelRouter {
     /// The model tag the last Host chat request actually put on the wire (nil before the first one).
     nonisolated(unsafe) static var lastWireModel: String? = nil
 
+    /// live-37 (2) — the model a web turn's evidence is sized for (`WebEvidence.hostWebBudget`): the one the last Host
+    /// request named, else the one the next will name (the catalog), else nil (sized as a small model).
+    static func webEvidenceModel() async -> String? {
+        #if DEBUG
+        let args = ProcessInfo.processInfo.arguments
+        if let i = args.firstIndex(of: "-DebugHostModel"), i + 1 < args.count { return args[i + 1] }
+        #endif
+        if let m = lastWireModel { return m }
+        guard case .host(let pairing) = active else { return nil }
+        return try? await resolveHostModel(pairing: pairing).preferred
+    }
+
     /// live-27 (4) — who is writing the answer being streamed: every ANSWER path sets it just before its request goes
     /// out (the route + the model tag put on the wire); `ChatSession` reads it when it commits the answer into the
     /// message's provenance. Titles / enrichment go through `generate`, which never sets it.

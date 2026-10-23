@@ -1174,6 +1174,10 @@ final class CorpusStore {
             if ProcessInfo.processInfo.arguments.contains("-MathTextSelfTest") {   // live-35 (2)
                 NSLog("[MathTextSelfTest] %@", MathTextSelfTest.run())
             }
+            if let path = UserDefaults.standard.string(forKey: "WebRetrievalRun") {   // live-37 (4) — the retrieval-only loop
+                let tier = UserDefaults.standard.string(forKey: "RetrievalTier") ?? "apple"
+                Task { @MainActor in NSLog("[WebRetrievalRun] %@", await WebRetrievalRun.run(path: path, tier: tier)) }
+            }
             if ProcessInfo.processInfo.arguments.contains("-WebEvidenceSelfTest") {   // live-32 (2)
                 Task { @MainActor in NSLog("[WebEvidenceSelfTest] %@", await WebEvidenceSelfTest.run()) }
             }

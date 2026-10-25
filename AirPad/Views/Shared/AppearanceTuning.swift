@@ -422,6 +422,26 @@ final class AppearanceTuner {
         // live-41 — `-MapGlassCycle <start-s>`: today's Glass (T's Copy values via `-MapGlassToday '<glass block JSON>'`, else
         // live-40 Medium) · arcs only · frost 0.3 / 0.6 / 0.9 · dim only · arcs + frost 0.6 · the new Medium at two simulated
         // tilts. Every 4 s, NSLog `[MAPCYCLE] <step>`.
+        // live-42 (measurement only) — `-MapGlassPair <start-s> -MapGlassToday '<Copy values>'`: T's Glass at <start-s>, then
+        // the same values with NO refraction (the real background through the body) 4 s later. NSLog `[MAPCYCLE] <step>`.
+        // Pass the JSON as `json:{…}` so the argument domain keeps it a string.
+        if let start = UserDefaults.standard.string(forKey: "MapGlassPair").flatMap(Double.init),
+           let j = UserDefaults.standard.string(forKey: "MapGlassToday").map({ $0.hasPrefix("json:") ? String($0.dropFirst(5)) : $0 }),
+           let o = (try? JSONSerialization.jsonObject(with: Data(j.utf8))) as? [String: Any] {
+            let md = (o["mapDark"] as? [String: Any]) ?? o
+            var g = GlassLook.medium
+            if let gb = md["glass"] as? [String: Any] { g.apply(exportJSON: gb) }
+            DispatchQueue.main.asyncAfter(deadline: .now() + start) { [weak self] in
+                guard let self else { return }
+                self.state.mapDark.apply(exportJSON: md); self.state.mapDark.orbLook = .glass; self.state.mapDark.glass = g
+                MapGlassDebug.tilt = .zero; MapGlassDebug.noRefraction = false
+                NSLog("[MAPCYCLE] %@", "glass-A"); print("[MAPCYCLE] glass-A")
+            }
+            DispatchQueue.main.asyncAfter(deadline: .now() + start + 4) {
+                MapGlassDebug.noRefraction = true
+                NSLog("[MAPCYCLE] %@", "no-refraction"); print("[MAPCYCLE] no-refraction")
+            }
+        }
         if let start = UserDefaults.standard.string(forKey: "MapGlassCycle").flatMap(Double.init) {
             var today = GlassLook.live40Medium
             var tTilt: Double? = nil
@@ -1563,7 +1583,7 @@ struct MapDarkTuning: Codable, Equatable {
 
 #if DEBUG
 /// live-40 stills — a simulated tilt for the Glass highlight (the Simulator has no gyro). nil = the real tilt.
-enum MapGlassDebug { static var tilt: SIMD2<Float>? }
+enum MapGlassDebug { static var tilt: SIMD2<Float>?; static var noRefraction = UserDefaults.standard.bool(forKey: "MapGlassNoRefraction") }
 #endif
 
 extension AppearanceTuning {

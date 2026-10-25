@@ -961,7 +961,7 @@ final class CorpusPhysicsScene: SKScene {
             let arc = simd_float4x4(columns: (
                 vector_float4(Float(g.topArc), Float(g.bottomArc), Float(g.arcSpan * .pi / 360), Float(g.arcThickness)),
                 vector_float4(Float(g.arcSoftness), ad.x, ad.y, Float(g.dim)),
-                vector_float4(0, 0, 0, 0), vector_float4(0, 0, 0, 0)))
+                vector_float4(Self.glassNoRefraction, 0, 0, 0), vector_float4(0, 0, 0, 0)))
             if arc != u.matrixFloat4x4Value { u.matrixFloat4x4Value = arc }
         }
 
@@ -976,6 +976,14 @@ final class CorpusPhysicsScene: SKScene {
         }
     }
     private var glassOrbCache: [String: vector_float3] = [:]
+    /// live-42 (measurement only) — 1 = Glass without the refracted grid (`-MapGlassNoRefraction YES` / `-MapGlassPair`).
+    private static var glassNoRefraction: Float {
+        #if DEBUG
+        return MapGlassDebug.noRefraction ? 1 : 0
+        #else
+        return 0
+        #endif
+    }
     private var smoothedGlassTilt = SIMD2<Float>(0, 0)   // live-41 — the drifting light
     #endif
     /// live-40 — the Glass highlight moved with the tilt → keep the map awake (it otherwise idles at rest).
@@ -3597,6 +3605,9 @@ final class CorpusPhysicsScene: SKScene {
             float washT = clamp((v_tex_coord.x - v_tex_coord.y + 1.0) * 0.5, 0.0, 1.0);
             float wS = a_wash.a * washT;
             vec3 fillRGB = fillC.rgb;
+            // live-42 (measurement only) — Glass with NO refraction: the same layers composited OVER the real background
+            // (premultiplied C, transmittance T) instead of over a refracted copy of the grid. u_gl_arc col 2.x = 1.
+            float nrOn = 0.0; vec3 nrC = vec3(0.0); float nrT = 1.0;
             if (u_wash_is_light > 0.5) {
                 // Brief AT (LIGHT comp, LOCKED). Flat slot fill → AE Hue/Sat translate → OKLCH palette dials
                 // (baked, applied PER-ORB so per-orb recency shades survive) → light FOCUS band (fade toward
@@ -3650,6 +3661,9 @@ final class CorpusPhysicsScene: SKScene {
                     float bend = lk_a.x * pow(rr, lk_a.y);
                     vec2 S = a_orb.xy + p * (2.0 * Rw) / max(lk_a.z, 0.05) + dir * (Rw * bend);
 
+                    nrOn = step(0.5, u_gl_arc[2].x);
+                    vec3 bg = vec3(0.0);
+                    if (nrOn < 0.5) {
                     float baseR = G1.z * camS;
                     float feather = 0.75 * camS;
                     // live-41 FROST = an analytic blur of the periodic grid: each layer's dots relax toward that layer's
@@ -3691,14 +3705,18 @@ final class CorpusPhysicsScene: SKScene {
                         cov = max(cov, (meanL + (cv - meanL) * melt) * las[L]);
                     }
                     float dotA = clamp(cov * G1.w, 0.0, 1.0);
-                    vec3 bg = u_ground_color * (1.0 - dotA) + lk_d.rgb * dotA;
+                    bg = u_ground_color * (1.0 - dotA) + lk_d.rgb * dotA;
                     vec2 sUV = ((S - G0.xy) / camS) / G1.xy + vec2(0.5);
                     float Rf = texture2D(u_disp_field, sUV).b;
                     float pk = G0.w;   // the ambient colour, packed 8-bit RGB
                     vec3 amb = vec3(floor(pk / 65536.0), floor(mod(pk, 65536.0) / 256.0), mod(pk, 256.0)) / 255.0;
                     bg = mix(bg, vec3(Rf) * amb, G3.z);
+                    }
                     vec4 A0 = u_gl_arc[0]; vec4 A1 = u_gl_arc[1];
                     bg *= 1.0 - A1.w;                                  // live-41 behind-glass dim
+                    float tw = lk_a.w * gDim * mix(0.4, 1.0, rr * rr);
+                    nrT = (1.0 - A1.w) * (1.0 - tw) * (1.0 - lk_b.x);
+                    nrC = (col * tw) * (1.0 - lk_b.x) + vec3(lk_b.x);   // dim (black) → tint → frosted lift, premultiplied
 
                     // Family tint, heavier toward the rim (glass reads clear face-on and coloured at grazing angles);
                     // recedes with the focus band.
@@ -3709,7 +3727,10 @@ final class CorpusPhysicsScene: SKScene {
                     float ldd = dot(dir, ld);
                     float lit = ldd * 0.5 + 0.5;
                     float aaR = 2.0 * aa;                             // ~1px in rr units
-                    gc *= 1.0 - lk_b.z * smoothstep(0.6, 0.97, rr) * mix(1.0, 0.35, lit);   // inner shadow
+                    float shK = 1.0 - lk_b.z * smoothstep(0.6, 0.97, rr) * mix(1.0, 0.35, lit);
+                    gc *= shK;                                                                 // inner shadow
+                    nrC *= shK; nrT *= shK;
+                    vec3 gc0 = gc;
                     float hs = smoothstep(lk_c.x, 0.0, distance(p, hc));
                     gc += vec3(lk_c.y * hs * hs * gDim);            // broad highlight
                     float rimBand = smoothstep(0.9 - 4.0 * aaR, 1.0 - 2.0 * aaR, rr);
@@ -3737,6 +3758,7 @@ final class CorpusPhysicsScene: SKScene {
                                     smoothstep(1.0 - th - sh, 1.0 - aaR - sh, rr));
                     rad = rad * rad;
                     gc += gDim * rad * (A0.x * angTop * mix(col, vec3(1.0), 0.8) + A0.y * angBot * mix(col, vec3(1.0), 0.45));
+                    nrC += gc - gc0;                                   // the additive lights (highlight, glint, edge, arcs)
                     fillRGB = clamp(gc, 0.0, 1.0);
                 } else if (u_fr_on > 0.5) {
                     // live-39 — FRESNEL (TestFlight tuner only; u_fr_on = 0 everywhere else → the flat path below).
@@ -3788,6 +3810,10 @@ final class CorpusPhysicsScene: SKScene {
             float sa = ring * strokeC.a;
             float outA = sa + fa * (1.0 - sa);
             vec3 outRGB = strokeC.rgb * sa + fillRGB * fa * (1.0 - sa);  // premultiplied, stroke over washed fill
+            if (nrOn > 0.5) {   // live-42 — no-refraction Glass: the background shows through (1 − T)
+                outA = sa + disc * (1.0 - nrT) * (1.0 - sa);
+                outRGB = strokeC.rgb * sa + clamp(nrC, 0.0, 1.0) * disc * (1.0 - sa);
+            }
             // Brief AW — LIGHT orb opacity (70% default) lets the dots + pool show through. Premultiplied
             // (rgb, a) × op reduces opacity uniformly. u_orb_opacity = 1 in dark → byte-identical.
             gl_FragColor = vec4(outRGB, outA) * u_orb_opacity;

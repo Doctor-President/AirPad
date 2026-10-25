@@ -937,8 +937,16 @@ final class CorpusPhysicsScene: SKScene {
         #if DEBUG
         if let t = MapGlassDebug.tilt { tilt = t }
         #endif
+        // live-41 — calmer light: "Tilt light" off → static; otherwise the light DRIFTS toward the tilt (one-pole smoothing,
+        // time constant tiltSmoothing) instead of tracking it. One light direction for every orb.
+        if !m.glass.tiltLight { tilt = .zero }
+        let tau = max(0.01, m.glass.tiltSmoothing)
+        let a = Float(1 - exp(-max(frameDT, 0) / tau))
+        smoothedGlassTilt += (tilt - smoothedGlassTilt) * a
+        if simd_distance(tilt, smoothedGlassTilt) > 0.001 { glassWake = true }   // still drifting → keep frames coming
         let k = Float(m.glass.tiltResponse) * 0.16
-        var hc = SIMD2<Float>(-0.16 + tilt.x * k, 0.19 + tilt.y * k)
+        let off = smoothedGlassTilt * k
+        var hc = SIMD2<Float>(-0.16 + off.x, 0.19 + off.y)
         let hl = simd_length(hc); if hl > 0.33 { hc *= 0.33 / hl }   // keep it on the bead
         if let u = o("u_gl_look") {
             var look = u.matrixFloat4x4Value
@@ -946,6 +954,15 @@ final class CorpusPhysicsScene: SKScene {
             look.columns.2 = vector_float4(Float(m.glass.highlightSize), Float(m.glass.highlightIntensity), hc.x, hc.y)
             look.columns.3 = vector_float4(dot.x, dot.y, dot.z, Float(m.glass.frost))
             if look != u.matrixFloat4x4Value { u.matrixFloat4x4Value = look }
+        }
+        if let u = o("u_gl_arc") {
+            let g = m.glass
+            let ad = simd_normalize(SIMD2<Float>(off.x * 4, 1 + off.y * 4))   // up, leaning with the (subtle) light
+            let arc = simd_float4x4(columns: (
+                vector_float4(Float(g.topArc), Float(g.bottomArc), Float(g.arcSpan * .pi / 360), Float(g.arcThickness)),
+                vector_float4(Float(g.arcSoftness), ad.x, ad.y, Float(g.dim)),
+                vector_float4(0, 0, 0, 0), vector_float4(0, 0, 0, 0)))
+            if arc != u.matrixFloat4x4Value { u.matrixFloat4x4Value = arc }
         }
 
         for (id, node) in nodeSprites {
@@ -959,6 +976,7 @@ final class CorpusPhysicsScene: SKScene {
         }
     }
     private var glassOrbCache: [String: vector_float3] = [:]
+    private var smoothedGlassTilt = SIMD2<Float>(0, 0)   // live-41 — the drifting light
     #endif
     /// live-40 — the Glass highlight moved with the tilt → keep the map awake (it otherwise idles at rest).
     private var glassWake = false
@@ -3633,7 +3651,11 @@ final class CorpusPhysicsScene: SKScene {
                     vec2 S = a_orb.xy + p * (2.0 * Rw) / max(lk_a.z, 0.05) + dir * (Rw * bend);
 
                     float baseR = G1.z * camS;
-                    float feather = 0.75 * camS * (1.0 + 5.0 * lk_d.w);
+                    float feather = 0.75 * camS;
+                    // live-41 FROST = an analytic blur of the periodic grid: each layer's dots relax toward that layer's
+                    // MEAN coverage (dot area / cell area × the layer's LOD alpha, with the shrink at this cell), so as
+                    // frost rises the dots don't grow — their contrast melts into an even haze of the same average.
+                    float melt = exp(-6.0 * lk_d.w * lk_d.w);
                     float q1 = G2.x; float q0 = q1 / G2.y; float q2 = q1 * G2.y;
                     float qs[3]; qs[0] = q0; qs[1] = q1; qs[2] = q2;
                     float las[3];
@@ -3648,6 +3670,7 @@ final class CorpusPhysicsScene: SKScene {
                         float maxOff = 0.9 * qq;
                         vec2 cell = floor(S / qq);
                         float cv = 0.0;
+                        float sh0 = 1.0;
                         for (int ny = -1; ny <= 1; ny++) {
                             for (int nx = -1; nx <= 1; nx++) {
                                 vec2 cc = (cell + vec2(float(nx), float(ny)) + 0.5) * qq;
@@ -3660,17 +3683,22 @@ final class CorpusPhysicsScene: SKScene {
                                 float shrink = clamp(1.0 - G3.x * pullLen, 0.15, 1.0);
                                 float dd = length(S - moved) - baseR * shrink;
                                 cv = max(cv, 1.0 - smoothstep(0.0, feather, dd));
+                                if (nx == 0 && ny == 0) { sh0 = shrink; }
                             }
                         }
-                        cov = max(cov, cv * las[L]);
+                        float rEff = baseR * sh0 + 0.5 * feather;
+                        float meanL = clamp(3.14159265 * rEff * rEff / (qq * qq), 0.0, 1.0);
+                        cov = max(cov, (meanL + (cv - meanL) * melt) * las[L]);
                     }
-                    float dotA = clamp(cov * G1.w * (1.0 - 0.35 * lk_d.w), 0.0, 1.0);
+                    float dotA = clamp(cov * G1.w, 0.0, 1.0);
                     vec3 bg = u_ground_color * (1.0 - dotA) + lk_d.rgb * dotA;
                     vec2 sUV = ((S - G0.xy) / camS) / G1.xy + vec2(0.5);
                     float Rf = texture2D(u_disp_field, sUV).b;
                     float pk = G0.w;   // the ambient colour, packed 8-bit RGB
                     vec3 amb = vec3(floor(pk / 65536.0), floor(mod(pk, 65536.0) / 256.0), mod(pk, 256.0)) / 255.0;
                     bg = mix(bg, vec3(Rf) * amb, G3.z);
+                    vec4 A0 = u_gl_arc[0]; vec4 A1 = u_gl_arc[1];
+                    bg *= 1.0 - A1.w;                                  // live-41 behind-glass dim
 
                     // Family tint, heavier toward the rim (glass reads clear face-on and coloured at grazing angles);
                     // recedes with the focus band.
@@ -3692,7 +3720,23 @@ final class CorpusPhysicsScene: SKScene {
                     vec3 eL = vec3(smoothstep(ew - aaR + sh, ew + sh, rr),
                                    smoothstep(ew - aaR, ew, rr),
                                    smoothstep(ew - aaR - sh, ew - sh, rr));
-                    gc += lk_b.y * mix(0.5, 1.0, lit) * gDim * eL * mix(col, vec3(1.0), 0.7);   // thin bright edge
+                    gc += lk_b.y * mix(0.5, 1.0, lit) * gDim * eL * mix(col, vec3(1.0), 0.7);   // thin bright edge (optional)
+                    // live-41 RIM LIGHT (iOS 27 Liquid Glass): a brighter TOP arc (key) + a softer BOTTOM arc (bounce),
+                    // centred on the light direction A1.yz (up + the subtle tilt) and its opposite, each fading toward
+                    // the sides. A0 = (top, bottom, half span rad, thickness); A1.x = softness. Same colour fringe.
+                    float ca = clamp(dot(dir, A1.yz), -1.0, 1.0);
+                    float tTop = acos(ca);
+                    float tBot = 3.14159265 - tTop;
+                    float hSpan = max(A0.z, 0.01);
+                    float a0e = hSpan * (1.0 - clamp(A1.x, 0.0, 1.0));
+                    float angTop = 1.0 - smoothstep(a0e, hSpan + 0.0001, tTop);
+                    float angBot = 1.0 - smoothstep(a0e, hSpan + 0.0001, tBot);
+                    float th = max(A0.w, 2.0 * aaR);
+                    vec3 rad = vec3(smoothstep(1.0 - th + sh, 1.0 - aaR + sh, rr),
+                                    smoothstep(1.0 - th, 1.0 - aaR, rr),
+                                    smoothstep(1.0 - th - sh, 1.0 - aaR - sh, rr));
+                    rad = rad * rad;
+                    gc += gDim * rad * (A0.x * angTop * mix(col, vec3(1.0), 0.8) + A0.y * angBot * mix(col, vec3(1.0), 0.45));
                     fillRGB = clamp(gc, 0.0, 1.0);
                 } else if (u_fr_on > 0.5) {
                     // live-39 — FRESNEL (TestFlight tuner only; u_fr_on = 0 everywhere else → the flat path below).
@@ -3790,6 +3834,9 @@ final class CorpusPhysicsScene: SKScene {
             SKUniform(name: "u_gl_look", matrixFloat4x4: simd_float4x4(columns: (vector_float4(0, 0, 0, 0), vector_float4(1, 0, 0, 0),
                                                                                   vector_float4(0.2, 0, -0.16, 0.19), vector_float4(1, 1, 1, 0)))),
             SKUniform(name: "u_gl_grid", matrixFloat4x4: matrix_identity_float4x4),
+            // live-41 — rim arcs + dim: columns (top, bottom, half span, thickness), (softness, light dir xy, dim). 30 of 31 bindings.
+            SKUniform(name: "u_gl_arc", matrixFloat4x4: simd_float4x4(columns: (vector_float4(0, 0, 1, 0.07), vector_float4(0.6, 0, 1, 0),
+                                                                                 vector_float4(0, 0, 0, 0), vector_float4(0, 0, 0, 0)))),
             SKUniform(name: "u_disp_field", texture: SKTexture(data: Data(count: 4), size: CGSize(width: 1, height: 1))),
             // Brief AT — LIGHT comp levers (light branch only). Dark holds them inert: u_orb_opacity = 1
             // (byte-identical premultiply), and the dark branch never reads the hue/sat/focus/palette/ground.

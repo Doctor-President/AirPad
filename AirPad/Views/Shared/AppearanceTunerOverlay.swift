@@ -706,9 +706,20 @@ struct AppearanceTunerSheet<G: Gesture>: View {
         subhead("Body")
         slider("Tint (orb colour)", g.tint, 0...1, 0.01, pct(g.tint), id: "glTint") { x in setG { $0.tint = x } }
         slider("Body brightness", g.brightness, 0...0.5, 0.005, pct(g.brightness), id: "glBright") { x in setG { $0.brightness = x } }
-        slider("Frost (soften the dots)", g.frost, 0...1, 0.01, pct(g.frost), id: "glFrost") { x in setG { $0.frost = x } }
+        slider("Frost (diffuse)", g.frost, 0...1, 0.01, pct(g.frost), id: "glFrost") { x in setG { $0.frost = x } }
+        slider("Behind-glass dim", g.dim, 0...0.9, 0.01, pct(g.dim), id: "glDim") { x in setG { $0.dim = x } }
+        subhead("Rim light (top + bottom arcs)")
+        slider("Top arc", g.topArc, 0...2, 0.01, String(format: "%.2f", g.topArc), id: "glTopArc") { x in setG { $0.topArc = x } }
+        slider("Bottom arc", g.bottomArc, 0...2, 0.01, String(format: "%.2f", g.bottomArc), id: "glBottomArc") { x in
+            setG { $0.bottomArc = x }
+        }
+        slider("Arc span", g.arcSpan, 20...180, 1, String(format: "%.0f°", g.arcSpan), id: "glArcSpan") { x in setG { $0.arcSpan = x } }
+        slider("Arc thickness", g.arcThickness, 0.01...0.3, 0.005, pct(g.arcThickness) + " of radius", id: "glArcThick") { x in
+            setG { $0.arcThickness = x }
+        }
+        slider("Arc softness", g.arcSoftness, 0...1, 0.01, pct(g.arcSoftness), id: "glArcSoft") { x in setG { $0.arcSoftness = x } }
         subhead("Edge")
-        slider("Edge line", g.edge, 0...2, 0.01, String(format: "%.2f", g.edge), id: "glEdge") { x in setG { $0.edge = x } }
+        slider("Edge line (all round)", g.edge, 0...2, 0.01, String(format: "%.2f", g.edge), id: "glEdge") { x in setG { $0.edge = x } }
         slider("Inner shadow", g.innerShadow, 0...1, 0.01, pct(g.innerShadow), id: "glShadow") { x in setG { $0.innerShadow = x } }
         slider("Colour fringe (dispersion)", g.dispersion, 0...1, 0.01, pct(g.dispersion), id: "glDispersion") { x in
             setG { $0.dispersion = x }
@@ -720,14 +731,21 @@ struct AppearanceTunerSheet<G: Gesture>: View {
         slider("Highlight intensity", g.highlightIntensity, 0...1.5, 0.01, String(format: "%.2f", g.highlightIntensity), id: "glHlInt") { x in
             setG { $0.highlightIntensity = x }
         }
-        slider("Tilt response", g.tiltResponse, -1.5...1.5, 0.05, String(format: "%.2f", g.tiltResponse), id: "glTilt") { x in
-            setG { $0.tiltResponse = x }
+        toggle("Tilt light (off = static highlights)", g.tiltLight, id: "glTiltLight") { b in setG { $0.tiltLight = b } }
+        if g.tiltLight {
+            // Squared scale: half the track = 0.375, so small responses are easy to set; negative = the other way.
+            slider("Tilt response", (g.tiltResponse < 0 ? -1 : 1) * (abs(g.tiltResponse) / 1.5).squareRoot(), -1...1, 0.005,
+                   String(format: "%.3f", g.tiltResponse), id: "glTilt") { u in setG { $0.tiltResponse = (u < 0 ? -1 : 1) * u * u * 1.5 } }
+            slider("Tilt smoothing", g.tiltSmoothing, 0...3, 0.05, String(format: "%.2f s", g.tiltSmoothing), id: "glTiltSmooth") { x in
+                setG { $0.tiltSmoothing = x }
+            }
         }
         TunerColorRow(label: "Label colour", color: g.label, defaultHex: GlassLook.medium.label.hex, id: "glLabel") { c in
             setG { $0.label = c }
         }
         note("Inside each orb you see the dot grid behind it through a lens: little bend at the centre, more toward the rim. "
-             + "The highlight follows the phone's tilt (negative response = the other way). It stays put in Low Power Mode, with "
+             + "Frost melts the dots into an even haze (they don't grow); dim darkens what the lens shows. "
+             + "The arcs light the top and bottom of the rim. The light drifts with the phone's tilt (negative response = the other way). It stays put in Low Power Mode, with "
              + "Reduce Motion, or with Appearance → Move with tilt off. Labels use the label colour unless dark text reads better.")
     }
 

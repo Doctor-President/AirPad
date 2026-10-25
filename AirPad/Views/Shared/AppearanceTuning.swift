@@ -304,6 +304,8 @@ struct AppearanceTuningState: Codable, Equatable {
     var floatingButtons: FloatingButtonsMode = .glass
     /// live-28 (A1) / live-29 (B1) — T picked A (10-19): the tuner starts there and the App Store build ships it.
     var lightFade: LightFadeMode = .band
+    /// live-39 — the Map in dark mode: background, highlights, flat ↔ Fresnel orbs.
+    var mapDark: MapDarkTuning = .today
     static let defaults = AppearanceTuningState(light: .lightDefault, dark: .darkDefault)
 
     init(light: AppearanceTuningValues, dark: AppearanceTuningValues, cardContent: CardContentMode = .proposal,
@@ -319,6 +321,7 @@ struct AppearanceTuningState: Codable, Equatable {
         captureControls = try c.decodeIfPresent(CaptureControlsMode.self, forKey: .captureControls) ?? .glass
         floatingButtons = try c.decodeIfPresent(FloatingButtonsMode.self, forKey: .floatingButtons) ?? .glass
         lightFade = try c.decodeIfPresent(LightFadeMode.self, forKey: .lightFade) ?? .band
+        mapDark = (try? c.decodeIfPresent(MapDarkTuning.self, forKey: .mapDark)) ?? .today
     }
 }
 
@@ -377,6 +380,93 @@ final class AppearanceTuner {
         // `-RenderGenerating YES`); `-RimRestRender off|static|dim` — the rim at rest on all three pills.
         if let a = UserDefaults.standard.string(forKey: "RimAnimationRender").flatMap(PillRimActive.init(rawValue:)) {
             for d in [false, true] { update(dark: d) { $0.searchPill.rim.active = a; $0.askPill.rim.active = a } }
+        }
+        // live-39 stills — `-MapOrbRender flat|subtle|medium|strong` and `-MapGroundRender <hex>`.
+        if let o = UserDefaults.standard.string(forKey: "MapOrbRender") {
+            // live-40: `glass-subtle|glass-medium|glass-strong` too.
+            if o.hasPrefix("glass") {
+                state.mapDark.orbLook = .glass
+                if let p = GlassLook.presets.first(where: { "glass-" + $0.0.lowercased() == o }) { state.mapDark.glass = p.1 }
+            } else {
+                state.mapDark.orbLook = o == "flat" ? .flat : .fresnel
+                if let p = FresnelLook.presets.first(where: { $0.0.lowercased() == o }) { state.mapDark.fresnel = p.1 }
+            }
+        }
+        // live-40 stills — `-MapShrinkRender off` (uniform dots); `-MapGlassTilt x,y` (a simulated tilt, −1…1).
+        if UserDefaults.standard.string(forKey: "MapShrinkRender") == "off" { state.mapDark.dotShrinkOn = false }
+        if let g = UserDefaults.standard.string(forKey: "MapGroundRender") { state.mapDark.ground = TunerHSL(hex: g) }
+        // `-MapOrbCycle <start-s>`: one launch steps flat → subtle → medium → strong every 4 s from <start-s> (same layout +
+        // framing for the comparison stills); NSLog `[MAPCYCLE] <look>` at each step.
+        // live-40: the cycle is flat → Fresnel medium → Glass subtle/medium/strong → Glass medium at two simulated tilts →
+        // Glass medium with the dot shrink off.
+        if let start = UserDefaults.standard.string(forKey: "MapOrbCycle").flatMap(Double.init) {
+            typealias Step = (String, (inout MapDarkTuning) -> Void)
+            let steps: [Step] = [
+                ("flat", { $0.orbLook = .flat }),
+                ("fresnel-medium", { $0.orbLook = .fresnel; $0.fresnel = .medium }),
+                ("glass-subtle", { $0.orbLook = .glass; $0.glass = .subtle }),
+                ("glass-medium", { $0.orbLook = .glass; $0.glass = .medium }),
+                ("glass-strong", { $0.orbLook = .glass; $0.glass = .strong }),
+                ("glass-medium-tilt-left-up", { $0.glass = .medium; MapGlassDebug.tilt = SIMD2(-1, 1) }),
+                ("glass-medium-tilt-right-down", { _ in MapGlassDebug.tilt = SIMD2(1, -1) }),
+                ("glass-medium-shrink-off", { $0.dotShrinkOn = false; MapGlassDebug.tilt = .zero }),
+            ]
+            for (i, step) in steps.enumerated() {
+                DispatchQueue.main.asyncAfter(deadline: .now() + start + Double(i) * 4) { [weak self] in
+                    guard let self else { return }
+                    step.1(&self.state.mapDark)
+                    NSLog("[MAPCYCLE] %@", step.0)
+                }
+            }
+        }
+        // live-41 — `-MapGlassCycle <start-s>`: today's Glass (T's Copy values via `-MapGlassToday '<glass block JSON>'`, else
+        // live-40 Medium) · arcs only · frost 0.3 / 0.6 / 0.9 · dim only · arcs + frost 0.6 · the new Medium at two simulated
+        // tilts. Every 4 s, NSLog `[MAPCYCLE] <step>`.
+        if let start = UserDefaults.standard.string(forKey: "MapGlassCycle").flatMap(Double.init) {
+            var today = GlassLook.live40Medium
+            var tTilt: Double? = nil
+            if let j = UserDefaults.standard.string(forKey: "MapGlassToday"),
+               let o = (try? JSONSerialization.jsonObject(with: Data(j.utf8))) as? [String: Any] {
+                let md = (o["mapDark"] as? [String: Any]) ?? o           // a full Copy values, its mapDark block, or a glass block
+                if md["ground"] != nil { state.mapDark.apply(exportJSON: md) }
+                let gb = (md["glass"] as? [String: Any]) ?? md
+                today.apply(exportJSON: gb)
+                if gb["topArc"] == nil { today.topArc = 0; today.bottomArc = 0 }   // a live-40 export: no arcs yet
+                tTilt = today.tiltResponse
+            }
+            let arcs = GlassLook.medium
+            // The tilt stills: today's values as T's device will load them on this build (live-40 values migrate: tilt
+            // × 0.2, edge → 0, arcs at Medium), else the new Medium.
+            var migrated = today; migrated.edge = 0; migrated.tiltResponse = (tTilt ?? 0.8) * 0.2
+            migrated.topArc = arcs.topArc; migrated.bottomArc = arcs.bottomArc
+            let tiltBase = UserDefaults.standard.string(forKey: "MapGlassToday") != nil ? migrated : GlassLook.medium
+            func with(_ f: (inout GlassLook) -> Void) -> GlassLook { var g = today; f(&g); return g }
+            let steps: [(String, GlassLook, SIMD2<Float>?)] = [
+                ("glass-today", today, nil),
+                ("arcs-only", with { $0.edge = 0; $0.topArc = arcs.topArc; $0.bottomArc = arcs.bottomArc; $0.arcSpan = arcs.arcSpan
+                                     $0.arcThickness = arcs.arcThickness; $0.arcSoftness = arcs.arcSoftness }, nil),
+                ("frost-0.3", with { $0.frost = 0.3 }, nil),
+                ("frost-0.6", with { $0.frost = 0.6 }, nil),
+                ("frost-0.9", with { $0.frost = 0.9 }, nil),
+                ("dim-only", with { $0.dim = 0.5 }, nil),
+                ("arcs-frost-0.6", with { $0.edge = 0; $0.topArc = arcs.topArc; $0.bottomArc = arcs.bottomArc; $0.arcSpan = arcs.arcSpan
+                                          $0.arcThickness = arcs.arcThickness; $0.arcSoftness = arcs.arcSoftness; $0.frost = 0.6 }, nil),
+                ("tilt-left-up", tiltBase, SIMD2(-1, 1)),
+                ("tilt-right-down", tiltBase, SIMD2(1, -1)),
+            ]
+            for (i, step) in steps.enumerated() {
+                DispatchQueue.main.asyncAfter(deadline: .now() + start + Double(i) * 4) { [weak self] in
+                    guard let self else { return }
+                    self.state.mapDark.orbLook = .glass
+                    self.state.mapDark.glass = step.1
+                    MapGlassDebug.tilt = step.2 ?? .zero
+                    NSLog("[MAPCYCLE] %@", step.0)
+                }
+            }
+        }
+        if let t = UserDefaults.standard.string(forKey: "MapGlassTilt") {
+            let v = t.split(separator: ",").compactMap { Float($0) }
+            if v.count == 2 { MapGlassDebug.tilt = SIMD2(v[0], v[1]) }
         }
         if let r = UserDefaults.standard.string(forKey: "RimRestRender").flatMap(PillRimRest.init(rawValue:)) {
             for d in [false, true] { update(dark: d) { $0.editPills { $0.rim.rest = r } } }
@@ -576,7 +666,7 @@ extension AppearanceTuning {
             return "{" + parts.joined(separator: ",") + "}"
         }
         return "{\"airpadAppearance\":1,\"build\":\"\(build)\",\"editing\":\"\(mode)\",\"cardContent\":\"\(s.cardContent.rawValue)\",\"captureControls\":\"\(s.captureControls.rawValue)\",\"floatingButtons\":\"\(s.floatingButtons.rawValue)\",\"lightFade\":\"\(s.lightFade.rawValue)\","
-            + "\"light\":\(block(s.light, dark: false)),\"dark\":\(block(s.dark, dark: true))}"
+            + "\"light\":\(block(s.light, dark: false)),\"dark\":\(block(s.dark, dark: true)),\"mapDark\":\(mapDarkJSON(s.mapDark))}"
     }
 }
 
@@ -1058,7 +1148,9 @@ extension AppearanceTuning {
                 && imp.captureControls == .glass && imp.floatingButtons == .glass,
                 "proposal=\(CardContentPresentation.bakedProposal) glass=\(CaptureControlsStyle.bakedGlass) floating=\(FloatingButtonsStyle.bakedGlass)")
             // Copy values at the defaults → T's file, every key (build + editing are the session's, not values).
-            let back = (try? JSONSerialization.jsonObject(with: Data(exportJSON(.defaults, editing: "light", build: "202610191107").utf8)))
+            var back = (try? JSONSerialization.jsonObject(with: Data(exportJSON(.defaults, editing: "light", build: "202610191107").utf8)))
+            // live-39's Map (dark) block postdates the 10-19 file (its own rows check it: map-dark-*).
+            if var o = back as? [String: Any] { o.removeValue(forKey: "mapDark"); back = o }
             let file = try? JSONSerialization.jsonObject(with: Data(t1019.utf8))
             // T's 10-19 file has every key this build writes (lightFade included): all compared, none skipped, none added.
             let d = keyDiff(back, file, "")
@@ -1204,6 +1296,7 @@ extension AppearanceTuning {
 
         #if DEBUG || TESTFLIGHT
         row("this-build-offers-it (DEBUG / TESTFLIGHT)", isOffered)
+        for (name, ok, detail) in mapDarkSelfTestRows() { row(name, ok, detail) }
         #endif
         return "[AppearanceTuningSelfTest] \(fails == 0 ? "PASS" : "FAIL") — \(rows.count - fails)/\(rows.count)\n"
             + rows.joined(separator: "\n")
@@ -1214,6 +1307,336 @@ extension AppearanceTuning {
     }
     private static func noHairline(_ v: AppearanceTuningValues) -> AppearanceTuningValues {
         var c = v; c.hairline = false; return c
+    }
+}
+
+#endif
+
+// MARK: - live-39 — the Map in dark mode (background, highlights, Fresnel orbs)
+
+#if DEBUG || TESTFLIGHT
+
+/// A tuner colour held as HSL (so a hue survives a trip through grey) with its 8-bit hex derived. Defaults are built
+/// from today's hex and round-trip to it exactly.
+struct TunerHSL: Codable, Equatable {
+    var h: Double   // 0…360
+    var s: Double   // 0…1
+    var l: Double   // 0…1
+
+    init(h: Double, s: Double, l: Double) { self.h = h; self.s = s; self.l = l }
+    init(hex: String) {
+        var v: UInt64 = 0
+        Scanner(string: hex).scanHexInt64(&v)
+        let r = Double((v >> 16) & 0xFF) / 255, g = Double((v >> 8) & 0xFF) / 255, b = Double(v & 0xFF) / 255
+        let mx = max(r, g, b), mn = min(r, g, b), d = mx - mn
+        l = (mx + mn) / 2
+        s = d == 0 ? 0 : d / (1 - abs(2 * l - 1))
+        var hue: Double = 0
+        if d != 0 {
+            if mx == r { hue = ((g - b) / d).truncatingRemainder(dividingBy: 6) }
+            else if mx == g { hue = (b - r) / d + 2 }
+            else { hue = (r - g) / d + 4 }
+        }
+        hue *= 60; if hue < 0 { hue += 360 }
+        h = hue
+    }
+    /// 0…1 sRGB.
+    var rgb: (r: Double, g: Double, b: Double) {
+        let c = (1 - abs(2 * l - 1)) * s, hp = (h.truncatingRemainder(dividingBy: 360)) / 60
+        let x = c * (1 - abs(hp.truncatingRemainder(dividingBy: 2) - 1)), m = l - c / 2
+        let (r1, g1, b1): (Double, Double, Double)
+        switch hp {
+        case ..<1: (r1, g1, b1) = (c, x, 0)
+        case ..<2: (r1, g1, b1) = (x, c, 0)
+        case ..<3: (r1, g1, b1) = (0, c, x)
+        case ..<4: (r1, g1, b1) = (0, x, c)
+        case ..<5: (r1, g1, b1) = (x, 0, c)
+        default:   (r1, g1, b1) = (c, 0, x)
+        }
+        func q(_ v: Double) -> Double { (min(max(v + m, 0), 1) * 255).rounded() / 255 }   // snapped to 8 bits = the hex
+        return (q(r1), q(g1), q(b1))
+    }
+    var hex: String {
+        let c = rgb
+        return String(format: "%02X%02X%02X", Int((c.r * 255).rounded()), Int((c.g * 255).rounded()), Int((c.b * 255).rounded()))
+    }
+    var uiColor: UIColor { let c = rgb; return UIColor(red: c.r, green: c.g, blue: c.b, alpha: 1) }
+    var color: Color { Color(uiColor) }
+    var simd: SIMD3<Float> { let c = rgb; return SIMD3(Float(c.r), Float(c.g), Float(c.b)) }
+}
+
+/// The dark Map's orb look: today's flat emissive fill, a dark bubble lit at its rim (Fresnel), or a glass bead that
+/// shows the dot grid behind it, bent by a lens (Glass).
+enum MapOrbLook: String, Codable, CaseIterable, Identifiable {
+    case flat, fresnel, glass
+    var id: String { rawValue }
+    var label: String {
+        switch self { case .flat: "Flat (today)"; case .fresnel: "Fresnel"; case .glass: "Glass" }
+    }
+}
+
+/// live-40 — the Glass orb: the orb shader redraws the dot grid (same spacing, dots, shrink and ambient as the
+/// background) through a lens — little bend at the centre, strong toward the rim, so the rim shows grid from beyond
+/// the edge, compressed — then a light tint of the orb's family colour, a thin bright edge over a soft inner shadow,
+/// and a highlight + rim glint that follow the phone's tilt. All global → the orbs stay one batch.
+struct GlassLook: Codable, Equatable {
+    var refraction: Double          // how far the rim reaches beyond the edge for what it shows (orb radii)
+    var lensCurve: Double           // exponent: higher = a flatter centre, the bend gathered at the rim
+    var magnification: Double       // zoom at the centre (1 = none)
+    var tint: Double                // the orb's family colour over the refracted grid
+    var brightness: Double          // a light frosted lift of the body
+    var frost: Double               // live-41: DIFFUSES the refracted grid (dot contrast melts into its average), dots don't grow
+    var edge: Double                // the old uniform edge line (live-41: optional, default 0 — the rim arcs replace it)
+    var innerShadow: Double         // a soft shadow just inside the rim (depth)
+    var dispersion: Double          // a colour fringe at the rim
+    var highlightSize: Double
+    var highlightIntensity: Double  // the broad highlight; the rim glint rides with it
+    var tiltResponse: Double        // how far the light follows the phone's tilt (negative = the other way)
+    var label: TunerHSL             // title ink
+    // live-41 — Liquid-Glass rim light: a brighter TOP arc (key) and a softer BOTTOM arc (bounce), fading toward the sides.
+    var topArc = 0.9
+    var bottomArc = 0.45
+    var arcSpan = 120.0             // degrees each arc covers (centre ± span/2)
+    var arcThickness = 0.07         // fraction of the radius the arc reaches in from the edge
+    var arcSoftness = 0.6           // 0 = hard arc ends · 1 = fades all the way from the arc's centre
+    var dim = 0.0                   // behind-glass dim: darkens what the lens shows
+    var tiltLight = true            // off = static highlights + arcs
+    var tiltSmoothing = 0.8         // seconds: the light drifts toward the tilt instead of tracking it
+
+    static let subtle = GlassLook(refraction: 0.25, lensCurve: 3.0, magnification: 1.05, tint: 0.14, brightness: 0.03,
+                                  frost: 0.25, edge: 0, innerShadow: 0.25, dispersion: 0.0, highlightSize: 0.22,
+                                  highlightIntensity: 0.22, tiltResponse: 0.12, label: TunerHSL(hex: "FFFFFF"),
+                                  topArc: 0.6, bottomArc: 0.3, arcSpan: 110, arcThickness: 0.06)
+    static let medium = GlassLook(refraction: 0.55, lensCurve: 2.4, magnification: 1.15, tint: 0.22, brightness: 0.04,
+                                  frost: 0.35, edge: 0, innerShadow: 0.4, dispersion: 0.15, highlightSize: 0.28,
+                                  highlightIntensity: 0.42, tiltResponse: 0.16, label: TunerHSL(hex: "FFFFFF"))
+    static let strong = GlassLook(refraction: 0.95, lensCurve: 1.9, magnification: 1.3, tint: 0.32, brightness: 0.08,
+                                  frost: 0.5, edge: 0, innerShadow: 0.55, dispersion: 0.3, highlightSize: 0.34,
+                                  highlightIntensity: 0.65, tiltResponse: 0.2, label: TunerHSL(hex: "FFFFFF"),
+                                  topArc: 1.3, bottomArc: 0.65, arcSpan: 135, arcThickness: 0.09, arcSoftness: 0.55)
+    static let presets: [(String, GlassLook)] = [("Subtle", .subtle), ("Medium", .medium), ("Strong", .strong)]
+
+    /// live-40's Medium as it shipped on TF 202610231523 (uniform edge line, full tilt, no arcs, no frost) — the stills'
+    /// "today" when T's Copy values aren't given.
+    static let live40Medium = GlassLook(refraction: 0.55, lensCurve: 2.4, magnification: 1.15, tint: 0.22, brightness: 0.04,
+                                        frost: 0, edge: 0.6, innerShadow: 0.4, dispersion: 0.15, highlightSize: 0.28,
+                                        highlightIntensity: 0.42, tiltResponse: 0.8, label: TunerHSL(hex: "FFFFFF"),
+                                        topArc: 0, bottomArc: 0)
+
+    /// Apply a Copy-values `glass` block (numbers by key, `label` as "#HEX"); unknown keys are ignored.
+    mutating func apply(exportJSON: [String: Any]) {
+        func d(_ k: String) -> Double? { (exportJSON[k] as? NSNumber)?.doubleValue }
+        if let v = d("refraction") { refraction = v }; if let v = d("lensCurve") { lensCurve = v }
+        if let v = d("magnification") { magnification = v }; if let v = d("tint") { tint = v }
+        if let v = d("brightness") { brightness = v }; if let v = d("frost") { frost = v }; if let v = d("edge") { edge = v }
+        if let v = d("innerShadow") { innerShadow = v }; if let v = d("dispersion") { dispersion = v }
+        if let v = d("highlightSize") { highlightSize = v }; if let v = d("highlightIntensity") { highlightIntensity = v }
+        if let v = d("tiltResponse") { tiltResponse = v }
+        if let v = d("topArc") { topArc = v }; if let v = d("bottomArc") { bottomArc = v }; if let v = d("arcSpan") { arcSpan = v }
+        if let v = d("arcThickness") { arcThickness = v }; if let v = d("arcSoftness") { arcSoftness = v }; if let v = d("dim") { dim = v }
+        if let v = d("tiltSmoothing") { tiltSmoothing = v }; if let b = exportJSON["tiltLight"] as? Bool { tiltLight = b }
+        if let h = exportJSON["label"] as? String { label = TunerHSL(hex: h.replacingOccurrences(of: "#", with: "")) }
+    }
+}
+
+extension GlassLook {
+    /// Tolerant decode. A value saved by the live-40 build (no `topArc` key) is MIGRATED to live-41's asks: its tilt
+    /// response × 0.2 and its uniform edge line → 0 (the top/bottom arcs replace it); everything else T dialled is kept.
+    init(from decoder: Decoder) throws {
+        let c = try decoder.container(keyedBy: CodingKeys.self)
+        let m = GlassLook.medium
+        func v<T: Decodable>(_ k: CodingKeys, _ def: T) -> T { ((try? c.decodeIfPresent(T.self, forKey: k)) ?? nil) ?? def }
+        self.init(refraction: v(.refraction, m.refraction), lensCurve: v(.lensCurve, m.lensCurve),
+                  magnification: v(.magnification, m.magnification), tint: v(.tint, m.tint), brightness: v(.brightness, m.brightness),
+                  frost: v(.frost, m.frost), edge: v(.edge, m.edge), innerShadow: v(.innerShadow, m.innerShadow),
+                  dispersion: v(.dispersion, m.dispersion), highlightSize: v(.highlightSize, m.highlightSize),
+                  highlightIntensity: v(.highlightIntensity, m.highlightIntensity), tiltResponse: v(.tiltResponse, m.tiltResponse),
+                  label: v(.label, m.label), topArc: v(.topArc, m.topArc), bottomArc: v(.bottomArc, m.bottomArc),
+                  arcSpan: v(.arcSpan, m.arcSpan), arcThickness: v(.arcThickness, m.arcThickness),
+                  arcSoftness: v(.arcSoftness, m.arcSoftness), dim: v(.dim, m.dim), tiltLight: v(.tiltLight, m.tiltLight),
+                  tiltSmoothing: v(.tiltSmoothing, m.tiltSmoothing))
+        if !c.contains(.topArc) {   // saved by live-40
+            tiltResponse *= 0.2
+            edge = 0
+        }
+    }
+}
+
+/// The Fresnel orb: a dark body near the background, tinted by the orb's family colour, with a rim that glows in the
+/// orb's colour and falls off toward the centre (rim = f(radius)^power). All global → the orbs stay one batch.
+struct FresnelLook: Codable, Equatable {
+    var bodyTint: Double        // 0 = the background · 1 = the orb's colour
+    var bodyDarkness: Double    // 0 = as tinted · 1 = black
+    var rimBrightness: Double   // rim colour = orb colour × this
+    var rimWidth: Double        // fraction of the radius the rim reaches in from the edge (1 = to the centre)
+    var rimPower: Double        // falloff exponent
+    var rimIntensity: Double
+    var innerGlow: Double       // a soft glow in the orb's colour at the centre
+    var highlight: Double       // a faint top-left light
+    var label: TunerHSL         // title ink on a dark body
+
+    static let subtle = FresnelLook(bodyTint: 0.14, bodyDarkness: 0.25, rimBrightness: 1.0, rimWidth: 0.45, rimPower: 2.6,
+                                    rimIntensity: 0.55, innerGlow: 0.0, highlight: 0.0, label: TunerHSL(hex: "F5F2EC"))
+    static let medium = FresnelLook(bodyTint: 0.20, bodyDarkness: 0.15, rimBrightness: 1.25, rimWidth: 0.65, rimPower: 2.2,
+                                    rimIntensity: 0.95, innerGlow: 0.06, highlight: 0.10, label: TunerHSL(hex: "FFFCF5"))
+    static let strong = FresnelLook(bodyTint: 0.28, bodyDarkness: 0.05, rimBrightness: 1.6, rimWidth: 0.85, rimPower: 1.7,
+                                    rimIntensity: 1.5, innerGlow: 0.14, highlight: 0.22, label: TunerHSL(hex: "FFFFFF"))
+    static let presets: [(String, FresnelLook)] = [("Subtle", .subtle), ("Medium", .medium), ("Strong", .strong)]
+}
+
+/// live-39 — every dark-Map colour T can dial. Defaults = what ships today, so an untouched tuner renders today's Map.
+struct MapDarkTuning: Codable, Equatable {
+    var ground = TunerHSL(hex: "111115")          // the grid's opaque ground (BackgroundGridNode u_ground_color)
+    var ambientAmount = 0.067                     // the mass-field ripple: mix toward the ambient colour away from orbs
+    var ambient = TunerHSL(hex: "FFFFFF")
+    var dot = TunerHSL(hex: "FFFFFF")             // the dot grid
+    var dotOpacity = 0.809
+    var pillTint = TunerHSL(hex: "FFFFFF")        // a tint laid over the territory pill's glass (0 = none)
+    var pillTintAmount = 0.0
+    var pillOutlineCustom = false                 // false = each territory's own colour (today)
+    var pillOutline = TunerHSL(hex: "FFFFFF")
+    var pillOutlineOpacity = 0.95
+    var pillOutlineWidth = 1.5
+    var pillTextOpacity = 0.95
+    var focusRing = TunerHSL(hex: "00BFFF")       // the focused orb's ring
+    var selectionRing = TunerHSL(hex: "1B59C2")   // the multi-select ring
+    var orbGlow = TunerHSL(hex: "FFFFFF")         // every orb's edge glow (AE inner glow)
+    var orbGlowOpacity = 0.12
+    var orbLook: MapOrbLook = .flat
+    var fresnel: FresnelLook = .medium
+    var glass: GlassLook = .medium
+    // live-40 — the grid's dots shrink under/near orbs (mass field). Drives the background AND the grid inside Glass orbs.
+    var dotShrinkOn = true
+    var dotShrink = 1.0                           // GridWarpTuning.dotShrink(dark) — today
+    var shrinkReach = 6.0                         // GridWarpTuning.reachOrbRadii — today (the field also drives the ripple)
+
+    static let today = MapDarkTuning()
+    init() {}
+
+    /// Every field optional, so values saved by an older build (live-39 had no Glass / shrink) keep T's dialled colours.
+    init(from decoder: Decoder) throws {
+        let c = try decoder.container(keyedBy: CodingKeys.self)
+        let d = MapDarkTuning()
+        func v<T: Decodable>(_ k: CodingKeys, _ def: T) -> T { ((try? c.decodeIfPresent(T.self, forKey: k)) ?? nil) ?? def }
+        ground = v(.ground, d.ground); ambientAmount = v(.ambientAmount, d.ambientAmount); ambient = v(.ambient, d.ambient)
+        dot = v(.dot, d.dot); dotOpacity = v(.dotOpacity, d.dotOpacity)
+        pillTint = v(.pillTint, d.pillTint); pillTintAmount = v(.pillTintAmount, d.pillTintAmount)
+        pillOutlineCustom = v(.pillOutlineCustom, d.pillOutlineCustom); pillOutline = v(.pillOutline, d.pillOutline)
+        pillOutlineOpacity = v(.pillOutlineOpacity, d.pillOutlineOpacity); pillOutlineWidth = v(.pillOutlineWidth, d.pillOutlineWidth)
+        pillTextOpacity = v(.pillTextOpacity, d.pillTextOpacity)
+        focusRing = v(.focusRing, d.focusRing); selectionRing = v(.selectionRing, d.selectionRing)
+        orbGlow = v(.orbGlow, d.orbGlow); orbGlowOpacity = v(.orbGlowOpacity, d.orbGlowOpacity)
+        orbLook = v(.orbLook, d.orbLook); fresnel = v(.fresnel, d.fresnel); glass = v(.glass, d.glass)
+        dotShrinkOn = v(.dotShrinkOn, d.dotShrinkOn); dotShrink = v(.dotShrink, d.dotShrink); shrinkReach = v(.shrinkReach, d.shrinkReach)
+    }
+
+    /// Apply a Copy-values `mapDark` block (colours as "#HEX"); unknown keys are ignored. Debug stills only.
+    mutating func apply(exportJSON o: [String: Any]) {
+        func d(_ k: String) -> Double? { (o[k] as? NSNumber)?.doubleValue }
+        func c(_ k: String) -> TunerHSL? { (o[k] as? String).map { TunerHSL(hex: $0.replacingOccurrences(of: "#", with: "")) } }
+        if let v = c("ground") { ground = v }; if let v = d("ambient") { ambientAmount = v }; if let v = c("ambientColor") { ambient = v }
+        if let v = c("dots") { dot = v }; if let v = d("dotOpacity") { dotOpacity = v }
+        if let v = c("pillTint") { pillTint = v }; if let v = d("pillTintAmount") { pillTintAmount = v }
+        if let h = o["pillOutline"] as? String { pillOutlineCustom = h != "territory"; if pillOutlineCustom, let v = c("pillOutline") { pillOutline = v } }
+        if let v = d("pillOutlineOpacity") { pillOutlineOpacity = v }; if let v = d("pillOutlineWidth") { pillOutlineWidth = v }
+        if let v = d("pillTextOpacity") { pillTextOpacity = v }
+        if let v = c("focusRing") { focusRing = v }; if let v = c("selectionRing") { selectionRing = v }
+        if let v = c("orbGlow") { orbGlow = v }; if let v = d("orbGlowOpacity") { orbGlowOpacity = v }
+        if let b = o["dotShrinkOn"] as? Bool { dotShrinkOn = b }; if let v = d("dotShrink") { dotShrink = v }
+        if let v = d("shrinkReach") { shrinkReach = v }
+    }
+
+    /// The shrink the grid shader receives (0 = uniform dots).
+    var effectiveShrink: Double { dotShrinkOn ? dotShrink : 0 }
+
+    /// What the Map's background shows. The ripple mixes the ground toward (R × ambient colour) at `ambientAmount`, with
+    /// R = 0 within reach of orbs (6 orb radii — measured: nearly the whole screen, `#101014` today) and R = 1 only in
+    /// open space past every orb's reach (`#212125` today).
+    var fieldHex: String { mixHex(r: 0) }
+    var openSpaceHex: String { mixHex(r: 1) }
+    private func mixHex(r: Double) -> String {
+        let g = ground.rgb, a = ambient.rgb, t = ambientAmount
+        func m(_ x: Double, _ y: Double) -> Int { Int(((x * (1 - t) + y * r * t) * 255).rounded()) }
+        return String(format: "%02X%02X%02X", m(g.r, a.r), m(g.g, a.g), m(g.b, a.b))
+    }
+}
+
+#if DEBUG
+/// live-40 stills — a simulated tilt for the Glass highlight (the Simulator has no gyro). nil = the real tilt.
+enum MapGlassDebug { static var tilt: SIMD2<Float>? }
+#endif
+
+extension AppearanceTuning {
+    /// The dark Map's tuner values, or nil when the tuner isn't live (the Map then renders its baked literals).
+    static var mapDark: MapDarkTuning? { isLive ? AppearanceTuner.shared.state.mapDark : nil }
+
+    static func mapDarkJSON(_ m: MapDarkTuning) -> String {
+        func n(_ x: Double) -> String {
+            var t = String(format: "%.3f", x)
+            while t.contains(".") && (t.hasSuffix("0") || t.hasSuffix(".")) { t.removeLast() }
+            return t
+        }
+        func c(_ x: TunerHSL) -> String { "\"#\(x.hex)\"" }
+        let f = m.fresnel, g = m.glass
+        return "{\"ground\":\(c(m.ground)),\"field\":\"#\(m.fieldHex)\",\"openSpace\":\"#\(m.openSpaceHex)\",\"ambient\":\(n(m.ambientAmount)),"
+            + "\"ambientColor\":\(c(m.ambient)),\"dots\":\(c(m.dot)),\"dotOpacity\":\(n(m.dotOpacity)),"
+            + "\"pillTint\":\(c(m.pillTint)),\"pillTintAmount\":\(n(m.pillTintAmount)),"
+            + "\"pillOutline\":\(m.pillOutlineCustom ? c(m.pillOutline) : "\"territory\""),"
+            + "\"pillOutlineOpacity\":\(n(m.pillOutlineOpacity)),\"pillOutlineWidth\":\(n(m.pillOutlineWidth)),"
+            + "\"pillTextOpacity\":\(n(m.pillTextOpacity)),\"focusRing\":\(c(m.focusRing)),\"selectionRing\":\(c(m.selectionRing)),"
+            + "\"orbGlow\":\(c(m.orbGlow)),\"orbGlowOpacity\":\(n(m.orbGlowOpacity)),\"orbLook\":\"\(m.orbLook.rawValue)\","
+            + "\"fresnel\":{\"bodyTint\":\(n(f.bodyTint)),\"bodyDarkness\":\(n(f.bodyDarkness)),\"rimBrightness\":\(n(f.rimBrightness)),"
+            + "\"rimWidth\":\(n(f.rimWidth)),\"rimPower\":\(n(f.rimPower)),\"rimIntensity\":\(n(f.rimIntensity)),"
+            + "\"innerGlow\":\(n(f.innerGlow)),\"highlight\":\(n(f.highlight)),\"label\":\(c(f.label))},"
+            + "\"dotShrinkOn\":\(m.dotShrinkOn),\"dotShrink\":\(n(m.dotShrink)),\"shrinkReach\":\(n(m.shrinkReach)),"
+            + "\"glass\":{\"refraction\":\(n(g.refraction)),\"lensCurve\":\(n(g.lensCurve)),\"magnification\":\(n(g.magnification)),"
+            + "\"tint\":\(n(g.tint)),\"brightness\":\(n(g.brightness)),\"frost\":\(n(g.frost)),\"edge\":\(n(g.edge)),"
+            + "\"innerShadow\":\(n(g.innerShadow)),\"dispersion\":\(n(g.dispersion)),\"highlightSize\":\(n(g.highlightSize)),"
+            + "\"highlightIntensity\":\(n(g.highlightIntensity)),\"tiltResponse\":\(n(g.tiltResponse)),\"label\":\(c(g.label)),"
+            + "\"topArc\":\(n(g.topArc)),\"bottomArc\":\(n(g.bottomArc)),\"arcSpan\":\(n(g.arcSpan)),\"arcThickness\":\(n(g.arcThickness)),"
+            + "\"arcSoftness\":\(n(g.arcSoftness)),\"dim\":\(n(g.dim)),\"tiltLight\":\(g.tiltLight),\"tiltSmoothing\":\(n(g.tiltSmoothing))}}"
+    }
+
+    /// `-AppearanceTuningSelfTest` rows for the Map section (pure).
+    static func mapDarkSelfTestRows() -> [(String, Bool, String)] {
+        let t = MapDarkTuning.today
+        let hexes = ["111115", "FFFFFF", "00BFFF", "1B59C2", "1A1A1A", "0B0B0E", "F5F2EC"]
+        let trips = hexes.allSatisfy { TunerHSL(hex: $0).hex == $0 }
+        return [
+            ("map-dark-hsl-round-trips-today's-hexes", trips, hexes.map { "\($0)→\(TunerHSL(hex: $0).hex)" }.joined(separator: " ")),
+            ("map-dark-defaults-are-today (ground 111115 · ripple 0.067 · dots FFFFFF@0.809 · focus 00BFFF · select 1B59C2 · glow FFFFFF@0.12 · flat)",
+             t.ground.hex == "111115" && t.ambientAmount == 0.067 && t.dot.hex == "FFFFFF" && t.dotOpacity == 0.809
+                && t.focusRing.hex == "00BFFF" && t.selectionRing.hex == "1B59C2" && t.orbGlow.hex == "FFFFFF"
+                && t.orbGlowOpacity == 0.12 && t.orbLook == .flat && t.pillTintAmount == 0 && !t.pillOutlineCustom
+                && t.pillOutlineOpacity == 0.95 && t.pillOutlineWidth == 1.5 && t.pillTextOpacity == 0.95, ""),
+            ("map-dark-field-today-101014-open-space-212125 (measured on a Sim still: 101014)",
+             t.fieldHex == "101014" && t.openSpaceHex == "212125", "\(t.fieldHex) / \(t.openSpaceHex)"),
+            ("map-dark-shrink-defaults-are-today (on · 1.0 · reach 6 orb radii)",
+             t.dotShrinkOn && t.dotShrink == 1.0 && t.shrinkReach == 6.0 && t.effectiveShrink == 1.0, ""),
+            ("map-dark-live39-saved-values-decode (no glass/shrink keys → ground kept, glass = medium)", {
+                let old = #"{"ground":{"h":240,"s":0.1,"l":0.04},"orbLook":"fresnel"}"#
+                guard let m = try? JSONDecoder().decode(MapDarkTuning.self, from: Data(old.utf8)) else { return false }
+                return m.orbLook == .fresnel && m.ground.l == 0.04 && m.glass == .medium && m.dotShrinkOn
+            }(), ""),
+            ("glass-live40-saved-value-migrates (tilt ×0.2, edge → 0, rest kept)", {
+                let old = #"{"refraction":0.7,"lensCurve":2.4,"magnification":1.2,"tint":0.3,"brightness":0.05,"frost":0.2,"edge":0.6,"innerShadow":0.4,"dispersion":0.1,"highlightSize":0.3,"highlightIntensity":0.5,"tiltResponse":0.8,"label":{"h":0,"s":0,"l":1}}"#
+                guard let g = try? JSONDecoder().decode(GlassLook.self, from: Data(old.utf8)) else { return false }
+                return abs(g.tiltResponse - 0.16) < 1e-9 && g.edge == 0 && g.refraction == 0.7 && g.topArc == GlassLook.medium.topArc
+            }(), ""),
+            ("glass-live41-value-round-trips-unmigrated", {
+                var g = GlassLook.medium; g.edge = 0.5; g.tiltResponse = 0.9
+                guard let data = try? JSONEncoder().encode(g), let back = try? JSONDecoder().decode(GlassLook.self, from: data) else { return false }
+                return back == g
+            }(), ""),
+            ("glass-export-applies-back", {
+                var g = GlassLook.subtle
+                guard let all = try? JSONSerialization.jsonObject(with: Data(mapDarkJSON(t).utf8)) as? [String: Any],
+                      let block = all["glass"] as? [String: Any] else { return false }
+                g.apply(exportJSON: block)
+                return g == t.glass
+            }(), ""),
+            ("map-dark-export-parses", (try? JSONSerialization.jsonObject(with: Data(mapDarkJSON(t).utf8))) != nil, mapDarkJSON(t)),
+        ]
     }
 }
 

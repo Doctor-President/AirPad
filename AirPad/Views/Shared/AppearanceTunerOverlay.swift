@@ -139,10 +139,11 @@ struct AppearanceTunerRoot: View {
 /// The sheet's sections — an accordion (2026-10-17 brief: T scrolled a lot and brushed sliders by accident). All start
 /// closed; opening one closes the others; the open one is remembered (`AppearanceTuning.openSectionKey`).
 enum TunerSection: String, CaseIterable, Identifiable {
-    case cardContent, captureControls, floatingButtons, librarian, peekPill, searchPill, askPill, panelGrade, cards, heroFade
+    case mapDark, cardContent, captureControls, floatingButtons, librarian, peekPill, searchPill, askPill, panelGrade, cards, heroFade
     var id: String { rawValue }
     var title: String {
         switch self {
+        case .mapDark:         return "Map (dark)"
         case .cardContent:     return "Card content"
         case .captureControls: return "Capture controls"
         case .floatingButtons: return "Floating buttons"
@@ -275,6 +276,7 @@ struct AppearanceTunerSheet<G: Gesture>: View {
 
     @ViewBuilder private func content(_ section: TunerSection) -> some View {
         switch section {
+        case .mapDark:         mapDarkSection
         case .cardContent:     cardContentSection
         case .captureControls: captureControlsSection
         case .floatingButtons: floatingButtonsSection
@@ -291,6 +293,7 @@ struct AppearanceTunerSheet<G: Gesture>: View {
     /// The one-line value a closed header shows.
     private func summary(_ section: TunerSection) -> String {
         switch section {
+        case .mapDark:         return "#\(m.fieldHex) · " + (m.orbLook == .flat ? "flat" : m.orbLook == .fresnel ? "Fresnel" : "Glass")
         case .cardContent:     return tuner.state.cardContent.label
         case .captureControls: return tuner.state.captureControls.label
         case .floatingButtons: return tuner.state.floatingButtons.label
@@ -577,6 +580,175 @@ struct AppearanceTunerSheet<G: Gesture>: View {
         }
     }
 
+    // Map (dark) — live-39: the background, every "highlight" candidate, and flat ↔ Fresnel orbs.
+
+    private var m: MapDarkTuning { tuner.state.mapDark }
+    private func setMap(_ change: (inout MapDarkTuning) -> Void) { change(&tuner.state.mapDark) }
+    private func setF(_ change: (inout FresnelLook) -> Void) { change(&tuner.state.mapDark.fresnel) }
+    private func setG(_ change: (inout GlassLook) -> Void) { change(&tuner.state.mapDark.glass) }
+    private func pct(_ x: Double) -> String { String(format: "%.0f%%", x * 100) }
+
+    @ViewBuilder private var mapDarkSection: some View {
+        if !dark {
+            note("Dark mode only. Switch the phone (or ≡ → Appearance) to Dark to see these on the Map.")
+        }
+        subhead("Background")
+        TunerColorRow(label: "Ground", color: m.ground, defaultHex: MapDarkTuning.today.ground.hex, id: "mapGround") { c in
+            setMap { $0.ground = c }
+        }
+        note("The background shows #\(m.fieldHex) (today #101014): the ground with the ambient ripple over it. Only open space, "
+             + "past every orb's reach, lifts toward #\(m.openSpaceHex) (today #212125).")
+        subhead("Ambient glow (the mass-field ripple)")
+        slider("Ambient glow", m.ambientAmount, 0...0.20, 0.001, String(format: "%.1f%%", m.ambientAmount * 100), id: "mapAmbient") { x in
+            setMap { $0.ambientAmount = x }
+        }
+        TunerColorRow(label: "Ambient colour", color: m.ambient, defaultHex: "FFFFFF", id: "mapAmbientColor") { c in setMap { $0.ambient = c } }
+        subhead("Dot grid")
+        TunerColorRow(label: "Dots", color: m.dot, defaultHex: "FFFFFF", id: "mapDots") { c in setMap { $0.dot = c } }
+        slider("Dot opacity", m.dotOpacity, 0...1, 0.005, String(format: "%.3f", m.dotOpacity), id: "mapDotOpacity") { x in
+            setMap { $0.dotOpacity = x }
+        }
+        toggle("Dots shrink under orbs (off = uniform dots)", m.dotShrinkOn, id: "mapDotShrinkOn") { b in setMap { $0.dotShrinkOn = b } }
+        if m.dotShrinkOn {
+            slider("Shrink amount", m.dotShrink, 0...2, 0.01, String(format: "%.2f", m.dotShrink), id: "mapDotShrink") { x in
+                setMap { $0.dotShrink = x }
+            }
+        }
+        slider("Reach (orb radii)", m.shrinkReach, 1...12, 0.1, String(format: "%.1f", m.shrinkReach), id: "mapShrinkReach") { x in
+            setMap { $0.shrinkReach = x }
+        }
+        note("The dots shrink and gather toward orbs within the reach (today: on, 1.00, 6.0 orb radii). The Glass orbs show the same "
+             + "dots. Reach also sets where the ambient glow starts.")
+        subhead("Territory label pills (the glass stays)")
+        TunerColorRow(label: "Pill tint", color: m.pillTint, defaultHex: "FFFFFF", id: "mapPillTint") { c in setMap { $0.pillTint = c } }
+        slider("Pill tint amount", m.pillTintAmount, 0...0.6, 0.01, pct(m.pillTintAmount), id: "mapPillTintAmount") { x in
+            setMap { $0.pillTintAmount = x }
+        }
+        toggle("One outline colour (off = each territory's colour)", m.pillOutlineCustom, id: "mapPillOutlineCustom") { b in
+            setMap { $0.pillOutlineCustom = b }
+        }
+        if m.pillOutlineCustom {
+            TunerColorRow(label: "Outline", color: m.pillOutline, defaultHex: "FFFFFF", id: "mapPillOutline") { c in setMap { $0.pillOutline = c } }
+        }
+        slider("Outline opacity", m.pillOutlineOpacity, 0...1, 0.01, pct(m.pillOutlineOpacity), id: "mapPillOutlineOpacity") { x in
+            setMap { $0.pillOutlineOpacity = x }
+        }
+        slider("Outline width", m.pillOutlineWidth, 0...3, 0.05, String(format: "%.2f pt", m.pillOutlineWidth), id: "mapPillOutlineWidth") { x in
+            setMap { $0.pillOutlineWidth = x }
+        }
+        slider("Label text opacity", m.pillTextOpacity, 0.3...1, 0.01, pct(m.pillTextOpacity), id: "mapPillText") { x in
+            setMap { $0.pillTextOpacity = x }
+        }
+        subhead("Orb highlights")
+        TunerColorRow(label: "Focused orb ring", color: m.focusRing, defaultHex: "00BFFF", id: "mapFocusRing") { c in setMap { $0.focusRing = c } }
+        TunerColorRow(label: "Selected orb ring", color: m.selectionRing, defaultHex: "1B59C2", id: "mapSelectRing") { c in
+            setMap { $0.selectionRing = c }
+        }
+        TunerColorRow(label: "Orb edge glow", color: m.orbGlow, defaultHex: "FFFFFF", id: "mapOrbGlow") { c in setMap { $0.orbGlow = c } }
+        slider("Orb edge glow", m.orbGlowOpacity, 0...0.5, 0.005, pct(m.orbGlowOpacity), id: "mapOrbGlowOpacity") { x in
+            setMap { $0.orbGlowOpacity = x }
+        }
+        note("The focused ring shows after Show on Map / a search result; the selected ring in Select mode.")
+        subhead("Orbs")
+        Picker("Orbs", selection: Binding(get: { m.orbLook }, set: { o in setMap { $0.orbLook = o } })) {
+            ForEach(MapOrbLook.allCases) { Text($0.label).tag($0) }
+        }
+        .pickerStyle(.segmented)
+        .accessibilityIdentifier("tunerMapOrbLook")
+        if m.orbLook == .fresnel { fresnelControls }
+        if m.orbLook == .glass { orbGlassControls }
+        Button("Reset the Map section", role: .destructive) { setMap { $0 = .today } }
+            .font(.caption).buttonStyle(.bordered).controlSize(.small)
+            .accessibilityIdentifier("tunerMapReset")
+    }
+
+    @ViewBuilder private var fresnelControls: some View {
+        let f = m.fresnel
+        HStack(spacing: 6) {
+            ForEach(FresnelLook.presets, id: \.0) { p in
+                chip(p.0, selected: f == p.1, id: "tunerFresnel-\(p.0)") { setMap { $0.fresnel = p.1 } }
+            }
+        }
+        slider("Body tint (orb colour)", f.bodyTint, 0...1, 0.01, pct(f.bodyTint), id: "frTint") { x in setF { $0.bodyTint = x } }
+        slider("Body darkness", f.bodyDarkness, 0...1, 0.01, pct(f.bodyDarkness), id: "frDark") { x in setF { $0.bodyDarkness = x } }
+        slider("Rim brightness (× orb colour)", f.rimBrightness, 0...3, 0.05, String(format: "×%.2f", f.rimBrightness), id: "frRimBright") { x in
+            setF { $0.rimBrightness = x }
+        }
+        slider("Rim width", f.rimWidth, 0.05...1, 0.01, pct(f.rimWidth) + " of radius", id: "frRimWidth") { x in setF { $0.rimWidth = x } }
+        slider("Falloff power", f.rimPower, 0.5...8, 0.05, String(format: "%.2f", f.rimPower), id: "frPower") { x in setF { $0.rimPower = x } }
+        slider("Rim intensity", f.rimIntensity, 0...3, 0.05, String(format: "%.2f", f.rimIntensity), id: "frIntensity") { x in
+            setF { $0.rimIntensity = x }
+        }
+        slider("Inner glow", f.innerGlow, 0...0.6, 0.01, pct(f.innerGlow), id: "frInnerGlow") { x in setF { $0.innerGlow = x } }
+        slider("Top-left highlight", f.highlight, 0...0.6, 0.01, pct(f.highlight), id: "frHighlight") { x in setF { $0.highlight = x } }
+        TunerColorRow(label: "Label colour (on dark bodies)", color: f.label, defaultHex: FresnelLook.medium.label.hex, id: "frLabel") { c in
+            setF { $0.label = c }
+        }
+        note("Rim = orb colour × brightness, strongest at the edge and falling off toward the centre (rim width, then the power). "
+             + "Labels use the label colour unless dark text would read better on a light body.")
+    }
+
+    @ViewBuilder private var orbGlassControls: some View {
+        let g = m.glass
+        HStack(spacing: 6) {
+            ForEach(GlassLook.presets, id: \.0) { p in
+                chip(p.0, selected: g == p.1, id: "tunerGlass-\(p.0)") { setMap { $0.glass = p.1 } }
+            }
+        }
+        subhead("Lens")
+        slider("Refraction strength", g.refraction, 0...2, 0.01, String(format: "%.2f", g.refraction), id: "glRefraction") { x in
+            setG { $0.refraction = x }
+        }
+        slider("Lens curve", g.lensCurve, 1...6, 0.05, String(format: "%.2f", g.lensCurve), id: "glCurve") { x in setG { $0.lensCurve = x } }
+        slider("Magnification", g.magnification, 0.7...2, 0.01, String(format: "×%.2f", g.magnification), id: "glMag") { x in
+            setG { $0.magnification = x }
+        }
+        subhead("Body")
+        slider("Tint (orb colour)", g.tint, 0...1, 0.01, pct(g.tint), id: "glTint") { x in setG { $0.tint = x } }
+        slider("Body brightness", g.brightness, 0...0.5, 0.005, pct(g.brightness), id: "glBright") { x in setG { $0.brightness = x } }
+        slider("Frost (diffuse)", g.frost, 0...1, 0.01, pct(g.frost), id: "glFrost") { x in setG { $0.frost = x } }
+        slider("Behind-glass dim", g.dim, 0...0.9, 0.01, pct(g.dim), id: "glDim") { x in setG { $0.dim = x } }
+        subhead("Rim light (top + bottom arcs)")
+        slider("Top arc", g.topArc, 0...2, 0.01, String(format: "%.2f", g.topArc), id: "glTopArc") { x in setG { $0.topArc = x } }
+        slider("Bottom arc", g.bottomArc, 0...2, 0.01, String(format: "%.2f", g.bottomArc), id: "glBottomArc") { x in
+            setG { $0.bottomArc = x }
+        }
+        slider("Arc span", g.arcSpan, 20...180, 1, String(format: "%.0f°", g.arcSpan), id: "glArcSpan") { x in setG { $0.arcSpan = x } }
+        slider("Arc thickness", g.arcThickness, 0.01...0.3, 0.005, pct(g.arcThickness) + " of radius", id: "glArcThick") { x in
+            setG { $0.arcThickness = x }
+        }
+        slider("Arc softness", g.arcSoftness, 0...1, 0.01, pct(g.arcSoftness), id: "glArcSoft") { x in setG { $0.arcSoftness = x } }
+        subhead("Edge")
+        slider("Edge line (all round)", g.edge, 0...2, 0.01, String(format: "%.2f", g.edge), id: "glEdge") { x in setG { $0.edge = x } }
+        slider("Inner shadow", g.innerShadow, 0...1, 0.01, pct(g.innerShadow), id: "glShadow") { x in setG { $0.innerShadow = x } }
+        slider("Colour fringe (dispersion)", g.dispersion, 0...1, 0.01, pct(g.dispersion), id: "glDispersion") { x in
+            setG { $0.dispersion = x }
+        }
+        subhead("Highlight")
+        slider("Highlight size", g.highlightSize, 0.05...0.6, 0.01, String(format: "%.2f", g.highlightSize), id: "glHlSize") { x in
+            setG { $0.highlightSize = x }
+        }
+        slider("Highlight intensity", g.highlightIntensity, 0...1.5, 0.01, String(format: "%.2f", g.highlightIntensity), id: "glHlInt") { x in
+            setG { $0.highlightIntensity = x }
+        }
+        toggle("Tilt light (off = static highlights)", g.tiltLight, id: "glTiltLight") { b in setG { $0.tiltLight = b } }
+        if g.tiltLight {
+            // Squared scale: half the track = 0.375, so small responses are easy to set; negative = the other way.
+            slider("Tilt response", (g.tiltResponse < 0 ? -1 : 1) * (abs(g.tiltResponse) / 1.5).squareRoot(), -1...1, 0.005,
+                   String(format: "%.3f", g.tiltResponse), id: "glTilt") { u in setG { $0.tiltResponse = (u < 0 ? -1 : 1) * u * u * 1.5 } }
+            slider("Tilt smoothing", g.tiltSmoothing, 0...3, 0.05, String(format: "%.2f s", g.tiltSmoothing), id: "glTiltSmooth") { x in
+                setG { $0.tiltSmoothing = x }
+            }
+        }
+        TunerColorRow(label: "Label colour", color: g.label, defaultHex: GlassLook.medium.label.hex, id: "glLabel") { c in
+            setG { $0.label = c }
+        }
+        note("Inside each orb you see the dot grid behind it through a lens: little bend at the centre, more toward the rim. "
+             + "Frost melts the dots into an even haze (they don't grow); dim darkens what the lens shows. "
+             + "The arcs light the top and bottom of the rim. The light drifts with the phone's tilt (negative response = the other way). It stays put in Low Power Mode, with "
+             + "Reduce Motion, or with Appearance → Move with tilt off. Labels use the label colour unless dark text reads better.")
+    }
+
     // Card content (live-23 (4)) — both appearances
 
     @ViewBuilder private var cardContentSection: some View {
@@ -665,7 +837,9 @@ struct AppearanceTunerSheet<G: Gesture>: View {
         HStack(spacing: 10) {
             Button(copied ? "Copied" : "Copy values") {
                 let build = Bundle.main.object(forInfoDictionaryKey: "CFBundleVersion") as? String ?? "?"
-                UIPasteboard.general.string = AppearanceTuning.exportJSON(tuner.state, editing: dark ? "dark" : "light", build: build)
+                let json = AppearanceTuning.exportJSON(tuner.state, editing: dark ? "dark" : "light", build: build)
+                UIPasteboard.general.string = json
+                NSLog("[TUNER-EXPORT] %@", json)   // live-39: the export line also goes to the log
                 copied = true
                 DispatchQueue.main.asyncAfter(deadline: .now() + 1.6) { copied = false }
             }
@@ -716,6 +890,62 @@ struct AppearanceTunerSheet<G: Gesture>: View {
             .toggleStyle(.switch)
             .controlSize(.small)
             .accessibilityIdentifier("tunerToggle-\(id)")
+    }
+}
+
+/// live-39 — a colour as HSL: a swatch + live hex; tap to open hue / saturation / lightness sliders and a reset.
+struct TunerColorRow: View {
+    let label: String
+    let color: TunerHSL
+    let defaultHex: String
+    let id: String
+    let onChange: (TunerHSL) -> Void
+    @State private var open = false
+
+    var body: some View {
+        VStack(alignment: .leading, spacing: 4) {
+            Button { open.toggle() } label: {
+                HStack(spacing: 8) {
+                    RoundedRectangle(cornerRadius: 4).fill(color.color)
+                        .overlay(RoundedRectangle(cornerRadius: 4).strokeBorder(Color.primary.opacity(0.3), lineWidth: 0.5))
+                        .frame(width: 22, height: 16)
+                    Text(label).font(.caption)
+                    Spacer()
+                    Text("#" + color.hex + (color.hex == defaultHex ? "" : " ●")).font(.caption.monospacedDigit())
+                        .foregroundStyle(Color.primary.opacity(0.62))
+                        .accessibilityIdentifier("tunerReadout-\(id)")
+                    Image(systemName: "chevron.right").font(.caption2.weight(.semibold)).foregroundStyle(Color.primary.opacity(0.5))
+                        .rotationEffect(.degrees(open ? 90 : 0))
+                }
+                .frame(minHeight: 26).contentShape(Rectangle())
+            }
+            .buttonStyle(.plain)
+            .accessibilityIdentifier("tunerColor-\(id)")
+            if open {
+                hsl("Hue", color.h, 0...360, 1, String(format: "%.0f°", color.h)) { var c = color; c.h = $0; onChange(c) }
+                hsl("Saturation", color.s, 0...1, 0.005, String(format: "%.1f%%", color.s * 100)) { var c = color; c.s = $0; onChange(c) }
+                hsl("Lightness", color.l, 0...1, 0.002, String(format: "%.1f%%", color.l * 100)) { var c = color; c.l = $0; onChange(c) }
+                Button("Reset to #\(defaultHex)") { onChange(TunerHSL(hex: defaultHex)) }
+                    .font(.caption).buttonStyle(.bordered).controlSize(.mini)
+                    .accessibilityIdentifier("tunerColorReset-\(id)")
+            }
+        }
+    }
+
+    private func hsl(_ label: String, _ v: Double, _ r: ClosedRange<Double>, _ step: Double, _ readout: String,
+                     _ set: @escaping (Double) -> Void) -> some View {
+        VStack(alignment: .leading, spacing: 0) {
+            HStack {
+                Text(label).font(.caption2)
+                Spacer()
+                Text(readout).font(.caption2.monospacedDigit()).foregroundStyle(Color.primary.opacity(0.62))
+            }
+            TunerSlider(value: v, range: r, step: step, onChange: set)
+                .accessibilityLabel("\(self.label) \(label)")
+                .accessibilityIdentifier("tunerSlider-\(id)-\(label)")
+                .accessibilityValue(readout)
+        }
+        .padding(.leading, 30)
     }
 }
 

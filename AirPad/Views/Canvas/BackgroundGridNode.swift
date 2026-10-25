@@ -238,7 +238,7 @@ enum BackgroundGridNode {
             if (u_ripple_amt > 0.0) {
                 float R = texture2D(u_disp_field, v_tex_coord).b;
                 vec3 groundDots = u_ground_color * (1.0 - alpha) + u_dot_color * alpha;
-                gl_FragColor = vec4(mix(groundDots, vec3(R), u_ripple_amt), 1.0);
+                gl_FragColor = vec4(mix(groundDots, vec3(R) * u_ripple_color, u_ripple_amt), 1.0);   // live-39: tint (white = today)
             } else if (u_light_ground_on > 0.5) {
                 // Brief AT — LIGHT comp: the grid OWNS the opaque #FFEEED ground (u_ground_color) so the
                 // dots read on T's chosen ground. Pool was removed at the lock; just ground ▸ dots, opaque.
@@ -280,6 +280,7 @@ enum BackgroundGridNode {
             // Brief AS — mass-field ripple (dark only; 0 in light → byte-identical). u_ground_color = #111115.
             SKUniform(name: "u_ripple_amt",   float: 0),
             SKUniform(name: "u_ground_color", vectorFloat3: vector_float3(0.0667, 0.0667, 0.0824)),
+            SKUniform(name: "u_ripple_color", vectorFloat3: vector_float3(1, 1, 1)),   // live-39 — the ambient tint (white = today)
             // Brief AT — LIGHT comp owns the opaque ground (0 → dark/list byte-identical). Pool removed.
             SKUniform(name: "u_light_ground_on", float: 0)
         ]

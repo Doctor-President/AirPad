@@ -58,6 +58,7 @@ struct CanvasView: View {
     /// empty in Release.
     private var mapDebugOptions: SpriteView.DebugOptions {
         #if DEBUG
+        if ProcessInfo.processInfo.arguments.contains("-NoMapDebugHUD") { return [] }   // live-39: clean stills
         return [.showsFPS, .showsDrawCount, .showsNodeCount]
         #else
         return []
@@ -836,9 +837,18 @@ struct CanvasView: View {
             }
     }
 
+    /// The Map's SwiftUI ground (behind the SpriteKit view; the dark grid paints its own opaque ground over it).
+    /// live-39: a ground dialled in the TestFlight tuner shows here too, so the mount frame matches.
+    private var mapGround: Color {
+        #if DEBUG || TESTFLIGHT
+        if mapColorScheme == .dark, let m = AppearanceTuning.mapDark, m.ground != MapDarkTuning.today.ground { return m.ground.color }
+        #endif
+        return AppearancePalette.mapBackground(dark: mapColorScheme == .dark)
+    }
+
     private var canvasZStack: some View {
         ZStack(alignment: .bottomTrailing) {
-            AppearancePalette.mapBackground(dark: mapColorScheme == .dark)
+            mapGround
                 .ignoresSafeArea()
                 // ★ SYNCHRONISED SNAP (Brief H). The SpriteKit content (orbs, dots, labels' ink)
                 // snaps its appearance imperatively; SwiftUI would otherwise cross-dissolve THIS
@@ -2008,6 +2018,17 @@ private struct TerritoryLabelPill: View {
     /// TITLES stay Space Grotesk via the MSDF atlas / Orb-font choice). Bold caps.
     @Environment(\.appBodyFont) private var appFont
 
+    /// Today's pill (0.95 text · territory outline 0.95 @ 1.5 pt · no tint); live-39: the TestFlight tuner, dark only.
+    private var look: (textOpacity: Double, tint: Color?, outline: Color?, outlineOpacity: Double, outlineWidth: CGFloat) {
+        #if DEBUG || TESTFLIGHT
+        if colorScheme == .dark, let m = AppearanceTuning.mapDark {
+            return (m.pillTextOpacity, m.pillTintAmount > 0 ? m.pillTint.color.opacity(m.pillTintAmount) : nil,
+                    m.pillOutlineCustom ? m.pillOutline.color : nil, m.pillOutlineOpacity, CGFloat(m.pillOutlineWidth))
+        }
+        #endif
+        return (0.95, nil, nil, 0.95, 1.5)
+    }
+
     var body: some View {
         Text(text.uppercased())
             // Font size + padding + minHeight read the SHARED RegionLabelPillMetrics so the
@@ -2016,7 +2037,7 @@ private struct TerritoryLabelPill: View {
             .tracking(1.5)
             // Dark (Solar Flare): byte-identical white@0.95. Light (Cucumber
             // Water): AppearancePalette.ink — the same token the detail view uses.
-            .foregroundStyle(colorScheme == .dark ? Color.white.opacity(0.95) : AppearancePalette.ink)
+            .foregroundStyle(colorScheme == .dark ? Color.white.opacity(look.textOpacity) : AppearancePalette.ink)
             .opacity(textAlpha)
             .padding(.horizontal, RegionLabelPillMetrics.hPad)
             .padding(.vertical, RegionLabelPillMetrics.vPad)
@@ -2026,8 +2047,10 @@ private struct TerritoryLabelPill: View {
             .background {
                 Capsule()
                     .fill(.ultraThinMaterial)
+                    .overlay { if let t = look.tint { Capsule().fill(t) } }   // live-39: tuner tint over the glass (none = today)
                     .overlay(
-                        Capsule().stroke(Color(hexString: colorHex).opacity(0.95), lineWidth: 1.5)
+                        Capsule().stroke((look.outline ?? Color(hexString: colorHex)).opacity(look.outlineOpacity),
+                                         lineWidth: look.outlineWidth)
                     )
                     .shadow(color: .black.opacity(0.25), radius: 4, y: 1)
                     .opacity(materialAlpha)

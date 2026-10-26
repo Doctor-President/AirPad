@@ -3806,7 +3806,9 @@ final class CorpusPhysicsScene: SKScene {
                 float olRing = clamp(smoothstep(R - olW - aa, R - olW, d) - smoothstep(R - aa, R, d), 0.0, 1.0);
                 float rA = olRing * lk_a.y;
                 outA = (rA + disc * lk_a.z * (1.0 - rA)) * fillC.a;
-                outRGB = fillRGB * outA;
+                // The light Map's pastel fill would make a near-invisible ring there → the territory colour itself.
+                vec3 olC = u_wash_is_light > 0.5 ? fillC.rgb : fillRGB;
+                outRGB = olC * outA;
             }
             // Brief AW — LIGHT orb opacity (70% default) lets the dots + pool show through. Premultiplied
             // (rgb, a) × op reduces opacity uniformly. u_orb_opacity = 1 in dark → byte-identical.

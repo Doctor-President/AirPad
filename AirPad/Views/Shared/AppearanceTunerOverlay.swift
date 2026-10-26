@@ -293,7 +293,7 @@ struct AppearanceTunerSheet<G: Gesture>: View {
     /// The one-line value a closed header shows.
     private func summary(_ section: TunerSection) -> String {
         switch section {
-        case .mapDark:         return "#\(m.fieldHex) · " + (m.orbLook == .flat ? "flat" : m.orbLook == .fresnel ? "Fresnel" : "Glass")
+        case .mapDark:         return "#\(m.fieldHex) · " + (m.orbLook == .aura ? m.aura.mode.label : m.orbLook.label)
         case .cardContent:     return tuner.state.cardContent.label
         case .captureControls: return tuner.state.captureControls.label
         case .floatingButtons: return tuner.state.floatingButtons.label
@@ -586,11 +586,14 @@ struct AppearanceTunerSheet<G: Gesture>: View {
     private func setMap(_ change: (inout MapDarkTuning) -> Void) { change(&tuner.state.mapDark) }
     private func setF(_ change: (inout FresnelLook) -> Void) { change(&tuner.state.mapDark.fresnel) }
     private func setG(_ change: (inout GlassLook) -> Void) { change(&tuner.state.mapDark.glass) }
+    private func setA(_ change: (inout AuraLook) -> Void) { change(&tuner.state.mapDark.aura) }
+    private func setO(_ change: (inout OutlineLook) -> Void) { change(&tuner.state.mapDark.outline) }
+    private func f2(_ x: Double) -> String { String(format: "%.2f", x) }
     private func pct(_ x: Double) -> String { String(format: "%.0f%%", x * 100) }
 
     @ViewBuilder private var mapDarkSection: some View {
         if !dark {
-            note("Dark mode only. Switch the phone (or ≡ → Appearance) to Dark to see these on the Map.")
+            note("Dark mode only, except the Aura and Outline orb looks (below), which also show on the light Map.")
         }
         subhead("Background")
         TunerColorRow(label: "Ground", color: m.ground, defaultHex: MapDarkTuning.today.ground.hex, id: "mapGround") { c in
@@ -657,6 +660,8 @@ struct AppearanceTunerSheet<G: Gesture>: View {
         .accessibilityIdentifier("tunerMapOrbLook")
         if m.orbLook == .fresnel { fresnelControls }
         if m.orbLook == .glass { orbGlassControls }
+        if m.orbLook == .aura { auraControls }
+        if m.orbLook == .outline { outlineControls }
         Button("Reset the Map section", role: .destructive) { setMap { $0 = .today } }
             .font(.caption).buttonStyle(.bordered).controlSize(.small)
             .accessibilityIdentifier("tunerMapReset")
@@ -695,18 +700,9 @@ struct AppearanceTunerSheet<G: Gesture>: View {
                 chip(p.0, selected: g == p.1, id: "tunerGlass-\(p.0)") { setMap { $0.glass = p.1 } }
             }
         }
-        subhead("Lens")
-        slider("Refraction strength", g.refraction, 0...2, 0.01, String(format: "%.2f", g.refraction), id: "glRefraction") { x in
-            setG { $0.refraction = x }
-        }
-        slider("Lens curve", g.lensCurve, 1...6, 0.05, String(format: "%.2f", g.lensCurve), id: "glCurve") { x in setG { $0.lensCurve = x } }
-        slider("Magnification", g.magnification, 0.7...2, 0.01, String(format: "×%.2f", g.magnification), id: "glMag") { x in
-            setG { $0.magnification = x }
-        }
         subhead("Body")
         slider("Tint (orb colour)", g.tint, 0...1, 0.01, pct(g.tint), id: "glTint") { x in setG { $0.tint = x } }
         slider("Body brightness", g.brightness, 0...0.5, 0.005, pct(g.brightness), id: "glBright") { x in setG { $0.brightness = x } }
-        slider("Frost (diffuse)", g.frost, 0...1, 0.01, pct(g.frost), id: "glFrost") { x in setG { $0.frost = x } }
         slider("Behind-glass dim", g.dim, 0...0.9, 0.01, pct(g.dim), id: "glDim") { x in setG { $0.dim = x } }
         subhead("Rim light (top + bottom arcs)")
         slider("Top arc", g.topArc, 0...2, 0.01, String(format: "%.2f", g.topArc), id: "glTopArc") { x in setG { $0.topArc = x } }
@@ -743,10 +739,71 @@ struct AppearanceTunerSheet<G: Gesture>: View {
         TunerColorRow(label: "Label colour", color: g.label, defaultHex: GlassLook.medium.label.hex, id: "glLabel") { c in
             setG { $0.label = c }
         }
-        note("Inside each orb you see the dot grid behind it through a lens: little bend at the centre, more toward the rim. "
-             + "Frost melts the dots into an even haze (they don't grow); dim darkens what the lens shows. "
-             + "The arcs light the top and bottom of the rim. The light drifts with the phone's tilt (negative response = the other way). It stays put in Low Power Mode, with "
-             + "Reduce Motion, or with Appearance → Move with tilt off. Labels use the label colour unless dark text reads better.")
+        note("The real background shows through each orb (no lens): dim darkens it, the tint colours it toward the rim, brightness "
+             + "lifts it. The arcs light the top and bottom of the rim. With Tilt light on, the light drifts with the phone's tilt "
+             + "(negative response = the other way); the Map then redraws at 30 fps, and only while the light visibly moves. It stays "
+             + "put in Low Power Mode, with Reduce Motion, or with Appearance → Move with tilt off. Labels use the label colour unless "
+             + "dark text reads better.")
+    }
+
+    // live-43 — Aura (port of the study T approved 2026-10-26); both grounds.
+    @ViewBuilder private var auraControls: some View {
+        let a = m.aura
+        Picker("Aura mode", selection: Binding(get: { a.mode }, set: { x in setA { $0.mode = x } })) {
+            ForEach(AuraMode.allCases) { Text($0.label).tag($0) }
+        }
+        .pickerStyle(.segmented)
+        .accessibilityIdentifier("tunerAuraMode")
+        slider("Gradient spread", a.spread, 0.4...2, 0.01, f2(a.spread), id: "auSpread") { x in setA { $0.spread = x } }
+        slider("Warp", a.warp, 0...1.5, 0.01, f2(a.warp), id: "auWarp") { x in setA { $0.warp = x } }
+        slider("Edge softness", a.softness, 0.01...0.25, 0.005, f2(a.softness), id: "auSoft") { x in setA { $0.softness = x } }
+        slider("Halo reach", a.haloReach, 0.05...1.4, 0.01, f2(a.haloReach), id: "auReach") { x in setA { $0.haloReach = x } }
+        slider("Rim light", a.rim, 0...1, 0.01, f2(a.rim), id: "auRim") { x in setA { $0.rim = x } }
+        slider("Chromatic fringe", a.fringe, 0...1.5, 0.01, f2(a.fringe), id: "auFringe") { x in setA { $0.fringe = x } }
+        slider("Grain", a.grain, 0...1, 0.01, f2(a.grain), id: "auGrain") { x in setA { $0.grain = x } }
+        slider("Hue spread (territory colour)", a.hueSpread, 0...90, 1, String(format: "%.0f°", a.hueSpread), id: "auHueSpread") { x in
+            setA { $0.hueSpread = x }
+        }
+        if a.mode == .eclipse {
+            TunerColorRow(label: "Eclipse halo", color: a.eclipseHalo, defaultHex: "FF6E21", id: "auEclipseHalo") { c in
+                setA { $0.eclipseHalo = c }
+            }
+        }
+        toggle("Drift (slow flow; the Map redraws at 30 fps while on)", a.drift, id: "auDrift") { b in setA { $0.drift = b } }
+        #if DEBUG
+        toggle("Study palettes (the study's 7 families by territory)", a.studyPalettes, id: "auStudy") { b in setA { $0.studyPalettes = b } }
+        #endif
+        Button("Aura defaults (T's 2026-10-26 values)") { setA { $0 = AuraLook() } }
+            .font(.caption).buttonStyle(.bordered).controlSize(.small)
+            .accessibilityIdentifier("tunerAuraReset")
+        note("Each orb's gradient is built from its territory colour: one stop turned back by the hue spread and darker, one "
+             + "lighter, one turned forward; the rim and halo sit opposite on the wheel (Eclipse: one warm halo, the colour above). "
+             + "The halo reaches past the orb, so dense clusters overlap. Labels: dark ink only on light gradients; Eclipse always "
+             + "light. Shows on the light and dark Map.")
+    }
+
+    // live-43-A — Outline; both grounds.
+    @ViewBuilder private var outlineControls: some View {
+        let o = m.outline
+        slider("Ring width (on screen)", o.ringWidth, 0.5...6, 0.1, String(format: "%.1f pt", o.ringWidth), id: "olWidth") { x in
+            setO { $0.ringWidth = x }
+        }
+        if dark {
+            slider("Ring opacity (dark Map)", o.ringOpacityDark, 0.1...1, 0.01, pct(o.ringOpacityDark), id: "olOpacityDark") { x in
+                setO { $0.ringOpacityDark = x }
+            }
+        } else {
+            slider("Ring opacity (light Map)", o.ringOpacityLight, 0.1...1, 0.01, pct(o.ringOpacityLight), id: "olOpacityLight") { x in
+                setO { $0.ringOpacityLight = x }
+            }
+        }
+        slider("Fill opacity", o.fillOpacity, 0...0.3, 0.005, pct(o.fillOpacity), id: "olFill") { x in setO { $0.fillOpacity = x } }
+        Button("Outline defaults") { setO { $0 = OutlineLook() } }
+            .font(.caption).buttonStyle(.bordered).controlSize(.small)
+            .accessibilityIdentifier("tunerOutlineReset")
+        note("A ring in each territory's colour over a faint fill of the same colour; the ring keeps its width on screen at every "
+             + "zoom, and the focused or selected orb's ring doubles. Ring opacity is set per Map (dark 85%, light 100% by default). "
+             + "The dot shrink follows the toggle above on the dark Map.")
     }
 
     // Card content (live-23 (4)) — both appearances

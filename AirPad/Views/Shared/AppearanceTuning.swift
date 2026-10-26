@@ -466,7 +466,7 @@ final class AppearanceTuner {
         }
         // live-43 stills — `-MapLookCycle <start-s>`: one launch steps flat → Glass (T's values via `-MapGlassToday
         // 'json:{Copy values}'`, else Medium) → Aura → Outline → Aura at contrast 0 / 1 / 2 every 4 s; `[MAPCYCLE] <look>` (NSLog + print).
-        // `-MapLookSet <look>` (flat|glass|aura|outline|aura-c0|aura-c1|aura-c2) holds one look; `-MapStudyPalettes YES` = the study's families.
+        // `-MapLookSet <look>` (flat|glass|aura|outline|aura-c0|aura-c1|aura-c2|wash-subtle|wash-medium|wash-strong) holds one look; `-MapStudyPalettes YES` = the study's families.
         do {
             var glassA = GlassLook.medium
             if var j = UserDefaults.standard.string(forKey: "MapGlassToday") {
@@ -487,6 +487,10 @@ final class AppearanceTuner {
                 ("aura-c0", { $0.orbLook = .aura; $0.aura.contrast = 0 }),
                 ("aura-c1", { $0.orbLook = .aura; $0.aura.contrast = 1 }),
                 ("aura-c2", { $0.orbLook = .aura; $0.aura.contrast = 2 }),
+                // live-46 — Wash on the light Map (the Pro "Aura" look draws Wash there): the study's presets
+                ("wash-subtle", { $0.orbLook = .aura; $0.wash = .subtle }),
+                ("wash-medium", { $0.orbLook = .aura; $0.wash = .medium }),
+                ("wash-strong", { $0.orbLook = .aura; $0.wash = .strong }),
             ]
             if let one = UserDefaults.standard.string(forKey: "MapLookSet"), let st = steps.first(where: { $0.0 == one }) {
                 st.1(&state.mapDark)
@@ -1404,7 +1408,8 @@ struct TunerHSL: Codable, Equatable {
 
 /// The Map's orb look: today's flat emissive fill, a dark bubble lit at its rim (Fresnel), a glass bead over the real
 /// background (Glass), a grainy multi-hue gradient (Aura), or a ring in the territory colour over a faint fill (Outline).
-/// Fresnel, Glass and Aura are dark-Map only (live-45-B: the light Map draws Flat for them); Outline shows on both grounds.
+/// Fresnel and Glass are dark-Map only (the light Map draws Flat for them); Outline shows on both grounds; Aura is the Pro
+/// pair — Aura on the dark Map, Wash on the light one (live-46; replaces live-45-B's Flat fallback).
 enum MapOrbLook: String, Codable, CaseIterable, Identifiable {
     case flat, fresnel, glass, aura, outline
     var id: String { rawValue }
@@ -1459,6 +1464,49 @@ struct AuraLook: Codable, Equatable {
         if let v = d("softnessFloor") { softnessFloor = v }; if let v = d("rim") { rim = v }; if let v = d("fringe") { fringe = v }
         if let v = d("grain") { grain = v }; if let v = d("grainSize") { grainSize = v }; if let v = d("contrast") { contrast = v }
         if let b = o["drift"] as? Bool { drift = b }; if let v = d("hueSpread") { hueSpread = v }
+    }
+}
+
+/// live-46 — the Wash look for the LIGHT Map (port of the study's `wash` branch, Ops/reference/aura-orb-study.html v2; T:
+/// "I like this a lot … as similar as possible"). Pigment on paper: the study's family palettes (by territory hue) lifted
+/// toward white, multiplied into the ground (SKBlendMode.multiply), with ink bleed, edge pooling, riso misregistration
+/// and granulation; the paper fibres + grain live on the ground (the grid shader). The Pro "Aura" look = Aura on the
+/// dark Map + Wash on the light Map. Slider names follow the study's Wash labels.
+struct WashLook: Codable, Equatable {
+    var spread = 1.0            // Gradient spread
+    var warp = 0.9              // Warp
+    var softness = 0.05         // Edge softness (orb radii)
+    var bleed = 0.6             // Bleed (the study's `reach` slot)
+    var pooling = 0.55          // Edge pooling (`rim`)
+    var misregistration = 0.6   // Misregistration (`fringe`)
+    var paper = 0.6             // Paper grain (`grain`): fibres + grain on the ground, granulation in the orb
+
+    static let medium = WashLook()
+    static let subtle = WashLook(spread: 0.8, warp: 0.5, softness: 0.03, bleed: 0.3, pooling: 0.3, misregistration: 0.3, paper: 0.4)
+    static let strong = WashLook(spread: 1.2, warp: 1.3, softness: 0.08, bleed: 1.0, pooling: 0.85, misregistration: 1.0, paper: 0.85)
+    static let presets: [(String, WashLook)] = [("Subtle", .subtle), ("Medium", .medium), ("Strong", .strong)]
+
+    init() {}
+    init(spread: Double, warp: Double, softness: Double, bleed: Double, pooling: Double, misregistration: Double, paper: Double) {
+        self.spread = spread; self.warp = warp; self.softness = softness; self.bleed = bleed; self.pooling = pooling
+        self.misregistration = misregistration; self.paper = paper
+    }
+    init(from decoder: Decoder) throws {
+        let c = try decoder.container(keyedBy: CodingKeys.self)
+        let d = WashLook()
+        func v<T: Decodable>(_ k: CodingKeys, _ def: T) -> T { ((try? c.decodeIfPresent(T.self, forKey: k)) ?? nil) ?? def }
+        spread = v(.spread, d.spread); warp = v(.warp, d.warp); softness = v(.softness, d.softness); bleed = v(.bleed, d.bleed)
+        pooling = v(.pooling, d.pooling); misregistration = v(.misregistration, d.misregistration); paper = v(.paper, d.paper)
+    }
+
+    /// The study's bound: 1.2 + softness + misregistration·0.05 + bleed·0.1 orb radii (no halo).
+    var spriteExtent: Double { 1.2 + softness + misregistration * 0.05 + bleed * 0.1 }
+
+    mutating func apply(exportJSON o: [String: Any]) {
+        func d(_ k: String) -> Double? { (o[k] as? NSNumber)?.doubleValue }
+        if let v = d("spread") { spread = v }; if let v = d("warp") { warp = v }; if let v = d("softness") { softness = v }
+        if let v = d("bleed") { bleed = v }; if let v = d("pooling") { pooling = v }
+        if let v = d("misregistration") { misregistration = v }; if let v = d("paper") { paper = v }
     }
 }
 
@@ -1618,6 +1666,7 @@ struct MapDarkTuning: Codable, Equatable {
     var glass: GlassLook = .medium
     var aura = AuraLook()                         // live-43
     var outline = OutlineLook()                   // live-43-A
+    var wash = WashLook()                         // live-46 — the light Map's half of the Pro "Aura" look
     // live-40 — the grid's dots shrink under/near orbs (mass field). Drives the background AND the grid inside Glass orbs.
     var dotShrinkOn = true
     var dotShrink = 1.0                           // GridWarpTuning.dotShrink(dark) — today
@@ -1640,7 +1689,7 @@ struct MapDarkTuning: Codable, Equatable {
         focusRing = v(.focusRing, d.focusRing); selectionRing = v(.selectionRing, d.selectionRing)
         orbGlow = v(.orbGlow, d.orbGlow); orbGlowOpacity = v(.orbGlowOpacity, d.orbGlowOpacity)
         orbLook = v(.orbLook, d.orbLook); fresnel = v(.fresnel, d.fresnel); glass = v(.glass, d.glass)
-        aura = v(.aura, d.aura); outline = v(.outline, d.outline)
+        aura = v(.aura, d.aura); outline = v(.outline, d.outline); wash = v(.wash, d.wash)
         dotShrinkOn = v(.dotShrinkOn, d.dotShrinkOn); dotShrink = v(.dotShrink, d.dotShrink); shrinkReach = v(.shrinkReach, d.shrinkReach)
     }
 
@@ -1661,6 +1710,7 @@ struct MapDarkTuning: Codable, Equatable {
         if let l = (o["orbLook"] as? String).flatMap(MapOrbLook.init(rawValue:)) { orbLook = l }
         if let a = o["aura"] as? [String: Any] { aura.apply(exportJSON: a) }
         if let b = o["outline"] as? [String: Any] { outline.apply(exportJSON: b) }
+        if let w = o["wash"] as? [String: Any] { wash.apply(exportJSON: w) }
     }
 
     /// The shrink the grid shader receives (0 = uniform dots).
@@ -1694,7 +1744,7 @@ extension AppearanceTuning {
             return t
         }
         func c(_ x: TunerHSL) -> String { "\"#\(x.hex)\"" }
-        let f = m.fresnel, g = m.glass, a = m.aura, ol = m.outline
+        let f = m.fresnel, g = m.glass, a = m.aura, ol = m.outline, w = m.wash
         return "{\"ground\":\(c(m.ground)),\"field\":\"#\(m.fieldHex)\",\"openSpace\":\"#\(m.openSpaceHex)\",\"ambient\":\(n(m.ambientAmount)),"
             + "\"ambientColor\":\(c(m.ambient)),\"dots\":\(c(m.dot)),\"dotOpacity\":\(n(m.dotOpacity)),"
             + "\"pillTint\":\(c(m.pillTint)),\"pillTintAmount\":\(n(m.pillTintAmount)),"
@@ -1716,7 +1766,9 @@ extension AppearanceTuning {
             + "\"softnessFloor\":\(n(a.softnessFloor)),\"rim\":\(n(a.rim)),\"fringe\":\(n(a.fringe)),\"grain\":\(n(a.grain)),"
             + "\"grainSize\":\(n(a.grainSize)),\"contrast\":\(n(a.contrast)),\"drift\":\(a.drift),\"hueSpread\":\(n(a.hueSpread))},"
             + "\"outline\":{\"ringWidth\":\(n(ol.ringWidth)),\"ringOpacityDark\":\(n(ol.ringOpacityDark)),"
-            + "\"ringOpacityLight\":\(n(ol.ringOpacityLight)),\"fillOpacity\":\(n(ol.fillOpacity))}}"
+            + "\"ringOpacityLight\":\(n(ol.ringOpacityLight)),\"fillOpacity\":\(n(ol.fillOpacity))},"
+            + "\"wash\":{\"spread\":\(n(w.spread)),\"warp\":\(n(w.warp)),\"softness\":\(n(w.softness)),\"bleed\":\(n(w.bleed)),"
+            + "\"pooling\":\(n(w.pooling)),\"misregistration\":\(n(w.misregistration)),\"paper\":\(n(w.paper))}}"
     }
 
     /// `-AppearanceTuningSelfTest` rows for the Map section (pure).
@@ -1790,6 +1842,23 @@ extension AppearanceTuning {
                 let old = #"{"orbLook":"glass","glass":{"tint":0.3,"tiltLight":true}}"#
                 guard let m = try? JSONDecoder().decode(MapDarkTuning.self, from: Data(old.utf8)) else { return false }
                 return m.orbLook == .glass && m.glass.tiltLight && m.aura == AuraLook() && m.outline == OutlineLook()
+            }(), ""),
+            ("wash-defaults-are-the-study's-Medium (spread 1 · warp 0.9 · soft 0.05 · bleed 0.6 · pooling 0.55 · misreg 0.6 · paper 0.6; extent 1.34)", {
+                let w = t.wash
+                return w == .medium && w.spread == 1 && w.warp == 0.9 && w.softness == 0.05 && w.bleed == 0.6 && w.pooling == 0.55
+                    && w.misregistration == 0.6 && w.paper == 0.6 && abs(w.spriteExtent - 1.34) < 1e-9
+            }(), String(format: "extent %.3f", t.wash.spriteExtent)),
+            ("wash-presets-are-the-study's (Subtle .8/.5/.03/.3/.3/.3/.4 · Strong 1.2/1.3/.08/1/.85/1/.85)",
+             WashLook.subtle == WashLook(spread: 0.8, warp: 0.5, softness: 0.03, bleed: 0.3, pooling: 0.3, misregistration: 0.3, paper: 0.4)
+                && WashLook.strong.bleed == 1 && WashLook.strong.pooling == 0.85 && WashLook.strong.paper == 0.85, ""),
+            ("wash-export-applies-back + live-45 values without a wash key decode", {
+                var m = MapDarkTuning(); m.wash = .strong; m.wash.paper = 0.33
+                var back = MapDarkTuning()
+                guard let all = try? JSONSerialization.jsonObject(with: Data(mapDarkJSON(m).utf8)) as? [String: Any] else { return false }
+                back.apply(exportJSON: all)
+                let old = #"{"orbLook":"aura","aura":{"contrast":1.5}}"#
+                guard let o = try? JSONDecoder().decode(MapDarkTuning.self, from: Data(old.utf8)) else { return false }
+                return back.wash == m.wash && o.wash == .medium && o.aura.contrast == 1.5
             }(), ""),
             ("map-dark-export-parses", (try? JSONSerialization.jsonObject(with: Data(mapDarkJSON(t).utf8))) != nil, mapDarkJSON(t)),
         ]

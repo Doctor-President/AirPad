@@ -588,12 +588,13 @@ struct AppearanceTunerSheet<G: Gesture>: View {
     private func setG(_ change: (inout GlassLook) -> Void) { change(&tuner.state.mapDark.glass) }
     private func setA(_ change: (inout AuraLook) -> Void) { change(&tuner.state.mapDark.aura) }
     private func setO(_ change: (inout OutlineLook) -> Void) { change(&tuner.state.mapDark.outline) }
+    private func setW(_ change: (inout WashLook) -> Void) { change(&tuner.state.mapDark.wash) }
     private func f2(_ x: Double) -> String { String(format: "%.2f", x) }
     private func pct(_ x: Double) -> String { String(format: "%.0f%%", x * 100) }
 
     @ViewBuilder private var mapDarkSection: some View {
         if !dark {
-            note("Dark mode only, except the Outline orb look (below), which also shows on the light Map.")
+            note("Dark mode only, except the orb looks (below): Outline shows on both Maps, and Aura draws as Wash on the light Map.")
         }
         subhead("Background")
         TunerColorRow(label: "Ground", color: m.ground, defaultHex: MapDarkTuning.today.ground.hex, id: "mapGround") { c in
@@ -661,7 +662,7 @@ struct AppearanceTunerSheet<G: Gesture>: View {
         if m.orbLook == .fresnel { fresnelControls }
         if m.orbLook == .glass { orbGlassControls }
         if m.orbLook == .aura {
-            if dark { auraControls } else { note("Aura is for the dark Map; the light Map draws Flat for it (live-45-B). Switch to dark mode to tune it.") }
+            if dark { auraControls } else { washControls }
         }
         if m.orbLook == .outline { outlineControls }
         Button("Reset the Map section", role: .destructive) { setMap { $0 = .today } }
@@ -778,6 +779,33 @@ struct AppearanceTunerSheet<G: Gesture>: View {
              + "lighter, one turned forward; Contrast pushes the first darker and the last lighter. The rim colour sits opposite "
              + "on the wheel. The edge feather is the softness × the orb's radius, but never narrower than the floor in points, "
              + "so small orbs stay soft too. No halo. Labels: dark ink only on light gradients. Dark Map only.")
+    }
+
+    // live-46 — Wash: the light Map's half of the Pro "Aura" look (a port of the study's wash branch).
+    @ViewBuilder private var washControls: some View {
+        let w = m.wash
+        note("Light Map: Aura draws as Wash (pigment on paper). These controls are Wash's; Aura's show in dark mode.")
+        HStack(spacing: 6) {
+            ForEach(WashLook.presets, id: \.0) { p in
+                chip(p.0, selected: w == p.1, id: "tunerWash-\(p.0)") { setMap { $0.wash = p.1 } }
+            }
+        }
+        slider("Gradient spread", w.spread, 0.4...2, 0.01, f2(w.spread), id: "waSpread") { x in setW { $0.spread = x } }
+        slider("Warp", w.warp, 0...1.5, 0.01, f2(w.warp), id: "waWarp") { x in setW { $0.warp = x } }
+        slider("Edge softness", w.softness, 0.01...0.25, 0.005, f2(w.softness), id: "waSoft") { x in setW { $0.softness = x } }
+        slider("Bleed", w.bleed, 0...1.4, 0.01, f2(w.bleed), id: "waBleed") { x in setW { $0.bleed = x } }
+        slider("Edge pooling", w.pooling, 0...1, 0.01, f2(w.pooling), id: "waPool") { x in setW { $0.pooling = x } }
+        slider("Misregistration", w.misregistration, 0...1.5, 0.01, f2(w.misregistration), id: "waMisreg") { x in
+            setW { $0.misregistration = x }
+        }
+        slider("Paper grain", w.paper, 0...1, 0.01, f2(w.paper), id: "waPaper") { x in setW { $0.paper = x } }
+        Button("Wash defaults (the study's Medium)") { setW { $0 = .medium } }
+            .font(.caption).buttonStyle(.bordered).controlSize(.small)
+            .accessibilityIdentifier("tunerWashReset")
+        note("Each orb is ink on paper: its territory's nearest study palette, lifted toward white and multiplied into the "
+             + "ground, so overlaps darken. Bleed wobbles the edge, pooling darkens a band just inside it, misregistration "
+             + "offsets the colour plates. Paper grain sets the paper fibres and grain on the ground and the pigment's "
+             + "granulation in each orb. Labels: dark ink unless the orb's middle is dark.")
     }
 
     // live-43-A — Outline; both grounds.

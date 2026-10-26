@@ -115,8 +115,37 @@ enum BackgroundGridNode {
         // on screen), and its reach widens with that radius too. The CPU packs the result; the shader
         // just decodes it against `u_warp_mass_range` (= 1 when the mass-influence dial is 0, which
         // makes BOTH the orb texture and the field byte-identical to the pre-mass encoding).
+        // live-46 — the Wash look's PAPER on the light ground (TestFlight / DEBUG only: the App Store shader text is unchanged).
+        // u_light_ground_on = 1 + paper while Wash shows (no new binding); fibres + a 1 pt grain in on-screen points,
+        // following the pan (worldPos ÷ camera scale: they move with the ground, the same size in points at every zoom) — the study's
+        // `col *= 1 − paper·0.05·(fbm(pt·(0.35, 0.9)) − 0.4)` and `col += grain·paper·0.035`.
+        #if DEBUG || TESTFLIGHT
+        let paperHelpers = """
+        float wpHash(vec2 p) { vec3 p3 = fract(vec3(p.xyx) * 0.1031); p3 += dot(p3, p3.yzx + 33.33); return fract((p3.x + p3.y) * p3.z); }
+        float wpNoise(vec2 p) {
+            vec2 i = floor(p); vec2 f = fract(p); vec2 u = f * f * (3.0 - 2.0 * f);
+            return mix(mix(wpHash(i), wpHash(i + vec2(1.0, 0.0)), u.x), mix(wpHash(i + vec2(0.0, 1.0)), wpHash(i + vec2(1.0, 1.0)), u.x), u.y);
+        }
+        float wpFbm(vec2 p) {
+            float a = 0.6; float s = 0.0;
+            for (int i = 0; i < 3; i++) { s += a * wpNoise(p); p = p * 1.9 + vec2(17.1, 9.2); a *= 0.32; }
+            return s;
+        }
+        """
+        let paperBranch = """
+                float paper = u_light_ground_on - 1.0;
+                if (paper > 0.0) {
+                    vec2 pt = worldPos / u_camera_scale;
+                    groundDots *= 1.0 - paper * 0.05 * (wpFbm(pt * vec2(0.35, 0.9)) - 0.4);
+                    groundDots += vec3(wpHash(floor(pt) * 1.37 + 3.1) - 0.5) * paper * 0.035;
+                }
+        """
+        #else
+        let paperHelpers = "", paperBranch = ""
+        #endif
         let source = """
         // --- Helpers (must precede main per GLSL ES rules) ---
+        \(paperHelpers)
 
         float levelOpacity(float screenPeriod, float targetPx) {
             float t = log2(screenPeriod / targetPx);
@@ -243,6 +272,7 @@ enum BackgroundGridNode {
                 // Brief AT — LIGHT comp: the grid OWNS the opaque #FFEEED ground (u_ground_color) so the
                 // dots read on T's chosen ground. Pool was removed at the lock; just ground ▸ dots, opaque.
                 vec3 groundDots = u_ground_color * (1.0 - alpha) + u_dot_color * alpha;
+        \(paperBranch)
                 gl_FragColor = vec4(groundDots, 1.0);
             } else {
                 // Premultiplied output. u_dot_color is the per-theme dot tint

@@ -917,13 +917,21 @@ final class CorpusPhysicsScene: SKScene {
     private var lastTitleInkKey = "flat"
     private var lastRingKey = ""
 
-    /// live-43 — the orb look on BOTH grounds, per frame (cheap: writes only on change). Fresnel and Glass are dark-only
-    /// (the light Map draws Flat for them); Aura swaps every orb to its own shader; Outline is u_fr_on 3 with its levers in
+    /// live-45-B — DEBUG `-MapAuraOnLight`: draw Aura on the light Map anyway (the one comparison row for T's call).
+    #if DEBUG
+    static let auraOnLightDebug = ProcessInfo.processInfo.arguments.contains("-MapAuraOnLight")
+    #else
+    static let auraOnLightDebug = false
+    #endif
+
+    /// live-43 — the orb look on BOTH grounds, per frame (cheap: writes only on change). Fresnel, Glass and (live-45-B)
+    /// Aura are dark-only (the light Map draws Flat for them); Aura swaps every orb to its own shader; Outline is u_fr_on 3 with its levers in
     /// u_gl_look col 0. Title ink and the Outline emphasis follow the look.
     private func applyMapLook(_ md: MapDarkTuning?) {
         func orb(_ n: String) -> SKUniform? { orbSpriteShader.uniforms.first { $0.name == n } }
         let m = md ?? .today
-        let look: MapOrbLook = (currentIsLight && !m.orbLook.bothGrounds) ? .flat : m.orbLook
+        let look: MapOrbLook = (currentIsLight && !m.orbLook.bothGrounds && !(m.orbLook == .aura && Self.auraOnLightDebug))
+            ? .flat : m.orbLook
         let mode: Float = look == .fresnel ? 1 : look == .glass ? 2 : look == .outline ? 3 : 0
         if orb("u_fr_on")?.floatValue != mode { orb("u_fr_on")?.floatValue = mode }
         if let u = orb("u_gl_look") {
@@ -955,7 +963,7 @@ final class CorpusPhysicsScene: SKScene {
         switch look {
         case .fresnel: inkKey = "fr\(m.fresnel)\(m.ground.hex)"
         case .glass: inkKey = "gl\(m.glass.tint)\(m.glass.brightness)\(m.glass.label.hex)\(m.ground.hex)"
-        case .aura: inkKey = "au\(m.aura.mode)\(m.aura.hueSpread)\(m.aura.studyPalettes)\(currentIsLight)"
+        case .aura: inkKey = "au\(m.aura.hueSpread)\(m.aura.contrast)\(m.aura.spread)\(m.aura.warp)\(m.aura.rim)\(m.aura.studyPalettes)\(currentIsLight)"
         case .outline: inkKey = "ol\(currentIsLight)"
         case .flat: inkKey = "flat"
         }
@@ -1877,6 +1885,28 @@ final class CorpusPhysicsScene: SKScene {
                         self.cameraNode.position.y -= CGFloat(v[1]) * k
                     }
                 }
+            }
+        }
+        // live-45 stills — `-MapFrameOrbs <n>`: after the auto-fit settles, centre on the orb with the tightest n nearest
+        // neighbours and zoom so those n orbs fill the screen (≈ n orbs, titles readable) — the same framing every launch.
+        if let i = ProcessInfo.processInfo.arguments.firstIndex(of: "-MapFrameOrbs"),
+           i + 1 < ProcessInfo.processInfo.arguments.count, let n = Int(ProcessInfo.processInfo.arguments[i + 1]), n > 1 {
+            DispatchQueue.main.asyncAfter(deadline: .now() + 14) { [weak self] in
+                guard let self else { return }
+                let pts = self.nodeSprites.keys.sorted().compactMap { id -> CGPoint? in
+                    guard let s = self.nodeSprites[id], let p = s.parent else { return nil }
+                    return self.convert(s.position, from: p)
+                }
+                guard pts.count > n else { return }
+                var best = (CGFloat.infinity, CGPoint.zero)
+                for a in pts {
+                    let d = pts.map { hypot($0.x - a.x, $0.y - a.y) }.sorted()[n - 1]
+                    if d < best.0 { best = (d, a) }
+                }
+                self.cameraNode.position = best.1
+                self.cameraNode.setScale(best.0 / (0.5 * min(self.size.width, self.size.height) * 0.95))
+                self.applyOrbScales()
+                NSLog("[MAPFRAME] n=%d scale=%.3f", n, self.cameraNode.xScale)
             }
         }
         startAuraSizeScriptIfAsked()
@@ -3921,15 +3951,16 @@ final class CorpusPhysicsScene: SKScene {
 
     /// The Aura look — a port of Ops/reference/aura-orb-study.html's fragment shader (T approved 2026-10-26), ONE shared
     /// SKShader of its own (the orb shader's binding budget is untouched): per orb a seeded 3-stop ramp warped by two
-    /// low-frequency fbm fields, a smoothstep edge, a gaussian halo, a chromatic rim (the edge at three radii, red
-    /// outermost), the Eclipse crescent (an offset disc) and a static hash grain. The sprite is enlarged to cover the
-    /// halo (a_au_b.w = that sprite's extent in orb radii — live-44: per orb, written with its size by applyOrbSpriteSize;
-    /// u_au col 2.y keeps the look's extent but the shader no longer reads it). The study composites over an opaque
-    /// ground; here the result over the KNOWN ground (u_au col 3) is emitted premultiplied with alpha = coverage, so it is
-    /// exact over the plain ground and lets the dots / neighbours show through where the orb is not opaque (the dark halo
-    /// is purely additive).
-    /// u_au = (spread, warp, softness, reach), (rim, fringe, grain, eclipse), (dark ground, extent, drift, 0), (ground rgb, 0).
-    /// a_au_a = (stop A rgb, seed), a_au_b = (stop B rgb, this sprite's extent), a_au_c = stop C, a_au_r = the rim / halo colour.
+    /// low-frequency fbm fields, a smoothstep edge, a chromatic rim (the edge at three radii, red outermost) and a static
+    /// grain. live-45: Eclipse and the halo are gone; the sprite covers the soft edge + the fringe only (a_au_b.w = this
+    /// sprite's extent in orb radii, written with its size by applyOrbSpriteSize). The edge feather is
+    /// max(softness × r, floor in on-screen POINTS) and the grain cell is in points: the orb's on-screen radius comes from
+    /// fwidth(v_tex_coord) (the sprite's own scale, the zoom and the reading band included) ÷ the content scale. The
+    /// result over the KNOWN ground (u_au col 3) is emitted premultiplied with alpha = coverage, so it is exact over the
+    /// plain ground and lets the dots / neighbours show through where the orb is not opaque.
+    /// u_au = (spread, warp, softness, 0), (rim, fringe, grain, 0), (0, content scale, drift, softness floor pt),
+    /// (ground rgb, grain size pt). a_au_a = (stop A rgb, seed), a_au_b = (stop B rgb, this sprite's extent),
+    /// a_au_c = stop C, a_au_r = the rim colour.
     private lazy var auraShader: SKShader = {
         let src = """
         float auHash(vec2 p) { vec3 p3 = fract(vec3(p.xyx) * 0.1031); p3 += dot(p3, p3.yzx + 33.33); return fract((p3.x + p3.y) * p3.z); }
@@ -3949,68 +3980,48 @@ final class CorpusPhysicsScene: SKScene {
         float auDisk(float d, float s) { return 1.0 - smoothstep(1.0 - s, 1.0 + s, d); }
         void main() {
             vec4 P0 = u_au[0]; vec4 P1 = u_au[1]; vec4 P2 = u_au[2]; vec4 P3 = u_au[3];
-            float spread = P0.x; float warp = P0.y; float s = P0.z; float reach = max(P0.w, 0.02);
-            float rimK = P1.x; float fringe = P1.y; float grain = P1.z; float ecl = P1.w;
+            float spread = P0.x; float warp = P0.y;
+            float rimK = P1.x; float fringe = P1.y; float grain = P1.z;
+            float scale = max(P2.y, 1.0);
             vec3 bg = P3.rgb;
-            vec2 q = (v_tex_coord - vec2(0.5)) * (2.0 * a_au_b.w);   // orb radii, y up (this sprite's own extent)
+            float ext = a_au_b.w;
+            vec2 q = (v_tex_coord - vec2(0.5)) * (2.0 * ext);   // orb radii, y up (this sprite's own extent)
             float d = length(q);
+            // the orb's radius on screen, in points
+            float rPt = 1.0 / (max(fwidth(v_tex_coord.x), 0.000001) * 2.0 * ext * scale);
+            float f = fringe * 0.045;
+            float s = min(max(P0.z, P2.w / max(rPt, 0.001)), max(ext * (1.0 - f) - 1.0, 0.0));
             vec3 A = a_au_a.rgb; vec3 B = a_au_b.rgb; vec3 C = a_au_c.rgb; vec3 Rc = a_au_r.rgb;
             float seed = a_au_a.w;
-
-            // halo / bloom
-            float hd = max(d - 1.0, 0.0) / reach;
-            float h = exp(-hd * hd * 1.5);
-            vec3 hc; float hk;
-            if (ecl < 0.5) { hc = mix(Rc, (A + B + C) / 3.0, 0.45); hk = 1.0; }
-            else { hc = Rc; hk = 0.7 + 0.45 * abs(q.y) / max(d, 0.001); }
-            vec3 col = bg; float alpha = 0.0;
-            if (P2.x > 0.5) { col += hc * h * 0.55 * hk; }
-            else { float k = clamp(h * 0.5 * hk, 0.0, 1.0); col = mix(col, mix(hc, vec3(1.0), 0.22), k); alpha = k; }
 
             // body
             vec2 w = q * 0.62 + vec2(seed * 13.1, seed * 7.7);
             vec2 dr = u_time * vec2(0.05, 0.032) * P2.z;
             vec2 n = vec2(auFbm(w + dr), auFbm(w * 1.15 + vec2(5.2, 1.3) - dr)) - vec2(0.4);
             vec2 qw = q + warp * n * 1.8;
-            vec3 body;
-            if (ecl < 0.5) {
-                float ang = seed * 6.2831853;
-                vec2 dir = vec2(cos(ang), sin(ang));
-                float t = dot(qw, dir) * 0.5 * spread + 0.5;
-                t += 0.3 * warp * sin(dot(qw, vec2(-dir.y, dir.x)) * 1.9 + seed * 11.0);
-                body = auRamp(A, B, C, t);
-                float rb = smoothstep(0.62, 1.02, d);
-                body = mix(body, Rc, rb * rb * rimK);
-                float z = sqrt(max(0.0, 1.0 - min(d * d, 1.0)));
-                body *= 0.9 + 0.14 * z;
-            } else {
-                float v = 0.5 - 0.5 * (q.y + warp * n.y * 0.5);
-                vec3 glow = auRamp(A, B, C, smoothstep(0.3, 1.05, v) * spread);
-                float dk = 1.0 - smoothstep(0.22, 0.56, v);
-                body = mix(glow, vec3(0.012, 0.01, 0.03), dk);
-                float rb = smoothstep(0.7, 1.02, d) * smoothstep(0.15, 0.6, v);
-                body = mix(body, min(Rc * 1.15, vec3(1.0)), rb * rimK);
-                float occ = auDisk(length(q - vec2(0.0, -0.07)) / 0.95, s * 0.6);
-                float cres = (1.0 - occ) * smoothstep(0.0, 0.55, q.y / max(d, 0.001));
-                body = mix(body, vec3(1.0, 0.93, 0.84), cres * clamp(rimK * 1.6, 0.0, 1.0));
-            }
+            float ang = seed * 6.2831853;
+            vec2 dir = vec2(cos(ang), sin(ang));
+            float t = dot(qw, dir) * 0.5 * spread + 0.5;
+            t += 0.3 * warp * sin(dot(qw, vec2(-dir.y, dir.x)) * 1.9 + seed * 11.0);
+            vec3 body = auRamp(A, B, C, t);
+            float rb = smoothstep(0.62, 1.02, d);
+            body = mix(body, Rc, rb * rb * rimK);
+            float z = sqrt(max(0.0, 1.0 - min(d * d, 1.0)));
+            body *= 0.9 + 0.14 * z;
 
             // chromatic rim: the edge at three radii, one per channel
-            float f = fringe * 0.045;
             vec3 a3 = vec3(auDisk(d * (1.0 - f), s), auDisk(d, s), auDisk(d * (1.0 + f), s));
-            col = mix(col, body, a3);
+            vec3 col = mix(bg, body, a3);
             float am = max(a3.r, max(a3.g, a3.b));
-            alpha = am + alpha * (1.0 - am);
 
-            // static grain (screen pixels): the body, plus the halo on the light ground (an additive dark halo would only
-            // brighten — a negative premultiplied value clamps)
-            float g = auHash(gl_FragCoord.xy * 1.37 + 3.1) - 0.5;
-            float g2 = auHash(gl_FragCoord.yx * 0.91 + 7.7) - 0.5;
-            float gw = max(am, P2.x > 0.5 ? 0.0 : h);
-            col += (vec3(g) + vec3(g2, -g2, g2) * 0.25) * grain * 0.1 * gw;
+            // static grain on the body, one cell per `grain size` on-screen points
+            vec2 gp = floor(gl_FragCoord.xy / (scale * max(P3.w, 0.25)));
+            float g = auHash(gp * 1.37 + 3.1) - 0.5;
+            float g2 = auHash(gp.yx * 0.91 + 7.7) - 0.5;
+            col += (vec3(g) + vec3(g2, -g2, g2) * 0.25) * grain * 0.1 * am;
 
-            vec3 outRGB = max(clamp(col, 0.0, 1.0) - bg * (1.0 - alpha), vec3(0.0));
-            gl_FragColor = vec4(outRGB, alpha);
+            vec3 outRGB = max(clamp(col, 0.0, 1.0) - bg * (1.0 - am), vec3(0.0));
+            gl_FragColor = vec4(outRGB, am);
         }
         """
         let shader = SKShader(source: src)
@@ -4024,7 +4035,7 @@ final class CorpusPhysicsScene: SKScene {
         return shader
     }()
 
-    /// "" = no orb wears Aura; otherwise what the Aura sprites were last styled with (colours / extent / ground / count).
+    /// "" = no orb wears Aura; otherwise what the Aura sprites were last styled with (colours / extent / count).
     private var auraStyleKey = ""
     /// The Aura drift is on (and showing) → the Map renders at ≥ 30 fps.
     private var auraDriftOn = false
@@ -4044,12 +4055,12 @@ final class CorpusPhysicsScene: SKScene {
         let ext = a.spriteExtent
         let ground: vector_float3 = currentIsLight ? Self.rgb3(MapCompTuning.lightGroundHex) : TunerHSL(hex: m.fieldHex).simd
         let u = simd_float4x4(columns: (
-            vector_float4(Float(a.spread), Float(a.warp), Float(a.softness), Float(a.haloReach)),
-            vector_float4(Float(a.rim), Float(a.fringe), Float(a.grain), a.mode == .eclipse ? 1 : 0),
-            vector_float4(currentIsLight ? 0 : 1, Float(ext), a.drift ? 1 : 0, 0),
-            vector_float4(ground.x, ground.y, ground.z, 0)))
+            vector_float4(Float(a.spread), Float(a.warp), Float(a.softness), 0),
+            vector_float4(Float(a.rim), Float(a.fringe), Float(a.grain), 0),
+            vector_float4(0, Float(glyphContentScale), a.drift ? 1 : 0, Float(a.softnessFloor)),
+            vector_float4(ground.x, ground.y, ground.z, Float(a.grainSize))))
         if let uu = auraShader.uniforms.first, uu.matrixFloat4x4Value != u { uu.matrixFloat4x4Value = u }
-        let key = "\(a.mode)|\(a.hueSpread)|\(a.eclipseHalo.hex)|\(a.studyPalettes)|\(ext)|\(nodeSprites.count)"
+        let key = "\(a.hueSpread)|\(a.contrast)|\(a.studyPalettes)|\(ext)|\(nodeSprites.count)"
         guard key != auraStyleKey else { return }
         auraStyleKey = key
         let byID = Dictionary(currentNodes.map { ($0.id, $0) }, uniquingKeysWith: { x, _ in x })
@@ -4058,6 +4069,9 @@ final class CorpusPhysicsScene: SKScene {
             let fill = byID[id].map { bubbleColor(for: $0) } ?? Self.unattachedNeutral
             styleAuraSprite(sp, nodeID: id, fill: fill, look: a)
         }
+        #if DEBUG
+        auditAuraInkIfAsked(a, byID: byID)
+        #endif
     }
 
     private func styleAuraSprite(_ sp: SKSpriteNode, nodeID: String, fill: UIColor, look a: AuraLook) {
@@ -4078,6 +4092,80 @@ final class CorpusPhysicsScene: SKScene {
         if sp.shader !== orbSpriteShader { sp.shader = orbSpriteShader }
     }
 
+    /// live-45 — the mean luma under an orb's title: a CPU twin of the shader's warped ramp (+ rim tint + shading), sampled
+    /// on a 7 × 5 grid over the title box (± 0.6 × ± 0.35 orb radii). The stop-B rule missed what the warp and the darker
+    /// stop A put under the title (dark ink on dark patches at Contrast 1).
+    static func auraTitleLuma(a A: SIMD3<Float>, b B: SIMD3<Float>, c C: SIMD3<Float>, r R: SIMD3<Float>, seed: Float,
+                              look: AuraLook) -> Float {
+        func fract(_ x: Float) -> Float { x - x.rounded(.down) }
+        func hash(_ x: Float, _ y: Float) -> Float {
+            var p = SIMD3<Float>(fract(x * 0.1031), fract(y * 0.1031), fract(x * 0.1031))
+            let d = p.x * (p.y + 33.33) + p.y * (p.z + 33.33) + p.z * (p.x + 33.33)
+            p += SIMD3(repeating: d)
+            return fract((p.x + p.y) * p.z)
+        }
+        func noise(_ x: Float, _ y: Float) -> Float {
+            let ix = x.rounded(.down), iy = y.rounded(.down), fx = x - ix, fy = y - iy
+            let ux = fx * fx * (3 - 2 * fx), uy = fy * fy * (3 - 2 * fy)
+            let a = hash(ix, iy), b = hash(ix + 1, iy), c = hash(ix, iy + 1), d = hash(ix + 1, iy + 1)
+            return (a + (b - a) * ux) + ((c + (d - c) * ux) - (a + (b - a) * ux)) * uy
+        }
+        func fbm(_ x0: Float, _ y0: Float) -> Float {
+            var x = x0, y = y0, a: Float = 0.6, s: Float = 0
+            for _ in 0..<3 { s += a * noise(x, y); x = x * 1.9 + 17.1; y = y * 1.9 + 9.2; a *= 0.32 }
+            return s
+        }
+        func ss(_ e0: Float, _ e1: Float, _ x: Float) -> Float { let u = min(max((x - e0) / (e1 - e0), 0), 1); return u * u * (3 - 2 * u) }
+        let warp = Float(look.warp), spread = Float(look.spread), rimK = Float(look.rim)
+        let ang = seed * 6.2831853, dir = SIMD2<Float>(cos(ang), sin(ang)), perp = SIMD2<Float>(-dir.y, dir.x)
+        var sum: Float = 0, n: Float = 0
+        for iy in 0..<5 { for ix in 0..<7 {
+            let q = SIMD2<Float>(-0.6 + Float(ix) * 0.2, -0.35 + Float(iy) * 0.175)
+            let w = q * 0.62 + SIMD2(seed * 13.1, seed * 7.7)
+            let nv = SIMD2<Float>(fbm(w.x, w.y), fbm(w.x * 1.15 + 5.2, w.y * 1.15 + 1.3)) - 0.4
+            let qw = q + warp * nv * 1.8
+            var t = simd_dot(qw, dir) * 0.5 * spread + 0.5
+            t += 0.3 * warp * sin(simd_dot(qw, perp) * 1.9 + seed * 11)
+            t = min(max(t, 0), 1)
+            let ab = A + (B - A) * ss(0, 0.55, t)
+            var body = ab + (C - ab) * ss(0.45, 1, t)
+            let d = simd_length(q), rb = ss(0.62, 1.02, d)
+            body += (R - body) * (rb * rb * rimK)
+            body *= 0.9 + 0.14 * (max(0, 1 - min(d * d, 1))).squareRoot()
+            sum += 0.2126 * min(body.x, 1) + 0.7152 * min(body.y, 1) + 0.0722 * min(body.z, 1); n += 1
+        } }
+        return sum / n
+    }
+
+    #if DEBUG
+    /// live-45 — `-AuraInkAudit`: once per restyle, the old title-ink rule (dark ink when stop B's luma > 0.55) against
+    /// the new one (the mean luma under the title box > 0.55), at contrast 0 / 1 / 2. Logs `[AURAINK]` with the orbs
+    /// whose ink flips (ids only — never titles).
+    private func auditAuraInkIfAsked(_ a: AuraLook, byID: [String: Node]) {
+        guard ProcessInfo.processInfo.arguments.contains("-AuraInkAudit") else { return }
+        func luma(_ c: SIMD3<Float>) -> Float { 0.2126 * c.x + 0.7152 * c.y + 0.0722 * c.z }
+        var line = "[AURAINK] orbs=\(nodeSprites.count)"
+        for k in [0.0, 1.0, 2.0] {
+            var la = a; la.contrast = k
+            var oldDark = 0, newDark = 0, toLight: [String] = [], toDark: [String] = [], lo: Float = 1, hi: Float = 0
+            for id in nodeSprites.keys.sorted() {
+                let fill = byID[id].map { bubbleColor(for: $0) } ?? Self.unattachedNeutral
+                let st = auraStops(fill: fill, nodeID: id, look: la)
+                let old = luma(st.b) > 0.55
+                let tl = Self.auraTitleLuma(a: st.a, b: st.b, c: st.c, r: st.r, seed: st.seed, look: la)
+                lo = min(lo, tl); hi = max(hi, tl)
+                let new = tl > 0.55
+                if old { oldDark += 1 }; if new { newDark += 1 }
+                if old && !new { toLight.append(id) }; if !old && new { toDark.append(id) }
+            }
+            line += String(format: " | c%.0f old-rule darkInk=%d new-rule darkInk=%d titleLuma=%.2f…%.2f flip→light=%d flip→dark=%d",
+                           k, oldDark, newDark, lo, hi, toLight.count, toDark.count)
+            if k == 1 && !toLight.isEmpty { line += " light:" + toLight.prefix(10).joined(separator: ",") }
+        }
+        NSLog("%@", line); print(line)
+    }
+    #endif
+
     /// The study's seven families (Tide, Deep, Ember, Citrus, Iris, Rust, Solar) as stops a, b, c + rim r.
     private static let auraStudyFamilies: [[SIMD3<Float>]] = [
         [SIMD3(0.29, 0.53, 0.86), SIMD3(0.88, 0.92, 0.96), SIMD3(0.62, 0.74, 0.95), SIMD3(0.96, 0.62, 0.86)],
@@ -4090,27 +4178,27 @@ final class CorpusPhysicsScene: SKScene {
     ]
 
     /// An orb's Aura stops from its territory colour (OKLCH): A = hue − 35° darker, B = the base lighter, C = hue + 45°
-    /// (at a hue spread of 40°; the offsets scale with it), rim / halo = hue + 150° (Aura) or the one warm Eclipse halo.
+    /// (at a hue spread of 40°; the offsets scale with it), rim = hue + 150°. live-45 Contrast k: A another 0.18·k darker,
+    /// C 0.10·k lighter in L (k = 0 → live-44's stops), so each orb runs dark → light like the study's families.
     /// DEBUG "Study palettes": the study's families by territory index instead. Seed = a stable hash of the node id.
     private func auraStops(fill: UIColor, nodeID: String, look a: AuraLook)
         -> (a: SIMD3<Float>, b: SIMD3<Float>, c: SIMD3<Float>, r: SIMD3<Float>, seed: Float) {
         let seed = Float(stableHash(nodeID) % 10_000) / 10_000
-        var halo = a.eclipseHalo.simd
         #if DEBUG
         if a.studyPalettes {
             let idx = territorySlots[nodeID] ?? Int(stableHash("\(Self.rgbaVec(fill))") % 7)
             let f = Self.auraStudyFamilies[((idx % 7) + 7) % 7]
-            return (f[0], f[1], f[2], a.mode == .eclipse ? halo : f[3], seed)
+            return (f[0], f[1], f[2], f[3], seed)
         }
         #endif
         let lch = Self.oklch(fill)
         let k = a.hueSpread / 40
         let cBase = min(lch.c, 0.2)
-        let A = Self.srgb(l: lch.l - 0.10, c: cBase, h: lch.h - 35 * k)
+        let A = Self.srgb(l: lch.l - 0.10 - 0.18 * a.contrast, c: cBase, h: lch.h - 35 * k)
         let B = Self.srgb(l: min(lch.l + 0.16, 0.95), c: cBase * 0.75, h: lch.h)
-        let C = Self.srgb(l: lch.l + 0.02, c: cBase, h: lch.h + 45 * k)
-        if a.mode == .aura { halo = Self.srgb(l: 0.78, c: max(cBase, 0.12), h: lch.h + 150) }
-        return (A, B, C, halo, seed)
+        let C = Self.srgb(l: lch.l + 0.02 + 0.10 * a.contrast, c: cBase, h: lch.h + 45 * k)
+        let rim = Self.srgb(l: 0.78, c: max(cBase, 0.12), h: lch.h + 150)
+        return (A, B, C, rim, seed)
     }
 
     /// sRGB UIColor → OKLCH (l 0…1, c, h degrees).
@@ -4233,7 +4321,7 @@ final class CorpusPhysicsScene: SKScene {
         try? FileManager.default.createDirectory(at: dir, withIntermediateDirectories: true)
         try? rows.joined(separator: "\n").write(to: dir.appendingPathComponent(String(format: "%02d-%@.csv", auraSizeStepIndex, step)),
                                                atomically: true, encoding: .utf8)
-        let look = AppearanceTuning.mapDark.map { $0.orbLook == .aura ? "\($0.aura.mode)" : "\($0.orbLook)" } ?? "flat"
+        let look = AppearanceTuning.mapDark.map { "\($0.orbLook)" } ?? "flat"
         let line = String(format: "[AURASIZE] step=%@ look=%@ ground=%@ cam=%.2f orbs=%d aura=%d bad>1px=%d maxErrPx=%.1f worst=%@",
                           step, look, currentIsLight ? "light" : "dark", cs, rows.count - 1, aura, bad, maxErr, worst)
         NSLog("%@", line); print(line)
@@ -4271,9 +4359,9 @@ final class CorpusPhysicsScene: SKScene {
                 self.cameraNode.position.y -= 160 * self.cameraNode.xScale
             }),
             ("toFlat", look { $0.orbLook = .flat }),
-            ("toAura", look { $0.orbLook = .aura; $0.aura.mode = .aura }),
-            ("toEclipse", look { $0.orbLook = .aura; $0.aura.mode = .eclipse }),
-            ("backToAura", look { $0.orbLook = .aura; $0.aura.mode = .aura }),
+            ("toAura", look { $0.orbLook = .aura }),
+            ("softer", look { $0.orbLook = .aura; $0.aura.softness = 0.3; $0.aura.fringe = 1.5 }),   // live-45: the largest extent
+            ("backToAura", look { $0.orbLook = .aura; $0.aura = AuraLook() }),
             ("addEntry", { NotificationCenter.default.post(name: Notification.Name("AuraSizeAddEntry"), object: nil) }),
             ("zoomMid", { [weak self] in self?.cameraNode.setScale(1.0); self?.applyOrbScales() }),
             ("bgReady", {}),   // the shell backgrounds + foregrounds the app here; `foreground` audits on return
@@ -4389,16 +4477,16 @@ final class CorpusPhysicsScene: SKScene {
     private func orbTitleInk(_ fillColor: UIColor, nodeID: String = "") -> UIColor {
         #if DEBUG || TESTFLIGHT
         // live-43 — Outline: light ink on the dark Map, dark ink on the light one (the fill is too faint to matter).
-        // Aura: dark ink only when the orb's mid stop is light (luma > 0.55, the study's rule); Eclipse: always light ink.
+        // Aura (dark Map only, live-45-B): dark ink only when what sits under the title is light (mean luma > 0.55, the
+        // study's threshold) — live-45 samples the warped gradient there instead of trusting the mid stop.
         if let m = AppearanceTuning.mapDark, m.orbLook == .outline {
             return currentIsLight ? UIColor(red: 0.08, green: 0.07, blue: 0.06, alpha: 1) : UIColor(red: 1.0, green: 0.98, blue: 0.95, alpha: 1)
         }
-        if let m = AppearanceTuning.mapDark, m.orbLook == .aura {
+        if let m = AppearanceTuning.mapDark, m.orbLook == .aura, !currentIsLight || Self.auraOnLightDebug {
             let onDark = UIColor(red: 0xF4 / 255.0, green: 0xF2 / 255.0, blue: 0xF8 / 255.0, alpha: 1)   // the study's inks
             let onLight = UIColor(red: 0x1B / 255.0, green: 0x1A / 255.0, blue: 0x20 / 255.0, alpha: 1)
-            if m.aura.mode == .eclipse { return onDark }
-            let b = auraStops(fill: fillColor, nodeID: nodeID, look: m.aura).b
-            return 0.2126 * b.x + 0.7152 * b.y + 0.0722 * b.z > 0.55 ? onLight : onDark
+            let st = auraStops(fill: fillColor, nodeID: nodeID, look: m.aura)
+            return Self.auraTitleLuma(a: st.a, b: st.b, c: st.c, r: st.r, seed: st.seed, look: m.aura) > 0.55 ? onLight : onDark
         }
         if !currentIsLight, let m = AppearanceTuning.mapDark, m.orbLook == .fresnel {
             let f = m.fresnel, g = m.ground.rgb

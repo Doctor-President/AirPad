@@ -1,6 +1,6 @@
 #!/bin/zsh
 # live-44 — Aura orb-size audit on a large library (the fixture clone of T's corpus, ~434 entries), iOS 27 Simulator.
-# One launch on Aura runs `-AuraSizeScript`: launch · zoom out · zoom in · pan · Aura→Flat→Aura · →Eclipse · →Aura ·
+# One launch on Aura runs `-AuraSizeScript`: launch · zoom out · zoom in · pan · Aura→Flat→Aura · softest (largest extent) · →Aura defaults ·
 # add an entry · zoom mid · background/foreground (done HERE, at `bgReady`) · →Glass · →Outline · →Flat. After each step
 # the app logs `[AURASIZE] … bad>1px=… maxErrPx=…` and writes tmp/aurasize/<n>-<step>.csv; this script snaps a still.
 #   scripts/renders/aura_size_audit.sh <out_dir> <tag> <dark|light> [rings] [extra args…]
@@ -21,7 +21,7 @@ nap() { python3 -c "import time; time.sleep($1)"; }
 xcrun simctl terminate $SIM $APPID >/dev/null 2>&1
 xcrun simctl launch --console-pty $SIM $APPID $BASE $RINGS "$@" > $LOG 2>&1 &
 LP=$!
-STEPS=(launch zoomOut zoomIn pan toFlat toAura toEclipse backToAura addEntry zoomMid bgReady toGlass toOutline toFlatEnd)
+STEPS=(launch zoomOut zoomIn pan toFlat toAura softer backToAura addEntry zoomMid bgReady toGlass toOutline toFlatEnd)
 n=0
 for st in $STEPS; do
   n=$((n+1))

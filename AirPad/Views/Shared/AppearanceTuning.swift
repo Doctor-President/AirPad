@@ -465,8 +465,8 @@ final class AppearanceTuner {
             }
         }
         // live-43 stills — `-MapLookCycle <start-s>`: one launch steps flat → Glass (T's values via `-MapGlassToday
-        // 'json:{Copy values}'`, else Medium) → Aura → Eclipse → Outline every 4 s; `[MAPCYCLE] <look>` (NSLog + print).
-        // `-MapLookSet <look>` (flat|glass|aura|eclipse|outline) holds one look; `-MapStudyPalettes YES` = the study's families.
+        // 'json:{Copy values}'`, else Medium) → Aura → Outline → Aura at contrast 0 / 1 / 2 every 4 s; `[MAPCYCLE] <look>` (NSLog + print).
+        // `-MapLookSet <look>` (flat|glass|aura|outline|aura-c0|aura-c1|aura-c2) holds one look; `-MapStudyPalettes YES` = the study's families.
         do {
             var glassA = GlassLook.medium
             if var j = UserDefaults.standard.string(forKey: "MapGlassToday") {
@@ -481,9 +481,12 @@ final class AppearanceTuner {
             let steps: [(String, (inout MapDarkTuning) -> Void)] = [
                 ("flat", { $0.orbLook = .flat }),
                 ("glass", { $0.orbLook = .glass; $0.glass = glassA }),
-                ("aura", { $0.orbLook = .aura; $0.aura.mode = .aura }),
-                ("eclipse", { $0.orbLook = .aura; $0.aura.mode = .eclipse }),
+                ("aura", { $0.orbLook = .aura; $0.aura.contrast = AuraLook().contrast }),
                 ("outline", { $0.orbLook = .outline }),
+                // live-45 — the contrast row (Aura at contrast 0 = live-44's stops, 1 = default, 2)
+                ("aura-c0", { $0.orbLook = .aura; $0.aura.contrast = 0 }),
+                ("aura-c1", { $0.orbLook = .aura; $0.aura.contrast = 1 }),
+                ("aura-c2", { $0.orbLook = .aura; $0.aura.contrast = 2 }),
             ]
             if let one = UserDefaults.standard.string(forKey: "MapLookSet"), let st = steps.first(where: { $0.0 == one }) {
                 st.1(&state.mapDark)
@@ -1400,9 +1403,8 @@ struct TunerHSL: Codable, Equatable {
 }
 
 /// The Map's orb look: today's flat emissive fill, a dark bubble lit at its rim (Fresnel), a glass bead over the real
-/// background (Glass), a grainy multi-hue gradient that blooms into the ground (Aura, with its Eclipse mode), or a ring
-/// in the territory colour over a faint fill (Outline). Fresnel and Glass are dark-Map only; Aura and Outline show on
-/// both grounds (live-43).
+/// background (Glass), a grainy multi-hue gradient (Aura), or a ring in the territory colour over a faint fill (Outline).
+/// Fresnel, Glass and Aura are dark-Map only (live-45-B: the light Map draws Flat for them); Outline shows on both grounds.
 enum MapOrbLook: String, Codable, CaseIterable, Identifiable {
     case flat, fresnel, glass, aura, outline
     var id: String { rawValue }
@@ -1410,31 +1412,27 @@ enum MapOrbLook: String, Codable, CaseIterable, Identifiable {
         switch self { case .flat: "Flat"; case .fresnel: "Fresnel"; case .glass: "Glass"; case .aura: "Aura"; case .outline: "Outline" }
     }
     /// Looks that also draw on the light Map.
-    var bothGrounds: Bool { self == .aura || self == .outline }
+    var bothGrounds: Bool { self == .outline }
 }
 
 /// live-43 — the Aura look (port of Ops/reference/aura-orb-study.html, T approved 2026-10-26). Its own SKShader: per orb a
-/// seeded 3-stop ramp warped by two low-frequency fbm fields, a smoothstep edge, a gaussian halo, a chromatic rim and a
-/// static grain. Eclipse = dark body, bright top crescent, one warm halo. Colours come from each orb's territory colour.
-enum AuraMode: String, Codable, CaseIterable, Identifiable {
-    case aura, eclipse
-    var id: String { rawValue }
-    var label: String { self == .aura ? "Aura" : "Eclipse" }
-}
-
+/// seeded 3-stop ramp warped by two low-frequency fbm fields, a smoothstep edge, a chromatic rim and a static grain.
+/// Colours come from each orb's territory colour. live-45: Eclipse and the halo are out (T: titles wash out / "way too
+/// distracting"); the edge feather has a floor in on-screen points, the grain is sized in points, and the stops run
+/// darker → lighter ("Contrast"). Old saved values (mode / haloReach / eclipseHalo keys) still load; the keys are ignored.
 struct AuraLook: Codable, Equatable {
-    var mode: AuraMode = .aura
     // T's values (2026-10-26, Eclipse · dark · Map cluster) = the defaults until T dials on device.
     var spread = 0.82           // gradient spread
     var warp = 1.36             // the fbm warp of the ramp
     var softness = 0.09         // edge softness (orb radii)
-    var haloReach = 0.34        // gaussian halo reach (orb radii)
-    var rim = 0.45              // rim light (Aura: the rim colour toward the edge; Eclipse: the crescent)
+    var softnessFloor = 4.0     // live-45 — the feather is never narrower than this many on-screen points
+    var rim = 0.45              // rim light (the rim colour toward the edge)
     var fringe = 0.65           // chromatic fringe (the edge at three radii, red outermost)
     var grain = 1.0
+    var grainSize = 1.0         // live-45 — grain cell in on-screen points (a per-pixel hash is too fine on a 3× phone)
+    var contrast = 1.0          // live-45 — × (stop A 0.18 darker, stop C 0.10 lighter in OKLCH L); 0 = live-44's stops
     var drift = false           // slow gradient flow; on → the Map renders at 30 fps (T asked for motion)
     var hueSpread = 40.0        // degrees: stops A / C sit at −35° / +45° of the territory hue at 40°
-    var eclipseHalo = TunerHSL(hex: "FF6E21")
     var studyPalettes = false   // DEBUG comparison: the study's seven families by territory index
 
     init() {}
@@ -1442,24 +1440,25 @@ struct AuraLook: Codable, Equatable {
         let c = try decoder.container(keyedBy: CodingKeys.self)
         let d = AuraLook()
         func v<T: Decodable>(_ k: CodingKeys, _ def: T) -> T { ((try? c.decodeIfPresent(T.self, forKey: k)) ?? nil) ?? def }
-        mode = v(.mode, d.mode); spread = v(.spread, d.spread); warp = v(.warp, d.warp); softness = v(.softness, d.softness)
-        haloReach = v(.haloReach, d.haloReach); rim = v(.rim, d.rim); fringe = v(.fringe, d.fringe); grain = v(.grain, d.grain)
-        drift = v(.drift, d.drift); hueSpread = v(.hueSpread, d.hueSpread); eclipseHalo = v(.eclipseHalo, d.eclipseHalo)
-        studyPalettes = v(.studyPalettes, d.studyPalettes)
+        spread = v(.spread, d.spread); warp = v(.warp, d.warp); softness = v(.softness, d.softness)
+        softnessFloor = v(.softnessFloor, d.softnessFloor); rim = v(.rim, d.rim); fringe = v(.fringe, d.fringe)
+        grain = v(.grain, d.grain); grainSize = v(.grainSize, d.grainSize); contrast = v(.contrast, d.contrast)
+        drift = v(.drift, d.drift); hueSpread = v(.hueSpread, d.hueSpread); studyPalettes = v(.studyPalettes, d.studyPalettes)
     }
 
-    /// The orb sprite grows to cover the halo: radius × (1 + 2.6·reach + softness). At 2.6 reach-widths the gaussian is
-    /// e^−10 (invisible in 8 bit); the study stops at 3.2.
-    var spriteExtent: Double { max(1 + 2.6 * max(haloReach, 0.02) + softness, (1 + softness) / max(0.5, 1 - fringe * 0.045)) }
+    /// The largest feather the sprite makes room for (orb radii): the softness, or — with a floor — up to 0.3 radii, so a
+    /// small orb's points floor can widen its edge that far (the shader caps it there too).
+    var maxFeather: Double { max(softness, softnessFloor > 0 ? 0.3 : 0) }
+    /// live-45 — no halo: the sprite covers the soft edge and the chromatic fringe's outermost (red) disc only.
+    var spriteExtent: Double { (1 + maxFeather) / max(0.5, 1 - fringe * 0.045) }
 
-    /// Apply a Copy-values `aura` block; unknown keys are ignored.
+    /// Apply a Copy-values `aura` block; unknown keys (live-43/44's mode, haloReach, eclipseHalo) are ignored.
     mutating func apply(exportJSON o: [String: Any]) {
         func d(_ k: String) -> Double? { (o[k] as? NSNumber)?.doubleValue }
-        if let m = (o["mode"] as? String).flatMap(AuraMode.init(rawValue:)) { mode = m }
         if let v = d("spread") { spread = v }; if let v = d("warp") { warp = v }; if let v = d("softness") { softness = v }
-        if let v = d("haloReach") { haloReach = v }; if let v = d("rim") { rim = v }; if let v = d("fringe") { fringe = v }
-        if let v = d("grain") { grain = v }; if let b = o["drift"] as? Bool { drift = b }; if let v = d("hueSpread") { hueSpread = v }
-        if let h = o["eclipseHalo"] as? String { eclipseHalo = TunerHSL(hex: h.replacingOccurrences(of: "#", with: "")) }
+        if let v = d("softnessFloor") { softnessFloor = v }; if let v = d("rim") { rim = v }; if let v = d("fringe") { fringe = v }
+        if let v = d("grain") { grain = v }; if let v = d("grainSize") { grainSize = v }; if let v = d("contrast") { contrast = v }
+        if let b = o["drift"] as? Bool { drift = b }; if let v = d("hueSpread") { hueSpread = v }
     }
 }
 
@@ -1713,9 +1712,9 @@ extension AppearanceTuning {
             + "\"highlightIntensity\":\(n(g.highlightIntensity)),\"tiltResponse\":\(n(g.tiltResponse)),\"label\":\(c(g.label)),"
             + "\"topArc\":\(n(g.topArc)),\"bottomArc\":\(n(g.bottomArc)),\"arcSpan\":\(n(g.arcSpan)),\"arcThickness\":\(n(g.arcThickness)),"
             + "\"arcSoftness\":\(n(g.arcSoftness)),\"dim\":\(n(g.dim)),\"tiltLight\":\(g.tiltLight),\"tiltSmoothing\":\(n(g.tiltSmoothing))},"
-            + "\"aura\":{\"mode\":\"\(a.mode.rawValue)\",\"spread\":\(n(a.spread)),\"warp\":\(n(a.warp)),\"softness\":\(n(a.softness)),"
-            + "\"haloReach\":\(n(a.haloReach)),\"rim\":\(n(a.rim)),\"fringe\":\(n(a.fringe)),\"grain\":\(n(a.grain)),"
-            + "\"drift\":\(a.drift),\"hueSpread\":\(n(a.hueSpread)),\"eclipseHalo\":\(c(a.eclipseHalo))},"
+            + "\"aura\":{\"spread\":\(n(a.spread)),\"warp\":\(n(a.warp)),\"softness\":\(n(a.softness)),"
+            + "\"softnessFloor\":\(n(a.softnessFloor)),\"rim\":\(n(a.rim)),\"fringe\":\(n(a.fringe)),\"grain\":\(n(a.grain)),"
+            + "\"grainSize\":\(n(a.grainSize)),\"contrast\":\(n(a.contrast)),\"drift\":\(a.drift),\"hueSpread\":\(n(a.hueSpread))},"
             + "\"outline\":{\"ringWidth\":\(n(ol.ringWidth)),\"ringOpacityDark\":\(n(ol.ringOpacityDark)),"
             + "\"ringOpacityLight\":\(n(ol.ringOpacityLight)),\"fillOpacity\":\(n(ol.fillOpacity))}}"
     }
@@ -1760,13 +1759,26 @@ extension AppearanceTuning {
                 g.apply(exportJSON: block)
                 return g == t.glass
             }(), ""),
-            ("aura-defaults-are-T's-2026-10-26-values (spread 0.82 · warp 1.36 · soft 0.09 · reach 0.34 · rim 0.45 · fringe 0.65 · grain 1 · drift off)", {
+            ("aura-defaults-are-T's-2026-10-26-values + live-45 (spread 0.82 · warp 1.36 · soft 0.09 · floor 4 pt · rim 0.45 · fringe 0.65 · grain 1 @ 1 pt · contrast 1 · drift off · no halo: extent 1.34)", {
                 let a = t.aura
-                return a.mode == .aura && a.spread == 0.82 && a.warp == 1.36 && a.softness == 0.09 && a.haloReach == 0.34
-                    && a.rim == 0.45 && a.fringe == 0.65 && a.grain == 1.0 && !a.drift && a.hueSpread == 40 && a.eclipseHalo.hex == "FF6E21"
+                return a.spread == 0.82 && a.warp == 1.36 && a.softness == 0.09 && a.softnessFloor == 4 && a.rim == 0.45
+                    && a.fringe == 0.65 && a.grain == 1.0 && a.grainSize == 1 && a.contrast == 1 && !a.drift && a.hueSpread == 40
+                    && abs(a.spriteExtent - 1.3 / (1 - 0.65 * 0.045)) < 1e-9
+            }(), String(format: "extent %.3f", t.aura.spriteExtent)),
+            ("aura-live44-saved-values-load (mode / haloReach / eclipseHalo ignored, the rest kept)", {
+                let old = #"{"mode":"eclipse","spread":1.1,"haloReach":0.5,"eclipseHalo":{"h":20,"s":1,"l":0.5},"grain":0.4}"#
+                guard let a = try? JSONDecoder().decode(AuraLook.self, from: Data(old.utf8)) else { return false }
+                var b = AuraLook(); b.apply(exportJSON: ["mode": "eclipse", "spread": 1.1, "haloReach": 0.5, "eclipseHalo": "#FF6E21", "grain": 0.4])
+                return a.spread == 1.1 && a.grain == 0.4 && a.softnessFloor == 4 && b == a
+            }(), ""),
+            ("aura-export-drops-eclipse-and-halo-keys", {
+                guard let all = try? JSONSerialization.jsonObject(with: Data(mapDarkJSON(t).utf8)) as? [String: Any],
+                      let au = all["aura"] as? [String: Any] else { return false }
+                return au["mode"] == nil && au["haloReach"] == nil && au["eclipseHalo"] == nil && au["softnessFloor"] != nil
             }(), ""),
             ("aura-and-outline-export-apply-back", {
-                var m = MapDarkTuning(); m.aura.mode = .eclipse; m.aura.warp = 0.5; m.aura.drift = true; m.outline.fillOpacity = 0.2
+                var m = MapDarkTuning(); m.aura.contrast = 1.7; m.aura.warp = 0.5; m.aura.drift = true; m.outline.fillOpacity = 0.2
+                m.aura.softnessFloor = 6; m.aura.grainSize = 1.5
                 m.orbLook = .outline
                 var back = MapDarkTuning()
                 guard let all = try? JSONSerialization.jsonObject(with: Data(mapDarkJSON(m).utf8)) as? [String: Any] else { return false }

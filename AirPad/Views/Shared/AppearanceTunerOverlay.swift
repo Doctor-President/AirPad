@@ -293,7 +293,7 @@ struct AppearanceTunerSheet<G: Gesture>: View {
     /// The one-line value a closed header shows.
     private func summary(_ section: TunerSection) -> String {
         switch section {
-        case .mapDark:         return "#\(m.fieldHex) · " + (m.orbLook == .aura ? m.aura.mode.label : m.orbLook.label)
+        case .mapDark:         return "#\(m.fieldHex) · " + m.orbLook.label
         case .cardContent:     return tuner.state.cardContent.label
         case .captureControls: return tuner.state.captureControls.label
         case .floatingButtons: return tuner.state.floatingButtons.label
@@ -593,7 +593,7 @@ struct AppearanceTunerSheet<G: Gesture>: View {
 
     @ViewBuilder private var mapDarkSection: some View {
         if !dark {
-            note("Dark mode only, except the Aura and Outline orb looks (below), which also show on the light Map.")
+            note("Dark mode only, except the Outline orb look (below), which also shows on the light Map.")
         }
         subhead("Background")
         TunerColorRow(label: "Ground", color: m.ground, defaultHex: MapDarkTuning.today.ground.hex, id: "mapGround") { c in
@@ -660,7 +660,9 @@ struct AppearanceTunerSheet<G: Gesture>: View {
         .accessibilityIdentifier("tunerMapOrbLook")
         if m.orbLook == .fresnel { fresnelControls }
         if m.orbLook == .glass { orbGlassControls }
-        if m.orbLook == .aura { auraControls }
+        if m.orbLook == .aura {
+            if dark { auraControls } else { note("Aura is for the dark Map; the light Map draws Flat for it (live-45-B). Switch to dark mode to tune it.") }
+        }
         if m.orbLook == .outline { outlineControls }
         Button("Reset the Map section", role: .destructive) { setMap { $0 = .today } }
             .font(.caption).buttonStyle(.bordered).controlSize(.small)
@@ -746,40 +748,36 @@ struct AppearanceTunerSheet<G: Gesture>: View {
              + "dark text reads better.")
     }
 
-    // live-43 — Aura (port of the study T approved 2026-10-26); both grounds.
+    // live-43 — Aura (port of the study T approved 2026-10-26). live-45: dark Map only; no Eclipse, no halo.
     @ViewBuilder private var auraControls: some View {
         let a = m.aura
-        Picker("Aura mode", selection: Binding(get: { a.mode }, set: { x in setA { $0.mode = x } })) {
-            ForEach(AuraMode.allCases) { Text($0.label).tag($0) }
-        }
-        .pickerStyle(.segmented)
-        .accessibilityIdentifier("tunerAuraMode")
         slider("Gradient spread", a.spread, 0.4...2, 0.01, f2(a.spread), id: "auSpread") { x in setA { $0.spread = x } }
         slider("Warp", a.warp, 0...1.5, 0.01, f2(a.warp), id: "auWarp") { x in setA { $0.warp = x } }
-        slider("Edge softness", a.softness, 0.01...0.25, 0.005, f2(a.softness), id: "auSoft") { x in setA { $0.softness = x } }
-        slider("Halo reach", a.haloReach, 0.05...1.4, 0.01, f2(a.haloReach), id: "auReach") { x in setA { $0.haloReach = x } }
+        slider("Edge softness", a.softness, 0.01...0.3, 0.005, f2(a.softness), id: "auSoft") { x in setA { $0.softness = x } }
+        slider("Softness floor (on screen)", a.softnessFloor, 0...10, 0.5, String(format: "%.1f pt", a.softnessFloor), id: "auSoftFloor") { x in
+            setA { $0.softnessFloor = x }
+        }
+        slider("Contrast (dark → light in each orb)", a.contrast, 0...2, 0.01, f2(a.contrast), id: "auContrast") { x in setA { $0.contrast = x } }
         slider("Rim light", a.rim, 0...1, 0.01, f2(a.rim), id: "auRim") { x in setA { $0.rim = x } }
         slider("Chromatic fringe", a.fringe, 0...1.5, 0.01, f2(a.fringe), id: "auFringe") { x in setA { $0.fringe = x } }
         slider("Grain", a.grain, 0...1, 0.01, f2(a.grain), id: "auGrain") { x in setA { $0.grain = x } }
+        slider("Grain size (on screen)", a.grainSize, 0.5...2, 0.05, String(format: "%.2f pt", a.grainSize), id: "auGrainSize") { x in
+            setA { $0.grainSize = x }
+        }
         slider("Hue spread (territory colour)", a.hueSpread, 0...90, 1, String(format: "%.0f°", a.hueSpread), id: "auHueSpread") { x in
             setA { $0.hueSpread = x }
-        }
-        if a.mode == .eclipse {
-            TunerColorRow(label: "Eclipse halo", color: a.eclipseHalo, defaultHex: "FF6E21", id: "auEclipseHalo") { c in
-                setA { $0.eclipseHalo = c }
-            }
         }
         toggle("Drift (slow flow; the Map redraws at 30 fps while on)", a.drift, id: "auDrift") { b in setA { $0.drift = b } }
         #if DEBUG
         toggle("Study palettes (the study's 7 families by territory)", a.studyPalettes, id: "auStudy") { b in setA { $0.studyPalettes = b } }
         #endif
-        Button("Aura defaults (T's 2026-10-26 values)") { setA { $0 = AuraLook() } }
+        Button("Aura defaults (T's 2026-10-26 values, live-45)") { setA { $0 = AuraLook() } }
             .font(.caption).buttonStyle(.bordered).controlSize(.small)
             .accessibilityIdentifier("tunerAuraReset")
         note("Each orb's gradient is built from its territory colour: one stop turned back by the hue spread and darker, one "
-             + "lighter, one turned forward; the rim and halo sit opposite on the wheel (Eclipse: one warm halo, the colour above). "
-             + "The halo reaches past the orb, so dense clusters overlap. Labels: dark ink only on light gradients; Eclipse always "
-             + "light. Shows on the light and dark Map.")
+             + "lighter, one turned forward; Contrast pushes the first darker and the last lighter. The rim colour sits opposite "
+             + "on the wheel. The edge feather is the softness × the orb's radius, but never narrower than the floor in points, "
+             + "so small orbs stay soft too. No halo. Labels: dark ink only on light gradients. Dark Map only.")
     }
 
     // live-43-A — Outline; both grounds.

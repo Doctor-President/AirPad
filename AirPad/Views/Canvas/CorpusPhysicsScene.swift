@@ -536,6 +536,12 @@ final class CorpusPhysicsScene: SKScene {
             }
         }
 
+        #if DEBUG || TESTFLIGHT
+        // live-44 — Aura bakes each orb's colours when it styles it; a sync can bring the territory colours later
+        // (launching straight into Aura showed neutral grey orbs until a look switch). Restyle on the next frame.
+        if !auraStyleKey.isEmpty { auraStyleKey = "stale" }
+        #endif
+
         // Canonical resting state: capture target positions and scales from the layout.
         // Reads `positionMap` / `nodeRadii` (the layout's target outputs), not mid-animation
         // sprite state — so engagements during a layout transition still resolve to the

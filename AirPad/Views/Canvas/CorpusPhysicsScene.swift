@@ -1873,6 +1873,7 @@ final class CorpusPhysicsScene: SKScene {
                 }
             }
         }
+        startAuraSizeScriptIfAsked()
         #endif
         // White-flash fix: a re-presented scene must re-signal its first frame so
         // CanvasView re-hides then reveals (each mount has the backing gap).
@@ -1936,6 +1937,9 @@ final class CorpusPhysicsScene: SKScene {
 
         updateGridWarp()      // grid warp — SHIPS (baked 2026-09-14)
         applyMapComp()        // Brief AS — push the live Map-comp levers (dark only)
+        #if DEBUG
+        syncLayoutRings()     // live-44 — `-AuraLayoutRings` audit overlay
+        #endif
 
         // SB83c: Coast camera with friction. Same pan math as SB83a (`* cameraNode.xScale`).
         if coastVelocity != .zero {
@@ -3913,11 +3917,13 @@ final class CorpusPhysicsScene: SKScene {
     /// SKShader of its own (the orb shader's binding budget is untouched): per orb a seeded 3-stop ramp warped by two
     /// low-frequency fbm fields, a smoothstep edge, a gaussian halo, a chromatic rim (the edge at three radii, red
     /// outermost), the Eclipse crescent (an offset disc) and a static hash grain. The sprite is enlarged to cover the
-    /// halo (u_au col 2.y = extent in orb radii). The study composites over an opaque ground; here the result over the
-    /// KNOWN ground (u_au col 3) is emitted premultiplied with alpha = coverage, so it is exact over the plain ground and
-    /// lets the dots / neighbours show through where the orb is not opaque (the dark halo is purely additive).
+    /// halo (a_au_b.w = that sprite's extent in orb radii — live-44: per orb, written with its size by applyOrbSpriteSize;
+    /// u_au col 2.y keeps the look's extent but the shader no longer reads it). The study composites over an opaque
+    /// ground; here the result over the KNOWN ground (u_au col 3) is emitted premultiplied with alpha = coverage, so it is
+    /// exact over the plain ground and lets the dots / neighbours show through where the orb is not opaque (the dark halo
+    /// is purely additive).
     /// u_au = (spread, warp, softness, reach), (rim, fringe, grain, eclipse), (dark ground, extent, drift, 0), (ground rgb, 0).
-    /// a_au_a = (stop A rgb, seed), a_au_b / a_au_c = stops B / C, a_au_r = the rim / halo colour.
+    /// a_au_a = (stop A rgb, seed), a_au_b = (stop B rgb, this sprite's extent), a_au_c = stop C, a_au_r = the rim / halo colour.
     private lazy var auraShader: SKShader = {
         let src = """
         float auHash(vec2 p) { vec3 p3 = fract(vec3(p.xyx) * 0.1031); p3 += dot(p3, p3.yzx + 33.33); return fract((p3.x + p3.y) * p3.z); }
@@ -3940,7 +3946,7 @@ final class CorpusPhysicsScene: SKScene {
             float spread = P0.x; float warp = P0.y; float s = P0.z; float reach = max(P0.w, 0.02);
             float rimK = P1.x; float fringe = P1.y; float grain = P1.z; float ecl = P1.w;
             vec3 bg = P3.rgb;
-            vec2 q = (v_tex_coord - vec2(0.5)) * (2.0 * P2.y);   // orb radii, y up
+            vec2 q = (v_tex_coord - vec2(0.5)) * (2.0 * a_au_b.w);   // orb radii, y up (this sprite's own extent)
             float d = length(q);
             vec3 A = a_au_a.rgb; vec3 B = a_au_b.rgb; vec3 C = a_au_c.rgb; vec3 Rc = a_au_r.rgb;
             float seed = a_au_a.w;
@@ -4023,7 +4029,7 @@ final class CorpusPhysicsScene: SKScene {
             auraDriftOn = false
             if !auraStyleKey.isEmpty {
                 auraStyleKey = ""
-                for (_, node) in nodeSprites { if let sp = node as? SKSpriteNode { unstyleAuraSprite(sp) } }
+                for (id, node) in nodeSprites { if let sp = node as? SKSpriteNode { unstyleAuraSprite(sp, nodeID: id) } }
             }
             return
         }
@@ -4049,24 +4055,20 @@ final class CorpusPhysicsScene: SKScene {
     }
 
     private func styleAuraSprite(_ sp: SKSpriteNode, nodeID: String, fill: UIColor, look a: AuraLook) {
-        if sp.userData == nil { sp.userData = NSMutableDictionary() }
-        let base = (sp.userData?["auraBase"] as? CGFloat) ?? sp.size.width
-        sp.userData?["auraBase"] = base
-        let e = CGFloat(a.spriteExtent)
-        sp.size = CGSize(width: base * e, height: base * e)
+        let e = a.spriteExtent
+        applyOrbSpriteSize(sp, nodeID: nodeID, extent: CGFloat(e))
         if sp.shader !== auraShader { sp.shader = auraShader }
         let st = auraStops(fill: fill, nodeID: nodeID, look: a)
         sp.setValue(SKAttributeValue(vectorFloat4: vector_float4(st.a.x, st.a.y, st.a.z, st.seed)), forAttribute: "a_au_a")
-        sp.setValue(SKAttributeValue(vectorFloat4: vector_float4(st.b, 0)), forAttribute: "a_au_b")
+        // .w = THIS sprite's extent (live-44): the shader maps the sprite to ± extent orb radii from the extent the
+        // sprite was actually sized with — a per-orb attribute, not the shared uniform.
+        sp.setValue(SKAttributeValue(vectorFloat4: vector_float4(st.b, Float(e))), forAttribute: "a_au_b")
         sp.setValue(SKAttributeValue(vectorFloat4: vector_float4(st.c, 0)), forAttribute: "a_au_c")
         sp.setValue(SKAttributeValue(vectorFloat4: vector_float4(st.r, 0)), forAttribute: "a_au_r")
     }
 
-    private func unstyleAuraSprite(_ sp: SKSpriteNode) {
-        if let base = sp.userData?["auraBase"] as? CGFloat {
-            sp.size = CGSize(width: base, height: base)
-            sp.userData?.removeObject(forKey: "auraBase")
-        }
+    private func unstyleAuraSprite(_ sp: SKSpriteNode, nodeID: String) {
+        applyOrbSpriteSize(sp, nodeID: nodeID, extent: 1)
         if sp.shader !== orbSpriteShader { sp.shader = orbSpriteShader }
     }
 
@@ -4157,21 +4159,138 @@ final class CorpusPhysicsScene: SKScene {
     }
     #endif
 
-    /// live-43 — the orb sprite's own (un-enlarged) width: tap boxes and the card zoom measure the orb, not an Aura halo
-    /// (Aura grows the sprite; userData "auraBase" keeps the orb's width). Identical to today for every other look.
-    private func orbBaseWidth(_ node: SKNode) -> CGFloat {
-        if let b = node.userData?["auraBase"] as? CGFloat { return b }
-        if let sp = node as? SKSpriteNode { return sp.size.width }
-        return node.frame.width / max(node.xScale, 0.0001)
+    /// live-44 — THE owner of an orb sprite's size; nothing else writes an orb sprite's `size`. Size = the LAYOUT diameter
+    /// (2 × nodeIntrinsicRadii — the radius the layout, physics and title are built for) × the look's extent (Aura's halo
+    /// room; 1 for every other look). Never derived from the sprite's current size: SKSpriteNode.size is in SCALED points
+    /// (getter AND setter multiply by xScale / yScale) and the per-frame scale (zoom ramp × reading band × regrowth)
+    /// moves all the time. live-43 read `size` back as the Aura base and re-wrote it at another scale (orbs too small /
+    /// too big by whatever their scale was at that moment), and lost the base when addNodeSprite replaced userData
+    /// (enlarged twice). So: write at scale 1, then put the scale back.
+    private func applyOrbSpriteSize(_ sp: SKSpriteNode, nodeID: String, extent: CGFloat) {
+        guard let r = nodeIntrinsicRadii[nodeID] else { return }
+        let w = 2 * r * extent
+        let sx = sp.xScale, sy = sp.yScale
+        sp.xScale = 1; sp.yScale = 1
+        if sp.size.width != w || sp.size.height != w { sp.size = CGSize(width: w, height: w) }
+        sp.xScale = sx; sp.yScale = sy
     }
 
-    /// Today's tap test (the orb's bounding box), measured on the orb rather than an Aura sprite's halo.
+    /// The orb's own LAYOUT width (unscaled; ×xScale = on the scene): tap boxes, the card zoom and the stroke measure
+    /// the orb, never an Aura halo or the sprite's (scaled) size.
+    private func orbBaseWidth(_ node: SKNode) -> CGFloat {
+        if let n = node.name, n.hasPrefix("node:"), let r = nodeIntrinsicRadii[String(n.dropFirst(5))] { return 2 * r }
+        return node.frame.width / max(abs(node.xScale), 0.0001)
+    }
+
+    /// Today's tap test (the orb's bounding box), measured on the orb's layout width rather than an Aura sprite's halo.
     private func orbContains(_ node: SKNode, _ scenePoint: CGPoint) -> Bool {
-        guard let b = node.userData?["auraBase"] as? CGFloat else { return node.contains(scenePoint) }
         let p = node.parent.map { convert(scenePoint, to: $0) } ?? scenePoint
-        let half = b / 2 * abs(node.xScale)
+        let half = orbBaseWidth(node) / 2 * abs(node.xScale)
         return abs(p.x - node.position.x) <= half && abs(p.y - node.position.y) <= half
     }
+
+    #if DEBUG
+    // live-44 — orb-size audit. `-AuraLayoutRings` draws each orb's LAYOUT radius (the one the layout, physics and
+    // title use) as a 1 px #FF00FF ring; `-AuraSizeScript <start-s>` runs launch · zoom out · zoom in · pan · look
+    // switches · add an entry · background / foreground, and after each step logs `[AURASIZE]` (layout vs drawn body
+    // radius, every orb) + writes tmp/aurasize/<n>-<step>.csv.
+    private var auraSizeStepIndex = 0
+    private static let auraLayoutRingsOn = ProcessInfo.processInfo.arguments.contains("-AuraLayoutRings")
+
+    /// The body radius the orb's CURRENT shader draws, in the sprite's own (unscaled) points — the shader's own mapping:
+    /// the orb shader fills the sprite; the Aura shader maps it to ± extent orb radii.
+    private func drawnBodyLocalRadius(_ sp: SKSpriteNode) -> CGFloat {
+        let unscaledW = sp.size.width / max(abs(sp.xScale), 0.0001)   // SKSpriteNode.size is in scaled points
+        guard sp.shader === auraShader else { return unscaledW / 2 }
+        let e = CGFloat(sp.value(forAttributeNamed: "a_au_b")?.vectorFloat4Value.w ?? 0)
+        return unscaledW / 2 / max(e, 0.0001)
+    }
+
+    private func auditOrbSizes(_ step: String) {
+        auraSizeStepIndex += 1
+        let cs = max(cameraNode.xScale, 0.0001), px = view?.contentScaleFactor ?? 3
+        let titles = Dictionary(currentNodes.map { ($0.id, $0.title) }, uniquingKeysWith: { a, _ in a })
+        var rows = ["id,title,shader,layoutR,drawnR,unscaledSpriteW,xScale,errPx"]
+        var bad = 0, aura = 0, maxErr: CGFloat = 0, worst = "-"
+        for (id, node) in nodeSprites {
+            guard let sp = node as? SKSpriteNode, let r = nodeIntrinsicRadii[id] else { continue }
+            let isAura = sp.shader === auraShader
+            if isAura { aura += 1 }
+            let d = drawnBodyLocalRadius(sp)
+            let err = abs(d - r) * abs(sp.xScale) / cs * px
+            if err > 1 { bad += 1 }
+            let t = (titles[id] ?? "").replacingOccurrences(of: ",", with: " ").prefix(40)
+            if err > maxErr { maxErr = err; worst = "\(t) layout=\(String(format: "%.1f", r)) drawn=\(String(format: "%.1f", d))" }
+            rows.append("\(id),\(t),\(isAura ? "aura" : "orb"),\(String(format: "%.2f,%.2f,%.2f,%.3f,%.2f", r, d, sp.size.width / max(abs(sp.xScale), 0.0001), sp.xScale, err))")
+        }
+        let dir = URL(fileURLWithPath: NSTemporaryDirectory()).appendingPathComponent("aurasize")
+        try? FileManager.default.createDirectory(at: dir, withIntermediateDirectories: true)
+        try? rows.joined(separator: "\n").write(to: dir.appendingPathComponent(String(format: "%02d-%@.csv", auraSizeStepIndex, step)),
+                                               atomically: true, encoding: .utf8)
+        let look = AppearanceTuning.mapDark.map { $0.orbLook == .aura ? "\($0.aura.mode)" : "\($0.orbLook)" } ?? "flat"
+        let line = String(format: "[AURASIZE] step=%@ look=%@ ground=%@ cam=%.2f orbs=%d aura=%d bad>1px=%d maxErrPx=%.1f worst=%@",
+                          step, look, currentIsLight ? "light" : "dark", cs, rows.count - 1, aura, bad, maxErr, worst)
+        NSLog("%@", line); print(line)
+    }
+
+    /// Per frame (with `-AuraLayoutRings`): a 1 px ring at each orb's layout radius, under its title.
+    private func syncLayoutRings() {
+        guard Self.auraLayoutRingsOn else { return }
+        let cs = max(cameraNode.xScale, 0.0001), px = view?.contentScaleFactor ?? 3
+        for (id, node) in nodeSprites {
+            guard let r = nodeIntrinsicRadii[id] else { continue }
+            var ring = node.childNode(withName: "layoutRing") as? SKShapeNode
+            if ring == nil || (ring?.userData?["r"] as? CGFloat) != r {
+                ring?.removeFromParent()
+                let s = SKShapeNode(circleOfRadius: r)
+                s.name = "layoutRing"; s.fillColor = .clear; s.zPosition = 1.5
+                s.strokeColor = UIColor(red: 1, green: 0, blue: 1, alpha: 1)   // #FF00FF
+                s.userData = ["r": r]
+                node.addChild(s); ring = s
+            }
+            ring?.lineWidth = cs / max(abs(node.xScale), 0.0001) / px
+        }
+    }
+
+    private func startAuraSizeScriptIfAsked() {
+        guard let start = UserDefaults.standard.string(forKey: "AuraSizeScript").flatMap(Double.init) else { return }
+        func look(_ f: @escaping (inout MapDarkTuning) -> Void) -> () -> Void { { f(&AppearanceTuner.shared.state.mapDark) } }
+        let steps: [(String, () -> Void)] = [
+            ("launch", {}),
+            ("zoomOut", { [weak self] in self?.cameraNode.setScale(4.0); self?.applyOrbScales() }),
+            ("zoomIn", { [weak self] in self?.cameraNode.setScale(0.3); self?.applyOrbScales() }),
+            ("pan", { [weak self] in
+                guard let self else { return }
+                self.cameraNode.position.x += 220 * self.cameraNode.xScale
+                self.cameraNode.position.y -= 160 * self.cameraNode.xScale
+            }),
+            ("toFlat", look { $0.orbLook = .flat }),
+            ("toAura", look { $0.orbLook = .aura; $0.aura.mode = .aura }),
+            ("toEclipse", look { $0.orbLook = .aura; $0.aura.mode = .eclipse }),
+            ("backToAura", look { $0.orbLook = .aura; $0.aura.mode = .aura }),
+            ("addEntry", { NotificationCenter.default.post(name: Notification.Name("AuraSizeAddEntry"), object: nil) }),
+            ("zoomMid", { [weak self] in self?.cameraNode.setScale(1.0); self?.applyOrbScales() }),
+            ("bgReady", {}),   // the shell backgrounds + foregrounds the app here; `foreground` audits on return
+            ("toGlass", look { $0.orbLook = .glass }),
+            ("toOutline", look { $0.orbLook = .outline }),
+            ("toFlatEnd", look { $0.orbLook = .flat }),
+        ]
+        let bg = steps.firstIndex { $0.0 == "bgReady" } ?? steps.count
+        for (i, step) in steps.enumerated() {
+            let t0 = start + Double(i) * 6 + (i > bg ? 12 : 0)   // room to background + foreground (shell) first
+            DispatchQueue.main.asyncAfter(deadline: .now() + t0) { [weak self] in
+                print("[AURASIZE-STEP] \(step.0)"); NSLog("[AURASIZE-STEP] %@", step.0)
+                step.1()
+                self?.lastActivityTime = CACurrentMediaTime()
+            }
+            DispatchQueue.main.asyncAfter(deadline: .now() + t0 + 3) { [weak self] in self?.auditOrbSizes(step.0) }
+        }
+        NotificationCenter.default.addObserver(forName: UIApplication.willEnterForegroundNotification, object: nil,
+                                               queue: .main) { [weak self] _ in
+            DispatchQueue.main.asyncAfter(deadline: .now() + 2) { self?.auditOrbSizes("foreground") }
+        }
+    }
+    #endif
 
     // MARK: - Helpers
 
@@ -4188,7 +4307,9 @@ final class CorpusPhysicsScene: SKScene {
         nodeID: String
     ) -> SKNode {
         let sprite = SKSpriteNode(texture: whiteUVTexture)  // texture → valid v_tex_coord
-        sprite.size = CGSize(width: radius * 2, height: radius * 2)
+        sprite.name = "node:\(nodeID)"
+        assert(nodeIntrinsicRadii[nodeID] == radius, "addNodeSprite records the layout radius before makeShape")
+        applyOrbSpriteSize(sprite, nodeID: nodeID, extent: 1)   // live-44 — the one size owner (addNodeSprite set the radius)
         sprite.zPosition = 1
         sprite.shader = orbSpriteShader
 

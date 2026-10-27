@@ -1024,7 +1024,7 @@ final class CorpusPhysicsScene: SKScene {
         case .flat: inkKey = washOn ? "wa\(washStyleKey)\(m.wash.spread)\(m.wash.warp)" : "flat"
         case .riso, .gradient: inkKey = "s2"
         }
-        if let s2 { inkKey = "s2\(s2)\(study2StyleKey)\(currentIsLight)" }   // live-49
+        if let s2 { inkKey = "s2\(s2)\(study2StyleKey)\(currentIsLight)\(m.lightGlass.label.hex)" }   // live-49 / 50 (label colour)
         if inkKey != lastTitleInkKey { lastTitleInkKey = inkKey; restyleLabels() }
     }
 
@@ -1034,7 +1034,8 @@ final class CorpusPhysicsScene: SKScene {
     /// move visibly: Δ(highlight centre, arc direction) × the largest on-screen orb > 0.5 px. Smaller drift is held back
     /// (not pushed) until it adds up to a visible step; while only the tilt moves, the Map renders at 30 fps.
     private func syncGlassOrbs() {
-        guard !currentIsLight, let m = mapTuning, m.orbLook == .glass else { return }
+        // live-50: on the light Map too (Light Glass), with the same shared tilt settings and the same visible-step wake.
+        guard let m = mapTuning, m.orbLook == .glass else { return }
         func o(_ n: String) -> SKUniform? { orbSpriteShader.uniforms.first { $0.name == n } }
         var tilt = FlutedGlass.shared.tiltRunning ? GlassMotion.shared.tilt : .zero
         #if DEBUG
@@ -1048,6 +1049,15 @@ final class CorpusPhysicsScene: SKScene {
         smoothedGlassTilt += (tilt - smoothedGlassTilt) * a
         let k = Float(m.glass.tiltResponse) * 0.16
         let off = smoothedGlassTilt * k
+        if currentIsLight {
+            // Light Glass: the glint + arcs lean with the same offset (orb radii); syncStudy2 pushes it with u_s2b.
+            let dk = SIMD2<Float>(Float(cameraNode.xScale), Float(nodeOnScreenDiameter.count))
+            if dk != maxOrbDiameterKey { maxOrbDiameterKey = dk; maxOrbOnScreenPt = nodeOnScreenDiameter.values.max() ?? 0 }
+            let px = Float(maxOrbOnScreenPt * glyphContentScale)
+            // a visible step: Δoffset (radii) × the largest orb's radius in px
+            if simd_distance(off, drawnLightGlassOff) * px / 2 > 0.5 { drawnLightGlassOff = off; glassTiltMoved = true }
+            return
+        }
         var hc = SIMD2<Float>(-0.16 + off.x, 0.19 + off.y)
         let hl = simd_length(hc); if hl > 0.33 { hc *= 0.33 / hl }   // keep it on the bead
         let ad = simd_normalize(SIMD2<Float>(off.x * 4, 1 + off.y * 4))   // up, leaning with the (subtle) light
@@ -4413,6 +4423,7 @@ final class CorpusPhysicsScene: SKScene {
             float rPt = 1.0 / (max(fwidth(v_tex_coord.x), 0.000001) * 2.0 * ext * scale);
             float lod = P2.x > 0.5 ? 0.0 : (P2.w > 0.0 ? smoothstep(P2.w - 3.0, P2.w + 3.0, rPt) : 1.0);
             float g = s2Hash(floor(pt) * 1.37 + 3.1) - 0.5;
+            float aq = max(fwidth(d), 0.0001);                  // ~1 px in orb radii (live-50, Light Glass's arcs)
             vec4 outc;
             if (!glass) {
                 // ---- the study's EASY looks: no fbm. Stops arrive sorted dark -> light. ----
@@ -4459,12 +4470,38 @@ final class CorpusPhysicsScene: SKScene {
                 gg += 0.05 * smoothstep(-0.3, 0.9, q.y);
                 float caus = smoothstep(0.45, 1.0, d) * smoothstep(0.15, -0.85, q.y);
                 gg = mix(gg, mix(tc, vec3(1.0), 0.25), caus * 0.45 * spread);
-                float eb = exp(-pow((d - 0.982) / (0.016 + s * 0.6), 2.0));
+                // live-50 — dark Glass's controls (u_s2b), each a no-op at its default: B0 = (top arc, bottom arc, half
+                // span rad, thickness), B1 = (arc softness, light dir xy, colour fringe), B2 = (glint 1/size², inner
+                // shadow, glint offset xy from the tilt).
+                vec4 B0 = u_s2b[0]; vec4 B1 = u_s2b[1]; vec4 B2 = u_s2b[2];
+                vec2 ldir = B1.yz;                              // (0, 1) unless the tilt leans it
+                vec2 qd = q / max(d, 0.001);
+                float lit = dot(qd, ldir) * 0.5 + 0.5;
+                if (B2.y > 0.0) { gg *= 1.0 - B2.y * smoothstep(0.6, 0.97, d) * mix(1.0, 0.35, lit); }   // inner shadow (0 = none)
+                vec3 fr = vec3(1.0 + B1.w * 0.012, 1.0, 1.0 - B1.w * 0.012);         // colour fringe: one radius per channel
+                float ebw = 0.016 + s * 0.6;
+                vec3 eb = B1.w > 0.0 ? exp(-pow((d * fr - vec3(0.982)) / ebw, vec3(2.0)))
+                                     : vec3(exp(-pow((d - 0.982) / ebw, 2.0)));
                 gg = mix(gg, gg * mix(vec3(1.0), tc, 0.9) * 0.8, eb * fringe);
-                float arc = exp(-pow((d - 0.92) / 0.045, 2.0)) * smoothstep(0.2, 0.95, q.y / max(d, 0.001));
+                float arc = exp(-pow((d - 0.92) / 0.045, 2.0)) * smoothstep(0.2, 0.95, dot(qd, ldir));
                 gg = mix(gg, vec3(1.0), arc * rimK);
-                vec2 gq = q - vec2(-0.38, 0.52);
-                gg = mix(gg, vec3(1.0), exp(-dot(gq, gq) * 70.0) * rimK * 0.85);
+                vec2 gq = q - vec2(-0.38, 0.52) - B2.zw;
+                gg = mix(gg, vec3(1.0), exp(-dot(gq, gq) * B2.x) * rimK * 0.85);
+                if (B0.x + B0.y > 0.0 && d > 1.0 - max(B0.w, 2.0 * aq) - 0.02) {   // only in the rim band
+                    // rim light: dark Glass's top (key) + bottom (bounce) arcs, WHITE and screened (light catching the rim)
+                    float ca = clamp(dot(qd, ldir), -1.0, 1.0);
+                    float tTop = acos(ca); float tBot = 3.14159265 - tTop;
+                    float hSpan = max(B0.z, 0.01);
+                    float a0e = hSpan * (1.0 - clamp(B1.x, 0.0, 1.0));
+                    float angTop = 1.0 - smoothstep(a0e, hSpan + 0.0001, tTop);
+                    float angBot = 1.0 - smoothstep(a0e, hSpan + 0.0001, tBot);
+                    float th = max(B0.w, 2.0 * aq);
+                    vec3 rr3 = d * fr;
+                    vec3 rad = smoothstep(vec3(1.0 - th), vec3(1.0 - aq), rr3) * (1.0 - smoothstep(vec3(1.0 - aq), vec3(1.0 + aq), rr3));
+                    rad = rad * rad;
+                    vec3 al = clamp(rad * (B0.x * angTop + B0.y * angBot), 0.0, 1.0);
+                    gg = vec3(1.0) - (vec3(1.0) - gg) * (vec3(1.0) - al);
+                }
                 vec3 res = mix(col, gg, cov);
                 float a = 1.0 - (1.0 - cov) * S;
                 res += vec3(g) * grain * 0.04 * a;
@@ -4481,7 +4518,8 @@ final class CorpusPhysicsScene: SKScene {
             SKAttribute(name: "a_au_c", type: .vectorFloat4),
         ]
         shader.uniforms = [SKUniform(name: "u_s2", matrixFloat4x4: matrix_identity_float4x4),
-                           SKUniform(name: "u_noise", texture: StudyNoise.texture)]
+                           SKUniform(name: "u_noise", texture: StudyNoise.texture),
+                           SKUniform(name: "u_s2b", matrixFloat4x4: Self.lightGlassExtras(LightGlassLook(), tilt: .zero))]   // live-50
         return shader
     }()
 
@@ -4509,6 +4547,10 @@ final class CorpusPhysicsScene: SKScene {
                           Float(kind == .lightGlass ? Self.lodRadiusPt : 0)),
             vector_float4(ground.x, ground.y, ground.z, 0)))
         if let uu = study2Shader.uniforms.first, uu.matrixFloat4x4Value != u { uu.matrixFloat4x4Value = u }
+        if kind == .lightGlass, let ub = study2Shader.uniforms.first(where: { $0.name == "u_s2b" }) {   // live-50
+            let b = Self.lightGlassExtras(m.lightGlass, tilt: drawnLightGlassOff)
+            if ub.matrixFloat4x4Value != b { ub.matrixFloat4x4Value = b }
+        }
         let ext = v.spriteExtent
         let blend: SKBlendMode = kind == .riso ? (currentIsLight ? .multiply : .screen) : .alpha
         let key = "\(kind)|\(currentIsLight)|\(ext)|\(nodeSprites.count)"
@@ -4528,6 +4570,19 @@ final class CorpusPhysicsScene: SKScene {
             sp.setValue(SKAttributeValue(vectorFloat4: vector_float4(st.c, 0)), forAttribute: "a_au_c")
         }
     }
+
+    /// live-50 — Light Glass's dark-Glass controls for u_s2b. `tilt` = the drawn light offset (orb radii; zero = the study's
+    /// light from straight above and its glint at (−0.38, 0.52)).
+    static func lightGlassExtras(_ g: LightGlassLook, tilt: SIMD2<Float>) -> simd_float4x4 {
+        let ld = simd_normalize(SIMD2<Float>(tilt.x * 4, 1 + tilt.y * 4))
+        return simd_float4x4(columns: (
+            vector_float4(Float(g.topArc), Float(g.bottomArc), Float(g.arcSpan * .pi / 360), Float(g.arcThickness)),
+            vector_float4(Float(g.arcSoftness), ld.x, ld.y, Float(g.dispersion)),
+            vector_float4(Float(1 / max(g.highlightSize * g.highlightSize, 0.0001)), Float(g.innerShadow), tilt.x, tilt.y),
+            vector_float4(0, 0, 0, 0)))
+    }
+    /// live-50 — the Light Glass light offset last pushed (moves only by a visible step, as dark Glass's).
+    private var drawnLightGlassOff = SIMD2<Float>(0, 0)
 
     private func unstyleStudy2Sprite(_ sp: SKSpriteNode, nodeID: String) {
         applyOrbSpriteSize(sp, nodeID: nodeID, extent: 1)
@@ -4948,6 +5003,7 @@ final class CorpusPhysicsScene: SKScene {
         // live-43 — Outline: light ink on the dark Map, dark ink on the light one (the fill is too faint to matter).
         // live-47 — the study looks (Aura / Eclipse on dark, Wash on light): studyTitleInkIsDark (Eclipse always light).
         if let m = mapTuning, let k = study2Kind(m) {   // live-49 — the study's inkDark for Light Glass / Riso / Gradient
+            if k == .lightGlass { return m.lightGlass.label.uiColor }   // live-50 — Light Glass's label colour (default = the study's dark ink)
             return study2TitleInkIsDark(nodeID: nodeID, kind: k)
                 ? UIColor(red: 0x1B / 255.0, green: 0x1A / 255.0, blue: 0x20 / 255.0, alpha: 1)
                 : UIColor(red: 0xF4 / 255.0, green: 0xF2 / 255.0, blue: 0xF8 / 255.0, alpha: 1)

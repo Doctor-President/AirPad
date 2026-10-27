@@ -495,6 +495,16 @@ final class AppearanceTuner {
             if let one = UserDefaults.standard.string(forKey: "MapLookSet"), let st = steps.first(where: { $0.0 == one }) {
                 st.1(&state.mapDark)
             }
+            // live-50 stills — `-MapLightGlassJSON 'json:{…}'`: a Copy-values `lightGlass` block (+ optional "tilt" keys for
+            // the shared Glass tilt: tiltLight / tiltResponse), applied after -MapLookSet.
+            if var j = UserDefaults.standard.string(forKey: "MapLightGlassJSON") {
+                if j.hasPrefix("json:") { j.removeFirst(5) }
+                if let o = (try? JSONSerialization.jsonObject(with: Data(j.utf8))) as? [String: Any] {
+                    state.mapDark.lightGlass.apply(exportJSON: o); state.mapDark.lightGlass.applyGlassExtras(o)
+                    if let b = o["tiltLight"] as? Bool { state.mapDark.glass.tiltLight = b }
+                    if let r = (o["tiltResponse"] as? NSNumber)?.doubleValue { state.mapDark.glass.tiltResponse = r }
+                }
+            }
             if let start = UserDefaults.standard.string(forKey: "MapLookCycle").flatMap(Double.init) {
                 for (i, step) in steps.enumerated() {
                     DispatchQueue.main.asyncAfter(deadline: .now() + start + Double(i) * 4) { [weak self] in
@@ -1541,6 +1551,18 @@ struct LightGlassLook: StudyOrbLook {
     var fringe = 0.41           // Edge line
     var grain = 0.0
     var drift = false
+    // live-50 — dark Glass's controls, each defaulting to the value that changes nothing (Light Glass = the study's until T
+    // moves one). Rim light = white arcs screened over the rim (light catching the edge, never a dark line); the tilt
+    // settings are SHARED with dark Glass (GlassLook.tiltLight / tiltResponse / tiltSmoothing), so one switch serves both.
+    var topArc = 0.0
+    var bottomArc = 0.0
+    var arcSpan = 120.0             // degrees each arc covers
+    var arcThickness = 0.07         // fraction of the radius
+    var arcSoftness = 0.6
+    var dispersion = 0.0            // Colour fringe: the edge line + arcs at three radii, one per channel
+    var highlightSize = 1 / 70.0.squareRoot()   // the study's glint width (exp(−d²·70)), orb radii
+    var innerShadow = 0.0
+    var label = TunerHSL(hex: "1B1A20")           // the study's dark ink
     /// The study's glass bound: 1.45 + shadow·0.4.
     var spriteExtent: Double { 1.45 + haloReach * 0.4 }
     static let presets: [(String, LightGlassLook)] = [("Subtle", .init(0.35, 0.45, 0.015, 0.4, 0.5, 0.4, 0.2)),
@@ -1551,7 +1573,36 @@ struct LightGlassLook: StudyOrbLook {
     init(_ a: Double, _ b: Double, _ c: Double, _ d: Double, _ e: Double, _ f: Double, _ g: Double) {
         spread = a; warp = b; softness = c; haloReach = d; rim = e; fringe = f; grain = g
     }
-    init(from decoder: Decoder) throws { self = try StudyLookDecode.decode(decoder, LightGlassLook()) }
+    init(from decoder: Decoder) throws {
+        self = try StudyLookDecode.decode(decoder, LightGlassLook())
+        let c = try decoder.container(keyedBy: CodingKeys.self)
+        func v<T: Decodable>(_ k: CodingKeys, _ def: T) -> T { ((try? c.decodeIfPresent(T.self, forKey: k)) ?? nil) ?? def }
+        topArc = v(.topArc, topArc); bottomArc = v(.bottomArc, bottomArc); arcSpan = v(.arcSpan, arcSpan)
+        arcThickness = v(.arcThickness, arcThickness); arcSoftness = v(.arcSoftness, arcSoftness)
+        dispersion = v(.dispersion, dispersion); highlightSize = v(.highlightSize, highlightSize)
+        innerShadow = v(.innerShadow, innerShadow); label = v(.label, label)
+    }
+    /// live-50 — the Copy values block: the study's seven + dark Glass's controls.
+    var exportJSON: String {
+        func n(_ x: Double) -> String {
+            var t = String(format: "%.4f", x)
+            while t.contains(".") && (t.hasSuffix("0") || t.hasSuffix(".")) { t.removeLast() }
+            return t
+        }
+        return "{\"spread\":\(n(spread)),\"warp\":\(n(warp)),\"softness\":\(n(softness)),\"haloReach\":\(n(haloReach)),"
+            + "\"rim\":\(n(rim)),\"fringe\":\(n(fringe)),\"grain\":\(n(grain)),\"topArc\":\(n(topArc)),\"bottomArc\":\(n(bottomArc)),"
+            + "\"arcSpan\":\(n(arcSpan)),\"arcThickness\":\(n(arcThickness)),\"arcSoftness\":\(n(arcSoftness)),"
+            + "\"dispersion\":\(n(dispersion)),\"highlightSize\":\(n(highlightSize)),\"innerShadow\":\(n(innerShadow)),"
+            + "\"label\":\"#\(label.hex)\"}"
+    }
+    mutating func applyGlassExtras(_ o: [String: Any]) {
+        func d(_ k: String) -> Double? { (o[k] as? NSNumber)?.doubleValue }
+        if let v = d("topArc") { topArc = v }; if let v = d("bottomArc") { bottomArc = v }; if let v = d("arcSpan") { arcSpan = v }
+        if let v = d("arcThickness") { arcThickness = v }; if let v = d("arcSoftness") { arcSoftness = v }
+        if let v = d("dispersion") { dispersion = v }; if let v = d("highlightSize") { highlightSize = v }
+        if let v = d("innerShadow") { innerShadow = v }
+        if let h = o["label"] as? String { label = TunerHSL(hex: h.replacingOccurrences(of: "#", with: "")) }
+    }
 }
 struct RisoLook: StudyOrbLook {
     var spread = 0.72           // Shape
@@ -1946,7 +1997,7 @@ struct MapDarkTuning: Codable, Equatable {
         if let e = o["eclipse"] as? [String: Any] { eclipse.apply(exportJSON: e) }
         if let b = o["outline"] as? [String: Any] { outline.apply(exportJSON: b) }
         if let w = o["wash"] as? [String: Any] { wash.apply(exportJSON: w) }
-        if let x = o["lightGlass"] as? [String: Any] { lightGlass.apply(exportJSON: x) }
+        if let x = o["lightGlass"] as? [String: Any] { lightGlass.apply(exportJSON: x); lightGlass.applyGlassExtras(x) }
         if let x = o["riso"] as? [String: Any] { riso.apply(exportJSON: x) }
         if let x = o["gradient"] as? [String: Any] { gradient.apply(exportJSON: x) }
     }
@@ -2005,7 +2056,7 @@ extension AppearanceTuning {
             + "\"topArc\":\(n(g.topArc)),\"bottomArc\":\(n(g.bottomArc)),\"arcSpan\":\(n(g.arcSpan)),\"arcThickness\":\(n(g.arcThickness)),"
             + "\"arcSoftness\":\(n(g.arcSoftness)),\"dim\":\(n(g.dim)),\"tiltLight\":\(g.tiltLight),\"tiltSmoothing\":\(n(g.tiltSmoothing))},"
             + "\"palettes\":\"12 territories\",\"aura\":\(study(a)),\"eclipse\":\(study(e)),"
-            + "\"lightGlass\":\(study(m.lightGlass)),\"riso\":\(study(m.riso)),\"gradient\":\(study(m.gradient)),"
+            + "\"lightGlass\":\(m.lightGlass.exportJSON),\"riso\":\(study(m.riso)),\"gradient\":\(study(m.gradient)),"
             + "\"outline\":{\"ringWidth\":\(n(ol.ringWidth)),\"ringOpacityDark\":\(n(ol.ringOpacityDark)),"
             + "\"ringOpacityLight\":\(n(ol.ringOpacityLight)),\"fillOpacity\":\(n(ol.fillOpacity))},"
             + "\"wash\":{\"spread\":\(n(w.spread)),\"warp\":\(n(w.warp)),\"softness\":\(n(w.softness)),\"bleed\":\(n(w.bleed)),"
@@ -2122,6 +2173,21 @@ extension AppearanceTuning {
                 guard let o = try? JSONDecoder().decode(MapDarkTuning.self, from: Data(old.utf8)) else { return false }
                 return back.riso == m.riso && back.lightGlass == m.lightGlass && back.gradient == m.gradient && back.orbLook == .riso
                     && o.lightGlass == LightGlassLook() && o.riso == RisoLook() && o.gradient == GradientLook() && o.orbLook == .eclipse
+            }(), ""),
+            // live-50 — Light Glass's dark-Glass controls start at "no change" and travel in Copy values
+            ("light-glass-extras-default-to-no-change + copy-values round trip (live-50)", {
+                let d = LightGlassLook()
+                var x = d; x.topArc = 1.2; x.bottomArc = 0.5; x.arcSpan = 90; x.dispersion = 0.6; x.innerShadow = 0.4
+                x.highlightSize = 0.3; x.label = TunerHSL(hex: "1B59C2")
+                var m = MapDarkTuning(); m.lightGlass = x
+                var back = MapDarkTuning()
+                guard let all = try? JSONSerialization.jsonObject(with: Data(mapDarkJSON(m).utf8)) as? [String: Any] else { return false }
+                back.apply(exportJSON: all)
+                let r = back.lightGlass
+                return d.topArc == 0 && d.bottomArc == 0 && d.dispersion == 0 && d.innerShadow == 0
+                    && abs(1 / (d.highlightSize * d.highlightSize) - 70) < 1e-9 && TunerHSL(hex: "1B1A20").hex == "1B1A20"
+                    && r.topArc == 1.2 && r.bottomArc == 0.5 && r.arcSpan == 90 && r.dispersion == 0.6 && r.innerShadow == 0.4
+                    && r.highlightSize == 0.3 && r.label.hex == "1B59C2" && r.spread == x.spread
             }(), ""),
             ("map-v7-lineup (dark Flat·Glass·Aura·Eclipse·Riso·Gradient·Outline; Riso / Gradient / Outline on both; Glass ↔ Light Glass)",
              MapOrbLook.darkPicker == [.flat, .glass, .aura, .eclipse, .riso, .gradient, .outline]

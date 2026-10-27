@@ -586,7 +586,6 @@ struct AppearanceTunerSheet<G: Gesture>: View {
     private func setMap(_ change: (inout MapDarkTuning) -> Void) { change(&tuner.state.mapDark) }
     private func setF(_ change: (inout FresnelLook) -> Void) { change(&tuner.state.mapDark.fresnel) }
     private func setG(_ change: (inout GlassLook) -> Void) { change(&tuner.state.mapDark.glass) }
-    private func setL(_ change: (inout LightGlassLook) -> Void) { change(&tuner.state.mapDark.lightGlass) }   // live-50
     private func setA(_ change: (inout AuraLook) -> Void) { change(&tuner.state.mapDark.aura) }
     private func setO(_ change: (inout OutlineLook) -> Void) { change(&tuner.state.mapDark.outline) }
     private func setW(_ change: (inout WashLook) -> Void) { change(&tuner.state.mapDark.wash) }
@@ -671,7 +670,7 @@ struct AppearanceTunerSheet<G: Gesture>: View {
             if m.orbLook == .riso { risoControls }
             if m.orbLook == .gradient { gradientControls }
         } else {
-            // live-49 — light Map: Flat · Light Glass · Wash · Riso · Gradient · Outline (Light Glass = Glass's pair).
+            // live-49 / 50b — light Map: Flat · Glass · Wash · Riso · Gradient · Outline. Glass = the SAME look and values as dark.
             Picker("Orbs", selection: Binding(get: { m.orbLook.drawsWashOnLight ? "wash" : m.orbLook == .glass ? "glass"
                                                     : [.outline, .riso, .gradient].contains(m.orbLook) ? m.orbLook.rawValue : "flat" },
                                               set: { k in setMap {
@@ -684,13 +683,13 @@ struct AppearanceTunerSheet<G: Gesture>: View {
                                                   default: $0.orbLook = .flat
                                                   }
                                               } })) {
-                Text("Flat").tag("flat"); Text("Light Glass").tag("glass"); Text("Wash").tag("wash")
+                Text("Flat").tag("flat"); Text("Glass").tag("glass"); Text("Wash").tag("wash")
                 Text("Riso").tag("riso"); Text("Gradient").tag("gradient"); Text("Outline").tag("outline")
             }
             .pickerStyle(.segmented)
             .accessibilityIdentifier("tunerMapOrbLook")
             if m.orbLook.drawsWashOnLight { washControls }
-            if m.orbLook == .glass { lightGlassControls }
+            if m.orbLook == .glass { orbGlassControls }   // live-50b — dark Glass's own section: one set of values for both Maps
             if m.orbLook == .riso { risoControls }
             if m.orbLook == .gradient { gradientControls }
         }
@@ -772,7 +771,8 @@ struct AppearanceTunerSheet<G: Gesture>: View {
         TunerColorRow(label: "Label colour", color: g.label, defaultHex: GlassLook.medium.label.hex, id: "glLabel") { c in
             setG { $0.label = c }
         }
-        note("The real background shows through each orb (no lens): dim darkens it, the tint colours it toward the rim, brightness "
+        note("Glass is one look on both Maps (live-50b): these values drive the dark and the light Map alike. "
+             + "The real background shows through each orb (no lens): dim darkens it, the tint colours it toward the rim, brightness "
              + "lifts it. The arcs light the top and bottom of the rim. With Tilt light on, the light drifts with the phone's tilt "
              + "(negative response = the other way); the Map then redraws at 30 fps, and only while the light visibly moves. It stays "
              + "put in Low Power Mode, with Reduce Motion, or with Appearance → Move with tilt off. Labels use the label colour unless "
@@ -814,54 +814,6 @@ struct AppearanceTunerSheet<G: Gesture>: View {
     }
 
     // live-49 — the study's v7 looks: its seven sliders under its labels, presets, T's values.
-    // live-50 — Light Glass with dark Glass's controls: the same groups, names and order (Body · Rim light · Edge · Highlight ·
-    // Label colour). The study's seven keep their names and T's values; every added control defaults to "no change"; the
-    // tilt switches are dark Glass's own (shared), so the light follows the phone on both Maps or on neither.
-    @ViewBuilder private var lightGlassControls: some View {
-        let v = m.lightGlass, g = m.glass
-        HStack(spacing: 6) {
-            ForEach(LightGlassLook.presets, id: \.0) { p in chip(p.0, selected: v == p.1, id: "tunerLightGlass-\(p.0)") { setMap { $0.lightGlass = p.1 } } }
-        }
-        subhead("Body")
-        slider("Tint", v.spread, 0.4...2, 0.01, f2(v.spread), id: "lgSpread") { x in setL { $0.spread = x } }
-        slider("Frost", v.warp, 0...1.5, 0.01, f2(v.warp), id: "lgWarp") { x in setL { $0.warp = x } }
-        slider("Shadow", v.haloReach, 0...1.4, 0.01, f2(v.haloReach), id: "lgHalo") { x in setL { $0.haloReach = x } }
-        slider("Grain", v.grain, 0...1, 0.01, f2(v.grain), id: "lgGrain") { x in setL { $0.grain = x } }
-        subhead("Rim light (top + bottom arcs)")
-        slider("Top arc", v.topArc, 0...2, 0.01, String(format: "%.2f", v.topArc), id: "lgTopArc") { x in setL { $0.topArc = x } }
-        slider("Bottom arc", v.bottomArc, 0...2, 0.01, String(format: "%.2f", v.bottomArc), id: "lgBottomArc") { x in setL { $0.bottomArc = x } }
-        slider("Arc span", v.arcSpan, 20...180, 1, String(format: "%.0f°", v.arcSpan), id: "lgArcSpan") { x in setL { $0.arcSpan = x } }
-        slider("Arc thickness", v.arcThickness, 0.01...0.3, 0.005, pct(v.arcThickness) + " of radius", id: "lgArcThick") { x in
-            setL { $0.arcThickness = x }
-        }
-        slider("Arc softness", v.arcSoftness, 0...1, 0.01, pct(v.arcSoftness), id: "lgArcSoft") { x in setL { $0.arcSoftness = x } }
-        subhead("Edge")
-        slider("Edge line", v.fringe, 0...1.5, 0.01, f2(v.fringe), id: "lgFringe") { x in setL { $0.fringe = x } }
-        slider("Edge softness", v.softness, 0.01...0.25, 0.005, f2(v.softness), id: "lgSoft") { x in setL { $0.softness = x } }
-        slider("Inner shadow", v.innerShadow, 0...1, 0.01, pct(v.innerShadow), id: "lgInnerShadow") { x in setL { $0.innerShadow = x } }
-        slider("Colour fringe (dispersion)", v.dispersion, 0...1, 0.01, pct(v.dispersion), id: "lgDispersion") { x in setL { $0.dispersion = x } }
-        subhead("Highlight")
-        slider("Highlight size", v.highlightSize, 0.05...0.6, 0.01, String(format: "%.2f", v.highlightSize), id: "lgHlSize") { x in
-            setL { $0.highlightSize = x }
-        }
-        slider("Highlight", v.rim, 0...1, 0.01, f2(v.rim), id: "lgRim") { x in setL { $0.rim = x } }
-        toggle("Tilt light (shared with Glass on the dark Map)", g.tiltLight, id: "lgTiltLight") { b in setG { $0.tiltLight = b } }
-        if g.tiltLight {
-            slider("Tilt response", (g.tiltResponse < 0 ? -1 : 1) * (abs(g.tiltResponse) / 1.5).squareRoot(), -1...1, 0.005,
-                   String(format: "%.3f", g.tiltResponse), id: "lgTilt") { u in setG { $0.tiltResponse = (u < 0 ? -1 : 1) * u * u * 1.5 } }
-            slider("Tilt smoothing", g.tiltSmoothing, 0...3, 0.05, String(format: "%.2f s", g.tiltSmoothing), id: "lgTiltSmooth") { x in
-                setG { $0.tiltSmoothing = x }
-            }
-        }
-        TunerColorRow(label: "Label colour", color: v.label, defaultHex: "1B1A20", id: "lgLabel") { c in setL { $0.label = c } }
-        Button("Light Glass defaults (T's study values, 2026-10-27)") { setMap { $0.lightGlass = LightGlassLook() } }
-            .font(.caption).buttonStyle(.bordered).controlSize(.small).accessibilityIdentifier("tunerLightGlassReset")
-        note("Glass's partner on the light Map (the study's Light Glass): a frosted body tinted by the territory palette, a thin "
-             + "tinted edge line, a white highlight and a soft shadow lifting it off the paper. The rim arcs are white light "
-             + "catching the rim, never dark lines. Tilt light is the same switch as dark Glass's: with it on the light drifts "
-             + "with the phone's tilt (the Map redraws at 30 fps only while it visibly moves), and it stays put in Low Power "
-             + "Mode, with Reduce Motion, or with Appearance → Move with tilt off. Every control here starts at \"no change\".")
-    }
     @ViewBuilder private var risoControls: some View {
         let v = m.riso
         HStack(spacing: 6) {

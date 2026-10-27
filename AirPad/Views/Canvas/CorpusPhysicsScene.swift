@@ -953,6 +953,12 @@ final class CorpusPhysicsScene: SKScene {
     #else
     static let auraOnLightDebug = false
     #endif
+    /// live-50b — DEBUG `-MapStudyLightGlass`: the light Map draws the study's Light Glass (live-49 / 50) instead of Glass, for A/B stills.
+    #if DEBUG
+    static let studyLightGlassDebug = ProcessInfo.processInfo.arguments.contains("-MapStudyLightGlass")
+    #else
+    static let studyLightGlassDebug = false
+    #endif
 
     /// live-43 — the orb look on BOTH grounds, per frame (cheap: writes only on change). Fresnel, Glass and (live-45-B)
     /// Aura are dark-only (the light Map draws Flat for them); Aura swaps every orb to its own shader; Outline is u_fr_on 3 with its levers in
@@ -984,7 +990,8 @@ final class CorpusPhysicsScene: SKScene {
             if lk != u.matrixFloat4x4Value { u.matrixFloat4x4Value = lk }
         }
         // The light Map draws its orbs at 70% (Brief AW); the Outline's own opacities replace that.
-        if currentIsLight { orb("u_orb_opacity")?.floatValue = look == .outline ? 1 : MapCompTuning.orbOpacity }
+        // live-50b: Glass carries its own transmittance on the light Map too → full opacity, as on dark.
+        if currentIsLight { orb("u_orb_opacity")?.floatValue = (look == .outline || look == .glass) ? 1 : MapCompTuning.orbOpacity }
         // live-46 / 47 — the Pro looks (Aura, Eclipse) on the light Map are Wash (unstyle the other look first: both own the
         // sprites).
         let washOn = currentIsLight && m.orbLook.drawsWashOnLight && !Self.auraOnLightDebug
@@ -1049,8 +1056,8 @@ final class CorpusPhysicsScene: SKScene {
         smoothedGlassTilt += (tilt - smoothedGlassTilt) * a
         let k = Float(m.glass.tiltResponse) * 0.16
         let off = smoothedGlassTilt * k
-        if currentIsLight {
-            // Light Glass: the glint + arcs lean with the same offset (orb radii); syncStudy2 pushes it with u_s2b.
+        if currentIsLight && Self.studyLightGlassDebug {
+            // DEBUG A/B — the study's Light Glass: the glint + arcs lean with the same offset; syncStudy2 pushes u_s2b.
             let dk = SIMD2<Float>(Float(cameraNode.xScale), Float(nodeOnScreenDiameter.count))
             if dk != maxOrbDiameterKey { maxOrbDiameterKey = dk; maxOrbOnScreenPt = nodeOnScreenDiameter.values.max() ?? 0 }
             let px = Float(maxOrbOnScreenPt * glyphContentScale)
@@ -3783,6 +3790,7 @@ final class CorpusPhysicsScene: SKScene {
             // live-43 — Glass = the orb's layers composited OVER the real background: premultiplied colour glC and
             // transmittance glT (the refracted copy of the grid is gone).
             float glOn = 0.0; vec3 glC = vec3(0.0); float glT = 1.0;
+            vec3 baseCol = fillRGB;   // live-50b — each ground's orb colour, for Glass (one model on both Maps)
             if (u_wash_is_light > 0.5) {
                 // Brief AT (LIGHT comp, LOCKED). Flat slot fill → AE Hue/Sat translate → OKLCH palette dials
                 // (baked, applied PER-ORB so per-orb recency shades survive) → light FOCUS band (fade toward
@@ -3798,6 +3806,7 @@ final class CorpusPhysicsScene: SKScene {
                 // a_defocus × strength (u_light_focus = base × 1.02). Same matte + reading weight as dark.
                 col = mix(col, u_ground_color, clamp(u_light_focus * a_defocus, 0.0, 1.0));
                 fillRGB = clamp(col, 0.0, 1.0);
+                baseCol = col;
             } else {
                 // DARK — emissive dimensionality register (the substrate's first
                 // effect). Replaces the flat diagonal darken with a lit-ball look
@@ -3813,62 +3822,13 @@ final class CorpusPhysicsScene: SKScene {
                 hsv.y = clamp(hsv.y * (1.0 - u_defocus_sat * a_defocus), 0.0, 1.0);
                 hsv.z = clamp(hsv.z * (1.0 - u_defocus_val * a_defocus), 0.0, 1.0);
                 vec3 col = hsv2rgb(hsv);
+                baseCol = col;
 
                 if (u_fr_on > 2.5) {
                     // live-43-A — OUTLINE: the ring + faint fill are drawn at the output below, in this colour.
                     fillRGB = clamp(col, 0.0, 1.0);
                 } else if (u_fr_on > 1.5) {
-                    // live-40 — GLASS (TestFlight tuner only). live-43: NO refraction — the real background shows through
-                    // the body: behind-glass dim (A1.w), a family tint heavier toward the rim (glass reads clear face-on and
-                    // coloured at grazing angles), a frosted lift (lk_b.x); then a soft inner shadow and the additive lights:
-                    // a broad highlight + rim glint at lk_c.zw (optionally following the tilt), a thin bright edge (optional,
-                    // with a colour fringe) and the top / bottom rim arcs. a.w = tint; b = (lift, edge, inner shadow,
-                    // dispersion); c = (highlight size, intensity, centre xy). All global → still one batch.
-                    float rr = clamp(d / R, 0.0, 1.0);
-                    float pl = length(p);
-                    vec2 dir = pl > 0.0001 ? p / pl : vec2(0.0, 1.0);
-                    float gDim = 1.0 - u_defocus_val * a_defocus;
-                    vec4 A0 = u_gl_arc[0]; vec4 A1 = u_gl_arc[1];
-                    float tw = lk_a.w * gDim * mix(0.4, 1.0, rr * rr);
-                    glT = (1.0 - A1.w) * (1.0 - tw) * (1.0 - lk_b.x);
-                    glC = (col * tw) * (1.0 - lk_b.x) + vec3(lk_b.x);   // dim (black) → tint → frosted lift, premultiplied
-                    vec2 hc = lk_c.zw;
-                    vec2 ld = normalize(hc + vec2(0.0001));
-                    float ldd = dot(dir, ld);
-                    float lit = ldd * 0.5 + 0.5;
-                    float aaR = 2.0 * aa;                             // ~1px in rr units
-                    float shK = 1.0 - lk_b.z * smoothstep(0.6, 0.97, rr) * mix(1.0, 0.35, lit);   // inner shadow
-                    glC *= shK; glT *= shK;
-                    vec3 gc = vec3(0.0);                              // the additive lights
-                    float hs = smoothstep(lk_c.x, 0.0, distance(p, hc));
-                    gc += vec3(lk_c.y * hs * hs * gDim);            // broad highlight
-                    float rimBand = smoothstep(0.9 - 4.0 * aaR, 1.0 - 2.0 * aaR, rr);
-                    float glint = pow(max(ldd, 0.0), 6.0) + 0.35 * pow(max(-ldd, 0.0), 6.0);
-                    gc += vec3(lk_c.y * 1.3 * rimBand * glint * gDim);   // rim glint (+ a faint one opposite)
-                    float ew = 1.0 - 2.5 * aaR;
-                    float sh = lk_b.w * 3.0 * aaR;
-                    vec3 eL = vec3(smoothstep(ew - aaR + sh, ew + sh, rr),
-                                   smoothstep(ew - aaR, ew, rr),
-                                   smoothstep(ew - aaR - sh, ew - sh, rr));
-                    gc += lk_b.y * mix(0.5, 1.0, lit) * gDim * eL * mix(col, vec3(1.0), 0.7);   // thin bright edge (optional)
-                    // live-41 RIM LIGHT (iOS 27 Liquid Glass): a brighter TOP arc (key) + a softer BOTTOM arc (bounce),
-                    // centred on the light direction A1.yz (up + the subtle tilt) and its opposite, each fading toward
-                    // the sides. A0 = (top, bottom, half span rad, thickness); A1.x = softness. Same colour fringe.
-                    float ca = clamp(dot(dir, A1.yz), -1.0, 1.0);
-                    float tTop = acos(ca);
-                    float tBot = 3.14159265 - tTop;
-                    float hSpan = max(A0.z, 0.01);
-                    float a0e = hSpan * (1.0 - clamp(A1.x, 0.0, 1.0));
-                    float angTop = 1.0 - smoothstep(a0e, hSpan + 0.0001, tTop);
-                    float angBot = 1.0 - smoothstep(a0e, hSpan + 0.0001, tBot);
-                    float th = max(A0.w, 2.0 * aaR);
-                    vec3 rad = vec3(smoothstep(1.0 - th + sh, 1.0 - aaR + sh, rr),
-                                    smoothstep(1.0 - th, 1.0 - aaR, rr),
-                                    smoothstep(1.0 - th - sh, 1.0 - aaR - sh, rr));
-                    rad = rad * rad;
-                    gc += gDim * rad * (A0.x * angTop * mix(col, vec3(1.0), 0.8) + A0.y * angBot * mix(col, vec3(1.0), 0.45));
-                    glC += gc;
-                    glOn = 1.0;
+                    // live-50b — GLASS runs after the ground branches (below), on BOTH Maps, from baseCol.
                 } else if (u_fr_on > 0.5) {
                     // live-39 — FRESNEL (TestFlight tuner only; u_fr_on = 0 everywhere else → the flat path below).
                     // A dark body near the ground tinted by the orb's colour, with a rim in the orb's colour that
@@ -3915,6 +3875,60 @@ final class CorpusPhysicsScene: SKScene {
                 }
             }
 
+            if (u_fr_on > 1.5 && u_fr_on < 2.5) {
+                vec3 col = baseCol;
+                // live-40 — GLASS (TestFlight tuner only). live-43: NO refraction — the real background shows through
+                // the body: behind-glass dim (A1.w), a family tint heavier toward the rim (glass reads clear face-on and
+                // coloured at grazing angles), a frosted lift (lk_b.x); then a soft inner shadow and the additive lights:
+                // a broad highlight + rim glint at lk_c.zw (optionally following the tilt), a thin bright edge (optional,
+                // with a colour fringe) and the top / bottom rim arcs. a.w = tint; b = (lift, edge, inner shadow,
+                // dispersion); c = (highlight size, intensity, centre xy). All global → still one batch.
+                float rr = clamp(d / R, 0.0, 1.0);
+                float pl = length(p);
+                vec2 dir = pl > 0.0001 ? p / pl : vec2(0.0, 1.0);
+                float gDim = 1.0 - u_defocus_val * a_defocus;
+                vec4 A0 = u_gl_arc[0]; vec4 A1 = u_gl_arc[1];
+                float tw = lk_a.w * gDim * mix(0.4, 1.0, rr * rr);
+                glT = (1.0 - A1.w) * (1.0 - tw) * (1.0 - lk_b.x);
+                glC = (col * tw) * (1.0 - lk_b.x) + vec3(lk_b.x);   // dim (black) → tint → frosted lift, premultiplied
+                vec2 hc = lk_c.zw;
+                vec2 ld = normalize(hc + vec2(0.0001));
+                float ldd = dot(dir, ld);
+                float lit = ldd * 0.5 + 0.5;
+                float aaR = 2.0 * aa;                             // ~1px in rr units
+                float shK = 1.0 - lk_b.z * smoothstep(0.6, 0.97, rr) * mix(1.0, 0.35, lit);   // inner shadow
+                glC *= shK; glT *= shK;
+                vec3 gc = vec3(0.0);                              // the additive lights
+                float hs = smoothstep(lk_c.x, 0.0, distance(p, hc));
+                gc += vec3(lk_c.y * hs * hs * gDim);            // broad highlight
+                float rimBand = smoothstep(0.9 - 4.0 * aaR, 1.0 - 2.0 * aaR, rr);
+                float glint = pow(max(ldd, 0.0), 6.0) + 0.35 * pow(max(-ldd, 0.0), 6.0);
+                gc += vec3(lk_c.y * 1.3 * rimBand * glint * gDim);   // rim glint (+ a faint one opposite)
+                float ew = 1.0 - 2.5 * aaR;
+                float sh = lk_b.w * 3.0 * aaR;
+                vec3 eL = vec3(smoothstep(ew - aaR + sh, ew + sh, rr),
+                               smoothstep(ew - aaR, ew, rr),
+                               smoothstep(ew - aaR - sh, ew - sh, rr));
+                gc += lk_b.y * mix(0.5, 1.0, lit) * gDim * eL * mix(col, vec3(1.0), 0.7);   // thin bright edge (optional)
+                // live-41 RIM LIGHT (iOS 27 Liquid Glass): a brighter TOP arc (key) + a softer BOTTOM arc (bounce),
+                // centred on the light direction A1.yz (up + the subtle tilt) and its opposite, each fading toward
+                // the sides. A0 = (top, bottom, half span rad, thickness); A1.x = softness. Same colour fringe.
+                float ca = clamp(dot(dir, A1.yz), -1.0, 1.0);
+                float tTop = acos(ca);
+                float tBot = 3.14159265 - tTop;
+                float hSpan = max(A0.z, 0.01);
+                float a0e = hSpan * (1.0 - clamp(A1.x, 0.0, 1.0));
+                float angTop = 1.0 - smoothstep(a0e, hSpan + 0.0001, tTop);
+                float angBot = 1.0 - smoothstep(a0e, hSpan + 0.0001, tBot);
+                float th = max(A0.w, 2.0 * aaR);
+                vec3 rad = vec3(smoothstep(1.0 - th + sh, 1.0 - aaR + sh, rr),
+                                smoothstep(1.0 - th, 1.0 - aaR, rr),
+                                smoothstep(1.0 - th - sh, 1.0 - aaR - sh, rr));
+                rad = rad * rad;
+                gc += gDim * rad * (A0.x * angTop * mix(col, vec3(1.0), 0.8) + A0.y * angBot * mix(col, vec3(1.0), 0.45));
+                glC += gc;
+                glOn = 1.0;
+            }
             float fa = disc * fillC.a;
             float sa = ring * strokeC.a;
             float outA = sa + fa * (1.0 - sa);
@@ -4605,7 +4619,7 @@ final class CorpusPhysicsScene: SKScene {
     /// Which v7 look the orbs wear now (nil = none): Glass on the light Map = Light Glass; Riso / Gradient on both.
     private func study2Kind(_ m: MapDarkTuning) -> Study2Kind? {
         switch m.orbLook {
-        case .glass: return currentIsLight ? .lightGlass : nil
+        case .glass: return currentIsLight && Self.studyLightGlassDebug ? .lightGlass : nil   // live-50b: Glass is ONE model on both Maps
         case .riso: return .riso
         case .gradient: return .gradient
         default: return nil
@@ -5027,9 +5041,11 @@ final class CorpusPhysicsScene: SKScene {
             let label = f.label.uiColor, black = UIColor(red: 0.08, green: 0.07, blue: 0.06, alpha: 1)
             return Self.wcagContrast(label, body) >= Self.wcagContrast(black, body) ? label : black
         }
-        if !currentIsLight, let m = mapTuning, m.orbLook == .glass {
+        if let m = mapTuning, m.orbLook == .glass {
             // CPU twin of the Glass body away from the highlight: the background (ground, dimmed) tinted, then lifted.
-            let gl = m.glass, g = m.ground.rgb
+            // live-50b: the same rule on both Maps, over each Map's own ground.
+            let gl = m.glass, lg = Self.rgb3(MapCompTuning.lightGroundHex)
+            let g: (r: Double, g: Double, b: Double) = currentIsLight ? (Double(lg.x), Double(lg.y), Double(lg.z)) : m.ground.rgb
             var r: CGFloat = 0, gg: CGFloat = 0, b: CGFloat = 0, a: CGFloat = 0
             applyDarkOrbBoost(fillColor).getRed(&r, green: &gg, blue: &b, alpha: &a)
             func ch(_ grd0: Double, _ c: CGFloat) -> CGFloat {

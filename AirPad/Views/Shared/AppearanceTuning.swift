@@ -1430,9 +1430,8 @@ enum MapOrbLook: String, Codable, CaseIterable, Identifiable {
         }
     }
     /// Looks that also draw on the light Map (live-49: Riso and Gradient draw themselves on both).
-    var bothGrounds: Bool { self == .outline || self == .riso || self == .gradient }
-    /// live-49 — Glass draws Light Glass on the light Map (its pair).
-    var drawsLightGlassOnLight: Bool { self == .glass }
+    /// live-50b: Glass too — ONE model and one set of values on both Maps (the study's Light Glass is DEBUG A/B only).
+    var bothGrounds: Bool { self == .outline || self == .riso || self == .gradient || self == .glass }
     /// live-47 — the Pro looks Aura and Eclipse both draw Wash on the light Map.
     var drawsWashOnLight: Bool { self == .aura || self == .eclipse }
     /// live-47 — the tuner's pickers: dark Map = Flat · Glass · Aura · Eclipse · Outline (Fresnel still decodes).
@@ -2185,10 +2184,9 @@ extension AppearanceTuning {
                     && r.topArc == 1.2 && r.bottomArc == 0.5 && r.arcSpan == 90 && r.dispersion == 0.6 && r.innerShadow == 0.4
                     && r.highlightSize == 0.3 && r.label.hex == "1B59C2" && r.spread == x.spread
             }(), ""),
-            ("map-v7-lineup (dark Flat·Glass·Aura·Eclipse·Riso·Gradient·Outline; Riso / Gradient / Outline on both; Glass ↔ Light Glass)",
+            ("map-v7-lineup (dark Flat·Glass·Aura·Eclipse·Riso·Gradient·Outline; Glass / Riso / Gradient / Outline on both)",
              MapOrbLook.darkPicker == [.flat, .glass, .aura, .eclipse, .riso, .gradient, .outline]
-                && MapOrbLook.riso.bothGrounds && MapOrbLook.gradient.bothGrounds && MapOrbLook.glass.drawsLightGlassOnLight
-                && !MapOrbLook.glass.bothGrounds, ""),
+                && MapOrbLook.riso.bothGrounds && MapOrbLook.gradient.bothGrounds && MapOrbLook.glass.bothGrounds, ""),
             ("glass-tilt-light-defaults-off (live-43)", !t.glass.tiltLight && !GlassLook.medium.tiltLight, ""),
             ("map-dark-live42-saved-values-decode (no aura/outline keys → defaults)", {
                 let old = #"{"orbLook":"glass","glass":{"tint":0.3,"tiltLight":true}}"#

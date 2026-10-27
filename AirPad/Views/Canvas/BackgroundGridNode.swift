@@ -119,24 +119,17 @@ enum BackgroundGridNode {
         // u_light_ground_on = 1 + paper while Wash shows (no new binding); fibres + a 1 pt grain in on-screen points,
         // following the pan (worldPos ÷ camera scale: they move with the ground, the same size in points at every zoom) — the study's
         // `col *= 1 − paper·0.05·(fbm(pt·(0.35, 0.9)) − 0.4)` and `col += grain·paper·0.035`.
+        // live-48 — the fibres' fbm is one lookup into the shared tiling noise texture (StudyNoise, `u_noise`; TF / DEBUG only).
         #if DEBUG || TESTFLIGHT
         let paperHelpers = """
         float wpHash(vec2 p) { vec3 p3 = fract(vec3(p.xyx) * 0.1031); p3 += dot(p3, p3.yzx + 33.33); return fract((p3.x + p3.y) * p3.z); }
-        float wpNoise(vec2 p) {
-            vec2 i = floor(p); vec2 f = fract(p); vec2 u = f * f * (3.0 - 2.0 * f);
-            return mix(mix(wpHash(i), wpHash(i + vec2(1.0, 0.0)), u.x), mix(wpHash(i + vec2(0.0, 1.0)), wpHash(i + vec2(1.0, 1.0)), u.x), u.y);
-        }
-        float wpFbm(vec2 p) {
-            float a = 0.6; float s = 0.0;
-            for (int i = 0; i < 3; i++) { s += a * wpNoise(p); p = p * 1.9 + vec2(17.1, 9.2); a *= 0.32; }
-            return s;
-        }
+        \(StudyNoise.glsl("wp"))
         """
         let paperBranch = """
                 float paper = u_light_ground_on - 1.0;
                 if (paper > 0.0) {
                     vec2 pt = worldPos / u_camera_scale;
-                    groundDots *= 1.0 - paper * 0.05 * (wpFbm(pt * vec2(0.35, 0.9)) - 0.4);
+                    groundDots *= 1.0 - paper * 0.05 * (wpNV(texture2D(u_noise, wpUV(pt * vec2(0.35, 0.9)))) - 0.4);
                     groundDots += vec3(wpHash(floor(pt) * 1.37 + 3.1) - 0.5) * paper * 0.035;
                 }
         """
@@ -327,6 +320,9 @@ enum BackgroundGridNode {
             // Brief AT — LIGHT comp owns the opaque ground (0 → dark/list byte-identical). Pool removed.
             SKUniform(name: "u_light_ground_on", float: 0)
         ]
+        #if DEBUG || TESTFLIGHT
+        shader.uniforms.append(SKUniform(name: "u_noise", texture: StudyNoise.texture))   // live-48 — the paper's fbm
+        #endif
         return shader
     }
 
@@ -370,3 +366,75 @@ enum BackgroundGridNode {
         }
     }
 }
+
+#if DEBUG || TESTFLIGHT
+/// live-48 — the study's fbm (3 octaves of value noise; ×1.9 + (17.1, 9.2) per octave; amplitudes 0.6, 0.192, 0.061) baked
+/// ONCE into a tiling texture, so each fbm in the Pro looks (Aura, Eclipse, Wash, the paper ground) is ONE linear lookup
+/// instead of 12 hashes. The period is 100 noise cells on both axes: the octaves then repeat after 100 · 1.9 = 190 and
+/// 100 · 3.61 = 361 cells, whole numbers, so each octave's lattice wraps exactly (the hash of the cell index mod its
+/// period) and the texture tiles with no seam. Inside the base window [−4, 96)² every lattice cell keeps the study's own
+/// hash (the wrap only renames cells outside it), so there the texture IS the study's fbm, sampled every 100 / 1024 cells:
+/// orbs always sample inside it (their domain is −3.5 … 22); the paper ground repeats every 100 cells (286 × 111 pt).
+/// Texel j (0 … 1024) holds fbm(−4 + j · 100 / 1024); texel 1024 repeats texel 0 (the apron that lets linear filtering
+/// wrap). 16 bits through linear filtering: R = ⌊fbm · 255⌋, G = the remainder · 255 (filtering is linear, so
+/// R + G / 255 filters exactly). Shader side: `glsl(_:)`.
+enum StudyNoise {
+    static let cells = 1024
+    /// Lazily on first use (≈10 ms optimised); shared by every Pro-look shader and the paper ground.
+    static let texture: SKTexture = {
+        let n = cells + 1
+        let periods = [100, 190, 361]
+        let offs = SIMD2<Float>(17.1, 9.2)
+        func fract(_ x: Float) -> Float { x - x.rounded(.down) }
+        func hash(_ x: Float, _ y: Float) -> Float {   // the shaders' hash, float for float
+            var p = SIMD3<Float>(fract(x * 0.1031), fract(y * 0.1031), fract(x * 0.1031))
+            let d = p.x * (p.y + 33.33) + p.y * (p.z + 33.33) + p.z * (p.x + 33.33)
+            p += SIMD3(repeating: d)
+            return fract((p.x + p.y) * p.z)
+        }
+        // Each octave's lattice base = ⌊the base window's corner in that octave⌋; its table holds the study's hash there.
+        var bases: [SIMD2<Float>] = [SIMD2(-4, -4)]
+        for _ in 1..<3 { bases.append(bases.last! * 1.9 + offs) }
+        let lat: [(b: SIMD2<Int>, p: Int, h: [Float])] = (0..<3).map { k in
+            let b = SIMD2<Int>(Int(bases[k].x.rounded(.down)), Int(bases[k].y.rounded(.down))), p = periods[k]
+            var h = [Float](repeating: 0, count: p * p)
+            for iy in 0..<p { for ix in 0..<p { h[iy * p + ix] = hash(Float(b.x + ix), Float(b.y + iy)) } }
+            return (b, p, h)
+        }
+        func noise(_ k: Int, _ x: Float, _ y: Float) -> Float {
+            let L = lat[k]
+            let fx0 = x.rounded(.down), fy0 = y.rounded(.down)
+            let fx = x - fx0, fy = y - fy0
+            func w(_ i: Int, _ b: Int) -> Int { ((i - b) % L.p + L.p) % L.p }
+            let x0 = w(Int(fx0), L.b.x), x1 = w(Int(fx0) + 1, L.b.x), y0 = w(Int(fy0), L.b.y), y1 = w(Int(fy0) + 1, L.b.y)
+            let ux = fx * fx * (3 - 2 * fx), uy = fy * fy * (3 - 2 * fy)
+            let a = L.h[y0 * L.p + x0], b = L.h[y0 * L.p + x1], c = L.h[y1 * L.p + x0], d = L.h[y1 * L.p + x1]
+            let ab = a + (b - a) * ux, cd = c + (d - c) * ux
+            return ab + (cd - ab) * uy
+        }
+        var bytes = [UInt8](repeating: 255, count: n * n * 4)
+        let step: Float = 100 / Float(cells)
+        for j in 0..<n {
+            for i in 0..<n {
+                var p = SIMD2<Float>(-4 + Float(i) * step, -4 + Float(j) * step)
+                var a: Float = 0.6, s: Float = 0
+                for k in 0..<3 { s += a * noise(k, p.x, p.y); p = p * 1.9 + offs; a *= 0.32 }
+                let v = min(max(s, 0), 1) * 255
+                let hi = v.rounded(.down)
+                let o = (j * n + i) * 4
+                bytes[o] = UInt8(hi); bytes[o + 1] = UInt8(min(255, ((v - hi) * 255).rounded()))
+            }
+        }
+        let t = SKTexture(data: Data(bytes), size: CGSize(width: n, height: n))
+        t.filteringMode = .linear
+        return t
+    }()
+    /// The helpers, prefixed `px`: `pxUV(p)` = where fbm(p) sits in the texture, `pxNV(texel)` = the 16-bit value. The
+    /// lookup itself, `pxNV(texture2D(u_noise, pxUV(p)))`, must be written in main(): SpriteKit's Metal translation hands
+    /// a texture uniform to main only (a helper that samples u_noise fails to compile → a white sprite).
+    static func glsl(_ px: String) -> String {
+        "vec2 \(px)UV(vec2 p) { return (fract((p + vec2(4.0)) * 0.01) * 1024.0 + vec2(0.5)) / 1025.0; }\n"
+            + "float \(px)NV(vec4 t) { return dot(t.rg, vec2(1.0, 1.0 / 255.0)); }"
+    }
+}
+#endif

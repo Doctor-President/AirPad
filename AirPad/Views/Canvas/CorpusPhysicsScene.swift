@@ -263,7 +263,7 @@ final class CorpusPhysicsScene: SKScene {
         // (the two never coexist — entering selection is a touch that clears focus).
         outline.strokeColor = UIColor(red: 0x1B / 255.0, green: 0x59 / 255.0, blue: 0xC2 / 255.0, alpha: 1)
         #if DEBUG || TESTFLIGHT
-        if !currentIsLight, let m = AppearanceTuning.mapDark { outline.strokeColor = m.selectionRing.uiColor }   // live-39
+        if !currentIsLight, let m = mapTuning { outline.strokeColor = m.selectionRing.uiColor }   // live-39
         #endif
         outline.fillColor = .clear
         outline.lineWidth = 3
@@ -315,7 +315,7 @@ final class CorpusPhysicsScene: SKScene {
         let outline = SKShapeNode(circleOfRadius: radius + 6)
         outline.strokeColor = UIColor(red: 0x00 / 255.0, green: 0xBF / 255.0, blue: 0xFF / 255.0, alpha: 1)
         #if DEBUG || TESTFLIGHT
-        if !currentIsLight, let m = AppearanceTuning.mapDark { outline.strokeColor = m.focusRing.uiColor }   // live-39
+        if !currentIsLight, let m = mapTuning { outline.strokeColor = m.focusRing.uiColor }   // live-39
         #endif
         outline.fillColor = .clear
         outline.lineWidth = 4
@@ -883,13 +883,41 @@ final class CorpusPhysicsScene: SKScene {
             gridNode?.fillShader?.uniforms.first { $0.name == "u_ground_color" }?
                 .vectorFloat3Value = vector_float3(0.0667, 0.0667, 0.0824)
             #if DEBUG || TESTFLIGHT
-            if let m = AppearanceTuning.mapDark { applyMapDarkTuning(m) }
+            if let m = mapTuning { applyMapDarkTuning(m) }
             #endif
         }
         #if DEBUG || TESTFLIGHT
-        applyMapLook(AppearanceTuning.mapDark)   // live-43 — the orb look on both grounds (Aura, Outline)
+        applyMapLook(mapTuning)   // live-43 — the orb look on both grounds (Aura, Outline)
         #endif
     }
+
+    #if DEBUG || TESTFLIGHT
+    /// live-48 — the tuner's Map values AS DRAWN: thermal ≥ .critical → the orb look is Flat until the phone cools (the
+    /// tuner keeps T's pick, nothing in the UI changes; the look returns by itself). Every look read in the scene goes
+    /// through here, so the title ink, Wash, the ground's grain and the Glass tilt follow.
+    private var mapTuning: MapDarkTuning? {
+        guard var m = AppearanceTuning.mapDark else { return nil }
+        if MapHeatGuard.shared.critical { m.orbLook = .flat }
+        return m
+    }
+    /// live-48 — a Pro look (Glass, Aura, Eclipse; Wash on the light Map) is what the orbs wear → 60 fps while panning.
+    private var proLookShowing = false
+    /// live-48 — Low Power / thermal ≥ .serious → the small-orb level of detail on EVERY orb (Aura, Eclipse, Wash).
+    private var lodAllOrbs = false
+    /// live-48 — below this on-screen radius (pt) Eclipse draws the plain ramp (no warp) and Wash drops bleed + granulation,
+    /// fading over ± 3 pt. DEBUG `-MapLODRadius <pt>` (0 = off) for A/B stills.
+    static let lodRadiusPt: Double = lodArg("MapLODRadius") ?? 28
+    /// live-48 — Aura's: OFF. Its warp moves WHICH stop shows (the orb's colour), not fine detail, so the plain ramp is
+    /// visible at every size (20–28 pt orbs: mean Δ 30–75 / 255 vs 2–6 for Eclipse), and after the noise texture it saves
+    /// ~0.02 ms. Low Power / thermal ≥ .serious still drop it on every orb (lodAllOrbs). DEBUG `-MapAuraLODRadius <pt>`.
+    static let auraLodRadiusPt: Double = lodArg("MapAuraLODRadius") ?? 0
+    private static func lodArg(_ key: String) -> Double? {
+        #if DEBUG
+        if let v = UserDefaults.standard.object(forKey: key) as? String, let d = Double(v) { return d }
+        #endif
+        return nil
+    }
+    #endif
 
     #if DEBUG || TESTFLIGHT
     /// live-39 — the TestFlight tuner's dark-Map values over the baked ones (pushed per frame; dark only).
@@ -960,6 +988,8 @@ final class CorpusPhysicsScene: SKScene {
         // sprites).
         let washOn = currentIsLight && m.orbLook.drawsWashOnLight && !Self.auraOnLightDebug
         let studyLight = look == .aura || look == .eclipse
+        proLookShowing = washOn || look == .glass || look == .aura || look == .eclipse || look == .fresnel   // live-48
+        lodAllOrbs = MapHeatGuard.shared.stressed
         if washOn { syncAura(nil); syncWash(m) } else { syncWash(nil); syncAura(studyLight ? m : nil, eclipse: look == .eclipse) }
         // The ground's share of the study's paper / grain (grid u_light_ground_on): light = 1 + paper while Wash shows;
         // dark = −grain while Aura / Eclipse shows (0 = none).
@@ -987,7 +1017,7 @@ final class CorpusPhysicsScene: SKScene {
     /// move visibly: Δ(highlight centre, arc direction) × the largest on-screen orb > 0.5 px. Smaller drift is held back
     /// (not pushed) until it adds up to a visible step; while only the tilt moves, the Map renders at 30 fps.
     private func syncGlassOrbs() {
-        guard !currentIsLight, let m = AppearanceTuning.mapDark, m.orbLook == .glass else { return }
+        guard !currentIsLight, let m = mapTuning, m.orbLook == .glass else { return }
         func o(_ n: String) -> SKUniform? { orbSpriteShader.uniforms.first { $0.name == n } }
         var tilt = FlutedGlass.shared.tiltRunning ? GlassMotion.shared.tilt : .zero
         #if DEBUG
@@ -1758,11 +1788,21 @@ final class CorpusPhysicsScene: SKScene {
     /// the next idle-rate frame). Also bumps `lastActivityTime` so the debounce starts fresh.
     private func wakeMap() {
         isTouchingMap = true
-        desiredMapFPS = Self.activeMapFPS
-        if let v = view, v.preferredFramesPerSecond != Self.activeMapFPS {
-            v.preferredFramesPerSecond = Self.activeMapFPS
+        desiredMapFPS = activeFPSNow
+        if let v = view, v.preferredFramesPerSecond != desiredMapFPS {
+            v.preferredFramesPerSecond = desiredMapFPS
         }
     }
+
+    /// live-48 — the panning / zooming frame rate: 60 on the Pro looks (Glass, Aura, Eclipse, Wash) and on EVERY look while
+    /// Low Power is on or thermal ≥ .serious; otherwise 120 (Flat and Outline unchanged). Rest stays 8 fps.
+    private var activeFPSNow: Int {
+        #if DEBUG || TESTFLIGHT
+        if proLookShowing || MapHeatGuard.shared.stressed { return Self.proActiveMapFPS }
+        #endif
+        return Self.activeMapFPS
+    }
+    private static let proActiveMapFPS = 60
 
     /// Brief AY — per-frame: count real renders, detect activity, drop/raise the SKView frame rate, and
     /// publish the heat instruments. At rest the map renders at `idleMapFPS` (a static image looks
@@ -1787,7 +1827,7 @@ final class CorpusPhysicsScene: SKScene {
         orbsMovedLastFrame = wasAnimating   // latch for next frame's updateGridWarp dirty check
         animatingThisFrame = false
 
-        var target = (currentTime - lastActivityTime < Self.idleDelay) ? Self.activeMapFPS : Self.idleMapFPS
+        var target = (currentTime - lastActivityTime < Self.idleDelay) ? activeFPSNow : Self.idleMapFPS
         // live-43 — only the Glass light following the tilt (a visible step) → 30 fps, not 120; the Aura drift (motion
         // T asked for) → at least 30 fps. Nothing else at rest leaves the 8 fps idle.
         if target == Self.idleMapFPS && currentTime - lastTiltActivityTime < Self.idleDelay { target = Self.tiltMapFPS }
@@ -1797,7 +1837,10 @@ final class CorpusPhysicsScene: SKScene {
         #endif
         if driftOn { target = max(target, Self.tiltMapFPS) }
         #if DEBUG
-        if ProcessInfo.processInfo.arguments.contains("-NoMapIdle") { target = Self.activeMapFPS }  // A/B baseline
+        // A/B baseline: `-NoMapIdle YES` = forced 120; live-48 `-NoMapIdle active` = held at the panning rate (60 on a Pro look)
+        if ProcessInfo.processInfo.arguments.contains("-NoMapIdle") {
+            target = UserDefaults.standard.string(forKey: "NoMapIdle") == "active" ? activeFPSNow : Self.activeMapFPS
+        }
         #endif
         if desiredMapFPS != target { desiredMapFPS = target }
         if v.preferredFramesPerSecond != desiredMapFPS { v.preferredFramesPerSecond = desiredMapFPS }
@@ -1810,8 +1853,10 @@ final class CorpusPhysicsScene: SKScene {
             lastCPUSampleTime = currentTime
             #if DEBUG
             if ProcessInfo.processInfo.arguments.contains("-MapHeatLog") {
-                NSLog("[MapHeat] rendered=%d/s targetFPS=%d CPU=%.0f%% thermal=%@ active=%@ [touch=%@ coast=%@ cam=%@ card=%@ anim=%@ tilt=%@ drift=%@]",
-                      recentRenderTimes.count, desiredMapFPS, avg, Self.thermalString(), active ? "Y" : "n",
+                NSLog("[MapHeat] rendered=%d/s targetFPS=%d CPU=%.0f%% thermal=%@ lowPower=%@ pro=%@ guard=%@ active=%@ [touch=%@ coast=%@ cam=%@ card=%@ anim=%@ tilt=%@ drift=%@]",
+                      recentRenderTimes.count, desiredMapFPS, avg, Self.thermalString(),
+                      ProcessInfo.processInfo.isLowPowerModeEnabled ? "Y" : "n", proLookShowing ? "Y" : "n",
+                      MapHeatGuard.shared.critical ? "flat" : MapHeatGuard.shared.stressed ? "60+lod" : "-", active ? "Y" : "n",
                       isTouchingMap ? "1":"0", coastVelocity != .zero ? "1":"0", camMoved ? "1":"0",
                       cardMoving ? "1":"0", wasAnimating ? "1":"0",
                       currentTime - lastTiltActivityTime < Self.idleDelay ? "1":"0", driftOn ? "1":"0")
@@ -2035,7 +2080,7 @@ final class CorpusPhysicsScene: SKScene {
             var dot = AppearancePalette.mapGridDotRGB(dark: dotDark)
             var dotOpacity = AppearancePalette.mapGridDotOpacity(dark: dotDark)
             #if DEBUG || TESTFLIGHT
-            if dotDark, let m = AppearanceTuning.mapDark {   // live-39 — the tuner's dark dots
+            if dotDark, let m = mapTuning {   // live-39 — the tuner's dark dots
                 let c = m.dot.simd; dot = (c.x, c.y, c.z); dotOpacity = Float(m.dotOpacity)
             }
             #endif
@@ -3403,7 +3448,7 @@ final class CorpusPhysicsScene: SKScene {
         let orbsChanged = nodeSprites.count != lastFieldOrbCount || nodeOnScreenDiameter.count != lastFieldMeasuredCount
         var reachChanged = false
         #if DEBUG || TESTFLIGHT
-        let tunedReach = isLight ? GridWarpTuning.reachOrbRadii : (AppearanceTuning.mapDark?.shrinkReach ?? GridWarpTuning.reachOrbRadii)
+        let tunedReach = isLight ? GridWarpTuning.reachOrbRadii : (mapTuning?.shrinkReach ?? GridWarpTuning.reachOrbRadii)
         reachChanged = tunedReach != lastFieldReach; lastFieldReach = tunedReach
         #endif
         if !(camMovedSinceField || orbsChanged || orbsMovedLastFrame || reachChanged) {
@@ -3433,7 +3478,7 @@ final class CorpusPhysicsScene: SKScene {
         let refScreen = refs.linear * ramp / cs
         var reachUnits = GridWarpTuning.reachOrbRadii             // ORB RADII
         #if DEBUG || TESTFLIGHT
-        if !isLight, let m = AppearanceTuning.mapDark { reachUnits = m.shrinkReach }   // live-40 — tuner reach (dark)
+        if !isLight, let m = mapTuning { reachUnits = m.shrinkReach }   // live-40 — tuner reach (dark)
         #endif
         // DEFENSIVE CEILING on a single orb's reach. `buildWarpField` early-exits per texel with
         // `dist > o.reach`, which is what keeps its cost bounded; reach in ORB UNITS grows with the
@@ -3970,21 +4015,13 @@ final class CorpusPhysicsScene: SKScene {
     /// cells on screen: the body's share is here (× coverage), the ground's is the grid's (u_light_ground_on = −grain on
     /// the dark Map). The result over the KNOWN ground (u_au col 3) is emitted premultiplied with alpha = coverage, so it
     /// is exact over the plain ground, the halo adds (alpha 0), and the dots / neighbours show through where the orb is not
-    /// opaque. u_au = (spread, warp, softness, halo reach), (rim, fringe, grain, eclipse 0/1), (0, content scale, drift, 0),
+    /// opaque. u_au = (spread, warp, softness, halo reach), (rim, fringe, grain, eclipse 0/1), (LOD every orb 0/1, content scale, drift, LOD radius pt),
     /// (ground rgb, 0). a_au_a = (stop A rgb, seed), a_au_b = (stop B rgb, this sprite's extent), a_au_c = stop C,
     /// a_au_r = the rim colour.
     private lazy var auraShader: SKShader = {
         let src = """
         float auHash(vec2 p) { vec3 p3 = fract(vec3(p.xyx) * 0.1031); p3 += dot(p3, p3.yzx + 33.33); return fract((p3.x + p3.y) * p3.z); }
-        float auNoise(vec2 p) {
-            vec2 i = floor(p); vec2 f = fract(p); vec2 u = f * f * (3.0 - 2.0 * f);
-            return mix(mix(auHash(i), auHash(i + vec2(1.0, 0.0)), u.x), mix(auHash(i + vec2(0.0, 1.0)), auHash(i + vec2(1.0, 1.0)), u.x), u.y);
-        }
-        float auFbm(vec2 p) {
-            float a = 0.6; float s = 0.0;
-            for (int i = 0; i < 3; i++) { s += a * auNoise(p); p = p * 1.9 + vec2(17.1, 9.2); a *= 0.32; }
-            return s;
-        }
+        \(StudyNoise.glsl("au"))
         vec3 auRamp(vec3 a, vec3 b, vec3 c, float t) {
             t = clamp(t, 0.0, 1.0);
             return mix(mix(a, b, smoothstep(0.0, 0.55, t)), c, smoothstep(0.45, 1.0, t));
@@ -3992,11 +4029,15 @@ final class CorpusPhysicsScene: SKScene {
         float auDisk(float d, float s) { return 1.0 - smoothstep(1.0 - s, 1.0 + s, d); }
         void main() {
             vec4 P0 = u_au[0]; vec4 P1 = u_au[1]; vec4 P2 = u_au[2]; vec4 P3 = u_au[3];
-            float spread = P0.x; float warp = P0.y; float s = P0.z; float reachK = P0.w;
-            float rimK = P1.x; float fringe = P1.y; float grain = P1.z; bool ecl = P1.w > 0.5;
             float scale = max(P2.y, 1.0);
-            vec3 bg = P3.rgb;
             float ext = a_au_b.w;
+            // live-48 level of detail: an orb under P2.w pt radius on screen (Eclipse 28; Aura 0 = off) draws the plain ramp
+            // (no warp), fading in over 6 pt so a zoom never pops; P2.x = 1 → every orb (Low Power / thermal ≥ serious).
+            float rPt = 1.0 / (max(fwidth(v_tex_coord.x), 0.000001) * 2.0 * ext * scale);   // the orb's radius on screen, pt
+            float lod = P2.x > 0.5 ? 0.0 : (P2.w > 0.0 ? smoothstep(P2.w - 3.0, P2.w + 3.0, rPt) : 1.0);
+            float spread = P0.x; float warp = P0.y * lod; float s = P0.z; float reachK = P0.w;
+            float rimK = P1.x; float fringe = P1.y; float grain = P1.z; bool ecl = P1.w > 0.5;
+            vec3 bg = P3.rgb;
             vec2 q = (v_tex_coord - vec2(0.5)) * (2.0 * ext);   // orb radii, y up (this sprite's own extent)
             float d = length(q);
             float reach = max(reachK, 0.02);
@@ -4005,7 +4046,8 @@ final class CorpusPhysicsScene: SKScene {
 
             vec2 w = q * 0.62 + vec2(seed * 13.1, seed * 7.7);
             vec2 dr = u_time * vec2(0.05, 0.032) * P2.z;
-            vec2 n = vec2(auFbm(w + dr), auFbm(w * 1.15 + vec2(5.2, 1.3) - dr)) - vec2(0.4);
+            vec2 n = vec2(0.0);
+            if (lod > 0.0) { n = vec2(auNV(texture2D(u_noise, auUV(w + dr))), auNV(texture2D(u_noise, auUV(w * 1.15 + vec2(5.2, 1.3) - dr)))) - vec2(0.4); }
             vec2 qw = q + warp * n * 1.8;
             float ang = seed * 6.2831853;
             vec2 dir = vec2(cos(ang), sin(ang));
@@ -4063,7 +4105,8 @@ final class CorpusPhysicsScene: SKScene {
             SKAttribute(name: "a_au_c", type: .vectorFloat4),
             SKAttribute(name: "a_au_r", type: .vectorFloat4),
         ]
-        shader.uniforms = [SKUniform(name: "u_au", matrixFloat4x4: matrix_identity_float4x4)]
+        shader.uniforms = [SKUniform(name: "u_au", matrixFloat4x4: matrix_identity_float4x4),
+                           SKUniform(name: "u_noise", texture: StudyNoise.texture)]   // live-48 — the fbm, one lookup each
         return shader
     }()
 
@@ -4093,7 +4136,8 @@ final class CorpusPhysicsScene: SKScene {
         let u = simd_float4x4(columns: (
             vector_float4(Float(v.spread), Float(v.warp), Float(v.softness), Float(v.haloReach)),
             vector_float4(Float(v.rim), Float(v.fringe), Float(v.grain), eclipse ? 1 : 0),
-            vector_float4(0, Float(glyphContentScale), v.drift ? 1 : 0, 0),
+            vector_float4(lodAllOrbs ? 1 : 0, Float(glyphContentScale), v.drift ? 1 : 0,
+                          Float(eclipse ? Self.lodRadiusPt : Self.auraLodRadiusPt)),
             vector_float4(ground.x, ground.y, ground.z, 0)))
         if let uu = auraShader.uniforms.first, uu.matrixFloat4x4Value != u { uu.matrixFloat4x4Value = u }
         let key = "\(eclipse)|\(ext)|\(nodeSprites.count)"
@@ -4187,7 +4231,7 @@ final class CorpusPhysicsScene: SKScene {
     /// 0.035), edge pooling, bloom, and granulation in ORB-LOCAL on-screen points (q × the orb's on-screen radius from
     /// fwidth(v_tex_coord) ÷ the content scale), so it rides with the orb and never swims. The paper fibres + grain are
     /// the GROUND's (BackgroundGridNode, u_light_ground_on = 1 + paper). Sprite extent = the study's bound (a_au_b.w).
-    /// u_wa = (spread, warp, softness, bleed), (pooling, misregistration, paper, 0), (0, content scale, 0, 0), 0.
+    /// u_wa = (spread, warp, softness, bleed), (pooling, misregistration, paper, 0), (LOD every orb 0/1, content scale, 0, LOD radius pt), 0.
     /// a_au_a = (stop A rgb, seed), a_au_b = (stop B rgb, this sprite's extent), a_au_c = stop C.
     private lazy var washShader: SKShader = {
         let src = """
@@ -4196,11 +4240,7 @@ final class CorpusPhysicsScene: SKScene {
             vec2 i = floor(p); vec2 f = fract(p); vec2 u = f * f * (3.0 - 2.0 * f);
             return mix(mix(waHash(i), waHash(i + vec2(1.0, 0.0)), u.x), mix(waHash(i + vec2(0.0, 1.0)), waHash(i + vec2(1.0, 1.0)), u.x), u.y);
         }
-        float waFbm(vec2 p) {
-            float a = 0.6; float s = 0.0;
-            for (int i = 0; i < 3; i++) { s += a * waNoise(p); p = p * 1.9 + vec2(17.1, 9.2); a *= 0.32; }
-            return s;
-        }
+        \(StudyNoise.glsl("wa"))
         vec3 waRamp(vec3 a, vec3 b, vec3 c, float t) {
             t = clamp(t, 0.0, 1.0);
             return mix(mix(a, b, smoothstep(0.0, 0.55, t)), c, smoothstep(0.45, 1.0, t));
@@ -4215,11 +4255,13 @@ final class CorpusPhysicsScene: SKScene {
             vec2 q = (v_tex_coord - vec2(0.5)) * (2.0 * ext);   // orb radii, y up
             float d = length(q);
             float rPt = 1.0 / (max(fwidth(v_tex_coord.x), 0.000001) * 2.0 * ext * scale);   // the orb's radius on screen, pt
+            // live-48 level of detail (as Aura): under ~28 pt radius no bleed and no granulation, faded over 6 pt.
+            float lod = P2.x > 0.5 ? 0.0 : (P2.w > 0.0 ? smoothstep(P2.w - 3.0, P2.w + 3.0, rPt) : 1.0);
             vec3 A = a_au_a.rgb; vec3 B = a_au_b.rgb; vec3 C = a_au_c.rgb;
             float seed = a_au_a.w;
 
             vec2 w = q * 0.62 + vec2(seed * 13.1, seed * 7.7);
-            vec2 n = vec2(waFbm(w), waFbm(w * 1.15 + vec2(5.2, 1.3))) - vec2(0.4);
+            vec2 n = vec2(waNV(texture2D(u_noise, waUV(w))), waNV(texture2D(u_noise, waUV(w * 1.15 + vec2(5.2, 1.3))))) - vec2(0.4);
             vec2 qw = q + warp * n * 1.8;
             float ang = seed * 6.2831853;
             vec2 dir = vec2(cos(ang), sin(ang));
@@ -4227,17 +4269,20 @@ final class CorpusPhysicsScene: SKScene {
             t += 0.3 * warp * sin(dot(qw, vec2(-dir.y, dir.x)) * 1.9 + seed * 11.0);
 
             vec3 pig = mix(waRamp(A, B, C, t), vec3(1.0), 0.14);
-            float th = atan(q.y, q.x);
-            float e = waFbm(vec2(cos(th), sin(th)) * 2.2 + vec2(seed * 9.0) + q * 0.8) - 0.42;
-            float rr = 1.0 + bleed * 0.11 * e;
+            float e = 0.0; float gran = 0.0;
+            if (lod > 0.0) {
+                // (cos, sin) of the angle = q / |q| (the study's atan → cos / sin, without the trig)
+                e = waNV(texture2D(u_noise, waUV(q / max(d, 0.000001) * 2.2 + vec2(seed * 9.0) + q * 0.8))) - 0.42;
+                gran = waNoise(q * rPt * 0.55 + vec2(seed * 40.0)) - 0.5;
+            }
+            float rr = 1.0 + bleed * lod * 0.11 * e;
             float dn = d / rr;
             vec2 off = vec2(0.75, -0.55) * misreg * 0.035;
             vec3 cov = vec3(waDisk(length(q + off) / rr, s), waDisk(dn, s), waDisk(length(q - off) / rr, s));
             float pq = (dn - 0.975) / max(0.035, s * 0.9);
             float pool = exp(-pq * pq) * pooling;
             float bloom = 0.88 + 0.3 * n.x;
-            float gran = waNoise(q * rPt * 0.55 + vec2(seed * 40.0)) - 0.5;
-            float dens = (0.6 * bloom + 0.5 * pool) * (1.0 - paper * 0.45 * gran);
+            float dens = (0.6 * bloom + 0.5 * pool) * (1.0 - paper * 0.45 * gran * lod);
             vec3 absorb = clamp((vec3(1.0) - pig) * dens, 0.0, 1.0);
             gl_FragColor = vec4(vec3(1.0) - absorb * cov, 1.0);
         }
@@ -4248,7 +4293,8 @@ final class CorpusPhysicsScene: SKScene {
             SKAttribute(name: "a_au_b", type: .vectorFloat4),
             SKAttribute(name: "a_au_c", type: .vectorFloat4),
         ]
-        shader.uniforms = [SKUniform(name: "u_wa", matrixFloat4x4: matrix_identity_float4x4)]
+        shader.uniforms = [SKUniform(name: "u_wa", matrixFloat4x4: matrix_identity_float4x4),
+                           SKUniform(name: "u_noise", texture: StudyNoise.texture)]   // live-48 — the fbm, one lookup each
         return shader
     }()
 
@@ -4269,7 +4315,7 @@ final class CorpusPhysicsScene: SKScene {
         let u = simd_float4x4(columns: (
             vector_float4(Float(w.spread), Float(w.warp), Float(w.softness), Float(w.bleed)),
             vector_float4(Float(w.pooling), Float(w.misregistration), Float(w.paper), 0),
-            vector_float4(0, Float(glyphContentScale), 0, 0),
+            vector_float4(lodAllOrbs ? 1 : 0, Float(glyphContentScale), 0, Float(Self.lodRadiusPt)),
             vector_float4(0, 0, 0, 0)))
         if let uu = washShader.uniforms.first, uu.matrixFloat4x4Value != u { uu.matrixFloat4x4Value = u }
         let ext = w.spriteExtent
@@ -4533,7 +4579,7 @@ final class CorpusPhysicsScene: SKScene {
         try? FileManager.default.createDirectory(at: dir, withIntermediateDirectories: true)
         try? rows.joined(separator: "\n").write(to: dir.appendingPathComponent(String(format: "%02d-%@.csv", auraSizeStepIndex, step)),
                                                atomically: true, encoding: .utf8)
-        let look = AppearanceTuning.mapDark.map { "\($0.orbLook)" } ?? "flat"
+        let look = mapTuning.map { "\($0.orbLook)" } ?? "flat"
         let line = String(format: "[AURASIZE] step=%@ look=%@ ground=%@ cam=%.2f orbs=%d aura=%d bad>1px=%d maxErrPx=%.1f worst=%@",
                           step, look, currentIsLight ? "light" : "dark", cs, rows.count - 1, aura, bad, maxErr, worst)
         NSLog("%@", line); print(line)
@@ -4624,7 +4670,7 @@ final class CorpusPhysicsScene: SKScene {
         styleUnfocusedOrb(sprite, baseFill: fillColor, isMeta: isMeta,
                           isLight: currentIsLight)
         #if DEBUG || TESTFLIGHT
-        if !auraStyleKey.isEmpty, let m = AppearanceTuning.mapDark {   // live-43 — born into the Aura / Eclipse look
+        if !auraStyleKey.isEmpty, let m = mapTuning {   // live-43 — born into the Aura / Eclipse look
             if studyFamilyOf[nodeID] == nil { studyFamilyOf[nodeID] = OrbStudyPalettes.nearest(hue: (Self.oklch(fillColor).h + 360).truncatingRemainder(dividingBy: 360)) }
             styleAuraSprite(sprite, nodeID: nodeID, extent: auraIsEclipse ? m.eclipse.spriteExtent : m.aura.spriteExtent)
         }
@@ -4691,15 +4737,15 @@ final class CorpusPhysicsScene: SKScene {
         #if DEBUG || TESTFLIGHT
         // live-43 — Outline: light ink on the dark Map, dark ink on the light one (the fill is too faint to matter).
         // live-47 — the study looks (Aura / Eclipse on dark, Wash on light): studyTitleInkIsDark (Eclipse always light).
-        if let m = AppearanceTuning.mapDark, m.orbLook == .outline {
+        if let m = mapTuning, m.orbLook == .outline {
             return currentIsLight ? UIColor(red: 0.08, green: 0.07, blue: 0.06, alpha: 1) : UIColor(red: 1.0, green: 0.98, blue: 0.95, alpha: 1)
         }
-        if let m = AppearanceTuning.mapDark, m.orbLook.drawsWashOnLight {
+        if let m = mapTuning, m.orbLook.drawsWashOnLight {
             return studyTitleInkIsDark(nodeID: nodeID, m: m)
                 ? UIColor(red: 0x1B / 255.0, green: 0x1A / 255.0, blue: 0x20 / 255.0, alpha: 1)   // the study's inks
                 : UIColor(red: 0xF4 / 255.0, green: 0xF2 / 255.0, blue: 0xF8 / 255.0, alpha: 1)
         }
-        if !currentIsLight, let m = AppearanceTuning.mapDark, m.orbLook == .fresnel {
+        if !currentIsLight, let m = mapTuning, m.orbLook == .fresnel {
             let f = m.fresnel, g = m.ground.rgb
             var r: CGFloat = 0, gg: CGFloat = 0, b: CGFloat = 0, a: CGFloat = 0
             applyDarkOrbBoost(fillColor).getRed(&r, green: &gg, blue: &b, alpha: &a)
@@ -4710,7 +4756,7 @@ final class CorpusPhysicsScene: SKScene {
             let label = f.label.uiColor, black = UIColor(red: 0.08, green: 0.07, blue: 0.06, alpha: 1)
             return Self.wcagContrast(label, body) >= Self.wcagContrast(black, body) ? label : black
         }
-        if !currentIsLight, let m = AppearanceTuning.mapDark, m.orbLook == .glass {
+        if !currentIsLight, let m = mapTuning, m.orbLook == .glass {
             // CPU twin of the Glass body away from the highlight: the background (ground, dimmed) tinted, then lifted.
             let gl = m.glass, g = m.ground.rgb
             var r: CGFloat = 0, gg: CGFloat = 0, b: CGFloat = 0, a: CGFloat = 0
@@ -5449,3 +5495,38 @@ private extension Comparable {
     }
 }
 
+#if DEBUG || TESTFLIGHT
+/// live-48 — the Map's heat safety net for the Pro looks (TestFlight / DEBUG). Cached, refreshed by the system's
+/// notifications (main queue). `stressed` = Low Power or thermal ≥ .serious → a 60 fps cap on every look + the small-orb
+/// level of detail on every orb; `critical` = thermal ≥ .critical → Flat until it cools. DEBUG
+/// `-MapHeatSim lowpower|serious|critical` fakes the state for stills.
+final class MapHeatGuard {
+    static let shared = MapHeatGuard()
+    private(set) var stressed = false
+    private(set) var critical = false
+    private var observers: [NSObjectProtocol] = []
+    private init() {
+        refresh()
+        let nc = NotificationCenter.default
+        for n in [ProcessInfo.thermalStateDidChangeNotification, Notification.Name.NSProcessInfoPowerStateDidChange] {
+            observers.append(nc.addObserver(forName: n, object: nil, queue: .main) { [weak self] _ in self?.refresh() })
+        }
+    }
+    private func refresh() {
+        var t = ProcessInfo.processInfo.thermalState
+        var lowPower = ProcessInfo.processInfo.isLowPowerModeEnabled
+        #if DEBUG
+        switch UserDefaults.standard.string(forKey: "MapHeatSim") {
+        case "lowpower": lowPower = true
+        case "serious": t = .serious
+        case "critical": t = .critical
+        default: break
+        }
+        #endif
+        stressed = lowPower || t.rawValue >= ProcessInfo.ThermalState.serious.rawValue
+        critical = t.rawValue >= ProcessInfo.ThermalState.critical.rawValue
+        NSLog("[MapHeatGuard] thermal=%d lowPower=%@ → %@", t.rawValue, lowPower ? "Y" : "n",
+              critical ? "Flat" : stressed ? "60 fps + LOD" : "normal")
+    }
+}
+#endif

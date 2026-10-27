@@ -589,12 +589,13 @@ struct AppearanceTunerSheet<G: Gesture>: View {
     private func setA(_ change: (inout AuraLook) -> Void) { change(&tuner.state.mapDark.aura) }
     private func setO(_ change: (inout OutlineLook) -> Void) { change(&tuner.state.mapDark.outline) }
     private func setW(_ change: (inout WashLook) -> Void) { change(&tuner.state.mapDark.wash) }
+    private func setE(_ change: (inout EclipseLook) -> Void) { change(&tuner.state.mapDark.eclipse) }
     private func f2(_ x: Double) -> String { String(format: "%.2f", x) }
     private func pct(_ x: Double) -> String { String(format: "%.0f%%", x * 100) }
 
     @ViewBuilder private var mapDarkSection: some View {
         if !dark {
-            note("Dark mode only, except the orb looks (below): Outline shows on both Maps, and Aura draws as Wash on the light Map.")
+            note("Dark mode only, except the orb looks (below): Outline shows on both Maps, and Aura / Eclipse draw as Wash on the light Map.")
         }
         subhead("Background")
         TunerColorRow(label: "Ground", color: m.ground, defaultHex: MapDarkTuning.today.ground.hex, id: "mapGround") { c in
@@ -654,15 +655,32 @@ struct AppearanceTunerSheet<G: Gesture>: View {
         }
         note("The focused ring shows after Show on Map / a search result; the selected ring in Select mode.")
         subhead("Orbs")
-        Picker("Orbs", selection: Binding(get: { m.orbLook }, set: { o in setMap { $0.orbLook = o } })) {
-            ForEach(MapOrbLook.allCases) { Text($0.label).tag($0) }
-        }
-        .pickerStyle(.segmented)
-        .accessibilityIdentifier("tunerMapOrbLook")
-        if m.orbLook == .fresnel { fresnelControls }
-        if m.orbLook == .glass { orbGlassControls }
-        if m.orbLook == .aura {
-            if dark { auraControls } else { washControls }
+        // live-47 — dark Map: Flat · Glass · Aura · Eclipse · Outline; light Map: Flat · Wash · Outline (Wash = the Pro looks
+        // Aura / Eclipse on the light ground; picking it keeps Eclipse if that is the dark choice, else Aura).
+        if dark {
+            Picker("Orbs", selection: Binding(get: { m.orbLook }, set: { o in setMap { $0.orbLook = o } })) {
+                ForEach(MapOrbLook.darkPicker) { Text($0.label).tag($0) }
+            }
+            .pickerStyle(.segmented)
+            .accessibilityIdentifier("tunerMapOrbLook")
+            if m.orbLook == .fresnel { fresnelControls }
+            if m.orbLook == .glass { orbGlassControls }
+            if m.orbLook == .aura { auraControls }
+            if m.orbLook == .eclipse { eclipseControls }
+        } else {
+            Picker("Orbs", selection: Binding(get: { m.orbLook.drawsWashOnLight ? "wash" : m.orbLook == .outline ? "outline" : "flat" },
+                                              set: { k in setMap {
+                                                  switch k {
+                                                  case "wash": if !$0.orbLook.drawsWashOnLight { $0.orbLook = .aura }
+                                                  case "outline": $0.orbLook = .outline
+                                                  default: $0.orbLook = .flat
+                                                  }
+                                              } })) {
+                Text("Flat").tag("flat"); Text("Wash").tag("wash"); Text("Outline").tag("outline")
+            }
+            .pickerStyle(.segmented)
+            .accessibilityIdentifier("tunerMapOrbLook")
+            if m.orbLook.drawsWashOnLight { washControls }
         }
         if m.orbLook == .outline { outlineControls }
         Button("Reset the Map section", role: .destructive) { setMap { $0 = .today } }
@@ -749,42 +767,57 @@ struct AppearanceTunerSheet<G: Gesture>: View {
              + "dark text reads better.")
     }
 
-    // live-43 — Aura (port of the study T approved 2026-10-26). live-45: dark Map only; no Eclipse, no halo.
+    // live-43 — Aura; live-47: an exact port of the study's aura branch (its seven controls, its ranges). Dark Map only.
     @ViewBuilder private var auraControls: some View {
         let a = m.aura
-        slider("Gradient spread", a.spread, 0.4...2, 0.01, f2(a.spread), id: "auSpread") { x in setA { $0.spread = x } }
-        slider("Warp", a.warp, 0...1.5, 0.01, f2(a.warp), id: "auWarp") { x in setA { $0.warp = x } }
-        slider("Edge softness", a.softness, 0.01...0.3, 0.005, f2(a.softness), id: "auSoft") { x in setA { $0.softness = x } }
-        slider("Softness floor (on screen)", a.softnessFloor, 0...10, 0.5, String(format: "%.1f pt", a.softnessFloor), id: "auSoftFloor") { x in
-            setA { $0.softnessFloor = x }
+        HStack(spacing: 6) {
+            ForEach(AuraLook.presets, id: \.0) { p in
+                chip(p.0, selected: a == p.1, id: "tunerAura-\(p.0)") { setMap { $0.aura = p.1 } }
+            }
         }
-        slider("Contrast (dark → light in each orb)", a.contrast, 0...2, 0.01, f2(a.contrast), id: "auContrast") { x in setA { $0.contrast = x } }
-        slider("Rim light", a.rim, 0...1, 0.01, f2(a.rim), id: "auRim") { x in setA { $0.rim = x } }
-        slider("Chromatic fringe", a.fringe, 0...1.5, 0.01, f2(a.fringe), id: "auFringe") { x in setA { $0.fringe = x } }
-        slider("Grain", a.grain, 0...1, 0.01, f2(a.grain), id: "auGrain") { x in setA { $0.grain = x } }
-        slider("Grain size (on screen)", a.grainSize, 0.5...2, 0.05, String(format: "%.2f pt", a.grainSize), id: "auGrainSize") { x in
-            setA { $0.grainSize = x }
-        }
-        slider("Hue spread (territory colour)", a.hueSpread, 0...90, 1, String(format: "%.0f°", a.hueSpread), id: "auHueSpread") { x in
-            setA { $0.hueSpread = x }
-        }
-        toggle("Drift (slow flow; the Map redraws at 30 fps while on)", a.drift, id: "auDrift") { b in setA { $0.drift = b } }
-        #if DEBUG
-        toggle("Study palettes (the study's 7 families by territory)", a.studyPalettes, id: "auStudy") { b in setA { $0.studyPalettes = b } }
-        #endif
-        Button("Aura defaults (T's 2026-10-26 values, live-45)") { setA { $0 = AuraLook() } }
+        studySliders(a, prefix: "au") { change in setA { change(&$0) } }
+        Button("Aura defaults (T's study values, 2026-10-27)") { setA { $0 = AuraLook() } }
             .font(.caption).buttonStyle(.bordered).controlSize(.small)
             .accessibilityIdentifier("tunerAuraReset")
-        note("Each orb's gradient is built from its territory colour: one stop turned back by the hue spread and darker, one "
-             + "lighter, one turned forward; Contrast pushes the first darker and the last lighter. The rim colour sits opposite "
-             + "on the wheel. The edge feather is the softness × the orb's radius, but never narrower than the floor in points, "
-             + "so small orbs stay soft too. No halo. Labels: dark ink only on light gradients. Dark Map only.")
+        note("The study's Aura, exactly: each orb takes its territory's study palette (12, one per territory), a seeded "
+             + "gradient warped by soft noise, a rim tint, a chromatic edge and a fine grain. Softness is a fraction of the "
+             + "orb's radius, as in the study. Labels: dark ink only where the gradient under the title is light.")
+    }
+
+    // live-47 — Eclipse returns: an exact port of the study's reworked eclipse branch. Dark Map only.
+    @ViewBuilder private var eclipseControls: some View {
+        let e = m.eclipse
+        HStack(spacing: 6) {
+            ForEach(EclipseLook.presets, id: \.0) { p in
+                chip(p.0, selected: e == p.1, id: "tunerEclipse-\(p.0)") { setMap { $0.eclipse = p.1 } }
+            }
+        }
+        studySliders(e, prefix: "ec") { change in setE { change(&$0) } }
+        Button("Eclipse defaults (T's study values, 2026-10-27)") { setE { $0 = EclipseLook() } }
+            .font(.caption).buttonStyle(.bordered).controlSize(.small)
+            .accessibilityIdentifier("tunerEclipseReset")
+        note("The study's reworked Eclipse: the glow rises gradually from a dark top, and the middle of each orb sits on its "
+             + "deepest colour, so white titles read. Rim light, a crescent, the chromatic edge and a small halo in the rim "
+             + "colour. Labels: always light ink.")
+    }
+
+    /// The study's seven sliders (its labels and ranges) for Aura / Eclipse.
+    @ViewBuilder private func studySliders<L: StudyOrbLook>(_ v: L, prefix: String,
+                                                            set: @escaping ((inout L) -> Void) -> Void) -> some View {
+        slider("Gradient spread", v.spread, 0.4...2, 0.01, f2(v.spread), id: prefix + "Spread") { x in set { $0.spread = x } }
+        slider("Warp", v.warp, 0...1.5, 0.01, f2(v.warp), id: prefix + "Warp") { x in set { $0.warp = x } }
+        slider("Edge softness", v.softness, 0.01...0.25, 0.005, f2(v.softness), id: prefix + "Soft") { x in set { $0.softness = x } }
+        slider("Halo reach", v.haloReach, 0...1.4, 0.01, f2(v.haloReach), id: prefix + "Halo") { x in set { $0.haloReach = x } }
+        slider("Rim light", v.rim, 0...1, 0.01, f2(v.rim), id: prefix + "Rim") { x in set { $0.rim = x } }
+        slider("Chromatic fringe", v.fringe, 0...1.5, 0.01, f2(v.fringe), id: prefix + "Fringe") { x in set { $0.fringe = x } }
+        slider("Grain", v.grain, 0...1, 0.01, f2(v.grain), id: prefix + "Grain") { x in set { $0.grain = x } }
+        toggle("Drift (slow flow; the Map redraws at 30 fps while on)", v.drift, id: prefix + "Drift") { b in set { $0.drift = b } }
     }
 
     // live-46 — Wash: the light Map's half of the Pro "Aura" look (a port of the study's wash branch).
     @ViewBuilder private var washControls: some View {
         let w = m.wash
-        note("Light Map: Aura draws as Wash (pigment on paper). These controls are Wash's; Aura's show in dark mode.")
+        note("Light Map: the Pro looks (Aura, Eclipse) draw as Wash (pigment on paper). These controls are Wash's; Aura's and Eclipse's show in dark mode.")
         HStack(spacing: 6) {
             ForEach(WashLook.presets, id: \.0) { p in
                 chip(p.0, selected: w == p.1, id: "tunerWash-\(p.0)") { setMap { $0.wash = p.1 } }
@@ -802,10 +835,10 @@ struct AppearanceTunerSheet<G: Gesture>: View {
         Button("Wash defaults (the study's Medium)") { setW { $0 = .medium } }
             .font(.caption).buttonStyle(.bordered).controlSize(.small)
             .accessibilityIdentifier("tunerWashReset")
-        note("Each orb is ink on paper: its territory's nearest study palette, lifted toward white and multiplied into the "
+        note("Each orb is ink on paper: its territory's study palette (12, one per territory), lifted toward white and multiplied into the "
              + "ground, so overlaps darken. Bleed wobbles the edge, pooling darkens a band just inside it, misregistration "
              + "offsets the colour plates. Paper grain sets the paper fibres and grain on the ground and the pigment's "
-             + "granulation in each orb. Labels: dark ink unless the orb's middle is dark.")
+             + "granulation in each orb. Labels: dark ink only where the colour under the title is light.")
     }
 
     // live-43-A — Outline; both grounds.

@@ -1,6 +1,6 @@
 #!/bin/zsh
 # live-45 — Map look stills, iOS 27 Simulator. ONE launch per framing + ground (-MapLookCycle steps every 4 s → same
-# layout + framing): Flat · Glass · Aura · Outline · Aura at contrast 0 / 1 / 2. Each snap waits for its
+# layout + framing): Flat · Glass · Aura · Eclipse · Outline · Wash Subtle / Medium / Strong (STEPS picks; live-47). Each snap waits for its
 # `[MAPCYCLE] <look>` line (+2.5 s to settle). LIB=fixture (default; the clone of T's corpus — its stills stay LOCAL) or
 # LIB=sample (the Sample Library — the only stills that get committed).
 #   [LIB=sample] scripts/renders/shoot_live45_looks.sh <out_dir> <tag> <dark|light> [extra args… e.g. -MapZoom 0.5]
@@ -24,7 +24,7 @@ waitstep() {   # waitstep <step> <png>
 xcrun simctl terminate $SIM $APPID >/dev/null 2>&1
 xcrun simctl launch --console-pty $SIM $APPID $BASE "$@" -MapLookCycle $S > $LOG 2>&1 &
 LP=$!
-STEPS=(${=STEPS:-flat aura outline aura-c0 aura-c1 aura-c2})
+STEPS=(${=STEPS:-flat aura eclipse})
 n=0; for st in $STEPS; do n=$((n+1)); waitstep $st $TAG-$GROUND-$n-$st; done
 kill $LP 2>/dev/null; xcrun simctl terminate $SIM $APPID >/dev/null 2>&1
 xcrun simctl status_bar $SIM clear

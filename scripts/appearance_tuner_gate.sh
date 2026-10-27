@@ -7,13 +7,14 @@
 set -uo pipefail
 A=${0:A:h:h}; OUT=${1:-$A/build/tuner-gate}; mkdir -p $OUT
 # live-39: + the Map (dark) section (background, highlights, Fresnel orbs) — tuner-only.
-# live-43: "Refraction strength" left with the lens sliders (Glass draws no refraction now) → "Hue spread (territory colour)" (Aura).
-# live-45/46: + "Softness floor (on screen)" (Aura) and the Wash controls ("Wash defaults (the study's Medium)", "Aura draws as Wash (pigment on paper)").
+# live-43: "Refraction strength" left with the lens sliders (Glass draws no refraction now) → "Aura defaults (T's study values, 2026-10-27)" (Aura).
+# live-45/46: + the Wash controls ("Wash defaults (the study's Medium)"). live-47: Aura / Eclipse defaults buttons replace "Hue spread" and
+# "Softness floor" (both gone); "draw as Wash (pigment on paper)" (the light Map's note).
 # live-23: "saturationBlendMode" left the probes — the frost backdrop ships now (T's tuned Librarian, `LibrarianSurfaceSpec`).
 # live-26: the floating-buttons switch (3d) and "Fade into body" / "Match fluted" (3c) are tuner-only too.
 # 2026-10-17 brief: the per-pill sections + the accordion (live-24's "Graded tint on the pills" / "Ask pill + search pill" left the sheet).
 # live-24: + the graded-tint section and the reading veil (LibrarianGlass types ship; their tuner does not). Probes must be > 15 bytes: Swift keeps shorter strings inline in code, invisible to `strings`.
-PROBES=("Appearance tuner" "appearanceTuning.v1" "AppearanceTunerWindow" "Frost 50% + glass" "Before = thin material" "Fade length (of the hero zone)" "tunerCaptureControls" "tunerCardContent" "Graded presets (all three pills + the panel)" "The Ask bar mirrors the search pill" "Reading veil (behind the transcript)" "Rim while answering" "AppearanceTunerOpenSection" "tunerFloatingButtons" "tunerFadeMatchFluted" "Fade into body carries it down" "dateline; above it, your fade alone" "chat scroll trace (live-29 C1)" "Reset the Map section" "Label colour (on dark bodies)" "Ambient glow (the mass-field ripple)" "Top-left highlight" "Hue spread (territory colour)" "Dots shrink under orbs (off = uniform dots)" "Behind-glass dim" "Rim light (top + bottom arcs)" "Softness floor (on screen)" "Wash defaults (the study's Medium)" "Aura draws as Wash (pigment on paper)")
+PROBES=("Appearance tuner" "appearanceTuning.v1" "AppearanceTunerWindow" "Frost 50% + glass" "Before = thin material" "Fade length (of the hero zone)" "tunerCaptureControls" "tunerCardContent" "Graded presets (all three pills + the panel)" "The Ask bar mirrors the search pill" "Reading veil (behind the transcript)" "Rim while answering" "AppearanceTunerOpenSection" "tunerFloatingButtons" "tunerFadeMatchFluted" "Fade into body carries it down" "dateline; above it, your fade alone" "chat scroll trace (live-29 C1)" "Reset the Map section" "Label colour (on dark bodies)" "Ambient glow (the mass-field ripple)" "Top-left highlight" "Aura defaults (T's study values, 2026-10-27)" "Dots shrink under orbs (off = uniform dots)" "Behind-glass dim" "Rim light (top + bottom arcs)" "Eclipse defaults (T's study values, 2026-10-27)" "Wash defaults (the study's Medium)" "draw as Wash (pigment on paper)")
 # live-32: + the live-31 web baseline, the web trace, the evidence self-test, the server model pin, the Wikipedia stub
 # switches (DEBUG-only) and the evidence rules, the Wikipedia row, the server reasoning switch (shipped).
 # live-31: + the transcript's live-30 baseline / motion recorder, the Host web self-test, the table perf seed (DEBUG-only)

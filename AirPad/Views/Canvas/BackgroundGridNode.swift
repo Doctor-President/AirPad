@@ -140,8 +140,19 @@ enum BackgroundGridNode {
                     groundDots += vec3(wpHash(floor(pt) * 1.37 + 3.1) - 0.5) * paper * 0.035;
                 }
         """
+        // live-47 — the ground's share of the Aura / Eclipse grain on the DARK Map (u_light_ground_on = −grain): the study's
+        // `col += (g + (g2, −g2, g2)·0.25)·grain·0.1`, one hash per on-screen point, screen-fixed like the orbs' share
+        // (pt from the top-left, so the two halves are one field). The orbs add theirs × coverage.
+        let darkGrainBranch = """
+                if (u_light_ground_on < 0.0) {
+                    vec2 gpt = floor(vec2(v_tex_coord.x, 1.0 - v_tex_coord.y) * u_viewport_size);
+                    float gg = wpHash(gpt * 1.37 + 3.1) - 0.5;
+                    float gg2 = wpHash(gpt.yx * 0.91 + 7.7) - 0.5;
+                    darkGrain = (vec3(gg) + vec3(gg2, -gg2, gg2) * 0.25) * (-u_light_ground_on) * 0.1;
+                }
+        """
         #else
-        let paperHelpers = "", paperBranch = ""
+        let paperHelpers = "", paperBranch = "", darkGrainBranch = ""
         #endif
         let source = """
         // --- Helpers (must precede main per GLSL ES rules) ---
@@ -264,10 +275,12 @@ enum BackgroundGridNode {
             // R (‖warp‖/K → invert → AE Levels gamma) is baked into the field B channel on the CPU at FULL
             // precision (no in-shader gamma on an 8-bit field → no stepping); the shader reads that single
             // linear-filtered channel and composites it Normal over (opaque ground ▸ dots) at u_ripple_amt.
+            vec3 darkGrain = vec3(0.0);
+        \(darkGrainBranch)
             if (u_ripple_amt > 0.0) {
                 float R = texture2D(u_disp_field, v_tex_coord).b;
                 vec3 groundDots = u_ground_color * (1.0 - alpha) + u_dot_color * alpha;
-                gl_FragColor = vec4(mix(groundDots, vec3(R) * u_ripple_color, u_ripple_amt), 1.0);   // live-39: tint (white = today)
+                gl_FragColor = vec4(mix(groundDots, vec3(R) * u_ripple_color, u_ripple_amt) + darkGrain, 1.0);   // live-39: tint (white = today)
             } else if (u_light_ground_on > 0.5) {
                 // Brief AT — LIGHT comp: the grid OWNS the opaque #FFEEED ground (u_ground_color) so the
                 // dots read on T's chosen ground. Pool was removed at the lock; just ground ▸ dots, opaque.
@@ -279,7 +292,7 @@ enum BackgroundGridNode {
                 // (default white → dark byte-identical: (1,1,1)*alpha reproduces the
                 // old vec4(alpha,alpha,alpha,alpha)); light mode pushes a cool
                 // graphite so the dots read on cream (ws-dark-light-mode item 3).
-                gl_FragColor = vec4(u_dot_color * alpha, alpha);
+                gl_FragColor = vec4(u_dot_color * alpha + darkGrain, alpha);
             }
         }
         """

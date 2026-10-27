@@ -479,7 +479,7 @@ final class AppearanceTuner {
             }
             let steps: [(String, (inout MapDarkTuning) -> Void)] = [
                 ("flat", { $0.orbLook = .flat }),
-                ("glass", { $0.orbLook = .glass; $0.glass = glassA }),
+                ("glass", { $0.orbLook = .glass; $0.glass = glassA; $0.glassLight = glassA }),   // live-50c: both Maps
                 ("aura", { $0.orbLook = .aura; $0.aura = AuraLook() }),
                 ("eclipse", { $0.orbLook = .eclipse; $0.eclipse = EclipseLook() }),
                 ("outline", { $0.orbLook = .outline }),
@@ -1939,6 +1939,10 @@ struct MapDarkTuning: Codable, Equatable {
     var orbLook: MapOrbLook = .flat
     var fresnel: FresnelLook = .medium
     var glass: GlassLook = .medium
+    /// live-50c — Glass's values for the LIGHT Map: the same parameters as `glass` (one model on both Maps), its own values.
+    /// Starts as a copy of the dark values (older saved values have no key → decode copies `glass`). Tilt light / response /
+    /// smoothing stay ONE shared switch: `glass`'s (glassFor(light:)).
+    var glassLight: GlassLook = .medium
     var aura = AuraLook()                         // live-43
     var eclipse = EclipseLook()                   // live-47
     var outline = OutlineLook()                   // live-43-A
@@ -1968,6 +1972,7 @@ struct MapDarkTuning: Codable, Equatable {
         focusRing = v(.focusRing, d.focusRing); selectionRing = v(.selectionRing, d.selectionRing)
         orbGlow = v(.orbGlow, d.orbGlow); orbGlowOpacity = v(.orbGlowOpacity, d.orbGlowOpacity)
         orbLook = v(.orbLook, d.orbLook); fresnel = v(.fresnel, d.fresnel); glass = v(.glass, d.glass)
+        glassLight = ((try? c.decodeIfPresent(GlassLook.self, forKey: .glassLight)) ?? nil) ?? glass   // live-50c
         aura = v(.aura, d.aura); eclipse = v(.eclipse, d.eclipse); outline = v(.outline, d.outline); wash = v(.wash, d.wash)
         lightGlass = v(.lightGlass, d.lightGlass); riso = v(.riso, d.riso); gradient = v(.gradient, d.gradient)
         dotShrinkOn = v(.dotShrinkOn, d.dotShrinkOn); dotShrink = v(.dotShrink, d.dotShrink); shrinkReach = v(.shrinkReach, d.shrinkReach)
@@ -1992,9 +1997,18 @@ struct MapDarkTuning: Codable, Equatable {
         if let e = o["eclipse"] as? [String: Any] { eclipse.apply(exportJSON: e) }
         if let b = o["outline"] as? [String: Any] { outline.apply(exportJSON: b) }
         if let w = o["wash"] as? [String: Any] { wash.apply(exportJSON: w) }
+        if let x = o["glassLight"] as? [String: Any] { glassLight.apply(exportJSON: x) }   // live-50c
         if let x = o["lightGlass"] as? [String: Any] { lightGlass.apply(exportJSON: x); lightGlass.applyGlassExtras(x) }
         if let x = o["riso"] as? [String: Any] { riso.apply(exportJSON: x) }
         if let x = o["gradient"] as? [String: Any] { gradient.apply(exportJSON: x) }
+    }
+
+    /// live-50c — the Glass values a Map draws with: its own set, with the ONE shared tilt switch (dark `glass`'s).
+    func glassFor(light: Bool) -> GlassLook {
+        guard light else { return glass }
+        var g = glassLight
+        g.tiltLight = glass.tiltLight; g.tiltResponse = glass.tiltResponse; g.tiltSmoothing = glass.tiltSmoothing
+        return g
     }
 
     /// The shrink the grid shader receives (0 = uniform dots).
@@ -2028,7 +2042,7 @@ extension AppearanceTuning {
             return t
         }
         func c(_ x: TunerHSL) -> String { "\"#\(x.hex)\"" }
-        let f = m.fresnel, g = m.glass, a = m.aura, e = m.eclipse, ol = m.outline, w = m.wash
+        let f = m.fresnel, g = m.glass, a = m.aura, e = m.eclipse, ol = m.outline, w = m.wash, gL = m.glassLight   // live-50c: the light Map's Glass values
         func study<L: StudyOrbLook>(_ x: L) -> String {
             "{\"spread\":\(n(x.spread)),\"warp\":\(n(x.warp)),\"softness\":\(n(x.softness)),\"haloReach\":\(n(x.haloReach)),"
                 + "\"rim\":\(n(x.rim)),\"fringe\":\(n(x.fringe)),\"grain\":\(n(x.grain)),\"drift\":\(x.drift)}"
@@ -2050,6 +2064,12 @@ extension AppearanceTuning {
             + "\"highlightIntensity\":\(n(g.highlightIntensity)),\"tiltResponse\":\(n(g.tiltResponse)),\"label\":\(c(g.label)),"
             + "\"topArc\":\(n(g.topArc)),\"bottomArc\":\(n(g.bottomArc)),\"arcSpan\":\(n(g.arcSpan)),\"arcThickness\":\(n(g.arcThickness)),"
             + "\"arcSoftness\":\(n(g.arcSoftness)),\"dim\":\(n(g.dim)),\"tiltLight\":\(g.tiltLight),\"tiltSmoothing\":\(n(g.tiltSmoothing))},"
+            + "\"glassLight\":{"
+            + "\"tint\":\(n(gL.tint)),\"brightness\":\(n(gL.brightness)),\"edge\":\(n(gL.edge)),"
+            + "\"innerShadow\":\(n(gL.innerShadow)),\"dispersion\":\(n(gL.dispersion)),\"highlightSize\":\(n(gL.highlightSize)),"
+            + "\"highlightIntensity\":\(n(gL.highlightIntensity)),\"tiltResponse\":\(n(gL.tiltResponse)),\"label\":\(c(gL.label)),"
+            + "\"topArc\":\(n(gL.topArc)),\"bottomArc\":\(n(gL.bottomArc)),\"arcSpan\":\(n(gL.arcSpan)),\"arcThickness\":\(n(gL.arcThickness)),"
+            + "\"arcSoftness\":\(n(gL.arcSoftness)),\"dim\":\(n(gL.dim)),\"tiltLight\":\(gL.tiltLight),\"tiltSmoothing\":\(n(gL.tiltSmoothing))},"
             + "\"palettes\":\"12 territories\",\"aura\":\(study(a)),\"eclipse\":\(study(e)),"
             + "\"lightGlass\":\(m.lightGlass.exportJSON),\"riso\":\(study(m.riso)),\"gradient\":\(study(m.gradient)),"
             + "\"outline\":{\"ringWidth\":\(n(ol.ringWidth)),\"ringOpacityDark\":\(n(ol.ringOpacityDark)),"
@@ -2168,6 +2188,19 @@ extension AppearanceTuning {
                 guard let o = try? JSONDecoder().decode(MapDarkTuning.self, from: Data(old.utf8)) else { return false }
                 return back.riso == m.riso && back.lightGlass == m.lightGlass && back.gradient == m.gradient && back.orbLook == .riso
                     && o.lightGlass == LightGlassLook() && o.riso == RisoLook() && o.gradient == GradientLook() && o.orbLook == .eclipse
+            }(), ""),
+            // live-50c — Glass: the same parameters on both Maps, each Map its own values; tilt one shared switch
+            ("glass-light-values-own-set (old saved → copy of dark · round trip · shared tilt) (live-50c)", {
+                let old = #"{"orbLook":"glass","glass":{"tint":0.31,"tiltLight":true,"brightness":0.02}}"#
+                guard let o = try? JSONDecoder().decode(MapDarkTuning.self, from: Data(old.utf8)) else { return false }
+                var m = MapDarkTuning(); m.glass.tint = 0.2; m.glassLight.tint = 0.55; m.glassLight.innerShadow = 0.1
+                m.glass.tiltLight = true; m.glass.tiltResponse = 0.9; m.glassLight.tiltLight = false
+                var back = MapDarkTuning()
+                guard let all = try? JSONSerialization.jsonObject(with: Data(mapDarkJSON(m).utf8)) as? [String: Any] else { return false }
+                back.apply(exportJSON: all)
+                let lf = m.glassFor(light: true)
+                return o.glassLight == o.glass && abs(back.glassLight.tint - 0.55) < 0.001 && abs(back.glassLight.innerShadow - 0.1) < 0.001
+                    && lf.tint == 0.55 && lf.tiltLight && lf.tiltResponse == 0.9 && m.glassFor(light: false) == m.glass
             }(), ""),
             // live-50 — Light Glass's dark-Glass controls start at "no change" and travel in Copy values
             ("light-glass-extras-default-to-no-change + copy-values round trip (live-50)", {

@@ -978,7 +978,7 @@ final class CorpusPhysicsScene: SKScene {
                 lk.columns.0 = vector_float4(Float(f.bodyTint), Float(f.bodyDarkness), Float(f.rimBrightness), Float(f.rimWidth))
                 lk.columns.1 = vector_float4(Float(f.rimPower), Float(f.rimIntensity), Float(f.innerGlow), Float(f.highlight))
             case .glass:   // cols 2 (highlight) + the arcs are syncGlassOrbs'
-                let g = m.glass
+                let g = m.glassFor(light: currentIsLight)   // live-50c: each Map's own values
                 lk.columns.0 = vector_float4(0, 0, 0, Float(g.tint))
                 lk.columns.1 = vector_float4(Float(g.brightness), Float(g.edge), Float(g.innerShadow), Float(g.dispersion))
             case .outline:
@@ -1024,7 +1024,7 @@ final class CorpusPhysicsScene: SKScene {
         var inkKey: String
         switch look {
         case .fresnel: inkKey = "fr\(m.fresnel)\(m.ground.hex)"
-        case .glass: inkKey = "gl\(m.glass.tint)\(m.glass.brightness)\(m.glass.label.hex)\(m.ground.hex)"
+        case .glass: let gv = m.glassFor(light: currentIsLight); inkKey = "gl\(gv.tint)\(gv.brightness)\(gv.label.hex)\(m.ground.hex)\(currentIsLight)"
         case .aura: inkKey = "au\(m.aura.spread)\(m.aura.warp)\(m.aura.rim)\(auraStyleKey)\(currentIsLight)"
         case .eclipse: inkKey = "ec\(currentIsLight)"
         case .outline: inkKey = "ol\(currentIsLight)"
@@ -1079,12 +1079,13 @@ final class CorpusPhysicsScene: SKScene {
         }
         if let u = o("u_gl_look") {
             var look = u.matrixFloat4x4Value
-            look.columns.2 = vector_float4(Float(m.glass.highlightSize), Float(m.glass.highlightIntensity), drawnGlassHC.x, drawnGlassHC.y)
+            let gv = m.glassFor(light: currentIsLight)   // live-50c
+            look.columns.2 = vector_float4(Float(gv.highlightSize), Float(gv.highlightIntensity), drawnGlassHC.x, drawnGlassHC.y)
             look.columns.3 = vector_float4(0, 0, 0, 0)
             if look != u.matrixFloat4x4Value { u.matrixFloat4x4Value = look }
         }
         if let u = o("u_gl_arc") {
-            let g = m.glass
+            let g = m.glassFor(light: currentIsLight)   // live-50c
             let arc = simd_float4x4(columns: (
                 vector_float4(Float(g.topArc), Float(g.bottomArc), Float(g.arcSpan * .pi / 360), Float(g.arcThickness)),
                 vector_float4(Float(g.arcSoftness), drawnGlassAD.x, drawnGlassAD.y, Float(g.dim)),
@@ -5044,7 +5045,7 @@ final class CorpusPhysicsScene: SKScene {
         if let m = mapTuning, m.orbLook == .glass {
             // CPU twin of the Glass body away from the highlight: the background (ground, dimmed) tinted, then lifted.
             // live-50b: the same rule on both Maps, over each Map's own ground.
-            let gl = m.glass, lg = Self.rgb3(MapCompTuning.lightGroundHex)
+            let gl = m.glassFor(light: currentIsLight), lg = Self.rgb3(MapCompTuning.lightGroundHex)
             let g: (r: Double, g: Double, b: Double) = currentIsLight ? (Double(lg.x), Double(lg.y), Double(lg.z)) : m.ground.rgb
             var r: CGFloat = 0, gg: CGFloat = 0, b: CGFloat = 0, a: CGFloat = 0
             applyDarkOrbBoost(fillColor).getRed(&r, green: &gg, blue: &b, alpha: &a)

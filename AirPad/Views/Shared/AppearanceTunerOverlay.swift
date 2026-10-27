@@ -586,6 +586,9 @@ struct AppearanceTunerSheet<G: Gesture>: View {
     private func setMap(_ change: (inout MapDarkTuning) -> Void) { change(&tuner.state.mapDark) }
     private func setF(_ change: (inout FresnelLook) -> Void) { change(&tuner.state.mapDark.fresnel) }
     private func setG(_ change: (inout GlassLook) -> Void) { change(&tuner.state.mapDark.glass) }
+    private func setGV(_ light: Bool, _ change: (inout GlassLook) -> Void) {   // live-50c — this Map's Glass values
+        if light { change(&tuner.state.mapDark.glassLight) } else { change(&tuner.state.mapDark.glass) }
+    }
     private func setA(_ change: (inout AuraLook) -> Void) { change(&tuner.state.mapDark.aura) }
     private func setO(_ change: (inout OutlineLook) -> Void) { change(&tuner.state.mapDark.outline) }
     private func setW(_ change: (inout WashLook) -> Void) { change(&tuner.state.mapDark.wash) }
@@ -664,7 +667,7 @@ struct AppearanceTunerSheet<G: Gesture>: View {
             .pickerStyle(.segmented)
             .accessibilityIdentifier("tunerMapOrbLook")
             if m.orbLook == .fresnel { fresnelControls }
-            if m.orbLook == .glass { orbGlassControls }
+            if m.orbLook == .glass { orbGlassControls(light: false) }
             if m.orbLook == .aura { auraControls }
             if m.orbLook == .eclipse { eclipseControls }
             if m.orbLook == .riso { risoControls }
@@ -689,7 +692,7 @@ struct AppearanceTunerSheet<G: Gesture>: View {
             .pickerStyle(.segmented)
             .accessibilityIdentifier("tunerMapOrbLook")
             if m.orbLook.drawsWashOnLight { washControls }
-            if m.orbLook == .glass { orbGlassControls }   // live-50b — dark Glass's own section: one set of values for both Maps
+            if m.orbLook == .glass { orbGlassControls(light: true) }   // live-50c — the same section, the light Map's own values
             if m.orbLook == .riso { risoControls }
             if m.orbLook == .gradient { gradientControls }
         }
@@ -725,53 +728,56 @@ struct AppearanceTunerSheet<G: Gesture>: View {
              + "Labels use the label colour unless dark text would read better on a light body.")
     }
 
-    @ViewBuilder private var orbGlassControls: some View {
-        let g = m.glass
+    /// live-50c — one Glass section for both Maps (the same parameters); `light` picks whose values it edits. Tilt light /
+    /// response / smoothing are ONE shared switch (dark `glass`'s).
+    @ViewBuilder private func orbGlassControls(light: Bool) -> some View {
+        let g = light ? m.glassLight : m.glass, tg = m.glass
         HStack(spacing: 6) {
             ForEach(GlassLook.presets, id: \.0) { p in
-                chip(p.0, selected: g == p.1, id: "tunerGlass-\(p.0)") { setMap { $0.glass = p.1 } }
+                chip(p.0, selected: g == p.1, id: "tunerGlass-\(p.0)") { setMap { if light { $0.glassLight = p.1 } else { $0.glass = p.1 } } }
             }
         }
         subhead("Body")
-        slider("Tint (orb colour)", g.tint, 0...1, 0.01, pct(g.tint), id: "glTint") { x in setG { $0.tint = x } }
-        slider("Body brightness", g.brightness, 0...0.5, 0.005, pct(g.brightness), id: "glBright") { x in setG { $0.brightness = x } }
-        slider("Behind-glass dim", g.dim, 0...0.9, 0.01, pct(g.dim), id: "glDim") { x in setG { $0.dim = x } }
+        slider("Tint (orb colour)", g.tint, 0...1, 0.01, pct(g.tint), id: "glTint") { x in setGV(light) { $0.tint = x } }
+        slider("Body brightness", g.brightness, 0...0.5, 0.005, pct(g.brightness), id: "glBright") { x in setGV(light) { $0.brightness = x } }
+        slider("Behind-glass dim", g.dim, 0...0.9, 0.01, pct(g.dim), id: "glDim") { x in setGV(light) { $0.dim = x } }
         subhead("Rim light (top + bottom arcs)")
-        slider("Top arc", g.topArc, 0...2, 0.01, String(format: "%.2f", g.topArc), id: "glTopArc") { x in setG { $0.topArc = x } }
+        slider("Top arc", g.topArc, 0...2, 0.01, String(format: "%.2f", g.topArc), id: "glTopArc") { x in setGV(light) { $0.topArc = x } }
         slider("Bottom arc", g.bottomArc, 0...2, 0.01, String(format: "%.2f", g.bottomArc), id: "glBottomArc") { x in
-            setG { $0.bottomArc = x }
+            setGV(light) { $0.bottomArc = x }
         }
-        slider("Arc span", g.arcSpan, 20...180, 1, String(format: "%.0f°", g.arcSpan), id: "glArcSpan") { x in setG { $0.arcSpan = x } }
+        slider("Arc span", g.arcSpan, 20...180, 1, String(format: "%.0f°", g.arcSpan), id: "glArcSpan") { x in setGV(light) { $0.arcSpan = x } }
         slider("Arc thickness", g.arcThickness, 0.01...0.3, 0.005, pct(g.arcThickness) + " of radius", id: "glArcThick") { x in
-            setG { $0.arcThickness = x }
+            setGV(light) { $0.arcThickness = x }
         }
-        slider("Arc softness", g.arcSoftness, 0...1, 0.01, pct(g.arcSoftness), id: "glArcSoft") { x in setG { $0.arcSoftness = x } }
+        slider("Arc softness", g.arcSoftness, 0...1, 0.01, pct(g.arcSoftness), id: "glArcSoft") { x in setGV(light) { $0.arcSoftness = x } }
         subhead("Edge")
-        slider("Edge line (all round)", g.edge, 0...2, 0.01, String(format: "%.2f", g.edge), id: "glEdge") { x in setG { $0.edge = x } }
-        slider("Inner shadow", g.innerShadow, 0...1, 0.01, pct(g.innerShadow), id: "glShadow") { x in setG { $0.innerShadow = x } }
+        slider("Edge line (all round)", g.edge, 0...2, 0.01, String(format: "%.2f", g.edge), id: "glEdge") { x in setGV(light) { $0.edge = x } }
+        slider("Inner shadow", g.innerShadow, 0...1, 0.01, pct(g.innerShadow), id: "glShadow") { x in setGV(light) { $0.innerShadow = x } }
         slider("Colour fringe (dispersion)", g.dispersion, 0...1, 0.01, pct(g.dispersion), id: "glDispersion") { x in
-            setG { $0.dispersion = x }
+            setGV(light) { $0.dispersion = x }
         }
         subhead("Highlight")
         slider("Highlight size", g.highlightSize, 0.05...0.6, 0.01, String(format: "%.2f", g.highlightSize), id: "glHlSize") { x in
-            setG { $0.highlightSize = x }
+            setGV(light) { $0.highlightSize = x }
         }
         slider("Highlight intensity", g.highlightIntensity, 0...1.5, 0.01, String(format: "%.2f", g.highlightIntensity), id: "glHlInt") { x in
-            setG { $0.highlightIntensity = x }
+            setGV(light) { $0.highlightIntensity = x }
         }
-        toggle("Tilt light (off = static highlights)", g.tiltLight, id: "glTiltLight") { b in setG { $0.tiltLight = b } }
-        if g.tiltLight {
+        toggle("Tilt light (off = static highlights; one switch for both Maps)", tg.tiltLight, id: "glTiltLight") { b in setG { $0.tiltLight = b } }
+        if tg.tiltLight {
             // Squared scale: half the track = 0.375, so small responses are easy to set; negative = the other way.
-            slider("Tilt response", (g.tiltResponse < 0 ? -1 : 1) * (abs(g.tiltResponse) / 1.5).squareRoot(), -1...1, 0.005,
-                   String(format: "%.3f", g.tiltResponse), id: "glTilt") { u in setG { $0.tiltResponse = (u < 0 ? -1 : 1) * u * u * 1.5 } }
-            slider("Tilt smoothing", g.tiltSmoothing, 0...3, 0.05, String(format: "%.2f s", g.tiltSmoothing), id: "glTiltSmooth") { x in
+            slider("Tilt response", (tg.tiltResponse < 0 ? -1 : 1) * (abs(tg.tiltResponse) / 1.5).squareRoot(), -1...1, 0.005,
+                   String(format: "%.3f", tg.tiltResponse), id: "glTilt") { u in setG { $0.tiltResponse = (u < 0 ? -1 : 1) * u * u * 1.5 } }
+            slider("Tilt smoothing", tg.tiltSmoothing, 0...3, 0.05, String(format: "%.2f s", tg.tiltSmoothing), id: "glTiltSmooth") { x in
                 setG { $0.tiltSmoothing = x }
             }
         }
         TunerColorRow(label: "Label colour", color: g.label, defaultHex: GlassLook.medium.label.hex, id: "glLabel") { c in
-            setG { $0.label = c }
+            setGV(light) { $0.label = c }
         }
-        note("Glass is one look on both Maps (live-50b): these values drive the dark and the light Map alike. "
+        note("Glass is one look on both Maps with the same controls; each Map keeps its own values (the light Map started as a "
+             + "copy of the dark one). Tilt light is one switch for both. "
              + "The real background shows through each orb (no lens): dim darkens it, the tint colours it toward the rim, brightness "
              + "lifts it. The arcs light the top and bottom of the rim. With Tilt light on, the light drifts with the phone's tilt "
              + "(negative response = the other way); the Map then redraws at 30 fps, and only while the light visibly moves. It stays "

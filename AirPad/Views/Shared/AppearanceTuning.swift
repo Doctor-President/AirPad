@@ -1584,11 +1584,7 @@ struct LightGlassLook: StudyOrbLook {
     }
     /// live-50 — the Copy values block: the study's seven + dark Glass's controls.
     var exportJSON: String {
-        func n(_ x: Double) -> String {
-            var t = String(format: "%.4f", x)
-            while t.contains(".") && (t.hasSuffix("0") || t.hasSuffix(".")) { t.removeLast() }
-            return t
-        }
+        func n(_ x: Double) -> String { "\(x)" }   // the shortest text that reads back as the same Double (0.68 → "0.68")
         return "{\"spread\":\(n(spread)),\"warp\":\(n(warp)),\"softness\":\(n(softness)),\"haloReach\":\(n(haloReach)),"
             + "\"rim\":\(n(rim)),\"fringe\":\(n(fringe)),\"grain\":\(n(grain)),\"topArc\":\(n(topArc)),\"bottomArc\":\(n(bottomArc)),"
             + "\"arcSpan\":\(n(arcSpan)),\"arcThickness\":\(n(arcThickness)),\"arcSoftness\":\(n(arcSoftness)),"

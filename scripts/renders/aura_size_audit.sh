@@ -21,7 +21,7 @@ nap() { python3 -c "import time; time.sleep($1)"; }
 xcrun simctl terminate $SIM $APPID >/dev/null 2>&1
 xcrun simctl launch --console-pty $SIM $APPID $BASE $RINGS "$@" > $LOG 2>&1 &
 LP=$!
-STEPS=(launch zoomOut zoomIn pan toFlat toAura toEclipse backToAura addEntry zoomMid bgReady toGlass toOutline toFlatEnd)
+STEPS=(launch zoomOut zoomIn pan toFlat toAura toEclipse backToAura addEntry zoomMid bgReady toGlass toOutline toRiso toGradient toGlassPair toFlatEnd)
 n=0
 for st in $STEPS; do
   n=$((n+1))

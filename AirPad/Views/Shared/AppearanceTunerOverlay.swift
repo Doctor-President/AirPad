@@ -667,20 +667,31 @@ struct AppearanceTunerSheet<G: Gesture>: View {
             if m.orbLook == .glass { orbGlassControls }
             if m.orbLook == .aura { auraControls }
             if m.orbLook == .eclipse { eclipseControls }
+            if m.orbLook == .riso { risoControls }
+            if m.orbLook == .gradient { gradientControls }
         } else {
-            Picker("Orbs", selection: Binding(get: { m.orbLook.drawsWashOnLight ? "wash" : m.orbLook == .outline ? "outline" : "flat" },
+            // live-49 — light Map: Flat · Light Glass · Wash · Riso · Gradient · Outline (Light Glass = Glass's pair).
+            Picker("Orbs", selection: Binding(get: { m.orbLook.drawsWashOnLight ? "wash" : m.orbLook == .glass ? "glass"
+                                                    : [.outline, .riso, .gradient].contains(m.orbLook) ? m.orbLook.rawValue : "flat" },
                                               set: { k in setMap {
                                                   switch k {
                                                   case "wash": if !$0.orbLook.drawsWashOnLight { $0.orbLook = .aura }
+                                                  case "glass": $0.orbLook = .glass
                                                   case "outline": $0.orbLook = .outline
+                                                  case "riso": $0.orbLook = .riso
+                                                  case "gradient": $0.orbLook = .gradient
                                                   default: $0.orbLook = .flat
                                                   }
                                               } })) {
-                Text("Flat").tag("flat"); Text("Wash").tag("wash"); Text("Outline").tag("outline")
+                Text("Flat").tag("flat"); Text("Light Glass").tag("glass"); Text("Wash").tag("wash")
+                Text("Riso").tag("riso"); Text("Gradient").tag("gradient"); Text("Outline").tag("outline")
             }
             .pickerStyle(.segmented)
             .accessibilityIdentifier("tunerMapOrbLook")
             if m.orbLook.drawsWashOnLight { washControls }
+            if m.orbLook == .glass { lightGlassControls }
+            if m.orbLook == .riso { risoControls }
+            if m.orbLook == .gradient { gradientControls }
         }
         if m.orbLook == .outline { outlineControls }
         Button("Reset the Map section", role: .destructive) { setMap { $0 = .today } }
@@ -801,17 +812,57 @@ struct AppearanceTunerSheet<G: Gesture>: View {
              + "colour. Labels: always light ink.")
     }
 
+    // live-49 — the study's v7 looks: its seven sliders under its labels, presets, T's values.
+    @ViewBuilder private var lightGlassControls: some View {
+        let v = m.lightGlass
+        HStack(spacing: 6) {
+            ForEach(LightGlassLook.presets, id: \.0) { p in chip(p.0, selected: v == p.1, id: "tunerLightGlass-\(p.0)") { setMap { $0.lightGlass = p.1 } } }
+        }
+        studySliders(v, prefix: "lg", labels: LightGlassLook.labels, drift: false) { change in setMap { change(&$0.lightGlass) } }
+        Button("Light Glass defaults (T's study values, 2026-10-27)") { setMap { $0.lightGlass = LightGlassLook() } }
+            .font(.caption).buttonStyle(.bordered).controlSize(.small).accessibilityIdentifier("tunerLightGlassReset")
+        note("The study's Light Glass, Glass's partner on the light Map: a frosted body tinted by the territory palette, a thin "
+             + "tinted edge line, a white highlight and a soft shadow lifting it off the paper. Labels: dark ink.")
+    }
+    @ViewBuilder private var risoControls: some View {
+        let v = m.riso
+        HStack(spacing: 6) {
+            ForEach(RisoLook.presets, id: \.0) { p in chip(p.0, selected: v == p.1, id: "tunerRiso-\(p.0)") { setMap { $0.riso = p.1 } } }
+        }
+        studySliders(v, prefix: "ri", labels: RisoLook.labels, drift: false) { change in setMap { change(&$0.riso) } }
+        Button("Riso defaults (T's study values, 2026-10-27)") { setMap { $0.riso = RisoLook() } }
+            .font(.caption).buttonStyle(.bordered).controlSize(.small).accessibilityIdentifier("tunerRisoReset")
+        note("The study's Riso, both Maps: two flat ink plates, the second offset and cut to a soft shape, with speckle. It "
+             + "multiplies on the light Map (with the paper fibres) and screens on the dark Map. No noise fields: about Flat's cost.")
+    }
+    @ViewBuilder private var gradientControls: some View {
+        let v = m.gradient
+        HStack(spacing: 6) {
+            ForEach(GradientLook.presets, id: \.0) { p in chip(p.0, selected: v == p.1, id: "tunerGradient-\(p.0)") { setMap { $0.gradient = p.1 } } }
+        }
+        studySliders(v, prefix: "gr", labels: GradientLook.labels, drift: false) { change in setMap { change(&$0.gradient) } }
+        Button("Gradient defaults (T's study values, 2026-10-27)") { setMap { $0.gradient = GradientLook() } }
+            .font(.caption).buttonStyle(.bordered).controlSize(.small).accessibilityIdentifier("tunerGradientReset")
+        note("The study's Gradient, both Maps: a clean three-stop gradient per orb with a little shading, a sheen and a rim "
+             + "line. No noise: about Flat's cost.")
+    }
+
     /// The study's seven sliders (its labels and ranges) for Aura / Eclipse.
     @ViewBuilder private func studySliders<L: StudyOrbLook>(_ v: L, prefix: String,
+                                                            labels l: [String] = ["Gradient spread", "Warp", "Edge softness", "Halo reach",
+                                                                                  "Rim light", "Chromatic fringe", "Grain"],
+                                                            drift: Bool = true,
                                                             set: @escaping ((inout L) -> Void) -> Void) -> some View {
-        slider("Gradient spread", v.spread, 0.4...2, 0.01, f2(v.spread), id: prefix + "Spread") { x in set { $0.spread = x } }
-        slider("Warp", v.warp, 0...1.5, 0.01, f2(v.warp), id: prefix + "Warp") { x in set { $0.warp = x } }
-        slider("Edge softness", v.softness, 0.01...0.25, 0.005, f2(v.softness), id: prefix + "Soft") { x in set { $0.softness = x } }
-        slider("Halo reach", v.haloReach, 0...1.4, 0.01, f2(v.haloReach), id: prefix + "Halo") { x in set { $0.haloReach = x } }
-        slider("Rim light", v.rim, 0...1, 0.01, f2(v.rim), id: prefix + "Rim") { x in set { $0.rim = x } }
-        slider("Chromatic fringe", v.fringe, 0...1.5, 0.01, f2(v.fringe), id: prefix + "Fringe") { x in set { $0.fringe = x } }
-        slider("Grain", v.grain, 0...1, 0.01, f2(v.grain), id: prefix + "Grain") { x in set { $0.grain = x } }
-        toggle("Drift (slow flow; the Map redraws at 30 fps while on)", v.drift, id: prefix + "Drift") { b in set { $0.drift = b } }
+        slider(l[0], v.spread, 0.4...2, 0.01, f2(v.spread), id: prefix + "Spread") { x in set { $0.spread = x } }
+        slider(l[1], v.warp, 0...1.5, 0.01, f2(v.warp), id: prefix + "Warp") { x in set { $0.warp = x } }
+        slider(l[2], v.softness, 0.01...0.25, 0.005, f2(v.softness), id: prefix + "Soft") { x in set { $0.softness = x } }
+        slider(l[3], v.haloReach, 0...1.4, 0.01, f2(v.haloReach), id: prefix + "Halo") { x in set { $0.haloReach = x } }
+        slider(l[4], v.rim, 0...1, 0.01, f2(v.rim), id: prefix + "Rim") { x in set { $0.rim = x } }
+        slider(l[5], v.fringe, 0...1.5, 0.01, f2(v.fringe), id: prefix + "Fringe") { x in set { $0.fringe = x } }
+        slider(l[6], v.grain, 0...1, 0.01, f2(v.grain), id: prefix + "Grain") { x in set { $0.grain = x } }
+        if drift {
+            toggle("Drift (slow flow; the Map redraws at 30 fps while on)", v.drift, id: prefix + "Drift") { b in set { $0.drift = b } }
+        }
     }
 
     // live-46 — Wash: the light Map's half of the Pro "Aura" look (a port of the study's wash branch).

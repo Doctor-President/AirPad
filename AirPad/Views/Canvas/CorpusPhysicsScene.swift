@@ -541,6 +541,7 @@ final class CorpusPhysicsScene: SKScene {
         // (launching straight into Aura showed neutral grey orbs until a look switch). Restyle on the next frame.
         if !auraStyleKey.isEmpty { auraStyleKey = "stale" }
         if !washStyleKey.isEmpty { washStyleKey = "stale" }
+        if !study2StyleKey.isEmpty { study2StyleKey = "stale" }
         #endif
 
         // Canonical resting state: capture target positions and scales from the layout.
@@ -978,7 +979,7 @@ final class CorpusPhysicsScene: SKScene {
                 let o = m.outline
                 lk.columns.0 = vector_float4(Float(o.ringWidth), Float(currentIsLight ? o.ringOpacityLight : o.ringOpacityDark),
                                              Float(o.fillOpacity), 0)
-            case .flat, .aura, .eclipse: break
+            case .flat, .aura, .eclipse, .riso, .gradient: break
             }
             if lk != u.matrixFloat4x4Value { u.matrixFloat4x4Value = lk }
         }
@@ -988,18 +989,32 @@ final class CorpusPhysicsScene: SKScene {
         // sprites).
         let washOn = currentIsLight && m.orbLook.drawsWashOnLight && !Self.auraOnLightDebug
         let studyLight = look == .aura || look == .eclipse
-        proLookShowing = washOn || look == .glass || look == .aura || look == .eclipse || look == .fresnel   // live-48
+        let s2 = study2Kind(m)   // live-49 — Light Glass (Glass on the light Map), Riso, Gradient
+        proLookShowing = washOn || s2 != nil || look == .glass || look == .aura || look == .eclipse || look == .fresnel   // live-48
         lodAllOrbs = MapHeatGuard.shared.stressed
-        if washOn { syncAura(nil); syncWash(m) } else { syncWash(nil); syncAura(studyLight ? m : nil, eclipse: look == .eclipse) }
+        // Each shader owns the sprites it styles: unstyle the others first.
+        if let s2 { syncAura(nil); syncWash(nil); syncStudy2(m, kind: s2) }
+        else if washOn { syncStudy2(nil, kind: nil); syncAura(nil); syncWash(m) }
+        else { syncStudy2(nil, kind: nil); syncWash(nil); syncAura(studyLight ? m : nil, eclipse: look == .eclipse) }
         // The ground's share of the study's paper / grain (grid u_light_ground_on): light = 1 + paper while Wash shows;
         // dark = −grain while Aura / Eclipse shows (0 = none).
-        let g: Float = currentIsLight ? (washOn ? 1 + Float(m.wash.paper) : 1)
+        // live-49: u_grain_cfg = (grain coefficient, the chroma term 0/1, paper fibres 0/1) — Wash (0.035, 0, 1) · Aura /
+        // Eclipse (0.1, 1, 0) · Riso (0.06, 0, fibres on the light Map) · Gradient (0.06, 0, 0) · Light Glass (0.04, 0, 0).
+        var g: Float = currentIsLight ? (washOn ? 1 + Float(m.wash.paper) : 1)
             : (studyLight ? -Float(look == .eclipse ? m.eclipse.grain : m.aura.grain) : 0)
+        var cfg = vector_float3(washOn ? 0.035 : 0.1, washOn ? 0 : 1, washOn ? 1 : 0)
+        switch s2 {
+        case .riso?: g = currentIsLight ? 1 + Float(m.riso.grain) : -Float(m.riso.grain); cfg = vector_float3(0.06, 0, currentIsLight ? 1 : 0)
+        case .gradient?: g = currentIsLight ? 1 + Float(m.gradient.grain) : -Float(m.gradient.grain); cfg = vector_float3(0.06, 0, 0)
+        case .lightGlass?: g = 1 + Float(m.lightGlass.grain); cfg = vector_float3(0.04, 0, 0)
+        case nil: break
+        }
         if let gu = gridNode?.fillShader?.uniforms.first(where: { $0.name == "u_light_ground_on" }), gu.floatValue != g { gu.floatValue = g }
+        if let gu = gridNode?.fillShader?.uniforms.first(where: { $0.name == "u_grain_cfg" }), gu.vectorFloat3Value != cfg { gu.vectorFloat3Value = cfg }
         let outlineNow = look == .outline
         if outlineNow != outlineLookOn { outlineLookOn = outlineNow; syncOutlineEmphasis() }
         // Title ink follows the look; recolour only when its inputs change.
-        let inkKey: String
+        var inkKey: String
         switch look {
         case .fresnel: inkKey = "fr\(m.fresnel)\(m.ground.hex)"
         case .glass: inkKey = "gl\(m.glass.tint)\(m.glass.brightness)\(m.glass.label.hex)\(m.ground.hex)"
@@ -1007,7 +1022,9 @@ final class CorpusPhysicsScene: SKScene {
         case .eclipse: inkKey = "ec\(currentIsLight)"
         case .outline: inkKey = "ol\(currentIsLight)"
         case .flat: inkKey = washOn ? "wa\(washStyleKey)\(m.wash.spread)\(m.wash.warp)" : "flat"
+        case .riso, .gradient: inkKey = "s2"
         }
+        if let s2 { inkKey = "s2\(s2)\(study2StyleKey)\(currentIsLight)" }   // live-49
         if inkKey != lastTitleInkKey { lastTitleInkKey = inkKey; restyleLabels() }
     }
 
@@ -3379,6 +3396,7 @@ final class CorpusPhysicsScene: SKScene {
         syncOutlineEmphasis()                                   // live-43-A — the restyle reset a_geom
         if !auraStyleKey.isEmpty { auraStyleKey = "stale" }    // live-43 — territory colours may have changed
         if !washStyleKey.isEmpty { washStyleKey = "stale" }
+        if !study2StyleKey.isEmpty { study2StyleKey = "stale" }
         #endif
     }
 
@@ -4350,6 +4368,195 @@ final class CorpusPhysicsScene: SKScene {
         if sp.blendMode != .alpha { sp.blendMode = .alpha }
     }
 
+    // MARK: - live-49 Light Glass, Riso, Gradient (the study's v7 glass + cheap branches; TestFlight tuner only)
+
+    /// The study's v7 `glass` branch (Light Glass, the light Map's half of Glass) and its `cheap` branch (Riso, Gradient,
+    /// both Maps), ported line for line into ONE SKShader of their own; u_s2 col 1.w picks the branch (3 glass · 5 riso ·
+    /// 6 gradient). Blending, so each is exact over whatever is under it:
+    /// - Gradient: the ramp over the disc, premultiplied alpha = coverage (the study's mix(col, body, disc)).
+    /// - Riso: two flat ink plates (the second offset by the misregistration and cut by a soft shape) — on the light Map
+    ///   the study's `col *= 1 − (1 − ink)·c` = SKBlendMode.multiply, on the dark Map its screen = SKBlendMode.screen.
+    ///   The speckle is one octave of value noise in screen points, kept as maths (4 hashes) so its cells are the study's
+    ///   everywhere (a tiling texture repeats past its window: port check 1.4 / 255 vs 0.0x).
+    /// - Light Glass: the ground frosted, tinted and lit, a tinted edge line, a white arc + glint, and a soft shadow off the
+    ///   body; computed over the KNOWN ground (u_s2 col 3) and emitted premultiplied (alpha = the body + the shadow), like
+    ///   Aura. Its two fbm (the tint's "little life") are noise-texture lookups; under the level-of-detail radius they fade.
+    /// The study's frame grain: the body's share here (× coverage), the ground's in the grid (u_grain_cfg).
+    /// u_s2 = (spread, warp, softness, reach), (rim, fringe, grain, mode), (LOD every orb 0/1, content scale, dark 0/1,
+    /// LOD radius pt), (ground rgb, 0). a_au_a = (stop A rgb, seed), a_au_b = (stop B rgb, extent), a_au_c = stop C.
+    private lazy var study2Shader: SKShader = {
+        let src = """
+        float s2Hash(vec2 p) { vec3 p3 = fract(vec3(p.xyx) * 0.1031); p3 += dot(p3, p3.yzx + 33.33); return fract((p3.x + p3.y) * p3.z); }
+        float s2Noise(vec2 p) {
+            vec2 i = floor(p); vec2 f = fract(p); vec2 u = f * f * (3.0 - 2.0 * f);
+            return mix(mix(s2Hash(i), s2Hash(i + vec2(1.0, 0.0)), u.x), mix(s2Hash(i + vec2(0.0, 1.0)), s2Hash(i + vec2(1.0, 1.0)), u.x), u.y);
+        }
+        \(StudyNoise.glsl("s2"))
+        vec3 s2Ramp(vec3 a, vec3 b, vec3 c, float t) {
+            t = clamp(t, 0.0, 1.0);
+            return mix(mix(a, b, smoothstep(0.0, 0.55, t)), c, smoothstep(0.45, 1.0, t));
+        }
+        float s2Disk(float d, float s) { return 1.0 - smoothstep(1.0 - s, 1.0 + s, d); }
+        void main() {
+            vec4 P0 = u_s2[0]; vec4 P1 = u_s2[1]; vec4 P2 = u_s2[2]; vec4 P3 = u_s2[3];
+            float spread = P0.x; float warp = P0.y; float s = P0.z; float reachK = P0.w;
+            float rimK = P1.x; float fringe = P1.y; float grain = P1.z; float mode = P1.w;
+            bool glass = mode < 4.0; bool riso = abs(mode - 5.0) < 0.5;
+            float scale = max(P2.y, 1.0); bool dark = P2.z > 0.5;
+            vec3 bg = P3.rgb;
+            float ext = a_au_b.w;
+            vec2 q = (v_tex_coord - vec2(0.5)) * (2.0 * ext);   // orb radii, y up
+            float d = length(q);
+            vec3 A = a_au_a.rgb; vec3 B = a_au_b.rgb; vec3 C = a_au_c.rgb;
+            float seed = a_au_a.w;
+            vec2 pt = gl_FragCoord.xy / scale;                  // on-screen points (the study's pt)
+            float rPt = 1.0 / (max(fwidth(v_tex_coord.x), 0.000001) * 2.0 * ext * scale);
+            float lod = P2.x > 0.5 ? 0.0 : (P2.w > 0.0 ? smoothstep(P2.w - 3.0, P2.w + 3.0, rPt) : 1.0);
+            float g = s2Hash(floor(pt) * 1.37 + 3.1) - 0.5;
+            vec4 outc;
+            if (!glass) {
+                // ---- the study's EASY looks: no fbm. Stops arrive sorted dark -> light. ----
+                float ang = seed * 6.2831853; vec2 dir = vec2(cos(ang), sin(ang)); vec2 per = vec2(-dir.y, dir.x);
+                float tt = dot(q, dir) * 0.5 * spread + 0.5 + 0.22 * warp * sin(dot(q, per) * 2.2 + seed * 11.0);
+                float z = sqrt(max(0.0, 1.0 - min(d * d, 1.0)));
+                vec3 nrm = vec3(q, z); float nl = dot(nrm, normalize(vec3(-0.45, 0.55, 0.7)));   // light from upper left
+                if (riso) {
+                    float cut = smoothstep(0.5 - 0.04 - s * 2.0, 0.5 + 0.04 + s * 2.0, tt);
+                    vec2 off = vec2(0.7, -0.6) * fringe * 0.04;
+                    float c1 = s2Disk(d, s); float c2 = s2Disk(length(q + off), s) * cut * reachK;
+                    float sp = s2Noise(pt * 0.9 + vec2(seed * 31.0));   // one octave (4 hashes): the study's own cells everywhere
+                    float spk = 1.0 - grain * 0.5 * smoothstep(0.55, 0.85, sp);
+                    c1 *= rimK * spk; c2 *= rimK * spk;
+                    vec3 i1 = B; vec3 i2 = dark ? C : A;
+                    if (dark) { outc = vec4(vec3(1.0) - (vec3(1.0) - i1 * c1) * (vec3(1.0) - i2 * c2 * 0.85), 1.0); }   // screen
+                    else { outc = vec4((vec3(1.0) - (vec3(1.0) - i1) * c1 * 0.92) * (vec3(1.0) - (vec3(1.0) - i2) * c2 * 0.85), 1.0); }   // multiply
+                } else {
+                    vec3 body = s2Ramp(A, B, C, tt);
+                    body *= mix(1.0, 0.78 + 0.34 * max(nl, 0.0), rimK);
+                    vec2 sq = q - vec2(-0.35, 0.42); body = mix(body, vec3(1.0), exp(-dot(sq, sq) * 7.0) * reachK * 0.35);
+                    float rl = exp(-pow((d - 0.965) / 0.025, 2.0)); body = mix(body, mix(body, vec3(1.0), 0.6), rl * fringe);
+                    float a = s2Disk(d, s);
+                    outc = vec4(clamp(body + vec3(g) * grain * 0.06, 0.0, 1.0) * a, a);
+                }
+            } else {
+                // ---- LIGHT GLASS: frosted, tinted, lifted off the paper (over the known ground) ----
+                vec2 w = q * 0.62 + vec2(seed * 13.1, seed * 7.7);
+                vec2 n = vec2(0.0);
+                if (lod > 0.0) { n = (vec2(s2NV(texture2D(u_noise, s2UV(w))), s2NV(texture2D(u_noise, s2UV(w * 1.15 + vec2(5.2, 1.3))))) - vec2(0.4)) * lod; }
+                vec2 qw = q + warp * n * 1.8;
+                float ang = seed * 6.2831853;
+                vec2 dir = vec2(cos(ang), sin(ang));
+                float t = dot(qw, dir) * 0.5 * spread + 0.5;
+                t += 0.3 * warp * sin(dot(qw, vec2(-dir.y, dir.x)) * 1.9 + seed * 11.0);
+                vec3 tc = s2Ramp(A, B, C, mix(0.5, t, 0.45));
+                float ds = length(q - vec2(0.0, -0.09));
+                float sh = (1.0 - smoothstep(0.82, 1.18 + reachK * 0.35, ds)) * reachK;
+                float cov = s2Disk(d, s);
+                float S = 1.0 - 0.2 * sh * (1.0 - cov);
+                vec3 col = bg * S;
+                vec3 gg = mix(col, vec3(1.0), 0.18 + 0.5 * warp);
+                gg = mix(gg, gg * mix(vec3(1.0), tc, 0.85), spread * 0.55);
+                gg += 0.05 * smoothstep(-0.3, 0.9, q.y);
+                float caus = smoothstep(0.45, 1.0, d) * smoothstep(0.15, -0.85, q.y);
+                gg = mix(gg, mix(tc, vec3(1.0), 0.25), caus * 0.45 * spread);
+                float eb = exp(-pow((d - 0.982) / (0.016 + s * 0.6), 2.0));
+                gg = mix(gg, gg * mix(vec3(1.0), tc, 0.9) * 0.8, eb * fringe);
+                float arc = exp(-pow((d - 0.92) / 0.045, 2.0)) * smoothstep(0.2, 0.95, q.y / max(d, 0.001));
+                gg = mix(gg, vec3(1.0), arc * rimK);
+                vec2 gq = q - vec2(-0.38, 0.52);
+                gg = mix(gg, vec3(1.0), exp(-dot(gq, gq) * 70.0) * rimK * 0.85);
+                vec3 res = mix(col, gg, cov);
+                float a = 1.0 - (1.0 - cov) * S;
+                res += vec3(g) * grain * 0.04 * a;
+                outc = vec4(max(clamp(res, 0.0, 1.0) - bg * (1.0 - a), vec3(0.0)), a);
+            }
+            // nothing beyond the study's bound (= this sprite's extent). No early return in an SKShader.
+            gl_FragColor = outc * step(d, ext) + vec4(riso && !dark ? 1.0 - step(d, ext) : 0.0);
+        }
+        """
+        let shader = SKShader(source: src)
+        shader.attributes = [
+            SKAttribute(name: "a_au_a", type: .vectorFloat4),
+            SKAttribute(name: "a_au_b", type: .vectorFloat4),
+            SKAttribute(name: "a_au_c", type: .vectorFloat4),
+        ]
+        shader.uniforms = [SKUniform(name: "u_s2", matrixFloat4x4: matrix_identity_float4x4),
+                           SKUniform(name: "u_noise", texture: StudyNoise.texture)]
+        return shader
+    }()
+
+    enum Study2Kind: Equatable { case lightGlass, riso, gradient }
+    /// "" = no orb wears Light Glass / Riso / Gradient; otherwise what the sprites were last styled with.
+    private var study2StyleKey = ""
+
+    /// Per frame: swap every orb to the shader (or back), restyle when the look, ground, extent or orbs change, push levers.
+    private func syncStudy2(_ m: MapDarkTuning?, kind: Study2Kind?) {
+        guard let m, let kind else {
+            if !study2StyleKey.isEmpty {
+                study2StyleKey = ""
+                for (id, node) in nodeSprites { if let sp = node as? SKSpriteNode { unstyleStudy2Sprite(sp, nodeID: id) } }
+            }
+            return
+        }
+        let v: any StudyOrbLook
+        switch kind { case .lightGlass: v = m.lightGlass; case .riso: v = m.riso; case .gradient: v = m.gradient }
+        let ground: vector_float3 = currentIsLight ? Self.rgb3(MapCompTuning.lightGroundHex) : TunerHSL(hex: m.fieldHex).simd
+        let mode: Float = kind == .lightGlass ? 3 : kind == .riso ? 5 : 6
+        let u = simd_float4x4(columns: (
+            vector_float4(Float(v.spread), Float(v.warp), Float(v.softness), Float(v.haloReach)),
+            vector_float4(Float(v.rim), Float(v.fringe), Float(v.grain), mode),
+            vector_float4(lodAllOrbs ? 1 : 0, Float(glyphContentScale), currentIsLight ? 0 : 1,
+                          Float(kind == .lightGlass ? Self.lodRadiusPt : 0)),
+            vector_float4(ground.x, ground.y, ground.z, 0)))
+        if let uu = study2Shader.uniforms.first, uu.matrixFloat4x4Value != u { uu.matrixFloat4x4Value = u }
+        let ext = v.spriteExtent
+        let blend: SKBlendMode = kind == .riso ? (currentIsLight ? .multiply : .screen) : .alpha
+        let key = "\(kind)|\(currentIsLight)|\(ext)|\(nodeSprites.count)"
+        guard key != study2StyleKey else { return }
+        let rebuild = study2StyleKey.isEmpty || study2StyleKey == "stale" || !study2StyleKey.hasSuffix("|\(nodeSprites.count)")
+        study2StyleKey = key
+        let byID = Dictionary(currentNodes.map { ($0.id, $0) }, uniquingKeysWith: { x, _ in x })
+        if rebuild || studyFamilyOf.isEmpty { buildStudyFamilies(byID: byID) }
+        for (id, node) in nodeSprites {
+            guard let sp = node as? SKSpriteNode else { continue }
+            applyOrbSpriteSize(sp, nodeID: id, extent: CGFloat(ext))
+            if sp.shader !== study2Shader { sp.shader = study2Shader }
+            if sp.blendMode != blend { sp.blendMode = blend }
+            let st = studyStops(nodeID: id, sorted: kind != .lightGlass)   // the study sorts Riso / Gradient dark → light
+            sp.setValue(SKAttributeValue(vectorFloat4: vector_float4(st.a, st.seed)), forAttribute: "a_au_a")
+            sp.setValue(SKAttributeValue(vectorFloat4: vector_float4(st.b, Float(ext))), forAttribute: "a_au_b")
+            sp.setValue(SKAttributeValue(vectorFloat4: vector_float4(st.c, 0)), forAttribute: "a_au_c")
+        }
+    }
+
+    private func unstyleStudy2Sprite(_ sp: SKSpriteNode, nodeID: String) {
+        applyOrbSpriteSize(sp, nodeID: nodeID, extent: 1)
+        if sp.shader !== orbSpriteShader { sp.shader = orbSpriteShader }
+        if sp.blendMode != .alpha { sp.blendMode = .alpha }
+    }
+
+    /// live-49 — the study's inkDark for the v7 looks: Light Glass dark; Riso the sorted mid stop (multiplied into the
+    /// ground at 85% on the light Map); Gradient the sorted mid stop. Threshold 0.5.
+    private func study2TitleInkIsDark(nodeID: String, kind: Study2Kind) -> Bool {
+        if kind == .lightGlass { return true }
+        let st = studyStops(nodeID: nodeID, sorted: true)
+        if kind == .riso && currentIsLight {
+            let g3 = Self.rgb3(MapCompTuning.lightGroundHex), g = SIMD3<Float>(g3.x, g3.y, g3.z)
+            return OrbStudyPalettes.lum(g * (SIMD3<Float>(repeating: 1) - (SIMD3<Float>(repeating: 1) - st.b) * 0.85)) > 0.5
+        }
+        return OrbStudyPalettes.lum(st.b) > 0.5
+    }
+
+    /// Which v7 look the orbs wear now (nil = none): Glass on the light Map = Light Glass; Riso / Gradient on both.
+    private func study2Kind(_ m: MapDarkTuning) -> Study2Kind? {
+        switch m.orbLook {
+        case .glass: return currentIsLight ? .lightGlass : nil
+        case .riso: return .riso
+        case .gradient: return .gradient
+        default: return nil
+        }
+    }
+
     /// live-45 / 47 — the mean luma under an orb's title: a CPU twin of the shader's warped ramp, sampled on a 7 × 5 grid
     /// over the title box (± 0.6 × ± 0.35 orb radii). Aura: the ramp + rim tint + shading. Wash (live-47, the same rule):
     /// the ground × (1 − absorb) with the pigment lifted 14% toward white and the density 0.6 × bloom (no pooling this far
@@ -4553,7 +4760,7 @@ final class CorpusPhysicsScene: SKScene {
     /// the orb shader fills the sprite; the Aura shader maps it to ± extent orb radii.
     private func drawnBodyLocalRadius(_ sp: SKSpriteNode) -> CGFloat {
         let unscaledW = sp.size.width / max(abs(sp.xScale), 0.0001)   // SKSpriteNode.size is in scaled points
-        guard sp.shader === auraShader || sp.shader === washShader else { return unscaledW / 2 }   // live-46: Wash too
+        guard sp.shader === auraShader || sp.shader === washShader || sp.shader === study2Shader else { return unscaledW / 2 }   // live-46 / 49
         let e = CGFloat(sp.value(forAttributeNamed: "a_au_b")?.vectorFloat4Value.w ?? 0)
         return unscaledW / 2 / max(e, 0.0001)
     }
@@ -4566,7 +4773,7 @@ final class CorpusPhysicsScene: SKScene {
         var bad = 0, aura = 0, maxErr: CGFloat = 0, worst = "-"
         for (id, node) in nodeSprites {
             guard let sp = node as? SKSpriteNode, let r = nodeIntrinsicRadii[id] else { continue }
-            let isAura = sp.shader === auraShader || sp.shader === washShader   // live-46: counts Wash orbs too
+            let isAura = sp.shader === auraShader || sp.shader === washShader || sp.shader === study2Shader   // live-46 / 49
             if isAura { aura += 1 }
             let d = drawnBodyLocalRadius(sp)
             let err = abs(d - r) * abs(sp.xScale) / cs * px
@@ -4625,6 +4832,9 @@ final class CorpusPhysicsScene: SKScene {
             ("bgReady", {}),   // the shell backgrounds + foregrounds the app here; `foreground` audits on return
             ("toGlass", look { $0.orbLook = .glass }),
             ("toOutline", look { $0.orbLook = .outline }),
+            ("toRiso", look { $0.orbLook = .riso }),               // live-49 (both grounds)
+            ("toGradient", look { $0.orbLook = .gradient }),
+            ("toGlassPair", look { $0.orbLook = .glass }),         // live-49: Light Glass on the light Map
             ("toFlatEnd", look { $0.orbLook = .flat }),
         ]
         let bg = steps.firstIndex { $0.0 == "bgReady" } ?? steps.count
@@ -4737,6 +4947,11 @@ final class CorpusPhysicsScene: SKScene {
         #if DEBUG || TESTFLIGHT
         // live-43 — Outline: light ink on the dark Map, dark ink on the light one (the fill is too faint to matter).
         // live-47 — the study looks (Aura / Eclipse on dark, Wash on light): studyTitleInkIsDark (Eclipse always light).
+        if let m = mapTuning, let k = study2Kind(m) {   // live-49 — the study's inkDark for Light Glass / Riso / Gradient
+            return study2TitleInkIsDark(nodeID: nodeID, kind: k)
+                ? UIColor(red: 0x1B / 255.0, green: 0x1A / 255.0, blue: 0x20 / 255.0, alpha: 1)
+                : UIColor(red: 0xF4 / 255.0, green: 0xF2 / 255.0, blue: 0xF8 / 255.0, alpha: 1)
+        }
         if let m = mapTuning, m.orbLook == .outline {
             return currentIsLight ? UIColor(red: 0.08, green: 0.07, blue: 0.06, alpha: 1) : UIColor(red: 1.0, green: 0.98, blue: 0.95, alpha: 1)
         }

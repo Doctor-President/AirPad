@@ -129,8 +129,9 @@ enum BackgroundGridNode {
                 float paper = u_light_ground_on - 1.0;
                 if (paper > 0.0) {
                     vec2 pt = worldPos / u_camera_scale;
-                    groundDots *= 1.0 - paper * 0.05 * (wpNV(texture2D(u_noise, wpUV(pt * vec2(0.35, 0.9)))) - 0.4);
-                    groundDots += vec3(wpHash(floor(pt) * 1.37 + 3.1) - 0.5) * paper * 0.035;
+                    // live-49: u_grain_cfg = (grain coefficient, chroma 0/1, fibres 0/1): Wash (0.035, 0, 1), Riso / Gradient / Light Glass
+                    groundDots *= 1.0 - paper * 0.05 * (wpNV(texture2D(u_noise, wpUV(pt * vec2(0.35, 0.9)))) - 0.4) * u_grain_cfg.z;
+                    groundDots += vec3(wpHash(floor(pt) * 1.37 + 3.1) - 0.5) * paper * u_grain_cfg.x;
                 }
         """
         // live-47 — the ground's share of the Aura / Eclipse grain on the DARK Map (u_light_ground_on = −grain): the study's
@@ -141,7 +142,7 @@ enum BackgroundGridNode {
                     vec2 gpt = floor(vec2(v_tex_coord.x, 1.0 - v_tex_coord.y) * u_viewport_size);
                     float gg = wpHash(gpt * 1.37 + 3.1) - 0.5;
                     float gg2 = wpHash(gpt.yx * 0.91 + 7.7) - 0.5;
-                    darkGrain = (vec3(gg) + vec3(gg2, -gg2, gg2) * 0.25) * (-u_light_ground_on) * 0.1;
+                    darkGrain = (vec3(gg) + vec3(gg2, -gg2, gg2) * 0.25 * u_grain_cfg.y) * (-u_light_ground_on) * u_grain_cfg.x;   // Aura (0.1, 1)
                 }
         """
         #else
@@ -322,6 +323,7 @@ enum BackgroundGridNode {
         ]
         #if DEBUG || TESTFLIGHT
         shader.uniforms.append(SKUniform(name: "u_noise", texture: StudyNoise.texture))   // live-48 — the paper's fbm
+        shader.uniforms.append(SKUniform(name: "u_grain_cfg", vectorFloat3: vector_float3(0.035, 0, 1)))   // live-49
         #endif
         return shader
     }

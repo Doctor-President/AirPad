@@ -647,11 +647,11 @@ struct SettingsView: View {
 
     private var privacySubmenu: some View {
         submenuScroll(header: { submenuHeader(icon: "lock.fill", tint: "3A8DDE", title: "Privacy",
-            blurb: "Your library stays on your phone.") }) {
+            blurb: "What AirPad keeps, and where.") }) {
             if !hasAnyFrontierKey {
                 HStack(spacing: 8) {
                     Image(systemName: "lock.fill").font(.caption).foregroundStyle(.green.opacity(0.8))
-                    Text("Your data never leaves this device").font(appFont.font(size: 12, relativeTo: .caption1)).foregroundStyle(AppearancePalette.ink.opacity(0.5))
+                    Text("No account, no tracking. Your notes stay in your iCloud Drive.").font(appFont.font(size: 12, relativeTo: .caption1)).foregroundStyle(AppearancePalette.ink.opacity(0.5))
                 }
             }
         }
@@ -953,7 +953,7 @@ struct SettingsView: View {
                     Image(systemName: "lock.fill")
                         .font(appFont.font(size: 12, relativeTo: .caption1))
                         .foregroundStyle(.green.opacity(0.8))
-                    Text("Your data never leaves this device")
+                    Text("No account, no tracking. Your notes stay in your iCloud Drive.")
                         .font(appFont.font(size: 12, relativeTo: .caption1))
                         .foregroundStyle(AppearancePalette.ink.opacity(0.5))
                 }

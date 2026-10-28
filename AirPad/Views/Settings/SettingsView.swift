@@ -97,8 +97,6 @@ struct SettingsView: View {
     // toolbar's font chip via the SAME @AppStorage key). New entries + entries with no
     // per-entry override follow it.
     @AppStorage(EntryBodyFont.defaultStorageKey) private var defaultBodyFontRaw = EntryBodyFont.fallback.rawValue
-    // Privacy
-    @AppStorage("locationEnabled") private var locationEnabled = false
 
     // SB126 Stage 2 — bound to the same key FeatureFlags.useCorpusAwareTagging reads.
     @AppStorage("ff.useCorpusAwareTagging") private var useCorpusAwareTagging = false
@@ -650,12 +648,6 @@ struct SettingsView: View {
     private var privacySubmenu: some View {
         submenuScroll(header: { submenuHeader(icon: "lock.fill", tint: "3A8DDE", title: "Privacy",
             blurb: "Your library stays on your phone.") }) {
-            Toggle(isOn: $locationEnabled) {
-                VStack(alignment: .leading, spacing: 2) {
-                    Text("GPS location on capture").font(appFont.font(size: 15, weight: .medium, relativeTo: .subheadline)).foregroundStyle(AppearancePalette.ink)
-                    Text("Attaches your location to newly captured entries").font(appFont.font(size: 12, relativeTo: .caption1)).foregroundStyle(AppearancePalette.ink.opacity(0.4))
-                }
-            }.tint(.purple)
             if !hasAnyFrontierKey {
                 HStack(spacing: 8) {
                     Image(systemName: "lock.fill").font(.caption).foregroundStyle(.green.opacity(0.8))
@@ -955,18 +947,6 @@ struct SettingsView: View {
     private var privacySection: some View {
         VStack(alignment: .leading, spacing: 16) {
             sectionHeader("Privacy")
-
-            Toggle(isOn: $locationEnabled) {
-                VStack(alignment: .leading, spacing: 2) {
-                    Text("GPS location on capture")
-                        .font(appFont.font(size: 15, weight: .medium, relativeTo: .subheadline))
-                        .foregroundStyle(AppearancePalette.ink)
-                    Text("Attaches your location to newly captured entries")
-                        .font(appFont.font(size: 12, relativeTo: .caption1))
-                        .foregroundStyle(AppearancePalette.ink.opacity(0.4))
-                }
-            }
-            .tint(.purple)
 
             if !hasAnyFrontierKey {
                 HStack(spacing: 8) {

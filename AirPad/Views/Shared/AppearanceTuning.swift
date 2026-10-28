@@ -468,18 +468,20 @@ final class AppearanceTuner {
         // 'json:{Copy values}'`, else Medium) → Aura → Eclipse → Outline → Wash Subtle / Medium / Strong every 4 s; `[MAPCYCLE] <look>`.
         // `-MapLookSet <look>` (flat|glass|aura|eclipse|outline|wash-subtle|wash-medium|wash-strong) holds one look.
         do {
-            var glassA = GlassLook.medium
+            var glassA = GlassLook.tDark, glassL = GlassLook.tLight   // live-51: T's signed-off values unless -MapGlassToday
             if var j = UserDefaults.standard.string(forKey: "MapGlassToday") {
+                glassA = .medium
                 if j.hasPrefix("json:") { j.removeFirst(5) }   // a bare {…} argument is parsed into a dictionary
                 if let o = (try? JSONSerialization.jsonObject(with: Data(j.utf8))) as? [String: Any] {
                     let md = (o["mapDark"] as? [String: Any]) ?? o
                     if md["ground"] != nil { state.mapDark.apply(exportJSON: md) }
                     glassA.apply(exportJSON: (md["glass"] as? [String: Any]) ?? md)
                 }
+                glassL = glassA
             }
             let steps: [(String, (inout MapDarkTuning) -> Void)] = [
                 ("flat", { $0.orbLook = .flat }),
-                ("glass", { $0.orbLook = .glass; $0.glass = glassA; $0.glassLight = glassA }),   // live-50c: both Maps
+                ("glass", { $0.orbLook = .glass; $0.glass = glassA; $0.glassLight = glassL }),   // live-50c: both Maps
                 ("aura", { $0.orbLook = .aura; $0.aura = AuraLook() }),
                 ("eclipse", { $0.orbLook = .eclipse; $0.eclipse = EclipseLook() }),
                 ("outline", { $0.orbLook = .outline }),
@@ -1470,18 +1472,18 @@ extension StudyOrbLook {
 /// floor, grain size and territory-derived stops are gone (T: the re-interpretation read as messy, fuzzy clusters). Old
 /// saved values still load; their extra keys are ignored.
 struct AuraLook: StudyOrbLook {
-    // T's values (study v4 on iPhone, 2026-10-27, Ops/reference/orb-study-values-2026-10-27.json) = the study's Medium.
+    // live-51 — T's values (TF 202610271825, Ops/reference/tuner-values-2026-10-27c.json).
     var spread = 0.82
     var warp = 1.36
-    var softness = 0.03         // edge softness (fraction of the orb's radius)
-    var haloReach = 0.0
-    var rim = 0.45
-    var fringe = 0.35           // chromatic fringe (the edge at three radii, red outermost)
-    var grain = 1.0
+    var softness = 0.09         // edge softness (fraction of the orb's radius)
+    var haloReach = 0.03
+    var rim = 0.49
+    var fringe = 0.58           // chromatic fringe (the edge at three radii, red outermost)
+    var grain = 0.0
     var drift = false           // slow gradient flow; on → the Map renders at 30 fps
 
     static let subtle = AuraLook(0.7, 0.6, 0.02, 0, 0.3, 0.2, 0.6)
-    static let medium = AuraLook()
+    static let medium = AuraLook(0.82, 1.36, 0.03, 0, 0.45, 0.35, 1)   // the study's Medium (the defaults before live-51)
     static let strong = AuraLook(1.1, 1.5, 0.06, 0.15, 0.7, 0.7, 1)
     static let presets: [(String, AuraLook)] = [("Subtle", .subtle), ("Medium", .medium), ("Strong", .strong)]
 
@@ -1505,15 +1507,21 @@ struct AuraLook: StudyOrbLook {
 /// rim light, a crescent (an offset disc), the chromatic rim and a small halo in the rim colour. Each orb's palette stops
 /// run sorted dark → light by luma. Title ink is always light.
 struct EclipseLook: StudyOrbLook {
-    // T's values (2026-10-27).
-    var spread = 0.87
-    var warp = 0.76
-    var softness = 0.01
-    var haloReach = 0.12
-    var rim = 0.56
-    var fringe = 0.39
-    var grain = 0.8
+    // live-51 — T's values (Ops/reference/tuner-values-2026-10-27c.json).
+    var spread = 0.97
+    var warp = 0.83
+    var softness = 0.055
+    var haloReach = 0.06
+    var rim = 0.59
+    var fringe = 0.41
+    var grain = 0.0
     var drift = false
+    /// live-51 amendment — the TOP ARC's thickness (the bright crescent across the top, between the edge and the occluding
+    /// disc), in orb radii at the top. 0.12 = the study's (occluder offset −0.07, radius 0.95); the shader scales that
+    /// offset and the radius gap by arcThickness / 0.12 (u_au col 3.w), inside the disc only, so the drawn area never grows.
+    var arcThickness = EclipseLook.studyArcThickness
+    static let studyArcThickness = 0.12
+    static let arcThicknessRange: ClosedRange<Double> = 0.02...0.4
 
     static let subtle = EclipseLook(0.85, 0.6, 0.03, 0.06, 0.35, 0.3, 0.6)
     static let medium = EclipseLook(0.95, 0.9, 0.04, 0.12, 0.5, 0.45, 0.8)
@@ -1531,8 +1539,10 @@ struct EclipseLook: StudyOrbLook {
         func v<T: Decodable>(_ k: CodingKeys, _ def: T) -> T { ((try? c.decodeIfPresent(T.self, forKey: k)) ?? nil) ?? def }
         spread = v(.spread, d.spread); warp = v(.warp, d.warp); softness = v(.softness, d.softness)
         haloReach = v(.haloReach, d.haloReach); rim = v(.rim, d.rim); fringe = v(.fringe, d.fringe)
-        grain = v(.grain, d.grain); drift = v(.drift, d.drift)
+        grain = v(.grain, d.grain); drift = v(.drift, d.drift); arcThickness = v(.arcThickness, d.arcThickness)
     }
+    /// The shader's arc lever (u_au col 3.w): exactly 1 at the study's thickness.
+    var arcScale: Float { Float(arcThickness / EclipseLook.studyArcThickness) }
 }
 
 /// live-49 — the study's v7 looks (Ops/reference/aura-orb-study.html v7), ported exactly like Aura: Light Glass (the
@@ -1600,11 +1610,12 @@ struct LightGlassLook: StudyOrbLook {
     }
 }
 struct RisoLook: StudyOrbLook {
-    var spread = 0.72           // Shape
-    var warp = 0.95             // Swirl
+    // live-51 — T's values (Ops/reference/tuner-values-2026-10-27c.json).
+    var spread = 0.55           // Shape
+    var warp = 0.44             // Swirl
     var softness = 0.01
-    var haloReach = 0.42        // Second ink
-    var rim = 0.84              // Ink density
+    var haloReach = 0.52        // Second ink
+    var rim = 0.69              // Ink density
     var fringe = 0.71           // Misregistration
     var grain = 0.23            // Speckle
     var drift = false
@@ -1621,13 +1632,14 @@ struct RisoLook: StudyOrbLook {
     init(from decoder: Decoder) throws { self = try StudyLookDecode.decode(decoder, RisoLook()) }
 }
 struct GradientLook: StudyOrbLook {
-    var spread = 1.01
-    var warp = 0.96             // Swirl
+    // live-51 — T's values (Ops/reference/tuner-values-2026-10-27c.json).
+    var spread = 0.83
+    var warp = 1.25             // Swirl
     var softness = 0.01
-    var haloReach = 0.4         // Sheen
-    var rim = 0.52              // Shading
-    var fringe = 0.1            // Rim line
-    var grain = 0.0
+    var haloReach = 0.92        // Sheen
+    var rim = 0.54              // Shading
+    var fringe = 0.11           // Rim line
+    var grain = 0.54
     var drift = false
     var spriteExtent: Double { 1.04 + softness * 1.2 + fringe * 0.05 }
     static let presets: [(String, GradientLook)] = [("Subtle", .init(0.7, 0.2, 0.01, 0.2, 0.3, 0.2, 0)),
@@ -1748,15 +1760,16 @@ enum OrbStudyPalettes {
 /// and granulation; the paper fibres + grain live on the ground (the grid shader). The Pro "Aura" look = Aura on the
 /// dark Map + Wash on the light Map. Slider names follow the study's Wash labels.
 struct WashLook: Codable, Equatable {
-    var spread = 1.0            // Gradient spread
-    var warp = 0.9              // Warp
-    var softness = 0.05         // Edge softness (orb radii)
-    var bleed = 0.6             // Bleed (the study's `reach` slot)
-    var pooling = 0.55          // Edge pooling (`rim`)
-    var misregistration = 0.6   // Misregistration (`fringe`)
-    var paper = 0.6             // Paper grain (`grain`): fibres + grain on the ground, granulation in the orb
+    // live-51 — T's values (Ops/reference/tuner-values-2026-10-27c.json).
+    var spread = 0.8            // Gradient spread
+    var warp = 0.82             // Warp
+    var softness = 0.03         // Edge softness (orb radii)
+    var bleed = 0.3             // Bleed (the study's `reach` slot)
+    var pooling = 0.3           // Edge pooling (`rim`)
+    var misregistration = 0.3   // Misregistration (`fringe`)
+    var paper = 0.4             // Paper grain (`grain`): the pigment's granulation in the orb (live-51: no longer on the ground)
 
-    static let medium = WashLook()
+    static let medium = WashLook(spread: 1.0, warp: 0.9, softness: 0.05, bleed: 0.6, pooling: 0.55, misregistration: 0.6, paper: 0.6)   // the study's Medium
     static let subtle = WashLook(spread: 0.8, warp: 0.5, softness: 0.03, bleed: 0.3, pooling: 0.3, misregistration: 0.3, paper: 0.4)
     static let strong = WashLook(spread: 1.2, warp: 1.3, softness: 0.08, bleed: 1.0, pooling: 0.85, misregistration: 1.0, paper: 0.85)
     static let presets: [(String, WashLook)] = [("Subtle", .subtle), ("Medium", .medium), ("Strong", .strong)]
@@ -1791,7 +1804,7 @@ struct OutlineLook: Codable, Equatable {
     var ringWidth = 2.0          // pt on screen, constant across zoom (doubles on the focused / selected orb)
     var ringOpacityDark = 0.85
     var ringOpacityLight = 1.0
-    var fillOpacity = 0.06       // 0 … 0.3
+    var fillOpacity = 0.115      // 0 … 0.3 (live-51: T's value)
 
     init() {}
     init(from decoder: Decoder) throws {
@@ -1849,6 +1862,25 @@ struct GlassLook: Codable, Equatable {
                                   highlightIntensity: 0.65, tiltResponse: 0.2, label: TunerHSL(hex: "FFFFFF"),
                                   topArc: 1.3, bottomArc: 0.65, arcSpan: 135, arcThickness: 0.09, arcSoftness: 0.55)
     static let presets: [(String, GlassLook)] = [("Subtle", .subtle), ("Medium", .medium), ("Strong", .strong)]
+
+    /// live-51 — T's signed-off Glass (2026-10-27, TF 202610271825, Ops/reference/tuner-values-2026-10-27c.json): the
+    /// dark Map's and the light Map's values = the defaults. Refraction / lens / magnification / frost aren't drawn (Medium's).
+    static let tDark: GlassLook = {
+        var g = GlassLook.medium
+        g.apply(exportJSON: ["tint": 0.22, "brightness": 0.04, "edge": 0.12, "innerShadow": 0.4, "dispersion": 0.15,
+                             "highlightSize": 0.43, "highlightIntensity": 0.11, "tiltResponse": 0.16, "label": "#FFFFFF",
+                             "topArc": 0.9, "bottomArc": 0.45, "arcSpan": 120, "arcThickness": 0.07, "arcSoftness": 0.6,
+                             "dim": 0, "tiltLight": false, "tiltSmoothing": 0.8])
+        return g
+    }()
+    static let tLight: GlassLook = {
+        var g = GlassLook.medium
+        g.apply(exportJSON: ["tint": 0.71, "brightness": 0.13, "edge": 0.16, "innerShadow": 0.12, "dispersion": 0.59,
+                             "highlightSize": 0.43, "highlightIntensity": 0.08, "tiltResponse": 0.16, "label": "#FFFFFF",
+                             "topArc": 0.28, "bottomArc": 0.37, "arcSpan": 174, "arcThickness": 0.175, "arcSoftness": 1,
+                             "dim": 0, "tiltLight": false, "tiltSmoothing": 0.8])
+        return g
+    }()
 
     /// live-40's Medium as it shipped on TF 202610231523 (uniform edge line, full tilt, no arcs, no frost) — the stills'
     /// "today" when T's Copy values aren't given.
@@ -1938,11 +1970,11 @@ struct MapDarkTuning: Codable, Equatable {
     var orbGlowOpacity = 0.12
     var orbLook: MapOrbLook = .flat
     var fresnel: FresnelLook = .medium
-    var glass: GlassLook = .medium
+    var glass: GlassLook = .tDark                 // live-51 — T's signed-off values
     /// live-50c — Glass's values for the LIGHT Map: the same parameters as `glass` (one model on both Maps), its own values.
     /// Starts as a copy of the dark values (older saved values have no key → decode copies `glass`). Tilt light / response /
     /// smoothing stay ONE shared switch: `glass`'s (glassFor(light:)).
-    var glassLight: GlassLook = .medium
+    var glassLight: GlassLook = .tLight           // live-51 — T's signed-off values
     var aura = AuraLook()                         // live-43
     var eclipse = EclipseLook()                   // live-47
     var outline = OutlineLook()                   // live-43-A
@@ -1994,7 +2026,10 @@ struct MapDarkTuning: Codable, Equatable {
         if let v = d("shrinkReach") { shrinkReach = v }
         if let l = (o["orbLook"] as? String).flatMap(MapOrbLook.init(rawValue:)) { orbLook = l }
         if let a = o["aura"] as? [String: Any] { aura.apply(exportJSON: a) }
-        if let e = o["eclipse"] as? [String: Any] { eclipse.apply(exportJSON: e) }
+        if let e = o["eclipse"] as? [String: Any] {
+            eclipse.apply(exportJSON: e)
+            if let v = (e["arcThickness"] as? NSNumber)?.doubleValue { eclipse.arcThickness = v }   // live-51 amendment
+        }
         if let b = o["outline"] as? [String: Any] { outline.apply(exportJSON: b) }
         if let w = o["wash"] as? [String: Any] { wash.apply(exportJSON: w) }
         if let x = o["glassLight"] as? [String: Any] { glassLight.apply(exportJSON: x) }   // live-50c
@@ -2070,7 +2105,7 @@ extension AppearanceTuning {
             + "\"highlightIntensity\":\(n(gL.highlightIntensity)),\"tiltResponse\":\(n(gL.tiltResponse)),\"label\":\(c(gL.label)),"
             + "\"topArc\":\(n(gL.topArc)),\"bottomArc\":\(n(gL.bottomArc)),\"arcSpan\":\(n(gL.arcSpan)),\"arcThickness\":\(n(gL.arcThickness)),"
             + "\"arcSoftness\":\(n(gL.arcSoftness)),\"dim\":\(n(gL.dim)),\"tiltLight\":\(gL.tiltLight),\"tiltSmoothing\":\(n(gL.tiltSmoothing))},"
-            + "\"palettes\":\"12 territories\",\"aura\":\(study(a)),\"eclipse\":\(study(e)),"
+            + "\"palettes\":\"12 territories\",\"aura\":\(study(a)),\"eclipse\":\(String(study(e).dropLast())),\"arcThickness\":\(n(e.arcThickness))},"
             + "\"lightGlass\":\(m.lightGlass.exportJSON),\"riso\":\(study(m.riso)),\"gradient\":\(study(m.gradient)),"
             + "\"outline\":{\"ringWidth\":\(n(ol.ringWidth)),\"ringOpacityDark\":\(n(ol.ringOpacityDark)),"
             + "\"ringOpacityLight\":\(n(ol.ringOpacityLight)),\"fillOpacity\":\(n(ol.fillOpacity))},"
@@ -2094,10 +2129,10 @@ extension AppearanceTuning {
              t.fieldHex == "101014" && t.openSpaceHex == "212125", "\(t.fieldHex) / \(t.openSpaceHex)"),
             ("map-dark-shrink-defaults-are-today (on · 1.0 · reach 6 orb radii)",
              t.dotShrinkOn && t.dotShrink == 1.0 && t.shrinkReach == 6.0 && t.effectiveShrink == 1.0, ""),
-            ("map-dark-live39-saved-values-decode (no glass/shrink keys → ground kept, glass = medium)", {
+            ("map-dark-live39-saved-values-decode (no glass/shrink keys → ground kept, glass = the default — live-51: T's)", {
                 let old = #"{"ground":{"h":240,"s":0.1,"l":0.04},"orbLook":"fresnel"}"#
                 guard let m = try? JSONDecoder().decode(MapDarkTuning.self, from: Data(old.utf8)) else { return false }
-                return m.orbLook == .fresnel && m.ground.l == 0.04 && m.glass == .medium && m.dotShrinkOn
+                return m.orbLook == .fresnel && m.ground.l == 0.04 && m.glass == .tDark && m.dotShrinkOn
             }(), ""),
             ("glass-live40-saved-value-migrates (tilt ×0.2, edge → 0, rest kept)", {
                 let old = #"{"refraction":0.7,"lensCurve":2.4,"magnification":1.2,"tint":0.3,"brightness":0.05,"frost":0.2,"edge":0.6,"innerShadow":0.4,"dispersion":0.1,"highlightSize":0.3,"highlightIntensity":0.5,"tiltResponse":0.8,"label":{"h":0,"s":0,"l":1}}"#
@@ -2118,16 +2153,54 @@ extension AppearanceTuning {
                 g.apply(exportJSON: block)
                 return g == t.glass
             }(), ""),
-            ("aura-defaults-are-T's-2026-10-27-values (spread 0.82 · warp 1.36 · soft 0.03 · halo 0 · rim 0.45 · fringe 0.35 · grain 1; extent 1.094 = the study's bound)", {
+            ("aura-defaults-are-T's-27c-values (spread 0.82 · warp 1.36 · soft 0.09 · halo 0.03 · rim 0.49 · fringe 0.58 · grain 0; extent 1.186 = the study's bound) (live-51)", {
                 let a = t.aura
-                return a.spread == 0.82 && a.warp == 1.36 && a.softness == 0.03 && a.haloReach == 0 && a.rim == 0.45
-                    && a.fringe == 0.35 && a.grain == 1.0 && !a.drift && a == AuraLook.medium && abs(a.spriteExtent - 1.094) < 1e-9
+                return a.spread == 0.82 && a.warp == 1.36 && a.softness == 0.09 && a.haloReach == 0.03 && a.rim == 0.49
+                    && a.fringe == 0.58 && a.grain == 0 && !a.drift && abs(a.spriteExtent - 1.186) < 1e-9
+                    && AuraLook.medium == AuraLook(0.82, 1.36, 0.03, 0, 0.45, 0.35, 1)
             }(), String(format: "extent %.3f", t.aura.spriteExtent)),
-            ("eclipse-defaults-are-T's-2026-10-27-values (0.87 · 0.76 · 0.01 · halo 0.12 · rim 0.56 · fringe 0.39 · grain 0.8; extent 1.394)", {
+            ("eclipse-defaults-are-T's-27c-values (0.97 · 0.83 · 0.055 · halo 0.06 · rim 0.59 · fringe 0.41 · grain 0; arc 0.12 → lever 1; extent 1.247) (live-51)", {
                 let e = t.eclipse
-                return e.spread == 0.87 && e.warp == 0.76 && e.softness == 0.01 && e.haloReach == 0.12 && e.rim == 0.56
-                    && e.fringe == 0.39 && e.grain == 0.8 && !e.drift && abs(e.spriteExtent - 1.394) < 1e-9
+                return e.spread == 0.97 && e.warp == 0.83 && e.softness == 0.055 && e.haloReach == 0.06 && e.rim == 0.59
+                    && e.fringe == 0.41 && e.grain == 0 && !e.drift && abs(e.spriteExtent - 1.247) < 1e-9
+                    && e.arcThickness == 0.12 && e.arcScale == 1
             }(), String(format: "extent %.3f", t.eclipse.spriteExtent)),
+            ("eclipse-arc-thickness-copy-values-round-trip + old values decode to 0.12 (live-51 amendment)", {
+                var m = MapDarkTuning(); m.eclipse.arcThickness = 0.3
+                var back = MapDarkTuning()
+                guard let all = try? JSONSerialization.jsonObject(with: Data(mapDarkJSON(m).utf8)) as? [String: Any],
+                      let ec = all["eclipse"] as? [String: Any] else { return false }
+                back.apply(exportJSON: all)
+                let old = #"{"spread":0.9,"rim":0.4}"#
+                guard let o = try? JSONDecoder().decode(EclipseLook.self, from: Data(old.utf8)) else { return false }
+                return (ec["arcThickness"] as? NSNumber)?.doubleValue == 0.3 && back.eclipse.arcThickness == 0.3
+                    && o.arcThickness == 0.12 && o.rim == 0.4 && abs(m.eclipse.arcScale - 2.5) < 1e-6
+            }(), ""),
+            ("map-defaults-are-T's-27c-values (glass · glassLight · aura · eclipse · riso · gradient · outline · wash) (live-51)", {
+                // T's blocks from Ops/reference/tuner-values-2026-10-27c.json, applied over the study presets → must equal today
+                let c27: [String: Any] = [
+                    "glass": ["tint": 0.22, "brightness": 0.04, "edge": 0.12, "innerShadow": 0.4, "dispersion": 0.15, "highlightSize": 0.43,
+                              "highlightIntensity": 0.11, "tiltResponse": 0.16, "label": "#FFFFFF", "topArc": 0.9, "bottomArc": 0.45,
+                              "arcSpan": 120, "arcThickness": 0.07, "arcSoftness": 0.6, "dim": 0, "tiltLight": false, "tiltSmoothing": 0.8],
+                    "glassLight": ["tint": 0.71, "brightness": 0.13, "edge": 0.16, "innerShadow": 0.12, "dispersion": 0.59, "highlightSize": 0.43,
+                                   "highlightIntensity": 0.08, "tiltResponse": 0.16, "label": "#FFFFFF", "topArc": 0.28, "bottomArc": 0.37,
+                                   "arcSpan": 174, "arcThickness": 0.175, "arcSoftness": 1, "dim": 0, "tiltLight": false, "tiltSmoothing": 0.8],
+                    "aura": ["spread": 0.82, "warp": 1.36, "softness": 0.09, "haloReach": 0.03, "rim": 0.49, "fringe": 0.58, "grain": 0, "drift": false],
+                    "eclipse": ["spread": 0.97, "warp": 0.83, "softness": 0.055, "haloReach": 0.06, "rim": 0.59, "fringe": 0.41, "grain": 0, "drift": false],
+                    "riso": ["spread": 0.55, "warp": 0.44, "softness": 0.01, "haloReach": 0.52, "rim": 0.69, "fringe": 0.71, "grain": 0.23, "drift": false],
+                    "gradient": ["spread": 0.83, "warp": 1.25, "softness": 0.01, "haloReach": 0.92, "rim": 0.54, "fringe": 0.11, "grain": 0.54, "drift": false],
+                    "outline": ["ringWidth": 2, "ringOpacityDark": 0.85, "ringOpacityLight": 1, "fillOpacity": 0.115],
+                    "wash": ["spread": 0.8, "warp": 0.82, "softness": 0.03, "bleed": 0.3, "pooling": 0.3, "misregistration": 0.3, "paper": 0.4]]
+                var m = MapDarkTuning()
+                var g0 = GlassLook.medium; g0.tint = 0.9; g0.topArc = 0.1; g0.arcSpan = 60; g0.highlightIntensity = 0.7
+                m.glass = g0; m.glassLight = g0; m.aura = .strong; m.eclipse = .strong; m.riso = RisoLook.presets[2].1
+                m.gradient = GradientLook.presets[2].1; m.outline.fillOpacity = 0.3; m.outline.ringWidth = 5; m.wash = .strong
+                m.apply(exportJSON: c27)
+                if let x = c27["glass"] as? [String: Any] { m.glass.apply(exportJSON: x) }   // apply() leaves `glass` to the stills hooks
+                return m.glass == t.glass && m.glassLight == t.glassLight && m.aura == t.aura && m.eclipse == t.eclipse
+                    && m.riso == t.riso && m.gradient == t.gradient && m.outline == t.outline && m.wash == t.wash
+                    && t.orbLook == .flat
+            }(), ""),
             ("aura-eclipse-presets-are-the-study's (Aura Subtle .7/.6/.02/0/.3/.2/.6 · Eclipse Medium .95/.9/.04/.12/.5/.45/.8)",
              AuraLook.subtle == AuraLook(0.7, 0.6, 0.02, 0, 0.3, 0.2, 0.6) && AuraLook.strong.haloReach == 0.15
                 && EclipseLook.medium == EclipseLook(0.95, 0.9, 0.04, 0.12, 0.5, 0.45, 0.8) && EclipseLook.strong.haloReach == 0.3, ""),
@@ -2171,12 +2244,12 @@ extension AppearanceTuning {
             }(), ""),
             // live-49 — the study's v7 looks: T's values (orb-study-values-2026-10-27b.json), the study's bounds, Copy values
             // round trip, older saved values (no lightGlass / riso / gradient keys) decode to the defaults.
-            ("map-v7-looks-defaults-are-T's-values (Light Glass .68/.6/.01/.36/.7/.41/0 · Riso .72/.95/.01/.42/.84/.71/.23 · Gradient 1.01/.96/.01/.4/.52/.1/0)", {
+            ("map-v7-looks-defaults-are-T's-values (Light Glass .68/.6/.01/.36/.7/.41/0 · live-51 27c: Riso .55/.44/.01/.52/.69/.71/.23 · Gradient .83/1.25/.01/.92/.54/.11/.54)", {
                 func k<L: StudyOrbLook>(_ x: L) -> [Double] { [x.spread, x.warp, x.softness, x.haloReach, x.rim, x.fringe, x.grain] }
-                return k(t.lightGlass) == [0.68, 0.6, 0.01, 0.36, 0.7, 0.41, 0] && k(t.riso) == [0.72, 0.95, 0.01, 0.42, 0.84, 0.71, 0.23]
-                    && k(t.gradient) == [1.01, 0.96, 0.01, 0.4, 0.52, 0.1, 0]
+                return k(t.lightGlass) == [0.68, 0.6, 0.01, 0.36, 0.7, 0.41, 0] && k(t.riso) == [0.55, 0.44, 0.01, 0.52, 0.69, 0.71, 0.23]
+                    && k(t.gradient) == [0.83, 1.25, 0.01, 0.92, 0.54, 0.11, 0.54]
                     && abs(t.lightGlass.spriteExtent - 1.594) < 1e-9 && abs(t.riso.spriteExtent - 1.0875) < 1e-9
-                    && abs(t.gradient.spriteExtent - 1.057) < 1e-9
+                    && abs(t.gradient.spriteExtent - 1.0575) < 1e-9
             }(), String(format: "extents %.4f %.4f %.4f", t.lightGlass.spriteExtent, t.riso.spriteExtent, t.gradient.spriteExtent)),
             ("map-v7-looks-copy-values-round-trip + old values decode", {
                 var m = MapDarkTuning(); m.orbLook = .riso; m.riso = RisoLook.presets[2].1; m.lightGlass = LightGlassLook.presets[0].1
@@ -2227,10 +2300,11 @@ extension AppearanceTuning {
                 return m.orbLook == .glass && m.glass.tiltLight && m.aura == AuraLook() && m.outline == OutlineLook()
                     && m.eclipse == EclipseLook()
             }(), ""),
-            ("wash-defaults-are-the-study's-Medium (spread 1 · warp 0.9 · soft 0.05 · bleed 0.6 · pooling 0.55 · misreg 0.6 · paper 0.6; extent 1.34)", {
+            ("wash-defaults-are-T's-27c-values (spread 0.8 · warp 0.82 · soft 0.03 · bleed 0.3 · pooling 0.3 · misreg 0.3 · paper 0.4; extent 1.275; Medium kept) (live-51)", {
                 let w = t.wash
-                return w == .medium && w.spread == 1 && w.warp == 0.9 && w.softness == 0.05 && w.bleed == 0.6 && w.pooling == 0.55
-                    && w.misregistration == 0.6 && w.paper == 0.6 && abs(w.spriteExtent - 1.34) < 1e-9
+                return w.spread == 0.8 && w.warp == 0.82 && w.softness == 0.03 && w.bleed == 0.3 && w.pooling == 0.3
+                    && w.misregistration == 0.3 && w.paper == 0.4 && abs(w.spriteExtent - 1.275) < 1e-9
+                    && WashLook.medium.spread == 1 && WashLook.medium.paper == 0.6
             }(), String(format: "extent %.3f", t.wash.spriteExtent)),
             ("wash-presets-are-the-study's (Subtle .8/.5/.03/.3/.3/.3/.4 · Strong 1.2/1.3/.08/1/.85/1/.85)",
              WashLook.subtle == WashLook(spread: 0.8, warp: 0.5, softness: 0.03, bleed: 0.3, pooling: 0.3, misregistration: 0.3, paper: 0.4)
@@ -2242,7 +2316,7 @@ extension AppearanceTuning {
                 back.apply(exportJSON: all)
                 let old = #"{"orbLook":"aura","aura":{"contrast":1.5,"spread":1.2}}"#
                 guard let o = try? JSONDecoder().decode(MapDarkTuning.self, from: Data(old.utf8)) else { return false }
-                return back.wash == m.wash && o.wash == .medium && o.aura.spread == 1.2 && o.eclipse == EclipseLook()
+                return back.wash == m.wash && o.wash == WashLook() && o.aura.spread == 1.2 && o.eclipse == EclipseLook()
             }(), ""),
             ("map-dark-export-parses", (try? JSONSerialization.jsonObject(with: Data(mapDarkJSON(t).utf8))) != nil, mapDarkJSON(t)),
         ]

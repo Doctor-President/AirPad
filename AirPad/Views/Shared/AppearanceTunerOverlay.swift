@@ -794,7 +794,7 @@ struct AppearanceTunerSheet<G: Gesture>: View {
             }
         }
         studySliders(a, prefix: "au") { change in setA { change(&$0) } }
-        Button("Aura defaults (T's study values, 2026-10-27)") { setA { $0 = AuraLook() } }
+        Button("Aura defaults (T's values, 2026-10-27c)") { setA { $0 = AuraLook() } }
             .font(.caption).buttonStyle(.bordered).controlSize(.small)
             .accessibilityIdentifier("tunerAuraReset")
         note("The study's Aura, exactly: each orb takes its territory's study palette (12, one per territory), a seeded "
@@ -810,12 +810,16 @@ struct AppearanceTunerSheet<G: Gesture>: View {
                 chip(p.0, selected: e == p.1, id: "tunerEclipse-\(p.0)") { setMap { $0.eclipse = p.1 } }
             }
         }
-        studySliders(e, prefix: "ec") { change in setE { change(&$0) } }
-        Button("Eclipse defaults (T's study values, 2026-10-27)") { setE { $0 = EclipseLook() } }
+        // live-51 amendment — the top arc's thickness, next to Rim light (Aura shares the shader; its arc stays the study's)
+        studySliders(e, prefix: "ec", afterRim: AnyView(
+            slider("Arc thickness", e.arcThickness, EclipseLook.arcThicknessRange, 0.005, f2(e.arcThickness), id: "ecArcThickness") { x in
+                setE { $0.arcThickness = x }
+            })) { change in setE { change(&$0) } }
+        Button("Eclipse defaults (T's values, 2026-10-27c)") { setE { $0 = EclipseLook() } }
             .font(.caption).buttonStyle(.bordered).controlSize(.small)
             .accessibilityIdentifier("tunerEclipseReset")
         note("The study's reworked Eclipse: the glow rises gradually from a dark top, and the middle of each orb sits on its "
-             + "deepest colour, so white titles read. Rim light, a crescent, the chromatic edge and a small halo in the rim "
+             + "deepest colour, so white titles read. Rim light, a crescent (Arc thickness: its depth across the top; 0.12 = the study's), the chromatic edge and a small halo in the rim "
              + "colour. Labels: always light ink.")
     }
 
@@ -826,10 +830,10 @@ struct AppearanceTunerSheet<G: Gesture>: View {
             ForEach(RisoLook.presets, id: \.0) { p in chip(p.0, selected: v == p.1, id: "tunerRiso-\(p.0)") { setMap { $0.riso = p.1 } } }
         }
         studySliders(v, prefix: "ri", labels: RisoLook.labels, drift: false) { change in setMap { change(&$0.riso) } }
-        Button("Riso defaults (T's study values, 2026-10-27)") { setMap { $0.riso = RisoLook() } }
+        Button("Riso defaults (T's values, 2026-10-27c)") { setMap { $0.riso = RisoLook() } }
             .font(.caption).buttonStyle(.bordered).controlSize(.small).accessibilityIdentifier("tunerRisoReset")
         note("The study's Riso, both Maps: two flat ink plates, the second offset and cut to a soft shape, with speckle. It "
-             + "multiplies on the light Map (with the paper fibres) and screens on the dark Map. No noise fields: about Flat's cost.")
+             + "multiplies on the light Map and screens on the dark Map. No noise fields: about Flat's cost.")
     }
     @ViewBuilder private var gradientControls: some View {
         let v = m.gradient
@@ -837,7 +841,7 @@ struct AppearanceTunerSheet<G: Gesture>: View {
             ForEach(GradientLook.presets, id: \.0) { p in chip(p.0, selected: v == p.1, id: "tunerGradient-\(p.0)") { setMap { $0.gradient = p.1 } } }
         }
         studySliders(v, prefix: "gr", labels: GradientLook.labels, drift: false) { change in setMap { change(&$0.gradient) } }
-        Button("Gradient defaults (T's study values, 2026-10-27)") { setMap { $0.gradient = GradientLook() } }
+        Button("Gradient defaults (T's values, 2026-10-27c)") { setMap { $0.gradient = GradientLook() } }
             .font(.caption).buttonStyle(.bordered).controlSize(.small).accessibilityIdentifier("tunerGradientReset")
         note("The study's Gradient, both Maps: a clean three-stop gradient per orb with a little shading, a sheen and a rim "
              + "line. No noise: about Flat's cost.")
@@ -848,12 +852,14 @@ struct AppearanceTunerSheet<G: Gesture>: View {
                                                             labels l: [String] = ["Gradient spread", "Warp", "Edge softness", "Halo reach",
                                                                                   "Rim light", "Chromatic fringe", "Grain"],
                                                             drift: Bool = true,
+                                                            afterRim: AnyView? = nil,
                                                             set: @escaping ((inout L) -> Void) -> Void) -> some View {
         slider(l[0], v.spread, 0.4...2, 0.01, f2(v.spread), id: prefix + "Spread") { x in set { $0.spread = x } }
         slider(l[1], v.warp, 0...1.5, 0.01, f2(v.warp), id: prefix + "Warp") { x in set { $0.warp = x } }
         slider(l[2], v.softness, 0.01...0.25, 0.005, f2(v.softness), id: prefix + "Soft") { x in set { $0.softness = x } }
         slider(l[3], v.haloReach, 0...1.4, 0.01, f2(v.haloReach), id: prefix + "Halo") { x in set { $0.haloReach = x } }
         slider(l[4], v.rim, 0...1, 0.01, f2(v.rim), id: prefix + "Rim") { x in set { $0.rim = x } }
+        if let afterRim { afterRim }
         slider(l[5], v.fringe, 0...1.5, 0.01, f2(v.fringe), id: prefix + "Fringe") { x in set { $0.fringe = x } }
         slider(l[6], v.grain, 0...1, 0.01, f2(v.grain), id: prefix + "Grain") { x in set { $0.grain = x } }
         if drift {
@@ -879,13 +885,13 @@ struct AppearanceTunerSheet<G: Gesture>: View {
             setW { $0.misregistration = x }
         }
         slider("Paper grain", w.paper, 0...1, 0.01, f2(w.paper), id: "waPaper") { x in setW { $0.paper = x } }
-        Button("Wash defaults (the study's Medium)") { setW { $0 = .medium } }
+        Button("Wash defaults (T's values, 2026-10-27c)") { setW { $0 = WashLook() } }
             .font(.caption).buttonStyle(.bordered).controlSize(.small)
             .accessibilityIdentifier("tunerWashReset")
         note("Each orb is ink on paper: its territory's study palette (12, one per territory), lifted toward white and multiplied into the "
              + "ground, so overlaps darken. Bleed wobbles the edge, pooling darkens a band just inside it, misregistration "
-             + "offsets the colour plates. Paper grain sets the paper fibres and grain on the ground and the pigment's "
-             + "granulation in each orb. Labels: dark ink only where the colour under the title is light.")
+             + "offsets the colour plates. Paper grain sets the pigment's "
+             + "granulation in each orb (the ground stays clean). Labels: dark ink only where the colour under the title is light.")
     }
 
     // live-43-A — Outline; both grounds.
@@ -904,7 +910,7 @@ struct AppearanceTunerSheet<G: Gesture>: View {
             }
         }
         slider("Fill opacity", o.fillOpacity, 0...0.3, 0.005, pct(o.fillOpacity), id: "olFill") { x in setO { $0.fillOpacity = x } }
-        Button("Outline defaults") { setO { $0 = OutlineLook() } }
+        Button("Outline defaults (T's values, 2026-10-27c)") { setO { $0 = OutlineLook() } }
             .font(.caption).buttonStyle(.bordered).controlSize(.small)
             .accessibilityIdentifier("tunerOutlineReset")
         note("A ring in each territory's colour over a faint fill of the same colour; the ring keeps its width on screen at every "

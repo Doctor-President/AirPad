@@ -323,7 +323,7 @@ enum BackgroundGridNode {
         ]
         #if DEBUG || TESTFLIGHT
         shader.uniforms.append(SKUniform(name: "u_noise", texture: StudyNoise.texture))   // live-48 — the paper's fbm
-        shader.uniforms.append(SKUniform(name: "u_grain_cfg", vectorFloat3: vector_float3(0.035, 0, 1)))   // live-49
+        shader.uniforms.append(SKUniform(name: "u_grain_cfg", vectorFloat3: vector_float3(0, 0, 0)))   // live-49; live-51: 0 = the ground stays clean
         #endif
         return shader
     }

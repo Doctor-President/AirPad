@@ -1005,17 +1005,13 @@ final class CorpusPhysicsScene: SKScene {
         else { syncStudy2(nil, kind: nil); syncWash(nil); syncAura(studyLight ? m : nil, eclipse: look == .eclipse) }
         // The ground's share of the study's paper / grain (grid u_light_ground_on): light = 1 + paper while Wash shows;
         // dark = −grain while Aura / Eclipse shows (0 = none).
-        // live-49: u_grain_cfg = (grain coefficient, the chroma term 0/1, paper fibres 0/1) — Wash (0.035, 0, 1) · Aura /
-        // Eclipse (0.1, 1, 0) · Riso (0.06, 0, fibres on the light Map) · Gradient (0.06, 0, 0) · Light Glass (0.04, 0, 0).
-        var g: Float = currentIsLight ? (washOn ? 1 + Float(m.wash.paper) : 1)
-            : (studyLight ? -Float(look == .eclipse ? m.eclipse.grain : m.aura.grain) : 0)
-        var cfg = vector_float3(washOn ? 0.035 : 0.1, washOn ? 0 : 1, washOn ? 1 : 0)
-        switch s2 {
-        case .riso?: g = currentIsLight ? 1 + Float(m.riso.grain) : -Float(m.riso.grain); cfg = vector_float3(0.06, 0, currentIsLight ? 1 : 0)
-        case .gradient?: g = currentIsLight ? 1 + Float(m.gradient.grain) : -Float(m.gradient.grain); cfg = vector_float3(0.06, 0, 0)
-        case .lightGlass?: g = 1 + Float(m.lightGlass.grain); cfg = vector_float3(0.04, 0, 0)
-        case nil: break
-        }
+        // live-49: u_grain_cfg = (grain coefficient, the chroma term 0/1, paper fibres 0/1).
+        // live-51 (T: the grain painted the background too and he couldn't judge it): grain lives on the orbs only. The
+        // ground is the Flat ground for every look (light 1, dark 0, cfg 0); each orb keeps its own grain × coverage.
+        // Wash's paper fibres + paper grain and Riso's light-Map fibres existed ONLY on the ground, so they are gone; their
+        // orbs are unchanged (Wash's `paper` still thins the granulation inside the orb).
+        let g: Float = currentIsLight ? 1 : 0
+        let cfg = vector_float3(0, 0, 0)
         if let gu = gridNode?.fillShader?.uniforms.first(where: { $0.name == "u_light_ground_on" }), gu.floatValue != g { gu.floatValue = g }
         if let gu = gridNode?.fillShader?.uniforms.first(where: { $0.name == "u_grain_cfg" }), gu.vectorFloat3Value != cfg { gu.vectorFloat3Value = cfg }
         let outlineNow = look == .outline
@@ -4059,7 +4055,7 @@ final class CorpusPhysicsScene: SKScene {
     /// the dark Map). The result over the KNOWN ground (u_au col 3) is emitted premultiplied with alpha = coverage, so it
     /// is exact over the plain ground, the halo adds (alpha 0), and the dots / neighbours show through where the orb is not
     /// opaque. u_au = (spread, warp, softness, halo reach), (rim, fringe, grain, eclipse 0/1), (LOD every orb 0/1, content scale, drift, LOD radius pt),
-    /// (ground rgb, 0). a_au_a = (stop A rgb, seed), a_au_b = (stop B rgb, this sprite's extent), a_au_c = stop C,
+    /// (ground rgb, Eclipse's arc thickness ÷ the study's — live-51). a_au_a = (stop A rgb, seed), a_au_b = (stop B rgb, this sprite's extent), a_au_c = stop C,
     /// a_au_r = the rim colour.
     private lazy var auraShader: SKShader = {
         let src = """
@@ -4119,7 +4115,8 @@ final class CorpusPhysicsScene: SKScene {
                 body = mix(glow, vec3(0.012, 0.01, 0.03), dk);
                 float rb = smoothstep(0.7, 1.02, d) * smoothstep(0.15, 0.6, vv);
                 body = mix(body, min(R * 1.15, vec3(1.0)), rb * rimK);
-                float occ = auDisk(length(q - vec2(0.0, -0.07)) / 0.95, s * 0.6);
+                // live-51 amendment — Arc thickness: the occluder's offset and radius gap × P3.w (1 = the study's: −0.07, 0.95)
+                float occ = auDisk(length(q - vec2(0.0, -0.07) * P3.w) / (0.95 + 0.05 * (1.0 - P3.w)), s * 0.6);
                 float cres = (1.0 - occ) * smoothstep(0.0, 0.55, q.y / max(d, 0.001));
                 body = mix(body, vec3(1.0, 0.93, 0.84), cres * clamp(rimK * 1.6, 0.0, 1.0));
             }
@@ -4181,7 +4178,7 @@ final class CorpusPhysicsScene: SKScene {
             vector_float4(Float(v.rim), Float(v.fringe), Float(v.grain), eclipse ? 1 : 0),
             vector_float4(lodAllOrbs ? 1 : 0, Float(glyphContentScale), v.drift ? 1 : 0,
                           Float(eclipse ? Self.lodRadiusPt : Self.auraLodRadiusPt)),
-            vector_float4(ground.x, ground.y, ground.z, 0)))
+            vector_float4(ground.x, ground.y, ground.z, eclipse ? m.eclipse.arcScale : 1)))   // live-51: col 3.w = Eclipse's arc
         if let uu = auraShader.uniforms.first, uu.matrixFloat4x4Value != u { uu.matrixFloat4x4Value = u }
         let key = "\(eclipse)|\(ext)|\(nodeSprites.count)"
         guard key != auraStyleKey else { return }

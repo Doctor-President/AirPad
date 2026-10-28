@@ -115,8 +115,42 @@ enum BackgroundGridNode {
         // on screen), and its reach widens with that radius too. The CPU packs the result; the shader
         // just decodes it against `u_warp_mass_range` (= 1 when the mass-influence dial is 0, which
         // makes BOTH the orb texture and the field byte-identical to the pre-mass encoding).
+        // live-46 — the Wash look's PAPER on the light ground (TestFlight / DEBUG only: the App Store shader text is unchanged).
+        // u_light_ground_on = 1 + paper while Wash shows (no new binding); fibres + a 1 pt grain in on-screen points,
+        // following the pan (worldPos ÷ camera scale: they move with the ground, the same size in points at every zoom) — the study's
+        // `col *= 1 − paper·0.05·(fbm(pt·(0.35, 0.9)) − 0.4)` and `col += grain·paper·0.035`.
+        // live-48 — the fibres' fbm is one lookup into the shared tiling noise texture (StudyNoise, `u_noise`; TF / DEBUG only).
+        #if DEBUG || TESTFLIGHT
+        let paperHelpers = """
+        float wpHash(vec2 p) { vec3 p3 = fract(vec3(p.xyx) * 0.1031); p3 += dot(p3, p3.yzx + 33.33); return fract((p3.x + p3.y) * p3.z); }
+        \(StudyNoise.glsl("wp"))
+        """
+        let paperBranch = """
+                float paper = u_light_ground_on - 1.0;
+                if (paper > 0.0) {
+                    vec2 pt = worldPos / u_camera_scale;
+                    // live-49: u_grain_cfg = (grain coefficient, chroma 0/1, fibres 0/1): Wash (0.035, 0, 1), Riso / Gradient / Light Glass
+                    groundDots *= 1.0 - paper * 0.05 * (wpNV(texture2D(u_noise, wpUV(pt * vec2(0.35, 0.9)))) - 0.4) * u_grain_cfg.z;
+                    groundDots += vec3(wpHash(floor(pt) * 1.37 + 3.1) - 0.5) * paper * u_grain_cfg.x;
+                }
+        """
+        // live-47 — the ground's share of the Aura / Eclipse grain on the DARK Map (u_light_ground_on = −grain): the study's
+        // `col += (g + (g2, −g2, g2)·0.25)·grain·0.1`, one hash per on-screen point, screen-fixed like the orbs' share
+        // (pt from the top-left, so the two halves are one field). The orbs add theirs × coverage.
+        let darkGrainBranch = """
+                if (u_light_ground_on < 0.0) {
+                    vec2 gpt = floor(vec2(v_tex_coord.x, 1.0 - v_tex_coord.y) * u_viewport_size);
+                    float gg = wpHash(gpt * 1.37 + 3.1) - 0.5;
+                    float gg2 = wpHash(gpt.yx * 0.91 + 7.7) - 0.5;
+                    darkGrain = (vec3(gg) + vec3(gg2, -gg2, gg2) * 0.25 * u_grain_cfg.y) * (-u_light_ground_on) * u_grain_cfg.x;   // Aura (0.1, 1)
+                }
+        """
+        #else
+        let paperHelpers = "", paperBranch = "", darkGrainBranch = ""
+        #endif
         let source = """
         // --- Helpers (must precede main per GLSL ES rules) ---
+        \(paperHelpers)
 
         float levelOpacity(float screenPeriod, float targetPx) {
             float t = log2(screenPeriod / targetPx);
@@ -235,21 +269,24 @@ enum BackgroundGridNode {
             // R (‖warp‖/K → invert → AE Levels gamma) is baked into the field B channel on the CPU at FULL
             // precision (no in-shader gamma on an 8-bit field → no stepping); the shader reads that single
             // linear-filtered channel and composites it Normal over (opaque ground ▸ dots) at u_ripple_amt.
+            vec3 darkGrain = vec3(0.0);
+        \(darkGrainBranch)
             if (u_ripple_amt > 0.0) {
                 float R = texture2D(u_disp_field, v_tex_coord).b;
                 vec3 groundDots = u_ground_color * (1.0 - alpha) + u_dot_color * alpha;
-                gl_FragColor = vec4(mix(groundDots, vec3(R) * u_ripple_color, u_ripple_amt), 1.0);   // live-39: tint (white = today)
+                gl_FragColor = vec4(mix(groundDots, vec3(R) * u_ripple_color, u_ripple_amt) + darkGrain, 1.0);   // live-39: tint (white = today)
             } else if (u_light_ground_on > 0.5) {
                 // Brief AT — LIGHT comp: the grid OWNS the opaque #FFEEED ground (u_ground_color) so the
                 // dots read on T's chosen ground. Pool was removed at the lock; just ground ▸ dots, opaque.
                 vec3 groundDots = u_ground_color * (1.0 - alpha) + u_dot_color * alpha;
+        \(paperBranch)
                 gl_FragColor = vec4(groundDots, 1.0);
             } else {
                 // Premultiplied output. u_dot_color is the per-theme dot tint
                 // (default white → dark byte-identical: (1,1,1)*alpha reproduces the
                 // old vec4(alpha,alpha,alpha,alpha)); light mode pushes a cool
                 // graphite so the dots read on cream (ws-dark-light-mode item 3).
-                gl_FragColor = vec4(u_dot_color * alpha, alpha);
+                gl_FragColor = vec4(u_dot_color * alpha + darkGrain, alpha);
             }
         }
         """
@@ -284,6 +321,10 @@ enum BackgroundGridNode {
             // Brief AT — LIGHT comp owns the opaque ground (0 → dark/list byte-identical). Pool removed.
             SKUniform(name: "u_light_ground_on", float: 0)
         ]
+        #if DEBUG || TESTFLIGHT
+        shader.uniforms.append(SKUniform(name: "u_noise", texture: StudyNoise.texture))   // live-48 — the paper's fbm
+        shader.uniforms.append(SKUniform(name: "u_grain_cfg", vectorFloat3: vector_float3(0, 0, 0)))   // live-49; live-51: 0 = the ground stays clean
+        #endif
         return shader
     }
 
@@ -325,5 +366,75 @@ enum BackgroundGridNode {
             default: break
             }
         }
+    }
+}
+
+/// pro-build — ships in every build (the Pro looks' noise). live-48 — the study's fbm (3 octaves of value noise; ×1.9 + (17.1, 9.2) per octave; amplitudes 0.6, 0.192, 0.061) baked
+/// ONCE into a tiling texture, so each fbm in the Pro looks (Aura, Eclipse, Wash, the paper ground) is ONE linear lookup
+/// instead of 12 hashes. The period is 100 noise cells on both axes: the octaves then repeat after 100 · 1.9 = 190 and
+/// 100 · 3.61 = 361 cells, whole numbers, so each octave's lattice wraps exactly (the hash of the cell index mod its
+/// period) and the texture tiles with no seam. Inside the base window [−4, 96)² every lattice cell keeps the study's own
+/// hash (the wrap only renames cells outside it), so there the texture IS the study's fbm, sampled every 100 / 1024 cells:
+/// orbs always sample inside it (their domain is −3.5 … 22); the paper ground repeats every 100 cells (286 × 111 pt).
+/// Texel j (0 … 1024) holds fbm(−4 + j · 100 / 1024); texel 1024 repeats texel 0 (the apron that lets linear filtering
+/// wrap). 16 bits through linear filtering: R = ⌊fbm · 255⌋, G = the remainder · 255 (filtering is linear, so
+/// R + G / 255 filters exactly). Shader side: `glsl(_:)`.
+enum StudyNoise {
+    static let cells = 1024
+    /// Lazily on first use (≈10 ms optimised); shared by every Pro-look shader and the paper ground.
+    static let texture: SKTexture = {
+        let n = cells + 1
+        let periods = [100, 190, 361]
+        let offs = SIMD2<Float>(17.1, 9.2)
+        func fract(_ x: Float) -> Float { x - x.rounded(.down) }
+        func hash(_ x: Float, _ y: Float) -> Float {   // the shaders' hash, float for float
+            var p = SIMD3<Float>(fract(x * 0.1031), fract(y * 0.1031), fract(x * 0.1031))
+            let d = p.x * (p.y + 33.33) + p.y * (p.z + 33.33) + p.z * (p.x + 33.33)
+            p += SIMD3(repeating: d)
+            return fract((p.x + p.y) * p.z)
+        }
+        // Each octave's lattice base = ⌊the base window's corner in that octave⌋; its table holds the study's hash there.
+        var bases: [SIMD2<Float>] = [SIMD2(-4, -4)]
+        for _ in 1..<3 { bases.append(bases.last! * 1.9 + offs) }
+        let lat: [(b: SIMD2<Int>, p: Int, h: [Float])] = (0..<3).map { k in
+            let b = SIMD2<Int>(Int(bases[k].x.rounded(.down)), Int(bases[k].y.rounded(.down))), p = periods[k]
+            var h = [Float](repeating: 0, count: p * p)
+            for iy in 0..<p { for ix in 0..<p { h[iy * p + ix] = hash(Float(b.x + ix), Float(b.y + iy)) } }
+            return (b, p, h)
+        }
+        func noise(_ k: Int, _ x: Float, _ y: Float) -> Float {
+            let L = lat[k]
+            let fx0 = x.rounded(.down), fy0 = y.rounded(.down)
+            let fx = x - fx0, fy = y - fy0
+            func w(_ i: Int, _ b: Int) -> Int { ((i - b) % L.p + L.p) % L.p }
+            let x0 = w(Int(fx0), L.b.x), x1 = w(Int(fx0) + 1, L.b.x), y0 = w(Int(fy0), L.b.y), y1 = w(Int(fy0) + 1, L.b.y)
+            let ux = fx * fx * (3 - 2 * fx), uy = fy * fy * (3 - 2 * fy)
+            let a = L.h[y0 * L.p + x0], b = L.h[y0 * L.p + x1], c = L.h[y1 * L.p + x0], d = L.h[y1 * L.p + x1]
+            let ab = a + (b - a) * ux, cd = c + (d - c) * ux
+            return ab + (cd - ab) * uy
+        }
+        var bytes = [UInt8](repeating: 255, count: n * n * 4)
+        let step: Float = 100 / Float(cells)
+        for j in 0..<n {
+            for i in 0..<n {
+                var p = SIMD2<Float>(-4 + Float(i) * step, -4 + Float(j) * step)
+                var a: Float = 0.6, s: Float = 0
+                for k in 0..<3 { s += a * noise(k, p.x, p.y); p = p * 1.9 + offs; a *= 0.32 }
+                let v = min(max(s, 0), 1) * 255
+                let hi = v.rounded(.down)
+                let o = (j * n + i) * 4
+                bytes[o] = UInt8(hi); bytes[o + 1] = UInt8(min(255, ((v - hi) * 255).rounded()))
+            }
+        }
+        let t = SKTexture(data: Data(bytes), size: CGSize(width: n, height: n))
+        t.filteringMode = .linear
+        return t
+    }()
+    /// The helpers, prefixed `px`: `pxUV(p)` = where fbm(p) sits in the texture, `pxNV(texel)` = the 16-bit value. The
+    /// lookup itself, `pxNV(texture2D(u_noise, pxUV(p)))`, must be written in main(): SpriteKit's Metal translation hands
+    /// a texture uniform to main only (a helper that samples u_noise fails to compile → a white sprite).
+    static func glsl(_ px: String) -> String {
+        "vec2 \(px)UV(vec2 p) { return (fract((p + vec2(4.0)) * 0.01) * 1024.0 + vec2(0.5)) / 1025.0; }\n"
+            + "float \(px)NV(vec4 t) { return dot(t.rg, vec2(1.0, 1.0 / 255.0)); }"
     }
 }

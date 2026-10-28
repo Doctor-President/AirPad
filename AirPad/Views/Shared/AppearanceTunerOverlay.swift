@@ -293,7 +293,7 @@ struct AppearanceTunerSheet<G: Gesture>: View {
     /// The one-line value a closed header shows.
     private func summary(_ section: TunerSection) -> String {
         switch section {
-        case .mapDark:         return "#\(m.fieldHex) · " + (m.orbLook == .flat ? "flat" : m.orbLook == .fresnel ? "Fresnel" : "Glass")
+        case .mapDark:         return "#\(m.fieldHex) · " + MapLookChoice.picked.label
         case .cardContent:     return tuner.state.cardContent.label
         case .captureControls: return tuner.state.captureControls.label
         case .floatingButtons: return tuner.state.floatingButtons.label
@@ -586,11 +586,19 @@ struct AppearanceTunerSheet<G: Gesture>: View {
     private func setMap(_ change: (inout MapDarkTuning) -> Void) { change(&tuner.state.mapDark) }
     private func setF(_ change: (inout FresnelLook) -> Void) { change(&tuner.state.mapDark.fresnel) }
     private func setG(_ change: (inout GlassLook) -> Void) { change(&tuner.state.mapDark.glass) }
+    private func setGV(_ light: Bool, _ change: (inout GlassLook) -> Void) {   // live-50c — this Map's Glass values
+        if light { change(&tuner.state.mapDark.glassLight) } else { change(&tuner.state.mapDark.glass) }
+    }
+    private func setA(_ change: (inout AuraLook) -> Void) { change(&tuner.state.mapDark.aura) }
+    private func setO(_ change: (inout OutlineLook) -> Void) { change(&tuner.state.mapDark.outline) }
+    private func setW(_ change: (inout WashLook) -> Void) { change(&tuner.state.mapDark.wash) }
+    private func setE(_ change: (inout EclipseLook) -> Void) { change(&tuner.state.mapDark.eclipse) }
+    private func f2(_ x: Double) -> String { String(format: "%.2f", x) }
     private func pct(_ x: Double) -> String { String(format: "%.0f%%", x * 100) }
 
     @ViewBuilder private var mapDarkSection: some View {
         if !dark {
-            note("Dark mode only. Switch the phone (or ≡ → Appearance) to Dark to see these on the Map.")
+            note("Dark mode only, except the orb looks (below): Outline shows on both Maps, and Aura / Eclipse draw as Wash on the light Map.")
         }
         subhead("Background")
         TunerColorRow(label: "Ground", color: m.ground, defaultHex: MapDarkTuning.today.ground.hex, id: "mapGround") { c in
@@ -650,13 +658,48 @@ struct AppearanceTunerSheet<G: Gesture>: View {
         }
         note("The focused ring shows after Show on Map / a search result; the selected ring in Select mode.")
         subhead("Orbs")
-        Picker("Orbs", selection: Binding(get: { m.orbLook }, set: { o in setMap { $0.orbLook = o } })) {
-            ForEach(MapOrbLook.allCases) { Text($0.label).tag($0) }
+        note("pro-build: this picker and Settings → Appearance → Map look are the same choice. Without Pro (TestFlight: a free "
+             + "sandbox purchase) the Map draws Flat whatever is picked.")
+        // live-47 — dark Map: Flat · Glass · Aura · Eclipse · Outline; light Map: Flat · Wash · Outline (Wash = the Pro looks
+        // Aura / Eclipse on the light ground; picking it keeps Eclipse if that is the dark choice, else Aura).
+        if dark {
+            Picker("Orbs", selection: Binding(get: { MapLookChoice.picked }, set: { o in setMap { $0.orbLook = o }; MapLookChoice.picked = o })) {
+                ForEach(MapOrbLook.darkPicker) { Text($0.label).tag($0) }
+            }
+            .pickerStyle(.segmented)
+            .accessibilityIdentifier("tunerMapOrbLook")
+            if MapLookChoice.picked == .fresnel { fresnelControls }
+            if MapLookChoice.picked == .glass { orbGlassControls(light: false) }
+            if MapLookChoice.picked == .aura { auraControls }
+            if MapLookChoice.picked == .eclipse { eclipseControls }
+            if MapLookChoice.picked == .riso { risoControls }
+            if MapLookChoice.picked == .gradient { gradientControls }
+        } else {
+            // live-49 / 50b — light Map: Flat · Glass · Wash · Riso · Gradient · Outline. Glass = the SAME look and values as dark.
+            Picker("Orbs", selection: Binding(get: { MapLookChoice.picked.drawsWashOnLight ? "wash" : MapLookChoice.picked == .glass ? "glass"
+                                                    : [.outline, .riso, .gradient].contains(MapLookChoice.picked) ? MapLookChoice.picked.rawValue : "flat" },
+                                              set: { k in setMap {
+                                                  switch k {
+                                                  case "wash": $0.orbLook = MapLookChoice.picked.drawsWashOnLight ? MapLookChoice.picked : .aura
+                                                  case "glass": $0.orbLook = .glass
+                                                  case "outline": $0.orbLook = .outline
+                                                  case "riso": $0.orbLook = .riso
+                                                  case "gradient": $0.orbLook = .gradient
+                                                  default: $0.orbLook = .flat
+                                                  }
+                                                  MapLookChoice.picked = $0.orbLook   // pro-build — the one authority
+                                              } })) {
+                Text("Flat").tag("flat"); Text("Glass").tag("glass"); Text("Wash").tag("wash")
+                Text("Riso").tag("riso"); Text("Gradient").tag("gradient"); Text("Outline").tag("outline")
+            }
+            .pickerStyle(.segmented)
+            .accessibilityIdentifier("tunerMapOrbLook")
+            if MapLookChoice.picked.drawsWashOnLight { washControls }
+            if MapLookChoice.picked == .glass { orbGlassControls(light: true) }   // live-50c — the same section, the light Map's own values
+            if MapLookChoice.picked == .riso { risoControls }
+            if MapLookChoice.picked == .gradient { gradientControls }
         }
-        .pickerStyle(.segmented)
-        .accessibilityIdentifier("tunerMapOrbLook")
-        if m.orbLook == .fresnel { fresnelControls }
-        if m.orbLook == .glass { orbGlassControls }
+        if MapLookChoice.picked == .outline { outlineControls }
         Button("Reset the Map section", role: .destructive) { setMap { $0 = .today } }
             .font(.caption).buttonStyle(.bordered).controlSize(.small)
             .accessibilityIdentifier("tunerMapReset")
@@ -688,65 +731,216 @@ struct AppearanceTunerSheet<G: Gesture>: View {
              + "Labels use the label colour unless dark text would read better on a light body.")
     }
 
-    @ViewBuilder private var orbGlassControls: some View {
-        let g = m.glass
+    /// live-50c — one Glass section for both Maps (the same parameters); `light` picks whose values it edits. Tilt light /
+    /// response / smoothing are ONE shared switch (dark `glass`'s).
+    @ViewBuilder private func orbGlassControls(light: Bool) -> some View {
+        let g = light ? m.glassLight : m.glass, tg = m.glass
         HStack(spacing: 6) {
             ForEach(GlassLook.presets, id: \.0) { p in
-                chip(p.0, selected: g == p.1, id: "tunerGlass-\(p.0)") { setMap { $0.glass = p.1 } }
+                chip(p.0, selected: g == p.1, id: "tunerGlass-\(p.0)") { setMap { if light { $0.glassLight = p.1 } else { $0.glass = p.1 } } }
             }
         }
-        subhead("Lens")
-        slider("Refraction strength", g.refraction, 0...2, 0.01, String(format: "%.2f", g.refraction), id: "glRefraction") { x in
-            setG { $0.refraction = x }
-        }
-        slider("Lens curve", g.lensCurve, 1...6, 0.05, String(format: "%.2f", g.lensCurve), id: "glCurve") { x in setG { $0.lensCurve = x } }
-        slider("Magnification", g.magnification, 0.7...2, 0.01, String(format: "×%.2f", g.magnification), id: "glMag") { x in
-            setG { $0.magnification = x }
-        }
         subhead("Body")
-        slider("Tint (orb colour)", g.tint, 0...1, 0.01, pct(g.tint), id: "glTint") { x in setG { $0.tint = x } }
-        slider("Body brightness", g.brightness, 0...0.5, 0.005, pct(g.brightness), id: "glBright") { x in setG { $0.brightness = x } }
-        slider("Frost (diffuse)", g.frost, 0...1, 0.01, pct(g.frost), id: "glFrost") { x in setG { $0.frost = x } }
-        slider("Behind-glass dim", g.dim, 0...0.9, 0.01, pct(g.dim), id: "glDim") { x in setG { $0.dim = x } }
+        slider("Tint (orb colour)", g.tint, 0...1, 0.01, pct(g.tint), id: "glTint") { x in setGV(light) { $0.tint = x } }
+        slider("Body brightness", g.brightness, 0...0.5, 0.005, pct(g.brightness), id: "glBright") { x in setGV(light) { $0.brightness = x } }
+        slider("Behind-glass dim", g.dim, 0...0.9, 0.01, pct(g.dim), id: "glDim") { x in setGV(light) { $0.dim = x } }
         subhead("Rim light (top + bottom arcs)")
-        slider("Top arc", g.topArc, 0...2, 0.01, String(format: "%.2f", g.topArc), id: "glTopArc") { x in setG { $0.topArc = x } }
+        slider("Top arc", g.topArc, 0...2, 0.01, String(format: "%.2f", g.topArc), id: "glTopArc") { x in setGV(light) { $0.topArc = x } }
         slider("Bottom arc", g.bottomArc, 0...2, 0.01, String(format: "%.2f", g.bottomArc), id: "glBottomArc") { x in
-            setG { $0.bottomArc = x }
+            setGV(light) { $0.bottomArc = x }
         }
-        slider("Arc span", g.arcSpan, 20...180, 1, String(format: "%.0f°", g.arcSpan), id: "glArcSpan") { x in setG { $0.arcSpan = x } }
+        slider("Arc span", g.arcSpan, 20...180, 1, String(format: "%.0f°", g.arcSpan), id: "glArcSpan") { x in setGV(light) { $0.arcSpan = x } }
         slider("Arc thickness", g.arcThickness, 0.01...0.3, 0.005, pct(g.arcThickness) + " of radius", id: "glArcThick") { x in
-            setG { $0.arcThickness = x }
+            setGV(light) { $0.arcThickness = x }
         }
-        slider("Arc softness", g.arcSoftness, 0...1, 0.01, pct(g.arcSoftness), id: "glArcSoft") { x in setG { $0.arcSoftness = x } }
+        slider("Arc softness", g.arcSoftness, 0...1, 0.01, pct(g.arcSoftness), id: "glArcSoft") { x in setGV(light) { $0.arcSoftness = x } }
         subhead("Edge")
-        slider("Edge line (all round)", g.edge, 0...2, 0.01, String(format: "%.2f", g.edge), id: "glEdge") { x in setG { $0.edge = x } }
-        slider("Inner shadow", g.innerShadow, 0...1, 0.01, pct(g.innerShadow), id: "glShadow") { x in setG { $0.innerShadow = x } }
+        slider("Edge line (all round)", g.edge, 0...2, 0.01, String(format: "%.2f", g.edge), id: "glEdge") { x in setGV(light) { $0.edge = x } }
+        slider("Inner shadow", g.innerShadow, 0...1, 0.01, pct(g.innerShadow), id: "glShadow") { x in setGV(light) { $0.innerShadow = x } }
         slider("Colour fringe (dispersion)", g.dispersion, 0...1, 0.01, pct(g.dispersion), id: "glDispersion") { x in
-            setG { $0.dispersion = x }
+            setGV(light) { $0.dispersion = x }
         }
         subhead("Highlight")
         slider("Highlight size", g.highlightSize, 0.05...0.6, 0.01, String(format: "%.2f", g.highlightSize), id: "glHlSize") { x in
-            setG { $0.highlightSize = x }
+            setGV(light) { $0.highlightSize = x }
         }
         slider("Highlight intensity", g.highlightIntensity, 0...1.5, 0.01, String(format: "%.2f", g.highlightIntensity), id: "glHlInt") { x in
-            setG { $0.highlightIntensity = x }
+            setGV(light) { $0.highlightIntensity = x }
         }
-        toggle("Tilt light (off = static highlights)", g.tiltLight, id: "glTiltLight") { b in setG { $0.tiltLight = b } }
-        if g.tiltLight {
+        // live-52 — three cheap glass cues, all off by default (off = the signed-off Glass); each Map its own values
+        subhead("Glass cues (off = today)")
+        slider("Caustic", g.caustic, 0...1.5, 0.01, String(format: "%.2f", g.caustic), id: "glCaustic") { x in setGV(light) { $0.caustic = x } }
+        slider("Caustic size", g.causticSize, 0.05...0.6, 0.01, String(format: "%.2f", g.causticSize), id: "glCausticSize") { x in
+            setGV(light) { $0.causticSize = x }
+        }
+        slider("Caustic colour (orb ↔ white)", g.causticColour, 0...1, 0.01, pct(g.causticColour), id: "glCausticColour") { x in
+            setGV(light) { $0.causticColour = x }
+        }
+        slider("Window", g.window, 0...1.5, 0.01, String(format: "%.2f", g.window), id: "glWindow") { x in setGV(light) { $0.window = x } }
+        slider("Window size", g.windowSize, 0.05...0.45, 0.01, String(format: "%.2f", g.windowSize), id: "glWindowSize") { x in
+            setGV(light) { $0.windowSize = x }
+        }
+        slider("Window sharpness", g.windowSharpness, 0...1, 0.01, pct(g.windowSharpness), id: "glWindowSharp") { x in
+            setGV(light) { $0.windowSharpness = x }
+        }
+        slider("Lens", g.lens, 0...1, 0.01, pct(g.lens), id: "glLens") { x in setGV(light) { $0.lens = x } }
+        slider("Magnification", g.lensMagnification, 1...3, 0.01, String(format: "%.2f×", g.lensMagnification), id: "glLensMag") { x in
+            setGV(light) { $0.lensMagnification = x }
+        }
+        toggle("Tilt light (off = static highlights; one switch for both Maps)", tg.tiltLight, id: "glTiltLight") { b in setG { $0.tiltLight = b } }
+        if tg.tiltLight {
             // Squared scale: half the track = 0.375, so small responses are easy to set; negative = the other way.
-            slider("Tilt response", (g.tiltResponse < 0 ? -1 : 1) * (abs(g.tiltResponse) / 1.5).squareRoot(), -1...1, 0.005,
-                   String(format: "%.3f", g.tiltResponse), id: "glTilt") { u in setG { $0.tiltResponse = (u < 0 ? -1 : 1) * u * u * 1.5 } }
-            slider("Tilt smoothing", g.tiltSmoothing, 0...3, 0.05, String(format: "%.2f s", g.tiltSmoothing), id: "glTiltSmooth") { x in
+            slider("Tilt response", (tg.tiltResponse < 0 ? -1 : 1) * (abs(tg.tiltResponse) / 1.5).squareRoot(), -1...1, 0.005,
+                   String(format: "%.3f", tg.tiltResponse), id: "glTilt") { u in setG { $0.tiltResponse = (u < 0 ? -1 : 1) * u * u * 1.5 } }
+            slider("Tilt smoothing", tg.tiltSmoothing, 0...3, 0.05, String(format: "%.2f s", tg.tiltSmoothing), id: "glTiltSmooth") { x in
                 setG { $0.tiltSmoothing = x }
             }
         }
         TunerColorRow(label: "Label colour", color: g.label, defaultHex: GlassLook.medium.label.hex, id: "glLabel") { c in
-            setG { $0.label = c }
+            setGV(light) { $0.label = c }
         }
-        note("Inside each orb you see the dot grid behind it through a lens: little bend at the centre, more toward the rim. "
-             + "Frost melts the dots into an even haze (they don't grow); dim darkens what the lens shows. "
-             + "The arcs light the top and bottom of the rim. The light drifts with the phone's tilt (negative response = the other way). It stays put in Low Power Mode, with "
-             + "Reduce Motion, or with Appearance → Move with tilt off. Labels use the label colour unless dark text reads better.")
+        note("Glass is one look on both Maps with the same controls; each Map keeps its own values (the light Map started as a "
+             + "copy of the dark one). Tilt light is one switch for both. "
+             + "The real background shows through each orb (no lens): dim darkens it, the tint colours it toward the rim, brightness "
+             + "lifts it. The arcs light the top and bottom of the rim. With Tilt light on, the light drifts with the phone's tilt "
+             + "(negative response = the other way); the Map then redraws at 30 fps, and only while the light visibly moves. It stays "
+             + "put in Low Power Mode, with Reduce Motion, or with Appearance → Move with tilt off. Labels use the label colour unless "
+             + "dark text reads better. Glass cues (all off = today): Caustic = the light the bead focuses opposite the "
+             + "highlight; Window = a crisp studio-window reflection at the highlight; Lens = the dots seen magnified through "
+             + "the body (squeezed at the rim).")
+    }
+
+    // live-43 — Aura; live-47: an exact port of the study's aura branch (its seven controls, its ranges). Dark Map only.
+    @ViewBuilder private var auraControls: some View {
+        let a = m.aura
+        HStack(spacing: 6) {
+            ForEach(AuraLook.presets, id: \.0) { p in
+                chip(p.0, selected: a == p.1, id: "tunerAura-\(p.0)") { setMap { $0.aura = p.1 } }
+            }
+        }
+        studySliders(a, prefix: "au") { change in setA { change(&$0) } }
+        Button("Aura defaults (T's values, 2026-10-27c)") { setA { $0 = AuraLook() } }
+            .font(.caption).buttonStyle(.bordered).controlSize(.small)
+            .accessibilityIdentifier("tunerAuraReset")
+        note("The study's Aura, exactly: each orb takes its territory's study palette (12, one per territory), a seeded "
+             + "gradient warped by soft noise, a rim tint, a chromatic edge and a fine grain. Softness is a fraction of the "
+             + "orb's radius, as in the study. Labels: dark ink only where the gradient under the title is light.")
+    }
+
+    // live-47 — Eclipse returns: an exact port of the study's reworked eclipse branch. Dark Map only.
+    @ViewBuilder private var eclipseControls: some View {
+        let e = m.eclipse
+        HStack(spacing: 6) {
+            ForEach(EclipseLook.presets, id: \.0) { p in
+                chip(p.0, selected: e == p.1, id: "tunerEclipse-\(p.0)") { setMap { $0.eclipse = p.1 } }
+            }
+        }
+        // live-51 amendment — the top arc's thickness, next to Rim light (Aura shares the shader; its arc stays the study's)
+        studySliders(e, prefix: "ec", afterRim: AnyView(
+            slider("Arc thickness", e.arcThickness, EclipseLook.arcThicknessRange, 0.005, f2(e.arcThickness), id: "ecArcThickness") { x in
+                setE { $0.arcThickness = x }
+            })) { change in setE { change(&$0) } }
+        Button("Eclipse defaults (T's values, 2026-10-27c)") { setE { $0 = EclipseLook() } }
+            .font(.caption).buttonStyle(.bordered).controlSize(.small)
+            .accessibilityIdentifier("tunerEclipseReset")
+        note("The study's reworked Eclipse: the glow rises gradually from a dark top, and the middle of each orb sits on its "
+             + "deepest colour, so white titles read. Rim light, a crescent (Arc thickness: its depth across the top; 0.12 = the study's), the chromatic edge and a small halo in the rim "
+             + "colour. Labels: always light ink.")
+    }
+
+    // live-49 — the study's v7 looks: its seven sliders under its labels, presets, T's values.
+    @ViewBuilder private var risoControls: some View {
+        let v = m.riso
+        HStack(spacing: 6) {
+            ForEach(RisoLook.presets, id: \.0) { p in chip(p.0, selected: v == p.1, id: "tunerRiso-\(p.0)") { setMap { $0.riso = p.1 } } }
+        }
+        studySliders(v, prefix: "ri", labels: RisoLook.labels, drift: false) { change in setMap { change(&$0.riso) } }
+        Button("Riso defaults (T's values, 2026-10-27c)") { setMap { $0.riso = RisoLook() } }
+            .font(.caption).buttonStyle(.bordered).controlSize(.small).accessibilityIdentifier("tunerRisoReset")
+        note("The study's Riso, both Maps: two flat ink plates, the second offset and cut to a soft shape, with speckle. It "
+             + "multiplies on the light Map and screens on the dark Map. No noise fields: about Flat's cost.")
+    }
+    @ViewBuilder private var gradientControls: some View {
+        let v = m.gradient
+        HStack(spacing: 6) {
+            ForEach(GradientLook.presets, id: \.0) { p in chip(p.0, selected: v == p.1, id: "tunerGradient-\(p.0)") { setMap { $0.gradient = p.1 } } }
+        }
+        studySliders(v, prefix: "gr", labels: GradientLook.labels, drift: false) { change in setMap { change(&$0.gradient) } }
+        Button("Gradient defaults (T's values, 2026-10-27c)") { setMap { $0.gradient = GradientLook() } }
+            .font(.caption).buttonStyle(.bordered).controlSize(.small).accessibilityIdentifier("tunerGradientReset")
+        note("The study's Gradient, both Maps: a clean three-stop gradient per orb with a little shading, a sheen and a rim "
+             + "line. No noise: about Flat's cost.")
+    }
+
+    /// The study's seven sliders (its labels and ranges) for Aura / Eclipse.
+    @ViewBuilder private func studySliders<L: StudyOrbLook>(_ v: L, prefix: String,
+                                                            labels l: [String] = ["Gradient spread", "Warp", "Edge softness", "Halo reach",
+                                                                                  "Rim light", "Chromatic fringe", "Grain"],
+                                                            drift: Bool = true,
+                                                            afterRim: AnyView? = nil,
+                                                            set: @escaping ((inout L) -> Void) -> Void) -> some View {
+        slider(l[0], v.spread, 0.4...2, 0.01, f2(v.spread), id: prefix + "Spread") { x in set { $0.spread = x } }
+        slider(l[1], v.warp, 0...1.5, 0.01, f2(v.warp), id: prefix + "Warp") { x in set { $0.warp = x } }
+        slider(l[2], v.softness, 0.01...0.25, 0.005, f2(v.softness), id: prefix + "Soft") { x in set { $0.softness = x } }
+        slider(l[3], v.haloReach, 0...1.4, 0.01, f2(v.haloReach), id: prefix + "Halo") { x in set { $0.haloReach = x } }
+        slider(l[4], v.rim, 0...1, 0.01, f2(v.rim), id: prefix + "Rim") { x in set { $0.rim = x } }
+        if let afterRim { afterRim }
+        slider(l[5], v.fringe, 0...1.5, 0.01, f2(v.fringe), id: prefix + "Fringe") { x in set { $0.fringe = x } }
+        slider(l[6], v.grain, 0...1, 0.01, f2(v.grain), id: prefix + "Grain") { x in set { $0.grain = x } }
+        if drift {
+            toggle("Drift (slow flow; the Map redraws at 30 fps while on)", v.drift, id: prefix + "Drift") { b in set { $0.drift = b } }
+        }
+    }
+
+    // live-46 — Wash: the light Map's half of the Pro "Aura" look (a port of the study's wash branch).
+    @ViewBuilder private var washControls: some View {
+        let w = m.wash
+        note("Light Map: the Pro looks (Aura, Eclipse) draw as Wash (pigment on paper). These controls are Wash's; Aura's and Eclipse's show in dark mode.")
+        HStack(spacing: 6) {
+            ForEach(WashLook.presets, id: \.0) { p in
+                chip(p.0, selected: w == p.1, id: "tunerWash-\(p.0)") { setMap { $0.wash = p.1 } }
+            }
+        }
+        slider("Gradient spread", w.spread, 0.4...2, 0.01, f2(w.spread), id: "waSpread") { x in setW { $0.spread = x } }
+        slider("Warp", w.warp, 0...1.5, 0.01, f2(w.warp), id: "waWarp") { x in setW { $0.warp = x } }
+        slider("Edge softness", w.softness, 0.01...0.25, 0.005, f2(w.softness), id: "waSoft") { x in setW { $0.softness = x } }
+        slider("Bleed", w.bleed, 0...1.4, 0.01, f2(w.bleed), id: "waBleed") { x in setW { $0.bleed = x } }
+        slider("Edge pooling", w.pooling, 0...1, 0.01, f2(w.pooling), id: "waPool") { x in setW { $0.pooling = x } }
+        slider("Misregistration", w.misregistration, 0...1.5, 0.01, f2(w.misregistration), id: "waMisreg") { x in
+            setW { $0.misregistration = x }
+        }
+        slider("Paper grain", w.paper, 0...1, 0.01, f2(w.paper), id: "waPaper") { x in setW { $0.paper = x } }
+        Button("Wash defaults (T's values, 2026-10-27c)") { setW { $0 = WashLook() } }
+            .font(.caption).buttonStyle(.bordered).controlSize(.small)
+            .accessibilityIdentifier("tunerWashReset")
+        note("Each orb is ink on paper: its territory's study palette (12, one per territory), lifted toward white and multiplied into the "
+             + "ground, so overlaps darken. Bleed wobbles the edge, pooling darkens a band just inside it, misregistration "
+             + "offsets the colour plates. Paper grain sets the pigment's "
+             + "granulation in each orb (the ground stays clean). Labels: dark ink only where the colour under the title is light.")
+    }
+
+    // live-43-A — Outline; both grounds.
+    @ViewBuilder private var outlineControls: some View {
+        let o = m.outline
+        slider("Ring width (on screen)", o.ringWidth, 0.5...6, 0.1, String(format: "%.1f pt", o.ringWidth), id: "olWidth") { x in
+            setO { $0.ringWidth = x }
+        }
+        if dark {
+            slider("Ring opacity (dark Map)", o.ringOpacityDark, 0.1...1, 0.01, pct(o.ringOpacityDark), id: "olOpacityDark") { x in
+                setO { $0.ringOpacityDark = x }
+            }
+        } else {
+            slider("Ring opacity (light Map)", o.ringOpacityLight, 0.1...1, 0.01, pct(o.ringOpacityLight), id: "olOpacityLight") { x in
+                setO { $0.ringOpacityLight = x }
+            }
+        }
+        slider("Fill opacity", o.fillOpacity, 0...0.3, 0.005, pct(o.fillOpacity), id: "olFill") { x in setO { $0.fillOpacity = x } }
+        Button("Outline defaults (T's values, 2026-10-27c)") { setO { $0 = OutlineLook() } }
+            .font(.caption).buttonStyle(.bordered).controlSize(.small)
+            .accessibilityIdentifier("tunerOutlineReset")
+        note("A ring in each territory's colour over a faint fill of the same colour; the ring keeps its width on screen at every "
+             + "zoom, and the focused or selected orb's ring doubles. Ring opacity is set per Map (dark 85%, light 100% by default). "
+             + "The dot shrink follows the toggle above on the dark Map.")
     }
 
     // Card content (live-23 (4)) — both appearances

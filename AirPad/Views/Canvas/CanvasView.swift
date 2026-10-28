@@ -566,6 +566,16 @@ struct CanvasView: View {
         NavigationStack(path: $navigationPath) {
             canvasStack
         }
+        #if DEBUG
+        // live-44 — the `-AuraSizeScript` "add an entry" step: a real store add (as Capture does), so the Map syncs it in.
+        .onReceive(NotificationCenter.default.publisher(for: Notification.Name("AuraSizeAddEntry"))) { _ in
+            Task {
+                let now = Date()
+                await store.addNode(Node(id: UUID().uuidString, createdAt: now, updatedAt: now, title: "Aura size probe",
+                                         summary: "", tags: [], entrySchemaVersion: 1), position: .zero)
+            }
+        }
+        #endif
         .onAppear {
             // Push the authoritative light/dark into the scene so the orbs stop
             // reading it through a nil-prone `view?.traitCollection` (dropped

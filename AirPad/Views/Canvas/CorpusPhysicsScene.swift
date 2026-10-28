@@ -979,7 +979,7 @@ final class CorpusPhysicsScene: SKScene {
                 lk.columns.1 = vector_float4(Float(f.rimPower), Float(f.rimIntensity), Float(f.innerGlow), Float(f.highlight))
             case .glass:   // cols 2 (highlight) + the arcs are syncGlassOrbs'
                 let g = m.glassFor(light: currentIsLight)   // live-50c: each Map's own values
-                lk.columns.0 = vector_float4(0, 0, 0, Float(g.tint))
+                lk.columns.0 = vector_float4(Float(g.caustic), Float(g.causticSize), Float(g.causticColour), Float(g.tint))   // live-52
                 lk.columns.1 = vector_float4(Float(g.brightness), Float(g.edge), Float(g.innerShadow), Float(g.dispersion))
             case .outline:
                 let o = m.outline
@@ -1077,17 +1077,33 @@ final class CorpusPhysicsScene: SKScene {
             var look = u.matrixFloat4x4Value
             let gv = m.glassFor(light: currentIsLight)   // live-50c
             look.columns.2 = vector_float4(Float(gv.highlightSize), Float(gv.highlightIntensity), drawnGlassHC.x, drawnGlassHC.y)
-            look.columns.3 = vector_float4(0, 0, 0, 0)
+            look.columns.3 = vector_float4(Float(gv.window), Float(gv.windowSize), Float(gv.windowSharpness), Float(gv.lens))   // live-52
             if look != u.matrixFloat4x4Value { u.matrixFloat4x4Value = look }
         }
         if let u = o("u_gl_arc") {
             let g = m.glassFor(light: currentIsLight)   // live-50c
+            let (lensA, lensB) = g.lens > 0 ? lensLattice(magnification: g.lensMagnification) : (vector_float4(0, 0, 0, 0), vector_float4(0, 0, 0, 0))
             let arc = simd_float4x4(columns: (
                 vector_float4(Float(g.topArc), Float(g.bottomArc), Float(g.arcSpan * .pi / 360), Float(g.arcThickness)),
                 vector_float4(Float(g.arcSoftness), drawnGlassAD.x, drawnGlassAD.y, Float(g.dim)),
-                vector_float4(0, 0, 0, 0), vector_float4(0, 0, 0, 0)))
+                lensA, lensB))
             if arc != u.matrixFloat4x4Value { u.matrixFloat4x4Value = arc }
         }
+    }
+    /// live-52 — the lens dots' lattice from the grid's own uniforms: (magnification, the finer active level's on-screen
+    /// spacing pt, the dot radius pt, its opacity) and (dot rgb, the 5× coarser level's opacity) — the grid's levelOpacity
+    /// over its three nested levels, the two most visible ones. Changes only with the zoom.
+    private func lensLattice(magnification: Double) -> (vector_float4, vector_float4) {
+        func gu(_ n: String) -> SKUniform? { gridNode?.fillShader?.uniforms.first { $0.name == n } }
+        let cs = max(gu("u_camera_scale")?.floatValue ?? 1, 0.0001)
+        let p1 = gu("u_period1")?.floatValue ?? 50, ratio = gu("u_ratio")?.floatValue ?? 5
+        let base = gu("u_dot_opacity")?.floatValue ?? 0.5, rPt = gu("u_dot_base_px")?.floatValue ?? 1.5
+        let rgb = gu("u_dot_color")?.vectorFloat3Value ?? vector_float3(1, 1, 1)
+        func op(_ period: Float) -> Float { max(0, min(1, 1 - abs(log2(period / cs / 60)) * 0.3)) }
+        let levels = [p1 / ratio, p1, p1 * ratio]
+        let fine = op(levels[0]) >= op(levels[2]) ? 0 : 1   // the finer of the two most visible levels
+        return (vector_float4(Float(magnification), levels[fine] / cs, rPt, op(levels[fine]) * base),
+                vector_float4(rgb.x, rgb.y, rgb.z, op(levels[fine + 1]) * base))
     }
     private var smoothedGlassTilt = SIMD2<Float>(0, 0)   // live-41 — the drifting light
     private var drawnGlassHC = SIMD2<Float>(-0.16, 0.19)  // live-43 — what the shader was last given
@@ -3888,6 +3904,36 @@ final class CorpusPhysicsScene: SKScene {
                 float tw = lk_a.w * gDim * mix(0.4, 1.0, rr * rr);
                 glT = (1.0 - A1.w) * (1.0 - tw) * (1.0 - lk_b.x);
                 glC = (col * tw) * (1.0 - lk_b.x) + vec3(lk_b.x);   // dim (black) → tint → frosted lift, premultiplied
+                // live-52 — LENS DOTS (lk_d.w = amount; off = 0 → skipped, today's Glass exactly): part of what shows
+                // through becomes the plain ground, with a magnified copy of a plain dot lattice over it — the grid's dots, evaluated
+                // analytically in orb-local points (no texture, no field, no warp), M× at the centre and squeezed toward
+                // the rim (the source radius runs 1/M → 1.25 radii). A2 = (M, the finer active level's spacing pt, dot
+                // radius pt, its opacity), A3 = (dot rgb, the 5× coarser level's opacity) — the grid's own level blend.
+                // A lattice cell under ~2 px fades out (no moiré). It rides with the orb → no shimmer while panning.
+                vec4 lk_d = u_gl_look[3];
+                if (lk_d.w > 0.0) {
+                    vec4 A2 = u_gl_arc[2]; vec4 A3 = u_gl_arc[3];
+                    float lM = max(A2.x, 1.0);
+                    float rs = rr / lM + (1.25 - 1.0 / lM) * rr * rr * rr;
+                    vec2 sq = dir * (rs * R) / max(aa, 0.000001);   // the source point, pt from the orb's centre
+                    vec2 qf = sq / max(A2.y, 0.5);
+                    vec2 qc = qf / 5.0;
+                    float fwf = max(fwidth(qf.x), fwidth(qf.y));
+                    float fwc = fwf / 5.0;
+                    float dF = length(fract(qf + 0.5) - 0.5) * A2.y;   // pt to the nearest dot (source space)
+                    float dC = length(fract(qc + 0.5) - 0.5) * A2.y * 5.0;
+                    float fpt = max(fwf * A2.y, 0.0001);                 // source pt per pixel
+                    float cF = (1.0 - smoothstep(A2.z - fpt, A2.z + fpt, dF)) * A2.w * (1.0 - smoothstep(0.35, 0.6, fwf));
+                    float cC = (1.0 - smoothstep(A2.z - fpt, A2.z + fpt, dC)) * A3.w * (1.0 - smoothstep(0.35, 0.6, fwc));
+                    float dA = clamp(max(cF, cC), 0.0, 1.0);
+                    // the plain ground replaces part of what shows through (the real dots fade), then the magnified
+                    // dots sit OVER the body layers, so a heavy tint (the light Map's) doesn't hide them
+                    glC += lk_d.w * u_ground_color * glT;
+                    glT *= 1.0 - lk_d.w;
+                    float kD = lk_d.w * dA;
+                    glC = glC * (1.0 - kD) + mix(A3.rgb, col, 0.5 * tw) * kD;
+                    glT *= 1.0 - kD;
+                }
                 vec2 hc = lk_c.zw;
                 vec2 ld = normalize(hc + vec2(0.0001));
                 float ldd = dot(dir, ld);
@@ -3923,6 +3969,25 @@ final class CorpusPhysicsScene: SKScene {
                                 smoothstep(1.0 - th - sh, 1.0 - aaR - sh, rr));
                 rad = rad * rad;
                 gc += gDim * rad * (A0.x * angTop * mix(col, vec3(1.0), 0.8) + A0.y * angBot * mix(col, vec3(1.0), 0.45));
+                // live-52 — CAUSTIC (lk_a.x amount, .y size, .z colour: the orb's colour ↔ white; 0 → skipped): the light
+                // the bead focuses on its far side — a soft crescent inside the rim opposite the highlight (follows it).
+                if (lk_a.x > 0.0) {
+                    vec2 qn = p / R;
+                    float cw = max(lk_a.y, 0.02);
+                    float cSoft = 0.06 + 0.45 * cw;
+                    float cOut = 1.0 - smoothstep(0.97 - cSoft, 0.97, length(qn));
+                    float cIn = 1.0 - smoothstep(0.97 - cSoft, 0.97, length(qn - ld * cw));
+                    float cres = clamp(cOut - cIn, 0.0, 1.0);
+                    gc += mix(col, vec3(1.0), lk_a.z) * (cres * lk_a.x * gDim);
+                }
+                // live-52 — WINDOW (lk_d.x amount, .y size, .z sharpness; 0 → skipped): a hard-edged rounded-rect specular,
+                // a studio window seen in the glass, at the highlight (it rides the highlight position and the tilt).
+                if (lk_d.x > 0.0) {
+                    float wsz = max(lk_d.y, 0.02);
+                    float sdw = sdRoundBox((p - hc) / R, vec2(wsz, wsz * 0.72), wsz * 0.3);
+                    float wEdge = mix(0.02 + 0.15 * wsz, 1.2 * aa / R, clamp(lk_d.z, 0.0, 1.0));
+                    gc += vec3(lk_d.x * (1.0 - smoothstep(-wEdge, wEdge, sdw)) * gDim);
+                }
                 glC += gc;
                 glOn = 1.0;
             }

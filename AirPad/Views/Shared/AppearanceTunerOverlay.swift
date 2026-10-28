@@ -764,6 +764,26 @@ struct AppearanceTunerSheet<G: Gesture>: View {
         slider("Highlight intensity", g.highlightIntensity, 0...1.5, 0.01, String(format: "%.2f", g.highlightIntensity), id: "glHlInt") { x in
             setGV(light) { $0.highlightIntensity = x }
         }
+        // live-52 — three cheap glass cues, all off by default (off = the signed-off Glass); each Map its own values
+        subhead("Glass cues (off = today)")
+        slider("Caustic", g.caustic, 0...1.5, 0.01, String(format: "%.2f", g.caustic), id: "glCaustic") { x in setGV(light) { $0.caustic = x } }
+        slider("Caustic size", g.causticSize, 0.05...0.6, 0.01, String(format: "%.2f", g.causticSize), id: "glCausticSize") { x in
+            setGV(light) { $0.causticSize = x }
+        }
+        slider("Caustic colour (orb ↔ white)", g.causticColour, 0...1, 0.01, pct(g.causticColour), id: "glCausticColour") { x in
+            setGV(light) { $0.causticColour = x }
+        }
+        slider("Window", g.window, 0...1.5, 0.01, String(format: "%.2f", g.window), id: "glWindow") { x in setGV(light) { $0.window = x } }
+        slider("Window size", g.windowSize, 0.05...0.45, 0.01, String(format: "%.2f", g.windowSize), id: "glWindowSize") { x in
+            setGV(light) { $0.windowSize = x }
+        }
+        slider("Window sharpness", g.windowSharpness, 0...1, 0.01, pct(g.windowSharpness), id: "glWindowSharp") { x in
+            setGV(light) { $0.windowSharpness = x }
+        }
+        slider("Lens", g.lens, 0...1, 0.01, pct(g.lens), id: "glLens") { x in setGV(light) { $0.lens = x } }
+        slider("Magnification", g.lensMagnification, 1...3, 0.01, String(format: "%.2f×", g.lensMagnification), id: "glLensMag") { x in
+            setGV(light) { $0.lensMagnification = x }
+        }
         toggle("Tilt light (off = static highlights; one switch for both Maps)", tg.tiltLight, id: "glTiltLight") { b in setG { $0.tiltLight = b } }
         if tg.tiltLight {
             // Squared scale: half the track = 0.375, so small responses are easy to set; negative = the other way.
@@ -782,7 +802,9 @@ struct AppearanceTunerSheet<G: Gesture>: View {
              + "lifts it. The arcs light the top and bottom of the rim. With Tilt light on, the light drifts with the phone's tilt "
              + "(negative response = the other way); the Map then redraws at 30 fps, and only while the light visibly moves. It stays "
              + "put in Low Power Mode, with Reduce Motion, or with Appearance → Move with tilt off. Labels use the label colour unless "
-             + "dark text reads better.")
+             + "dark text reads better. Glass cues (all off = today): Caustic = the light the bead focuses opposite the "
+             + "highlight; Window = a crisp studio-window reflection at the highlight; Lens = the dots seen magnified through "
+             + "the body (squeezed at the rim).")
     }
 
     // live-43 — Aura; live-47: an exact port of the study's aura branch (its seven controls, its ranges). Dark Map only.

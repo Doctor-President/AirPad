@@ -497,6 +497,13 @@ final class AppearanceTuner {
             if let one = UserDefaults.standard.string(forKey: "MapLookSet"), let st = steps.first(where: { $0.0 == one }) {
                 st.1(&state.mapDark)
             }
+            // live-52 stills — `-MapGlassCues 'json:{"caustic":0.8,…}'`: the cue keys on BOTH Maps' Glass values
+            if var j = UserDefaults.standard.string(forKey: "MapGlassCues") {
+                if j.hasPrefix("json:") { j.removeFirst(5) }
+                if let o = (try? JSONSerialization.jsonObject(with: Data(j.utf8))) as? [String: Any] {
+                    state.mapDark.glass.apply(exportJSON: o); state.mapDark.glassLight.apply(exportJSON: o)
+                }
+            }
             // live-50 stills — `-MapLightGlassJSON 'json:{…}'`: a Copy-values `lightGlass` block (+ optional "tilt" keys for
             // the shared Glass tilt: tiltLight / tiltResponse), applied after -MapLookSet.
             if var j = UserDefaults.standard.string(forKey: "MapLightGlassJSON") {
@@ -1849,6 +1856,15 @@ struct GlassLook: Codable, Equatable {
     var dim = 0.0                   // behind-glass dim: darkens what the lens shows
     var tiltLight = false           // off = static highlights + arcs (live-43: default off)
     var tiltSmoothing = 0.8         // seconds: the light drifts toward the tilt instead of tracking it
+    // live-52 — three cheap glass cues (analytic, no texture reads; each amount 0 = off = the signed-off Glass exactly).
+    var caustic = 0.0               // the light the bead focuses on its far side: a soft crescent opposite the highlight
+    var causticSize = 0.3           // the crescent's depth, orb radii
+    var causticColour = 0.5         // 0 = the orb's colour · 1 = white
+    var window = 0.0                // a hard-edged rounded-rect specular (a studio window) at the highlight
+    var windowSize = 0.2            // half-width, orb radii
+    var windowSharpness = 0.8       // 0 = soft · 1 = a 1 pt edge
+    var lens = 0.0                  // a magnified copy of the dot lattice inside the body
+    var lensMagnification = 1.6     // at the centre; squeezed toward the rim
 
     static let subtle = GlassLook(refraction: 0.25, lensCurve: 3.0, magnification: 1.05, tint: 0.14, brightness: 0.03,
                                   frost: 0.25, edge: 0, innerShadow: 0.25, dispersion: 0.0, highlightSize: 0.22,
@@ -1901,6 +1917,10 @@ struct GlassLook: Codable, Equatable {
         if let v = d("topArc") { topArc = v }; if let v = d("bottomArc") { bottomArc = v }; if let v = d("arcSpan") { arcSpan = v }
         if let v = d("arcThickness") { arcThickness = v }; if let v = d("arcSoftness") { arcSoftness = v }; if let v = d("dim") { dim = v }
         if let v = d("tiltSmoothing") { tiltSmoothing = v }; if let b = exportJSON["tiltLight"] as? Bool { tiltLight = b }
+        if let v = d("caustic") { caustic = v }; if let v = d("causticSize") { causticSize = v }   // live-52
+        if let v = d("causticColour") { causticColour = v }; if let v = d("window") { window = v }
+        if let v = d("windowSize") { windowSize = v }; if let v = d("windowSharpness") { windowSharpness = v }
+        if let v = d("lens") { lens = v }; if let v = d("lensMagnification") { lensMagnification = v }
         if let h = exportJSON["label"] as? String { label = TunerHSL(hex: h.replacingOccurrences(of: "#", with: "")) }
     }
 }
@@ -1921,6 +1941,10 @@ extension GlassLook {
                   arcSpan: v(.arcSpan, m.arcSpan), arcThickness: v(.arcThickness, m.arcThickness),
                   arcSoftness: v(.arcSoftness, m.arcSoftness), dim: v(.dim, m.dim), tiltLight: v(.tiltLight, m.tiltLight),
                   tiltSmoothing: v(.tiltSmoothing, m.tiltSmoothing))
+        caustic = v(.caustic, m.caustic); causticSize = v(.causticSize, m.causticSize)   // live-52 (older values: off)
+        causticColour = v(.causticColour, m.causticColour); window = v(.window, m.window)
+        windowSize = v(.windowSize, m.windowSize); windowSharpness = v(.windowSharpness, m.windowSharpness)
+        lens = v(.lens, m.lens); lensMagnification = v(.lensMagnification, m.lensMagnification)
         if !c.contains(.topArc) {   // saved by live-40
             tiltResponse *= 0.2
             edge = 0
@@ -2078,6 +2102,11 @@ extension AppearanceTuning {
         }
         func c(_ x: TunerHSL) -> String { "\"#\(x.hex)\"" }
         let f = m.fresnel, g = m.glass, a = m.aura, e = m.eclipse, ol = m.outline, w = m.wash, gL = m.glassLight   // live-50c: the light Map's Glass values
+        func cues(_ x: GlassLook) -> String {   // live-52
+            "\"caustic\":\(n(x.caustic)),\"causticSize\":\(n(x.causticSize)),\"causticColour\":\(n(x.causticColour)),"
+                + "\"window\":\(n(x.window)),\"windowSize\":\(n(x.windowSize)),\"windowSharpness\":\(n(x.windowSharpness)),"
+                + "\"lens\":\(n(x.lens)),\"lensMagnification\":\(n(x.lensMagnification))"
+        }
         func study<L: StudyOrbLook>(_ x: L) -> String {
             "{\"spread\":\(n(x.spread)),\"warp\":\(n(x.warp)),\"softness\":\(n(x.softness)),\"haloReach\":\(n(x.haloReach)),"
                 + "\"rim\":\(n(x.rim)),\"fringe\":\(n(x.fringe)),\"grain\":\(n(x.grain)),\"drift\":\(x.drift)}"
@@ -2098,13 +2127,15 @@ extension AppearanceTuning {
             + "\"innerShadow\":\(n(g.innerShadow)),\"dispersion\":\(n(g.dispersion)),\"highlightSize\":\(n(g.highlightSize)),"
             + "\"highlightIntensity\":\(n(g.highlightIntensity)),\"tiltResponse\":\(n(g.tiltResponse)),\"label\":\(c(g.label)),"
             + "\"topArc\":\(n(g.topArc)),\"bottomArc\":\(n(g.bottomArc)),\"arcSpan\":\(n(g.arcSpan)),\"arcThickness\":\(n(g.arcThickness)),"
-            + "\"arcSoftness\":\(n(g.arcSoftness)),\"dim\":\(n(g.dim)),\"tiltLight\":\(g.tiltLight),\"tiltSmoothing\":\(n(g.tiltSmoothing))},"
+            + "\"arcSoftness\":\(n(g.arcSoftness)),\"dim\":\(n(g.dim)),\"tiltLight\":\(g.tiltLight),\"tiltSmoothing\":\(n(g.tiltSmoothing)),"
+            + cues(g) + "},"
             + "\"glassLight\":{"
             + "\"tint\":\(n(gL.tint)),\"brightness\":\(n(gL.brightness)),\"edge\":\(n(gL.edge)),"
             + "\"innerShadow\":\(n(gL.innerShadow)),\"dispersion\":\(n(gL.dispersion)),\"highlightSize\":\(n(gL.highlightSize)),"
             + "\"highlightIntensity\":\(n(gL.highlightIntensity)),\"tiltResponse\":\(n(gL.tiltResponse)),\"label\":\(c(gL.label)),"
             + "\"topArc\":\(n(gL.topArc)),\"bottomArc\":\(n(gL.bottomArc)),\"arcSpan\":\(n(gL.arcSpan)),\"arcThickness\":\(n(gL.arcThickness)),"
-            + "\"arcSoftness\":\(n(gL.arcSoftness)),\"dim\":\(n(gL.dim)),\"tiltLight\":\(gL.tiltLight),\"tiltSmoothing\":\(n(gL.tiltSmoothing))},"
+            + "\"arcSoftness\":\(n(gL.arcSoftness)),\"dim\":\(n(gL.dim)),\"tiltLight\":\(gL.tiltLight),\"tiltSmoothing\":\(n(gL.tiltSmoothing)),"
+            + cues(gL) + "},"
             + "\"palettes\":\"12 territories\",\"aura\":\(study(a)),\"eclipse\":\(String(study(e).dropLast())),\"arcThickness\":\(n(e.arcThickness))},"
             + "\"lightGlass\":\(m.lightGlass.exportJSON),\"riso\":\(study(m.riso)),\"gradient\":\(study(m.gradient)),"
             + "\"outline\":{\"ringWidth\":\(n(ol.ringWidth)),\"ringOpacityDark\":\(n(ol.ringOpacityDark)),"
@@ -2293,6 +2324,25 @@ extension AppearanceTuning {
             ("map-v7-lineup (dark Flat·Glass·Aura·Eclipse·Riso·Gradient·Outline; Glass / Riso / Gradient / Outline on both)",
              MapOrbLook.darkPicker == [.flat, .glass, .aura, .eclipse, .riso, .gradient, .outline]
                 && MapOrbLook.riso.bothGrounds && MapOrbLook.gradient.bothGrounds && MapOrbLook.glass.bothGrounds, ""),
+            ("glass-cues-default-off + copy-values round trip per Map + old values decode off (live-52)", {
+                let d = MapDarkTuning()
+                func isOff(_ g: GlassLook) -> Bool { g.caustic == 0 && g.window == 0 && g.lens == 0 }
+                let off: Bool = isOff(d.glass) && isOff(d.glassLight) && isOff(GlassLook.medium)
+                var m = MapDarkTuning(); m.glass.caustic = 0.7; m.glass.lensMagnification = 2.2; m.glassLight.window = 0.6
+                m.glassLight.windowSharpness = 0.3; m.glassLight.lens = 0.5
+                var back = MapDarkTuning()
+                guard let all = try? JSONSerialization.jsonObject(with: Data(mapDarkJSON(m).utf8)) as? [String: Any],
+                      let gb = all["glass"] as? [String: Any] else { return false }
+                back.apply(exportJSON: all); back.glass.apply(exportJSON: gb)
+                let old = #"{"tint":0.3,"topArc":0.9}"#
+                guard let o = try? JSONDecoder().decode(GlassLook.self, from: Data(old.utf8)) else { return false }
+                let g = back.glass, gL = back.glassLight
+                let darkOK: Bool = g.caustic == 0.7 && g.lensMagnification == 2.2 && g.window == 0
+                let lightOK: Bool = gL.window == 0.6 && gL.windowSharpness == 0.3 && gL.lens == 0.5 && gL.caustic == 0
+                let oldOK: Bool = o.caustic == 0 && o.window == 0 && o.lens == 0
+                let perMap: Bool = m.glassFor(light: true).lens == 0.5 && m.glassFor(light: false).caustic == 0.7
+                return off && darkOK && lightOK && oldOK && perMap
+            }(), ""),
             ("glass-tilt-light-defaults-off (live-43)", !t.glass.tiltLight && !GlassLook.medium.tiltLight, ""),
             ("map-dark-live42-saved-values-decode (no aura/outline keys → defaults)", {
                 let old = #"{"orbLook":"glass","glass":{"tint":0.3,"tiltLight":true}}"#

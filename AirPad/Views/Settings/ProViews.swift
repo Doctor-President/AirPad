@@ -85,7 +85,7 @@ struct MapLookSection: View {
     }
 }
 
-/// pro-build — the Pro sheet. Copy = Companion's draft (T approves on device).
+/// pro-build — the Pro sheet. Copy = Companion's draft; rc step 1: T's line ("New looks", not "Seven new looks").
 struct ProSheet: View {
     @Environment(\.appBodyFont) private var appFont
     @Environment(\.dismiss) private var dismiss
@@ -100,7 +100,7 @@ struct ProSheet: View {
             VStack(alignment: .leading, spacing: 18) {
                 Text("AirPad Pro").font(appFont.font(size: 28, weight: .bold, relativeTo: .largeTitle)).foregroundStyle(AppearancePalette.ink)
                     .accessibilityAddTraits(.isHeader)
-                Text("Make your Map yours. Seven new looks for every idea you keep, light and dark.")
+                Text("Make your Map yours. New looks for every idea you keep, light and dark.")
                     .font(appFont.font(size: 17, relativeTo: .body)).foregroundStyle(AppearancePalette.ink.opacity(0.8))
                     .fixedSize(horizontal: false, vertical: true)
                 VStack(spacing: 0) {

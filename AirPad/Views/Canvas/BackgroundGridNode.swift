@@ -369,8 +369,7 @@ enum BackgroundGridNode {
     }
 }
 
-#if DEBUG || TESTFLIGHT
-/// live-48 — the study's fbm (3 octaves of value noise; ×1.9 + (17.1, 9.2) per octave; amplitudes 0.6, 0.192, 0.061) baked
+/// pro-build — ships in every build (the Pro looks' noise). live-48 — the study's fbm (3 octaves of value noise; ×1.9 + (17.1, 9.2) per octave; amplitudes 0.6, 0.192, 0.061) baked
 /// ONCE into a tiling texture, so each fbm in the Pro looks (Aura, Eclipse, Wash, the paper ground) is ONE linear lookup
 /// instead of 12 hashes. The period is 100 noise cells on both axes: the octaves then repeat after 100 · 1.9 = 190 and
 /// 100 · 3.61 = 361 cells, whole numbers, so each octave's lattice wraps exactly (the hash of the cell index mod its
@@ -439,4 +438,3 @@ enum StudyNoise {
             + "float \(px)NV(vec4 t) { return dot(t.rg, vec2(1.0, 1.0 / 255.0)); }"
     }
 }
-#endif

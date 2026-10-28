@@ -26,7 +26,7 @@ struct SettingsView: View {
 
     /// Brief AJ1 — the submenu destinations (iOS-Settings-style navigation).
     enum Dest: Hashable {
-        case library, tags, models, webSearch, librarian, appearance, privacy, about
+        case library, tags, models, webSearch, librarian, appearance, privacy, about, support
         case macModels, advanced   // nested under Models
         #if DEBUG
         case developer
@@ -182,6 +182,7 @@ struct SettingsView: View {
                 // Group 3 — privacy and about.
                 Section {
                     settingsRow(.privacy,  icon: "lock.fill",                  tint: "3A8DDE", title: "Privacy")
+                    settingsRow(.support,  icon: "heart.fill",                 tint: "D6336C", title: "Support AirPad")   // pro-build — the tip jar
                     settingsRow(.about,    icon: "info.circle.fill",           tint: "8A8A8E", title: "About")
                 }
                 #if DEBUG
@@ -251,6 +252,8 @@ struct SettingsView: View {
         case .appearance: appearanceSubmenu
         case .privacy:   privacySubmenu
         case .about:     aboutSubmenu
+        case .support:   submenuScroll(header: { submenuHeader(icon: "heart.fill", tint: "D6336C", title: "Support AirPad",
+                             blurb: "Tips keep AirPad going. They unlock nothing.") }) { TipJarView() }
         #if DEBUG
         case .developer: submenuScroll { developerSection }
         #endif
@@ -612,6 +615,7 @@ struct SettingsView: View {
         submenuScroll(header: { submenuHeader(icon: "circle.righthalf.filled", tint: "5E5CE6", title: "Appearance",
             blurb: "How AirPad looks, and the font it uses.") }) {
             VStack(alignment: .leading, spacing: 20) {
+                MapLookSection()   // pro-build — the Map's look (Flat free; the rest AirPad Pro)
                 VStack(alignment: .leading, spacing: 8) {
                     Text("Theme").font(appFont.font(size: 15, weight: .semibold, relativeTo: .subheadline)).foregroundStyle(AppearancePalette.ink)
                     Picker("Theme", selection: Binding(

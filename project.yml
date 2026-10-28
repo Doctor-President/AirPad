@@ -15,10 +15,12 @@ schemes:
     run:
       config: Release
       debugEnabled: false
+      storeKitConfiguration: StoreKit/AirPadPro.storekit   # pro-build — the four products in the Simulator
     test:
       config: Debug
       targets:
         - AirPadUITests
+        - AirPadTests
     profile:
       config: Release
     analyze:
@@ -376,12 +378,30 @@ targets:
   # note editor in the Simulator; the app traces the caret event sequence to a
   # file CC reads back). Only in the `test` action — normal builds/TestFlight
   # never build it.
+  # pro-build — StoreKit 2 tests (SKTestSession over StoreKit/AirPadPro.storekit), hosted in the app.
+  AirPadTests:
+    type: bundle.unit-test
+    platform: iOS
+    deploymentTarget: "26.0"
+    sources:
+      - path: AirPadTests
+      - path: StoreKit/AirPadPro.storekit
+        buildPhase: resources
+    dependencies:
+      - target: AirPad
+    settings:
+      base:
+        PRODUCT_BUNDLE_IDENTIFIER: com.doctorpresident.airpad.tests
+        DEVELOPMENT_TEAM: 8XM4B5F42Y
+        GENERATE_INFOPLIST_FILE: YES
   AirPadUITests:
     type: bundle.ui-testing
     platform: iOS
     deploymentTarget: "26.0"
     sources:
       - path: AirPadUITests
+      - path: StoreKit/AirPadPro.storekit   # pro-build — SKTestSession in ProScreenshots
+        buildPhase: resources
     dependencies:
       - target: AirPad
     settings:

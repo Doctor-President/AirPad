@@ -723,6 +723,7 @@ struct DebugScreenHost: View {
         case "privacy":   return .privacy
         case "about":     return .about
         case "appearance": return .appearance   // ws-fluted-glass — the glass toggles
+        case "support":   return .support      // pro-build — the tip jar
         default:          return nil
         }
     }

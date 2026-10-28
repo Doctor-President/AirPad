@@ -8,6 +8,8 @@ set -uo pipefail
 A=${0:A:h:h}; OUT=${1:-$A/build/tuner-gate}; mkdir -p $OUT
 # live-39: + the Map (dark) section (background, highlights, Fresnel orbs) — tuner-only.
 # live-43: "Refraction strength" left with the lens sliders (Glass draws no refraction now) → "Aura defaults (T's study values, 2026-10-27)" (Aura).
+# pro-build: the Pro Map looks SHIP — their shader text (auDisk / LENS DOTS / s2Ramp) and the Pro UI (sheet, Restore, tip jar,
+# the product id) must be in BOTH binaries (SHIPPED_PROBES); the swatch / audit harness strings in neither (DEBUG_PROBES).
 # live-51: the three defaults buttons now read "(T's values, 2026-10-27c)".
 # live-45/46: + the Wash controls ("Wash defaults (the study's Medium)"). live-47: Aura / Eclipse defaults buttons replace "Hue spread" and
 # "Softness floor" (both gone); "draw as Wash (pigment on paper)" (the light Map's note).
@@ -22,11 +24,11 @@ PROBES=("Appearance tuner" "appearanceTuning.v1" "AppearanceTunerWindow" "Frost 
 # and the provider-failed line (shipped).
 # live-28 — DEBUG-only hooks must be in NEITHER Release build; the shipped caps line must be in BOTH (the positive control).
 # live-30 — + the (A1) RED switch and the transcript open trace (DEBUG-only); the (A1) framing line ships in both.
-DEBUG_PROBES=("AnswerWallClockSec" "WebSearchSwitchIgnored" "WebSearchBaseURL" "[AnswerCapSelfTest]" "[TitleCaseSelfTest]" "AppleWebFollowUpOff" "TranscriptOpenTrace" "TranscriptLive30" "TranscriptMotionLog" "[HostWebSelfTest]" "GauntletSeedTable" "Live31Web" "WebTrace" "[WebEvidenceSelfTest]" "DebugEndpointModel" "WikipediaBaseURL" "WikipediaLive" "WebFreshnessCurrent")
+DEBUG_PROBES=("AnswerWallClockSec" "WebSearchSwitchIgnored" "WebSearchBaseURL" "[AnswerCapSelfTest]" "[TitleCaseSelfTest]" "AppleWebFollowUpOff" "TranscriptOpenTrace" "TranscriptLive30" "TranscriptMotionLog" "[HostWebSelfTest]" "GauntletSeedTable" "Live31Web" "WebTrace" "[WebEvidenceSelfTest]" "DebugEndpointModel" "WikipediaBaseURL" "WikipediaLive" "WebFreshnessCurrent" "[AURAINK]" "[MAPFRAME]" "[SWATCH]" "AuraSizeScript")
 # live-34: + the freshness override (DEBUG-only); the training-cutoff line and the tables' Sources rule (shipped).
 # live-33: the one sources-over-memory line replaced live-32's evidence block. (A probe with non-ASCII — "—" — never
 # matches: `strings` reports ASCII runs.)
-SHIPPED_PROBES=("Stopped: the answer ran too long" "Tavily (free, no card)" "Web search is off. [Turn it on" "they come from the app's search, not from the user" "The web search didn't go through" "they are newer than your training" "Searched the web and Wikipedia" "reasoning_effort" "Your training data ends around" "If you answer with a table, end with a short line")
+SHIPPED_PROBES=("Stopped: the answer ran too long" "Tavily (free, no card)" "Web search is off. [Turn it on" "they come from the app's search, not from the user" "The web search didn't go through" "they are newer than your training" "Searched the web and Wikipedia" "reasoning_effort" "Your training data ends around" "If you answer with a table, end with a short line" "float auDisk(float d, float s)" "LENS DOTS" "s2Ramp" "Make your Map yours." "Restore Purchases" "AirPad is made by one person." "com.doctorpresident.airpad.pro" "Couldn't reach the App Store")
 export DEVELOPER_DIR=/Applications/Xcode.app/Contents/Developer
 fail=0
 for mode in testflight appstore; do

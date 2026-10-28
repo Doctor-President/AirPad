@@ -21,6 +21,8 @@ struct AirPadApp: App {
         self.router = appRouter
         AppDependencyManager.shared.add(dependency: appRouter)
         Self.purgeRetiredDevTunerDefaults()
+        // pro-build — StoreKit 2: listen for transactions + re-verify the Pro entitlement (the cached value draws the Map meanwhile).
+        Task { @MainActor in ProStore.shared.start() }
         // Step 1 — off the launch path. (The DEBUG self-test runs the migration itself, on an item it seeds: a launch
         // migration racing it could move that item first and fail the test falsely.)
         if !UserDefaults.standard.bool(forKey: "KeychainMigrationSelfTest") {

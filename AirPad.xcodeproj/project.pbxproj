@@ -27,6 +27,7 @@
 		07C8518A53FA5439187CAE4B /* NodeBlock.swift in Sources */ = {isa = PBXBuildFile; fileRef = 376265F2CCAF46EDE2216E54 /* NodeBlock.swift */; };
 		07CB581F48846F9CC3814049 /* UberNodeService.swift in Sources */ = {isa = PBXBuildFile; fileRef = 1004BF2AC849AC8BA745BD5D /* UberNodeService.swift */; };
 		0888BEFE345DC3469F36CC46 /* AVKit.framework in Frameworks */ = {isa = PBXBuildFile; fileRef = 8EA8C82636A7D9E2E115A203 /* AVKit.framework */; };
+		092FA569980C2BB2F5CDF687 /* AirPadPro.storekit in Resources */ = {isa = PBXBuildFile; fileRef = 24E36764357B1A05ECCE72AC /* AirPadPro.storekit */; };
 		09AE21B8978FFA31BA8A26AF /* PastePadView.swift in Sources */ = {isa = PBXBuildFile; fileRef = 88A13C2113DC9781B455DF42 /* PastePadView.swift */; };
 		0A1E663CC31AC33AC01C329C /* SubstrateCoord2D.swift in Sources */ = {isa = PBXBuildFile; fileRef = CB4204EBBDB6AEFAC59BB313 /* SubstrateCoord2D.swift */; };
 		0A27CE339FA78690449AAEB4 /* ChatViewCitationUI.swift in Sources */ = {isa = PBXBuildFile; fileRef = 2569215F820AD591AF4A754A /* ChatViewCitationUI.swift */; };
@@ -42,6 +43,7 @@
 		10EE8C518BC6A4AE6ECB3745 /* VectorBasis.swift in Sources */ = {isa = PBXBuildFile; fileRef = CF8F89C6F77EFD27FB9CDB99 /* VectorBasis.swift */; };
 		1121953E0B7C6CA81992C90F /* CardDocumentTile.swift in Sources */ = {isa = PBXBuildFile; fileRef = 321F93F7630A107A8A1266EF /* CardDocumentTile.swift */; };
 		11D8040AE3C48E6498A1F6A6 /* UMAPSelfTest.swift in Sources */ = {isa = PBXBuildFile; fileRef = D80918E8E0CCC9ECFE36A664 /* UMAPSelfTest.swift */; };
+		11EAF984FB3BCEFD18C400C9 /* ProViews.swift in Sources */ = {isa = PBXBuildFile; fileRef = EC55F8927BF1AB0D81FDEF40 /* ProViews.swift */; };
 		128BD8D7EEBF8F107B575D9B /* RecentsView.swift in Sources */ = {isa = PBXBuildFile; fileRef = 705C25E7ACABFFA509C39BFF /* RecentsView.swift */; };
 		130B5342B773AA3949CFC79C /* HDBSCANCluster.swift in Sources */ = {isa = PBXBuildFile; fileRef = D513DE977AA6A0B607CE5508 /* HDBSCANCluster.swift */; };
 		14CCCFDE746CB2FA0459B622 /* CanvasView.swift in Sources */ = {isa = PBXBuildFile; fileRef = 66610DC5B90AC2729F2B6F1D /* CanvasView.swift */; };
@@ -54,6 +56,7 @@
 		1A4B4683A0B01732DEC94DBF /* FieldDefinition.swift in Sources */ = {isa = PBXBuildFile; fileRef = 003CEDBA7C8C183191D81F3E /* FieldDefinition.swift */; };
 		1A71668ACC87B6B9C0D804E7 /* Collection.swift in Sources */ = {isa = PBXBuildFile; fileRef = 909B3DB690784E89652659ED /* Collection.swift */; };
 		1A9E8EF4E13EF3D1B9009EB8 /* ReviewQueueSheet.swift in Sources */ = {isa = PBXBuildFile; fileRef = 8BDD458C42AD717CBB2269BE /* ReviewQueueSheet.swift */; };
+		1AA3141530F04F4090790F8C /* ProStore.swift in Sources */ = {isa = PBXBuildFile; fileRef = 21F157A25C20FDDA011EFB0A /* ProStore.swift */; };
 		1AB937D63FE8F452D767344B /* Neighborhood.swift in Sources */ = {isa = PBXBuildFile; fileRef = AE402981E931009EBB3F93EE /* Neighborhood.swift */; };
 		1C3C8D561E55F06E8803826E /* SwiftUI.framework in Frameworks */ = {isa = PBXBuildFile; fileRef = 360617FDFF9D3F6D0175F257 /* SwiftUI.framework */; };
 		1C7BD8D8DAED08D89F04F795 /* LongPressDragRecognizer.swift in Sources */ = {isa = PBXBuildFile; fileRef = 3A582AE8DB1D9CEB0084017C /* LongPressDragRecognizer.swift */; };
@@ -195,6 +198,7 @@
 		790E62A06880D73E5FE759EA /* HostPairingSheet.swift in Sources */ = {isa = PBXBuildFile; fileRef = 93FCE9DB8410C90A3B0EFAC0 /* HostPairingSheet.swift */; };
 		79EBBD07CEAF35CA5E4CF8A3 /* Neighborhood.swift in Sources */ = {isa = PBXBuildFile; fileRef = AE402981E931009EBB3F93EE /* Neighborhood.swift */; };
 		7A35344BA88803818AB82661 /* cinzelbold_msdf.png in Resources */ = {isa = PBXBuildFile; fileRef = A041B55F9CB72A7C37989EF0 /* cinzelbold_msdf.png */; };
+		7A36980AB2D45C9454C7C71F /* AirPadPro.storekit in Resources */ = {isa = PBXBuildFile; fileRef = 24E36764357B1A05ECCE72AC /* AirPadPro.storekit */; };
 		7B5E835B2655C01AC63A3F3C /* LibrarianPerfGate.swift in Sources */ = {isa = PBXBuildFile; fileRef = 9C2FF3FB474EB570C6F67185 /* LibrarianPerfGate.swift */; };
 		7CE4D30F31BD74E94FB87500 /* SpeechSynthesisService.swift in Sources */ = {isa = PBXBuildFile; fileRef = 4496FF91A72DB981ED791A85 /* SpeechSynthesisService.swift */; };
 		7D662BACA7CB206841C5BA3D /* CardSwipeRepro.swift in Sources */ = {isa = PBXBuildFile; fileRef = B8D87927EAE11D669A11A825 /* CardSwipeRepro.swift */; };
@@ -254,6 +258,7 @@
 		98B5E99326DE7512F0B6C859 /* CitationSheet.swift in Sources */ = {isa = PBXBuildFile; fileRef = 4FE654FD7C01A6BC0AAB228A /* CitationSheet.swift */; };
 		99570B5D8F06DF317DEB07A5 /* QuarantineStore.swift in Sources */ = {isa = PBXBuildFile; fileRef = 0642041A7F8A258DF0FF065C /* QuarantineStore.swift */; };
 		9BBBB45D21CADBD3E042E4E9 /* StrandService.swift in Sources */ = {isa = PBXBuildFile; fileRef = 780B6A68830590DBDA5189D1 /* StrandService.swift */; };
+		9BF2C1F06E9B86EF13A15EA7 /* ProStoreTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = AC6736CCEB7AF941CE1C06BD /* ProStoreTests.swift */; };
 		9C0E90AD9209954A7FDA17C0 /* ArcAVoiceDone.swift in Sources */ = {isa = PBXBuildFile; fileRef = 6D5DA85B1BF96EDBE819DEC3 /* ArcAVoiceDone.swift */; };
 		9CA473D3F2ECA00AAC3BBEC2 /* SubstrateWhitening.swift in Sources */ = {isa = PBXBuildFile; fileRef = B9C5245A09127ABECCBFEDC4 /* SubstrateWhitening.swift */; };
 		9CC24D2F472D010E7128EB08 /* NodeGradientBackground.swift in Sources */ = {isa = PBXBuildFile; fileRef = 497A2D223E494E948D445DFF /* NodeGradientBackground.swift */; };
@@ -403,6 +408,7 @@
 		EC60DCF76DE4CB0896EE04F4 /* TitleCase.swift in Sources */ = {isa = PBXBuildFile; fileRef = E0D34E62139AB741F9EC03C3 /* TitleCase.swift */; };
 		ED263E6AF87CC57F7DF48FA2 /* CaptureHeader.swift in Sources */ = {isa = PBXBuildFile; fileRef = 7382A39FD7A3008B7F5F0790 /* CaptureHeader.swift */; };
 		ED2897F4A493372C37245794 /* AppleWebGrounding.swift in Sources */ = {isa = PBXBuildFile; fileRef = DAF63C3BDCDEC950CAF7DEBC /* AppleWebGrounding.swift */; };
+		EE930D753CB83240E0F65FCC /* ProScreenshots.swift in Sources */ = {isa = PBXBuildFile; fileRef = 066F0ECD5D6906ADAF3A2FDF /* ProScreenshots.swift */; };
 		EFE768526206D4EDA8B50911 /* RegenerateUI.swift in Sources */ = {isa = PBXBuildFile; fileRef = 2F23E239FD3DA51B1D798086 /* RegenerateUI.swift */; };
 		F1CC4C613799AD49459896D5 /* LiveWebUI.swift in Sources */ = {isa = PBXBuildFile; fileRef = C24E73996610B9E23DEB38A1 /* LiveWebUI.swift */; };
 		F2C9E94362C505F3F61061DF /* TerritoryLayoutRestoreSelfTest.swift in Sources */ = {isa = PBXBuildFile; fileRef = 9C34AEE42CAC269D68078D15 /* TerritoryLayoutRestoreSelfTest.swift */; };
@@ -446,6 +452,13 @@
 			remoteGlobalIDString = 62C8055DB0F7AF52F9B3E615;
 			remoteInfo = AirPad;
 		};
+		CC4297293DE12C7AF8697D0E /* PBXContainerItemProxy */ = {
+			isa = PBXContainerItemProxy;
+			containerPortal = 88710B490536A898E4AE3E9F /* Project object */;
+			proxyType = 1;
+			remoteGlobalIDString = 62C8055DB0F7AF52F9B3E615;
+			remoteInfo = AirPad;
+		};
 /* End PBXContainerItemProxy section */
 
 /* Begin PBXCopyFilesBuildPhase section */
@@ -474,6 +487,7 @@
 		0485A1BAF09FE0038C9B50A1 /* WebTrace.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = WebTrace.swift; sourceTree = "<group>"; };
 		04C9DF59B5CB0AF40373A81B /* DocumentExtractionService.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = DocumentExtractionService.swift; sourceTree = "<group>"; };
 		0642041A7F8A258DF0FF065C /* QuarantineStore.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = QuarantineStore.swift; sourceTree = "<group>"; };
+		066F0ECD5D6906ADAF3A2FDF /* ProScreenshots.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ProScreenshots.swift; sourceTree = "<group>"; };
 		06B1768239F02E6846F26864 /* SampleLibrarySeeder.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = SampleLibrarySeeder.swift; sourceTree = "<group>"; };
 		06B75637388695434A20A8B7 /* CaptureControlsStills.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = CaptureControlsStills.swift; sourceTree = "<group>"; };
 		09D0243E524E09781995DF68 /* CitationReference.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = CitationReference.swift; sourceTree = "<group>"; };
@@ -512,10 +526,12 @@
 		21B0049BD58E9FC905E20D61 /* EntryMigrationSelfTest.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = EntryMigrationSelfTest.swift; sourceTree = "<group>"; };
 		21B33F87387E58BCADB5C823 /* DocumentHandoffName.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = DocumentHandoffName.swift; sourceTree = "<group>"; };
 		21D283503B6CC7FE116CC91F /* ModelPicker.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ModelPicker.swift; sourceTree = "<group>"; };
+		21F157A25C20FDDA011EFB0A /* ProStore.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ProStore.swift; sourceTree = "<group>"; };
 		22331897C26EB8AA6E253BD6 /* CollectionPickerMenu.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = CollectionPickerMenu.swift; sourceTree = "<group>"; };
 		239B75A26B2BA53534F71428 /* LayoutService.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = LayoutService.swift; sourceTree = "<group>"; };
 		23ECDDE27DD9E25B6ED253D9 /* GauntletTap.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = GauntletTap.swift; sourceTree = "<group>"; };
 		24A6A32F900316F628EEF046 /* LongPaste.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = LongPaste.swift; sourceTree = "<group>"; };
+		24E36764357B1A05ECCE72AC /* AirPadPro.storekit */ = {isa = PBXFileReference; path = AirPadPro.storekit; sourceTree = "<group>"; };
 		2569215F820AD591AF4A754A /* ChatViewCitationUI.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ChatViewCitationUI.swift; sourceTree = "<group>"; };
 		25D6B0FB2872A820D969CD5E /* SubstrateColoringPass.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = SubstrateColoringPass.swift; sourceTree = "<group>"; };
 		2674695478CBBF59D690FC8A /* bigshouldersbold_msdf.json */ = {isa = PBXFileReference; lastKnownFileType = text.json; path = bigshouldersbold_msdf.json; sourceTree = "<group>"; };
@@ -716,6 +732,7 @@
 		AA69D329E4CBB77BDB1B9345 /* SubstrateService.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = SubstrateService.swift; sourceTree = "<group>"; };
 		AB1C29C713D0DA9D291C4661 /* WebEvidenceUI.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = WebEvidenceUI.swift; sourceTree = "<group>"; };
 		AC63EC73AD8EFD037637381F /* FieldPreset.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = FieldPreset.swift; sourceTree = "<group>"; };
+		AC6736CCEB7AF941CE1C06BD /* ProStoreTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ProStoreTests.swift; sourceTree = "<group>"; };
 		ACC6BC5CBFC1176D6EC92CE0 /* WikipediaGrounding.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = WikipediaGrounding.swift; sourceTree = "<group>"; };
 		ACE4CFCC06057A8055A511FC /* BackgroundGridNode.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = BackgroundGridNode.swift; sourceTree = "<group>"; };
 		ADDA79A05C807120913FCE5F /* CorpusStore.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = CorpusStore.swift; sourceTree = "<group>"; };
@@ -816,10 +833,12 @@
 		EB23955C4460CA1D6E2710E9 /* HostPairingStore.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = HostPairingStore.swift; sourceTree = "<group>"; };
 		EC0FDB237F677A326AE033DF /* CanvasSlideOutMenu.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = CanvasSlideOutMenu.swift; sourceTree = "<group>"; };
 		EC36DE9EA28BD7C8FAFD81A0 /* HistoryPanel.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = HistoryPanel.swift; sourceTree = "<group>"; };
+		EC55F8927BF1AB0D81FDEF40 /* ProViews.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ProViews.swift; sourceTree = "<group>"; };
 		ECFED59D749E91B63D80BF73 /* BigShouldersDisplay-OFL.txt */ = {isa = PBXFileReference; lastKnownFileType = text; path = "BigShouldersDisplay-OFL.txt"; sourceTree = "<group>"; };
 		ED287727ED25FF9291551213 /* HDBSCANReachability.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = HDBSCANReachability.swift; sourceTree = "<group>"; };
 		ED83A2DE515939345223CDCB /* ClipboardContentRouterDiagnostic.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ClipboardContentRouterDiagnostic.swift; sourceTree = "<group>"; };
 		ED924ABE8CD119DCD5194981 /* SpeechEngineSwitch.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = SpeechEngineSwitch.swift; sourceTree = "<group>"; };
+		EF6CA7D08C809ED4F3B84ACC /* AirPadTests.xctest */ = {isa = PBXFileReference; includeInIndex = 0; lastKnownFileType = wrapper.cfbundle; path = AirPadTests.xctest; sourceTree = BUILT_PRODUCTS_DIR; };
 		F009B8D59EF84BA40BB5B4A6 /* EmptyStateOverlay.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = EmptyStateOverlay.swift; sourceTree = "<group>"; };
 		F017F0A0FBF6A049612B0607 /* ViewModeToggle.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ViewModeToggle.swift; sourceTree = "<group>"; };
 		F06786CD0AD508D09A0C5570 /* SubstrateInspectView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = SubstrateInspectView.swift; sourceTree = "<group>"; };
@@ -919,6 +938,14 @@
 			path = Resources;
 			sourceTree = "<group>";
 		};
+		0E4C8BCF688F3CE758328538 /* AirPadTests */ = {
+			isa = PBXGroup;
+			children = (
+				AC6736CCEB7AF941CE1C06BD /* ProStoreTests.swift */,
+			);
+			path = AirPadTests;
+			sourceTree = "<group>";
+		};
 		1098DD62B5B4D5B3A78424EB /* Canvas */ = {
 			isa = PBXGroup;
 			children = (
@@ -974,6 +1001,7 @@
 				DB4EAC09C3FD8068935123CA /* PagedRestGeometry.swift */,
 				4771A71BAAF540EA68EAB025 /* PhotoHandoffName.swift */,
 				FB2DFB50C4CBFDAC9D650DE9 /* PlusCaptureOverlap.swift */,
+				066F0ECD5D6906ADAF3A2FDF /* ProScreenshots.swift */,
 				84A5A86127573E1A97D3BB7D /* RangeCitationChips.swift */,
 				87ABAE5EF1669794E0C9F8F8 /* RecorderRender.swift */,
 				2F23E239FD3DA51B1D798086 /* RegenerateUI.swift */,
@@ -995,6 +1023,7 @@
 			children = (
 				93FCE9DB8410C90A3B0EFAC0 /* HostPairingSheet.swift */,
 				F20C72F362ADBFA6890FA798 /* ImportIdeasSheet.swift */,
+				EC55F8927BF1AB0D81FDEF40 /* ProViews.swift */,
 				5D1408F7F32D1B41467621B6 /* QRScannerView.swift */,
 				8BDD458C42AD717CBB2269BE /* ReviewQueueSheet.swift */,
 				F7814673E5A10B9F5E391DA4 /* SettingsView.swift */,
@@ -1068,6 +1097,7 @@
 				12FFD0E4E7DD235786396C38 /* PasteProbe.swift */,
 				DC64642A8AD34593133AC155 /* PlaybackAudioSession.swift */,
 				4D544BE360AD6B420154999B /* ProposalSelfTest.swift */,
+				21F157A25C20FDDA011EFB0A /* ProStore.swift */,
 				2F1E6D3E3DA257A138353F43 /* RecorderDeviceBench.swift */,
 				B8903D365A99288D29FD0840 /* RecorderSaveSelfTest.swift */,
 				988F66299DD79745A824B3A0 /* RelatednessService.swift */,
@@ -1220,6 +1250,14 @@
 			path = Views;
 			sourceTree = "<group>";
 		};
+		6508017442FE3BF6B1C178FB /* StoreKit */ = {
+			isa = PBXGroup;
+			children = (
+				24E36764357B1A05ECCE72AC /* AirPadPro.storekit */,
+			);
+			path = StoreKit;
+			sourceTree = "<group>";
+		};
 		6876C92BB6761BB9D3907C40 /* Frameworks */ = {
 			isa = PBXGroup;
 			children = (
@@ -1241,8 +1279,10 @@
 			children = (
 				A055D36542F89044D66F6B90 /* AirPad */,
 				FDEDADDFC6788C80B33AEE44 /* AirPadShare */,
+				0E4C8BCF688F3CE758328538 /* AirPadTests */,
 				1FD4D705EF0E64DD9326D5C6 /* AirPadUITests */,
 				ECB288A7AD69D6C13110D6CA /* AirPadWidgets */,
+				6508017442FE3BF6B1C178FB /* StoreKit */,
 				6876C92BB6761BB9D3907C40 /* Frameworks */,
 				95C31440F925CC38D4918A3D /* Products */,
 			);
@@ -1345,6 +1385,7 @@
 			children = (
 				9D21AB3DEE91993C6F039833 /* AirPad.app */,
 				20ED1D435BF9E254D634DF37 /* AirPadShare.appex */,
+				EF6CA7D08C809ED4F3B84ACC /* AirPadTests.xctest */,
 				64F471EBF10E37239E168D8D /* AirPadUITests.xctest */,
 				69902D1D994B371BD68A2D71 /* AirPadWidgets.appex */,
 			);
@@ -1653,11 +1694,31 @@
 			productReference = 20ED1D435BF9E254D634DF37 /* AirPadShare.appex */;
 			productType = "com.apple.product-type.app-extension";
 		};
+		A9E3BE3E5759E20B29B643BE /* AirPadTests */ = {
+			isa = PBXNativeTarget;
+			buildConfigurationList = 443EBC61A4A04F2A052B4C0A /* Build configuration list for PBXNativeTarget "AirPadTests" */;
+			buildPhases = (
+				8F32DAA8714487FC1F317BFA /* Sources */,
+				9ECE60F16D7BA4AEB1CEEF48 /* Resources */,
+			);
+			buildRules = (
+			);
+			dependencies = (
+				1D04C0E89F98CC7C88601A4D /* PBXTargetDependency */,
+			);
+			name = AirPadTests;
+			packageProductDependencies = (
+			);
+			productName = AirPadTests;
+			productReference = EF6CA7D08C809ED4F3B84ACC /* AirPadTests.xctest */;
+			productType = "com.apple.product-type.bundle.unit-test";
+		};
 		AA9929896740AE8EED70334C /* AirPadUITests */ = {
 			isa = PBXNativeTarget;
 			buildConfigurationList = 8360FC09BCE202500942ADBE /* Build configuration list for PBXNativeTarget "AirPadUITests" */;
 			buildPhases = (
 				2EAF9ACCF41F405BE3FB2447 /* Sources */,
+				7C71FE222B5D2946F887667E /* Resources */,
 			);
 			buildRules = (
 			);
@@ -1692,6 +1753,10 @@
 						DevelopmentTeam = 8XM4B5F42Y;
 						ProvisioningStyle = Automatic;
 					};
+					A9E3BE3E5759E20B29B643BE = {
+						DevelopmentTeam = 8XM4B5F42Y;
+						ProvisioningStyle = Automatic;
+					};
 					AA9929896740AE8EED70334C = {
 						DevelopmentTeam = 8XM4B5F42Y;
 						ProvisioningStyle = Automatic;
@@ -1720,6 +1785,7 @@
 			targets = (
 				62C8055DB0F7AF52F9B3E615 /* AirPad */,
 				9F144B331C91B74D76253A80 /* AirPadShare */,
+				A9E3BE3E5759E20B29B643BE /* AirPadTests */,
 				AA9929896740AE8EED70334C /* AirPadUITests */,
 				478761CF9C12DB05D43D2DC3 /* AirPadWidgets */,
 			);
@@ -1763,6 +1829,22 @@
 				006A852ECAECCA4AC0F4865A /* spacegroteskbold_msdf.json in Resources */,
 				00C63DC59D1A92B324588D5C /* spacegroteskbold_msdf.png in Resources */,
 				2C1F540D4AE140CFEE09150A /* vocab.txt in Resources */,
+			);
+			runOnlyForDeploymentPostprocessing = 0;
+		};
+		7C71FE222B5D2946F887667E /* Resources */ = {
+			isa = PBXResourcesBuildPhase;
+			buildActionMask = 2147483647;
+			files = (
+				092FA569980C2BB2F5CDF687 /* AirPadPro.storekit in Resources */,
+			);
+			runOnlyForDeploymentPostprocessing = 0;
+		};
+		9ECE60F16D7BA4AEB1CEEF48 /* Resources */ = {
+			isa = PBXResourcesBuildPhase;
+			buildActionMask = 2147483647;
+			files = (
+				7A36980AB2D45C9454C7C71F /* AirPadPro.storekit in Resources */,
 			);
 			runOnlyForDeploymentPostprocessing = 0;
 		};
@@ -1818,6 +1900,7 @@
 				2E86EA279EA589C6F373EFCC /* PagedRestGeometry.swift in Sources */,
 				0F4F8C758E92903FD2A05D23 /* PhotoHandoffName.swift in Sources */,
 				8F858857A22B2EBF7D206FCC /* PlusCaptureOverlap.swift in Sources */,
+				EE930D753CB83240E0F65FCC /* ProScreenshots.swift in Sources */,
 				4D5DE03C0D6096C8DA1D7B6D /* RangeCitationChips.swift in Sources */,
 				8D6452684E76A0BC003DB116 /* RecorderRender.swift in Sources */,
 				EFE768526206D4EDA8B50911 /* RegenerateUI.swift in Sources */,
@@ -2041,6 +2124,8 @@
 				A9D30911FB3F2FA2F59DA847 /* PasteProbe.swift in Sources */,
 				BC4D8EDC2E3EC93B74EF342F /* PeekPillStyle.swift in Sources */,
 				8D99DC4617A52B993992A45E /* PlaybackAudioSession.swift in Sources */,
+				1AA3141530F04F4090790F8C /* ProStore.swift in Sources */,
+				11EAF984FB3BCEFD18C400C9 /* ProViews.swift in Sources */,
 				4F5641FAA2E71DD840D37C09 /* Proposal.swift in Sources */,
 				E127B43A0B3D942200798A71 /* ProposalSelfTest.swift in Sources */,
 				3C1C7C69B23FACE57AAD1E4D /* QRScannerView.swift in Sources */,
@@ -2128,6 +2213,14 @@
 			);
 			runOnlyForDeploymentPostprocessing = 0;
 		};
+		8F32DAA8714487FC1F317BFA /* Sources */ = {
+			isa = PBXSourcesBuildPhase;
+			buildActionMask = 2147483647;
+			files = (
+				9BF2C1F06E9B86EF13A15EA7 /* ProStoreTests.swift in Sources */,
+			);
+			runOnlyForDeploymentPostprocessing = 0;
+		};
 		B651AE95E0BAEFCFFEF1DCEF /* Sources */ = {
 			isa = PBXSourcesBuildPhase;
 			buildActionMask = 2147483647;
@@ -2168,6 +2261,11 @@
 /* End PBXSourcesBuildPhase section */
 
 /* Begin PBXTargetDependency section */
+		1D04C0E89F98CC7C88601A4D /* PBXTargetDependency */ = {
+			isa = PBXTargetDependency;
+			target = 62C8055DB0F7AF52F9B3E615 /* AirPad */;
+			targetProxy = CC4297293DE12C7AF8697D0E /* PBXContainerItemProxy */;
+		};
 		4C4FA9FB46FC1707AF3D3102 /* PBXTargetDependency */ = {
 			isa = PBXTargetDependency;
 			target = 9F144B331C91B74D76253A80 /* AirPadShare */;
@@ -2458,6 +2556,44 @@
 			};
 			name = Release;
 		};
+		B28531F919124B87EB2AE286 /* Release */ = {
+			isa = XCBuildConfiguration;
+			buildSettings = {
+				BUNDLE_LOADER = "$(TEST_HOST)";
+				DEVELOPMENT_TEAM = 8XM4B5F42Y;
+				GENERATE_INFOPLIST_FILE = YES;
+				IPHONEOS_DEPLOYMENT_TARGET = 26.0;
+				LD_RUNPATH_SEARCH_PATHS = (
+					"$(inherited)",
+					"@executable_path/Frameworks",
+					"@loader_path/Frameworks",
+				);
+				PRODUCT_BUNDLE_IDENTIFIER = com.doctorpresident.airpad.tests;
+				SDKROOT = iphoneos;
+				TARGETED_DEVICE_FAMILY = "1,2";
+				TEST_HOST = "$(BUILT_PRODUCTS_DIR)/AirPad.app/AirPad";
+			};
+			name = Release;
+		};
+		F14506EF05494BD5E569F69B /* Debug */ = {
+			isa = XCBuildConfiguration;
+			buildSettings = {
+				BUNDLE_LOADER = "$(TEST_HOST)";
+				DEVELOPMENT_TEAM = 8XM4B5F42Y;
+				GENERATE_INFOPLIST_FILE = YES;
+				IPHONEOS_DEPLOYMENT_TARGET = 26.0;
+				LD_RUNPATH_SEARCH_PATHS = (
+					"$(inherited)",
+					"@executable_path/Frameworks",
+					"@loader_path/Frameworks",
+				);
+				PRODUCT_BUNDLE_IDENTIFIER = com.doctorpresident.airpad.tests;
+				SDKROOT = iphoneos;
+				TARGETED_DEVICE_FAMILY = "1,2";
+				TEST_HOST = "$(BUILT_PRODUCTS_DIR)/AirPad.app/AirPad";
+			};
+			name = Debug;
+		};
 		F71BB0372444075FB6D0EE62 /* Release */ = {
 			isa = XCBuildConfiguration;
 			buildSettings = {
@@ -2485,6 +2621,15 @@
 			buildConfigurations = (
 				4A1C406E1D5C32090FCB0173 /* Debug */,
 				0971F275BBB074FAC046B2C5 /* Release */,
+			);
+			defaultConfigurationIsVisible = 0;
+			defaultConfigurationName = Debug;
+		};
+		443EBC61A4A04F2A052B4C0A /* Build configuration list for PBXNativeTarget "AirPadTests" */ = {
+			isa = XCConfigurationList;
+			buildConfigurations = (
+				F14506EF05494BD5E569F69B /* Debug */,
+				B28531F919124B87EB2AE286 /* Release */,
 			);
 			defaultConfigurationIsVisible = 0;
 			defaultConfigurationName = Debug;

@@ -141,7 +141,7 @@ enum MapCompTuning {
     // prefix from the tuner era; the tuner is deleted — these constants ARE the shipped values.)
     static let defFocusStrength:  Float = 1.96   // × on dim+desat
     static let defGlowOpacity:    Float = 0.12   // AE inner-glow opacity (T lock, O4)
-    static let defRippleStrength: Float = 0.067  // mass-field ripple
+    static let defRippleStrength: Float = 0.026  // mass-field ripple (pro-build: T's final; was 0.067)
     static let defFocusOnset:     Float = 0.10   // starts as titles fade in
     static let defFocusRamp:      Float = 0.40   // medium
 
@@ -251,9 +251,7 @@ final class CorpusPhysicsScene: SKScene {
             existing.removeFromParent()
         }
         guard isSelected else {
-            #if DEBUG || TESTFLIGHT
             syncOutlineEmphasis(sprite)
-            #endif
             return
         }
         let radius = (sprite.userData?["radius"] as? CGFloat) ?? 30
@@ -262,17 +260,13 @@ final class CorpusPhysicsScene: SKScene {
         // contrast over the old white. Distinct from the focus ring's cyan #00BFFF
         // (the two never coexist — entering selection is a touch that clears focus).
         outline.strokeColor = UIColor(red: 0x1B / 255.0, green: 0x59 / 255.0, blue: 0xC2 / 255.0, alpha: 1)
-        #if DEBUG || TESTFLIGHT
         if !currentIsLight, let m = mapTuning { outline.strokeColor = m.selectionRing.uiColor }   // live-39
-        #endif
         outline.fillColor = .clear
         outline.lineWidth = 3
         outline.zPosition = 1.0
         outline.name = "selectionOutline"
         sprite.addChild(outline)
-        #if DEBUG || TESTFLIGHT
         syncOutlineEmphasis(sprite)   // live-43-A — under Outline the orb's own ring thickens instead
-        #endif
     }
 
     /// Reconcile outlines against the current selection set. Called by
@@ -287,9 +281,7 @@ final class CorpusPhysicsScene: SKScene {
                 applySelectionOutline(nodeID: id, isSelected: true)
             } else if !want, existing != nil {
                 existing?.removeFromParent()
-                #if DEBUG || TESTFLIGHT
                 syncOutlineEmphasis(sprite)
-                #endif
             }
         }
     }
@@ -306,25 +298,19 @@ final class CorpusPhysicsScene: SKScene {
             sprite.children.first(where: { $0.name == "focusOutline" })?.removeFromParent()
         }
         guard let nodeID, let sprite = nodeSprites[nodeID] else {
-            #if DEBUG || TESTFLIGHT
             syncOutlineEmphasis()
-            #endif
             return
         }
         let radius = (sprite.userData?["radius"] as? CGFloat) ?? 30
         let outline = SKShapeNode(circleOfRadius: radius + 6)
         outline.strokeColor = UIColor(red: 0x00 / 255.0, green: 0xBF / 255.0, blue: 0xFF / 255.0, alpha: 1)
-        #if DEBUG || TESTFLIGHT
         if !currentIsLight, let m = mapTuning { outline.strokeColor = m.focusRing.uiColor }   // live-39
-        #endif
         outline.fillColor = .clear
         outline.lineWidth = 4
         outline.zPosition = 1.0
         outline.name = "focusOutline"
         sprite.addChild(outline)
-        #if DEBUG || TESTFLIGHT
         syncOutlineEmphasis()
-        #endif
     }
 
     /// Animate all existing sprites to new positions (view-only rearrangement; does not
@@ -536,13 +522,11 @@ final class CorpusPhysicsScene: SKScene {
             }
         }
 
-        #if DEBUG || TESTFLIGHT
         // live-44 — Aura bakes each orb's colours when it styles it; a sync can bring the territory colours later
         // (launching straight into Aura showed neutral grey orbs until a look switch). Restyle on the next frame.
         if !auraStyleKey.isEmpty { auraStyleKey = "stale" }
         if !washStyleKey.isEmpty { washStyleKey = "stale" }
         if !study2StyleKey.isEmpty { study2StyleKey = "stale" }
-        #endif
 
         // Canonical resting state: capture target positions and scales from the layout.
         // Reads `positionMap` / `nodeRadii` (the layout's target outputs), not mid-animation
@@ -883,21 +867,23 @@ final class CorpusPhysicsScene: SKScene {
             // Restore the dark ripple ground (#111115) after any light→dark flip left the light hex here.
             gridNode?.fillShader?.uniforms.first { $0.name == "u_ground_color" }?
                 .vectorFloat3Value = vector_float3(0.0667, 0.0667, 0.0824)
-            #if DEBUG || TESTFLIGHT
             if let m = mapTuning { applyMapDarkTuning(m) }
-            #endif
         }
-        #if DEBUG || TESTFLIGHT
         applyMapLook(mapTuning)   // live-43 — the orb look on both grounds (Aura, Outline)
-        #endif
     }
 
-    #if DEBUG || TESTFLIGHT
     /// live-48 — the tuner's Map values AS DRAWN: thermal ≥ .critical → the orb look is Flat until the phone cools (the
     /// tuner keeps T's pick, nothing in the UI changes; the look returns by itself). Every look read in the scene goes
     /// through here, so the title ink, Wash, the ground's grain and the Glass tilt follow.
+    /// pro-build — EVERY build: the baked values (T's final, `MapDarkTuning.today`; TestFlight / DEBUG: the tuner's when it is
+    /// live), wearing the user's Map look (`MapLookChoice.effective`: a Pro look only with Pro; Flat otherwise).
     private var mapTuning: MapDarkTuning? {
-        guard var m = AppearanceTuning.mapDark else { return nil }
+        #if DEBUG || TESTFLIGHT
+        var m = AppearanceTuning.mapDark ?? MapDarkTuning.today
+        #else
+        var m = MapDarkTuning.today
+        #endif
+        m.orbLook = MapLookChoice.effective
         if MapHeatGuard.shared.critical { m.orbLook = .flat }
         return m
     }
@@ -918,9 +904,7 @@ final class CorpusPhysicsScene: SKScene {
         #endif
         return nil
     }
-    #endif
 
-    #if DEBUG || TESTFLIGHT
     /// live-39 — the TestFlight tuner's dark-Map values over the baked ones (pushed per frame; dark only).
     private func applyMapDarkTuning(_ m: MapDarkTuning) {
         func orb(_ n: String) -> SKUniform? { orbSpriteShader.uniforms.first { $0.name == n } }
@@ -952,6 +936,11 @@ final class CorpusPhysicsScene: SKScene {
     static let auraOnLightDebug = ProcessInfo.processInfo.arguments.contains("-MapAuraOnLight")
     #else
     static let auraOnLightDebug = false
+    #endif
+    #if DEBUG
+    private var swatchFramed = false
+    private var swatchFamily: (String, Int)?
+    static let noTitlesDebug = ProcessInfo.processInfo.arguments.contains("-MapNoTitles")
     #endif
     /// live-50b — DEBUG `-MapStudyLightGlass`: the light Map draws the study's Light Glass (live-49 / 50) instead of Glass, for A/B stills.
     #if DEBUG
@@ -1111,7 +1100,6 @@ final class CorpusPhysicsScene: SKScene {
     private var maxOrbDiameterKey = SIMD2<Float>(-1, -1)
     private var maxOrbOnScreenPt: CGFloat = 0
     private var outlineLookOn = false
-    #endif
     /// live-43 — the Glass light moved VISIBLY with the tilt this frame → keep the map awake at 30 fps (it idles at 8).
     private var glassTiltMoved = false
     private var lastTiltActivityTime: TimeInterval = -.infinity
@@ -1844,9 +1832,7 @@ final class CorpusPhysicsScene: SKScene {
     /// live-48 — the panning / zooming frame rate: 60 on the Pro looks (Glass, Aura, Eclipse, Wash) and on EVERY look while
     /// Low Power is on or thermal ≥ .serious; otherwise 120 (Flat and Outline unchanged). Rest stays 8 fps.
     private var activeFPSNow: Int {
-        #if DEBUG || TESTFLIGHT
         if proLookShowing || MapHeatGuard.shared.stressed { return Self.proActiveMapFPS }
-        #endif
         return Self.activeMapFPS
     }
     private static let proActiveMapFPS = 60
@@ -1879,9 +1865,7 @@ final class CorpusPhysicsScene: SKScene {
         // T asked for) → at least 30 fps. Nothing else at rest leaves the 8 fps idle.
         if target == Self.idleMapFPS && currentTime - lastTiltActivityTime < Self.idleDelay { target = Self.tiltMapFPS }
         var driftOn = false
-        #if DEBUG || TESTFLIGHT
         driftOn = auraDriftOn
-        #endif
         if driftOn { target = max(target, Self.tiltMapFPS) }
         #if DEBUG
         // A/B baseline: `-NoMapIdle YES` = forced 120; live-48 `-NoMapIdle active` = held at the panning rate (60 on a Pro look)
@@ -2012,6 +1996,34 @@ final class CorpusPhysicsScene: SKScene {
                 NSLog("[MAPFRAME] n=%d scale=%.3f", n, self.cameraNode.xScale)
             }
         }
+        // pro-build swatches — `-MapSwatch`: after the auto-fit settles, ONE orb alone (the largest by layout, ties by id —
+        // the same orb every launch), centred and zoomed to ~45% of the screen width; the rest hidden, no territory pills.
+        if ProcessInfo.processInfo.arguments.contains("-MapSwatch") {
+            DispatchQueue.main.asyncAfter(deadline: .now() + 16) { [weak self] in
+                guard let self else { return }
+                let ids = self.nodeSprites.keys.sorted()
+                guard let pick = ids.max(by: { (self.nodeIntrinsicRadii[$0] ?? 0, $1) < (self.nodeIntrinsicRadii[$1] ?? 0, $0) }),
+                      let sp = self.nodeSprites[pick], let par = sp.parent else { return }
+                for (id, s) in self.nodeSprites where id != pick { s.isHidden = true }
+                self.swatchFramed = true
+                // one fixed colour (#2F6FD6) so every look's swatch is the same orb: the orb shader's attributes and the
+                // study looks' family, then every look restyles from them
+                let fill = UIColor(red: 0x2F / 255.0, green: 0x6F / 255.0, blue: 0xD6 / 255.0, alpha: 1)
+                if let shape = sp as? SKSpriteNode, shape.shader === self.orbSpriteShader {
+                    self.styleUnfocusedOrb(shape, baseFill: fill, isMeta: false, isLight: self.currentIsLight)
+                }
+                let fam = OrbStudyPalettes.nearest(hue: (Self.oklch(fill).h + 360).truncatingRemainder(dividingBy: 360))
+                self.swatchFamily = (pick, fam); self.studyFamilyOf[pick] = fam
+                if !self.auraStyleKey.isEmpty { self.auraStyleKey = "stale" }
+                if !self.washStyleKey.isEmpty { self.washStyleKey = "stale" }
+                if !self.study2StyleKey.isEmpty { self.study2StyleKey = "stale" }
+                let r = self.nodeIntrinsicRadii[pick] ?? 30
+                self.cameraNode.position = self.convert(sp.position, from: par)
+                self.cameraNode.setScale(2 * r / (0.2 * self.size.width))
+                self.applyOrbScales()
+                NSLog("[SWATCH] id-hash=%d r=%.1f scale=%.3f", pick.hashValue & 0xffff, r, self.cameraNode.xScale)
+            }
+        }
         startAuraSizeScriptIfAsked()
         #endif
         // White-flash fix: a re-presented scene must re-signal its first frame so
@@ -2126,11 +2138,9 @@ final class CorpusPhysicsScene: SKScene {
             let dotDark = view?.traitCollection.userInterfaceStyle != .light
             var dot = AppearancePalette.mapGridDotRGB(dark: dotDark)
             var dotOpacity = AppearancePalette.mapGridDotOpacity(dark: dotDark)
-            #if DEBUG || TESTFLIGHT
             if dotDark, let m = mapTuning {   // live-39 — the tuner's dark dots
                 let c = m.dot.simd; dot = (c.x, c.y, c.z); dotOpacity = Float(m.dotOpacity)
             }
-            #endif
             BackgroundGridNode.setDotAppearance(grid, r: dot.r, g: dot.g, b: dot.b, opacity: dotOpacity)
         }
 
@@ -2159,8 +2169,11 @@ final class CorpusPhysicsScene: SKScene {
         // the base layout), so nodes settle home as they leave the band.
         applyOrbScales()
         applyBandRelaxation()
-        #if DEBUG || TESTFLIGHT
-        syncGlassOrbs()        // live-40 — Glass orbs (tuner only)
+        syncGlassOrbs()        // live-40 — Glass orbs (live-40: tuner only; pro-build: every build)
+        #if DEBUG
+        if Self.noTitlesDebug {   // pro-build — `-MapNoTitles`: the swatch captures (look_swatches.sh)
+            for (_, sp) in nodeSprites { sp.children.first { $0.name == "titleLabel" }?.isHidden = true }
+        }
         #endif
 
         updateCardPresentation()   // tap-driven card morph → SwiftUI overlay
@@ -2424,6 +2437,9 @@ final class CorpusPhysicsScene: SKScene {
     /// `view.convert(_:from:)`. Empty data clears the overlay once.
     private func syncTerritoryLabelsToCanvasState(currentTime: TimeInterval) {
         guard let view = self.view else { return }
+        #if DEBUG
+        if swatchFramed { territoryLabelData.removeAll() }   // pro-build `-MapSwatch`: no pills
+        #endif
         // Local type (function body, not the closure) so it's capturable below.
         struct RegionCandidate {
             let key: String
@@ -3422,12 +3438,10 @@ final class CorpusPhysicsScene: SKScene {
             styleUnfocusedOrb(shape, baseFill: bubbleColor(for: node), isMeta: node.isMeta,
                               isLight: isLight)
         }
-        #if DEBUG || TESTFLIGHT
         syncOutlineEmphasis()                                   // live-43-A — the restyle reset a_geom
         if !auraStyleKey.isEmpty { auraStyleKey = "stale" }    // live-43 — territory colours may have changed
         if !washStyleKey.isEmpty { washStyleKey = "stale" }
         if !study2StyleKey.isEmpty { study2StyleKey = "stale" }
-        #endif
     }
 
     // ─────────────────────────────────────────────────────────────────────────────────────────────
@@ -3495,10 +3509,8 @@ final class CorpusPhysicsScene: SKScene {
         // measured count changes.
         let orbsChanged = nodeSprites.count != lastFieldOrbCount || nodeOnScreenDiameter.count != lastFieldMeasuredCount
         var reachChanged = false
-        #if DEBUG || TESTFLIGHT
         let tunedReach = isLight ? GridWarpTuning.reachOrbRadii : (mapTuning?.shrinkReach ?? GridWarpTuning.reachOrbRadii)
         reachChanged = tunedReach != lastFieldReach; lastFieldReach = tunedReach
-        #endif
         if !(camMovedSinceField || orbsChanged || orbsMovedLastFrame || reachChanged) {
             return   // field inputs unchanged → last texture + uniforms stand
         }
@@ -3525,9 +3537,7 @@ final class CorpusPhysicsScene: SKScene {
         // applyOrbScales uses per orb (onScreen ÷ 2), for the mean. This is the encode base.
         let refScreen = refs.linear * ramp / cs
         var reachUnits = GridWarpTuning.reachOrbRadii             // ORB RADII
-        #if DEBUG || TESTFLIGHT
         if !isLight, let m = mapTuning { reachUnits = m.shrinkReach }   // live-40 — tuner reach (dark)
-        #endif
         // DEFENSIVE CEILING on a single orb's reach. `buildWarpField` early-exits per texel with
         // `dist > o.reach`, which is what keeps its cost bounded; reach in ORB UNITS grows with the
         // orb's on-screen size, so zoomed close enough one orb's ring can cover the whole viewport
@@ -4107,7 +4117,6 @@ final class CorpusPhysicsScene: SKScene {
 
 
 
-    #if DEBUG || TESTFLIGHT
     // MARK: - live-43 Aura / live-47 Eclipse (TestFlight tuner only)
 
     /// Aura and Eclipse — live-47: an EXACT port of the study's aura and (reworked) eclipse branches
@@ -4304,6 +4313,7 @@ final class CorpusPhysicsScene: SKScene {
         }
         studyFamilyOf = out
         #if DEBUG
+        if let (id, f) = swatchFamily { studyFamilyOf[id] = f }   // pro-build `-MapSwatch`: the swatch orb's fixed family
         let fs = OrbStudyPalettes.families
         let lines = terrHue.sorted { $0.value < $1.value }.map { slot, h -> String in
             let f = fam[slot] ?? 0
@@ -4848,7 +4858,6 @@ final class CorpusPhysicsScene: SKScene {
             }
         }
     }
-    #endif
 
     /// live-44 — THE owner of an orb sprite's size; nothing else writes an orb sprite's `size`. Size = the LAYOUT diameter
     /// (2 × nodeIntrinsicRadii — the radius the layout, physics and title are built for) × the look's extent (Aura's halo
@@ -5011,12 +5020,10 @@ final class CorpusPhysicsScene: SKScene {
         // re-applied on appearance flip via restyleUnfocusedOrbs().
         styleUnfocusedOrb(sprite, baseFill: fillColor, isMeta: isMeta,
                           isLight: currentIsLight)
-        #if DEBUG || TESTFLIGHT
         if !auraStyleKey.isEmpty, let m = mapTuning {   // live-43 — born into the Aura / Eclipse look
             if studyFamilyOf[nodeID] == nil { studyFamilyOf[nodeID] = OrbStudyPalettes.nearest(hue: (Self.oklch(fillColor).h + 360).truncatingRemainder(dividingBy: 360)) }
             styleAuraSprite(sprite, nodeID: nodeID, extent: auraIsEclipse ? m.eclipse.spriteExtent : m.aura.spriteExtent)
         }
-        #endif
         return sprite
     }
 
@@ -5076,7 +5083,6 @@ final class CorpusPhysicsScene: SKScene {
     /// TestFlight tuner's Fresnel look (dark) the tone is the dark body (+ the centre's inner glow), and the ink is the
     /// tuner's label colour unless near-black reads better there.
     private func orbTitleInk(_ fillColor: UIColor, nodeID: String = "") -> UIColor {
-        #if DEBUG || TESTFLIGHT
         // live-43 — Outline: light ink on the dark Map, dark ink on the light one (the fill is too faint to matter).
         // live-47 — the study looks (Aura / Eclipse on dark, Wash on light): studyTitleInkIsDark (Eclipse always light).
         if let m = mapTuning, let k = study2Kind(m) {   // live-49 — the study's inkDark for Light Glass / Riso / Gradient
@@ -5120,7 +5126,6 @@ final class CorpusPhysicsScene: SKScene {
             let label = gl.label.uiColor, black = UIColor(red: 0.08, green: 0.07, blue: 0.06, alpha: 1)
             return Self.wcagContrast(label, body) >= Self.wcagContrast(black, body) ? label : black
         }
-        #endif
         let inkFill = currentIsLight ? lightCompFill(fillColor) : applyDarkOrbBoost(fillColor)
         return legibleInk(over: inkFill).ink
     }
@@ -5845,7 +5850,6 @@ private extension Comparable {
     }
 }
 
-#if DEBUG || TESTFLIGHT
 /// live-48 — the Map's heat safety net for the Pro looks (TestFlight / DEBUG). Cached, refreshed by the system's
 /// notifications (main queue). `stressed` = Low Power or thermal ≥ .serious → a 60 fps cap on every look + the small-orb
 /// level of detail on every orb; `critical` = thermal ≥ .critical → Flat until it cools. DEBUG
@@ -5875,8 +5879,9 @@ final class MapHeatGuard {
         #endif
         stressed = lowPower || t.rawValue >= ProcessInfo.ThermalState.serious.rawValue
         critical = t.rawValue >= ProcessInfo.ThermalState.critical.rawValue
+        #if DEBUG || TESTFLIGHT
         NSLog("[MapHeatGuard] thermal=%d lowPower=%@ → %@", t.rawValue, lowPower ? "Y" : "n",
               critical ? "Flat" : stressed ? "60 fps + LOD" : "normal")
+        #endif
     }
 }
-#endif

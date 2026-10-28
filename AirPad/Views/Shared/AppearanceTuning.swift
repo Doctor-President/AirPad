@@ -335,6 +335,9 @@ final class AppearanceTuner {
 
     var state: AppearanceTuningState {
         didSet {
+            // pro-build — the Map's look has ONE authority, the user's pick (MapLookChoice); the tuner's look picker and the
+            // DEBUG still hooks write through to it.
+            if state.mapDark.orbLook != oldValue.mapDark.orbLook { MapLookChoice.picked = state.mapDark.orbLook }
             guard state != oldValue, let data = try? JSONEncoder().encode(state) else { return }
             UserDefaults.standard.set(data, forKey: AppearanceTuning.storageKey)
         }
@@ -531,6 +534,8 @@ final class AppearanceTuner {
         if let r = UserDefaults.standard.string(forKey: "RimRestRender").flatMap(PillRimRest.init(rawValue:)) {
             for d in [false, true] { update(dark: d) { $0.editPills { $0.rim.rest = r } } }
         }
+        // pro-build — a look set by a still hook at launch (didSet doesn't run in init) becomes the pick.
+        if MapLookChoice.debugLookHookActive { MapLookChoice.picked = state.mapDark.orbLook }
         #endif
     }
 
@@ -1373,8 +1378,8 @@ extension AppearanceTuning {
 #endif
 
 // MARK: - live-39 — the Map in dark mode (background, highlights, Fresnel orbs)
-
-#if DEBUG || TESTFLIGHT
+// pro-build — the look TYPES and their baked values ship in every build (the Pro Map looks); the tuner's resolver, Copy
+// values and self-tests below stay TestFlight / DEBUG only.
 
 /// A tuner colour held as HSL (so a hue survives a trip through grey) with its 8-bit hex derived. Defaults are built
 /// from today's hex and round-trip to it exactly.
@@ -1479,14 +1484,14 @@ extension StudyOrbLook {
 /// floor, grain size and territory-derived stops are gone (T: the re-interpretation read as messy, fuzzy clusters). Old
 /// saved values still load; their extra keys are ignored.
 struct AuraLook: StudyOrbLook {
-    // live-51 — T's values (TF 202610271825, Ops/reference/tuner-values-2026-10-27c.json).
-    var spread = 0.82
+    // pro-build — T's final values (Ops/reference/tuner-values-2026-10-28-final.json).
+    var spread = 1.25
     var warp = 1.36
     var softness = 0.09         // edge softness (fraction of the orb's radius)
     var haloReach = 0.03
-    var rim = 0.49
+    var rim = 0.5
     var fringe = 0.58           // chromatic fringe (the edge at three radii, red outermost)
-    var grain = 0.0
+    var grain = 0.19
     var drift = false           // slow gradient flow; on → the Map renders at 30 fps
 
     static let subtle = AuraLook(0.7, 0.6, 0.02, 0, 0.3, 0.2, 0.6)
@@ -1514,19 +1519,19 @@ struct AuraLook: StudyOrbLook {
 /// rim light, a crescent (an offset disc), the chromatic rim and a small halo in the rim colour. Each orb's palette stops
 /// run sorted dark → light by luma. Title ink is always light.
 struct EclipseLook: StudyOrbLook {
-    // live-51 — T's values (Ops/reference/tuner-values-2026-10-27c.json).
-    var spread = 0.97
-    var warp = 0.83
-    var softness = 0.055
-    var haloReach = 0.06
-    var rim = 0.59
-    var fringe = 0.41
-    var grain = 0.0
+    // pro-build — T's final values (Ops/reference/tuner-values-2026-10-28-final.json).
+    var spread = 0.68
+    var warp = 0.98
+    var softness = 0.15
+    var haloReach = 0.02
+    var rim = 0.56
+    var fringe = 0.28
+    var grain = 0.24
     var drift = false
     /// live-51 amendment — the TOP ARC's thickness (the bright crescent across the top, between the edge and the occluding
     /// disc), in orb radii at the top. 0.12 = the study's (occluder offset −0.07, radius 0.95); the shader scales that
     /// offset and the radius gap by arcThickness / 0.12 (u_au col 3.w), inside the disc only, so the drawn area never grows.
-    var arcThickness = EclipseLook.studyArcThickness
+    var arcThickness = 0.035                      // pro-build — T's final (the study's is 0.12)
     static let studyArcThickness = 0.12
     static let arcThicknessRange: ClosedRange<Double> = 0.02...0.4
 
@@ -1617,14 +1622,14 @@ struct LightGlassLook: StudyOrbLook {
     }
 }
 struct RisoLook: StudyOrbLook {
-    // live-51 — T's values (Ops/reference/tuner-values-2026-10-27c.json).
-    var spread = 0.55           // Shape
+    // pro-build — T's final values (Ops/reference/tuner-values-2026-10-28-final.json).
+    var spread = 0.53           // Shape
     var warp = 0.44             // Swirl
-    var softness = 0.01
+    var softness = 0.02
     var haloReach = 0.52        // Second ink
-    var rim = 0.69              // Ink density
-    var fringe = 0.71           // Misregistration
-    var grain = 0.23            // Speckle
+    var rim = 0.54              // Ink density
+    var fringe = 0.85           // Misregistration
+    var grain = 0.3             // Speckle
     var drift = false
     /// The study's cheap bound: 1.04 + softness·1.2 + fringe·0.05.
     var spriteExtent: Double { 1.04 + softness * 1.2 + fringe * 0.05 }
@@ -1639,7 +1644,7 @@ struct RisoLook: StudyOrbLook {
     init(from decoder: Decoder) throws { self = try StudyLookDecode.decode(decoder, RisoLook()) }
 }
 struct GradientLook: StudyOrbLook {
-    // live-51 — T's values (Ops/reference/tuner-values-2026-10-27c.json).
+    // pro-build — T's final values (Ops/reference/tuner-values-2026-10-28-final.json). (= 27c)
     var spread = 0.83
     var warp = 1.25             // Swirl
     var softness = 0.01
@@ -1767,7 +1772,7 @@ enum OrbStudyPalettes {
 /// and granulation; the paper fibres + grain live on the ground (the grid shader). The Pro "Aura" look = Aura on the
 /// dark Map + Wash on the light Map. Slider names follow the study's Wash labels.
 struct WashLook: Codable, Equatable {
-    // live-51 — T's values (Ops/reference/tuner-values-2026-10-27c.json).
+    // pro-build — T's final values (Ops/reference/tuner-values-2026-10-28-final.json). (= 27c)
     var spread = 0.8            // Gradient spread
     var warp = 0.82             // Warp
     var softness = 0.03         // Edge softness (orb radii)
@@ -1809,7 +1814,7 @@ struct WashLook: Codable, Equatable {
 /// halo, no gradient. A branch of the shared orb shader (u_fr_on 3, levers in u_gl_look col 0 → no new binding).
 struct OutlineLook: Codable, Equatable {
     var ringWidth = 2.0          // pt on screen, constant across zoom (doubles on the focused / selected orb)
-    var ringOpacityDark = 0.85
+    var ringOpacityDark = 0.88   // pro-build — T's final
     var ringOpacityLight = 1.0
     var fillOpacity = 0.115      // 0 … 0.3 (live-51: T's value)
 
@@ -1879,22 +1884,27 @@ struct GlassLook: Codable, Equatable {
                                   topArc: 1.3, bottomArc: 0.65, arcSpan: 135, arcThickness: 0.09, arcSoftness: 0.55)
     static let presets: [(String, GlassLook)] = [("Subtle", .subtle), ("Medium", .medium), ("Strong", .strong)]
 
-    /// live-51 — T's signed-off Glass (2026-10-27, TF 202610271825, Ops/reference/tuner-values-2026-10-27c.json): the
-    /// dark Map's and the light Map's values = the defaults. Refraction / lens / magnification / frost aren't drawn (Medium's).
+    /// pro-build — T's FINAL Glass (2026-10-28, TF 202610272101, Ops/reference/tuner-values-2026-10-28-final.json), cues
+    /// included: the dark Map's and the light Map's values = the defaults (what ships). Refraction / lens / magnification /
+    /// frost aren't drawn (Medium's).
     static let tDark: GlassLook = {
         var g = GlassLook.medium
-        g.apply(exportJSON: ["tint": 0.22, "brightness": 0.04, "edge": 0.12, "innerShadow": 0.4, "dispersion": 0.15,
-                             "highlightSize": 0.43, "highlightIntensity": 0.11, "tiltResponse": 0.16, "label": "#FFFFFF",
+        g.apply(exportJSON: ["tint": 0.19, "brightness": 0, "edge": 0, "innerShadow": 0.31, "dispersion": 0.35,
+                             "highlightSize": 0.43, "highlightIntensity": 0.04, "tiltResponse": 0.16, "label": "#FFFFFF",
                              "topArc": 0.9, "bottomArc": 0.45, "arcSpan": 120, "arcThickness": 0.07, "arcSoftness": 0.6,
-                             "dim": 0, "tiltLight": false, "tiltSmoothing": 0.8])
+                             "dim": 0, "tiltLight": false, "tiltSmoothing": 0.8,
+                             "caustic": 0.06, "causticSize": 0.21, "causticColour": 0.18, "window": 0.02, "windowSize": 0.26,
+                             "windowSharpness": 0, "lens": 0.22, "lensMagnification": 2.15])
         return g
     }()
     static let tLight: GlassLook = {
         var g = GlassLook.medium
-        g.apply(exportJSON: ["tint": 0.71, "brightness": 0.13, "edge": 0.16, "innerShadow": 0.12, "dispersion": 0.59,
-                             "highlightSize": 0.43, "highlightIntensity": 0.08, "tiltResponse": 0.16, "label": "#FFFFFF",
-                             "topArc": 0.28, "bottomArc": 0.37, "arcSpan": 174, "arcThickness": 0.175, "arcSoftness": 1,
-                             "dim": 0, "tiltLight": false, "tiltSmoothing": 0.8])
+        g.apply(exportJSON: ["tint": 0.71, "brightness": 0.13, "edge": 0.07, "innerShadow": 0.13, "dispersion": 0.62,
+                             "highlightSize": 0.43, "highlightIntensity": 0.14, "tiltResponse": 0.16, "label": "#FFFFFF",
+                             "topArc": 0.16, "bottomArc": 0.37, "arcSpan": 174, "arcThickness": 0.12, "arcSoftness": 1,
+                             "dim": 0.09, "tiltLight": false, "tiltSmoothing": 0.8,
+                             "caustic": 0.08, "causticSize": 0.41, "causticColour": 0.5, "window": 0.04, "windowSize": 0.28,
+                             "windowSharpness": 0.04, "lens": 0.36, "lensMagnification": 2.49])
         return g
     }()
 
@@ -1977,7 +1987,7 @@ struct FresnelLook: Codable, Equatable {
 /// live-39 — every dark-Map colour T can dial. Defaults = what ships today, so an untouched tuner renders today's Map.
 struct MapDarkTuning: Codable, Equatable {
     var ground = TunerHSL(hex: "111115")          // the grid's opaque ground (BackgroundGridNode u_ground_color)
-    var ambientAmount = 0.067                     // the mass-field ripple: mix toward the ambient colour away from orbs
+    var ambientAmount = 0.026                     // pro-build — T's final (was 0.067); the mass-field ripple: mix toward the ambient colour away from orbs
     var ambient = TunerHSL(hex: "FFFFFF")
     var dot = TunerHSL(hex: "FFFFFF")             // the dot grid
     var dotOpacity = 0.809
@@ -2090,6 +2100,7 @@ struct MapDarkTuning: Codable, Equatable {
 enum MapGlassDebug { static var tilt: SIMD2<Float>? }
 #endif
 
+#if DEBUG || TESTFLIGHT
 extension AppearanceTuning {
     /// The dark Map's tuner values, or nil when the tuner isn't live (the Map then renders its baked literals).
     static var mapDark: MapDarkTuning? { isLive ? AppearanceTuner.shared.state.mapDark : nil }
@@ -2151,13 +2162,13 @@ extension AppearanceTuning {
         let trips = hexes.allSatisfy { TunerHSL(hex: $0).hex == $0 }
         return [
             ("map-dark-hsl-round-trips-today's-hexes", trips, hexes.map { "\($0)→\(TunerHSL(hex: $0).hex)" }.joined(separator: " ")),
-            ("map-dark-defaults-are-today (ground 111115 · ripple 0.067 · dots FFFFFF@0.809 · focus 00BFFF · select 1B59C2 · glow FFFFFF@0.12 · flat)",
-             t.ground.hex == "111115" && t.ambientAmount == 0.067 && t.dot.hex == "FFFFFF" && t.dotOpacity == 0.809
+            ("map-dark-defaults-are-today (ground 111115 · ripple 0.026 (pro-build: T's final) · dots FFFFFF@0.809 · focus 00BFFF · select 1B59C2 · glow FFFFFF@0.12 · flat)",
+             t.ground.hex == "111115" && t.ambientAmount == 0.026 && t.dot.hex == "FFFFFF" && t.dotOpacity == 0.809
                 && t.focusRing.hex == "00BFFF" && t.selectionRing.hex == "1B59C2" && t.orbGlow.hex == "FFFFFF"
                 && t.orbGlowOpacity == 0.12 && t.orbLook == .flat && t.pillTintAmount == 0 && !t.pillOutlineCustom
                 && t.pillOutlineOpacity == 0.95 && t.pillOutlineWidth == 1.5 && t.pillTextOpacity == 0.95, ""),
-            ("map-dark-field-today-101014-open-space-212125 (measured on a Sim still: 101014)",
-             t.fieldHex == "101014" && t.openSpaceHex == "212125", "\(t.fieldHex) / \(t.openSpaceHex)"),
+            ("map-dark-field-111114-open-space-17171B (pro-build: ripple 0.026; was 101014 / 212125 at 0.067)",
+             t.fieldHex == "111114" && t.openSpaceHex == "17171B", "\(t.fieldHex) / \(t.openSpaceHex)"),
             ("map-dark-shrink-defaults-are-today (on · 1.0 · reach 6 orb radii)",
              t.dotShrinkOn && t.dotShrink == 1.0 && t.shrinkReach == 6.0 && t.effectiveShrink == 1.0, ""),
             ("map-dark-live39-saved-values-decode (no glass/shrink keys → ground kept, glass = the default — live-51: T's)", {
@@ -2184,19 +2195,19 @@ extension AppearanceTuning {
                 g.apply(exportJSON: block)
                 return g == t.glass
             }(), ""),
-            ("aura-defaults-are-T's-27c-values (spread 0.82 · warp 1.36 · soft 0.09 · halo 0.03 · rim 0.49 · fringe 0.58 · grain 0; extent 1.186 = the study's bound) (live-51)", {
+            ("aura-defaults-are-T's-final-values (spread 1.25 · warp 1.36 · soft 0.09 · halo 0.03 · rim 0.5 · fringe 0.58 · grain 0.19; extent 1.186) (pro-build)", {
                 let a = t.aura
-                return a.spread == 0.82 && a.warp == 1.36 && a.softness == 0.09 && a.haloReach == 0.03 && a.rim == 0.49
-                    && a.fringe == 0.58 && a.grain == 0 && !a.drift && abs(a.spriteExtent - 1.186) < 1e-9
+                return a.spread == 1.25 && a.warp == 1.36 && a.softness == 0.09 && a.haloReach == 0.03 && a.rim == 0.5
+                    && a.fringe == 0.58 && a.grain == 0.19 && !a.drift && abs(a.spriteExtent - 1.186) < 1e-9
                     && AuraLook.medium == AuraLook(0.82, 1.36, 0.03, 0, 0.45, 0.35, 1)
             }(), String(format: "extent %.3f", t.aura.spriteExtent)),
-            ("eclipse-defaults-are-T's-27c-values (0.97 · 0.83 · 0.055 · halo 0.06 · rim 0.59 · fringe 0.41 · grain 0; arc 0.12 → lever 1; extent 1.247) (live-51)", {
+            ("eclipse-defaults-are-T's-final-values (0.68 · 0.98 · 0.15 · halo 0.02 · rim 0.56 · fringe 0.28 · grain 0.24; arc 0.035; extent 1.214) (pro-build)", {
                 let e = t.eclipse
-                return e.spread == 0.97 && e.warp == 0.83 && e.softness == 0.055 && e.haloReach == 0.06 && e.rim == 0.59
-                    && e.fringe == 0.41 && e.grain == 0 && !e.drift && abs(e.spriteExtent - 1.247) < 1e-9
-                    && e.arcThickness == 0.12 && e.arcScale == 1
+                return e.spread == 0.68 && e.warp == 0.98 && e.softness == 0.15 && e.haloReach == 0.02 && e.rim == 0.56
+                    && e.fringe == 0.28 && e.grain == 0.24 && !e.drift && abs(e.spriteExtent - 1.214) < 1e-9
+                    && e.arcThickness == 0.035 && abs(e.arcScale - Float(0.035 / 0.12)) < 1e-6
             }(), String(format: "extent %.3f", t.eclipse.spriteExtent)),
-            ("eclipse-arc-thickness-copy-values-round-trip + old values decode to 0.12 (live-51 amendment)", {
+            ("eclipse-arc-thickness-copy-values-round-trip + old values decode to the default (live-51 amendment; pro-build default 0.035)", {
                 var m = MapDarkTuning(); m.eclipse.arcThickness = 0.3
                 var back = MapDarkTuning()
                 guard let all = try? JSONSerialization.jsonObject(with: Data(mapDarkJSON(m).utf8)) as? [String: Any],
@@ -2205,22 +2216,27 @@ extension AppearanceTuning {
                 let old = #"{"spread":0.9,"rim":0.4}"#
                 guard let o = try? JSONDecoder().decode(EclipseLook.self, from: Data(old.utf8)) else { return false }
                 return (ec["arcThickness"] as? NSNumber)?.doubleValue == 0.3 && back.eclipse.arcThickness == 0.3
-                    && o.arcThickness == 0.12 && o.rim == 0.4 && abs(m.eclipse.arcScale - 2.5) < 1e-6
+                    && o.arcThickness == EclipseLook().arcThickness && o.rim == 0.4 && abs(m.eclipse.arcScale - 2.5) < 1e-6
             }(), ""),
-            ("map-defaults-are-T's-27c-values (glass · glassLight · aura · eclipse · riso · gradient · outline · wash) (live-51)", {
-                // T's blocks from Ops/reference/tuner-values-2026-10-27c.json, applied over the study presets → must equal today
+            ("map-defaults-are-T's-final-values (glass · glassLight incl. cues · aura · eclipse incl. arc · riso · gradient · outline · wash) (pro-build)", {
+                // T's blocks from Ops/reference/tuner-values-2026-10-28-final.json, applied over the study presets → must equal today
                 let c27: [String: Any] = [
-                    "glass": ["tint": 0.22, "brightness": 0.04, "edge": 0.12, "innerShadow": 0.4, "dispersion": 0.15, "highlightSize": 0.43,
-                              "highlightIntensity": 0.11, "tiltResponse": 0.16, "label": "#FFFFFF", "topArc": 0.9, "bottomArc": 0.45,
-                              "arcSpan": 120, "arcThickness": 0.07, "arcSoftness": 0.6, "dim": 0, "tiltLight": false, "tiltSmoothing": 0.8],
-                    "glassLight": ["tint": 0.71, "brightness": 0.13, "edge": 0.16, "innerShadow": 0.12, "dispersion": 0.59, "highlightSize": 0.43,
-                                   "highlightIntensity": 0.08, "tiltResponse": 0.16, "label": "#FFFFFF", "topArc": 0.28, "bottomArc": 0.37,
-                                   "arcSpan": 174, "arcThickness": 0.175, "arcSoftness": 1, "dim": 0, "tiltLight": false, "tiltSmoothing": 0.8],
-                    "aura": ["spread": 0.82, "warp": 1.36, "softness": 0.09, "haloReach": 0.03, "rim": 0.49, "fringe": 0.58, "grain": 0, "drift": false],
-                    "eclipse": ["spread": 0.97, "warp": 0.83, "softness": 0.055, "haloReach": 0.06, "rim": 0.59, "fringe": 0.41, "grain": 0, "drift": false],
-                    "riso": ["spread": 0.55, "warp": 0.44, "softness": 0.01, "haloReach": 0.52, "rim": 0.69, "fringe": 0.71, "grain": 0.23, "drift": false],
+                    "glass": ["tint": 0.19, "brightness": 0, "edge": 0, "innerShadow": 0.31, "dispersion": 0.35, "highlightSize": 0.43,
+                              "highlightIntensity": 0.04, "tiltResponse": 0.16, "label": "#FFFFFF", "topArc": 0.9, "bottomArc": 0.45,
+                              "arcSpan": 120, "arcThickness": 0.07, "arcSoftness": 0.6, "dim": 0, "tiltLight": false, "tiltSmoothing": 0.8,
+                              "caustic": 0.06, "causticSize": 0.21, "causticColour": 0.18, "window": 0.02, "windowSize": 0.26,
+                              "windowSharpness": 0, "lens": 0.22, "lensMagnification": 2.15],
+                    "glassLight": ["tint": 0.71, "brightness": 0.13, "edge": 0.07, "innerShadow": 0.13, "dispersion": 0.62, "highlightSize": 0.43,
+                                   "highlightIntensity": 0.14, "tiltResponse": 0.16, "label": "#FFFFFF", "topArc": 0.16, "bottomArc": 0.37,
+                                   "arcSpan": 174, "arcThickness": 0.12, "arcSoftness": 1, "dim": 0.09, "tiltLight": false, "tiltSmoothing": 0.8,
+                                   "caustic": 0.08, "causticSize": 0.41, "causticColour": 0.5, "window": 0.04, "windowSize": 0.28,
+                                   "windowSharpness": 0.04, "lens": 0.36, "lensMagnification": 2.49],
+                    "aura": ["spread": 1.25, "warp": 1.36, "softness": 0.09, "haloReach": 0.03, "rim": 0.5, "fringe": 0.58, "grain": 0.19, "drift": false],
+                    "eclipse": ["spread": 0.68, "warp": 0.98, "softness": 0.15, "haloReach": 0.02, "rim": 0.56, "fringe": 0.28, "grain": 0.24, "drift": false,
+                                "arcThickness": 0.035],
+                    "riso": ["spread": 0.53, "warp": 0.44, "softness": 0.02, "haloReach": 0.52, "rim": 0.54, "fringe": 0.85, "grain": 0.3, "drift": false],
                     "gradient": ["spread": 0.83, "warp": 1.25, "softness": 0.01, "haloReach": 0.92, "rim": 0.54, "fringe": 0.11, "grain": 0.54, "drift": false],
-                    "outline": ["ringWidth": 2, "ringOpacityDark": 0.85, "ringOpacityLight": 1, "fillOpacity": 0.115],
+                    "outline": ["ringWidth": 2, "ringOpacityDark": 0.88, "ringOpacityLight": 1, "fillOpacity": 0.115],
                     "wash": ["spread": 0.8, "warp": 0.82, "softness": 0.03, "bleed": 0.3, "pooling": 0.3, "misregistration": 0.3, "paper": 0.4]]
                 var m = MapDarkTuning()
                 var g0 = GlassLook.medium; g0.tint = 0.9; g0.topArc = 0.1; g0.arcSpan = 60; g0.highlightIntensity = 0.7
@@ -2275,11 +2291,11 @@ extension AppearanceTuning {
             }(), ""),
             // live-49 — the study's v7 looks: T's values (orb-study-values-2026-10-27b.json), the study's bounds, Copy values
             // round trip, older saved values (no lightGlass / riso / gradient keys) decode to the defaults.
-            ("map-v7-looks-defaults-are-T's-values (Light Glass .68/.6/.01/.36/.7/.41/0 · live-51 27c: Riso .55/.44/.01/.52/.69/.71/.23 · Gradient .83/1.25/.01/.92/.54/.11/.54)", {
+            ("map-v7-looks-defaults-are-T's-values (Light Glass .68/.6/.01/.36/.7/.41/0 · final: Riso .53/.44/.02/.52/.54/.85/.3 · Gradient .83/1.25/.01/.92/.54/.11/.54)", {
                 func k<L: StudyOrbLook>(_ x: L) -> [Double] { [x.spread, x.warp, x.softness, x.haloReach, x.rim, x.fringe, x.grain] }
-                return k(t.lightGlass) == [0.68, 0.6, 0.01, 0.36, 0.7, 0.41, 0] && k(t.riso) == [0.55, 0.44, 0.01, 0.52, 0.69, 0.71, 0.23]
+                return k(t.lightGlass) == [0.68, 0.6, 0.01, 0.36, 0.7, 0.41, 0] && k(t.riso) == [0.53, 0.44, 0.02, 0.52, 0.54, 0.85, 0.3]
                     && k(t.gradient) == [0.83, 1.25, 0.01, 0.92, 0.54, 0.11, 0.54]
-                    && abs(t.lightGlass.spriteExtent - 1.594) < 1e-9 && abs(t.riso.spriteExtent - 1.0875) < 1e-9
+                    && abs(t.lightGlass.spriteExtent - 1.594) < 1e-9 && abs(t.riso.spriteExtent - 1.1065) < 1e-9
                     && abs(t.gradient.spriteExtent - 1.0575) < 1e-9
             }(), String(format: "extents %.4f %.4f %.4f", t.lightGlass.spriteExtent, t.riso.spriteExtent, t.gradient.spriteExtent)),
             ("map-v7-looks-copy-values-round-trip + old values decode", {
@@ -2324,10 +2340,10 @@ extension AppearanceTuning {
             ("map-v7-lineup (dark Flat·Glass·Aura·Eclipse·Riso·Gradient·Outline; Glass / Riso / Gradient / Outline on both)",
              MapOrbLook.darkPicker == [.flat, .glass, .aura, .eclipse, .riso, .gradient, .outline]
                 && MapOrbLook.riso.bothGrounds && MapOrbLook.gradient.bothGrounds && MapOrbLook.glass.bothGrounds, ""),
-            ("glass-cues-default-off + copy-values round trip per Map + old values decode off (live-52)", {
+            ("glass-cues-off-in-the-presets + T's final cues by default + copy-values round trip per Map + old values decode off (live-52 / pro-build)", {
                 let d = MapDarkTuning()
                 func isOff(_ g: GlassLook) -> Bool { g.caustic == 0 && g.window == 0 && g.lens == 0 }
-                let off: Bool = isOff(d.glass) && isOff(d.glassLight) && isOff(GlassLook.medium)
+                let off: Bool = isOff(GlassLook.medium) && d.glass.caustic == 0.06 && d.glass.lens == 0.22 && d.glassLight.lens == 0.36
                 var m = MapDarkTuning(); m.glass.caustic = 0.7; m.glass.lensMagnification = 2.2; m.glassLight.window = 0.6
                 m.glassLight.windowSharpness = 0.3; m.glassLight.lens = 0.5
                 var back = MapDarkTuning()
@@ -2337,8 +2353,8 @@ extension AppearanceTuning {
                 let old = #"{"tint":0.3,"topArc":0.9}"#
                 guard let o = try? JSONDecoder().decode(GlassLook.self, from: Data(old.utf8)) else { return false }
                 let g = back.glass, gL = back.glassLight
-                let darkOK: Bool = g.caustic == 0.7 && g.lensMagnification == 2.2 && g.window == 0
-                let lightOK: Bool = gL.window == 0.6 && gL.windowSharpness == 0.3 && gL.lens == 0.5 && gL.caustic == 0
+                let darkOK: Bool = g.caustic == 0.7 && g.lensMagnification == 2.2 && g.window == d.glass.window
+                let lightOK: Bool = gL.window == 0.6 && gL.windowSharpness == 0.3 && gL.lens == 0.5 && gL.caustic == d.glassLight.caustic
                 let oldOK: Bool = o.caustic == 0 && o.window == 0 && o.lens == 0
                 let perMap: Bool = m.glassFor(light: true).lens == 0.5 && m.glassFor(light: false).caustic == 0.7
                 return off && darkOK && lightOK && oldOK && perMap

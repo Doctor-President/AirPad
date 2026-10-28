@@ -293,7 +293,7 @@ struct AppearanceTunerSheet<G: Gesture>: View {
     /// The one-line value a closed header shows.
     private func summary(_ section: TunerSection) -> String {
         switch section {
-        case .mapDark:         return "#\(m.fieldHex) · " + m.orbLook.label
+        case .mapDark:         return "#\(m.fieldHex) · " + MapLookChoice.picked.label
         case .cardContent:     return tuner.state.cardContent.label
         case .captureControls: return tuner.state.captureControls.label
         case .floatingButtons: return tuner.state.floatingButtons.label
@@ -658,45 +658,48 @@ struct AppearanceTunerSheet<G: Gesture>: View {
         }
         note("The focused ring shows after Show on Map / a search result; the selected ring in Select mode.")
         subhead("Orbs")
+        note("pro-build: this picker and Settings → Appearance → Map look are the same choice. Without Pro (TestFlight: a free "
+             + "sandbox purchase) the Map draws Flat whatever is picked.")
         // live-47 — dark Map: Flat · Glass · Aura · Eclipse · Outline; light Map: Flat · Wash · Outline (Wash = the Pro looks
         // Aura / Eclipse on the light ground; picking it keeps Eclipse if that is the dark choice, else Aura).
         if dark {
-            Picker("Orbs", selection: Binding(get: { m.orbLook }, set: { o in setMap { $0.orbLook = o } })) {
+            Picker("Orbs", selection: Binding(get: { MapLookChoice.picked }, set: { o in setMap { $0.orbLook = o }; MapLookChoice.picked = o })) {
                 ForEach(MapOrbLook.darkPicker) { Text($0.label).tag($0) }
             }
             .pickerStyle(.segmented)
             .accessibilityIdentifier("tunerMapOrbLook")
-            if m.orbLook == .fresnel { fresnelControls }
-            if m.orbLook == .glass { orbGlassControls(light: false) }
-            if m.orbLook == .aura { auraControls }
-            if m.orbLook == .eclipse { eclipseControls }
-            if m.orbLook == .riso { risoControls }
-            if m.orbLook == .gradient { gradientControls }
+            if MapLookChoice.picked == .fresnel { fresnelControls }
+            if MapLookChoice.picked == .glass { orbGlassControls(light: false) }
+            if MapLookChoice.picked == .aura { auraControls }
+            if MapLookChoice.picked == .eclipse { eclipseControls }
+            if MapLookChoice.picked == .riso { risoControls }
+            if MapLookChoice.picked == .gradient { gradientControls }
         } else {
             // live-49 / 50b — light Map: Flat · Glass · Wash · Riso · Gradient · Outline. Glass = the SAME look and values as dark.
-            Picker("Orbs", selection: Binding(get: { m.orbLook.drawsWashOnLight ? "wash" : m.orbLook == .glass ? "glass"
-                                                    : [.outline, .riso, .gradient].contains(m.orbLook) ? m.orbLook.rawValue : "flat" },
+            Picker("Orbs", selection: Binding(get: { MapLookChoice.picked.drawsWashOnLight ? "wash" : MapLookChoice.picked == .glass ? "glass"
+                                                    : [.outline, .riso, .gradient].contains(MapLookChoice.picked) ? MapLookChoice.picked.rawValue : "flat" },
                                               set: { k in setMap {
                                                   switch k {
-                                                  case "wash": if !$0.orbLook.drawsWashOnLight { $0.orbLook = .aura }
+                                                  case "wash": $0.orbLook = MapLookChoice.picked.drawsWashOnLight ? MapLookChoice.picked : .aura
                                                   case "glass": $0.orbLook = .glass
                                                   case "outline": $0.orbLook = .outline
                                                   case "riso": $0.orbLook = .riso
                                                   case "gradient": $0.orbLook = .gradient
                                                   default: $0.orbLook = .flat
                                                   }
+                                                  MapLookChoice.picked = $0.orbLook   // pro-build — the one authority
                                               } })) {
                 Text("Flat").tag("flat"); Text("Glass").tag("glass"); Text("Wash").tag("wash")
                 Text("Riso").tag("riso"); Text("Gradient").tag("gradient"); Text("Outline").tag("outline")
             }
             .pickerStyle(.segmented)
             .accessibilityIdentifier("tunerMapOrbLook")
-            if m.orbLook.drawsWashOnLight { washControls }
-            if m.orbLook == .glass { orbGlassControls(light: true) }   // live-50c — the same section, the light Map's own values
-            if m.orbLook == .riso { risoControls }
-            if m.orbLook == .gradient { gradientControls }
+            if MapLookChoice.picked.drawsWashOnLight { washControls }
+            if MapLookChoice.picked == .glass { orbGlassControls(light: true) }   // live-50c — the same section, the light Map's own values
+            if MapLookChoice.picked == .riso { risoControls }
+            if MapLookChoice.picked == .gradient { gradientControls }
         }
-        if m.orbLook == .outline { outlineControls }
+        if MapLookChoice.picked == .outline { outlineControls }
         Button("Reset the Map section", role: .destructive) { setMap { $0 = .today } }
             .font(.caption).buttonStyle(.bordered).controlSize(.small)
             .accessibilityIdentifier("tunerMapReset")

@@ -56,6 +56,7 @@ struct TagPickerButton<Label: View>: View {
 /// contains); tapping an existing tag applies it. "New tag…" defers to the caller's
 /// create flow via `onRequestCreate` (see `TagPickerButton`).
 struct TagPickerSheet: View {
+    @Environment(\.appBodyFont) private var appFont   // 1.1-A type pass
 
     let tags: [Tag]
     let excludeNames: Set<String>
@@ -93,11 +94,11 @@ struct TagPickerSheet: View {
                     onRequestCreate()
                     dismiss()
                 } label: {
-                    Label("New tag…", systemImage: "plus")
+                    Label("New tag…", systemImage: "plus").font(appFont.font(size: 17, relativeTo: .body))
                 }
                 if available.isEmpty {
                     Text(trimmed.isEmpty ? "No tags yet." : "No tag matches \u{201C}\(trimmed)\u{201D}.")
-                        .font(.footnote)
+                        .font(appFont.font(size: 13, relativeTo: .footnote))
                         .foregroundStyle(.secondary)
                 } else {
                     Section {
@@ -153,7 +154,7 @@ struct TagPickerSheet: View {
             onPickExisting(tag.name)
             dismiss()
         } label: {
-            Text(tag.name).foregroundStyle(AppearancePalette.ink)
+            Text(tag.name).font(appFont.font(size: 17, relativeTo: .body)).foregroundStyle(AppearancePalette.ink)
         }
         if store != nil {
             button

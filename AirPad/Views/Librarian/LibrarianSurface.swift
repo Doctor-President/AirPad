@@ -721,7 +721,7 @@ struct LibrarianSurface: View {
                     set: { librarian.searchText = $0 }
                 ), prompt: LibrarianPillChrome.placeholder("Search", searchScheme))   // live-26 (2): 4.5:1
                     .focused($isSearchFocused)
-                    .font(.system(size: 15, weight: .regular))
+                    .font(appFont.font(size: 15, relativeTo: .subheadline))
                     // #2 FIX 2 — entered text: appearance-aware ink (was `.white`,
                     // illegible on the light pill). Dark #FFFFFF byte-identical.
                     .foregroundStyle(AppearancePalette.ink)
@@ -1143,7 +1143,7 @@ struct LibrarianSurface: View {
             isSearchFocused = false
         } label: {
             Text("Done")
-                .font(.system(size: 17, weight: .semibold))
+                .font(appFont.font(size: 17, weight: .semibold, relativeTo: .body))
                 .foregroundStyle(AppearancePalette.ink.opacity(0.95))
                 .contentShape(Rectangle())
                 .padding(.vertical, 6)
@@ -1195,7 +1195,7 @@ struct LibrarianSurface: View {
                     Image(systemName: "chevron.left")
                         .font(.system(size: 13, weight: .semibold))
                     Text("Back")
-                        .font(.system(size: 13, weight: .medium))
+                        .font(appFont.font(size: 13, weight: .medium, relativeTo: .footnote))
                 }
                 .foregroundStyle(AppearancePalette.ink.opacity(0.75))
                 .padding(.horizontal, 16)
@@ -1295,7 +1295,7 @@ struct LibrarianSurface: View {
                 set: { librarian.searchText = $0 }
             ))
                 .focused($isSearchFocused)
-                .font(.system(size: 15, weight: .regular))
+                .font(appFont.font(size: 15, relativeTo: .subheadline))
                 .foregroundStyle(AppearancePalette.ink)
                 .tint(AppearancePalette.ink)
                 .textInputAutocapitalization(.never)
@@ -1348,14 +1348,14 @@ struct LibrarianSurface: View {
             VStack(alignment: .leading, spacing: 12) {
                 if matches.isEmpty && imageMatches.isEmpty && related.isEmpty && !librarian.searchSemanticInFlight {
                     Text("No matches")
-                        .font(.system(size: 13, weight: .medium))
+                        .font(appFont.font(size: 13, weight: .medium, relativeTo: .footnote))
                         .foregroundStyle(AppearancePalette.ink.opacity(0.45))
                         .padding(.top, 12)
                 }
 
                 if !matches.isEmpty {
                     Text("MATCHES")
-                        .font(.system(size: 11, weight: .semibold))
+                        .font(appFont.font(size: 11, weight: .semibold, relativeTo: .caption2))
                         .tracking(0.8)
                         .foregroundStyle(AppearancePalette.ink.opacity(0.45))
                         .padding(.top, 4)
@@ -1377,7 +1377,7 @@ struct LibrarianSurface: View {
                 // empty, the Collections/Priority idiom).
                 if !imageMatches.isEmpty {
                     Text("IMAGES")
-                        .font(.system(size: 11, weight: .semibold))
+                        .font(appFont.font(size: 11, weight: .semibold, relativeTo: .caption2))
                         .tracking(0.8)
                         .foregroundStyle(AppearancePalette.ink.opacity(0.45))
                         .padding(.top, !matches.isEmpty ? 8 : 4)
@@ -1404,7 +1404,7 @@ struct LibrarianSurface: View {
 
                 HStack(spacing: 6) {
                     Text("RELATED")
-                        .font(.system(size: 11, weight: .semibold))
+                        .font(appFont.font(size: 11, weight: .semibold, relativeTo: .caption2))
                         .tracking(0.8)
                         .foregroundStyle(AppearancePalette.ink.opacity(0.45))
                     if librarian.searchSemanticInFlight {
@@ -1612,7 +1612,7 @@ struct LibrarianSurface: View {
                 .font(.system(size: 13, weight: .semibold))
                 .foregroundStyle(AppearancePalette.ink.opacity(0.55))
             Text("Nothing in your library covers this.")
-                .font(.system(size: 13))
+                .font(appFont.font(size: 13, relativeTo: .footnote))
                 .foregroundStyle(AppearancePalette.ink.opacity(0.7))
                 .fixedSize(horizontal: false, vertical: true)
             Spacer(minLength: 8)
@@ -1620,7 +1620,7 @@ struct LibrarianSurface: View {
                 Task { await librarian.acceptWebSearchOffer(store: store, chat: router.chat) }
             } label: {
                 Text("Search the web instead")
-                    .font(.system(size: 13, weight: .semibold))
+                    .font(appFont.font(size: 13, weight: .semibold, relativeTo: .footnote))
                     .foregroundStyle(AppearancePalette.ink)
                     .padding(.horizontal, 12)
                     .padding(.vertical, 7)
@@ -1646,7 +1646,7 @@ struct LibrarianSurface: View {
                 .font(.system(size: 13, weight: .semibold))
                 .foregroundStyle(AppearancePalette.ink.opacity(0.55))
             Text("One entry stands out: \(Text(offer.title).italic())")
-                .font(.system(size: 13))
+                .font(appFont.font(size: 13, relativeTo: .footnote))
                 .foregroundStyle(AppearancePalette.ink.opacity(0.7))
                 .fixedSize(horizontal: false, vertical: true)
             Spacer(minLength: 8)
@@ -1654,7 +1654,7 @@ struct LibrarianSurface: View {
                 Task { await librarian.acceptReadInFullOffer(store: store, chat: router.chat) }
             } label: {
                 Text("Read it in full")
-                    .font(.system(size: 13, weight: .semibold))
+                    .font(appFont.font(size: 13, weight: .semibold, relativeTo: .footnote))
                     .foregroundStyle(AppearancePalette.ink)
                     .padding(.horizontal, 12)
                     .padding(.vertical, 7)
@@ -1695,7 +1695,7 @@ struct LibrarianSurface: View {
                     .font(.system(size: 12, weight: .semibold))
                     .foregroundStyle(AppearancePalette.ink.opacity(0.7))
                 Text("Ask needs a model. This device has none available — you can connect one in Settings.")
-                    .font(.system(size: 12))
+                    .font(appFont.font(size: 12, relativeTo: .caption1))
                     .foregroundStyle(AppearancePalette.ink.opacity(0.9))
                     .fixedSize(horizontal: false, vertical: true)
                     .multilineTextAlignment(.leading)
@@ -1987,7 +1987,7 @@ struct LibrarianSurface: View {
                 .symbolEffect(.variableColor.iterative, options: .repeating)
             // No trailing "…" — the glyph IS the ellipsis; the copy would say it twice.
             Text("Still adding older items")
-                .font(.system(size: 12, weight: .regular))
+                .font(appFont.font(size: 12, relativeTo: .caption1))
                 .foregroundStyle(AppearancePalette.ink.opacity(0.5))
         }
         .frame(maxWidth: .infinity, alignment: .leading)
@@ -2025,7 +2025,7 @@ struct LibrarianSurface: View {
                         .font(.system(size: 13))
                         .foregroundStyle(Color(hexString: "00BFFF"))
                     Text(router.chat.displayTitle)
-                        .font(.system(size: 14, weight: .medium))
+                        .font(appFont.font(size: 14, weight: .medium, relativeTo: .subheadline))
                         .foregroundStyle(AppearancePalette.ink)
                         .lineLimit(1)
                     Spacer(minLength: 0)
@@ -2084,7 +2084,7 @@ struct LibrarianSurface: View {
 
         if nodes.isEmpty {
             Text("No matches.")
-                .font(.system(size: 15))
+                .font(appFont.font(size: 15, relativeTo: .subheadline))
                 .foregroundStyle(AppearancePalette.ink.opacity(0.55))
         } else {
             LazyVStack(spacing: 10) {
@@ -2094,20 +2094,20 @@ struct LibrarianSurface: View {
                     } label: {
                         VStack(alignment: .leading, spacing: 4) {
                             Text(node.title)
-                                .font(.system(size: 16, weight: .semibold))
+                                .font(appFont.font(size: 16, weight: .semibold, relativeTo: .subheadline))
                                 .foregroundStyle(AppearancePalette.ink)
                                 .frame(maxWidth: .infinity, alignment: .leading)
 
                             if !node.summary.isEmpty {
                                 Text(node.summary)
-                                    .font(.system(size: 14))
+                                    .font(appFont.font(size: 14, relativeTo: .subheadline))
                                     .foregroundStyle(AppearancePalette.ink.opacity(0.7))
                                     .frame(maxWidth: .infinity, alignment: .leading)
                                     .lineLimit(2)
                             }
 
                             Text(node.createdAt.formatted(date: .abbreviated, time: .shortened))
-                                .font(.system(size: 12))
+                                .font(appFont.font(size: 12, relativeTo: .caption1))
                                 .foregroundStyle(AppearancePalette.ink.opacity(0.4))
                         }
                         .padding(14)
@@ -2185,7 +2185,7 @@ struct LibrarianSurface: View {
                 .font(.system(size: compact ? 18 : 22, weight: .regular))
                 .foregroundStyle(AppearancePalette.ink.opacity(0.85))
             Text(label)
-                .font(.system(size: compact ? 11 : 12, weight: .medium))
+                .font(appFont.font(size: compact ? 11 : 12, weight: .medium, relativeTo: .caption1))
                 .foregroundStyle(AppearancePalette.ink.opacity(0.7))
                 .lineLimit(1)
                 .minimumScaleFactor(0.8)
@@ -2213,12 +2213,12 @@ struct LibrarianSurface: View {
                 .font(.system(size: compact ? 18 : 22, weight: .regular))
                 .foregroundStyle(AppearancePalette.ink.opacity(0.4))
             Text(label)
-                .font(.system(size: compact ? 11 : 12, weight: .medium))
+                .font(appFont.font(size: compact ? 11 : 12, weight: .medium, relativeTo: .caption1))
                 .foregroundStyle(AppearancePalette.ink.opacity(0.4))
                 .lineLimit(1)
                 .minimumScaleFactor(0.8)
             Text("Coming soon")
-                .font(.system(size: compact ? 9 : 10, weight: .semibold))
+                .font(appFont.font(size: compact ? 9 : 10, weight: .semibold, relativeTo: .caption2))
                 .foregroundStyle(AppearancePalette.ink.opacity(0.3))
                 .lineLimit(1)
                 .minimumScaleFactor(0.8)
@@ -2248,7 +2248,7 @@ struct LibrarianSurface: View {
     @ViewBuilder
     private func scopeRoomLabel(librarian: LibrarianState) -> some View {
         Text(scopeRoomText(librarian.selectedScope))
-            .font(.system(size: 12, weight: .medium))
+            .font(appFont.font(size: 12, weight: .medium, relativeTo: .caption1))
             .foregroundStyle(AppearancePalette.ink.opacity(0.45))
             .frame(maxWidth: .infinity, alignment: .leading)
             .padding(.horizontal, 16)
@@ -2398,6 +2398,7 @@ private struct SearchResultRow<Label: View>: View {
 }
 
 private struct SearchMatchRow: View {
+    @Environment(\.appBodyFont) private var appFont   // 1.1-A type pass
     let node: Node
     /// Entry-BODY hit → a pull quote around the match. nil for title/summary/tag
     /// hits, where the row falls back to the node summary.
@@ -2412,12 +2413,12 @@ private struct SearchMatchRow: View {
     var body: some View {
         VStack(alignment: .leading, spacing: 2) {
             Text(node.title.isEmpty ? "Untitled" : node.title)
-                .font(.system(size: 15, weight: .semibold))
+                .font(appFont.font(size: 15, weight: .semibold, relativeTo: .subheadline))
                 .foregroundStyle(AppearancePalette.ink.opacity(0.95))
                 .lineLimit(1)
             if !displaySnippet.isEmpty {
                 Text(displaySnippet)
-                    .font(.system(size: 13, weight: .regular))
+                    .font(appFont.font(size: 13, relativeTo: .footnote))
                     .foregroundStyle(AppearancePalette.ink.opacity(0.55))
                     .lineLimit(2)
             }
@@ -2432,6 +2433,7 @@ private struct SearchMatchRow: View {
 /// matched OCR text as caption. Same shape as `SearchImageRow`; a hero just has no
 /// `GalleryItem`, so the thumbnail loads from `coverImageRelativePath`.
 private struct SearchHeroRow: View {
+    @Environment(\.appBodyFont) private var appFont   // 1.1-A type pass
     let node: Node
     let matchedText: String
     @Environment(CorpusStore.self) private var store
@@ -2451,11 +2453,11 @@ private struct SearchHeroRow: View {
             .clipShape(RoundedRectangle(cornerRadius: 8, style: .continuous))
             VStack(alignment: .leading, spacing: 2) {
                 Text(node.title.isEmpty ? "Untitled" : node.title)
-                    .font(.system(size: 15, weight: .semibold))
+                    .font(appFont.font(size: 15, weight: .semibold, relativeTo: .subheadline))
                     .foregroundStyle(AppearancePalette.ink.opacity(0.95))
                     .lineLimit(1)
                 Text(matchedText)
-                    .font(.system(size: 13, weight: .regular))
+                    .font(appFont.font(size: 13, relativeTo: .footnote))
                     .foregroundStyle(AppearancePalette.ink.opacity(0.55))
                     .lineLimit(2)
             }
@@ -2479,6 +2481,7 @@ private struct SearchHeroRow: View {
 /// Alternatives — the gallery entry, or the lightbox at this image — are
 /// defensible; this is the simplest.
 private struct SearchImageRow: View {
+    @Environment(\.appBodyFont) private var appFont   // 1.1-A type pass
     let node: Node
     let entry: NodeItem
     let galleryItem: GalleryItem
@@ -2491,11 +2494,11 @@ private struct SearchImageRow: View {
                 .clipShape(RoundedRectangle(cornerRadius: 8, style: .continuous))
             VStack(alignment: .leading, spacing: 2) {
                 Text(node.title.isEmpty ? "Untitled" : node.title)
-                    .font(.system(size: 15, weight: .semibold))
+                    .font(appFont.font(size: 15, weight: .semibold, relativeTo: .subheadline))
                     .foregroundStyle(AppearancePalette.ink.opacity(0.95))
                     .lineLimit(1)
                 Text(matchedText)
-                    .font(.system(size: 13, weight: .regular))
+                    .font(appFont.font(size: 13, relativeTo: .footnote))
                     .foregroundStyle(AppearancePalette.ink.opacity(0.55))
                     .lineLimit(2)
             }

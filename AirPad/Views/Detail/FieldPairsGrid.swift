@@ -1085,7 +1085,7 @@ struct FieldPairCell: View {
                 .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .center)
         } else if displayText == nil {
             Text("\u{2014}")   // empty — present but unfilled (modest, does NOT fill)
-                .font(.system(size: 14 * typeScale, weight: .semibold))
+                .font(appFont.font(size: 14 * typeScale, weight: .semibold))
                 .foregroundStyle(AppearancePalette.ink.opacity(0.3))
                 .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: isProse ? .topLeading : .center)
         } else if isTextKind || (isDate && treatment == .row) {
@@ -1106,7 +1106,7 @@ struct FieldPairCell: View {
         GeometryReader { geo in
             let h = max(geo.size.height, 14)
             Text(displayText ?? "\u{2014}")
-                .font(.system(size: h, weight: .semibold))
+                .font(appFont.font(size: h, weight: .semibold))
                 .foregroundStyle(AppearancePalette.ink)
                 .lineLimit(1)
                 .minimumScaleFactor(14 / h)   // shrink to fit WIDTH, but never below 14pt
@@ -1121,10 +1121,10 @@ struct FieldPairCell: View {
     /// NO minimumScaleFactor — it never shrinks below the baseline.
     private var proseFill: some View {
         let size = 14 * typeScale
-        let lineH = UIFont.systemFont(ofSize: size, weight: .semibold).lineHeight
+        let lineH = appFont.uiFont(size: size, weight: .semibold).lineHeight
         return GeometryReader { geo in
             Text(displayText ?? "\u{2014}")
-                .font(.system(size: size, weight: .semibold))
+                .font(appFont.font(size: size, weight: .semibold))
                 .foregroundStyle(AppearancePalette.ink)
                 // live-29 (4) — whole lines only (a partly-fitting line was clipped mid-word, no ellipsis: "hates wh"),
                 // at most two in a 1-high tile, then the ellipsis.
@@ -1211,7 +1211,7 @@ struct FieldPairCell: View {
                 .font(.system(size: size, weight: .medium))
                 .foregroundStyle(Color(hexString: "FACC15"))
             Text("\(v)")
-                .font(.system(size: size, weight: .semibold))
+                .font(appFont.font(size: size, weight: .semibold))
                 .foregroundStyle(AppearancePalette.ink)
                 .lineLimit(1)
         }

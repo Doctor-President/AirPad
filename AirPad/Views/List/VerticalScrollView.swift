@@ -309,6 +309,7 @@ struct VerticalScrollView: View {
 // MARK: - NodeCard
 
 private struct NodeCard: View {
+    @Environment(\.appBodyFont) private var appFont   // 1.1-A type pass
     let node: Node
     let namespace: Namespace.ID
     let screenMidY: CGFloat
@@ -325,12 +326,12 @@ private struct NodeCard: View {
 
             VStack(alignment: .leading, spacing: 8) {
                 Text(node.title.isEmpty ? "Untitled" : node.title)
-                    .font(.headline)
+                    .font(appFont.font(size: 17, weight: .semibold, relativeTo: .headline))
                     .foregroundStyle(AppearancePalette.ink)
                     .lineLimit(1)
 
                 Text(node.summary.isEmpty ? "—" : node.summary)
-                    .font(.subheadline)
+                    .font(appFont.font(size: 15, relativeTo: .subheadline))
                     .foregroundStyle(AppearancePalette.ink.opacity(0.6))
                     .lineLimit(2)
 
@@ -340,7 +341,7 @@ private struct NodeCard: View {
                     NodeCardItemCounts(items: node.items)
                     Spacer()
                     Text(relativeTimestamp(node.createdAt))
-                        .font(.caption)
+                        .font(appFont.font(size: 12, relativeTo: .caption1))
                         .foregroundStyle(AppearancePalette.ink.opacity(0.38))
                 }
             }
@@ -385,6 +386,7 @@ private struct NodeCard: View {
 // MARK: - Item count chips
 
 private struct NodeCardItemCounts: View {
+    @Environment(\.appBodyFont) private var appFont   // 1.1-A type pass
     let items: [NodeItem]
 
     private var counts: (text: Int, image: Int, audio: Int, video: Int, link: Int, document: Int) {
@@ -425,7 +427,7 @@ private struct NodeCardItemCounts: View {
 
     private func chip(_ icon: String, _ count: Int) -> some View {
         Label("\(count)", systemImage: icon)
-            .font(.caption)
+            .font(appFont.font(size: 12, relativeTo: .caption1))
             .foregroundStyle(AppearancePalette.ink.opacity(0.48))
     }
 }

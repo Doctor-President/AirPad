@@ -8,6 +8,7 @@ import SwiftUI
 /// Baked defaults matching the entry visual language; T will art-direct after it
 /// lands. No hue-only state (T is colorblind).
 struct ChatsEntryBody: View {
+    @Environment(\.appBodyFont) private var appFont   // 1.1-A type pass
     let item: NodeItem
     let nodeID: String
 
@@ -43,7 +44,7 @@ struct ChatsEntryBody: View {
                 .foregroundStyle(AppearancePalette.ink.opacity(0.6))
                 .frame(width: 22)
             Text(Self.displayTitle(chat))
-                .font(.system(size: 15, weight: .medium))
+                .font(appFont.font(size: 15, weight: .medium, relativeTo: .subheadline))
                 .foregroundStyle(AppearancePalette.ink.opacity(0.92))
                 .lineLimit(1)
             Spacer(minLength: 8)
@@ -79,6 +80,7 @@ struct ChatsEntryBody: View {
 /// the current pin so re-pinning reads as a MOVE. Shared by the Chats list
 /// (retroactive pin) and from inside a chat.
 struct PinChatSheet: View {
+    @Environment(\.appBodyFont) private var appFont   // 1.1-A type pass
     let chatID: UUID
 
     @Environment(CorpusStore.self) private var store
@@ -103,7 +105,7 @@ struct PinChatSheet: View {
                     } label: {
                         HStack(spacing: 8) {
                             Text(node.title.isEmpty ? "Untitled" : node.title)
-                                .font(.system(size: 15))
+                                .font(appFont.font(size: 15, relativeTo: .subheadline))
                                 .foregroundStyle(AppearancePalette.ink)
                                 .lineLimit(1)
                             Spacer(minLength: 8)

@@ -350,12 +350,12 @@ struct SettingsView: View {
                     ForEach(manageTagRows, id: \.tag.id) { row in
                         HStack(spacing: 10) {
                             Circle().fill(Color(hex: row.tag.colorHex) ?? .gray).frame(width: 11, height: 11)
-                            Text(row.tag.name).foregroundStyle(AppearancePalette.ink)
+                            Text(row.tag.name).font(appFont.font(size: 17, relativeTo: .body)).foregroundStyle(AppearancePalette.ink)
                             if row.tag.isCanvasAnchor {
                                 Image(systemName: "map.fill").font(.system(size: 10)).foregroundStyle(AppearancePalette.ink.opacity(0.3))
                             }
                             Spacer()
-                            Text("\(row.count)").monospacedDigit().foregroundStyle(AppearancePalette.ink.opacity(0.4))
+                            Text("\(row.count)").font(appFont.font(size: 17, relativeTo: .body).monospacedDigit()).foregroundStyle(AppearancePalette.ink.opacity(0.4))
                         }
                         .listRowBackground(AppearancePalette.ink.opacity(0.04))
                         .swipeActions(edge: .trailing) {
@@ -922,7 +922,7 @@ struct SettingsView: View {
                     .textSelection(.enabled)
                 if localModel.lastOutTokens > 0 {
                     Text("\(localModel.lastOutTokens) out-tokens · \(String(format: "%.1f", localModel.lastTokPerSec)) tok/s")
-                        .font(.caption2.monospacedDigit()).foregroundStyle(AppearancePalette.ink.opacity(0.4))
+                        .font(appFont.font(size: 11, relativeTo: .caption2).monospacedDigit()).foregroundStyle(AppearancePalette.ink.opacity(0.4))
                 }
             }
         }
@@ -952,7 +952,7 @@ struct SettingsView: View {
                     .foregroundStyle(AppearancePalette.ink.opacity(0.4))
                 Spacer()
                 Text("\(librarianPersonalPrompt.count) / \(Self.librarianPersonalPromptMaxChars)")
-                    .font(.caption2.monospacedDigit())
+                    .font(appFont.font(size: 11, relativeTo: .caption2).monospacedDigit())
                     .foregroundStyle(
                         librarianPersonalPrompt.count >= Self.librarianPersonalPromptMaxChars
                         ? .orange.opacity(0.8)
@@ -1250,7 +1250,7 @@ struct SettingsView: View {
                 Task { await store.reprocessUntaggedNodes() }
             } label: {
                 Text(inFlight ? "Reprocessing…" : "Reprocess Untagged Nodes")
-                    .font(.caption2)
+                    .font(appFont.font(size: 11, relativeTo: .caption2))
                     .foregroundStyle(.orange.opacity(inFlight ? 0.3 : 0.5))
             }
             .buttonStyle(.plain)
@@ -1259,7 +1259,7 @@ struct SettingsView: View {
 
             if let s = state {
                 Text(reprocessStatusText(s))
-                    .font(.caption2)
+                    .font(appFont.font(size: 11, relativeTo: .caption2))
                     .foregroundStyle(AppearancePalette.ink.opacity(0.35))
                     .frame(maxWidth: .infinity, alignment: .center)
             }
@@ -1283,7 +1283,7 @@ struct SettingsView: View {
                 Task { await store.backfillContentEmbeddings() }
             } label: {
                 Text(inFlight ? "Backfilling embeddings…" : "Backfill content embeddings")
-                    .font(.caption2)
+                    .font(appFont.font(size: 11, relativeTo: .caption2))
                     .foregroundStyle(.orange.opacity(inFlight ? 0.3 : 0.5))
             }
             .buttonStyle(.plain)
@@ -1292,7 +1292,7 @@ struct SettingsView: View {
 
             if let s = state {
                 Text(backfillStatusText(s))
-                    .font(.caption2)
+                    .font(appFont.font(size: 11, relativeTo: .caption2))
                     .foregroundStyle(AppearancePalette.ink.opacity(0.35))
                     .frame(maxWidth: .infinity, alignment: .center)
             }

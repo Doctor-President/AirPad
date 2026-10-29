@@ -668,6 +668,7 @@ struct ViewSwitchMenuContent: View {
 /// Brief AG2 — the top-of-view pill is a LABEL of the current view, not a control: no chevron,
 /// no tap target. The View button (above Capture) is the only way to switch views.
 private struct ViewPill: View {
+    @Environment(\.appBodyFont) private var appFont   // 1.1-A type pass
     @Environment(CorpusStore.self) private var store
     let scope: CanvasScope
 
@@ -681,7 +682,7 @@ private struct ViewPill: View {
             Image(systemName: currentDest.icon)
                 .font(.system(size: 13, weight: .semibold))
             Text(currentDest.label)
-                .font(.system(size: 14, weight: .semibold))
+                .font(appFont.font(size: 14, weight: .semibold, relativeTo: .subheadline))
         }
         // ws-dark-light-mode item 2 — the "Map"/view pill. ink (dark #FFFFFF == .white).
         .foregroundStyle(AppearancePalette.ink)
@@ -796,6 +797,7 @@ private struct DensityPill: View {
 // MARK: - Filter panel
 
 struct FilterPanelView: View {
+    @Environment(\.appBodyFont) private var appFont   // 1.1-A type pass
     var scope: CanvasScope = .corpus
 
     @Environment(CorpusStore.self) private var store
@@ -935,7 +937,7 @@ struct FilterPanelView: View {
     private func filterSection<Content: View>(_ title: String, @ViewBuilder content: () -> Content) -> some View {
         VStack(alignment: .leading, spacing: 10) {
             Text(title)
-                .font(.caption.weight(.semibold))
+                .font(appFont.font(size: 12, weight: .semibold, relativeTo: .caption1))
                 .foregroundStyle(.white.opacity(0.4))
                 .textCase(.uppercase)
             content()
@@ -956,7 +958,7 @@ struct FilterPanelView: View {
                         .font(.system(size: 11))
                 }
                 Text(label)
-                    .font(.subheadline.weight(isActive ? .semibold : .regular))
+                    .font(appFont.font(size: 15, weight: isActive ? .semibold : .regular, relativeTo: .subheadline))
             }
             .foregroundStyle(isActive ? .black : .white.opacity(0.75))
             .padding(.horizontal, 14)
@@ -971,6 +973,7 @@ struct FilterPanelView: View {
 // MARK: - Import progress banner
 
 private struct ImportProgressBanner: View {
+    @Environment(\.appBodyFont) private var appFont   // 1.1-A type pass
     let current: Int
     let total: Int
 
@@ -980,7 +983,7 @@ private struct ImportProgressBanner: View {
                 .tint(AppearancePalette.ink)
                 .scaleEffect(0.75)
             Text("Importing \(total) entries… (\(current)/\(total) processed)")
-                .font(.caption.weight(.medium))
+                .font(appFont.font(size: 12, weight: .medium, relativeTo: .caption1))
                 .foregroundStyle(AppearancePalette.ink)
         }
         .padding(.horizontal, 16)
@@ -993,12 +996,13 @@ private struct ImportProgressBanner: View {
 // MARK: - iCloud banner
 
 private struct iCloudUnavailableBanner: View {
+    @Environment(\.appBodyFont) private var appFont   // 1.1-A type pass
     var body: some View {
         HStack(spacing: 8) {
             Image(systemName: "icloud.slash")
                 .font(.caption)
             Text("iCloud unavailable — saving locally")
-                .font(.caption)
+                .font(appFont.font(size: 12, relativeTo: .caption1))
         }
         .foregroundStyle(AppearancePalette.ink)
         .padding(.horizontal, 16)
@@ -1011,13 +1015,14 @@ private struct iCloudUnavailableBanner: View {
 // MARK: - Selection mode controls
 
 private struct SelectionHeader: View {
+    @Environment(\.appBodyFont) private var appFont   // 1.1-A type pass
     let count: Int
     let onDone: () -> Void
 
     var body: some View {
         HStack(alignment: .center) {
             Text(count == 0 ? "Select items" : "\(count) selected")
-                .font(.system(size: 15, weight: .semibold))
+                .font(appFont.font(size: 15, weight: .semibold, relativeTo: .subheadline))
                 .foregroundStyle(AppearancePalette.ink)
                 .padding(.horizontal, 14)
                 .padding(.vertical, 10)
@@ -1026,7 +1031,7 @@ private struct SelectionHeader: View {
             Spacer()
             Button(action: onDone) {
                 Text("Done")
-                    .font(.system(size: 15, weight: .semibold))
+                    .font(appFont.font(size: 15, weight: .semibold, relativeTo: .subheadline))
                     .foregroundStyle(AppearancePalette.ink)
                     .padding(.horizontal, 16)
                     .padding(.vertical, 10)
@@ -1039,6 +1044,7 @@ private struct SelectionHeader: View {
 }
 
 private struct BatchActionBar: View {
+    @Environment(\.appBodyFont) private var appFont   // 1.1-A type pass
     let count: Int
     let scope: CanvasScope
     let tags: [Tag]
@@ -1073,7 +1079,7 @@ private struct BatchActionBar: View {
                     Image(systemName: "tag")
                         .font(.system(size: 14, weight: .semibold))
                     Text("Tag")
-                        .font(.system(size: 13, weight: .semibold))
+                        .font(appFont.font(size: 13, weight: .semibold, relativeTo: .footnote))
                 }
                 .foregroundStyle(AppearancePalette.ink)
                 .padding(.horizontal, 18)
@@ -1122,7 +1128,7 @@ private struct BatchActionBar: View {
                 }
             } label: {
                 Text("Organize")
-                    .font(.system(size: 13, weight: .semibold))
+                    .font(appFont.font(size: 13, weight: .semibold, relativeTo: .footnote))
                     .foregroundStyle(AppearancePalette.ink)
                     .padding(.horizontal, 18)
                     .padding(.vertical, 12)
@@ -1135,7 +1141,7 @@ private struct BatchActionBar: View {
 
             Button(action: onDelete) {
                 Text("Delete")
-                    .font(.system(size: 13, weight: .semibold))
+                    .font(appFont.font(size: 13, weight: .semibold, relativeTo: .footnote))
                     .foregroundStyle(.white)
                     .padding(.horizontal, 18)
                     .padding(.vertical, 12)

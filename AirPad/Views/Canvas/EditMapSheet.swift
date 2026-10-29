@@ -7,6 +7,7 @@
 import SwiftUI
 
 struct EditMapSheet: View {
+    @Environment(\.appBodyFont) private var appFont   // 1.1-A type pass
     @Environment(CorpusStore.self) private var store
     @Environment(\.dismiss) private var dismiss
 
@@ -39,7 +40,7 @@ struct EditMapSheet: View {
                         ForEach(MapOrbFont.allCases) { Text($0.displayName).tag($0) }
                     } label: {
                         Text("Orb font")
-                            .font(.system(size: 15, weight: .medium))
+                            .font(appFont.font(size: 15, weight: .medium, relativeTo: .subheadline))
                             .foregroundStyle(AppearancePalette.ink)
                     }
                     .pickerStyle(.menu)
@@ -49,7 +50,7 @@ struct EditMapSheet: View {
                     Text("Orb titles")
                 } footer: {
                     Text("The typeface for entry titles on the Map. Independent of the app-wide Font (Settings → Appearance). Titles re-wrap inside each circle when you switch.")
-                        .font(.caption).foregroundStyle(AppearancePalette.ink.opacity(0.4))
+                        .font(appFont.font(size: 12, relativeTo: .caption1)).foregroundStyle(AppearancePalette.ink.opacity(0.4))
                 }
 
                 Section {
@@ -62,7 +63,7 @@ struct EditMapSheet: View {
                     weightRow("Backlink", $wBacklink)
                     Toggle(isOn: $tintByRecency) {
                         Text("Vary tint by recency")
-                            .font(.system(size: 15, weight: .medium))
+                            .font(appFont.font(size: 15, weight: .medium, relativeTo: .subheadline))
                             .foregroundStyle(AppearancePalette.ink)
                     }
                     .listRowBackground(AppearancePalette.ink.opacity(0.04))
@@ -70,16 +71,16 @@ struct EditMapSheet: View {
                     Text("Gravity — signal weights")
                 } footer: {
                     Text("Collection / Anchor / Meaning decide an entry's territory (argmax) and border lean. Backlink then pulls it toward its linked entries — capped, so territory law still wins. Each entry's tint is a shade of its territory family — brighter = more recent when varied by recency, a stable per-entry shade otherwise.")
-                        .font(.caption).foregroundStyle(AppearancePalette.ink.opacity(0.4))
+                        .font(appFont.font(size: 12, relativeTo: .caption1)).foregroundStyle(AppearancePalette.ink.opacity(0.4))
                 }
 
                 Section {
                     Text("\(anchorCount) of \(CorpusStore.maxCanvasAnchors) anchors")
-                        .font(.footnote)
+                        .font(appFont.font(size: 13, relativeTo: .footnote))
                         .foregroundStyle(AppearancePalette.ink.opacity(0.5))
                 } footer: {
                     Text("Promote tags to spatial territories on the Map. Entries gather in their territory; an entry with no anchor tag lands near the nearest one.")
-                        .font(.caption)
+                        .font(appFont.font(size: 12, relativeTo: .caption1))
                         .foregroundStyle(AppearancePalette.ink.opacity(0.4))
                 }
 
@@ -109,7 +110,7 @@ struct EditMapSheet: View {
         VStack(alignment: .leading, spacing: 4) {
             HStack {
                 Text(label)
-                    .font(.system(size: 15, weight: .medium))
+                    .font(appFont.font(size: 15, weight: .medium, relativeTo: .subheadline))
                     .foregroundStyle(AppearancePalette.ink)
                 Spacer()
                 Text(String(format: "%.2f", value.wrappedValue))
@@ -131,12 +132,12 @@ struct EditMapSheet: View {
                 .frame(width: 14, height: 14)
             VStack(alignment: .leading, spacing: 2) {
                 Text(tag.name)
-                    .font(.system(size: 16, weight: .medium))
+                    .font(appFont.font(size: 16, weight: .medium, relativeTo: .subheadline))
                     .foregroundStyle(AppearancePalette.ink)
                     .lineLimit(1)
                 if let similar {
                     Text("Similar to: \(similar)")
-                        .font(.system(size: 11))
+                        .font(appFont.font(size: 11, relativeTo: .caption2))
                         .foregroundStyle(.orange.opacity(0.85))
                         .lineLimit(1)
                 }

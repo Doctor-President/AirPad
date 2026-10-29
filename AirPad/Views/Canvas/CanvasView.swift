@@ -913,7 +913,7 @@ struct CanvasView: View {
                             Image(systemName: "chevron.left")
                                 .font(.system(size: 12, weight: .semibold))
                             Text(cluster.title)
-                                .font(.system(size: 14, weight: .medium))
+                                .font(appFont.font(size: 14, weight: .medium, relativeTo: .subheadline))
                         }
                         // Light-mode convergence — adaptive ink (dark `#FFFFFF`,
                         // light `#232A2E`) on the already-adaptive `.ultraThinMaterial`
@@ -1633,6 +1633,7 @@ struct CanvasView: View {
 // MARK: - Node detail overlay (animated gradient card, morphs from circle)
 
 struct NodeDetailOverlay: View {   // internal: live-20 (3) stills (TextRunsGallery)
+    @Environment(\.appBodyFont) private var appFont   // 1.1-A type pass
     let node: Node
     @Bindable var canvasState: CanvasState
     @Binding var isDismissing: Bool
@@ -1686,7 +1687,7 @@ struct NodeDetailOverlay: View {   // internal: live-20 (3) stills (TextRunsGall
                 VStack(alignment: .leading, spacing: 12) {
                     // Title
                     Text(node.title.isEmpty ? (node.untitledDisplayText ?? "Untitled") : node.title)
-                        .font(.system(size: 24, weight: .semibold))
+                        .font(appFont.font(size: 24, weight: .semibold, relativeTo: .title1))
                         .foregroundStyle(AppearancePalette.ink)
                         .lineLimit(2)
                         .multilineTextAlignment(.leading)
@@ -1695,7 +1696,7 @@ struct NodeDetailOverlay: View {   // internal: live-20 (3) stills (TextRunsGall
                     // Summary
                     if !node.summary.isEmpty {
                         Text(MarkdownPlain.label(node.summary))   // live-29 (B4)
-                            .font(.system(size: 16))
+                            .font(appFont.font(size: 16, relativeTo: .subheadline))
                             .foregroundStyle(AppearancePalette.ink.opacity(0.85))
                             .lineLimit(3)
                             .multilineTextAlignment(.leading)
@@ -1709,7 +1710,7 @@ struct NodeDetailOverlay: View {   // internal: live-20 (3) stills (TextRunsGall
                         ItemCountsRow(items: node.items)
 
                         Text("\(node.createdAt, style: .relative) ago")
-                            .font(.caption)
+                            .font(appFont.font(size: 12, relativeTo: .caption1))
                             .foregroundStyle(AppearancePalette.ink.opacity(0.65))
                     }
                     .frame(maxWidth: .infinity, alignment: .leading)
@@ -1797,6 +1798,7 @@ struct NodeDetailOverlay: View {   // internal: live-20 (3) stills (TextRunsGall
 // MARK: - Item counts row
 
 private struct ItemCountsRow: View {
+    @Environment(\.appBodyFont) private var appFont   // 1.1-A type pass
     let items: [NodeItem]
 
     private var counts: (text: Int, image: Int, audio: Int, video: Int, link: Int, document: Int) {
@@ -1835,7 +1837,7 @@ private struct ItemCountsRow: View {
 
     private func chip(_ icon: String, _ count: Int) -> some View {
         Label("\(count)", systemImage: icon)
-            .font(.caption)
+            .font(appFont.font(size: 12, relativeTo: .caption1))
             // Light-mode convergence — adaptive ink (was hardcoded `.white`).
             .foregroundStyle(AppearancePalette.ink.opacity(0.55))
     }

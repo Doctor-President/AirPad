@@ -404,7 +404,7 @@ struct DashboardView: View {
                     .foregroundStyle(AppearancePalette.ink)
                 Spacer()
                 Text("\(store.priorityNodes.count)")
-                    .font(.system(size: 14, weight: .medium))
+                    .font(appFont.font(size: 14, weight: .medium, relativeTo: .subheadline))
                     .foregroundStyle(AppearancePalette.ink.opacity(0.4))
                 Image(systemName: "chevron.right")
                     .font(.system(size: 13, weight: .semibold))
@@ -551,7 +551,7 @@ struct DashboardView: View {
         } label: {
             HStack(spacing: 12) {
                 Text("Remove Sample Library")
-                    .font(.system(size: 14, weight: .semibold))
+                    .font(appFont.font(size: 14, weight: .semibold, relativeTo: .subheadline))
                     .foregroundStyle(AppearancePalette.ink.opacity(0.7))
                 Spacer()
             }
@@ -710,7 +710,7 @@ private struct CollectionRow: View {
                             .font(nameFont)
                             .foregroundStyle(AppearancePalette.ink)
                         Text(subtitle)
-                            .font(.system(size: 12, weight: .regular))
+                            .font(appFont.font(size: 12, relativeTo: .caption1))
                             .foregroundStyle(AppearancePalette.ink.opacity(0.5))
                     }
                     Spacer(minLength: 0)
@@ -779,6 +779,7 @@ private struct CollectionRow: View {
 /// a `CollectionRow` (lower-opacity label) so it reads as auxiliary. Flat
 /// to match the hairline-divided collection rows above it.
 private struct NewCollectionButton: View {
+    @Environment(\.appBodyFont) private var appFont   // 1.1-A type pass
     let onTap: () -> Void
 
     var body: some View {
@@ -787,7 +788,7 @@ private struct NewCollectionButton: View {
                 Image(systemName: "plus")
                     .font(.system(size: 14, weight: .semibold))
                 Text("New Collection")
-                    .font(.system(size: 15, weight: .semibold))
+                    .font(appFont.font(size: 15, weight: .semibold, relativeTo: .subheadline))
             }
             .foregroundStyle(AppearancePalette.ink.opacity(0.7))
             .frame(maxWidth: .infinity)
@@ -805,6 +806,7 @@ private struct NewCollectionButton: View {
 /// position, no migration). Only user collections are passed in — Corpus /
 /// Journal are synthetic Dashboard rows and aren't reorderable.
 private struct CollectionReorderSheet: View {
+    @Environment(\.appBodyFont) private var appFont   // 1.1-A type pass
     @Environment(CorpusStore.self) private var store
     @Environment(\.dismiss) private var dismiss
     @State private var working: [NodeCollection]
@@ -821,7 +823,7 @@ private struct CollectionReorderSheet: View {
                         Image(systemName: "folder")
                             .foregroundStyle(AppearancePalette.ink.opacity(0.5))
                         Text(collection.name)
-                            .font(.body)
+                            .font(appFont.font(size: 17, relativeTo: .body))
                             .foregroundStyle(AppearancePalette.ink)
                         Spacer(minLength: 0)
                     }

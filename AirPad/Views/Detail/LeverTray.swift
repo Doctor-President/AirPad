@@ -19,6 +19,7 @@ import SwiftUI
 /// offered for THIS node again. Empty is a real row ("nothing to suggest"), not a
 /// missing one. ★ No badge count. ★ Selective per row, never all-or-nothing.
 struct LeverTray: View {
+    @Environment(\.appBodyFont) private var appFont   // 1.1-A type pass
     let nodeID: String
 
     @Environment(CorpusStore.self) private var store
@@ -118,7 +119,7 @@ struct LeverTray: View {
         ScrollView {
             VStack(alignment: .leading, spacing: 22) {
                 Text("Proposals")
-                    .font(.headline)
+                    .font(appFont.font(size: 17, weight: .semibold, relativeTo: .headline))
                     .foregroundStyle(AppearancePalette.ink)
 
                 // F4 — say WHY a generate came back empty, using the SHARED
@@ -169,7 +170,7 @@ struct LeverTray: View {
                 if namedOnDevice, generatingAspect == nil {
                     // live-20 (1) — one line: who wrote the proposal below, and why.
                     Text("Named by the on-device model — Apple Intelligence declined this entry.")
-                        .font(.system(size: 12))
+                        .font(appFont.font(size: 12, relativeTo: .caption1))
                         .foregroundStyle(AppearancePalette.ink.opacity(0.55))
                         .fixedSize(horizontal: false, vertical: true)
                         .accessibilityIdentifier("namedOnDeviceNote")
@@ -262,7 +263,7 @@ struct LeverTray: View {
 
         VStack(alignment: .leading, spacing: 10) {
             Text(label.uppercased())
-                .font(.caption.weight(.semibold))
+                .font(appFont.font(size: 12, weight: .semibold, relativeTo: .caption1))
                 .foregroundStyle(AppearancePalette.ink.opacity(0.5))
 
             fieldBlock(caption: "Current",
@@ -276,7 +277,7 @@ struct LeverTray: View {
                         Task { await store.dismissProposal(nodeID: nodeID, kind: kind) }
                     } label: {
                         Text("Ignore")
-                            .font(.subheadline.weight(.semibold))
+                            .font(appFont.font(size: 15, weight: .semibold, relativeTo: .subheadline))
                             .foregroundStyle(AppearancePalette.ink.opacity(0.55))
                     }
                     .buttonStyle(.plain)
@@ -287,7 +288,7 @@ struct LeverTray: View {
                         Task { await store.acceptProposal(nodeID: nodeID, kind: kind) }
                     } label: {
                         Text("Use this")
-                            .font(.subheadline.weight(.semibold))
+                            .font(appFont.font(size: 15, weight: .semibold, relativeTo: .subheadline))
                             .foregroundStyle(AppearancePalette.onInk)
                             .padding(.horizontal, 18)
                             .frame(height: 38)
@@ -329,7 +330,7 @@ struct LeverTray: View {
             HStack(spacing: 6) {
                 ProgressView().controlSize(.small)
                 Text("Regenerating from your writing…")
-                    .font(.caption)
+                    .font(appFont.font(size: 12, relativeTo: .caption1))
                     .foregroundStyle(AppearancePalette.ink.opacity(0.5))
             }
             .padding(.top, 4)
@@ -368,13 +369,13 @@ struct LeverTray: View {
                     .font(.system(size: 11))
                     .foregroundStyle(AppearancePalette.ink.opacity(0.45))
                 Text("Based partly on image & document text.")
-                    .font(.caption)
+                    .font(appFont.font(size: 12, relativeTo: .caption1))
                     .foregroundStyle(AppearancePalette.ink.opacity(0.5))
                     .fixedSize(horizontal: false, vertical: true)
             }
             if let note {
                 Text(note)
-                    .font(.caption2)
+                    .font(appFont.font(size: 11, relativeTo: .caption2))
                     .foregroundStyle(AppearancePalette.ink.opacity(0.45))
                     .fixedSize(horizontal: false, vertical: true)
             }
@@ -382,7 +383,7 @@ struct LeverTray: View {
                 generate(kind, authoredOnly: true)
             } label: {
                 Text(action)
-                    .font(.caption.weight(.semibold))
+                    .font(appFont.font(size: 12, weight: .semibold, relativeTo: .caption1))
                     .foregroundStyle(Color(hexString: "00BFFF"))
             }
             .buttonStyle(.plain)
@@ -400,7 +401,7 @@ struct LeverTray: View {
                 .font(.system(size: 11))
                 .foregroundStyle(AppearancePalette.ink.opacity(0.45))
             Text(text)
-                .font(.caption)
+                .font(appFont.font(size: 12, relativeTo: .caption1))
                 .foregroundStyle(AppearancePalette.ink.opacity(0.5))
                 .fixedSize(horizontal: false, vertical: true)
         }
@@ -429,7 +430,7 @@ struct LeverTray: View {
                     Text(currentIsEmpty ? "Generate" : "Suggest another")
                 }
             }
-            .font(.subheadline.weight(.semibold))
+            .font(appFont.font(size: 15, weight: .semibold, relativeTo: .subheadline))
             .foregroundStyle(AppearancePalette.ink.opacity(0.85))
             .padding(.horizontal, 16)
             .frame(height: 38)
@@ -443,10 +444,10 @@ struct LeverTray: View {
     private func fieldBlock(caption: String, text: String, muted: Bool) -> some View {
         VStack(alignment: .leading, spacing: 3) {
             Text(caption)
-                .font(.caption2.weight(.semibold))
+                .font(appFont.font(size: 11, weight: .semibold, relativeTo: .caption2))
                 .foregroundStyle(AppearancePalette.ink.opacity(0.4))
             Text(text)
-                .font(.subheadline)
+                .font(appFont.font(size: 15, relativeTo: .subheadline))
                 .foregroundStyle(AppearancePalette.ink.opacity(muted ? 0.4 : 0.9))
                 .fixedSize(horizontal: false, vertical: true)
         }
@@ -464,14 +465,14 @@ struct LeverTray: View {
     private var tagsSection: some View {
         VStack(alignment: .leading, spacing: 10) {
             Text("TAGS")
-                .font(.caption.weight(.semibold))
+                .font(appFont.font(size: 12, weight: .semibold, relativeTo: .caption1))
                 .foregroundStyle(AppearancePalette.ink.opacity(0.5))
 
             if !tagsLoaded {
                 HStack(spacing: 8) {
                     ProgressView().controlSize(.small)
                     Text("Looking for tags you already use…")
-                        .font(.subheadline)
+                        .font(appFont.font(size: 15, relativeTo: .subheadline))
                         .foregroundStyle(AppearancePalette.ink.opacity(0.4))
                 }
             } else if node?.embeddingFailureReason == "guardrail_refused" {
@@ -495,7 +496,7 @@ struct LeverTray: View {
                 // folksonomy, and a node with folksonomy can still match nothing in
                 // EITHER tier. Distinct from the guardrail-refused branch above.
                 Text("Nothing to suggest here.")
-                    .font(.subheadline)
+                    .font(appFont.font(size: 15, relativeTo: .subheadline))
                     .foregroundStyle(AppearancePalette.ink.opacity(0.4))
             } else {
                 // TWO TIERS, distinguished by SHAPE + LABEL, never hue (T is colorblind,
@@ -535,7 +536,7 @@ struct LeverTray: View {
     private func tierGroup(caption: String, @ViewBuilder chips: () -> some View) -> some View {
         VStack(alignment: .leading, spacing: 8) {
             Text(caption)
-                .font(.caption2.weight(.semibold))
+                .font(appFont.font(size: 11, weight: .semibold, relativeTo: .caption2))
                 .foregroundStyle(AppearancePalette.ink.opacity(0.4))
             TagFlowLayout(spacing: 8) { chips() }
         }
@@ -557,7 +558,7 @@ struct LeverTray: View {
                     Image(systemName: "plus")
                         .font(.system(size: 10, weight: .bold))
                     Text(s.name)
-                        .font(.caption.weight(.semibold))
+                        .font(appFont.font(size: 12, weight: .semibold, relativeTo: .caption1))
                 }
                 .foregroundStyle(AppearancePalette.ink.opacity(0.9))
             }
@@ -595,7 +596,7 @@ struct LeverTray: View {
                     Image(systemName: "plus")
                         .font(.system(size: 10, weight: .bold))
                     Text(s.name)
-                        .font(.caption.weight(.semibold))
+                        .font(appFont.font(size: 12, weight: .semibold, relativeTo: .caption1))
                 }
                 .foregroundStyle(AppearancePalette.ink.opacity(0.9))
             }
@@ -823,6 +824,7 @@ struct LeverTray: View {
 // Brief CD5 — internal (was private) so the fresh-capture surface can reuse the SAME refusal banner
 // (one-line note + "Set up the private model" → Settings), per BP5's reuse requirement.
 struct LeverRefusalBanner: View {
+    @Environment(\.appBodyFont) private var appFont   // 1.1-A type pass
     let message: String
     var frameworkMessage: String = ""
     /// Nil HIDES the "Set up the private model" CTA — used when the local model is already
@@ -839,12 +841,12 @@ struct LeverRefusalBanner: View {
                     .foregroundStyle(AppearancePalette.ink.opacity(0.7))
                 VStack(alignment: .leading, spacing: 4) {
                     Text(message)
-                        .font(.system(size: 13))
+                        .font(appFont.font(size: 13, relativeTo: .footnote))
                         .foregroundStyle(AppearancePalette.ink.opacity(0.9))
                         .fixedSize(horizontal: false, vertical: true)
                     if !frameworkMessage.isEmpty {
                         Text(frameworkMessage)
-                            .font(.system(size: 11))
+                            .font(appFont.font(size: 11, relativeTo: .caption2))
                             .foregroundStyle(AppearancePalette.ink.opacity(0.5))
                             .fixedSize(horizontal: false, vertical: true)
                     }
@@ -864,7 +866,7 @@ struct LeverRefusalBanner: View {
                 Button(action: onSetUp) {
                     HStack(spacing: 6) {
                         Image(systemName: "gearshape.fill").font(.system(size: 12))
-                        Text(setUpLabel).font(.system(size: 13, weight: .semibold))
+                        Text(setUpLabel).font(appFont.font(size: 13, weight: .semibold, relativeTo: .footnote))
                     }
                     .foregroundStyle(Color(hexString: "00BFFF"))
                 }

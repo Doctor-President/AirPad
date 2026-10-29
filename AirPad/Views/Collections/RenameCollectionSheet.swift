@@ -6,6 +6,7 @@ import SwiftUI
 /// current name; Save is disabled when the trimmed input is empty or
 /// unchanged from the original.
 struct RenameCollectionSheet: View {
+    @Environment(\.appBodyFont) private var appFont   // 1.1-A type pass
 
     let collectionID: String
     let currentName: String
@@ -35,7 +36,7 @@ struct RenameCollectionSheet: View {
             VStack(alignment: .leading, spacing: 0) {
                 TextField("", text: $name, prompt: Text("Collection name").foregroundStyle(AppearancePalette.ink.opacity(0.35)))
                     .focused($isFocused)
-                    .font(.body)
+                    .font(appFont.font(size: 17, relativeTo: .body))
                     .foregroundStyle(AppearancePalette.ink)
                     .tint(AppearancePalette.ink)
                     .padding(.horizontal, 16)

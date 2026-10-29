@@ -14,6 +14,7 @@ import SwiftUI
 /// `@Observable` store (per-property tracking — deliberately NOT an
 /// `@ObservedObject`, which would invalidate the whole detail view on publish).
 struct FieldCreationSheet: View {
+    @Environment(\.appBodyFont) private var appFont   // 1.1-A type pass
 
     let nodeID: String
 
@@ -125,10 +126,10 @@ struct FieldCreationSheet: View {
                 HStack(alignment: .firstTextBaseline, spacing: 10) {
                     VStack(alignment: .leading, spacing: 3) {
                         Text(title)
-                            .font(.headline)
+                            .font(appFont.font(size: 17, weight: .semibold, relativeTo: .headline))
                             .foregroundStyle(AppearancePalette.ink)
                         Text(preview.joined(separator: " · "))
-                            .font(.caption)
+                            .font(appFont.font(size: 12, relativeTo: .caption1))
                             .foregroundStyle(AppearancePalette.ink.opacity(0.5))
                             .lineLimit(1)
                     }
@@ -156,11 +157,11 @@ struct FieldCreationSheet: View {
         Button(action: action) {
             HStack(spacing: 12) {
                 Text(title)
-                    .font(.body)
+                    .font(appFont.font(size: 17, relativeTo: .body))
                     .foregroundStyle(AppearancePalette.ink)
                 Spacer(minLength: 8)
                 Text(kind.pickerName)
-                    .font(.caption)
+                    .font(appFont.font(size: 12, relativeTo: .caption1))
                     .foregroundStyle(AppearancePalette.ink.opacity(0.45))
                 Image(systemName: "plus.circle.fill")
                     .foregroundStyle(AppearancePalette.ink.opacity(0.35))
@@ -188,6 +189,7 @@ struct FieldCreationSheet: View {
 /// defaults only (TASTE — T's eye decides on device). "Create & Add" mints the
 /// definition and attaches it in one step.
 private struct NewFieldForm: View {
+    @Environment(\.appBodyFont) private var appFont   // 1.1-A type pass
 
     /// (displayName, kind, config) — the caller creates + attaches.
     var onCreate: (String, FieldKind, FieldConfig) -> Void
@@ -208,11 +210,11 @@ private struct NewFieldForm: View {
     var body: some View {
         VStack(alignment: .leading, spacing: 16) {
             TextField("Field name", text: $name)
-                .textFieldStyle(.roundedBorder)
+                .textFieldStyle(.roundedBorder).font(appFont.font(size: 17, relativeTo: .body))
 
             HStack {
                 Text("Kind")
-                    .font(.subheadline)
+                    .font(appFont.font(size: 15, relativeTo: .subheadline))
                     .foregroundStyle(AppearancePalette.ink.opacity(0.6))
                 Spacer()
                 Picker("Kind", selection: $kind) {
@@ -225,7 +227,7 @@ private struct NewFieldForm: View {
 
             if let note = kind.pickerNote {
                 Text(note)
-                    .font(.caption)
+                    .font(appFont.font(size: 12, relativeTo: .caption1))
                     .foregroundStyle(AppearancePalette.ink.opacity(0.5))
             }
 
@@ -234,7 +236,7 @@ private struct NewFieldForm: View {
             Button {
                 onCreate(trimmedName, kind, buildConfig())
             } label: {
-                Text("Create & Add").frame(maxWidth: .infinity)
+                Text("Create & Add").font(appFont.font(size: 17, relativeTo: .body)).frame(maxWidth: .infinity)
             }
             .buttonStyle(.borderedProminent)
             .disabled(!isValid)
@@ -274,7 +276,7 @@ private struct NewFieldForm: View {
     ) -> some View {
         HStack {
             Text(label)
-                .font(.subheadline)
+                .font(appFont.font(size: 15, relativeTo: .subheadline))
                 .foregroundStyle(AppearancePalette.ink.opacity(0.6))
             Spacer()
             Picker(label, selection: selection) {
@@ -289,14 +291,14 @@ private struct NewFieldForm: View {
         VStack(alignment: .leading, spacing: 8) {
             HStack {
                 TextField("Add a value", text: $newVocabLabel)
-                    .textFieldStyle(.roundedBorder)
+                    .textFieldStyle(.roundedBorder).font(appFont.font(size: 17, relativeTo: .body))
                     .onSubmit(addVocabValue)
                 Button("Add", action: addVocabValue)
                     .disabled(newVocabLabel.trimmingCharacters(in: .whitespaces).isEmpty)
             }
             if !vocabValues.isEmpty {
                 Text(vocabValues.map(\.label).joined(separator: " · "))
-                    .font(.caption)
+                    .font(appFont.font(size: 12, relativeTo: .caption1))
                     .foregroundStyle(AppearancePalette.ink.opacity(0.6))
                     .fixedSize(horizontal: false, vertical: true)
             }

@@ -6,6 +6,7 @@ import Speech
 /// live-11 (4) — records through `LiveVoiceRecorder` (one AVAudioEngine tap → the file, the waveform and the live
 /// on-device recogniser); the words appear as they're spoken and Done saves them at once → saves Node.
 struct VoiceCaptureSheet: View {
+    @Environment(\.appBodyFont) private var appFont   // 1.1-A type pass
 
     /// If set, the captured audio is appended to this node instead of creating a new one.
     var targetNodeID: String? = nil
@@ -136,13 +137,13 @@ struct VoiceCaptureSheet: View {
             } label: {
                 if glass {
                     Text("Done")
-                        .font(.title3.weight(.semibold))
+                        .font(appFont.font(size: 20, weight: .semibold, relativeTo: .title3))
                         .foregroundStyle(AppearancePalette.onInk)
                         .frame(width: 120, height: 48)
                         .captureGlassPill(tint: AppearancePalette.ink)
                 } else {
                     Text("Done")
-                        .font(.title3.weight(.semibold))
+                        .font(appFont.font(size: 20, weight: .semibold, relativeTo: .title3))
                         .foregroundStyle(.black)
                         .frame(width: 120, height: 48)
                         .background(.white)
@@ -160,14 +161,14 @@ struct VoiceCaptureSheet: View {
             } label: {
                 if glass {
                     Text("Cancel")   // plain glass, same place
-                        .font(.body)
+                        .font(appFont.font(size: 17, relativeTo: .body))
                         .foregroundStyle(AppearancePalette.ink.opacity(0.8))
                         .padding(.horizontal, 18)
                         .frame(height: 40)
                         .captureGlassPill(tint: nil)
                 } else {
                     Text("Cancel")
-                        .font(.body)
+                        .font(appFont.font(size: 17, relativeTo: .body))
                         .foregroundStyle(AppearancePalette.ink.opacity(0.45))
                 }
             }
@@ -360,6 +361,7 @@ private struct WaveformView: View {
 // MARK: - Permission denied
 
 private struct PermissionDeniedView: View {
+    @Environment(\.appBodyFont) private var appFont   // 1.1-A type pass
     let onDismiss: () -> Void
 
     var body: some View {
@@ -369,7 +371,7 @@ private struct PermissionDeniedView: View {
                 .foregroundStyle(AppearancePalette.ink.opacity(0.4))
 
             Text("Microphone or speech recognition access is required for voice memos.")
-                .font(.body)
+                .font(appFont.font(size: 17, relativeTo: .body))
                 .foregroundStyle(AppearancePalette.ink.opacity(0.7))
                 .multilineTextAlignment(.center)
                 .padding(.horizontal, 32)
@@ -379,11 +381,11 @@ private struct PermissionDeniedView: View {
                     UIApplication.shared.open(url)
                 }
             }
-            .font(.body.weight(.semibold))
+            .font(appFont.font(size: 17, weight: .semibold, relativeTo: .body))
             .foregroundStyle(AppearancePalette.ink)
 
             Button("Cancel") { onDismiss() }
-                .font(.body)
+                .font(appFont.font(size: 17, relativeTo: .body))
                 .foregroundStyle(AppearancePalette.ink.opacity(0.45))
         }
     }

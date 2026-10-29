@@ -67,7 +67,7 @@ settings:
     # literal written into a plist is reset to xcodegen's "1.0" by the next `xcodegen generate`
     # (ws-fluted-glass, 2026-10-07). A TestFlight-only version (e.g. a 1.1 spike) passes
     # MARKETING_VERSION=<v> on the xcodebuild command line instead of editing plists.
-    MARKETING_VERSION: "1.0"
+    MARKETING_VERSION: "1.1"
 
 packages:
   FloatingPanel:

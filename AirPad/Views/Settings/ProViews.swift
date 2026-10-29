@@ -99,7 +99,7 @@ struct MapLookSection: View {
     }
 }
 
-/// 1.1-A fix-up (1) — "Gravity wells" (Settings → Appearance and the Appearance panel share it). On by default; off by
+/// 1.1-A fix-up (1) — "Gravity" (1.1-B: was "Gravity wells"; Settings → Appearance and the Appearance panel share it). On by default; off by
 /// itself in Low Power Mode or while the phone is hot, back when that ends (`MapWells`).
 struct GravityWellsToggle: View {
     var detailed: Bool
@@ -111,7 +111,7 @@ struct GravityWellsToggle: View {
     var body: some View {
         Toggle(isOn: Binding(get: { on }, set: { on = $0; MapWells.userOn = $0 })) {
             VStack(alignment: .leading, spacing: 2) {
-                Text("Gravity wells").font(appFont.font(size: 15, weight: .medium, relativeTo: .subheadline))
+                Text("Gravity").font(appFont.font(size: 15, weight: .medium, relativeTo: .subheadline))
                     .foregroundStyle(AppearancePalette.ink)
                 if let detail {
                     Text(detail).font(appFont.font(size: 12, relativeTo: .caption1))

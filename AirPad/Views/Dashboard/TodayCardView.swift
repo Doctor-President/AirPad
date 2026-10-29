@@ -58,7 +58,7 @@ struct TodayCardView: View {
         VStack(alignment: .leading, spacing: 4) {
             Text("Today")
                 .font(appFont.font(size: 12, weight: .semibold, relativeTo: .caption1))
-                .foregroundStyle(AppearancePalette.ink.opacity(0.4))
+                .dashSecondaryInk(0.4)
                 .textCase(.uppercase)
                 .tracking(0.8)
             Text(longDate(now))
@@ -82,7 +82,7 @@ struct TodayCardView: View {
                 HStack(alignment: .firstTextBaseline, spacing: 10) {
                     Text("What's on your mind today?")
                         .font(appFont.font(size: 15))
-                        .foregroundStyle(AppearancePalette.ink.opacity(0.55))
+                        .dashSecondaryInk(0.55)
                         .frame(maxWidth: .infinity, alignment: .leading)
                     Image(systemName: "pencil.line")
                         .font(.system(size: 14, weight: .semibold))
@@ -117,7 +117,7 @@ struct TodayCardView: View {
                 if recentNodes.isEmpty {
                     Text("No recent activity")
                         .font(appFont.font(size: 14))
-                        .foregroundStyle(AppearancePalette.ink.opacity(0.4))
+                        .dashSecondaryInk(0.4)
                 } else {
                     ForEach(recentNodes.prefix(3)) { node in
                         Button { onRecentTap(node) } label: {
@@ -134,14 +134,14 @@ struct TodayCardView: View {
         HStack(spacing: 10) {
             Text(node.title)
                 .font(appFont.font(size: 14))
-                .foregroundStyle(AppearancePalette.ink.opacity(0.78))
+                .dashSecondaryInk(0.78)
                 .lineLimit(1)
             Text("·")
                 .font(appFont.font(size: 14, relativeTo: .subheadline))
-                .foregroundStyle(AppearancePalette.ink.opacity(0.4))
+                .dashSecondaryInk(0.4)
             Text(node.updatedAt, style: .relative)
                 .font(appFont.font(size: 13, relativeTo: .footnote))
-                .foregroundStyle(AppearancePalette.ink.opacity(0.4))
+                .dashSecondaryInk(0.4)
                 .lineLimit(1)
             Spacer(minLength: 0)
         }
@@ -152,7 +152,7 @@ struct TodayCardView: View {
     private func sectionLabel(_ text: String) -> some View {
         Text(text)
             .font(appFont.font(size: 12, weight: .semibold, relativeTo: .caption1))
-            .foregroundStyle(AppearancePalette.ink.opacity(0.4))
+            .dashSecondaryInk(0.4)
             .textCase(.uppercase)
             .tracking(0.8)
     }

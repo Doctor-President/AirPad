@@ -25,12 +25,21 @@ enum HostAccess {
     /// his Host keeps answering with no action. A phone with no pairing starts OFF and never shows the Host. A failed
     /// Keychain read decides nothing (asked again next launch).
     static func migrateAtLaunch() {
+        #if DEBUG
+        let before = UserDefaults.standard.object(forKey: storageKey).map { "\($0)" } ?? "unset"
+        DispatchQueue.main.asyncAfter(deadline: .now() + 3) { NSLog("[HostAccess] at launch: %@", before) }
+        #endif
         guard UserDefaults.standard.object(forKey: storageKey) == nil else { return }
-        switch KeychainHelper.read(key: HostPairing.keychainKey) {
+        let read = KeychainHelper.read(key: HostPairing.keychainKey)
+        switch read {
         case .found:    UserDefaults.standard.set(true, forKey: storageKey)
         case .notFound: UserDefaults.standard.set(false, forKey: storageKey)
         case .failed:   break
         }
+        #if DEBUG
+        let line = "[HostAccess] migrate: keychain=\({ if case .found = read { return "found" }; if case .notFound = read { return "notFound" }; return "failed" }()) → enabled=\(UserDefaults.standard.object(forKey: storageKey).map { "\($0)" } ?? "unset")"
+        DispatchQueue.main.asyncAfter(deadline: .now() + 3) { NSLog("%@", line) }   // init-time logs miss the console
+        #endif
     }
 }
 

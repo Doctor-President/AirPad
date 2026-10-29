@@ -30,6 +30,10 @@ struct AirPadApp: App {
         }
         // live-17 — a document's named hand-off copies (viewer / share) a crash left behind; none is in use at launch.
         Task.detached(priority: .utility) { DocumentHandoff.purgeAll() }
+        #if DEBUG
+        // 1.1-A (8) test — `-ResetHostAccess YES` forgets the switch, as on a phone upgrading from 1.0, so the migration runs.
+        if UserDefaults.standard.bool(forKey: "ResetHostAccess") { UserDefaults.standard.removeObject(forKey: HostAccess.storageKey) }
+        #endif
         HostAccess.migrateAtLaunch()   // 1.1-A (8) — the hidden Host switch: ON only where a pairing already exists
         #if DEBUG
         // 1.1-A (8) — the paired-Host harnesses need the hidden switch on.

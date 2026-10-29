@@ -387,7 +387,8 @@ struct CanvasChrome: View {
                 onFilter: { showFilterPanel = true },
                 onSettings: { showSettings = true },
                 onQuarantineReview: { showQuarantineReview = true },
-                onAppearance: { showAppearancePanel = true }
+                onAppearance: { showAppearancePanel = true },
+                bottomInset: LibrarianPanelLayout.peekOverlayClearance
             )
 
             #if DEBUG
@@ -413,7 +414,14 @@ struct CanvasChrome: View {
                 .id(key)
             }
         }
-        .onAppear { scheduleCanvasCallout() }
+        .onAppear {
+            scheduleCanvasCallout()
+            #if DEBUG
+            // 1.1-A stills — `-OpenMenu` / `-OpenAppearancePanel` open the ≡ menu / the Appearance panel over this view.
+            if ProcessInfo.processInfo.arguments.contains("-OpenMenu") { showSlideOutMenu = true }
+            if ProcessInfo.processInfo.arguments.contains("-OpenAppearancePanel") { showAppearancePanel = true }
+            #endif
+        }
         .onDisappear { calloutTask?.cancel() }
         .onChange(of: filterState.viewMode) { _, _ in scheduleCanvasCallout() }
         .onChange(of: router.mapSettled) { _, _ in scheduleCanvasCallout() }

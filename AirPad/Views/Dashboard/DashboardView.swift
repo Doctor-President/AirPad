@@ -228,6 +228,12 @@ struct DashboardView: View {
             .sheet(isPresented: $showAppearancePanel) {
                 AppearancePanel()
             }
+            #if DEBUG
+            .onAppear {   // 1.1-A stills — see CanvasChrome
+                if ProcessInfo.processInfo.arguments.contains("-OpenMenu") { showMenu = true }
+                if ProcessInfo.processInfo.arguments.contains("-OpenAppearancePanel") { showAppearancePanel = true }
+            }
+            #endif
             .sheet(isPresented: $showQuarantineReview) {
                 QuarantineReviewSheet()
             }

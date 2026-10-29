@@ -231,7 +231,6 @@ struct AppLockInstaller: View {
     @Environment(\.scenePhase) private var scenePhase
     @Environment(CorpusStore.self) private var store
     @Environment(AppRouter.self) private var router
-    @Environment(\.appBodyFont) private var appFont
     private var lock: AppLock { AppLock.shared }
 
     var body: some View {
@@ -242,7 +241,7 @@ struct AppLockInstaller: View {
                     AppLockOverlay()
                         .environment(store)
                         .environment(router)
-                        .environment(\.appBodyFont, appFont)
+                        .provideAppBodyFont()   // follows Settings → Appearance → Font live
                 ))
                 if router.entryMode == .quikCapture, lock.isLocked {   // cold launch from the Quick Capture control
                     lock.lockedCaptureOpen = true

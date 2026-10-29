@@ -37,6 +37,8 @@ struct CanvasSlideOutMenu: View {
     let onQuarantineReview: () -> Void
     /// 1.1-A (A3) — opens the half-height Appearance panel over the current view.
     let onAppearance: () -> Void
+    /// Room kept under the bottom Settings row: on the canvas the Librarian's search pill floats over the menu.
+    var bottomInset: CGFloat = 12
 
     private let panelWidth: CGFloat = 280
     @State private var dragOffset: CGFloat = 0
@@ -121,7 +123,7 @@ struct CanvasSlideOutMenu: View {
                 action: { dismiss(then: onSettings) }
             )
             .accessibilityIdentifier("menu.settings")
-            .padding(.bottom, 12)
+            .padding(.bottom, bottomInset)
         }
     }
 

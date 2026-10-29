@@ -79,6 +79,29 @@ enum TitleInkRule {
     static let titleBox: [SIMD2<Float>] = box(halfWidth: 0.6, halfHeight: 0.35)
 }
 
+/// 1.1-B — the soft tonal scrim the ground study proposes for titles under 4.5:1 (T decides from stills): a radial
+/// shade of the ink's opposite (black under light ink, white under dark ink) behind the title, an ellipse `radius` × the
+/// title box, at `amount` in the middle and falling off to 0 at its edge. Never an outline. Port of ground-study.html's
+/// `scrimF` and its scoring, so the stills' ratios match the study's.
+enum TitleScrim {
+    struct Config: Equatable { var amount: Float; var radius: Float }
+    /// The study's values (T's ground-values-2026-10-29.json: amount 0.3, radius 1.6).
+    static let study = Config(amount: 0.3, radius: 1.6)
+
+    /// The falloff, ρ = 0 at the centre … 1 at the ellipse's edge.
+    static func falloff(_ r: Float) -> Float { r >= 1 ? 0 : exp(-3.2 * r * r) * (1 - r * r) }
+
+    /// The samples under the title (`TitleInkRule.box(halfWidth: hw, halfHeight: hh)`, same order) with the scrim mixed in.
+    static func apply(_ samples: [SIMD3<Float>], hw: Float, hh: Float, lightInk: Bool, _ c: Config) -> [SIMD3<Float>] {
+        let pts = TitleInkRule.box(halfWidth: hw, halfHeight: hh), sc = SIMD3<Float>(repeating: lightInk ? 0 : 1)
+        let rx = max(hw * c.radius, 1e-4), ry = max(hh * c.radius, 1e-4)
+        return samples.enumerated().map { j, s in
+            let q = j < pts.count ? pts[j] : .zero
+            return s + (sc - s) * (c.amount * falloff(((q.x / rx) * (q.x / rx) + (q.y / ry) * (q.y / ry)).squareRoot()))
+        }
+    }
+}
+
 /// CPU twins of what each Map look draws under a title's box (`TitleInkRule.box`), one sRGB colour per sample point.
 /// Every twin is a port of its shader's maths at those points; what each leaves out is named on it. Inputs are the
 /// colours the shader is given (the orb's colour after the Map's own boost / translate, the study stops) and the GROUND.

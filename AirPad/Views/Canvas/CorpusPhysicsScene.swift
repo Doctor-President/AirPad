@@ -3789,6 +3789,7 @@ final class CorpusPhysicsScene: SKScene {
             let p = titleInkPick(nodeID: nodeID, fill: node.map { bubbleColor(for: $0) } ?? .gray,
                                  isMeta: node?.isMeta ?? false, box: Self.inkBox(titleNode))
             MSDFLabel.recolor(container: titleNode, color: Self.uiColor(p.ink))
+            updateTitleScrim(titleNode, pick: p)
         }
     }
 
@@ -4926,9 +4927,13 @@ final class CorpusPhysicsScene: SKScene {
             guard let self else { return }
             let m = self.mapTuning ?? .today
             let look = Self.drawnTitleLook(m.orbLook, light: self.currentIsLight)
-            let byNew = ProcessInfo.processInfo.arguments.contains("-InkStillSortNew")   // the n worst by the NEW rule
+            // 1.1-B `-InkStillScrim`: the frames are the area rule's ink with the scrim off ("old") then on ("new"), over
+            // the titles under 4.5:1 only, hardest first
+            let scrimTour = ProcessInfo.processInfo.arguments.contains("-InkStillScrim")
+            let byNew = scrimTour || ProcessInfo.processInfo.arguments.contains("-InkStillSortNew")   // the n worst by the NEW rule
             var ids: [(String, Float, Float, Bool)] = self.inkAuditItems(lookFilter: (look, self.currentIsLight), realOnly: true)
                 .sorted { byNew ? ($0.newA, $0.id) < ($1.newA, $1.id) : ($0.aaW, $0.id) < ($1.aaW, $1.id) }
+                .filter { !scrimTour || $0.newA < TitleInkRule.minContrast }
                 .map { ($0.id, $0.aaA, $0.newA, $0.flipped) }
             if let s = UserDefaults.standard.string(forKey: "InkStillIDs") {
                 let want = s.split(separator: ",").map(String.init)
@@ -4949,7 +4954,7 @@ final class CorpusPhysicsScene: SKScene {
                             self.applyOrbScales()
                         }
                         centre()
-                        Self.worstCaseInkDebug = old
+                        if scrimTour { Self.titleScrim = old ? nil : TitleScrim.study } else { Self.worstCaseInkDebug = old }
                         self.restyleLabels()
                         // the lens / band relaxation moves orbs once the zoom lands: re-centre, then log where it sits
                         DispatchQueue.main.asyncAfter(deadline: .now() + 1.2) { centre() }
@@ -4967,6 +4972,13 @@ final class CorpusPhysicsScene: SKScene {
                                 let bx = Self.inkBox(sp.children.first { $0.name == "titleLabel" })
                                 NSLog("[INKSTILL] box %d %.3f %.3f", k + 1, bx.last?.x ?? 0, bx.last?.y ?? 0)
                                 NSLog("[INKSTILL] twin %d %@", k + 1, sm.map(OrbStudyPalettes.hex).joined(separator: ","))
+                                if scrimTour {   // the title's ratio with the scrim, scored as the study scores it
+                                    let pk = TitleInkRule.pick(samples: sm, inks: Self.titleInks(look, light: self.currentIsLight, m: m))
+                                    let b = (sp.children.first { $0.name == "titleLabel" }?.userData?["inkBox"] as? [Float]) ?? [0.6, 0.35]
+                                    let s2 = TitleScrim.apply(sm, hw: b[0], hh: b[1], lightInk: pk.lightInk, TitleScrim.study)
+                                    NSLog("[INKSTILL] scrim %d id=%@ p80=%.2f withScrim=%.2f ink=%@", k + 1, e.0, pk.area,
+                                          TitleInkRule.areaContrast(pk.ink, over: s2), pk.lightInk ? "light" : "dark")
+                                }
                             }
                             NSLog("[INKSTILL] %d %@ id=%@ look=%@ map=%@ aaP80=%.2f newP80=%.2f flipped=%@ cx=%.1f cy=%.1f r=%.1f", k + 1,
                                   old ? "old" : "new", e.0, look.rawValue, self.currentIsLight ? "light" : "dark", e.1, e.2,
@@ -4977,6 +4989,7 @@ final class CorpusPhysicsScene: SKScene {
             }
             DispatchQueue.main.asyncAfter(deadline: .now() + Double(ids.count * 2) * 4) {
                 Self.worstCaseInkDebug = false
+                if scrimTour { Self.titleScrim = nil }
                 NSLog("[INKSTILL] end")
             }
         }
@@ -5385,6 +5398,50 @@ final class CorpusPhysicsScene: SKScene {
         return TitleInkRule.pick(samples: samples, inks: inks)
     }
 
+    /// 1.1-B — the soft tonal scrim under titles whose ink is under 4.5:1 (`TitleScrim`). nil = off: T decides from
+    /// stills (design-refs/1.1b-ink/scrim/); only DEBUG's `-TitleScrim` / `-InkStillScrim` turn it on for now.
+    static var titleScrim: TitleScrim.Config? = {
+        #if DEBUG
+        if ProcessInfo.processInfo.arguments.contains("-TitleScrim") { return TitleScrim.study }
+        #endif
+        return nil
+    }()
+    static let scrimName = "titleScrim"
+    /// One shared texture: white, alpha = `TitleScrim.falloff(ρ)` over the unit disc (tinted per title).
+    private static let scrimTexture: SKTexture = {
+        let n = 128
+        let img = UIGraphicsImageRenderer(size: CGSize(width: n, height: n), format: {
+            let f = UIGraphicsImageRendererFormat(); f.scale = 1; f.opaque = false; return f }()).image { ctx in
+            for y in 0..<n { for x in 0..<n {
+                let dx = (Float(x) + 0.5) / Float(n) * 2 - 1, dy = (Float(y) + 0.5) / Float(n) * 2 - 1
+                let a = TitleScrim.falloff((dx * dx + dy * dy).squareRoot())
+                guard a > 0 else { continue }
+                ctx.cgContext.setFillColor(UIColor(white: 1, alpha: CGFloat(a)).cgColor)
+                ctx.cgContext.fill(CGRect(x: x, y: y, width: 1, height: 1))
+            } }
+        }
+        let t = SKTexture(image: img); t.filteringMode = .linear
+        return t
+    }()
+
+    /// Put (or take away) the scrim behind a title container: present only when the scrim is on and the title's ink is
+    /// under 4.5:1 by area. Inside the container (below its glyphs), so the LOD fade (container alpha) and rebuilds
+    /// carry it.
+    private func updateTitleScrim(_ container: SKNode, pick: TitleInkRule.Pick) {
+        container.childNode(withName: Self.scrimName)?.removeFromParent()
+        guard let c = Self.titleScrim, pick.area < TitleInkRule.minContrast,
+              let b = container.userData?["inkBox"] as? [Float], b.count == 2,
+              let r = container.userData?["inkRadius"] as? CGFloat else { return }
+        let s = SKSpriteNode(texture: Self.scrimTexture)
+        s.name = Self.scrimName
+        s.size = CGSize(width: CGFloat(2 * b[0] * c.radius) * r, height: CGFloat(2 * b[1] * c.radius) * r)
+        s.color = pick.lightInk ? .black : .white
+        s.colorBlendFactor = 1
+        s.alpha = CGFloat(c.amount)
+        s.zPosition = 0
+        container.addChild(s)
+    }
+
     /// The sample points under a title container's set type (stored by makeTitleSprite; the default box otherwise).
     static func inkBox(_ container: SKNode?) -> [SIMD2<Float>] {
         guard let v = container?.userData?["inkBox"] as? [Float], v.count == 2 else { return TitleInkRule.titleBox }
@@ -5777,6 +5834,8 @@ final class CorpusPhysicsScene: SKScene {
         let container = MSDFLabel.makeContainer(lines: lines, pointSize: pt,
                                                 color: Self.uiColor(p.ink), fullTitle: text, font: font)
         container.userData?["inkBox"] = inkBox
+        container.userData?["inkRadius"] = radius
+        updateTitleScrim(container, pick: p)
         #if DEBUG
         container.userData?["debugLines"] = lines   // 1.1-B study export
         container.userData?["debugLineHeightEm"] = font.lineHeightEm

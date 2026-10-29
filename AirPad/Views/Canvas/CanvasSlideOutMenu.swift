@@ -267,7 +267,9 @@ struct AppearancePanel: View {
                     .accessibilityIdentifier("appearancePanel.theme")
                 }
                 MapLookSection()
+                MapGroundSection()                    // 1.1-B — Pro: the Map's ground + dots
                 GravityWellsToggle(detailed: false)   // 1.1-A fix-up (1)
+                SheenToggle(detailed: false)          // 1.1-B — TestFlight only
                 DashboardSurfaceSection()             // 1.1-A fix-up (2)
                 GlassAppearanceToggles(detailed: false)
             }

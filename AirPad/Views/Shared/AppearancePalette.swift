@@ -107,6 +107,12 @@ enum AppearancePalette {
         dynamic(dark: "FFFFFF", light: "232A2E")
     }
 
+    /// 1.1-B — the ground behind the library views (cards, list, grid) and the Map's SwiftUI backing: the Pro custom
+    /// background when this appearance has one, else today's `mapBackground` exactly.
+    @ViewBuilder static func libraryBackground(dark: Bool) -> some View {
+        if let g = MapGround.override(light: !dark) { CustomGroundView(side: g) } else { mapBackground(dark: dark) }
+    }
+
     /// Ink for text placed on a card FACE (over the warm-cream card art), at a
     /// given opacity. Dark reproduces the shipped warm-cream (`#FFF9F0`)
     /// BYTE-IDENTICAL; light flips to the appearance `ink` (`#232A2E`) so the
@@ -340,8 +346,11 @@ struct DashboardSurface: ViewModifier {
         return DashboardSurfaceChoice.effective(pickedRaw: pickedRaw, isPro: ProStore.shared.isPro)
     }
 
+    /// 1.1-B — over a custom background, the see-through surfaces' text picks its ink by the background's rule; Solid keeps
+    /// today's ink (its own opaque fill).
     @ViewBuilder func body(content: Content) -> some View {
         let dark = scheme == .dark
+        let content = content.onCustomGround(choice != .panel, pane: true)   // the pane's text, not its glass
         switch choice {
         case .glass:
             content.glassEffect(.regular, in: shape)
@@ -449,3 +458,49 @@ struct AppearanceApplier: UIViewRepresentable {
     }
 }
 
+
+
+// MARK: - 1.1-B custom background
+
+/// The Pro custom background as a view: one colour, or the two stops across the screen exactly as the Map's grid shader
+/// draws them (t = 0.5 + dot(offset, dir) / (|w·dir.x| + |h·dir.y|), offset from the centre, y up).
+struct CustomGroundView: View {
+    let side: MapGroundSide
+    private func color(_ c: SIMD3<Float>) -> Color { Color(red: Double(c.x), green: Double(c.y), blue: Double(c.z)) }
+    var body: some View {
+        if side.gradient {
+            GeometryReader { geo in
+                let w = Float(geo.size.width), h = Float(geo.size.height), d = side.direction
+                let ext = max(abs(w * d.x) + abs(h * d.y), 1)
+                // the offsets where t = 0 and t = 1, as unit points (y down)
+                let p0 = -d * ext / 2, p1 = d * ext / 2
+                LinearGradient(colors: [color(side.colorRGB), color(side.color2RGB)],
+                               startPoint: UnitPoint(x: CGFloat(0.5 + p0.x / w), y: CGFloat(0.5 - p0.y / h)),
+                               endPoint: UnitPoint(x: CGFloat(0.5 + p1.x / w), y: CGFloat(0.5 - p1.y / h)))
+            }
+        } else {
+            color(side.colorRGB)
+        }
+    }
+}
+
+/// 1.1-B — marks content whose text sits directly on the background. With a Pro custom background, its text takes the ink
+/// the contrast rule picks for that background (`MapGround.inkPick`, the orb titles' p80 rule): `AppearancePalette.ink`
+/// is white in Dark and #232A2E in Light — exactly the rule's two inks — so the content is drawn in the scheme whose ink
+/// the rule picked. Without a custom background (or `on` false) nothing changes. Use it on text, not on surfaces: a
+/// material inside would follow the flipped scheme.
+struct OnCustomGround: ViewModifier {
+    var on = true
+    var pane = false   // the text sits on a see-through pane over the background (judged against the pane, `paneOver`)
+    @Environment(\.colorScheme) private var scheme
+    func body(content: Content) -> some View {
+        if on, let p = MapGround.inkPick(light: scheme == .light, pane: pane) {
+            content.environment(\.colorScheme, p.lightInk ? .dark : .light)
+        } else {
+            content
+        }
+    }
+}
+extension View {
+    func onCustomGround(_ on: Bool = true, pane: Bool = false) -> some View { modifier(OnCustomGround(on: on, pane: pane)) }
+}

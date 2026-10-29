@@ -84,6 +84,31 @@ enum BackgroundGridNode {
         }
     }
 
+    /// 1.1-B — the Map's ground: its colour, and a second stop + direction (y up, unit; nil = one colour).
+    static func setGround(_ shape: SKShapeNode, color: SIMD3<Float>, gradient: (color2: SIMD3<Float>, dir: SIMD2<Float>)?) {
+        guard let uniforms = shape.fillShader?.uniforms else { return }
+        for u in uniforms {
+            switch u.name {
+            case "u_ground_color": u.vectorFloat3Value = color
+            case "u_ground2": u.vectorFloat3Value = gradient?.color2 ?? color
+            case "u_grad_dir": u.vectorFloat2Value = gradient?.dir ?? .zero
+            default: break
+            }
+        }
+    }
+
+    /// 1.1-B — the sheen (`MapSheen`): amount 0 = off.
+    static func setSheen(_ shape: SKShapeNode, on: Bool) {
+        guard let uniforms = shape.fillShader?.uniforms else { return }
+        for u in uniforms {
+            switch u.name {
+            case "u_sh": u.vectorFloat4Value = on ? vector_float4(MapSheen.amount, MapSheen.softness, MapSheen.relief, MapSheen.colour) : .zero
+            case "u_sh_l": let l = MapSheen.light; u.vectorFloat4Value = vector_float4(l.x, l.y, l.z, MapSheen.falloffNearWells)
+            default: break
+            }
+        }
+    }
+
     /// Resize when the viewport changes (e.g. orientation).
     static func resize(_ shape: SKShapeNode, to size: CGSize) {
         let half = CGSize(width: size.width / 2, height: size.height / 2)
@@ -271,14 +296,41 @@ enum BackgroundGridNode {
             // linear-filtered channel and composites it Normal over (opaque ground ▸ dots) at u_ripple_amt.
             vec3 darkGrain = vec3(0.0);
         \(darkGrainBranch)
+            // 1.1-B — the Map's (Pro-editable) ground: one colour, or two stops across the screen along u_grad_dir (zero
+            // = off), exactly as the ground study (Ops/reference/ground-study.html) draws it.
+            vec3 G = u_ground_color;
+            if (dot(u_grad_dir, u_grad_dir) > 0.0) {
+                float ext = abs(u_viewport_size.x * u_grad_dir.x) + abs(u_viewport_size.y * u_grad_dir.y);
+                G = mix(u_ground_color, u_ground2, clamp(0.5 + dot(screenOffset, u_grad_dir) / ext, 0.0, 1.0));
+            }
+            // 1.1-B — SHEEN (the study's "wellsSlope"): the wells' pull IS the slope of the sheet; a soft specular hit
+            // where the sheet faces the light, measured against the FLAT sheet's own value (subtracted) so open ground
+            // never lifts; fades going down into the wells; screen-blended in the ground's own hue. Only with the
+            // wells drawing (mode 3). u_sh = (amount, softness, relief, colour); u_sh_l = (light direction, falloff).
+            vec4 F = texture2D(u_disp_field, v_tex_coord);
+            if (u_sh.x > 0.0 && u_warp_mode > 2.5) {
+                vec2 shPull = (F.rg - vec2(0.5)) * (2.0 * u_warp_mass_range);
+                vec2 grad = -shPull * 0.35 * u_sh.z;
+                float depth = clamp(length(shPull), 0.0, 1.0);
+                vec3 N = normalize(vec3(grad, 1.0));
+                vec3 H = normalize(u_sh_l.xyz + vec3(0.0, 0.0, 1.0));
+                float shp = exp2(mix(8.0, 2.5, u_sh.y));
+                float flatSpec = pow(H.z, shp);
+                float spec = max(pow(max(dot(N, H), 0.0), shp) - flatSpec, 0.0) / max(1.0 - flatSpec, 0.001);
+                float mask = 1.0 - smoothstep(1.0 - u_sh_l.w, 1.0, depth);
+                vec3 tint = G / max(max(G.r, G.g), max(G.b, 0.001));
+                vec3 shCol = mix(vec3(1.0), tint, u_sh.w);
+                float shK = clamp(spec * mask * u_sh.x, 0.0, 1.0);
+                G = vec3(1.0) - (vec3(1.0) - G) * (vec3(1.0) - shCol * shK);
+            }
             if (u_ripple_amt > 0.0) {
-                float R = texture2D(u_disp_field, v_tex_coord).b;
-                vec3 groundDots = u_ground_color * (1.0 - alpha) + u_dot_color * alpha;
+                float R = F.b;
+                vec3 groundDots = G * (1.0 - alpha) + u_dot_color * alpha;
                 gl_FragColor = vec4(mix(groundDots, vec3(R) * u_ripple_color, u_ripple_amt) + darkGrain, 1.0);   // live-39: tint (white = today)
             } else if (u_light_ground_on > 0.5) {
                 // Brief AT — LIGHT comp: the grid OWNS the opaque #FFEEED ground (u_ground_color) so the
                 // dots read on T's chosen ground. Pool was removed at the lock; just ground ▸ dots, opaque.
-                vec3 groundDots = u_ground_color * (1.0 - alpha) + u_dot_color * alpha;
+                vec3 groundDots = G * (1.0 - alpha) + u_dot_color * alpha;
         \(paperBranch)
                 gl_FragColor = vec4(groundDots, 1.0);
             } else {
@@ -327,7 +379,13 @@ enum BackgroundGridNode {
             SKUniform(name: "u_ground_color", vectorFloat3: vector_float3(0.0667, 0.0667, 0.0824)),
             SKUniform(name: "u_ripple_color", vectorFloat3: vector_float3(1, 1, 1)),   // live-39 — the ambient tint (white = today)
             // Brief AT — LIGHT comp owns the opaque ground (0 → dark/list byte-identical). Pool removed.
-            SKUniform(name: "u_light_ground_on", float: 0)
+            SKUniform(name: "u_light_ground_on", float: 0),
+            // 1.1-B — the editable ground's second stop + direction (zero = no gradient) and the sheen (amount 0 = off).
+            // Packed into vectors: each SKUniform is a Metal buffer binding (31 max).
+            SKUniform(name: "u_ground2", vectorFloat3: vector_float3(0.0667, 0.0667, 0.0824)),
+            SKUniform(name: "u_grad_dir", vectorFloat2: vector_float2(0, 0)),
+            SKUniform(name: "u_sh", vectorFloat4: vector_float4(0, 0, 0, 0)),
+            SKUniform(name: "u_sh_l", vectorFloat4: vector_float4(0, 0, 1, 0))
         ]
         #if DEBUG || TESTFLIGHT
         shader.uniforms.append(SKUniform(name: "u_noise", texture: StudyNoise.texture))   // live-48 — the paper's fbm

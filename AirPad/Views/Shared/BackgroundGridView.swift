@@ -114,7 +114,8 @@ struct BackgroundGridView: View {
         ZStack {
             // §4 background-pass bake (T 2026-10-02): the dark ground is a VERTICAL GRADIENT
             // (#161616 top → #0A0A0C bottom), replacing the flat #161616; light stays flat.
-            if colorScheme == .dark {
+            // 1.1-B: not over a Pro custom background (the container draws that; the dots stay today's).
+            if colorScheme == .dark, MapGround.override(light: false) == nil {
                 LinearGradient(colors: [Color(hexString: "161616"), Color(hexString: "0A0A0C")],
                                startPoint: .top, endPoint: .bottom)
                     .ignoresSafeArea()

@@ -852,7 +852,7 @@ final class CorpusPhysicsScene: SKScene {
                 .vectorFloat3Value = vector_float3(MapCompTuning.palLightness, MapCompTuning.palChroma,
                                                    MapCompTuning.palHueDeg * Float.pi / 180)   // deg → rad
             orbSpriteShader.uniforms.first { $0.name == "u_ground_color" }?
-                .vectorFloat3Value = Self.rgb3(MapCompTuning.lightGroundHex)
+                .vectorFloat3Value = Self.lightGroundRGB
             // Grid: opaque owned #FFEEED ground; no pool, no ripple.
             setGrid("u_ripple_amt", 0)
             setGrid("u_light_ground_on", 1)
@@ -872,8 +872,19 @@ final class CorpusPhysicsScene: SKScene {
                 .vectorFloat3Value = vector_float3(0.0667, 0.0667, 0.0824)
             if let m = mapTuning { applyMapDarkTuning(m) }
         }
+        // 1.1-B — the Pro-edited ground (colour + optional gradient) on the grid; nil = today's ground exactly.
+        if let grid = gridNode {
+            if let o = MapGround.override(light: currentIsLight) {
+                BackgroundGridNode.setGround(grid, color: o.colorRGB, gradient: o.gradient ? (o.color2RGB, o.direction) : nil)
+            } else {
+                grid.fillShader?.uniformNamed("u_grad_dir")?.vectorFloat2Value = .zero
+            }
+        }
         applyMapLook(mapTuning)   // live-43 — the orb look on both grounds (Aura, Outline)
     }
+
+    /// 1.1-B — the light Map's ground as one colour (the orb shaders' "ground"; a gradient's middle): the Pro edit, or #FFEEED.
+    static var lightGroundRGB: vector_float3 { MapGround.override(light: true)?.meanRGB ?? rgb3(MapCompTuning.lightGroundHex) }
 
     /// live-48 — the tuner's Map values AS DRAWN: thermal ≥ .critical → the orb look is Flat until the phone cools (the
     /// tuner keeps T's pick, nothing in the UI changes; the look returns by itself). Every look read in the scene goes
@@ -888,6 +899,10 @@ final class CorpusPhysicsScene: SKScene {
         #endif
         m.orbLook = MapLookChoice.effective
         if MapHeatGuard.shared.critical { m.orbLook = .flat }
+        // 1.1-B — the Pro-edited dark ground + dots (a gradient's middle stands in where one colour is needed).
+        if let o = MapGround.override(light: false) {
+            m.ground = TunerHSL(hex: Self.hex6(o.meanRGB)); m.dot = TunerHSL(hex: o.dot); m.dotOpacity = o.dotOpacity
+        }
         m.applyStrength(MapLookStrength.effective(m.orbLook))   // 1.1-B — the Pro look's Subtle / Medium / Strong
         #if DEBUG
         let sk = "\(m.orbLook.rawValue)/\(MapLookStrength.effective(m.orbLook).label)"
@@ -2045,6 +2060,10 @@ final class CorpusPhysicsScene: SKScene {
         }
         startAuraSizeScriptIfAsked()
         scheduleGPUBenchIfAsked()   // 1.1-A (6) — `-MapGPUBench`
+        // 1.1-B — `-MapSheenFlipAt <s>`: flip the Sheen switch once, s seconds in (a same-launch off/on still pair).
+        if let v = UserDefaults.standard.string(forKey: "MapSheenFlipAt"), let t = Double(v) {
+            DispatchQueue.main.asyncAfter(deadline: .now() + t) { MapSheen.userOn.toggle(); NSLog("[SHEEN] flipped → %@", MapSheen.userOn ? "on" : "off") }
+        }
         scheduleMapLayoutExportIfAsked()   // 1.1-B study — `-ExportMapLayout <tag>`
         // 1.1-A (4) — `-InkAudit` (the title-ink audit, after the auto-fit settles) and `-InkStillTour <n>` (before / after stills).
         if ProcessInfo.processInfo.arguments.contains("-DumpLookStrengths") { MapDarkTuning.dumpStrengths() }   // 1.1-B
@@ -2178,10 +2197,22 @@ final class CorpusPhysicsScene: SKScene {
             let dotDark = view?.traitCollection.userInterfaceStyle != .light
             var dot = AppearancePalette.mapGridDotRGB(dark: dotDark)
             var dotOpacity = AppearancePalette.mapGridDotOpacity(dark: dotDark)
-            if dotDark, let m = mapTuning {   // live-39 — the tuner's dark dots
+            if dotDark, let m = mapTuning {   // live-39 — the tuner's dark dots (1.1-B: the Pro-edited dots ride in mapTuning)
                 let c = m.dot.simd; dot = (c.x, c.y, c.z); dotOpacity = Float(m.dotOpacity)
+            } else if !dotDark, let o = MapGround.override(light: true) {   // 1.1-B — the Pro-edited light dots
+                let c = o.dotRGB; dot = (c.x, c.y, c.z); dotOpacity = Float(o.dotOpacity)
             }
             BackgroundGridNode.setDotAppearance(grid, r: dot.r, g: dot.g, b: dot.b, opacity: dotOpacity)
+            BackgroundGridNode.setSheen(grid, on: sheenOn)
+            // 1.1-B — the titles' ink reads the ground: re-pick when the edit (or Pro) changes, and with a gradient also
+            // after the camera has moved a quarter screen (each title then sits over another part of the gradient).
+            let ov = MapGround.override(light: currentIsLight)
+            let camMoved = hypot(cameraNode.position.x - lastGroundInkCam.x, cameraNode.position.y - lastGroundInkCam.y)
+                / max(cameraNode.xScale, 0.0001)
+            if ov != lastGroundOverride || (ov?.gradient == true && camMoved > size.height / 4) {
+                lastGroundOverride = ov; lastGroundInkCam = cameraNode.position
+                restyleLabels()
+            }
         }
 
         // Re-theme unfocused orbs when the appearance flips (light ↔ dark). Fires
@@ -3498,7 +3529,13 @@ final class CorpusPhysicsScene: SKScene {
     /// Per-appearance where T dialled them apart; `reach`/`depth`/`massLaw` converged on one value.
     enum GridWarpTuning {
         static let reachOrbRadii: Double = 6.000     // both appearances (top of the dialled range; T called it final)
-        static let depthOrbRadii: Double = 0.600     // both appearances
+        /// 1.1-B — T's ground study: 0.89 (was 0.600, T device-final 2026-09-14). DEBUG `-MapWellsDepth <x>` for A/B stills.
+        static let depthOrbRadii: Double = {
+            #if DEBUG
+            if let v = UserDefaults.standard.string(forKey: "MapWellsDepth"), let d = Double(v) { return d }
+            #endif
+            return 0.89
+        }()
         static let massLaw: Double = 2.177           // both appearances (exponent: displacement ∝ r^law)
         static let sign: Double = 1                  // +1 = converge (mass dimple)
         /// Mass influence — how strongly an orb's own size drives its dent. 0 = every orb equal.
@@ -3510,6 +3547,18 @@ final class CorpusPhysicsScene: SKScene {
     private var lastWarpMode = 0
     private var lastWellsActive = true
     private var lastFieldIsLight: Bool?
+    // 1.1-B — the editable ground's last state the titles were inked for, and where the camera was then.
+    private var lastGroundOverride: MapGroundSide?
+    private var lastGroundInkCam: CGPoint = .zero
+    /// 1.1-B — the sheen this frame (`MapSheen.active`; the shader also needs the wells drawing, mode 3). DEBUG: the bench
+    /// and `-MapGroundCase sheen | sheenWellsOff` force it on.
+    private var sheenOn: Bool {
+        #if DEBUG
+        if groundCase.sheenForced { return true }
+        if benchRunning { return false }
+        #endif
+        return MapSheen.active
+    }
     #if DEBUG
     // 1.1-A (6) Map ground measurement harness state (see `MapGroundCase`, end of file).
     var groundCase: MapGroundCase = MapGroundCase(rawValue: UserDefaults.standard.string(forKey: "MapGroundCase") ?? "") ?? .all
@@ -4165,7 +4214,7 @@ final class CorpusPhysicsScene: SKScene {
             SKUniform(name: "u_light_val_add", float: MapCompTuning.lightValAdd),
             SKUniform(name: "u_light_focus",   float: MapCompTuning.lightFocusBase * MapCompTuning.lightFocus),
             SKUniform(name: "u_orb_opacity",   float: 1.0),
-            SKUniform(name: "u_ground_color",  vectorFloat3: Self.rgb3(MapCompTuning.lightGroundHex)),
+            SKUniform(name: "u_ground_color",  vectorFloat3: Self.lightGroundRGB),
             SKUniform(name: "u_pal_lch",       vectorFloat3: vector_float3(MapCompTuning.palLightness,
                                                                            MapCompTuning.palChroma,
                                                                            MapCompTuning.palHueDeg * .pi / 180))
@@ -4335,7 +4384,7 @@ final class CorpusPhysicsScene: SKScene {
         auraDriftOn = v.drift
         auraIsEclipse = eclipse
         let ext = v.spriteExtent
-        let ground: vector_float3 = currentIsLight ? Self.rgb3(MapCompTuning.lightGroundHex) : TunerHSL(hex: m.fieldHex).simd
+        let ground: vector_float3 = currentIsLight ? Self.lightGroundRGB : TunerHSL(hex: m.fieldHex).simd
         let u = simd_float4x4(columns: (
             vector_float4(Float(v.spread), Float(v.warp), Float(v.softness), Float(v.haloReach)),
             vector_float4(Float(v.rim), Float(v.fringe), Float(v.grain), eclipse ? 1 : 0),
@@ -4714,7 +4763,7 @@ final class CorpusPhysicsScene: SKScene {
         }
         let v: any StudyOrbLook
         switch kind { case .lightGlass: v = m.lightGlass; case .riso: v = m.riso; case .gradient: v = m.gradient }
-        let ground: vector_float3 = currentIsLight ? Self.rgb3(MapCompTuning.lightGroundHex) : TunerHSL(hex: m.fieldHex).simd
+        let ground: vector_float3 = currentIsLight ? Self.lightGroundRGB : TunerHSL(hex: m.fieldHex).simd
         let mode: Float = kind == .lightGlass ? 3 : kind == .riso ? 5 : 6
         let u = simd_float4x4(columns: (
             vector_float4(Float(v.spread), Float(v.warp), Float(v.softness), Float(v.haloReach)),
@@ -5346,8 +5395,27 @@ final class CorpusPhysicsScene: SKScene {
     /// The ground under the titles — an explicit INPUT to the ink rule (1.1-B's custom backgrounds plug in here): the light
     /// Map's #FFEEED; on the dark Map the field the grid draws next to an orb (the ground with the ambient ripple at zero,
     /// = the colour the Pro-look shaders composite over).
-    static func titleGround(_ m: MapDarkTuning, light: Bool) -> SIMD3<Float> {
-        light ? rgb3(MapCompTuning.lightGroundHex) : TunerHSL(hex: m.fieldHex).simd
+    /// 1.1-B: the Pro-edited ground plugs in here; with a gradient, the ground at the title's place on screen (`offset`, pt
+    /// from the screen's centre, y up — the study's `groundAt`), or the gradient's middle when the place isn't known.
+    static func titleGround(_ m: MapDarkTuning, light: Bool, offset: SIMD2<Float>? = nil,
+                            viewport: SIMD2<Float> = SIMD2(440, 956)) -> SIMD3<Float> {
+        if let g = MapGround.override(light: light) {
+            let c = offset.map { g.ground(atOffset: $0, viewport: viewport) } ?? g.meanRGB
+            return light ? c : c * Float(1 - m.ambientAmount)   // dark: the field next to an orb (= m.fieldHex's mix)
+        }
+        return light ? rgb3(MapCompTuning.lightGroundHex) : TunerHSL(hex: m.fieldHex).simd
+    }
+    static func hex6(_ c: SIMD3<Float>) -> String {
+        String(format: "%02X%02X%02X", Int((min(max(c.x, 0), 1) * 255).rounded()), Int((min(max(c.y, 0), 1) * 255).rounded()),
+               Int((min(max(c.z, 0), 1) * 255).rounded()))
+    }
+    /// Where an orb sits on screen for `titleGround` (only needed when the edited ground has a gradient).
+    private func titleGroundOffset(_ nodeID: String) -> (SIMD2<Float>, SIMD2<Float>)? {
+        guard MapGround.override(light: currentIsLight)?.gradient == true, let v = view,
+              let sp = nodeSprites[nodeID], let par = sp.parent else { return nil }
+        let p = convertPoint(toView: convert(sp.position, from: par))
+        let w = Float(v.bounds.width), h = Float(v.bounds.height)
+        return (SIMD2(Float(p.x) - w / 2, h / 2 - Float(p.y)), SIMD2(w, h))
     }
 
     /// Each look's two candidate inks — the colours each look already used: the study's #F4F2F8 / #1B1A20 (Aura, Eclipse,
@@ -5409,8 +5477,10 @@ final class CorpusPhysicsScene: SKScene {
         let m = mapTuning ?? .today, light = currentIsLight
         let look = Self.drawnTitleLook(m.orbLook, light: light)
         let fam = studyFamily(nodeID, fill: fill), seed = studySeed(nodeID)
+        let at = titleGroundOffset(nodeID)
+        let ground = at.map { Self.titleGround(m, light: light, offset: $0.0, viewport: $0.1) } ?? Self.titleGround(m, light: light)
         let samples = titleSamples(look, light: light, fill: fill, alpha: isMeta ? 0.55 : 1, family: fam, seed: seed, m: m,
-                                   ground: Self.titleGround(m, light: light), box: box)
+                                   ground: ground, box: box)
         let inks = Self.titleInks(look, light: light, m: m)
         #if DEBUG
         if Self.worstCaseInkDebug {   // `-InkStillTour`'s "before" frames: 1.1-A's worst-case pick (its halo is gone)
@@ -6345,7 +6415,9 @@ final class MapHeatGuard {
 ///   hidden. `empty`: grid + orbs hidden (clear + SpriteKit overhead).
 enum MapGroundCase: String, CaseIterable {
     case all, wellsOff, rippleOff, wellsRippleOff, dotsOff, gridOff, titlesOff, orbsOff, empty
-    var wellsOff: Bool { self == .wellsOff || self == .wellsRippleOff }
+    case sheen, sheenWellsOff   // 1.1-B — the sheen forced on (with the wells; and with them off, where it must cost 0)
+    var wellsOff: Bool { self == .wellsOff || self == .wellsRippleOff || self == .sheenWellsOff }
+    var sheenForced: Bool { self == .sheen || self == .sheenWellsOff }
     var rippleOff: Bool { self == .rippleOff || self == .wellsRippleOff }
 }
 
@@ -6427,7 +6499,9 @@ extension CorpusPhysicsScene {
         func pct(_ a: [Double], _ q: Double) -> Double { a.isEmpty ? 0 : a.sorted()[min(a.count - 1, Int(Double(a.count) * q))] }
         let rounds = Int(UserDefaults.standard.string(forKey: "MapGPUBenchRounds") ?? "") ?? 2
         for round in 1...rounds {
-            for c in MapGroundCase.allCases + [.all] {
+            // 1.1-B: `-MapGPUBenchCases all,sheen,…` runs just those cases.
+            let only = (UserDefaults.standard.string(forKey: "MapGPUBenchCases") ?? "").split(separator: ",").compactMap { MapGroundCase(rawValue: String($0)) }
+            for c in only.isEmpty ? MapGroundCase.allCases + [.all] : only {
                 groundCase = c
                 var gpu: [Double] = [], wall: [Double] = [], upd: [Double] = [], warp: [Double] = [], enc: [Double] = []
                 var modes = Set<Int>()
@@ -6452,7 +6526,7 @@ extension CorpusPhysicsScene {
                                     round, c.rawValue as NSString, pct(gpu, 0.5), pct(enc, 0.5), pct(wall, 0.5), pct(wall, 0.1),
                                     pct(wall, 0.9), pct(upd, 0.5), pct(warp, 0.5),
                                     modes.sorted().map(String.init).joined(separator: ",") as NSString))
-                if round == 1, c == .all || c == .dotsOff, let src = gridNode?.fillShader?.source,
+                if round == 1, c == .all || c == .dotsOff || c == .sheen, let src = gridNode?.fillShader?.source,
                    let dir = FileManager.default.urls(for: .cachesDirectory, in: .userDomainMask).first {
                     try? src.write(to: dir.appendingPathComponent("grid-\(c.rawValue).glsl"), atomically: true, encoding: .utf8)
                 }

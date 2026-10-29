@@ -134,6 +134,151 @@ struct GravityWellsToggle: View {
     }
 }
 
+/// 1.1-B — "Sheen" (TestFlight only): T judges the ground study's sheen on the 1.1-B TestFlight. Shown only on TestFlight
+/// installs (`InstallChannel`), on by default there; App Store installs never show it and draw no sheen.
+struct SheenToggle: View {
+    var detailed: Bool
+    @Environment(\.appBodyFont) private var appFont
+    @State private var on = MapSheen.userOn
+    @State private var testFlight = InstallChannel.isTestFlight
+
+    var body: some View {
+        Group {
+            if testFlight {
+                Toggle(isOn: Binding(get: { on }, set: { on = $0; MapSheen.userOn = $0 })) {
+                    VStack(alignment: .leading, spacing: 2) {
+                        Text("Sheen").font(appFont.font(size: 15, weight: .medium, relativeTo: .subheadline))
+                            .foregroundStyle(AppearancePalette.ink)
+                        Text(MapWells.userOn ? "TestFlight only: a soft light across the wells. Off uses less battery."
+                                             : "TestFlight only. Needs Gravity on.")
+                            .font(appFont.font(size: 12, relativeTo: .caption1))
+                            .foregroundStyle(AppearancePalette.ink.opacity(0.4))
+                            .fixedSize(horizontal: false, vertical: true)
+                    }
+                }
+                .tint(.purple)
+                .accessibilityIdentifier("appearance.sheen")
+            }
+        }
+        .onReceive(NotificationCenter.default.publisher(for: .installChannelResolved)) { _ in
+            testFlight = InstallChannel.isTestFlight
+        }
+    }
+}
+
+/// 1.1-B — "Background", beside Map look (Pro): the background colour, an optional two-colour gradient across the screen,
+/// and the Map's dots, for the appearance showing now. It applies to the Map, cards, lists and the Dashboard (T, amended
+/// 2026-10-29); text on it picks its ink by contrast (`MapGround.inkPick`). Without Pro the row carries a lock and opens
+/// the Pro sheet, as the Map looks do. "Reset to default" returns every view to today's ground.
+struct MapGroundSection: View {
+    @Environment(\.appBodyFont) private var appFont
+    @Environment(\.colorScheme) private var scheme
+    @State private var showPro = false
+    @State private var side = MapGround.edited(light: false)
+    private var store: ProStore { ProStore.shared }
+    private var light: Bool { scheme == .light }
+
+    var body: some View {
+        VStack(alignment: .leading, spacing: 10) {
+            Text("Background").font(appFont.font(size: 15, weight: .semibold, relativeTo: .subheadline))
+                .foregroundStyle(AppearancePalette.ink)
+            Group {
+                if store.isPro { editor } else { lockedRow }
+            }
+            .background(AppearancePalette.ink.opacity(0.05))
+            .clipShape(RoundedRectangle(cornerRadius: 12))
+            Text(store.isPro ? "For the Map, cards, lists and the Dashboard in \(light ? "Light" : "Dark"). Switch to \(light ? "Dark" : "Light") to edit the other."
+                             : "Change the background and the Map's dots with AirPad Pro.")
+                .font(appFont.font(size: 12, relativeTo: .caption1)).foregroundStyle(AppearancePalette.ink.opacity(0.45))
+                .fixedSize(horizontal: false, vertical: true)
+        }
+        .sheet(isPresented: $showPro) { ProSheet() }
+        .onAppear { side = MapGround.edited(light: light) }
+        .onChange(of: scheme) { _, _ in side = MapGround.edited(light: light) }
+    }
+
+    private var lockedRow: some View {
+        Button { showPro = true } label: {
+            HStack(spacing: 14) {
+                GroundSwatch(side: light ? .lightDefault : .darkDefault)
+                Text("Background and dots").font(appFont.font(size: 16, relativeTo: .body)).foregroundStyle(AppearancePalette.ink)
+                Spacer()
+                Image(systemName: "lock.fill").font(.system(size: 13)).foregroundStyle(AppearancePalette.ink.opacity(0.35))
+            }
+            .padding(.horizontal, 12).padding(.vertical, 8)
+            .contentShape(Rectangle())
+        }
+        .buttonStyle(.plain)
+        .accessibilityLabel("Background, locked. Opens AirPad Pro.")
+        .accessibilityIdentifier("mapGround.locked")
+    }
+
+    private var editor: some View {
+        VStack(alignment: .leading, spacing: 10) {
+            ColorPicker("Colour", selection: hexBinding(\.color), supportsOpacity: false)
+            Toggle("Gradient", isOn: binding(\.gradient)).tint(.purple)
+            if side.gradient {
+                ColorPicker("Second colour", selection: hexBinding(\.color2), supportsOpacity: false)
+                slider("Angle", value: binding(\.angle), range: 0...360, text: "\(Int(side.angle.rounded()))°")
+            }
+            ColorPicker("Map dots", selection: hexBinding(\.dot), supportsOpacity: false)
+            slider("Map dot opacity", value: binding(\.dotOpacity), range: 0...1, text: "\(Int((side.dotOpacity * 100).rounded()))%")
+            Button("Reset to default") { side = light ? .lightDefault : .darkDefault; MapGround.setEdited(side, light: light) }
+                .font(appFont.font(size: 15, relativeTo: .subheadline))
+                .disabled(!side.custom)
+                .accessibilityIdentifier("mapGround.reset")
+        }
+        .font(appFont.font(size: 16, relativeTo: .body))
+        .foregroundStyle(AppearancePalette.ink)
+        .padding(12)
+        .accessibilityIdentifier("mapGround.editor")
+    }
+
+    private func slider(_ label: String, value: Binding<Double>, range: ClosedRange<Double>, text: String) -> some View {
+        VStack(alignment: .leading, spacing: 2) {
+            HStack { Text(label); Spacer(); Text(text).monospacedDigit().foregroundStyle(AppearancePalette.ink.opacity(0.6)) }
+            Slider(value: value, in: range).tint(.purple).accessibilityLabel(label)
+        }
+    }
+
+    /// Any edit makes the appearance custom (every view then draws it).
+    private func commit(_ s0: MapGroundSide) { var s = s0; s.custom = true; side = s; MapGround.setEdited(s, light: light) }
+    private func binding<T>(_ k: WritableKeyPath<MapGroundSide, T>) -> Binding<T> {
+        Binding(get: { side[keyPath: k] }, set: { var s = side; s[keyPath: k] = $0; commit(s) })
+    }
+    private func hexBinding(_ k: WritableKeyPath<MapGroundSide, String>) -> Binding<Color> {
+        Binding(get: {
+            let c = MapGroundSide.rgb(side[keyPath: k])
+            return Color(red: Double(c.x), green: Double(c.y), blue: Double(c.z))
+        }, set: { color in
+            var r: CGFloat = 0, g: CGFloat = 0, b: CGFloat = 0, a: CGFloat = 0
+            UIColor(color).getRed(&r, green: &g, blue: &b, alpha: &a)
+            func ch(_ v: CGFloat) -> Int { Int((min(max(v, 0), 1) * 255).rounded()) }
+            var s = side; s[keyPath: k] = String(format: "%02X%02X%02X", ch(r), ch(g), ch(b)); commit(s)
+        })
+    }
+}
+
+/// The ground drawn small: its colour (or gradient) with three dots.
+private struct GroundSwatch: View {
+    let side: MapGroundSide
+    var size: CGFloat = 34
+    private func color(_ h: String) -> Color { let c = MapGroundSide.rgb(h); return Color(red: Double(c.x), green: Double(c.y), blue: Double(c.z)) }
+    var body: some View {
+        ZStack {
+            LinearGradient(colors: [color(side.color), color(side.gradient ? side.color2 : side.color)],
+                           startPoint: .bottom, endPoint: .top)
+            HStack(spacing: size * 0.18) {
+                ForEach(0..<3, id: \.self) { _ in Circle().fill(color(side.dot).opacity(side.dotOpacity)).frame(width: 3, height: 3) }
+            }
+        }
+        .frame(width: size, height: size)
+        .clipShape(RoundedRectangle(cornerRadius: size * 0.22, style: .continuous))
+        .overlay(RoundedRectangle(cornerRadius: size * 0.22, style: .continuous).stroke(AppearancePalette.ink.opacity(0.12), lineWidth: 0.5))
+        .accessibilityHidden(true)
+    }
+}
+
 /// 1.1-A fix-up (2) — "Dashboard surface", beside Map look: what the Dashboard's panes are made of. Glass is free (and
 /// what everyone gets); without Pro the others carry a lock and open the Pro sheet, as the Map looks do.
 struct DashboardSurfaceSection: View {

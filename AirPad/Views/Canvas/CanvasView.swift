@@ -849,11 +849,18 @@ struct CanvasView: View {
 
     /// The Map's SwiftUI ground (behind the SpriteKit view; the dark grid paints its own opaque ground over it).
     /// live-39: a ground dialled in the TestFlight tuner shows here too, so the mount frame matches.
-    private var mapGround: Color {
+    /// 1.1-B — a Pro custom background shows here too (the grid paints the same over it).
+    @ViewBuilder private var mapGround: some View {
         #if DEBUG || TESTFLIGHT
-        if mapColorScheme == .dark, let m = AppearanceTuning.mapDark, m.ground != MapDarkTuning.today.ground { return m.ground.color }
+        if mapColorScheme == .dark, MapGround.override(light: false) == nil, let m = AppearanceTuning.mapDark,
+           m.ground != MapDarkTuning.today.ground {
+            m.ground.color
+        } else {
+            AppearancePalette.libraryBackground(dark: mapColorScheme == .dark)
+        }
+        #else
+        AppearancePalette.libraryBackground(dark: mapColorScheme == .dark)
         #endif
-        return AppearancePalette.mapBackground(dark: mapColorScheme == .dark)
     }
 
     private var canvasZStack: some View {

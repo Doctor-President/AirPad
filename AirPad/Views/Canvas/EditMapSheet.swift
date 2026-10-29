@@ -68,7 +68,7 @@ struct EditMapSheet: View {
                     }
                     .listRowBackground(AppearancePalette.ink.opacity(0.04))
                 } header: {
-                    Text("Gravity — signal weights")
+                    Text("Placement — signal weights")   // 1.1-B: was "Gravity — …" (T: the Map toggle is now "Gravity")
                 } footer: {
                     Text("Collection / Anchor / Meaning decide an entry's territory (argmax) and border lean. Backlink then pulls it toward its linked entries — capped, so territory law still wins. Each entry's tint is a shade of its territory family — brighter = more recent when varied by recency, a stable per-entry shade otherwise.")
                         .font(appFont.font(size: 12, relativeTo: .caption1)).foregroundStyle(AppearancePalette.ink.opacity(0.4))

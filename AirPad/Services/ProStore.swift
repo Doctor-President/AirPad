@@ -100,7 +100,9 @@ enum MapLookStrength {
     static let storageKey = "mapLook.strength.v1"   // [look rawValue: LookStrength rawValue]
     /// The looks with T's strengths. Glass has none: the study's Glass is the light-Map Light Glass, not the shipping one.
     static func has(_ l: MapOrbLook) -> Bool { [.aura, .eclipse, .riso, .gradient, .outline].contains(l) }
-    private static var cached: [String: Int] = UserDefaults.standard.dictionary(forKey: storageKey) as? [String: Int] ?? [:]
+    private static var cached: [String: Int] = (UserDefaults.standard.dictionary(forKey: storageKey) ?? [:]).compactMapValues {
+        ($0 as? NSNumber)?.intValue ?? ($0 as? String).flatMap { Int($0) }   // launch-argument values arrive as strings
+    }
     static func picked(_ l: MapOrbLook) -> LookStrength { cached[l.rawValue].flatMap(LookStrength.init(rawValue:)) ?? .medium }
     static func set(_ s: LookStrength, for l: MapOrbLook) {
         cached[l.rawValue] = s.rawValue
@@ -191,6 +193,7 @@ final class ProStore {
     private func setPro(_ v: Bool) {
         #if DEBUG
         if UserDefaults.standard.bool(forKey: "ProLocked") { isPro = false; return }   // `-ProLocked YES`: the locked rows' stills
+        if UserDefaults.standard.bool(forKey: "ProUnlocked") || MapLookChoice.debugLookHookActive { isPro = true; return }   // 1.1-B: Pro stills
         #endif
         isPro = v
         if v { proPending = false }

@@ -889,6 +889,14 @@ final class CorpusPhysicsScene: SKScene {
         m.orbLook = MapLookChoice.effective
         if MapHeatGuard.shared.critical { m.orbLook = .flat }
         m.applyStrength(MapLookStrength.effective(m.orbLook))   // 1.1-B — the Pro look's Subtle / Medium / Strong
+        #if DEBUG
+        let sk = "\(m.orbLook.rawValue)/\(MapLookStrength.effective(m.orbLook).label)"
+        if sk != Self.lastStrengthLog {
+            Self.lastStrengthLog = sk
+            NSLog("[STRENGTH] %@ aura spread=%.2f warp=%.2f rim=%.2f · wash bleed=%.2f · riso fringe=%.2f · outline ring=%.1f", sk,
+                  m.aura.spread, m.aura.warp, m.aura.rim, m.wash.bleed, m.riso.fringe, m.outline.ringWidth)
+        }
+        #endif
         return m
     }
     /// live-48 — a Pro look (Glass, Aura, Eclipse; Wash on the light Map) is what the orbs wear → 60 fps while panning.
@@ -945,6 +953,9 @@ final class CorpusPhysicsScene: SKScene {
     private var swatchFramed = false
     private var swatchFamily: (String, Int)?
     private var inkTourActive = false   // 1.1-A (4) `-InkStillTour`
+    #if DEBUG
+    private static var lastStrengthLog = ""   // 1.1-B `[STRENGTH]`: log the drawn values once per look / strength change
+    #endif
     private var inkTourCamera: (CGPoint, CGFloat)?   // 1.1-B `-InkStillScrim`: the "off" frame's camera, reused for "on"
     static let noTitlesDebug = ProcessInfo.processInfo.arguments.contains("-MapNoTitles")
     #endif

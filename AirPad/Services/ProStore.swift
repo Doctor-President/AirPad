@@ -165,27 +165,36 @@ enum MapGround {
         #if DEBUG
         // `-MapGroundDebug <base64 of a Stored as JSON>` for stills (base64: a bare `{…}` argument is parsed as a plist).
         if let b = UserDefaults.standard.string(forKey: "MapGroundDebug"), let d = Data(base64Encoded: b),
-           let s = try? JSONDecoder().decode(Stored.self, from: d) { return s }
+           let s = try? JSONDecoder().decode(Stored.self, from: d) {
+            let r = s.readable
+            NSLog("[GROUND] debug ground: dark %@%@ → %@%@ · light %@%@ → %@%@", s.dark.color, s.dark.gradient ? "→" + s.dark.color2 : "",
+                  r.dark.color, r.dark.gradient ? "→" + r.dark.color2 : "", s.light.color, s.light.gradient ? "→" + s.light.color2 : "",
+                  r.light.color, r.light.gradient ? "→" + r.light.color2 : "")
+            return r
+        }
         #endif
         guard let d = UserDefaults.standard.data(forKey: storageKey),
               let s = try? JSONDecoder().decode(Stored.self, from: d) else { return defaults }
-        return s
+        return s.readable
     }()
     /// The user's edit (kept even without Pro, like the Map look; drawn only with Pro).
     static var edited: Stored {
         get { cached }
         set {
-            cached = newValue
-            if let d = try? JSONEncoder().encode(newValue) { UserDefaults.standard.set(d, forKey: storageKey) }
+            let v = newValue.readable   // a ground text can't read on is never stored (ReadableGround)
+            cached = v
+            if let d = try? JSONEncoder().encode(v) { UserDefaults.standard.set(d, forKey: storageKey) }
             Observed.shared.version += 1
             NotificationCenter.default.post(name: .mapGroundChanged, object: nil)
         }
     }
     static func edited(light: Bool) -> MapGroundSide { light ? cached.light : cached.dark }
-    static func setEdited(_ s: MapGroundSide, light: Bool) {
+    /// Store an edit; returns what was stored (moved out of the unreadable band when it had to be: compare to `s`).
+    @discardableResult static func setEdited(_ s: MapGroundSide, light: Bool) -> MapGroundSide {
         var v = cached
         if light { v.light = s } else { v.dark = s }
         edited = v
+        return edited(light: light)
     }
     static var proActive: Bool {
         #if DEBUG
@@ -298,6 +307,103 @@ enum MapSheen {
     }
     /// What the Map draws: TestFlight only, the switch on, and the wells drawing.
     static var active: Bool { InstallChannel.isTestFlight && userOn && MapWells.active }
+}
+
+extension MapGround.Stored {
+    var readable: Self { Self(dark: dark.readable, light: light.readable) }
+}
+
+/// 1.1-B (T 2026-10-29: "limit the colour picker away from mid tones") — a custom background must let full-strength text
+/// reach 4.5:1 with one of the two inks (white / #232A2E) at every point, so a ground's WCAG relative luminance may not
+/// sit in the band where neither does:
+///   white reaches 4.5:1 ⇔ L ≤ 1.05 / 4.5 − 0.05 = 0.18333;  #232A2E (L 0.022105) ⇔ L ≥ 4.5 · 0.072105 − 0.05 = 0.27447.
+/// A colour inside (0.18333, 0.27447) moves to the nearer side in OKLab lightness, hue kept and chroma kept as far as
+/// the sRGB gamut allows; a gradient's two stops sit on the same side (else colour 2 moves to colour 1's side), and
+/// every point between them is checked. Applied where an edit is stored and where one is loaded, so an unreadable
+/// ground can't exist.
+enum ReadableGround {
+    static let darkMax = 1.05 / 4.5 - 0.05                       // 0.18333: white text ≥ 4.5:1 at or below
+    static let lightMin = 4.5 * (lum(SIMD3(0x23, 0x2A, 0x2E) / 255) + 0.05) - 0.05   // 0.27447: #232A2E ≥ 4.5:1 at or above
+
+    static func lin(_ v: Double) -> Double { v <= 0.03928 ? v / 12.92 : pow((v + 0.055) / 1.055, 2.4) }
+    static func enc(_ v: Double) -> Double { let x = min(max(v, 0), 1); return x <= 0.0031308 ? 12.92 * x : 1.055 * pow(x, 1 / 2.4) - 0.055 }
+    static func lum(_ c: SIMD3<Float>) -> Double { 0.2126 * lin(Double(c.x)) + 0.7152 * lin(Double(c.y)) + 0.0722 * lin(Double(c.z)) }
+    static func inBand(_ c: SIMD3<Float>) -> Bool { let l = lum(c); return l > darkMax && l < lightMin }
+    /// Which side of the band a colour is on (true = light: dark ink); in-band colours by their nearer bound.
+    static func lightSide(_ c: SIMD3<Float>) -> Bool { lum(c) >= (darkMax + lightMin) / 2 }
+
+    // OKLab ↔ sRGB (encoded 0…1)
+    static func oklab(_ c: SIMD3<Float>) -> (Double, Double, Double) {
+        let r = lin(Double(c.x)), g = lin(Double(c.y)), b = lin(Double(c.z))
+        let l = cbrt(0.4122214708 * r + 0.5363325363 * g + 0.0514459929 * b)
+        let m = cbrt(0.2119034982 * r + 0.6806995451 * g + 0.1073969566 * b)
+        let s = cbrt(0.0883024619 * r + 0.2817188376 * g + 0.6299787005 * b)
+        return (0.2104542553 * l + 0.7936177850 * m - 0.0040720468 * s, 1.9779984951 * l - 2.4285922050 * m + 0.4505937099 * s,
+                0.0259040371 * l + 0.7827717662 * m - 0.8086757660 * s)
+    }
+    /// OKLCH → sRGB, chroma stepped down until in gamut.
+    static func srgb(L: Double, C c0: Double, h: Double) -> SIMD3<Float> {
+        var c = c0
+        while true {
+            let a = c * cos(h), b = c * sin(h)
+            let l = pow(L + 0.3963377774 * a + 0.2158037573 * b, 3), m = pow(L - 0.1055613458 * a - 0.0638541728 * b, 3)
+            let s = pow(L - 0.0894841775 * a - 1.2914855480 * b, 3)
+            let rgb = [4.0767416621 * l - 3.3077115913 * m + 0.2309699292 * s, -1.2684380046 * l + 2.6097574011 * m - 0.3413193965 * s,
+                       -0.0041960863 * l - 0.7034186147 * m + 1.7076147010 * s]
+            if c <= 0 || rgb.allSatisfy({ $0 >= -0.0005 && $0 <= 1.0005 }) {
+                return SIMD3(Float(enc(rgb[0])), Float(enc(rgb[1])), Float(enc(rgb[2])))
+            }
+            c = max(0, c - 0.004)
+        }
+    }
+    static func hex(_ c: SIMD3<Float>) -> String {
+        String(format: "%02X%02X%02X", Int((min(max(c.x, 0), 1) * 255).rounded()), Int((min(max(c.y, 0), 1) * 255).rounded()),
+               Int((min(max(c.z, 0), 1) * 255).rounded()))
+    }
+    /// The colour moved onto one side of the band (`light` nil = the nearer side in OKLab lightness), `margin` past the bound.
+    static func moved(_ hexIn: String, toLight forced: Bool? = nil, margin: Double = 0.002) -> String {
+        let c = MapGroundSide.rgb(hexIn)
+        if let f = forced { if f ? lum(c) >= lightMin + margin : lum(c) <= darkMax - margin { return hexIn } } else if !inBand(c) { return hexIn }
+        let (L0, a, b) = oklab(c), C = (a * a + b * b).squareRoot(), h = atan2(b, a)
+        func solve(light: Bool) -> (Double, String) {
+            let target = light ? lightMin + margin : darkMax - margin
+            var lo = light ? L0 : 0.0, hi = light ? 1.0 : L0
+            for _ in 0..<48 {
+                let mid = (lo + hi) / 2, l = lum(srgb(L: mid, C: C, h: h))
+                if light { if l < target { lo = mid } else { hi = mid } } else { if l > target { hi = mid } else { lo = mid } }
+            }
+            let L = light ? hi : lo
+            var out = hex(srgb(L: L, C: C, h: h))
+            let q = MapGroundSide.rgb(out)
+            if light ? lum(q) < lightMin : lum(q) > darkMax { out = moved(out, toLight: light, margin: margin * 2) }   // 8-bit rounding
+            return (abs(L - L0), out)
+        }
+        if let f = forced { return solve(light: f).1 }
+        let d = solve(light: false), l = solve(light: true)
+        return d.0 <= l.0 ? d.1 : l.1
+    }
+    /// Every point of a gradient (the shader's mix of the encoded stops) readable?
+    static func gradientReadable(_ c1: SIMD3<Float>, _ c2: SIMD3<Float>) -> Bool {
+        (0...32).allSatisfy { i in let t = Float(i) / 32; return !inBand(c1 + (c2 - c1) * t) }
+    }
+}
+
+extension MapGroundSide {
+    /// This side with its colour (and a gradient's colour 2) out of the unreadable band (`ReadableGround`).
+    var readable: MapGroundSide {
+        var s = self
+        s.color = ReadableGround.moved(color)
+        guard gradient else { return s }
+        let side = ReadableGround.lightSide(MapGroundSide.rgb(s.color))
+        s.color2 = ReadableGround.moved(color2, toLight: side)
+        var margin = 0.004
+        while !ReadableGround.gradientReadable(s.colorRGB, s.color2RGB), margin < 0.2 {   // a dip between the stops
+            s.color2 = ReadableGround.moved(s.color2, toLight: side, margin: margin)
+            margin *= 2
+        }
+        if !ReadableGround.gradientReadable(s.colorRGB, s.color2RGB) { s.color2 = s.color }
+        return s
+    }
 }
 
 extension Notification.Name {

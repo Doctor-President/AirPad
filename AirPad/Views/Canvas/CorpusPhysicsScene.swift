@@ -5372,10 +5372,10 @@ final class CorpusPhysicsScene: SKScene {
         let m = mapTuning ?? .today, light = currentIsLight
         let look = Self.drawnTitleLook(m.orbLook, light: light)
         let fam = studyFamily(nodeID, fill: fill), seed = studySeed(nodeID)
-        #if DEBUG
         let samples = titleSamples(look, light: light, fill: fill, alpha: isMeta ? 0.55 : 1, family: fam, seed: seed, m: m,
                                    ground: Self.titleGround(m, light: light), box: box)
         let inks = Self.titleInks(look, light: light, m: m)
+        #if DEBUG
         if Self.worstCaseInkDebug {   // `-InkStillTour`'s "before" frames: 1.1-A's worst-case pick (its halo is gone)
             let ink = Self.worstCaseInk(samples: samples, inks: inks)
             return .init(ink: ink, area: TitleInkRule.areaContrast(ink, over: samples),

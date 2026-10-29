@@ -1,7 +1,9 @@
 import SwiftUI
 
-/// Right-edge slide-out menu mounted by `CanvasChrome`. Holds the secondary chrome actions —
-/// Analyze, Filter, Settings, and (when non-empty) Quarantine review.
+/// Right-edge slide-out menu mounted by `CanvasChrome` and (1.1-A) the Dashboard — one menu behind the
+/// same `line.3.horizontal` glyph everywhere. Holds the secondary chrome actions — Analyze, Filter (canvas only),
+/// Quarantine review (when non-empty), Appearance (opens `AppearancePanel` as a half-height sheet over the current
+/// view so changes show live) and, at the bottom, Settings.
 ///
 /// ★ 2026-09-15: the VIEW-MODE PICKER was REMOVED from here. The bottom view switcher (and the
 /// top pill) own mode switching now, via one shared `ViewSwitchMenuContent`. Removing it also
@@ -29,14 +31,15 @@ struct CanvasSlideOutMenu: View {
     let quarantineCount: Int
 
     let onAnalyze: () -> Void
-    let onFilter: () -> Void
+    /// nil hides the Filter row (the Dashboard has no canvas to filter).
+    let onFilter: (() -> Void)?
     let onSettings: () -> Void
     let onQuarantineReview: () -> Void
+    /// 1.1-A (A3) — opens the half-height Appearance panel over the current view.
+    let onAppearance: () -> Void
 
     private let panelWidth: CGFloat = 280
     @State private var dragOffset: CGFloat = 0
-    // Brief AT5 — Appearance override (shared with Settings via one @AppStorage key).
-    @AppStorage(AppearanceOverride.storageKey) private var appearanceRaw = AppearanceOverride.system.rawValue
 
     var body: some View {
         ZStack(alignment: .trailing) {
@@ -67,57 +70,59 @@ struct CanvasSlideOutMenu: View {
     // MARK: - Panel
 
     private var panel: some View {
-        ScrollView {
-            VStack(alignment: .leading, spacing: 0) {
-                header
+        VStack(alignment: .leading, spacing: 0) {
+            ScrollView {
+                VStack(alignment: .leading, spacing: 0) {
+                    header
 
-                section("Tools") {
-                    actionRow(
-                        icon: "point.3.connected.trianglepath.dotted",
-                        label: "Analyze",
-                        action: { dismiss(then: onAnalyze) }
-                    )
-                    actionRow(
-                        icon: "slider.horizontal.3",
-                        label: "Filter",
-                        badge: filterActiveCount > 0 ? "\(filterActiveCount)" : nil,
-                        badgeColor: .blue,
-                        action: { dismiss(then: onFilter) }
-                    )
-                    actionRow(
-                        icon: "gearshape.fill",
-                        label: "Settings",
-                        action: { dismiss(then: onSettings) }
-                    )
-                    if quarantineCount > 0 {
+                    section("Tools") {
                         actionRow(
-                            icon: "exclamationmark.triangle.fill",
-                            label: "Quarantine",
-                            badge: "\(quarantineCount)",
-                            badgeColor: .orange,
-                            action: { dismiss(then: onQuarantineReview) }
+                            icon: "point.3.connected.trianglepath.dotted",
+                            label: "Analyze",
+                            action: { dismiss(then: onAnalyze) }
                         )
+                        if let onFilter {
+                            actionRow(
+                                icon: "slider.horizontal.3",
+                                label: "Filter",
+                                badge: filterActiveCount > 0 ? "\(filterActiveCount)" : nil,
+                                badgeColor: .blue,
+                                action: { dismiss(then: onFilter) }
+                            )
+                        }
+                        if quarantineCount > 0 {
+                            actionRow(
+                                icon: "exclamationmark.triangle.fill",
+                                label: "Quarantine",
+                                badge: "\(quarantineCount)",
+                                badgeColor: .orange,
+                                action: { dismiss(then: onQuarantineReview) }
+                            )
+                        }
+                        // 1.1-A (A3) — Theme · Map look · fluted glass · tilt, in a half-height panel (was an inline
+                        // Theme picker + glass toggles here).
+                        actionRow(
+                            icon: "circle.righthalf.filled",
+                            label: "Appearance",
+                            action: { dismiss(then: onAppearance) }
+                        )
+                        .accessibilityIdentifier("menu.appearance")
                     }
                 }
-
-                section("Appearance") {
-                    Picker("Appearance", selection: Binding(
-                        get: { AppearanceOverride(rawValue: appearanceRaw) ?? .system },
-                        set: { appearanceRaw = $0.rawValue }
-                    )) {
-                        ForEach(AppearanceOverride.allCases) { Text($0.label).tag($0) }
-                    }
-                    .pickerStyle(.segmented)
-                    .padding(.horizontal, 16)
-                    .padding(.vertical, 6)
-                    GlassAppearanceToggles(detailed: false)   // ws-fluted-glass — same settings as Settings → Appearance
-                        .padding(.horizontal, 20)
-                        .padding(.vertical, 8)
-                }
+                .padding(.bottom, 16)
             }
-            .padding(.bottom, 32)
+            .scrollIndicators(.hidden)
+
+            // 1.1-A (A2) — Settings sits at the bottom of the menu.
+            Divider().overlay(AppearancePalette.ink.opacity(0.1))
+            actionRow(
+                icon: "gearshape.fill",
+                label: "Settings",
+                action: { dismiss(then: onSettings) }
+            )
+            .accessibilityIdentifier("menu.settings")
+            .padding(.bottom, 12)
         }
-        .scrollIndicators(.hidden)
     }
 
     /// Just the close affordance. The "CANVAS" title was dropped 2026-09-15 — "TOOLS" already says
@@ -222,5 +227,54 @@ struct CanvasSlideOutMenu: View {
                 action()
             }
         }
+    }
+}
+
+/// 1.1-A (A3) — Appearance from the ≡ menu: Theme (Light / Dark / System) · Map look (the Settings picker,
+/// `MapLookSection`: the same `MapLookChoice`, Pro looks locked → Pro sheet) · fluted glass · tilt. Presented as a
+/// half-height sheet with the view behind it undimmed and live, so every change shows at once. Settings → Appearance
+/// reads and writes the same state (`AppearanceOverride.storageKey`, `MapLookChoice`, `FlutedGlass.shared`).
+struct AppearancePanel: View {
+    @Environment(\.appBodyFont) private var appFont
+    @Environment(\.dismiss) private var dismiss
+    @AppStorage(AppearanceOverride.storageKey) private var appearanceRaw = AppearanceOverride.system.rawValue
+
+    var body: some View {
+        ScrollView {
+            VStack(alignment: .leading, spacing: 20) {
+                HStack {
+                    Text("Appearance")
+                        .font(appFont.font(size: 20, weight: .semibold, relativeTo: .title3))
+                        .foregroundStyle(AppearancePalette.ink)
+                        .accessibilityAddTraits(.isHeader)
+                    Spacer()
+                    Button("Done") { dismiss() }
+                        .font(appFont.font(size: 17, weight: .semibold, relativeTo: .body))
+                        .foregroundStyle(AppearancePalette.ink)
+                        .accessibilityIdentifier("appearancePanel.done")
+                }
+                VStack(alignment: .leading, spacing: 8) {
+                    Text("Theme").font(appFont.font(size: 15, weight: .semibold, relativeTo: .subheadline)).foregroundStyle(AppearancePalette.ink)
+                    Picker("Theme", selection: Binding(
+                        get: { AppearanceOverride(rawValue: appearanceRaw) ?? .system },
+                        set: { appearanceRaw = $0.rawValue }
+                    )) {
+                        ForEach(AppearanceOverride.allCases) { Text($0.label).tag($0) }
+                    }
+                    .pickerStyle(.segmented)
+                    .accessibilityIdentifier("appearancePanel.theme")
+                }
+                MapLookSection()
+                GlassAppearanceToggles(detailed: false)
+            }
+            .padding(.horizontal, 20)
+            .padding(.top, 20)
+            .padding(.bottom, 32)
+        }
+        .scrollIndicators(.hidden)
+        .presentationDetents([.medium, .large])
+        .presentationBackgroundInteraction(.enabled(upThrough: .medium))
+        .presentationBackground(.thinMaterial)
+        .presentationDragIndicator(.visible)
     }
 }

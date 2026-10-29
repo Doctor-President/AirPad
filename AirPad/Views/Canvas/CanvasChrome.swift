@@ -34,6 +34,8 @@ struct CanvasChrome: View {
     @State private var showSettings = false
     @State private var showQuarantineReview = false
     @State private var showSlideOutMenu = false
+    /// 1.1-A (A3) — the ≡ menu's half-height Appearance panel.
+    @State private var showAppearancePanel = false
     @State private var showEditMap = false
     @State private var showBatchDeleteConfirmation = false
     @State private var showBatchAddTagSheet = false
@@ -117,7 +119,7 @@ struct CanvasChrome: View {
     /// selecting, Librarian at peek (View + Capture only render then), menu closed.
     private var canvasCalloutEligible: Bool {
         !store.isInDetailView && !selection.isActive && router.librarianAtPeek
-            && !showSlideOutMenu && !router.isCapturing
+            && !showSlideOutMenu && !showAppearancePanel && !router.isCapturing
     }
 
     /// `view.buttons` first on ANY view; `map.intro` after it, Map only. List / Cards get only
@@ -384,7 +386,8 @@ struct CanvasChrome: View {
                 onAnalyze: { Task { store.runCorpusAnalysis(trigger: .manual) } },
                 onFilter: { showFilterPanel = true },
                 onSettings: { showSettings = true },
-                onQuarantineReview: { showQuarantineReview = true }
+                onQuarantineReview: { showQuarantineReview = true },
+                onAppearance: { showAppearancePanel = true }
             )
 
             #if DEBUG
@@ -436,6 +439,9 @@ struct CanvasChrome: View {
         }
         .sheet(isPresented: $showSettings) {
             SettingsView()
+        }
+        .sheet(isPresented: $showAppearancePanel) {
+            AppearancePanel()
         }
         .sheet(isPresented: $showQuarantineReview) {
             QuarantineReviewSheet()
@@ -561,7 +567,9 @@ private struct ChromeBar: View {
     var body: some View {
         HStack(spacing: 0) {
             segment(icon: "checkmark.circle", weightSize: 18, action: onSelect)
-            segment(icon: "line.3.horizontal.decrease", weightSize: 18, action: onMenu)
+            segment(icon: "line.3.horizontal", weightSize: 18, action: onMenu)   // 1.1-A (A1) — one menu glyph everywhere
+                .accessibilityLabel("Menu")
+                .accessibilityIdentifier("chrome.menu")
                 .overlay(alignment: .topTrailing) {
                     if menuHasAttention {
                         Circle()

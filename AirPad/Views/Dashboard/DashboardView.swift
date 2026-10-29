@@ -48,6 +48,7 @@ struct DashboardView: View {
 
     @Environment(AppRouter.self) private var router
     @Environment(CorpusStore.self) private var store
+    @Environment(QuarantineStore.self) private var quarantineStore
     /// Brief BF — the app-wide content face (Dashboard eyebrow + collection names follow it).
     @Environment(\.appBodyFont) private var appFont
 
@@ -82,6 +83,10 @@ struct DashboardView: View {
     @State private var showCreateCollectionSheet = false
     @State private var showCollectionReorder = false
     @State private var showSettings = false
+    /// 1.1-A (A1) — the header's ≡ opens the SAME slide-out menu as the canvas (was a gear straight to Settings).
+    @State private var showMenu = false
+    @State private var showAppearancePanel = false
+    @State private var showQuarantineReview = false
     /// Brief T — sample-library strip confirm + persisted collapse state
     /// (default false = expanded on first open). @AppStorage is fine here: the
     /// dashboard body is not a continuously-relaid-out surface, so the per-eval
@@ -174,6 +179,17 @@ struct DashboardView: View {
                 }
 
                 floatingPlusButton
+
+                CanvasSlideOutMenu(
+                    isPresented: $showMenu,
+                    filterActiveCount: 0,
+                    quarantineCount: quarantineStore.entries.count,
+                    onAnalyze: { Task { store.runCorpusAnalysis(trigger: .manual) } },
+                    onFilter: nil,
+                    onSettings: { showSettings = true },
+                    onQuarantineReview: { showQuarantineReview = true },
+                    onAppearance: { showAppearancePanel = true }
+                )
             }
             .toolbar(.hidden, for: .navigationBar) // dashboard renders its own header
             .navigationDestination(for: DashboardRoute.self) { route in
@@ -208,6 +224,12 @@ struct DashboardView: View {
             }
             .sheet(isPresented: $showSettings) {
                 SettingsView()
+            }
+            .sheet(isPresented: $showAppearancePanel) {
+                AppearancePanel()
+            }
+            .sheet(isPresented: $showQuarantineReview) {
+                QuarantineReviewSheet()
             }
             // In-app capture overlay handoff. The overlay (mounted at
             // ContentView) writes the picked / newly-captured node ID into
@@ -298,7 +320,9 @@ struct DashboardView: View {
     private var headerPill: some View {
         HStack(spacing: 2) {
             pillIcon("bubble.left.and.bubble.right.fill", size: 16) { router.showChatsList = true }
-            pillIcon("gearshape.fill", size: 16) { showSettings = true }
+            pillIcon("line.3.horizontal", size: 16) { showMenu = true }   // 1.1-A (A1) — the menu, not Settings directly
+                .accessibilityLabel("Menu")
+                .accessibilityIdentifier("dashboard.menu")
         }
         .padding(.horizontal, 4)
         .chromeSurface(Capsule())

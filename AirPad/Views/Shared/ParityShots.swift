@@ -735,9 +735,11 @@ struct DebugScreenHost: View {
         // Brief AJ — screenshot each submenu: `-Screen settings-<dest>`.
         case let s where s.hasPrefix("settings-"):
             SettingsView(debugInitialDest: settingsDest(String(s.dropFirst("settings-".count))))
-        case "slideout":         // ws-fluted-glass — the canvas ≡ menu's Appearance section
+        case "slideout":         // ws-fluted-glass — the ≡ menu (1.1-A: Appearance row + Settings at the bottom)
             CanvasSlideOutMenu(isPresented: .constant(true), filterActiveCount: 0, quarantineCount: 0,
-                               onAnalyze: {}, onFilter: {}, onSettings: {}, onQuarantineReview: {})
+                               onAnalyze: {}, onFilter: {}, onSettings: {}, onQuarantineReview: {}, onAppearance: {})
+        case "appearancepanel":  // 1.1-A (A3) — the ≡ menu's Appearance panel content
+            AppearancePanel()
         case "substrate":        SubstrateInspectView()
         case "import":           ImportIdeasSheet()
         case "reviewqueue":      ReviewQueueSheet()

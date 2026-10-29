@@ -971,7 +971,6 @@ final class CorpusPhysicsScene: SKScene {
     #if DEBUG
     private static var lastStrengthLog = ""   // 1.1-B `[STRENGTH]`: log the drawn values once per look / strength change
     #endif
-    private var inkTourCamera: (CGPoint, CGFloat)?   // 1.1-B `-InkStillScrim`: the "off" frame's camera, reused for "on"
     static let noTitlesDebug = ProcessInfo.processInfo.arguments.contains("-MapNoTitles")
     #endif
     /// live-50b — DEBUG `-MapStudyLightGlass`: the light Map draws the study's Light Glass (live-49 / 50) instead of Glass, for A/B stills.
@@ -5018,11 +5017,9 @@ final class CorpusPhysicsScene: SKScene {
                         }
                         // the scrim tour's "on" frame keeps the "off" frame's camera, so the pair differs only by the scrim
                         let keepCamera = scrimTour && !old
-                        if !keepCamera { centre() } else if let c = self.inkTourCamera {
-                            self.cameraNode.removeAllActions()
-                            self.cameraNode.position = c.0; self.cameraNode.setScale(c.1)
-                            self.applyOrbScales()   // re-applies every title's LOD pass, so the frame redraws with the scrim
-                        }
+                        // (no camera move and no applyOrbScales: either re-runs the lens relaxation and shuffles the frame;
+                        // the stills run with -NoMapIdle so the scrim reaches the next frame)
+                        if !keepCamera { centre() }
                         if scrimTour { Self.titleScrim = old ? nil : TitleScrim.study } else { Self.worstCaseInkDebug = old }
                         self.restyleLabels()
                         // the lens / band relaxation moves orbs once the zoom lands: re-centre, then log where it sits
@@ -5030,7 +5027,6 @@ final class CorpusPhysicsScene: SKScene {
                         DispatchQueue.main.asyncAfter(deadline: .now() + 2.0) { [weak self] in
                             guard let self else { return }
                             // where the orb sits (view pt) + the twin's samples, so a still can be checked against the twin
-                            if old { self.inkTourCamera = (self.cameraNode.position, self.cameraNode.xScale) }
                             let c = self.convert(sp.position, from: par), rs = self.orbBaseWidth(sp) * sp.xScale / 2
                             let vc = self.convertPoint(toView: c), ve = self.convertPoint(toView: CGPoint(x: c.x + rs, y: c.y))
                             if !old, let node = self.currentNodes.first(where: { $0.id == e.0 }) {

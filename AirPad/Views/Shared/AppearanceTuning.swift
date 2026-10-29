@@ -1484,19 +1484,20 @@ extension StudyOrbLook {
 /// floor, grain size and territory-derived stops are gone (T: the re-interpretation read as messy, fuzzy clusters). Old
 /// saved values still load; their extra keys are ignored.
 struct AuraLook: StudyOrbLook {
-    // pro-build — T's final values (Ops/reference/tuner-values-2026-10-28-final.json).
-    var spread = 1.25
-    var warp = 1.36
-    var softness = 0.09         // edge softness (fraction of the orb's radius)
-    var haloReach = 0.03
-    var rim = 0.5
-    var fringe = 0.58           // chromatic fringe (the edge at three radii, red outermost)
+    // 1.1-B — T's Medium (Ops/reference/orb-strengths-2026-10-29.json; replaces the Oct 28 look values).
+    var spread = 1.04
+    var warp = 1.04
+    var softness = 0.08         // edge softness (fraction of the orb's radius)
+    var haloReach = 0.01
+    var rim = 0.29
+    var fringe = 0.46           // chromatic fringe (the edge at three radii, red outermost)
     var grain = 0.19
     var drift = false           // slow gradient flow; on → the Map renders at 30 fps
 
-    static let subtle = AuraLook(0.7, 0.6, 0.02, 0, 0.3, 0.2, 0.6)
-    static let medium = AuraLook(0.82, 1.36, 0.03, 0, 0.45, 0.35, 1)   // the study's Medium (the defaults before live-51)
-    static let strong = AuraLook(1.1, 1.5, 0.06, 0.15, 0.7, 0.7, 1)
+    // 1.1-B — T's strengths (orb-strengths-2026-10-29.json); Medium = the defaults above.
+    static let subtle = AuraLook(0.72, 0.82, 0.05, 0.02, 0.3, 0.35, 0.11)
+    static let medium = AuraLook()
+    static let strong = AuraLook(1.11, 1.26, 0.04, 0.05, 0.75, 0.87, 0.28)
     static let presets: [(String, AuraLook)] = [("Subtle", .subtle), ("Medium", .medium), ("Strong", .strong)]
 
     init() {}
@@ -1519,13 +1520,13 @@ struct AuraLook: StudyOrbLook {
 /// rim light, a crescent (an offset disc), the chromatic rim and a small halo in the rim colour. Each orb's palette stops
 /// run sorted dark → light by luma. Title ink is always light.
 struct EclipseLook: StudyOrbLook {
-    // pro-build — T's final values (Ops/reference/tuner-values-2026-10-28-final.json).
-    var spread = 0.68
+    // 1.1-B — T's Medium (Ops/reference/orb-strengths-2026-10-29.json; replaces the Oct 28 look values). Arc thickness (not in the study) stays T's Oct 28.
+    var spread = 0.8
     var warp = 0.98
-    var softness = 0.15
-    var haloReach = 0.02
-    var rim = 0.56
-    var fringe = 0.28
+    var softness = 0.01
+    var haloReach = 0.0
+    var rim = 0.45
+    var fringe = 0.14
     var grain = 0.24
     var drift = false
     /// live-51 amendment — the TOP ARC's thickness (the bright crescent across the top, between the edge and the occluding
@@ -1535,9 +1536,10 @@ struct EclipseLook: StudyOrbLook {
     static let studyArcThickness = 0.12
     static let arcThicknessRange: ClosedRange<Double> = 0.02...0.4
 
-    static let subtle = EclipseLook(0.85, 0.6, 0.03, 0.06, 0.35, 0.3, 0.6)
-    static let medium = EclipseLook(0.95, 0.9, 0.04, 0.12, 0.5, 0.45, 0.8)
-    static let strong = EclipseLook(1.1, 1.3, 0.07, 0.3, 0.75, 0.8, 1)
+    // 1.1-B — T's strengths (orb-strengths-2026-10-29.json); Medium = the defaults above (each keeps the arc thickness).
+    static let subtle = EclipseLook(0.72, 0.59, 0.01, 0, 0.16, 0.42, 0.32)
+    static let medium = EclipseLook()
+    static let strong = EclipseLook(1.06, 1.47, 0.01, 0, 0.84, 0.42, 0.36)
     static let presets: [(String, EclipseLook)] = [("Subtle", .subtle), ("Medium", .medium), ("Strong", .strong)]
 
     init() {}
@@ -1564,12 +1566,13 @@ struct EclipseLook: StudyOrbLook {
 /// fringe · grain) and the tuner shows the study's labels. Defaults = T's values (Ops/reference/orb-study-values-2026-10-27b.json),
 /// presets = the study's Subtle / Medium / Strong.
 struct LightGlassLook: StudyOrbLook {
-    var spread = 0.68           // Tint
-    var warp = 0.6              // Frost
+    // 1.1-B — T's Medium (Ops/reference/orb-strengths-2026-10-29.json; replaces the Oct 28 look values). (DEBUG A/B only: the Glass that ships is GlassLook.)
+    var spread = 0.79           // Tint
+    var warp = 0.92             // Frost
     var softness = 0.01         // Edge softness
-    var haloReach = 0.36        // Shadow
-    var rim = 0.7               // Highlight
-    var fringe = 0.41           // Edge line
+    var haloReach = 0.0         // Shadow
+    var rim = 0.43              // Highlight
+    var fringe = 0.18           // Edge line
     var grain = 0.0
     var drift = false
     // live-50 — dark Glass's controls, each defaulting to the value that changes nothing (Light Glass = the study's until T
@@ -1586,9 +1589,9 @@ struct LightGlassLook: StudyOrbLook {
     var label = TunerHSL(hex: "1B1A20")           // the study's dark ink
     /// The study's glass bound: 1.45 + shadow·0.4.
     var spriteExtent: Double { 1.45 + haloReach * 0.4 }
-    static let presets: [(String, LightGlassLook)] = [("Subtle", .init(0.35, 0.45, 0.015, 0.4, 0.5, 0.4, 0.2)),
-                                                      ("Medium", .init(0.55, 0.6, 0.02, 0.6, 0.7, 0.6, 0.3)),
-                                                      ("Strong", .init(0.8, 0.8, 0.03, 0.9, 0.9, 0.85, 0.45))]
+    static let presets: [(String, LightGlassLook)] = [("Subtle", .init(0.58, 0.36, 0.01, 0, 0.42, 0.25, 0)),   // 1.1-B — T's
+                                                      ("Medium", .init()),
+                                                      ("Strong", .init(0.97, 1.27, 0.01, 0, 0.56, 0.36, 0))]
     static let labels = ["Tint", "Frost", "Edge softness", "Shadow", "Highlight", "Edge line", "Grain"]
     init() {}
     init(_ a: Double, _ b: Double, _ c: Double, _ d: Double, _ e: Double, _ f: Double, _ g: Double) {
@@ -1622,20 +1625,20 @@ struct LightGlassLook: StudyOrbLook {
     }
 }
 struct RisoLook: StudyOrbLook {
-    // pro-build — T's final values (Ops/reference/tuner-values-2026-10-28-final.json).
-    var spread = 0.53           // Shape
+    // 1.1-B — T's Medium (Ops/reference/orb-strengths-2026-10-29.json; replaces the Oct 28 look values).
+    var spread = 0.59           // Shape
     var warp = 0.44             // Swirl
-    var softness = 0.02
-    var haloReach = 0.52        // Second ink
-    var rim = 0.54              // Ink density
-    var fringe = 0.85           // Misregistration
-    var grain = 0.3             // Speckle
+    var softness = 0.01
+    var haloReach = 0.28        // Second ink
+    var rim = 0.72              // Ink density
+    var fringe = 1.08           // Misregistration
+    var grain = 0.16            // Speckle
     var drift = false
     /// The study's cheap bound: 1.04 + softness·1.2 + fringe·0.05.
     var spriteExtent: Double { 1.04 + softness * 1.2 + fringe * 0.05 }
-    static let presets: [(String, RisoLook)] = [("Subtle", .init(0.8, 0.3, 0.01, 0.4, 0.75, 0.25, 0.3)),
-                                                ("Medium", .init(1, 0.6, 0.015, 0.65, 0.85, 0.5, 0.5)),
-                                                ("Strong", .init(1.2, 1, 0.02, 0.9, 0.95, 0.85, 0.75))]
+    static let presets: [(String, RisoLook)] = [("Subtle", .init(0.71, 0.48, 0.01, 0.47, 0.51, 0.51, 0.09)),   // 1.1-B — T's
+                                                ("Medium", .init()),
+                                                ("Strong", .init(0.64, 0.4, 0.01, 0.31, 1, 1.27, 0.16))]
     static let labels = ["Shape", "Swirl", "Edge softness", "Second ink", "Ink density", "Misregistration", "Speckle"]
     init() {}
     init(_ a: Double, _ b: Double, _ c: Double, _ d: Double, _ e: Double, _ f: Double, _ g: Double) {
@@ -1644,19 +1647,19 @@ struct RisoLook: StudyOrbLook {
     init(from decoder: Decoder) throws { self = try StudyLookDecode.decode(decoder, RisoLook()) }
 }
 struct GradientLook: StudyOrbLook {
-    // pro-build — T's final values (Ops/reference/tuner-values-2026-10-28-final.json). (= 27c)
-    var spread = 0.83
-    var warp = 1.25             // Swirl
+    // 1.1-B — T's Medium (Ops/reference/orb-strengths-2026-10-29.json; replaces the Oct 28 look values).
+    var spread = 0.61
+    var warp = 1.0              // Swirl
     var softness = 0.01
-    var haloReach = 0.92        // Sheen
-    var rim = 0.54              // Shading
-    var fringe = 0.11           // Rim line
-    var grain = 0.54
+    var haloReach = 0.29        // Sheen
+    var rim = 0.34              // Shading
+    var fringe = 0.17           // Rim line
+    var grain = 0.3
     var drift = false
     var spriteExtent: Double { 1.04 + softness * 1.2 + fringe * 0.05 }
-    static let presets: [(String, GradientLook)] = [("Subtle", .init(0.7, 0.2, 0.01, 0.2, 0.3, 0.2, 0)),
-                                                    ("Medium", .init(1, 0.45, 0.012, 0.4, 0.45, 0.35, 0)),
-                                                    ("Strong", .init(1.3, 0.8, 0.02, 0.7, 0.7, 0.6, 0.15))]
+    static let presets: [(String, GradientLook)] = [("Subtle", .init(0.47, 0.88, 0.01, 0.55, 0.32, 0.07, 0.32)),   // 1.1-B — T's
+                                                    ("Medium", .init()),
+                                                    ("Strong", .init(1.09, 1.22, 0.01, 0.47, 0.43, 0.17, 0.28))]
     static let labels = ["Gradient spread", "Swirl", "Edge softness", "Sheen", "Shading", "Rim line", "Grain"]
     init() {}
     init(_ a: Double, _ b: Double, _ c: Double, _ d: Double, _ e: Double, _ f: Double, _ g: Double) {
@@ -1772,18 +1775,20 @@ enum OrbStudyPalettes {
 /// and granulation; the paper fibres + grain live on the ground (the grid shader). The Pro "Aura" look = Aura on the
 /// dark Map + Wash on the light Map. Slider names follow the study's Wash labels.
 struct WashLook: Codable, Equatable {
-    // pro-build — T's final values (Ops/reference/tuner-values-2026-10-28-final.json). (= 27c)
-    var spread = 0.8            // Gradient spread
-    var warp = 0.82             // Warp
-    var softness = 0.03         // Edge softness (orb radii)
-    var bleed = 0.3             // Bleed (the study's `reach` slot)
-    var pooling = 0.3           // Edge pooling (`rim`)
-    var misregistration = 0.3   // Misregistration (`fringe`)
+    // 1.1-B — T's Medium (Ops/reference/orb-strengths-2026-10-29.json; replaces the Oct 28 look values).
+    var spread = 0.58           // Gradient spread
+    var warp = 0.59             // Warp
+    var softness = 0.02         // Edge softness (orb radii)
+    var bleed = 0.5             // Bleed (the study's `reach` slot)
+    var pooling = 0.41          // Edge pooling (`rim`)
+    var misregistration = 0.0   // Misregistration (`fringe`)
     var paper = 0.4             // Paper grain (`grain`): the pigment's granulation in the orb (live-51: no longer on the ground)
 
-    static let medium = WashLook(spread: 1.0, warp: 0.9, softness: 0.05, bleed: 0.6, pooling: 0.55, misregistration: 0.6, paper: 0.6)   // the study's Medium
-    static let subtle = WashLook(spread: 0.8, warp: 0.5, softness: 0.03, bleed: 0.3, pooling: 0.3, misregistration: 0.3, paper: 0.4)
-    static let strong = WashLook(spread: 1.2, warp: 1.3, softness: 0.08, bleed: 1.0, pooling: 0.85, misregistration: 1.0, paper: 0.85)
+    // 1.1-B — T's strengths (orb-strengths-2026-10-29.json, study keys reach/rim/fringe/grain = bleed/pooling/
+    // misregistration/paper); Medium = the defaults above.
+    static let medium = WashLook()
+    static let subtle = WashLook(spread: 0.68, warp: 0.49, softness: 0.03, bleed: 0.18, pooling: 0.28, misregistration: 0.18, paper: 0.24)
+    static let strong = WashLook(spread: 1.05, warp: 0.78, softness: 0.04, bleed: 0.52, pooling: 0.72, misregistration: 0.45, paper: 0.41)
     static let presets: [(String, WashLook)] = [("Subtle", .subtle), ("Medium", .medium), ("Strong", .strong)]
 
     init() {}
@@ -1814,7 +1819,7 @@ struct WashLook: Codable, Equatable {
 /// halo, no gradient. A branch of the shared orb shader (u_fr_on 3, levers in u_gl_look col 0 → no new binding).
 struct OutlineLook: Codable, Equatable {
     var ringWidth = 2.0          // pt on screen, constant across zoom (doubles on the focused / selected orb)
-    var ringOpacityDark = 0.88   // pro-build — T's final
+    var ringOpacityDark = 1.0    // 1.1-B — T's Medium (was 0.88)
     var ringOpacityLight = 1.0
     var fillOpacity = 0.115      // 0 … 0.3 (live-51: T's value)
 
@@ -1831,6 +1836,10 @@ struct OutlineLook: Codable, Equatable {
         if let v = d("ringWidth") { ringWidth = v }; if let v = d("ringOpacityDark") { ringOpacityDark = v }
         if let v = d("ringOpacityLight") { ringOpacityLight = v }; if let v = d("fillOpacity") { fillOpacity = v }
     }
+    // 1.1-B — T's strengths (orb-strengths-2026-10-29.json); Medium = the defaults above.
+    static let subtle: OutlineLook = { var o = OutlineLook(); o.ringWidth = 1.5; o.fillOpacity = 0.07; o.ringOpacityDark = 0.75; return o }()
+    static let medium = OutlineLook()
+    static let strong: OutlineLook = { var o = OutlineLook(); o.ringWidth = 3; o.fillOpacity = 0.17; return o }()
 }
 
 /// live-40 — the Glass orb. live-43 (Companion ruled 2026-10-26): NO refraction — the real background shows through the
@@ -2071,6 +2080,61 @@ struct MapDarkTuning: Codable, Equatable {
         if let x = o["riso"] as? [String: Any] { riso.apply(exportJSON: x) }
         if let x = o["gradient"] as? [String: Any] { gradient.apply(exportJSON: x) }
     }
+
+    /// 1.1-B — the Map's values at a Pro look's Strength (`LookStrength`): Subtle / Strong replace that look's values
+    /// with T's (Aura and Eclipse also set Wash, their light-Map half); Medium keeps them (the defaults = T's Medium).
+    /// Glass has no strengths: T's study dialled the study's Light Glass, which isn't the Glass that ships.
+    mutating func applyStrength(_ s: LookStrength) {
+        guard s != .medium else { return }
+        let sub = s == .subtle
+        switch orbLook {
+        case .aura:
+            let dr = aura.drift; aura = sub ? .subtle : .strong; aura.drift = dr
+            wash = sub ? .subtle : .strong
+        case .eclipse:
+            let t = eclipse.arcThickness, dr = eclipse.drift
+            eclipse = sub ? .subtle : .strong; eclipse.arcThickness = t; eclipse.drift = dr
+            wash = sub ? .subtle : .strong
+        case .riso: riso = RisoLook.presets[sub ? 0 : 2].1
+        case .gradient: gradient = GradientLook.presets[sub ? 0 : 2].1
+        case .outline:
+            let light = outline.ringOpacityLight
+            outline = sub ? .subtle : .strong; outline.ringOpacityLight = light
+        case .flat, .fresnel, .glass: break
+        }
+    }
+
+    #if DEBUG
+    /// `-DumpLookStrengths`: logs `[STRENGTHS] {json}` — every look × strength as drawn, under the study's keys, so the port
+    /// can be diffed against Ops/reference/orb-strengths-2026-10-29.json.
+    static func dumpStrengths() {
+        func st(_ v: any StudyOrbLook) -> [String: Double] {
+            ["spread": v.spread, "warp": v.warp, "soft": v.softness, "reach": v.haloReach, "rim": v.rim, "fringe": v.fringe, "grain": v.grain]
+        }
+        func wa(_ w: WashLook) -> [String: Double] {
+            ["spread": w.spread, "warp": w.warp, "soft": w.softness, "reach": w.bleed, "rim": w.pooling, "fringe": w.misregistration, "grain": w.paper]
+        }
+        var out: [String: [String: Any]] = [:]
+        for s in LookStrength.allCases {
+            let k = s.label.lowercased()
+            var a = MapDarkTuning.today; a.orbLook = .aura; a.applyStrength(s)
+            var e = MapDarkTuning.today; e.orbLook = .eclipse; e.applyStrength(s)
+            var r = MapDarkTuning.today; r.orbLook = .riso; r.applyStrength(s)
+            var g = MapDarkTuning.today; g.orbLook = .gradient; g.applyStrength(s)
+            var o = MapDarkTuning.today; o.orbLook = .outline; o.applyStrength(s)
+            let lg = LightGlassLook.presets[s.rawValue].1
+            out["aura", default: [:]][k] = st(a.aura); out["wash", default: [:]][k] = wa(a.wash)
+            out["washViaEclipse", default: [:]][k] = wa(e.wash); out["eclipse", default: [:]][k] = st(e.eclipse)
+            out["riso", default: [:]][k] = st(r.riso); out["gradient", default: [:]][k] = st(g.gradient); out["lightGlass", default: [:]][k] = st(lg)
+            out["outline", default: [:]][k] = ["ringWidth": o.outline.ringWidth, "fillOpacity": o.outline.fillOpacity,
+                                               "ringOpacityDark": o.outline.ringOpacityDark, "ringOpacityLight": o.outline.ringOpacityLight]
+            out["eclipseArc", default: [:]][k] = e.eclipse.arcThickness
+        }
+        if let d = try? JSONSerialization.data(withJSONObject: out, options: [.sortedKeys]), let j = String(data: d, encoding: .utf8) {
+            NSLog("[STRENGTHS] %@", j)
+        }
+    }
+    #endif
 
     /// live-50c — the Glass values a Map draws with: its own set, with the ONE shared tilt switch (dark `glass`'s).
     func glassFor(light: Bool) -> GlassLook {

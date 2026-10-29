@@ -888,6 +888,7 @@ final class CorpusPhysicsScene: SKScene {
         #endif
         m.orbLook = MapLookChoice.effective
         if MapHeatGuard.shared.critical { m.orbLook = .flat }
+        m.applyStrength(MapLookStrength.effective(m.orbLook))   // 1.1-B — the Pro look's Subtle / Medium / Strong
         return m
     }
     /// live-48 — a Pro look (Glass, Aura, Eclipse; Wash on the light Map) is what the orbs wear → 60 fps while panning.
@@ -944,6 +945,7 @@ final class CorpusPhysicsScene: SKScene {
     private var swatchFramed = false
     private var swatchFamily: (String, Int)?
     private var inkTourActive = false   // 1.1-A (4) `-InkStillTour`
+    private var inkTourCamera: (CGPoint, CGFloat)?   // 1.1-B `-InkStillScrim`: the "off" frame's camera, reused for "on"
     static let noTitlesDebug = ProcessInfo.processInfo.arguments.contains("-MapNoTitles")
     #endif
     /// live-50b — DEBUG `-MapStudyLightGlass`: the light Map draws the study's Light Glass (live-49 / 50) instead of Glass, for A/B stills.
@@ -2034,6 +2036,7 @@ final class CorpusPhysicsScene: SKScene {
         scheduleGPUBenchIfAsked()   // 1.1-A (6) — `-MapGPUBench`
         scheduleMapLayoutExportIfAsked()   // 1.1-B study — `-ExportMapLayout <tag>`
         // 1.1-A (4) — `-InkAudit` (the title-ink audit, after the auto-fit settles) and `-InkStillTour <n>` (before / after stills).
+        if ProcessInfo.processInfo.arguments.contains("-DumpLookStrengths") { MapDarkTuning.dumpStrengths() }   // 1.1-B
         if ProcessInfo.processInfo.arguments.contains("-InkAudit") {
             whenOrbsSettled(after: 16) { [weak self] in self?.runInkAudit() }
         }
@@ -4953,14 +4956,21 @@ final class CorpusPhysicsScene: SKScene {
                             self.cameraNode.setScale(2 * r / (0.2 * self.size.width))
                             self.applyOrbScales()
                         }
-                        centre()
+                        // the scrim tour's "on" frame keeps the "off" frame's camera, so the pair differs only by the scrim
+                        let keepCamera = scrimTour && !old
+                        if !keepCamera { centre() } else if let c = self.inkTourCamera {
+                            self.cameraNode.removeAllActions()
+                            self.cameraNode.position = c.0; self.cameraNode.setScale(c.1)
+                            self.applyOrbScales()   // re-applies every title's LOD pass, so the frame redraws with the scrim
+                        }
                         if scrimTour { Self.titleScrim = old ? nil : TitleScrim.study } else { Self.worstCaseInkDebug = old }
                         self.restyleLabels()
                         // the lens / band relaxation moves orbs once the zoom lands: re-centre, then log where it sits
-                        DispatchQueue.main.asyncAfter(deadline: .now() + 1.2) { centre() }
+                        if !keepCamera { DispatchQueue.main.asyncAfter(deadline: .now() + 1.2) { centre() } }
                         DispatchQueue.main.asyncAfter(deadline: .now() + 2.0) { [weak self] in
                             guard let self else { return }
                             // where the orb sits (view pt) + the twin's samples, so a still can be checked against the twin
+                            if old { self.inkTourCamera = (self.cameraNode.position, self.cameraNode.xScale) }
                             let c = self.convert(sp.position, from: par), rs = self.orbBaseWidth(sp) * sp.xScale / 2
                             let vc = self.convertPoint(toView: c), ve = self.convertPoint(toView: CGPoint(x: c.x + rs, y: c.y))
                             if !old, let node = self.currentNodes.first(where: { $0.id == e.0 }) {
@@ -4976,8 +4986,11 @@ final class CorpusPhysicsScene: SKScene {
                                     let pk = TitleInkRule.pick(samples: sm, inks: Self.titleInks(look, light: self.currentIsLight, m: m))
                                     let b = (sp.children.first { $0.name == "titleLabel" }?.userData?["inkBox"] as? [Float]) ?? [0.6, 0.35]
                                     let s2 = TitleScrim.apply(sm, hw: b[0], hh: b[1], lightInk: pk.lightInk, TitleScrim.study)
-                                    NSLog("[INKSTILL] scrim %d id=%@ p80=%.2f withScrim=%.2f ink=%@", k + 1, e.0, pk.area,
-                                          TitleInkRule.areaContrast(pk.ink, over: s2), pk.lightInk ? "light" : "dark")
+                                    let tl = sp.children.first { $0.name == "titleLabel" }
+                                    let sc = tl?.childNode(withName: Self.scrimName) as? SKSpriteNode
+                                    NSLog("[INKSTILL] scrim %d id=%@ p80=%.2f withScrim=%.2f ink=%@ drawn=%@ size=%.0fx%.0f titleAlpha=%.2f children=%d", k + 1, e.0, pk.area,
+                                          TitleInkRule.areaContrast(pk.ink, over: s2), pk.lightInk ? "light" : "dark", sc == nil ? "no" : "yes",
+                                          sc?.size.width ?? 0, sc?.size.height ?? 0, tl?.alpha ?? -1, tl?.children.count ?? -1)
                                 }
                             }
                             NSLog("[INKSTILL] %d %@ id=%@ look=%@ map=%@ aaP80=%.2f newP80=%.2f flipped=%@ cx=%.1f cy=%.1f r=%.1f", k + 1,
@@ -5439,6 +5452,9 @@ final class CorpusPhysicsScene: SKScene {
         s.colorBlendFactor = 1
         s.alpha = CGFloat(c.amount)
         s.zPosition = 0
+        #if DEBUG
+        if ProcessInfo.processInfo.arguments.contains("-TitleScrimProbe") { s.color = .red; s.alpha = 1 }   // render check
+        #endif
         container.addChild(s)
     }
 

@@ -23,6 +23,7 @@ struct MapLookSection: View {
     @Environment(\.colorScheme) private var scheme
     @State private var lightTab: Bool?
     @State private var picked = MapLookChoice.picked
+    @State private var strength = MapLookStrength.picked(MapLookChoice.picked)
     @State private var showPro = false
     private var store: ProStore { ProStore.shared }
 
@@ -46,6 +47,18 @@ struct MapLookSection: View {
             }
             .background(AppearancePalette.ink.opacity(0.05))
             .clipShape(RoundedRectangle(cornerRadius: 12))
+            if store.isPro && MapLookStrength.has(picked) {   // 1.1-B — T's Subtle / Medium / Strong for the picked look
+                HStack(spacing: 12) {
+                    Text("Strength").font(appFont.font(size: 15, relativeTo: .subheadline)).foregroundStyle(AppearancePalette.ink)
+                    Picker("Strength", selection: Binding(get: { strength }, set: { s in
+                        MapLookStrength.set(s, for: picked); strength = s })) {
+                        ForEach(LookStrength.allCases) { Text($0.label).tag($0) }
+                    }
+                    .pickerStyle(.segmented)
+                    .accessibilityIdentifier("appearance.lookStrength")
+                }
+                .padding(.top, 2)
+            }
             Text(store.isPro ? "Your pick applies to both Maps: Aura and Eclipse show as Wash on the light Map."
                              : "Flat is free. The other looks come with AirPad Pro.")
                 .font(appFont.font(size: 12, relativeTo: .caption1)).foregroundStyle(AppearancePalette.ink.opacity(0.45))
@@ -64,6 +77,7 @@ struct MapLookSection: View {
             let p = MapLookChoice.pick(for: look, light: light, current: picked)
             MapLookChoice.picked = p
             picked = p
+            strength = MapLookStrength.picked(p)
         } label: {
             HStack(spacing: 14) {
                 LookSwatch(look: look, light: light)

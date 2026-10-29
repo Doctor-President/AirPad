@@ -87,6 +87,29 @@ enum MapWells {
     static var active: Bool { cached && !MapHeatGuard.shared.stressed }
 }
 
+/// 1.1-B — a Pro look's strength (T's Subtle / Medium / Strong, Ops/reference/orb-strengths-2026-10-29.json).
+enum LookStrength: Int, CaseIterable, Identifiable {
+    case subtle = 0, medium = 1, strong = 2
+    var id: Int { rawValue }
+    var label: String { switch self { case .subtle: "Subtle"; case .medium: "Medium"; case .strong: "Strong" } }
+}
+
+/// 1.1-B — the Strength picker beside Map look: one strength per Pro look (each look keeps its own), Medium by default.
+/// Pro only: without Pro the Map is Flat, which has no strength.
+enum MapLookStrength {
+    static let storageKey = "mapLook.strength.v1"   // [look rawValue: LookStrength rawValue]
+    /// The looks with T's strengths. Glass has none: the study's Glass is the light-Map Light Glass, not the shipping one.
+    static func has(_ l: MapOrbLook) -> Bool { [.aura, .eclipse, .riso, .gradient, .outline].contains(l) }
+    private static var cached: [String: Int] = UserDefaults.standard.dictionary(forKey: storageKey) as? [String: Int] ?? [:]
+    static func picked(_ l: MapOrbLook) -> LookStrength { cached[l.rawValue].flatMap(LookStrength.init(rawValue:)) ?? .medium }
+    static func set(_ s: LookStrength, for l: MapOrbLook) {
+        cached[l.rawValue] = s.rawValue
+        UserDefaults.standard.set(cached, forKey: storageKey)
+    }
+    /// What the Map draws for look `l`.
+    static func effective(_ l: MapOrbLook) -> LookStrength { has(l) && ProEntitlement.isPro ? picked(l) : .medium }
+}
+
 /// pro-build — the Pro entitlement as the app last verified it, cached so the Map never flashes Flat → Pro at launch.
 /// Written ONLY by `ProStore` from `Transaction.currentEntitlements` / `Transaction.updates` (local, verified by StoreKit).
 enum ProEntitlement {

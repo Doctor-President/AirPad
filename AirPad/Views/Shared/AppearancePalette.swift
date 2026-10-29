@@ -338,13 +338,25 @@ struct DashboardSurface: ViewModifier {
               blue: Double(h & 0xFF) / 255, opacity: alpha)
     }
     private var shape: RoundedRectangle { RoundedRectangle(cornerRadius: cornerRadius, style: .continuous) }
-    private var choice: DashboardSurfaceChoice {
-        if let forced { return forced }
+    private var choice: DashboardSurfaceChoice { forced ?? Self.drawn(pickedRaw: pickedRaw) }
+    /// The surface the Dashboard draws for a stored pick (DEBUG `-DashSurfaceCandidate` wins) — shared with the text floors
+    /// (`DashSecondaryInk`), so the ink always matches the surface under it.
+    static func drawn(pickedRaw: Int) -> DashboardSurfaceChoice {
         #if DEBUG
-        if let c = Self.debugCandidate { return c }
+        if let c = debugCandidate { return c }
         #endif
         return DashboardSurfaceChoice.effective(pickedRaw: pickedRaw, isPro: ProStore.shared.isPro)
     }
+    /// 1.1-B (T: "Dim the dark Glass a bit") — a black tint on the DARK Glass surface only, so its brightest background
+    /// drops enough for body text to gain contrast and the secondary greys to sit back below body at ≥ 4.5:1. DEBUG
+    /// `-DashGlassDarkTint <t>` sweeps it.
+    static let glassDarkTint: Double = {
+        #if DEBUG
+        if let s = UserDefaults.standard.string(forKey: "DashGlassDarkTint"), let v = Double(s) { return v }
+        #endif
+        return bakedGlassDarkTint
+    }()
+    static let bakedGlassDarkTint = 0.27   // swept: 0.25 → greys need ≤ 0.76 (one run spiked), 0.27 → ≤ 0.68, 0.30 → ≤ 0.64
 
     /// 1.1-B — over a custom background, the see-through surfaces' text picks its ink by the background's rule; Solid keeps
     /// today's ink (its own opaque fill).
@@ -353,7 +365,7 @@ struct DashboardSurface: ViewModifier {
         let content = content.onCustomGround(choice != .panel, pane: true)   // the pane's text, not its glass
         switch choice {
         case .glass:
-            content.glassEffect(.regular, in: shape)
+            content.glassEffect(dark && Self.glassDarkTint > 0 ? .regular.tint(Color.black.opacity(Self.glassDarkTint)) : .regular, in: shape)
         case .clear:
             content.glassEffect(.clear.tint(dark ? Self.hex(0x0D0D0D, 0.30) : Self.hex(0xFBF9F5, 0.45)), in: shape)
         case .panel:

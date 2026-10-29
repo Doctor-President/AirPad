@@ -2259,16 +2259,16 @@ extension AppearanceTuning {
                 g.apply(exportJSON: block)
                 return g == t.glass
             }(), ""),
-            ("aura-defaults-are-T's-final-values (spread 1.25 · warp 1.36 · soft 0.09 · halo 0.03 · rim 0.5 · fringe 0.58 · grain 0.19; extent 1.186) (pro-build)", {
+            // 1.1-B — T's Medium (Ops/reference/orb-strengths-2026-10-29.json) is each look's default, replacing Oct 28's values
+            ("aura-defaults-are-T's-Medium-2026-10-29 (1.04 · 1.04 · 0.08 · halo 0.01 · rim 0.29 · fringe 0.46 · grain 0.19) (1.1-B)", {
                 let a = t.aura
-                return a.spread == 1.25 && a.warp == 1.36 && a.softness == 0.09 && a.haloReach == 0.03 && a.rim == 0.5
-                    && a.fringe == 0.58 && a.grain == 0.19 && !a.drift && abs(a.spriteExtent - 1.186) < 1e-9
-                    && AuraLook.medium == AuraLook(0.82, 1.36, 0.03, 0, 0.45, 0.35, 1)
+                return a.spread == 1.04 && a.warp == 1.04 && a.softness == 0.08 && a.haloReach == 0.01 && a.rim == 0.29
+                    && a.fringe == 0.46 && a.grain == 0.19 && !a.drift && AuraLook.medium == a
             }(), String(format: "extent %.3f", t.aura.spriteExtent)),
-            ("eclipse-defaults-are-T's-final-values (0.68 · 0.98 · 0.15 · halo 0.02 · rim 0.56 · fringe 0.28 · grain 0.24; arc 0.035; extent 1.214) (pro-build)", {
+            ("eclipse-defaults-are-T's-Medium-2026-10-29 (0.8 · 0.98 · 0.01 · halo 0 · rim 0.45 · fringe 0.14 · grain 0.24; arc 0.035 kept) (1.1-B)", {
                 let e = t.eclipse
-                return e.spread == 0.68 && e.warp == 0.98 && e.softness == 0.15 && e.haloReach == 0.02 && e.rim == 0.56
-                    && e.fringe == 0.28 && e.grain == 0.24 && !e.drift && abs(e.spriteExtent - 1.214) < 1e-9
+                return e.spread == 0.8 && e.warp == 0.98 && e.softness == 0.01 && e.haloReach == 0 && e.rim == 0.45
+                    && e.fringe == 0.14 && e.grain == 0.24 && !e.drift && EclipseLook.medium == e
                     && e.arcThickness == 0.035 && abs(e.arcScale - Float(0.035 / 0.12)) < 1e-6
             }(), String(format: "extent %.3f", t.eclipse.spriteExtent)),
             ("eclipse-arc-thickness-copy-values-round-trip + old values decode to the default (live-51 amendment; pro-build default 0.035)", {
@@ -2282,8 +2282,9 @@ extension AppearanceTuning {
                 return (ec["arcThickness"] as? NSNumber)?.doubleValue == 0.3 && back.eclipse.arcThickness == 0.3
                     && o.arcThickness == EclipseLook().arcThickness && o.rim == 0.4 && abs(m.eclipse.arcScale - 2.5) < 1e-6
             }(), ""),
-            ("map-defaults-are-T's-final-values (glass · glassLight incl. cues · aura · eclipse incl. arc · riso · gradient · outline · wash) (pro-build)", {
-                // T's blocks from Ops/reference/tuner-values-2026-10-28-final.json, applied over the study presets → must equal today
+            ("map-defaults-are-T's-final-values (glass · glassLight incl. cues from Oct 28 · aura · eclipse incl. arc · riso · gradient · outline · wash from T's 10-29 Medium) (1.1-B)", {
+                // T's blocks from Ops/reference/tuner-values-2026-10-28-final.json (Glass), with 1.1-B's Medium
+                // (orb-strengths-2026-10-29.json) for the strength looks, applied over the study presets → must equal today
                 let c27: [String: Any] = [
                     "glass": ["tint": 0.19, "brightness": 0, "edge": 0, "innerShadow": 0.31, "dispersion": 0.35, "highlightSize": 0.43,
                               "highlightIntensity": 0.04, "tiltResponse": 0.16, "label": "#FFFFFF", "topArc": 0.9, "bottomArc": 0.45,
@@ -2295,13 +2296,13 @@ extension AppearanceTuning {
                                    "arcSpan": 174, "arcThickness": 0.12, "arcSoftness": 1, "dim": 0.09, "tiltLight": false, "tiltSmoothing": 0.8,
                                    "caustic": 0.08, "causticSize": 0.41, "causticColour": 0.5, "window": 0.04, "windowSize": 0.28,
                                    "windowSharpness": 0.04, "lens": 0.36, "lensMagnification": 2.49],
-                    "aura": ["spread": 1.25, "warp": 1.36, "softness": 0.09, "haloReach": 0.03, "rim": 0.5, "fringe": 0.58, "grain": 0.19, "drift": false],
-                    "eclipse": ["spread": 0.68, "warp": 0.98, "softness": 0.15, "haloReach": 0.02, "rim": 0.56, "fringe": 0.28, "grain": 0.24, "drift": false,
+                    "aura": ["spread": 1.04, "warp": 1.04, "softness": 0.08, "haloReach": 0.01, "rim": 0.29, "fringe": 0.46, "grain": 0.19, "drift": false],
+                    "eclipse": ["spread": 0.8, "warp": 0.98, "softness": 0.01, "haloReach": 0, "rim": 0.45, "fringe": 0.14, "grain": 0.24, "drift": false,
                                 "arcThickness": 0.035],
-                    "riso": ["spread": 0.53, "warp": 0.44, "softness": 0.02, "haloReach": 0.52, "rim": 0.54, "fringe": 0.85, "grain": 0.3, "drift": false],
-                    "gradient": ["spread": 0.83, "warp": 1.25, "softness": 0.01, "haloReach": 0.92, "rim": 0.54, "fringe": 0.11, "grain": 0.54, "drift": false],
-                    "outline": ["ringWidth": 2, "ringOpacityDark": 0.88, "ringOpacityLight": 1, "fillOpacity": 0.115],
-                    "wash": ["spread": 0.8, "warp": 0.82, "softness": 0.03, "bleed": 0.3, "pooling": 0.3, "misregistration": 0.3, "paper": 0.4]]
+                    "riso": ["spread": 0.59, "warp": 0.44, "softness": 0.01, "haloReach": 0.28, "rim": 0.72, "fringe": 1.08, "grain": 0.16, "drift": false],
+                    "gradient": ["spread": 0.61, "warp": 1, "softness": 0.01, "haloReach": 0.29, "rim": 0.34, "fringe": 0.17, "grain": 0.3, "drift": false],
+                    "outline": ["ringWidth": 2, "ringOpacityDark": 1, "ringOpacityLight": 1, "fillOpacity": 0.115],
+                    "wash": ["spread": 0.58, "warp": 0.59, "softness": 0.02, "bleed": 0.5, "pooling": 0.41, "misregistration": 0, "paper": 0.4]]
                 var m = MapDarkTuning()
                 var g0 = GlassLook.medium; g0.tint = 0.9; g0.topArc = 0.1; g0.arcSpan = 60; g0.highlightIntensity = 0.7
                 m.glass = g0; m.glassLight = g0; m.aura = .strong; m.eclipse = .strong; m.riso = RisoLook.presets[2].1
@@ -2312,9 +2313,10 @@ extension AppearanceTuning {
                     && m.riso == t.riso && m.gradient == t.gradient && m.outline == t.outline && m.wash == t.wash
                     && t.orbLook == .flat
             }(), ""),
-            ("aura-eclipse-presets-are-the-study's (Aura Subtle .7/.6/.02/0/.3/.2/.6 · Eclipse Medium .95/.9/.04/.12/.5/.45/.8)",
-             AuraLook.subtle == AuraLook(0.7, 0.6, 0.02, 0, 0.3, 0.2, 0.6) && AuraLook.strong.haloReach == 0.15
-                && EclipseLook.medium == EclipseLook(0.95, 0.9, 0.04, 0.12, 0.5, 0.45, 0.8) && EclipseLook.strong.haloReach == 0.3, ""),
+            ("aura-eclipse-presets-are-T's-strengths (Aura Subtle .72/.82/.05/.02/.3/.35/.11 · Strong .05 halo · Eclipse Subtle .72/.59/.01/0/.16/.42/.32 · Strong 1.06/1.47) (1.1-B)",
+             AuraLook.subtle == AuraLook(0.72, 0.82, 0.05, 0.02, 0.3, 0.35, 0.11) && AuraLook.strong.haloReach == 0.05
+                && EclipseLook.subtle == EclipseLook(0.72, 0.59, 0.01, 0, 0.16, 0.42, 0.32)
+                && EclipseLook.strong.spread == 1.06 && EclipseLook.strong.warp == 1.47, ""),
             ("study-12-palettes-match-the-hex-table (Ops/reference/orb-study-families-2026-10-27.md)", {
                 let want = ["770055 EC305A FDCFC0 37D59F", "D85A04 FDD1AE 7C0438 1AD1D1", "810013 B2790C F6D69E 10CAFD",
                             "928A0F E5DDA0 702901 87BAFD", "004D4A 519C03 D1E4A9 B0ADFE", "0D9E73 BBE9BA 004C55 DB98F9",
@@ -2336,7 +2338,7 @@ extension AppearanceTuning {
                 let old = #"{"spread":1.1,"softnessFloor":4,"grainSize":1,"contrast":1.5,"hueSpread":40,"grain":0.4,"softness":0.09}"#
                 guard let a = try? JSONDecoder().decode(AuraLook.self, from: Data(old.utf8)) else { return false }
                 var b = AuraLook(); b.apply(exportJSON: ["spread": 1.1, "softnessFloor": 4, "contrast": 1.5, "grain": 0.4, "softness": 0.09])
-                return a.spread == 1.1 && a.grain == 0.4 && a.softness == 0.09 && a.warp == 1.36 && b == a
+                return a.spread == 1.1 && a.grain == 0.4 && a.softness == 0.09 && a.warp == AuraLook().warp && b == a
             }(), ""),
             ("export-has-aura-eclipse-wash-blocks + palettes (no live-45 keys)", {
                 guard let all = try? JSONSerialization.jsonObject(with: Data(mapDarkJSON(t).utf8)) as? [String: Any],
@@ -2355,12 +2357,10 @@ extension AppearanceTuning {
             }(), ""),
             // live-49 — the study's v7 looks: T's values (orb-study-values-2026-10-27b.json), the study's bounds, Copy values
             // round trip, older saved values (no lightGlass / riso / gradient keys) decode to the defaults.
-            ("map-v7-looks-defaults-are-T's-values (Light Glass .68/.6/.01/.36/.7/.41/0 · final: Riso .53/.44/.02/.52/.54/.85/.3 · Gradient .83/1.25/.01/.92/.54/.11/.54)", {
+            ("map-v7-looks-defaults-are-T's-Medium-2026-10-29 (Light Glass .79/.92/.01/0/.43/.18/0 · Riso .59/.44/.01/.28/.72/1.08/.16 · Gradient .61/1/.01/.29/.34/.17/.3) (1.1-B)", {
                 func k<L: StudyOrbLook>(_ x: L) -> [Double] { [x.spread, x.warp, x.softness, x.haloReach, x.rim, x.fringe, x.grain] }
-                return k(t.lightGlass) == [0.68, 0.6, 0.01, 0.36, 0.7, 0.41, 0] && k(t.riso) == [0.53, 0.44, 0.02, 0.52, 0.54, 0.85, 0.3]
-                    && k(t.gradient) == [0.83, 1.25, 0.01, 0.92, 0.54, 0.11, 0.54]
-                    && abs(t.lightGlass.spriteExtent - 1.594) < 1e-9 && abs(t.riso.spriteExtent - 1.1065) < 1e-9
-                    && abs(t.gradient.spriteExtent - 1.0575) < 1e-9
+                return k(t.lightGlass) == [0.79, 0.92, 0.01, 0, 0.43, 0.18, 0] && k(t.riso) == [0.59, 0.44, 0.01, 0.28, 0.72, 1.08, 0.16]
+                    && k(t.gradient) == [0.61, 1, 0.01, 0.29, 0.34, 0.17, 0.3]
             }(), String(format: "extents %.4f %.4f %.4f", t.lightGlass.spriteExtent, t.riso.spriteExtent, t.gradient.spriteExtent)),
             ("map-v7-looks-copy-values-round-trip + old values decode", {
                 var m = MapDarkTuning(); m.orbLook = .riso; m.riso = RisoLook.presets[2].1; m.lightGlass = LightGlassLook.presets[0].1
@@ -2430,15 +2430,14 @@ extension AppearanceTuning {
                 return m.orbLook == .glass && m.glass.tiltLight && m.aura == AuraLook() && m.outline == OutlineLook()
                     && m.eclipse == EclipseLook()
             }(), ""),
-            ("wash-defaults-are-T's-27c-values (spread 0.8 · warp 0.82 · soft 0.03 · bleed 0.3 · pooling 0.3 · misreg 0.3 · paper 0.4; extent 1.275; Medium kept) (live-51)", {
+            ("wash-defaults-are-T's-Medium-2026-10-29 (spread 0.58 · warp 0.59 · soft 0.02 · bleed 0.5 · pooling 0.41 · misreg 0 · paper 0.4) (1.1-B)", {
                 let w = t.wash
-                return w.spread == 0.8 && w.warp == 0.82 && w.softness == 0.03 && w.bleed == 0.3 && w.pooling == 0.3
-                    && w.misregistration == 0.3 && w.paper == 0.4 && abs(w.spriteExtent - 1.275) < 1e-9
-                    && WashLook.medium.spread == 1 && WashLook.medium.paper == 0.6
+                return w.spread == 0.58 && w.warp == 0.59 && w.softness == 0.02 && w.bleed == 0.5 && w.pooling == 0.41
+                    && w.misregistration == 0 && w.paper == 0.4 && WashLook.medium == w
             }(), String(format: "extent %.3f", t.wash.spriteExtent)),
-            ("wash-presets-are-the-study's (Subtle .8/.5/.03/.3/.3/.3/.4 · Strong 1.2/1.3/.08/1/.85/1/.85)",
-             WashLook.subtle == WashLook(spread: 0.8, warp: 0.5, softness: 0.03, bleed: 0.3, pooling: 0.3, misregistration: 0.3, paper: 0.4)
-                && WashLook.strong.bleed == 1 && WashLook.strong.pooling == 0.85 && WashLook.strong.paper == 0.85, ""),
+            ("wash-presets-are-T's-strengths (Subtle .68/.49/.03/.18/.28/.18/.24 · Strong 1.05/.78/.04/.52/.72/.45/.41) (1.1-B)",
+             WashLook.subtle == WashLook(spread: 0.68, warp: 0.49, softness: 0.03, bleed: 0.18, pooling: 0.28, misregistration: 0.18, paper: 0.24)
+                && WashLook.strong == WashLook(spread: 1.05, warp: 0.78, softness: 0.04, bleed: 0.52, pooling: 0.72, misregistration: 0.45, paper: 0.41), ""),
             ("wash-export-applies-back + live-45 values without a wash key decode", {
                 var m = MapDarkTuning(); m.wash = .strong; m.wash.paper = 0.33
                 var back = MapDarkTuning()

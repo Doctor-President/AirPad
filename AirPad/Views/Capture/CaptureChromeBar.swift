@@ -39,6 +39,7 @@ enum CaptureChromeMetrics {
 /// The primitives pill is applied by the CALLER via `.capturePrimitivesContainer()`
 /// on its leading content, so this component never wraps an empty leading slot.
 struct CaptureChromeBar<Leading: View>: View {
+    @Environment(\.appBodyFont) private var appFont   // 1.1-A type pass
     let hasContent: Bool
     let onDone: () -> Void
     let onDiscard: () -> Void
@@ -105,7 +106,7 @@ struct CaptureChromeBar<Leading: View>: View {
     private func pill(title: String, fill: Color, ink: Color, glassTint: Color?, action: @escaping () -> Void) -> some View {
         Button(action: action) {
             let label = Text(title)
-                .font(.headline)
+                .font(appFont.font(size: 17, weight: .semibold, relativeTo: .headline))
                 .lineLimit(1)
                 .fixedSize(horizontal: true, vertical: false)
                 .foregroundStyle(ink)

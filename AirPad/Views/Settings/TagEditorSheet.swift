@@ -2,6 +2,7 @@ import SwiftUI
 
 /// Create a new tag or edit an existing one. Pass `existing: nil` to create.
 struct TagEditorSheet: View {
+    @Environment(\.appBodyFont) private var appFont   // 1.1-A type pass
 
     let existing: Tag?
     var onCreated: ((String) -> Void)? = nil
@@ -78,7 +79,7 @@ struct TagEditorSheet: View {
         VStack(alignment: .leading, spacing: 8) {
             sectionLabel("Name")
             TextField("Tag name", text: $name)
-                .font(.body)
+                .font(appFont.font(size: 17, relativeTo: .body))
                 .foregroundStyle(AppearancePalette.ink)
                 .tint(AppearancePalette.ink)
                 .padding(12)
@@ -95,7 +96,7 @@ struct TagEditorSheet: View {
                 Spacer()
                 // Preview pill
                 Text(name.isEmpty ? "Tag" : name)
-                    .font(.caption.weight(.semibold))
+                    .font(appFont.font(size: 12, weight: .semibold, relativeTo: .caption1))
                     .foregroundStyle(.white)
                     .padding(.horizontal, 12)
                     .padding(.vertical, 6)
@@ -135,7 +136,7 @@ struct TagEditorSheet: View {
                 Image(systemName: "trash")
                 Text("Delete tag")
             }
-            .font(.subheadline.weight(.medium))
+            .font(appFont.font(size: 15, weight: .medium, relativeTo: .subheadline))
             .foregroundStyle(.red.opacity(0.8))
             .frame(maxWidth: .infinity)
             .padding(.vertical, 12)
@@ -148,7 +149,7 @@ struct TagEditorSheet: View {
     @ViewBuilder
     private func sectionLabel(_ text: String) -> some View {
         Text(text)
-            .font(.caption.weight(.semibold))
+            .font(appFont.font(size: 12, weight: .semibold, relativeTo: .caption1))
             .foregroundStyle(AppearancePalette.ink.opacity(0.35))
             .textCase(.uppercase)
             .tracking(0.6)

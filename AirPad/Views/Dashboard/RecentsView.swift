@@ -69,7 +69,7 @@ struct RecentsView: View {
             Spacer()
 
             Text("Recents")
-                .font(.system(size: 17, weight: .semibold))
+                .font(appFont.font(size: 17, weight: .semibold, relativeTo: .body))
                 // Light-mode pass — adaptive ink (dark `#FFFFFF` == `.white`,
                 // byte-identical; light `#232A2E` so the title reads on parchment).
                 .foregroundStyle(AppearancePalette.ink)
@@ -322,7 +322,7 @@ struct RecentNodeRow: View, Equatable {
                     .foregroundStyle(ink)
                     .lineLimit(1)
                 Text("\(timestamp, style: .relative) ago")
-                    .font(.caption)
+                    .font(appFont.font(size: 12, relativeTo: .caption1))
                     .foregroundStyle(ink.opacity(0.4))
             }
             Spacer()
@@ -388,7 +388,7 @@ struct PriorityView: View {
             chromeCircleButton("chevron.backward") { dismiss() }
             Spacer()
             Text("Priority")
-                .font(.system(size: 17, weight: .semibold))
+                .font(appFont.font(size: 17, weight: .semibold, relativeTo: .body))
                 .foregroundStyle(AppearancePalette.ink)
             Spacer()
             // Reorder only makes sense with 2+; keep the layout balanced otherwise.
@@ -461,6 +461,7 @@ struct PriorityView: View {
 /// (List + `.onMove` + always-active edit mode), writing through
 /// `CorpusStore.setPriorityOrder`.
 private struct PriorityReorderSheet: View {
+    @Environment(\.appBodyFont) private var appFont   // 1.1-A type pass
     @Environment(CorpusStore.self) private var store
     @Environment(\.dismiss) private var dismiss
     @State private var working: [Node]
@@ -477,7 +478,7 @@ private struct PriorityReorderSheet: View {
                         Image(systemName: "flag")
                             .foregroundStyle(AppearancePalette.ink.opacity(0.5))
                         Text(node.title.isEmpty ? "Untitled" : node.title)
-                            .font(.body)
+                            .font(appFont.font(size: 17, relativeTo: .body))
                             .foregroundStyle(AppearancePalette.ink)
                             .lineLimit(1)
                         Spacer(minLength: 0)

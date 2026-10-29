@@ -12,6 +12,7 @@ import SwiftUI
 /// re-classified. Retry and dismiss are the caller's (the chat re-sends the
 /// trailing turn; the tray re-runs generate).
 struct FMFailureBanner: View {
+    @Environment(\.appBodyFont) private var appFont   // 1.1-A type pass
     let message: String
     var retryDisabled: Bool = false
     /// C4a — replaces "Retry" with a named action (e.g. "Load and ask") when the failure has a better fix.
@@ -25,12 +26,12 @@ struct FMFailureBanner: View {
                 .font(.system(size: 14))
                 .foregroundStyle(Color(hexString: "E8820A"))
             Text(message)
-                .font(.system(size: 13))
+                .font(appFont.font(size: 13, relativeTo: .footnote))
                 .foregroundStyle(AppearancePalette.ink.opacity(0.9))
                 .frame(maxWidth: .infinity, alignment: .leading)
             Button(retryTitle, action: onRetry)
                 .fixedSize()
-                .font(.system(size: 13, weight: .semibold))
+                .font(appFont.font(size: 13, weight: .semibold, relativeTo: .footnote))
                 .foregroundStyle(Color(hexString: "00BFFF"))
                 .buttonStyle(.plain)
                 .disabled(retryDisabled)

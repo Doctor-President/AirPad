@@ -183,7 +183,7 @@ struct CanvasSlideOutMenu: View {
                 Spacer()
                 if let badge {
                     Text(badge)
-                        .font(.system(size: 11, weight: .bold))
+                        .font(appFont.font(size: 11, weight: .bold, relativeTo: .caption2))
                         .foregroundStyle(.white)
                         .padding(.horizontal, 7)
                         .padding(.vertical, 3)

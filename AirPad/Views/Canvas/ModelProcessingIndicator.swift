@@ -10,6 +10,7 @@ import SwiftUI
 /// over ~4s, and an opacity pulse from 0.65 → 1.0 over ~1.8s. The pill is
 /// informational only — non-tappable, doesn't block the canvas.
 struct ModelProcessingIndicator: View {
+    @Environment(\.appBodyFont) private var appFont   // 1.1-A type pass
 
     @State private var phase: CGFloat = 0
     @State private var pulse: CGFloat = 0.65
@@ -32,7 +33,7 @@ struct ModelProcessingIndicator: View {
                 .font(.system(size: 11, weight: .semibold))
                 .symbolEffect(.variableColor.iterative, options: .repeating)
             Text("Thinking")
-                .font(.system(size: 12, weight: .semibold))
+                .font(appFont.font(size: 12, weight: .semibold, relativeTo: .caption1))
         }
         // Light-mode convergence — adaptive ink (was hardcoded `.white`). NOTE:
         // the pill fill is a FIXED pastel gradient (below), so this is really a

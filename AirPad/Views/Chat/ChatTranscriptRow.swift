@@ -333,7 +333,7 @@ struct ChatMessageRow: View {
                         // Tapping the header only expands/collapses. Navigation
                         // lives on the individual source rows (Piece 2).
                         Text("◇ \(sources.count) source\(sources.count == 1 ? "" : "s")")
-                            .font(.system(size: 13, weight: .medium))
+                            .font(appFont.font(size: 13, weight: .medium, relativeTo: .footnote))
                         Image(systemName: "chevron.right")
                             .font(.system(size: 10, weight: .semibold))
                             .rotationEffect(.degrees(isExpanded ? 90 : 0))
@@ -368,10 +368,10 @@ struct ChatMessageRow: View {
                                         .foregroundStyle(AppearancePalette.ink.opacity(0.55))
                                     VStack(alignment: .leading, spacing: 2) {
                                         Text(c.title)
-                                            .font(.system(size: 13, weight: .medium))
+                                            .font(appFont.font(size: 13, weight: .medium, relativeTo: .footnote))
                                             .foregroundStyle(AppearancePalette.ink.opacity(0.75))
                                         Text(c.snippet)
-                                            .font(.system(size: 12))
+                                            .font(appFont.font(size: 12, relativeTo: .caption1))
                                             .foregroundStyle(AppearancePalette.ink.opacity(0.45))
                                             .lineLimit(2)
                                     }
@@ -410,13 +410,13 @@ struct ChatMessageRow: View {
             if isLast {
                 HStack(spacing: 16) {
                     Button { Task { await session.regenerateLast() } } label: {
-                        Label("Try again", systemImage: "arrow.clockwise").font(.system(size: 13, weight: .semibold))
+                        Label("Try again", systemImage: "arrow.clockwise").font(appFont.font(size: 13, weight: .semibold, relativeTo: .footnote))
                     }
                     .disabled(session.isStreaming)
                     .accessibilityIdentifier("chat.declined.retry")
                     if let onSwitchModel = context.onSwitchModel {
                         Button(action: onSwitchModel) {
-                            Label("Switch model", systemImage: "cpu").font(.system(size: 13, weight: .semibold))
+                            Label("Switch model", systemImage: "cpu").font(appFont.font(size: 13, weight: .semibold, relativeTo: .footnote))
                         }
                         .accessibilityIdentifier("chat.declined.switchModel")
                     }
@@ -441,11 +441,11 @@ struct ChatMessageRow: View {
                 // ★ BUG 36 Pillar 2 — auto re-attaching to the held FULL answer on the Host.
                 ProgressView().controlSize(.mini)
                 Text("Resuming…")
-                    .font(.system(size: 12, weight: .medium))
+                    .font(appFont.font(size: 12, weight: .medium, relativeTo: .caption1))
                     .foregroundStyle(AppearancePalette.ink.opacity(0.5))
             } else {
                 Label("Stopped early", systemImage: "pause.circle")
-                    .font(.system(size: 12, weight: .medium))
+                    .font(appFont.font(size: 12, weight: .medium, relativeTo: .caption1))
                     .foregroundStyle(AppearancePalette.ink.opacity(0.5))
                 if isLast {
                     Button {
@@ -453,7 +453,7 @@ struct ChatMessageRow: View {
                     } label: {
                         Label("Continue", systemImage: "arrow.turn.down.right")
                             .labelStyle(.titleAndIcon)
-                            .font(.system(size: 12, weight: .semibold))
+                            .font(appFont.font(size: 12, weight: .semibold, relativeTo: .caption1))
                             .foregroundStyle(Color(hexString: "00BFFF"))
                     }
                     .buttonStyle(.plain)

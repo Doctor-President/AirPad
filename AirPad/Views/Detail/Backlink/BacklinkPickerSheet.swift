@@ -9,6 +9,7 @@
 import SwiftUI
 
 struct BacklinkPickerSheet: View {
+    @Environment(\.appBodyFont) private var appFont   // 1.1-A type pass
     /// The node the backlink originates from (the detail view we're in).
     let sourceNodeID: String
     /// The entry the "Backlink" action fired on — recorded as the source anchor
@@ -59,7 +60,7 @@ struct BacklinkPickerSheet: View {
                 } label: {
                     HStack(spacing: 12) {
                         Text(BacklinkLabels.title(node))
-                            .font(.system(size: 16, weight: .medium))
+                            .font(appFont.font(size: 16, weight: .medium, relativeTo: .subheadline))
                             .foregroundStyle(AppearancePalette.ink)
                             .lineLimit(1)
                         Spacer(minLength: 8)
@@ -97,6 +98,7 @@ struct BacklinkPickerSheet: View {
 // MARK: - Screen 2 — node-vs-entry granularity
 
 private struct BacklinkTargetPicker: View {
+    @Environment(\.appBodyFont) private var appFont   // 1.1-A type pass
     let sourceNodeID: String
     let sourceEntryID: String?
     let targetNodeID: String
@@ -126,7 +128,7 @@ private struct BacklinkTargetPicker: View {
         List {
             if sourceConnectionCount >= 20 {
                 Text("This entry already has \(sourceConnectionCount) connections. Adding more is fine — just getting dense.")
-                    .font(.footnote)
+                    .font(appFont.font(size: 13, relativeTo: .footnote))
                     .foregroundStyle(.orange)
                     .listRowBackground(Color.orange.opacity(0.10))
             }
@@ -151,7 +153,7 @@ private struct BacklinkTargetPicker: View {
                     }
                 } header: {
                     Text("Or an entry")
-                        .font(.caption).foregroundStyle(AppearancePalette.ink.opacity(0.4))
+                        .font(appFont.font(size: 12, relativeTo: .caption1)).foregroundStyle(AppearancePalette.ink.opacity(0.4))
                 }
             }
         }
@@ -181,7 +183,7 @@ private struct BacklinkTargetPicker: View {
                     .foregroundStyle(AppearancePalette.ink.opacity(0.6))
                     .frame(width: 22)
                 Text(title)
-                    .font(.system(size: indent ? 15 : 16, weight: indent ? .regular : .semibold))
+                    .font(appFont.font(size: indent ? 15 : 16, weight: indent ? .regular : .semibold, relativeTo: .subheadline))
                     .foregroundStyle(AppearancePalette.ink)
                     .lineLimit(1)
                 Spacer(minLength: 8)

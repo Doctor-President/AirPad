@@ -113,7 +113,7 @@ struct RelatedNodesSection: View {
                     Image(systemName: "plus")
                         .font(.system(size: 10, weight: .semibold))
                     Text("Link to entry")
-                        .font(.system(size: 12, weight: .medium))
+                        .font(appFont.font(size: 12, weight: .medium, relativeTo: .caption1))
                 }
                 .foregroundStyle(AppearancePalette.ink.opacity(0.4))
                 .contentShape(Rectangle())
@@ -157,7 +157,7 @@ struct RelatedNodesSection: View {
 
     private func channelHeader(_ text: String, secondary: Bool) -> some View {
         Text(text)
-            .font(.caption.weight(.semibold))
+            .font(appFont.font(size: 12, weight: .semibold, relativeTo: .caption1))
             .foregroundStyle(AppearancePalette.ink.opacity(secondary ? 0.3 : 0.45))
             .textCase(.uppercase)
             .tracking(0.8)
@@ -236,7 +236,7 @@ struct RelatedNodesSection: View {
                 if let entryID = conn.entryID,
                    let entry = target.items.first(where: { $0.id == entryID }) {
                     Text(BacklinkLabels.entry(entry))
-                        .font(.system(size: 12))
+                        .font(appFont.font(size: 12, relativeTo: .caption1))
                         .foregroundStyle(AppearancePalette.ink.opacity(0.5))
                         .lineLimit(1)
                 }

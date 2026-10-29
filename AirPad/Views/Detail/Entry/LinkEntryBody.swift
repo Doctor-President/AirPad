@@ -39,6 +39,7 @@ import UIKit
 /// snapshot trio has no `LinkItem` to attach to. New captures and
 /// migrated entries always have `linkItems[0]`.
 struct LinkEntryBody: View {
+    @Environment(\.appBodyFont) private var appFont   // 1.1-A type pass
 
     let item: NodeItem
     let nodeID: String
@@ -68,7 +69,7 @@ struct LinkEntryBody: View {
 
             if let wordCount = snapshotLinkItem?.snapshotWordCount, wordCount > 0 {
                 Text("\(wordCount.formatted()) words saved")
-                    .font(.caption2)
+                    .font(appFont.font(size: 11, relativeTo: .caption2))
                     .foregroundStyle(AppearancePalette.ink.opacity(0.4))
                     .lineLimit(1)
                     .padding(.horizontal, 4)

@@ -4,6 +4,7 @@ import SwiftUI
 /// an `EntryCard`. Lazy `imageURL` resolution + rounded placeholder while
 /// the file URL loads; description text below if present.
 struct ImageEntryBody: View {
+    @Environment(\.appBodyFont) private var appFont   // 1.1-A type pass
 
     let item: NodeItem
     let nodeID: String
@@ -24,7 +25,7 @@ struct ImageEntryBody: View {
             }
             if let description = item.description, !description.isEmpty {
                 Text(description)
-                    .font(.caption)
+                    .font(appFont.font(size: 12, relativeTo: .caption1))
                     .foregroundStyle(AppearancePalette.ink.opacity(0.55))
                     .padding(.horizontal, 4)
             }

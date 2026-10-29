@@ -40,6 +40,7 @@ import PhotosUI
 /// orphaned; we chain `deleteGalleryItem` first to clean the file via
 /// its correct itemID, then `deleteEntry` to remove the now-empty entry.
 struct SingleMediaBody: View {
+    @Environment(\.appBodyFont) private var appFont   // 1.1-A type pass
 
     let item: NodeItem
     let nodeID: String
@@ -81,12 +82,12 @@ struct SingleMediaBody: View {
 
             if let description = item.description, !description.isEmpty {
                 Text(description)
-                    .font(.caption)
+                    .font(appFont.font(size: 12, relativeTo: .caption1))
                     .foregroundStyle(AppearancePalette.ink.opacity(0.55))
                     .padding(.horizontal, 4)
             } else if let transcript = item.transcript, !transcript.isEmpty {
                 Text(transcript)
-                    .font(.caption)
+                    .font(appFont.font(size: 12, relativeTo: .caption1))
                     .foregroundStyle(AppearancePalette.ink.opacity(0.55))
                     .padding(.horizontal, 4)
             }

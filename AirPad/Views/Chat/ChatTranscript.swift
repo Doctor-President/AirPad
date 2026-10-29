@@ -574,6 +574,7 @@ private struct ThinkingShimmerView: View {
 /// shape (colourblind-safe), not colour. Reuses the panel `AppearancePalette.ink`
 /// chrome; renders in both appearance modes.
 struct ActivityRow: View {
+    @Environment(\.appBodyFont) private var appFont   // 1.1-A type pass
     let activity: ChatSession.ToolActivity
     /// live-30 — held by the transcript (`TranscriptRowContext`), so an opened box stays open when its cell is reused.
     @Binding var expanded: Bool
@@ -599,10 +600,10 @@ struct ActivityRow: View {
                     Image(systemName: activity.icon)
                         .font(.system(size: 12, weight: .semibold))
                     Text(activity.label)
-                        .font(.system(size: 13, weight: .medium))
+                        .font(appFont.font(size: 13, weight: .medium, relativeTo: .footnote))
                     if !activity.links.isEmpty {
                         Text("· \(activity.links.count)")
-                            .font(.system(size: 13))
+                            .font(appFont.font(size: 13, relativeTo: .footnote))
                             .foregroundStyle(AppearancePalette.ink.opacity(0.4))
                     }
                     Spacer(minLength: 0)
@@ -621,7 +622,7 @@ struct ActivityRow: View {
                 VStack(alignment: .leading, spacing: 10) {
                     if let detail = activity.detail, !detail.isEmpty {
                         Text(detail)
-                            .font(.system(size: 12))
+                            .font(appFont.font(size: 12, relativeTo: .caption1))
                             .foregroundStyle(AppearancePalette.ink.opacity(0.5))
                             .lineLimit(2)
                             .frame(maxWidth: .infinity, alignment: .leading)
@@ -632,17 +633,17 @@ struct ActivityRow: View {
                         } label: {
                             VStack(alignment: .leading, spacing: 2) {
                                 Text(link.title)
-                                    .font(.system(size: 13, weight: .medium))
+                                    .font(appFont.font(size: 13, weight: .medium, relativeTo: .footnote))
                                     .foregroundStyle(AppearancePalette.ink)
                                     .lineLimit(2)
                                 Text(link.url)
-                                    .font(.system(size: 11))
+                                    .font(appFont.font(size: 11, relativeTo: .caption2))
                                     .foregroundStyle(Color(hexString: "1B59C2"))
                                     .lineLimit(1)
                                     .truncationMode(.middle)
                                 if let s = link.snippet, !s.isEmpty {
                                     Text(s)
-                                        .font(.system(size: 11))
+                                        .font(appFont.font(size: 11, relativeTo: .caption2))
                                         .foregroundStyle(AppearancePalette.ink.opacity(0.45))
                                         .lineLimit(2)
                                 }

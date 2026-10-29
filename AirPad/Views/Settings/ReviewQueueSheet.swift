@@ -1,6 +1,7 @@
 import SwiftUI
 
 struct ReviewQueueSheet: View {
+    @Environment(\.appBodyFont) private var appFont   // 1.1-A type pass
 
     @Environment(CorpusStore.self) private var store
     @Environment(\.dismiss) private var dismiss
@@ -39,7 +40,7 @@ struct ReviewQueueSheet: View {
                 }
             } header: {
                 Text("\(store.reviewQueue.count) \(store.reviewQueue.count == 1 ? "entry" : "entries") waiting")
-                    .font(.caption.weight(.semibold))
+                    .font(appFont.font(size: 12, weight: .semibold, relativeTo: .caption1))
                     .foregroundStyle(AppearancePalette.ink.opacity(0.4))
                     .textCase(nil)
             }
@@ -56,7 +57,7 @@ struct ReviewQueueSheet: View {
                 .font(.system(size: 44))
                 .foregroundStyle(AppearancePalette.ink.opacity(0.2))
             Text("Queue is clear")
-                .font(.headline)
+                .font(appFont.font(size: 17, weight: .semibold, relativeTo: .headline))
                 .foregroundStyle(AppearancePalette.ink.opacity(0.4))
         }
         .frame(maxWidth: .infinity, maxHeight: .infinity)
@@ -66,6 +67,7 @@ struct ReviewQueueSheet: View {
 // MARK: - Row
 
 private struct ReviewBlockRow: View {
+    @Environment(\.appBodyFont) private var appFont   // 1.1-A type pass
 
     let block: RejectedBlock
     @Environment(CorpusStore.self) private var store
@@ -76,7 +78,7 @@ private struct ReviewBlockRow: View {
             HStack(alignment: .top, spacing: 10) {
                 reasonBadge
                 Text(block.text)
-                    .font(.subheadline)
+                    .font(appFont.font(size: 15, relativeTo: .subheadline))
                     .foregroundStyle(AppearancePalette.ink.opacity(0.8))
                     .lineLimit(isExpanded ? nil : 3)
                     .frame(maxWidth: .infinity, alignment: .leading)
@@ -88,7 +90,7 @@ private struct ReviewBlockRow: View {
                     Task { await store.promoteRejectedBlock(block) }
                 } label: {
                     Text("Add as entry")
-                        .font(.caption.weight(.semibold))
+                        .font(appFont.font(size: 12, weight: .semibold, relativeTo: .caption1))
                         .foregroundStyle(AppearancePalette.ink)
                         .padding(.horizontal, 12)
                         .padding(.vertical, 6)
@@ -100,7 +102,7 @@ private struct ReviewBlockRow: View {
                     store.removeFromReviewQueue(id: block.id)
                 } label: {
                     Text("Discard")
-                        .font(.caption.weight(.semibold))
+                        .font(appFont.font(size: 12, weight: .semibold, relativeTo: .caption1))
                         .foregroundStyle(.red.opacity(0.7))
                         .padding(.horizontal, 12)
                         .padding(.vertical, 6)
@@ -111,7 +113,7 @@ private struct ReviewBlockRow: View {
                 Spacer()
 
                 Text("\(block.rejectedAt, style: .relative) ago")
-                    .font(.caption2)
+                    .font(appFont.font(size: 11, relativeTo: .caption2))
                     .foregroundStyle(AppearancePalette.ink.opacity(0.25))
             }
         }
@@ -121,7 +123,7 @@ private struct ReviewBlockRow: View {
 
     private var reasonBadge: some View {
         Text(block.reason == .heuristic ? "fragment" : "incomplete")
-            .font(.caption2.weight(.semibold))
+            .font(appFont.font(size: 11, weight: .semibold, relativeTo: .caption2))
             .foregroundStyle(block.reason == .heuristic ? Color.orange : Color.yellow)
             .padding(.horizontal, 6)
             .padding(.vertical, 3)

@@ -3,6 +3,7 @@ import SwiftUI
 /// Sheet for reviewing quarantined entries.
 /// Shows each entry with its reason and provides Rescue/Discard actions.
 struct QuarantineReviewSheet: View {
+    @Environment(\.appBodyFont) private var appFont   // 1.1-A type pass
 
     @Environment(CorpusStore.self) private var store
     @Environment(QuarantineStore.self) private var quarantineStore
@@ -47,7 +48,7 @@ struct QuarantineReviewSheet: View {
                 }
             } header: {
                 Text("\(quarantineStore.entries.count) quarantined \(quarantineStore.entries.count == 1 ? "entry" : "entries")")
-                    .font(.caption.weight(.semibold))
+                    .font(appFont.font(size: 12, weight: .semibold, relativeTo: .caption1))
                     .foregroundStyle(AppearancePalette.ink.opacity(0.4))
                     .textCase(nil)
             }
@@ -64,7 +65,7 @@ struct QuarantineReviewSheet: View {
                 .font(.system(size: 44))
                 .foregroundStyle(AppearancePalette.ink.opacity(0.2))
             Text("No quarantined entries")
-                .font(.headline)
+                .font(appFont.font(size: 17, weight: .semibold, relativeTo: .headline))
                 .foregroundStyle(AppearancePalette.ink.opacity(0.4))
         }
         .frame(maxWidth: .infinity, maxHeight: .infinity)
@@ -74,6 +75,7 @@ struct QuarantineReviewSheet: View {
 // MARK: - Row
 
 private struct QuarantineEntryRow: View {
+    @Environment(\.appBodyFont) private var appFont   // 1.1-A type pass
 
     let entry: BatchParser.QuarantinedEntry
     @Environment(CorpusStore.self) private var store
@@ -85,7 +87,7 @@ private struct QuarantineEntryRow: View {
             HStack(alignment: .top, spacing: 10) {
                 reasonBadge
                 Text(entry.rawText)
-                    .font(.subheadline)
+                    .font(appFont.font(size: 15, relativeTo: .subheadline))
                     .foregroundStyle(AppearancePalette.ink.opacity(0.8))
                     .lineLimit(isExpanded ? nil : 3)
                     .frame(maxWidth: .infinity, alignment: .leading)
@@ -97,7 +99,7 @@ private struct QuarantineEntryRow: View {
                     Task { await rescueEntry() }
                 } label: {
                     Text("Rescue")
-                        .font(.caption.weight(.semibold))
+                        .font(appFont.font(size: 12, weight: .semibold, relativeTo: .caption1))
                         .foregroundStyle(AppearancePalette.ink)
                         .padding(.horizontal, 12)
                         .padding(.vertical, 6)
@@ -109,7 +111,7 @@ private struct QuarantineEntryRow: View {
                     discardEntry()
                 } label: {
                     Text("Discard")
-                        .font(.caption.weight(.semibold))
+                        .font(appFont.font(size: 12, weight: .semibold, relativeTo: .caption1))
                         .foregroundStyle(.red.opacity(0.7))
                         .padding(.horizontal, 12)
                         .padding(.vertical, 6)
@@ -120,7 +122,7 @@ private struct QuarantineEntryRow: View {
                 Spacer()
 
                 Text("\(entry.importedAt, style: .relative) ago")
-                    .font(.caption2)
+                    .font(appFont.font(size: 11, relativeTo: .caption2))
                     .foregroundStyle(AppearancePalette.ink.opacity(0.25))
             }
         }
@@ -130,7 +132,7 @@ private struct QuarantineEntryRow: View {
 
     private var reasonBadge: some View {
         Text(entry.reason)
-            .font(.caption2.weight(.semibold))
+            .font(appFont.font(size: 11, weight: .semibold, relativeTo: .caption2))
             .foregroundStyle(Color.orange)
             .padding(.horizontal, 6)
             .padding(.vertical, 3)

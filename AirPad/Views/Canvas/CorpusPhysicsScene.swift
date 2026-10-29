@@ -1,6 +1,9 @@
 import SpriteKit
 import UIKit
 import simd
+#if DEBUG
+import Metal   // 1.1-A (6) — the `-MapGPUBench` offscreen SKRenderer harness
+#endif
 
 /// The tier-fit SIZE-CARRIER face — a UIFont whose only job is to pass the tier point
 /// size through the wrap loop (`mapLabelFont`); the FACE never reaches the screen. The
@@ -2025,6 +2028,7 @@ final class CorpusPhysicsScene: SKScene {
             }
         }
         startAuraSizeScriptIfAsked()
+        scheduleGPUBenchIfAsked()   // 1.1-A (6) — `-MapGPUBench`
         #endif
         // White-flash fix: a re-presented scene must re-signal its first frame so
         // CanvasView re-hides then reveals (each mount has the backing gap).
@@ -2086,8 +2090,18 @@ final class CorpusPhysicsScene: SKScene {
             onFirstRender?()
         }
 
+        #if DEBUG
+        applyAutoPanDebug(currentTime)   // 1.1-A (6) — `-MapAutoPan`: a slow camera drift (the "panning" state)
+        let warpT0 = CACurrentMediaTime()
+        #endif
         updateGridWarp()      // grid warp — SHIPS (baked 2026-09-14)
+        #if DEBUG
+        benchWarpCPU += CACurrentMediaTime() - warpT0
+        #endif
         applyMapComp()        // Brief AS — push the live Map-comp levers (dark only)
+        #if DEBUG
+        applyGroundCaseGridDebug()   // 1.1-A (6) — `-MapGroundCase`: wells / ripple / dots / grid off
+        #endif
         #if DEBUG
         syncLayoutRings()     // live-44 — `-AuraLayoutRings` audit overlay
         #endif
@@ -2174,6 +2188,7 @@ final class CorpusPhysicsScene: SKScene {
         if Self.noTitlesDebug {   // pro-build — `-MapNoTitles`: the swatch captures (look_swatches.sh)
             for (_, sp) in nodeSprites { sp.children.first { $0.name == "titleLabel" }?.isHidden = true }
         }
+        applyGroundCaseNodesDebug()   // 1.1-A (6) — `-MapGroundCase titlesOff | orbsOff | empty`
         #endif
 
         updateCardPresentation()   // tap-driven card morph → SwiftUI overlay
@@ -3466,6 +3481,16 @@ final class CorpusPhysicsScene: SKScene {
     }
 
     private var lastWarpMode = 0
+    #if DEBUG
+    // 1.1-A (6) Map ground measurement harness state (see `MapGroundCase`, end of file).
+    var groundCase: MapGroundCase = MapGroundCase(rawValue: UserDefaults.standard.string(forKey: "MapGroundCase") ?? "") ?? .all
+    fileprivate var groundCaseDotsOffApplied = false
+    fileprivate var groundCaseHidden: [SKNode] = []
+    fileprivate var benchWarpCPU: TimeInterval = 0
+    fileprivate var autoPanLastPhase: Double?
+    fileprivate var benchRunning = false
+    static let autoPanDebug = ProcessInfo.processInfo.arguments.contains("-MapAutoPan")
+    #endif
     // Brief AY — dirty-field tracking (reuse the last texture when nothing that feeds it changed).
     private var fieldBuiltOnce = false
     private var lastFieldCamPos: CGPoint = .zero      // gated by fieldBuiltOnce → init value is inert
@@ -3612,7 +3637,13 @@ final class CorpusPhysicsScene: SKScene {
         // Falloff baked 1.0; the field carries the per-orb title fade via w, so the dot shrink
         // (∝ field magnitude) eases in per orb too.
         let field = buildWarpField(orbs: packed, falloff: 1.0, massRange: massRange, viewW: viewW, viewH: viewH)
-        BackgroundGridNode.setWarp(grid, mode: mode, strength: Float(strengthEff),
+        #if DEBUG
+        // 1.1-A (6) — wells off: the field is still built (the ripple reads its B channel), the dots stay unmoved (mode 0).
+        let modeOut: Float = groundCase.wellsOff ? 0 : mode
+        #else
+        let modeOut = mode
+        #endif
+        BackgroundGridNode.setWarp(grid, mode: modeOut, strength: Float(strengthEff),
                                    sign: Float(GridWarpTuning.sign),
                                    shrink: Float(GridWarpTuning.dotShrink(isLight: isLight)),
                                    massRange: Float(massRange), field: field)
@@ -5885,3 +5916,142 @@ final class MapHeatGuard {
         #endif
     }
 }
+
+#if DEBUG
+// MARK: - 1.1-A (6) Map ground measurement harness (DEBUG only — Release-inert)
+
+/// What `-MapGroundCase <case>` (device trace) / `-MapGPUBench` (in-app offscreen bench) switch off:
+/// - `wellsOff`: the dots stay on the lattice (grid shader mode 0); the field is still built because the ripple reads it.
+/// - `rippleOff`: `u_ripple_amt` = 0 (dark only; the grid then outputs premultiplied dots over the SwiftUI ground).
+/// - `wellsRippleOff`: both (what a "Gravity wells" toggle that also drops the mass-field glow would leave).
+/// - `dotsOff`: the dot coverage forced to 0 in the shader (the compiler drops the lattice); the ground + ripple remain.
+/// - `gridOff`: the whole ground node hidden. `titlesOff`: orb titles hidden. `orbsOff`: orb sprites (and their titles)
+///   hidden. `empty`: grid + orbs hidden (clear + SpriteKit overhead).
+enum MapGroundCase: String, CaseIterable {
+    case all, wellsOff, rippleOff, wellsRippleOff, dotsOff, gridOff, titlesOff, orbsOff, empty
+    var wellsOff: Bool { self == .wellsOff || self == .wellsRippleOff }
+    var rippleOff: Bool { self == .rippleOff || self == .wellsRippleOff }
+}
+
+extension CorpusPhysicsScene {
+    /// Per frame, after `applyMapComp` (which re-pushes the ripple each frame).
+    func applyGroundCaseGridDebug() {
+        guard let grid = gridNode else { return }
+        if groundCase.rippleOff { grid.fillShader?.uniformNamed("u_ripple_amt")?.floatValue = 0 }
+        let hideGrid = groundCase == .gridOff || groundCase == .empty
+        if grid.isHidden != hideGrid { grid.isHidden = hideGrid }
+        let dotsOff = groundCase == .dotsOff
+        if dotsOff != groundCaseDotsOffApplied {
+            BackgroundGridNode.debugRebuildShader(grid, dotsOff: dotsOff)
+            groundCaseDotsOffApplied = dotsOff
+        }
+    }
+
+    /// Per frame, after `applyOrbScales` / `syncGlassOrbs` (so nothing re-shows what this hides).
+    func applyGroundCaseNodesDebug() {
+        let hideOrbs = groundCase == .orbsOff || groundCase == .empty
+        let hideTitles = groundCase == .titlesOff
+        if !hideOrbs && !hideTitles {
+            if !groundCaseHidden.isEmpty { groundCaseHidden.forEach { $0.isHidden = false }; groundCaseHidden = [] }
+            return
+        }
+        for (_, sp) in nodeSprites {
+            let n: SKNode? = hideOrbs ? sp : sp.children.first { $0.name == "titleLabel" }
+            if let n, !n.isHidden { n.isHidden = true; groundCaseHidden.append(n) }
+        }
+    }
+
+    /// `-MapAutoPan`: drift the camera on a 12 pt (on-screen) circle every 4 s — the Map stays "active" (full frame rate,
+    /// the warp field rebuilt every frame), like a slow pan, with no touch. The bench pans the same way.
+    func applyAutoPanDebug(_ t: TimeInterval) {
+        guard Self.autoPanDebug || benchRunning else { autoPanLastPhase = nil; return }
+        let ph = t * 2 * Double.pi / 4
+        defer { autoPanLastPhase = ph }
+        guard let last = autoPanLastPhase else { return }
+        let r = 12 * Double(cameraNode.xScale)
+        cameraNode.position.x += CGFloat(r * (cos(ph) - cos(last)))
+        cameraNode.position.y += CGFloat(r * (sin(ph) - sin(last)))
+    }
+
+    /// `-MapGPUBench`: ~20 s after the Map mounts (after `-MapFrameOrbs` / `-MapZoom` at 14 s), pause the SKView and render
+    /// THIS scene offscreen with `SKRenderer` at the view's pixel size, every `MapGroundCase` in turn (two rounds), reading
+    /// `MTLCommandBuffer` GPU start/end per frame. Results → `Caches/mapgpubench.txt` + NSLog `[MAPBENCH]`.
+    func scheduleGPUBenchIfAsked() {
+        guard ProcessInfo.processInfo.arguments.contains("-MapGPUBench") else { return }
+        let delay = Double(UserDefaults.standard.string(forKey: "MapGPUBenchDelay") ?? "") ?? 20
+        DispatchQueue.main.asyncAfter(deadline: .now() + delay) { [weak self] in self?.runGPUBench() }
+    }
+
+    private func runGPUBench() {
+        guard let view = view, let dev = MTLCreateSystemDefaultDevice(), let queue = dev.makeCommandQueue() else { return }
+        let k = view.contentScaleFactor
+        let W = Int(view.bounds.width * k), H = Int(view.bounds.height * k)
+        let td = MTLTextureDescriptor.texture2DDescriptor(pixelFormat: .bgra8Unorm, width: W, height: H, mipmapped: false)
+        td.usage = [.renderTarget, .shaderRead]; td.storageMode = .private
+        guard let target = dev.makeTexture(descriptor: td) else { return }
+        let rpd = MTLRenderPassDescriptor()
+        rpd.colorAttachments[0].texture = target
+        rpd.colorAttachments[0].loadAction = .clear; rpd.colorAttachments[0].storeAction = .store
+        rpd.colorAttachments[0].clearColor = MTLClearColor(red: 0, green: 0, blue: 0, alpha: 0)
+        let r = SKRenderer(device: dev)
+        r.scene = self
+        r.ignoresSiblingOrder = view.ignoresSiblingOrder
+        r.shouldCullNonVisibleNodes = view.shouldCullNonVisibleNodes
+        view.isPaused = true
+        isPaused = false
+        benchRunning = true
+        let startCase = groundCase
+        let warm = 40, measure = Int(UserDefaults.standard.string(forKey: "MapGPUBenchFrames") ?? "") ?? 240
+        var t = CACurrentMediaTime()
+        var lines: [String] = []
+        let titles = nodeTitleLodFade.values.filter { $0 > 0 }.count
+        lines.append(String(format: "MAPBENCH %dx%d px  orbs %d  titles-visible %d  camScale %.3f  light %@  device %@",
+                            W, H, nodeSprites.count, titles, Double(cameraNode.xScale), currentIsLight ? "Y" : "n", dev.name))
+        lines.append("case             GPU-ts med | encode ms med | commit→done ms med  p10   p90 | update CPU ms | warp CPU ms | warpMode")
+        func pct(_ a: [Double], _ q: Double) -> Double { a.isEmpty ? 0 : a.sorted()[min(a.count - 1, Int(Double(a.count) * q))] }
+        let rounds = Int(UserDefaults.standard.string(forKey: "MapGPUBenchRounds") ?? "") ?? 2
+        for round in 1...rounds {
+            for c in MapGroundCase.allCases + [.all] {
+                groundCase = c
+                var gpu: [Double] = [], wall: [Double] = [], upd: [Double] = [], warp: [Double] = [], enc: [Double] = []
+                var modes = Set<Int>()
+                for i in 0..<(warm + measure) {
+                    t += 1.0 / 120
+                    benchWarpCPU = 0
+                    let c0 = CACurrentMediaTime()
+                    r.update(atTime: t)
+                    let c1 = CACurrentMediaTime()
+                    guard let cb = queue.makeCommandBuffer() else { continue }
+                    r.render(withViewport: CGRect(x: 0, y: 0, width: W, height: H), commandBuffer: cb, renderPassDescriptor: rpd)
+                    let c1b = CACurrentMediaTime()
+                    cb.commit(); cb.waitUntilCompleted()
+                    let c2 = CACurrentMediaTime()
+                    if i >= warm {
+                        gpu.append((cb.gpuEndTime - cb.gpuStartTime) * 1000); enc.append((c1b - c1) * 1000)
+                        wall.append((c2 - c1b) * 1000); upd.append((c1 - c0) * 1000); warp.append(benchWarpCPU * 1000)
+                        modes.insert(lastWarpMode)
+                    }
+                }
+                lines.append(String(format: "r%d %-14@ %6.3f   | %7.3f       | %7.3f  %6.3f %6.3f        | %7.3f       | %7.3f     | %@",
+                                    round, c.rawValue as NSString, pct(gpu, 0.5), pct(enc, 0.5), pct(wall, 0.5), pct(wall, 0.1),
+                                    pct(wall, 0.9), pct(upd, 0.5), pct(warp, 0.5),
+                                    modes.sorted().map(String.init).joined(separator: ",") as NSString))
+                if round == 1, c == .all || c == .dotsOff, let src = gridNode?.fillShader?.source,
+                   let dir = FileManager.default.urls(for: .cachesDirectory, in: .userDomainMask).first {
+                    try? src.write(to: dir.appendingPathComponent("grid-\(c.rawValue).glsl"), atomically: true, encoding: .utf8)
+                }
+            }
+        }
+        groundCase = startCase
+        benchRunning = false
+        view.isPaused = false
+        let text = lines.joined(separator: "\n") + "\n"
+        for l in lines { NSLog("[MAPBENCH] %@", l) }
+        if let dir = FileManager.default.urls(for: .cachesDirectory, in: .userDomainMask).first {
+            let url = dir.appendingPathComponent("mapgpubench.txt")
+            let prev = (try? String(contentsOf: url, encoding: .utf8)) ?? ""
+            try? (prev + text).write(to: url, atomically: true, encoding: .utf8)
+        }
+    }
+}
+#endif

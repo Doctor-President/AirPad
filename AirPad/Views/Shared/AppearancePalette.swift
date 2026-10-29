@@ -308,6 +308,10 @@ extension View {
     /// automatic — the DARK pane keeps the same frosted material + `white@0.12`
     /// rim, byte-identical to the dark Today card.
     func dashboardPaneSurface(cornerRadius: CGFloat = 22) -> some View {
+        #if DEBUG
+        // 1.1-A (7) research — `-DashSurfaceCandidate 1|2|3` swaps the pane surface for stills (0 / absent = shipped).
+        modifier(DashSurfaceCandidate(cornerRadius: cornerRadius))
+        #else
         background(
             RoundedRectangle(cornerRadius: cornerRadius, style: .continuous)
                 .fill(.thinMaterial)
@@ -316,8 +320,51 @@ extension View {
                         .strokeBorder(Color.white.opacity(0.12), lineWidth: 1)
                 )
         )
+        #endif
     }
 }
+
+#if DEBUG
+/// 1.1-A (7) — Dashboard surface research (no shipped change). DEBUG `-DashSurfaceCandidate <n>`:
+///   0 (default) = the shipped surface: `.thinMaterial` + `white@0.12` hairline.
+///   1 = Liquid Glass `.regular` (`glassEffect(.regular, in:)`), no hairline (the glass draws its own edge).
+///   2 = Liquid Glass `.clear` tinted: dark `#0D0D0D` @ 0.30, light `#FBF9F5` @ 0.45 (the lamp shows through more).
+///   3 = tinted mostly-opaque panel: dark `#13161B` @ 0.88 + `white@0.10` hairline; light `#FBF9F5` @ 0.90 + `#DCD6CC` hairline.
+struct DashSurfaceCandidate: ViewModifier {
+    let cornerRadius: CGFloat
+    @Environment(\.colorScheme) private var scheme
+    static let active: Int = {
+        let a = ProcessInfo.processInfo.arguments
+        guard let i = a.firstIndex(of: "-DashSurfaceCandidate"), i + 1 < a.count else { return 0 }
+        return Int(a[i + 1]) ?? 0
+    }()
+    private static func hex(_ h: UInt32, _ alpha: Double) -> Color {
+        Color(red: Double((h >> 16) & 0xFF) / 255, green: Double((h >> 8) & 0xFF) / 255,
+              blue: Double(h & 0xFF) / 255, opacity: alpha)
+    }
+    private var shape: RoundedRectangle { RoundedRectangle(cornerRadius: cornerRadius, style: .continuous) }
+
+    @ViewBuilder func body(content: Content) -> some View {
+        let dark = scheme == .dark
+        switch Self.active {
+        case 1:
+            content.glassEffect(.regular, in: shape)
+        case 2:
+            content.glassEffect(.clear.tint(dark ? Self.hex(0x0D0D0D, 0.30) : Self.hex(0xFBF9F5, 0.45)), in: shape)
+        case 3:
+            content.background(
+                shape.fill(dark ? Self.hex(0x13161B, 0.88) : Self.hex(0xFBF9F5, 0.90))
+                    .overlay(shape.strokeBorder(dark ? Color.white.opacity(0.10) : Self.hex(0xDCD6CC, 1), lineWidth: 1))
+            )
+        default:
+            content.background(
+                shape.fill(.thinMaterial)
+                    .overlay(shape.strokeBorder(Color.white.opacity(0.12), lineWidth: 1))
+            )
+        }
+    }
+}
+#endif
 
 // MARK: - Light palettes (live-21 renders → live-22 (1))
 

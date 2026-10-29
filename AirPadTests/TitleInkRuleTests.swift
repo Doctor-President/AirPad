@@ -2,8 +2,9 @@ import XCTest
 import simd
 @testable import AirPad
 
-/// 1.1-A (4) — the pure title-ink rule: worst-case WCAG contrast over the samples picks the ink; under 4.5:1 a halo in
-/// the other ink. Positive controls (must pick dark / must pick light / must halo) plus the worst-case (not mean) property.
+/// 1.1-A (4) / 1.1-B — the pure title-ink rule: the ink with the higher AREA contrast (80th percentile of the title's
+/// samples) wins; there is no halo. Positive controls (must pick dark / must pick light) plus the area (not worst-case,
+/// not mean) property.
 final class TitleInkRuleTests: XCTestCase {
     private let inks = TitleInkRule.legibleInks
     private func grey(_ v: Int) -> SIMD3<Float> { SIMD3(repeating: Float(v) / 255) }
@@ -12,7 +13,7 @@ final class TitleInkRuleTests: XCTestCase {
         let p = TitleInkRule.pick(samples: [grey(255), grey(240)], inks: inks)
         XCTAssertFalse(p.lightInk)
         XCTAssertEqual(p.ink, inks.dark)
-        XCTAssertNil(p.halo)
+        XCTAssertGreaterThanOrEqual(p.area, 4.5)
         XCTAssertGreaterThanOrEqual(p.worst, 4.5)
     }
 
@@ -20,24 +21,45 @@ final class TitleInkRuleTests: XCTestCase {
         let p = TitleInkRule.pick(samples: [grey(0), grey(20)], inks: inks)
         XCTAssertTrue(p.lightInk)
         XCTAssertEqual(p.ink, inks.light)
-        XCTAssertNil(p.halo)
     }
 
-    func testMidGreyHalosInTheOtherInk() {
+    /// The halo is gone structurally: a Pick has no halo (or any stroke / outline) field, even where neither ink reads.
+    func testNoPickCarriesAHalo() {
         let p = TitleInkRule.pick(samples: [grey(0x77)], inks: inks)   // < 4.5 against both inks
-        XCTAssertLessThan(p.worst, 4.5)
-        XCTAssertNotNil(p.halo)
-        XCTAssertEqual(p.halo, p.lightInk ? inks.dark : inks.light)
+        XCTAssertLessThan(p.area, 4.5)
+        let fields = Mirror(reflecting: p).children.compactMap { $0.label?.lowercased() }
+        XCTAssertEqual(Set(fields), ["ink", "area", "worst", "lightink"])
+        XCTAssertFalse(fields.contains { $0.contains("halo") || $0.contains("stroke") || $0.contains("outline") })
     }
 
-    /// One bright patch under the title must flip the choice away from the ink a MEAN would pick.
-    func testWorstCaseNotMean() {
-        let samples = Array(repeating: grey(30), count: 34) + [grey(250)]   // mostly dark, one near-white sample
-        let p = TitleInkRule.pick(samples: samples, inks: inks)
+    /// The area measure, precisely: sorted ascending, c[n − ⌈0.8·n⌉] — 35 samples → the 8th lowest (28 of 35 reach it).
+    func testAreaContrastIsThe80thPercentile() {
+        let samples = (0..<35).map { grey($0 * 7) }   // 0 … 238, distinct
+        let c = samples.map { TitleInkRule.contrast(inks.dark, $0) }.sorted()
+        XCTAssertEqual(TitleInkRule.areaContrast(inks.dark, over: samples), c[7])
+        XCTAssertEqual(c.filter { $0 >= c[7] }.count, 28)
+        XCTAssertEqual(TitleInkRule.areaContrast(inks.dark, over: [grey(255)]), TitleInkRule.contrast(inks.dark, grey(255)))
+        XCTAssertEqual(TitleInkRule.areaContrast(inks.dark, over: []), 21)
+    }
+
+    /// A few bright points under a mostly dark title no longer flip the ink (1.1-A's worst case did).
+    func testAFewBadSamplesNoLongerFlipThePick() {
+        let samples = Array(repeating: grey(30), count: 31) + Array(repeating: grey(250), count: 4)
         let wl = TitleInkRule.worstContrast(inks.light, over: samples), wd = TitleInkRule.worstContrast(inks.dark, over: samples)
-        XCTAssertEqual(p.worst, max(wl, wd))
-        XCTAssertEqual(p.lightInk, wl >= wd)
-        XCTAssertNotNil(p.halo)   // neither ink survives both a #1E1E1E and a #FAFAFA sample
+        XCTAssertLessThan(wl, wd)   // the worst case would have picked the dark ink
+        let p = TitleInkRule.pick(samples: samples, inks: inks)
+        XCTAssertTrue(p.lightInk)
+        XCTAssertGreaterThanOrEqual(p.area, 4.5)
+        XCTAssertEqual(p.worst, wl)
+        // …but a real majority still decides: 8 bright points of 35 (> 20%) flip it to the dark ink's side of the sort
+        let more = Array(repeating: grey(30), count: 27) + Array(repeating: grey(250), count: 8)
+        XCTAssertEqual(TitleInkRule.areaContrast(inks.light, over: more), TitleInkRule.contrast(inks.light, grey(250)))
+    }
+
+    /// Ties go to the light ink.
+    func testTieGoesToLightInk() {
+        let p = TitleInkRule.pick(samples: [grey(100)], inks: .init(light: grey(200), dark: grey(200)))
+        XCTAssertTrue(p.lightInk)
     }
 
     func testContrastMatchesWCAG() {

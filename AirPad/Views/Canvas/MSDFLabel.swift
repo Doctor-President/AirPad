@@ -198,19 +198,14 @@ enum MSDFLabel {
             float screenPxDistance = a_px_range * (sd - 0.5);
             float opacity = clamp(screenPxDistance + 0.5, 0.0, 1.0);
             float a = a_glyph_color.a * opacity * a_lod_alpha;   // a_lod_alpha = LOD fade
-            // 1.1-A (4) — the title's soft halo (a_halo.a = 0 → none → exactly the ink alone): the other ink, under the
-            // glyph, fading from the outline to 0 at the field's reach (½ a_px_range px out — the atlas's padding).
-            float hr = 0.5 * a_px_range;
-            float ha = a_halo.a * a_lod_alpha * smoothstep(-hr, 0.0, screenPxDistance) * (1.0 - a);
-            gl_FragColor = vec4(a_glyph_color.rgb * a + a_halo.rgb * ha, a + ha);   // premultiplied, ink over halo
+            gl_FragColor = vec4(a_glyph_color.rgb * a, a);   // premultiplied
         }
         """
         let shader = SKShader(source: src)
         shader.attributes = [
             SKAttribute(name: "a_glyph_color", type: .vectorFloat4),
             SKAttribute(name: "a_px_range", type: .float),
-            SKAttribute(name: "a_lod_alpha", type: .float),
-            SKAttribute(name: "a_halo", type: .vectorFloat4)   // 1.1-A (4) — halo rgb + peak opacity (0 = no halo)
+            SKAttribute(name: "a_lod_alpha", type: .float)
         ]
         return shader
     }()
@@ -232,7 +227,7 @@ enum MSDFLabel {
     /// horizontally; lines are STACKED by the font line-height and the whole block is
     /// CENTERED vertically on the origin. Returns an `SKNode` named `containerName`
     /// (drop-in for the raster title sprite: child of orb, z 2, alpha-driven by LOD).
-    static func makeContainer(lines: [String], pointSize: CGFloat, color: UIColor, halo: UIColor? = nil,
+    static func makeContainer(lines: [String], pointSize: CGFloat, color: UIColor,
                               fullTitle: String, font: MSDFFont = .shared) -> SKNode {
         let container = SKNode()
         container.zPosition = 2
@@ -253,7 +248,6 @@ enum MSDFLabel {
         let midCaps: CGFloat = 0.355                 // cap-box center (em) → vertical centering
         let lineSpacing = font.lineHeightEm * pointSize
         let colorVec = rgbaVec(color)
-        let haloVec = halo.map(rgbaVec) ?? vector_float4(0, 0, 0, 0)
         // Top line highest, block centered on y = 0.
         let topOffset = CGFloat(lines.count - 1) / 2 * lineSpacing
         for (li, line) in lines.enumerated() {
@@ -276,20 +270,17 @@ enum MSDFLabel {
                 sprite.setValue(SKAttributeValue(vectorFloat4: colorVec), forAttribute: "a_glyph_color")
                 sprite.setValue(SKAttributeValue(float: 4.0), forAttribute: "a_px_range")     // set per-frame (smoothing)
                 sprite.setValue(SKAttributeValue(float: 1.0), forAttribute: "a_lod_alpha")    // set per-frame (LOD fade)
-                sprite.setValue(SKAttributeValue(vectorFloat4: haloVec), forAttribute: "a_halo")
                 container.addChild(sprite)
             }
         }
         return container
     }
 
-    /// Recolor an existing glyph container in place (appearance flip — no rebuild). `halo` nil = no halo.
-    static func recolor(container: SKNode, color: UIColor, halo: UIColor? = nil) {
-        let v = rgbaVec(color), h = halo.map(rgbaVec) ?? vector_float4(0, 0, 0, 0)
+    /// Recolor an existing glyph container in place (appearance flip — no rebuild).
+    static func recolor(container: SKNode, color: UIColor) {
+        let v = rgbaVec(color)
         for glyph in container.children {
-            guard let sp = glyph as? SKSpriteNode else { continue }
-            sp.setValue(SKAttributeValue(vectorFloat4: v), forAttribute: "a_glyph_color")
-            sp.setValue(SKAttributeValue(vectorFloat4: h), forAttribute: "a_halo")
+            (glyph as? SKSpriteNode)?.setValue(SKAttributeValue(vectorFloat4: v), forAttribute: "a_glyph_color")
         }
     }
 

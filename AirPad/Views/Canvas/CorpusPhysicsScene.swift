@@ -2032,6 +2032,7 @@ final class CorpusPhysicsScene: SKScene {
         }
         startAuraSizeScriptIfAsked()
         scheduleGPUBenchIfAsked()   // 1.1-A (6) — `-MapGPUBench`
+        scheduleMapLayoutExportIfAsked()   // 1.1-B study — `-ExportMapLayout <tag>`
         // 1.1-A (4) — `-InkAudit` (the title-ink audit, after the auto-fit settles) and `-InkStillTour <n>` (before / after stills).
         if ProcessInfo.processInfo.arguments.contains("-InkAudit") {
             whenOrbsSettled(after: 16) { [weak self] in self?.runInkAudit() }
@@ -3663,6 +3664,15 @@ final class CorpusPhysicsScene: SKScene {
         // Falloff baked 1.0; the field carries the per-orb title fade via w, so the dot shrink
         // (∝ field magnitude) eases in per orb too.
         let field = buildWarpField(orbs: packed, falloff: 1.0, massRange: massRange, viewW: viewW, viewH: viewH)
+        #if DEBUG
+        // 1.1-B study export — the field's exact inputs this frame.
+        Self.debugLastWarp = ["mode": Double(mode), "strengthEff": strengthEff, "massRange": massRange, "refScreen": refScreen,
+                              "refLinear": refs.linear, "refMass": refs.mass, "ramp": ramp, "influence": influence, "exponent": exponent,
+                              "reachUnits": reachUnits, "depth": depth, "reachCeiling": reachCeiling, "viewW": viewW, "viewH": viewH,
+                              "cs": cs, "rippleK": Double(MapCompTuning.rippleK), "rippleGamma": Double(MapCompTuning.rippleGamma),
+                              "compBaked": currentIsLight ? 0 : 1]
+        Self.debugLastPacked = packed.map { [$0.sx, $0.sy, $0.w, $0.reach] }
+        #endif
         // 1.1-A fix-up (1) — wells off (the toggle, Low Power, heat): the field is still built (the dark ripple reads its
         // B channel), the dots stay on the lattice (mode 0) — the path 1.1-A (6) measured at 0.31–0.37 ms vs 1.5–1.9 ms.
         #if DEBUG
@@ -3750,6 +3760,9 @@ final class CorpusPhysicsScene: SKScene {
                 }
             }
         }
+        #if DEBUG
+        Self.debugLastField = (bytes, fw, fh)   // 1.1-B study export
+        #endif
         let tex = SKTexture(data: Data(bytes), size: CGSize(width: fw, height: fh))
         tex.filteringMode = .linear
         return tex
@@ -5752,6 +5765,10 @@ final class CorpusPhysicsScene: SKScene {
         let container = MSDFLabel.makeContainer(lines: lines, pointSize: pt,
                                                 color: c.ink, halo: c.halo, fullTitle: text, font: font)
         container.userData?["inkBox"] = inkBox
+        #if DEBUG
+        container.userData?["debugLines"] = lines   // 1.1-B study export
+        container.userData?["debugLineHeightEm"] = font.lineHeightEm
+        #endif
         return container
     }
 
@@ -6353,6 +6370,138 @@ extension CorpusPhysicsScene {
             let prev = (try? String(contentsOf: url, encoding: .utf8)) ?? ""
             try? (prev + text).write(to: url, atomically: true, encoding: .utf8)
         }
+    }
+}
+#endif
+
+#if DEBUG
+// MARK: - 1.1-B ground study export (DEBUG only — Release-inert)
+
+extension CorpusPhysicsScene {
+    /// The last warp field built (bytes RGBA, w, h) and its packed inputs — stashed by `updateGridWarp` / `buildWarpField`.
+    static var debugLastField: ([UInt8], Int, Int) = ([], 0, 0)
+    static var debugLastPacked: [[Double]] = []
+    static var debugLastWarp: [String: Double] = [:]
+
+    /// `-ExportMapLayout <tag>`: after the orbs settle (and `-MapFrameOrbs` has framed), write the Map AS DRAWN — every
+    /// orb's position / size / shader attributes / title lines, both shaders' uniforms, the warp field and its inputs —
+    /// to `Caches/maplayout-<tag>-<dark|light>.json`, in four steps a Mac script screenshots between (NSLog
+    /// `[EXPORTMAP] ready <step>`): dark with titles, dark without, light with titles, light without. No territory pills.
+    /// Sample Library only (the study's data) — never point it at a real library.
+    func scheduleMapLayoutExportIfAsked() {
+        let a = ProcessInfo.processInfo.arguments
+        guard let i = a.firstIndex(of: "-ExportMapLayout"), i + 1 < a.count else { return }
+        let tag = a[i + 1]
+        whenOrbsSettled(after: 18) { [weak self] in self?.runMapLayoutExport(tag: tag) }
+    }
+
+    private func runMapLayoutExport(tag: String) {
+        inkTourActive = true   // no territory pills
+        let key = AppearanceOverride.storageKey
+        let steps: [(Double, () -> Void)] = [
+            // After each flip, nudge the camera 0.05 pt so the warp field rebuilds for the new Map (the field's dirty check
+            // doesn't see an appearance flip with a still camera — any pan rebuilds it).
+            (0, { UserDefaults.standard.set("dark", forKey: key) }),
+            (2, { [weak self] in self?.cameraNode.position.x += 0.05 }),
+            (5, { [weak self] in self?.writeMapLayout(tag: tag); NSLog("[EXPORTMAP] ready dark-titles") }),
+            (7, { [weak self] in self?.groundCase = .titlesOff }),
+            (2, { NSLog("[EXPORTMAP] ready dark-notitles") }),
+            (7, { [weak self] in self?.groundCase = .all; UserDefaults.standard.set("light", forKey: key) }),
+            (2, { [weak self] in self?.cameraNode.position.x -= 0.05 }),
+            (5, { [weak self] in self?.writeMapLayout(tag: tag); NSLog("[EXPORTMAP] ready light-titles") }),
+            (7, { [weak self] in self?.groundCase = .titlesOff }),
+            (2, { NSLog("[EXPORTMAP] ready light-notitles") }),
+            (7, { [weak self] in self?.groundCase = .all; NSLog("[EXPORTMAP] done") }),
+        ]
+        var t = 0.0
+        for (d, f) in steps { t += d; DispatchQueue.main.asyncAfter(deadline: .now() + t, execute: f) }
+    }
+
+    private func writeMapLayout(tag: String) {
+        func uniforms(_ list: [SKUniform]) -> [String: Any] {
+            var out: [String: Any] = [:]
+            for u in list {
+                switch u.uniformType {
+                case .float: out[u.name] = u.floatValue
+                case .floatVector2: let v = u.vectorFloat2Value; out[u.name] = [v.x, v.y]
+                case .floatVector3: let v = u.vectorFloat3Value; out[u.name] = [v.x, v.y, v.z]
+                case .floatVector4: let v = u.vectorFloat4Value; out[u.name] = [v.x, v.y, v.z, v.w]
+                case .floatMatrix4:
+                    let m = u.matrixFloat4x4Value
+                    out[u.name] = [m.columns.0, m.columns.1, m.columns.2, m.columns.3].flatMap { [$0.x, $0.y, $0.z, $0.w] }
+                default: break
+                }
+            }
+            return out
+        }
+        func v4(_ s: SKSpriteNode, _ n: String) -> [Float]? {
+            guard let v = s.value(forAttributeNamed: n) else { return nil }
+            let x = v.vectorFloat4Value; return [x.x, x.y, x.z, x.w]
+        }
+        var orbs: [[String: Any]] = []
+        for id in nodeSprites.keys.sorted() {
+            guard let sp = nodeSprites[id], let par = sp.parent else { continue }
+            let p = convert(sp.position, from: par)
+            var o: [String: Any] = ["id": id, "x": p.x, "y": p.y, "xScale": sp.xScale, "hidden": sp.isHidden, "alpha": sp.alpha,
+                                    "z": sp.zPosition]
+            if let h = nodeRestingPositions[id] { let hp = convert(h, from: par); o["homeX"] = hp.x; o["homeY"] = hp.y }
+            o["intrinsic"] = nodeIntrinsicRadii[id] ?? 0
+            o["restingScale"] = nodeRestingScales[id] ?? 1
+            o["onScreen"] = nodeOnScreenDiameter[id] ?? 0
+            o["lodFade"] = nodeTitleLodFade[id] ?? 0
+            if let s = sp as? SKSpriteNode {
+                o["flatShader"] = s.shader === orbSpriteShader
+                o["size"] = [s.size.width, s.size.height]   // SCALED (× xScale)
+                o["a_node_color"] = v4(s, "a_node_color"); o["a_stroke_color"] = v4(s, "a_stroke_color")
+                o["a_wash"] = v4(s, "a_wash")
+                if let g = s.value(forAttributeNamed: "a_geom") { let x = g.vectorFloat2Value; o["a_geom"] = [x.x, x.y] }
+                if let d = s.value(forAttributeNamed: "a_defocus") { o["a_defocus"] = d.floatValue }
+            }
+            if let t = sp.children.first(where: { $0.name == "titleLabel" }) {
+                var ti: [String: Any] = ["text": (t.userData?["fullTitle"] as? String) ?? "", "z": t.zPosition,
+                                         "pointSize": (t.userData?["msdfPointSize"] as? CGFloat) ?? 0,
+                                         "lines": (t.userData?["debugLines"] as? [String]) ?? [],
+                                         "lineHeightEm": (t.userData?["debugLineHeightEm"] as? CGFloat) ?? 1.2,
+                                         "inkBox": (t.userData?["inkBox"] as? [Float]) ?? []]
+                if let g = t.children.first as? SKSpriteNode {
+                    ti["ink"] = v4(g, "a_glyph_color"); ti["halo"] = v4(g, "a_halo")
+                }
+                o["title"] = ti
+            }
+            orbs.append(o)
+        }
+        let (fb, fw, fh) = Self.debugLastField
+        let json: [String: Any] = [
+            "tag": tag, "light": currentIsLight, "orbs": orbs,
+            "view": ["w": view?.bounds.width ?? 0, "h": view?.bounds.height ?? 0, "contentScale": view?.contentScaleFactor ?? 3],
+            "scene": ["w": size.width, "h": size.height],
+            "camera": ["x": cameraNode.position.x, "y": cameraNode.position.y, "scale": cameraNode.xScale],
+            "gridUniforms": uniforms(gridNode?.fillShader?.uniforms ?? []),
+            "gridHidden": gridNode?.isHidden ?? true,
+            "orbUniforms": uniforms(orbSpriteShader.uniforms),
+            "field": ["w": fw, "h": fh, "rgba": Data(fb).base64EncodedString()],
+            "warp": Self.debugLastWarp, "packed": Self.debugLastPacked, "lastWarpMode": lastWarpMode,
+            "tuning": [
+                "lens": ["zoomIn": LensTuning.zoomIn, "zoomOut": LensTuning.zoomOut, "minShrink": LensTuning.minShrink,
+                         "labelLOD": LensTuning.labelLOD, "labelBoxFactor": LensTuning.labelBoxFactor],
+                "annulus": ["amplitude": AnnulusTuning.amplitude, "onset": AnnulusTuning.onset, "rampWidth": AnnulusTuning.rampWidth,
+                            "radius": AnnulusTuning.radius],
+                "warp": ["reachOrbRadii": GridWarpTuning.reachOrbRadii, "depthOrbRadii": GridWarpTuning.depthOrbRadii,
+                         "massLaw": GridWarpTuning.massLaw, "sign": GridWarpTuning.sign,
+                         "massInfluenceDark": GridWarpTuning.massInfluence(isLight: false),
+                         "massInfluenceLight": GridWarpTuning.massInfluence(isLight: true),
+                         "dotShrinkDark": GridWarpTuning.dotShrink(isLight: false), "dotShrinkLight": GridWarpTuning.dotShrink(isLight: true),
+                         "maxWarpOrbs": BackgroundGridNode.maxWarpOrbs, "massCeiling": BackgroundGridNode.warpMassCeiling],
+                "comp": ["focusOnset": MapCompTuning.defFocusOnset, "focusRamp": MapCompTuning.defFocusRamp,
+                         "topEdge0": MapCompTuning.topEdge0, "topEdge1": MapCompTuning.topEdge1,
+                         "botEdge0": MapCompTuning.botEdge0, "botEdge1": MapCompTuning.botEdge1]
+            ]
+        ]
+        guard let dir = FileManager.default.urls(for: .cachesDirectory, in: .userDomainMask).first,
+              let data = try? JSONSerialization.data(withJSONObject: json, options: [.sortedKeys]) else { return }
+        let url = dir.appendingPathComponent("maplayout-\(tag)-\(currentIsLight ? "light" : "dark").json")
+        try? data.write(to: url)
+        NSLog("[EXPORTMAP] wrote %@ (%d orbs, %d bytes)", url.lastPathComponent, orbs.count, data.count)
     }
 }
 #endif

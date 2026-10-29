@@ -71,7 +71,7 @@ enum DashboardSurfaceChoice: Int, CaseIterable, Identifiable {
     }
 }
 
-/// 1.1-A fix-up (1) — the "Gravity wells" Appearance toggle (on by default): the Map's ground dips under the orbs you can
+/// 1.1-A fix-up (1) — the "Gravity" Appearance toggle (1.1-B: was "Gravity wells") (on by default): the Map's ground dips under the orbs you can
 /// read. Off by itself in Low Power Mode and at thermal ≥ .serious (`MapHeatGuard.stressed`), back by itself when that
 /// ends. Zoomed out the wells were already off (no title visible → every weight 0), so that is unchanged.
 enum MapWells {

@@ -411,7 +411,7 @@ struct DashboardView: View {
                 Spacer()
                 Text("\(store.priorityNodes.count)")
                     .font(appFont.font(size: 14, weight: .medium, relativeTo: .subheadline))
-                    .foregroundStyle(AppearancePalette.ink.opacity(0.4))
+                    .dashSecondaryInk(0.4)
                 Image(systemName: "chevron.right")
                     .font(.system(size: 13, weight: .semibold))
                     .foregroundStyle(AppearancePalette.ink.opacity(0.3))
@@ -558,7 +558,7 @@ struct DashboardView: View {
             HStack(spacing: 12) {
                 Text("Remove Sample Library")
                     .font(appFont.font(size: 14, weight: .semibold, relativeTo: .subheadline))
-                    .foregroundStyle(AppearancePalette.ink.opacity(0.7))
+                    .dashSecondaryInk(0.7)
                 Spacer()
             }
             .padding(.vertical, 18)
@@ -575,7 +575,7 @@ struct DashboardView: View {
             HStack {
                 Text("Collections")
                     .font(appFont.font(size: 12, weight: .semibold, relativeTo: .caption1))
-                    .foregroundStyle(AppearancePalette.ink.opacity(0.4))
+                    .dashSecondaryInk(0.4)
                     .textCase(.uppercase)
                     .tracking(0.8)
                 Spacer()
@@ -694,6 +694,29 @@ struct DashboardView: View {
 
 }
 
+// MARK: - Secondary text ink (1.1-B)
+
+/// 1.1-B (T, option B, 2026-10-29) — the Dashboard panes' secondary / tertiary text (counts, dates, captions, section
+/// labels, placeholders) reaches 4.5:1 on EVERY Dashboard surface (Glass · Frosted · Clear glass · Solid) in both
+/// appearances, the surfaces unchanged: each keeps its own opacity of `AppearancePalette.ink` but never below the
+/// appearance's floor. Floors = the least opacity whose MINIMUM contrast over the panes' measured backgrounds (10 frames
+/// of the moving colour per surface, text masked out) reaches 4.5:1, + 0.01: light 0.79 (Clear glass) → 0.80, dark 0.97
+/// (Glass) → 0.98. Dark Glass sets the dark floor, so on dark the greys sit within 2% of body ink and the hierarchy is
+/// carried by size and weight. Icons (chevrons, ellipsis) keep their opacities.
+struct DashSecondaryInk: ViewModifier {
+    static let floorLight = 0.80
+    static let floorDark = 0.98
+    let opacity: Double
+    @Environment(\.colorScheme) private var colorScheme
+    func body(content: Content) -> some View {
+        content.foregroundStyle(AppearancePalette.ink.opacity(max(opacity, colorScheme == .dark ? Self.floorDark : Self.floorLight)))
+    }
+}
+extension View {
+    /// Dashboard secondary text: `AppearancePalette.ink` at `opacity`, raised to the 4.5:1 floor (`DashSecondaryInk`).
+    func dashSecondaryInk(_ opacity: Double) -> some View { modifier(DashSecondaryInk(opacity: opacity)) }
+}
+
 // MARK: - Collection row
 
 private struct CollectionRow: View {
@@ -717,7 +740,7 @@ private struct CollectionRow: View {
                             .foregroundStyle(AppearancePalette.ink)
                         Text(subtitle)
                             .font(appFont.font(size: 12, relativeTo: .caption1))
-                            .foregroundStyle(AppearancePalette.ink.opacity(0.5))
+                            .dashSecondaryInk(0.5)
                     }
                     Spacer(minLength: 0)
                 }

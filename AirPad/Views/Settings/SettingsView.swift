@@ -132,6 +132,9 @@ struct SettingsView: View {
     // never read HostPairing.load() from `body`); refreshed on appear + after the sheet closes.
     @State private var showPairingQR = false
     @State private var hostPairing: HostPairing? = nil
+    /// 1.1-A (8) — the hidden AirPad Host switch (observed so the Models screen follows it); written via `HostAccess`.
+    @AppStorage(HostAccess.storageKey) private var hostAccessOn = false
+    @State private var versionTaps = 0
     @State private var showImportIdeas = false
     @State private var showReviewQueue = false
     @State private var showClearConfirmation = false
@@ -428,20 +431,25 @@ struct SettingsView: View {
                 appleIntelligenceRow
                 localModelSubsection   // "Downloaded model"
             }
+            // 1.1-A (8) — the custom server (was "Advanced") is the "your own models" path; AirPad Host is parked.
             VStack(alignment: .leading, spacing: 12) {
-                sectionHeader("On your Mac")
-                macRow
-            }
-            NavigationLink(value: Dest.advanced) {
-                HStack {
-                    Text("Advanced").font(appFont.font(size: 15, weight: .medium, relativeTo: .subheadline)).foregroundStyle(AppearancePalette.ink.opacity(0.8))
-                    Spacer()
-                    Image(systemName: "chevron.right").font(.caption).foregroundStyle(AppearancePalette.ink.opacity(0.3))
+                sectionHeader("Your own models")
+                NavigationLink(value: Dest.advanced) {
+                    macRowLabel(icon: "server.rack", text: ollamaEndpoint.isEmpty ? "Connect Ollama or LM Studio"
+                                                          : (URL(string: ollamaEndpoint)?.host ?? ollamaEndpoint), chevron: true)
                 }
-                .padding(.horizontal, 16).padding(.vertical, 12)
-                .background(AppearancePalette.ink.opacity(0.05)).clipShape(RoundedRectangle(cornerRadius: 10))
+                .buttonStyle(.plain)
+                .accessibilityIdentifier("settings.ownModels")
+                Text("Run Ollama or LM Studio on your own computer and point AirPad at it.")
+                    .font(appFont.font(size: 11, relativeTo: .caption2)).foregroundStyle(AppearancePalette.ink.opacity(0.4))
             }
-            .buttonStyle(.plain)
+            // The hidden developer switch (About → tap the version 7 times) brings back T's own Mac.
+            if hostAccessOn {
+                VStack(alignment: .leading, spacing: 12) {
+                    sectionHeader("AirPad Host (developer)")
+                    macRow
+                }
+            }
         }
         // Brief AL1 — refresh the shared pairing observable + the local name off-render when
         // the Models screen appears (covers the deep-link push, where the root `onAppear`
@@ -523,8 +531,8 @@ struct SettingsView: View {
     }
 
     private var advancedSubmenu: some View {
-        submenuScroll(header: { submenuHeader(icon: "slider.horizontal.3", tint: "8A8A8E", title: "Advanced",
-            blurb: "Connect a model server on your network, like Ollama or LM Studio.") }) {
+        submenuScroll(header: { submenuHeader(icon: "server.rack", tint: "8A8A8E", title: "Your own models",
+            blurb: "Point AirPad at Ollama or LM Studio on your own computer.") }) {
             VStack(alignment: .leading, spacing: 12) {
                 VStack(alignment: .leading, spacing: 4) {
                     Text("Ollama / LM Studio endpoint").font(appFont.font(size: 12, weight: .semibold, relativeTo: .caption1)).foregroundStyle(AppearancePalette.ink.opacity(0.4))
@@ -648,6 +656,7 @@ struct SettingsView: View {
     private var privacySubmenu: some View {
         submenuScroll(header: { submenuHeader(icon: "lock.fill", tint: "3A8DDE", title: "Privacy",
             blurb: "What AirPad keeps, and where.") }) {
+            appLockSection   // 1.1-A (A6)
             if !hasAnyFrontierKey {
                 HStack(spacing: 8) {
                     Image(systemName: "lock.fill").font(.caption).foregroundStyle(.green.opacity(0.8))
@@ -655,6 +664,46 @@ struct SettingsView: View {
                 }
             }
         }
+    }
+
+    /// 1.1-A (A6) — "Require Face ID" (off by default) + lock after (Immediately / 1 min / 5 min, default 1 min).
+    /// Turning it on asks for Face ID / the passcode first. Copy never says "encryption".
+    private var appLockSection: some View {
+        let lock = AppLock.shared
+        return VStack(alignment: .leading, spacing: 10) {
+            Toggle(isOn: Binding(
+                get: { lock.enabled },
+                set: { on in
+                    if on { Task { _ = await lock.requestEnable() } } else { lock.enabled = false }
+                }
+            )) {
+                VStack(alignment: .leading, spacing: 2) {
+                    Text(lock.requireLabel).font(appFont.font(size: 15, weight: .medium, relativeTo: .subheadline))
+                        .foregroundStyle(AppearancePalette.ink)
+                    Text(lock.method == .none ? "Set a passcode on this \(ModelRouter.deviceNoun) to use this."
+                                              : "AirPad asks before it opens. Quick Capture and the share sheet can still add entries.")
+                        .font(appFont.font(size: 12, relativeTo: .caption1))
+                        .foregroundStyle(AppearancePalette.ink.opacity(0.45))
+                        .fixedSize(horizontal: false, vertical: true)
+                }
+            }
+            .tint(Color(hexString: "3A8DDE"))
+            .disabled(lock.method == .none && !lock.enabled)
+            .accessibilityIdentifier("settings.requireFaceID")
+            if lock.enabled {
+                HStack {
+                    Text("Lock").font(appFont.font(size: 15, relativeTo: .subheadline)).foregroundStyle(AppearancePalette.ink)
+                    Spacer()
+                    Picker("Lock", selection: Binding(get: { lock.after }, set: { lock.after = $0 })) {
+                        ForEach(AppLock.After.allCases) { Text($0.label).tag($0) }
+                    }
+                    .pickerStyle(.menu)
+                    .tint(AppearancePalette.ink)
+                    .accessibilityIdentifier("settings.lockAfter")
+                }
+            }
+        }
+        .padding(14).background(AppearancePalette.ink.opacity(0.05)).clipShape(RoundedRectangle(cornerRadius: 12))
     }
 
     private var aboutSubmenu: some View {
@@ -666,11 +715,23 @@ struct SettingsView: View {
                    let build = Bundle.main.object(forInfoDictionaryKey: "CFBundleVersion") as? String {
                     Text("Version \(version) (\(build))").font(appFont.font(size: 11, relativeTo: .caption2)).foregroundStyle(AppearancePalette.ink.opacity(0.25))
                         .accessibilityIdentifier("aboutVersion")
+                        // 1.1-A (8) — the hidden AirPad Host switch: 7 taps on the version line toggle it.
+                        .onTapGesture {
+                            versionTaps += 1
+                            guard versionTaps >= 7 else { return }
+                            versionTaps = 0
+                            HostAccess.enabled.toggle()
+                            HostCatalog.shared.refreshPaired()
+                        }
                         #if DEBUG || TESTFLIGHT
                         // live-12 (2) — TestFlight/DEBUG only: long-press → "Speech engine (testing)"; compiled out of
                         // App Store builds (live-19 (4)).
                         .onLongPressGesture { showSpeechEngineTesting = true }
                         #endif
+                }
+                if hostAccessOn {
+                    Text("Developer: AirPad Host on").font(appFont.font(size: 11, relativeTo: .caption2)).foregroundStyle(AppearancePalette.ink.opacity(0.35))
+                        .accessibilityIdentifier("aboutHostDeveloper")
                 }
             }
         }

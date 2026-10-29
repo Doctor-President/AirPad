@@ -26,6 +26,8 @@ struct ContentView: View {
             // Brief AT5 — pin the window appearance to the user's choice (System = follow iOS). Live.
             AppearanceApplier(style: (AppearanceOverride(rawValue: appearanceRaw) ?? .system).uiStyle)
                 .frame(width: 0, height: 0)
+            // 1.1-A (A6) — the Face ID lock + app-switcher cover, in their own window above everything.
+            AppLockInstaller()
             #if DEBUG || TESTFLIGHT
             // live-22 (2) — the on-device appearance tuner floats in its own pass-through window, over every view,
             // sheet and the Librarian panel (TestFlight only; in DEBUG only with `-AppearanceTuner YES`).

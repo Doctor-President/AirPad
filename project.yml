@@ -262,6 +262,7 @@ targets:
         NSSpeechRecognitionUsageDescription: "AirPad uses speech recognition to transcribe your voice memos."
         NSCameraUsageDescription: "AirPad uses the camera to capture photos and videos as entries."
         NSPhotoLibraryUsageDescription: "AirPad can add photos from your photo library to an entry."
+        NSFaceIDUsageDescription: "AirPad uses Face ID to unlock when you turn on Require Face ID in Settings."
         NSLocalNetworkUsageDescription: "AirPad needs local network access to reach the Ollama or LM Studio endpoint you configured in Settings. Only used for queries you initiate."
         # ATS exception for user-configured local-AI endpoints. NSAllowsLocalNetworking
         # is too narrow — it only covers .local / link-local / unqualified hostnames,

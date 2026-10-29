@@ -147,6 +147,7 @@ final class HostCatalog {
         switch HostPairing.read() {
         case .paired(let p): pairing = p; isPaired = true
         case .unpaired:      pairing = nil; isPaired = false
+                             if !HostAccess.enabled { models = [] }   // 1.1-A (8) — no Mac rows while the Host is hidden
         case .unreadable:    break   // C2c — a failed Keychain read is not "unpaired": keep what we last knew
         }
         refreshRoute()
@@ -216,7 +217,7 @@ final class HostCatalog {
     /// models in the picker, greyed, instead of nothing.
     private static let catalogCacheKey = "airpadHostCatalogCache"
     init() {
-        if let d = UserDefaults.standard.data(forKey: Self.catalogCacheKey) { models = Self.parse(d) }
+        if HostAccess.enabled, let d = UserDefaults.standard.data(forKey: Self.catalogCacheKey) { models = Self.parse(d) }
     }
 
     /// LOAD = SELECT: the resident model IS the selection (one at a time).

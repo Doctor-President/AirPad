@@ -142,6 +142,7 @@
 		52E814CA75A30AACE5AC618A /* AirPadWidgets.appex in Embed Foundation Extensions */ = {isa = PBXBuildFile; fileRef = 69902D1D994B371BD68A2D71 /* AirPadWidgets.appex */; settings = {ATTRIBUTES = (RemoveHeadersOnCopy, ); }; };
 		536D8F5AEBC887BD1A87C990 /* AutoScrollDriver.swift in Sources */ = {isa = PBXBuildFile; fileRef = 9640DF6602CDCA4B2689C33C /* AutoScrollDriver.swift */; };
 		53C50184B3A475F62CC9BDE2 /* FieldDefinition.swift in Sources */ = {isa = PBXBuildFile; fileRef = 003CEDBA7C8C183191D81F3E /* FieldDefinition.swift */; };
+		54AFC37A189FD4A44E8FA7B7 /* AppLock.swift in Sources */ = {isa = PBXBuildFile; fileRef = 52F7466953998FA4739AC9C0 /* AppLock.swift */; };
 		55858A9A690EA3D459DE82E9 /* FilterState.swift in Sources */ = {isa = PBXBuildFile; fileRef = 48DBCBFAFA7298D82C3BB0FF /* FilterState.swift */; };
 		56061A0335E2973DF52243F1 /* NodeGridTile.swift in Sources */ = {isa = PBXBuildFile; fileRef = F189E8F160D5B6BD04D88706 /* NodeGridTile.swift */; };
 		5643368053997E604509A1A7 /* AppearanceTunerUI.swift in Sources */ = {isa = PBXBuildFile; fileRef = 4BBD207713633D26703AEE75 /* AppearanceTunerUI.swift */; };
@@ -346,6 +347,7 @@
 		C87A28595DB3F99CAB512AE5 /* SubstrateRelaxationPass.swift in Sources */ = {isa = PBXBuildFile; fileRef = E6F0064A274D4E43585A9E88 /* SubstrateRelaxationPass.swift */; };
 		C886B7D6197D62C8419E17BD /* HostE2E.swift in Sources */ = {isa = PBXBuildFile; fileRef = 01439497F74FDC8285B4AB62 /* HostE2E.swift */; };
 		C903E8B2386E55E01245428C /* TagSelectionSheet.swift in Sources */ = {isa = PBXBuildFile; fileRef = 1005ACA467AE3052F511365B /* TagSelectionSheet.swift */; };
+		CA0D6C0322B7B5B19E69A833 /* AppLockViews.swift in Sources */ = {isa = PBXBuildFile; fileRef = 327E5B86135CE6709941454A /* AppLockViews.swift */; };
 		CA5580BF3FA789B9EF9D906C /* Speech.framework in Frameworks */ = {isa = PBXBuildFile; fileRef = 4339BD7FF5450195EDF70A95 /* Speech.framework */; };
 		CA78CCC70BD9A594AD079E7D /* GalleryItemTile.swift in Sources */ = {isa = PBXBuildFile; fileRef = 6CC9DA2E35A6A167254A44EC /* GalleryItemTile.swift */; };
 		CB2B608F43E8C59B2E14762E /* DocumentExtractionService.swift in Sources */ = {isa = PBXBuildFile; fileRef = 04C9DF59B5CB0AF40373A81B /* DocumentExtractionService.swift */; };
@@ -556,6 +558,7 @@
 		31C88155071A46620445C439 /* SpeechEngineTesting.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = SpeechEngineTesting.swift; sourceTree = "<group>"; };
 		31D68FA628B933D53B524B98 /* WidgetKit.framework */ = {isa = PBXFileReference; lastKnownFileType = wrapper.framework; name = WidgetKit.framework; path = System/Library/Frameworks/WidgetKit.framework; sourceTree = SDKROOT; };
 		321F93F7630A107A8A1266EF /* CardDocumentTile.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = CardDocumentTile.swift; sourceTree = "<group>"; };
+		327E5B86135CE6709941454A /* AppLockViews.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = AppLockViews.swift; sourceTree = "<group>"; };
 		328B8A79A32590B1D037ABEA /* BackgroundModelDownloader.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = BackgroundModelDownloader.swift; sourceTree = "<group>"; };
 		33042BED1052082E19821C5B /* MarkdownPlain.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = MarkdownPlain.swift; sourceTree = "<group>"; };
 		331D29B33502CD4329D9797D /* RelatedTapRepro.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = RelatedTapRepro.swift; sourceTree = "<group>"; };
@@ -612,6 +615,7 @@
 		50172A80D6B3F46FAE1A4862 /* CatalogCard.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = CatalogCard.swift; sourceTree = "<group>"; };
 		50239A55AA4D3422B7844644 /* PagedRestProbe.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = PagedRestProbe.swift; sourceTree = "<group>"; };
 		51379886273900EA232831C5 /* LibrarianSheetBackground.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = LibrarianSheetBackground.swift; sourceTree = "<group>"; };
+		52F7466953998FA4739AC9C0 /* AppLock.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = AppLock.swift; sourceTree = "<group>"; };
 		544E9426775EDF9FEFBA6E5F /* CardContent.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = CardContent.swift; sourceTree = "<group>"; };
 		54EF9B80ADE5E17639843055 /* latobold_msdf.json */ = {isa = PBXFileReference; lastKnownFileType = text.json; path = latobold_msdf.json; sourceTree = "<group>"; };
 		555A2F390CA8E4777AAE7CB6 /* NodeConnection.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = NodeConnection.swift; sourceTree = "<group>"; };
@@ -1062,6 +1066,7 @@
 				E04317C484DBF0C7715402A4 /* AppleNaming.swift */,
 				DAF63C3BDCDEC950CAF7DEBC /* AppleWebGrounding.swift */,
 				8509B49710C68DB540F0E277 /* AppleWebQuery.swift */,
+				52F7466953998FA4739AC9C0 /* AppLock.swift */,
 				328B8A79A32590B1D037ABEA /* BackgroundModelDownloader.swift */,
 				34AC513418FD53025E45C9B6 /* BlockChunker.swift */,
 				4011A4175698F1BD8BAECF08 /* BlockEmbeddingService.swift */,
@@ -1545,6 +1550,7 @@
 				3A9743C5B6E8F1BB35AFB615 /* AppearanceTunerOverlay.swift */,
 				59706866FD48AC8400BD377E /* AppearanceTuning.swift */,
 				71268D5FBA66FA5B4EF35343 /* AppFont.swift */,
+				327E5B86135CE6709941454A /* AppLockViews.swift */,
 				5ACF91AFE4B56A560100046E /* BackgroundGridView.swift */,
 				B29B3F0F3BBB31D0715043DC /* BlobFieldView.swift */,
 				90F7805935A064BDC856B051 /* CaptureButtonLabel.swift */,
@@ -1954,6 +1960,8 @@
 				A5BA279013A717CC6026D717 /* AnswerCap.swift in Sources */,
 				D3E0730ECFE302BBC58A79C0 /* AppDelegate.swift in Sources */,
 				B42B66E904E381DFE892340C /* AppFont.swift in Sources */,
+				54AFC37A189FD4A44E8FA7B7 /* AppLock.swift in Sources */,
+				CA0D6C0322B7B5B19E69A833 /* AppLockViews.swift in Sources */,
 				C333CD1EB11BAB691BB68679 /* AppRouter.swift in Sources */,
 				3687E0F23E8567FA598FD175 /* AppearancePalette.swift in Sources */,
 				F9715B6E3C4BB21DFA8D610C /* AppearanceTunerOverlay.swift in Sources */,

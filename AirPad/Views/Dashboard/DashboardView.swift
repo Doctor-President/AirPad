@@ -719,9 +719,10 @@ struct DashSecondaryInk: ViewModifier {
     let opacity: Double
     @Environment(\.colorScheme) private var colorScheme
     @AppStorage(DashboardSurfaceChoice.storageKey) private var pickedRaw = DashboardSurfaceChoice.free.rawValue
+    @Environment(\.groundInkFloor) private var groundFloor   // over a custom background, its own 4.5:1 floor too
     func body(content: Content) -> some View {
         let f = Self.floor(DashboardSurface.drawn(pickedRaw: pickedRaw), dark: colorScheme == .dark)
-        content.foregroundStyle(AppearancePalette.ink.opacity(max(opacity, f)))
+        content.foregroundStyle(AppearancePalette.ink.opacity(max(opacity, f, groundFloor)))
     }
 }
 extension View {
@@ -831,7 +832,7 @@ private struct NewCollectionButton: View {
                 Text("New Collection")
                     .font(appFont.font(size: 15, weight: .semibold, relativeTo: .subheadline))
             }
-            .foregroundStyle(AppearancePalette.ink.opacity(0.7))
+            .dashSecondaryInk(0.7)   // 1.1-B — the 4.5:1 floors (it sat at 0.7, under Clear glass's light floor 0.80)
             .frame(maxWidth: .infinity)
             .padding(.vertical, 14)
             .contentShape(Rectangle())

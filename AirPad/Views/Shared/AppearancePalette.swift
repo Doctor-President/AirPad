@@ -508,6 +508,7 @@ struct OnCustomGround: ViewModifier {
     func body(content: Content) -> some View {
         if on, let p = MapGround.inkPick(light: scheme == .light, pane: pane) {
             content.environment(\.colorScheme, p.lightInk ? .dark : .light)
+                .environment(\.groundInkFloor, MapGround.inkFloor(light: scheme == .light, pane: pane) ?? 0)
         } else {
             content
         }
@@ -515,4 +516,21 @@ struct OnCustomGround: ViewModifier {
 }
 extension View {
     func onCustomGround(_ on: Bool = true, pane: Bool = false) -> some View { modifier(OnCustomGround(on: on, pane: pane)) }
+    /// Fainter text on the background: `AppearancePalette.ink` at `opacity`, raised on a custom background to the
+    /// opacity that reaches 4.5:1 there (`MapGround.inkFloor`, set by `onCustomGround`). Unchanged without one.
+    func groundInk(_ opacity: Double) -> some View { modifier(GroundInk(opacity: opacity)) }
+}
+/// 1.1-B (T: "floors on custom backgrounds") — see `groundInk`.
+struct GroundInk: ViewModifier {
+    let opacity: Double
+    @Environment(\.groundInkFloor) private var floor
+    func body(content: Content) -> some View { content.foregroundStyle(AppearancePalette.ink.opacity(max(opacity, floor))) }
+}
+private struct GroundInkFloorKey: EnvironmentKey { static let defaultValue = 0.0 }
+extension EnvironmentValues {
+    /// The 4.5:1 opacity floor for text on a custom background (0 = none; set by `onCustomGround`).
+    var groundInkFloor: Double {
+        get { self[GroundInkFloorKey.self] }
+        set { self[GroundInkFloorKey.self] = newValue }
+    }
 }

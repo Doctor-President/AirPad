@@ -239,12 +239,29 @@ enum MapGround {
     /// #777777 → #70–80 dark): Light lifts the ground 56% toward white; Dark leaves it about where it is.
     static func paneOver(_ c: SIMD3<Float>, light: Bool) -> SIMD3<Float> { light ? c + (SIMD3(repeating: 1) - c) * 0.56 : c }
     /// A text style's contrast on the custom background: `ink` at `opacity` over the background, at the 80th percentile.
-    static func styleContrast(light: Bool, opacity: Float) -> Float? {
-        guard let g = override(light: light), let p = inkPick(light: light) else { return nil }
-        let s = samples(g)
-        let shown = s.map { $0 + (p.ink - $0) * opacity }
+    static func styleContrast(light: Bool, opacity: Float, pane: Bool = false) -> Float? {
+        guard let g = override(light: light), let p = inkPick(light: light, pane: pane) else { return nil }
+        return p80(samples(g).map { pane ? paneOver($0, light: light) : $0 }, ink: p.ink, opacity: opacity)
+    }
+    private static func p80(_ s: [SIMD3<Float>], ink: SIMD3<Float>, opacity: Float) -> Float {
+        let shown = s.map { $0 + (ink - $0) * opacity }
         return zip(shown, s).map { TitleInkRule.contrast($0, $1) }.sorted()[max(0, s.count - Int((0.8 * Float(s.count)).rounded(.up)))]
     }
+    /// 1.1-B (T: "floors on custom backgrounds") — the lowest opacity at which the picked ink reaches 4.5:1 (p80) on the
+    /// custom background, so a fainter text style on it is raised to this floor (`groundInk`). Always ≤ 1: the limit
+    /// (`ReadableGround`) keeps full-strength ink at 4.5:1. nil = no custom background in that appearance.
+    static func inkFloor(light: Bool, pane: Bool = false) -> Double? {
+        guard let g = override(light: light), let p = inkPick(light: light, pane: pane) else { return nil }
+        let key = light ? (pane ? 3 : 1) : (pane ? 2 : 0)
+        if let c = floorCache[key], c.0 == g { return c.1 }
+        let s = samples(g).map { pane ? paneOver($0, light: light) : $0 }
+        var lo: Float = 0, hi: Float = 1
+        for _ in 0..<16 { let m = (lo + hi) / 2; if p80(s, ink: p.ink, opacity: m) >= TitleInkRule.minContrast { hi = m } else { lo = m } }
+        let f = (Double(hi) * 100).rounded(.up) / 100
+        floorCache[key] = (g, f)
+        return f
+    }
+    private static var floorCache: [Int: (MapGroundSide, Double)] = [:]
 }
 
 /// 1.1-B — where this copy of AirPad came from, read at RUNTIME so one binary (archived in App Store config) can carry

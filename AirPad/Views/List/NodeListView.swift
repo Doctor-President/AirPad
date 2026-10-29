@@ -192,7 +192,7 @@ struct NodeListView: View {
                     if let label = section.label {
                         Text(label)
                             .font(appFont.font(size: 12, weight: .semibold, relativeTo: .caption1))
-                            .foregroundStyle(AppearancePalette.ink.opacity(0.5))
+                            .groundInk(0.5)
                             .textCase(.uppercase)
                             .tracking(0.8)
                             .onCustomGround()   // 1.1-B — sits on the background
@@ -218,10 +218,10 @@ struct NodeListView: View {
         VStack(spacing: 8) {
             Text("Nothing here yet")
                 .font(appFont.font(size: 17, weight: .semibold))
-                .foregroundStyle(AppearancePalette.ink.opacity(0.5))
+                .groundInk(0.5)
             Text("Capture something to get started.")
                 .font(appFont.font(size: 14))
-                .foregroundStyle(AppearancePalette.ink.opacity(0.3))
+                .groundInk(0.3)
         }
         .frame(maxWidth: .infinity, maxHeight: .infinity)
         .onCustomGround()   // 1.1-B — sits on the background

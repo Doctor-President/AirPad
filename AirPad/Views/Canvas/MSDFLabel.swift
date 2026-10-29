@@ -279,7 +279,7 @@ enum MSDFLabel {
     /// Recolor an existing glyph container in place (appearance flip — no rebuild).
     static func recolor(container: SKNode, color: UIColor) {
         let v = rgbaVec(color)
-        for glyph in container.children where glyph.name != "titleScrim" {   // 1.1-B: the scrim isn't a glyph
+        for glyph in container.children {
             (glyph as? SKSpriteNode)?.setValue(SKAttributeValue(vectorFloat4: v), forAttribute: "a_glyph_color")
         }
     }
@@ -309,7 +309,7 @@ enum MSDFLabel {
         let screenPxRange = max(1.0, distanceRange * pt * worldToScreenPt * contentScale / atlasSize)
         let px = Float(screenPxRange)
         let lod = Float(lodAlpha)
-        for case let glyph as SKSpriteNode in container.children where glyph.name != "titleScrim" {
+        for case let glyph as SKSpriteNode in container.children {
             glyph.setValue(SKAttributeValue(float: px), forAttribute: "a_px_range")
             glyph.setValue(SKAttributeValue(float: lod), forAttribute: "a_lod_alpha")
         }

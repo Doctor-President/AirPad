@@ -332,7 +332,7 @@ private struct NodeCard: View {
 
                 Text(node.summary.isEmpty ? "—" : node.summary)
                     .font(appFont.font(size: 15, relativeTo: .subheadline))
-                    .foregroundStyle(AppearancePalette.ink.opacity(0.6))
+                    .groundInk(0.6)
                     .lineLimit(2)
 
                 Spacer(minLength: 0)
@@ -342,7 +342,7 @@ private struct NodeCard: View {
                     Spacer()
                     Text(relativeTimestamp(node.createdAt))
                         .font(appFont.font(size: 12, relativeTo: .caption1))
-                        .foregroundStyle(AppearancePalette.ink.opacity(0.38))
+                        .groundInk(0.38)
                 }
             }
             .padding(.horizontal, 16)
@@ -429,7 +429,7 @@ private struct NodeCardItemCounts: View {
     private func chip(_ icon: String, _ count: Int) -> some View {
         Label("\(count)", systemImage: icon)
             .font(appFont.font(size: 12, relativeTo: .caption1))
-            .foregroundStyle(AppearancePalette.ink.opacity(0.48))
+            .groundInk(0.48)
     }
 }
 

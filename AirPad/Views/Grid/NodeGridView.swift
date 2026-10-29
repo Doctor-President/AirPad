@@ -111,7 +111,7 @@ struct NodeGridView: View {
     var body: some View {
         NavigationStack(path: $navigationPath) {
             ZStack(alignment: .bottomTrailing) {
-                AppearancePalette.mapBackground(dark: colorScheme == .dark).ignoresSafeArea()
+                AppearancePalette.libraryBackground(dark: colorScheme == .dark).ignoresSafeArea()
                 BackgroundGridView()
                     .ignoresSafeArea()
                     .allowsHitTesting(false)

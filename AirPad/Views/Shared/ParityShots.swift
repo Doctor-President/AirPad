@@ -740,6 +740,11 @@ struct DebugScreenHost: View {
                                onAnalyze: {}, onFilter: {}, onSettings: {}, onQuarantineReview: {}, onAppearance: {})
         case "appearancepanel":  // 1.1-A (A3) — the ≡ menu's Appearance panel content
             AppearancePanel()
+        case "groundsection":    // 1.1-B — the Background section + Gravity / Sheen, alone (the panel scrolls past them)
+            ScrollView { VStack(alignment: .leading, spacing: 20) {
+                MapGroundSection(); GravityWellsToggle(detailed: true); SheenToggle(detailed: true)
+            }.padding(20).padding(.top, 60) }
+            .background(AppearancePalette.bgBase.ignoresSafeArea())
         case "substrate":        SubstrateInspectView()
         case "import":           ImportIdeasSheet()
         case "reviewqueue":      ReviewQueueSheet()

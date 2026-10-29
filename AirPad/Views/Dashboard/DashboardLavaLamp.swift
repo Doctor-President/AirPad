@@ -23,7 +23,9 @@ struct DashboardLavaLamp: View {
 
     var body: some View {
         Group {
-            if colorScheme == .dark {
+            if let g = MapGround.override(light: colorScheme != .dark) {
+                CustomGroundView(side: g)   // 1.1-B — a Pro custom background replaces the backdrop (the lava is off)
+            } else if colorScheme == .dark {
                 darkLava
             } else {
                 lightPigment

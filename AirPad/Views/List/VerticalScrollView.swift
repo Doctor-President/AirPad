@@ -60,7 +60,7 @@ struct VerticalScrollView: View {
         GeometryReader { geo in
             NavigationStack(path: $navigationPath) {
                 ZStack(alignment: .bottomTrailing) {
-                    AppearancePalette.mapBackground(dark: colorScheme == .dark).ignoresSafeArea()
+                    AppearancePalette.libraryBackground(dark: colorScheme == .dark).ignoresSafeArea()
                     BackgroundGridView()
                         .ignoresSafeArea()
                         .allowsHitTesting(false)
@@ -349,6 +349,7 @@ private struct NodeCard: View {
             .padding(.vertical, 14)
         }
         .background(primaryTagColor.opacity(0.10))
+        .onCustomGround()   // 1.1-B — the card is a 10% tint over the background: its text reads against the background
         .clipShape(RoundedRectangle(cornerRadius: 16))
         .overlay(RoundedRectangle(cornerRadius: 16).stroke(primaryTagColor.opacity(0.22), lineWidth: 1))
         .matchedTransitionSource(id: node.id, in: namespace)

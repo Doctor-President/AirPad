@@ -45,7 +45,7 @@ struct NodeListView: View {
     var body: some View {
         NavigationStack(path: $navigationPath) {
             ZStack(alignment: .bottom) {
-                AppearancePalette.mapBackground(dark: colorScheme == .dark).ignoresSafeArea()
+                AppearancePalette.libraryBackground(dark: colorScheme == .dark).ignoresSafeArea()
                 BackgroundGridView()
                     .ignoresSafeArea()
                     .allowsHitTesting(false)
@@ -195,6 +195,7 @@ struct NodeListView: View {
                             .foregroundStyle(AppearancePalette.ink.opacity(0.5))
                             .textCase(.uppercase)
                             .tracking(0.8)
+                            .onCustomGround()   // 1.1-B — sits on the background
                     }
                 }
             }
@@ -223,6 +224,7 @@ struct NodeListView: View {
                 .foregroundStyle(AppearancePalette.ink.opacity(0.3))
         }
         .frame(maxWidth: .infinity, maxHeight: .infinity)
+        .onCustomGround()   // 1.1-B — sits on the background
     }
 
     // MARK: - Sort control

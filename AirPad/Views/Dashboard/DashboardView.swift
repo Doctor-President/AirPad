@@ -698,18 +698,30 @@ struct DashboardView: View {
 
 /// 1.1-B (T, option B, 2026-10-29) — the Dashboard panes' secondary / tertiary text (counts, dates, captions, section
 /// labels, placeholders) reaches 4.5:1 on EVERY Dashboard surface (Glass · Frosted · Clear glass · Solid) in both
-/// appearances, the surfaces unchanged: each keeps its own opacity of `AppearancePalette.ink` but never below the
-/// appearance's floor. Floors = the least opacity whose MINIMUM contrast over the panes' measured backgrounds (10 frames
-/// of the moving colour per surface, text masked out) reaches 4.5:1, + 0.01: light 0.79 (Clear glass) → 0.80, dark 0.97
-/// (Glass) → 0.98. Dark Glass sets the dark floor, so on dark the greys sit within 2% of body ink and the hierarchy is
-/// carried by size and weight. Icons (chevrons, ellipsis) keep their opacities.
+/// appearances: each keeps its own opacity of `AppearancePalette.ink` but never below the floor of the surface it sits on
+/// (`DashboardSurface.drawn`, the same pick the panes draw) in this appearance. Each floor = the least opacity whose
+/// MINIMUM contrast over that surface's measured pane backgrounds (10 frames of the moving colour, text masked out)
+/// reaches 4.5:1, + 0.01. Dark Glass is dimmed (`DashboardSurface.glassDarkTint`, T: "Dim the dark Glass a bit") so its
+/// greys sit back below body. Icons (chevrons, ellipsis) keep their opacities.
 struct DashSecondaryInk: ViewModifier {
-    static let floorLight = 0.80
-    static let floorDark = 0.98
+    static func floor(_ surface: DashboardSurfaceChoice, dark: Bool) -> Double {
+        switch (surface, dark) {
+        case (.glass, false): 0.73
+        case (.thin, false): 0.74
+        case (.clear, false): 0.80
+        case (.panel, false): 0.68
+        case (.glass, true): 0.69
+        case (.thin, true): 0.61
+        case (.clear, true): 0.75
+        case (.panel, true): 0.60
+        }
+    }
     let opacity: Double
     @Environment(\.colorScheme) private var colorScheme
+    @AppStorage(DashboardSurfaceChoice.storageKey) private var pickedRaw = DashboardSurfaceChoice.free.rawValue
     func body(content: Content) -> some View {
-        content.foregroundStyle(AppearancePalette.ink.opacity(max(opacity, colorScheme == .dark ? Self.floorDark : Self.floorLight)))
+        let f = Self.floor(DashboardSurface.drawn(pickedRaw: pickedRaw), dark: colorScheme == .dark)
+        content.foregroundStyle(AppearancePalette.ink.opacity(max(opacity, f)))
     }
 }
 extension View {

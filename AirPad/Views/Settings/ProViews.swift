@@ -85,6 +85,116 @@ struct MapLookSection: View {
     }
 }
 
+/// 1.1-A fix-up (1) — "Gravity wells" (Settings → Appearance and the Appearance panel share it). On by default; off by
+/// itself in Low Power Mode or while the phone is hot, back when that ends (`MapWells`).
+struct GravityWellsToggle: View {
+    var detailed: Bool
+    @Environment(\.appBodyFont) private var appFont
+    @State private var on = MapWells.userOn
+    @State private var stressed = MapHeatGuard.shared.stressed
+    @State private var lowPower = MapHeatGuard.shared.lowPower
+
+    var body: some View {
+        Toggle(isOn: Binding(get: { on }, set: { on = $0; MapWells.userOn = $0 })) {
+            VStack(alignment: .leading, spacing: 2) {
+                Text("Gravity wells").font(appFont.font(size: 15, weight: .medium, relativeTo: .subheadline))
+                    .foregroundStyle(AppearancePalette.ink)
+                if let detail {
+                    Text(detail).font(appFont.font(size: 12, relativeTo: .caption1))
+                        .foregroundStyle(AppearancePalette.ink.opacity(0.4))
+                        .fixedSize(horizontal: false, vertical: true)
+                }
+            }
+        }
+        .tint(.purple)
+        .accessibilityIdentifier("appearance.gravityWells")
+        .onReceive(NotificationCenter.default.publisher(for: .mapHeatGuardChanged)) { _ in
+            stressed = MapHeatGuard.shared.stressed
+            lowPower = MapHeatGuard.shared.lowPower
+        }
+    }
+
+    private var detail: String? {
+        if on && stressed { return lowPower ? "Paused in Low Power Mode" : "Paused while your iPhone cools down" }
+        return detailed ? "The Map's dots dip toward the ideas you're reading. Off uses less battery." : nil
+    }
+}
+
+/// 1.1-A fix-up (2) — "Dashboard surface", beside Map look: what the Dashboard's panes are made of. Glass is free (and
+/// what everyone gets); without Pro the others carry a lock and open the Pro sheet, as the Map looks do.
+struct DashboardSurfaceSection: View {
+    @Environment(\.appBodyFont) private var appFont
+    @Environment(\.colorScheme) private var scheme
+    @AppStorage(DashboardSurfaceChoice.storageKey) private var pickedRaw = DashboardSurfaceChoice.free.rawValue
+    @State private var showPro = false
+    private var store: ProStore { ProStore.shared }
+
+    var body: some View {
+        VStack(alignment: .leading, spacing: 10) {
+            Text("Dashboard surface").font(appFont.font(size: 15, weight: .semibold, relativeTo: .subheadline))
+                .foregroundStyle(AppearancePalette.ink)
+            VStack(spacing: 0) {
+                let lineup = DashboardSurfaceChoice.lineup
+                ForEach(Array(lineup.enumerated()), id: \.element) { i, c in
+                    row(c)
+                    if i < lineup.count - 1 { Divider().overlay(AppearancePalette.ink.opacity(0.08)).padding(.leading, 60) }
+                }
+            }
+            .background(AppearancePalette.ink.opacity(0.05))
+            .clipShape(RoundedRectangle(cornerRadius: 12))
+            Text(store.isPro ? "The panes on the Dashboard, over its color."
+                             : "Glass is free. The other surfaces come with AirPad Pro.")
+                .font(appFont.font(size: 12, relativeTo: .caption1)).foregroundStyle(AppearancePalette.ink.opacity(0.45))
+                .fixedSize(horizontal: false, vertical: true)
+        }
+        .sheet(isPresented: $showPro) { ProSheet() }
+    }
+
+    private func row(_ c: DashboardSurfaceChoice) -> some View {
+        let locked = !c.isFree && !store.isPro
+        let selected = DashboardSurfaceChoice.effective(pickedRaw: pickedRaw, isPro: store.isPro) == c
+        return Button {
+            if locked { showPro = true; return }
+            pickedRaw = c.rawValue
+        } label: {
+            HStack(spacing: 14) {
+                SurfaceSwatch(choice: c)
+                Text(c.label).font(appFont.font(size: 16, relativeTo: .body)).foregroundStyle(AppearancePalette.ink)
+                Spacer()
+                if locked {
+                    Image(systemName: "lock.fill").font(.system(size: 13)).foregroundStyle(AppearancePalette.ink.opacity(0.35))
+                } else if selected {
+                    Image(systemName: "checkmark").font(.system(size: 14, weight: .semibold)).foregroundStyle(AppearancePalette.ink)
+                }
+            }
+            .padding(.horizontal, 12).padding(.vertical, 8)
+            .contentShape(Rectangle())
+        }
+        .buttonStyle(.plain)
+        .accessibilityLabel(locked ? "\(c.label), locked. Opens AirPad Pro." : c.label)
+        .accessibilityAddTraits(selected && !locked ? .isSelected : [])
+        .accessibilityIdentifier("dashSurface-\(c.rawValue)")
+    }
+}
+
+/// The surface drawn small over a two-colour wash, the way it sits over the Dashboard's colour.
+private struct SurfaceSwatch: View {
+    let choice: DashboardSurfaceChoice
+    var size: CGFloat = 34
+    var body: some View {
+        ZStack {
+            LinearGradient(colors: [Color(red: 0.95, green: 0.55, blue: 0.25), Color(red: 0.45, green: 0.35, blue: 0.85)],
+                           startPoint: .topLeading, endPoint: .bottomTrailing)
+            Color.clear
+                .modifier(DashboardSurface(cornerRadius: size * 0.16, forced: choice))
+                .padding(size * 0.16)
+        }
+        .frame(width: size, height: size)
+        .clipShape(RoundedRectangle(cornerRadius: size * 0.22, style: .continuous))
+        .accessibilityHidden(true)
+    }
+}
+
 /// pro-build — the Pro sheet. Copy = Companion's draft; rc step 1: T's line ("New looks", not "Seven new looks").
 struct ProSheet: View {
     @Environment(\.appBodyFont) private var appFont

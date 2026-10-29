@@ -267,6 +267,8 @@ struct AppearancePanel: View {
                     .accessibilityIdentifier("appearancePanel.theme")
                 }
                 MapLookSection()
+                GravityWellsToggle(detailed: false)   // 1.1-A fix-up (1)
+                DashboardSurfaceSection()             // 1.1-A fix-up (2)
                 GlassAppearanceToggles(detailed: false)
             }
             .padding(.horizontal, 20)

@@ -3493,6 +3493,8 @@ final class CorpusPhysicsScene: SKScene {
     }
 
     private var lastWarpMode = 0
+    private var lastWellsActive = true
+    private var lastFieldIsLight: Bool?
     #if DEBUG
     // 1.1-A (6) Map ground measurement harness state (see `MapGroundCase`, end of file).
     var groundCase: MapGroundCase = MapGroundCase(rawValue: UserDefaults.standard.string(forKey: "MapGroundCase") ?? "") ?? .all
@@ -3548,7 +3550,19 @@ final class CorpusPhysicsScene: SKScene {
         var reachChanged = false
         let tunedReach = isLight ? GridWarpTuning.reachOrbRadii : (mapTuning?.shrinkReach ?? GridWarpTuning.reachOrbRadii)
         reachChanged = tunedReach != lastFieldReach; lastFieldReach = tunedReach
-        if !(camMovedSinceField || orbsChanged || orbsMovedLastFrame || reachChanged) {
+        // 1.1-A fix-up (1) — the Gravity wells toggle / Low Power / heat: a change re-pushes the uniforms.
+        let wellsActive = MapWells.active
+        let wellsChanged = wellsActive != lastWellsActive || !fieldBuiltOnce; lastWellsActive = wellsActive
+        // A light/dark flip with a still camera must rebuild too: the field's ripple channel, the strength and the dot
+        // shrink are per appearance (found by the 1.1-B study's export: the dark Map kept the light field until a pan).
+        let appearanceChanged = isLight != lastFieldIsLight; lastFieldIsLight = isLight
+        #if DEBUG
+        if wellsChanged || appearanceChanged {
+            NSLog("[MapWells] active=%@ (setting=%@ stressed=%@) light=%@ → field rebuild", wellsActive ? "Y" : "n",
+                  MapWells.userOn ? "on" : "off", MapHeatGuard.shared.stressed ? "Y" : "n", isLight ? "Y" : "n")
+        }
+        #endif
+        if !(camMovedSinceField || orbsChanged || orbsMovedLastFrame || reachChanged || wellsChanged || appearanceChanged) {
             return   // field inputs unchanged → last texture + uniforms stand
         }
         fieldBuiltOnce = true
@@ -3649,11 +3663,12 @@ final class CorpusPhysicsScene: SKScene {
         // Falloff baked 1.0; the field carries the per-orb title fade via w, so the dot shrink
         // (∝ field magnitude) eases in per orb too.
         let field = buildWarpField(orbs: packed, falloff: 1.0, massRange: massRange, viewW: viewW, viewH: viewH)
+        // 1.1-A fix-up (1) — wells off (the toggle, Low Power, heat): the field is still built (the dark ripple reads its
+        // B channel), the dots stay on the lattice (mode 0) — the path 1.1-A (6) measured at 0.31–0.37 ms vs 1.5–1.9 ms.
         #if DEBUG
-        // 1.1-A (6) — wells off: the field is still built (the ripple reads its B channel), the dots stay unmoved (mode 0).
-        let modeOut: Float = groundCase.wellsOff ? 0 : mode
+        let modeOut: Float = groundCase.wellsOff || !wellsActive ? 0 : mode
         #else
-        let modeOut = mode
+        let modeOut: Float = wellsActive ? mode : 0
         #endif
         BackgroundGridNode.setWarp(grid, mode: modeOut, strength: Float(strengthEff),
                                    sign: Float(GridWarpTuning.sign),
@@ -6152,23 +6167,40 @@ private extension Comparable {
 /// notifications (main queue). `stressed` = Low Power or thermal ≥ .serious → a 60 fps cap on every look + the small-orb
 /// level of detail on every orb; `critical` = thermal ≥ .critical → Flat until it cools. DEBUG
 /// `-MapHeatSim lowpower|serious|critical` fakes the state for stills.
+extension Notification.Name {
+    /// `MapHeatGuard` re-read Low Power / the thermal state (main queue).
+    static let mapHeatGuardChanged = Notification.Name("mapHeatGuardChanged")
+}
+
 final class MapHeatGuard {
     static let shared = MapHeatGuard()
     private(set) var stressed = false
     private(set) var critical = false
+    /// Low Power Mode is on (else `stressed` means the phone is hot) — for the Gravity wells row's caption.
+    private(set) var lowPower = false
     private var observers: [NSObjectProtocol] = []
+    #if DEBUG
+    /// `-MapHeatSim <state>`; `-MapHeatSimClearAfter <s>` drops it after s seconds (the "returns by itself" check).
+    private var debugSim = UserDefaults.standard.string(forKey: "MapHeatSim")
+    #endif
     private init() {
-        refresh()
+        refresh(notify: false)   // no post from inside `shared`'s own initialiser (a listener would re-enter it)
         let nc = NotificationCenter.default
         for n in [ProcessInfo.thermalStateDidChangeNotification, Notification.Name.NSProcessInfoPowerStateDidChange] {
             observers.append(nc.addObserver(forName: n, object: nil, queue: .main) { [weak self] _ in self?.refresh() })
         }
+        #if DEBUG
+        let secs = UserDefaults.standard.double(forKey: "MapHeatSimClearAfter")
+        if secs > 0 {
+            DispatchQueue.main.asyncAfter(deadline: .now() + secs) { [weak self] in self?.debugSim = nil; self?.refresh() }
+        }
+        #endif
     }
-    private func refresh() {
+    private func refresh(notify: Bool = true) {
         var t = ProcessInfo.processInfo.thermalState
         var lowPower = ProcessInfo.processInfo.isLowPowerModeEnabled
         #if DEBUG
-        switch UserDefaults.standard.string(forKey: "MapHeatSim") {
+        switch debugSim {
         case "lowpower": lowPower = true
         case "serious": t = .serious
         case "critical": t = .critical
@@ -6177,6 +6209,8 @@ final class MapHeatGuard {
         #endif
         stressed = lowPower || t.rawValue >= ProcessInfo.ThermalState.serious.rawValue
         critical = t.rawValue >= ProcessInfo.ThermalState.critical.rawValue
+        self.lowPower = lowPower
+        if notify { NotificationCenter.default.post(name: .mapHeatGuardChanged, object: nil) }
         #if DEBUG || TESTFLIGHT
         NSLog("[MapHeatGuard] thermal=%d lowPower=%@ → %@", t.rawValue, lowPower ? "Y" : "n",
               critical ? "Flat" : stressed ? "60 fps + LOD" : "normal")

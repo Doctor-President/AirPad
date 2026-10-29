@@ -300,63 +300,59 @@ extension View {
         .compositingGroup()
     }
 
-    /// The dashboard pane surface — the Today card's exact treatment, promoted
-    /// out of `TodayCardView` so Today / Recents / Collections share ONE surface
-    /// and cannot drift (#3 fix-up). A rounded `.thinMaterial` fill (the lava
-    /// lamp reads THROUGH it, identically in all three panes) + a hairline white
-    /// rim, and NO shadow. `.thinMaterial` is adaptive, so light/dark parity is
-    /// automatic — the DARK pane keeps the same frosted material + `white@0.12`
-    /// rim, byte-identical to the dark Today card.
+    /// The dashboard pane surface — ONE modifier so Today / Recents / Collections share one surface and cannot drift
+    /// (#3 fix-up). 1.1-A fix-up (2): everyone gets Liquid Glass `.regular` (T's pick, candidate 1); AirPad Pro adds the
+    /// Surface picker (`DashboardSurfaceChoice`, Settings / the Appearance panel). The surface owns its own edge.
     func dashboardPaneSurface(cornerRadius: CGFloat = 22) -> some View {
-        #if DEBUG
-        // 1.1-A (7) research — `-DashSurfaceCandidate 1|2|3` swaps the pane surface for stills (0 / absent = shipped).
-        modifier(DashSurfaceCandidate(cornerRadius: cornerRadius))
-        #else
-        background(
-            RoundedRectangle(cornerRadius: cornerRadius, style: .continuous)
-                .fill(.thinMaterial)
-                .overlay(
-                    RoundedRectangle(cornerRadius: cornerRadius, style: .continuous)
-                        .strokeBorder(Color.white.opacity(0.12), lineWidth: 1)
-                )
-        )
-        #endif
+        modifier(DashboardSurface(cornerRadius: cornerRadius))
     }
 }
 
-#if DEBUG
-/// 1.1-A (7) — Dashboard surface research (no shipped change). DEBUG `-DashSurfaceCandidate <n>`:
-///   0 (default) = the shipped surface: `.thinMaterial` + `white@0.12` hairline.
-///   1 = Liquid Glass `.regular` (`glassEffect(.regular, in:)`), no hairline (the glass draws its own edge).
-///   2 = Liquid Glass `.clear` tinted: dark `#0D0D0D` @ 0.30, light `#FBF9F5` @ 0.45 (the lamp shows through more).
-///   3 = tinted mostly-opaque panel: dark `#13161B` @ 0.88 + `white@0.10` hairline; light `#FBF9F5` @ 0.90 + `#DCD6CC` hairline.
-struct DashSurfaceCandidate: ViewModifier {
+/// 1.1-A fix-up (2) — the Dashboard panes' surface, from the user's pick (`DashboardSurfaceChoice.effective`):
+///   thin  = the 1.0 surface: `.thinMaterial` + `white@0.12` hairline.
+///   glass = Liquid Glass `.regular` (`glassEffect(.regular, in:)`), no hairline (the glass draws its own edge). Default.
+///   clear = Liquid Glass `.clear` tinted: dark `#0D0D0D` @ 0.30, light `#FBF9F5` @ 0.45 (the lamp shows through more).
+///   panel = tinted mostly-opaque panel: dark `#13161B` @ 0.88 + `white@0.10` hairline; light `#FBF9F5` @ 0.90 + `#DCD6CC`.
+/// `forced` draws one surface regardless of the pick (the picker's swatches). DEBUG `-DashSurfaceCandidate <0…3>`
+/// forces one for stills.
+struct DashboardSurface: ViewModifier {
     let cornerRadius: CGFloat
+    var forced: DashboardSurfaceChoice? = nil
     @Environment(\.colorScheme) private var scheme
-    static let active: Int = {
+    @AppStorage(DashboardSurfaceChoice.storageKey) private var pickedRaw = DashboardSurfaceChoice.free.rawValue
+    #if DEBUG
+    static let debugCandidate: DashboardSurfaceChoice? = {
         let a = ProcessInfo.processInfo.arguments
-        guard let i = a.firstIndex(of: "-DashSurfaceCandidate"), i + 1 < a.count else { return 0 }
-        return Int(a[i + 1]) ?? 0
+        guard let i = a.firstIndex(of: "-DashSurfaceCandidate"), i + 1 < a.count, let n = Int(a[i + 1]) else { return nil }
+        return DashboardSurfaceChoice(rawValue: n)
     }()
+    #endif
     private static func hex(_ h: UInt32, _ alpha: Double) -> Color {
         Color(red: Double((h >> 16) & 0xFF) / 255, green: Double((h >> 8) & 0xFF) / 255,
               blue: Double(h & 0xFF) / 255, opacity: alpha)
     }
     private var shape: RoundedRectangle { RoundedRectangle(cornerRadius: cornerRadius, style: .continuous) }
+    private var choice: DashboardSurfaceChoice {
+        if let forced { return forced }
+        #if DEBUG
+        if let c = Self.debugCandidate { return c }
+        #endif
+        return DashboardSurfaceChoice.effective(pickedRaw: pickedRaw, isPro: ProStore.shared.isPro)
+    }
 
     @ViewBuilder func body(content: Content) -> some View {
         let dark = scheme == .dark
-        switch Self.active {
-        case 1:
+        switch choice {
+        case .glass:
             content.glassEffect(.regular, in: shape)
-        case 2:
+        case .clear:
             content.glassEffect(.clear.tint(dark ? Self.hex(0x0D0D0D, 0.30) : Self.hex(0xFBF9F5, 0.45)), in: shape)
-        case 3:
+        case .panel:
             content.background(
                 shape.fill(dark ? Self.hex(0x13161B, 0.88) : Self.hex(0xFBF9F5, 0.90))
                     .overlay(shape.strokeBorder(dark ? Color.white.opacity(0.10) : Self.hex(0xDCD6CC, 1), lineWidth: 1))
             )
-        default:
+        case .thin:
             content.background(
                 shape.fill(.thinMaterial)
                     .overlay(shape.strokeBorder(Color.white.opacity(0.12), lineWidth: 1))
@@ -364,7 +360,6 @@ struct DashSurfaceCandidate: ViewModifier {
         }
     }
 }
-#endif
 
 // MARK: - Light palettes (live-21 renders → live-22 (1))
 

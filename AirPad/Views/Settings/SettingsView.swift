@@ -622,6 +622,8 @@ struct SettingsView: View {
             blurb: "How AirPad looks, and the font it uses.") }) {
             VStack(alignment: .leading, spacing: 20) {
                 MapLookSection()   // pro-build — the Map's look (Flat free; the rest AirPad Pro)
+                GravityWellsToggle(detailed: true)   // 1.1-A fix-up (1)
+                DashboardSurfaceSection()            // 1.1-A fix-up (2) — Glass free; the rest AirPad Pro
                 VStack(alignment: .leading, spacing: 8) {
                     Text("Theme").font(appFont.font(size: 15, weight: .semibold, relativeTo: .subheadline)).foregroundStyle(AppearancePalette.ink)
                     Picker("Theme", selection: Binding(

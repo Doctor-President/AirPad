@@ -48,6 +48,45 @@ enum MapLookChoice {
     }
 }
 
+/// 1.1-A fix-up (2) — the Dashboard panes' surface. Everyone gets Glass (T's pick); the others come with AirPad Pro, the
+/// same way as the Map looks (the pick is kept when Pro isn't active; what draws falls back to Glass).
+enum DashboardSurfaceChoice: Int, CaseIterable, Identifiable {
+    case thin = 0, glass = 1, clear = 2, panel = 3
+    static let storageKey = "dashboard.surface.v1"
+    static let free: DashboardSurfaceChoice = .glass
+    static let lineup: [DashboardSurfaceChoice] = [.glass, .thin, .clear, .panel]
+    var id: Int { rawValue }
+    var label: String {
+        switch self {
+        case .thin: "Frosted"
+        case .glass: "Glass"
+        case .clear: "Clear glass"
+        case .panel: "Solid"
+        }
+    }
+    var isFree: Bool { self == Self.free }
+    static func effective(pickedRaw: Int, isPro: Bool) -> DashboardSurfaceChoice {
+        let p = DashboardSurfaceChoice(rawValue: pickedRaw) ?? free
+        return p.isFree || isPro ? p : free
+    }
+}
+
+/// 1.1-A fix-up (1) — the "Gravity wells" Appearance toggle (on by default): the Map's ground dips under the orbs you can
+/// read. Off by itself in Low Power Mode and at thermal ≥ .serious (`MapHeatGuard.stressed`), back by itself when that
+/// ends. Zoomed out the wells were already off (no title visible → every weight 0), so that is unchanged.
+enum MapWells {
+    static let storageKey = "map.gravityWells.v1"
+    private static var cached: Bool = UserDefaults.standard.object(forKey: storageKey) == nil
+        ? true : UserDefaults.standard.bool(forKey: storageKey)
+    /// The user's setting.
+    static var userOn: Bool {
+        get { cached }
+        set { cached = newValue; UserDefaults.standard.set(newValue, forKey: storageKey) }
+    }
+    /// What the Map draws this frame.
+    static var active: Bool { cached && !MapHeatGuard.shared.stressed }
+}
+
 /// pro-build — the Pro entitlement as the app last verified it, cached so the Map never flashes Flat → Pro at launch.
 /// Written ONLY by `ProStore` from `Transaction.currentEntitlements` / `Transaction.updates` (local, verified by StoreKit).
 enum ProEntitlement {
@@ -89,7 +128,12 @@ final class ProStore {
 
     private(set) var products: [String: Product] = [:]
     private(set) var loadState: LoadState = .idle
-    private(set) var isPro: Bool = ProEntitlement.isPro
+    private(set) var isPro: Bool = {
+        #if DEBUG
+        if UserDefaults.standard.bool(forKey: "ProLocked") { return false }
+        #endif
+        return ProEntitlement.isPro
+    }()
     /// A purchase in flight (its product id), for the buttons' spinners.
     private(set) var busyID: String?
     /// Ask to Buy: Pro was requested and waits for approval.
@@ -122,6 +166,9 @@ final class ProStore {
     }
 
     private func setPro(_ v: Bool) {
+        #if DEBUG
+        if UserDefaults.standard.bool(forKey: "ProLocked") { isPro = false; return }   // `-ProLocked YES`: the locked rows' stills
+        #endif
         isPro = v
         if v { proPending = false }
         ProEntitlement.set(v)

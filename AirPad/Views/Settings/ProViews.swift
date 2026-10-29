@@ -175,6 +175,7 @@ struct MapGroundSection: View {
     @Environment(\.colorScheme) private var scheme
     @State private var showPro = false
     @State private var side = MapGround.edited(light: false)
+    @State private var adjusted = false   // the last pick was moved out of the unreadable band (`ReadableGround`)
     private var store: ProStore { ProStore.shared }
     private var light: Bool { scheme == .light }
 
@@ -223,7 +224,14 @@ struct MapGroundSection: View {
             }
             ColorPicker("Map dots", selection: hexBinding(\.dot), supportsOpacity: false)
             slider("Map dot opacity", value: binding(\.dotOpacity), range: 0...1, text: "\(Int((side.dotOpacity * 100).rounded()))%")
-            Button("Reset to default") { side = light ? .lightDefault : .darkDefault; MapGround.setEdited(side, light: light) }
+            if adjusted {
+                Text("Adjusted so text stays readable.")
+                    .font(appFont.font(size: 12, relativeTo: .caption1)).foregroundStyle(AppearancePalette.ink.opacity(0.6))
+                    .accessibilityIdentifier("mapGround.adjusted")
+            }
+            Button("Reset to default") {
+                side = light ? .lightDefault : .darkDefault; adjusted = false; MapGround.setEdited(side, light: light)
+            }
                 .font(appFont.font(size: 15, relativeTo: .subheadline))
                 .disabled(!side.custom)
                 .accessibilityIdentifier("mapGround.reset")
@@ -242,7 +250,12 @@ struct MapGroundSection: View {
     }
 
     /// Any edit makes the appearance custom (every view then draws it).
-    private func commit(_ s0: MapGroundSide) { var s = s0; s.custom = true; side = s; MapGround.setEdited(s, light: light) }
+    private func commit(_ s0: MapGroundSide) {
+        var s = s0; s.custom = true
+        let stored = MapGround.setEdited(s, light: light)   // the setter keeps text readable (ReadableGround)
+        adjusted = stored.color != s.color || (s.gradient && stored.color2 != s.color2)
+        side = stored
+    }
     private func binding<T>(_ k: WritableKeyPath<MapGroundSide, T>) -> Binding<T> {
         Binding(get: { side[keyPath: k] }, set: { var s = side; s[keyPath: k] = $0; commit(s) })
     }

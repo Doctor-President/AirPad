@@ -3758,9 +3758,9 @@ final class CorpusPhysicsScene: SKScene {
                   (titleNode.userData?["isFocal"] as? Bool) != true
             else { continue }
             let node = byID[nodeID]
-            let c = Self.titleColors(titleInkPick(nodeID: nodeID, fill: node.map { bubbleColor(for: $0) } ?? .gray,
-                                                  isMeta: node?.isMeta ?? false, box: Self.inkBox(titleNode)))
-            MSDFLabel.recolor(container: titleNode, color: c.ink, halo: c.halo)
+            let p = titleInkPick(nodeID: nodeID, fill: node.map { bubbleColor(for: $0) } ?? .gray,
+                                 isMeta: node?.isMeta ?? false, box: Self.inkBox(titleNode))
+            MSDFLabel.recolor(container: titleNode, color: Self.uiColor(p.ink))
         }
     }
 
@@ -4788,15 +4788,20 @@ final class CorpusPhysicsScene: SKScene {
         return min(1, max(0, (Double(fb / bb) - 0.78) / 0.44))
     }
 
-    /// One audited title: the old rule's ink and the new rule's pick, scored over the SAME twin samples.
-    struct InkAuditItem { let id: String; let look: TitleLook; let light: Bool; let oldW: Float; let newW: Float; let halo: Bool; let palette: Int }
+    /// One audited title under three rules, each ink scored over the SAME twin samples by area (p80) and worst case:
+    /// `pre` = before 1.1-A (`legacyTitleInk`), `aa` = 1.1-A's worst-case pick (its halo is gone), `new` = the area rule.
+    struct InkAuditItem {
+        let id: String; let look: TitleLook; let light: Bool; let palette: Int
+        let preA: Float, preW: Float, aaA: Float, aaW: Float, newA: Float, newW: Float
+        let flipped: Bool   // the area rule picks the other ink than 1.1-A
+    }
 
     /// The looks as drawn on each Map (the light Map's Fresnel = Flat, Aura / Eclipse = Wash; Light Glass is DEBUG-only).
     static let inkAuditLooks: [(TitleLook, Bool)] =
         [TitleLook.flat, .fresnel, .glass, .aura, .eclipse, .outline, .riso, .gradient].map { ($0, false) }
         + [TitleLook.flat, .glass, .wash, .outline, .riso, .gradient].map { ($0, true) }
 
-    /// Every title × every look × both Maps × (the real palette + each of the 12): the old rule vs the new one.
+    /// Every title × every look × both Maps × (the real palette + each of the 12), under the three rules.
     /// palette −1 = the real configuration (its territory slot / study family); 0…11 = forced (Flat / Fresnel / Glass /
     /// Outline: RegionPalette slot p with the orb's own shade; the study looks: OrbStudyPalettes family p).
     func inkAuditItems(lookFilter: (TitleLook, Bool)? = nil, realOnly: Bool = false) -> [InkAuditItem] {
@@ -4822,9 +4827,13 @@ final class CorpusPhysicsScene: SKScene {
                     let fill = p < 0 ? realFill : Self.auditFamilyTint(RegionPalette.color(isLight: light, slot: p), shade)
                     let fam = p < 0 ? studyFamily(id, fill: realFill) : p
                     let sm = titleSamples(look, light: light, fill: fill, alpha: alpha, family: fam, seed: seed, m: m, ground: g, box: box)
-                    let oldW = TitleInkRule.worstContrast(legacyTitleInk(look, light: light, fill: fill, family: fam, seed: seed, m: m), over: sm)
+                    let pre = legacyTitleInk(look, light: light, fill: fill, family: fam, seed: seed, m: m)
+                    let aa = Self.worstCaseInk(samples: sm, inks: inks)
                     let pk = TitleInkRule.pick(samples: sm, inks: inks)
-                    out.append(InkAuditItem(id: id, look: look, light: light, oldW: oldW, newW: pk.worst, halo: pk.halo != nil, palette: p))
+                    out.append(InkAuditItem(id: id, look: look, light: light, palette: p,
+                                            preA: TitleInkRule.areaContrast(pre, over: sm), preW: TitleInkRule.worstContrast(pre, over: sm),
+                                            aaA: TitleInkRule.areaContrast(aa, over: sm), aaW: TitleInkRule.worstContrast(aa, over: sm),
+                                            newA: pk.area, newW: pk.worst, flipped: pk.ink != aa))
                 }
             }
         }
@@ -4832,55 +4841,58 @@ final class CorpusPhysicsScene: SKScene {
     }
 
     /// `-InkAudit`: logs `[INKAUDIT]` (ids + numbers only, never titles): a positive control of the rule, then per look ×
-    /// Map, for the real configuration and the 12-palette sweep, the % of titles ≥ 4.5:1 under the OLD rule and under the
-    /// NEW one (≥ 4.5 by ink · halo'd · below 4.5 without a halo), then the worst 10 before and after (real config).
+    /// Map, for the real configuration and the 12-palette sweep, the % of titles whose ink reaches 4.5:1 by AREA (p80)
+    /// and by WORST case, under the pre-1.1-A rule, 1.1-A's worst-case pick and the area rule; then the worst 10 (real
+    /// configuration) by the area rule.
     private func runInkAudit() {
         let t0 = CACurrentMediaTime()
-        // positive control: white samples → dark ink; black → light; mid grey (#777777, < 4.5 for both inks) → halo
+        // positive controls: white → dark ink; black → light; 30 dark + 5 white samples → light by area, though the
+        // worst case (1.1-A) picks dark
         let li = TitleInkRule.legibleInks
         let w = TitleInkRule.pick(samples: [SIMD3(1, 1, 1)], inks: li), b = TitleInkRule.pick(samples: [SIMD3(0, 0, 0)], inks: li)
-        let gy = TitleInkRule.pick(samples: [SIMD3(repeating: Float(0x77) / 255)], inks: li)
-        let ctl = (!w.lightInk && w.halo == nil) && (b.lightInk && b.halo == nil) && gy.halo != nil
-        NSLog("[INKAUDIT] control white→%@ black→%@ grey→halo=%@ (%.2f) %@", w.lightInk ? "light" : "dark", b.lightInk ? "light" : "dark",
-              gy.halo != nil ? "yes" : "no", gy.worst, ctl ? "PASS" : "FAIL")
+        let mix = Array(repeating: SIMD3<Float>(repeating: 0.12), count: 30) + Array(repeating: SIMD3<Float>(repeating: 1), count: 5)
+        let am = TitleInkRule.pick(samples: mix, inks: li), wm = Self.worstCaseInk(samples: mix, inks: li)
+        let ctl = !w.lightInk && b.lightInk && am.lightInk && wm == li.dark
+        NSLog("[INKAUDIT] control white→%@ black→%@ mostly-dark→area %@ / worst %@ %@", w.lightInk ? "light" : "dark",
+              b.lightInk ? "light" : "dark", am.lightInk ? "light" : "dark", wm == li.light ? "light" : "dark", ctl ? "PASS" : "FAIL")
         let items = inkAuditItems()
         NSLog("[INKAUDIT] orbs=%d evaluations=%d light-now=%@ %.0f ms", nodeSprites.count, items.count, currentIsLight ? "yes" : "no",
               (CACurrentMediaTime() - t0) * 1000)
-        func pct(_ k: Int, _ n: Int) -> Double { n == 0 ? 0 : 100 * Double(k) / Double(n) }
+        func pct(_ r: [InkAuditItem], _ f: (InkAuditItem) -> Bool) -> Double { r.isEmpty ? 0 : 100 * Double(r.filter(f).count) / Double(r.count) }
         func med(_ v: [Float]) -> Float { v.isEmpty ? 0 : v.sorted()[v.count / 2] }
+        func line(_ tag: String, _ r: [InkAuditItem]) {
+            NSLog("[INKAUDIT] %@ n=%d p80>=4.5 pre=%.1f%% aa=%.1f%% new=%.1f%% | worst>=4.5 pre=%.1f%% aa=%.1f%% new=%.1f%% | flipped=%.1f%% newMinP80=%.2f newMedP80=%.2f",
+                  tag, r.count, pct(r) { $0.preA >= 4.5 }, pct(r) { $0.aaA >= 4.5 }, pct(r) { $0.newA >= 4.5 },
+                  pct(r) { $0.preW >= 4.5 }, pct(r) { $0.aaW >= 4.5 }, pct(r) { $0.newW >= 4.5 }, pct(r) { $0.flipped },
+                  r.map(\.newA).min() ?? 0, med(r.map(\.newA)))
+        }
         for real in [true, false] {
-            var tot = (n: 0, o: 0, ni: 0, h: 0, nb: 0)
+            let rr = items.filter { ($0.palette < 0) == real }
             for (look, light) in Self.inkAuditLooks {
-                let r = items.filter { $0.look == look && $0.light == light && ($0.palette < 0) == real }
-                let n = r.count, o = r.filter { $0.oldW >= 4.5 }.count
-                let ni = r.filter { $0.newW >= 4.5 }.count, h = r.filter { $0.halo }.count, nb = r.filter { $0.newW < 4.5 && !$0.halo }.count
-                tot.n += n; tot.o += o; tot.ni += ni; tot.h += h; tot.nb += nb
-                NSLog("[INKAUDIT] %@ %@ %@ n=%d old>=4.5=%.1f%% new>=4.5ink=%.1f%% halo=%d (%.1f%%) below-no-halo=%d oldMin=%.2f newMin=%.2f oldMed=%.2f newMed=%.2f",
-                      real ? "real " : "sweep", light ? "light" : "dark ", look.rawValue, n, pct(o, n), pct(ni, n), h, pct(h, n), nb,
-                      r.map(\.oldW).min() ?? 0, r.map(\.newW).min() ?? 0,
-                      med(r.map(\.oldW)), med(r.map(\.newW)))
+                line("\(real ? "real " : "sweep") \(light ? "light" : "dark ") \(look.rawValue)", rr.filter { $0.look == look && $0.light == light })
             }
-            NSLog("[INKAUDIT] %@ ALL n=%d old>=4.5=%.1f%% new>=4.5ink=%.1f%% halo=%d (%.1f%%) below-no-halo=%d", real ? "real " : "sweep",
-                  tot.n, pct(tot.o, tot.n), pct(tot.ni, tot.n), tot.h, pct(tot.h, tot.n), tot.nb)
+            line("\(real ? "real " : "sweep") ALL", rr)
+            line("\(real ? "real " : "sweep") SHIPPING", rr.filter { $0.look != .fresnel && !($0.look == .glass && $0.light) })
         }
         let real = items.filter { $0.palette < 0 && $0.look != .fresnel }   // Fresnel doesn't ship (MapLookChoice)
         func distinct(_ v: [InkAuditItem]) -> [InkAuditItem] {   // one entry per title (its worst look × Map)
             var seen = Set<String>(); return v.filter { seen.insert($0.id).inserted }
         }
-        for (k, it) in distinct(real.sorted(by: { ($0.oldW, $0.id) < ($1.oldW, $1.id) })).prefix(10).enumerated() {
-            NSLog("[INKAUDIT] worst-before #%d id=%@ look=%@ map=%@ old=%.2f new=%.2f halo=%@", k + 1, it.id, it.look.rawValue,
-                  it.light ? "light" : "dark", it.oldW, it.newW, it.halo ? "yes" : "no")
+        for (k, it) in distinct(real.sorted(by: { ($0.newA, $0.id) < ($1.newA, $1.id) })).prefix(10).enumerated() {
+            NSLog("[INKAUDIT] worst-after #%d id=%@ look=%@ map=%@ p80=%.2f worst=%.2f (1.1-A p80=%.2f worst=%.2f) flipped=%@", k + 1,
+                  it.id, it.look.rawValue, it.light ? "light" : "dark", it.newA, it.newW, it.aaA, it.aaW, it.flipped ? "yes" : "no")
         }
-        for (k, it) in distinct(real.sorted(by: { ($0.newW, $0.id) < ($1.newW, $1.id) })).prefix(10).enumerated() {
-            NSLog("[INKAUDIT] worst-after #%d id=%@ look=%@ map=%@ old=%.2f new=%.2f halo=%@", k + 1, it.id, it.look.rawValue,
-                  it.light ? "light" : "dark", it.oldW, it.newW, it.halo ? "yes" : "no")
+        let sweep = items.filter { $0.palette >= 0 && $0.look != .fresnel }
+        for (k, it) in distinct(sweep.sorted(by: { ($0.newA, $0.id) < ($1.newA, $1.id) })).prefix(10).enumerated() {
+            NSLog("[INKAUDIT] worst-sweep #%d id=%@ look=%@ palette=%d map=%@ p80=%.2f worst=%.2f (1.1-A p80=%.2f worst=%.2f)", k + 1,
+                  it.id, it.look.rawValue, it.palette, it.light ? "light" : "dark", it.newA, it.newW, it.aaA, it.aaW)
         }
         NSLog("[INKAUDIT] done")
     }
 
     /// `-InkStillTour <n>` (+ optional `-InkStillIDs id,id,…`): in the current look on the current Map, frame each of the
-    /// n worst titles by the OLD rule (real configuration; or the given ids) alone at the centre, first in the old ink
-    /// (`[INKSTILL] k old …`), then the new (`[INKSTILL] k new …`), 3 s each. Territory pills hidden.
+    /// n worst titles by 1.1-A's worst-case rule (real configuration; or the given ids) alone at the centre, first in
+    /// 1.1-A's ink (`[INKSTILL] k old …`, no halo), then the area rule's (`[INKSTILL] k new …`), 3 s each. Pills hidden.
     private func startInkStillTour(n: Int, delay: Double) {
         DispatchQueue.main.asyncAfter(deadline: .now() + delay) { [weak self] in
             guard let self else { return }
@@ -4888,8 +4900,8 @@ final class CorpusPhysicsScene: SKScene {
             let look = Self.drawnTitleLook(m.orbLook, light: self.currentIsLight)
             let byNew = ProcessInfo.processInfo.arguments.contains("-InkStillSortNew")   // the n worst by the NEW rule
             var ids: [(String, Float, Float, Bool)] = self.inkAuditItems(lookFilter: (look, self.currentIsLight), realOnly: true)
-                .sorted { byNew ? ($0.newW, $0.id) < ($1.newW, $1.id) : ($0.oldW, $0.id) < ($1.oldW, $1.id) }
-                .map { ($0.id, $0.oldW, $0.newW, $0.halo) }
+                .sorted { byNew ? ($0.newA, $0.id) < ($1.newA, $1.id) : ($0.aaW, $0.id) < ($1.aaW, $1.id) }
+                .map { ($0.id, $0.aaA, $0.newA, $0.flipped) }
             if let s = UserDefaults.standard.string(forKey: "InkStillIDs") {
                 let want = s.split(separator: ",").map(String.init)
                 ids = want.compactMap { w in ids.first { $0.0 == w } }
@@ -4909,7 +4921,7 @@ final class CorpusPhysicsScene: SKScene {
                             self.applyOrbScales()
                         }
                         centre()
-                        Self.legacyInkDebug = old
+                        Self.worstCaseInkDebug = old
                         self.restyleLabels()
                         // the lens / band relaxation moves orbs once the zoom lands: re-centre, then log where it sits
                         DispatchQueue.main.asyncAfter(deadline: .now() + 1.2) { centre() }
@@ -4928,7 +4940,7 @@ final class CorpusPhysicsScene: SKScene {
                                 NSLog("[INKSTILL] box %d %.3f %.3f", k + 1, bx.last?.x ?? 0, bx.last?.y ?? 0)
                                 NSLog("[INKSTILL] twin %d %@", k + 1, sm.map(OrbStudyPalettes.hex).joined(separator: ","))
                             }
-                            NSLog("[INKSTILL] %d %@ id=%@ look=%@ map=%@ old=%.2f new=%.2f halo=%@ cx=%.1f cy=%.1f r=%.1f", k + 1,
+                            NSLog("[INKSTILL] %d %@ id=%@ look=%@ map=%@ aaP80=%.2f newP80=%.2f flipped=%@ cx=%.1f cy=%.1f r=%.1f", k + 1,
                                   old ? "old" : "new", e.0, look.rawValue, self.currentIsLight ? "light" : "dark", e.1, e.2,
                                   e.3 ? "yes" : "no", vc.x, vc.y, hypot(ve.x - vc.x, ve.y - vc.y))
                         }
@@ -4936,7 +4948,7 @@ final class CorpusPhysicsScene: SKScene {
                 }
             }
             DispatchQueue.main.asyncAfter(deadline: .now() + Double(ids.count * 2) * 4) {
-                Self.legacyInkDebug = false
+                Self.worstCaseInkDebug = false
                 NSLog("[INKSTILL] end")
             }
         }
@@ -5236,21 +5248,16 @@ final class CorpusPhysicsScene: SKScene {
         )
     }
 
-    /// Ink + halo that read legibly over a given fill: warm near-black on a light
-    /// fill, warm off-white on a dark one, each paired with an opposite-luminance
-    /// halo so the type separates on mid-tones too. Mirrors the focal bubble's
+    /// Ink that reads legibly over a given fill: warm near-black on a light
+    /// fill, warm off-white on a dark one. Mirrors the focal bubble's
     /// SwiftUI rule (`NodeGradientLayer.legibleInk`), in UIKit for the sprite path.
     /// Brief AS (AQ2) — title ink by MEASURED WCAG contrast: white vs near-black, whichever has the
     /// higher contrast ratio against the orb's actual rendered fill. Replaces the old `lum > 0.6` proxy
     /// (a legibility fix applied in BOTH appearances — the one shared change vs today). Flip point L≈0.179.
-    private func legibleInk(over fill: UIColor) -> (ink: UIColor, halo: UIColor) {
+    private func legibleInk(over fill: UIColor) -> UIColor {
         let white = UIColor(red: 1.0, green: 0.98, blue: 0.95, alpha: 1.0)
         let black = UIColor(red: 0.08, green: 0.07, blue: 0.06, alpha: 1.0)
-        if Self.wcagContrast(white, fill) >= Self.wcagContrast(black, fill) {
-            return (white, UIColor(white: 0.0, alpha: 0.6))   // white ink, dark halo
-        } else {
-            return (black, UIColor(white: 1.0, alpha: 0.6))   // dark ink, light halo
-        }
+        return Self.wcagContrast(white, fill) >= Self.wcagContrast(black, fill) ? white : black
     }
 
     // MARK: - 1.1-A (4) title ink — ONE rule for every look × palette × Map
@@ -5331,19 +5338,23 @@ final class CorpusPhysicsScene: SKScene {
     }
 
     /// 1.1-A (4) — THE title ink for an orb on the current Map, in the current look: its look's twin sampled under the
-    /// title box over this Map's ground, then `TitleInkRule.pick` (worst-case WCAG over every sample; halo under 4.5:1).
+    /// title box over this Map's ground, then `TitleInkRule.pick` (the ink with the higher WCAG contrast at the 80th
+    /// percentile of the title's area; no halo).
     private func titleInkPick(nodeID: String, fill: UIColor, isMeta: Bool, box: [SIMD2<Float>]) -> TitleInkRule.Pick {
         let m = mapTuning ?? .today, light = currentIsLight
         let look = Self.drawnTitleLook(m.orbLook, light: light)
         let fam = studyFamily(nodeID, fill: fill), seed = studySeed(nodeID)
         #if DEBUG
-        if Self.legacyInkDebug {   // `-InkStillTour`'s "before" frames: the old rule, no halo
-            return .init(ink: legacyTitleInk(look, light: light, fill: fill, family: fam, seed: seed, m: m), halo: nil, worst: 0, lightInk: false)
-        }
-        #endif
         let samples = titleSamples(look, light: light, fill: fill, alpha: isMeta ? 0.55 : 1, family: fam, seed: seed, m: m,
                                    ground: Self.titleGround(m, light: light), box: box)
-        return TitleInkRule.pick(samples: samples, inks: Self.titleInks(look, light: light, m: m))
+        let inks = Self.titleInks(look, light: light, m: m)
+        if Self.worstCaseInkDebug {   // `-InkStillTour`'s "before" frames: 1.1-A's worst-case pick (its halo is gone)
+            let ink = Self.worstCaseInk(samples: samples, inks: inks)
+            return .init(ink: ink, area: TitleInkRule.areaContrast(ink, over: samples),
+                         worst: TitleInkRule.worstContrast(ink, over: samples), lightInk: ink == inks.light)
+        }
+        #endif
+        return TitleInkRule.pick(samples: samples, inks: inks)
     }
 
     /// The sample points under a title container's set type (stored by makeTitleSprite; the default box otherwise).
@@ -5355,14 +5366,15 @@ final class CorpusPhysicsScene: SKScene {
     static func uiColor(_ c: SIMD3<Float>, alpha: Float = 1) -> UIColor {
         UIColor(red: CGFloat(c.x), green: CGFloat(c.y), blue: CGFloat(c.z), alpha: CGFloat(alpha))
     }
-    /// The pick as the glyph label's (ink, halo) colours.
-    static func titleColors(_ p: TitleInkRule.Pick) -> (ink: UIColor, halo: UIColor?) {
-        (uiColor(p.ink), p.halo.map { uiColor($0, alpha: TitleInkRule.haloAlpha) })
-    }
 
     #if DEBUG
     /// `-InkStillTour` flips this between its before / after frames (then restyleLabels).
-    static var legacyInkDebug = false
+    static var worstCaseInkDebug = false
+
+    /// 1.1-A's rule, kept only for the audit and the still tour: the ink with the higher WORST-case contrast (ties light).
+    static func worstCaseInk(samples: [SIMD3<Float>], inks: TitleInkRule.Inks) -> SIMD3<Float> {
+        TitleInkRule.worstContrast(inks.light, over: samples) >= TitleInkRule.worstContrast(inks.dark, over: samples) ? inks.light : inks.dark
+    }
 
     /// The title-ink rule BEFORE 1.1-A (4) — per-look special cases (live-39 … 50) — kept only so the audit and the
     /// still tour can show before vs after. Parameterised by look / Map / family; otherwise line for line the old
@@ -5414,7 +5426,7 @@ final class CorpusPhysicsScene: SKScene {
             let label = gl.label.uiColor, black = UIColor(red: 0.08, green: 0.07, blue: 0.06, alpha: 1)
             return c3(Self.wcagContrast(label, body) >= Self.wcagContrast(black, body) ? label : black)
         case .flat:
-            return c3(legibleInk(over: light ? lightCompFill(fill) : applyDarkOrbBoost(fill)).ink)
+            return c3(legibleInk(over: light ? lightCompFill(fill) : applyDarkOrbBoost(fill)))
         }
     }
     #endif
@@ -5726,16 +5738,16 @@ final class CorpusPhysicsScene: SKScene {
         }
         // Title ink: T device-final 2026-09-14 is `titleColour=(auto)` + `titleOpacity=1.000`,
         // i.e. the legible-ink rule with no override — so the auto value IS the shipped value.
-        // 1.1-A (4): the one rule (titleInkPick), with its halo when neither ink reaches 4.5:1.
+        // 1.1-A (4) / 1.1-B: the one rule (titleInkPick) — the ink with the better area contrast; no halo.
         // The set type's extent in orb radii (the widest line × the lines' cap-height span) = the box the rule samples.
         let pt = glyphFont.pointSize
         let hw = (lines.map { MSDFLabel.textWidth($0, pointSize: pt, font: font) }.max() ?? side) / 2 / max(radius, 1)
         let hh = (CGFloat(max(lines.count - 1, 0)) * font.lineHeightEm * pt + 0.72 * pt) / 2 / max(radius, 1)
         let inkBox = [Float(min(hw, 1)), Float(min(hh, 1))]
-        let c = Self.titleColors(titleInkPick(nodeID: nodeID, fill: fillColor, isMeta: isMeta,
-                                              box: TitleInkRule.box(halfWidth: inkBox[0], halfHeight: inkBox[1])))
+        let p = titleInkPick(nodeID: nodeID, fill: fillColor, isMeta: isMeta,
+                             box: TitleInkRule.box(halfWidth: inkBox[0], halfHeight: inkBox[1]))
         let container = MSDFLabel.makeContainer(lines: lines, pointSize: pt,
-                                                color: c.ink, halo: c.halo, fullTitle: text, font: font)
+                                                color: Self.uiColor(p.ink), fullTitle: text, font: font)
         container.userData?["inkBox"] = inkBox
         return container
     }

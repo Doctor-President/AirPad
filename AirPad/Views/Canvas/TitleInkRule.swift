@@ -1,11 +1,13 @@
 //  TitleInkRule.swift
-//  1.1-A (4) — ONE deterministic title-ink rule for every Map look × palette × ground.
+//  1.1-A (4) — ONE deterministic title-ink rule for every Map look × palette × ground. 1.1-B fix-up: no halo, area rule.
 //
-//  The rule (pure: samples in, ink + halo out): sample the colours a look actually draws under an orb's title box
-//  (`TitleInkTwin`, a CPU twin per look, ground showing through where the orb is transparent or faint), take each of the
-//  look's two candidate inks, score each by its WORST-case WCAG contrast over every sample, and pick the better. When
-//  neither reaches 4.5:1 the title also gets a soft halo in the other ink. The ground is an explicit input to every twin
-//  that lets it show through, so a custom background (1.1-B) plugs in as one parameter.
+//  The rule (pure: samples in, ink out): sample the colours a look actually draws under an orb's title box
+//  (`TitleInkTwin`, a CPU twin per look, ground showing through where the orb is transparent or faint), score each of the
+//  look's two candidate inks by an AREA measure — its WCAG contrast at the 80th percentile of the title's area (`p80`:
+//  80% of the sample points reach at least this) — and pick the better. A few bad points (a bright rim, one hot spot) no
+//  longer decide the ink the way the 1.1-A worst-case did. There is no halo, stroke or outline: T ruled the 1.1-A halo
+//  "looks like a rendering mistake" (2026-10-29). The ground is an explicit input to every twin that lets it show
+//  through, so a custom background (1.1-B) plugs in as one parameter.
 
 import simd
 
@@ -18,17 +20,17 @@ enum TitleInkRule {
 
     struct Pick: Equatable {
         var ink: SIMD3<Float>
-        /// The other ink, drawn as a soft halo (nil = no halo).
-        var halo: SIMD3<Float>?
-        /// The chosen ink's worst-case contrast over the samples.
+        /// The chosen ink's contrast at the 80th percentile of the title's area (`areaContrast`) — the score.
+        var area: Float
+        /// The chosen ink's worst-case contrast over the samples (reported, no longer decides).
         var worst: Float
         var lightInk: Bool
     }
 
     /// WCAG AA body-text contrast.
     static let minContrast: Float = 4.5
-    /// The halo's peak opacity (the shader fades it to 0 over the glyph field's reach just outside the outline).
-    static let haloAlpha: Float = 0.55
+    /// The share of the title's area an ink must reach its score over (0.8 = the 80th percentile).
+    static let areaShare: Float = 0.8
 
     /// The study looks' inks (Aura · Eclipse · Wash · Riso · Gradient): #F4F2F8 / #1B1A20.
     static let studyInks = Inks(light: SIMD3(0xF4, 0xF2, 0xF8) / 255, dark: SIMD3(0x1B, 0x1A, 0x20) / 255)
@@ -50,15 +52,22 @@ enum TitleInkRule {
         for s in samples { w = min(w, contrast(ink, s)) }
         return w
     }
+    /// The ink's AREA contrast: the largest value that at least `share` of the samples meet or exceed. With the contrasts
+    /// sorted ascending c[0] … c[n−1], that is c[n − ⌈share·n⌉] (35 samples, share 0.8 → c[7]: 28 of 35 points reach it).
+    /// 21 = no samples.
+    static func areaContrast(_ ink: SIMD3<Float>, over samples: [SIMD3<Float>], share: Float = areaShare) -> Float {
+        guard !samples.isEmpty else { return 21 }
+        let c = samples.map { contrast(ink, $0) }.sorted()
+        let need = min(c.count, max(1, Int((share * Float(c.count)).rounded(.up))))
+        return c[c.count - need]
+    }
 
-    /// THE rule. Ties go to the light ink (as `legibleInk` did).
-    static func pick(samples: [SIMD3<Float>], inks: Inks, minContrast: Float = minContrast) -> Pick {
-        let wl = worstContrast(inks.light, over: samples), wd = worstContrast(inks.dark, over: samples)
-        let light = wl >= wd
-        let w = max(wl, wd)
-        let other = light ? inks.dark : inks.light
-        return Pick(ink: light ? inks.light : inks.dark, halo: w < minContrast && inks.light != inks.dark ? other : nil,
-                    worst: w, lightInk: light)
+    /// THE rule: the ink with the higher area contrast. Ties go to the light ink (as `legibleInk` did).
+    static func pick(samples: [SIMD3<Float>], inks: Inks) -> Pick {
+        let al = areaContrast(inks.light, over: samples), ad = areaContrast(inks.dark, over: samples)
+        let light = al >= ad
+        let ink = light ? inks.light : inks.dark
+        return Pick(ink: ink, area: max(al, ad), worst: worstContrast(ink, over: samples), lightInk: light)
     }
 
     /// A title's box in orb radii, y up, as a 7 × 5 grid of sample points over ± halfWidth × ± halfHeight — the extent of

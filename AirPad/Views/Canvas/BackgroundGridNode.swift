@@ -291,7 +291,15 @@ enum BackgroundGridNode {
         }
         """
 
+        #if DEBUG
+        // 1.1-A (6) measure — `-MapGroundCase dotsOff`: the same shader with the dot coverage forced to 0, so the compiler
+        // drops the whole lattice (the 27 field samples of mode C included) and only the ground fill + ripple remain.
+        let shader = SKShader(source: debugDotsOffNextBuild
+            ? source.replacingOccurrences(of: "float coverage = max(c1, max(c0g, c2g));", with: "float coverage = 0.0;")
+            : source)
+        #else
         let shader = SKShader(source: source)
+        #endif
         // Placeholder texture (no warp until the scene feeds the field).
         // u_disp_field = a low-res displacement field the CPU rewrites each frame.
         let fieldZero = SKTexture(data: Data(count: 4), size: CGSize(width: 1, height: 1))
@@ -327,6 +335,38 @@ enum BackgroundGridNode {
         #endif
         return shader
     }
+
+    #if DEBUG
+    /// 1.1-A (6) measure — set before `debugRebuildShader` to build the dots-off variant.
+    static var debugDotsOffNextBuild = false
+
+    /// 1.1-A (6) measure — swap the grid's shader for the dots-off variant (or back), carrying every uniform value over
+    /// by name (the per-frame setters find them by name, so nothing else changes). DEBUG harness only.
+    static func debugRebuildShader(_ shape: SKShapeNode, dotsOff: Bool) {
+        guard let old = shape.fillShader else { return }
+        let vp = old.uniformNamed("u_viewport_size")?.vectorFloat2Value ?? vector_float2(1, 1)
+        debugDotsOffNextBuild = dotsOff
+        let fresh = makeShader(viewportSize: CGSize(width: CGFloat(vp.x), height: CGFloat(vp.y)),
+                               dotSizePx: old.uniformNamed("u_dot_base_px")?.floatValue ?? 0.5,
+                               dotOpacity: old.uniformNamed("u_dot_opacity")?.floatValue ?? 0.18,
+                               period: old.uniformNamed("u_period1")?.floatValue ?? 83,
+                               ratio: old.uniformNamed("u_ratio")?.floatValue ?? 5,
+                               lodLevels: old.uniformNamed("u_lod_levels")?.floatValue ?? 3)
+        debugDotsOffNextBuild = false
+        for u in old.uniforms {
+            guard let n = fresh.uniformNamed(u.name) else { continue }
+            switch u.uniformType {
+            case .float: n.floatValue = u.floatValue
+            case .floatVector2: n.vectorFloat2Value = u.vectorFloat2Value
+            case .floatVector3: n.vectorFloat3Value = u.vectorFloat3Value
+            case .floatVector4: n.vectorFloat4Value = u.vectorFloat4Value
+            case .texture: if let t = u.textureValue { n.textureValue = t }
+            default: break
+            }
+        }
+        shape.fillShader = fresh
+    }
+    #endif
 
     /// How many nearest orbs contribute to the displacement field (the CPU-side "48-set").
     static let maxWarpOrbs = 48

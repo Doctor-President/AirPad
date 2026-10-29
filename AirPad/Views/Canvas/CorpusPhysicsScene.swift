@@ -940,6 +940,7 @@ final class CorpusPhysicsScene: SKScene {
     #if DEBUG
     private var swatchFramed = false
     private var swatchFamily: (String, Int)?
+    private var inkTourActive = false   // 1.1-A (4) `-InkStillTour`
     static let noTitlesDebug = ProcessInfo.processInfo.arguments.contains("-MapNoTitles")
     #endif
     /// live-50b — DEBUG `-MapStudyLightGlass`: the light Map draws the study's Light Glass (live-49 / 50) instead of Glass, for A/B stills.
@@ -1006,17 +1007,19 @@ final class CorpusPhysicsScene: SKScene {
         let outlineNow = look == .outline
         if outlineNow != outlineLookOn { outlineLookOn = outlineNow; syncOutlineEmphasis() }
         // Title ink follows the look; recolour only when its inputs change.
+        // 1.1-A (4): the key carries every input of the look's twin (and the ground), so the rule re-runs only when one moves.
         var inkKey: String
         switch look {
-        case .fresnel: inkKey = "fr\(m.fresnel)\(m.ground.hex)"
-        case .glass: let gv = m.glassFor(light: currentIsLight); inkKey = "gl\(gv.tint)\(gv.brightness)\(gv.label.hex)\(m.ground.hex)\(currentIsLight)"
+        case .fresnel: inkKey = "fr\(m.fresnel)"
+        case .glass: inkKey = "gl\(m.glassFor(light: currentIsLight))\(currentIsLight)"
         case .aura: inkKey = "au\(m.aura.spread)\(m.aura.warp)\(m.aura.rim)\(auraStyleKey)\(currentIsLight)"
-        case .eclipse: inkKey = "ec\(currentIsLight)"
-        case .outline: inkKey = "ol\(currentIsLight)"
-        case .flat: inkKey = washOn ? "wa\(washStyleKey)\(m.wash.spread)\(m.wash.warp)" : "flat"
+        case .eclipse: inkKey = "ec\(m.eclipse)\(auraStyleKey)\(currentIsLight)"
+        case .outline: inkKey = "ol\(m.outline.fillOpacity)\(currentIsLight)"
+        case .flat: inkKey = washOn ? "wa\(washStyleKey)\(m.wash.spread)\(m.wash.warp)" : "flat\(m.orbGlowOpacity)\(m.orbGlow.hex)"
         case .riso, .gradient: inkKey = "s2"
         }
-        if let s2 { inkKey = "s2\(s2)\(study2StyleKey)\(currentIsLight)\(m.lightGlass.label.hex)" }   // live-49 / 50 (label colour)
+        if let s2 { inkKey = "s2\(s2)\(study2StyleKey)\(currentIsLight)\(m.lightGlass.label.hex)\(m.riso)\(m.gradient)" }   // live-49 / 50 (label colour)
+        inkKey += "|\(Self.titleGround(m, light: currentIsLight))"
         if inkKey != lastTitleInkKey { lastTitleInkKey = inkKey; restyleLabels() }
     }
 
@@ -2025,6 +2028,14 @@ final class CorpusPhysicsScene: SKScene {
             }
         }
         startAuraSizeScriptIfAsked()
+        // 1.1-A (4) — `-InkAudit` (the title-ink audit, after the auto-fit settles) and `-InkStillTour <n>` (before / after stills).
+        if ProcessInfo.processInfo.arguments.contains("-InkAudit") {
+            whenOrbsSettled(after: 16) { [weak self] in self?.runInkAudit() }
+        }
+        if let i = ProcessInfo.processInfo.arguments.firstIndex(of: "-InkStillTour"), i + 1 < ProcessInfo.processInfo.arguments.count,
+           let n = Int(ProcessInfo.processInfo.arguments[i + 1]) {
+            whenOrbsSettled(after: 16) { [weak self] in self?.startInkStillTour(n: n, delay: 3) }
+        }
         #endif
         // White-flash fix: a re-presented scene must re-signal its first frame so
         // CanvasView re-hides then reveals (each mount has the backing gap).
@@ -2438,7 +2449,7 @@ final class CorpusPhysicsScene: SKScene {
     private func syncTerritoryLabelsToCanvasState(currentTime: TimeInterval) {
         guard let view = self.view else { return }
         #if DEBUG
-        if swatchFramed { territoryLabelData.removeAll() }   // pro-build `-MapSwatch`: no pills
+        if swatchFramed || inkTourActive { territoryLabelData.removeAll() }   // pro-build `-MapSwatch` / 1.1-A `-InkStillTour`: no pills
         #endif
         // Local type (function body, not the closure) so it's capturable below.
         struct RegionCandidate {
@@ -2807,7 +2818,8 @@ final class CorpusPhysicsScene: SKScene {
         shape.userData?["radius"] = radius
 
         let displayText = node.title.isEmpty ? (node.untitledDisplayText ?? "") : node.title
-        let labelSprite = makeTitleSprite(text: displayText, radius: radius, fillColor: bubbleColor(for: node))
+        let labelSprite = makeTitleSprite(text: displayText, radius: radius, fillColor: bubbleColor(for: node),
+                                          nodeID: node.id, isMeta: node.isMeta)
         shape.addChild(labelSprite)
 
         if node.isMeta {
@@ -2891,7 +2903,7 @@ final class CorpusPhysicsScene: SKScene {
                 titleNode.removeFromParent()
                 let radius = nodeIntrinsicRadii[node.id] ?? bubbleRadius(for: node)
                 shape.addChild(makeTitleSprite(text: displayText, radius: radius,
-                                               fillColor: bubbleColor(for: node)))
+                                               fillColor: bubbleColor(for: node), nodeID: node.id, isMeta: node.isMeta))
             }
         }
     }
@@ -3709,12 +3721,15 @@ final class CorpusPhysicsScene: SKScene {
     /// depends on the sat/val boost, so light↔dark must re-flip. Glyph labels recolor in
     /// place (set `a_glyph_color`; no re-raster) — a one-time burst on flip.
     func restyleLabels() {
+        let byID = Dictionary(currentNodes.map { ($0.id, $0) }, uniquingKeysWith: { a, _ in a })
         for (nodeID, shape) in nodeSprites {
             guard let titleNode = shape.children.first(where: { $0.name == "titleLabel" }),
                   (titleNode.userData?["isFocal"] as? Bool) != true
             else { continue }
-            let fillColor = currentNodes.first(where: { $0.id == nodeID }).map { bubbleColor(for: $0) } ?? .gray
-            MSDFLabel.recolor(container: titleNode, color: orbTitleInk(fillColor, nodeID: nodeID))
+            let node = byID[nodeID]
+            let c = Self.titleColors(titleInkPick(nodeID: nodeID, fill: node.map { bubbleColor(for: $0) } ?? .gray,
+                                                  isMeta: node?.isMeta ?? false, box: Self.inkBox(titleNode)))
+            MSDFLabel.recolor(container: titleNode, color: c.ink, halo: c.halo)
         }
     }
 
@@ -4677,18 +4692,6 @@ final class CorpusPhysicsScene: SKScene {
         if sp.blendMode != .alpha { sp.blendMode = .alpha }
     }
 
-    /// live-49 — the study's inkDark for the v7 looks: Light Glass dark; Riso the sorted mid stop (multiplied into the
-    /// ground at 85% on the light Map); Gradient the sorted mid stop. Threshold 0.5.
-    private func study2TitleInkIsDark(nodeID: String, kind: Study2Kind) -> Bool {
-        if kind == .lightGlass { return true }
-        let st = studyStops(nodeID: nodeID, sorted: true)
-        if kind == .riso && currentIsLight {
-            let g3 = Self.rgb3(MapCompTuning.lightGroundHex), g = SIMD3<Float>(g3.x, g3.y, g3.z)
-            return OrbStudyPalettes.lum(g * (SIMD3<Float>(repeating: 1) - (SIMD3<Float>(repeating: 1) - st.b) * 0.85)) > 0.5
-        }
-        return OrbStudyPalettes.lum(st.b) > 0.5
-    }
-
     /// Which v7 look the orbs wear now (nil = none): Glass on the light Map = Light Glass; Riso / Gradient on both.
     private func study2Kind(_ m: MapDarkTuning) -> Study2Kind? {
         switch m.orbLook {
@@ -4699,75 +4702,215 @@ final class CorpusPhysicsScene: SKScene {
         }
     }
 
-    /// live-45 / 47 — the mean luma under an orb's title: a CPU twin of the shader's warped ramp, sampled on a 7 × 5 grid
-    /// over the title box (± 0.6 × ± 0.35 orb radii). Aura: the ramp + rim tint + shading. Wash (live-47, the same rule):
-    /// the ground × (1 − absorb) with the pigment lifted 14% toward white and the density 0.6 × bloom (no pooling this far
-    /// in; the granulation averages out). The study's one-stop rule missed what the warp puts under the title (dark ink on
-    /// dark patches — Aura at live-45, the Rust family's dark stop under Wash at live-46).
+    /// live-45 / 47 — the mean luma under an orb's title (the study's luma over `TitleInkTwin.studySamples`, the 7 × 5
+    /// sampled twin of Aura / Wash). Since 1.1-A (4) only the old rule (`legacyTitleInk`, the audits) reads it.
     static func studyTitleLuma(a A: SIMD3<Float>, b B: SIMD3<Float>, c C: SIMD3<Float>, r R: SIMD3<Float>, seed: Float,
                                spread: Double, warp: Double, rim: Double, washGround: SIMD3<Float>? = nil) -> Float {
-        func fract(_ x: Float) -> Float { x - x.rounded(.down) }
-        func hash(_ x: Float, _ y: Float) -> Float {
-            var p = SIMD3<Float>(fract(x * 0.1031), fract(y * 0.1031), fract(x * 0.1031))
-            let d = p.x * (p.y + 33.33) + p.y * (p.z + 33.33) + p.z * (p.x + 33.33)
-            p += SIMD3(repeating: d)
-            return fract((p.x + p.y) * p.z)
-        }
-        func noise(_ x: Float, _ y: Float) -> Float {
-            let ix = x.rounded(.down), iy = y.rounded(.down), fx = x - ix, fy = y - iy
-            let ux = fx * fx * (3 - 2 * fx), uy = fy * fy * (3 - 2 * fy)
-            let a = hash(ix, iy), b = hash(ix + 1, iy), c = hash(ix, iy + 1), d = hash(ix + 1, iy + 1)
-            return (a + (b - a) * ux) + ((c + (d - c) * ux) - (a + (b - a) * ux)) * uy
-        }
-        func fbm(_ x0: Float, _ y0: Float) -> Float {
-            var x = x0, y = y0, a: Float = 0.6, s: Float = 0
-            for _ in 0..<3 { s += a * noise(x, y); x = x * 1.9 + 17.1; y = y * 1.9 + 9.2; a *= 0.32 }
-            return s
-        }
-        func ss(_ e0: Float, _ e1: Float, _ x: Float) -> Float { let u = min(max((x - e0) / (e1 - e0), 0), 1); return u * u * (3 - 2 * u) }
-        let warp = Float(warp), spread = Float(spread), rimK = Float(rim)
-        let ang = seed * 6.2831853, dir = SIMD2<Float>(cos(ang), sin(ang)), perp = SIMD2<Float>(-dir.y, dir.x)
-        var sum: Float = 0, n: Float = 0
-        for iy in 0..<5 { for ix in 0..<7 {
-            let q = SIMD2<Float>(-0.6 + Float(ix) * 0.2, -0.35 + Float(iy) * 0.175)
-            let w = q * 0.62 + SIMD2(seed * 13.1, seed * 7.7)
-            let nv = SIMD2<Float>(fbm(w.x, w.y), fbm(w.x * 1.15 + 5.2, w.y * 1.15 + 1.3)) - 0.4
-            let qw = q + warp * nv * 1.8
-            var t = simd_dot(qw, dir) * 0.5 * spread + 0.5
-            t += 0.3 * warp * sin(simd_dot(qw, perp) * 1.9 + seed * 11)
-            t = min(max(t, 0), 1)
-            let ab = A + (B - A) * ss(0, 0.55, t)
-            var body = ab + (C - ab) * ss(0.45, 1, t)
-            if let g = washGround {
-                let pig = body + (SIMD3<Float>(repeating: 1) - body) * 0.14
-                let dens = 0.6 * (0.88 + 0.3 * nv.x)
-                let absorb = simd_clamp((SIMD3<Float>(repeating: 1) - pig) * dens, SIMD3(repeating: 0), SIMD3(repeating: 1))
-                body = g * (SIMD3<Float>(repeating: 1) - absorb)
-            } else {
-                let d = simd_length(q), rb = ss(0.62, 1.02, d)
-                body += (R - body) * (rb * rb * rimK)
-                body *= 0.9 + 0.14 * (max(0, 1 - min(d * d, 1))).squareRoot()
-            }
-            sum += OrbStudyPalettes.lum(simd_min(body, SIMD3(repeating: 1))); n += 1
-        } }
-        return sum / n
+        let sm = TitleInkTwin.studySamples(.init(a: A, b: B, c: C, r: R, seed: seed), spread: spread, warp: warp, rim: rim,
+                                           washGround: washGround)
+        return sm.reduce(0) { $0 + OrbStudyPalettes.lum($1) } / Float(max(sm.count, 1))
     }
     /// The study's ink threshold (v5 `inkDark`: luma > 0.5 → dark ink).
     static let studyInkThreshold: Float = 0.5
 
-    /// live-47 — the title ink under the study looks: Eclipse always light; Aura (dark Map) and Wash (light Map) dark only
-    /// where the sampled colour under the title is light.
-    private func studyTitleInkIsDark(nodeID: String, m: MapDarkTuning) -> Bool {
-        if currentIsLight {
-            let st = studyStops(nodeID: nodeID, sorted: false), w = m.wash, g = Self.rgb3(MapCompTuning.lightGroundHex)
-            return Self.studyTitleLuma(a: st.a, b: st.b, c: st.c, r: st.r, seed: st.seed, spread: w.spread, warp: w.warp, rim: 0,
-                                       washGround: SIMD3(g.x, g.y, g.z)) > Self.studyInkThreshold
+    #if DEBUG
+    // MARK: - 1.1-A (4) `-InkAudit` + `-InkStillTour` (DEBUG)
+
+    /// Run `body` once the orbs have settled — the count (> 1) held, territory tints present and no orb moved more than
+    /// 0.5 pt, for 4 s in a row —
+    /// polled each second from `after` s (gives up waiting at 120 s).
+    private func whenOrbsSettled(after: Double, _ body: @escaping () -> Void) {
+        var last = -1, held = 0, waited = after, lastPos: [String: CGPoint] = [:]
+        func poll() {
+            DispatchQueue.main.asyncAfter(deadline: .now() + (waited == after ? after : 1)) { [weak self] in
+                guard let self else { return }
+                let n = self.nodeSprites.count
+                var pos: [String: CGPoint] = [:], moved: CGFloat = 0
+                for (id, sp) in self.nodeSprites {
+                    pos[id] = sp.position
+                    if let p = lastPos[id] { moved = max(moved, hypot(p.x - sp.position.x, p.y - sp.position.y)) } else { moved = .infinity }
+                }
+                lastPos = pos
+                // …and the territories have coloured the orbs (positions settle before the territory tints land)
+                let tinted = !self.territoryColors.isEmpty
+                held = (n == last && n > 1 && moved < 0.5 && tinted) ? held + 1 : 0; last = n; waited += 1
+                if held >= 4 || waited > 120 { NSLog("[INKAUDIT] orbs settled at %d (%.0f s), %d tinted", n, waited, self.territoryColors.count); body() } else { poll() }
+            }
         }
-        if m.orbLook == .eclipse { return false }
-        let st = studyStops(nodeID: nodeID, sorted: false), a = m.aura
-        return Self.studyTitleLuma(a: st.a, b: st.b, c: st.c, r: st.r, seed: st.seed, spread: a.spread, warp: a.warp, rim: a.rim)
-            > Self.studyInkThreshold
+        poll()
     }
+
+    /// The territory tint CanvasView gives an orb (`familyTint`: the slot colour, shaded per orb) — to re-tint an orb
+    /// in another palette slot or on the other Map with its own shade.
+    private static func auditFamilyTint(_ base: UIColor, _ t: Double) -> UIColor {
+        var h: CGFloat = 0, s: CGFloat = 0, b: CGFloat = 0, a: CGFloat = 0
+        guard base.getHue(&h, saturation: &s, brightness: &b, alpha: &a) else { return base }
+        let nb = min(1.0, max(0.40, b * CGFloat(0.78 + 0.44 * t)))
+        let ns = min(1.0, max(0.0, s * CGFloat(1.05 - 0.15 * t)))
+        return UIColor(hue: h, saturation: ns, brightness: nb, alpha: a)
+    }
+    /// The orb's shade back out of its fill (familyTint's brightness factor; 0.5 when it can't be read).
+    private static func auditShade(fill: UIColor, base: UIColor) -> Double {
+        var h: CGFloat = 0, s: CGFloat = 0, fb: CGFloat = 0, a: CGFloat = 0, bb: CGFloat = 0
+        guard fill.getHue(&h, saturation: &s, brightness: &fb, alpha: &a), base.getHue(&h, saturation: &s, brightness: &bb, alpha: &a),
+              bb > 0.01 else { return 0.5 }
+        return min(1, max(0, (Double(fb / bb) - 0.78) / 0.44))
+    }
+
+    /// One audited title: the old rule's ink and the new rule's pick, scored over the SAME twin samples.
+    struct InkAuditItem { let id: String; let look: TitleLook; let light: Bool; let oldW: Float; let newW: Float; let halo: Bool; let palette: Int }
+
+    /// The looks as drawn on each Map (the light Map's Fresnel = Flat, Aura / Eclipse = Wash; Light Glass is DEBUG-only).
+    static let inkAuditLooks: [(TitleLook, Bool)] =
+        [TitleLook.flat, .fresnel, .glass, .aura, .eclipse, .outline, .riso, .gradient].map { ($0, false) }
+        + [TitleLook.flat, .glass, .wash, .outline, .riso, .gradient].map { ($0, true) }
+
+    /// Every title × every look × both Maps × (the real palette + each of the 12): the old rule vs the new one.
+    /// palette −1 = the real configuration (its territory slot / study family); 0…11 = forced (Flat / Fresnel / Glass /
+    /// Outline: RegionPalette slot p with the orb's own shade; the study looks: OrbStudyPalettes family p).
+    func inkAuditItems(lookFilter: (TitleLook, Bool)? = nil, realOnly: Bool = false) -> [InkAuditItem] {
+        let m = mapTuning ?? .today
+        let byID = Dictionary(currentNodes.map { ($0.id, $0) }, uniquingKeysWith: { a, _ in a })
+        if studyFamilyOf.count < nodeSprites.count { buildStudyFamilies(byID: byID) }
+        let ids = nodeSprites.keys.sorted().filter { byID[$0] != nil }
+        var out: [InkAuditItem] = []
+        for (look, light) in Self.inkAuditLooks {
+            if let f = lookFilter, f.0 != look || f.1 != light { continue }
+            let g = Self.titleGround(m, light: light), inks = Self.titleInks(look, light: light, m: m)
+            for id in ids {
+                guard let node = byID[id] else { continue }
+                let alpha: Float = node.isMeta ? 0.55 : 1, seed = studySeed(id)
+                let box = Self.inkBox(nodeSprites[id]?.children.first { $0.name == "titleLabel" })
+                let cur = bubbleColor(for: node)
+                var shade = 0.5, realFill = cur
+                if let slot = territorySlots[id] {
+                    shade = Self.auditShade(fill: cur, base: RegionPalette.color(isLight: currentIsLight, slot: slot))
+                    if light != currentIsLight { realFill = Self.auditFamilyTint(RegionPalette.color(isLight: light, slot: slot), shade) }
+                }
+                for p in -1..<(realOnly ? 0 : 12) {
+                    let fill = p < 0 ? realFill : Self.auditFamilyTint(RegionPalette.color(isLight: light, slot: p), shade)
+                    let fam = p < 0 ? studyFamily(id, fill: realFill) : p
+                    let sm = titleSamples(look, light: light, fill: fill, alpha: alpha, family: fam, seed: seed, m: m, ground: g, box: box)
+                    let oldW = TitleInkRule.worstContrast(legacyTitleInk(look, light: light, fill: fill, family: fam, seed: seed, m: m), over: sm)
+                    let pk = TitleInkRule.pick(samples: sm, inks: inks)
+                    out.append(InkAuditItem(id: id, look: look, light: light, oldW: oldW, newW: pk.worst, halo: pk.halo != nil, palette: p))
+                }
+            }
+        }
+        return out
+    }
+
+    /// `-InkAudit`: logs `[INKAUDIT]` (ids + numbers only, never titles): a positive control of the rule, then per look ×
+    /// Map, for the real configuration and the 12-palette sweep, the % of titles ≥ 4.5:1 under the OLD rule and under the
+    /// NEW one (≥ 4.5 by ink · halo'd · below 4.5 without a halo), then the worst 10 before and after (real config).
+    private func runInkAudit() {
+        let t0 = CACurrentMediaTime()
+        // positive control: white samples → dark ink; black → light; mid grey (#777777, < 4.5 for both inks) → halo
+        let li = TitleInkRule.legibleInks
+        let w = TitleInkRule.pick(samples: [SIMD3(1, 1, 1)], inks: li), b = TitleInkRule.pick(samples: [SIMD3(0, 0, 0)], inks: li)
+        let gy = TitleInkRule.pick(samples: [SIMD3(repeating: Float(0x77) / 255)], inks: li)
+        let ctl = (!w.lightInk && w.halo == nil) && (b.lightInk && b.halo == nil) && gy.halo != nil
+        NSLog("[INKAUDIT] control white→%@ black→%@ grey→halo=%@ (%.2f) %@", w.lightInk ? "light" : "dark", b.lightInk ? "light" : "dark",
+              gy.halo != nil ? "yes" : "no", gy.worst, ctl ? "PASS" : "FAIL")
+        let items = inkAuditItems()
+        NSLog("[INKAUDIT] orbs=%d evaluations=%d light-now=%@ %.0f ms", nodeSprites.count, items.count, currentIsLight ? "yes" : "no",
+              (CACurrentMediaTime() - t0) * 1000)
+        func pct(_ k: Int, _ n: Int) -> Double { n == 0 ? 0 : 100 * Double(k) / Double(n) }
+        func med(_ v: [Float]) -> Float { v.isEmpty ? 0 : v.sorted()[v.count / 2] }
+        for real in [true, false] {
+            var tot = (n: 0, o: 0, ni: 0, h: 0, nb: 0)
+            for (look, light) in Self.inkAuditLooks {
+                let r = items.filter { $0.look == look && $0.light == light && ($0.palette < 0) == real }
+                let n = r.count, o = r.filter { $0.oldW >= 4.5 }.count
+                let ni = r.filter { $0.newW >= 4.5 }.count, h = r.filter { $0.halo }.count, nb = r.filter { $0.newW < 4.5 && !$0.halo }.count
+                tot.n += n; tot.o += o; tot.ni += ni; tot.h += h; tot.nb += nb
+                NSLog("[INKAUDIT] %@ %@ %@ n=%d old>=4.5=%.1f%% new>=4.5ink=%.1f%% halo=%d (%.1f%%) below-no-halo=%d oldMin=%.2f newMin=%.2f oldMed=%.2f newMed=%.2f",
+                      real ? "real " : "sweep", light ? "light" : "dark ", look.rawValue, n, pct(o, n), pct(ni, n), h, pct(h, n), nb,
+                      r.map(\.oldW).min() ?? 0, r.map(\.newW).min() ?? 0,
+                      med(r.map(\.oldW)), med(r.map(\.newW)))
+            }
+            NSLog("[INKAUDIT] %@ ALL n=%d old>=4.5=%.1f%% new>=4.5ink=%.1f%% halo=%d (%.1f%%) below-no-halo=%d", real ? "real " : "sweep",
+                  tot.n, pct(tot.o, tot.n), pct(tot.ni, tot.n), tot.h, pct(tot.h, tot.n), tot.nb)
+        }
+        let real = items.filter { $0.palette < 0 && $0.look != .fresnel }   // Fresnel doesn't ship (MapLookChoice)
+        func distinct(_ v: [InkAuditItem]) -> [InkAuditItem] {   // one entry per title (its worst look × Map)
+            var seen = Set<String>(); return v.filter { seen.insert($0.id).inserted }
+        }
+        for (k, it) in distinct(real.sorted(by: { ($0.oldW, $0.id) < ($1.oldW, $1.id) })).prefix(10).enumerated() {
+            NSLog("[INKAUDIT] worst-before #%d id=%@ look=%@ map=%@ old=%.2f new=%.2f halo=%@", k + 1, it.id, it.look.rawValue,
+                  it.light ? "light" : "dark", it.oldW, it.newW, it.halo ? "yes" : "no")
+        }
+        for (k, it) in distinct(real.sorted(by: { ($0.newW, $0.id) < ($1.newW, $1.id) })).prefix(10).enumerated() {
+            NSLog("[INKAUDIT] worst-after #%d id=%@ look=%@ map=%@ old=%.2f new=%.2f halo=%@", k + 1, it.id, it.look.rawValue,
+                  it.light ? "light" : "dark", it.oldW, it.newW, it.halo ? "yes" : "no")
+        }
+        NSLog("[INKAUDIT] done")
+    }
+
+    /// `-InkStillTour <n>` (+ optional `-InkStillIDs id,id,…`): in the current look on the current Map, frame each of the
+    /// n worst titles by the OLD rule (real configuration; or the given ids) alone at the centre, first in the old ink
+    /// (`[INKSTILL] k old …`), then the new (`[INKSTILL] k new …`), 3 s each. Territory pills hidden.
+    private func startInkStillTour(n: Int, delay: Double) {
+        DispatchQueue.main.asyncAfter(deadline: .now() + delay) { [weak self] in
+            guard let self else { return }
+            let m = self.mapTuning ?? .today
+            let look = Self.drawnTitleLook(m.orbLook, light: self.currentIsLight)
+            let byNew = ProcessInfo.processInfo.arguments.contains("-InkStillSortNew")   // the n worst by the NEW rule
+            var ids: [(String, Float, Float, Bool)] = self.inkAuditItems(lookFilter: (look, self.currentIsLight), realOnly: true)
+                .sorted { byNew ? ($0.newW, $0.id) < ($1.newW, $1.id) : ($0.oldW, $0.id) < ($1.oldW, $1.id) }
+                .map { ($0.id, $0.oldW, $0.newW, $0.halo) }
+            if let s = UserDefaults.standard.string(forKey: "InkStillIDs") {
+                let want = s.split(separator: ",").map(String.init)
+                ids = want.compactMap { w in ids.first { $0.0 == w } }
+            }
+            ids = Array(ids.prefix(n))
+            self.inkTourActive = true
+            NSLog("[INKSTILL] begin look=%@ map=%@ count=%d", look.rawValue, self.currentIsLight ? "light" : "dark", ids.count)
+            for (k, e) in ids.enumerated() {
+                for (j, old) in [true, false].enumerated() {
+                    DispatchQueue.main.asyncAfter(deadline: .now() + Double(k * 2 + j) * 4) { [weak self] in
+                        guard let self, let sp = self.nodeSprites[e.0], let par = sp.parent else { return }
+                        let r = self.nodeIntrinsicRadii[e.0] ?? 30
+                        func centre() {
+                            self.cameraNode.removeAllActions()
+                            self.cameraNode.position = self.convert(sp.position, from: par)
+                            self.cameraNode.setScale(2 * r / (0.2 * self.size.width))
+                            self.applyOrbScales()
+                        }
+                        centre()
+                        Self.legacyInkDebug = old
+                        self.restyleLabels()
+                        // the lens / band relaxation moves orbs once the zoom lands: re-centre, then log where it sits
+                        DispatchQueue.main.asyncAfter(deadline: .now() + 1.2) { centre() }
+                        DispatchQueue.main.asyncAfter(deadline: .now() + 2.0) { [weak self] in
+                            guard let self else { return }
+                            // where the orb sits (view pt) + the twin's samples, so a still can be checked against the twin
+                            let c = self.convert(sp.position, from: par), rs = self.orbBaseWidth(sp) * sp.xScale / 2
+                            let vc = self.convertPoint(toView: c), ve = self.convertPoint(toView: CGPoint(x: c.x + rs, y: c.y))
+                            if !old, let node = self.currentNodes.first(where: { $0.id == e.0 }) {
+                                let fill = self.bubbleColor(for: node)
+                                let sm = self.titleSamples(look, light: self.currentIsLight, fill: fill, alpha: node.isMeta ? 0.55 : 1,
+                                                           family: self.studyFamily(e.0, fill: fill), seed: self.studySeed(e.0), m: m,
+                                                           ground: Self.titleGround(m, light: self.currentIsLight),
+                                                       box: Self.inkBox(sp.children.first { $0.name == "titleLabel" }))
+                                let bx = Self.inkBox(sp.children.first { $0.name == "titleLabel" })
+                                NSLog("[INKSTILL] box %d %.3f %.3f", k + 1, bx.last?.x ?? 0, bx.last?.y ?? 0)
+                                NSLog("[INKSTILL] twin %d %@", k + 1, sm.map(OrbStudyPalettes.hex).joined(separator: ","))
+                            }
+                            NSLog("[INKSTILL] %d %@ id=%@ look=%@ map=%@ old=%.2f new=%.2f halo=%@ cx=%.1f cy=%.1f r=%.1f", k + 1,
+                                  old ? "old" : "new", e.0, look.rawValue, self.currentIsLight ? "light" : "dark", e.1, e.2,
+                                  e.3 ? "yes" : "no", vc.x, vc.y, hypot(ve.x - vc.x, ve.y - vc.y))
+                        }
+                    }
+                }
+            }
+            DispatchQueue.main.asyncAfter(deadline: .now() + Double(ids.count * 2) * 4) {
+                Self.legacyInkDebug = false
+                NSLog("[INKSTILL] end")
+            }
+        }
+    }
+    #endif
 
     #if DEBUG
     /// live-47 — `-AuraInkAudit`: once per restyle, the study's one-stop rule (dark ink when lum(a·.25 + b·.5 + c·.25) > 0.5;
@@ -5079,56 +5222,171 @@ final class CorpusPhysicsScene: SKScene {
         }
     }
 
-    /// The orb title's ink for a node's base fill: the legible-ink rule over the rendered tone. live-39: under the
-    /// TestFlight tuner's Fresnel look (dark) the tone is the dark body (+ the centre's inner glow), and the ink is the
-    /// tuner's label colour unless near-black reads better there.
-    private func orbTitleInk(_ fillColor: UIColor, nodeID: String = "") -> UIColor {
-        // live-43 — Outline: light ink on the dark Map, dark ink on the light one (the fill is too faint to matter).
-        // live-47 — the study looks (Aura / Eclipse on dark, Wash on light): studyTitleInkIsDark (Eclipse always light).
-        if let m = mapTuning, let k = study2Kind(m) {   // live-49 — the study's inkDark for Light Glass / Riso / Gradient
-            if k == .lightGlass { return m.lightGlass.label.uiColor }   // live-50 — Light Glass's label colour (default = the study's dark ink)
-            return study2TitleInkIsDark(nodeID: nodeID, kind: k)
-                ? UIColor(red: 0x1B / 255.0, green: 0x1A / 255.0, blue: 0x20 / 255.0, alpha: 1)
-                : UIColor(red: 0xF4 / 255.0, green: 0xF2 / 255.0, blue: 0xF8 / 255.0, alpha: 1)
+    // MARK: - 1.1-A (4) title ink — ONE rule for every look × palette × Map
+
+    /// The look as DRAWN under a title on a Map (applyMapLook's choice: the light Map draws Flat for Fresnel and Wash for
+    /// Aura / Eclipse; Light Glass only under the DEBUG `-MapStudyLightGlass` A/B).
+    enum TitleLook: String, CaseIterable { case flat, fresnel, glass, aura, eclipse, wash, outline, riso, gradient, lightGlass }
+    static func drawnTitleLook(_ look: MapOrbLook, light: Bool) -> TitleLook {
+        switch look {
+        case .flat: return .flat
+        case .fresnel: return light ? .flat : .fresnel
+        case .glass: return light && studyLightGlassDebug ? .lightGlass : .glass
+        case .aura: return light && !auraOnLightDebug ? .wash : .aura
+        case .eclipse: return light && !auraOnLightDebug ? .wash : .eclipse
+        case .outline: return .outline
+        case .riso: return .riso
+        case .gradient: return .gradient
         }
-        if let m = mapTuning, m.orbLook == .outline {
-            return currentIsLight ? UIColor(red: 0.08, green: 0.07, blue: 0.06, alpha: 1) : UIColor(red: 1.0, green: 0.98, blue: 0.95, alpha: 1)
+    }
+
+    /// The ground under the titles — an explicit INPUT to the ink rule (1.1-B's custom backgrounds plug in here): the light
+    /// Map's #FFEEED; on the dark Map the field the grid draws next to an orb (the ground with the ambient ripple at zero,
+    /// = the colour the Pro-look shaders composite over).
+    static func titleGround(_ m: MapDarkTuning, light: Bool) -> SIMD3<Float> {
+        light ? rgb3(MapCompTuning.lightGroundHex) : TunerHSL(hex: m.fieldHex).simd
+    }
+
+    /// Each look's two candidate inks — the colours each look already used: the study's #F4F2F8 / #1B1A20 (Aura, Eclipse,
+    /// Wash, Riso, Gradient), Flat / Outline's warm off-white / near-black, Fresnel / Glass's label colour vs near-black.
+    static func titleInks(_ look: TitleLook, light: Bool, m: MapDarkTuning) -> TitleInkRule.Inks {
+        switch look {
+        case .flat, .outline: return TitleInkRule.legibleInks
+        case .fresnel: return .init(light: m.fresnel.label.simd, dark: TitleInkRule.legibleInks.dark)
+        case .glass: return .init(light: m.glassFor(light: light).label.simd, dark: TitleInkRule.legibleInks.dark)
+        case .aura, .eclipse, .wash, .riso, .gradient: return TitleInkRule.studyInks
+        case .lightGlass: let l = m.lightGlass.label.simd; return .init(light: l, dark: l)   // DEBUG A/B: its label colour, fixed
         }
-        if let m = mapTuning, m.orbLook.drawsWashOnLight {
-            return studyTitleInkIsDark(nodeID: nodeID, m: m)
-                ? UIColor(red: 0x1B / 255.0, green: 0x1A / 255.0, blue: 0x20 / 255.0, alpha: 1)   // the study's inks
-                : UIColor(red: 0xF4 / 255.0, green: 0xF2 / 255.0, blue: 0xF8 / 255.0, alpha: 1)
+    }
+
+    /// What `look` draws under an orb's title on a Map (sRGB samples over `TitleInkRule.titleBox`): `fill` = the orb's Map
+    /// colour (its territory slot's), `alpha` = its fill alpha (0.55 for a meta orb), `family` / `seed` = its study palette.
+    func titleSamples(_ look: TitleLook, light: Bool, fill: UIColor, alpha: Float, family: Int, seed: Float,
+                      m: MapDarkTuning, ground g: SIMD3<Float>, box: [SIMD2<Float>] = TitleInkRule.titleBox) -> [SIMD3<Float>] {
+        func c3(_ c: UIColor) -> SIMD3<Float> { let v = Self.rgbaVec(c); return SIMD3(v.x, v.y, v.z) }
+        let f = OrbStudyPalettes.families[min(max(family, 0), OrbStudyPalettes.families.count - 1)]
+        func stops(sorted: Bool) -> TitleInkTwin.Stops {
+            var st = [f.a, f.b, f.c]
+            if sorted { st.sort { OrbStudyPalettes.lum($0) < OrbStudyPalettes.lum($1) } }
+            return .init(a: st[0], b: st[1], c: st[2], r: f.r, seed: seed)
         }
-        if !currentIsLight, let m = mapTuning, m.orbLook == .fresnel {
+        // the colour the orb shader starts from: dark = the sat/val boost; light = the AE translate + OKLCH palette
+        let orbCol = light ? c3(MapCompTuning.lightOrbColor(fill)) : c3(applyDarkOrbBoost(fill))
+        switch look {
+        case .flat:
+            if light { return TitleInkTwin.flatLight(orb: orbCol, opacity: MapCompTuning.orbOpacity * alpha, ground: g) }
+            let s = TitleInkTwin.flatDark(fill: orbCol, glow: m.orbGlow.simd, glowOpacity: Float(m.orbGlowOpacity),
+                                          glowSize: MapCompTuning.glowSizeRel, box: box)
+            return alpha >= 1 ? s : s.map { $0 * alpha + g * (1 - alpha) }
+        case .outline:   // the light Map's ring + fill are the territory colour itself
+            return TitleInkTwin.outline(fill: light ? c3(fill) : orbCol, fillOpacity: Float(m.outline.fillOpacity) * alpha, ground: g)
+        case .fresnel: return TitleInkTwin.fresnel(col: orbCol, ground: g, m.fresnel, box: box)
+        case .glass: return TitleInkTwin.glass(col: orbCol, ground: g, m.glassFor(light: light), box: box)
+        case .aura: return TitleInkTwin.studySamples(stops(sorted: false), spread: m.aura.spread, warp: m.aura.warp, rim: m.aura.rim, box: box)
+        case .wash: return TitleInkTwin.studySamples(stops(sorted: false), spread: m.wash.spread, warp: m.wash.warp, rim: 0, washGround: g, box: box)
+        case .eclipse: return TitleInkTwin.eclipse(stops(sorted: true), m.eclipse, box: box)
+        case .riso: return TitleInkTwin.riso(stops(sorted: true), m.riso, dark: !light, ground: g, box: box)
+        case .gradient: return TitleInkTwin.gradient(stops(sorted: true), m.gradient, box: box)
+        case .lightGlass: return []
+        }
+    }
+
+    /// An orb's study seed (the shaders' a_au_a.w; = studyStops').
+    private func studySeed(_ nodeID: String) -> Float { Float(stableHash(nodeID) % 10_000) / 10_000 }
+
+    /// The orb's study family — its territory's (buildStudyFamilies), else the family nearest its own Map colour's hue.
+    private func studyFamily(_ nodeID: String, fill: UIColor) -> Int {
+        studyFamilyOf[nodeID] ?? OrbStudyPalettes.nearest(hue: (Self.oklch(fill).h + 360).truncatingRemainder(dividingBy: 360))
+    }
+
+    /// 1.1-A (4) — THE title ink for an orb on the current Map, in the current look: its look's twin sampled under the
+    /// title box over this Map's ground, then `TitleInkRule.pick` (worst-case WCAG over every sample; halo under 4.5:1).
+    private func titleInkPick(nodeID: String, fill: UIColor, isMeta: Bool, box: [SIMD2<Float>]) -> TitleInkRule.Pick {
+        let m = mapTuning ?? .today, light = currentIsLight
+        let look = Self.drawnTitleLook(m.orbLook, light: light)
+        let fam = studyFamily(nodeID, fill: fill), seed = studySeed(nodeID)
+        #if DEBUG
+        if Self.legacyInkDebug {   // `-InkStillTour`'s "before" frames: the old rule, no halo
+            return .init(ink: legacyTitleInk(look, light: light, fill: fill, family: fam, seed: seed, m: m), halo: nil, worst: 0, lightInk: false)
+        }
+        #endif
+        let samples = titleSamples(look, light: light, fill: fill, alpha: isMeta ? 0.55 : 1, family: fam, seed: seed, m: m,
+                                   ground: Self.titleGround(m, light: light), box: box)
+        return TitleInkRule.pick(samples: samples, inks: Self.titleInks(look, light: light, m: m))
+    }
+
+    /// The sample points under a title container's set type (stored by makeTitleSprite; the default box otherwise).
+    static func inkBox(_ container: SKNode?) -> [SIMD2<Float>] {
+        guard let v = container?.userData?["inkBox"] as? [Float], v.count == 2 else { return TitleInkRule.titleBox }
+        return TitleInkRule.box(halfWidth: v[0], halfHeight: v[1])
+    }
+
+    static func uiColor(_ c: SIMD3<Float>, alpha: Float = 1) -> UIColor {
+        UIColor(red: CGFloat(c.x), green: CGFloat(c.y), blue: CGFloat(c.z), alpha: CGFloat(alpha))
+    }
+    /// The pick as the glyph label's (ink, halo) colours.
+    static func titleColors(_ p: TitleInkRule.Pick) -> (ink: UIColor, halo: UIColor?) {
+        (uiColor(p.ink), p.halo.map { uiColor($0, alpha: TitleInkRule.haloAlpha) })
+    }
+
+    #if DEBUG
+    /// `-InkStillTour` flips this between its before / after frames (then restyleLabels).
+    static var legacyInkDebug = false
+
+    /// The title-ink rule BEFORE 1.1-A (4) — per-look special cases (live-39 … 50) — kept only so the audit and the
+    /// still tour can show before vs after. Parameterised by look / Map / family; otherwise line for line the old
+    /// `orbTitleInk`.
+    func legacyTitleInk(_ look: TitleLook, light: Bool, fill: UIColor, family: Int, seed: Float, m: MapDarkTuning) -> SIMD3<Float> {
+        let si = TitleInkRule.studyInks, li = TitleInkRule.legibleInks
+        let fam = OrbStudyPalettes.families[min(max(family, 0), OrbStudyPalettes.families.count - 1)]
+        let sorted = [fam.a, fam.b, fam.c].sorted { OrbStudyPalettes.lum($0) < OrbStudyPalettes.lum($1) }
+        func c3(_ c: UIColor) -> SIMD3<Float> { let v = Self.rgbaVec(c); return SIMD3(v.x, v.y, v.z) }
+        switch look {
+        case .lightGlass: return m.lightGlass.label.simd
+        case .riso, .gradient:   // live-49 — the sorted mid stop (Riso on the light Map: multiplied into the ground at 85%)
+            if look == .riso && light {
+                let g = Self.rgb3(MapCompTuning.lightGroundHex)
+                return OrbStudyPalettes.lum(g * (SIMD3<Float>(repeating: 1) - (SIMD3<Float>(repeating: 1) - sorted[1]) * 0.85)) > 0.5 ? si.dark : si.light
+            }
+            return OrbStudyPalettes.lum(sorted[1]) > 0.5 ? si.dark : si.light
+        case .outline: return light ? li.dark : li.light
+        case .eclipse: return si.light
+        case .aura, .wash:
+            let g = Self.rgb3(MapCompTuning.lightGroundHex)
+            let tl = look == .wash
+                ? Self.studyTitleLuma(a: fam.a, b: fam.b, c: fam.c, r: fam.r, seed: seed, spread: m.wash.spread, warp: m.wash.warp,
+                                      rim: 0, washGround: g)
+                : Self.studyTitleLuma(a: fam.a, b: fam.b, c: fam.c, r: fam.r, seed: seed, spread: m.aura.spread, warp: m.aura.warp,
+                                      rim: m.aura.rim)
+            return tl > Self.studyInkThreshold ? si.dark : si.light
+        case .fresnel:
             let f = m.fresnel, g = m.ground.rgb
             var r: CGFloat = 0, gg: CGFloat = 0, b: CGFloat = 0, a: CGFloat = 0
-            applyDarkOrbBoost(fillColor).getRed(&r, green: &gg, blue: &b, alpha: &a)
+            applyDarkOrbBoost(fill).getRed(&r, green: &gg, blue: &b, alpha: &a)
             func ch(_ grd: Double, _ c: CGFloat) -> CGFloat {
                 min(1, CGFloat(grd + (Double(c) - grd) * f.bodyTint) * CGFloat(1 - f.bodyDarkness) + c * CGFloat(f.innerGlow))
             }
             let body = UIColor(red: ch(g.r, r), green: ch(g.g, gg), blue: ch(g.b, b), alpha: 1)
             let label = f.label.uiColor, black = UIColor(red: 0.08, green: 0.07, blue: 0.06, alpha: 1)
-            return Self.wcagContrast(label, body) >= Self.wcagContrast(black, body) ? label : black
-        }
-        if let m = mapTuning, m.orbLook == .glass {
-            // CPU twin of the Glass body away from the highlight: the background (ground, dimmed) tinted, then lifted.
-            // live-50b: the same rule on both Maps, over each Map's own ground.
-            let gl = m.glassFor(light: currentIsLight), lg = Self.rgb3(MapCompTuning.lightGroundHex)
-            let g: (r: Double, g: Double, b: Double) = currentIsLight ? (Double(lg.x), Double(lg.y), Double(lg.z)) : m.ground.rgb
+            return c3(Self.wcagContrast(label, body) >= Self.wcagContrast(black, body) ? label : black)
+        case .glass:
+            let gl = m.glassFor(light: light), lg = Self.rgb3(MapCompTuning.lightGroundHex)
+            let g: (r: Double, g: Double, b: Double) = light ? (Double(lg.x), Double(lg.y), Double(lg.z)) : m.ground.rgb
             var r: CGFloat = 0, gg: CGFloat = 0, b: CGFloat = 0, a: CGFloat = 0
-            applyDarkOrbBoost(fillColor).getRed(&r, green: &gg, blue: &b, alpha: &a)
+            applyDarkOrbBoost(fill).getRed(&r, green: &gg, blue: &b, alpha: &a)
             func ch(_ grd0: Double, _ c: CGFloat) -> CGFloat {
                 let grd = grd0 * (1 - gl.dim)
-                let t = grd + (Double(c) - grd) * gl.tint * 0.55   // the tint around the label (≈ 40% centre → rim)
+                let t = grd + (Double(c) - grd) * gl.tint * 0.55
                 return CGFloat(min(1, t + (1 - t) * gl.brightness))
             }
             let body = UIColor(red: ch(g.r, r), green: ch(g.g, gg), blue: ch(g.b, b), alpha: 1)
             let label = gl.label.uiColor, black = UIColor(red: 0.08, green: 0.07, blue: 0.06, alpha: 1)
-            return Self.wcagContrast(label, body) >= Self.wcagContrast(black, body) ? label : black
+            return c3(Self.wcagContrast(label, body) >= Self.wcagContrast(black, body) ? label : black)
+        case .flat:
+            return c3(legibleInk(over: light ? lightCompFill(fill) : applyDarkOrbBoost(fill)).ink)
         }
-        let inkFill = currentIsLight ? lightCompFill(fillColor) : applyDarkOrbBoost(fillColor)
-        return legibleInk(over: inkFill).ink
     }
+    #endif
 
     /// WCAG 2.x relative luminance (sRGB linearised) + contrast ratio (hi+0.05)/(lo+0.05).
     static func wcagRelLum(_ c: UIColor) -> CGFloat {
@@ -5421,7 +5679,7 @@ final class CorpusPhysicsScene: SKScene {
         return Array(lines.prefix(maxLines))
     }
 
-    private func makeTitleSprite(text: String, radius: CGFloat, fillColor: UIColor) -> SKNode {
+    private func makeTitleSprite(text: String, radius: CGFloat, fillColor: UIColor, nodeID: String, isMeta: Bool) -> SKNode {
         // MSDF glyph label — the SOLE label path (raster retired in Phase 3). The wrap /
         // tier / hyphenation is resolved in glyph-space (resolveTitleLines, measured with
         // atlas advances → one metric system for fit + render); ink matches the orb
@@ -5437,9 +5695,18 @@ final class CorpusPhysicsScene: SKScene {
         }
         // Title ink: T device-final 2026-09-14 is `titleColour=(auto)` + `titleOpacity=1.000`,
         // i.e. the legible-ink rule with no override — so the auto value IS the shipped value.
-        let titleColor = orbTitleInk(fillColor)
-        return MSDFLabel.makeContainer(lines: lines, pointSize: glyphFont.pointSize,
-                                       color: titleColor, fullTitle: text, font: font)
+        // 1.1-A (4): the one rule (titleInkPick), with its halo when neither ink reaches 4.5:1.
+        // The set type's extent in orb radii (the widest line × the lines' cap-height span) = the box the rule samples.
+        let pt = glyphFont.pointSize
+        let hw = (lines.map { MSDFLabel.textWidth($0, pointSize: pt, font: font) }.max() ?? side) / 2 / max(radius, 1)
+        let hh = (CGFloat(max(lines.count - 1, 0)) * font.lineHeightEm * pt + 0.72 * pt) / 2 / max(radius, 1)
+        let inkBox = [Float(min(hw, 1)), Float(min(hh, 1))]
+        let c = Self.titleColors(titleInkPick(nodeID: nodeID, fill: fillColor, isMeta: isMeta,
+                                              box: TitleInkRule.box(halfWidth: inkBox[0], halfHeight: inkBox[1])))
+        let container = MSDFLabel.makeContainer(lines: lines, pointSize: pt,
+                                                color: c.ink, halo: c.halo, fullTitle: text, font: font)
+        container.userData?["inkBox"] = inkBox
+        return container
     }
 
     /// Brief BF addendum — rebuild EVERY orb title in the newly-chosen Orb font (Edit Map…).
@@ -5455,7 +5722,7 @@ final class CorpusPhysicsScene: SKScene {
             titleNode.removeFromParent()
             let radius = nodeIntrinsicRadii[node.id] ?? bubbleRadius(for: node)
             shape.addChild(makeTitleSprite(text: displayText, radius: radius,
-                                           fillColor: bubbleColor(for: node)))
+                                           fillColor: bubbleColor(for: node), nodeID: node.id, isMeta: node.isMeta))
         }
         lastRampCameraScale = -1   // force applyOrbScales to re-apply title LOD next frame
     }

@@ -39,6 +39,7 @@
 		0E65AFD08082B04CE1E21753 /* SubstrateCoord2D.swift in Sources */ = {isa = PBXBuildFile; fileRef = CB4204EBBDB6AEFAC59BB313 /* SubstrateCoord2D.swift */; };
 		0EEF4CACE92EAACFFD043499 /* OGPreviewView.swift in Sources */ = {isa = PBXBuildFile; fileRef = BBA68756B325BB81B3EDBA12 /* OGPreviewView.swift */; };
 		0F4F8C758E92903FD2A05D23 /* PhotoHandoffName.swift in Sources */ = {isa = PBXBuildFile; fileRef = 4771A71BAAF540EA68EAB025 /* PhotoHandoffName.swift */; };
+		0F8BB1D5BEC4D0EFE6A711FC /* TitleInkRuleTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = 30BB6DB341B37E0A59BB0991 /* TitleInkRuleTests.swift */; };
 		0FC28421241925F0E0EC37ED /* SelectableTextTaps.swift in Sources */ = {isa = PBXBuildFile; fileRef = 6B51417DF85C778A80A829F6 /* SelectableTextTaps.swift */; };
 		10EE8C518BC6A4AE6ECB3745 /* VectorBasis.swift in Sources */ = {isa = PBXBuildFile; fileRef = CF8F89C6F77EFD27FB9CDB99 /* VectorBasis.swift */; };
 		1121953E0B7C6CA81992C90F /* CardDocumentTile.swift in Sources */ = {isa = PBXBuildFile; fileRef = 321F93F7630A107A8A1266EF /* CardDocumentTile.swift */; };
@@ -339,6 +340,7 @@
 		C2FDA9A2A99BDA1CA9FC2281 /* FieldPreset.swift in Sources */ = {isa = PBXBuildFile; fileRef = AC63EC73AD8EFD037637381F /* FieldPreset.swift */; };
 		C333CD1EB11BAB691BB68679 /* AppRouter.swift in Sources */ = {isa = PBXBuildFile; fileRef = 3B1822A03D5407145464AB94 /* AppRouter.swift */; };
 		C3D20531250163A764EAB625 /* LinkGalleryBody.swift in Sources */ = {isa = PBXBuildFile; fileRef = E2EFF0C3EADAB643BFED4C8F /* LinkGalleryBody.swift */; };
+		C43EA4F6274E0133B8C92A0A /* TitleInkRule.swift in Sources */ = {isa = PBXBuildFile; fileRef = A64E46FB41D72CA1748DFFE9 /* TitleInkRule.swift */; };
 		C5E56761FA8C6CFFC16F2BF9 /* ChatViewScopeUI.swift in Sources */ = {isa = PBXBuildFile; fileRef = BACBABD0740D39E70240648D /* ChatViewScopeUI.swift */; };
 		C705DEBC6BF45BA7A85AC37D /* BigShouldersDisplay-OFL.txt in Resources */ = {isa = PBXBuildFile; fileRef = ECFED59D749E91B63D80BF73 /* BigShouldersDisplay-OFL.txt */; };
 		C778ACC9CC63354AC17A3744 /* FieldKind.swift in Sources */ = {isa = PBXBuildFile; fileRef = 6EDDB291F9F6170B93CE084E /* FieldKind.swift */; };
@@ -552,6 +554,7 @@
 		2E92C2D35B0BE6D96A64B830 /* FieldCreationSheet.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = FieldCreationSheet.swift; sourceTree = "<group>"; };
 		2F1E6D3E3DA257A138353F43 /* RecorderDeviceBench.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = RecorderDeviceBench.swift; sourceTree = "<group>"; };
 		2F23E239FD3DA51B1D798086 /* RegenerateUI.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = RegenerateUI.swift; sourceTree = "<group>"; };
+		30BB6DB341B37E0A59BB0991 /* TitleInkRuleTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = TitleInkRuleTests.swift; sourceTree = "<group>"; };
 		31AC6EC9380F63E183E91CFC /* HDBSCANTree.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = HDBSCANTree.swift; sourceTree = "<group>"; };
 		31C88155071A46620445C439 /* SpeechEngineTesting.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = SpeechEngineTesting.swift; sourceTree = "<group>"; };
 		31D68FA628B933D53B524B98 /* WidgetKit.framework */ = {isa = PBXFileReference; lastKnownFileType = wrapper.framework; name = WidgetKit.framework; path = System/Library/Frameworks/WidgetKit.framework; sourceTree = SDKROOT; };
@@ -729,6 +732,7 @@
 		A145877F383DA348E436CE25 /* LibrarianTunedMaterial.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = LibrarianTunedMaterial.swift; sourceTree = "<group>"; };
 		A48FA73530D4DCADC394E232 /* DocumentReextractSelfTest.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = DocumentReextractSelfTest.swift; sourceTree = "<group>"; };
 		A49826350A4FB5D62830132F /* NoteTitleStorageSelfTest.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = NoteTitleStorageSelfTest.swift; sourceTree = "<group>"; };
+		A64E46FB41D72CA1748DFFE9 /* TitleInkRule.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = TitleInkRule.swift; sourceTree = "<group>"; };
 		A662760759EB979E56CF6090 /* CEControlRouting.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = CEControlRouting.swift; sourceTree = "<group>"; };
 		A68F48BA8AA932943F118533 /* CardEmbeddingParityTest.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = CardEmbeddingParityTest.swift; sourceTree = "<group>"; };
 		A78147F82EB55E186C5934A2 /* AlphabetScrubber.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = AlphabetScrubber.swift; sourceTree = "<group>"; };
@@ -948,6 +952,7 @@
 			isa = PBXGroup;
 			children = (
 				AC6736CCEB7AF941CE1C06BD /* ProStoreTests.swift */,
+				30BB6DB341B37E0A59BB0991 /* TitleInkRuleTests.swift */,
 			);
 			path = AirPadTests;
 			sourceTree = "<group>";
@@ -965,6 +970,7 @@
 				F009B8D59EF84BA40BB5B4A6 /* EmptyStateOverlay.swift */,
 				03E923FC9841272766621A1B /* ModelProcessingIndicator.swift */,
 				7F66121EACBDE4B0316AC715 /* MSDFLabel.swift */,
+				A64E46FB41D72CA1748DFFE9 /* TitleInkRule.swift */,
 			);
 			path = Canvas;
 			sourceTree = "<group>";
@@ -2211,6 +2217,7 @@
 				8A4950423895F7ECE2B4D88E /* ThreadService.swift in Sources */,
 				E4343E9BFBA0EAAF7E3C9D5B /* ThreadSuggestionCard.swift in Sources */,
 				EC60DCF76DE4CB0896EE04F4 /* TitleCase.swift in Sources */,
+				C43EA4F6274E0133B8C92A0A /* TitleInkRule.swift in Sources */,
 				26E14B3E298318D333114703 /* TodayCardView.swift in Sources */,
 				180A5BBD985A33703EA64E74 /* UMAP.swift in Sources */,
 				AC00CAAEA3AB86F2D4455FD1 /* UMAPFindAB.swift in Sources */,
@@ -2246,6 +2253,7 @@
 			buildActionMask = 2147483647;
 			files = (
 				9BF2C1F06E9B86EF13A15EA7 /* ProStoreTests.swift in Sources */,
+				0F8BB1D5BEC4D0EFE6A711FC /* TitleInkRuleTests.swift in Sources */,
 			);
 			runOnlyForDeploymentPostprocessing = 0;
 		};

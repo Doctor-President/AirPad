@@ -162,7 +162,7 @@ enum MapGround {
     static let defaults = Stored(dark: .darkDefault, light: .lightDefault)
 
     private static var cached: Stored = {
-        #if DEBUG
+        #if DEBUG || PANBENCH
         // `-MapGroundDebug <base64 of a Stored as JSON>` for stills (base64: a bare `{…}` argument is parsed as a plist).
         if let b = UserDefaults.standard.string(forKey: "MapGroundDebug"), let d = Data(base64Encoded: b),
            let s = try? JSONDecoder().decode(Stored.self, from: d) {
@@ -206,6 +206,9 @@ enum MapGround {
     static func override(light: Bool) -> MapGroundSide? {
         _ = Observed.shared.version   // SwiftUI bodies that draw the background re-render on an edit
         guard proActive else { return nil }
+        #if DEBUG || PANBENCH
+        if PanBench.noGround { return nil }
+        #endif
         let e = edited(light: light)
         return e.custom ? e : nil
     }
@@ -323,7 +326,13 @@ enum MapSheen {
         set { cached = newValue; UserDefaults.standard.set(newValue, forKey: storageKey) }
     }
     /// What the Map draws: TestFlight only, the switch on, and the wells drawing.
-    static var active: Bool { InstallChannel.isTestFlight && userOn && MapWells.active }
+    static var active: Bool {
+        #if PANBENCH
+        return userOn && MapWells.active   // the bench builds draw it as TestFlight does
+        #else
+        return InstallChannel.isTestFlight && userOn && MapWells.active
+        #endif
+    }
 }
 
 extension MapGround.Stored {
@@ -433,15 +442,21 @@ extension Notification.Name {
 enum ProEntitlement {
     static let storageKey = "pro.unlocked.v1"
     private static var cached: Bool = {
+        #if DEBUG || PANBENCH
+        if UserDefaults.standard.bool(forKey: "ProUnlocked") { return true }   // `-ProUnlocked YES`
+        #endif
         #if DEBUG
-        if UserDefaults.standard.bool(forKey: "ProUnlocked") || MapLookChoice.debugLookHookActive { return true }   // `-ProUnlocked YES`, still hooks
+        if MapLookChoice.debugLookHookActive { return true }   // still hooks
         #endif
         return UserDefaults.standard.bool(forKey: storageKey)
     }()
     static var isPro: Bool { cached }
     static func set(_ v: Bool) {
+        #if DEBUG || PANBENCH
+        if UserDefaults.standard.bool(forKey: "ProUnlocked") { return }
+        #endif
         #if DEBUG
-        if UserDefaults.standard.bool(forKey: "ProUnlocked") || MapLookChoice.debugLookHookActive { return }
+        if MapLookChoice.debugLookHookActive { return }
         #endif
         guard v != cached else { return }
         cached = v

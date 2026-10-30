@@ -33,6 +33,11 @@ struct ContentView: View {
             // sheet and the Librarian panel (TestFlight only; in DEBUG only with `-AppearanceTuner YES`).
             if AppearanceTuning.isLive { AppearanceTunerInstaller().frame(width: 0, height: 0) }
             #endif
+            #if PANBENCH && !DEBUG
+            Color.clear.frame(width: 0, height: 0).onAppear {   // bench builds: `-OpenMap` (DEBUG has its own)
+                if ProcessInfo.processInfo.arguments.contains("-OpenMap"), router.entryMode != .canvas { router.entryMode = .canvas }
+            }
+            #endif
             #if DEBUG
             // `-OpenCardView` companion — `entryMode` defaults to `.recents`, so the
             // viewMode seed alone never reaches the canvas.

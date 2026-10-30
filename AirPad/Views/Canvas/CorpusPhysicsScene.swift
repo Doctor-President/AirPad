@@ -2124,6 +2124,10 @@ final class CorpusPhysicsScene: SKScene {
 
     override func update(_ currentTime: TimeInterval) {
         if isPaused { return }
+        #if DEBUG || PANBENCH
+        let pbT0 = CACurrentMediaTime(); panBenchTick(currentTime)
+        defer { panBenchEnd(pbT0) }
+        #endif
         // Frame delta (s), captured before the per-frame passes consume it. Clamp against a stall.
         frameDT = lastUpdateTime > 0 ? min(max(currentTime - lastUpdateTime, 0), 0.1) : 1.0 / 120.0
 
@@ -2205,13 +2209,24 @@ final class CorpusPhysicsScene: SKScene {
             BackgroundGridNode.setSheen(grid, on: sheenOn)
             // 1.1-B — the titles' ink reads the ground: re-pick when the edit (or Pro) changes, and with a gradient also
             // after the camera has moved a quarter screen (each title then sits over another part of the gradient).
+            // 1.1-B fix-up (A): the gradient re-pick ran the rule for EVERY title in one frame, six times per fast flick
+            // (Sim: 1,260 picks per flick, update() 30 → 74 ms on those frames). Now only the titles whose look reads the
+            // ground are queued (none on Aura / Eclipse / Gradient), on-screen first, `groundInkPerFrame` per frame.
             let ov = MapGround.override(light: currentIsLight)
             let camMoved = hypot(cameraNode.position.x - lastGroundInkCam.x, cameraNode.position.y - lastGroundInkCam.y)
                 / max(cameraNode.xScale, 0.0001)
-            if ov != lastGroundOverride || (ov?.gradient == true && camMoved > size.height / 4) {
-                lastGroundOverride = ov; lastGroundInkCam = cameraNode.position
+            if ov != lastGroundOverride {
+                lastGroundOverride = ov; lastGroundInkCam = cameraNode.position; groundInkQueue = []
                 restyleLabels()
+            } else if ov?.gradient == true && camMoved > size.height / 4 {
+                lastGroundInkCam = cameraNode.position
+                #if DEBUG || PANBENCH
+                if PanBench.oldInk { restyleLabels() } else { queueGroundInk() }
+                #else
+                queueGroundInk()
+                #endif
             }
+            drainGroundInk()
         }
 
         // Re-theme unfocused orbs when the appearance flips (light ↔ dark). Fires
@@ -3549,6 +3564,8 @@ final class CorpusPhysicsScene: SKScene {
     // 1.1-B — the editable ground's last state the titles were inked for, and where the camera was then.
     private var lastGroundOverride: MapGroundSide?
     private var lastGroundInkCam: CGPoint = .zero
+    private var groundInkQueue: [String] = []        // 1.1-B fix-up (A) — titles still to re-pick after a gradient move
+    private var groundInkNodes: [String: Node] = [:]
     /// 1.1-B — the sheen this frame (`MapSheen.active`; the shader also needs the wells drawing, mode 3). DEBUG: the bench
     /// and `-MapGroundCase sheen | sheenWellsOff` force it on.
     private var sheenOn: Bool {
@@ -3629,6 +3646,9 @@ final class CorpusPhysicsScene: SKScene {
             return   // field inputs unchanged → last texture + uniforms stand
         }
         fieldBuiltOnce = true
+        #if DEBUG || PANBENCH
+        PanBench.fieldBuilds += 1
+        #endif
         lastFieldCamPos = camPos; lastFieldCamScale = cameraScale; lastFieldOrbCount = nodeSprites.count
         lastFieldMeasuredCount = nodeOnScreenDiameter.count
 
@@ -3842,15 +3862,54 @@ final class CorpusPhysicsScene: SKScene {
     /// depends on the sat/val boost, so light↔dark must re-flip. Glyph labels recolor in
     /// place (set `a_glyph_color`; no re-raster) — a one-time burst on flip.
     func restyleLabels() {
+        #if DEBUG || PANBENCH
+        PanBench.restyles += 1
+        #endif
+        groundInkQueue = []   // this pass covers every title
         let byID = Dictionary(currentNodes.map { ($0.id, $0) }, uniquingKeysWith: { a, _ in a })
-        for (nodeID, shape) in nodeSprites {
-            guard let titleNode = shape.children.first(where: { $0.name == "titleLabel" }),
-                  (titleNode.userData?["isFocal"] as? Bool) != true
-            else { continue }
-            let node = byID[nodeID]
-            let p = titleInkPick(nodeID: nodeID, fill: node.map { bubbleColor(for: $0) } ?? .gray,
-                                 isMeta: node?.isMeta ?? false, box: Self.inkBox(titleNode))
-            MSDFLabel.recolor(container: titleNode, color: Self.uiColor(p.ink))
+        for nodeID in nodeSprites.keys { restyleLabel(nodeID, node: byID[nodeID]) }
+    }
+
+    private func restyleLabel(_ nodeID: String, node: Node?) {
+        guard let shape = nodeSprites[nodeID], let titleNode = shape.children.first(where: { $0.name == "titleLabel" }),
+              (titleNode.userData?["isFocal"] as? Bool) != true
+        else { return }
+        let p = titleInkPick(nodeID: nodeID, fill: node.map { bubbleColor(for: $0) } ?? .gray,
+                             isMeta: node?.isMeta ?? false, box: Self.inkBox(titleNode))
+        MSDFLabel.recolor(container: titleNode, color: Self.uiColor(p.ink))
+    }
+
+    /// 1.1-B fix-up (A) — the titles a gradient ground's re-pick must visit, nearest the screen's centre first.
+    private func queueGroundInk() {
+        let m = mapTuning ?? .today, light = currentIsLight
+        let look = Self.drawnTitleLook(m.orbLook, light: light)
+        let byID = Dictionary(currentNodes.map { ($0.id, $0) }, uniquingKeysWith: { a, _ in a })
+        let cam = cameraNode.position
+        groundInkQueue = nodeSprites.compactMap { id, sp -> (String, CGFloat)? in
+            guard Self.titleInkReadsGround(look, light: light, isMeta: byID[id]?.isMeta ?? false), let par = sp.parent else { return nil }
+            let p = convert(sp.position, from: par)
+            return (id, hypot(p.x - cam.x, p.y - cam.y))
+        }.sorted { $0.1 > $1.1 }.map(\.0)   // popped from the end → nearest first
+        groundInkNodes = byID
+    }
+
+    private func drainGroundInk() {
+        guard !groundInkQueue.isEmpty else { return }
+        for _ in 0..<min(Self.groundInkPerFrame, groundInkQueue.count) {
+            let id = groundInkQueue.removeLast()
+            restyleLabel(id, node: groundInkNodes[id])
+        }
+        if groundInkQueue.isEmpty { groundInkNodes = [:] }
+    }
+    private static let groundInkPerFrame = 12
+
+    /// Whether `titleSamples` reads the ground for this look (keep in step with it): Aura, Eclipse and Gradient sample the
+    /// orb alone; the dark Flat orb only mixes the ground in at a meta orb's 0.55 alpha.
+    static func titleInkReadsGround(_ look: TitleLook, light: Bool, isMeta: Bool) -> Bool {
+        switch look {
+        case .aura, .eclipse, .gradient, .lightGlass: return false
+        case .flat: return light || isMeta
+        case .fresnel, .glass, .wash, .outline, .riso: return true
         }
     }
 
@@ -5452,6 +5511,9 @@ final class CorpusPhysicsScene: SKScene {
     /// title box over this Map's ground, then `TitleInkRule.pick` (the ink with the higher WCAG contrast at the 80th
     /// percentile of the title's area; no halo).
     private func titleInkPick(nodeID: String, fill: UIColor, isMeta: Bool, box: [SIMD2<Float>]) -> TitleInkRule.Pick {
+        #if DEBUG || PANBENCH
+        PanBench.inkPicks += 1
+        #endif
         let m = mapTuning ?? .today, light = currentIsLight
         let look = Self.drawnTitleLook(m.orbLook, light: light)
         let fam = studyFamily(nodeID, fill: fill), seed = studySeed(nodeID)
@@ -5836,6 +5898,9 @@ final class CorpusPhysicsScene: SKScene {
     }
 
     private func makeTitleSprite(text: String, radius: CGFloat, fillColor: UIColor, nodeID: String, isMeta: Bool) -> SKNode {
+        #if DEBUG || PANBENCH
+        PanBench.titleBuilds += 1
+        #endif
         // MSDF glyph label — the SOLE label path (raster retired in Phase 3). The wrap /
         // tier / hyphenation is resolved in glyph-space (resolveTitleLines, measured with
         // atlas advances → one metric system for fit + render); ink matches the orb
@@ -6603,6 +6668,124 @@ extension CorpusPhysicsScene {
         let url = dir.appendingPathComponent("maplayout-\(tag)-\(currentIsLight ? "light" : "dark").json")
         try? data.write(to: url)
         NSLog("[EXPORTMAP] wrote %@ (%d orbs, %d bytes)", url.lastPathComponent, orbs.count, data.count)
+    }
+}
+#endif
+
+#if DEBUG || PANBENCH
+// MARK: - 1.1-B fix-up (A) — `-PanBench`: scripted fast pans + frame timing (DEBUG / -D PANBENCH builds only)
+
+/// Counters the bench reads (bumped at the title-ink, label-build and warp-field sites).
+enum PanBench {
+    static var restyles = 0, inkPicks = 0, titleBuilds = 0, fieldBuilds = 0
+    static let on = ProcessInfo.processInfo.arguments.contains("-PanBench")
+    static let noGround = ProcessInfo.processInfo.arguments.contains("-PanBenchNoGround")
+    static let oldInk = ProcessInfo.processInfo.arguments.contains("-PanBenchOldInk")   // the pre-fix whole-Map re-pick
+    static var state: State?
+    struct Flick { let dir: CGPoint; var dts: [Double] = []; var cpu: [Double] = []; var c0 = (0, 0, 0, 0); var c1 = (0, 0, 0, 0); var fps = 0 }
+    struct State { var t0: TimeInterval = 0; var lastT: TimeInterval = 0; var k = 0; var flicks: [Flick] = []; var released = false }
+    /// Flick plan: 0.22 s drag at `speed` pt/s (screen), release into the real coast, 1.4 s to settle; 8 flicks R L U D R L U D.
+    static let drag = 0.22, settle = 1.4
+    static var speed: Double { Double(UserDefaults.standard.string(forKey: "PanBenchSpeed") ?? "") ?? 2600 }
+    static var tag: String { UserDefaults.standard.string(forKey: "PanBenchTag") ?? "run" }
+}
+
+extension CorpusPhysicsScene {
+    func panBenchTick(_ t: TimeInterval) {
+        guard PanBench.on else { return }
+        let delay = Double(UserDefaults.standard.string(forKey: "PanBenchDelay") ?? "") ?? 18
+        if PanBench.state == nil {
+            if hasRenderedFirstFrame, CACurrentMediaTime() - panBenchMountT > delay {
+                let dirs = [CGPoint(x: 1, y: 0), CGPoint(x: -1, y: 0), CGPoint(x: 0, y: 1), CGPoint(x: 0, y: -1)]
+                PanBench.state = .init(t0: t, lastT: t, flicks: (dirs + dirs).map { .init(dir: $0) })
+                PanBench.state?.flicks[0].c0 = (PanBench.restyles, PanBench.inkPicks, PanBench.titleBuilds, PanBench.fieldBuilds)
+                wakeMap()
+                NSLog("[PANBENCH] start tag=%@", PanBench.tag)
+            }
+            return
+        }
+        guard var st = PanBench.state, st.k < st.flicks.count else { return }
+        let dt = t - st.lastT; st.lastT = t
+        let local = t - st.t0
+        let f = st.flicks[st.k]
+        if local < PanBench.drag {
+            isTouchingMap = true
+            let d = PanBench.speed * dt * Double(panMultiplier)
+            let desired = CGPoint(x: cameraNode.position.x - f.dir.x * CGFloat(d) * cameraNode.xScale,
+                                  y: cameraNode.position.y + f.dir.y * CGFloat(d) * cameraNode.xScale)
+            cameraNode.position = rubberBanded(desired)
+        } else if !st.released {
+            st.released = true
+            isTouchingMap = false
+            coastVelocity = CGPoint(x: f.dir.x * PanBench.speed / 60, y: f.dir.y * PanBench.speed / 60)
+        }
+        if local > 0 { st.flicks[st.k].dts.append(dt * 1000) }
+        st.flicks[st.k].fps = max(st.flicks[st.k].fps, view?.preferredFramesPerSecond ?? 0)
+        if local > PanBench.drag + PanBench.settle {
+            st.flicks[st.k].c1 = (PanBench.restyles, PanBench.inkPicks, PanBench.titleBuilds, PanBench.fieldBuilds)
+            st.k += 1; st.t0 = t; st.released = false
+            coastVelocity = .zero
+            if st.k < st.flicks.count {
+                st.flicks[st.k].c0 = (PanBench.restyles, PanBench.inkPicks, PanBench.titleBuilds, PanBench.fieldBuilds)
+                wakeMap()
+            } else {
+                PanBench.state = st
+                panBenchReport(st)
+                return
+            }
+        }
+        PanBench.state = st
+    }
+
+    func panBenchEnd(_ t0: TimeInterval) {
+        guard PanBench.on, var st = PanBench.state, st.k < st.flicks.count else { return }
+        st.flicks[st.k].cpu.append((CACurrentMediaTime() - t0) * 1000)
+        PanBench.state = st
+    }
+
+    private var panBenchMountT: TimeInterval {
+        if let v = userData?["panBenchMount"] as? TimeInterval { return v }
+        let now = CACurrentMediaTime()
+        if userData == nil { userData = [:] }
+        userData?["panBenchMount"] = now
+        return now
+    }
+
+    private func panBenchReport(_ st: PanBench.State) {
+        func pct(_ a: [Double], _ p: Double) -> Double {
+            let s = a.sorted(); return s.isEmpty ? 0 : s[min(s.count - 1, Int(Double(s.count - 1) * p + 0.5))]
+        }
+        var lines: [String] = []
+        let ov = MapGround.override(light: currentIsLight)
+        lines.append(String(format: "[PANBENCH] tag=%@ look=%@ light=%@ ground=%@ sheen=%@ wells=%@ titles=%d speed=%.0f",
+                            PanBench.tag, (mapTuning ?? .today).orbLook.rawValue, currentIsLight ? "Y" : "n",
+                            ov == nil ? "default" : (ov!.gradient ? "custom-gradient" : "custom"),
+                            UserDefaults.standard.object(forKey: "map.sheen.v1") as? Bool == false ? "off" : "on?",
+                            MapWells.active ? "on" : "off", nodeSprites.count, PanBench.speed))
+        var all: [Double] = [], allCPU: [Double] = []
+        var hitchesAll = 0
+        for (i, f) in st.flicks.enumerated() {
+            let budget = 1000.0 / Double(max(f.fps, 1))
+            let h = f.dts.filter { $0 > budget * 1.5 }.count
+            hitchesAll += h; all += f.dts; allCPU += f.cpu
+            lines.append(String(format: "[PANBENCH] flick %d dir=(%.0f,%.0f) fps=%d frames=%d hitches=%d dt p50=%.1f p95=%.1f max=%.1f | update p50=%.2f p95=%.2f max=%.2f ms | restyles=%d inkPicks=%d titleBuilds=%d fieldBuilds=%d",
+                                i + 1, f.dir.x, f.dir.y, f.fps, f.dts.count, h, pct(f.dts, 0.5), pct(f.dts, 0.95), f.dts.max() ?? 0,
+                                pct(f.cpu, 0.5), pct(f.cpu, 0.95), f.cpu.max() ?? 0,
+                                f.c1.0 - f.c0.0, f.c1.1 - f.c0.1, f.c1.2 - f.c0.2, f.c1.3 - f.c0.3))
+        }
+        lines.append(String(format: "[PANBENCH] ALL frames=%d hitches=%d dt p50=%.1f p95=%.1f p99=%.1f max=%.1f | update p50=%.2f p95=%.2f p99=%.2f max=%.2f ms | restyles=%d inkPicks=%d titleBuilds=%d",
+                            all.count, hitchesAll, pct(all, 0.5), pct(all, 0.95), pct(all, 0.99), all.max() ?? 0,
+                            pct(allCPU, 0.5), pct(allCPU, 0.95), pct(allCPU, 0.99), allCPU.max() ?? 0,
+                            st.flicks.last!.c1.0 - st.flicks[0].c0.0, st.flicks.last!.c1.1 - st.flicks[0].c0.1,
+                            st.flicks.last!.c1.2 - st.flicks[0].c0.2))
+        for l in lines { NSLog("%@", l) }
+        if let dir = FileManager.default.urls(for: .cachesDirectory, in: .userDomainMask).first {
+            let url = dir.appendingPathComponent("panbench.txt")
+            let text = lines.joined(separator: "\n") + "\n"
+            if let h = try? FileHandle(forWritingTo: url) { h.seekToEndOfFile(); h.write(text.data(using: .utf8)!); try? h.close() }
+            else { try? text.write(to: url, atomically: true, encoding: .utf8) }
+        }
+        NSLog("[PANBENCH] done")
     }
 }
 #endif

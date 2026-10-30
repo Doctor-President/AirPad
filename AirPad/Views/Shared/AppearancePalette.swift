@@ -314,6 +314,29 @@ extension View {
     }
 }
 
+/// 1.1-B fix-up (D) — dark Glass's separation, after light Glass ("light crisp, almost frosted, but still very
+/// transparent"): a 1 pt hairline, white 0.28 at the top fading to 0.10 down the sides and 0.16 at the bottom, and a frost
+/// band just inside the edge (white 0.07, ~10 pt, soft). Drawn under the text; the middle of the pane stays clear.
+struct DarkGlassEdge: View {
+    let shape: RoundedRectangle
+    var body: some View {
+        ZStack {
+            shape.stroke(Color.white.opacity(DarkGlassEdge.frost), lineWidth: 14).blur(radius: 7).clipShape(shape)
+            shape.strokeBorder(LinearGradient(stops: [.init(color: .white.opacity(0.28), location: 0),
+                                                      .init(color: .white.opacity(0.10), location: 0.45),
+                                                      .init(color: .white.opacity(0.16), location: 1)],
+                                              startPoint: .top, endPoint: .bottom), lineWidth: 1)
+        }
+        .allowsHitTesting(false)
+    }
+    static let frost: Double = {
+        #if DEBUG
+        if let s = UserDefaults.standard.string(forKey: "DashGlassDarkFrost"), let v = Double(s) { return v }
+        #endif
+        return 0.07
+    }()
+}
+
 /// 1.1-A fix-up (2) — the Dashboard panes' surface, from the user's pick (`DashboardSurfaceChoice.effective`):
 ///   thin  = the 1.0 surface: `.thinMaterial` + `white@0.12` hairline.
 ///   glass = Liquid Glass `.regular` (`glassEffect(.regular, in:)`), no hairline (the glass draws its own edge). Default.
@@ -325,7 +348,9 @@ struct DashboardSurface: ViewModifier {
     let cornerRadius: CGFloat
     var forced: DashboardSurfaceChoice? = nil
     @Environment(\.colorScheme) private var scheme
-    @AppStorage(DashboardSurfaceChoice.storageKey) private var pickedRaw = DashboardSurfaceChoice.free.rawValue
+    @AppStorage(DashboardSurfaceChoice.storageKey(dark: true)) private var darkRaw = DashboardSurfaceChoice.legacyRaw
+    @AppStorage(DashboardSurfaceChoice.storageKey(dark: false)) private var lightRaw = DashboardSurfaceChoice.legacyRaw
+    private var pickedRaw: Int { scheme == .dark ? darkRaw : lightRaw }   // 1.1-B fix-up (C): per appearance
     #if DEBUG
     static let debugCandidate: DashboardSurfaceChoice? = {
         let a = ProcessInfo.processInfo.arguments
@@ -357,6 +382,13 @@ struct DashboardSurface: ViewModifier {
         return bakedGlassDarkTint
     }()
     static let bakedGlassDarkTint = 0.27   // swept: 0.25 → greys need ≤ 0.76 (one run spiked), 0.27 → ≤ 0.68, 0.30 → ≤ 0.64
+    /// 1.1-B fix-up (D) — dark Glass's edge (`DarkGlassEdge`); DEBUG `-DashGlassDarkEdge NO` draws the 1.1-B surface.
+    static let glassDarkEdge: Bool = {
+        #if DEBUG
+        if UserDefaults.standard.object(forKey: "DashGlassDarkEdge") != nil { return UserDefaults.standard.bool(forKey: "DashGlassDarkEdge") }
+        #endif
+        return true
+    }()
 
     /// 1.1-B — over a custom background, the see-through surfaces' text picks its ink by the background's rule; Solid keeps
     /// today's ink (its own opaque fill).
@@ -365,7 +397,16 @@ struct DashboardSurface: ViewModifier {
         let content = content.onCustomGround(choice != .panel, pane: true)   // the pane's text, not its glass
         switch choice {
         case .glass:
-            content.glassEffect(dark && Self.glassDarkTint > 0 ? .regular.tint(Color.black.opacity(Self.glassDarkTint)) : .regular, in: shape)
+            if dark {
+                // 1.1-B fix-up (D) — light Glass's crisp, slightly frosted edge for dark Glass (T: dark read "crystal clear"):
+                // a hairline brighter at the top + a faint frost just inside the edge, both behind the text; the colour
+                // boost (the black tint) is kept.
+                content
+                    .background { if Self.glassDarkEdge { DarkGlassEdge(shape: shape) } }
+                    .glassEffect(Self.glassDarkTint > 0 ? .regular.tint(Color.black.opacity(Self.glassDarkTint)) : .regular, in: shape)
+            } else {
+                content.glassEffect(.regular, in: shape)
+            }
         case .clear:
             content.glassEffect(.clear.tint(dark ? Self.hex(0x0D0D0D, 0.30) : Self.hex(0xFBF9F5, 0.45)), in: shape)
         case .panel:

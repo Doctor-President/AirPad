@@ -387,9 +387,8 @@ struct CanvasChrome: View {
                 onFilter: { showFilterPanel = true },
                 onSettings: { showSettings = true },
                 onQuarantineReview: { showQuarantineReview = true },
-                onAppearance: { showAppearancePanel = true },
-                bottomInset: LibrarianPanelLayout.peekOverlayClearance
-            )
+                onAppearance: { showAppearancePanel = true }
+            )   // 1.1-B fix-up (F): the Librarian pills fade out under the open menu, so no room is kept for them
 
             #if DEBUG
             // Top-most dev layer — placed AFTER CanvasSlideOutMenu so it

@@ -50,12 +50,7 @@ struct MapLookSection: View {
             if store.isPro && MapLookStrength.has(picked) {   // 1.1-B — T's Subtle / Medium / Strong for the picked look
                 HStack(spacing: 12) {
                     Text("Strength").font(appFont.font(size: 15, relativeTo: .subheadline)).foregroundStyle(AppearancePalette.ink)
-                    Picker("Strength", selection: Binding(get: { strength }, set: { s in
-                        MapLookStrength.set(s, for: picked); strength = s })) {
-                        ForEach(LookStrength.allCases) { Text($0.label).tag($0) }
-                    }
-                    .pickerStyle(.segmented)
-                    .accessibilityIdentifier("appearance.lookStrength")
+                    LookStrengthPicker(look: picked, strength: $strength)
                 }
                 .padding(.top, 2)
             }
@@ -99,6 +94,81 @@ struct MapLookSection: View {
     }
 }
 
+/// 1.1-B fix-up (E) — Theme (System / Light / Dark): the ≡ menu's Appearance section and the Appearance sheet's Look tab.
+struct ThemePicker: View {
+    @AppStorage(AppearanceOverride.storageKey) private var appearanceRaw = AppearanceOverride.system.rawValue
+    var body: some View {
+        Picker("Theme", selection: Binding(
+            get: { AppearanceOverride(rawValue: appearanceRaw) ?? .system },
+            set: { appearanceRaw = $0.rawValue }
+        )) {
+            ForEach(AppearanceOverride.allCases) { Text($0.label).tag($0) }
+        }
+        .pickerStyle(.segmented)
+        .accessibilityIdentifier("appearance.theme")
+    }
+}
+
+/// 1.1-B — Subtle / Medium / Strong for a look (`MapLookStrength`; only looks that have strengths, with Pro).
+struct LookStrengthPicker: View {
+    let look: MapOrbLook
+    @Binding var strength: LookStrength
+    var body: some View {
+        Picker("Strength", selection: Binding(get: { strength }, set: { s in MapLookStrength.set(s, for: look); strength = s })) {
+            ForEach(LookStrength.allCases) { Text($0.label).tag($0) }
+        }
+        .pickerStyle(.segmented)
+        .accessibilityIdentifier("appearance.lookStrength")
+    }
+}
+
+/// 1.1-B fix-up (E) — the ≡ menu's quick Map look: one swatch per look of the Map showing now (`MapLookChoice`, the same
+/// pick as Settings and the sheet). Without Pro the Pro looks carry a lock and call `onLocked` (the Pro sheet).
+struct MapLookQuickRow: View {
+    @Environment(\.colorScheme) private var scheme
+    @Binding var picked: MapOrbLook
+    var onPick: (MapOrbLook) -> Void = { _ in }
+    var onLocked: () -> Void
+    var size: CGFloat = 28
+    private var store: ProStore { ProStore.shared }
+    private var light: Bool { scheme == .light }
+
+    var body: some View {
+        HStack(spacing: 2) {
+            ForEach(light ? MapLookChoice.lightLineup : MapLookChoice.darkLineup, id: \.self) { look in
+                let locked = look != .flat && !store.isPro
+                let selected = !locked && MapLookChoice.isSelected(look, light: light, picked: picked)
+                let name = MapLookChoice.name(look, light: light)
+                Button {
+                    if locked { onLocked(); return }
+                    let p = MapLookChoice.pick(for: look, light: light, current: picked)
+                    MapLookChoice.picked = p
+                    picked = p
+                    onPick(p)
+                } label: {
+                    LookSwatch(look: look, light: light, size: size)
+                        .overlay {
+                            RoundedRectangle(cornerRadius: size * 0.22 + 2, style: .continuous)
+                                .stroke(AppearancePalette.ink, lineWidth: 1.5).padding(-2).opacity(selected ? 1 : 0)
+                        }
+                        .overlay(alignment: .bottomTrailing) {
+                            if locked {
+                                Image(systemName: "lock.fill").font(.system(size: 8, weight: .bold)).foregroundStyle(.white)
+                                    .padding(2.5).background(Circle().fill(.black.opacity(0.55))).offset(x: 2, y: 2)
+                            }
+                        }
+                        .frame(width: size + 4, height: size + 4)
+                        .contentShape(Rectangle())
+                }
+                .buttonStyle(.plain)
+                .accessibilityLabel(locked ? "\(name), locked. Opens AirPad Pro." : name)
+                .accessibilityAddTraits(selected ? .isSelected : [])
+                .accessibilityIdentifier("menuLook-\(look.rawValue)")
+            }
+        }
+    }
+}
+
 /// 1.1-A fix-up (1) — "Gravity" (1.1-B: was "Gravity wells"; Settings → Appearance and the Appearance panel share it). On by default; off by
 /// itself in Low Power Mode or while the phone is hot, back when that ends (`MapWells`).
 struct GravityWellsToggle: View {
@@ -130,39 +200,7 @@ struct GravityWellsToggle: View {
 
     private var detail: String? {
         if on && stressed { return lowPower ? "Paused in Low Power Mode" : "Paused while your iPhone cools down" }
-        return detailed ? "The Map's dots dip toward the ideas you're reading. Off uses less battery." : nil
-    }
-}
-
-/// 1.1-B — "Sheen" (TestFlight only): T judges the ground study's sheen on the 1.1-B TestFlight. Shown only on TestFlight
-/// installs (`InstallChannel`), on by default there; App Store installs never show it and draw no sheen.
-struct SheenToggle: View {
-    var detailed: Bool
-    @Environment(\.appBodyFont) private var appFont
-    @State private var on = MapSheen.userOn
-    @State private var testFlight = InstallChannel.isTestFlight
-
-    var body: some View {
-        Group {
-            if testFlight {
-                Toggle(isOn: Binding(get: { on }, set: { on = $0; MapSheen.userOn = $0 })) {
-                    VStack(alignment: .leading, spacing: 2) {
-                        Text("Sheen").font(appFont.font(size: 15, weight: .medium, relativeTo: .subheadline))
-                            .foregroundStyle(AppearancePalette.ink)
-                        Text(MapWells.userOn ? "TestFlight only: a soft light across the wells. Off uses less battery."
-                                             : "TestFlight only. Needs Gravity on.")
-                            .font(appFont.font(size: 12, relativeTo: .caption1))
-                            .foregroundStyle(AppearancePalette.ink.opacity(0.4))
-                            .fixedSize(horizontal: false, vertical: true)
-                    }
-                }
-                .tint(.purple)
-                .accessibilityIdentifier("appearance.sheen")
-            }
-        }
-        .onReceive(NotificationCenter.default.publisher(for: .installChannelResolved)) { _ in
-            testFlight = InstallChannel.isTestFlight
-        }
+        return detailed ? "The Map's dots dip toward the ideas you're reading, with a soft sheen. Off uses less battery." : nil
     }
 }
 
@@ -175,7 +213,13 @@ struct MapGroundSection: View {
     @Environment(\.colorScheme) private var scheme
     @State private var showPro = false
     @State private var side = MapGround.edited(light: false)
-    @State private var adjusted = false   // the last pick was moved out of the unreadable band (`ReadableGround`)
+    @State private var adjusted: Adjusted?   // the last pick was moved (`ReadableGround`), and why
+    /// 1.1-B fix-up (B) — what each colour well last PICKED (key: "color" / "color2" / "dot"). The wells show this, not the
+    /// stored (readable) colour: feeding the moved colour back made the system picker adopt it mid-drag, so a drag toward
+    /// white through the mid-tones kept snapping back to the band's edge, a grey (sim log: #119515 picked → #078A0E stored,
+    /// then the picker's R and B stayed at 07 / 0E). The stored ground is still always readable.
+    @State private var rawPick: [String: String] = [:]
+    enum Adjusted { case midTone, gradientSides }
     private var store: ProStore { ProStore.shared }
     private var light: Bool { scheme == .light }
 
@@ -194,8 +238,8 @@ struct MapGroundSection: View {
                 .fixedSize(horizontal: false, vertical: true)
         }
         .sheet(isPresented: $showPro) { ProSheet() }
-        .onAppear { side = MapGround.edited(light: light) }
-        .onChange(of: scheme) { _, _ in side = MapGround.edited(light: light) }
+        .onAppear { side = MapGround.edited(light: light); rawPick = [:]; adjusted = nil }
+        .onChange(of: scheme) { _, _ in side = MapGround.edited(light: light); rawPick = [:]; adjusted = nil }
     }
 
     private var lockedRow: some View {
@@ -216,21 +260,23 @@ struct MapGroundSection: View {
 
     private var editor: some View {
         VStack(alignment: .leading, spacing: 10) {
-            ColorPicker("Colour", selection: hexBinding(\.color), supportsOpacity: false)
+            ColorPicker("Colour", selection: hexBinding(\.color, "color"), supportsOpacity: false)
             Toggle("Gradient", isOn: binding(\.gradient)).tint(.purple)
             if side.gradient {
-                ColorPicker("Second colour", selection: hexBinding(\.color2), supportsOpacity: false)
+                ColorPicker("Second colour", selection: hexBinding(\.color2, "color2"), supportsOpacity: false)
                 slider("Angle", value: binding(\.angle), range: 0...360, text: "\(Int(side.angle.rounded()))°")
             }
-            ColorPicker("Map dots", selection: hexBinding(\.dot), supportsOpacity: false)
+            ColorPicker("Map dots", selection: hexBinding(\.dot, "dot"), supportsOpacity: false)
             slider("Map dot opacity", value: binding(\.dotOpacity), range: 0...1, text: "\(Int((side.dotOpacity * 100).rounded()))%")
-            if adjusted {
-                Text("Adjusted so text stays readable.")
+            if let adjusted {
+                Text(adjusted == .gradientSides
+                     ? "Both gradient colours must be light, or both dark, so text reads across it. The second colour was adjusted."
+                     : "Mid-tones are moved lighter or darker so text stays readable.")
                     .font(appFont.font(size: 12, relativeTo: .caption1)).foregroundStyle(AppearancePalette.ink.opacity(0.6))
                     .accessibilityIdentifier("mapGround.adjusted")
             }
             Button("Reset to default") {
-                side = light ? .lightDefault : .darkDefault; adjusted = false; MapGround.setEdited(side, light: light)
+                side = light ? .lightDefault : .darkDefault; adjusted = nil; rawPick = [:]; MapGround.setEdited(side, light: light)
             }
                 .font(appFont.font(size: 15, relativeTo: .subheadline))
                 .disabled(!side.custom)
@@ -252,22 +298,37 @@ struct MapGroundSection: View {
     /// Any edit makes the appearance custom (every view then draws it).
     private func commit(_ s0: MapGroundSide) {
         var s = s0; s.custom = true
+        if let c = rawPick["color"] { s.color = c }      // what was picked, re-checked against the other colour each time
+        if let c = rawPick["color2"] { s.color2 = c }
         let stored = MapGround.setEdited(s, light: light)   // the setter keeps text readable (ReadableGround)
-        adjusted = stored.color != s.color || (s.gradient && stored.color2 != s.color2)
+        let c2Moved = s.gradient && stored.color2 != s.color2
+        if stored.color != s.color || (c2Moved && ReadableGround.inBand(s.color2RGB)) { adjusted = .midTone }
+        else if c2Moved { adjusted = .gradientSides }   // a readable colour 2 on the other side of the band than colour 1
+        else { adjusted = nil }
         side = stored
     }
     private func binding<T>(_ k: WritableKeyPath<MapGroundSide, T>) -> Binding<T> {
         Binding(get: { side[keyPath: k] }, set: { var s = side; s[keyPath: k] = $0; commit(s) })
     }
-    private func hexBinding(_ k: WritableKeyPath<MapGroundSide, String>) -> Binding<Color> {
+    private func hexBinding(_ k: WritableKeyPath<MapGroundSide, String>, _ key: String) -> Binding<Color> {
         Binding(get: {
-            let c = MapGroundSide.rgb(side[keyPath: k])
+            #if DEBUG
+            let old = UserDefaults.standard.bool(forKey: "GroundPickReadback")   // the 1.1-B write-back, for the repro's A/B
+            #else
+            let old = false
+            #endif
+            let c = MapGroundSide.rgb((old ? nil : rawPick[key]) ?? side[keyPath: k])
             return Color(red: Double(c.x), green: Double(c.y), blue: Double(c.z))
         }, set: { color in
             var r: CGFloat = 0, g: CGFloat = 0, b: CGFloat = 0, a: CGFloat = 0
             UIColor(color).getRed(&r, green: &g, blue: &b, alpha: &a)
             func ch(_ v: CGFloat) -> Int { Int((min(max(v, 0), 1) * 255).rounded()) }
-            var s = side; s[keyPath: k] = String(format: "%02X%02X%02X", ch(r), ch(g), ch(b)); commit(s)
+            let hex = String(format: "%02X%02X%02X", ch(r), ch(g), ch(b))
+            rawPick[key] = hex
+            var s = side; s[keyPath: k] = hex; commit(s)
+            #if DEBUG
+            NSLog("[GROUNDPICK] picked %@ (r=%.4f g=%.4f b=%.4f) → stored %@", s[keyPath: k], r, g, b, side[keyPath: k])
+            #endif
         })
     }
 }
@@ -297,9 +358,16 @@ private struct GroundSwatch: View {
 struct DashboardSurfaceSection: View {
     @Environment(\.appBodyFont) private var appFont
     @Environment(\.colorScheme) private var scheme
-    @AppStorage(DashboardSurfaceChoice.storageKey) private var pickedRaw = DashboardSurfaceChoice.free.rawValue
+    @AppStorage(DashboardSurfaceChoice.storageKey(dark: true)) private var darkRaw = DashboardSurfaceChoice.legacyRaw
+    @AppStorage(DashboardSurfaceChoice.storageKey(dark: false)) private var lightRaw = DashboardSurfaceChoice.legacyRaw
     @State private var showPro = false
     private var store: ProStore { ProStore.shared }
+    private var light: Bool { scheme == .light }
+    /// 1.1-B fix-up (C) — the pick for the appearance showing now (like Background).
+    private var pickedRaw: Int {
+        get { light ? lightRaw : darkRaw }
+        nonmutating set { if light { lightRaw = newValue } else { darkRaw = newValue } }
+    }
 
     var body: some View {
         VStack(alignment: .leading, spacing: 10) {
@@ -314,7 +382,7 @@ struct DashboardSurfaceSection: View {
             }
             .background(AppearancePalette.ink.opacity(0.05))
             .clipShape(RoundedRectangle(cornerRadius: 12))
-            Text(store.isPro ? "The panes on the Dashboard, over its color."
+            Text(store.isPro ? "The panes on the Dashboard in \(light ? "Light" : "Dark"). Switch to \(light ? "Dark" : "Light") to pick the other."
                              : "Glass is free. The other surfaces come with AirPad Pro.")
                 .font(appFont.font(size: 12, relativeTo: .caption1)).foregroundStyle(AppearancePalette.ink.opacity(0.45))
                 .fixedSize(horizontal: false, vertical: true)

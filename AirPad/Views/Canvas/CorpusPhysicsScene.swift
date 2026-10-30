@@ -2059,9 +2059,9 @@ final class CorpusPhysicsScene: SKScene {
         }
         startAuraSizeScriptIfAsked()
         scheduleGPUBenchIfAsked()   // 1.1-A (6) — `-MapGPUBench`
-        // 1.1-B — `-MapSheenFlipAt <s>`: flip the Sheen switch once, s seconds in (a same-launch off/on still pair).
+        // 1.1-B — `-MapSheenFlipAt <s>`: flip the Sheen once, s seconds in (a same-launch off/on still pair).
         if let v = UserDefaults.standard.string(forKey: "MapSheenFlipAt"), let t = Double(v) {
-            DispatchQueue.main.asyncAfter(deadline: .now() + t) { MapSheen.userOn.toggle(); NSLog("[SHEEN] flipped → %@", MapSheen.userOn ? "on" : "off") }
+            DispatchQueue.main.asyncAfter(deadline: .now() + t) { MapSheen.debugOff.toggle(); NSLog("[SHEEN] flipped → %@", MapSheen.debugOff ? "off" : "on") }
         }
         scheduleMapLayoutExportIfAsked()   // 1.1-B study — `-ExportMapLayout <tag>`
         // 1.1-A (4) — `-InkAudit` (the title-ink audit, after the auto-fit settles) and `-InkStillTour <n>` (before / after stills).
@@ -6760,7 +6760,7 @@ extension CorpusPhysicsScene {
         lines.append(String(format: "[PANBENCH] tag=%@ look=%@ light=%@ ground=%@ sheen=%@ wells=%@ titles=%d speed=%.0f",
                             PanBench.tag, (mapTuning ?? .today).orbLook.rawValue, currentIsLight ? "Y" : "n",
                             ov == nil ? "default" : (ov!.gradient ? "custom-gradient" : "custom"),
-                            UserDefaults.standard.object(forKey: "map.sheen.v1") as? Bool == false ? "off" : "on?",
+                            MapSheen.active ? "on" : "off",
                             MapWells.active ? "on" : "off", nodeSprites.count, PanBench.speed))
         var all: [Double] = [], allCPU: [Double] = []
         var hitchesAll = 0

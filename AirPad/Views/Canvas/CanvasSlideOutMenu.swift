@@ -2,8 +2,8 @@ import SwiftUI
 
 /// Right-edge slide-out menu mounted by `CanvasChrome` and (1.1-A) the Dashboard — one menu behind the
 /// same `line.3.horizontal` glyph everywhere. Holds the secondary chrome actions — Analyze, Filter (canvas only),
-/// Quarantine review (when non-empty), Appearance (opens `AppearancePanel` as a half-height sheet over the current
-/// view so changes show live) and, at the bottom, Settings.
+/// Quarantine review (when non-empty), the Appearance quick controls (1.1-B fix-up (E): Theme · Map look · Strength ·
+/// Gravity inline, "More appearance…" opens `AppearancePanel`) and, at the bottom, Settings.
 ///
 /// ★ 2026-09-15: the VIEW-MODE PICKER was REMOVED from here. The bottom view switcher (and the
 /// top pill) own mode switching now, via one shared `ViewSwitchMenuContent`. Removing it also
@@ -24,6 +24,7 @@ struct CanvasSlideOutMenu: View {
     /// Brief BG — the ≡ menu is a CUSTOM view, so its section headers + action labels
     /// follow the app-wide Font (icons + badges stay SF chrome).
     @Environment(\.appBodyFont) private var appFont
+    @Environment(AppRouter.self) private var router
 
     @Binding var isPresented: Bool
 
@@ -66,8 +67,16 @@ struct CanvasSlideOutMenu: View {
                     .transition(.move(edge: .trailing))
             }
         }
-        .animation(.spring(response: 0.32, dampingFraction: 0.86), value: isPresented)
+        .animation(Self.slide, value: isPresented)
+        // 1.1-B fix-up (F) — the Librarian pills fade with this same spring (`LibrarianSurface`).
+        .onChange(of: isPresented, initial: true) { _, open in
+            withAnimation(Self.slide) { router.slideOutMenuOpen = open }
+        }
+        .onDisappear { router.slideOutMenuOpen = false }
     }
+
+    /// The menu's slide; the Librarian pills' fade uses it too.
+    static let slide = Animation.spring(response: 0.32, dampingFraction: 0.86)
 
     // MARK: - Panel
 
@@ -101,11 +110,15 @@ struct CanvasSlideOutMenu: View {
                                 action: { dismiss(then: onQuarantineReview) }
                             )
                         }
-                        // 1.1-A (A3) — Theme · Map look · fluted glass · tilt, in a half-height panel (was an inline
-                        // Theme picker + glass toggles here).
+                    }
+                    // 1.1-B fix-up (E) — the Appearance quick controls, inline, applying live with the view beside the
+                    // menu (was a row opening the sheet); "More appearance…" opens the sheet for the rest.
+                    section("Appearance") {
+                        MenuAppearanceSection()
+                            .padding(.horizontal, 20)
                         actionRow(
                             icon: "circle.righthalf.filled",
-                            label: "Appearance",
+                            label: "More appearance…",
                             action: { dismiss(then: onAppearance) }
                         )
                         .accessibilityIdentifier("menu.appearance")
@@ -217,7 +230,7 @@ struct CanvasSlideOutMenu: View {
     }
 
     private func dismiss(then action: (() -> Void)? = nil) {
-        withAnimation(.spring(response: 0.32, dampingFraction: 0.86)) {
+        withAnimation(Self.slide) {
             isPresented = false
         }
         dragOffset = 0
@@ -232,54 +245,110 @@ struct CanvasSlideOutMenu: View {
     }
 }
 
+/// 1.1-B fix-up (E) — the ≡ menu's Appearance quick controls: Theme · the Map look of the appearance showing now (a swatch
+/// row; Pro looks locked → the Pro sheet) · Strength (Pro, looks that have strengths) · Gravity. The same state as the
+/// sheet and Settings (`AppearanceOverride`, `MapLookChoice`, `MapLookStrength`, `MapWells`).
+private struct MenuAppearanceSection: View {
+    @Environment(\.appBodyFont) private var appFont
+    @Environment(\.colorScheme) private var scheme
+    @State private var picked = MapLookChoice.picked
+    @State private var strength = MapLookStrength.picked(MapLookChoice.picked)
+    @State private var showPro = false
+    private var store: ProStore { ProStore.shared }
+
+    var body: some View {
+        VStack(alignment: .leading, spacing: 12) {
+            ThemePicker()
+            VStack(alignment: .leading, spacing: 6) {
+                HStack {
+                    Text(scheme == .light ? "Light Map" : "Dark Map").foregroundStyle(AppearancePalette.ink.opacity(0.95))
+                    Spacer()
+                    Text(MapLookChoice.name(store.isPro ? picked : .flat, light: scheme == .light))
+                        .foregroundStyle(AppearancePalette.ink.opacity(0.6))
+                }
+                .font(appFont.font(size: 14, weight: .medium, relativeTo: .subheadline))
+                MapLookQuickRow(picked: $picked, onPick: { strength = MapLookStrength.picked($0) }, onLocked: { showPro = true })
+            }
+            if store.isPro && MapLookStrength.has(picked) {
+                LookStrengthPicker(look: picked, strength: $strength)
+            }
+            GravityWellsToggle(detailed: false)
+        }
+        .padding(.bottom, 4)
+        .sheet(isPresented: $showPro) { ProSheet() }
+        .onReceive(NotificationCenter.default.publisher(for: .proEntitlementChanged)) { _ in picked = MapLookChoice.picked }
+    }
+}
+
 /// 1.1-A (A3) — Appearance from the ≡ menu: Theme (Light / Dark / System) · Map look (the Settings picker,
-/// `MapLookSection`: the same `MapLookChoice`, Pro looks locked → Pro sheet) · fluted glass · tilt. Presented as a
-/// half-height sheet with the view behind it undimmed and live, so every change shows at once. Settings → Appearance
+/// `MapLookSection`: the same `MapLookChoice`, Pro looks locked → Pro sheet) · fluted glass · tilt. 1.1-B fix-up (E):
+/// tabs (Look · Background · Dashboard) in one ~55 % detent, the view behind it undimmed and live. Settings → Appearance
 /// reads and writes the same state (`AppearanceOverride.storageKey`, `MapLookChoice`, `FlutedGlass.shared`).
 struct AppearancePanel: View {
     @Environment(\.appBodyFont) private var appFont
     @Environment(\.dismiss) private var dismiss
-    @AppStorage(AppearanceOverride.storageKey) private var appearanceRaw = AppearanceOverride.system.rawValue
+
+    /// 1.1-B fix-up (E) — tabs inside ONE ~55 % detent: the sheet never grows, so its grabber never reaches the top edge
+    /// (dragging it down from there triggered the system search gesture). Each tab's content scrolls inside.
+    enum Tab: String, CaseIterable, Identifiable {
+        case look = "Look", background = "Background", dashboard = "Dashboard"
+        var id: String { rawValue }
+    }
+    @State private var tab: Tab = {
+        #if DEBUG
+        if let t = UserDefaults.standard.string(forKey: "AppearanceTab").flatMap({ Tab(rawValue: $0.capitalized) }) { return t }
+        #endif
+        return .look
+    }()
+    static let detent = PresentationDetent.fraction(0.55)
 
     var body: some View {
-        ScrollView {
-            VStack(alignment: .leading, spacing: 20) {
-                HStack {
-                    Text("Appearance")
-                        .font(appFont.font(size: 20, weight: .semibold, relativeTo: .title3))
-                        .foregroundStyle(AppearancePalette.ink)
-                        .accessibilityAddTraits(.isHeader)
-                    Spacer()
-                    Button("Done") { dismiss() }
-                        .font(appFont.font(size: 17, weight: .semibold, relativeTo: .body))
-                        .foregroundStyle(AppearancePalette.ink)
-                        .accessibilityIdentifier("appearancePanel.done")
-                }
-                VStack(alignment: .leading, spacing: 8) {
-                    Text("Theme").font(appFont.font(size: 15, weight: .semibold, relativeTo: .subheadline)).foregroundStyle(AppearancePalette.ink)
-                    Picker("Theme", selection: Binding(
-                        get: { AppearanceOverride(rawValue: appearanceRaw) ?? .system },
-                        set: { appearanceRaw = $0.rawValue }
-                    )) {
-                        ForEach(AppearanceOverride.allCases) { Text($0.label).tag($0) }
-                    }
-                    .pickerStyle(.segmented)
-                    .accessibilityIdentifier("appearancePanel.theme")
-                }
-                MapLookSection()
-                MapGroundSection()                    // 1.1-B — Pro: the Map's ground + dots
-                GravityWellsToggle(detailed: false)   // 1.1-A fix-up (1)
-                SheenToggle(detailed: false)          // 1.1-B — TestFlight only
-                DashboardSurfaceSection()             // 1.1-A fix-up (2)
-                GlassAppearanceToggles(detailed: false)
+        VStack(alignment: .leading, spacing: 14) {
+            HStack {
+                Text("Appearance")
+                    .font(appFont.font(size: 20, weight: .semibold, relativeTo: .title3))
+                    .foregroundStyle(AppearancePalette.ink)
+                    .accessibilityAddTraits(.isHeader)
+                Spacer()
+                Button("Done") { dismiss() }
+                    .font(appFont.font(size: 17, weight: .semibold, relativeTo: .body))
+                    .foregroundStyle(AppearancePalette.ink)
+                    .accessibilityIdentifier("appearancePanel.done")
             }
             .padding(.horizontal, 20)
-            .padding(.top, 20)
-            .padding(.bottom, 32)
+            Picker("Section", selection: $tab) {
+                ForEach(Tab.allCases) { Text($0.rawValue).tag($0) }
+            }
+            .pickerStyle(.segmented)
+            .padding(.horizontal, 20)
+            .accessibilityIdentifier("appearancePanel.tabs")
+            ScrollView {
+                VStack(alignment: .leading, spacing: 20) {
+                    switch tab {
+                    case .look:
+                        VStack(alignment: .leading, spacing: 8) {
+                            Text("Theme").font(appFont.font(size: 15, weight: .semibold, relativeTo: .subheadline))
+                                .foregroundStyle(AppearancePalette.ink)
+                            ThemePicker()
+                        }
+                        MapLookSection()
+                        GravityWellsToggle(detailed: true)   // 1.1-A fix-up (1); 1.1-B fix-up (G): the Sheen rides it
+                    case .background:
+                        MapGroundSection()                   // 1.1-B — Pro: the background + dots, per appearance
+                    case .dashboard:
+                        DashboardSurfaceSection()            // 1.1-B fix-up (C): per appearance
+                        GlassAppearanceToggles(detailed: false)
+                    }
+                }
+                .padding(.horizontal, 20)
+                .padding(.bottom, 32)
+            }
+            .scrollIndicators(.hidden)
+            .id(tab)
         }
-        .scrollIndicators(.hidden)
-        .presentationDetents([.medium, .large])
-        .presentationBackgroundInteraction(.enabled(upThrough: .medium))
+        .padding(.top, 20)
+        .presentationDetents([Self.detent])
+        .presentationBackgroundInteraction(.enabled(upThrough: Self.detent))
         .presentationBackground(.thinMaterial)
         .presentationDragIndicator(.visible)
     }

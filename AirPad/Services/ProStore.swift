@@ -52,7 +52,12 @@ enum MapLookChoice {
 /// same way as the Map looks (the pick is kept when Pro isn't active; what draws falls back to Glass).
 enum DashboardSurfaceChoice: Int, CaseIterable, Identifiable {
     case thin = 0, glass = 1, clear = 2, panel = 3
+    /// 1.1-A's single pick. 1.1-B fix-up (C): one pick per appearance (`storageKey(dark:)`); until an appearance has its
+    /// own, it reads this one, so an existing pick carries over to both.
     static let storageKey = "dashboard.surface.v1"
+    static func storageKey(dark: Bool) -> String { dark ? "dashboard.surface.dark.v1" : "dashboard.surface.light.v1" }
+    /// The default for an appearance's pick: the 1.1-A pick if there is one, else Glass.
+    static var legacyRaw: Int { UserDefaults.standard.object(forKey: storageKey) as? Int ?? free.rawValue }
     static let free: DashboardSurfaceChoice = .glass
     static let lineup: [DashboardSurfaceChoice] = [.glass, .thin, .clear, .panel]
     var id: Int { rawValue }
@@ -309,7 +314,6 @@ enum InstallChannel {
 /// hidden and OFF from the App Store. It reads the wells' field, so it is off whenever the wells are (Gravity off, Low
 /// Power, hot phone).
 enum MapSheen {
-    static let storageKey = "map.sheen.v1"
     /// T's values (ground-values-2026-10-29.json). `reach` (1.38) only shapes the study's depth / static variants, which
     /// weren't ported, so it isn't here.
     static let amount: Float = 0.06, lightAngleDeg: Float = 253, lightHeightDeg: Float = 62
@@ -319,20 +323,14 @@ enum MapSheen {
         let a = lightAngleDeg * .pi / 180, e = lightHeightDeg * .pi / 180
         return SIMD3(cos(a) * cos(e), sin(a) * cos(e), sin(e))
     }
-    private static var cached: Bool = UserDefaults.standard.object(forKey: storageKey) == nil
-        ? true : UserDefaults.standard.bool(forKey: storageKey)
-    static var userOn: Bool {
-        get { cached }
-        set { cached = newValue; UserDefaults.standard.set(newValue, forKey: storageKey) }
-    }
-    /// What the Map draws: TestFlight only, the switch on, and the wells drawing.
-    static var active: Bool {
-        #if PANBENCH
-        return userOn && MapWells.active   // the bench builds draw it as TestFlight does
-        #else
-        return InstallChannel.isTestFlight && userOn && MapWells.active
-        #endif
-    }
+    /// 1.1-B fix-up (G) — Sheen ships, on for everyone, with no switch of its own: it draws whenever Gravity draws (so Low
+    /// Power and the heat guard turn it off with the wells). DEBUG / bench builds: `-MapSheenOff YES` (and `debugOff`).
+    #if DEBUG || PANBENCH
+    static var debugOff = UserDefaults.standard.bool(forKey: "MapSheenOff")
+    static var active: Bool { !debugOff && MapWells.active }
+    #else
+    static var active: Bool { MapWells.active }
+    #endif
 }
 
 extension MapGround.Stored {

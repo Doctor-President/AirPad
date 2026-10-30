@@ -624,7 +624,6 @@ struct SettingsView: View {
                 MapLookSection()   // pro-build — the Map's look (Flat free; the rest AirPad Pro)
                 MapGroundSection()                   // 1.1-B — Pro: the Map's ground + dots
                 GravityWellsToggle(detailed: true)   // 1.1-A fix-up (1)
-                SheenToggle(detailed: true)          // 1.1-B — TestFlight only
                 DashboardSurfaceSection()            // 1.1-A fix-up (2) — Glass free; the rest AirPad Pro
                 VStack(alignment: .leading, spacing: 8) {
                     Text("Theme").font(appFont.font(size: 15, weight: .semibold, relativeTo: .subheadline)).foregroundStyle(AppearancePalette.ink)

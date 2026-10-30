@@ -55,6 +55,10 @@ final class AppRouter {
     /// fix-pass v3 Item 2a).
     var librarianAtPeek: Bool = false
 
+    /// 1.1-B fix-up (F) — the ≡ slide-out menu is open: the floating Librarian pills (search pill / peek) fade out in step
+    /// with the menu's slide and come back when it closes, so nothing renders over the menu.
+    var slideOutMenuOpen: Bool = false
+
     /// Brief AG3 — true once the Map on screen has SETTLED (first frame rendered and, in
     /// territory mode, the card-basis territories formed). Set by `CanvasView`; false while no
     /// Map is mounted. `CanvasChrome` waits on it before showing a first-run callout over the Map.

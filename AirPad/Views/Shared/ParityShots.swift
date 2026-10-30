@@ -742,7 +742,7 @@ struct DebugScreenHost: View {
             AppearancePanel()
         case "groundsection":    // 1.1-B — the Background section + Gravity / Sheen, alone (the panel scrolls past them)
             ScrollView { VStack(alignment: .leading, spacing: 20) {
-                MapGroundSection(); GravityWellsToggle(detailed: true); SheenToggle(detailed: true)
+                MapGroundSection(); GravityWellsToggle(detailed: true)
             }.padding(20).padding(.top, 60) }
             .background(AppearancePalette.bgBase.ignoresSafeArea())
         case "substrate":        SubstrateInspectView()

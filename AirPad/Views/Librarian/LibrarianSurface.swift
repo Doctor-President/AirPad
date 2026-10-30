@@ -574,6 +574,10 @@ struct LibrarianSurface: View {
         // `panelSuppressed`), so it never depends on the panel's physical detent.
         .opacity(panelSuppressed ? 0 : 1)
         .allowsHitTesting(!panelSuppressed)
+        // 1.1-B fix-up (F) — out of the way while the ≡ menu is open, fading in step with its slide.
+        .opacity(router.slideOutMenuOpen ? 0 : 1)
+        .allowsHitTesting(!router.slideOutMenuOpen)
+        .animation(CanvasSlideOutMenu.slide, value: router.slideOutMenuOpen)
     }
 
     /// Surface corner radius — unified at 39pt so the peek pill arc

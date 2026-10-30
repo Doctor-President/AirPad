@@ -104,6 +104,7 @@
 		3A0DA40D5693012561ABFE15 /* AppleDeclineChat.swift in Sources */ = {isa = PBXBuildFile; fileRef = 2C50052E35D01E7BA42393F1 /* AppleDeclineChat.swift */; };
 		3B496945356A064AD86E3547 /* DocumentPickerView.swift in Sources */ = {isa = PBXBuildFile; fileRef = D06AD49C19B1632AA4F8E29C /* DocumentPickerView.swift */; };
 		3BAFE63927E0F48132A90141 /* latobold_msdf.png in Resources */ = {isa = PBXBuildFile; fileRef = F0B477059444D44B3E9DC03D /* latobold_msdf.png */; };
+		3BBE093DC9DAEEA88B7D5898 /* GroundPickerRepro.swift in Sources */ = {isa = PBXBuildFile; fileRef = F65726013657CF58491EA8A5 /* GroundPickerRepro.swift */; };
 		3BF81C58D40F6C131CDCDA99 /* OneEntryInvariant.swift in Sources */ = {isa = PBXBuildFile; fileRef = 78BE389CD3124C9CAA5D01C3 /* OneEntryInvariant.swift */; };
 		3C1C7C69B23FACE57AAD1E4D /* QRScannerView.swift in Sources */ = {isa = PBXBuildFile; fileRef = 5D1408F7F32D1B41467621B6 /* QRScannerView.swift */; };
 		3E4BD1C91E3FE716BA0F0B71 /* HeroHeaderFlash.swift in Sources */ = {isa = PBXBuildFile; fileRef = D4FBCF8B7AC3CF84A924B74F /* HeroHeaderFlash.swift */; };
@@ -864,6 +865,7 @@
 		F292ED0AAF2B778F7A20C891 /* spacegroteskbold_msdf.png */ = {isa = PBXFileReference; lastKnownFileType = image.png; path = spacegroteskbold_msdf.png; sourceTree = "<group>"; };
 		F3B14548B9E3EEA51AD548E6 /* HeroHeaderProbe.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = HeroHeaderProbe.swift; sourceTree = "<group>"; };
 		F3D0F984EFB676B8DEF23CF1 /* Lora-OFL.txt */ = {isa = PBXFileReference; lastKnownFileType = text; path = "Lora-OFL.txt"; sourceTree = "<group>"; };
+		F65726013657CF58491EA8A5 /* GroundPickerRepro.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = GroundPickerRepro.swift; sourceTree = "<group>"; };
 		F66D3DA4639568EA375AC13E /* SourceSerif4-Bold.ttf */ = {isa = PBXFileReference; lastKnownFileType = file; path = "SourceSerif4-Bold.ttf"; sourceTree = "<group>"; };
 		F6A18AD80C0FCB6B5E928844 /* TagCreationSheet.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = TagCreationSheet.swift; sourceTree = "<group>"; };
 		F7814673E5A10B9F5E391DA4 /* SettingsView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = SettingsView.swift; sourceTree = "<group>"; };
@@ -1006,6 +1008,7 @@
 				E909538DC252422B01EA04C6 /* DeviceRecorderTier.swift */,
 				21B33F87387E58BCADB5C823 /* DocumentHandoffName.swift */,
 				41588CCE3CAAFC09130BFE25 /* DocumentImportNaming.swift */,
+				F65726013657CF58491EA8A5 /* GroundPickerRepro.swift */,
 				D4FBCF8B7AC3CF84A924B74F /* HeroHeaderFlash.swift */,
 				5CA786FE73ACBE100B4FAA56 /* HoldDragRepro.swift */,
 				47D13AA6D276BABAF0A77D8B /* LibrarianGauntletV2.swift */,
@@ -1929,6 +1932,7 @@
 				BA9035AA679FB65F2C403ECE /* DeviceRecorderTier.swift in Sources */,
 				F89E6B927D36543A7B3D7D9F /* DocumentHandoffName.swift in Sources */,
 				BCEA38610D7EEB032A314769 /* DocumentImportNaming.swift in Sources */,
+				3BBE093DC9DAEEA88B7D5898 /* GroundPickerRepro.swift in Sources */,
 				3E4BD1C91E3FE716BA0F0B71 /* HeroHeaderFlash.swift in Sources */,
 				B50270CC57FE455419F41E86 /* HoldDragRepro.swift in Sources */,
 				385D05CF17B9D82F1F6D8A2D /* LibrarianGauntletV2.swift in Sources */,

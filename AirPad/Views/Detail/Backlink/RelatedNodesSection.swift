@@ -38,7 +38,7 @@ struct RelatedNodesSection: View {
         let conns: [NodeConnection] = (node?.connections ?? []).sorted { $0.createdAt > $1.createdAt }
         var out: [(conn: NodeConnection, target: Node)] = []
         for c in conns {
-            if let target = store.nodes.first(where: { $0.id == c.nodeID }) {
+            if let target = store.nodes.first(where: { $0.id == c.nodeID }), !store.isHidden(target) {   // 1.1-C
                 out.append((c, target))
             }
         }
@@ -212,7 +212,7 @@ struct RelatedNodesSection: View {
             return
         }
         let backlinked = Set(node.connections.map(\.nodeID))
-        let cands = SubstrateThreadService.candidates(forNode: node, in: store.nodes)
+        let cands = SubstrateThreadService.candidates(forNode: node, in: store.hidingPrivate(store.nodes))   // 1.1-C
         var picked: [Node] = []
         for c in cands where c.exclusion == nil && !backlinked.contains(c.other.id) {
             picked.append(c.other)

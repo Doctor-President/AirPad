@@ -78,6 +78,8 @@ struct CanvasSlideOutMenu: View {
     /// The menu's slide; the Librarian pills' fade uses it too.
     static let slide = Animation.spring(response: 0.32, dampingFraction: 0.86)
 
+    private var privateEntries: PrivateEntries { PrivateEntries.shared }
+
     // MARK: - Panel
 
     private var panel: some View {
@@ -109,6 +111,19 @@ struct CanvasSlideOutMenu: View {
                                 badgeColor: .orange,
                                 action: { dismiss(then: onQuarantineReview) }
                             )
+                        }
+                        // 1.1-C (C3) — always listed (whether or not anything is private, so the menu itself never
+                        // says there is); Face ID / the passcode to show, one tap to hide. Hidden again on background.
+                        if privateEntries.available {
+                            actionRow(
+                                icon: privateEntries.revealed ? "lock.open" : "lock",
+                                label: privateEntries.revealed ? "Hide private" : "Show private",
+                                action: {
+                                    if privateEntries.revealed { privateEntries.hide() }
+                                    else { Task { await privateEntries.reveal() } }
+                                }
+                            )
+                            .accessibilityIdentifier("menu.showPrivate")
                         }
                     }
                     // 1.1-B fix-up (E) — the Appearance quick controls, inline, applying live with the view beside the

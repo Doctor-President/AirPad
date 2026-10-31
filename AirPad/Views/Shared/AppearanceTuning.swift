@@ -1448,8 +1448,9 @@ enum MapOrbLook: String, Codable, CaseIterable, Identifiable {
     var bothGrounds: Bool { self == .outline || self == .riso || self == .gradient || self == .glass }
     /// live-47 — the Pro looks Aura and Eclipse both draw Wash on the light Map.
     var drawsWashOnLight: Bool { self == .aura || self == .eclipse }
-    /// live-47 — the tuner's pickers: dark Map = Flat · Glass · Aura · Eclipse · Outline (Fresnel still decodes).
-    static let darkPicker: [MapOrbLook] = [.flat, .glass, .aura, .eclipse, .riso, .gradient, .outline]
+    /// live-47 — the tuner's pickers (Fresnel still decodes). 1.1-C (C7): Eclipse is dropped (it still decodes; the Map
+    /// draws Aura for it, `MapLookChoice.shipping`).
+    static let darkPicker: [MapOrbLook] = [.flat, .glass, .aura, .riso, .gradient, .outline]
 }
 
 /// The study's light-on-dark looks (Ops/reference/aura-orb-study.html v5) — Aura and Eclipse share the study's seven
@@ -1484,20 +1485,20 @@ extension StudyOrbLook {
 /// floor, grain size and territory-derived stops are gone (T: the re-interpretation read as messy, fuzzy clusters). Old
 /// saved values still load; their extra keys are ignored.
 struct AuraLook: StudyOrbLook {
-    // 1.1-B — T's Medium (Ops/reference/orb-strengths-2026-10-29.json; replaces the Oct 28 look values).
-    var spread = 1.04
-    var warp = 1.04
-    var softness = 0.08         // edge softness (fraction of the orb's radius)
-    var haloReach = 0.01
+    // 1.1-C (C7) — T's final Medium (Ops/reference/aura-final-2026-10-30.json; replaces orb-strengths-2026-10-29.json's Aura).
+    var spread = 1.02
+    var warp = 0.53
+    var softness = 0.01         // edge softness (fraction of the orb's radius)
+    var haloReach = 0.0
     var rim = 0.29
-    var fringe = 0.46           // chromatic fringe (the edge at three radii, red outermost)
+    var fringe = 0.0            // chromatic fringe (the edge at three radii, red outermost)
     var grain = 0.19
     var drift = false           // slow gradient flow; on → the Map renders at 30 fps
 
-    // 1.1-B — T's strengths (orb-strengths-2026-10-29.json); Medium = the defaults above.
-    static let subtle = AuraLook(0.72, 0.82, 0.05, 0.02, 0.3, 0.35, 0.11)
+    // 1.1-C (C7) — T's final strengths (aura-final-2026-10-30.json); Medium = the defaults above.
+    static let subtle = AuraLook(0.61, 0.82, 0.01, 0, 0.41, 0, 0.11)
     static let medium = AuraLook()
-    static let strong = AuraLook(1.11, 1.26, 0.04, 0.05, 0.75, 0.87, 0.28)
+    static let strong = AuraLook(0.68, 1.26, 0.01, 0, 0.29, 0, 0.28)
     static let presets: [(String, AuraLook)] = [("Subtle", .subtle), ("Medium", .medium), ("Strong", .strong)]
 
     init() {}
@@ -2260,10 +2261,10 @@ extension AppearanceTuning {
                 return g == t.glass
             }(), ""),
             // 1.1-B — T's Medium (Ops/reference/orb-strengths-2026-10-29.json) is each look's default, replacing Oct 28's values
-            ("aura-defaults-are-T's-Medium-2026-10-29 (1.04 · 1.04 · 0.08 · halo 0.01 · rim 0.29 · fringe 0.46 · grain 0.19) (1.1-B)", {
+            ("aura-defaults-are-T's-final-Medium-2026-10-30 (1.02 · 0.53 · 0.01 · halo 0 · rim 0.29 · fringe 0 · grain 0.19) (1.1-C)", {
                 let a = t.aura
-                return a.spread == 1.04 && a.warp == 1.04 && a.softness == 0.08 && a.haloReach == 0.01 && a.rim == 0.29
-                    && a.fringe == 0.46 && a.grain == 0.19 && !a.drift && AuraLook.medium == a
+                return a.spread == 1.02 && a.warp == 0.53 && a.softness == 0.01 && a.haloReach == 0 && a.rim == 0.29
+                    && a.fringe == 0 && a.grain == 0.19 && !a.drift && AuraLook.medium == a
             }(), String(format: "extent %.3f", t.aura.spriteExtent)),
             ("eclipse-defaults-are-T's-Medium-2026-10-29 (0.8 · 0.98 · 0.01 · halo 0 · rim 0.45 · fringe 0.14 · grain 0.24; arc 0.035 kept) (1.1-B)", {
                 let e = t.eclipse
@@ -2296,7 +2297,7 @@ extension AppearanceTuning {
                                    "arcSpan": 174, "arcThickness": 0.12, "arcSoftness": 1, "dim": 0.09, "tiltLight": false, "tiltSmoothing": 0.8,
                                    "caustic": 0.08, "causticSize": 0.41, "causticColour": 0.5, "window": 0.04, "windowSize": 0.28,
                                    "windowSharpness": 0.04, "lens": 0.36, "lensMagnification": 2.49],
-                    "aura": ["spread": 1.04, "warp": 1.04, "softness": 0.08, "haloReach": 0.01, "rim": 0.29, "fringe": 0.46, "grain": 0.19, "drift": false],
+                    "aura": ["spread": 1.02, "warp": 0.53, "softness": 0.01, "haloReach": 0, "rim": 0.29, "fringe": 0, "grain": 0.19, "drift": false],   // 1.1-C: aura-final-2026-10-30.json
                     "eclipse": ["spread": 0.8, "warp": 0.98, "softness": 0.01, "haloReach": 0, "rim": 0.45, "fringe": 0.14, "grain": 0.24, "drift": false,
                                 "arcThickness": 0.035],
                     "riso": ["spread": 0.59, "warp": 0.44, "softness": 0.01, "haloReach": 0.28, "rim": 0.72, "fringe": 1.08, "grain": 0.16, "drift": false],
@@ -2313,8 +2314,8 @@ extension AppearanceTuning {
                     && m.riso == t.riso && m.gradient == t.gradient && m.outline == t.outline && m.wash == t.wash
                     && t.orbLook == .flat
             }(), ""),
-            ("aura-eclipse-presets-are-T's-strengths (Aura Subtle .72/.82/.05/.02/.3/.35/.11 · Strong .05 halo · Eclipse Subtle .72/.59/.01/0/.16/.42/.32 · Strong 1.06/1.47) (1.1-B)",
-             AuraLook.subtle == AuraLook(0.72, 0.82, 0.05, 0.02, 0.3, 0.35, 0.11) && AuraLook.strong.haloReach == 0.05
+            ("aura-eclipse-presets-are-T's-strengths (Aura final 2026-10-30: Subtle .61/.82/.01/0/.41/0/.11 · Strong .68/1.26/.01/0/.29/0/.28 · Eclipse Subtle .72/.59/.01/0/.16/.42/.32 · Strong 1.06/1.47) (1.1-C)",
+             AuraLook.subtle == AuraLook(0.61, 0.82, 0.01, 0, 0.41, 0, 0.11) && AuraLook.strong == AuraLook(0.68, 1.26, 0.01, 0, 0.29, 0, 0.28)
                 && EclipseLook.subtle == EclipseLook(0.72, 0.59, 0.01, 0, 0.16, 0.42, 0.32)
                 && EclipseLook.strong.spread == 1.06 && EclipseLook.strong.warp == 1.47, ""),
             ("study-12-palettes-match-the-hex-table (Ops/reference/orb-study-families-2026-10-27.md)", {
@@ -2401,8 +2402,10 @@ extension AppearanceTuning {
                     && r.topArc == 1.2 && r.bottomArc == 0.5 && r.arcSpan == 90 && r.dispersion == 0.6 && r.innerShadow == 0.4
                     && r.highlightSize == 0.3 && r.label.hex == "1B59C2" && r.spread == x.spread
             }(), ""),
-            ("map-v7-lineup (dark Flat·Glass·Aura·Eclipse·Riso·Gradient·Outline; Glass / Riso / Gradient / Outline on both)",
-             MapOrbLook.darkPicker == [.flat, .glass, .aura, .eclipse, .riso, .gradient, .outline]
+            ("map-v8-lineup (dark Flat·Glass·Aura·Riso·Gradient·Outline, no Eclipse; Glass / Riso / Gradient / Outline on both) (1.1-C)",
+             MapOrbLook.darkPicker == [.flat, .glass, .aura, .riso, .gradient, .outline] && MapLookChoice.darkLineup == MapOrbLook.darkPicker
+                && !MapLookChoice.proListNames.contains("Eclipse") && !MapLookStrength.has(.eclipse)
+                && MapLookChoice.shipping(.eclipse) == .aura && MapLookChoice.shipping(.fresnel) == .flat && MapLookChoice.shipping(.riso) == .riso
                 && MapOrbLook.riso.bothGrounds && MapOrbLook.gradient.bothGrounds && MapOrbLook.glass.bothGrounds, ""),
             ("glass-cues-off-in-the-presets + T's final cues by default + copy-values round trip per Map + old values decode off (live-52 / pro-build)", {
                 let d = MapDarkTuning()

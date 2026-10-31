@@ -138,7 +138,7 @@ struct DashboardView: View {
         store.collections
             .filter { store.sampleCollectionIDs.contains($0.id) }
             .map { collection in
-                let members = store.nodes.filter { $0.collectionIDs.contains(collection.id) }
+                let members = store.hidingPrivate(store.nodes).filter { $0.collectionIDs.contains(collection.id) }   // 1.1-C
                 var row = collection
                 row.nodeCount = members.count
                 row.lastEntryAt = members.map(\.createdAt).max()
@@ -150,7 +150,7 @@ struct DashboardView: View {
     /// the sample pane's collection list. Routes to `.sampleCanvas` (a node-set
     /// scope), never a collection, so it can't seed a capture default.
     private var sampleCorpusRow: NodeCollection {
-        let sampleNodes = store.nodes.filter { store.isSample($0.id) }
+        let sampleNodes = store.hidingPrivate(store.nodes).filter { store.isSample($0.id) }   // 1.1-C
         return NodeCollection(
             id: NodeCollection.sampleScopeID,
             name: "Library",

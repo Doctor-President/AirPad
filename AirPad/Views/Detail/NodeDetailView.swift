@@ -127,6 +127,11 @@ struct NodeDetailView: View {
     @State private var showingNewTagSheet = false
     @State private var showingNewCollectionSheet = false
     @State private var showDeleteConfirmation = false
+    /// 1.1-C — flagged Private from this screen while private entries are hidden: it stays open until AirPad leaves the
+    /// foreground (then the placeholder shows).
+    @State private var markedPrivateHere = false
+    @State private var showExport = false
+    @Environment(\.scenePhase) private var privateScenePhase
     @State private var keyboardVisible = false
     /// The pinned capture bar's MEASURED height (item 1 — drives the capture-mode
     /// bottom reservation so content never sits under the bar).
@@ -324,7 +329,10 @@ struct NodeDetailView: View {
 
     var body: some View {
         Group {
-            if let node {
+            if let node, node.isPrivate, !PrivateEntries.shared.revealed, !markedPrivateHere {
+                // 1.1-C (C3 / C4) — a private entry while private entries are hidden: hidden, never blurred.
+                PrivateEntryPlaceholder()
+            } else if let node {
                 content(node: node)
             } else {
                 Text("Entry not found").font(appFont.font(size: 17, relativeTo: .body))
@@ -346,6 +354,8 @@ struct NodeDetailView: View {
         .onDisappear {
             saveIfChanged()
         }
+        .onChange(of: privateScenePhase) { _, phase in if phase == .background { markedPrivateHere = false } }
+        .sheet(isPresented: $showExport) { EntryExportSheet(nodeID: nodeID) }   // 1.1-C (C5)
         .onChange(of: node?.title) { old, new in
             if editedTitle == (old ?? "") { editedTitle = new ?? "" }
         }
@@ -904,6 +914,33 @@ struct NodeDetailView: View {
                             systemImage: node.priority == nil ? "flag" : "flag.slash"
                         )
                     }
+                    // 1.1-C (C3) — Private: hidden everywhere until "Show private" (slide-out menu). Needs a passcode.
+                    if PrivateEntries.shared.available {
+                        Button {
+                            var updated = node
+                            updated.isPrivate.toggle()
+                            if updated.isPrivate && !PrivateEntries.shared.revealed { markedPrivateHere = true }
+                            Task { await store.updateNode(updated) }
+                        } label: {
+                            Label(node.isPrivate ? "Make Not Private" : "Make Private",
+                                  systemImage: node.isPrivate ? "lock.open" : "lock")
+                        }
+                        .accessibilityIdentifier("entryMenu.private")
+                    } else {
+                        Button {} label: {
+                            Label("Make Private", systemImage: "lock")
+                            Text(PrivateEntries.unavailableReason)
+                        }
+                        .disabled(true)
+                    }
+                    // 1.1-C (C5) — Export (Markdown / TextBundle / folder). A private entry exports only while shown,
+                    // which is the only time its menu is reachable.
+                    Button {
+                        showExport = true
+                    } label: {
+                        Label("Export…", systemImage: "square.and.arrow.up")
+                    }
+                    .accessibilityIdentifier("entryMenu.export")
                     Divider()
                     // entry-system-and-fold Commit 6 — visibility flag for
                     // the description on the card-view surface (queue #10).
@@ -989,6 +1026,7 @@ struct NodeDetailView: View {
                         .frame(width: 48, height: 48)
                         .contentShape(Rectangle())
                 }
+                .accessibilityIdentifier("entryMenu")   // 1.1-C — UI tests reach Private / Export
                 }  // close ws-chrome-pill HStack
                 .modifier(InteractiveGlassCapsule())
             }

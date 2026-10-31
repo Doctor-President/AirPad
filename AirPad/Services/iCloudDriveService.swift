@@ -21,6 +21,17 @@ actor iCloudDriveService {
     // MARK: - Setup
 
     func setup() async {
+        #if PANBENCH && !DEBUG
+        // 1.1-C (C8) — the phone bench (Release + PANBENCH) runs on the Sample Library scratch, never the real Library.
+        if ProcessInfo.processInfo.arguments.contains("-UITestLibrary"),
+           let caches = FileManager.default.urls(for: .cachesDirectory, in: .userDomainMask).first {
+            let root = caches.appendingPathComponent("AirPadBenchScratch")
+            if (try? FileManager.default.createDirectory(at: root.appendingPathComponent("nodes"), withIntermediateDirectories: true)) != nil {
+                rootURL = root; isAvailable = true; usingLocalFallback = false
+                return
+            }
+        }
+        #endif
         #if DEBUG
         // Device-safety for the Stage 5.1 -FieldFixtureNode visual check: root
         // at a THROWAWAY local scratch dir so the twelve-kind fixture (and any

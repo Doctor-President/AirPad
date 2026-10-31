@@ -1856,19 +1856,24 @@ final class CorpusPhysicsScene: SKScene {
     /// the next idle-rate frame). Also bumps `lastActivityTime` so the debounce starts fresh.
     private func wakeMap() {
         isTouchingMap = true
+        adaptiveTouchStart = true
         desiredMapFPS = activeFPSNow
         if let v = view, v.preferredFramesPerSecond != desiredMapFPS {
             v.preferredFramesPerSecond = desiredMapFPS
         }
     }
 
-    /// live-48 — the panning / zooming frame rate: 60 on the Pro looks (Glass, Aura, Eclipse, Wash) and on EVERY look while
-    /// Low Power is on or thermal ≥ .serious; otherwise 120 (Flat and Outline unchanged). Rest stays 8 fps.
+    /// live-48 — the panning / zooming frame rate: 60 on EVERY look while Low Power is on or thermal ≥ .serious. 1.1-C (C8):
+    /// otherwise `MapAdaptiveRate` (120 while the frames keep up, else 60) on every look (live-48's "60 on the Pro looks"
+    /// never ran: without CADisableMinimumFrameDurationOnPhone the system capped everything at 60). Rest stays 8 fps.
     private var activeFPSNow: Int {
-        if proLookShowing || MapHeatGuard.shared.stressed { return Self.proActiveMapFPS }
-        return Self.activeMapFPS
+        if MapHeatGuard.shared.stressed { return Self.proActiveMapFPS }
+        return adaptiveRate.rate
     }
     private static let proActiveMapFPS = 60
+    private var adaptiveRate = MapAdaptiveRate()
+    private var adaptiveAwake = false
+    private var adaptiveTouchStart = false
 
     /// Brief AY — per-frame: count real renders, detect activity, drop/raise the SKView frame rate, and
     /// publish the heat instruments. At rest the map renders at `idleMapFPS` (a static image looks
@@ -1893,7 +1898,18 @@ final class CorpusPhysicsScene: SKScene {
         orbsMovedLastFrame = wasAnimating   // latch for next frame's updateGridWarp dirty check
         animatingThisFrame = false
 
-        var target = (currentTime - lastActivityTime < Self.idleDelay) ? activeFPSNow : Self.idleMapFPS
+        // 1.1-C (C8) — while awake, the adaptive controller sees every frame (it measures the intervals at 120); a new
+        // gesture (waking from rest, or a touch-down) is the only moment it may go back up to 120.
+        let awake = currentTime - lastActivityTime < Self.idleDelay
+        let regime = lastWarpMode == 3 ? 1 : 0
+        if awake && !MapHeatGuard.shared.stressed {
+            _ = adaptiveRate.frame(at: currentTime, regime: regime, gestureStart: !adaptiveAwake || adaptiveTouchStart)
+        } else if adaptiveAwake {
+            adaptiveRate.gestureEnded(regime: regime)
+        }
+        adaptiveAwake = awake && !MapHeatGuard.shared.stressed
+        adaptiveTouchStart = false
+        var target = awake ? activeFPSNow : Self.idleMapFPS
         // live-43 — only the Glass light following the tilt (a visible step) → 30 fps, not 120; the Aura drift (motion
         // T asked for) → at least 30 fps. Nothing else at rest leaves the 8 fps idle.
         if target == Self.idleMapFPS && currentTime - lastTiltActivityTime < Self.idleDelay { target = Self.tiltMapFPS }
@@ -1984,6 +2000,13 @@ final class CorpusPhysicsScene: SKScene {
 
     override func didMove(to view: SKView) {
         self.isPaused = false
+        #if PANBENCH && !DEBUG
+        // 1.1-C (C8) — the bench build's `-MapZoom <mult>` (DEBUG has its own below): zoomed in / out for the 120 run.
+        if let i = ProcessInfo.processInfo.arguments.firstIndex(of: "-MapZoom"), i + 1 < ProcessInfo.processInfo.arguments.count,
+           let mult = Float(ProcessInfo.processInfo.arguments[i + 1]) {
+            DispatchQueue.main.asyncAfter(deadline: .now() + 14) { self.cameraNode.setScale(self.cameraNode.xScale * CGFloat(mult)) }
+        }
+        #endif
         #if DEBUG
         if ProcessInfo.processInfo.arguments.contains("-LogSwatches") {
             NSLog("[Swatches] baked light slots: %@",
@@ -6682,7 +6705,8 @@ enum PanBench {
     static let noGround = ProcessInfo.processInfo.arguments.contains("-PanBenchNoGround")
     static let oldInk = ProcessInfo.processInfo.arguments.contains("-PanBenchOldInk")   // the pre-fix whole-Map re-pick
     static var state: State?
-    struct Flick { let dir: CGPoint; var dts: [Double] = []; var cpu: [Double] = []; var c0 = (0, 0, 0, 0); var c1 = (0, 0, 0, 0); var fps = 0 }
+    struct Flick { let dir: CGPoint; var dts: [Double] = []; var cpu: [Double] = []; var c0 = (0, 0, 0, 0); var c1 = (0, 0, 0, 0); var fps = 0
+        var budgets: [Double] = []; var n120 = 0; var thermal = ""; var wall = Date() }   // 1.1-C (C8): each frame's intended interval; frames asked at 120
     struct State { var t0: TimeInterval = 0; var lastT: TimeInterval = 0; var k = 0; var flicks: [Flick] = []; var released = false }
     /// Flick plan: 0.22 s drag at `speed` pt/s (screen), release into the real coast, 1.4 s to settle; 8 flicks R L U D R L U D.
     static let drag = 0.22, settle = 1.4
@@ -6697,7 +6721,8 @@ extension CorpusPhysicsScene {
         if PanBench.state == nil {
             if hasRenderedFirstFrame, CACurrentMediaTime() - panBenchMountT > delay {
                 let dirs = [CGPoint(x: 1, y: 0), CGPoint(x: -1, y: 0), CGPoint(x: 0, y: 1), CGPoint(x: 0, y: -1)]
-                PanBench.state = .init(t0: t, lastT: t, flicks: (dirs + dirs).map { .init(dir: $0) })
+                let rep = max(1, Int(UserDefaults.standard.string(forKey: "PanBenchRepeat") ?? "") ?? 1)   // 1.1-C (C8): a long session
+                PanBench.state = .init(t0: t, lastT: t, flicks: Array(repeating: dirs + dirs, count: rep).flatMap { $0 }.map { .init(dir: $0) })
                 PanBench.state?.flicks[0].c0 = (PanBench.restyles, PanBench.inkPicks, PanBench.titleBuilds, PanBench.fieldBuilds)
                 wakeMap()
                 NSLog("[PANBENCH] start tag=%@", PanBench.tag)
@@ -6719,10 +6744,15 @@ extension CorpusPhysicsScene {
             isTouchingMap = false
             coastVelocity = CGPoint(x: f.dir.x * PanBench.speed / 60, y: f.dir.y * PanBench.speed / 60)
         }
-        if local > 0 { st.flicks[st.k].dts.append(dt * 1000) }
-        st.flicks[st.k].fps = max(st.flicks[st.k].fps, view?.preferredFramesPerSecond ?? 0)
+        let askFPS = view?.preferredFramesPerSecond ?? 60
+        if local > 0 {
+            st.flicks[st.k].dts.append(dt * 1000); st.flicks[st.k].budgets.append(1000.0 / Double(max(askFPS, 1)))
+            if askFPS >= 120 { st.flicks[st.k].n120 += 1 }
+        }
+        st.flicks[st.k].fps = max(st.flicks[st.k].fps, askFPS)
         if local > PanBench.drag + PanBench.settle {
             st.flicks[st.k].c1 = (PanBench.restyles, PanBench.inkPicks, PanBench.titleBuilds, PanBench.fieldBuilds)
+            st.flicks[st.k].thermal = Self.thermalString(); st.flicks[st.k].wall = Date()
             st.k += 1; st.t0 = t; st.released = false
             coastVelocity = .zero
             if st.k < st.flicks.count {
@@ -6757,24 +6787,26 @@ extension CorpusPhysicsScene {
         }
         var lines: [String] = []
         let ov = MapGround.override(light: currentIsLight)
-        lines.append(String(format: "[PANBENCH] tag=%@ look=%@ light=%@ ground=%@ sheen=%@ wells=%@ titles=%d speed=%.0f",
+        lines.append(String(format: "[PANBENCH] tag=%@ look=%@ light=%@ ground=%@ sheen=%@ wells=%@ titles=%d speed=%.0f zoom=%.2f adaptive=%@ thermal=%@ lowPower=%@",
                             PanBench.tag, (mapTuning ?? .today).orbLook.rawValue, currentIsLight ? "Y" : "n",
                             ov == nil ? "default" : (ov!.gradient ? "custom-gradient" : "custom"),
                             MapSheen.active ? "on" : "off",
-                            MapWells.active ? "on" : "off", nodeSprites.count, PanBench.speed))
+                            MapWells.active ? "on" : "off", nodeSprites.count, PanBench.speed, cameraNode.xScale,
+                            MapAdaptiveRate.enabled ? "on" : "off(60)", Self.thermalString(),
+                            ProcessInfo.processInfo.isLowPowerModeEnabled ? "Y" : "n"))
         var all: [Double] = [], allCPU: [Double] = []
-        var hitchesAll = 0
+        var hitchesAll = 0, all120 = 0
         for (i, f) in st.flicks.enumerated() {
-            let budget = 1000.0 / Double(max(f.fps, 1))
-            let h = f.dts.filter { $0 > budget * 1.5 }.count
-            hitchesAll += h; all += f.dts; allCPU += f.cpu
-            lines.append(String(format: "[PANBENCH] flick %d dir=(%.0f,%.0f) fps=%d frames=%d hitches=%d dt p50=%.1f p95=%.1f max=%.1f | update p50=%.2f p95=%.2f max=%.2f ms | restyles=%d inkPicks=%d titleBuilds=%d fieldBuilds=%d",
-                                i + 1, f.dir.x, f.dir.y, f.fps, f.dts.count, h, pct(f.dts, 0.5), pct(f.dts, 0.95), f.dts.max() ?? 0,
+            // A hitch = a frame later than 1.5× the interval asked for at that frame (8.3 ms at 120, 16.7 ms at 60).
+            let h = zip(f.dts, f.budgets).filter { $0.0 > $0.1 * 1.5 }.count
+            hitchesAll += h; all += f.dts; allCPU += f.cpu; all120 += f.n120
+            lines.append(String(format: "[PANBENCH] flick %d t=%.0f thermal=%@ dir=(%.0f,%.0f) fps=%d at120=%d frames=%d hitches=%d dt p50=%.1f p95=%.1f max=%.1f | update p50=%.2f p95=%.2f max=%.2f ms | restyles=%d inkPicks=%d titleBuilds=%d fieldBuilds=%d",
+                                i + 1, f.wall.timeIntervalSince(st.flicks[0].wall), f.thermal, f.dir.x, f.dir.y, f.fps, f.n120, f.dts.count, h, pct(f.dts, 0.5), pct(f.dts, 0.95), f.dts.max() ?? 0,
                                 pct(f.cpu, 0.5), pct(f.cpu, 0.95), f.cpu.max() ?? 0,
                                 f.c1.0 - f.c0.0, f.c1.1 - f.c0.1, f.c1.2 - f.c0.2, f.c1.3 - f.c0.3))
         }
-        lines.append(String(format: "[PANBENCH] ALL frames=%d hitches=%d dt p50=%.1f p95=%.1f p99=%.1f max=%.1f | update p50=%.2f p95=%.2f p99=%.2f max=%.2f ms | restyles=%d inkPicks=%d titleBuilds=%d",
-                            all.count, hitchesAll, pct(all, 0.5), pct(all, 0.95), pct(all, 0.99), all.max() ?? 0,
+        lines.append(String(format: "[PANBENCH] ALL frames=%d at120=%d switches=%d hitches=%d dt p50=%.1f p95=%.1f p99=%.1f max=%.1f | update p50=%.2f p95=%.2f p99=%.2f max=%.2f ms | restyles=%d inkPicks=%d titleBuilds=%d",
+                            all.count, all120, adaptiveRate.switches.count, hitchesAll, pct(all, 0.5), pct(all, 0.95), pct(all, 0.99), all.max() ?? 0,
                             pct(allCPU, 0.5), pct(allCPU, 0.95), pct(allCPU, 0.99), allCPU.max() ?? 0,
                             st.flicks.last!.c1.0 - st.flicks[0].c0.0, st.flicks.last!.c1.1 - st.flicks[0].c0.1,
                             st.flicks.last!.c1.2 - st.flicks[0].c0.2))

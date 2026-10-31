@@ -467,11 +467,11 @@ final class CorpusStore {
         case .corpus:
             return corpusRoomNodes
         case .collection(let id) where id == NodeCollection.journalID:
-            return nodes.filter { $0.journalDate != nil }
+            return hidingPrivate(nodes.filter { $0.journalDate != nil })
         case .collection(let id):
-            return nodes.filter { $0.collectionIDs.contains(id) }
+            return hidingPrivate(nodes.filter { $0.collectionIDs.contains(id) })
         case .nodeIDs(let ids):
-            return nodes.filter { ids.contains($0.id) }
+            return hidingPrivate(nodes.filter { ids.contains($0.id) })
         }
     }
 
@@ -611,8 +611,24 @@ final class CorpusStore {
     /// sample is seeded this is every node (no allocation cost via the empty-set
     /// fast path). The Dashboard's three lists (Activity / Priority / Recents) and
     /// the Corpus/Journal row counts derive from this, so the sample never mixes in.
-    var userNodes: [Node] {
+    var userNodes: [Node] { hidingPrivate(userNodesIncludingPrivate) }
+
+    /// The user's own entries with the private ones too (the room decision, and machinery that must reach every entry).
+    var userNodesIncludingPrivate: [Node] {
         sampleNodeIDs.isEmpty ? nodes : nodes.filter { !sampleNodeIDs.contains($0.id) }
+    }
+
+    /// 1.1-C (C3) — every read path that lists, counts, searches or retrieves entries goes through this: private
+    /// entries drop out unless "Show private" is unlocked (`PrivateEntries`). Lookups by id (`nodes.first`) don't, so an
+    /// open entry never turns into "Entry not found" (NodeDetailView shows a private entry's own placeholder instead).
+    func hidingPrivate(_ a: [Node]) -> [Node] {
+        PrivateEntries.shared.revealed ? a : a.filter { !$0.isPrivate }
+    }
+    /// Is this entry hidden right now?
+    func isHidden(_ n: Node) -> Bool { n.isPrivate && !PrivateEntries.shared.revealed }
+    /// The ids hidden right now (for id-list read paths: embeddings, block retrieval).
+    var hiddenNodeIDs: Set<String> {
+        PrivateEntries.shared.revealed ? [] : Set(nodes.lazy.filter(\.isPrivate).map(\.id))
     }
 
     /// Brief Z R1 — the CORPUS ROOM: what `.corpus` scope reads everywhere (Map,
@@ -622,7 +638,8 @@ final class CorpusStore {
     /// AT THE SOURCE (`nodes(in:)` / `filteredNodes` route through this), so a caller
     /// asking for the corpus can't accidentally mix the sample in.
     var corpusRoomNodes: [Node] {
-        (sampleLibraryPresent && !userNodes.isEmpty) ? userNodes : nodes
+        // 1.1-C — the room is decided on ALL the user's entries, so hiding private ones never flips it to the sample.
+        hidingPrivate((sampleLibraryPresent && !userNodesIncludingPrivate.isEmpty) ? userNodesIncludingPrivate : nodes)
     }
 
     /// Brief Z R1 — the RAW full node set (user + sample), for GLOBAL MACHINERY that
@@ -851,7 +868,8 @@ final class CorpusStore {
         // T hit. A sample collection now broadens to the sample; a user collection to
         // the user corpus. `.nodeIDs` (the sample canvas) still never retries.
         if case .collection(let cid) = scope, (matches.first?.score ?? 0) < Self.minRelevanceScore {
-            let retryIDs = sampleCollectionIDs.contains(cid) ? Array(sampleNodeIDs) : corpusAskCandidateIDs
+            let hidden = hiddenNodeIDs   // 1.1-C — a private sample entry stays out too
+            let retryIDs = sampleCollectionIDs.contains(cid) ? Array(sampleNodeIDs).filter { !hidden.contains($0) } : corpusAskCandidateIDs
             let retryMatches = Self.diversifyByNode(
                 await blockEmbedding.findRelevantBlocks(queryVector: qvec, candidateNodeIDs: retryIDs, topK: pool),
                 perNode: Self.maxBlocksPerNode, limit: topK)
@@ -923,6 +941,8 @@ final class CorpusStore {
     /// the Ask candidate list. Thin wrapper over the block retriever (one BGE embed
     /// of the query); called only when a pin is detected.
     func blocksForNodes(query: String, nodeIDs: [String], topK: Int = 20, queryVector: [Float]? = nil) async -> [BlockMatch] {
+        let hidden = hiddenNodeIDs   // 1.1-C — a pinned / named private entry is never read while hidden
+        let nodeIDs = hidden.isEmpty ? nodeIDs : nodeIDs.filter { !hidden.contains($0) }
         guard !nodeIDs.isEmpty else { return [] }
         // AA1 — reuse the shared query embedding when supplied (embed once).
         if let queryVector, !queryVector.isEmpty {
@@ -1052,6 +1072,7 @@ final class CorpusStore {
                       + "liveKept=\(live.keys.filter(loadedIDs.contains).count) createdDuringLoad=\(live.keys.filter { !loadedIDs.contains($0) }.count)")
             }
             nodes = merged.sorted { $0.createdAt > $1.createdAt }
+            libraryLoaded = true   // 1.1-C (C1) — share-sheet appends can find their entries now
             // live-17 (2c) — MERGE the disk layout with the live one, like the nodes above: a position added while the
             // load ran (a capture during launch) is the live copy and wins; every saved position is kept. When the merge
             // differs from disk, persist it — the capture held off saving (it had only its own position).
@@ -1158,6 +1179,10 @@ final class CorpusStore {
             // live-28 (1) — answer caps: the loop guard, the budgets by route, num_predict on the Host bodies.
             if ProcessInfo.processInfo.arguments.contains("-AnswerCapSelfTest") {
                 NSLog("[AnswerCapSelfTest] %@", AnswerCapSelfTest.run())
+            }
+            // 1.1-C — tables, private entries, export, share index, Eclipse → Aura, adaptive 120.
+            if ProcessInfo.processInfo.arguments.contains("-Batch11CSelfTest") {
+                Task { @MainActor in NSLog("[Batch11CSelfTest] %@", await Batch11CSelfTest.run(store: self)) }
             }
             // live-27 (4e) — the RELATED list never shows one entry twice.
             if ProcessInfo.processInfo.arguments.contains("-SearchRelatedSelfTest") {
@@ -2150,7 +2175,12 @@ final class CorpusStore {
         }
         // Process any nodes that were captured by the share extension (no AI ran at capture time)
         await scanForUnprocessedNodes()
+        // 1.1-C (C1) — the share sheet's "Existing entry" records waited for the Library (the import above ran first).
+        await importFromAppGroupInbox()
     }
+
+    /// 1.1-C (C1) — set once `load()` has the Library in memory; an append record waits for it.
+    private var libraryLoaded = false
 
     // MARK: - Brief BU2 — THE LIBRARIAN GAUNTLET (the standing gate)
 
@@ -8856,7 +8886,7 @@ final class CorpusStore {
     /// "nothing close" state.
     func findRelevantBlocks(query: String, topK: Int = 10) async -> [BlockMatch] {
         guard let qvec = await CardEmbeddingService.shared.embed(query), !qvec.isEmpty else { return [] }
-        let candidateIDs = nodes.map { $0.id }
+        let candidateIDs = hidingPrivate(nodes).map { $0.id }   // 1.1-C — private entries stay out unless shown
         let matches = await blockEmbedding.findRelevantBlocks(
             queryVector: qvec,
             candidateNodeIDs: candidateIDs,
@@ -9539,6 +9569,57 @@ final class CorpusStore {
         await importFromAppGroupInbox()
     }
 
+    /// 1.1-C (C1) — the share sheet's "Existing entry" list (`ShareIndex` in the App Group): the user's own entries,
+    /// newest first, names only (private ones flagged; the sheet hides them unless unlocked). Written when AirPad goes
+    /// to the background, which is when a share from another app can happen.
+    func writeShareIndex() {
+        let entries = userNodesIncludingPrivate.filter { !$0.isMeta }
+            .sorted { $0.updatedAt > $1.updatedAt }
+            .prefix(ShareIndex.limit)
+            .map { n in
+                let name = n.title.trimmingCharacters(in: .whitespacesAndNewlines)
+                return ShareIndex.Entry(id: n.id, title: name.isEmpty ? (n.untitledDisplayText ?? "Untitled") : name,
+                                        updatedAt: n.updatedAt, isPrivate: n.isPrivate)
+            }
+        ShareIndex(entries: Array(entries)).save()
+    }
+
+    /// 1.1-C (C1) — a share added to an existing entry: copy its staged files into that entry, append the items (in
+    /// share order, after what's there), then the same follow-ups an import gets (audio transcripts, a link's page).
+    /// The entry keeps its title and summary. A target that no longer exists → the share becomes a new entry instead.
+    private func importShareAppend(_ rec: ShareAppendRecord, from dir: URL) async {
+        let itemsDir = dir.appendingPathComponent("items")
+        guard nodes.contains(where: { $0.id == rec.target }) else {
+            let now = Date()
+            let node = Node(id: UUID().uuidString, createdAt: now, updatedAt: now, title: "", summary: "", tags: [], mood: nil,
+                            isMeta: false, provenance: nil, threads: [], location: nil, items: rec.items, domain: nil,
+                            domainConfirmed: false, needsAIProcessing: true)
+            do { try await saveAndEnqueue(node) } catch { return }
+            if let files = try? FileManager.default.contentsOfDirectory(at: itemsDir, includingPropertiesForKeys: nil, options: .skipsHiddenFiles) {
+                for f in files {
+                    try? await service.saveItemFile(nodeID: node.id, itemID: f.deletingPathExtension().lastPathComponent,
+                                                    sourceURL: f, fileExtension: f.pathExtension)
+                }
+            }
+            nodes.insert(node, at: 0)
+            await enrichIfNeeded(nodeID: node.id, at: .committed)
+            await fetchAndApplyOGForImportedLinks(nodeID: node.id)
+            return
+        }
+        if let files = try? FileManager.default.contentsOfDirectory(at: itemsDir, includingPropertiesForKeys: nil, options: .skipsHiddenFiles) {
+            for f in files {
+                try? await service.saveItemFile(nodeID: rec.target, itemID: f.deletingPathExtension().lastPathComponent,
+                                                sourceURL: f, fileExtension: f.pathExtension)
+            }
+        }
+        await mutateNode(id: rec.target) { n in
+            n.items.append(contentsOf: rec.items)
+            n.updatedAt = Date()
+        }
+        await transcribeImportedAudio(nodeID: rec.target)
+        await fetchAndApplyOGForImportedLinks(nodeID: rec.target)
+    }
+
     private func importFromAppGroupInbox() async {
         guard let groupContainer = FileManager.default.containerURL(
             forSecurityApplicationGroupIdentifier: "group.com.doctorpresident.airpad"
@@ -9556,9 +9637,30 @@ final class CorpusStore {
             var isDir: ObjCBool = false
             guard FileManager.default.fileExists(atPath: dir.path, isDirectory: &isDir), isDir.boolValue else { continue }
 
+            // 1.1-C (C1) — "Save to: Existing entry": the share adds its items to an entry already in the Library.
+            if FileManager.default.fileExists(atPath: dir.appendingPathComponent(ShareAppendRecord.fileName).path) {
+                guard libraryLoaded else { continue }   // its entry isn't in memory yet: the post-load pass applies it
+                // Claim it (a rename is atomic): two passes (launch + foreground) never apply one record twice.
+                let claimed = dir.deletingLastPathComponent().appendingPathComponent(".claimed-" + dir.lastPathComponent)
+                guard (try? FileManager.default.moveItem(at: dir, to: claimed)) != nil else { continue }
+                if let data = try? Data(contentsOf: claimed.appendingPathComponent(ShareAppendRecord.fileName)),
+                   let rec = try? JSONDecoder.airPad.decode(ShareAppendRecord.self, from: data) {
+                    await importShareAppend(rec, from: claimed)
+                }
+                try? FileManager.default.removeItem(at: claimed)
+                continue
+            }
+
             let nodeFile = dir.appendingPathComponent("node.json")
             guard let data = try? Data(contentsOf: nodeFile),
-                  let node = try? JSONDecoder.airPad.decode(Node.self, from: data) else { continue }
+                  let node = try? JSONDecoder.airPad.decode(Node.self, from: data) else {
+                // 1.1-C (C1) — a share sheet left open (or killed) stages files with no record yet; after a day it's
+                // abandoned.
+                if !FileManager.default.fileExists(atPath: nodeFile.path),
+                   let made = (try? dir.resourceValues(forKeys: [.creationDateKey]))?.creationDate,
+                   Date().timeIntervalSince(made) > 86_400 { try? FileManager.default.removeItem(at: dir) }
+                continue
+            }
 
             // Skip if already imported
             guard !nodes.contains(where: { $0.id == node.id }) else {

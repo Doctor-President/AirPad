@@ -137,6 +137,9 @@ struct RichTextEditor: UIViewRepresentable {
         textView.placeholderText = placeholder
         textView.minHeight = minHeight
         textView.attributedText = decodedAttributedText(text)
+        #if DEBUG
+        NSLog("[TEXTKIT] note editor textLayoutManager=%@ (TextKit %@)", textView.usesTextKit2 ? "set" : "nil", textView.usesTextKit2 ? "2" : "1")
+        #endif
         // SPIKE v3 Model C — style paragraph 1 as the entry title on first render.
         if firstParagraphAsTitle { NoteTypography.styleFirstParagraphAsEntryTitle(textView, font: documentFont) }
         // Record the markdown now reflected in the view so the first updateUIView
@@ -290,6 +293,143 @@ struct RichTextEditor: UIViewRepresentable {
             self.parent = parent
             super.init()
             wireStateCommands()
+            // 1.1-C (C6) — a tapped table block asks for its editor; the editor that holds that table answers.
+            tableObserver = NotificationCenter.default.addObserver(forName: .noteTableOpen, object: nil, queue: .main) { [weak self] n in
+                guard let id = n.object as? String else { return }
+                MainActor.assumeIsolated { self?.openTableEditor(id: id) }
+            }
+        }
+        private var tableObserver: NSObjectProtocol?
+        deinit { if let tableObserver { NotificationCenter.default.removeObserver(tableObserver) } }
+
+        // MARK: Tables (1.1-C, C6)
+
+        /// The table block `id`, else (the text was re-decoded meanwhile, which mints new ids) the `ordinal`-th block.
+        private func tableRange(id: String, ordinal: Int? = nil, in textView: UITextView) -> NSRange? {
+            let attr = textView.attributedText ?? NSAttributedString()
+            var found: NSRange?
+            var all: [NSRange] = []
+            attr.enumerateAttribute(.airpadTableID, in: NSRange(location: 0, length: attr.length)) { v, r, _ in
+                guard let v = v as? String else { return }
+                all.append(r)
+                if v == id && found == nil { found = r }
+            }
+            if let found { return found }
+            if let ordinal, ordinal < all.count { return all[ordinal] }
+            return nil
+        }
+
+        private func tableOrdinal(id: String, in textView: UITextView) -> Int? {
+            let attr = textView.attributedText ?? NSAttributedString()
+            var k = 0, hit: Int?
+            attr.enumerateAttribute(.airpadTableID, in: NSRange(location: 0, length: attr.length)) { v, _, stop in
+                guard let v = v as? String else { return }
+                if v == id { hit = k; stop.pointee = true }
+                k += 1
+            }
+            return hit
+        }
+
+        /// The attachment run (+ note typography) for `table`, keeping `id`.
+        private func tableRun(_ table: MarkdownTable, id: String) -> NSAttributedString {
+            let run = NSMutableAttributedString(attributedString: MarkdownCodec.tableAttachmentString(table, tableID: id))
+            if parent.documentStyle {
+                let full = NSRange(location: 0, length: run.length)
+                run.addAttribute(.paragraphStyle, value: NoteTypography.bodyParagraphStyle, range: full)
+                run.addAttribute(.foregroundColor, value: NoteTypography.foreground, range: full)
+            }
+            return run
+        }
+
+        /// Puts `table` at the caret on its own line (or `segments` from a paste), then re-encodes.
+        func insertTable(_ table: MarkdownTable, in textView: UITextView, openEditor: Bool) {
+            let id = UUID().uuidString
+            insertBlocks([.table(table)], in: textView, tableIDs: [id])
+            if openEditor { DispatchQueue.main.async { [weak self] in self?.openTableEditor(id: id) } }
+        }
+
+        /// A paste with tables (`TableConverter.segments`): the prose as plain text in the current typing style, each
+        /// table as a block on its own line, replacing the selection. Undoable.
+        func insertBlocks(_ segs: [TableSegment], in textView: UITextView, tableIDs: [String]? = nil) {
+            captureUndoSnapshot(in: textView)
+            let attr = textView.attributedText ?? NSAttributedString()
+            let sel = textView.selectedRange
+            let ns = attr.string as NSString
+            let loc = min(max(sel.location, 0), ns.length)
+            let end = min(NSMaxRange(sel), ns.length)
+            var typing = textView.typingAttributes
+            typing[.attachment] = nil; typing[.airpadTableID] = nil; typing[.airpadImageItemID] = nil
+            let block = NSMutableAttributedString()
+            var ids = tableIDs ?? []
+            let atLineStart = loc == 0 || ns.substring(with: NSRange(location: loc - 1, length: 1)) == "\n"
+            for (k, seg) in segs.enumerated() {
+                switch seg {
+                case .text(let t):
+                    block.append(NSAttributedString(string: t, attributes: typing))
+                case .table(let t):
+                    let before = block.length > 0 ? !block.string.hasSuffix("\n") : !atLineStart
+                    if before { block.append(NSAttributedString(string: "\n", attributes: typing)) }
+                    block.append(tableRun(t, id: ids.isEmpty ? UUID().uuidString : ids.removeFirst()))
+                    let nextStartsLine: Bool = {
+                        if k + 1 < segs.count, case .text(let nt) = segs[k + 1] { return nt.hasPrefix("\n") }
+                        return k + 1 >= segs.count && (end >= ns.length || ns.substring(with: NSRange(location: end, length: 1)) == "\n")
+                    }()
+                    if !nextStartsLine { block.append(NSAttributedString(string: "\n", attributes: typing)) }
+                }
+            }
+            let mut = NSMutableAttributedString(attributedString: attr)
+            mut.replaceCharacters(in: NSRange(location: loc, length: end - loc), with: block)
+            textView.attributedText = mut
+            textView.selectedRange = NSRange(location: min(loc + block.length, mut.length), length: 0)
+            pushBinding(from: textView)
+            refreshActiveState(in: textView)
+            #if DEBUG
+            // UIKit falls back to TextKit 1 silently (no notification): check it after a table lands.
+            NSLog("[TEXTKIT] after table insert: TextKit %@", textView.textLayoutManager != nil ? "2" : "1 (fallback)")
+            #endif
+        }
+
+        /// The full-screen table view for the table `id` in this editor (no-op when it isn't here).
+        func openTableEditor(id: String) {
+            guard let tv = textView, let range = tableRange(id: id, in: tv), let ordinal = tableOrdinal(id: id, in: tv),
+                  let att = (tv.attributedText ?? NSAttributedString()).attribute(.attachment, at: range.location, effectiveRange: nil) as? NoteTableAttachment
+            else { return }
+            guard var top = tv.window?.rootViewController else { return }
+            while let p = top.presentedViewController { top = p }
+            tv.resignFirstResponder()
+            var host: UIViewController?
+            let editor = NoteTableEditorView(table: att.table, onDone: { [weak self, weak tv] t in
+                host?.dismiss(animated: true)
+                guard let self, let tv else { return }
+                self.replaceTable(id: id, ordinal: ordinal, with: t, in: tv)
+            }, onCancel: { host?.dismiss(animated: true) })
+            let h = UIHostingController(rootView: AnyView(editor.provideAppBodyFont()))
+            h.modalPresentationStyle = .fullScreen
+            host = h
+            top.present(h, animated: true)
+        }
+
+        /// The edited table back into the note (nil = remove the block and its line).
+        func replaceTable(id: String, ordinal: Int? = nil, with table: MarkdownTable?, in textView: UITextView) {
+            guard let range = tableRange(id: id, ordinal: ordinal, in: textView) else { return }
+            captureUndoSnapshot(in: textView)
+            let attr = textView.attributedText ?? NSAttributedString()
+            let mut = NSMutableAttributedString(attributedString: attr)
+            if let table {
+                mut.replaceCharacters(in: range, with: tableRun(table, id: id))
+            } else {
+                var r = range
+                let ns = attr.string as NSString
+                if NSMaxRange(r) < ns.length, ns.substring(with: NSRange(location: NSMaxRange(r), length: 1)) == "\n" { r.length += 1 }
+                else if r.location > 0, ns.substring(with: NSRange(location: r.location - 1, length: 1)) == "\n" { r.location -= 1; r.length += 1 }
+                mut.replaceCharacters(in: r, with: "")
+            }
+            textView.attributedText = mut
+            textView.selectedRange = NSRange(location: min(range.location + 1, mut.length), length: 0)
+            pushBinding(from: textView)
+            // The table view took the keyboard, so editing had ended (and saved) before this edit: save it now, the way
+            // a checklist tick outside editing does, or the store's copy re-decodes over it.
+            if !textView.isFirstResponder { parent.onChecklistMutated?() }
         }
 
         // MARK: Toolbar wiring
@@ -400,6 +540,10 @@ struct RichTextEditor: UIViewRepresentable {
             }
             state.toggleFormatPanel = { [weak self] in
                 self?.toggleFormatPanel()
+            }
+            state.insertTable = { [weak self] in
+                guard let self, let tv = self.textView else { return }
+                self.insertTable(.blank, in: tv, openEditor: true)
             }
             state.insertImage = { [weak self] in
                 // Capture the caret NOW (before the picker resigns first responder),
@@ -1600,8 +1744,25 @@ struct RichTextEditor: UIViewRepresentable {
         @objc fileprivate func handleChecklistTap(_ recognizer: UITapGestureRecognizer) {
             guard let textView = self.textView else { return }
             let point = recognizer.location(in: textView)
+            if let id = hitTestTable(at: point, in: textView) { openTableEditor(id: id); return }   // 1.1-C (C6)
             guard let prefixRange = hitTestChecklistGlyph(at: point, in: textView) else { return }
             toggleChecklistChecked(at: prefixRange, in: textView)
+        }
+
+        /// 1.1-C (C6) — the id of the table block under `point` (its drawn rect), if any.
+        fileprivate func hitTestTable(at point: CGPoint, in textView: UITextView) -> String? {
+            guard let attr = textView.attributedText, attr.length > 0,
+                  let position = textView.closestPosition(to: point) else { return nil }
+            let idx = textView.offset(from: textView.beginningOfDocument, to: position)
+            for i in [idx, idx - 1] where i >= 0 && i < attr.length {
+                guard let id = attr.attribute(.airpadTableID, at: i, effectiveRange: nil) as? String,
+                      let start = textView.position(from: textView.beginningOfDocument, offset: i),
+                      let end = textView.position(from: start, offset: 1),
+                      let range = textView.textRange(from: start, to: end) else { continue }
+                let rect = textView.selectionRects(for: range).map(\.rect).reduce(CGRect.null) { $0.union($1) }
+                if rect.insetBy(dx: -4, dy: -4).contains(point) { return id }
+            }
+            return nil
         }
 
         /// Returns the 2-char checklist prefix range (glyph + space) when
@@ -2025,7 +2186,7 @@ extension RichTextEditor.Coordinator: UIGestureRecognizerDelegate {
     func gestureRecognizer(_ gestureRecognizer: UIGestureRecognizer, shouldReceive touch: UITouch) -> Bool {
         guard let textView = gestureRecognizer.view as? UITextView else { return true }
         let point = touch.location(in: textView)
-        return hitTestChecklistGlyph(at: point, in: textView) != nil
+        return hitTestChecklistGlyph(at: point, in: textView) != nil || hitTestTable(at: point, in: textView) != nil
     }
 }
 
@@ -2199,6 +2360,8 @@ final class RichTextEditorState {
     /// `image` category on the bar → captures the caret (before the picker resigns
     /// first responder) and asks the consumer to present the photo picker.
     var insertImage: () -> Void = {}
+    /// 1.1-C (C6) — "Insert table": a blank 3 × 3 table at the caret (its own line), then the full-screen table view.
+    var insertTable: () -> Void = {}
 
     /// Brief AZ4 — the toolbar font chip's model. Non-nil ONLY for the note editor
     /// (`documentStyle`); when set, the bar shows a font chip in the reserved slot
@@ -2239,6 +2402,8 @@ struct RichTextToolbar: View {
             if state.supportsInlineImage {
                 separator
                 button(icon: "photo", active: false, action: state.insertImage)             // image — its own section
+                button(icon: "tablecells", active: false, action: state.insertTable)        // 1.1-C (C6) — a table (3 × 3)
+                    .accessibilityIdentifier("toolbar.insertTable")
             }
             // Brief AZ4 — the font chip lives in this slot for the note editor (it opens
             // the body-typeface picker). Non-note editors keep the empty reserved slot
@@ -2611,6 +2776,24 @@ final class RichTextUIView: UITextView {
         applyTitleExclusion(width: bounds.width)
         super.layoutSubviews()
     }
+
+    /// 1.1-C (C6) — a paste that holds a table (HTML `<table>` from the web / Docs / Sheets, tab-separated lines from
+    /// Numbers / Excel / Sheets, a Markdown pipe table from chat, a whole-CSV text) keeps its prose and turns each
+    /// table into a table block (`TableConverter.segments`). Any other paste is the system's, as before.
+    override func paste(_ sender: Any?) {
+        let pb = UIPasteboard.general
+        let html = pb.data(forPasteboardType: "public.html").flatMap { String(data: $0, encoding: .utf8) }
+        if html != nil || pb.hasStrings,
+           let segs = TableConverter.segments(html: html, text: pb.string),
+           let c = delegate as? RichTextEditor.Coordinator {
+            c.insertBlocks(segs, in: self)
+            return
+        }
+        super.paste(sender)
+    }
+
+    /// 1.1-C (C6) — which text system UIKit gave this view (TextKit 2 → live table blocks; 1 → static renders).
+    var usesTextKit2: Bool { textLayoutManager != nil }
 
     override init(frame: CGRect, textContainer: NSTextContainer?) {
         super.init(frame: frame, textContainer: textContainer)
@@ -2994,6 +3177,13 @@ enum MarkdownCodec {
         result.reserveCapacity(range.length)
 
         attr.enumerateAttributes(in: range, options: []) { attrs, runRange, _ in
+            // 1.1-C (C6) — a table block: its GFM lines, always on their own lines.
+            if let table = table(in: attrs) {
+                if runRange.location > range.location { result += "\n" }
+                result += TableConverter.gfm(table)
+                if NSMaxRange(runRange) < NSMaxRange(range) { result += "\n" }
+                return
+            }
             // Inline image: emit the storage token, skip normal text encoding
             // (the run's char is the U+FFFC attachment placeholder).
             if let itemID = attrs[.airpadImageItemID] as? String {
@@ -3057,6 +3247,23 @@ enum MarkdownCodec {
     // MARK: Decoding
 
     static func decode(_ markdown: String) -> NSAttributedString {
+        // 1.1-C (C6) — tables first: each GFM table block becomes one table attachment on its own line; the prose
+        // around it decodes exactly as before (the separating newlines stay in the prose, `TableConverter.splitGFM`).
+        let segs = TableConverter.splitGFM(markdown)
+        if segs.contains(where: { if case .table = $0 { return true }; return false }) {
+            let out = NSMutableAttributedString()
+            for seg in segs {
+                switch seg {
+                case .text(let t): if !t.isEmpty { out.append(decodeImages(t)) }
+                case .table(let t): out.append(tableAttachmentString(t))
+                }
+            }
+            return out
+        }
+        return decodeImages(markdown)
+    }
+
+    private static func decodeImages(_ markdown: String) -> NSAttributedString {
         // Inline images: split on `![](airpad-image:<id>)` tokens, decode each
         // surrounding text segment through the normal pipeline, and splice image
         // attachments between them. This keeps the (dense) inline markdown parser

@@ -54,7 +54,7 @@ struct MapLookSection: View {
                 }
                 .padding(.top, 2)
             }
-            Text(store.isPro ? "Your pick applies to both Maps: Aura and Eclipse show as Wash on the light Map."
+            Text(store.isPro ? "Your pick applies to both Maps: Aura shows as Wash on the light Map."
                              : "Flat is free. The other looks come with AirPad Pro.")
                 .font(appFont.font(size: 12, relativeTo: .caption1)).foregroundStyle(AppearancePalette.ink.opacity(0.45))
                 .fixedSize(horizontal: false, vertical: true)
@@ -493,9 +493,9 @@ struct ProSheet: View {
         .task { if store.loadState != .loaded { await store.loadProducts() } }
     }
 
-    /// The seven Pro looks, each with its swatch (Wash on the light Map).
+    /// The six Pro looks, each with its swatch (Wash on the light Map). 1.1-C (C7): Eclipse is dropped.
     private static let list: [(name: String, look: MapOrbLook, light: Bool)] = [
-        ("Glass", .glass, false), ("Aura", .aura, false), ("Eclipse", .eclipse, false), ("Wash", .aura, true),
+        ("Glass", .glass, false), ("Aura", .aura, false), ("Wash", .aura, true),
         ("Riso", .riso, false), ("Gradient", .gradient, false), ("Outline", .outline, false)]
 
     @ViewBuilder private var actions: some View {

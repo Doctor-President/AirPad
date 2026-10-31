@@ -54,7 +54,12 @@ final class AppLock {
     private let now: () -> TimeInterval
     private let auth: Authenticator
 
-    var enabled: Bool { didSet { defaults.set(enabled, forKey: Self.enabledKey); if !enabled { isLocked = false } } }
+    var enabled: Bool {
+        didSet {
+            defaults.set(enabled, forKey: Self.enabledKey); if !enabled { isLocked = false }
+            if defaults == .standard { ShareShared.requireFaceID = enabled }   // 1.1-C (C1) — the share sheet reads it
+        }
+    }
     var after: After { didSet { defaults.set(after.rawValue, forKey: Self.afterKey) } }
     /// The lock screen is up (content hidden until an unlock succeeds).
     private(set) var isLocked: Bool
@@ -76,6 +81,7 @@ final class AppLock {
         after = After(rawValue: defaults.object(forKey: Self.afterKey) as? Int ?? After.oneMinute.rawValue) ?? .oneMinute
         isLocked = on   // a cold launch with the lock on starts locked
         method = auth.method()
+        if defaults == .standard { ShareShared.requireFaceID = on }
     }
 
     /// The overlay window shows while locked or covered.
@@ -252,11 +258,14 @@ struct AppLockInstaller: View {
             })
             .onChange(of: scenePhase) { _, phase in
                 lock.scenePhaseChanged(phase)
+                PrivateEntries.shared.scenePhaseChanged(phase)   // 1.1-C (C3) — private entries hide again on background
+                if phase == .background { store.writeShareIndex() }   // 1.1-C (C1) — the share sheet's entry list
                 AppLockWindow.shared.setVisible(lock.overlayVisible)
                 if phase == .active, lock.isLocked, !lock.lockedCaptureOpen { Task { await lock.unlock() } }
             }
             .onChange(of: lock.overlayVisible) { _, v in AppLockWindow.shared.setVisible(v) }
             .onChange(of: lock.isLocked) { _, locked in
+                if locked { PrivateEntries.shared.hide() }   // 1.1-C — the lock's timeout hides private entries too
                 // Unlocked from inside Quick Capture: carry on into the real Quick Capture.
                 guard !locked, lock.lockedCaptureOpen else { return }
                 lock.lockedCaptureOpen = false

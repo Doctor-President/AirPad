@@ -8,7 +8,8 @@ import Foundation
 enum MarkdownPlain {
     /// Block + inline: each line loses its heading / quote / list / checkbox marker, then its inline syntax.
     static func text(_ s: String) -> String {
-        s.components(separatedBy: "\n").map { inline(block($0)) }.joined(separator: "\n")
+        // 1.1-C (C6) — a table reads as plain rows ("a · b"), never pipes.
+        TableConverter.flattenForPreview(s).components(separatedBy: "\n").map { inline(block($0)) }.joined(separator: "\n")
     }
 
     /// One line's leading block syntax: `# ` headings, `> ` quotes, `- ` / `* ` / `+ ` / `• ` / `1. ` markers, and a
@@ -16,6 +17,13 @@ enum MarkdownPlain {
     static func block(_ line: String) -> String {
         var l = line
         if l.range(of: #"^\s*([-*_])(\s*\1){2,}\s*$"#, options: .regularExpression) != nil { return "" }
+        // 1.1-C (C6) — a stored table's lines, read one at a time: the delimiter row is nothing, a `| a | b |` row is
+        // its cells ("a · b").
+        let tl = l.trimmingCharacters(in: .whitespaces)
+        if tl.hasPrefix("|") && tl.hasSuffix("|") && tl.count > 1 {
+            if TableConverter.isSeparator(tl) { return "" }
+            if let c = TableConverter.cells(tl) { return TableConverter.plainRow(c) }
+        }
         if let cb = checkbox(l) { return (cb.done ? checkedGlyph : uncheckedGlyph) + " " + cb.text }
         // live-29 (B4) — a label line never starts with a heading marker, however the note spells it: any indentation,
         // a no-break space, a BOM / zero-width space before it, inside a quote, a trailing "\r", or "###" with no space
@@ -102,6 +110,7 @@ enum MarkdownPlain {
     /// only): `<b>` / `<strong>` → `**`, `<i>` / `<em>` → `*`, `<s>` / `<del>` / `<strike>` → `~~`, `<br>` → a space,
     /// any other tag dropped, entities decoded (to the decoder's escapes where it has one). `<u>` and typed `<` stay.
     static func forDecoder(_ s: String) -> String {
+        let s = TableConverter.flattenForPreview(s)   // 1.1-C (C6) — cards show a table's rows, never pipes
         guard s.contains("<") || s.contains("&") else { return s }
         var t = park(s)
         t = replace(t, #"<br\s*/?>"#, " ")

@@ -45,5 +45,7 @@
 		<key>NSExtensionPrincipalClass</key>
 		<string>$(PRODUCT_MODULE_NAME).ShareViewController</string>
 	</dict>
+	<key>NSFaceIDUsageDescription</key>
+	<string>AirPad uses Face ID before showing your entries in the share sheet.</string>
 </dict>
 </plist>

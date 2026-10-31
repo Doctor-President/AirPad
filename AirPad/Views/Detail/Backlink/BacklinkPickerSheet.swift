@@ -37,7 +37,7 @@ struct BacklinkPickerSheet: View {
         // a backlink, so those nodes are still valid targets.
         let alreadyLinked: Set<String> = onPick == nil ? Set((source?.connections ?? []).map(\.nodeID)) : []
         let q = searchText.trimmingCharacters(in: .whitespacesAndNewlines).lowercased()
-        var result: [Node] = store.nodes.filter { node in
+        var result: [Node] = store.hidingPrivate(store.nodes).filter { node in   // 1.1-C — private entries hidden
             node.id != sourceNodeID && !alreadyLinked.contains(node.id)
         }
         if !q.isEmpty {

@@ -482,6 +482,9 @@ struct Node: Codable, Identifiable, Hashable {
     /// `EntryBodyFont`. Additive + decode-tolerant (`decodeIfPresent`); legacy nodes
     /// decode as nil — no schema-version bump (the `heroCrop` / `priority` pattern).
     var perEntryBodyFont: EntryBodyFont?
+    /// 1.1-C (C3) — Private: hidden everywhere until "Show private" is unlocked (`PrivateEntries`). Additive +
+    /// decode-tolerant (absent = false), no schema bump.
+    var isPrivate: Bool = false
 
     enum CodingKeys: String, CodingKey {
         case id, title, summary, tags, mood, provenance, threads, location, items, domain, source
@@ -523,6 +526,7 @@ struct Node: Codable, Identifiable, Hashable {
         case priority
         case proposals
         case perEntryBodyFont = "per_entry_body_font"
+        case isPrivate = "is_private"
     }
 
     // ID-based equality so Hashable synthesis doesn't require all properties to be Hashable.
@@ -694,6 +698,7 @@ extension Node {
         priority                   = try c.decodeIfPresent(PriorityState.self, forKey: .priority)
         proposals                  = try c.decodeIfPresent([Proposal].self, forKey: .proposals)
         perEntryBodyFont           = try c.decodeIfPresent(EntryBodyFont.self, forKey: .perEntryBodyFont)
+        isPrivate                  = try c.decodeIfPresent(Bool.self,     forKey: .isPrivate) ?? false
     }
 }
 

@@ -670,6 +670,10 @@ struct CanvasView: View {
         .onChange(of: store.tags) { _, _ in
             syncScene(nodes: store.visibleNodes(in: scope))
         }
+        // 1.1-C (C3) — "Show private" / hidden again, or an entry flagged Private: the Map drops or regains it.
+        .onChange(of: store.hiddenNodeIDs) { _, _ in
+            syncScene(nodes: store.visibleNodes(in: scope))
+        }
     }
 
     private var canvasWithLateObservers: some View {

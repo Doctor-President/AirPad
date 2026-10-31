@@ -3,27 +3,34 @@ import StoreKit
 import Observation
 
 /// pro-build — the user's Map look: ONE pick, paired across the Maps as the looks always were (Glass ↔ Glass with each
-/// Map's own values; Aura / Eclipse ↔ Wash; Riso, Gradient, Outline on both). Flat is free; every other look needs Pro.
+/// Map's own values; Aura ↔ Wash; Riso, Gradient, Outline on both). 1.1-C (C7): Eclipse is dropped; a saved Eclipse pick
+/// reads as Aura (and is rewritten as Aura). Flat is free; every other look needs Pro.
 /// The pick survives a lost entitlement (a refund shows Flat, and the pick comes back with Pro). Fresh install = Flat.
 /// Static + cached: the Map reads `effective` every frame.
 enum MapLookChoice {
     static let storageKey = "mapLook.v1"
-    /// The lineups each Map's picker shows. On the light Map, `.aura` is shown as "Wash" (Aura and Eclipse draw Wash there).
-    static let darkLineup: [MapOrbLook] = [.flat, .glass, .aura, .eclipse, .riso, .gradient, .outline]
+    /// The lineups each Map's picker shows. On the light Map, `.aura` is shown as "Wash" (Aura draws Wash there).
+    static let darkLineup: [MapOrbLook] = [.flat, .glass, .aura, .riso, .gradient, .outline]
     static let lightLineup: [MapOrbLook] = [.flat, .glass, .aura, .riso, .gradient, .outline]
-    /// The Pro sheet's list: every Pro look once (Wash = the light Map's half of Aura / Eclipse).
-    static let proListNames = ["Glass", "Aura", "Eclipse", "Wash", "Riso", "Gradient", "Outline"]
+    /// The Pro sheet's list: every Pro look once (Wash = the light Map's half of Aura).
+    static let proListNames = ["Glass", "Aura", "Wash", "Riso", "Gradient", "Outline"]
 
+    /// Looks that don't ship read as the one that replaced them: Fresnel → Flat, Eclipse → Aura (1.1-C, C7).
+    static func shipping(_ l: MapOrbLook) -> MapOrbLook {
+        switch l { case .fresnel: .flat; case .eclipse: .aura; default: l }
+    }
     private static var cached: MapOrbLook = {
         let raw = UserDefaults.standard.string(forKey: storageKey) ?? MapOrbLook.flat.rawValue
-        let l = MapOrbLook(rawValue: raw) ?? .flat
-        return l == .fresnel ? .flat : l   // Fresnel doesn't ship
+        let saved = MapOrbLook(rawValue: raw) ?? .flat
+        let l = shipping(saved)
+        if l != saved { UserDefaults.standard.set(l.rawValue, forKey: storageKey) }   // migrate the saved pick once
+        return l
     }()
     /// What the user picked (kept even when Pro isn't active).
     static var picked: MapOrbLook {
         get { cached }
         set {
-            let v = newValue == .fresnel ? .flat : newValue
+            let v = shipping(newValue)
             cached = v
             UserDefaults.standard.set(v.rawValue, forKey: storageKey)
         }
@@ -42,10 +49,8 @@ enum MapLookChoice {
     static func isSelected(_ l: MapOrbLook, light: Bool, picked p: MapOrbLook) -> Bool {
         light && l == .aura ? p.drawsWashOnLight : l == p
     }
-    /// The pick a row stands for: "Wash" on the light Map keeps Eclipse if that's the dark pick, else Aura.
-    static func pick(for l: MapOrbLook, light: Bool, current: MapOrbLook) -> MapOrbLook {
-        light && l == .aura ? (current == .eclipse ? .eclipse : .aura) : l
-    }
+    /// The pick a row stands for ("Wash" on the light Map is Aura).
+    static func pick(for l: MapOrbLook, light: Bool, current: MapOrbLook) -> MapOrbLook { l }
 }
 
 /// 1.1-A fix-up (2) — the Dashboard panes' surface. Everyone gets Glass (T's pick); the others come with AirPad Pro, the
@@ -104,7 +109,7 @@ enum LookStrength: Int, CaseIterable, Identifiable {
 enum MapLookStrength {
     static let storageKey = "mapLook.strength.v1"   // [look rawValue: LookStrength rawValue]
     /// The looks with T's strengths. Glass has none: the study's Glass is the light-Map Light Glass, not the shipping one.
-    static func has(_ l: MapOrbLook) -> Bool { [.aura, .eclipse, .riso, .gradient, .outline].contains(l) }
+    static func has(_ l: MapOrbLook) -> Bool { [.aura, .riso, .gradient, .outline].contains(l) }
     private static var cached: [String: Int] = (UserDefaults.standard.dictionary(forKey: storageKey) ?? [:]).compactMapValues {
         ($0 as? NSNumber)?.intValue ?? ($0 as? String).flatMap { Int($0) }   // launch-argument values arrive as strings
     }

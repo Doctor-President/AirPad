@@ -91,7 +91,7 @@ struct PinChatSheet: View {
 
     private var candidates: [Node] {
         let q = query.trimmingCharacters(in: .whitespacesAndNewlines).lowercased()
-        let all = store.nodes.sorted { $0.updatedAt > $1.updatedAt }
+        let all = store.hidingPrivate(store.nodes).sorted { $0.updatedAt > $1.updatedAt }   // 1.1-C
         guard !q.isEmpty else { return all }
         return all.filter { ($0.title.isEmpty ? "untitled" : $0.title.lowercased()).contains(q) }
     }

@@ -82,6 +82,7 @@ struct SettingsView: View {
     @State private var deepSeekKey = ""
     @State private var braveSearchKey = ""
     @State private var tavilySearchKey = ""   // live-28 (A2)
+    @State private var quickSave = false   // 1.1-C (C1) — mirrors ShareShared.quickSave (App Group)
     /// live-28 (A2) — Web search on/off (the keys stay in the Keychain) and the provider.
     @AppStorage(WebSearchBackend.enabledKey) private var webSearchEnabled = true
     @AppStorage(WebSearchBackend.providerKey) private var webSearchProvider = WebSearchBackend.Provider.brave.rawValue
@@ -307,6 +308,7 @@ struct SettingsView: View {
         submenuScroll(header: { submenuHeader(icon: "books.vertical.fill", tint: "1B59C2", title: "Library",
             blurb: "Everything you've saved, and the ways to bring more in or take it out.") }) {
             captureSection     // Brief BI — Done-delegates toggle
+            shareSection       // 1.1-C (C1) — Quick save
             corpusSection      // counts · search index + rebuild · export · clear · sample add/remove
             importSection      // "each paragraph becomes an entry"
             reviewSection      // Needs review (import review queue)
@@ -329,6 +331,25 @@ struct SettingsView: View {
                 .font(appFont.font(size: 12, relativeTo: .caption1))
                 .foregroundStyle(AppearancePalette.ink.opacity(0.4))
         }
+    }
+
+    /// 1.1-C (C1) — the share sheet: AirPad's own sheet (title, note, new or existing entry) by default; "Quick save"
+    /// brings back 1.0's one tap ("Saved!", a new entry). Stored in the App Group so the extension reads it.
+    private var shareSection: some View {
+        Section {
+            Toggle(isOn: Binding(get: { quickSave }, set: { quickSave = $0; ShareShared.quickSave = $0 })) {
+                Text("Quick save")
+                    .font(appFont.font(size: 15, weight: .medium, relativeTo: .subheadline))
+                    .foregroundStyle(AppearancePalette.ink)
+            }
+            .tint(Color(hexString: "1B59C2"))
+            .accessibilityIdentifier("settings.quickSave")
+        } footer: {
+            Text("Sharing to AirPad saves at once as a new entry, without asking for a title or where to put it.")
+                .font(appFont.font(size: 12, relativeTo: .caption1))
+                .foregroundStyle(AppearancePalette.ink.opacity(0.4))
+        }
+        .onAppear { quickSave = ShareShared.quickSave }
     }
 
     /// Brief K — Manage Tags CRUD. A `List` (native swipe + context menu). Room-SEALED:

@@ -119,6 +119,115 @@ final class Batch11CUI: XCTestCase {
         app.buttons["tableEditor.cancel"].tap()
     }
 
+    // MARK: The ≡ menu over the Map (1.1-C fix-up (1))
+
+    /// Every row of the slide-out menu takes its tap with the Librarian up behind it, Settings and the bottom edge
+    /// included: the faded Librarian surface takes no touches while the menu is open. Each launch opens the menu over the
+    /// Map (`-OpenMap -OpenMenu`); an action row's tap closes the menu (`dismiss(then:)`), so the menu going away is the
+    /// proof that the tap reached the row and not the surface under it.
+    func testMenuRowsTakeTaps() {
+        func open() -> XCUIApplication {
+            let app = launch(["-OpenMap", "-OpenMenu"], fresh: false)
+            XCTAssertTrue(app.buttons["menu.settings"].waitForExistence(timeout: 20), "the menu is open")
+            Thread.sleep(forTimeInterval: 1.2)   // the slide and the Librarian's fade settle
+            return app
+        }
+        _ = launch([], fresh: true); XCUIApplication().terminate()
+
+        // Settings, bottom edge of the row (the band the faded Librarian pill sits over).
+        var app = open()
+        shot(app, "menu-open")
+        let settings = app.buttons["menu.settings"]
+        XCTAssertGreaterThan(settings.frame.maxY, app.windows.firstMatch.frame.height - 140, "Settings sits in the Librarian's band")
+        settings.coordinate(withNormalizedOffset: CGVector(dx: 0.5, dy: 0.92)).tap()
+        XCTAssertTrue(app.switches["settings.quickSave"].waitForExistence(timeout: 6) || app.navigationBars["Settings"].waitForExistence(timeout: 2),
+                      "Settings opens from its bottom edge")
+        shot(app, "menu-settings-opened")
+        app.terminate()
+
+        // Settings, middle of the row.
+        app = open()
+        app.buttons["menu.settings"].tap()
+        XCTAssertTrue(app.switches["settings.quickSave"].waitForExistence(timeout: 6) || app.navigationBars["Settings"].waitForExistence(timeout: 2),
+                      "Settings opens")
+        app.terminate()
+
+        // Each other action row closes the menu.
+        for id in ["menu.appearance", "menu.analyze", "menu.filter", "menu.close"] {
+            app = open()
+            let row = app.buttons[id]
+            XCTAssertTrue(row.exists, "\(id) is in the menu")
+            row.tap()
+            XCTAssertTrue(app.buttons["menu.settings"].waitForNonExistence(timeout: 4), "\(id) takes its tap")
+            app.terminate()
+        }
+
+        // Show private stays in the menu and flips (Face ID stubbed); the inline Gravity switch flips.
+        app = open()
+        let priv = app.buttons["menu.showPrivate"]
+        if priv.exists {
+            priv.tap()
+            XCTAssertTrue(app.buttons.matching(NSPredicate(format: "label == 'Hide private'")).firstMatch.waitForExistence(timeout: 4),
+                          "Show private takes its tap")
+        }
+        let gravity = app.switches["appearance.gravityWells"].firstMatch
+        if gravity.waitForExistence(timeout: 2) {
+            let before = gravity.value as? String
+            gravity.switches.firstMatch.exists ? gravity.switches.firstMatch.tap() : gravity.tap()
+            Thread.sleep(forTimeInterval: 0.6)
+            XCTAssertNotEqual(gravity.value as? String, before, "the inline Gravity switch takes its tap")
+        }
+        shot(app, "menu-inline")
+        app.terminate()
+    }
+
+    // MARK: Save to folder (1.1-C fix-up (3))
+
+    /// Export → the remembered folder is offered first (seeded: `-ExportFolderSeed`, as the picker would leave it), with
+    /// Change folder…; saving twice gives "<title>.md" then "<title> 2.md"; Change folder… opens the system folder picker.
+    func testSaveToFolder() {
+        var app = launch(["-EntryQuikCapture"], fresh: true)
+        let editor = app.textViews["noteEditor"]
+        XCTAssertTrue(editor.waitForExistence(timeout: 20))
+        _ = app.keyboards.element.waitForExistence(timeout: 10)
+        editor.typeText("Folder check\nA note for the vault.")
+        dismissKeyboardTip(app)
+        let hide = app.buttons["keyboard.chevron.compact.down"]
+        if hide.waitForExistence(timeout: 3) { hide.tap() }
+        Thread.sleep(forTimeInterval: 0.8)
+        app.buttons["Done"].firstMatch.tap()
+        Thread.sleep(forTimeInterval: 4)
+        app.terminate()
+
+        app = launch(["-ExportFolderSeed"], fresh: false)
+        XCTAssertTrue(openFirstEntry(app))
+        tapEntryMenu(app)
+        XCTAssertTrue(app.buttons["entryMenu.export"].waitForExistence(timeout: 5))
+        app.buttons["entryMenu.export"].tap()
+        let save = app.buttons["export.saveToFolder"]
+        XCTAssertTrue(save.waitForExistence(timeout: 5), "Save to folder in the export sheet")
+        XCTAssertTrue(save.label.contains("ExportSeed"), "the remembered folder is offered: \(save.label)")
+        XCTAssertLessThan(save.frame.minY, app.buttons["export.markdown"].frame.minY, "offered first")
+        XCTAssertTrue(app.buttons["export.changeFolder"].exists, "with Change folder…")
+        shot(app, "folder-offered")
+        save.tap()
+        let saved = app.staticTexts["export.saved"]
+        XCTAssertTrue(saved.waitForExistence(timeout: 8), "saved")
+        let first = saved.label
+        save.tap()
+        let second = NSPredicate(format: "label CONTAINS ' 2.md'")
+        XCTAssertTrue(app.staticTexts.matching(second).firstMatch.waitForExistence(timeout: 8), "a second save adds \" 2\": \(first)")
+        XCTAssertTrue(first.contains(".md") && !first.contains(" 2.md"), "the first save keeps the plain name: \(first)")
+        shot(app, "folder-saved-twice")
+        app.buttons["export.changeFolder"].tap()
+        let picker = app.navigationBars.matching(NSPredicate(format: "identifier CONTAINS 'DOC' OR identifier CONTAINS 'Browse' OR identifier CONTAINS 'Recents'")).firstMatch
+        let open = app.buttons["Open"].firstMatch
+        XCTAssertTrue(open.waitForExistence(timeout: 8) || picker.exists, "Change folder… opens the folder picker")
+        shot(app, "folder-picker")
+        if app.buttons["Cancel"].exists { app.buttons["Cancel"].firstMatch.tap() }
+        app.terminate()
+    }
+
     // MARK: Private entries + export
 
     func testPrivateAndExport() {
@@ -146,15 +255,17 @@ final class Batch11CUI: XCTestCase {
         XCTAssertTrue(app.buttons["export.markdown"].waitForExistence(timeout: 5), "the export sheet")
         shot(app, "export-sheet")
         app.buttons["export.textBundle"].tap()
-        let share = app.otherElements["ActivityListView"].firstMatch
-        _ = share.waitForExistence(timeout: 8)
+        // The share sheet: wait for it to be up (the file takes a moment to make) before closing anything — a swipe while
+        // it was still coming closed the export sheet under it instead.
+        let saveToFiles = app.descendants(matching: .any).matching(NSPredicate(format: "label == 'Save to Files'")).firstMatch
+        XCTAssertTrue(saveToFiles.waitForExistence(timeout: 15), "the share sheet opens with the file")
         shot(app, "export-share")
-        XCTAssertTrue(share.exists || app.navigationBars["UIActivityContentView"].exists || app.buttons["Save to Files"].exists
-                      || app.cells.matching(NSPredicate(format: "label CONTAINS 'Save to Files'")).firstMatch.exists, "the share sheet opens with the file")
-        // Close the share sheet + the export sheet.
-        if app.buttons["Close"].exists { app.buttons["Close"].tap() } else { app.swipeDown() }
-        Thread.sleep(forTimeInterval: 1)
-        if app.buttons["Cancel"].exists { app.buttons["Cancel"].firstMatch.tap() }
+        let close = app.buttons.matching(NSPredicate(format: "label == 'Close' OR identifier == 'Close'")).firstMatch
+        if close.exists { close.tap() } else { app.swipeDown() }
+        XCTAssertTrue(saveToFiles.waitForNonExistence(timeout: 6), "the share sheet closes")
+        let cancel = app.buttons["Cancel"].firstMatch
+        if cancel.waitForExistence(timeout: 3) { cancel.tap() }
+        XCTAssertTrue(app.buttons["export.markdown"].waitForNonExistence(timeout: 5), "the export sheet closes")
         Thread.sleep(forTimeInterval: 1)
         _ = ellipsis
 
@@ -186,7 +297,7 @@ final class Batch11CUI: XCTestCase {
         show.tap()
         Thread.sleep(forTimeInterval: 1)
         shot(app, "private-shown-menu")
-        app.buttons["xmark"].firstMatch.tap()
+        app.buttons["menu.close"].firstMatch.tap()
         XCTAssertTrue(listRow.waitForExistence(timeout: 8), "Show private brings it back in the List")
         shot(app, "private-shown-list")
     }

@@ -205,7 +205,7 @@ struct GravityWellsToggle: View {
 }
 
 /// 1.1-B — "Background", beside Map look (Pro): the background colour, an optional two-colour gradient across the screen,
-/// and the Map's dots, for the appearance showing now. It applies to the Map, cards, lists and the Dashboard (T, amended
+/// and the dots (1.1-C fix-up: "Dots", on every view with the dot grid), for the appearance showing now. It applies to the Map, cards, lists and the Dashboard (T, amended
 /// 2026-10-29); text on it picks its ink by contrast (`MapGround.inkPick`). Without Pro the row carries a lock and opens
 /// the Pro sheet, as the Map looks do. "Reset to default" returns every view to today's ground.
 struct MapGroundSection: View {
@@ -233,7 +233,7 @@ struct MapGroundSection: View {
             .background(AppearancePalette.ink.opacity(0.05))
             .clipShape(RoundedRectangle(cornerRadius: 12))
             Text(store.isPro ? "For the Map, cards, lists and the Dashboard in \(light ? "Light" : "Dark"). Switch to \(light ? "Dark" : "Light") to edit the other."
-                             : "Change the background and the Map's dots with AirPad Pro.")
+                             : "Change the background and the dots with AirPad Pro.")
                 .font(appFont.font(size: 12, relativeTo: .caption1)).foregroundStyle(AppearancePalette.ink.opacity(0.45))
                 .fixedSize(horizontal: false, vertical: true)
         }
@@ -266,8 +266,9 @@ struct MapGroundSection: View {
                 ColorPicker("Second colour", selection: hexBinding(\.color2, "color2"), supportsOpacity: false)
                 slider("Angle", value: binding(\.angle), range: 0...360, text: "\(Int(side.angle.rounded()))°")
             }
-            ColorPicker("Map dots", selection: hexBinding(\.dot, "dot"), supportsOpacity: false)
-            slider("Map dot opacity", value: binding(\.dotOpacity), range: 0...1, text: "\(Int((side.dotOpacity * 100).rounded()))%")
+            ColorPicker("Dots", selection: hexBinding(\.dot, "dot"), supportsOpacity: false)
+                .accessibilityIdentifier("mapGround.dots")
+            slider("Dot opacity", value: binding(\.dotOpacity), range: 0...1, text: "\(Int((side.dotOpacity * 100).rounded()))%")
             if let adjusted {
                 Text(adjusted == .gradientSides
                      ? "Both gradient colours must be light, or both dark, so text reads across it. The second colour was adjusted."
@@ -317,7 +318,7 @@ struct MapGroundSection: View {
             #else
             let old = false
             #endif
-            let c = MapGroundSide.rgb((old ? nil : rawPick[key]) ?? side[keyPath: k])
+            let c = MapGroundSide.rgb((old ? nil : rawPick[key]) ?? (key == "dot" ? side.dotShown : side[keyPath: k]))
             return Color(red: Double(c.x), green: Double(c.y), blue: Double(c.z))
         }, set: { color in
             var r: CGFloat = 0, g: CGFloat = 0, b: CGFloat = 0, a: CGFloat = 0
@@ -325,7 +326,9 @@ struct MapGroundSection: View {
             func ch(_ v: CGFloat) -> Int { Int((min(max(v, 0), 1) * 255).rounded()) }
             let hex = String(format: "%02X%02X%02X", ch(r), ch(g), ch(b))
             rawPick[key] = hex
-            var s = side; s[keyPath: k] = hex; commit(s)
+            var s = side; s[keyPath: k] = hex
+            if key == "dot" { s.dotEdited = true }   // 1.1-C fix-up (2) — the dots now keep this colour
+            commit(s)
             #if DEBUG
             NSLog("[GROUNDPICK] picked %@ (r=%.4f g=%.4f b=%.4f) → stored %@", s[keyPath: k], r, g, b, side[keyPath: k])
             #endif
@@ -343,7 +346,7 @@ private struct GroundSwatch: View {
             LinearGradient(colors: [color(side.color), color(side.gradient ? side.color2 : side.color)],
                            startPoint: .bottom, endPoint: .top)
             HStack(spacing: size * 0.18) {
-                ForEach(0..<3, id: \.self) { _ in Circle().fill(color(side.dot).opacity(side.dotOpacity)).frame(width: 3, height: 3) }
+                ForEach(0..<3, id: \.self) { _ in Circle().fill(color(side.dotShown).opacity(side.dotOpacity)).frame(width: 3, height: 3) }
             }
         }
         .frame(width: size, height: size)

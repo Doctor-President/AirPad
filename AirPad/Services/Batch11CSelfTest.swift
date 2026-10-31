@@ -96,7 +96,79 @@ enum Batch11CSelfTest {
         let mdOnly = EntryExporter.markdown(for: exportNode, withAssets: false) { _, _ in nil }
         check("export .md alone: no assets, no image tokens", mdOnly.assets.isEmpty && !mdOnly.text.contains("assets/") && !mdOnly.text.contains("airpad-image"))
         check("export file name is safe", EntryExporter.baseName(exportNode) == "Trip   plan" || !EntryExporter.baseName(exportNode).contains("/"))
+
+        // MARK: Save to folder… (1.1-C fix-up (3)) — on a scratch folder, through the same file work as the real save
+        let fm = FileManager.default
+        let scratch = fm.temporaryDirectory.appendingPathComponent("folder-export-\(UUID().uuidString)", isDirectory: true)
+        try? fm.createDirectory(at: scratch, withIntermediateDirectories: true)
+        let srcImg = scratch.appendingPathComponent("src.jpg")
+        try? Data([0xFF, 0xD8, 0xFF]).write(to: srcImg)
+        let vault = scratch.appendingPathComponent("Vault", isDirectory: true)
+        try? fm.createDirectory(at: vault, withIntermediateDirectories: true)
+        let base = EntryExporter.baseName(exportNode)
+        let first = try? EntryExporter.writeNote(exportNode, into: vault) { _, _ in srcImg }
+        let firstText = (try? String(contentsOf: vault.appendingPathComponent(base + ".md"), encoding: .utf8)) ?? ""
+        let img1 = "\(base) image-1.jpg"
+        check("folder: <name>.md + attachments/<name> image-1.jpg, linked relatively", first == base + ".md"
+              && fm.fileExists(atPath: vault.appendingPathComponent("attachments/" + img1).path)
+              && firstText.contains("![](attachments/" + img1.addingPercentEncoding(withAllowedCharacters: .urlPathAllowed)! + ")")
+              && !firstText.contains("assets/"))
+        let second = try? EntryExporter.writeNote(exportNode, into: vault) { _, _ in srcImg }
+        check("folder: a name clash adds \" 2\" (note and its files), the first is untouched", second == base + " 2.md"
+              && fm.fileExists(atPath: vault.appendingPathComponent("attachments/\(base) 2 image-1.jpg").path)
+              && ((try? String(contentsOf: vault.appendingPathComponent(base + ".md"), encoding: .utf8)) ?? "") == firstText)
+        try? Data([0]).write(to: vault.appendingPathComponent("attachments/\(base) 3 image-1.jpg"))
+        let third = try? EntryExporter.writeNote(exportNode, into: vault) { _, _ in srcImg }
+        let thirdText = (try? String(contentsOf: vault.appendingPathComponent(base + " 3.md"), encoding: .utf8)) ?? ""
+        check("folder: an attachment clash adds \" 2\" and the link follows", third == base + " 3.md"
+              && thirdText.contains(("attachments/\(base) 3 image-1 2.jpg").addingPercentEncoding(withAllowedCharacters: .urlPathAllowed)!))
+        let textOnly = Node(id: "export-text", createdAt: now, updatedAt: now, title: "Just text", summary: "", tags: [], mood: nil,
+                            isMeta: false, provenance: nil, threads: [], location: nil, items: [item(.text, content: "Hello")],
+                            domain: nil, domainConfirmed: false, needsAIProcessing: false)
+        let plainDir = scratch.appendingPathComponent("Plain", isDirectory: true)
+        try? fm.createDirectory(at: plainDir, withIntermediateDirectories: true)
+        _ = try? EntryExporter.writeNote(textOnly, into: plainDir) { _, _ in nil }
+        check("folder: a text-only note is just the .md (no attachments/)",
+              (try? fm.contentsOfDirectory(atPath: plainDir.path)) == ["Just text.md"])
+        check("freeName: stem, stem 2, stem 3", PickedFolder.freeName("a", ext: "md") { ["a.md", "a 2.md"].contains($0) } == "a 3.md")
+        let picked = PickedFolder(key: "selftest.pickedFolder")
+        try? picked.remember(vault)
+        check("picked folder: the bookmark resolves to the folder", picked.url?.standardizedFileURL.resolvingSymlinksInPath().path
+              == vault.standardizedFileURL.resolvingSymlinksInPath().path && picked.name == "Vault")
+        picked.forget()
+        check("picked folder: forget clears it", picked.url == nil)
+        try? fm.removeItem(at: scratch)
         exportNode.items = []
+
+        // MARK: Dots (1.1-C fix-up (2))
+        func side(_ json: String) -> MapGroundSide? { try? JSONDecoder().decode(MapGroundSide.self, from: Data(json.utf8)) }
+        let oldDefault = side(#"{"custom":true,"color":"FFEEED","gradient":false,"color2":"FFF8EF","angle":90,"dot":"FFFFFF","dotOpacity":0.809}"#)
+        let oldPicked = side(#"{"custom":true,"color":"111115","gradient":false,"color2":"FFF8EF","angle":90,"dot":"FF8800","dotOpacity":0.5}"#)
+        check("dots: a 1.1-B ground still decodes; a default dot colour counts as not picked, another as picked",
+              oldDefault?.dotEdited == false && oldPicked?.dotEdited == true && oldPicked?.dotShown == "FF8800")
+        check("dots: not picked → the default dots of the background's side",
+              oldDefault?.dotShown == MapGroundSide.lightDefault.dot
+              && MapGroundSide(custom: true, color: "0A1A3A", gradient: false, color2: "0A1A3A", angle: 90, dot: "3B362F", dotOpacity: 0.805).dotShown == "FFFFFF")
+        check("dots: no custom background → the library's dots unchanged",
+              BackgroundGridSKView.dots(dark: true, ground: nil).opacity == AppearancePalette.libraryGridDotOpacity(dark: true)
+              && BackgroundGridSKView.dots(dark: false, ground: nil).opacity == AppearancePalette.libraryGridDotOpacity(dark: false))
+        let custom = MapGroundSide(custom: true, color: "1B2A4A", gradient: false, color2: "1B2A4A", angle: 90, dot: "FF8800", dotOpacity: 0.4, dotEdited: true)
+        let libDots = BackgroundGridSKView.dots(dark: true, ground: custom)
+        check("dots: a custom background's Dots reach the list / cards / grid", libDots.opacity == 0.4 && libDots.rgb == MapGroundSide.rgb("FF8800"))
+        // Visible at the default opacity: the dot's peak over the ground, as contrast, on a few custom backgrounds.
+        var worst: Float = 99
+        for (light, hexes) in [(false, ["111115", "1B2A4A", "3A0F2A", "FFEEED", "E8F0FF"]), (true, ["FFEEED", "FFF6D8", "D9F2E6", "111115", "2A1B3A"])] {
+            for h in hexes {
+                var g = light ? MapGroundSide.lightDefault : MapGroundSide.darkDefault
+                g.custom = true; g.color = h; g = g.readable
+                let d = BackgroundGridSKView.dots(dark: !light, ground: g)
+                let peak = g.colorRGB + (d.rgb - g.colorRGB) * d.opacity
+                let cr = TitleInkRule.contrast(peak, g.colorRGB)
+                worst = min(worst, cr)
+                NSLog("[Batch11CSelfTest] dots %@ on #%@: %.2f:1", light ? "light" : "dark", g.color, cr)
+            }
+        }
+        check("dots: visible at the default opacity on custom backgrounds, both appearances (worst ≥ 3:1)", worst >= 3)
 
         // MARK: Share sheet index / append (C1)
         let idx = ShareIndex(entries: [.init(id: "1", title: "Garden notes", updatedAt: now, isPrivate: false),

@@ -38,7 +38,8 @@ struct CanvasSlideOutMenu: View {
     let onQuarantineReview: () -> Void
     /// 1.1-A (A3) — opens the half-height Appearance panel over the current view.
     let onAppearance: () -> Void
-    /// Room kept under the bottom Settings row: on the canvas the Librarian's search pill floats over the menu.
+    /// Room under the bottom Settings row. The Librarian fades out and takes no touches while the menu is open
+    /// (`ContentView.applyLibrarianInteraction`), so no room is kept for it.
     var bottomInset: CGFloat = 12
 
     private let panelWidth: CGFloat = 280
@@ -94,6 +95,7 @@ struct CanvasSlideOutMenu: View {
                             label: "Analyze",
                             action: { dismiss(then: onAnalyze) }
                         )
+                        .accessibilityIdentifier("menu.analyze")
                         if let onFilter {
                             actionRow(
                                 icon: "slider.horizontal.3",
@@ -102,6 +104,7 @@ struct CanvasSlideOutMenu: View {
                                 badgeColor: .blue,
                                 action: { dismiss(then: onFilter) }
                             )
+                            .accessibilityIdentifier("menu.filter")
                         }
                         if quarantineCount > 0 {
                             actionRow(
@@ -171,6 +174,7 @@ struct CanvasSlideOutMenu: View {
                     .clipShape(Circle())
             }
             .buttonStyle(.plain)
+            .accessibilityIdentifier("menu.close")
         }
         .padding(.horizontal, 20)
         .padding(.top, 16)

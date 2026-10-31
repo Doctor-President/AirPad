@@ -21,6 +21,9 @@ import UIKit
 /// white-only dots (they were the makeShape default, unreadable on light ground).
 struct BackgroundGridSKView: UIViewRepresentable {
     @Environment(\.colorScheme) private var colorScheme
+    /// 1.1-C fix-up (2) — the appearance's custom background (`MapGround.override`), read by the caller's body so an edit
+    /// re-runs updateUIView: its Dots (colour + opacity) draw here as on the Map. nil = today's library dots.
+    var ground: MapGroundSide? = nil
 
     func makeUIView(context: Context) -> SKView {
         let view = SKView()
@@ -73,12 +76,17 @@ struct BackgroundGridSKView: UIViewRepresentable {
     /// track the theme instead of the white-only makeShape default: dark = white
     /// @0.18, light = graphite #2E3A40 @0.47.
     private func pushAppearance(to grid: SKShapeNode) {
-        let dark = colorScheme == .dark
+        let d = Self.dots(dark: colorScheme == .dark, ground: ground)
+        BackgroundGridNode.setDotAppearance(grid, r: d.rgb.x, g: d.rgb.y, b: d.rgb.z, opacity: d.opacity)
+    }
+
+    /// The library views' dots. 1.1-C fix-up (2): on a custom background, its Dots (colour + opacity), as on the Map.
+    /// Otherwise today's: §4 — LIBRARY views use the QUIETER library dot opacity; the Map keeps `mapGridDotOpacity`
+    /// (byte-for-byte), so this can't touch the Map. Hue (`mapGridDotRGB`) stays shared.
+    static func dots(dark: Bool, ground: MapGroundSide?) -> (rgb: SIMD3<Float>, opacity: Float) {
+        if let g = ground { return (g.dotShownRGB, Float(g.dotOpacity)) }
         let dot = AppearancePalette.mapGridDotRGB(dark: dark)
-        // §4 — LIBRARY views use the QUIETER library dot opacity; the Map keeps `mapGridDotOpacity`
-        // (byte-for-byte), so this change can't touch the Map. Hue (`mapGridDotRGB`) stays shared.
-        BackgroundGridNode.setDotAppearance(grid, r: dot.r, g: dot.g, b: dot.b,
-                                            opacity: AppearancePalette.libraryGridDotOpacity(dark: dark))
+        return (SIMD3(dot.r, dot.g, dot.b), AppearancePalette.libraryGridDotOpacity(dark: dark))
     }
 
     /// Shared 128x128 white texture for SKShapeNode.fillShader UV validity.
@@ -114,13 +122,15 @@ struct BackgroundGridView: View {
         ZStack {
             // §4 background-pass bake (T 2026-10-02): the dark ground is a VERTICAL GRADIENT
             // (#161616 top → #0A0A0C bottom), replacing the flat #161616; light stays flat.
-            // 1.1-B: not over a Pro custom background (the container draws that; the dots stay today's).
-            if colorScheme == .dark, MapGround.override(light: false) == nil {
+            // 1.1-B: not over a Pro custom background (the container draws that). 1.1-C fix-up (2): with one, the dots
+            // are its Dots, as on the Map.
+            let ground = MapGround.override(light: colorScheme == .light)
+            if colorScheme == .dark, ground == nil {
                 LinearGradient(colors: [Color(hexString: "161616"), Color(hexString: "0A0A0C")],
                                startPoint: .top, endPoint: .bottom)
                     .ignoresSafeArea()
             }
-            BackgroundGridSKView()
+            BackgroundGridSKView(ground: ground)
         }
     }
 }

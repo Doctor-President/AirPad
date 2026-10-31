@@ -901,7 +901,7 @@ final class CorpusPhysicsScene: SKScene {
         if MapHeatGuard.shared.critical { m.orbLook = .flat }
         // 1.1-B — the Pro-edited dark ground + dots (a gradient's middle stands in where one colour is needed).
         if let o = MapGround.override(light: false) {
-            m.ground = TunerHSL(hex: Self.hex6(o.meanRGB)); m.dot = TunerHSL(hex: o.dot); m.dotOpacity = o.dotOpacity
+            m.ground = TunerHSL(hex: Self.hex6(o.meanRGB)); m.dot = TunerHSL(hex: o.dotShown); m.dotOpacity = o.dotOpacity
         }
         m.applyStrength(MapLookStrength.effective(m.orbLook))   // 1.1-B — the Pro look's Subtle / Medium / Strong
         #if DEBUG
@@ -2226,7 +2226,7 @@ final class CorpusPhysicsScene: SKScene {
             if dotDark, let m = mapTuning {   // live-39 — the tuner's dark dots (1.1-B: the Pro-edited dots ride in mapTuning)
                 let c = m.dot.simd; dot = (c.x, c.y, c.z); dotOpacity = Float(m.dotOpacity)
             } else if !dotDark, let o = MapGround.override(light: true) {   // 1.1-B — the Pro-edited light dots
-                let c = o.dotRGB; dot = (c.x, c.y, c.z); dotOpacity = Float(o.dotOpacity)
+                let c = o.dotShownRGB; dot = (c.x, c.y, c.z); dotOpacity = Float(o.dotOpacity)
             }
             BackgroundGridNode.setDotAppearance(grid, r: dot.r, g: dot.g, b: dot.b, opacity: dotOpacity)
             BackgroundGridNode.setSheen(grid, on: sheenOn)

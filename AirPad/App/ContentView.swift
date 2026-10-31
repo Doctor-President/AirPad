@@ -335,6 +335,10 @@ struct ContentView: View {
         .onChange(of: router.isCapturing) { _, _ in
             applyLibrarianVisibility(animated: true)
         }
+        // 1.1-C fix-up (1) — while the ≡ menu is open the faded Librarian takes no touches (position unchanged).
+        .onChange(of: router.slideOutMenuOpen) { _, _ in
+            applyLibrarianInteraction()
+        }
         // Detail-view coexistence. ContentView's panel visibility is keyed
         // on entryMode, but a node detail is pushed inside the host
         // surface's NavigationStack without changing entryMode — so a
@@ -453,12 +457,19 @@ struct ContentView: View {
         // can't reach that UIKit view, so make the whole panel non-interactive at
         // the controller level when suppressed: touches then fall through to the
         // surface below. Instant (not animated), so it can't be raced.
-        panelState.controller?.view.isUserInteractionEnabled = !librarianSuppressed
+        applyLibrarianInteraction()
         if librarianSuppressed {
             panelState.duck(animated: animated)
         } else {
             panelState.raiseToPeek(animated: animated)
         }
+    }
+
+    /// The panel's UIKit view takes touches only when the Librarian is up AND the ≡ menu is closed. 1.1-C fix-up (1):
+    /// the open menu faded the surface with SwiftUI's `.allowsHitTesting(false)`, which can't reach the panel's
+    /// surfaceView (same trap as BUG 11), so the faded surface still swallowed taps on the menu's lower rows (Settings).
+    private func applyLibrarianInteraction() {
+        panelState.controller?.view.isUserInteractionEnabled = !librarianSuppressed && !router.slideOutMenuOpen
     }
 
     /// Restore panel visibility for the live surface. Shared by capture-overlay

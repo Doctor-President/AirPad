@@ -1,47 +1,69 @@
 import Foundation
 import SwiftUI
 import UIKit
+import UniformTypeIdentifiers
 
 /// 1.1-C (C5) — export an entry as standard Markdown, the format its notes are already stored in:
 /// - **Markdown (.md):** the text alone (tables as GFM pipe tables, checklists as `- [ ]`); images and files left out.
 /// - **TextBundle (.textpack):** the .md + an `assets/` folder with the entry's images and files, zipped the way the
 ///   TextBundle spec packs it (Bear and iA Writer open it).
-/// - **Folder (Obsidian):** a plain folder of the .md + `assets/`, zipped for the trip (Files unzips it on a tap).
-/// Out through the system share sheet (which has Save to Files). A private entry exports only while private entries are
-/// showing. Tables go through `TableConverter` (the same converter as paste and the share sheet).
+/// Both go out through the system share sheet (which has Save to Files).
+/// - **Save to folder… (1.1-C fix-up (3)):** the .md, plus its images and files in an `attachments/` subfolder with
+///   relative links, written straight into a folder the user picks (their Obsidian vault: a vault is just a folder of .md
+///   files, and Obsidian can't import a zip). The folder is remembered (`PickedFolder`); a name clash adds " 2".
+/// A private entry exports only while private entries are showing. Tables go through `TableConverter` (the same converter as paste and the share sheet).
 @MainActor
 enum EntryExporter {
     enum Format: String, CaseIterable, Identifiable {
-        case markdown, textBundle, folder
+        case markdown, textBundle
         var id: String { rawValue }
         var label: String {
             switch self {
             case .markdown: "Markdown (.md)"
             case .textBundle: "TextBundle (.textpack)"
-            case .folder: "Folder for Obsidian (.zip)"
             }
         }
         var detail: String {
             switch self {
             case .markdown: "The text only. Opens in any Markdown app."
             case .textBundle: "The text with its images and files. Opens in Bear and iA Writer."
-            case .folder: "A folder with the .md and its images. Unzip it into your vault."
             }
         }
     }
 
     struct Asset: Equatable { let source: URL?; let name: String }
 
-    /// The entry as Markdown + the files it points at (`assets/<name>`). `withAssets: false` drops images and files.
-    /// Pure but for the file lookups the caller resolves (`fileFor`).
-    static func markdown(for node: Node, withAssets: Bool, fileFor: (NodeItem, GalleryItem?) -> URL?) -> (text: String, assets: [Asset]) {
+    /// The remembered "Save to folder…" folder.
+    static let folder = PickedFolder(key: "export.folder.v1")
+
+    #if DEBUG
+    /// UI tests: `-ExportFolderSeed` remembers a fresh Documents/ExportSeed (the system folder picker isn't driven).
+    private static var seeded = false
+    static func debugSeedFolder() {
+        guard !seeded, ProcessInfo.processInfo.arguments.contains("-ExportFolderSeed"),
+              let docs = FileManager.default.urls(for: .documentDirectory, in: .userDomainMask).first else { return }
+        let dir = docs.appendingPathComponent("ExportSeed", isDirectory: true)
+        try? FileManager.default.removeItem(at: dir)
+        try? FileManager.default.createDirectory(at: dir, withIntermediateDirectories: true)
+        try? folder.remember(dir)
+        seeded = true
+    }
+    #endif
+
+    /// The entry as Markdown + the files it points at (`<assetDir>/<name>`). `withAssets: false` drops images and files.
+    /// Pure but for the file lookups the caller resolves (`fileFor`). The folder export names its files after the note
+    /// (`assetPrefix`) and skips names already in its attachments folder (`taken`, " 2").
+    static func markdown(for node: Node, withAssets: Bool, assetDir: String = "assets", assetPrefix: String = "",
+                         taken: (String) -> Bool = { _ in false },
+                         fileFor: (NodeItem, GalleryItem?) -> URL?) -> (text: String, assets: [Asset]) {
         var out: [String] = []
         var assets: [Asset] = []
         var used = Set<String>()
         func assetName(_ base: String, _ ext: String) -> String {
-            let stem = sanitize(base).isEmpty ? "file" : sanitize(base)
-            var n = "\(stem).\(ext)", k = 2
-            while used.contains(n.lowercased()) { n = "\(stem)-\(k).\(ext)"; k += 1 }
+            let stem = assetPrefix + (sanitize(base).isEmpty ? "file" : sanitize(base))
+            var s = stem, k = 2
+            while used.contains("\(s).\(ext)".lowercased()) { s = "\(stem)-\(k)"; k += 1 }
+            let n = PickedFolder.freeName(s, ext: ext, taken: taken)
             used.insert(n.lowercased())
             return n
         }
@@ -50,7 +72,7 @@ enum EntryExporter {
             let ext = (url?.pathExtension).flatMap { $0.isEmpty ? nil : $0.lowercased() } ?? fallbackExt
             let name = assetName(base, ext)
             assets.append(Asset(source: url, name: name))
-            return "assets/" + name.addingPercentEncoding(withAllowedCharacters: .urlPathAllowed)!
+            return assetDir + "/" + name.addingPercentEncoding(withAllowedCharacters: .urlPathAllowed)!
         }
         let title = node.title.trimmingCharacters(in: .whitespacesAndNewlines)
         if !title.isEmpty { out.append("# " + title) }
@@ -134,10 +156,9 @@ enum EntryExporter {
         return t.isEmpty ? "AirPad entry" : t
     }
 
-    /// Writes the export into a fresh temp folder and returns the URL to share.
-    static func write(_ node: Node, format: Format, store: CorpusStore) async throws -> URL {
-        // Resolve every file the entry points at first (async lookups), then build.
-        var files: [String: URL] = [:]   // key: item id / gallery id
+    /// Every file the entry points at (key: item id / gallery id), resolved before building (async lookups).
+    private static func resolveFiles(_ node: Node, store: CorpusStore) async -> [String: URL] {
+        var files: [String: URL] = [:]
         for item in node.items {
             if let media = item.mediaItems, !media.isEmpty {
                 for g in media { files[g.id] = await store.resolveGalleryItemURL(g, nodeID: node.id, fallbackParentItem: item) }
@@ -145,6 +166,39 @@ enum EntryExporter {
                 files[item.id] = await store.itemFileURL(for: item, nodeID: node.id)
             }
         }
+        return files
+    }
+
+    /// Save to folder… — writes `<name>.md` (or `<name> 2.md` …) into `folder`, and its images and files into
+    /// `folder/attachments/` (created only when there are any), linked relatively. Returns the .md's file name.
+    static func save(_ node: Node, toFolder folder: URL, store: CorpusStore) async throws -> String {
+        let files = await resolveFiles(node, store: store)
+        return try PickedFolder.write(into: folder) { dir in
+            try writeNote(node, into: dir) { item, g in files[g?.id ?? item.id] }
+        }
+    }
+
+    /// The folder export's file work, given folder access (also run by the self-test on a scratch folder).
+    static func writeNote(_ node: Node, into dir: URL, fileFor: (NodeItem, GalleryItem?) -> URL?) throws -> String {
+        let fm = FileManager.default
+        func exists(_ u: URL) -> Bool { fm.fileExists(atPath: u.path) }
+        let mdName = PickedFolder.freeName(baseName(node), ext: "md") { exists(dir.appendingPathComponent($0)) }
+        let att = dir.appendingPathComponent("attachments", isDirectory: true)
+        let built = markdown(for: node, withAssets: true, assetDir: "attachments",
+                             assetPrefix: (mdName as NSString).deletingPathExtension + " ",
+                             taken: { exists(att.appendingPathComponent($0)) }, fileFor: fileFor)
+        try built.text.write(to: dir.appendingPathComponent(mdName), atomically: true, encoding: .utf8)
+        let copies = built.assets.filter { $0.source != nil }
+        if !copies.isEmpty {
+            try fm.createDirectory(at: att, withIntermediateDirectories: true)
+            for a in copies { try? fm.copyItem(at: a.source!, to: att.appendingPathComponent(a.name)) }
+        }
+        return mdName
+    }
+
+    /// Writes the export into a fresh temp folder and returns the URL to share.
+    static func write(_ node: Node, format: Format, store: CorpusStore) async throws -> URL {
+        let files = await resolveFiles(node, store: store)
         let built = markdown(for: node, withAssets: format != .markdown) { item, g in files[g?.id ?? item.id] }
         let root = FileManager.default.temporaryDirectory.appendingPathComponent("export-\(UUID().uuidString)", isDirectory: true)
         try FileManager.default.createDirectory(at: root, withIntermediateDirectories: true)
@@ -160,10 +214,6 @@ enum EntryExporter {
             let info = #"{"version":2,"type":"net.daringfireball.markdown","transient":false,"creatorIdentifier":"com.doctorpresident.airpad"}"#
             try info.write(to: bundle.appendingPathComponent("info.json"), atomically: true, encoding: .utf8)
             return try zip(bundle, as: name + ".textpack", in: root)
-        case .folder:
-            let folder = root.appendingPathComponent(name, isDirectory: true)
-            try writeFolder(at: folder, mdName: name + ".md", text: built.text, assets: built.assets)
-            return try zip(folder, as: name + ".zip", in: root)
         }
     }
 
@@ -196,7 +246,8 @@ enum EntryExporter {
     }
 }
 
-/// The entry menu's Export sheet: pick a format, then the system share sheet (Save to Files, AirDrop, other apps).
+/// The entry menu's Export sheet: pick a format, then the system share sheet (Save to Files, AirDrop, other apps); or
+/// Save to folder…, which writes into a picked folder (offered first once one is remembered, with Change folder…).
 struct EntryExportSheet: View {
     let nodeID: String
     @Environment(CorpusStore.self) private var store
@@ -205,6 +256,10 @@ struct EntryExportSheet: View {
     @State private var working: EntryExporter.Format?
     @State private var shareURL: URL?
     @State private var failed = false
+    @State private var picking = false
+    @State private var folderName = EntryExporter.folder.name
+    @State private var saved: String?        // "Saved “X.md” to Vault."
+    @State private var folderFailed = false
 
     private var node: Node? { store.nodes.first { $0.id == nodeID } }
     private var hasFiles: Bool {
@@ -215,7 +270,8 @@ struct EntryExportSheet: View {
         NavigationStack {
             List {
                 if let node, !store.isHidden(node) {
-                    ForEach(EntryExporter.Format.allCases) { f in
+                    if folderName != nil { folderRows(node) }
+                    Section { ForEach(EntryExporter.Format.allCases) { f in
                         Button { export(node, f) } label: {
                             VStack(alignment: .leading, spacing: 3) {
                                 HStack {
@@ -233,28 +289,105 @@ struct EntryExportSheet: View {
                     }
                     if failed {
                         Text("Couldn't export this entry.").font(appFont.font(size: 13, relativeTo: .footnote)).foregroundStyle(.red)
-                    }
+                    } }
+                    if folderName == nil { folderRows(node) }
                 } else {
                     Text("This entry is private.").foregroundStyle(AppearancePalette.ink.opacity(0.6))
                 }
+            }
+            // The system folder picker (a UIDocumentPickerViewController). On the List, not beside the share sheet's
+            // `.sheet` below: two presentations stacked on one view closed this sheet when the share sheet opened.
+            .fileImporter(isPresented: $picking, allowedContentTypes: [.folder]) { result in
+                guard case .success(let url) = result, let node else { return }
+                do { try EntryExporter.folder.remember(url) } catch { folderFailed = true; return }
+                folderName = EntryExporter.folder.name
+                saveToFolder(node)
             }
             .navigationTitle("Export")
             .navigationBarTitleDisplayMode(.inline)
             .toolbar { ToolbarItem(placement: .cancellationAction) { Button("Cancel") { dismiss() } } }
         }
-        .presentationDetents([.medium])
+        .presentationDetents([.medium, .large])
+        .onAppear {
+            shown = true
+            #if DEBUG
+            EntryExporter.debugSeedFolder()
+            #endif
+            folderName = EntryExporter.folder.name
+        }
+        .onDisappear { shown = false }
         .sheet(item: Binding(get: { shareURL.map(ShareTarget.init) }, set: { if $0 == nil { shareURL = nil } })) { t in
             ActivityShareView(items: [t.url]).ignoresSafeArea()
+        }
+    }
+
+    /// Save to folder…: the remembered folder first, with Change folder…; or the picker when none is remembered.
+    @ViewBuilder private func folderRows(_ node: Node) -> some View {
+        Section {
+            if let folderName {
+                row(label: "Save to “\(folderName)”", detail: "The .md, with its images and files in attachments/.", busy: savingFolder) {
+                    saveToFolder(node)
+                }
+                .accessibilityIdentifier("export.saveToFolder")
+                Button("Change folder…") { picking = true }
+                    .font(appFont.font(size: 15, relativeTo: .subheadline))
+                    .disabled(savingFolder)
+                    .accessibilityIdentifier("export.changeFolder")
+            } else {
+                row(label: "Save to folder…", detail: "Into a folder in Files, like your Obsidian vault. Images and files go in attachments/.",
+                    busy: false) { picking = true }
+                    .accessibilityIdentifier("export.saveToFolder")
+            }
+            if let saved {
+                Text(saved).font(appFont.font(size: 13, relativeTo: .footnote)).foregroundStyle(AppearancePalette.ink.opacity(0.7))
+                    .accessibilityIdentifier("export.saved")
+            }
+            if folderFailed {
+                Text("Couldn't save to that folder. Pick it again with Change folder….")
+                    .font(appFont.font(size: 13, relativeTo: .footnote)).foregroundStyle(.red)
+            }
+        }
+    }
+    @State private var savingFolder = false
+
+    private func row(label: String, detail: String, busy: Bool, action: @escaping () -> Void) -> some View {
+        Button(action: action) {
+            VStack(alignment: .leading, spacing: 3) {
+                HStack {
+                    Text(label).font(appFont.font(size: 16, weight: .medium, relativeTo: .body)).foregroundStyle(AppearancePalette.ink)
+                    if busy { Spacer(); ProgressView() }
+                }
+                Text(detail).font(appFont.font(size: 13, relativeTo: .footnote)).foregroundStyle(AppearancePalette.ink.opacity(0.55))
+            }
+        }
+        .disabled(working != nil || savingFolder)
+    }
+
+    private func saveToFolder(_ node: Node) {
+        guard let url = EntryExporter.folder.url else { folderName = nil; picking = true; return }
+        savingFolder = true; saved = nil; folderFailed = false
+        Task {
+            do {
+                let name = try await EntryExporter.save(node, toFolder: url, store: store)
+                saved = "Saved “\(name)” to \(EntryExporter.folder.name ?? "the folder")."
+            } catch { folderFailed = true }
+            savingFolder = false
         }
     }
 
     private func export(_ node: Node, _ f: EntryExporter.Format) {
         working = f; failed = false
         Task {
-            do { shareURL = try await EntryExporter.write(node, format: f, store: store) } catch { failed = true }
+            do {
+                let url = try await EntryExporter.write(node, format: f, store: store)
+                // Closed while the file was being made: no share sheet (one presented from a closing sheet is orphaned
+                // and can't be closed).
+                if shown { shareURL = url }
+            } catch { failed = true }
             working = nil
         }
     }
+    @State private var shown = false
 
     private struct ShareTarget: Identifiable { let url: URL; var id: String { url.path } }
 }

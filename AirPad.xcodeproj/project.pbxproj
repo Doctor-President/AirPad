@@ -260,6 +260,7 @@
 		9453BD22FBCF63BB83151ABE /* QuarantineReviewSheet.swift in Sources */ = {isa = PBXBuildFile; fileRef = CB9627DA5A37E1126FD4446D /* QuarantineReviewSheet.swift */; };
 		94765E10145D5017BDE18696 /* CanvasState.swift in Sources */ = {isa = PBXBuildFile; fileRef = 9348EE6BAC36DA4236BB5780 /* CanvasState.swift */; };
 		94A537D61439FE71622A5EF2 /* Assets.xcassets in Resources */ = {isa = PBXBuildFile; fileRef = 8EC521B24C7F8F9283E16AF2 /* Assets.xcassets */; };
+		95973AD12D5D10B23140EE1E /* PickedFolder.swift in Sources */ = {isa = PBXBuildFile; fileRef = 604EE7366522CD33DB9E8344 /* PickedFolder.swift */; };
 		97211C70A29E050F42DCA86F /* LinkFollowupsSelfTest.swift in Sources */ = {isa = PBXBuildFile; fileRef = 0050CBF021D1A050268F2E5B /* LinkFollowupsSelfTest.swift */; };
 		9787E9E6519D8AE627C866E3 /* SubstrateBagLayout.swift in Sources */ = {isa = PBXBuildFile; fileRef = 1AB3E0DAA09EAAB03B140BC7 /* SubstrateBagLayout.swift */; };
 		97C345D4F777202BA884F9A3 /* BatchParser.swift in Sources */ = {isa = PBXBuildFile; fileRef = DD4733E2421E070A68925125 /* BatchParser.swift */; };
@@ -655,6 +656,7 @@
 		5D1408F7F32D1B41467621B6 /* QRScannerView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = QRScannerView.swift; sourceTree = "<group>"; };
 		5D1F41D45475B641E3F64573 /* NoteTableBlock.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = NoteTableBlock.swift; sourceTree = "<group>"; };
 		6005A33A7E6D6D1064AE551C /* LibrarianSurface.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = LibrarianSurface.swift; sourceTree = "<group>"; };
+		604EE7366522CD33DB9E8344 /* PickedFolder.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = PickedFolder.swift; sourceTree = "<group>"; };
 		60D13A13B22F4512A523EB58 /* ParityShots.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ParityShots.swift; sourceTree = "<group>"; };
 		6123D1D38AF585588EBDF3F2 /* CollectionCreationSheet.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = CollectionCreationSheet.swift; sourceTree = "<group>"; };
 		613177CF17502A7D0A1B2388 /* LinkGalleryTile.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = LinkGalleryTile.swift; sourceTree = "<group>"; };
@@ -1144,6 +1146,7 @@
 				50239A55AA4D3422B7844644 /* PagedRestProbe.swift */,
 				1AD54D0A6C6263DCCDE840CF /* PastePadTypeSelfTest.swift */,
 				12FFD0E4E7DD235786396C38 /* PasteProbe.swift */,
+				604EE7366522CD33DB9E8344 /* PickedFolder.swift */,
 				DC64642A8AD34593133AC155 /* PlaybackAudioSession.swift */,
 				6AD361DF778E4F885E259B82 /* PrivateEntries.swift */,
 				4D544BE360AD6B420154999B /* ProposalSelfTest.swift */,
@@ -2210,6 +2213,7 @@
 				09AE21B8978FFA31BA8A26AF /* PastePadView.swift in Sources */,
 				A9D30911FB3F2FA2F59DA847 /* PasteProbe.swift in Sources */,
 				BC4D8EDC2E3EC93B74EF342F /* PeekPillStyle.swift in Sources */,
+				95973AD12D5D10B23140EE1E /* PickedFolder.swift in Sources */,
 				8D99DC4617A52B993992A45E /* PlaybackAudioSession.swift in Sources */,
 				B5E9F4EDD8A5E613A198B1C0 /* PrivateEntries.swift in Sources */,
 				F1C72436EB4580D8A7AF7CB5 /* PrivateEntryPlaceholder.swift in Sources */,

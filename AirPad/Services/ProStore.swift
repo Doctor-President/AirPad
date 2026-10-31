@@ -125,7 +125,8 @@ enum MapLookStrength {
 /// 1.1-B — the background, editable with Pro per appearance (T's ground study, Ops/reference/ground-values-2026-10-29.json;
 /// amended 2026-10-29: a custom background applies to every view in that appearance — the Map, cards, lists and the
 /// Dashboard's backdrop; the dots stay the Map's): its colour, an optional two-stop gradient across the screen (colour 2 +
-/// angle, as the study draws it) and the Map dots' colour + opacity. Until a Pro user customises an appearance
+/// angle, as the study draws it) and the dots' colour + opacity (1.1-C fix-up (2): "Dots", wherever the dot grid draws —
+/// the Map, lists, cards and the grid). Until a Pro user customises an appearance
 /// (`custom` false), every view keeps today's ground (the Map #111115 / #FFEEED, the library #1A1A1A / #F4F2ED).
 struct MapGroundSide: Codable, Equatable {
     var custom = false      // false = today's per-view grounds (the values below are then only the editor's start)
@@ -135,14 +136,38 @@ struct MapGroundSide: Codable, Equatable {
     var angle: Double       // degrees, 0 = toward the right edge, 90 = toward the top
     var dot: String
     var dotOpacity: Double
+    /// 1.1-C fix-up (2) — the user picked the dots' colour. Until then the dots wear the default dots of the background's
+    /// side (`dotShown`), so they stay visible on a custom background of either kind in either appearance.
+    var dotEdited = false
 
     static let darkDefault = MapGroundSide(color: "111115", gradient: false, color2: "1D1D26", angle: 90, dot: "FFFFFF", dotOpacity: 0.809)
     static let lightDefault = MapGroundSide(color: "FFEEED", gradient: false, color2: "FFF8EF", angle: 90, dot: "3B362F", dotOpacity: 0.805)
 
-    init(custom: Bool = false, color: String, gradient: Bool, color2: String, angle: Double, dot: String, dotOpacity: Double) {
+    init(custom: Bool = false, color: String, gradient: Bool, color2: String, angle: Double, dot: String, dotOpacity: Double,
+         dotEdited: Bool = false) {
         self.custom = custom; self.color = color; self.gradient = gradient; self.color2 = color2; self.angle = angle
-        self.dot = dot; self.dotOpacity = dotOpacity
+        self.dot = dot; self.dotOpacity = dotOpacity; self.dotEdited = dotEdited
     }
+
+    private enum CodingKeys: String, CodingKey { case custom, color, gradient, color2, angle, dot, dotOpacity, dotEdited }
+    init(from decoder: Decoder) throws {
+        let c = try decoder.container(keyedBy: CodingKeys.self)
+        custom = try c.decodeIfPresent(Bool.self, forKey: .custom) ?? false
+        color = try c.decode(String.self, forKey: .color); gradient = try c.decode(Bool.self, forKey: .gradient)
+        color2 = try c.decode(String.self, forKey: .color2); angle = try c.decode(Double.self, forKey: .angle)
+        dot = try c.decode(String.self, forKey: .dot); dotOpacity = try c.decode(Double.self, forKey: .dotOpacity)
+        // Stored before 1.1-C fix-up: a dot colour that isn't one of the two defaults was picked.
+        dotEdited = try c.decodeIfPresent(Bool.self, forKey: .dotEdited)
+            ?? ![Self.darkDefault.dot, Self.lightDefault.dot].contains(dot)
+    }
+
+    /// The dots' colour as drawn: the user's pick, or until one is made the default dots of the background's side
+    /// (white on a dark background, #3B362F on a light one; `ReadableGround` keeps every background on one side).
+    var dotShown: String {
+        guard !dotEdited else { return dot }
+        return ReadableGround.lightSide(colorRGB) ? Self.lightDefault.dot : Self.darkDefault.dot
+    }
+    var dotShownRGB: SIMD3<Float> { Self.rgb(dotShown) }
 
     static func rgb(_ hex: String) -> SIMD3<Float> {
         var v: UInt64 = 0
@@ -151,7 +176,6 @@ struct MapGroundSide: Codable, Equatable {
     }
     var colorRGB: SIMD3<Float> { Self.rgb(color) }
     var color2RGB: SIMD3<Float> { Self.rgb(color2) }
-    var dotRGB: SIMD3<Float> { Self.rgb(dot) }
     /// The gradient's direction (unit, y up), the study's (cos a, sin a).
     var direction: SIMD2<Float> { SIMD2(Float(cos(angle * .pi / 180)), Float(sin(angle * .pi / 180))) }
     /// The ground at a point of the screen (pt from the centre, y up) on a viewport `vp` — the study's `groundAt`, the

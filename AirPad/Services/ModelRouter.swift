@@ -232,7 +232,10 @@ enum ModelRouter {
         switch active {
         case .host:            return 20_480   // Brief BW3 — right-sized from 32768 (read cap is 12k; frees KV RAM)
         case .foundationModel: return 4_096
-        case .ollama:          return 4_096
+        // 1.1-D — the user's server: the chat model's REAL window from the last listing (Ollama /api/ps context_length,
+        // LM Studio's loaded instance; an unloaded model is loaded at `CustomServer.loadContext`); 4,096 before the
+        // first listing, or on a generic OpenAI-compatible server.
+        case .ollama(let e):   return CustomServer.cachedContext(endpoint: e) ?? 4_096
         case .local:           return 4_096
         }
     }
@@ -254,7 +257,7 @@ enum ModelRouter {
     /// live provider (Keychain), so an endpoint swapped in Settings is reflected.
     /// Call this OFF the render path — it may hit the network for a remote endpoint
     /// (and the Keychain read is XPC-backed). FM returns instantly; a remote
-    /// endpoint is probed for its first model id (the SAME `firstOllamaModel` the
+    /// endpoint is listed for the model a chat will name (the SAME `CustomServer.chatModel` the
     /// generate path uses), falling back to the resting label if unreachable — so
     /// the caller always gets a display string, never a throw or an empty value.
     static func resolveActiveModelName() async -> String {
@@ -266,8 +269,11 @@ enum ModelRouter {
             // no-model notice). Fall back to the resting "No model" label.
             return onDeviceAvailable ? foundationModelName : remoteRestingName
         case .ollama(let endpoint):
-            guard let base = URL(string: endpoint) else { return remoteRestingName }
-            return (try? await firstOllamaModel(base: base)) ?? remoteRestingName
+            // 1.1-D — the picked (else loaded, else first) model, by its friendly name. A listing only: naming the model
+            // must never load it (`chatTarget` loads an LM Studio pick before a turn).
+            guard let snap = try? await CustomServer.snapshot(endpoint: endpoint),
+                  let m = CustomServer.chatModel(snap.models, pick: CustomServer.pick(for: endpoint)) else { return remoteRestingName }
+            return CatalogModel.friendlyName(forTag: m.id)
         case .host(let pairing):
             // LOAD = SELECT: the label reflects what is RESIDENT (true by construction); only if
             // nothing is loaded do we fall back to the filtered list, then the resting label.
@@ -836,7 +842,18 @@ enum ModelRouter {
         guard let base = URL(string: endpoint) else {
             throw RouterError.ollamaBadEndpoint(endpoint)
         }
-        let modelName = try await firstOllamaModel(base: base)
+        let target = try await CustomServer.chatTarget(endpoint: endpoint)
+        let modelName = target.model
+        if target.kind.isOllama {
+            // 1.1-D — Ollama: native /api/chat at the chat's OWN window (Brief BW2: a one-shot at another num_ctx reloads
+            // the model and drops its cache), thinking off for a title.
+            var msgs: [[String: Any]] = []
+            if !systemPrompt.isEmpty { msgs.append(["role": "system", "content": systemPrompt]) }
+            msgs.append(["role": "user", "content": userPrompt])
+            let body = CustomServer.ollamaChatBody(model: modelName, messages: msgs, numCtx: target.contextTokens,
+                                                   think: target.thinking == true ? false : nil, stream: true)
+            return try await CustomServer.streamOllamaChat(endpoint: endpoint, body: body, onContent: { _ in }, onThinking: { _ in }).content
+        }
 
         let path = "v1/chat/completions"
         var request = URLRequest(url: base.appendingPathComponent(path))
@@ -859,12 +876,14 @@ enum ModelRouter {
         if !WikipediaGrounding.live31, let effort = await serverReasoningOff(base: base, model: modelName) { body["reasoning_effort"] = effort }
         request.httpBody = try JSONSerialization.data(withJSONObject: body)
 
-        let (data, response) = try await runRequest(request, path: path)
+        let (data, response): (Data, URLResponse)
+        do { (data, response) = try await URLSession.shared.data(for: request) }
+        catch { throw CustomServer.transport(error, endpoint: endpoint) }
         let bodyString = String(data: data, encoding: .utf8) ?? ""
 
         if let http = response as? HTTPURLResponse, !(200...299).contains(http.statusCode) {
-            print("[ModelRouter] \(path) HTTP \(http.statusCode): \(bodyString)")
-            throw RouterError.ollamaHTTPError(path: path, status: http.statusCode, body: bodyString)
+            print("[ModelRouter] \(path) HTTP \(http.statusCode)")
+            throw CustomServer.httpRefusal(status: http.statusCode, body: data, endpoint: endpoint)
         }
 
         guard let json = try? JSONSerialization.jsonObject(with: data) as? [String: Any],
@@ -896,7 +915,20 @@ enum ModelRouter {
         guard let base = URL(string: endpoint) else {
             throw RouterError.ollamaBadEndpoint(endpoint)
         }
-        let modelName = try await firstOllamaModel(base: base)
+        let target = try await CustomServer.chatTarget(endpoint: endpoint)
+        let modelName = target.model
+        if target.kind.isOllama {
+            // 1.1-D — Ollama: native /api/chat with options.num_ctx = the model's LOADED window (or the window its load
+            // will use), real roles, `think` only for a model the server says thinks, and no keep_alive (Brief BY).
+            // The OpenAI-compatible /v1 path can't carry num_ctx, so a /v1 turn would reload at the server default.
+            lastAnswerSource = AnswerSource(route: .server, model: modelName)
+            let body = CustomServer.ollamaChatBody(model: modelName, messages: messages, numCtx: target.contextTokens,
+                                                   think: target.thinking == true ? think : nil, stream: true)
+            _ = try await CustomServer.streamOllamaChat(endpoint: endpoint, body: body,
+                                                        onContent: { continuation.yield(.answer($0)) },
+                                                        onThinking: { continuation.yield(.thinking($0)) })
+            return
+        }
         // live-32 (2) — the chat's Thinking switch (off by default) now reaches a server model too: off asks for its
         // thinking off where the server offers it (T's qwen/qwen3.5-9b thought ~25 s per answer and, on a long table,
         // ran out of its 8,192-token context); on, its reasoning streams into the Thought process.
@@ -927,15 +959,14 @@ enum ModelRouter {
             (bytes, response) = try await URLSession.shared.bytes(for: request)
         } catch {
             print("[ModelRouter] \(path) transport: \(error.localizedDescription)")
-            throw transportError(error)
+            throw CustomServer.transport(error, endpoint: endpoint)
         }
 
         if let http = response as? HTTPURLResponse, !(200...299).contains(http.statusCode) {
             var bodyData = Data()
             for try await byte in bytes { bodyData.append(byte) }
-            let bodyString = String(data: bodyData, encoding: .utf8) ?? ""
-            print("[ModelRouter] \(path) HTTP \(http.statusCode): \(bodyString)")
-            throw RouterError.ollamaHTTPError(path: path, status: http.statusCode, body: bodyString)
+            print("[ModelRouter] \(path) HTTP \(http.statusCode)")
+            throw CustomServer.httpRefusal(status: http.statusCode, body: bodyData, endpoint: endpoint)
         }
 
         for try await line in bytes.lines {
@@ -958,64 +989,27 @@ enum ModelRouter {
 
     /// Result of a Settings "Test connection" probe — three honest, in-place outcomes.
     enum EndpointProbe {
-        case needsEndpoint                 // field empty — no connection attempted
-        case reachable(model: String)      // answered; names the model that's loaded
-        case unreachable(reason: String)   // failed; the typed RouterError reason
+        case needsEndpoint                                  // field empty — no connection attempted
+        case reachable(server: String, model: String?)      // 1.1-D — what answered ("Ollama 0.13.2") + the chat model
+        case unreachable(reason: String)                    // failed; in plain words
     }
 
-    /// Probe the local-server endpoint (Ollama / LM Studio) for the Settings "Test connection"
-    /// button. Reuses the SAME `firstOllamaModel` path the live Librarian uses, so a green result
-    /// means the real feature will work. Never throws — returns one of the three honest outcomes.
+    /// Probe the custom server for Settings → Your own models → Test connection: detect it AGAIN (Ollama / LM Studio /
+    /// OpenAI-compatible) and name the model a chat would use — the SAME `CustomServer` derivation the Librarian uses,
+    /// so a green result means the real feature will work. Never throws.
     static func probeEndpoint(_ endpoint: String) async -> EndpointProbe {
         let trimmed = endpoint.trimmingCharacters(in: .whitespacesAndNewlines)
         guard !trimmed.isEmpty else { return .needsEndpoint }
         guard let base = URL(string: trimmed), base.scheme != nil, base.host != nil else {
-            return .unreachable(reason: RouterError.ollamaBadEndpoint(trimmed).errorDescription
-                                        ?? "The endpoint is not a valid URL.")
+            return .unreachable(reason: CustomServer.ServerError.badEndpoint.errorDescription ?? "")
         }
         do {
-            return .reachable(model: try await firstOllamaModel(base: base))
+            let snap = try await CustomServer.snapshot(endpoint: trimmed, redetect: true)
+            let m = CustomServer.chatModel(snap.models, pick: CustomServer.pick(for: trimmed))
+            return .reachable(server: snap.kind.label, model: m.map { CatalogModel.friendlyName(forTag: $0.id) })
         } catch {
-            return .unreachable(reason: (error as? LocalizedError)?.errorDescription
-                                        ?? error.localizedDescription)
+            return .unreachable(reason: (error as? LocalizedError)?.errorDescription ?? error.localizedDescription)
         }
-    }
-
-    static func firstOllamaModel(base: URL) async throws -> String {
-        #if DEBUG
-        // live-32 (1) — pin the server's model (T's LM Studio lists another loaded model first).
-        if let m = UserDefaults.standard.string(forKey: "DebugEndpointModel"), !m.isEmpty { return m }
-        #endif
-        // LM Studio moved model listing to api/v0/models in a recent update
-        // and broke the OpenAI-compatible /v1/models endpoint. Response shape
-        // (data array, each entry has an id string) is unchanged.
-        let path = "api/v0/models"
-        var request = URLRequest(url: base.appendingPathComponent(path))
-        request.httpMethod = "GET"
-        // C4b2 (T 2026-10-10) — a model LIST answers at once; a server that's away (T's Tailscale LM Studio, phone
-        // off the tailnet) must not hold the probe, the label or an ask for URLSession's 60 s default.
-        request.timeoutInterval = 8
-        applyEndpointAuth(&request)
-
-        let (data, response) = try await runRequest(request, path: path)
-        let bodyString = String(data: data, encoding: .utf8) ?? ""
-
-        if let http = response as? HTTPURLResponse, !(200...299).contains(http.statusCode) {
-            print("[ModelRouter] \(path) HTTP \(http.statusCode): \(bodyString)")
-            throw RouterError.ollamaHTTPError(path: path, status: http.statusCode, body: bodyString)
-        }
-
-        guard let json = try? JSONSerialization.jsonObject(with: data) as? [String: Any],
-              let entries = json["data"] as? [[String: Any]]
-        else {
-            print("[ModelRouter] \(path) parse failure. body=\(bodyString)")
-            throw RouterError.ollamaBadResponse(path: path, body: bodyString)
-        }
-        guard let firstID = entries.compactMap({ $0["id"] as? String }).first else {
-            throw RouterError.ollamaNoModels
-        }
-        print("[ModelRouter] picked model id=\(firstID) from \(path)")
-        return firstID
     }
 
     private static func runRequest(_ request: URLRequest, path: String) async throws -> (Data, URLResponse) {
@@ -1035,7 +1029,7 @@ enum ModelRouter {
     /// request without a restart. Needed for the AirPad Bridge/Host path (the Host
     /// requires the QR-derived bearer) and for any authenticated proxy in front of a
     /// local model server.
-    private static func applyEndpointAuth(_ request: inout URLRequest) {
+    static func applyEndpointAuth(_ request: inout URLRequest) {
         guard let token = KeychainHelper.load(key: "ollamaAPIToken")?
                 .trimmingCharacters(in: .whitespacesAndNewlines),
               !token.isEmpty else { return }
@@ -1866,8 +1860,7 @@ extension ModelRouter {
     /// Raw model id for the request `model` field (remote endpoints). Reuses the
     /// same discovery the generate path uses.
     static func firstModelID(endpoint: String) async throws -> String {
-        guard let base = URL(string: endpoint) else { throw RouterError.ollamaBadEndpoint(endpoint) }
-        return try await firstOllamaModel(base: base)
+        try await CustomServer.chatTarget(endpoint: endpoint).model
     }
 
     /// One agentic model turn against a remote OpenAI-compatible endpoint. Streams
@@ -1886,6 +1879,17 @@ extension ModelRouter {
         onReasoningDelta: @Sendable @escaping (String) -> Void = { _ in }
     ) async throws -> AgentTurn {
         guard let base = URL(string: endpoint) else { throw RouterError.ollamaBadEndpoint(endpoint) }
+        // 1.1-D — Ollama: the tool turn goes over native /api/chat too, at the loaded window (the loop's later steps
+        // reuse the turn's listing for 30 s). Tool-call arguments go back as objects (`nativizeToolMessages`).
+        let target = try? await CustomServer.chatTarget(endpoint: endpoint, maxAge: 30)
+        if let target, target.kind.isOllama {
+            lastAnswerSource = AnswerSource(route: .server, model: model)
+            let body = CustomServer.ollamaChatBody(model: model, messages: nativizeToolMessages(messages), numCtx: target.contextTokens,
+                                                   think: target.thinking == true ? !reasoningOff : nil, stream: true, tools: tools)
+            let r = try await CustomServer.streamOllamaChat(endpoint: endpoint, body: body,
+                                                            onContent: onContentDelta, onThinking: onReasoningDelta)
+            return AgentTurn(content: r.content, toolCalls: r.toolCalls)
+        }
         let effort = reasoningOff && !WikipediaGrounding.live31 ? await serverReasoningOff(base: base, model: model) : nil
         let path = "v1/chat/completions"
         var request = URLRequest(url: base.appendingPathComponent(path))
@@ -1902,13 +1906,12 @@ extension ModelRouter {
         do {
             (bytes, response) = try await URLSession.shared.bytes(for: request)
         } catch {
-            throw transportError(error)
+            throw CustomServer.transport(error, endpoint: endpoint)
         }
         if let http = response as? HTTPURLResponse, !(200...299).contains(http.statusCode) {
             var data = Data()
             for try await b in bytes { data.append(b) }
-            let s = String(data: data, encoding: .utf8) ?? ""
-            throw RouterError.ollamaHTTPError(path: path, status: http.statusCode, body: s)
+            throw CustomServer.httpRefusal(status: http.statusCode, body: data, endpoint: endpoint)
         }
 
         var content = ""

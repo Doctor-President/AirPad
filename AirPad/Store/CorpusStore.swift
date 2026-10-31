@@ -1214,6 +1214,16 @@ final class CorpusStore {
             if ProcessInfo.processInfo.arguments.contains("-ModelPickSelfTest") {
                 NSLog("[ModelPickSelfTest] %@", await MainActor.run { ModelPickSelfTest.run() })
             }
+            // 1.1-D — the user's-own-server adapter (pure), and its real network paths against the fakes.
+            if ProcessInfo.processInfo.arguments.contains("-CustomServerSelfTest") {
+                NSLog("[CustomServerSelfTest] %@", await MainActor.run { CustomServerSelfTest.run() })
+            }
+            if ProcessInfo.processInfo.arguments.contains("-CustomServerRealCheck") {
+                Task { @MainActor in await CustomServerRealCheck.run() }
+            }
+            if ProcessInfo.processInfo.arguments.contains("-CustomServerFakeSelfTest") {
+                Task { @MainActor in NSLog("[CustomServerFakeSelfTest] %@", await CustomServerFakeSelfTest.run()) }
+            }
             if ProcessInfo.processInfo.arguments.contains("-ProposalSelfTest") {
                 NSLog("[ProposalSelfTest] %@", ProposalSelfTest.run())
             }

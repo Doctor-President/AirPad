@@ -28,6 +28,7 @@ struct SettingsView: View {
     enum Dest: Hashable {
         case library, tags, models, webSearch, librarian, appearance, privacy, about, support
         case macModels, advanced   // nested under Models
+        case serverModels          // 1.1-D — nested under Your own models
         #if DEBUG
         case developer
         #endif
@@ -117,6 +118,8 @@ struct SettingsView: View {
 
     // UI state
     @State private var connectionTestResult: String? = nil
+    /// 1.1-D — the endpoint/token are saved (and the server detected again) a moment after they stop changing.
+    @State private var endpointSaveTask: Task<Void, Never>? = nil
     @State private var isTestingConnection = false
     @State private var showTagEditor = false
     @State private var editingTag: Tag? = nil
@@ -249,6 +252,7 @@ struct SettingsView: View {
         case .models:    modelsSubmenu
         case .macModels: macModelsSubmenu
         case .advanced:  advancedSubmenu
+        case .serverModels: serverModelsSubmenu
         case .webSearch: webSearchSubmenu
         case .librarian: librarianSubmenu
         case .appearance: appearanceSubmenu
@@ -563,6 +567,7 @@ struct SettingsView: View {
                         .keyboardType(.URL).autocorrectionDisabled().textInputAutocapitalization(.never)
                 }
                 apiKeyField(label: "API token (optional)", placeholder: "Bearer token — leave empty for none", text: $ollamaAPIToken)
+                ServerDetectionRow(endpointText: $ollamaEndpoint)
                 HStack {
                     Button { testConnection() } label: {
                         HStack(spacing: 6) {
@@ -587,6 +592,32 @@ struct SettingsView: View {
                     apiKeyField(label: "DeepSeek API key", placeholder: "sk-...", text: $deepSeekKey)
                 }
             }
+        }
+        .onChange(of: ollamaEndpoint) { _, _ in scheduleEndpointSave() }
+        .onChange(of: ollamaAPIToken) { _, _ in scheduleEndpointSave() }
+        .task { await HostCatalog.server.refreshServer(redetect: true) }
+    }
+
+    /// Settings → Your own models → Models: the full picker surface for the server (list, pick, load/eject, downloads).
+    private var serverModelsSubmenu: some View {
+        ModelPickerSheet(catalog: HostCatalog.server, thinkEnabled: $hostThinkingDefault, fullControls: true)
+            .navigationTitle("Models")
+            .navigationBarTitleDisplayMode(.inline)
+    }
+
+    /// Save the endpoint + token shortly after the last edit, forget what was detected there, and detect again.
+    private func scheduleEndpointSave() {
+        endpointSaveTask?.cancel()
+        endpointSaveTask = Task {
+            try? await Task.sleep(for: .milliseconds(700))
+            guard !Task.isCancelled else { return }
+            persistKey("ollamaEndpoint", value: ollamaEndpoint.trimmingCharacters(in: .whitespacesAndNewlines))
+            persistKey("ollamaAPIToken", value: ollamaAPIToken.trimmingCharacters(in: .whitespacesAndNewlines))
+            CustomServer.forget(nil)
+            connectionTestResult = nil
+            await HostCatalog.server.refreshServer(redetect: true)
+            HostCatalog.shared.refreshRoute()
+            NotificationCenter.default.post(name: .librarianRouteChanged, object: nil)
         }
     }
 
@@ -1522,6 +1553,10 @@ struct SettingsView: View {
         braveSearchKey = KeychainHelper.load(key: WebSearchBackend.keychainKey) ?? ""
         tavilySearchKey = KeychainHelper.load(key: WebSearchBackend.tavilyKeychainKey) ?? ""
         ollamaEndpoint = KeychainHelper.load(key: "ollamaEndpoint")    ?? ""
+        #if DEBUG
+        // 1.1-D — stills/UI tests point Settings at a fake server the way routing already does (`configuredEndpoint`).
+        if ollamaEndpoint.isEmpty, let e = UserDefaults.standard.string(forKey: "DebugEndpointURL") { ollamaEndpoint = e }
+        #endif
         ollamaAPIToken = KeychainHelper.load(key: "ollamaAPIToken")    ?? ""
         hostPairing    = HostPairing.load()
     }
@@ -1562,8 +1597,9 @@ struct SettingsView: View {
             switch await ModelRouter.probeEndpoint(trimmed) {
             case .needsEndpoint:
                 connectionTestResult = "Enter an endpoint above to test it."
-            case .reachable(let model):
-                connectionTestResult = "✓ Connected — \(model) is loaded"
+            case .reachable(let server, let model):
+                connectionTestResult = "✓ \(server)" + (model.map { " — chats use \($0)" } ?? " — no models yet")
+                await HostCatalog.server.refreshServer()
             case .unreachable(let reason):
                 connectionTestResult = "✗ \(reason)"
             }
@@ -1576,6 +1612,46 @@ struct SettingsView: View {
         if result.hasPrefix("✓") { return .green }
         if result.hasPrefix("✗") { return .red.opacity(0.8) }
         return AppearancePalette.ink.opacity(0.55)
+    }
+}
+
+/// 1.1-D — what answered at the endpoint ("Ollama 0.13.2", "LM Studio 0.4.14", "OpenAI-compatible server"), or why it
+/// can't be reached; once something answered, the way into its models. Its OWN view, so it observes `HostCatalog.server`
+/// (built inside the pushed destination's closure, it never re-rendered — the navdest stale-state trap).
+private struct ServerDetectionRow: View {
+    @Environment(\.appBodyFont) private var appFont
+    @Binding var endpointText: String   // a binding: a plain value here is the destination's stale snapshot
+    var body: some View {
+        let server = HostCatalog.server
+        if !endpointText.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty {
+            if server.isLoading && server.serverKind == nil {
+                Text("Looking for the server…").font(appFont.font(size: 12, relativeTo: .caption1))
+                    .foregroundStyle(AppearancePalette.ink.opacity(0.5))
+            } else if server.reachable, let kind = server.serverKind {
+                NavigationLink(value: SettingsView.Dest.serverModels) {
+                    HStack(spacing: 8) {
+                        Image(systemName: "checkmark.seal.fill").foregroundStyle(.green)
+                        VStack(alignment: .leading, spacing: 2) {
+                            Text(kind.label).font(appFont.font(size: 15, weight: .medium, relativeTo: .subheadline))
+                                .foregroundStyle(AppearancePalette.ink.opacity(0.85))
+                                .accessibilityIdentifier("settings.serverKind")
+                            Text(server.chosen.map { "Models · chats use \(server.name($0))" } ?? "Models")
+                                .font(appFont.font(size: 12, relativeTo: .caption1)).foregroundStyle(AppearancePalette.ink.opacity(0.5))
+                        }
+                        Spacer()
+                        Image(systemName: "chevron.right").font(.caption).foregroundStyle(AppearancePalette.ink.opacity(0.3))
+                    }
+                    .padding(.horizontal, 16).padding(.vertical, 11)
+                    .background(AppearancePalette.ink.opacity(0.07)).clipShape(RoundedRectangle(cornerRadius: 10))
+                }
+                .buttonStyle(.plain)
+                .accessibilityIdentifier("settings.serverModels")
+            } else if let err = server.serverError {
+                Label(err, systemImage: "wifi.slash").font(appFont.font(size: 12, relativeTo: .caption1))
+                    .foregroundStyle(AppearancePalette.ink.opacity(0.6))
+                    .accessibilityIdentifier("settings.serverError")
+            }
+        }
     }
 }
 

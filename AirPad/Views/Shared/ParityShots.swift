@@ -718,6 +718,7 @@ struct DebugScreenHost: View {
         case "models":    return .models
         case "macmodels": return .macModels   // Brief AL — the paired Mac models screen (needs -FakeHostPairing)
         case "advanced":  return .advanced
+        case "servermodels": return .serverModels   // 1.1-D — the server's models (with -DebugEndpointURL at a fake)
         case "websearch": return .webSearch
         case "librarian": return .librarian
         case "privacy":   return .privacy
@@ -732,6 +733,8 @@ struct DebugScreenHost: View {
     private var content: some View {
         switch screen {
         case "settings":         SettingsView()
+        case "modelpicker":      // 1.1-D — the pill's quick switcher (the server's models listed under YOUR SERVER)
+            ModelPickerSheet(catalog: HostCatalog.shared, thinkEnabled: .constant(false), onManageModels: {})
         // Brief AJ — screenshot each submenu: `-Screen settings-<dest>`.
         case let s where s.hasPrefix("settings-"):
             SettingsView(debugInitialDest: settingsDest(String(s.dropFirst("settings-".count))))

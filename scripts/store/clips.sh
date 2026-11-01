@@ -2,6 +2,7 @@
 # 1.1 store — the preview clips on <sim> into <out>/clips/ (raw, with handles). Usage: clips.sh <sim> <out>
 set -u
 SIM=$1; OUT=$2; HERE=${0:A:h}; source $HERE/lib.sh; source $HERE/pairs.sh; mkdir -p $OUT/clips
+xcrun simctl keychain $SIM reset   # no server endpoint left from shot 8: the Librarian answers with Apple Intelligence
 # run <name> <appearance> <test> <out-dir placeholder handled by run> [ENV=…]
 r() { local name=$1 ap=$2 t=$3; shift 3; xcrun simctl ui $SIM appearance $ap
   $HERE/run_ui.sh $SIM $t $OUT/run-$name "$@" >/dev/null 2>&1

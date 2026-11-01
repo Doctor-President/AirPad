@@ -15,8 +15,8 @@ for dev in pro:6.3in-iphone17pro promax:6.9in-iphone17promax; do src=${dev%%:*};
   done
 done
 cp $O/pro/clips/*.mov $D/clips/ 2>/dev/null
-python3 $HERE/fps.py $D/clips >/dev/null
+python3 $HERE/fps.py $D/clips >/dev/null; cp $D/clips/fps.md $D/fps.md; cp $HERE/README-delivery.md $D/README.md
 python3 $HERE/manifest.py $D
-$HERE/contact.sh $D
+python3 $HERE/contact.py $D
 print -l 'stills/' 'clips/' > $D/.gitignore   # raw media stay on this Mac (≈1.5 GB): T composes from here
 du -sh $D/stills $D/clips

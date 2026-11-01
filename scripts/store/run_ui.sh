@@ -14,7 +14,7 @@ envs=(TEST_RUNNER_STORE_MARK=$MARK); for kv in "$@"; do envs+=(TEST_RUNNER_$kv);
       snap-*) xcrun simctl io $SIM screenshot --type=png $OUT/${${f:t}#snap-}.png >/dev/null 2>&1;;
       faceid-match) sleep 1; xcrun simctl spawn $SIM notifyutil -p com.apple.BiometricKit_Sim.pearl.match;;
       rec-start-*) n=${${f:t}#rec-start-}; mkdir -p $OUT/clips; pkill -INT -f "simctl io $SIM recordVideo"; sleep 1
-        xcrun simctl io $SIM recordVideo --codec h264 --force $OUT/clips/$n.mov >/dev/null 2>&1 & echo $! > $MARK/pid-$n; sleep 1.5;;
+        xcrun simctl io $SIM recordVideo --codec h264 --mask ignored --force $OUT/clips/$n.mov >/dev/null 2>&1 & echo $! > $MARK/pid-$n; sleep 1.5;;
       rec-stop-*) n=${${f:t}#rec-stop-}; kill -INT $(cat $MARK/pid-$n) 2>/dev/null
         for i in {1..50}; do kill -0 $(cat $MARK/pid-$n) 2>/dev/null || break; sleep 0.2; done
         kill -9 $(cat $MARK/pid-$n) 2>/dev/null;;

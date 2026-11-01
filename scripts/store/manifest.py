@@ -38,7 +38,8 @@ WHAT = [
   (r"07-export-saved", lambda m: "Export sheet after saving"),
   (r"07-files-attachments", lambda m: "Files: the attachments folder"),
   (r"07-files-folder", lambda m: "Files: the .md and its attachments folder"),
-  (r"08-settings-models-section", lambda m: "Settings, “Your own models” section"),
+  (r"08-settings-models-section", lambda m: "Settings → Models, the “Your own models” row"),
+  (r"08-settings", lambda m: "Settings"),
   (r"08-your-own-models", lambda m: "Your own models: endpoint and “Ollama 0.13.2” detected"),
   (r"08-models-list-b", lambda m: "Models list scrolled: curated downloads"),
   (r"08-models-list", lambda m: "Models list: installed, in memory, curated names"),
@@ -50,7 +51,7 @@ WHAT = [
 ]
 def what(stem):
     ap = ""
-    m = re.match(r"(0[2-8]-.*)-(light|dark)$", stem)
+    m = re.match(r"(0[2-46-8]-.*)-(light|dark)$", stem)
     if m: stem, ap = m[1], m[2]
     base = re.sub(r"-(zoomed|start)$", "", stem)
     for pat, f in WHAT:

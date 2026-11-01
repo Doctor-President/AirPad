@@ -45,6 +45,14 @@ final class StoreShots: XCTestCase {
         item.tap()
     }
 
+    /// The view the library opens on is kept between launches (the List tests leave it on List): back to the Map.
+    private func ensureMap(_ app: XCUIApplication) {
+        let view = app.buttons.matching(NSPredicate(format: "label BEGINSWITH 'View:'")).firstMatch
+        guard view.waitForExistence(timeout: 30), !view.label.contains("Map") else { return }
+        switchTo(app, "Map")
+        sleep(6)
+    }
+
     /// The List view → the entry's row (scrolling until it's on screen) → its detail.
     private func openFromList(_ app: XCUIApplication, id: String) {
         switchTo(app, "List")
@@ -81,6 +89,7 @@ final class StoreShots: XCTestCase {
         let name = env["STORE_NAME"] ?? "map"
         let app = launch(["-OpenMap"] + extra)
         sleep(14)
+        ensureMap(app)
         shot("\(name)-start")
         app.pinch(withScale: CGFloat(Double(env["STORE_PINCH"] ?? "0.55") ?? 0.55), velocity: -0.6)
         sleep(6)
@@ -109,6 +118,7 @@ final class StoreShots: XCTestCase {
         let q = env["STORE_QUESTION"] ?? "What would it actually take to shoot on the Bolex?"
         let app = launch(["-OpenMap"])
         sleep(8)
+        ensureMap(app)
         let field = openLibrarian(app)
         XCTAssertTrue(field.waitForExistence(timeout: 10), "Ask field")
         sleep(1)
@@ -342,6 +352,7 @@ final class StoreShots: XCTestCase {
         let extra = (env["STORE_ARGS"] ?? "").split(separator: " ").map(String.init)
         let app = launch(["-OpenMap"] + extra)
         sleep(14)
+        ensureMap(app)
         let v = XCUIGestureVelocity(CGFloat(Double(env["STORE_VELOCITY"] ?? "120") ?? 120))
         record(env["STORE_NAME"] ?? "map-glide") {
             let a = app.coordinate(withNormalizedOffset: CGVector(dx: 0.78, dy: 0.62))
@@ -358,6 +369,7 @@ final class StoreShots: XCTestCase {
     func testClipOpenEntry() {
         let app = launch(["-OpenMap"])
         sleep(14)
+        ensureMap(app)
         record("open-entry") {
             switchTo(app, "List")
             sleep(2)
@@ -399,6 +411,7 @@ final class StoreShots: XCTestCase {
         let q = env["STORE_QUESTION"] ?? "What would it actually take to shoot on the Bolex?"
         let app = launch(["-OpenMap"])
         sleep(14)
+        ensureMap(app)
         record("librarian-stream") {
             let field = openLibrarian(app)
             _ = field.waitForExistence(timeout: 10)
@@ -422,6 +435,7 @@ final class StoreShots: XCTestCase {
         let extra = (env["STORE_ARGS"] ?? "").split(separator: " ").map(String.init)
         let app = launch(["-OpenMap"] + extra)
         sleep(14)
+        ensureMap(app)
         record(env["STORE_NAME"] ?? "look") {
             let a = app.coordinate(withNormalizedOffset: CGVector(dx: 0.65, dy: 0.55))
             let b = app.coordinate(withNormalizedOffset: CGVector(dx: 0.45, dy: 0.47))

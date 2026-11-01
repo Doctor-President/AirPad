@@ -291,6 +291,7 @@
 		A5BA279013A717CC6026D717 /* AnswerCap.swift in Sources */ = {isa = PBXBuildFile; fileRef = BEA4AFE38DA4FFBCF4A88C9E /* AnswerCap.swift */; };
 		A795741744098AF3B305335B /* CardBlurTest.swift in Sources */ = {isa = PBXBuildFile; fileRef = B65719255B960A7B6876EC2A /* CardBlurTest.swift */; };
 		A82F67B951F127ECCD91D8DD /* ChatScrollLiveUI.swift in Sources */ = {isa = PBXBuildFile; fileRef = E91FC3333B755E31454E8075 /* ChatScrollLiveUI.swift */; };
+		A8399F208D84902F8FB838C7 /* StoreShots.swift in Sources */ = {isa = PBXBuildFile; fileRef = E31D96C535128A6AFBB6349F /* StoreShots.swift */; };
 		A859CCDDA5AEF40491043CDA /* UMAPFuzzySet.swift in Sources */ = {isa = PBXBuildFile; fileRef = 7B05C305C5A28D74F771BA11 /* UMAPFuzzySet.swift */; };
 		A96AAFCADC47CC8E620B6B74 /* WebGrounding.swift in Sources */ = {isa = PBXBuildFile; fileRef = 03B3380B23C12BA32EC0A66D /* WebGrounding.swift */; };
 		A9D30911FB3F2FA2F59DA847 /* PasteProbe.swift in Sources */ = {isa = PBXBuildFile; fileRef = 12FFD0E4E7DD235786396C38 /* PasteProbe.swift */; };
@@ -867,6 +868,7 @@
 		E1CA7EBB8E00D6EB0B60EBCE /* KeyboardDismissModifier.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = KeyboardDismissModifier.swift; sourceTree = "<group>"; };
 		E2AD296B35A1F56E8CF30BCA /* LiveVoiceEngine.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = LiveVoiceEngine.swift; sourceTree = "<group>"; };
 		E2EFF0C3EADAB643BFED4C8F /* LinkGalleryBody.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = LinkGalleryBody.swift; sourceTree = "<group>"; };
+		E31D96C535128A6AFBB6349F /* StoreShots.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = StoreShots.swift; sourceTree = "<group>"; };
 		E3F9189D5677C65F12E2D47F /* NodeDetailView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = NodeDetailView.swift; sourceTree = "<group>"; };
 		E5035C30AE70E1C4E361CF86 /* ImageOCRService.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ImageOCRService.swift; sourceTree = "<group>"; };
 		E60E7CA2D6AAD7EF1812F933 /* ChatScrollEndUI.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ChatScrollEndUI.swift; sourceTree = "<group>"; };
@@ -1068,6 +1070,7 @@
 				A38EC08243A62FE2EACFC69B /* ServerModelsUI.swift */,
 				CC24979DB59D837E18440FAE /* ShareSheetUI.swift */,
 				ED924ABE8CD119DCD5194981 /* SpeechEngineSwitch.swift */,
+				E31D96C535128A6AFBB6349F /* StoreShots.swift */,
 				CB533693BAEAB8B5A5A69BC9 /* TestFlightRestore.swift */,
 				AB1C29C713D0DA9D291C4661 /* WebEvidenceUI.swift */,
 				1E713BD5708D29B15EB4BB18 /* WebSearchAnswerUI.swift */,
@@ -2006,6 +2009,7 @@
 				FA5AAED50A00FB5657013EE2 /* ServerModelsUI.swift in Sources */,
 				36F9E4061BB1232B2A4EB8B1 /* ShareSheetUI.swift in Sources */,
 				804248449DE978D3C6F76331 /* SpeechEngineSwitch.swift in Sources */,
+				A8399F208D84902F8FB838C7 /* StoreShots.swift in Sources */,
 				70696C7DE6DCC44361DBCC54 /* TestFlightRestore.swift in Sources */,
 				06BE785481E7CAB51C38A8BE /* WebEvidenceUI.swift in Sources */,
 				230C621B2436337F906706A5 /* WebSearchAnswerUI.swift in Sources */,

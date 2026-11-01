@@ -199,6 +199,19 @@ enum ModelPickSelfTestHook {
         do { _ = try await CustomServer.detect(endpoint: locked); check("token needed throws", false) }
         catch { check("token needed wording", (error as? LocalizedError)?.errorDescription?.contains("needs an API token") == true,
                       (error as? LocalizedError)?.errorDescription ?? "\(error)") }
+        // 1.1-D fix-up (D2) — Settings' network hint shows under "Can't reach" only, never under the token line.
+        UserDefaults.standard.set(closed, forKey: "DebugEndpointURL")
+        HostCatalog.server.debugResetForTest()
+        await HostCatalog.server.refreshServer(redetect: true)
+        check("hint: closed port → hint", HostCatalog.server.serverUnreachable && HostCatalog.server.serverError?.hasPrefix("Can't reach") == true,
+              HostCatalog.server.serverError ?? "nil")
+        UserDefaults.standard.set(locked, forKey: "DebugEndpointURL")
+        await HostCatalog.server.refreshServer(redetect: true)
+        check("hint: token needed → no hint", !HostCatalog.server.serverUnreachable && HostCatalog.server.serverError?.contains("needs an API token") == true,
+              HostCatalog.server.serverError ?? "nil")
+        UserDefaults.standard.set(ollama, forKey: "DebugEndpointURL")
+        await HostCatalog.server.refreshServer(redetect: true)
+        check("hint: reachable → no hint", !HostCatalog.server.serverUnreachable && HostCatalog.server.serverError == nil)
 
         // Ollama through the real router: pick an UNLOADED model, the ask loads it at the load window, no reload after.
         UserDefaults.standard.set(ollama, forKey: "DebugEndpointURL")

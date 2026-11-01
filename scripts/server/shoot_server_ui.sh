@@ -32,4 +32,8 @@ done
 shot lms-models-light light http://127.0.0.1:$LP settings-servermodels
 shot lms-picker-light light http://127.0.0.1:$LP modelpicker
 shot closed-advanced-light light http://127.0.0.1:9 settings-advanced
+shot closed-advanced-dark dark http://127.0.0.1:9 settings-advanced   # 1.1-D fix-up: the network hint
+xcrun simctl ui $SIM content_size accessibility-large
+shot closed-advanced-light-ax light http://127.0.0.1:9 settings-advanced
+xcrun simctl ui $SIM content_size large
 xcrun simctl terminate $SIM $BID 2>/dev/null

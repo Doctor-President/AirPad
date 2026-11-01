@@ -1647,9 +1647,17 @@ private struct ServerDetectionRow: View {
                 .buttonStyle(.plain)
                 .accessibilityIdentifier("settings.serverModels")
             } else if let err = server.serverError {
-                Label(err, systemImage: "wifi.slash").font(appFont.font(size: 12, relativeTo: .caption1))
-                    .foregroundStyle(AppearancePalette.ink.opacity(0.6))
-                    .accessibilityIdentifier("settings.serverError")
+                VStack(alignment: .leading, spacing: 4) {
+                    Label(err, systemImage: "wifi.slash").font(appFont.font(size: 12, relativeTo: .caption1))
+                        .foregroundStyle(AppearancePalette.ink.opacity(0.6))
+                        .accessibilityIdentifier("settings.serverError")
+                    if server.serverUnreachable {
+                        Text(CustomServer.networkHint).font(appFont.font(size: 12, relativeTo: .caption1))
+                            .foregroundStyle(AppearancePalette.ink.opacity(0.5))
+                            .fixedSize(horizontal: false, vertical: true)
+                            .accessibilityIdentifier("settings.serverNetworkHint")
+                    }
+                }
             }
         }
     }

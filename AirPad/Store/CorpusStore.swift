@@ -2600,10 +2600,27 @@ final class CorpusStore {
         // again be read as "the Librarian is broken" when the real fault was the model picked.
         NSLog("[Gauntlet] model resolution: userPicked=%@ (the Host's --observe `chat done model=…` line is the authority on what actually answered)",
               ModelRouter.userPickedHostModel ?? "none (no picker choice yet → smallest installed curated)")
+        // 1.1-D fix-up (D3) — `-GauntletRoute endpoint` (DEBUG) runs the same cases over the user's-own-server route
+        // (`-DebugEndpointURL <ollama>` + `-DebugEndpointModel <tag>`): ModelRouter → native /api/chat at the loaded
+        // window. Each turn logs a presence-only `[ServerChat] done model=… num_ctx=… prompt_eval=…` line.
+        var serverRoute = false
+        #if DEBUG
+        serverRoute = UserDefaults.standard.string(forKey: "GauntletRoute") == "endpoint"
+        #endif
+        if serverRoute {
+            guard case .ollama(let e) = ModelRouter.active else {
+                NSLog("[Gauntlet] ABORT — -GauntletRoute endpoint but the provider is NOT the server. Pass -DebugEndpointURL and route to it.")
+                NSLog("[Gauntlet] done")
+                return
+            }
+            let t = try? await CustomServer.chatTarget(endpoint: e)
+            NSLog("[Gauntlet] ROUTE server: model=%@ window=%d (%@)", t?.model ?? "?", t?.contextTokens ?? 0, t?.kind.label ?? "not reachable")
+        } else {
         guard case .host = ModelRouter.active else {
             NSLog("[Gauntlet] ABORT — provider is NOT .host. Pass -DebugHostURL/-DebugHostSecret/-DebugHostPubKey so the REAL sealed Host path is exercised (direct-Ollama/FM would be a fake green).")
             NSLog("[Gauntlet] done")
             return
+        }
         }
 
         let librarian = LibrarianState()
@@ -2683,10 +2700,11 @@ final class CorpusStore {
                 // Host and tap Retry. Without the forced failure this case was a silent NO-OP:
                 // `retryLastUserTurn` guards on the transcript ending in a user turn, so it returned
                 // instantly (0.0s, no inference) and the row re-graded the PREVIOUS answer.
-                HostPairing.debugForceUnreachableHost = true
+                // On the server route the dead port is the server address itself, for that one send.
+                if serverRoute { CustomServer.debugForceUnreachable = true } else { HostPairing.debugForceUnreachableHost = true }
                 await librarian.groundedSend(query: c.question, store: self, chat: chat)
                 let failedAsExpected = chat.messages.last?.role == .user
-                HostPairing.debugForceUnreachableHost = false
+                if serverRoute { CustomServer.debugForceUnreachable = false } else { HostPairing.debugForceUnreachableHost = false }
                 NSLog("[Gauntlet] CASE %@ note — forced Host error first (dead port): transcript ends in the user turn = %@; now tapping Retry",
                       c.id, failedAsExpected ? "yes" : "NO (the failure did not surface as expected)")
                 // The case is only meaningful if the failure REALLY happened; otherwise Retry is a

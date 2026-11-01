@@ -116,6 +116,9 @@ enum ModelRouter {
             .trimmingCharacters(in: .whitespacesAndNewlines)
         #if DEBUG
         if let e = UserDefaults.standard.string(forKey: "DebugEndpointURL"), !e.isEmpty { endpoint = e }   // C2c tests
+        // 1.1-D fix-up (D3) — the gauntlet's case 5 forces ONE failed send on the server route (a launch-arg
+        // -DebugEndpointURL outranks a UserDefaults write, so the dead port has to be applied here).
+        if CustomServer.debugForceUnreachable { endpoint = "http://127.0.0.1:9" }   // nothing listens on port 9
         #endif
         guard !endpoint.isEmpty, URL(string: endpoint) != nil else { return nil }
         return endpoint
@@ -214,9 +217,8 @@ enum ModelRouter {
     ///     the win here is memory + load, not prefill. The request num_ctx overrides the Modelfile pin.
     ///   • `.foundationModel` — 4,096. Apple's on-device model is a hard 4K window; the budget
     ///     must never overflow it, so a big entry degrades to its best passages ("partial").
-    ///   • `.ollama` — 4,096. A direct LAN endpoint (Ollama/LM Studio) self-reports no reliable
-    ///     served `num_ctx`, and both commonly default low, so we stay conservative and never
-    ///     overflow. (A future brief can probe `/api/show` for the real value.)
+    ///   • `.ollama` — the server model's served window (1.1-D, `CustomServer.cachedContext`); 4,096 until
+    ///     the first listing, and on a generic OpenAI-compatible server.
     ///   • `.local` — 4,096. The on-device MLX model is small and not wired to free-text Ask
     ///     anyway; a safe floor for exhaustiveness.
     /// Reads the Keychain (XPC) via `active` — call OFF the SwiftUI render path.

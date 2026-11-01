@@ -143,6 +143,8 @@ final class HostCatalog {
     private(set) var serverKind: CustomServer.Kind? = nil
     private(set) var serverModels: [CustomServer.ServerModel] = []
     private(set) var serverError: String? = nil
+    /// The error is "Can't reach the server" (not a token or a refusal) — Settings adds the network hint under it.
+    private(set) var serverUnreachable = false
     var canManage: Bool { source == .host || serverKind?.canManage == true }
     #if DEBUG
     @ObservationIgnored var debugProgressSink: ((Int) -> Void)? = nil   // 1.1-D fake self-test: every download percent
@@ -360,7 +362,7 @@ final class HostCatalog {
     func refreshServer(redetect: Bool = false) async {
         endpoint = ModelRouter.configuredEndpoint
         guard let e = endpoint else {
-            serverKind = nil; serverModels = []; models = []; serverError = nil; reachable = false; return
+            serverKind = nil; serverModels = []; models = []; serverError = nil; serverUnreachable = false; reachable = false; return
         }
         pickedTag = CustomServer.pick(for: e)
         isLoading = true
@@ -371,10 +373,13 @@ final class HostCatalog {
             serverModels = snap.models
             models = CustomServer.catalogModels(kind: snap.kind, models: snap.models)
             serverError = nil
+            serverUnreachable = false
             reachable = true
         } catch {
             reachable = false
-            serverError = (error as? LocalizedError)?.errorDescription ?? CustomServer.ServerError.unreachable(host: CustomServer.hostLabel(e)).errorDescription
+            let cantReach = CustomServer.ServerError.unreachable(host: CustomServer.hostLabel(e)).errorDescription
+            serverError = (error as? LocalizedError)?.errorDescription ?? cantReach
+            serverUnreachable = serverError == cantReach
         }
         NSLog("[CustomServer] refresh kind=%@ models=%d reachable=%d", serverKind?.label ?? "-", models.count, reachable ? 1 : 0)
         // C4b2 (T 2026-10-10) — a server that doesn't answer is greyed, and skipped when nothing is chosen.
@@ -817,6 +822,6 @@ extension HostCatalog {
 extension HostCatalog {
     func debugSetModels(_ m: [CatalogModel]) { models = m }
     /// 1.1-D fake self-test — start the server source clean (a new endpoint).
-    func debugResetForTest() { serverKind = nil; serverModels = []; models = []; serverError = nil; lastActionError = nil }
+    func debugResetForTest() { serverKind = nil; serverModels = []; models = []; serverError = nil; serverUnreachable = false; lastActionError = nil }
 }
 #endif

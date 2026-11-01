@@ -127,6 +127,14 @@ enum CustomServer {
         }
     }
 
+    /// 1.1-D fix-up (D2) — under "Can't reach the server": out of the box Ollama and LM Studio answer only their own
+    /// computer. The setting names are the apps' own labels (Ollama 0.13.2 Settings; LM Studio 0.4 Server Settings).
+    static let networkHint = "Let other devices connect: turn on “Expose Ollama to the network” in Ollama, or “Serve on Local Network” in LM Studio."
+
+    #if DEBUG
+    static var debugForceUnreachable = false   // the gauntlet's forced failure (case 5)
+    #endif
+
     static func hostLabel(_ endpoint: String) -> String {
         guard let u = URL(string: endpoint), let h = u.host else { return endpoint }
         return u.port.map { "\(h):\($0)" } ?? h
@@ -642,13 +650,31 @@ enum CustomServer {
             throw ServerError.refused(refusalText(d) ?? "The server answered HTTP \(status).")
         }
         var content = "", calls: [ToolCall] = []
+        #if DEBUG
+        // 1.1-D fix-up (D3) — the server route's presence-only delivery line (the Host's `--observe` equivalent): which
+        // model, the window asked for, the roles, the packet size and Ollama's prompt_eval — never any content.
+        let msgs = body["messages"] as? [[String: Any]] ?? []
+        let chars = msgs.reduce(0) { $0 + (($1["content"] as? String)?.count ?? 0) }
+        let numCtx = (body["options"] as? [String: Any])?["num_ctx"] as? Int ?? 0
+        GauntletTap.shared.noteModel(body["model"] as? String ?? "?")
+        #endif
         for try await line in bytes.lines {
             guard let l = parseChatLine(line) else { continue }
             if let e = l.error { throw ServerError.refused(e) }
             if !l.thinking.isEmpty { onThinking(l.thinking) }
             if !l.content.isEmpty { content += l.content; onContent(l.content) }
             for c in l.toolCalls { calls.append(ToolCall(id: "call_\(calls.count)", name: c.name, argumentsJSON: c.args)) }
-            if l.done { break }
+            if l.done {
+                #if DEBUG
+                let done = (try? JSONSerialization.jsonObject(with: Data(line.utf8)) as? [String: Any]) ?? [:]
+                NSLog("[ServerChat] done model=%@ num_ctx=%d roles=[%@] totalChars=%d tools=%d think=%@ prompt_eval=%d eval=%d done_reason=%@ toolCalls=%d",
+                      body["model"] as? String ?? "?", numCtx, msgs.compactMap { $0["role"] as? String }.joined(separator: " "), chars,
+                      (body["tools"] as? [Any])?.count ?? 0, body["think"].map { "\($0)" } ?? "none",
+                      (done["prompt_eval_count"] as? Int) ?? -1, (done["eval_count"] as? Int) ?? -1,
+                      done["done_reason"] as? String ?? "?", calls.count)
+                #endif
+                break
+            }
         }
         return (content, calls)
     }

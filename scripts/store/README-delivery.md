@@ -4,7 +4,7 @@ Directive `2026-11-01-companion-1.1-closeout-A-assets`, items 1, 2 and 4. Raw ma
 no frames, no overlays. Everything is the Sample Library (plus two synthetic entries, below) on the bench build of the
 1.1 candidate (AirPad `ws-1.1d` 50021d9 + harness `ws-1.1-store` 7f015e4: Release, the shipping UI, no DEBUG chrome).
 
-**What's in git and what isn't:** `stills/` and `clips/` (≈1.5 GB) stay on this Mac (`.gitignore` here; GitHub refuses
+**What's in git and what isn't:** `stills/` and `clips/` (about 1 GB) stay on this Mac (`.gitignore` here; GitHub refuses
 files over 100 MB and Ops holds no media this size). Committed: this README, `manifest.md`, `fps.md` and the contact sheets.
 
 ## Apple's current specs (checked 2026-11-01)

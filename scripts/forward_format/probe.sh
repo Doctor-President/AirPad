@@ -41,7 +41,7 @@ fi
 S=$(scratch); rm -rf "$S"; cp -R $OUT/before "$S"
 DEVELOPER_DIR=$DEV xcodebuild test-without-building -project ${HERE:h:h}/AirPad.xcodeproj -scheme AirPad \
   -destination "platform=iOS Simulator,id=$UDID" -derivedDataPath $DD \
-  -only-testing:AirPadUITests/ForwardFormatProbe > $OUT/xcuitest-edit.log 2>&1
+  -only-testing:${B_ONLY:-AirPadUITests/ForwardFormatProbe} > $OUT/xcuitest-edit.log 2>&1
 S=$(scratch); cp -R "$S" $OUT/after-edit   # the test reinstalls → the data container path can move
 python3 $HERE/diff.py $OUT/before $OUT/after-edit > $OUT/diff-edit.md
 grep -E "\*\* TEST|FWDPROBE" $OUT/xcuitest-edit.log | head -5

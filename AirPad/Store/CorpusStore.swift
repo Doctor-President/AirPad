@@ -1087,18 +1087,8 @@ final class CorpusStore {
             // read its file and land in between: replacing put the node in from disk AND the capture then inserted it
             // again (one entry on disk, two rows in Recents, a stale blank card), or replaced the live copy with an older
             // snapshot. Every write goes through the store, so a node already in memory is the live copy: it wins, and
-            // anything created while the load ran is kept.
-            let live = Dictionary(nodes.map { ($0.id, $0) }, uniquingKeysWith: { first, _ in first })
-            let loadedIDs = Set(normalized.map(\.id))
-            var merged = normalized.map { live[$0.id] ?? $0 }
-            merged += nodes.filter { !loadedIDs.contains($0.id) }
-            if !live.isEmpty {
-                print("[Store] A3 load merged into a live store: loaded=\(normalized.count) live=\(live.count) "
-                      + "liveKept=\(live.keys.filter(loadedIDs.contains).count) createdDuringLoad=\(live.keys.filter { !loadedIDs.contains($0) }.count)")
-            }
-            nodes = merged.sorted { $0.createdAt > $1.createdAt }
-            libraryLoaded = true   // 1.1-C (C1) — share-sheet appends can find their entries now
-            // live-17 (2c) — MERGE the disk layout with the live one, like the nodes above: a position added while the
+            // anything created while the load ran is kept. (The merge itself runs below, at the commit point.)
+            // live-17 (2c) — MERGE the disk layout with the live one, like the nodes below: a position added while the
             // load ran (a capture during launch) is the live copy and wins; every saved position is kept. When the merge
             // differs from disk, persist it — the capture held off saving (it had only its own position).
             var mergedLayout = layout ?? CanvasLayout(version: 1, updatedAt: Date(), positions: [:])
@@ -1115,7 +1105,7 @@ final class CorpusStore {
             // `try?` so a schema drift decodes to nil → the Map re-forms + re-persists
             // rather than crashing on a stale artifact (the brief's "loads silently
             // fail" case, handled as a safe fall-through, not a fault).
-            territoryLayouts = (try? await service.loadTerritoryLayouts()) ?? [:]
+            var loadedTerritoryLayouts = (try? await service.loadTerritoryLayouts()) ?? [:]
             #if DEBUG
             // Sample-map bake — `-RestoreLayout <path>` injects a captured snapshot dict (per-scope) so the
             // Map restores it verbatim: candidate re-render (light/dark) + a bake dry-run. The existing
@@ -1124,29 +1114,48 @@ final class CorpusStore {
                ri + 1 < ProcessInfo.processInfo.arguments.count,
                let rdata = try? Data(contentsOf: URL(fileURLWithPath: ProcessInfo.processInfo.arguments[ri + 1])),
                let rdict = try? JSONDecoder.airPad.decode([String: TerritoryLayoutSnapshot].self, from: rdata) {
-                for (k, v) in rdict { territoryLayouts[k] = v; frozenTerritoryScopes.insert(k) }
+                for (k, v) in rdict { loadedTerritoryLayouts[k] = v; frozenTerritoryScopes.insert(k) }
                 print("[SampleBake] -RestoreLayout injected \(rdict.count) scope snapshot(s) [frozen]")
             }
             #endif
             let minimumViableTagCount = 8
-            if loadedTags.count < minimumViableTagCount {
+            let seedsTier1Tags = loadedTags.count < minimumViableTagCount
+            var resolvedTags = loadedTags
+            if seedsTier1Tags {
                 let existingNames = Set(loadedTags.map { $0.name.lowercased() })
                 let tier1 = Self.tier1SeedTags()
                 let newTags = tier1.filter { !existingNames.contains($0.name.lowercased()) }
-                tags = loadedTags + newTags
-                await persistTags()
-            } else {
-                tags = loadedTags
+                resolvedTags = loadedTags + newTags
             }
             // Dashboard Stage 3 — seed user collections on first launch
             // (nil = file absent). Empty array means the user has explicitly
             // cleared their collections in a later stage; respect that.
-            if let loadedCollections = try await service.loadCollections() {
-                collections = loadedCollections
-            } else {
-                collections = Self.defaultUserCollections()
-                await persistCollections()
+            var loadedCollections: [NodeCollection]?
+            var collectionsLoadError: Error?
+            do { loadedCollections = try await service.loadCollections() } catch { collectionsLoadError = error }
+            // ★ 1.0r S1d — COMMIT THE MAP'S INPUTS TOGETHER, entries LAST, with no `await` in between. The Map lays
+            // out from four things: the entries, the anchor tags, the user collections and the saved territory
+            // layout. Entries used to land first (then an await, then the rest), so the Map's first pass placed
+            // every orb with no territory at all (the ±60 fallback: the pile-up), and its next pass formed a fresh
+            // layout off a half-loaded corpus (the saved layout's signature can't match yet) — the visible
+            // reshuffle on every launch, and a different layout per launch. One synchronous commit means the
+            // Map's first pass sees a whole corpus and restores the saved layout as is.
+            territoryLayouts = loadedTerritoryLayouts
+            tags = resolvedTags
+            if collectionsLoadError == nil { collections = loadedCollections ?? Self.defaultUserCollections() }
+            let live = Dictionary(nodes.map { ($0.id, $0) }, uniquingKeysWith: { first, _ in first })
+            let loadedIDs = Set(normalized.map(\.id))
+            var merged = normalized.map { live[$0.id] ?? $0 }
+            merged += nodes.filter { !loadedIDs.contains($0.id) }
+            if !live.isEmpty {
+                print("[Store] A3 load merged into a live store: loaded=\(normalized.count) live=\(live.count) "
+                      + "liveKept=\(live.keys.filter(loadedIDs.contains).count) createdDuringLoad=\(live.keys.filter { !loadedIDs.contains($0) }.count)")
             }
+            nodes = merged.sorted { $0.createdAt > $1.createdAt }
+            libraryLoaded = true   // 1.1-C (C1) — share-sheet appends can find their entries now
+            if seedsTier1Tags { await persistTags() }
+            if let collectionsLoadError { throw collectionsLoadError }
+            if loadedCollections == nil { await persistCollections() }
             // Stage 5.1 — corpus-level field definitions. Absent file (nil) is
             // the normal first-run state: no definitions yet, nothing to seed
             // (unlike collections/tags). Leave the file unwritten until the
@@ -3151,10 +3160,15 @@ final class CorpusStore {
             let loaded = try await service.loadAllNodes()
             var normalized = loaded
             for i in normalized.indices { Self.normalizeAtomicsToFront(&normalized[i]) }
+            let loadedTags = try await service.loadTags()
+            let loadedCollections = try await service.loadCollections()
+            let loadedFieldDefinitions = (try await service.loadFieldDefinitions())?.definitions ?? []
+            // 1.0r S1d — one synchronous commit, entries LAST (see `load()`): the seeded sample's first Map pass
+            // must see its anchor tags + collections, or it places every orb in the fallback pile and re-forms.
+            tags = loadedTags
+            if let loadedCollections { collections = loadedCollections }
+            fieldDefinitions = loadedFieldDefinitions
             nodes = normalized.sorted { $0.createdAt > $1.createdAt }
-            tags = try await service.loadTags()
-            if let c = try await service.loadCollections() { collections = c }
-            fieldDefinitions = (try await service.loadFieldDefinitions())?.definitions ?? []
         } catch {
             print("[SampleSeed] corpus refresh error: \(error)")
         }

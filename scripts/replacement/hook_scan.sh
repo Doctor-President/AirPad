@@ -13,3 +13,4 @@ grep -xFf $OUT/hooks.txt $OUT/release-strings.txt | sort -u > $OUT/release-hits.
 grep -xFf $OUT/hooks.txt $OUT/debug-strings.txt | sort -u > $OUT/debug-hits.txt
 echo "hooks in source: $(wc -l < $OUT/hooks.txt | tr -d ' ') · Release hits: $(wc -l < $OUT/release-hits.txt | tr -d ' ') · Debug hits (control): $(wc -l < $OUT/debug-hits.txt | tr -d ' ')"
 [[ -s $OUT/release-hits.txt ]] && { echo "Release hits:"; cat $OUT/release-hits.txt; }
+[[ ! -s $OUT/release-hits.txt ]]   # exit 0 only when no DEBUG hook is in the Release binary

@@ -5,7 +5,7 @@
 # banner (the forward-format guard must not fire on an older library).
 # Usage: upgrade_test.sh <udid> <old AirPad.app> <new AirPad.app> <out-dir>
 set -u
-UDID=$1; OLD=$2; NEW=$3; OUT=$4; BID=com.doctorpresident.airpad; GID=group.com.doctorpresident.airpad
+UDID=$1; OLD=$2; NEW=$3; OUT=$4; BID=com.doctorpresident.airpad; GRP=group.com.doctorpresident.airpad
 HERE=${0:A:h}
 rm -rf $OUT; mkdir -p $OUT
 xcrun simctl shutdown $UDID 2>/dev/null; xcrun simctl erase $UDID
@@ -18,7 +18,7 @@ libroot() { local c=$(xcrun simctl get_app_container $UDID $BID data)
   dirname "$(find "$c" -name corpus_index.json -not -path '*Caches*' | head -1)"; }
 xcrun simctl install $UDID $OLD
 run old-1                                    # first launch: seeds the Sample Library
-G=$(xcrun simctl get_app_container $UDID $BID $GID)
+G=$(xcrun simctl get_app_container $UDID $BID $GRP)
 python3 $HERE/stage_share_entry.py "$(libroot)" "$G/AirPad/inbox" > $OUT/staged.txt
 run old-2                                    # imports the staged share as a user entry
 L=$(libroot); echo "library root: $L" > $OUT/root.txt

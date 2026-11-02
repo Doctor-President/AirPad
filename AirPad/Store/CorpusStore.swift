@@ -226,6 +226,27 @@ final class CorpusStore {
     /// True when iCloud is unavailable and the app is writing to local storage instead.
     var iCloudUnavailable = false
 
+    /// 1.0r S0 — the library holds a file saved by a NEWER AirPad: nothing is written this run
+    /// (`LibraryFormatGuard`). Drives the read-only banner; capture is refused with the same message.
+    var libraryIsNewerFormat = false
+    /// Set when something was refused because the library is newer (a capture, a save) — shows the message.
+    var newerFormatNotice = false
+
+    /// Mirrors the guard's state into the store and, for a refused action, raises the notice.
+    func noteNewerFormat(refused: Bool) {
+        libraryIsNewerFormat = LibraryFormatGuard.isReadOnly
+        if refused && libraryIsNewerFormat { newerFormatNotice = true }
+    }
+
+    /// A new entry in a newer library is refused. A capture can start before the load has read the entries
+    /// (Quick Capture from the widget/Control at cold launch), so check their versions first (once, versions only).
+    private func newerFormatRefusesCapture() async -> Bool {
+        if !libraryLoaded { await service.scanForNewerEntries() }
+        guard LibraryFormatGuard.isReadOnly else { return false }
+        noteNewerFormat(refused: true)
+        return true
+    }
+
     /// Set when AI processing suggests tags not yet in the vocabulary.
     /// CanvasView observes this and presents TagCreationSheet.
     var pendingTagSuggestions: TagSuggestionContext? = nil
@@ -681,7 +702,10 @@ final class CorpusStore {
     /// land. Throws what the storage actor throws — callers keep their
     /// existing do/catch error handling intact.
     private func saveAndEnqueue(_ node: Node) async throws {
-        try await service.saveNode(node)
+        do { try await service.saveNode(node) } catch {
+            noteNewerFormat(refused: true)   // 1.0r S0 — refused by the forward-format guard → say so
+            throw error
+        }
         blockEmbedding.enqueueRebuild(node: node)
         // ws-card-catalog step 2c — card write-through. Debounced per-node so
         // rapid edits coalesce under one refresh+embed, mirroring the block
@@ -1047,6 +1071,7 @@ final class CorpusStore {
             let loaded = try await service.loadAllNodes()
             let layout = try await service.loadCanvasLayout()
             let loadedTags = try await service.loadTags()
+            noteNewerFormat(refused: false)   // 1.0r S0 — entries + canvas layout checked; the banner shows if newer
             // Stage 4.8 — enforce the atomic-prefix invariant on every
             // loaded node before it enters the live store. Nodes saved
             // before the split (Commit 5's inline-rating shape) may have
@@ -1127,6 +1152,7 @@ final class CorpusStore {
             // (unlike collections/tags). Leave the file unwritten until the
             // first definition is created (a later stage).
             if let loadedFieldDefs = try await service.loadFieldDefinitions() {
+                noteNewerFormat(refused: false)   // 1.0r S0
                 fieldDefinitions = loadedFieldDefs.definitions
             } else {
                 fieldDefinitions = []
@@ -1171,6 +1197,10 @@ final class CorpusStore {
             // live-29 (1) — "what did I write about X" reads what names X; the absence guard.
             if ProcessInfo.processInfo.arguments.contains("-SubjectLookupSelfTest") {
                 NSLog("[SubjectLookupSelfTest] %@", SubjectLookupSelfTest.run())
+            }
+            // 1.0r S0 — the forward-format guard (versions, unknown-field carry, the one write path).
+            if ProcessInfo.processInfo.arguments.contains("-ForwardFormatGuardSelfTest") {
+                NSLog("[ForwardFormatGuardSelfTest] %@", ForwardFormatGuardSelfTest.run())
             }
             // live-28 (A3) — Title Case for model-written titles.
             if ProcessInfo.processInfo.arguments.contains("-TitleCaseSelfTest") {
@@ -2127,6 +2157,7 @@ final class CorpusStore {
         }
         // Load corpus index if available (graceful fallback to empty on first run)
         if let loadedIndex = try? await service.loadCorpusIndex() {
+            noteNewerFormat(refused: false)   // 1.0r S0
             // SB137 Stage A — first launch on schema v2: back up the v1 index and
             // bump version. The neighborhoodCache stays nil, so the immediately-
             // following refreshNeighborhoods() runs a full re-cluster against
@@ -3076,6 +3107,7 @@ final class CorpusStore {
     /// indexes update this session — the baked card.json/blocks.json ride along, so
     /// retrieval works immediately and the reconciler pass is a fast fingerprint refresh.
     func addSampleLibrary() async {
+        guard !LibraryFormatGuard.isReadOnly else { noteNewerFormat(refused: true); return }   // 1.0r S0
         guard let root = await service.containerRootURL() else { return }
         guard !SampleLibrarySeeder.markerExists(containerRoot: root),
               let bundle = SampleLibrarySeeder.bundledLibraryURL() else { return }
@@ -3098,6 +3130,7 @@ final class CorpusStore {
     /// only by recorded id, so a user's own nodes are never touched; safe after the
     /// user has added their own notes.
     func removeSampleLibrary() async {
+        guard !LibraryFormatGuard.isReadOnly else { noteNewerFormat(refused: true); return }   // 1.0r S0
         guard let root = await service.containerRootURL() else { return }
         do {
             let removed = try await Task.detached(priority: .userInitiated) {
@@ -3131,6 +3164,7 @@ final class CorpusStore {
 
     /// Saves an audio file, then saves the node. Use this for voice captures.
     func addNodeWithAudio(_ node: Node, audioURL: URL, audioItemID: String, position: CGPoint) async {
+        if await newerFormatRefusesCapture() { return }   // 1.0r S0
         do {
             try await service.saveItemFile(
                 nodeID: node.id,
@@ -3157,6 +3191,7 @@ final class CorpusStore {
     #endif
 
     func addNode(_ node: Node, position: CGPoint) async {
+        if await newerFormatRefusesCapture() { return }   // 1.0r S0 — no new entries in a newer library
         // live-17 (2c) — no copy of `canvasLayout` before the awaits: a capture during the launch load copied the EMPTY
         // default and saved a layout holding only itself over every saved position. The position goes into the LIVE
         // layout after the save; it's persisted now if the layout has loaded, else the load merges and persists it.
@@ -3365,6 +3400,7 @@ final class CorpusStore {
     func endComposing(nodeID: String) { composingNodeIDs.remove(nodeID) }
 
     func createCaptureNode() async -> Node? {
+        if await newerFormatRefusesCapture() { return nil }   // 1.0r S0
         let now = Date()
         let node = Node(
             id: UUID().uuidString,
@@ -9659,6 +9695,14 @@ final class CorpusStore {
             includingPropertiesForKeys: nil,
             options: .skipsHiddenFiles
         ) else { return }
+        // 1.0r S0 — shares wait in the inbox (untouched) while the library is newer than this build. This runs
+        // before the load, so check the entries' versions first when there is something to import.
+        if !dirs.isEmpty { await service.scanForNewerEntries() }
+        if LibraryFormatGuard.isReadOnly {
+            noteNewerFormat(refused: true)
+            print("[FormatGuard] \(dirs.count) share(s) held in the inbox — library is newer than this build")
+            return
+        }
 
         var importedIDs: [String] = []
         for dir in dirs {

@@ -22,6 +22,14 @@ final class ForwardFormatProbe: XCTestCase {
         for dy in [0.95, 0.6, 0.2] where !app.keyboards.element.waitForExistence(timeout: 3) {
             editor.coordinate(withNormalizedOffset: CGVector(dx: 0.6, dy: dy)).tap()
         }
+        print("FWDPROBE banner=\(app.descendants(matching: .any)["newerLibraryBanner"].exists)")
+        // A read-only library (the guard) never takes focus: record that instead of typing.
+        guard app.keyboards.element.exists else {
+            print("FWDPROBE no-keyboard (editor read-only)")
+            app.buttons["Back"].firstMatch.tap()
+            Thread.sleep(forTimeInterval: 4.0)
+            return
+        }
         editor.typeText(" FWDPROBE")
         Thread.sleep(forTimeInterval: 2.0)
         // The detail saves on close (`onDisappear` → saveIfChanged): close the entry the way a user does.
@@ -31,5 +39,17 @@ final class ForwardFormatProbe: XCTestCase {
         if editor.exists { app.swipeDown(velocity: XCUIGestureVelocity(3000)) }
         Thread.sleep(forTimeInterval: 4.0)
         print("FWDPROBE closed=\(!editor.exists)")
+    }
+
+    /// S0c — a new entry in a newer library is refused with the message (Quick Capture, the widget/Control path).
+    func testCaptureRefusedInFutureLibrary() {
+        let app = XCUIApplication()
+        app.launchArguments = ["-UITestLibrary", "-UITestSampleLibrary", "-EntryQuikCapture"]
+        app.launch()
+        let alert = app.alerts.firstMatch
+        let shown = alert.waitForExistence(timeout: 30)
+        print("FWDPROBE capture-alert=\(shown) label=\(shown ? alert.label : "-")")
+        if shown { alert.buttons.firstMatch.tap() }
+        Thread.sleep(forTimeInterval: 3.0)
     }
 }

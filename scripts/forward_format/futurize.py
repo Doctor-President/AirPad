@@ -7,10 +7,12 @@ import json, os, sys
 VERSION_KEYS = {"entry_schema_version", "version", "schemaVersion", "schema_version", "formatVersion",
                 "card_text_version", "embedding_version", "embedder_version", "embedderVersion"}
 FUT = 99
+KEEP = os.environ.get("FUT_KEEP_VERSIONS") == "1"   # additive case: unknown fields only, versions unchanged
 
 def mark(obj, tag):
     if isinstance(obj, dict):
         bumped = [k for k in obj if k in VERSION_KEYS and isinstance(obj[k], int)]
+        if KEEP: bumped = []
         for k in bumped: obj[k] = FUT
         obj["zz_future_field"] = tag
         return bumped

@@ -113,6 +113,7 @@ struct RichTextEditor: UIViewRepresentable {
         #else
         if CaretTrace.enabled { textView.accessibilityIdentifier = "noteEditor" }
         #endif
+        textView.isEditable = !LibraryFormatGuard.isReadOnly   // 1.0r S0 — read-only library
         textView.backgroundColor = .clear
         textView.font = UIFont.preferredFont(forTextStyle: .body)
         // documentStyle uses semantic `.label` (adaptive) so text is legible in
@@ -179,6 +180,9 @@ struct RichTextEditor: UIViewRepresentable {
 
     func updateUIView(_ uiView: RichTextUIView, context: Context) {
         context.coordinator.parent = self
+        // 1.0r S0 — a library saved by a newer AirPad is read-only: the note can be read, not typed into.
+        let editable = !LibraryFormatGuard.isReadOnly
+        if uiView.isEditable != editable { uiView.isEditable = editable }
         // Brief AZ4 — keep the toolbar font chip's model live (the closures + the
         // effective face change as the entry's override / the global default change).
         context.coordinator.state.bodyFontMenu = bodyFontMenu

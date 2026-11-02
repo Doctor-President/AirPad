@@ -21,7 +21,8 @@ run seed -UITestLibrary -UITestLibraryFresh -UITestSampleLibrary
 S=$(scratch); cp -R "$S" $OUT/seeded
 python3 $HERE/futurize.py "$S" > $OUT/futurize.txt
 cp -R "$S" $OUT/before
-# A — open only
+# A — open only (+ a screenshot at 20 s: the banner, if any)
+( sleep 20; xcrun simctl io $UDID screenshot $OUT/open-20s.png >/dev/null 2>&1 ) &
 run open -UITestLibrary -UITestSampleLibrary
 cp -R "$S" $OUT/after-open
 python3 $HERE/diff.py $OUT/before $OUT/after-open > $OUT/diff-open.md
@@ -30,10 +31,11 @@ if [[ ${CONTROL:-1} == 1 ]]; then
   S=$(scratch); rm -rf "$S"; cp -R $OUT/seeded "$S"
   DEVELOPER_DIR=$DEV xcodebuild test-without-building -project ${HERE:h:h}/AirPad.xcodeproj -scheme AirPad \
     -destination "platform=iOS Simulator,id=$UDID" -derivedDataPath $DD \
-    -only-testing:AirPadUITests/ForwardFormatProbe > $OUT/xcuitest-control.log 2>&1
+    -only-testing:AirPadUITests/ForwardFormatProbe/testEditEntryInFutureLibrary > $OUT/xcuitest-control.log 2>&1
   S=$(scratch); rm -rf $OUT/after-control; cp -R "$S" $OUT/after-control
   python3 $HERE/diff.py $OUT/seeded $OUT/after-control > $OUT/diff-control.md
-  echo "control: $(grep -rl FWDPROBE $OUT/after-control | wc -l | tr -d ' ') file(s) carry the edit"
+  # (the harness's typing can split the word with markup, e.g. FWDPROB**E**, so match the stem)
+  echo "control: $(grep -rl FWDPROB $OUT/after-control | wc -l | tr -d ' ') file(s) carry the edit"
 fi
 # B — restore the futurized library, then open an entry + type into its note
 S=$(scratch); rm -rf "$S"; cp -R $OUT/before "$S"

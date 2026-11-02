@@ -356,6 +356,7 @@
 		C3D20531250163A764EAB625 /* LinkGalleryBody.swift in Sources */ = {isa = PBXBuildFile; fileRef = E2EFF0C3EADAB643BFED4C8F /* LinkGalleryBody.swift */; };
 		C43EA4F6274E0133B8C92A0A /* TitleInkRule.swift in Sources */ = {isa = PBXBuildFile; fileRef = A64E46FB41D72CA1748DFFE9 /* TitleInkRule.swift */; };
 		C5E56761FA8C6CFFC16F2BF9 /* ChatViewScopeUI.swift in Sources */ = {isa = PBXBuildFile; fileRef = BACBABD0740D39E70240648D /* ChatViewScopeUI.swift */; };
+		C66E384AC4F49A5D119D3012 /* LibraryFormatGuard.swift in Sources */ = {isa = PBXBuildFile; fileRef = 63415948576B3EC6DC78941B /* LibraryFormatGuard.swift */; };
 		C705DEBC6BF45BA7A85AC37D /* BigShouldersDisplay-OFL.txt in Resources */ = {isa = PBXBuildFile; fileRef = ECFED59D749E91B63D80BF73 /* BigShouldersDisplay-OFL.txt */; };
 		C778ACC9CC63354AC17A3744 /* FieldKind.swift in Sources */ = {isa = PBXBuildFile; fileRef = 6EDDB291F9F6170B93CE084E /* FieldKind.swift */; };
 		C81DA4861FD8ADC4BC0617D7 /* CaptureChromeBar.swift in Sources */ = {isa = PBXBuildFile; fileRef = B6410795D74C090F46198216 /* CaptureChromeBar.swift */; };
@@ -669,6 +670,7 @@
 		613177CF17502A7D0A1B2388 /* LinkGalleryTile.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = LinkGalleryTile.swift; sourceTree = "<group>"; };
 		6150CF6FB6E8BBB89B1C5C8F /* Security.framework */ = {isa = PBXFileReference; lastKnownFileType = wrapper.framework; name = Security.framework; path = System/Library/Frameworks/Security.framework; sourceTree = SDKROOT; };
 		62E2EC2958AAC24AD281B70D /* NodeGridTileTuning.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = NodeGridTileTuning.swift; sourceTree = "<group>"; };
+		63415948576B3EC6DC78941B /* LibraryFormatGuard.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = LibraryFormatGuard.swift; sourceTree = "<group>"; };
 		64DE32F1BD5B9B909D92BB3B /* HDBSCAN.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = HDBSCAN.swift; sourceTree = "<group>"; };
 		64F471EBF10E37239E168D8D /* AirPadUITests.xctest */ = {isa = PBXFileReference; includeInIndex = 0; lastKnownFileType = wrapper.cfbundle; path = AirPadUITests.xctest; sourceTree = BUILT_PRODUCTS_DIR; };
 		657E5CF4617BD56734417E8F /* SubstrateClusterLabelService.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = SubstrateClusterLabelService.swift; sourceTree = "<group>"; };
@@ -1149,6 +1151,7 @@
 				C729D9028EBF447A0241ABFD /* KeychainHelper.swift */,
 				19A7D40E298ACBC315ECFB6F /* LapackSVDSelfTest.swift */,
 				239B75A26B2BA53534F71428 /* LayoutService.swift */,
+				63415948576B3EC6DC78941B /* LibraryFormatGuard.swift */,
 				0050CBF021D1A050268F2E5B /* LinkFollowupsSelfTest.swift */,
 				FC68B6E4E41E80E237C8FFBA /* LinkSnapshotService.swift */,
 				9113DD140BEEB334F5D52DA8 /* LiveDictationService.swift */,
@@ -2185,6 +2188,7 @@
 				6F50F55ECA31C219E365F731 /* LibrarianSubjectLookup.swift in Sources */,
 				5E5D595A3C1F9CA4851D05A1 /* LibrarianSurface.swift in Sources */,
 				1567DFB006C4086A348F0712 /* LibrarianTunedMaterial.swift in Sources */,
+				C66E384AC4F49A5D119D3012 /* LibraryFormatGuard.swift in Sources */,
 				2D797B443BD3042A6F78FC40 /* LinkAppendSheet.swift in Sources */,
 				598AB294337257CEED19A5BC /* LinkEntryBody.swift in Sources */,
 				97211C70A29E050F42DCA86F /* LinkFollowupsSelfTest.swift in Sources */,

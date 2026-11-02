@@ -486,7 +486,7 @@ struct Node: Codable, Identifiable, Hashable {
     /// decode-tolerant (absent = false), no schema bump.
     var isPrivate: Bool = false
 
-    enum CodingKeys: String, CodingKey {
+    enum CodingKeys: String, CodingKey, CaseIterable {   // CaseIterable: LibraryFormatGuard.knownEntryKeys
         case id, title, summary, tags, mood, provenance, threads, location, items, domain, source
         case createdAt = "created_at"
         case updatedAt = "updated_at"

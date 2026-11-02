@@ -1019,6 +1019,28 @@ private struct iCloudUnavailableBanner: View {
     }
 }
 
+/// 1.0r S0 — one plain banner while the library is read-only (`LibraryFormatGuard`). Mounted at the app root
+/// (`ContentView`) so it shows on every screen.
+struct NewerLibraryBanner: View {
+    @Environment(\.appBodyFont) private var appFont
+    var body: some View {
+        HStack(alignment: .firstTextBaseline, spacing: 8) {
+            Image(systemName: "lock")
+                .font(.caption)
+            Text(LibraryFormatGuard.message)
+                .font(appFont.font(size: 12, relativeTo: .caption1))
+                .fixedSize(horizontal: false, vertical: true)
+        }
+        .foregroundStyle(AppearancePalette.ink)
+        .padding(.horizontal, 16)
+        .padding(.vertical, 8)
+        .background(.ultraThinMaterial)
+        .clipShape(RoundedRectangle(cornerRadius: 16, style: .continuous))
+        .padding(.horizontal, 16)
+        .accessibilityIdentifier("newerLibraryBanner")
+    }
+}
+
 // MARK: - Selection mode controls
 
 private struct SelectionHeader: View {

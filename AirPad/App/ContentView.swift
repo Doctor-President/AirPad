@@ -206,6 +206,15 @@ struct ContentView: View {
         // at the root so both entry points present the bit-identical
         // surface, and so the sheet floats over the Librarian's
         // FloatingPanel regardless of entry mode.
+        // 1.0r S0 — the read-only banner on every screen, and the message for a refused capture or save.
+        // Below the top chrome row (back / title / sort sit in the first ~56 pt), and taps pass through to it.
+        .overlay(alignment: .top) {
+            if store.libraryIsNewerFormat { NewerLibraryBanner().padding(.top, 56).allowsHitTesting(false) }
+        }
+        .alert(LibraryFormatGuard.message, isPresented: Binding(
+            get: { store.newerFormatNotice }, set: { store.newerFormatNotice = $0 })) {
+            Button("OK", role: .cancel) {}
+        }
         .sheet(isPresented: $routerBinding.showChatsList) {
             ChatsListView()
                 .environment(store)

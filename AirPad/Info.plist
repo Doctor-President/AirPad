@@ -45,7 +45,7 @@
 	<key>NSFaceIDUsageDescription</key>
 	<string>AirPad uses Face ID to unlock the app when Require Face ID is on, and to show private entries.</string>
 	<key>NSLocalNetworkUsageDescription</key>
-	<string>AirPad needs local network access to reach the Ollama or LM Studio endpoint you configured in Settings. Only used for queries you initiate.</string>
+	<string>AirPad uses your local network to reach the model server you set up, including checking it when you open Settings or the model picker.</string>
 	<key>NSMicrophoneUsageDescription</key>
 	<string>AirPad needs microphone access to record voice memos.</string>
 	<key>NSPhotoLibraryUsageDescription</key>

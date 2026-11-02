@@ -453,7 +453,7 @@ struct ProSheet: View {
             VStack(alignment: .leading, spacing: 18) {
                 Text("AirPad Pro").font(appFont.font(size: 28, weight: .bold, relativeTo: .largeTitle)).foregroundStyle(AppearancePalette.ink)
                     .accessibilityAddTraits(.isHeader)
-                Text("Make your Map yours. New looks for every idea you keep, light and dark.")
+                Text("Make AirPad yours. New looks, backgrounds and surfaces, light and dark.")
                     .font(appFont.font(size: 17, relativeTo: .body)).foregroundStyle(AppearancePalette.ink.opacity(0.8))
                     .fixedSize(horizontal: false, vertical: true)
                 VStack(spacing: 0) {
@@ -469,7 +469,7 @@ struct ProSheet: View {
                     }
                 }
                 .background(AppearancePalette.ink.opacity(0.05)).clipShape(RoundedRectangle(cornerRadius: 12))
-                Text("One-time purchase. Includes every look we add later. Everything else in AirPad stays free.")
+                Text("One-time purchase. Includes every look, background and surface we add later. Everything else in AirPad stays free.")
                     .font(appFont.font(size: 13, relativeTo: .footnote)).foregroundStyle(AppearancePalette.ink.opacity(0.5))
                     .fixedSize(horizontal: false, vertical: true)
                 actions

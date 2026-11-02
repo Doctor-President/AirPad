@@ -2082,14 +2082,15 @@ final class CorpusPhysicsScene: SKScene {
         }
         startAuraSizeScriptIfAsked()
         scheduleGPUBenchIfAsked()   // 1.1-A (6) — `-MapGPUBench`
+        if ProcessInfo.processInfo.arguments.contains("-DumpOrbShaders") { dumpOrbShaders() }   // 1.0r S1e
         // 1.0r S1c — `-RisoDotsScript <start-s>`: one launch, one layout: every 10 s from <start-s> Riso pre-fix / fixed with
         // the Dots at 0 (the port check), then pre-fix / fixed with the Dots at 100%; NSLog `[RISODOTS] <step>`.
         if let v = UserDefaults.standard.string(forKey: "RisoDotsScript"), let start = Double(v) {
             func dots(_ o: Double) { var e = MapGround.edited; e.dark.custom = true; e.light.custom = true
                 e.dark.dotOpacity = o; e.light.dotOpacity = o; MapGround.edited = e }
             let steps: [(String, () -> Void)] = [
-                ("legacy-dots0", { Self.risoLegacyDebug = true; dots(0) }), ("fixed-dots0", { Self.risoLegacyDebug = false }),
-                ("legacy-dots100", { Self.risoLegacyDebug = true; dots(1) }), ("fixed-dots100", { Self.risoLegacyDebug = false }),
+                ("legacy-dots0", { Self.dotsLegacyDebug = true; dots(0) }), ("fixed-dots0", { Self.dotsLegacyDebug = false }),
+                ("legacy-dots100", { Self.dotsLegacyDebug = true; dots(1) }), ("fixed-dots100", { Self.dotsLegacyDebug = false }),
             ]
             for (i, st) in steps.enumerated() {
                 DispatchQueue.main.asyncAfter(deadline: .now() + start + Double(i) * 10) { st.1(); NSLog("[RISODOTS] %@", st.0) }
@@ -2243,7 +2244,7 @@ final class CorpusPhysicsScene: SKScene {
             }
             BackgroundGridNode.setDotAppearance(grid, r: dot.r, g: dot.g, b: dot.b, opacity: dotOpacity)
             BackgroundGridNode.setSheen(grid, on: sheenOn)
-            syncRisoGround()   // 1.0r S1c — after every grid uniform of the frame
+            syncGroundRebuild()   // 1.0r S1c — after every grid uniform of the frame
             // 1.1-B — the titles' ink reads the ground: re-pick when the edit (or Pro) changes, and with a gradient also
             // after the camera has moved a quarter screen (each title then sits over another part of the gradient).
             // 1.1-B fix-up (A): the gradient re-pick ran the rule for EVERY title in one frame, six times per fast flick
@@ -4573,14 +4574,29 @@ final class CorpusPhysicsScene: SKScene {
     /// The Wash look — the study's `wash` branch (Ops/reference/aura-orb-study.html v2), ported line for line into its own
     /// SKShader, drawn with SKBlendMode.multiply: the shader emits 1 − absorb·coverage per channel (1 = no change outside
     /// the ink), so the pigment multiplies into the ground — and into overlapping orbs — exactly as the study's
-    /// `col *= 1 − absorb·cov`. Per orb: the study family's 3-stop ramp warped by two fbm fields, lifted 14% toward white;
+    /// `col *= 1 − absorb·cov`. (1.0r S1e: now that multiply is done in the shader over the dot-free ground and drawn with
+    /// the alpha blend; see `makeWashShader`.) Per orb: the study family's 3-stop ramp warped by two fbm fields, lifted 14% toward white;
     /// bleed (an angle-seeded wobble of the radius), misregistration (per-channel discs offset by (0.75, −0.55)·misreg·
     /// 0.035), edge pooling, bloom, and granulation in ORB-LOCAL on-screen points (q × the orb's on-screen radius from
     /// fwidth(v_tex_coord) ÷ the content scale), so it rides with the orb and never swims. The paper fibres + grain are
     /// the GROUND's (BackgroundGridNode, u_light_ground_on = 1 + paper). Sprite extent = the study's bound (a_au_b.w).
     /// u_wa = (spread, warp, softness, bleed), (pooling, misregistration, paper, 0), (LOD every orb 0/1, content scale, 0, LOD radius pt), 0.
     /// a_au_a = (stop A rgb, seed), a_au_b = (stop B rgb, this sprite's extent), a_au_c = stop C.
-    private lazy var washShader: SKShader = {
+    /// 1.0r S1e — built in variants: nil = the pre-S1e source exactly (SKBlendMode.multiply; the DEBUG pre-fix A/B), or a
+    /// `GroundVariant`: the multiply let the dot grid through the body, so the shader rebuilds the dot-free ground
+    /// (`groundRebuildGLSL`, shared with Riso), lays the same pigment over it (G · (1 − absorb · cov)) and goes out
+    /// premultiplied with alpha = the cover, drawn with the alpha blend: out = T(G) − G·(1 − a) is exactly the old multiply
+    /// over plain ground for ANY cover a, and the dots under the body (dst − G) are scaled by (1 − a) = gone. (Where two
+    /// Wash bodies overlap, the upper one now covers the lower instead of multiplying into it; the Map keeps orbs apart.)
+    static func makeWashShader(_ g: GroundVariant?) -> SKShader {
+        let out = g.map { g in "            vec3 bg = u_wa[3].rgb;   // the dark-Map fallback of the shared ground (Wash draws on the light Map only)\n"
+            + Self.groundRebuildGLSL(g) + "\n" + """
+                    vec3 mul = vec3(1.0) - absorb * cov;   // the study's multiply, unchanged
+                    // full cover from the rim's mid-point in; the result over plain ground doesn't depend on the cover
+                    float cover = min(1.0, 2.0 * max(cov.r, max(cov.g, cov.b)));
+                    cover = max(cover, 1.0 - min(mul.r, min(mul.g, mul.b)));   // keeps G·(mul − 1 + a) ≥ 0
+                    gl_FragColor = vec4(G * (mul - vec3(1.0) + cover), cover);
+        """ } ?? "    gl_FragColor = vec4(vec3(1.0) - absorb * cov, 1.0);"   // the pre-S1e line, byte for byte
         let src = """
         float waHash(vec2 p) { vec3 p3 = fract(vec3(p.xyx) * 0.1031); p3 += dot(p3, p3.yzx + 33.33); return fract((p3.x + p3.y) * p3.z); }
         float waNoise(vec2 p) {
@@ -4631,7 +4647,7 @@ final class CorpusPhysicsScene: SKScene {
             float bloom = 0.88 + 0.3 * n.x;
             float dens = (0.6 * bloom + 0.5 * pool) * (1.0 - paper * 0.45 * gran * lod);
             vec3 absorb = clamp((vec3(1.0) - pig) * dens, 0.0, 1.0);
-            gl_FragColor = vec4(vec3(1.0) - absorb * cov, 1.0);
+        \(out)
         }
         """
         let shader = SKShader(source: src)
@@ -4642,8 +4658,18 @@ final class CorpusPhysicsScene: SKScene {
         ]
         shader.uniforms = [SKUniform(name: "u_wa", matrixFloat4x4: matrix_identity_float4x4),
                            SKUniform(name: "u_noise", texture: StudyNoise.texture)]   // live-48 — the fbm, one lookup each
+        if let g { shader.uniforms += Self.groundRebuildUniforms(g) }   // 1.0r S1e — the grid's ground (syncGroundRebuild)
         return shader
-    }()
+    }
+    /// 1.0r S1e — the Wash variant drawn now (nil = pre-fix, DEBUG A/B only) and its shaders.
+    private var washVariant: GroundVariant? = GroundVariant()
+    private var washShaders: [GroundVariant?: SKShader] = [:]
+    private var washShader: SKShader {
+        if let s = washShaders[washVariant] { return s }
+        let s = Self.makeWashShader(washVariant)
+        washShaders[washVariant] = s
+        return s
+    }
 
     /// "" = no orb wears Wash; otherwise what the Wash sprites were last styled with.
     private var washStyleKey = ""
@@ -4659,14 +4685,23 @@ final class CorpusPhysicsScene: SKScene {
             return
         }
         let w = m.wash
+        // 1.0r S1e — the dot-free ground under the body (the DEBUG pre-fix A/B keeps the multiply)
+        #if DEBUG
+        let legacy = Self.dotsLegacyDebug
+        #else
+        let legacy = false
+        #endif
+        washVariant = legacy ? nil : groundRebuildVariant()
+        let lg = Self.lightGroundRGB
         let u = simd_float4x4(columns: (
             vector_float4(Float(w.spread), Float(w.warp), Float(w.softness), Float(w.bleed)),
             vector_float4(Float(w.pooling), Float(w.misregistration), Float(w.paper), 0),
             vector_float4(lodAllOrbs ? 1 : 0, Float(glyphContentScale), 0, Float(Self.lodRadiusPt)),
-            vector_float4(0, 0, 0, 0)))
+            vector_float4(lg.x, lg.y, lg.z, 0)))   // 1.0r S1e: col 3 = the ground (`bg` of the shared ground code)
         if let uu = washShader.uniforms.first, uu.matrixFloat4x4Value != u { uu.matrixFloat4x4Value = u }
         let ext = w.spriteExtent
-        let key = "\(ext)|\(nodeSprites.count)"
+        let vk = washVariant.map { "g\($0.field ? 1 : 0)\($0.sheen ? 1 : 0)\($0.gradient ? 1 : 0)" } ?? "legacy"
+        let key = "\(vk)|\(ext)|\(nodeSprites.count)"
         guard key != washStyleKey else { return }
         let rebuild = washStyleKey.isEmpty || washStyleKey == "stale" || !washStyleKey.hasSuffix("|\(nodeSprites.count)")
         washStyleKey = key
@@ -4679,12 +4714,14 @@ final class CorpusPhysicsScene: SKScene {
             guard let sp = node as? SKSpriteNode else { continue }
             styleWashSprite(sp, nodeID: id, extent: ext)
         }
+        syncGroundRebuild()   // a fresh variant's ground uniforms, this frame
     }
 
     private func styleWashSprite(_ sp: SKSpriteNode, nodeID: String, extent e: Double) {
         applyOrbSpriteSize(sp, nodeID: nodeID, extent: CGFloat(e))
         if sp.shader !== washShader { sp.shader = washShader }
-        if sp.blendMode != .multiply { sp.blendMode = .multiply }
+        let blend: SKBlendMode = washVariant == nil ? .multiply : .alpha   // 1.0r S1e (was multiply)
+        if sp.blendMode != blend { sp.blendMode = blend }
         let st = studyStops(nodeID: nodeID, sorted: false)
         sp.setValue(SKAttributeValue(vectorFloat4: vector_float4(st.a, st.seed)), forAttribute: "a_au_a")
         sp.setValue(SKAttributeValue(vectorFloat4: vector_float4(st.b, Float(e))), forAttribute: "a_au_b")
@@ -4848,17 +4885,16 @@ final class CorpusPhysicsScene: SKScene {
         shader.uniforms = [SKUniform(name: "u_s2", matrixFloat4x4: matrix_identity_float4x4),
                            SKUniform(name: "u_noise", texture: StudyNoise.texture),
                            SKUniform(name: "u_s2b", matrixFloat4x4: Self.lightGlassExtras(LightGlassLook(), tilt: .zero))]   // live-50
-        if v.risoGround {   // 1.0r S1c — Riso's copy of the grid's ground (syncRisoGround)
-            shader.uniforms += [SKUniform(name: "u_s2g", matrixFloat4x4: simd_float4x4()),
-                                SKUniform(name: "u_s2h", matrixFloat4x4: simd_float4x4())]
-            if v.field { shader.uniforms.append(SKUniform(name: "u_s2f", texture: SKTexture(data: Data([128, 128, 0, 255]), size: CGSize(width: 1, height: 1)))) }
-        }
+        if v.risoGround { shader.uniforms += Self.groundRebuildUniforms(v.ground) }   // 1.0r S1c — Riso's copy of the grid's ground
         return shader
     }
 
     /// 1.0r S1c — which study-2 shader: the legacy source, or Riso's ground variant (reads the warp field when the ripple or
     /// the sheen draws; computes the sheen only when it can move a pixel by more than 1.5 / 255).
-    struct Study2Variant: Hashable { var risoGround = false, field = false, sheen = false, gradient = false }
+    struct Study2Variant: Hashable {
+        var risoGround = false, field = false, sheen = false, gradient = false
+        var ground: GroundVariant { GroundVariant(field: field, sheen: sheen, gradient: gradient) }
+    }
     private var study2Shaders: [Study2Variant: SKShader] = [:]
     private var study2Variant = Study2Variant()
     private var study2Shader: SKShader {
@@ -4868,17 +4904,23 @@ final class CorpusPhysicsScene: SKScene {
         return s
     }
 
-    /// Riso's output (1.0r S1c). The plates no longer blend into the framebuffer (multiply / screen let the dot grid through
-    /// the body): the ground is rebuilt here exactly as the grid draws it WITHOUT its dots (u_s2g / u_s2h / u_s2f = the
-    /// grid's own uniforms and field, pushed per frame by syncRisoGround), the ink is laid over it as the study's multiply /
-    /// screen, and the result goes out premultiplied with alpha = the plates' cover: out = T(G) − G·(1 − a), so over plain
-    /// ground (dst = G) the alpha blend gives T(G) for ANY cover a, and the dots under the plates (dst − G) are scaled by
-    /// (1 − a) = gone inside the body.
-    static func risoGroundGLSL(_ v: Study2Variant) -> String {
-        let field = v.field ? """
+    /// 1.0r S1e — THE dot-free ground under an orb: one owner, shared by Riso (S1c) and light Wash (S1e). It rebuilds the
+    /// ground exactly as the grid draws it WITHOUT its dots — colour or two-stop gradient, the dark ripple (warp field B),
+    /// the sheen (warp field RG) — from the grid's own uniforms and field, which `syncGroundRebuild` copies into the shader
+    /// per frame (u_s2g / u_s2h / u_s2f; the names are Riso's, kept so its shader text is unchanged). Declares `G` (and
+    /// W0…W3, X0…X2, plus `vp` / `suv` / `F` when used); the host shader must define `scale` (content scale) and `bg` (the
+    /// dark Map's ground, where the grid draws dots only). Variants (`GroundVariant`): the field is read and the sheen / the
+    /// gradient computed only when they draw (code merely skipped by a branch still costs: measured +0.09 ms).
+    struct GroundVariant: Hashable { var field = false, sheen = false, gradient = false }
+    static func groundRebuildUniforms(_ g: GroundVariant) -> [SKUniform] {
+        [SKUniform(name: "u_s2g", matrixFloat4x4: simd_float4x4()), SKUniform(name: "u_s2h", matrixFloat4x4: simd_float4x4())]
+            + (g.field ? [SKUniform(name: "u_s2f", texture: SKTexture(data: Data([128, 128, 0, 255]), size: CGSize(width: 1, height: 1)))] : [])
+    }
+    static func groundRebuildGLSL(_ g: GroundVariant) -> String {
+        let field = g.field ? """
                     vec4 F = texture2D(u_s2f, suv);
         """ : ""
-        let sheen = v.sheen ? """
+        let sheen = g.sheen ? """
                     {   // the grid's sheen; per-frame constants from the CPU: X3 = (H, flatSpec), X2.z = shp, X2.w = 1 / (1 − flatSpec)
                         vec2 shPull = (F.rg - vec2(0.5)) * (2.0 * W1.w);
                         float depth = clamp(length(shPull), 0.0, 1.0);
@@ -4898,17 +4940,17 @@ final class CorpusPhysicsScene: SKScene {
                         }
                     }
         """ : ""
-        let ripple = v.field ? """
+        let ripple = g.field ? """
                     if (W0.w > 0.0) { G = mix(G, vec3(F.b) * X1.rgb, W0.w); }   // the dark ripple
                     else if (X2.x < 0.5) { G = bg; }                             // dark, no ripple: the grid draws dots only
         """ : """
                     if (X2.x < 0.5) { G = bg; }                                  // dark, no ripple: the grid draws dots only
         """
-        let suv = v.field || v.gradient ? """
+        let suv = g.field || g.gradient ? """
                     vec2 vp = max(W2.zw, vec2(1.0));
                     vec2 suv = vec2(gl_FragCoord.x / (scale * vp.x), 1.0 - gl_FragCoord.y / (scale * vp.y));   // the grid's v_tex_coord
         """ : ""
-        let gradient = v.gradient ? """
+        let gradient = g.gradient ? """
                     {   // the ground's two stops across the screen
                         vec2 soff = (suv - vec2(0.5)) * vp;
                         float gext = abs(vp.x * W2.x) + abs(vp.y * W2.y);
@@ -4924,6 +4966,17 @@ final class CorpusPhysicsScene: SKScene {
         \(field)
         \(sheen)
         \(ripple)
+        """
+    }
+
+    /// Riso's output (1.0r S1c). The plates no longer blend into the framebuffer (multiply / screen let the dot grid through
+    /// the body): the ground is rebuilt exactly as the grid draws it WITHOUT its dots (`groundRebuildGLSL`, the
+    /// shared owner), the ink is laid over it as the study's multiply /
+    /// screen, and the result goes out premultiplied with alpha = the plates' cover: out = T(G) − G·(1 − a), so over plain
+    /// ground (dst = G) the alpha blend gives T(G) for ANY cover a, and the dots under the plates (dst − G) are scaled by
+    /// (1 − a) = gone inside the body.
+    static func risoGroundGLSL(_ v: Study2Variant) -> String {
+        Self.groundRebuildGLSL(v.ground) + "\n" + """
                     // full cover from the rim's mid-point in (the soft rim is ~2% of the radius: on a big orb that's pixels
                     // a dot could show through); the result over plain ground doesn't depend on the cover
                     float cover = min(1.0, 2.0 * max(s2Disk(d, s), s2Disk(length(q + off), s) * cut));
@@ -4955,11 +5008,14 @@ final class CorpusPhysicsScene: SKScene {
         switch kind { case .lightGlass: v = m.lightGlass; case .riso: v = m.riso; case .gradient: v = m.gradient }
         // 1.0r S1c — Riso draws with its ground variant (Gradient / Light Glass keep the legacy source)
         #if DEBUG
-        let legacyRiso = Self.risoLegacyDebug
+        let legacyRiso = Self.dotsLegacyDebug
         #else
         let legacyRiso = false
         #endif
-        study2Variant = kind == .riso && !legacyRiso ? risoGroundVariant() : Study2Variant()
+        if kind == .riso && !legacyRiso {
+            let g = groundRebuildVariant()
+            study2Variant = Study2Variant(risoGround: true, field: g.field, sheen: g.sheen, gradient: g.gradient)
+        } else { study2Variant = Study2Variant() }
         let ground: vector_float3 = currentIsLight ? Self.lightGroundRGB : TunerHSL(hex: m.fieldHex).simd
         let mode: Float = kind == .lightGlass ? 3 : kind == .riso ? 5 : 6
         let u = simd_float4x4(columns: (
@@ -4994,30 +5050,30 @@ final class CorpusPhysicsScene: SKScene {
             sp.setValue(SKAttributeValue(vectorFloat4: vector_float4(st.b, Float(ext))), forAttribute: "a_au_b")
             sp.setValue(SKAttributeValue(vectorFloat4: vector_float4(st.c, 0)), forAttribute: "a_au_c")
         }
-        syncRisoGround()   // a fresh variant's ground uniforms, this frame
+        syncGroundRebuild()   // a fresh variant's ground uniforms, this frame
     }
 
     /// 1.0r S1c — the grid's uniforms by name (re-read when its shader is rebuilt).
-    private func risoGridUniforms() -> [String: SKUniform]? {
+    private func groundGridUniforms() -> [String: SKUniform]? {
         guard let gs = gridNode?.fillShader else { return nil }
-        if gs !== risoGridShader {
-            risoGridShader = gs
-            risoGridU = Dictionary(gs.uniforms.map { ($0.name, $0) }, uniquingKeysWith: { a, _ in a })
+        if gs !== groundGridShader {
+            groundGridShader = gs
+            groundGridU = Dictionary(gs.uniforms.map { ($0.name, $0) }, uniquingKeysWith: { a, _ in a })
         }
-        return risoGridU
+        return groundGridU
     }
     /// 1.0r S1c — Riso's ground variant for the grid as it draws now: the field is read when the ripple or the sheen draws;
     /// the sheen is computed only when it can move a pixel by more than 1.5 / 255 — it screens toward at most white × its
     /// amount, so its largest change is (1 − the ground's darkest channel) × amount (#FFEEED: 1.08 / 255; #111115: 14 / 255).
-    private func risoGroundVariant() -> Study2Variant {
-        guard let gu = risoGridUniforms() else { return Study2Variant(risoGround: true) }
+    private func groundRebuildVariant() -> GroundVariant {
+        guard let gu = groundGridUniforms() else { return GroundVariant() }
         let ripple = (gu["u_ripple_amt"]?.floatValue ?? 0) > 0
         let sh = gu["u_sh"]?.vectorFloat4Value ?? .zero
         var lo = (gu["u_ground_color"]?.vectorFloat3Value ?? .one).min()
         let gradient = simd_length_squared(gu["u_grad_dir"]?.vectorFloat2Value ?? .zero) > 0
         if gradient { lo = min(lo, (gu["u_ground2"]?.vectorFloat3Value ?? .one).min()) }
         let sheen = sh.x > 0 && (gu["u_warp_mode"]?.floatValue ?? 0) > 2.5 && (1 - lo) * sh.x * 255 > 1.5
-        return Study2Variant(risoGround: true, field: ripple || sheen, sheen: sheen, gradient: gradient)
+        return GroundVariant(field: ripple || sheen, sheen: sheen, gradient: gradient)
     }
 
     /// live-50 — Light Glass's dark-Glass controls for u_s2b. `tilt` = the drawn light offset (orb radii; zero = the study's
@@ -5030,16 +5086,18 @@ final class CorpusPhysicsScene: SKScene {
             vector_float4(Float(1 / max(g.highlightSize * g.highlightSize, 0.0001)), Float(g.innerShadow), tilt.x, tilt.y),
             vector_float4(0, 0, 0, 0)))
     }
-    /// 1.0r S1c — per frame while Riso shows, after every grid uniform of the frame is set: copy the grid's ground inputs
-    /// (colour / gradient, sheen, ripple, the warp field) into the Riso shader, which rebuilds the ground without its dots
-    /// and lays the ink over it. u_s2g = (ground rgb, ripple amt), (ground 2 rgb, mass range), (gradient dir, viewport),
+    /// 1.0r S1c / S1e — per frame while Riso or light Wash shows, after every grid uniform of the frame is set: copy the
+    /// grid's ground inputs (colour / gradient, sheen, ripple, the warp field) into that look's shader, which rebuilds the
+    /// ground without its dots (`groundRebuildGLSL`) and lays the ink over it. u_s2g = (ground rgb, ripple amt), (ground 2 rgb, mass range), (gradient dir, viewport),
     /// u_sh; u_s2h = u_sh_l, (ripple colour, warp mode), (light ground on, 0, shp, 1 / (1 − flatSpec)), (H, flatSpec).
-    private func syncRisoGround() {
-        guard study2Variant.risoGround, study2StyleKey.hasPrefix("riso|"), let risoGridU = risoGridUniforms() else { return }
-        func f(_ n: String) -> Float { risoGridU[n]?.floatValue ?? 0 }
-        func v2(_ n: String) -> SIMD2<Float> { risoGridU[n]?.vectorFloat2Value ?? .zero }
-        func v3(_ n: String) -> SIMD3<Float> { risoGridU[n]?.vectorFloat3Value ?? .zero }
-        func v4(_ n: String) -> SIMD4<Float> { risoGridU[n]?.vectorFloat4Value ?? .zero }
+    private func syncGroundRebuild() {
+        let riso = study2Variant.risoGround && study2StyleKey.hasPrefix("riso|")
+        let wash = washVariant != nil && !washStyleKey.isEmpty
+        guard riso || wash, let groundGridU = groundGridUniforms() else { return }
+        func f(_ n: String) -> Float { groundGridU[n]?.floatValue ?? 0 }
+        func v2(_ n: String) -> SIMD2<Float> { groundGridU[n]?.vectorFloat2Value ?? .zero }
+        func v3(_ n: String) -> SIMD3<Float> { groundGridU[n]?.vectorFloat3Value ?? .zero }
+        func v4(_ n: String) -> SIMD4<Float> { groundGridU[n]?.vectorFloat4Value ?? .zero }
         let g1 = v3("u_ground_color"), g2 = v3("u_ground2"), dir = v2("u_grad_dir"), vp = v2("u_viewport_size")
         let rc = v3("u_ripple_color")
         let a = simd_float4x4(columns: (SIMD4(g1, f("u_ripple_amt")), SIMD4(g2, f("u_warp_mass_range")),
@@ -5050,22 +5108,40 @@ final class CorpusPhysicsScene: SKScene {
         let shp = exp2(8 + (2.5 - 8) * sh.y), flatSpec = pow(H.z, shp)
         let b = simd_float4x4(columns: (shl, SIMD4(rc, f("u_warp_mode")),
                                         SIMD4(f("u_light_ground_on"), 0, shp, 1 / max(1 - flatSpec, 0.001)), SIMD4(H, flatSpec)))
-        for u in study2Shader.uniforms {
-            switch u.name {
-            case "u_s2g": if u.matrixFloat4x4Value != a { u.matrixFloat4x4Value = a }
-            case "u_s2h": if u.matrixFloat4x4Value != b { u.matrixFloat4x4Value = b }
-            case "u_s2f": if let t = risoGridU["u_disp_field"]?.textureValue, u.textureValue !== t { u.textureValue = t }
-            default: break
+        for sh in (riso ? [study2Shader] : []) + (wash ? [washShader] : []) {
+            for u in sh.uniforms {
+                switch u.name {
+                case "u_s2g": if u.matrixFloat4x4Value != a { u.matrixFloat4x4Value = a }
+                case "u_s2h": if u.matrixFloat4x4Value != b { u.matrixFloat4x4Value = b }
+                case "u_s2f": if let t = groundGridU["u_disp_field"]?.textureValue, u.textureValue !== t { u.textureValue = t }
+                default: break
+                }
             }
         }
     }
-    private weak var risoGridShader: SKShader?
+    private weak var groundGridShader: SKShader?
     #if DEBUG
+    /// 1.0r S1e — `-DumpOrbShaders`: every study-2 variant's and Wash's GLSL → Caches/orbshaders/*.glsl (a refactor of the
+    /// shared ground code is checked by diffing these before / after).
+    func dumpOrbShaders() {
+        guard let dir = FileManager.default.urls(for: .cachesDirectory, in: .userDomainMask).first?.appendingPathComponent("orbshaders") else { return }
+        try? FileManager.default.createDirectory(at: dir, withIntermediateDirectories: true)
+        func w(_ n: String, _ src: String) { try? src.write(to: dir.appendingPathComponent(n + ".glsl"), atomically: true, encoding: .utf8) }
+        w("study2-legacy", Self.makeStudy2Shader(Study2Variant()).source ?? "")
+        for f in [false, true] { for sh in [false, true] where !sh || f { for g in [false, true] {
+            w("riso-f\(f ? 1 : 0)s\(sh ? 1 : 0)g\(g ? 1 : 0)", Self.makeStudy2Shader(Study2Variant(risoGround: true, field: f, sheen: sh, gradient: g)).source ?? "")
+        } } }
+        w("wash-legacy", Self.makeWashShader(nil).source ?? "")
+        for f in [false, true] { for sh in [false, true] where !sh || f { for g in [false, true] {
+            w("wash-f\(f ? 1 : 0)s\(sh ? 1 : 0)g\(g ? 1 : 0)", Self.makeWashShader(GroundVariant(field: f, sheen: sh, gradient: g)).source ?? "")
+        } } }
+        NSLog("[ORBSHADERS] dumped")
+    }
     /// 1.0r S1c — DEBUG A/B in one launch (`-RisoDotsScript`, `-MapGPUBenchRisoAB`): Riso drawn the pre-fix way — the
     /// legacy shader source with multiply / screen into the framebuffer. Release builds have no flag.
-    static var risoLegacyDebug = false
+    static var dotsLegacyDebug = false
     #endif
-    private var risoGridU: [String: SKUniform] = [:]
+    private var groundGridU: [String: SKUniform] = [:]
 
     /// live-50 — the Light Glass light offset last pushed (moves only by a visible step, as dark Glass's).
     private var drawnLightGlassOff = SIMD2<Float>(0, 0)
@@ -6703,7 +6779,7 @@ extension CorpusPhysicsScene {
             let risoAB = ProcessInfo.processInfo.arguments.contains("-MapGPUBenchRisoAB")
             for (c, legacy) in (only.isEmpty ? MapGroundCase.allCases + [.all] : only).flatMap({ c in risoAB ? [(c, true), (c, false)] : [(c, false)] }) {
                 groundCase = c
-                if risoAB { Self.risoLegacyDebug = legacy }
+                if risoAB { Self.dotsLegacyDebug = legacy }
                 var gpu: [Double] = [], wall: [Double] = [], upd: [Double] = [], warp: [Double] = [], enc: [Double] = []
                 var modes = Set<Int>()
                 for i in 0..<(warm + measure) {
@@ -6734,7 +6810,7 @@ extension CorpusPhysicsScene {
                 }
             }
         }
-        groundCase = startCase; Self.risoLegacyDebug = false
+        groundCase = startCase; Self.dotsLegacyDebug = false
         benchRunning = false
         view.isPaused = false
         let text = lines.joined(separator: "\n") + "\n"

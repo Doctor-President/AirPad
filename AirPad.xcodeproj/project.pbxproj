@@ -405,6 +405,7 @@
 		DDC652824F3F6BCA24D1EE71 /* CitationReference.swift in Sources */ = {isa = PBXBuildFile; fileRef = 09D0243E524E09781995DF68 /* CitationReference.swift */; };
 		DDFA466B1F065DAF3DC13799 /* CaretTapTest.swift in Sources */ = {isa = PBXBuildFile; fileRef = A9C57830B6D6683951BF3F6E /* CaretTapTest.swift */; };
 		E015CC503DCD0442457638C9 /* FieldValueFormatter.swift in Sources */ = {isa = PBXBuildFile; fileRef = E650D0049F1C1E20D3E562B1 /* FieldValueFormatter.swift */; };
+		E09EBFBD83C2D44E5233E421 /* ForwardFormatProbe.swift in Sources */ = {isa = PBXBuildFile; fileRef = 001C9E7E66797170231C0F63 /* ForwardFormatProbe.swift */; };
 		E0B11AE9D6BA6895C646C8EE /* LiveVoiceRecorder.swift in Sources */ = {isa = PBXBuildFile; fileRef = 9F73B6E69C451D7E42EC38C6 /* LiveVoiceRecorder.swift */; };
 		E0FFC1D3012E19FD234F3751 /* FieldPreset.swift in Sources */ = {isa = PBXBuildFile; fileRef = AC63EC73AD8EFD037637381F /* FieldPreset.swift */; };
 		E10CF1BD1B6C11C9F51094F3 /* FieldValue.swift in Sources */ = {isa = PBXBuildFile; fileRef = 8587B8FB965733F87A837170 /* FieldValue.swift */; };
@@ -503,6 +504,7 @@
 /* End PBXCopyFilesBuildPhase section */
 
 /* Begin PBXFileReference section */
+		001C9E7E66797170231C0F63 /* ForwardFormatProbe.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ForwardFormatProbe.swift; sourceTree = "<group>"; };
 		003CEDBA7C8C183191D81F3E /* FieldDefinition.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = FieldDefinition.swift; sourceTree = "<group>"; };
 		0050CBF021D1A050268F2E5B /* LinkFollowupsSelfTest.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = LinkFollowupsSelfTest.swift; sourceTree = "<group>"; };
 		01439497F74FDC8285B4AB62 /* HostE2E.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = HostE2E.swift; sourceTree = "<group>"; };
@@ -1045,6 +1047,7 @@
 				E909538DC252422B01EA04C6 /* DeviceRecorderTier.swift */,
 				21B33F87387E58BCADB5C823 /* DocumentHandoffName.swift */,
 				41588CCE3CAAFC09130BFE25 /* DocumentImportNaming.swift */,
+				001C9E7E66797170231C0F63 /* ForwardFormatProbe.swift */,
 				F65726013657CF58491EA8A5 /* GroundPickerRepro.swift */,
 				D4FBCF8B7AC3CF84A924B74F /* HeroHeaderFlash.swift */,
 				5CA786FE73ACBE100B4FAA56 /* HoldDragRepro.swift */,
@@ -1983,6 +1986,7 @@
 				BA9035AA679FB65F2C403ECE /* DeviceRecorderTier.swift in Sources */,
 				F89E6B927D36543A7B3D7D9F /* DocumentHandoffName.swift in Sources */,
 				BCEA38610D7EEB032A314769 /* DocumentImportNaming.swift in Sources */,
+				E09EBFBD83C2D44E5233E421 /* ForwardFormatProbe.swift in Sources */,
 				3BBE093DC9DAEEA88B7D5898 /* GroundPickerRepro.swift in Sources */,
 				3E4BD1C91E3FE716BA0F0B71 /* HeroHeaderFlash.swift in Sources */,
 				B50270CC57FE455419F41E86 /* HoldDragRepro.swift in Sources */,

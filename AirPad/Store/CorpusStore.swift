@@ -9903,9 +9903,11 @@ final class CorpusStore {
     /// `-StubTranscription` launch arg returns a canned transcript so the Simulator logic-matrix can
     /// prove the WIRING without a real speech model (device proves transcription QUALITY).
     nonisolated private static func transcribeAudioFile(at url: URL) async -> (text: String, unavailable: Bool) {
+        #if DEBUG   // 1.0r S2b hook scan: this was compiled into Release; now DEBUG-only like every other hook
         if CommandLine.arguments.contains("-StubTranscription") {
             return ("stub transcript for share-import wiring", false)
         }
+        #endif
         if SFSpeechRecognizer.authorizationStatus() != .authorized {
             let status = await withCheckedContinuation { (cont: CheckedContinuation<SFSpeechRecognizerAuthorizationStatus, Never>) in
                 SFSpeechRecognizer.requestAuthorization { cont.resume(returning: $0) }

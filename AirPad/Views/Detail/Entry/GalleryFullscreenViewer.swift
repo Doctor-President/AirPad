@@ -57,6 +57,7 @@ import UIKit
 /// unreachable to other apps), and the Share path handles video export
 /// properly via the activity sheet.
 struct GalleryFullscreenViewer: View {
+    @Environment(\.appBodyFont) private var appFont   // 1.1-A type pass
 
     let galleryItems: [GalleryItem]
     let nodeID: String
@@ -532,7 +533,7 @@ struct GalleryFullscreenViewer: View {
     /// carry the liquid-glass plates; the counter isn't a control.
     private var counterLabel: some View {
         Text("\(currentIndex + 1) / \(galleryItems.count)")
-            .font(.callout.weight(.medium))
+            .font(appFont.font(size: 16, weight: .medium, relativeTo: .callout))
             .foregroundStyle(.white)
             .shadow(color: .black.opacity(0.5), radius: 3, y: 1)
             .frame(height: 44)
@@ -580,7 +581,7 @@ struct GalleryFullscreenViewer: View {
                     .onTapGesture { beginEditingCaption(item) }
             }
         }
-        .font(.callout)
+        .font(appFont.font(size: 16, relativeTo: .callout))
         .multilineTextAlignment(.leading)
         .frame(maxWidth: .infinity, alignment: .leading)
         .padding(.horizontal, 22)

@@ -65,6 +65,7 @@ import UIKit
 /// overlay-rendered copy of the label. No hue shift, no transform —
 /// peripheral-vision calm in a populated node was the design intent.
 struct PastePadView: View {
+    @Environment(\.appBodyFont) private var appFont   // 1.1-A type pass
 
     /// Callback fired on tap when there's readable content on the
     /// clipboard. C2 doesn't route; the call site can pass `{ _ in }`
@@ -162,11 +163,11 @@ struct PastePadView: View {
                 let phase = Self.shimmerPhase(at: context.date)
                 ZStack {
                     Text(text)
-                        .font(.subheadline.weight(.medium))
+                        .font(appFont.font(size: 15, weight: .medium, relativeTo: .subheadline))
                         .foregroundStyle(AppearancePalette.ink.opacity(Shimmer.baseOpacity))
 
                     Text(text)
-                        .font(.subheadline.weight(.medium))
+                        .font(appFont.font(size: 15, weight: .medium, relativeTo: .subheadline))
                         .foregroundStyle(AppearancePalette.ink.opacity(Shimmer.peakOpacity))
                         .mask {
                             GeometryReader { geo in
@@ -190,7 +191,7 @@ struct PastePadView: View {
             .lineLimit(1)
         } else {
             Text(text)
-                .font(.subheadline.weight(.medium))
+                .font(appFont.font(size: 15, weight: .medium, relativeTo: .subheadline))
                 .foregroundStyle(AppearancePalette.ink.opacity(0.4))
                 .lineLimit(1)
         }

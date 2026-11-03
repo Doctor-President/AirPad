@@ -16,6 +16,7 @@ import SwiftUI
 /// model's inline markers (i.e. if block 3 in the full set belongs to
 /// the displayed node, it shows as `[3]`, not `[1]`).
 struct CitationSheet: View {
+    @Environment(\.appBodyFont) private var appFont   // 1.1-A type pass
 
     let nodeID: String
     let allCitations: [BlockMatch]
@@ -80,7 +81,7 @@ struct CitationSheet: View {
                         dismiss()
                     } label: {
                         HStack(spacing: 4) {
-                            Text("Open")
+                            Text("Open").font(appFont.font(size: 17, relativeTo: .body))
                             Image(systemName: "arrow.up.right")
                         }
                     }
@@ -98,7 +99,7 @@ struct CitationSheet: View {
                 .fill(dotColor)
                 .frame(width: 10, height: 10)
             Text(nodeTitle)
-                .font(.system(size: 18, weight: .semibold))
+                .font(appFont.font(size: 18, weight: .semibold, relativeTo: .title3))
                 .foregroundStyle(AppearancePalette.ink)
                 .lineLimit(2)
             Spacer(minLength: 0)
@@ -113,7 +114,7 @@ struct CitationSheet: View {
                 .foregroundStyle(AppearancePalette.ink.opacity(0.4))
 
             Text(MarkdownPlain.text(match.block.text))   // live-26 (3b): the stored block's markup never shows
-                .font(.system(size: 15))
+                .font(appFont.font(size: 15, relativeTo: .subheadline))
                 .foregroundStyle(AppearancePalette.ink.opacity(0.88))
                 .lineSpacing(4)
                 .frame(maxWidth: .infinity, alignment: .leading)

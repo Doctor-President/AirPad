@@ -34,6 +34,8 @@ struct CanvasChrome: View {
     @State private var showSettings = false
     @State private var showQuarantineReview = false
     @State private var showSlideOutMenu = false
+    /// 1.1-A (A3) — the ≡ menu's half-height Appearance panel.
+    @State private var showAppearancePanel = false
     @State private var showEditMap = false
     @State private var showBatchDeleteConfirmation = false
     @State private var showBatchAddTagSheet = false
@@ -117,7 +119,7 @@ struct CanvasChrome: View {
     /// selecting, Librarian at peek (View + Capture only render then), menu closed.
     private var canvasCalloutEligible: Bool {
         !store.isInDetailView && !selection.isActive && router.librarianAtPeek
-            && !showSlideOutMenu && !router.isCapturing
+            && !showSlideOutMenu && !showAppearancePanel && !router.isCapturing
     }
 
     /// `view.buttons` first on ANY view; `map.intro` after it, Map only. List / Cards get only
@@ -384,8 +386,9 @@ struct CanvasChrome: View {
                 onAnalyze: { Task { store.runCorpusAnalysis(trigger: .manual) } },
                 onFilter: { showFilterPanel = true },
                 onSettings: { showSettings = true },
-                onQuarantineReview: { showQuarantineReview = true }
-            )
+                onQuarantineReview: { showQuarantineReview = true },
+                onAppearance: { showAppearancePanel = true }
+            )   // 1.1-B fix-up (F): the Librarian pills fade out under the open menu, so no room is kept for them
 
             #if DEBUG
             // Top-most dev layer — placed AFTER CanvasSlideOutMenu so it
@@ -410,7 +413,14 @@ struct CanvasChrome: View {
                 .id(key)
             }
         }
-        .onAppear { scheduleCanvasCallout() }
+        .onAppear {
+            scheduleCanvasCallout()
+            #if DEBUG
+            // 1.1-A stills — `-OpenMenu` / `-OpenAppearancePanel` open the ≡ menu / the Appearance panel over this view.
+            if ProcessInfo.processInfo.arguments.contains("-OpenMenu") { showSlideOutMenu = true }
+            if ProcessInfo.processInfo.arguments.contains("-OpenAppearancePanel") { showAppearancePanel = true }
+            #endif
+        }
         .onDisappear { calloutTask?.cancel() }
         .onChange(of: filterState.viewMode) { _, _ in scheduleCanvasCallout() }
         .onChange(of: router.mapSettled) { _, _ in scheduleCanvasCallout() }
@@ -436,6 +446,9 @@ struct CanvasChrome: View {
         }
         .sheet(isPresented: $showSettings) {
             SettingsView()
+        }
+        .sheet(isPresented: $showAppearancePanel) {
+            AppearancePanel()
         }
         .sheet(isPresented: $showQuarantineReview) {
             QuarantineReviewSheet()
@@ -561,7 +574,9 @@ private struct ChromeBar: View {
     var body: some View {
         HStack(spacing: 0) {
             segment(icon: "checkmark.circle", weightSize: 18, action: onSelect)
-            segment(icon: "line.3.horizontal.decrease", weightSize: 18, action: onMenu)
+            segment(icon: "line.3.horizontal", weightSize: 18, action: onMenu)   // 1.1-A (A1) — one menu glyph everywhere
+                .accessibilityLabel("Menu")
+                .accessibilityIdentifier("chrome.menu")
                 .overlay(alignment: .topTrailing) {
                     if menuHasAttention {
                         Circle()
@@ -660,6 +675,7 @@ struct ViewSwitchMenuContent: View {
 /// Brief AG2 — the top-of-view pill is a LABEL of the current view, not a control: no chevron,
 /// no tap target. The View button (above Capture) is the only way to switch views.
 private struct ViewPill: View {
+    @Environment(\.appBodyFont) private var appFont   // 1.1-A type pass
     @Environment(CorpusStore.self) private var store
     let scope: CanvasScope
 
@@ -673,7 +689,7 @@ private struct ViewPill: View {
             Image(systemName: currentDest.icon)
                 .font(.system(size: 13, weight: .semibold))
             Text(currentDest.label)
-                .font(.system(size: 14, weight: .semibold))
+                .font(appFont.font(size: 14, weight: .semibold, relativeTo: .subheadline))
         }
         // ws-dark-light-mode item 2 — the "Map"/view pill. ink (dark #FFFFFF == .white).
         .foregroundStyle(AppearancePalette.ink)
@@ -788,6 +804,7 @@ private struct DensityPill: View {
 // MARK: - Filter panel
 
 struct FilterPanelView: View {
+    @Environment(\.appBodyFont) private var appFont   // 1.1-A type pass
     var scope: CanvasScope = .corpus
 
     @Environment(CorpusStore.self) private var store
@@ -927,7 +944,7 @@ struct FilterPanelView: View {
     private func filterSection<Content: View>(_ title: String, @ViewBuilder content: () -> Content) -> some View {
         VStack(alignment: .leading, spacing: 10) {
             Text(title)
-                .font(.caption.weight(.semibold))
+                .font(appFont.font(size: 12, weight: .semibold, relativeTo: .caption1))
                 .foregroundStyle(.white.opacity(0.4))
                 .textCase(.uppercase)
             content()
@@ -948,7 +965,7 @@ struct FilterPanelView: View {
                         .font(.system(size: 11))
                 }
                 Text(label)
-                    .font(.subheadline.weight(isActive ? .semibold : .regular))
+                    .font(appFont.font(size: 15, weight: isActive ? .semibold : .regular, relativeTo: .subheadline))
             }
             .foregroundStyle(isActive ? .black : .white.opacity(0.75))
             .padding(.horizontal, 14)
@@ -963,6 +980,7 @@ struct FilterPanelView: View {
 // MARK: - Import progress banner
 
 private struct ImportProgressBanner: View {
+    @Environment(\.appBodyFont) private var appFont   // 1.1-A type pass
     let current: Int
     let total: Int
 
@@ -972,7 +990,7 @@ private struct ImportProgressBanner: View {
                 .tint(AppearancePalette.ink)
                 .scaleEffect(0.75)
             Text("Importing \(total) entries… (\(current)/\(total) processed)")
-                .font(.caption.weight(.medium))
+                .font(appFont.font(size: 12, weight: .medium, relativeTo: .caption1))
                 .foregroundStyle(AppearancePalette.ink)
         }
         .padding(.horizontal, 16)
@@ -985,12 +1003,13 @@ private struct ImportProgressBanner: View {
 // MARK: - iCloud banner
 
 private struct iCloudUnavailableBanner: View {
+    @Environment(\.appBodyFont) private var appFont   // 1.1-A type pass
     var body: some View {
         HStack(spacing: 8) {
             Image(systemName: "icloud.slash")
                 .font(.caption)
             Text("iCloud unavailable — saving locally")
-                .font(.caption)
+                .font(appFont.font(size: 12, relativeTo: .caption1))
         }
         .foregroundStyle(AppearancePalette.ink)
         .padding(.horizontal, 16)
@@ -1000,16 +1019,39 @@ private struct iCloudUnavailableBanner: View {
     }
 }
 
+/// 1.0r S0 — one plain banner while the library is read-only (`LibraryFormatGuard`). Mounted at the app root
+/// (`ContentView`) so it shows on every screen.
+struct NewerLibraryBanner: View {
+    @Environment(\.appBodyFont) private var appFont
+    var body: some View {
+        HStack(alignment: .firstTextBaseline, spacing: 8) {
+            Image(systemName: "lock")
+                .font(.caption)
+            Text(LibraryFormatGuard.message)
+                .font(appFont.font(size: 12, relativeTo: .caption1))
+                .fixedSize(horizontal: false, vertical: true)
+        }
+        .foregroundStyle(AppearancePalette.ink)
+        .padding(.horizontal, 16)
+        .padding(.vertical, 8)
+        .background(.ultraThinMaterial)
+        .clipShape(RoundedRectangle(cornerRadius: 16, style: .continuous))
+        .padding(.horizontal, 16)
+        .accessibilityIdentifier("newerLibraryBanner")
+    }
+}
+
 // MARK: - Selection mode controls
 
 private struct SelectionHeader: View {
+    @Environment(\.appBodyFont) private var appFont   // 1.1-A type pass
     let count: Int
     let onDone: () -> Void
 
     var body: some View {
         HStack(alignment: .center) {
             Text(count == 0 ? "Select items" : "\(count) selected")
-                .font(.system(size: 15, weight: .semibold))
+                .font(appFont.font(size: 15, weight: .semibold, relativeTo: .subheadline))
                 .foregroundStyle(AppearancePalette.ink)
                 .padding(.horizontal, 14)
                 .padding(.vertical, 10)
@@ -1018,7 +1060,7 @@ private struct SelectionHeader: View {
             Spacer()
             Button(action: onDone) {
                 Text("Done")
-                    .font(.system(size: 15, weight: .semibold))
+                    .font(appFont.font(size: 15, weight: .semibold, relativeTo: .subheadline))
                     .foregroundStyle(AppearancePalette.ink)
                     .padding(.horizontal, 16)
                     .padding(.vertical, 10)
@@ -1031,6 +1073,7 @@ private struct SelectionHeader: View {
 }
 
 private struct BatchActionBar: View {
+    @Environment(\.appBodyFont) private var appFont   // 1.1-A type pass
     let count: Int
     let scope: CanvasScope
     let tags: [Tag]
@@ -1065,7 +1108,7 @@ private struct BatchActionBar: View {
                     Image(systemName: "tag")
                         .font(.system(size: 14, weight: .semibold))
                     Text("Tag")
-                        .font(.system(size: 13, weight: .semibold))
+                        .font(appFont.font(size: 13, weight: .semibold, relativeTo: .footnote))
                 }
                 .foregroundStyle(AppearancePalette.ink)
                 .padding(.horizontal, 18)
@@ -1114,7 +1157,7 @@ private struct BatchActionBar: View {
                 }
             } label: {
                 Text("Organize")
-                    .font(.system(size: 13, weight: .semibold))
+                    .font(appFont.font(size: 13, weight: .semibold, relativeTo: .footnote))
                     .foregroundStyle(AppearancePalette.ink)
                     .padding(.horizontal, 18)
                     .padding(.vertical, 12)
@@ -1127,7 +1170,7 @@ private struct BatchActionBar: View {
 
             Button(action: onDelete) {
                 Text("Delete")
-                    .font(.system(size: 13, weight: .semibold))
+                    .font(appFont.font(size: 13, weight: .semibold, relativeTo: .footnote))
                     .foregroundStyle(.white)
                     .padding(.horizontal, 18)
                     .padding(.vertical, 12)

@@ -3,6 +3,7 @@ import SwiftUI
 /// Ephemeral floating card shown at the bottom of the canvas when a thread is detected.
 /// One card at a time — the store queues the rest.
 struct ThreadSuggestionCard: View {
+    @Environment(\.appBodyFont) private var appFont   // 1.1-A type pass
 
     let suggestion: ThreadSuggestion
     let nodeTitles: [String]
@@ -17,7 +18,7 @@ struct ThreadSuggestionCard: View {
                 // it reads as an empty "AI" promise; AirPad's posture is patient,
                 // legible work. The "THREAD DETECTED" label carries the meaning.
                 Text("Thread detected")
-                    .font(.caption.weight(.semibold))
+                    .font(appFont.font(size: 12, weight: .semibold, relativeTo: .caption1))
                     .foregroundStyle(.white.opacity(0.45))
                     .textCase(.uppercase)
                     .tracking(0.5)
@@ -25,7 +26,7 @@ struct ThreadSuggestionCard: View {
             }
 
             Text(suggestion.description)
-                .font(.subheadline.weight(.medium))
+                .font(appFont.font(size: 15, weight: .medium, relativeTo: .subheadline))
                 .foregroundStyle(.white)
                 .fixedSize(horizontal: false, vertical: true)
 
@@ -34,7 +35,7 @@ struct ThreadSuggestionCard: View {
                     HStack(spacing: 6) {
                         ForEach(nodeTitles, id: \.self) { title in
                             Text(title)
-                                .font(.caption2.weight(.semibold))
+                                .font(appFont.font(size: 11, weight: .semibold, relativeTo: .caption2))
                                 .foregroundStyle(.white.opacity(0.55))
                                 .padding(.horizontal, 8)
                                 .padding(.vertical, 4)
@@ -50,7 +51,7 @@ struct ThreadSuggestionCard: View {
                 Spacer()
                 Button(action: onDismiss) {
                     Text("Dismiss")
-                        .font(.subheadline.weight(.medium))
+                        .font(appFont.font(size: 15, weight: .medium, relativeTo: .subheadline))
                         .foregroundStyle(.white.opacity(0.5))
                         .padding(.horizontal, 18)
                         .padding(.vertical, 9)
@@ -62,7 +63,7 @@ struct ThreadSuggestionCard: View {
                 Button(action: onPull) {
                     // No decorative ✦ — same magic-star family as sparkles (app-wide ban).
                     Text("Pull")
-                        .font(.subheadline.weight(.semibold))
+                        .font(appFont.font(size: 15, weight: .semibold, relativeTo: .subheadline))
                         .foregroundStyle(.black)
                         .padding(.horizontal, 22)
                         .padding(.vertical, 9)

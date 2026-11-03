@@ -60,7 +60,7 @@ struct VerticalScrollView: View {
         GeometryReader { geo in
             NavigationStack(path: $navigationPath) {
                 ZStack(alignment: .bottomTrailing) {
-                    AppearancePalette.mapBackground(dark: colorScheme == .dark).ignoresSafeArea()
+                    AppearancePalette.libraryBackground(dark: colorScheme == .dark).ignoresSafeArea()
                     BackgroundGridView()
                         .ignoresSafeArea()
                         .allowsHitTesting(false)
@@ -309,6 +309,7 @@ struct VerticalScrollView: View {
 // MARK: - NodeCard
 
 private struct NodeCard: View {
+    @Environment(\.appBodyFont) private var appFont   // 1.1-A type pass
     let node: Node
     let namespace: Namespace.ID
     let screenMidY: CGFloat
@@ -325,13 +326,13 @@ private struct NodeCard: View {
 
             VStack(alignment: .leading, spacing: 8) {
                 Text(node.title.isEmpty ? "Untitled" : node.title)
-                    .font(.headline)
+                    .font(appFont.font(size: 17, weight: .semibold, relativeTo: .headline))
                     .foregroundStyle(AppearancePalette.ink)
                     .lineLimit(1)
 
                 Text(node.summary.isEmpty ? "—" : node.summary)
-                    .font(.subheadline)
-                    .foregroundStyle(AppearancePalette.ink.opacity(0.6))
+                    .font(appFont.font(size: 15, relativeTo: .subheadline))
+                    .groundInk(0.6)
                     .lineLimit(2)
 
                 Spacer(minLength: 0)
@@ -340,14 +341,15 @@ private struct NodeCard: View {
                     NodeCardItemCounts(items: node.items)
                     Spacer()
                     Text(relativeTimestamp(node.createdAt))
-                        .font(.caption)
-                        .foregroundStyle(AppearancePalette.ink.opacity(0.38))
+                        .font(appFont.font(size: 12, relativeTo: .caption1))
+                        .groundInk(0.38)
                 }
             }
             .padding(.horizontal, 16)
             .padding(.vertical, 14)
         }
         .background(primaryTagColor.opacity(0.10))
+        .onCustomGround()   // 1.1-B — the card is a 10% tint over the background: its text reads against the background
         .clipShape(RoundedRectangle(cornerRadius: 16))
         .overlay(RoundedRectangle(cornerRadius: 16).stroke(primaryTagColor.opacity(0.22), lineWidth: 1))
         .matchedTransitionSource(id: node.id, in: namespace)
@@ -385,6 +387,7 @@ private struct NodeCard: View {
 // MARK: - Item count chips
 
 private struct NodeCardItemCounts: View {
+    @Environment(\.appBodyFont) private var appFont   // 1.1-A type pass
     let items: [NodeItem]
 
     private var counts: (text: Int, image: Int, audio: Int, video: Int, link: Int, document: Int) {
@@ -425,8 +428,8 @@ private struct NodeCardItemCounts: View {
 
     private func chip(_ icon: String, _ count: Int) -> some View {
         Label("\(count)", systemImage: icon)
-            .font(.caption)
-            .foregroundStyle(AppearancePalette.ink.opacity(0.48))
+            .font(appFont.font(size: 12, relativeTo: .caption1))
+            .groundInk(0.48)
     }
 }
 

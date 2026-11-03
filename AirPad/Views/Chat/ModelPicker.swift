@@ -221,6 +221,7 @@ extension View {
 /// (not greyed) when the resident model can't be told NOT to think (think:false ignored — the
 /// toggle would do nothing). Gated on the MEASURED `thinkingToggleable`, not "can think".
 struct ModelPillRow: View {
+    @Environment(\.appBodyFont) private var appFont   // 1.1-A type pass
     var catalog: HostCatalog
     @Binding var thinkEnabled: Bool
     var onTapModel: () -> Void
@@ -290,7 +291,7 @@ struct ModelPillRow: View {
         PickerPill {
             HStack(spacing: 5) {
                 Image(systemName: "lock.fill").font(.system(size: 11, weight: .semibold))
-                Text("Private").font(.system(size: 12, weight: .semibold))
+                Text("Private").font(appFont.font(size: 12, weight: .semibold, relativeTo: .caption1))
             }.foregroundStyle(AppearancePalette.ink.opacity(0.55))
         }
     }
@@ -304,7 +305,7 @@ struct ModelPillRow: View {
                 HStack(spacing: 5) {
                     if let busy = catalog.busyTag, let m = catalog.models.first(where: { $0.tag == busy }) {
                         // Load emits no progress → SHIMMER "loading" (honest "in progress", not a fake %).
-                        Text("loading").font(.system(size: 12, weight: .medium)).foregroundStyle(AppearancePalette.ink.opacity(0.5))
+                        Text("loading").font(appFont.font(size: 12, weight: .medium, relativeTo: .caption1)).foregroundStyle(AppearancePalette.ink.opacity(0.5))
                             .lineLimit(1).fixedSize()
                             .composerShimmer(catalog.busyPercent == nil)
                         dividerBar
@@ -317,6 +318,13 @@ struct ModelPillRow: View {
                         // C4b2 (T 2026-10-10) — the chosen server is away: say so, like the Mac (never a silent switch).
                         Image(systemName: "wifi.slash").font(.system(size: 9, weight: .semibold)).foregroundStyle(AppearancePalette.ink.opacity(0.4))
                         name("Server not reachable", cap: nameCap)
+                    } else if catalog.answerer == .endpoint, let busy = HostCatalog.server.busyTag {
+                        // 1.1-D — a server model is loading (a pick, or an ask on LM Studio): narrate it like a Mac load.
+                        Text("loading").font(appFont.font(size: 12, weight: .medium, relativeTo: .caption1)).foregroundStyle(AppearancePalette.ink.opacity(0.5))
+                            .lineLimit(1).fixedSize()
+                            .composerShimmer(HostCatalog.server.busyPercent == nil)
+                        dividerBar
+                        name(CatalogModel.friendlyName(forTag: busy), cap: nameCap)
                     } else if catalog.answerer == .endpoint {
                         // C4b2 — the user's own server (the custom endpoint).
                         Image(systemName: "server.rack").font(.system(size: 9, weight: .semibold)).foregroundStyle(AppearancePalette.ink.opacity(0.7))
@@ -333,7 +341,7 @@ struct ModelPillRow: View {
                         name(catalog.name(a), cap: nameCap)
                     } else {
                         Text(catalog.answerer == .mac && !catalog.reachable ? "Mac not reachable" : "No model")
-                            .font(.system(size: 12, weight: .semibold)).foregroundStyle(AppearancePalette.ink.opacity(0.55))
+                            .font(appFont.font(size: 12, weight: .semibold, relativeTo: .caption1)).foregroundStyle(AppearancePalette.ink.opacity(0.55))
                             .lineLimit(1).fixedSize()
                     }
                 }
@@ -358,7 +366,7 @@ struct ModelPillRow: View {
     }
 
     private var dividerBar: some View {
-        Text("|").font(.system(size: 12)).foregroundStyle(AppearancePalette.ink.opacity(0.25))
+        Text("|").font(appFont.font(size: 12, relativeTo: .caption1)).foregroundStyle(AppearancePalette.ink.opacity(0.25))
     }
 
     // NO pill is ever taller than one text row (T). C4 — one line, never wrapped; up to `cap` wide, and
@@ -372,7 +380,7 @@ struct ModelPillRow: View {
         Button { thinkEnabled.toggle() } label: {
             PickerPill(filled: thinkEnabled, stroked: !thinkEnabled) {
                 Text(thinkEnabled ? "Thinking on" : "Thinking off")
-                    .font(.system(size: 12, weight: .semibold))
+                    .font(appFont.font(size: 12, weight: .semibold, relativeTo: .caption1))
                     .lineLimit(1).fixedSize()
                     .foregroundStyle(AppearancePalette.ink.opacity(thinkEnabled ? 0.9 : 0.55))
             }
@@ -399,10 +407,11 @@ struct ModelPillRow: View {
 /// C4 — a one-line name that shows in full when it fits and otherwise runs to `cap` (or the space it is
 /// offered, if less) with a trailing fade, never an ellipsis and never a wrap.
 private struct FadingName: View {
+    @Environment(\.appBodyFont) private var appFont   // 1.1-A type pass
     let text: String
     let cap: CGFloat
     private var label: some View {
-        Text(text).font(.system(size: 12, weight: .semibold))
+        Text(text).font(appFont.font(size: 12, weight: .semibold, relativeTo: .caption1))
             .foregroundStyle(AppearancePalette.ink.opacity(0.9))
             .lineLimit(1).fixedSize()
     }
@@ -441,6 +450,7 @@ private struct HugUpTo: Layout {
 // MARK: - the sheet
 
 struct ModelPickerSheet: View {
+    @Environment(\.appBodyFont) private var appFont   // 1.1-A type pass
     var catalog: HostCatalog
     @Binding var thinkEnabled: Bool
     /// Brief AJ3 — the SAME surface, two contexts. `false` (default) = the Librarian /
@@ -521,21 +531,25 @@ struct ModelPickerSheet: View {
                     HStack(spacing: 8) {
                         Image(systemName: "checkmark.seal.fill").foregroundStyle(.green)
                         VStack(alignment: .leading, spacing: 2) {
-                            Text(macName).font(.system(size: 16, weight: .semibold)).foregroundStyle(AppearancePalette.ink)
+                            Text(macName).font(appFont.font(size: 16, weight: .semibold, relativeTo: .subheadline)).foregroundStyle(AppearancePalette.ink)
                             Text(catalog.reachable ? "Connected" : "Not reachable right now")
-                                .font(.system(size: 12)).foregroundStyle(AppearancePalette.ink.opacity(0.5))
+                                .font(appFont.font(size: 12, relativeTo: .caption1)).foregroundStyle(AppearancePalette.ink.opacity(0.5))
                         }
                         Spacer()
                     }
                 }
+                // 1.1-D — Settings → Your own models → Models: what answered at the endpoint, and the model chats use.
+                if fullControls, catalog.source == .server {
+                    serverHeader
+                }
                 if let err = catalog.lastActionError {
                     actionErrorBanner(err)
                 }
-                if catalog.reachable, !catalog.installed.isEmpty {
+                if catalog.source == .host, catalog.reachable, !catalog.installed.isEmpty {   // 1.1-D — no deleting on a server
                     HStack {
                         Spacer()
                         Button(editing ? "Done" : "Edit") { withAnimation(.easeInOut(duration: 0.2)) { editing.toggle() } }
-                            .font(.system(size: 15, weight: editing ? .semibold : .regular))
+                            .font(appFont.font(size: 15, weight: editing ? .semibold : .regular, relativeTo: .subheadline))
                             .foregroundStyle(Color(hexString: "1B59C2"))
                     }
                 }
@@ -543,14 +557,14 @@ struct ModelPickerSheet: View {
                     section("THINKING") {
                         HStack {
                             VStack(alignment: .leading, spacing: 2) {
-                                Text("Thinking").font(.system(size: 16, weight: .semibold)).foregroundStyle(AppearancePalette.ink)
+                                Text("Thinking").font(appFont.font(size: 16, weight: .semibold, relativeTo: .subheadline)).foregroundStyle(AppearancePalette.ink)
                                 Text("Slower, more careful answers. Off by default.")
-                                    .font(.system(size: 12)).foregroundStyle(AppearancePalette.ink.opacity(0.5))
+                                    .font(appFont.font(size: 12, relativeTo: .caption1)).foregroundStyle(AppearancePalette.ink.opacity(0.5))
                             }
                             Spacer()
                             Button { thinkEnabled.toggle() } label: {
                                 PickerPill(filled: thinkEnabled, stroked: !thinkEnabled) {
-                                    Text(thinkEnabled ? "Thinking on" : "Thinking off").font(.system(size: 12, weight: .semibold))
+                                    Text(thinkEnabled ? "Thinking on" : "Thinking off").font(appFont.font(size: 12, weight: .semibold, relativeTo: .caption1))
                                         .foregroundStyle(AppearancePalette.ink.opacity(thinkEnabled ? 0.9 : 0.55))
                                 }
                             }.buttonStyle(.plain)
@@ -571,18 +585,37 @@ struct ModelPickerSheet: View {
                     }
                 }
                 if !fullControls, let endpoint = catalog.endpoint {
+                    let server = HostCatalog.server
                     section("YOUR SERVER") {
-                        sourceRow(icon: "server.rack", title: catalog.endpointName,
-                                  subtitle: (catalog.endpointReachable ? "" : "Not reachable right now · ") + (URL(string: endpoint)?.host ?? endpoint),
-                                  chosen: catalog.answerer == .endpoint, enabled: catalog.endpointReachable, id: "picker.endpoint") {
-                            catalog.useEndpoint()
+                        if catalog.endpointReachable, !server.installed.isEmpty {
+                            // 1.1-D — every model on the server; the pick answers (a model that isn't loaded loads first).
+                            ForEach(Array(server.installed.enumerated()), id: \.element.id) { i, m in
+                                if i > 0 { divider }
+                                sourceRow(icon: "server.rack", title: server.name(m),
+                                          subtitle: serverRowSubtitle(m, host: URL(string: endpoint)?.host ?? endpoint),
+                                          chosen: catalog.answerer == .endpoint && server.isChosen(m), enabled: true,
+                                          id: "picker.endpoint.\(m.tag)") {
+                                    Task { await server.use(m.tag) }
+                                }
+                            }
+                        } else {
+                            sourceRow(icon: "server.rack", title: catalog.endpointName,
+                                      subtitle: (catalog.endpointReachable ? "" : "Not reachable right now · ") + (URL(string: endpoint)?.host ?? endpoint),
+                                      chosen: catalog.answerer == .endpoint, enabled: catalog.endpointReachable, id: "picker.endpoint") {
+                                catalog.useEndpoint()
+                            }
                         }
                     }
+                }
+                if catalog.source == .server, !catalog.reachable, let err = catalog.serverError {
+                    Text(err)
+                        .font(appFont.font(size: 13, relativeTo: .footnote)).foregroundStyle(AppearancePalette.ink.opacity(0.55))
+                        .accessibilityIdentifier("picker.serverUnreachable")
                 }
                 if catalog.isPaired, !catalog.reachable {
                     Text(catalog.models.isEmpty ? "Can't reach your Mac right now."
                                                 : "Can't reach your Mac right now. Its models are here for when it's back.")
-                        .font(.system(size: 13)).foregroundStyle(AppearancePalette.ink.opacity(0.55))
+                        .font(appFont.font(size: 13, relativeTo: .footnote)).foregroundStyle(AppearancePalette.ink.opacity(0.55))
                         .accessibilityIdentifier("picker.macUnreachable")
                 }
                 if !catalog.installed.isEmpty {
@@ -591,7 +624,7 @@ struct ModelPickerSheet: View {
                     // Brief AJ3 — Eject-all is a FULL-controls (Settings) affordance only.
                     if fullControls, catalog.installed.contains(where: { $0.isResident }) {
                         Button { Task { await catalog.ejectAll() } } label: {
-                            Text("Eject all from memory").font(.system(size: 13, weight: .semibold))
+                            Text("Eject all from memory").font(appFont.font(size: 13, weight: .semibold, relativeTo: .footnote))
                                 .foregroundStyle(AppearancePalette.ink.opacity(0.9))
                                 .padding(.horizontal, 14).padding(.vertical, 7)
                                 .background(Capsule().fill(AppearancePalette.ink.opacity(0.10)))
@@ -608,19 +641,26 @@ struct ModelPickerSheet: View {
                         }
                     }
                     if !catalog.residencyFine.isEmpty {
-                        Text(catalog.residencyFine).font(.system(size: 11)).foregroundStyle(AppearancePalette.ink.opacity(0.4)).padding(.horizontal, 4)
+                        Text(catalog.residencyFine).font(appFont.font(size: 11, relativeTo: .caption2)).foregroundStyle(AppearancePalette.ink.opacity(0.4)).padding(.horizontal, 4)
                     }
                 }
                 if catalog.reachable, !catalog.available.isEmpty {
                     section("AVAILABLE TO DOWNLOAD") {
                         rows(catalog.available)
-                        divider
-                        moreModelsStub
+                        if catalog.source == .host {   // 1.1-D — a server offers the curated list only
+                            divider
+                            moreModelsStub
+                        }
                     }
+                }
+                if catalog.source == .server, catalog.reachable, catalog.models.isEmpty {
+                    Text("No models on this server yet.")
+                        .font(appFont.font(size: 14, relativeTo: .subheadline)).foregroundStyle(AppearancePalette.ink.opacity(0.5))
+                        .frame(maxWidth: .infinity).padding(.top, 40)
                 }
                 if catalog.isPaired, catalog.reachable, catalog.models.isEmpty {
                     Text("No models available for this Mac.")
-                        .font(.system(size: 14)).foregroundStyle(AppearancePalette.ink.opacity(0.5))
+                        .font(appFont.font(size: 14, relativeTo: .subheadline)).foregroundStyle(AppearancePalette.ink.opacity(0.5))
                         .frame(maxWidth: .infinity).padding(.top, 40)
                 }
                 // Brief AJ3 — quick switcher: a row into the full Settings → Models surface.
@@ -628,7 +668,7 @@ struct ModelPickerSheet: View {
                     Button { onManageModels() } label: {
                         HStack {
                             Image(systemName: "slider.horizontal.3")
-                            Text("Manage models").font(.system(size: 15, weight: .semibold))
+                            Text("Manage models").font(appFont.font(size: 15, weight: .semibold, relativeTo: .subheadline))
                             Spacer()
                             Image(systemName: "chevron.right").font(.system(size: 12, weight: .semibold)).foregroundStyle(AppearancePalette.ink.opacity(0.3))
                         }
@@ -643,7 +683,7 @@ struct ModelPickerSheet: View {
                     Button(role: .destructive) { confirmForget = true } label: {
                         HStack {
                             Image(systemName: "xmark.circle")
-                            Text("Forget this Mac").font(.system(size: 15, weight: .semibold))
+                            Text("Forget this Mac").font(appFont.font(size: 15, weight: .semibold, relativeTo: .subheadline))
                             Spacer()
                         }
                         .foregroundStyle(.red.opacity(0.8))
@@ -707,6 +747,40 @@ struct ModelPickerSheet: View {
 
     private var divider: some View { Divider().overlay(AppearancePalette.ink.opacity(0.08)) }
 
+    /// 1.1-D — the quick switcher's line under a server model: loaded (with its window) or not, and where.
+    private func serverRowSubtitle(_ m: CatalogModel, host: String) -> String {
+        let state = m.isResident ? (m.contextLine.map { "Loaded · \($0)" } ?? "Loaded") : "Not loaded"
+        return "\(state) · \(host)"
+    }
+
+    /// 1.1-D — Settings' server header: what was detected (Ollama 0.x / LM Studio / OpenAI-compatible), and the model
+    /// chats use with its window.
+    private var serverHeader: some View {
+        HStack(alignment: .top, spacing: 8) {
+            Image(systemName: catalog.reachable ? "checkmark.seal.fill" : "wifi.slash")
+                .foregroundStyle(catalog.reachable ? Color.green : AppearancePalette.ink.opacity(0.4))
+            VStack(alignment: .leading, spacing: 2) {
+                Text(catalog.serverKind?.label ?? "Your server")
+                    .font(appFont.font(size: 16, weight: .semibold, relativeTo: .subheadline)).foregroundStyle(AppearancePalette.ink)
+                    .accessibilityIdentifier("server.kind")
+                Text(catalog.reachable ? (catalog.serverHost.map { "Connected · \($0)" } ?? "Connected")
+                                       : "Not reachable right now")
+                    .font(appFont.font(size: 12, relativeTo: .caption1)).foregroundStyle(AppearancePalette.ink.opacity(0.5))
+                if catalog.reachable, let c = catalog.chosen {
+                    Text("Chats use \(catalog.name(c))" + (c.contextLine.map { " · \($0)" } ?? (c.isResident ? "" : " · not loaded yet")))
+                        .font(appFont.font(size: 12, relativeTo: .caption1)).foregroundStyle(AppearancePalette.ink.opacity(0.7))
+                        .accessibilityIdentifier("server.chosen")
+                }
+                if catalog.serverKind?.canManage == false {
+                    Text("This server can be listed and picked from here. Load and download models on the server itself.")
+                        .font(appFont.font(size: 12, relativeTo: .caption1)).foregroundStyle(AppearancePalette.ink.opacity(0.5))
+                        .fixedSize(horizontal: false, vertical: true)
+                }
+            }
+            Spacer()
+        }
+    }
+
     // The Host's refusal for a failed load/eject/download (e.g. 507 "Not enough disk space…"),
     // shown verbatim so the action doesn't just silently revert. Dismissable; also cleared when
     // the next action starts.
@@ -714,7 +788,7 @@ struct ModelPickerSheet: View {
         HStack(alignment: .top, spacing: 8) {
             Image(systemName: "exclamationmark.triangle.fill")
                 .font(.system(size: 13)).foregroundStyle(Color(hexString: "C2571B"))
-            Text(text).font(.system(size: 13)).foregroundStyle(AppearancePalette.ink.opacity(0.85))
+            Text(text).font(appFont.font(size: 13, relativeTo: .footnote)).foregroundStyle(AppearancePalette.ink.opacity(0.85))
                 .fixedSize(horizontal: false, vertical: true)
             Spacer(minLength: 4)
             Button { catalog.lastActionError = nil } label: {
@@ -737,8 +811,8 @@ struct ModelPickerSheet: View {
             HStack(spacing: 10) {
                 Image(systemName: icon).font(.system(size: 15)).foregroundStyle(AppearancePalette.ink.opacity(0.8))
                 VStack(alignment: .leading, spacing: 2) {
-                    Text(title).font(.system(size: 16, weight: .semibold)).foregroundStyle(AppearancePalette.ink)
-                    Text(subtitle).font(.system(size: 12)).foregroundStyle(AppearancePalette.ink.opacity(0.5))
+                    Text(title).font(appFont.font(size: 16, weight: .semibold, relativeTo: .subheadline)).foregroundStyle(AppearancePalette.ink)
+                    Text(subtitle).font(appFont.font(size: 12, relativeTo: .caption1)).foregroundStyle(AppearancePalette.ink.opacity(0.5))
                         .fixedSize(horizontal: false, vertical: true)
                 }
                 Spacer()
@@ -769,14 +843,14 @@ struct ModelPickerSheet: View {
             HStack(alignment: .top, spacing: 8) {
                 VStack(alignment: .leading, spacing: 3) {
                     HStack(spacing: 6) {
-                        Text(card.name).font(.system(size: 15, weight: .semibold)).foregroundStyle(AppearancePalette.ink)
+                        Text(card.name).font(appFont.font(size: 15, weight: .semibold, relativeTo: .subheadline)).foregroundStyle(AppearancePalette.ink)
                         if card.recommended {
-                            Text("recommended").font(.system(size: 10, weight: .semibold)).foregroundStyle(.white)
+                            Text("recommended").font(appFont.font(size: 10, weight: .semibold, relativeTo: .caption2)).foregroundStyle(.white)
                                 .padding(.horizontal, 6).padding(.vertical, 1)
                                 .background(Capsule().fill(Color(hexString: "1B59C2")))
                         }
                     }
-                    Text(card.description).font(.system(size: 12)).foregroundStyle(AppearancePalette.ink.opacity(0.55))
+                    Text(card.description).font(appFont.font(size: 12, relativeTo: .caption1)).foregroundStyle(AppearancePalette.ink.opacity(0.55))
                         .fixedSize(horizontal: false, vertical: true)
                 }
                 Spacer(minLength: 8)
@@ -789,7 +863,7 @@ struct ModelPickerSheet: View {
 
     private func section<C: View>(_ label: String, @ViewBuilder _ content: () -> C) -> some View {
         VStack(alignment: .leading, spacing: 7) {
-            Text(label).font(.system(size: 12, weight: .semibold)).foregroundStyle(AppearancePalette.ink.opacity(0.4)).padding(.leading, 4)
+            Text(label).font(appFont.font(size: 12, weight: .semibold, relativeTo: .caption1)).foregroundStyle(AppearancePalette.ink.opacity(0.4)).padding(.leading, 4)
             VStack(spacing: 0) { content() }
                 .padding(.horizontal, 14)
                 .background(RoundedRectangle(cornerRadius: 18).fill(AppearancePalette.ink.opacity(0.05)))
@@ -800,10 +874,10 @@ struct ModelPickerSheet: View {
     private var moreModelsStub: some View {
         Button { showInstallByName = true } label: {
             HStack {
-                Text("More models").font(.system(size: 15, weight: .semibold)).foregroundStyle(AppearancePalette.ink.opacity(0.8))
+                Text("More models").font(appFont.font(size: 15, weight: .semibold, relativeTo: .subheadline)).foregroundStyle(AppearancePalette.ink.opacity(0.8))
                 Image(systemName: "chevron.right").font(.system(size: 11, weight: .semibold)).foregroundStyle(AppearancePalette.ink.opacity(0.4))
                 Spacer()
-                Text("install any model by name").font(.system(size: 11)).foregroundStyle(AppearancePalette.ink.opacity(0.4))
+                Text("install any model by name").font(appFont.font(size: 11, relativeTo: .caption2)).foregroundStyle(AppearancePalette.ink.opacity(0.4))
             }.padding(.vertical, 14).contentShape(Rectangle())
         }.buttonStyle(.plain)
     }
@@ -813,6 +887,7 @@ struct ModelPickerSheet: View {
 /// FULL curated copy always-visible (T's ruling). The metadata line names thinking support via
 /// `thinkingCopy` — the honest ladder over BOTH measured traits (can-think + can-be-told-not-to).
 private struct ModelSheetRow: View {
+    @Environment(\.appBodyFont) private var appFont   // 1.1-A type pass
     let model: CatalogModel
     var catalog: HostCatalog
     var editing: Bool = false
@@ -825,46 +900,52 @@ private struct ModelSheetRow: View {
         // claim can't read as verified when it isn't (it was false on the wire once — a receipt now).
         let caps = model.capabilities.filter { $0 != "tools" }
         if !caps.isEmpty { parts.append(caps.joined(separator: ", ")) }
-        parts.append(model.thinkingCopy)
+        if let t = model.thinkingLine { parts.append(t) }
         if let toolsCopy = model.toolsCopy { parts.append(toolsCopy) }
+        if let ctx = model.contextLine { parts.append(ctx) }   // 1.1-D — a loaded server model's window
         // Brief AJ3 — "candidate" / "✓ tested" removed (show nothing in their place).
-        return parts.joined(separator: " · ")
+        return parts.filter { !$0.isEmpty }.joined(separator: " · ")
     }
     private func gb(_ b: Int64) -> String { b > 0 ? "\(Int((Double(b) / 1e9).rounded())) GB" : "" }
 
     var body: some View {
         VStack(alignment: .leading, spacing: 6) {
             HStack(alignment: .firstTextBaseline, spacing: 8) {
-                Text(catalog.name(model)).font(.system(size: 16, weight: .semibold)).foregroundStyle(AppearancePalette.ink)
+                Text(catalog.name(model)).font(appFont.font(size: 16, weight: .semibold, relativeTo: .subheadline)).foregroundStyle(AppearancePalette.ink)
                     .lineLimit(1).truncationMode(.tail)
                 // Brief BZ — the V1 default / recommended-to-download model (Qwen3 4B). Green so it
                 // reads distinctly from the blue "in memory" state badge; the Host's `recommended` flag.
                 if model.recommended {
-                    Text("recommended").font(.system(size: 11, weight: .semibold)).foregroundStyle(.white)
+                    Text("recommended").font(appFont.font(size: 11, weight: .semibold, relativeTo: .caption2)).foregroundStyle(.white)
                         .padding(.horizontal, 8).padding(.vertical, 2)
                         .background(Capsule().fill(Color(hexString: "2E9E4F")))
                 }
                 if model.isResident {
-                    Text("in memory").font(.system(size: 11, weight: .semibold)).foregroundStyle(.white)
+                    Text("in memory").font(appFont.font(size: 11, weight: .semibold, relativeTo: .caption2)).foregroundStyle(.white)
                         .padding(.horizontal, 8).padding(.vertical, 2)
                         .background(Capsule().fill(Color(hexString: "1B59C2")))
+                }
+                if catalog.source == .server, catalog.isChosen(model) {
+                    // 1.1-D — the model chats on this server use.
+                    Image(systemName: "checkmark").font(.system(size: 12, weight: .bold)).foregroundStyle(Color(hexString: "2E9E4F"))
+                        .accessibilityLabel("Chats use this model")
                 }
                 Spacer(minLength: 8)
                 action
             }
-            Text(meta).font(.system(size: 12)).foregroundStyle(AppearancePalette.ink.opacity(0.55))
+            Text(meta).font(appFont.font(size: 12, relativeTo: .caption1)).foregroundStyle(AppearancePalette.ink.opacity(0.55))
             // live-17 (2b) — the 30B: which Mac it needs, said plainly, above the curated prose.
             if let note = model.memoryNote {
                 Label(note, systemImage: "memorychip")
-                    .font(.system(size: 13, weight: .medium)).foregroundStyle(AppearancePalette.ink.opacity(0.75))
+                    .font(appFont.font(size: 13, weight: .medium, relativeTo: .footnote)).foregroundStyle(AppearancePalette.ink.opacity(0.75))
                     .fixedSize(horizontal: false, vertical: true)
             }
             if !model.capability.isEmpty {
-                Text(model.capability).font(.system(size: 13)).foregroundStyle(AppearancePalette.ink.opacity(0.75))
+                Text(model.capability).font(appFont.font(size: 13, relativeTo: .footnote)).foregroundStyle(AppearancePalette.ink.opacity(0.75))
                     .fixedSize(horizontal: false, vertical: true)
             }
             if !model.posture.isEmpty {
-                Text(model.posture).font(.system(size: 12)).foregroundStyle(AppearancePalette.ink.opacity(0.45))
+                Text(model.posture).font(appFont.font(size: 12, relativeTo: .caption1)).foregroundStyle(AppearancePalette.ink.opacity(0.45))
                     .fixedSize(horizontal: false, vertical: true)
             }
             // Live download progress — the Host streams {phase, percent}; no more frozen "Working…".
@@ -882,12 +963,24 @@ private struct ModelSheetRow: View {
         let busy = catalog.busyTag == model.tag
         if !catalog.reachable {
             EmptyView()   // C4b2 — the Mac is away: its models are listed for reference, nothing to act on
+        } else if catalog.source == .server {
+            // 1.1-D — the user's own server. Download (curated) · Load (picks it, at AirPad's window) · Use (already
+            // loaded, or a server AirPad can't load on) · Eject (the model chats use, loaded). No delete (T: out).
+            if !model.isInstalled {
+                if catalog.canManage { actionPill("Download", ghost: false, busy: busy) { await catalog.install(model.tag) } }
+            } else if model.isResident && catalog.isChosen(model) {
+                if catalog.canManage { actionPill("Eject", ghost: true, busy: busy) { await catalog.eject(model.tag) } }
+            } else if model.isResident || !catalog.canManage {
+                if !catalog.isChosen(model) { actionPill("Use", ghost: false, busy: busy) { await catalog.use(model.tag) } }
+            } else {
+                actionPill("Load", ghost: false, busy: busy) { await catalog.use(model.tag) }
+            }
         } else if editing {
             // Edit mode (T-ruled): Load/Eject SUPPRESSED; Delete on every installed row. This is the
             // only place a third control lives, and it replaces the others — the row never crowds.
             if model.isInstalled {
                 Button { onDelete(model) } label: {
-                    Text("Delete").font(.system(size: 13, weight: .semibold))
+                    Text("Delete").font(appFont.font(size: 13, weight: .semibold, relativeTo: .footnote))
                         .foregroundStyle(busy ? AppearancePalette.ink.opacity(0.4) : Color(hexString: "C7362F"))
                         .padding(.horizontal, 14).padding(.vertical, 6)
                         .background(Capsule().strokeBorder(Color(hexString: "C7362F").opacity(0.55), lineWidth: 1))
@@ -912,7 +1005,7 @@ private struct ModelSheetRow: View {
         Button { Task { await run() } } label: {
             // While downloading, the label counts up (busyPercent); a LOAD shimmers "Working…"
             // (no progress events → honest "in progress", not an invented percentage).
-            Text(busy ? (catalog.busyPercent.map { "\($0)%" } ?? "Working…") : title).font(.system(size: 13, weight: .semibold))
+            Text(busy ? (catalog.busyPercent.map { "\($0)%" } ?? "Working…") : title).font(appFont.font(size: 13, weight: .semibold, relativeTo: .footnote))
                 .composerShimmer(busy && catalog.busyPercent == nil)
                 .foregroundStyle(ghost ? AppearancePalette.ink.opacity(0.9) : .white)
                 .padding(.horizontal, 14).padding(.vertical, 6)
@@ -921,6 +1014,7 @@ private struct ModelSheetRow: View {
         }
         .buttonStyle(.plain)
         .disabled(busy || catalog.busyTag != nil)
+        .accessibilityIdentifier("modelAction.\(model.tag)")   // 1.1-D — UI tests tap a row's action by model
     }
 }
 
@@ -932,6 +1026,7 @@ private struct ModelSheetRow: View {
 /// answer begins. Ephemeral: it reads session.streamingThinking, which is never persisted and resets
 /// each turn — send another message and the previous thought process is gone.
 struct ThoughtProcessBlock: View {
+    @Environment(\.appBodyFont) private var appFont   // 1.1-A type pass
     var session: ChatSession
     @State private var expanded = false
     @State private var pulse = false
@@ -944,7 +1039,7 @@ struct ThoughtProcessBlock: View {
             Button { withAnimation(.easeInOut(duration: 0.2)) { expanded.toggle() } } label: {
                 HStack(spacing: 6) {
                     Text("Thought process")
-                        .font(.system(size: 13, weight: .medium))
+                        .font(appFont.font(size: 13, weight: .medium, relativeTo: .footnote))
                         .foregroundStyle(AppearancePalette.ink.opacity(thinking ? (pulse ? 0.75 : 0.32) : 0.45))
                     Image(systemName: expanded ? "chevron.up" : "chevron.down")
                         .font(.system(size: 10, weight: .semibold))
@@ -956,7 +1051,7 @@ struct ThoughtProcessBlock: View {
             .buttonStyle(.plain)
             if expanded {
                 Text(session.streamingThinking)
-                    .font(.system(size: 13))
+                    .font(appFont.font(size: 13, relativeTo: .footnote))
                     .foregroundStyle(AppearancePalette.ink.opacity(0.5))
                     .fixedSize(horizontal: false, vertical: true)
                     .textSelection(.enabled)

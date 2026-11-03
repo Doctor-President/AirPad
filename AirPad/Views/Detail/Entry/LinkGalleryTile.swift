@@ -29,6 +29,7 @@ import UIKit
 /// brief (no per-LinkItem fetched-at field; OG fetch is cheap and
 /// idempotent at the service layer).
 struct LinkGalleryTile: View {
+    @Environment(\.appBodyFont) private var appFont   // 1.1-A type pass
 
     let linkItem: LinkItem
     let entryID: String
@@ -128,7 +129,7 @@ struct LinkGalleryTile: View {
                 .font(.title3)
                 .foregroundStyle(AppearancePalette.ink.opacity(0.45))
             Text(linkItem.url)
-                .font(.caption)
+                .font(appFont.font(size: 12, relativeTo: .caption1))
                 .foregroundStyle(.blue)
                 .lineLimit(3)
                 .truncationMode(.middle)
@@ -163,27 +164,27 @@ struct LinkGalleryTile: View {
         VStack(alignment: .leading, spacing: 4) {
             if let title = linkItem.title, !title.isEmpty {
                 Text(title)
-                    .font(.subheadline.weight(.semibold))
+                    .font(appFont.font(size: 15, weight: .semibold, relativeTo: .subheadline))
                     .foregroundStyle(AppearancePalette.ink)
                     .lineLimit(2)
                     .multilineTextAlignment(.leading)
             }
             if let description = linkItem.description, !description.isEmpty {
                 Text(description)
-                    .font(.caption)
+                    .font(appFont.font(size: 12, relativeTo: .caption1))
                     .foregroundStyle(AppearancePalette.ink.opacity(0.55))
                     .lineLimit(2)
                     .multilineTextAlignment(.leading)
             }
             if let siteName = linkItem.siteName, !siteName.isEmpty {
                 Text(siteName)
-                    .font(.caption2)
+                    .font(appFont.font(size: 11, relativeTo: .caption2))
                     .foregroundStyle(AppearancePalette.ink.opacity(0.4))
                     .lineLimit(1)
             }
             if let wordCount = linkItem.snapshotWordCount, wordCount > 0 {
                 Text("\(wordCount.formatted()) words saved")
-                    .font(.caption2)
+                    .font(appFont.font(size: 11, relativeTo: .caption2))
                     .foregroundStyle(AppearancePalette.ink.opacity(0.4))
                     .lineLimit(1)
             }

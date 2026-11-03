@@ -23,6 +23,12 @@ struct CatalogModel: Identifiable, Sendable, Equatable {
     let toolsMeasured: Bool      // false → the manifest's "tools" claim, UNVERIFIED (not yet probed)
     let capability: String      // copy.capability — the full curated prose the Mac window shows
     let posture: String         // copy.posture — maker · license · caveat
+    /// 1.1-D — the user's own server: the window the model is loaded at (nil = not loaded / not said).
+    var contextTokens: Int? = nil
+    /// 1.1-D — who the memory note addresses: the Host's Mac, or "computers" for the user's own server.
+    var machineNoun: String = "Macs"
+    /// 1.1-D — capabilities are the server's CLAIM (never probed): thinking/tools read "(unverified)", nothing when unsaid.
+    var claimsOnly: Bool = false
     var id: String { tag }
 
     var isResident: Bool { state == "installed-loaded" }
@@ -89,7 +95,17 @@ struct CatalogModel: Identifiable, Sendable, Equatable {
     /// tier 32), not its name, so any future 32 GB model gets it too. nil below 32 GB (the 4B and 8B are tier 16).
     /// Wording for T to review on device.
     var memoryNote: String? {
-        tier >= 32 ? "For Macs with \(tier) GB of memory or more. Runs best with nothing else loaded." : nil
+        tier >= 32 ? "For \(machineNoun) with \(tier) GB of memory or more. Runs best with nothing else loaded." : nil
+    }
+    /// The thinking statement the row shows: the measured ladder for the Host, the unverified claim for a server.
+    var thinkingLine: String? {
+        guard claimsOnly else { return thinkingCopy }
+        return supportsThinking ? "Thinking (unverified)" : nil
+    }
+    /// 1.1-D — "Context 20,480 tokens" for a loaded server model.
+    var contextLine: String? {
+        guard let c = contextTokens, c > 0 else { return nil }
+        return "Context \(c.formatted(.number.grouping(.automatic))) tokens"
     }
     /// Tool-use, MEASURED not inherited — the sheet says WHICH (the last claim on this surface made
     /// honest). nil when the model neither claims nor supports tools (don't mention it at all).
@@ -116,6 +132,23 @@ struct ResidencyModeCard: Identifiable, Sendable, Equatable {
 @Observable
 final class HostCatalog {
     static let shared = HostCatalog()
+    /// 1.1-D — the SAME picker surface for the user's own server (Ollama / LM Studio / OpenAI-compatible): this
+    /// instance maps the server's state to `CatalogModel` rows and the row actions to the server's endpoints
+    /// (`CustomServer`). The Host path (`shared`) is untouched.
+    static let server = HostCatalog(source: .server)
+    enum Source { case host, server }
+    let source: Source
+
+    /// 1.1-D (server source) — what answered at the endpoint, the raw listing, and why it can't be reached.
+    private(set) var serverKind: CustomServer.Kind? = nil
+    private(set) var serverModels: [CustomServer.ServerModel] = []
+    private(set) var serverError: String? = nil
+    /// The error is "Can't reach the server" (not a token or a refusal) — Settings adds the network hint under it.
+    private(set) var serverUnreachable = false
+    var canManage: Bool { source == .host || serverKind?.canManage == true }
+    #if DEBUG
+    @ObservationIgnored var debugProgressSink: ((Int) -> Void)? = nil   // 1.1-D fake self-test: every download percent
+    #endif
 
     private(set) var models: [CatalogModel] = []
     private(set) var isLoading = false        // a /v1/catalog fetch is in flight
@@ -147,6 +180,7 @@ final class HostCatalog {
         switch HostPairing.read() {
         case .paired(let p): pairing = p; isPaired = true
         case .unpaired:      pairing = nil; isPaired = false
+                             if !HostAccess.enabled { models = [] }   // 1.1-A (8) — no Mac rows while the Host is hidden
         case .unreadable:    break   // C2c — a failed Keychain read is not "unpaired": keep what we last knew
         }
         refreshRoute()
@@ -167,8 +201,11 @@ final class HostCatalog {
     private(set) var endpointModel: String? = nil
     /// The custom endpoint answered its last check (or hasn't been checked yet): greyed in the picker when not.
     private(set) var endpointReachable = true
-    /// The name the pill and picker give the custom endpoint.
-    var endpointName: String { endpointModel ?? "Your server" }
+    /// The name the pill and picker give the custom endpoint: the model a chat there will use.
+    var endpointName: String {
+        let s = HostCatalog.server
+        return s.chosen.map { s.name($0) } ?? endpointModel ?? "Your server"
+    }
 
     func refreshRoute() {
         onDeviceAvailable = ModelRouter.onDeviceAvailable
@@ -215,8 +252,9 @@ final class HostCatalog {
     /// C4b2 — the Mac's last model list, kept so a Mac that's away (or a cold launch away from home) still shows its
     /// models in the picker, greyed, instead of nothing.
     private static let catalogCacheKey = "airpadHostCatalogCache"
-    init() {
-        if let d = UserDefaults.standard.data(forKey: Self.catalogCacheKey) { models = Self.parse(d) }
+    init(source: Source = .host) {
+        self.source = source
+        if source == .host, HostAccess.enabled, let d = UserDefaults.standard.data(forKey: Self.catalogCacheKey) { models = Self.parse(d) }
     }
 
     /// LOAD = SELECT: the resident model IS the selection (one at a time).
@@ -276,6 +314,7 @@ final class HostCatalog {
 
     /// Fetch the catalog. Call OFF the render path (on sheet-open / pill-appear).
     func refresh() async {
+        if source == .server { await refreshServer(); return }
         pickedTag = ModelRouter.userPickedHostModel
         refreshPaired()
         Task { await refreshEndpointModel() }   // never holds up the Mac's list behind a server that's away
@@ -300,15 +339,85 @@ final class HostCatalog {
 
     /// The custom endpoint's first model id, for its name in the pill and picker ("Your server" when it doesn't answer).
     private func refreshEndpointModel() async {
-        guard let e = endpoint, let base = URL(string: e) else { endpointModel = nil; return }
-        endpointModel = try? await ModelRouter.firstOllamaModel(base: base)
+        guard endpoint != nil else { endpointModel = nil; return }
+        let s = HostCatalog.server
+        await s.refreshServer()
+        endpointModel = s.chosen.map { s.name($0) }
+        refreshRoute()
+    }
+
+    // MARK: - 1.1-D — the user's own server (source == .server)
+
+    /// The model a server chat will name (`CustomServer.chatModel`: the pick, else loaded, else first).
+    var chosen: CatalogModel? {
+        guard source == .server, let id = CustomServer.chatModel(serverModels, pick: pickedTag)?.id else { return nil }
+        return models.first { $0.tag == id }
+    }
+    func isChosen(_ m: CatalogModel) -> Bool { chosen?.tag == m.tag }
+    /// The server's host (and port), for "Can't reach the server at …" and the headers.
+    var serverHost: String? { endpoint.map(CustomServer.hostLabel) }
+
+    /// Detect (again, when `redetect` — the endpoint changed, the sheet opened) and list. Updates the shared
+    /// reachability routing reads (`ModelRouter.endpointUnreachable`) and the route caches.
+    func refreshServer(redetect: Bool = false) async {
+        endpoint = ModelRouter.configuredEndpoint
+        guard let e = endpoint else {
+            serverKind = nil; serverModels = []; models = []; serverError = nil; serverUnreachable = false; reachable = false; return
+        }
+        pickedTag = CustomServer.pick(for: e)
+        isLoading = true
+        defer { isLoading = false }
+        do {
+            let snap = try await CustomServer.snapshot(endpoint: e, redetect: redetect)
+            serverKind = snap.kind
+            serverModels = snap.models
+            models = CustomServer.catalogModels(kind: snap.kind, models: snap.models)
+            serverError = nil
+            serverUnreachable = false
+            reachable = true
+        } catch {
+            reachable = false
+            let cantReach = CustomServer.ServerError.unreachable(host: CustomServer.hostLabel(e)).errorDescription
+            serverError = (error as? LocalizedError)?.errorDescription ?? cantReach
+            serverUnreachable = serverError == cantReach
+        }
+        NSLog("[CustomServer] refresh kind=%@ models=%d reachable=%d", serverKind?.label ?? "-", models.count, reachable ? 1 : 0)
         // C4b2 (T 2026-10-10) — a server that doesn't answer is greyed, and skipped when nothing is chosen.
-        if ModelRouter.endpointUnreachable != (endpointModel == nil) {
-            ModelRouter.endpointUnreachable = endpointModel == nil
-            refreshRoute()
+        if ModelRouter.endpointUnreachable != !reachable {
+            ModelRouter.endpointUnreachable = !reachable
+            HostCatalog.shared.refreshRoute()
             NotificationCenter.default.post(name: .librarianRouteChanged, object: nil)
         }
     }
+
+    /// Pick `tag` on the server: it answers every chat there from now on (persisted per endpoint), and the server
+    /// becomes the chosen source. An installed model that isn't loaded is loaded first where the server allows it.
+    func use(_ tag: String) async {
+        guard source == .server, let e = endpoint else { return }
+        CustomServer.setPick(tag, for: e)
+        pickedTag = tag
+        if ModelRouter.chosenRoute != .endpoint { ModelRouter.chosenRoute = .endpoint }
+        HostCatalog.shared.refreshRoute()
+        HostCatalog.shared.endpointModel = chosen.map { name($0) }
+        if canManage, let m = models.first(where: { $0.tag == tag }), m.isInstalled, !m.isResident {
+            await serverAction(tag) { kind, sm in try await CustomServer.load(endpoint: e, kind: kind, model: sm) }
+        }
+        NotificationCenter.default.post(name: .librarianRouteChanged, object: nil)
+    }
+
+    /// One server action on `tag`, narrated (`busyTag`), its refusal shown verbatim, then a fresh listing.
+    private func serverAction(_ tag: String, _ run: (CustomServer.Kind, CustomServer.ServerModel) async throws -> Void) async {
+        guard let kind = serverKind, let sm = serverModels.first(where: { $0.id == tag }) else { return }
+        busyTag = tag
+        lastActionError = nil
+        defer { busyTag = nil }
+        do { try await run(kind, sm) }
+        catch { lastActionError = (error as? LocalizedError)?.errorDescription ?? error.localizedDescription }
+        await refreshServer()
+    }
+
+    /// An ask is loading `tag` on LM Studio (the chat path's `ensureLoaded`): narrate it on the pill, refresh after.
+    func endAskLoadQuietly() { busyTag = nil }
 
     private static func parse(_ data: Data) -> [CatalogModel] {
         guard let json = try? JSONSerialization.jsonObject(with: data) as? [String: Any],
@@ -374,6 +483,7 @@ final class HostCatalog {
     /// §18 magnitude string WITHOUT loading, so the phone can warn BEFORE committing to a ~20s load.
     /// Returns the notice text, or nil (small model / not paired / error). One string, two renderers.
     func previewLoad(_ tag: String) async -> String? {
+        guard source == .host else { return nil }
         guard let url = HostPairing.load()?.loadURL,
               let req = authed(url, method: "POST", body: ["catalogId": tag, "preview": true]) else { return nil }
         guard let (data, resp) = try? await URLSession.shared.data(for: req),
@@ -385,6 +495,7 @@ final class HostCatalog {
     }
 
     func load(_ tag: String) async {
+        if source == .server { await use(tag); return }   // 1.1-D — on a server, Load = pick + load at AirPad's window
         guard let url = HostPairing.load()?.loadURL, let req = authed(url, method: "POST", body: ["catalogId": tag]) else { return }
         // ★ Brief BU3 (T's ruling, 2026-09-29) — THE USER'S PICK IS THE DEFAULT MODEL. Every picker
         // "Load" funnels through here, so this is the one place the choice is knowable. Persisted so a
@@ -427,6 +538,16 @@ final class HostCatalog {
     /// Poll until `/api/ps` (via refresh) shows it gone, bounded, before returning; fail-closed on
     /// timeout with an actionable error. (Single-eject was on the accept path too — same fix.)
     func eject(_ tag: String) async {
+        if source == .server {
+            guard let e = endpoint else { return }
+            await serverAction(tag) { kind, sm in try await CustomServer.eject(endpoint: e, kind: kind, model: sm) }
+            // Eject settles (Ollama unloads a moment after it answers): poll the listing until it's gone.
+            if !(await waitUntilSettled { [weak self] in self?.models.first(where: { $0.tag == tag })?.isResident != true }),
+               lastActionError == nil {
+                lastActionError = "That model is taking a while to eject. Try again in a moment."
+            }
+            return
+        }
         guard let url = HostPairing.load()?.ejectURL, let req = authed(url, method: "POST", body: ["catalogId": tag]) else { return }
         busyTag = tag
         lastActionError = nil
@@ -440,6 +561,10 @@ final class HostCatalog {
     /// Eject EVERY resident model (phone parity with the Mac's "eject all"), SETTLED: fire each eject,
     /// then poll until NONE are resident. Fail-closed on timeout (the two-tap bug was accept-not-settle).
     func ejectAll() async {
+        if source == .server {
+            for tag in models.filter({ $0.isResident }).map(\.tag) { await eject(tag) }
+            return
+        }
         guard let url = HostPairing.load()?.ejectURL else { return }
         lastActionError = nil
         for tag in models.filter({ $0.isResident }).map(\.tag) {
@@ -468,6 +593,7 @@ final class HostCatalog {
     // MARK: - Residency (§3) — cards + copy from the Host, the SAME source the Mac renders
 
     func fetchResidency() async {
+        guard source == .host else { return }   // 1.1-D — no residency modes on the user's own server
         guard let url = HostPairing.load()?.residencyURL, let req = authed(url, method: "GET", body: nil) else { return }
         guard let (data, resp) = try? await URLSession.shared.data(for: req),
               let http = resp as? HTTPURLResponse, (200...299).contains(http.statusCode),
@@ -546,6 +672,25 @@ final class HostCatalog {
     /// row shows real progress instead of a frozen "Working…" for a 19 GB download. A non-2xx (e.g.
     /// 507 insufficient_disk) carries the Host's message → surface it, same as `act()`.
     func install(_ tag: String) async {
+        if source == .server {
+            guard let e = endpoint, let kind = serverKind else { return }
+            busyTag = tag
+            busyPercent = 0
+            lastActionError = nil
+            defer { busyTag = nil; busyPercent = nil }
+            do {
+                try await CustomServer.download(endpoint: e, kind: kind, id: tag) { [weak self] pct in
+                    self?.busyPercent = pct
+                    #if DEBUG
+                    self?.debugProgressSink?(pct)
+                    #endif
+                }
+            } catch {
+                lastActionError = (error as? LocalizedError)?.errorDescription ?? "Download interrupted. Try again."
+            }
+            await refreshServer()
+            return
+        }
         guard let url = HostPairing.load()?.installURL,
               let req = authed(url, method: "POST", body: ["catalogId": tag]) else { return }
         busyTag = tag
@@ -676,5 +821,7 @@ extension HostCatalog {
 }
 extension HostCatalog {
     func debugSetModels(_ m: [CatalogModel]) { models = m }
+    /// 1.1-D fake self-test — start the server source clean (a new endpoint).
+    func debugResetForTest() { serverKind = nil; serverModels = []; models = []; serverError = nil; serverUnreachable = false; lastActionError = nil }
 }
 #endif

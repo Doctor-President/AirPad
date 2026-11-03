@@ -23,6 +23,7 @@ struct AirPadApp: App {
         Self.purgeRetiredDevTunerDefaults()
         // pro-build — StoreKit 2: listen for transactions + re-verify the Pro entitlement (the cached value draws the Map meanwhile).
         Task { @MainActor in ProStore.shared.start() }
+        InstallChannel.resolve()   // 1.1-B — TestFlight or App Store (the Sheen switch)
         // Step 1 — off the launch path. (The DEBUG self-test runs the migration itself, on an item it seeds: a launch
         // migration racing it could move that item first and fail the test falsely.)
         if !UserDefaults.standard.bool(forKey: "KeychainMigrationSelfTest") {
@@ -31,6 +32,15 @@ struct AirPadApp: App {
         // live-17 — a document's named hand-off copies (viewer / share) a crash left behind; none is in use at launch.
         Task.detached(priority: .utility) { DocumentHandoff.purgeAll() }
         #if DEBUG
+        // 1.1-A (8) test — `-ResetHostAccess YES` forgets the switch, as on a phone upgrading from 1.0, so the migration runs.
+        if UserDefaults.standard.bool(forKey: "ResetHostAccess") { UserDefaults.standard.removeObject(forKey: HostAccess.storageKey) }
+        #endif
+        HostAccess.migrateAtLaunch()   // 1.1-A (8) — the hidden Host switch: ON only where a pairing already exists
+        #if DEBUG
+        // 1.1-A (8) — the paired-Host harnesses need the hidden switch on.
+        if UserDefaults.standard.bool(forKey: "FakeHostPairing") || UserDefaults.standard.bool(forKey: "DebugPersistLANPairing") {
+            UserDefaults.standard.set(true, forKey: HostAccess.storageKey)
+        }
         // Arc A — `-StdoutToFile`: an XCUITest-launched app's print() goes nowhere; send it to
         // Caches/stdout.log (unbuffered) so a UI test run keeps the app's own trace.
         if CommandLine.arguments.contains("-StdoutToFile"),
@@ -47,6 +57,7 @@ struct AirPadApp: App {
         // C4b2 device check — `-ResetLibrarianRoute YES` routes the Librarian back to the Mac (undoes a test's pick).
         if UserDefaults.standard.bool(forKey: "ResetLibrarianRoute") { ModelRouter.chosenRoute = nil }
         if UserDefaults.standard.bool(forKey: "KeychainMigrationSelfTest") { KeychainHelper.runMigrationSelfTest() }
+        if UserDefaults.standard.bool(forKey: "AppLockSelfTest") { AppLock.runSelfTest() }   // 1.1-A (A6)
         #endif
     }
 

@@ -11,6 +11,7 @@ import SwiftUI
 /// C2 kinds: duration · money · measurement · numeric rating · + RANGES on the
 /// four scalars. C3 adds vocabulary · nodeReference.
 struct FieldValueEditorSheet: View {
+    @Environment(\.appBodyFont) private var appFont   // 1.1-A type pass
 
     let nodeID: String
     let item: NodeItem
@@ -108,16 +109,16 @@ struct FieldValueEditorSheet: View {
         case .number:
             decimalField($text)
         case .text:
-            TextField("Value", text: $text, axis: .vertical).lineLimit(1...6)
+            TextField("Value", text: $text, axis: .vertical).lineLimit(1...6).font(appFont.font(size: 17, relativeTo: .body))
         case .url:
-            TextField("https://…", text: $text)
+            TextField("https://…", text: $text).font(appFont.font(size: 17, relativeTo: .body))
                 .keyboardType(.URL).textInputAutocapitalization(.never).autocorrectionDisabled()
         case .date:
             DatePicker("Date", selection: $dateValue,
                        displayedComponents: definition.config.dateHasTime ? [.date, .hourAndMinute] : [.date])
                 .datePickerStyle(.graphical)
         case .location:
-            TextField("Place", text: $text)
+            TextField("Place", text: $text).font(appFont.font(size: 17, relativeTo: .body))
         case .duration:
             durationFields($hours, $minutes)
         case .money:
@@ -143,7 +144,7 @@ struct FieldValueEditorSheet: View {
                     else { selectedValueIDs.insert(val.id) }
                 } label: {
                     HStack {
-                        Text(val.label).foregroundStyle(AppearancePalette.ink)
+                        Text(val.label).font(appFont.font(size: 17, relativeTo: .body)).foregroundStyle(AppearancePalette.ink)
                         Spacer()
                         if selectedValueIDs.contains(val.id) {
                             Image(systemName: "checkmark").foregroundStyle(.blue)
@@ -153,15 +154,15 @@ struct FieldValueEditorSheet: View {
                 }
             }
             HStack {
-                TextField("Add a value", text: $newVocabLabel).onSubmit(addVocab)
+                TextField("Add a value", text: $newVocabLabel).font(appFont.font(size: 17, relativeTo: .body)).onSubmit(addVocab)
                 Button("Add", action: addVocab)
                     .disabled(newVocabLabel.trimmingCharacters(in: .whitespaces).isEmpty)
             }
         case .nodeReference:
             HStack {
-                Text("Entry")
+                Text("Entry").font(appFont.font(size: 17, relativeTo: .body))
                 Spacer()
-                Text(referencedTitle ?? "None").foregroundStyle(.secondary).lineLimit(1)
+                Text(referencedTitle ?? "None").font(appFont.font(size: 17, relativeTo: .body)).foregroundStyle(.secondary).lineLimit(1)
             }
             Button("Choose an entry") { showNodePicker = true }
         case .boolean:
@@ -203,15 +204,15 @@ struct FieldValueEditorSheet: View {
     }
 
     private func decimalField(_ binding: Binding<String>) -> some View {
-        TextField("0", text: binding).keyboardType(.decimalPad)
+        TextField("0", text: binding).keyboardType(.decimalPad).font(appFont.font(size: 17, relativeTo: .body))
     }
 
     private func durationFields(_ h: Binding<Int>, _ m: Binding<Int>) -> some View {
         HStack {
-            TextField("hr", value: h, format: .number).keyboardType(.numberPad).frame(width: 60)
-            Text("hr").foregroundStyle(.secondary)
-            TextField("min", value: m, format: .number).keyboardType(.numberPad).frame(width: 60)
-            Text("min").foregroundStyle(.secondary)
+            TextField("hr", value: h, format: .number).keyboardType(.numberPad).font(appFont.font(size: 17, relativeTo: .body)).frame(width: 60)
+            Text("hr").font(appFont.font(size: 17, relativeTo: .body)).foregroundStyle(.secondary)
+            TextField("min", value: m, format: .number).keyboardType(.numberPad).font(appFont.font(size: 17, relativeTo: .body)).frame(width: 60)
+            Text("min").font(appFont.font(size: 17, relativeTo: .body)).foregroundStyle(.secondary)
         }
     }
 

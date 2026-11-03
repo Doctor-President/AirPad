@@ -718,6 +718,7 @@ struct DebugScreenHost: View {
         case "models":    return .models
         case "macmodels": return .macModels   // Brief AL — the paired Mac models screen (needs -FakeHostPairing)
         case "advanced":  return .advanced
+        case "servermodels": return .serverModels   // 1.1-D — the server's models (with -DebugEndpointURL at a fake)
         case "websearch": return .webSearch
         case "librarian": return .librarian
         case "privacy":   return .privacy
@@ -732,12 +733,21 @@ struct DebugScreenHost: View {
     private var content: some View {
         switch screen {
         case "settings":         SettingsView()
+        case "modelpicker":      // 1.1-D — the pill's quick switcher (the server's models listed under YOUR SERVER)
+            ModelPickerSheet(catalog: HostCatalog.shared, thinkEnabled: .constant(false), onManageModels: {})
         // Brief AJ — screenshot each submenu: `-Screen settings-<dest>`.
         case let s where s.hasPrefix("settings-"):
             SettingsView(debugInitialDest: settingsDest(String(s.dropFirst("settings-".count))))
-        case "slideout":         // ws-fluted-glass — the canvas ≡ menu's Appearance section
+        case "slideout":         // ws-fluted-glass — the ≡ menu (1.1-A: Appearance row + Settings at the bottom)
             CanvasSlideOutMenu(isPresented: .constant(true), filterActiveCount: 0, quarantineCount: 0,
-                               onAnalyze: {}, onFilter: {}, onSettings: {}, onQuarantineReview: {})
+                               onAnalyze: {}, onFilter: {}, onSettings: {}, onQuarantineReview: {}, onAppearance: {})
+        case "appearancepanel":  // 1.1-A (A3) — the ≡ menu's Appearance panel content
+            AppearancePanel()
+        case "groundsection":    // 1.1-B — the Background section + Gravity / Sheen, alone (the panel scrolls past them)
+            ScrollView { VStack(alignment: .leading, spacing: 20) {
+                MapGroundSection(); GravityWellsToggle(detailed: true)
+            }.padding(20).padding(.top, 60) }
+            .background(AppearancePalette.bgBase.ignoresSafeArea())
         case "substrate":        SubstrateInspectView()
         case "import":           ImportIdeasSheet()
         case "reviewqueue":      ReviewQueueSheet()

@@ -226,6 +226,27 @@ final class CorpusStore {
     /// True when iCloud is unavailable and the app is writing to local storage instead.
     var iCloudUnavailable = false
 
+    /// 1.0r S0 — the library holds a file saved by a NEWER AirPad: nothing is written this run
+    /// (`LibraryFormatGuard`). Drives the read-only banner; capture is refused with the same message.
+    var libraryIsNewerFormat = false
+    /// Set when something was refused because the library is newer (a capture, a save) — shows the message.
+    var newerFormatNotice = false
+
+    /// Mirrors the guard's state into the store and, for a refused action, raises the notice.
+    func noteNewerFormat(refused: Bool) {
+        libraryIsNewerFormat = LibraryFormatGuard.isReadOnly
+        if refused && libraryIsNewerFormat { newerFormatNotice = true }
+    }
+
+    /// A new entry in a newer library is refused. A capture can start before the load has read the entries
+    /// (Quick Capture from the widget/Control at cold launch), so check their versions first (once, versions only).
+    private func newerFormatRefusesCapture() async -> Bool {
+        if !libraryLoaded { await service.scanForNewerEntries() }
+        guard LibraryFormatGuard.isReadOnly else { return false }
+        noteNewerFormat(refused: true)
+        return true
+    }
+
     /// Set when AI processing suggests tags not yet in the vocabulary.
     /// CanvasView observes this and presents TagCreationSheet.
     var pendingTagSuggestions: TagSuggestionContext? = nil
@@ -467,11 +488,11 @@ final class CorpusStore {
         case .corpus:
             return corpusRoomNodes
         case .collection(let id) where id == NodeCollection.journalID:
-            return nodes.filter { $0.journalDate != nil }
+            return hidingPrivate(nodes.filter { $0.journalDate != nil })
         case .collection(let id):
-            return nodes.filter { $0.collectionIDs.contains(id) }
+            return hidingPrivate(nodes.filter { $0.collectionIDs.contains(id) })
         case .nodeIDs(let ids):
-            return nodes.filter { ids.contains($0.id) }
+            return hidingPrivate(nodes.filter { ids.contains($0.id) })
         }
     }
 
@@ -611,8 +632,24 @@ final class CorpusStore {
     /// sample is seeded this is every node (no allocation cost via the empty-set
     /// fast path). The Dashboard's three lists (Activity / Priority / Recents) and
     /// the Corpus/Journal row counts derive from this, so the sample never mixes in.
-    var userNodes: [Node] {
+    var userNodes: [Node] { hidingPrivate(userNodesIncludingPrivate) }
+
+    /// The user's own entries with the private ones too (the room decision, and machinery that must reach every entry).
+    var userNodesIncludingPrivate: [Node] {
         sampleNodeIDs.isEmpty ? nodes : nodes.filter { !sampleNodeIDs.contains($0.id) }
+    }
+
+    /// 1.1-C (C3) — every read path that lists, counts, searches or retrieves entries goes through this: private
+    /// entries drop out unless "Show private" is unlocked (`PrivateEntries`). Lookups by id (`nodes.first`) don't, so an
+    /// open entry never turns into "Entry not found" (NodeDetailView shows a private entry's own placeholder instead).
+    func hidingPrivate(_ a: [Node]) -> [Node] {
+        PrivateEntries.shared.revealed ? a : a.filter { !$0.isPrivate }
+    }
+    /// Is this entry hidden right now?
+    func isHidden(_ n: Node) -> Bool { n.isPrivate && !PrivateEntries.shared.revealed }
+    /// The ids hidden right now (for id-list read paths: embeddings, block retrieval).
+    var hiddenNodeIDs: Set<String> {
+        PrivateEntries.shared.revealed ? [] : Set(nodes.lazy.filter(\.isPrivate).map(\.id))
     }
 
     /// Brief Z R1 — the CORPUS ROOM: what `.corpus` scope reads everywhere (Map,
@@ -622,7 +659,8 @@ final class CorpusStore {
     /// AT THE SOURCE (`nodes(in:)` / `filteredNodes` route through this), so a caller
     /// asking for the corpus can't accidentally mix the sample in.
     var corpusRoomNodes: [Node] {
-        (sampleLibraryPresent && !userNodes.isEmpty) ? userNodes : nodes
+        // 1.1-C — the room is decided on ALL the user's entries, so hiding private ones never flips it to the sample.
+        hidingPrivate((sampleLibraryPresent && !userNodesIncludingPrivate.isEmpty) ? userNodesIncludingPrivate : nodes)
     }
 
     /// Brief Z R1 — the RAW full node set (user + sample), for GLOBAL MACHINERY that
@@ -664,7 +702,10 @@ final class CorpusStore {
     /// land. Throws what the storage actor throws — callers keep their
     /// existing do/catch error handling intact.
     private func saveAndEnqueue(_ node: Node) async throws {
-        try await service.saveNode(node)
+        do { try await service.saveNode(node) } catch {
+            noteNewerFormat(refused: true)   // 1.0r S0 — refused by the forward-format guard → say so
+            throw error
+        }
         blockEmbedding.enqueueRebuild(node: node)
         // ws-card-catalog step 2c — card write-through. Debounced per-node so
         // rapid edits coalesce under one refresh+embed, mirroring the block
@@ -851,7 +892,8 @@ final class CorpusStore {
         // T hit. A sample collection now broadens to the sample; a user collection to
         // the user corpus. `.nodeIDs` (the sample canvas) still never retries.
         if case .collection(let cid) = scope, (matches.first?.score ?? 0) < Self.minRelevanceScore {
-            let retryIDs = sampleCollectionIDs.contains(cid) ? Array(sampleNodeIDs) : corpusAskCandidateIDs
+            let hidden = hiddenNodeIDs   // 1.1-C — a private sample entry stays out too
+            let retryIDs = sampleCollectionIDs.contains(cid) ? Array(sampleNodeIDs).filter { !hidden.contains($0) } : corpusAskCandidateIDs
             let retryMatches = Self.diversifyByNode(
                 await blockEmbedding.findRelevantBlocks(queryVector: qvec, candidateNodeIDs: retryIDs, topK: pool),
                 perNode: Self.maxBlocksPerNode, limit: topK)
@@ -923,6 +965,8 @@ final class CorpusStore {
     /// the Ask candidate list. Thin wrapper over the block retriever (one BGE embed
     /// of the query); called only when a pin is detected.
     func blocksForNodes(query: String, nodeIDs: [String], topK: Int = 20, queryVector: [Float]? = nil) async -> [BlockMatch] {
+        let hidden = hiddenNodeIDs   // 1.1-C — a pinned / named private entry is never read while hidden
+        let nodeIDs = hidden.isEmpty ? nodeIDs : nodeIDs.filter { !hidden.contains($0) }
         guard !nodeIDs.isEmpty else { return [] }
         // AA1 — reuse the shared query embedding when supplied (embed once).
         if let queryVector, !queryVector.isEmpty {
@@ -1027,6 +1071,7 @@ final class CorpusStore {
             let loaded = try await service.loadAllNodes()
             let layout = try await service.loadCanvasLayout()
             let loadedTags = try await service.loadTags()
+            noteNewerFormat(refused: false)   // 1.0r S0 — entries + canvas layout checked; the banner shows if newer
             // Stage 4.8 — enforce the atomic-prefix invariant on every
             // loaded node before it enters the live store. Nodes saved
             // before the split (Commit 5's inline-rating shape) may have
@@ -1042,17 +1087,8 @@ final class CorpusStore {
             // read its file and land in between: replacing put the node in from disk AND the capture then inserted it
             // again (one entry on disk, two rows in Recents, a stale blank card), or replaced the live copy with an older
             // snapshot. Every write goes through the store, so a node already in memory is the live copy: it wins, and
-            // anything created while the load ran is kept.
-            let live = Dictionary(nodes.map { ($0.id, $0) }, uniquingKeysWith: { first, _ in first })
-            let loadedIDs = Set(normalized.map(\.id))
-            var merged = normalized.map { live[$0.id] ?? $0 }
-            merged += nodes.filter { !loadedIDs.contains($0.id) }
-            if !live.isEmpty {
-                print("[Store] A3 load merged into a live store: loaded=\(normalized.count) live=\(live.count) "
-                      + "liveKept=\(live.keys.filter(loadedIDs.contains).count) createdDuringLoad=\(live.keys.filter { !loadedIDs.contains($0) }.count)")
-            }
-            nodes = merged.sorted { $0.createdAt > $1.createdAt }
-            // live-17 (2c) — MERGE the disk layout with the live one, like the nodes above: a position added while the
+            // anything created while the load ran is kept. (The merge itself runs below, at the commit point.)
+            // live-17 (2c) — MERGE the disk layout with the live one, like the nodes below: a position added while the
             // load ran (a capture during launch) is the live copy and wins; every saved position is kept. When the merge
             // differs from disk, persist it — the capture held off saving (it had only its own position).
             var mergedLayout = layout ?? CanvasLayout(version: 1, updatedAt: Date(), positions: [:])
@@ -1069,7 +1105,7 @@ final class CorpusStore {
             // `try?` so a schema drift decodes to nil → the Map re-forms + re-persists
             // rather than crashing on a stale artifact (the brief's "loads silently
             // fail" case, handled as a safe fall-through, not a fault).
-            territoryLayouts = (try? await service.loadTerritoryLayouts()) ?? [:]
+            var loadedTerritoryLayouts = (try? await service.loadTerritoryLayouts()) ?? [:]
             #if DEBUG
             // Sample-map bake — `-RestoreLayout <path>` injects a captured snapshot dict (per-scope) so the
             // Map restores it verbatim: candidate re-render (light/dark) + a bake dry-run. The existing
@@ -1078,34 +1114,54 @@ final class CorpusStore {
                ri + 1 < ProcessInfo.processInfo.arguments.count,
                let rdata = try? Data(contentsOf: URL(fileURLWithPath: ProcessInfo.processInfo.arguments[ri + 1])),
                let rdict = try? JSONDecoder.airPad.decode([String: TerritoryLayoutSnapshot].self, from: rdata) {
-                for (k, v) in rdict { territoryLayouts[k] = v; frozenTerritoryScopes.insert(k) }
+                for (k, v) in rdict { loadedTerritoryLayouts[k] = v; frozenTerritoryScopes.insert(k) }
                 print("[SampleBake] -RestoreLayout injected \(rdict.count) scope snapshot(s) [frozen]")
             }
             #endif
             let minimumViableTagCount = 8
-            if loadedTags.count < minimumViableTagCount {
+            let seedsTier1Tags = loadedTags.count < minimumViableTagCount
+            var resolvedTags = loadedTags
+            if seedsTier1Tags {
                 let existingNames = Set(loadedTags.map { $0.name.lowercased() })
                 let tier1 = Self.tier1SeedTags()
                 let newTags = tier1.filter { !existingNames.contains($0.name.lowercased()) }
-                tags = loadedTags + newTags
-                await persistTags()
-            } else {
-                tags = loadedTags
+                resolvedTags = loadedTags + newTags
             }
             // Dashboard Stage 3 — seed user collections on first launch
             // (nil = file absent). Empty array means the user has explicitly
             // cleared their collections in a later stage; respect that.
-            if let loadedCollections = try await service.loadCollections() {
-                collections = loadedCollections
-            } else {
-                collections = Self.defaultUserCollections()
-                await persistCollections()
+            var loadedCollections: [NodeCollection]?
+            var collectionsLoadError: Error?
+            do { loadedCollections = try await service.loadCollections() } catch { collectionsLoadError = error }
+            // ★ 1.0r S1d — COMMIT THE MAP'S INPUTS TOGETHER, entries LAST, with no `await` in between. The Map lays
+            // out from four things: the entries, the anchor tags, the user collections and the saved territory
+            // layout. Entries used to land first (then an await, then the rest), so the Map's first pass placed
+            // every orb with no territory at all (the ±60 fallback: the pile-up), and its next pass formed a fresh
+            // layout off a half-loaded corpus (the saved layout's signature can't match yet) — the visible
+            // reshuffle on every launch, and a different layout per launch. One synchronous commit means the
+            // Map's first pass sees a whole corpus and restores the saved layout as is.
+            territoryLayouts = loadedTerritoryLayouts
+            tags = resolvedTags
+            if collectionsLoadError == nil { collections = loadedCollections ?? Self.defaultUserCollections() }
+            let live = Dictionary(nodes.map { ($0.id, $0) }, uniquingKeysWith: { first, _ in first })
+            let loadedIDs = Set(normalized.map(\.id))
+            var merged = normalized.map { live[$0.id] ?? $0 }
+            merged += nodes.filter { !loadedIDs.contains($0.id) }
+            if !live.isEmpty {
+                print("[Store] A3 load merged into a live store: loaded=\(normalized.count) live=\(live.count) "
+                      + "liveKept=\(live.keys.filter(loadedIDs.contains).count) createdDuringLoad=\(live.keys.filter { !loadedIDs.contains($0) }.count)")
             }
+            nodes = merged.sorted { $0.createdAt > $1.createdAt }
+            libraryLoaded = true   // 1.1-C (C1) — share-sheet appends can find their entries now
+            if seedsTier1Tags { await persistTags() }
+            if let collectionsLoadError { throw collectionsLoadError }
+            if loadedCollections == nil { await persistCollections() }
             // Stage 5.1 — corpus-level field definitions. Absent file (nil) is
             // the normal first-run state: no definitions yet, nothing to seed
             // (unlike collections/tags). Leave the file unwritten until the
             // first definition is created (a later stage).
             if let loadedFieldDefs = try await service.loadFieldDefinitions() {
+                noteNewerFormat(refused: false)   // 1.0r S0
                 fieldDefinitions = loadedFieldDefs.definitions
             } else {
                 fieldDefinitions = []
@@ -1151,6 +1207,10 @@ final class CorpusStore {
             if ProcessInfo.processInfo.arguments.contains("-SubjectLookupSelfTest") {
                 NSLog("[SubjectLookupSelfTest] %@", SubjectLookupSelfTest.run())
             }
+            // 1.0r S0 — the forward-format guard (versions, unknown-field carry, the one write path).
+            if ProcessInfo.processInfo.arguments.contains("-ForwardFormatGuardSelfTest") {
+                NSLog("[ForwardFormatGuardSelfTest] %@", ForwardFormatGuardSelfTest.run())
+            }
             // live-28 (A3) — Title Case for model-written titles.
             if ProcessInfo.processInfo.arguments.contains("-TitleCaseSelfTest") {
                 NSLog("[TitleCaseSelfTest] %@", TitleCaseSelfTest.run())
@@ -1158,6 +1218,10 @@ final class CorpusStore {
             // live-28 (1) — answer caps: the loop guard, the budgets by route, num_predict on the Host bodies.
             if ProcessInfo.processInfo.arguments.contains("-AnswerCapSelfTest") {
                 NSLog("[AnswerCapSelfTest] %@", AnswerCapSelfTest.run())
+            }
+            // 1.1-C — tables, private entries, export, share index, Eclipse → Aura, adaptive 120.
+            if ProcessInfo.processInfo.arguments.contains("-Batch11CSelfTest") {
+                Task { @MainActor in NSLog("[Batch11CSelfTest] %@", await Batch11CSelfTest.run(store: self)) }
             }
             // live-27 (4e) — the RELATED list never shows one entry twice.
             if ProcessInfo.processInfo.arguments.contains("-SearchRelatedSelfTest") {
@@ -1188,6 +1252,16 @@ final class CorpusStore {
             // CH Session 2 (C4 / C4a) — the shared active-model derivation + friendly names.
             if ProcessInfo.processInfo.arguments.contains("-ModelPickSelfTest") {
                 NSLog("[ModelPickSelfTest] %@", await MainActor.run { ModelPickSelfTest.run() })
+            }
+            // 1.1-D — the user's-own-server adapter (pure), and its real network paths against the fakes.
+            if ProcessInfo.processInfo.arguments.contains("-CustomServerSelfTest") {
+                NSLog("[CustomServerSelfTest] %@", await MainActor.run { CustomServerSelfTest.run() })
+            }
+            if ProcessInfo.processInfo.arguments.contains("-CustomServerRealCheck") {
+                Task { @MainActor in await CustomServerRealCheck.run() }
+            }
+            if ProcessInfo.processInfo.arguments.contains("-CustomServerFakeSelfTest") {
+                Task { @MainActor in NSLog("[CustomServerFakeSelfTest] %@", await CustomServerFakeSelfTest.run()) }
             }
             if ProcessInfo.processInfo.arguments.contains("-ProposalSelfTest") {
                 NSLog("[ProposalSelfTest] %@", ProposalSelfTest.run())
@@ -2092,6 +2166,7 @@ final class CorpusStore {
         }
         // Load corpus index if available (graceful fallback to empty on first run)
         if let loadedIndex = try? await service.loadCorpusIndex() {
+            noteNewerFormat(refused: false)   // 1.0r S0
             // SB137 Stage A — first launch on schema v2: back up the v1 index and
             // bump version. The neighborhoodCache stays nil, so the immediately-
             // following refreshNeighborhoods() runs a full re-cluster against
@@ -2150,7 +2225,12 @@ final class CorpusStore {
         }
         // Process any nodes that were captured by the share extension (no AI ran at capture time)
         await scanForUnprocessedNodes()
+        // 1.1-C (C1) — the share sheet's "Existing entry" records waited for the Library (the import above ran first).
+        await importFromAppGroupInbox()
     }
+
+    /// 1.1-C (C1) — set once `load()` has the Library in memory; an append record waits for it.
+    private var libraryLoaded = false
 
     // MARK: - Brief BU2 — THE LIBRARIAN GAUNTLET (the standing gate)
 
@@ -2560,10 +2640,27 @@ final class CorpusStore {
         // again be read as "the Librarian is broken" when the real fault was the model picked.
         NSLog("[Gauntlet] model resolution: userPicked=%@ (the Host's --observe `chat done model=…` line is the authority on what actually answered)",
               ModelRouter.userPickedHostModel ?? "none (no picker choice yet → smallest installed curated)")
+        // 1.1-D fix-up (D3) — `-GauntletRoute endpoint` (DEBUG) runs the same cases over the user's-own-server route
+        // (`-DebugEndpointURL <ollama>` + `-DebugEndpointModel <tag>`): ModelRouter → native /api/chat at the loaded
+        // window. Each turn logs a presence-only `[ServerChat] done model=… num_ctx=… prompt_eval=…` line.
+        var serverRoute = false
+        #if DEBUG
+        serverRoute = UserDefaults.standard.string(forKey: "GauntletRoute") == "endpoint"
+        #endif
+        if serverRoute {
+            guard case .ollama(let e) = ModelRouter.active else {
+                NSLog("[Gauntlet] ABORT — -GauntletRoute endpoint but the provider is NOT the server. Pass -DebugEndpointURL and route to it.")
+                NSLog("[Gauntlet] done")
+                return
+            }
+            let t = try? await CustomServer.chatTarget(endpoint: e)
+            NSLog("[Gauntlet] ROUTE server: model=%@ window=%d (%@)", t?.model ?? "?", t?.contextTokens ?? 0, t?.kind.label ?? "not reachable")
+        } else {
         guard case .host = ModelRouter.active else {
             NSLog("[Gauntlet] ABORT — provider is NOT .host. Pass -DebugHostURL/-DebugHostSecret/-DebugHostPubKey so the REAL sealed Host path is exercised (direct-Ollama/FM would be a fake green).")
             NSLog("[Gauntlet] done")
             return
+        }
         }
 
         let librarian = LibrarianState()
@@ -2643,10 +2740,11 @@ final class CorpusStore {
                 // Host and tap Retry. Without the forced failure this case was a silent NO-OP:
                 // `retryLastUserTurn` guards on the transcript ending in a user turn, so it returned
                 // instantly (0.0s, no inference) and the row re-graded the PREVIOUS answer.
-                HostPairing.debugForceUnreachableHost = true
+                // On the server route the dead port is the server address itself, for that one send.
+                if serverRoute { CustomServer.debugForceUnreachable = true } else { HostPairing.debugForceUnreachableHost = true }
                 await librarian.groundedSend(query: c.question, store: self, chat: chat)
                 let failedAsExpected = chat.messages.last?.role == .user
-                HostPairing.debugForceUnreachableHost = false
+                if serverRoute { CustomServer.debugForceUnreachable = false } else { HostPairing.debugForceUnreachableHost = false }
                 NSLog("[Gauntlet] CASE %@ note — forced Host error first (dead port): transcript ends in the user turn = %@; now tapping Retry",
                       c.id, failedAsExpected ? "yes" : "NO (the failure did not surface as expected)")
                 // The case is only meaningful if the failure REALLY happened; otherwise Retry is a
@@ -3018,6 +3116,7 @@ final class CorpusStore {
     /// indexes update this session — the baked card.json/blocks.json ride along, so
     /// retrieval works immediately and the reconciler pass is a fast fingerprint refresh.
     func addSampleLibrary() async {
+        guard !LibraryFormatGuard.isReadOnly else { noteNewerFormat(refused: true); return }   // 1.0r S0
         guard let root = await service.containerRootURL() else { return }
         guard !SampleLibrarySeeder.markerExists(containerRoot: root),
               let bundle = SampleLibrarySeeder.bundledLibraryURL() else { return }
@@ -3040,6 +3139,7 @@ final class CorpusStore {
     /// only by recorded id, so a user's own nodes are never touched; safe after the
     /// user has added their own notes.
     func removeSampleLibrary() async {
+        guard !LibraryFormatGuard.isReadOnly else { noteNewerFormat(refused: true); return }   // 1.0r S0
         guard let root = await service.containerRootURL() else { return }
         do {
             let removed = try await Task.detached(priority: .userInitiated) {
@@ -3060,10 +3160,15 @@ final class CorpusStore {
             let loaded = try await service.loadAllNodes()
             var normalized = loaded
             for i in normalized.indices { Self.normalizeAtomicsToFront(&normalized[i]) }
+            let loadedTags = try await service.loadTags()
+            let loadedCollections = try await service.loadCollections()
+            let loadedFieldDefinitions = (try await service.loadFieldDefinitions())?.definitions ?? []
+            // 1.0r S1d — one synchronous commit, entries LAST (see `load()`): the seeded sample's first Map pass
+            // must see its anchor tags + collections, or it places every orb in the fallback pile and re-forms.
+            tags = loadedTags
+            if let loadedCollections { collections = loadedCollections }
+            fieldDefinitions = loadedFieldDefinitions
             nodes = normalized.sorted { $0.createdAt > $1.createdAt }
-            tags = try await service.loadTags()
-            if let c = try await service.loadCollections() { collections = c }
-            fieldDefinitions = (try await service.loadFieldDefinitions())?.definitions ?? []
         } catch {
             print("[SampleSeed] corpus refresh error: \(error)")
         }
@@ -3073,6 +3178,7 @@ final class CorpusStore {
 
     /// Saves an audio file, then saves the node. Use this for voice captures.
     func addNodeWithAudio(_ node: Node, audioURL: URL, audioItemID: String, position: CGPoint) async {
+        if await newerFormatRefusesCapture() { return }   // 1.0r S0
         do {
             try await service.saveItemFile(
                 nodeID: node.id,
@@ -3099,6 +3205,7 @@ final class CorpusStore {
     #endif
 
     func addNode(_ node: Node, position: CGPoint) async {
+        if await newerFormatRefusesCapture() { return }   // 1.0r S0 — no new entries in a newer library
         // live-17 (2c) — no copy of `canvasLayout` before the awaits: a capture during the launch load copied the EMPTY
         // default and saved a layout holding only itself over every saved position. The position goes into the LIVE
         // layout after the save; it's persisted now if the layout has loaded, else the load merges and persists it.
@@ -3307,6 +3414,7 @@ final class CorpusStore {
     func endComposing(nodeID: String) { composingNodeIDs.remove(nodeID) }
 
     func createCaptureNode() async -> Node? {
+        if await newerFormatRefusesCapture() { return nil }   // 1.0r S0
         let now = Date()
         let node = Node(
             id: UUID().uuidString,
@@ -8856,7 +8964,7 @@ final class CorpusStore {
     /// "nothing close" state.
     func findRelevantBlocks(query: String, topK: Int = 10) async -> [BlockMatch] {
         guard let qvec = await CardEmbeddingService.shared.embed(query), !qvec.isEmpty else { return [] }
-        let candidateIDs = nodes.map { $0.id }
+        let candidateIDs = hidingPrivate(nodes).map { $0.id }   // 1.1-C — private entries stay out unless shown
         let matches = await blockEmbedding.findRelevantBlocks(
             queryVector: qvec,
             candidateNodeIDs: candidateIDs,
@@ -9539,6 +9647,57 @@ final class CorpusStore {
         await importFromAppGroupInbox()
     }
 
+    /// 1.1-C (C1) — the share sheet's "Existing entry" list (`ShareIndex` in the App Group): the user's own entries,
+    /// newest first, names only (private ones flagged; the sheet hides them unless unlocked). Written when AirPad goes
+    /// to the background, which is when a share from another app can happen.
+    func writeShareIndex() {
+        let entries = userNodesIncludingPrivate.filter { !$0.isMeta }
+            .sorted { $0.updatedAt > $1.updatedAt }
+            .prefix(ShareIndex.limit)
+            .map { n in
+                let name = n.title.trimmingCharacters(in: .whitespacesAndNewlines)
+                return ShareIndex.Entry(id: n.id, title: name.isEmpty ? (n.untitledDisplayText ?? "Untitled") : name,
+                                        updatedAt: n.updatedAt, isPrivate: n.isPrivate)
+            }
+        ShareIndex(entries: Array(entries)).save()
+    }
+
+    /// 1.1-C (C1) — a share added to an existing entry: copy its staged files into that entry, append the items (in
+    /// share order, after what's there), then the same follow-ups an import gets (audio transcripts, a link's page).
+    /// The entry keeps its title and summary. A target that no longer exists → the share becomes a new entry instead.
+    private func importShareAppend(_ rec: ShareAppendRecord, from dir: URL) async {
+        let itemsDir = dir.appendingPathComponent("items")
+        guard nodes.contains(where: { $0.id == rec.target }) else {
+            let now = Date()
+            let node = Node(id: UUID().uuidString, createdAt: now, updatedAt: now, title: "", summary: "", tags: [], mood: nil,
+                            isMeta: false, provenance: nil, threads: [], location: nil, items: rec.items, domain: nil,
+                            domainConfirmed: false, needsAIProcessing: true)
+            do { try await saveAndEnqueue(node) } catch { return }
+            if let files = try? FileManager.default.contentsOfDirectory(at: itemsDir, includingPropertiesForKeys: nil, options: .skipsHiddenFiles) {
+                for f in files {
+                    try? await service.saveItemFile(nodeID: node.id, itemID: f.deletingPathExtension().lastPathComponent,
+                                                    sourceURL: f, fileExtension: f.pathExtension)
+                }
+            }
+            nodes.insert(node, at: 0)
+            await enrichIfNeeded(nodeID: node.id, at: .committed)
+            await fetchAndApplyOGForImportedLinks(nodeID: node.id)
+            return
+        }
+        if let files = try? FileManager.default.contentsOfDirectory(at: itemsDir, includingPropertiesForKeys: nil, options: .skipsHiddenFiles) {
+            for f in files {
+                try? await service.saveItemFile(nodeID: rec.target, itemID: f.deletingPathExtension().lastPathComponent,
+                                                sourceURL: f, fileExtension: f.pathExtension)
+            }
+        }
+        await mutateNode(id: rec.target) { n in
+            n.items.append(contentsOf: rec.items)
+            n.updatedAt = Date()
+        }
+        await transcribeImportedAudio(nodeID: rec.target)
+        await fetchAndApplyOGForImportedLinks(nodeID: rec.target)
+    }
+
     private func importFromAppGroupInbox() async {
         guard let groupContainer = FileManager.default.containerURL(
             forSecurityApplicationGroupIdentifier: "group.com.doctorpresident.airpad"
@@ -9550,15 +9709,44 @@ final class CorpusStore {
             includingPropertiesForKeys: nil,
             options: .skipsHiddenFiles
         ) else { return }
+        // 1.0r S0 — shares wait in the inbox (untouched) while the library is newer than this build. This runs
+        // before the load, so check the entries' versions first when there is something to import.
+        if !dirs.isEmpty { await service.scanForNewerEntries() }
+        if LibraryFormatGuard.isReadOnly {
+            noteNewerFormat(refused: true)
+            print("[FormatGuard] \(dirs.count) share(s) held in the inbox — library is newer than this build")
+            return
+        }
 
         var importedIDs: [String] = []
         for dir in dirs {
             var isDir: ObjCBool = false
             guard FileManager.default.fileExists(atPath: dir.path, isDirectory: &isDir), isDir.boolValue else { continue }
 
+            // 1.1-C (C1) — "Save to: Existing entry": the share adds its items to an entry already in the Library.
+            if FileManager.default.fileExists(atPath: dir.appendingPathComponent(ShareAppendRecord.fileName).path) {
+                guard libraryLoaded else { continue }   // its entry isn't in memory yet: the post-load pass applies it
+                // Claim it (a rename is atomic): two passes (launch + foreground) never apply one record twice.
+                let claimed = dir.deletingLastPathComponent().appendingPathComponent(".claimed-" + dir.lastPathComponent)
+                guard (try? FileManager.default.moveItem(at: dir, to: claimed)) != nil else { continue }
+                if let data = try? Data(contentsOf: claimed.appendingPathComponent(ShareAppendRecord.fileName)),
+                   let rec = try? JSONDecoder.airPad.decode(ShareAppendRecord.self, from: data) {
+                    await importShareAppend(rec, from: claimed)
+                }
+                try? FileManager.default.removeItem(at: claimed)
+                continue
+            }
+
             let nodeFile = dir.appendingPathComponent("node.json")
             guard let data = try? Data(contentsOf: nodeFile),
-                  let node = try? JSONDecoder.airPad.decode(Node.self, from: data) else { continue }
+                  let node = try? JSONDecoder.airPad.decode(Node.self, from: data) else {
+                // 1.1-C (C1) — a share sheet left open (or killed) stages files with no record yet; after a day it's
+                // abandoned.
+                if !FileManager.default.fileExists(atPath: nodeFile.path),
+                   let made = (try? dir.resourceValues(forKeys: [.creationDateKey]))?.creationDate,
+                   Date().timeIntervalSince(made) > 86_400 { try? FileManager.default.removeItem(at: dir) }
+                continue
+            }
 
             // Skip if already imported
             guard !nodes.contains(where: { $0.id == node.id }) else {
@@ -9729,9 +9917,11 @@ final class CorpusStore {
     /// `-StubTranscription` launch arg returns a canned transcript so the Simulator logic-matrix can
     /// prove the WIRING without a real speech model (device proves transcription QUALITY).
     nonisolated private static func transcribeAudioFile(at url: URL) async -> (text: String, unavailable: Bool) {
+        #if DEBUG   // 1.0r S2b hook scan: this was compiled into Release; now DEBUG-only like every other hook
         if CommandLine.arguments.contains("-StubTranscription") {
             return ("stub transcript for share-import wiring", false)
         }
+        #endif
         if SFSpeechRecognizer.authorizationStatus() != .authorized {
             let status = await withCheckedContinuation { (cont: CheckedContinuation<SFSpeechRecognizerAuthorizationStatus, Never>) in
                 SFSpeechRecognizer.requestAuthorization { cont.resume(returning: $0) }

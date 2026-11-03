@@ -192,6 +192,8 @@ struct CanvasView: View {
             print("[Territory] No territories (no anchors / user collections) — trigger: \(trigger)")
             return
         }
+        // 1.0r S1d — nothing to form from zero entries; an empty formation would hold the corpus that lands next.
+        guard !nodes.isEmpty else { territory = nil; return }
         // Sample-map FREEZE — a frozen scope NEVER fresh-forms: it restores the BAKED snapshot verbatim
         // when the corpus matches its signature, and otherwise DEFERS (keeps the current territory) rather
         // than forming with wrong slots. This closes the fresh-install flake: the async seed re-forms
@@ -314,7 +316,10 @@ struct CanvasView: View {
         let sig = territorySignature(nodes: nodes, basis: .card)
         let scoped = store.territoryLayout(for: scope)   // Brief Z Z2 — this scope's snapshot
         guard TerritoryLayoutRestore.canRestore(scoped, currentCardSignature: sig),
-              let snap = scoped else { return nil }
+              let snap = scoped else {
+            print("[Territory] saved layout not restorable for \(nodes.count) entries — saved=\(scoped?.signature ?? "none") current=\(sig)")
+            return nil
+        }
         var layout = TagTerritoryLayout.Layout()
         layout.positions = snap.positions
         layout.nodeTerritory = snap.nodeTerritory
@@ -670,6 +675,10 @@ struct CanvasView: View {
         .onChange(of: store.tags) { _, _ in
             syncScene(nodes: store.visibleNodes(in: scope))
         }
+        // 1.1-C (C3) — "Show private" / hidden again, or an entry flagged Private: the Map drops or regains it.
+        .onChange(of: store.hiddenNodeIDs) { _, _ in
+            syncScene(nodes: store.visibleNodes(in: scope))
+        }
     }
 
     private var canvasWithLateObservers: some View {
@@ -689,6 +698,13 @@ struct CanvasView: View {
                 let sk = store.canvasLayout.positions.mapValues { CGPoint(x: $0.x, y: -$0.y) }
                 scene.rearrangeToPositions(sk)
                 scene.applyTerritoryColors([:])
+            } else if let restored = restoredTerritory(nodes: nodes) {
+                // 1.0r S1d — the anchors ARRIVING with the library at launch (none → the loaded set) is not a
+                // user's anchor change: the saved layout still matches the whole corpus, so it is restored, not
+                // re-formed. (A real designate / demote changes the anchor set, so the signature can't match.)
+                territory = restored
+                print("[Territory] anchor-change matches the saved layout — restored, no re-form")
+                syncScene(nodes: nodes)
             } else {
                 formTerritories(nodes: nodes, trigger: "anchor-change")
                 // ★ Route through syncScene (not just rearrangeToPositions) so the freshly-formed
@@ -849,11 +865,18 @@ struct CanvasView: View {
 
     /// The Map's SwiftUI ground (behind the SpriteKit view; the dark grid paints its own opaque ground over it).
     /// live-39: a ground dialled in the TestFlight tuner shows here too, so the mount frame matches.
-    private var mapGround: Color {
+    /// 1.1-B — a Pro custom background shows here too (the grid paints the same over it).
+    @ViewBuilder private var mapGround: some View {
         #if DEBUG || TESTFLIGHT
-        if mapColorScheme == .dark, let m = AppearanceTuning.mapDark, m.ground != MapDarkTuning.today.ground { return m.ground.color }
+        if mapColorScheme == .dark, MapGround.override(light: false) == nil, let m = AppearanceTuning.mapDark,
+           m.ground != MapDarkTuning.today.ground {
+            m.ground.color
+        } else {
+            AppearancePalette.libraryBackground(dark: mapColorScheme == .dark)
+        }
+        #else
+        AppearancePalette.libraryBackground(dark: mapColorScheme == .dark)
         #endif
-        return AppearancePalette.mapBackground(dark: mapColorScheme == .dark)
     }
 
     private var canvasZStack: some View {
@@ -913,7 +936,7 @@ struct CanvasView: View {
                             Image(systemName: "chevron.left")
                                 .font(.system(size: 12, weight: .semibold))
                             Text(cluster.title)
-                                .font(.system(size: 14, weight: .medium))
+                                .font(appFont.font(size: 14, weight: .medium, relativeTo: .subheadline))
                         }
                         // Light-mode convergence — adaptive ink (dark `#FFFFFF`,
                         // light `#232A2E`) on the already-adaptive `.ultraThinMaterial`
@@ -1357,7 +1380,9 @@ struct CanvasView: View {
             // best-fit centroid; every existing node keeps its frozen position,
             // tint, and territory. Re-formation happens only on deliberate
             // triggers (see `formTerritories`).
-            if territory == nil {
+            // 1.0r S1d — never form from ZERO entries (a fresh install's Map mounts before the sample is seeded):
+            // an empty formation is non-nil, so the seeded corpus would land in it with no positions (the pile).
+            if territory == nil, !nodes.isEmpty {
                 // MAP-RELAYOUT FIX: restore the persisted card-basis geography
                 // verbatim when it still matches the inputs (placed instantly
                 // below, no reform, no animation). The common launch path.
@@ -1633,6 +1658,7 @@ struct CanvasView: View {
 // MARK: - Node detail overlay (animated gradient card, morphs from circle)
 
 struct NodeDetailOverlay: View {   // internal: live-20 (3) stills (TextRunsGallery)
+    @Environment(\.appBodyFont) private var appFont   // 1.1-A type pass
     let node: Node
     @Bindable var canvasState: CanvasState
     @Binding var isDismissing: Bool
@@ -1686,7 +1712,7 @@ struct NodeDetailOverlay: View {   // internal: live-20 (3) stills (TextRunsGall
                 VStack(alignment: .leading, spacing: 12) {
                     // Title
                     Text(node.title.isEmpty ? (node.untitledDisplayText ?? "Untitled") : node.title)
-                        .font(.system(size: 24, weight: .semibold))
+                        .font(appFont.font(size: 24, weight: .semibold, relativeTo: .title1))
                         .foregroundStyle(AppearancePalette.ink)
                         .lineLimit(2)
                         .multilineTextAlignment(.leading)
@@ -1695,7 +1721,7 @@ struct NodeDetailOverlay: View {   // internal: live-20 (3) stills (TextRunsGall
                     // Summary
                     if !node.summary.isEmpty {
                         Text(MarkdownPlain.label(node.summary))   // live-29 (B4)
-                            .font(.system(size: 16))
+                            .font(appFont.font(size: 16, relativeTo: .subheadline))
                             .foregroundStyle(AppearancePalette.ink.opacity(0.85))
                             .lineLimit(3)
                             .multilineTextAlignment(.leading)
@@ -1709,7 +1735,7 @@ struct NodeDetailOverlay: View {   // internal: live-20 (3) stills (TextRunsGall
                         ItemCountsRow(items: node.items)
 
                         Text("\(node.createdAt, style: .relative) ago")
-                            .font(.caption)
+                            .font(appFont.font(size: 12, relativeTo: .caption1))
                             .foregroundStyle(AppearancePalette.ink.opacity(0.65))
                     }
                     .frame(maxWidth: .infinity, alignment: .leading)
@@ -1797,6 +1823,7 @@ struct NodeDetailOverlay: View {   // internal: live-20 (3) stills (TextRunsGall
 // MARK: - Item counts row
 
 private struct ItemCountsRow: View {
+    @Environment(\.appBodyFont) private var appFont   // 1.1-A type pass
     let items: [NodeItem]
 
     private var counts: (text: Int, image: Int, audio: Int, video: Int, link: Int, document: Int) {
@@ -1835,7 +1862,7 @@ private struct ItemCountsRow: View {
 
     private func chip(_ icon: String, _ count: Int) -> some View {
         Label("\(count)", systemImage: icon)
-            .font(.caption)
+            .font(appFont.font(size: 12, relativeTo: .caption1))
             // Light-mode convergence — adaptive ink (was hardcoded `.white`).
             .foregroundStyle(AppearancePalette.ink.opacity(0.55))
     }

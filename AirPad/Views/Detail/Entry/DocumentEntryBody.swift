@@ -58,6 +58,7 @@ import UIKit
 /// `.task` would otherwise race with migration and fire before
 /// `documentItems[0]` exists.
 struct DocumentEntryBody: View {
+    @Environment(\.appBodyFont) private var appFont   // 1.1-A type pass
 
     let item: NodeItem
     let nodeID: String
@@ -144,17 +145,17 @@ struct DocumentEntryBody: View {
     private var textBlock: some View {
         VStack(alignment: .leading, spacing: 2) {
             Text(displayTitle)
-                .font(.subheadline.weight(.medium))
+                .font(appFont.font(size: 15, weight: .medium, relativeTo: .subheadline))
                 .foregroundStyle(AppearancePalette.ink)
                 .lineLimit(2)
             if let metricsLine {
                 Text(metricsLine)
-                    .font(.caption)
+                    .font(appFont.font(size: 12, relativeTo: .caption1))
                     .foregroundStyle(AppearancePalette.ink.opacity(0.5))
                     .lineLimit(1)
             } else if let description = item.description {
                 Text(description)
-                    .font(.caption)
+                    .font(appFont.font(size: 12, relativeTo: .caption1))
                     .foregroundStyle(AppearancePalette.ink.opacity(0.5))
                     .lineLimit(2)
             }

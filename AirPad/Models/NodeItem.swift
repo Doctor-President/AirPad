@@ -223,7 +223,7 @@ struct NodeItem: Codable, Identifiable, Equatable {
     /// v1→v2 entry migration). Optional + decode-tolerant: nil on everything else.
     var originalName: String?
 
-    enum CodingKeys: String, CodingKey {
+    enum CodingKeys: String, CodingKey, CaseIterable {   // CaseIterable: LibraryFormatGuard.knownItemKeys
         case id, type, content, file, description, transcript, url, title, preview
         case createdAt = "created_at"
         case durationSeconds = "duration_seconds"

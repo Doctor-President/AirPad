@@ -8,6 +8,7 @@ import SwiftUI
 /// Librarian-has-no-stack problem and makes the two entry points open
 /// a bit-identical surface.
 struct ChatsListView: View {
+    @Environment(\.appBodyFont) private var appFont   // 1.1-A type pass
 
     @Environment(AppRouter.self) private var router
     @Environment(CorpusStore.self) private var store
@@ -83,7 +84,7 @@ struct ChatsListView: View {
 
     private var emptyState: some View {
         Text("No chats yet")
-            .font(.system(size: 15))
+            .font(appFont.font(size: 15, relativeTo: .subheadline))
             .foregroundStyle(AppearancePalette.ink.opacity(0.45))
             .frame(maxWidth: .infinity, maxHeight: .infinity)
     }
@@ -193,19 +194,19 @@ struct ChatsListView: View {
         VStack(alignment: .leading, spacing: 4) {
             HStack(alignment: .firstTextBaseline, spacing: 8) {
                 Text(displayTitle(for: chat))
-                    .font(.system(size: 15, weight: .semibold))
+                    .font(appFont.font(size: 15, weight: .semibold, relativeTo: .subheadline))
                     .foregroundStyle(AppearancePalette.ink)
                     .lineLimit(1)
                 Spacer(minLength: 8)
                 Text(relativeTime(chat.updatedAt))
-                    .font(.system(size: 12))
+                    .font(appFont.font(size: 12, relativeTo: .caption1))
                     .foregroundStyle(AppearancePalette.ink.opacity(0.4))
             }
             HStack(spacing: 6) {
                 // Brief AH2 — the room the chat belongs to (labelling only, not a filter).
                 if let room = chat.room, !room.isEmpty {
                     Text(room)
-                        .font(.system(size: 11, weight: .medium))
+                        .font(appFont.font(size: 11, weight: .medium, relativeTo: .caption2))
                         .foregroundStyle(AppearancePalette.ink.opacity(0.45))
                         .padding(.horizontal, 6)
                         .padding(.vertical, 2)
@@ -214,7 +215,7 @@ struct ChatsListView: View {
                         .layoutPriority(1)
                 }
                 Text(preview(for: chat))
-                    .font(.system(size: 13))
+                    .font(appFont.font(size: 13, relativeTo: .footnote))
                     .foregroundStyle(AppearancePalette.ink.opacity(0.55))
                     .lineLimit(1)
             }

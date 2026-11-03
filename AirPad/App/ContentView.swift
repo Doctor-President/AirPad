@@ -26,10 +26,17 @@ struct ContentView: View {
             // Brief AT5 — pin the window appearance to the user's choice (System = follow iOS). Live.
             AppearanceApplier(style: (AppearanceOverride(rawValue: appearanceRaw) ?? .system).uiStyle)
                 .frame(width: 0, height: 0)
+            // 1.1-A (A6) — the Face ID lock + app-switcher cover, in their own window above everything.
+            AppLockInstaller()
             #if DEBUG || TESTFLIGHT
             // live-22 (2) — the on-device appearance tuner floats in its own pass-through window, over every view,
             // sheet and the Librarian panel (TestFlight only; in DEBUG only with `-AppearanceTuner YES`).
             if AppearanceTuning.isLive { AppearanceTunerInstaller().frame(width: 0, height: 0) }
+            #endif
+            #if PANBENCH && !DEBUG
+            Color.clear.frame(width: 0, height: 0).onAppear {   // bench builds: `-OpenMap` (DEBUG has its own)
+                if ProcessInfo.processInfo.arguments.contains("-OpenMap"), router.entryMode != .canvas { router.entryMode = .canvas }
+            }
             #endif
             #if DEBUG
             // `-OpenCardView` companion — `entryMode` defaults to `.recents`, so the
@@ -199,6 +206,15 @@ struct ContentView: View {
         // at the root so both entry points present the bit-identical
         // surface, and so the sheet floats over the Librarian's
         // FloatingPanel regardless of entry mode.
+        // 1.0r S0 — the read-only banner on every screen, and the message for a refused capture or save.
+        // Below the top chrome row (back / title / sort sit in the first ~56 pt), and taps pass through to it.
+        .overlay(alignment: .top) {
+            if store.libraryIsNewerFormat { NewerLibraryBanner().padding(.top, 56).allowsHitTesting(false) }
+        }
+        .alert(LibraryFormatGuard.message, isPresented: Binding(
+            get: { store.newerFormatNotice }, set: { store.newerFormatNotice = $0 })) {
+            Button("OK", role: .cancel) {}
+        }
         .sheet(isPresented: $routerBinding.showChatsList) {
             ChatsListView()
                 .environment(store)
@@ -328,6 +344,10 @@ struct ContentView: View {
         .onChange(of: router.isCapturing) { _, _ in
             applyLibrarianVisibility(animated: true)
         }
+        // 1.1-C fix-up (1) — while the ≡ menu is open the faded Librarian takes no touches (position unchanged).
+        .onChange(of: router.slideOutMenuOpen) { _, _ in
+            applyLibrarianInteraction()
+        }
         // Detail-view coexistence. ContentView's panel visibility is keyed
         // on entryMode, but a node detail is pushed inside the host
         // surface's NavigationStack without changing entryMode — so a
@@ -446,12 +466,19 @@ struct ContentView: View {
         // can't reach that UIKit view, so make the whole panel non-interactive at
         // the controller level when suppressed: touches then fall through to the
         // surface below. Instant (not animated), so it can't be raced.
-        panelState.controller?.view.isUserInteractionEnabled = !librarianSuppressed
+        applyLibrarianInteraction()
         if librarianSuppressed {
             panelState.duck(animated: animated)
         } else {
             panelState.raiseToPeek(animated: animated)
         }
+    }
+
+    /// The panel's UIKit view takes touches only when the Librarian is up AND the ≡ menu is closed. 1.1-C fix-up (1):
+    /// the open menu faded the surface with SwiftUI's `.allowsHitTesting(false)`, which can't reach the panel's
+    /// surfaceView (same trap as BUG 11), so the faded surface still swallowed taps on the menu's lower rows (Settings).
+    private func applyLibrarianInteraction() {
+        panelState.controller?.view.isUserInteractionEnabled = !librarianSuppressed && !router.slideOutMenuOpen
     }
 
     /// Restore panel visibility for the live surface. Shared by capture-overlay

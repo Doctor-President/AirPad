@@ -7,6 +7,7 @@ import AVFoundation
 import SwiftUI
 
 struct HostPairingSheet: View {
+    @Environment(\.appBodyFont) private var appFont   // 1.1-A type pass
     @Environment(\.dismiss) private var dismiss
 
     @State private var existing: HostPairing? = HostPairing.load()
@@ -46,7 +47,7 @@ struct HostPairingSheet: View {
 
     @ViewBuilder private var pairing: some View {
         Text("Scan the QR code shown by the AirPad Host on your Mac — or paste the pairing code.")
-            .font(.subheadline)
+            .font(appFont.font(size: 15, relativeTo: .subheadline))
             .foregroundStyle(AppearancePalette.ink.opacity(0.7))
 
         if cameraAuthorized {
@@ -61,7 +62,7 @@ struct HostPairingSheet: View {
                 }
             } label: {
                 Label("Enable camera to scan", systemImage: "camera")
-                    .font(.subheadline.weight(.medium))
+                    .font(appFont.font(size: 15, weight: .medium, relativeTo: .subheadline))
                     .foregroundStyle(AppearancePalette.ink.opacity(0.8))
                     .padding(.vertical, 12).frame(maxWidth: .infinity)
                     .background(AppearancePalette.ink.opacity(0.07))
@@ -71,7 +72,7 @@ struct HostPairingSheet: View {
 
         VStack(alignment: .leading, spacing: 6) {
             Text("Or paste the pairing code")
-                .font(.caption.weight(.semibold)).foregroundStyle(AppearancePalette.ink.opacity(0.4))
+                .font(appFont.font(size: 12, weight: .semibold, relativeTo: .caption1)).foregroundStyle(AppearancePalette.ink.opacity(0.4))
             HStack {
                 TextField("{ \"tunnelURL\": … }", text: $pasteCode, axis: .vertical)
                     .font(.footnote.monospaced())
@@ -82,13 +83,13 @@ struct HostPairingSheet: View {
                     .autocorrectionDisabled()
                     .textInputAutocapitalization(.never)
                 Button("Connect") { accept(pasteCode) }
-                    .font(.subheadline.weight(.semibold))
+                    .font(appFont.font(size: 15, weight: .semibold, relativeTo: .subheadline))
                     .disabled(pasteCode.isEmpty)
             }
         }
 
         if let e = error {
-            Text(e).font(.caption).foregroundStyle(.orange.opacity(0.85))
+            Text(e).font(appFont.font(size: 12, relativeTo: .caption1)).foregroundStyle(.orange.opacity(0.85))
         }
     }
 
@@ -101,11 +102,11 @@ struct HostPairingSheet: View {
             confirmForget = true
         } label: {
             Label("Forget this Mac", systemImage: "xmark.circle")
-                .font(.subheadline.weight(.medium))
+                .font(appFont.font(size: 15, weight: .medium, relativeTo: .subheadline))
         }
         .forgetMacAlert(isPresented: $confirmForget) { HostCatalog.shared.forgetMac(); existing = nil }
         Text("Re-scan a new QR to pair with a different computer (this rotates the secret).")
-            .font(.caption2).foregroundStyle(AppearancePalette.ink.opacity(0.4))
+            .font(appFont.font(size: 11, relativeTo: .caption2)).foregroundStyle(AppearancePalette.ink.opacity(0.4))
         Divider().overlay(AppearancePalette.ink.opacity(0.1))
         pairing // allow re-pairing inline
     }
@@ -115,7 +116,7 @@ struct HostPairingSheet: View {
             title: "Connected to \(host)",
             subtitle: "You can now chat with your computer's model from anywhere.")
         Button("Done") { dismiss() }
-            .font(.subheadline.weight(.semibold))
+            .font(appFont.font(size: 15, weight: .semibold, relativeTo: .subheadline))
             .padding(.vertical, 12).frame(maxWidth: .infinity)
             .background(AppearancePalette.ink.opacity(0.09))
             .clipShape(RoundedRectangle(cornerRadius: 12))
@@ -125,8 +126,8 @@ struct HostPairingSheet: View {
         HStack(alignment: .top, spacing: 12) {
             Image(systemName: icon).foregroundStyle(tint).font(.title3)
             VStack(alignment: .leading, spacing: 3) {
-                Text(title).font(.subheadline.weight(.semibold)).foregroundStyle(AppearancePalette.ink)
-                Text(subtitle).font(.caption).foregroundStyle(AppearancePalette.ink.opacity(0.6))
+                Text(title).font(appFont.font(size: 15, weight: .semibold, relativeTo: .subheadline)).foregroundStyle(AppearancePalette.ink)
+                Text(subtitle).font(appFont.font(size: 12, relativeTo: .caption1)).foregroundStyle(AppearancePalette.ink.opacity(0.6))
             }
             Spacer()
         }

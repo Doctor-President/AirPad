@@ -21,6 +21,7 @@ import UIKit
 /// release commits a single `CorpusStore.moveEntry` (the snapshot pattern,
 /// per close-note in `sounding-board/2026-05-17-stage-3-1b-reorder-cleanup-close.md`).
 struct EntryCard: View {
+    @Environment(\.appBodyFont) private var appFont   // 1.1-A type pass
 
     let item: NodeItem
     let nodeID: String
@@ -607,7 +608,7 @@ struct EntryCard: View {
 
     private func metaLabel(_ text: String) -> some View {
         Text(text)
-            .font(.system(size: 12))
+            .font(appFont.font(size: 12, relativeTo: .caption1))
             .foregroundStyle(AppearancePalette.ink.opacity(0.30))
             .monospacedDigit()
     }
@@ -1116,6 +1117,7 @@ extension View {
 /// path (legacy `file == nil` migrated to `mediaItems: []`). Commit 3
 /// owns the proper empty-state UX inside `SingleMediaBody`.
 private struct EmptyMediaPlaceholder: View {
+    @Environment(\.appBodyFont) private var appFont   // 1.1-A type pass
     var body: some View {
         RoundedRectangle(cornerRadius: 12)
             .fill(AppearancePalette.ink.opacity(0.06))
@@ -1126,7 +1128,7 @@ private struct EmptyMediaPlaceholder: View {
                         .font(.title3)
                         .foregroundStyle(AppearancePalette.ink.opacity(0.35))
                     Text("No media")
-                        .font(.caption)
+                        .font(appFont.font(size: 12, relativeTo: .caption1))
                         .foregroundStyle(AppearancePalette.ink.opacity(0.45))
                 }
             }

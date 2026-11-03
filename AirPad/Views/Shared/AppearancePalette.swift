@@ -107,6 +107,12 @@ enum AppearancePalette {
         dynamic(dark: "FFFFFF", light: "232A2E")
     }
 
+    /// 1.1-B — the ground behind the library views (cards, list, grid) and the Map's SwiftUI backing: the Pro custom
+    /// background when this appearance has one, else today's `mapBackground` exactly.
+    @ViewBuilder static func libraryBackground(dark: Bool) -> some View {
+        if let g = MapGround.override(light: !dark) { CustomGroundView(side: g) } else { mapBackground(dark: dark) }
+    }
+
     /// Ink for text placed on a card FACE (over the warm-cream card art), at a
     /// given opacity. Dark reproduces the shipped warm-cream (`#FFF9F0`)
     /// BYTE-IDENTICAL; light flips to the appearance `ink` (`#232A2E`) so the
@@ -300,22 +306,120 @@ extension View {
         .compositingGroup()
     }
 
-    /// The dashboard pane surface — the Today card's exact treatment, promoted
-    /// out of `TodayCardView` so Today / Recents / Collections share ONE surface
-    /// and cannot drift (#3 fix-up). A rounded `.thinMaterial` fill (the lava
-    /// lamp reads THROUGH it, identically in all three panes) + a hairline white
-    /// rim, and NO shadow. `.thinMaterial` is adaptive, so light/dark parity is
-    /// automatic — the DARK pane keeps the same frosted material + `white@0.12`
-    /// rim, byte-identical to the dark Today card.
+    /// The dashboard pane surface — ONE modifier so Today / Recents / Collections share one surface and cannot drift
+    /// (#3 fix-up). 1.1-A fix-up (2): everyone gets Liquid Glass `.regular` (T's pick, candidate 1); AirPad Pro adds the
+    /// Surface picker (`DashboardSurfaceChoice`, Settings / the Appearance panel). The surface owns its own edge.
     func dashboardPaneSurface(cornerRadius: CGFloat = 22) -> some View {
-        background(
-            RoundedRectangle(cornerRadius: cornerRadius, style: .continuous)
-                .fill(.thinMaterial)
-                .overlay(
-                    RoundedRectangle(cornerRadius: cornerRadius, style: .continuous)
-                        .strokeBorder(Color.white.opacity(0.12), lineWidth: 1)
-                )
-        )
+        modifier(DashboardSurface(cornerRadius: cornerRadius))
+    }
+}
+
+/// 1.1-B fix-up (D) — dark Glass's separation, after light Glass ("light crisp, almost frosted, but still very
+/// transparent"): a 1 pt hairline, white 0.28 at the top fading to 0.10 down the sides and 0.16 at the bottom, and a frost
+/// band just inside the edge (white 0.07, ~10 pt, soft). Drawn under the text; the middle of the pane stays clear.
+struct DarkGlassEdge: View {
+    let shape: RoundedRectangle
+    var body: some View {
+        ZStack {
+            shape.stroke(Color.white.opacity(DarkGlassEdge.frost), lineWidth: 14).blur(radius: 7).clipShape(shape)
+            shape.strokeBorder(LinearGradient(stops: [.init(color: .white.opacity(0.28), location: 0),
+                                                      .init(color: .white.opacity(0.10), location: 0.45),
+                                                      .init(color: .white.opacity(0.16), location: 1)],
+                                              startPoint: .top, endPoint: .bottom), lineWidth: 1)
+        }
+        .allowsHitTesting(false)
+    }
+    static let frost: Double = {
+        #if DEBUG
+        if let s = UserDefaults.standard.string(forKey: "DashGlassDarkFrost"), let v = Double(s) { return v }
+        #endif
+        return 0.07
+    }()
+}
+
+/// 1.1-A fix-up (2) — the Dashboard panes' surface, from the user's pick (`DashboardSurfaceChoice.effective`):
+///   thin  = the 1.0 surface: `.thinMaterial` + `white@0.12` hairline.
+///   glass = Liquid Glass `.regular` (`glassEffect(.regular, in:)`), no hairline (the glass draws its own edge). Default.
+///   clear = Liquid Glass `.clear` tinted: dark `#0D0D0D` @ 0.30, light `#FBF9F5` @ 0.45 (the lamp shows through more).
+///   panel = tinted mostly-opaque panel: dark `#13161B` @ 0.88 + `white@0.10` hairline; light `#FBF9F5` @ 0.90 + `#DCD6CC`.
+/// `forced` draws one surface regardless of the pick (the picker's swatches). DEBUG `-DashSurfaceCandidate <0…3>`
+/// forces one for stills.
+struct DashboardSurface: ViewModifier {
+    let cornerRadius: CGFloat
+    var forced: DashboardSurfaceChoice? = nil
+    @Environment(\.colorScheme) private var scheme
+    @AppStorage(DashboardSurfaceChoice.storageKey(dark: true)) private var darkRaw = DashboardSurfaceChoice.legacyRaw
+    @AppStorage(DashboardSurfaceChoice.storageKey(dark: false)) private var lightRaw = DashboardSurfaceChoice.legacyRaw
+    private var pickedRaw: Int { scheme == .dark ? darkRaw : lightRaw }   // 1.1-B fix-up (C): per appearance
+    #if DEBUG
+    static let debugCandidate: DashboardSurfaceChoice? = {
+        let a = ProcessInfo.processInfo.arguments
+        guard let i = a.firstIndex(of: "-DashSurfaceCandidate"), i + 1 < a.count, let n = Int(a[i + 1]) else { return nil }
+        return DashboardSurfaceChoice(rawValue: n)
+    }()
+    #endif
+    private static func hex(_ h: UInt32, _ alpha: Double) -> Color {
+        Color(red: Double((h >> 16) & 0xFF) / 255, green: Double((h >> 8) & 0xFF) / 255,
+              blue: Double(h & 0xFF) / 255, opacity: alpha)
+    }
+    private var shape: RoundedRectangle { RoundedRectangle(cornerRadius: cornerRadius, style: .continuous) }
+    private var choice: DashboardSurfaceChoice { forced ?? Self.drawn(pickedRaw: pickedRaw) }
+    /// The surface the Dashboard draws for a stored pick (DEBUG `-DashSurfaceCandidate` wins) — shared with the text floors
+    /// (`DashSecondaryInk`), so the ink always matches the surface under it.
+    static func drawn(pickedRaw: Int) -> DashboardSurfaceChoice {
+        #if DEBUG
+        if let c = debugCandidate { return c }
+        #endif
+        return DashboardSurfaceChoice.effective(pickedRaw: pickedRaw, isPro: ProStore.shared.isPro)
+    }
+    /// 1.1-B (T: "Dim the dark Glass a bit") — a black tint on the DARK Glass surface only, so its brightest background
+    /// drops enough for body text to gain contrast and the secondary greys to sit back below body at ≥ 4.5:1. DEBUG
+    /// `-DashGlassDarkTint <t>` sweeps it.
+    static let glassDarkTint: Double = {
+        #if DEBUG
+        if let s = UserDefaults.standard.string(forKey: "DashGlassDarkTint"), let v = Double(s) { return v }
+        #endif
+        return bakedGlassDarkTint
+    }()
+    static let bakedGlassDarkTint = 0.27   // swept: 0.25 → greys need ≤ 0.76 (one run spiked), 0.27 → ≤ 0.68, 0.30 → ≤ 0.64
+    /// 1.1-B fix-up (D) — dark Glass's edge (`DarkGlassEdge`); DEBUG `-DashGlassDarkEdge NO` draws the 1.1-B surface.
+    static let glassDarkEdge: Bool = {
+        #if DEBUG
+        if UserDefaults.standard.object(forKey: "DashGlassDarkEdge") != nil { return UserDefaults.standard.bool(forKey: "DashGlassDarkEdge") }
+        #endif
+        return true
+    }()
+
+    /// 1.1-B — over a custom background, the see-through surfaces' text picks its ink by the background's rule; Solid keeps
+    /// today's ink (its own opaque fill).
+    @ViewBuilder func body(content: Content) -> some View {
+        let dark = scheme == .dark
+        let content = content.onCustomGround(choice != .panel, pane: true)   // the pane's text, not its glass
+        switch choice {
+        case .glass:
+            if dark {
+                // 1.1-B fix-up (D) — light Glass's crisp, slightly frosted edge for dark Glass (T: dark read "crystal clear"):
+                // a hairline brighter at the top + a faint frost just inside the edge, both behind the text; the colour
+                // boost (the black tint) is kept.
+                content
+                    .background { if Self.glassDarkEdge { DarkGlassEdge(shape: shape) } }
+                    .glassEffect(Self.glassDarkTint > 0 ? .regular.tint(Color.black.opacity(Self.glassDarkTint)) : .regular, in: shape)
+            } else {
+                content.glassEffect(.regular, in: shape)
+            }
+        case .clear:
+            content.glassEffect(.clear.tint(dark ? Self.hex(0x0D0D0D, 0.30) : Self.hex(0xFBF9F5, 0.45)), in: shape)
+        case .panel:
+            content.background(
+                shape.fill(dark ? Self.hex(0x13161B, 0.88) : Self.hex(0xFBF9F5, 0.90))
+                    .overlay(shape.strokeBorder(dark ? Color.white.opacity(0.10) : Self.hex(0xDCD6CC, 1), lineWidth: 1))
+            )
+        case .thin:
+            content.background(
+                shape.fill(.thinMaterial)
+                    .overlay(shape.strokeBorder(Color.white.opacity(0.12), lineWidth: 1))
+            )
+        }
     }
 }
 
@@ -407,3 +511,67 @@ struct AppearanceApplier: UIViewRepresentable {
     }
 }
 
+
+
+// MARK: - 1.1-B custom background
+
+/// The Pro custom background as a view: one colour, or the two stops across the screen exactly as the Map's grid shader
+/// draws them (t = 0.5 + dot(offset, dir) / (|w·dir.x| + |h·dir.y|), offset from the centre, y up).
+struct CustomGroundView: View {
+    let side: MapGroundSide
+    private func color(_ c: SIMD3<Float>) -> Color { Color(red: Double(c.x), green: Double(c.y), blue: Double(c.z)) }
+    var body: some View {
+        if side.gradient {
+            GeometryReader { geo in
+                let w = Float(geo.size.width), h = Float(geo.size.height), d = side.direction
+                let ext = max(abs(w * d.x) + abs(h * d.y), 1)
+                // the offsets where t = 0 and t = 1, as unit points (y down)
+                let p0 = -d * ext / 2, p1 = d * ext / 2
+                LinearGradient(colors: [color(side.colorRGB), color(side.color2RGB)],
+                               startPoint: UnitPoint(x: CGFloat(0.5 + p0.x / w), y: CGFloat(0.5 - p0.y / h)),
+                               endPoint: UnitPoint(x: CGFloat(0.5 + p1.x / w), y: CGFloat(0.5 - p1.y / h)))
+            }
+        } else {
+            color(side.colorRGB)
+        }
+    }
+}
+
+/// 1.1-B — marks content whose text sits directly on the background. With a Pro custom background, its text takes the ink
+/// the contrast rule picks for that background (`MapGround.inkPick`, the orb titles' p80 rule): `AppearancePalette.ink`
+/// is white in Dark and #232A2E in Light — exactly the rule's two inks — so the content is drawn in the scheme whose ink
+/// the rule picked. Without a custom background (or `on` false) nothing changes. Use it on text, not on surfaces: a
+/// material inside would follow the flipped scheme.
+struct OnCustomGround: ViewModifier {
+    var on = true
+    var pane = false   // the text sits on a see-through pane over the background (judged against the pane, `paneOver`)
+    @Environment(\.colorScheme) private var scheme
+    func body(content: Content) -> some View {
+        if on, let p = MapGround.inkPick(light: scheme == .light, pane: pane) {
+            content.environment(\.colorScheme, p.lightInk ? .dark : .light)
+                .environment(\.groundInkFloor, MapGround.inkFloor(light: scheme == .light, pane: pane) ?? 0)
+        } else {
+            content
+        }
+    }
+}
+extension View {
+    func onCustomGround(_ on: Bool = true, pane: Bool = false) -> some View { modifier(OnCustomGround(on: on, pane: pane)) }
+    /// Fainter text on the background: `AppearancePalette.ink` at `opacity`, raised on a custom background to the
+    /// opacity that reaches 4.5:1 there (`MapGround.inkFloor`, set by `onCustomGround`). Unchanged without one.
+    func groundInk(_ opacity: Double) -> some View { modifier(GroundInk(opacity: opacity)) }
+}
+/// 1.1-B (T: "floors on custom backgrounds") — see `groundInk`.
+struct GroundInk: ViewModifier {
+    let opacity: Double
+    @Environment(\.groundInkFloor) private var floor
+    func body(content: Content) -> some View { content.foregroundStyle(AppearancePalette.ink.opacity(max(opacity, floor))) }
+}
+private struct GroundInkFloorKey: EnvironmentKey { static let defaultValue = 0.0 }
+extension EnvironmentValues {
+    /// The 4.5:1 opacity floor for text on a custom background (0 = none; set by `onCustomGround`).
+    var groundInkFloor: Double {
+        get { self[GroundInkFloorKey.self] }
+        set { self[GroundInkFloorKey.self] = newValue }
+    }
+}

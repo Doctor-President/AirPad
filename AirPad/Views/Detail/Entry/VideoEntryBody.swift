@@ -5,6 +5,7 @@ import AVKit
 /// an `EntryCard`. Same lazy file-URL pattern as `ImageEntryBody`; once
 /// resolved we hand it to `VideoPlayer(AVPlayer)`.
 struct VideoEntryBody: View {
+    @Environment(\.appBodyFont) private var appFont   // 1.1-A type pass
 
     let item: NodeItem
     let nodeID: String
@@ -27,7 +28,7 @@ struct VideoEntryBody: View {
             }
             if let transcript = item.transcript, !transcript.isEmpty {
                 Text(transcript)
-                    .font(.caption)
+                    .font(appFont.font(size: 12, relativeTo: .caption1))
                     .foregroundStyle(AppearancePalette.ink.opacity(0.55))
                     .padding(.horizontal, 4)
             }

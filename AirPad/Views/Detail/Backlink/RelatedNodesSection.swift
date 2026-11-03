@@ -38,7 +38,7 @@ struct RelatedNodesSection: View {
         let conns: [NodeConnection] = (node?.connections ?? []).sorted { $0.createdAt > $1.createdAt }
         var out: [(conn: NodeConnection, target: Node)] = []
         for c in conns {
-            if let target = store.nodes.first(where: { $0.id == c.nodeID }) {
+            if let target = store.nodes.first(where: { $0.id == c.nodeID }), !store.isHidden(target) {   // 1.1-C
                 out.append((c, target))
             }
         }
@@ -113,7 +113,7 @@ struct RelatedNodesSection: View {
                     Image(systemName: "plus")
                         .font(.system(size: 10, weight: .semibold))
                     Text("Link to entry")
-                        .font(.system(size: 12, weight: .medium))
+                        .font(appFont.font(size: 12, weight: .medium, relativeTo: .caption1))
                 }
                 .foregroundStyle(AppearancePalette.ink.opacity(0.4))
                 .contentShape(Rectangle())
@@ -157,7 +157,7 @@ struct RelatedNodesSection: View {
 
     private func channelHeader(_ text: String, secondary: Bool) -> some View {
         Text(text)
-            .font(.caption.weight(.semibold))
+            .font(appFont.font(size: 12, weight: .semibold, relativeTo: .caption1))
             .foregroundStyle(AppearancePalette.ink.opacity(secondary ? 0.3 : 0.45))
             .textCase(.uppercase)
             .tracking(0.8)
@@ -212,7 +212,7 @@ struct RelatedNodesSection: View {
             return
         }
         let backlinked = Set(node.connections.map(\.nodeID))
-        let cands = SubstrateThreadService.candidates(forNode: node, in: store.nodes)
+        let cands = SubstrateThreadService.candidates(forNode: node, in: store.hidingPrivate(store.nodes))   // 1.1-C
         var picked: [Node] = []
         for c in cands where c.exclusion == nil && !backlinked.contains(c.other.id) {
             picked.append(c.other)
@@ -236,7 +236,7 @@ struct RelatedNodesSection: View {
                 if let entryID = conn.entryID,
                    let entry = target.items.first(where: { $0.id == entryID }) {
                     Text(BacklinkLabels.entry(entry))
-                        .font(.system(size: 12))
+                        .font(appFont.font(size: 12, relativeTo: .caption1))
                         .foregroundStyle(AppearancePalette.ink.opacity(0.5))
                         .lineLimit(1)
                 }

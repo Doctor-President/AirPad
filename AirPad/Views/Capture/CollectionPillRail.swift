@@ -23,6 +23,7 @@ import SwiftUI
 ///   no-op; "New +" hidden (creating a collection mid-forced-capture
 ///   would orphan the new pill — the node still lands in the locked one).
 struct CollectionPillRail: View {
+    @Environment(\.appBodyFont) private var appFont   // 1.1-A type pass
 
     @Binding var selectedCollectionID: String?
     var lockedID: String? = nil
@@ -87,7 +88,7 @@ struct CollectionPillRail: View {
     @ViewBuilder
     private func pillLabel(_ name: String, isSelected: Bool, isLocked: Bool) -> some View {
         let base = Text(name)
-            .font(.system(size: 13, weight: .semibold))
+            .font(appFont.font(size: 13, weight: .semibold, relativeTo: .footnote))
             .foregroundStyle(isSelected ? Color.black
                                         : AppearancePalette.ink.opacity(isLocked ? 0.35 : 0.75))
             .padding(.horizontal, 14)
@@ -109,7 +110,7 @@ struct CollectionPillRail: View {
                 Image(systemName: "plus")
                     .font(.system(size: 11, weight: .bold))
                 Text("New")
-                    .font(.system(size: 13, weight: .semibold))
+                    .font(appFont.font(size: 13, weight: .semibold, relativeTo: .footnote))
             }
             // Light-mode convergence — adaptive ink text + ink stroke (were
             // `.white`, invisible on the light capture surface). Outline-only

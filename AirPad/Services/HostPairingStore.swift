@@ -5,6 +5,44 @@
 
 import Foundation
 
+/// 1.1-A (8) — T parked AirPad Host as a public product (2026-10-28, decisions.md): users never see it. It stays
+/// reachable behind this hidden developer switch (About → tap the version line 7 times) so T's own Mac keeps
+/// answering on his phone. Off ⇒ `HostPairing.read()` reports `.unpaired`, so routing, Settings, the model picker and
+/// the Librarian all see "no Mac" from ONE gate; the pairing itself stays in the Keychain. The custom server
+/// (Settings → Models → Your own models: Ollama / LM Studio) is the "your own models" path.
+enum HostAccess {
+    static let storageKey = "dev.airpadHost.enabled"
+
+    static var enabled: Bool {
+        get { UserDefaults.standard.bool(forKey: storageKey) }
+        set {
+            UserDefaults.standard.set(newValue, forKey: storageKey)
+            NotificationCenter.default.post(name: .librarianRouteChanged, object: nil)   // re-derive who answers
+        }
+    }
+
+    /// At launch, once: a phone that already holds a pairing (T's, from 1.0 / TestFlight) starts with the switch ON, so
+    /// his Host keeps answering with no action. A phone with no pairing starts OFF and never shows the Host. A failed
+    /// Keychain read decides nothing (asked again next launch).
+    static func migrateAtLaunch() {
+        #if DEBUG
+        let before = UserDefaults.standard.object(forKey: storageKey).map { "\($0)" } ?? "unset"
+        DispatchQueue.main.asyncAfter(deadline: .now() + 3) { NSLog("[HostAccess] at launch: %@", before) }
+        #endif
+        guard UserDefaults.standard.object(forKey: storageKey) == nil else { return }
+        let read = KeychainHelper.read(key: HostPairing.keychainKey)
+        switch read {
+        case .found:    UserDefaults.standard.set(true, forKey: storageKey)
+        case .notFound: UserDefaults.standard.set(false, forKey: storageKey)
+        case .failed:   break
+        }
+        #if DEBUG
+        let line = "[HostAccess] migrate: keychain=\({ if case .found = read { return "found" }; if case .notFound = read { return "notFound" }; return "failed" }()) → enabled=\(UserDefaults.standard.object(forKey: storageKey).map { "\($0)" } ?? "unset")"
+        DispatchQueue.main.asyncAfter(deadline: .now() + 3) { NSLog("%@", line) }   // init-time logs miss the console
+        #endif
+    }
+}
+
 extension HostPairing {
     static let keychainKey = "airpadHostPairing"
 
@@ -37,6 +75,7 @@ extension HostPairing {
         // really removes it; the launch-arg override must not resurrect it.
         if !UserDefaults.standard.bool(forKey: "DebugPersistLANPairing"), let dbg = debugLANHostPairing() { return .paired(dbg) }
         #endif
+        guard HostAccess.enabled else { return .unpaired }   // 1.1-A (8) — the Host is hidden unless the developer switch is on
         cacheLock.lock(); defer { cacheLock.unlock() }
         if let known = cached { return known.map(Read.paired) ?? .unpaired }
         switch KeychainHelper.read(key: keychainKey) {

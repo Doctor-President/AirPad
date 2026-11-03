@@ -33,6 +33,7 @@ import UIKit
 ///   - Tap-to-fullscreen — parent attaches `.onTapGesture` to the framed
 ///     tile, since the trigger surface depends on presentation context.
 struct GalleryItemTile: View {
+    @Environment(\.appBodyFont) private var appFont   // 1.1-A type pass
 
     let galleryItem: GalleryItem
     let nodeID: String
@@ -121,7 +122,7 @@ struct GalleryItemTile: View {
     private var captionStrip: some View {
         if showsCaption, let caption = galleryItem.caption, !caption.isEmpty {
             Text(caption)
-                .font(.system(size: 12, weight: .medium))
+                .font(appFont.font(size: 12, weight: .medium, relativeTo: .caption1))
                 .foregroundStyle(.white)
                 .lineLimit(2)
                 .frame(maxWidth: .infinity, alignment: .leading)

@@ -88,7 +88,7 @@ struct CoverFlowView: View {
     var body: some View {
         NavigationStack(path: $navigationPath) {
             ZStack {
-                AppearancePalette.mapBackground(dark: colorScheme == .dark).ignoresSafeArea()
+                AppearancePalette.libraryBackground(dark: colorScheme == .dark).ignoresSafeArea()
                 BackgroundGridView()
                     .ignoresSafeArea()
                     .allowsHitTesting(false)

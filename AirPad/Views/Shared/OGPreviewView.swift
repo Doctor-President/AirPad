@@ -13,6 +13,7 @@ import UIKit
 // async UIImage loading in State C; business logic stays externalized.
 
 struct OGPreviewView: View {
+    @Environment(\.appBodyFont) private var appFont   // 1.1-A type pass
 
     let item: NodeItem
     let nodeID: String
@@ -114,7 +115,7 @@ struct OGPreviewView: View {
             .textInputAutocapitalization(.never)
             .autocorrectionDisabled()
             .keyboardType(.URL)
-            .font(.caption)
+            .font(appFont.font(size: 12, relativeTo: .caption1))
             .foregroundStyle(.blue)
             .submitLabel(.done)
             .onSubmit { commitDraftIfPresent() }
@@ -154,7 +155,7 @@ struct OGPreviewView: View {
             if let urlString = effectiveURL, let url = URL(string: urlString) {
                 if interactive {
                     Text(urlString)
-                        .font(.caption)
+                        .font(appFont.font(size: 12, relativeTo: .caption1))
                         .foregroundStyle(.blue)
                         .lineLimit(1)
                         .truncationMode(.middle)
@@ -163,7 +164,7 @@ struct OGPreviewView: View {
                         .accessibilityAddTraits(.isLink)
                 } else {
                     Text(urlString)
-                        .font(.caption)
+                        .font(appFont.font(size: 12, relativeTo: .caption1))
                         .foregroundStyle(.blue)
                         .lineLimit(1)
                         .truncationMode(.middle)
@@ -196,21 +197,21 @@ struct OGPreviewView: View {
             VStack(alignment: .leading, spacing: 4) {
                 if let title = effectiveTitle, !title.isEmpty {
                     Text(title)
-                        .font(.subheadline.weight(.semibold))
+                        .font(appFont.font(size: 15, weight: .semibold, relativeTo: .subheadline))
                         .foregroundStyle(.primary)
                         .lineLimit(2)
                         .multilineTextAlignment(.leading)
                 }
                 if let description = effectiveDescription, !description.isEmpty {
                     Text(description)
-                        .font(.caption)
+                        .font(appFont.font(size: 12, relativeTo: .caption1))
                         .foregroundStyle(.primary.opacity(0.55))
                         .lineLimit(3)
                         .multilineTextAlignment(.leading)
                 }
                 if let siteName = effectiveSiteName, !siteName.isEmpty {
                     Text(siteName)
-                        .font(.caption2)
+                        .font(appFont.font(size: 11, relativeTo: .caption2))
                         .foregroundStyle(.primary.opacity(0.4))
                         .lineLimit(1)
                 }

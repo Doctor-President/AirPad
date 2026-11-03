@@ -9,6 +9,7 @@ import ObjectiveC.runtime
 /// Full node detail view. Entered via NavigationStack zoom transition from the canvas.
 /// All edits auto-save on disappear.
 struct NodeDetailView: View {
+    @Environment(\.appBodyFont) private var appFont   // 1.1-A type pass
 
     let nodeID: String
     /// Backlinks v1 — when set, the view scrolls to this entry on appear. Used
@@ -126,6 +127,11 @@ struct NodeDetailView: View {
     @State private var showingNewTagSheet = false
     @State private var showingNewCollectionSheet = false
     @State private var showDeleteConfirmation = false
+    /// 1.1-C — flagged Private from this screen while private entries are hidden: it stays open until AirPad leaves the
+    /// foreground (then the placeholder shows).
+    @State private var markedPrivateHere = false
+    @State private var showExport = false
+    @Environment(\.scenePhase) private var privateScenePhase
     @State private var keyboardVisible = false
     /// The pinned capture bar's MEASURED height (item 1 — drives the capture-mode
     /// bottom reservation so content never sits under the bar).
@@ -323,10 +329,13 @@ struct NodeDetailView: View {
 
     var body: some View {
         Group {
-            if let node {
+            if let node, node.isPrivate, !PrivateEntries.shared.revealed, !markedPrivateHere {
+                // 1.1-C (C3 / C4) — a private entry while private entries are hidden: hidden, never blurred.
+                PrivateEntryPlaceholder()
+            } else if let node {
                 content(node: node)
             } else {
-                Text("Entry not found")
+                Text("Entry not found").font(appFont.font(size: 17, relativeTo: .body))
                     .foregroundStyle(AppearancePalette.ink.opacity(0.5))
                     .frame(maxWidth: .infinity, maxHeight: .infinity)
                     .background(Color.black)
@@ -345,6 +354,8 @@ struct NodeDetailView: View {
         .onDisappear {
             saveIfChanged()
         }
+        .onChange(of: privateScenePhase) { _, phase in if phase == .background { markedPrivateHere = false } }
+        .sheet(isPresented: $showExport) { EntryExportSheet(nodeID: nodeID) }   // 1.1-C (C5)
         .onChange(of: node?.title) { old, new in
             if editedTitle == (old ?? "") { editedTitle = new ?? "" }
         }
@@ -874,7 +885,7 @@ struct NodeDetailView: View {
                     reorderController.exit()
                 } label: {
                     Text("Done")
-                        .font(.system(size: 16, weight: .semibold))
+                        .font(appFont.font(size: 16, weight: .semibold, relativeTo: .subheadline))
                         .foregroundStyle(AppearancePalette.ink)
                         .padding(.horizontal, 20)
                         .frame(height: 48)
@@ -903,6 +914,33 @@ struct NodeDetailView: View {
                             systemImage: node.priority == nil ? "flag" : "flag.slash"
                         )
                     }
+                    // 1.1-C (C3) — Private: hidden everywhere until "Show private" (slide-out menu). Needs a passcode.
+                    if PrivateEntries.shared.available {
+                        Button {
+                            var updated = node
+                            updated.isPrivate.toggle()
+                            if updated.isPrivate && !PrivateEntries.shared.revealed { markedPrivateHere = true }
+                            Task { await store.updateNode(updated) }
+                        } label: {
+                            Label(node.isPrivate ? "Make Not Private" : "Make Private",
+                                  systemImage: node.isPrivate ? "lock.open" : "lock")
+                        }
+                        .accessibilityIdentifier("entryMenu.private")
+                    } else {
+                        Button {} label: {
+                            Label("Make Private", systemImage: "lock")
+                            Text(PrivateEntries.unavailableReason)
+                        }
+                        .disabled(true)
+                    }
+                    // 1.1-C (C5) — Export (Markdown / TextBundle / folder). A private entry exports only while shown,
+                    // which is the only time its menu is reachable.
+                    Button {
+                        showExport = true
+                    } label: {
+                        Label("Export…", systemImage: "square.and.arrow.up")
+                    }
+                    .accessibilityIdentifier("entryMenu.export")
                     Divider()
                     // entry-system-and-fold Commit 6 — visibility flag for
                     // the description on the card-view surface (queue #10).
@@ -988,6 +1026,7 @@ struct NodeDetailView: View {
                         .frame(width: 48, height: 48)
                         .contentShape(Rectangle())
                 }
+                .accessibilityIdentifier("entryMenu")   // 1.1-C — UI tests reach Private / Export
                 }  // close ws-chrome-pill HStack
                 .modifier(InteractiveGlassCapsule())
             }
@@ -1128,7 +1167,7 @@ struct NodeDetailView: View {
                 // stay a quiet fixed strip); never centred (asymmetric chrome
                 // makes "centre" drift with the ••• width).
                 Text(node.title)
-                    .font(.system(size: 17, weight: .semibold))
+                    .font((node.perEntryBodyFont ?? appFont).font(size: 17, weight: .semibold))
                     .foregroundStyle(titleInk)
                     .shadow(color: titleHalo, radius: 1.5)
                     .lineLimit(1)
@@ -1206,7 +1245,7 @@ struct NodeDetailView: View {
                     )
                 } label: {
                     Label("Add to collection", systemImage: "plus")
-                        .font(.caption.weight(.semibold))
+                        .font(appFont.font(size: 12, weight: .semibold, relativeTo: .caption1))
                         .foregroundStyle(AppearancePalette.ink.opacity(0.5))
                         .padding(.horizontal, 10)
                         .padding(.vertical, 5)
@@ -1290,7 +1329,7 @@ struct NodeDetailView: View {
                     onAddNew: { showingNewTagSheet = true }
                 ) {
                     Label("Add tag", systemImage: "plus")
-                        .font(.caption.weight(.semibold))
+                        .font(appFont.font(size: 12, weight: .semibold, relativeTo: .caption1))
                         .foregroundStyle(AppearancePalette.ink.opacity(0.5))
                         .padding(.horizontal, 10)
                         .padding(.vertical, 5)
@@ -1768,6 +1807,7 @@ struct NodeDetailView: View {
 /// user the chips below the title are *memberships* (rounded rects) and
 /// the row beneath is *tags* (capsules).
 private struct CollectionChip: View {
+    @Environment(\.appBodyFont) private var appFont   // 1.1-A type pass
     let name: String
     let onRemove: () -> Void
 
@@ -1777,7 +1817,7 @@ private struct CollectionChip: View {
                 .font(.system(size: 9, weight: .semibold))
                 .foregroundStyle(AppearancePalette.ink.opacity(0.6))
             Text(name)
-                .font(.caption.weight(.semibold))
+                .font(appFont.font(size: 12, weight: .semibold, relativeTo: .caption1))
                 .foregroundStyle(AppearancePalette.ink)
             Button(action: onRemove) {
                 Image(systemName: "xmark")
@@ -1799,6 +1839,7 @@ private struct CollectionChip: View {
 // MARK: - Tag chip
 
 private struct TagChip: View {
+    @Environment(\.appBodyFont) private var appFont   // 1.1-A type pass
     let name: String
     let store: CorpusStore
     let onRemove: () -> Void
@@ -1813,7 +1854,7 @@ private struct TagChip: View {
     var body: some View {
         HStack(spacing: 4) {
             Text(name)
-                .font(.caption.weight(.semibold))
+                .font(appFont.font(size: 12, weight: .semibold, relativeTo: .caption1))
                 .foregroundStyle(AppearancePalette.ink)
             Button(action: onRemove) {
                 Image(systemName: "xmark")
@@ -1836,6 +1877,7 @@ private struct TagChip: View {
 /// (`WaveformBars`, `AudioPlaybackController`, `CachedPeaks`) remain private
 /// since they're only used inside this file.
 struct VoiceWaveformPlayer: View {
+    @Environment(\.appBodyFont) private var appFont   // 1.1-A type pass
     let item: NodeItem
     let nodeID: String
 
@@ -1853,7 +1895,7 @@ struct VoiceWaveformPlayer: View {
 
             if let duration = item.durationSeconds {
                 Text(formatDuration(duration))
-                    .font(.caption.weight(.medium))
+                    .font(appFont.font(size: 12, weight: .medium, relativeTo: .caption1))
                     .foregroundStyle(AppearancePalette.ink.opacity(0.6))
                     .monospacedDigit()
                     .frame(minWidth: 40, alignment: .trailing)
@@ -2237,6 +2279,7 @@ struct AsyncImageFromURL: View {
 // MARK: - Meta-node banner
 
 private struct MetaNodeBanner: View {
+    @Environment(\.appBodyFont) private var appFont   // 1.1-A type pass
     let nodeID: String
     @Binding var showPromoteConfirmation: Bool
     @Environment(CorpusStore.self) private var store
@@ -2253,7 +2296,7 @@ private struct MetaNodeBanner: View {
                 Text("✦")
                     .foregroundStyle(.purple.opacity(0.8))
                 Text("Thread")
-                    .font(.caption.weight(.semibold))
+                    .font(appFont.font(size: 12, weight: .semibold, relativeTo: .caption1))
                     .foregroundStyle(AppearancePalette.ink.opacity(0.5))
                     .textCase(.uppercase)
                     .tracking(0.5)
@@ -2263,7 +2306,7 @@ private struct MetaNodeBanner: View {
             if !sources.isEmpty {
                 VStack(alignment: .leading, spacing: 4) {
                     Text("Connected from")
-                        .font(.caption)
+                        .font(appFont.font(size: 12, relativeTo: .caption1))
                         .foregroundStyle(AppearancePalette.ink.opacity(0.35))
                     ForEach(sources) { source in
                         HStack(spacing: 6) {
@@ -2271,7 +2314,7 @@ private struct MetaNodeBanner: View {
                                 .fill(AppearancePalette.ink.opacity(0.2))
                                 .frame(width: 5, height: 5)
                             Text(source.title)
-                                .font(.caption.weight(.medium))
+                                .font(appFont.font(size: 12, weight: .medium, relativeTo: .caption1))
                                 .foregroundStyle(AppearancePalette.ink.opacity(0.6))
                                 .lineLimit(1)
                         }
@@ -2283,7 +2326,7 @@ private struct MetaNodeBanner: View {
                 showPromoteConfirmation = true
             } label: {
                 Text("Promote to entry")
-                    .font(.subheadline.weight(.semibold))
+                    .font(appFont.font(size: 15, weight: .semibold, relativeTo: .subheadline))
                     .foregroundStyle(.purple)
                     .frame(maxWidth: .infinity)
                     .padding(.vertical, 11)
@@ -2311,6 +2354,7 @@ private struct MetaNodeBanner: View {
 
 // internal (not file-private): shared with `CaptureAttributesSection`.
 struct RatingAttributeRow: View {
+    @Environment(\.appBodyFont) private var appFont   // 1.1-A type pass
 
     let item: NodeItem
     let onTap: () -> Void
@@ -2321,7 +2365,7 @@ struct RatingAttributeRow: View {
     var body: some View {
         HStack(spacing: 12) {
             Text(item.type.defaultDisplayName)
-                .font(.subheadline.weight(.medium))
+                .font(appFont.font(size: 15, weight: .medium, relativeTo: .subheadline))
                 .foregroundStyle(AppearancePalette.ink)
 
             stars
@@ -2371,6 +2415,7 @@ struct RatingAttributeRow: View {
 /// user dismisses via the drag indicator.
 /// internal (not file-private): shared with `CaptureAttributesSection`.
 struct RatingEditSheet: View {
+    @Environment(\.appBodyFont) private var appFont   // 1.1-A type pass
 
     let itemID: String
     let nodeID: String
@@ -2391,7 +2436,7 @@ struct RatingEditSheet: View {
     var body: some View {
         VStack(spacing: 24) {
             Text("Rating")
-                .font(.headline)
+                .font(appFont.font(size: 17, weight: .semibold, relativeTo: .headline))
                 .foregroundStyle(.white)
                 .padding(.top, 28)
 
@@ -2421,7 +2466,7 @@ struct RatingEditSheet: View {
                 Task { await store.setRatingValue(itemID: itemID, nodeID: nodeID, value: 0) }
             } label: {
                 Text("Clear")
-                    .font(.subheadline.weight(.medium))
+                    .font(appFont.font(size: 15, weight: .medium, relativeTo: .subheadline))
                     .foregroundStyle(.white.opacity(0.55))
                     .padding(.horizontal, 16)
                     .padding(.vertical, 8)
@@ -2456,6 +2501,7 @@ struct RatingEditSheet: View {
 /// inside a `LazyVGrid`. The picker uses a private square-aspect
 /// cell with its own decode pipeline instead.
 private struct HeroImagePickerSheet: View {
+    @Environment(\.appBodyFont) private var appFont   // 1.1-A type pass
 
     let node: Node
     let nodeID: String
@@ -2543,7 +2589,7 @@ private struct HeroImagePickerSheet: View {
                     Image(systemName: "photo.on.rectangle.angled")
                         .font(.system(size: 24, weight: .medium))
                     Text("Photos")
-                        .font(.caption.weight(.medium))
+                        .font(appFont.font(size: 12, weight: .medium, relativeTo: .caption1))
                 }
                 .foregroundStyle(.white.opacity(0.85))
             }
@@ -2780,6 +2826,7 @@ private struct GlassRowContainer<Content: View>: View {
 /// stale path degrades gracefully and the user never sees a broken /
 /// empty banner. (A cross-fade on image-ready would be a nice-to-have.)
 private struct HeroImageBanner: View {
+    @Environment(\.appBodyFont) private var appFont   // 1.1-A type pass
 
     let node: Node
     /// BUG 24 round 2 — passed as an EXPLICIT value prop (not read off `node`)
@@ -3086,7 +3133,7 @@ private struct HeroImageBanner: View {
     private var adjustDoneButton: some View {
         Button { isAdjusting = false } label: {
             Text("Done")
-                .font(.subheadline.weight(.semibold))
+                .font(appFont.font(size: 15, weight: .semibold, relativeTo: .subheadline))
                 .foregroundStyle(.white)
                 .padding(.horizontal, 14)
                 .padding(.vertical, 8)

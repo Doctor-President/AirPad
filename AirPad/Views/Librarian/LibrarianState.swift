@@ -307,7 +307,7 @@ final class LibrarianState {
         var bodyHits: [SearchMatch] = []
         var summaryTagHits: [SearchMatch] = []
         var imageHits: [SearchImageMatch] = []
-        for node in store.nodes {
+        for node in store.hidingPrivate(store.nodes) {   // 1.1-C — private entries stay out of search unless shown
             if node.title.lowercased().contains(q) {
                 titleHits.append(SearchMatch(id: node.id, snippet: nil))
             } else if let snippet = Self.bodyMatchSnippet(node: node, q: q, query: query) {
@@ -1072,7 +1072,7 @@ final class LibrarianState {
         let forcedID = forcedReadNodeID
         forcedReadNodeID = nil
         let pinnedIDs: [String] = {
-            if let forcedID, store.nodes.contains(where: { $0.id == forcedID }) { return [forcedID] }
+            if let forcedID, store.nodes.contains(where: { $0.id == forcedID && !store.isHidden($0) }) { return [forcedID] }
             return Self.pinnedNodeIDs(question: query, nodes: store.nodes(in: selectedScope))
         }()
         let pinning = !pinnedIDs.isEmpty
@@ -1203,7 +1203,7 @@ final class LibrarianState {
         // range?") answers FROM the lab entry (chol [n] / LDL [n]) instead of the model's prior text
         // (T's glucose [n] "out of range" error). Carried lean (entry only, no fresh skim) so the
         // packet prefix matches the prior read and Ollama reuses the KV — the fast follow-up.
-        let wsTargets = chat.workingSet.filter { id in store.nodes.contains { $0.id == id } }
+        let wsTargets = chat.workingSet.filter { id in store.nodes.contains { $0.id == id && !store.isHidden($0) } }   // 1.1-C
         let dominantDifferent = (dominant != nil) && !wsTargets.contains(dominant!)
         // ★ Decide the carry from the CURRENT question ALONE — NOT the augmented `retrievalQuery`,
         // which folds in the PRIOR user turn and biases the working set BOTH ways (measured: the prior

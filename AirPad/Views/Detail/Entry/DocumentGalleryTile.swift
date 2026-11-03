@@ -34,6 +34,7 @@ import UIKit
 /// The Menu's own tap target intercepts before the tile's tap gesture
 /// fires.
 struct DocumentGalleryTile: View {
+    @Environment(\.appBodyFont) private var appFont   // 1.1-A type pass
 
     let documentItem: DocumentItem
     let entryID: String
@@ -201,13 +202,13 @@ struct DocumentGalleryTile: View {
     private var textBlock: some View {
         VStack(alignment: .leading, spacing: 4) {
             Text(displayTitle)
-                .font(.subheadline.weight(.semibold))
+                .font(appFont.font(size: 15, weight: .semibold, relativeTo: .subheadline))
                 .foregroundStyle(AppearancePalette.ink)
                 .lineLimit(2)
                 .multilineTextAlignment(.leading)
             if let metricsLine {
                 Text(metricsLine)
-                    .font(.caption)
+                    .font(appFont.font(size: 12, relativeTo: .caption1))
                     .foregroundStyle(AppearancePalette.ink.opacity(0.55))
                     .lineLimit(1)
             }

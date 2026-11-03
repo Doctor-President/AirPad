@@ -48,6 +48,7 @@ struct DashboardView: View {
 
     @Environment(AppRouter.self) private var router
     @Environment(CorpusStore.self) private var store
+    @Environment(QuarantineStore.self) private var quarantineStore
     /// Brief BF — the app-wide content face (Dashboard eyebrow + collection names follow it).
     @Environment(\.appBodyFont) private var appFont
 
@@ -82,6 +83,10 @@ struct DashboardView: View {
     @State private var showCreateCollectionSheet = false
     @State private var showCollectionReorder = false
     @State private var showSettings = false
+    /// 1.1-A (A1) — the header's ≡ opens the SAME slide-out menu as the canvas (was a gear straight to Settings).
+    @State private var showMenu = false
+    @State private var showAppearancePanel = false
+    @State private var showQuarantineReview = false
     /// Brief T — sample-library strip confirm + persisted collapse state
     /// (default false = expanded on first open). @AppStorage is fine here: the
     /// dashboard body is not a continuously-relaid-out surface, so the per-eval
@@ -133,7 +138,7 @@ struct DashboardView: View {
         store.collections
             .filter { store.sampleCollectionIDs.contains($0.id) }
             .map { collection in
-                let members = store.nodes.filter { $0.collectionIDs.contains(collection.id) }
+                let members = store.hidingPrivate(store.nodes).filter { $0.collectionIDs.contains(collection.id) }   // 1.1-C
                 var row = collection
                 row.nodeCount = members.count
                 row.lastEntryAt = members.map(\.createdAt).max()
@@ -145,7 +150,7 @@ struct DashboardView: View {
     /// the sample pane's collection list. Routes to `.sampleCanvas` (a node-set
     /// scope), never a collection, so it can't seed a capture default.
     private var sampleCorpusRow: NodeCollection {
-        let sampleNodes = store.nodes.filter { store.isSample($0.id) }
+        let sampleNodes = store.hidingPrivate(store.nodes).filter { store.isSample($0.id) }   // 1.1-C
         return NodeCollection(
             id: NodeCollection.sampleScopeID,
             name: "Library",
@@ -174,6 +179,17 @@ struct DashboardView: View {
                 }
 
                 floatingPlusButton
+
+                CanvasSlideOutMenu(
+                    isPresented: $showMenu,
+                    filterActiveCount: 0,
+                    quarantineCount: quarantineStore.entries.count,
+                    onAnalyze: { Task { store.runCorpusAnalysis(trigger: .manual) } },
+                    onFilter: nil,
+                    onSettings: { showSettings = true },
+                    onQuarantineReview: { showQuarantineReview = true },
+                    onAppearance: { showAppearancePanel = true }
+                )
             }
             .toolbar(.hidden, for: .navigationBar) // dashboard renders its own header
             .navigationDestination(for: DashboardRoute.self) { route in
@@ -208,6 +224,18 @@ struct DashboardView: View {
             }
             .sheet(isPresented: $showSettings) {
                 SettingsView()
+            }
+            .sheet(isPresented: $showAppearancePanel) {
+                AppearancePanel()
+            }
+            #if DEBUG
+            .onAppear {   // 1.1-A stills — see CanvasChrome
+                if ProcessInfo.processInfo.arguments.contains("-OpenMenu") { showMenu = true }
+                if ProcessInfo.processInfo.arguments.contains("-OpenAppearancePanel") { showAppearancePanel = true }
+            }
+            #endif
+            .sheet(isPresented: $showQuarantineReview) {
+                QuarantineReviewSheet()
             }
             // In-app capture overlay handoff. The overlay (mounted at
             // ContentView) writes the picked / newly-captured node ID into
@@ -298,7 +326,9 @@ struct DashboardView: View {
     private var headerPill: some View {
         HStack(spacing: 2) {
             pillIcon("bubble.left.and.bubble.right.fill", size: 16) { router.showChatsList = true }
-            pillIcon("gearshape.fill", size: 16) { showSettings = true }
+            pillIcon("line.3.horizontal", size: 16) { showMenu = true }   // 1.1-A (A1) — the menu, not Settings directly
+                .accessibilityLabel("Menu")
+                .accessibilityIdentifier("dashboard.menu")
         }
         .padding(.horizontal, 4)
         .chromeSurface(Capsule())
@@ -380,8 +410,8 @@ struct DashboardView: View {
                     .foregroundStyle(AppearancePalette.ink)
                 Spacer()
                 Text("\(store.priorityNodes.count)")
-                    .font(.system(size: 14, weight: .medium))
-                    .foregroundStyle(AppearancePalette.ink.opacity(0.4))
+                    .font(appFont.font(size: 14, weight: .medium, relativeTo: .subheadline))
+                    .dashSecondaryInk(0.4)
                 Image(systemName: "chevron.right")
                     .font(.system(size: 13, weight: .semibold))
                     .foregroundStyle(AppearancePalette.ink.opacity(0.3))
@@ -527,8 +557,8 @@ struct DashboardView: View {
         } label: {
             HStack(spacing: 12) {
                 Text("Remove Sample Library")
-                    .font(.system(size: 14, weight: .semibold))
-                    .foregroundStyle(AppearancePalette.ink.opacity(0.7))
+                    .font(appFont.font(size: 14, weight: .semibold, relativeTo: .subheadline))
+                    .dashSecondaryInk(0.7)
                 Spacer()
             }
             .padding(.vertical, 18)
@@ -545,7 +575,7 @@ struct DashboardView: View {
             HStack {
                 Text("Collections")
                     .font(appFont.font(size: 12, weight: .semibold, relativeTo: .caption1))
-                    .foregroundStyle(AppearancePalette.ink.opacity(0.4))
+                    .dashSecondaryInk(0.4)
                     .textCase(.uppercase)
                     .tracking(0.8)
                 Spacer()
@@ -664,6 +694,44 @@ struct DashboardView: View {
 
 }
 
+// MARK: - Secondary text ink (1.1-B)
+
+/// 1.1-B (T, option B, 2026-10-29) — the Dashboard panes' secondary / tertiary text (counts, dates, captions, section
+/// labels, placeholders) reaches 4.5:1 on EVERY Dashboard surface (Glass · Frosted · Clear glass · Solid) in both
+/// appearances: each keeps its own opacity of `AppearancePalette.ink` but never below the floor of the surface it sits on
+/// (`DashboardSurface.drawn`, the same pick the panes draw) in this appearance. Each floor = the least opacity whose
+/// MINIMUM contrast over that surface's measured pane backgrounds (10 frames of the moving colour, text masked out)
+/// reaches 4.5:1, + 0.01. Dark Glass is dimmed (`DashboardSurface.glassDarkTint`, T: "Dim the dark Glass a bit") so its
+/// greys sit back below body. Icons (chevrons, ellipsis) keep their opacities.
+struct DashSecondaryInk: ViewModifier {
+    static func floor(_ surface: DashboardSurfaceChoice, dark: Bool) -> Double {
+        switch (surface, dark) {
+        case (.glass, false): 0.73
+        case (.thin, false): 0.74
+        case (.clear, false): 0.80
+        case (.panel, false): 0.68
+        case (.glass, true): 0.69
+        case (.thin, true): 0.61
+        case (.clear, true): 0.75
+        case (.panel, true): 0.60
+        }
+    }
+    let opacity: Double
+    @Environment(\.colorScheme) private var colorScheme
+    @AppStorage(DashboardSurfaceChoice.storageKey(dark: true)) private var darkRaw = DashboardSurfaceChoice.legacyRaw
+    @AppStorage(DashboardSurfaceChoice.storageKey(dark: false)) private var lightRaw = DashboardSurfaceChoice.legacyRaw
+    @Environment(\.groundInkFloor) private var groundFloor   // over a custom background, its own 4.5:1 floor too
+    func body(content: Content) -> some View {
+        let dark = colorScheme == .dark
+        let f = Self.floor(DashboardSurface.drawn(pickedRaw: dark ? darkRaw : lightRaw), dark: dark)
+        content.foregroundStyle(AppearancePalette.ink.opacity(max(opacity, f, groundFloor)))
+    }
+}
+extension View {
+    /// Dashboard secondary text: `AppearancePalette.ink` at `opacity`, raised to the 4.5:1 floor (`DashSecondaryInk`).
+    func dashSecondaryInk(_ opacity: Double) -> some View { modifier(DashSecondaryInk(opacity: opacity)) }
+}
+
 // MARK: - Collection row
 
 private struct CollectionRow: View {
@@ -686,8 +754,8 @@ private struct CollectionRow: View {
                             .font(nameFont)
                             .foregroundStyle(AppearancePalette.ink)
                         Text(subtitle)
-                            .font(.system(size: 12, weight: .regular))
-                            .foregroundStyle(AppearancePalette.ink.opacity(0.5))
+                            .font(appFont.font(size: 12, relativeTo: .caption1))
+                            .dashSecondaryInk(0.5)
                     }
                     Spacer(minLength: 0)
                 }
@@ -755,6 +823,7 @@ private struct CollectionRow: View {
 /// a `CollectionRow` (lower-opacity label) so it reads as auxiliary. Flat
 /// to match the hairline-divided collection rows above it.
 private struct NewCollectionButton: View {
+    @Environment(\.appBodyFont) private var appFont   // 1.1-A type pass
     let onTap: () -> Void
 
     var body: some View {
@@ -763,9 +832,9 @@ private struct NewCollectionButton: View {
                 Image(systemName: "plus")
                     .font(.system(size: 14, weight: .semibold))
                 Text("New Collection")
-                    .font(.system(size: 15, weight: .semibold))
+                    .font(appFont.font(size: 15, weight: .semibold, relativeTo: .subheadline))
             }
-            .foregroundStyle(AppearancePalette.ink.opacity(0.7))
+            .dashSecondaryInk(0.7)   // 1.1-B — the 4.5:1 floors (it sat at 0.7, under Clear glass's light floor 0.80)
             .frame(maxWidth: .infinity)
             .padding(.vertical, 14)
             .contentShape(Rectangle())
@@ -781,6 +850,7 @@ private struct NewCollectionButton: View {
 /// position, no migration). Only user collections are passed in — Corpus /
 /// Journal are synthetic Dashboard rows and aren't reorderable.
 private struct CollectionReorderSheet: View {
+    @Environment(\.appBodyFont) private var appFont   // 1.1-A type pass
     @Environment(CorpusStore.self) private var store
     @Environment(\.dismiss) private var dismiss
     @State private var working: [NodeCollection]
@@ -797,7 +867,7 @@ private struct CollectionReorderSheet: View {
                         Image(systemName: "folder")
                             .foregroundStyle(AppearancePalette.ink.opacity(0.5))
                         Text(collection.name)
-                            .font(.body)
+                            .font(appFont.font(size: 17, relativeTo: .body))
                             .foregroundStyle(AppearancePalette.ink)
                         Spacer(minLength: 0)
                     }

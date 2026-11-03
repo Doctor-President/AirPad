@@ -18,6 +18,7 @@ import SwiftUI
 ///   pill mid-session must not reshuffle the rail.
 /// - **No locked mode**: tags are always interactive at capture time.
 struct TagPillRail: View {
+    @Environment(\.appBodyFont) private var appFont   // 1.1-A type pass
 
     @Binding var selectedTagNames: Set<String>
     var onMore: () -> Void
@@ -80,7 +81,7 @@ struct TagPillRail: View {
             }
         } label: {
             Text(tagName)
-                .font(.system(size: 13, weight: .semibold))
+                .font(appFont.font(size: 13, weight: .semibold, relativeTo: .footnote))
                 // Light-mode convergence. SELECTED: the pill fill is the full
                 // saturated tag colour (mode-invariant), so the ink is derived
                 // from that colour's luminance — white on dark tags, dark on light
@@ -110,7 +111,7 @@ struct TagPillRail: View {
                 Image(systemName: "ellipsis")
                     .font(.system(size: 11, weight: .bold))
                 Text("More")
-                    .font(.system(size: 13, weight: .semibold))
+                    .font(appFont.font(size: 13, weight: .semibold, relativeTo: .footnote))
             }
             // Light-mode convergence — adaptive ink text + stroke (no tag colour).
             .foregroundStyle(AppearancePalette.ink.opacity(0.75))

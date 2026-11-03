@@ -13,6 +13,7 @@ import SwiftUI
 /// brief's expectation that selection isn't applied until the user
 /// commits — same grammar as `CollectionCreationSheet`.
 struct TagSelectionSheet: View {
+    @Environment(\.appBodyFont) private var appFont   // 1.1-A type pass
 
     @Binding var selectedTagNames: Set<String>
 
@@ -49,7 +50,7 @@ struct TagSelectionSheet: View {
             List {
                 if displayedTags.isEmpty {
                     Text("No matches")
-                        .font(.subheadline)
+                        .font(appFont.font(size: 15, relativeTo: .subheadline))
                         .foregroundStyle(AppearancePalette.ink.opacity(0.4))
                         .frame(maxWidth: .infinity, alignment: .center)
                         .listRowBackground(Color.clear)
@@ -103,7 +104,7 @@ struct TagSelectionSheet: View {
                     .fill(Color(hex: tag.colorHex) ?? .gray)
                     .frame(width: 10, height: 10)
                 Text(tag.name)
-                    .font(.subheadline.weight(.medium))
+                    .font(appFont.font(size: 15, weight: .medium, relativeTo: .subheadline))
                     .foregroundStyle(AppearancePalette.ink)
                     .lineLimit(1)
                 Spacer()

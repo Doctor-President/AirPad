@@ -84,6 +84,31 @@ enum BackgroundGridNode {
         }
     }
 
+    /// 1.1-B — the Map's ground: its colour, and a second stop + direction (y up, unit; nil = one colour).
+    static func setGround(_ shape: SKShapeNode, color: SIMD3<Float>, gradient: (color2: SIMD3<Float>, dir: SIMD2<Float>)?) {
+        guard let uniforms = shape.fillShader?.uniforms else { return }
+        for u in uniforms {
+            switch u.name {
+            case "u_ground_color": u.vectorFloat3Value = color
+            case "u_ground2": u.vectorFloat3Value = gradient?.color2 ?? color
+            case "u_grad_dir": u.vectorFloat2Value = gradient?.dir ?? .zero
+            default: break
+            }
+        }
+    }
+
+    /// 1.1-B — the sheen (`MapSheen`): amount 0 = off.
+    static func setSheen(_ shape: SKShapeNode, on: Bool) {
+        guard let uniforms = shape.fillShader?.uniforms else { return }
+        for u in uniforms {
+            switch u.name {
+            case "u_sh": u.vectorFloat4Value = on ? vector_float4(MapSheen.amount, MapSheen.softness, MapSheen.relief, MapSheen.colour) : .zero
+            case "u_sh_l": let l = MapSheen.light; u.vectorFloat4Value = vector_float4(l.x, l.y, l.z, MapSheen.falloffNearWells)
+            default: break
+            }
+        }
+    }
+
     /// Resize when the viewport changes (e.g. orientation).
     static func resize(_ shape: SKShapeNode, to size: CGSize) {
         let half = CGSize(width: size.width / 2, height: size.height / 2)
@@ -271,14 +296,41 @@ enum BackgroundGridNode {
             // linear-filtered channel and composites it Normal over (opaque ground ▸ dots) at u_ripple_amt.
             vec3 darkGrain = vec3(0.0);
         \(darkGrainBranch)
+            // 1.1-B — the Map's (Pro-editable) ground: one colour, or two stops across the screen along u_grad_dir (zero
+            // = off), exactly as the ground study (Ops/reference/ground-study.html) draws it.
+            vec3 G = u_ground_color;
+            if (dot(u_grad_dir, u_grad_dir) > 0.0) {
+                float ext = abs(u_viewport_size.x * u_grad_dir.x) + abs(u_viewport_size.y * u_grad_dir.y);
+                G = mix(u_ground_color, u_ground2, clamp(0.5 + dot(screenOffset, u_grad_dir) / ext, 0.0, 1.0));
+            }
+            // 1.1-B — SHEEN (the study's "wellsSlope"): the wells' pull IS the slope of the sheet; a soft specular hit
+            // where the sheet faces the light, measured against the FLAT sheet's own value (subtracted) so open ground
+            // never lifts; fades going down into the wells; screen-blended in the ground's own hue. Only with the
+            // wells drawing (mode 3). u_sh = (amount, softness, relief, colour); u_sh_l = (light direction, falloff).
+            vec4 F = texture2D(u_disp_field, v_tex_coord);
+            if (u_sh.x > 0.0 && u_warp_mode > 2.5) {
+                vec2 shPull = (F.rg - vec2(0.5)) * (2.0 * u_warp_mass_range);
+                vec2 grad = -shPull * 0.35 * u_sh.z;
+                float depth = clamp(length(shPull), 0.0, 1.0);
+                vec3 N = normalize(vec3(grad, 1.0));
+                vec3 H = normalize(u_sh_l.xyz + vec3(0.0, 0.0, 1.0));
+                float shp = exp2(mix(8.0, 2.5, u_sh.y));
+                float flatSpec = pow(H.z, shp);
+                float spec = max(pow(max(dot(N, H), 0.0), shp) - flatSpec, 0.0) / max(1.0 - flatSpec, 0.001);
+                float mask = 1.0 - smoothstep(1.0 - u_sh_l.w, 1.0, depth);
+                vec3 tint = G / max(max(G.r, G.g), max(G.b, 0.001));
+                vec3 shCol = mix(vec3(1.0), tint, u_sh.w);
+                float shK = clamp(spec * mask * u_sh.x, 0.0, 1.0);
+                G = vec3(1.0) - (vec3(1.0) - G) * (vec3(1.0) - shCol * shK);
+            }
             if (u_ripple_amt > 0.0) {
-                float R = texture2D(u_disp_field, v_tex_coord).b;
-                vec3 groundDots = u_ground_color * (1.0 - alpha) + u_dot_color * alpha;
+                float R = F.b;
+                vec3 groundDots = G * (1.0 - alpha) + u_dot_color * alpha;
                 gl_FragColor = vec4(mix(groundDots, vec3(R) * u_ripple_color, u_ripple_amt) + darkGrain, 1.0);   // live-39: tint (white = today)
             } else if (u_light_ground_on > 0.5) {
                 // Brief AT — LIGHT comp: the grid OWNS the opaque #FFEEED ground (u_ground_color) so the
                 // dots read on T's chosen ground. Pool was removed at the lock; just ground ▸ dots, opaque.
-                vec3 groundDots = u_ground_color * (1.0 - alpha) + u_dot_color * alpha;
+                vec3 groundDots = G * (1.0 - alpha) + u_dot_color * alpha;
         \(paperBranch)
                 gl_FragColor = vec4(groundDots, 1.0);
             } else {
@@ -291,7 +343,15 @@ enum BackgroundGridNode {
         }
         """
 
+        #if DEBUG
+        // 1.1-A (6) measure — `-MapGroundCase dotsOff`: the same shader with the dot coverage forced to 0, so the compiler
+        // drops the whole lattice (the 27 field samples of mode C included) and only the ground fill + ripple remain.
+        let shader = SKShader(source: debugDotsOffNextBuild
+            ? source.replacingOccurrences(of: "float coverage = max(c1, max(c0g, c2g));", with: "float coverage = 0.0;")
+            : source)
+        #else
         let shader = SKShader(source: source)
+        #endif
         // Placeholder texture (no warp until the scene feeds the field).
         // u_disp_field = a low-res displacement field the CPU rewrites each frame.
         let fieldZero = SKTexture(data: Data(count: 4), size: CGSize(width: 1, height: 1))
@@ -319,7 +379,13 @@ enum BackgroundGridNode {
             SKUniform(name: "u_ground_color", vectorFloat3: vector_float3(0.0667, 0.0667, 0.0824)),
             SKUniform(name: "u_ripple_color", vectorFloat3: vector_float3(1, 1, 1)),   // live-39 — the ambient tint (white = today)
             // Brief AT — LIGHT comp owns the opaque ground (0 → dark/list byte-identical). Pool removed.
-            SKUniform(name: "u_light_ground_on", float: 0)
+            SKUniform(name: "u_light_ground_on", float: 0),
+            // 1.1-B — the editable ground's second stop + direction (zero = no gradient) and the sheen (amount 0 = off).
+            // Packed into vectors: each SKUniform is a Metal buffer binding (31 max).
+            SKUniform(name: "u_ground2", vectorFloat3: vector_float3(0.0667, 0.0667, 0.0824)),
+            SKUniform(name: "u_grad_dir", vectorFloat2: vector_float2(0, 0)),
+            SKUniform(name: "u_sh", vectorFloat4: vector_float4(0, 0, 0, 0)),
+            SKUniform(name: "u_sh_l", vectorFloat4: vector_float4(0, 0, 1, 0))
         ]
         #if DEBUG || TESTFLIGHT
         shader.uniforms.append(SKUniform(name: "u_noise", texture: StudyNoise.texture))   // live-48 — the paper's fbm
@@ -327,6 +393,38 @@ enum BackgroundGridNode {
         #endif
         return shader
     }
+
+    #if DEBUG
+    /// 1.1-A (6) measure — set before `debugRebuildShader` to build the dots-off variant.
+    static var debugDotsOffNextBuild = false
+
+    /// 1.1-A (6) measure — swap the grid's shader for the dots-off variant (or back), carrying every uniform value over
+    /// by name (the per-frame setters find them by name, so nothing else changes). DEBUG harness only.
+    static func debugRebuildShader(_ shape: SKShapeNode, dotsOff: Bool) {
+        guard let old = shape.fillShader else { return }
+        let vp = old.uniformNamed("u_viewport_size")?.vectorFloat2Value ?? vector_float2(1, 1)
+        debugDotsOffNextBuild = dotsOff
+        let fresh = makeShader(viewportSize: CGSize(width: CGFloat(vp.x), height: CGFloat(vp.y)),
+                               dotSizePx: old.uniformNamed("u_dot_base_px")?.floatValue ?? 0.5,
+                               dotOpacity: old.uniformNamed("u_dot_opacity")?.floatValue ?? 0.18,
+                               period: old.uniformNamed("u_period1")?.floatValue ?? 83,
+                               ratio: old.uniformNamed("u_ratio")?.floatValue ?? 5,
+                               lodLevels: old.uniformNamed("u_lod_levels")?.floatValue ?? 3)
+        debugDotsOffNextBuild = false
+        for u in old.uniforms {
+            guard let n = fresh.uniformNamed(u.name) else { continue }
+            switch u.uniformType {
+            case .float: n.floatValue = u.floatValue
+            case .floatVector2: n.vectorFloat2Value = u.vectorFloat2Value
+            case .floatVector3: n.vectorFloat3Value = u.vectorFloat3Value
+            case .floatVector4: n.vectorFloat4Value = u.vectorFloat4Value
+            case .texture: if let t = u.textureValue { n.textureValue = t }
+            default: break
+            }
+        }
+        shape.fillShader = fresh
+    }
+    #endif
 
     /// How many nearest orbs contribute to the displacement field (the CPU-side "48-set").
     static let maxWarpOrbs = 48

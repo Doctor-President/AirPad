@@ -5,6 +5,7 @@ import SwiftUI
 /// created collection is handed back via `onCreate` so the rail can pin it
 /// as the active selection immediately.
 struct CollectionCreationSheet: View {
+    @Environment(\.appBodyFont) private var appFont   // 1.1-A type pass
 
     /// Called on the main actor with the freshly-created collection after
     /// `store.createCollection` finishes. The caller decides what to do
@@ -27,7 +28,7 @@ struct CollectionCreationSheet: View {
             VStack(alignment: .leading, spacing: 0) {
                 TextField("", text: $name, prompt: Text("Collection name").foregroundStyle(AppearancePalette.ink.opacity(0.35)))
                     .focused($isFocused)
-                    .font(.body)
+                    .font(appFont.font(size: 17, relativeTo: .body))
                     .foregroundStyle(AppearancePalette.ink)
                     .tint(AppearancePalette.ink)
                     .padding(.horizontal, 16)

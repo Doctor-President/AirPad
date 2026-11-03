@@ -262,7 +262,11 @@ targets:
         NSSpeechRecognitionUsageDescription: "AirPad uses speech recognition to transcribe your voice memos."
         NSCameraUsageDescription: "AirPad uses the camera to capture photos and videos as entries."
         NSPhotoLibraryUsageDescription: "AirPad can add photos from your photo library to an entry."
-        NSLocalNetworkUsageDescription: "AirPad needs local network access to reach the Ollama or LM Studio endpoint you configured in Settings. Only used for queries you initiate."
+        NSFaceIDUsageDescription: "AirPad uses Face ID to unlock the app when Require Face ID is on, and to show private entries."
+        # 1.1-C (C8) — lets the Map pan at 120 Hz on ProMotion iPhones (without it the system caps CADisplayLink content,
+        # the SKView, at 60). MapAdaptiveRate drops to 60 when frames miss. ONE-LINE REVERT: delete this key.
+        CADisableMinimumFrameDurationOnPhone: true
+        NSLocalNetworkUsageDescription: "AirPad uses your local network to reach the model server you set up, including checking it when you open Settings or the model picker."
         # ATS exception for user-configured local-AI endpoints. NSAllowsLocalNetworking
         # is too narrow — it only covers .local / link-local / unqualified hostnames,
         # not RFC 1918 ranges (10.x, 192.168.x, 172.16-31.x) and not Tailscale CGNAT
@@ -304,6 +308,8 @@ targets:
       path: AirPadShare/Info.plist
       properties:
         CFBundleDisplayName: AirPad Share
+        # 1.1-C (C1) — "Existing entry" asks for Face ID when Require Face ID is on.
+        NSFaceIDUsageDescription: "AirPad uses Face ID before showing your entries in the share sheet."
         # Must match the host app's version (App Store validation). Same fix as
         # the app target — pin to CURRENT_PROJECT_VERSION, not xcodegen's "1".
         # CRITICAL: this appex is validated MORE STRICTLY than the host app — an

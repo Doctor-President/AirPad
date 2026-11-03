@@ -13,6 +13,7 @@ import PhotosUI
 /// share `GalleryItemTile` as the per-item primitive, sized externally by each
 /// parent.
 struct GalleryBody: View {
+    @Environment(\.appBodyFont) private var appFont   // 1.1-A type pass
 
     let item: NodeItem
     let nodeID: String
@@ -124,7 +125,7 @@ struct GalleryBody: View {
 
             if let description = item.description, !description.isEmpty {
                 Text(description)
-                    .font(.caption)
+                    .font(appFont.font(size: 12, relativeTo: .caption1))
                     .foregroundStyle(AppearancePalette.ink.opacity(0.55))
                     .padding(.horizontal, 4)
             }
@@ -170,7 +171,7 @@ struct GalleryBody: View {
         HStack(spacing: 6) {
             if !isExpanded { thumbstack }
             Text("\(galleryItems.count)")
-                .font(.system(size: 12))
+                .font(appFont.font(size: 12, relativeTo: .caption1))
                 .foregroundStyle(AppearancePalette.ink.opacity(0.30))
                 .monospacedDigit()
         }
@@ -648,6 +649,7 @@ private struct GalleryBento: View {
 /// `moveEntry`'s one-commit-per-reorder philosophy. The card behind the sheet
 /// reflects the persisted order once the sheet dismisses.
 private struct GalleryReorderSheet: View {
+    @Environment(\.appBodyFont) private var appFont   // 1.1-A type pass
 
     let item: NodeItem
     let nodeID: String
@@ -695,7 +697,7 @@ private struct GalleryReorderSheet: View {
             .clipShape(RoundedRectangle(cornerRadius: 8))
 
             Text(galleryItem.mediaType == .video ? "Video" : "Photo")
-                .font(.body)
+                .font(appFont.font(size: 17, relativeTo: .body))
                 .foregroundStyle(AppearancePalette.ink)
 
             Spacer(minLength: 0)

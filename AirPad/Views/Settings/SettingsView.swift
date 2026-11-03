@@ -28,6 +28,7 @@ struct SettingsView: View {
     enum Dest: Hashable {
         case library, tags, models, webSearch, librarian, appearance, privacy, about, support
         case macModels, advanced   // nested under Models
+        case serverModels          // 1.1-D — nested under Your own models
         #if DEBUG
         case developer
         #endif
@@ -82,6 +83,7 @@ struct SettingsView: View {
     @State private var deepSeekKey = ""
     @State private var braveSearchKey = ""
     @State private var tavilySearchKey = ""   // live-28 (A2)
+    @State private var quickSave = false   // 1.1-C (C1) — mirrors ShareShared.quickSave (App Group)
     /// live-28 (A2) — Web search on/off (the keys stay in the Keychain) and the provider.
     @AppStorage(WebSearchBackend.enabledKey) private var webSearchEnabled = true
     @AppStorage(WebSearchBackend.providerKey) private var webSearchProvider = WebSearchBackend.Provider.brave.rawValue
@@ -116,6 +118,8 @@ struct SettingsView: View {
 
     // UI state
     @State private var connectionTestResult: String? = nil
+    /// 1.1-D — the endpoint/token are saved (and the server detected again) a moment after they stop changing.
+    @State private var endpointSaveTask: Task<Void, Never>? = nil
     @State private var isTestingConnection = false
     @State private var showTagEditor = false
     @State private var editingTag: Tag? = nil
@@ -132,6 +136,9 @@ struct SettingsView: View {
     // never read HostPairing.load() from `body`); refreshed on appear + after the sheet closes.
     @State private var showPairingQR = false
     @State private var hostPairing: HostPairing? = nil
+    /// 1.1-A (8) — the hidden AirPad Host switch (observed so the Models screen follows it); written via `HostAccess`.
+    @AppStorage(HostAccess.storageKey) private var hostAccessOn = false
+    @State private var versionTaps = 0
     @State private var showImportIdeas = false
     @State private var showReviewQueue = false
     @State private var showClearConfirmation = false
@@ -245,6 +252,7 @@ struct SettingsView: View {
         case .models:    modelsSubmenu
         case .macModels: macModelsSubmenu
         case .advanced:  advancedSubmenu
+        case .serverModels: serverModelsSubmenu
         case .webSearch: webSearchSubmenu
         case .librarian: librarianSubmenu
         case .appearance: appearanceSubmenu
@@ -304,6 +312,7 @@ struct SettingsView: View {
         submenuScroll(header: { submenuHeader(icon: "books.vertical.fill", tint: "1B59C2", title: "Library",
             blurb: "Everything you've saved, and the ways to bring more in or take it out.") }) {
             captureSection     // Brief BI — Done-delegates toggle
+            shareSection       // 1.1-C (C1) — Quick save
             corpusSection      // counts · search index + rebuild · export · clear · sample add/remove
             importSection      // "each paragraph becomes an entry"
             reviewSection      // Needs review (import review queue)
@@ -328,6 +337,25 @@ struct SettingsView: View {
         }
     }
 
+    /// 1.1-C (C1) — the share sheet: AirPad's own sheet (title, note, new or existing entry) by default; "Quick save"
+    /// brings back 1.0's one tap ("Saved!", a new entry). Stored in the App Group so the extension reads it.
+    private var shareSection: some View {
+        Section {
+            Toggle(isOn: Binding(get: { quickSave }, set: { quickSave = $0; ShareShared.quickSave = $0 })) {
+                Text("Quick save")
+                    .font(appFont.font(size: 15, weight: .medium, relativeTo: .subheadline))
+                    .foregroundStyle(AppearancePalette.ink)
+            }
+            .tint(Color(hexString: "1B59C2"))
+            .accessibilityIdentifier("settings.quickSave")
+        } footer: {
+            Text("Sharing to AirPad saves at once as a new entry, without asking for a title or where to put it.")
+                .font(appFont.font(size: 12, relativeTo: .caption1))
+                .foregroundStyle(AppearancePalette.ink.opacity(0.4))
+        }
+        .onAppear { quickSave = ShareShared.quickSave }
+    }
+
     /// Brief K — Manage Tags CRUD. A `List` (native swipe + context menu). Room-SEALED:
     /// sample-only tags never appear; counts + delete/rename act on the USER room only.
     private var tagsSubmenu: some View {
@@ -347,12 +375,12 @@ struct SettingsView: View {
                     ForEach(manageTagRows, id: \.tag.id) { row in
                         HStack(spacing: 10) {
                             Circle().fill(Color(hex: row.tag.colorHex) ?? .gray).frame(width: 11, height: 11)
-                            Text(row.tag.name).foregroundStyle(AppearancePalette.ink)
+                            Text(row.tag.name).font(appFont.font(size: 17, relativeTo: .body)).foregroundStyle(AppearancePalette.ink)
                             if row.tag.isCanvasAnchor {
                                 Image(systemName: "map.fill").font(.system(size: 10)).foregroundStyle(AppearancePalette.ink.opacity(0.3))
                             }
                             Spacer()
-                            Text("\(row.count)").monospacedDigit().foregroundStyle(AppearancePalette.ink.opacity(0.4))
+                            Text("\(row.count)").font(appFont.font(size: 17, relativeTo: .body).monospacedDigit()).foregroundStyle(AppearancePalette.ink.opacity(0.4))
                         }
                         .listRowBackground(AppearancePalette.ink.opacity(0.04))
                         .swipeActions(edge: .trailing) {
@@ -428,20 +456,25 @@ struct SettingsView: View {
                 appleIntelligenceRow
                 localModelSubsection   // "Downloaded model"
             }
+            // 1.1-A (8) — the custom server (was "Advanced") is the "your own models" path; AirPad Host is parked.
             VStack(alignment: .leading, spacing: 12) {
-                sectionHeader("On your Mac")
-                macRow
-            }
-            NavigationLink(value: Dest.advanced) {
-                HStack {
-                    Text("Advanced").font(appFont.font(size: 15, weight: .medium, relativeTo: .subheadline)).foregroundStyle(AppearancePalette.ink.opacity(0.8))
-                    Spacer()
-                    Image(systemName: "chevron.right").font(.caption).foregroundStyle(AppearancePalette.ink.opacity(0.3))
+                sectionHeader("Your own models")
+                NavigationLink(value: Dest.advanced) {
+                    macRowLabel(icon: "server.rack", text: ollamaEndpoint.isEmpty ? "Connect Ollama or LM Studio"
+                                                          : (URL(string: ollamaEndpoint)?.host ?? ollamaEndpoint), chevron: true)
                 }
-                .padding(.horizontal, 16).padding(.vertical, 12)
-                .background(AppearancePalette.ink.opacity(0.05)).clipShape(RoundedRectangle(cornerRadius: 10))
+                .buttonStyle(.plain)
+                .accessibilityIdentifier("settings.ownModels")
+                Text("Run Ollama or LM Studio on your own computer and point AirPad at it.")
+                    .font(appFont.font(size: 11, relativeTo: .caption2)).foregroundStyle(AppearancePalette.ink.opacity(0.4))
             }
-            .buttonStyle(.plain)
+            // The hidden developer switch (About → tap the version 7 times) brings back T's own Mac.
+            if hostAccessOn {
+                VStack(alignment: .leading, spacing: 12) {
+                    sectionHeader("AirPad Host (developer)")
+                    macRow
+                }
+            }
         }
         // Brief AL1 — refresh the shared pairing observable + the local name off-render when
         // the Models screen appears (covers the deep-link push, where the root `onAppear`
@@ -523,8 +556,8 @@ struct SettingsView: View {
     }
 
     private var advancedSubmenu: some View {
-        submenuScroll(header: { submenuHeader(icon: "slider.horizontal.3", tint: "8A8A8E", title: "Advanced",
-            blurb: "Connect a model server on your network, like Ollama or LM Studio.") }) {
+        submenuScroll(header: { submenuHeader(icon: "server.rack", tint: "8A8A8E", title: "Your own models",
+            blurb: "Point AirPad at Ollama or LM Studio on your own computer.") }) {
             VStack(alignment: .leading, spacing: 12) {
                 VStack(alignment: .leading, spacing: 4) {
                     Text("Ollama / LM Studio endpoint").font(appFont.font(size: 12, weight: .semibold, relativeTo: .caption1)).foregroundStyle(AppearancePalette.ink.opacity(0.4))
@@ -534,6 +567,7 @@ struct SettingsView: View {
                         .keyboardType(.URL).autocorrectionDisabled().textInputAutocapitalization(.never)
                 }
                 apiKeyField(label: "API token (optional)", placeholder: "Bearer token — leave empty for none", text: $ollamaAPIToken)
+                ServerDetectionRow(endpointText: $ollamaEndpoint)
                 HStack {
                     Button { testConnection() } label: {
                         HStack(spacing: 6) {
@@ -558,6 +592,32 @@ struct SettingsView: View {
                     apiKeyField(label: "DeepSeek API key", placeholder: "sk-...", text: $deepSeekKey)
                 }
             }
+        }
+        .onChange(of: ollamaEndpoint) { _, _ in scheduleEndpointSave() }
+        .onChange(of: ollamaAPIToken) { _, _ in scheduleEndpointSave() }
+        .task { await HostCatalog.server.refreshServer(redetect: true) }
+    }
+
+    /// Settings → Your own models → Models: the full picker surface for the server (list, pick, load/eject, downloads).
+    private var serverModelsSubmenu: some View {
+        ModelPickerSheet(catalog: HostCatalog.server, thinkEnabled: $hostThinkingDefault, fullControls: true)
+            .navigationTitle("Models")
+            .navigationBarTitleDisplayMode(.inline)
+    }
+
+    /// Save the endpoint + token shortly after the last edit, forget what was detected there, and detect again.
+    private func scheduleEndpointSave() {
+        endpointSaveTask?.cancel()
+        endpointSaveTask = Task {
+            try? await Task.sleep(for: .milliseconds(700))
+            guard !Task.isCancelled else { return }
+            persistKey("ollamaEndpoint", value: ollamaEndpoint.trimmingCharacters(in: .whitespacesAndNewlines))
+            persistKey("ollamaAPIToken", value: ollamaAPIToken.trimmingCharacters(in: .whitespacesAndNewlines))
+            CustomServer.forget(nil)
+            connectionTestResult = nil
+            await HostCatalog.server.refreshServer(redetect: true)
+            HostCatalog.shared.refreshRoute()
+            NotificationCenter.default.post(name: .librarianRouteChanged, object: nil)
         }
     }
 
@@ -614,6 +674,9 @@ struct SettingsView: View {
             blurb: "How AirPad looks, and the font it uses.") }) {
             VStack(alignment: .leading, spacing: 20) {
                 MapLookSection()   // pro-build — the Map's look (Flat free; the rest AirPad Pro)
+                MapGroundSection()                   // 1.1-B — Pro: the Map's ground + dots
+                GravityWellsToggle(detailed: true)   // 1.1-A fix-up (1)
+                DashboardSurfaceSection()            // 1.1-A fix-up (2) — Glass free; the rest AirPad Pro
                 VStack(alignment: .leading, spacing: 8) {
                     Text("Theme").font(appFont.font(size: 15, weight: .semibold, relativeTo: .subheadline)).foregroundStyle(AppearancePalette.ink)
                     Picker("Theme", selection: Binding(
@@ -648,6 +711,7 @@ struct SettingsView: View {
     private var privacySubmenu: some View {
         submenuScroll(header: { submenuHeader(icon: "lock.fill", tint: "3A8DDE", title: "Privacy",
             blurb: "What AirPad keeps, and where.") }) {
+            appLockSection   // 1.1-A (A6)
             if !hasAnyFrontierKey {
                 HStack(spacing: 8) {
                     Image(systemName: "lock.fill").font(.caption).foregroundStyle(.green.opacity(0.8))
@@ -655,6 +719,46 @@ struct SettingsView: View {
                 }
             }
         }
+    }
+
+    /// 1.1-A (A6) — "Require Face ID" (off by default) + lock after (Immediately / 1 min / 5 min, default 1 min).
+    /// Turning it on asks for Face ID / the passcode first. Copy never says "encryption".
+    private var appLockSection: some View {
+        let lock = AppLock.shared
+        return VStack(alignment: .leading, spacing: 10) {
+            Toggle(isOn: Binding(
+                get: { lock.enabled },
+                set: { on in
+                    if on { Task { _ = await lock.requestEnable() } } else { lock.enabled = false }
+                }
+            )) {
+                VStack(alignment: .leading, spacing: 2) {
+                    Text(lock.requireLabel).font(appFont.font(size: 15, weight: .medium, relativeTo: .subheadline))
+                        .foregroundStyle(AppearancePalette.ink)
+                    Text(lock.method == .none ? "Set a passcode on this \(ModelRouter.deviceNoun) to use this."
+                                              : "AirPad asks before it opens. Quick Capture and the share sheet can still add entries.")
+                        .font(appFont.font(size: 12, relativeTo: .caption1))
+                        .foregroundStyle(AppearancePalette.ink.opacity(0.45))
+                        .fixedSize(horizontal: false, vertical: true)
+                }
+            }
+            .tint(Color(hexString: "3A8DDE"))
+            .disabled(lock.method == .none && !lock.enabled)
+            .accessibilityIdentifier("settings.requireFaceID")
+            if lock.enabled {
+                HStack {
+                    Text("Lock").font(appFont.font(size: 15, relativeTo: .subheadline)).foregroundStyle(AppearancePalette.ink)
+                    Spacer()
+                    Picker("Lock", selection: Binding(get: { lock.after }, set: { lock.after = $0 })) {
+                        ForEach(AppLock.After.allCases) { Text($0.label).tag($0) }
+                    }
+                    .pickerStyle(.menu)
+                    .tint(AppearancePalette.ink)
+                    .accessibilityIdentifier("settings.lockAfter")
+                }
+            }
+        }
+        .padding(14).background(AppearancePalette.ink.opacity(0.05)).clipShape(RoundedRectangle(cornerRadius: 12))
     }
 
     private var aboutSubmenu: some View {
@@ -666,11 +770,23 @@ struct SettingsView: View {
                    let build = Bundle.main.object(forInfoDictionaryKey: "CFBundleVersion") as? String {
                     Text("Version \(version) (\(build))").font(appFont.font(size: 11, relativeTo: .caption2)).foregroundStyle(AppearancePalette.ink.opacity(0.25))
                         .accessibilityIdentifier("aboutVersion")
+                        // 1.1-A (8) — the hidden AirPad Host switch: 7 taps on the version line toggle it.
+                        .onTapGesture {
+                            versionTaps += 1
+                            guard versionTaps >= 7 else { return }
+                            versionTaps = 0
+                            HostAccess.enabled.toggle()
+                            HostCatalog.shared.refreshPaired()
+                        }
                         #if DEBUG || TESTFLIGHT
                         // live-12 (2) — TestFlight/DEBUG only: long-press → "Speech engine (testing)"; compiled out of
                         // App Store builds (live-19 (4)).
                         .onLongPressGesture { showSpeechEngineTesting = true }
                         #endif
+                }
+                if hostAccessOn {
+                    Text("Developer: AirPad Host on").font(appFont.font(size: 11, relativeTo: .caption2)).foregroundStyle(AppearancePalette.ink.opacity(0.35))
+                        .accessibilityIdentifier("aboutHostDeveloper")
                 }
             }
         }
@@ -861,7 +977,7 @@ struct SettingsView: View {
                     .textSelection(.enabled)
                 if localModel.lastOutTokens > 0 {
                     Text("\(localModel.lastOutTokens) out-tokens · \(String(format: "%.1f", localModel.lastTokPerSec)) tok/s")
-                        .font(.caption2.monospacedDigit()).foregroundStyle(AppearancePalette.ink.opacity(0.4))
+                        .font(appFont.font(size: 11, relativeTo: .caption2).monospacedDigit()).foregroundStyle(AppearancePalette.ink.opacity(0.4))
                 }
             }
         }
@@ -891,7 +1007,7 @@ struct SettingsView: View {
                     .foregroundStyle(AppearancePalette.ink.opacity(0.4))
                 Spacer()
                 Text("\(librarianPersonalPrompt.count) / \(Self.librarianPersonalPromptMaxChars)")
-                    .font(.caption2.monospacedDigit())
+                    .font(appFont.font(size: 11, relativeTo: .caption2).monospacedDigit())
                     .foregroundStyle(
                         librarianPersonalPrompt.count >= Self.librarianPersonalPromptMaxChars
                         ? .orange.opacity(0.8)
@@ -1189,7 +1305,7 @@ struct SettingsView: View {
                 Task { await store.reprocessUntaggedNodes() }
             } label: {
                 Text(inFlight ? "Reprocessing…" : "Reprocess Untagged Nodes")
-                    .font(.caption2)
+                    .font(appFont.font(size: 11, relativeTo: .caption2))
                     .foregroundStyle(.orange.opacity(inFlight ? 0.3 : 0.5))
             }
             .buttonStyle(.plain)
@@ -1198,7 +1314,7 @@ struct SettingsView: View {
 
             if let s = state {
                 Text(reprocessStatusText(s))
-                    .font(.caption2)
+                    .font(appFont.font(size: 11, relativeTo: .caption2))
                     .foregroundStyle(AppearancePalette.ink.opacity(0.35))
                     .frame(maxWidth: .infinity, alignment: .center)
             }
@@ -1222,7 +1338,7 @@ struct SettingsView: View {
                 Task { await store.backfillContentEmbeddings() }
             } label: {
                 Text(inFlight ? "Backfilling embeddings…" : "Backfill content embeddings")
-                    .font(.caption2)
+                    .font(appFont.font(size: 11, relativeTo: .caption2))
                     .foregroundStyle(.orange.opacity(inFlight ? 0.3 : 0.5))
             }
             .buttonStyle(.plain)
@@ -1231,7 +1347,7 @@ struct SettingsView: View {
 
             if let s = state {
                 Text(backfillStatusText(s))
-                    .font(.caption2)
+                    .font(appFont.font(size: 11, relativeTo: .caption2))
                     .foregroundStyle(AppearancePalette.ink.opacity(0.35))
                     .frame(maxWidth: .infinity, alignment: .center)
             }
@@ -1437,6 +1553,10 @@ struct SettingsView: View {
         braveSearchKey = KeychainHelper.load(key: WebSearchBackend.keychainKey) ?? ""
         tavilySearchKey = KeychainHelper.load(key: WebSearchBackend.tavilyKeychainKey) ?? ""
         ollamaEndpoint = KeychainHelper.load(key: "ollamaEndpoint")    ?? ""
+        #if DEBUG
+        // 1.1-D — stills/UI tests point Settings at a fake server the way routing already does (`configuredEndpoint`).
+        if ollamaEndpoint.isEmpty, let e = UserDefaults.standard.string(forKey: "DebugEndpointURL") { ollamaEndpoint = e }
+        #endif
         ollamaAPIToken = KeychainHelper.load(key: "ollamaAPIToken")    ?? ""
         hostPairing    = HostPairing.load()
     }
@@ -1477,8 +1597,9 @@ struct SettingsView: View {
             switch await ModelRouter.probeEndpoint(trimmed) {
             case .needsEndpoint:
                 connectionTestResult = "Enter an endpoint above to test it."
-            case .reachable(let model):
-                connectionTestResult = "✓ Connected — \(model) is loaded"
+            case .reachable(let server, let model):
+                connectionTestResult = "✓ \(server)" + (model.map { " — chats use \($0)" } ?? " — no models yet")
+                await HostCatalog.server.refreshServer()
             case .unreachable(let reason):
                 connectionTestResult = "✗ \(reason)"
             }
@@ -1491,6 +1612,54 @@ struct SettingsView: View {
         if result.hasPrefix("✓") { return .green }
         if result.hasPrefix("✗") { return .red.opacity(0.8) }
         return AppearancePalette.ink.opacity(0.55)
+    }
+}
+
+/// 1.1-D — what answered at the endpoint ("Ollama 0.13.2", "LM Studio 0.4.14", "OpenAI-compatible server"), or why it
+/// can't be reached; once something answered, the way into its models. Its OWN view, so it observes `HostCatalog.server`
+/// (built inside the pushed destination's closure, it never re-rendered — the navdest stale-state trap).
+private struct ServerDetectionRow: View {
+    @Environment(\.appBodyFont) private var appFont
+    @Binding var endpointText: String   // a binding: a plain value here is the destination's stale snapshot
+    var body: some View {
+        let server = HostCatalog.server
+        if !endpointText.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty {
+            if server.isLoading && server.serverKind == nil {
+                Text("Looking for the server…").font(appFont.font(size: 12, relativeTo: .caption1))
+                    .foregroundStyle(AppearancePalette.ink.opacity(0.5))
+            } else if server.reachable, let kind = server.serverKind {
+                NavigationLink(value: SettingsView.Dest.serverModels) {
+                    HStack(spacing: 8) {
+                        Image(systemName: "checkmark.seal.fill").foregroundStyle(.green)
+                        VStack(alignment: .leading, spacing: 2) {
+                            Text(kind.label).font(appFont.font(size: 15, weight: .medium, relativeTo: .subheadline))
+                                .foregroundStyle(AppearancePalette.ink.opacity(0.85))
+                                .accessibilityIdentifier("settings.serverKind")
+                            Text(server.chosen.map { "Models · chats use \(server.name($0))" } ?? "Models")
+                                .font(appFont.font(size: 12, relativeTo: .caption1)).foregroundStyle(AppearancePalette.ink.opacity(0.5))
+                        }
+                        Spacer()
+                        Image(systemName: "chevron.right").font(.caption).foregroundStyle(AppearancePalette.ink.opacity(0.3))
+                    }
+                    .padding(.horizontal, 16).padding(.vertical, 11)
+                    .background(AppearancePalette.ink.opacity(0.07)).clipShape(RoundedRectangle(cornerRadius: 10))
+                }
+                .buttonStyle(.plain)
+                .accessibilityIdentifier("settings.serverModels")
+            } else if let err = server.serverError {
+                VStack(alignment: .leading, spacing: 4) {
+                    Label(err, systemImage: "wifi.slash").font(appFont.font(size: 12, relativeTo: .caption1))
+                        .foregroundStyle(AppearancePalette.ink.opacity(0.6))
+                        .accessibilityIdentifier("settings.serverError")
+                    if server.serverUnreachable {
+                        Text(CustomServer.networkHint).font(appFont.font(size: 12, relativeTo: .caption1))
+                            .foregroundStyle(AppearancePalette.ink.opacity(0.5))
+                            .fixedSize(horizontal: false, vertical: true)
+                            .accessibilityIdentifier("settings.serverNetworkHint")
+                    }
+                }
+            }
+        }
     }
 }
 

@@ -9,6 +9,7 @@ import SwiftUI
 /// live-27 (4b) — one shared view: the Librarian and the Chat view show the same toggle over the same stored setting
 /// (`LibrarianState.corpusAware`), so both surfaces route a turn the same way.
 struct CorpusModeToggle: View {
+    @Environment(\.appBodyFont) private var appFont   // 1.1-A type pass
     let librarian: LibrarianState
     var identifier: String
     /// After a flip (the Librarian's first-use coach-mark).
@@ -27,7 +28,7 @@ struct CorpusModeToggle: View {
                     .font(.system(size: 11, weight: .semibold))
                     .contentTransition(.symbolEffect(.replace))
                 Text(on ? "Library" : "General")
-                    .font(.system(size: 12, weight: .semibold))
+                    .font(appFont.font(size: 12, weight: .semibold, relativeTo: .caption1))
                     .contentTransition(.opacity)
             }
             .foregroundStyle(AppearancePalette.ink.opacity(on ? 0.9 : 0.55))

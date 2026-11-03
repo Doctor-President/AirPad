@@ -1,6 +1,7 @@
 import SwiftUI
 
 struct ImportIdeasSheet: View {
+    @Environment(\.appBodyFont) private var appFont   // 1.1-A type pass
 
     @Environment(CorpusStore.self) private var store
     @Environment(\.dismiss) private var dismiss
@@ -21,14 +22,14 @@ struct ImportIdeasSheet: View {
                     ZStack(alignment: .topLeading) {
                         if text.isEmpty {
                             Text("Paste any text — bullet lists, multi-paragraph writing…")
-                                .font(.body)
+                                .font(appFont.font(size: 17, relativeTo: .body))
                                 .foregroundStyle(AppearancePalette.ink.opacity(0.3))
                                 .padding(.horizontal, 4)
                                 .padding(.vertical, 8)
                                 .allowsHitTesting(false)
                         }
                         TextEditor(text: $text)
-                            .font(.body)
+                            .font(appFont.font(size: 17, relativeTo: .body))
                             .foregroundStyle(AppearancePalette.ink)
                             .scrollContentBackground(.hidden)
                             .tint(AppearancePalette.ink)
@@ -44,21 +45,21 @@ struct ImportIdeasSheet: View {
                     HStack(spacing: 8) {
                         if detectedCount == 0 {
                             Text("No entries detected yet")
-                                .font(.subheadline)
+                                .font(appFont.font(size: 15, relativeTo: .subheadline))
                                 .foregroundStyle(AppearancePalette.ink.opacity(0.35))
                         } else if willTruncate {
                             Image(systemName: "exclamationmark.triangle")
                                 .font(.caption.weight(.semibold))
                                 .foregroundStyle(.orange)
                             Text("\(detectedCount) detected — max \(BatchParser.maxNodes), first \(BatchParser.maxNodes) will be imported")
-                                .font(.subheadline)
+                                .font(appFont.font(size: 15, relativeTo: .subheadline))
                                 .foregroundStyle(.orange)
                         } else {
                             Image(systemName: "checkmark.circle")
                                 .font(.caption.weight(.semibold))
                                 .foregroundStyle(.green.opacity(0.8))
                             Text("\(detectedCount) \(detectedCount == 1 ? "entry" : "entries") detected")
-                                .font(.subheadline)
+                                .font(appFont.font(size: 15, relativeTo: .subheadline))
                                 .foregroundStyle(AppearancePalette.ink.opacity(0.65))
                         }
                         Spacer()

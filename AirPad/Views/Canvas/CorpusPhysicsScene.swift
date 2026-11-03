@@ -1,6 +1,9 @@
 import SpriteKit
 import UIKit
 import simd
+#if DEBUG
+import Metal   // 1.1-A (6) — the `-MapGPUBench` offscreen SKRenderer harness
+#endif
 
 /// The tier-fit SIZE-CARRIER face — a UIFont whose only job is to pass the tier point
 /// size through the wrap loop (`mapLabelFont`); the FACE never reaches the screen. The
@@ -849,7 +852,7 @@ final class CorpusPhysicsScene: SKScene {
                 .vectorFloat3Value = vector_float3(MapCompTuning.palLightness, MapCompTuning.palChroma,
                                                    MapCompTuning.palHueDeg * Float.pi / 180)   // deg → rad
             orbSpriteShader.uniforms.first { $0.name == "u_ground_color" }?
-                .vectorFloat3Value = Self.rgb3(MapCompTuning.lightGroundHex)
+                .vectorFloat3Value = Self.lightGroundRGB
             // Grid: opaque owned #FFEEED ground; no pool, no ripple.
             setGrid("u_ripple_amt", 0)
             setGrid("u_light_ground_on", 1)
@@ -869,8 +872,19 @@ final class CorpusPhysicsScene: SKScene {
                 .vectorFloat3Value = vector_float3(0.0667, 0.0667, 0.0824)
             if let m = mapTuning { applyMapDarkTuning(m) }
         }
+        // 1.1-B — the Pro-edited ground (colour + optional gradient) on the grid; nil = today's ground exactly.
+        if let grid = gridNode {
+            if let o = MapGround.override(light: currentIsLight) {
+                BackgroundGridNode.setGround(grid, color: o.colorRGB, gradient: o.gradient ? (o.color2RGB, o.direction) : nil)
+            } else {
+                grid.fillShader?.uniformNamed("u_grad_dir")?.vectorFloat2Value = .zero
+            }
+        }
         applyMapLook(mapTuning)   // live-43 — the orb look on both grounds (Aura, Outline)
     }
+
+    /// 1.1-B — the light Map's ground as one colour (the orb shaders' "ground"; a gradient's middle): the Pro edit, or #FFEEED.
+    static var lightGroundRGB: vector_float3 { MapGround.override(light: true)?.meanRGB ?? rgb3(MapCompTuning.lightGroundHex) }
 
     /// live-48 — the tuner's Map values AS DRAWN: thermal ≥ .critical → the orb look is Flat until the phone cools (the
     /// tuner keeps T's pick, nothing in the UI changes; the look returns by itself). Every look read in the scene goes
@@ -885,6 +899,19 @@ final class CorpusPhysicsScene: SKScene {
         #endif
         m.orbLook = MapLookChoice.effective
         if MapHeatGuard.shared.critical { m.orbLook = .flat }
+        // 1.1-B — the Pro-edited dark ground + dots (a gradient's middle stands in where one colour is needed).
+        if let o = MapGround.override(light: false) {
+            m.ground = TunerHSL(hex: Self.hex6(o.meanRGB)); m.dot = TunerHSL(hex: o.dotShown); m.dotOpacity = o.dotOpacity
+        }
+        m.applyStrength(MapLookStrength.effective(m.orbLook))   // 1.1-B — the Pro look's Subtle / Medium / Strong
+        #if DEBUG
+        let sk = "\(m.orbLook.rawValue)/\(MapLookStrength.effective(m.orbLook).label)"
+        if sk != Self.lastStrengthLog {
+            Self.lastStrengthLog = sk
+            NSLog("[STRENGTH] %@ aura spread=%.2f warp=%.2f rim=%.2f · wash bleed=%.2f · riso fringe=%.2f · outline ring=%.1f", sk,
+                  m.aura.spread, m.aura.warp, m.aura.rim, m.wash.bleed, m.riso.fringe, m.outline.ringWidth)
+        }
+        #endif
         return m
     }
     /// live-48 — a Pro look (Glass, Aura, Eclipse; Wash on the light Map) is what the orbs wear → 60 fps while panning.
@@ -940,6 +967,10 @@ final class CorpusPhysicsScene: SKScene {
     #if DEBUG
     private var swatchFramed = false
     private var swatchFamily: (String, Int)?
+    private var inkTourActive = false   // 1.1-A (4) `-InkStillTour`
+    #if DEBUG
+    private static var lastStrengthLog = ""   // 1.1-B `[STRENGTH]`: log the drawn values once per look / strength change
+    #endif
     static let noTitlesDebug = ProcessInfo.processInfo.arguments.contains("-MapNoTitles")
     #endif
     /// live-50b — DEBUG `-MapStudyLightGlass`: the light Map draws the study's Light Glass (live-49 / 50) instead of Glass, for A/B stills.
@@ -1006,17 +1037,19 @@ final class CorpusPhysicsScene: SKScene {
         let outlineNow = look == .outline
         if outlineNow != outlineLookOn { outlineLookOn = outlineNow; syncOutlineEmphasis() }
         // Title ink follows the look; recolour only when its inputs change.
+        // 1.1-A (4): the key carries every input of the look's twin (and the ground), so the rule re-runs only when one moves.
         var inkKey: String
         switch look {
-        case .fresnel: inkKey = "fr\(m.fresnel)\(m.ground.hex)"
-        case .glass: let gv = m.glassFor(light: currentIsLight); inkKey = "gl\(gv.tint)\(gv.brightness)\(gv.label.hex)\(m.ground.hex)\(currentIsLight)"
+        case .fresnel: inkKey = "fr\(m.fresnel)"
+        case .glass: inkKey = "gl\(m.glassFor(light: currentIsLight))\(currentIsLight)"
         case .aura: inkKey = "au\(m.aura.spread)\(m.aura.warp)\(m.aura.rim)\(auraStyleKey)\(currentIsLight)"
-        case .eclipse: inkKey = "ec\(currentIsLight)"
-        case .outline: inkKey = "ol\(currentIsLight)"
-        case .flat: inkKey = washOn ? "wa\(washStyleKey)\(m.wash.spread)\(m.wash.warp)" : "flat"
+        case .eclipse: inkKey = "ec\(m.eclipse)\(auraStyleKey)\(currentIsLight)"
+        case .outline: inkKey = "ol\(m.outline.fillOpacity)\(currentIsLight)"
+        case .flat: inkKey = washOn ? "wa\(washStyleKey)\(m.wash.spread)\(m.wash.warp)" : "flat\(m.orbGlowOpacity)\(m.orbGlow.hex)"
         case .riso, .gradient: inkKey = "s2"
         }
-        if let s2 { inkKey = "s2\(s2)\(study2StyleKey)\(currentIsLight)\(m.lightGlass.label.hex)" }   // live-49 / 50 (label colour)
+        if let s2 { inkKey = "s2\(s2)\(study2StyleKey)\(currentIsLight)\(m.lightGlass.label.hex)\(m.riso)\(m.gradient)" }   // live-49 / 50 (label colour)
+        inkKey += "|\(Self.titleGround(m, light: currentIsLight))"
         if inkKey != lastTitleInkKey { lastTitleInkKey = inkKey; restyleLabels() }
     }
 
@@ -1823,19 +1856,24 @@ final class CorpusPhysicsScene: SKScene {
     /// the next idle-rate frame). Also bumps `lastActivityTime` so the debounce starts fresh.
     private func wakeMap() {
         isTouchingMap = true
+        adaptiveTouchStart = true
         desiredMapFPS = activeFPSNow
         if let v = view, v.preferredFramesPerSecond != desiredMapFPS {
             v.preferredFramesPerSecond = desiredMapFPS
         }
     }
 
-    /// live-48 — the panning / zooming frame rate: 60 on the Pro looks (Glass, Aura, Eclipse, Wash) and on EVERY look while
-    /// Low Power is on or thermal ≥ .serious; otherwise 120 (Flat and Outline unchanged). Rest stays 8 fps.
+    /// live-48 — the panning / zooming frame rate: 60 on EVERY look while Low Power is on or thermal ≥ .serious. 1.1-C (C8):
+    /// otherwise `MapAdaptiveRate` (120 while the frames keep up, else 60) on every look (live-48's "60 on the Pro looks"
+    /// never ran: without CADisableMinimumFrameDurationOnPhone the system capped everything at 60). Rest stays 8 fps.
     private var activeFPSNow: Int {
-        if proLookShowing || MapHeatGuard.shared.stressed { return Self.proActiveMapFPS }
-        return Self.activeMapFPS
+        if MapHeatGuard.shared.stressed { return Self.proActiveMapFPS }
+        return adaptiveRate.rate
     }
     private static let proActiveMapFPS = 60
+    private var adaptiveRate = MapAdaptiveRate()
+    private var adaptiveAwake = false
+    private var adaptiveTouchStart = false
 
     /// Brief AY — per-frame: count real renders, detect activity, drop/raise the SKView frame rate, and
     /// publish the heat instruments. At rest the map renders at `idleMapFPS` (a static image looks
@@ -1860,7 +1898,18 @@ final class CorpusPhysicsScene: SKScene {
         orbsMovedLastFrame = wasAnimating   // latch for next frame's updateGridWarp dirty check
         animatingThisFrame = false
 
-        var target = (currentTime - lastActivityTime < Self.idleDelay) ? activeFPSNow : Self.idleMapFPS
+        // 1.1-C (C8) — while awake, the adaptive controller sees every frame (it measures the intervals at 120); a new
+        // gesture (waking from rest, or a touch-down) is the only moment it may go back up to 120.
+        let awake = currentTime - lastActivityTime < Self.idleDelay
+        let regime = lastWarpMode == 3 ? 1 : 0
+        if awake && !MapHeatGuard.shared.stressed {
+            _ = adaptiveRate.frame(at: currentTime, regime: regime, gestureStart: !adaptiveAwake || adaptiveTouchStart)
+        } else if adaptiveAwake {
+            adaptiveRate.gestureEnded(regime: regime)
+        }
+        adaptiveAwake = awake && !MapHeatGuard.shared.stressed
+        adaptiveTouchStart = false
+        var target = awake ? activeFPSNow : Self.idleMapFPS
         // live-43 — only the Glass light following the tilt (a visible step) → 30 fps, not 120; the Aura drift (motion
         // T asked for) → at least 30 fps. Nothing else at rest leaves the 8 fps idle.
         if target == Self.idleMapFPS && currentTime - lastTiltActivityTime < Self.idleDelay { target = Self.tiltMapFPS }
@@ -1951,6 +2000,13 @@ final class CorpusPhysicsScene: SKScene {
 
     override func didMove(to view: SKView) {
         self.isPaused = false
+        #if PANBENCH && !DEBUG
+        // 1.1-C (C8) — the bench build's `-MapZoom <mult>` (DEBUG has its own below): zoomed in / out for the 120 run.
+        if let i = ProcessInfo.processInfo.arguments.firstIndex(of: "-MapZoom"), i + 1 < ProcessInfo.processInfo.arguments.count,
+           let mult = Float(ProcessInfo.processInfo.arguments[i + 1]) {
+            DispatchQueue.main.asyncAfter(deadline: .now() + 14) { self.cameraNode.setScale(self.cameraNode.xScale * CGFloat(mult)) }
+        }
+        #endif
         #if DEBUG
         if ProcessInfo.processInfo.arguments.contains("-LogSwatches") {
             NSLog("[Swatches] baked light slots: %@",
@@ -2025,6 +2081,35 @@ final class CorpusPhysicsScene: SKScene {
             }
         }
         startAuraSizeScriptIfAsked()
+        scheduleGPUBenchIfAsked()   // 1.1-A (6) — `-MapGPUBench`
+        if ProcessInfo.processInfo.arguments.contains("-DumpOrbShaders") { dumpOrbShaders() }   // 1.0r S1e
+        // 1.0r S1c — `-RisoDotsScript <start-s>`: one launch, one layout: every 10 s from <start-s> Riso pre-fix / fixed with
+        // the Dots at 0 (the port check), then pre-fix / fixed with the Dots at 100%; NSLog `[RISODOTS] <step>`.
+        if let v = UserDefaults.standard.string(forKey: "RisoDotsScript"), let start = Double(v) {
+            func dots(_ o: Double) { var e = MapGround.edited; e.dark.custom = true; e.light.custom = true
+                e.dark.dotOpacity = o; e.light.dotOpacity = o; MapGround.edited = e }
+            let steps: [(String, () -> Void)] = [
+                ("legacy-dots0", { Self.dotsLegacyDebug = true; dots(0) }), ("fixed-dots0", { Self.dotsLegacyDebug = false }),
+                ("legacy-dots100", { Self.dotsLegacyDebug = true; dots(1) }), ("fixed-dots100", { Self.dotsLegacyDebug = false }),
+            ]
+            for (i, st) in steps.enumerated() {
+                DispatchQueue.main.asyncAfter(deadline: .now() + start + Double(i) * 10) { st.1(); NSLog("[RISODOTS] %@", st.0) }
+            }
+        }
+        // 1.1-B — `-MapSheenFlipAt <s>`: flip the Sheen once, s seconds in (a same-launch off/on still pair).
+        if let v = UserDefaults.standard.string(forKey: "MapSheenFlipAt"), let t = Double(v) {
+            DispatchQueue.main.asyncAfter(deadline: .now() + t) { MapSheen.debugOff.toggle(); NSLog("[SHEEN] flipped → %@", MapSheen.debugOff ? "off" : "on") }
+        }
+        scheduleMapLayoutExportIfAsked()   // 1.1-B study — `-ExportMapLayout <tag>`
+        // 1.1-A (4) — `-InkAudit` (the title-ink audit, after the auto-fit settles) and `-InkStillTour <n>` (before / after stills).
+        if ProcessInfo.processInfo.arguments.contains("-DumpLookStrengths") { MapDarkTuning.dumpStrengths() }   // 1.1-B
+        if ProcessInfo.processInfo.arguments.contains("-InkAudit") {
+            whenOrbsSettled(after: 16) { [weak self] in self?.runInkAudit() }
+        }
+        if let i = ProcessInfo.processInfo.arguments.firstIndex(of: "-InkStillTour"), i + 1 < ProcessInfo.processInfo.arguments.count,
+           let n = Int(ProcessInfo.processInfo.arguments[i + 1]) {
+            whenOrbsSettled(after: 16) { [weak self] in self?.startInkStillTour(n: n, delay: 3) }
+        }
         #endif
         // White-flash fix: a re-presented scene must re-signal its first frame so
         // CanvasView re-hides then reveals (each mount has the backing gap).
@@ -2076,6 +2161,10 @@ final class CorpusPhysicsScene: SKScene {
 
     override func update(_ currentTime: TimeInterval) {
         if isPaused { return }
+        #if DEBUG || PANBENCH
+        let pbT0 = CACurrentMediaTime(); panBenchTick(currentTime)
+        defer { panBenchEnd(pbT0) }
+        #endif
         // Frame delta (s), captured before the per-frame passes consume it. Clamp against a stall.
         frameDT = lastUpdateTime > 0 ? min(max(currentTime - lastUpdateTime, 0), 0.1) : 1.0 / 120.0
 
@@ -2086,8 +2175,18 @@ final class CorpusPhysicsScene: SKScene {
             onFirstRender?()
         }
 
+        #if DEBUG
+        applyAutoPanDebug(currentTime)   // 1.1-A (6) — `-MapAutoPan`: a slow camera drift (the "panning" state)
+        let warpT0 = CACurrentMediaTime()
+        #endif
         updateGridWarp()      // grid warp — SHIPS (baked 2026-09-14)
+        #if DEBUG
+        benchWarpCPU += CACurrentMediaTime() - warpT0
+        #endif
         applyMapComp()        // Brief AS — push the live Map-comp levers (dark only)
+        #if DEBUG
+        applyGroundCaseGridDebug()   // 1.1-A (6) — `-MapGroundCase`: wells / ripple / dots / grid off
+        #endif
         #if DEBUG
         syncLayoutRings()     // live-44 — `-AuraLayoutRings` audit overlay
         #endif
@@ -2138,10 +2237,34 @@ final class CorpusPhysicsScene: SKScene {
             let dotDark = view?.traitCollection.userInterfaceStyle != .light
             var dot = AppearancePalette.mapGridDotRGB(dark: dotDark)
             var dotOpacity = AppearancePalette.mapGridDotOpacity(dark: dotDark)
-            if dotDark, let m = mapTuning {   // live-39 — the tuner's dark dots
+            if dotDark, let m = mapTuning {   // live-39 — the tuner's dark dots (1.1-B: the Pro-edited dots ride in mapTuning)
                 let c = m.dot.simd; dot = (c.x, c.y, c.z); dotOpacity = Float(m.dotOpacity)
+            } else if !dotDark, let o = MapGround.override(light: true) {   // 1.1-B — the Pro-edited light dots
+                let c = o.dotShownRGB; dot = (c.x, c.y, c.z); dotOpacity = Float(o.dotOpacity)
             }
             BackgroundGridNode.setDotAppearance(grid, r: dot.r, g: dot.g, b: dot.b, opacity: dotOpacity)
+            BackgroundGridNode.setSheen(grid, on: sheenOn)
+            syncGroundRebuild()   // 1.0r S1c — after every grid uniform of the frame
+            // 1.1-B — the titles' ink reads the ground: re-pick when the edit (or Pro) changes, and with a gradient also
+            // after the camera has moved a quarter screen (each title then sits over another part of the gradient).
+            // 1.1-B fix-up (A): the gradient re-pick ran the rule for EVERY title in one frame, six times per fast flick
+            // (Sim: 1,260 picks per flick, update() 30 → 74 ms on those frames). Now only the titles whose look reads the
+            // ground are queued (none on Aura / Eclipse / Gradient), on-screen first, `groundInkPerFrame` per frame.
+            let ov = MapGround.override(light: currentIsLight)
+            let camMoved = hypot(cameraNode.position.x - lastGroundInkCam.x, cameraNode.position.y - lastGroundInkCam.y)
+                / max(cameraNode.xScale, 0.0001)
+            if ov != lastGroundOverride {
+                lastGroundOverride = ov; lastGroundInkCam = cameraNode.position; groundInkQueue = []
+                restyleLabels()
+            } else if ov?.gradient == true && camMoved > size.height / 4 {
+                lastGroundInkCam = cameraNode.position
+                #if DEBUG || PANBENCH
+                if PanBench.oldInk { restyleLabels() } else { queueGroundInk() }
+                #else
+                queueGroundInk()
+                #endif
+            }
+            drainGroundInk()
         }
 
         // Re-theme unfocused orbs when the appearance flips (light ↔ dark). Fires
@@ -2174,6 +2297,7 @@ final class CorpusPhysicsScene: SKScene {
         if Self.noTitlesDebug {   // pro-build — `-MapNoTitles`: the swatch captures (look_swatches.sh)
             for (_, sp) in nodeSprites { sp.children.first { $0.name == "titleLabel" }?.isHidden = true }
         }
+        applyGroundCaseNodesDebug()   // 1.1-A (6) — `-MapGroundCase titlesOff | orbsOff | empty`
         #endif
 
         updateCardPresentation()   // tap-driven card morph → SwiftUI overlay
@@ -2438,7 +2562,7 @@ final class CorpusPhysicsScene: SKScene {
     private func syncTerritoryLabelsToCanvasState(currentTime: TimeInterval) {
         guard let view = self.view else { return }
         #if DEBUG
-        if swatchFramed { territoryLabelData.removeAll() }   // pro-build `-MapSwatch`: no pills
+        if swatchFramed || inkTourActive { territoryLabelData.removeAll() }   // pro-build `-MapSwatch` / 1.1-A `-InkStillTour`: no pills
         #endif
         // Local type (function body, not the closure) so it's capturable below.
         struct RegionCandidate {
@@ -2807,7 +2931,8 @@ final class CorpusPhysicsScene: SKScene {
         shape.userData?["radius"] = radius
 
         let displayText = node.title.isEmpty ? (node.untitledDisplayText ?? "") : node.title
-        let labelSprite = makeTitleSprite(text: displayText, radius: radius, fillColor: bubbleColor(for: node))
+        let labelSprite = makeTitleSprite(text: displayText, radius: radius, fillColor: bubbleColor(for: node),
+                                          nodeID: node.id, isMeta: node.isMeta)
         shape.addChild(labelSprite)
 
         if node.isMeta {
@@ -2891,7 +3016,7 @@ final class CorpusPhysicsScene: SKScene {
                 titleNode.removeFromParent()
                 let radius = nodeIntrinsicRadii[node.id] ?? bubbleRadius(for: node)
                 shape.addChild(makeTitleSprite(text: displayText, radius: radius,
-                                               fillColor: bubbleColor(for: node)))
+                                               fillColor: bubbleColor(for: node), nodeID: node.id, isMeta: node.isMeta))
             }
         }
     }
@@ -3456,7 +3581,13 @@ final class CorpusPhysicsScene: SKScene {
     /// Per-appearance where T dialled them apart; `reach`/`depth`/`massLaw` converged on one value.
     enum GridWarpTuning {
         static let reachOrbRadii: Double = 6.000     // both appearances (top of the dialled range; T called it final)
-        static let depthOrbRadii: Double = 0.600     // both appearances
+        /// 1.1-B — T's ground study: 0.89 (was 0.600, T device-final 2026-09-14). DEBUG `-MapWellsDepth <x>` for A/B stills.
+        static let depthOrbRadii: Double = {
+            #if DEBUG
+            if let v = UserDefaults.standard.string(forKey: "MapWellsDepth"), let d = Double(v) { return d }
+            #endif
+            return 0.89
+        }()
         static let massLaw: Double = 2.177           // both appearances (exponent: displacement ∝ r^law)
         static let sign: Double = 1                  // +1 = converge (mass dimple)
         /// Mass influence — how strongly an orb's own size drives its dent. 0 = every orb equal.
@@ -3466,6 +3597,32 @@ final class CorpusPhysicsScene: SKScene {
     }
 
     private var lastWarpMode = 0
+    private var lastWellsActive = true
+    private var lastFieldIsLight: Bool?
+    // 1.1-B — the editable ground's last state the titles were inked for, and where the camera was then.
+    private var lastGroundOverride: MapGroundSide?
+    private var lastGroundInkCam: CGPoint = .zero
+    private var groundInkQueue: [String] = []        // 1.1-B fix-up (A) — titles still to re-pick after a gradient move
+    private var groundInkNodes: [String: Node] = [:]
+    /// 1.1-B — the sheen this frame (`MapSheen.active`; the shader also needs the wells drawing, mode 3). DEBUG: the bench
+    /// and `-MapGroundCase sheen | sheenWellsOff` force it on.
+    private var sheenOn: Bool {
+        #if DEBUG
+        if groundCase.sheenForced { return true }
+        if benchRunning { return false }
+        #endif
+        return MapSheen.active
+    }
+    #if DEBUG
+    // 1.1-A (6) Map ground measurement harness state (see `MapGroundCase`, end of file).
+    var groundCase: MapGroundCase = MapGroundCase(rawValue: UserDefaults.standard.string(forKey: "MapGroundCase") ?? "") ?? .all
+    fileprivate var groundCaseDotsOffApplied = false
+    fileprivate var groundCaseHidden: [SKNode] = []
+    fileprivate var benchWarpCPU: TimeInterval = 0
+    fileprivate var autoPanLastPhase: Double?
+    fileprivate var benchRunning = false
+    static let autoPanDebug = ProcessInfo.processInfo.arguments.contains("-MapAutoPan")
+    #endif
     // Brief AY — dirty-field tracking (reuse the last texture when nothing that feeds it changed).
     private var fieldBuiltOnce = false
     private var lastFieldCamPos: CGPoint = .zero      // gated by fieldBuiltOnce → init value is inert
@@ -3511,10 +3668,25 @@ final class CorpusPhysicsScene: SKScene {
         var reachChanged = false
         let tunedReach = isLight ? GridWarpTuning.reachOrbRadii : (mapTuning?.shrinkReach ?? GridWarpTuning.reachOrbRadii)
         reachChanged = tunedReach != lastFieldReach; lastFieldReach = tunedReach
-        if !(camMovedSinceField || orbsChanged || orbsMovedLastFrame || reachChanged) {
+        // 1.1-A fix-up (1) — the Gravity wells toggle / Low Power / heat: a change re-pushes the uniforms.
+        let wellsActive = MapWells.active
+        let wellsChanged = wellsActive != lastWellsActive || !fieldBuiltOnce; lastWellsActive = wellsActive
+        // A light/dark flip with a still camera must rebuild too: the field's ripple channel, the strength and the dot
+        // shrink are per appearance (found by the 1.1-B study's export: the dark Map kept the light field until a pan).
+        let appearanceChanged = isLight != lastFieldIsLight; lastFieldIsLight = isLight
+        #if DEBUG
+        if wellsChanged || appearanceChanged {
+            NSLog("[MapWells] active=%@ (setting=%@ stressed=%@) light=%@ → field rebuild", wellsActive ? "Y" : "n",
+                  MapWells.userOn ? "on" : "off", MapHeatGuard.shared.stressed ? "Y" : "n", isLight ? "Y" : "n")
+        }
+        #endif
+        if !(camMovedSinceField || orbsChanged || orbsMovedLastFrame || reachChanged || wellsChanged || appearanceChanged) {
             return   // field inputs unchanged → last texture + uniforms stand
         }
         fieldBuiltOnce = true
+        #if DEBUG || PANBENCH
+        PanBench.fieldBuilds += 1
+        #endif
         lastFieldCamPos = camPos; lastFieldCamScale = cameraScale; lastFieldOrbCount = nodeSprites.count
         lastFieldMeasuredCount = nodeOnScreenDiameter.count
 
@@ -3612,7 +3784,23 @@ final class CorpusPhysicsScene: SKScene {
         // Falloff baked 1.0; the field carries the per-orb title fade via w, so the dot shrink
         // (∝ field magnitude) eases in per orb too.
         let field = buildWarpField(orbs: packed, falloff: 1.0, massRange: massRange, viewW: viewW, viewH: viewH)
-        BackgroundGridNode.setWarp(grid, mode: mode, strength: Float(strengthEff),
+        #if DEBUG
+        // 1.1-B study export — the field's exact inputs this frame.
+        Self.debugLastWarp = ["mode": Double(mode), "strengthEff": strengthEff, "massRange": massRange, "refScreen": refScreen,
+                              "refLinear": refs.linear, "refMass": refs.mass, "ramp": ramp, "influence": influence, "exponent": exponent,
+                              "reachUnits": reachUnits, "depth": depth, "reachCeiling": reachCeiling, "viewW": viewW, "viewH": viewH,
+                              "cs": cs, "rippleK": Double(MapCompTuning.rippleK), "rippleGamma": Double(MapCompTuning.rippleGamma),
+                              "compBaked": currentIsLight ? 0 : 1]
+        Self.debugLastPacked = packed.map { [$0.sx, $0.sy, $0.w, $0.reach] }
+        #endif
+        // 1.1-A fix-up (1) — wells off (the toggle, Low Power, heat): the field is still built (the dark ripple reads its
+        // B channel), the dots stay on the lattice (mode 0) — the path 1.1-A (6) measured at 0.31–0.37 ms vs 1.5–1.9 ms.
+        #if DEBUG
+        let modeOut: Float = groundCase.wellsOff || !wellsActive ? 0 : mode
+        #else
+        let modeOut: Float = wellsActive ? mode : 0
+        #endif
+        BackgroundGridNode.setWarp(grid, mode: modeOut, strength: Float(strengthEff),
                                    sign: Float(GridWarpTuning.sign),
                                    shrink: Float(GridWarpTuning.dotShrink(isLight: isLight)),
                                    massRange: Float(massRange), field: field)
@@ -3692,6 +3880,9 @@ final class CorpusPhysicsScene: SKScene {
                 }
             }
         }
+        #if DEBUG
+        Self.debugLastField = (bytes, fw, fh)   // 1.1-B study export
+        #endif
         let tex = SKTexture(data: Data(bytes), size: CGSize(width: fw, height: fh))
         tex.filteringMode = .linear
         return tex
@@ -3709,12 +3900,54 @@ final class CorpusPhysicsScene: SKScene {
     /// depends on the sat/val boost, so light↔dark must re-flip. Glyph labels recolor in
     /// place (set `a_glyph_color`; no re-raster) — a one-time burst on flip.
     func restyleLabels() {
-        for (nodeID, shape) in nodeSprites {
-            guard let titleNode = shape.children.first(where: { $0.name == "titleLabel" }),
-                  (titleNode.userData?["isFocal"] as? Bool) != true
-            else { continue }
-            let fillColor = currentNodes.first(where: { $0.id == nodeID }).map { bubbleColor(for: $0) } ?? .gray
-            MSDFLabel.recolor(container: titleNode, color: orbTitleInk(fillColor, nodeID: nodeID))
+        #if DEBUG || PANBENCH
+        PanBench.restyles += 1
+        #endif
+        groundInkQueue = []   // this pass covers every title
+        let byID = Dictionary(currentNodes.map { ($0.id, $0) }, uniquingKeysWith: { a, _ in a })
+        for nodeID in nodeSprites.keys { restyleLabel(nodeID, node: byID[nodeID]) }
+    }
+
+    private func restyleLabel(_ nodeID: String, node: Node?) {
+        guard let shape = nodeSprites[nodeID], let titleNode = shape.children.first(where: { $0.name == "titleLabel" }),
+              (titleNode.userData?["isFocal"] as? Bool) != true
+        else { return }
+        let p = titleInkPick(nodeID: nodeID, fill: node.map { bubbleColor(for: $0) } ?? .gray,
+                             isMeta: node?.isMeta ?? false, box: Self.inkBox(titleNode))
+        MSDFLabel.recolor(container: titleNode, color: Self.uiColor(p.ink))
+    }
+
+    /// 1.1-B fix-up (A) — the titles a gradient ground's re-pick must visit, nearest the screen's centre first.
+    private func queueGroundInk() {
+        let m = mapTuning ?? .today, light = currentIsLight
+        let look = Self.drawnTitleLook(m.orbLook, light: light)
+        let byID = Dictionary(currentNodes.map { ($0.id, $0) }, uniquingKeysWith: { a, _ in a })
+        let cam = cameraNode.position
+        groundInkQueue = nodeSprites.compactMap { id, sp -> (String, CGFloat)? in
+            guard Self.titleInkReadsGround(look, light: light, isMeta: byID[id]?.isMeta ?? false), let par = sp.parent else { return nil }
+            let p = convert(sp.position, from: par)
+            return (id, hypot(p.x - cam.x, p.y - cam.y))
+        }.sorted { $0.1 > $1.1 }.map(\.0)   // popped from the end → nearest first
+        groundInkNodes = byID
+    }
+
+    private func drainGroundInk() {
+        guard !groundInkQueue.isEmpty else { return }
+        for _ in 0..<min(Self.groundInkPerFrame, groundInkQueue.count) {
+            let id = groundInkQueue.removeLast()
+            restyleLabel(id, node: groundInkNodes[id])
+        }
+        if groundInkQueue.isEmpty { groundInkNodes = [:] }
+    }
+    private static let groundInkPerFrame = 12
+
+    /// Whether `titleSamples` reads the ground for this look (keep in step with it): Aura, Eclipse and Gradient sample the
+    /// orb alone; the dark Flat orb only mixes the ground in at a meta orb's 0.55 alpha.
+    static func titleInkReadsGround(_ look: TitleLook, light: Bool, isMeta: Bool) -> Bool {
+        switch look {
+        case .aura, .eclipse, .gradient, .lightGlass: return false
+        case .flat: return light || isMeta
+        case .fresnel, .glass, .wash, .outline, .riso: return true
         }
     }
 
@@ -4076,7 +4309,7 @@ final class CorpusPhysicsScene: SKScene {
             SKUniform(name: "u_light_val_add", float: MapCompTuning.lightValAdd),
             SKUniform(name: "u_light_focus",   float: MapCompTuning.lightFocusBase * MapCompTuning.lightFocus),
             SKUniform(name: "u_orb_opacity",   float: 1.0),
-            SKUniform(name: "u_ground_color",  vectorFloat3: Self.rgb3(MapCompTuning.lightGroundHex)),
+            SKUniform(name: "u_ground_color",  vectorFloat3: Self.lightGroundRGB),
             SKUniform(name: "u_pal_lch",       vectorFloat3: vector_float3(MapCompTuning.palLightness,
                                                                            MapCompTuning.palChroma,
                                                                            MapCompTuning.palHueDeg * .pi / 180))
@@ -4246,7 +4479,7 @@ final class CorpusPhysicsScene: SKScene {
         auraDriftOn = v.drift
         auraIsEclipse = eclipse
         let ext = v.spriteExtent
-        let ground: vector_float3 = currentIsLight ? Self.rgb3(MapCompTuning.lightGroundHex) : TunerHSL(hex: m.fieldHex).simd
+        let ground: vector_float3 = currentIsLight ? Self.lightGroundRGB : TunerHSL(hex: m.fieldHex).simd
         let u = simd_float4x4(columns: (
             vector_float4(Float(v.spread), Float(v.warp), Float(v.softness), Float(v.haloReach)),
             vector_float4(Float(v.rim), Float(v.fringe), Float(v.grain), eclipse ? 1 : 0),
@@ -4341,14 +4574,29 @@ final class CorpusPhysicsScene: SKScene {
     /// The Wash look — the study's `wash` branch (Ops/reference/aura-orb-study.html v2), ported line for line into its own
     /// SKShader, drawn with SKBlendMode.multiply: the shader emits 1 − absorb·coverage per channel (1 = no change outside
     /// the ink), so the pigment multiplies into the ground — and into overlapping orbs — exactly as the study's
-    /// `col *= 1 − absorb·cov`. Per orb: the study family's 3-stop ramp warped by two fbm fields, lifted 14% toward white;
+    /// `col *= 1 − absorb·cov`. (1.0r S1e: now that multiply is done in the shader over the dot-free ground and drawn with
+    /// the alpha blend; see `makeWashShader`.) Per orb: the study family's 3-stop ramp warped by two fbm fields, lifted 14% toward white;
     /// bleed (an angle-seeded wobble of the radius), misregistration (per-channel discs offset by (0.75, −0.55)·misreg·
     /// 0.035), edge pooling, bloom, and granulation in ORB-LOCAL on-screen points (q × the orb's on-screen radius from
     /// fwidth(v_tex_coord) ÷ the content scale), so it rides with the orb and never swims. The paper fibres + grain are
     /// the GROUND's (BackgroundGridNode, u_light_ground_on = 1 + paper). Sprite extent = the study's bound (a_au_b.w).
     /// u_wa = (spread, warp, softness, bleed), (pooling, misregistration, paper, 0), (LOD every orb 0/1, content scale, 0, LOD radius pt), 0.
     /// a_au_a = (stop A rgb, seed), a_au_b = (stop B rgb, this sprite's extent), a_au_c = stop C.
-    private lazy var washShader: SKShader = {
+    /// 1.0r S1e — built in variants: nil = the pre-S1e source exactly (SKBlendMode.multiply; the DEBUG pre-fix A/B), or a
+    /// `GroundVariant`: the multiply let the dot grid through the body, so the shader rebuilds the dot-free ground
+    /// (`groundRebuildGLSL`, shared with Riso), lays the same pigment over it (G · (1 − absorb · cov)) and goes out
+    /// premultiplied with alpha = the cover, drawn with the alpha blend: out = T(G) − G·(1 − a) is exactly the old multiply
+    /// over plain ground for ANY cover a, and the dots under the body (dst − G) are scaled by (1 − a) = gone. (Where two
+    /// Wash bodies overlap, the upper one now covers the lower instead of multiplying into it; the Map keeps orbs apart.)
+    static func makeWashShader(_ g: GroundVariant?) -> SKShader {
+        let out = g.map { g in "            vec3 bg = u_wa[3].rgb;   // the dark-Map fallback of the shared ground (Wash draws on the light Map only)\n"
+            + Self.groundRebuildGLSL(g) + "\n" + """
+                    vec3 mul = vec3(1.0) - absorb * cov;   // the study's multiply, unchanged
+                    // full cover from the rim's mid-point in; the result over plain ground doesn't depend on the cover
+                    float cover = min(1.0, 2.0 * max(cov.r, max(cov.g, cov.b)));
+                    cover = max(cover, 1.0 - min(mul.r, min(mul.g, mul.b)));   // keeps G·(mul − 1 + a) ≥ 0
+                    gl_FragColor = vec4(G * (mul - vec3(1.0) + cover), cover);
+        """ } ?? "    gl_FragColor = vec4(vec3(1.0) - absorb * cov, 1.0);"   // the pre-S1e line, byte for byte
         let src = """
         float waHash(vec2 p) { vec3 p3 = fract(vec3(p.xyx) * 0.1031); p3 += dot(p3, p3.yzx + 33.33); return fract((p3.x + p3.y) * p3.z); }
         float waNoise(vec2 p) {
@@ -4399,7 +4647,7 @@ final class CorpusPhysicsScene: SKScene {
             float bloom = 0.88 + 0.3 * n.x;
             float dens = (0.6 * bloom + 0.5 * pool) * (1.0 - paper * 0.45 * gran * lod);
             vec3 absorb = clamp((vec3(1.0) - pig) * dens, 0.0, 1.0);
-            gl_FragColor = vec4(vec3(1.0) - absorb * cov, 1.0);
+        \(out)
         }
         """
         let shader = SKShader(source: src)
@@ -4410,8 +4658,18 @@ final class CorpusPhysicsScene: SKScene {
         ]
         shader.uniforms = [SKUniform(name: "u_wa", matrixFloat4x4: matrix_identity_float4x4),
                            SKUniform(name: "u_noise", texture: StudyNoise.texture)]   // live-48 — the fbm, one lookup each
+        if let g { shader.uniforms += Self.groundRebuildUniforms(g) }   // 1.0r S1e — the grid's ground (syncGroundRebuild)
         return shader
-    }()
+    }
+    /// 1.0r S1e — the Wash variant drawn now (nil = pre-fix, DEBUG A/B only) and its shaders.
+    private var washVariant: GroundVariant? = GroundVariant()
+    private var washShaders: [GroundVariant?: SKShader] = [:]
+    private var washShader: SKShader {
+        if let s = washShaders[washVariant] { return s }
+        let s = Self.makeWashShader(washVariant)
+        washShaders[washVariant] = s
+        return s
+    }
 
     /// "" = no orb wears Wash; otherwise what the Wash sprites were last styled with.
     private var washStyleKey = ""
@@ -4427,14 +4685,23 @@ final class CorpusPhysicsScene: SKScene {
             return
         }
         let w = m.wash
+        // 1.0r S1e — the dot-free ground under the body (the DEBUG pre-fix A/B keeps the multiply)
+        #if DEBUG
+        let legacy = Self.dotsLegacyDebug
+        #else
+        let legacy = false
+        #endif
+        washVariant = legacy ? nil : groundRebuildVariant()
+        let lg = Self.lightGroundRGB
         let u = simd_float4x4(columns: (
             vector_float4(Float(w.spread), Float(w.warp), Float(w.softness), Float(w.bleed)),
             vector_float4(Float(w.pooling), Float(w.misregistration), Float(w.paper), 0),
             vector_float4(lodAllOrbs ? 1 : 0, Float(glyphContentScale), 0, Float(Self.lodRadiusPt)),
-            vector_float4(0, 0, 0, 0)))
+            vector_float4(lg.x, lg.y, lg.z, 0)))   // 1.0r S1e: col 3 = the ground (`bg` of the shared ground code)
         if let uu = washShader.uniforms.first, uu.matrixFloat4x4Value != u { uu.matrixFloat4x4Value = u }
         let ext = w.spriteExtent
-        let key = "\(ext)|\(nodeSprites.count)"
+        let vk = washVariant.map { "g\($0.field ? 1 : 0)\($0.sheen ? 1 : 0)\($0.gradient ? 1 : 0)" } ?? "legacy"
+        let key = "\(vk)|\(ext)|\(nodeSprites.count)"
         guard key != washStyleKey else { return }
         let rebuild = washStyleKey.isEmpty || washStyleKey == "stale" || !washStyleKey.hasSuffix("|\(nodeSprites.count)")
         washStyleKey = key
@@ -4447,12 +4714,14 @@ final class CorpusPhysicsScene: SKScene {
             guard let sp = node as? SKSpriteNode else { continue }
             styleWashSprite(sp, nodeID: id, extent: ext)
         }
+        syncGroundRebuild()   // a fresh variant's ground uniforms, this frame
     }
 
     private func styleWashSprite(_ sp: SKSpriteNode, nodeID: String, extent e: Double) {
         applyOrbSpriteSize(sp, nodeID: nodeID, extent: CGFloat(e))
         if sp.shader !== washShader { sp.shader = washShader }
-        if sp.blendMode != .multiply { sp.blendMode = .multiply }
+        let blend: SKBlendMode = washVariant == nil ? .multiply : .alpha   // 1.0r S1e (was multiply)
+        if sp.blendMode != blend { sp.blendMode = blend }
         let st = studyStops(nodeID: nodeID, sorted: false)
         sp.setValue(SKAttributeValue(vectorFloat4: vector_float4(st.a, st.seed)), forAttribute: "a_au_a")
         sp.setValue(SKAttributeValue(vectorFloat4: vector_float4(st.b, Float(e))), forAttribute: "a_au_b")
@@ -4472,7 +4741,9 @@ final class CorpusPhysicsScene: SKScene {
     /// 6 gradient). Blending, so each is exact over whatever is under it:
     /// - Gradient: the ramp over the disc, premultiplied alpha = coverage (the study's mix(col, body, disc)).
     /// - Riso: two flat ink plates (the second offset by the misregistration and cut by a soft shape) — on the light Map
-    ///   the study's `col *= 1 − (1 − ink)·c` = SKBlendMode.multiply, on the dark Map its screen = SKBlendMode.screen.
+    ///   the study's `col *= 1 − (1 − ink)·c` (multiply), on the dark Map its screen. 1.0r S1c: computed in the shader over
+    ///   the grid's own ground (no dots) and drawn with the alpha blend, so the dot grid no longer shows through the body
+    ///   (SKBlendMode.multiply / .screen passed everything under the orb, dots included); same colours on plain ground.
     ///   The speckle is one octave of value noise in screen points, kept as maths (4 hashes) so its cells are the study's
     ///   everywhere (a tiling texture repeats past its window: port check 1.4 / 255 vs 0.0x).
     /// - Light Glass: the ground frosted, tinted and lit, a tinted edge line, a white arc + glint, and a soft shadow off the
@@ -4481,7 +4752,15 @@ final class CorpusPhysicsScene: SKScene {
     /// The study's frame grain: the body's share here (× coverage), the ground's in the grid (u_grain_cfg).
     /// u_s2 = (spread, warp, softness, reach), (rim, fringe, grain, mode), (LOD every orb 0/1, content scale, dark 0/1,
     /// LOD radius pt), (ground rgb, 0). a_au_a = (stop A rgb, seed), a_au_b = (stop B rgb, extent), a_au_c = stop C.
-    private lazy var study2Shader: SKShader = {
+    /// 1.0r S1c — built in variants (`Study2Variant`): `.legacy` is the pre-S1c source exactly (Gradient and Light Glass
+    /// draw with it; so does the DEBUG pre-fix Riso); Riso draws with a ground variant that reads the warp field and
+    /// computes the sheen only when they draw (code that is only skipped by a branch still costs: measured +0.09 ms).
+    static func makeStudy2Shader(_ v: Study2Variant) -> SKShader {
+        let risoOut = v.risoGround ? risoGroundGLSL(v) : """
+                    if (dark) { outc = vec4(vec3(1.0) - (vec3(1.0) - i1 * c1) * (vec3(1.0) - i2 * c2 * 0.85), 1.0); }   // screen
+                    else { outc = vec4((vec3(1.0) - (vec3(1.0) - i1) * c1 * 0.92) * (vec3(1.0) - (vec3(1.0) - i2) * c2 * 0.85), 1.0); }   // multiply
+        """
+        let tail = v.risoGround ? "" : " + vec4(riso && !dark ? 1.0 - step(d, ext) : 0.0)"
         let src = """
         float s2Hash(vec2 p) { vec3 p3 = fract(vec3(p.xyx) * 0.1031); p3 += dot(p3, p3.yzx + 33.33); return fract((p3.x + p3.y) * p3.z); }
         float s2Noise(vec2 p) {
@@ -4526,8 +4805,7 @@ final class CorpusPhysicsScene: SKScene {
                     float spk = 1.0 - grain * 0.5 * smoothstep(0.55, 0.85, sp);
                     c1 *= rimK * spk; c2 *= rimK * spk;
                     vec3 i1 = B; vec3 i2 = dark ? C : A;
-                    if (dark) { outc = vec4(vec3(1.0) - (vec3(1.0) - i1 * c1) * (vec3(1.0) - i2 * c2 * 0.85), 1.0); }   // screen
-                    else { outc = vec4((vec3(1.0) - (vec3(1.0) - i1) * c1 * 0.92) * (vec3(1.0) - (vec3(1.0) - i2) * c2 * 0.85), 1.0); }   // multiply
+        \(risoOut)
                 } else {
                     vec3 body = s2Ramp(A, B, C, tt);
                     body *= mix(1.0, 0.78 + 0.34 * max(nl, 0.0), rimK);
@@ -4595,7 +4873,7 @@ final class CorpusPhysicsScene: SKScene {
                 outc = vec4(max(clamp(res, 0.0, 1.0) - bg * (1.0 - a), vec3(0.0)), a);
             }
             // nothing beyond the study's bound (= this sprite's extent). No early return in an SKShader.
-            gl_FragColor = outc * step(d, ext) + vec4(riso && !dark ? 1.0 - step(d, ext) : 0.0);
+            gl_FragColor = outc * step(d, ext)\(tail);
         }
         """
         let shader = SKShader(source: src)
@@ -4607,8 +4885,111 @@ final class CorpusPhysicsScene: SKScene {
         shader.uniforms = [SKUniform(name: "u_s2", matrixFloat4x4: matrix_identity_float4x4),
                            SKUniform(name: "u_noise", texture: StudyNoise.texture),
                            SKUniform(name: "u_s2b", matrixFloat4x4: Self.lightGlassExtras(LightGlassLook(), tilt: .zero))]   // live-50
+        if v.risoGround { shader.uniforms += Self.groundRebuildUniforms(v.ground) }   // 1.0r S1c — Riso's copy of the grid's ground
         return shader
-    }()
+    }
+
+    /// 1.0r S1c — which study-2 shader: the legacy source, or Riso's ground variant (reads the warp field when the ripple or
+    /// the sheen draws; computes the sheen only when it can move a pixel by more than 1.5 / 255).
+    struct Study2Variant: Hashable {
+        var risoGround = false, field = false, sheen = false, gradient = false
+        var ground: GroundVariant { GroundVariant(field: field, sheen: sheen, gradient: gradient) }
+    }
+    private var study2Shaders: [Study2Variant: SKShader] = [:]
+    private var study2Variant = Study2Variant()
+    private var study2Shader: SKShader {
+        if let s = study2Shaders[study2Variant] { return s }
+        let s = Self.makeStudy2Shader(study2Variant)
+        study2Shaders[study2Variant] = s
+        return s
+    }
+
+    /// 1.0r S1e — THE dot-free ground under an orb: one owner, shared by Riso (S1c) and light Wash (S1e). It rebuilds the
+    /// ground exactly as the grid draws it WITHOUT its dots — colour or two-stop gradient, the dark ripple (warp field B),
+    /// the sheen (warp field RG) — from the grid's own uniforms and field, which `syncGroundRebuild` copies into the shader
+    /// per frame (u_s2g / u_s2h / u_s2f; the names are Riso's, kept so its shader text is unchanged). Declares `G` (and
+    /// W0…W3, X0…X2, plus `vp` / `suv` / `F` when used); the host shader must define `scale` (content scale) and `bg` (the
+    /// dark Map's ground, where the grid draws dots only). Variants (`GroundVariant`): the field is read and the sheen / the
+    /// gradient computed only when they draw (code merely skipped by a branch still costs: measured +0.09 ms).
+    struct GroundVariant: Hashable { var field = false, sheen = false, gradient = false }
+    static func groundRebuildUniforms(_ g: GroundVariant) -> [SKUniform] {
+        [SKUniform(name: "u_s2g", matrixFloat4x4: simd_float4x4()), SKUniform(name: "u_s2h", matrixFloat4x4: simd_float4x4())]
+            + (g.field ? [SKUniform(name: "u_s2f", texture: SKTexture(data: Data([128, 128, 0, 255]), size: CGSize(width: 1, height: 1)))] : [])
+    }
+    static func groundRebuildGLSL(_ g: GroundVariant) -> String {
+        let field = g.field ? """
+                    vec4 F = texture2D(u_s2f, suv);
+        """ : ""
+        let sheen = g.sheen ? """
+                    {   // the grid's sheen; per-frame constants from the CPU: X3 = (H, flatSpec), X2.z = shp, X2.w = 1 / (1 − flatSpec)
+                        vec2 shPull = (F.rg - vec2(0.5)) * (2.0 * W1.w);
+                        float depth = clamp(length(shPull), 0.0, 1.0);
+                        if (depth < 1.0 && X1.w > 2.5) {   // its mask is exactly 0 at depth 1 (deep in a well, under an orb)
+                            vec4 X3 = u_s2h[3];
+                            vec2 grad = -shPull * 0.35 * W3.z;
+                            vec3 N = normalize(vec3(grad, 1.0));
+                            float nh = dot(N, X3.xyz);
+                            if (nh > X3.z) {   // else pow(nh, shp) ≤ flatSpec = H.z^shp → spec 0: the slope faces away
+                                float spec = max(pow(max(nh, 0.0), X2.z) - X3.w, 0.0) * X2.w;
+                                float mask = 1.0 - smoothstep(1.0 - X0.w, 1.0, depth);
+                                vec3 tint = G / max(max(G.r, G.g), max(G.b, 0.001));
+                                vec3 shCol = mix(vec3(1.0), tint, W3.w);
+                                float shK = clamp(spec * mask * W3.x, 0.0, 1.0);
+                                G = vec3(1.0) - (vec3(1.0) - G) * (vec3(1.0) - shCol * shK);
+                            }
+                        }
+                    }
+        """ : ""
+        let ripple = g.field ? """
+                    if (W0.w > 0.0) { G = mix(G, vec3(F.b) * X1.rgb, W0.w); }   // the dark ripple
+                    else if (X2.x < 0.5) { G = bg; }                             // dark, no ripple: the grid draws dots only
+        """ : """
+                    if (X2.x < 0.5) { G = bg; }                                  // dark, no ripple: the grid draws dots only
+        """
+        let suv = g.field || g.gradient ? """
+                    vec2 vp = max(W2.zw, vec2(1.0));
+                    vec2 suv = vec2(gl_FragCoord.x / (scale * vp.x), 1.0 - gl_FragCoord.y / (scale * vp.y));   // the grid's v_tex_coord
+        """ : ""
+        let gradient = g.gradient ? """
+                    {   // the ground's two stops across the screen
+                        vec2 soff = (suv - vec2(0.5)) * vp;
+                        float gext = abs(vp.x * W2.x) + abs(vp.y * W2.y);
+                        G = mix(W0.rgb, W1.rgb, clamp(0.5 + dot(soff, W2.xy) / gext, 0.0, 1.0));
+                    }
+        """ : ""
+        return """
+                    vec4 W0 = u_s2g[0]; vec4 W1 = u_s2g[1]; vec4 W2 = u_s2g[2]; vec4 W3 = u_s2g[3];
+                    vec4 X0 = u_s2h[0]; vec4 X1 = u_s2h[1]; vec4 X2 = u_s2h[2];
+                    vec3 G = W0.rgb;
+        \(suv)
+        \(gradient)
+        \(field)
+        \(sheen)
+        \(ripple)
+        """
+    }
+
+    /// Riso's output (1.0r S1c). The plates no longer blend into the framebuffer (multiply / screen let the dot grid through
+    /// the body): the ground is rebuilt exactly as the grid draws it WITHOUT its dots (`groundRebuildGLSL`, the
+    /// shared owner), the ink is laid over it as the study's multiply /
+    /// screen, and the result goes out premultiplied with alpha = the plates' cover: out = T(G) − G·(1 − a), so over plain
+    /// ground (dst = G) the alpha blend gives T(G) for ANY cover a, and the dots under the plates (dst − G) are scaled by
+    /// (1 − a) = gone inside the body.
+    static func risoGroundGLSL(_ v: Study2Variant) -> String {
+        Self.groundRebuildGLSL(v.ground) + "\n" + """
+                    // full cover from the rim's mid-point in (the soft rim is ~2% of the radius: on a big orb that's pixels
+                    // a dot could show through); the result over plain ground doesn't depend on the cover
+                    float cover = min(1.0, 2.0 * max(s2Disk(d, s), s2Disk(length(q + off), s) * cut));
+                    if (dark) {   // screen
+                        vec3 sc = vec3(1.0) - (vec3(1.0) - i1 * c1) * (vec3(1.0) - i2 * c2 * 0.85);
+                        outc = vec4(sc + G * (cover - sc), cover);
+                    } else {      // multiply
+                        vec3 mul = (vec3(1.0) - (vec3(1.0) - i1) * c1 * 0.92) * (vec3(1.0) - (vec3(1.0) - i2) * c2 * 0.85);
+                        cover = max(cover, 1.0 - min(mul.r, min(mul.g, mul.b)));   // keeps G·(mul − 1 + a) ≥ 0
+                        outc = vec4(G * (mul - vec3(1.0) + cover), cover);
+                    }
+        """
+    }
 
     enum Study2Kind: Equatable { case lightGlass, riso, gradient }
     /// "" = no orb wears Light Glass / Riso / Gradient; otherwise what the sprites were last styled with.
@@ -4625,7 +5006,17 @@ final class CorpusPhysicsScene: SKScene {
         }
         let v: any StudyOrbLook
         switch kind { case .lightGlass: v = m.lightGlass; case .riso: v = m.riso; case .gradient: v = m.gradient }
-        let ground: vector_float3 = currentIsLight ? Self.rgb3(MapCompTuning.lightGroundHex) : TunerHSL(hex: m.fieldHex).simd
+        // 1.0r S1c — Riso draws with its ground variant (Gradient / Light Glass keep the legacy source)
+        #if DEBUG
+        let legacyRiso = Self.dotsLegacyDebug
+        #else
+        let legacyRiso = false
+        #endif
+        if kind == .riso && !legacyRiso {
+            let g = groundRebuildVariant()
+            study2Variant = Study2Variant(risoGround: true, field: g.field, sheen: g.sheen, gradient: g.gradient)
+        } else { study2Variant = Study2Variant() }
+        let ground: vector_float3 = currentIsLight ? Self.lightGroundRGB : TunerHSL(hex: m.fieldHex).simd
         let mode: Float = kind == .lightGlass ? 3 : kind == .riso ? 5 : 6
         let u = simd_float4x4(columns: (
             vector_float4(Float(v.spread), Float(v.warp), Float(v.softness), Float(v.haloReach)),
@@ -4639,8 +5030,11 @@ final class CorpusPhysicsScene: SKScene {
             if ub.matrixFloat4x4Value != b { ub.matrixFloat4x4Value = b }
         }
         let ext = v.spriteExtent
-        let blend: SKBlendMode = kind == .riso ? (currentIsLight ? .multiply : .screen) : .alpha
-        let key = "\(kind)|\(currentIsLight)|\(ext)|\(nodeSprites.count)"
+        // 1.0r S1c — Riso too: it covers the ground itself (was multiply / screen; the DEBUG pre-fix A/B keeps those)
+        let blend: SKBlendMode = legacyRiso ? (currentIsLight ? .multiply : .screen) : .alpha
+        let sv = study2Variant
+        let vk = sv.risoGround ? "g\(sv.field ? 1 : 0)\(sv.sheen ? 1 : 0)\(sv.gradient ? 1 : 0)" : "legacy"
+        let key = "\(kind)|\(vk)|\(currentIsLight)|\(ext)|\(nodeSprites.count)"
         guard key != study2StyleKey else { return }
         let rebuild = study2StyleKey.isEmpty || study2StyleKey == "stale" || !study2StyleKey.hasSuffix("|\(nodeSprites.count)")
         study2StyleKey = key
@@ -4656,6 +5050,30 @@ final class CorpusPhysicsScene: SKScene {
             sp.setValue(SKAttributeValue(vectorFloat4: vector_float4(st.b, Float(ext))), forAttribute: "a_au_b")
             sp.setValue(SKAttributeValue(vectorFloat4: vector_float4(st.c, 0)), forAttribute: "a_au_c")
         }
+        syncGroundRebuild()   // a fresh variant's ground uniforms, this frame
+    }
+
+    /// 1.0r S1c — the grid's uniforms by name (re-read when its shader is rebuilt).
+    private func groundGridUniforms() -> [String: SKUniform]? {
+        guard let gs = gridNode?.fillShader else { return nil }
+        if gs !== groundGridShader {
+            groundGridShader = gs
+            groundGridU = Dictionary(gs.uniforms.map { ($0.name, $0) }, uniquingKeysWith: { a, _ in a })
+        }
+        return groundGridU
+    }
+    /// 1.0r S1c — Riso's ground variant for the grid as it draws now: the field is read when the ripple or the sheen draws;
+    /// the sheen is computed only when it can move a pixel by more than 1.5 / 255 — it screens toward at most white × its
+    /// amount, so its largest change is (1 − the ground's darkest channel) × amount (#FFEEED: 1.08 / 255; #111115: 14 / 255).
+    private func groundRebuildVariant() -> GroundVariant {
+        guard let gu = groundGridUniforms() else { return GroundVariant() }
+        let ripple = (gu["u_ripple_amt"]?.floatValue ?? 0) > 0
+        let sh = gu["u_sh"]?.vectorFloat4Value ?? .zero
+        var lo = (gu["u_ground_color"]?.vectorFloat3Value ?? .one).min()
+        let gradient = simd_length_squared(gu["u_grad_dir"]?.vectorFloat2Value ?? .zero) > 0
+        if gradient { lo = min(lo, (gu["u_ground2"]?.vectorFloat3Value ?? .one).min()) }
+        let sheen = sh.x > 0 && (gu["u_warp_mode"]?.floatValue ?? 0) > 2.5 && (1 - lo) * sh.x * 255 > 1.5
+        return GroundVariant(field: ripple || sheen, sheen: sheen, gradient: gradient)
     }
 
     /// live-50 — Light Glass's dark-Glass controls for u_s2b. `tilt` = the drawn light offset (orb radii; zero = the study's
@@ -4668,6 +5086,63 @@ final class CorpusPhysicsScene: SKScene {
             vector_float4(Float(1 / max(g.highlightSize * g.highlightSize, 0.0001)), Float(g.innerShadow), tilt.x, tilt.y),
             vector_float4(0, 0, 0, 0)))
     }
+    /// 1.0r S1c / S1e — per frame while Riso or light Wash shows, after every grid uniform of the frame is set: copy the
+    /// grid's ground inputs (colour / gradient, sheen, ripple, the warp field) into that look's shader, which rebuilds the
+    /// ground without its dots (`groundRebuildGLSL`) and lays the ink over it. u_s2g = (ground rgb, ripple amt), (ground 2 rgb, mass range), (gradient dir, viewport),
+    /// u_sh; u_s2h = u_sh_l, (ripple colour, warp mode), (light ground on, 0, shp, 1 / (1 − flatSpec)), (H, flatSpec).
+    private func syncGroundRebuild() {
+        let riso = study2Variant.risoGround && study2StyleKey.hasPrefix("riso|")
+        let wash = washVariant != nil && !washStyleKey.isEmpty
+        guard riso || wash, let groundGridU = groundGridUniforms() else { return }
+        func f(_ n: String) -> Float { groundGridU[n]?.floatValue ?? 0 }
+        func v2(_ n: String) -> SIMD2<Float> { groundGridU[n]?.vectorFloat2Value ?? .zero }
+        func v3(_ n: String) -> SIMD3<Float> { groundGridU[n]?.vectorFloat3Value ?? .zero }
+        func v4(_ n: String) -> SIMD4<Float> { groundGridU[n]?.vectorFloat4Value ?? .zero }
+        let g1 = v3("u_ground_color"), g2 = v3("u_ground2"), dir = v2("u_grad_dir"), vp = v2("u_viewport_size")
+        let rc = v3("u_ripple_color")
+        let a = simd_float4x4(columns: (SIMD4(g1, f("u_ripple_amt")), SIMD4(g2, f("u_warp_mass_range")),
+                                        SIMD4(dir.x, dir.y, vp.x, vp.y), v4("u_sh")))
+        // the sheen's per-frame constants, as the grid computes them per pixel: H = normalize(light + z), shp, flatSpec
+        let sh = v4("u_sh"), shl = v4("u_sh_l")
+        let H = simd_normalize(SIMD3(shl.x, shl.y, shl.z) + SIMD3(0, 0, 1))
+        let shp = exp2(8 + (2.5 - 8) * sh.y), flatSpec = pow(H.z, shp)
+        let b = simd_float4x4(columns: (shl, SIMD4(rc, f("u_warp_mode")),
+                                        SIMD4(f("u_light_ground_on"), 0, shp, 1 / max(1 - flatSpec, 0.001)), SIMD4(H, flatSpec)))
+        for sh in (riso ? [study2Shader] : []) + (wash ? [washShader] : []) {
+            for u in sh.uniforms {
+                switch u.name {
+                case "u_s2g": if u.matrixFloat4x4Value != a { u.matrixFloat4x4Value = a }
+                case "u_s2h": if u.matrixFloat4x4Value != b { u.matrixFloat4x4Value = b }
+                case "u_s2f": if let t = groundGridU["u_disp_field"]?.textureValue, u.textureValue !== t { u.textureValue = t }
+                default: break
+                }
+            }
+        }
+    }
+    private weak var groundGridShader: SKShader?
+    #if DEBUG
+    /// 1.0r S1e — `-DumpOrbShaders`: every study-2 variant's and Wash's GLSL → Caches/orbshaders/*.glsl (a refactor of the
+    /// shared ground code is checked by diffing these before / after).
+    func dumpOrbShaders() {
+        guard let dir = FileManager.default.urls(for: .cachesDirectory, in: .userDomainMask).first?.appendingPathComponent("orbshaders") else { return }
+        try? FileManager.default.createDirectory(at: dir, withIntermediateDirectories: true)
+        func w(_ n: String, _ src: String) { try? src.write(to: dir.appendingPathComponent(n + ".glsl"), atomically: true, encoding: .utf8) }
+        w("study2-legacy", Self.makeStudy2Shader(Study2Variant()).source ?? "")
+        for f in [false, true] { for sh in [false, true] where !sh || f { for g in [false, true] {
+            w("riso-f\(f ? 1 : 0)s\(sh ? 1 : 0)g\(g ? 1 : 0)", Self.makeStudy2Shader(Study2Variant(risoGround: true, field: f, sheen: sh, gradient: g)).source ?? "")
+        } } }
+        w("wash-legacy", Self.makeWashShader(nil).source ?? "")
+        for f in [false, true] { for sh in [false, true] where !sh || f { for g in [false, true] {
+            w("wash-f\(f ? 1 : 0)s\(sh ? 1 : 0)g\(g ? 1 : 0)", Self.makeWashShader(GroundVariant(field: f, sheen: sh, gradient: g)).source ?? "")
+        } } }
+        NSLog("[ORBSHADERS] dumped")
+    }
+    /// 1.0r S1c — DEBUG A/B in one launch (`-RisoDotsScript`, `-MapGPUBenchRisoAB`): Riso drawn the pre-fix way — the
+    /// legacy shader source with multiply / screen into the framebuffer. Release builds have no flag.
+    static var dotsLegacyDebug = false
+    #endif
+    private var groundGridU: [String: SKUniform] = [:]
+
     /// live-50 — the Light Glass light offset last pushed (moves only by a visible step, as dark Glass's).
     private var drawnLightGlassOff = SIMD2<Float>(0, 0)
 
@@ -4675,18 +5150,6 @@ final class CorpusPhysicsScene: SKScene {
         applyOrbSpriteSize(sp, nodeID: nodeID, extent: 1)
         if sp.shader !== orbSpriteShader { sp.shader = orbSpriteShader }
         if sp.blendMode != .alpha { sp.blendMode = .alpha }
-    }
-
-    /// live-49 — the study's inkDark for the v7 looks: Light Glass dark; Riso the sorted mid stop (multiplied into the
-    /// ground at 85% on the light Map); Gradient the sorted mid stop. Threshold 0.5.
-    private func study2TitleInkIsDark(nodeID: String, kind: Study2Kind) -> Bool {
-        if kind == .lightGlass { return true }
-        let st = studyStops(nodeID: nodeID, sorted: true)
-        if kind == .riso && currentIsLight {
-            let g3 = Self.rgb3(MapCompTuning.lightGroundHex), g = SIMD3<Float>(g3.x, g3.y, g3.z)
-            return OrbStudyPalettes.lum(g * (SIMD3<Float>(repeating: 1) - (SIMD3<Float>(repeating: 1) - st.b) * 0.85)) > 0.5
-        }
-        return OrbStudyPalettes.lum(st.b) > 0.5
     }
 
     /// Which v7 look the orbs wear now (nil = none): Glass on the light Map = Light Glass; Riso / Gradient on both.
@@ -4699,75 +5162,229 @@ final class CorpusPhysicsScene: SKScene {
         }
     }
 
-    /// live-45 / 47 — the mean luma under an orb's title: a CPU twin of the shader's warped ramp, sampled on a 7 × 5 grid
-    /// over the title box (± 0.6 × ± 0.35 orb radii). Aura: the ramp + rim tint + shading. Wash (live-47, the same rule):
-    /// the ground × (1 − absorb) with the pigment lifted 14% toward white and the density 0.6 × bloom (no pooling this far
-    /// in; the granulation averages out). The study's one-stop rule missed what the warp puts under the title (dark ink on
-    /// dark patches — Aura at live-45, the Rust family's dark stop under Wash at live-46).
+    /// live-45 / 47 — the mean luma under an orb's title (the study's luma over `TitleInkTwin.studySamples`, the 7 × 5
+    /// sampled twin of Aura / Wash). Since 1.1-A (4) only the old rule (`legacyTitleInk`, the audits) reads it.
     static func studyTitleLuma(a A: SIMD3<Float>, b B: SIMD3<Float>, c C: SIMD3<Float>, r R: SIMD3<Float>, seed: Float,
                                spread: Double, warp: Double, rim: Double, washGround: SIMD3<Float>? = nil) -> Float {
-        func fract(_ x: Float) -> Float { x - x.rounded(.down) }
-        func hash(_ x: Float, _ y: Float) -> Float {
-            var p = SIMD3<Float>(fract(x * 0.1031), fract(y * 0.1031), fract(x * 0.1031))
-            let d = p.x * (p.y + 33.33) + p.y * (p.z + 33.33) + p.z * (p.x + 33.33)
-            p += SIMD3(repeating: d)
-            return fract((p.x + p.y) * p.z)
-        }
-        func noise(_ x: Float, _ y: Float) -> Float {
-            let ix = x.rounded(.down), iy = y.rounded(.down), fx = x - ix, fy = y - iy
-            let ux = fx * fx * (3 - 2 * fx), uy = fy * fy * (3 - 2 * fy)
-            let a = hash(ix, iy), b = hash(ix + 1, iy), c = hash(ix, iy + 1), d = hash(ix + 1, iy + 1)
-            return (a + (b - a) * ux) + ((c + (d - c) * ux) - (a + (b - a) * ux)) * uy
-        }
-        func fbm(_ x0: Float, _ y0: Float) -> Float {
-            var x = x0, y = y0, a: Float = 0.6, s: Float = 0
-            for _ in 0..<3 { s += a * noise(x, y); x = x * 1.9 + 17.1; y = y * 1.9 + 9.2; a *= 0.32 }
-            return s
-        }
-        func ss(_ e0: Float, _ e1: Float, _ x: Float) -> Float { let u = min(max((x - e0) / (e1 - e0), 0), 1); return u * u * (3 - 2 * u) }
-        let warp = Float(warp), spread = Float(spread), rimK = Float(rim)
-        let ang = seed * 6.2831853, dir = SIMD2<Float>(cos(ang), sin(ang)), perp = SIMD2<Float>(-dir.y, dir.x)
-        var sum: Float = 0, n: Float = 0
-        for iy in 0..<5 { for ix in 0..<7 {
-            let q = SIMD2<Float>(-0.6 + Float(ix) * 0.2, -0.35 + Float(iy) * 0.175)
-            let w = q * 0.62 + SIMD2(seed * 13.1, seed * 7.7)
-            let nv = SIMD2<Float>(fbm(w.x, w.y), fbm(w.x * 1.15 + 5.2, w.y * 1.15 + 1.3)) - 0.4
-            let qw = q + warp * nv * 1.8
-            var t = simd_dot(qw, dir) * 0.5 * spread + 0.5
-            t += 0.3 * warp * sin(simd_dot(qw, perp) * 1.9 + seed * 11)
-            t = min(max(t, 0), 1)
-            let ab = A + (B - A) * ss(0, 0.55, t)
-            var body = ab + (C - ab) * ss(0.45, 1, t)
-            if let g = washGround {
-                let pig = body + (SIMD3<Float>(repeating: 1) - body) * 0.14
-                let dens = 0.6 * (0.88 + 0.3 * nv.x)
-                let absorb = simd_clamp((SIMD3<Float>(repeating: 1) - pig) * dens, SIMD3(repeating: 0), SIMD3(repeating: 1))
-                body = g * (SIMD3<Float>(repeating: 1) - absorb)
-            } else {
-                let d = simd_length(q), rb = ss(0.62, 1.02, d)
-                body += (R - body) * (rb * rb * rimK)
-                body *= 0.9 + 0.14 * (max(0, 1 - min(d * d, 1))).squareRoot()
-            }
-            sum += OrbStudyPalettes.lum(simd_min(body, SIMD3(repeating: 1))); n += 1
-        } }
-        return sum / n
+        let sm = TitleInkTwin.studySamples(.init(a: A, b: B, c: C, r: R, seed: seed), spread: spread, warp: warp, rim: rim,
+                                           washGround: washGround)
+        return sm.reduce(0) { $0 + OrbStudyPalettes.lum($1) } / Float(max(sm.count, 1))
     }
     /// The study's ink threshold (v5 `inkDark`: luma > 0.5 → dark ink).
     static let studyInkThreshold: Float = 0.5
 
-    /// live-47 — the title ink under the study looks: Eclipse always light; Aura (dark Map) and Wash (light Map) dark only
-    /// where the sampled colour under the title is light.
-    private func studyTitleInkIsDark(nodeID: String, m: MapDarkTuning) -> Bool {
-        if currentIsLight {
-            let st = studyStops(nodeID: nodeID, sorted: false), w = m.wash, g = Self.rgb3(MapCompTuning.lightGroundHex)
-            return Self.studyTitleLuma(a: st.a, b: st.b, c: st.c, r: st.r, seed: st.seed, spread: w.spread, warp: w.warp, rim: 0,
-                                       washGround: SIMD3(g.x, g.y, g.z)) > Self.studyInkThreshold
+    #if DEBUG
+    // MARK: - 1.1-A (4) `-InkAudit` + `-InkStillTour` (DEBUG)
+
+    /// Run `body` once the orbs have settled — the count (> 1) held, territory tints present and no orb moved more than
+    /// 0.5 pt, for 4 s in a row —
+    /// polled each second from `after` s (gives up waiting at 120 s).
+    private func whenOrbsSettled(after: Double, _ body: @escaping () -> Void) {
+        var last = -1, held = 0, waited = after, lastPos: [String: CGPoint] = [:]
+        func poll() {
+            DispatchQueue.main.asyncAfter(deadline: .now() + (waited == after ? after : 1)) { [weak self] in
+                guard let self else { return }
+                let n = self.nodeSprites.count
+                var pos: [String: CGPoint] = [:], moved: CGFloat = 0
+                for (id, sp) in self.nodeSprites {
+                    pos[id] = sp.position
+                    if let p = lastPos[id] { moved = max(moved, hypot(p.x - sp.position.x, p.y - sp.position.y)) } else { moved = .infinity }
+                }
+                lastPos = pos
+                // …and the territories have coloured the orbs (positions settle before the territory tints land)
+                let tinted = !self.territoryColors.isEmpty
+                held = (n == last && n > 1 && moved < 0.5 && tinted) ? held + 1 : 0; last = n; waited += 1
+                if held >= 4 || waited > 120 { NSLog("[INKAUDIT] orbs settled at %d (%.0f s), %d tinted", n, waited, self.territoryColors.count); body() } else { poll() }
+            }
         }
-        if m.orbLook == .eclipse { return false }
-        let st = studyStops(nodeID: nodeID, sorted: false), a = m.aura
-        return Self.studyTitleLuma(a: st.a, b: st.b, c: st.c, r: st.r, seed: st.seed, spread: a.spread, warp: a.warp, rim: a.rim)
-            > Self.studyInkThreshold
+        poll()
     }
+
+    /// The territory tint CanvasView gives an orb (`familyTint`: the slot colour, shaded per orb) — to re-tint an orb
+    /// in another palette slot or on the other Map with its own shade.
+    private static func auditFamilyTint(_ base: UIColor, _ t: Double) -> UIColor {
+        var h: CGFloat = 0, s: CGFloat = 0, b: CGFloat = 0, a: CGFloat = 0
+        guard base.getHue(&h, saturation: &s, brightness: &b, alpha: &a) else { return base }
+        let nb = min(1.0, max(0.40, b * CGFloat(0.78 + 0.44 * t)))
+        let ns = min(1.0, max(0.0, s * CGFloat(1.05 - 0.15 * t)))
+        return UIColor(hue: h, saturation: ns, brightness: nb, alpha: a)
+    }
+    /// The orb's shade back out of its fill (familyTint's brightness factor; 0.5 when it can't be read).
+    private static func auditShade(fill: UIColor, base: UIColor) -> Double {
+        var h: CGFloat = 0, s: CGFloat = 0, fb: CGFloat = 0, a: CGFloat = 0, bb: CGFloat = 0
+        guard fill.getHue(&h, saturation: &s, brightness: &fb, alpha: &a), base.getHue(&h, saturation: &s, brightness: &bb, alpha: &a),
+              bb > 0.01 else { return 0.5 }
+        return min(1, max(0, (Double(fb / bb) - 0.78) / 0.44))
+    }
+
+    /// One audited title under three rules, each ink scored over the SAME twin samples by area (p80) and worst case:
+    /// `pre` = before 1.1-A (`legacyTitleInk`), `aa` = 1.1-A's worst-case pick (its halo is gone), `new` = the area rule.
+    struct InkAuditItem {
+        let id: String; let look: TitleLook; let light: Bool; let palette: Int
+        let preA: Float, preW: Float, aaA: Float, aaW: Float, newA: Float, newW: Float
+        let flipped: Bool   // the area rule picks the other ink than 1.1-A
+    }
+
+    /// The looks as drawn on each Map (the light Map's Fresnel = Flat, Aura / Eclipse = Wash; Light Glass is DEBUG-only).
+    static let inkAuditLooks: [(TitleLook, Bool)] =
+        [TitleLook.flat, .fresnel, .glass, .aura, .eclipse, .outline, .riso, .gradient].map { ($0, false) }
+        + [TitleLook.flat, .glass, .wash, .outline, .riso, .gradient].map { ($0, true) }
+
+    /// Every title × every look × both Maps × (the real palette + each of the 12), under the three rules.
+    /// palette −1 = the real configuration (its territory slot / study family); 0…11 = forced (Flat / Fresnel / Glass /
+    /// Outline: RegionPalette slot p with the orb's own shade; the study looks: OrbStudyPalettes family p).
+    func inkAuditItems(lookFilter: (TitleLook, Bool)? = nil, realOnly: Bool = false) -> [InkAuditItem] {
+        let m = mapTuning ?? .today
+        let byID = Dictionary(currentNodes.map { ($0.id, $0) }, uniquingKeysWith: { a, _ in a })
+        if studyFamilyOf.count < nodeSprites.count { buildStudyFamilies(byID: byID) }
+        let ids = nodeSprites.keys.sorted().filter { byID[$0] != nil }
+        var out: [InkAuditItem] = []
+        for (look, light) in Self.inkAuditLooks {
+            if let f = lookFilter, f.0 != look || f.1 != light { continue }
+            let g = Self.titleGround(m, light: light), inks = Self.titleInks(look, light: light, m: m)
+            for id in ids {
+                guard let node = byID[id] else { continue }
+                let alpha: Float = node.isMeta ? 0.55 : 1, seed = studySeed(id)
+                let box = Self.inkBox(nodeSprites[id]?.children.first { $0.name == "titleLabel" })
+                let cur = bubbleColor(for: node)
+                var shade = 0.5, realFill = cur
+                if let slot = territorySlots[id] {
+                    shade = Self.auditShade(fill: cur, base: RegionPalette.color(isLight: currentIsLight, slot: slot))
+                    if light != currentIsLight { realFill = Self.auditFamilyTint(RegionPalette.color(isLight: light, slot: slot), shade) }
+                }
+                for p in -1..<(realOnly ? 0 : 12) {
+                    let fill = p < 0 ? realFill : Self.auditFamilyTint(RegionPalette.color(isLight: light, slot: p), shade)
+                    let fam = p < 0 ? studyFamily(id, fill: realFill) : p
+                    let sm = titleSamples(look, light: light, fill: fill, alpha: alpha, family: fam, seed: seed, m: m, ground: g, box: box)
+                    let pre = legacyTitleInk(look, light: light, fill: fill, family: fam, seed: seed, m: m)
+                    let aa = Self.worstCaseInk(samples: sm, inks: inks)
+                    let pk = TitleInkRule.pick(samples: sm, inks: inks)
+                    out.append(InkAuditItem(id: id, look: look, light: light, palette: p,
+                                            preA: TitleInkRule.areaContrast(pre, over: sm), preW: TitleInkRule.worstContrast(pre, over: sm),
+                                            aaA: TitleInkRule.areaContrast(aa, over: sm), aaW: TitleInkRule.worstContrast(aa, over: sm),
+                                            newA: pk.area, newW: pk.worst, flipped: pk.ink != aa))
+                }
+            }
+        }
+        return out
+    }
+
+    /// `-InkAudit`: logs `[INKAUDIT]` (ids + numbers only, never titles): a positive control of the rule, then per look ×
+    /// Map, for the real configuration and the 12-palette sweep, the % of titles whose ink reaches 4.5:1 by AREA (p80)
+    /// and by WORST case, under the pre-1.1-A rule, 1.1-A's worst-case pick and the area rule; then the worst 10 (real
+    /// configuration) by the area rule.
+    private func runInkAudit() {
+        let t0 = CACurrentMediaTime()
+        // positive controls: white → dark ink; black → light; 30 dark + 5 white samples → light by area, though the
+        // worst case (1.1-A) picks dark
+        let li = TitleInkRule.legibleInks
+        let w = TitleInkRule.pick(samples: [SIMD3(1, 1, 1)], inks: li), b = TitleInkRule.pick(samples: [SIMD3(0, 0, 0)], inks: li)
+        let mix = Array(repeating: SIMD3<Float>(repeating: 0.12), count: 30) + Array(repeating: SIMD3<Float>(repeating: 1), count: 5)
+        let am = TitleInkRule.pick(samples: mix, inks: li), wm = Self.worstCaseInk(samples: mix, inks: li)
+        let ctl = !w.lightInk && b.lightInk && am.lightInk && wm == li.dark
+        NSLog("[INKAUDIT] control white→%@ black→%@ mostly-dark→area %@ / worst %@ %@", w.lightInk ? "light" : "dark",
+              b.lightInk ? "light" : "dark", am.lightInk ? "light" : "dark", wm == li.light ? "light" : "dark", ctl ? "PASS" : "FAIL")
+        let items = inkAuditItems()
+        NSLog("[INKAUDIT] orbs=%d evaluations=%d light-now=%@ %.0f ms", nodeSprites.count, items.count, currentIsLight ? "yes" : "no",
+              (CACurrentMediaTime() - t0) * 1000)
+        func pct(_ r: [InkAuditItem], _ f: (InkAuditItem) -> Bool) -> Double { r.isEmpty ? 0 : 100 * Double(r.filter(f).count) / Double(r.count) }
+        func med(_ v: [Float]) -> Float { v.isEmpty ? 0 : v.sorted()[v.count / 2] }
+        func line(_ tag: String, _ r: [InkAuditItem]) {
+            NSLog("[INKAUDIT] %@ n=%d p80>=4.5 pre=%.1f%% aa=%.1f%% new=%.1f%% | worst>=4.5 pre=%.1f%% aa=%.1f%% new=%.1f%% | flipped=%.1f%% newMinP80=%.2f newMedP80=%.2f | under4.5=%d under3=%d",
+                  tag, r.count, pct(r) { $0.preA >= 4.5 }, pct(r) { $0.aaA >= 4.5 }, pct(r) { $0.newA >= 4.5 },
+                  pct(r) { $0.preW >= 4.5 }, pct(r) { $0.aaW >= 4.5 }, pct(r) { $0.newW >= 4.5 }, pct(r) { $0.flipped },
+                  r.map(\.newA).min() ?? 0, med(r.map(\.newA)),
+                  // 1.1-B (T: "recount at 3:1 large") — titles are large text: WCAG's large-text bar is 3:1
+                  r.filter { $0.newA < 4.5 }.count, r.filter { $0.newA < 3 }.count)
+        }
+        for real in [true, false] {
+            let rr = items.filter { ($0.palette < 0) == real }
+            for (look, light) in Self.inkAuditLooks {
+                line("\(real ? "real " : "sweep") \(light ? "light" : "dark ") \(look.rawValue)", rr.filter { $0.look == look && $0.light == light })
+            }
+            line("\(real ? "real " : "sweep") ALL", rr)
+            line("\(real ? "real " : "sweep") SHIPPING", rr.filter { $0.look != .fresnel && !($0.look == .glass && $0.light) })
+        }
+        let real = items.filter { $0.palette < 0 && $0.look != .fresnel }   // Fresnel doesn't ship (MapLookChoice)
+        func distinct(_ v: [InkAuditItem]) -> [InkAuditItem] {   // one entry per title (its worst look × Map)
+            var seen = Set<String>(); return v.filter { seen.insert($0.id).inserted }
+        }
+        for (k, it) in distinct(real.sorted(by: { ($0.newA, $0.id) < ($1.newA, $1.id) })).prefix(10).enumerated() {
+            NSLog("[INKAUDIT] worst-after #%d id=%@ look=%@ map=%@ p80=%.2f worst=%.2f (1.1-A p80=%.2f worst=%.2f) flipped=%@", k + 1,
+                  it.id, it.look.rawValue, it.light ? "light" : "dark", it.newA, it.newW, it.aaA, it.aaW, it.flipped ? "yes" : "no")
+        }
+        let sweep = items.filter { $0.palette >= 0 && $0.look != .fresnel }
+        for (k, it) in distinct(sweep.sorted(by: { ($0.newA, $0.id) < ($1.newA, $1.id) })).prefix(10).enumerated() {
+            NSLog("[INKAUDIT] worst-sweep #%d id=%@ look=%@ palette=%d map=%@ p80=%.2f worst=%.2f (1.1-A p80=%.2f worst=%.2f)", k + 1,
+                  it.id, it.look.rawValue, it.palette, it.light ? "light" : "dark", it.newA, it.newW, it.aaA, it.aaW)
+        }
+        NSLog("[INKAUDIT] done")
+    }
+
+    /// `-InkStillTour <n>` (+ optional `-InkStillIDs id,id,…`): in the current look on the current Map, frame each of the
+    /// n worst titles by 1.1-A's worst-case rule (real configuration; or the given ids) alone at the centre, first in
+    /// 1.1-A's ink (`[INKSTILL] k old …`, no halo), then the area rule's (`[INKSTILL] k new …`), 3 s each. Pills hidden.
+    private func startInkStillTour(n: Int, delay: Double) {
+        DispatchQueue.main.asyncAfter(deadline: .now() + delay) { [weak self] in
+            guard let self else { return }
+            let m = self.mapTuning ?? .today
+            let look = Self.drawnTitleLook(m.orbLook, light: self.currentIsLight)
+            let byNew = ProcessInfo.processInfo.arguments.contains("-InkStillSortNew")   // the n worst by the NEW rule
+            var ids: [(String, Float, Float, Bool)] = self.inkAuditItems(lookFilter: (look, self.currentIsLight), realOnly: true)
+                .sorted { byNew ? ($0.newA, $0.id) < ($1.newA, $1.id) : ($0.aaW, $0.id) < ($1.aaW, $1.id) }
+                .map { ($0.id, $0.aaA, $0.newA, $0.flipped) }
+            if let s = UserDefaults.standard.string(forKey: "InkStillIDs") {
+                let want = s.split(separator: ",").map(String.init)
+                ids = want.compactMap { w in ids.first { $0.0 == w } }
+            }
+            ids = Array(ids.prefix(n))
+            self.inkTourActive = true
+            NSLog("[INKSTILL] begin look=%@ map=%@ count=%d", look.rawValue, self.currentIsLight ? "light" : "dark", ids.count)
+            for (k, e) in ids.enumerated() {
+                for (j, old) in [true, false].enumerated() {
+                    DispatchQueue.main.asyncAfter(deadline: .now() + Double(k * 2 + j) * 4) { [weak self] in
+                        guard let self, let sp = self.nodeSprites[e.0], let par = sp.parent else { return }
+                        let r = self.nodeIntrinsicRadii[e.0] ?? 30
+                        func centre() {
+                            self.cameraNode.removeAllActions()
+                            self.cameraNode.position = self.convert(sp.position, from: par)
+                            self.cameraNode.setScale(2 * r / (0.2 * self.size.width))
+                            self.applyOrbScales()
+                        }
+                        centre()
+                        Self.worstCaseInkDebug = old
+                        self.restyleLabels()
+                        // the lens / band relaxation moves orbs once the zoom lands: re-centre, then log where it sits
+                        DispatchQueue.main.asyncAfter(deadline: .now() + 1.2) { centre() }
+                        DispatchQueue.main.asyncAfter(deadline: .now() + 2.0) { [weak self] in
+                            guard let self else { return }
+                            // where the orb sits (view pt) + the twin's samples, so a still can be checked against the twin
+                            let c = self.convert(sp.position, from: par), rs = self.orbBaseWidth(sp) * sp.xScale / 2
+                            let vc = self.convertPoint(toView: c), ve = self.convertPoint(toView: CGPoint(x: c.x + rs, y: c.y))
+                            if !old, let node = self.currentNodes.first(where: { $0.id == e.0 }) {
+                                let fill = self.bubbleColor(for: node)
+                                let sm = self.titleSamples(look, light: self.currentIsLight, fill: fill, alpha: node.isMeta ? 0.55 : 1,
+                                                           family: self.studyFamily(e.0, fill: fill), seed: self.studySeed(e.0), m: m,
+                                                           ground: Self.titleGround(m, light: self.currentIsLight),
+                                                       box: Self.inkBox(sp.children.first { $0.name == "titleLabel" }))
+                                let bx = Self.inkBox(sp.children.first { $0.name == "titleLabel" })
+                                NSLog("[INKSTILL] box %d %.3f %.3f", k + 1, bx.last?.x ?? 0, bx.last?.y ?? 0)
+                                NSLog("[INKSTILL] twin %d %@", k + 1, sm.map(OrbStudyPalettes.hex).joined(separator: ","))
+                            }
+                            NSLog("[INKSTILL] %d %@ id=%@ look=%@ map=%@ aaP80=%.2f newP80=%.2f flipped=%@ cx=%.1f cy=%.1f r=%.1f", k + 1,
+                                  old ? "old" : "new", e.0, look.rawValue, self.currentIsLight ? "light" : "dark", e.1, e.2,
+                                  e.3 ? "yes" : "no", vc.x, vc.y, hypot(ve.x - vc.x, ve.y - vc.y))
+                        }
+                    }
+                }
+            }
+            DispatchQueue.main.asyncAfter(deadline: .now() + Double(ids.count * 2) * 4) {
+                Self.worstCaseInkDebug = false
+                NSLog("[INKSTILL] end")
+            }
+        }
+    }
+    #endif
 
     #if DEBUG
     /// live-47 — `-AuraInkAudit`: once per restyle, the study's one-stop rule (dark ink when lum(a·.25 + b·.5 + c·.25) > 0.5;
@@ -5062,73 +5679,212 @@ final class CorpusPhysicsScene: SKScene {
         )
     }
 
-    /// Ink + halo that read legibly over a given fill: warm near-black on a light
-    /// fill, warm off-white on a dark one, each paired with an opposite-luminance
-    /// halo so the type separates on mid-tones too. Mirrors the focal bubble's
+    /// Ink that reads legibly over a given fill: warm near-black on a light
+    /// fill, warm off-white on a dark one. Mirrors the focal bubble's
     /// SwiftUI rule (`NodeGradientLayer.legibleInk`), in UIKit for the sprite path.
     /// Brief AS (AQ2) — title ink by MEASURED WCAG contrast: white vs near-black, whichever has the
     /// higher contrast ratio against the orb's actual rendered fill. Replaces the old `lum > 0.6` proxy
     /// (a legibility fix applied in BOTH appearances — the one shared change vs today). Flip point L≈0.179.
-    private func legibleInk(over fill: UIColor) -> (ink: UIColor, halo: UIColor) {
+    private func legibleInk(over fill: UIColor) -> UIColor {
         let white = UIColor(red: 1.0, green: 0.98, blue: 0.95, alpha: 1.0)
         let black = UIColor(red: 0.08, green: 0.07, blue: 0.06, alpha: 1.0)
-        if Self.wcagContrast(white, fill) >= Self.wcagContrast(black, fill) {
-            return (white, UIColor(white: 0.0, alpha: 0.6))   // white ink, dark halo
-        } else {
-            return (black, UIColor(white: 1.0, alpha: 0.6))   // dark ink, light halo
+        return Self.wcagContrast(white, fill) >= Self.wcagContrast(black, fill) ? white : black
+    }
+
+    // MARK: - 1.1-A (4) title ink — ONE rule for every look × palette × Map
+
+    /// The look as DRAWN under a title on a Map (applyMapLook's choice: the light Map draws Flat for Fresnel and Wash for
+    /// Aura / Eclipse; Light Glass only under the DEBUG `-MapStudyLightGlass` A/B).
+    enum TitleLook: String, CaseIterable { case flat, fresnel, glass, aura, eclipse, wash, outline, riso, gradient, lightGlass }
+    static func drawnTitleLook(_ look: MapOrbLook, light: Bool) -> TitleLook {
+        switch look {
+        case .flat: return .flat
+        case .fresnel: return light ? .flat : .fresnel
+        case .glass: return light && studyLightGlassDebug ? .lightGlass : .glass
+        case .aura: return light && !auraOnLightDebug ? .wash : .aura
+        case .eclipse: return light && !auraOnLightDebug ? .wash : .eclipse
+        case .outline: return .outline
+        case .riso: return .riso
+        case .gradient: return .gradient
         }
     }
 
-    /// The orb title's ink for a node's base fill: the legible-ink rule over the rendered tone. live-39: under the
-    /// TestFlight tuner's Fresnel look (dark) the tone is the dark body (+ the centre's inner glow), and the ink is the
-    /// tuner's label colour unless near-black reads better there.
-    private func orbTitleInk(_ fillColor: UIColor, nodeID: String = "") -> UIColor {
-        // live-43 — Outline: light ink on the dark Map, dark ink on the light one (the fill is too faint to matter).
-        // live-47 — the study looks (Aura / Eclipse on dark, Wash on light): studyTitleInkIsDark (Eclipse always light).
-        if let m = mapTuning, let k = study2Kind(m) {   // live-49 — the study's inkDark for Light Glass / Riso / Gradient
-            if k == .lightGlass { return m.lightGlass.label.uiColor }   // live-50 — Light Glass's label colour (default = the study's dark ink)
-            return study2TitleInkIsDark(nodeID: nodeID, kind: k)
-                ? UIColor(red: 0x1B / 255.0, green: 0x1A / 255.0, blue: 0x20 / 255.0, alpha: 1)
-                : UIColor(red: 0xF4 / 255.0, green: 0xF2 / 255.0, blue: 0xF8 / 255.0, alpha: 1)
+    /// The ground under the titles — an explicit INPUT to the ink rule (1.1-B's custom backgrounds plug in here): the light
+    /// Map's #FFEEED; on the dark Map the field the grid draws next to an orb (the ground with the ambient ripple at zero,
+    /// = the colour the Pro-look shaders composite over).
+    /// 1.1-B: the Pro-edited ground plugs in here; with a gradient, the ground at the title's place on screen (`offset`, pt
+    /// from the screen's centre, y up — the study's `groundAt`), or the gradient's middle when the place isn't known.
+    static func titleGround(_ m: MapDarkTuning, light: Bool, offset: SIMD2<Float>? = nil,
+                            viewport: SIMD2<Float> = SIMD2(440, 956)) -> SIMD3<Float> {
+        if let g = MapGround.override(light: light) {
+            let c = offset.map { g.ground(atOffset: $0, viewport: viewport) } ?? g.meanRGB
+            return light ? c : c * Float(1 - m.ambientAmount)   // dark: the field next to an orb (= m.fieldHex's mix)
         }
-        if let m = mapTuning, m.orbLook == .outline {
-            return currentIsLight ? UIColor(red: 0.08, green: 0.07, blue: 0.06, alpha: 1) : UIColor(red: 1.0, green: 0.98, blue: 0.95, alpha: 1)
+        return light ? rgb3(MapCompTuning.lightGroundHex) : TunerHSL(hex: m.fieldHex).simd
+    }
+    static func hex6(_ c: SIMD3<Float>) -> String {
+        String(format: "%02X%02X%02X", Int((min(max(c.x, 0), 1) * 255).rounded()), Int((min(max(c.y, 0), 1) * 255).rounded()),
+               Int((min(max(c.z, 0), 1) * 255).rounded()))
+    }
+    /// Where an orb sits on screen for `titleGround` (only needed when the edited ground has a gradient).
+    private func titleGroundOffset(_ nodeID: String) -> (SIMD2<Float>, SIMD2<Float>)? {
+        guard MapGround.override(light: currentIsLight)?.gradient == true, let v = view,
+              let sp = nodeSprites[nodeID], let par = sp.parent else { return nil }
+        let p = convertPoint(toView: convert(sp.position, from: par))
+        let w = Float(v.bounds.width), h = Float(v.bounds.height)
+        return (SIMD2(Float(p.x) - w / 2, h / 2 - Float(p.y)), SIMD2(w, h))
+    }
+
+    /// Each look's two candidate inks — the colours each look already used: the study's #F4F2F8 / #1B1A20 (Aura, Eclipse,
+    /// Wash, Riso, Gradient), Flat / Outline's warm off-white / near-black, Fresnel / Glass's label colour vs near-black.
+    static func titleInks(_ look: TitleLook, light: Bool, m: MapDarkTuning) -> TitleInkRule.Inks {
+        switch look {
+        case .flat, .outline: return TitleInkRule.legibleInks
+        case .fresnel: return .init(light: m.fresnel.label.simd, dark: TitleInkRule.legibleInks.dark)
+        case .glass: return .init(light: m.glassFor(light: light).label.simd, dark: TitleInkRule.legibleInks.dark)
+        case .aura, .eclipse, .wash, .riso, .gradient: return TitleInkRule.studyInks
+        case .lightGlass: let l = m.lightGlass.label.simd; return .init(light: l, dark: l)   // DEBUG A/B: its label colour, fixed
         }
-        if let m = mapTuning, m.orbLook.drawsWashOnLight {
-            return studyTitleInkIsDark(nodeID: nodeID, m: m)
-                ? UIColor(red: 0x1B / 255.0, green: 0x1A / 255.0, blue: 0x20 / 255.0, alpha: 1)   // the study's inks
-                : UIColor(red: 0xF4 / 255.0, green: 0xF2 / 255.0, blue: 0xF8 / 255.0, alpha: 1)
+    }
+
+    /// What `look` draws under an orb's title on a Map (sRGB samples over `TitleInkRule.titleBox`): `fill` = the orb's Map
+    /// colour (its territory slot's), `alpha` = its fill alpha (0.55 for a meta orb), `family` / `seed` = its study palette.
+    func titleSamples(_ look: TitleLook, light: Bool, fill: UIColor, alpha: Float, family: Int, seed: Float,
+                      m: MapDarkTuning, ground g: SIMD3<Float>, box: [SIMD2<Float>] = TitleInkRule.titleBox) -> [SIMD3<Float>] {
+        func c3(_ c: UIColor) -> SIMD3<Float> { let v = Self.rgbaVec(c); return SIMD3(v.x, v.y, v.z) }
+        let f = OrbStudyPalettes.families[min(max(family, 0), OrbStudyPalettes.families.count - 1)]
+        func stops(sorted: Bool) -> TitleInkTwin.Stops {
+            var st = [f.a, f.b, f.c]
+            if sorted { st.sort { OrbStudyPalettes.lum($0) < OrbStudyPalettes.lum($1) } }
+            return .init(a: st[0], b: st[1], c: st[2], r: f.r, seed: seed)
         }
-        if !currentIsLight, let m = mapTuning, m.orbLook == .fresnel {
+        // the colour the orb shader starts from: dark = the sat/val boost; light = the AE translate + OKLCH palette
+        let orbCol = light ? c3(MapCompTuning.lightOrbColor(fill)) : c3(applyDarkOrbBoost(fill))
+        switch look {
+        case .flat:
+            if light { return TitleInkTwin.flatLight(orb: orbCol, opacity: MapCompTuning.orbOpacity * alpha, ground: g) }
+            let s = TitleInkTwin.flatDark(fill: orbCol, glow: m.orbGlow.simd, glowOpacity: Float(m.orbGlowOpacity),
+                                          glowSize: MapCompTuning.glowSizeRel, box: box)
+            return alpha >= 1 ? s : s.map { $0 * alpha + g * (1 - alpha) }
+        case .outline:   // the light Map's ring + fill are the territory colour itself
+            return TitleInkTwin.outline(fill: light ? c3(fill) : orbCol, fillOpacity: Float(m.outline.fillOpacity) * alpha, ground: g)
+        case .fresnel: return TitleInkTwin.fresnel(col: orbCol, ground: g, m.fresnel, box: box)
+        case .glass: return TitleInkTwin.glass(col: orbCol, ground: g, m.glassFor(light: light), box: box)
+        case .aura: return TitleInkTwin.studySamples(stops(sorted: false), spread: m.aura.spread, warp: m.aura.warp, rim: m.aura.rim, box: box)
+        case .wash: return TitleInkTwin.studySamples(stops(sorted: false), spread: m.wash.spread, warp: m.wash.warp, rim: 0, washGround: g, box: box)
+        case .eclipse: return TitleInkTwin.eclipse(stops(sorted: true), m.eclipse, box: box)
+        case .riso: return TitleInkTwin.riso(stops(sorted: true), m.riso, dark: !light, ground: g, box: box)
+        case .gradient: return TitleInkTwin.gradient(stops(sorted: true), m.gradient, box: box)
+        case .lightGlass: return []
+        }
+    }
+
+    /// An orb's study seed (the shaders' a_au_a.w; = studyStops').
+    private func studySeed(_ nodeID: String) -> Float { Float(stableHash(nodeID) % 10_000) / 10_000 }
+
+    /// The orb's study family — its territory's (buildStudyFamilies), else the family nearest its own Map colour's hue.
+    private func studyFamily(_ nodeID: String, fill: UIColor) -> Int {
+        studyFamilyOf[nodeID] ?? OrbStudyPalettes.nearest(hue: (Self.oklch(fill).h + 360).truncatingRemainder(dividingBy: 360))
+    }
+
+    /// 1.1-A (4) — THE title ink for an orb on the current Map, in the current look: its look's twin sampled under the
+    /// title box over this Map's ground, then `TitleInkRule.pick` (the ink with the higher WCAG contrast at the 80th
+    /// percentile of the title's area; no halo).
+    private func titleInkPick(nodeID: String, fill: UIColor, isMeta: Bool, box: [SIMD2<Float>]) -> TitleInkRule.Pick {
+        #if DEBUG || PANBENCH
+        PanBench.inkPicks += 1
+        #endif
+        let m = mapTuning ?? .today, light = currentIsLight
+        let look = Self.drawnTitleLook(m.orbLook, light: light)
+        let fam = studyFamily(nodeID, fill: fill), seed = studySeed(nodeID)
+        let at = titleGroundOffset(nodeID)
+        let ground = at.map { Self.titleGround(m, light: light, offset: $0.0, viewport: $0.1) } ?? Self.titleGround(m, light: light)
+        let samples = titleSamples(look, light: light, fill: fill, alpha: isMeta ? 0.55 : 1, family: fam, seed: seed, m: m,
+                                   ground: ground, box: box)
+        let inks = Self.titleInks(look, light: light, m: m)
+        #if DEBUG
+        if Self.worstCaseInkDebug {   // `-InkStillTour`'s "before" frames: 1.1-A's worst-case pick (its halo is gone)
+            let ink = Self.worstCaseInk(samples: samples, inks: inks)
+            return .init(ink: ink, area: TitleInkRule.areaContrast(ink, over: samples),
+                         worst: TitleInkRule.worstContrast(ink, over: samples), lightInk: ink == inks.light)
+        }
+        #endif
+        return TitleInkRule.pick(samples: samples, inks: inks)
+    }
+
+    /// The sample points under a title container's set type (stored by makeTitleSprite; the default box otherwise).
+    static func inkBox(_ container: SKNode?) -> [SIMD2<Float>] {
+        guard let v = container?.userData?["inkBox"] as? [Float], v.count == 2 else { return TitleInkRule.titleBox }
+        return TitleInkRule.box(halfWidth: v[0], halfHeight: v[1])
+    }
+
+    static func uiColor(_ c: SIMD3<Float>, alpha: Float = 1) -> UIColor {
+        UIColor(red: CGFloat(c.x), green: CGFloat(c.y), blue: CGFloat(c.z), alpha: CGFloat(alpha))
+    }
+
+    #if DEBUG
+    /// `-InkStillTour` flips this between its before / after frames (then restyleLabels).
+    static var worstCaseInkDebug = false
+
+    /// 1.1-A's rule, kept only for the audit and the still tour: the ink with the higher WORST-case contrast (ties light).
+    static func worstCaseInk(samples: [SIMD3<Float>], inks: TitleInkRule.Inks) -> SIMD3<Float> {
+        TitleInkRule.worstContrast(inks.light, over: samples) >= TitleInkRule.worstContrast(inks.dark, over: samples) ? inks.light : inks.dark
+    }
+
+    /// The title-ink rule BEFORE 1.1-A (4) — per-look special cases (live-39 … 50) — kept only so the audit and the
+    /// still tour can show before vs after. Parameterised by look / Map / family; otherwise line for line the old
+    /// `orbTitleInk`.
+    func legacyTitleInk(_ look: TitleLook, light: Bool, fill: UIColor, family: Int, seed: Float, m: MapDarkTuning) -> SIMD3<Float> {
+        let si = TitleInkRule.studyInks, li = TitleInkRule.legibleInks
+        let fam = OrbStudyPalettes.families[min(max(family, 0), OrbStudyPalettes.families.count - 1)]
+        let sorted = [fam.a, fam.b, fam.c].sorted { OrbStudyPalettes.lum($0) < OrbStudyPalettes.lum($1) }
+        func c3(_ c: UIColor) -> SIMD3<Float> { let v = Self.rgbaVec(c); return SIMD3(v.x, v.y, v.z) }
+        switch look {
+        case .lightGlass: return m.lightGlass.label.simd
+        case .riso, .gradient:   // live-49 — the sorted mid stop (Riso on the light Map: multiplied into the ground at 85%)
+            if look == .riso && light {
+                let g = Self.rgb3(MapCompTuning.lightGroundHex)
+                return OrbStudyPalettes.lum(g * (SIMD3<Float>(repeating: 1) - (SIMD3<Float>(repeating: 1) - sorted[1]) * 0.85)) > 0.5 ? si.dark : si.light
+            }
+            return OrbStudyPalettes.lum(sorted[1]) > 0.5 ? si.dark : si.light
+        case .outline: return light ? li.dark : li.light
+        case .eclipse: return si.light
+        case .aura, .wash:
+            let g = Self.rgb3(MapCompTuning.lightGroundHex)
+            let tl = look == .wash
+                ? Self.studyTitleLuma(a: fam.a, b: fam.b, c: fam.c, r: fam.r, seed: seed, spread: m.wash.spread, warp: m.wash.warp,
+                                      rim: 0, washGround: g)
+                : Self.studyTitleLuma(a: fam.a, b: fam.b, c: fam.c, r: fam.r, seed: seed, spread: m.aura.spread, warp: m.aura.warp,
+                                      rim: m.aura.rim)
+            return tl > Self.studyInkThreshold ? si.dark : si.light
+        case .fresnel:
             let f = m.fresnel, g = m.ground.rgb
             var r: CGFloat = 0, gg: CGFloat = 0, b: CGFloat = 0, a: CGFloat = 0
-            applyDarkOrbBoost(fillColor).getRed(&r, green: &gg, blue: &b, alpha: &a)
+            applyDarkOrbBoost(fill).getRed(&r, green: &gg, blue: &b, alpha: &a)
             func ch(_ grd: Double, _ c: CGFloat) -> CGFloat {
                 min(1, CGFloat(grd + (Double(c) - grd) * f.bodyTint) * CGFloat(1 - f.bodyDarkness) + c * CGFloat(f.innerGlow))
             }
             let body = UIColor(red: ch(g.r, r), green: ch(g.g, gg), blue: ch(g.b, b), alpha: 1)
             let label = f.label.uiColor, black = UIColor(red: 0.08, green: 0.07, blue: 0.06, alpha: 1)
-            return Self.wcagContrast(label, body) >= Self.wcagContrast(black, body) ? label : black
-        }
-        if let m = mapTuning, m.orbLook == .glass {
-            // CPU twin of the Glass body away from the highlight: the background (ground, dimmed) tinted, then lifted.
-            // live-50b: the same rule on both Maps, over each Map's own ground.
-            let gl = m.glassFor(light: currentIsLight), lg = Self.rgb3(MapCompTuning.lightGroundHex)
-            let g: (r: Double, g: Double, b: Double) = currentIsLight ? (Double(lg.x), Double(lg.y), Double(lg.z)) : m.ground.rgb
+            return c3(Self.wcagContrast(label, body) >= Self.wcagContrast(black, body) ? label : black)
+        case .glass:
+            let gl = m.glassFor(light: light), lg = Self.rgb3(MapCompTuning.lightGroundHex)
+            let g: (r: Double, g: Double, b: Double) = light ? (Double(lg.x), Double(lg.y), Double(lg.z)) : m.ground.rgb
             var r: CGFloat = 0, gg: CGFloat = 0, b: CGFloat = 0, a: CGFloat = 0
-            applyDarkOrbBoost(fillColor).getRed(&r, green: &gg, blue: &b, alpha: &a)
+            applyDarkOrbBoost(fill).getRed(&r, green: &gg, blue: &b, alpha: &a)
             func ch(_ grd0: Double, _ c: CGFloat) -> CGFloat {
                 let grd = grd0 * (1 - gl.dim)
-                let t = grd + (Double(c) - grd) * gl.tint * 0.55   // the tint around the label (≈ 40% centre → rim)
+                let t = grd + (Double(c) - grd) * gl.tint * 0.55
                 return CGFloat(min(1, t + (1 - t) * gl.brightness))
             }
             let body = UIColor(red: ch(g.r, r), green: ch(g.g, gg), blue: ch(g.b, b), alpha: 1)
             let label = gl.label.uiColor, black = UIColor(red: 0.08, green: 0.07, blue: 0.06, alpha: 1)
-            return Self.wcagContrast(label, body) >= Self.wcagContrast(black, body) ? label : black
+            return c3(Self.wcagContrast(label, body) >= Self.wcagContrast(black, body) ? label : black)
+        case .flat:
+            return c3(legibleInk(over: light ? lightCompFill(fill) : applyDarkOrbBoost(fill)))
         }
-        let inkFill = currentIsLight ? lightCompFill(fillColor) : applyDarkOrbBoost(fillColor)
-        return legibleInk(over: inkFill).ink
     }
+    #endif
 
     /// WCAG 2.x relative luminance (sRGB linearised) + contrast ratio (hi+0.05)/(lo+0.05).
     static func wcagRelLum(_ c: UIColor) -> CGFloat {
@@ -5421,7 +6177,10 @@ final class CorpusPhysicsScene: SKScene {
         return Array(lines.prefix(maxLines))
     }
 
-    private func makeTitleSprite(text: String, radius: CGFloat, fillColor: UIColor) -> SKNode {
+    private func makeTitleSprite(text: String, radius: CGFloat, fillColor: UIColor, nodeID: String, isMeta: Bool) -> SKNode {
+        #if DEBUG || PANBENCH
+        PanBench.titleBuilds += 1
+        #endif
         // MSDF glyph label — the SOLE label path (raster retired in Phase 3). The wrap /
         // tier / hyphenation is resolved in glyph-space (resolveTitleLines, measured with
         // atlas advances → one metric system for fit + render); ink matches the orb
@@ -5437,9 +6196,22 @@ final class CorpusPhysicsScene: SKScene {
         }
         // Title ink: T device-final 2026-09-14 is `titleColour=(auto)` + `titleOpacity=1.000`,
         // i.e. the legible-ink rule with no override — so the auto value IS the shipped value.
-        let titleColor = orbTitleInk(fillColor)
-        return MSDFLabel.makeContainer(lines: lines, pointSize: glyphFont.pointSize,
-                                       color: titleColor, fullTitle: text, font: font)
+        // 1.1-A (4) / 1.1-B: the one rule (titleInkPick) — the ink with the better area contrast; no halo.
+        // The set type's extent in orb radii (the widest line × the lines' cap-height span) = the box the rule samples.
+        let pt = glyphFont.pointSize
+        let hw = (lines.map { MSDFLabel.textWidth($0, pointSize: pt, font: font) }.max() ?? side) / 2 / max(radius, 1)
+        let hh = (CGFloat(max(lines.count - 1, 0)) * font.lineHeightEm * pt + 0.72 * pt) / 2 / max(radius, 1)
+        let inkBox = [Float(min(hw, 1)), Float(min(hh, 1))]
+        let p = titleInkPick(nodeID: nodeID, fill: fillColor, isMeta: isMeta,
+                             box: TitleInkRule.box(halfWidth: inkBox[0], halfHeight: inkBox[1]))
+        let container = MSDFLabel.makeContainer(lines: lines, pointSize: pt,
+                                                color: Self.uiColor(p.ink), fullTitle: text, font: font)
+        container.userData?["inkBox"] = inkBox
+        #if DEBUG
+        container.userData?["debugLines"] = lines   // 1.1-B study export
+        container.userData?["debugLineHeightEm"] = font.lineHeightEm
+        #endif
+        return container
     }
 
     /// Brief BF addendum — rebuild EVERY orb title in the newly-chosen Orb font (Edit Map…).
@@ -5455,7 +6227,7 @@ final class CorpusPhysicsScene: SKScene {
             titleNode.removeFromParent()
             let radius = nodeIntrinsicRadii[node.id] ?? bubbleRadius(for: node)
             shape.addChild(makeTitleSprite(text: displayText, radius: radius,
-                                           fillColor: bubbleColor(for: node)))
+                                           fillColor: bubbleColor(for: node), nodeID: node.id, isMeta: node.isMeta))
         }
         lastRampCameraScale = -1   // force applyOrbScales to re-apply title LOD next frame
     }
@@ -5854,23 +6626,40 @@ private extension Comparable {
 /// notifications (main queue). `stressed` = Low Power or thermal ≥ .serious → a 60 fps cap on every look + the small-orb
 /// level of detail on every orb; `critical` = thermal ≥ .critical → Flat until it cools. DEBUG
 /// `-MapHeatSim lowpower|serious|critical` fakes the state for stills.
+extension Notification.Name {
+    /// `MapHeatGuard` re-read Low Power / the thermal state (main queue).
+    static let mapHeatGuardChanged = Notification.Name("mapHeatGuardChanged")
+}
+
 final class MapHeatGuard {
     static let shared = MapHeatGuard()
     private(set) var stressed = false
     private(set) var critical = false
+    /// Low Power Mode is on (else `stressed` means the phone is hot) — for the Gravity wells row's caption.
+    private(set) var lowPower = false
     private var observers: [NSObjectProtocol] = []
+    #if DEBUG
+    /// `-MapHeatSim <state>`; `-MapHeatSimClearAfter <s>` drops it after s seconds (the "returns by itself" check).
+    private var debugSim = UserDefaults.standard.string(forKey: "MapHeatSim")
+    #endif
     private init() {
-        refresh()
+        refresh(notify: false)   // no post from inside `shared`'s own initialiser (a listener would re-enter it)
         let nc = NotificationCenter.default
         for n in [ProcessInfo.thermalStateDidChangeNotification, Notification.Name.NSProcessInfoPowerStateDidChange] {
             observers.append(nc.addObserver(forName: n, object: nil, queue: .main) { [weak self] _ in self?.refresh() })
         }
+        #if DEBUG
+        let secs = UserDefaults.standard.double(forKey: "MapHeatSimClearAfter")
+        if secs > 0 {
+            DispatchQueue.main.asyncAfter(deadline: .now() + secs) { [weak self] in self?.debugSim = nil; self?.refresh() }
+        }
+        #endif
     }
-    private func refresh() {
+    private func refresh(notify: Bool = true) {
         var t = ProcessInfo.processInfo.thermalState
         var lowPower = ProcessInfo.processInfo.isLowPowerModeEnabled
         #if DEBUG
-        switch UserDefaults.standard.string(forKey: "MapHeatSim") {
+        switch debugSim {
         case "lowpower": lowPower = true
         case "serious": t = .serious
         case "critical": t = .critical
@@ -5879,9 +6668,417 @@ final class MapHeatGuard {
         #endif
         stressed = lowPower || t.rawValue >= ProcessInfo.ThermalState.serious.rawValue
         critical = t.rawValue >= ProcessInfo.ThermalState.critical.rawValue
+        self.lowPower = lowPower
+        if notify { NotificationCenter.default.post(name: .mapHeatGuardChanged, object: nil) }
         #if DEBUG || TESTFLIGHT
         NSLog("[MapHeatGuard] thermal=%d lowPower=%@ → %@", t.rawValue, lowPower ? "Y" : "n",
               critical ? "Flat" : stressed ? "60 fps + LOD" : "normal")
         #endif
     }
 }
+
+#if DEBUG
+// MARK: - 1.1-A (6) Map ground measurement harness (DEBUG only — Release-inert)
+
+/// What `-MapGroundCase <case>` (device trace) / `-MapGPUBench` (in-app offscreen bench) switch off:
+/// - `wellsOff`: the dots stay on the lattice (grid shader mode 0); the field is still built because the ripple reads it.
+/// - `rippleOff`: `u_ripple_amt` = 0 (dark only; the grid then outputs premultiplied dots over the SwiftUI ground).
+/// - `wellsRippleOff`: both (what a "Gravity wells" toggle that also drops the mass-field glow would leave).
+/// - `dotsOff`: the dot coverage forced to 0 in the shader (the compiler drops the lattice); the ground + ripple remain.
+/// - `gridOff`: the whole ground node hidden. `titlesOff`: orb titles hidden. `orbsOff`: orb sprites (and their titles)
+///   hidden. `empty`: grid + orbs hidden (clear + SpriteKit overhead).
+enum MapGroundCase: String, CaseIterable {
+    case all, wellsOff, rippleOff, wellsRippleOff, dotsOff, gridOff, titlesOff, orbsOff, empty
+    case sheen, sheenWellsOff   // 1.1-B — the sheen forced on (with the wells; and with them off, where it must cost 0)
+    var wellsOff: Bool { self == .wellsOff || self == .wellsRippleOff || self == .sheenWellsOff }
+    var sheenForced: Bool { self == .sheen || self == .sheenWellsOff }
+    var rippleOff: Bool { self == .rippleOff || self == .wellsRippleOff }
+}
+
+extension CorpusPhysicsScene {
+    /// Per frame, after `applyMapComp` (which re-pushes the ripple each frame).
+    func applyGroundCaseGridDebug() {
+        guard let grid = gridNode else { return }
+        if groundCase.rippleOff { grid.fillShader?.uniformNamed("u_ripple_amt")?.floatValue = 0 }
+        let hideGrid = groundCase == .gridOff || groundCase == .empty
+        if grid.isHidden != hideGrid { grid.isHidden = hideGrid }
+        let dotsOff = groundCase == .dotsOff
+        if dotsOff != groundCaseDotsOffApplied {
+            BackgroundGridNode.debugRebuildShader(grid, dotsOff: dotsOff)
+            groundCaseDotsOffApplied = dotsOff
+        }
+    }
+
+    /// Per frame, after `applyOrbScales` / `syncGlassOrbs` (so nothing re-shows what this hides).
+    func applyGroundCaseNodesDebug() {
+        let hideOrbs = groundCase == .orbsOff || groundCase == .empty
+        let hideTitles = groundCase == .titlesOff
+        if !hideOrbs && !hideTitles {
+            if !groundCaseHidden.isEmpty { groundCaseHidden.forEach { $0.isHidden = false }; groundCaseHidden = [] }
+            return
+        }
+        for (_, sp) in nodeSprites {
+            let n: SKNode? = hideOrbs ? sp : sp.children.first { $0.name == "titleLabel" }
+            if let n, !n.isHidden { n.isHidden = true; groundCaseHidden.append(n) }
+        }
+    }
+
+    /// `-MapAutoPan`: drift the camera on a 12 pt (on-screen) circle every 4 s — the Map stays "active" (full frame rate,
+    /// the warp field rebuilt every frame), like a slow pan, with no touch. The bench pans the same way.
+    func applyAutoPanDebug(_ t: TimeInterval) {
+        guard Self.autoPanDebug || benchRunning else { autoPanLastPhase = nil; return }
+        let ph = t * 2 * Double.pi / 4
+        defer { autoPanLastPhase = ph }
+        guard let last = autoPanLastPhase else { return }
+        let r = 12 * Double(cameraNode.xScale)
+        cameraNode.position.x += CGFloat(r * (cos(ph) - cos(last)))
+        cameraNode.position.y += CGFloat(r * (sin(ph) - sin(last)))
+    }
+
+    /// `-MapGPUBench`: ~20 s after the Map mounts (after `-MapFrameOrbs` / `-MapZoom` at 14 s), pause the SKView and render
+    /// THIS scene offscreen with `SKRenderer` at the view's pixel size, every `MapGroundCase` in turn (two rounds), reading
+    /// `MTLCommandBuffer` GPU start/end per frame. Results → `Caches/mapgpubench.txt` + NSLog `[MAPBENCH]`.
+    func scheduleGPUBenchIfAsked() {
+        guard ProcessInfo.processInfo.arguments.contains("-MapGPUBench") else { return }
+        let delay = Double(UserDefaults.standard.string(forKey: "MapGPUBenchDelay") ?? "") ?? 20
+        DispatchQueue.main.asyncAfter(deadline: .now() + delay) { [weak self] in self?.runGPUBench() }
+    }
+
+    private func runGPUBench() {
+        guard let view = view, let dev = MTLCreateSystemDefaultDevice(), let queue = dev.makeCommandQueue() else { return }
+        let k = view.contentScaleFactor
+        let W = Int(view.bounds.width * k), H = Int(view.bounds.height * k)
+        let td = MTLTextureDescriptor.texture2DDescriptor(pixelFormat: .bgra8Unorm, width: W, height: H, mipmapped: false)
+        td.usage = [.renderTarget, .shaderRead]; td.storageMode = .private
+        guard let target = dev.makeTexture(descriptor: td) else { return }
+        let rpd = MTLRenderPassDescriptor()
+        rpd.colorAttachments[0].texture = target
+        rpd.colorAttachments[0].loadAction = .clear; rpd.colorAttachments[0].storeAction = .store
+        rpd.colorAttachments[0].clearColor = MTLClearColor(red: 0, green: 0, blue: 0, alpha: 0)
+        let r = SKRenderer(device: dev)
+        r.scene = self
+        r.ignoresSiblingOrder = view.ignoresSiblingOrder
+        r.shouldCullNonVisibleNodes = view.shouldCullNonVisibleNodes
+        view.isPaused = true
+        isPaused = false
+        benchRunning = true
+        let startCase = groundCase
+        let warm = 40, measure = Int(UserDefaults.standard.string(forKey: "MapGPUBenchFrames") ?? "") ?? 240
+        var t = CACurrentMediaTime()
+        var lines: [String] = []
+        let titles = nodeTitleLodFade.values.filter { $0 > 0 }.count
+        lines.append(String(format: "MAPBENCH %dx%d px  orbs %d  titles-visible %d  camScale %.3f  light %@  device %@",
+                            W, H, nodeSprites.count, titles, Double(cameraNode.xScale), currentIsLight ? "Y" : "n", dev.name))
+        lines.append("case             GPU-ts med | encode ms med | commit→done ms med  p10   p90 | update CPU ms | warp CPU ms | warpMode")
+        func pct(_ a: [Double], _ q: Double) -> Double { a.isEmpty ? 0 : a.sorted()[min(a.count - 1, Int(Double(a.count) * q))] }
+        let rounds = Int(UserDefaults.standard.string(forKey: "MapGPUBenchRounds") ?? "") ?? 2
+        for round in 1...rounds {
+            // 1.1-B: `-MapGPUBenchCases all,sheen,…` runs just those cases.
+            let only = (UserDefaults.standard.string(forKey: "MapGPUBenchCases") ?? "").split(separator: ",").compactMap { MapGroundCase(rawValue: String($0)) }
+            // 1.0r S1c — `-MapGPUBenchRisoAB`: each case twice, Riso pre-fix (legacy) then fixed, in this launch.
+            let risoAB = ProcessInfo.processInfo.arguments.contains("-MapGPUBenchRisoAB")
+            for (c, legacy) in (only.isEmpty ? MapGroundCase.allCases + [.all] : only).flatMap({ c in risoAB ? [(c, true), (c, false)] : [(c, false)] }) {
+                groundCase = c
+                if risoAB { Self.dotsLegacyDebug = legacy }
+                var gpu: [Double] = [], wall: [Double] = [], upd: [Double] = [], warp: [Double] = [], enc: [Double] = []
+                var modes = Set<Int>()
+                for i in 0..<(warm + measure) {
+                    t += 1.0 / 120
+                    benchWarpCPU = 0
+                    let c0 = CACurrentMediaTime()
+                    r.update(atTime: t)
+                    let c1 = CACurrentMediaTime()
+                    guard let cb = queue.makeCommandBuffer() else { continue }
+                    r.render(withViewport: CGRect(x: 0, y: 0, width: W, height: H), commandBuffer: cb, renderPassDescriptor: rpd)
+                    let c1b = CACurrentMediaTime()
+                    cb.commit(); cb.waitUntilCompleted()
+                    let c2 = CACurrentMediaTime()
+                    if i >= warm {
+                        gpu.append((cb.gpuEndTime - cb.gpuStartTime) * 1000); enc.append((c1b - c1) * 1000)
+                        wall.append((c2 - c1b) * 1000); upd.append((c1 - c0) * 1000); warp.append(benchWarpCPU * 1000)
+                        modes.insert(lastWarpMode)
+                    }
+                }
+                let cname = risoAB ? "\(c.rawValue)/\(legacy ? "pre" : "fix")" : c.rawValue
+                lines.append(String(format: "r%d %-14@ %6.3f   | %7.3f       | %7.3f  %6.3f %6.3f        | %7.3f       | %7.3f     | %@",
+                                    round, cname as NSString, pct(gpu, 0.5), pct(enc, 0.5), pct(wall, 0.5), pct(wall, 0.1),
+                                    pct(wall, 0.9), pct(upd, 0.5), pct(warp, 0.5),
+                                    modes.sorted().map(String.init).joined(separator: ",") as NSString))
+                if round == 1, c == .all || c == .dotsOff || c == .sheen, let src = gridNode?.fillShader?.source,
+                   let dir = FileManager.default.urls(for: .cachesDirectory, in: .userDomainMask).first {
+                    try? src.write(to: dir.appendingPathComponent("grid-\(c.rawValue).glsl"), atomically: true, encoding: .utf8)
+                }
+            }
+        }
+        groundCase = startCase; Self.dotsLegacyDebug = false
+        benchRunning = false
+        view.isPaused = false
+        let text = lines.joined(separator: "\n") + "\n"
+        for l in lines { NSLog("[MAPBENCH] %@", l) }
+        if let dir = FileManager.default.urls(for: .cachesDirectory, in: .userDomainMask).first {
+            let url = dir.appendingPathComponent("mapgpubench.txt")
+            let prev = (try? String(contentsOf: url, encoding: .utf8)) ?? ""
+            try? (prev + text).write(to: url, atomically: true, encoding: .utf8)
+        }
+    }
+}
+#endif
+
+#if DEBUG
+// MARK: - 1.1-B ground study export (DEBUG only — Release-inert)
+
+extension CorpusPhysicsScene {
+    /// The last warp field built (bytes RGBA, w, h) and its packed inputs — stashed by `updateGridWarp` / `buildWarpField`.
+    static var debugLastField: ([UInt8], Int, Int) = ([], 0, 0)
+    static var debugLastPacked: [[Double]] = []
+    static var debugLastWarp: [String: Double] = [:]
+
+    /// `-ExportMapLayout <tag>`: after the orbs settle (and `-MapFrameOrbs` has framed), write the Map AS DRAWN — every
+    /// orb's position / size / shader attributes / title lines, both shaders' uniforms, the warp field and its inputs —
+    /// to `Caches/maplayout-<tag>-<dark|light>.json`, in four steps a Mac script screenshots between (NSLog
+    /// `[EXPORTMAP] ready <step>`): dark with titles, dark without, light with titles, light without. No territory pills.
+    /// Sample Library only (the study's data) — never point it at a real library.
+    func scheduleMapLayoutExportIfAsked() {
+        let a = ProcessInfo.processInfo.arguments
+        guard let i = a.firstIndex(of: "-ExportMapLayout"), i + 1 < a.count else { return }
+        let tag = a[i + 1]
+        whenOrbsSettled(after: 18) { [weak self] in self?.runMapLayoutExport(tag: tag) }
+    }
+
+    private func runMapLayoutExport(tag: String) {
+        inkTourActive = true   // no territory pills
+        let key = AppearanceOverride.storageKey
+        let steps: [(Double, () -> Void)] = [
+            // After each flip, nudge the camera 0.05 pt so the warp field rebuilds for the new Map (the field's dirty check
+            // doesn't see an appearance flip with a still camera — any pan rebuilds it).
+            (0, { UserDefaults.standard.set("dark", forKey: key) }),
+            (2, { [weak self] in self?.cameraNode.position.x += 0.05 }),
+            (5, { [weak self] in self?.writeMapLayout(tag: tag); NSLog("[EXPORTMAP] ready dark-titles") }),
+            (7, { [weak self] in self?.groundCase = .titlesOff }),
+            (2, { NSLog("[EXPORTMAP] ready dark-notitles") }),
+            (7, { [weak self] in self?.groundCase = .all; UserDefaults.standard.set("light", forKey: key) }),
+            (2, { [weak self] in self?.cameraNode.position.x -= 0.05 }),
+            (5, { [weak self] in self?.writeMapLayout(tag: tag); NSLog("[EXPORTMAP] ready light-titles") }),
+            (7, { [weak self] in self?.groundCase = .titlesOff }),
+            (2, { NSLog("[EXPORTMAP] ready light-notitles") }),
+            (7, { [weak self] in self?.groundCase = .all; NSLog("[EXPORTMAP] done") }),
+        ]
+        var t = 0.0
+        for (d, f) in steps { t += d; DispatchQueue.main.asyncAfter(deadline: .now() + t, execute: f) }
+    }
+
+    private func writeMapLayout(tag: String) {
+        func uniforms(_ list: [SKUniform]) -> [String: Any] {
+            var out: [String: Any] = [:]
+            for u in list {
+                switch u.uniformType {
+                case .float: out[u.name] = u.floatValue
+                case .floatVector2: let v = u.vectorFloat2Value; out[u.name] = [v.x, v.y]
+                case .floatVector3: let v = u.vectorFloat3Value; out[u.name] = [v.x, v.y, v.z]
+                case .floatVector4: let v = u.vectorFloat4Value; out[u.name] = [v.x, v.y, v.z, v.w]
+                case .floatMatrix4:
+                    let m = u.matrixFloat4x4Value
+                    out[u.name] = [m.columns.0, m.columns.1, m.columns.2, m.columns.3].flatMap { [$0.x, $0.y, $0.z, $0.w] }
+                default: break
+                }
+            }
+            return out
+        }
+        func v4(_ s: SKSpriteNode, _ n: String) -> [Float]? {
+            guard let v = s.value(forAttributeNamed: n) else { return nil }
+            let x = v.vectorFloat4Value; return [x.x, x.y, x.z, x.w]
+        }
+        var orbs: [[String: Any]] = []
+        for id in nodeSprites.keys.sorted() {
+            guard let sp = nodeSprites[id], let par = sp.parent else { continue }
+            let p = convert(sp.position, from: par)
+            var o: [String: Any] = ["id": id, "x": p.x, "y": p.y, "xScale": sp.xScale, "hidden": sp.isHidden, "alpha": sp.alpha,
+                                    "z": sp.zPosition]
+            if let h = nodeRestingPositions[id] { let hp = convert(h, from: par); o["homeX"] = hp.x; o["homeY"] = hp.y }
+            o["intrinsic"] = nodeIntrinsicRadii[id] ?? 0
+            o["restingScale"] = nodeRestingScales[id] ?? 1
+            o["onScreen"] = nodeOnScreenDiameter[id] ?? 0
+            o["lodFade"] = nodeTitleLodFade[id] ?? 0
+            if let s = sp as? SKSpriteNode {
+                o["flatShader"] = s.shader === orbSpriteShader
+                o["size"] = [s.size.width, s.size.height]   // SCALED (× xScale)
+                o["a_node_color"] = v4(s, "a_node_color"); o["a_stroke_color"] = v4(s, "a_stroke_color")
+                o["a_wash"] = v4(s, "a_wash")
+                if let g = s.value(forAttributeNamed: "a_geom") { let x = g.vectorFloat2Value; o["a_geom"] = [x.x, x.y] }
+                if let d = s.value(forAttributeNamed: "a_defocus") { o["a_defocus"] = d.floatValue }
+            }
+            if let t = sp.children.first(where: { $0.name == "titleLabel" }) {
+                var ti: [String: Any] = ["text": (t.userData?["fullTitle"] as? String) ?? "", "z": t.zPosition,
+                                         "pointSize": (t.userData?["msdfPointSize"] as? CGFloat) ?? 0,
+                                         "lines": (t.userData?["debugLines"] as? [String]) ?? [],
+                                         "lineHeightEm": (t.userData?["debugLineHeightEm"] as? CGFloat) ?? 1.2,
+                                         "inkBox": (t.userData?["inkBox"] as? [Float]) ?? []]
+                if let g = t.children.first as? SKSpriteNode {
+                    ti["ink"] = v4(g, "a_glyph_color"); ti["halo"] = v4(g, "a_halo")
+                }
+                o["title"] = ti
+            }
+            orbs.append(o)
+        }
+        let (fb, fw, fh) = Self.debugLastField
+        let json: [String: Any] = [
+            "tag": tag, "light": currentIsLight, "orbs": orbs,
+            "view": ["w": view?.bounds.width ?? 0, "h": view?.bounds.height ?? 0, "contentScale": view?.contentScaleFactor ?? 3],
+            "scene": ["w": size.width, "h": size.height],
+            "camera": ["x": cameraNode.position.x, "y": cameraNode.position.y, "scale": cameraNode.xScale],
+            "gridUniforms": uniforms(gridNode?.fillShader?.uniforms ?? []),
+            "gridHidden": gridNode?.isHidden ?? true,
+            "orbUniforms": uniforms(orbSpriteShader.uniforms),
+            "field": ["w": fw, "h": fh, "rgba": Data(fb).base64EncodedString()],
+            "warp": Self.debugLastWarp, "packed": Self.debugLastPacked, "lastWarpMode": lastWarpMode,
+            "tuning": [
+                "lens": ["zoomIn": LensTuning.zoomIn, "zoomOut": LensTuning.zoomOut, "minShrink": LensTuning.minShrink,
+                         "labelLOD": LensTuning.labelLOD, "labelBoxFactor": LensTuning.labelBoxFactor],
+                "annulus": ["amplitude": AnnulusTuning.amplitude, "onset": AnnulusTuning.onset, "rampWidth": AnnulusTuning.rampWidth,
+                            "radius": AnnulusTuning.radius],
+                "warp": ["reachOrbRadii": GridWarpTuning.reachOrbRadii, "depthOrbRadii": GridWarpTuning.depthOrbRadii,
+                         "massLaw": GridWarpTuning.massLaw, "sign": GridWarpTuning.sign,
+                         "massInfluenceDark": GridWarpTuning.massInfluence(isLight: false),
+                         "massInfluenceLight": GridWarpTuning.massInfluence(isLight: true),
+                         "dotShrinkDark": GridWarpTuning.dotShrink(isLight: false), "dotShrinkLight": GridWarpTuning.dotShrink(isLight: true),
+                         "maxWarpOrbs": BackgroundGridNode.maxWarpOrbs, "massCeiling": BackgroundGridNode.warpMassCeiling],
+                "comp": ["focusOnset": MapCompTuning.defFocusOnset, "focusRamp": MapCompTuning.defFocusRamp,
+                         "topEdge0": MapCompTuning.topEdge0, "topEdge1": MapCompTuning.topEdge1,
+                         "botEdge0": MapCompTuning.botEdge0, "botEdge1": MapCompTuning.botEdge1]
+            ]
+        ]
+        guard let dir = FileManager.default.urls(for: .cachesDirectory, in: .userDomainMask).first,
+              let data = try? JSONSerialization.data(withJSONObject: json, options: [.sortedKeys]) else { return }
+        let url = dir.appendingPathComponent("maplayout-\(tag)-\(currentIsLight ? "light" : "dark").json")
+        try? data.write(to: url)
+        NSLog("[EXPORTMAP] wrote %@ (%d orbs, %d bytes)", url.lastPathComponent, orbs.count, data.count)
+    }
+}
+#endif
+
+#if DEBUG || PANBENCH
+// MARK: - 1.1-B fix-up (A) — `-PanBench`: scripted fast pans + frame timing (DEBUG / -D PANBENCH builds only)
+
+/// Counters the bench reads (bumped at the title-ink, label-build and warp-field sites).
+enum PanBench {
+    static var restyles = 0, inkPicks = 0, titleBuilds = 0, fieldBuilds = 0
+    static let on = ProcessInfo.processInfo.arguments.contains("-PanBench")
+    static let noGround = ProcessInfo.processInfo.arguments.contains("-PanBenchNoGround")
+    static let oldInk = ProcessInfo.processInfo.arguments.contains("-PanBenchOldInk")   // the pre-fix whole-Map re-pick
+    static var state: State?
+    struct Flick { let dir: CGPoint; var dts: [Double] = []; var cpu: [Double] = []; var c0 = (0, 0, 0, 0); var c1 = (0, 0, 0, 0); var fps = 0
+        var budgets: [Double] = []; var n120 = 0; var thermal = ""; var wall = Date() }   // 1.1-C (C8): each frame's intended interval; frames asked at 120
+    struct State { var t0: TimeInterval = 0; var lastT: TimeInterval = 0; var k = 0; var flicks: [Flick] = []; var released = false }
+    /// Flick plan: 0.22 s drag at `speed` pt/s (screen), release into the real coast, 1.4 s to settle; 8 flicks R L U D R L U D.
+    static let drag = 0.22, settle = 1.4
+    static var speed: Double { Double(UserDefaults.standard.string(forKey: "PanBenchSpeed") ?? "") ?? 2600 }
+    static var tag: String { UserDefaults.standard.string(forKey: "PanBenchTag") ?? "run" }
+}
+
+extension CorpusPhysicsScene {
+    func panBenchTick(_ t: TimeInterval) {
+        guard PanBench.on else { return }
+        let delay = Double(UserDefaults.standard.string(forKey: "PanBenchDelay") ?? "") ?? 18
+        if PanBench.state == nil {
+            if hasRenderedFirstFrame, CACurrentMediaTime() - panBenchMountT > delay {
+                let dirs = [CGPoint(x: 1, y: 0), CGPoint(x: -1, y: 0), CGPoint(x: 0, y: 1), CGPoint(x: 0, y: -1)]
+                let rep = max(1, Int(UserDefaults.standard.string(forKey: "PanBenchRepeat") ?? "") ?? 1)   // 1.1-C (C8): a long session
+                PanBench.state = .init(t0: t, lastT: t, flicks: Array(repeating: dirs + dirs, count: rep).flatMap { $0 }.map { .init(dir: $0) })
+                PanBench.state?.flicks[0].c0 = (PanBench.restyles, PanBench.inkPicks, PanBench.titleBuilds, PanBench.fieldBuilds)
+                wakeMap()
+                NSLog("[PANBENCH] start tag=%@", PanBench.tag)
+            }
+            return
+        }
+        guard var st = PanBench.state, st.k < st.flicks.count else { return }
+        let dt = t - st.lastT; st.lastT = t
+        let local = t - st.t0
+        let f = st.flicks[st.k]
+        if local < PanBench.drag {
+            isTouchingMap = true
+            let d = PanBench.speed * dt * Double(panMultiplier)
+            let desired = CGPoint(x: cameraNode.position.x - f.dir.x * CGFloat(d) * cameraNode.xScale,
+                                  y: cameraNode.position.y + f.dir.y * CGFloat(d) * cameraNode.xScale)
+            cameraNode.position = rubberBanded(desired)
+        } else if !st.released {
+            st.released = true
+            isTouchingMap = false
+            coastVelocity = CGPoint(x: f.dir.x * PanBench.speed / 60, y: f.dir.y * PanBench.speed / 60)
+        }
+        let askFPS = view?.preferredFramesPerSecond ?? 60
+        if local > 0 {
+            st.flicks[st.k].dts.append(dt * 1000); st.flicks[st.k].budgets.append(1000.0 / Double(max(askFPS, 1)))
+            if askFPS >= 120 { st.flicks[st.k].n120 += 1 }
+        }
+        st.flicks[st.k].fps = max(st.flicks[st.k].fps, askFPS)
+        if local > PanBench.drag + PanBench.settle {
+            st.flicks[st.k].c1 = (PanBench.restyles, PanBench.inkPicks, PanBench.titleBuilds, PanBench.fieldBuilds)
+            st.flicks[st.k].thermal = Self.thermalString(); st.flicks[st.k].wall = Date()
+            st.k += 1; st.t0 = t; st.released = false
+            coastVelocity = .zero
+            if st.k < st.flicks.count {
+                st.flicks[st.k].c0 = (PanBench.restyles, PanBench.inkPicks, PanBench.titleBuilds, PanBench.fieldBuilds)
+                wakeMap()
+            } else {
+                PanBench.state = st
+                panBenchReport(st)
+                return
+            }
+        }
+        PanBench.state = st
+    }
+
+    func panBenchEnd(_ t0: TimeInterval) {
+        guard PanBench.on, var st = PanBench.state, st.k < st.flicks.count else { return }
+        st.flicks[st.k].cpu.append((CACurrentMediaTime() - t0) * 1000)
+        PanBench.state = st
+    }
+
+    private var panBenchMountT: TimeInterval {
+        if let v = userData?["panBenchMount"] as? TimeInterval { return v }
+        let now = CACurrentMediaTime()
+        if userData == nil { userData = [:] }
+        userData?["panBenchMount"] = now
+        return now
+    }
+
+    private func panBenchReport(_ st: PanBench.State) {
+        func pct(_ a: [Double], _ p: Double) -> Double {
+            let s = a.sorted(); return s.isEmpty ? 0 : s[min(s.count - 1, Int(Double(s.count - 1) * p + 0.5))]
+        }
+        var lines: [String] = []
+        let ov = MapGround.override(light: currentIsLight)
+        lines.append(String(format: "[PANBENCH] tag=%@ look=%@ light=%@ ground=%@ sheen=%@ wells=%@ titles=%d speed=%.0f zoom=%.2f adaptive=%@ thermal=%@ lowPower=%@",
+                            PanBench.tag, (mapTuning ?? .today).orbLook.rawValue, currentIsLight ? "Y" : "n",
+                            ov == nil ? "default" : (ov!.gradient ? "custom-gradient" : "custom"),
+                            MapSheen.active ? "on" : "off",
+                            MapWells.active ? "on" : "off", nodeSprites.count, PanBench.speed, cameraNode.xScale,
+                            MapAdaptiveRate.enabled ? "on" : "off(60)", Self.thermalString(),
+                            ProcessInfo.processInfo.isLowPowerModeEnabled ? "Y" : "n"))
+        var all: [Double] = [], allCPU: [Double] = []
+        var hitchesAll = 0, all120 = 0
+        for (i, f) in st.flicks.enumerated() {
+            // A hitch = a frame later than 1.5× the interval asked for at that frame (8.3 ms at 120, 16.7 ms at 60).
+            let h = zip(f.dts, f.budgets).filter { $0.0 > $0.1 * 1.5 }.count
+            hitchesAll += h; all += f.dts; allCPU += f.cpu; all120 += f.n120
+            lines.append(String(format: "[PANBENCH] flick %d t=%.0f thermal=%@ dir=(%.0f,%.0f) fps=%d at120=%d frames=%d hitches=%d dt p50=%.1f p95=%.1f max=%.1f | update p50=%.2f p95=%.2f max=%.2f ms | restyles=%d inkPicks=%d titleBuilds=%d fieldBuilds=%d",
+                                i + 1, f.wall.timeIntervalSince(st.flicks[0].wall), f.thermal, f.dir.x, f.dir.y, f.fps, f.n120, f.dts.count, h, pct(f.dts, 0.5), pct(f.dts, 0.95), f.dts.max() ?? 0,
+                                pct(f.cpu, 0.5), pct(f.cpu, 0.95), f.cpu.max() ?? 0,
+                                f.c1.0 - f.c0.0, f.c1.1 - f.c0.1, f.c1.2 - f.c0.2, f.c1.3 - f.c0.3))
+        }
+        lines.append(String(format: "[PANBENCH] ALL frames=%d at120=%d switches=%d hitches=%d dt p50=%.1f p95=%.1f p99=%.1f max=%.1f | update p50=%.2f p95=%.2f p99=%.2f max=%.2f ms | restyles=%d inkPicks=%d titleBuilds=%d",
+                            all.count, all120, adaptiveRate.switches.count, hitchesAll, pct(all, 0.5), pct(all, 0.95), pct(all, 0.99), all.max() ?? 0,
+                            pct(allCPU, 0.5), pct(allCPU, 0.95), pct(allCPU, 0.99), allCPU.max() ?? 0,
+                            st.flicks.last!.c1.0 - st.flicks[0].c0.0, st.flicks.last!.c1.1 - st.flicks[0].c0.1,
+                            st.flicks.last!.c1.2 - st.flicks[0].c0.2))
+        for l in lines { NSLog("%@", l) }
+        if let dir = FileManager.default.urls(for: .cachesDirectory, in: .userDomainMask).first {
+            let url = dir.appendingPathComponent("panbench.txt")
+            let text = lines.joined(separator: "\n") + "\n"
+            if let h = try? FileHandle(forWritingTo: url) { h.seekToEndOfFile(); h.write(text.data(using: .utf8)!); try? h.close() }
+            else { try? text.write(to: url, atomically: true, encoding: .utf8) }
+        }
+        NSLog("[PANBENCH] done")
+    }
+}
+#endif

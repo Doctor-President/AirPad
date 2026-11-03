@@ -7,6 +7,7 @@ import UniformTypeIdentifiers
 /// Camera/photo-library capture sheet.
 /// Presents the system camera or photo picker, then saves the result as an image node (or appends to an existing node).
 struct CameraCaptureView: View {
+    @Environment(\.appBodyFont) private var appFont   // 1.1-A type pass
 
     /// If set, the captured image is appended to this node instead of creating a new one.
     var targetNodeID: String? = nil
@@ -41,7 +42,7 @@ struct CameraCaptureView: View {
                         .tint(AppearancePalette.ink)
                 } else {
                     Text("Capture")
-                        .font(.largeTitle.weight(.bold))
+                        .font(appFont.font(size: 34, weight: .bold, relativeTo: .largeTitle))
                         .foregroundStyle(AppearancePalette.ink)
 
                     HStack(spacing: 20) {
@@ -269,6 +270,7 @@ struct CameraCaptureView: View {
 // MARK: - Source button
 
 private struct SourceButton: View {
+    @Environment(\.appBodyFont) private var appFont   // 1.1-A type pass
     let icon: String
     let label: String
     let action: () -> Void
@@ -283,7 +285,7 @@ private struct SourceButton: View {
                     .background(.white)
                     .clipShape(RoundedRectangle(cornerRadius: 18))
                 Text(label)
-                    .font(.caption.weight(.medium))
+                    .font(appFont.font(size: 12, weight: .medium, relativeTo: .caption1))
                     .foregroundStyle(AppearancePalette.ink.opacity(0.8))
             }
         }
@@ -293,17 +295,18 @@ private struct SourceButton: View {
 // MARK: - Permission banner
 
 private struct PermissionBanner: View {
+    @Environment(\.appBodyFont) private var appFont   // 1.1-A type pass
     let message: String
     let onSettings: () -> Void
 
     var body: some View {
         HStack {
             Text(message)
-                .font(.caption)
+                .font(appFont.font(size: 12, relativeTo: .caption1))
                 .foregroundStyle(.white.opacity(0.8))
             Spacer()
             Button("Settings") { onSettings() }
-                .font(.caption.weight(.semibold))
+                .font(appFont.font(size: 12, weight: .semibold, relativeTo: .caption1))
                 .foregroundStyle(.white)
         }
         .padding(12)

@@ -3,6 +3,7 @@ import SwiftUI
 /// Presented after AI processing when new tag names are suggested that don't exist in vocabulary.
 /// The user accepts or dismisses each suggestion, picks colors for new tags, then confirms.
 struct TagCreationSheet: View {
+    @Environment(\.appBodyFont) private var appFont   // 1.1-A type pass
 
     let context: TagSuggestionContext
 
@@ -58,10 +59,10 @@ struct TagCreationSheet: View {
     private var headerSection: some View {
         VStack(alignment: .leading, spacing: 6) {
             Text("AI suggested these tags")
-                .font(.title3.weight(.semibold))
+                .font(appFont.font(size: 20, weight: .semibold, relativeTo: .title3))
                 .foregroundStyle(AppearancePalette.ink)
             Text("New tags need a color. Tap to change.")
-                .font(.subheadline)
+                .font(appFont.font(size: 15, relativeTo: .subheadline))
                 .foregroundStyle(AppearancePalette.ink.opacity(0.55))
         }
     }
@@ -70,7 +71,7 @@ struct TagCreationSheet: View {
     private var existingTagsSection: some View {
         VStack(alignment: .leading, spacing: 12) {
             Text("Applied automatically")
-                .font(.caption.weight(.semibold))
+                .font(appFont.font(size: 12, weight: .semibold, relativeTo: .caption1))
                 .foregroundStyle(AppearancePalette.ink.opacity(0.4))
                 .textCase(.uppercase)
                 .kerning(0.5)
@@ -87,7 +88,7 @@ struct TagCreationSheet: View {
     private var newTagsSection: some View {
         VStack(alignment: .leading, spacing: 12) {
             Text("New tags")
-                .font(.caption.weight(.semibold))
+                .font(appFont.font(size: 12, weight: .semibold, relativeTo: .caption1))
                 .foregroundStyle(AppearancePalette.ink.opacity(0.4))
                 .textCase(.uppercase)
                 .kerning(0.5)
@@ -163,6 +164,7 @@ private struct PendingTag: Identifiable {
 // MARK: - Existing tag pill (already has a color)
 
 private struct ExistingTagPill: View {
+    @Environment(\.appBodyFont) private var appFont   // 1.1-A type pass
     let name: String
     let store: CorpusStore
 
@@ -175,7 +177,7 @@ private struct ExistingTagPill: View {
 
     var body: some View {
         Text(name)
-            .font(.caption.weight(.semibold))
+            .font(appFont.font(size: 12, weight: .semibold, relativeTo: .caption1))
             .foregroundStyle(.white)
             .padding(.horizontal, 12)
             .padding(.vertical, 6)
@@ -188,6 +190,7 @@ private struct ExistingTagPill: View {
 // MARK: - New tag pill (needs color assignment)
 
 private struct NewTagPill: View {
+    @Environment(\.appBodyFont) private var appFont   // 1.1-A type pass
     @Binding var tag: PendingTag
     let isAccepted: Bool
     let onToggle: () -> Void
@@ -213,7 +216,7 @@ private struct NewTagPill: View {
             // Tag name — tap to accept/reject
             Button(action: onToggle) {
                 Text(tag.name)
-                    .font(.caption.weight(.semibold))
+                    .font(appFont.font(size: 12, weight: .semibold, relativeTo: .caption1))
                     .foregroundStyle(isAccepted ? AppearancePalette.ink : AppearancePalette.ink.opacity(0.35))
                     .strikethrough(!isAccepted)
             }

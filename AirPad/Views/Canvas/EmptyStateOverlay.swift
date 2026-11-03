@@ -3,6 +3,7 @@ import SwiftUI
 /// Empty-state overlay shown when the corpus has no nodes.
 /// Renders centered prompt + animated arrow over the global isometric grid.
 struct EmptyStateOverlay: View {
+    @Environment(\.appBodyFont) private var appFont   // 1.1-A type pass
 
     private let kleinBlue = Color(red: 0, green: 0.184, blue: 0.655)
 
@@ -11,10 +12,10 @@ struct EmptyStateOverlay: View {
             // Light-mode convergence — adaptive ink (was hardcoded `.white`,
             // illegible on the cream map in light). Opacity ratios preserved.
             Text("I haven't any idea(s).")
-                .font(.title3)
+                .font(appFont.font(size: 20, relativeTo: .title3))
                 .foregroundStyle(AppearancePalette.ink.opacity(0.45))
             Text("Add one!")
-                .font(.title3)
+                .font(appFont.font(size: 20, relativeTo: .title3))
                 .foregroundStyle(AppearancePalette.ink.opacity(0.35))
 
             ArrowToAddButton(color: kleinBlue.opacity(0.55))

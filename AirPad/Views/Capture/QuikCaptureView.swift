@@ -645,7 +645,7 @@ struct QuikCaptureView: View {
                     )
                 } label: {
                     Label("Add to collection", systemImage: "plus")
-                        .font(.caption.weight(.semibold))
+                        .font(appFont.font(size: 12, weight: .semibold, relativeTo: .caption1))
                         .foregroundStyle(AppearancePalette.ink.opacity(0.5))
                         .padding(.horizontal, 10)
                         .padding(.vertical, 5)
@@ -727,7 +727,7 @@ struct QuikCaptureView: View {
                     onAddNew: { showingNewTagSheet = true }
                 ) {
                     Label("Add tag", systemImage: "plus")
-                        .font(.caption.weight(.semibold))
+                        .font(appFont.font(size: 12, weight: .semibold, relativeTo: .caption1))
                         .foregroundStyle(AppearancePalette.ink.opacity(0.5))
                         .padding(.horizontal, 10)
                         .padding(.vertical, 5)
@@ -1056,6 +1056,7 @@ struct QuikCaptureView: View {
 /// Membership chip for the Collections row. Rounded-rect shape + neutral
 /// fill so it reads distinct from the capsule tag pills.
 private struct QuikCaptureCollectionChip: View {
+    @Environment(\.appBodyFont) private var appFont   // 1.1-A type pass
     let name: String
     let onRemove: () -> Void
 
@@ -1065,7 +1066,7 @@ private struct QuikCaptureCollectionChip: View {
                 .font(.system(size: 9, weight: .semibold))
                 .foregroundStyle(AppearancePalette.ink.opacity(0.6))
             Text(name)
-                .font(.caption.weight(.semibold))
+                .font(appFont.font(size: 12, weight: .semibold, relativeTo: .caption1))
                 .foregroundStyle(AppearancePalette.ink)
             Button(action: onRemove) {
                 Image(systemName: "xmark")
@@ -1087,6 +1088,7 @@ private struct QuikCaptureCollectionChip: View {
 // MARK: - Tag chip (copied from NodeDetailView; private there)
 
 private struct QuikCaptureTagChip: View {
+    @Environment(\.appBodyFont) private var appFont   // 1.1-A type pass
     let name: String
     let store: CorpusStore
     let onRemove: () -> Void
@@ -1101,7 +1103,7 @@ private struct QuikCaptureTagChip: View {
     var body: some View {
         HStack(spacing: 4) {
             Text(name)
-                .font(.caption.weight(.semibold))
+                .font(appFont.font(size: 12, weight: .semibold, relativeTo: .caption1))
                 .foregroundStyle(AppearancePalette.ink)
             Button(action: onRemove) {
                 Image(systemName: "xmark")

@@ -21,6 +21,17 @@ actor iCloudDriveService {
     // MARK: - Setup
 
     func setup() async {
+        #if PANBENCH && !DEBUG
+        // 1.1-C (C8) — the phone bench (Release + PANBENCH) runs on the Sample Library scratch, never the real Library.
+        if ProcessInfo.processInfo.arguments.contains("-UITestLibrary"),
+           let caches = FileManager.default.urls(for: .cachesDirectory, in: .userDomainMask).first {
+            let root = caches.appendingPathComponent("AirPadBenchScratch")
+            if (try? FileManager.default.createDirectory(at: root.appendingPathComponent("nodes"), withIntermediateDirectories: true)) != nil {
+                rootURL = root; isAvailable = true; usingLocalFallback = false
+                return
+            }
+        }
+        #endif
         #if DEBUG
         // Device-safety for the Stage 5.1 -FieldFixtureNode visual check: root
         // at a THROWAWAY local scratch dir so the twelve-kind fixture (and any
@@ -991,10 +1002,31 @@ actor iCloudDriveService {
         let nodeDir = root.appendingPathComponent("nodes/\(node.id)")
         try FileManager.default.createDirectory(at: nodeDir, withIntermediateDirectories: true)
         let data = try JSONEncoder.airPad.encode(node)
-        try data.write(to: nodeDir.appendingPathComponent("node.json"), options: .atomic)
+        try LibraryFormatGuard.write(data, to: nodeDir.appendingPathComponent("node.json"))
+    }
+
+    /// Set once the entries' versions have been looked at (the scan, or a full load).
+    private var entriesScanned = false
+
+    /// 1.0r S0 — reads only each entry's version (no full decode) so the share inbox can be held BEFORE the load
+    /// when the library is newer. Stops at the first newer entry.
+    func scanForNewerEntries() {
+        guard !entriesScanned else { return }
+        entriesScanned = true
+        guard let root = rootURL, !LibraryFormatGuard.isReadOnly,
+              let dirs = try? FileManager.default.contentsOfDirectory(
+                at: root.appendingPathComponent("nodes"), includingPropertiesForKeys: nil, options: .skipsHiddenFiles)
+        else { return }
+        for dir in dirs {
+            guard let data = try? Data(contentsOf: dir.appendingPathComponent("node.json")),
+                  LibraryFormatGuard.isNewer(data, file: "node.json") else { continue }
+            LibraryFormatGuard.markNewer("nodes/\(dir.lastPathComponent)/node.json")
+            return
+        }
     }
 
     func deleteNode(id: String) throws {
+        try LibraryFormatGuard.requireWritable()
         let root = try requireRoot()
         let nodeDir = root.appendingPathComponent("nodes/\(id)")
         if FileManager.default.fileExists(atPath: nodeDir.path) {
@@ -1030,8 +1062,12 @@ actor iCloudDriveService {
             guard FileManager.default.fileExists(atPath: fileURL.path) else { continue }
             let data = try Data(contentsOf: fileURL)
             let node = try JSONDecoder.airPad.decode(Node.self, from: data)
+            if node.entrySchemaVersion > LibraryFormatGuard.entrySchemaVersion {   // 1.0r S0 forward-format guard
+                LibraryFormatGuard.markNewer("nodes/\(nodeDir.lastPathComponent)/node.json v\(node.entrySchemaVersion)")
+            }
             decoded.append((node, nodeDir.lastPathComponent))
         }
+        entriesScanned = true   // 1.0r S0 — every entry's version was just checked
         return Self.dedupById(decoded)
     }
 
@@ -1069,7 +1105,7 @@ actor iCloudDriveService {
         let nodeDir = root.appendingPathComponent("nodes/\(nodeID)")
         try FileManager.default.createDirectory(at: nodeDir, withIntermediateDirectories: true)
         let data = try JSONEncoder.airPad.encode(index)
-        try data.write(to: nodeDir.appendingPathComponent("blocks.json"), options: .atomic)
+        try LibraryFormatGuard.write(data, to: nodeDir.appendingPathComponent("blocks.json"))
     }
 
     /// Returns nil when the sidecar is absent — callers treat that as
@@ -1096,7 +1132,7 @@ actor iCloudDriveService {
         let nodeDir = root.appendingPathComponent("nodes/\(nodeID)")
         try FileManager.default.createDirectory(at: nodeDir, withIntermediateDirectories: true)
         let data = try JSONEncoder.airPad.encode(card)
-        try data.write(to: nodeDir.appendingPathComponent("card.json"), options: .atomic)
+        try LibraryFormatGuard.write(data, to: nodeDir.appendingPathComponent("card.json"))
     }
 
     /// Returns nil when the sidecar is absent — callers treat that as "no card
@@ -1118,6 +1154,7 @@ actor iCloudDriveService {
     ///   - sourceURL: Temporary file to copy from.
     ///   - fileExtension: e.g. `"m4a"`, `"jpg"`.
     func saveItemFile(nodeID: String, itemID: String, sourceURL: URL, fileExtension: String) throws {
+        try LibraryFormatGuard.requireWritable()
         let root = try requireRoot()
         let itemsDir = root.appendingPathComponent("nodes/\(nodeID)/items")
         try FileManager.default.createDirectory(at: itemsDir, withIntermediateDirectories: true)
@@ -1137,6 +1174,7 @@ actor iCloudDriveService {
     /// orphaned entry from `node.items`.
     @discardableResult
     func deleteItemFile(nodeID: String, itemID: String, fileExtension: String) throws -> Bool {
+        try LibraryFormatGuard.requireWritable()
         let root = try requireRoot()
         let fileURL = root.appendingPathComponent("nodes/\(nodeID)/items/\(itemID).\(fileExtension)")
         guard FileManager.default.fileExists(atPath: fileURL.path) else { return false }
@@ -1159,7 +1197,7 @@ actor iCloudDriveService {
     func saveTags(_ tags: [Tag]) throws {
         let root = try requireRoot()
         let data = try JSONEncoder.airPad.encode(tags)
-        try data.write(to: root.appendingPathComponent("tags.json"), options: .atomic)
+        try LibraryFormatGuard.write(data, to: root.appendingPathComponent("tags.json"))
     }
 
     func loadTags() throws -> [Tag] {
@@ -1184,7 +1222,7 @@ actor iCloudDriveService {
     func saveCollections(_ collections: [NodeCollection]) throws {
         let root = try requireRoot()
         let data = try JSONEncoder.airPad.encode(collections)
-        try data.write(to: root.appendingPathComponent("collections.json"), options: .atomic)
+        try LibraryFormatGuard.write(data, to: root.appendingPathComponent("collections.json"))
     }
 
     /// Returns nil when the file is absent (first launch). Returns an empty
@@ -1208,7 +1246,7 @@ actor iCloudDriveService {
     func saveFieldDefinitions(_ store: FieldDefinitionStore) throws {
         let root = try requireRoot()
         let data = try JSONEncoder.airPad.encode(store)
-        try data.write(to: root.appendingPathComponent("field_definitions.json"), options: .atomic)
+        try LibraryFormatGuard.write(data, to: root.appendingPathComponent("field_definitions.json"))
     }
 
     /// Returns nil when the file is absent — the normal first-run state (a
@@ -1221,6 +1259,7 @@ actor iCloudDriveService {
         let fileURL = root.appendingPathComponent("field_definitions.json")
         guard FileManager.default.fileExists(atPath: fileURL.path) else { return nil }
         let data = try Data(contentsOf: fileURL)
+        if LibraryFormatGuard.isNewer(data, file: "field_definitions.json") { LibraryFormatGuard.markNewer("field_definitions.json") }   // 1.0r S0
         return try JSONDecoder.airPad.decode(FieldDefinitionStore.self, from: data)
     }
 
@@ -1234,7 +1273,7 @@ actor iCloudDriveService {
     func saveChats(_ chats: [Chat]) throws {
         let root = try requireRoot()
         let data = try JSONEncoder.airPad.encode(chats)
-        try data.write(to: root.appendingPathComponent("chats.json"), options: .atomic)
+        try LibraryFormatGuard.write(data, to: root.appendingPathComponent("chats.json"))
     }
 
     /// nil when the file is absent (first launch / pre-chat install).
@@ -1254,7 +1293,7 @@ actor iCloudDriveService {
     func saveCanvasLayout(_ layout: CanvasLayout) throws {
         let root = try requireRoot()
         let data = try JSONEncoder.airPad.encode(layout)
-        try data.write(to: root.appendingPathComponent("canvas_layout.json"), options: .atomic)
+        try LibraryFormatGuard.write(data, to: root.appendingPathComponent("canvas_layout.json"))
     }
 
     func loadCanvasLayout() throws -> CanvasLayout? {
@@ -1262,6 +1301,7 @@ actor iCloudDriveService {
         let fileURL = root.appendingPathComponent("canvas_layout.json")
         guard FileManager.default.fileExists(atPath: fileURL.path) else { return nil }
         let data = try Data(contentsOf: fileURL)
+        if LibraryFormatGuard.isNewer(data, file: "canvas_layout.json") { LibraryFormatGuard.markNewer("canvas_layout.json") }   // 1.0r S0
         return try JSONDecoder.airPad.decode(CanvasLayout.self, from: data)
     }
 
@@ -1278,7 +1318,7 @@ actor iCloudDriveService {
     func saveTerritoryLayouts(_ layouts: [String: TerritoryLayoutSnapshot]) throws {
         let root = try requireRoot()
         let data = try JSONEncoder.airPad.encode(layouts)
-        try data.write(to: root.appendingPathComponent("territory_layout.json"), options: .atomic)
+        try LibraryFormatGuard.write(data, to: root.appendingPathComponent("territory_layout.json"))
     }
 
     /// Loads the per-scope dict. **Migration:** a pre-Z2 file holds a SINGLE
@@ -1289,6 +1329,7 @@ actor iCloudDriveService {
         let fileURL = root.appendingPathComponent("territory_layout.json")
         guard FileManager.default.fileExists(atPath: fileURL.path) else { return nil }
         let data = try Data(contentsOf: fileURL)
+        if LibraryFormatGuard.isNewer(data, file: "territory_layout.json") { LibraryFormatGuard.markNewer("territory_layout.json") }   // 1.0r S0
         if let dict = try? JSONDecoder.airPad.decode([String: TerritoryLayoutSnapshot].self, from: data) {
             return dict
         }
@@ -1303,13 +1344,14 @@ actor iCloudDriveService {
     func saveCorpusIndex(_ index: CorpusIndex) throws {
         let root = try requireRoot()
         let data = try JSONEncoder.airPad.encode(index)
-        try data.write(to: root.appendingPathComponent("corpus_index.json"), options: .atomic)
+        try LibraryFormatGuard.write(data, to: root.appendingPathComponent("corpus_index.json"))
     }
 
     func loadCorpusIndex() throws -> CorpusIndex {
         let root = try requireRoot()
         let fileURL = root.appendingPathComponent("corpus_index.json")
         let data = try Data(contentsOf: fileURL)
+        if LibraryFormatGuard.isNewer(data, file: "corpus_index.json") { LibraryFormatGuard.markNewer("corpus_index.json") }   // 1.0r S0
         return try JSONDecoder.airPad.decode(CorpusIndex.self, from: data)
     }
 
@@ -1319,10 +1361,7 @@ actor iCloudDriveService {
     func saveRoutingDiagnostics(_ diagnostics: RoutingDiagnostics) throws {
         let root = try requireRoot()
         let data = try JSONEncoder.airPad.encode(diagnostics)
-        try data.write(
-            to: root.appendingPathComponent("corpus_routing_diagnostics.json"),
-            options: .atomic
-        )
+        try LibraryFormatGuard.write(data, to: root.appendingPathComponent("corpus_routing_diagnostics.json"))
     }
 
     /// SB137 Stage A — copy the live `corpus_index.json` to
@@ -1332,6 +1371,7 @@ actor iCloudDriveService {
     /// upgrade attempt doesn't lose the original); the caller guards by
     /// detecting the v1 → v2 schema transition exactly once.
     func backupCorpusIndexForStageAUpgrade() throws {
+        try LibraryFormatGuard.requireWritable()
         let root = try requireRoot()
         let src = root.appendingPathComponent("corpus_index.json")
         guard FileManager.default.fileExists(atPath: src.path) else { return }
@@ -1347,6 +1387,7 @@ actor iCloudDriveService {
     /// Deletes every node directory (and all contained media), then recreates an empty
     /// `nodes/` folder, saves an empty canvas layout, and saves an empty tag list.
     func deleteAllData() throws {
+        try LibraryFormatGuard.requireWritable()
         let root = try requireRoot()
         let nodesDir = root.appendingPathComponent("nodes")
         if FileManager.default.fileExists(atPath: nodesDir.path) {

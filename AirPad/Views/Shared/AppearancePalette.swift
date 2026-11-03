@@ -309,8 +309,10 @@ extension View {
     /// The dashboard pane surface — ONE modifier so Today / Recents / Collections share one surface and cannot drift
     /// (#3 fix-up). 1.1-A fix-up (2): everyone gets Liquid Glass `.regular` (T's pick, candidate 1); AirPad Pro adds the
     /// Surface picker (`DashboardSurfaceChoice`, Settings / the Appearance panel). The surface owns its own edge.
-    func dashboardPaneSurface(cornerRadius: CGFloat = 22) -> some View {
-        modifier(DashboardSurface(cornerRadius: cornerRadius))
+    /// `overLibraryGround`: the pane floats over the Map / List / Cards (the first-run callouts), so its text follows a
+    /// custom background there; the Dashboard's own panes leave it false (1.0r fix-up: the Dashboard keeps its ground).
+    func dashboardPaneSurface(cornerRadius: CGFloat = 22, overLibraryGround: Bool = false) -> some View {
+        modifier(DashboardSurface(cornerRadius: cornerRadius, overLibraryGround: overLibraryGround))
     }
 }
 
@@ -347,6 +349,7 @@ struct DarkGlassEdge: View {
 struct DashboardSurface: ViewModifier {
     let cornerRadius: CGFloat
     var forced: DashboardSurfaceChoice? = nil
+    var overLibraryGround = false   // see `dashboardPaneSurface`
     @Environment(\.colorScheme) private var scheme
     @AppStorage(DashboardSurfaceChoice.storageKey(dark: true)) private var darkRaw = DashboardSurfaceChoice.legacyRaw
     @AppStorage(DashboardSurfaceChoice.storageKey(dark: false)) private var lightRaw = DashboardSurfaceChoice.legacyRaw
@@ -390,11 +393,12 @@ struct DashboardSurface: ViewModifier {
         return true
     }()
 
-    /// 1.1-B — over a custom background, the see-through surfaces' text picks its ink by the background's rule; Solid keeps
-    /// today's ink (its own opaque fill).
+    /// 1.1-B — over a custom background (a pane over the Map / List / Cards only: the Dashboard keeps its own ground, 1.0r
+    /// fix-up), the see-through surfaces' text picks its ink by the background's rule; Solid keeps today's ink (its own
+    /// opaque fill).
     @ViewBuilder func body(content: Content) -> some View {
         let dark = scheme == .dark
-        let content = content.onCustomGround(choice != .panel, pane: true)   // the pane's text, not its glass
+        let content = content.onCustomGround(overLibraryGround && choice != .panel, pane: true)   // the pane's text, not its glass
         switch choice {
         case .glass:
             if dark {

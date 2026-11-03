@@ -267,7 +267,7 @@ struct FirstRunCalloutOverlay: View {
             }
         }
         .padding(20)
-        .dashboardPaneSurface()
+        .dashboardPaneSurface(overLibraryGround: true)   // over the Map / List / Cards: follows a custom background
     }
 
     /// Soft ring — a SHAPE cue (≥ 2 pt stroke, appearance-aware ink), never a colour cue.

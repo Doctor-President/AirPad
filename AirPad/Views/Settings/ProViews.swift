@@ -205,8 +205,8 @@ struct GravityWellsToggle: View {
 }
 
 /// 1.1-B — "Background", beside Map look (Pro): the background colour, an optional two-colour gradient across the screen,
-/// and the dots (1.1-C fix-up: "Dots", on every view with the dot grid), for the appearance showing now. It applies to the Map, cards, lists and the Dashboard (T, amended
-/// 2026-10-29); text on it picks its ink by contrast (`MapGround.inkPick`). Without Pro the row carries a lock and opens
+/// and the dots (1.1-C fix-up: "Dots", on every view with the dot grid), for the appearance showing now. It applies to the Map, cards and lists (T 2026-10-29;
+/// 1.0r fix-up, T 2026-11-02: not the Dashboard, which keeps its own ground); text on it picks its ink by contrast (`MapGround.inkPick`). Without Pro the row carries a lock and opens
 /// the Pro sheet, as the Map looks do. "Reset to default" returns every view to today's ground.
 struct MapGroundSection: View {
     @Environment(\.appBodyFont) private var appFont
@@ -232,7 +232,7 @@ struct MapGroundSection: View {
             }
             .background(AppearancePalette.ink.opacity(0.05))
             .clipShape(RoundedRectangle(cornerRadius: 12))
-            Text(store.isPro ? "For the Map, cards, lists and the Dashboard in \(light ? "Light" : "Dark"). Switch to \(light ? "Dark" : "Light") to edit the other."
+            Text(store.isPro ? "For the Map, cards and lists in \(light ? "Light" : "Dark"). Switch to \(light ? "Dark" : "Light") to edit the other."
                              : "Change the background and the dots with AirPad Pro.")
                 .font(appFont.font(size: 12, relativeTo: .caption1)).foregroundStyle(AppearancePalette.ink.opacity(0.45))
                 .fixedSize(horizontal: false, vertical: true)

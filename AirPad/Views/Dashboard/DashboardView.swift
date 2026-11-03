@@ -720,11 +720,10 @@ struct DashSecondaryInk: ViewModifier {
     @Environment(\.colorScheme) private var colorScheme
     @AppStorage(DashboardSurfaceChoice.storageKey(dark: true)) private var darkRaw = DashboardSurfaceChoice.legacyRaw
     @AppStorage(DashboardSurfaceChoice.storageKey(dark: false)) private var lightRaw = DashboardSurfaceChoice.legacyRaw
-    @Environment(\.groundInkFloor) private var groundFloor   // over a custom background, its own 4.5:1 floor too
     func body(content: Content) -> some View {
         let dark = colorScheme == .dark
         let f = Self.floor(DashboardSurface.drawn(pickedRaw: dark ? darkRaw : lightRaw), dark: dark)
-        content.foregroundStyle(AppearancePalette.ink.opacity(max(opacity, f, groundFloor)))
+        content.foregroundStyle(AppearancePalette.ink.opacity(max(opacity, f)))   // 1.0r fix-up: no custom-background floor here
     }
 }
 extension View {

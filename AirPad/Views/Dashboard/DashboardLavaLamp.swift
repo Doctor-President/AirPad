@@ -23,21 +23,9 @@ struct DashboardLavaLamp: View {
 
     var body: some View {
         Group {
-            if let g = MapGround.override(light: colorScheme != .dark) {
-                // 1.1-B (T 2026-10-29) — the lava draws OVER a Pro custom background, composited as over today's ground:
-                // dark = the blob field source-over (it is transparent between blobs, as over the black ground); light =
-                // the pigment recipe with the custom colour in the parchment's place.
-                ZStack {
-                    CustomGroundView(side: g)
-                    if colorScheme == .dark {
-                        darkLava
-                    } else {
-                        lightPigmentField
-                            .opacity(AppearancePalette.cwPigmentStrength).blendMode(AppearancePalette.cwTransferMode)
-                    }
-                }
-                .compositingGroup()
-            } else if colorScheme == .dark {
+            // 1.0r fix-up (T 2026-11-02) — the Dashboard keeps its own ground in both appearances, whatever Background is
+            // set to: the Pro custom background is for the Map, List and Card views (reverses 1.1-B's lava over it).
+            if colorScheme == .dark {
                 darkLava
             } else {
                 lightPigment
@@ -73,19 +61,6 @@ struct DashboardLavaLamp: View {
                           noiseScale: s.noiseScale,
                           glass: glass)
                 .pigmentOnParchment()
-        }
-    }
-
-    /// The light blob field alone (pigmentOnParchment composites it over the parchment; 1.1-B: or over a custom ground).
-    private var lightPigmentField: some View {
-        let s = light
-        let glass = FlutedGlass.shared.active(.dashboard)   // nil = both glass settings off → V1
-        return GeometryReader { geo in
-            BlobFieldView(cardBlobs: Self.mangoBlobs(size: geo.size, style: s),
-                          animated: true,
-                          noiseAmount: s.noiseAmount,
-                          noiseScale: s.noiseScale,
-                          glass: glass)
         }
     }
 

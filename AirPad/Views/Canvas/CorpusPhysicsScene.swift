@@ -470,6 +470,14 @@ final class CorpusPhysicsScene: SKScene {
         territorySlots: [String: Int] = [:]
     ) {
         wakeFromRest("syncNodes")   // R1
+        #if DEBUG
+        let syncT0 = CACurrentMediaTime()   // R2 — `-TitleTilesLog`: what a sync costs on the main thread, tiles vs per-glyph
+        defer {
+            if ProcessInfo.processInfo.arguments.contains("-TitleTilesLog") {
+                NSLog("[SYNCNODES] %.1f ms nodes=%d tiles=%@", (CACurrentMediaTime() - syncT0) * 1000, nodes.count, TitleTiles.enabled ? "Y" : "n")
+            }
+        }
+        #endif
         self.tagColors = tagColors
         self.territoryColors = territoryColors
         self.territorySlots = territorySlots
@@ -2175,6 +2183,23 @@ final class CorpusPhysicsScene: SKScene {
         installRestObservers(on: view)   // R1
         #if DEBUG
         if ProcessInfo.processInfo.arguments.contains("-MapNoHalo") { enableNewcomerHalo = false }   // R1 gate: no halo step frames
+        // R2 crop gate — `-MapCameraScale <s>`: at 16 s (after -MapFrameOrbs / -MapZoom) set the camera scale absolutely
+        // (the pinch clamp is 0.25 … 4: 0.25 = zoomed in 4×, 4 = zoomed out to ¼), keeping the centre.
+        if let i = ProcessInfo.processInfo.arguments.firstIndex(of: "-MapCameraScale"), i + 1 < ProcessInfo.processInfo.arguments.count,
+           let sc = Double(ProcessInfo.processInfo.arguments[i + 1]) {
+            afterWaking(16) { [weak self] in self?.cameraNode.setScale(CGFloat(sc)); NSLog("[CAMSCALE] %.2f", sc) }
+        }
+        // R2 crop gate — `-TitleTilesFlip <s>`: at s seconds switch the title path (tiles ↔ per-glyph) and rebuild every title,
+        // at 2s switch back; the stills before / between / after share the camera and the layout.
+        if let i = ProcessInfo.processInfo.arguments.firstIndex(of: "-TitleTilesFlip"), i + 1 < ProcessInfo.processInfo.arguments.count,
+           let t = Double(ProcessInfo.processInfo.arguments[i + 1]) {
+            for k in 1...2 {
+                afterWaking(t * Double(k)) { [weak self] in
+                    TitleTiles.enabled.toggle(); self?.reloadOrbTitles()
+                    NSLog("[TITLEFLIP] %d tiles=%@", k, TitleTiles.enabled ? "Y" : "n")
+                }
+            }
+        }
         #endif
         #if PANBENCH && !DEBUG
         // 1.1-C (C8) — the bench build's `-MapZoom <mult>` (DEBUG has its own below): zoomed in / out for the 120 run.
@@ -2339,6 +2364,7 @@ final class CorpusPhysicsScene: SKScene {
     override func update(_ currentTime: TimeInterval) {
         if isPaused { return }
         noteFrameForRest()   // R1
+        TitleTiles.shared.flush()   // R2 — upload new title tiles before this frame draws (no-op when none)
         #if DEBUG || PANBENCH
         let pbT0 = CACurrentMediaTime(); panBenchTick(currentTime)
         defer { panBenchEnd(pbT0) }

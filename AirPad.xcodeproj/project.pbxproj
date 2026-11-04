@@ -431,6 +431,7 @@
 		EC2D01F833BB64A23B8CEC24 /* ChatSession.swift in Sources */ = {isa = PBXBuildFile; fileRef = 0C38EEC0DB9F051F85839CCE /* ChatSession.swift */; };
 		EC60DCF76DE4CB0896EE04F4 /* TitleCase.swift in Sources */ = {isa = PBXBuildFile; fileRef = E0D34E62139AB741F9EC03C3 /* TitleCase.swift */; };
 		ECC1BBB914B52D14F0C595B9 /* TableMarkdown.swift in Sources */ = {isa = PBXBuildFile; fileRef = 755624913C34BDA923C2954F /* TableMarkdown.swift */; };
+		ED209AB861CC4309CBEE1A31 /* MapRestWake.swift in Sources */ = {isa = PBXBuildFile; fileRef = 89CBDAE6C3E6486FB82997D4 /* MapRestWake.swift */; };
 		ED263E6AF87CC57F7DF48FA2 /* CaptureHeader.swift in Sources */ = {isa = PBXBuildFile; fileRef = 7382A39FD7A3008B7F5F0790 /* CaptureHeader.swift */; };
 		ED2897F4A493372C37245794 /* AppleWebGrounding.swift in Sources */ = {isa = PBXBuildFile; fileRef = DAF63C3BDCDEC950CAF7DEBC /* AppleWebGrounding.swift */; };
 		EE930D753CB83240E0F65FCC /* ProScreenshots.swift in Sources */ = {isa = PBXBuildFile; fileRef = 066F0ECD5D6906ADAF3A2FDF /* ProScreenshots.swift */; };
@@ -727,6 +728,7 @@
 		88A13C2113DC9781B455DF42 /* PastePadView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = PastePadView.swift; sourceTree = "<group>"; };
 		88ABC9EFFF4787FFDF05A2CB /* DashboardView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = DashboardView.swift; sourceTree = "<group>"; };
 		894DD6E70D91D9E9B00246B9 /* MediaPickerWrapper.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = MediaPickerWrapper.swift; sourceTree = "<group>"; };
+		89CBDAE6C3E6486FB82997D4 /* MapRestWake.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = MapRestWake.swift; sourceTree = "<group>"; };
 		8B587CEAA00DEAB9CA11100E /* WebEvidencePure.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = WebEvidencePure.swift; sourceTree = "<group>"; };
 		8B88D3F84112712169492D89 /* DocumentQuickLookViewer.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = DocumentQuickLookViewer.swift; sourceTree = "<group>"; };
 		8BDD458C42AD717CBB2269BE /* ReviewQueueSheet.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ReviewQueueSheet.swift; sourceTree = "<group>"; };
@@ -1058,6 +1060,7 @@
 				C24E73996610B9E23DEB38A1 /* LiveWebUI.swift */,
 				24A6A32F900316F628EEF046 /* LongPaste.swift */,
 				DD915DF68A27E1ED37382E19 /* ManageModelsRepro.swift */,
+				89CBDAE6C3E6486FB82997D4 /* MapRestWake.swift */,
 				78BE389CD3124C9CAA5D01C3 /* OneEntryInvariant.swift */,
 				DB4EAC09C3FD8068935123CA /* PagedRestGeometry.swift */,
 				4771A71BAAF540EA68EAB025 /* PhotoHandoffName.swift */,
@@ -1998,6 +2001,7 @@
 				F1CC4C613799AD49459896D5 /* LiveWebUI.swift in Sources */,
 				6CEA0A9E6957A4D316649C54 /* LongPaste.swift in Sources */,
 				570D62A8CEA2A19CC44B383D /* ManageModelsRepro.swift in Sources */,
+				ED209AB861CC4309CBEE1A31 /* MapRestWake.swift in Sources */,
 				3BF81C58D40F6C131CDCDA99 /* OneEntryInvariant.swift in Sources */,
 				2E86EA279EA589C6F373EFCC /* PagedRestGeometry.swift in Sources */,
 				0F4F8C758E92903FD2A05D23 /* PhotoHandoffName.swift in Sources */,

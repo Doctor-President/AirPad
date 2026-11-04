@@ -92,6 +92,12 @@ final class CanvasState {
     /// fast pan/zoom the overlay reads a 1-frame-stale centroid.
     var clusterCentroidScreenPositions: [UUID: CGPoint] = [:]
 
+    /// Map in-place fix R1 — the Map's SKView is paused because nothing moves. The two label overlays'
+    /// `TimelineView(.animation)` pause with it (their positions can't change while the scene draws nothing).
+    /// Read ONLY inside `MapRestTimeline` (a leaf view): a read in CanvasView's body would re-render the
+    /// SpriteView on every flip, and SpriteView re-applies `isPaused: false`.
+    var mapAtRest: Bool = false
+
     /// Tag-anchored Map — resolved territory name labels in **screen-space**,
     /// written each scene tick by `syncTerritoryLabelsToCanvasState`. The
     /// SwiftUI `territoryLabelOverlay` renders these as real

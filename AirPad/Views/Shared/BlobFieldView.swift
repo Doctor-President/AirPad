@@ -151,7 +151,12 @@ struct BlobFieldView: View {
     /// Appearance glass settings are off.
     private let glass: GlassRender?
 
-    init(parameters: Parameters, glass: GlassRender? = nil) {
+    /// Map in-place fix R1 — the Dashboard / Recents ground: draw frames only while the tilt visibly moves; still
+    /// otherwise (its drift clock advances only while it draws, so it resumes where it stopped, never jumps).
+    private var restsWhenStill = false
+
+    init(parameters: Parameters, glass: GlassRender? = nil, restsWhenStill: Bool = false) {
+        self.restsWhenStill = restsWhenStill
         self.style = .lava
         self.packed = Self.packLava(parameters.blobs)
         self.sharedField = parameters.sharedField
@@ -178,7 +183,9 @@ struct BlobFieldView: View {
          noiseAmount: CGFloat = 0,
          noiseScale: CGFloat = 0,
          bloom: CGFloat = 0,
-         glass: GlassRender? = nil) {
+         glass: GlassRender? = nil,
+         restsWhenStill: Bool = false) {
+        self.restsWhenStill = restsWhenStill
         self.style = .card
         self.packed = Self.packCard(cardBlobs)
         self.sharedField = sharedField
@@ -212,7 +219,11 @@ struct BlobFieldView: View {
     var body: some View {
         GeometryReader { geo in
             let origin = geo.frame(in: .global).origin
-            if animated {
+            if animated && restsWhenStill {
+                RestingBlobTimeline(frameInterval: frameInterval) { clock in
+                    canvas(size: geo.size, origin: origin, time: Self.frozenTime ?? clock)
+                }
+            } else if animated {
                 TimelineView(.animation(minimumInterval: frameInterval)) { timeline in
                     // Wrap time to keep Float precision usable across the app's
                     // multi-hundred-million-second reference clock (per brief).
@@ -363,5 +374,38 @@ struct BlobFieldView: View {
         var r: CGFloat = 0, g: CGFloat = 0, b: CGFloat = 0, a: CGFloat = 0
         UIColor(color).getRed(&r, green: &g, blue: &b, alpha: &a)
         return (Float(r), Float(g), Float(b))
+    }
+}
+
+/// Map in-place fix R1 — a blob field's TimelineView that runs only while the tilt visibly moves
+/// (`GlassTiltActivity.moving`; never on a Simulator or a Mac, no motion sensor), with a drift clock that advances only
+/// across consecutive ticks: a pause (or any gap over 0.25 s) adds nothing, so the field resumes where it stopped.
+private struct RestingBlobTimeline<Content: View>: View {
+    let frameInterval: Double
+    @ViewBuilder let content: (Float) -> Content
+    private var activity: GlassTiltActivity { .shared }
+
+    var body: some View {
+        TimelineView(.animation(minimumInterval: frameInterval, paused: !activity.moving)) { timeline in
+            content(BlobDriftClock.shared.time(at: timeline.date))
+        }
+    }
+}
+
+/// The resting ground's drift clock (shared by the Dashboard and Recents grounds). Starts at the wall clock (mod 1000 s,
+/// as the always-running field did) so the first frame isn't always the same arrangement.
+final class BlobDriftClock {
+    static let shared = BlobDriftClock()
+    private var elapsed = Date().timeIntervalSinceReferenceDate.truncatingRemainder(dividingBy: 1000.0)
+    private var last: Date?
+    func time(at d: Date) -> Float {
+        if let l = last {
+            let dt = d.timeIntervalSince(l)
+            if dt > 0 && dt < 0.25 { elapsed += dt }
+            if dt > 0 { last = d }
+        } else {
+            last = d
+        }
+        return Float(elapsed.truncatingRemainder(dividingBy: 1000.0))
     }
 }

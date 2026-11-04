@@ -1216,7 +1216,7 @@ struct CanvasView: View {
     /// scheduled for next runloop hop.
     @ViewBuilder
     private var clusterLabelOverlay: some View {
-        TimelineView(.animation) { _ in
+        MapRestTimeline(canvasState: canvasState) {
             ClusterLabelLayer(
                 positions: canvasState.clusterCentroidScreenPositions,
                 memberCounts: bagMemberCounts()
@@ -1232,7 +1232,7 @@ struct CanvasView: View {
     /// every frame via `TimelineView(.animation)`.
     @ViewBuilder
     private var territoryLabelOverlay: some View {
-        TimelineView(.animation) { _ in
+        MapRestTimeline(canvasState: canvasState) {
             TerritoryLabelLayer(labels: canvasState.territoryLabels)
         }
         .allowsHitTesting(false)
@@ -2132,3 +2132,13 @@ enum RegionLabelTuning {
     static let materialDropThreshold: CGFloat = 0.0
 }
 
+/// Map in-place fix R1 — the label overlays' per-frame `TimelineView(.animation)`, paused while the Map rests
+/// (`CanvasState.mapAtRest`). A leaf view, so the flag's flips re-render only this view, never CanvasView's
+/// SpriteView.
+private struct MapRestTimeline<Content: View>: View {
+    let canvasState: CanvasState
+    @ViewBuilder let content: () -> Content
+    var body: some View {
+        TimelineView(.animation(minimumInterval: nil, paused: canvasState.mapAtRest)) { _ in content() }
+    }
+}

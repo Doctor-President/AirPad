@@ -46,7 +46,7 @@ struct DashboardLavaLamp: View {
                       phase: CGFloat($0.phase), color: $0.color.color, peak: CGFloat($0.peak))
             },
             sharedField: d.sharedField
-        ), glass: glass)
+        ), glass: glass, restsWhenStill: true)   // R1 — still unless the tilt moves
     }
 
     // MARK: - Light (#3 — mango pigment on parchment)
@@ -59,7 +59,8 @@ struct DashboardLavaLamp: View {
                           animated: true,
                           noiseAmount: s.noiseAmount,
                           noiseScale: s.noiseScale,
-                          glass: glass)
+                          glass: glass,
+                          restsWhenStill: true)   // R1 — still unless the tilt moves
                 .pigmentOnParchment()
         }
     }

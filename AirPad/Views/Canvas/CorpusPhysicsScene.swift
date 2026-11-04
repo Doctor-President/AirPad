@@ -249,6 +249,7 @@ final class CorpusPhysicsScene: SKScene {
     /// Mirrors the `addNewcomerHalo` pattern — the outline lives as a named
     /// child node so it tracks sprite motion automatically.
     func applySelectionOutline(nodeID: String, isSelected: Bool) {
+        wakeFromRest("applySelectionOutline")   // R1
         guard let sprite = nodeSprites[nodeID] else { return }
         if let existing = sprite.children.first(where: { $0.name == "selectionOutline" }) {
             existing.removeFromParent()
@@ -275,6 +276,7 @@ final class CorpusPhysicsScene: SKScene {
     /// Reconcile outlines against the current selection set. Called by
     /// CanvasView whenever `selection.selected` or `isActive` changes.
     func refreshSelectionOutlines() {
+        wakeFromRest("refreshSelectionOutlines")   // R1
         let active = selection?.isActive ?? false
         let picked = selection?.selected ?? []
         for (id, sprite) in nodeSprites {
@@ -297,6 +299,7 @@ final class CorpusPhysicsScene: SKScene {
     /// until CanvasView clears it on the user's next touch — same
     /// `focusedHighlightNodeID` semantics as the card/tile glow.
     func applyFocusOutline(nodeID: String?) {
+        wakeFromRest("applyFocusOutline")   // R1
         for (_, sprite) in nodeSprites {
             sprite.children.first(where: { $0.name == "focusOutline" })?.removeFromParent()
         }
@@ -319,6 +322,7 @@ final class CorpusPhysicsScene: SKScene {
     /// Animate all existing sprites to new positions (view-only rearrangement; does not
     /// mutate canvasLayout). Positions use SpriteKit convention (y-up from center).
     func rearrangeToPositions(_ positions: [String: CGPoint]) {
+        wakeFromRest("rearrangeToPositions")   // R1
         for (nodeID, target) in positions {
             guard let shape = nodeSprites[nodeID] else { continue }
             shape.physicsBody?.velocity = .zero
@@ -331,6 +335,7 @@ final class CorpusPhysicsScene: SKScene {
 
     /// Center camera on a node and scale it up for detail preview
     func centerAndZoomNode(_ nodeID: String) {
+        wakeFromRest("centerAndZoomNode")   // R1
         guard let shape = nodeSprites[nodeID],
               let view = self.view else { return }
 
@@ -387,6 +392,7 @@ final class CorpusPhysicsScene: SKScene {
     /// `applyOrbScales` rewrites each orb's scale every frame, so a hardcoded
     /// pulse would be stomped — emphasis, if wanted, belongs in that system.
     func focusNode(_ nodeID: String) {
+        wakeFromRest("focusNode")   // R1
         guard let shape = nodeSprites[nodeID] else { return }
         let move = SKAction.move(to: shape.position, duration: 0.38)
         move.timingMode = .easeInEaseOut
@@ -395,6 +401,7 @@ final class CorpusPhysicsScene: SKScene {
 
     /// Reset camera and node scale to original state
     func resetZoom() {
+        wakeFromRest("resetZoom")   // R1
         guard let nodeID = zoomedNodeID,
               let shape = nodeSprites[nodeID] else {
             // If no zoomed node, just update state
@@ -402,7 +409,7 @@ final class CorpusPhysicsScene: SKScene {
                 self?.canvasState?.isZoomed = false
             }
             // Delay clearing selectedNodeID to allow dismiss animation to complete
-            DispatchQueue.main.asyncAfter(deadline: .now() + 0.55) { [weak self] in
+            afterWaking(0.55) { [weak self] in
                 self?.canvasState?.selectedNodeID = nil
             }
             savedPhysicsBody = nil
@@ -440,7 +447,7 @@ final class CorpusPhysicsScene: SKScene {
         }
 
         // Delay clearing selectedNodeID to allow dismiss animation to complete (0.53s + buffer)
-        DispatchQueue.main.asyncAfter(deadline: .now() + 0.55) { [weak self] in
+        afterWaking(0.55) { [weak self] in
             self?.canvasState?.selectedNodeID = nil
         }
     }
@@ -462,6 +469,7 @@ final class CorpusPhysicsScene: SKScene {
         territoryColors: [String: UIColor] = [:],
         territorySlots: [String: Int] = [:]
     ) {
+        wakeFromRest("syncNodes")   // R1
         self.tagColors = tagColors
         self.territoryColors = territoryColors
         self.territorySlots = territorySlots
@@ -1309,6 +1317,7 @@ final class CorpusPhysicsScene: SKScene {
     /// sprites already read this via `bubbleColor`. Passing `[:]` restores each
     /// node's original (substrate/neighborhood) color.
     func applyTerritoryColors(_ colors: [String: UIColor]) {
+        wakeFromRest("applyTerritoryColors")   // R1
         territoryColors = colors
         // Re-tint through the unfocused-orb styler so the light-mode fill dilution
         // + hue wash stay in sync with the new fill. DARK is byte-identical — the
@@ -1350,6 +1359,7 @@ final class CorpusPhysicsScene: SKScene {
     /// `syncTerritoryLabelsToCanvasState` projects member centroids to screen
     /// space for the SwiftUI overlay. Passing `[]` clears the overlay.
     func setTerritoryLabels(_ labels: [TerritoryLabel]) {
+        wakeFromRest("setTerritoryLabels")   // R1
         territoryLabelData = labels
         // C4: a rebuild / mode switch must not resurrect stale fade or incumbency.
         regionLabelDeclutterAlpha.removeAll()
@@ -1855,6 +1865,7 @@ final class CorpusPhysicsScene: SKScene {
     /// Immediately restore the full frame rate (called from `touchesBegan` so a pan/tap never waits for
     /// the next idle-rate frame). Also bumps `lastActivityTime` so the debounce starts fresh.
     private func wakeMap() {
+        wakeFromRest("touch")
         isTouchingMap = true
         adaptiveTouchStart = true
         desiredMapFPS = activeFPSNow
@@ -1890,6 +1901,7 @@ final class CorpusPhysicsScene: SKScene {
         let cardMoving = abs(cardProgress - lastCardProgressForIdle) > 0.0005
         lastCamPosForIdle = cam; lastCamScaleForIdle = scale; lastCardProgressForIdle = cardProgress
         let wasAnimating = animatingThisFrame
+        if restWakePending { restWakePending = false; lastActivityTime = currentTime }   // R1 — a change woke the Map
         let active = isTouchingMap || coastVelocity != .zero || camMoved || cardMoving || wasAnimating
         let tiltMoved = glassTiltMoved
         glassTiltMoved = false
@@ -1924,6 +1936,7 @@ final class CorpusPhysicsScene: SKScene {
         #endif
         if desiredMapFPS != target { desiredMapFPS = target }
         if v.preferredFramesPerSecond != desiredMapFPS { v.preferredFramesPerSecond = desiredMapFPS }
+        decideRest(awake: awake, target: target)   // R1 — still → pause the SKView (0 frames)
 
         if currentTime - lastCPUSampleTime > 0.5 {
             let pct = Self.processCPUPercent()
@@ -1943,6 +1956,165 @@ final class CorpusPhysicsScene: SKScene {
             }
             #endif
         }
+    }
+
+    // MARK: - Map in-place fix R1: zero frames at rest
+
+    /// The SKView is paused because the Map is still (not the DEBUG GPU bench's pause).
+    private(set) var restPaused = false
+    /// Consecutive frames that found nothing moving or pending after the 0.4 s idle delay. Two in a row → pause, so the
+    /// frame before the pause drew exactly the state the pause keeps.
+    private var restEligibleFrames = 0
+    /// A change woke the Map: count it as activity on the next frame (the idle delay starts fresh).
+    private var restWakePending = false
+    /// A territory pill's declutter fade is still easing toward its target.
+    private var regionLabelsFading = false
+    private var restObservers: [NSObjectProtocol] = []
+    /// A newcomer halo fades 0.5 → 0 alpha over 5 minutes: one 1/255 step every ~2.35 s. While one is fading the Map
+    /// still pauses, and this timer draws one frame every `haloStepSeconds` (instead of 8–10 fps for 5 minutes).
+    private var restHaloTimer: Timer?
+    private static let haloStepSeconds: TimeInterval = 2.0
+    private var restTraitRegistration: (any UITraitChangeRegistration)?
+    #if DEBUG
+    private var restFramesThisTick = 0
+    private var restLogTimer: Timer?
+    private var restLastWake = "-"
+    private var restExternalWakes = 0
+    private var restHeldBy = "-"
+    static let restLog = ProcessInfo.processInfo.arguments.contains("-MapRestLog")
+    #endif
+    /// DEBUG / bench A/B: `-NoMapRest` keeps today's 8 fps idle instead of pausing.
+    static let restDisabled: Bool = {
+        #if DEBUG || PANBENCH
+        return ProcessInfo.processInfo.arguments.contains("-NoMapRest")
+        #else
+        return false
+        #endif
+    }()
+
+    /// Wake the Map from rest: something changed that the next frames must draw (a touch, a camera action, data, the
+    /// appearance or look, a setting, a tilt step). Cheap and idempotent: only acts while paused.
+    /// `soft`: draw, but don't count as activity (the newcomer halo's step frame: no 0.4 s at 120 fps).
+    func wakeFromRest(_ reason: String, soft: Bool = false) {
+        guard restPaused else { return }
+        restPaused = false
+        restEligibleFrames = 0
+        restHaloTimer?.invalidate(); restHaloTimer = nil
+        if !soft { restWakePending = true }
+        view?.isPaused = false
+        if canvasState?.mapAtRest == true { canvasState?.mapAtRest = false }
+        #if DEBUG
+        restLastWake = reason
+        if Self.restLog { NSLog("[MAPREST] wake reason=%@", reason) }
+        #endif
+    }
+
+    /// Delayed work that touches the scene: wake first so it draws (a paused SKView runs no actions and draws nothing).
+    private func afterWaking(_ delay: TimeInterval, _ work: @escaping () -> Void) {
+        DispatchQueue.main.asyncAfter(deadline: .now() + delay) { [weak self] in
+            self?.wakeFromRest("delayed")
+            work()
+        }
+    }
+
+    /// Called at the top of every rendered frame. A frame while `restPaused` means something outside the scene
+    /// un-paused the SKView (SpriteView re-applies `isPaused: false` when SwiftUI updates it): resync the flags.
+    private func noteFrameForRest() {
+        #if DEBUG
+        restFramesThisTick += 1
+        #endif
+        if restPaused {
+            restPaused = false
+            restEligibleFrames = 0
+            if canvasState?.mapAtRest == true { canvasState?.mapAtRest = false }
+            #if DEBUG
+            restExternalWakes += 1
+            restLastWake = "external"
+            #endif
+        }
+    }
+
+    /// Anything still in motion or queued that a pause would freeze mid-way (nil = nothing).
+    private var restBusyReason: String? {
+        if cameraNode.hasActions() { return "cameraAction" }
+        if !groundInkQueue.isEmpty { return "groundInk" }
+        if regionLabelsFading { return "labelFade" }
+        for (_, n) in nodeSprites where n.hasActions() { return "orbAction" }
+        for n in children where n !== cameraNode && n.hasActions() { return "sceneAction" }   // ripples, über-node fades
+        #if DEBUG || PANBENCH
+        if PanBench.on, PanBench.state == nil || PanBench.state!.k < PanBench.state!.flicks.count { return "panBench" }
+        #endif
+        return nil
+    }
+
+    /// End of every frame (after the frame-rate decision): pause the SKView once the Map has been still for the idle
+    /// delay and nothing is moving, fading or queued. The Aura drift and a moving Glass tilt keep their 30 fps.
+    private func decideRest(awake: Bool, target: Int) {
+        guard let v = view, !Self.restDisabled else { return }
+        #if DEBUG
+        if ProcessInfo.processInfo.arguments.contains("-NoMapIdle") { return }
+        #endif
+        let busy = restBusyReason
+        let still = hasRenderedFirstFrame && !awake && target == Self.idleMapFPS && busy == nil
+        restEligibleFrames = still ? restEligibleFrames + 1 : 0
+        #if DEBUG
+        restHeldBy = !hasRenderedFirstFrame ? "firstFrame" : awake ? "awake" : target != Self.idleMapFPS ? "fps\(target)" : busy ?? "-"
+        #endif
+        guard restEligibleFrames >= 2, !restPaused else { return }
+        restPaused = true
+        v.isPaused = true
+        if canvasState?.mapAtRest == false { canvasState?.mapAtRest = true }
+        if nodeSprites.values.contains(where: { $0.userData?["haloCreatedAt"] != nil }) {
+            restHaloTimer = Timer.scheduledTimer(withTimeInterval: Self.haloStepSeconds, repeats: false) { [weak self] _ in
+                MainActor.assumeIsolated { self?.wakeFromRest("haloStep", soft: true) }
+            }
+        }
+        #if DEBUG
+        if Self.restLog { NSLog("[MAPREST] pause") }
+        #endif
+    }
+
+    /// Wake sources that don't come through a method call: settings (all stored in UserDefaults), the heat guard, the
+    /// custom ground, the app coming back, the appearance, and a visible Glass tilt step.
+    private func installRestObservers(on view: SKView) {
+        guard restObservers.isEmpty else { return }
+        let nc = NotificationCenter.default
+        let wakes: [(Notification.Name, String)] = [
+            (UserDefaults.didChangeNotification, "defaults"),
+            (.mapHeatGuardChanged, "heat"),
+            (.mapGroundChanged, "ground"),
+            (UIApplication.willEnterForegroundNotification, "foreground"),
+            (UIApplication.didBecomeActiveNotification, "active"),
+            (.NSProcessInfoPowerStateDidChange, "power"),
+            (UIAccessibility.reduceMotionStatusDidChangeNotification, "reduceMotion"),
+        ]
+        for (name, reason) in wakes {
+            restObservers.append(nc.addObserver(forName: name, object: nil, queue: .main) { [weak self] _ in
+                MainActor.assumeIsolated { self?.wakeFromRest(reason) }
+            })
+        }
+        restObservers.append(nc.addObserver(forName: .glassTiltStep, object: nil, queue: .main) { [weak self] _ in
+            MainActor.assumeIsolated {
+                guard let self, self.restPaused, let m = self.mapTuning, m.orbLook == .glass, m.glass.tiltLight else { return }
+                self.wakeFromRest("tilt")
+            }
+        })
+        restTraitRegistration = view.registerForTraitChanges([UITraitUserInterfaceStyle.self]) { [weak self] (_: SKView, _: UITraitCollection) in
+            self?.wakeFromRest("appearance")
+        }
+        #if DEBUG
+        if Self.restLog && restLogTimer == nil {
+            restLogTimer = Timer.scheduledTimer(withTimeInterval: 1, repeats: true) { [weak self] _ in
+                MainActor.assumeIsolated {
+                    guard let self else { return }
+                    NSLog("[MAPREST] frames=%d paused=%@ rest=%@ heldBy=%@ lastWake=%@ externalWakes=%d",
+                          self.restFramesThisTick, self.view?.isPaused == true ? "Y" : "n", self.restPaused ? "Y" : "n",
+                          self.restHeldBy, self.restLastWake, self.restExternalWakes)
+                    self.restFramesThisTick = 0
+                }
+            }
+        }
+        #endif
     }
 
     /// Total CPU% of the app process across its threads (of one core; multi-core can exceed 100%).
@@ -2000,11 +2172,15 @@ final class CorpusPhysicsScene: SKScene {
 
     override func didMove(to view: SKView) {
         self.isPaused = false
+        installRestObservers(on: view)   // R1
+        #if DEBUG
+        if ProcessInfo.processInfo.arguments.contains("-MapNoHalo") { enableNewcomerHalo = false }   // R1 gate: no halo step frames
+        #endif
         #if PANBENCH && !DEBUG
         // 1.1-C (C8) — the bench build's `-MapZoom <mult>` (DEBUG has its own below): zoomed in / out for the 120 run.
         if let i = ProcessInfo.processInfo.arguments.firstIndex(of: "-MapZoom"), i + 1 < ProcessInfo.processInfo.arguments.count,
            let mult = Float(ProcessInfo.processInfo.arguments[i + 1]) {
-            DispatchQueue.main.asyncAfter(deadline: .now() + 14) { self.cameraNode.setScale(self.cameraNode.xScale * CGFloat(mult)) }
+            afterWaking(14) { self.cameraNode.setScale(self.cameraNode.xScale * CGFloat(mult)) }
         }
         #endif
         #if DEBUG
@@ -2017,7 +2193,7 @@ final class CorpusPhysicsScene: SKScene {
         if let i = ProcessInfo.processInfo.arguments.firstIndex(of: "-MapZoom"),
            i + 1 < ProcessInfo.processInfo.arguments.count,
            let mult = Float(ProcessInfo.processInfo.arguments[i + 1]) {
-            DispatchQueue.main.asyncAfter(deadline: .now() + 14) {
+            afterWaking(14) {
                 self.cameraNode.setScale(self.cameraNode.xScale * CGFloat(mult))
                 // live-43 stills — `-MapPan dx,dy` (screen points at the new zoom) frames a cluster.
                 if let j = ProcessInfo.processInfo.arguments.firstIndex(of: "-MapPan"), j + 1 < ProcessInfo.processInfo.arguments.count {
@@ -2034,7 +2210,7 @@ final class CorpusPhysicsScene: SKScene {
         // neighbours and zoom so those n orbs fill the screen (≈ n orbs, titles readable) — the same framing every launch.
         if let i = ProcessInfo.processInfo.arguments.firstIndex(of: "-MapFrameOrbs"),
            i + 1 < ProcessInfo.processInfo.arguments.count, let n = Int(ProcessInfo.processInfo.arguments[i + 1]), n > 1 {
-            DispatchQueue.main.asyncAfter(deadline: .now() + 14) { [weak self] in
+            afterWaking(14) { [weak self] in
                 guard let self else { return }
                 let pts = self.nodeSprites.keys.sorted().compactMap { id -> CGPoint? in
                     guard let s = self.nodeSprites[id], let p = s.parent else { return nil }
@@ -2055,7 +2231,7 @@ final class CorpusPhysicsScene: SKScene {
         // pro-build swatches — `-MapSwatch`: after the auto-fit settles, ONE orb alone (the largest by layout, ties by id —
         // the same orb every launch), centred and zoomed to ~45% of the screen width; the rest hidden, no territory pills.
         if ProcessInfo.processInfo.arguments.contains("-MapSwatch") {
-            DispatchQueue.main.asyncAfter(deadline: .now() + 16) { [weak self] in
+            afterWaking(16) { [weak self] in
                 guard let self else { return }
                 let ids = self.nodeSprites.keys.sorted()
                 guard let pick = ids.max(by: { (self.nodeIntrinsicRadii[$0] ?? 0, $1) < (self.nodeIntrinsicRadii[$1] ?? 0, $0) }),
@@ -2093,12 +2269,12 @@ final class CorpusPhysicsScene: SKScene {
                 ("legacy-dots100", { Self.dotsLegacyDebug = true; dots(1) }), ("fixed-dots100", { Self.dotsLegacyDebug = false }),
             ]
             for (i, st) in steps.enumerated() {
-                DispatchQueue.main.asyncAfter(deadline: .now() + start + Double(i) * 10) { st.1(); NSLog("[RISODOTS] %@", st.0) }
+                afterWaking(start + Double(i) * 10) { st.1(); NSLog("[RISODOTS] %@", st.0) }
             }
         }
         // 1.1-B — `-MapSheenFlipAt <s>`: flip the Sheen once, s seconds in (a same-launch off/on still pair).
         if let v = UserDefaults.standard.string(forKey: "MapSheenFlipAt"), let t = Double(v) {
-            DispatchQueue.main.asyncAfter(deadline: .now() + t) { MapSheen.debugOff.toggle(); NSLog("[SHEEN] flipped → %@", MapSheen.debugOff ? "off" : "on") }
+            afterWaking(t) { MapSheen.debugOff.toggle(); NSLog("[SHEEN] flipped → %@", MapSheen.debugOff ? "off" : "on") }
         }
         scheduleMapLayoutExportIfAsked()   // 1.1-B study — `-ExportMapLayout <tag>`
         // 1.1-A (4) — `-InkAudit` (the title-ink audit, after the auto-fit settles) and `-InkStillTour <n>` (before / after stills).
@@ -2152,6 +2328,7 @@ final class CorpusPhysicsScene: SKScene {
     }
 
     override func didChangeSize(_ oldSize: CGSize) {
+        wakeFromRest("size")   // R1
         super.didChangeSize(oldSize)
         if let grid = gridNode {
             BackgroundGridNode.resize(grid, to: size)
@@ -2161,6 +2338,7 @@ final class CorpusPhysicsScene: SKScene {
 
     override func update(_ currentTime: TimeInterval) {
         if isPaused { return }
+        noteFrameForRest()   // R1
         #if DEBUG || PANBENCH
         let pbT0 = CACurrentMediaTime(); panBenchTick(currentTime)
         defer { panBenchEnd(pbT0) }
@@ -2560,6 +2738,7 @@ final class CorpusPhysicsScene: SKScene {
     /// rides with its nodes through pan/zoom/engagement), projected via
     /// `view.convert(_:from:)`. Empty data clears the overlay once.
     private func syncTerritoryLabelsToCanvasState(currentTime: TimeInterval) {
+        regionLabelsFading = false   // R1 — set again below while any pill is still easing
         guard let view = self.view else { return }
         #if DEBUG
         if swatchFramed || inkTourActive { territoryLabelData.removeAll() }   // pro-build `-MapSwatch` / 1.1-A `-InkStillTour`: no pills
@@ -2682,6 +2861,7 @@ final class CorpusPhysicsScene: SKScene {
                 var a = regionLabelDeclutterAlpha[c.key] ?? 0     // new key → fade IN from 0, never pop
                 if target > a { a = min(target, a + fadeStep) }
                 else if target < a { a = max(target, a - fadeStep) }
+                if a != target { regionLabelsFading = true }   // R1 — a pause would freeze it half-faded
                 regionLabelDeclutterAlpha[c.key] = a
                 // C5: omit from the bridged array only ONCE the ease actually reached ~0 — never as a
                 // shortcut for target==0, or a fading-out label would vanish instead of being seen out.
@@ -3477,6 +3657,7 @@ final class CorpusPhysicsScene: SKScene {
     /// Restyles on an actual flip so live theme changes still take.
     var appearanceIsLight: Bool = true {
         didSet {
+            wakeFromRest("appearanceIsLight")   // R1
             if oldValue != appearanceIsLight {
                 restyleUnfocusedOrbs()
                 restyleLabels()   // dark label ink depends on the sat/val boost → re-flip on theme change
@@ -3556,6 +3737,7 @@ final class CorpusPhysicsScene: SKScene {
     /// leaves `shape.alpha` (0 while focal) untouched, so they stay hidden and pick
     /// up the current theme on disengagement.
     func restyleUnfocusedOrbs() {
+        wakeFromRest("restyleUnfocusedOrbs")   // R1
         let isLight = currentIsLight
         let byID = Dictionary(currentNodes.map { ($0.id, $0) }, uniquingKeysWith: { a, _ in a })
         for (id, shape) in nodeSprites {
@@ -3900,6 +4082,7 @@ final class CorpusPhysicsScene: SKScene {
     /// depends on the sat/val boost, so light↔dark must re-flip. Glyph labels recolor in
     /// place (set `a_glyph_color`; no re-raster) — a one-time burst on flip.
     func restyleLabels() {
+        wakeFromRest("restyleLabels")   // R1
         #if DEBUG || PANBENCH
         PanBench.restyles += 1
         #endif
@@ -5182,7 +5365,7 @@ final class CorpusPhysicsScene: SKScene {
     private func whenOrbsSettled(after: Double, _ body: @escaping () -> Void) {
         var last = -1, held = 0, waited = after, lastPos: [String: CGPoint] = [:]
         func poll() {
-            DispatchQueue.main.asyncAfter(deadline: .now() + (waited == after ? after : 1)) { [weak self] in
+            afterWaking((waited == after ? after : 1)) { [weak self] in
                 guard let self else { return }
                 let n = self.nodeSprites.count
                 var pos: [String: CGPoint] = [:], moved: CGFloat = 0
@@ -5325,7 +5508,7 @@ final class CorpusPhysicsScene: SKScene {
     /// n worst titles by 1.1-A's worst-case rule (real configuration; or the given ids) alone at the centre, first in
     /// 1.1-A's ink (`[INKSTILL] k old …`, no halo), then the area rule's (`[INKSTILL] k new …`), 3 s each. Pills hidden.
     private func startInkStillTour(n: Int, delay: Double) {
-        DispatchQueue.main.asyncAfter(deadline: .now() + delay) { [weak self] in
+        afterWaking(delay) { [weak self] in
             guard let self else { return }
             let m = self.mapTuning ?? .today
             let look = Self.drawnTitleLook(m.orbLook, light: self.currentIsLight)
@@ -5342,7 +5525,7 @@ final class CorpusPhysicsScene: SKScene {
             NSLog("[INKSTILL] begin look=%@ map=%@ count=%d", look.rawValue, self.currentIsLight ? "light" : "dark", ids.count)
             for (k, e) in ids.enumerated() {
                 for (j, old) in [true, false].enumerated() {
-                    DispatchQueue.main.asyncAfter(deadline: .now() + Double(k * 2 + j) * 4) { [weak self] in
+                    afterWaking(Double(k * 2 + j) * 4) { [weak self] in
                         guard let self, let sp = self.nodeSprites[e.0], let par = sp.parent else { return }
                         let r = self.nodeIntrinsicRadii[e.0] ?? 30
                         func centre() {
@@ -5355,8 +5538,8 @@ final class CorpusPhysicsScene: SKScene {
                         Self.worstCaseInkDebug = old
                         self.restyleLabels()
                         // the lens / band relaxation moves orbs once the zoom lands: re-centre, then log where it sits
-                        DispatchQueue.main.asyncAfter(deadline: .now() + 1.2) { centre() }
-                        DispatchQueue.main.asyncAfter(deadline: .now() + 2.0) { [weak self] in
+                        self.afterWaking(1.2) { centre() }
+                        self.afterWaking(2.0) { [weak self] in
                             guard let self else { return }
                             // where the orb sits (view pt) + the twin's samples, so a still can be checked against the twin
                             let c = self.convert(sp.position, from: par), rs = self.orbBaseWidth(sp) * sp.xScale / 2
@@ -5378,7 +5561,7 @@ final class CorpusPhysicsScene: SKScene {
                     }
                 }
             }
-            DispatchQueue.main.asyncAfter(deadline: .now() + Double(ids.count * 2) * 4) {
+            afterWaking(Double(ids.count * 2) * 4) {
                 Self.worstCaseInkDebug = false
                 NSLog("[INKSTILL] end")
             }
@@ -5598,16 +5781,16 @@ final class CorpusPhysicsScene: SKScene {
         let bg = steps.firstIndex { $0.0 == "bgReady" } ?? steps.count
         for (i, step) in steps.enumerated() {
             let t0 = start + Double(i) * 6 + (i > bg ? 12 : 0)   // room to background + foreground (shell) first
-            DispatchQueue.main.asyncAfter(deadline: .now() + t0) { [weak self] in
+            afterWaking(t0) { [weak self] in
                 print("[AURASIZE-STEP] \(step.0)"); NSLog("[AURASIZE-STEP] %@", step.0)
                 step.1()
                 self?.lastActivityTime = CACurrentMediaTime()
             }
-            DispatchQueue.main.asyncAfter(deadline: .now() + t0 + 3) { [weak self] in self?.auditOrbSizes(step.0) }
+            afterWaking(t0 + 3) { [weak self] in self?.auditOrbSizes(step.0) }
         }
         NotificationCenter.default.addObserver(forName: UIApplication.willEnterForegroundNotification, object: nil,
                                                queue: .main) { [weak self] _ in
-            DispatchQueue.main.asyncAfter(deadline: .now() + 2) { self?.auditOrbSizes("foreground") }
+            self?.afterWaking(2) { self?.auditOrbSizes("foreground") }
         }
     }
     #endif
@@ -6219,6 +6402,7 @@ final class CorpusPhysicsScene: SKScene {
     /// SAME orb — no territory re-form, no orb movement, layout/warp untouched. Forces the
     /// next `applyOrbScales` pass so the fresh containers pick up their LOD fade (no flash).
     func reloadOrbTitles() {
+        wakeFromRest("reloadOrbTitles")   // R1
         for node in currentNodes {
             guard let shape = nodeSprites[node.id],
                   let titleNode = shape.children.first(where: { $0.name == "titleLabel" }),
@@ -6741,7 +6925,7 @@ extension CorpusPhysicsScene {
     func scheduleGPUBenchIfAsked() {
         guard ProcessInfo.processInfo.arguments.contains("-MapGPUBench") else { return }
         let delay = Double(UserDefaults.standard.string(forKey: "MapGPUBenchDelay") ?? "") ?? 20
-        DispatchQueue.main.asyncAfter(deadline: .now() + delay) { [weak self] in self?.runGPUBench() }
+        afterWaking(delay) { [weak self] in self?.runGPUBench() }
     }
 
     private func runGPUBench() {
@@ -6864,7 +7048,7 @@ extension CorpusPhysicsScene {
             (7, { [weak self] in self?.groundCase = .all; NSLog("[EXPORTMAP] done") }),
         ]
         var t = 0.0
-        for (d, f) in steps { t += d; DispatchQueue.main.asyncAfter(deadline: .now() + t, execute: f) }
+        for (d, f) in steps { t += d; afterWaking(t, f) }
     }
 
     private func writeMapLayout(tag: String) {

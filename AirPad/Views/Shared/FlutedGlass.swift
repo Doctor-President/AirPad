@@ -184,6 +184,28 @@ final class GlassMotion {
             self.lastTimestamp = motion.timestamp
             // x tilt = rotation about the device's long (y) axis, y tilt = about its short (x) axis.
             self.tilt = self.integrator.step(rate: SIMD2(r.y, r.x), dt: dt)
+            self.noteStep(at: motion.timestamp)
+        }
+    }
+
+    // MARK: Map in-place fix R1 — "is the tilt visibly moving?"
+
+    /// A tilt change this large moves the glass field ≈ 0.5 px at 3× (tilt × 0.053 × 440 pt per unit, BlobField.metal).
+    static let visibleStep: Float = 0.007
+    private var lastStepTilt = SIMD2<Float>(0, 0)
+    private var lastStepTime: TimeInterval = 0
+
+    /// Each visible step: post `.glassTiltStep` (wakes a resting Map under the Glass look) and hold
+    /// `GlassTiltActivity.moving` true until 0.4 s pass without one (the lava ground ticks only then).
+    private func noteStep(at t: TimeInterval) {
+        let activity = GlassTiltActivity.shared
+        if simd_distance(tilt, lastStepTilt) > Self.visibleStep {
+            lastStepTilt = tilt
+            lastStepTime = t
+            NotificationCenter.default.post(name: .glassTiltStep, object: nil)
+            if !activity.moving { activity.moving = true }
+        } else if activity.moving && t - lastStepTime > 0.4 {
+            activity.moving = false
         }
     }
 
@@ -195,7 +217,22 @@ final class GlassMotion {
         running = false
         manager.stopDeviceMotionUpdates()
         recenter()
+        lastStepTilt = .zero
+        if GlassTiltActivity.shared.moving { GlassTiltActivity.shared.moving = false }
     }
+}
+
+extension Notification.Name {
+    /// Map in-place fix R1 — the tilt moved the glass by a visible step (posted at most at the 30 Hz sensor rate).
+    static let glassTiltStep = Notification.Name("airpad.glassTiltStep")
+}
+
+/// Map in-place fix R1 — whether the tilt is visibly moving right now. `@Observable` and flips only at the start and
+/// end of a movement, so the lava ground's TimelineView can pause between movements without per-sample invalidation.
+@Observable
+final class GlassTiltActivity {
+    static let shared = GlassTiltActivity()
+    fileprivate(set) var moving = false
 }
 
 /// The tilt maths, pure (no CoreMotion) so it can be exercised with synthetic rates.

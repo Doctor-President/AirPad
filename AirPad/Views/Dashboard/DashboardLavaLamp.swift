@@ -46,7 +46,7 @@ struct DashboardLavaLamp: View {
                       phase: CGFloat($0.phase), color: $0.color.color, peak: CGFloat($0.peak))
             },
             sharedField: d.sharedField
-        ), glass: glass, restsWhenStill: true)   // R1 — still unless the tilt moves
+        ), glass: glass, slowWhenStill: true)   // R1 — slow drift when still, full rate while tilting
     }
 
     // MARK: - Light (#3 — mango pigment on parchment)
@@ -60,7 +60,7 @@ struct DashboardLavaLamp: View {
                           noiseAmount: s.noiseAmount,
                           noiseScale: s.noiseScale,
                           glass: glass,
-                          restsWhenStill: true)   // R1 — still unless the tilt moves
+                          slowWhenStill: true)   // R1 — slow drift when still, full rate while tilting
                 .pigmentOnParchment()
         }
     }

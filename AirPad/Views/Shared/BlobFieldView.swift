@@ -151,12 +151,12 @@ struct BlobFieldView: View {
     /// Appearance glass settings are off.
     private let glass: GlassRender?
 
-    /// Map in-place fix R1 — the Dashboard / Recents ground: draw frames only while the tilt visibly moves; still
-    /// otherwise (its drift clock advances only while it draws, so it resumes where it stopped, never jumps).
-    private var restsWhenStill = false
+    /// Map in-place fix R1 (T 2026-11-05) — the Dashboard / Recents ground: keeps its ambient drift, but draws it at
+    /// `LavaAmbient.fps` while the phone is still, and at the full `frameInterval` while the tilt moves.
+    private var slowWhenStill = false
 
-    init(parameters: Parameters, glass: GlassRender? = nil, restsWhenStill: Bool = false) {
-        self.restsWhenStill = restsWhenStill
+    init(parameters: Parameters, glass: GlassRender? = nil, slowWhenStill: Bool = false) {
+        self.slowWhenStill = slowWhenStill
         self.style = .lava
         self.packed = Self.packLava(parameters.blobs)
         self.sharedField = parameters.sharedField
@@ -184,8 +184,8 @@ struct BlobFieldView: View {
          noiseScale: CGFloat = 0,
          bloom: CGFloat = 0,
          glass: GlassRender? = nil,
-         restsWhenStill: Bool = false) {
-        self.restsWhenStill = restsWhenStill
+         slowWhenStill: Bool = false) {
+        self.slowWhenStill = slowWhenStill
         self.style = .card
         self.packed = Self.packCard(cardBlobs)
         self.sharedField = sharedField
@@ -219,8 +219,8 @@ struct BlobFieldView: View {
     var body: some View {
         GeometryReader { geo in
             let origin = geo.frame(in: .global).origin
-            if animated && restsWhenStill {
-                RestingBlobTimeline(frameInterval: frameInterval) { clock in
+            if animated && slowWhenStill {
+                AmbientBlobTimeline(frameInterval: frameInterval) { clock in
                     canvas(size: geo.size, origin: origin, time: Self.frozenTime ?? clock)
                 }
             } else if animated {
@@ -377,35 +377,29 @@ struct BlobFieldView: View {
     }
 }
 
-/// Map in-place fix R1 — a blob field's TimelineView that runs only while the tilt visibly moves
-/// (`GlassTiltActivity.moving`; never on a Simulator or a Mac, no motion sensor), with a drift clock that advances only
-/// across consecutive ticks: a pause (or any gap over 0.25 s) adds nothing, so the field resumes where it stopped.
-private struct RestingBlobTimeline<Content: View>: View {
+/// Map in-place fix R1 (T 2026-11-05) — a blob field's TimelineView that keeps the ambient drift at a low frame rate
+/// while the phone is still, and runs at the full `frameInterval` while the tilt visibly moves
+/// (`GlassTiltActivity.moving`; never on a Simulator or a Mac, no motion sensor) so the glass highlight stays smooth.
+/// Same wall clock as the always-running field (mod 1000 s), so nothing jumps when the rate changes.
+private struct AmbientBlobTimeline<Content: View>: View {
     let frameInterval: Double
     @ViewBuilder let content: (Float) -> Content
     private var activity: GlassTiltActivity { .shared }
 
     var body: some View {
-        TimelineView(.animation(minimumInterval: frameInterval, paused: !activity.moving)) { timeline in
-            content(BlobDriftClock.shared.time(at: timeline.date))
+        TimelineView(.animation(minimumInterval: activity.moving ? frameInterval : 1.0 / LavaAmbient.fps)) { timeline in
+            content(Float(timeline.date.timeIntervalSinceReferenceDate.truncatingRemainder(dividingBy: 1000.0)))
         }
     }
 }
 
-/// The resting ground's drift clock (shared by the Dashboard and Recents grounds). Starts at the wall clock (mod 1000 s,
-/// as the always-running field did) so the first frame isn't always the same arrangement.
-final class BlobDriftClock {
-    static let shared = BlobDriftClock()
-    private var elapsed = Date().timeIntervalSinceReferenceDate.truncatingRemainder(dividingBy: 1000.0)
-    private var last: Date?
-    func time(at d: Date) -> Float {
-        if let l = last {
-            let dt = d.timeIntervalSince(l)
-            if dt > 0 && dt < 0.25 { elapsed += dt }
-            if dt > 0 { last = d }
-        } else {
-            last = d
-        }
-        return Float(elapsed.truncatingRemainder(dividingBy: 1000.0))
-    }
+enum LavaAmbient {
+    /// The still-phone drift rate of the Dashboard / Recents ground. DEBUG `-LavaAmbientFPS <n>` overrides it.
+    static let fps: Double = {
+        #if DEBUG
+        let v = UserDefaults.standard.double(forKey: "LavaAmbientFPS")
+        if v > 0 { return v }
+        #endif
+        return 10
+    }()
 }

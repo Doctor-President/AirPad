@@ -185,7 +185,7 @@ enum MSDFLabel {
     /// Container marker + point-size stash (for per-frame smoothing).
     static let containerName = "titleLabel"   // the label child's name → all seams find it
     private static let markerKey = "msdfGlyph"
-    private static let pointSizeKey = "msdfPointSize"
+    fileprivate static let pointSizeKey = "msdfPointSize"
 
     /// Shared MSDF shader. median-of-RGB → screenPxDistance (scaled by the per-glyph
     /// `a_px_range` smoothing) → premultiplied opacity. Color is per-glyph `a_glyph_color`
@@ -252,14 +252,12 @@ enum MSDFLabel {
         guard font.loaded, pointSize > 0, !lines.isEmpty else { return container }
 
         let midCaps: CGFloat = 0.355                 // cap-box center (em) → vertical centering
-        let lineSpacing = font.lineHeightEm * pointSize
         let colorVec = rgbaVec(color)
         // Map in-place fix R2 — ONE sprite per title: the same glyph quads, composed into one MSDF tile (TitleTiles), drawn
         // by the same shader with the same attributes. The container keeps its shape (an SKNode of SKSpriteNode children
         // carrying a_glyph_color / a_px_range / a_lod_alpha), so recolor, applyLOD and every reader work unchanged.
         if TitleTiles.enabled, let tile = TitleTiles.shared.tile(lines: lines, font: font, midCaps: midCaps) {
             let sprite = SKSpriteNode(texture: nil)
-            TitleTiles.shared.attach(sprite, to: tile)
             sprite.size = CGSize(width: tile.emRect.width * pointSize, height: tile.emRect.height * pointSize)
             sprite.position = CGPoint(x: tile.emRect.midX * pointSize, y: tile.emRect.midY * pointSize)
             sprite.zPosition = 2
@@ -269,8 +267,19 @@ enum MSDFLabel {
             sprite.setValue(SKAttributeValue(float: 4.0), forAttribute: "a_px_range")     // set per-frame (smoothing)
             sprite.setValue(SKAttributeValue(float: 1.0), forAttribute: "a_lod_alpha")    // set per-frame (LOD fade)
             container.addChild(sprite)
+            container.userData?[tileKey] = tile
+            TitleTiles.shared.attach(sprite, to: tile)   // shown once the tile is resident (fix-up F1b: on demand)
             return container
         }
+        addGlyphSprites(to: container, lines: lines, pointSize: pointSize, font: font, midCaps: midCaps, colorVec: colorVec)
+        return container
+    }
+
+    /// The per-glyph sprites (one per drawable glyph) — the pre-R2 path, `-PerGlyphTitles`, and the fix-up's overflow
+    /// fallback (a title the fixed tile budget can't hold right now still draws, from the font atlas).
+    fileprivate static func addGlyphSprites(to container: SKNode, lines: [String], pointSize: CGFloat, font: MSDFFont,
+                                            midCaps: CGFloat, colorVec: vector_float4) {
+        let lineSpacing = font.lineHeightEm * pointSize
         // Top line highest, block centered on y = 0.
         let topOffset = CGFloat(lines.count - 1) / 2 * lineSpacing
         for (li, line) in lines.enumerated() {
@@ -296,8 +305,24 @@ enum MSDFLabel {
                 container.addChild(sprite)
             }
         }
-        return container
     }
+
+    /// Fix-up F1b — the Map's orb pass asks for the tiles of the titles that are (about to be) drawn: in view or within a
+    /// margin, and at or near the LOD fade. `urgent` = drawn this frame (on screen, fade > 0). Lower `priority` = sooner.
+    static func wantTile(_ container: SKNode, urgent: Bool, priority: CGFloat) {
+        guard let tile = container.userData?[tileKey] as? TitleTiles.Tile else { return }
+        TitleTiles.shared.want(tile, urgent: urgent, priority: priority)
+    }
+    fileprivate static let tileKey = "titleTile"
+
+    #if DEBUG
+    /// Fix-up F1 frame check: a tiled title with no texture to draw (and no per-glyph fallback).
+    static func isTitleBlank(_ container: SKNode) -> Bool {
+        guard container.userData?[tileKey] != nil, container.userData?["perGlyphFallback"] == nil else { return false }
+        guard let sp = container.children.first as? SKSpriteNode else { return true }
+        return sp.isHidden || sp.texture == nil
+    }
+    #endif
 
     /// Recolor an existing glyph container in place (appearance flip — no rebuild).
     static func recolor(container: SKNode, color: UIColor) {
@@ -338,24 +363,29 @@ enum MSDFLabel {
         }
     }
 
-    private static func rgbaVec(_ c: UIColor) -> vector_float4 {
+    fileprivate static func rgbaVec(_ c: UIColor) -> vector_float4 {
         var r: CGFloat = 0, g: CGFloat = 0, b: CGFloat = 0, a: CGFloat = 0
         c.getRed(&r, green: &g, blue: &b, alpha: &a)
         return vector_float4(Float(r), Float(g), Float(b), Float(a))
     }
 }
 
-// MARK: - Map in-place fix R2 — titles as one sprite each
+// MARK: - Map in-place fix R2 (+ fix-up F1) — titles as one sprite each, in a FIXED texture budget
 
 /// Composes each title's glyph quads into ONE MSDF tile — the same atlas texels, sampled at the same positions the
 /// per-glyph quads would sample (bilinear, texel centres); where two glyph cells overlap, the nearer glyph's field, made
-/// neutral along the switch — and packs the tiles into one shared texture, so the title sprites batch.
-/// A tile is in atlas units (atlasSize texels per em), independent of point size, ink and zoom: a title is rebuilt only
-/// when its text (lines) or face changes. MSDF stays resolution-independent, so no LOD-level rebuilds.
+/// neutral along the switch — so the title sprites batch. A tile is in atlas units (× `texelScale`), independent of point
+/// size, ink and zoom: a title's tile changes only when its text (lines) or face changes.
 ///
-/// Tiles made in one run-loop turn (the whole Map at load, a renamed or new entry later) go into one BATCH. At the next
-/// flush (the scene's next frame, or the main queue) the batch becomes one exactly-sized immutable texture, its sprites
-/// are pointed at it and shown, and the CPU bytes are released. A later batch is its own (small) texture.
+/// Fix-up F1 — the tiles live in at most `maxPages` fixed pages (`pageSize`², RGBA8), whatever the library size:
+/// - A tile is built only when the Map's orb pass WANTS it: the title is in view or within a margin of it, and at or near
+///   its LOD fade (`MSDFLabel.wantTile`). Titles that are drawn this frame are URGENT and are always built before the
+///   frame draws; the rest (the margin, the pre-fade band) are built ahead, nearest first, a few milliseconds per frame.
+/// - Tiles go into the OPEN page (its bytes on the CPU), which becomes a new texture at the end of a flush that changed
+///   it; a full page is SEALED (CPU bytes dropped). A new page beyond the budget EVICTS the least-recently-wanted sealed
+///   page (none of its titles wanted in the current pass): its sprites are hidden (they are off screen or faded out)
+///   and rebuild when wanted again.
+/// - If every page holds a title wanted right now, the title draws from per-glyph sprites instead (never blank).
 final class TitleTiles {
     static let shared = TitleTiles()
 
@@ -369,60 +399,119 @@ final class TitleTiles {
         #endif
     }()
 
-    /// A placed tile: its slot in a batch texture, and the quad in em around the title's origin (× point size).
+    /// Fix-up F1a — tile resolution as a fraction of the atlas's texels per em. DEBUG `-TitleTileScale <f>` overrides it.
+    static let texelScale: CGFloat = {
+        #if DEBUG
+        let v = UserDefaults.standard.double(forKey: "TitleTileScale")
+        if v > 0 { return CGFloat(v) }
+        #endif
+        return 0.5   // fix-up F1a: the smallest tested scale inside the crop gate (0.375 failed at zoom 4)
+    }()
+
+    /// Fix-up F1b — the budget: `maxPages` × `pageSize`² × 4 bytes. DEBUG `-TitleTilePages <n>` / `-TitleTilePageSize <px>`.
+    static let pageSize: Int = {
+        #if DEBUG
+        let v = UserDefaults.standard.integer(forKey: "TitleTilePageSize")
+        if v > 0 { return v }
+        #endif
+        return 512   // 1 MB a page: a page rebuild stays well under a millisecond
+    }()
+    static let maxPages: Int = {
+        #if DEBUG
+        let v = UserDefaults.standard.integer(forKey: "TitleTilePages")
+        if v > 0 { return v }
+        #endif
+        return 16    // 16 × 1 MB = the 16 MB budget
+    }()
+    static var budgetBytes: Int { maxPages * pageSize * pageSize * 4 }
+
+    /// A title's tile: its layout (always kept, small) and, while resident, its slot in a page.
     final class Tile {
         let emRect: CGRect
-        fileprivate let slot: (x: Int, y: Int, w: Int, h: Int)
-        fileprivate(set) var texture: SKTexture?          // nil until its batch is flushed
-        fileprivate init(emRect: CGRect, slot: (x: Int, y: Int, w: Int, h: Int)) { self.emRect = emRect; self.slot = slot }
+        fileprivate let job: FillJob
+        fileprivate let lines: [String], font: MSDFFont, midCaps: CGFloat
+        fileprivate weak var page: Page?
+        fileprivate var slot = (x: 0, y: 0)
+        fileprivate(set) var texture: SKTexture?
+        fileprivate var lastWanted = -1
+        fileprivate var queued = false, urgent = false, overflowed = false
+        fileprivate var priority: CGFloat = 0
+        fileprivate var sprites: [WeakSprite] = []
+        fileprivate init(emRect: CGRect, job: FillJob, lines: [String], font: MSDFFont, midCaps: CGFloat) {
+            self.emRect = emRect; self.job = job; self.lines = lines; self.font = font; self.midCaps = midCaps
+        }
     }
 
-    private final class WeakSprite { weak var node: SKSpriteNode?; init(_ n: SKSpriteNode) { node = n } }
+    fileprivate final class WeakSprite { weak var node: SKSpriteNode?; init(_ n: SKSpriteNode) { node = n } }
 
-    /// The open batch: a shelf packer over a fixed width, rows bottom-up (the texture's v = 0 row first).
-    private final class Batch {
-        static let width = 2048
-        var bytes: [UInt8] = []
-        var rows = 0                          // allocated rows (bytes.count = width × rows × 4)
+    /// One page: a shelf packer over `pageSize`², rows bottom-up (the texture's v = 0 row first).
+    fileprivate final class Page {
+        let size: Int
+        var bytes: [UInt8]? = nil              // the CPU copy, only while the page is open
         var x = 0, y = 0, shelfH = 0
         var tiles: [Tile] = []
-        var jobs: [FillJob] = []
-        var waiting: [(WeakSprite, Tile)] = []
-        func place(_ w: Int, _ h: Int) -> (Int, Int) {
-            let gw = w + 2, gh = h + 2       // a clear 1-texel gutter all round
-            if x + gw > Self.width { x = 0; y += shelfH; shelfH = 0 }
+        var texture: SKTexture?
+        var dirty = false
+        init(size: Int) { self.size = size; bytes = [UInt8](repeating: 0, count: size * size * 4) }
+        var lastWanted: Int { tiles.reduce(-1) { max($0, $1.lastWanted) } }
+        func canPlace(_ w: Int, _ h: Int) -> Bool {
+            let gw = w + 2, gh = h + 2
+            guard gw <= size, gh <= size else { return false }
+            return x + gw <= size ? y + max(shelfH, gh) <= size : y + shelfH + gh <= size
+        }
+        /// A w × h slot with a clear 1-texel gutter all round, or nil when the page is full.
+        func place(_ w: Int, _ h: Int) -> (Int, Int)? {
+            let gw = w + 2, gh = h + 2
+            guard gw <= size, gh <= size else { return nil }
+            if x + gw > size { x = 0; y += shelfH; shelfH = 0 }
+            guard y + gh <= size else { return nil }
             let at = (x + 1, y + 1)
             x += gw; shelfH = max(shelfH, gh)
-            let need = y + shelfH
-            if need > rows {
-                let grow = max(need, rows * 2, 256)
-                bytes.append(contentsOf: [UInt8](repeating: 0, count: (grow - rows) * Self.width * 4))
-                rows = grow
-            }
             return at
         }
-        var usedRows: Int { y + shelfH }
+        func reset() {
+            for t in tiles {
+                t.texture = nil; t.page = nil
+                for ws in t.sprites { if let n = ws.node { n.texture = nil; n.isHidden = true } }
+            }
+            tiles = []; texture = nil; dirty = false
+            x = 0; y = 0; shelfH = 0
+            bytes = [UInt8](repeating: 0, count: size * size * 4)
+        }
     }
 
     private var cache: [String: Tile] = [:]           // face | midCaps | lines
-    private var batch: Batch?
-    private var flushScheduled = false
+    private var pages: [Page] = []
+    private var open: Page?
+    private var queue: [Tile] = []
+    private var stamp = 0
+    /// Set when a title is attached to a tile that isn't resident: the Map runs its orb pass next frame to want it.
+    private(set) var needsPass = false
+    /// Wanted tiles not yet built (the Map stays awake until they are).
+    var pending: Bool { !queue.isEmpty }
+    /// Budget for the non-urgent (ahead-of-time) builds per flush.
+    static let aheadBudgetMS: Double = 1.5
+
     #if DEBUG
-    private var texelsTotal = 0, textures = 0, composeMS = 0.0
+    private(set) var stats = Stats()
+    struct Stats {
+        var built = 0, urgentBuilt = 0, lateBuilt = 0, evictions = 0, compactions = 0, overflows = 0, flushes = 0
+        var maxFlushMS = 0.0, maxPanFlushMS = 0.0, totalFlushMS = 0.0
+        var lastLog = 0.0, windowMax = 0.0, windowBuilt = 0
+        var maxFillMS = 0.0, maxTexMS = 0.0, maxPagesPerFlush = 0
+    }
+    private var loaded = false                       // the first urgent flush (the Map's first frame) is the load
+    func resetStats() { stats = Stats(); loaded = true }
     #endif
 
-    /// The tile for `lines` in `font` (built on first use), or nil → the caller falls back to per-glyph sprites.
+    /// The tile for `lines` in `font` (its layout; texels are built when wanted), or nil → per-glyph sprites.
     func tile(lines: [String], font: MSDFFont, midCaps: CGFloat) -> Tile? {
         let key = font.atlasName + "|" + String(describing: midCaps) + "|" + lines.joined(separator: "\n")
         if let t = cache[key] { return t }
         guard font.pixelW > 0 else { return nil }
-        #if DEBUG
-        let t0 = CACurrentMediaTime()
-        #endif
 
         // The glyph quads exactly as the per-glyph path lays them out, in em (× pointSize there).
-        struct Quad { let em: CGRect; let atlas: CGRect }   // atlas: px, y-from-bottom
-        var quads: [Quad] = []
+        var quads: [(em: CGRect, atlas: CGRect)] = []
         let lineSpacing = font.lineHeightEm
         let topOffset = CGFloat(lines.count - 1) / 2 * lineSpacing
         for (li, line) in lines.enumerated() {
@@ -435,47 +524,229 @@ final class TitleTiles {
                 let w = CGFloat(pb.right - pb.left), h = CGFloat(pb.top - pb.bottom)
                 let cx = penX + CGFloat(pb.left + pb.right) / 2
                 let cy = CGFloat(pb.top + pb.bottom) / 2 - midCaps + lineY
-                quads.append(Quad(em: CGRect(x: cx - w / 2, y: cy - h / 2, width: w, height: h),
-                                  atlas: CGRect(x: ab.left, y: ab.bottom, width: ab.right - ab.left, height: ab.top - ab.bottom)))
+                quads.append((CGRect(x: cx - w / 2, y: cy - h / 2, width: w, height: h),
+                              CGRect(x: ab.left, y: ab.bottom, width: ab.right - ab.left, height: ab.top - ab.bottom)))
             }
         }
         guard let first = quads.first else { return nil }
         let bbox = quads.dropFirst().reduce(first.em) { $0.union($1.em) }
 
         // Tile grid: s texels per em plus a 1-texel margin; texel (i, j) centre = origin + (i + ½, j + ½) / s.
-        let s = font.atlasSize
+        // Fix-up F1a — s is a fraction of the atlas's own texels per em (`texelScale`). The tile still holds the atlas's
+        // distance values, so the shader's screen px range (computed in atlas units) is unchanged.
+        let s = font.atlasSize * Self.texelScale
         let tw = Int((bbox.width * s).rounded(.up)) + 2, th = Int((bbox.height * s).rounded(.up)) + 2
-        guard tw + 2 <= Batch.width else { return nil }
+        guard tw + 2 <= Self.pageSize, th + 2 <= Self.pageSize else { return nil }
         let ox = bbox.minX - 1 / s, oy = bbox.minY - 1 / s
-        let b = batch ?? Batch()
-        batch = b
-        let at = b.place(tw, th)
-
-        // The texels are filled at the flush, all of the batch's tiles in parallel (disjoint slots).
-        b.jobs.append(FillJob(font: font, quads: quads.map { ($0.em, $0.atlas) }, ox: ox, oy: oy, s: s, tw: tw, th: th, at: at))
-        let t = Tile(emRect: CGRect(x: ox, y: oy, width: CGFloat(tw) / s, height: CGFloat(th) / s), slot: (at.0, at.1, tw, th))
-        b.tiles.append(t)
+        let job = FillJob(font: font, quads: quads, ox: ox, oy: oy, s: s, tw: tw, th: th)
+        let t = Tile(emRect: CGRect(x: ox, y: oy, width: CGFloat(tw) / s, height: CGFloat(th) / s), job: job,
+                     lines: lines, font: font, midCaps: midCaps)
         cache[key] = t
-        scheduleFlush()
-        #if DEBUG
-        texelsTotal += tw * th; composeMS += (CACurrentMediaTime() - t0) * 1000   // + the parallel fill, at the flush
-        #endif
+        if cache.count > pruneAt { pruneCache() }
         return t
     }
 
-    /// One tile's texels to fill: its glyph quads (em rect, atlas rect in px y-from-bottom) and its slot.
+    /// Show `sprite` with `tile` now if it is resident; otherwise hidden until it is (the next orb pass wants it).
+    func attach(_ sprite: SKSpriteNode, to tile: Tile) {
+        tile.sprites.removeAll { $0.node == nil }
+        tile.sprites.append(WeakSprite(sprite))
+        if tile.overflowed { sprite.isHidden = true; fallBack(sprite, tile); return }
+        if let tex = tile.texture { sprite.texture = tex; sprite.isHidden = false; return }
+        sprite.isHidden = true
+        needsPass = true
+    }
+
+    /// The orb pass starts: titles wanted from here on carry the new stamp.
+    func beginPass() { stamp += 1; needsPass = false }
+
+    func want(_ tile: Tile, urgent: Bool, priority: CGFloat) {
+        tile.lastWanted = stamp
+        guard tile.texture == nil, !tile.overflowed else { return }
+        tile.priority = priority
+        tile.urgent = tile.urgent || urgent
+        if !tile.queued { tile.queued = true; queue.append(tile) }
+    }
+
+    /// One fill: a tile and where it goes.
     fileprivate struct FillJob {
         let font: MSDFFont
         let quads: [(em: CGRect, atlas: CGRect)]
         let ox: CGFloat, oy: CGFloat, s: CGFloat
         let tw: Int, th: Int
-        let at: (Int, Int)
+    }
+
+    /// Build the wanted tiles: every urgent one (drawn this frame), then the rest nearest first within
+    /// `aheadBudgetMS`; then turn each changed page into a texture and show the new tiles. Called twice a Map frame
+    /// (top of update, and right after the orb pass); a no-op with nothing queued.
+    func flush() {
+        guard !queue.isEmpty else { return }
+        let t0 = CACurrentMediaTime()
+        // Drop tiles no longer wanted (scrolled past before they were built).
+        queue.removeAll { t in
+            let stale = t.lastWanted < stamp || t.texture != nil || t.overflowed
+            if stale { t.queued = false; t.urgent = false }
+            return stale
+        }
+        guard !queue.isEmpty else { return }
+        queue.sort { a, b in a.urgent != b.urgent ? a.urgent : a.priority < b.priority }
+
+        var built: [Tile] = []
+        var touched: [ObjectIdentifier: Page] = [:]
+        var urgentCount = 0
+        // Fill in small groups (parallel within a group); stop the ahead-of-time builds at the time budget.
+        var k = 0
+        while k < queue.count {
+            let isUrgent = queue[k].urgent
+            if !isUrgent && (CACurrentMediaTime() - t0) * 1000 > Self.aheadBudgetMS { break }
+            var group: [(Tile, Page, (Int, Int))] = []
+            while k < queue.count, group.count < 8, queue[k].urgent == isUrgent {
+                let t = queue[k]; k += 1
+                t.queued = false
+                guard let (page, rescued) = makeRoom(for: t, touched: touched) else { overflow(t); continue }
+                func put(_ x: Tile) -> Bool {
+                    guard let at = page.place(x.job.tw, x.job.th) else { return false }
+                    x.page = page; x.slot = (at.0, at.1)
+                    page.tiles.append(x)
+                    page.dirty = true   // keeps its CPU bytes until this flush has built its texture, even if it fills up
+                    group.append((x, page, at))
+                    touched[ObjectIdentifier(page)] = page
+                    return true
+                }
+                // A compacted page's titles that are wanted right now go back in first, in this same flush (no blank frame).
+                for r in rescued where !put(r) { overflow(r) }
+                if !put(t) { overflow(t) }
+            }
+            // Pages in this group all have their CPU bytes (open, or opened by `placement`).
+            let byPage = Dictionary(grouping: group, by: { ObjectIdentifier($0.1) })
+            for (_, items) in byPage {
+                let page = items[0].1
+                page.bytes!.withUnsafeMutableBufferPointer { buf in
+                    let dst = buf.baseAddress!
+                    DispatchQueue.concurrentPerform(iterations: items.count) {
+                        Self.fill(items[$0].0.job, at: items[$0].2, into: dst, stride: page.size)
+                    }
+                }
+                page.dirty = true
+            }
+            for (t, _, _) in group { built.append(t); if t.urgent { urgentCount += 1 }; t.urgent = false }
+        }
+        queue.removeFirst(min(k, queue.count))
+
+        #if DEBUG
+        let tTex = CACurrentMediaTime()
+        stats.maxFillMS = max(stats.maxFillMS, (tTex - t0) * 1000)
+        #endif
+        // Each changed page → one new texture (fixed size, so sub-rects stay put); re-point all its tiles' sprites.
+        for (_, page) in touched where page.dirty {
+            let n = page.size
+            let tex = SKTexture(data: Data(page.bytes!), size: CGSize(width: n, height: n))
+            tex.filteringMode = .linear
+            tex.usesMipmaps = false
+            page.texture = tex
+            page.dirty = false
+            for t in page.tiles {
+                let r = CGRect(x: CGFloat(t.slot.x) / CGFloat(n), y: CGFloat(t.slot.y) / CGFloat(n),
+                               width: CGFloat(t.job.tw) / CGFloat(n), height: CGFloat(t.job.th) / CGFloat(n))
+                let sub = SKTexture(rect: r, in: tex)
+                sub.filteringMode = .linear
+                t.texture = sub
+                for ws in t.sprites { if let node = ws.node { node.texture = sub; node.isHidden = false } }
+            }
+            if page !== open { page.bytes = nil }   // sealed while this flush filled it
+        }
+
+        #if DEBUG
+        stats.maxTexMS = max(stats.maxTexMS, (CACurrentMediaTime() - tTex) * 1000)
+        stats.maxPagesPerFlush = max(stats.maxPagesPerFlush, touched.count)
+        let ms = (CACurrentMediaTime() - t0) * 1000
+        stats.flushes += 1; stats.built += built.count; stats.urgentBuilt += urgentCount
+        stats.totalFlushMS += ms; stats.maxFlushMS = max(stats.maxFlushMS, ms)
+        if loaded { stats.lateBuilt += urgentCount; stats.maxPanFlushMS = max(stats.maxPanFlushMS, ms) }
+        else if urgentCount > 0 { loaded = true }
+        stats.windowMax = max(stats.windowMax, ms); stats.windowBuilt += built.count
+        if ProcessInfo.processInfo.arguments.contains("-TitleTilesLog") {
+            let now = CACurrentMediaTime()
+            if now - stats.lastLog >= 1 {
+                NSLog("[TITLETILES] 1s: built=%d maxFlush=%.2f ms · totals: built=%d urgent=%d late=%d evictions=%d compactions=%d overflows=%d maxPanFlush=%.2f ms maxFlush=%.2f ms (fill %.2f, textures %.2f, pages/flush %d) · pages=%d/%d (%.1f MB of %.1f) resident=%d queue=%d cache=%d",
+                      stats.windowBuilt, stats.windowMax, stats.built, stats.urgentBuilt, stats.lateBuilt, stats.evictions, stats.compactions,
+                      stats.overflows, stats.maxPanFlushMS, stats.maxFlushMS, stats.maxFillMS, stats.maxTexMS, stats.maxPagesPerFlush, pages.count, Self.maxPages,
+                      Double(pages.count * Self.pageSize * Self.pageSize * 4) / 1_048_576,
+                      Double(Self.budgetBytes) / 1_048_576, pages.reduce(0) { $0 + $1.tiles.count }, queue.count, cache.count)
+                stats.lastLog = now; stats.windowMax = 0; stats.windowBuilt = 0
+            }
+        }
+        #endif
+    }
+
+    /// Make the open page one that can take `t`: the current open page, else a new page within the budget, else the
+    /// least-recently-wanted page that nothing in the current pass wants (evicted), else — every page holds a title wanted
+    /// right now — the page with the fewest wanted titles (at most half of its titles), COMPACTED: emptied, and its wanted
+    /// titles returned to be put back first. nil = no room (the title draws per-glyph). Pages this flush already filled
+    /// are never chosen.
+    private func makeRoom(for t: Tile, touched: [ObjectIdentifier: Page]) -> (Page, [Tile])? {
+        if let p = open, p.canPlace(t.job.tw, t.job.th) { return (p, []) }
+        // The open page is full: seal it (if this flush filled it, its bytes go once its texture is built).
+        if let p = open, !p.dirty { p.bytes = nil }
+        open = nil
+        var rescued: [Tile] = []
+        let page: Page
+        if pages.count < Self.maxPages {
+            page = Page(size: Self.pageSize); pages.append(page)
+        } else {
+            let free = pages.filter { touched[ObjectIdentifier($0)] == nil }
+            if let lru = free.map({ ($0, $0.lastWanted) }).filter({ $0.1 < stamp }).min(by: { $0.1 < $1.1 })?.0 {
+                lru.reset()
+                #if DEBUG
+                stats.evictions += 1
+                #endif
+                page = lru
+            } else {
+                let scored = free.map { p in (p, p.tiles.filter { $0.lastWanted >= stamp }) }
+                    .filter { $0.1.count * 2 <= $0.0.tiles.count }
+                guard let (p, keep) = scored.min(by: { $0.1.count < $1.1.count }) else { return nil }
+                p.reset()
+                #if DEBUG
+                stats.compactions += 1
+                #endif
+                rescued = keep
+                page = p
+            }
+        }
+        open = page
+        return (page, rescued)
+    }
+
+    /// No page can take `t` right now: its titles draw from per-glyph sprites (the font atlas), so none is blank.
+    private func overflow(_ t: Tile) {
+        t.overflowed = true; t.urgent = false
+        #if DEBUG
+        stats.overflows += 1
+        #endif
+        for ws in t.sprites { if let n = ws.node { fallBack(n, t) } }
+    }
+
+    private func fallBack(_ sprite: SKSpriteNode, _ t: Tile) {
+        guard let container = sprite.parent, container.userData?["perGlyphFallback"] == nil,
+              let pt = container.userData?[MSDFLabel.pointSizeKey] as? CGFloat else { return }
+        container.userData?["perGlyphFallback"] = true
+        sprite.isHidden = true
+        let color = sprite.value(forAttributeNamed: "a_glyph_color")?.vectorFloat4Value ?? vector_float4(1, 1, 1, 1)
+        MSDFLabel.addGlyphSprites(to: container, lines: t.lines, pointSize: pt, font: t.font, midCaps: t.midCaps,
+                                  colorVec: color)
+    }
+
+    /// Forget layouts no sprite shows any more (old faces, deleted or renamed titles). The next prune waits until the
+    /// cache has doubled, so a large library never prunes per title.
+    private var pruneAt = 4096
+    private func pruneCache() {
+        cache = cache.filter { _, t in t.page != nil || t.sprites.contains { $0.node != nil } }
+        pruneAt = max(4096, cache.count * 2)
     }
 
     /// Fill one tile's slot. Thread-safe across jobs: each writes only its own slot (+ its own owner map).
-    private static func fill(_ job: FillJob, into dst: UnsafeMutablePointer<UInt8>) {
-        let font = job.font, quads = job.quads, ox = job.ox, oy = job.oy, s = job.s, tw = job.tw, th = job.th, at = job.at
-        let aw = font.pixelW, ah = font.pixelH, W = Batch.width
+    private static func fill(_ job: FillJob, at: (Int, Int), into dst: UnsafeMutablePointer<UInt8>, stride W: Int) {
+        let font = job.font, quads = job.quads, ox = job.ox, oy = job.oy, s = job.s, tw = job.tw, th = job.th
+        let aw = font.pixelW, ah = font.pixelH
         var owner = [Int16](repeating: -1, count: tw * th)   // which glyph's field each tile texel holds
         @inline(__always) func med(_ a: Int32, _ b: Int32, _ c: Int32) -> Int32 { max(min(a, b), min(max(a, b), c)) }
         font.pixels.withUnsafeBufferPointer { srcBuf in
@@ -561,62 +832,4 @@ final class TitleTiles {
         }
     }
 
-    /// Show `sprite` with `tile`: now if its batch is flushed, else hidden until the flush points it at the texture.
-    func attach(_ sprite: SKSpriteNode, to tile: Tile) {
-        if let tex = tile.texture { sprite.texture = tex; return }
-        sprite.isHidden = true
-        batch?.waiting.append((WeakSprite(sprite), tile))
-    }
-
-
-    private func scheduleFlush() {
-        guard !flushScheduled else { return }
-        flushScheduled = true
-        DispatchQueue.main.async { [weak self] in self?.flush() }
-    }
-
-    /// Turn the open batch into one texture (W × used rows), point its tiles and waiting sprites at it, drop the bytes.
-    /// Called at the top of every Map frame (a no-op without a batch) and from the main queue.
-    func flush() {
-        flushScheduled = false
-        guard let b = batch, !b.tiles.isEmpty else { return }
-        batch = nil
-        let w = Batch.width, h = max(b.usedRows, 1)
-        #if DEBUG
-        let f0 = CACurrentMediaTime()
-        #endif
-        let jobs = b.jobs
-        b.bytes.withUnsafeMutableBufferPointer { buf in
-            let dst = buf.baseAddress!
-            DispatchQueue.concurrentPerform(iterations: jobs.count) { Self.fill(jobs[$0], into: dst) }
-        }
-        #if DEBUG
-        composeMS += (CACurrentMediaTime() - f0) * 1000
-        #endif
-        let data = Data(b.bytes[0..<(w * h * 4)])
-        let tex = SKTexture(data: data, size: CGSize(width: w, height: h))   // rows from v = 0 (bottom), as packed
-        tex.filteringMode = .linear
-        tex.usesMipmaps = false
-        for t in b.tiles {
-            let r = CGRect(x: CGFloat(t.slot.x) / CGFloat(w), y: CGFloat(t.slot.y) / CGFloat(h),
-                           width: CGFloat(t.slot.w) / CGFloat(w), height: CGFloat(t.slot.h) / CGFloat(h))
-            let sub = SKTexture(rect: r, in: tex)
-            sub.filteringMode = .linear
-            t.texture = sub
-        }
-        for (ws, t) in b.waiting { if let n = ws.node { n.texture = t.texture; n.isHidden = false } }
-        // A face switch rebuilds every title in the new face: forget the other faces' tiles, so their batch texture is
-        // freed once no sprite shows it (sprites hold their own texture references until they are rebuilt).
-        let faces = Set(b.jobs.map { $0.font.atlasName })
-        if faces.count == 1, let face = faces.first, b.tiles.count > 1 {
-            cache = cache.filter { $0.key.hasPrefix(face + "|") }
-        }
-        #if DEBUG
-        textures += 1
-        if ProcessInfo.processInfo.arguments.contains("-TitleTilesLog") {
-            NSLog("[TITLETILES] flush tiles=%d texture=%dx%d (%.1f MB) · total textures=%d tiles=%d texels=%d compose=%.0f ms",
-                  b.tiles.count, w, h, Double(w * h * 4) / 1_048_576, textures, cache.count, texelsTotal, composeMS)
-        }
-        #endif
-    }
 }

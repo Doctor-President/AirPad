@@ -471,6 +471,12 @@ final class CorpusPhysicsScene: SKScene {
     ) {
         wakeFromRest("syncNodes")   // R1
         #if DEBUG
+        // Fix-up F1 — `-MapSyntheticEntries <n>`: tile the incoming library (with its layout) into a grid of copies up to
+        // n entries, each copy's titles suffixed so every title is its own tile. Same density as the source library.
+        var nodes = nodes, layoutPositions = layoutPositions, nodeRadii = nodeRadii
+        Self.syntheticLibrary(&nodes, &layoutPositions, &nodeRadii)
+        #endif
+        #if DEBUG
         let syncT0 = CACurrentMediaTime()   // R2 — `-TitleTilesLog`: what a sync costs on the main thread, tiles vs per-glyph
         defer {
             if ProcessInfo.processInfo.arguments.contains("-TitleTilesLog") {
@@ -553,6 +559,41 @@ final class CorpusPhysicsScene: SKScene {
         // correct fingerprint when they disengage.
         captureRestingState()
     }
+
+    #if DEBUG
+    private static let syntheticTarget: Int = UserDefaults.standard.integer(forKey: "MapSyntheticEntries")
+
+    private static func syntheticLibrary(_ nodes: inout [Node], _ positions: inout [String: CanvasPosition],
+                                         _ radii: inout [String: CGFloat]) {
+        let target = syntheticTarget, base = nodes.filter { positions[$0.id] != nil }
+        guard target > nodes.count, !base.isEmpty else { return }
+        let xs = base.compactMap { positions[$0.id]?.x }, ys = base.compactMap { positions[$0.id]?.y }
+        let w = (xs.max()! - xs.min()!) * 1.08 + 200, h = (ys.max()! - ys.min()!) * 1.08 + 200
+        let copies = Int((Double(target - nodes.count) / Double(base.count)).rounded(.up))
+        let cols = Int(Double(copies + 1).squareRoot().rounded(.up))
+        let enc = JSONEncoder(), dec = JSONDecoder()
+        var added = 0
+        outer: for c in 1...copies {
+            let dx = w * Double(c % cols), dy = h * Double(c / cols)
+            for n in base {
+                guard nodes.count < target else { break outer }
+                guard let data = try? enc.encode(n),
+                      var obj = try? JSONSerialization.jsonObject(with: data) as? [String: Any] else { continue }
+                let id = n.id + "-syn\(c)"
+                obj["id"] = id
+                obj["title"] = (n.title.isEmpty ? "Entry" : n.title) + " \(c + 1)"
+                guard let d2 = try? JSONSerialization.data(withJSONObject: obj), let copy = try? dec.decode(Node.self, from: d2)
+                else { continue }
+                nodes.append(copy)
+                let p = positions[n.id]!
+                positions[id] = CanvasPosition(x: p.x + dx, y: p.y + dy)
+                if let r = radii[n.id] { radii[id] = r }
+                added += 1
+            }
+        }
+        NSLog("[SYNTHETIC] +%d entries → %d (copies=%d grid=%d cols)", added, nodes.count, copies, cols)
+    }
+    #endif
 
     /// Populate `nodeRestingPositions` / `nodeRestingScales` from the current layout's
     /// target outputs. Called at the end of every `syncNodes` (initial sync and recompute).
@@ -755,12 +796,28 @@ final class CorpusPhysicsScene: SKScene {
         // POSITIONS, which this pass never reads, so skipping is safe while the band micro-settles.)
         let camStill = abs(cameraScale - lastRampCameraScale) < 0.0005
             && abs(camPos.x - lastRampCameraPos.x) < 0.01 && abs(camPos.y - lastRampCameraPos.y) < 0.01
-        if camStill && activeCardID == nil && nodeSprites.count == lastOrbScaleCount { return }
+        if camStill && activeCardID == nil && nodeSprites.count == lastOrbScaleCount && !TitleTiles.shared.needsPass { return }
         lastRampCameraScale = cameraScale
         lastRampCameraPos = camPos
         lastOrbScaleCount = nodeSprites.count
         let lod = LensTuning.labelLOD
         let fadeHi = lod * 1.5
+        // Fix-up F1b — which titles need their tile: in view or within `titleWantMargin` screens of it, and at or past
+        // `titleWantPreFade` × the LOD fade's start (built before they fade in).
+        TitleTiles.shared.beginPass()
+        // The want box: the screen plus `titleWantMargin` all round, stretched along the camera's motion by
+        // `titleWantLookahead` seconds of it (screen pt, signed, relative to the camera).
+        let wantNow = CACurrentMediaTime()
+        let wantDT = wantNow - titleWantLastT
+        var lookX: CGFloat = 0, lookY: CGFloat = 0
+        if wantDT > 0, wantDT < 0.25 {
+            lookX = (camPos.x - titleWantLastCam.x) / CGFloat(wantDT) * Self.titleWantLookahead / max(cameraScale, 0.0001)
+            lookY = (camPos.y - titleWantLastCam.y) / CGFloat(wantDT) * Self.titleWantLookahead / max(cameraScale, 0.0001)
+        }
+        titleWantLastT = wantNow; titleWantLastCam = camPos
+        let mW = size.width * Self.titleWantMargin, mH = size.height * Self.titleWantMargin
+        let wantX0 = -size.width / 2 - mW + min(lookX, 0), wantX1 = size.width / 2 + mW + max(lookX, 0)
+        let wantY0 = -size.height / 2 - mH + min(lookY, 0), wantY1 = size.height / 2 + mH + max(lookY, 0)
         // Brief AU — READING-MODE focus weight (library-size-independent). Driver = the average ON-SCREEN
         // title LOD (last frame's cached lodFade; a 1-frame lag is imperceptible). onset/ramp remap it.
         // Also publish the driver + camera scale + median on-screen orb radius (pt) for the tuner Copy.
@@ -844,9 +901,27 @@ final class CorpusPhysicsScene: SKScene {
             if MSDFLabel.isGlyphContainer(title) {
                 MSDFLabel.applyLOD(container: title, lodAlpha: lodFade,
                                    worldToScreenPt: worldToScreen, contentScale: glyphContentScale)
+                if onScreen >= lod * Self.titleWantPreFade {
+                    let home = nodeRestingPositions[nodeID] ?? sprite.position
+                    let dx = (home.x - camPos.x) / max(cameraScale, 0.0001), dy = (home.y - camPos.y) / max(cameraScale, 0.0001)
+                    let sx = abs(dx), sy = abs(dy)
+                    let r = onScreen / 2
+                    if dx >= wantX0 - r, dx <= wantX1 + r, dy >= wantY0 - r, dy <= wantY1 + r {
+                        let visible = lodFade > 0 && sx <= size.width / 2 + r && sy <= size.height / 2 + r
+                        // Nearest the screen first; titles still below the fade come after those already fading.
+                        let outside = max(sx - size.width / 2, 0) / size.width + max(sy - size.height / 2, 0) / size.height
+                        MSDFLabel.wantTile(title, urgent: visible, priority: outside + (lodFade > 0 ? 0 : 1))
+                    }
+                }
             }
         }
     }
+
+    /// Fix-up F1b — the title tile look-ahead: 15% of the screen beyond each edge plus 0.35 s of the camera's motion
+    /// ahead, and from 75% of the LOD fade's start.
+    static let titleWantMargin: CGFloat = 0.15
+    static let titleWantLookahead: CGFloat = 0.35
+    static let titleWantPreFade: CGFloat = 0.75
 
     /// Cached `view.contentScaleFactor` for MSDF smoothing (device px per point).
     private var glyphContentScale: CGFloat { view?.contentScaleFactor ?? 3.0 }
@@ -1775,6 +1850,8 @@ final class CorpusPhysicsScene: SKScene {
     // Annulus browse tick — fires via MapHaptics (the set's graze style); throttled
     // so fast pans don't machine-gun it.
     private var annulusNearestID: String? = nil
+    private var titleWantLastT: CFTimeInterval = 0          // fix-up F1b — the camera's motion for the tile look-ahead
+    private var titleWantLastCam: CGPoint = .zero
     private var lastAnnulusHapticTime: TimeInterval = 0
     private let annulusHapticThrottle: TimeInterval = 0.05
 
@@ -2047,6 +2124,10 @@ final class CorpusPhysicsScene: SKScene {
         if cameraNode.hasActions() { return "cameraAction" }
         if !groundInkQueue.isEmpty { return "groundInk" }
         if regionLabelsFading { return "labelFade" }
+        if TitleTiles.shared.pending || TitleTiles.shared.needsPass { return "titleTiles" }   // fix-up F1b
+        #if DEBUG
+        if TitleSweep.on, !TitleSweep.done { return "titleSweep" }
+        #endif
         for (_, n) in nodeSprites where n.hasActions() { return "orbAction" }
         for n in children where n !== cameraNode && n.hasActions() { return "sceneAction" }   // ripples, über-node fades
         #if DEBUG || PANBENCH
@@ -2369,6 +2450,9 @@ final class CorpusPhysicsScene: SKScene {
         let pbT0 = CACurrentMediaTime(); panBenchTick(currentTime)
         defer { panBenchEnd(pbT0) }
         #endif
+        #if DEBUG
+        titleSweepTick(currentTime)   // fix-up F1 — `-TitleSweep`
+        #endif
         // Frame delta (s), captured before the per-frame passes consume it. Clamp against a stall.
         frameDT = lastUpdateTime > 0 ? min(max(currentTime - lastUpdateTime, 0), 0.1) : 1.0 / 120.0
 
@@ -2495,6 +2579,10 @@ final class CorpusPhysicsScene: SKScene {
         // machine is retired; displacement is per-frame off restingPos (never mutates
         // the base layout), so nodes settle home as they leave the band.
         applyOrbScales()
+        TitleTiles.shared.flush()   // fix-up F1b — build the tiles this pass wants before the frame draws
+        #if DEBUG
+        titleSweepCheck()
+        #endif
         applyBandRelaxation()
         syncGlassOrbs()        // live-40 — Glass orbs (live-40: tuner only; pro-build: every build)
         #if DEBUG
@@ -7292,3 +7380,88 @@ extension CorpusPhysicsScene {
     }
 }
 #endif
+
+#if DEBUG
+// MARK: - Fix-up F1 — `-TitleSweep`: pan the whole Map in rows at a reading zoom; count blank titles every frame
+//
+// `-TitleSweep` (after `-TitleSweepDelay` s, default 20): camera scale `-TitleSweepScale` (default: keep the current
+// framing), rows a screen apart across the bounding box of every orb, at `-TitleSweepSpeed` screen pt/s (default 2600,
+// PanBench's flick speed). Every frame: titles drawn (on screen, LOD fade > 0) with no texture → `blank`.
+enum TitleSweep {
+    static let on = ProcessInfo.processInfo.arguments.contains("-TitleSweep")
+    static var started = false, done = false
+    static var path: [CGPoint] = [], seg = 0, segT = 0.0, lastT = 0.0, t0 = 0.0
+    static var frames = 0, blankFrames = 0, blankTitles = 0, maxBlank = 0, drawnMax = 0, lastLog = 0.0
+    static func arg(_ k: String) -> Double? { Double(UserDefaults.standard.string(forKey: k) ?? "") }
+}
+
+extension CorpusPhysicsScene {
+    func titleSweepTick(_ t: TimeInterval) {
+        guard TitleSweep.on, !TitleSweep.done else { return }
+        if !TitleSweep.started {
+            if TitleSweep.t0 == 0 { TitleSweep.t0 = CACurrentMediaTime() }
+            guard CACurrentMediaTime() - TitleSweep.t0 > (TitleSweep.arg("TitleSweepDelay") ?? 20), !nodeRestingPositions.isEmpty
+            else { return }
+            if let sc = TitleSweep.arg("TitleSweepScale") { cameraNode.setScale(CGFloat(sc)) }
+            let cs = cameraNode.xScale
+            let xs = nodeRestingPositions.values.map(\.x), ys = nodeRestingPositions.values.map(\.y)
+            let minX = xs.min()!, maxX = xs.max()!, minY = ys.min()!, maxY = ys.max()!
+            let rowH = size.height * cs
+            var y = maxY, left = true
+            var pts: [CGPoint] = []
+            while y >= minY - rowH / 2 {
+                pts.append(CGPoint(x: left ? minX : maxX, y: y)); pts.append(CGPoint(x: left ? maxX : minX, y: y))
+                y -= rowH; left.toggle()
+            }
+            TitleSweep.path = pts; TitleSweep.seg = 0; TitleSweep.segT = 0; TitleSweep.lastT = t
+            cameraNode.position = pts[0]
+            TitleSweep.started = true
+            TitleTiles.shared.resetStats()   // count builds, late tiles and flush times over the sweep only
+            wakeMap()
+            NSLog("[TITLESWEEP] start scale=%.3f rows=%d box=%.0fx%.0f orbs=%d", cs, pts.count / 2, maxX - minX, maxY - minY, nodeSprites.count)
+            return
+        }
+        let dt = min(t - TitleSweep.lastT, 0.1); TitleSweep.lastT = t
+        let speed = (TitleSweep.arg("TitleSweepSpeed") ?? 2600) * Double(cameraNode.xScale)   // world pt/s
+        var remaining = speed * dt
+        var pos = cameraNode.position
+        while remaining > 0, TitleSweep.seg + 1 < TitleSweep.path.count {
+            let b = TitleSweep.path[TitleSweep.seg + 1]
+            let d = hypot(b.x - pos.x, b.y - pos.y)
+            if d <= remaining { pos = b; remaining -= d; TitleSweep.seg += 1 }
+            else { pos.x += (b.x - pos.x) / d * remaining; pos.y += (b.y - pos.y) / d * remaining; remaining = 0 }
+        }
+        cameraNode.position = pos
+        wakeMap()
+        if TitleSweep.seg + 1 >= TitleSweep.path.count {
+            TitleSweep.done = true
+            NSLog("[TITLESWEEP] done frames=%d blankFrames=%d blankTitles=%d maxBlank=%d maxDrawn=%d",
+                  TitleSweep.frames, TitleSweep.blankFrames, TitleSweep.blankTitles, TitleSweep.maxBlank, TitleSweep.drawnMax)
+        }
+    }
+
+    func titleSweepCheck() {
+        guard TitleSweep.on, TitleSweep.started, !TitleSweep.done else { return }
+        let cs = max(cameraNode.xScale, 0.0001), cam = cameraNode.position
+        var blank = 0, drawn = 0
+        for (id, sprite) in nodeSprites {
+            guard (nodeTitleLodFade[id] ?? 0) > 0,
+                  let title = sprite.children.first(where: { $0.name == "titleLabel" }) else { continue }
+            let home = nodeRestingPositions[id] ?? sprite.position
+            let r = (nodeOnScreenDiameter[id] ?? 0) / 2
+            guard abs(home.x - cam.x) / cs <= size.width / 2 + r, abs(home.y - cam.y) / cs <= size.height / 2 + r else { continue }
+            drawn += 1
+            if MSDFLabel.isTitleBlank(title) { blank += 1 }
+        }
+        TitleSweep.frames += 1
+        TitleSweep.drawnMax = max(TitleSweep.drawnMax, drawn)
+        if blank > 0 { TitleSweep.blankFrames += 1; TitleSweep.blankTitles += blank; TitleSweep.maxBlank = max(TitleSweep.maxBlank, blank) }
+        let now = CACurrentMediaTime()
+        if now - TitleSweep.lastLog >= 1 {
+            TitleSweep.lastLog = now
+            NSLog("[TITLESWEEP] frames=%d drawn=%d blankFrames=%d blankTitles=%d", TitleSweep.frames, drawn, TitleSweep.blankFrames, TitleSweep.blankTitles)
+        }
+    }
+}
+#endif
+

@@ -4,10 +4,10 @@
 set -uo pipefail
 OUT=${1:?out}; TAG=${2:?tag}; SIM=${SIM:?}; APPID=com.doctorpresident.airpad; S=${S:-16}; mkdir -p $OUT
 CALLOUTS=(); for k in view.buttons map.intro librarian.intro librarian.sample librarian.mode librarian.model entry.intro capture.title; do CALLOUTS+=(-com.airpad.callouts.$k YES); done
-BASE=(-UITestLibrary -UITestSampleLibrary -EmbedCPUOnly -GlassFreezeTime 5 $CALLOUTS)
+BASE=(-UITestLibrary -UITestSampleLibrary -EmbedCPUOnly -GlassFreezeTime 5 $CALLOUTS ${=EXTRA:-})   # EXTRA="…": more launch args
 xcrun simctl status_bar $SIM override --time 9:41 --batteryState charged --batteryLevel 100 --cellularBars 4 --wifiBars 3
 xcrun simctl ui $SIM appearance light
-for V in dashboard map list cards entry chats; do
+for V in ${=VIEWS:-dashboard map list cards entry chats}; do
   case $V in dashboard) VA=(-OpenDashboard);; map) VA=(-OpenMap);; list) VA=(-OpenListView);; cards) VA=(-OpenCardView);;
     entry) VA=(-OpenFirstGradientEntry);; chats) VA=(-OpenChatsList);; esac
   xcrun simctl launch --terminate-running-process $SIM $APPID $BASE $VA >/dev/null

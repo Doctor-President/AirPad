@@ -35,6 +35,12 @@ extension RunningOnMac {
             guard let w = windows.first(where: \.isKeyWindow) ?? windows.max(by: { $0.bounds.width < $1.bounds.width }) else {
                 NSLog("[MacSnapshot] no window"); return
             }
+            for win in windows {
+                var chain: [String] = []; var vc = win.rootViewController?.presentedViewController
+                while let v = vc { chain.append("\(type(of: v)) inWindow=\(v.view.window === win) frame=\(v.view.frame)"); vc = v.presentedViewController }
+                NSLog("[MacSnapshot] window %@ level=%.0f hidden=%d key=%d frame=%@ presented=%@", "\(type(of: win))", win.windowLevel.rawValue,
+                      win.isHidden ? 1 : 0, win.isKeyWindow ? 1 : 0, "\(win.frame)", chain.joined(separator: " → "))
+            }
             // Every window of the scene, bottom to top (the lock/tuner windows and sheets sit in their own windows).
             let format = UIGraphicsImageRendererFormat(); format.scale = w.screen.scale
             let img = UIGraphicsImageRenderer(bounds: w.bounds, format: format).image { _ in
@@ -45,6 +51,20 @@ extension RunningOnMac {
             let dir = FileManager.default.temporaryDirectory.appendingPathComponent("macshots", isDirectory: true)
             try? FileManager.default.createDirectory(at: dir, withIntermediateDirectories: true)
             let url = dir.appendingPathComponent("\(name).png")
+            // Catalyst hosts a sheet outside the UIWindow (its view isn't in `win`), so each presented controller is
+            // drawn on its own: `<name>-sheet1.png`, … (written first; the main image's log line is the "done" signal).
+            var k = 0, vc = w.rootViewController?.presentedViewController
+            while let v = vc {
+                k += 1
+                let sheet = UIGraphicsImageRenderer(bounds: v.view.bounds, format: format).image { _ in
+                    // false: forcing an update re-runs the detached sheet's SwiftUI body outside its environment
+                    // (Settings → "No Observable object of type CorpusStore"); the last drawn frame is what we want.
+                    v.view.drawHierarchy(in: v.view.bounds, afterScreenUpdates: false)
+                }
+                let su = dir.appendingPathComponent("\(name)-sheet\(k).png")
+                try? sheet.pngData()?.write(to: su); NSLog("[MacSnapshot] sheet %@ %@", "\(type(of: v))", su.path)
+                vc = v.presentedViewController
+            }
             do { try img.pngData()?.write(to: url); NSLog("[MacSnapshot] %@", url.path) }
             catch { NSLog("[MacSnapshot] write failed: %@", "\(error)") }
         }

@@ -357,7 +357,8 @@ extension AppLock {
 
             // App switcher: the cover is up whenever AirPad isn't in front (lock on), down when it's back.
             lock.scenePhaseChanged(.inactive)
-            check("cover-on-inactive", lock.coverShown && lock.overlayVisible && !lock.isLocked)
+            // (On a Mac the default lock doesn't cover on .inactive — `mac-no-cover-when-inactive` below.)
+            check("cover-on-inactive", RunningOnMac.isMac ? !lock.coverShown : lock.coverShown && lock.overlayVisible && !lock.isLocked)
             lock.scenePhaseChanged(.background)
             check("cover-in-background", lock.coverShown)
             box.t += 30; lock.scenePhaseChanged(.active)
@@ -393,7 +394,8 @@ extension AppLock {
             // Fallback: Touch ID / passcode-only phones get their own words; a phone with no passcode can't turn it on,
             // and a lock left on after the passcode was removed lets the user in instead of locking them out.
             box.method = .passcode; lock.scenePhaseChanged(.active)
-            check("passcode-fallback-label", lock.requireLabel == "Require Passcode" && lock.unlockLabel == "Unlock with Passcode")
+            let word = RunningOnMac.isMac ? "Password" : "Passcode"   // a Mac's fallback is the login password
+            check("passcode-fallback-label", lock.requireLabel == "Require \(word)" && lock.unlockLabel == "Unlock with \(word)")
             box.method = .touchID; lock.scenePhaseChanged(.active)
             check("touchid-label", lock.requireLabel == "Require Touch ID")
             lock.enabled = false

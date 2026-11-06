@@ -1,0 +1,14 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
+<!-- Mac Catalyst entitlements for the share extension (project.yml: CODE_SIGN_ENTITLEMENTS[sdk=macosx*]). A Mac app
+     extension must be sandboxed to load. It only writes into the App Group inbox, like on iOS. -->
+<plist version="1.0">
+<dict>
+    <key>com.apple.security.app-sandbox</key>
+    <true/>
+    <key>com.apple.security.application-groups</key>
+    <array>
+        <string>group.com.doctorpresident.airpad</string>
+    </array>
+</dict>
+</plist>

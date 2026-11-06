@@ -4,6 +4,7 @@ options:
   bundleIdPrefix: com.doctorpresident
   deploymentTarget:
     iOS: "26.0"
+    macOS: "26.0"   # Mac Catalyst floor (macOS 26 = the iOS 26 floor's twin)
   createIntermediateGroups: true
   groupSortPosition: top
 
@@ -139,16 +140,20 @@ targets:
       # in the app like the share extension. One capture entry point: it runs the SAME CaptureIntent.
       - target: AirPadWidgets
         embed: true
+        platformFilter: iOS   # Mac: the Quick Capture Control stays iOS-only for now (no Mac Catalyst profile)
       - package: FloatingPanel
       # Local on-device model (ws-local-model Stage 1). MLXLLM/MLXLMCommon from
       # mlx-swift-examples 2.29.1 (mlx-swift 0.29.1 transitive). Plumbing only this
       # stage — no generation path uses it yet (LocalModelService + Settings surface).
       - package: MLXSwiftExamples
         product: MLXLLM
+        platformFilter: iOS   # Mac: no MLX under Catalyst (LocalModelService has a Catalyst stand-in)
       - package: MLXSwiftExamples
         product: MLXLMCommon
+        platformFilter: iOS   # Mac: no MLX under Catalyst (LocalModelService has a Catalyst stand-in)
       - package: SwiftTransformers
         product: Hub
+        platformFilter: iOS   # Mac: no MLX under Catalyst (LocalModelService has a Catalyst stand-in)
       # Synthesized-voice deps (KokoroSwift / mlx-swift / MLXUtilsLibrary / FluidAudio,
       # + ORT earlier) REMOVED 2026-08-02 — AVSpeech is the sole read-aloud engine.
       # Restore steps in Ops/workstreams/ws-synthesized-voice.md.
@@ -162,12 +167,19 @@ targets:
     settings:
       base:
         PRODUCT_BUNDLE_IDENTIFIER: com.doctorpresident.airpad
-        TARGETED_DEVICE_FAMILY: "1"
+        TARGETED_DEVICE_FAMILY: "1,2,6"   # Mac Catalyst needs 2 (iPad); 6 = "Optimize for Mac"
+        SUPPORTS_MACCATALYST: "YES"
+        MACOSX_DEPLOYMENT_TARGET: "26.0"
+        DERIVE_MACCATALYST_PRODUCT_BUNDLE_IDENTIFIER: "NO"   # same bundle ID on Mac (universal purchase)
         SWIFT_ACTIVE_COMPILATION_CONDITIONS: "$(inherited) $(AIRPAD_TF_FLAG)"   # live-19 (4) — see AIRPAD_TF_FLAG
         # live-19 (4) — Accelerate's current LAPACK interface (the CLAPACK one is deprecated since iOS 16.4): the Map's
         # SVDs (SubstrateWhitening, SubstrateBagLayout) call `dgesvd_` with `__LAPACK_int`.
         OTHER_SWIFT_FLAGS: "$(inherited) -Xcc -DACCELERATE_NEW_LAPACK"
         CODE_SIGN_ENTITLEMENTS: AirPad/AirPad.entitlements
+        # Mac (Catalyst builds use the macosx SDK): App Sandbox + the Mac keys in AirPadMac.entitlements, in every
+        # config (the iOS Debug/Release files carry iOS-only kernel keys). Hardened runtime on for the Mac.
+        "CODE_SIGN_ENTITLEMENTS[sdk=macosx*]": AirPad/AirPadMac.entitlements
+        "ENABLE_HARDENED_RUNTIME[sdk=macosx*]": "YES"
         DEVELOPMENT_TEAM: 8XM4B5F42Y
         # Re-pin signing at the TARGET level too. The project-level pin (see
         # settings.base up top) is OUTRANKED by xcodegen's per-target auto-default
@@ -301,9 +313,15 @@ targets:
     settings:
       base:
         PRODUCT_BUNDLE_IDENTIFIER: com.doctorpresident.airpad.share
-        TARGETED_DEVICE_FAMILY: "1"
+        TARGETED_DEVICE_FAMILY: "1,2,6"   # Mac Catalyst needs 2 (iPad); 6 = "Optimize for Mac"
+        SUPPORTS_MACCATALYST: "YES"
+        MACOSX_DEPLOYMENT_TARGET: "26.0"
+        DERIVE_MACCATALYST_PRODUCT_BUNDLE_IDENTIFIER: "NO"   # same bundle ID on Mac (universal purchase)
         DEVELOPMENT_TEAM: 8XM4B5F42Y
         CODE_SIGN_ENTITLEMENTS: AirPadShare/AirPadShare.entitlements
+        # Mac: an app extension must be sandboxed to load; AirPadShareMac.entitlements = sandbox + the same App Group.
+        "CODE_SIGN_ENTITLEMENTS[sdk=macosx*]": AirPadShare/AirPadShareMac.entitlements
+        "ENABLE_HARDENED_RUNTIME[sdk=macosx*]": "YES"
     info:
       path: AirPadShare/Info.plist
       properties:
@@ -363,7 +381,10 @@ targets:
         # Brief CE #7 — EXACTLY `.Widgets` (capital W): `.widgets` collided case-insensitively with the
         # existing App ID `com.doctorpresident.airpad.Widgets` ("not available" at App Store export).
         PRODUCT_BUNDLE_IDENTIFIER: com.doctorpresident.airpad.Widgets
-        TARGETED_DEVICE_FAMILY: "1"
+        TARGETED_DEVICE_FAMILY: "1,2,6"   # Mac Catalyst needs 2 (iPad); 6 = "Optimize for Mac"
+        SUPPORTS_MACCATALYST: "YES"
+        MACOSX_DEPLOYMENT_TARGET: "26.0"
+        DERIVE_MACCATALYST_PRODUCT_BUNDLE_IDENTIFIER: "NO"   # same bundle ID on Mac (universal purchase)
         DEVELOPMENT_TEAM: 8XM4B5F42Y
         CODE_SIGN_STYLE: Automatic
         CODE_SIGN_IDENTITY: "Apple Development"

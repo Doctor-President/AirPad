@@ -1,3 +1,4 @@
+#if !targetEnvironment(macCatalyst)   // only LocalModelService (iOS) uses this
 import Foundation
 import Hub
 import CryptoKit
@@ -443,3 +444,4 @@ final class BackgroundModelDownloader: NSObject, URLSessionDownloadDelegate, @un
         DispatchQueue.main.async { handler?() }
     }
 }
+#endif

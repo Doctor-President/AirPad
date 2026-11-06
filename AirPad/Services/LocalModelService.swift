@@ -1,3 +1,4 @@
+#if !targetEnvironment(macCatalyst)   // MLX is iOS-only; Catalyst stand-in below
 import Foundation
 import Metal
 import Observation
@@ -291,3 +292,60 @@ enum LocalModelError: Error, LocalizedError {
         }
     }
 }
+#else
+// Mac — Mac Catalyst has no MLX (the MLX / swift-transformers packages are platform-filtered
+// to iOS in project.yml). Same API surface, permanently unavailable, so every call site compiles unchanged
+// and every "is the local model ready?" check reads false. The Mac's private-model story is the user's own
+// server (Ollama / LM Studio on localhost) plus Apple Intelligence.
+import Foundation
+import Observation
+
+@MainActor
+@Observable
+final class LocalModelService {
+    static let shared = LocalModelService()
+
+    enum State: Equatable {
+        case notDownloaded
+        case downloading(Double)
+        case paused(Double)
+        case ready
+        case failed(String)
+        case loadFailed(String)
+    }
+
+    private(set) var state: State = .notDownloaded
+    private(set) var isResident = false
+    private(set) var lastTokPerSec: Double = 0
+    private(set) var lastOutTokens = 0
+    private(set) var excludedFromBackup = false
+    let isAvailable = false
+    let modelDisplayName = "Qwen3 1.7B (4-bit)"
+    let downloadSizeLabel = "~1.8 GB"
+    var modelDirectoryPath: String { "" }
+
+    private init() {}
+
+    func download() {}
+    func cancelDownload() {}
+    func handleBackgroundURLSessionEvents(identifier: String, completionHandler: @escaping () -> Void) { completionHandler() }
+    func load() async {}
+    func retryLoad() {}
+    func unload() {}
+    func deleteModel() {}
+    func diskUsageBytes() -> Int64 { 0 }
+    func generate(systemPrompt: String, userPrompt: String) async throws -> String { throw LocalModelError.notReady }
+}
+
+enum LocalModelError: Error, LocalizedError {
+    case notReady
+    case loadFailed(String)
+
+    var errorDescription: String? {
+        switch self {
+        case .notReady: return "The on-device model isn't available on Mac."
+        case .loadFailed(let reason): return reason
+        }
+    }
+}
+#endif

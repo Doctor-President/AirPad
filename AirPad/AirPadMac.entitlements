@@ -1,0 +1,41 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
+<!-- Mac Catalyst entitlements (project.yml: CODE_SIGN_ENTITLEMENTS[sdk=macosx*]). App Sandbox ON: a Mac App Store
+     requirement, and it keeps the local fallback library inside the app's container instead of the user's ~/Documents.
+     Exactly these keys and no more (Mac batch A, A1). No iOS-only kernel/memory keys. -->
+<plist version="1.0">
+<dict>
+    <key>com.apple.security.app-sandbox</key>
+    <true/>
+    <!-- Apple Intelligence needs none; the user's own model server (Ollama / LM Studio) does. -->
+    <key>com.apple.security.network.client</key>
+    <true/>
+    <!-- The same iCloud Drive container as the iPhone. -->
+    <key>com.apple.developer.icloud-container-identifiers</key>
+    <array>
+        <string>iCloud.com.doctorpresident.airpad</string>
+    </array>
+    <key>com.apple.developer.icloud-services</key>
+    <array>
+        <string>CloudDocuments</string>
+    </array>
+    <key>com.apple.developer.ubiquity-container-identifiers</key>
+    <array>
+        <string>iCloud.com.doctorpresident.airpad</string>
+    </array>
+    <key>com.apple.security.application-groups</key>
+    <array>
+        <string>group.com.doctorpresident.airpad</string>
+    </array>
+    <!-- Import/attach and "Save to folder" (document picker), and remembering that folder across launches. -->
+    <key>com.apple.security.files.user-selected.read-write</key>
+    <true/>
+    <key>com.apple.security.files.bookmarks.app-scope</key>
+    <true/>
+    <!-- Voice memos + dictation, and photo/video capture. -->
+    <key>com.apple.security.device.audio-input</key>
+    <true/>
+    <key>com.apple.security.device.camera</key>
+    <true/>
+</dict>
+</plist>

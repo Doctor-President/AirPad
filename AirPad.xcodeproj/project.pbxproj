@@ -146,7 +146,7 @@
 		51864CB87A34BFA4C9F5D563 /* DocumentNaming.swift in Sources */ = {isa = PBXBuildFile; fileRef = 13209372046A2ACD8BAB1789 /* DocumentNaming.swift */; };
 		524632EA61033FFCA11734F8 /* BentoLayout.swift in Sources */ = {isa = PBXBuildFile; fileRef = DB97C8C89A4E56E95903000D /* BentoLayout.swift */; };
 		52D3D753240395AD3A873749 /* DashboardView.swift in Sources */ = {isa = PBXBuildFile; fileRef = 88ABC9EFFF4787FFDF05A2CB /* DashboardView.swift */; };
-		52E814CA75A30AACE5AC618A /* AirPadWidgets.appex in Embed Foundation Extensions */ = {isa = PBXBuildFile; fileRef = 69902D1D994B371BD68A2D71 /* AirPadWidgets.appex */; settings = {ATTRIBUTES = (RemoveHeadersOnCopy, ); }; };
+		52E814CA75A30AACE5AC618A /* AirPadWidgets.appex in Embed Foundation Extensions */ = {isa = PBXBuildFile; fileRef = 69902D1D994B371BD68A2D71 /* AirPadWidgets.appex */; platformFilter = ios; settings = {ATTRIBUTES = (RemoveHeadersOnCopy, ); }; };
 		536D8F5AEBC887BD1A87C990 /* AutoScrollDriver.swift in Sources */ = {isa = PBXBuildFile; fileRef = 9640DF6602CDCA4B2689C33C /* AutoScrollDriver.swift */; };
 		53C50184B3A475F62CC9BDE2 /* FieldDefinition.swift in Sources */ = {isa = PBXBuildFile; fileRef = 003CEDBA7C8C183191D81F3E /* FieldDefinition.swift */; };
 		54AFC37A189FD4A44E8FA7B7 /* AppLock.swift in Sources */ = {isa = PBXBuildFile; fileRef = 52F7466953998FA4739AC9C0 /* AppLock.swift */; };
@@ -245,7 +245,7 @@
 		8D9DC70840AFFFF47A8577FB /* ParityShots.swift in Sources */ = {isa = PBXBuildFile; fileRef = 60D13A13B22F4512A523EB58 /* ParityShots.swift */; };
 		8DF5479C80E72F6CE5DCC035 /* SubstrateLayoutService.swift in Sources */ = {isa = PBXBuildFile; fileRef = 7917C14BA2EB5AE11F600CA0 /* SubstrateLayoutService.swift */; };
 		8F858857A22B2EBF7D206FCC /* PlusCaptureOverlap.swift in Sources */ = {isa = PBXBuildFile; fileRef = FB2DFB50C4CBFDAC9D650DE9 /* PlusCaptureOverlap.swift */; };
-		8FAEAF61A466C4180D5B078D /* MLXLLM in Frameworks */ = {isa = PBXBuildFile; productRef = FA212520B86966AE24E20B23 /* MLXLLM */; };
+		8FAEAF61A466C4180D5B078D /* MLXLLM in Frameworks */ = {isa = PBXBuildFile; platformFilter = ios; productRef = FA212520B86966AE24E20B23 /* MLXLLM */; };
 		8FCCD1C11E415D8FDC0322CA /* ZoomableImageView.swift in Sources */ = {isa = PBXBuildFile; fileRef = 36D4851654AC4C2F3AF8798F /* ZoomableImageView.swift */; };
 		8FFDCAEF4D4015563015B420 /* RejectedBlock.swift in Sources */ = {isa = PBXBuildFile; fileRef = 463DA699C1C0AF251F9242D9 /* RejectedBlock.swift */; };
 		910169FB448EEF32C13A9AD4 /* CorpusStore.swift in Sources */ = {isa = PBXBuildFile; fileRef = ADDA79A05C807120913FCE5F /* CorpusStore.swift */; };
@@ -296,11 +296,11 @@
 		A9D30911FB3F2FA2F59DA847 /* PasteProbe.swift in Sources */ = {isa = PBXBuildFile; fileRef = 12FFD0E4E7DD235786396C38 /* PasteProbe.swift */; };
 		AA372D98B2CE6A919091975B /* AppStoreLookStills.swift in Sources */ = {isa = PBXBuildFile; fileRef = 37A7EB2DE317B859BC165DD4 /* AppStoreLookStills.swift */; };
 		AA9443964465D51E902BE973 /* TagPillRail.swift in Sources */ = {isa = PBXBuildFile; fileRef = 586FC4429B40614A3F7EBDC6 /* TagPillRail.swift */; };
-		AAB2501E331656DE7FE806A6 /* MLXLMCommon in Frameworks */ = {isa = PBXBuildFile; productRef = 8C8B68B978A8161E8AC53C08 /* MLXLMCommon */; };
+		AAB2501E331656DE7FE806A6 /* MLXLMCommon in Frameworks */ = {isa = PBXBuildFile; platformFilter = ios; productRef = 8C8B68B978A8161E8AC53C08 /* MLXLMCommon */; };
 		AB1987E40736EECE7D0FDD13 /* HistoryPanel.swift in Sources */ = {isa = PBXBuildFile; fileRef = EC36DE9EA28BD7C8FAFD81A0 /* HistoryPanel.swift */; };
 		ABE6D49FBC9F9E8EC4D77DAB /* EntryDeletionDiagnostic.swift in Sources */ = {isa = PBXBuildFile; fileRef = 7E163AC58FD3A0154CA67BD2 /* EntryDeletionDiagnostic.swift */; };
 		AC00CAAEA3AB86F2D4455FD1 /* UMAPFindAB.swift in Sources */ = {isa = PBXBuildFile; fileRef = 7DA33E483A4D9242E12537AA /* UMAPFindAB.swift */; };
-		AC2DE8245EED4A88F909800B /* Hub in Frameworks */ = {isa = PBXBuildFile; productRef = 7E8E59FE24B218A0AEFD5C52 /* Hub */; };
+		AC2DE8245EED4A88F909800B /* Hub in Frameworks */ = {isa = PBXBuildFile; platformFilter = ios; productRef = 7E8E59FE24B218A0AEFD5C52 /* Hub */; };
 		ACA7B702683CE03A268E743D /* SettingsView.swift in Sources */ = {isa = PBXBuildFile; fileRef = F7814673E5A10B9F5E391DA4 /* SettingsView.swift */; };
 		ACB61EF70E11DC8884EE3A6F /* Lora-Bold.ttf in Resources */ = {isa = PBXBuildFile; fileRef = D414766388E3034250D0E1AE /* Lora-Bold.ttf */; };
 		ACEC4360C76A6F362AA87972 /* UMAPModel.swift in Sources */ = {isa = PBXBuildFile; fileRef = D78B727835739390B86DF397 /* UMAPModel.swift */; };
@@ -2401,6 +2401,7 @@
 		};
 		50B6DBC9481CC8CEA4004287 /* PBXTargetDependency */ = {
 			isa = PBXTargetDependency;
+			platformFilter = ios;
 			target = 478761CF9C12DB05D43D2DC3 /* AirPadWidgets */;
 			targetProxy = 497DD0CDE1FA1E106A859536 /* PBXContainerItemProxy */;
 		};
@@ -2418,6 +2419,7 @@
 				CODE_SIGN_ENTITLEMENTS = AirPadWidgets/AirPadWidgets.entitlements;
 				CODE_SIGN_IDENTITY = "Apple Development";
 				CODE_SIGN_STYLE = Automatic;
+				DERIVE_MACCATALYST_PRODUCT_BUNDLE_IDENTIFIER = NO;
 				DEVELOPMENT_TEAM = 8XM4B5F42Y;
 				INFOPLIST_FILE = AirPadWidgets/Info.plist;
 				IPHONEOS_DEPLOYMENT_TARGET = 26.0;
@@ -2426,10 +2428,12 @@
 					"@executable_path/Frameworks",
 					"@executable_path/../../Frameworks",
 				);
+				MACOSX_DEPLOYMENT_TARGET = 26.0;
 				PRODUCT_BUNDLE_IDENTIFIER = com.doctorpresident.airpad.Widgets;
 				SDKROOT = iphoneos;
+				SUPPORTS_MACCATALYST = YES;
 				SWIFT_ACTIVE_COMPILATION_CONDITIONS = WIDGET_EXTENSION;
-				TARGETED_DEVICE_FAMILY = 1;
+				TARGETED_DEVICE_FAMILY = "1,2,6";
 			};
 			name = Release;
 		};
@@ -2437,7 +2441,10 @@
 			isa = XCBuildConfiguration;
 			buildSettings = {
 				CODE_SIGN_ENTITLEMENTS = AirPadShare/AirPadShare.entitlements;
+				"CODE_SIGN_ENTITLEMENTS[sdk=macosx*]" = AirPadShare/AirPadShareMac.entitlements;
+				DERIVE_MACCATALYST_PRODUCT_BUNDLE_IDENTIFIER = NO;
 				DEVELOPMENT_TEAM = 8XM4B5F42Y;
+				"ENABLE_HARDENED_RUNTIME[sdk=macosx*]" = YES;
 				INFOPLIST_FILE = AirPadShare/Info.plist;
 				IPHONEOS_DEPLOYMENT_TARGET = 26.0;
 				LD_RUNPATH_SEARCH_PATHS = (
@@ -2445,9 +2452,11 @@
 					"@executable_path/Frameworks",
 					"@executable_path/../../Frameworks",
 				);
+				MACOSX_DEPLOYMENT_TARGET = 26.0;
 				PRODUCT_BUNDLE_IDENTIFIER = com.doctorpresident.airpad.share;
 				SDKROOT = iphoneos;
-				TARGETED_DEVICE_FAMILY = 1;
+				SUPPORTS_MACCATALYST = YES;
+				TARGETED_DEVICE_FAMILY = "1,2,6";
 			};
 			name = Debug;
 		};
@@ -2457,6 +2466,7 @@
 				CODE_SIGN_ENTITLEMENTS = AirPadWidgets/AirPadWidgets.entitlements;
 				CODE_SIGN_IDENTITY = "Apple Development";
 				CODE_SIGN_STYLE = Automatic;
+				DERIVE_MACCATALYST_PRODUCT_BUNDLE_IDENTIFIER = NO;
 				DEVELOPMENT_TEAM = 8XM4B5F42Y;
 				INFOPLIST_FILE = AirPadWidgets/Info.plist;
 				IPHONEOS_DEPLOYMENT_TARGET = 26.0;
@@ -2465,10 +2475,12 @@
 					"@executable_path/Frameworks",
 					"@executable_path/../../Frameworks",
 				);
+				MACOSX_DEPLOYMENT_TARGET = 26.0;
 				PRODUCT_BUNDLE_IDENTIFIER = com.doctorpresident.airpad.Widgets;
 				SDKROOT = iphoneos;
+				SUPPORTS_MACCATALYST = YES;
 				SWIFT_ACTIVE_COMPILATION_CONDITIONS = WIDGET_EXTENSION;
-				TARGETED_DEVICE_FAMILY = 1;
+				TARGETED_DEVICE_FAMILY = "1,2,6";
 			};
 			name = Debug;
 		};
@@ -2477,20 +2489,25 @@
 			buildSettings = {
 				ASSETCATALOG_COMPILER_APPICON_NAME = AirPad;
 				CODE_SIGN_ENTITLEMENTS = AirPad/AirPadRelease.entitlements;
+				"CODE_SIGN_ENTITLEMENTS[sdk=macosx*]" = AirPad/AirPadMac.entitlements;
 				CODE_SIGN_IDENTITY = "Apple Development";
 				CODE_SIGN_STYLE = Automatic;
+				DERIVE_MACCATALYST_PRODUCT_BUNDLE_IDENTIFIER = NO;
 				DEVELOPMENT_TEAM = 8XM4B5F42Y;
+				"ENABLE_HARDENED_RUNTIME[sdk=macosx*]" = YES;
 				INFOPLIST_FILE = AirPad/Info.plist;
 				IPHONEOS_DEPLOYMENT_TARGET = 26.0;
 				LD_RUNPATH_SEARCH_PATHS = (
 					"$(inherited)",
 					"@executable_path/Frameworks",
 				);
+				MACOSX_DEPLOYMENT_TARGET = 26.0;
 				OTHER_SWIFT_FLAGS = "$(inherited) -Xcc -DACCELERATE_NEW_LAPACK";
 				PRODUCT_BUNDLE_IDENTIFIER = com.doctorpresident.airpad;
 				SDKROOT = iphoneos;
+				SUPPORTS_MACCATALYST = YES;
 				SWIFT_ACTIVE_COMPILATION_CONDITIONS = "$(inherited) $(AIRPAD_TF_FLAG)";
-				TARGETED_DEVICE_FAMILY = 1;
+				TARGETED_DEVICE_FAMILY = "1,2,6";
 			};
 			name = Release;
 		};
@@ -2498,7 +2515,10 @@
 			isa = XCBuildConfiguration;
 			buildSettings = {
 				CODE_SIGN_ENTITLEMENTS = AirPadShare/AirPadShare.entitlements;
+				"CODE_SIGN_ENTITLEMENTS[sdk=macosx*]" = AirPadShare/AirPadShareMac.entitlements;
+				DERIVE_MACCATALYST_PRODUCT_BUNDLE_IDENTIFIER = NO;
 				DEVELOPMENT_TEAM = 8XM4B5F42Y;
+				"ENABLE_HARDENED_RUNTIME[sdk=macosx*]" = YES;
 				INFOPLIST_FILE = AirPadShare/Info.plist;
 				IPHONEOS_DEPLOYMENT_TARGET = 26.0;
 				LD_RUNPATH_SEARCH_PATHS = (
@@ -2506,9 +2526,11 @@
 					"@executable_path/Frameworks",
 					"@executable_path/../../Frameworks",
 				);
+				MACOSX_DEPLOYMENT_TARGET = 26.0;
 				PRODUCT_BUNDLE_IDENTIFIER = com.doctorpresident.airpad.share;
 				SDKROOT = iphoneos;
-				TARGETED_DEVICE_FAMILY = 1;
+				SUPPORTS_MACCATALYST = YES;
+				TARGETED_DEVICE_FAMILY = "1,2,6";
 			};
 			name = Release;
 		};
@@ -2588,6 +2610,7 @@
 				GCC_WARN_UNUSED_FUNCTION = YES;
 				GCC_WARN_UNUSED_VARIABLE = YES;
 				IPHONEOS_DEPLOYMENT_TARGET = 26.0;
+				MACOSX_DEPLOYMENT_TARGET = 26.0;
 				MARKETING_VERSION = 1.0.1;
 				MTL_ENABLE_DEBUG_INFO = INCLUDE_SOURCE;
 				MTL_FAST_MATH = YES;
@@ -2605,20 +2628,25 @@
 			buildSettings = {
 				ASSETCATALOG_COMPILER_APPICON_NAME = AirPad;
 				CODE_SIGN_ENTITLEMENTS = AirPad/AirPad.entitlements;
+				"CODE_SIGN_ENTITLEMENTS[sdk=macosx*]" = AirPad/AirPadMac.entitlements;
 				CODE_SIGN_IDENTITY = "Apple Development";
 				CODE_SIGN_STYLE = Automatic;
+				DERIVE_MACCATALYST_PRODUCT_BUNDLE_IDENTIFIER = NO;
 				DEVELOPMENT_TEAM = 8XM4B5F42Y;
+				"ENABLE_HARDENED_RUNTIME[sdk=macosx*]" = YES;
 				INFOPLIST_FILE = AirPad/Info.plist;
 				IPHONEOS_DEPLOYMENT_TARGET = 26.0;
 				LD_RUNPATH_SEARCH_PATHS = (
 					"$(inherited)",
 					"@executable_path/Frameworks",
 				);
+				MACOSX_DEPLOYMENT_TARGET = 26.0;
 				OTHER_SWIFT_FLAGS = "$(inherited) -Xcc -DACCELERATE_NEW_LAPACK";
 				PRODUCT_BUNDLE_IDENTIFIER = com.doctorpresident.airpad;
 				SDKROOT = iphoneos;
+				SUPPORTS_MACCATALYST = YES;
 				SWIFT_ACTIVE_COMPILATION_CONDITIONS = "$(inherited) $(AIRPAD_TF_FLAG)";
-				TARGETED_DEVICE_FAMILY = 1;
+				TARGETED_DEVICE_FAMILY = "1,2,6";
 			};
 			name = Debug;
 		};
@@ -2673,6 +2701,7 @@
 				GCC_WARN_UNUSED_FUNCTION = YES;
 				GCC_WARN_UNUSED_VARIABLE = YES;
 				IPHONEOS_DEPLOYMENT_TARGET = 26.0;
+				MACOSX_DEPLOYMENT_TARGET = 26.0;
 				MARKETING_VERSION = 1.0.1;
 				MTL_ENABLE_DEBUG_INFO = NO;
 				MTL_FAST_MATH = YES;

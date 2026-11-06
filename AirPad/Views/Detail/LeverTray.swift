@@ -93,7 +93,9 @@ struct LeverTray: View {
 
     /// live-20 (1) — the decline copy (T judges the wording): plain, honest, and it offers the fix.
     private var namingDeclineMessage: String {
-        localModelInstalled
+        // Mac batch A — no on-device model on Mac, and the user's own server doesn't name entries: say so plainly.
+        if RunningOnMac.isMac { return "Apple Intelligence won't name this entry. You can give it a title yourself." }
+        return localModelInstalled
             ? "Apple Intelligence won't name this entry, and the on-device model couldn't either."
             : "Apple Intelligence won't name this entry. Turn on the on-device model in Settings to name sensitive entries."
     }
@@ -112,7 +114,10 @@ struct LeverTray: View {
     /// "enrichment" (internal vocabulary); deliberately says NOTHING about chats — the Ask
     /// surface gets its own copy.
     private var noProviderMessage: String {
-        "No model is available on this device. AirPad's optional private model runs entirely on your device and enables titles, summaries, and tags."
+        if RunningOnMac.isMac {
+            return "Apple Intelligence isn't available on this Mac. Turn it on in System Settings to get titles, summaries, and tags."
+        }
+        return "No model is available on this device. AirPad's optional private model runs entirely on your device and enables titles, summaries, and tags."
     }
 
     var body: some View {
@@ -136,7 +141,7 @@ struct LeverTray: View {
                         // said nothing the user could act on. Settings opens at the model.
                         LeverRefusalBanner(
                             message: namingDeclineMessage,
-                            onSetUp: localModelInstalled ? nil : { showSettings = true },
+                            onSetUp: localModelInstalled || RunningOnMac.isMac ? nil : { showSettings = true },
                             setUpLabel: "Open Settings",
                             onDismiss: { self.failure = nil }
                         )
@@ -153,7 +158,7 @@ struct LeverTray: View {
                         // local model resolves as `.local`, so it never returns `.unavailable`.
                         LeverRefusalBanner(
                             message: noProviderMessage,
-                            onSetUp: localModelReady ? nil : { showSettings = true },
+                            onSetUp: localModelReady || RunningOnMac.isMac ? nil : { showSettings = true },
                             onDismiss: { self.failure = nil }
                         )
                         .clipShape(RoundedRectangle(cornerRadius: 12))
@@ -487,7 +492,7 @@ struct LeverTray: View {
                 // still has a summary — and don't claim so if it doesn't (both refused).
                 LeverRefusalBanner(
                     message: tagsRefusalMessage,
-                    onSetUp: localModelInstalled ? nil : { showSettings = true },
+                    onSetUp: localModelInstalled || RunningOnMac.isMac ? nil : { showSettings = true },
                     setUpLabel: "Open Settings"
                 )
                 .clipShape(RoundedRectangle(cornerRadius: 12))
@@ -639,6 +644,10 @@ struct LeverTray: View {
     private var tagsRefusalMessage: String {
         let hasSummary = !((node?.summary ?? "").trimmingCharacters(in: .whitespacesAndNewlines).isEmpty)
         // live-20 (1) — the same plain copy as the naming decline.
+        if RunningOnMac.isMac {   // Mac batch A — no on-device model to offer
+            return hasSummary ? "Apple Intelligence won't suggest tags for this entry; its title and summary are unaffected. You can add tags yourself."
+                              : "Apple Intelligence won't suggest tags for this entry. You can add tags yourself."
+        }
         if localModelInstalled {
             return "Apple Intelligence won't suggest tags for this entry, and the on-device model couldn't either."
         }

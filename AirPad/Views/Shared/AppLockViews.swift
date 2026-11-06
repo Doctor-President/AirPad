@@ -26,7 +26,7 @@ struct AppLockOverlay: View {
                             .font(appFont.font(size: 17, weight: .semibold, relativeTo: .headline))
                             .foregroundStyle(AppearancePalette.ink)
                         Button { Task { await lock.unlock() } } label: {
-                            Label(lock.unlockLabel, systemImage: lock.method == .touchID ? "touchid" : lock.method == .passcode ? "lock.open" : "faceid")
+                            Label(lock.unlockLabel, systemImage: lock.method == .touchID ? "touchid" : lock.method == .passcode || RunningOnMac.isMac && lock.method == .none ? "lock.open" : "faceid")
                                 .font(appFont.font(size: 16, weight: .semibold, relativeTo: .body))
                                 .foregroundStyle(AppearancePalette.ink)
                                 .padding(.horizontal, 20).padding(.vertical, 12)

@@ -9,7 +9,15 @@ final class SceneDelegate: NSObject, UIWindowSceneDelegate {
     ) {
         applyURLs(connectionOptions.urlContexts)
         consumeQuikCaptureHandoff(attempt: 0)   // Brief CE — COLD launch from the Control
+        // Mac batch A — a minimum window: below ~900×640 the stretched phone layout's bars and sheets start to
+        // collide, and the desktop layout (batch D) is planned at that size and up. No maximum.
+        #if targetEnvironment(macCatalyst)
+        (scene as? UIWindowScene)?.sizeRestrictions?.minimumSize = Self.macMinimumWindow
+        #endif
     }
+
+    /// Mac batch A — the proposed minimum window size, in points.
+    static let macMinimumWindow = CGSize(width: 900, height: 640)
 
     func scene(_ scene: UIScene, openURLContexts URLContexts: Set<UIOpenURLContext>) {
         applyURLs(URLContexts)

@@ -97,7 +97,7 @@ struct SpeechEngineTestingPanel: View {
                         .accessibilityAddTraits(c == choice ? .isSelected : [])
                     }
                 } footer: {
-                    Text("Testing only — absent from App Store builds. Every engine runs on this iPhone. A forced engine "
+                    Text("Testing only — absent from App Store builds. Every engine runs on this \(ModelRouter.deviceNoun). A forced engine "
                          + "that can't run falls to the next one, as it would for anyone.")
                 }
                 Section {

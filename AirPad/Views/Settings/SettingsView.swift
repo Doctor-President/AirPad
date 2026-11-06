@@ -454,7 +454,9 @@ struct SettingsView: View {
             VStack(alignment: .leading, spacing: 16) {
                 sectionHeader("On this \(ModelRouter.deviceNoun)")
                 appleIntelligenceRow
-                localModelSubsection   // "Downloaded model"
+                // Mac batch A — no downloadable model on Mac (MLX is iOS-only); the Mac's private path is the user's
+                // own server, below.
+                if !RunningOnMac.isMac { localModelSubsection }   // "Downloaded model"
             }
             // 1.1-A (8) — the custom server (was "Advanced") is the "your own models" path; AirPad Host is parked.
             VStack(alignment: .leading, spacing: 12) {
@@ -735,7 +737,7 @@ struct SettingsView: View {
                 VStack(alignment: .leading, spacing: 2) {
                     Text(lock.requireLabel).font(appFont.font(size: 15, weight: .medium, relativeTo: .subheadline))
                         .foregroundStyle(AppearancePalette.ink)
-                    Text(lock.method == .none ? "Set a passcode on this \(ModelRouter.deviceNoun) to use this."
+                    Text(lock.method == .none ? AppLock.noPasscodeHint
                                               : "AirPad asks before it opens. Quick Capture and the share sheet can still add entries.")
                         .font(appFont.font(size: 12, relativeTo: .caption1))
                         .foregroundStyle(AppearancePalette.ink.opacity(0.45))

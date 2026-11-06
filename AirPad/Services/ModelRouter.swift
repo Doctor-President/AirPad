@@ -173,8 +173,9 @@ enum ModelRouter {
         return SystemLanguageModel.default.isAvailable
     }
 
-    /// Step 1 (T 2026-10-10) — the copy names the device AirPad runs on: iPhone, iPad, or Mac (the iPad app on a Mac).
-    static let deviceNoun: String = ProcessInfo.processInfo.isiOSAppOnMac ? "Mac"
+    /// Step 1 (T 2026-10-10) — the copy names the device AirPad runs on: iPhone, iPad, or Mac. Mac batch A: the Mac test
+    /// is `isMacCatalystApp` (`isiOSAppOnMac` is false under Catalyst, so the Mac app said "iPhone").
+    static let deviceNoun: String = RunningOnMac.isMac ? "Mac"
         : UIDevice.current.userInterfaceIdiom == .pad ? "iPad" : "iPhone"
 
     /// C4b2 — why Apple Intelligence can't answer YET on this iPhone, for the picker to say so instead of hiding the

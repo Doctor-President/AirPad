@@ -15,7 +15,7 @@ enum SpeechVocabulary {
 /// built here and requires on-device recognition. When this iPhone can't transcribe the language on-device, the
 /// audio is still kept and its transcript area says so — there is no silent fallback to Apple's server.
 enum OnDeviceSpeech {
-    static let unavailableMessage = "Transcript unavailable — this iPhone can't transcribe this language on-device."
+    static let unavailableMessage = "Transcript unavailable — this \(RunningOnMac.isMac ? "Mac" : "iPhone") can't transcribe this language on-device."
 
     /// The current locale's recognizer, only when it can transcribe on-device. Nil ⇒ unavailable (never the server).
     static func recognizer(locale: Locale = .current) -> SFSpeechRecognizer? {

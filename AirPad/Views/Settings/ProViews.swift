@@ -199,7 +199,7 @@ struct GravityWellsToggle: View {
     }
 
     private var detail: String? {
-        if on && stressed { return lowPower ? "Paused in Low Power Mode" : "Paused while your iPhone cools down" }
+        if on && stressed { return lowPower ? "Paused in Low Power Mode" : "Paused while your \(ModelRouter.deviceNoun) cools down" }
         return detailed ? "The Map's dots dip toward the ideas you're reading, with a soft sheen. Off uses less battery." : nil
     }
 }

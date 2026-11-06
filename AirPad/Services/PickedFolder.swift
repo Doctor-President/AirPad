@@ -8,12 +8,22 @@ struct PickedFolder {
     let key: String
     private var defaults: UserDefaults { .standard }
 
+    /// Mac batch A — under the Mac App Sandbox a plain bookmark resolves but grants no access after a relaunch; it
+    /// must be security-scoped (`files.bookmarks.app-scope`). iOS keeps the plain bookmark (unchanged behaviour).
+    #if targetEnvironment(macCatalyst)
+    private static let creation: URL.BookmarkCreationOptions = [.withSecurityScope]
+    private static let resolution: URL.BookmarkResolutionOptions = [.withSecurityScope]
+    #else
+    private static let creation: URL.BookmarkCreationOptions = []
+    private static let resolution: URL.BookmarkResolutionOptions = []
+    #endif
+
     /// The remembered folder, or nil (never picked, or the bookmark no longer resolves — e.g. the folder was deleted).
     /// A stale bookmark is refreshed in place.
     var url: URL? {
         guard let data = defaults.data(forKey: key) else { return nil }
         var stale = false
-        guard let url = try? URL(resolvingBookmarkData: data, options: [], relativeTo: nil, bookmarkDataIsStale: &stale) else {
+        guard let url = try? URL(resolvingBookmarkData: data, options: Self.resolution, relativeTo: nil, bookmarkDataIsStale: &stale) else {
             return nil
         }
         if stale { try? remember(url) }
@@ -27,7 +37,7 @@ struct PickedFolder {
     func remember(_ url: URL) throws {
         let scoped = url.startAccessingSecurityScopedResource()
         defer { if scoped { url.stopAccessingSecurityScopedResource() } }
-        defaults.set(try url.bookmarkData(options: [], includingResourceValuesForKeys: nil, relativeTo: nil), forKey: key)
+        defaults.set(try url.bookmarkData(options: Self.creation, includingResourceValuesForKeys: nil, relativeTo: nil), forKey: key)
     }
 
     func forget() { defaults.removeObject(forKey: key) }

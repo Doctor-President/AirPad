@@ -34,7 +34,8 @@ final class PrivateEntries {
     /// The phone has a passcode (and so Face ID or the passcode can unlock private entries).
     var available: Bool { method != .none }
     /// The one line shown where the flag is disabled.
-    static let unavailableReason = "Set a passcode on this iPhone to use private entries."
+    static let unavailableReason = RunningOnMac.isMac ? "Set a login password on this Mac to use private entries."
+                                                      : "Set a passcode on this \(ModelRouter.deviceNoun) to use private entries."
 
     /// "Show private": asks for Face ID / the passcode. Returns whether private entries are showing.
     @discardableResult

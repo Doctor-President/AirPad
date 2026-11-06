@@ -50,7 +50,8 @@ final class ShareComposeModel {
         defer { authenticating = false }
         let ctx = LAContext()
         guard ctx.canEvaluatePolicy(.deviceOwnerAuthentication, error: nil) else {
-            if requireFaceID { destination = .new; authMessage = "Face ID isn't available. Saving as a new entry." }
+            if requireFaceID { destination = .new; authMessage = ProcessInfo.processInfo.isMacCatalystApp ? "Touch ID or your password isn't available. Saving as a new entry."
+                                                                                  : "Face ID isn't available. Saving as a new entry." }
             return
         }
         let ok = (try? await ctx.evaluatePolicy(.deviceOwnerAuthentication, localizedReason: reason)) ?? false

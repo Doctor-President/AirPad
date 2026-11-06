@@ -62,7 +62,7 @@ enum CustomServer {
     static let curated: [Curated] = [
         Curated(ollamaTag: "qwen3:4b-instruct-2507-q4_K_M", lmStudioKey: "qwen/qwen3-4b-2507", display: "Qwen3 4B",
                 sizeBytes: 2_497_293_803, tier: 16, recommended: true, tools: true, thinking: false,
-                capability: "The fast default - quick, direct answers for chat and everyday questions. A real step up from the model your phone runs on its own.",
+                capability: "The fast default - quick, direct answers for chat and everyday questions. A real step up from the model your \(RunningOnMac.isMac ? "Mac" : "phone") runs on its own.",
                 posture: "Made by Alibaba (Qwen). Open license (Apache-2.0). May decline some topics."),
         Curated(ollamaTag: "qwen3:8b-q4_K_M", lmStudioKey: "qwen/qwen3-8b", display: "Qwen3 8B",
                 sizeBytes: 5_225_388_164, tier: 16, recommended: false, tools: true, thinking: true,

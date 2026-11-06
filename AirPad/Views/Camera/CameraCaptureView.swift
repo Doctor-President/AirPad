@@ -29,6 +29,10 @@ struct CameraCaptureView: View {
     @State private var sourceChoice: SourceChoice? = nil
     @State private var isSaving = false
 
+    /// Mac batch A — the live camera source only where the system has one (a Mac without a usable camera, the
+    /// Simulator). Presenting `.camera` where it isn't available raises an exception.
+    static var cameraAvailable: Bool { UIImagePickerController.isSourceTypeAvailable(.camera) }
+
     enum SourceChoice: Identifiable {
         case camera, library
         var id: Int { hashValue }
@@ -46,8 +50,10 @@ struct CameraCaptureView: View {
                         .foregroundStyle(AppearancePalette.ink)
 
                     HStack(spacing: 20) {
-                        SourceButton(icon: "camera.fill", label: "Camera") {
-                            requestCameraAndOpen()
+                        if Self.cameraAvailable {
+                            SourceButton(icon: "camera.fill", label: "Camera") {
+                                requestCameraAndOpen()
+                            }
                         }
                         SourceButton(icon: "photo.on.rectangle", label: "Library") {
                             showingPicker = true
@@ -98,6 +104,7 @@ struct CameraCaptureView: View {
     // MARK: - Camera permission
 
     private func requestCameraAndOpen() {
+        guard Self.cameraAvailable else { return }
         let status = AVCaptureDevice.authorizationStatus(for: .video)
         switch status {
         case .authorized:

@@ -77,7 +77,7 @@ enum FirstRunCalloutKey: String, CaseIterable, Identifiable {
         case .librarianModel:
             return FirstRunCalloutContent(
                 headline: nil,
-                body: ["Choose who answers: Apple Intelligence on your phone, or your own models with Ollama or LM Studio."],   // 1.1-A (8) — no Host
+                body: ["Choose who answers: Apple Intelligence on your \(RunningOnMac.isMac ? "Mac" : "phone"), or your own models with Ollama or LM Studio."],   // 1.1-A (8) — no Host
                 targets: [FirstRunCalloutTargetID.librarianModelChip]
             )
         case .entryIntro:

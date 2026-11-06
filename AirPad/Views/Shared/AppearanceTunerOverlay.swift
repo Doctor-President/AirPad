@@ -188,7 +188,7 @@ struct AppearanceTunerSheet<G: Gesture>: View {
                     ForEach(TunerSection.allCases) { group($0) }
                     note("Copy values copies both appearances as JSON. Reset restores the TestFlight defaults, both modes. "
                          + "Drag the header to move this sheet; long-press the handle to hide it until the next launch. "
-                         + "Sliders move only when dragged by the knob. Values stay on this iPhone. TestFlight only.")
+                         + "Sliders move only when dragged by the knob. Values stay on this \(ModelRouter.deviceNoun). TestFlight only.")
                         .padding(.top, 10)
                 }
                 .padding(.horizontal, 14)

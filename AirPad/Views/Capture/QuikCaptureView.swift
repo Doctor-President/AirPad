@@ -421,8 +421,10 @@ struct QuikCaptureView: View {
                 if node.embeddingFailureReason == "guardrail_refused",
                    LocalModelService.shared.state != .ready, !refusalNoteDismissed {
                     LeverRefusalBanner(
-                        message: "Apple Intelligence won't name this entry. Turn on the on-device model in Settings to name sensitive entries.",
-                        onSetUp: { showRefusalSettings = true },
+                        message: RunningOnMac.isMac   // Mac batch A — no on-device model on Mac
+                            ? "Apple Intelligence won't name this entry. You can give it a title yourself."
+                            : "Apple Intelligence won't name this entry. Turn on the on-device model in Settings to name sensitive entries.",
+                        onSetUp: RunningOnMac.isMac ? nil : { showRefusalSettings = true },
                         setUpLabel: "Open Settings",
                         onDismiss: { withAnimation(.easeInOut(duration: 0.2)) { refusalNoteDismissed = true } }
                     )

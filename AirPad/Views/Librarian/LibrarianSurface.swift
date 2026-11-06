@@ -350,6 +350,14 @@ struct LibrarianSurface: View {
                     panelModel.expandToFull(animated: false)
                 }
             }
+            // Mac batch A — `-OpenLibrarian` raises the Librarian to full; `-OpenSettings` opens Settings at its root
+            // (the Mac launch stills: no input automation there).
+            if ProcessInfo.processInfo.arguments.contains("-OpenLibrarian") {
+                DispatchQueue.main.asyncAfter(deadline: .now() + 1.5) { panelModel.expandToFull(animated: false) }
+            }
+            if ProcessInfo.processInfo.arguments.contains("-OpenSettings") {
+                DispatchQueue.main.asyncAfter(deadline: .now() + 1.5) { settingsPresentation = .root }
+            }
             // live-20 (3) — `-OpenSeededChat YES`: open the seeded chat at full (the read-in-full offer's still).
             if UserDefaults.standard.bool(forKey: "OpenSeededChat") {
                 DispatchQueue.main.asyncAfter(deadline: .now() + 1.0) {

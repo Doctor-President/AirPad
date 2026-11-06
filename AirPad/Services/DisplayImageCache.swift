@@ -186,8 +186,15 @@ enum DisplaySize {
         return (scenes.first { $0.activationState == .foregroundActive } ?? scenes.first)?.screen
     }
     static var scale: CGFloat { screen?.scale ?? UITraitCollection.current.displayScale }
-    static var screenWidth: CGFloat { screen?.bounds.width ?? 0 }
-    static var screenHeight: CGFloat { screen?.bounds.height ?? 0 }
+    /// Mac batch A — the foreground scene's own bounds: the window on a Mac (and an iPad in Split View), not the whole
+    /// display. On iPhone the scene fills the screen, so this is the screen size as before. Layout and image buckets
+    /// read these, so a Mac window sizes cards and heroes to the window.
+    private static var sceneBounds: CGRect? {
+        let scenes = UIApplication.shared.connectedScenes.compactMap { $0 as? UIWindowScene }
+        return (scenes.first { $0.activationState == .foregroundActive } ?? scenes.first)?.effectiveGeometry.coordinateSpace.bounds
+    }
+    static var screenWidth: CGFloat { sceneBounds?.width ?? screen?.bounds.width ?? 0 }
+    static var screenHeight: CGFloat { sceneBounds?.height ?? screen?.bounds.height ?? 0 }
     /// The detail hero (and Quick Capture's): the banner's width or its height cap, whichever is larger.
     static var hero: Int { Int(max(screenWidth, EntryVisualSettings.shared.heroMaxHeight) * scale) }
     /// A full-width card (Card view's carousel / vertical cards, the Map's card): the same bucket as the hero, so the

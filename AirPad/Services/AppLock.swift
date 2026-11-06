@@ -53,6 +53,9 @@ final class AppLock {
     private let defaults: UserDefaults
     private let now: () -> TimeInterval
     private let auth: Authenticator
+    /// Mac batch A — on a Mac, AirPad goes `.inactive` whenever another app is in front while its window stays on
+    /// screen, so a cover there would blank the window. The Mac covers on `.background` only (hidden / minimised).
+    private let coversWhenInactive: Bool
 
     var enabled: Bool {
         didSet {
@@ -72,10 +75,11 @@ final class AppLock {
     private var awaySince: TimeInterval?
 
     init(defaults: UserDefaults = .standard, now: @escaping () -> TimeInterval = AppLock.monotonicNow,
-         auth: Authenticator = AppLock.systemAuthenticator) {
+         auth: Authenticator = AppLock.systemAuthenticator, coversWhenInactive: Bool = !RunningOnMac.isMac) {
         self.defaults = defaults
         self.now = now
         self.auth = auth
+        self.coversWhenInactive = coversWhenInactive
         let on = defaults.bool(forKey: Self.enabledKey)
         enabled = on
         after = After(rawValue: defaults.object(forKey: Self.afterKey) as? Int ?? After.oneMinute.rawValue) ?? .oneMinute
@@ -91,22 +95,29 @@ final class AppLock {
     /// the foreground (Face ID can be enrolled or the passcode removed meanwhile).
     private(set) var method: Method = .faceID
 
-    /// "Require Face ID" / "Require Touch ID" / "Require Passcode".
+    /// "Require Face ID" / "Require Touch ID" / "Require Passcode". On a Mac the fallback is the login password, and
+    /// `.none` (no password) names that rather than Face ID, which no Mac has.
     var requireLabel: String {
         switch method {
-        case .faceID, .none: return "Require Face ID"
-        case .touchID:       return "Require Touch ID"
-        case .opticID:       return "Require Optic ID"
-        case .passcode:      return "Require Passcode"
+        case .faceID:   return "Require Face ID"
+        case .touchID:  return "Require Touch ID"
+        case .opticID:  return "Require Optic ID"
+        case .passcode: return RunningOnMac.isMac ? "Require Password" : "Require Passcode"
+        case .none:     return RunningOnMac.isMac ? "Require Password" : "Require Face ID"
         }
     }
     var unlockLabel: String {
         switch method {
-        case .faceID, .none: return "Unlock with Face ID"
-        case .touchID:       return "Unlock with Touch ID"
-        case .opticID:       return "Unlock with Optic ID"
-        case .passcode:      return "Unlock with Passcode"
+        case .faceID:   return "Unlock with Face ID"
+        case .touchID:  return "Unlock with Touch ID"
+        case .opticID:  return "Unlock with Optic ID"
+        case .passcode: return RunningOnMac.isMac ? "Unlock with Password" : "Unlock with Passcode"
+        case .none:     return RunningOnMac.isMac ? "Unlock with Password" : "Unlock with Face ID"
         }
+    }
+    /// The settings line when nothing can unlock (`.none`).
+    static var noPasscodeHint: String {
+        RunningOnMac.isMac ? "Set a login password on this Mac to use this." : "Set a passcode on this \(ModelRouter.deviceNoun) to use this."
     }
 
     // MARK: - Scene phase
@@ -121,7 +132,7 @@ final class AppLock {
             awaySince = nil
         case .inactive:
             // The Face ID sheet itself makes the scene inactive; that is not "away".
-            if !authenticating { coverShown = true }
+            if !authenticating && coversWhenInactive { coverShown = true }
         case .background:
             coverShown = true
             if awaySince == nil { awaySince = now() }
@@ -394,6 +405,21 @@ extension AppLock {
             box.next = .unavailable
             _ = await lock.unlock()
             check("no-passcode-lets-in", !lock.isLocked)
+
+            // Mac batch A — the Mac doesn't cover while another app is in front (.inactive); it still covers when hidden.
+            do {
+                let ds = "\(suite).mac"; UserDefaults().removePersistentDomain(forName: ds)
+                let dm = UserDefaults(suiteName: ds)!; dm.set(true, forKey: enabledKey)
+                box.method = .touchID
+                let mac = AppLock(defaults: dm, now: { box.t },
+                                  auth: Authenticator(method: { box.method }, authenticate: { _ in .success }), coversWhenInactive: false)
+                _ = await mac.unlock()
+                mac.scenePhaseChanged(.inactive)
+                let inactiveClear = !mac.coverShown && !mac.overlayVisible
+                mac.scenePhaseChanged(.background)
+                check("mac-no-cover-when-inactive", inactiveClear && mac.coverShown)
+                UserDefaults().removePersistentDomain(forName: ds)
+            }
 
             // Turning it off drops the lock at once.
             box.method = .faceID; box.next = .success

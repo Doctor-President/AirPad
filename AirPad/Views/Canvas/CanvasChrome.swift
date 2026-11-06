@@ -205,7 +205,8 @@ struct CanvasChrome: View {
                     VStack {
                         iCloudUnavailableBanner()
                             .transition(.move(edge: .top).combined(with: .opacity))
-                            .padding(.top, 8)
+                            // Mac batch A — below the top row (12 pt inset + 48 pt buttons + 8), not on the view title.
+                            .padding(.top, 12 + 48 + 8)
                         Spacer()
                     }
                 }

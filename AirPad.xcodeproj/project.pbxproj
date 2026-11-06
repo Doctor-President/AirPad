@@ -88,6 +88,7 @@
 		314DD82E20DEE1EAF48A2FDD /* AppearanceTuning.swift in Sources */ = {isa = PBXBuildFile; fileRef = 59706866FD48AC8400BD377E /* AppearanceTuning.swift */; };
 		31F513F9A5A97E3E7D7D2086 /* DocumentNamingSelfTest.swift in Sources */ = {isa = PBXBuildFile; fileRef = C3E4914CEA3AE2C4DC0C085C /* DocumentNamingSelfTest.swift */; };
 		323E01DE20F1D667B931F5F0 /* GhostFieldOverlay.swift in Sources */ = {isa = PBXBuildFile; fileRef = CF2C09BA37847F1EB226638D /* GhostFieldOverlay.swift */; };
+		3296197779867E0CBAB270BF /* RunningOnMac.swift in Sources */ = {isa = PBXBuildFile; fileRef = 2201BE07F6CDDB45F55D6B0B /* RunningOnMac.swift */; };
 		334550772B8C8599E8D99C30 /* TagTerritoryLayout.swift in Sources */ = {isa = PBXBuildFile; fileRef = 219BB28A054C465CCA88BA43 /* TagTerritoryLayout.swift */; };
 		33BCDE66EDD07EFE3F1CBB6A /* ModelPicker.swift in Sources */ = {isa = PBXBuildFile; fileRef = 21D283503B6CC7FE116CC91F /* ModelPicker.swift */; };
 		3421335809DAF6820317ADDC /* LibrarianSheetBackground.swift in Sources */ = {isa = PBXBuildFile; fileRef = 51379886273900EA232831C5 /* LibrarianSheetBackground.swift */; };
@@ -559,6 +560,7 @@
 		21B33F87387E58BCADB5C823 /* DocumentHandoffName.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = DocumentHandoffName.swift; sourceTree = "<group>"; };
 		21D283503B6CC7FE116CC91F /* ModelPicker.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ModelPicker.swift; sourceTree = "<group>"; };
 		21F157A25C20FDDA011EFB0A /* ProStore.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ProStore.swift; sourceTree = "<group>"; };
+		2201BE07F6CDDB45F55D6B0B /* RunningOnMac.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = RunningOnMac.swift; sourceTree = "<group>"; };
 		22331897C26EB8AA6E253BD6 /* CollectionPickerMenu.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = CollectionPickerMenu.swift; sourceTree = "<group>"; };
 		239B75A26B2BA53534F71428 /* LayoutService.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = LayoutService.swift; sourceTree = "<group>"; };
 		23ECDDE27DD9E25B6ED253D9 /* GauntletTap.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = GauntletTap.swift; sourceTree = "<group>"; };
@@ -1175,6 +1177,7 @@
 				2F1E6D3E3DA257A138353F43 /* RecorderDeviceBench.swift */,
 				B8903D365A99288D29FD0840 /* RecorderSaveSelfTest.swift */,
 				988F66299DD79745A824B3A0 /* RelatednessService.swift */,
+				2201BE07F6CDDB45F55D6B0B /* RunningOnMac.swift */,
 				06B1768239F02E6846F26864 /* SampleLibrarySeeder.swift */,
 				9C401DD21DDB057255BB02AD /* SampleLibrarySeederSelfTest.swift */,
 				92F8312336CC2A7C1C2763EF /* SelectionService.swift */,
@@ -2262,6 +2265,7 @@
 				E4563A24FEE837F3F34E65B0 /* RenameCollectionSheet.swift in Sources */,
 				1A9E8EF4E13EF3D1B9009EB8 /* ReviewQueueSheet.swift in Sources */,
 				6FC2BE9C463FD9AE53042812 /* RichTextEditor.swift in Sources */,
+				3296197779867E0CBAB270BF /* RunningOnMac.swift in Sources */,
 				C04B73454671E6375E3F8B6A /* SampleLibrarySeeder.swift in Sources */,
 				60B0574C17FE538E06EC22B6 /* SampleLibrarySeederSelfTest.swift in Sources */,
 				1F75D3242F7280C70C2158C5 /* SceneDelegate.swift in Sources */,

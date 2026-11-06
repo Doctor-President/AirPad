@@ -61,6 +61,12 @@ struct ContentView: View {
                         print("[FocusSweep] done")
                     }
                 }
+                // Mac batch A — `-MacReport`: the Mac-sensitive answers, logged once the window is up (and again after a
+                // resize settles, so the window-sized DisplaySize shows).
+                if ProcessInfo.processInfo.arguments.contains("-MacReport") {
+                    DispatchQueue.main.asyncAfter(deadline: .now() + 3) { RunningOnMac.report() }
+                    DispatchQueue.main.asyncAfter(deadline: .now() + 12) { RunningOnMac.report() }
+                }
                 // Brief AS — `-OpenMap` lands on the canvas (Map) for headless verification.
                 if ProcessInfo.processInfo.arguments.contains("-OpenMap"),
                    router.entryMode != .canvas { router.entryMode = .canvas }

@@ -91,8 +91,12 @@ final class FlutedGlass {
     private(set) var lowPower = ProcessInfo.processInfo.isLowPowerModeEnabled
     private(set) var reduceMotion = UIAccessibility.isReduceMotionEnabled
 
+    /// Mac batch A — the device has a motion sensor (no Mac does; nor does the Simulator). Without one, tilt never
+    /// runs and its toggle is hidden.
+    let motionAvailable = CMMotionManager().isDeviceMotionAvailable
+
     /// Tilt is actually moving the field.
-    var tiltRunning: Bool { tiltOn && !lowPower && !reduceMotion }
+    var tiltRunning: Bool { tiltOn && motionAvailable && !lowPower && !reduceMotion }
 
     /// What `surface` should render, or nil → the untouched V1 shader.
     func active(_ surface: GlassSurface) -> GlassRender? {
@@ -273,10 +277,12 @@ struct GlassAppearanceToggles: View {
             row("Fluted glass",
                 detail: detailed ? "Reeded glass over the color on cards and the Dashboard." : nil,
                 isOn: Binding(get: { glass.glassOn }, set: { glass.glassOn = $0 }))
-            row("Move with tilt",
-                detail: tiltDetail,
-                isOn: Binding(get: { glass.tiltOn && !glass.reduceMotion }, set: { glass.tiltOn = $0 }))
-                .disabled(glass.reduceMotion)
+            if glass.motionAvailable {   // Mac batch A — no motion sensor (Mac), no tilt toggle
+                row("Move with tilt",
+                    detail: tiltDetail,
+                    isOn: Binding(get: { glass.tiltOn && !glass.reduceMotion }, set: { glass.tiltOn = $0 }))
+                    .disabled(glass.reduceMotion)
+            }
         }
     }
 

@@ -207,7 +207,24 @@ enum TwoDeviceSelfTest {
         let hu = EntryHistory.union(h1, h2)
         check(hu.count == 2 && hu.first { $0["id"] as? String == "r1" }?["state"] as? String == "seen", "history: union, state never goes back")
 
-        return fails.isEmpty ? "PASS \(n)/\(n)" : "FAIL \(n - fails.count)/\(n): " + fails.joined(separator: "; ")
+        // Cost of one stamped write of a realistically sized entry (4 embeddings, 6 notes) over the previous version.
+        var big = entry("Cost", (0..<6).map { item("c\($0)", String(repeating: "A sentence of a note. ", count: 40)) })
+        for k in ["content_embedding", "summary_embedding", "folksonomy_embedding", "contextual_content_embedding"] {
+            big[k] = (0..<384).map { _ in Double(Float.random(in: -1...1)) }
+        }
+        let costFile = dir.appendingPathComponent("cost/node.json")
+        try? FileManager.default.createDirectory(at: costFile.deletingLastPathComponent(), withIntermediateDirectories: true)
+        var base = (try? LibraryFormatGuard.write(json(big), to: costFile))?.revision
+        let t0 = Date()
+        for i in 0..<20 {
+            big["title"] = "Cost \(i)"
+            base = (try? LibraryFormatGuard.write(json(big), to: costFile, entryBase: base))?.revision
+        }
+        let ms = Date().timeIntervalSince(t0) / 20 * 1000
+        let size = ((try? Data(contentsOf: costFile))?.count ?? 0) / 1024
+        let cost = String(format: " · stamped write of a %d KB entry ≈ %.1f ms (off the main thread)", size, ms)
+
+        return fails.isEmpty ? "PASS \(n)/\(n)" + cost : "FAIL \(n - fails.count)/\(n): " + fails.joined(separator: "; ")
     }
 }
 #endif

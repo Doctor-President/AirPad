@@ -38,8 +38,9 @@ enum GlassSurface {
     }
 }
 
-/// Per-surface size. `ribs` = ribs per SCREEN width and `refraction` is width-normalised on every
-/// surface, so a value means the same thing everywhere.
+/// Per-surface size. `ribs` = ribs per iPhone SCREEN width and `refraction` is pitch-normalised on every
+/// surface, so a value means the same thing everywhere. iPad and Mac turn `ribs` into a pitch in points
+/// (`GlassGeometry`).
 struct GlassSpec: Equatable {
     var ribs: Float
     var refraction: Float
@@ -61,11 +62,55 @@ struct GlassRender: Equatable {
     static let tiltY: Float = 0.05533332824707031
 
     /// Shader buffer — order must match the GLASS layout in `BlobField.metal`.
-    func packed(screenWidth: CGFloat, tilt: SIMD2<Float>) -> [Float] {
-        [ribbed ? 1 : 2, Float(screenWidth), tilt.x * Self.tiltX, tilt.y * Self.tiltY,
-         spec.ribs, spec.refraction, spec.followsCard ? 1 : 0,
+    func packed(_ geometry: GlassGeometry, tilt: SIMD2<Float>) -> [Float] {
+        [ribbed ? 1 : 2, geometry.width, tilt.x * Self.tiltX, tilt.y * Self.tiltY,
+         geometry.ribs(spec), spec.refraction, spec.followsCard ? 1 : 0,
          spec.fadeStart, spec.fadeEnd, spec.fadeAcross ? 1 : 0]
     }
+}
+
+/// Mac batch B0 — how wide a rib is. The shader lays `ribs` across `width` points, so the rib PITCH is
+/// width / ribs points, and refraction (× pitch in `BlobField.metal`) scales with it.
+/// - **iPhone:** unchanged. `width` = the screen width, `ribs` = the surface's ribs per screen width (pixel-identical).
+/// - **iPad / Mac:** a fixed pitch in POINTS, so a wider window gets more ribs, not wider ones. `width` is the
+///   iPhone reference (440 pt), so the pitch never depends on the window and stays right through a resize (the
+///   phase is anchored to the hosting window via the view's global origin). iPad keeps the iPhone's pitch per
+///   surface (440 / ribs: Dashboard and entry 20 pt, List 22, cards 14.7, grid 15.2); the Mac uses T's 14 pt
+///   (mac layout study, 2026-11-07) on every surface.
+struct GlassGeometry: Equatable {
+    /// `.perWidth` = the surface's `ribs` across `width`; `.points` = a fixed pitch.
+    enum Pitch: Equatable { case perWidth, points(Float) }
+    var width: Float
+    var pitch: Pitch
+    /// DEBUG `-glass.ribPitchScale <x>`: < 1 = narrower ribs. 1 in Release.
+    var scale: Float = 1
+
+    static let iPhoneReferenceWidth: Float = 440
+    /// T's pick in the Mac layout study (Ops reference/mac-layout-2026-11-07.json, "rib": 14).
+    static let macPitch: Float = 14
+
+    func ribs(_ spec: GlassSpec) -> Float {
+        switch pitch {
+        case .perWidth: return spec.ribs / scale
+        case .points(let p): return width / (p * scale)
+        }
+    }
+
+    /// Rib pitch in points on this surface (for reports and the self-check).
+    func pitchPoints(_ spec: GlassSpec) -> Float { width / ribs(spec) }
+
+    static let current: GlassGeometry = {
+        var scale: Float = 1
+        #if DEBUG
+        let d = UserDefaults.standard
+        if d.object(forKey: "glass.ribPitchScale") != nil { scale = max(0.1, d.float(forKey: "glass.ribPitchScale")) }
+        #endif
+        if RunningOnMac.isMac { return GlassGeometry(width: iPhoneReferenceWidth, pitch: .points(macPitch), scale: scale) }
+        if UIDevice.current.userInterfaceIdiom == .pad {
+            return GlassGeometry(width: iPhoneReferenceWidth, pitch: .perWidth, scale: scale)
+        }
+        return GlassGeometry(width: Float(FlutedGlass.screenWidth), pitch: .perWidth, scale: scale)
+    }()
 }
 
 /// The two Appearance settings + the system states that pause tilt. `@Observable` so only the
@@ -136,8 +181,8 @@ final class FlutedGlass {
         if tiltRunning { GlassMotion.shared.start() } else { GlassMotion.shared.stop() }
     }
 
-    /// Rib phase is in screen space, normalised by the screen width.
-    /// Read per frame, so resolved once (portrait app; the width doesn't change at runtime).
+    /// iPhone rib phase is in screen space, normalised by the screen width.
+    /// Read per frame, so resolved once (portrait on iPhone; iPad and Mac don't use it, see `GlassGeometry`).
     static let screenWidth: CGFloat = {
         let scene = UIApplication.shared.connectedScenes.first { $0 is UIWindowScene } as? UIWindowScene
         return scene?.screen.bounds.width ?? 440

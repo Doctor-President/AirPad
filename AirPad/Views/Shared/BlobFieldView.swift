@@ -284,7 +284,7 @@ struct BlobFieldView: View {
         guard let glass else { return Shader(function: ShaderLibrary.blobField, arguments: args) }
         // Tilt is read here, per TimelineView tick — a plain non-observed read.
         return Shader(function: ShaderLibrary.blobFieldGlass, arguments: args + [
-            .floatArray(glass.packed(screenWidth: FlutedGlass.screenWidth, tilt: GlassMotion.shared.tilt))
+            .floatArray(glass.packed(GlassGeometry.current, tilt: GlassMotion.shared.tilt))
         ])
     }
 

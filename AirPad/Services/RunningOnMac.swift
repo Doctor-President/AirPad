@@ -18,6 +18,8 @@ extension RunningOnMac {
             "displaySize=\(Int(DisplaySize.screenWidth))x\(Int(DisplaySize.screenHeight)) screen=\(Int(DisplaySize.screen?.bounds.width ?? 0))x\(Int(DisplaySize.screen?.bounds.height ?? 0)) scale=\(DisplaySize.scale)",
             "lock: method=\(AppLock.shared.method) require=\"\(AppLock.shared.requireLabel)\" unlock=\"\(AppLock.shared.unlockLabel)\"",
             "localModel.isAvailable=\(LocalModelService.shared.isAvailable)",
+            "glassPitchPt: " + [GlassSurface.dashboard, .entry, .list, .carousel, .grid].compactMap { s in
+                s.spec.map { "\(s)=\(String(format: "%.2f", GlassGeometry.current.pitchPoints($0)))" } }.joined(separator: " "),
             "minWindow=\(UIApplication.shared.connectedScenes.compactMap { ($0 as? UIWindowScene)?.sizeRestrictions?.minimumSize }.first.map { "\(Int($0.width))x\(Int($0.height))" } ?? "none")",
         ]
         for l in lines { NSLog("[MacReport] %@", l) }

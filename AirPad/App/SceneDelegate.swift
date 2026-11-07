@@ -13,6 +13,16 @@ final class SceneDelegate: NSObject, UIWindowSceneDelegate {
         // collide, and the desktop layout (batch D) is planned at that size and up. No maximum.
         #if targetEnvironment(macCatalyst)
         (scene as? UIWindowScene)?.sizeRestrictions?.minimumSize = Self.macMinimumWindow
+        #if DEBUG
+        // Mac batch B0 stills: `-MacWindowSize 1440x900` pins the window to that size (min = max).
+        if let arg = UserDefaults.standard.string(forKey: "MacWindowSize"),
+           case let wh = arg.split(separator: "x").compactMap({ Double($0) }), wh.count == 2,
+           let r = (scene as? UIWindowScene)?.sizeRestrictions {
+            let size = CGSize(width: wh[0], height: wh[1])
+            r.minimumSize = size
+            r.maximumSize = size
+        }
+        #endif
         #endif
     }
 

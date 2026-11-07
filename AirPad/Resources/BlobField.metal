@@ -417,8 +417,8 @@ static half4 fieldAt(float2 samplePos, float time, float2 size, float style, flo
 // per-surface size + fade arrive in the buffer (`GlassSurface.spec`).
 // GLASS layout (a second .floatArray, so the 13-blob param buffer is untouched):
 //   [0] mode: 1 glass · 2 tilt only (field offset by tilt, nothing else)
-//   [1] screenWidth (pt)  [2] tiltX  [3] tiltY  (already × range, fraction of width)
-//   [4] ribs (per screen width)  [5] refraction (width-normalised)  [6] rib anchor (0 screen · 1 card)
+//   [1] width (pt: the iPhone's screen width; 440 on iPad/Mac)  [2] tiltX  [3] tiltY  (× range, fraction of [1])
+//   [4] ribs across [1] (pitch = [1]/[4] pt)  [5] refraction (× pitch)  [6] rib anchor (0 screen · 1 card)
 //   [7] fadeStart  [8] fadeEnd — fractions of the surface; the glass hands back to the plain field
 //       between them (start ≥ 1 = no fade)
 //   [9] fade axis (0 down the surface · 1 across it, left → right)

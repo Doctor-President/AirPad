@@ -53,6 +53,19 @@ actor iCloudDriveService {
            trySetupSampleDemoScratch() {
             return
         }
+        // Mac batch B1e — `-TwoDeviceRoot <abs path>` (ahead of -UITestLibrary, which the harness passes only to skip the
+        // Sample Library seed): root DIRECTLY at a shared scratch folder (no copy), so two app
+        // instances (two Simulators, or a Simulator and the isolated Mac copy) edit ONE library, with the harness's
+        // stand-in for iCloud between their replicas. Never the real container.
+        if let shared = UserDefaults.standard.string(forKey: "TwoDeviceRoot"), shared.hasPrefix("/"),
+           !shared.contains("Mobile Documents"), !shared.contains("CloudDocs") {
+            let root = URL(fileURLWithPath: shared)
+            if (try? FileManager.default.createDirectory(at: root.appendingPathComponent("nodes"), withIntermediateDirectories: true)) != nil {
+                rootURL = root; isAvailable = true; usingLocalFallback = false
+                print("[Sync] -TwoDeviceRoot \(shared) (device \(SyncDevice.id) \(SyncDevice.label))")
+                return
+            }
+        }
         // UI-first rule (SCHEMA.md §Briefs, 2026-10-01) — `-UITestLibrary` roots at an ISOLATED, EMPTY
         // scratch so device XCUITests never create entries in T's real Library. No sample seed (see
         // `seedSampleLibraryIfNeeded`), wiped clean each launch. Single total isolation point, like the
@@ -991,19 +1004,295 @@ actor iCloudDriveService {
         else if path.contains("AirPadFieldFixtureScratch") { kind = "field-scratch" }
         else if path.contains("Mobile Documents") || path.contains("com~apple~CloudDocs") { kind = "icloud" }
         else if usingLocalFallback { kind = "local" }
+        else if Self.isTwoDeviceRoot(path) { kind = "two-device" }
         else { kind = "unknown" }
         return (kind, path, usingLocalFallback)
     }
 
     // MARK: - Nodes
 
-    func saveNode(_ node: Node) throws {
+    /// Mac batch B1 — writes the entry through the one funnel with the stamp of the version this copy came from
+    /// (`node.syncBase`); a different version on disk is merged, not overwritten. The outcome carries the new stamp
+    /// and, after a merge, the merged entry for the store to adopt.
+    @discardableResult
+    func saveNode(_ node: Node, origin: SyncOrigin = .user) throws -> LibraryFormatGuard.WriteOutcome {
         let root = try requireRoot()
         let nodeDir = root.appendingPathComponent("nodes/\(node.id)")
+        if origin == .background, node.syncBase.map({ !$0.hash.isEmpty }) == true,
+           !FileManager.default.fileExists(atPath: nodeDir.path) {
+            var o = LibraryFormatGuard.WriteOutcome()   // deleted on another device: a background pass doesn't bring it back
+            o.deletedElsewhere = true; o.skipped = true
+            return o
+        }
         try FileManager.default.createDirectory(at: nodeDir, withIntermediateDirectories: true)
         let data = try JSONEncoder.airPad.encode(node)
-        try LibraryFormatGuard.write(data, to: nodeDir.appendingPathComponent("node.json"))
+        return try LibraryFormatGuard.write(data, to: nodeDir.appendingPathComponent("node.json"),
+                                            entryBase: node.syncBase, origin: origin)
     }
+
+    // MARK: - B1: coordinated reads, download status, conflicts, reload
+
+    nonisolated static func isTwoDeviceRoot(_ path: String) -> Bool {
+        #if DEBUG
+        return UserDefaults.standard.string(forKey: "TwoDeviceRoot") == path
+        #else
+        return false
+        #endif
+    }
+
+    /// A coordinated read of one library file (iCloud never swaps it mid-read); remembered as the base of this
+    /// device's next three-way merge of it.
+    static func readLibraryFile(_ url: URL) throws -> Data {
+        var data: Data?
+        var readError: Error?
+        var coordError: NSError?
+        NSFileCoordinator(filePresenter: LibraryWatcher.presenter).coordinate(readingItemAt: url, options: [], error: &coordError) { u in
+            do { data = try Data(contentsOf: u) } catch { readError = error }
+        }
+        if let readError { throw readError }
+        if let coordError { throw coordError }
+        guard let data else { throw CocoaError(.fileReadUnknown) }
+        SyncBases.noteRead(url, data)
+        return data
+    }
+
+    enum EntryFileState: Equatable { case current, notDownloaded, notCurrent, missing }
+
+    /// Whether this device holds the newest version of an entry. An iCloud placeholder (`.node.json.icloud`, or a
+    /// dataless file) is `notDownloaded`; a downloaded file with a newer version still on its way is `notCurrent`.
+    /// Not iCloud (local fallback, scratch roots) → `current`. DEBUG harness markers stand in for iCloud's states.
+    nonisolated static func entryFileState(_ nodeDir: URL) -> EntryFileState {
+        let fm = FileManager.default
+        let file = nodeDir.appendingPathComponent("node.json")
+        let stub = nodeDir.appendingPathComponent(".node.json.icloud")
+        #if DEBUG
+        if fm.fileExists(atPath: nodeDir.appendingPathComponent(".harness-not-current").path) { return .notCurrent }
+        #endif
+        if !fm.fileExists(atPath: file.path) {
+            return fm.fileExists(atPath: stub.path) ? .notDownloaded : .missing
+        }
+        let v = try? file.resourceValues(forKeys: [.isUbiquitousItemKey, .ubiquitousItemDownloadingStatusKey])
+        guard v?.isUbiquitousItem == true, let status = v?.ubiquitousItemDownloadingStatus else { return .current }
+        switch status {
+        case .current: return .current
+        case .notDownloaded: return .notDownloaded
+        default: return .notCurrent
+        }
+    }
+
+    /// Asks iCloud for the newest version of an entry (no-op off iCloud).
+    nonisolated static func startDownload(_ nodeDir: URL) {
+        let file = nodeDir.appendingPathComponent("node.json")
+        do { try FileManager.default.startDownloadingUbiquitousItem(at: file) }
+        catch { /* not ubiquitous (local / scratch): nothing to download */ }
+    }
+
+    /// Every other version of an entry that iCloud (or a stand-in) kept beside the current one: NSFileVersion
+    /// conflict versions, a renamed copy (`node 2.json`), and under DEBUG the harness's `.conflicts/*.json`.
+    private func otherVersions(_ nodeDir: URL) -> [(data: Data, resolve: () -> Void)] {
+        let fm = FileManager.default
+        let file = nodeDir.appendingPathComponent("node.json")
+        var out: [(Data, () -> Void)] = []
+        let hasConflicts = (try? file.resourceValues(forKeys: [.ubiquitousItemHasUnresolvedConflictsKey]))?
+            .ubiquitousItemHasUnresolvedConflicts ?? false
+        if hasConflicts, let versions = NSFileVersion.unresolvedConflictVersionsOfItem(at: file) {
+            for v in versions {
+                if let d = try? Data(contentsOf: v.url) { out.append((d, { v.isResolved = true })) }
+            }
+            if !versions.isEmpty {
+                out.append((Data(), { try? NSFileVersion.removeOtherVersionsOfItem(at: file) }))
+            }
+        }
+        for f in (try? fm.contentsOfDirectory(atPath: nodeDir.path)) ?? []
+        where f != "node.json" && f.hasPrefix("node ") && f.hasSuffix(".json") {
+            let u = nodeDir.appendingPathComponent(f)
+            if let d = try? Data(contentsOf: u) { out.append((d, { try? fm.removeItem(at: u) })) }
+        }
+        #if DEBUG
+        let cdir = nodeDir.appendingPathComponent(".conflicts")
+        for f in (try? fm.contentsOfDirectory(atPath: cdir.path)) ?? [] where f.hasSuffix(".json") {
+            let u = cdir.appendingPathComponent(f)
+            if let d = try? Data(contentsOf: u) { out.append((d, { try? fm.removeItem(at: u) })) }
+        }
+        #endif
+        return out
+    }
+
+    /// Folds every other version of an entry into its `node.json` (per-field / per-item merge, losers into
+    /// `versions.json`), then marks them resolved. Returns how many versions were folded in.
+    @discardableResult
+    func resolveConflicts(_ nodeDir: URL) -> Int {
+        let others = otherVersions(nodeDir)
+        guard !others.isEmpty else { return 0 }
+        let file = nodeDir.appendingPathComponent("node.json")
+        var folded = 0
+        for other in others {
+            guard !other.data.isEmpty, !LibraryFormatGuard.mergeOffForControl else { other.resolve(); continue }
+            guard let current = try? Self.readLibraryFile(file), let cur = SyncJSON.object(current),
+                  let alt = SyncJSON.object(other.data) else { continue }
+            if LibraryFormatGuard.isNewer(other.data, file: "node.json") { continue }   // S0: leave a newer version alone
+            let a = EntryMerge.Side(obj: cur, rev: EntryMerge.adopt(cur))
+            let b = EntryMerge.Side(obj: alt, rev: EntryMerge.adopt(alt))
+            if a.rev.hash == b.rev.hash { other.resolve(); continue }   // same content: nothing to fold
+            let m = EntryMerge.merge(a, b)
+            var obj = m.obj
+            obj.removeValue(forKey: EntryMerge.stampKey)
+            var rev = m.rev
+            rev.d = SyncDevice.id; rev.n = SyncDevice.nextCounter(); rev.t = Date().timeIntervalSince1970
+            rev.vv[SyncDevice.id] = rev.n
+            let (final, _) = EntryMerge.stamped(obj, rev)
+            guard let bytes = SyncJSON.data(final) else { continue }
+            do {
+                // Base = the current file: a plain stamped write of the merged entry (no second merge).
+                try LibraryFormatGuard.write(bytes, to: file, entryBase: a.rev, origin: .user, asStamped: true)
+                let hist = EntryHistory.records(m.losers, names: m.rev.names)
+                if !hist.isEmpty, let h = SyncJSON.data(EntryHistory.file(hist)) {
+                    _ = try? LibraryFormatGuard.write(h, to: nodeDir.appendingPathComponent(EntryHistory.fileName))
+                }
+                other.resolve()
+                folded += 1
+                print("[Sync] folded a conflict version of \(nodeDir.lastPathComponent) into node.json; kept \(hist.count) version(s)")
+            } catch {
+                print("[Sync] conflict fold failed for \(nodeDir.lastPathComponent): \(error)")
+            }
+        }
+        return folded
+    }
+
+    enum ReloadResult { case node(Node), missing, notDownloaded, notCurrent }
+
+    /// One entry as it is on disk now (after folding in any conflict versions), with its stamp.
+    func reloadNode(id: String) -> ReloadResult {
+        guard let root = rootURL else { return .missing }
+        let dir = root.appendingPathComponent("nodes/\(id)")
+        mergeDuplicateDirs(root: root, ids: [id])
+        switch Self.entryFileState(dir) {
+        case .missing: return .missing
+        case .notDownloaded: Self.startDownload(dir); return .notDownloaded
+        case .notCurrent: Self.startDownload(dir); return .notCurrent
+        case .current: break
+        }
+        resolveConflicts(dir)
+        guard let data = try? Self.readLibraryFile(dir.appendingPathComponent("node.json")),
+              var node = try? JSONDecoder.airPad.decode(Node.self, from: data) else { return .missing }
+        if node.entrySchemaVersion > LibraryFormatGuard.entrySchemaVersion {
+            LibraryFormatGuard.markNewer("nodes/\(id)/node.json v\(node.entrySchemaVersion)")
+        }
+        node.syncBase = SyncJSON.object(data).map(EntryMerge.adopt)
+        return .node(node)
+    }
+
+    /// Download state of one entry (for the open entry's "Catching up…").
+    func fileState(id: String) -> EntryFileState {
+        guard let root = rootURL else { return .current }
+        let dir = root.appendingPathComponent("nodes/\(id)")
+        let st = Self.entryFileState(dir)
+        if st == .notDownloaded || st == .notCurrent { Self.startDownload(dir) }
+        return st
+    }
+
+    /// iCloud directory conflict copies (`nodes/<id> 2/`): fold the copy's entry into `nodes/<id>/node.json`, move
+    /// over any file the copy has that the original lacks (media), then remove the copy. Replaces BN0's
+    /// "keep the newest, ignore the other" (which dropped the other device's edits).
+    private func mergeDuplicateDirs(root: URL, ids: Set<String>?) {
+        let fm = FileManager.default
+        let nodes = root.appendingPathComponent("nodes")
+        for dir in (try? fm.contentsOfDirectory(atPath: nodes.path)) ?? [] {
+            let id = LibraryWatcher.entryID(fromDir: dir)
+            guard id != dir, ids?.contains(id) ?? true else { continue }
+            let copy = nodes.appendingPathComponent(dir), main = nodes.appendingPathComponent(id)
+            guard let copyData = try? Data(contentsOf: copy.appendingPathComponent("node.json")),
+                  let copyNode = SyncJSON.object(copyData), copyNode["id"] as? String == id else { continue }
+            if !fm.fileExists(atPath: main.appendingPathComponent("node.json").path) {
+                try? fm.createDirectory(at: main, withIntermediateDirectories: true)
+            }
+            // Move over files the original lacks (never overwrite one it has).
+            if let e = fm.enumerator(at: copy, includingPropertiesForKeys: [.isDirectoryKey]) {
+                for case let u as URL in e {
+                    let rel = String(u.standardizedFileURL.path.dropFirst(copy.standardizedFileURL.path.count + 1))
+                    guard rel != "node.json", (try? u.resourceValues(forKeys: [.isDirectoryKey]))?.isDirectory != true else { continue }
+                    let dst = main.appendingPathComponent(rel)
+                    if !fm.fileExists(atPath: dst.path) {
+                        try? fm.createDirectory(at: dst.deletingLastPathComponent(), withIntermediateDirectories: true)
+                        try? fm.copyItem(at: u, to: dst)
+                    }
+                }
+            }
+            let mainFile = main.appendingPathComponent("node.json")
+            if !fm.fileExists(atPath: mainFile.path) {
+                guard (try? LibraryFormatGuard.write(copyData, to: mainFile, origin: .user, asStamped: true)) != nil else { continue }
+            } else {
+                // Stage the copy as a conflict version of the original and fold it in.
+                let staged = main.appendingPathComponent("node \(UUID().uuidString.prefix(6)).json")
+                guard (try? copyData.write(to: staged, options: .atomic)) != nil else { continue }
+                resolveConflicts(main)
+                guard !fm.fileExists(atPath: staged.path) else { continue }   // fold failed: keep the copy
+            }
+            try? fm.removeItem(at: copy)
+            print("[Sync] merged directory copy '\(dir)' into nodes/\(id)")
+        }
+    }
+
+    /// Library-wide files with other versions kept beside them (an iCloud conflict, or under DEBUG the harness's
+    /// `.conflicts/<file>/*.json`): each is united into the current file (no common base → nothing dropped).
+    static let aggregateFiles = ["tags.json", "collections.json", "field_definitions.json", "chats.json",
+                                 "canvas_layout.json", "territory_layout.json"]
+
+    func resolveAggregateConflicts(_ names: Set<String>?) {
+        guard let root = rootURL else { return }
+        let fm = FileManager.default
+        for name in Self.aggregateFiles where names?.contains(name) ?? true {
+            let url = root.appendingPathComponent(name)
+            var others: [(Data, () -> Void)] = []
+            let hasConflicts = (try? url.resourceValues(forKeys: [.ubiquitousItemHasUnresolvedConflictsKey]))?
+                .ubiquitousItemHasUnresolvedConflicts ?? false
+            if hasConflicts, let versions = NSFileVersion.unresolvedConflictVersionsOfItem(at: url) {
+                for v in versions { if let d = try? Data(contentsOf: v.url) { others.append((d, { v.isResolved = true })) } }
+                if !versions.isEmpty { others.append((Data(), { try? NSFileVersion.removeOtherVersionsOfItem(at: url) })) }
+            }
+            #if DEBUG
+            let cdir = root.appendingPathComponent(".conflicts/\(name)")
+            for f in (try? fm.contentsOfDirectory(atPath: cdir.path)) ?? [] where f.hasSuffix(".json") {
+                let u = cdir.appendingPathComponent(f)
+                if let d = try? Data(contentsOf: u) { others.append((d, { try? fm.removeItem(at: u) })) }
+            }
+            #endif
+            for (data, resolve) in others {
+                guard !data.isEmpty else { resolve(); continue }
+                guard let cur = try? Self.readLibraryFile(url), let curV = SyncJSON.any(cur), let altV = SyncJSON.any(data) else { continue }
+                let merged = AggregateMerge.merge3(file: name, base: nil, mine: curV, disk: altV)
+                guard let bytes = SyncJSON.data(merged) else { continue }
+                if (try? LibraryFormatGuard.write(bytes, to: url)) != nil {
+                    resolve()
+                    print("[Sync] folded a conflict version of \(name)")
+                    DispatchQueue.main.async {
+                        NotificationCenter.default.post(name: .librarySyncChanged, object: nil,
+                                                        userInfo: ["nodes": Set<String>(), "files": Set([name])])
+                    }
+                }
+            }
+        }
+    }
+
+    // MARK: - B1f: version history
+
+    func loadHistory(nodeID: String) -> [[String: Any]] {
+        guard let root = rootURL else { return [] }
+        let url = root.appendingPathComponent("nodes/\(nodeID)/\(EntryHistory.fileName)")
+        guard FileManager.default.fileExists(atPath: url.path), let d = try? Self.readLibraryFile(url) else { return [] }
+        return EntryHistory.records(in: SyncJSON.any(d))
+    }
+
+    /// Moves records forward (seen / restored), or adds new ones (a restore keeps what it replaced).
+    func updateHistory(nodeID: String, records: [[String: Any]]) throws {
+        let root = try requireRoot()
+        let url = root.appendingPathComponent("nodes/\(nodeID)/\(EntryHistory.fileName)")
+        guard let d = SyncJSON.data(EntryHistory.file(records)) else { return }
+        try LibraryFormatGuard.write(d, to: url)
+    }
+
+    /// B1 — entries iCloud is still downloading at the last full load (placeholders / not current).
+    private(set) var waitingForDownload: Set<String> = []
 
     /// Set once the entries' versions have been looked at (the scan, or a full load).
     private var entriesScanned = false
@@ -1056,18 +1345,38 @@ actor iCloudDriveService {
         // (A file-level iCloud conflict copy — `node 2.json` — is IGNORED here because we only
         //  read `node.json`; a DIRECTORY-level conflict — `nodes/<id> 2/node.json` — is not, and
         //  is the duplicate-id source below.)
+        // Mac batch B1 — fold iCloud directory copies (`nodes/<id> 2/`) into their entry first.
+        if contents.contains(where: { LibraryWatcher.entryID(fromDir: $0.lastPathComponent) != $0.lastPathComponent }) {
+            mergeDuplicateDirs(root: root, ids: nil)
+        }
+        let dirs = (try? FileManager.default.contentsOfDirectory(at: nodesDir, includingPropertiesForKeys: nil,
+                                                                  options: .skipsHiddenFiles)) ?? contents
         var decoded: [(node: Node, dir: String)] = []
-        for nodeDir in contents {
+        var waiting: Set<String> = []
+        for nodeDir in dirs {
             let fileURL = nodeDir.appendingPathComponent("node.json")
-            guard FileManager.default.fileExists(atPath: fileURL.path) else { continue }
-            let data = try Data(contentsOf: fileURL)
-            let node = try JSONDecoder.airPad.decode(Node.self, from: data)
+            // B1 — an entry iCloud hasn't downloaded yet is no longer skipped silently: ask for it, and the store
+            // shows "Catching up…" until it lands (the watcher then loads it).
+            switch Self.entryFileState(nodeDir) {
+            case .missing: continue
+            case .notDownloaded:
+                Self.startDownload(nodeDir); waiting.insert(nodeDir.lastPathComponent); continue
+            case .notCurrent:
+                Self.startDownload(nodeDir); waiting.insert(nodeDir.lastPathComponent)
+            case .current: break
+            }
+            resolveConflicts(nodeDir)
+            let data = try Self.readLibraryFile(fileURL)
+            var node = try JSONDecoder.airPad.decode(Node.self, from: data)
+            node.syncBase = SyncJSON.object(data).map(EntryMerge.adopt)   // B1 — the version this copy came from
             if node.entrySchemaVersion > LibraryFormatGuard.entrySchemaVersion {   // 1.0r S0 forward-format guard
                 LibraryFormatGuard.markNewer("nodes/\(nodeDir.lastPathComponent)/node.json v\(node.entrySchemaVersion)")
             }
             decoded.append((node, nodeDir.lastPathComponent))
         }
         entriesScanned = true   // 1.0r S0 — every entry's version was just checked
+        waitingForDownload = waiting
+        if !waiting.isEmpty { print("[Sync] \(waiting.count) entr\(waiting.count == 1 ? "y" : "ies") still downloading from iCloud") }
         return Self.dedupById(decoded)
     }
 
@@ -1204,7 +1513,7 @@ actor iCloudDriveService {
         let root = try requireRoot()
         let fileURL = root.appendingPathComponent("tags.json")
         guard FileManager.default.fileExists(atPath: fileURL.path) else { return [] }
-        let data = try Data(contentsOf: fileURL)
+        let data = try Self.readLibraryFile(fileURL)   // B1: coordinated; the base of the next merge
         return try JSONDecoder.airPad.decode([Tag].self, from: data)
     }
 
@@ -1232,7 +1541,7 @@ actor iCloudDriveService {
         let root = try requireRoot()
         let fileURL = root.appendingPathComponent("collections.json")
         guard FileManager.default.fileExists(atPath: fileURL.path) else { return nil }
-        let data = try Data(contentsOf: fileURL)
+        let data = try Self.readLibraryFile(fileURL)   // B1: coordinated; the base of the next merge
         return try JSONDecoder.airPad.decode([NodeCollection].self, from: data)
     }
 
@@ -1258,7 +1567,7 @@ actor iCloudDriveService {
         let root = try requireRoot()
         let fileURL = root.appendingPathComponent("field_definitions.json")
         guard FileManager.default.fileExists(atPath: fileURL.path) else { return nil }
-        let data = try Data(contentsOf: fileURL)
+        let data = try Self.readLibraryFile(fileURL)   // B1: coordinated; the base of the next merge
         if LibraryFormatGuard.isNewer(data, file: "field_definitions.json") { LibraryFormatGuard.markNewer("field_definitions.json") }   // 1.0r S0
         return try JSONDecoder.airPad.decode(FieldDefinitionStore.self, from: data)
     }
@@ -1284,7 +1593,7 @@ actor iCloudDriveService {
         let root = try requireRoot()
         let fileURL = root.appendingPathComponent("chats.json")
         guard FileManager.default.fileExists(atPath: fileURL.path) else { return nil }
-        let data = try Data(contentsOf: fileURL)
+        let data = try Self.readLibraryFile(fileURL)   // B1: coordinated; the base of the next merge
         return try JSONDecoder.airPad.decode([Chat].self, from: data)
     }
 
@@ -1300,7 +1609,7 @@ actor iCloudDriveService {
         let root = try requireRoot()
         let fileURL = root.appendingPathComponent("canvas_layout.json")
         guard FileManager.default.fileExists(atPath: fileURL.path) else { return nil }
-        let data = try Data(contentsOf: fileURL)
+        let data = try Self.readLibraryFile(fileURL)   // B1: coordinated; the base of the next merge
         if LibraryFormatGuard.isNewer(data, file: "canvas_layout.json") { LibraryFormatGuard.markNewer("canvas_layout.json") }   // 1.0r S0
         return try JSONDecoder.airPad.decode(CanvasLayout.self, from: data)
     }
@@ -1328,7 +1637,7 @@ actor iCloudDriveService {
         let root = try requireRoot()
         let fileURL = root.appendingPathComponent("territory_layout.json")
         guard FileManager.default.fileExists(atPath: fileURL.path) else { return nil }
-        let data = try Data(contentsOf: fileURL)
+        let data = try Self.readLibraryFile(fileURL)   // B1: coordinated; the base of the next merge
         if LibraryFormatGuard.isNewer(data, file: "territory_layout.json") { LibraryFormatGuard.markNewer("territory_layout.json") }   // 1.0r S0
         if let dict = try? JSONDecoder.airPad.decode([String: TerritoryLayoutSnapshot].self, from: data) {
             return dict

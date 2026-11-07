@@ -78,13 +78,68 @@ enum LibraryFormatGuard {
 
     // MARK: - The one write path
 
+    /// DEBUG `-SyncMergeOffForControl` — the harness's positive control: writes overwrite blindly and conflict
+    /// versions are dropped unread, as before B1. Never in Release.
+    static let mergeOffForControl: Bool = {
+        #if DEBUG
+        return ProcessInfo.processInfo.arguments.contains("-SyncMergeOffForControl")
+        #else
+        return false
+        #endif
+    }()
+
+    /// Mac batch B1 — what a write did, for the store: the stamp now on disk, and the bytes actually written when a
+    /// merge with another device's version changed them (the store adopts those), plus the history it kept.
+    struct WriteOutcome {
+        var revision: EntryRevision?
+        var merged: Data?
+        var keptVersions = 0
+        /// An entry deleted on another device; a background pass doesn't bring it back.
+        var deletedElsewhere = false
+        var skipped = false
+    }
+
     /// Writes a library file — the only way `iCloudDriveService` writes one. Refuses (throws `newerLibraryFormat`)
     /// when the library is read-only or the file on disk is newer; carries unknown entry fields into a `node.json`.
-    static func write(_ data: Data, to url: URL) throws {
+    ///
+    /// Mac batch B1 — two-device safety, in the same one place, under an `NSFileCoordinator` write (so iCloud never
+    /// swaps the file between the read and the write):
+    /// - `node.json`: stamped (`EntryMerge.stamp`). If the file on disk isn't the version `entryBase` (this
+    ///   device's in-memory copy) came from, nor this device's own last write, the two are MERGED per field and item
+    ///   (`EntryMerge.merge`) — never a blind overwrite — and the losing values go to the entry's `versions.json`.
+    /// - other library files: a three-way merge against what this device last read or wrote (`AggregateMerge`).
+    @discardableResult
+    /// `asStamped`: the bytes already carry their final stamp (a conflict fold) — keep it rather than recording the
+    /// content as a new edit by this device.
+    static func write(_ data: Data, to url: URL, entryBase: EntryRevision? = nil, origin: SyncOrigin = .user,
+                      asStamped: Bool = false) throws -> WriteOutcome {
         try requireWritable()
+        var outcome = WriteOutcome()
+        var thrown: Error?
+        var coordError: NSError?
+        var history: [[String: Any]] = []
+        NSFileCoordinator(filePresenter: LibraryWatcher.presenter).coordinate(
+            writingItemAt: url, options: .forMerging, error: &coordError
+        ) { u in
+            do { (outcome, history) = try writeCoordinated(data, to: u, entryBase: entryBase, origin: origin, asStamped: asStamped) }
+            catch { thrown = error }
+        }
+        if let thrown { throw thrown }
+        if let coordError { throw coordError }
+        if !history.isEmpty {
+            let hist = url.deletingLastPathComponent().appendingPathComponent(EntryHistory.fileName)
+            if let d = SyncJSON.data(EntryHistory.file(history)) { _ = try? write(d, to: hist) }
+        }
+        return outcome
+    }
+
+    private static func writeCoordinated(_ data: Data, to url: URL, entryBase: EntryRevision?,
+                                         origin: SyncOrigin, asStamped: Bool) throws -> (WriteOutcome, [[String: Any]]) {
         let name = url.lastPathComponent
         let old = try? Data(contentsOf: url)
         var out = data
+        var outcome = WriteOutcome()
+        var history: [[String: Any]] = []
         if let old {
             if isNewer(old, file: name) {
                 markNewer("\(url.deletingLastPathComponent().lastPathComponent)/\(name)")
@@ -92,7 +147,95 @@ enum LibraryFormatGuard {
             }
             if name == "node.json" { out = carryUnknownEntryFields(into: data, from: old) }
         }
+        if name == "node.json", var mine = SyncJSON.object(out) {
+            let given = asStamped ? EntryMerge.adopt(mine) : nil
+            mine.removeValue(forKey: EntryMerge.stampKey)
+            func stampMine(_ base: EntryRevision?) -> EntryRevision {
+                given ?? EntryMerge.stamp(mine, base: base, origin: origin)
+            }
+            if old == nil, entryBase.map({ !$0.hash.isEmpty }) == true {
+                // On disk before, gone now: deleted on another device. A background pass doesn't resurrect it; a
+                // person's edit does (nothing typed is lost).
+                outcome.deletedElsewhere = true
+                if origin == .background { outcome.skipped = true; return (outcome, []) }
+            }
+            var final: [String: Any]
+            var rev: EntryRevision
+            if let old, let disk = SyncJSON.object(old) {
+                let diskRev = EntryMerge.adopt(disk)
+                let ownLast = SyncBases.isOwnLast(url, hash: diskRev.hash)
+                if SyncJSON.contentHash(mine) == diskRev.hash {
+                    // Same content as disk (a re-save, or the other device already merged the same): no write, so two
+                    // devices never trade identical files back and forth.
+                    outcome.revision = diskRev
+                    return (outcome, [])
+                }
+                if ownLast || diskRev.hash == entryBase?.hash || mergeOffForControl {
+                    // Nobody else changed it: a plain write. After our own write, that version is the real base.
+                    let stamp = stampMine(ownLast ? diskRev : entryBase)
+                    (final, rev) = EntryMerge.stamped(mine, stamp)
+                } else {
+                    let stamp = stampMine(entryBase)
+                    let m = EntryMerge.merge(.init(obj: mine, rev: stamp), .init(obj: disk, rev: diskRev))
+                    var merged = m.rev
+                    if given != nil {
+                        merged.n = SyncDevice.nextCounter(); merged.vv[SyncDevice.id] = merged.n
+                        merged.names[SyncDevice.id] = SyncDevice.label
+                    } else { merged.n = stamp.n }
+                    merged.d = SyncDevice.id; merged.t = Date().timeIntervalSince1970
+                    (final, rev) = EntryMerge.stamped(m.obj, merged)
+                    history = EntryHistory.records(m.losers, names: merged.names)
+                    outcome.keptVersions = history.count
+                    print("[Sync] merged \(url.deletingLastPathComponent().lastPathComponent) with another device's version "
+                          + "(disk \(diskRev.d.isEmpty ? "unstamped" : diskRev.d):\(diskRev.n), base \(entryBase?.n ?? 0)); kept \(history.count) version(s)")
+                }
+            } else {
+                (final, rev) = EntryMerge.stamped(mine, stampMine(entryBase))
+            }
+            guard let bytes = SyncJSON.data(final) else { throw GuardError.newerLibraryFormat }
+            if outcome.keptVersions > 0 || SyncJSON.contentHash(final) != SyncJSON.contentHash(mine) { outcome.merged = bytes }
+            out = bytes
+            outcome.revision = rev
+            try out.write(to: url, options: .atomic)
+            SyncBases.noteOwnWrite(url, hash: rev.hash)
+            return (outcome, history)
+        }
+        // Derived files (card / block index / corpus index …): this device's write stands — no merge, no hashing.
+        if AggregateMerge.mineWins.contains(name) {
+            try out.write(to: url, options: .atomic)
+            return (outcome, history)
+        }
+        // Library-wide files: three-way merge when another device changed the file since this one last saw it.
+        if let old, let disk = SyncJSON.any(old), let mineV = SyncJSON.any(out) {
+            let diskHash = SyncJSON.valueHash(old)
+            let base = SyncBases.base(url)
+            // The version history only ever grows: always a union with what's there.
+            let clean = name != EntryHistory.fileName
+                && (SyncBases.isOwnLast(url, hash: diskHash) || base.map { SyncJSON.valueHash($0) == diskHash } == true
+                    || diskHash == SyncJSON.valueHash(out))
+            if !clean {
+                let merged = AggregateMerge.merge3(file: name, base: base.flatMap(SyncJSON.any), mine: mineV, disk: disk)
+                if let bytes = SyncJSON.data(merged), SyncJSON.valueHash(bytes) != SyncJSON.valueHash(out) {
+                    out = bytes
+                    outcome.merged = bytes
+                    print("[Sync] merged \(name) with another device's version")
+                    if name != EntryHistory.fileName {   // the store reloads the merged file
+                        DispatchQueue.main.async {
+                            NotificationCenter.default.post(name: .librarySyncChanged, object: nil,
+                                                            userInfo: ["nodes": Set<String>(), "files": Set([name])])
+                        }
+                    }
+                }
+            }
+        }
+        if let old, SyncJSON.valueHash(old) == SyncJSON.valueHash(out) {
+            SyncBases.noteRead(url, old)   // same value already there: no write (no back-and-forth between devices)
+            return (outcome, history)
+        }
         try out.write(to: url, options: .atomic)
+        SyncBases.noteOwnWrite(url, hash: SyncJSON.valueHash(out))
+        SyncBases.noteRead(url, out)
+        return (outcome, history)
     }
 
     /// For mutations that aren't a file write (delete, copy a media file in): refused while read-only.
@@ -102,7 +245,8 @@ enum LibraryFormatGuard {
 
     // MARK: - Unknown fields
 
-    static let knownEntryKeys = Set(Node.CodingKeys.allCases.map(\.stringValue))
+    /// + the B1 stamp, which the write funnel sets itself (never carried from the old file).
+    static let knownEntryKeys = Set(Node.CodingKeys.allCases.map(\.stringValue)).union([EntryMerge.stampKey])
     static let knownItemKeys = Set(NodeItem.CodingKeys.allCases.map(\.stringValue))
 
     /// Copies keys this build doesn't decode from the on-disk entry (`old`) into the entry about to be written

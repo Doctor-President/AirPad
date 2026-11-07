@@ -60,6 +60,8 @@ struct RichTextEditor: UIViewRepresentable {
     /// clear the upstream trigger (e.g. `store.pendingAutoFocusItemID`) on
     /// `.onAppear` so subsequent renders don't re-focus.
     var autoFocusOnAppear: Bool = false
+    /// Mac batch B1 — iCloud is still bringing this entry's newest version: readable, not typeable, until it lands.
+    var holdEdits: Bool = false
     /// When true, applies the Note document typography (line height, paragraph
     /// spacing, list hanging indent) and system-aware colors. Opt-in so other
     /// consumers of this editor render exactly as before. See `NoteTypography`.
@@ -113,7 +115,7 @@ struct RichTextEditor: UIViewRepresentable {
         #else
         if CaretTrace.enabled { textView.accessibilityIdentifier = "noteEditor" }
         #endif
-        textView.isEditable = !LibraryFormatGuard.isReadOnly   // 1.0r S0 — read-only library
+        textView.isEditable = !LibraryFormatGuard.isReadOnly && !holdEdits   // 1.0r S0 — read-only library; B1 catching up
         textView.backgroundColor = .clear
         textView.font = UIFont.preferredFont(forTextStyle: .body)
         // documentStyle uses semantic `.label` (adaptive) so text is legible in
@@ -181,7 +183,7 @@ struct RichTextEditor: UIViewRepresentable {
     func updateUIView(_ uiView: RichTextUIView, context: Context) {
         context.coordinator.parent = self
         // 1.0r S0 — a library saved by a newer AirPad is read-only: the note can be read, not typed into.
-        let editable = !LibraryFormatGuard.isReadOnly
+        let editable = !LibraryFormatGuard.isReadOnly && !holdEdits   // + Mac B1: catching up
         if uiView.isEditable != editable { uiView.isEditable = editable }
         // Brief AZ4 — keep the toolbar font chip's model live (the closures + the
         // effective face change as the entry's override / the global default change).

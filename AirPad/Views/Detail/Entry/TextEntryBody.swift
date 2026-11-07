@@ -87,7 +87,10 @@ struct TextEntryBody: View {
             // empty) entry. Guarded so it only applies when the user hasn't
             // diverged locally (editingText still matches the old stored value),
             // so it never clobbers active typing.
-            if editingText == (old ?? "") { editingText = new ?? "" }
+            // (Mac B1: also when the editor shows the display-trimmed old text, so another device's edit lands.)
+            if editingText == (old ?? "") || editingText == Self.trimmingLeadingBlankLines(old ?? "") {
+                editingText = new ?? ""
+            }
         }
         // Capture-mode live signal + substrate mirror — hoisted off the editor so
         // it fires in spine mode whether the note is expanded or collapsed.
@@ -263,6 +266,7 @@ struct TextEntryBody: View {
                 }
             },
             autoFocusOnAppear: shouldAutoFocus,
+            holdEdits: store.catchingUp.contains(nodeID),   // Mac B1 — newest version still downloading
             documentStyle: true,
             // Brief AZ4 — the effective body face: this entry's override, else the global
             // "Default font". Changing either re-faces the editor live (updateUIView re-decode).

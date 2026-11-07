@@ -121,6 +121,16 @@ struct BackfillBlockEmbeddingState: Equatable {
 final class CorpusStore {
 
     var nodes: [Node] = []
+    /// Mac batch B1 — entries whose newest version iCloud is still downloading: shown "Catching up…", edits held.
+    var catchingUp: Set<String> = []
+    /// Mac batch B1f — per entry, the newest version-history record not yet seen ("Also edited on your Mac · Restore").
+    var versionNotes: [String: EntryVersion] = [:]
+    @ObservationIgnored var inFlightSaves: [String: Int] = [:]
+    /// The stamp of this device's last write per entry — also for one written before it joined `nodes` (a capture
+    /// saves, then inserts), so its echo from disk isn't mistaken for another device's change.
+    @ObservationIgnored var lastWrittenRevision: [String: EntryRevision] = [:]
+    @ObservationIgnored var pendingFlushers: [String: [UUID: () async -> Void]] = [:]
+    @ObservationIgnored var syncObserver: NSObjectProtocol?
     var tags: [Tag] = []
     /// Dashboard Stage 3 — persisted user collections (id + name only). The
     /// virtual Corpus and Journal rows are NOT stored here; the dashboard
@@ -701,11 +711,18 @@ final class CorpusStore {
     /// write-through trigger can't be forgotten when future save paths
     /// land. Throws what the storage actor throws — callers keep their
     /// existing do/catch error handling intact.
-    private func saveAndEnqueue(_ node: Node) async throws {
-        do { try await service.saveNode(node) } catch {
+    private func saveAndEnqueue(_ node: Node, origin: SyncOrigin = .user) async throws {
+        // Mac batch B1 — the write merges with another device's version when the file changed under us; the store
+        // then adopts the merged entry (or drops one a background pass found deleted elsewhere).
+        inFlightSaves[node.id, default: 0] += 1
+        defer { inFlightSaves[node.id] = max(0, (inFlightSaves[node.id] ?? 1) - 1) }
+        let outcome: LibraryFormatGuard.WriteOutcome
+        do { outcome = try await service.saveNode(node, origin: origin) } catch {
             noteNewerFormat(refused: true)   // 1.0r S0 — refused by the forward-format guard → say so
             throw error
         }
+        applySaveOutcome(outcome, sent: node)
+        if outcome.skipped { return }
         blockEmbedding.enqueueRebuild(node: node)
         // ws-card-catalog step 2c — card write-through. Debounced per-node so
         // rapid edits coalesce under one refresh+embed, mirroring the block
@@ -1039,6 +1056,10 @@ final class CorpusStore {
         iCloudUnavailable = fallback
         guard available else { return }
         await load()
+        await startSyncWatching()   // Mac batch B1 — other devices' changes while the app runs
+        #if DEBUG
+        TwoDeviceHarness.startIfAsked(store: self)
+        #endif
         // ws-card-catalog step 2c — kick the catalog backfill after corpus load,
         // off the launch path (foreground-idle, low priority). Not awaited.
         armCatalogBackfill()
@@ -1210,6 +1231,10 @@ final class CorpusStore {
             // 1.0r S0 — the forward-format guard (versions, unknown-field carry, the one write path).
             if ProcessInfo.processInfo.arguments.contains("-ForwardFormatGuardSelfTest") {
                 NSLog("[ForwardFormatGuardSelfTest] %@", ForwardFormatGuardSelfTest.run())
+            }
+            // Mac batch B1 — two-device safety (stamp, merge, the write funnel's base check, history, library files).
+            if ProcessInfo.processInfo.arguments.contains("-TwoDeviceSelfTest") {
+                NSLog("[TwoDeviceSelfTest] %@", TwoDeviceSelfTest.run())
             }
             // live-28 (A3) — Title Case for model-written titles.
             if ProcessInfo.processInfo.arguments.contains("-TitleCaseSelfTest") {
@@ -3437,11 +3462,11 @@ final class CorpusStore {
 
     // MARK: - Update existing nodes
 
-    func updateNode(_ updated: Node) async {
+    func updateNode(_ updated: Node, origin: SyncOrigin = .user) async {
         guard let idx = nodes.firstIndex(where: { $0.id == updated.id }) else { return }
         nodes[idx] = updated
         do {
-            try await saveAndEnqueue(updated)
+            try await saveAndEnqueue(updated, origin: origin)
         } catch {
             print("[CorpusStore] Update error: \(error)")
         }
@@ -3454,11 +3479,11 @@ final class CorpusStore {
     /// is the funnel for every field-scoped mutation; whole-node `updateNode`
     /// stays for callers that legitimately replace the entire node (create/import).
     /// No-op if the node is gone.
-    func mutateNode(id: String, _ body: (inout Node) -> Void) async {
+    func mutateNode(id: String, origin: SyncOrigin = .user, _ body: (inout Node) -> Void) async {
         guard let idx = nodes.firstIndex(where: { $0.id == id }) else { return }
         var node = nodes[idx]
         body(&node)
-        await updateNode(node)
+        await updateNode(node, origin: origin)
     }
 
     // MARK: - Backlinks (user connections)
@@ -3537,7 +3562,7 @@ final class CorpusStore {
         guard didMigrate else { return }
         nodes[idx] = node
         do {
-            try await saveAndEnqueue(node)
+            try await saveAndEnqueue(node, origin: .background)
         } catch {
             print("[CorpusStore] ensureEntrySchema: saveNode error for \(nodeID): \(error)")
         }
@@ -3839,6 +3864,7 @@ final class CorpusStore {
             guard let text = pendingItemEdits[item.id] else { continue }
             await updateTextItem(itemID: item.id, newContent: text, nodeID: nodeID)
         }
+        await runPendingFlushers(nodeID: nodeID)   // Mac B1 — and the header's unsaved title/summary/tags
     }
 
     @ObservationIgnored private var captureLiveCommitTasks: [String: Task<Void, Never>] = [:]
@@ -4037,7 +4063,7 @@ final class CorpusStore {
         guard let name else { return false }
         let hash = cardContentHash(for: node)
         var recorded = false
-        await mutateNode(id: nodeID) { n in
+        await mutateNode(id: nodeID, origin: .background) { n in
             // Don't overwrite a fresh title proposal the FM already produced for this content.
             if n.proposals?.contains(where: { $0.kind == .title && $0.state == .fresh }) == true { return }
             _ = n.recordProposal(kind: .title, text: name, currentSource: n.titleSource,
@@ -4060,7 +4086,7 @@ final class CorpusStore {
     /// no work is needed is a conclusion, not an omission — record it.
     private func markAIWorkSettled(nodeID: String) async {
         guard let node = nodes.first(where: { $0.id == nodeID }), node.needsAIProcessing else { return }
-        await mutateNode(id: nodeID) { $0.needsAIProcessing = false }
+        await mutateNode(id: nodeID, origin: .background) { $0.needsAIProcessing = false }
     }
 
     #if DEBUG
@@ -5534,7 +5560,7 @@ final class CorpusStore {
 
         updated.items[itemIdx] = item
         updated.updatedAt = Date()
-        await updateNode(updated)
+        await updateNode(updated, origin: .background)
 
         // Brief BP1 — the moment the OG title is known, record it as a GHOST title suggestion
         // (a `.propose` proposal), NEVER a written field. Shown as ghost text in a fresh capture,
@@ -5934,7 +5960,7 @@ final class CorpusStore {
         updated.items[itemIdx].linkItems = linkItems
         updated.items[itemIdx].updatedAt = Date()
         updated.updatedAt = Date()
-        await updateNode(updated)
+        await updateNode(updated, origin: .background)
     }
 
     /// Stage 4.6 commit 5 — writeback for a `LinkSnapshotService` pass.
@@ -6788,7 +6814,7 @@ final class CorpusStore {
         updated.items[itemIdx].documentItems = docItems
         updated.items[itemIdx].updatedAt = Date()
         updated.updatedAt = Date()
-        await updateNode(updated)
+        await updateNode(updated, origin: .background)
     }
 
     /// live-15 (1) — extracts every document in the entry that has never been attempted, through the same service and
@@ -7123,7 +7149,7 @@ final class CorpusStore {
         if items[galleryIdx].analysis == analysis { return }
         items[galleryIdx].analysis = analysis
         updated.items[itemIdx].mediaItems = items
-        await updateNode(updated)
+        await updateNode(updated, origin: .background)
     }
 
     /// Writes machine-derived `ImageAnalysis` for a node's DIRECTLY-PICKED hero
@@ -7137,7 +7163,7 @@ final class CorpusStore {
         var updated = nodes[idx]
         if updated.heroAnalysis == analysis { return }
         updated.heroAnalysis = analysis
-        await updateNode(updated)
+        await updateNode(updated, origin: .background)
     }
 
     /// Enqueue (never await) deferred OCR enrichment for a node's gallery
@@ -7247,7 +7273,7 @@ final class CorpusStore {
             let formatter = DateFormatter()
             formatter.setLocalizedDateFormatFromTemplate("MMMd")
             let dated = "\(word) · \(formatter.string(from: node.createdAt))"
-            await mutateNode(id: nodeID) { n in
+            await mutateNode(id: nodeID, origin: .background) { n in
                 n.title = dated
                 n.titleSource = .model   // a user edit flips it .user; never a summary
                 n.updatedAt = Date()
@@ -8644,7 +8670,7 @@ final class CorpusStore {
                 // ★ `"Photo"` / `"Voice note"` are STRUCTURAL media placeholders, not an
                 // enrichment fill of a blank field — they upgrade regardless of posture,
                 // exactly as before.
-                await mutateNode(id: nodeID) { n in
+                await mutateNode(id: nodeID, origin: .background) { n in
                     let fallback = n.items.compactMap { item -> String? in
                         switch item.type {
                         case .text:          return item.content
@@ -8714,7 +8740,7 @@ final class CorpusStore {
             print("[AI] skip substrate FM for \(nodeID) — current for this content")
         }
 
-        await mutateNode(id: nodeID) { n in
+        await mutateNode(id: nodeID, origin: .background) { n in
             // THE LEVER — Stage 1 (ws-lever.md § C5). Record a proposal for each
             // model-authored aspect the user hasn't authored, ALONGSIDE the write.
             // `recordProposal` carries the FM-respect gate that used to sit inline
@@ -8927,7 +8953,7 @@ final class CorpusStore {
             if let vec = computeNodeEmbedding(for: node), !vec.isEmpty {
                 var updated = node
                 updated.contentEmbedding = vec
-                await updateNode(updated)
+                await updateNode(updated, origin: .background)
                 populated += 1
             } else {
                 skippedNoContent += 1
@@ -9080,7 +9106,7 @@ final class CorpusStore {
         print("[Substrate] Migrated \(changed.count) embedder_error → fm_error (had vectors)")
         Task {
             for node in changed {
-                do { try await saveAndEnqueue(node) }
+                do { try await saveAndEnqueue(node, origin: .background) }
                 catch { print("[Substrate] migration save error: \(error)") }
             }
         }
@@ -9285,7 +9311,7 @@ final class CorpusStore {
             // Preserve `embedding_failure_reason = "guardrail_refused"` as
             // historical provenance — the diagnostic export needs it to
             // group the population for hypothesis-3 validation.
-            await updateNode(working)
+            await updateNode(working, origin: .background)
             processed += 1
 
             substrateBackfill = SubstrateBackfillState(
@@ -9369,7 +9395,7 @@ final class CorpusStore {
             // Re-fetch from `nodes` so we never overwrite a concurrent update.
             guard var working = nodes.first(where: { $0.id == node.id }) else { continue }
             await runSubstratePipeline(on: &working, aiSvc: aiSvc)
-            await updateNode(working)
+            await updateNode(working, origin: .background)
 
             switch working.embeddingFailureReason {
             case "guardrail_refused": refused += 1
@@ -9521,7 +9547,7 @@ final class CorpusStore {
                         // FM says incoherent — flag for user review
                         print("[FM] \(nodeID): INCOHERENT — setting needsReview flag")
                         node.needsReview = true
-                        await updateNode(node)
+                        await updateNode(node, origin: .background)
 
                     case nil:
                         // Model unavailable — treat as pass
@@ -9892,7 +9918,7 @@ final class CorpusStore {
             let result = await Self.transcribeAudioFile(at: url)
             if result.unavailable {
                 // live-10 (4) — on-device only: keep the audio; its transcript area says why there are no words.
-                await mutateNode(id: nodeID) { n in
+                await mutateNode(id: nodeID, origin: .background) { n in
                     if let idx = n.items.firstIndex(where: { $0.id == item.id }) { n.items[idx].transcriptUnavailable = true }
                 }
                 print("[Import] audio item=\(item.id.suffix(4)) node=\(nodeID.suffix(4)) not transcribed — on-device recognition unavailable")
@@ -9900,7 +9926,7 @@ final class CorpusStore {
             }
             let transcript = result.text
             guard !transcript.isEmpty else { continue }
-            await mutateNode(id: nodeID) { n in
+            await mutateNode(id: nodeID, origin: .background) { n in
                 if let idx = n.items.firstIndex(where: { $0.id == item.id }) {
                     n.items[idx].transcript = transcript
                     n.items[idx].updatedAt = Date()
@@ -11816,5 +11842,288 @@ final class CorpusStore {
         }
 
         return bestPosition
+    }
+}
+
+// MARK: - Mac batch B1 — two-device safety (store side)
+
+/// One record of an entry's version history, for the "Versions" list and the quiet note.
+struct EntryVersion: Identifiable, Equatable {
+    let id: String
+    let at: Date
+    let kind: String        // field | item | restore
+    let key: String
+    let label: String       // "Title", "Note", "Tags", …
+    let preview: String
+    let from: String        // device label of the replaced version ("Mac"), "" = unknown / older build
+    let state: String       // new | seen | restored
+
+    /// "Also edited on your Mac" (or on another device when unknown).
+    var note: String { from.isEmpty ? "Also edited on another device" : "Also edited on your \(from)" }
+}
+
+extension CorpusStore {
+
+    /// Starts listening for other devices' changes (once), after the first load.
+    func startSyncWatching() async {
+        guard syncObserver == nil, let root = await service.containerRootURL() else { return }
+        syncObserver = NotificationCenter.default.addObserver(forName: .librarySyncChanged, object: nil, queue: .main) { [weak self] n in
+            let ids = n.userInfo?["nodes"] as? Set<String> ?? []
+            let files = n.userInfo?["files"] as? Set<String> ?? []
+            MainActor.assumeIsolated {
+                guard let self else { return }
+                Task { await self.librarySyncChanged(nodeIDs: ids, files: files) }
+            }
+        }
+        await service.resolveAggregateConflicts(nil)
+        LibraryWatcher.start(root: root)
+        let waiting = await service.waitingForDownload
+        if !waiting.isEmpty { catchingUp.formUnion(waiting) }
+    }
+
+    /// The store's half of a write: adopt the stamp, or the merged entry after a merge with another device's
+    /// version, or drop an entry a background pass found deleted on another device.
+    func applySaveOutcome(_ outcome: LibraryFormatGuard.WriteOutcome, sent: Node) {
+        if let rev = outcome.revision { lastWrittenRevision[sent.id] = rev }
+        guard let idx = nodes.firstIndex(where: { $0.id == sent.id }) else { return }
+        if outcome.skipped && outcome.deletedElsewhere {
+            removeDeletedElsewhere(id: sent.id)
+            return
+        }
+        guard let rev = outcome.revision else { return }
+        if let merged = outcome.merged, var m = try? JSONDecoder.airPad.decode(Node.self, from: merged) {
+            // Adopt the merge only if this copy hasn't moved on since it was sent; otherwise keep the old base, so the
+            // next write merges again (the other device's changes are on disk, never dropped).
+            let unchanged = (try? JSONEncoder.airPad.encode(nodes[idx])) == (try? JSONEncoder.airPad.encode(sent))
+            guard unchanged else { return }
+            Self.normalizeAtomicsToFront(&m)
+            m.syncBase = rev
+            nodes[idx] = m
+            if outcome.keptVersions > 0 { Task { await refreshVersionNote(nodeID: sent.id) } }
+        } else {
+            nodes[idx].syncBase = rev
+        }
+    }
+
+    /// The watcher saw files change on disk (another device, or a stand-in under the harness).
+    func librarySyncChanged(nodeIDs: Set<String>, files: Set<String>) async {
+        for id in nodeIDs { await reconcileNode(id: id) }
+        if !files.isEmpty { await service.resolveAggregateConflicts(files) }
+        if files.contains("tags.json"), let t = try? await service.loadTags(), !t.isEmpty { tags = t }
+        if files.contains("collections.json"), let c = try? await service.loadCollections() { collections = c }
+        if files.contains("field_definitions.json"), let f = try? await service.loadFieldDefinitions() {
+            fieldDefinitions = f.definitions
+        }
+    }
+
+    /// Brings one entry up to date with disk. Unsaved typing in the open entry is saved first (as an edit made now),
+    /// so it merges with the other device's version instead of being overwritten by it or overwriting it blind.
+    func reconcileNode(id: String) async {
+        if nodes.contains(where: { $0.id == id }) { await commitPendingItemEdits(forNodeID: id) }
+        if (inFlightSaves[id] ?? 0) > 0 { return }   // that write reads the new version under coordination and merges
+        switch await service.reloadNode(id: id) {
+        case .missing:
+            guard let n = nodes.first(where: { $0.id == id }), n.syncBase.map({ !$0.hash.isEmpty }) == true else { return }
+            removeDeletedElsewhere(id: id)
+        case .notDownloaded, .notCurrent:
+            catchingUp.insert(id)
+        case .node(var d):
+            catchingUp.remove(id)
+            Self.normalizeAtomicsToFront(&d)
+            guard let idx = nodes.firstIndex(where: { $0.id == id }) else {
+                nodes.append(d)   // a new entry from another device
+                nodes.sort { $0.createdAt > $1.createdAt }
+                blockEmbedding.enqueueRebuild(node: d)
+                scheduleCardRefresh(nodeID: id)
+                print("[Sync] new entry from another device: \(id)")
+                return
+            }
+            if let own = lastWrittenRevision[id], own.hash == d.syncBase?.hash {   // our own write coming back
+                if nodes[idx].syncBase == nil { nodes[idx].syncBase = own }
+                return
+            }
+            guard d.syncBase?.hash != nodes[idx].syncBase?.hash else { return }
+            if (inFlightSaves[id] ?? 0) > 0 { return }
+            nodes[idx] = d
+            blockEmbedding.enqueueRebuild(node: d)
+            scheduleCardRefresh(nodeID: id)
+            print("[Sync] reloaded \(id) (another device's version \(d.syncBase?.d ?? "?"):\(d.syncBase?.n ?? 0))")
+            await refreshVersionNote(nodeID: id)
+        }
+    }
+
+    /// Deleted on another device: out of memory (no write). A copy of what this device held stays in Application
+    /// Support for 30 days, in case the delete raced an edit here.
+    private func removeDeletedElsewhere(id: String) {
+        guard let n = nodes.first(where: { $0.id == id }) else { return }
+        if let dir = FileManager.default.urls(for: .applicationSupportDirectory, in: .userDomainMask).first?
+            .appendingPathComponent("RemovedElsewhere", isDirectory: true) {
+            try? FileManager.default.createDirectory(at: dir, withIntermediateDirectories: true)
+            if let d = try? JSONEncoder.airPad.encode(n) {
+                try? d.write(to: dir.appendingPathComponent("\(id)-\(Int(Date().timeIntervalSince1970)).json"))
+            }
+            let old = Date().addingTimeInterval(-30 * 86_400)
+            for f in (try? FileManager.default.contentsOfDirectory(at: dir, includingPropertiesForKeys: [.creationDateKey])) ?? []
+            where ((try? f.resourceValues(forKeys: [.creationDateKey]))?.creationDate ?? .distantFuture) < old {
+                try? FileManager.default.removeItem(at: f)
+            }
+        }
+        nodes.removeAll { $0.id == id }
+        catchingUp.remove(id)
+        versionNotes[id] = nil
+        print("[Sync] \(id) was deleted on another device — removed here (copy kept in RemovedElsewhere)")
+    }
+
+    // MARK: Pending edits held by open views
+
+    /// A view holding unsaved edits for an entry (the header's title/summary/tags) registers how to save them, so
+    /// a change from another device first saves them. Returns the token to unregister with.
+    func registerPendingFlush(nodeID: String, _ flush: @escaping () async -> Void) -> UUID {
+        let token = UUID()
+        pendingFlushers[nodeID, default: [:]][token] = flush
+        return token
+    }
+
+    func unregisterPendingFlush(nodeID: String, token: UUID) {
+        pendingFlushers[nodeID]?[token] = nil
+    }
+
+    func runPendingFlushers(nodeID: String) async {
+        for f in (pendingFlushers[nodeID] ?? [:]).values { await f() }
+    }
+
+    // MARK: Catching up (the open entry)
+
+    /// Checks the open entry's download state; not current → "Catching up…" and edits held until it is.
+    func checkCurrent(nodeID: String) async {
+        let st = await service.fileState(id: nodeID)
+        if st == .notDownloaded || st == .notCurrent {
+            catchingUp.insert(nodeID)
+            Task { [weak self] in
+                // iCloud may land the file without telling a presenter: look again until it's current.
+                for _ in 0..<60 {
+                    try? await Task.sleep(for: .seconds(2))
+                    guard let self, self.catchingUp.contains(nodeID) else { return }
+                    let s = await self.service.fileState(id: nodeID)
+                    if s == .current { await self.reconcileNode(id: nodeID); self.catchingUp.remove(nodeID); return }
+                }
+            }
+        } else if catchingUp.contains(nodeID) {
+            await reconcileNode(id: nodeID)
+            catchingUp.remove(nodeID)
+        }
+    }
+
+    func isCatchingUp(_ nodeID: String) -> Bool { catchingUp.contains(nodeID) }
+
+    // MARK: Version history (B1f)
+
+    func rawHistory(nodeID: String) async -> [[String: Any]] { await service.loadHistory(nodeID: nodeID) }
+
+    func versions(nodeID: String) async -> [EntryVersion] {
+        await service.loadHistory(nodeID: nodeID).compactMap { Self.entryVersion($0) }
+    }
+
+    func refreshVersionNote(nodeID: String) async {
+        let all = await versions(nodeID: nodeID)
+        versionNotes[nodeID] = all.first { $0.state == "new" }
+    }
+
+    /// The note's ✕: every new record becomes seen (on every device: the history file syncs).
+    func dismissVersionNote(nodeID: String) async {
+        var records = await service.loadHistory(nodeID: nodeID)
+        for i in records.indices where (records[i]["state"] as? String) == "new" { records[i]["state"] = "seen" }
+        try? await service.updateHistory(nodeID: nodeID, records: records)
+        versionNotes[nodeID] = nil
+    }
+
+    /// One tap: puts the kept version back as a new edit. What it replaces is kept too, so a restore can be undone.
+    func restoreVersion(nodeID: String, versionID: String) async {
+        await commitPendingItemEdits(forNodeID: nodeID)
+        var records = await service.loadHistory(nodeID: nodeID)
+        guard let ri = records.firstIndex(where: { $0["id"] as? String == versionID }),
+              let idx = nodes.firstIndex(where: { $0.id == nodeID }),
+              let enc = try? JSONEncoder.airPad.encode(nodes[idx]),
+              var obj = SyncJSON.object(enc) else { return }
+        let rec = records[ri]
+        let key = rec["key"] as? String ?? ""
+        let value = rec["value"]
+        var replaced: Any = NSNull()
+        if rec["kind"] as? String == "item" || (rec["kind"] as? String == "restore" && rec["item"] as? Bool == true) {
+            var items = EntryMerge.items(obj)
+            guard let item = value as? [String: Any] else { return }
+            if let i = items.firstIndex(where: { EntryMerge.itemID($0) == key }) {
+                replaced = items[i]
+                var restored = item
+                restored["updated_at"] = SyncJSON.iso(Date().timeIntervalSince1970)
+                items[i] = restored
+            } else {
+                items.append(item)
+            }
+            obj["items"] = items
+        } else {
+            replaced = obj[key] ?? NSNull()
+            if value == nil || value is NSNull { obj.removeValue(forKey: key) } else { obj[key] = value }
+        }
+        obj["updated_at"] = SyncJSON.iso(Date().timeIntervalSince1970)
+        guard let data = SyncJSON.data(obj), var restored = try? JSONDecoder.airPad.decode(Node.self, from: data) else { return }
+        restored.syncBase = nodes[idx].syncBase
+        records[ri]["state"] = "restored"
+        var undo = EntryHistory.records([EntryMerge.Loser(kind: "restore", key: key, value: replaced,
+                                                         change: SyncChange(d: SyncDevice.id, n: 0, t: Date().timeIntervalSince1970, u: true),
+                                                         winner: .zero(0))],
+                                        names: [SyncDevice.id: SyncDevice.label])
+        undo[0]["state"] = "seen"
+        undo[0]["item"] = rec["kind"] as? String == "item" || rec["item"] as? Bool == true
+        try? await service.updateHistory(nodeID: nodeID, records: records + undo)
+        await updateNode(restored)
+        await refreshVersionNote(nodeID: nodeID)
+    }
+
+    nonisolated static func entryVersion(_ r: [String: Any]) -> EntryVersion? {
+        guard let id = r["id"] as? String else { return nil }
+        let kind = r["kind"] as? String ?? "field"
+        let key = r["key"] as? String ?? ""
+        let value = r["value"]
+        let isItem = kind == "item" || r["item"] as? Bool == true
+        let label: String
+        var preview = ""
+        if isItem, let item = value as? [String: Any] {
+            let type = item["type"] as? String ?? ""
+            label = type == "text" ? "Note" : type.capitalized
+            preview = (item["content"] as? String) ?? (item["title"] as? String) ?? (item["url"] as? String) ?? ""
+        } else {
+            label = fieldLabel(key)
+            switch value {
+            case let s as String: preview = s
+            case let a as [String]: preview = a.joined(separator: ", ")
+            case is NSNull, nil: preview = "(empty)"
+            default: preview = ""
+            }
+        }
+        preview = preview.replacingOccurrences(of: "\n", with: " ").trimmingCharacters(in: .whitespaces)
+        if preview.count > 140 { preview = String(preview.prefix(140)) + "…" }
+        return EntryVersion(id: id, at: (r["at"] as? String).flatMap { try? Date($0, strategy: .iso8601) } ?? .distantPast,
+                            kind: kind, key: key, label: kind == "restore" ? "Before restore · \(label)" : label,
+                            preview: preview, from: r["from"] as? String ?? "", state: r["state"] as? String ?? "new")
+    }
+
+    nonisolated static func fieldLabel(_ key: String) -> String {
+        switch key {
+        case "title": "Title"
+        case "summary": "Description"
+        case "tags": "Tags"
+        case "collection_ids": "Collections"
+        case "connections": "Related entries"
+        case "cover_image_relative_path", "hero_crop": "Hero image"
+        case "journal_date", "is_journal_entry": "Journal"
+        case "priority": "Priority"
+        case "is_private": "Private"
+        case "per_entry_body_font": "Font"
+        case "description_on_card": "Description on card"
+        case "location": "Location"
+        case "mood": "Mood"
+        default: key.replacingOccurrences(of: "_", with: " ").capitalized
+        }
     }
 }

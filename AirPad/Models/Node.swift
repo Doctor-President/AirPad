@@ -485,6 +485,10 @@ struct Node: Codable, Identifiable, Hashable {
     /// 1.1-C (C3) — Private: hidden everywhere until "Show private" is unlocked (`PrivateEntries`). Additive +
     /// decode-tolerant (absent = false), no schema bump.
     var isPrivate: Bool = false
+    /// Mac batch B1 — the revision stamp of the on-disk version this in-memory copy came from (set by the storage
+    /// service on load and after every write). NOT encoded as a field: the write funnel turns it into the file's
+    /// `sync_revision`, and uses it to tell another device's change from this device's own.
+    var syncBase: EntryRevision? = nil
 
     enum CodingKeys: String, CodingKey, CaseIterable {   // CaseIterable: LibraryFormatGuard.knownEntryKeys
         case id, title, summary, tags, mood, provenance, threads, location, items, domain, source

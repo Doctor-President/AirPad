@@ -85,6 +85,21 @@ final class ChatStore {
             chats = []
         }
         didSetup = true
+        // Mac batch B1 — chats another device added or continued (chats.json is merged per chat / per message on write).
+        syncObserver = NotificationCenter.default.addObserver(forName: .librarySyncChanged, object: nil, queue: .main) { [weak self] n in
+            guard (n.userInfo?["files"] as? Set<String>)?.contains("chats.json") == true else { return }
+            MainActor.assumeIsolated {
+                guard let self else { return }
+                Task { await self.reloadFromDisk() }
+            }
+        }
+    }
+
+    @ObservationIgnored private var syncObserver: NSObjectProtocol?
+
+    private func reloadFromDisk() async {
+        guard let loaded = try? await service.loadChats() else { return }
+        chats = loaded.filter { !tombstones.contains($0.id) }.sorted { $0.updatedAt > $1.updatedAt }
     }
 
     /// Insert-or-update by id. `title` is owned solely by

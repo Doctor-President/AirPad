@@ -131,6 +131,8 @@ struct NodeDetailView: View {
     /// foreground (then the placeholder shows).
     @State private var markedPrivateHere = false
     @State private var showExport = false
+    @State private var showVersions = false            // Mac B1f
+    @State private var syncFlushToken: UUID?           // Mac B1 — header drafts saved before another device's change
     @Environment(\.scenePhase) private var privateScenePhase
     @State private var keyboardVisible = false
     /// The pinned capture bar's MEASURED height (item 1 — drives the capture-mode
@@ -350,12 +352,21 @@ struct NodeDetailView: View {
             // Stage 3.1a — first-open lazy migration to the entry-primitive
             // schema. No-op once the node's entrySchemaVersion is current.
             Task { await store.ensureEntrySchema(forNodeID: nodeID) }
+            // Mac batch B1 — another device's change first saves this header's drafts (so they merge, not vanish);
+            // an entry iCloud is still bringing shows "Catching up…"; a kept version shows its note.
+            syncFlushToken = store.registerPendingFlush(nodeID: nodeID) { await commitEditsIfChanged() }
+            Task {
+                await store.checkCurrent(nodeID: nodeID)
+                await store.refreshVersionNote(nodeID: nodeID)
+            }
         }
         .onDisappear {
             saveIfChanged()
+            if let syncFlushToken { store.unregisterPendingFlush(nodeID: nodeID, token: syncFlushToken) }
         }
         .onChange(of: privateScenePhase) { _, phase in if phase == .background { markedPrivateHere = false } }
         .sheet(isPresented: $showExport) { EntryExportSheet(nodeID: nodeID) }   // 1.1-C (C5)
+        .sheet(isPresented: $showVersions) { EntryVersionsSheet(nodeID: nodeID) }   // Mac B1f
         .onChange(of: node?.title) { old, new in
             if editedTitle == (old ?? "") { editedTitle = new ?? "" }
         }
@@ -526,6 +537,7 @@ struct NodeDetailView: View {
                          onVisibleHeight: { heroVisibleHeight = $0 })
                     .measureHeaderBound("hero")
                 VStack(alignment: .leading, spacing: 0) {
+                EntrySyncNotes(nodeID: node.id)   // Mac B1 — draws nothing unless catching up / a version was kept
                 // Detail-View outer rhythm — spacing:0 + explicit per-gap padding
                 // (gap-before), each default 24 so this is BYTE-IDENTICAL to the
                 // old `spacing: 24` until T dials one. The gap-before padding
@@ -941,6 +953,13 @@ struct NodeDetailView: View {
                         Label("Export…", systemImage: "square.and.arrow.up")
                     }
                     .accessibilityIdentifier("entryMenu.export")
+                    // Mac batch B1f — what two-device merges kept for this entry.
+                    Button {
+                        showVersions = true
+                    } label: {
+                        Label("Versions", systemImage: "clock.arrow.circlepath")
+                    }
+                    .accessibilityIdentifier("entryMenu.versions")
                     Divider()
                     // entry-system-and-fold Commit 6 — visibility flag for
                     // the description on the card-view surface (queue #10).

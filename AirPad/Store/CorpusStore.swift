@@ -12016,6 +12016,13 @@ extension CorpusStore {
 
     func isCatchingUp(_ nodeID: String) -> Bool { catchingUp.contains(nodeID) }
 
+    /// Entries iCloud is bringing that aren't on this device at all yet (the library's "Catching up…").
+    var entriesCatchingUp: Int {
+        guard !catchingUp.isEmpty else { return 0 }
+        let here = Set(nodes.map(\.id))
+        return catchingUp.subtracting(here).count
+    }
+
     // MARK: Version history (B1f)
 
     func rawHistory(nodeID: String) async -> [[String: Any]] { await service.loadHistory(nodeID: nodeID) }

@@ -201,6 +201,15 @@ struct CanvasChrome: View {
             // blur uniformly when the fan is expanded so the focal effect is
             // consistent across the full screen, not just the canvas area.
             ZStack {
+                // Mac batch B1 — entries iCloud is still bringing (not on this device yet): a quiet "Catching up…".
+                if !store.iCloudUnavailable, store.entriesCatchingUp > 0 {
+                    VStack {
+                        CatchingUpBanner(count: store.entriesCatchingUp)
+                            .transition(.opacity)
+                            .padding(.top, 12 + 48 + 8)
+                        Spacer()
+                    }
+                }
                 if store.iCloudUnavailable {
                     VStack {
                         iCloudUnavailableBanner()
@@ -1017,6 +1026,25 @@ private struct iCloudUnavailableBanner: View {
         .padding(.vertical, 8)
         .background(.ultraThinMaterial)
         .clipShape(Capsule())
+    }
+}
+
+/// Mac batch B1 — iCloud still downloading entries to this device.
+private struct CatchingUpBanner: View {
+    @Environment(\.appBodyFont) private var appFont
+    let count: Int
+    var body: some View {
+        HStack(spacing: 8) {
+            ProgressView().controlSize(.mini)
+            Text(count == 1 ? "Catching up… 1 entry" : "Catching up… \(count) entries")
+                .font(appFont.font(size: 12, relativeTo: .caption1))
+        }
+        .foregroundStyle(AppearancePalette.ink)
+        .padding(.horizontal, 16)
+        .padding(.vertical, 8)
+        .background(.ultraThinMaterial)
+        .clipShape(Capsule())
+        .accessibilityIdentifier("library.catchingUp")
     }
 }
 

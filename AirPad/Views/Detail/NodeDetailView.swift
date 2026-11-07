@@ -609,6 +609,7 @@ struct NodeDetailView: View {
                     // Placeholder suppressed while a ghost shows (rule 7); the shared header draws the ghost.
                     TextField(tGhostText != nil && focusedField != .title ? "" : "Title",
                               text: $editedTitle, axis: .vertical)
+                        .disabled(store.catchingUp.contains(nodeID))   // Mac B1 — held while catching up
                         .font(entryTitleFont)
                         .foregroundStyle(AppearancePalette.ink)
                         .tint(AppearancePalette.ink)

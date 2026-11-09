@@ -64,6 +64,14 @@ struct ContentView: View {
                 // Mac batch A — `-MacReport`: the Mac-sensitive answers, logged once the window is up (and again after a
                 // resize settles, so the window-sized DisplaySize shows).
                 RunningOnMac.snapshotIfAsked()
+                // Mac batch C2 — `-MapPointerSelfTest`: the Map's trackpad / wheel / hover / keyboard-zoom paths.
+                if ProcessInfo.processInfo.arguments.contains("-MapPointerSelfTest") {
+                    Task { @MainActor in
+                        for _ in 0..<160 where !router.mapSettled { try? await Task.sleep(nanoseconds: 250_000_000) }
+                        try? await Task.sleep(nanoseconds: 8_000_000_000)
+                        NSLog("%@", await MapPointerSelfTest.run(store: store, router: router))
+                    }
+                }
                 #if targetEnvironment(macCatalyst)
                 // Mac batch C1 — `-MacMenuSelfTest`: the real menu bar, fired item by item, once the library is up.
                 if ProcessInfo.processInfo.arguments.contains("-MacMenuSelfTest") {
@@ -586,7 +594,7 @@ struct ContentView: View {
             #if targetEnvironment(macCatalyst)
             RunningOnMac.closeFrontWindow()   // one window for now; the same as its close button
             #endif
-        case .export, .back, .forward:
+        case .export, .back, .forward, .zoomIn, .zoomOut, .zoomFit:
             break
         }
     }

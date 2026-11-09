@@ -225,6 +225,8 @@ final class AppRouter {
     /// Published by the mounted NavigationStack (`NavigationHistory`) for Go › Back / Forward.
     var canGoBack = false
     var canGoForward = false
+    /// The Map is mounted (Mac batch C2: View › Zoom In / Out / to Fit).
+    var mapShowing = false
     /// The entry whose detail is on screen (the top of the stack), for File › Export Entry….
     var openEntryID: String? = nil
     /// File › New Collection and the Settings item present these sheets at the root.

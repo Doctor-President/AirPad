@@ -54,6 +54,12 @@ enum MacMenuSelfTest {
         unsafeBitCast(imp, to: Perform.self)(item.menu, sel, item.index)
     }
 
+    /// Fire `menu › title` as a click does; false if it's missing or disabled.
+    static func fire(menu: String, title: String) -> Bool {
+        guard let i = find(menu, title), i.enabled else { return false }
+        fire(i); return true
+    }
+
     private static func shortcut(_ i: Item) -> String {
         var s = ""
         if i.mods & control != 0 { s += "⌃" }

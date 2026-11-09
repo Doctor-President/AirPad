@@ -1938,6 +1938,14 @@ final class CorpusPhysicsScene: SKScene {
     private var lastCamScaleForIdle: CGFloat = -1      // impossible scale → frame 1 always reads "moved"
     private var lastCardProgressForIdle: CGFloat = -1
     private var isTouchingMap = false
+    /// Mac batch C2 — trackpad pinch / scroll / wheel / hover input (Mac, and iPad with a trackpad or mouse).
+    private var pointerInput: MapPointerInput?
+    /// The orb under the pointer (hover), with its ring + title tag shown.
+    private var hoveredOrbID: String?
+    #if DEBUG
+    /// C2 self-test: the Map on screen.
+    static weak var debugCurrent: CorpusPhysicsScene?
+    #endif
     private var lastActivityTime: TimeInterval = 0
     private var recentRenderTimes: [TimeInterval] = []   // for renderFPS (actual SKView renders / s)
     private var desiredMapFPS: Int = 120
@@ -2262,6 +2270,10 @@ final class CorpusPhysicsScene: SKScene {
     override func didMove(to view: SKView) {
         self.isPaused = false
         installRestObservers(on: view)   // R1
+        if pointerInput == nil { pointerInput = MapPointerInput(scene: self, view: view) }   // Mac batch C2
+        #if DEBUG
+        Self.debugCurrent = self
+        #endif
         #if DEBUG
         if ProcessInfo.processInfo.arguments.contains("-MapNoHalo") { enableNewcomerHalo = false }   // R1 gate: no halo step frames
         // R2 crop gate — `-MapCameraScale <s>`: at 16 s (after -MapFrameOrbs / -MapZoom) set the camera scale absolutely
@@ -6910,6 +6922,205 @@ final class CorpusPhysicsScene: SKScene {
         gestureState = .idle   // nothing to disengage — the annulus is per-frame
         springCameraInsideBounds()   // same spring as a normal release
     }
+}
+
+// MARK: - Mac batch C2 — the Map on a trackpad, a mouse and the keyboard
+
+/// Trackpad pinch (it arrives as a magnify, never as two touches, so the scene's touch pinch can't see it), two-finger
+/// scroll / mouse wheel (pan; ⌥ + wheel zooms), and hover. Recognisers on the SKView that never take touches: an iPhone
+/// gets the same scene code path as before (touch pinch and pan stay in `touchesBegan/Moved/Ended`).
+final class MapPointerInput: NSObject, UIGestureRecognizerDelegate {
+    private weak var scene: CorpusPhysicsScene?
+
+    init(scene: CorpusPhysicsScene, view: SKView) {
+        self.scene = scene
+        super.init()
+        let pinch = UIPinchGestureRecognizer(target: self, action: #selector(pinched(_:)))
+        #if !targetEnvironment(macCatalyst)
+        pinch.allowedTouchTypes = [NSNumber(value: UITouch.TouchType.indirectPointer.rawValue)]   // trackpad only
+        #endif
+        let scroll = UIPanGestureRecognizer(target: self, action: #selector(scrolled(_:)))
+        scroll.allowedScrollTypesMask = .all
+        scroll.allowedTouchTypes = []   // scroll events only: a finger or a click-drag still pans through the scene
+        let hover = UIHoverGestureRecognizer(target: self, action: #selector(hovered(_:)))
+        for g in [pinch, scroll, hover] as [UIGestureRecognizer] {
+            g.cancelsTouchesInView = false
+            g.delaysTouchesBegan = false
+            g.delaysTouchesEnded = false
+            g.delegate = self
+            view.addGestureRecognizer(g)
+        }
+    }
+
+    func gestureRecognizer(_ g: UIGestureRecognizer, shouldRecognizeSimultaneouslyWith other: UIGestureRecognizer) -> Bool { true }
+
+    @objc private func pinched(_ g: UIPinchGestureRecognizer) {
+        guard let scene, let view = g.view else { return }
+        switch g.state {
+        case .began: scene.pointerGestureBegan()
+        case .changed:
+            if g.scale > 0 { scene.pointerZoom(by: 1 / g.scale, at: g.location(in: view)) }
+            g.scale = 1
+        default: scene.pointerGestureEnded()
+        }
+    }
+
+    @objc private func scrolled(_ g: UIPanGestureRecognizer) {
+        guard let scene, let view = g.view else { return }
+        switch g.state {
+        case .began: scene.pointerGestureBegan()
+        case .changed:
+            let t = g.translation(in: view)
+            g.setTranslation(.zero, in: view)
+            if g.modifierFlags.contains(.alternate) {
+                scene.pointerZoom(by: exp(-t.y * 0.01), at: g.location(in: view))   // ⌥ + wheel: up zooms in
+            } else {
+                scene.pointerPan(by: t)
+            }
+        default: scene.pointerGestureEnded()
+        }
+    }
+
+    @objc private func hovered(_ g: UIHoverGestureRecognizer) {
+        guard let scene, let view = g.view else { return }
+        switch g.state {
+        case .began, .changed: scene.pointerHover(at: g.location(in: view))
+        default: scene.pointerHover(at: nil)
+        }
+    }
+}
+
+extension CorpusPhysicsScene {
+    fileprivate func pointerGestureBegan() {
+        wakeMap()
+        coastVelocity = .zero
+        cameraNode.removeAction(forKey: PanBounds.springKey)
+        if canvasState?.cardedNodeID != nil {   // as a touch pan does: moving the Map clears an open card
+            DispatchQueue.main.async { [weak self] in self?.canvasState?.cardedNodeID = nil }
+        }
+    }
+
+    fileprivate func pointerGestureEnded() {
+        isTouchingMap = false
+        springCameraInsideBounds()
+    }
+
+    /// Pan by a scroll delta, the same sense and speed as a finger drag.
+    fileprivate func pointerPan(by t: CGPoint) {
+        let desired = CGPoint(x: cameraNode.position.x - t.x * panMultiplier * cameraNode.xScale,
+                              y: cameraNode.position.y + t.y * panMultiplier * cameraNode.xScale)
+        cameraNode.position = rubberBanded(desired)
+    }
+
+    /// Zoom by `factor` (> 1 zooms out) keeping the scene point under `viewPoint` still — around the cursor.
+    fileprivate func pointerZoom(by factor: CGFloat, at viewPoint: CGPoint) {
+        let before = convertPoint(fromView: viewPoint)
+        cameraNode.setScale((cameraNode.xScale * factor).clamped(to: 0.25...4.0))
+        let after = convertPoint(fromView: viewPoint)
+        cameraNode.position = rubberBanded(CGPoint(x: cameraNode.position.x + before.x - after.x,
+                                                   y: cameraNode.position.y + before.y - after.y))
+        applyOrbScales()
+    }
+
+    /// View › Zoom In / Zoom Out (around the middle) and Zoom to Fit (the whole library), eased like the other camera
+    /// glides.
+    func keyboardZoom(_ command: AppCommand) {
+        wakeFromRest("keyboardZoom")
+        coastVelocity = .zero
+        cameraNode.removeAction(forKey: PanBounds.springKey)
+        let scale: CGFloat, centre: CGPoint
+        switch command {
+        case .zoomIn:  scale = cameraNode.xScale / 1.5; centre = cameraNode.position
+        case .zoomOut: scale = cameraNode.xScale * 1.5; centre = cameraNode.position
+        default:
+            let radius = panBoundsLimit / PanBounds.slack
+            scale = radius / max(0.5 * min(size.width, size.height) * 0.92, 1)
+            centre = panBoundsCentre
+        }
+        let target = scale.clamped(to: 0.25...4.0)
+        let zoom = SKAction.scale(to: target, duration: 0.3)
+        let move = SKAction.move(to: centre, duration: 0.3)
+        zoom.timingMode = .easeInEaseOut; move.timingMode = .easeInEaseOut
+        cameraNode.run(.group([zoom, move]), withKey: "keyboardZoom")
+    }
+
+    /// Hover: a light ring and the orb's title tag (what a glance at an orb tells you), cleared when the pointer
+    /// leaves. Draws only when the orb under the pointer changes; at rest the Map stays paused.
+    fileprivate func pointerHover(at viewPoint: CGPoint?) {
+        var id: String?
+        var dragging = false
+        if case .honeycomb = gestureState { dragging = true }
+        if let viewPoint, !dragging {
+            let p = convertPoint(fromView: viewPoint)
+            if let shape = nodeSprites.values.first(where: { orbContains($0, p) }), let name = shape.name, name.hasPrefix("node:") {
+                id = String(name.dropFirst(5))
+            }
+        }
+        guard id != hoveredOrbID else { return }
+        if let old = hoveredOrbID, let sprite = nodeSprites[old] {
+            sprite.children.filter { $0.name == "hoverRing" || $0.name == "hoverTitle" }.forEach { $0.removeFromParent() }
+        }
+        hoveredOrbID = id
+        wakeFromRest("hover")
+        guard let id, let sprite = nodeSprites[id] else { return }
+        let radius = (sprite.userData?["radius"] as? CGFloat) ?? 30
+        let ring = SKShapeNode(circleOfRadius: radius + 4)
+        ring.strokeColor = currentIsLight ? UIColor(white: 0, alpha: 0.35) : UIColor(white: 1, alpha: 0.5)
+        ring.fillColor = .clear
+        ring.lineWidth = 2
+        ring.zPosition = 0.9
+        ring.name = "hoverRing"
+        sprite.addChild(ring)
+        let title = currentNodes.first { $0.id == id }?.title ?? ""
+        if !title.isEmpty {
+            let label = SKLabelNode()
+            label.attributedText = NSAttributedString(string: title, attributes: [
+                .font: CorpusPhysicsScene.serifFont(size: 13, weight: .medium),
+                .foregroundColor: currentIsLight ? UIColor(white: 0.1, alpha: 0.9) : UIColor(white: 1, alpha: 0.92),
+            ])
+            label.verticalAlignmentMode = .bottom
+            label.horizontalAlignmentMode = .center
+            label.position = CGPoint(x: 0, y: radius + 8)
+            // Screen-constant size whatever the zoom and the orb's own scale.
+            label.setScale(cameraNode.xScale / max(sprite.xScale, 0.0001))
+            label.zPosition = 3
+            label.name = "hoverTitle"
+            sprite.addChild(label)
+        }
+    }
+
+    #if DEBUG
+    /// C2 self-test hooks: drive the pointer paths exactly as the recognisers do.
+    var debugCamera: (position: CGPoint, scale: CGFloat) { (cameraNode.position, cameraNode.xScale) }
+    var debugHoveredOrbID: String? { hoveredOrbID }
+    var debugHoverTitle: String? {
+        hoveredOrbID.flatMap { nodeSprites[$0] }?.children.compactMap { $0 as? SKLabelNode }
+            .first { $0.name == "hoverTitle" }?.attributedText?.string
+    }
+    func debugOrbViewPoint(_ id: String) -> CGPoint? {
+        guard let s = nodeSprites[id], let parent = s.parent else { return nil }
+        return convertPoint(toView: convert(s.position, from: parent))
+    }
+    var debugOrbIDs: [String] { nodeSprites.keys.sorted() }
+    func debugPointerGesture(_ body: (CorpusPhysicsScene) -> Void) {
+        pointerGestureBegan(); body(self); pointerGestureEnded()
+    }
+    func debugPointerZoom(by f: CGFloat, at p: CGPoint) { pointerZoom(by: f, at: p) }
+    func debugPointerPan(by t: CGPoint) { pointerPan(by: t) }
+    func debugPointerHover(at p: CGPoint?) { pointerHover(at: p) }
+    var debugRestPaused: Bool { restPaused }
+    var debugRecognizers: String {
+        (view?.gestureRecognizers ?? []).compactMap { g -> String? in
+            switch g {
+            case let p as UIPinchGestureRecognizer: return "pinch(touchTypes=\(p.allowedTouchTypes.map(\.intValue)))"
+            case let p as UIPanGestureRecognizer where p.allowedTouchTypes.isEmpty: return "scroll(mask=\(p.allowedScrollTypesMask.rawValue))"
+            case is UIHoverGestureRecognizer: return "hover"
+            default: return nil
+            }
+        }.joined(separator: " ")
+    }
+    func debugSceneUnder(_ p: CGPoint) -> CGPoint { convertPoint(fromView: p) }
+    #endif
 }
 
 // MARK: - Comparable clamping helper

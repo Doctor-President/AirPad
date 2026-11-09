@@ -104,6 +104,7 @@
 		36F9E4061BB1232B2A4EB8B1 /* ShareSheetUI.swift in Sources */ = {isa = PBXBuildFile; fileRef = CC24979DB59D837E18440FAE /* ShareSheetUI.swift */; };
 		37C96334FF2E680609216C38 /* EntryVisualSettings.swift in Sources */ = {isa = PBXBuildFile; fileRef = 6F9B499A6DE0C5C10644FF16 /* EntryVisualSettings.swift */; };
 		385D05CF17B9D82F1F6D8A2D /* LibrarianGauntletV2.swift in Sources */ = {isa = PBXBuildFile; fileRef = 47D13AA6D276BABAF0A77D8B /* LibrarianGauntletV2.swift */; };
+		387AC23E16A52397AB46891A /* MapPointerSelfTest.swift in Sources */ = {isa = PBXBuildFile; fileRef = 9A1192C01F48D65E220E33D0 /* MapPointerSelfTest.swift */; };
 		38853CBE29DB65D5ED44A3F6 /* FlutedGlass.swift in Sources */ = {isa = PBXBuildFile; fileRef = F7AF6427A219BF4C6B063118 /* FlutedGlass.swift */; };
 		3A0DA40D5693012561ABFE15 /* AppleDeclineChat.swift in Sources */ = {isa = PBXBuildFile; fileRef = 2C50052E35D01E7BA42393F1 /* AppleDeclineChat.swift */; };
 		3B496945356A064AD86E3547 /* DocumentPickerView.swift in Sources */ = {isa = PBXBuildFile; fileRef = D06AD49C19B1632AA4F8E29C /* DocumentPickerView.swift */; };
@@ -778,6 +779,7 @@
 		988F66299DD79745A824B3A0 /* RelatednessService.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = RelatednessService.swift; sourceTree = "<group>"; };
 		995F37552165E2C50D1ACBA7 /* IPadRotation.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = IPadRotation.swift; sourceTree = "<group>"; };
 		99AE7198F824D189DAD581EE /* LeverButton.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = LeverButton.swift; sourceTree = "<group>"; };
+		9A1192C01F48D65E220E33D0 /* MapPointerSelfTest.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = MapPointerSelfTest.swift; sourceTree = "<group>"; };
 		9AA8521DD3D6E9D3A98EF6EB /* TodayCardView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = TodayCardView.swift; sourceTree = "<group>"; };
 		9C20470AE11E1FAF10AF1071 /* TagSuggestionService.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = TagSuggestionService.swift; sourceTree = "<group>"; };
 		9C2FF3FB474EB570C6F67185 /* LibrarianPerfGate.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = LibrarianPerfGate.swift; sourceTree = "<group>"; };
@@ -1041,6 +1043,7 @@
 				D9792DA964AD5BC6DF0B2F6C /* EditMapSheet.swift */,
 				F009B8D59EF84BA40BB5B4A6 /* EmptyStateOverlay.swift */,
 				A86A204A4B913E467EDBA6B6 /* MapAdaptiveRate.swift */,
+				9A1192C01F48D65E220E33D0 /* MapPointerSelfTest.swift */,
 				03E923FC9841272766621A1B /* ModelProcessingIndicator.swift */,
 				7F66121EACBDE4B0316AC715 /* MSDFLabel.swift */,
 				A64E46FB41D72CA1748DFFE9 /* TitleInkRule.swift */,
@@ -2253,6 +2256,7 @@
 				5AFB3DA829E4D444AE74108C /* MacEnrichServerSelfTest.swift in Sources */,
 				5404E38C7AFC95CBE00F95D9 /* MacMenuSelfTest.swift in Sources */,
 				3B6801F816A54E8556578089 /* MapAdaptiveRate.swift in Sources */,
+				387AC23E16A52397AB46891A /* MapPointerSelfTest.swift in Sources */,
 				D231EBAD8B8B3B58C951FEDE /* MarkdownBlock.swift in Sources */,
 				0D0F9BF7BDE19BC6BF4E9A29 /* MarkdownBlockParserSelfTest.swift in Sources */,
 				4B2E282A8A74937A179298DA /* MarkdownPlain.swift in Sources */,

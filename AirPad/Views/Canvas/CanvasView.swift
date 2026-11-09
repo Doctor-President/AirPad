@@ -851,6 +851,13 @@ struct CanvasView: View {
                 scene.applyFocusOutline(nodeID: id)
             }
             .onAppear { scene.applyFocusOutline(nodeID: router.focusedHighlightNodeID) }
+            // Mac batch C2 — View › Zoom In / Out / to Fit (⌘+ ⌘− ⌘9).
+            .onAppear { router.mapShowing = true }
+            .onDisappear { router.mapShowing = false }
+            .onChange(of: router.commandRequest) { _, request in
+                guard let c = request?.command, [.zoomIn, .zoomOut, .zoomFit].contains(c), navigationPath.isEmpty else { return }
+                scene.keyboardZoom(c)
+            }
             .onChange(of: navigationPath.count) { _, newCount in
                 // Authoritative depth signal. `navigationPath` only ever
                 // contains Node values (the sole `.navigationDestination

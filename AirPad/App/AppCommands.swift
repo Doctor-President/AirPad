@@ -9,6 +9,7 @@ enum AppCommand: String, CaseIterable, Sendable {
     case newEntry, newCollection, closeWindow, export
     case find
     case viewMap, viewList, viewCards, librarian
+    case zoomIn, zoomOut, zoomFit
     case back, forward, today
     case settings
 }
@@ -54,6 +55,16 @@ struct AppCommands: Commands {
             item("Librarian", .librarian, "view.librarian").keyboardShortcut("l")
                 .disabled(router.isCapturing || router.entryMode == .quikCapture)
         }
+        // View: the Map's zoom (C2). ⌘0 is Go › Today, so Zoom to Fit takes ⌘9, as in Preview.
+        CommandGroup(after: .sidebar) {
+            Divider()
+            item("Zoom In", .zoomIn, "view.zoomIn").keyboardShortcut("+")
+                .disabled(!mapShowing)
+            item("Zoom Out", .zoomOut, "view.zoomOut").keyboardShortcut("-")
+                .disabled(!mapShowing)
+            item("Zoom to Fit", .zoomFit, "view.zoomFit").keyboardShortcut("9")
+                .disabled(!mapShowing)
+        }
         // Go
         CommandMenu("Go") {
             item("Back", .back, "go.back").keyboardShortcut("[")
@@ -67,6 +78,7 @@ struct AppCommands: Commands {
         CommandGroup(replacing: .help) {}
     }
 
+    private var mapShowing: Bool { router.mapShowing && !store.isInDetailView }
     private var canCreate: Bool { router.entryMode != .quikCapture && !router.isCapturing }
 
     private func item(_ title: String, _ command: AppCommand, _ id: String) -> some View {

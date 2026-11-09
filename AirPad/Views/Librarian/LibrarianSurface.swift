@@ -1142,6 +1142,12 @@ struct LibrarianSurface: View {
         .sheet(item: $settingsPresentation) { presentation in
             SettingsView(initialAnchor: presentation.anchor)
         }
+        // Mac batch C1 — Edit › Find (⌘F): the library search, as a tap on the search pill gives (focus promotes it
+        // to full). ContentView first brings the Librarian up when the screen had it put away.
+        .onChange(of: router.commandRequest) { _, request in
+            guard request?.command == .find, panelModel.state != .hidden else { return }
+            isSearchFocused = true
+        }
     }
 
     /// Field-agnostic keyboard dismiss (Move 2 fix-pass B). Lifted out

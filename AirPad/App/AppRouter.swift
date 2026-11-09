@@ -208,6 +208,29 @@ final class AppRouter {
     /// nil = open the list itself.
     var pendingChatToOpen: UUID? = nil
 
+    // MARK: - Mac batch C1 — menu bar / keyboard commands
+
+    /// One request per menu choice or key command, monotonic like `FocusRequest` (a repeat still fires). The view that
+    /// owns the action answers it (see `AppCommands`).
+    struct CommandRequest: Equatable {
+        let command: AppCommand
+        let token: Int
+    }
+    private(set) var commandRequest: CommandRequest? = nil
+    @ObservationIgnored private var commandCounter = 0
+    func perform(_ command: AppCommand) {
+        commandCounter += 1
+        commandRequest = CommandRequest(command: command, token: commandCounter)
+    }
+    /// Published by the mounted NavigationStack (`NavigationHistory`) for Go › Back / Forward.
+    var canGoBack = false
+    var canGoForward = false
+    /// The entry whose detail is on screen (the top of the stack), for File › Export Entry….
+    var openEntryID: String? = nil
+    /// File › New Collection and the Settings item present these sheets at the root.
+    var showNewCollection = false
+    var showSettings = false
+
     init() {
         AppRouter.shared = self
         // Brief CE — consume a deep link that arrived before this router existed (cold launch from the

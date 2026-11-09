@@ -135,6 +135,7 @@ struct NodeGridView: View {
                 NodeDetailView(nodeID: route.nodeID, focusEntryID: route.entryID)
             }
             // §3 — search ROW tap pops the detail so the focus is visible.
+            .navigationHistory($navigationPath)   // Mac batch C1 — Go › Back / Forward
             .onChange(of: router.dismissDetailRequest) { _, _ in
                 navigationPath = NavigationPath()
             }

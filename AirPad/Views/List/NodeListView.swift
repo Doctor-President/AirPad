@@ -80,6 +80,7 @@ struct NodeListView: View {
             }
             // §3 — Librarian search ROW tap pops the detail so the focus lands
             // on the visible surface (no-op at root).
+            .navigationHistory($navigationPath)   // Mac batch C1 — Go › Back / Forward
             .onChange(of: router.dismissDetailRequest) { _, _ in
                 navigationPath = NavigationPath()
             }

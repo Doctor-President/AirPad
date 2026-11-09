@@ -367,6 +367,11 @@ struct NodeDetailView: View {
         }
         .onChange(of: privateScenePhase) { _, phase in if phase == .background { markedPrivateHere = false } }
         .sheet(isPresented: $showExport) { EntryExportSheet(nodeID: nodeID) }   // 1.1-C (C5)
+        // Mac batch C1 — this is the entry on screen (the top of the stack re-appears after a Back); File › Export Entry….
+        .onAppear { router.openEntryID = nodeID }
+        .onChange(of: router.commandRequest) { _, request in
+            if request?.command == .export, router.openEntryID == nodeID { showExport = true }
+        }
         .sheet(isPresented: $showVersions) { EntryVersionsSheet(nodeID: nodeID) }   // Mac B1f
         .onChange(of: node?.title) { old, new in
             if editedTitle == (old ?? "") { editedTitle = new ?? "" }

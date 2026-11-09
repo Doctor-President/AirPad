@@ -6,6 +6,34 @@ enum RunningOnMac {
     static let isMac: Bool = ProcessInfo.processInfo.isMacCatalystApp
 }
 
+#if targetEnvironment(macCatalyst)
+import UIKit
+
+extension RunningOnMac {
+    /// Mac batch C1 — AppKit's window list, through the runtime (Catalyst has no AppKit import).
+    private static var appKitWindows: (key: NSObject?, all: [NSObject]) {
+        guard let cls = NSClassFromString("NSApplication") as? NSObject.Type,
+              let app = cls.perform(NSSelectorFromString("sharedApplication"))?.takeUnretainedValue() as? NSObject
+        else { return (nil, []) }
+        let all = (app.value(forKey: "windows") as? [NSObject] ?? [])
+            .filter { ($0.value(forKey: "visible") as? NSNumber)?.boolValue == true }
+        return (app.value(forKey: "keyWindow") as? NSObject, all)
+    }
+
+    /// File › Close Window: the window's own close, the same as its close button. (For a one-window app UIKit's
+    /// `requestSceneSessionDestruction` does nothing, and the system Close item is disabled.)
+    @MainActor static func closeFrontWindow() {
+        let w = appKitWindows
+        guard let window = w.key ?? w.all.first(where: { ($0.value(forKey: "canBecomeMainWindow") as? NSNumber)?.boolValue == true })
+        else { return }
+        window.perform(NSSelectorFromString("performClose:"), with: nil)
+    }
+
+    /// Visible app windows (DEBUG checks).
+    static var visibleWindowCount: Int { appKitWindows.all.count }
+}
+#endif
+
 #if DEBUG
 import UIKit
 

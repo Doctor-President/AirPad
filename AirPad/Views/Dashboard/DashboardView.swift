@@ -265,6 +265,11 @@ struct DashboardView: View {
                 store.detailViewDepth = detailDepth(count: newPath.count)
             }
             .onAppear { store.detailViewDepth = detailDepth(count: path.count) }
+            .navigationHistory($path)   // Mac batch C1 — Go › Back / Forward
+            // Mac batch C1 — Go › Today on the Dashboard itself: back to its top.
+            .onChange(of: router.commandRequest) { _, request in
+                if request?.command == .today, router.entryMode == .dashboard { path = NavigationPath() }
+            }
             .confirmationDialog(
                 deleteTarget.map { "Delete \"\($0.name)\"?" } ?? "Delete collection?",
                 isPresented: deleteDialogBinding,

@@ -821,6 +821,7 @@ struct CanvasView: View {
             // §3 — Librarian search ROW tap pops the detail so the camera fly
             // lands on the visible map (it flies UNDER a pushed detail otherwise).
             // No-op at root.
+            .navigationHistory($navigationPath)   // Mac batch C1 — Go › Back / Forward
             .onChange(of: router.dismissDetailRequest) { _, _ in
                 navigationPath = NavigationPath()
             }

@@ -153,6 +153,7 @@
 		52E814CA75A30AACE5AC618A /* AirPadWidgets.appex in Embed Foundation Extensions */ = {isa = PBXBuildFile; fileRef = 69902D1D994B371BD68A2D71 /* AirPadWidgets.appex */; platformFilter = ios; settings = {ATTRIBUTES = (RemoveHeadersOnCopy, ); }; };
 		536D8F5AEBC887BD1A87C990 /* AutoScrollDriver.swift in Sources */ = {isa = PBXBuildFile; fileRef = 9640DF6602CDCA4B2689C33C /* AutoScrollDriver.swift */; };
 		53C50184B3A475F62CC9BDE2 /* FieldDefinition.swift in Sources */ = {isa = PBXBuildFile; fileRef = 003CEDBA7C8C183191D81F3E /* FieldDefinition.swift */; };
+		5404E38C7AFC95CBE00F95D9 /* MacMenuSelfTest.swift in Sources */ = {isa = PBXBuildFile; fileRef = 3773385430F4EE5C69E66E12 /* MacMenuSelfTest.swift */; };
 		54AFC37A189FD4A44E8FA7B7 /* AppLock.swift in Sources */ = {isa = PBXBuildFile; fileRef = 52F7466953998FA4739AC9C0 /* AppLock.swift */; };
 		55858A9A690EA3D459DE82E9 /* FilterState.swift in Sources */ = {isa = PBXBuildFile; fileRef = 48DBCBFAFA7298D82C3BB0FF /* FilterState.swift */; };
 		56061A0335E2973DF52243F1 /* NodeGridTile.swift in Sources */ = {isa = PBXBuildFile; fileRef = F189E8F160D5B6BD04D88706 /* NodeGridTile.swift */; };
@@ -228,12 +229,14 @@
 		81E961BA4A708B6152A03A06 /* CustomServerSelfTest.swift in Sources */ = {isa = PBXBuildFile; fileRef = B23C7965626A503B20C5D0FC /* CustomServerSelfTest.swift */; };
 		82A241AC4B5BE28AC0C44FCE /* UMAPTransform.swift in Sources */ = {isa = PBXBuildFile; fileRef = CBFC67AB61C6EF9AE8FAEA9E /* UMAPTransform.swift */; };
 		82E46E44615798A6EAF8F8EF /* ShareViewController.swift in Sources */ = {isa = PBXBuildFile; fileRef = 7ADCFC2E5FD3AD007A9DF0EE /* ShareViewController.swift */; };
+		82F235121D34EDF0F2571CB8 /* IPadKeyCommands.swift in Sources */ = {isa = PBXBuildFile; fileRef = 55C3F23FF0530CB8F0162525 /* IPadKeyCommands.swift */; };
 		844D8C5D275400061EB97E02 /* EntrySync.swift in Sources */ = {isa = PBXBuildFile; fileRef = 1C805A799D4977CD24D23D96 /* EntrySync.swift */; };
 		84D3297B82B6407D4F3DA4C4 /* SelectionService.swift in Sources */ = {isa = PBXBuildFile; fileRef = 92F8312336CC2A7C1C2763EF /* SelectionService.swift */; };
 		85903919E22420C824ADCD93 /* CanvasScope.swift in Sources */ = {isa = PBXBuildFile; fileRef = 592EF17AD51166EAA3E577F2 /* CanvasScope.swift */; };
 		868B804EAA857627DC429F67 /* DocumentQuickLookViewer.swift in Sources */ = {isa = PBXBuildFile; fileRef = 8B88D3F84112712169492D89 /* DocumentQuickLookViewer.swift */; };
 		86C3217B7B90105732A120FA /* ClipboardContentRouter.swift in Sources */ = {isa = PBXBuildFile; fileRef = 39A4F2C5815649CFC465EF1F /* ClipboardContentRouter.swift */; };
 		872217B757A952ED832C6741 /* AttributeTile.swift in Sources */ = {isa = PBXBuildFile; fileRef = 7E766D5A76F8E33EC9A24C07 /* AttributeTile.swift */; };
+		87B2475915B8751032B6DCAC /* AppCommands.swift in Sources */ = {isa = PBXBuildFile; fileRef = 86247A5A2A07676459007E67 /* AppCommands.swift */; };
 		87C2B621CF7711E7FF62598C /* CaptureIntent.swift in Sources */ = {isa = PBXBuildFile; fileRef = C8376D171BB956C6EA17E5F9 /* CaptureIntent.swift */; };
 		87C31FDACB1FF755B329BEB2 /* WikipediaGrounding.swift in Sources */ = {isa = PBXBuildFile; fileRef = ACC6BC5CBFC1176D6EC92CE0 /* WikipediaGrounding.swift */; };
 		8943F983244CAFA176DC3313 /* TagCreationSheet.swift in Sources */ = {isa = PBXBuildFile; fileRef = F6A18AD80C0FCB6B5E928844 /* TagCreationSheet.swift */; };
@@ -614,6 +617,7 @@
 		36746C9E05B99C06E6564DA4 /* SourceSerif4-SemiboldItalic.ttf */ = {isa = PBXFileReference; lastKnownFileType = file; path = "SourceSerif4-SemiboldItalic.ttf"; sourceTree = "<group>"; };
 		36D4851654AC4C2F3AF8798F /* ZoomableImageView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ZoomableImageView.swift; sourceTree = "<group>"; };
 		376265F2CCAF46EDE2216E54 /* NodeBlock.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = NodeBlock.swift; sourceTree = "<group>"; };
+		3773385430F4EE5C69E66E12 /* MacMenuSelfTest.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = MacMenuSelfTest.swift; sourceTree = "<group>"; };
 		37A7EB2DE317B859BC165DD4 /* AppStoreLookStills.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = AppStoreLookStills.swift; sourceTree = "<group>"; };
 		37F96F01949F13EC35528775 /* CardTuning.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = CardTuning.swift; sourceTree = "<group>"; };
 		38A3FAF363374C7CF5B97E3B /* CorpusIndex.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = CorpusIndex.swift; sourceTree = "<group>"; };
@@ -661,6 +665,7 @@
 		544E9426775EDF9FEFBA6E5F /* CardContent.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = CardContent.swift; sourceTree = "<group>"; };
 		54EF9B80ADE5E17639843055 /* latobold_msdf.json */ = {isa = PBXFileReference; lastKnownFileType = text.json; path = latobold_msdf.json; sourceTree = "<group>"; };
 		555A2F390CA8E4777AAE7CB6 /* NodeConnection.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = NodeConnection.swift; sourceTree = "<group>"; };
+		55C3F23FF0530CB8F0162525 /* IPadKeyCommands.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = IPadKeyCommands.swift; sourceTree = "<group>"; };
 		56CD028FECD6CBB2BB00A054 /* ShareShared.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ShareShared.swift; sourceTree = "<group>"; };
 		579FF08E333E57A78D8A5C84 /* GalleryBody.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = GalleryBody.swift; sourceTree = "<group>"; };
 		586FC4429B40614A3F7EBDC6 /* TagPillRail.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = TagPillRail.swift; sourceTree = "<group>"; };
@@ -738,6 +743,7 @@
 		8519FC78C9238BD578A97998 /* WebEvidence.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = WebEvidence.swift; sourceTree = "<group>"; };
 		8587B8FB965733F87A837170 /* FieldValue.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = FieldValue.swift; sourceTree = "<group>"; };
 		85995050BC812122755EEE8E /* TerritoryLayoutSnapshot.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = TerritoryLayoutSnapshot.swift; sourceTree = "<group>"; };
+		86247A5A2A07676459007E67 /* AppCommands.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = AppCommands.swift; sourceTree = "<group>"; };
 		87ABAE5EF1669794E0C9F8F8 /* RecorderRender.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = RecorderRender.swift; sourceTree = "<group>"; };
 		884F21B2684954C76BBC6139 /* LocalDrafts.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = LocalDrafts.swift; sourceTree = "<group>"; };
 		88A13C2113DC9781B455DF42 /* PastePadView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = PastePadView.swift; sourceTree = "<group>"; };
@@ -1074,6 +1080,7 @@
 				F65726013657CF58491EA8A5 /* GroundPickerRepro.swift */,
 				D4FBCF8B7AC3CF84A924B74F /* HeroHeaderFlash.swift */,
 				5CA786FE73ACBE100B4FAA56 /* HoldDragRepro.swift */,
+				55C3F23FF0530CB8F0162525 /* IPadKeyCommands.swift */,
 				995F37552165E2C50D1ACBA7 /* IPadRotation.swift */,
 				47D13AA6D276BABAF0A77D8B /* LibrarianGauntletV2.swift */,
 				9C2FF3FB474EB570C6F67185 /* LibrarianPerfGate.swift */,
@@ -1531,9 +1538,11 @@
 			isa = PBXGroup;
 			children = (
 				5B3AEF4D4309C19AB2068A9E /* AirPadApp.swift */,
+				86247A5A2A07676459007E67 /* AppCommands.swift */,
 				804D3764E120F2398822E16A /* AppDelegate.swift */,
 				3B1822A03D5407145464AB94 /* AppRouter.swift */,
 				194292F01A21193B880F16FA /* ContentView.swift */,
+				3773385430F4EE5C69E66E12 /* MacMenuSelfTest.swift */,
 				79694583DE4ADDFCDD62B5F6 /* SceneDelegate.swift */,
 			);
 			path = App;
@@ -2024,6 +2033,7 @@
 				3BBE093DC9DAEEA88B7D5898 /* GroundPickerRepro.swift in Sources */,
 				3E4BD1C91E3FE716BA0F0B71 /* HeroHeaderFlash.swift in Sources */,
 				B50270CC57FE455419F41E86 /* HoldDragRepro.swift in Sources */,
+				82F235121D34EDF0F2571CB8 /* IPadKeyCommands.swift in Sources */,
 				0FED4F5D7C4A8CEF3D997290 /* IPadRotation.swift in Sources */,
 				385D05CF17B9D82F1F6D8A2D /* LibrarianGauntletV2.swift in Sources */,
 				7B5E835B2655C01AC63A3F3C /* LibrarianPerfGate.swift in Sources */,
@@ -2061,6 +2071,7 @@
 				2249B0A6466ACB02E03C2E41 /* AirPadApp.swift in Sources */,
 				4B9C908546B44C7D1416ADAB /* AlphabetScrubber.swift in Sources */,
 				A5BA279013A717CC6026D717 /* AnswerCap.swift in Sources */,
+				87B2475915B8751032B6DCAC /* AppCommands.swift in Sources */,
 				D3E0730ECFE302BBC58A79C0 /* AppDelegate.swift in Sources */,
 				B42B66E904E381DFE892340C /* AppFont.swift in Sources */,
 				54AFC37A189FD4A44E8FA7B7 /* AppLock.swift in Sources */,
@@ -2240,6 +2251,7 @@
 				1C7BD8D8DAED08D89F04F795 /* LongPressDragRecognizer.swift in Sources */,
 				BB9BDB30E58DC2856238105B /* MSDFLabel.swift in Sources */,
 				5AFB3DA829E4D444AE74108C /* MacEnrichServerSelfTest.swift in Sources */,
+				5404E38C7AFC95CBE00F95D9 /* MacMenuSelfTest.swift in Sources */,
 				3B6801F816A54E8556578089 /* MapAdaptiveRate.swift in Sources */,
 				D231EBAD8B8B3B58C951FEDE /* MarkdownBlock.swift in Sources */,
 				0D0F9BF7BDE19BC6BF4E9A29 /* MarkdownBlockParserSelfTest.swift in Sources */,

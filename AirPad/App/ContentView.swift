@@ -64,6 +64,16 @@ struct ContentView: View {
                 // Mac batch A — `-MacReport`: the Mac-sensitive answers, logged once the window is up (and again after a
                 // resize settles, so the window-sized DisplaySize shows).
                 RunningOnMac.snapshotIfAsked()
+                #if targetEnvironment(macCatalyst)
+                // Mac batch C1 — `-MacMenuSelfTest`: the real menu bar, fired item by item, once the library is up.
+                if ProcessInfo.processInfo.arguments.contains("-MacMenuSelfTest") {
+                    Task { @MainActor in
+                        for _ in 0..<120 where store.nodes.count < 10 { try? await Task.sleep(nanoseconds: 250_000_000) }
+                        try? await Task.sleep(nanoseconds: 4_000_000_000)
+                        NSLog("%@", await MacMenuSelfTest.run(store: store, router: router))
+                    }
+                }
+                #endif
                 RunningOnMac.forceOrientationIfAsked()   // C7 — iPad four-orientation stills
                 if ProcessInfo.processInfo.arguments.contains("-MacReport") {
                     DispatchQueue.main.asyncAfter(deadline: .now() + 3) { RunningOnMac.report() }
@@ -205,6 +215,25 @@ struct ContentView: View {
                     .accessibilityValue(store.nodes.map { "\($0.id)=\($0.title)" }.joined(separator: "\n"))
                     .allowsHitTesting(false)
             }
+            // Mac batch C1 — `-RouterProbe`: what the menu / key commands changed, for the iPad key-command UI test.
+            if ProcessInfo.processInfo.arguments.contains("-RouterProbe") {
+                let mode: String = {
+                    switch router.entryMode {
+                    case .dashboard: return "dashboard"
+                    case .recents: return "recents"
+                    case .canvas: return "canvas"
+                    case .quikCapture: return "quikCapture"
+                    case .collectionCanvas: return "collection"
+                    case .sampleCanvas: return "sample"
+                    }
+                }()
+                Color.clear.frame(width: 1, height: 1)
+                    .accessibilityElement()
+                    .accessibilityIdentifier("routerProbe")
+                    .accessibilityLabel("routerProbe")
+                    .accessibilityValue("mode=\(mode) view=\(store.filterState(for: .corpus).viewMode.rawValue) depth=\(store.detailViewDepth) peek=\(router.librarianAtPeek ? 1 : 0) capturing=\(router.isCapturing ? 1 : 0) back=\(router.canGoBack ? 1 : 0) forward=\(router.canGoForward ? 1 : 0) settings=\(router.showSettings ? 1 : 0) newCollection=\(router.showNewCollection ? 1 : 0)")
+                    .allowsHitTesting(false)
+            }
             // live-11 (2) — `-PasteProbe`: main-thread stalls + paste → naming → ghost times for a long paste.
             if PasteProbe.enabled { PasteProbeView() }
             #endif
@@ -229,6 +258,21 @@ struct ContentView: View {
                 .environment(router)
                 .environment(selection)
                 .environment(quarantineStore)
+        }
+        // Mac batch C1 — File › New Collection and Settings… (menu bar / key commands).
+        .sheet(isPresented: $routerBinding.showNewCollection) {
+            CollectionCreationSheet { _ in }
+                .environment(store)
+        }
+        .sheet(isPresented: $routerBinding.showSettings) {
+            SettingsView()
+                .environment(store)
+                .environment(router)
+                .environment(selection)
+                .environment(quarantineStore)
+        }
+        .onChange(of: router.commandRequest) { _, request in
+            if let command = request?.command { perform(command) }
         }
         // In-layout FloatingPanel — the Librarian's structural home. Mounted
         // once at ContentView root and never torn down across entry-mode
@@ -493,6 +537,78 @@ struct ContentView: View {
     /// dismiss and detail-view exit; delegates to the `librarianSuppressed` SSOT.
     private func restorePanelForEntryMode() {
         applyLibrarianVisibility(animated: true)
+    }
+
+    // MARK: - Mac batch C1 — menu bar / key commands
+
+    /// The commands ContentView owns. Find also lives in LibrarianSurface (the field), Export in the open entry, Back /
+    /// Forward in the mounted NavigationStack.
+    private func perform(_ command: AppCommand) {
+        let busy = router.isCapturing || router.entryMode == .quikCapture
+        switch command {
+        case .newEntry:
+            guard !busy else { return }
+            // The capture "+" (CanvasChrome / Dashboard): a fresh entry, opened with its note.
+            Task {
+                guard let node = await store.createCaptureNode() else { return }
+                router.isCapturing = true
+                router.captureNodeID = node.id
+                router.captureDraftHasText = false
+                router.pendingNodeNavigationID = node.id
+            }
+        case .newCollection:
+            guard router.entryMode != .quikCapture else { return }
+            router.showNewCollection = true
+        case .viewMap:   if !busy { showLibraryView(.systemGraph) }
+        case .viewList:  if !busy { showLibraryView(.list) }
+        case .viewCards: if !busy { showLibraryView(.grid) }
+        case .today:
+            guard !busy else { return }
+            if router.entryMode != .dashboard { router.entryMode = .dashboard }   // on the Dashboard, it pops to its top
+        case .settings:
+            router.showSettings = true
+        case .librarian:
+            guard !busy else { return }
+            if librarianSuppressed {
+                // The Dashboard / Recents put the Librarian away; it lives over the library.
+                router.entryMode = .canvas
+                DispatchQueue.main.asyncAfter(deadline: .now() + 0.5) { panelState.expandToHalf(animated: true) }
+            } else if panelState.state == .tip || panelState.state == .hidden {
+                panelState.expandToHalf(animated: true)
+            } else {
+                panelState.raiseToPeek(animated: true)
+            }
+        case .find:
+            guard !busy, librarianSuppressed else { return }   // with the Librarian up, LibrarianSurface focuses it
+            router.entryMode = .canvas
+            DispatchQueue.main.asyncAfter(deadline: .now() + 0.5) { if !librarianSuppressed { router.perform(.find) } }
+        case .closeWindow:
+            #if targetEnvironment(macCatalyst)
+            RunningOnMac.closeFrontWindow()   // one window for now; the same as its close button
+            #endif
+        case .export, .back, .forward:
+            break
+        }
+    }
+
+    /// View › Map / List / Cards: that view of the library being looked at (a collection stays that collection), with
+    /// any open entry closed so the view shows.
+    private func showLibraryView(_ mode: ViewMode) {
+        let scope: CanvasScope
+        switch router.entryMode {
+        case .collectionCanvas(let id): scope = .collection(id)
+        case .sampleCanvas:             scope = .nodeIDs(store.sampleNodeIDs)
+        case .canvas:                   scope = .corpus
+        case .dashboard, .recents, .quikCapture:
+            scope = .corpus
+            router.entryMode = .canvas
+        }
+        var s = store.filterState(for: scope)
+        if s.viewMode != mode {
+            s.viewMode = mode
+            store.setFilterState(s, for: scope)
+        }
+        router.requestDismissDetail()
     }
 
     /// Collapse the entry modes to a Librarian scope.

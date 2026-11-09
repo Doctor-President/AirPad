@@ -132,6 +132,7 @@ struct AirPadApp: App {
             mainContent
             #endif
         }
+        .commands { AppCommands(router: router, store: store) }   // Mac batch C1
     }
 
     private var mainContent: some View {

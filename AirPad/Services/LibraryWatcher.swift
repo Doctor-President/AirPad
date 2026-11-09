@@ -129,7 +129,15 @@ final class LibraryWatcher: NSObject, NSFilePresenter {
 
     // MARK: Rescan (modification dates)
 
+    /// Under the harness (DEBUG `-SyncPollSeconds`): skip derived files (block index, card). They never change an
+    /// entry, and a poll by modification date would also see this device's OWN derived writes, which a real iCloud
+    /// presenter never reports (coordinated writes pass the presenter) — that echo masked the F3 control.
     private func rescan(report: Bool) {
+        #if DEBUG
+        let harnessPoll = UserDefaults.standard.double(forKey: "SyncPollSeconds") > 0   // every rescan: one snapshot shape
+        #else
+        let harnessPoll = false
+        #endif
         let fm = FileManager.default
         var snap: [String: Date] = [:]
         let stat = { (url: URL) -> Date? in (try? url.resourceValues(forKeys: [.contentModificationDateKey]))?.contentModificationDate }
@@ -137,6 +145,7 @@ final class LibraryWatcher: NSObject, NSFilePresenter {
         for dir in (try? fm.contentsOfDirectory(atPath: nodes.path)) ?? [] where !dir.hasPrefix(".") {
             let d = nodes.appendingPathComponent(dir)
             for f in (try? fm.contentsOfDirectory(atPath: d.path)) ?? [] where f.hasSuffix(".json") || f.hasSuffix(".icloud") || f == ".conflicts" {
+                if harnessPoll, AggregateMerge.mineWins.contains(f) { continue }
                 snap["nodes/\(dir)/\(f)"] = stat(d.appendingPathComponent(f))
             }
             snap["nodes/\(dir)"] = snap["nodes/\(dir)"] ?? .distantPast
@@ -150,6 +159,9 @@ final class LibraryWatcher: NSObject, NSFilePresenter {
         var changed = Set<String>()
         for (k, v) in snap where old[k] != v { changed.insert(k) }
         for k in old.keys where snap[k] == nil { changed.insert(k) }
+        #if DEBUG
+        if harnessPoll, !changed.isEmpty { print("[Sync] poll saw \(changed.sorted())") }
+        #endif
         for k in changed { note(root.appendingPathComponent(k)) }
     }
 }

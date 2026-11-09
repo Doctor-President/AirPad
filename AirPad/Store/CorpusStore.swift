@@ -12008,6 +12008,9 @@ extension CorpusStore {
 
     /// The watcher saw files change on disk (another device, or a stand-in under the harness).
     func librarySyncChanged(nodeIDs: Set<String>, files: Set<String>) async {
+        #if DEBUG
+        print("[Sync] watcher: entries \(nodeIDs.sorted()) files \(files.sorted())")
+        #endif
         var ids = nodeIDs
         // F1 — new tombstones from another device: every entry they name is checked now (its folder may not be gone
         // here yet; a covered copy is removed, one with an edit the delete didn't see stays).
@@ -12047,6 +12050,7 @@ extension CorpusStore {
             removeDeletedElsewhere(id: id)
         case .notDownloaded, .notCurrent:
             catchingUp.insert(id)
+            print("[Sync] \(id) still downloading — catching up")
             followUntilCurrent(id)   // F3 — iCloud may land it without telling the watcher
         case .node(var d):
             catchingUp.remove(id)
@@ -12141,6 +12145,7 @@ extension CorpusStore {
         #endif
         guard !followingUntilCurrent.contains(nodeID) else { return }
         followingUntilCurrent.insert(nodeID)
+        print("[Sync] following \(nodeID) until it's current")
         Task { [weak self] in
             defer { Task { @MainActor [weak self] in self?.followingUntilCurrent.remove(nodeID) } }
             for _ in 0..<90 {

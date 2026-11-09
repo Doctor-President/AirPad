@@ -141,6 +141,9 @@ results = []
 
 
 def scenario(name, setup, expect, written, check, deleted_ok=()):
+    only = [x for x in os.environ.get("ONLY", "").split(",") if x]   # ONLY=S12,S10 runs just those
+    if only and name.split()[0] not in only:
+        return
     print(f"== {name}", flush=True)
     t0 = time.time()
     eid = setup()
@@ -421,7 +424,7 @@ try:
         marker = os.path.join(H, "A", "library", "nodes", e, ".harness-not-current")
         open(marker, "w").close()
         cmd("B", "set_text", entry=e, item=f"{e}-i1", text="S12 new text from the other device")
-        quiet(); time.sleep(3)
+        quiet(); time.sleep(15); quiet()           # B's follow-up background writes land too (still "downloading" on A)
         before = note(entry(cmd("A", "dump"), e), f"{e}-i1")
         os.remove(marker)                          # iCloud finishes: no callback, no file change
         t0 = time.time(); after = before

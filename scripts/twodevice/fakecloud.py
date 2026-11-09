@@ -38,7 +38,7 @@ def files(root):
     out = set()
     for d, dirs, fs in os.walk(root):
         for f in fs:
-            if f.startswith(".fc-tmp") or f == ".DS_Store" or f.endswith(".tmp"):
+            if f.startswith(".fc-tmp") or f == ".DS_Store" or f.endswith(".tmp") or ".sb-" in f or f == ".harness-not-current":   # + Foundation's atomic-write temps; the not-current marker is per replica
                 continue
             out.add(os.path.relpath(os.path.join(d, f), root))
     return out
@@ -55,7 +55,10 @@ def h(path):
 def put(src, dst):
     os.makedirs(os.path.dirname(dst), exist_ok=True)
     tmp = os.path.join(os.path.dirname(dst), f".fc-tmp-{os.getpid()}-{time.time_ns()}")
-    shutil.copyfile(src, tmp)
+    try:
+        shutil.copyfile(src, tmp)
+    except FileNotFoundError:   # the app replaced or removed it mid-pass: the next pass sees the new state
+        return
     os.replace(tmp, dst)
 
 

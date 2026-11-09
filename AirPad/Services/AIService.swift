@@ -186,9 +186,12 @@ actor AIService {
         // GAP 27 — consult the router BEFORE the FM guard. This call routes through
         // `ModelRouter.generateNodeSummary`, which sends `.local` to the on-device model,
         // so the FM-availability guard applies only when FM is the resolved provider.
+        // Mac C0 — FM is the resolved provider but unavailable: the Mac's own server names the entry, if there is one.
+        var appleUnavailable = false
         if !Self.stubAppleDeclines, await structuredCallNeedsFoundationModel() {
             // FM is the resolved provider: it must be available on this device.
-            guard SystemLanguageModel.default.isAvailable else { return .failure(.unavailable) }
+            guard Self.appleIntelligenceAvailable || ModelRouter.enrichmentServer != nil else { return .failure(.unavailable) }
+            appleUnavailable = !Self.appleIntelligenceAvailable
         }
 
         let content = Self.namingSlice(extractContent(from: node, authoredOnly: authoredOnly))
@@ -198,6 +201,13 @@ actor AIService {
         #endif
 
         let prompt = AppleNaming.namingPrompt(content: content)
+
+        if appleUnavailable {
+            guard let server = ModelRouter.enrichmentServer,
+                  let r = try? await ModelRouter.nodeSummaryServer(server, prompt: prompt) else { return .failure(.unavailable) }
+            print("[FM][processNode] no Apple Intelligence → own server authored (title/summary)")
+            return .success(Self.guardedNaming(title: r.title, summary: r.summary, content: content))
+        }
 
         // live-11 (2) — the token count is a log line, not an input: counting it is a model call of its own, and awaiting
         // it held the capture's naming back (longer the longer the note). Off the critical path.
@@ -233,6 +243,17 @@ actor AIService {
                     return .success(out)
                 } catch {
                     print("[FM][processNode] refusal → on-device retry also failed: \(error)")
+                }
+            }
+            // Mac C0 — no on-device model on the Mac: the user's own server, if there is one. Quietly: no note, since
+            // nothing ran on this device.
+            if case .refused = failure, let server = ModelRouter.enrichmentServer {
+                do {
+                    let r = try await ModelRouter.nodeSummaryServer(server, prompt: prompt)
+                    print("[FM][processNode] refusal → own server authored (title/summary)")
+                    return .success(Self.guardedNaming(title: r.title, summary: r.summary, content: content))
+                } catch {
+                    print("[FM][processNode] refusal → own server also failed: \(error)")
                 }
             }
             return .failure(failure)
@@ -591,11 +612,13 @@ actor AIService {
         // through `ModelRouter.generateSubstrate`, which sends `.local` to the on-device
         // model; returning `model_unavailable` here without asking the router meant the local
         // model was never consulted and the tray rendered a refusal that never happened.
+        var appleUnavailable = false
         if !Self.stubAppleDeclines, await structuredCallNeedsFoundationModel() {
-            // FM is the resolved provider: it must be available on this device.
-            guard SystemLanguageModel.default.isAvailable else {
+            // FM is the resolved provider: it must be available on this device (Mac C0: or the Mac's own server).
+            guard Self.appleIntelligenceAvailable || ModelRouter.enrichmentServer != nil else {
                 return .otherError(FMErrorDetail(errorType: "model_unavailable", debugDescription: nil))
             }
+            appleUnavailable = !Self.appleIntelligenceAvailable
         }
         guard !content.isEmpty else {
             return .otherError(FMErrorDetail(errorType: "empty_content", debugDescription: nil))
@@ -615,6 +638,16 @@ actor AIService {
         // Item 2 — detect the note's OWN language from the raw content (not the
         // instruction-laden prompt) so the LOCAL model can be pinned to it. FM ignores this.
         let responseLanguage = Self.substrateResponseLanguage(for: truncated)
+
+        if appleUnavailable {
+            guard let server = ModelRouter.enrichmentServer,
+                  let r = try? await ModelRouter.substrateServer(server, prompt: prompt, responseLanguage: responseLanguage),
+                  !(r.summary.isEmpty && r.folksonomy.isEmpty) else {
+                return .otherError(FMErrorDetail(errorType: "model_unavailable", debugDescription: nil))
+            }
+            print("[FM][processSubstrate] no Apple Intelligence → own server authored (substrate)")
+            return .ok(summary: r.summary, folksonomy: r.folksonomy)
+        }
 
         // live-11 (2) — the token count is a log line, not an input: counting it is a model call of its own, and awaiting
         // it held the capture's naming back (longer the longer the note). Off the critical path.
@@ -663,6 +696,18 @@ actor AIService {
                         }
                     } catch {
                         print("[FM][processSubstrate] refusal → on-device retry also failed: \(error)")
+                    }
+                }
+                // Mac C0 — the Mac's own server, as in processNode.
+                if let server = ModelRouter.enrichmentServer {
+                    do {
+                        let r = try await ModelRouter.substrateServer(server, prompt: prompt, responseLanguage: responseLanguage)
+                        if !(r.summary.isEmpty && r.folksonomy.isEmpty) {
+                            print("[FM][processSubstrate] refusal → own server authored (substrate)")
+                            return .ok(summary: r.summary, folksonomy: r.folksonomy)
+                        }
+                    } catch {
+                        print("[FM][processSubstrate] refusal → own server also failed: \(error)")
                     }
                 }
                 return .guardrailRefused
@@ -770,6 +815,14 @@ actor AIService {
     }
 
     // MARK: - When Apple declines (live-20 (1))
+
+    /// Mac C0 — Apple Intelligence can run here. DEBUG `-StubOnDeviceUnavailable` stands in for a Mac without it.
+    static var appleIntelligenceAvailable: Bool {
+        #if DEBUG
+        if UserDefaults.standard.string(forKey: "StubOnDeviceUnavailable") != nil { return false }
+        #endif
+        return SystemLanguageModel.default.isAvailable
+    }
 
     /// Is the on-device model installed to name what Apple Intelligence declined? (`.ready` — opted in or not.)
     static func localModelReadyForFallback() async -> Bool {

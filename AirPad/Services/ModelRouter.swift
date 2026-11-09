@@ -661,12 +661,17 @@ enum ModelRouter {
     // LocalModelService (Metal-gated at runtime) + JSON decode — it's the ONLY option on a
     // device without Apple Intelligence.
     private static func nodeSummaryLocal(prompt: String) async throws -> NodeSummaryResult {
-        let jsonInstruction = """
-        Respond with ONLY a single minified JSON object and nothing else — no prose, no code fences, no commentary. Use exactly these keys:
-        {"title": string, "summary": string}
-        Use "" for anything you cannot fill. Do not add keys.
-        """
-        let raw = try await LocalModelService.shared.generate(systemPrompt: jsonInstruction, userPrompt: prompt)
+        let raw = try await LocalModelService.shared.generate(systemPrompt: nodeSummaryJSONInstruction, userPrompt: prompt)
+        return try decodeNodeSummary(raw)
+    }
+
+    private static let nodeSummaryJSONInstruction = """
+    Respond with ONLY a single minified JSON object and nothing else — no prose, no code fences, no commentary. Use exactly these keys:
+    {"title": string, "summary": string}
+    Use "" for anything you cannot fill. Do not add keys.
+    """
+
+    private static func decodeNodeSummary(_ raw: String) throws -> NodeSummaryResult {
         guard let obj: LocalNodeSummaryJSON = decodeOutermostJSON(raw) else {
             throw RouterError.localBadJSON(String(raw.prefix(240)))
         }
@@ -706,6 +711,36 @@ enum ModelRouter {
         try await substrateLocal(prompt: prompt, responseLanguage: responseLanguage)
     }
 
+    // MARK: - Mac batch C0 — the user's own server enriches on the Mac
+
+    /// C0 (T ruled yes, 2026-11-07) — on the Mac there is no on-device model, so when Apple Intelligence is unavailable
+    /// or declines a title / summary / tags request, the user's own server takes it: the custom server from Settings
+    /// (when it answered its last check), else a paired Host, the same routes the Librarian uses. nil on iPhone and
+    /// iPad (their fallback stays the on-device model) and on a Mac with no server: the quiet fallback, as before.
+    static var enrichmentServer: Provider? {
+        guard RunningOnMac.isMac else { return nil }
+        if let endpoint = configuredEndpoint, !endpointUnreachable { return .ollama(endpoint: endpoint) }
+        if let pairing = HostPairing.load() { return .host(pairing) }
+        return nil
+    }
+
+    static func nodeSummaryServer(_ server: Provider, prompt: String) async throws -> NodeSummaryResult {
+        try decodeNodeSummary(try await generateServer(server, systemPrompt: nodeSummaryJSONInstruction, userPrompt: prompt))
+    }
+
+    static func substrateServer(_ server: Provider, prompt: String, responseLanguage: String?) async throws -> SubstrateResult {
+        try decodeSubstrate(try await generateServer(server, systemPrompt: substrateJSONInstruction(responseLanguage),
+                                                     userPrompt: prompt))
+    }
+
+    private static func generateServer(_ server: Provider, systemPrompt: String, userPrompt: String) async throws -> String {
+        switch server {
+        case .ollama(let endpoint): return try await generateOllama(endpoint: endpoint, systemPrompt: systemPrompt, userPrompt: userPrompt)
+        case .host(let pairing):    return try await generateHost(pairing: pairing, systemPrompt: systemPrompt, userPrompt: userPrompt)
+        case .foundationModel, .local: throw RouterError.foundationModelUnavailable   // not a server; never passed
+        }
+    }
+
     private static func substrateFoundationModel(prompt: String) async throws -> SubstrateResult {
         guard SystemLanguageModel.default.isAvailable else { throw RouterError.foundationModelUnavailable }
         // A refusal throws up to `processSubstrate` → `.guardrailRefused`.
@@ -729,15 +764,23 @@ enum ModelRouter {
         // only lever, and naming the language explicitly (in English, keeping the prompt
         // all-English) beats "same language as input", which Qwen drifts around. LOCAL ONLY —
         // the FM path is deliberately untouched.
+        let raw = try await LocalModelService.shared.generate(systemPrompt: substrateJSONInstruction(responseLanguage),
+                                                              userPrompt: prompt)
+        return try decodeSubstrate(raw)
+    }
+
+    private static func substrateJSONInstruction(_ responseLanguage: String?) -> String {
         let languageLine = responseLanguage.map {
             "\nWrite `summary` and every entry in `tags` in \($0)."
         } ?? ""
-        let jsonInstruction = """
+        return """
         Respond with ONLY a single minified JSON object and nothing else — no prose, no code fences, no commentary. Use exactly these keys:
         {"summary": string, "tags": [string]}
         `tags` are free-form — pick whatever short words best describe the idea; there is no fixed vocabulary. Use "" or [] for anything you cannot fill. Do not add keys.\(languageLine)
         """
-        let raw = try await LocalModelService.shared.generate(systemPrompt: jsonInstruction, userPrompt: prompt)
+    }
+
+    private static func decodeSubstrate(_ raw: String) throws -> SubstrateResult {
         guard let obj: LocalSubstrateJSON = decodeOutermostJSON(raw) else {
             throw RouterError.localBadJSON(String(raw.prefix(240)))
         }

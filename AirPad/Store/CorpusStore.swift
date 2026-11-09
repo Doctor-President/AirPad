@@ -1372,6 +1372,9 @@ final class CorpusStore {
             if ProcessInfo.processInfo.arguments.contains("-DocumentReextractSelfTest") {
                 NSLog("%@", await runDocumentReextractSelfTest())
             }
+            if ProcessInfo.processInfo.arguments.contains("-MacEnrichServerSelfTest") {   // Mac batch C0
+                Task { @MainActor in NSLog("%@", await runMacEnrichServerSelfTest()) }
+            }
             // live-20 (1) — Apple Intelligence declines: a refusal (not Retry), the on-device model takes over; Done → B1 fragment title (live-21).
             if ProcessInfo.processInfo.arguments.contains("-AppleDeclineSelfTest") {
                 NSLog("%@", await runAppleDeclineSelfTest())

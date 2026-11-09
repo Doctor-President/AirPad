@@ -64,6 +64,7 @@ struct ContentView: View {
                 // Mac batch A — `-MacReport`: the Mac-sensitive answers, logged once the window is up (and again after a
                 // resize settles, so the window-sized DisplaySize shows).
                 RunningOnMac.snapshotIfAsked()
+                RunningOnMac.forceOrientationIfAsked()   // C7 — iPad four-orientation stills
                 if ProcessInfo.processInfo.arguments.contains("-MacReport") {
                     DispatchQueue.main.asyncAfter(deadline: .now() + 3) { RunningOnMac.report() }
                     DispatchQueue.main.asyncAfter(deadline: .now() + 12) { RunningOnMac.report() }

@@ -123,6 +123,8 @@ final class CorpusStore {
     var nodes: [Node] = []
     /// Mac batch B1 — entries whose newest version iCloud is still downloading: shown "Catching up…", edits held.
     var catchingUp: Set<String> = []
+    /// F3 — entries with a catch-up loop running (one per entry).
+    @ObservationIgnored var followingUntilCurrent: Set<String> = []
     /// Mac batch B1f — per entry, the newest version-history record not yet seen ("Also edited on your Mac · Restore").
     var versionNotes: [String: EntryVersion] = [:]
     @ObservationIgnored var inFlightSaves: [String: Int] = [:]
@@ -712,6 +714,8 @@ final class CorpusStore {
     /// land. Throws what the storage actor throws — callers keep their
     /// existing do/catch error handling intact.
     private func saveAndEnqueue(_ node: Node, origin: SyncOrigin = .user) async throws {
+        var node = node
+        if node.syncBase == nil, let own = lastWrittenRevision[node.id] { node.syncBase = own }   // F1 — its last write
         // Mac batch B1 — the write merges with another device's version when the file changed under us; the store
         // then adopts the merged entry (or drops one a background pass found deleted elsewhere).
         inFlightSaves[node.id, default: 0] += 1
@@ -1057,6 +1061,7 @@ final class CorpusStore {
         guard available else { return }
         await load()
         await startSyncWatching()   // Mac batch B1 — other devices' changes while the app runs
+        await recoverDrafts()       // F2 — typing that never reached the library (a crash / force-quit)
         #if DEBUG
         TwoDeviceHarness.startIfAsked(store: self)
         #endif
@@ -3260,6 +3265,13 @@ final class CorpusStore {
             } else {
                 nodes.insert(node, at: 0)
             }
+            // F1 — the save above ran before the insert, so its stamp couldn't land on the node: set it now (without it
+            // an entry made here had no version to compare, a remote delete didn't remove it, and any later write
+            // recreated it).
+            if let own = lastWrittenRevision[node.id], let i = nodes.firstIndex(where: { $0.id == node.id }),
+               nodes[i].syncBase == nil {
+                nodes[i].syncBase = own
+            }
         } catch {
             print("[CorpusStore] Save error: \(error)")
         }
@@ -3469,6 +3481,36 @@ final class CorpusStore {
             try await saveAndEnqueue(updated, origin: origin)
         } catch {
             print("[CorpusStore] Update error: \(error)")
+        }
+    }
+
+    /// The entry header's edits (title / summary: nil = not edited by the user; tags as shown), compared with the
+    /// FRESHEST node: only a field whose value differs (or a title / summary the user typed that isn't yet marked as
+    /// theirs) is written, so an unedited fire is a no-op. Batch B fix-up F1: the header used to re-save an edited title
+    /// with a new `updatedAt` on every flush — a user write that brought back an entry deleted on another device.
+    func commitHeaderEdits(nodeID: String, title: String?, summary: String?, tags: [String]) async {
+        guard let fresh = nodes.first(where: { $0.id == nodeID }) else { return }
+        let titleChanged = title.map { $0 != fresh.title || fresh.titleSource != .user } ?? false
+        let summaryChanged = summary.map { $0 != fresh.summary || fresh.summarySource != .user } ?? false
+        let tagsChanged = fresh.tags != tags
+        defer {   // F2 — saved (or nothing to save): the header's drafts go
+            if let title { LocalDrafts.clear("title:\(nodeID)", ifText: title) }
+            if let summary { LocalDrafts.clear("summary:\(nodeID)", ifText: summary) }
+        }
+        guard titleChanged || summaryChanged || tagsChanged else { return }
+        // ws-card-catalog Change A — write via mutateNode (fresh read-modify-write) so this title/summary/tags save
+        // never blind-overwrites `.items` with a stale snapshot. Title/summary stamp `.user` (the user authored them);
+        // tags carry `.user` provenance; sources for removed tags are dropped.
+        await mutateNode(id: nodeID) { n in
+            if titleChanged, let title { n.title = title; n.titleSource = .user }
+            if summaryChanged, let summary { n.summary = summary; n.summarySource = .user }
+            if tagsChanged {
+                n.tags = tags
+                let editedSet = Set(tags)
+                for name in tags { n.tagSources[name] = TagOrigin(source: .user) }
+                for name in n.tagSources.keys where !editedSet.contains(name) { n.tagSources.removeValue(forKey: name) }
+            }
+            n.updatedAt = Date()
         }
     }
 
@@ -3801,7 +3843,12 @@ final class CorpusStore {
     /// No-op if the node or item is missing, or the content is unchanged.
     /// Bumps the item's `updatedAt` alongside the node's — the per-entry
     /// timestamp field shipped in Stage 3.1a commit (a) and is now live.
-    func updateTextItem(itemID: String, newContent: String, nodeID: String, pieceLanded: Bool = false) async {
+    func updateTextItem(itemID: String, newContent: String, nodeID: String, pieceLanded: Bool = false, enrich: Bool = true) async {
+        // F2 — this text is (or already was) saved: its local draft and live mirror go, unless typing moved on.
+        defer {
+            if pendingItemEdits[itemID] == newContent { pendingItemEdits[itemID] = nil }
+            LocalDrafts.clear("item:\(itemID)", ifText: newContent)
+        }
         // Race-safe: read fresh + apply inside mutateNode so a concurrent whole-
         // node writer (saveIfChanged, enrichment) can't clobber this body edit.
         var removedImageIDs: Set<String> = []
@@ -3833,6 +3880,7 @@ final class CorpusStore {
         // title/summary (the tile falls back to raw first-words). Scheduled
         // (debounced, fresh-read) rather than fired inline so it can't run against
         // a not-yet-committed body during the Map surface's capture churn.
+        guard enrich else { return }
         scheduleEnrichment(nodeID: nodeID, pieceLanded: pieceLanded)
     }
 
@@ -3850,9 +3898,15 @@ final class CorpusStore {
     /// Mirror the note editor's live text for `itemID`. Cheap, non-observed; called from
     /// the editor's `onChange`. Shared by every surface that renders `TextEntryBody`
     /// (the detail view and QuikCapture), so one channel covers both lever fire sites.
-    func mirrorPendingItemEdit(itemID: String, text: String) {
+    /// F2 — `nodeID` nil = the editor's text equals what's stored (display-trimmed): mirrored, but no draft.
+    func mirrorPendingItemEdit(itemID: String, text: String, nodeID: String? = nil) {
         pendingItemEdits[itemID] = text
+        // F2 — a local draft on every change (outside the synced folder), recovered on the next launch.
+        guard let node = nodeID else { LocalDrafts.clear("item:\(itemID)"); return }
+        let saved = nodes.first(where: { $0.id == node })?.items.first(where: { $0.id == itemID })?.content
+        if saved != text { LocalDrafts.set("item:\(itemID)", node: node, text: text) } else { LocalDrafts.clear("item:\(itemID)") }
     }
+
 
     /// Flush any un-persisted note-body edits for this node's TEXT items into the store,
     /// AWAITED, so a caller reads committed content. Reuses `updateTextItem` (no-ops when
@@ -3879,13 +3933,29 @@ final class CorpusStore {
     /// `onChange(item.content)` guard (TextEntryBody) only resyncs when the user hasn't diverged, so a
     /// mid-edit persist never resets the caret. CD3's enrichment floor still caps how often it fires.
     /// live-11 (2) — `pieceLanded` (a paste): commit now, not after the pause; the eager pass skips its settle too.
-    func scheduleCaptureLiveCommit(itemID: String, nodeID: String, text: String, pieceLanded: Bool = false) {
+    /// Batch B fix-up F2 — typing reaches the shared library on a pause of this long (or when the field loses focus),
+    /// never mid-word: the other device sees whole edits. Same on iPhone, iPad and Mac. (Was 1.0 s, capture only.)
+    static var typingPause: Double { legacyTypingForControl ? 1.0 : 1.75 }
+
+    /// DEBUG `-SyncLegacyTypingForControl` — the harness's F2 positive control: the f4a12630 behaviour (1.0 s capture
+    /// pause; an echo of this device's own write flushes the typing). Never in Release.
+    static let legacyTypingForControl: Bool = {
+        #if DEBUG
+        return ProcessInfo.processInfo.arguments.contains("-SyncLegacyTypingForControl")
+        #else
+        return false
+        #endif
+    }()
+
+    /// F2 — every note edit (not only a capture) commits on a typing pause; `enrich` = the capture's eager pass
+    /// (a re-opened entry still enriches only at end-of-editing, as before).
+    func scheduleCaptureLiveCommit(itemID: String, nodeID: String, text: String, pieceLanded: Bool = false, enrich: Bool = true) {
         captureLiveCommitTasks[itemID]?.cancel()
         captureLiveCommitTasks[itemID] = Task(priority: .userInitiated) { @MainActor [weak self] in
-            if !pieceLanded { try? await Task.sleep(for: .seconds(1.0)) }
+            if !pieceLanded { try? await Task.sleep(for: .seconds(Self.typingPause)) }
             guard let self, !Task.isCancelled else { return }
             self.captureLiveCommitTasks[itemID] = nil
-            await self.updateTextItem(itemID: itemID, newContent: text, nodeID: nodeID, pieceLanded: pieceLanded)
+            await self.updateTextItem(itemID: itemID, newContent: text, nodeID: nodeID, pieceLanded: pieceLanded, enrich: enrich)
         }
     }
 
@@ -10320,12 +10390,16 @@ final class CorpusStore {
 
         for id in ids {
             do {
-                try await service.deleteNode(id: id)
+                // F1 — the tombstone carries everything this device had seen of the entry.
+                var seen = nodes.first(where: { $0.id == id })?.syncBase?.vv ?? [:]
+                for (dev, n) in lastWrittenRevision[id]?.vv ?? [:] { seen[dev] = max(seen[dev] ?? 0, n) }
+                try await service.deleteNode(id: id, seen: seen)
             } catch {
                 print("[CorpusStore] deleteNodes error for \(id): \(error)")
             }
         }
         nodes.removeAll { ids.contains($0.id) }
+        for id in ids { LocalDrafts.clearNode(id) }   // F2 — a deleted entry's unsaved drafts go with it
         // Absence from the card cache means "excluded from language gravity", so a deleted node's
         // vector left behind would keep voting on territory centroids.
         SubstrateLayoutService.shared.evictCardVectors(forNodeIDs: ids)
@@ -11864,6 +11938,33 @@ struct EntryVersion: Identifiable, Equatable {
 
 extension CorpusStore {
 
+    /// Batch B fix-up F2 — after the first load: every local draft that differs from what's saved goes in as a user edit
+    /// (the write funnel merges it with anything another device changed meanwhile). Drafts of entries no longer here
+    /// are dropped.
+    func recoverDrafts() async {
+        let drafts = LocalDrafts.all()
+        guard !drafts.isEmpty, !LibraryFormatGuard.isReadOnly else { return }   // read-only library: keep them for later
+        var recovered = 0
+        for (key, d) in drafts {
+            guard let node = nodes.first(where: { $0.id == d.node }) else { LocalDrafts.clear(key); continue }
+            if key.hasPrefix("item:") {
+                let itemID = String(key.dropFirst(5))
+                guard let item = node.items.first(where: { $0.id == itemID }), item.type == .text else { LocalDrafts.clear(key); continue }
+                if item.content != d.text { await updateTextItem(itemID: itemID, newContent: d.text, nodeID: node.id); recovered += 1 }
+                LocalDrafts.clear(key)
+            } else if key.hasPrefix("title:") {
+                if node.title != d.text { await commitHeaderEdits(nodeID: node.id, title: d.text, summary: nil, tags: node.tags); recovered += 1 }
+                LocalDrafts.clear(key)
+            } else if key.hasPrefix("summary:") {
+                if node.summary != d.text { await commitHeaderEdits(nodeID: node.id, title: nil, summary: d.text, tags: node.tags); recovered += 1 }
+                LocalDrafts.clear(key)
+            } else {
+                LocalDrafts.clear(key)
+            }
+        }
+        print("[Drafts] recovered \(recovered) unsaved edit(s) from the last run (\(drafts.count) draft(s))")
+    }
+
     /// Starts listening for other devices' changes (once), after the first load.
     func startSyncWatching() async {
         guard syncObserver == nil, let root = await service.containerRootURL() else { return }
@@ -11907,7 +12008,14 @@ extension CorpusStore {
 
     /// The watcher saw files change on disk (another device, or a stand-in under the harness).
     func librarySyncChanged(nodeIDs: Set<String>, files: Set<String>) async {
-        for id in nodeIDs { await reconcileNode(id: id) }
+        var ids = nodeIDs
+        // F1 — new tombstones from another device: every entry they name is checked now (its folder may not be gone
+        // here yet; a covered copy is removed, one with an edit the delete didn't see stays).
+        if files.contains(Tombstones.fileName), let root = await service.containerRootURL() {
+            let marked = Set(Tombstones.marks(root: root).keys)
+            ids.formUnion(nodes.lazy.map(\.id).filter { marked.contains($0) })
+        }
+        for id in ids { await reconcileNode(id: id) }
         if !files.isEmpty { await service.resolveAggregateConflicts(files) }
         if files.contains("tags.json"), let t = try? await service.loadTags(), !t.isEmpty { tags = t }
         if files.contains("collections.json"), let c = try? await service.loadCollections() { collections = c }
@@ -11919,14 +12027,27 @@ extension CorpusStore {
     /// Brings one entry up to date with disk. Unsaved typing in the open entry is saved first (as an edit made now),
     /// so it merges with the other device's version instead of being overwritten by it or overwriting it blind.
     func reconcileNode(id: String) async {
+        // F2 — nothing changed on disk (this device's own write coming back, or a touch): no flush, so half-typed text
+        // never goes out because of an echo. Only a real change from another device first saves the typing (to merge).
+        if !Self.legacyTypingForControl,
+           let idx = nodes.firstIndex(where: { $0.id == id }), case .node(let d) = await service.reloadNode(id: id),
+           let hash = d.syncBase?.hash,
+           hash == nodes[idx].syncBase?.hash || hash == lastWrittenRevision[id]?.hash {
+            if nodes[idx].syncBase == nil { nodes[idx].syncBase = d.syncBase }
+            catchingUp.remove(id)
+            return
+        }
         if nodes.contains(where: { $0.id == id }) { await commitPendingItemEdits(forNodeID: id) }
         if (inFlightSaves[id] ?? 0) > 0 { return }   // that write reads the new version under coordination and merges
         switch await service.reloadNode(id: id) {
         case .missing:
-            guard let n = nodes.first(where: { $0.id == id }), n.syncBase.map({ !$0.hash.isEmpty }) == true else { return }
+            // Gone from disk: deleted elsewhere if this copy was ever on disk (read from it, or written by this device).
+            guard let n = nodes.first(where: { $0.id == id }),
+                  n.syncBase.map({ !$0.hash.isEmpty }) == true || lastWrittenRevision[id] != nil else { return }
             removeDeletedElsewhere(id: id)
         case .notDownloaded, .notCurrent:
             catchingUp.insert(id)
+            followUntilCurrent(id)   // F3 — iCloud may land it without telling the watcher
         case .node(var d):
             catchingUp.remove(id)
             Self.normalizeAtomicsToFront(&d)
@@ -11999,15 +12120,7 @@ extension CorpusStore {
         let st = await service.fileState(id: nodeID)
         if st == .notDownloaded || st == .notCurrent {
             catchingUp.insert(nodeID)
-            Task { [weak self] in
-                // iCloud may land the file without telling a presenter: look again until it's current.
-                for _ in 0..<60 {
-                    try? await Task.sleep(for: .seconds(2))
-                    guard let self, self.catchingUp.contains(nodeID) else { return }
-                    let s = await self.service.fileState(id: nodeID)
-                    if s == .current { await self.reconcileNode(id: nodeID); self.catchingUp.remove(nodeID); return }
-                }
-            }
+            followUntilCurrent(nodeID)
         } else if catchingUp.contains(nodeID) {
             await reconcileNode(id: nodeID)
             catchingUp.remove(nodeID)
@@ -12015,6 +12128,35 @@ extension CorpusStore {
     }
 
     func isCatchingUp(_ nodeID: String) -> Bool { catchingUp.contains(nodeID) }
+
+    /// Batch B fix-up F3 (T's pass: after a Restore on the iPhone the Mac's card kept the old note text until the entry
+    /// was opened) — iCloud may land a newer version without telling the watcher. This loop used to run only for the
+    /// OPEN entry, so any other entry caught mid-download stayed on its old version in memory, and every view showing
+    /// it (cards, list rows, the Map, Recents, search) with it. Now every entry that's catching up is looked at again
+    /// every 2 s until it's current, then reloaded — which updates every view, since they all read the store.
+    func followUntilCurrent(_ nodeID: String) {
+        #if DEBUG
+        // `-SyncNoCatchUpFollowForControl` — the harness's F3 positive control: only the open entry is followed (f4a12630).
+        if ProcessInfo.processInfo.arguments.contains("-SyncNoCatchUpFollowForControl"), pendingFlushers[nodeID]?.isEmpty ?? true { return }
+        #endif
+        guard !followingUntilCurrent.contains(nodeID) else { return }
+        followingUntilCurrent.insert(nodeID)
+        Task { [weak self] in
+            defer { Task { @MainActor [weak self] in self?.followingUntilCurrent.remove(nodeID) } }
+            for _ in 0..<90 {
+                try? await Task.sleep(for: .seconds(Self.catchUpPollSeconds))
+                guard let self, self.catchingUp.contains(nodeID) else { return }
+                let s = await self.service.fileState(id: nodeID)
+                if s == .current || s == .missing {
+                    await self.reconcileNode(id: nodeID)
+                    self.catchingUp.remove(nodeID)
+                    return
+                }
+            }
+        }
+    }
+
+    static let catchUpPollSeconds: Double = 2
 
     /// Entries iCloud is bringing that aren't on this device at all yet (the library's "Catching up…").
     var entriesCatchingUp: Int {

@@ -493,6 +493,9 @@ enum AggregateMerge {
     /// side and untouched on the other → deleted. No base → a union (nothing dropped).
     static func merge3(file: String, base: Any?, mine: Any, disk: Any) -> Any {
         if mineWins.contains(file) { return mine }
+        if file == Tombstones.fileName {   // F1 — tombstones only ever unite (old ones age out)
+            return Tombstones.object(Tombstones.union(Tombstones.parse(mine), Tombstones.parse(disk)))
+        }
         if file == EntryHistory.fileName {
             return EntryHistory.file(EntryHistory.union(EntryHistory.records(in: mine), EntryHistory.records(in: disk)))
         }
@@ -597,4 +600,107 @@ enum SyncBases {
     #if DEBUG
     static func resetForSelfTest() { reads.withLock { $0 = [:] }; own.withLock { $0 = [:] } }
     #endif
+}
+
+// MARK: - Deleted entries (batch B fix-up F1)
+
+/// Batch B fix-up F1 (T's two-device pass, step 10: deletes came back). A delete used to leave nothing behind but a
+/// missing folder, so "an edit never loses to a delete that didn't see it" couldn't tell a fully informed delete from
+/// an uninformed one: any later write by a device still holding the entry (the open entry's header re-saving its
+/// title, a background pass) recreated it, and iCloud carried it back to the device that deleted it.
+///
+/// Now every delete leaves a **tombstone** in the library-wide `deleted.json`: the entry id, when, by which device,
+/// and the version vector of what that device had seen of the entry. Kept 30 days, then dropped (every device has
+/// long seen it by then; an older build ignores the file). The rule, in the one write funnel and on every read:
+/// - a version of the entry is **covered** when every user change its stamp records was seen by the delete;
+/// - a covered version is deleted (on read) or not written (on write); background passes never count as user
+///   changes, so naming, tagging, enrichment or layout never bring an entry back;
+/// - a version with a user change the delete didn't see (the step-7 case: an offline edit vs a delete) comes back.
+enum Tombstones {
+    static let fileName = "deleted.json"
+    static let keepSeconds: Double = 30 * 86_400
+
+    struct Mark: Equatable {
+        var t: Double
+        var d: String
+        var vv: [String: Int]
+    }
+
+    /// DEBUG `-SyncTombstonesOffForControl` — the harness's positive control: no tombstone written or read (the
+    /// pre-fix-up behaviour). Never in Release.
+    static let offForControl: Bool = {
+        #if DEBUG
+        return ProcessInfo.processInfo.arguments.contains("-SyncTombstonesOffForControl")
+        #else
+        return false
+        #endif
+    }()
+
+    // MARK: File format: {"v": 1, "entries": {"<id>": {"t": <s since 1970>, "d": "<device>", "vv": {...}}}}
+
+    static func parse(_ any: Any?) -> [String: Mark] {
+        guard let o = any as? [String: Any], let e = o["entries"] as? [String: Any] else { return [:] }
+        var out: [String: Mark] = [:]
+        for (id, v) in e {
+            guard let m = v as? [String: Any] else { continue }
+            let vv = (m["vv"] as? [String: Any] ?? [:]).compactMapValues { ($0 as? NSNumber)?.intValue }
+            out[id] = Mark(t: (m["t"] as? NSNumber)?.doubleValue ?? 0, d: m["d"] as? String ?? "", vv: vv)
+        }
+        return out
+    }
+
+    static func object(_ marks: [String: Mark]) -> [String: Any] {
+        var e: [String: Any] = [:]
+        for (id, m) in marks { e[id] = ["t": m.t, "d": m.d, "vv": m.vv] }
+        return ["v": 1, "entries": e]
+    }
+
+    /// Two devices' files united: every tombstone kept (per entry: the later delete's time, every device's highest
+    /// counter), old ones dropped.
+    static func union(_ a: [String: Mark], _ b: [String: Mark], now: Double = Date().timeIntervalSince1970) -> [String: Mark] {
+        var out = a
+        for (id, m) in b {
+            guard var x = out[id] else { out[id] = m; continue }
+            if m.t > x.t { x.t = m.t; x.d = m.d }
+            for (dev, n) in m.vv { x.vv[dev] = max(x.vv[dev] ?? 0, n) }
+            out[id] = x
+        }
+        return out.filter { now - $0.value.t < keepSeconds }
+    }
+
+    /// Covered: every user change the stamp records was seen by the delete (background changes never count).
+    static func covers(_ m: Mark, _ rev: EntryRevision) -> Bool {
+        let changes = Array(rev.keys.values) + Array(rev.items.values) + Array(rev.gone.values) + [rev.orderChange].compactMap { $0 }
+        return !changes.contains { $0.u && $0.n > (m.vv[$0.d] ?? 0) }
+    }
+
+    // MARK: Read (cached by modification date; tiny file)
+
+    private static let cache = OSAllocatedUnfairLock<[String: (Date?, [String: Mark])]>(initialState: [:])
+
+    static func marks(root: URL) -> [String: Mark] {
+        guard !offForControl else { return [:] }
+        let url = root.appendingPathComponent(fileName)
+        let mtime = (try? url.resourceValues(forKeys: [.contentModificationDateKey]))?.contentModificationDate
+        if let hit = cache.withLock({ $0[url.path] }), hit.0 == mtime { return hit.1 }
+        let marks = mtime == nil ? [:] : parse((try? Data(contentsOf: url)).flatMap(SyncJSON.any))
+        cache.withLock { $0[url.path] = (mtime, marks) }
+        return marks
+    }
+
+    static func mark(id: String, root: URL) -> Mark? { marks(root: root)[id] }
+
+    /// `<root>/nodes/<id>/<file>` → (root, id).
+    static func entry(of url: URL) -> (root: URL, id: String)? {
+        let dir = url.deletingLastPathComponent()
+        let nodes = dir.deletingLastPathComponent()
+        guard nodes.lastPathComponent == "nodes" else { return nil }
+        return (nodes.deletingLastPathComponent(), dir.lastPathComponent)
+    }
+
+    /// Is this version of the entry deleted? (A tombstone exists and covers it.)
+    static func deletes(id: String, root: URL, version data: Data) -> Bool {
+        guard let m = mark(id: id, root: root), let obj = SyncJSON.object(data) else { return false }
+        return covers(m, EntryMerge.adopt(obj))
+    }
 }

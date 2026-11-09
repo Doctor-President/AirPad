@@ -242,8 +242,9 @@ struct ChatTableView: View {
     }
 }
 
-/// The table full screen: the same grid, the whole screen; Copy as Markdown / CSV. The app is portrait-only, so when the
-/// phone turns the viewer lays the table out sideways itself (the device orientation, so the rotation lock still applies).
+/// The table full screen: the same grid, the whole screen; Copy as Markdown / CSV. The iPhone app is portrait-only, so when
+/// the phone turns the viewer lays the table out sideways itself (the device orientation, so the rotation lock still
+/// applies). C7: the iPad app rotates with the device, so there the system turns it and the viewer stays upright.
 struct ChatTableFullScreen: View {
     let table: ChatTable
     @Environment(\.dismiss) private var dismiss
@@ -270,6 +271,7 @@ struct ChatTableFullScreen: View {
 
     /// Landscape left → the table turns 90°, right → −90°, portrait → upright; face up / down keep the last.
     static func turn(_ o: UIDeviceOrientation, was: Double) -> Double {
+        guard UIDevice.current.userInterfaceIdiom == .phone else { return 0 }
         switch o {
         case .landscapeLeft: return 90
         case .landscapeRight: return -90

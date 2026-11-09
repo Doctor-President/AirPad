@@ -101,6 +101,7 @@ struct NodeDetailView: View {
     /// title/summary the model promoted at Done, while an edited-to-empty field still commits (a
     /// user-cleared field stays cleared). Set only on a change WHILE the field is focused.
     @State private var titleEdited = false
+    @State private var headerCommitTask: Task<Void, Never>?   // F2 — the typing-pause commit
     @State private var summaryEdited = false
 
     /// Per-field focus (the shared `CaptureHeaderFocus`) so a capture-mode ghost clears for the field
@@ -378,8 +379,19 @@ struct NodeDetailView: View {
         }
         // Brief CD (no-overwrite rule) — a change WHILE the field is focused is a real user edit; the
         // node→mirror syncs above run unfocused, so they don't mark the field edited.
-        .onChange(of: editedTitle) { _, _ in if focusedField == .title { titleEdited = true } }
-        .onChange(of: editedSummary) { _, _ in if focusedField == .summary { summaryEdited = true } }
+        // Batch B fix-up F2 — an edited header field reaches the library on a typing pause or when it loses focus
+        // (whole edits to the other device), with a local draft in between.
+        .onChange(of: editedTitle) { _, new in
+            if focusedField == .title { titleEdited = true }
+            if titleEdited { LocalDrafts.set("title:\(nodeID)", node: nodeID, text: new); scheduleHeaderCommit() }
+        }
+        .onChange(of: editedSummary) { _, new in
+            if focusedField == .summary { summaryEdited = true }
+            if summaryEdited { LocalDrafts.set("summary:\(nodeID)", node: nodeID, text: new); scheduleHeaderCommit() }
+        }
+        .onChange(of: focusedField) { old, new in
+            if (old == .title || old == .summary), new != old { headerCommitTask?.cancel(); saveIfChanged() }
+        }
         .confirmationDialog(
             "Make it permanent?",
             isPresented: $showPromoteConfirmation,
@@ -1773,6 +1785,16 @@ struct NodeDetailView: View {
 
     /// Fire-and-forget commit — for teardown paths (`onDisappear`) where nothing
     /// downstream reads the node in the same turn.
+    /// F2 — commit the header after a typing pause (`CorpusStore.typingPause`); more typing re-arms it.
+    private func scheduleHeaderCommit() {
+        headerCommitTask?.cancel()
+        headerCommitTask = Task { @MainActor in
+            try? await Task.sleep(for: .seconds(CorpusStore.typingPause))
+            guard !Task.isCancelled else { return }
+            await commitEditsIfChanged()
+        }
+    }
+
     private func saveIfChanged() {
         Task { await commitEditsIfChanged() }
     }
@@ -1787,34 +1809,15 @@ struct NodeDetailView: View {
         guard let node else { return }
         let nodeID = node.id
         let newTitle = editedTitle, newSummary = editedSummary, newTags = editedTags
-        // Compare against the FRESHEST node so an unedited fire stays a no-op.
-        guard let fresh = store.nodes.first(where: { $0.id == nodeID }) else { return }
         // Brief CD NO-OVERWRITE RULE — commit a header field ONLY when the user actually edited it.
         // An empty, never-edited mirror must never overwrite a title/summary the model promoted at
         // Done (the teardown race that blanked the title + locked it `.user`); an edited field still
         // commits even when empty, so a user-cleared field stays cleared.
-        let titleChanged = titleEdited
-        let summaryChanged = summaryEdited
-        let tagsChanged = fresh.tags != newTags
-        guard titleChanged || summaryChanged || tagsChanged else { return }
-        // ws-card-catalog Change A — write via mutateNode (fresh read-modify-write)
-        // so this title/summary/tags save never blind-overwrites `.items` with a
-        // stale snapshot. Source-stamp semantics unchanged:
-        //  - title/summary stamp `.user` only when the user authored the field (above).
-        //  - tags carry `.user` provenance; sources for removed tags are dropped.
-        await store.mutateNode(id: nodeID) { n in
-            if titleChanged { n.title = newTitle; n.titleSource = .user }
-            if summaryChanged { n.summary = newSummary; n.summarySource = .user }
-            if tagsChanged {
-                n.tags = newTags
-                let editedSet = Set(newTags)
-                for name in newTags { n.tagSources[name] = TagOrigin(source: .user) }
-                for name in n.tagSources.keys where !editedSet.contains(name) {
-                    n.tagSources.removeValue(forKey: name)
-                }
-            }
-            n.updatedAt = Date()
-        }
+        // Batch B fix-up F1 — the store writes only a field whose value (or authorship) actually differs, so a header
+        // left "edited" doesn't re-save on every change from another device (it used to, as a user edit, and that
+        // write brought back an entry deleted elsewhere).
+        await store.commitHeaderEdits(nodeID: nodeID, title: titleEdited ? newTitle : nil,
+                                      summary: summaryEdited ? newSummary : nil, tags: newTags)
     }
 }
 

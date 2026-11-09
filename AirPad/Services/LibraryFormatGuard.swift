@@ -147,6 +147,34 @@ enum LibraryFormatGuard {
             }
             if name == "node.json" { out = carryUnknownEntryFields(into: data, from: old) }
         }
+        // Batch B fix-up F1 — an entry with a tombstone is written only for a user change the delete didn't see.
+        if let e = Tombstones.entry(of: url), let mark = Tombstones.mark(id: e.id, root: e.root) {
+            let dir = url.deletingLastPathComponent()
+            if name == "node.json", let all = SyncJSON.object(out) {
+                let diskRev = old.flatMap(SyncJSON.object).map(EntryMerge.adopt)
+                if diskRev.map({ Tombstones.covers(mark, $0) }) ?? true {   // gone, or a copy the delete saw
+                    var plain = all
+                    plain.removeValue(forKey: EntryMerge.stampKey)
+                    let would = asStamped ? EntryMerge.adopt(all)
+                        : EntryMerge.stamp(plain, base: entryBase, origin: origin, counter: Int.max)
+                    if Tombstones.covers(mark, would) {
+                        outcome.deletedElsewhere = true
+                        outcome.skipped = true
+                        print("[Sync] \(e.id) was deleted (tombstone by \(mark.d)); this \(origin == .user ? "save" : "background write") "
+                              + "changes nothing the delete didn't see — not written")
+                        return (outcome, [])
+                    }
+                    print("[Sync] \(e.id) comes back: an edit the delete (by \(mark.d)) didn't see")
+                }
+            } else if !FileManager.default.fileExists(atPath: dir.appendingPathComponent("node.json").path) {
+                // A derived file (blocks, card, versions) of a deleted entry: not written; no empty folder left behind.
+                if ((try? FileManager.default.contentsOfDirectory(atPath: dir.path)) ?? ["x"]).isEmpty {
+                    try? FileManager.default.removeItem(at: dir)
+                }
+                outcome.skipped = true
+                return (outcome, [])
+            }
+        }
         if name == "node.json", var mine = SyncJSON.object(out) {
             let given = asStamped ? EntryMerge.adopt(mine) : nil
             mine.removeValue(forKey: EntryMerge.stampKey)
@@ -371,3 +399,18 @@ enum ForwardFormatGuardSelfTest {
     }
 }
 #endif
+
+// MARK: - Batch B fix-up F1: recording a delete (in the app target: the write goes through the funnel)
+
+extension Tombstones {
+    /// Records a delete: `seen` = the version vector of everything this device had of the entry.
+    static func record(id: String, seen: [String: Int], root: URL) throws {
+        guard !offForControl else { return }
+        let url = root.appendingPathComponent(fileName)
+        let disk = parse((try? Data(contentsOf: url)).flatMap(SyncJSON.any))
+        let now = Date().timeIntervalSince1970
+        let mine = union(disk, [id: Mark(t: now, d: SyncDevice.id, vv: seen)], now: now)
+        guard let data = SyncJSON.data(object(mine)) else { return }
+        try LibraryFormatGuard.write(data, to: url)
+    }
+}

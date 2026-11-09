@@ -183,8 +183,14 @@ struct QuikCaptureView: View {
                     // user edit (typing, dictation, paste into the field). The node→mirror syncs
                     // above run unfocused (promote lands at Done after focus resigns), so they don't
                     // mark the field edited.
-                    .onChange(of: editedTitle) { _, _ in if focusedField == .title { titleEdited = true } }
-                    .onChange(of: editedSummary) { _, _ in if focusedField == .summary { summaryEdited = true } }
+                    .onChange(of: editedTitle) { _, new in
+                        if focusedField == .title { titleEdited = true }
+                        if titleEdited { LocalDrafts.set("title:\(node.id)", node: node.id, text: new) }   // F2 — a local draft
+                    }
+                    .onChange(of: editedSummary) { _, new in
+                        if focusedField == .summary { summaryEdited = true }
+                        if summaryEdited { LocalDrafts.set("summary:\(node.id)", node: node.id, text: new) }
+                    }
                     .sheet(item: $captureMode) { mode in
                         switch mode {
                         case .voice:  VoiceCaptureSheet(targetNodeID: node.id, captureOwnsDone: true)
@@ -1021,35 +1027,13 @@ struct QuikCaptureView: View {
     /// and higher-impact here since capture is the first surface a new user hits.
     private func commitEditsIfChanged() async {
         guard let node else { return }
-        let nodeID = node.id
-        let newTitle = editedTitle, newSummary = editedSummary, newTags = editedTags
-        // Compare against the FRESHEST node so an unedited close stays a no-op.
-        guard let fresh = store.nodes.first(where: { $0.id == nodeID }) else { return }
         // Brief CD NO-OVERWRITE RULE — commit a header field ONLY when the user actually edited it.
         // An empty, never-edited mirror must never overwrite the title/summary the model promoted at
         // Done (the teardown race that blanked the title + locked it `.user`); an edited field DOES
         // commit even when empty, so a user-cleared field stays cleared. `titleSource = .user` is thus
-        // stamped only on genuine user authorship.
-        let titleChanged = titleEdited
-        let summaryChanged = summaryEdited
-        let tagsChanged = fresh.tags != newTags
-        guard titleChanged || summaryChanged || tagsChanged else { return }
-        // ws-card-catalog Change A — write via mutateNode (fresh read-modify-write)
-        // so this title/summary/tags save can't blind-overwrite `.items` with a
-        // stale snapshot and erase the note body typed just before Done.
-        await store.mutateNode(id: nodeID) { n in
-            if titleChanged { n.title = newTitle; n.titleSource = .user }
-            if summaryChanged { n.summary = newSummary; n.summarySource = .user }
-            if tagsChanged {
-                n.tags = newTags
-                let editedSet = Set(newTags)
-                for name in newTags { n.tagSources[name] = TagOrigin(source: .user) }
-                for name in n.tagSources.keys where !editedSet.contains(name) {
-                    n.tagSources.removeValue(forKey: name)
-                }
-            }
-            n.updatedAt = Date()
-        }
+        // stamped only on genuine user authorship. Batch B fix-up F1 — the store writes only what differs.
+        await store.commitHeaderEdits(nodeID: node.id, title: titleEdited ? editedTitle : nil,
+                                      summary: summaryEdited ? editedSummary : nil, tags: editedTags)
     }
 }
 

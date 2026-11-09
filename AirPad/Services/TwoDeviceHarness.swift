@@ -13,12 +13,15 @@ import Foundation
 /// - `add_item` entry, text, item (fixed id) — a new note in the entry
 /// - `set_title` entry, title — the header's title edit (user)
 /// - `enrich` entry, title?, summary? — a background pass (naming / enrichment) writing the entry
+/// - `open_header` entry, title — the entry open, its header's title typed (the flush stays registered, as the view's)
 /// - `delete_entry` entry
 /// - `restore` entry, version — restore a kept version
 /// - `rescan` — look for changes now; `dump` — every entry (+ its versions) and the store's sync state
 @MainActor
 enum TwoDeviceHarness {
     private static var started = false
+    private static var typedTitles: [String: String] = [:]
+    private static var flushTokens: [String: UUID] = [:]
 
     static func startIfAsked(store: CorpusStore) {
         guard !started, let dir = UserDefaults.standard.string(forKey: "TwoDeviceCommands"), dir.hasPrefix("/") else { return }
@@ -62,7 +65,7 @@ enum TwoDeviceHarness {
             await store.updateTextItem(itemID: c["item"] as? String ?? "", newContent: text, nodeID: entry)
             return "ok"
         case "type":
-            store.mirrorPendingItemEdit(itemID: c["item"] as? String ?? "", text: text)
+            store.mirrorPendingItemEdit(itemID: c["item"] as? String ?? "", text: text, nodeID: entry)
             return "ok"
         case "add_item":
             let now = Date()
@@ -82,6 +85,102 @@ enum TwoDeviceHarness {
                 if let summary { n.summary = summary; n.summarySource = .model }
             }
             return "ok"
+        case "open_header":
+            // F1 — the entry open with its header edited: the user typed `title`, and the view stays open, so another
+            // device's change first runs its flush (`NodeDetailView.commitEditsIfChanged`). DEBUG
+            // `-SyncLegacyHeaderFlushForControl` = the f4a12630 flush (re-saves the title + updatedAt every time).
+            let title = c["title"] as? String
+            let legacy = ProcessInfo.processInfo.arguments.contains("-SyncLegacyHeaderFlushForControl")
+            let flush: () async -> Void = { @MainActor in
+                if legacy {
+                    await store.mutateNode(id: entry) { n in
+                        if let title { n.title = title; n.titleSource = .user }
+                        n.updatedAt = Date()
+                    }
+                } else {
+                    let tags = store.nodes.first(where: { $0.id == entry })?.tags ?? []
+                    await store.commitHeaderEdits(nodeID: entry, title: title, summary: nil, tags: tags)
+                }
+            }
+            await flush()
+            _ = store.registerPendingFlush(nodeID: entry, flush)
+            return "ok"
+        case "keystrokes":
+            // F2 — typing in the note key by key, as the editor does (mirror + draft + the typing-pause commit), with
+            // hesitations (`hesitate`: {"<chars typed>": seconds}) and echoes of this device's own write
+            // (`echo_at`: [chars typed] → the watcher's callback for this entry) mid-word.
+            let itemID = c["item"] as? String ?? ""
+            let keyMs = c["key_ms"] as? Int ?? 120
+            let hesitate = (c["hesitate"] as? [String: Any] ?? [:]).compactMapValues { ($0 as? NSNumber)?.doubleValue }
+            let echoAt = Set((c["echo_at"] as? [Int]) ?? [])
+            let base = store.nodes.first(where: { $0.id == entry })?.items.first(where: { $0.id == itemID })?.content ?? ""
+            var typed = base
+            for (k, ch) in text.enumerated() {
+                typed.append(ch)
+                store.mirrorPendingItemEdit(itemID: itemID, text: typed, nodeID: entry)
+                store.scheduleCaptureLiveCommit(itemID: itemID, nodeID: entry, text: typed, enrich: false)
+                try? await Task.sleep(for: .milliseconds(keyMs))
+                if echoAt.contains(k + 1) { await store.librarySyncChanged(nodeIDs: [entry], files: []) }
+                if let h = hesitate["\(k + 1)"] { try? await Task.sleep(for: .seconds(h)) }
+            }
+            try? await Task.sleep(for: .seconds(CorpusStore.typingPause + 0.5))
+            return typed
+        case "title_keys":
+            // F2 — typing the header title key by key: the view's draft + typing-pause commit + its flush (registered
+            // once, reading the title as typed so far), with hesitations and echoes as above. Legacy control: no pause
+            // commit, and the f4a12630 flush (writes the title as typed + updatedAt every time).
+            let keyMs = c["key_ms"] as? Int ?? 120
+            let hesitate = (c["hesitate"] as? [String: Any] ?? [:]).compactMapValues { ($0 as? NSNumber)?.doubleValue }
+            let echoAt = Set((c["echo_at"] as? [Int]) ?? [])
+            let legacy = CorpusStore.legacyTypingForControl
+            typedTitles[entry] = ""
+            if flushTokens[entry] == nil {
+                flushTokens[entry] = store.registerPendingFlush(nodeID: entry) { @MainActor in
+                    guard let t = typedTitles[entry] else { return }
+                    if legacy { await store.mutateNode(id: entry) { n in n.title = t; n.titleSource = .user; n.updatedAt = Date() } }
+                    else { await store.commitHeaderEdits(nodeID: entry, title: t, summary: nil,
+                                                         tags: store.nodes.first(where: { $0.id == entry })?.tags ?? []) }
+                }
+            }
+            var pause: Task<Void, Never>?
+            for (k, ch) in text.enumerated() {
+                typedTitles[entry, default: ""].append(ch)
+                let t = typedTitles[entry] ?? ""
+                LocalDrafts.set("title:\(entry)", node: entry, text: t)
+                if !legacy {
+                    pause?.cancel()
+                    pause = Task { @MainActor in
+                        try? await Task.sleep(for: .seconds(CorpusStore.typingPause))
+                        guard !Task.isCancelled else { return }
+                        await store.commitHeaderEdits(nodeID: entry, title: t, summary: nil,
+                                                      tags: store.nodes.first(where: { $0.id == entry })?.tags ?? [])
+                    }
+                }
+                try? await Task.sleep(for: .milliseconds(keyMs))
+                if echoAt.contains(k + 1) { await store.librarySyncChanged(nodeIDs: [entry], files: []) }
+                if let h = hesitate["\(k + 1)"] { try? await Task.sleep(for: .seconds(h)) }
+            }
+            try? await Task.sleep(for: .seconds(CorpusStore.typingPause + 0.5))
+            if legacy { await store.runPendingFlushers(nodeID: entry) }   // the old path saved at blur / close
+            return typedTitles[entry] ?? ""
+        case "watch":
+            // F2 — what this device shows for the entry, sampled every 50 ms for `seconds`: every distinct title and
+            // note text seen, in order.
+            let seconds = (c["seconds"] as? NSNumber)?.doubleValue ?? 10
+            var titles: [String] = [], notes: [String] = []
+            let t0 = Date()
+            while Date().timeIntervalSince(t0) < seconds {
+                if let n = store.nodes.first(where: { $0.id == entry }) {
+                    if titles.last != n.title { titles.append(n.title) }
+                    let body = n.items.first?.content ?? ""
+                    if notes.last != body { notes.append(body) }
+                }
+                try? await Task.sleep(for: .milliseconds(50))
+            }
+            return ["titles": titles, "notes": notes]
+        case "flush_drafts":
+            LocalDrafts.flushNow()
+            return LocalDrafts.all().keys.sorted()
         case "delete_entry":
             await store.deleteNode(id: entry)
             return "ok"

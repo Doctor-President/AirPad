@@ -1175,6 +1175,7 @@ actor iCloudDriveService {
         resolveConflicts(dir)
         guard let data = try? Self.readLibraryFile(dir.appendingPathComponent("node.json")),
               var node = try? JSONDecoder.airPad.decode(Node.self, from: data) else { return .missing }
+        if dropIfDeleted(id: id, dir: dir, data: data) { return .missing }   // F1
         if node.entrySchemaVersion > LibraryFormatGuard.entrySchemaVersion {
             LibraryFormatGuard.markNewer("nodes/\(id)/node.json v\(node.entrySchemaVersion)")
         }
@@ -1236,7 +1237,8 @@ actor iCloudDriveService {
     /// Library-wide files with other versions kept beside them (an iCloud conflict, or under DEBUG the harness's
     /// `.conflicts/<file>/*.json`): each is united into the current file (no common base → nothing dropped).
     static let aggregateFiles = ["tags.json", "collections.json", "field_definitions.json", "chats.json",
-                                 "canvas_layout.json", "territory_layout.json"]
+                                 "canvas_layout.json", "territory_layout.json",
+                                 Tombstones.fileName]
 
     func resolveAggregateConflicts(_ names: Set<String>?) {
         guard let root = rootURL else { return }
@@ -1314,13 +1316,33 @@ actor iCloudDriveService {
         }
     }
 
-    func deleteNode(id: String) throws {
+    /// Batch B fix-up F1 — a delete leaves a tombstone first (`deleted.json`): `seen` is the version vector of what
+    /// this device held of the entry, joined with the stamp on disk, so another device's copy of the same version can
+    /// never bring it back; only a user edit this device never saw can.
+    func deleteNode(id: String, seen: [String: Int] = [:]) throws {
         try LibraryFormatGuard.requireWritable()
         let root = try requireRoot()
         let nodeDir = root.appendingPathComponent("nodes/\(id)")
+        var vv = seen
+        if let d = try? Data(contentsOf: nodeDir.appendingPathComponent("node.json")), let o = SyncJSON.object(d) {
+            for (dev, n) in EntryMerge.adopt(o).vv { vv[dev] = max(vv[dev] ?? 0, n) }
+        }
+        try Tombstones.record(id: id, seen: vv, root: root)
         if FileManager.default.fileExists(atPath: nodeDir.path) {
             try FileManager.default.removeItem(at: nodeDir)
         }
+    }
+
+    /// F1 — a version of a deleted entry the delete saw (another device's stale copy, or one iCloud brought back):
+    /// removed again, so the delete reaches every device.
+    private func dropIfDeleted(id: String, dir: URL, data: Data) -> Bool {
+        guard let root = rootURL, Tombstones.deletes(id: id, root: root, version: data) else { return false }
+        var coordError: NSError?
+        NSFileCoordinator(filePresenter: LibraryWatcher.presenter).coordinate(writingItemAt: dir, options: .forDeleting, error: &coordError) { u in
+            try? FileManager.default.removeItem(at: u)
+        }
+        print("[Sync] \(id) has a tombstone that covers this copy — removed (deleted on another device)")
+        return true
     }
 
     func loadAllNodes() throws -> [Node] {
@@ -1367,6 +1389,7 @@ actor iCloudDriveService {
             }
             resolveConflicts(nodeDir)
             let data = try Self.readLibraryFile(fileURL)
+            if dropIfDeleted(id: nodeDir.lastPathComponent, dir: nodeDir, data: data) { continue }   // F1
             var node = try JSONDecoder.airPad.decode(Node.self, from: data)
             node.syncBase = SyncJSON.object(data).map(EntryMerge.adopt)   // B1 — the version this copy came from
             if node.entrySchemaVersion > LibraryFormatGuard.entrySchemaVersion {   // 1.0r S0 forward-format guard

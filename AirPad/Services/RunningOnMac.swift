@@ -25,6 +25,26 @@ extension RunningOnMac {
         for l in lines { NSLog("[MacReport] %@", l) }
     }
 
+    /// C7 — `-ForceOrientation portrait|upsideDown|landscapeLeft|landscapeRight` (+ `-ForceOrientationAfter <s>`,
+    /// default 6): turn the iPad interface after the app is up (a real mid-session rotation, not a launch in landscape),
+    /// so the four-orientation stills run headlessly. Logs `[Orientation] <name> → <interfaceOrientation>`.
+    @MainActor static func forceOrientationIfAsked() {
+        let d = UserDefaults.standard
+        guard let name = d.string(forKey: "ForceOrientation"), !name.isEmpty else { return }
+        let masks: [String: UIInterfaceOrientationMask] = ["portrait": .portrait, "upsideDown": .portraitUpsideDown,
+                                                            "landscapeLeft": .landscapeLeft, "landscapeRight": .landscapeRight]
+        guard let mask = masks[name] else { NSLog("[Orientation] unknown %@", name); return }
+        let after = d.object(forKey: "ForceOrientationAfter") == nil ? 6 : d.double(forKey: "ForceOrientationAfter")
+        DispatchQueue.main.asyncAfter(deadline: .now() + after) {
+            guard let scene = UIApplication.shared.connectedScenes.compactMap({ $0 as? UIWindowScene }).first else { return }
+            scene.requestGeometryUpdate(.iOS(interfaceOrientations: mask)) { NSLog("[Orientation] %@ failed: %@", name, "\($0)") }
+            DispatchQueue.main.asyncAfter(deadline: .now() + 2) {
+                NSLog("[Orientation] %@ → %ld bounds=%@", name, scene.effectiveGeometry.interfaceOrientation.rawValue,
+                      "\(scene.effectiveGeometry.coordinateSpace.bounds.size)")
+            }
+        }
+    }
+
     /// `-MacSnapshot <name>` (+ `-MacSnapshotAfter <s>`, default 12) — the key window drawn in-process to
     /// `<tmp>/macshots/<name>.png` (inside the sandbox container), logged as `[MacSnapshot] <path>`. Works with the
     /// screen locked, where `screencapture` returns black.

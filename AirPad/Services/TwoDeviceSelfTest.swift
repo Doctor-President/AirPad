@@ -207,6 +207,39 @@ enum TwoDeviceSelfTest {
         let hu = EntryHistory.union(h1, h2)
         check(hu.count == 2 && hu.first { $0["id"] as? String == "r1" }?["state"] as? String == "seen", "history: union, state never goes back")
 
+        // Batch B fix-up F1 — tombstones: covered = every user change seen by the delete; background never counts.
+        let tp = entry("Del", [item("d1", "one")])
+        let tpRev = stamp(tp, base: nil, dev: "I", t: 500)
+        var tMac = tp; tMac["title"] = "Del (Mac)"
+        let tMacRev = stamp(tMac, base: tpRev, dev: "M", t: 510)                    // the Mac's user edit
+        let seenAll = Tombstones.Mark(t: 520, d: "I", vv: tMacRev.vv)              // the iPhone saw it, then deleted
+        check(Tombstones.covers(seenAll, tMacRev), "tombstone: a delete that saw the Mac's edit covers it")
+        var tBg = tMac; tBg["summary"] = "model summary"
+        let tBgRev = stamp(tBg, base: tMacRev, dev: "M", t: 530, origin: .background)
+        check(Tombstones.covers(seenAll, tBgRev), "tombstone: a later background pass doesn't count")
+        let sameAgain = stamp(tMac, base: tMacRev, dev: "M", t: 540)              // a re-save that changes nothing
+        check(Tombstones.covers(seenAll, sameAgain), "tombstone: a re-save that changes nothing doesn't count")
+        let blind = Tombstones.Mark(t: 520, d: "I", vv: tpRev.vv)                  // a delete that never saw the Mac's edit
+        check(!Tombstones.covers(blind, tMacRev), "tombstone: an edit the delete didn't see brings it back")
+        let tu = Tombstones.union(["x": .init(t: 600, d: "I", vv: ["I": 3])], ["x": .init(t: 610, d: "M", vv: ["M": 5]),
+                                                                              "old": .init(t: 1, d: "M", vv: [:])], now: 700)
+        check(tu["x"]?.vv == ["I": 3, "M": 5] && tu["x"]?.d == "M" && tu["old"] != nil, "tombstone: union keeps both, latest delete")
+        check(Tombstones.union([:], ["old": .init(t: 1, d: "M", vv: [:])], now: 1 + Tombstones.keepSeconds + 1).isEmpty,
+              "tombstone: dropped after 30 days")
+        // The funnel: a covered write to a tombstoned entry is not written; an unseen user edit is.
+        let troot = dir.appendingPathComponent("troot")
+        let tfile = troot.appendingPathComponent("nodes/E1/node.json")
+        try? FileManager.default.createDirectory(at: tfile.deletingLastPathComponent(), withIntermediateDirectories: true)
+        let tw0 = try? LibraryFormatGuard.write(json(tMac), to: tfile, entryBase: nil)
+        try? Tombstones.record(id: "E1", seen: tw0?.revision?.vv ?? [:], root: troot)
+        try? FileManager.default.removeItem(at: tfile.deletingLastPathComponent())
+        let tw1 = try? LibraryFormatGuard.write(json(tMac), to: tfile, entryBase: tw0?.revision)
+        check(tw1?.skipped == true && !FileManager.default.fileExists(atPath: tfile.path), "funnel: a covered re-save of a deleted entry isn't written")
+        var tEdit = tMac; tEdit["title"] = "Del (typed after)"
+        try? FileManager.default.createDirectory(at: tfile.deletingLastPathComponent(), withIntermediateDirectories: true)   // as saveNode does
+        let tw2 = try? LibraryFormatGuard.write(json(tEdit), to: tfile, entryBase: tw0?.revision)
+        check(tw2?.skipped != true && FileManager.default.fileExists(atPath: tfile.path), "funnel: an edit the delete didn't see is written")
+
         // Cost of one stamped write of a realistically sized entry (4 embeddings, 6 notes) over the previous version.
         var big = entry("Cost", (0..<6).map { item("c\($0)", String(repeating: "A sentence of a note. ", count: 40)) })
         for k in ["content_embedding", "summary_embedding", "folksonomy_embedding", "contextual_content_embedding"] {

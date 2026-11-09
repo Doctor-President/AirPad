@@ -34,7 +34,11 @@ def launch(r, extra=()):
     sh("xcrun", "simctl", "terminate", SIMS[r], BUNDLE)
     args = ["-TwoDeviceRoot", os.path.join(d, "library"), "-TwoDeviceCommands", os.path.join(d, "cmd"),
             "-SyncDeviceID", f"dev{r}", "-SyncDeviceName", NAMES[r], "-SyncPollSeconds", "1", "-UITestLibrary",
-            *(["-SyncMergeOffForControl"] if os.environ.get("CONTROL") else []), *extra]
+            *(["-SyncMergeOffForControl"] if os.environ.get("CONTROL") else []),
+            *(["-SyncTombstonesOffForControl", "-SyncLegacyHeaderFlushForControl"] if os.environ.get("CONTROL_F1") else []),
+            *(["-SyncLegacyTypingForControl", "-SyncNoDraftsForControl"] if os.environ.get("CONTROL_F2") else []),
+            *(["-SyncNoCatchUpFollowForControl"] if os.environ.get("CONTROL_F3") else []),
+            *extra]
     log = open(os.path.join(d, "app.log"), "a")
     p = subprocess.Popen(["xcrun", "simctl", "launch", "--console-pty", "--terminate-running-process", SIMS[r], BUNDLE, *args],
                          stdout=log, stderr=subprocess.STDOUT)
@@ -57,6 +61,26 @@ def cmd(r, op, timeout=90, **kw):
             return json.load(open(done)).get("result")
         time.sleep(0.2)
     raise TimeoutError(f"{r} {op} timed out")
+
+
+def cmd_async(r, op, **kw):
+    """Send a command without waiting; returns a function that waits for its result."""
+    seq[0] += 1
+    cid = f"{seq[0]:04d}-{uuid.uuid4().hex[:6]}"
+    cdir = os.path.join(H, r, "cmd")
+    tmp = os.path.join(cdir, f".tmp-{cid}")
+    json.dump({"id": cid, "op": op, **kw}, open(tmp, "w"))
+    os.replace(tmp, os.path.join(cdir, f"cmd-{cid}.json"))
+    done = os.path.join(cdir, f"done-{cid}.json")
+    def wait(timeout=120):
+        t0 = time.time()
+        while time.time() - t0 < timeout:
+            if os.path.exists(done):
+                time.sleep(0.05)
+                return json.load(open(done)).get("result")
+            time.sleep(0.2)
+        raise TimeoutError(f"{r} {op} timed out")
+    return wait
 
 
 def offline(r, on):
@@ -292,6 +316,125 @@ try:
              ["S2 written on the iPhone, offline", "S2 written on the Mac, offline (later)"],
              lambda a, b: (note(a, f"{s2.e}-i1") == "S2 written on the iPhone, offline",
                            f"i1={note(a, f'{s2.e}-i1')!r} versions={[(v['label'], v['state']) for v in a['versions']]}"))
+
+    # ---- batch B fix-up F1 (T's pass step 10: deletes came back) ----
+    def gone_everywhere(*ids):
+        da, db = cmd("A", "dump"), cmd("B", "dump")
+        left = {r: [x for x in ids if entry(d, x)] for r, d in (("A", da), ("B", db))}
+        return not left["A"] and not left["B"], f"still there: A={left['A'] or 'none'} B={left['B'] or 'none'}"
+
+    # S8 — informed delete: one entry the Mac edited (its header still open), one the Mac made; the iPhone deletes both.
+    def s8():
+        e1 = new_entry("S8 one", "S8 one body")
+        cmd("B", "open_header", entry=e1, title="S8 one (Mac)"); settle()
+        e2 = f"E-{uuid.uuid4().hex[:8]}"
+        cmd("B", "new_entry", entry=e2, item=f"{e2}-i1", title="", text="S8 four body, made on the Mac")
+        cmd("B", "open_header", entry=e2, title="S8 four (Mac)"); settle()
+        assert entry(cmd("A", "dump"), e2), "S8: the Mac's entry never reached the iPhone"
+        cmd("A", "delete_entry", entry=e1); cmd("A", "delete_entry", entry=e2)
+        settle()
+        cmd("B", "enrich", entry=e2, title="S8 model title", summary="S8 model summary")   # a background pass after
+        settle(); time.sleep(2); settle()
+        s8.e1, s8.e2 = e1, e2
+        return e1
+    scenario("S8 informed delete (Mac edited one, made the other; iPhone deletes both)", s8,
+             "both stay deleted on both devices", [], lambda a, b: gone_everywhere(s8.e1, s8.e2))
+
+    # S8b — a background pass on a device that hadn't seen the delete yet (offline), then it reconnects.
+    def s8b():
+        e = new_entry("S8b background vs delete", "S8b body")
+        offline("B", True)
+        cmd("A", "delete_entry", entry=e); quiet()
+        cmd("B", "enrich", entry=e, title="S8b model title (offline)", summary="S8b model summary")
+        time.sleep(1.5)
+        offline("B", False)
+        settle(); time.sleep(2); settle()
+        s8b.e = e
+        return e
+    scenario("S8b background write offline vs an online delete", s8b,
+             "a background pass never brings an entry back: deleted on both", [], lambda a, b: gone_everywhere(s8b.e))
+
+    # S9 — the reverse direction: the Mac deletes an entry the iPhone made and edited (header open).
+    def s9():
+        e = new_entry("S9 reverse", "S9 body")
+        cmd("A", "set_text", entry=e, item=f"{e}-i1", text="S9 body · edited on the iPhone")
+        cmd("A", "open_header", entry=e, title="S9 title (iPhone)"); settle()
+        cmd("B", "delete_entry", entry=e)
+        settle(); time.sleep(2); settle()
+        s9.e = e
+        return e
+    scenario("S9 reverse: the Mac deletes, the iPhone had edited it", s9,
+             "deleted on both", [], lambda a, b: gone_everywhere(s9.e))
+
+    # ---- batch B fix-up F2 (T's pass: half-typed text synced) ----
+    def whole(seen, final, start):
+        """Every value the other device showed: the start, the final, or the final cut at a word boundary."""
+        bad = [v for v in seen if v != start and not (final.startswith(v) and (len(v) == len(final) or final[len(v)] == " "))]
+        return bad
+
+    # S10 — A types a note and a title key by key, hesitating mid-word (1.3 s) and getting echoes of its own writes
+    # mid-word; B watches the whole time.
+    def s10():
+        e = new_entry("", "S10 start.")
+        watch = cmd_async("B", "watch", entry=e, seconds=40)
+        time.sleep(1)
+        cmd("A", "keystrokes", entry=e, item=f"{e}-i1", text=" Mac change made here, then more", key_ms=110,
+            hesitate={"3": 1.3, "8": 1.2, "16": 2.4}, echo_at=[2, 7, 20], timeout=120)
+        cmd("A", "title_keys", entry=e, text="2D one (Mac)", key_ms=110, hesitate={"1": 1.3, "5": 1.2}, echo_at=[1, 4], timeout=120)
+        settle()
+        seen = watch(timeout=120)
+        s10.e, s10.seen = e, seen
+        return e
+    def s10check(a, b):
+        final_note, final_title = "S10 start. Mac change made here, then more", "2D one (Mac)"
+        bad_n = whole(s10.seen["notes"], final_note, "S10 start.")
+        bad_t = whole(s10.seen["titles"], final_title, "")
+        ok = not bad_n and not bad_t and note(b, f"{s10.e}-i1") == final_note and b["title"] == final_title
+        return ok, f"B saw notes={s10.seen['notes']} titles={s10.seen['titles']}; partial: notes={bad_n or 'none'} titles={bad_t or 'none'}"
+    scenario("S10 typing key by key on A: B never sees a partial word", s10,
+             "B shows only whole edits (the start, whole words, the final)", [], s10check)
+
+    # S11 — typing that never reached the library (the app is killed before the pause) comes back on the next launch.
+    def s11():
+        e = new_entry("S11 crash", "S11 body")
+        cmd("A", "type", entry=e, item=f"{e}-i1", text="S11 body + typed, then the app was killed")
+        cmd("A", "flush_drafts")
+        sh("xcrun", "simctl", "terminate", SIMS["A"], BUNDLE)
+        time.sleep(2)
+        launch("A")
+        cmd("A", "dump", timeout=180)
+        settle()
+        s11.e = e
+        return e
+    scenario("S11 a crash before the pause: the draft is recovered", s11,
+             "the typed text is saved on the next launch and reaches B", ["S11 body + typed, then the app was killed"],
+             lambda a, b: (note(a, f"{s11.e}-i1") == "S11 body + typed, then the app was killed",
+                           f"A={note(a, f'{s11.e}-i1')!r} B={note(b, f'{s11.e}-i1')!r}"),
+             deleted_ok=("S11 body",))
+
+    # ---- batch B fix-up F3 (T's pass: a card kept the old note text after a Restore on the other device) ----
+    # S12 — the other device's version lands while iCloud still reports the entry as downloading, and then becomes
+    # current WITHOUT a watcher callback (as iCloud can). A (not open there) must still show it: every view reads the
+    # store, so the store's copy is what the card shows (the cardrefresh.py stills prove the views follow the store).
+    def s12():
+        e = new_entry("S12 card refresh", "S12 old text")
+        marker = os.path.join(H, "A", "library", "nodes", e, ".harness-not-current")
+        open(marker, "w").close()
+        cmd("B", "set_text", entry=e, item=f"{e}-i1", text="S12 new text from the other device")
+        quiet(); time.sleep(3)
+        before = note(entry(cmd("A", "dump"), e), f"{e}-i1")
+        os.remove(marker)                          # iCloud finishes: no callback, no file change
+        t0 = time.time(); after = before
+        while time.time() - t0 < 15 and after != "S12 new text from the other device":
+            time.sleep(0.5); after = note(entry(cmd("A", "dump"), e), f"{e}-i1")
+        s12.e, s12.before, s12.secs = e, before, round(time.time() - t0, 1)
+        return e
+    scenario("S12 a version that lands silently reaches the card", s12,
+             "A's copy (what its card shows) updates within a few seconds of the file becoming current",
+             ["S12 new text from the other device"],
+             lambda a, b: (note(a, f"{s12.e}-i1") == "S12 new text from the other device",
+                           f"while downloading A showed {s12.before!r}; current after {s12.secs}s → {note(a, f'{s12.e}-i1')!r}"),
+             deleted_ok=("S12 old text",))
 finally:
     fc.terminate()
     for r in "AB":

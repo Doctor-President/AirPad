@@ -99,13 +99,23 @@ struct TextEntryBody: View {
             #if DEBUG
             PasteProbe.shared.notePaste(added: added)
             #endif
-            store.mirrorPendingItemEdit(itemID: item.id, text: newValue)
+            // F2 — the editor shows the stored text display-trimmed: that isn't an edit (no draft, no commit).
+            let stored = item.content ?? ""
+            let unchanged = newValue == stored || newValue == Self.trimmingLeadingBlankLines(stored)
+            store.mirrorPendingItemEdit(itemID: item.id, text: newValue, nodeID: unchanged ? nil : nodeID)
             // Brief CD fix — gate on the ROBUST composing signal, not `router.isCapturing` (which the
             // detail-exit handler clears during the "+"→push, so on device typing/pasting never committed
             // live). `isComposing` is set at createCaptureNode + cleared at Done → survives navigation.
-            guard store.isComposing(nodeID: nodeID) else { return }
+            guard store.isComposing(nodeID: nodeID) else {
+                // Batch B fix-up F2 — a re-opened entry's note also reaches the library on a typing pause (whole
+                // edits to the other device, not only at end-of-editing); no eager enrichment pass for it.
+                if !unchanged {
+                    store.scheduleCaptureLiveCommit(itemID: item.id, nodeID: nodeID, text: newValue, enrich: false)
+                }
+                return
+            }
             router.captureDraftHasText = !newValue.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty
-            // Commit the live note text on a ~1 s pause (typing OR paste — both fire editingText via
+            // Commit the live note text on a typing pause (`CorpusStore.typingPause`; typing OR paste — both fire editingText via
             // textViewDidChange) so a ghost suggestion appears WHILE you compose, not only after Done.
             // live-11 (2) — a paste is a piece landing: commit (and name) now, not after the pause.
             store.scheduleCaptureLiveCommit(itemID: item.id, nodeID: nodeID, text: newValue,

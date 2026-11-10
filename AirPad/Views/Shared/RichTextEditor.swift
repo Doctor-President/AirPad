@@ -1,5 +1,6 @@
 import SwiftUI
 import UIKit
+import UniformTypeIdentifiers
 
 /// Consumer-owned command bridge for inserting an inline image at a caret the editor
 /// remembered before the photo picker stole focus (photo-at-caret). The
@@ -102,6 +103,9 @@ struct RichTextEditor: UIViewRepresentable {
     /// Brief AZ4 — the toolbar font-chip model (see `EntryFontMenu`). Non-nil only for
     /// the note editor; drives the font chip in the toolbar's reserved slot.
     var bodyFontMenu: EntryFontMenu? = nil
+    /// Mac batch C4 — an image dropped (or pasted) onto the note on a Mac / iPad: store it as the entry's inline image and
+    /// return its item id (the token goes in at the drop point). nil = images aren't accepted here.
+    var inlineImageFromData: ((Data) async -> String?)? = nil
 
     func makeCoordinator() -> Coordinator {
         Coordinator(parent: self)
@@ -154,6 +158,7 @@ struct RichTextEditor: UIViewRepresentable {
         // Set them explicitly here and re-apply whenever attributedText is replaced.
         textView.typingAttributes = documentStyle ? NoteTypography.typingAttributes : Self.defaultTypingAttributes
         context.coordinator.attachToolbar(to: textView)
+        context.coordinator.installRichDrops(on: textView)   // Mac batch C4
         // Launcher bar: show the `image` category only for editors that support
         // inline images (the note; not capture surfaces).
         context.coordinator.state.supportsInlineImage = (onInsertImageTapped != nil)
@@ -2211,6 +2216,54 @@ extension NSAttributedString.Key {
 }
 
 // MARK: - Gesture recognizer delegate (Stage 2.3 commit 5)
+
+// MARK: - Mac batch C4 — drop onto the note: insert at the drop point
+
+/// UITextView inserts a text drop at the drop point itself. On a Mac / iPad the note also takes images and `.md` /
+/// `.txt` files there (and from ⌘V): an image becomes the entry's inline image (its token at the point), a text file
+/// its text. iPhone keeps the stock text-only behaviour.
+extension RichTextEditor.Coordinator: UITextPasteDelegate {
+    static var takesRichDrops: Bool { UIDevice.current.userInterfaceIdiom != .phone }
+
+    func installRichDrops(on textView: UITextView) {
+        guard Self.takesRichDrops, parent.inlineImageFromData != nil else { return }
+        textView.pasteDelegate = self
+        var types = textView.pasteConfiguration?.acceptableTypeIdentifiers ?? []
+        for t in [UTType.plainText, .utf8PlainText, .text, .url, .image, .fileURL, UTType("net.daringfireball.markdown") ?? .plainText] {
+            if !types.contains(t.identifier) { types.append(t.identifier) }
+        }
+        textView.pasteConfiguration = UIPasteConfiguration(acceptableTypeIdentifiers: types)
+    }
+
+    func textPasteConfigurationSupporting(_ supporting: UITextPasteConfigurationSupporting, transform item: UITextPasteItem) {
+        let provider = item.itemProvider
+        if CorpusStore.isTextFile(provider) {
+            Task { @MainActor in
+                if let text = await CorpusStore.loadTextFile(provider) { item.setResult(string: text) } else { item.setDefaultResult() }
+            }
+            return
+        }
+        let isImage = provider.hasItemConformingToTypeIdentifier(UTType.image.identifier)
+            && !provider.hasItemConformingToTypeIdentifier(UTType.plainText.identifier)
+        guard isImage, let save = parent.inlineImageFromData else { item.setDefaultResult(); return }
+        _ = provider.loadDataRepresentation(for: .image) { data, _ in
+            Task { @MainActor [weak self] in
+                guard let self, let data, let id = await save(data) else { item.setDefaultResult(); return }
+                let token = NSMutableAttributedString(attributedString: MarkdownCodec.imageAttachmentString(itemID: id))
+                if self.parent.documentStyle {
+                    let full = NSRange(location: 0, length: token.length)
+                    token.addAttribute(.paragraphStyle, value: NoteTypography.bodyParagraphStyle, range: full)
+                    token.addAttribute(.foregroundColor, value: NoteTypography.foreground, range: full)
+                }
+                item.setResult(attributedString: token)
+                // the placeholder becomes the picture once the file is in
+                DispatchQueue.main.asyncAfter(deadline: .now() + 0.3) { [weak self] in
+                    if let tv = self?.textView { self?.resolvePendingImages(in: tv) }
+                }
+            }
+        }
+    }
+}
 
 extension RichTextEditor.Coordinator: UIGestureRecognizerDelegate {
     /// Only fires the checklist tap recognizer when the touch lands inside

@@ -9,6 +9,7 @@
 /* Begin PBXBuildFile section */
 		006A852ECAECCA4AC0F4865A /* spacegroteskbold_msdf.json in Resources */ = {isa = PBXBuildFile; fileRef = 1CF73692FBE1135F029C455E /* spacegroteskbold_msdf.json */; };
 		00C63DC59D1A92B324588D5C /* spacegroteskbold_msdf.png in Resources */ = {isa = PBXBuildFile; fileRef = F292ED0AAF2B778F7A20C891 /* spacegroteskbold_msdf.png */; };
+		00F56459A4761D68A5980231 /* ShareItemLoader.swift in Sources */ = {isa = PBXBuildFile; fileRef = 1DA7C97349881D313C0A03D3 /* ShareItemLoader.swift */; };
 		019EF67755B6DCAB5D16F595 /* TextEntryBody.swift in Sources */ = {isa = PBXBuildFile; fileRef = 90A621BCC5001A67C9B05A19 /* TextEntryBody.swift */; };
 		01B59D8470DC7C110EDA1081 /* NodeConnection.swift in Sources */ = {isa = PBXBuildFile; fileRef = 555A2F390CA8E4777AAE7CB6 /* NodeConnection.swift */; };
 		01CB6D60C09DCB0B6E126569 /* RecorderSaveSelfTest.swift in Sources */ = {isa = PBXBuildFile; fileRef = B8903D365A99288D29FD0840 /* RecorderSaveSelfTest.swift */; };
@@ -332,6 +333,7 @@
 		B11CC0100B96616EFF31AF9F /* CatalogCard.swift in Sources */ = {isa = PBXBuildFile; fileRef = 50172A80D6B3F46FAE1A4862 /* CatalogCard.swift */; };
 		B17DD9C767DE65A3033EC241 /* QuickCaptureControl.swift in Sources */ = {isa = PBXBuildFile; fileRef = C754F682AD01FF5801808F72 /* QuickCaptureControl.swift */; };
 		B22143F553374028E0FCAF87 /* Lato-Bold.ttf in Resources */ = {isa = PBXBuildFile; fileRef = 1DBE8572AE138177283E2B18 /* Lato-Bold.ttf */; };
+		B22A6CB96BF27D473984F273 /* DropImportSelfTest.swift in Sources */ = {isa = PBXBuildFile; fileRef = E90A0EAC82B7FD92EDBAD7F3 /* DropImportSelfTest.swift */; };
 		B35E3505455954169FCEDDDB /* AVFoundation.framework in Frameworks */ = {isa = PBXBuildFile; fileRef = 7F65B5EE1F36033500EF4B74 /* AVFoundation.framework */; };
 		B3905779F4DC65E2E8AFB76A /* CollectionPillRail.swift in Sources */ = {isa = PBXBuildFile; fileRef = C824F739A24F35A1EE96F481 /* CollectionPillRail.swift */; };
 		B41BE6EEABE45AC1655AD699 /* GhostFieldOverlay.swift in Sources */ = {isa = PBXBuildFile; fileRef = CF2C09BA37847F1EB226638D /* GhostFieldOverlay.swift */; };
@@ -392,6 +394,7 @@
 		CE1698BA8F2CB57ED11C37F8 /* CaptureIntent.swift in Sources */ = {isa = PBXBuildFile; fileRef = C8376D171BB956C6EA17E5F9 /* CaptureIntent.swift */; };
 		CEC993D6DECF8273EFFFB647 /* ChatsListView.swift in Sources */ = {isa = PBXBuildFile; fileRef = 3B63639E3606E8D188FB55AD /* ChatsListView.swift */; };
 		CEC9C7F4431D0776A1A4DC13 /* AirPad.icon in Resources */ = {isa = PBXBuildFile; fileRef = D86D98BB8BD1E493F884909C /* AirPad.icon */; };
+		CF3C2C24F860F973AEBEE0FA /* ShareItemLoader.swift in Sources */ = {isa = PBXBuildFile; fileRef = 1DA7C97349881D313C0A03D3 /* ShareItemLoader.swift */; };
 		CFA4FACC94931D7A54BF03E4 /* CardContent.swift in Sources */ = {isa = PBXBuildFile; fileRef = 544E9426775EDF9FEFBA6E5F /* CardContent.swift */; };
 		CFFE64A955B749CCBAA0C04D /* BacklinkPickerSheet.swift in Sources */ = {isa = PBXBuildFile; fileRef = CA44132CD96DC6E2560940ED /* BacklinkPickerSheet.swift */; };
 		D18F4D206417F1F7843170A1 /* WebTrace.swift in Sources */ = {isa = PBXBuildFile; fileRef = 0485A1BAF09FE0038C9B50A1 /* WebTrace.swift */; };
@@ -567,6 +570,7 @@
 		1B6BEF2C32FEEC7F6D57FD03 /* CDGhostWhileTyping.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = CDGhostWhileTyping.swift; sourceTree = "<group>"; };
 		1C805A799D4977CD24D23D96 /* EntrySync.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = EntrySync.swift; sourceTree = "<group>"; };
 		1CF73692FBE1135F029C455E /* spacegroteskbold_msdf.json */ = {isa = PBXFileReference; lastKnownFileType = text.json; path = spacegroteskbold_msdf.json; sourceTree = "<group>"; };
+		1DA7C97349881D313C0A03D3 /* ShareItemLoader.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ShareItemLoader.swift; sourceTree = "<group>"; };
 		1DBE8572AE138177283E2B18 /* Lato-Bold.ttf */ = {isa = PBXFileReference; lastKnownFileType = file; path = "Lato-Bold.ttf"; sourceTree = "<group>"; };
 		1E713BD5708D29B15EB4BB18 /* WebSearchAnswerUI.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = WebSearchAnswerUI.swift; sourceTree = "<group>"; };
 		20ED1D435BF9E254D634DF37 /* AirPadShare.appex */ = {isa = PBXFileReference; includeInIndex = 0; lastKnownFileType = "wrapper.app-extension"; path = AirPadShare.appex; sourceTree = BUILT_PRODUCTS_DIR; };
@@ -913,6 +917,7 @@
 		E6F0064A274D4E43585A9E88 /* SubstrateRelaxationPass.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = SubstrateRelaxationPass.swift; sourceTree = "<group>"; };
 		E72BAB0716ACA80A097CBF4F /* NodeGridView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = NodeGridView.swift; sourceTree = "<group>"; };
 		E909538DC252422B01EA04C6 /* DeviceRecorderTier.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = DeviceRecorderTier.swift; sourceTree = "<group>"; };
+		E90A0EAC82B7FD92EDBAD7F3 /* DropImportSelfTest.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = DropImportSelfTest.swift; sourceTree = "<group>"; };
 		E91FC3333B755E31454E8075 /* ChatScrollLiveUI.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ChatScrollLiveUI.swift; sourceTree = "<group>"; };
 		EB1C4F8AC8EFA42414AB9073 /* VoiceEntryBody.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = VoiceEntryBody.swift; sourceTree = "<group>"; };
 		EB23955C4460CA1D6E2710E9 /* HostPairingStore.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = HostPairingStore.swift; sourceTree = "<group>"; };
@@ -1178,6 +1183,7 @@
 				D64A6E1AD17AAB5CA64D4C88 /* DocumentNamingInputSelfTest.swift */,
 				C3E4914CEA3AE2C4DC0C085C /* DocumentNamingSelfTest.swift */,
 				A48FA73530D4DCADC394E232 /* DocumentReextractSelfTest.swift */,
+				E90A0EAC82B7FD92EDBAD7F3 /* DropImportSelfTest.swift */,
 				BC2397AFB193E7A4EF7411E4 /* EnrichmentGateSelfTest.swift */,
 				2E66D65D95452E1D7078D350 /* EntryExporter.swift */,
 				6CEB84A4A23D03CBE6C82507 /* FolksonomyDiagnostic.swift */,
@@ -1479,6 +1485,7 @@
 				3DFC577B59F540670E2A5588 /* Proposal.swift */,
 				463DA699C1C0AF251F9242D9 /* RejectedBlock.swift */,
 				5CBFC13F8D66EB937FAA1B1E /* ShareImportItems.swift */,
+				1DA7C97349881D313C0A03D3 /* ShareItemLoader.swift */,
 				56CD028FECD6CBB2BB00A054 /* ShareShared.swift */,
 				CB4204EBBDB6AEFAC59BB313 /* SubstrateCoord2D.swift */,
 				755624913C34BDA923C2954F /* TableMarkdown.swift */,
@@ -2183,6 +2190,7 @@
 				868B804EAA857627DC429F67 /* DocumentQuickLookViewer.swift in Sources */,
 				5DA34D8F82456B890694DBE4 /* DocumentReextractSelfTest.swift in Sources */,
 				60B79436916BF6C740B9DBCF /* DocumentViewModeToggle.swift in Sources */,
+				B22A6CB96BF27D473984F273 /* DropImportSelfTest.swift in Sources */,
 				918876676560C61205991A10 /* EditMapSheet.swift in Sources */,
 				577D10FF968327A1AFD2AD1E /* EditorRoundTripSelfTest.swift in Sources */,
 				AD075AAA15B8DF36B4830D0D /* EmptyStateOverlay.swift in Sources */,
@@ -2331,6 +2339,7 @@
 				84D3297B82B6407D4F3DA4C4 /* SelectionService.swift in Sources */,
 				ACA7B702683CE03A268E743D /* SettingsView.swift in Sources */,
 				BCD5DDC7AA4CF6AB59A82FFA /* ShareImportItems.swift in Sources */,
+				CF3C2C24F860F973AEBEE0FA /* ShareItemLoader.swift in Sources */,
 				BA59A66DC2C88462005D9EF7 /* ShareShared.swift in Sources */,
 				7289AE336C9540B5885CD057 /* ShimmerSelfTest.swift in Sources */,
 				B0C29E98DF6C6DBE11E29DF1 /* SingleMediaBody.swift in Sources */,
@@ -2442,6 +2451,7 @@
 				D5EB544A1177511F99074F74 /* RejectedBlock.swift in Sources */,
 				70A34294A7CA720FE82F4B74 /* ShareComposeView.swift in Sources */,
 				782107DF917EB5B3B2AAA139 /* ShareImportItems.swift in Sources */,
+				00F56459A4761D68A5980231 /* ShareItemLoader.swift in Sources */,
 				D430CBAF98B157CA9EC2E58C /* ShareShared.swift in Sources */,
 				82E46E44615798A6EAF8F8EF /* ShareViewController.swift in Sources */,
 				0E65AFD08082B04CE1E21753 /* SubstrateCoord2D.swift in Sources */,

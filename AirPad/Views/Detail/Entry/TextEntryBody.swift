@@ -309,7 +309,14 @@ struct TextEntryBody: View {
                     // override so it follows the new default ("set it once, stop fighting it").
                     Task { await store.setEntryBodyFont(nil, nodeID: nodeID) }
                 }
-            )
+            ),
+            // Mac batch C4 — an image dropped onto the note (Mac / iPad) becomes its inline image at the drop point.
+            inlineImageFromData: { data in
+                let tmp = FileManager.default.temporaryDirectory.appendingPathComponent(UUID().uuidString + ".jpg")
+                guard (try? data.write(to: tmp)) != nil else { return nil }
+                defer { try? FileManager.default.removeItem(at: tmp) }
+                return await store.addInlineImageItem(nodeID: nodeID, sourceURL: tmp, fileExtension: "jpg")
+            }
         )
         // Inline-image insertion lives on the launcher bar's `image` category
         // (ws-editor-chrome); the picker is presented from here, caret captured

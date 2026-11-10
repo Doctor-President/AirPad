@@ -15,6 +15,8 @@ struct ContentView: View {
     /// `.hidden` on dashboard / QuikCapture; user drag covers
     /// `.tip` ↔ `.half` ↔ `.full`.
     @State private var panelState = LibrarianPanelStateModel()
+    /// Mac batch C4 — something is being dragged over the window (the drop highlight).
+    @State private var dropTargeted = false
     private let panelLayout = LibrarianPanelLayout()
     // Brief AT5 — app-wide Appearance override (System / Light / Dark), applied to the window(s).
     @AppStorage(AppearanceOverride.storageKey) private var appearanceRaw = AppearanceOverride.system.rawValue
@@ -72,6 +74,8 @@ struct ContentView: View {
                         NSLog("%@", await MapPointerSelfTest.run(store: store, router: router))
                     }
                 }
+                // Mac batch C4 — `-ShowDropHighlight`: the drop highlight, for its still.
+                if ProcessInfo.processInfo.arguments.contains("-ShowDropHighlight") { dropTargeted = true }
                 // Mac batch C3 — `-FocusNoteEditor <s>`: focus the first note editor on screen after <s> s (inline-bar stills).
                 if let after = UserDefaults.standard.string(forKey: "FocusNoteEditor").flatMap(Double.init) {
                     DispatchQueue.main.asyncAfter(deadline: .now() + after) {
@@ -288,6 +292,25 @@ struct ContentView: View {
             }
         }
         .animation(.easeOut(duration: 0.15), value: ActiveRichTextEditor.shared.state != nil)
+        // Mac batch C4 — drop onto the window: new entries through the share import, or — with an entry open — added to
+        // that entry. (A drop on the open note's text lands at the drop point: the editor takes it.)
+        .onDrop(of: [.item], isTargeted: $dropTargeted) { providers in
+            guard router.entryMode != .quikCapture else { return false }
+            let target = store.isInDetailView ? router.openEntryID : nil
+            Task { await store.importDrop(providers, appendTo: target) }
+            return true
+        }
+        .overlay {
+            if dropTargeted {
+                RoundedRectangle(cornerRadius: 12, style: .continuous)
+                    .strokeBorder(Color.accentColor, lineWidth: 3)
+                    .background(RoundedRectangle(cornerRadius: 12, style: .continuous).fill(Color.accentColor.opacity(0.06)))
+                    .padding(4)
+                    .ignoresSafeArea()
+                    .allowsHitTesting(false)
+                    .accessibilityIdentifier("dropHighlight")
+            }
+        }
         .alert(LibraryFormatGuard.message, isPresented: Binding(
             get: { store.newerFormatNotice }, set: { store.newerFormatNotice = $0 })) {
             Button("OK", role: .cancel) {}

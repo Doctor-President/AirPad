@@ -1,4 +1,5 @@
 import CryptoKit
+import UniformTypeIdentifiers
 import Foundation
 import NaturalLanguage
 import Observation
@@ -1371,6 +1372,9 @@ final class CorpusStore {
             // live-20 (2) — a failed weekly re-extraction keeps the document's title, text, thumbnail and page count.
             if ProcessInfo.processInfo.arguments.contains("-DocumentReextractSelfTest") {
                 NSLog("%@", await runDocumentReextractSelfTest())
+            }
+            if ProcessInfo.processInfo.arguments.contains("-DropImportSelfTest") {   // Mac batch C4
+                Task { @MainActor in NSLog("%@", await runDropImportSelfTest()) }
             }
             if ProcessInfo.processInfo.arguments.contains("-MacEnrichServerSelfTest") {   // Mac batch C0
                 Task { @MainActor in NSLog("%@", await runMacEnrichServerSelfTest()) }
@@ -3847,6 +3851,10 @@ final class CorpusStore {
     /// Bumps the item's `updatedAt` alongside the node's — the per-entry
     /// timestamp field shipped in Stage 3.1a commit (a) and is now live.
     #if DEBUG
+    /// Mac batch C4 self-test — an item file's location in the library.
+    func resolveItemPathForSelfTest(nodeID: String, relativePath: String) async -> URL? {
+        await service.resolveItemPath(nodeID: nodeID, relativePath: relativePath)
+    }
     /// Mac batch C3 self-test — the entry as it is on disk now.
     func debugReloadFromDisk(id: String) async -> Node? {
         if case .node(let n) = await service.reloadNode(id: id) { return n }
@@ -9887,6 +9895,12 @@ final class CorpusStore {
             importedIDs.append(node.id)
         }
 
+        await finishImportedShares(importedIDs)
+    }
+
+    /// The follow-ups every imported share gets (Brief CG): gallery, audio transcript, naming, a link's page.
+    /// Mac batch C4: shared with the drag-and-drop import.
+    private func finishImportedShares(_ importedIDs: [String]) async {
         // Brief CG (CG3) — NAME each imported share via the app's proven path. The share extension can't
         // run the model (FM is iOS-26-only + untested in-extension; MLX is infeasible in the ~20 MB
         // extension heap — CG0 audit), so it stages a bare/placeholder-titled node and the APP names it
@@ -9913,6 +9927,87 @@ final class CorpusStore {
             //      this runs AFTER the `.noContent` enrich above set `pendingLinkAuthor`, so
             //      `applyOGFetch` re-authors from the page title in the same import pass.
             await fetchAndApplyOGForImportedLinks(nodeID: id)
+        }
+    }
+
+    // MARK: - Mac batch C4 — drag and drop in
+
+    /// A drop on the window: the dropped items are staged exactly as the share extension stages a share
+    /// (`ShareItemLoader`, into AirPad's own temporary folder, never the library), then imported through the same code:
+    /// a new entry for the drop (a `.md` / `.txt` file is an entry of its own, its text as the note), or — with an
+    /// entry open (`appendTo`) — the share's "Existing entry" path. The staging folder is removed afterwards.
+    /// Returns the ids of the entries made or added to.
+    @discardableResult
+    func importDrop(_ providers: [NSItemProvider], appendTo target: String? = nil) async -> [String] {
+        guard !providers.isEmpty, !LibraryFormatGuard.isReadOnly else {
+            if LibraryFormatGuard.isReadOnly { noteNewerFormat(refused: true) }
+            return []
+        }
+        let inbox = FileManager.default.temporaryDirectory.appendingPathComponent("drop-inbox-\(UUID().uuidString)")
+        defer { try? FileManager.default.removeItem(at: inbox) }
+        let now = Date()
+
+        // A text file (.md / .txt) → its own entry; everything else in the drop → one entry, as one share is.
+        var groups: [[NSItemProvider]] = []
+        var rest: [NSItemProvider] = []
+        for p in providers {
+            if target == nil, Self.isTextFile(p) { groups.append([p]) } else { rest.append(p) }
+        }
+        if !rest.isEmpty { groups.append(rest) }
+
+        var made: [String] = []
+        for group in groups {
+            let id = UUID().uuidString
+            var items: [NodeItem] = []
+            for p in group {
+                if let text = await Self.loadTextFile(p) {
+                    items.append(ShareItemLoader.makeTextItem(text: text, now: now))
+                } else if let item = await withCheckedContinuation({ (c: CheckedContinuation<NodeItem?, Never>) in
+                    ShareItemLoader.loadItem(from: p, nodeID: id, now: now, inbox: inbox) { c.resume(returning: $0) }
+                }) {
+                    items.append(item)
+                }
+            }
+            guard !items.isEmpty else { continue }
+            let dir = inbox.appendingPathComponent(id)
+            try? FileManager.default.createDirectory(at: dir, withIntermediateDirectories: true)
+            if let target {
+                await importShareAppend(ShareAppendRecord(target: target, items: items), from: dir)
+                made.append(target)
+            } else {
+                let node = ShareItemLoader.makeNode(id: id, createdAt: now, items: items)
+                guard (try? await saveAndEnqueue(node)) != nil else { continue }
+                let itemsDir = dir.appendingPathComponent("items")
+                for f in (try? FileManager.default.contentsOfDirectory(at: itemsDir, includingPropertiesForKeys: nil,
+                                                                        options: .skipsHiddenFiles)) ?? [] {
+                    try? await service.saveItemFile(nodeID: id, itemID: f.deletingPathExtension().lastPathComponent,
+                                                    sourceURL: f, fileExtension: f.pathExtension)
+                }
+                nodes.insert(node, at: 0)
+                made.append(id)
+            }
+        }
+        if target == nil { await finishImportedShares(made) }
+        return made
+    }
+
+    /// A dropped `.md` / `.txt` file (from Finder, Files…), not a text snippet.
+    nonisolated static func isTextFile(_ p: NSItemProvider) -> Bool {
+        let name = (p.suggestedName ?? "").lowercased()
+        let typed = p.registeredContentTypes.contains { $0.conforms(to: .plainText) }
+        let isFile = p.hasItemConformingToTypeIdentifier(UTType.fileURL.identifier)
+        return (isFile || typed) && (name.hasSuffix(".md") || name.hasSuffix(".txt") || name.hasSuffix(".markdown")
+            || p.registeredContentTypes.contains { $0.identifier == "net.daringfireball.markdown" })
+    }
+
+    /// The text of a dropped `.md` / `.txt` file; nil for anything else.
+    nonisolated static func loadTextFile(_ p: NSItemProvider) async -> String? {
+        guard isTextFile(p) else { return nil }
+        let type = p.registeredContentTypes.first { $0.conforms(to: .plainText) } ?? .plainText
+        return await withCheckedContinuation { c in
+            _ = p.loadFileRepresentation(for: type, openInPlace: false) { url, _, _ in
+                c.resume(returning: url.flatMap { try? String(contentsOf: $0, encoding: .utf8) })
+            }
         }
     }
 

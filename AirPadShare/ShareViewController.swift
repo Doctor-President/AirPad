@@ -251,164 +251,21 @@ final class ShareViewController: UIViewController {
         }
     }
 
-    /// Inspect a single provider and produce AT MOST ONE `NodeItem`. Priority (most specific first):
-    /// movie → audio → image → web URL → generic file → plain text. File-backed kinds copy by URL;
-    /// the copy runs SYNCHRONOUSLY inside the load callback because the vended temp URL is valid
-    /// only for the duration of that block.
+    /// Inspect a single provider → at most one `NodeItem` (Mac batch C4: the code lives in `ShareItemLoader`, shared with
+    /// the app's drag-and-drop import, which stages exactly what a share stages).
     private static func loadItem(from provider: NSItemProvider, nodeID: String, now: Date,
                                  completion: @escaping (NodeItem?) -> Void) {
-        if provider.hasItemConformingToTypeIdentifier(UTType.movie.identifier) {
-            provider.loadFileRepresentation(forTypeIdentifier: UTType.movie.identifier) { url, _ in
-                completion(url.flatMap { makeFileItem(fromFileURL: $0, nodeID: nodeID, now: now, type: .video, description: nil) })
-            }
-        } else if provider.hasItemConformingToTypeIdentifier(UTType.audio.identifier) {
-            provider.loadFileRepresentation(forTypeIdentifier: UTType.audio.identifier) { url, _ in
-                completion(url.flatMap { makeFileItem(fromFileURL: $0, nodeID: nodeID, now: now, type: .audio, description: nil) })
-            }
-        } else if provider.hasItemConformingToTypeIdentifier(UTType.image.identifier) {
-            provider.loadItem(forTypeIdentifier: UTType.image.identifier) { item, _ in
-                completion(makeImageItem(from: item, nodeID: nodeID, now: now, suggestedName: provider.suggestedName))
-            }
-        } else if provider.hasItemConformingToTypeIdentifier(UTType.url.identifier) {
-            provider.loadItem(forTypeIdentifier: UTType.url.identifier) { item, _ in
-                guard let url = item as? URL else { completion(nil); return }
-                if url.isFileURL {
-                    completion(makeFileItem(fromFileURL: url, nodeID: nodeID, now: now, type: .document,
-                                            description: DocumentNaming.realName(suggested: provider.suggestedName, url: url)))
-                } else {
-                    completion(makeLinkItem(url: url, now: now))
-                }
-            }
-        } else if provider.hasItemConformingToTypeIdentifier(UTType.html.identifier) {
-            // 1.1-C (C1 / C6) — shared HTML with a table: prose + GFM tables through the one table converter.
-            provider.loadDataRepresentation(forTypeIdentifier: UTType.html.identifier) { data, _ in
-                let html = data.flatMap { String(data: $0, encoding: .utf8) }
-                if let html, let segs = TableConverter.segments(html: html, text: nil) {
-                    completion(makeTextItem(text: TableConverter.join(segs), now: now))
-                } else if provider.hasItemConformingToTypeIdentifier(UTType.plainText.identifier) {
-                    provider.loadItem(forTypeIdentifier: UTType.plainText.identifier) { item, _ in   // no table: the text, as before
-                        completion((item as? String).map { makeTextItem(text: $0, now: now) })
-                    }
-                } else if let html {
-                    completion(makeTextItem(text: TableConverter.htmlToText(html), now: now))
-                } else {
-                    completion(nil)
-                }
-            }
-        } else if provider.hasItemConformingToTypeIdentifier(UTType.plainText.identifier) {
-            provider.loadItem(forTypeIdentifier: UTType.plainText.identifier) { item, _ in
-                guard let text = item as? String else { completion(nil); return }
-                // 1.1-C (C6) — tab-separated / CSV text becomes a GFM table (pipe tables already are one).
-                if let segs = TableConverter.segments(html: nil, text: text) {
-                    completion(makeTextItem(text: TableConverter.join(segs), now: now))
-                } else {
-                    completion(makeTextItem(text: text, now: now))
-                }
-            }
-        } else if provider.hasItemConformingToTypeIdentifier(UTType.data.identifier) {
-            provider.loadFileRepresentation(forTypeIdentifier: UTType.data.identifier) { url, _ in
-                guard let url else { completion(nil); return }
-                let ext = url.pathExtension.lowercased()
-                // A shared text file folds into ONE text item (one share = one entry), rather than
-                // batch-splitting into many nodes — the share sheet is not the batch-import channel.
-                if (ext == "txt" || ext == "md"), let content = try? String(contentsOf: url, encoding: .utf8) {
-                    completion(makeTextItem(text: content, now: now))
-                } else {
-                    // live-13 (4) — the document's real name: the provider's suggested name, else the vended file's
-                    // (a temp/UUID one is no name — the app then shows the PDF title or the date).
-                    completion(makeFileItem(fromFileURL: url, nodeID: nodeID, now: now, type: .document,
-                                            description: DocumentNaming.realName(suggested: provider.suggestedName, url: url)))
-                }
-            }
-        } else {
-            completion(nil)
-        }
+        guard let inbox = ShareItemLoader.appGroupInbox else { completion(nil); return }
+        ShareItemLoader.loadItem(from: provider, nodeID: nodeID, now: now, inbox: inbox, completion: completion)
     }
 
-    // MARK: - NodeItem factories
-
-    private static func makeLinkItem(url: URL, now: Date) -> NodeItem {
-        // Brief CG — leave `title` NIL (not the URL host). The in-app Link path keeps a bare link's
-        // title empty until OG lands; the host placeholder made an imported link read as having
-        // content, so the FM named it "Wayfair.com" and the OG page-title path never engaged. Nil
-        // → the import enrich hits `.noContent` → `pendingLinkAuthor` → `applyOGFetch` commits the
-        // page-title ghost, exactly as the in-app link capture does.
-        NodeItem(
-            id: UUID().uuidString, type: .link, createdAt: now, content: nil, file: nil,
-            description: nil, transcript: nil, durationSeconds: nil,
-            url: url.absoluteString, title: nil, preview: nil
-        )
-    }
-
-    private static func makeTextItem(text: String, now: Date) -> NodeItem {
-        NodeItem(
-            id: UUID().uuidString, type: .text, createdAt: now, content: text, file: nil,
-            description: nil, transcript: nil, durationSeconds: nil, url: nil, title: nil, preview: nil
-        )
-    }
-
-    private static func makeImageItem(from item: NSSecureCoding?, nodeID: String, now: Date, suggestedName: String?) -> NodeItem? {
-        var data: Data?
-        if let url = item as? URL { data = try? Data(contentsOf: url) }
-        else if let image = item as? UIImage { data = image.jpegData(compressionQuality: 0.85) }
-        guard let data else { return nil }
-        let itemID = UUID().uuidString
-        stageMedia(nodeID: nodeID, itemID: itemID, data: data, ext: "jpg")
-        return ShareImportItems.imageItem(itemID: itemID, ext: "jpg", suggestedName: suggestedName,
-                                          sourceURL: item as? URL, now: now)
-    }
-
-    /// Video / audio / documents — copied by file URL, never read into memory.
-    private static func makeFileItem(fromFileURL fileURL: URL, nodeID: String, now: Date,
-                                     type: NodeItemType, description: String?) -> NodeItem? {
-        let itemID = UUID().uuidString
-        let ext = fileURL.pathExtension.isEmpty ? "bin" : fileURL.pathExtension.lowercased()
-        guard stageMediaCopy(nodeID: nodeID, itemID: itemID, from: fileURL, ext: ext) else { return nil }
-        return NodeItem(
-            id: itemID, type: type, createdAt: now, content: nil, file: "items/\(itemID).\(ext)",
-            description: description, transcript: nil, durationSeconds: nil, url: nil, title: nil, preview: nil
-        )
-    }
+    private static func makeTextItem(text: String, now: Date) -> NodeItem { ShareItemLoader.makeTextItem(text: text, now: now) }
 
     private static func makeNode(id: String, createdAt: Date, items: [NodeItem]) -> Node {
-        Node(
-            id: id,
-            createdAt: createdAt,
-            updatedAt: createdAt,
-            title: placeholderTitle(for: items),
-            summary: "",
-            tags: [],
-            mood: nil,
-            isMeta: false,
-            provenance: nil,
-            threads: [],
-            location: nil,
-            items: items,
-            domain: nil,
-            domainConfirmed: false,
-            needsAIProcessing: true
-        )
+        ShareItemLoader.makeNode(id: id, createdAt: createdAt, items: items)
     }
 
-    /// A placeholder only — the app RE-DERIVES the title on import and the placeholder must not
-    /// block that: a link names from its page title, photos/videos from a dated fallback, audio
-    /// from its transcript — all keyed on an EMPTY (or generic) title + nil `titleSource`. So the
-    /// only content-y placeholders left are text (its own words) and a document (its filename),
-    /// the two rows that already named well on import. "Shared items" is gone: it was not in the
-    /// photo namer's placeholder set, so it stuck.
-    private static func placeholderTitle(for items: [NodeItem]) -> String {
-        guard items.count == 1, let first = items.first else { return "" }
-        switch first.type {
-        // live-29 (B4) — shared Markdown (Bear, Obsidian…) never titles an entry "### Heading": the first line, plain.
-        case .text:
-            let firstLine = (first.content ?? "").split(whereSeparator: \.isNewline).first.map(String.init) ?? ""
-            let plain = firstLine.replacingOccurrences(of: #"^[\s>]*(#{1,6}\s*|[-*+•]\s+)?"#, with: "", options: .regularExpression)
-                .replacingOccurrences(of: #"\*\*|__|`"#, with: "", options: .regularExpression)
-            return String(plain.trimmingCharacters(in: .whitespaces).prefix(40))
-        case .document: return (first.description as NSString?)?.deletingPathExtension ?? ""
-        default:        return ""   // link, image, video, audio → named on import
-        }
-    }
+    private static func placeholderTitle(for items: [NodeItem]) -> String { ShareItemLoader.placeholderTitle(for: items) }
 
     // MARK: - Staging (App Group inbox)
 
@@ -427,38 +284,6 @@ final class ShareViewController: UIViewController {
         encoder.outputFormatting = [.prettyPrinted, .sortedKeys]
         guard let data = try? encoder.encode(node) else { return }
         try? data.write(to: nodeDir.appendingPathComponent("node.json"), options: .atomic)
-    }
-
-    private static func stageMedia(nodeID: String, itemID: String, data: Data, ext: String) {
-        guard let container = FileManager.default.containerURL(
-            forSecurityApplicationGroupIdentifier: appGroupID
-        ) else { return }
-        let itemsDir = container.appendingPathComponent("AirPad/inbox/\(nodeID)/items")
-        try? FileManager.default.createDirectory(at: itemsDir, withIntermediateDirectories: true)
-        try? data.write(to: itemsDir.appendingPathComponent("\(itemID).\(ext)"), options: .atomic)
-    }
-
-    /// Copy a file-backed attachment into the inbox WITHOUT loading it into memory. Runs inside the
-    /// provider's load callback (the source URL is only valid there). Falls back to a Data write for
-    /// tiny files if the copy fails.
-    private static func stageMediaCopy(nodeID: String, itemID: String, from fileURL: URL, ext: String) -> Bool {
-        guard let container = FileManager.default.containerURL(
-            forSecurityApplicationGroupIdentifier: appGroupID
-        ) else { return false }
-        let itemsDir = container.appendingPathComponent("AirPad/inbox/\(nodeID)/items")
-        try? FileManager.default.createDirectory(at: itemsDir, withIntermediateDirectories: true)
-        let dest = itemsDir.appendingPathComponent("\(itemID).\(ext)")
-        try? FileManager.default.removeItem(at: dest)
-        do {
-            try FileManager.default.copyItem(at: fileURL, to: dest)
-            return true
-        } catch {
-            if let data = try? Data(contentsOf: fileURL) {
-                try? data.write(to: dest, options: .atomic)
-                return true
-            }
-            return false
-        }
     }
 
     // MARK: - Dismiss

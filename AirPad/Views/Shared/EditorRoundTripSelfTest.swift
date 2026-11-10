@@ -150,6 +150,26 @@ enum EditorRoundTripSelfTest {
         } else {
             row("re-opened, the editor is there", false)
         }
+        // C4 — an image dropped / pasted onto the note goes in at the caret (the editor's drop path).
+        if let tv3 = editor(containing: "Subheading line") {
+            tv3.becomeFirstResponder(); await settle(0.5)
+            let ns = (tv3.text ?? "") as NSString
+            let at = ns.range(of: "Body line")
+            tv3.selectedRange = NSRange(location: at.location + at.length, length: 0)
+            let img = UIGraphicsImageRenderer(size: CGSize(width: 40, height: 30)).image { c in
+                UIColor(red: 0xE8 / 255.0, green: 0x82 / 255.0, blue: 0x0A / 255.0, alpha: 1).setFill()
+                c.fill(CGRect(x: 0, y: 0, width: 40, height: 30))
+            }
+            tv3.paste(itemProviders: [NSItemProvider(object: img)])
+            await settle(2.0)
+            let md3 = MarkdownCodec.encode(tv3.attributedText ?? NSAttributedString())
+            let lines3 = md3.components(separatedBy: "\n")
+            let i = lines3.firstIndex(of: "Body line") ?? -1
+            let next = i >= 0 && i + 1 < lines3.count ? lines3[i + 1] : ""
+            row("an image dropped on the note goes in at the point", RichTextEditor.Coordinator.takesRichDrops ? next.hasPrefix(MarkdownCodec.imageTokenPrefix) || (md3.components(separatedBy: "Body line").dropFirst().first ?? "").hasPrefix(MarkdownCodec.imageTokenPrefix) : true,
+                "after Body line: \(next.prefix(60))")
+            tv3.resignFirstResponder(); await settle(0.8)
+        }
         router.perform(.back); await settle(1.0)
         await store.deleteNode(id: id)
         return "[EditorRoundTripSelfTest] \(fails == 0 ? "PASS" : "FAIL") — \(rows.count - fails)/\(rows.count)\n" + rows.joined(separator: "\n")

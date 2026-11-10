@@ -264,6 +264,8 @@ struct VerticalScrollView: View {
                                 store.openAfterPrewarm(real) { navigationPath.append(real) }
                             }
                         }
+                        .pointerHover(cornerRadius: 20)   // Mac batch C5
+                        .entryContextMenu(node)
                     }
                 }
                 .padding(.horizontal, DisplaySize.screenWidth * 0.05)

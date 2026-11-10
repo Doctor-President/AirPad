@@ -225,6 +225,22 @@ final class AppRouter {
     /// Published by the mounted NavigationStack (`NavigationHistory`) for Go › Back / Forward.
     var canGoBack = false
     var canGoForward = false
+    /// Mac batch C5 — a right-click menu's choice on an entry (`EntryContextMenu`, the Map's orb menu), answered at the
+    /// root. Monotonic like the command request.
+    struct EntryActionRequest: Equatable {
+        let action: EntryAction
+        let nodeID: String
+        let token: Int
+    }
+    private(set) var entryAction: EntryActionRequest? = nil
+    func requestEntryAction(_ action: EntryAction, _ nodeID: String) {
+        commandCounter += 1
+        entryAction = EntryActionRequest(action: action, nodeID: nodeID, token: commandCounter)
+    }
+    /// The entry the root's Export sheet / Delete confirmation is for.
+    var exportEntryID: String? = nil
+    var deleteEntryID: String? = nil
+
     /// The Map is mounted (Mac batch C2: View › Zoom In / Out / to Fit).
     var mapShowing = false
     /// The entry whose detail is on screen (the top of the stack), for File › Export Entry….

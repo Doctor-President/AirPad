@@ -159,6 +159,8 @@ struct NodeListView: View {
                         // than an outline (T: the outline didn't hug the row —
                         // make the strip blue). Persists until the next touch.
                         .accessibilityIdentifier("listRow-\(node.id)")   // A3 — one row per entry, findable by id
+                        .pointerHover(cornerRadius: 8)   // Mac batch C5
+                        .entryContextMenu(node)
                         .listRowBackground(
                             Group {
                                 if selection.isSelected(node.id) {

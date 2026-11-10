@@ -89,6 +89,14 @@ struct ContentView: View {
                         tv?.selectedRange = NSRange(location: 0, length: min(5, (tv?.text as NSString?)?.length ?? 0))
                     }
                 }
+                // Mac batch C5 — `-EntryMenuSelfTest`: the entry menu's actions, the orb menu, delete-after-edit.
+                if ProcessInfo.processInfo.arguments.contains("-EntryMenuSelfTest") {
+                    Task { @MainActor in
+                        for _ in 0..<160 where !router.mapSettled { try? await Task.sleep(nanoseconds: 250_000_000) }
+                        try? await Task.sleep(nanoseconds: 6_000_000_000)
+                        NSLog("%@", await EntryMenuSelfTest.run(store: store, router: router))
+                    }
+                }
                 // Mac batch C3 — `-EditorRoundTripSelfTest`: every Format command → save → disk → re-open.
                 if ProcessInfo.processInfo.arguments.contains("-EditorRoundTripSelfTest") {
                     Task { @MainActor in
@@ -336,6 +344,27 @@ struct ContentView: View {
         }
         .onChange(of: router.commandRequest) { _, request in
             if let command = request?.command { perform(command) }
+        }
+        // Mac batch C5 — an entry's right-click menu, wherever it was shown.
+        .onChange(of: router.entryAction) { _, request in
+            if let request { perform(request.action, on: request.nodeID) }
+        }
+        .sheet(item: Binding(get: { router.exportEntryID.map(ExportTarget.init) }, set: { router.exportEntryID = $0?.id })) { t in
+            EntryExportSheet(nodeID: t.id)
+                .environment(store)
+                .environment(router)
+        }
+        .confirmationDialog("Delete this entry?", isPresented: Binding(
+            get: { router.deleteEntryID != nil }, set: { if !$0 { router.deleteEntryID = nil } }), titleVisibility: .visible) {
+            Button("Delete", role: .destructive) {
+                guard let id = router.deleteEntryID else { return }
+                router.deleteEntryID = nil
+                if store.isInDetailView, router.openEntryID == id { router.perform(.back) }
+                Task { await store.deleteNode(id: id) }
+            }
+            Button("Cancel", role: .cancel) { router.deleteEntryID = nil }
+        } message: {
+            Text("This will permanently delete the entry and all its items. Can't be undone.")
         }
         // In-layout FloatingPanel — the Librarian's structural home. Mounted
         // once at ContentView root and never torn down across entry-mode
@@ -653,6 +682,25 @@ struct ContentView: View {
             break
         }
     }
+
+    /// Mac batch C5 — the entry menu's actions, the same paths as the open entry's own menu.
+    private func perform(_ action: EntryAction, on nodeID: String) {
+        switch action {
+        case .open:
+            if router.entryMode == .quikCapture { return }
+            router.pendingNodeNavigationID = nodeID
+        case .togglePrivate:
+            guard PrivateEntries.shared.available, var updated = store.nodes.first(where: { $0.id == nodeID }) else { return }
+            updated.isPrivate.toggle()
+            Task { await store.updateNode(updated) }
+        case .export:
+            router.exportEntryID = nodeID
+        case .delete:
+            router.deleteEntryID = nodeID
+        }
+    }
+
+    private struct ExportTarget: Identifiable { let id: String }
 
     /// View › Map / List / Cards: that view of the library being looked at (a collection stays that collection), with
     /// any open entry closed so the view shows.

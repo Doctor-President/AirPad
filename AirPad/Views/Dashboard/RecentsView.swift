@@ -154,6 +154,8 @@ struct RecentsView: View {
                                         .contentShape(Rectangle())
                                 }
                                 .buttonStyle(.plain)
+                                .pointerHover(Rectangle())   // Mac batch C5
+                                .entryContextMenu(node)
                                 .accessibilityIdentifier("entryRow-\(node.id)")   // Brief CD — XCUITest reopens a specific entry
                                 if index < bucket.nodes.count - 1 {
                                     rowHairline

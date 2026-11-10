@@ -6929,7 +6929,7 @@ final class CorpusPhysicsScene: SKScene {
 /// Trackpad pinch (it arrives as a magnify, never as two touches, so the scene's touch pinch can't see it), two-finger
 /// scroll / mouse wheel (pan; ⌥ + wheel zooms), and hover. Recognisers on the SKView that never take touches: an iPhone
 /// gets the same scene code path as before (touch pinch and pan stay in `touchesBegan/Moved/Ended`).
-final class MapPointerInput: NSObject, UIGestureRecognizerDelegate {
+final class MapPointerInput: NSObject, UIGestureRecognizerDelegate, UIContextMenuInteractionDelegate {
     private weak var scene: CorpusPhysicsScene?
 
     init(scene: CorpusPhysicsScene, view: SKView) {
@@ -6949,6 +6949,38 @@ final class MapPointerInput: NSObject, UIGestureRecognizerDelegate {
             g.delaysTouchesEnded = false
             g.delegate = self
             view.addGestureRecognizer(g)
+        }
+        // Mac batch C5 — right-click (Mac) / secondary click or long-press (iPad) on an orb: the entry menu.
+        if EntryContextMenu.enabled { view.addInteraction(UIContextMenuInteraction(delegate: self)) }
+    }
+
+    func contextMenuInteraction(_ interaction: UIContextMenuInteraction,
+                                configurationForMenuAtLocation location: CGPoint) -> UIContextMenuConfiguration? {
+        guard let scene, let id = scene.orbID(atViewPoint: location) else { return nil }
+        let isPrivate = scene.nodeIsPrivate(id)
+        return UIContextMenuConfiguration(identifier: nil, previewProvider: nil) { [weak self] _ in
+            self?.entryMenu(id: id, isPrivate: isPrivate)
+        }
+    }
+
+    /// The orb's entry menu: the same actions as `EntryContextMenu`.
+    func entryMenu(id: String, isPrivate: Bool) -> UIMenu? {
+        guard let router = AppRouter.shared else { return nil }
+        do {
+            var items: [UIMenuElement] = [
+                UIAction(title: "Open", image: UIImage(systemName: "arrow.up.forward.square")) { _ in router.requestEntryAction(.open, id) },
+            ]
+            if PrivateEntries.shared.available {
+                items.append(UIAction(title: isPrivate ? "Make Not Private" : "Make Private",
+                                      image: UIImage(systemName: isPrivate ? "lock.open" : "lock")) { _ in
+                    router.requestEntryAction(.togglePrivate, id)
+                })
+            }
+            items.append(UIAction(title: "Export…", image: UIImage(systemName: "square.and.arrow.up")) { _ in router.requestEntryAction(.export, id) })
+            items.append(UIMenu(options: .displayInline, children: [
+                UIAction(title: "Delete…", image: UIImage(systemName: "trash"), attributes: .destructive) { _ in router.requestEntryAction(.delete, id) },
+            ]))
+            return UIMenu(children: items)
         }
     }
 
@@ -6991,6 +7023,15 @@ final class MapPointerInput: NSObject, UIGestureRecognizerDelegate {
 }
 
 extension CorpusPhysicsScene {
+    /// Mac batch C5 — the entry orb under a view point (nil off the orbs).
+    func orbID(atViewPoint viewPoint: CGPoint) -> String? {
+        let p = convertPoint(fromView: viewPoint)
+        guard let shape = nodeSprites.values.first(where: { orbContains($0, p) }), let name = shape.name, name.hasPrefix("node:")
+        else { return nil }
+        return String(name.dropFirst(5))
+    }
+    func nodeIsPrivate(_ id: String) -> Bool { currentNodes.first { $0.id == id }?.isPrivate == true }
+
     fileprivate func pointerGestureBegan() {
         wakeMap()
         coastVelocity = .zero
@@ -7109,6 +7150,13 @@ extension CorpusPhysicsScene {
     func debugPointerPan(by t: CGPoint) { pointerPan(by: t) }
     func debugPointerHover(at p: CGPoint?) { pointerHover(at: p) }
     var debugRestPaused: Bool { restPaused }
+    /// C5 — the orb menu's item titles at a view point ([] = no menu).
+    func debugContextMenuTitles(at p: CGPoint) -> [String] {
+        guard let input = pointerInput, let id = orbID(atViewPoint: p),
+              let menu = input.entryMenu(id: id, isPrivate: nodeIsPrivate(id)) else { return [] }
+        func titles(_ m: UIMenu) -> [String] { m.children.flatMap { ($0 as? UIMenu).map(titles) ?? [$0.title] } }
+        return titles(menu)
+    }
     var debugRecognizers: String {
         (view?.gestureRecognizers ?? []).compactMap { g -> String? in
             switch g {

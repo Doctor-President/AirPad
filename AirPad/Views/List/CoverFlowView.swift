@@ -248,6 +248,7 @@ struct CoverFlowView: View {
                                     store.openAfterPrewarm(node) { navigationPath.append(node) }
                                 }
                             }
+                            .entryContextMenu(node)   // Mac batch C5
                     }
                 }
                 .scrollTargetLayout()

@@ -171,7 +171,12 @@ enum EditorRoundTripSelfTest {
             tv3.resignFirstResponder(); await settle(0.8)
         }
         router.perform(.back); await settle(1.0)
+        let depthAtDelete = store.detailViewDepth
         await store.deleteNode(id: id)
+        await settle(5)
+        let survived = store.nodes.contains { $0.id == id }
+        let onDisk = await store.debugReloadFromDisk(id: id) != nil
+        NSLog("[EditorRoundTripSelfTest] cleanup: depthAtDelete=%d inStore=%@ onDisk=%@", depthAtDelete, survived ? "Y" : "n", onDisk ? "Y" : "n")
         return "[EditorRoundTripSelfTest] \(fails == 0 ? "PASS" : "FAIL") — \(rows.count - fails)/\(rows.count)\n" + rows.joined(separator: "\n")
     }
 

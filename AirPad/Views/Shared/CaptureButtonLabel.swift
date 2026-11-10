@@ -26,11 +26,14 @@ struct CanvasCircleButtonLabel: View {
     @Environment(\.colorSchemeContrast) private var contrast
 
     var body: some View {
-        if let role = glassRole, FloatingButtonsStyle.isOn(reduceTransparency: reduceTransparency, increaseContrast: contrast == .increased) {
-            glass(role)
-        } else {
-            disc
+        Group {
+            if let role = glassRole, FloatingButtonsStyle.isOn(reduceTransparency: reduceTransparency, increaseContrast: contrast == .increased) {
+                glass(role)
+            } else {
+                disc
+            }
         }
+        .pointerHover(Circle())   // Mac batch C5
     }
 
     @ViewBuilder private func glass(_ role: FloatingButtonsStyle.Role) -> some View {

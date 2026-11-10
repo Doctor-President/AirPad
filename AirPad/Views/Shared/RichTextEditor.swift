@@ -290,6 +290,8 @@ struct RichTextEditor: UIViewRepresentable {
         private var isRestyling = false
         private weak var textView: UITextView?
         private var toolbarHost: UIHostingController<RichTextToolbar>?
+        /// The keyboard bar's container (Mac batch C3: taken off while the inline bar shows).
+        private var accessoryContainer: UIView?
         /// Tap recognizer that fires only when the tap lands on a checklist
         /// glyph. Installed in `attachToolbar`; its delegate filters out other
         /// taps so the textView's built-in cursor-placement tap still wins.
@@ -459,6 +461,13 @@ struct RichTextEditor: UIViewRepresentable {
 
             textView.inputAccessoryView = container
             self.toolbarHost = host
+            self.accessoryContainer = container
+            // Mac batch C3 — Tab / ⇧Tab indent / outdent inside a list; ⌘↩ ticks the checkbox at the caret.
+            (textView as? RichTextUIView)?.onTabKey = { [weak self] shift in
+                guard let self, self.state.isBulletList || self.state.isNumberedList || self.state.isChecklist else { return false }
+                if shift { self.state.outdent() } else { self.state.indent() }
+                return true
+            }
 
             // Tap-to-toggle for checklist glyphs. The delegate's
             // `shouldReceive` returns true only when the touch lands inside
@@ -550,6 +559,14 @@ struct RichTextEditor: UIViewRepresentable {
             state.insertTable = { [weak self] in
                 guard let self, let tv = self.textView else { return }
                 self.insertTable(.blank, in: tv, openEditor: true)
+            }
+            state.toggleCheckboxAtCaret = { [weak self] in
+                guard let self, let tv = self.textView else { return }
+                let attr = tv.attributedText ?? NSAttributedString()
+                let para = (attr.string as NSString).paragraphRange(for: NSRange(location: min(tv.selectedRange.location, attr.length), length: 0))
+                if let prefix = MarkdownCodec.checklistPrefixRange(in: attr, paragraph: para) {
+                    self.toggleChecklistChecked(at: prefix, in: tv)
+                }
             }
             state.insertImage = { [weak self] in
                 // Capture the caret NOW (before the picker resigns first responder),
@@ -785,6 +802,15 @@ struct RichTextEditor: UIViewRepresentable {
         }
 
         func textViewDidBeginEditing(_ textView: UITextView) {
+            // Mac batch C3 — on a Mac (no software keyboard) or an iPad with a hardware keyboard, the formatting bar
+            // shows inline (ActiveRichTextEditor + RichTextInlineBar), not on the keyboard. iPhone: today's bar.
+            if ActiveRichTextEditor.usesInlineBar {
+                if textView.inputAccessoryView != nil { textView.inputAccessoryView = nil; textView.reloadInputViews() }
+                ActiveRichTextEditor.shared.begin(state)
+            } else if textView.inputAccessoryView == nil, let accessoryContainer {
+                textView.inputAccessoryView = accessoryContainer
+                textView.reloadInputViews()
+            }
             CaretTrace.log("didBeginEditing ENTER \(CaretTrace.sel(textView))")
             // MD14 M2 geometry gate: where does the XCUITest tap point (0.35, 0.06) map?
             CaretTrace.geomLog(textView)
@@ -797,6 +823,7 @@ struct RichTextEditor: UIViewRepresentable {
         }
 
         func textViewDidEndEditing(_ textView: UITextView) {
+            ActiveRichTextEditor.shared.end(state, textView: textView)   // Mac batch C3
             // Restore the keyboard slot so re-focusing raises the keyboard, not a
             // stale Format panel (inputView otherwise persists across focus loss).
             dismissFormatPanel(in: textView, reload: false)
@@ -2368,6 +2395,8 @@ final class RichTextEditorState {
     var insertImage: () -> Void = {}
     /// 1.1-C (C6) — "Insert table": a blank 3 × 3 table at the caret (its own line), then the full-screen table view.
     var insertTable: () -> Void = {}
+    /// Mac batch C3 — Format › Toggle Checkbox (⌘↩): tick / untick the checklist item the caret is in.
+    var toggleCheckboxAtCaret: () -> Void = {}
 
     /// Brief AZ4 — the toolbar font chip's model. Non-nil ONLY for the note editor
     /// (`documentStyle`); when set, the bar shows a font chip in the reserved slot
@@ -2696,6 +2725,21 @@ struct RichTextFormatSheet: View {
 final class RichTextUIView: UITextView {
 
     private let placeholderLabel = UILabel()
+
+    /// Mac batch C3 — Tab (false) / ⇧Tab (true) from a hardware keyboard: the coordinator indents / outdents when the
+    /// caret is in a list and returns true; otherwise Tab types a tab as before.
+    var onTabKey: ((Bool) -> Bool)?
+
+    override var keyCommands: [UIKeyCommand]? {
+        guard onTabKey != nil else { return super.keyCommands }
+        let tab = UIKeyCommand(input: "\t", modifierFlags: [], action: #selector(tabKey))
+        let backTab = UIKeyCommand(input: "\t", modifierFlags: .shift, action: #selector(shiftTabKey))
+        tab.wantsPriorityOverSystemBehavior = true
+        backTab.wantsPriorityOverSystemBehavior = true
+        return (super.keyCommands ?? []) + [tab, backTab]
+    }
+    @objc private func tabKey() { if onTabKey?(false) != true { insertText("\t") } }
+    @objc private func shiftTabKey() { _ = onTabKey?(true) }
 
     var placeholderText: String = "" {
         didSet {

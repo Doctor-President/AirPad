@@ -72,6 +72,27 @@ struct ContentView: View {
                         NSLog("%@", await MapPointerSelfTest.run(store: store, router: router))
                     }
                 }
+                // Mac batch C3 — `-FocusNoteEditor <s>`: focus the first note editor on screen after <s> s (inline-bar stills).
+                if let after = UserDefaults.standard.string(forKey: "FocusNoteEditor").flatMap(Double.init) {
+                    DispatchQueue.main.asyncAfter(deadline: .now() + after) {
+                        func walk(_ v: UIView) -> RichTextUIView? {
+                            if let t = v as? RichTextUIView, !(t.text ?? "").isEmpty { return t }
+                            for s in v.subviews { if let r = walk(s) { return r } }
+                            return nil
+                        }
+                        let tv = UIApplication.shared.connectedScenes.compactMap { $0 as? UIWindowScene }.flatMap(\.windows).lazy.compactMap(walk).first
+                        tv?.becomeFirstResponder()
+                        tv?.selectedRange = NSRange(location: 0, length: min(5, (tv?.text as NSString?)?.length ?? 0))
+                    }
+                }
+                // Mac batch C3 — `-EditorRoundTripSelfTest`: every Format command → save → disk → re-open.
+                if ProcessInfo.processInfo.arguments.contains("-EditorRoundTripSelfTest") {
+                    Task { @MainActor in
+                        for _ in 0..<120 where store.nodes.count < 10 { try? await Task.sleep(nanoseconds: 250_000_000) }
+                        try? await Task.sleep(nanoseconds: 4_000_000_000)
+                        NSLog("%@", await EditorRoundTripSelfTest.run(store: store, router: router))
+                    }
+                }
                 #if targetEnvironment(macCatalyst)
                 // Mac batch C1 — `-MacMenuSelfTest`: the real menu bar, fired item by item, once the library is up.
                 if ProcessInfo.processInfo.arguments.contains("-MacMenuSelfTest") {
@@ -239,7 +260,7 @@ struct ContentView: View {
                     .accessibilityElement()
                     .accessibilityIdentifier("routerProbe")
                     .accessibilityLabel("routerProbe")
-                    .accessibilityValue("mode=\(mode) view=\(store.filterState(for: .corpus).viewMode.rawValue) depth=\(store.detailViewDepth) peek=\(router.librarianAtPeek ? 1 : 0) capturing=\(router.isCapturing ? 1 : 0) back=\(router.canGoBack ? 1 : 0) forward=\(router.canGoForward ? 1 : 0) settings=\(router.showSettings ? 1 : 0) newCollection=\(router.showNewCollection ? 1 : 0)")
+                    .accessibilityValue("mode=\(mode) view=\(store.filterState(for: .corpus).viewMode.rawValue) depth=\(store.detailViewDepth) peek=\(router.librarianAtPeek ? 1 : 0) capturing=\(router.isCapturing ? 1 : 0) back=\(router.canGoBack ? 1 : 0) forward=\(router.canGoForward ? 1 : 0) settings=\(router.showSettings ? 1 : 0) newCollection=\(router.showNewCollection ? 1 : 0) editor=\(ActiveRichTextEditor.shared.state == nil ? 0 : 1) bold=\(ActiveRichTextEditor.shared.state?.isBold == true ? 1 : 0) heading=\(ActiveRichTextEditor.shared.state?.currentHeadingLevel?.rawValue ?? 0) bullet=\(ActiveRichTextEditor.shared.state?.isBulletList == true ? 1 : 0) checklist=\(ActiveRichTextEditor.shared.state?.isChecklist == true ? 1 : 0) inlineBarMode=\(ActiveRichTextEditor.usesInlineBar ? 1 : 0)")
                     .allowsHitTesting(false)
             }
             // live-11 (2) — `-PasteProbe`: main-thread stalls + paste → naming → ghost times for a long paste.
@@ -256,6 +277,17 @@ struct ContentView: View {
         .overlay(alignment: .top) {
             if store.libraryIsNewerFormat { NewerLibraryBanner().padding(.top, 56).allowsHitTesting(false) }
         }
+        // Mac batch C3 — the note editor's formatting bar on a Mac / an iPad with a keyboard, inline under the top
+        // chrome row (the iPhone's rides on the keyboard).
+        .overlay(alignment: .top) {
+            if let editor = ActiveRichTextEditor.shared.state {
+                RichTextInlineBar(state: editor)
+                    .padding(.top, 58)
+                    .padding(.horizontal, 16)
+                    .transition(.opacity)
+            }
+        }
+        .animation(.easeOut(duration: 0.15), value: ActiveRichTextEditor.shared.state != nil)
         .alert(LibraryFormatGuard.message, isPresented: Binding(
             get: { store.newerFormatNotice }, set: { store.newerFormatNotice = $0 })) {
             Button("OK", role: .cancel) {}

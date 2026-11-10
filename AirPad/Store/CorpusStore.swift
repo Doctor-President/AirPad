@@ -3846,6 +3846,14 @@ final class CorpusStore {
     /// No-op if the node or item is missing, or the content is unchanged.
     /// Bumps the item's `updatedAt` alongside the node's — the per-entry
     /// timestamp field shipped in Stage 3.1a commit (a) and is now live.
+    #if DEBUG
+    /// Mac batch C3 self-test — the entry as it is on disk now.
+    func debugReloadFromDisk(id: String) async -> Node? {
+        if case .node(let n) = await service.reloadNode(id: id) { return n }
+        return nil
+    }
+    #endif
+
     func updateTextItem(itemID: String, newContent: String, nodeID: String, pieceLanded: Bool = false, enrich: Bool = true) async {
         // F2 — this text is (or already was) saved: its local draft and live mirror go, unless typing moved on.
         defer {

@@ -10,7 +10,8 @@ LOOK=${LOOK:-light}
 xcrun simctl ui $SIM appearance $LOOK
 for V in ${=VIEWS:-dashboard map list cards entry chats}; do
   case $V in dashboard) VA=(-OpenDashboard);; map) VA=(-OpenMap);; list) VA=(-OpenListView);; cards) VA=(-OpenCardView);;
-    entry) VA=(-OpenFirstGradientEntry);; chats) VA=(-OpenChatsList);; recents) VA=();; esac
+    entry) VA=(-OpenFirstGradientEntry);; chats) VA=(-OpenChatsList);; recents) VA=();;
+    quik) VA=(-EntryQuikCapture);; esac   # C3 — Quick Capture: the note focused, the keyboard + its formatting bar
   xcrun simctl launch --terminate-running-process $SIM $APPID $BASE $VA >/dev/null
   python3 -c "import time; time.sleep($S)"
   xcrun simctl io $SIM screenshot --type=png $OUT/$TAG-$V.png >/dev/null 2>&1

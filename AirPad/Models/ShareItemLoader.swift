@@ -92,7 +92,17 @@ enum ShareItemLoader {
     /// `URL` / `String`; accept both.
     static func asURL(_ item: NSSecureCoding?) -> URL? {
         if let u = item as? URL { return u }
-        if let d = item as? Data { return URL(dataRepresentation: d, relativeTo: nil) }
+        if let d = item as? Data {
+            // iOS: NSURL's property-list form (an array whose first element is the URL string, or a plain string).
+            if let pl = try? PropertyListSerialization.propertyList(from: d, format: nil) {
+                let s = (pl as? [Any])?.first as? String ?? pl as? String
+                if let s, let u = URL(string: s), u.scheme != nil { return u }
+            }
+            if let s = String(data: d, encoding: .utf8), let u = URL(string: s.trimmingCharacters(in: .whitespacesAndNewlines)),
+               u.scheme != nil { return u }
+            if let u = URL(dataRepresentation: d, relativeTo: nil), u.scheme != nil { return u }
+            return nil
+        }
         if let s = item as? String { return URL(string: s.trimmingCharacters(in: .whitespacesAndNewlines)) }
         return nil
     }

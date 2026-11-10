@@ -43,6 +43,13 @@ extension CorpusStore {
         urls.forEach { try? FileManager.default.removeItem(at: $0) }
 
         // 3. A web URL → a link entry.
+        let up = NSItemProvider(object: URL(string: "https://example.com/airpad-drop-test")! as NSURL)
+        let probe: String = await withCheckedContinuation { c in
+            up.loadItem(forTypeIdentifier: UTType.url.identifier) { item, err in
+                c.resume(returning: "types=\(up.registeredTypeIdentifiers) item=\(item.map { String(describing: type(of: $0)) } ?? "nil") err=\(err.map { "\($0)" } ?? "nil")")
+            }
+        }
+        NSLog("[DropImportSelfTest] url provider: %@", probe)
         let link = await importDrop([NSItemProvider(object: URL(string: "https://example.com/airpad-drop-test")! as NSURL)])
         made += link
         row("URL → a link entry", link.count == 1 && node(link[0])?.items.first?.type == .link

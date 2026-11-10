@@ -106,6 +106,22 @@ struct ContentView: View {
                     }
                 }
                 #if targetEnvironment(macCatalyst)
+                // Mac batch C6 — `-MacWindowFrameTest set|check`: set the main window's frame (then quit), or log it at
+                // the next launch (the harness compares).
+                if let mode = UserDefaults.standard.string(forKey: "MacWindowFrameTest") {
+                    DispatchQueue.main.asyncAfter(deadline: .now() + 6) {
+                        if mode == "set", let cls = NSClassFromString("NSApplication") as? NSObject.Type,
+                           let app = cls.perform(NSSelectorFromString("sharedApplication"))?.takeUnretainedValue() as? NSObject,
+                           let win = (app.value(forKey: "windows") as? [NSObject])?.first(where: { ($0.value(forKey: "visible") as? NSNumber)?.boolValue == true }) {
+                            typealias SetFrame = @convention(c) (AnyObject, Selector, CGRect, Bool) -> Void
+                            let sel = NSSelectorFromString("setFrame:display:")
+                            unsafeBitCast(win.method(for: sel), to: SetFrame.self)(win, sel, CGRect(x: 160, y: 140, width: 1180, height: 760), true)
+                        }
+                        DispatchQueue.main.asyncAfter(deadline: .now() + 1.5) {
+                            NSLog("[MacWindowFrameTest] %@ frame=%@", mode, RunningOnMac.mainWindowFrame.map { NSCoder.string(for: $0) } ?? "nil")
+                        }
+                    }
+                }
                 // Mac batch C1 — `-MacMenuSelfTest`: the real menu bar, fired item by item, once the library is up.
                 if ProcessInfo.processInfo.arguments.contains("-MacMenuSelfTest") {
                     Task { @MainActor in

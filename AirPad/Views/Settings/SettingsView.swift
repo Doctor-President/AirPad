@@ -215,6 +215,7 @@ struct SettingsView: View {
             }
         }
         .presentationBackground(AppearancePalette.bgBase)
+        .macSheetSize()   // Mac batch C6
         .onAppear {
             loadKeys()
             // Brief AL1 — pairing state is the shared observable `HostCatalog.shared.isPaired`

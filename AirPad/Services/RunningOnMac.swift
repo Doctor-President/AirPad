@@ -6,6 +6,21 @@ enum RunningOnMac {
     static let isMac: Bool = ProcessInfo.processInfo.isMacCatalystApp
 }
 
+import SwiftUI
+
+extension View {
+    /// Mac batch C6 — Settings and Chats as sheets on the Mac: about 720 × 640, down to 560 × 480 in a small window.
+    /// iPhone / iPad: unchanged.
+    @ViewBuilder func macSheetSize() -> some View {
+        #if targetEnvironment(macCatalyst)
+        self.frame(minWidth: 560, idealWidth: 720, maxWidth: .infinity, minHeight: 480, idealHeight: 640, maxHeight: .infinity)
+            .presentationSizing(.fitted)
+        #else
+        self
+        #endif
+    }
+}
+
 #if targetEnvironment(macCatalyst)
 import UIKit
 
@@ -27,6 +42,13 @@ extension RunningOnMac {
         guard let window = w.key ?? w.all.first(where: { ($0.value(forKey: "canBecomeMainWindow") as? NSNumber)?.boolValue == true })
         else { return }
         window.perform(NSSelectorFromString("performClose:"), with: nil)
+    }
+
+    /// The main window's frame in screen points (DEBUG checks).
+    @MainActor static var mainWindowFrame: CGRect? {
+        let w = appKitWindows
+        guard let window = w.key ?? w.all.first else { return nil }
+        return (window.value(forKey: "frame") as? NSValue)?.cgRectValue
     }
 
     /// Visible app windows (DEBUG checks).

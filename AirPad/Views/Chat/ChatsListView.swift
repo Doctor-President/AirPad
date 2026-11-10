@@ -69,6 +69,7 @@ struct ChatsListView: View {
                 }
             }
         }
+        .macSheetSize()   // Mac batch C6
     }
 
     // MARK: - Content

@@ -12086,6 +12086,13 @@ extension CorpusStore {
         LibraryWatcher.start(root: root)
         let waiting = await service.waitingForDownload
         if !waiting.isEmpty { catchingUp.formUnion(waiting) }
+        // Mac fix-up X5 (T: "Catching up… 3 entries" stayed up all session, gone after a relaunch) — entries iCloud was
+        // still bringing at launch were marked but never followed, so one that landed without a watcher callback was
+        // never loaded and the pill never cleared. Follow them like every other catching-up entry.
+        #if DEBUG
+        if ProcessInfo.processInfo.arguments.contains("-SyncNoLaunchFollowForControl") { return }   // X5 positive control
+        #endif
+        for id in waiting { followUntilCurrent(id) }
     }
 
     /// The store's half of a write: adopt the stamp, or the merged entry after a merge with another device's
@@ -12254,8 +12261,13 @@ extension CorpusStore {
         print("[Sync] following \(nodeID) until it's current")
         Task { [weak self] in
             defer { Task { @MainActor [weak self] in self?.followingUntilCurrent.remove(nodeID) } }
-            for _ in 0..<90 {
-                try? await Task.sleep(for: .seconds(Self.catchUpPollSeconds))
+            // X5 — it used to stop after 3 minutes and leave the entry "catching up" for the rest of the session: keep
+            // looking for as long as it's catching up (every 2 s for 3 minutes, then every 15 s; each look also asks
+            // iCloud for it again).
+            var looks = 0
+            while true {
+                try? await Task.sleep(for: .seconds(looks < 90 ? Self.catchUpPollSeconds : 15))
+                looks += 1
                 guard let self, self.catchingUp.contains(nodeID) else { return }
                 let s = await self.service.fileState(id: nodeID)
                 if s == .current || s == .missing {

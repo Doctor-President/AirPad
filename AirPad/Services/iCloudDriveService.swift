@@ -1067,6 +1067,11 @@ actor iCloudDriveService {
         let stub = nodeDir.appendingPathComponent(".node.json.icloud")
         #if DEBUG
         if fm.fileExists(atPath: nodeDir.appendingPathComponent(".harness-not-current").path) { return .notCurrent }
+        // Mac fix-up X5 — `-HarnessNotDownloaded <file>`: ids listed in that file (OUTSIDE the library, so emptying it
+        // reaches no file presenter) are entries iCloud hasn't downloaded yet; emptying it = they land with no callback.
+        if let list = UserDefaults.standard.string(forKey: "HarnessNotDownloaded"),
+           let ids = try? String(contentsOfFile: list, encoding: .utf8),
+           ids.split(whereSeparator: \.isNewline).contains(Substring(nodeDir.lastPathComponent)) { return .notDownloaded }
         #endif
         if !fm.fileExists(atPath: file.path) {
             return fm.fileExists(atPath: stub.path) ? .notDownloaded : .missing

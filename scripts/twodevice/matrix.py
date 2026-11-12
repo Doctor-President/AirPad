@@ -38,6 +38,8 @@ def launch(r, extra=()):
             *(["-SyncTombstonesOffForControl", "-SyncLegacyHeaderFlushForControl"] if os.environ.get("CONTROL_F1") else []),
             *(["-SyncLegacyTypingForControl", "-SyncNoDraftsForControl"] if os.environ.get("CONTROL_F2") else []),
             *(["-SyncNoCatchUpFollowForControl"] if os.environ.get("CONTROL_F3") else []),
+            *(["-SyncNoLaunchFollowForControl"] if os.environ.get("CONTROL_X5") else []),
+            "-HarnessNotDownloaded", os.path.join(d, "not-downloaded.txt"),
             *extra]
     log = open(os.path.join(d, "app.log"), "a")
     p = subprocess.Popen(["xcrun", "simctl", "launch", "--console-pty", "--terminate-running-process", SIMS[r], BUNDLE, *args],
@@ -438,6 +440,36 @@ try:
              lambda a, b: (note(a, f"{s12.e}-i1") == "S12 new text from the other device",
                            f"while downloading A showed {s12.before!r}; current after {s12.secs}s → {note(a, f'{s12.e}-i1')!r}"),
              deleted_ok=("S12 old text",))
+    # ---- Mac C fix-up X5 (T: "Catching up… 3 entries" stayed up all session on the Mac, gone after a relaunch) ----
+    # S13 — three entries made on B while A is closed reach A's disk, but iCloud hasn't downloaded them when A launches
+    # (placeholders): A's library shows "Catching up… 3 entries". They then land WITHOUT a watcher callback. A must load
+    # them and clear the pill by itself, no relaunch.
+    def s13():
+        sh("xcrun", "simctl", "terminate", SIMS["A"], BUNDLE)
+        es = []
+        for k in range(3):
+            eid = f"E-{uuid.uuid4().hex[:8]}"
+            cmd("B", "new_entry", entry=eid, item=f"{eid}-i1", title=f"S13 arrives later {k}", text=f"S13 text {k}")
+            es.append(eid)
+        quiet(); time.sleep(3); quiet()
+        nd = os.path.join(H, "A", "not-downloaded.txt")   # outside the library: its change reaches no file presenter
+        open(nd, "w").write("\n".join(es) + "\n")
+        launch("A")
+        da = cmd("A", "dump", timeout=180)
+        time.sleep(8)
+        da = cmd("A", "dump")
+        s13.pill_at_launch = da.get("pill")
+        open(nd, "w").close()                       # iCloud finishes: no callback, nothing in the library changes
+        t0 = time.time(); da = cmd("A", "dump")
+        while time.time() - t0 < 40 and (da.get("pill") or not all(entry(da, e) for e in es)):
+            time.sleep(0.5); da = cmd("A", "dump")
+        s13.es, s13.secs, s13.pill_after, s13.loaded = es, round(time.time() - t0, 1), da.get("pill"), sum(1 for e in es if entry(da, e))
+        return es[0]
+    scenario("S13 entries still downloading at launch land and the pill clears", s13,
+             "A launches with 'Catching up… 3 entries'; once they land A loads all 3 and the pill clears within seconds, no relaunch",
+             ["S13 text 0"],
+             lambda a, b: (s13.pill_at_launch == 3 and s13.pill_after == 0 and s13.loaded == 3,
+                           f"pill at launch {s13.pill_at_launch}; after they landed: pill {s13.pill_after}, loaded {s13.loaded}/3 after {s13.secs}s"))
 finally:
     fc.terminate()
     for r in "AB":

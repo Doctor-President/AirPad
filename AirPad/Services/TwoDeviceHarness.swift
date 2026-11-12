@@ -204,7 +204,8 @@ enum TwoDeviceHarness {
                     "note": store.versionNotes[n.id]?.note ?? "",
                 ])
             }
-            return ["nodes": nodes, "catching_up": Array(store.catchingUp), "count": store.nodes.count]
+            return ["nodes": nodes, "catching_up": Array(store.catchingUp), "count": store.nodes.count,
+                    "pill": store.entriesCatchingUp]
         default:
             return "unknown op"
         }

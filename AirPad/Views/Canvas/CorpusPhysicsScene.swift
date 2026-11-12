@@ -1942,6 +1942,10 @@ final class CorpusPhysicsScene: SKScene {
     private var pointerInput: MapPointerInput?
     /// The orb under the pointer (hover), with its ring + title tag shown.
     private var hoveredOrbID: String?
+    /// Mac fix-up X2 — the hover ring + tag, children of the camera (screen space).
+    private var hoverRing: SKShapeNode?
+    private var hoverLabel: SKLabelNode?
+    private var hoverRingRadius: CGFloat = 0
     #if DEBUG
     /// C2 self-test: the Map on screen.
     static weak var debugCurrent: CorpusPhysicsScene?
@@ -2453,6 +2457,11 @@ final class CorpusPhysicsScene: SKScene {
         }
     }
 
+
+    /// Mac fix-up X2 — the hover overlay follows its orb after this frame's camera / orb-scale passes.
+    override func didFinishUpdate() {
+        if hoveredOrbID != nil { updateHoverOverlay() }
+    }
 
     override func update(_ currentTime: TimeInterval) {
         if isPaused { return }
@@ -7138,20 +7147,22 @@ extension CorpusPhysicsScene {
             }
         }
         guard id != hoveredOrbID else { return }
-        if let old = hoveredOrbID, let sprite = nodeSprites[old] {
-            sprite.children.filter { $0.name == "hoverRing" || $0.name == "hoverTitle" }.forEach { $0.removeFromParent() }
-        }
         hoveredOrbID = id
+        hoverRing?.removeFromParent(); hoverRing = nil
+        hoverLabel?.removeFromParent(); hoverLabel = nil
+        hoverRingRadius = 0
         wakeFromRest("hover")
-        guard let id, let sprite = nodeSprites[id] else { return }
-        let radius = (sprite.userData?["radius"] as? CGFloat) ?? 30
-        let ring = SKShapeNode(circleOfRadius: radius + 4)
+        guard let id, nodeSprites[id] != nil else { return }
+        // Mac fix-up X2 — both live on the CAMERA (screen space), drawn at the current zoom every frame they're up: a
+        // constant 2 pt stroke and 13 pt text, crisp at any zoom (on the orb they were rasterised once and magnified).
+        let ring = SKShapeNode()
         ring.strokeColor = currentIsLight ? UIColor(white: 0, alpha: 0.35) : UIColor(white: 1, alpha: 0.5)
         ring.fillColor = .clear
         ring.lineWidth = 2
-        ring.zPosition = 0.9
+        ring.zPosition = 40
         ring.name = "hoverRing"
-        sprite.addChild(ring)
+        cameraNode.addChild(ring)
+        hoverRing = ring
         let title = currentNodes.first { $0.id == id }?.title ?? ""
         if !title.isEmpty {
             let label = SKLabelNode()
@@ -7159,35 +7170,141 @@ extension CorpusPhysicsScene {
                 .font: CorpusPhysicsScene.serifFont(size: 13, weight: .medium),
                 .foregroundColor: currentIsLight ? UIColor(white: 0.1, alpha: 0.9) : UIColor(white: 1, alpha: 0.92),
             ])
-            label.verticalAlignmentMode = .bottom
+            label.verticalAlignmentMode = .center
             label.horizontalAlignmentMode = .center
-            label.position = CGPoint(x: 0, y: radius + 8)
-            // Screen-constant size whatever the zoom and the orb's own scale.
-            label.setScale(cameraNode.xScale / max(sprite.xScale, 0.0001))
-            label.zPosition = 3
+            label.zPosition = 41
             label.name = "hoverTitle"
-            sprite.addChild(label)
+            // A soft backing in the Map's ground colour, so the tag reads over a dense field of orbs.
+            let f = label.frame.insetBy(dx: -7, dy: -3)
+            let backing = SKShapeNode(rect: CGRect(x: -f.width / 2, y: -f.height / 2, width: f.width, height: f.height),
+                                      cornerRadius: f.height / 2)
+            backing.fillColor = currentIsLight ? UIColor(white: 1, alpha: 0.85) : UIColor(white: 0.07, alpha: 0.85)
+            backing.strokeColor = .clear
+            backing.zPosition = -0.5
+            label.addChild(backing)
+            cameraNode.addChild(label)
+            hoverLabel = label
         }
+        updateHoverOverlay()
+    }
+
+    /// Mac fix-up X2 — place the hover ring + label on the hovered orb (screen space). Every frame while one is up (the
+    /// orb moves with pans, zooms and the annulus); nothing at rest, when nothing moves.
+    func updateHoverOverlay() {
+        guard let id = hoveredOrbID, let ring = hoverRing, let sprite = nodeSprites[id], let parent = sprite.parent else { return }
+        let cam = cameraNode.xScale
+        let centre = cameraNode.convert(convert(sprite.position, from: parent), from: self)   // screen pt from the middle
+        let radius = (nodeOnScreenDiameter[id] ?? ((sprite.userData?["radius"] as? CGFloat ?? 30) * 2 * sprite.xScale / max(cam, 0.0001))) / 2
+        let r = radius + 4
+        if abs(r - hoverRingRadius) > 0.25 {
+            ring.path = CGPath(ellipseIn: CGRect(x: -r, y: -r, width: 2 * r, height: 2 * r), transform: nil)
+            hoverRingRadius = r
+        }
+        ring.position = centre
+        guard let label = hoverLabel else { return }
+        // Only while the orb's own title is too small to read: once the orb is big enough for its title, the tag would
+        // just repeat it.
+        label.isHidden = 2 * radius >= Self.hoverLabelMaxOrbDiameter
+        if label.isHidden { return }
+        label.position = hoverLabelPosition(id: id, centre: centre, ringRadius: r, labelSize: label.frame.size)
+    }
+
+    /// The hover tag shows while the orb is smaller than this on screen (pt): below it the title inside the orb is
+    /// under ~8 pt or still fading in (it starts at LensTuning.labelLOD = 33 pt).
+    static let hoverLabelMaxOrbDiameter: CGFloat = 96
+
+    /// Just below the ring, or just above it when that side runs into fewer neighbouring orbs (screen space).
+    private func hoverLabelPosition(id: String, centre: CGPoint, ringRadius r: CGFloat, labelSize: CGSize) -> CGPoint {
+        let gap: CGFloat = 7   // clears the tag's backing
+        let below = CGPoint(x: centre.x, y: centre.y - r - gap - labelSize.height / 2)
+        let above = CGPoint(x: centre.x, y: centre.y + r + gap + labelSize.height / 2)
+        func overlap(_ c: CGPoint) -> CGFloat {
+            let box = CGRect(x: c.x - labelSize.width / 2 - 3, y: c.y - labelSize.height / 2 - 2,
+                             width: labelSize.width + 6, height: labelSize.height + 4)
+            var total: CGFloat = 0
+            for (other, s) in nodeSprites where other != id {
+                guard let d = nodeOnScreenDiameter[other], let parent = s.parent else { continue }
+                let o = cameraNode.convert(convert(s.position, from: parent), from: self)
+                let rr = d / 2
+                guard o.x + rr > box.minX, o.x - rr < box.maxX, o.y + rr > box.minY, o.y - rr < box.maxY else { continue }
+                total += box.intersection(CGRect(x: o.x - rr, y: o.y - rr, width: 2 * rr, height: 2 * rr)).width
+                    * box.intersection(CGRect(x: o.x - rr, y: o.y - rr, width: 2 * rr, height: 2 * rr)).height
+            }
+            return total
+        }
+        let ob = overlap(below)
+        return ob == 0 ? below : (overlap(above) < ob ? above : below)
     }
 
     #if DEBUG
     /// C2 self-test hooks: drive the pointer paths exactly as the recognisers do.
     var debugCamera: (position: CGPoint, scale: CGFloat) { (cameraNode.position, cameraNode.xScale) }
     var debugHoveredOrbID: String? { hoveredOrbID }
-    var debugHoverTitle: String? {
-        hoveredOrbID.flatMap { nodeSprites[$0] }?.children.compactMap { $0 as? SKLabelNode }
-            .first { $0.name == "hoverTitle" }?.attributedText?.string
+    var debugHoverTitle: String? { hoverLabel?.attributedText?.string }
+    /// X2 — the hover overlay in view points: ring centre + radius, label frame (nil when hidden).
+    var debugHoverOverlay: (ringCentre: CGPoint, ringRadius: CGFloat, label: CGRect?, orbDiameter: CGFloat)? {
+        guard let ring = hoverRing, let id = hoveredOrbID else { return nil }
+        func toView(_ p: CGPoint) -> CGPoint { convertPoint(toView: convert(p, from: cameraNode)) }
+        let c = toView(ring.position)
+        var label: CGRect?
+        if let l = hoverLabel, !l.isHidden {
+            let f = l.frame, a = toView(CGPoint(x: f.minX, y: f.maxY)), b = toView(CGPoint(x: f.maxX, y: f.minY))
+            label = CGRect(x: a.x, y: a.y, width: b.x - a.x, height: b.y - a.y)
+        }
+        return (c, hoverRingRadius, label, nodeOnScreenDiameter[id] ?? 0)
+    }
+    /// X2 — on-screen orb circles (view points) for the neighbour check.
+    func debugOrbCircle(_ id: String) -> (CGPoint, CGFloat)? {
+        guard let p = debugOrbViewPoint(id), let d = nodeOnScreenDiameter[id] else { return nil }
+        return (p, d / 2)
     }
     func debugOrbViewPoint(_ id: String) -> CGPoint? {
         guard let s = nodeSprites[id], let parent = s.parent else { return nil }
         return convertPoint(toView: convert(s.position, from: parent))
     }
     var debugOrbIDs: [String] { nodeSprites.keys.sorted() }
+    var debugTitledOrbIDs: [String] { currentNodes.filter { !$0.title.isEmpty }.map(\.id) }
     func debugPointerGesture(_ body: (CorpusPhysicsScene) -> Void) {
         pointerGestureBegan(); body(self); pointerGestureEnded()
     }
     func debugPointerZoom(by f: CGFloat, at p: CGPoint) { pointerZoom(by: f, at: p) }
     func debugSetCameraScale(_ s: CGFloat) { wakeFromRest("debug"); cameraNode.setScale(s); applyOrbScales() }
+    /// X2 — centre the camera on an orb at a scale.
+    func debugCentre(on id: String, scale: CGFloat) {
+        guard let s = nodeSprites[id], let parent = s.parent else { return }
+        wakeFromRest("debug")
+        cameraNode.removeAllActions()
+        cameraNode.setScale(scale)
+        cameraNode.position = convert(s.position, from: parent)
+        applyOrbScales()
+    }
+    /// X2 — the scene through its camera rendered OFFSCREEN (SKRenderer, 2×) to a PNG: what the SKView would draw now,
+    /// even with the display asleep (a locked Mac presents no frames, so a window snapshot shows an old one).
+    func debugRenderStill(to path: String) -> Bool {
+        guard let device = MTLCreateSystemDefaultDevice(), let queue = device.makeCommandQueue() else { return false }
+        let w = Int(size.width * 2), h = Int(size.height * 2)
+        let desc = MTLTextureDescriptor.texture2DDescriptor(pixelFormat: .bgra8Unorm, width: w, height: h, mipmapped: false)
+        desc.usage = [.renderTarget, .shaderRead]
+        desc.storageMode = .shared
+        guard let tex = device.makeTexture(descriptor: desc), let cb = queue.makeCommandBuffer() else { return false }
+        let pass = MTLRenderPassDescriptor()
+        pass.colorAttachments[0].texture = tex
+        pass.colorAttachments[0].loadAction = .clear
+        pass.colorAttachments[0].storeAction = .store
+        pass.colorAttachments[0].clearColor = MTLClearColor(red: 0, green: 0, blue: 0, alpha: 1)
+        let renderer = SKRenderer(device: device)
+        renderer.scene = self
+        renderer.render(withViewport: CGRect(x: 0, y: 0, width: w, height: h), commandBuffer: cb, renderPassDescriptor: pass)
+        cb.commit(); cb.waitUntilCompleted()
+        var bytes = [UInt8](repeating: 0, count: w * h * 4)
+        tex.getBytes(&bytes, bytesPerRow: w * 4, from: MTLRegionMake2D(0, 0, w, h), mipmapLevel: 0)
+        guard let ctx = CGContext(data: &bytes, width: w, height: h, bitsPerComponent: 8, bytesPerRow: w * 4,
+                                  space: CGColorSpaceCreateDeviceRGB(),
+                                  bitmapInfo: CGImageAlphaInfo.premultipliedFirst.rawValue | CGBitmapInfo.byteOrder32Little.rawValue),
+              let img = ctx.makeImage(), let data = UIImage(cgImage: img).pngData() else { return false }
+        return (try? data.write(to: URL(fileURLWithPath: path))) != nil
+    }
+    var debugHoverInScreenSpace: Bool { hoverRing?.parent === cameraNode && (hoverLabel == nil || hoverLabel?.parent === cameraNode) }
     func debugPointerPan(by t: CGPoint) { pointerPan(by: t) }
     func debugPointerHover(at p: CGPoint?) { pointerHover(at: p) }
     var debugRestPaused: Bool { restPaused }

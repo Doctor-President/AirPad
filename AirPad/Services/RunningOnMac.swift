@@ -102,10 +102,15 @@ extension RunningOnMac {
         let d = UserDefaults.standard
         guard let name = d.string(forKey: "MacSnapshot"), !name.isEmpty else { return }
         let after = d.object(forKey: "MacSnapshotAfter") == nil ? 12 : d.double(forKey: "MacSnapshotAfter")
-        DispatchQueue.main.asyncAfter(deadline: .now() + after) {
+        DispatchQueue.main.asyncAfter(deadline: .now() + after) { snapshot(name) }
+    }
+
+    /// The window (and each sheet) drawn in-process to `<tmp>/macshots/<name>.png`; returns the main image's path.
+    @discardableResult @MainActor static func snapshot(_ name: String) -> String? {
+        do {
             let windows = UIApplication.shared.connectedScenes.compactMap { $0 as? UIWindowScene }.flatMap(\.windows)
             guard let w = windows.first(where: \.isKeyWindow) ?? windows.max(by: { $0.bounds.width < $1.bounds.width }) else {
-                NSLog("[MacSnapshot] no window"); return
+                NSLog("[MacSnapshot] no window"); return nil
             }
             for win in windows {
                 var chain: [String] = []; var vc = win.rootViewController?.presentedViewController
@@ -137,8 +142,8 @@ extension RunningOnMac {
                 try? sheet.pngData()?.write(to: su); NSLog("[MacSnapshot] sheet %@ %@", "\(type(of: v))", su.path)
                 vc = v.presentedViewController
             }
-            do { try img.pngData()?.write(to: url); NSLog("[MacSnapshot] %@", url.path) }
-            catch { NSLog("[MacSnapshot] write failed: %@", "\(error)") }
+            do { try img.pngData()?.write(to: url); NSLog("[MacSnapshot] %@", url.path); return url.path }
+            catch { NSLog("[MacSnapshot] write failed: %@", "\(error)"); return nil }
         }
     }
 }

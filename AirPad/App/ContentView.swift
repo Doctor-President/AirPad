@@ -83,6 +83,14 @@ struct ContentView: View {
                         NSLog("%@", await MapPinchReplaySelfTest.run())
                     }
                 }
+                // Mac fix-up X2 — `-MapHoverStillsSelfTest`: hover ring + tag measured and shot at three zooms.
+                if ProcessInfo.processInfo.arguments.contains("-MapHoverStillsSelfTest") {
+                    Task { @MainActor in
+                        for _ in 0..<160 where !router.mapSettled { try? await Task.sleep(nanoseconds: 250_000_000) }
+                        try? await Task.sleep(nanoseconds: 8_000_000_000)
+                        NSLog("%@", await MapHoverStillsSelfTest.run(look: UserDefaults.standard.string(forKey: "appearance.override") ?? "light"))
+                    }
+                }
                 #endif
                 // Mac batch C4 — `-ShowDropHighlight`: the drop highlight, for its still.
                 if ProcessInfo.processInfo.arguments.contains("-ShowDropHighlight") { dropTargeted = true }

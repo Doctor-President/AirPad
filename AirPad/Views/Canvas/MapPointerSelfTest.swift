@@ -235,3 +235,67 @@ enum MapPinchReplaySelfTest {
     }
 }
 #endif
+
+#if DEBUG && targetEnvironment(macCatalyst)
+/// Mac fix-up X2 — `-MapHoverStillsSelfTest` (with `-OpenMap`, light or dark): hovers an orb at max zoom-out, the
+/// opening zoom and max zoom-in, measures the ring + tag in view points and writes a still of each
+/// (`<tmp>/macshots/hover-<zoom>-<look>.png`). Crisp = drawn in screen space (camera children) at a constant size.
+@MainActor
+enum MapHoverStillsSelfTest {
+    static func run(look: String) async -> String {
+        guard let scene = CorpusPhysicsScene.debugCurrent, let view = scene.view else { return "[MapHoverStillsSelfTest] FAIL — no Map" }
+        var lines: [String] = [], fails = 0
+        func row(_ name: String, _ ok: Bool, _ detail: String) { lines.append("\(ok ? "PASS" : "FAIL") \(name) — \(detail)"); if !ok { fails += 1 } }
+        func settle(_ s: Double) async { try? await Task.sleep(nanoseconds: UInt64(s * 1_000_000_000)) }
+        let opening = scene.debugCamera.scale
+        let mid = CGPoint(x: view.bounds.midX, y: view.bounds.midY)
+        // The orb with a title nearest the middle and the most neighbours close by (the case T saw).
+        let titled = Set(scene.debugTitledOrbIDs)
+        guard let pick = scene.debugOrbIDs.filter({ titled.contains($0) }).compactMap({ id -> (String, Int)? in
+            guard let p = scene.debugOrbViewPoint(id) else { return nil }
+            let n = scene.debugOrbIDs.filter { $0 != id && (scene.debugOrbViewPoint($0).map { hypot($0.x - p.x, $0.y - p.y) < 160 } ?? false) }.count
+            return hypot(p.x - mid.x, p.y - mid.y) < 260 ? (id, n) : nil
+        }).max(by: { $0.1 < $1.1 })?.0 else { return "[MapHoverStillsSelfTest] FAIL — no titled orb near the middle" }
+        var labelHeights: [CGFloat] = []
+        for (zname, scale) in [("max-out", CGFloat(4.0)), ("mid-out", CGFloat(2.0)), ("opening", opening), ("max-in", CGFloat(0.25))] {
+            scene.debugPointerHover(at: nil)
+            scene.debugCentre(on: pick, scale: scale)
+            await settle(1.5)
+            guard let p = scene.debugOrbViewPoint(pick), let (_, orbR) = scene.debugOrbCircle(pick) else { row("\(zname): orb on screen", false, ""); continue }
+            scene.debugPointerHover(at: p)
+            await settle(0.8)
+            guard let o = scene.debugHoverOverlay else { row("\(zname): hover overlay up", false, ""); continue }
+            row("\(zname): ring + tag drawn in screen space", scene.debugHoverInScreenSpace, "")
+            row("\(zname): ring sits 4 pt outside the orb", abs(o.ringRadius - orbR - 4) < 0.6 && hypot(o.ringCentre.x - p.x, o.ringCentre.y - p.y) < 1,
+                String(format: "orb r %.1f ring r %.1f centre off %.2f", orbR, o.ringRadius, hypot(o.ringCentre.x - p.x, o.ringCentre.y - p.y)))
+            let shouldShow = o.orbDiameter < CorpusPhysicsScene.hoverLabelMaxOrbDiameter
+            row("\(zname): tag only while the orb's title is too small", (o.label != nil) == shouldShow,
+                String(format: "orb %.0f pt tag %@", o.orbDiameter, o.label == nil ? "hidden" : "shown"))
+            if let l = o.label {
+                labelHeights.append(l.height)
+                let clearOfOwn = l.minY >= p.y + o.ringRadius - 0.5 || l.maxY <= p.y - o.ringRadius + 0.5
+                var hits: [String] = []
+                for id in scene.debugOrbIDs where id != pick {
+                    guard let (c, r) = scene.debugOrbCircle(id) else { continue }
+                    let nx = min(max(c.x, l.minX), l.maxX), ny = min(max(c.y, l.minY), l.maxY)
+                    if hypot(nx - c.x, ny - c.y) < r { hits.append(id) }
+                }
+                row("\(zname): tag anchored just outside its own ring", clearOfOwn,
+                    String(format: "tag y %.1f…%.1f orb y %.1f ring r %.1f", l.minY, l.maxY, p.y, o.ringRadius))
+                lines.append("  \(zname): tag \(l.integral) overlaps \(hits.count) other orb(s)")
+            }
+            let dir = FileManager.default.temporaryDirectory.appendingPathComponent("macshots", isDirectory: true)
+            try? FileManager.default.createDirectory(at: dir, withIntermediateDirectories: true)
+            let shot = dir.appendingPathComponent("hover-\(zname)-\(look).png").path
+            row("\(zname): still rendered", scene.debugRenderStill(to: shot), shot)
+            lines.append("  \(zname): camera \(String(format: "%.3f", scale)) still \(shot)")
+        }
+        if labelHeights.count > 1 {
+            row("tag text the same size at every zoom it shows", (labelHeights.max()! - labelHeights.min()!) < 0.5,
+                labelHeights.map { String(format: "%.1f", $0) }.joined(separator: " "))
+        }
+        scene.debugPointerHover(at: nil)
+        return "[MapHoverStillsSelfTest] \(fails == 0 ? "PASS" : "FAIL") — \(fails) fail (\(look))\n" + lines.joined(separator: "\n")
+    }
+}
+#endif

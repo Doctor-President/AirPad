@@ -6986,15 +6986,55 @@ final class MapPointerInput: NSObject, UIGestureRecognizerDelegate, UIContextMen
 
     func gestureRecognizer(_ g: UIGestureRecognizer, shouldRecognizeSimultaneouslyWith other: UIGestureRecognizer) -> Bool { true }
 
+    #if DEBUG
+    /// Mac fix-up X1 — what the pinch recogniser delivered, per event (state, scale before the reset, camera after).
+    static var debugPinchLog: [(state: Int, scale: CGFloat, camera: CGFloat)] = []
+    #endif
+
     @objc private func pinched(_ g: UIPinchGestureRecognizer) {
         guard let scene, let view = g.view else { return }
+        #if DEBUG
+        let rawScale = g.scale
+        defer { Self.debugPinchLog.append((g.state.rawValue, rawScale, scene.debugCamera.scale)) }
+        #endif
+        // Mac fix-up X1 — on the Mac the recogniser's `scale` is CUMULATIVE and setting it back to 1 is ignored, so
+        // applying it per event compounded (barely moving, then running away). Apply each event's own change instead:
+        // camera × exp(−Δ), from the first event (see `pinchTravel`).
         switch g.state {
-        case .began: scene.pointerGestureBegan()
-        case .changed:
-            if g.scale > 0 { scene.pointerZoom(by: 1 / g.scale, at: g.location(in: view)) }
-            g.scale = 1
+        case .began:
+            scene.pointerGestureBegan()
+            lastPinchScale = 1
+            applyPinch(g, in: view)
+        case .changed: applyPinch(g, in: view)
         default: scene.pointerGestureEnded()
         }
+    }
+
+    private var lastPinchScale: CGFloat = 1
+
+    /// The finger travel (Σ magnification) behind a cumulative pinch `scale`, so equal travel → equal zoom steps both
+    /// ways. Measured by replaying magnify events (-MapPinchReplaySelfTest; the same curve at any event size or rate):
+    /// spreading, scale = 1 + Σ exactly; pinching together it bends (1/scale ≈ 1 + 1.4…2 × |Σ|), so that side is read
+    /// back from the measured (Σ, ln scale) table, straight-line between points and past the last.
+    static func pinchTravel(_ scale: CGFloat) -> CGFloat {
+        if scale >= 1 { return scale - 1 }
+        let l = log(scale)
+        let table: [(sum: CGFloat, ln: CGFloat)] = [
+            (0, 0), (-0.004, -0.0044), (-0.02, -0.0253), (-0.05, -0.0681), (-0.1, -0.1405), (-0.15, -0.2116),
+            (-0.2, -0.2802), (-0.35, -0.469), (-0.5, -0.6345), (-0.65, -0.7804), (-0.8, -0.9108), (-1.1, -1.1344),
+            (-1.4, -1.322), (-1.7, -1.4828), (-2.0, -1.6235), (-2.45, -1.8067),
+        ]
+        var i = 1
+        while i < table.count - 1, l < table[i].ln { i += 1 }
+        let a = table[i - 1], b = table[i]
+        return a.sum + (l - a.ln) * (b.sum - a.sum) / (b.ln - a.ln)
+    }
+
+    private func applyPinch(_ g: UIPinchGestureRecognizer, in view: UIView) {
+        guard let scene, g.scale > 0 else { return }
+        let delta = Self.pinchTravel(g.scale) - Self.pinchTravel(lastPinchScale)
+        lastPinchScale = g.scale
+        if delta != 0 { scene.pointerZoom(by: exp(-delta), at: g.location(in: view)) }
     }
 
     @objc private func scrolled(_ g: UIPanGestureRecognizer) {
@@ -7147,6 +7187,7 @@ extension CorpusPhysicsScene {
         pointerGestureBegan(); body(self); pointerGestureEnded()
     }
     func debugPointerZoom(by f: CGFloat, at p: CGPoint) { pointerZoom(by: f, at: p) }
+    func debugSetCameraScale(_ s: CGFloat) { wakeFromRest("debug"); cameraNode.setScale(s); applyOrbScales() }
     func debugPointerPan(by t: CGPoint) { pointerPan(by: t) }
     func debugPointerHover(at p: CGPoint?) { pointerHover(at: p) }
     var debugRestPaused: Bool { restPaused }

@@ -74,6 +74,16 @@ struct ContentView: View {
                         NSLog("%@", await MapPointerSelfTest.run(store: store, router: router))
                     }
                 }
+                #if targetEnvironment(macCatalyst)
+                // Mac fix-up X1 — `-MapPinchReplaySelfTest`: magnify events replayed through the real pinch recogniser.
+                if ProcessInfo.processInfo.arguments.contains("-MapPinchReplaySelfTest") {
+                    Task { @MainActor in
+                        for _ in 0..<160 where !router.mapSettled { try? await Task.sleep(nanoseconds: 250_000_000) }
+                        try? await Task.sleep(nanoseconds: 8_000_000_000)
+                        NSLog("%@", await MapPinchReplaySelfTest.run())
+                    }
+                }
+                #endif
                 // Mac batch C4 — `-ShowDropHighlight`: the drop highlight, for its still.
                 if ProcessInfo.processInfo.arguments.contains("-ShowDropHighlight") { dropTargeted = true }
                 // Mac batch C3 — `-FocusNoteEditor <s>`: focus the first note editor on screen after <s> s (inline-bar stills).

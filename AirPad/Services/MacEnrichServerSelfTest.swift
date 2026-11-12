@@ -20,7 +20,7 @@ extension CorpusStore {
         let d = UserDefaults.standard
         let endpoint = d.string(forKey: "MacEnrichEndpoint") ?? "http://127.0.0.1:11434"
         let keys = ["StubOnDeviceUnavailable", "StubAppleDeclines", "DebugEndpointURL", "StubLocalModelReady",
-                    AuthorshipPosture.delegateSettingKey]
+                    AuthorshipPosture.delegateSettingKey, "DebugHostURL", "DebugHostSecret", "DebugHostPubKey"]
         let prior = keys.map { d.object(forKey: $0) }
         defer { for (k, v) in zip(keys, prior) { d.set(v, forKey: k) } }
         d.set(true, forKey: AuthorshipPosture.delegateSettingKey)
@@ -46,7 +46,11 @@ extension CorpusStore {
             if let server { d.set(server, forKey: "DebugEndpointURL") } else { d.removeObject(forKey: "DebugEndpointURL") }
             ModelRouter.endpointUnreachable = false
         }
-        func sheet(_ label: String, expectNamed: Bool) async {
+        func resetSource() { AIService.lastLeverSource.withLock { $0 = nil }; AIService.lastLeverAttempt.withLock { $0 = nil } }
+        var source: String { AIService.lastLeverSource.withLock { $0 } ?? "none" }
+        var asked: String { AIService.lastLeverAttempt.withLock { $0 } ?? "none" }
+        func sheet(_ label: String, expectNamed: Bool, expectSource: String? = nil) async {
+            resetSource()
             let id = await newEntry()
             let t0 = Date()
             let reason = await processNodeWithAI(nodeID: id, suppressTagSheet: true, solicited: true)
@@ -54,11 +58,15 @@ extension CorpusStore {
             let secs = String(format: "%.1fs", Date().timeIntervalSince(t0))
             if expectNamed {
                 row("\(label)/sheet-named", reason == nil && !title.isEmpty, "reason=\(describe(reason)) title=\"\(title)\" \(secs)")
+                if let expectSource {   // X6 — the proposal's engine, from its [Lever] line
+                    row("\(label)/sheet-source", source.hasPrefix(expectSource), "source=\(source) server asked=\(asked)")
+                }
             } else {
                 row("\(label)/sheet-not-named", reason != nil && title.isEmpty, "reason=\(describe(reason)) \(secs)")
             }
         }
-        func done(_ label: String, expectTagged: Bool) async {
+        func done(_ label: String, expectTagged: Bool, expectSource: String? = nil) async {
+            resetSource()
             let id = await newEntry()
             await enrichIfNeeded(nodeID: id, at: .committed)
             let n = node(id)
@@ -66,6 +74,7 @@ extension CorpusStore {
             if expectTagged {
                 row("\(label)/done-titled-and-tagged", !(n?.title ?? "").isEmpty && !folk.isEmpty,
                     "title=\"\(n?.title ?? "nil")\" tags=\(folk)")
+                if let expectSource { row("\(label)/done-source", source.hasPrefix(expectSource), "source=\(source)") }
             } else {
                 row("\(label)/done-quiet", n != nil && folk.isEmpty, "title=\"\(n?.title ?? "nil")\" reason=\(n?.embeddingFailureReason ?? "nil")")
             }
@@ -83,12 +92,36 @@ extension CorpusStore {
         }
         // 2. No Apple Intelligence, the user's server → the server names and tags it (Mac only).
         setState(unavailable: true, declines: false, server: endpoint)
-        await sheet("unavailable-server", expectNamed: isMac)
-        await done("unavailable-server", expectTagged: isMac)
+        await sheet("unavailable-server", expectNamed: isMac, expectSource: "own server")
+        await done("unavailable-server", expectTagged: isMac, expectSource: "own server")
         // 3. Apple Intelligence declines, the user's server → the server names and tags it (Mac only).
         setState(unavailable: false, declines: true, server: endpoint)
-        await sheet("declines-server", expectNamed: isMac)
-        await done("declines-server", expectTagged: isMac)
+        await sheet("declines-server", expectNamed: isMac, expectSource: "own server")
+        await done("declines-server", expectTagged: isMac, expectSource: "own server")
+        // X6 — T's step 12: Apple Intelligence available and answering, the server set → Apple writes the proposals and
+        // the server is never asked (the own server is the fallback when Apple can't or won't).
+        if AIService.appleIntelligenceAvailable {
+            setState(unavailable: false, declines: false, server: endpoint)
+            await sheet("apple-answers-server-set", expectNamed: true, expectSource: "Apple Intelligence")
+            row("apple-answers-server-set/server-not-asked", asked == "none", "server asked=\(asked)")
+        } else {
+            row("apple-answers-server-set", true, "skipped: no Apple Intelligence here")
+        }
+        // X6 — the Host fallback: Apple declines, the custom server didn't answer its last check, a Host is paired → the
+        // Host is asked. (A LAN pairing to a port nothing listens on: proves the route without a Host holding a model.)
+        if isMac {
+            setState(unavailable: false, declines: true, server: endpoint)
+            ModelRouter.endpointUnreachable = true
+            d.set("http://127.0.0.1:8799", forKey: "DebugHostURL")
+            d.set("selftest-secret", forKey: "DebugHostSecret")
+            d.set(Data(repeating: 7, count: 32).base64EncodedString(), forKey: "DebugHostPubKey")
+            resetSource()
+            let id = await newEntry()
+            let reason = await processNodeWithAI(nodeID: id, suppressTagSheet: true, solicited: true)
+            row("server-unreachable-host-paired/host-asked", asked == "Host", "server asked=\(asked) reason=\(describe(reason))")
+            for k in ["DebugHostURL", "DebugHostSecret", "DebugHostPubKey"] { d.removeObject(forKey: k) }
+            ModelRouter.endpointUnreachable = false
+        }
         // 4. Apple Intelligence declines, the server doesn't answer → the decline, as before.
         setState(unavailable: false, declines: true, server: "http://127.0.0.1:9")
         do {

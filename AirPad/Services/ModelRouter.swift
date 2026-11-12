@@ -724,6 +724,18 @@ enum ModelRouter {
         return nil
     }
 
+    /// Mac fix-up X6 — the server, as the `[Lever]` source line names it.
+    static func serverSourceName(_ server: Provider) -> String {
+        switch server {
+        case .ollama(let endpoint):
+            let model = CustomServer.cached(endpoint).flatMap { CustomServer.chatModel($0.models, pick: CustomServer.pick(for: endpoint))?.id }
+            return "own server \(URL(string: endpoint)?.host ?? endpoint)" + (model.map { " (\($0))" } ?? "")
+        case .host: return "Host"
+        case .foundationModel: return "Apple Intelligence"
+        case .local: return "on-device model"
+        }
+    }
+
     static func nodeSummaryServer(_ server: Provider, prompt: String) async throws -> NodeSummaryResult {
         try decodeNodeSummary(try await generateServer(server, systemPrompt: nodeSummaryJSONInstruction, userPrompt: prompt))
     }
@@ -734,6 +746,10 @@ enum ModelRouter {
     }
 
     private static func generateServer(_ server: Provider, systemPrompt: String, userPrompt: String) async throws -> String {
+        #if DEBUG
+        AIService.lastLeverAttempt.withLock { $0 = serverSourceName(server) }
+        #endif
+        print("[Lever] asking \(serverSourceName(server))")
         switch server {
         case .ollama(let endpoint): return try await generateOllama(endpoint: endpoint, systemPrompt: systemPrompt, userPrompt: userPrompt)
         case .host(let pairing):    return try await generateHost(pairing: pairing, systemPrompt: systemPrompt, userPrompt: userPrompt)
@@ -941,6 +957,8 @@ enum ModelRouter {
             print("[ModelRouter] \(path) parse failure. body=\(bodyString)")
             throw RouterError.ollamaBadResponse(path: path, body: bodyString)
         }
+        // Mac fix-up X6 — the server's own receipt (its completion id + model), the same id its request log shows.
+        print("[Lever] \(base.host ?? endpoint) answered \(path): HTTP \((response as? HTTPURLResponse)?.statusCode ?? 0) id=\(json["id"] as? String ?? "-") model=\(json["model"] as? String ?? "-")")
         return content
     }
 

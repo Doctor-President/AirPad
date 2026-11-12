@@ -1,4 +1,5 @@
 import Foundation
+import os
 import FoundationModels
 import NaturalLanguage
 
@@ -206,6 +207,7 @@ actor AIService {
             guard let server = ModelRouter.enrichmentServer,
                   let r = try? await ModelRouter.nodeSummaryServer(server, prompt: prompt) else { return .failure(.unavailable) }
             print("[FM][processNode] no Apple Intelligence → own server authored (title/summary)")
+            Self.noteLeverSource("title/summary", ModelRouter.serverSourceName(server))
             return .success(Self.guardedNaming(title: r.title, summary: r.summary, content: content))
         }
 
@@ -223,6 +225,7 @@ actor AIService {
             if Self.stubAppleDeclines { throw Self.stubDeclineError() }
             #endif
             let r = try await ModelRouter.generateNodeSummary(prompt: prompt)
+            Self.noteLeverSource("title/summary", await Self.structuredSourceName())
             return .success(Self.guardedNaming(title: r.title, summary: r.summary, content: content))
         } catch {
             print("[FM][processNode] FAILURE: \(error)")
@@ -238,6 +241,7 @@ actor AIService {
                 do {
                     let r = try await Self.nodeSummaryLocalForced(prompt: prompt)
                     print("[FM][processNode] refusal → on-device model authored (title/summary)")
+                    Self.noteLeverSource("title/summary", "on-device model (Apple Intelligence declined)")
                     var out = Self.guardedNaming(title: r.title, summary: r.summary, content: content)
                     out.namedOnDeviceAfterDecline = true   // live-20 (1) — the Proposals sheet says so in one line
                     return .success(out)
@@ -251,6 +255,7 @@ actor AIService {
                 do {
                     let r = try await ModelRouter.nodeSummaryServer(server, prompt: prompt)
                     print("[FM][processNode] refusal → own server authored (title/summary)")
+                    Self.noteLeverSource("title/summary", ModelRouter.serverSourceName(server) + " (Apple Intelligence declined)")
                     return .success(Self.guardedNaming(title: r.title, summary: r.summary, content: content))
                 } catch {
                     print("[FM][processNode] refusal → own server also failed: \(error)")
@@ -646,6 +651,7 @@ actor AIService {
                 return .otherError(FMErrorDetail(errorType: "model_unavailable", debugDescription: nil))
             }
             print("[FM][processSubstrate] no Apple Intelligence → own server authored (substrate)")
+            Self.noteLeverSource("tags", ModelRouter.serverSourceName(server))
             return .ok(summary: r.summary, folksonomy: r.folksonomy)
         }
 
@@ -667,6 +673,7 @@ actor AIService {
             if r.summary.isEmpty && r.folksonomy.isEmpty {
                 return .otherError(FMErrorDetail(errorType: "empty_output", debugDescription: nil))
             }
+            Self.noteLeverSource("tags", await Self.structuredSourceName())
             return .ok(summary: r.summary, folksonomy: r.folksonomy)
         } catch {
             // SB139 Stage 1 cleanup: match on the typed enum cases, not on
@@ -692,6 +699,7 @@ actor AIService {
                         let r = try await Self.substrateLocalForced(prompt: prompt, responseLanguage: responseLanguage)
                         if !(r.summary.isEmpty && r.folksonomy.isEmpty) {
                             print("[FM][processSubstrate] refusal → on-device model authored (substrate)")
+                            Self.noteLeverSource("tags", "on-device model (Apple Intelligence declined)")
                             return .ok(summary: r.summary, folksonomy: r.folksonomy)
                         }
                     } catch {
@@ -704,6 +712,7 @@ actor AIService {
                         let r = try await ModelRouter.substrateServer(server, prompt: prompt, responseLanguage: responseLanguage)
                         if !(r.summary.isEmpty && r.folksonomy.isEmpty) {
                             print("[FM][processSubstrate] refusal → own server authored (substrate)")
+                            Self.noteLeverSource("tags", ModelRouter.serverSourceName(server) + " (Apple Intelligence declined)")
                             return .ok(summary: r.summary, folksonomy: r.folksonomy)
                         }
                     } catch {
@@ -846,12 +855,35 @@ actor AIService {
         return try await ModelRouter.substrateLocalForced(prompt: prompt, responseLanguage: responseLanguage)
     }
 
-    /// `-StubAppleDeclines YES` (DEBUG): Apple Intelligence declines every naming + tags call with the error the OS
-    /// throws — iOS 27's `LanguageModelError.guardrailViolation` (T's device), iOS 26's `GenerationError` — into the
-    /// REAL catch path. `StubLocalModelReady` says whether the on-device model is installed to take over.
+    // MARK: - Which engine wrote it (Mac fix-up X6)
+
+    /// One line per proposal result naming the engine that wrote it (`[Lever] title/summary ← Apple Intelligence`):
+    /// T can read it in Xcode's console (any configuration), and the self-tests read `lastLeverSource`.
+    static func noteLeverSource(_ what: String, _ source: String) {
+        print("[Lever] \(what) ← \(source)")
+        #if DEBUG
+        lastLeverSource.withLock { $0 = source }
+        #endif
+    }
+    #if DEBUG
+    static let lastLeverSource = OSAllocatedUnfairLock<String?>(initialState: nil)
+    /// The last server a proposal call was sent to (answered or not).
+    static let lastLeverAttempt = OSAllocatedUnfairLock<String?>(initialState: nil)
+    #endif
+
+    /// The structured lever's own engine: Apple Intelligence, or the opted-in on-device model.
+    static func structuredSourceName() async -> String {
+        if case .local = await ModelRouter.structuredProvider() { return "on-device model" }
+        return "Apple Intelligence"
+    }
+
+    /// `-StubAppleDeclines YES` / `-ForceAppleDecline` (DEBUG): Apple Intelligence declines every naming + tags call
+    /// with the error the OS throws — iOS 27's `LanguageModelError.guardrailViolation` (T's device), iOS 26's
+    /// `GenerationError` — into the REAL catch path, so the routes after a decline (the on-device model, the Mac's own
+    /// server, the Host) can be run on purpose. `StubLocalModelReady` says whether the on-device model is installed.
     static var stubAppleDeclines: Bool {
         #if DEBUG
-        return UserDefaults.standard.bool(forKey: "StubAppleDeclines")
+        return UserDefaults.standard.bool(forKey: "StubAppleDeclines") || ProcessInfo.processInfo.arguments.contains("-ForceAppleDecline")
         #else
         return false
         #endif

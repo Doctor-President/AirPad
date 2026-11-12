@@ -55,14 +55,14 @@ struct AppCommands: Commands {
             item("Librarian", .librarian, "view.librarian").keyboardShortcut("l")
                 .disabled(router.isCapturing || router.entryMode == .quikCapture)
         }
-        // View: the Map's zoom (C2). ⌘0 is Go › Today, so Zoom to Fit takes ⌘9, as in Preview.
+        // View: the Map's zoom (C2). Zoom to Fit ⌘0 (T ruled R1, fix-up X10: swapped with Go › Today, now ⌘9).
         CommandGroup(after: .sidebar) {
             Divider()
             item("Zoom In", .zoomIn, "view.zoomIn").keyboardShortcut("+")
                 .disabled(!mapShowing)
             item("Zoom Out", .zoomOut, "view.zoomOut").keyboardShortcut("-")
                 .disabled(!mapShowing)
-            item("Zoom to Fit", .zoomFit, "view.zoomFit").keyboardShortcut("9")
+            item("Zoom to Fit", .zoomFit, "view.zoomFit").keyboardShortcut("0")
                 .disabled(!mapShowing)
         }
         // Go
@@ -72,7 +72,7 @@ struct AppCommands: Commands {
             item("Forward", .forward, "go.forward").keyboardShortcut("]")
                 .disabled(!router.canGoForward)
             Divider()
-            item("Today", .today, "go.today").keyboardShortcut("0")
+            item("Today", .today, "go.today").keyboardShortcut("9")
         }
         // Format: the note editor's commands (C3), acting on the editor being typed in.
         CommandMenu("Format") {

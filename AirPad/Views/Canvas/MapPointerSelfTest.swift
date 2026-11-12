@@ -76,7 +76,7 @@ enum MapPointerSelfTest {
         await fire(.zoomFit)
         let fitScale = scene.debugCamera.scale
         await fire(.zoomIn); await fire(.zoomFit)
-        row("⌘9 fits the whole library (same framing each time)", abs(scene.debugCamera.scale - fitScale) < 0.01,
+        row("⌘0 fits the whole library (same framing each time)", abs(scene.debugCamera.scale - fitScale) < 0.01,
             String(format: "scale %.3f", fitScale))
         await atRest("after keyboard zoom")
 

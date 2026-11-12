@@ -41,7 +41,7 @@ final class IPadKeyCommands: XCTestCase {
         let app = launch()
         XCTAssertTrue(app.descendants(matching: .any)["routerProbe"].waitForExistence(timeout: 30))
         Thread.sleep(forTimeInterval: 6)   // the Sample Library loads
-        press(app, "0", .command, "⌘0 Today", expect: ["mode=dashboard"])
+        press(app, "9", .command, "⌘9 Today", expect: ["mode=dashboard"])
         press(app, "2", .command, "⌘2 List", expect: ["mode=canvas", "view=list"])
         press(app, "3", .command, "⌘3 Cards", expect: ["view=grid"])
         press(app, "1", .command, "⌘1 Map", expect: ["view=graph"])

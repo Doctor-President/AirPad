@@ -125,7 +125,8 @@ enum MacMenuSelfTest {
             ("File", "Export Entry…", "⇧⌘E"),
             ("Edit", "Find", "⌘F"),
             ("View", "Map", "⌘1"), ("View", "List", "⌘2"), ("View", "Cards", "⌘3"), ("View", "Librarian", "⌘L"),
-            ("Go", "Back", "⌘["), ("Go", "Forward", "⌘]"), ("Go", "Today", "⌘0"),
+            ("Go", "Back", "⌘["), ("Go", "Forward", "⌘]"), ("Go", "Today", "⌘9"),
+            ("View", "Zoom In", "⌘+"), ("View", "Zoom Out", "⌘-"), ("View", "Zoom to Fit", "⌘0"),
         ]
         for e in expected {
             let i = find(e.menu, e.title)

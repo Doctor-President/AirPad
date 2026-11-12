@@ -851,7 +851,7 @@ struct CanvasView: View {
                 scene.applyFocusOutline(nodeID: id)
             }
             .onAppear { scene.applyFocusOutline(nodeID: router.focusedHighlightNodeID) }
-            // Mac batch C2 — View › Zoom In / Out / to Fit (⌘+ ⌘− ⌘9).
+            // Mac batch C2 — View › Zoom In / Out / to Fit (⌘+ ⌘− ⌘0; fix-up X10).
             .onAppear { router.mapShowing = true }
             .onDisappear { router.mapShowing = false }
             .onChange(of: router.commandRequest) { _, request in

@@ -1376,6 +1376,9 @@ final class CorpusStore {
             if ProcessInfo.processInfo.arguments.contains("-DropImportSelfTest") {   // Mac batch C4
                 Task { @MainActor in NSLog("%@", await runDropImportSelfTest()) }
             }
+            if ProcessInfo.processInfo.arguments.contains("-ShareAppendSelfTest") {   // Mac fix-up X9
+                Task { @MainActor in NSLog("%@", await runShareAppendSelfTest()) }
+            }
             if ProcessInfo.processInfo.arguments.contains("-MacEnrichServerSelfTest") {   // Mac batch C0
                 Task { @MainActor in NSLog("%@", await runMacEnrichServerSelfTest()) }
             }
@@ -9805,12 +9808,51 @@ final class CorpusStore {
                                                 sourceURL: f, fileExtension: f.pathExtension)
             }
         }
-        await mutateNode(id: rec.target) { n in
-            n.items.append(contentsOf: rec.items)
-            n.updatedAt = Date()
-        }
+        await appendSharedItems(rec.items, to: rec.target)
         await transcribeImportedAudio(nodeID: rec.target)
         await fetchAndApplyOGForImportedLinks(nodeID: rec.target)
+    }
+
+    /// Mac fix-up X9 (T, iPhone: sharing a link into an existing entry always made a NEW Link item and an EMPTY Note) —
+    /// what a share or a drop adds to an existing entry. A link goes into the entry's Link item (the last one if there
+    /// are several; `appendLinkItem` also fetches its page); the entry gets a new Link item only when it has none.
+    /// Text the share carries (a page title, a selection) becomes a Note; empty text never does. Everything else is
+    /// appended in share order, as before.
+    func appendSharedItems(_ items: [NodeItem], to target: String) async {
+        #if DEBUG
+        if ProcessInfo.processInfo.arguments.contains("-ShareAppendLegacyForControl") {   // X9 positive control: as before
+            await mutateNode(id: target) { n in n.items.append(contentsOf: items); n.updatedAt = Date() }
+            return
+        }
+        #endif
+        let sharedURLs = Set(items.compactMap { $0.type == .link ? $0.url?.trimmingCharacters(in: .whitespacesAndNewlines) : nil })
+        let kept = items.filter {   // no empty Note, and no Note that only repeats the shared link
+            $0.type != .text || (AIService.meaningfulText($0.content) != nil
+                && !sharedURLs.contains(($0.content ?? "").trimmingCharacters(in: .whitespacesAndNewlines)))
+        }
+        let isBareLink = { (i: NodeItem) in i.type == .link && !(i.url ?? "").isEmpty && (i.linkItems ?? []).isEmpty }
+        let others = kept.filter { !isBareLink($0) }
+        let links = kept.filter(isBareLink)
+        if !others.isEmpty {
+            await mutateNode(id: target) { n in
+                n.items.append(contentsOf: others)
+                n.updatedAt = Date()
+            }
+        }
+        guard let first = links.first else { return }
+        var container = nodes.first { $0.id == target }?.items.last { $0.type == .link }?.id
+        var rest = links[...]
+        if container == nil {   // no Link item yet: the first link becomes it
+            await mutateNode(id: target) { n in
+                n.items.append(first)
+                n.updatedAt = Date()
+            }
+            container = first.id
+            rest = rest.dropFirst()
+        }
+        for link in rest {
+            await appendLinkItem(toEntryID: container!, nodeID: target, url: link.url ?? "")
+        }
     }
 
     private func importFromAppGroupInbox() async {

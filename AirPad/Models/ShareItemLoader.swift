@@ -48,7 +48,7 @@ enum ShareItemLoader {
                     completion(makeTextItem(text: TableConverter.join(segs), now: now))
                 } else if provider.hasItemConformingToTypeIdentifier(UTType.plainText.identifier) {
                     provider.loadItem(forTypeIdentifier: UTType.plainText.identifier) { item, _ in   // no table: the text, as before
-                        completion(asText(item).map { makeTextItem(text: $0, now: now) })
+                        completion(asText(item).flatMap { $0.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty ? nil : makeTextItem(text: $0, now: now) })
                     }
                 } else if let html {
                     completion(makeTextItem(text: TableConverter.htmlToText(html), now: now))
@@ -58,7 +58,8 @@ enum ShareItemLoader {
             }
         } else if provider.hasItemConformingToTypeIdentifier(UTType.plainText.identifier) {
             provider.loadItem(forTypeIdentifier: UTType.plainText.identifier) { item, _ in
-                guard let text = asText(item) else { completion(nil); return }
+                // X9 — an empty text attachment (a page with nothing selected) is no Note.
+                guard let text = asText(item), !text.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty else { completion(nil); return }
                 // 1.1-C (C6) — tab-separated / CSV text becomes a GFM table (pipe tables already are one).
                 if let segs = TableConverter.segments(html: nil, text: text) {
                     completion(makeTextItem(text: TableConverter.join(segs), now: now))

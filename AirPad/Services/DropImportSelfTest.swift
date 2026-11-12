@@ -84,4 +84,96 @@ extension CorpusStore {
         return "[DropImportSelfTest] \(fails == 0 ? "PASS" : "FAIL") — \(rows.count - fails)/\(rows.count)\n" + rows.joined(separator: "\n")
     }
 }
+
+/// Mac fix-up X9 — `-ShareAppendSelfTest`: a share / drop of a link INTO an existing entry, through the one path the
+/// share extension's inbox import and a drop onto an open entry both take (`importDrop(appendTo:)` → `importShareAppend`
+/// → `appendSharedItems`), with real `NSItemProvider`s staged by `ShareItemLoader`. Per case the entry as saved on
+/// disk: the link lands in the entry's Link item (the last of two), a new Link item only when there is none, text
+/// alongside becomes a Note, an empty text never does. Scratch entries, deleted after.
+extension CorpusStore {
+    func runShareAppendSelfTest() async -> String {
+        var rows: [String] = [], fails = 0
+        func row(_ name: String, _ ok: Bool, _ detail: String = "") {
+            rows.append("\(ok ? "PASS" : "FAIL") \(name)" + (detail.isEmpty ? "" : " — \(detail)"))
+            if !ok { fails += 1 }
+        }
+        var made: [String] = []
+        let now = Date()
+        func entry(note: String, links: [[String]]) async -> String {
+            let id = "sa-" + UUID().uuidString.prefix(8)
+            var n = Node(id: id, createdAt: now, updatedAt: now, title: "Fix test share", summary: "", tags: [])
+            n.items = [ShareItemLoader.makeTextItem(text: note, now: now)]
+            for group in links {
+                let itemID = UUID().uuidString
+                var item = NodeItem(id: itemID, type: .link, createdAt: now, url: group.first,
+                                    linkItems: group.enumerated().map { i, u in
+                                        LinkItem(id: i == 0 ? itemID : UUID().uuidString, url: u, title: "t", description: nil,
+                                                 imageFile: nil, siteName: nil, faviconFile: nil, capturedAt: now) })
+                item.ogFetchedAt = now   // no page fetch for the existing links
+                n.items.append(item)
+            }
+            n.entrySchemaVersion = 1
+            n.titleSource = .user
+            await addNode(n, position: .zero)
+            made.append(id)
+            return id
+        }
+        func providers(link: String, text: String?) -> [NSItemProvider] {
+            var p = [NSItemProvider(object: URL(string: link)! as NSURL)]
+            if let text { p.append(NSItemProvider(object: text as NSString)) }
+            return p
+        }
+        /// (link items, urls per link item, notes) of the entry as saved on disk.
+        func onDisk(_ id: String) async -> (links: Int, urls: [[String]], notes: [String]) {
+            try? await Task.sleep(nanoseconds: 600_000_000)
+            let n = await debugReloadFromDisk(id: id)
+            let links = (n?.items ?? []).filter { $0.type == .link }
+            return (links.count, links.map { ($0.linkItems ?? []).map(\.url) }, (n?.items ?? []).filter { $0.type == .text }.map { $0.content ?? "" })
+        }
+        let A = "https://example.com/share-a", B = "https://example.org/share-b", NEW = "https://example.net/share-new"
+
+        // 1. Entry WITH a Link item × link only → into that Link item; nothing else.
+        let e1 = await entry(note: "Fix test note one", links: [[A]])
+        _ = await importDrop(providers(link: NEW, text: nil), appendTo: e1)
+        let d1 = await onDisk(e1)
+        row("with a Link item · link only → added to it, no new item", d1.links == 1 && d1.urls.first == [A, NEW] && d1.notes == ["Fix test note one"],
+            "\(d1)")
+        // 2. Entry WITH a Link item × link + text → link into it, the text a Note.
+        let e2 = await entry(note: "Fix test note two", links: [[A]])
+        _ = await importDrop(providers(link: NEW, text: "Shared page title"), appendTo: e2)
+        let d2 = await onDisk(e2)
+        row("with a Link item · link + text → link added to it, the text a Note", d2.links == 1 && d2.urls.first == [A, NEW]
+            && d2.notes == ["Fix test note two", "Shared page title"], "\(d2)")
+        // 3. Entry WITHOUT a Link item × link only → one new Link item, no empty Note.
+        let e3 = await entry(note: "Fix test note three", links: [])
+        _ = await importDrop(providers(link: NEW, text: nil), appendTo: e3)
+        let d3 = await onDisk(e3)
+        row("no Link item · link only → one new Link item, no Note added", d3.links == 1 && d3.notes == ["Fix test note three"], "\(d3)")
+        // 4. Entry WITHOUT a Link item × link + EMPTY text (a page with nothing selected) → no empty Note.
+        let e4 = await entry(note: "Fix test note four", links: [])
+        _ = await importDrop(providers(link: NEW, text: "  "), appendTo: e4)
+        let d4 = await onDisk(e4)
+        row("no Link item · link + empty text → one new Link item, never an empty Note", d4.links == 1 && d4.notes == ["Fix test note four"], "\(d4)")
+        // 4b. Link + its own URL as text (what a browser can hand over) → nothing extra.
+        let e4b = await entry(note: "Fix test note four b", links: [[A]])
+        _ = await importDrop(providers(link: NEW, text: NEW), appendTo: e4b)
+        let d4b = await onDisk(e4b)
+        row("with a Link item · link + its URL as text → no Note repeating the link", d4b.links == 1 && d4b.notes == ["Fix test note four b"], "\(d4b)")
+        // 5. Entry with TWO Link items × link → into the LAST one.
+        let e5 = await entry(note: "Fix test note five", links: [[A], [B]])
+        _ = await importDrop(providers(link: NEW, text: nil), appendTo: e5)
+        let d5 = await onDisk(e5)
+        row("two Link items · link → into the last one", d5.links == 2 && d5.urls == [[A], [B, NEW]], "\(d5)")
+        // 6. A new entry from a link + empty text (the share's "New entry") → no empty Note either.
+        let n6 = await importDrop(providers(link: NEW, text: ""))
+        made += n6
+        try? await Task.sleep(nanoseconds: 600_000_000)
+        let d6 = await debugReloadFromDisk(id: n6.first ?? "")
+        row("new entry · link + empty text → no empty Note", d6.map { !$0.items.contains { $0.type == .text && ($0.content ?? "").trimmingCharacters(in: .whitespacesAndNewlines).isEmpty } } ?? false,
+            "\(d6?.items.map { "\($0.type)" } ?? [])")
+
+        for id in made { await deleteNode(id: id) }
+        return "[ShareAppendSelfTest] \(fails == 0 ? "PASS" : "FAIL") — \(rows.count - fails)/\(rows.count)\n" + rows.joined(separator: "\n")
+    }
+}
 #endif

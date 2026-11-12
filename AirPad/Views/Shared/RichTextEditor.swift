@@ -2222,6 +2222,9 @@ extension NSAttributedString.Key {
     /// live-26 (3) — on a plain run Source Serif's body lifts from regular to semibold (`applyFont`). Semibold sets
     /// `.traitBold`, so without this the whole body of a Serif note was stored as `**…**`. Display weight, stored plain.
     static let airpadBodyLift = NSAttributedString.Key("airpadBodyLift")
+    /// Mac fix-up X11 — encoder-only: Markdown the storage pass already wrote (a checklist's `- [x]` / `- [ ]`), emitted
+    /// as is by `encode` (never escaped). Lives only inside `encode`.
+    static let airpadRawMarkdown = NSAttributedString.Key("airpadRawMarkdown")
 
     /// live-26 (3) — on a run decoded from stored `**…**`: the user's bold. It survives the title line (a note stored with
     /// a bold first line is never rewritten) and Source Serif's lift (where it now shows at Bold, not the body's
@@ -3315,6 +3318,11 @@ enum MarkdownCodec {
                 if NSMaxRange(runRange) < NSMaxRange(range) { result += "\n" }
                 return
             }
+            // X11 — a checklist marker the storage pass wrote: standard `- [x]` / `- [ ]`, unescaped, no inline markers.
+            if (attrs[.airpadRawMarkdown] as? Bool) == true {
+                result += nsString.substring(with: runRange)
+                return
+            }
             // Inline image: emit the storage token, skip normal text encoding
             // (the run's char is the U+FFFC attachment placeholder).
             if let itemID = attrs[.airpadImageItemID] as? String {
@@ -3759,6 +3767,10 @@ enum MarkdownCodec {
                 let newRange = NSRange(location: hit.range.location, length: (replacement as NSString).length)
                 mut.removeAttribute(.airpadChecklistGlyph, range: newRange)
                 mut.removeAttribute(.attachment, range: newRange)
+                // Mac fix-up X11 (T ruled R2) — written as standard Markdown tasks, `- [x]` / `- [ ]`, not `- \[x]` (the
+                // run encoder escaped the bracket, so other apps saw text, not a task). The reader takes both forms, and
+                // 1.0 / 1.0.3 read `- [x]` as a checklist (proved in the Simulator). Files switch on their next save.
+                mut.addAttribute(.airpadRawMarkdown, value: true, range: newRange)
             case .bullet:
                 let chunk = (mut.string as NSString).substring(with: hit.range)
                 let first = chunk.first

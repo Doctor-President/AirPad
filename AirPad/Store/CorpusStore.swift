@@ -1350,6 +1350,9 @@ final class CorpusStore {
                 NSLog("%@", CardContentSummary.selfTest())
             }
             // live-26 (3) — a note's first line (shown as its title) stores plain; bold the user chose stays.
+            if ProcessInfo.processInfo.arguments.contains("-ChecklistCodecSelfTest") {   // Mac fix-up X11
+                NSLog("%@", ChecklistCodecSelfTest.run())
+            }
             if ProcessInfo.processInfo.arguments.contains("-NoteTitleStorageSelfTest") {
                 NSLog("%@", NoteTitleStorageSelfTest.run())
             }

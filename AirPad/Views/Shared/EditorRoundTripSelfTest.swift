@@ -13,8 +13,7 @@ enum EditorRoundTripSelfTest {
                         "Check one", "Check two", "Toggle twice"]
 
     /// The markdown the commands must produce (golden, each line checked against the codec's rules). Checklists save as
-    /// `- \\[x]` / `- \\[ ]` (the codec escapes the bracket; pre-existing, flagged for T: other Markdown apps won't read
-    /// them as tasks).
+    /// standard Markdown tasks `- [x]` / `- [ ]` (Mac fix-up X11; they were `- \\[x]`, which other apps read as text).
     static let expected = """
     # Title line
     ## Heading line
@@ -27,8 +26,8 @@ enum EditorRoundTripSelfTest {
     - Bullet one
       - Bullet two
     1. Number one
-    - \\[x] Check one
-    - \\[ ] Check two
+    - [x] Check one
+    - [ ] Check two
     Toggle twice
     """
 
@@ -292,6 +291,50 @@ enum NoteWeightSelfTest {
         await settle(1.0)
         await store.deleteNode(id: id)
         return (rows, fails)
+    }
+}
+
+/// Mac fix-up X11 — `-ChecklistCodecSelfTest`: checklists through the editor's passes (decode → applyInPlace → encode →
+/// decode), both stored forms. The old `- \\[x]` / `- \\[ ]` (every note saved before) reads as a checklist and saves as
+/// standard `- [x]` / `- [ ]` on its next save; the standard form round-trips unchanged; nested items, a bold word in an
+/// item and a literal `[x]` in plain text are kept as they were.
+enum ChecklistCodecSelfTest {
+    @MainActor static func run() -> String {
+        var rows: [String] = [], fails = 0
+        func row(_ name: String, _ ok: Bool, _ detail: String = "") {
+            rows.append("\(ok ? "PASS" : "FAIL") \(name)" + (ok || detail.isEmpty ? "" : " — \(detail)")); if !ok { fails += 1 }
+        }
+        func states(_ a: NSAttributedString) -> [Int] {
+            var out: [Int] = []
+            a.enumerateAttribute(.airpadChecklistGlyph, in: NSRange(location: 0, length: a.length), options: []) { v, _, _ in
+                if let s = v as? Int { out.append(s) }
+            }
+            return out
+        }
+        for font in [NoteFontChoice.system, .sourceSerif4] {
+            func roundTrip(_ md: String) -> (read: [Int], saved: String, reread: [Int]) {
+                let tv = UITextView(frame: CGRect(x: 0, y: 0, width: 390, height: 600))
+                tv.font = NoteTypographyHelper.bodyFont
+                tv.attributedText = MarkdownCodec.decode(md)
+                NoteTypography.applyInPlace(to: tv, font: font)
+                let saved = MarkdownCodec.encode(tv.attributedText)
+                return (states(tv.attributedText), saved, states(MarkdownCodec.decode(saved)))
+            }
+            let tag = "\(font)"
+            let old = "- \\[x] Fix test done\n- \\[ ] Fix test open\n  - \\[x] Fix test nested"
+            let std = "- [x] Fix test done\n- [ ] Fix test open\n  - [x] Fix test nested"
+            let o = roundTrip(old)
+            row("old form `- \\[x]` reads as checklists (\(tag))", o.read == [1, 0, 1], "\(o.read)")
+            row("old form saves as standard `- [x]` / `- [ ]` (\(tag))", o.saved == std, o.saved)
+            row("…and reads back the same (\(tag))", o.reread == [1, 0, 1], "\(o.reread)")
+            let n = roundTrip(std)
+            row("standard form reads as checklists (\(tag))", n.read == [1, 0, 1], "\(n.read)")
+            row("standard form round-trips unchanged (\(tag))", n.saved == std, n.saved)
+            let mixed = "- [x] Fix test **bold** task\nplain line \\[x] stays text"
+            let m = roundTrip(mixed)
+            row("a bold word in an item and a literal [x] in text are kept (\(tag))", m.saved == mixed && m.read == [1], "\(m.saved) \(m.read)")
+        }
+        return "[ChecklistCodecSelfTest] \(fails == 0 ? "PASS" : "FAIL") — \(rows.count - fails)/\(rows.count)\n" + rows.joined(separator: "\n")
     }
 }
 #endif

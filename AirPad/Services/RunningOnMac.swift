@@ -21,6 +21,19 @@ extension View {
     }
 }
 
+extension View {
+    /// Mac fix-up X7 — a sheet's detents. On the Mac a sheet is a fixed-size window sheet with no drag to resize, so
+    /// detents only got between a trackpad scroll and the content (T: the Proposals sheet didn't scroll); there it's a
+    /// plain sheet whose content scrolls. iPhone / iPad: the detents, unchanged.
+    @ViewBuilder func sheetDetents(_ detents: Set<PresentationDetent>) -> some View {
+        #if targetEnvironment(macCatalyst)
+        self.presentationContentInteraction(.scrolls)
+        #else
+        self.presentationDetents(detents)
+        #endif
+    }
+}
+
 #if targetEnvironment(macCatalyst)
 import UIKit
 

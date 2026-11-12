@@ -123,9 +123,22 @@ struct LeverTray: View {
     var body: some View {
         ScrollView {
             VStack(alignment: .leading, spacing: 22) {
-                Text("Proposals")
-                    .font(appFont.font(size: 17, weight: .semibold, relativeTo: .headline))
-                    .foregroundStyle(AppearancePalette.ink)
+                HStack {
+                    Text("Proposals")
+                        .font(appFont.font(size: 17, weight: .semibold, relativeTo: .headline))
+                        .foregroundStyle(AppearancePalette.ink)
+                    // Mac fix-up X7 — on the Mac a sheet is attached to the window and the window takes no clicks while
+                    // it's up (T: Done and Delete behind it "didn't respond"); there's no swipe down to close it, so it
+                    // gets its own Done (and Esc).
+                    if RunningOnMac.isMac {
+                        Spacer()
+                        Button("Done") { dismiss() }
+                            .keyboardShortcut(.cancelAction)
+                            .font(appFont.font(size: 15, weight: .semibold, relativeTo: .subheadline))
+                            .foregroundStyle(AppearancePalette.ink)
+                            .accessibilityIdentifier("proposalsDone")
+                    }
+                }
 
                 // F4 — say WHY a generate came back empty, using the SHARED
                 // failure banner (one vocabulary with chat: amber, the reason,
@@ -212,8 +225,9 @@ struct LeverTray: View {
         // old "never .large" rule predated the tray carrying its own Current line;
         // the comparison now lives inside the sheet, so occluding the page behind
         // costs nothing. Low detent listed first = the opening one.
-        .presentationDetents([.height(360), .large])
+        .sheetDetents([.height(360), .large])
         .presentationDragIndicator(.visible)
+        .macSheetSize()   // X7 — on the Mac the whole tray (title, summary, tags) fits; it still scrolls when longer
         // Nested sheet OVER the tray — the refusal surface's "set up" route lands the
         // user in AirPad's own Settings (local-model download + enable). No AppRouter
         // plumbing, no dismiss-then-present race; closing returns to the tray.

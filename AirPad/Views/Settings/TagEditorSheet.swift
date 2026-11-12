@@ -55,7 +55,7 @@ struct TagEditorSheet: View {
                 }
             }
         }
-        .presentationDetents([.medium])
+        .sheetDetents([.medium])
         .presentationBackground(AppearancePalette.bgBase)
         .confirmationDialog(
             "Delete \"\(existing?.name ?? "")\"?",

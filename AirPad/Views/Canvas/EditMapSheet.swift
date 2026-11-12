@@ -102,7 +102,7 @@ struct EditMapSheet: View {
             }
         }
         // Partial so the map is visible behind while you dial the weights.
-        .presentationDetents([.medium, .large])
+        .sheetDetents([.medium, .large])
         .presentationDragIndicator(.visible)
     }
 

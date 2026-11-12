@@ -51,7 +51,7 @@ struct TagCreationSheet: View {
             }
         }
         .presentationBackground(AppearancePalette.bgBase)
-        .presentationDetents([.medium, .large])
+        .sheetDetents([.medium, .large])
     }
 
     // MARK: - Sections
@@ -276,7 +276,7 @@ private struct ColorPickerSheet: View {
                 }
             }
         }
-        .presentationDetents([.medium])
+        .sheetDetents([.medium])
         .presentationBackground(AppearancePalette.bgBase)
     }
 }

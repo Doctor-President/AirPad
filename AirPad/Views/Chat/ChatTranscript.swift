@@ -113,7 +113,7 @@ struct ChatTranscript: View {
                 catalog: HostCatalog.shared,
                 thinkEnabled: Binding(get: { session.thinkEnabled }, set: { session.thinkEnabled = $0 })
             )
-            .presentationDetents([.medium, .large])
+            .sheetDetents([.medium, .large])
         }
         // Conversation identity changed (new chat / switched chat): drop the
         // half-typed composer text and re-arm bottom-follow for the new thread.

@@ -91,7 +91,7 @@ struct FieldCreationSheet: View {
                 }
             }
         }
-        .presentationDetents([.medium, .large])
+        .sheetDetents([.medium, .large])
         .presentationDragIndicator(.visible)
         .onAppear {
             // Reopen the remembered section — but never User-Created if it's

@@ -366,7 +366,7 @@ struct AppearancePanel: View {
             .id(tab)
         }
         .padding(.top, 20)
-        .presentationDetents([Self.detent])
+        .sheetDetents([Self.detent])
         .presentationBackgroundInteraction(.enabled(upThrough: Self.detent))
         .presentationBackground(.thinMaterial)
         .presentationDragIndicator(.visible)

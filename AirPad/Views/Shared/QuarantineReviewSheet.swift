@@ -34,7 +34,7 @@ struct QuarantineReviewSheet: View {
                 }
             }
         }
-        .presentationDetents([.large])
+        .sheetDetents([.large])
         .presentationBackground(AppearancePalette.bgBase)
     }
 

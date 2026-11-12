@@ -491,7 +491,7 @@ struct ProSheet: View {
             ScrollView { TipJarView().padding(24) }
                 .background(AppearancePalette.bgBase.ignoresSafeArea())
                 .presentationBackground(AppearancePalette.bgBase)
-                .presentationDetents([.medium, .large])
+                .sheetDetents([.medium, .large])
         }
         .task { if store.loadState != .loaded { await store.loadProducts() } }
     }

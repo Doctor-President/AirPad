@@ -91,7 +91,7 @@ struct FieldValueEditorSheet: View {
                 ToolbarItem(placement: .confirmationAction) { Button("Save") { commitSave() } }
             }
         }
-        .presentationDetents([.medium, .large])
+        .sheetDetents([.medium, .large])
         .sheet(isPresented: $showNodePicker) {
             // Reuse BacklinkPickerSheet's node search+list via its field-reference
             // `onPick` mode (no backlink connection is created).

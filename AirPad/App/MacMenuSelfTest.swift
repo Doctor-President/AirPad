@@ -209,4 +209,103 @@ enum MacMenuSelfTest {
         return "[MacMenuSelfTest] done"
     }
 }
+
+
+/// Mac fix-up X7 — `-CaptureClickSelfTest`: a new entry from the "+" (as the button does), text typed, Apple's proposals
+/// arrived (T's step 12), then REAL clicks: mouse-down/up events built by AppKit and sent into the app's own window at
+/// the pill's place, through the window's hit-testing like a trackpad click. Logs what the click hits; checks Done
+/// leaves the new-entry state.
+/// Mac fix-up X7 — `-CaptureClickSelfTest` (Sample scratch): T's step 12 on the Mac. A new entry from the "+" (as the
+/// button does), text typed, Apple's proposals arrived; then the Proposals sheet (`-ProposalsScroll`): it is attached to
+/// the window (a window with an attached sheet takes no clicks — why Done and Delete behind it "didn't respond"), it fits
+/// on the Mac and has its own Done, which closes it; then the entry's Done leaves the new-entry state and applies the
+/// title. Buttons are pressed through accessibility: a locked Mac can't make the app active, and AppKit drops synthetic
+/// clicks and scrolls to an inactive app (measured: none reached UIKit, even on the known-good "+"), so the real click is
+/// T's check.
+@MainActor
+enum CaptureClickSelfTest {
+    private static var nsWindow: NSObject? {
+        guard let app = (NSClassFromString("NSApplication") as? NSObject.Type)?.perform(NSSelectorFromString("sharedApplication"))?
+            .takeUnretainedValue() as? NSObject else { return nil }
+        return (app.value(forKey: "windows") as? [NSObject])?.first { String(describing: type(of: $0)).contains("UINSWindow") }
+    }
+
+    /// The accessibility elements with this label.
+    static func elementObjects(_ label: String, in window: UIWindow) -> [NSObject] {
+        var out: [NSObject] = []
+        func walk(_ o: NSObject, depth: Int) {
+            guard depth < 60 else { return }
+            if o.accessibilityLabel == label, !(o is UIWindow) { out.append(o) }
+            if let v = o as? UIView { v.subviews.forEach { walk($0, depth: depth + 1) } }
+            let n = o.accessibilityElementCount()
+            if n != NSNotFound, n > 0 { for i in 0..<n { if let e = o.accessibilityElement(at: i) as? NSObject { walk(e, depth: depth + 1) } } }
+            (o.accessibilityElements as? [NSObject])?.forEach { walk($0, depth: depth + 1) }
+        }
+        walk(window, depth: 0)
+        return out
+    }
+
+    static func run(store: CorpusStore, router: AppRouter) async -> String {
+        var rows: [String] = [], fails = 0
+        func row(_ name: String, _ ok: Bool, _ detail: String = "") {
+            rows.append("\(ok ? "PASS" : "FAIL") \(name)" + (detail.isEmpty ? "" : " — \(detail)")); if !ok { fails += 1 }
+        }
+        func settle(_ s: Double) async { try? await Task.sleep(nanoseconds: UInt64(s * 1_000_000_000)) }
+        guard let window = UIApplication.shared.connectedScenes.compactMap({ $0 as? UIWindowScene }).flatMap(\.windows).first(where: \.isKeyWindow)
+        else { return "[CaptureClickSelfTest] FAIL — no window" }
+
+        // The "+" (CanvasChrome.captureTriggerButton), then text, as typed.
+        guard let node = await store.createCaptureNode() else { return "[CaptureClickSelfTest] FAIL — no capture node" }
+        router.isCapturing = true; router.captureNodeID = node.id; router.captureDraftHasText = false
+        router.pendingNodeNavigationID = node.id
+        await settle(2.5)
+        if let item = store.nodes.first(where: { $0.id == node.id })?.items.first(where: { $0.type == .text }) {
+            await store.updateTextItem(itemID: item.id, newContent: "Fix test click. Sourdough starter log: fed it at nine, doubled by two; bake Saturday at seventy-five percent hydration.", nodeID: node.id)
+        }
+        router.captureDraftHasText = true
+        for _ in 0..<40 {   // Apple's proposals arrive (the typing pause's enrichment) — T's step 12 state
+            await settle(0.5)
+            if store.nodes.first(where: { $0.id == node.id })?.surfacedProposal(kind: .title) != nil { break }
+        }
+        let proposed = store.nodes.first { $0.id == node.id }?.surfacedProposal(kind: .title)?.text ?? ""
+        row("proposals arrived before Done (T's step 12 state)", !proposed.isEmpty, "title proposal \"\(proposed)\"")
+        await settle(1.0)
+        row("in the new-entry state", store.isComposing(nodeID: node.id))
+
+        // The Proposals sheet (the feather).
+        let opened = elementObjects("Review proposals", in: window).last?.accessibilityActivate() ?? false
+        await settle(2.0)
+        var vc = window.rootViewController?.presentedViewController
+        while let next = vc?.presentedViewController { vc = next }
+        func scrollViews(_ v: UIView) -> [UIScrollView] { ((v as? UIScrollView).map { [$0] } ?? []) + v.subviews.flatMap(scrollViews) }
+        let sv = (vc.map { scrollViews($0.view) } ?? []).max { $0.contentSize.height < $1.contentSize.height }
+        row("Proposals sheet open", opened && sv != nil, "sheet \(vc?.view.bounds.size ?? .zero)")
+        func attached() -> NSObject? { nsWindow?.value(forKey: "attachedSheet") as? NSObject }
+        row("while it's up the sheet is attached to the window (macOS gives that window no clicks)", attached() != nil)
+        if let sv {
+            let overflow = Int(sv.contentSize.height - sv.bounds.height)
+            row("the tray's title, summary and tags are in view on the Mac", overflow <= 44, "view \(sv.bounds.size) content \(sv.contentSize) overflow \(overflow) pt")
+            RunningOnMac.snapshot("proposals-sheet")
+        }
+        let closer = elementObjects("Done", in: vc?.view.window ?? window)
+            .first { ((($0 as? UIAccessibilityIdentification)?.accessibilityIdentifier) ?? "") == "proposalsDone" || $0.accessibilityFrame.width < 120 }
+        row("the sheet has its own Done on the Mac", closer != nil)
+        _ = closer?.accessibilityActivate()
+        await settle(1.5)
+        row("its Done closes it and the window takes clicks again", attached() == nil && window.rootViewController?.presentedViewController == nil)
+
+        // The entry's Done (the capture bar's pill).
+        RunningOnMac.snapshot("capture-done-bar")
+        let done = elementObjects("Done", in: window).last
+        row("the entry's Done pressed", done?.accessibilityActivate() ?? false)
+        await settle(2.0)
+        row("Done leaves the new-entry state", !store.isComposing(nodeID: node.id) && !router.isCapturing,
+            "composing=\(store.isComposing(nodeID: node.id)) capturing=\(router.isCapturing)")
+        await settle(6.0)
+        let n = store.nodes.first { $0.id == node.id }
+        row("after Done the title is applied (as on iPhone: the same finishCapture → enrichIfNeeded(.committed))", !(n?.title ?? "").isEmpty, "title=\"\(n?.title ?? "nil")\"")
+        if let id = n?.id { await store.deleteNode(id: id) }
+        return "[CaptureClickSelfTest] \(fails == 0 ? "PASS" : "FAIL") — \(rows.filter { $0.hasPrefix("PASS") }.count)/\(rows.filter { $0.hasPrefix("PASS") || $0.hasPrefix("FAIL") }.count)\n" + rows.joined(separator: "\n")
+    }
+}
 #endif

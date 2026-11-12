@@ -83,6 +83,14 @@ struct ContentView: View {
                         NSLog("%@", await MapPinchReplaySelfTest.run())
                     }
                 }
+                // Mac fix-up X7 — `-CaptureClickSelfTest`: a new entry's Done, clicked for real.
+                if ProcessInfo.processInfo.arguments.contains("-CaptureClickSelfTest") {
+                    Task { @MainActor in
+                        for _ in 0..<160 where !router.mapSettled { try? await Task.sleep(nanoseconds: 250_000_000) }
+                        try? await Task.sleep(nanoseconds: 6_000_000_000)
+                        NSLog("%@", await CaptureClickSelfTest.run(store: store, router: router))
+                    }
+                }
                 // Mac fix-up X2 — `-MapHoverStillsSelfTest`: hover ring + tag measured and shot at three zooms.
                 if ProcessInfo.processInfo.arguments.contains("-MapHoverStillsSelfTest") {
                     Task { @MainActor in

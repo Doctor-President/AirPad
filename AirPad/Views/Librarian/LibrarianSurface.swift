@@ -1606,7 +1606,7 @@ struct LibrarianSurface: View {
                     showModelPicker = false
                 }
             )
-            .presentationDetents([.medium, .large])
+            .sheetDetents([.medium, .large])
         }
     }
 

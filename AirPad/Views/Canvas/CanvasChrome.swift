@@ -941,7 +941,7 @@ struct FilterPanelView: View {
                 }
             }
         }
-        .presentationDetents([.medium])
+        .sheetDetents([.medium])
         .presentationBackground(.black)
     }
 

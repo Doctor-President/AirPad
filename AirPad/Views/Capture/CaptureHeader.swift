@@ -276,7 +276,7 @@ struct CaptureAttributesSection: View {
             if item.type == .rating, let rating = item.rating {
                 RatingEditSheet(itemID: item.id, nodeID: nodeID,
                                 initialValue: rating.value, scale: rating.scale)
-                    .presentationDetents([.height(260)])
+                    .sheetDetents([.height(260)])
                     .presentationDragIndicator(.visible)
             }
         }

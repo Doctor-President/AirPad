@@ -81,7 +81,7 @@ struct TagSelectionSheet: View {
                 }
             }
         }
-        .presentationDetents([.medium, .large])
+        .sheetDetents([.medium, .large])
         .presentationBackground(AppearancePalette.bgBase)
         .onAppear {
             guard !hasHydrated else { return }

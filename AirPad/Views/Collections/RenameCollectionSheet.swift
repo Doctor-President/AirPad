@@ -68,7 +68,7 @@ struct RenameCollectionSheet: View {
                 }
             }
         }
-        .presentationDetents([.medium])
+        .sheetDetents([.medium])
         .presentationBackground(AppearancePalette.bgBase)
         .onAppear { isFocused = true }
     }

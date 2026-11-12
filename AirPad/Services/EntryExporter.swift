@@ -307,7 +307,7 @@ struct EntryExportSheet: View {
             .navigationBarTitleDisplayMode(.inline)
             .toolbar { ToolbarItem(placement: .cancellationAction) { Button("Cancel") { dismiss() } } }
         }
-        .presentationDetents([.medium, .large])
+        .sheetDetents([.medium, .large])
         .onAppear {
             shown = true
             #if DEBUG

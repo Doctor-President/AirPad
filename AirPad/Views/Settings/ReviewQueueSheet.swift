@@ -26,7 +26,7 @@ struct ReviewQueueSheet: View {
                 }
             }
         }
-        .presentationDetents([.large])
+        .sheetDetents([.large])
         .presentationBackground(AppearancePalette.bgBase)
     }
 

@@ -112,6 +112,7 @@ struct CaptureChromeBar<Leading: View>: View {
                 .foregroundStyle(ink)
                 .padding(.horizontal, M.pillHPadding)
                 .frame(height: M.barHeight)
+                .contentShape(Capsule())   // X7 — the whole pill takes the click (as Back's circle does), not just its word
             if glass {
                 label.captureGlassPill(tint: glassTint)
             } else {

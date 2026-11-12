@@ -188,4 +188,110 @@ enum EditorRoundTripSelfTest {
         return "\(i): got «\(ctx(x))» want «\(ctx(y))»"
     }
 }
+
+/// Mac fix-up X8 — `-NoteWeightSelfTest` (iPhone, iPad, Mac; Sample scratch): T's ruling on note weight, through the
+/// real editor on a scratch entry. Note text is regular body weight by default, paragraph 1 too (no auto-title bold);
+/// opening a note rewrites nothing; B bolds and un-bolds paragraph 1 and the un-bold survives the editor's restyle
+/// passes; a stored `**bold**` un-bolds and stays plain; Body keeps a user's bold and adds none.
+@MainActor
+enum NoteWeightSelfTest {
+    static let original = "Fix test weight first line\nSecond line with **kept bold** word\nThird line plain"
+
+    static func run(store: CorpusStore, router: AppRouter) async -> String {
+        var out: [String] = [], total = 0, failed = 0
+        for face in [nil, EntryBodyFont.sourceSerif4] {   // the app default, and Source Serif (its semibold body lift)
+            let (rows, fails) = await pass(store: store, router: router, face: face)
+            out.append("  — face \(face.map { "\($0)" } ?? "default")"); out += rows
+            total += rows.count; failed += fails
+            router.perform(.back); try? await Task.sleep(nanoseconds: 1_500_000_000)
+        }
+        return "[NoteWeightSelfTest] \(failed == 0 ? "PASS" : "FAIL") — \(total - failed)/\(total)\n" + out.joined(separator: "\n")
+    }
+
+    static func pass(store: CorpusStore, router: AppRouter, face: EntryBodyFont?) async -> ([String], Int) {
+        var rows: [String] = [], fails = 0
+        func row(_ name: String, _ ok: Bool, _ detail: String = "") {
+            rows.append("\(ok ? "PASS" : "FAIL") \(name)" + (detail.isEmpty ? "" : " — \(detail)")); if !ok { fails += 1 }
+        }
+        func settle(_ s: Double = 0.5) async { try? await Task.sleep(nanoseconds: UInt64(s * 1_000_000_000)) }
+        func editor() -> RichTextUIView? {
+            func walk(_ v: UIView) -> RichTextUIView? {
+                if let t = v as? RichTextUIView, (t.text ?? "").contains("Fix test weight") { return t }
+                for s in v.subviews { if let r = walk(s) { return r } }
+                return nil
+            }
+            for w in UIApplication.shared.connectedScenes.compactMap({ $0 as? UIWindowScene }).flatMap(\.windows) {
+                if let r = walk(w) { return r }
+            }
+            return nil
+        }
+        let id = "nw-" + UUID().uuidString.prefix(8)
+        var n = Node(id: id, createdAt: Date(), updatedAt: Date(), title: "Fix test weight", summary: "", tags: [])
+        let itemID = UUID().uuidString
+        n.items = [NodeItem(id: itemID, type: .text, createdAt: Date(), content: original)]
+        n.entrySchemaVersion = 1
+        n.titleSource = .user
+        n.perEntryBodyFont = face
+        await store.addNode(n, position: .zero)
+        router.pendingNodeNavigationID = id
+        await settle(2.5)
+        guard let tv = editor() else { return (["FAIL the entry's editor never appeared"], 1) }
+        tv.becomeFirstResponder()
+        await settle(0.8)
+        // The editor's own state (Mac / iPad register it for the inline bar; on iPhone it rides the keyboard bar).
+        guard let state = ActiveRichTextEditor.shared.state ?? (tv.delegate as? RichTextEditor.Coordinator)?.state
+        else { return (["FAIL no editor state"], 1) }
+        func stored() -> String { store.nodes.first { $0.id == id }?.items.first { $0.id == itemID }?.content ?? "" }
+        func range(_ s: String) -> NSRange { ((tv.text ?? "") as NSString).range(of: s) }
+        func select(_ s: String) { tv.selectedRange = range(s); tv.delegate?.textViewDidChangeSelection?(tv) }
+        func caret(in s: String) { let r = range(s); tv.selectedRange = NSRange(location: r.location + 1, length: 0); tv.delegate?.textViewDidChangeSelection?(tv) }
+        func userBold(_ s: String) -> Bool {
+            let r = range(s); var all = true
+            tv.attributedText.enumerateAttributes(in: r, options: []) { a, _, stop in if !NoteTypography.isUserBold(a) { all = false; stop.pointee = true } }
+            return all
+        }
+        func weight(_ s: String) -> CGFloat { (tv.attributedText.attribute(.font, at: range(s).location, effectiveRange: nil) as? UIFont)?.airpadWeightValue ?? -1 }
+        func size(_ s: String) -> CGFloat { (tv.attributedText.attribute(.font, at: range(s).location, effectiveRange: nil) as? UIFont)?.pointSize ?? -1 }
+        /// A keystroke at the end of the last line: runs the editor's restyle passes like typing does.
+        func type(_ t: String) async {
+            tv.selectedRange = NSRange(location: ((tv.text ?? "") as NSString).length, length: 0)
+            tv.insertText(t)
+            await settle(0.3)
+        }
+
+        // 1. Default weight: paragraph 1 is body, like paragraph 3 (same size + weight), and not bold.
+        row("paragraph 1 renders at the body weight, not bold", !userBold("first") && abs(weight("first") - weight("Third")) < 0.01
+            && abs(size("first") - size("Third")) < 0.5, "p1 weight \(weight("first")) size \(size("first")) · p3 weight \(weight("Third")) size \(size("Third"))")
+        row("the stored bold renders bold", userBold("kept bold"))
+        await settle(2.5)
+        row("opening the note rewrote nothing", stored() == original, stored())
+
+        // 2. B on paragraph 1: on, then off, and off survives the restyle passes.
+        select("first"); state.toggleBold()
+        row("B bolds a word in paragraph 1 (and its button shows it)", userBold("first") && state.isBold, "bold=\(userBold("first")) button=\(state.isBold)")
+        await type(" a")
+        row("…and it stays bold while typing on", userBold("first"))
+        select("first"); state.toggleBold(); await type(" b"); await type(" c")
+        row("B again un-bolds it, and it stays un-bolded while typing on", !userBold("first"))
+        // 3. B on the stored bold: off, and stays off (the stored-bold mark used to re-bold it on the next keystroke).
+        select("kept bold"); state.toggleBold(); await type(" d"); await type(" e")
+        row("B un-bolds a stored **bold** and it stays plain", !userBold("kept bold"))
+        // 4. Body keeps the user's bold and adds none.
+        select("kept bold"); state.toggleBold(); await settle(0.2)
+        caret(in: "Second"); state.applyHeading(nil); await type(" f")
+        row("Body on a line with a bold word keeps the bold", userBold("kept bold"))
+        caret(in: "first"); state.applyHeading(nil)
+        // The caret moves to the end (UIKit resets the typing attributes from the text), then one keystroke, then the
+        // typing-pause save: that last keystroke used to be stored `**…**` on Source Serif.
+        await type(" g")
+        row("Body on paragraph 1 adds no bold", !userBold("Fix test") && !userBold("first"))
+        await settle(2.5)
+        let want = "Fix test weight first line\nSecond line with **kept bold** word\nThird line plain a b c d e f g"
+        row("saved markdown: only the user's bold is stored", stored() == want, stored())
+        tv.resignFirstResponder()
+        await settle(1.0)
+        await store.deleteNode(id: id)
+        return (rows, fails)
+    }
+}
 #endif

@@ -71,11 +71,6 @@ struct TextEntryBody: View {
     /// The EFFECTIVE body face for this entry: its per-entry override, else the default.
     private var effectiveBodyFont: EntryBodyFont { storeNode?.perEntryBodyFont ?? defaultBodyFont }
 
-    /// AZ3 — true when the user opted paragraph 1 out of the entry-title styling.
-    private var firstParaIsExplicitBody: Bool {
-        storeNode?.items.first(where: { $0.id == item.id })?.firstParaExplicitBody ?? false
-    }
-
     var body: some View {
         container
         // editingText tracks item.content whether or not the editor is in the tree
@@ -154,8 +149,11 @@ struct TextEntryBody: View {
                 // exists exactly once — it IS line 1 (A4 by construction). Chevron +
                 // grip float over line 1 (chevron in the gutter, grip trailing);
                 // tapping line 1 edits the title (tap-to-rename free).
-                // AZ3 — paragraph 1 is the entry title UNLESS the user opted it out (Body).
-                editorCore(text: $editingText, firstParagraphAsTitle: !firstParaIsExplicitBody)
+                // Mac fix-up X8 (T ruled 2026-11-12) — note text is REGULAR body weight by default, paragraph 1 too: the
+                // auto-title (bold, title size, display only) is off in the editor. The COLLAPSED row still shows the first
+                // line bold (EntrySpineRow). Nothing is stored either way, so existing notes simply render at body weight;
+                // text bolded on purpose (`**…**`) stays bold.
+                editorCore(text: $editingText, firstParagraphAsTitle: false)
                     .padding(.leading, EntrySpineRow<EmptyView>.textMargin)
                     .frame(maxWidth: .infinity, alignment: .leading)
                     .overlay(alignment: .topLeading) { chevronOverlay }

@@ -793,8 +793,12 @@ struct RichTextEditor: UIViewRepresentable {
         // MARK: UITextViewDelegate
 
         func textViewDidChange(_ textView: UITextView) {
-            pushBinding(from: textView)
+            // Mac fix-up X8 — restyle BEFORE encoding: after the caret moves UIKit's typing attributes carry Source Serif's
+            // Semibold (bold trait) without the editor's display-weight mark, so text typed there was encoded `**…**`
+            // until a later keystroke re-encoded it (the last one before a save stayed bold in the file). The restyle
+            // marks it (`.airpadBodyLift`) first.
             refreshActiveState(in: textView)
+            pushBinding(from: textView)
         }
 
         func textViewDidChangeSelection(_ textView: UITextView) {
@@ -868,7 +872,7 @@ struct RichTextEditor: UIViewRepresentable {
             let typing = textView.typingAttributes
             let font = (typing[.font] as? UIFont) ?? UIFont.preferredFont(forTextStyle: .body)
             let traits = font.fontDescriptor.symbolicTraits
-            state.isBold = traits.contains(.traitBold)
+            state.isBold = NoteTypography.isUserBold(typing)   // X8 — the user's bold, not a display weight
             state.isItalic = traits.contains(.traitItalic)
             // Inline-code state is tracked via custom marker because `.traitMonoSpace`
             // doesn't always round-trip cleanly through `withSymbolicTraits` on monospaced
@@ -1538,15 +1542,26 @@ struct RichTextEditor: UIViewRepresentable {
             let range = textView.selectedRange
             let attrText = textView.attributedText ?? NSAttributedString()
 
+            // X8 — bold is the USER's bold (`isUserBold`): a display weight doesn't count, and the stored-bold mark
+            // (`.airpadOwnBold`) follows every toggle — left on an un-bolded run, the weight pass re-bolded it.
+            let isBoldToggle = trait == .traitBold
+            func markBold(_ on: Bool, _ apply: (NSAttributedString.Key, Any?) -> Void) {
+                guard isBoldToggle else { return }
+                apply(.airpadOwnBold, on ? true : nil)
+                apply(.airpadBodyLift, nil)
+                apply(.airpadTitleBold, nil)
+            }
             if range.length == 0 {
                 var typing = textView.typingAttributes
                 let font = (typing[.font] as? UIFont) ?? UIFont.preferredFont(forTextStyle: .body)
-                let hasTrait = font.fontDescriptor.symbolicTraits.contains(trait)
+                let hasTrait = isBoldToggle ? NoteTypography.isUserBold(typing) : font.fontDescriptor.symbolicTraits.contains(trait)
                 let isCode = (typing[.airpadInlineCode] as? Bool) == true
                 typing[.font] = composeFont(togglingTrait: trait, currentlyOn: hasTrait, code: isCode, base: font)
+                markBold(!hasTrait) { k, v in typing[k] = v }
                 textView.typingAttributes = typing
             } else {
-                let uniformOn = isTraitUniformlyApplied(trait, in: attrText, range: range)
+                let uniformOn = isBoldToggle ? isUserBoldUniformly(in: attrText, range: range)
+                    : isTraitUniformlyApplied(trait, in: attrText, range: range)
                 let target = !uniformOn
 
                 let mutable = NSMutableAttributedString(attributedString: attrText)
@@ -1555,6 +1570,9 @@ struct RichTextEditor: UIViewRepresentable {
                     let isCode = (attrs[.airpadInlineCode] as? Bool) == true
                     let newFont = composeFont(togglingTrait: trait, currentlyOn: !target, code: isCode, base: font)
                     mutable.addAttribute(.font, value: newFont, range: subRange)
+                    markBold(target) { k, v in
+                        if let v { mutable.addAttribute(k, value: v, range: subRange) } else { mutable.removeAttribute(k, range: subRange) }
+                    }
                 }
                 let preservedSelection = range
                 textView.attributedText = mutable
@@ -1564,6 +1582,7 @@ struct RichTextEditor: UIViewRepresentable {
                 let typingFont = (typing[.font] as? UIFont) ?? UIFont.preferredFont(forTextStyle: .body)
                 let typingIsCode = (typing[.airpadInlineCode] as? Bool) == true
                 typing[.font] = composeFont(togglingTrait: trait, currentlyOn: !target, code: typingIsCode, base: typingFont)
+                markBold(target) { k, v in typing[k] = v }
                 textView.typingAttributes = typing
             }
             refreshActiveState(in: textView)
@@ -1958,6 +1977,15 @@ struct RichTextEditor: UIViewRepresentable {
         }
 
         // MARK: Uniformity checks
+
+        /// X8 — every run in `range` is the user's bold.
+        private func isUserBoldUniformly(in attrText: NSAttributedString, range: NSRange) -> Bool {
+            var uniform = true
+            attrText.enumerateAttributes(in: range, options: []) { attrs, _, stop in
+                if !NoteTypography.isUserBold(attrs) { uniform = false; stop.pointee = true }
+            }
+            return uniform
+        }
 
         private func isTraitUniformlyApplied(
             _ trait: UIFontDescriptor.SymbolicTraits,
@@ -3502,17 +3530,23 @@ enum MarkdownCodec {
         }
     }
 
-    /// Strips `.airpadHeadingLevel` and rewrites every font run back to body,
-    /// preserving italic. Used by `setHeadingLevel(nil, ...)` (Body case).
+    /// Strips `.airpadHeadingLevel` and rewrites a heading's font runs back to body, preserving italic. Used by
+    /// `setHeadingLevel(nil, ...)` (Body case). X8 (T ruled: Body never adds or removes bold): a paragraph that is
+    /// already body keeps its runs exactly (it used to lose the user's bold words), and the user's bold
+    /// (`isUserBold`) stays bold.
     private static func removeHeading(in attr: NSMutableAttributedString, range: NSRange) {
         guard range.length > 0 else { return }
+        var hadHeading = false
+        attr.enumerateAttribute(.airpadHeadingLevel, in: range, options: []) { v, _, stop in if v != nil { hadHeading = true; stop.pointee = true } }
+        guard hadHeading else { return }
         attr.removeAttribute(.airpadHeadingLevel, range: range)
         let body = UIFont.preferredFont(forTextStyle: .body)
-        attr.enumerateAttribute(.font, in: range, options: []) { value, runRange, _ in
-            let existing = (value as? UIFont) ?? body
-            let italic = existing.fontDescriptor.symbolicTraits.contains(.traitItalic)
+        attr.enumerateAttributes(in: range, options: []) { attrs, runRange, _ in
+            let existing = (attrs[.font] as? UIFont) ?? body
+            var traits: UIFontDescriptor.SymbolicTraits = existing.fontDescriptor.symbolicTraits.intersection(.traitItalic)
+            if (attrs[.airpadOwnBold] as? Bool) == true { traits.insert(.traitBold) }
             let final: UIFont
-            if italic, let desc = body.fontDescriptor.withSymbolicTraits(.traitItalic) {
+            if !traits.isEmpty, let desc = body.fontDescriptor.withSymbolicTraits(traits) {
                 final = UIFont(descriptor: desc, size: body.pointSize)
             } else {
                 final = body
@@ -4374,6 +4408,17 @@ enum NoteTypography {
         if i.location > r.location { out.append(NSRange(location: r.location, length: i.location - r.location)) }
         if NSMaxRange(i) < NSMaxRange(r) { out.append(NSRange(location: NSMaxRange(i), length: NSMaxRange(r) - NSMaxRange(i))) }
         return out
+    }
+
+    /// Mac fix-up X8 (T ruled: B toggles bold on and off on any selection, always) — a run is BOLD for B and its button
+    /// when the bold is the user's: a stored bold (`.airpadOwnBold`), or a bold face that isn't a display weight (Source
+    /// Serif's semibold body lift, the entry-title face). Before, a display weight read as bold, so B "un-bolded" text to
+    /// the same look (nothing happened).
+    static func isUserBold(_ attrs: [NSAttributedString.Key: Any]) -> Bool {
+        if (attrs[.airpadOwnBold] as? Bool) == true { return true }
+        let font = (attrs[.font] as? UIFont) ?? UIFont.preferredFont(forTextStyle: .body)
+        guard font.fontDescriptor.symbolicTraits.contains(.traitBold) else { return false }
+        return (attrs[.airpadBodyLift] as? Bool) != true && (attrs[.airpadTitleBold] as? Bool) != true
     }
 
     /// The body face at the body size and the weight `applyFont` gives the run: a plain run regular (Source Serif lifted

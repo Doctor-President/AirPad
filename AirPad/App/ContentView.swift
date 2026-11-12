@@ -131,6 +131,14 @@ struct ContentView: View {
                         NSLog("%@", await EditorRoundTripSelfTest.run(store: store, router: router))
                     }
                 }
+                // Mac fix-up X8 — `-NoteWeightSelfTest`: regular note weight; B and Body on bold.
+                if ProcessInfo.processInfo.arguments.contains("-NoteWeightSelfTest") {
+                    Task { @MainActor in
+                        for _ in 0..<120 where store.nodes.count < 10 { try? await Task.sleep(nanoseconds: 250_000_000) }
+                        try? await Task.sleep(nanoseconds: 4_000_000_000)
+                        NSLog("%@", await NoteWeightSelfTest.run(store: store, router: router))
+                    }
+                }
                 #if targetEnvironment(macCatalyst)
                 // Mac batch C6 — `-MacWindowFrameTest set|check`: set the main window's frame (then quit), or log it at
                 // the next launch (the harness compares).

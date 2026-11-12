@@ -98,6 +98,19 @@ enum MapPointerSelfTest {
         } else {
             row("hover target on screen", false)
         }
+        // X4 — the view switcher (bottom right) is the round 60 pt button whose click opens its menu (on the Mac it was a
+        // small pull-down chip). SwiftUI backs it with a UIButton: menu set, shown as its primary action.
+        if let window = scene.view?.window {
+            var buttons: [UIButton] = []
+            func scan(_ v: UIView) {
+                if let b = v as? UIButton, b.menu != nil, b.showsMenuAsPrimaryAction { buttons.append(b) }
+                v.subviews.forEach(scan)
+            }
+            scan(window)
+            let round = buttons.first { abs($0.bounds.width - $0.bounds.height) < 1 && $0.bounds.width >= 56 }
+            row("view switcher: round button that opens its menu on a click", round != nil,
+                buttons.map { "\(Int($0.bounds.width))×\(Int($0.bounds.height)) menu: \($0.menu?.children.count ?? 0) items" }.joined(separator: ", "))
+        }
         return "[MapPointerSelfTest] \(fails == 0 ? "PASS" : "FAIL") — \(rows.count - fails)/\(rows.count)\n" + rows.joined(separator: "\n")
     }
 }

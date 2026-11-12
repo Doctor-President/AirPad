@@ -108,6 +108,7 @@ struct CanvasChrome: View {
         } label: {
             CanvasCircleButtonLabel(systemName: viewSwitchGlyph, glyphSize: 22, glassRole: .secondary)
         }
+        .macPlainMenuButton()   // Mac fix-up X4: the round button, not a pull-down chip
         .accessibilityLabel("View: \(ViewSwitchMenuContent.destination(for: filterState.viewMode).label)")
         .accessibilityHint("Switches between Map, List and Card View")
         .firstRunCalloutTarget(FirstRunCalloutTargetID.viewButton)

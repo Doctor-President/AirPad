@@ -60,10 +60,19 @@ struct PointerHover<S: Shape>: ViewModifier {
 }
 
 extension View {
+    /// Mac fix-up X4 — a SwiftUI `Menu` on the Mac draws as a pull-down chip (its label shrunk into a bordered button
+    /// with a chevron); this keeps the label as drawn, as iPhone and iPad show it. No change off the Mac.
+    @ViewBuilder func macPlainMenuButton() -> some View {
+        #if targetEnvironment(macCatalyst)
+        self.menuStyle(.button).buttonStyle(.plain).menuIndicator(.hidden)
+        #else
+        self
+        #endif
+    }
     func entryContextMenu(_ node: Node) -> some View { modifier(EntryContextMenu(nodeID: node.id, isPrivate: node.isPrivate)) }
     func pointerHover<S: Shape>(_ shape: S) -> some View { modifier(PointerHover(shape: shape)) }
+
     func pointerHover(cornerRadius: CGFloat = 12) -> some View {
         modifier(PointerHover(shape: RoundedRectangle(cornerRadius: cornerRadius, style: .continuous)))
     }
 }
-

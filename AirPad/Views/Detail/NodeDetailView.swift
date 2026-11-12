@@ -1429,6 +1429,7 @@ struct NodeDetailView: View {
         } label: {
             CaptureButtonLabel() // shared visual — unified with the map/list/card capture button
         }
+        .macPlainMenuButton()   // Mac fix-up X4 — the round "+", not a pull-down chip
         .accessibilityIdentifier("entryAddButton")   // Arc A — the "+"-capture voice XCUITest opens this menu
         .firstRunCalloutTarget(FirstRunCalloutTargetID.entryAddButton)  // Brief AJ6 — the entry.intro ring
     }

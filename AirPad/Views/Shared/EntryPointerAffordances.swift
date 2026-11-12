@@ -38,12 +38,23 @@ struct EntryContextMenu: ViewModifier {
 /// (no pointer); on iPad it follows a trackpad / mouse.
 struct PointerHover<S: Shape>: ViewModifier {
     let shape: S
-    @State private var hovering = false
+    var color: Color = AppearancePalette.ink
+    var opacity: Double = 0.05
+    @State private var hovering = Self.forced
+
+    /// DEBUG `-ForcePointerHover`: every hover wash on, for stills (a locked Mac has no pointer).
+    static var forced: Bool {
+        #if DEBUG
+        return ProcessInfo.processInfo.arguments.contains("-ForcePointerHover")
+        #else
+        return false
+        #endif
+    }
 
     func body(content: Content) -> some View {
         content
-            .overlay(shape.fill(AppearancePalette.ink.opacity(hovering ? 0.05 : 0)).allowsHitTesting(false))
-            .onHover { hovering = $0 }
+            .overlay(shape.fill(color.opacity(hovering ? opacity : 0)).allowsHitTesting(false))
+            .onHover { if !Self.forced { hovering = $0 } }
             .animation(.easeOut(duration: 0.12), value: hovering)
     }
 }
@@ -55,3 +66,4 @@ extension View {
         modifier(PointerHover(shape: RoundedRectangle(cornerRadius: cornerRadius, style: .continuous)))
     }
 }
+

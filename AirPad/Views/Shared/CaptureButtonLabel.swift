@@ -24,6 +24,10 @@ struct CanvasCircleButtonLabel: View {
     var glassRole: FloatingButtonsStyle.Role? = nil
     @Environment(\.accessibilityReduceTransparency) private var reduceTransparency
     @Environment(\.colorSchemeContrast) private var contrast
+    @State private var hovering = PointerHover<Circle>.forced
+
+    /// The disc's own fill is ink: the "+" glass and the solid discs (not the switcher's clear glass).
+    private var inkFilled: Bool { glassRole != .secondary || !FloatingButtonsStyle.isOn(reduceTransparency: reduceTransparency, increaseContrast: contrast == .increased) }
 
     var body: some View {
         Group {
@@ -33,7 +37,13 @@ struct CanvasCircleButtonLabel: View {
                 disc
             }
         }
-        .pointerHover(Circle())   // Mac batch C5
+        // Mac batch C5 hover. Mac fix-up X3: no wash shows on the "+" (its own fill is ink, and on the Mac its glass draws
+        // over any overlay and ignores a tint change, measured), so the ink-filled discs lift a little (6%) instead; the
+        // switcher keeps the 5% ink wash.
+        .modifier(PointerHover(shape: Circle(), opacity: inkFilled ? 0 : 0.05))
+        .scaleEffect(hovering && inkFilled ? 1.06 : 1)
+        .onHover { if !PointerHover<Circle>.forced { hovering = $0 } }
+        .animation(.easeOut(duration: 0.12), value: hovering)
     }
 
     @ViewBuilder private func glass(_ role: FloatingButtonsStyle.Role) -> some View {

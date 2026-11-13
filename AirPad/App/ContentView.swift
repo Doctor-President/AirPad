@@ -131,6 +131,10 @@ struct ContentView: View {
                         NSLog("%@", await EditorRoundTripSelfTest.run(store: store, router: router))
                     }
                 }
+                // Mac D0.10 — `-BoldMarkupSelfTest`: bold/italic written as CommonMark spans.
+                if ProcessInfo.processInfo.arguments.contains("-BoldMarkupSelfTest") {
+                    Task { @MainActor in NSLog("%@", BoldMarkupSelfTest.run()) }
+                }
                 // Mac D0.8 — `-EmptyLineListSelfTest`: list commands on an empty line.
                 if ProcessInfo.processInfo.arguments.contains("-EmptyLineListSelfTest") {
                     Task { @MainActor in

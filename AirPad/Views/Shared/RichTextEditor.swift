@@ -3316,6 +3316,22 @@ enum MarkdownCodec {
     /// `headingLevel` lets the run encoder subtract the heading-inherent font
     /// traits (e.g., title's `.traitBold`) so a plain Title round-trips as
     /// `# Hello` rather than `# **Hello**`.
+    /// Inline styles the encoder writes as delimiters, in their canonical opening order.
+    private enum InlineStyle: Int, CaseIterable, Comparable {
+        case bold, italic, underline, strike
+        static func < (a: Self, b: Self) -> Bool { a.rawValue < b.rawValue }
+        var open: String { switch self { case .bold: "**"; case .italic: "*"; case .underline: "<u>"; case .strike: "~~" } }
+        var close: String { switch self { case .bold: "**"; case .italic: "*"; case .underline: "</u>"; case .strike: "~~" } }
+        /// `**` `*` `~~` follow CommonMark's flanking rules (no whitespace just inside them); `<u>` is a tag.
+        var flanks: Bool { self != .underline }
+    }
+
+    /// Mac D0.10 (T N7) — inline text is written as SPANS, not per attribute run. Before, every run carried its own
+    /// `**…**`, so a bold paragraph split into runs (a word bolded again, a bold from storage beside a format-bar bold)
+    /// came out `**Gen ****Z.**`: two delimiters back to back and a space just inside a closer, which CommonMark (Obsidian
+    /// and every other app) reads as literal `**`. Now each style is one span over the runs that carry it; whitespace at a
+    /// span's edges moves outside its delimiters; spans close and reopen in nesting order, so the same style never nests.
+    /// What AirPad reads is unchanged (`decode` untouched); a note is written clean on its next save.
     private static func encodeRuns(_ attr: NSAttributedString, range: NSRange, headingLevel: RichTextHeadingLevel?) -> String {
         guard range.length > 0 else { return "" }
         let nsString = attr.string as NSString
@@ -3324,9 +3340,20 @@ enum MarkdownCodec {
         var result = ""
         result.reserveCapacity(range.length)
 
+        // Styled text waiting to be written: one chunk per link (nil = none), flushed at anything else.
+        var chunk: [(text: String, styles: Set<InlineStyle>)] = []
+        var chunkLink: URL?
+        func flush() {
+            guard !chunk.isEmpty else { return }
+            let body = encodeSpans(chunk)
+            result += chunkLink.map { "[\(body)](\($0.absoluteString))" } ?? body
+            chunk = []; chunkLink = nil
+        }
+
         attr.enumerateAttributes(in: range, options: []) { attrs, runRange, _ in
             // 1.1-C (C6) — a table block: its GFM lines, always on their own lines.
             if let table = table(in: attrs) {
+                flush()
                 if runRange.location > range.location { result += "\n" }
                 result += TableConverter.gfm(table)
                 if NSMaxRange(runRange) < NSMaxRange(range) { result += "\n" }
@@ -3334,54 +3361,104 @@ enum MarkdownCodec {
             }
             // X11 — a checklist marker the storage pass wrote: standard `- [x]` / `- [ ]`, unescaped, no inline markers.
             if (attrs[.airpadRawMarkdown] as? Bool) == true {
+                flush()
                 result += nsString.substring(with: runRange)
                 return
             }
             // Inline image: emit the storage token, skip normal text encoding
             // (the run's char is the U+FFFC attachment placeholder).
             if let itemID = attrs[.airpadImageItemID] as? String {
+                flush()
                 result += imageToken(itemID: itemID)
                 return
             }
             let runText = nsString.substring(with: runRange)
-            let escaped = escape(runText)
 
             let isCode = (attrs[.airpadInlineCode] as? Bool) == true
             let linkURL = attrs[.link] as? URL
+            if isCode {
+                flush()
+                var body = runText.replacingOccurrences(of: "\\", with: "\\\\")
+                body = body.replacingOccurrences(of: "`", with: "\\`")
+                let middle = "`" + body + "`"
+                result += linkURL.map { "[\(middle)](\($0.absoluteString))" } ?? middle
+                return
+            }
             let font = (attrs[.font] as? UIFont) ?? UIFont.preferredFont(forTextStyle: .body)
             let userTraits = font.fontDescriptor.symbolicTraits.subtracting(headingTraits)
             // live-26 (3) — display weights are never `**`: the entry title's face (`.airpadTitleBold`) and Source
-            // Serif's semibold body lift (`.airpadBodyLift`). A bold from storage (`.airpadOwnBold`) always is; a
+            // Serif's old semibold body lift (`.airpadBodyLift`). A bold from storage (`.airpadOwnBold`) always is; a
             // format-bar bold outside the title line carries no display mark, so it is too.
             let own = (attrs[.airpadOwnBold] as? Bool) == true
             let displayOnly = (attrs[.airpadTitleBold] as? Bool) == true || (attrs[.airpadBodyLift] as? Bool) == true
-            let isBold = userTraits.contains(.traitBold) && (own || !displayOnly)
-            let isItalic = userTraits.contains(.traitItalic)
-            let isUnderline = (attrs[.underlineStyle] as? Int).map { $0 != 0 } ?? false
-            let isStrike = (attrs[.strikethroughStyle] as? Int).map { $0 != 0 } ?? false
+            var styles: Set<InlineStyle> = []
+            if userTraits.contains(.traitBold) && (own || !displayOnly) { styles.insert(.bold) }
+            if userTraits.contains(.traitItalic) { styles.insert(.italic) }
+            if (attrs[.underlineStyle] as? Int).map({ $0 != 0 }) ?? false { styles.insert(.underline) }
+            if (attrs[.strikethroughStyle] as? Int).map({ $0 != 0 }) ?? false { styles.insert(.strike) }
 
-            let middle: String
-            if isCode {
-                var body = runText.replacingOccurrences(of: "\\", with: "\\\\")
-                body = body.replacingOccurrences(of: "`", with: "\\`")
-                middle = "`" + body + "`"
-            } else {
-                var open = ""
-                var close = ""
-                if isBold { open += "**"; close = "**" + close }
-                if isItalic { open += "*"; close = "*" + close }
-                if isUnderline { open += "<u>"; close = "</u>" + close }
-                if isStrike { open += "~~"; close = "~~" + close }
-                middle = open + escaped + close
-            }
+            if linkURL != chunkLink { flush() }
+            chunkLink = linkURL
+            chunk.append((runText, styles))
+        }
+        flush()
+        return result
+    }
 
-            if let url = linkURL {
-                result += "[\(middle)](\(url.absoluteString))"
-            } else {
-                result += middle
+    /// D0.10 — one chunk of styled text (no link change inside it) as CommonMark: per character, each style's stretch
+    /// loses the whitespace at its edges (a delimiter can't sit against whitespace); then a stack of open styles —
+    /// at each change the styles that end are closed (with any opened after them, which reopen), and new ones open
+    /// longest-lasting first, so a span is written once and the same style is never nested in itself.
+    private static func encodeSpans(_ runs: [(text: String, styles: Set<InlineStyle>)]) -> String {
+        var chars: [Character] = []
+        var styles: [Set<InlineStyle>] = []
+        for r in runs { for c in r.text { chars.append(c); styles.append(r.styles) } }
+        let n = chars.count
+        guard n > 0 else { return "" }
+        for style in InlineStyle.allCases where style.flanks {
+            var i = 0
+            while i < n {
+                guard styles[i].contains(style) else { i += 1; continue }
+                var j = i
+                while j < n, styles[j].contains(style) { j += 1 }
+                var a = i, b = j - 1
+                while a <= b, chars[a].isWhitespace { styles[a].remove(style); a += 1 }
+                while b >= a, chars[b].isWhitespace { styles[b].remove(style); b -= 1 }
+                i = j
             }
         }
-        return result
+        /// How far `style` keeps going from `i` (for the opening order).
+        func runEnd(_ style: InlineStyle, from i: Int) -> Int {
+            var j = i
+            while j < n, styles[j].contains(style) { j += 1 }
+            return j
+        }
+        var out = ""
+        var stack: [InlineStyle] = []
+        var text = ""
+        func emitText() { if !text.isEmpty { out += escape(text); text = "" } }
+        for i in 0...n {
+            let want: Set<InlineStyle> = i < n ? styles[i] : []
+            if Set(stack) != want {
+                // Close down to the deepest open style that no longer applies; the ones above it reopen.
+                if let k = stack.firstIndex(where: { !want.contains($0) }) {
+                    emitText()
+                    for s in stack[k...].reversed() { out += s.close }
+                    stack.removeSubrange(k...)
+                }
+                // A style reopened after a forced close waits past whitespace (an opener can't sit before one).
+                let atSpace = i < n && chars[i].isWhitespace
+                let toOpen = want.subtracting(stack).filter { !(atSpace && $0.flanks) }.sorted { a, b in
+                    let ea = runEnd(a, from: i), eb = runEnd(b, from: i)
+                    return ea != eb ? ea > eb : a < b
+                }
+                if !toOpen.isEmpty { emitText() }
+                for s in toOpen { out += s.open; stack.append(s) }
+            }
+            if i < n { text.append(chars[i]) }
+        }
+        emitText()
+        return out
     }
 
     private static func escape(_ s: String) -> String {

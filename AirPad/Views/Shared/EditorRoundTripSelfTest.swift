@@ -188,6 +188,90 @@ enum EditorRoundTripSelfTest {
     }
 }
 
+/// Mac D0.10 (T N7) — `-BoldMarkupSelfTest` (any platform; no UI): the encoder writes bold and italic as single spans
+/// CommonMark reads — a bold paragraph with words bolded again inside, adjacent bold words, bold across a space, bold
+/// against a space, bold/italic overlap, and old stored markup (`**A ****B**`) read then re-saved. Checks AirPad's own
+/// round trip here; writes `<tmp>/boldmarkup.json` (markdown + the expected bold/italic per character) for
+/// `scripts/mac/commonmark_check.py`, which parses it with a CommonMark parser (markdown-it).
+@MainActor
+enum BoldMarkupSelfTest {
+    static func run() -> String {
+        var rows: [String] = [], fails = 0
+        func row(_ name: String, _ ok: Bool, _ detail: String = "") {
+            rows.append("\(ok ? "PASS" : "FAIL") \(name)" + (detail.isEmpty ? "" : " — \(detail)")); if !ok { fails += 1 }
+        }
+        let plain = UIFont.systemFont(ofSize: 17), bold = UIFont.boldSystemFont(ofSize: 17)
+        let italic = NoteTypographyHelper.italicized(plain), boldItalic = NoteTypographyHelper.italicized(bold)
+        enum S { case p, b, ob, i, bi }   // plain, bold, bold from storage, italic, bold italic
+        func make(_ parts: [(String, S)]) -> NSAttributedString {
+            let out = NSMutableAttributedString()
+            for (t, st) in parts {
+                var a: [NSAttributedString.Key: Any] = [:]
+                switch st {
+                case .p: a[.font] = plain
+                case .b: a[.font] = bold
+                case .ob: a[.font] = bold; a[.airpadOwnBold] = true
+                case .i: a[.font] = italic
+                case .bi: a[.font] = boldItalic
+                }
+                out.append(NSAttributedString(string: t, attributes: a))
+            }
+            return out
+        }
+        /// Per character: (bold, italic) as AirPad's decoder reads it.
+        func flags(_ a: NSAttributedString) -> (text: String, b: [Bool], i: [Bool]) {
+            var b: [Bool] = [], i: [Bool] = []
+            a.enumerateAttributes(in: NSRange(location: 0, length: a.length), options: []) { attrs, r, _ in
+                let t = ((attrs[.font] as? UIFont) ?? plain).fontDescriptor.symbolicTraits
+                for _ in 0..<r.length { b.append(t.contains(.traitBold)); i.append(t.contains(.traitItalic)) }
+            }
+            return (a.string, b, i)
+        }
+        var cases: [[String: Any]] = []
+        func check(_ name: String, _ input: NSAttributedString, expect: String? = nil) {
+            let md = MarkdownCodec.encode(input)
+            let want = flags(input)
+            let back = flags(MarkdownCodec.decode(md))
+            // Whitespace at a span's edge may drop its style (invisible for bold/italic); compare non-space characters.
+            let same = back.text == want.text && zip(Array(want.text).indices, Array(want.text)).allSatisfy { k, c in
+                c.isWhitespace || (back.b[k] == want.b[k] && back.i[k] == want.i[k])
+            }
+            row("\(name): AirPad reads back what it wrote", same, md)
+            if let expect { row("\(name): written as \(expect)", md == expect, md) }
+            row("\(name): no style nested in itself", !md.contains("****"), md)
+            cases.append(["name": name, "md": md, "text": want.text,
+                          "bold": want.b.map { $0 ? 1 : 0 }, "italic": want.i.map { $0 ? 1 : 0 }])
+        }
+        // T's three cases.
+        check("bold line with bold words inside",
+              make([("Generation ", .b), ("Gen", .ob), (" ", .b), ("Z.", .ob), (" grew up online.", .b)]),
+              expect: "**Generation Gen Z. grew up online.**")
+        check("adjacent bold words", make([("Gen", .ob), ("Z.", .b), (" and more", .p)]), expect: "**GenZ.** and more")
+        check("adjacent bold words, a plain space between", make([("Gen", .b), (" ", .p), ("Z.", .ob)]), expect: "**Gen** **Z.**")
+        check("bold across a space", make([("Gen ", .b), ("Z", .ob), (" rest", .p)]), expect: "**Gen Z** rest")
+        // Around them.
+        check("bold ending in a space", make([("Bold ", .b), ("plain", .p)]), expect: "**Bold** plain")
+        check("bold starting with a space", make([("plain", .p), (" bold", .b)]), expect: "plain **bold**")
+        check("bold then bold italic then italic", make([("strong ", .b), ("both", .bi), (" em", .i)]))
+        check("italic inside bold", make([("all ", .b), ("of", .bi), (" it", .b)]), expect: "**all *of* it**")
+        // Old stored markup: read as before, written clean.
+        for old in ["**Generation ****Gen**** ****Z.**** grew up online.**", "**Gen ****Z** rest"] {
+            let read = MarkdownCodec.decode(old)
+            let before = flags(read)
+            let md = MarkdownCodec.encode(read)
+            let after = flags(MarkdownCodec.decode(md))
+            row("old \"\(old)\": rewritten without back-to-back delimiters", !md.contains("****"), md)
+            row("old \"\(old)\": same text and bold after the rewrite", after.text == before.text
+                && zip(Array(before.text).indices, Array(before.text)).allSatisfy { k, c in c.isWhitespace || after.b[k] == before.b[k] }, md)
+            cases.append(["name": "old: \(old)", "md": md, "text": before.text,
+                          "bold": before.b.map { $0 ? 1 : 0 }, "italic": before.i.map { $0 ? 1 : 0 }])
+        }
+        let url = FileManager.default.temporaryDirectory.appendingPathComponent("boldmarkup.json")
+        if let data = try? JSONSerialization.data(withJSONObject: cases, options: [.prettyPrinted]) { try? data.write(to: url) }
+        return "[BoldMarkupSelfTest] \(fails == 0 ? "PASS" : "FAIL") — \(rows.count - fails)/\(rows.count) (cases: \(url.path))\n" + rows.joined(separator: "\n")
+    }
+}
+
 /// Mac D0.8 (T N5) — `-EmptyLineListSelfTest` (iPhone, iPad, Mac; Sample scratch): Checklist, Bulleted List and
 /// Numbered List on an EMPTY line make an empty item with the caret ready after its marker, on an empty line between two
 /// lines and on the empty last line; typing then fills the item and it saves as standard Markdown. On the Mac through

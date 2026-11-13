@@ -291,6 +291,7 @@ struct LeverTray: View {
 
             if showProposal, let proposal {
                 fieldBlock(caption: "Proposed", text: proposal.text, muted: false)
+                authorLine(proposal.author)
                 HStack(spacing: 16) {
                     Button {
                         Task { await store.dismissProposal(nodeID: nodeID, kind: kind) }
@@ -459,6 +460,18 @@ struct LeverTray: View {
         .disabled(generatingAspect != nil)
     }
 
+    /// Mac D0.2 (T R-PROV, 2026-11-13) — who wrote the proposal, quietly: one small grey line ("Qwen3 4B · your
+    /// server", "Apple Intelligence", "Host"). Nothing for a proposal made before the author was recorded.
+    @ViewBuilder
+    private func authorLine(_ author: String?) -> some View {
+        if let author, !author.isEmpty {
+            Text(author)
+                .font(appFont.font(size: 11, relativeTo: .caption2))
+                .foregroundStyle(AppearancePalette.ink.opacity(0.45))
+                .accessibilityIdentifier("proposalAuthor")
+        }
+    }
+
     @ViewBuilder
     private func fieldBlock(caption: String, text: String, muted: Bool) -> some View {
         VStack(alignment: .leading, spacing: 3) {
@@ -524,6 +537,7 @@ struct LeverTray: View {
                 // group of DASHED, neutral chips reading as provisional. Each group's
                 // sub-label shows only when that tier has chips.
                 VStack(alignment: .leading, spacing: 16) {
+                    authorLine(node?.folksonomyAuthor)
                     if !tagSuggestions.isEmpty {
                         tierGroup(caption: "Tags you already use") {
                             ForEach(tagSuggestions) { suggestionChip($0) }

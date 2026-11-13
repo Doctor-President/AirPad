@@ -45,6 +45,7 @@ extension CorpusStore {
             d.set(declines, forKey: "StubAppleDeclines")
             if let server { d.set(server, forKey: "DebugEndpointURL") } else { d.removeObject(forKey: "DebugEndpointURL") }
             ModelRouter.endpointUnreachable = false
+            ModelRouter.resetServerFirstBackoff()
         }
         func resetSource() { AIService.lastLeverSource.withLock { $0 = nil }; AIService.lastLeverAttempt.withLock { $0 = nil } }
         var source: String { AIService.lastLeverSource.withLock { $0 } ?? "none" }
@@ -60,6 +61,10 @@ extension CorpusStore {
                 row("\(label)/sheet-named", reason == nil && !title.isEmpty, "reason=\(describe(reason)) title=\"\(title)\" \(secs)")
                 if let expectSource {   // X6 — the proposal's engine, from its [Lever] line
                     row("\(label)/sheet-source", source.hasPrefix(expectSource), "source=\(source) server asked=\(asked)")
+                    // D0.2 — the Proposals sheet's grey line: the proposal records who wrote it.
+                    let author = node(id)?.surfacedProposal(kind: .title)?.author ?? "nil"
+                    let want = expectSource == "own server" ? "your server" : expectSource
+                    row("\(label)/sheet-author", author.contains(want), "author=\(author)")
                 }
             } else {
                 row("\(label)/sheet-not-named", reason != nil && title.isEmpty, "reason=\(describe(reason)) \(secs)")
@@ -74,7 +79,11 @@ extension CorpusStore {
             if expectTagged {
                 row("\(label)/done-titled-and-tagged", !(n?.title ?? "").isEmpty && !folk.isEmpty,
                     "title=\"\(n?.title ?? "nil")\" tags=\(folk)")
-                if let expectSource { row("\(label)/done-source", source.hasPrefix(expectSource), "source=\(source)") }
+                if let expectSource {
+                    row("\(label)/done-source", source.hasPrefix(expectSource), "source=\(source)")
+                    let want = expectSource == "own server" ? "your server" : expectSource
+                    row("\(label)/done-tags-author", (n?.folksonomyAuthor ?? "").contains(want), "folksonomyAuthor=\(n?.folksonomyAuthor ?? "nil")")
+                }
             } else {
                 row("\(label)/done-quiet", n != nil && folk.isEmpty, "title=\"\(n?.title ?? "nil")\" reason=\(n?.embeddingFailureReason ?? "nil")")
             }
@@ -98,14 +107,37 @@ extension CorpusStore {
         setState(unavailable: false, declines: true, server: endpoint)
         await sheet("declines-server", expectNamed: isMac, expectSource: "own server")
         await done("declines-server", expectTagged: isMac, expectSource: "own server")
-        // X6 — T's step 12: Apple Intelligence available and answering, the server set → Apple writes the proposals and
-        // the server is never asked (the own server is the fallback when Apple can't or won't).
+        // D0.1 (T R-X6, 2026-11-13) — Apple Intelligence available, the server set → on the Mac the SERVER writes first
+        // (iPhone/iPad: Apple Intelligence, the server never asked).
         if AIService.appleIntelligenceAvailable {
             setState(unavailable: false, declines: false, server: endpoint)
-            await sheet("apple-answers-server-set", expectNamed: true, expectSource: "Apple Intelligence")
-            row("apple-answers-server-set/server-not-asked", asked == "none", "server asked=\(asked)")
+            await sheet("server-first", expectNamed: true, expectSource: isMac ? "own server" : "Apple Intelligence")
+            await done("server-first", expectTagged: true, expectSource: isMac ? "own server" : "Apple Intelligence")
+            if !isMac { row("server-first/server-not-asked", asked == "none", "server asked=\(asked)") }
+            // Server off (nothing listens) → Apple Intelligence writes it; the next entry skips the server (backoff).
+            setState(unavailable: false, declines: false, server: "http://127.0.0.1:9")
+            await sheet("server-off", expectNamed: true, expectSource: "Apple Intelligence")
+            if isMac {
+                row("server-off/server-asked-first", asked.hasPrefix("own server"), "server asked=\(asked)")
+                resetSource()
+                _ = await AIService().processSubstrate(content: Self.enrichText)
+                row("server-off/backoff-skips-server", asked == "none" && source == "Apple Intelligence",
+                    "within \(Int(ModelRouter.serverFirstBackoff)) s of a miss: server asked=\(asked) source=\(source)")
+                // A server that lists a model but never answers the chat (`scripts/mac/silent_server.py`, passed as
+                // `-MacEnrichSilentEndpoint`) → Apple Intelligence after the deadline.
+                setState(unavailable: false, declines: false, server: d.string(forKey: "MacEnrichSilentEndpoint") ?? "http://127.0.0.1:8790")
+                resetSource()
+                let t0 = Date()
+                let sub = await AIService().processSubstrate(content: Self.enrichText)
+                let secs = Date().timeIntervalSince(t0)
+                var ok = false
+                if case .ok = sub { ok = true }
+                row("server-silent/apple-after-deadline", ok && source == "Apple Intelligence"
+                        && secs >= ModelRouter.serverFirstTimeout - 1 && secs < ModelRouter.serverFirstTimeout + 15,
+                    String(format: "%.1fs (deadline %.0fs) source=\(source)", secs, ModelRouter.serverFirstTimeout))
+            }
         } else {
-            row("apple-answers-server-set", true, "skipped: no Apple Intelligence here")
+            row("server-first", true, "skipped: no Apple Intelligence here")
         }
         // X6 — the Host fallback: Apple declines, the custom server didn't answer its last check, a Host is paired → the
         // Host is asked. (A LAN pairing to a port nothing listens on: proves the route without a Host holding a model.)

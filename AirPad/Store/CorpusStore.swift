@@ -8866,7 +8866,8 @@ final class CorpusStore {
                                     sourceContentHash: promptContentHash,
                                     posture: posture, generatedAt: generatedAt,
                                     solicited: solicited,
-                                    onDeviceAfterDecline: result.namedOnDeviceAfterDecline) {
+                                    onDeviceAfterDecline: result.namedOnDeviceAfterDecline,
+                                    author: result.author) {
                     n.title = result.title
                     n.titleSource = .model
                 }
@@ -8877,7 +8878,8 @@ final class CorpusStore {
                                     sourceContentHash: promptContentHash,
                                     posture: posture, generatedAt: generatedAt,
                                     solicited: solicited,
-                                    onDeviceAfterDecline: result.namedOnDeviceAfterDecline) {
+                                    onDeviceAfterDecline: result.namedOnDeviceAfterDecline,
+                                    author: result.author) {
                     n.summary = result.summary
                     n.summarySource = .model
                 }
@@ -8907,6 +8909,7 @@ final class CorpusStore {
             if substrateDidRun {
                 n.substrateSummary = working.substrateSummary
                 n.folksonomy = working.folksonomy
+                n.folksonomyAuthor = working.folksonomyAuthor
                 n.summaryEmbedding = working.summaryEmbedding
                 n.folksonomyEmbedding = working.folksonomyEmbedding
                 n.contextualContentEmbedding = working.contextualContentEmbedding
@@ -9252,6 +9255,7 @@ final class CorpusStore {
             node.fmErrorDetail = nil
             node.substrateSummary = nil
             node.folksonomy = nil
+            node.folksonomyAuthor = nil
             node.summaryEmbedding = nil
             node.folksonomyEmbedding = nil
             if loaded, !trimmed.isEmpty, let v = await substrate.embed(trimmed) {
@@ -9270,10 +9274,12 @@ final class CorpusStore {
         var fmErrorDetail: FMErrorDetail? = nil
         var producedSummary: String? = nil
         var producedFolksonomy: [String]? = nil
+        var producedAuthor: String? = nil
         switch outcome {
-        case .ok(let s, let f):
+        case .ok(let s, let f, let author):
             producedSummary = s.isEmpty ? nil : s
             producedFolksonomy = f.isEmpty ? nil : f
+            producedAuthor = f.isEmpty ? nil : author
         case .guardrailRefused:
             failureReason = "guardrail_refused"
         case .otherError(let detail):
@@ -9283,6 +9289,7 @@ final class CorpusStore {
         }
         node.substrateSummary = producedSummary
         node.folksonomy = producedFolksonomy
+        node.folksonomyAuthor = producedAuthor
 
         // Embed whichever channels we have text for. Embedder load failure
         // is its own reason and overrides any prior FM-side reason — the

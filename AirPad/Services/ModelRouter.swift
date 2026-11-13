@@ -1,6 +1,7 @@
 import Foundation
 import UIKit
 import FoundationModels
+import os
 
 /// The note-summary lever's result, provider-agnostic (`processNode`'s shape). Title + summary,
 /// nothing else — the corpus-aware extras (tags/mood/domain/neighborhood) belong to the DORMANT
@@ -567,9 +568,12 @@ enum ModelRouter {
         case modelNotLoaded(tag: String, message: String)
         /// C2c — Apple Intelligence produced no first token in 45 s.
         case onDeviceTimeout
+        /// Mac D0.1 — the own server didn't answer within `serverFirstTimeout`; Apple Intelligence takes the entry.
+        case serverFirstTimedOut
 
         var errorDescription: String? {
             switch self {
+            case .serverFirstTimedOut: return "Your server didn't answer in time."
             case .onDeviceTimeout: return "Apple Intelligence didn't respond. Try again."
             case .modelNotLoaded(_, let message): return message
             case .foundationModelUnavailable: return "Foundation Model not available on this device."
@@ -722,6 +726,49 @@ enum ModelRouter {
         if let endpoint = configuredEndpoint, !endpointUnreachable { return .ollama(endpoint: endpoint) }
         if let pairing = HostPairing.load() { return .host(pairing) }
         return nil
+    }
+
+    /// Mac D0.1 (T R-X6, 2026-11-13) — on the Mac the user's own server writes the proposals FIRST when one is set;
+    /// Apple Intelligence is the fallback. A server that hasn't answered within `serverFirstTimeout` (20 s: a 4B model's
+    /// cold load plus its answer, LM Studio's load-on-request included) hands the entry to Apple Intelligence, and for
+    /// the next `serverFirstBackoff` (2 min) entries go straight to Apple Intelligence, so a sleeping server doesn't
+    /// hold every capture for 20 s. nil off the Mac, with no server, or during the backoff.
+    static let serverFirstTimeout: TimeInterval = 20
+    static let serverFirstBackoff: TimeInterval = 120
+    static var serverFirst: Provider? {
+        guard Date() >= serverFirstLock.withLock({ $0 }) else { return nil }
+        return enrichmentServer
+    }
+    static func noteServerFirstMissed() {
+        serverFirstLock.withLock { $0 = Date().addingTimeInterval(serverFirstBackoff) }
+    }
+    static func resetServerFirstBackoff() { serverFirstLock.withLock { $0 = .distantPast } }
+    private static let serverFirstLock = OSAllocatedUnfairLock<Date>(initialState: .distantPast)
+
+    /// Runs `op`, or throws `RouterError.serverFirstTimedOut` after `seconds` (the slower side is cancelled).
+    static func withDeadline<T: Sendable>(_ seconds: TimeInterval, _ op: @escaping @Sendable () async throws -> T) async throws -> T {
+        try await withThrowingTaskGroup(of: T.self) { group in
+            group.addTask { try await op() }
+            group.addTask {
+                try await Task.sleep(nanoseconds: UInt64(seconds * 1_000_000_000))
+                throw RouterError.serverFirstTimedOut
+            }
+            defer { group.cancelAll() }
+            guard let first = try await group.next() else { throw RouterError.serverFirstTimedOut }
+            return first
+        }
+    }
+
+    /// Mac D0.2 (T R-PROV) — the server as the Proposals sheet names a proposal's author: "Qwen3 4B · your server", "Host".
+    static func serverAuthorLabel(_ server: Provider) -> String {
+        switch server {
+        case .ollama(let endpoint):
+            let model = CustomServer.cached(endpoint).flatMap { CustomServer.chatModel($0.models, pick: CustomServer.pick(for: endpoint))?.id }
+            return model.map { CatalogModel.friendlyName(forTag: $0) + " · your server" } ?? "Your server"
+        case .host: return "Host"
+        case .foundationModel: return "Apple Intelligence"
+        case .local: return "On-device model"
+        }
     }
 
     /// Mac fix-up X6 — the server, as the `[Lever]` source line names it.

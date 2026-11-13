@@ -78,6 +78,9 @@ struct Proposal: Codable, Equatable, Identifiable {
     /// live-20 (1) — Apple Intelligence declined this entry and the installed on-device model wrote this proposal
     /// instead; the Proposals sheet says so in one line.
     var onDeviceAfterDecline: Bool = false
+    /// Mac D0.2 (T R-PROV, 2026-11-13) — who wrote it, as the Proposals sheet's grey line names it ("Apple
+    /// Intelligence", "Qwen3 4B · your server", "Host", "On-device model"). Nil for a proposal made before.
+    var author: String? = nil
 
     enum CodingKeys: String, CodingKey {
         case id
@@ -90,6 +93,7 @@ struct Proposal: Codable, Equatable, Identifiable {
         case sourceContentHash = "source_content_hash"
         case sourceEntryID = "source_entry_id"
         case onDeviceAfterDecline = "on_device_after_decline"
+        case author
     }
 }
 
@@ -110,6 +114,7 @@ extension Proposal {
         sourceContentHash = try c.decodeIfPresent(String.self, forKey: .sourceContentHash)
         sourceEntryID   = try c.decodeIfPresent(String.self, forKey: .sourceEntryID)
         onDeviceAfterDecline = try c.decodeIfPresent(Bool.self, forKey: .onDeviceAfterDecline) ?? false
+        author          = try c.decodeIfPresent(String.self, forKey: .author)
     }
 }
 
@@ -215,7 +220,8 @@ extension Node {
                                  posture: AuthorshipPosture,
                                  generatedAt: Date,
                                  solicited: Bool = false,
-                                 onDeviceAfterDecline: Bool = false) -> Bool {
+                                 onDeviceAfterDecline: Bool = false,
+                                 author: String? = nil) -> Bool {
         // User-beats-model. `nil` = legacy / never-processed (FM eligible);
         // `.model` = a prior FM write (FM may refresh); `.user` = locked — UNLESS
         // the user explicitly asked (`solicited`), in which case the gate opens
@@ -234,7 +240,8 @@ extension Node {
                                  solicited: solicited,
                                  sourceContentHash: sourceContentHash,
                                  sourceEntryID: id,
-                                 onDeviceAfterDecline: onDeviceAfterDecline))
+                                 onDeviceAfterDecline: onDeviceAfterDecline,
+                                 author: author))
             proposals = list
         }
         // ★ The WRITE is never bypassed by `solicited`: user-authored fields still

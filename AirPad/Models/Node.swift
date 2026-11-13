@@ -303,6 +303,9 @@ struct Node: Codable, Identifiable, Hashable {
     /// FM-generated free-form folksonomy tags. Joined comma-space before
     /// embedding. Empty/nil on guardrail refusal or thin content.
     var folksonomy: [String]?
+    /// Mac D0.2 (T R-PROV) — who wrote `folksonomy` (the Proposals sheet's tag suggestions come from it), as the sheet
+    /// names it. Nil before 2026-11-13 or with no folksonomy.
+    var folksonomyAuthor: String? = nil
     /// `NLContextualEmbedding(.english)` mean-pooled vector of `substrateSummary`.
     /// Stored raw; mean-center via `SubstrateService` before cosine.
     var summaryEmbedding: [Float]?
@@ -507,6 +510,7 @@ struct Node: Codable, Identifiable, Hashable {
         case fmSuggestedNeighborhoodID = "fm_suggested_neighborhood_id"
         case substrateSummary = "substrate_summary"
         case folksonomy
+        case folksonomyAuthor = "folksonomy_author"
         case summaryEmbedding = "summary_embedding"
         case folksonomyEmbedding = "folksonomy_embedding"
         case contextualContentEmbedding = "contextual_content_embedding"
@@ -672,6 +676,7 @@ extension Node {
         fmSuggestedNeighborhoodID = try c.decodeIfPresent(String.self,    forKey: .fmSuggestedNeighborhoodID)
         substrateSummary           = try c.decodeIfPresent(String.self,   forKey: .substrateSummary)
         folksonomy                 = try c.decodeIfPresent([String].self, forKey: .folksonomy)
+        folksonomyAuthor           = try c.decodeIfPresent(String.self, forKey: .folksonomyAuthor)
         summaryEmbedding           = try c.decodeIfPresent([Float].self,  forKey: .summaryEmbedding)
         folksonomyEmbedding        = try c.decodeIfPresent([Float].self,  forKey: .folksonomyEmbedding)
         contextualContentEmbedding = try c.decodeIfPresent([Float].self,  forKey: .contextualContentEmbedding)

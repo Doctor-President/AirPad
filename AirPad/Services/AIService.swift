@@ -64,7 +64,8 @@ struct ProcessNodeResult {
 /// refusals as a normal outcome (~4% of nodes per harness data) so the caller
 /// can record the reason on the node and fall back to the content embedding.
 enum SubstrateFMOutcome {
-    case ok(summary: String, folksonomy: [String])
+    /// `author` (Mac D0.2): who wrote it, as the Proposals sheet names it ("Apple Intelligence", "Qwen3 4B · your server").
+    case ok(summary: String, folksonomy: [String], author: String? = nil)
     case guardrailRefused
     /// SB139 Stage 1 cleanup — carries `FMErrorDetail` so the diagnostic
     /// inspect view can show the raw error type + debugDescription. Pre-call
@@ -203,12 +204,33 @@ actor AIService {
 
         let prompt = AppleNaming.namingPrompt(content: content)
 
+        // Mac D0.1 (T R-X6) — the user's own server writes first; Apple Intelligence is the fallback.
+        var serverTried = false
+        if let server = ModelRouter.serverFirst {
+            serverTried = true
+            do {
+                let r = try await ModelRouter.withDeadline(ModelRouter.serverFirstTimeout) {
+                    try await ModelRouter.nodeSummaryServer(server, prompt: prompt)
+                }
+                print("[FM][processNode] own server first → authored (title/summary)")
+                Self.noteLeverSource("title/summary", ModelRouter.serverSourceName(server))
+                var out = Self.guardedNaming(title: r.title, summary: r.summary, content: content)
+                out.author = ModelRouter.serverAuthorLabel(server)
+                return .success(out)
+            } catch {
+                ModelRouter.noteServerFirstMissed()
+                print("[FM][processNode] own server first → no answer (\(error.localizedDescription)) → Apple Intelligence")
+            }
+        }
+
         if appleUnavailable {
-            guard let server = ModelRouter.enrichmentServer,
+            guard !serverTried, let server = ModelRouter.enrichmentServer,
                   let r = try? await ModelRouter.nodeSummaryServer(server, prompt: prompt) else { return .failure(.unavailable) }
             print("[FM][processNode] no Apple Intelligence → own server authored (title/summary)")
             Self.noteLeverSource("title/summary", ModelRouter.serverSourceName(server))
-            return .success(Self.guardedNaming(title: r.title, summary: r.summary, content: content))
+            var out = Self.guardedNaming(title: r.title, summary: r.summary, content: content)
+            out.author = ModelRouter.serverAuthorLabel(server)
+            return .success(out)
         }
 
         // live-11 (2) — the token count is a log line, not an input: counting it is a model call of its own, and awaiting
@@ -225,8 +247,11 @@ actor AIService {
             if Self.stubAppleDeclines { throw Self.stubDeclineError() }
             #endif
             let r = try await ModelRouter.generateNodeSummary(prompt: prompt)
-            Self.noteLeverSource("title/summary", await Self.structuredSourceName())
-            return .success(Self.guardedNaming(title: r.title, summary: r.summary, content: content))
+            let source = await Self.structuredSourceName()
+            Self.noteLeverSource("title/summary", source)
+            var out = Self.guardedNaming(title: r.title, summary: r.summary, content: content)
+            out.author = Self.authorLabel(source)
+            return .success(out)
         } catch {
             print("[FM][processNode] FAILURE: \(error)")
             // nodeFailure inspects FM error types (iOS 26). On the floor the throw can only
@@ -244,6 +269,7 @@ actor AIService {
                     Self.noteLeverSource("title/summary", "on-device model (Apple Intelligence declined)")
                     var out = Self.guardedNaming(title: r.title, summary: r.summary, content: content)
                     out.namedOnDeviceAfterDecline = true   // live-20 (1) — the Proposals sheet says so in one line
+                    out.author = "On-device model"
                     return .success(out)
                 } catch {
                     print("[FM][processNode] refusal → on-device retry also failed: \(error)")
@@ -251,12 +277,14 @@ actor AIService {
             }
             // Mac C0 — no on-device model on the Mac: the user's own server, if there is one. Quietly: no note, since
             // nothing ran on this device.
-            if case .refused = failure, let server = ModelRouter.enrichmentServer {
+            if case .refused = failure, !serverTried, let server = ModelRouter.enrichmentServer {
                 do {
                     let r = try await ModelRouter.nodeSummaryServer(server, prompt: prompt)
                     print("[FM][processNode] refusal → own server authored (title/summary)")
                     Self.noteLeverSource("title/summary", ModelRouter.serverSourceName(server) + " (Apple Intelligence declined)")
-                    return .success(Self.guardedNaming(title: r.title, summary: r.summary, content: content))
+                    var out = Self.guardedNaming(title: r.title, summary: r.summary, content: content)
+                    out.author = ModelRouter.serverAuthorLabel(server)
+                    return .success(out)
                 } catch {
                     print("[FM][processNode] refusal → own server also failed: \(error)")
                 }
@@ -644,15 +672,35 @@ actor AIService {
         // instruction-laden prompt) so the LOCAL model can be pinned to it. FM ignores this.
         let responseLanguage = Self.substrateResponseLanguage(for: truncated)
 
+        // Mac D0.1 (T R-X6) — the user's own server writes first; Apple Intelligence is the fallback.
+        var serverTried = false
+        if let server = ModelRouter.serverFirst {
+            serverTried = true
+            do {
+                let r = try await ModelRouter.withDeadline(ModelRouter.serverFirstTimeout) {
+                    try await ModelRouter.substrateServer(server, prompt: prompt, responseLanguage: responseLanguage)
+                }
+                if !(r.summary.isEmpty && r.folksonomy.isEmpty) {
+                    print("[FM][processSubstrate] own server first → authored (substrate)")
+                    Self.noteLeverSource("tags", ModelRouter.serverSourceName(server))
+                    return .ok(summary: r.summary, folksonomy: r.folksonomy, author: ModelRouter.serverAuthorLabel(server))
+                }
+                print("[FM][processSubstrate] own server first → empty answer → Apple Intelligence")
+            } catch {
+                ModelRouter.noteServerFirstMissed()
+                print("[FM][processSubstrate] own server first → no answer (\(error.localizedDescription)) → Apple Intelligence")
+            }
+        }
+
         if appleUnavailable {
-            guard let server = ModelRouter.enrichmentServer,
+            guard !serverTried, let server = ModelRouter.enrichmentServer,
                   let r = try? await ModelRouter.substrateServer(server, prompt: prompt, responseLanguage: responseLanguage),
                   !(r.summary.isEmpty && r.folksonomy.isEmpty) else {
                 return .otherError(FMErrorDetail(errorType: "model_unavailable", debugDescription: nil))
             }
             print("[FM][processSubstrate] no Apple Intelligence → own server authored (substrate)")
             Self.noteLeverSource("tags", ModelRouter.serverSourceName(server))
-            return .ok(summary: r.summary, folksonomy: r.folksonomy)
+            return .ok(summary: r.summary, folksonomy: r.folksonomy, author: ModelRouter.serverAuthorLabel(server))
         }
 
         // live-11 (2) — the token count is a log line, not an input: counting it is a model call of its own, and awaiting
@@ -673,8 +721,9 @@ actor AIService {
             if r.summary.isEmpty && r.folksonomy.isEmpty {
                 return .otherError(FMErrorDetail(errorType: "empty_output", debugDescription: nil))
             }
-            Self.noteLeverSource("tags", await Self.structuredSourceName())
-            return .ok(summary: r.summary, folksonomy: r.folksonomy)
+            let source = await Self.structuredSourceName()
+            Self.noteLeverSource("tags", source)
+            return .ok(summary: r.summary, folksonomy: r.folksonomy, author: Self.authorLabel(source))
         } catch {
             // SB139 Stage 1 cleanup: match on the typed enum cases, not on
             // substrings of the stringified error. The `fm_error_detail`
@@ -700,20 +749,20 @@ actor AIService {
                         if !(r.summary.isEmpty && r.folksonomy.isEmpty) {
                             print("[FM][processSubstrate] refusal → on-device model authored (substrate)")
                             Self.noteLeverSource("tags", "on-device model (Apple Intelligence declined)")
-                            return .ok(summary: r.summary, folksonomy: r.folksonomy)
+                            return .ok(summary: r.summary, folksonomy: r.folksonomy, author: "On-device model")
                         }
                     } catch {
                         print("[FM][processSubstrate] refusal → on-device retry also failed: \(error)")
                     }
                 }
                 // Mac C0 — the Mac's own server, as in processNode.
-                if let server = ModelRouter.enrichmentServer {
+                if !serverTried, let server = ModelRouter.enrichmentServer {
                     do {
                         let r = try await ModelRouter.substrateServer(server, prompt: prompt, responseLanguage: responseLanguage)
                         if !(r.summary.isEmpty && r.folksonomy.isEmpty) {
                             print("[FM][processSubstrate] refusal → own server authored (substrate)")
                             Self.noteLeverSource("tags", ModelRouter.serverSourceName(server) + " (Apple Intelligence declined)")
-                            return .ok(summary: r.summary, folksonomy: r.folksonomy)
+                            return .ok(summary: r.summary, folksonomy: r.folksonomy, author: ModelRouter.serverAuthorLabel(server))
                         }
                     } catch {
                         print("[FM][processSubstrate] refusal → own server also failed: \(error)")
@@ -870,6 +919,9 @@ actor AIService {
     /// The last server a proposal call was sent to (answered or not).
     static let lastLeverAttempt = OSAllocatedUnfairLock<String?>(initialState: nil)
     #endif
+
+    /// Mac D0.2 — the structured lever's engine as the Proposals sheet names it.
+    static func authorLabel(_ source: String) -> String { source == "on-device model" ? "On-device model" : source }
 
     /// The structured lever's own engine: Apple Intelligence, or the opted-in on-device model.
     static func structuredSourceName() async -> String {
@@ -1089,6 +1141,8 @@ struct NodeAIOutput {
     let neighborhoodID: String?
     /// live-20 (1) — Apple Intelligence declined and the installed on-device model named it instead.
     var namedOnDeviceAfterDecline: Bool = false
+    /// Mac D0.2 (T R-PROV) — who wrote it, as the Proposals sheet names it ("Apple Intelligence", "Host").
+    var author: String? = nil
 }
 
 // MARK: - THE LEVER — Stage 2 F3 · typed generate outcome

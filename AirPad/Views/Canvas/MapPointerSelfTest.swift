@@ -182,6 +182,14 @@ enum MapPinchReplaySelfTest {
         }
         try? await Task.sleep(nanoseconds: 300_000_000)
         guard let (_, g) = globalPoint(mid, in: view) else { return "[MapPinchReplaySelfTest] FAIL — no NSWindow" }
+        // A pointer AppKit won't put the Map under (at a screen edge, under the menu bar) sends every pinch elsewhere.
+        let screenH = ((NSClassFromString("NSScreen") as? NSObject.Type)?.value(forKey: "screens") as? [NSObject])?.first?
+            .value(forKey: "frame") as? CGRect ?? .zero
+        let pointer = CGPoint(x: mouse.x, y: screenH.height - mouse.y)
+        if hypot(pointer.x - g.x, pointer.y - g.y) > 2 {
+            return "[MapPinchReplaySelfTest] FAIL — precondition: the pointer at \(pointer) can't sit over the Map's middle "
+                + "(window put it at \(g)); move the pointer towards the middle of the screen and run again"
+        }
         var lines: [String] = ["window=\(String(describing: type(of: window))) mid=\(mid) global=\(g)"]
         var fails = 0
         func row(_ name: String, _ ok: Bool, _ detail: String) { lines.append("\(ok ? "PASS" : "FAIL") \(name) — \(detail)"); if !ok { fails += 1 } }

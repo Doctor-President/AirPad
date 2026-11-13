@@ -188,6 +188,98 @@ enum EditorRoundTripSelfTest {
     }
 }
 
+/// Mac D0.8 (T N5) — `-EmptyLineListSelfTest` (iPhone, iPad, Mac; Sample scratch): Checklist, Bulleted List and
+/// Numbered List on an EMPTY line make an empty item with the caret ready after its marker, on an empty line between two
+/// lines and on the empty last line; typing then fills the item and it saves as standard Markdown. On the Mac through
+/// the real Format menu; elsewhere the same editor state closures the bars call.
+@MainActor
+enum EmptyLineListSelfTest {
+    static func run(store: CorpusStore, router: AppRouter) async -> String {
+        var rows: [String] = [], fails = 0
+        func row(_ name: String, _ ok: Bool, _ detail: String = "") {
+            rows.append("\(ok ? "PASS" : "FAIL") \(name)" + (detail.isEmpty ? "" : " — \(detail)")); if !ok { fails += 1 }
+        }
+        func settle(_ s: Double = 0.4) async { try? await Task.sleep(nanoseconds: UInt64(s * 1_000_000_000)) }
+        let kinds: [(name: String, menu: String, run: (RichTextEditorState) -> Void, md: String)] = [
+            ("checklist", "Checklist", { $0.toggleChecklist() }, "- [ ] "),
+            ("bulleted", "Bulleted List", { $0.toggleBulletList() }, "- "),
+            ("numbered", "Numbered List", { $0.toggleNumberedList() }, "1. "),
+        ]
+        for kind in kinds {
+            let id = "ell-" + UUID().uuidString.prefix(8)
+            let original = "D test lists \(kind.name)\nAbove\n\nBelow"
+            var n = Node(id: id, createdAt: Date(), updatedAt: Date(), title: "D test lists", summary: "", tags: [])
+            let itemID = UUID().uuidString
+            n.items = [NodeItem(id: itemID, type: .text, createdAt: Date(), content: original)]
+            n.entrySchemaVersion = 1
+            n.titleSource = .user
+            await store.addNode(n, position: .zero)
+            router.pendingNodeNavigationID = id
+            await settle(2.5)
+            func editor() -> RichTextUIView? {
+                func walk(_ v: UIView) -> RichTextUIView? {
+                    if let t = v as? RichTextUIView, (t.text ?? "").contains("D test lists \(kind.name)") { return t }
+                    for s in v.subviews { if let r = walk(s) { return r } }
+                    return nil
+                }
+                for w in UIApplication.shared.connectedScenes.compactMap({ $0 as? UIWindowScene }).flatMap(\.windows) {
+                    if let r = walk(w) { return r }
+                }
+                return nil
+            }
+            guard let tv = editor() else { row("\(kind.name): the entry's editor appeared", false); continue }
+            tv.becomeFirstResponder()
+            await settle(0.8)
+            func command() async {
+                #if targetEnvironment(macCatalyst)
+                if MacMenuSelfTest.fire(menu: "Format", title: kind.menu) { await settle(); return }
+                row("\(kind.name): menu Format›\(kind.menu) present + enabled", false)
+                #endif
+                if let s = ActiveRichTextEditor.shared.state { kind.run(s) } else { row("\(kind.name): no active editor", false) }
+                await settle()
+            }
+            /// The paragraph the caret is in, and the caret's offset into it.
+            func caretLine() -> (line: String, offset: Int) {
+                let ns = (tv.text ?? "") as NSString
+                let loc = min(tv.selectedRange.location, ns.length)
+                let para = ns.paragraphRange(for: NSRange(location: loc, length: 0))
+                let line = ns.substring(with: para).trimmingCharacters(in: .newlines)
+                return (line, loc - para.location)
+            }
+            // 1. The empty line between "Above" and "Below".
+            let ns = (tv.text ?? "") as NSString
+            let below = ns.range(of: "\nBelow")
+            tv.selectedRange = NSRange(location: below.location, length: 0)
+            tv.delegate?.textViewDidChangeSelection?(tv)
+            await command()
+            let mid = caretLine()
+            row("\(kind.name): empty middle line → an empty item, caret after its marker",
+                !mid.line.isEmpty && mid.line.trimmingCharacters(in: .whitespaces).count <= 2 && mid.offset == (mid.line as NSString).length,
+                "line=\"\(mid.line)\" caret at \(mid.offset)")
+            tv.insertText("Middle item"); await settle(0.3)
+            // 2. The empty last line (after a final newline).
+            tv.selectedRange = NSRange(location: ((tv.text ?? "") as NSString).length, length: 0)
+            tv.insertText("\n"); await settle(0.3)
+            if caretLine().line.isEmpty == false {   // Return in "Below" — a plain line; make sure it's empty
+                row("\(kind.name): Return made an empty last line", false, "line=\"\(caretLine().line)\"")
+            }
+            await command()
+            let end = caretLine()
+            row("\(kind.name): empty last line → an empty item, caret after its marker",
+                !end.line.isEmpty && end.offset == (end.line as NSString).length, "line=\"\(end.line)\" caret at \(end.offset)")
+            tv.insertText("Last item"); await settle(0.3)
+            tv.resignFirstResponder()
+            await settle(2.5)
+            let stored = store.nodes.first { $0.id == id }?.items.first { $0.id == itemID }?.content ?? ""
+            let want = "D test lists \(kind.name)\nAbove\n\(kind.md)Middle item\nBelow\n\(kind.md)Last item"
+            row("\(kind.name): saved as standard Markdown", stored == want, stored.replacingOccurrences(of: "\n", with: "⏎"))
+            router.perform(.back); await settle(1.5)
+            await store.deleteNode(id: id)
+        }
+        return "[EmptyLineListSelfTest] \(fails == 0 ? "PASS" : "FAIL") — \(rows.count - fails)/\(rows.count)\n" + rows.joined(separator: "\n")
+    }
+}
+
 /// Mac fix-up X8 — `-NoteWeightSelfTest` (iPhone, iPad, Mac; Sample scratch): T's ruling on note weight, through the
 /// real editor on a scratch entry. Note text is regular body weight by default, paragraph 1 too (no auto-title bold);
 /// opening a note rewrites nothing; B bolds and un-bolds paragraph 1 and the un-bold survives the editor's restyle

@@ -3635,6 +3635,9 @@ enum MarkdownCodec {
                 paragraphRanges.append(subRange)
             }
         }
+        // Mac D0.8 (T N5) — the caret on the empty last line (after a final newline): `enumerateSubstrings` emits no
+        // paragraph there, so nothing was inserted. It is a paragraph of its own: an empty checklist item goes there.
+        if paragraphRanges.isEmpty, active { paragraphRanges.append(NSRange(location: safeLocation, length: 0)) }
 
         for paraRange in paragraphRanges.reversed() {
             // Marker-based prefix check — works for both the current SF Symbol

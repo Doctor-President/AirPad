@@ -131,6 +131,14 @@ struct ContentView: View {
                         NSLog("%@", await EditorRoundTripSelfTest.run(store: store, router: router))
                     }
                 }
+                // Mac D0.8 — `-EmptyLineListSelfTest`: list commands on an empty line.
+                if ProcessInfo.processInfo.arguments.contains("-EmptyLineListSelfTest") {
+                    Task { @MainActor in
+                        for _ in 0..<120 where store.nodes.count < 10 { try? await Task.sleep(nanoseconds: 250_000_000) }
+                        try? await Task.sleep(nanoseconds: 4_000_000_000)
+                        NSLog("%@", await EmptyLineListSelfTest.run(store: store, router: router))
+                    }
+                }
                 // Mac fix-up X8 — `-NoteWeightSelfTest`: regular note weight; B and Body on bold.
                 if ProcessInfo.processInfo.arguments.contains("-NoteWeightSelfTest") {
                     Task { @MainActor in

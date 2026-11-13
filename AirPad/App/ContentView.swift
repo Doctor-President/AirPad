@@ -728,7 +728,7 @@ struct ContentView: View {
             #if targetEnvironment(macCatalyst)
             RunningOnMac.closeFrontWindow()   // one window for now; the same as its close button
             #endif
-        case .export, .back, .forward, .zoomIn, .zoomOut, .zoomFit:
+        case .export, .back, .forward, .zoomIn, .zoomOut, .zoomFit, .editMap:
             break
         }
     }

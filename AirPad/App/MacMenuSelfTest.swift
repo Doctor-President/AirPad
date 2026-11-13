@@ -159,6 +159,9 @@ enum MacMenuSelfTest {
             && store.filterState(for: .corpus).viewMode == .list, "mode=\(router.entryMode) view=\(store.filterState(for: .corpus).viewMode)")
         row("fire/View›Cards → Cards", await go("View", "Cards") && store.filterState(for: .corpus).viewMode == .grid)
         row("fire/View›Map → Map", await go("View", "Map") && store.filterState(for: .corpus).viewMode == .systemGraph)
+        // Mac D0.7 — View › Edit Map… opens the Map's settings sheet.
+        row("fire/View›Edit Map… opens Edit Map", await go("View", "Edit Map…") && presented() != nil, "presented=\(presented().map { "\(type(of: $0))" } ?? "nil")")
+        await dismissPresented()
         row("state/Back disabled at the top", find("Go", "Back")?.enabled == false)
         row("state/Export disabled with no entry open", find("File", "Export Entry…")?.enabled == false)
         row("fire/View›Librarian raises it", await go("View", "Librarian") && !router.librarianAtPeek, "atPeek=\(router.librarianAtPeek)")

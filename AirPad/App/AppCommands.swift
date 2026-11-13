@@ -9,7 +9,7 @@ enum AppCommand: String, CaseIterable, Sendable {
     case newEntry, newCollection, closeWindow, export
     case find
     case viewMap, viewList, viewCards, librarian
-    case zoomIn, zoomOut, zoomFit
+    case zoomIn, zoomOut, zoomFit, editMap
     case back, forward, today
     case settings
 }
@@ -64,6 +64,11 @@ struct AppCommands: Commands {
                 .disabled(!mapShowing)
             item("Zoom to Fit", .zoomFit, "view.zoomFit").keyboardShortcut("0")
                 .disabled(!mapShowing)
+            #if targetEnvironment(macCatalyst)
+            // Mac D0.7 (T N4) — Edit Map… lives in the View menu once the toolbar replaces the floating view button.
+            item("Edit Map…", .editMap, "view.editMap")
+                .disabled(!mapShowing)
+            #endif
         }
         // Go
         CommandMenu("Go") {

@@ -455,6 +455,10 @@ struct CanvasChrome: View {
         .sheet(isPresented: $showEditMap) {
             EditMapSheet()
         }
+        // Mac D0.7 — View › Edit Map… (the Map's own settings, as from the view menu).
+        .onChange(of: router.commandRequest) { _, request in
+            if request?.command == .editMap, store.filterState(for: scope).viewMode == .systemGraph { showEditMap = true }
+        }
         .sheet(isPresented: $showSettings) {
             SettingsView()
         }
@@ -648,6 +652,13 @@ struct ViewSwitchMenuContent: View {
         (.systemGraph, "Map",  "circle.hexagongrid.fill"),
     ]
 
+    /// Mac D0.7 / D1 — the Mac's order and names (T's layout picks): Map | List | Cards.
+    static let macDestinations: [(mode: ViewMode, label: String, icon: String)] = [
+        (.systemGraph, "Map",   "circle.hexagongrid.fill"),
+        (.list,        "List",  "list.bullet"),
+        (.grid,        "Cards", "square.grid.2x2"),
+    ]
+
     /// Card View spans several `viewMode`s that all route to the `.grid` destination, so fall back
     /// to the first entry (Card) when the live mode isn't one of the three primaries.
     static func destination(for mode: ViewMode) -> (mode: ViewMode, label: String, icon: String) {
@@ -670,11 +681,22 @@ struct ViewSwitchMenuContent: View {
     }
 
     var body: some View {
+        #if targetEnvironment(macCatalyst)
+        // Mac D0.7 (T N4) — one level: Map, List, Cards (a checkmark on the current one), divider, Edit Map…. A Picker in
+        // a Menu is a "View ›" submenu on the Mac; inline it is the items themselves.
+        Picker("View", selection: modeBinding) {
+            ForEach(Self.macDestinations, id: \.mode) { dest in
+                Label(dest.label, systemImage: dest.icon).tag(dest.mode)
+            }
+        }
+        .pickerStyle(.inline)
+        #else
         Picker("View", selection: modeBinding) {
             ForEach(Self.destinations, id: \.mode) { dest in
                 Label(dest.label, systemImage: dest.icon).tag(dest.mode)
             }
         }
+        #endif
         // Map settings — anchor designation. Only meaningful on the Map.
         if current == .systemGraph {
             Divider()

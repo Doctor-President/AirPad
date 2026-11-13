@@ -260,6 +260,9 @@ struct EntryExportSheet: View {
     @State private var folderName = EntryExporter.folder.name
     @State private var saved: String?        // "Saved “X.md” to Vault."
     @State private var folderFailed = false
+    /// Mac D0.9 (T N6) — the file waiting for the Save dialog (folder + name), and what it said.
+    @State private var saveURL: URL?
+    @State private var savedFile: String?
 
     private var node: Node? { store.nodes.first { $0.id == nodeID } }
     private var hasFiles: Bool {
@@ -272,24 +275,36 @@ struct EntryExportSheet: View {
                 if let node, !store.isHidden(node) {
                     if folderName != nil { folderRows(node) }
                     Section { ForEach(EntryExporter.Format.allCases) { f in
-                        Button { export(node, f) } label: {
-                            VStack(alignment: .leading, spacing: 3) {
-                                HStack {
-                                    Text(f.label).font(appFont.font(size: 16, weight: .medium, relativeTo: .body))
-                                        .foregroundStyle(AppearancePalette.ink)
-                                    if working == f { Spacer(); ProgressView() }
-                                }
-                                Text(f == .markdown && hasFiles ? f.detail + " Images and files are left out." : f.detail)
-                                    .font(appFont.font(size: 13, relativeTo: .footnote))
-                                    .foregroundStyle(AppearancePalette.ink.opacity(0.55))
+                        #if targetEnvironment(macCatalyst)
+                        // Mac D0.9 (T N6): the format saves through the standard Save dialog (folder + name); Share… stays.
+                        HStack(spacing: 12) {
+                            formatButton(node, f, share: false)
+                            Button { export(node, f, share: true) } label: {
+                                Label("Share…", systemImage: "square.and.arrow.up").labelStyle(.iconOnly)
+                                    .font(.system(size: 16)).foregroundStyle(AppearancePalette.ink.opacity(0.7))
                             }
+                            .buttonStyle(.borderless)
+                            .disabled(working != nil)
+                            .help("Share…")
+                            .accessibilityIdentifier("export.\(f.rawValue).share")
                         }
-                        .disabled(working != nil)
-                        .accessibilityIdentifier("export.\(f.rawValue)")
+                        #else
+                        formatButton(node, f, share: true)
+                        #endif
+                    }
+                    if let savedFile {
+                        Text(savedFile).font(appFont.font(size: 13, relativeTo: .footnote)).foregroundStyle(AppearancePalette.ink.opacity(0.7))
+                            .accessibilityIdentifier("export.savedFile")
                     }
                     if failed {
                         Text("Couldn't export this entry.").font(appFont.font(size: 13, relativeTo: .footnote)).foregroundStyle(.red)
                     } }
+                    // Mac D0.9 — the standard Save dialog. On the formats' Section: the folder picker (`.fileImporter`)
+                    // sits on the List, and two file dialogs on one view leave one dead.
+                    .fileMover(isPresented: Binding(get: { saveURL != nil }, set: { if !$0 { saveURL = nil } }), file: saveURL) { result in
+                        if case .success(let url) = result { savedFile = "Saved “\(url.lastPathComponent)”." }
+                        saveURL = nil
+                    }
                     if folderName == nil { folderRows(node) }
                 } else {
                     Text("This entry is private.").foregroundStyle(AppearancePalette.ink.opacity(0.6))
@@ -375,14 +390,44 @@ struct EntryExportSheet: View {
         }
     }
 
-    private func export(_ node: Node, _ f: EntryExporter.Format) {
-        working = f; failed = false
+    /// One format's row: its name + what it holds. `share` = the system share sheet (iPhone, iPad); on the Mac the row
+    /// saves through the Save dialog and Share… is its own button (D0.9).
+    @ViewBuilder private func formatButton(_ node: Node, _ f: EntryExporter.Format, share: Bool) -> some View {
+        #if targetEnvironment(macCatalyst)
+        formatButtonBase(node, f, share: share)
+            .buttonStyle(.borderless)   // beside its Share… button, each takes its own clicks
+        #else
+        formatButtonBase(node, f, share: share)
+        #endif
+    }
+
+    private func formatButtonBase(_ node: Node, _ f: EntryExporter.Format, share: Bool) -> some View {
+        Button { export(node, f, share: share) } label: {
+            VStack(alignment: .leading, spacing: 3) {
+                HStack {
+                    Text(f.label).font(appFont.font(size: 16, weight: .medium, relativeTo: .body))
+                        .foregroundStyle(AppearancePalette.ink)
+                    if working == f { Spacer(); ProgressView() }
+                }
+                Text(f == .markdown && hasFiles ? f.detail + " Images and files are left out." : f.detail)
+                    .font(appFont.font(size: 13, relativeTo: .footnote))
+                    .foregroundStyle(AppearancePalette.ink.opacity(0.55))
+            }
+            .frame(maxWidth: .infinity, alignment: .leading)
+            .contentShape(Rectangle())
+        }
+        .disabled(working != nil)
+        .accessibilityIdentifier("export.\(f.rawValue)")
+    }
+
+    private func export(_ node: Node, _ f: EntryExporter.Format, share: Bool) {
+        working = f; failed = false; savedFile = nil
         Task {
             do {
                 let url = try await EntryExporter.write(node, format: f, store: store)
-                // Closed while the file was being made: no share sheet (one presented from a closing sheet is orphaned
-                // and can't be closed).
-                if shown { shareURL = url }
+                // Closed while the file was being made: no share sheet / Save dialog (one presented from a closing sheet
+                // is orphaned and can't be closed).
+                if shown { if share { shareURL = url } else { saveURL = url } }
             } catch { failed = true }
             working = nil
         }

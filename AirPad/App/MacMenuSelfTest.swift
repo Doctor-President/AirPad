@@ -180,6 +180,29 @@ enum MacMenuSelfTest {
             row("open/an entry", store.isInDetailView && router.openEntryID == entry.id, "depth=\(store.detailViewDepth)")
             row("fire/File›Export Entry… opens Export", await go("File", "Export Entry…") && presented() != nil,
                 "presented=\(presented().map { String(describing: type(of: $0)) } ?? "nil")")
+            // Mac D0.9 (T N6) — Markdown saves through the standard Save dialog (a document picker in export mode,
+            // which macOS shows as its Save panel); each format keeps a Share… button.
+            if let sheet = presented() {
+                // SwiftUI List rows don't carry their identifiers on the element proxies: found by label.
+                var byLabel: [(String, NSObject)] = []
+                func walk(_ o: NSObject, _ d: Int) {
+                    guard d < 60 else { return }
+                    if let l = o.accessibilityLabel, !l.isEmpty { byLabel.append((l, o)) }
+                    if let v = o as? UIView { v.subviews.forEach { walk($0, d + 1) } }
+                    let n = o.accessibilityElementCount()
+                    if n != NSNotFound, n > 0 { for i in 0..<n { if let e = o.accessibilityElement(at: i) as? NSObject { walk(e, d + 1) } } }
+                }
+                walk(sheet.view, 0)
+                let shares = Set(byLabel.filter { $0.0 == "Share…" }.map { ObjectIdentifier($0.1) }).count
+                row("export/each format keeps a Share… button", shares >= 2, "Share… buttons \(shares)")
+                let md = byLabel.first { $0.0.hasPrefix("Markdown (.md)") }?.1
+                _ = md?.accessibilityActivate()
+                await settle(2.5)
+                let saver = presented()
+                row("export/Markdown opens the Save dialog (folder + name)", saver is UIDocumentPickerViewController,
+                    "found=\(md != nil) presented=\(saver.map { String(describing: type(of: $0)) } ?? "nil")")
+                if saver is UIDocumentPickerViewController { saver?.dismiss(animated: false); await settle(0.8) }
+            }
             await dismissPresented()
             row("fire/Go›Back closes it", await go("Go", "Back") && !store.isInDetailView, "depth=\(store.detailViewDepth)")
             row("fire/Go›Forward re-opens it", await go("Go", "Forward") && store.isInDetailView && router.openEntryID == entry.id,

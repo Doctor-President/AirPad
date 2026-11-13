@@ -924,6 +924,10 @@ struct CanvasView: View {
                 .opacity(mapContentRevealed ? 1 : 0)
             focalEngagementOverlay
             nodeSummaryLayer
+            // Mac D0.4 (T N1) — the hover tag draws above everything on the Map, region pills included.
+            MapHoverTagLayer(tag: canvasState.hoverTag)
+                .allowsHitTesting(false)
+                .ignoresSafeArea()
             drillDownBackButton
 
         }
@@ -2016,6 +2020,54 @@ enum RegionLabelPillMetrics {
 /// centroids. Real `.ultraThinMaterial` glass; Source Serif 4; palette stroke.
 /// Visibility (edge fade + declutter hysteresis) is decided IN THE SCENE and
 /// carried on `declutterAlpha`; this layer only renders — it no longer culls.
+/// Mac D0.4/D0.5 — the hover tag's size, shared by the pill and the scene's placement (above/below the ring).
+enum MapHoverTagMetrics {
+    static let fontSize: CGFloat = 13
+    static let hPad: CGFloat = 9
+    static let height: CGFloat = 24
+    static let maxWidth: CGFloat = 300
+    /// In the app font (Appearance → Font), read when a tag is made, so it follows a change of font.
+    static var font: UIFont {
+        let face = EntryBodyFont(rawValue: UserDefaults.standard.string(forKey: EntryBodyFont.defaultStorageKey) ?? "") ?? .fallback
+        return face.uiFont(size: fontSize, weight: .semibold)
+    }
+    static func size(of title: String) -> CGSize {
+        let w = ceil((title as NSString).size(withAttributes: [.font: font]).width) + 2 * hPad
+        return CGSize(width: min(w, maxWidth), height: height)
+    }
+}
+
+/// Mac D0.4/D0.5 (T N1/N2, 2026-11-13) — the Map's hover tag, as a pill like the region labels' (glass, the orb's colour
+/// as tint + outline), in the user's app font, above the region pills.
+private struct MapHoverTagLayer: View {
+    let tag: CanvasState.HoverTagInfo?
+    @Environment(\.colorScheme) private var colorScheme
+    @Environment(\.appBodyFont) private var appFont
+
+    var body: some View {
+        GeometryReader { _ in
+            if let tag {
+                Text(tag.title)
+                    .font(appFont.font(size: MapHoverTagMetrics.fontSize, weight: .semibold))
+                    .lineLimit(1)
+                    .truncationMode(.tail)
+                    .foregroundStyle(colorScheme == .dark ? Color.white.opacity(0.95) : AppearancePalette.ink)
+                    .padding(.horizontal, MapHoverTagMetrics.hPad)
+                    .frame(width: MapHoverTagMetrics.size(of: tag.title).width, height: MapHoverTagMetrics.height)
+                    .background {
+                        Capsule()
+                            .fill(.ultraThinMaterial)
+                            .overlay(Capsule().fill(Color(uiColor: tag.tint).opacity(colorScheme == .dark ? 0.42 : 0.30)))
+                            .overlay(Capsule().stroke(Color(uiColor: tag.tint).opacity(0.95), lineWidth: 1.5))
+                            .shadow(color: .black.opacity(0.25), radius: 4, y: 1)
+                    }
+                    .position(tag.centre)
+                    .accessibilityIdentifier("mapHoverTag")
+            }
+        }
+    }
+}
+
 private struct TerritoryLabelLayer: View {
     let labels: [CanvasState.TerritoryLabelInfo]
 

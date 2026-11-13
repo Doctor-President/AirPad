@@ -309,6 +309,9 @@ enum MapHoverStillsSelfTest {
             try? FileManager.default.createDirectory(at: dir, withIntermediateDirectories: true)
             let shot = dir.appendingPathComponent("hover-\(zname)-\(look).png").path
             row("\(zname): still rendered", scene.debugRenderStill(to: shot), shot)
+            // D0.4 — the hover tag is SwiftUI now (above the region pills): the WINDOW drawn in-process shows it with the
+            // pills (a locked Mac's SKView keeps an older frame under them).
+            if let w = RunningOnMac.snapshot("hover-window-\(zname)-\(look)") { lines.append("  \(zname): window \(w)") }
             lines.append("  \(zname): camera \(String(format: "%.3f", scale)) still \(shot)")
         }
         if labelHeights.count > 1 {

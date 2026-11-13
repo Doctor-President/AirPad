@@ -1944,7 +1944,10 @@ final class CorpusPhysicsScene: SKScene {
     private var hoveredOrbID: String?
     /// Mac fix-up X2 — the hover ring + tag, children of the camera (screen space).
     private var hoverRing: SKShapeNode?
-    private var hoverLabel: SKLabelNode?
+    /// Mac D0.4 — the hover tag's title, tint and size (the tag itself is SwiftUI: `CanvasState.hoverTag`).
+    private var hoverTitle: String?
+    private var hoverTint: UIColor = .gray
+    private var hoverTagSize: CGSize = .zero
     private var hoverRingRadius: CGFloat = 0
     #if DEBUG
     /// C2 self-test: the Map on screen.
@@ -3524,7 +3527,9 @@ final class CorpusPhysicsScene: SKScene {
         titleLabel.attributedText = NSAttributedString(
             string: cluster.title,
             attributes: [
-                .font: CorpusPhysicsScene.serifFont(size: 11, weight: .medium),
+                // Mac D0.5 (T N2) — Map text follows the app font (Appearance → Font), not a fixed serif.
+                .font: (EntryBodyFont(rawValue: UserDefaults.standard.string(forKey: EntryBodyFont.defaultStorageKey) ?? "")
+                        ?? .fallback).uiFont(size: 11, weight: .medium),
                 .foregroundColor: UIColor.white.withAlphaComponent(0.85),
             ]
         )
@@ -7149,7 +7154,8 @@ extension CorpusPhysicsScene {
         guard id != hoveredOrbID else { return }
         hoveredOrbID = id
         hoverRing?.removeFromParent(); hoverRing = nil
-        hoverLabel?.removeFromParent(); hoverLabel = nil
+        hoverTitle = nil
+        if canvasState?.hoverTag != nil { canvasState?.hoverTag = nil }
         hoverRingRadius = 0
         wakeFromRest("hover")
         guard let id, nodeSprites[id] != nil else { return }
@@ -7163,27 +7169,11 @@ extension CorpusPhysicsScene {
         ring.name = "hoverRing"
         cameraNode.addChild(ring)
         hoverRing = ring
-        let title = currentNodes.first { $0.id == id }?.title ?? ""
-        if !title.isEmpty {
-            let label = SKLabelNode()
-            label.attributedText = NSAttributedString(string: title, attributes: [
-                .font: CorpusPhysicsScene.serifFont(size: 13, weight: .medium),
-                .foregroundColor: currentIsLight ? UIColor(white: 0.1, alpha: 0.9) : UIColor(white: 1, alpha: 0.92),
-            ])
-            label.verticalAlignmentMode = .center
-            label.horizontalAlignmentMode = .center
-            label.zPosition = 41
-            label.name = "hoverTitle"
-            // A soft backing in the Map's ground colour, so the tag reads over a dense field of orbs.
-            let f = label.frame.insetBy(dx: -7, dy: -3)
-            let backing = SKShapeNode(rect: CGRect(x: -f.width / 2, y: -f.height / 2, width: f.width, height: f.height),
-                                      cornerRadius: f.height / 2)
-            backing.fillColor = currentIsLight ? UIColor(white: 1, alpha: 0.85) : UIColor(white: 0.07, alpha: 0.85)
-            backing.strokeColor = .clear
-            backing.zPosition = -0.5
-            label.addChild(backing)
-            cameraNode.addChild(label)
-            hoverLabel = label
+        // Mac D0.4/D0.5 — the title tag is SwiftUI (above the region pills, in the app font); the scene places it.
+        if let node = currentNodes.first(where: { $0.id == id }), !node.title.isEmpty {
+            hoverTitle = node.title
+            hoverTint = bubbleColor(for: node)
+            hoverTagSize = MapHoverTagMetrics.size(of: node.title)
         }
         updateHoverOverlay()
     }
@@ -7201,12 +7191,17 @@ extension CorpusPhysicsScene {
             hoverRingRadius = r
         }
         ring.position = centre
-        guard let label = hoverLabel else { return }
+        guard let title = hoverTitle else { return }
         // Only while the orb's own title is too small to read: once the orb is big enough for its title, the tag would
         // just repeat it.
-        label.isHidden = 2 * radius >= Self.hoverLabelMaxOrbDiameter
-        if label.isHidden { return }
-        label.position = hoverLabelPosition(id: id, centre: centre, ringRadius: r, labelSize: label.frame.size)
+        guard 2 * radius < Self.hoverLabelMaxOrbDiameter, view != nil else {
+            if canvasState?.hoverTag != nil { canvasState?.hoverTag = nil }
+            return
+        }
+        let p = hoverLabelPosition(id: id, centre: centre, ringRadius: r, labelSize: hoverTagSize)
+        let v = convertPoint(toView: convert(p, from: cameraNode))
+        if let t = canvasState?.hoverTag, t.id == id, hypot(t.centre.x - v.x, t.centre.y - v.y) < 0.25 { return }
+        canvasState?.hoverTag = CanvasState.HoverTagInfo(id: id, title: title, tint: hoverTint, centre: v)
     }
 
     /// The hover tag shows while the orb is smaller than this on screen (pt): below it the title inside the orb is
@@ -7240,16 +7235,16 @@ extension CorpusPhysicsScene {
     /// C2 self-test hooks: drive the pointer paths exactly as the recognisers do.
     var debugCamera: (position: CGPoint, scale: CGFloat) { (cameraNode.position, cameraNode.xScale) }
     var debugHoveredOrbID: String? { hoveredOrbID }
-    var debugHoverTitle: String? { hoverLabel?.attributedText?.string }
+    var debugHoverTitle: String? { hoverTitle }
     /// X2 — the hover overlay in view points: ring centre + radius, label frame (nil when hidden).
     var debugHoverOverlay: (ringCentre: CGPoint, ringRadius: CGFloat, label: CGRect?, orbDiameter: CGFloat)? {
         guard let ring = hoverRing, let id = hoveredOrbID else { return nil }
         func toView(_ p: CGPoint) -> CGPoint { convertPoint(toView: convert(p, from: cameraNode)) }
         let c = toView(ring.position)
         var label: CGRect?
-        if let l = hoverLabel, !l.isHidden {
-            let f = l.frame, a = toView(CGPoint(x: f.minX, y: f.maxY)), b = toView(CGPoint(x: f.maxX, y: f.minY))
-            label = CGRect(x: a.x, y: a.y, width: b.x - a.x, height: b.y - a.y)
+        if let t = canvasState?.hoverTag, t.id == id {   // D0.4 — the SwiftUI tag's frame (its metrics are shared)
+            label = CGRect(x: t.centre.x - hoverTagSize.width / 2, y: t.centre.y - hoverTagSize.height / 2,
+                           width: hoverTagSize.width, height: hoverTagSize.height)
         }
         return (c, hoverRingRadius, label, nodeOnScreenDiameter[id] ?? 0)
     }
@@ -7304,7 +7299,7 @@ extension CorpusPhysicsScene {
               let img = ctx.makeImage(), let data = UIImage(cgImage: img).pngData() else { return false }
         return (try? data.write(to: URL(fileURLWithPath: path))) != nil
     }
-    var debugHoverInScreenSpace: Bool { hoverRing?.parent === cameraNode && (hoverLabel == nil || hoverLabel?.parent === cameraNode) }
+    var debugHoverInScreenSpace: Bool { hoverRing?.parent === cameraNode }
     func debugPointerPan(by t: CGPoint) { pointerPan(by: t) }
     func debugPointerHover(at p: CGPoint?) { pointerHover(at: p) }
     var debugRestPaused: Bool { restPaused }

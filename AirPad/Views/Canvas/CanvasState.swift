@@ -1,4 +1,5 @@
 import Foundation
+import UIKit
 import Observation
 import CoreGraphics
 
@@ -105,6 +106,17 @@ final class CanvasState {
     /// — same overlay pattern as the cluster labels, for the same reason (SK
     /// can't reproduce the system blur). Empty in every non-Map mode.
     var territoryLabels: [TerritoryLabelInfo] = []
+
+    /// Mac D0.4/D0.5 (T N1/N2, 2026-11-13) — the Map's hover tag: the hovered orb's title while the orb's own title is
+    /// too small to read. Drawn by SwiftUI ABOVE the region pills (`MapHoverTagLayer`), in the app font, in a pill tinted
+    /// with the orb's colour. `centre` is the tag's centre in view points. nil when none is up.
+    var hoverTag: HoverTagInfo?
+    struct HoverTagInfo: Equatable {
+        let id: String
+        let title: String
+        let tint: UIColor
+        var centre: CGPoint
+    }
 
     /// One territory name pill: its name, palette stroke color (hex literal, per
     /// the colorblind house rule), and screen-space center.

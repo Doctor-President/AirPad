@@ -39,15 +39,20 @@ struct CanvasCircleButtonLabel: View {
         }
         // Mac batch C5 hover. Mac fix-up X3: no wash shows on the "+" (its own fill is ink, and on the Mac its glass draws
         // over any overlay and ignores a tint change, measured), so the ink-filled discs lift a little (6%) instead; the
-        // switcher keeps the 5% ink wash.
+        // switcher keeps the 5% ink wash. Mac D0.6 (T N3): the lift grows the disc's OWN frame inside a fixed 60 pt box,
+        // so it grows around its centre (a scaleEffect on the glass grew from a corner: the + drifted up-left).
+        .frame(width: 60, height: 60)
         .modifier(PointerHover(shape: Circle(), opacity: inkFilled ? 0 : 0.05))
-        .scaleEffect(hovering && inkFilled ? 1.06 : 1)
         .onHover { if !PointerHover<Circle>.forced { hovering = $0 } }
         .animation(.easeOut(duration: 0.12), value: hovering)
     }
 
+    /// The hover lift (D0.6): 6% on the ink-filled discs.
+    private var lift: CGFloat { hovering && inkFilled ? 1.06 : 1 }
+
     @ViewBuilder private func glass(_ role: FloatingButtonsStyle.Role) -> some View {
-        let glyph = Image(systemName: systemName).font(.system(size: glyphSize, weight: .semibold)).frame(width: 60, height: 60)
+        let glyph = Image(systemName: systemName).font(.system(size: glyphSize * lift, weight: .semibold))
+            .frame(width: 60 * lift, height: 60 * lift)
         switch role {
         case .primary:     // ink-tinted glass, its glyph cut in onInk — the brightest disc in dark, the darkest in light
             glyph.foregroundStyle(AppearancePalette.onInk)
@@ -60,11 +65,11 @@ struct CanvasCircleButtonLabel: View {
 
     private var disc: some View {
         Image(systemName: systemName)
-            .font(.system(size: glyphSize, weight: .semibold))
+            .font(.system(size: glyphSize * lift, weight: .semibold))
             // Dark: onInk `#000000` glyph on ink `#FFFFFF` circle. Light: a cream glyph cut out of
             // a dark ink circle so it reads on cream. T art-directs via the tokens (surface 6).
             .foregroundStyle(AppearancePalette.onInk)
-            .frame(width: 60, height: 60)
+            .frame(width: 60 * lift, height: 60 * lift)
             .background(AppearancePalette.ink)
             .clipShape(Circle())
             .shadow(color: AppearancePalette.panelShadow, radius: 12, y: 4)

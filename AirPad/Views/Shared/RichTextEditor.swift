@@ -92,6 +92,10 @@ struct RichTextEditor: UIViewRepresentable {
     /// deleting paragraph 1 promotes the next paragraph live. Only notes opt in.
     var firstParagraphAsTitle: Bool = false
 
+    /// Mac fix-up X8 — the note's overlaid "..." sits over line 1 whether or not paragraph 1 is dressed as a title: keep
+    /// its corner clear (and line 1 at the collapsed row's y) for a body-weight first line too.
+    var reservesOptionsCorner: Bool = false
+
     /// Brief AZ3 — fired when the user picks "Body" in the Aa styles while the caret is
     /// in the auto-titled paragraph 1 (i.e. `firstParagraphAsTitle` is active and the
     /// paragraph has no explicit heading level). The consumer persists the explicit-Body
@@ -132,13 +136,14 @@ struct RichTextEditor: UIViewRepresentable {
         // editor puts its first line flush at the top. This top inset drops the
         // expanded first line to the SAME y so the title never jumps on fold. Only
         // for the Model-C first-paragraph-title editor; every other editor stays .zero.
-        textView.textContainerInset = firstParagraphAsTitle
+        textView.textContainerInset = (firstParagraphAsTitle || reservesOptionsCorner)
             ? UIEdgeInsets(top: 2, left: 0, bottom: 0, right: 0)
             : .zero
         // ws-entry-containers (4b) — reserve the top-right for the overlaid "..."
         // so a long title wraps around it (first line only; body stays full width).
         // 68 = the "..." button (28) + reserved grip slot (26) + gaps, from the edge.
-        textView.titleTrailingReserve = firstParagraphAsTitle ? 68 : 0
+        textView.titleTrailingReserve = (firstParagraphAsTitle || reservesOptionsCorner) ? 68 : 0
+        textView.titleReserveHeight = firstParagraphAsTitle ? 30 : nil
         textView.textContainer.lineFragmentPadding = 0
         textView.adjustsFontForContentSizeCategory = true
         textView.placeholderText = placeholder
@@ -2882,6 +2887,10 @@ final class RichTextUIView: UITextView {
         }
     }
     private var appliedExclusionContainerW: CGFloat = -1
+    /// The exclusion's height: 30 covers the 20pt title line; nil = the top half of a body-font line 1, so a
+    /// body-weight first line wraps around the "..." and line 2 keeps full width.
+    var titleReserveHeight: CGFloat? = nil
+    private var appliedExclusionHeight: CGFloat = -1
 
     /// Positions the first-line title exclusion at the container's top-right for a
     /// given proposed width, so `sizeThatFits` + display layout both account for the
@@ -2897,12 +2906,17 @@ final class RichTextUIView: UITextView {
         let containerW = width - textContainerInset.left - textContainerInset.right
             - 2 * textContainer.lineFragmentPadding
         guard containerW > titleTrailingReserve else { return }
-        if appliedExclusionContainerW == containerW { return }
-        appliedExclusionContainerW = containerW
-        // Height kept just under a full line so ONLY the title line wraps; 30pt
+        // Height kept just under a full line so ONLY the first line wraps; 30pt
         // covers the 20pt title line (entryTitlePointSize) + the 2pt top inset.
+        let lineFont = (textStorage.length > 0 ? textStorage.attribute(.font, at: 0, effectiveRange: nil) as? UIFont : nil) ?? font
+        // Body line 1: reach into its top half only (any overlap moves line 1; line 2's band, wherever the paragraph
+        // style puts it, stays clear).
+        let height = titleReserveHeight ?? textContainerInset.top + (lineFont?.lineHeight ?? 22) * 0.5
+        if appliedExclusionContainerW == containerW, appliedExclusionHeight == height { return }
+        appliedExclusionContainerW = containerW
+        appliedExclusionHeight = height
         let rect = CGRect(x: containerW - titleTrailingReserve, y: 0,
-                          width: titleTrailingReserve, height: 30)
+                          width: titleTrailingReserve, height: height)
         textContainer.exclusionPaths = [UIBezierPath(rect: rect)]
     }
 

@@ -288,6 +288,7 @@ struct TextEntryBody: View {
             onInsertImageTapped: { showPhotoPicker = true },
             // SPIKE v3 Model C — style paragraph 1 as the entry title (spine only).
             firstParagraphAsTitle: firstParagraphAsTitle,
+            reservesOptionsCorner: true,   // X8 — the "..." still floats over line 1
             // AZ3 — "Body" on the auto-titled paragraph 1 → persist the opt-out, which
             // flips `firstParagraphAsTitle` off for this item so it sticks as plain body.
             onExplicitBodyFirstParagraph: {

@@ -4053,8 +4053,8 @@ enum NoteFontChoice {
         case .sourceSerif4:
             // (axis weight, upright stem, italic stem) per vendored face. PS names
             // read from the files — `-It`/`-SemiboldIt`/`-BoldIt`, NOT `-Italic`. The
-            // note body renders at Semibold (see `NoteTypography.applyFont`), so body
-            // italic resolves to `-SemiboldIt` — both faces ship with the family.
+            // note body renders at Regular (Mac D0.3; it was Semibold), so body italic
+            // resolves to `-It`.
             let faces: [(w: CGFloat, up: String, it: String)] = [
                 (UIFont.Weight.regular.rawValue,  "Regular",  "It"),
                 (UIFont.Weight.semibold.rawValue, "Semibold", "SemiboldIt"),
@@ -4316,7 +4316,7 @@ enum NoteTypography {
         let bodySize = NoteTypographyHelper.bodyFont.pointSize * ratio
         let full = NSRange(location: 0, length: mut.length)
         var runs: [(NSRange, UIFont)] = []
-        var lift: [NSRange] = [], unlift: [NSRange] = []
+        var unlift: [NSRange] = []
         mut.enumerateAttributes(in: full, options: []) { attrs, r, _ in
             let current = (attrs[.font] as? UIFont) ?? UIFont.preferredFont(forTextStyle: .body)
             let wasLifted = (attrs[.airpadBodyLift] as? Bool) == true
@@ -4337,29 +4337,20 @@ enum NoteTypography {
             // don't set .traitBold, so the bit path drops their weight. Italic stays
             // the symbolic trait (its correct source).
             var weight = current.airpadWeightValue
-            // Source Serif's note body reads at Semibold (600): plain (Regular) body runs
-            // are lifted to the body weight; heavier runs (bold, Bold headings) keep
-            // theirs. SF Pro / New York body stays at its natural (regular) weight — no
-            // lift — so a clean sans/serif body doesn't read heavy.
-            // live-26 (3): a lifted run is marked (`.airpadBodyLift`) so `encode` stores it plain; the mark goes when the
-            // run turns heavier (a user's bold) or the face changes (the run drops back to regular).
+            // Mac D0.3 (T R-X8, 2026-11-13): the font choice changes the FACE, never the weight — Source Serif's body is
+            // Regular like every other face (it used to be lifted to Semibold). A run still carrying the old lift mark
+            // (`.airpadBodyLift`, display-only, never stored) drops back to regular; a stored bold shows Bold.
             let semibold = UIFont.Weight.semibold.rawValue
-            if choice == .sourceSerif4 {
-                if ownBold && weight >= semibold - 0.01 {
-                    weight = max(weight, UIFont.Weight.bold.rawValue)   // a stored bold shows Bold (was the body's Semibold)
-                    if wasLifted { unlift.append(r) }
-                } else if weight <= semibold + 0.01 {
-                    weight = semibold; if !wasLifted { lift.append(r) }   // the body (typed text inherits it unmarked)
-                } else if wasLifted { unlift.append(r) }                // heavier: a format-bar bold, the title face
-            } else if wasLifted {
+            if wasLifted {
                 weight = UIFont.Weight.regular.rawValue; unlift.append(r)
+            } else if choice == .sourceSerif4, ownBold, weight >= semibold - 0.01 {
+                weight = max(weight, UIFont.Weight.bold.rawValue)
             }
             guard let swapped = choice.resolveFont(size: size, weight: weight,
                                                    italic: symbolic.contains(.traitItalic)) else { return }
             runs.append((r, swapped))
         }
         for (r, f) in runs { mut.addAttribute(.font, value: f, range: r) }
-        for r in lift { mut.addAttribute(.airpadBodyLift, value: true, range: r) }
         for r in unlift { mut.removeAttribute(.airpadBodyLift, range: r) }
     }
 
@@ -4405,7 +4396,6 @@ enum NoteTypography {
                 let own = (attrs[.airpadOwnBold] as? Bool) == true
                 let italic = existing.fontDescriptor.symbolicTraits.contains(.traitItalic)
                 storage.addAttribute(.font, value: bodyWeightFont(choice: choice, italic: italic, bold: own), range: r2)
-                if choice == .sourceSerif4 && !own { storage.addAttribute(.airpadBodyLift, value: true, range: r2) }
             }
             storage.removeAttribute(.airpadTitleBold, range: r)
         }
@@ -4447,12 +4437,11 @@ enum NoteTypography {
         return (attrs[.airpadBodyLift] as? Bool) != true && (attrs[.airpadTitleBold] as? Bool) != true
     }
 
-    /// The body face at the body size and the weight `applyFont` gives the run: a plain run regular (Source Serif lifted
-    /// to semibold), a stored bold Bold.
+    /// The body face at the body size and the weight `applyFont` gives the run: a plain run regular (every face, D0.3),
+    /// a stored bold Bold.
     private static func bodyWeightFont(choice: NoteFontChoice, italic: Bool, bold: Bool = false) -> UIFont {
         let size = NoteTypographyHelper.bodyFont.pointSize * NoteTypographyHelper.bodyPointSizeRatio
-        let weight = bold ? UIFont.Weight.bold.rawValue
-            : choice == .sourceSerif4 ? UIFont.Weight.semibold.rawValue : UIFont.Weight.regular.rawValue
+        let weight = bold ? UIFont.Weight.bold.rawValue : UIFont.Weight.regular.rawValue
         return choice.resolveFont(size: size, weight: weight, italic: italic)
             ?? NoteTypographyHelper.styledFont(weight: weight, italic: italic, like: NoteTypographyHelper.bodyFont.withSize(size))
     }

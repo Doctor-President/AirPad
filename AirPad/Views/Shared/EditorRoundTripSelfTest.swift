@@ -198,7 +198,7 @@ enum NoteWeightSelfTest {
 
     static func run(store: CorpusStore, router: AppRouter) async -> String {
         var out: [String] = [], total = 0, failed = 0
-        for face in [nil, EntryBodyFont.sourceSerif4] {   // the app default, and Source Serif (its semibold body lift)
+        for face in [nil, EntryBodyFont.sourceSerif4] {   // the app default, and Source Serif (Regular body since D0.3)
             let (rows, fails) = await pass(store: store, router: router, face: face)
             out.append("  — face \(face.map { "\($0)" } ?? "default")"); out += rows
             total += rows.count; failed += fails
@@ -261,6 +261,8 @@ enum NoteWeightSelfTest {
         // 1. Default weight: paragraph 1 is body, like paragraph 3 (same size + weight), and not bold.
         row("paragraph 1 renders at the body weight, not bold", !userBold("first") && abs(weight("first") - weight("Third")) < 0.01
             && abs(size("first") - size("Third")) < 0.5, "p1 weight \(weight("first")) size \(size("first")) · p3 weight \(weight("Third")) size \(size("Third"))")
+        // Mac D0.3 (T R-X8) — the body is Regular in every face (Source Serif's was Semibold).
+        row("the body is Regular", abs(weight("Third") - UIFont.Weight.regular.rawValue) < 0.01, "p3 weight \(weight("Third"))")
         row("the stored bold renders bold", userBold("kept bold"))
         await settle(2.5)
         row("opening the note rewrote nothing", stored() == original, stored())

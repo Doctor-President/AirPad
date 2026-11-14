@@ -31,7 +31,10 @@ struct CanvasCircleButtonLabel: View {
 
     var body: some View {
         Group {
-            if let role = glassRole, FloatingButtonsStyle.isOn(reduceTransparency: reduceTransparency, increaseContrast: contrast == .increased) {
+            // Mac D0.12 (T R-SMALL) — no glass disc on the Mac: in light mode its ink tint drew pale grey under a cream
+            // glyph. The solid ink disc reads in both modes (the toolbar's + is the main one there now).
+            if let role = glassRole, !RunningOnMac.isMac,
+               FloatingButtonsStyle.isOn(reduceTransparency: reduceTransparency, increaseContrast: contrast == .increased) {
                 glass(role)
             } else {
                 disc

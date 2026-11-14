@@ -290,6 +290,15 @@ struct NodeListView: View {
                 .onFocusRequest { id in withAnimation { proxy.scrollTo(id, anchor: .center) } }
             }
         }
+        // D fix-up F4 — View › Sort List By.
+        .onChange(of: router.commandRequest) { _, request in
+            switch request?.command {
+            case .sortEdited?: sortKey = .newest
+            case .sortOldest?: sortKey = .oldest
+            case .sortTitle?: sortKey = .alphabetical
+            default: break
+            }
+        }
     }
 
     @State private var keyIndex: Int?

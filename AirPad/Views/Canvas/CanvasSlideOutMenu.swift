@@ -47,7 +47,7 @@ struct CanvasSlideOutMenu: View {
 
     var body: some View {
         ZStack(alignment: .trailing) {
-            if isPresented {
+            if isPresented && !RunningOnMac.isMac {   // D fix-up F4 — the phone's drawer never opens on the Mac
                 Color.black.opacity(0.4)
                     .ignoresSafeArea()
                     .contentShape(Rectangle())

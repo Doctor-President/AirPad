@@ -206,7 +206,7 @@ struct ContentView: View {
                     Task { @MainActor in
                         for _ in 0..<120 where store.nodes.count < 10 { try? await Task.sleep(nanoseconds: 250_000_000) }
                         try? await Task.sleep(nanoseconds: 4_000_000_000)
-                        NSLog("%@", await MacFixupSelfTest.run(store: store, router: router))
+                        NSLog("%@", await MacFixupSelfTest.run(store: store, router: router, selection: selection))
                     }
                 }
                 // Mac batch D — `-MacLayoutSelfTest`: the toolbar, sidebar and Librarian column.
@@ -813,8 +813,13 @@ struct ContentView: View {
             #if targetEnvironment(macCatalyst)
             MacLayout.shared.sidebarVisible.toggle()
             #endif
-        case .export, .back, .forward, .zoomIn, .zoomOut, .zoomFit, .editMap:
-            break
+        case .analyze:
+            store.runCorpusAnalysis(trigger: .manual)
+        case .togglePrivate:
+            if PrivateEntries.shared.revealed { PrivateEntries.shared.hide() } else { Task { await PrivateEntries.shared.reveal() } }
+        case .export, .back, .forward, .zoomIn, .zoomOut, .zoomFit, .editMap,
+             .selectEntries, .sortEdited, .sortOldest, .sortTitle, .filter, .quarantine:
+            break   // handled by the view on screen (CanvasChrome, NodeListView, …)
         }
     }
 

@@ -187,10 +187,13 @@ struct DashboardView: View {
 
                 ScrollView {
                     VStack(alignment: .leading, spacing: 28) {
-                        header
-                            .padding(.top, 6)
+                        if !RunningOnMac.isMac {   // D fix-up F4 — the logo + chats/≡ pill repeat the Mac toolbar
+                            header
+                                .padding(.top, 6)
+                        }
                         if RunningOnMac.isMac {
                             macPaneGrid   // Mac batch D4 — the panes reflow with the width
+                                .padding(.top, 16)   // D fix-up F4 — the header that sat above is gone on the Mac
                         } else {
                             todaySection
                             quickReentrySection

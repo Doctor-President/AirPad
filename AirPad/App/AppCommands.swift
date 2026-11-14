@@ -13,6 +13,8 @@ enum AppCommand: String, CaseIterable, Sendable {
     case toggleSidebar
     case back, forward, today
     case settings
+    // D fix-up F4 — the phone's ✓ ≡ pill and ≡ drawer, in the Mac's View menu.
+    case selectEntries, sortEdited, sortOldest, sortTitle, filter, analyze, togglePrivate, quarantine
 }
 
 struct AppCommands: Commands {
@@ -69,6 +71,25 @@ struct AppCommands: Commands {
             // Mac D0.7 (T N4) — Edit Map… lives in the View menu once the toolbar replaces the floating view button.
             item("Edit Map…", .editMap, "view.editMap")
                 .disabled(!mapShowing)
+            // D fix-up F4 — what the phone's floating ✓ ≡ pill and ≡ drawer held (Appearance: Settings › Appearance).
+            Divider()
+            item("Select Entries", .selectEntries, "view.select")
+                .disabled(macViewScope(router, store) == nil || store.isInDetailView)
+            Menu("Sort List By") {
+                item("Last Edited", .sortEdited, "view.sortEdited")
+                item("Oldest First", .sortOldest, "view.sortOldest")
+                item("Title", .sortTitle, "view.sortTitle")
+            }
+            .disabled(!listShowing)
+            item("Filter…", .filter, "view.filter")
+                .disabled(macViewScope(router, store) == nil || store.isInDetailView)
+            Divider()
+            item("Analyze Library", .analyze, "view.analyze")
+            item(PrivateEntries.shared.revealed ? "Hide Private Entries" : "Show Private Entries", .togglePrivate, "view.private")
+                .disabled(!PrivateEntries.shared.available)
+            if (store.quarantineStore?.entries.count ?? 0) > 0 {
+                item("Review Quarantine…", .quarantine, "view.quarantine")
+            }
             #endif
         }
         // Go
@@ -114,6 +135,15 @@ struct AppCommands: Commands {
     }
 
     private var mapShowing: Bool { router.mapShowing && !store.isInDetailView }
+    /// D fix-up F4 — the List is the view on screen (Sort List By).
+    private var listShowing: Bool {
+        #if targetEnvironment(macCatalyst)
+        guard !store.isInDetailView, let scope = macViewScope(router, store) else { return false }
+        return store.filterState(for: scope).viewMode == .list
+        #else
+        return false
+        #endif
+    }
     /// Mac D fix-up F3 — ⌘+ / ⌘− / ⌘0 size the cards while Cards is showing.
     private var cardsShowing: Bool {
         #if targetEnvironment(macCatalyst)

@@ -21,7 +21,7 @@ enum MacFixupSelfTest {
         return out
     }
 
-    static func run(store: CorpusStore, router: AppRouter) async -> String {
+    static func run(store: CorpusStore, router: AppRouter, selection: SelectionService) async -> String {
         var rows: [String] = [], fails = 0
         func row(_ name: String, _ ok: Bool, _ detail: String = "") {
             rows.append("\(ok ? "PASS" : "FAIL") \(name)" + (detail.isEmpty ? "" : " — \(detail)")); if !ok { fails += 1 }
@@ -87,6 +87,29 @@ enum MacFixupSelfTest {
         row("F3 View › Zoom Out (⌘−) shrinks them (remembered in defaults)", w2 == NodeGridView.macCardWidthDefault - NodeGridView.macCardWidthStep, "width \(Int(w2))")
         _ = MacMenuSelfTest.fire(menu: "View", title: "Zoom to Fit"); await settle(0.6)
         row("F3 ⌘0 back to the default size", UserDefaults.standard.double(forKey: key) == NodeGridView.macCardWidthDefault)
+
+        // F4 — no iPhone leftovers.
+        func has(_ label: String) -> Bool { !elements(in: window) { l, _ in l == label }.isEmpty }
+        func hasID(_ id: String) -> Bool { !elements(in: window) { _, i in i == id }.isEmpty }
+        for mode in [ViewMode.systemGraph, .list, .grid] {
+            fs = store.filterState(for: scope); fs.viewMode = mode; store.setFilterState(fs, for: scope); await settle(1.2)
+            row("F4 no floating ✓ ≡ pill on \(mode == .systemGraph ? "Map" : mode == .list ? "List" : "Cards")", !hasID("chrome.menu") && !has("Menu"))
+        }
+        let selOK = MacMenuSelfTest.fire(menu: "View", title: "Select Entries"); await settle(0.8)
+        row("F4 View › Select Entries enters selection", selOK && selection.isActive)
+        selection.exit(); await settle(0.5)
+        fs = store.filterState(for: scope); fs.viewMode = .list; store.setFilterState(fs, for: scope); await settle(1.0)
+        let sortOK = MacMenuSelfTest.fire(menu: "View", title: "Sort List By")   // a submenu: present + enabled
+        row("F4 View › Sort List By (enabled on List)", sortOK || MacMenuSelfTest.dump().contains { $0.contains("Sort List By") && !$0.contains("(disabled)") })
+        let menuText = MacMenuSelfTest.dump()
+        for t in ["Analyze Library", "Show Private Entries", "Filter…"] {
+            row("F4 View › \(t) in the menu bar", menuText.contains { $0.trimmingCharacters(in: .whitespaces).hasPrefix(t) })
+        }
+        router.entryMode = .dashboard; await settle(1.5)
+        row("F4 Today: no own logo / chats / ≡ buttons", !hasID("dashboard.menu"))
+        row("F4 Librarian: interim empty state, no launcher tiles", hasID("macLibrarianEmpty") && elements(in: window) { l, _ in l?.contains("Coming soon") == true }.isEmpty)
+        row("F4 Librarian header: chat history", hasID("macLibrarianHistory") || has("Chat history"))
+        row("F4 no phone Back bar", !has("Back to Librarian home"))
 
         let checks = rows.filter { !$0.hasPrefix("INFO") }.count
         return "[MacFixupSelfTest] \(fails == 0 ? "PASS" : "FAIL") \(checks - fails)/\(checks)\n" + rows.joined(separator: "\n")

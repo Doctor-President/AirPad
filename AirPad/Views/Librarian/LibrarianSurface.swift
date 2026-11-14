@@ -939,7 +939,7 @@ struct LibrarianSurface: View {
                 // the affordances there. The panel stays DRAGGABLE — this Capsule
                 // hosts no gesture; dragging lives on the FloatingPanel pan
                 // recognizer, so only the visual signal goes.
-                if isMacColumn && !isViewingActiveChat {
+                if isMacColumn {   // D fix-up F4 — the header stays in a chat too (history + new chat live there)
                     macColumnHeader(librarian: librarian)   // Mac batch D3 — "Librarian" + its mode switch
                 } else if !isViewingActiveChat {
                     dragGrabber(librarian: librarian)
@@ -1079,7 +1079,7 @@ struct LibrarianSurface: View {
             // `endSessionFooter` / End-session dialog — dead since the
             // Ask→ChatSession rewire — were removed 2026-08-01; the live
             // chat ends via the active-chat pill × dialog above.)
-            if isViewingActiveChat {
+            if isViewingActiveChat && !isMacColumn {   // D fix-up F4 — the Mac's way out is the header
                 backPill()
             }
         }
@@ -1995,7 +1995,11 @@ struct LibrarianSurface: View {
                             removal: .opacity))
                 }
 
-                capabilityTileGrid(librarian: librarian, singleRow: true)
+                if isMacColumn {
+                    macEmptyState   // D fix-up F4 — not the phone's launcher tiles (the final design comes from the study)
+                } else {
+                    capabilityTileGrid(librarian: librarian, singleRow: true)
+                }
 
                 // Active-chat pill — the one-tap breadcrumb back into the
                 // live conversation. Only when the chat has messages
@@ -2370,11 +2374,89 @@ struct LibrarianSurface: View {
                 .foregroundStyle(AppearancePalette.ink)
                 .accessibilityAddTraits(.isHeader)
             Spacer()
+            // D fix-up F4 — chat history and a new chat in the header (the phone's bottom Back bar is gone on the Mac).
+            if isViewingActiveChat {
+                Button {
+                    isViewingActiveChat = false   // the chat persists (as Back did); the composer starts the next one
+                } label: { Image(systemName: "square.and.pencil").font(.system(size: 14, weight: .medium)) }
+                .buttonStyle(.plain)
+                .foregroundStyle(AppearancePalette.ink.opacity(0.7))
+                .help("New chat")
+                .accessibilityLabel("New chat")
+                .accessibilityIdentifier("macLibrarianNewChat")
+            }
+            Menu {
+                ForEach(router.chatStore.chats.prefix(8)) { chat in
+                    Button(ChatsEntryBody.displayTitle(chat)) { openMacChat(chat) }
+                }
+                if !router.chatStore.chats.isEmpty { Divider() }
+                Button("All Chats…") { router.showChatsList = true }
+            } label: {
+                Image(systemName: "clock.arrow.circlepath").font(.system(size: 14, weight: .medium))
+            }
+            .menuStyle(.button)
+            .buttonStyle(.plain)
+            .menuIndicator(.hidden)
+            .fixedSize()
+            .foregroundStyle(AppearancePalette.ink.opacity(0.7))
+            .help("Chat history")
+            .accessibilityLabel("Chat history")
+            .accessibilityIdentifier("macLibrarianHistory")
             corpusModeToggle(librarian: librarian)
         }
         .padding(.horizontal, 16)
         .padding(.top, 14)
         .accessibilityIdentifier("macLibrarianHeader")
+    }
+
+    /// D fix-up F4 — a chat picked from the history continues here, in the column.
+    private func openMacChat(_ chat: Chat) {
+        router.chat.load(chat)
+        isViewingActiveChat = true
+    }
+
+    /// D fix-up F4 — the Mac's interim empty Librarian: what it does, then the recent chats. (The study decides the
+    /// final one.)
+    private var macEmptyState: some View {
+        VStack(alignment: .leading, spacing: 14) {
+            Text("Ask about anything in your library, or anything at all. Answers link back to the entries they come from.")
+                .font(appFont.font(size: 13.5))
+                .foregroundStyle(AppearancePalette.ink.opacity(0.7))
+                .fixedSize(horizontal: false, vertical: true)
+            let recent = Array(router.chatStore.chats.prefix(5))
+            if !recent.isEmpty {
+                Text("RECENT CHATS")
+                    .font(appFont.font(size: 11, weight: .semibold))
+                    .tracking(1.2)
+                    .foregroundStyle(AppearancePalette.ink.opacity(0.45))
+                    .padding(.top, 6)
+                VStack(alignment: .leading, spacing: 2) {
+                    ForEach(recent) { chat in
+                        Button { openMacChat(chat) } label: {
+                            HStack(spacing: 8) {
+                                Image(systemName: "bubble.left").font(.system(size: 12))
+                                    .foregroundStyle(AppearancePalette.ink.opacity(0.5))
+                                Text(ChatsEntryBody.displayTitle(chat))
+                                    .font(appFont.font(size: 13.5))
+                                    .foregroundStyle(AppearancePalette.ink.opacity(0.9))
+                                    .lineLimit(1)
+                                Spacer(minLength: 0)
+                            }
+                            .padding(.vertical, 6)
+                            .contentShape(Rectangle())
+                        }
+                        .buttonStyle(.plain)
+                        .pointerHover(cornerRadius: 6)
+                    }
+                    Button("All chats…") { router.showChatsList = true }
+                        .buttonStyle(.plain)
+                        .font(appFont.font(size: 13, weight: .medium))
+                        .foregroundStyle(AppearancePalette.ink.opacity(0.6))
+                        .padding(.top, 4)
+                }
+            }
+        }
+        .accessibilityIdentifier("macLibrarianEmpty")
     }
 
     /// D3 — the scope line follows the place: the open entry, a collection, or the whole library.

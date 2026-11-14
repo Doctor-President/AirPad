@@ -261,11 +261,14 @@ struct CanvasChrome: View {
                                         }
                                     }
                                     Spacer()
-                                    ChromeBar(
-                                        menuHasAttention: menuHasAttention,
-                                        onSelect: { selection.enter(scope: scope) },
-                                        onMenu: { showSlideOutMenu = true }
-                                    )
+                                    // D fix-up F4 — no floating ✓ ≡ pill on the Mac: Select and the ≡ tools are in the View menu.
+                                    if !RunningOnMac.isMac {
+                                        ChromeBar(
+                                            menuHasAttention: menuHasAttention,
+                                            onSelect: { selection.enter(scope: scope) },
+                                            onMenu: { showSlideOutMenu = true }
+                                        )
+                                    }
                                 }
                             }
                             .padding(.horizontal, 16)
@@ -463,6 +466,14 @@ struct CanvasChrome: View {
         // Mac D0.7 — View › Edit Map… (the Map's own settings, as from the view menu).
         .onChange(of: router.commandRequest) { _, request in
             if request?.command == .editMap, store.filterState(for: scope).viewMode == .systemGraph { showEditMap = true }
+            // D fix-up F4 — the ✓ ≡ pill's and ≡ drawer's tools from the View menu (this is the place on screen).
+            guard RunningOnMac.isMac, !store.isInDetailView else { return }
+            switch request?.command {
+            case .selectEntries?: selection.enter(scope: scope)
+            case .filter?: showFilterPanel = true
+            case .quarantine?: showQuarantineReview = true
+            default: break
+            }
         }
         .appSheet(isPresented: $showSettings) {
             SettingsView()

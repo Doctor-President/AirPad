@@ -111,6 +111,25 @@ enum MacFixupSelfTest {
         row("F4 Librarian header: chat history", hasID("macLibrarianHistory") || has("Chat history"))
         row("F4 no phone Back bar", !has("Back to Librarian home"))
 
+        // F5 — resizable panels (the real drag is T's check: a locked Mac takes no mouse drags).
+        let layout = MacLayout.shared
+        layout.sidebarVisible = true; layout.librarianOpen = true; await settle(0.6)
+        row("F5 drag handles on the sidebar and Librarian edges", hasID("resize.sidebar") && hasID("resize.librarian"))
+        layout.librarianWidth = 440; layout.sidebarWidth = 260; await settle(0.8)
+        let libW = elements(in: window) { _, i in i == "macLibrarianColumn" }.first?.accessibilityFrame.width ?? 0
+        let sideW = elements(in: window) { _, i in i == "macSidebar" }.first?.accessibilityFrame.width ?? 0
+        row("F5 the Librarian takes its new width", abs(libW - 440) < 2, "\(Int(libW)) pt")
+        row("F5 the sidebar takes its new width", abs(sideW - 260) < 2, "\(Int(sideW)) pt")
+        row("F5 widths remembered", UserDefaults.standard.double(forKey: MacLayout.librarianWidthKey) == 440
+            && UserDefaults.standard.double(forKey: MacLayout.sidebarWidthKey) == 260)
+        row("F5 limits: Librarian 300–520, sidebar 200–300",
+            MacLayout.clamp(700, MacLayout.librarianWidthRange) == 520 && MacLayout.clamp(100, MacLayout.librarianWidthRange) == 300
+            && MacLayout.clamp(900, MacLayout.sidebarWidthRange) == 300 && MacLayout.clamp(10, MacLayout.sidebarWidthRange) == 200)
+        layout.librarianWidth = 520; layout.sidebarWidth = 300; await settle(0.8)
+        row("F5 at 1,350 pt with both panels widest the Librarian floats (content would be 528 < 616)", layout.librarianFloats)
+        layout.librarianWidth = MacLayout.librarianWidthDefault; layout.sidebarWidth = MacLayout.sidebarWidthDefault; await settle(0.8)
+        row("F5 at the default widths it pushes in (content 756 pt)", !layout.librarianFloats)
+
         let checks = rows.filter { !$0.hasPrefix("INFO") }.count
         return "[MacFixupSelfTest] \(fails == 0 ? "PASS" : "FAIL") \(checks - fails)/\(checks)\n" + rows.joined(separator: "\n")
     }

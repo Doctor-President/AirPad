@@ -10,13 +10,23 @@ import FloatingPanel
 final class MacLayout {
     static let shared = MacLayout()
 
-    static let sidebarWidth: CGFloat = 232
-    static let librarianWidth: CGFloat = 360
-    /// Below this window width the Librarian floats over the content (rounded, glass, inset 10 pt) instead of pushing it.
-    static let librarianFloatsBelow: CGFloat = 1210
+    /// D fix-up F5 — both panels resize from their inner edge (drag the hairline); remembered.
+    static let sidebarWidthRange: ClosedRange<CGFloat> = 200...300
+    static let librarianWidthRange: ClosedRange<CGFloat> = 300...520
+    static let sidebarWidthDefault: CGFloat = 232
+    static let librarianWidthDefault: CGFloat = 360
+    /// The content column never gets narrower than this beside a pushed-in Librarian; when it would, the Librarian
+    /// floats over the content instead (rounded, glass, inset 10 pt). 616 = batch D's 1,210 pt threshold at the default
+    /// widths (1,210 − 232 − 360 − 2 hairlines), so nothing changes until a panel is resized.
+    static let contentMinWidth: CGFloat = 616
 
     private static let sidebarKey = "mac.layout.sidebar.v1"
     private static let librarianKey = "mac.layout.librarian.v1"
+    static let sidebarWidthKey = "mac.layout.sidebarWidth.v1"
+    static let librarianWidthKey = "mac.layout.librarianWidth.v1"
+
+    var sidebarWidth: CGFloat { didSet { UserDefaults.standard.set(Double(sidebarWidth), forKey: Self.sidebarWidthKey) } }
+    var librarianWidth: CGFloat { didSet { UserDefaults.standard.set(Double(librarianWidth), forKey: Self.librarianWidthKey) } }
 
     /// Shown / hidden (⌃⌘S, the toolbar button); remembered.
     var sidebarVisible: Bool { didSet { UserDefaults.standard.set(sidebarVisible, forKey: Self.sidebarKey) } }
@@ -26,7 +36,10 @@ final class MacLayout {
     var windowWidth: CGFloat = 1350
     /// D7 — the region Tab last moved to (for the self-test and the sidebar's arrow keys).
     var focusedRegion: MacRegion?
-    var librarianFloats: Bool { windowWidth < Self.librarianFloatsBelow }
+    /// F5 — follows from the widths: the content would drop below `contentMinWidth`.
+    var librarianFloats: Bool {
+        windowWidth - (sidebarVisible ? sidebarWidth + 1 : 0) - (librarianWidth + 1) < Self.contentMinWidth
+    }
 
     /// The Librarian column's panel state: always fully open — there is no FloatingPanel on the Mac, so its moves are
     /// no-ops and the surface lays out as its expanded self.
@@ -42,6 +55,10 @@ final class MacLayout {
         let d = UserDefaults.standard
         sidebarVisible = d.object(forKey: Self.sidebarKey) as? Bool ?? true
         librarianOpen = d.object(forKey: Self.librarianKey) as? Bool ?? true
+        sidebarWidth = (d.object(forKey: Self.sidebarWidthKey) as? Double).map { CGFloat($0) }
+            .map { min(max($0, Self.sidebarWidthRange.lowerBound), Self.sidebarWidthRange.upperBound) } ?? Self.sidebarWidthDefault
+        librarianWidth = (d.object(forKey: Self.librarianWidthKey) as? Double).map { CGFloat($0) }
+            .map { min(max($0, Self.librarianWidthRange.lowerBound), Self.librarianWidthRange.upperBound) } ?? Self.librarianWidthDefault
         #if DEBUG
         // Stills: `-MacSidebar on|off`, `-MacLibrarian open|closed` (not remembered).
         if let s = d.string(forKey: "MacSidebar") { sidebarVisible = s == "on" }
@@ -72,13 +89,16 @@ struct MacDesktopFrame<Content: View>: View {
         HStack(spacing: 0) {
             if layout.sidebarVisible {
                 MacSidebar()
-                    .frame(width: MacLayout.sidebarWidth)
+                    .frame(width: layout.sidebarWidth)
                     .focusable()
                     .focusEffectDisabled()
                     .focused($region, equals: .sidebar)
                     .overlay(alignment: .leading) { regionMark(.sidebar) }
                     .transition(.move(edge: .leading))
                 MacHairline()
+                    .overlay { MacResizeHandle(id: "resize.sidebar") { dx, start in
+                        layout.sidebarWidth = MacLayout.clamp(start + dx, MacLayout.sidebarWidthRange)
+                    } startValue: { layout.sidebarWidth } }
             }
             content
                 .frame(maxWidth: .infinity, maxHeight: .infinity)
@@ -88,7 +108,12 @@ struct MacDesktopFrame<Content: View>: View {
                 .overlay(alignment: .trailing) {
                     if layout.librarianOpen && layout.librarianFloats {
                         MacLibrarianColumn(hostScope: hostScope)
-                            .frame(width: MacLayout.librarianWidth)
+                            .frame(width: layout.librarianWidth)
+                            .overlay(alignment: .leading) {
+                                MacResizeHandle(id: "resize.librarian") { dx, start in
+                                    layout.librarianWidth = MacLayout.clamp(start - dx, MacLayout.librarianWidthRange)
+                                } startValue: { layout.librarianWidth }
+                            }
                             .clipShape(RoundedRectangle(cornerRadius: 14, style: .continuous))
                             .overlay(RoundedRectangle(cornerRadius: 14, style: .continuous)
                                 .strokeBorder(AppearancePalette.ink.opacity(0.10), lineWidth: 1))
@@ -99,8 +124,11 @@ struct MacDesktopFrame<Content: View>: View {
                 }
             if layout.librarianOpen && !layout.librarianFloats {
                 MacHairline()
+                    .overlay { MacResizeHandle(id: "resize.librarian") { dx, start in
+                        layout.librarianWidth = MacLayout.clamp(start - dx, MacLayout.librarianWidthRange)
+                    } startValue: { layout.librarianWidth } }
                 MacLibrarianColumn(hostScope: hostScope)
-                    .frame(width: MacLayout.librarianWidth)
+                    .frame(width: layout.librarianWidth)
                     .transition(.move(edge: .trailing))
             }
         }
@@ -145,6 +173,49 @@ struct MacDesktopFrame<Content: View>: View {
             RoundedRectangle(cornerRadius: 1.5).fill(Color.accentColor).frame(width: 3).padding(.vertical, 8)
         }
     }
+}
+
+/// D fix-up F5 — an 8 pt grab zone over a column hairline: the left–right resize cursor on hover, a drag changes the
+/// width (`apply(dx, widthAtStart)`).
+struct MacResizeHandle: View {
+    let id: String
+    let apply: (_ dx: CGFloat, _ start: CGFloat) -> Void
+    let startValue: () -> CGFloat
+    @State private var start: CGFloat?
+
+    var body: some View {
+        Color.clear
+            .frame(width: 8)
+            .contentShape(Rectangle())
+            .onHover { inside in MacCursor.resizeLeftRight(inside) }
+            .gesture(DragGesture(minimumDistance: 1, coordinateSpace: .global)
+                .onChanged { g in
+                    let s = start ?? startValue()
+                    start = s
+                    apply(g.translation.width, s)
+                }
+                .onEnded { _ in start = nil })
+            .accessibilityElement()
+            .accessibilityLabel(id == "resize.sidebar" ? "Resize the sidebar" : "Resize the Librarian")
+            .accessibilityIdentifier(id)
+    }
+}
+
+/// The AppKit resize cursor, through the runtime (Catalyst has no SwiftUI pointer style for it).
+enum MacCursor {
+    static func resizeLeftRight(_ on: Bool) {
+        guard let cls = NSClassFromString("NSCursor") as? NSObject.Type else { return }
+        if on {
+            (cls.perform(NSSelectorFromString("resizeLeftRightCursor"))?.takeUnretainedValue() as? NSObject)?
+                .perform(NSSelectorFromString("push"))
+        } else {
+            _ = cls.perform(NSSelectorFromString("pop"))
+        }
+    }
+}
+
+extension MacLayout {
+    static func clamp(_ v: CGFloat, _ r: ClosedRange<CGFloat>) -> CGFloat { min(max(v.rounded(), r.lowerBound), r.upperBound) }
 }
 
 /// A 1 pt divider between the columns, in the app's ink.
@@ -668,7 +739,7 @@ enum MacLayoutSelfTest {
                 return walk(win).map { $0.convert($0.bounds, to: win) }
             }
             row("window width measured", abs(layout.windowWidth - win.bounds.width) < 2, "layout \(layout.windowWidth) window \(win.bounds.width)")
-            row("Librarian push-in at this width", layout.librarianFloats == (win.bounds.width < 1210), "floats=\(layout.librarianFloats)")
+            row("Librarian push-in at this width", layout.librarianFloats == (win.bounds.width - (layout.sidebarVisible ? layout.sidebarWidth + 1 : 0) - layout.librarianWidth - 1 < MacLayout.contentMinWidth), "floats=\(layout.librarianFloats)")
             _ = frameOf
         }
         // 4b. D7 — Tab into the Librarian focuses its Ask field; View › Hide Sidebar (⌃⌘S) toggles the sidebar.

@@ -178,7 +178,7 @@ struct DashboardView: View {
                     .padding(.bottom, 120)
                 }
 
-                floatingPlusButton
+                if !RunningOnMac.isMac { floatingPlusButton }   // Mac batch D1 — the toolbar's + New Entry
 
                 CanvasSlideOutMenu(
                     isPresented: $showMenu,

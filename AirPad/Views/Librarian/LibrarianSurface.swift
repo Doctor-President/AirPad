@@ -178,6 +178,7 @@ struct LibrarianSurface: View {
     /// whenever a canvas-covering surface is up, regardless of where the panel
     /// physically sits. Canvas / collection-canvas show the peek as normal.
     private var panelSuppressed: Bool {
+        if isMacColumn { return false }   // Mac batch D3 — the column is there on every place
         if router.isCapturing { return true }
         switch router.entryMode {
         case .canvas, .collectionCanvas, .sampleCanvas:
@@ -267,9 +268,11 @@ struct LibrarianSurface: View {
                     let fieldOpacity: Double = isViewingActiveChat
                         ? Double(max(0, min(1, (0.5 - p) / 0.5)))
                         : 1
-                    morphingField(geo: geo, librarian: librarian, p: p)
-                        .opacity(fieldOpacity)
-                        .allowsHitTesting(fieldOpacity > 0.01)
+                    if !isMacColumn {   // Mac batch D3 — the toolbar holds the search
+                        morphingField(geo: geo, librarian: librarian, p: p)
+                            .opacity(fieldOpacity)
+                            .allowsHitTesting(fieldOpacity > 0.01)
+                    }
                 }
 
             }
@@ -290,6 +293,12 @@ struct LibrarianSurface: View {
         }
         // live-24 — the pill rim's "while answering" animation reads this.
         .environment(\.librarianGenerating, isGenerating)
+        // Mac batch D3 — the column stays mounted while the place changes: its scope follows the place.
+        .onChange(of: hostScope) { _, scope in
+            guard isMacColumn else { return }
+            router.librarian.selectedScope = scope   // (the seed's key can't tell one entry's scope from another's)
+            router.librarian.lastSeededHostKey = scope.key
+        }
         .onAppear {
             startWhisperCycle()
             seedScopeFromHostIfNeeded(librarian: librarian)
@@ -926,7 +935,9 @@ struct LibrarianSurface: View {
                 // the affordances there. The panel stays DRAGGABLE — this Capsule
                 // hosts no gesture; dragging lives on the FloatingPanel pan
                 // recognizer, so only the visual signal goes.
-                if !isViewingActiveChat {
+                if isMacColumn && !isViewingActiveChat {
+                    macColumnHeader(librarian: librarian)   // Mac batch D3 — "Librarian" + its mode switch
+                } else if !isViewingActiveChat {
                     dragGrabber(librarian: librarian)
                         .padding(.top, 6)
                 }
@@ -970,7 +981,7 @@ struct LibrarianSurface: View {
             // #1-followup item 1 — in an active chat the morphing field is
             // suppressed, so this pocket is dead space; collapse it to a small
             // gap (tunable) and let the transcript extend up into it.
-            Color.clear.frame(height: isViewingActiveChat ? cctTopGap : 62)
+            Color.clear.frame(height: isViewingActiveChat ? cctTopGap : (isMacColumn ? 0 : 62))   // Mac D3: no search slot
 
             // Brief AB2 — the scope-chip row is DELETED (T, 2026-09-21): a "Corpus"
             // chip default-selected the USER room while the user stood in the sample
@@ -1541,7 +1552,8 @@ struct LibrarianSurface: View {
                     }
                 },
                 includePrivate: false,
-                leading: AnyView(corpusModeToggle(librarian: librarian))
+                // Mac batch D3 — on the Mac the mode switch sits in the column's header.
+                leading: isMacColumn ? nil : AnyView(corpusModeToggle(librarian: librarian))
             )
             // Mac D0.11 (T N8) — on the Mac and iPad the picker is a popover on the pill (the row centres it).
             .pickerPopover(isPresented: $showModelPicker, onDismiss: modelPickerDismissed) { modelPicker(librarian) }
@@ -2276,7 +2288,7 @@ struct LibrarianSurface: View {
     /// set once from the host when the sheet opened (`seedScopeFromHostIfNeeded`).
     @ViewBuilder
     private func scopeRoomLabel(librarian: LibrarianState) -> some View {
-        Text(scopeRoomText(librarian.selectedScope))
+        Text(isMacColumn ? macScopeLine(librarian.selectedScope) : scopeRoomText(librarian.selectedScope))
             .font(appFont.font(size: 12, weight: .medium, relativeTo: .caption1))
             .foregroundStyle(AppearancePalette.ink.opacity(0.45))
             .frame(maxWidth: .infinity, alignment: .leading)
@@ -2343,6 +2355,38 @@ struct LibrarianSurface: View {
     /// `LibrarianState` so within a single host the user's explicit
     /// chip selection survives remounts. Crossing into a different
     /// host (Corpus → Reading collection, say) re-seeds.
+    /// Mac batch D3 — the Librarian as the Mac's column (no FloatingPanel): header, no in-panel search, scope follows.
+    private var isMacColumn: Bool { proxy == nil }
+
+    /// D3 — "Librarian" and its Library/General switch, where the phone's grabber is.
+    private func macColumnHeader(librarian: LibrarianState) -> some View {
+        HStack(spacing: 10) {
+            Text("Librarian")
+                .font(appFont.font(size: 17, weight: .bold))
+                .foregroundStyle(AppearancePalette.ink)
+                .accessibilityAddTraits(.isHeader)
+            Spacer()
+            corpusModeToggle(librarian: librarian)
+        }
+        .padding(.horizontal, 16)
+        .padding(.top, 14)
+        .accessibilityIdentifier("macLibrarianHeader")
+    }
+
+    /// D3 — the scope line follows the place: the open entry, a collection, or the whole library.
+    private func macScopeLine(_ scope: CanvasScope) -> String {
+        switch scope {
+        case .corpus: return "Reading your whole library"
+        case .collection: return "Reading " + scopeRoomText(scope)
+        case .nodeIDs(let ids):
+            if ids == store.sampleNodeIDs { return "Reading the Sample Library" }
+            if ids.count == 1, let id = ids.first, let n = store.nodes.first(where: { $0.id == id }) {
+                return "Reading “\(n.title.isEmpty ? "Untitled" : n.title)”"
+            }
+            return "Reading the selected entries"
+        }
+    }
+
     private func seedScopeFromHostIfNeeded(librarian: LibrarianState) {
         let key = hostScope.key
         guard librarian.lastSeededHostKey != key else { return }

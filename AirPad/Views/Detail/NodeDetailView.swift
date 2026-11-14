@@ -891,15 +891,18 @@ struct NodeDetailView: View {
         // eval shows artifacts.
         GlassRowContainer {
         HStack {
-            Button {
-                dismiss()
-            } label: {
-                Image(systemName: "chevron.left")
-                    .font(.system(size: 17, weight: .semibold))
-                    .foregroundStyle(AppearancePalette.ink.opacity(0.85))
-                    .frame(width: 48, height: 48)
-                    .contentShape(Circle())
-                    .modifier(InteractiveGlassCircle())
+            // Mac batch D1 — the toolbar's Back replaces the floating back button.
+            if !RunningOnMac.isMac {
+                Button {
+                    dismiss()
+                } label: {
+                    Image(systemName: "chevron.left")
+                        .font(.system(size: 17, weight: .semibold))
+                        .foregroundStyle(AppearancePalette.ink.opacity(0.85))
+                        .frame(width: 48, height: 48)
+                        .contentShape(Circle())
+                        .modifier(InteractiveGlassCircle())
+                }
             }
             Spacer()
             // Round 2 (scroll-collapsed band) — measure the RIGHT chrome group's

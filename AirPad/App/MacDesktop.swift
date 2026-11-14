@@ -105,17 +105,177 @@ struct MacHairline: View {
 /// D3 — the Librarian as a column: the same surface the phone's panel shows, laid out open.
 struct MacLibrarianColumn: View {
     let hostScope: CanvasScope
+    @Environment(AppRouter.self) private var router
+    @Environment(CorpusStore.self) private var store
+    /// The place the Librarian reads (its scope line follows it): the open entry, else the library / collection.
+    private var scope: CanvasScope {
+        if store.isInDetailView, let id = router.openEntryID, !router.isCapturing { return .nodeIDs([id]) }
+        return hostScope
+    }
     var body: some View {
-        LibrarianSurface(hostScope: hostScope, panelModel: MacLayout.shared.panelModel, proxy: nil)
+        LibrarianSurface(hostScope: scope, panelModel: MacLayout.shared.panelModel, proxy: nil)
             .background(AppearancePalette.bgBase)
             .accessibilityIdentifier("macLibrarianColumn")
     }
 }
 
-/// D2 — placeholder until the sidebar lands.
+/// D2 — the sidebar (232 pt): AIRPAD (Today, Recents, Chats), LIBRARIES, COLLECTIONS, JOURNALS, each with its count.
+/// A click goes there; the current place is highlighted; right-click on a collection offers what its Today menu does.
 struct MacSidebar: View {
+    @Environment(AppRouter.self) private var router
+    @Environment(CorpusStore.self) private var store
+    @Environment(\.appBodyFont) private var appFont
+    @Environment(\.colorScheme) private var scheme
+    @State private var renameTarget: NodeCollection?
+    @State private var deleteTarget: NodeCollection?
+
+    private var userNodes: [Node] { store.userNodes }
+
     var body: some View {
-        Color.clear.background(AppearancePalette.bgBase).accessibilityIdentifier("macSidebar")
+        ScrollView {
+            VStack(alignment: .leading, spacing: 2) {
+                header("AirPad")
+                row("Today", icon: "sun.max", selected: router.entryMode == .dashboard, id: "sidebar.today") {
+                    router.entryMode = .dashboard
+                }
+                row("Recents", icon: "clock", count: userNodes.count, selected: router.entryMode == .recents, id: "sidebar.recents") {
+                    router.entryMode = .recents
+                }
+                row("Chats", icon: "bubble.left.and.bubble.right", count: router.chatStore.chats.count, selected: false, id: "sidebar.chats") {
+                    router.showChatsList = true
+                }
+
+                header("Libraries")
+                row("Library", icon: "books.vertical", count: userNodes.count, selected: router.entryMode == .canvas, id: "sidebar.library") {
+                    router.entryMode = .canvas
+                }
+                if !store.sampleNodeIDs.isEmpty {
+                    row("Sample Library", icon: "sparkles.rectangle.stack",
+                        count: store.hidingPrivate(store.nodes).filter { store.isSample($0.id) }.count,
+                        selected: router.entryMode == .sampleCanvas, id: "sidebar.sample") {
+                        router.entryMode = .sampleCanvas
+                    }
+                }
+
+                let collections = store.collections.filter { !$0.isSystem }
+                if !collections.isEmpty {
+                    header("Collections")
+                    ForEach(collections) { c in
+                        row(c.name, dot: Self.dotColor(c.id, light: scheme == .light), count: count(in: c.id),
+                            selected: router.entryMode == .collectionCanvas(id: c.id), id: "sidebar.collection") {
+                            router.entryMode = .collectionCanvas(id: c.id)
+                        }
+                        .contextMenu {
+                            Button { router.entryMode = .collectionCanvas(id: c.id) } label: { Label("Open", systemImage: "arrow.right.circle") }
+                            Button { renameTarget = c } label: { Label("Rename", systemImage: "pencil") }
+                            Button(role: .destructive) { deleteTarget = c } label: { Label("Delete", systemImage: "trash") }
+                        }
+                    }
+                }
+
+                header("Journals")
+                row("Journal", dot: Self.dotColor(NodeCollection.journalID, light: scheme == .light),
+                    count: userNodes.filter { $0.journalDate != nil }.count,
+                    selected: router.entryMode == .collectionCanvas(id: NodeCollection.journalID), id: "sidebar.journal") {
+                    router.entryMode = .collectionCanvas(id: NodeCollection.journalID)
+                }
+                .contextMenu {
+                    Button { router.entryMode = .collectionCanvas(id: NodeCollection.journalID) } label: { Label("Open", systemImage: "arrow.right.circle") }
+                }
+            }
+            .padding(.horizontal, 10)
+            .padding(.vertical, 12)
+        }
+        .background(AppearancePalette.ink.opacity(scheme == .dark ? 0.03 : 0.035))
+        .background(AppearancePalette.bgBase)
+        .accessibilityIdentifier("macSidebar")
+        .sheet(item: $renameTarget) { c in
+            RenameCollectionSheet(collectionID: c.id, currentName: c.name)
+        }
+        .confirmationDialog(deleteTarget.map { "Delete \"\($0.name)\"?" } ?? "Delete collection?",
+                            isPresented: Binding(get: { deleteTarget != nil }, set: { if !$0 { deleteTarget = nil } }),
+                            titleVisibility: .visible, presenting: deleteTarget) { c in
+            Button("Delete", role: .destructive) {
+                if router.entryMode == .collectionCanvas(id: c.id) { router.entryMode = .dashboard }
+                Task { await store.deleteCollection(id: c.id) }
+            }
+            Button("Cancel", role: .cancel) {}
+        } message: { _ in
+            Text("The entries stay in your library.")
+        }
+    }
+
+    /// Entries in a collection (the Sample Library's collections hold sample entries).
+    private func count(in id: String) -> Int { store.hidingPrivate(store.nodes).filter { $0.collectionIDs.contains(id) }.count }
+
+    /// A collection has no colour of its own: a stable slot of the region palette, from its id.
+    static func dotColor(_ id: String, light: Bool) -> Color {
+        let slots = RegionPalette.currentHex(isLight: light).count
+        let h = id.unicodeScalars.reduce(UInt32(5381)) { ($0 &* 33) &+ $1.value }
+        return Color(uiColor: RegionPalette.color(isLight: light, slot: Int(h % UInt32(max(slots, 1)))))
+    }
+
+    /// Section header in AirPad's small caps style.
+    private func header(_ title: String) -> some View {
+        Text(title.uppercased())
+            .font(appFont.font(size: 11, weight: .semibold))
+            .tracking(1.2)
+            .foregroundStyle(AppearancePalette.ink.opacity(0.45))
+            .padding(.horizontal, 10)
+            .padding(.top, 16)
+            .padding(.bottom, 4)
+            .accessibilityAddTraits(.isHeader)
+    }
+
+    private func row(_ title: String, icon: String? = nil, dot: Color? = nil, count: Int? = nil, selected: Bool, id: String,
+                     action: @escaping () -> Void) -> some View {
+        MacSidebarRow(title: title, icon: icon, dot: dot, count: count, selected: selected, action: action)
+            .accessibilityIdentifier(id)
+    }
+}
+
+private struct MacSidebarRow: View {
+    let title: String
+    let icon: String?
+    let dot: Color?
+    let count: Int?
+    let selected: Bool
+    let action: () -> Void
+    @Environment(\.appBodyFont) private var appFont
+    @State private var hovering = false
+
+    var body: some View {
+        Button(action: action) {
+            HStack(spacing: 9) {
+                if let icon {
+                    Image(systemName: icon).font(.system(size: 13, weight: .medium))
+                        .foregroundStyle(AppearancePalette.ink.opacity(selected ? 0.9 : 0.6))
+                        .frame(width: 18)
+                } else if let dot {
+                    Circle().fill(dot).frame(width: 9, height: 9).frame(width: 18)
+                }
+                Text(title)
+                    .font(appFont.font(size: 14, weight: selected ? .semibold : .regular))
+                    .foregroundStyle(AppearancePalette.ink.opacity(selected ? 0.95 : 0.82))
+                    .lineLimit(1)
+                Spacer(minLength: 4)
+                if let count {
+                    Text("\(count)")
+                        .font(appFont.font(size: 12))
+                        .monospacedDigit()
+                        .foregroundStyle(AppearancePalette.ink.opacity(0.45))
+                }
+            }
+            .padding(.horizontal, 10)
+            .frame(height: 30)
+            .background(RoundedRectangle(cornerRadius: 8, style: .continuous)
+                .fill(AppearancePalette.ink.opacity(selected ? 0.12 : (hovering ? 0.05 : 0))))
+            .contentShape(Rectangle())
+        }
+        .buttonStyle(.plain)
+        .onHover { hovering = $0 }
+        .accessibilityLabel(count.map { "\(title), \($0)" } ?? title)
+        .accessibilityAddTraits(selected ? .isSelected : [])
     }
 }
 #endif

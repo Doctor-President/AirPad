@@ -255,17 +255,27 @@ struct NodeListView: View {
                         }
                         .font(appFont.font(size: 13, weight: .medium))
                         .groundInk(0.55)
-                        .padding(.horizontal, 24)
+                        .padding(.horizontal, 30)
                         .padding(.top, 18)
                         .padding(.bottom, 10)
                         .accessibilityIdentifier("macListHeader")
-                        ForEach(Array(rows.enumerated()), id: \.element.id) { index, node in
-                            MacListRow(node: node, showCollection: geo.size.width >= Self.macCollectionColumnMinWidth,
-                                       keyboardFocused: keyIndex == index, appFont: appFont) { open(node) }
-                                .id(node.id)
-                                .entryContextMenu(node)
-                                .accessibilityIdentifier("listRow-\(node.id)")
+                        // D fix-up F1 — the rows sit on the app's panel, as the iPhone's rows do (dark: the frosted
+                        // material; light: the warm elevated fill + its lift), not as bare text on the dot grid.
+                        LazyVStack(alignment: .leading, spacing: 0) {
+                            ForEach(Array(rows.enumerated()), id: \.element.id) { index, node in
+                                MacListRow(node: node, showCollection: geo.size.width - 32 >= Self.macCollectionColumnMinWidth,
+                                           keyboardFocused: keyIndex == index, appFont: appFont) { open(node) }
+                                    .id(node.id)
+                                    .entryContextMenu(node)
+                                    .accessibilityIdentifier("listRow-\(node.id)")
+                            }
                         }
+                        .padding(.vertical, 6)
+                        .background(RoundedRectangle(cornerRadius: 14, style: .continuous)
+                            .fill(colorScheme == .dark ? AnyShapeStyle(.ultraThinMaterial) : AnyShapeStyle(AppearancePalette.bgElevated))
+                            .shadow(color: AppearancePalette.listRowLift, radius: 26, x: 0, y: 11))
+                        .padding(.horizontal, 16)
+                        .accessibilityIdentifier("macListPanel")
                     }
                     .padding(.bottom, 24)
                 }

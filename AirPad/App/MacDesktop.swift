@@ -60,6 +60,8 @@ struct MacDesktopFrame<Content: View>: View {
     @ViewBuilder var content: Content
     @State private var layout = MacLayout.shared
     @FocusState private var region: MacRegion?
+    /// F2 — the toolbar's height over the window's content (the UIWindow's top safe area, 52 pt).
+    @State private var toolbarInset: CGFloat = 0
 
     /// The regions on screen, in Tab order.
     private var regions: [MacRegion] {
@@ -107,6 +109,13 @@ struct MacDesktopFrame<Content: View>: View {
                 .onAppear { layout.windowWidth = geo.size.width }
                 .onChange(of: geo.size.width) { _, w in layout.windowWidth = w }
         })
+        // D fix-up F2 — the columns start BELOW the toolbar: the window's content runs under the unified toolbar, so List
+        // rows scrolled through the view switch and the Map's top orbs and labels sat under the bar. The bar's band
+        // shows the app's ground instead (a backing, not content).
+        .padding(.top, toolbarInset)
+        .ignoresSafeArea(.container, edges: .top)
+        .background(AppearancePalette.bgBase.ignoresSafeArea())
+        .onGeometryChange(for: CGFloat.self) { $0.safeAreaInsets.top } action: { if $0 > 0 { toolbarInset = $0 } }
         .animation(.easeOut(duration: 0.2), value: layout.sidebarVisible)
         .animation(.easeOut(duration: 0.2), value: layout.librarianOpen)
         .animation(.easeOut(duration: 0.2), value: layout.librarianFloats)

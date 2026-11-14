@@ -4,8 +4,10 @@ import UIKit
 import FloatingPanel
 
 /// Mac batch D — the desktop layout, T's picks (Ops `reference/mac-layout-2026-11-07.json`): one toolbar (D1), a sidebar
-/// at 232 pt (D2), the content, and the Librarian as a push-in panel at 360 pt that floats over the content below a
-/// 1,210 pt window (D3). Mac only: iPhone and iPad keep their layout.
+/// at 232 pt (D2), the content, and the Librarian as a push-in panel that floats over the content when the window is
+/// too narrow for it (D3). Batch E (v3 picks, `reference/mac-layout-2026-11-14-v3.json`): the sidebar runs full height
+/// with the window buttons at its top, the toolbar spans the content + Librarian (E1); the Librarian opens at 370 pt
+/// (E2). Mac only: iPhone and iPad keep their layout.
 @MainActor @Observable
 final class MacLayout {
     static let shared = MacLayout()
@@ -14,10 +16,11 @@ final class MacLayout {
     static let sidebarWidthRange: ClosedRange<CGFloat> = 200...300
     static let librarianWidthRange: ClosedRange<CGFloat> = 300...520
     static let sidebarWidthDefault: CGFloat = 232
-    static let librarianWidthDefault: CGFloat = 360
+    /// Batch E2 — T's v3 pick (was 360).
+    static let librarianWidthDefault: CGFloat = 370
     /// The content column never gets narrower than this beside a pushed-in Librarian; when it would, the Librarian
-    /// floats over the content instead (rounded, glass, inset 10 pt). 616 = batch D's 1,210 pt threshold at the default
-    /// widths (1,210 − 232 − 360 − 2 hairlines), so nothing changes until a panel is resized.
+    /// floats over the content instead (rounded, glass, inset 10 pt). 616 = batch D's 1,210 pt threshold at its default
+    /// widths (1,210 − 232 − 360 − 2 hairlines); at E2's 370 pt the Librarian floats below a 1,220 pt window.
     static let contentMinWidth: CGFloat = 616
 
     private static let sidebarKey = "mac.layout.sidebar.v1"
@@ -36,6 +39,9 @@ final class MacLayout {
     var windowWidth: CGFloat = 1350
     /// D7 — the region Tab last moved to (for the self-test and the sidebar's arrow keys).
     var focusedRegion: MacRegion?
+    /// E1 — where AppKit puts the toolbar's first item (after the window buttons), in window points; measured from the
+    /// toolbar once it's on screen (`MacWindowChrome.settle`), so the title starts at the content's edge.
+    var toolbarLeadingX: CGFloat = 84
     /// F5 — follows from the widths: the content would drop below `contentMinWidth`.
     var librarianFloats: Bool {
         windowWidth - (sidebarVisible ? sidebarWidth + 1 : 0) - (librarianWidth + 1) < Self.contentMinWidth
@@ -79,6 +85,7 @@ struct MacDesktopFrame<Content: View>: View {
     @FocusState private var region: MacRegion?
     /// F2 — the toolbar's height over the window's content (the UIWindow's top safe area, 52 pt).
     @State private var toolbarInset: CGFloat = 0
+    @Environment(\.colorScheme) private var scheme
 
     /// The regions on screen, in Tab order.
     private var regions: [MacRegion] {
@@ -88,8 +95,12 @@ struct MacDesktopFrame<Content: View>: View {
     var body: some View {
         HStack(spacing: 0) {
             if layout.sidebarVisible {
+                // E1 — full height: its ground runs up under the (transparent) title bar, where the window buttons and
+                // the sidebar toggle sit; the list starts below the bar.
                 MacSidebar()
+                    .padding(.top, toolbarInset)
                     .frame(width: layout.sidebarWidth)
+                    .background { MacSidebar.ground(scheme).ignoresSafeArea() }
                     .focusable()
                     .focusEffectDisabled()
                     .focused($region, equals: .sidebar)
@@ -100,6 +111,38 @@ struct MacDesktopFrame<Content: View>: View {
                         layout.sidebarWidth = MacLayout.clamp(start + dx, MacLayout.sidebarWidthRange)
                     } startValue: { layout.sidebarWidth } }
             }
+            // E1 — the toolbar spans the content + Librarian only: its band is drawn here (AppKit's title bar is made
+            // transparent), with the hairline under it; the columns start below it (D fix-up F2).
+            VStack(spacing: 0) {
+                MacToolbarBand(height: toolbarInset).zIndex(1)
+                // The Map's scene ignores the safe area and would draw up under the (now transparent) bar.
+                columns.clipped()
+            }
+        }
+        .background(GeometryReader { geo in
+            Color.clear
+                .onAppear { layout.windowWidth = geo.size.width }
+                .onChange(of: geo.size.width) { _, w in layout.windowWidth = w }
+        })
+        .ignoresSafeArea(.container, edges: .top)
+        .background(AppearancePalette.bgBase.ignoresSafeArea())
+        .onGeometryChange(for: CGFloat.self) { $0.safeAreaInsets.top } action: { if $0 > 0 { toolbarInset = $0 } }
+        .animation(.easeOut(duration: 0.2), value: layout.sidebarVisible)
+        .animation(.easeOut(duration: 0.2), value: layout.librarianOpen)
+        .animation(.easeOut(duration: 0.2), value: layout.librarianFloats)
+        // D7 — Tab / ⇧Tab: sidebar → content → Librarian (a text field keeps its own Tab: indent, next field).
+        .onKeyPress(keys: [.tab]) { press in
+            let list = regions
+            let i = region.flatMap { list.firstIndex(of: $0) } ?? (press.modifiers.contains(.shift) ? 0 : list.count - 1)
+            let next = list[(i + (press.modifiers.contains(.shift) ? list.count - 1 : 1)) % list.count]
+            focus(next)
+            return .handled
+        }
+    }
+
+    /// Content | Librarian, under the toolbar band.
+    private var columns: some View {
+        HStack(spacing: 0) {
             content
                 .frame(maxWidth: .infinity, maxHeight: .infinity)
                 .focusable()
@@ -131,29 +174,6 @@ struct MacDesktopFrame<Content: View>: View {
                     .frame(width: layout.librarianWidth)
                     .transition(.move(edge: .trailing))
             }
-        }
-        .background(GeometryReader { geo in
-            Color.clear
-                .onAppear { layout.windowWidth = geo.size.width }
-                .onChange(of: geo.size.width) { _, w in layout.windowWidth = w }
-        })
-        // D fix-up F2 — the columns start BELOW the toolbar: the window's content runs under the unified toolbar, so List
-        // rows scrolled through the view switch and the Map's top orbs and labels sat under the bar. The bar's band
-        // shows the app's ground instead (a backing, not content).
-        .padding(.top, toolbarInset)
-        .ignoresSafeArea(.container, edges: .top)
-        .background(AppearancePalette.bgBase.ignoresSafeArea())
-        .onGeometryChange(for: CGFloat.self) { $0.safeAreaInsets.top } action: { if $0 > 0 { toolbarInset = $0 } }
-        .animation(.easeOut(duration: 0.2), value: layout.sidebarVisible)
-        .animation(.easeOut(duration: 0.2), value: layout.librarianOpen)
-        .animation(.easeOut(duration: 0.2), value: layout.librarianFloats)
-        // D7 — Tab / ⇧Tab: sidebar → content → Librarian (a text field keeps its own Tab: indent, next field).
-        .onKeyPress(keys: [.tab]) { press in
-            let list = regions
-            let i = region.flatMap { list.firstIndex(of: $0) } ?? (press.modifiers.contains(.shift) ? 0 : list.count - 1)
-            let next = list[(i + (press.modifiers.contains(.shift) ? list.count - 1 : 1)) % list.count]
-            focus(next)
-            return .handled
         }
     }
 
@@ -216,6 +236,20 @@ enum MacCursor {
 
 extension MacLayout {
     static func clamp(_ v: CGFloat, _ r: ClosedRange<CGFloat>) -> CGFloat { min(max(v.rounded(), r.lowerBound), r.upperBound) }
+}
+
+/// E1 — the toolbar's band over the content + Librarian columns: the app's ground, a faint ink wash, a hairline under
+/// it. AppKit draws the items over it (its title bar is transparent — `MacWindowChrome`).
+struct MacToolbarBand: View {
+    let height: CGFloat
+    @Environment(\.colorScheme) private var scheme
+    var body: some View {
+        AppearancePalette.ink.opacity(scheme == .dark ? 0.035 : 0.025)
+            .background(AppearancePalette.bgBase)
+            .frame(height: height)
+            .overlay(alignment: .bottom) { Rectangle().fill(AppearancePalette.ink.opacity(0.10)).frame(height: 1) }
+            .accessibilityHidden(true)
+    }
 }
 
 /// A 1 pt divider between the columns, in the app's ink.
@@ -312,8 +346,6 @@ struct MacSidebar: View {
             .padding(.horizontal, 10)
             .padding(.vertical, 12)
         }
-        .background(AppearancePalette.ink.opacity(scheme == .dark ? 0.03 : 0.035))
-        .background(AppearancePalette.bgBase)
         .accessibilityIdentifier("macSidebar")
         // D7 — with the sidebar focused, ↑ / ↓ go to the previous / next place.
         .onKeyPress(.downArrow) { step(+1); return .handled }
@@ -353,6 +385,11 @@ struct MacSidebar: View {
     private func count(in id: String) -> Int { store.hidingPrivate(store.nodes).filter { $0.collectionIDs.contains(id) }.count }
 
     static func dotColor(_ id: String, light: Bool) -> Color { CollectionDot.color(id, light: light) }
+
+    /// The sidebar's ground (full height, under the title bar too — E1).
+    static func ground(_ scheme: ColorScheme) -> some View {
+        AppearancePalette.ink.opacity(scheme == .dark ? 0.03 : 0.035).background(AppearancePalette.bgBase)
+    }
 
     /// Section header in AirPad's small caps style.
     private func header(_ title: String) -> some View {
@@ -447,7 +484,10 @@ final class MacToolbarController: NSObject, NSToolbarDelegate {
         titlebar.toolbar = toolbar
         titlebar.toolbarStyle = .unified
         titlebar.titleVisibility = .hidden
-        titlebar.separatorStyle = .line
+        // E1 — no AppKit separator or bar material: the sidebar's ground runs up under the window buttons and the band
+        // over the content + Librarian (`MacToolbarBand`) carries the hairline.
+        titlebar.separatorStyle = .none
+        MacWindowChrome.settle()
     }
 
     /// The Appearance override reaches the hosted items too (they aren't in the app's windows).
@@ -532,6 +572,86 @@ struct MacToolbarIconButton: View {
     }
 }
 
+/// E2 — the Librarian's toolbar button: its own glyph (the feather of the Ask field) and its name, highlighted while the
+/// column is open (T's v3 pick "label").
+struct MacLibrarianToolbarButton: View {
+    let open: Bool
+    let action: () -> Void
+    @State private var hovering = false
+    @Environment(\.appBodyFont) private var appFont
+    @Environment(\.colorScheme) private var scheme
+
+    var body: some View {
+        Button(action: action) {
+            HStack(spacing: 5) {
+                Image("AirPadLogo")
+                    .renderingMode(.template)
+                    .resizable()
+                    .scaledToFit()
+                    .frame(width: 20, height: 20)
+                    .foregroundStyle(open ? LibrarianPillChrome.accent(scheme) : AnyShapeStyle(AppearancePalette.ink.opacity(0.75)))
+                Text("Librarian")
+                    .font(appFont.font(size: 13, weight: .semibold))
+                    .foregroundStyle(AppearancePalette.ink.opacity(open ? 0.95 : 0.75))
+            }
+            .padding(.leading, 6)
+            .padding(.trailing, 11)
+            .frame(height: 30)
+            .background(Capsule().fill(AppearancePalette.ink.opacity(open ? 0.13 : (hovering ? 0.07 : 0))))
+            .overlay(Capsule().strokeBorder(AppearancePalette.ink.opacity(open ? 0 : 0.14), lineWidth: 1))
+            .contentShape(Capsule())
+        }
+        .buttonStyle(.plain)
+        .onHover { hovering = $0 }
+        .help("Librarian (⌘L)")
+        .accessibilityLabel("Librarian")
+        .accessibilityValue(open ? "Open" : "Closed")
+        .accessibilityAddTraits(open ? .isSelected : [])
+        .accessibilityIdentifier("toolbar.librarian")
+    }
+}
+
+/// E1 — the window's title bar through AppKit (Catalyst has no API for these): transparent, so the sidebar's ground and
+/// the toolbar band show under the window buttons and items; and where AppKit put the leading item.
+@MainActor
+enum MacWindowChrome {
+    static var nsWindow: NSObject? {
+        guard let app = (NSClassFromString("NSApplication") as? NSObject.Type)?.perform(NSSelectorFromString("sharedApplication"))?
+            .takeUnretainedValue() as? NSObject else { return nil }
+        return (app.value(forKey: "windows") as? [NSObject])?.first { String(describing: type(of: $0)).contains("UINSWindow") }
+    }
+
+    /// Applies the transparent title bar and measures the leading item, now and once the toolbar has laid out.
+    static func settle() {
+        for delay in [0.0, 0.4, 1.5] {
+            DispatchQueue.main.asyncAfter(deadline: .now() + delay) {
+                guard let w = nsWindow else { return }
+                if (w.value(forKey: "titlebarAppearsTransparent") as? Bool) != true {
+                    w.setValue(true, forKey: "titlebarAppearsTransparent")
+                }
+                if let x = leadingItemX(), x > 20, x < 200, abs(x - MacLayout.shared.toolbarLeadingX) > 0.5 {
+                    MacLayout.shared.toolbarLeadingX = x
+                }
+            }
+        }
+    }
+
+    /// The leading item's left edge in window points (its NSView's frame, summed up the view chain).
+    static func leadingItemX() -> CGFloat? {
+        guard let toolbar = nsWindow?.value(forKey: "toolbar") as? NSObject,
+              let items = toolbar.value(forKey: "items") as? [NSObject],
+              let item = items.first(where: { ($0.value(forKey: "itemIdentifier") as? String) == MacToolbarController.leadingID.rawValue }),
+              var v = item.value(forKey: "view") as? NSObject else { return nil }
+        var x: CGFloat = 0
+        for _ in 0..<40 {
+            x += (v.value(forKey: "frame") as? CGRect)?.minX ?? 0
+            guard let up = v.value(forKey: "superview") as? NSObject else { break }
+            v = up
+        }
+        return x
+    }
+}
+
 /// D1 — Map | List | Cards as AirPad's segmented pill (the toolbar's view switch).
 struct MacViewSwitch: View {
     let scope: CanvasScope
@@ -574,27 +694,82 @@ struct MacToolbarLeading: View {
     @Environment(\.appBodyFont) private var appFont
     @State private var layout = MacLayout.shared
 
+    /// E1 — with the sidebar shown, the toggle sits at the trailing end of the sidebar's top (beside the window buttons)
+    /// and ‹ › start at the content's edge; hidden, they follow the window buttons.
+    private var toggleLead: CGFloat {
+        layout.sidebarVisible ? max(0, layout.sidebarWidth - 6 - MacToolbarMetrics.toggleWidth - layout.toolbarLeadingX) : 0
+    }
+    private var afterToggle: CGFloat {
+        layout.sidebarVisible
+            ? max(4, layout.sidebarWidth + 1 + 8 - (layout.toolbarLeadingX + toggleLead + MacToolbarMetrics.toggleWidth))
+            : 4
+    }
+
     var body: some View {
-        HStack(spacing: 4) {
-            MacToolbarIconButton(systemName: "sidebar.left", help: layout.sidebarVisible ? "Hide Sidebar" : "Show Sidebar",
+        HStack(spacing: 0) {
+            Color.clear.frame(width: toggleLead, height: 1)
+            MacToolbarIconButton(systemName: "sidebar.left", help: layout.sidebarVisible ? "Hide Sidebar (⌃⌘S)" : "Show Sidebar (⌃⌘S)",
                                  id: "toolbar.sidebar") { layout.sidebarVisible.toggle() }
-            MacToolbarIconButton(systemName: "chevron.left", help: "Back", id: "toolbar.back") { router.perform(.back) }
-                .disabled(!router.canGoBack)
-            MacToolbarIconButton(systemName: "chevron.right", help: "Forward", id: "toolbar.forward") { router.perform(.forward) }
-                .disabled(!router.canGoForward)
-            Text(macPlaceTitle(router, store))
-                .font(appFont.font(size: 15, weight: .semibold))
-                .foregroundStyle(AppearancePalette.ink)
-                .lineLimit(1)
-                .padding(.leading, 8)
-                .padding(.trailing, 14)
-                .accessibilityIdentifier("toolbar.title")
-            if let scope = macViewScope(router, store), !store.isInDetailView {
-                MacViewSwitch(scope: scope)
+                .macToolbarProbe("toolbar.sidebar")
+            Color.clear.frame(width: afterToggle, height: 1)
+            HStack(spacing: 4) {
+                MacToolbarIconButton(systemName: "chevron.left", help: "Back", id: "toolbar.back") { router.perform(.back) }
+                    .disabled(!router.canGoBack)
+                    .macToolbarProbe("toolbar.back")
+                MacToolbarIconButton(systemName: "chevron.right", help: "Forward", id: "toolbar.forward") { router.perform(.forward) }
+                    .disabled(!router.canGoForward)
+                Text(macPlaceTitle(router, store))
+                    .font(appFont.font(size: 15, weight: .semibold))
+                    .foregroundStyle(AppearancePalette.ink)
+                    .lineLimit(1)
+                    .truncationMode(.tail)
+                    .frame(maxWidth: MacToolbarMetrics.titleMax(layout), alignment: .leading)
+                    .padding(.leading, 8)
+                    .padding(.trailing, 14)
+                    .accessibilityIdentifier("toolbar.title")
+                if let scope = macViewScope(router, store), !store.isInDetailView {
+                    MacViewSwitch(scope: scope)
+                }
             }
         }
         .frame(height: 36)
         .fixedSize()
+        .coordinateSpace(.named(MacToolbarProbe.space))
+        .animation(.easeOut(duration: 0.2), value: layout.sidebarVisible)
+    }
+}
+
+/// DEBUG — where the leading item's controls sit inside it (the self-test adds AppKit's item x to get window points).
+enum MacToolbarProbe {
+    static let space = "macToolbarLeading"
+    @MainActor static var x: [String: CGFloat] = [:]
+}
+
+extension View {
+    @ViewBuilder func macToolbarProbe(_ id: String) -> some View {
+        #if DEBUG
+        onGeometryChange(for: CGFloat.self) { $0.frame(in: .named(MacToolbarProbe.space)).minX } action: { MacToolbarProbe.x[id] = $0 }
+        #else
+        self
+        #endif
+    }
+}
+
+/// E1 — the toolbar's fixed sizes, and what the title / search may take at a given window width so the trailing item
+/// never spills into AppKit's overflow menu (the minimum window is 900 pt).
+@MainActor enum MacToolbarMetrics {
+    static let toggleWidth: CGFloat = 32
+    /// Search: 240 pt at a roomy window, narrower below.
+    static func searchWidth(_ l: MacLayout) -> CGFloat {
+        let room = l.windowWidth - (l.sidebarVisible ? l.sidebarWidth : 0)
+        return room >= 1000 ? 240 : (room >= 860 ? 200 : 150)
+    }
+    /// The place's title truncates first (the sidebar shows the place too).
+    static func titleMax(_ l: MacLayout) -> CGFloat {
+        let start = l.sidebarVisible ? l.sidebarWidth + 9 : l.toolbarLeadingX + toggleWidth + 4
+        // ‹ › 68 · title padding 22 · view switch ~205 · trailing (search + Librarian + + + gaps) · margins 40
+        let rest = start + 68 + 22 + 205 + searchWidth(l) + 170 + 40
+        return max(40, min(260, l.windowWidth - rest))
     }
 }
 
@@ -635,12 +810,11 @@ struct MacToolbarTrailing: View {
                 }
             }
             .padding(.horizontal, 10)
-            .frame(width: 240, height: 30)
+            .frame(width: MacToolbarMetrics.searchWidth(layout), height: 30)
             .background(Capsule().fill(AppearancePalette.ink.opacity(searchFocused ? 0.10 : 0.06)))
             .overlay(Capsule().stroke(AppearancePalette.ink.opacity(searchFocused ? 0.25 : 0), lineWidth: 1))
             .padding(.trailing, 4)
-            MacToolbarIconButton(systemName: "sidebar.right", help: layout.librarianOpen ? "Hide Librarian" : "Show Librarian",
-                                 active: layout.librarianOpen, id: "toolbar.librarian") { router.perform(.librarian) }
+            MacLibrarianToolbarButton(open: layout.librarianOpen) { router.perform(.librarian) }
             MacToolbarIconButton(systemName: "plus", help: "New Entry", id: "toolbar.newEntry") { router.perform(.newEntry) }
         }
         .frame(height: 36)
@@ -781,6 +955,43 @@ enum MacLayoutSelfTest {
             let floats = labels.filter { $0.hasPrefix("View: ") || $0.hasSuffix(" View") || $0 == "#captureButton" }
             row("no floating view button / + / back over the content", floats.isEmpty, "found \(floats)")
         }
+        // 7. Batch E1 — the sidebar runs full height: a transparent title bar, no AppKit separator, ‹ › start at the
+        //    content's edge (sidebar shown) or after the toggle (hidden), and the toolbar never overflows at 900–1,920 pt.
+        row("E1 title bar transparent", (nsWindow?.value(forKey: "titlebarAppearsTransparent") as? Bool) == true)
+        row("E1 no AppKit separator", scene?.titlebar?.separatorStyle == UITitlebarSeparatorStyle.none)
+        let ax = MacWindowChrome.leadingItemX()
+        row("E1 leading item measured (AppKit)", ax != nil && abs((ax ?? 0) - layout.toolbarLeadingX) < 1,
+            "AppKit x \(ax.map { String(format: "%.1f", $0) } ?? "nil") · layout \(layout.toolbarLeadingX)")
+        func hostX(_ id: String) -> CGFloat? { MacToolbarProbe.x[id].map { $0 + (MacWindowChrome.leadingItemX() ?? layout.toolbarLeadingX) } }
+        func visibleIDs() -> [String] {
+            ((nsWindow?.value(forKey: "toolbar") as? NSObject)?.value(forKey: "visibleItems") as? [NSObject] ?? [])
+                .compactMap { $0.value(forKey: "itemIdentifier") as? String }
+        }
+        let sidebarWas = layout.sidebarVisible, libWas = layout.librarianOpen
+        if let r = scene?.sizeRestrictions, let ws = scene {
+            let (minWas, maxWas) = (r.minimumSize, r.maximumSize)
+            for width in [1350, 1180, 900, 1920] as [CGFloat] {
+                let size = CGSize(width: width, height: 840)
+                r.minimumSize = size; r.maximumSize = size
+                var origin = ws.effectiveGeometry.systemFrame.origin; origin.x = max(0, min(origin.x, ws.screen.bounds.width - width))
+                ws.requestGeometryUpdate(.Mac(systemFrame: CGRect(origin: origin, size: size)))
+                await settle(1.2)
+                for side in [true, false] {
+                    layout.sidebarVisible = side; layout.librarianOpen = true; await settle(0.9)
+                    let ids = visibleIDs()
+                    let back = hostX("toolbar.back"), toggle = hostX("toolbar.sidebar")
+                    let want = side ? layout.sidebarWidth + 9 : layout.toolbarLeadingX + MacToolbarMetrics.toggleWidth + 4
+                    let ok = ids.contains(MacToolbarController.leadingID.rawValue) && ids.contains(MacToolbarController.trailingID.rawValue)
+                        && back.map { abs($0 - want) <= 3 } == true
+                        && (!side || toggle.map { $0 + MacToolbarMetrics.toggleWidth <= layout.sidebarWidth } == true)
+                    row("E1 \(Int(layout.windowWidth)) pt, sidebar \(side ? "on" : "off"): both items visible, ‹ at \(side ? "the content's edge" : "the toggle")", ok,
+                        "visible \(ids.count) · ‹ x \(back.map { String(format: "%.0f", $0) } ?? "nil") want \(Int(want)) · toggle x \(toggle.map { String(format: "%.0f", $0) } ?? "nil") · title max \(Int(MacToolbarMetrics.titleMax(layout))) · search \(Int(MacToolbarMetrics.searchWidth(layout)))")
+                }
+            }
+            r.minimumSize = minWas; r.maximumSize = maxWas
+        }
+        layout.sidebarVisible = sidebarWas; layout.librarianOpen = libWas; await settle(0.6)
+
         return "[MacLayoutSelfTest] \(fails == 0 ? "PASS" : "FAIL") — \(rows.count - fails)/\(rows.count)\n" + rows.joined(separator: "\n")
     }
 

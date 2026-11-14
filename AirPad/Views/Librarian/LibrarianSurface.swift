@@ -993,9 +993,9 @@ struct LibrarianSurface: View {
             // the sheet's swipe gesture. Scope is now set ONCE from the room when the
             // sheet opens (`seedScopeFromHostIfNeeded`) and cannot change inside the
             // sheet. All that remains is a NON-interactive READABLE label of the room.
-            if !isViewingActiveChat {
+            if !isViewingActiveChat || isMacColumn {   // E2 — the Mac's scope line stays in a chat too
                 scopeRoomLabel(librarian: librarian)
-                    .padding(.top, 12)   // Brief AC4 — ≥12pt below the search field (was flush)
+                    .padding(.top, isViewingActiveChat ? 2 : 12)   // Brief AC4 — ≥12pt below the search field (was flush)
                     .padding(.bottom, 8)
             }
 
@@ -2370,25 +2370,33 @@ struct LibrarianSurface: View {
     /// Mac batch D3 — the Librarian as the Mac's column (no FloatingPanel): header, no in-panel search, scope follows.
     private var isMacColumn: Bool { proxy == nil }
 
-    /// D3 — "Librarian" and its Library/General switch, where the phone's grabber is.
+    /// D3 — "Librarian" and its Library/General switch, where the phone's grabber is. Batch E2 (T's v3 pick): its glyph
+    /// (the Ask field's feather) · "Librarian" · Library/General · New chat · Chat history; the scope line below.
     private func macColumnHeader(librarian: LibrarianState) -> some View {
         HStack(spacing: 10) {
+            Image("AirPadLogo")
+                .renderingMode(.template)
+                .resizable()
+                .scaledToFit()
+                .frame(width: 24, height: 24)
+                .foregroundStyle(LibrarianPillChrome.accent(colorScheme))
+                .accessibilityHidden(true)
             Text("Librarian")
                 .font(appFont.font(size: 17, weight: .bold))
                 .foregroundStyle(AppearancePalette.ink)
                 .accessibilityAddTraits(.isHeader)
-            Spacer()
+            Spacer(minLength: 4)
+            corpusModeToggle(librarian: librarian)
             // D fix-up F4 — chat history and a new chat in the header (the phone's bottom Back bar is gone on the Mac).
-            if isViewingActiveChat {
-                Button {
-                    isViewingActiveChat = false   // the chat persists (as Back did); the composer starts the next one
-                } label: { Image(systemName: "square.and.pencil").font(.system(size: 14, weight: .medium)) }
-                .buttonStyle(.plain)
-                .foregroundStyle(AppearancePalette.ink.opacity(0.7))
-                .help("New chat")
-                .accessibilityLabel("New chat")
-                .accessibilityIdentifier("macLibrarianNewChat")
-            }
+            Button {
+                isViewingActiveChat = false   // the chat persists (as Back did); the composer starts the next one
+            } label: { Image(systemName: "square.and.pencil").font(.system(size: 14, weight: .medium)).frame(width: 26, height: 26) }
+            .buttonStyle(.plain)
+            .foregroundStyle(AppearancePalette.ink.opacity(isViewingActiveChat ? 0.7 : 0.3))
+            .disabled(!isViewingActiveChat)
+            .help("New chat")
+            .accessibilityLabel("New chat")
+            .accessibilityIdentifier("macLibrarianNewChat")
             Menu {
                 ForEach(router.chatStore.chats.prefix(8)) { chat in
                     Button(ChatsEntryBody.displayTitle(chat)) { openMacChat(chat) }
@@ -2396,7 +2404,7 @@ struct LibrarianSurface: View {
                 if !router.chatStore.chats.isEmpty { Divider() }
                 Button("All Chats…") { router.showChatsList = true }
             } label: {
-                Image(systemName: "clock.arrow.circlepath").font(.system(size: 14, weight: .medium))
+                Image(systemName: "clock").font(.system(size: 14, weight: .medium)).frame(width: 26, height: 26)
             }
             .menuStyle(.button)
             .buttonStyle(.plain)
@@ -2406,7 +2414,6 @@ struct LibrarianSurface: View {
             .help("Chat history")
             .accessibilityLabel("Chat history")
             .accessibilityIdentifier("macLibrarianHistory")
-            corpusModeToggle(librarian: librarian)
         }
         .padding(.horizontal, 16)
         .padding(.top, 14)
@@ -2419,48 +2426,107 @@ struct LibrarianSurface: View {
         isViewingActiveChat = true
     }
 
-    /// D fix-up F4 — the Mac's interim empty Librarian: what it does, then the recent chats. (The study decides the
-    /// final one.)
+    /// Batch E2 — the first open (no chat yet), T's v3 pick: one line on what it does, a few questions to try (they ask
+    /// in Library mode, about the place the Librarian reads), the recent chats.
     private var macEmptyState: some View {
-        VStack(alignment: .leading, spacing: 14) {
+        let librarian = router.librarian
+        return VStack(alignment: .leading, spacing: 10) {
             Text("Ask about anything in your library, or anything at all. Answers link back to the entries they come from.")
                 .font(appFont.font(size: 13.5))
-                .foregroundStyle(AppearancePalette.ink.opacity(0.7))
+                .foregroundStyle(AppearancePalette.ink.opacity(0.75))
                 .fixedSize(horizontal: false, vertical: true)
-            let recent = Array(router.chatStore.chats.prefix(5))
-            if !recent.isEmpty {
-                Text("RECENT CHATS")
-                    .font(appFont.font(size: 11, weight: .semibold))
-                    .tracking(1.2)
-                    .foregroundStyle(AppearancePalette.ink.opacity(0.45))
-                    .padding(.top, 6)
-                VStack(alignment: .leading, spacing: 2) {
-                    ForEach(recent) { chat in
+            macSectionLabel("Try")
+            VStack(alignment: .leading, spacing: 6) {
+                ForEach(macTryQuestions(librarian.selectedScope), id: \.self) { q in
+                    Button { sendCalloutQuestion(q, librarian: librarian) } label: {
+                        Text(q)
+                            .font(appFont.font(size: 13))
+                            .foregroundStyle(AppearancePalette.ink.opacity(0.9))
+                            .multilineTextAlignment(.leading)
+                            .fixedSize(horizontal: false, vertical: true)
+                            .frame(maxWidth: .infinity, alignment: .leading)
+                            .padding(.horizontal, 11)
+                            .padding(.vertical, 8)
+                            .background(RoundedRectangle(cornerRadius: 10, style: .continuous)
+                                .fill(AppearancePalette.ink.opacity(0.04)))
+                            .overlay(RoundedRectangle(cornerRadius: 10, style: .continuous)
+                                .strokeBorder(AppearancePalette.ink.opacity(0.12), lineWidth: 1))
+                            .contentShape(RoundedRectangle(cornerRadius: 10, style: .continuous))
+                    }
+                    .buttonStyle(.plain)
+                    .pointerHover(cornerRadius: 10)
+                    .disabled(librarian.askUnavailable)
+                    .accessibilityIdentifier("macLibrarianTry")
+                }
+            }
+            let chats = router.chatStore.chats
+            if !chats.isEmpty {
+                macSectionLabel("Recent chats")
+                VStack(alignment: .leading, spacing: 0) {
+                    ForEach(chats.prefix(3)) { chat in
                         Button { openMacChat(chat) } label: {
                             HStack(spacing: 8) {
-                                Image(systemName: "bubble.left").font(.system(size: 12))
-                                    .foregroundStyle(AppearancePalette.ink.opacity(0.5))
                                 Text(ChatsEntryBody.displayTitle(chat))
-                                    .font(appFont.font(size: 13.5))
+                                    .font(appFont.font(size: 13))
                                     .foregroundStyle(AppearancePalette.ink.opacity(0.9))
                                     .lineLimit(1)
-                                Spacer(minLength: 0)
+                                Spacer(minLength: 4)
+                                Text(chat.updatedAt.formatted(.relative(presentation: .numeric, unitsStyle: .narrow)))
+                                    .font(appFont.font(size: 12))
+                                    .monospacedDigit()
+                                    .foregroundStyle(AppearancePalette.ink.opacity(0.45))
                             }
-                            .padding(.vertical, 6)
+                            .padding(.vertical, 7)
+                            .overlay(alignment: .top) { Rectangle().fill(AppearancePalette.ink.opacity(0.08)).frame(height: 1) }
                             .contentShape(Rectangle())
                         }
                         .buttonStyle(.plain)
-                        .pointerHover(cornerRadius: 6)
+                        .accessibilityIdentifier("macLibrarianRecentChat")
                     }
-                    Button("All chats…") { router.showChatsList = true }
-                        .buttonStyle(.plain)
-                        .font(appFont.font(size: 13, weight: .medium))
+                    Button { router.showChatsList = true } label: {
+                        HStack {
+                            Text("All chats").font(appFont.font(size: 13, weight: .medium))
+                            Spacer(minLength: 4)
+                            Text("\(chats.count) ›").font(appFont.font(size: 12)).monospacedDigit()
+                        }
                         .foregroundStyle(AppearancePalette.ink.opacity(0.6))
-                        .padding(.top, 4)
+                        .padding(.vertical, 7)
+                        .overlay(alignment: .top) { Rectangle().fill(AppearancePalette.ink.opacity(0.08)).frame(height: 1) }
+                        .contentShape(Rectangle())
+                    }
+                    .buttonStyle(.plain)
+                    .accessibilityIdentifier("macLibrarianAllChats")
                 }
             }
         }
         .accessibilityIdentifier("macLibrarianEmpty")
+    }
+
+    private func macSectionLabel(_ title: String) -> some View {
+        Text(title.uppercased())
+            .font(appFont.font(size: 11, weight: .semibold))
+            .tracking(1.2)
+            .foregroundStyle(AppearancePalette.ink.opacity(0.45))
+            .padding(.top, 8)
+            .accessibilityAddTraits(.isHeader)
+    }
+
+    /// E2 — questions that fit the place: the Sample Library's own (its first-run card), one entry, a collection, the
+    /// whole library.
+    private func macTryQuestions(_ scope: CanvasScope) -> [String] {
+        switch scope {
+        case .nodeIDs(let ids) where ids == store.sampleNodeIDs:
+            return FirstRunCalloutKey.librarianSample.content.actions
+        case .nodeIDs(let ids) where ids.count == 1:
+            return ["Summarise this entry", "What else in my library connects to this?", "What does this entry leave open?"]
+        case .collection(let id):
+            let name = scopeRoomText(scope)
+            return id == NodeCollection.journalID
+                ? ["What keeps coming up in my Journal?", "Summarise my recent Journal entries", "How have my moods changed lately?"]
+                : ["What's in \(name)?", "Summarise \(name)", "What keeps coming up in \(name)?"]
+        default:
+            return ["What are the main topics in my library?", "Summarise my most recent entries", "What keeps coming up in my Journal?"]
+        }
     }
 
     /// D3 — the scope line follows the place: the open entry, a collection, or the whole library.

@@ -2417,6 +2417,7 @@ struct LibrarianSurface: View {
         }
         .padding(.horizontal, 16)
         .padding(.top, 14)
+        .accessibilityElement(children: .contain)
         .accessibilityIdentifier("macLibrarianHeader")
     }
 
@@ -2499,6 +2500,7 @@ struct LibrarianSurface: View {
                 }
             }
         }
+        .accessibilityElement(children: .contain)
         .accessibilityIdentifier("macLibrarianEmpty")
     }
 

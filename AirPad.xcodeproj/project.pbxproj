@@ -260,6 +260,7 @@
 		8C733440249680712EED9AAE /* NodeGridView.swift in Sources */ = {isa = PBXBuildFile; fileRef = E72BAB0716ACA80A097CBF4F /* NodeGridView.swift */; };
 		8C816C9A65368BD8D812CFFB /* FieldKind.swift in Sources */ = {isa = PBXBuildFile; fileRef = 6EDDB291F9F6170B93CE084E /* FieldKind.swift */; };
 		8C96AD497D0109F8061A0BB6 /* NodeListView.swift in Sources */ = {isa = PBXBuildFile; fileRef = 4D539DCAE9FDB57420DF7460 /* NodeListView.swift */; };
+		8D357FA2CB55E52BD3C5E6B6 /* MacBatchESelfTest.swift in Sources */ = {isa = PBXBuildFile; fileRef = 4AF71451D2C050C5BB0CCBA9 /* MacBatchESelfTest.swift */; };
 		8D6452684E76A0BC003DB116 /* RecorderRender.swift in Sources */ = {isa = PBXBuildFile; fileRef = 87ABAE5EF1669794E0C9F8F8 /* RecorderRender.swift */; };
 		8D93AB74B120515EE87D5A07 /* DocumentGalleryBody.swift in Sources */ = {isa = PBXBuildFile; fileRef = 03D5CDD92B068C0BDB141317 /* DocumentGalleryBody.swift */; };
 		8D99DC4617A52B993992A45E /* PlaybackAudioSession.swift in Sources */ = {isa = PBXBuildFile; fileRef = DC64642A8AD34593133AC155 /* PlaybackAudioSession.swift */; };
@@ -669,6 +670,7 @@
 		495540C7C08695DEA4B137D3 /* DocumentGalleryTile.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = DocumentGalleryTile.swift; sourceTree = "<group>"; };
 		496C87CE26D129958AA115EF /* EntryMigration.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = EntryMigration.swift; sourceTree = "<group>"; };
 		497A2D223E494E948D445DFF /* NodeGradientBackground.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = NodeGradientBackground.swift; sourceTree = "<group>"; };
+		4AF71451D2C050C5BB0CCBA9 /* MacBatchESelfTest.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = MacBatchESelfTest.swift; sourceTree = "<group>"; };
 		4B68E039D40EC6C7742E3CC7 /* CardSurface.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = CardSurface.swift; sourceTree = "<group>"; };
 		4B75F1FFD1DCE98C8955DBFB /* MacDesktop.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = MacDesktop.swift; sourceTree = "<group>"; };
 		4BBD207713633D26703AEE75 /* AppearanceTunerUI.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = AppearanceTunerUI.swift; sourceTree = "<group>"; };
@@ -1580,6 +1582,7 @@
 				3B1822A03D5407145464AB94 /* AppRouter.swift */,
 				194292F01A21193B880F16FA /* ContentView.swift */,
 				110A3E2E3A7FE4D20CCEA45E /* EntryMenuSelfTest.swift */,
+				4AF71451D2C050C5BB0CCBA9 /* MacBatchESelfTest.swift */,
 				4B75F1FFD1DCE98C8955DBFB /* MacDesktop.swift */,
 				370BA8F4AD4732AD0F6E1018 /* MacFixupSelfTest.swift */,
 				3773385430F4EE5C69E66E12 /* MacMenuSelfTest.swift */,
@@ -2303,6 +2306,7 @@
 				8B123FFA9CC1CE3B3C739AE3 /* LocalModelService.swift in Sources */,
 				1C7BD8D8DAED08D89F04F795 /* LongPressDragRecognizer.swift in Sources */,
 				BB9BDB30E58DC2856238105B /* MSDFLabel.swift in Sources */,
+				8D357FA2CB55E52BD3C5E6B6 /* MacBatchESelfTest.swift in Sources */,
 				05FD14E104D9CDCA47A884EC /* MacDesktop.swift in Sources */,
 				5AFB3DA829E4D444AE74108C /* MacEnrichServerSelfTest.swift in Sources */,
 				6ABE6214365D588647344F6C /* MacFixupSelfTest.swift in Sources */,

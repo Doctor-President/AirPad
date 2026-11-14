@@ -20,6 +20,10 @@ struct TodayCardView: View {
     let recentNodes: [Node]
     let onJournalPromptTap: () -> Void
     let onRecentTap: (Node) -> Void
+    /// Mac batch E3 — the compact home's first pane: the date (with a note beside it) and the journal field; the
+    /// activity has its own pane there.
+    var showsActivity = true
+    var dateNote: String? = nil
 
     @Environment(\.colorScheme) private var colorScheme
     /// Brief BF — Today's date, eyebrows, journal prompt and activity titles follow the
@@ -30,19 +34,23 @@ struct TodayCardView: View {
         now: Date = Date(),
         recentNodes: [Node] = [],
         onJournalPromptTap: @escaping () -> Void = {},
-        onRecentTap: @escaping (Node) -> Void = { _ in }
+        onRecentTap: @escaping (Node) -> Void = { _ in },
+        showsActivity: Bool = true,
+        dateNote: String? = nil
     ) {
         self.now = now
         self.recentNodes = recentNodes
         self.onJournalPromptTap = onJournalPromptTap
         self.onRecentTap = onRecentTap
+        self.showsActivity = showsActivity
+        self.dateNote = dateNote
     }
 
     var body: some View {
         VStack(alignment: .leading, spacing: 18) {
             dateHeader
             journalPrompt
-            activityLog
+            if showsActivity { activityLog }
         }
         .padding(20)
         .frame(maxWidth: .infinity, alignment: .leading)
@@ -61,9 +69,17 @@ struct TodayCardView: View {
                 .dashSecondaryInk(0.4)
                 .textCase(.uppercase)
                 .tracking(0.8)
-            Text(longDate(now))
-                .font(appFont.font(size: 22, weight: .semibold))
-                .foregroundStyle(AppearancePalette.ink)
+            HStack(alignment: .firstTextBaseline) {
+                Text(longDate(now))
+                    .font(appFont.font(size: 22, weight: .semibold))
+                    .foregroundStyle(AppearancePalette.ink)
+                if let dateNote {
+                    Spacer(minLength: 8)
+                    Text(dateNote)
+                        .font(appFont.font(size: 13))
+                        .dashSecondaryInk(0.5)
+                }
+            }
         }
     }
 

@@ -162,21 +162,136 @@ struct DashboardView: View {
     /// Mac batch D4 — the Dashboard's width, for its pane grid.
     @State private var macWidth: CGFloat = 0
 
-    /// Mac batch D4 — Today's panes in columns that reflow: 3 at ≥ 1,150 pt, 2 at ≥ 760, else 1 (filled in turn).
-    private var macPaneGrid: some View {
-        let columns = macWidth >= 1150 ? 3 : (macWidth >= 760 ? 2 : 1)
-        var panes: [AnyView] = [AnyView(todaySection), AnyView(quickReentrySection)]
-        if store.sampleLibraryPresent { panes.append(AnyView(samplePane)) }
-        panes.append(AnyView(collectionsSection))
-        return HStack(alignment: .top, spacing: 20) {
-            ForEach(0..<columns, id: \.self) { c in
-                VStack(alignment: .leading, spacing: 28) {
-                    ForEach(Array(panes.enumerated()).filter { $0.offset % columns == c }, id: \.offset) { $0.element }
+    /// Mac batch E3 — Today on the Mac, T's v3 pick "compact": one column (max 860 pt) centred on the Dashboard's ground —
+    /// the date with the journal field; Activity | Priority side by side (stacked under ~700 pt); "Pick up again" = the
+    /// next three recent entries as small hero tiles (Activity already lists the latest three). No collections: the
+    /// sidebar lists them (the Sample Library's remove lives in Settings › Sample Library).
+    private var macCompactHome: some View {
+        let recent = macHomeNodes.sorted { $0.updatedAt > $1.updatedAt }
+        let today = macHomeNodes.filter { Calendar.current.isDateInToday($0.createdAt) }.count
+        let pickUp = Array(recent.dropFirst(3).prefix(3))
+        let side = macWidth >= 700
+        return VStack(alignment: .leading, spacing: 14) {
+            TodayCardView(recentNodes: [], onJournalPromptTap: openTodayJournal, onRecentTap: { push(.node($0)) },
+                          showsActivity: false,
+                          dateNote: today == 0 ? nil : (today == 1 ? "1 entry today" : "\(today) entries today"))
+            let activity = macActivityPane(Array(recent.prefix(3)))
+            if side {
+                HStack(alignment: .top, spacing: 14) { activity; macPriorityPane }
+                    .fixedSize(horizontal: false, vertical: true)
+            } else {
+                activity
+                macPriorityPane
+            }
+            if !pickUp.isEmpty { macPickUpPane(pickUp) }
+        }
+        .frame(maxWidth: 860)
+        .frame(maxWidth: .infinity)
+        .accessibilityElement(children: .contain)
+        .accessibilityIdentifier("macTodayHome-\(side ? 2 : 1)")
+    }
+
+    /// The entries Today reads: the user's own (the sample has its own place). DEBUG `-MacTodaySample YES` reads the
+    /// Sample Library instead, for stills of a fresh scratch.
+    private var macHomeNodes: [Node] {
+        #if DEBUG
+        if UserDefaults.standard.bool(forKey: "MacTodaySample") { return store.hidingPrivate(store.nodes).filter { store.isSample($0.id) } }
+        #endif
+        return store.userNodes
+    }
+
+    private func macPaneLabel(_ text: String) -> some View {
+        Text(text)
+            .font(appFont.font(size: 12, weight: .semibold, relativeTo: .caption1))
+            .dashSecondaryInk(0.4)
+            .textCase(.uppercase)
+            .tracking(0.8)
+    }
+
+    private func macPaneRow(_ title: String, trailing: String?, action: @escaping () -> Void) -> some View {
+        Button(action: action) {
+            HStack(spacing: 10) {
+                Text(title)
+                    .font(appFont.font(size: 14))
+                    .dashSecondaryInk(0.85)
+                    .lineLimit(1)
+                Spacer(minLength: 6)
+                if let trailing {
+                    Text(trailing)
+                        .font(appFont.font(size: 12))
+                        .monospacedDigit()
+                        .dashSecondaryInk(0.45)
+                        .lineLimit(1)
                 }
-                .frame(maxWidth: .infinity, alignment: .top)
+            }
+            .padding(.vertical, 8)
+            .contentShape(Rectangle())
+        }
+        .buttonStyle(.plain)
+    }
+
+    private func macActivityPane(_ nodes: [Node]) -> some View {
+        VStack(alignment: .leading, spacing: 4) {
+            macPaneLabel("Activity").padding(.bottom, 4)
+            if nodes.isEmpty {
+                Text("No recent activity").font(appFont.font(size: 14)).dashSecondaryInk(0.4).padding(.vertical, 8)
+            } else {
+                ForEach(nodes) { node in
+                    macPaneRow(node.title.isEmpty ? (node.untitledDisplayText ?? "Untitled") : node.title,
+                               trailing: node.updatedAt.formatted(.relative(presentation: .numeric, unitsStyle: .narrow))) {
+                        push(.node(node))
+                    }
+                }
+            }
+            Spacer(minLength: 0)
+        }
+        .padding(18)
+        .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .topLeading)
+        .dashboardPaneSurface()
+        .accessibilityElement(children: .contain)
+        .accessibilityIdentifier("macTodayActivity")
+    }
+
+    private var macPriorityPane: some View {
+        let flagged = store.priorityNodes
+        return VStack(alignment: .leading, spacing: 4) {
+            macPaneLabel("Priority").padding(.bottom, 4)
+            if flagged.isEmpty {
+                Text("Nothing flagged").font(appFont.font(size: 14)).dashSecondaryInk(0.4).padding(.vertical, 8)
+            } else {
+                ForEach(flagged.prefix(flagged.count > 3 ? 2 : 3)) { node in
+                    macPaneRow(node.title.isEmpty ? (node.untitledDisplayText ?? "Untitled") : node.title, trailing: nil) {
+                        push(.node(node))
+                    }
+                }
+                if flagged.count > 3 {
+                    macPaneRow("\(flagged.count - 2) more", trailing: "›") { push(.priority) }
+                }
+            }
+            Spacer(minLength: 0)
+        }
+        .padding(18)
+        .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .topLeading)
+        .dashboardPaneSurface()
+        .accessibilityElement(children: .contain)
+        .accessibilityIdentifier("macTodayPriority")
+    }
+
+    private func macPickUpPane(_ nodes: [Node]) -> some View {
+        VStack(alignment: .leading, spacing: 12) {
+            macPaneLabel("Pick up again")
+            HStack(spacing: 12) {
+                ForEach(nodes) { node in
+                    MacPickUpTile(node: node) { push(.node(node)) }
+                }
+                ForEach(0..<(3 - nodes.count), id: \.self) { _ in Color.clear.frame(maxWidth: .infinity, maxHeight: 1) }
             }
         }
-        .accessibilityIdentifier("macDashboardGrid-\(columns)")
+        .padding(18)
+        .frame(maxWidth: .infinity, alignment: .leading)
+        .dashboardPaneSurface()
+        .accessibilityElement(children: .contain)
+        .accessibilityIdentifier("macTodayPickUp")
     }
 
     var body: some View {
@@ -192,8 +307,8 @@ struct DashboardView: View {
                                 .padding(.top, 6)
                         }
                         if RunningOnMac.isMac {
-                            macPaneGrid   // Mac batch D4 — the panes reflow with the width
-                                .padding(.top, 16)   // D fix-up F4 — the header that sat above is gone on the Mac
+                            macCompactHome   // Mac batch E3 — T's v3 pick (was D4's reflowing pane grid)
+                                .padding(.top, 28)
                         } else {
                             todaySection
                             quickReentrySection
@@ -933,4 +1048,42 @@ private struct CollectionReorderSheet: View {
 
 #Preview {
     DashboardView()
+}
+
+/// Mac batch E3 — a small hero tile: the entry's cover (or its gradient) over its title.
+struct MacPickUpTile: View {
+    let node: Node
+    let action: () -> Void
+    @Environment(\.appBodyFont) private var appFont
+    @State private var hovering = false
+
+    var body: some View {
+        Button(action: action) {
+            VStack(alignment: .leading, spacing: 0) {
+                ZStack {
+                    NodeGradientLayer(node: node, animated: false)
+                    GridTileHeroImage(node: node)
+                }
+                .frame(height: 64)
+                .frame(maxWidth: .infinity)
+                .clipped()
+                Text(node.title.isEmpty ? (node.untitledDisplayText ?? "Untitled") : node.title)
+                    .font(appFont.font(size: 13, weight: .semibold))
+                    .foregroundStyle(AppearancePalette.ink)
+                    .lineLimit(1)
+                    .padding(.horizontal, 10)
+                    .padding(.vertical, 9)
+                    .frame(maxWidth: .infinity, alignment: .leading)
+            }
+            .background(AppearancePalette.bgBase.opacity(0.55))
+            .clipShape(RoundedRectangle(cornerRadius: 12, style: .continuous))
+            .overlay(RoundedRectangle(cornerRadius: 12, style: .continuous)
+                .strokeBorder(AppearancePalette.ink.opacity(hovering ? 0.28 : 0.12), lineWidth: 1))
+            .contentShape(RoundedRectangle(cornerRadius: 12, style: .continuous))
+        }
+        .buttonStyle(.plain)
+        .frame(maxWidth: .infinity)
+        .onHover { hovering = $0 }
+        .accessibilityIdentifier("macTodayPickUpTile")
+    }
 }

@@ -209,6 +209,14 @@ struct ContentView: View {
                         NSLog("%@", await MacFixupSelfTest.run(store: store, router: router, selection: selection))
                     }
                 }
+                // Mac batch E — `-MacBatchESelfTest`: the v3 layout (E2–E5) and collection colours (E6).
+                if ProcessInfo.processInfo.arguments.contains("-MacBatchESelfTest") {
+                    Task { @MainActor in
+                        for _ in 0..<120 where store.nodes.count < 10 { try? await Task.sleep(nanoseconds: 250_000_000) }
+                        try? await Task.sleep(nanoseconds: 4_000_000_000)
+                        NSLog("%@", await MacBatchESelfTest.run(store: store, router: router))
+                    }
+                }
                 // Mac batch D — `-MacLayoutSelfTest`: the toolbar, sidebar and Librarian column.
                 if ProcessInfo.processInfo.arguments.contains("-MacLayoutSelfTest") {
                     Task { @MainActor in

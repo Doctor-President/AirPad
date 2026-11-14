@@ -46,6 +46,14 @@ final class MacLayout {
     var librarianFloats: Bool {
         windowWidth - (sidebarVisible ? sidebarWidth + 1 : 0) - (librarianWidth + 1) < Self.contentMinWidth
     }
+    /// The content column's width (window minus the sidebar), the floating Librarian's room.
+    var contentWidth: CGFloat { windowWidth - (sidebarVisible ? sidebarWidth + 1 : 0) }
+    /// E5 — floating, the Librarian always leaves a strip beside it for the open entry's own + (56 pt and its gaps):
+    /// at the smallest window with both panels widest it draws a little narrower (the remembered width is untouched).
+    var floatingLibrarianWidth: CGFloat { max(MacLayout.librarianWidthRange.lowerBound - 40, min(librarianWidth, contentWidth - Self.entryPlusStrip - 10)) }
+    static let entryPlusStrip: CGFloat = 84
+    /// E5 — the open entry's floating + : 24 pt from the content's corner, or just left of a floating Librarian.
+    var entryPlusTrailing: CGFloat { librarianOpen && librarianFloats ? floatingLibrarianWidth + 10 + 14 : 24 }
 
     /// The Librarian column's panel state: always fully open — there is no FloatingPanel on the Mac, so its moves are
     /// no-ops and the surface lays out as its expanded self.
@@ -151,7 +159,7 @@ struct MacDesktopFrame<Content: View>: View {
                 .overlay(alignment: .trailing) {
                     if layout.librarianOpen && layout.librarianFloats {
                         MacLibrarianColumn(hostScope: hostScope)
-                            .frame(width: layout.librarianWidth)
+                            .frame(width: layout.floatingLibrarianWidth)
                             .overlay(alignment: .leading) {
                                 MacResizeHandle(id: "resize.librarian") { dx, start in
                                     layout.librarianWidth = MacLayout.clamp(start - dx, MacLayout.librarianWidthRange)
@@ -532,10 +540,11 @@ final class MacToolbarController: NSObject, NSToolbarDelegate {
     }
 }
 
-/// The current place's title: the library or collection name, "AirPad" on Today.
+/// The current place's title: the library or collection name, "Today" on Today (E3: the sidebar's name for it).
 @MainActor func macPlaceTitle(_ router: AppRouter, _ store: CorpusStore) -> String {
     switch router.entryMode {
-    case .dashboard, .quikCapture: return "AirPad"
+    case .dashboard: return "Today"
+    case .quikCapture: return "AirPad"
     case .recents: return "Recents"
     case .canvas: return "Library"
     case .sampleCanvas: return "Sample Library"
@@ -604,6 +613,7 @@ struct MacLibrarianToolbarButton: View {
         .buttonStyle(.plain)
         .onHover { hovering = $0 }
         .help("Librarian (⌘L)")
+        .macToolbarProbe("toolbar.librarian")
         .accessibilityLabel("Librarian")
         .accessibilityValue(open ? "Open" : "Closed")
         .accessibilityAddTraits(open ? .isSelected : [])

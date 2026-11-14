@@ -608,7 +608,7 @@ struct NodeGridTile: View {
 // to that file). Same resolver path — `store.coverImageURL(for:)` — so
 // card and tile stay byte-identical on what they resolve.
 
-private struct GridTileHeroImage: View, Equatable {
+struct GridTileHeroImage: View, Equatable {   // internal: the Mac Today tiles use it too (batch E3)
     let node: Node
 
     @Environment(CorpusStore.self) private var store

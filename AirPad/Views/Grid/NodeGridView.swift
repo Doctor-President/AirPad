@@ -51,8 +51,9 @@ struct NodeGridView: View {
 
     private let tileSpacing: CGFloat = 10
     /// Mac D fix-up F3 — the card size on the Mac: a width the columns stay near (slider in the Cards header, ⌘+ / ⌘−,
-    /// ⌘0 back to the default), remembered. Every card renders the iPhone's 2-column design scaled to it.
-    static let macCardWidthDefault: Double = 260
+    /// ⌘0 back to the default), remembered. Every card renders the iPhone's 2-column design scaled to it. Batch E4: the
+    /// default is T's v3 pick, 210 (was 260); a size the user set stays theirs (the key holds it).
+    static let macCardWidthDefault: Double = 210
     static let macCardWidthRange: ClosedRange<Double> = 160...440
     static let macCardWidthStep: Double = 40
     static let macCardWidthKey = "mac.cards.width.v1"

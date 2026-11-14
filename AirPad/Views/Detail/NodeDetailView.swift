@@ -765,13 +765,13 @@ struct NodeDetailView: View {
             // restructuring.
             if !keyboardVisible && !reorderController.isReorderActive {
                 floatingAddButton
-                    .padding(.trailing, 24)
+                    .padding(.trailing, addButtonTrailing)
                     // Lift above the persistent Librarian peek pill so the
                     // "+" isn't obscured at peek; same clearance the canvas
                     // capture trigger uses (peek detent + 24pt breathing
                     // room). At medium / large the sheet covers the button
                     // — intentional, mirrors canvas behavior.
-                    .padding(.bottom, LibrarianPanelLayout.peekOverlayClearance)
+                    .padding(.bottom, RunningOnMac.isMac ? 24 : LibrarianPanelLayout.peekOverlayClearance)   // Mac: no peek pill
                     .transition(.opacity)
             }
         }
@@ -1390,6 +1390,15 @@ struct NodeDetailView: View {
     /// brief: Text, Camera, Voice, Link, Document, More... (More... is a
     /// no-op stub seat for 3.1a; the eventual sheet ships when there's
     /// something to put in it).
+    /// Mac batch E5 (T: the entry's + stays floating) — clear of a floating Librarian; the column never overlaps it.
+    private var addButtonTrailing: CGFloat {
+        #if targetEnvironment(macCatalyst)
+        MacLayout.shared.entryPlusTrailing
+        #else
+        24
+        #endif
+    }
+
     private var floatingAddButton: some View {
         Menu {
             Button {

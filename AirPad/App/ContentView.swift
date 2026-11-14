@@ -30,6 +30,15 @@ struct ContentView: View {
                 .frame(width: 0, height: 0)
             // 1.1-A (A6) — the Face ID lock + app-switcher cover, in their own window above everything.
             AppLockInstaller()
+            #if targetEnvironment(macCatalyst)
+            // Mac batch D1 — the window's toolbar (hosted SwiftUI, given the app's environment).
+            Color.clear.frame(width: 0, height: 0).onAppear {
+                let (r, s, sel, q) = (router, store, selection, quarantineStore)
+                MacToolbarController.shared.install { view in
+                    AnyView(view.environment(r).environment(s).environment(sel).environment(q).provideAppBodyFont())
+                }
+            }
+            #endif
             #if DEBUG || TESTFLIGHT
             // live-22 (2) — the on-device appearance tuner floats in its own pass-through window, over every view,
             // sheet and the Librarian panel (TestFlight only; in DEBUG only with `-AppearanceTuner YES`).
@@ -176,6 +185,14 @@ struct ContentView: View {
                         NSLog("%@", await MacMenuSelfTest.run(store: store, router: router))
                     }
                 }
+                // Mac batch D — `-MacLayoutSelfTest`: the toolbar, sidebar and Librarian column.
+                if ProcessInfo.processInfo.arguments.contains("-MacLayoutSelfTest") {
+                    Task { @MainActor in
+                        for _ in 0..<120 where store.nodes.count < 10 { try? await Task.sleep(nanoseconds: 250_000_000) }
+                        try? await Task.sleep(nanoseconds: 4_000_000_000)
+                        NSLog("%@", await MacLayoutSelfTest.run(store: store, router: router))
+                    }
+                }
                 // Mac D0.11 — `-MacSheetsSelfTest` (with `-OpenMap -OpenAppearancePanel -ProLocked YES`): popovers + closes.
                 if ProcessInfo.processInfo.arguments.contains("-MacSheetsSelfTest") {
                     Task { @MainActor in
@@ -276,7 +293,7 @@ struct ContentView: View {
                 }
             }
             #endif
-            Group {
+            macDesktop {
                 switch router.entryMode {
                 case .dashboard:
                     DashboardView(initialRoute: nil)
@@ -446,11 +463,12 @@ struct ContentView: View {
             // needs explicitly. `hostScope` drives the Librarian's
             // first-appear scope seed; we collapse the four entry modes
             // to corpus/collection so the surface sees a clean slice.
-            LibrarianSurface(
+            // Mac batch D3 — on the Mac the Librarian is a column (`MacDesktopFrame`); the panel stays mounted, empty.
+            (RunningOnMac.isMac ? nil : LibrarianSurface(
                 hostScope: hostScope(for: router.entryMode),
                 panelModel: panelState,
                 proxy: proxy
-            )
+            ))
                 .environment(store)
                 .environment(router)
                 .environment(selection)
@@ -636,6 +654,9 @@ struct ContentView: View {
         // until the panel first moved; seen in every -Open* still).
         .onChange(of: panelState.state, initial: true) { _, newState in
             router.librarianAtPeek = (newState == .tip)
+            #if targetEnvironment(macCatalyst)
+            router.librarianAtPeek = !MacLayout.shared.librarianOpen   // Mac batch D3 — the column, not the panel
+            #endif
         }
     }
 
@@ -681,6 +702,11 @@ struct ContentView: View {
         // the controller level when suppressed: touches then fall through to the
         // surface below. Instant (not animated), so it can't be raced.
         applyLibrarianInteraction()
+        #if targetEnvironment(macCatalyst)
+        panelState.duck(animated: false)   // Mac batch D3 — the Librarian is the column, never the panel
+        panelState.controller?.view.isUserInteractionEnabled = false
+        return
+        #endif
         if librarianSuppressed {
             panelState.duck(animated: animated)
         } else {
@@ -730,6 +756,12 @@ struct ContentView: View {
         case .settings:
             router.showSettings = true
         case .librarian:
+            #if targetEnvironment(macCatalyst)
+            // Mac batch D3 — ⌘L opens / closes the Librarian column, anywhere.
+            MacLayout.shared.librarianOpen.toggle()
+            router.librarianAtPeek = !MacLayout.shared.librarianOpen
+            return
+            #endif
             guard !busy else { return }
             if librarianSuppressed {
                 // The Dashboard / Recents put the Librarian away; it lives over the library.
@@ -741,6 +773,11 @@ struct ContentView: View {
                 panelState.raiseToPeek(animated: true)
             }
         case .find:
+            #if targetEnvironment(macCatalyst)
+            MacLayout.shared.librarianOpen = true   // Mac batch D — the search lives in the toolbar; results in the column
+            router.librarianAtPeek = false
+            return
+            #endif
             guard !busy, librarianSuppressed else { return }   // with the Librarian up, LibrarianSurface focuses it
             router.entryMode = .canvas
             DispatchQueue.main.asyncAfter(deadline: .now() + 0.5) { if !librarianSuppressed { router.perform(.find) } }
@@ -799,6 +836,15 @@ struct ContentView: View {
     /// this on first appear in a new host and seeds
     /// `LibrarianState.selectedScope` so search/Ask default to the
     /// slice the user is already looking at.
+    /// Mac batch D — the entry-mode content inside the desktop frame (sidebar | content | Librarian); elsewhere as is.
+    @ViewBuilder private func macDesktop<C: View>(@ViewBuilder _ content: () -> C) -> some View {
+        #if targetEnvironment(macCatalyst)
+        MacDesktopFrame(hostScope: hostScope(for: router.entryMode)) { content() }
+        #else
+        Group { content() }
+        #endif
+    }
+
     private func hostScope(for mode: AppRouter.EntryMode) -> CanvasScope {
         switch mode {
         case .collectionCanvas(let id):

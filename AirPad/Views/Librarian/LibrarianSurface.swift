@@ -33,7 +33,8 @@ struct LibrarianSurface: View {
     // This is the root perf fix: the old `@ObservedObject` invalidated the
     // whole body on ANY published change (peekProgress fires ~60×/sec).
     let panelModel: LibrarianPanelStateModel
-    let proxy: FloatingPanelProxy
+    /// nil in the Mac's Librarian column (D3): no FloatingPanel, so no scroll tracking.
+    let proxy: FloatingPanelProxy?
 
     @Environment(CorpusStore.self) private var store
     @Environment(AppRouter.self) private var router
@@ -1450,7 +1451,7 @@ struct LibrarianSurface: View {
             .padding(.horizontal, 14)
             .padding(.bottom, 12)
         }
-        .floatingPanelScrollTracking(proxy: proxy)
+        .scrollTracking(proxy)
     }
 
     /// Hand a search-result tap to the host NavigationStack via the
@@ -1992,7 +1993,7 @@ struct LibrarianSurface: View {
             .frame(maxWidth: .infinity, alignment: .leading)
             .animation(.easeInOut(duration: 0.35), value: store.isReconcilingSubstrate)
         }
-        .floatingPanelScrollTracking(proxy: proxy)
+        .scrollTracking(proxy)
     }
 
     /// ws-substrate — the reconciler's ambient signal, replacing the invisible
@@ -2590,3 +2591,10 @@ private struct PeekProgressReader<V: View>: View {
     var body: some View { build(progress.peekProgress) }
 }
 
+
+private extension View {
+    /// The panel's scroll tracking, when there is a FloatingPanel (not in the Mac's Librarian column).
+    @ViewBuilder func scrollTracking(_ proxy: FloatingPanelProxy?) -> some View {
+        if let proxy { self.floatingPanelScrollTracking(proxy: proxy) } else { self }
+    }
+}

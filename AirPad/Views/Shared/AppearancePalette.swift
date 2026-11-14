@@ -512,6 +512,9 @@ struct AppearanceApplier: UIViewRepresentable {
         for scene in UIApplication.shared.connectedScenes.compactMap({ $0 as? UIWindowScene }) {
             for window in scene.windows { window.overrideUserInterfaceStyle = style }
         }
+        #if targetEnvironment(macCatalyst)
+        MacToolbarController.shared.applyStyle(style)   // Mac batch D1 — the toolbar's hosted items live outside the windows
+        #endif
     }
 }
 

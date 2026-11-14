@@ -250,12 +250,15 @@ struct CanvasChrome: View {
                             // two Spacers would bias it toward the narrower side.
                             ZStack {
                                 // Top-center view pill — a label of the current view
-                                // (Brief AG2); the View button is the switcher.
-                                ViewPill(scope: scope)
+                                // (Brief AG2); the View button is the switcher. Mac batch D1: the toolbar's view switch
+                                // names it, and Today is in the sidebar — no pill, no back button.
+                                if !RunningOnMac.isMac { ViewPill(scope: scope) }
 
                                 HStack(alignment: .center, spacing: 8) {
-                                    DashboardBackButton {
-                                        router.entryMode = .dashboard
+                                    if !RunningOnMac.isMac {
+                                        DashboardBackButton {
+                                            router.entryMode = .dashboard
+                                        }
                                     }
                                     Spacer()
                                     ChromeBar(
@@ -279,7 +282,8 @@ struct CanvasChrome: View {
                 // raised above peek, neither appears in detail view or while
                 // selection is active. Body-switcher gate still applies — the
                 // pill only makes sense in the default branch (grid / cover flow).
-                if !store.isInDetailView
+                if !RunningOnMac.isMac   // Mac batch D1 — nothing floats over the content on the Mac
+                    && !store.isInDetailView
                     && !selection.isActive
                     && router.librarianAtPeek
                     && filterState.viewMode != .systemGraph
@@ -307,7 +311,8 @@ struct CanvasChrome: View {
                 // clearing the peek pill. Shares the density/pill visibility
                 // gate — hidden in detail view, during selection, or when the
                 // Librarian rises above peek.
-                if !store.isInDetailView
+                if !RunningOnMac.isMac   // Mac batch D1 — the toolbar's view switch and + replace these
+                    && !store.isInDetailView
                     && !selection.isActive
                     && router.librarianAtPeek {
                     VStack {

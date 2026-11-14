@@ -456,6 +456,7 @@ struct GalleryFullscreenViewer: View {
                 nodeID: nodeID,
                 parentItem: parentItem
             )
+            .macSheetClose()   // Mac D0.11 — the player closed only by a drag down
         }
         .confirmationDialog(
             "Delete this item?",
@@ -474,6 +475,7 @@ struct GalleryFullscreenViewer: View {
         }
         .sheet(item: $shareHandoff) { handoff in
             DocumentShareSheet(handoff: handoff)
+                .macSheetClose()   // Mac D0.11
         }
         // Release the playback audio session when the viewer is torn down.
         // Per-page pauses already happen on scroll-off / disappear, but the

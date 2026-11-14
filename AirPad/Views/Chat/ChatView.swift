@@ -81,6 +81,8 @@ struct ChatView: View {
                         .foregroundStyle(AppearancePalette.ink)
                 }
                 .accessibilityLabel(isPinned ? "Change pinned entry" : "Pin chat to an entry")
+                // Mac D0.11 (T N8) — choose the entry to pin to in a popover on this button on the Mac and iPad.
+                .pickerPopover(isPresented: $showingPinSheet) { PinChatSheet(chatID: session.id).environment(store) }
             }
             ToolbarItem(placement: .topBarTrailing) {
                 Button {
@@ -94,7 +96,7 @@ struct ChatView: View {
             }
         }
         .toolbarBackground(.visible, for: .navigationBar)
-        .sheet(isPresented: $showingPinSheet) {
+        .sheet(isPresented: Binding(get: { showingPinSheet && !RunningOnMac.usesPickerPopovers }, set: { showingPinSheet = $0 })) {
             PinChatSheet(chatID: session.id).environment(store)
         }
     }

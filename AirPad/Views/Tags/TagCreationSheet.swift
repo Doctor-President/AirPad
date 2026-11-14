@@ -226,7 +226,9 @@ private struct NewTagPill: View {
         .background(isAccepted ? pillColor.opacity(0.25) : AppearancePalette.ink.opacity(0.06))
         .overlay(Capsule().stroke(isAccepted ? pillColor.opacity(0.6) : AppearancePalette.ink.opacity(0.15), lineWidth: 1))
         .clipShape(Capsule())
-        .sheet(isPresented: $showColorPicker) {
+        // Mac D0.11 (T N8) — a choose-one picker: a popover on the pill on the Mac and iPad, the sheet on iPhone.
+        .pickerPopover(isPresented: $showColorPicker) { ColorPickerSheet(selectedHex: $tag.colorHex, presets: colorPresets) }
+        .sheet(isPresented: Binding(get: { showColorPicker && !RunningOnMac.usesPickerPopovers }, set: { showColorPicker = $0 })) {
             ColorPickerSheet(selectedHex: $tag.colorHex, presets: colorPresets)
         }
     }

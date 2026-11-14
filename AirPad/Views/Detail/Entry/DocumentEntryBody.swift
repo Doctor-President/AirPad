@@ -107,6 +107,7 @@ struct DocumentEntryBody: View {
         }
         .sheet(item: $shareIdentity) { identity in
             DocumentShareSheet(handoff: identity)
+                .macSheetClose()   // Mac D0.11 — a visible × + Esc around the share panel
         }
         .task { await extractIfNeeded() }
     }

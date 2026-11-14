@@ -487,11 +487,13 @@ struct ProSheet: View {
         .background(AppearancePalette.bgBase.ignoresSafeArea())
         .presentationBackground(AppearancePalette.bgBase)
         .presentationDragIndicator(.visible)
+        .macSheetClose()   // Mac D0.11 — × and Esc (a Mac sheet has no swipe)
         .sheet(isPresented: $showTips) {
             ScrollView { TipJarView().padding(24) }
                 .background(AppearancePalette.bgBase.ignoresSafeArea())
                 .presentationBackground(AppearancePalette.bgBase)
                 .sheetDetents([.medium, .large])
+                .macSheetClose()   // Mac D0.11 (T R-SMALL) — the Tip Jar's close
         }
         .task { if store.loadState != .loaded { await store.loadProducts() } }
     }

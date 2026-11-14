@@ -278,6 +278,7 @@ struct CaptureAttributesSection: View {
                                 initialValue: rating.value, scale: rating.scale)
                     .sheetDetents([.height(260)])
                     .presentationDragIndicator(.visible)
+                    .macSheetClose()   // Mac D0.11
             }
         }
     }

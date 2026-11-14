@@ -32,23 +32,29 @@ struct TagPickerButton<Label: View>: View {
 
     var body: some View {
         Button { showing = true } label: { label() }
-            .sheet(isPresented: $showing, onDismiss: {
-                // Present the create-tag editor only AFTER this picker is fully
-                // dismissed — presenting it while the picker sheet is still up
-                // drops the second presentation (sheet-over-sheet).
-                if pendingCreate {
-                    pendingCreate = false
-                    onAddNew()
-                }
-            }) {
-                TagPickerSheet(
-                    tags: tags,
-                    excludeNames: excludeNames,
-                    store: store,
-                    onPickExisting: onPickExisting,
-                    onRequestCreate: { pendingCreate = true }
-                )
-            }
+            // Mac D0.11 (T N8) — a choose-one picker: a popover on this button on the Mac and iPad, the sheet on iPhone.
+            .pickerPopover(isPresented: $showing, onDismiss: pickerDismissed) { picker }
+            .sheet(isPresented: Binding(get: { showing && !RunningOnMac.usesPickerPopovers }, set: { showing = $0 }),
+                   onDismiss: pickerDismissed) { picker }
+    }
+
+    private var picker: some View {
+        TagPickerSheet(
+            tags: tags,
+            excludeNames: excludeNames,
+            store: store,
+            onPickExisting: onPickExisting,
+            onRequestCreate: { pendingCreate = true }
+        )
+    }
+
+    /// Present the create-tag editor only AFTER this picker is fully dismissed — presenting it while the picker is
+    /// still up drops the second presentation (sheet-over-sheet).
+    private func pickerDismissed() {
+        if pendingCreate {
+            pendingCreate = false
+            onAddNew()
+        }
     }
 }
 

@@ -1542,6 +1542,8 @@ struct LibrarianSurface: View {
                 includePrivate: false,
                 leading: AnyView(corpusModeToggle(librarian: librarian))
             )
+            // Mac D0.11 (T N8) — on the Mac and iPad the picker is a popover on the pill (the row centres it).
+            .pickerPopover(isPresented: $showModelPicker, onDismiss: modelPickerDismissed) { modelPicker(librarian) }
             // Brief AI2 — the ring target lives on the model pill INSIDE ModelPillRow.
 
             // STATE 2 — no free-text model on this device: gate Ask (send disabled via
@@ -1587,26 +1589,33 @@ struct LibrarianSurface: View {
                 await HostCatalog.shared.refresh()
             }
         }
-        .sheet(isPresented: $showModelPicker, onDismiss: {
-            // Brief AL2 — present Settings only AFTER the picker sheet is gone (else the
-            // second presentation is dropped and Settings opens at its root, not Models).
-            if pendingManageModels {
-                pendingManageModels = false
-                settingsPresentation = .at(.models)
+        // iPhone: the sheet (Mac / iPad: the popover on the pill, above).
+        .sheet(isPresented: Binding(get: { showModelPicker && !RunningOnMac.usesPickerPopovers },
+                                    set: { showModelPicker = $0 }), onDismiss: modelPickerDismissed) {
+            modelPicker(librarian).sheetDetents([.medium, .large])
+        }
+    }
+
+    /// Brief AJ3 — the model chip is the QUICK SWITCHER (fullControls: false, the default): no Memory policy /
+    /// Eject-all; "Manage models" opens the full Settings → Models surface (AL2: routes to the paired Mac screen when
+    /// paired).
+    private func modelPicker(_ librarian: LibrarianState) -> some View {
+        ModelPickerSheet(
+            catalog: HostCatalog.shared,
+            thinkEnabled: Binding(get: { librarian.thinkEnabled }, set: { librarian.thinkEnabled = $0 }),
+            onManageModels: {
+                pendingManageModels = true
+                showModelPicker = false
             }
-        }) {
-            // Brief AJ3 — the model chip is the QUICK SWITCHER (fullControls: false, the
-            // default): no Memory policy / Eject-all; "Manage models" opens the full
-            // Settings → Models surface (AL2: routes to the paired Mac screen when paired).
-            ModelPickerSheet(
-                catalog: HostCatalog.shared,
-                thinkEnabled: Binding(get: { librarian.thinkEnabled }, set: { librarian.thinkEnabled = $0 }),
-                onManageModels: {
-                    pendingManageModels = true
-                    showModelPicker = false
-                }
-            )
-            .sheetDetents([.medium, .large])
+        )
+    }
+
+    /// Brief AL2 — present Settings only AFTER the picker is gone (else the second presentation is dropped and
+    /// Settings opens at its root, not Models).
+    private func modelPickerDismissed() {
+        if pendingManageModels {
+            pendingManageModels = false
+            settingsPresentation = .at(.models)
         }
     }
 

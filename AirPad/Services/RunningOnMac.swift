@@ -21,6 +21,72 @@ extension View {
     }
 }
 
+extension RunningOnMac {
+    /// Mac D0.11 (T N8) — choose-one pickers open as popovers anchored to their button on the Mac and iPad.
+    static var usesPickerPopovers: Bool { isMac || UIDevice.current.userInterfaceIdiom == .pad }
+}
+
+extension View {
+    /// Mac D0.11 (T N8) — a choose-one picker anchored to this view: a popover on the Mac and iPad (a click outside
+    /// closes it, like any popover), nothing here on iPhone (the caller keeps its sheet for iPhone, gated on
+    /// `!RunningOnMac.usesPickerPopovers`). `onDismiss` runs when it closes, as a sheet's would.
+    @ViewBuilder func pickerPopover<Content: View>(isPresented: Binding<Bool>, onDismiss: (() -> Void)? = nil,
+                                                    @ViewBuilder content: @escaping () -> Content) -> some View {
+        if RunningOnMac.usesPickerPopovers {
+            self.popover(isPresented: isPresented, arrowEdge: .bottom) {
+                content()
+                    .frame(minWidth: 340, idealWidth: 380, maxWidth: 440, minHeight: 360, idealHeight: 520, maxHeight: 640)
+                    .presentationCompactAdaptation(.popover)
+            }
+            .onChange(of: isPresented.wrappedValue) { _, shown in if !shown { onDismiss?() } }
+        } else {
+            self
+        }
+    }
+}
+
+extension View {
+    /// Mac D0.11 (T N8) — a sheet that closed only by a swipe gets a visible × (top trailing) and Esc on the Mac, where
+    /// a sheet has no swipe. iPhone / iPad: unchanged.
+    @ViewBuilder func macSheetClose() -> some View {
+        #if targetEnvironment(macCatalyst)
+        modifier(MacSheetCloseButton())
+        #else
+        self
+        #endif
+    }
+}
+
+private struct MacSheetCloseButton: ViewModifier {
+    @Environment(\.dismiss) private var dismiss
+    func body(content: Content) -> some View {
+        // A row of its own above the content (an overlay sat on the Tip Jar's first line).
+        content.safeAreaInset(edge: .top, spacing: 0) {
+            HStack {
+                Spacer()
+                closeButton
+            }
+        }
+    }
+
+    private var closeButton: some View {
+            Button { dismiss() } label: {
+                Image(systemName: "xmark")
+                    .font(.system(size: 12, weight: .bold))
+                    .foregroundStyle(AppearancePalette.ink.opacity(0.7))
+                    .frame(width: 28, height: 28)
+                    .background(AppearancePalette.ink.opacity(0.08), in: Circle())
+                    .contentShape(Circle())
+            }
+            .buttonStyle(.plain)
+            .keyboardShortcut(.cancelAction)
+            .padding(.top, 12)
+            .padding(.trailing, 12)
+            .accessibilityLabel("Close")
+            .accessibilityIdentifier("sheetClose")
+    }
+}
+
 extension View {
     /// Mac fix-up X7 — a sheet's detents. On the Mac a sheet is a fixed-size window sheet with no drag to resize, so
     /// detents only got between a trackpad scroll and the content (T: the Proposals sheet didn't scroll); there it's a

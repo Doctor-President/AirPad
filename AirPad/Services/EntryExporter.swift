@@ -333,6 +333,7 @@ struct EntryExportSheet: View {
         .onDisappear { shown = false }
         .sheet(item: Binding(get: { shareURL.map(ShareTarget.init) }, set: { if $0 == nil { shareURL = nil } })) { t in
             ActivityShareView(items: [t.url]).ignoresSafeArea()
+                .macSheetClose()   // Mac D0.11 — a visible × + Esc around the share panel
         }
     }
 

@@ -176,6 +176,14 @@ struct ContentView: View {
                         NSLog("%@", await MacMenuSelfTest.run(store: store, router: router))
                     }
                 }
+                // Mac D0.11 — `-MacSheetsSelfTest` (with `-OpenMap -OpenAppearancePanel -ProLocked YES`): popovers + closes.
+                if ProcessInfo.processInfo.arguments.contains("-MacSheetsSelfTest") {
+                    Task { @MainActor in
+                        for _ in 0..<120 where store.nodes.count < 10 { try? await Task.sleep(nanoseconds: 250_000_000) }
+                        try? await Task.sleep(nanoseconds: 4_000_000_000)
+                        NSLog("%@", await MacSheetsSelfTest.run(store: store, router: router))
+                    }
+                }
                 #endif
                 RunningOnMac.forceOrientationIfAsked()   // C7 — iPad four-orientation stills
                 if ProcessInfo.processInfo.arguments.contains("-MacReport") {

@@ -78,6 +78,13 @@ struct ChatTranscript: View {
 
     private struct PresentedTable: Identifiable { let id = UUID(); let table: ChatTable }
 
+    private var modelPicker: some View {
+        ModelPickerSheet(
+            catalog: HostCatalog.shared,
+            thinkEnabled: Binding(get: { session.thinkEnabled }, set: { session.thinkEnabled = $0 })
+        )
+    }
+
     var body: some View {
         #if DEBUG
         let _ = FreezeProbe.hit("transcript.body")
@@ -102,18 +109,16 @@ struct ChatTranscript: View {
                         includePrivate: leadingControl == nil,
                         leading: leadingControl
                     )
+                    // Mac D0.11 (T N8) — a popover on the pill on the Mac and iPad.
+                    .pickerPopover(isPresented: $showPicker) { modelPicker }
                     inputRow
                 }
                 .background(AppearancePalette.bgBase)
             }
         }
         .task { HostCatalog.shared.refreshPaired(); await HostCatalog.shared.refresh() } // off-render
-        .sheet(isPresented: $showPicker) {
-            ModelPickerSheet(
-                catalog: HostCatalog.shared,
-                thinkEnabled: Binding(get: { session.thinkEnabled }, set: { session.thinkEnabled = $0 })
-            )
-            .sheetDetents([.medium, .large])
+        .sheet(isPresented: Binding(get: { showPicker && !RunningOnMac.usesPickerPopovers }, set: { showPicker = $0 })) {
+            modelPicker.sheetDetents([.medium, .large])
         }
         // Conversation identity changed (new chat / switched chat): drop the
         // half-typed composer text and re-arm bottom-follow for the new thread.

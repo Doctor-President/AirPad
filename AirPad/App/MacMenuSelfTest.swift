@@ -249,6 +249,100 @@ enum MacMenuSelfTest {
 /// title. Buttons are pressed through accessibility: a locked Mac can't make the app active, and AppKit drops synthetic
 /// clicks and scrolls to an inactive app (measured: none reached UIKit, even on the known-good "+"), so the real click is
 /// T's check.
+/// Mac D0.11 (T N8) — `-MacSheetsSelfTest` (with `-OpenMap -OpenAppearancePanel -ProLocked YES`): the Pro sheet and the
+/// Tip Jar close with their own × (they had only a swipe); the Librarian's model picker opens as a popover on its pill;
+/// Export's Share… shows what macOS gives (snapshotted). Presses go through accessibility (a locked Mac takes no clicks).
+@MainActor
+enum MacSheetsSelfTest {
+    static func run(store: CorpusStore, router: AppRouter) async -> String {
+        var rows: [String] = [], fails = 0
+        func row(_ name: String, _ ok: Bool, _ detail: String = "") {
+            rows.append("\(ok ? "PASS" : "FAIL") \(name)" + (detail.isEmpty ? "" : " — \(detail)")); if !ok { fails += 1 }
+        }
+        func settle(_ s: Double = 1.5) async { try? await Task.sleep(nanoseconds: UInt64(s * 1_000_000_000)) }
+        func top() -> UIViewController? {
+            let scenes = UIApplication.shared.connectedScenes.compactMap { $0 as? UIWindowScene }
+            for w in scenes.flatMap(\.windows) {
+                var vc = w.rootViewController?.presentedViewController
+                while let next = vc?.presentedViewController { vc = next }
+                if let vc { return vc }
+            }
+            return nil
+        }
+        func depth() -> Int {
+            let scenes = UIApplication.shared.connectedScenes.compactMap { $0 as? UIWindowScene }
+            var n = 0
+            for w in scenes.flatMap(\.windows) { var vc = w.rootViewController?.presentedViewController; while let v = vc { n += 1; vc = v.presentedViewController } }
+            return n
+        }
+        func element(_ match: (String) -> Bool, in root: NSObject) -> NSObject? {
+            var found: NSObject?
+            func walk(_ o: NSObject, _ d: Int) {
+                guard found == nil, d < 60 else { return }
+                if let l = o.accessibilityLabel, match(l), !(o is UIWindow) { found = o; return }
+                if let v = o as? UIView { v.subviews.forEach { walk($0, d + 1) } }
+                let n = o.accessibilityElementCount()
+                if n != NSNotFound, n > 0 { for i in 0..<n { if let e = o.accessibilityElement(at: i) as? NSObject { walk(e, d + 1) } } }
+            }
+            walk(root, 0)
+            return found
+        }
+        func press(_ label: String, prefix: Bool = false) async -> Bool {
+            guard let v = top()?.view, let e = element({ prefix ? $0.hasPrefix(label) : $0 == label }, in: v) else { return false }
+            let ok = e.accessibilityActivate()
+            await settle()
+            return ok
+        }
+        func name(_ vc: UIViewController?) -> String { vc.map { String(describing: type(of: $0)) } ?? "nil" }
+
+        // 1. Pro sheet (over the Appearance panel, opened at launch) and its Tip Jar.
+        await settle(2)
+        let base = depth()
+        row("Appearance panel up (launch arg)", base >= 1, "depth \(base) top=\(name(top()))")
+        row("a locked look (Glass) opens the Pro sheet", await press("Glass", prefix: true) && depth() == base + 1,
+            "depth \(depth())")
+        RunningOnMac.snapshot("d011-pro-sheet")
+        row("Pro sheet: its × closes it", await press("Close") && depth() == base, "depth \(depth())")
+        _ = await press("Glass", prefix: true)
+        row("Pro sheet: the tip link opens the Tip Jar", await press("Support AirPad with a tip") && depth() == base + 2, "depth \(depth())")
+        RunningOnMac.snapshot("d011-tip-jar")
+        row("Tip Jar: its × closes it (back to the Pro sheet)", await press("Close") && depth() == base + 1, "depth \(depth())")
+        _ = await press("Close")
+        while depth() > 0 { top()?.dismiss(animated: false); await settle(0.6) }
+
+        // 2. The Librarian's model picker: a popover on its pill.
+        router.perform(.librarian)
+        await settle(2.5)
+        let window = UIApplication.shared.connectedScenes.compactMap { $0 as? UIWindowScene }.flatMap(\.windows).first(where: \.isKeyWindow)
+        let pill = window.flatMap { w in element({ $0.hasPrefix("Model ") }, in: w) }
+        _ = pill?.accessibilityActivate()
+        await settle(2)
+        let picker = top()
+        row("model picker opens as a popover (not a sheet)", picker?.modalPresentationStyle == .popover
+            || picker?.presentationController is UIPopoverPresentationController,
+            "pill=\(pill != nil) presented=\(name(picker)) style=\(picker?.modalPresentationStyle.rawValue ?? -1)")
+        RunningOnMac.snapshot("d011-model-popover")
+        picker?.dismiss(animated: false); await settle(0.8)
+        router.perform(.librarian); await settle(1)
+
+        // 3. Export › Share… — what macOS shows (evidence; it has its own close or not).
+        if let entry = store.nodes.first(where: { !$0.isPrivate && !$0.title.isEmpty }) {
+            router.pendingNodeNavigationID = entry.id
+            await settle(2)
+            router.exportEntryID = entry.id
+            await settle(1.5)
+            _ = await press("Share…")
+            await settle(2)
+            let share = top()
+            let closer = share.flatMap { element({ $0 == "Close" }, in: $0.view) }
+            row("Export › Share… presents, with a Close", share != nil && closer != nil, "presented=\(name(share)) close=\(closer != nil)")
+            RunningOnMac.snapshot("d011-share")
+            while depth() > 0 { top()?.dismiss(animated: false); await settle(0.6) }
+        }
+        return "[MacSheetsSelfTest] \(fails == 0 ? "PASS" : "FAIL") — \(rows.count - fails)/\(rows.count)\n" + rows.joined(separator: "\n")
+    }
+}
+
 @MainActor
 enum CaptureClickSelfTest {
     private static var nsWindow: NSObject? {

@@ -67,6 +67,14 @@ struct FieldValueEditorSheet: View {
     private var isScalar: Bool { [.number, .duration, .measurement, .money].contains(definition.kind) }
     private var rangeAvailable: Bool { isScalar && definition.config.rangeEnabled }
 
+    /// Reuse BacklinkPickerSheet's node search+list via its field-reference `onPick` mode (no backlink connection is
+    /// created).
+    private var nodePicker: some View {
+        BacklinkPickerSheet(sourceNodeID: nodeID, sourceEntryID: nil, onPick: { id in
+            draftRefID = id
+        })
+    }
+
     var body: some View {
         NavigationStack {
             Form {
@@ -92,12 +100,8 @@ struct FieldValueEditorSheet: View {
             }
         }
         .sheetDetents([.medium, .large])
-        .sheet(isPresented: $showNodePicker) {
-            // Reuse BacklinkPickerSheet's node search+list via its field-reference
-            // `onPick` mode (no backlink connection is created).
-            BacklinkPickerSheet(sourceNodeID: nodeID, sourceEntryID: nil, onPick: { id in
-                draftRefID = id
-            })
+        .sheet(isPresented: Binding(get: { showNodePicker && !RunningOnMac.usesPickerPopovers }, set: { showNodePicker = $0 })) {
+            nodePicker
         }
     }
 
@@ -165,6 +169,8 @@ struct FieldValueEditorSheet: View {
                 Text(referencedTitle ?? "None").font(appFont.font(size: 17, relativeTo: .body)).foregroundStyle(.secondary).lineLimit(1)
             }
             Button("Choose an entry") { showNodePicker = true }
+                // Mac D0.11 (T N8) — a popover on this button on the Mac and iPad.
+                .pickerPopover(isPresented: $showNodePicker) { nodePicker }
         case .boolean:
             EmptyView()   // boolean is direct-manip in the cell — never routed here
         }

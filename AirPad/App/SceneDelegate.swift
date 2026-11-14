@@ -13,6 +13,16 @@ final class SceneDelegate: NSObject, UIWindowSceneDelegate {
         // collide, and the desktop layout (batch D) is planned at that size and up. No maximum.
         #if targetEnvironment(macCatalyst)
         (scene as? UIWindowScene)?.sizeRestrictions?.minimumSize = Self.macMinimumWindow
+        // Mac batch D6 — the first launch opens at T's layout size (1,350 × 840, centred); after that macOS restores the
+        // size and place the user left (its own frame autosave: never overridden).
+        if let ws = scene as? UIWindowScene, UserDefaults.standard.object(forKey: "NSWindow Frame MainSceneWindow") == nil {
+            let screen = ws.screen.bounds
+            let size = CGSize(width: min(Self.macFirstWindow.width, screen.width - 40),
+                              height: min(Self.macFirstWindow.height, screen.height - 80))
+            let frame = CGRect(x: screen.midX - size.width / 2, y: max(screen.midY - size.height / 2, 30),
+                               width: size.width, height: size.height)
+            ws.requestGeometryUpdate(.Mac(systemFrame: frame)) { error in NSLog("[MacWindow] first size: %@", "\(error)") }
+        }
         #if DEBUG
         // Mac batch B0 stills: `-MacWindowSize 1440x900` pins the window to that size (min = max).
         if let arg = UserDefaults.standard.string(forKey: "MacWindowSize"),
@@ -28,6 +38,8 @@ final class SceneDelegate: NSObject, UIWindowSceneDelegate {
 
     /// Mac batch A — the proposed minimum window size, in points.
     static let macMinimumWindow = CGSize(width: 900, height: 640)
+    /// Mac batch D6 — the window on first launch (T's layout study: 1,350 pt wide).
+    static let macFirstWindow = CGSize(width: 1350, height: 840)
 
     func scene(_ scene: UIScene, openURLContexts URLContexts: Set<UIOpenURLContext>) {
         applyURLs(URLContexts)

@@ -598,6 +598,33 @@ enum MacLayoutSelfTest {
             row("Librarian push-in at this width", layout.librarianFloats == (win.bounds.width < 1210), "floats=\(layout.librarianFloats)")
             _ = frameOf
         }
+        // 5. A citation (the transcript's openNode = pendingNodeNavigationID) opens the entry in the centre; the
+        //    Librarian stays open beside it and reads that entry.
+        layout.librarianOpen = true
+        if let entry = store.nodes.first(where: { !$0.isPrivate && !$0.title.isEmpty }) {
+            router.pendingNodeNavigationID = entry.id
+            await settle(2.0)
+            row("a cited entry opens in the centre, the Librarian beside it", store.isInDetailView && router.openEntryID == entry.id && layout.librarianOpen,
+                "detail=\(store.isInDetailView) open=\(layout.librarianOpen)")
+            row("the Librarian reads the open entry", router.librarian.selectedScope == .nodeIDs([entry.id]), "\(router.librarian.selectedScope)")
+            router.perform(.back); await settle(1.2)
+            row("back: the Librarian reads the library again", router.librarian.selectedScope == .corpus, "\(router.librarian.selectedScope)")
+        }
+        // 6. Floating chrome gone (D1): no view button / + / view pill / back button over the content.
+        if let win = UIApplication.shared.connectedScenes.compactMap({ $0 as? UIWindowScene }).flatMap(\.windows).first(where: \.isKeyWindow) {
+            var labels: [String] = []
+            func walk(_ o: NSObject, _ d: Int) {
+                guard d < 60 else { return }
+                if let l = o.accessibilityLabel { labels.append(l) }
+                if let i = (o as? UIAccessibilityIdentification)?.accessibilityIdentifier, i == "captureButton" { labels.append("#captureButton") }
+                if let v = o as? UIView { v.subviews.forEach { walk($0, d + 1) } }
+                let n = o.accessibilityElementCount()
+                if n != NSNotFound, n > 0 { for i in 0..<n { if let e = o.accessibilityElement(at: i) as? NSObject { walk(e, d + 1) } } }
+            }
+            walk(win, 0)
+            let floats = labels.filter { $0.hasPrefix("View: ") || $0.hasSuffix(" View") || $0 == "#captureButton" }
+            row("no floating view button / + / back over the content", floats.isEmpty, "found \(floats)")
+        }
         return "[MacLayoutSelfTest] \(fails == 0 ? "PASS" : "FAIL") — \(rows.count - fails)/\(rows.count)\n" + rows.joined(separator: "\n")
     }
 

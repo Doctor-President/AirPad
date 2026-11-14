@@ -24,6 +24,8 @@ final class MacLayout {
     var librarianOpen: Bool { didSet { UserDefaults.standard.set(librarianOpen, forKey: Self.librarianKey) } }
     /// The window's width in points (the frame measures it).
     var windowWidth: CGFloat = 1350
+    /// D7 — the region Tab last moved to (for the self-test and the sidebar's arrow keys).
+    var focusedRegion: MacRegion?
     var librarianFloats: Bool { windowWidth < Self.librarianFloatsBelow }
 
     /// The Librarian column's panel state: always fully open — there is no FloatingPanel on the Mac, so its moves are
@@ -50,21 +52,37 @@ final class MacLayout {
 
 /// D2/D3 — sidebar | content | Librarian. The content takes what's left; below 1,210 pt the open Librarian floats over
 /// its trailing edge instead of narrowing it.
+/// D7 — the three regions Tab / ⇧Tab move between.
+enum MacRegion: Hashable { case sidebar, content, librarian }
+
 struct MacDesktopFrame<Content: View>: View {
     let hostScope: CanvasScope
     @ViewBuilder var content: Content
     @State private var layout = MacLayout.shared
+    @FocusState private var region: MacRegion?
+
+    /// The regions on screen, in Tab order.
+    private var regions: [MacRegion] {
+        (layout.sidebarVisible ? [.sidebar] : []) + [.content] + (layout.librarianOpen ? [.librarian] : [])
+    }
 
     var body: some View {
         HStack(spacing: 0) {
             if layout.sidebarVisible {
                 MacSidebar()
                     .frame(width: MacLayout.sidebarWidth)
+                    .focusable()
+                    .focusEffectDisabled()
+                    .focused($region, equals: .sidebar)
+                    .overlay(alignment: .leading) { regionMark(.sidebar) }
                     .transition(.move(edge: .leading))
                 MacHairline()
             }
             content
                 .frame(maxWidth: .infinity, maxHeight: .infinity)
+                .focusable()
+                .focusEffectDisabled()
+                .focused($region, equals: .content)
                 .overlay(alignment: .trailing) {
                     if layout.librarianOpen && layout.librarianFloats {
                         MacLibrarianColumn(hostScope: hostScope)
@@ -92,6 +110,31 @@ struct MacDesktopFrame<Content: View>: View {
         .animation(.easeOut(duration: 0.2), value: layout.sidebarVisible)
         .animation(.easeOut(duration: 0.2), value: layout.librarianOpen)
         .animation(.easeOut(duration: 0.2), value: layout.librarianFloats)
+        // D7 — Tab / ⇧Tab: sidebar → content → Librarian (a text field keeps its own Tab: indent, next field).
+        .onKeyPress(keys: [.tab]) { press in
+            let list = regions
+            let i = region.flatMap { list.firstIndex(of: $0) } ?? (press.modifiers.contains(.shift) ? 0 : list.count - 1)
+            let next = list[(i + (press.modifiers.contains(.shift) ? list.count - 1 : 1)) % list.count]
+            focus(next)
+            return .handled
+        }
+    }
+
+    private func focus(_ r: MacRegion) {
+        if r == .librarian {
+            region = nil
+            NotificationCenter.default.post(name: .macFocusLibrarianAsk, object: nil)
+        } else {
+            region = r
+        }
+        MacLayout.shared.focusedRegion = r
+    }
+
+    /// A slim accent bar on the focused region's leading edge (the focus is otherwise invisible on a pane).
+    @ViewBuilder private func regionMark(_ r: MacRegion) -> some View {
+        if region == r {
+            RoundedRectangle(cornerRadius: 1.5).fill(Color.accentColor).frame(width: 3).padding(.vertical, 8)
+        }
     }
 }
 
@@ -189,6 +232,9 @@ struct MacSidebar: View {
         .background(AppearancePalette.ink.opacity(scheme == .dark ? 0.03 : 0.035))
         .background(AppearancePalette.bgBase)
         .accessibilityIdentifier("macSidebar")
+        // D7 — with the sidebar focused, ↑ / ↓ go to the previous / next place.
+        .onKeyPress(.downArrow) { step(+1); return .handled }
+        .onKeyPress(.upArrow) { step(-1); return .handled }
         .sheet(item: $renameTarget) { c in
             RenameCollectionSheet(collectionID: c.id, currentName: c.name)
         }
@@ -206,6 +252,21 @@ struct MacSidebar: View {
     }
 
     /// Entries in a collection (the Sample Library's collections hold sample entries).
+    /// The places in sidebar order (Chats opens a sheet, so the arrows skip it).
+    private var places: [AppRouter.EntryMode] {
+        var p: [AppRouter.EntryMode] = [.dashboard, .recents, .canvas]
+        if !store.sampleNodeIDs.isEmpty { p.append(.sampleCanvas) }
+        p += store.collections.filter { !$0.isSystem }.map { .collectionCanvas(id: $0.id) }
+        p.append(.collectionCanvas(id: NodeCollection.journalID))
+        return p
+    }
+
+    private func step(_ d: Int) {
+        let p = places
+        let i = p.firstIndex(of: router.entryMode) ?? 0
+        router.entryMode = p[min(max(i + d, 0), p.count - 1)]
+    }
+
     private func count(in id: String) -> Int { store.hidingPrivate(store.nodes).filter { $0.collectionIDs.contains(id) }.count }
 
     /// A collection has no colour of its own: a stable slot of the region palette, from its id.
@@ -598,6 +659,18 @@ enum MacLayoutSelfTest {
             row("Librarian push-in at this width", layout.librarianFloats == (win.bounds.width < 1210), "floats=\(layout.librarianFloats)")
             _ = frameOf
         }
+        // 4b. D7 — Tab into the Librarian focuses its Ask field; View › Hide Sidebar (⌃⌘S) toggles the sidebar.
+        layout.librarianOpen = true; await settle(0.5)
+        NotificationCenter.default.post(name: .macFocusLibrarianAsk, object: nil); await settle(1.0)
+        let keyWin = UIApplication.shared.connectedScenes.compactMap { $0 as? UIWindowScene }.flatMap(\.windows).first(where: \.isKeyWindow)
+        let ask = keyWin.flatMap { firstResponder(in: $0) }
+        row("Tab into the Librarian focuses its Ask field", ask is UITextField || ask is UITextView, "first responder \(ask.map { String(describing: type(of: $0)) } ?? "none")")
+        ask?.resignFirstResponder()
+        let before = layout.sidebarVisible
+        router.perform(.toggleSidebar); await settle(0.6)
+        row("⌃⌘S (View › Hide Sidebar) toggles the sidebar", layout.sidebarVisible == !before)
+        router.perform(.toggleSidebar); await settle(0.6)
+
         // 5. A citation (the transcript's openNode = pendingNodeNavigationID) opens the entry in the centre; the
         //    Librarian stays open beside it and reads that entry.
         layout.librarianOpen = true

@@ -10,6 +10,7 @@ enum AppCommand: String, CaseIterable, Sendable {
     case find
     case viewMap, viewList, viewCards, librarian
     case zoomIn, zoomOut, zoomFit, editMap
+    case toggleSidebar
     case back, forward, today
     case settings
 }

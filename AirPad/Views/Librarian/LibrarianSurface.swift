@@ -293,6 +293,10 @@ struct LibrarianSurface: View {
         }
         // live-24 — the pill rim's "while answering" animation reads this.
         .environment(\.librarianGenerating, isGenerating)
+        // Mac batch D7 — Tab into the Librarian column: its Ask field takes the keyboard.
+        .onReceive(NotificationCenter.default.publisher(for: .macFocusLibrarianAsk)) { _ in
+            if isMacColumn { isInputFocused = true }
+        }
         // Mac batch D3 — the column stays mounted while the place changes: its scope follows the place.
         .onChange(of: hostScope) { _, scope in
             guard isMacColumn else { return }

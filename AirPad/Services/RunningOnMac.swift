@@ -6,6 +6,11 @@ enum RunningOnMac {
     static let isMac: Bool = ProcessInfo.processInfo.isMacCatalystApp
 }
 
+extension Notification.Name {
+    /// Mac batch D7 — Tab into the Librarian column: its Ask field takes the keyboard.
+    static let macFocusLibrarianAsk = Notification.Name("macFocusLibrarianAsk")
+}
+
 import SwiftUI
 
 extension View {

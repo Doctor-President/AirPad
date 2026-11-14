@@ -133,7 +133,7 @@ enum MacMenuSelfTest {
             row("menu/\(e.menu)›\(e.title) \(e.key)", i.map(shortcut) == e.key, "found=\(i.map { "\($0.title) \(shortcut($0))" } ?? "nil")")
         }
         let all = dump()
-        row("menu/no ⌃⌘S binding (kept for batch D)", !all.contains { $0.hasSuffix("⌃⌘S") }, "")
+        row("menu/View › Hide Sidebar ⌃⌘S (batch D)", all.contains { $0.contains("Sidebar") && $0.hasSuffix("⌃⌘S") }, "")
         row("menu/no Help item", !all.contains { $0.trimmingCharacters(in: .whitespaces).hasPrefix("AirPad Help") })
         row("menu/no Print", !all.contains { $0.trimmingCharacters(in: .whitespaces).hasPrefix("Print") })
         let dead = ["Duplicate", "Move", "Rename…", "Export As…", "Show Toolbar", "Customize Toolbar…", "Close All"]
@@ -164,13 +164,20 @@ enum MacMenuSelfTest {
         await dismissPresented()
         row("state/Back disabled at the top", find("Go", "Back")?.enabled == false)
         row("state/Export disabled with no entry open", find("File", "Export Entry…")?.enabled == false)
-        row("fire/View›Librarian raises it", await go("View", "Librarian") && !router.librarianAtPeek, "atPeek=\(router.librarianAtPeek)")
-        row("fire/View›Librarian again lowers it", await go("View", "Librarian") && router.librarianAtPeek, "atPeek=\(router.librarianAtPeek)")
-        row("fire/Edit›Find focuses the search", await go("Edit", "Find") && firstResponderIsText() && !router.librarianAtPeek,
-            "text focused=\(firstResponderIsText()) atPeek=\(router.librarianAtPeek)")
+        // Mac batch D3 — the Librarian is a column, open by default: ⌘L closes it, ⌘L again opens it.
+        let wasOpen = MacLayout.shared.librarianOpen
+        row("fire/View›Librarian toggles the column", await go("View", "Librarian") && MacLayout.shared.librarianOpen == !wasOpen,
+            "open \(wasOpen) → \(MacLayout.shared.librarianOpen)")
+        row("fire/View›Librarian again toggles it back", await go("View", "Librarian") && MacLayout.shared.librarianOpen == wasOpen)
+        // D1 — Find focuses the TOOLBAR's search (its field lives in the toolbar's hosted view).
+        let toolbarField: () -> Bool = {
+            MacToolbarController.shared.hosts[MacToolbarController.trailingID]?.view
+                .flatMap { MacLayoutSelfTest.firstResponder(in: $0) } != nil
+        }
+        row("fire/Edit›Find focuses the toolbar's search", await go("Edit", "Find") && toolbarField() && MacLayout.shared.librarianOpen,
+            "toolbar field focused=\(toolbarField())")
         UIApplication.shared.sendAction(#selector(UIResponder.resignFirstResponder), to: nil, from: nil, for: nil)
-        _ = await go("View", "Librarian"); await settle(0.5)
-        if !router.librarianAtPeek { _ = await go("View", "Librarian") }
+        MacLayout.shared.librarianOpen = wasOpen
 
         // Open an entry from the List, as a click does, then Back / Forward / Export.
         _ = await go("View", "List")

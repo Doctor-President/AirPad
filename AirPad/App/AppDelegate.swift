@@ -28,11 +28,28 @@ final class AppDelegate: UIResponder, UIApplicationDelegate {
         builder.remove(menu: .help)
         builder.remove(menu: .document)
         builder.remove(menu: .toolbar)
-        // The View items share the sidebar group; its Show Sidebar (⌃⌘S) waits for batch D's sidebar.
+        // The View items share the sidebar group. Mac batch D7: its system Show Sidebar (⌃⌘S) toggles AirPad's sidebar
+        // (`toggleSidebar(_:)` below; a SwiftUI item with the same keys made UIKit drop the View groups). iPad: no sidebar.
+        #if !targetEnvironment(macCatalyst)
         builder.replaceChildren(ofMenu: .sidebar) { children in
             children.filter { ($0 as? UICommand)?.action != NSSelectorFromString("toggleSidebar:") }
         }
+        #endif
     }
+
+    #if targetEnvironment(macCatalyst)
+    /// Mac batch D7 — View › Show / Hide Sidebar (⌃⌘S), the system item, answered here at the end of the responder chain.
+    @objc override func toggleSidebar(_ sender: Any?) {
+        AppRouter.shared?.perform(.toggleSidebar)
+    }
+
+    override func validate(_ command: UICommand) {
+        super.validate(command)
+        if command.action == #selector(toggleSidebar(_:)) {
+            command.title = MacLayout.shared.sidebarVisible ? "Hide Sidebar" : "Show Sidebar"
+        }
+    }
+    #endif
 
     func application(
         _ application: UIApplication,

@@ -470,6 +470,34 @@ try:
              ["S13 text 0"],
              lambda a, b: (s13.pill_at_launch == 3 and s13.pill_after == 0 and s13.loaded == 3,
                            f"pill at launch {s13.pill_at_launch}; after they landed: pill {s13.pill_after}, loaded {s13.loaded}/3 after {s13.secs}s"))
+    # ---- Mac batch E6 — collection colours sync (their own file, collection-colors.json) ----
+    # S14 — A colours one collection; B shows it. Then each device colours a different collection at the same time:
+    # both keep both. Then B sets one back to Automatic: A follows. Nothing in the entries changes.
+    def s14():
+        e = new_entry("S14 carrier", "S14 text")
+        def colours(r): return cmd(r, "dump").get("collection_colors") or {}
+        def wait(r, want, secs=30):
+            t0 = time.time(); got = colours(r)
+            while time.time() - t0 < secs and got != want:
+                time.sleep(0.5); got = colours(r)
+            return got
+        cmd("A", "set_collection_color", collection="Field Notes", text="#D6249F")
+        s14.one = wait("B", {"Field Notes": "#D6249F"})
+        wa = cmd_async("A", "set_collection_color", collection="Reading", text="#1B59C2")
+        cmd("B", "set_collection_color", collection="Studio", text="#3FA34D")
+        wa()
+        settle()
+        both = {"Field Notes": "#D6249F", "Reading": "#1B59C2", "Studio": "#3FA34D"}
+        s14.a2, s14.b2 = wait("A", both), wait("B", both)
+        cmd("B", "set_collection_color", collection="Field Notes", text="")
+        rest = {"Reading": "#1B59C2", "Studio": "#3FA34D"}
+        s14.a3 = wait("A", rest)
+        s14.ok = s14.one == {"Field Notes": "#D6249F"} and s14.a2 == both and s14.b2 == both and s14.a3 == rest
+        return e
+    scenario("S14 collection colours sync both ways and merge", s14,
+             "a colour set on A shows on B; two devices colouring different collections at once keep both; Automatic on B clears it on A",
+             ["S14 text"],
+             lambda a, b: (s14.ok, f"B after A's colour {s14.one}; concurrent A {s14.a2} B {s14.b2}; after B's Automatic A {s14.a3}"))
 finally:
     fc.terminate()
     for r in "AB":

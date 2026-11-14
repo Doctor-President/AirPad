@@ -190,6 +190,10 @@ enum TwoDeviceHarness {
         case "rescan":
             LibraryWatcher.rescanNow()
             return "ok"
+        case "set_collection_color":   // Mac batch E6 — by collection name; "" = Automatic
+            guard let c = store.collections.first(where: { $0.name == (c["collection"] as? String ?? "") }) else { return "no collection" }
+            await store.setCollectionColor(c.id, hex: text.isEmpty ? nil : text)
+            return "ok"
         case "dump":
             var nodes: [[String: Any]] = []
             for n in store.nodes {
@@ -204,8 +208,11 @@ enum TwoDeviceHarness {
                     "note": store.versionNotes[n.id]?.note ?? "",
                 ])
             }
+            let names = Dictionary(store.collections.map { ($0.id, $0.name) }, uniquingKeysWith: { a, _ in a })
             return ["nodes": nodes, "catching_up": Array(store.catchingUp), "count": store.nodes.count,
-                    "pill": store.entriesCatchingUp]
+                    "pill": store.entriesCatchingUp,
+                    "collection_colors": Dictionary(store.collectionColors.map { (names[$0.key] ?? $0.key, $0.value) },
+                                                    uniquingKeysWith: { a, _ in a })]
         default:
             return "unknown op"
         }

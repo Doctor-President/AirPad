@@ -1158,6 +1158,10 @@ struct LibrarianSurface: View {
         .appSheet(item: $settingsPresentation) { presentation in
             SettingsView(initialAnchor: presentation.anchor)
         }
+        #if DEBUG
+        // Mac D fix-up B1 — `-MacSettingsSelfTest` opens Settings from this in-view sheet too (the ≡ drawer is gone on the Mac).
+        .onReceive(NotificationCenter.default.publisher(for: .debugOpenLibrarianSettings)) { _ in settingsPresentation = .root }
+        #endif
         // Mac batch C1 — Edit › Find (⌘F): the library search, as a tap on the search pill gives (focus promotes it
         // to full). ContentView first brings the Librarian up when the screen had it put away.
         .onChange(of: router.commandRequest) { _, request in
@@ -2728,3 +2732,10 @@ private extension View {
         if let proxy { self.floatingPanelScrollTracking(proxy: proxy) } else { self }
     }
 }
+
+#if DEBUG
+extension Notification.Name {
+    /// Mac D fix-up B1 — `-MacSettingsSelfTest`: open Settings from the Librarian's own sheet.
+    static let debugOpenLibrarianSettings = Notification.Name("debugOpenLibrarianSettings")
+}
+#endif

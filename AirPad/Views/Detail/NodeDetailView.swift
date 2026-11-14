@@ -749,6 +749,7 @@ struct NodeDetailView: View {
                 .padding(.top, 24)   // tail past Related — fixed, not dialed
             }
             .padding(20)
+            .macReadingColumn()   // Mac batch D4 — a centred reading column (~720 pt) under the full-width hero
             .dismissKeyboardOnTapOutside()
             }
             // Header parity measurement (DEBUG, `-HeaderMeasure`): rendered boundary

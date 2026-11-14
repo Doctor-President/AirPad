@@ -52,6 +52,8 @@ struct NodeListView: View {
 
                 if nodes.isEmpty {
                     emptyState
+                } else if RunningOnMac.isMac {
+                    macList   // Mac batch D4 — the desktop list (T asked for it)
                 } else {
                     bucketList
                 }
@@ -61,7 +63,7 @@ struct NodeListView: View {
                 // detail, during selection, or when the Librarian rises above
                 // peek). The capture "+" is no longer per-body — it lives once
                 // in the persistent chrome layer (CanvasChrome).
-                if !store.isInDetailView && !selection.isActive && router.librarianAtPeek {
+                if !RunningOnMac.isMac && !store.isInDetailView && !selection.isActive && router.librarianAtPeek {
                     HStack {
                         sortControl
                         Spacer()
@@ -217,6 +219,87 @@ struct NodeListView: View {
         }
     }
 
+    // MARK: - Mac batch D4 — the desktop list
+
+    /// Every entry in the order picked: "N entries · Sorted by last edited" (a menu), then one row each — a small hero
+    /// thumbnail, the title, one line of summary, the collection (dot + name) once the content is ≥ 820 pt wide, and the
+    /// age. Hover wash, right-click menu, ↑ / ↓ to move and ↩ to open.
+    private var macList: some View {
+        let rows = sections.flatMap(\.nodes)
+        return GeometryReader { geo in
+            ScrollViewReader { proxy in
+                ScrollView {
+                    LazyVStack(alignment: .leading, spacing: 0) {
+                        HStack(spacing: 6) {
+                            Text("\(rows.count) \(rows.count == 1 ? "entry" : "entries") ·")
+                            Menu {
+                                Picker("Sort", selection: $sortKey) {
+                                    Text("Last edited").tag(ListSort.newest)
+                                    Text("Oldest first").tag(ListSort.oldest)
+                                    Text("Title, A – Z").tag(ListSort.alphabetical)
+                                }
+                                .pickerStyle(.inline)
+                            } label: {
+                                HStack(spacing: 3) {
+                                    Text(sortLabel)
+                                    Image(systemName: "chevron.down").font(.system(size: 9, weight: .semibold))
+                                }
+                            }
+                            .menuStyle(.button)
+                            .buttonStyle(.plain)
+                            .fixedSize()
+                        }
+                        .font(appFont.font(size: 13, weight: .medium))
+                        .groundInk(0.55)
+                        .padding(.horizontal, 24)
+                        .padding(.top, 18)
+                        .padding(.bottom, 10)
+                        .accessibilityIdentifier("macListHeader")
+                        ForEach(Array(rows.enumerated()), id: \.element.id) { index, node in
+                            MacListRow(node: node, showCollection: geo.size.width >= 820,
+                                       keyboardFocused: keyIndex == index, appFont: appFont) { open(node) }
+                                .id(node.id)
+                                .entryContextMenu(node)
+                                .accessibilityIdentifier("listRow-\(node.id)")
+                        }
+                    }
+                    .padding(.bottom, 24)
+                }
+                .focusable()
+                .focusEffectDisabled()
+                .onKeyPress(.downArrow) { moveKey(+1, rows, proxy); return .handled }
+                .onKeyPress(.upArrow) { moveKey(-1, rows, proxy); return .handled }
+                .onKeyPress(.return) {
+                    if let i = keyIndex, rows.indices.contains(i) { open(rows[i]) }
+                    return .handled
+                }
+                .onFocusRequest { id in withAnimation { proxy.scrollTo(id, anchor: .center) } }
+            }
+        }
+    }
+
+    @State private var keyIndex: Int?
+
+    private var sortLabel: String {
+        switch sortKey {
+        case .newest: return "Sorted by last edited"
+        case .oldest: return "Oldest first"
+        case .alphabetical: return "Sorted by title"
+        }
+    }
+
+    private func moveKey(_ step: Int, _ rows: [Node], _ proxy: ScrollViewProxy) {
+        guard !rows.isEmpty else { return }
+        let next = min(max((keyIndex ?? (step > 0 ? -1 : rows.count)) + step, 0), rows.count - 1)
+        keyIndex = next
+        proxy.scrollTo(rows[next].id)
+    }
+
+    private func open(_ node: Node) {
+        if selection.isActive { selection.toggle(node.id); return }
+        store.openAfterPrewarm(node) { navigationPath.append(node) }
+    }
+
     private var emptyState: some View {
         VStack(spacing: 8) {
             Text("Nothing here yet")
@@ -339,5 +422,83 @@ struct NodeListView: View {
             }
         }
         return result
+    }
+}
+
+/// Mac batch D4 — one row of the desktop list.
+private struct MacListRow: View {
+    let node: Node
+    let showCollection: Bool
+    let keyboardFocused: Bool
+    let appFont: EntryBodyFont
+    let action: () -> Void
+    @Environment(CorpusStore.self) private var store
+    @Environment(\.colorScheme) private var scheme
+    @State private var hovering = false
+    @State private var thumb: UIImage?
+
+    var body: some View {
+        Button(action: action) {
+            HStack(spacing: 12) {
+                ZStack {
+                    RoundedRectangle(cornerRadius: 7, style: .continuous).fill(AppearancePalette.ink.opacity(0.07))
+                    if let thumb { Image(uiImage: thumb).resizable().scaledToFill() }
+                }
+                .frame(width: 40, height: 40)
+                .clipShape(RoundedRectangle(cornerRadius: 7, style: .continuous))
+                VStack(alignment: .leading, spacing: 2) {
+                    Text(node.title.isEmpty ? "Untitled" : node.title)
+                        .font(appFont.font(size: 14, weight: .semibold))
+                        .foregroundStyle(AppearancePalette.ink.opacity(0.95))
+                        .lineLimit(1)
+                    if !node.summary.isEmpty {
+                        Text(MarkdownPlain.label(node.summary))
+                            .font(appFont.font(size: 12.5))
+                            .foregroundStyle(AppearancePalette.ink.opacity(0.55))
+                            .lineLimit(1)
+                    }
+                }
+                .frame(maxWidth: .infinity, alignment: .leading)
+                if showCollection, let c = collection {
+                    HStack(spacing: 6) {
+                        Circle().fill(MacSidebar.dotColor(c.id, light: scheme == .light)).frame(width: 8, height: 8)
+                        Text(c.name).font(appFont.font(size: 12.5)).foregroundStyle(AppearancePalette.ink.opacity(0.7)).lineLimit(1)
+                    }
+                    .frame(width: 150, alignment: .leading)
+                }
+                Text(Self.age(node.updatedAt))
+                    .font(appFont.font(size: 12.5))
+                    .monospacedDigit()
+                    .foregroundStyle(AppearancePalette.ink.opacity(0.5))
+                    .frame(width: 56, alignment: .trailing)
+            }
+            .padding(.horizontal, 14)
+            .padding(.vertical, 7)
+            .background(RoundedRectangle(cornerRadius: 9, style: .continuous)
+                .fill(AppearancePalette.ink.opacity(keyboardFocused ? 0.11 : (hovering ? 0.05 : 0))))
+            .contentShape(Rectangle())
+        }
+        .buttonStyle(.plain)
+        .padding(.horizontal, 10)
+        .onHover { hovering = $0 }
+        .task(id: node.coverImageRelativePath) {
+            guard let url = await store.coverImageURL(for: node), let key = DisplayImageCache.coverKey(node) else { return }
+            thumb = await DisplayImageCache.shared.load(path: key, url: url, pixels: Int(40 * DisplaySize.scale))
+        }
+    }
+
+    private var collection: NodeCollection? {
+        store.collections.first { !$0.isSystem && node.collectionIDs.contains($0.id) }
+    }
+
+    /// "now", "5 min", "3 h", "2 d", "6 wk", then the date.
+    static func age(_ date: Date) -> String {
+        let s = Date().timeIntervalSince(date)
+        if s < 60 { return "now" }
+        if s < 3600 { return "\(Int(s / 60)) min" }
+        if s < 86_400 { return "\(Int(s / 3600)) h" }
+        if s < 7 * 86_400 { return "\(Int(s / 86_400)) d" }
+        if s < 60 * 86_400 { return "\(Int(s / (7 * 86_400))) wk" }
+        return date.formatted(.dateTime.month(.abbreviated).day())
     }
 }

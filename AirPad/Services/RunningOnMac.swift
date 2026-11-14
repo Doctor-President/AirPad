@@ -88,6 +88,18 @@ private struct MacSheetCloseButton: ViewModifier {
 }
 
 extension View {
+    /// Mac batch D4 — an entry's body as a centred reading column: a comfortable measure (720 pt at most) in the middle
+    /// of whatever width the entry is given. iPhone / iPad: unchanged.
+    @ViewBuilder func macReadingColumn() -> some View {
+        #if targetEnvironment(macCatalyst)
+        self.frame(maxWidth: 720).frame(maxWidth: .infinity)
+        #else
+        self
+        #endif
+    }
+}
+
+extension View {
     /// Mac fix-up X7 — a sheet's detents. On the Mac a sheet is a fixed-size window sheet with no drag to resize, so
     /// detents only got between a trackpad scroll and the content (T: the Proposals sheet didn't scroll); there it's a
     /// plain sheet whose content scrolls. iPhone / iPad: the detents, unchanged.

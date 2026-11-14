@@ -177,7 +177,7 @@ struct CanvasChrome: View {
                     // the shared `gridColumnCount` key so it swaps the body
                     // live: 1 = Cover Flow 3D carousel; 4 = vertical-scroll
                     // full cards; 2/3 = uniform-tile grid.
-                    switch gridColumnCount {
+                    switch RunningOnMac.isMac ? 2 : gridColumnCount {   // Mac batch D4 — Cards is the grid on the Mac
                     case 1:
                         CoverFlowView(scope: scope)
                     case 4:

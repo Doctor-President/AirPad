@@ -50,6 +50,8 @@ struct NodeGridView: View {
     #endif
 
     private let tileSpacing: CGFloat = 10
+    /// Mac batch D4 — the Cards grid's minimum card width on the Mac.
+    static let macMinCardWidth: CGFloat = 260
     private let topInset: CGFloat = 110
     private let bottomInset: CGFloat = 120
     private let haptic = UIImpactFeedbackGenerator(style: .medium)
@@ -184,6 +186,10 @@ struct NodeGridView: View {
             // always-on (large corpus) or always-off (small corpus), and
             // sort-switching never reflows the grid. ≤15 reclaims the lane.
             let railLane: CGFloat = scrubberMode != nil ? 30 : 0
+            // Mac batch D4 — on the Mac the columns fill the width at ~260 pt minimum per card (T's pick).
+            let columnCount = RunningOnMac.isMac
+                ? max(1, Int((geo.size.width - tileSpacing - railLane) / (Self.macMinCardWidth + tileSpacing)))
+                : self.columnCount
             let totalSpacing = tileSpacing * 2 + tileSpacing * CGFloat(columnCount - 1) + railLane
             let cellW = (geo.size.width - totalSpacing) / CGFloat(columnCount)
             let cellH = cellW * 7.0 / 5.0

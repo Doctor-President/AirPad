@@ -159,6 +159,26 @@ struct DashboardView: View {
         )
     }
 
+    /// Mac batch D4 — the Dashboard's width, for its pane grid.
+    @State private var macWidth: CGFloat = 0
+
+    /// Mac batch D4 — Today's panes in columns that reflow: 3 at ≥ 1,150 pt, 2 at ≥ 760, else 1 (filled in turn).
+    private var macPaneGrid: some View {
+        let columns = macWidth >= 1150 ? 3 : (macWidth >= 760 ? 2 : 1)
+        var panes: [AnyView] = [AnyView(todaySection), AnyView(quickReentrySection)]
+        if store.sampleLibraryPresent { panes.append(AnyView(samplePane)) }
+        panes.append(AnyView(collectionsSection))
+        return HStack(alignment: .top, spacing: 20) {
+            ForEach(0..<columns, id: \.self) { c in
+                VStack(alignment: .leading, spacing: 28) {
+                    ForEach(Array(panes.enumerated()).filter { $0.offset % columns == c }, id: \.offset) { $0.element }
+                }
+                .frame(maxWidth: .infinity, alignment: .top)
+            }
+        }
+        .accessibilityIdentifier("macDashboardGrid-\(columns)")
+    }
+
     var body: some View {
         NavigationStack(path: $path) {
             ZStack {
@@ -169,14 +189,19 @@ struct DashboardView: View {
                     VStack(alignment: .leading, spacing: 28) {
                         header
                             .padding(.top, 6)
-                        todaySection
-                        quickReentrySection
-                        if store.sampleLibraryPresent { samplePane }
-                        collectionsSection
+                        if RunningOnMac.isMac {
+                            macPaneGrid   // Mac batch D4 — the panes reflow with the width
+                        } else {
+                            todaySection
+                            quickReentrySection
+                            if store.sampleLibraryPresent { samplePane }
+                            collectionsSection
+                        }
                     }
                     .padding(.horizontal, 20)
-                    .padding(.bottom, 120)
+                    .padding(.bottom, RunningOnMac.isMac ? 40 : 120)
                 }
+                .onGeometryChange(for: CGFloat.self) { $0.size.width } action: { macWidth = $0 }
 
                 if !RunningOnMac.isMac { floatingPlusButton }   // Mac batch D1 — the toolbar's + New Entry
 

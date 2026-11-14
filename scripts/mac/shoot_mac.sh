@@ -16,7 +16,7 @@ for G in ${=LOOKS:-light dark}; do
       entry) VA=(-OpenFirstGradientEntry);; chats) VA=(-OpenMap -OpenChatsList);; settings) VA=(-OpenMap -OpenSettings root);; models) VA=(-OpenMap -OpenSettings models);;
       librarian) VA=(-OpenMap -OpenLibrarian);; recents) VA=();;
     esac
-    $APP/Contents/MacOS/AirPad $BASE $VA $WINA -appearance.override $G -MacSnapshot $V-$G-$RUN -MacSnapshotAfter $S > $OUT/$V-$G.out 2> $OUT/$V-$G.err &
+    $APP/Contents/MacOS/AirPad $BASE $VA $WINA ${=EXTRA:-} -appearance.override $G -MacSnapshot $V-$G-$RUN -MacSnapshotAfter $S > $OUT/$V-$G.out 2> $OUT/$V-$G.err &
     PID=$!
     for i in {1..40}; do [[ -f $SHOTS/$V-$G-$RUN.png ]] && break; sleep 1; done
     sleep 1

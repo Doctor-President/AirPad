@@ -40,6 +40,8 @@ STALL, CLOSED = stub_ports()
 results, t_all = [], time.time()
 for row in rows:
     if only and row["name"] not in only: continue
+    if row["needs"] == "mac":   # Mac batch D — runs on the isolated Mac copy (scripts/mac/selftest_mac.sh), not here
+        results.append((row["name"], "SKIP", "Mac only (scripts/mac/selftest_mac.sh)", 0)); continue
     if row["needs"] == "host" and not a.with_host_args:
         results.append((row["name"], "SKIP", "needs a Host (--with-host-args)", 0)); continue
     args = row["launch_args"].replace("{STALL}", str(STALL)).replace("{CLOSED}", str(CLOSED)).split() \

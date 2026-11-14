@@ -486,7 +486,7 @@ struct SettingsView: View {
             HostCatalog.shared.refreshPaired()
             if hostPairing == nil { hostPairing = HostPairing.load() }
         }
-        .sheet(isPresented: $showPairingQR, onDismiss: {
+        .appSheet(isPresented: $showPairingQR, onDismiss: {
             hostPairing = HostPairing.load()
             HostCatalog.shared.refreshPaired()
         }) {
@@ -794,7 +794,7 @@ struct SettingsView: View {
             }
         }
         #if DEBUG || TESTFLIGHT
-        .sheet(isPresented: $showSpeechEngineTesting) { SpeechEngineTestingPanel() }
+        .appSheet(isPresented: $showSpeechEngineTesting) { SpeechEngineTestingPanel() }
         #endif
     }
 
@@ -1119,7 +1119,7 @@ struct SettingsView: View {
             }
             .buttonStyle(.plain)
         }
-        .sheet(isPresented: $showTagEditor) {
+        .appSheet(isPresented: $showTagEditor) {
             TagEditorSheet(existing: editingTag)
         }
     }
@@ -1162,7 +1162,7 @@ struct SettingsView: View {
                 .clipShape(RoundedRectangle(cornerRadius: 10))
             }
             .buttonStyle(.plain)
-            .sheet(isPresented: $showImportIdeas) {
+            .appSheet(isPresented: $showImportIdeas) {
                 ImportIdeasSheet()
             }
 
@@ -1207,7 +1207,7 @@ struct SettingsView: View {
                 .clipShape(RoundedRectangle(cornerRadius: 10))
             }
             .buttonStyle(.plain)
-            .sheet(isPresented: $showReviewQueue) {
+            .appSheet(isPresented: $showReviewQueue) {
                 ReviewQueueSheet()
             }
 
@@ -1272,7 +1272,7 @@ struct SettingsView: View {
                 #endif
         }
         #if DEBUG
-        .sheet(isPresented: $showSubstrateInspect) {
+        .appSheet(isPresented: $showSubstrateInspect) {
             SubstrateInspectView()
                 .environment(store)
         }

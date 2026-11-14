@@ -235,7 +235,7 @@ struct MacSidebar: View {
         // D7 — with the sidebar focused, ↑ / ↓ go to the previous / next place.
         .onKeyPress(.downArrow) { step(+1); return .handled }
         .onKeyPress(.upArrow) { step(-1); return .handled }
-        .sheet(item: $renameTarget) { c in
+        .appSheet(item: $renameTarget) { c in
             RenameCollectionSheet(collectionID: c.id, currentName: c.name)
         }
         .confirmationDialog(deleteTarget.map { "Delete \"\($0.name)\"?" } ?? "Delete collection?",

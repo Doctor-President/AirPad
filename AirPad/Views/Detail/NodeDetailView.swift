@@ -366,13 +366,13 @@ struct NodeDetailView: View {
             if let syncFlushToken { store.unregisterPendingFlush(nodeID: nodeID, token: syncFlushToken) }
         }
         .onChange(of: privateScenePhase) { _, phase in if phase == .background { markedPrivateHere = false } }
-        .sheet(isPresented: $showExport) { EntryExportSheet(nodeID: nodeID) }   // 1.1-C (C5)
+        .appSheet(isPresented: $showExport) { EntryExportSheet(nodeID: nodeID) }   // 1.1-C (C5)
         // Mac batch C1 — this is the entry on screen (the top of the stack re-appears after a Back); File › Export Entry….
         .onAppear { router.openEntryID = nodeID }
         .onChange(of: router.commandRequest) { _, request in
             if request?.command == .export, router.openEntryID == nodeID { showExport = true }
         }
-        .sheet(isPresented: $showVersions) { EntryVersionsSheet(nodeID: nodeID) }   // Mac B1f
+        .appSheet(isPresented: $showVersions) { EntryVersionsSheet(nodeID: nodeID) }   // Mac B1f
         .onChange(of: node?.title) { old, new in
             if editedTitle == (old ?? "") { editedTitle = new ?? "" }
         }
@@ -424,29 +424,29 @@ struct NodeDetailView: View {
         } message: {
             Text("This will permanently delete the entry and all its items. Can't be undone.")
         }
-        .sheet(item: $captureMode) { mode in
+        .appSheet(item: $captureMode) { mode in
             switch mode {
             case .voice:  VoiceCaptureSheet(targetNodeID: nodeID, captureOwnsDone: isCaptureMode)
             case .camera: CameraCaptureView(targetNodeID: nodeID, captureOwnsDone: isCaptureMode)
             }
         }
-        .sheet(item: $backlinkSource) { src in
+        .appSheet(item: $backlinkSource) { src in
             BacklinkPickerSheet(sourceNodeID: nodeID, sourceEntryID: src.id)
         }
-        .sheet(isPresented: $showingNewTagSheet) {
+        .appSheet(isPresented: $showingNewTagSheet) {
             TagEditorSheet(existing: nil) { createdName in
                 if !editedTags.contains(createdName) {
                     editedTags.append(createdName)
                 }
             }
         }
-        .sheet(isPresented: $showingNewCollectionSheet) {
+        .appSheet(isPresented: $showingNewCollectionSheet) {
             CollectionCreationSheet(onCreate: { newCol in
                 Task { await store.addNodes(ids: [nodeID], toCollection: newCol.id) }
                 store.markCollectionUsed(newCol.id)
             })
         }
-        .sheet(isPresented: $showDocumentPicker) {
+        .appSheet(isPresented: $showDocumentPicker) {
             DocumentPickerView { urls in
                 guard !urls.isEmpty else { return }
                 // Phase 1 rule: append-to-most-recently-updated for
@@ -462,11 +462,11 @@ struct NodeDetailView: View {
                 }
             }
         }
-        .sheet(isPresented: $showFieldSheet) {
+        .appSheet(isPresented: $showFieldSheet) {
             FieldCreationSheet(nodeID: nodeID)
         }
         // THE LEVER — Stage 2 (§ C3). Partial-height proposals tray.
-        .sheet(isPresented: $showLeverTray) {
+        .appSheet(isPresented: $showLeverTray) {
             LeverTray(nodeID: nodeID)
         }
         .confirmationDialog(
@@ -1126,7 +1126,7 @@ struct NodeDetailView: View {
         // Lives on `content`'s chain (not body) because it needs `node`
         // in scope; the body-level sheets operate on state that doesn't
         // depend on a resolved node.
-        .sheet(isPresented: $showHeroPicker) {
+        .appSheet(isPresented: $showHeroPicker) {
             HeroImagePickerSheet(node: node, nodeID: nodeID)
         }
     }
@@ -2599,7 +2599,7 @@ private struct HeroImagePickerSheet: View {
                         .foregroundStyle(.white)
                 }
             }
-            .sheet(isPresented: $showPhotosPicker) {
+            .appSheet(isPresented: $showPhotosPicker) {
                 MediaPickerWrapper(
                     onPick: { results in
                         Task { await handlePhotosPick(results) }

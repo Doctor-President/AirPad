@@ -34,7 +34,7 @@ struct TagPickerButton<Label: View>: View {
         Button { showing = true } label: { label() }
             // Mac D0.11 (T N8) — a choose-one picker: a popover on this button on the Mac and iPad, the sheet on iPhone.
             .pickerPopover(isPresented: $showing, onDismiss: pickerDismissed) { picker }
-            .sheet(isPresented: Binding(get: { showing && !RunningOnMac.usesPickerPopovers }, set: { showing = $0 }),
+            .appSheet(isPresented: Binding(get: { showing && !RunningOnMac.usesPickerPopovers }, set: { showing = $0 }),
                    onDismiss: pickerDismissed) { picker }
     }
 

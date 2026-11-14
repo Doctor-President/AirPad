@@ -379,7 +379,7 @@ struct PriorityView: View {
                 .frame(width: 0, height: 0)
                 .allowsHitTesting(false)
         }
-        .sheet(isPresented: $showReorder) {
+        .appSheet(isPresented: $showReorder) {
             PriorityReorderSheet(nodes: store.priorityNodes)
                 .environment(store)
         }

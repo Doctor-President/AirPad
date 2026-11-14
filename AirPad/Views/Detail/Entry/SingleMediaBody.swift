@@ -103,7 +103,7 @@ struct SingleMediaBody: View {
                 EmptyView()
             }
         }
-        .sheet(isPresented: $showingPicker) {
+        .appSheet(isPresented: $showingPicker) {
             MediaPickerWrapper { results in
                 Task { await handlePickedMedia(results) }
             }
@@ -124,7 +124,7 @@ struct SingleMediaBody: View {
         } message: {
             Text("They may be stored in iCloud and need to be downloaded first. Try again once they’ve finished downloading.")
         }
-        .fullScreenCover(item: $viewerStart, onDismiss: handleViewerDismiss) { start in
+        .appFullScreenCover(item: $viewerStart, onDismiss: handleViewerDismiss) { start in
             GalleryFullscreenViewer(
                 galleryItems: item.mediaItems ?? [],
                 nodeID: nodeID,

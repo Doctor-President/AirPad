@@ -57,7 +57,7 @@ struct RelatedNodesSection: View {
         .padding(.horizontal, 16)
         .padding(.top, 20)
         .onAppear { refreshSuggestions() }
-        .sheet(isPresented: $showLinkPicker) {
+        .appSheet(isPresented: $showLinkPicker) {
             // The standard backlink creation flow with a WHOLE-NODE source
             // (`sourceEntryID: nil`) — the case the entry "..." menu can't
             // author. Screen 2's node-level option writes `entryID == nil`.

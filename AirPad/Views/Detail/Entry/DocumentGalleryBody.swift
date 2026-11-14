@@ -60,7 +60,7 @@ struct DocumentGalleryBody: View {
                 }
             }
         }
-        .sheet(isPresented: $showingAppendPicker) {
+        .appSheet(isPresented: $showingAppendPicker) {
             DocumentPickerView { urls in
                 guard !urls.isEmpty else { return }
                 Task {

@@ -38,7 +38,7 @@ extension View {
     @ViewBuilder func pickerPopover<Content: View>(isPresented: Binding<Bool>, onDismiss: (() -> Void)? = nil,
                                                     @ViewBuilder content: @escaping () -> Content) -> some View {
         if RunningOnMac.usesPickerPopovers {
-            self.popover(isPresented: isPresented, arrowEdge: .bottom) {
+            self.appPopover(isPresented: isPresented, arrowEdge: .bottom) {   // D fix-up B1 — carries the app objects
                 content()
                     .frame(minWidth: 340, idealWidth: 380, maxWidth: 440, minHeight: 360, idealHeight: 520, maxHeight: 640)
                     .presentationCompactAdaptation(.popover)

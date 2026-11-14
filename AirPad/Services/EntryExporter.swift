@@ -331,7 +331,7 @@ struct EntryExportSheet: View {
             folderName = EntryExporter.folder.name
         }
         .onDisappear { shown = false }
-        .sheet(item: Binding(get: { shareURL.map(ShareTarget.init) }, set: { if $0 == nil { shareURL = nil } })) { t in
+        .appSheet(item: Binding(get: { shareURL.map(ShareTarget.init) }, set: { if $0 == nil { shareURL = nil } })) { t in
             ActivityShareView(items: [t.url]).ignoresSafeArea()
                 .macSheetClose()   // Mac D0.11 — a visible × + Esc around the share panel
         }

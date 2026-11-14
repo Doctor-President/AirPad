@@ -237,20 +237,20 @@ struct DashboardView: View {
             .navigationDestination(for: NodeDetailRoute.self) { route in
                 NodeDetailView(nodeID: route.nodeID, focusEntryID: route.entryID)
             }
-            .sheet(item: $renameTarget) { collection in
+            .appSheet(item: $renameTarget) { collection in
                 RenameCollectionSheet(collectionID: collection.id, currentName: collection.name)
             }
-            .sheet(isPresented: $showCreateCollectionSheet) {
+            .appSheet(isPresented: $showCreateCollectionSheet) {
                 CollectionCreationSheet { _ in }
             }
-            .sheet(isPresented: $showCollectionReorder) {
+            .appSheet(isPresented: $showCollectionReorder) {
                 CollectionReorderSheet(collections: store.collections)
                     .environment(store)
             }
-            .sheet(isPresented: $showSettings) {
+            .appSheet(isPresented: $showSettings) {
                 SettingsView()
             }
-            .sheet(isPresented: $showAppearancePanel) {
+            .appSheet(isPresented: $showAppearancePanel) {
                 AppearancePanel()
             }
             #if DEBUG
@@ -259,7 +259,7 @@ struct DashboardView: View {
                 if ProcessInfo.processInfo.arguments.contains("-OpenAppearancePanel") { showAppearancePanel = true }
             }
             #endif
-            .sheet(isPresented: $showQuarantineReview) {
+            .appSheet(isPresented: $showQuarantineReview) {
                 QuarantineReviewSheet()
             }
             // In-app capture overlay handoff. The overlay (mounted at

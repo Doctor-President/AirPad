@@ -60,7 +60,7 @@ struct LinkGalleryBody: View {
                 }
             }
         }
-        .sheet(isPresented: $showingAppendSheet) {
+        .appSheet(isPresented: $showingAppendSheet) {
             LinkAppendSheet { url in
                 Task {
                     await store.appendLinkItem(

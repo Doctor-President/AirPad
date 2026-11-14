@@ -96,7 +96,7 @@ struct ChatView: View {
             }
         }
         .toolbarBackground(.visible, for: .navigationBar)
-        .sheet(isPresented: Binding(get: { showingPinSheet && !RunningOnMac.usesPickerPopovers }, set: { showingPinSheet = $0 })) {
+        .appSheet(isPresented: Binding(get: { showingPinSheet && !RunningOnMac.usesPickerPopovers }, set: { showingPinSheet = $0 })) {
             PinChatSheet(chatID: session.id).environment(store)
         }
     }

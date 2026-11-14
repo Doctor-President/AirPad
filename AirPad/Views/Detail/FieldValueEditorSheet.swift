@@ -100,7 +100,7 @@ struct FieldValueEditorSheet: View {
             }
         }
         .sheetDetents([.medium, .large])
-        .sheet(isPresented: Binding(get: { showNodePicker && !RunningOnMac.usesPickerPopovers }, set: { showNodePicker = $0 })) {
+        .appSheet(isPresented: Binding(get: { showNodePicker && !RunningOnMac.usesPickerPopovers }, set: { showNodePicker = $0 })) {
             nodePicker
         }
     }

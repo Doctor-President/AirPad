@@ -213,16 +213,16 @@ struct GalleryBody: View {
     /// per instance (spine vs legacy) so the bindings never double-present.
     private func galleryPresentations<V: View>(_ content: V) -> some View {
         content
-            .sheet(isPresented: $showingPicker) {
+            .appSheet(isPresented: $showingPicker) {
                 MediaPickerWrapper { results in
                     Task { await handlePickedMedia(results) }
                 }
             }
-            .sheet(isPresented: $showingReorder) {
+            .appSheet(isPresented: $showingReorder) {
                 GalleryReorderSheet(item: item, nodeID: nodeID)
                     .environment(store)
             }
-            .fullScreenCover(item: $viewerStart, onDismiss: flushPendingDeletion) { start in
+            .appFullScreenCover(item: $viewerStart, onDismiss: flushPendingDeletion) { start in
                 GalleryFullscreenViewer(
                     galleryItems: galleryItems,
                     nodeID: nodeID,

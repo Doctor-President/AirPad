@@ -191,20 +191,20 @@ struct QuikCaptureView: View {
                         if focusedField == .summary { summaryEdited = true }
                         if summaryEdited { LocalDrafts.set("summary:\(node.id)", node: node.id, text: new) }
                     }
-                    .sheet(item: $captureMode) { mode in
+                    .appSheet(item: $captureMode) { mode in
                         switch mode {
                         case .voice:  VoiceCaptureSheet(targetNodeID: node.id, captureOwnsDone: true)
                         case .camera: CameraCaptureView(targetNodeID: node.id, captureOwnsDone: true)
                         }
                     }
-                    .sheet(isPresented: $showingNewTagSheet) {
+                    .appSheet(isPresented: $showingNewTagSheet) {
                         TagEditorSheet(existing: nil) { createdName in
                             if !editedTags.contains(createdName) {
                                 editedTags.append(createdName)
                             }
                         }
                     }
-                    .sheet(isPresented: $showingNewCollectionSheet) {
+                    .appSheet(isPresented: $showingNewCollectionSheet) {
                         CollectionCreationSheet(onCreate: { newCol in
                             let id = node.id
                             Task { await store.addNodes(ids: [id], toCollection: newCol.id) }
@@ -212,18 +212,18 @@ struct QuikCaptureView: View {
                         })
                     }
                     // THE LEVER — Stage 2c. The same proposals tray as the detail view.
-                    .sheet(isPresented: $showLeverTray) {
+                    .appSheet(isPresented: $showLeverTray) {
                         LeverTray(nodeID: node.id)
                     }
                     // Shared ATTRIBUTES "+" → Add-Field sheet (same as the detail view).
-                    .sheet(isPresented: $showFieldSheet) {
+                    .appSheet(isPresented: $showFieldSheet) {
                         FieldCreationSheet(nodeID: node.id)
                     }
                     // Brief CD5 — the refusal note's "Set up the private model" → Settings → Models.
-                    .sheet(isPresented: $showRefusalSettings) {
+                    .appSheet(isPresented: $showRefusalSettings) {
                         SettingsView(initialAnchor: .models)
                     }
-                    .sheet(isPresented: $showDocumentPicker) {
+                    .appSheet(isPresented: $showDocumentPicker) {
                         DocumentPickerView { urls in
                             guard !urls.isEmpty else { return }
                             // Phase 1 rule: append-to-most-recently-updated

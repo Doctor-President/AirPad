@@ -231,7 +231,7 @@ struct LeverTray: View {
         // Nested sheet OVER the tray — the refusal surface's "set up" route lands the
         // user in AirPad's own Settings (local-model download + enable). No AppRouter
         // plumbing, no dismiss-then-present race; closing returns to the tray.
-        .sheet(isPresented: $showSettings) { SettingsView(initialAnchor: .models) }
+        .appSheet(isPresented: $showSettings) { SettingsView(initialAnchor: .models) }
     }
 
     // MARK: - Rows

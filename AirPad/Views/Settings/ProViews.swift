@@ -59,7 +59,7 @@ struct MapLookSection: View {
                 .font(appFont.font(size: 12, relativeTo: .caption1)).foregroundStyle(AppearancePalette.ink.opacity(0.45))
                 .fixedSize(horizontal: false, vertical: true)
         }
-        .sheet(isPresented: $showPro) { ProSheet() }
+        .appSheet(isPresented: $showPro) { ProSheet() }
         .onReceive(NotificationCenter.default.publisher(for: .proEntitlementChanged)) { _ in picked = MapLookChoice.picked }
     }
 
@@ -237,7 +237,7 @@ struct MapGroundSection: View {
                 .font(appFont.font(size: 12, relativeTo: .caption1)).foregroundStyle(AppearancePalette.ink.opacity(0.45))
                 .fixedSize(horizontal: false, vertical: true)
         }
-        .sheet(isPresented: $showPro) { ProSheet() }
+        .appSheet(isPresented: $showPro) { ProSheet() }
         .onAppear { side = MapGround.edited(light: light); rawPick = [:]; adjusted = nil }
         .onChange(of: scheme) { _, _ in side = MapGround.edited(light: light); rawPick = [:]; adjusted = nil }
     }
@@ -390,7 +390,7 @@ struct DashboardSurfaceSection: View {
                 .font(appFont.font(size: 12, relativeTo: .caption1)).foregroundStyle(AppearancePalette.ink.opacity(0.45))
                 .fixedSize(horizontal: false, vertical: true)
         }
-        .sheet(isPresented: $showPro) { ProSheet() }
+        .appSheet(isPresented: $showPro) { ProSheet() }
     }
 
     private func row(_ c: DashboardSurfaceChoice) -> some View {
@@ -488,7 +488,7 @@ struct ProSheet: View {
         .presentationBackground(AppearancePalette.bgBase)
         .presentationDragIndicator(.visible)
         .macSheetClose()   // Mac D0.11 — × and Esc (a Mac sheet has no swipe)
-        .sheet(isPresented: $showTips) {
+        .appSheet(isPresented: $showTips) {
             ScrollView { TipJarView().padding(24) }
                 .background(AppearancePalette.bgBase.ignoresSafeArea())
                 .presentationBackground(AppearancePalette.bgBase)

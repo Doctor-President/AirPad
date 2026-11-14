@@ -163,7 +163,7 @@ struct ChatsListView: View {
         } message: {
             Text("This chat is pinned to \(pendingDeleteNodeName). Deleting it removes it from that entry too.")
         }
-        .sheet(isPresented: pinSheetPresented) {
+        .appSheet(isPresented: pinSheetPresented) {
             if let id = pinningChatID {
                 PinChatSheet(chatID: id).environment(store)
             }

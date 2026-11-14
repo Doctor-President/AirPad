@@ -454,26 +454,26 @@ struct CanvasChrome: View {
                 .frame(width: 0, height: 0)
         )
         .animation(.spring(response: 0.35), value: store.iCloudUnavailable)
-        .sheet(isPresented: $showFilterPanel) {
+        .appSheet(isPresented: $showFilterPanel) {
             FilterPanelView(scope: scope)
         }
-        .sheet(isPresented: $showEditMap) {
+        .appSheet(isPresented: $showEditMap) {
             EditMapSheet()
         }
         // Mac D0.7 — View › Edit Map… (the Map's own settings, as from the view menu).
         .onChange(of: router.commandRequest) { _, request in
             if request?.command == .editMap, store.filterState(for: scope).viewMode == .systemGraph { showEditMap = true }
         }
-        .sheet(isPresented: $showSettings) {
+        .appSheet(isPresented: $showSettings) {
             SettingsView()
         }
-        .sheet(isPresented: $showAppearancePanel) {
+        .appSheet(isPresented: $showAppearancePanel) {
             AppearancePanel()
         }
-        .sheet(isPresented: $showQuarantineReview) {
+        .appSheet(isPresented: $showQuarantineReview) {
             QuarantineReviewSheet()
         }
-        .sheet(isPresented: $showBatchAddTagSheet) {
+        .appSheet(isPresented: $showBatchAddTagSheet) {
             TagEditorSheet(existing: nil) { createdName in
                 let ids = selection.selected
                 Task {

@@ -450,7 +450,7 @@ struct GalleryFullscreenViewer: View {
         // gets the entire screen — its own transport, fullscreen, and PiP
         // surfaces all light up; nothing in the AirPad pager competes for
         // body taps. Dismissing returns to the poster page.
-        .fullScreenCover(item: $playingItem) { item in
+        .appFullScreenCover(item: $playingItem) { item in
             FullscreenVideoPlayer(
                 galleryItem: item,
                 nodeID: nodeID,
@@ -473,7 +473,7 @@ struct GalleryFullscreenViewer: View {
             }
             Button("Cancel", role: .cancel) { pendingDelete = nil }
         }
-        .sheet(item: $shareHandoff) { handoff in
+        .appSheet(item: $shareHandoff) { handoff in
             DocumentShareSheet(handoff: handoff)
                 .macSheetClose()   // Mac D0.11
         }

@@ -568,7 +568,7 @@ struct LibrarianSurface: View {
             }
             updateActiveAccent()
         }
-        .sheet(item: $presentedCitation) { context in
+        .appSheet(item: $presentedCitation) { context in
             CitationSheet(
                 nodeID: context.nodeID,
                 allCitations: context.citations,
@@ -1152,10 +1152,10 @@ struct LibrarianSurface: View {
         } message: {
             Text("Clear removes it from here; the chat stays in your Chats list. Delete removes it permanently.")
         }
-        .sheet(isPresented: $showingLibrarianPinSheet) {
+        .appSheet(isPresented: $showingLibrarianPinSheet) {
             PinChatSheet(chatID: router.chat.id).environment(store)
         }
-        .sheet(item: $settingsPresentation) { presentation in
+        .appSheet(item: $settingsPresentation) { presentation in
             SettingsView(initialAnchor: presentation.anchor)
         }
         // Mac batch C1 — Edit › Find (⌘F): the library search, as a tap on the search pill gives (focus promotes it
@@ -1607,7 +1607,7 @@ struct LibrarianSurface: View {
             }
         }
         // iPhone: the sheet (Mac / iPad: the popover on the pill, above).
-        .sheet(isPresented: Binding(get: { showModelPicker && !RunningOnMac.usesPickerPopovers },
+        .appSheet(isPresented: Binding(get: { showModelPicker && !RunningOnMac.usesPickerPopovers },
                                     set: { showModelPicker = $0 }), onDismiss: modelPickerDismissed) {
             modelPicker(librarian).sheetDetents([.medium, .large])
         }

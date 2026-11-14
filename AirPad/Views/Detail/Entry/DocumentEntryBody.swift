@@ -89,7 +89,7 @@ struct DocumentEntryBody: View {
                 EmptyView()
             }
         }
-        .sheet(isPresented: $showingAppendSheet) {
+        .appSheet(isPresented: $showingAppendSheet) {
             DocumentPickerView { urls in
                 guard !urls.isEmpty else { return }
                 Task {
@@ -101,11 +101,11 @@ struct DocumentEntryBody: View {
                 }
             }
         }
-        .sheet(item: $previewIdentity) { identity in
+        .appSheet(item: $previewIdentity) { identity in
             DocumentViewerSheet(handoff: identity)
                 .ignoresSafeArea()
         }
-        .sheet(item: $shareIdentity) { identity in
+        .appSheet(item: $shareIdentity) { identity in
             DocumentShareSheet(handoff: identity)
                 .macSheetClose()   // Mac D0.11 — a visible × + Esc around the share panel
         }

@@ -214,7 +214,7 @@ struct ChatTableView: View {
             .accessibilityIdentifier("chatTable")
         }
         .padding(.trailing, -gutter)
-        .fullScreenCover(isPresented: $showFull) { ChatTableFullScreen(table: table) }
+        .appFullScreenCover(isPresented: $showFull) { ChatTableFullScreen(table: table) }
     }
 
     /// One row: the pinned cells (the first column; the first two after a narrow index, live-28 (A4)) ride the

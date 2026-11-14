@@ -795,7 +795,7 @@ struct CanvasView: View {
             .navigationDestination(for: NodeDetailRoute.self) { route in
                 NodeDetailView(nodeID: route.nodeID, focusEntryID: route.entryID)
             }
-            .sheet(item: $localTagSuggestions) { context in
+            .appSheet(item: $localTagSuggestions) { context in
                 tagCreationSheet(context: context)
             }
             .alert("Rename cluster", isPresented: Binding(

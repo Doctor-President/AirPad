@@ -272,7 +272,7 @@ struct CaptureAttributesSection: View {
         .padding(.vertical, 10)
         .padding(.horizontal, 12)
         .background(AppearancePalette.ink.opacity(0.05), in: RoundedRectangle(cornerRadius: 12))
-        .sheet(item: $editingItem) { item in
+        .appSheet(item: $editingItem) { item in
             if item.type == .rating, let rating = item.rating {
                 RatingEditSheet(itemID: item.id, nodeID: nodeID,
                                 initialValue: rating.value, scale: rating.scale)

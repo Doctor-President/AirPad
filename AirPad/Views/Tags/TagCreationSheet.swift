@@ -228,7 +228,7 @@ private struct NewTagPill: View {
         .clipShape(Capsule())
         // Mac D0.11 (T N8) — a choose-one picker: a popover on the pill on the Mac and iPad, the sheet on iPhone.
         .pickerPopover(isPresented: $showColorPicker) { ColorPickerSheet(selectedHex: $tag.colorHex, presets: colorPresets) }
-        .sheet(isPresented: Binding(get: { showColorPicker && !RunningOnMac.usesPickerPopovers }, set: { showColorPicker = $0 })) {
+        .appSheet(isPresented: Binding(get: { showColorPicker && !RunningOnMac.usesPickerPopovers }, set: { showColorPicker = $0 })) {
             ColorPickerSheet(selectedHex: $tag.colorHex, presets: colorPresets)
         }
     }

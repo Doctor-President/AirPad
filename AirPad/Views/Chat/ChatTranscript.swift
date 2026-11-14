@@ -117,7 +117,7 @@ struct ChatTranscript: View {
             }
         }
         .task { HostCatalog.shared.refreshPaired(); await HostCatalog.shared.refresh() } // off-render
-        .sheet(isPresented: Binding(get: { showPicker && !RunningOnMac.usesPickerPopovers }, set: { showPicker = $0 })) {
+        .appSheet(isPresented: Binding(get: { showPicker && !RunningOnMac.usesPickerPopovers }, set: { showPicker = $0 })) {
             modelPicker.sheetDetents([.medium, .large])
         }
         // Conversation identity changed (new chat / switched chat): drop the
@@ -126,7 +126,7 @@ struct ChatTranscript: View {
             input = ""
             isPinnedToBottom = true
         }
-        .fullScreenCover(item: $presentedTable) { ChatTableFullScreen(table: $0.table) }
+        .appFullScreenCover(item: $presentedTable) { ChatTableFullScreen(table: $0.table) }
         // ★ BUG 36 Pillar 2 — foreground re-attach for EVERY chat host. This is the
         // shared component behind both ChatView and the Librarian's "Ask" panel; the
         // Librarian is a FloatingPanel-hosted VC where `@Environment(\.scenePhase)` does

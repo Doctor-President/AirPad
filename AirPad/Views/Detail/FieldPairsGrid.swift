@@ -185,7 +185,7 @@ struct FieldPairsGrid: View {
                 .accessibilityIdentifier("attrEmptyFields")
             }
         }
-        .sheet(item: $editingItem) { item in
+        .appSheet(item: $editingItem) { item in
             if let fv = item.field, let def = store.fieldDefinition(id: fv.definitionID) {
                 FieldValueEditorSheet(nodeID: nodeID, item: item, definition: def)
             }

@@ -294,7 +294,7 @@ private struct MenuAppearanceSection: View {
             GravityWellsToggle(detailed: false)
         }
         .padding(.bottom, 4)
-        .sheet(isPresented: $showPro) { ProSheet() }
+        .appSheet(isPresented: $showPro) { ProSheet() }
         .onReceive(NotificationCenter.default.publisher(for: .proEntitlementChanged)) { _ in picked = MapLookChoice.picked }
     }
 }

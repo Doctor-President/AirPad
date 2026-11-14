@@ -81,13 +81,13 @@ struct CameraCaptureView: View {
             }
         }
         // PHPickerViewController for photo library
-        .sheet(isPresented: $showingPicker) {
+        .appSheet(isPresented: $showingPicker) {
             MediaPickerWrapper { results in
                 Task { await handlePickerResults(results) }
             }
         }
         // UIImagePickerController for live camera
-        .sheet(isPresented: $showingCamera) {
+        .appSheet(isPresented: $showingCamera) {
             ImagePickerWrapper(sourceType: .camera) { image in
                 Task { await handleCapturedImage(image) }
             }

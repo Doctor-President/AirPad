@@ -802,7 +802,7 @@ private struct ManageModelsReproView: View {
     var body: some View {
         Color(hexString: "EFEAE0").ignoresSafeArea()
             .onAppear { HostCatalog.shared.refreshPaired(); showModelPicker = true }
-            .sheet(isPresented: $showModelPicker, onDismiss: {
+            .appSheet(isPresented: $showModelPicker, onDismiss: {
                 if pendingManageModels {
                     pendingManageModels = false
                     settingsPresentation = .at(.models)
@@ -818,7 +818,7 @@ private struct ManageModelsReproView: View {
                 )
                 .presentationDetents([.medium, .large])
             }
-            .sheet(item: $settingsPresentation) { presentation in
+            .appSheet(item: $settingsPresentation) { presentation in
                 SettingsView(initialAnchor: presentation.anchor)
             }
     }

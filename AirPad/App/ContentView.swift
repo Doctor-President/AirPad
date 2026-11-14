@@ -185,6 +185,14 @@ struct ContentView: View {
                         NSLog("%@", await MacMenuSelfTest.run(store: store, router: router))
                     }
                 }
+                // Mac D fix-up B1 — `-MacSettingsSelfTest`: Settings opened and closed 50× in a row.
+                if ProcessInfo.processInfo.arguments.contains("-MacSettingsSelfTest") {
+                    Task { @MainActor in
+                        for _ in 0..<120 where store.nodes.count < 10 { try? await Task.sleep(nanoseconds: 250_000_000) }
+                        try? await Task.sleep(nanoseconds: 4_000_000_000)
+                        NSLog("%@", await MacSettingsSelfTest.run(store: store, router: router))
+                    }
+                }
                 // Mac batch D — `-MacLayoutSelfTest`: the toolbar, sidebar and Librarian column.
                 if ProcessInfo.processInfo.arguments.contains("-MacLayoutSelfTest") {
                     Task { @MainActor in
@@ -410,7 +418,7 @@ struct ContentView: View {
             get: { store.newerFormatNotice }, set: { store.newerFormatNotice = $0 })) {
             Button("OK", role: .cancel) {}
         }
-        .sheet(isPresented: $routerBinding.showChatsList) {
+        .appSheet(isPresented: $routerBinding.showChatsList) {
             ChatsListView()
                 .environment(store)
                 .environment(router)
@@ -418,11 +426,11 @@ struct ContentView: View {
                 .environment(quarantineStore)
         }
         // Mac batch C1 — File › New Collection and Settings… (menu bar / key commands).
-        .sheet(isPresented: $routerBinding.showNewCollection) {
+        .appSheet(isPresented: $routerBinding.showNewCollection) {
             CollectionCreationSheet { _ in }
                 .environment(store)
         }
-        .sheet(isPresented: $routerBinding.showSettings) {
+        .appSheet(isPresented: $routerBinding.showSettings) {
             SettingsView()
                 .environment(store)
                 .environment(router)
@@ -436,7 +444,7 @@ struct ContentView: View {
         .onChange(of: router.entryAction) { _, request in
             if let request { perform(request.action, on: request.nodeID) }
         }
-        .sheet(item: Binding(get: { router.exportEntryID.map(ExportTarget.init) }, set: { router.exportEntryID = $0?.id })) { t in
+        .appSheet(item: Binding(get: { router.exportEntryID.map(ExportTarget.init) }, set: { router.exportEntryID = $0?.id })) { t in
             EntryExportSheet(nodeID: t.id)
                 .environment(store)
                 .environment(router)

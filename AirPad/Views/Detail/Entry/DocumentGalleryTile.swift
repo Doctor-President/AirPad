@@ -62,11 +62,11 @@ struct DocumentGalleryTile: View {
         .onTapGesture { Task { await openInQuickLook() } }
         .overlay(alignment: .topTrailing) { tileMenu }
         .task { await extractIfNeeded() }
-        .sheet(item: $previewIdentity) { identity in
+        .appSheet(item: $previewIdentity) { identity in
             DocumentViewerSheet(handoff: identity)
                 .ignoresSafeArea()
         }
-        .sheet(item: $shareIdentity) { identity in
+        .appSheet(item: $shareIdentity) { identity in
             DocumentShareSheet(handoff: identity)
                 .macSheetClose()   // Mac D0.11 — a visible × + Esc around the share panel
         }

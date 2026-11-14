@@ -2096,6 +2096,9 @@ final class CorpusPhysicsScene: SKScene {
     /// appearance or look, a setting, a tilt step). Cheap and idempotent: only acts while paused.
     /// `soft`: draw, but don't count as activity (the newcomer halo's step frame: no 0.4 s at 120 fps).
     func wakeFromRest(_ reason: String, soft: Bool = false) {
+        #if targetEnvironment(macCatalyst)
+        if ["size", "appearance", "power", "heat", "ground"].contains(reason) { MapLaunchFrameLog.shared.event(reason) }
+        #endif
         guard restPaused else { return }
         restPaused = false
         restEligibleFrames = 0
@@ -2167,6 +2170,9 @@ final class CorpusPhysicsScene: SKScene {
         guard restEligibleFrames >= 2, !restPaused else { return }
         restPaused = true
         v.isPaused = true
+        #if targetEnvironment(macCatalyst)
+        MapLaunchFrameLog.shared.event("rest (0 fps)", context: launchLogContext)
+        #endif
         if canvasState?.mapAtRest == false { canvasState?.mapAtRest = true }
         if nodeSprites.values.contains(where: { $0.userData?["haloCreatedAt"] != nil }) {
             restHaloTimer = Timer.scheduledTimer(withTimeInterval: Self.haloStepSeconds, repeats: false) { [weak self] _ in
@@ -2248,6 +2254,19 @@ final class CorpusPhysicsScene: SKScene {
         }
         return total
     }
+
+    #if targetEnvironment(macCatalyst)
+    private var launchTitleBuilds = 0
+    /// B3 — what the launch frame log notes with each second (title builds since the last line).
+    private var launchLogContext: String {
+        defer { launchTitleBuilds = 0 }
+        return String(format: "titles=%d lowPower=%@ thermal=%@ heat=%@ look=%@ light=%@ size=%.0fx%.0f orbs=%d zoom=%.2f",
+               launchTitleBuilds, ProcessInfo.processInfo.isLowPowerModeEnabled ? "Y" : "n", Self.thermalString(),
+               MapHeatGuard.shared.critical ? "flat" : MapHeatGuard.shared.stressed ? "60+lod" : "-",
+               (mapTuning ?? .today).orbLook.rawValue, appearanceIsLight ? "Y" : "n", size.width, size.height,
+               nodeSprites.count, cameraNode.xScale)
+    }
+    #endif
 
     private static func thermalString() -> String {
         switch ProcessInfo.processInfo.thermalState {
@@ -2468,6 +2487,16 @@ final class CorpusPhysicsScene: SKScene {
 
     override func update(_ currentTime: TimeInterval) {
         if isPaused { return }
+        #if targetEnvironment(macCatalyst)
+        // Mac D fix-up B3 — the first 30 s of Map frames after launch, for the next stutter's evidence.
+        let launchLog = MapLaunchFrameLog.shared.active ? CACurrentMediaTime() : nil
+        defer {
+            if let launchLog {
+                MapLaunchFrameLog.shared.frame(currentTime, updateMs: (CACurrentMediaTime() - launchLog) * 1000,
+                                               askFPS: view?.preferredFramesPerSecond ?? 0) { launchLogContext }
+            }
+        }
+        #endif
         noteFrameForRest()   // R1
         TitleTiles.shared.flush()   // R2 — upload new title tiles before this frame draws (no-op when none)
         #if DEBUG || PANBENCH
@@ -6503,6 +6532,9 @@ final class CorpusPhysicsScene: SKScene {
     private func makeTitleSprite(text: String, radius: CGFloat, fillColor: UIColor, nodeID: String, isMeta: Bool) -> SKNode {
         #if DEBUG || PANBENCH
         PanBench.titleBuilds += 1
+        #endif
+        #if targetEnvironment(macCatalyst)
+        launchTitleBuilds += 1   // B3 — the launch frame log's per-second count
         #endif
         // MSDF glyph label — the SOLE label path (raster retired in Phase 3). The wrap /
         // tier / hyphenation is resolved in glyph-space (resolveTitleLines, measured with

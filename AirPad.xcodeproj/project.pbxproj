@@ -236,6 +236,7 @@
 		811D96167D624FC5CEA113E7 /* Lora-OFL.txt in Resources */ = {isa = PBXBuildFile; fileRef = F3D0F984EFB676B8DEF23CF1 /* Lora-OFL.txt */; };
 		81BA2F196401E0FAACA38EF6 /* SpaceGrotesk-OFL.txt in Resources */ = {isa = PBXBuildFile; fileRef = 419893A1B7CDFFFFF7BF2B5B /* SpaceGrotesk-OFL.txt */; };
 		81E961BA4A708B6152A03A06 /* CustomServerSelfTest.swift in Sources */ = {isa = PBXBuildFile; fileRef = B23C7965626A503B20C5D0FC /* CustomServerSelfTest.swift */; };
+		824B29BC3D593E9E1D016DB9 /* MapLaunchFrameLog.swift in Sources */ = {isa = PBXBuildFile; fileRef = ED15C691B3F98B0D96B05496 /* MapLaunchFrameLog.swift */; };
 		82A241AC4B5BE28AC0C44FCE /* UMAPTransform.swift in Sources */ = {isa = PBXBuildFile; fileRef = CBFC67AB61C6EF9AE8FAEA9E /* UMAPTransform.swift */; };
 		82E46E44615798A6EAF8F8EF /* ShareViewController.swift in Sources */ = {isa = PBXBuildFile; fileRef = 7ADCFC2E5FD3AD007A9DF0EE /* ShareViewController.swift */; };
 		82F235121D34EDF0F2571CB8 /* IPadKeyCommands.swift in Sources */ = {isa = PBXBuildFile; fileRef = 55C3F23FF0530CB8F0162525 /* IPadKeyCommands.swift */; };
@@ -938,6 +939,7 @@
 		EC36DE9EA28BD7C8FAFD81A0 /* HistoryPanel.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = HistoryPanel.swift; sourceTree = "<group>"; };
 		EC55F8927BF1AB0D81FDEF40 /* ProViews.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ProViews.swift; sourceTree = "<group>"; };
 		ECFED59D749E91B63D80BF73 /* BigShouldersDisplay-OFL.txt */ = {isa = PBXFileReference; lastKnownFileType = text; path = "BigShouldersDisplay-OFL.txt"; sourceTree = "<group>"; };
+		ED15C691B3F98B0D96B05496 /* MapLaunchFrameLog.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = MapLaunchFrameLog.swift; sourceTree = "<group>"; };
 		ED287727ED25FF9291551213 /* HDBSCANReachability.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = HDBSCANReachability.swift; sourceTree = "<group>"; };
 		ED83A2DE515939345223CDCB /* ClipboardContentRouterDiagnostic.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ClipboardContentRouterDiagnostic.swift; sourceTree = "<group>"; };
 		ED924ABE8CD119DCD5194981 /* SpeechEngineSwitch.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = SpeechEngineSwitch.swift; sourceTree = "<group>"; };
@@ -1068,6 +1070,7 @@
 				D9792DA964AD5BC6DF0B2F6C /* EditMapSheet.swift */,
 				F009B8D59EF84BA40BB5B4A6 /* EmptyStateOverlay.swift */,
 				A86A204A4B913E467EDBA6B6 /* MapAdaptiveRate.swift */,
+				ED15C691B3F98B0D96B05496 /* MapLaunchFrameLog.swift */,
 				9A1192C01F48D65E220E33D0 /* MapPointerSelfTest.swift */,
 				03E923FC9841272766621A1B /* ModelProcessingIndicator.swift */,
 				7F66121EACBDE4B0316AC715 /* MSDFLabel.swift */,
@@ -2303,6 +2306,7 @@
 				C476E58EFD2185BEE830A281 /* MacSettingsSelfTest.swift in Sources */,
 				98C431825B91D4819CE4096F /* MacWebKeySelfTest.swift in Sources */,
 				3B6801F816A54E8556578089 /* MapAdaptiveRate.swift in Sources */,
+				824B29BC3D593E9E1D016DB9 /* MapLaunchFrameLog.swift in Sources */,
 				387AC23E16A52397AB46891A /* MapPointerSelfTest.swift in Sources */,
 				D231EBAD8B8B3B58C951FEDE /* MarkdownBlock.swift in Sources */,
 				0D0F9BF7BDE19BC6BF4E9A29 /* MarkdownBlockParserSelfTest.swift in Sources */,

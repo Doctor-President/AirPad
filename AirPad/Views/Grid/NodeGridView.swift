@@ -50,10 +50,17 @@ struct NodeGridView: View {
     #endif
 
     private let tileSpacing: CGFloat = 10
-    /// Mac batch D4 — the Cards grid's minimum card width on the Mac.
-    static let macMinCardWidth: CGFloat = 260
-    private let topInset: CGFloat = 110
-    private let bottomInset: CGFloat = 120
+    /// Mac D fix-up F3 — the card size on the Mac: a width the columns stay near (slider in the Cards header, ⌘+ / ⌘−,
+    /// ⌘0 back to the default), remembered. Every card renders the iPhone's 2-column design scaled to it.
+    static let macCardWidthDefault: Double = 260
+    static let macCardWidthRange: ClosedRange<Double> = 160...440
+    static let macCardWidthStep: Double = 40
+    static let macCardWidthKey = "mac.cards.width.v1"
+    /// The iPhone's 2-column card width (a 440 pt screen: (440 − 3 × 10) / 2), the size the card is designed at.
+    static let macCardDesignWidth: CGFloat = 205
+    @AppStorage(NodeGridView.macCardWidthKey) private var macCardWidth: Double = NodeGridView.macCardWidthDefault
+    private var topInset: CGFloat { RunningOnMac.isMac ? 6 : 110 }
+    private var bottomInset: CGFloat { RunningOnMac.isMac ? 24 : 120 }
     private let haptic = UIImpactFeedbackGenerator(style: .medium)
     private let navHaptic = UIImpactFeedbackGenerator(style: .heavy)
 
@@ -118,7 +125,14 @@ struct NodeGridView: View {
                     .ignoresSafeArea()
                     .allowsHitTesting(false)
 
-                gridContent
+                if RunningOnMac.isMac {
+                    VStack(spacing: 0) {
+                        macCardsHeader
+                        gridContent
+                    }
+                } else {
+                    gridContent
+                }
 
                 #if DEBUG
                 tileTuningTrigger
@@ -173,6 +187,35 @@ struct NodeGridView: View {
 
     // MARK: - Grid content
 
+    /// Mac D fix-up F3 — "N entries" and the card-size slider (small card · slider · large card), as in Photos / Finder.
+    private var macCardsHeader: some View {
+        HStack(spacing: 10) {
+            Text("\(nodes.count) \(nodes.count == 1 ? "entry" : "entries")")
+                .font(appFont.font(size: 13, weight: .medium))
+                .groundInk(0.55)
+            Spacer()
+            Image(systemName: "rectangle.portrait").font(.system(size: 10, weight: .medium)).groundInk(0.5)
+            Slider(value: $macCardWidth, in: Self.macCardWidthRange)
+                .frame(width: 140)
+                .tint(AppearancePalette.ink.opacity(0.6))
+                .accessibilityLabel("Card size")
+                .accessibilityIdentifier("cardsSizeSlider")
+                .help("Card size (⌘+ / ⌘−)")
+            Image(systemName: "rectangle.portrait").font(.system(size: 15, weight: .medium)).groundInk(0.5)
+        }
+        .padding(.horizontal, 20)
+        .padding(.top, 14)
+        .padding(.bottom, 6)
+        .onChange(of: router.commandRequest) { _, request in
+            switch request?.command {
+            case .zoomIn?:  macCardWidth = min(macCardWidth + Self.macCardWidthStep, Self.macCardWidthRange.upperBound)
+            case .zoomOut?: macCardWidth = max(macCardWidth - Self.macCardWidthStep, Self.macCardWidthRange.lowerBound)
+            case .zoomFit?: macCardWidth = Self.macCardWidthDefault
+            default: break
+            }
+        }
+    }
+
     private var gridContent: some View {
         // Width is measured ONCE here, above the ScrollView. cellW/cellH are
         // the single source of truth and get handed down to each tile.
@@ -186,9 +229,9 @@ struct NodeGridView: View {
             // always-on (large corpus) or always-off (small corpus), and
             // sort-switching never reflows the grid. ≤15 reclaims the lane.
             let railLane: CGFloat = scrubberMode != nil ? 30 : 0
-            // Mac batch D4 — on the Mac the columns fill the width at ~260 pt minimum per card (T's pick).
+            // Mac D fix-up F3 — on the Mac as many columns as keep the cards nearest the chosen size.
             let columnCount = RunningOnMac.isMac
-                ? max(1, Int((geo.size.width - tileSpacing - railLane) / (Self.macMinCardWidth + tileSpacing)))
+                ? max(1, Int(((geo.size.width - tileSpacing - railLane) / (CGFloat(macCardWidth) + tileSpacing)).rounded()))
                 : self.columnCount
             let totalSpacing = tileSpacing * 2 + tileSpacing * CGFloat(columnCount - 1) + railLane
             let cellW = (geo.size.width - totalSpacing) / CGFloat(columnCount)
@@ -217,7 +260,8 @@ struct NodeGridView: View {
                                 cellWidth: cellW,
                                 cellHeight: cellH,
                                 animateGradient: true,
-                                columnCount: columnCount,
+                                columnCount: RunningOnMac.isMac ? 2 : columnCount,   // F3 — the editorial card at every size
+                                designWidth: RunningOnMac.isMac ? Self.macCardDesignWidth : nil,
                                 appFont: appFont
                             )
                             // Commit 3 — skip re-rendering tiles whose rendered
@@ -363,6 +407,8 @@ private struct NodeTileView: View, Equatable {
     let cellHeight: CGFloat
     let animateGradient: Bool
     let columnCount: Int
+    /// Mac D fix-up F3 — see `NodeGridTile.designWidth`.
+    var designWidth: CGFloat? = nil
     /// Brief BF — the app-wide content face. This wrapper is `.equatable()`, so a live Font
     /// switch is invisible to it unless the face is in `==`; the inner `NodeGridTile` reads
     /// the same face from `@Environment` and re-renders when this wrapper does.
@@ -380,6 +426,7 @@ private struct NodeTileView: View, Equatable {
         l.cellHeight == r.cellHeight &&
         l.animateGradient == r.animateGradient &&
         l.columnCount == r.columnCount &&
+        l.designWidth == r.designWidth &&
         l.node.id == r.node.id &&
         l.node.title == r.node.title &&
         l.node.summary == r.node.summary &&
@@ -397,7 +444,8 @@ private struct NodeTileView: View, Equatable {
             cellWidth: cellWidth,
             cellHeight: cellHeight,
             animateGradient: animateGradient,
-            columnCount: columnCount
+            columnCount: columnCount,
+            designWidth: designWidth
         )
         .frame(width: cellWidth, height: cellHeight)
         .clipShape(RoundedRectangle(cornerRadius: 14))

@@ -31,6 +31,9 @@ struct NodeGridTile: View {
     var animateGradient: Bool = true
     /// Density driver. 2-col = editorial composition; 3-col+ = title-only.
     let columnCount: Int
+    /// Mac D fix-up F3 — the card width its type and spacing are designed at (the iPhone's 2-column card); the tile
+    /// scales as one design from there. nil = derived from this grid's own 2-column width (iPhone / iPad).
+    var designWidth: CGFloat? = nil
 
     /// Drift-speed multiplier for the gradient on dense (3-col+) tiles, where
     /// the blobs are small and full-speed drift reads as shimmer. Slows them
@@ -234,6 +237,7 @@ struct NodeGridTile: View {
     /// by inverting NodeGridView's sizing math. At `columnCount == 2` this
     /// equals `cellWidth`, so `scaled(_:)` lands exactly on the base sizes.
     private var referenceCellWidth: CGFloat {
+        if let designWidth { return designWidth }
         let spacing = Self.gridTileSpacing
         let containerW = cellWidth * CGFloat(columnCount) + spacing * CGFloat(columnCount + 1)
         return (containerW - spacing * 3) / 2

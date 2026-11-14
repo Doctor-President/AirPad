@@ -73,6 +73,21 @@ enum MacFixupSelfTest {
         row("B6 collection column shown (rows name their collection)", filed > 0 && named == filed,
             "\(named)/\(filed) filed rows of \(listRows.count) on screen; window \(Int(listW)) pt")
 
+        // F3 — Cards: the size slider, ⌘+ / ⌘− / ⌘0 through the real View menu, remembered.
+        fs = store.filterState(for: scope); fs.viewMode = .grid; store.setFilterState(fs, for: scope)
+        await settle(1.5)
+        let key = NodeGridView.macCardWidthKey
+        UserDefaults.standard.set(NodeGridView.macCardWidthDefault, forKey: key); await settle(0.5)
+        row("F3 card-size slider in the Cards header", !elements(in: window) { _, id in id == "cardsSizeSlider" }.isEmpty)
+        let zin = MacMenuSelfTest.fire(menu: "View", title: "Zoom In"); await settle(0.6)
+        let w1 = UserDefaults.standard.double(forKey: key)
+        row("F3 View › Zoom In (⌘+) enabled on Cards and grows the cards", zin && w1 == NodeGridView.macCardWidthDefault + NodeGridView.macCardWidthStep, "width \(Int(w1))")
+        _ = MacMenuSelfTest.fire(menu: "View", title: "Zoom Out"); _ = MacMenuSelfTest.fire(menu: "View", title: "Zoom Out"); await settle(0.6)
+        let w2 = UserDefaults.standard.double(forKey: key)
+        row("F3 View › Zoom Out (⌘−) shrinks them (remembered in defaults)", w2 == NodeGridView.macCardWidthDefault - NodeGridView.macCardWidthStep, "width \(Int(w2))")
+        _ = MacMenuSelfTest.fire(menu: "View", title: "Zoom to Fit"); await settle(0.6)
+        row("F3 ⌘0 back to the default size", UserDefaults.standard.double(forKey: key) == NodeGridView.macCardWidthDefault)
+
         let checks = rows.filter { !$0.hasPrefix("INFO") }.count
         return "[MacFixupSelfTest] \(fails == 0 ? "PASS" : "FAIL") \(checks - fails)/\(checks)\n" + rows.joined(separator: "\n")
     }

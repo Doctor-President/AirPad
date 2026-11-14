@@ -56,15 +56,15 @@ struct AppCommands: Commands {
             item("Librarian", .librarian, "view.librarian").keyboardShortcut("l")
                 .disabled(router.isCapturing || router.entryMode == .quikCapture)
         }
-        // View: the Map's zoom (C2). Zoom to Fit ⌘0 (T ruled R1, fix-up X10: swapped with Go › Today, now ⌘9).
+        // View: the Map's zoom (C2); on the Mac also the cards' size (D fix-up F3). Zoom to Fit ⌘0 (T ruled R1, fix-up X10: swapped with Go › Today, now ⌘9).
         CommandGroup(after: .sidebar) {
             Divider()
             item("Zoom In", .zoomIn, "view.zoomIn").keyboardShortcut("+")
-                .disabled(!mapShowing)
+                .disabled(!mapShowing && !cardsShowing)
             item("Zoom Out", .zoomOut, "view.zoomOut").keyboardShortcut("-")
-                .disabled(!mapShowing)
+                .disabled(!mapShowing && !cardsShowing)
             item("Zoom to Fit", .zoomFit, "view.zoomFit").keyboardShortcut("0")
-                .disabled(!mapShowing)
+                .disabled(!mapShowing && !cardsShowing)
             #if targetEnvironment(macCatalyst)
             // Mac D0.7 (T N4) — Edit Map… lives in the View menu once the toolbar replaces the floating view button.
             item("Edit Map…", .editMap, "view.editMap")
@@ -114,6 +114,15 @@ struct AppCommands: Commands {
     }
 
     private var mapShowing: Bool { router.mapShowing && !store.isInDetailView }
+    /// Mac D fix-up F3 — ⌘+ / ⌘− / ⌘0 size the cards while Cards is showing.
+    private var cardsShowing: Bool {
+        #if targetEnvironment(macCatalyst)
+        guard !store.isInDetailView, let scope = macViewScope(router, store) else { return false }
+        return store.filterState(for: scope).viewMode == .grid
+        #else
+        return false
+        #endif
+    }
     private var canCreate: Bool { router.entryMode != .quikCapture && !router.isCapturing }
 
     private func editorItem(_ title: String, _ id: String, _ run: @escaping (RichTextEditorState) -> Void) -> some View {

@@ -957,7 +957,7 @@ struct LibrarianSurface: View {
                 // away (iOS large-title collapse). `displayTitle` always has a
                 // real value (first-message truncation within ms, FM title in
                 // 2–5s) so there's no blank window and no placeholder needed.
-                if isViewingActiveChat {
+                if isViewingActiveChat && !isMacColumn {   // D fix-up — on the Mac it drew over the column header
                     Text(router.chat.displayTitle)
                         // Chrome correction 1 — Source Serif 4 BOLD (the app's
                         // registered serif family; PostScript "SourceSerif4-Bold",

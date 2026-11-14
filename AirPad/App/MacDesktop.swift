@@ -55,9 +55,9 @@ final class MacLayout {
         let d = UserDefaults.standard
         sidebarVisible = d.object(forKey: Self.sidebarKey) as? Bool ?? true
         librarianOpen = d.object(forKey: Self.librarianKey) as? Bool ?? true
-        sidebarWidth = (d.object(forKey: Self.sidebarWidthKey) as? Double).map { CGFloat($0) }
+        sidebarWidth = (d.object(forKey: Self.sidebarWidthKey) == nil ? nil : CGFloat(d.double(forKey: Self.sidebarWidthKey)))
             .map { min(max($0, Self.sidebarWidthRange.lowerBound), Self.sidebarWidthRange.upperBound) } ?? Self.sidebarWidthDefault
-        librarianWidth = (d.object(forKey: Self.librarianWidthKey) as? Double).map { CGFloat($0) }
+        librarianWidth = (d.object(forKey: Self.librarianWidthKey) == nil ? nil : CGFloat(d.double(forKey: Self.librarianWidthKey)))
             .map { min(max($0, Self.librarianWidthRange.lowerBound), Self.librarianWidthRange.upperBound) } ?? Self.librarianWidthDefault
         #if DEBUG
         // Stills: `-MacSidebar on|off`, `-MacLibrarian open|closed` (not remembered).

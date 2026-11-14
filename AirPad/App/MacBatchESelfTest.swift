@@ -1,4 +1,5 @@
 #if DEBUG && targetEnvironment(macCatalyst)
+import SwiftUI
 import UIKit
 
 /// Mac batch E — `-MacBatchESelfTest` (run with `-MacWindowSize 1350x840`): T's v3 layout picks checked in the running
@@ -106,12 +107,45 @@ enum MacBatchESelfTest {
         await resize(restore.1?.width ?? 1350, restore.1?.height ?? 840)
         layout.sidebarWidth = restore.2; layout.librarianWidth = restore.3; layout.sidebarVisible = restore.4; layout.librarianOpen = restore.5
 
-        rows += await e6Rows(store: store, router: router)
+        let e6 = await e6Rows(store: store, router: router)
+        fails += e6.filter { $0.hasPrefix("FAIL") }.count
+        rows += e6
         let checks = rows.filter { !$0.hasPrefix("INFO") }.count
         return "[MacBatchESelfTest] \(fails == 0 ? "PASS" : "FAIL") \(checks - fails)/\(checks)\n" + rows.joined(separator: "\n")
     }
 
-    /// E6 rows (collection colours) — filled in with E6.
-    static func e6Rows(store: CorpusStore, router: AppRouter) async -> [String] { [] }
+    /// E6 — a chosen colour reaches the Map: the collection's region label pill and its orbs' family tint (same hue);
+    /// Automatic puts the palette colour back. (The sidebar dot and List column read the same resolver.)
+    static func e6Rows(store: CorpusStore, router: AppRouter) async -> [String] {
+        var rows: [String] = []
+        func row(_ name: String, _ ok: Bool, _ detail: String = "") { rows.append("\(ok ? "PASS" : "FAIL") \(name)" + (detail.isEmpty ? "" : " — \(detail)")) }
+        func settle(_ s: Double) async { try? await Task.sleep(nanoseconds: UInt64(s * 1_000_000_000)) }
+        router.entryMode = .sampleCanvas; await settle(1.0)
+        var fs = store.filterState(for: .nodeIDs(store.sampleNodeIDs)); fs.viewMode = .systemGraph
+        store.setFilterState(fs, for: .nodeIDs(store.sampleNodeIDs)); await settle(4.0)
+        guard let key = MapColorProbe.labelHex.keys.sorted().first(where: { $0.hasPrefix("col:") }),
+              let id = CollectionColors.collectionID(territoryKey: key) else {
+            return ["FAIL E6 a collection region on the Map — labels \(MapColorProbe.labelHex.count)"]
+        }
+        let regions = MapColorProbe.labelHex.keys.sorted().compactMap { k in
+            CollectionColors.collectionID(territoryKey: k).map { cid in store.collections.first { $0.id == cid }?.name ?? cid } }
+        rows.append("INFO collection regions on this Map: \(regions)")
+        let autoHex = MapColorProbe.labelHex[key]
+        func hue(_ c: UIColor) -> CGFloat { var h: CGFloat = 0, s: CGFloat = 0, b: CGFloat = 0, a: CGFloat = 0; c.getHue(&h, saturation: &s, brightness: &b, alpha: &a); return h }
+        func memberHues() -> [CGFloat] {
+            MapColorProbe.territoryOfNode.filter { $0.value == key }.keys.compactMap { MapColorProbe.tints[$0] }.map(hue)
+        }
+        await store.setCollectionColor(id, hex: "#D6249F"); await settle(1.5)
+        let want = hue(CollectionColors.uiColor("#D6249F")!)
+        let hues = memberHues()
+        row("E6 Map: the region pill takes the chosen colour", MapColorProbe.labelHex[key] == "#D6249F", "\(autoHex ?? "nil") → \(MapColorProbe.labelHex[key] ?? "nil")")
+        row("E6 Map: its orbs take the chosen colour's family (hue)", !hues.isEmpty && hues.allSatisfy { abs($0 - want) < 0.02 },
+            "\(hues.count) orbs")
+        row("E6 sidebar / List: the resolver returns the chosen colour", CollectionDot.color(id, light: true, chosen: store.collectionColorHex(id))
+            == Color(uiColor: CollectionColors.uiColor("#D6249F")!))
+        await store.setCollectionColor(id, hex: nil); await settle(1.5)
+        row("E6 Automatic: the palette colour comes back", MapColorProbe.labelHex[key] == autoHex, "\(MapColorProbe.labelHex[key] ?? "nil")")
+        return rows
+    }
 }
 #endif

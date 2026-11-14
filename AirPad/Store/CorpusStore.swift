@@ -142,6 +142,9 @@ final class CorpusStore {
     /// after that the array reflects whatever the user has, including an empty
     /// list if they delete them all in a later stage.
     var collections: [NodeCollection] = []
+    /// Mac batch E6 — colours the user chose, by collection id (the Journal under `NodeCollection.journalID`); a missing
+    /// id = "Automatic". Its own library file (`CollectionColors`), so older builds never drop it.
+    var collectionColors: [String: String] = [:]
 
     /// Stage 5.1 (atomic fields) — corpus-level field definitions loaded from
     /// the single `field_definitions.json`. Nodes reference these by stable ID
@@ -1160,6 +1163,7 @@ final class CorpusStore {
             var loadedCollections: [NodeCollection]?
             var collectionsLoadError: Error?
             do { loadedCollections = try await service.loadCollections() } catch { collectionsLoadError = error }
+            let loadedCollectionColors = (try? await service.loadCollectionColors()) ?? [:]   // Mac batch E6
             // ★ 1.0r S1d — COMMIT THE MAP'S INPUTS TOGETHER, entries LAST, with no `await` in between. The Map lays
             // out from four things: the entries, the anchor tags, the user collections and the saved territory
             // layout. Entries used to land first (then an await, then the rest), so the Map's first pass placed
@@ -1170,6 +1174,7 @@ final class CorpusStore {
             territoryLayouts = loadedTerritoryLayouts
             tags = resolvedTags
             if collectionsLoadError == nil { collections = loadedCollections ?? Self.defaultUserCollections() }
+            collectionColors = loadedCollectionColors   // E6 — with the collections (the Map reads both)
             let live = Dictionary(nodes.map { ($0.id, $0) }, uniquingKeysWith: { first, _ in first })
             let loadedIDs = Set(normalized.map(\.id))
             var merged = normalized.map { live[$0.id] ?? $0 }
@@ -1237,6 +1242,17 @@ final class CorpusStore {
             // 1.0r S0 — the forward-format guard (versions, unknown-field carry, the one write path).
             if ProcessInfo.processInfo.arguments.contains("-ForwardFormatGuardSelfTest") {
                 NSLog("[ForwardFormatGuardSelfTest] %@", ForwardFormatGuardSelfTest.run())
+            }
+            // Mac batch E6 stills — `-SeedCollectionColor "Film=#D6249F"`: a chosen colour on a collection (by name).
+            if let seed = UserDefaults.standard.string(forKey: "SeedCollectionColor") {
+                let parts = seed.split(separator: "=").map(String.init)
+                if parts.count == 2, let c = collections.first(where: { $0.name == parts[0] }) {
+                    Task { @MainActor in await self.setCollectionColor(c.id, hex: parts[1]) }
+                }
+            }
+            // Mac batch E6 — collection colours: the sidecar file, its merge, the store, the resolver, the guard.
+            if ProcessInfo.processInfo.arguments.contains("-CollectionColorsSelfTest") {
+                Task { @MainActor in NSLog("[CollectionColorsSelfTest] %@", await CollectionColorsSelfTest.run(store: self)) }
             }
             // Mac batch B1 — two-device safety (stamp, merge, the write funnel's base check, history, library files).
             if ProcessInfo.processInfo.arguments.contains("-TwoDeviceSelfTest") {
@@ -3206,10 +3222,12 @@ final class CorpusStore {
             let loadedTags = try await service.loadTags()
             let loadedCollections = try await service.loadCollections()
             let loadedFieldDefinitions = (try await service.loadFieldDefinitions())?.definitions ?? []
+            let loadedCollectionColors = (try? await service.loadCollectionColors()) ?? [:]   // Mac batch E6
             // 1.0r S1d — one synchronous commit, entries LAST (see `load()`): the seeded sample's first Map pass
             // must see its anchor tags + collections, or it places every orb in the fallback pile and re-forms.
             tags = loadedTags
             if let loadedCollections { collections = loadedCollections }
+            collectionColors = loadedCollectionColors
             fieldDefinitions = loadedFieldDefinitions
             nodes = normalized.sorted { $0.createdAt > $1.createdAt }
         } catch {
@@ -8110,6 +8128,25 @@ final class CorpusStore {
 
     // MARK: - Collection persistence (Dashboard Stage 3)
 
+    #if DEBUG
+    /// The library folder (self-tests read the files the store wrote).
+    func debugLibraryRoot() async -> URL? { await service.containerRootURL() }
+    func debugReloadCollectionColors() async { collectionColors = (try? await service.loadCollectionColors()) ?? [:] }
+    #endif
+
+    /// Mac batch E6 — the colour shown for a collection: the chosen one, or nil for Automatic.
+    func collectionColorHex(_ id: String) -> String? { collectionColors[id] }
+
+    /// Mac batch E6 — choose a collection's colour (nil = Automatic). Saved to `collection-colors.json`.
+    func setCollectionColor(_ id: String, hex: String?) async {
+        let value = hex.flatMap(CollectionColors.normalized)
+        guard collectionColors[id] != value else { return }
+        collectionColors[id] = value
+        do { try await service.saveCollectionColors(collectionColors) } catch {
+            print("[CorpusStore] Collection colours save error: \(error)")
+        }
+    }
+
     private func persistCollections() async {
         do {
             try await service.saveCollections(collections)
@@ -8470,6 +8507,7 @@ final class CorpusStore {
         guard collections.contains(where: { $0.id == collectionID }) else { return }
         collections.removeAll { $0.id == collectionID }
         await persistCollections()
+        if collectionColors[collectionID] != nil { await setCollectionColor(collectionID, hex: nil) }   // E6
 
         let now = Date()
         var changedNodes: [Node] = []
@@ -12187,6 +12225,7 @@ extension CorpusStore {
         if !files.isEmpty { await service.resolveAggregateConflicts(files) }
         if files.contains("tags.json"), let t = try? await service.loadTags(), !t.isEmpty { tags = t }
         if files.contains("collections.json"), let c = try? await service.loadCollections() { collections = c }
+        if files.contains(CollectionColors.fileName), let c = try? await service.loadCollectionColors() { collectionColors = c }   // E6
         if files.contains("field_definitions.json"), let f = try? await service.loadFieldDefinitions() {
             fieldDefinitions = f.definitions
         }

@@ -35,6 +35,7 @@ enum LibraryFormatGuard {
         case "territory_layout.json":  return TerritoryLayoutSnapshot.currentVersion
         case "canvas_layout.json":     return 1
         case "sample_library.json":    return SampleLibrarySeeder.manifestVersion
+        case CollectionColors.fileName: return CollectionColors.currentVersion   // Mac batch E6
         default:                       return nil
         }
     }

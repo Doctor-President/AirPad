@@ -55,6 +55,8 @@ struct ContentView: View {
             Color.clear.frame(width: 0, height: 0).onAppear {
                 if ProcessInfo.processInfo.arguments.contains("-OpenCardView") || ProcessInfo.processInfo.arguments.contains("-OpenListView"),
                    router.entryMode != .canvas { router.entryMode = .canvas }
+                // Mac batch E6 stills — the Sample Library's own place (its Map forms collection regions).
+                if ProcessInfo.processInfo.arguments.contains("-OpenSampleCanvas") { router.entryMode = .sampleCanvas }
                 // live-19 (3a) — `-DebugFocusSweep`: once the library is up, fire the REAL focus request (the one a
                 // Librarian search row fires) at five nodes spread across it, 5 s apart — far rows the surface has
                 // never realised. `ScrollToLanding` asserts each lands on screen (iOS 27: FB24968838 reports

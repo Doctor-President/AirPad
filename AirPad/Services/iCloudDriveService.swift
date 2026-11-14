@@ -1243,7 +1243,7 @@ actor iCloudDriveService {
     /// `.conflicts/<file>/*.json`): each is united into the current file (no common base → nothing dropped).
     static let aggregateFiles = ["tags.json", "collections.json", "field_definitions.json", "chats.json",
                                  "canvas_layout.json", "territory_layout.json",
-                                 Tombstones.fileName]
+                                 Tombstones.fileName, CollectionColors.fileName]
 
     func resolveAggregateConflicts(_ names: Set<String>?) {
         guard let root = rootURL else { return }
@@ -1571,6 +1571,25 @@ actor iCloudDriveService {
         guard FileManager.default.fileExists(atPath: fileURL.path) else { return nil }
         let data = try Self.readLibraryFile(fileURL)   // B1: coordinated; the base of the next merge
         return try JSONDecoder.airPad.decode([NodeCollection].self, from: data)
+    }
+
+    /// Mac batch E6 — the chosen collection colours (`collection-colors.json`); empty when the file is absent.
+    func loadCollectionColors() throws -> [String: String] {
+        let root = try requireRoot()
+        let url = root.appendingPathComponent(CollectionColors.fileName)
+        guard FileManager.default.fileExists(atPath: url.path) else { return [:] }
+        let data = try Self.readLibraryFile(url)   // coordinated; the base of the next merge
+        if LibraryFormatGuard.isNewer(data, file: CollectionColors.fileName) {
+            LibraryFormatGuard.markNewer(CollectionColors.fileName)
+        }
+        return (try JSONDecoder().decode(CollectionColors.File.self, from: data)).colors
+    }
+
+    func saveCollectionColors(_ colors: [String: String]) throws {
+        let root = try requireRoot()
+        let enc = JSONEncoder(); enc.outputFormatting = [.sortedKeys, .prettyPrinted]
+        let data = try enc.encode(CollectionColors.File(colors: colors))
+        try LibraryFormatGuard.write(data, to: root.appendingPathComponent(CollectionColors.fileName))
     }
 
     // MARK: - Field definitions (Stage 5.1 — atomic fields)

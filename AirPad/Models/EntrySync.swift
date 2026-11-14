@@ -509,6 +509,12 @@ enum AggregateMerge {
                 out["positions"] = byKey(base: b?["positions"] as? [String: Any], mine: mp, disk: dp)
                 return out
             }
+            if file == CollectionColors.fileName {   // Mac batch E6 — one colour per collection id, merged by key
+                var out = m
+                out["colors"] = byKey(base: b?["colors"] as? [String: Any], mine: m["colors"] as? [String: Any] ?? [:],
+                                      disk: d["colors"] as? [String: Any] ?? [:])
+                return out
+            }
             if let md = m["definitions"] as? [[String: Any]], let dd = d["definitions"] as? [[String: Any]] {
                 var out = m
                 out["definitions"] = byID(base: b?["definitions"] as? [[String: Any]], mine: md, disk: dd, nested: nil)

@@ -267,9 +267,15 @@ extension RunningOnMac {
 }
 #endif
 
-/// A collection has no colour of its own: a stable slot of the region palette, from its id.
+/// A collection's colour: the one the user chose (Mac batch E6, `chosen` = its hex), else "Automatic" — a stable slot
+/// of the region palette, from its id.
 enum CollectionDot {
-    static func color(_ id: String, light: Bool) -> Color {
+    static func color(_ id: String, light: Bool, chosen: String? = nil) -> Color {
+        if let chosen, let c = CollectionColors.uiColor(chosen) { return Color(uiColor: c) }
+        return automatic(id, light: light)
+    }
+
+    static func automatic(_ id: String, light: Bool) -> Color {
         let slots = RegionPalette.currentHex(isLight: light).count
         let h = id.unicodeScalars.reduce(UInt32(5381)) { ($0 &* 33) &+ $1.value }
         return Color(uiColor: RegionPalette.color(isLight: light, slot: Int(h % UInt32(max(slots, 1)))))

@@ -293,6 +293,7 @@ struct MacSidebar: View {
     @Environment(\.colorScheme) private var scheme
     @State private var renameTarget: NodeCollection?
     @State private var deleteTarget: NodeCollection?
+    @State private var colorTarget: CollectionColorTarget?   // E6
 
     private var userNodes: [Node] { store.userNodes }
 
@@ -325,26 +326,28 @@ struct MacSidebar: View {
                 // D fix-up B5 — Journals before the collections: last, it sat below a long collection list (off screen
                 // at 840 pt with T's library, so the section looked missing).
                 header("Journals")
-                row("Journal", dot: Self.dotColor(NodeCollection.journalID, light: scheme == .light),
+                row("Journal", dot: dotColor(NodeCollection.journalID),
                     count: userNodes.filter { $0.journalDate != nil }.count,
                     selected: router.entryMode == .collectionCanvas(id: NodeCollection.journalID), id: "sidebar.journal") {
                     router.entryMode = .collectionCanvas(id: NodeCollection.journalID)
                 }
                 .contextMenu {
                     Button { router.entryMode = .collectionCanvas(id: NodeCollection.journalID) } label: { Label("Open", systemImage: "arrow.right.circle") }
+                    Button { colorTarget = CollectionColorTarget(id: NodeCollection.journalID, name: "Journal") } label: { Label("Colour…", systemImage: "paintpalette") }
                 }
 
                 let collections = store.collections.filter { !$0.isSystem }
                 if !collections.isEmpty {
                     header("Collections")
                     ForEach(collections) { c in
-                        row(c.name, dot: Self.dotColor(c.id, light: scheme == .light), count: count(in: c.id),
+                        row(c.name, dot: dotColor(c.id), count: count(in: c.id),
                             selected: router.entryMode == .collectionCanvas(id: c.id), id: "sidebar.collection") {
                             router.entryMode = .collectionCanvas(id: c.id)
                         }
                         .contextMenu {
                             Button { router.entryMode = .collectionCanvas(id: c.id) } label: { Label("Open", systemImage: "arrow.right.circle") }
                             Button { renameTarget = c } label: { Label("Rename", systemImage: "pencil") }
+                            Button { colorTarget = CollectionColorTarget(id: c.id, name: c.name) } label: { Label("Colour…", systemImage: "paintpalette") }
                             Button(role: .destructive) { deleteTarget = c } label: { Label("Delete", systemImage: "trash") }
                         }
                     }
@@ -361,6 +364,17 @@ struct MacSidebar: View {
         .appSheet(item: $renameTarget) { c in
             RenameCollectionSheet(collectionID: c.id, currentName: c.name)
         }
+        .appSheet(item: $colorTarget) { t in   // E6 — right-click › Colour…
+            CollectionColorSheet(collectionID: t.id, name: t.name)
+        }
+        #if DEBUG
+        .task {   // E6 stills — `-OpenCollectionColor Film`
+                guard let n = UserDefaults.standard.string(forKey: "OpenCollectionColor") else { return }
+                for _ in 0..<80 where !store.collections.contains(where: { $0.name == n }) { try? await Task.sleep(nanoseconds: 250_000_000) }
+                try? await Task.sleep(nanoseconds: 2_000_000_000)
+                if let c = store.collections.first(where: { $0.name == n }) { colorTarget = CollectionColorTarget(id: c.id, name: c.name) }
+            }
+            #endif
         .confirmationDialog(deleteTarget.map { "Delete \"\($0.name)\"?" } ?? "Delete collection?",
                             isPresented: Binding(get: { deleteTarget != nil }, set: { if !$0 { deleteTarget = nil } }),
                             titleVisibility: .visible, presenting: deleteTarget) { c in
@@ -392,7 +406,8 @@ struct MacSidebar: View {
 
     private func count(in id: String) -> Int { store.hidingPrivate(store.nodes).filter { $0.collectionIDs.contains(id) }.count }
 
-    static func dotColor(_ id: String, light: Bool) -> Color { CollectionDot.color(id, light: light) }
+    /// E6 — the chosen colour, else Automatic.
+    private func dotColor(_ id: String) -> Color { CollectionDot.color(id, light: scheme == .light, chosen: store.collectionColorHex(id)) }
 
     /// The sidebar's ground (full height, under the title bar too — E1).
     static func ground(_ scheme: ColorScheme) -> some View {

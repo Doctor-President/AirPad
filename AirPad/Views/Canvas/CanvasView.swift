@@ -144,10 +144,22 @@ struct CanvasView: View {
         out.reserveCapacity(frozen.shades.count)
         for (nodeID, key) in frozen.layout.nodeTerritory {
             guard let slot = frozen.slots[key] else { continue }
-            out[nodeID] = familyTint(RegionPalette.color(isLight: isLight, slot: slot),
+            out[nodeID] = familyTint(territoryBase(key, slot: slot, isLight: isLight),
                                      frozen.shades[nodeID] ?? 0.5)
         }
+        #if DEBUG
+        MapColorProbe.territoryOfNode = frozen.layout.nodeTerritory
+        MapColorProbe.tints = out
+        #endif
         return out
+    }
+
+    /// Mac batch E6 — a territory's base colour: the collection's chosen colour (both appearances; the orbs' shade and
+    /// title ink still follow from it), else its palette slot ("Automatic").
+    private func territoryBase(_ key: String, slot: Int, isLight: Bool) -> UIColor {
+        if let id = CollectionColors.collectionID(territoryKey: key), let hex = store.collectionColorHex(id),
+           let c = CollectionColors.uiColor(hex) { return c }
+        return RegionPalette.color(isLight: isLight, slot: slot)
     }
 
     /// A frozen territory formation — the deliberate-clock output that reactive
@@ -538,6 +550,8 @@ struct CanvasView: View {
                 // against the new palette in one pass.
                 flipMapColorsForAppearance()
             }
+            // Mac batch E6 — a collection's chosen colour changed (here or on another device): the same colour-only push.
+            .onChange(of: store.collectionColors) { _, _ in flipMapColorsForAppearance() }
             // Brief AG3 — publish "the Map has settled" for the first-run callouts.
             .onChange(of: mapSettledForCallouts, initial: true) { _, settled in
                 router.mapSettled = settled
@@ -1326,7 +1340,7 @@ struct CanvasView: View {
     /// for life, so position no longer has anything to do with colour.
     private func territoryColorMap(_ slots: [String: Int]) -> [String: UIColor] {
         let isLight = mapColorScheme != .dark
-        return slots.mapValues { RegionPalette.color(isLight: isLight, slot: $0) }
+        return Dictionary(uniqueKeysWithValues: slots.map { ($0.key, territoryBase($0.key, slot: $0.value, isLight: isLight)) })
     }
 
     /// Map layout radii — mirror the substrate path's documented fallback chain
@@ -1360,7 +1374,14 @@ struct CanvasView: View {
     /// house rule.
     private func territoryHexMap(_ slots: [String: Int]) -> [String: String] {
         let isLight = mapColorScheme != .dark
-        return slots.mapValues { RegionPalette.hex(isLight: isLight, slot: $0) }
+        let out = Dictionary(uniqueKeysWithValues: slots.map { k, slot in
+            (k, CollectionColors.collectionID(territoryKey: k).flatMap { store.collectionColorHex($0) }.flatMap(CollectionColors.normalized)
+                ?? RegionPalette.hex(isLight: isLight, slot: slot))
+        })
+        #if DEBUG
+        MapColorProbe.labelHex = out
+        #endif
+        return out
     }
 
     private func syncScene(nodes: [Node], newNodeID: String? = nil, expandingFrom: CGPoint? = nil) {
@@ -1452,7 +1473,7 @@ struct CanvasView: View {
                             let dates = nodes.map { $0.updatedAt.timeIntervalSince1970 }
                             let minD = dates.min() ?? 0
                             let span = max(1, (dates.max() ?? 1) - minD)
-                            let base = RegionPalette.color(isLight: mapColorScheme != .dark, slot: slot)
+                            let base = territoryBase(key, slot: slot, isLight: mapColorScheme != .dark)
                             colors[newNodeID] = familyTint(base, nodeShade(newNodeID, node: newNode,
                                                                           minD: minD, span: span))
                         }
@@ -2202,3 +2223,12 @@ private struct MapRestTimeline<Content: View>: View {
         TimelineView(.animation(minimumInterval: nil, paused: canvasState.mapAtRest)) { _ in content() }
     }
 }
+
+#if DEBUG
+/// Mac batch E6 — what the Map last pushed (label pill hex per territory key, orb tint per node), for the self-test.
+@MainActor enum MapColorProbe {
+    static var labelHex: [String: String] = [:]
+    static var tints: [String: UIColor] = [:]
+    static var territoryOfNode: [String: String] = [:]
+}
+#endif

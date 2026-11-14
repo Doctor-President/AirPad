@@ -487,7 +487,7 @@ private struct MacListRow: View {
                     // journal entry names the Journal: only user collections showed, so a run of journal entries had none.
                     HStack(spacing: 6) {
                         if let c = collection {
-                            Circle().fill(CollectionDot.color(c.id, light: scheme == .light)).frame(width: 8, height: 8)
+                            Circle().fill(CollectionDot.color(c.id, light: scheme == .light, chosen: store.collectionColorHex(c.id))).frame(width: 8, height: 8)
                             Text(c.name).font(appFont.font(size: 12.5)).foregroundStyle(AppearancePalette.ink.opacity(0.7)).lineLimit(1)
                         }
                     }

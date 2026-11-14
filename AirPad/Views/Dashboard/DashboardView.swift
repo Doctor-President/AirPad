@@ -80,6 +80,7 @@ struct DashboardView: View {
     }
     @State private var renameTarget: NodeCollection?
     @State private var deleteTarget: NodeCollection?
+    @State private var colorTarget: CollectionColorTarget?   // Mac batch E6
     @State private var showCreateCollectionSheet = false
     @State private var showCollectionReorder = false
     @State private var showSettings = false
@@ -358,6 +359,17 @@ struct DashboardView: View {
             .appSheet(item: $renameTarget) { collection in
                 RenameCollectionSheet(collectionID: collection.id, currentName: collection.name)
             }
+            .appSheet(item: $colorTarget) { t in   // Mac batch E6 — long-press › Colour…
+                CollectionColorSheet(collectionID: t.id, name: t.name)
+            }
+            #if DEBUG
+            .task {   // E6 stills — `-OpenCollectionColor Film` (iPhone / iPad)
+                guard !RunningOnMac.isMac, let n = UserDefaults.standard.string(forKey: "OpenCollectionColor") else { return }
+                for _ in 0..<80 where !store.collections.contains(where: { $0.name == n }) { try? await Task.sleep(nanoseconds: 250_000_000) }
+                try? await Task.sleep(nanoseconds: 2_000_000_000)
+                if let c = store.collections.first(where: { $0.name == n }) { colorTarget = CollectionColorTarget(id: c.id, name: c.name) }
+            }
+            #endif
             .appSheet(isPresented: $showCreateCollectionSheet) {
                 CollectionCreationSheet { _ in }
             }
@@ -628,7 +640,8 @@ struct DashboardView: View {
                     ForEach(sampleDisplayedCollections) { collection in
                         CollectionRow(collection: collection,
                                       onTap: { tap(collection) },
-                                      onRename: nil, onDelete: nil)
+                                      onRename: nil, onDelete: nil,
+                                      onColor: { colorTarget = CollectionColorTarget(id: collection.id, name: collection.name) })
                         collectionsHairline
                     }
                     sampleRemoveRow
@@ -749,7 +762,8 @@ struct DashboardView: View {
                         collection: collection,
                         onTap: { tap(collection) },
                         onRename: canManage(collection) ? { renameTarget = collection } : nil,
-                        onDelete: canDelete(collection) ? { deleteTarget = collection } : nil
+                        onDelete: canDelete(collection) ? { deleteTarget = collection } : nil,
+                        onColor: collection.isCorpus ? nil : { colorTarget = CollectionColorTarget(id: collection.id, name: collection.name) }
                     )
                     .accessibilityIdentifier("collectionRow-\(collection.id)")   // A3 — the user's Library row, not the sample's
                     // Hairline after every collection row. The final
@@ -894,6 +908,8 @@ private struct CollectionRow: View {
     /// Nil → Delete entry hidden inside the ellipsis menu. Only meaningful
     /// when `onRename` is also non-nil (the menu itself is gated on rename).
     let onDelete: (() -> Void)?
+    /// Mac batch E6 — Colour… (long-press, and in the ··· menu). Nil for the Library row (not a collection).
+    var onColor: (() -> Void)? = nil
 
     var body: some View {
         HStack(alignment: .center, spacing: 8) {
@@ -920,6 +936,9 @@ private struct CollectionRow: View {
                     } label: {
                         Label("Rename", systemImage: "pencil")
                     }
+                    if let onColor {
+                        Button { onColor() } label: { Label("Colour…", systemImage: "paintpalette") }
+                    }
                     if let onDelete {
                         Button(role: .destructive) {
                             onDelete()
@@ -942,6 +961,9 @@ private struct CollectionRow: View {
         }
         .padding(.horizontal, 18)
         .padding(.vertical, verticalPadding)
+        .contextMenu {   // E6 — long-press › Colour…
+            if let onColor { Button { onColor() } label: { Label("Colour…", systemImage: "paintpalette") } }
+        }
     }
 
     private var nameFont: Font {

@@ -618,6 +618,11 @@ enum MacLayoutSelfTest {
            let content = (w.value(forKey: "contentLayoutRect") as? CGRect) {
             let bar = frame.height - content.height
             row("title bar + toolbar ~52 pt", bar >= 44 && bar <= 60, String(format: "%.0f pt", bar))
+            // Where the UIWindow sits: under the toolbar (full-size content) or below it, and its top safe area.
+            if let uiw = UIApplication.shared.connectedScenes.compactMap({ $0 as? UIWindowScene }).flatMap(\.windows).first(where: \.isKeyWindow) {
+                let topPad = uiw.safeAreaInsets.top
+                row("measure: window \(Int(frame.width))×\(Int(frame.height)) · content \(Int(content.height)) · UIWindow \(Int(uiw.bounds.height)) · safe top \(Int(topPad))", true)
+            }
         }
 
         // 2. ⌘F focuses the toolbar search; typing opens the Librarian.

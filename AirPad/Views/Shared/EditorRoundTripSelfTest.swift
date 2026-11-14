@@ -319,7 +319,9 @@ enum EmptyLineListSelfTest {
                 if MacMenuSelfTest.fire(menu: "Format", title: kind.menu) { await settle(); return }
                 row("\(kind.name): menu Format›\(kind.menu) present + enabled", false)
                 #endif
-                if let s = ActiveRichTextEditor.shared.state { kind.run(s) } else { row("\(kind.name): no active editor", false) }
+                // iPhone has no inline bar (ActiveRichTextEditor is Mac / iPad-with-keyboard): use the editor's own state.
+                if let s = ActiveRichTextEditor.shared.state ?? (tv.delegate as? RichTextEditor.Coordinator)?.state { kind.run(s) }
+                else { row("\(kind.name): no active editor", false) }
                 await settle()
             }
             /// The paragraph the caret is in, and the caret's offset into it.

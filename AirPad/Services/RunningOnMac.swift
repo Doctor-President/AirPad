@@ -222,14 +222,16 @@ extension RunningOnMac {
                 }
             }
             #if targetEnvironment(macCatalyst)
-            // Mac batch D1 — the toolbar is AppKit's (outside the UIWindow): its two hosted items are drawn above the
-            // content in a 52 pt band, after three grey dots where the window buttons sit. A composite, for stills.
+            // Mac batch D1 — the toolbar is AppKit's (outside the UIWindow's render): the UIWindow runs under it (its top
+            // safe area, 52 pt, is the toolbar), so its two hosted items are drawn OVER that band, after three grey dots
+            // where the window buttons sit. A composite, for stills.
             let hosts = MacToolbarController.shared.hosts
             if let lead = hosts[MacToolbarController.leadingID]?.view, let trail = hosts[MacToolbarController.trailingID]?.view {
-                let band: CGFloat = 52, content = img
+                let band: CGFloat = w.safeAreaInsets.top > 0 ? w.safeAreaInsets.top : 52, content = img
                 let bandColor = w.traitCollection.userInterfaceStyle == .dark ? UIColor(white: 0.17, alpha: 1) : UIColor(white: 0.93, alpha: 1)
-                img = UIGraphicsImageRenderer(bounds: CGRect(x: 0, y: 0, width: w.bounds.width, height: w.bounds.height + band),
+                img = UIGraphicsImageRenderer(bounds: CGRect(x: 0, y: 0, width: w.bounds.width, height: w.bounds.height),
                                               format: format).image { ctx in
+                    content.draw(at: .zero)
                     bandColor.setFill(); ctx.fill(CGRect(x: 0, y: 0, width: w.bounds.width, height: band))
                     UIColor(white: 0.5, alpha: 0.6).setFill()
                     for k in 0..<3 { ctx.cgContext.fillEllipse(in: CGRect(x: 20 + CGFloat(k) * 20, y: band / 2 - 6, width: 12, height: 12)) }
@@ -238,7 +240,6 @@ extension RunningOnMac {
                     trail.drawHierarchy(in: CGRect(x: w.bounds.width - trail.bounds.width - 10, y: (band - trail.bounds.height) / 2,
                                                    width: trail.bounds.width, height: trail.bounds.height), afterScreenUpdates: true)
                     UIColor(white: 0.5, alpha: 0.25).setFill(); ctx.fill(CGRect(x: 0, y: band - 1, width: w.bounds.width, height: 1))
-                    content.draw(at: CGPoint(x: 0, y: band))
                 }
             }
             #endif

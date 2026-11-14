@@ -198,6 +198,7 @@
 		681C98F35607F79887210FD5 /* CatalogCard.swift in Sources */ = {isa = PBXBuildFile; fileRef = 50172A80D6B3F46FAE1A4862 /* CatalogCard.swift */; };
 		68A7DFE8A2759AF0DCFD3924 /* SourceSerif4-OFL.txt in Resources */ = {isa = PBXBuildFile; fileRef = C438DCDE3DCF26ECB6207FEA /* SourceSerif4-OFL.txt */; };
 		6ABE3E503556A6148E29F602 /* Node.swift in Sources */ = {isa = PBXBuildFile; fileRef = 1866B7173FCC4A9B1AE81AF1 /* Node.swift */; };
+		6ABE6214365D588647344F6C /* MacFixupSelfTest.swift in Sources */ = {isa = PBXBuildFile; fileRef = 370BA8F4AD4732AD0F6E1018 /* MacFixupSelfTest.swift */; };
 		6AD3038B45A504C93797875A /* KeychainHelper.swift in Sources */ = {isa = PBXBuildFile; fileRef = C729D9028EBF447A0241ABFD /* KeychainHelper.swift */; };
 		6AECB4ECB65870FC014F6158 /* DisplayImageCache.swift in Sources */ = {isa = PBXBuildFile; fileRef = BBB2A18E9000A773611FC222 /* DisplayImageCache.swift */; };
 		6BAF912AA3AF57ED9A6F600B /* NodeGridTileTuning.swift in Sources */ = {isa = PBXBuildFile; fileRef = 62E2EC2958AAC24AD281B70D /* NodeGridTileTuning.swift */; };
@@ -634,6 +635,7 @@
 		360B7A6DADF89ED7B6D1DD3E /* MarkdownBlockParserSelfTest.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = MarkdownBlockParserSelfTest.swift; sourceTree = "<group>"; };
 		36746C9E05B99C06E6564DA4 /* SourceSerif4-SemiboldItalic.ttf */ = {isa = PBXFileReference; lastKnownFileType = file; path = "SourceSerif4-SemiboldItalic.ttf"; sourceTree = "<group>"; };
 		36D4851654AC4C2F3AF8798F /* ZoomableImageView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ZoomableImageView.swift; sourceTree = "<group>"; };
+		370BA8F4AD4732AD0F6E1018 /* MacFixupSelfTest.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = MacFixupSelfTest.swift; sourceTree = "<group>"; };
 		376265F2CCAF46EDE2216E54 /* NodeBlock.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = NodeBlock.swift; sourceTree = "<group>"; };
 		3773385430F4EE5C69E66E12 /* MacMenuSelfTest.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = MacMenuSelfTest.swift; sourceTree = "<group>"; };
 		37A7EB2DE317B859BC165DD4 /* AppStoreLookStills.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = AppStoreLookStills.swift; sourceTree = "<group>"; };
@@ -1579,6 +1581,7 @@
 				194292F01A21193B880F16FA /* ContentView.swift */,
 				110A3E2E3A7FE4D20CCEA45E /* EntryMenuSelfTest.swift */,
 				4B75F1FFD1DCE98C8955DBFB /* MacDesktop.swift */,
+				370BA8F4AD4732AD0F6E1018 /* MacFixupSelfTest.swift */,
 				3773385430F4EE5C69E66E12 /* MacMenuSelfTest.swift */,
 				D8B1D8BF348787D3FD1C2923 /* MacSettingsSelfTest.swift */,
 				F9B25219BFD45C5CD8068AFC /* MacWebKeySelfTest.swift */,
@@ -2302,6 +2305,7 @@
 				BB9BDB30E58DC2856238105B /* MSDFLabel.swift in Sources */,
 				05FD14E104D9CDCA47A884EC /* MacDesktop.swift in Sources */,
 				5AFB3DA829E4D444AE74108C /* MacEnrichServerSelfTest.swift in Sources */,
+				6ABE6214365D588647344F6C /* MacFixupSelfTest.swift in Sources */,
 				5404E38C7AFC95CBE00F95D9 /* MacMenuSelfTest.swift in Sources */,
 				C476E58EFD2185BEE830A281 /* MacSettingsSelfTest.swift in Sources */,
 				98C431825B91D4819CE4096F /* MacWebKeySelfTest.swift in Sources */,

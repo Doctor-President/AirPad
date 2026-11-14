@@ -287,6 +287,9 @@ struct DashboardView: View {
             // when the stack empties (a landing is the bottom, popped last).
             .onChange(of: path) { _, newPath in
                 if newPath.isEmpty { landingOnStack = false }
+                // Mac D fix-up B4 — Recents is a place of its own on the Mac (the sidebar's Recents): popping it (the
+                // toolbar ‹ / Go › Back) lands on Today, and the place says so — not Today under a "Recents" title.
+                if RunningOnMac.isMac, newPath.isEmpty, router.entryMode == .recents { router.entryMode = .dashboard }
                 store.detailViewDepth = detailDepth(count: newPath.count)
             }
             .onAppear { store.detailViewDepth = detailDepth(count: path.count) }

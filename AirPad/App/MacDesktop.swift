@@ -162,7 +162,7 @@ struct MacLibrarianColumn: View {
     }
 }
 
-/// D2 — the sidebar (232 pt): AIRPAD (Today, Recents, Chats), LIBRARIES, COLLECTIONS, JOURNALS, each with its count.
+/// D2 — the sidebar (232 pt): AIRPAD (Today, Recents, Chats), LIBRARIES, JOURNALS, COLLECTIONS, each with its count.
 /// A click goes there; the current place is highlighted; right-click on a collection offers what its Today menu does.
 struct MacSidebar: View {
     @Environment(AppRouter.self) private var router
@@ -200,6 +200,18 @@ struct MacSidebar: View {
                     }
                 }
 
+                // D fix-up B5 — Journals before the collections: last, it sat below a long collection list (off screen
+                // at 840 pt with T's library, so the section looked missing).
+                header("Journals")
+                row("Journal", dot: Self.dotColor(NodeCollection.journalID, light: scheme == .light),
+                    count: userNodes.filter { $0.journalDate != nil }.count,
+                    selected: router.entryMode == .collectionCanvas(id: NodeCollection.journalID), id: "sidebar.journal") {
+                    router.entryMode = .collectionCanvas(id: NodeCollection.journalID)
+                }
+                .contextMenu {
+                    Button { router.entryMode = .collectionCanvas(id: NodeCollection.journalID) } label: { Label("Open", systemImage: "arrow.right.circle") }
+                }
+
                 let collections = store.collections.filter { !$0.isSystem }
                 if !collections.isEmpty {
                     header("Collections")
@@ -216,15 +228,6 @@ struct MacSidebar: View {
                     }
                 }
 
-                header("Journals")
-                row("Journal", dot: Self.dotColor(NodeCollection.journalID, light: scheme == .light),
-                    count: userNodes.filter { $0.journalDate != nil }.count,
-                    selected: router.entryMode == .collectionCanvas(id: NodeCollection.journalID), id: "sidebar.journal") {
-                    router.entryMode = .collectionCanvas(id: NodeCollection.journalID)
-                }
-                .contextMenu {
-                    Button { router.entryMode = .collectionCanvas(id: NodeCollection.journalID) } label: { Label("Open", systemImage: "arrow.right.circle") }
-                }
             }
             .padding(.horizontal, 10)
             .padding(.vertical, 12)
@@ -256,8 +259,8 @@ struct MacSidebar: View {
     private var places: [AppRouter.EntryMode] {
         var p: [AppRouter.EntryMode] = [.dashboard, .recents, .canvas]
         if !store.sampleNodeIDs.isEmpty { p.append(.sampleCanvas) }
-        p += store.collections.filter { !$0.isSystem }.map { .collectionCanvas(id: $0.id) }
         p.append(.collectionCanvas(id: NodeCollection.journalID))
+        p += store.collections.filter { !$0.isSystem }.map { .collectionCanvas(id: $0.id) }
         return p
     }
 

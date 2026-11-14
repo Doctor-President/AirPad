@@ -62,8 +62,12 @@ struct RecentsView: View {
         HStack(alignment: .center) {
             // Back control — native pop to the Dashboard hub (free slide +
             // edge-swipe-back, because Recents is a pushed child now).
-            glassCircleButton(systemName: "chevron.backward") {
-                dismiss()
+            if RunningOnMac.isMac {
+                Color.clear.frame(width: 40, height: 40)   // Mac D fix-up B4 — the toolbar's ‹ is the way back
+            } else {
+                glassCircleButton(systemName: "chevron.backward") {
+                    dismiss()
+                }
             }
 
             Spacer()

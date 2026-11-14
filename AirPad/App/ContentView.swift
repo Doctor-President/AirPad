@@ -201,6 +201,14 @@ struct ContentView: View {
                         NSLog("%@", await MacWebKeySelfTest.run(store: store, router: router))
                     }
                 }
+                // Mac D fix-up — `-MacFixupSelfTest`: the fix-up's layout items (B4–F5) in the running app.
+                if ProcessInfo.processInfo.arguments.contains("-MacFixupSelfTest") {
+                    Task { @MainActor in
+                        for _ in 0..<120 where store.nodes.count < 10 { try? await Task.sleep(nanoseconds: 250_000_000) }
+                        try? await Task.sleep(nanoseconds: 4_000_000_000)
+                        NSLog("%@", await MacFixupSelfTest.run(store: store, router: router))
+                    }
+                }
                 // Mac batch D — `-MacLayoutSelfTest`: the toolbar, sidebar and Librarian column.
                 if ProcessInfo.processInfo.arguments.contains("-MacLayoutSelfTest") {
                     Task { @MainActor in

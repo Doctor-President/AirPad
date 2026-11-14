@@ -222,8 +222,12 @@ struct NodeListView: View {
     // MARK: - Mac batch D4 — the desktop list
 
     /// Every entry in the order picked: "N entries · Sorted by last edited" (a menu), then one row each — a small hero
-    /// thumbnail, the title, one line of summary, the collection (dot + name) once the content is ≥ 820 pt wide, and the
+    /// thumbnail, the title, one line of summary, the collection (dot + name) once the content is ≥ 720 pt wide, and the
     /// age. Hover wash, right-click menu, ↑ / ↓ to move and ↩ to open.
+    /// D fix-up B6 — from 720 pt (was 820): the default 1,350 pt window with the sidebar and the Librarian open leaves
+    /// the List 736 pt, so the column never showed there; the title and summary still get ~400 pt.
+    static let macCollectionColumnMinWidth: CGFloat = 720
+
     private var macList: some View {
         let rows = sections.flatMap(\.nodes)
         return GeometryReader { geo in
@@ -256,7 +260,7 @@ struct NodeListView: View {
                         .padding(.bottom, 10)
                         .accessibilityIdentifier("macListHeader")
                         ForEach(Array(rows.enumerated()), id: \.element.id) { index, node in
-                            MacListRow(node: node, showCollection: geo.size.width >= 820,
+                            MacListRow(node: node, showCollection: geo.size.width >= Self.macCollectionColumnMinWidth,
                                        keyboardFocused: keyIndex == index, appFont: appFont) { open(node) }
                                 .id(node.id)
                                 .entryContextMenu(node)
@@ -459,12 +463,17 @@ private struct MacListRow: View {
                     }
                 }
                 .frame(maxWidth: .infinity, alignment: .leading)
-                if showCollection, let c = collection {
+                if showCollection {
+                    // D fix-up B6 — the column keeps its width on every row (an unfiled entry leaves it blank), and a
+                    // journal entry names the Journal: only user collections showed, so a run of journal entries had none.
                     HStack(spacing: 6) {
-                        Circle().fill(CollectionDot.color(c.id, light: scheme == .light)).frame(width: 8, height: 8)
-                        Text(c.name).font(appFont.font(size: 12.5)).foregroundStyle(AppearancePalette.ink.opacity(0.7)).lineLimit(1)
+                        if let c = collection {
+                            Circle().fill(CollectionDot.color(c.id, light: scheme == .light)).frame(width: 8, height: 8)
+                            Text(c.name).font(appFont.font(size: 12.5)).foregroundStyle(AppearancePalette.ink.opacity(0.7)).lineLimit(1)
+                        }
                     }
                     .frame(width: 150, alignment: .leading)
+                    .accessibilityIdentifier("listCollection")
                 }
                 Text(Self.age(node.updatedAt))
                     .font(appFont.font(size: 12.5))
@@ -488,7 +497,9 @@ private struct MacListRow: View {
     }
 
     private var collection: NodeCollection? {
-        store.collections.first { !$0.isSystem && node.collectionIDs.contains($0.id) }
+        if let c = store.collections.first(where: { !$0.isSystem && node.collectionIDs.contains($0.id) }) { return c }
+        guard node.journalDate != nil || node.collectionIDs.contains(NodeCollection.journalID) else { return nil }
+        return store.collections.first { $0.isJournal } ?? NodeCollection(id: NodeCollection.journalID, name: "Journal", nodeCount: 0)
     }
 
     /// "now", "5 min", "3 h", "2 d", "6 wk", then the date.

@@ -11,6 +11,9 @@ struct KeychainHelper {
 
     @discardableResult
     static func save(key: String, value: String) -> OSStatus {
+        #if DEBUG
+        if debugMemory { debugItems[key] = value; return errSecSuccess }
+        #endif
         let data = Data(value.utf8)
         let query: [CFString: Any] = [
             kSecClass:            kSecClassGenericPassword,
@@ -39,6 +42,7 @@ struct KeychainHelper {
         ]
         #if DEBUG
         if debugStubbedReadFailure(key) { return .failed(errSecInteractionNotAllowed) }
+        if debugMemory { return debugItems[key].map { .found($0) } ?? .notFound }
         #endif
         var result: AnyObject?
         let status = SecItemCopyMatching(query as CFDictionary, &result)
@@ -59,6 +63,9 @@ struct KeychainHelper {
     }
 
     static func delete(key: String) {
+        #if DEBUG
+        if debugMemory { debugItems[key] = nil; return }
+        #endif
         let query: [CFString: Any] = [
             kSecClass:       kSecClassGenericPassword,
             kSecAttrAccount: key,
@@ -122,6 +129,11 @@ struct KeychainHelper {
     /// C2c test hook — `-StubPairingReadFailsAfter <n>`: after n reads of the pairing item, every later read fails as a
     /// locked device's does (errSecInteractionNotAllowed), so a UI test can prove a failed read never unpairs.
     private static var debugPairingReads = 0
+
+    /// Mac D fix-up B2 — `-KeychainMemory YES`: an in-memory stand-in for the isolated Mac copy, whose ad-hoc signature
+    /// has no application identifier, so the real Keychain refuses it (errSecMissingEntitlement, -34018).
+    nonisolated(unsafe) private static var debugItems: [String: String] = [:]
+    private static var debugMemory: Bool { UserDefaults.standard.bool(forKey: "KeychainMemory") }
     static func debugStubbedReadFailure(_ key: String) -> Bool {
         let n = UserDefaults.standard.integer(forKey: "StubPairingReadFailsAfter")
         guard n > 0, key == "airpadHostPairing" else { return false }

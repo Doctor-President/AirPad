@@ -83,6 +83,8 @@ struct SettingsView: View {
     @State private var deepSeekKey = ""
     @State private var braveSearchKey = ""
     @State private var tavilySearchKey = ""   // live-28 (A2)
+    /// Mac D fix-up B2 — the key fields as `loadKeys` read them (`saveKeys` writes only what differs).
+    @State private var loadedKeyValues: [String: String] = [:]
     @State private var quickSave = false   // 1.1-C (C1) — mirrors ShareShared.quickSave (App Group)
     /// live-28 (A2) — Web search on/off (the keys stay in the Keychain) and the provider.
     @AppStorage(WebSearchBackend.enabledKey) private var webSearchEnabled = true
@@ -225,6 +227,9 @@ struct SettingsView: View {
             // pushed here — the onAppear push was unreliable through the picker's onDismiss.)
             HostCatalog.shared.refreshPaired()
         }
+        // Mac D fix-up B2 — saved however Settings closes (T's Brave key on the Mac was lost: Esc / the window close a
+        // sheet without Done, and the Web search screen has no Done of its own).
+        .onDisappear { saveKeys() }
     }
 
     // MARK: - Brief AJ1 — top-level rows + submenu routing
@@ -1562,9 +1567,21 @@ struct SettingsView: View {
         #endif
         ollamaAPIToken = KeychainHelper.load(key: "ollamaAPIToken")    ?? ""
         hostPairing    = HostPairing.load()
+        loadedKeyValues = ["anthropicAPIKey": anthropicKey, "openAIAPIKey": openAIKey, "deepSeekAPIKey": deepSeekKey,
+                           WebSearchBackend.keychainKey: braveSearchKey, WebSearchBackend.tavilyKeychainKey: tavilySearchKey,
+                           "ollamaEndpoint": ollamaEndpoint, "ollamaAPIToken": ollamaAPIToken]
     }
 
     private func saveKeys() {
+        // Mac D fix-up B2 — only what changed since `loadKeys` is written. Settings now saves whenever it closes (Esc and
+        // the window close a Mac sheet without Done), and a key that failed to read (a locked device) shows empty: it
+        // must never be "saved" as a delete.
+        guard !loadedKeyValues.isEmpty else { return }   // not loaded yet: nothing the user typed to save
+        func persistKey(_ key: String, value: String) {
+            guard loadedKeyValues[key] != value else { return }
+            self.persistKey(key, value: value)
+            loadedKeyValues[key] = value
+        }
         if FeatureFlags.cloudProviders {
             persistKey("anthropicAPIKey", value: anthropicKey)
             persistKey("openAIAPIKey",    value: openAIKey)

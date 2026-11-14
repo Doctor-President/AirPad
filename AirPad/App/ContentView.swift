@@ -193,6 +193,14 @@ struct ContentView: View {
                         NSLog("%@", await MacSettingsSelfTest.run(store: store, router: router))
                     }
                 }
+                // Mac D fix-up B2 — `-MacWebKeySelfTest`: a dummy Brave key through Settings, the Keychain and the search route.
+                if ProcessInfo.processInfo.arguments.contains("-MacWebKeySelfTest") {
+                    Task { @MainActor in
+                        for _ in 0..<120 where store.nodes.count < 10 { try? await Task.sleep(nanoseconds: 250_000_000) }
+                        try? await Task.sleep(nanoseconds: 4_000_000_000)
+                        NSLog("%@", await MacWebKeySelfTest.run(store: store, router: router))
+                    }
+                }
                 // Mac batch D — `-MacLayoutSelfTest`: the toolbar, sidebar and Librarian column.
                 if ProcessInfo.processInfo.arguments.contains("-MacLayoutSelfTest") {
                     Task { @MainActor in

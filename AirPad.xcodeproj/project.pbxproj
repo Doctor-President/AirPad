@@ -290,6 +290,7 @@
 		9864B2ADA60C6630DA0223AC /* NodeItem.swift in Sources */ = {isa = PBXBuildFile; fileRef = 8E4F251A686080806C62E071 /* NodeItem.swift */; };
 		989BB937F008E0994246E6CC /* CoverFlowView.swift in Sources */ = {isa = PBXBuildFile; fileRef = C49FE808E3476860F4E68D4F /* CoverFlowView.swift */; };
 		98B5E99326DE7512F0B6C859 /* CitationSheet.swift in Sources */ = {isa = PBXBuildFile; fileRef = 4FE654FD7C01A6BC0AAB228A /* CitationSheet.swift */; };
+		98C431825B91D4819CE4096F /* MacWebKeySelfTest.swift in Sources */ = {isa = PBXBuildFile; fileRef = F9B25219BFD45C5CD8068AFC /* MacWebKeySelfTest.swift */; };
 		99570B5D8F06DF317DEB07A5 /* QuarantineStore.swift in Sources */ = {isa = PBXBuildFile; fileRef = 0642041A7F8A258DF0FF065C /* QuarantineStore.swift */; };
 		9BBBB45D21CADBD3E042E4E9 /* StrandService.swift in Sources */ = {isa = PBXBuildFile; fileRef = 780B6A68830590DBDA5189D1 /* StrandService.swift */; };
 		9BF2C1F06E9B86EF13A15EA7 /* ProStoreTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = AC6736CCEB7AF941CE1C06BD /* ProStoreTests.swift */; };
@@ -960,6 +961,7 @@
 		F7814673E5A10B9F5E391DA4 /* SettingsView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = SettingsView.swift; sourceTree = "<group>"; };
 		F7AF6427A219BF4C6B063118 /* FlutedGlass.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = FlutedGlass.swift; sourceTree = "<group>"; };
 		F98C5EDB7B8428ABB080668F /* UberNode.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = UberNode.swift; sourceTree = "<group>"; };
+		F9B25219BFD45C5CD8068AFC /* MacWebKeySelfTest.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = MacWebKeySelfTest.swift; sourceTree = "<group>"; };
 		FA68215D2065B3D02251352C /* CardEmbeddingService.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = CardEmbeddingService.swift; sourceTree = "<group>"; };
 		FB2DFB50C4CBFDAC9D650DE9 /* PlusCaptureOverlap.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = PlusCaptureOverlap.swift; sourceTree = "<group>"; };
 		FB7866DE5FB6758202EA3AB1 /* CameraCaptureView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = CameraCaptureView.swift; sourceTree = "<group>"; };
@@ -1576,6 +1578,7 @@
 				4B75F1FFD1DCE98C8955DBFB /* MacDesktop.swift */,
 				3773385430F4EE5C69E66E12 /* MacMenuSelfTest.swift */,
 				D8B1D8BF348787D3FD1C2923 /* MacSettingsSelfTest.swift */,
+				F9B25219BFD45C5CD8068AFC /* MacWebKeySelfTest.swift */,
 				79694583DE4ADDFCDD62B5F6 /* SceneDelegate.swift */,
 			);
 			path = App;
@@ -2298,6 +2301,7 @@
 				5AFB3DA829E4D444AE74108C /* MacEnrichServerSelfTest.swift in Sources */,
 				5404E38C7AFC95CBE00F95D9 /* MacMenuSelfTest.swift in Sources */,
 				C476E58EFD2185BEE830A281 /* MacSettingsSelfTest.swift in Sources */,
+				98C431825B91D4819CE4096F /* MacWebKeySelfTest.swift in Sources */,
 				3B6801F816A54E8556578089 /* MapAdaptiveRate.swift in Sources */,
 				387AC23E16A52397AB46891A /* MapPointerSelfTest.swift in Sources */,
 				D231EBAD8B8B3B58C951FEDE /* MarkdownBlock.swift in Sources */,

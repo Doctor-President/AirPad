@@ -269,12 +269,7 @@ struct MacSidebar: View {
 
     private func count(in id: String) -> Int { store.hidingPrivate(store.nodes).filter { $0.collectionIDs.contains(id) }.count }
 
-    /// A collection has no colour of its own: a stable slot of the region palette, from its id.
-    static func dotColor(_ id: String, light: Bool) -> Color {
-        let slots = RegionPalette.currentHex(isLight: light).count
-        let h = id.unicodeScalars.reduce(UInt32(5381)) { ($0 &* 33) &+ $1.value }
-        return Color(uiColor: RegionPalette.color(isLight: light, slot: Int(h % UInt32(max(slots, 1)))))
-    }
+    static func dotColor(_ id: String, light: Bool) -> Color { CollectionDot.color(id, light: light) }
 
     /// Section header in AirPad's small caps style.
     private func header(_ title: String) -> some View {

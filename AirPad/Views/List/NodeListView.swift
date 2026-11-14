@@ -461,7 +461,7 @@ private struct MacListRow: View {
                 .frame(maxWidth: .infinity, alignment: .leading)
                 if showCollection, let c = collection {
                     HStack(spacing: 6) {
-                        Circle().fill(MacSidebar.dotColor(c.id, light: scheme == .light)).frame(width: 8, height: 8)
+                        Circle().fill(CollectionDot.color(c.id, light: scheme == .light)).frame(width: 8, height: 8)
                         Text(c.name).font(appFont.font(size: 12.5)).foregroundStyle(AppearancePalette.ink.opacity(0.7)).lineLimit(1)
                     }
                     .frame(width: 150, alignment: .leading)

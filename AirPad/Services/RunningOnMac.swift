@@ -265,3 +265,12 @@ extension RunningOnMac {
     }
 }
 #endif
+
+/// A collection has no colour of its own: a stable slot of the region palette, from its id.
+enum CollectionDot {
+    static func color(_ id: String, light: Bool) -> Color {
+        let slots = RegionPalette.currentHex(isLight: light).count
+        let h = id.unicodeScalars.reduce(UInt32(5381)) { ($0 &* 33) &+ $1.value }
+        return Color(uiColor: RegionPalette.color(isLight: light, slot: Int(h % UInt32(max(slots, 1)))))
+    }
+}

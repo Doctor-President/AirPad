@@ -108,8 +108,14 @@ enum MapPointerSelfTest {
             }
             scan(window)
             let round = buttons.first { abs($0.bounds.width - $0.bounds.height) < 1 && $0.bounds.width >= 56 }
-            row("view switcher: round button that opens its menu on a click", round != nil,
-                buttons.map { "\(Int($0.bounds.width))×\(Int($0.bounds.height)) menu: \($0.menu?.children.count ?? 0) items" }.joined(separator: ", "))
+            // D1 — on the Mac the switcher lives in the toolbar (MacLayoutSelfTest), so nothing floats over the Map.
+            if RunningOnMac.isMac {
+                row("view switcher: not over the Map (it is in the toolbar)", round == nil,
+                    buttons.map { "\(Int($0.bounds.width))×\(Int($0.bounds.height))" }.joined(separator: ", "))
+            } else {
+                row("view switcher: round button that opens its menu on a click", round != nil,
+                    buttons.map { "\(Int($0.bounds.width))×\(Int($0.bounds.height)) menu: \($0.menu?.children.count ?? 0) items" }.joined(separator: ", "))
+            }
         }
         return "[MapPointerSelfTest] \(fails == 0 ? "PASS" : "FAIL") — \(rows.count - fails)/\(rows.count)\n" + rows.joined(separator: "\n")
     }

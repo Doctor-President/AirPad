@@ -317,8 +317,9 @@ enum MacSheetsSelfTest {
         _ = await press("Close")
         while depth() > 0 { top()?.dismiss(animated: false); await settle(0.6) }
 
-        // 2. The Librarian's model picker: a popover on its pill.
-        router.perform(.librarian)
+        // 2. The Librarian's model picker: a popover on its pill (the column open, whatever it was left as).
+        let wasOpen = MacLayout.shared.librarianOpen
+        MacLayout.shared.librarianOpen = true
         await settle(2.5)
         let window = UIApplication.shared.connectedScenes.compactMap { $0 as? UIWindowScene }.flatMap(\.windows).first(where: \.isKeyWindow)
         let pill = window.flatMap { w in element({ $0.hasPrefix("Model ") }, in: w) }
@@ -330,7 +331,7 @@ enum MacSheetsSelfTest {
             "pill=\(pill != nil) presented=\(name(picker)) style=\(picker?.modalPresentationStyle.rawValue ?? -1)")
         RunningOnMac.snapshot("d011-model-popover")
         picker?.dismiss(animated: false); await settle(0.8)
-        router.perform(.librarian); await settle(1)
+        MacLayout.shared.librarianOpen = wasOpen; await settle(1)
 
         // 3. Export › Share… — what macOS shows (evidence; it has its own close or not).
         if let entry = store.nodes.first(where: { !$0.isPrivate && !$0.title.isEmpty }) {

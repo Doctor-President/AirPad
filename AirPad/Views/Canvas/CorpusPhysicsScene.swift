@@ -1915,6 +1915,28 @@ final class CorpusPhysicsScene: SKScene {
     /// (`focalNodeFinalDiameter` / the card-commit glide), not the retired browse lens.
     private let focalScreenFraction: CGFloat = 0.60
 
+    /// The card's (and the inflating orb's) final on-screen width. iPhone: 60 % of the Map's width. E fix-up G4 (Mac):
+    /// 60 % of what the reader can SEE — the Map's width minus a floating Librarian — at most 420 pt, and short
+    /// enough that its 5:7 height fits the Map with a margin (the Map spans the whole content column under a floating
+    /// panel, so 60 % of it made the card enormous and partly hidden).
+    private func focalScreenDiameter(_ view: SKView) -> CGFloat {
+        #if targetEnvironment(macCatalyst)
+        let room = view.bounds.width - macCardOcclusion
+        let byHeight = max(160, (view.bounds.height - 48) / 1.4)
+        return max(160, min(Self.macCardMaxWidth, room * focalScreenFraction, byHeight))
+        #else
+        return view.bounds.width * focalScreenFraction
+        #endif
+    }
+    #if targetEnvironment(macCatalyst)
+    static let macCardMaxWidth: CGFloat = 420
+    /// The Map's trailing strip a floating Librarian covers (its width and the 10 pt inset either side), view points.
+    private var macCardOcclusion: CGFloat {
+        let l = MacLayout.shared
+        return l.librarianOpen && l.librarianFloats ? l.floatingLibrarianWidth + 20 : 0
+    }
+    #endif
+
     // (The GRAZE-ERA constants that lived here — baselineScreenFraction, positionCompressionFalloff,
     // neighborBreathingGap, engagementLerp, steadyStateLerp, relaxationBand/Passes/BreathingGap,
     // position/scaleMatchTolerance, and characteristicSpacing with its O(n²) median pass — were
@@ -2722,6 +2744,13 @@ final class CorpusPhysicsScene: SKScene {
                 cardProgress = min(cardProgress, cardHopDip)
                 cardCamStart = cameraNode.position
                 cardCamTarget = nodeRestingPositions[id] ?? nodeSprites[id]?.position
+                #if targetEnvironment(macCatalyst)
+                // G4 — centre the card in the visible area: the camera stops half a floating Librarian to the right,
+                // so the orb (and the card on it) lands mid-way across what's left of the Map.
+                if let t = cardCamTarget, macCardOcclusion > 0 {
+                    cardCamTarget = CGPoint(x: t.x + macCardOcclusion / 2 * cameraNode.xScale, y: t.y)
+                }
+                #endif
                 coastVelocity = .zero   // cancel any pan-coast momentum in flight
             } else {
                 cardCamStart = nil; cardCamTarget = nil
@@ -2779,7 +2808,7 @@ final class CorpusPhysicsScene: SKScene {
                 canvasState?.disengagingFocalNodeID = isActive ? nil : trackedID
                 canvasState?.focalNodeScreenPosition = centerView
                 canvasState?.focalNodeDiameter = diameterView
-                canvasState?.focalNodeFinalDiameter = view.bounds.width * focalScreenFraction
+                canvasState?.focalNodeFinalDiameter = focalScreenDiameter(view)
                 canvasState?.focalScaleProgress = cardProgress
                 canvasState?.focalMorph = morphAmount(cardProgress)
                 if let focalNode = currentNodes.first(where: { $0.id == trackedID }) {
@@ -2833,7 +2862,7 @@ final class CorpusPhysicsScene: SKScene {
         }
         let intrinsic = max(nodeIntrinsicRadii[nodeID] ?? 30, 0.001)
         let restingScale = nodeRestingScales[nodeID] ?? 1.0
-        let fullFocalWorldRadius = (view.bounds.width * focalScreenFraction / 2) * cameraNode.xScale
+        let fullFocalWorldRadius = (focalScreenDiameter(view) / 2) * cameraNode.xScale
         let fullFocalScale = fullFocalWorldRadius / intrinsic
         let denom = fullFocalScale - restingScale
         guard denom > 0.0001 else { return isActive ? 1 : 0 }

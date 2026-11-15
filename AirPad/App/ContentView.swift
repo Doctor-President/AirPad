@@ -243,6 +243,14 @@ struct ContentView: View {
                         NSLog("%@", await MacZoomFitSelfTest.run(store: store, router: router))
                     }
                 }
+                // Mac E fix-up G4 — `-MacCardSizeSelfTest` (with `-OpenMap`): the orb's preview card at three widths.
+                if ProcessInfo.processInfo.arguments.contains("-MacCardSizeSelfTest") {
+                    Task { @MainActor in
+                        for _ in 0..<120 where store.nodes.count < 10 { try? await Task.sleep(nanoseconds: 250_000_000) }
+                        try? await Task.sleep(nanoseconds: 4_000_000_000)
+                        NSLog("%@", await MacCardSizeSelfTest.run(store: store, router: router))
+                    }
+                }
                 // Mac batch D — `-MacLayoutSelfTest`: the toolbar, sidebar and Librarian column.
                 if ProcessInfo.processInfo.arguments.contains("-MacLayoutSelfTest") {
                     Task { @MainActor in

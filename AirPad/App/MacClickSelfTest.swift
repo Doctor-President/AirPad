@@ -411,7 +411,7 @@ enum MacResizeSelfTest {
     }
 
     static func skViews(_ v: UIView) -> [UIView] {
-        (String(describing: type(of: v)).contains("SKView") ? [v] : []) + v.subviews.flatMap { skViews($0) }
+        (v is SKView ? [v] : []) + v.subviews.flatMap { skViews($0) }
     }
 
     static func run(store: CorpusStore, router: AppRouter) async -> String {
@@ -585,6 +585,94 @@ enum MacZoomFitSelfTest {
         let (rf, _) = await untilRest("final")
         row("final: the Map at rest (0 frames)", rf, scene.debugRestLine)
         return "[MacZoomFitSelfTest] \(fails == 0 ? "PASS" : "FAIL") — \(rows.filter { !$0.hasPrefix("INFO") }.count - fails)/\(rows.filter { !$0.hasPrefix("INFO") }.count)\n" + rows.joined(separator: "\n")
+    }
+}
+#endif
+
+#if DEBUG && targetEnvironment(macCatalyst)
+/// E fix-up G4 — `-MacCardSizeSelfTest` (with `-OpenMap`): an orb's preview card at 1,180 / 1,350 / 1,920 pt with the
+/// Librarian floating and docked: at most 420 pt wide, centred in the VISIBLE Map (the Map minus a floating Librarian),
+/// never under the floating panel, its 5:7 height inside the Map. Stills `<tmp>/macshots/g4-<width>-<mode>.png`.
+@MainActor
+enum MacCardSizeSelfTest {
+    static func run(store: CorpusStore, router: AppRouter) async -> String {
+        var rows: [String] = [], fails = 0
+        func row(_ name: String, _ ok: Bool, _ detail: String = "") {
+            rows.append("\(ok ? "PASS" : "FAIL") \(name)" + (detail.isEmpty ? "" : " — \(detail)")); if !ok { fails += 1 }
+        }
+        func settle(_ s: Double) async { try? await Task.sleep(nanoseconds: UInt64(s * 1_000_000_000)) }
+        let layout = MacLayout.shared
+        guard let scene = UIApplication.shared.connectedScenes.compactMap({ $0 as? UIWindowScene }).first,
+              let storeCanvas = store.canvasState else { return "[MacCardSizeSelfTest] FAIL — no window / Map" }
+        let restore = (scene.sizeRestrictions?.minimumSize, scene.sizeRestrictions?.maximumSize, layout.sidebarVisible, layout.librarianWidth)
+        func resize(_ w: CGFloat) async {
+            guard let r = scene.sizeRestrictions else { return }
+            let size = CGSize(width: w, height: 840)
+            r.minimumSize = size; r.maximumSize = size
+            var origin = scene.effectiveGeometry.systemFrame.origin
+            origin.x = max(0, min(origin.x, scene.screen.bounds.width - w))
+            scene.requestGeometryUpdate(.Mac(systemFrame: CGRect(origin: origin, size: size)))
+            await settle(1.6)
+        }
+        // The Map's scene: the window's SpriteKit view with the most orbs (debugCurrent can be another, newer scene).
+        func mapScene() -> CorpusPhysicsScene? {
+            let wins = scene.windows
+            let all = wins.flatMap { MacResizeSelfTest.skViews($0) }.compactMap { ($0 as? SKView)?.scene as? CorpusPhysicsScene }
+            return all.max { $0.debugOrbIDs.count < $1.debugOrbIDs.count }
+        }
+        let diag = scene.windows.flatMap { MacResizeSelfTest.skViews($0) }.map { v -> String in
+            let sc = (v as? SKView)?.scene
+            return "\(type(of: v)) scene=\(sc.map { "\(type(of: $0))" } ?? "nil") orbs=\((sc as? CorpusPhysicsScene)?.debugOrbIDs.count ?? -1)"
+        }
+        rows.append("INFO place \(router.entryMode) · view \(store.filterState(for: .corpus).viewMode.rawValue) · SKViews: \(diag.joined(separator: "; ")) · debugCurrent orbs \(CorpusPhysicsScene.debugCurrent?.debugOrbIDs.count ?? -1)")
+        guard let mapSc = mapScene(), mapSc.debugOrbIDs.count > 4 else { return "[MacCardSizeSelfTest] FAIL — no Map scene in the window\n" + rows.joined(separator: "\n") }
+        let ids = mapSc.debugOrbIDs   // the orbs this Map draws
+        let canvas = mapSc.canvasState ?? storeCanvas
+        guard ids.count > 4 else { return "[MacCardSizeSelfTest] FAIL — no orbs on the Map (\(ids.count))" }
+        rows.append("INFO \(ids.count) titled orbs · canvas \(canvas === mapSc.canvasState ? "is" : "is NOT") the Map's")
+        layout.librarianOpen = true
+        let configs: [(CGFloat, String, Bool, CGFloat)] = [   // width, label, sidebar, Librarian width
+            (1180, "floating", true, 370), (1180, "docked", false, 370),
+            (1350, "docked", true, 370), (1350, "floating", true, 520),
+            (1920, "docked", true, 370)]
+        for (k, (width, mode, side, lib)) in configs.enumerated() {
+            await resize(width)
+            layout.sidebarVisible = side; layout.librarianWidth = lib
+            await settle(1.0)
+            guard let sk = mapSc.view, let win = sk.window else { row("\(Int(width)) \(mode): Map on screen", false); continue }
+            let floats = layout.librarianFloats
+            row("\(Int(width)) pt \(mode): the Librarian \(mode == "floating" ? "floats" : "is docked")", floats == (mode == "floating"),
+                "floats \(floats) · Map \(Int(sk.bounds.width)) pt")
+            canvas.cardedNodeID = ids[k % ids.count]
+            mapSc.wakeFromRest("cardTest")   // as a tap does
+            await settle(2.8)
+            let d = canvas.focalNodeFinalDiameter
+            let c = sk.convert(canvas.focalNodeScreenPosition, to: win)
+            let card = CGRect(x: c.x - d / 2, y: c.y - d * 0.7, width: d, height: d * 1.4)
+            let map = sk.convert(sk.bounds, to: win)
+            var visible = map
+            var panel: CGRect?
+            if layout.librarianOpen && floats {
+                let pw = layout.floatingLibrarianWidth
+                panel = CGRect(x: map.maxX - 10 - pw, y: map.minY + 10, width: pw, height: map.height - 20)
+                visible.size.width -= pw + 20
+            }
+            let path = RunningOnMac.snapshot("g4-\(Int(width))-\(mode)")
+            row("\(Int(width)) pt \(mode): card ≤ 420 pt wide", d <= 420.5 && d >= 160, String(format: "card %.0f × %.0f", d, d * 1.4))
+            // the card sits on its orb, which settles within ~20 pt of the glide's target (live vs resting position)
+            row("\(Int(width)) pt \(mode): centred in the visible Map (±24 pt)", abs(card.midX - visible.midX) <= 24 && abs(card.midY - visible.midY) <= 24,
+                String(format: "card centre (%.0f, %.0f) · visible centre (%.0f, %.0f)", card.midX, card.midY, visible.midX, visible.midY))
+            row("\(Int(width)) pt \(mode): never under the floating panel, inside the Map", (panel.map { !card.intersects($0) } ?? true) && map.insetBy(dx: -1, dy: -1).contains(card),
+                String(format: "card x %.0f–%.0f y %.0f–%.0f · panel x %@ · Map %.0f–%.0f", card.minX, card.maxX, card.minY, card.maxY,
+                       panel.map { String(format: "%.0f–%.0f", $0.minX, $0.maxX) } ?? "—", map.minX, map.maxX))
+            rows.append("INFO still \(path ?? "none")")
+            canvas.cardedNodeID = nil
+            mapSc.wakeFromRest("cardTest")
+            await settle(1.2)
+        }
+        if let r = scene.sizeRestrictions { r.minimumSize = restore.0 ?? .zero; r.maximumSize = restore.1 ?? .zero }
+        layout.sidebarVisible = restore.2; layout.librarianWidth = restore.3
+        return "[MacCardSizeSelfTest] \(fails == 0 ? "PASS" : "FAIL") — \(rows.filter { !$0.hasPrefix("INFO") }.count - fails)/\(rows.filter { !$0.hasPrefix("INFO") }.count)\n" + rows.joined(separator: "\n")
     }
 }
 #endif

@@ -354,6 +354,32 @@ enum MacClickSelfTest {
         await press("toolbar.newEntry", "+ New Entry") { (router.isCapturing || store.isInDetailView, "capturing \(router.isCapturing) detail \(store.isInDetailView)") }
         await MacClick.settle(1.0)
 
+        // Content-area targets (the main window, below the bar): the sidebar's rows, the Librarian's header and
+        // resize edges, the home's Hide. A press there must reach the app's view, not start a window drag.
+        if let win = UIApplication.shared.connectedScenes.compactMap({ $0 as? UIWindowScene }).flatMap(\.windows).first {
+            layout.librarianOpen = true; layout.sidebarVisible = true
+            router.entryMode = .canvas; await MacClick.settle(1.2)
+            func target(_ id: String) async {
+                guard let e = MacFixupSelfTest.elements(in: win, { _, i in i == id }).first else { rows.append("INFO \(id): not on screen"); return }
+                let f = win.convert(e.accessibilityFrame, from: win.screen.coordinateSpace)
+                guard let wp = MacClick.windowPoint(ui: CGPoint(x: f.midX, y: f.midY)) else { return }
+                let h = MacClick.hit(wp)
+                let inContent = h.chain.contains("UINSSceneView") && !h.chain.contains("Toolbar")
+                let drag = MacClick.startsDrag(wp)
+                row("\(id) — a press reaches the app's view (not a window drag)", inContent && drag == false,
+                    "hit \(h.chain.prefix(70)) · drag \(drag.map { "\($0)" } ?? "n/a")")
+            }
+            for id in ["sidebar.today", "sidebar.recents", "sidebar.chats", "sidebar.library", "sidebar.journal",
+                       "macLibrarianHistory", "macLibrarianExpand", "macLibrarianNewChat", "macLibrarianTry",
+                       "macLibrarianHide.Try", "macLibrarianHide.Recent chats", "macLibrarianRecentChat", "macLibrarianAllChats",
+                       "resize.sidebar", "resize.librarian"] { await target(id) }
+            router.requestMacPanel(.history); await MacClick.settle(1.0)
+            for id in ["macLibrarianBack", "macChatHistoryRow", "macChatHistoryActions"] { await target(id) }
+            router.requestMacPanel(.history); await MacClick.settle(0.3)
+            if let back = MacFixupSelfTest.elements(in: win, { _, i in i == "macLibrarianBack" }).first { _ = back.accessibilityActivate() }
+            await MacClick.settle(0.6)
+        }
+
         // The bar's empty part still drags the window (between the view switch and the search).
         if let sw = point("toolbar.view.Cards"), let se = point("toolbar.search"), let w = MacClick.window,
            let before = w.value(forKey: "frame") as? CGRect {

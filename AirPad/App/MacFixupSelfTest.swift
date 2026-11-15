@@ -51,7 +51,7 @@ enum MacFixupSelfTest {
         row("B5 Journal row inside the window (no scrolling)", journal != nil && jf.maxY <= winScreen.maxY,
             "row bottom \(Int(jf.maxY - winScreen.minY)) pt of a \(Int(winScreen.height)) pt window")
 
-        // B6 — the List's collection column at ≥ 820 pt.
+        // B6 — the List's collection column at ≥ 660 pt (batch E; was 720, 820).
         let scope = CanvasScope.nodeIDs(store.sampleNodeIDs)
         router.entryMode = .sampleCanvas; await settle(1.0)
         var fs = store.filterState(for: scope); fs.viewMode = .list; store.setFilterState(fs, for: scope)

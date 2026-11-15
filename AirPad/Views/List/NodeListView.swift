@@ -226,7 +226,8 @@ struct NodeListView: View {
     /// age. Hover wash, right-click menu, ↑ / ↓ to move and ↩ to open.
     /// D fix-up B6 — from 720 pt (was 820): the default 1,350 pt window with the sidebar and the Librarian open leaves
     /// the List 736 pt, so the column never showed there; the title and summary still get ~400 pt.
-    static let macCollectionColumnMinWidth: CGFloat = 720
+    /// Batch E — 660 pt: the Librarian's 370 pt default leaves rows 694 pt at 1,350; the title and summary keep ~410 pt.
+    static let macCollectionColumnMinWidth: CGFloat = 660
 
     private var macList: some View {
         let rows = sections.flatMap(\.nodes)

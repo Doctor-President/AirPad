@@ -204,9 +204,15 @@ struct MacDesktopFrame<Content: View>: View {
                 .onAppear { layout.windowWidth = geo.size.width }
                 .onChange(of: geo.size.width) { _, w in layout.windowWidth = w }
         })
+        // E fix-up 2 — the controls in the bar itself (the overlay ignores the top safe area with the rest).
+        .overlay(alignment: .top) {
+            if MacToolbarController.controlsInWindow { MacToolbarInWindow(height: toolbarInset) }
+        }
         .ignoresSafeArea(.container, edges: .top)
         .background(AppearancePalette.bgBase.ignoresSafeArea())
-        .onGeometryChange(for: CGFloat.self) { $0.safeAreaInsets.top } action: { if $0 > 0 { toolbarInset = $0 } }
+        .onGeometryChange(for: CGFloat.self) { $0.safeAreaInsets.top } action: {
+            if $0 > 0 { toolbarInset = MacToolbarController.route == .none ? 52 : $0 }
+        }
         .animation(.easeOut(duration: 0.2), value: layout.sidebarVisible)
         .animation(.easeOut(duration: 0.2), value: layout.librarianOpen)
         .animation(.easeOut(duration: 0.2), value: layout.librarianFloats)
@@ -377,7 +383,7 @@ extension MacLayout {
 }
 
 /// E1 — the toolbar's band over the content + Librarian columns: the app's ground, a faint ink wash, a hairline under
-/// it. AppKit draws the items over it (its title bar is transparent — `MacWindowChrome`).
+/// it. The controls are drawn over it in the same window (`MacToolbarInWindow`; the title bar is transparent).
 struct MacToolbarBand: View {
     let height: CGFloat
     @Environment(\.colorScheme) private var scheme
@@ -387,6 +393,43 @@ struct MacToolbarBand: View {
             .frame(height: height)
             .overlay(alignment: .bottom) { Rectangle().fill(AppearancePalette.ink.opacity(0.10)).frame(height: 1) }
             .accessibilityHidden(true)
+    }
+}
+
+/// E fix-up 2 — the toolbar's controls drawn in the main window, across its top (the window buttons' strip, then the
+/// band): leading controls from the window buttons, trailing ones at the right edge. The empty parts drag the window.
+struct MacToolbarInWindow: View {
+    let height: CGFloat
+    @State private var layout = MacLayout.shared
+    var body: some View {
+        HStack(spacing: 0) {
+            MacToolbarLeading().padding(.leading, layout.toolbarLeadingX)
+            Spacer(minLength: 0)
+            MacToolbarTrailing().padding(.trailing, 8)
+        }
+        .frame(height: height)
+        .background(MacWindowDragArea())
+    }
+}
+
+/// The bar's empty parts: a press drags the window (AppKit's `performWindowDragWithEvent:` with the press), a double
+/// click does what the title bar's double click does in System Settings (zoom, minimise or nothing).
+struct MacWindowDragArea: UIViewRepresentable {
+    func makeUIView(context: Context) -> UIView { DragView() }
+    func updateUIView(_ uiView: UIView, context: Context) {}
+
+    final class DragView: UIView {
+        override init(frame: CGRect) {
+            super.init(frame: frame)
+            let g = UILongPressGestureRecognizer(target: self, action: #selector(pressed(_:)))
+            g.minimumPressDuration = 0
+            addGestureRecognizer(g)
+        }
+        required init?(coder: NSCoder) { fatalError() }
+        @objc func pressed(_ g: UILongPressGestureRecognizer) {
+            guard g.state == .began else { return }
+            MacWindowChrome.dragOrZoomWithCurrentEvent()
+        }
     }
 }
 
@@ -613,13 +656,27 @@ private struct MacSidebarRow: View {
 // MARK: - D1 — the toolbar
 
 /// D1 — ONE toolbar in the unified title bar (~52 pt): sidebar toggle · Back / Forward · the place's title · Map | List |
-/// Cards, then search (⌘F) · Librarian (⌘L) · + New Entry (⌘N). A real NSToolbar (window dragging, the traffic lights,
-/// full-screen behave as on any Mac app) whose two items host SwiftUI in AirPad's own styling (`NSUIViewToolbarItem`).
+/// Cards, then search (⌘F) · Librarian (⌘L) · + New Entry (⌘N). A real NSToolbar (the bar's height, the traffic lights,
+/// full-screen behave as on any Mac app). E fix-up 2: it holds NO items: under E1's transparent bar Catalyst delivered
+/// every click on a hosted item to the main window beneath it (the item never saw one), so the controls are drawn in the
+/// main window itself (`MacToolbarInWindow`), which is where the clicks arrive.
 @MainActor
 final class MacToolbarController: NSObject, NSToolbarDelegate {
     static let shared = MacToolbarController()
     static let leadingID = NSToolbarItem.Identifier("airpad.toolbar.leading")
     static let trailingID = NSToolbarItem.Identifier("airpad.toolbar.trailing")
+
+    /// E fix-up 2 — where the toolbar's controls live. `.items`: AppKit toolbar items hosting SwiftUI (D1/E1, dead to
+    /// the mouse under E1's transparent bar). `.empty`: an NSToolbar with no items (bar height, window buttons) and the
+    /// controls drawn in the main window. `.none`: no NSToolbar, controls in the main window. (Observation switch.)
+    enum Route: String { case items, empty, none }
+    static let route: Route = {
+        #if DEBUG
+        if let r = UserDefaults.standard.string(forKey: "MacToolbarRoute").flatMap(Route.init(rawValue:)) { return r }
+        #endif
+        return .empty
+    }()
+    static var controlsInWindow: Bool { route != .items }
 
     private var makeEnvironment: ((AnyView) -> AnyView)?
     /// The hosted item views (kept alive; the stills draw them too — the toolbar is AppKit, outside the UIWindow).
@@ -630,10 +687,19 @@ final class MacToolbarController: NSObject, NSToolbarDelegate {
         makeEnvironment = environment
         guard let scene = UIApplication.shared.connectedScenes.compactMap({ $0 as? UIWindowScene }).first,
               let titlebar = scene.titlebar, titlebar.toolbar?.identifier != "AirPadMain" else { return }
+        if Self.route == .none {
+            titlebar.toolbar = nil
+            titlebar.titleVisibility = .hidden
+            titlebar.separatorStyle = .none
+            MacLayout.shared.toolbarLeadingX = 96
+            MacWindowChrome.settle()
+            return
+        }
         let toolbar = NSToolbar(identifier: "AirPadMain")
         toolbar.delegate = self
         toolbar.displayMode = .iconOnly
         toolbar.allowsUserCustomization = false
+        if Self.controlsInWindow { MacLayout.shared.toolbarLeadingX = 96 }
         titlebar.toolbar = toolbar
         titlebar.toolbarStyle = .unified
         titlebar.titleVisibility = .hidden
@@ -649,7 +715,7 @@ final class MacToolbarController: NSObject, NSToolbarDelegate {
     }
 
     nonisolated func toolbarDefaultItemIdentifiers(_ toolbar: NSToolbar) -> [NSToolbarItem.Identifier] {
-        [Self.leadingID, .flexibleSpace, Self.trailingID]
+        Self.route == .items ? [Self.leadingID, .flexibleSpace, Self.trailingID] : []
     }
     nonisolated func toolbarAllowedItemIdentifiers(_ toolbar: NSToolbar) -> [NSToolbarItem.Identifier] {
         [Self.leadingID, .flexibleSpace, Self.trailingID]
@@ -776,6 +842,24 @@ enum MacWindowChrome {
         return (app.value(forKey: "windows") as? [NSObject])?.first { String(describing: type(of: $0)).contains("UINSWindow") }
     }
 
+    /// The app's current AppKit event (a press on the bar's empty part): a double click zooms / minimises as the user's
+    /// title-bar setting says, a single press starts AppKit's own window drag.
+    static func dragOrZoomWithCurrentEvent() {
+        guard let app = (NSClassFromString("NSApplication") as? NSObject.Type)?.perform(NSSelectorFromString("sharedApplication"))?
+                .takeUnretainedValue() as? NSObject,
+              let event = app.value(forKey: "currentEvent") as? NSObject, let w = nsWindow,
+              (event.value(forKey: "type") as? UInt) == 1 else { return }   // NSEventTypeLeftMouseDown
+        if (event.value(forKey: "clickCount") as? Int ?? 1) >= 2 {
+            switch UserDefaults.standard.string(forKey: "AppleActionOnDoubleClick") {
+            case "None": return
+            case "Minimize": w.perform(NSSelectorFromString("performMiniaturize:"), with: nil)
+            default: w.perform(NSSelectorFromString("performZoom:"), with: nil)
+            }
+            return
+        }
+        w.perform(NSSelectorFromString("performWindowDragWithEvent:"), with: event)
+    }
+
     /// Applies the transparent title bar and measures the leading item, now and once the toolbar has laid out.
     static func settle() {
         for delay in [0.0, 0.4, 1.5] {
@@ -788,6 +872,7 @@ enum MacWindowChrome {
                 if (w.value(forKey: "titlebarAppearsTransparent") as? Bool) != true {
                     w.setValue(true, forKey: "titlebarAppearsTransparent")
                 }
+                if MacToolbarController.controlsInWindow { return }
                 #if DEBUG
                 if UserDefaults.standard.string(forKey: "MacTitlebarProbe") != "unfixed" { keepToolbarClicks() }   // A/B
                 #else
@@ -970,6 +1055,8 @@ enum MacToolbarProbe {
     static let space = "macToolbarItem"
     @MainActor static var x: [String: CGFloat] = [:]
     @MainActor static var rect: [String: CGRect] = [:]
+    /// E fix-up 2 — each control's frame in the main window (the controls live there now; tests turn it into window points).
+    @MainActor static var windowRect: [String: CGRect] = [:]
     /// The controls in the trailing item (the rest are in the leading one).
     static let trailingIDs: Set<String> = ["toolbar.search", "toolbar.librarian", "toolbar.newEntry"]
     /// The control the pointer is over (its hover state), for the real-click test.
@@ -986,6 +1073,7 @@ extension View {
         onGeometryChange(for: CGRect.self) { $0.frame(in: .named(MacToolbarProbe.space)) } action: {
             MacToolbarProbe.x[id] = $0.minX; MacToolbarProbe.rect[id] = $0
         }
+        .onGeometryChange(for: CGRect.self) { $0.frame(in: .global) } action: { MacToolbarProbe.windowRect[id] = $0 }
     }
 }
 
@@ -1101,10 +1189,20 @@ enum MacLayoutSelfTest {
         let items = (toolbar?.value(forKey: "items") as? [NSObject]) ?? []
         let ids = items.compactMap { $0.value(forKey: "itemIdentifier") as? String }
         row("window toolbar is AirPad's", ident == "AirPadMain", "identifier=\(ident ?? "nil")")
-        row("items: leading · flexible space · trailing", ids == ["airpad.toolbar.leading", "NSToolbarFlexibleSpaceItem", "airpad.toolbar.trailing"], "\(ids)")
+        let inWindow = MacToolbarController.controlsInWindow
+        if inWindow {
+            // E fix-up 2 — the NSToolbar holds no items (it gives the bar its height); the controls are in the main window.
+            row("items: none (controls in the window)", ids.isEmpty, "\(ids)")
+            let all = ["toolbar.sidebar", "toolbar.back", "toolbar.forward", "toolbar.search", "toolbar.librarian", "toolbar.newEntry"]
+            let rs = all.map { MacToolbarProbe.windowRect[$0] }
+            row("controls drawn in the main window, inside the bar", rs.allSatisfy { $0.map { $0.minY >= 0 && $0.maxY <= 52 && $0.width > 0 } == true },
+                all.indices.map { "\(all[$0].dropFirst(8)) \(rs[$0].map { "\(Int($0.minX)),\(Int($0.minY)) \(Int($0.width))×\(Int($0.height))" } ?? "nil")" }.joined(separator: " · "))
+        } else {
+            row("items: leading · flexible space · trailing", ids == ["airpad.toolbar.leading", "NSToolbarFlexibleSpaceItem", "airpad.toolbar.trailing"], "\(ids)")
+        }
         let scene = UIApplication.shared.connectedScenes.compactMap { $0 as? UIWindowScene }.first
         row("unified title bar, title hidden", scene?.titlebar?.toolbarStyle == .unified && scene?.titlebar?.titleVisibility == .hidden)
-        for (name, id) in [("leading", MacToolbarController.leadingID), ("trailing", MacToolbarController.trailingID)] {
+        for (name, id) in inWindow ? [] : [("leading", MacToolbarController.leadingID), ("trailing", MacToolbarController.trailingID)] {
             guard let v = tc.hosts[id]?.view else { row("\(name) item hosted", false); continue }
             row("\(name) item hosted and sized", v.bounds.width > 100 && v.bounds.height >= 30 && v.window != nil,
                 "size \(v.bounds.size) window=\(v.window.map { String(describing: type(of: $0)) } ?? "nil")")
@@ -1127,7 +1225,11 @@ enum MacLayoutSelfTest {
         // 2. ⌘F focuses the toolbar search; typing opens the Librarian.
         layout.librarianOpen = false; await settle(0.6)
         router.perform(.find); await settle(1.0)
-        let field = tc.hosts[MacToolbarController.trailingID]?.view.flatMap { firstResponder(in: $0) }
+        let field = inWindow
+            ? UIApplication.shared.connectedScenes.compactMap { $0 as? UIWindowScene }.flatMap(\.windows).first(where: \.isKeyWindow)
+                .flatMap { firstResponder(in: $0) }.flatMap { f in
+                    MacToolbarProbe.windowRect["toolbar.search"].map { $0.insetBy(dx: -4, dy: -4).contains({ let b = f.convert(f.bounds, to: nil); return CGPoint(x: b.midX, y: b.midY) }()) } == true ? f : nil }
+            : tc.hosts[MacToolbarController.trailingID]?.view.flatMap { firstResponder(in: $0) }
         row("⌘F focuses the toolbar's search", field != nil, "first responder \(field.map { String(describing: type(of: $0)) } ?? "none")")
         row("⌘F opens the Librarian (results show there)", layout.librarianOpen)
         router.librarian.searchText = "coffee"; await settle(1.0)
@@ -1201,10 +1303,22 @@ enum MacLayoutSelfTest {
         //    content's edge (sidebar shown) or after the toggle (hidden), and the toolbar never overflows at 900–1,920 pt.
         row("E1 title bar transparent", (nsWindow?.value(forKey: "titlebarAppearsTransparent") as? Bool) == true)
         row("E1 no AppKit separator", scene?.titlebar?.separatorStyle == UITitlebarSeparatorStyle.none)
-        let ax = MacWindowChrome.leadingItemX()
-        row("E1 leading item measured (AppKit)", ax != nil && abs((ax ?? 0) - layout.toolbarLeadingX) < 1,
-            "AppKit x \(ax.map { String(format: "%.1f", $0) } ?? "nil") · layout \(layout.toolbarLeadingX)")
-        func hostX(_ id: String) -> CGFloat? { MacToolbarProbe.x[id].map { $0 + (MacWindowChrome.leadingItemX() ?? layout.toolbarLeadingX) } }
+        if !inWindow {
+            let ax = MacWindowChrome.leadingItemX()
+            row("E1 leading item measured (AppKit)", ax != nil && abs((ax ?? 0) - layout.toolbarLeadingX) < 1,
+                "AppKit x \(ax.map { String(format: "%.1f", $0) } ?? "nil") · layout \(layout.toolbarLeadingX)")
+        }
+        func hostX(_ id: String) -> CGFloat? {
+            inWindow ? MacToolbarProbe.windowRect[id]?.minX
+                     : MacToolbarProbe.x[id].map { $0 + (MacWindowChrome.leadingItemX() ?? layout.toolbarLeadingX) }
+        }
+        /// In the window: every control whole and on screen, the leading run clear of the trailing one.
+        func allOnScreen() -> Bool {
+            let r = MacToolbarProbe.windowRect
+            guard let fwd = r["toolbar.forward"], let search = r["toolbar.search"], let plus = r["toolbar.newEntry"] else { return false }
+            let lastLeading = [r["toolbar.view.Cards"], r["toolbar.forward"]].compactMap { $0 }.map(\.maxX).max() ?? fwd.maxX
+            return lastLeading < search.minX && plus.maxX <= layout.windowWidth
+        }
         func visibleIDs() -> [String] {
             ((nsWindow?.value(forKey: "toolbar") as? NSObject)?.value(forKey: "visibleItems") as? [NSObject] ?? [])
                 .compactMap { $0.value(forKey: "itemIdentifier") as? String }
@@ -1223,7 +1337,7 @@ enum MacLayoutSelfTest {
                     let ids = visibleIDs()
                     let back = hostX("toolbar.back"), toggle = hostX("toolbar.sidebar")
                     let want = side ? layout.sidebarWidth + 9 : layout.toolbarLeadingX + MacToolbarMetrics.toggleWidth + 4
-                    let ok = ids.contains(MacToolbarController.leadingID.rawValue) && ids.contains(MacToolbarController.trailingID.rawValue)
+                    let ok = (inWindow ? allOnScreen() : ids.contains(MacToolbarController.leadingID.rawValue) && ids.contains(MacToolbarController.trailingID.rawValue))
                         && back.map { abs($0 - want) <= 3 } == true
                         && (!side || toggle.map { $0 + MacToolbarMetrics.toggleWidth <= layout.sidebarWidth } == true)
                     row("E1 \(Int(layout.windowWidth)) pt, sidebar \(side ? "on" : "off"): both items visible, ‹ at \(side ? "the content's edge" : "the toggle")", ok,

@@ -243,7 +243,7 @@ enum MacClickSelfTest {
         }
         /// A click's EFFECT: a row only when the window can take clicks (app active, window key). A locked Mac never
         /// makes the app active, AppKit then passes no first click on, and the row is left to T's real click.
-        let live = MacClick.isLive
+        var live = false   // read after `activate()` (an unlocked Mac makes the app active and the window key there)
         func effect(_ name: String, _ ok: Bool, _ detail: String = "") {
             if live { row(name, ok, detail) } else { rows.append("T-CHECK \(name) — window can't be key here (\(MacClick.state)); seen: \(detail)") }
         }
@@ -251,6 +251,7 @@ enum MacClickSelfTest {
         let lead = MacToolbarController.leadingID, trail = MacToolbarController.trailingID
         NSLog("[MacClick] start")
         await MacClick.activate()
+        live = MacClick.isLive
         MacClick.traceTouches()
         MacClick.traceMouseDown()
         if UserDefaults.standard.bool(forKey: "MacClickTraceWindow") { MacClick.traceWindowMethods() }
@@ -258,6 +259,10 @@ enum MacClickSelfTest {
         rows.append("INFO method: NSEvent mouse/key events → \(MacClick.viaWindow ? "NSWindow sendEvent:" : "NSApp postEvent:atStart:") at the control's window point · \(MacClick.state)")
 
         func point(_ id: String) -> CGPoint? {
+            // E fix-up 2 — the controls are in the main window: its point straight from the window frame.
+            if MacToolbarController.controlsInWindow {
+                return MacToolbarProbe.windowRect[id].flatMap { MacClick.windowPoint(ui: CGPoint(x: $0.midX, y: $0.midY)) }
+            }
             guard let r = MacToolbarProbe.rect[id] else { return nil }
             let item = MacToolbarProbe.trailingIDs.contains(id) ? trail : lead
             return MacClick.windowPoint(toolbarItem: item, CGPoint(x: r.midX, y: r.midY))
@@ -269,7 +274,13 @@ enum MacClickSelfTest {
             let h = MacClick.hit(wp)
             let inItem = MacClick.isDescendant(h.view, of: MacClick.itemView(item))
             let drag = MacClick.startsDrag(wp)
-            row("\(name) — a press is a click, not a window drag", drag == false, "shouldStartWindowDrag \(drag.map { "\($0)" } ?? "n/a")")
+            if MacToolbarController.controlsInWindow {
+                // E fix-up 2 — the press goes to the main window's content (the hit below), which never asks the frame
+                // view; its answer for the title-bar area is kept for the record. The real-click matrix proves the click.
+                rows.append("INFO \(name) — frame view's own drag answer here: \(drag.map { "\($0)" } ?? "n/a") (not consulted: hit is content)")
+            } else {
+                row("\(name) — a press is a click, not a window drag", drag == false, "shouldStartWindowDrag \(drag.map { "\($0)" } ?? "n/a")")
+            }
             rows.append("INFO \(id) at window (\(Int(wp.x)), \(Int(wp.y))) · hit: \(h.chain)")
             rows.append("INFO   AppKit can-move-window chain: \(MacClick.moveChain(h.view))")
             if let host = MacToolbarController.shared.hosts[item]?.view, let r = MacToolbarProbe.rect[id], let hw = host.window {
@@ -311,11 +322,14 @@ enum MacClickSelfTest {
             }
         }
 
-        // G9 — Back / Forward.
-        await press("toolbar.back", "Back") { (router.entryMode == .dashboard, "mode \(router.entryMode)") }
+        // G9 — Back / Forward follow the place's NavigationStack: a new entry goes on it, ‹ closes it, › re-opens it.
+        router.perform(.newEntry); await MacClick.settle(1.5)
+        rows.append("INFO opened a new entry · back enabled \(router.canGoBack)")
+        await press("toolbar.back", "Back") { (!router.canGoBack && router.canGoForward, "back \(router.canGoBack) · forward \(router.canGoForward)") }
         await MacClick.settle(0.8)
-        await press("toolbar.forward", "Forward") { (router.entryMode == .canvas, "mode \(router.entryMode)") }
+        await press("toolbar.forward", "Forward") { (router.canGoBack && !router.canGoForward, "back \(router.canGoBack) · forward \(router.canGoForward)") }
         await MacClick.settle(0.8)
+        router.perform(.back); await MacClick.settle(1.0)
 
         // View switch (Map | List | Cards).
         for (label, mode) in [("List", ViewMode.list), ("Cards", .grid), ("Map", .systemGraph)] {
@@ -333,15 +347,25 @@ enum MacClickSelfTest {
         await MacClick.settle(0.6)
 
         // G8 — the search field: a click focuses it, typing searches.
+        /// The search field's first responder: in the toolbar item's host, or (E fix-up 2) in the main window at the field.
+        func searchResponder() -> UIView? {
+            if !MacToolbarController.controlsInWindow {
+                return MacToolbarController.shared.hosts[trail]?.view.flatMap { MacLayoutSelfTest.firstResponder(in: $0) }
+            }
+            guard let win = UIApplication.shared.connectedScenes.compactMap({ $0 as? UIWindowScene }).flatMap(\.windows).first(where: \.isKeyWindow),
+                  let f = MacLayoutSelfTest.firstResponder(in: win), let r = MacToolbarProbe.windowRect["toolbar.search"] else { return nil }
+            let b = f.convert(f.bounds, to: nil)
+            return r.insetBy(dx: -4, dy: -4).contains(CGPoint(x: b.midX, y: b.midY)) ? f : nil
+        }
         await press("toolbar.search", "Search field") {
-            let fr = MacToolbarController.shared.hosts[trail]?.view.flatMap { MacLayoutSelfTest.firstResponder(in: $0) }
+            let fr = searchResponder()
             return (fr != nil, "first responder \(fr.map { String(describing: type(of: $0)) } ?? "none")")
         }
-        let focused = MacToolbarController.shared.hosts[trail]?.view.flatMap { MacLayoutSelfTest.firstResponder(in: $0) } != nil
+        let focused = searchResponder() != nil
         if focused && !MacClick.viaWindow { await MacClick.typeText("co"); await MacClick.settle(0.6) }   // window-direct keys stall
         effect("Search field — typing searches", router.librarian.searchText == "co", "text \"\(router.librarian.searchText)\" · Librarian open \(layout.librarianOpen)")
         router.librarian.searchText = ""
-        MacToolbarController.shared.hosts[trail]?.view.flatMap { MacLayoutSelfTest.firstResponder(in: $0) }?.resignFirstResponder()
+        searchResponder()?.resignFirstResponder()
         await MacClick.settle(0.5)
 
         // G9 — the sidebar button (last: hiding the sidebar moves it).

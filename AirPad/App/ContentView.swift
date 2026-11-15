@@ -219,6 +219,14 @@ struct ContentView: View {
                         NSLog("%@", await MacBatchESelfTest.run(store: store, router: router))
                     }
                 }
+                // Mac E fix-up — `-MacClickSelfTest`: every toolbar item pressed with a real (AppKit) click.
+                if ProcessInfo.processInfo.arguments.contains("-MacClickSelfTest") {
+                    Task { @MainActor in
+                        for _ in 0..<120 where store.nodes.count < 10 { try? await Task.sleep(nanoseconds: 250_000_000) }
+                        try? await Task.sleep(nanoseconds: 4_000_000_000)
+                        NSLog("%@", await MacClickSelfTest.run(store: store, router: router))
+                    }
+                }
                 // Mac batch D — `-MacLayoutSelfTest`: the toolbar, sidebar and Librarian column.
                 if ProcessInfo.processInfo.arguments.contains("-MacLayoutSelfTest") {
                     Task { @MainActor in

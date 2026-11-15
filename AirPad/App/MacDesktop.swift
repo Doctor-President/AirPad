@@ -589,7 +589,7 @@ struct MacToolbarIconButton: View {
                 .contentShape(Capsule())
         }
         .buttonStyle(.plain)
-        .onHover { hovering = $0 }
+        .onHover { hovering = $0; MacToolbarProbe.hovered(id, $0) }
         .help(help)
         .accessibilityLabel(help)
         .accessibilityIdentifier(id)
@@ -626,7 +626,7 @@ struct MacLibrarianToolbarButton: View {
             .contentShape(Capsule())
         }
         .buttonStyle(.plain)
-        .onHover { hovering = $0 }
+        .onHover { hovering = $0; MacToolbarProbe.hovered("toolbar.librarian", $0) }
         .help("Librarian (⌘L)")
         .macToolbarProbe("toolbar.librarian")
         .accessibilityLabel("Librarian")
@@ -651,14 +651,80 @@ enum MacWindowChrome {
         for delay in [0.0, 0.4, 1.5] {
             DispatchQueue.main.asyncAfter(deadline: .now() + delay) {
                 guard let w = nsWindow else { return }
+                #if DEBUG
+                // G1 observation: `-MacTitlebarProbe opaque` keeps D's opaque title bar (the A/B for the click test).
+                if UserDefaults.standard.string(forKey: "MacTitlebarProbe") == "opaque" { return }
+                #endif
                 if (w.value(forKey: "titlebarAppearsTransparent") as? Bool) != true {
                     w.setValue(true, forKey: "titlebarAppearsTransparent")
                 }
+                #if DEBUG
+                if UserDefaults.standard.string(forKey: "MacTitlebarProbe") != "unfixed" { keepToolbarClicks() }   // A/B
+                #else
+                keepToolbarClicks()
+                #endif
                 if let x = leadingItemX(), x > 20, x < 200, abs(x - MacLayout.shared.toolbarLeadingX) > 0.5 {
                     MacLayout.shared.toolbarLeadingX = x
                 }
             }
         }
+    }
+
+    /// E fix-up G1 — with the title bar transparent, AppKit's frame view answers YES to `shouldStartWindowDragForEvent:`
+    /// for a press anywhere in the bar, toolbar items included, so every click on the toolbar became a (zero-length)
+    /// window drag and never reached the item (traced: `performWindowDragWithEvent:`, no `mouseDown:`; with D's opaque
+    /// bar the same press answers NO and reaches the item). It now answers NO when the press lands on a toolbar control;
+    /// everywhere else (the bar's empty part) keeps AppKit's answer, so the window still drags from the bar.
+    static func keepToolbarClicks() {
+        guard !toolbarClicksKept, let cls = NSClassFromString("NSThemeFrame"),
+              let m = class_getInstanceMethod(cls, NSSelectorFromString("shouldStartWindowDragForEvent:")) else { return }
+        toolbarClicksKept = true
+        typealias Orig = @convention(c) (NSObject, Selector, NSObject) -> Bool
+        let orig = unsafeBitCast(method_getImplementation(m), to: Orig.self)
+        let sel = method_getName(m)
+        let block: @convention(block) (NSObject, NSObject) -> Bool = { frame, event in
+            pressIsOnToolbarControl(frame, event) ? false : orig(frame, sel, event)
+        }
+        // Only NSThemeFrame's own answer (an inherited one is added to it, not replaced in its superclass).
+        if !class_addMethod(cls, sel, imp_implementationWithBlock(block), method_getTypeEncoding(m)) {
+            method_setImplementation(m, imp_implementationWithBlock(block))
+        }
+    }
+    private static var toolbarClicksKept = false
+
+    /// The press lands on one of the toolbar's controls: the frame view's hit-test finds one of AirPad's two items, and
+    /// the point, in that item's hosted root, falls on a control's frame (2 pt slack). The items' empty runs — the strip
+    /// beside the window buttons, around the title — stay draggable.
+    private static func pressIsOnToolbarControl(_ frame: NSObject, _ event: NSObject) -> Bool {
+        guard let p = event.value(forKey: "locationInWindow") as? CGPoint else { return false }
+        typealias Hit = @convention(c) (AnyObject, Selector, CGPoint) -> AnyObject?
+        let hitSel = NSSelectorFromString("hitTest:")
+        let hit = unsafeBitCast(frame.method(for: hitSel), to: Hit.self)(frame, hitSel, p) as? NSObject
+        for (id, trailing) in [(MacToolbarController.leadingID, false), (MacToolbarController.trailingID, true)] {
+            guard let v = itemView(id), isDescendant(hit, of: v), let b = v.value(forKey: "bounds") as? CGRect else { continue }
+            typealias Conv = @convention(c) (AnyObject, Selector, CGPoint, AnyObject?) -> CGPoint
+            let sel = NSSelectorFromString("convertPoint:fromView:")
+            let local = unsafeBitCast(v.method(for: sel), to: Conv.self)(v, sel, p, nil)
+            let flipped = (v.value(forKey: "isFlipped") as? Bool) ?? false
+            let q = CGPoint(x: local.x - b.minX, y: flipped ? local.y - b.minY : b.maxY - local.y)
+            return MacToolbarProbe.rect.contains { key, r in
+                MacToolbarProbe.trailingIDs.contains(key) == trailing && r.insetBy(dx: -2, dy: -2).contains(q)
+            }
+        }
+        return false
+    }
+
+    static func itemView(_ id: NSToolbarItem.Identifier) -> NSObject? {
+        guard let toolbar = nsWindow?.value(forKey: "toolbar") as? NSObject,
+              let items = toolbar.value(forKey: "items") as? [NSObject],
+              let item = items.first(where: { ($0.value(forKey: "itemIdentifier") as? String) == id.rawValue }) else { return nil }
+        return item.value(forKey: "view") as? NSObject
+    }
+
+    private static func isDescendant(_ v: NSObject?, of ancestor: NSObject) -> Bool {
+        var cur = v
+        for _ in 0..<20 { guard let c = cur else { return false }; if c === ancestor { return true }; cur = c.value(forKey: "superview") as? NSObject }
+        return false
     }
 
     /// The leading item's left edge in window points (its NSView's frame, summed up the view chain).
@@ -706,6 +772,7 @@ struct MacViewSwitch: View {
                 .accessibilityLabel(dest.label)
                 .accessibilityAddTraits(on ? .isSelected : [])
                 .accessibilityIdentifier("toolbar.view.\(dest.label)")
+                .macToolbarProbe("toolbar.view.\(dest.label)")
             }
         }
         .padding(3)
@@ -743,6 +810,7 @@ struct MacToolbarLeading: View {
                     .macToolbarProbe("toolbar.back")
                 MacToolbarIconButton(systemName: "chevron.right", help: "Forward", id: "toolbar.forward") { router.perform(.forward) }
                     .disabled(!router.canGoForward)
+                    .macToolbarProbe("toolbar.forward")
                 Text(macPlaceTitle(router, store))
                     .font(appFont.font(size: 15, weight: .semibold))
                     .foregroundStyle(AppearancePalette.ink)
@@ -764,19 +832,29 @@ struct MacToolbarLeading: View {
     }
 }
 
-/// DEBUG — where the leading item's controls sit inside it (the self-test adds AppKit's item x to get window points).
+/// Where each toolbar control sits inside its item (its hosted root's coordinates). E fix-up G1: the title bar uses it
+/// to tell a press on a control (a click) from a press on the bar around them (a window drag); the self-tests turn it
+/// into window points.
 enum MacToolbarProbe {
-    static let space = "macToolbarLeading"
+    static let space = "macToolbarItem"
     @MainActor static var x: [String: CGFloat] = [:]
+    @MainActor static var rect: [String: CGRect] = [:]
+    /// The controls in the trailing item (the rest are in the leading one).
+    static let trailingIDs: Set<String> = ["toolbar.search", "toolbar.librarian", "toolbar.newEntry"]
+    /// The control the pointer is over (its hover state), for the real-click test.
+    @MainActor static var hover: String?
+    @MainActor static func hovered(_ id: String, _ inside: Bool) {
+        #if DEBUG
+        if inside { hover = id } else if hover == id { hover = nil }
+        #endif
+    }
 }
 
 extension View {
-    @ViewBuilder func macToolbarProbe(_ id: String) -> some View {
-        #if DEBUG
-        onGeometryChange(for: CGFloat.self) { $0.frame(in: .named(MacToolbarProbe.space)).minX } action: { MacToolbarProbe.x[id] = $0 }
-        #else
-        self
-        #endif
+    func macToolbarProbe(_ id: String) -> some View {
+        onGeometryChange(for: CGRect.self) { $0.frame(in: .named(MacToolbarProbe.space)) } action: {
+            MacToolbarProbe.x[id] = $0.minX; MacToolbarProbe.rect[id] = $0
+        }
     }
 }
 
@@ -803,6 +881,7 @@ struct MacToolbarTrailing: View {
     @Environment(\.appBodyFont) private var appFont
     @State private var layout = MacLayout.shared
     @FocusState private var searchFocused: Bool
+    @State private var searchHover = false
 
     var body: some View {
         @Bindable var librarian = router.librarian
@@ -836,14 +915,21 @@ struct MacToolbarTrailing: View {
             }
             .padding(.horizontal, 10)
             .frame(width: MacToolbarMetrics.searchWidth(layout), height: 30)
-            .background(Capsule().fill(AppearancePalette.ink.opacity(searchFocused ? 0.10 : 0.06)))
+            .background(Capsule().fill(AppearancePalette.ink.opacity(searchFocused ? 0.10 : (searchHover ? 0.09 : 0.06))))
             .overlay(Capsule().stroke(AppearancePalette.ink.opacity(searchFocused ? 0.25 : 0), lineWidth: 1))
+            // G8 — a click anywhere on the capsule (the glass, the ⌘F hint) focuses the field.
+            .contentShape(Capsule())
+            .onTapGesture { searchFocused = true }
+            .onHover { searchHover = $0; MacToolbarProbe.hovered("toolbar.search", $0) }
+            .macToolbarProbe("toolbar.search")
             .padding(.trailing, 4)
             MacLibrarianToolbarButton(open: layout.librarianOpen) { router.perform(.librarian) }
             MacToolbarIconButton(systemName: "plus", help: "New Entry", id: "toolbar.newEntry") { router.perform(.newEntry) }
+                .macToolbarProbe("toolbar.newEntry")
         }
         .frame(height: 36)
         .fixedSize()
+        .coordinateSpace(.named(MacToolbarProbe.space))
         // ⌘F focuses the search; typing shows the results in the Librarian (it opens if closed).
         .onChange(of: router.commandRequest) { _, request in
             if request?.command == .find { searchFocused = true }

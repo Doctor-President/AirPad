@@ -169,11 +169,8 @@ enum MacMenuSelfTest {
         row("fire/View›Librarian toggles the column", await go("View", "Librarian") && MacLayout.shared.librarianOpen == !wasOpen,
             "open \(wasOpen) → \(MacLayout.shared.librarianOpen)")
         row("fire/View›Librarian again toggles it back", await go("View", "Librarian") && MacLayout.shared.librarianOpen == wasOpen)
-        // D1 — Find focuses the TOOLBAR's search (its field lives in the toolbar's hosted view).
-        let toolbarField: () -> Bool = {
-            MacToolbarController.shared.hosts[MacToolbarController.trailingID]?.view
-                .flatMap { MacLayoutSelfTest.firstResponder(in: $0) } != nil
-        }
+        // D1 — Find focuses the TOOLBAR's search (E fix-up 2: drawn in the main window, no longer a hosted item).
+        let toolbarField: () -> Bool = { MacLayoutSelfTest.toolbarSearchResponder() != nil }
         row("fire/Edit›Find focuses the toolbar's search", await go("Edit", "Find") && toolbarField() && MacLayout.shared.librarianOpen,
             "toolbar field focused=\(toolbarField())")
         UIApplication.shared.sendAction(#selector(UIResponder.resignFirstResponder), to: nil, from: nil, for: nil)

@@ -1225,11 +1225,7 @@ enum MacLayoutSelfTest {
         // 2. ⌘F focuses the toolbar search; typing opens the Librarian.
         layout.librarianOpen = false; await settle(0.6)
         router.perform(.find); await settle(1.0)
-        let field = inWindow
-            ? UIApplication.shared.connectedScenes.compactMap { $0 as? UIWindowScene }.flatMap(\.windows).first(where: \.isKeyWindow)
-                .flatMap { firstResponder(in: $0) }.flatMap { f in
-                    MacToolbarProbe.windowRect["toolbar.search"].map { $0.insetBy(dx: -4, dy: -4).contains({ let b = f.convert(f.bounds, to: nil); return CGPoint(x: b.midX, y: b.midY) }()) } == true ? f : nil }
-            : tc.hosts[MacToolbarController.trailingID]?.view.flatMap { firstResponder(in: $0) }
+        let field = toolbarSearchResponder()
         row("⌘F focuses the toolbar's search", field != nil, "first responder \(field.map { String(describing: type(of: $0)) } ?? "none")")
         row("⌘F opens the Librarian (results show there)", layout.librarianOpen)
         router.librarian.searchText = "coffee"; await settle(1.0)
@@ -1349,6 +1345,18 @@ enum MacLayoutSelfTest {
         layout.sidebarVisible = sidebarWas; layout.librarianOpen = libWas; await settle(0.6)
 
         return "[MacLayoutSelfTest] \(fails == 0 ? "PASS" : "FAIL") — \(rows.count - fails)/\(rows.count)\n" + rows.joined(separator: "\n")
+    }
+
+    /// The toolbar search field when it's first responder: in the toolbar item's host, or (E fix-up 2) in the main
+    /// window at the field's frame.
+    static func toolbarSearchResponder() -> UIView? {
+        guard MacToolbarController.controlsInWindow else {
+            return MacToolbarController.shared.hosts[MacToolbarController.trailingID]?.view.flatMap { firstResponder(in: $0) }
+        }
+        guard let win = UIApplication.shared.connectedScenes.compactMap({ $0 as? UIWindowScene }).flatMap(\.windows).first(where: \.isKeyWindow),
+              let f = firstResponder(in: win), let r = MacToolbarProbe.windowRect["toolbar.search"] else { return nil }
+        let b = f.convert(f.bounds, to: nil)
+        return r.insetBy(dx: -4, dy: -4).contains(CGPoint(x: b.midX, y: b.midY)) ? f : nil
     }
 
     static func firstResponder(in v: UIView) -> UIView? {

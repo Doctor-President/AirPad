@@ -347,16 +347,7 @@ enum MacClickSelfTest {
         await MacClick.settle(0.6)
 
         // G8 — the search field: a click focuses it, typing searches.
-        /// The search field's first responder: in the toolbar item's host, or (E fix-up 2) in the main window at the field.
-        func searchResponder() -> UIView? {
-            if !MacToolbarController.controlsInWindow {
-                return MacToolbarController.shared.hosts[trail]?.view.flatMap { MacLayoutSelfTest.firstResponder(in: $0) }
-            }
-            guard let win = UIApplication.shared.connectedScenes.compactMap({ $0 as? UIWindowScene }).flatMap(\.windows).first(where: \.isKeyWindow),
-                  let f = MacLayoutSelfTest.firstResponder(in: win), let r = MacToolbarProbe.windowRect["toolbar.search"] else { return nil }
-            let b = f.convert(f.bounds, to: nil)
-            return r.insetBy(dx: -4, dy: -4).contains(CGPoint(x: b.midX, y: b.midY)) ? f : nil
-        }
+        func searchResponder() -> UIView? { MacLayoutSelfTest.toolbarSearchResponder() }
         await press("toolbar.search", "Search field") {
             let fr = searchResponder()
             return (fr != nil, "first responder \(fr.map { String(describing: type(of: $0)) } ?? "none")")

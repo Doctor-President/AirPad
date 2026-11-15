@@ -39,7 +39,8 @@ enum MacFixupSelfTest {
         router.entryMode = .recents; await settle(1.5)
         let recentsHeader = elements(in: window) { l, _ in l == "Recents" }
         row("B4 Today → Recents shows the Recents list (its header), not Today", !recentsHeader.isEmpty)
-        row("B4 no phone back chevron in Recents", elements(in: window) { l, _ in l == "Back" || l == "chevron.backward" }.isEmpty)
+        // (The toolbar's own ‹, drawn in the window since E fix-up 2, isn't the phone's chevron.)
+        row("B4 no phone back chevron in Recents", elements(in: window) { l, i in (l == "Back" || l == "chevron.backward") && i != "toolbar.back" }.isEmpty)
         router.perform(.back); await settle(1.2)
         row("B4 Back from Recents → the place is Today (title follows)", router.entryMode == .dashboard, "\(router.entryMode)")
 

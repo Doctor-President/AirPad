@@ -208,6 +208,9 @@ struct NodeGridView: View {
         .padding(.top, 14)
         .padding(.bottom, 6)
         .onChange(of: router.commandRequest) { _, request in
+            // G3 — strictly Cards': only while the cards are the visible view (not under an open entry).
+            let mode = store.filterState(for: scope).viewMode
+            guard !store.isInDetailView, mode != .list, mode != .systemGraph else { return }
             switch request?.command {
             case .zoomIn?:  macCardWidth = min(macCardWidth + Self.macCardWidthStep, Self.macCardWidthRange.upperBound)
             case .zoomOut?: macCardWidth = max(macCardWidth - Self.macCardWidthStep, Self.macCardWidthRange.lowerBound)

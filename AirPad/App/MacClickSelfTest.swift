@@ -482,3 +482,109 @@ enum MacResizeSelfTest {
     }
 }
 #endif
+
+#if DEBUG && targetEnvironment(macCatalyst)
+/// E fix-up G3 — `-MacZoomFitSelfTest` (with `-OpenMap`): ⌘0 (the View menu's command) on the Map from rest, the Map's
+/// rest state sampled after it, then trackpad pans and pinches through the pointer paths; the Map must come back to
+/// rest (0 frames) after each. Then ⌘0 with Cards showing must reach only Cards.
+@MainActor
+enum MacZoomFitSelfTest {
+    static func run(store: CorpusStore, router: AppRouter) async -> String {
+        var rows: [String] = [], fails = 0
+        func row(_ name: String, _ ok: Bool, _ detail: String = "") {
+            rows.append("\(ok ? "PASS" : "FAIL") \(name)" + (detail.isEmpty ? "" : " — \(detail)")); if !ok { fails += 1 }
+            NSLog("[G3] %@", rows.last ?? "")
+        }
+        func settle(_ s: Double) async { try? await Task.sleep(nanoseconds: UInt64(s * 1_000_000_000)) }
+        guard let scene = CorpusPhysicsScene.debugCurrent, let view = scene.view else { return "[MacZoomFitSelfTest] FAIL — no Map" }
+        /// Waits up to `limit` s for rest; the samples on the way.
+        func untilRest(_ label: String, limit: Double = 6) async -> (Bool, Double) {
+            let t0 = CACurrentMediaTime()
+            var last = ""
+            while CACurrentMediaTime() - t0 < limit {
+                if scene.debugRestPaused { return (true, CACurrentMediaTime() - t0) }
+                let l = scene.debugRestLine
+                if l != last { NSLog("[G3] %@ +%.2fs %@", label, CACurrentMediaTime() - t0, l); last = l }
+                await settle(0.1)
+            }
+            rows.append("INFO   \(label) still awake: \(scene.debugRestLine)")
+            return (false, limit)
+        }
+        let mid = CGPoint(x: view.bounds.midX, y: view.bounds.midY)
+        func pans(_ n: Int) async {
+            for i in 0..<n {
+                scene.debugPointerGesture { s in
+                    for _ in 0..<8 { s.debugPointerPan(by: CGPoint(x: i % 2 == 0 ? 6 : -6, y: 3)) }
+                }
+                await settle(0.016)
+            }
+        }
+        func pinches(_ n: Int) async {
+            for i in 0..<n {
+                scene.debugPointerGesture { s in s.debugPointerZoom(by: i % 2 == 0 ? 1.04 : 1 / 1.04, at: mid) }
+                await settle(0.016)
+            }
+        }
+        rows.append("INFO view \(Int(view.bounds.width))×\(Int(view.bounds.height))")
+        CorpusPhysicsScene.debugLabelLagOn = true
+        func lag(_ name: String, _ body: () async -> Void) async {
+            CorpusPhysicsScene.debugLabelLagMax = 0; CorpusPhysicsScene.debugLabelLagFrames = 0
+            await body()
+            let m = CorpusPhysicsScene.debugLabelLagMax
+            row("pills stay on their orbs — \(name)", m <= 1.0, String(format: "max %.1f pt off over %d frames", m, CorpusPhysicsScene.debugLabelLagFrames))
+        }
+        let (r0, _) = await untilRest("launch", limit: 20)
+        row("the Map rests before ⌘0", r0, scene.debugRestLine)
+
+        // Control: the same pans + pinches before any ⌘0.
+        await lag("pans + pinches at the start scale") { await pans(30); await pinches(20) }
+        let (rc, tc) = await untilRest("control gestures")
+        row("control: rests after pans + pinches (no ⌘0)", rc, String(format: "%.1f s", tc))
+
+        for k in 1...3 {
+            let zBefore = CorpusPhysicsScene.debugKeyboardZooms
+            var r1 = false, t1 = 0.0
+            await lag("the ⌘0 #\(k) glide") {
+                router.perform(.zoomFit)
+                await settle(0.05)
+                (r1, t1) = await untilRest("after ⌘0 #\(k)")
+            }
+            row("⌘0 #\(k) reaches the Map once", CorpusPhysicsScene.debugKeyboardZooms == zBefore + 1, "\(CorpusPhysicsScene.debugKeyboardZooms - zBefore) calls")
+            row("⌘0 #\(k): the Map comes back to rest", r1, String(format: "%.1f s · %@", t1, scene.debugRestLine))
+            // pan right away; at ⌘0's full zoom-out the pans run past the bounds and the spring brings the camera back
+            var r2 = false, t2 = 0.0
+            await lag("pans + pinches + spring-back after ⌘0 #\(k)") {
+                await pans(30); await pinches(20)
+                (r2, t2) = await untilRest("gestures after ⌘0 #\(k)")
+            }
+            row("⌘0 #\(k) then pans + pinches: rests again", r2, String(format: "%.1f s · %@", t2, scene.debugRestLine))
+        }
+        // ⌘0 mid-gesture: a pinch while the glide runs must take over (the glide is cancelled).
+        router.perform(.zoomFit); await settle(0.08)
+        scene.debugPointerGesture { s in s.debugPointerZoom(by: 1.2, at: mid) }
+        let kzAfter = scene.debugRestLine.contains("kz=1")
+        row("a pinch during the ⌘0 glide takes over (glide cancelled)", !kzAfter, scene.debugRestLine)
+        _ = await untilRest("after mid-glide pinch")
+
+        // View scoping: Cards showing → ⌘0 resets the card size only.
+        var st = store.filterState(for: .corpus); st.viewMode = .grid; store.setFilterState(st, for: .corpus)
+        await settle(2.0)
+        UserDefaults.standard.set(300.0, forKey: "mac.cards.width.v1"); await settle(0.5)
+        let zBefore = CorpusPhysicsScene.debugKeyboardZooms
+        router.perform(.zoomFit); await settle(0.6)
+        let w = UserDefaults.standard.double(forKey: "mac.cards.width.v1")
+        row("Cards: ⌘0 sets the default card size", abs(w - 210) < 0.5, "width \(w)")
+        row("Cards: ⌘0 doesn't reach the (hidden) Map", CorpusPhysicsScene.debugKeyboardZooms == zBefore, "\(CorpusPhysicsScene.debugKeyboardZooms - zBefore) Map zooms")
+        st.viewMode = .systemGraph; store.setFilterState(st, for: .corpus); await settle(2.0)
+        // Map showing → ⌘0 doesn't touch the card size.
+        UserDefaults.standard.set(300.0, forKey: "mac.cards.width.v1"); await settle(0.3)
+        router.perform(.zoomFit); await settle(0.6)
+        let w2 = UserDefaults.standard.double(forKey: "mac.cards.width.v1")
+        row("Map: ⌘0 leaves the card size alone", abs(w2 - 300) < 0.5, "width \(w2)")
+        UserDefaults.standard.set(210.0, forKey: "mac.cards.width.v1")
+        let (rf, _) = await untilRest("final")
+        row("final: the Map at rest (0 frames)", rf, scene.debugRestLine)
+        return "[MacZoomFitSelfTest] \(fails == 0 ? "PASS" : "FAIL") — \(rows.filter { !$0.hasPrefix("INFO") }.count - fails)/\(rows.filter { !$0.hasPrefix("INFO") }.count)\n" + rows.joined(separator: "\n")
+    }
+}
+#endif

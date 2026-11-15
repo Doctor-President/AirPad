@@ -1966,6 +1966,7 @@ final class CorpusPhysicsScene: SKScene {
     /// the next idle-rate frame). Also bumps `lastActivityTime` so the debounce starts fresh.
     private func wakeMap() {
         wakeFromRest("touch")
+        cameraNode.removeAction(forKey: Self.keyboardZoomKey)   // G3 — a touch takes over from a keyboard glide
         isTouchingMap = true
         adaptiveTouchStart = true
         desiredMapFPS = activeFPSNow
@@ -2480,9 +2481,21 @@ final class CorpusPhysicsScene: SKScene {
     }
 
 
+    private var overlaySyncDue = false
+    private var overlaySyncTime: TimeInterval = 0
+    private var overlaySyncPreviousTime: TimeInterval = 0
+
     /// Mac fix-up X2 — the hover overlay follows its orb after this frame's camera / orb-scale passes.
     override func didFinishUpdate() {
         if hoveredOrbID != nil { updateHoverOverlay() }
+        if overlaySyncDue {   // G3 — after this frame's actions (see update)
+            overlaySyncDue = false
+            syncClusterCentroidsToCanvasState()
+            syncTerritoryLabelsToCanvasState(currentTime: overlaySyncTime, previousTime: overlaySyncPreviousTime)
+        }
+        #if DEBUG
+        if Self.debugLabelLagOn { debugMeasureLabelLag() }
+        #endif
     }
 
     override func update(_ currentTime: TimeInterval) {
@@ -2646,8 +2659,18 @@ final class CorpusPhysicsScene: SKScene {
         #endif
 
         updateCardPresentation()   // tap-driven card morph → SwiftUI overlay
+        // E fix-up G3 — the region pills and cluster centroids are published at the END of the frame
+        // (`didFinishUpdate`), after SpriteKit has run this frame's actions: published here, a camera moved by an action
+        // (⌘0's glide, the pan-bounds spring) put them a frame behind their orbs (up to 282 pt in the ⌘0 glide).
+        // Mac only in this fix-up (iPhone unchanged; its glides are the spring-back, ≤ 0.3 pt measured).
+        #if targetEnvironment(macCatalyst)
+        overlaySyncDue = true
+        overlaySyncTime = currentTime
+        overlaySyncPreviousTime = lastUpdateTime   // the fades' frame delta (lastUpdateTime moves on at the end of update)
+        #else
         syncClusterCentroidsToCanvasState()
-        syncTerritoryLabelsToCanvasState(currentTime: currentTime)
+        syncTerritoryLabelsToCanvasState(currentTime: currentTime, previousTime: lastUpdateTime)
+        #endif
 
         // Brief AY — idle the SKView frame rate when nothing moves + publish the heat instruments. Runs
         // LAST so it sees this frame's camera/card/band/pool state.
@@ -2904,7 +2927,7 @@ final class CorpusPhysicsScene: SKScene {
     /// the mean of the territory members' LIVE sprite positions (so the pill
     /// rides with its nodes through pan/zoom/engagement), projected via
     /// `view.convert(_:from:)`. Empty data clears the overlay once.
-    private func syncTerritoryLabelsToCanvasState(currentTime: TimeInterval) {
+    private func syncTerritoryLabelsToCanvasState(currentTime: TimeInterval, previousTime: TimeInterval) {
         regionLabelsFading = false   // R1 — set again below while any pill is still easing
         guard let view = self.view else { return }
         #if DEBUG
@@ -3013,10 +3036,10 @@ final class CorpusPhysicsScene: SKScene {
                 tryPlace(c, halo: haloPlace)
             }
 
-            // ── C3 EASE + C1 edge alpha + C5 emit. dt = the scene's frame delta: lastUpdateTime is
-            // written at the END of update(), so here it still holds the previous frame's time.
+            // ── C3 EASE + C1 edge alpha + C5 emit. dt = the scene's frame delta: `previousTime` is the previous
+            // frame's update time, captured before update() moved lastUpdateTime on (G3: this runs at the frame's end).
             // Clamped so a stale first frame can't produce a giant step.
-            let dt = min(max(currentTime - lastUpdateTime, 0), 0.1)
+            let dt = min(max(currentTime - previousTime, 0), 0.1)
             let fadeStep = CGFloat(dt / max(regionLabelFadeDuration, 0.001))   // full 0→1 fade in `duration` s
             var out: [CanvasState.TerritoryLabelInfo] = []
             out.reserveCapacity(candidates.count)
@@ -7122,6 +7145,7 @@ extension CorpusPhysicsScene {
         wakeMap()
         coastVelocity = .zero
         cameraNode.removeAction(forKey: PanBounds.springKey)
+        cameraNode.removeAction(forKey: Self.keyboardZoomKey)   // G3 — the trackpad takes over from a ⌘0 / ⌘± glide
         if canvasState?.cardedNodeID != nil {   // as a touch pan does: moving the Map clears an open card
             DispatchQueue.main.async { [weak self] in self?.canvasState?.cardedNodeID = nil }
         }
@@ -7151,7 +7175,12 @@ extension CorpusPhysicsScene {
 
     /// View › Zoom In / Zoom Out (around the middle) and Zoom to Fit (the whole library), eased like the other camera
     /// glides.
+    static let keyboardZoomKey = "keyboardZoom"
+
     func keyboardZoom(_ command: AppCommand) {
+        #if DEBUG
+        Self.debugKeyboardZooms += 1
+        #endif
         wakeFromRest("keyboardZoom")
         coastVelocity = .zero
         cameraNode.removeAction(forKey: PanBounds.springKey)
@@ -7168,7 +7197,7 @@ extension CorpusPhysicsScene {
         let zoom = SKAction.scale(to: target, duration: 0.3)
         let move = SKAction.move(to: centre, duration: 0.3)
         zoom.timingMode = .easeInEaseOut; move.timingMode = .easeInEaseOut
-        cameraNode.run(.group([zoom, move]), withKey: "keyboardZoom")
+        cameraNode.run(.group([zoom, move]), withKey: Self.keyboardZoomKey)
     }
 
     /// Hover: a light ring and the orb's title tag (what a glance at an orb tells you), cleared when the pointer
@@ -7296,6 +7325,36 @@ extension CorpusPhysicsScene {
     }
     func debugPointerZoom(by f: CGFloat, at p: CGPoint) { pointerZoom(by: f, at: p) }
     func debugSetCameraScale(_ s: CGFloat) { wakeFromRest("debug"); cameraNode.setScale(s); applyOrbScales() }
+    /// E fix-up G3 — the rest machinery's state in one line, and how often ⌘0 reached this scene.
+    var debugRestLine: String {
+        String(format: "rest=%d busy=%@ camActions=%d [spring=%d kz=%d] scale=%.3f pos=(%.0f,%.0f) frames/s=%d viewPaused=%d hidden=%d",
+               restPaused ? 1 : 0, restBusyReason ?? "-", cameraNode.hasActions() ? 1 : 0,
+               cameraNode.action(forKey: PanBounds.springKey) != nil ? 1 : 0, cameraNode.action(forKey: Self.keyboardZoomKey) != nil ? 1 : 0,
+               cameraNode.xScale, cameraNode.position.x, cameraNode.position.y, recentRenderTimes.count,
+               (view?.isPaused ?? false) ? 1 : 0, (view?.window == nil) ? 1 : 0)
+    }
+    var debugRestPaused: Bool { restPaused }
+    var debugRenderedLastSecond: Int { recentRenderTimes.count }
+    static var debugKeyboardZooms = 0
+    /// G3 — how far (view pt) the published region pills sit from where this frame's FINAL camera puts their orbs
+    /// (measured at the end of the frame, after actions). Max since the last reset.
+    static var debugLabelLagOn = false
+    static var debugLabelLagMax: CGFloat = 0
+    static var debugLabelLagFrames = 0
+    func debugMeasureLabelLag() {
+        guard let view, let published = canvasState?.territoryLabels, !published.isEmpty else { return }
+        var worst: CGFloat = 0
+        for info in published {
+            guard let label = territoryLabelData.first(where: { $0.key == info.key }) else { continue }
+            var sum = CGPoint.zero, n: CGFloat = 0
+            for id in label.memberIDs { if let sp = nodeSprites[id] { sum.x += sp.position.x; sum.y += sp.position.y; n += 1 } }
+            guard n > 0 else { continue }
+            let p = view.convert(CGPoint(x: sum.x / n, y: sum.y / n), from: self)
+            worst = max(worst, hypot(p.x - info.screenPosition.x, p.y - info.screenPosition.y))
+        }
+        Self.debugLabelLagMax = max(Self.debugLabelLagMax, worst)
+        Self.debugLabelLagFrames += 1
+    }
     /// X2 — centre the camera on an orb at a scale.
     func debugCentre(on id: String, scale: CGFloat) {
         guard let s = nodeSprites[id], let parent = s.parent else { return }
@@ -7334,7 +7393,6 @@ extension CorpusPhysicsScene {
     var debugHoverInScreenSpace: Bool { hoverRing?.parent === cameraNode }
     func debugPointerPan(by t: CGPoint) { pointerPan(by: t) }
     func debugPointerHover(at p: CGPoint?) { pointerHover(at: p) }
-    var debugRestPaused: Bool { restPaused }
     /// C5 — the orb menu's item titles at a view point ([] = no menu).
     func debugContextMenuTitles(at p: CGPoint) -> [String] {
         guard let input = pointerInput, let id = orbID(atViewPoint: p),

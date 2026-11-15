@@ -235,6 +235,14 @@ struct ContentView: View {
                         NSLog("%@", await MacResizeSelfTest.run(store: store, router: router))
                     }
                 }
+                // Mac E fix-up G3 — `-MacZoomFitSelfTest` (with `-OpenMap`): ⌘0 on the Map, rest after it, view scoping.
+                if ProcessInfo.processInfo.arguments.contains("-MacZoomFitSelfTest") {
+                    Task { @MainActor in
+                        for _ in 0..<120 where store.nodes.count < 10 { try? await Task.sleep(nanoseconds: 250_000_000) }
+                        try? await Task.sleep(nanoseconds: 4_000_000_000)
+                        NSLog("%@", await MacZoomFitSelfTest.run(store: store, router: router))
+                    }
+                }
                 // Mac batch D — `-MacLayoutSelfTest`: the toolbar, sidebar and Librarian column.
                 if ProcessInfo.processInfo.arguments.contains("-MacLayoutSelfTest") {
                     Task { @MainActor in

@@ -869,7 +869,9 @@ struct CanvasView: View {
             .onAppear { router.mapShowing = true }
             .onDisappear { router.mapShowing = false }
             .onChange(of: router.commandRequest) { _, request in
-                guard let c = request?.command, [.zoomIn, .zoomOut, .zoomFit].contains(c), navigationPath.isEmpty else { return }
+                // G3 — strictly the Map's: only while the Map is the place's visible view (Cards owns ⌘+ ⌘− ⌘0 then).
+                guard let c = request?.command, [.zoomIn, .zoomOut, .zoomFit].contains(c), navigationPath.isEmpty,
+                      store.filterState(for: scope).viewMode == .systemGraph else { return }
                 scene.keyboardZoom(c)
             }
             .onChange(of: navigationPath.count) { _, newCount in

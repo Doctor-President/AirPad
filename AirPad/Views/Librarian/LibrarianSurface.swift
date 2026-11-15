@@ -57,6 +57,11 @@ struct LibrarianSurface: View {
     /// transcript. Only meaningful when `activeMode == .ask`; set true on
     /// send / active-chat-pill tap, false on Back.
     @State private var isViewingActiveChat = false
+    /// E fix-up G5 (Mac) — the panel shows its chat history (the clock, the sidebar's Chats, "All chats").
+    @State private var macShowingHistory = false
+    /// G6 — the first-open state's sections, each hideable (View › Librarian brings them back).
+    @AppStorage(MacLibrarianHome.hideTryKey) private var macHideTry = false
+    @AppStorage(MacLibrarianHome.hideRecentKey) private var macHideRecent = false
 
     // #1-followup (chat chrome reclaim) — scroll offset from the transcript
     // top; drives the scroll-collapsing chat title's opacity.
@@ -1060,6 +1065,9 @@ struct LibrarianSurface: View {
                 if !librarian.searchText.isEmpty {
                     searchResultsView(librarian: librarian)
                         .frame(maxHeight: .infinity)
+                } else if isMacColumn && macShowingHistory {
+                    macHistoryView
+                        .frame(maxHeight: .infinity)
                 } else {
                     librarianHome(librarian: librarian)
                         .frame(maxHeight: .infinity)
@@ -1385,6 +1393,7 @@ struct LibrarianSurface: View {
         let searchResultsTopInset: CGFloat = 12
         ScrollView {
             VStack(alignment: .leading, spacing: 12) {
+                if isMacColumn { macChatSearchMatches(librarian.searchText) }
                 if matches.isEmpty && imageMatches.isEmpty && related.isEmpty && !librarian.searchSemanticInFlight {
                     Text("No matches")
                         .font(appFont.font(size: 13, weight: .medium, relativeTo: .footnote))
@@ -2374,17 +2383,35 @@ struct LibrarianSurface: View {
     /// (the Ask field's feather) · "Librarian" · Library/General · New chat · Chat history; the scope line below.
     private func macColumnHeader(librarian: LibrarianState) -> some View {
         HStack(spacing: 10) {
-            Image("AirPadLogo")
-                .renderingMode(.template)
-                .resizable()
-                .scaledToFit()
-                .frame(width: 24, height: 24)
-                .foregroundStyle(LibrarianPillChrome.accent(colorScheme))
-                .accessibilityHidden(true)
-            Text("Librarian")
-                .font(appFont.font(size: 17, weight: .bold))
-                .foregroundStyle(AppearancePalette.ink)
-                .accessibilityAddTraits(.isHeader)
+            if isViewingActiveChat || macShowingHistory {
+                // G5 — ‹ back to the panel's home (the first-open state) from a chat or the history.
+                Button { macGoHome() } label: {
+                    Image(systemName: "chevron.left").font(.system(size: 15, weight: .semibold)).frame(width: 24, height: 26)
+                }
+                .buttonStyle(.plain)
+                .foregroundStyle(AppearancePalette.ink.opacity(0.75))
+                .help("Back to the Librarian's home")
+                .accessibilityLabel("Back")
+                .accessibilityIdentifier("macLibrarianBack")
+            } else {
+                Image("AirPadLogo")
+                    .renderingMode(.template)
+                    .resizable()
+                    .scaledToFit()
+                    .frame(width: 24, height: 24)
+                    .foregroundStyle(LibrarianPillChrome.accent(colorScheme))
+                    .accessibilityHidden(true)
+            }
+            // The title gives way first: at the narrowest panel it's left out rather than cut to "…".
+            ViewThatFits(in: .horizontal) {
+                Text(macShowingHistory && !isViewingActiveChat ? "Chats" : "Librarian")
+                    .font(appFont.font(size: 17, weight: .bold))
+                    .foregroundStyle(AppearancePalette.ink)
+                    .fixedSize()
+                    .accessibilityAddTraits(.isHeader)
+                Color.clear.frame(width: 0, height: 0)
+            }
+            .layoutPriority(-1)
             Spacer(minLength: 4)
             corpusModeToggle(librarian: librarian)
             // D fix-up F4 — chat history and a new chat in the header (the phone's bottom Back bar is gone on the Mac).
@@ -2397,34 +2424,116 @@ struct LibrarianSurface: View {
             .help("New chat")
             .accessibilityLabel("New chat")
             .accessibilityIdentifier("macLibrarianNewChat")
-            Menu {
-                ForEach(router.chatStore.chats.prefix(8)) { chat in
-                    Button(ChatsEntryBody.displayTitle(chat)) { openMacChat(chat) }
-                }
-                if !router.chatStore.chats.isEmpty { Divider() }
-                Button("All Chats…") { router.showChatsList = true }
+            // G5 — the history shows IN the panel (was a menu + the Chats sheet); a second click goes back.
+            Button {
+                if macShowingHistory && !isViewingActiveChat { macGoHome() } else { macShowHistory() }
             } label: {
                 Image(systemName: "clock").font(.system(size: 14, weight: .medium)).frame(width: 26, height: 26)
+                    .background(Circle().fill(AppearancePalette.ink.opacity(macShowingHistory && !isViewingActiveChat ? 0.12 : 0)))
             }
-            .menuStyle(.button)
             .buttonStyle(.plain)
-            .menuIndicator(.hidden)
-            .fixedSize()
             .foregroundStyle(AppearancePalette.ink.opacity(0.7))
             .help("Chat history")
             .accessibilityLabel("Chat history")
+            .accessibilityAddTraits(macShowingHistory && !isViewingActiveChat ? .isSelected : [])
             .accessibilityIdentifier("macLibrarianHistory")
+            #if targetEnvironment(macCatalyst)
+            // G5 — expand: about half the window for long reading; toggles back.
+            Button { MacLayout.shared.toggleLibrarianExpanded() } label: {
+                Image(systemName: MacLayout.shared.librarianExpanded ? "arrow.down.right.and.arrow.up.left" : "arrow.up.left.and.arrow.down.right")
+                    .font(.system(size: 13, weight: .medium)).frame(width: 26, height: 26)
+            }
+            .buttonStyle(.plain)
+            .foregroundStyle(AppearancePalette.ink.opacity(0.7))
+            .help(MacLayout.shared.librarianExpanded ? "Narrow the Librarian" : "Widen the Librarian for reading")
+            .accessibilityLabel(MacLayout.shared.librarianExpanded ? "Narrow the Librarian" : "Widen the Librarian")
+            .accessibilityIdentifier("macLibrarianExpand")
+            #endif
         }
         .padding(.horizontal, 16)
         .padding(.top, 14)
         .accessibilityElement(children: .contain)
         .accessibilityIdentifier("macLibrarianHeader")
+        // G5 — every way into a past chat on the Mac (sidebar Chats, "All chats", an entry's pinned chat, the old
+        // sheet's callers) arrives here as a route; handled once, also when the panel opens for it.
+        .onAppear { handleMacPanelRequest() }
+        .onChange(of: router.macPanelRequest) { _, _ in handleMacPanelRequest() }
+        .onChange(of: isViewingActiveChat) { _, inChat in if inChat { macShowingHistory = false } }
     }
 
     /// D fix-up F4 — a chat picked from the history continues here, in the column.
     private func openMacChat(_ chat: Chat) {
         router.chat.load(chat)
+        router.librarian.searchText = ""   // G5 — from a search result: the chat, not the results
+        macShowingHistory = false
         isViewingActiveChat = true
+    }
+
+    /// G5 — the panel's home (the first-open state); the chat stays (the composer starts the next one).
+    private func macGoHome() {
+        isViewingActiveChat = false
+        macShowingHistory = false
+    }
+
+    private func macShowHistory() {
+        isViewingActiveChat = false
+        macShowingHistory = true
+    }
+
+    private func handleMacPanelRequest() {
+        guard isMacColumn, let req = router.macPanelRequest, req.serial > router.macPanelHandledSerial else { return }
+        router.macPanelHandledSerial = req.serial
+        switch req.route {
+        case .history:
+            macShowHistory()
+        case .chat(let id):
+            Task { @MainActor in
+                await router.chatStore.loadIfNeeded()
+                if let chat = router.chatStore.chats.first(where: { $0.id == id }) { openMacChat(chat) } else { macShowHistory() }
+            }
+        }
+    }
+
+    /// G5 — the chat history in the panel.
+    @ViewBuilder private var macHistoryView: some View {
+        #if targetEnvironment(macCatalyst)
+        MacChatHistory(onOpen: { openMacChat($0) })
+        #endif
+    }
+
+    /// G5 — chats whose title or words match the search (Mac: the results show in the panel, so a chat opens there).
+    @ViewBuilder private func macChatSearchMatches(_ query: String) -> some View {
+        let q = query.trimmingCharacters(in: .whitespacesAndNewlines)
+        let hits = q.count < 2 ? [] : router.chatStore.chats.filter { chat in
+            ChatsEntryBody.displayTitle(chat).localizedCaseInsensitiveContains(q)
+                || chat.messages.contains { $0.role != .activity && $0.text.localizedCaseInsensitiveContains(q) }
+        }.prefix(5)
+        if !hits.isEmpty {
+            Text("CHATS")
+                .font(appFont.font(size: 11, weight: .semibold, relativeTo: .caption2))
+                .tracking(0.8)
+                .foregroundStyle(AppearancePalette.ink.opacity(0.45))
+                .padding(.top, 4)
+            ForEach(Array(hits)) { chat in
+                Button { openMacChat(chat) } label: {
+                    HStack(spacing: 8) {
+                        Image(systemName: "bubble.left.and.bubble.right").font(.system(size: 12)).foregroundStyle(AppearancePalette.ink.opacity(0.5))
+                        Text(ChatsEntryBody.displayTitle(chat))
+                            .font(appFont.font(size: 13))
+                            .foregroundStyle(AppearancePalette.ink.opacity(0.9))
+                            .lineLimit(1)
+                        Spacer(minLength: 4)
+                        Text(chat.updatedAt.formatted(.relative(presentation: .numeric, unitsStyle: .narrow)))
+                            .font(appFont.font(size: 12)).monospacedDigit()
+                            .foregroundStyle(AppearancePalette.ink.opacity(0.45))
+                    }
+                    .padding(.vertical, 6)
+                    .contentShape(Rectangle())
+                }
+                .buttonStyle(.plain)
+                .accessibilityIdentifier("macSearchChat")
+            }
+        }
     }
 
     /// Batch E2 — the first open (no chat yet), T's v3 pick: one line on what it does, a few questions to try (they ask
@@ -2436,7 +2545,8 @@ struct LibrarianSurface: View {
                 .font(appFont.font(size: 13.5))
                 .foregroundStyle(AppearancePalette.ink.opacity(0.75))
                 .fixedSize(horizontal: false, vertical: true)
-            macSectionLabel("Try")
+            if !macHideTry {
+            macSectionLabel("Try") { macHideTry = true }
             VStack(alignment: .leading, spacing: 6) {
                 ForEach(macTryQuestions(librarian.selectedScope), id: \.self) { q in
                     Button { sendCalloutQuestion(q, librarian: librarian) } label: {
@@ -2460,9 +2570,10 @@ struct LibrarianSurface: View {
                     .accessibilityIdentifier("macLibrarianTry")
                 }
             }
+            }
             let chats = router.chatStore.chats
-            if !chats.isEmpty {
-                macSectionLabel("Recent chats")
+            if !chats.isEmpty && !macHideRecent {
+                macSectionLabel("Recent chats") { macHideRecent = true }
                 VStack(alignment: .leading, spacing: 0) {
                     ForEach(chats.prefix(3)) { chat in
                         Button { openMacChat(chat) } label: {
@@ -2484,7 +2595,7 @@ struct LibrarianSurface: View {
                         .buttonStyle(.plain)
                         .accessibilityIdentifier("macLibrarianRecentChat")
                     }
-                    Button { router.showChatsList = true } label: {
+                    Button { macShowHistory() } label: {   // G5 — the history, in the panel
                         HStack {
                             Text("All chats").font(appFont.font(size: 13, weight: .medium))
                             Spacer(minLength: 4)
@@ -2504,13 +2615,26 @@ struct LibrarianSurface: View {
         .accessibilityIdentifier("macLibrarianEmpty")
     }
 
-    private func macSectionLabel(_ title: String) -> some View {
-        Text(title.uppercased())
-            .font(appFont.font(size: 11, weight: .semibold))
-            .tracking(1.2)
-            .foregroundStyle(AppearancePalette.ink.opacity(0.45))
-            .padding(.top, 8)
-            .accessibilityAddTraits(.isHeader)
+    /// A section's small-caps label; G6 — with a quiet "Hide" at its end (View › Librarian brings it back).
+    private func macSectionLabel(_ title: String, hide: (() -> Void)? = nil) -> some View {
+        HStack(spacing: 6) {
+            Text(title.uppercased())
+                .font(appFont.font(size: 11, weight: .semibold))
+                .tracking(1.2)
+                .foregroundStyle(AppearancePalette.ink.opacity(0.45))
+                .accessibilityAddTraits(.isHeader)
+            Spacer(minLength: 4)
+            if let hide {
+                Button("Hide", action: hide)
+                    .buttonStyle(.plain)
+                    .font(appFont.font(size: 11.5))
+                    .foregroundStyle(AppearancePalette.ink.opacity(0.45))
+                    .help("Hide \(title.lowercased()) (View › Librarian shows it again)")
+                    .accessibilityLabel("Hide \(title)")
+                    .accessibilityIdentifier("macLibrarianHide.\(title)")
+            }
+        }
+        .padding(.top, 8)
     }
 
     /// E2 — questions that fit the place: the Sample Library's own (its first-run card), one entry, a collection, the

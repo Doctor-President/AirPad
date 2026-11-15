@@ -676,3 +676,146 @@ enum MacCardSizeSelfTest {
     }
 }
 #endif
+
+#if DEBUG && targetEnvironment(macCatalyst)
+/// E fix-up G5 + G6 — `-MacChatsPanelSelfTest` (with `-UITestLibraryFresh -UITestSeedChats -MacWindowSize 1350x840`):
+/// chats live in the Librarian panel on the Mac. Buttons are pressed through accessibility (this locked Mac takes no
+/// clicks: T's real-click check). Stills `<tmp>/macshots/g5-*.png`.
+@MainActor
+enum MacChatsPanelSelfTest {
+    static func run(store: CorpusStore, router: AppRouter) async -> String {
+        var rows: [String] = [], fails = 0
+        func row(_ name: String, _ ok: Bool, _ detail: String = "") {
+            rows.append("\(ok ? "PASS" : "FAIL") \(name)" + (detail.isEmpty ? "" : " — \(detail)")); if !ok { fails += 1 }
+        }
+        func settle(_ s: Double) async { try? await Task.sleep(nanoseconds: UInt64(s * 1_000_000_000)) }
+        guard let window = UIApplication.shared.connectedScenes.compactMap({ $0 as? UIWindowScene }).flatMap(\.windows).first
+        else { return "[MacChatsPanelSelfTest] FAIL — no window" }
+        let layout = MacLayout.shared
+        func els(_ id: String) -> [NSObject] { MacFixupSelfTest.elements(in: window) { _, i in i == id } }
+        /// Distinct on-screen elements (the walker reaches one SwiftUI element by several paths).
+        func count(_ id: String) -> Int { Set(els(id).map { "\($0.accessibilityFrame)" }).count }
+        func has(_ id: String) -> Bool { !els(id).isEmpty }
+        /// The history is up: its rows (or, with no chats, its empty line) — the ScrollView exposes no container id.
+        func historyShown() -> Bool { has("macChatHistoryRow") }
+        @discardableResult func press(_ id: String) async -> Bool {
+            guard let e = els(id).first else { return false }
+            let ok = e.accessibilityActivate()
+            await settle(0.9)
+            return ok
+        }
+        func noSheet() -> Bool {
+            window.rootViewController?.presentedViewController == nil
+                && (MacWindowChrome.nsWindow?.value(forKey: "attachedSheet") == nil)
+        }
+        await router.chatStore.loadIfNeeded()
+        // A few more chats for the history (the seed has one).
+        let now = Date()
+        for (i, q) in ["Which entries mention the Bolex?", "Summarise my Field Notes", "What did I plan for the workshop?"].enumerated() {
+            let t = now.addingTimeInterval(-Double(i + 1) * 3600 * 20)
+            router.chatStore.upsert(Chat(id: UUID(), title: q, createdAt: t, updatedAt: t, messages: [
+                ChatSession.Message(role: .user, text: q),
+                ChatSession.Message(role: .assistant, text: "A seeded answer (\(i + 1)).")]))
+        }
+        await settle(0.5)
+        let chats = router.chatStore.chats
+        rows.append("INFO \(chats.count) chats · window \(Int(layout.windowWidth)) pt")
+        router.entryMode = .canvas
+        layout.librarianOpen = false; await settle(1.0)
+
+        // Sidebar › Chats (closed panel) → the panel opens on its history; no sheet.
+        await press("sidebar.chats"); await settle(0.8)
+        row("sidebar Chats opens the Librarian", layout.librarianOpen)
+        row("…on its history, in the panel", historyShown(), "history \(historyShown())")
+        row("…and no Chats sheet", noSheet())
+        row("the history lists every chat", count("macChatHistoryRow") == chats.count, "\(count("macChatHistoryRow")) rows / \(chats.count)")
+        row("each row has its ··· (rename / pin / delete)", count("macChatHistoryActions") == chats.count, "\(count("macChatHistoryActions"))")
+        row("‹ back shows in the header", has("macLibrarianBack"))
+        _ = RunningOnMac.snapshot("g5-history")
+
+        // A row opens the chat in the panel.
+        await press("macChatHistoryRow"); await settle(0.6)
+        row("a history row opens the chat in the panel", !historyShown() && router.chat.id == chats.first?.id && noSheet(),
+            "chat \(router.chat.id == chats.first?.id) · history gone \(!historyShown())")
+        row("‹ back in the chat", has("macLibrarianBack"))
+        _ = RunningOnMac.snapshot("g5-chat")
+        // ‹ → home (the first-open state).
+        await press("macLibrarianBack")
+        row("‹ returns to the panel's home", has("macLibrarianEmpty") && !has("macLibrarianBack"))
+        _ = RunningOnMac.snapshot("g5-home")
+        // The clock: history in the panel, a second press back home.
+        await press("macLibrarianHistory")
+        row("the clock shows the history in the panel", historyShown())
+        await press("macLibrarianHistory")
+        row("the clock again: back to home", has("macLibrarianEmpty") && !historyShown())
+        // Home › Recent chats › a chat; › All chats → history.
+        await press("macLibrarianRecentChat")
+        row("home's recent chat opens in the panel", !has("macLibrarianEmpty") && has("macLibrarianBack") && noSheet())
+        await press("macLibrarianBack")
+        await press("macLibrarianAllChats")
+        row("home's All chats → the history in the panel", historyShown() && noSheet())
+        await press("macLibrarianBack")
+
+        // An entry's pinned chat (the old sheet's deep link) → straight into that chat, in the panel.
+        if let target = chats.last {
+            layout.librarianOpen = false; await settle(0.6)
+            router.pendingChatToOpen = target.id
+            router.showChatsList = true
+            await settle(1.5)
+            row("a pinned-chat link opens that chat in the panel", layout.librarianOpen && router.chat.id == target.id && noSheet() && has("macLibrarianBack"),
+                "open \(layout.librarianOpen) · chat \(router.chat.id == target.id) · sheet \(!noSheet())")
+            await press("macLibrarianBack")
+        }
+
+        // Search: a chat matching the query opens in the panel (the results clear).
+        router.librarian.searchText = "Bolex"; await settle(1.2)
+        row("search lists matching chats", has("macSearchChat"), "\(count("macSearchChat")) chats")
+        await press("macSearchChat")
+        row("a chat result opens in the panel", router.librarian.searchText.isEmpty && has("macLibrarianBack") && router.chat.messages.first?.text.contains("Bolex") == true)
+        await press("macLibrarianBack")
+
+        // Expand: about half the window (the content keeps its minimum), toggles back, never saved.
+        layout.sidebarVisible = true
+        let w0 = layout.librarianWidth
+        let saved0 = UserDefaults.standard.double(forKey: MacLayout.librarianWidthKey)
+        await press("macLibrarianExpand"); await settle(0.6)
+        let want = max(w0, min(layout.windowWidth / 2, layout.windowWidth - layout.sidebarWidth - 1 - MacLayout.contentMinWidth - 1)).rounded()
+        row("expand widens the Librarian (half the window, content ≥ 616 pt)", layout.librarianExpanded && abs(layout.librarianWidth - want) < 1 && !layout.librarianFloats,
+            "width \(Int(w0)) → \(Int(layout.librarianWidth)) (want \(Int(want))) · floats \(layout.librarianFloats)")
+        row("expanded width isn't saved as the remembered width", UserDefaults.standard.double(forKey: MacLayout.librarianWidthKey) == saved0)
+        await press("macLibrarianRecentChat"); await settle(0.5)
+        _ = RunningOnMac.snapshot("g5-expanded-chat")
+        await press("macLibrarianExpand"); await settle(0.6)
+        row("expand toggles back", !layout.librarianExpanded && abs(layout.librarianWidth - w0) < 1, "width \(Int(layout.librarianWidth))")
+        // The header at the narrowest Librarian (300 pt), in a chat: ‹ · title · mode · new chat · clock · expand.
+        layout.librarianWidth = MacLayout.librarianWidthRange.lowerBound; await settle(0.8)
+        // the docked panel ends at the window's right edge (screen points, as accessibility frames are)
+        let winRight = UIAccessibility.convertToScreenCoordinates(window.bounds, in: window).maxX
+        let expandF = els("macLibrarianExpand").first?.accessibilityFrame ?? .zero
+        let backF = els("macLibrarianBack").first?.accessibilityFrame ?? .zero
+        row("at 300 pt the header fits: ‹ … expand inside the panel", expandF.width > 0 && expandF.maxX <= winRight - 8 && backF.minX >= winRight - 300,
+            String(format: "‹ minX %.0f · expand maxX %.0f · panel %.0f–%.0f", backF.minX, expandF.maxX, winRight - 300, winRight))
+        _ = RunningOnMac.snapshot("g5-chat-300")
+        layout.librarianWidth = w0; await settle(0.5)
+        await press("macLibrarianBack")
+
+        // G6 — each home section hides (remembered) and comes back from the View menu.
+        UserDefaults.standard.set(false, forKey: MacLibrarianHome.hideTryKey)
+        UserDefaults.standard.set(false, forKey: MacLibrarianHome.hideRecentKey)
+        await settle(0.6)
+        let tryBefore = count("macLibrarianTry")
+        await press("macLibrarianHide.Try")
+        row("G6: Try hides", els("macLibrarianTry").isEmpty && tryBefore > 0 && UserDefaults.standard.bool(forKey: MacLibrarianHome.hideTryKey),
+            "\(tryBefore) → \(count("macLibrarianTry"))")
+        await press("macLibrarianHide.Recent chats")
+        row("G6: Recent chats hides", els("macLibrarianRecentChat").isEmpty && UserDefaults.standard.bool(forKey: MacLibrarianHome.hideRecentKey))
+        _ = RunningOnMac.snapshot("g5-home-hidden")
+        let firedTry = MacMenuSelfTest.fire(menu: "View", title: "Librarian Suggestions")
+        let firedRecent = MacMenuSelfTest.fire(menu: "View", title: "Librarian Recent Chats")
+        await settle(1.0)
+        row("G6: View › Librarian Suggestions / Recent Chats bring them back", firedTry && firedRecent && !els("macLibrarianTry").isEmpty && !els("macLibrarianRecentChat").isEmpty,
+            "menu items fired \(firedTry)/\(firedRecent) · try \(count("macLibrarianTry")) · recent \(count("macLibrarianRecentChat"))")
+        return "[MacChatsPanelSelfTest] \(fails == 0 ? "PASS" : "FAIL") — \(rows.filter { !$0.hasPrefix("INFO") }.count - fails)/\(rows.filter { !$0.hasPrefix("INFO") }.count)\n" + rows.joined(separator: "\n")
+    }
+}
+#endif

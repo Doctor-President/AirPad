@@ -19,6 +19,8 @@ enum AppCommand: String, CaseIterable, Sendable {
 
 struct AppCommands: Commands {
     let router: AppRouter
+    @AppStorage(MacLibrarianHome.hideTryKey) private var hideLibrarianTry = false
+    @AppStorage(MacLibrarianHome.hideRecentKey) private var hideLibrarianRecent = false
     let store: CorpusStore
 
     var body: some Commands {
@@ -57,6 +59,11 @@ struct AppCommands: Commands {
             Divider()
             item("Librarian", .librarian, "view.librarian").keyboardShortcut("l")
                 .disabled(router.isCapturing || router.entryMode == .quikCapture)
+            #if targetEnvironment(macCatalyst)
+            // E fix-up G6 — the Librarian home's sections, hideable there (its "Hide"), shown again here.
+            Toggle("Librarian Suggestions", isOn: Binding(get: { !hideLibrarianTry }, set: { hideLibrarianTry = !$0 }))
+            Toggle("Librarian Recent Chats", isOn: Binding(get: { !hideLibrarianRecent }, set: { hideLibrarianRecent = !$0 }))
+            #endif
         }
         // View: the Map's zoom (C2); on the Mac also the cards' size (D fix-up F3). Zoom to Fit ⌘0 (T ruled R1, fix-up X10: swapped with Go › Today, now ⌘9).
         CommandGroup(after: .sidebar) {

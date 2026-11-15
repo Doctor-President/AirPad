@@ -208,6 +208,18 @@ final class AppRouter {
     /// nil = open the list itself.
     var pendingChatToOpen: UUID? = nil
 
+    /// E fix-up G5 — on the Mac the chats live in the Librarian panel: `showChatsList` (every entry point keeps
+    /// setting it) becomes a request for the panel to show its history, or a chat (`pendingChatToOpen`). Monotonic, so
+    /// a repeat still fires.
+    enum MacPanelRoute: Equatable { case history, chat(UUID) }
+    struct MacPanelRequest: Equatable { let route: MacPanelRoute; let serial: Int }
+    var macPanelRequest: MacPanelRequest?
+    /// The last request the panel acted on (a panel that mounts later acts on a newer one only).
+    var macPanelHandledSerial = 0
+    func requestMacPanel(_ route: MacPanelRoute) {
+        macPanelRequest = MacPanelRequest(route: route, serial: (macPanelRequest?.serial ?? 0) + 1)
+    }
+
     // MARK: - Mac batch C1 — menu bar / keyboard commands
 
     /// One request per menu choice or key command, monotonic like `FocusRequest` (a repeat still fires). The view that

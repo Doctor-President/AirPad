@@ -251,6 +251,14 @@ struct ContentView: View {
                         NSLog("%@", await MacCardSizeSelfTest.run(store: store, router: router))
                     }
                 }
+                // Mac E fix-up G5/G6 — `-MacChatsPanelSelfTest`: chats in the Librarian panel, hideable home sections.
+                if ProcessInfo.processInfo.arguments.contains("-MacChatsPanelSelfTest") {
+                    Task { @MainActor in
+                        for _ in 0..<120 where store.nodes.count < 10 { try? await Task.sleep(nanoseconds: 250_000_000) }
+                        try? await Task.sleep(nanoseconds: 4_000_000_000)
+                        NSLog("%@", await MacChatsPanelSelfTest.run(store: store, router: router))
+                    }
+                }
                 // Mac batch D — `-MacLayoutSelfTest`: the toolbar, sidebar and Librarian column.
                 if ProcessInfo.processInfo.arguments.contains("-MacLayoutSelfTest") {
                     Task { @MainActor in
@@ -476,7 +484,9 @@ struct ContentView: View {
             get: { store.newerFormatNotice }, set: { store.newerFormatNotice = $0 })) {
             Button("OK", role: .cancel) {}
         }
-        .appSheet(isPresented: $routerBinding.showChatsList) {
+        // E fix-up G5 — no Chats sheet on the Mac: the request opens the Librarian panel on its history (or the chat).
+        .appSheet(isPresented: Binding(get: { !RunningOnMac.isMac && router.showChatsList },
+                                       set: { router.showChatsList = $0 })) {
             ChatsListView()
                 .environment(store)
                 .environment(router)
@@ -498,6 +508,16 @@ struct ContentView: View {
         .onChange(of: router.commandRequest) { _, request in
             if let command = request?.command { perform(command) }
         }
+        #if targetEnvironment(macCatalyst)
+        .onChange(of: router.showChatsList) { _, show in
+            guard show else { return }
+            router.showChatsList = false
+            MacLayout.shared.librarianOpen = true
+            router.librarianAtPeek = false
+            router.requestMacPanel(router.pendingChatToOpen.map { .chat($0) } ?? .history)
+            router.pendingChatToOpen = nil
+        }
+        #endif
         // Mac batch C5 — an entry's right-click menu, wherever it was shown.
         .onChange(of: router.entryAction) { _, request in
             if let request { perform(request.action, on: request.nodeID) }

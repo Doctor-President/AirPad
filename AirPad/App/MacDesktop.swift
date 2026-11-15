@@ -43,7 +43,27 @@ final class MacLayout {
     private var settleTask: Task<Void, Never>?
     static let dragSettleInterval: Double = 0.1
 
+    /// E fix-up G5 — the Librarian's expand control (its header): about half the window for long reading, keeping the
+    /// content's minimum beside it; toggles back to the remembered width, which it never overwrites.
+    private(set) var librarianExpanded = false
+    private var widthBeforeExpand: CGFloat?
+    func toggleLibrarianExpanded() {
+        if librarianExpanded {
+            librarianExpanded = false
+            librarianWidth = widthBeforeExpand ?? Self.librarianWidthDefault
+            widthBeforeExpand = nil
+        } else {
+            let besideContent = windowWidth - (sidebarVisible ? sidebarWidth + 1 : 0) - Self.contentMinWidth - 1
+            let target = max(librarianWidth, min(windowWidth / 2, besideContent)).rounded()
+            guard target > librarianWidth + 1 else { return }   // no room to widen at this window size
+            widthBeforeExpand = librarianWidth
+            librarianExpanded = true
+            librarianWidth = target
+        }
+    }
+
     func beginColumnDrag() {
+        if librarianExpanded { librarianExpanded = false; widthBeforeExpand = nil }   // a drag takes the width from here
         #if DEBUG
         if UserDefaults.standard.bool(forKey: "MacResizeUnfrozen") { return }   // G2 A/B: the old per-event layout
         #endif
@@ -73,7 +93,7 @@ final class MacLayout {
         if settledLibrarianWidth != librarianWidth { settledLibrarianWidth = librarianWidth }
         let d = UserDefaults.standard
         if d.double(forKey: Self.sidebarWidthKey) != Double(sidebarWidth) { d.set(Double(sidebarWidth), forKey: Self.sidebarWidthKey) }
-        if d.double(forKey: Self.librarianWidthKey) != Double(librarianWidth) { d.set(Double(librarianWidth), forKey: Self.librarianWidthKey) }
+        if !librarianExpanded, d.double(forKey: Self.librarianWidthKey) != Double(librarianWidth) { d.set(Double(librarianWidth), forKey: Self.librarianWidthKey) }
     }
 
     /// A panel's own layout width during a drag: the settled width while the panel is wider than it (a strip of its

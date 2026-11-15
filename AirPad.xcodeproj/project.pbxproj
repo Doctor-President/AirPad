@@ -305,6 +305,7 @@
 		9C978D8A70B3CF27F94BF8C4 /* TwoDeviceHarness.swift in Sources */ = {isa = PBXBuildFile; fileRef = F54C024DEF9DD722EE7CB555 /* TwoDeviceHarness.swift */; };
 		9CA473D3F2ECA00AAC3BBEC2 /* SubstrateWhitening.swift in Sources */ = {isa = PBXBuildFile; fileRef = B9C5245A09127ABECCBFEDC4 /* SubstrateWhitening.swift */; };
 		9CC24D2F472D010E7128EB08 /* NodeGradientBackground.swift in Sources */ = {isa = PBXBuildFile; fileRef = 497A2D223E494E948D445DFF /* NodeGradientBackground.swift */; };
+		9CCD7FC1ADD91CE36C6E026D /* MacChatHistory.swift in Sources */ = {isa = PBXBuildFile; fileRef = BDA2C388C5F53B7BC11CA306 /* MacChatHistory.swift */; };
 		9DE472F3C0CC2C7696196323 /* GalleryBody.swift in Sources */ = {isa = PBXBuildFile; fileRef = 579FF08E333E57A78D8A5C84 /* GalleryBody.swift */; };
 		9E5FA56AC337A7A5ADF61EE7 /* ImportIdeasSheet.swift in Sources */ = {isa = PBXBuildFile; fileRef = F20C72F362ADBFA6890FA798 /* ImportIdeasSheet.swift */; };
 		9EB9E29886AAC3A0626B456C /* UberNode.swift in Sources */ = {isa = PBXBuildFile; fileRef = F98C5EDB7B8428ABB080668F /* UberNode.swift */; };
@@ -869,6 +870,7 @@
 		BC2397AFB193E7A4EF7411E4 /* EnrichmentGateSelfTest.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = EnrichmentGateSelfTest.swift; sourceTree = "<group>"; };
 		BD02B64092A916BBD65260B0 /* AppearancePalette.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = AppearancePalette.swift; sourceTree = "<group>"; };
 		BD12D156A4CBC12E872BDEC7 /* BlobField.metal */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.metal; path = BlobField.metal; sourceTree = "<group>"; };
+		BDA2C388C5F53B7BC11CA306 /* MacChatHistory.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = MacChatHistory.swift; sourceTree = "<group>"; };
 		BDB2FF3A2EB3993F966BACB7 /* ChatTableUI.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ChatTableUI.swift; sourceTree = "<group>"; };
 		BDC4C16B56698F279465B01A /* ChatTableSelfTest.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ChatTableSelfTest.swift; sourceTree = "<group>"; };
 		BE499E529F1B439D3EDD8816 /* UMAPGraph.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = UMAPGraph.swift; sourceTree = "<group>"; };
@@ -1619,6 +1621,7 @@
 				283A15F3D5D4B6BB51F74DDB /* LibrarianSubjectLookup.swift */,
 				6005A33A7E6D6D1064AE551C /* LibrarianSurface.swift */,
 				A145877F383DA348E436CE25 /* LibrarianTunedMaterial.swift */,
+				BDA2C388C5F53B7BC11CA306 /* MacChatHistory.swift */,
 				FF5E2E9E140FAB95C76681A3 /* PeekPillStyle.swift */,
 				33AB8A695AFDD807BC72EBE9 /* SolarFlareTuning.swift */,
 			);
@@ -2323,6 +2326,7 @@
 				1C7BD8D8DAED08D89F04F795 /* LongPressDragRecognizer.swift in Sources */,
 				BB9BDB30E58DC2856238105B /* MSDFLabel.swift in Sources */,
 				8D357FA2CB55E52BD3C5E6B6 /* MacBatchESelfTest.swift in Sources */,
+				9CCD7FC1ADD91CE36C6E026D /* MacChatHistory.swift in Sources */,
 				7666EFC3587CC6AA2E798673 /* MacClickSelfTest.swift in Sources */,
 				05FD14E104D9CDCA47A884EC /* MacDesktop.swift in Sources */,
 				5AFB3DA829E4D444AE74108C /* MacEnrichServerSelfTest.swift in Sources */,

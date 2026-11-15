@@ -28,8 +28,61 @@ final class MacLayout {
     static let sidebarWidthKey = "mac.layout.sidebarWidth.v1"
     static let librarianWidthKey = "mac.layout.librarianWidth.v1"
 
-    var sidebarWidth: CGFloat { didSet { UserDefaults.standard.set(Double(sidebarWidth), forKey: Self.sidebarWidthKey) } }
-    var librarianWidth: CGFloat { didSet { UserDefaults.standard.set(Double(librarianWidth), forKey: Self.librarianWidthKey) } }
+    /// The panels' widths: during an edge drag they follow the pointer (only the panel frames read them live).
+    var sidebarWidth: CGFloat { didSet { widthsMoved() } }
+    var librarianWidth: CGFloat { didSet { widthsMoved() } }
+
+    /// E fix-up G2 — the widths the heavy layout uses (the content: Map camera/regions, List/Cards reflow; the
+    /// Librarian's text; the toolbar's spacing). Outside a drag they ARE the widths; during one they follow at most
+    /// ~10×/s and on release, so a drag moves only the panel frames (the content keeps its layout, clipped or with a
+    /// strip of ground for the moment). Saved on release, not per pointer event (a defaults write wakes every
+    /// @AppStorage reader in the app).
+    private(set) var settledSidebarWidth: CGFloat = 0
+    private(set) var settledLibrarianWidth: CGFloat = 0
+    private(set) var columnDragging = false
+    private var settleTask: Task<Void, Never>?
+    static let dragSettleInterval: Double = 0.1
+
+    func beginColumnDrag() {
+        #if DEBUG
+        if UserDefaults.standard.bool(forKey: "MacResizeUnfrozen") { return }   // G2 A/B: the old per-event layout
+        #endif
+        columnDragging = true
+    }
+
+    func endColumnDrag() {
+        settleTask?.cancel(); settleTask = nil
+        columnDragging = false
+        settleWidths()
+    }
+
+    private func widthsMoved() {
+        guard columnDragging else { settleWidths(); return }
+        guard settleTask == nil else { return }
+        settleTask = Task { @MainActor [weak self] in
+            try? await Task.sleep(nanoseconds: UInt64(Self.dragSettleInterval * 1_000_000_000))
+            guard let self, !Task.isCancelled else { return }
+            self.settledSidebarWidth = self.sidebarWidth
+            self.settledLibrarianWidth = self.librarianWidth
+            self.settleTask = nil
+        }
+    }
+
+    private func settleWidths() {
+        if settledSidebarWidth != sidebarWidth { settledSidebarWidth = sidebarWidth }
+        if settledLibrarianWidth != librarianWidth { settledLibrarianWidth = librarianWidth }
+        let d = UserDefaults.standard
+        if d.double(forKey: Self.sidebarWidthKey) != Double(sidebarWidth) { d.set(Double(sidebarWidth), forKey: Self.sidebarWidthKey) }
+        if d.double(forKey: Self.librarianWidthKey) != Double(librarianWidth) { d.set(Double(librarianWidth), forKey: Self.librarianWidthKey) }
+    }
+
+    /// A panel's own layout width during a drag: the settled width while the panel is wider than it (a strip of its
+    /// ground beside it), the live width when narrower — never wider than its frame (a view laid out wider than its
+    /// slot made the Map's safe-area-ignoring SpriteView grow on every pass, to Metal's texture limit). The sidebar
+    /// uses this; the Librarian (no SpriteKit, text that's costly to reflow) keeps the settled width, clipped.
+    func panelLayoutWidth(live: CGFloat, settled: CGFloat) -> CGFloat? {
+        columnDragging ? min(live, settled) : nil
+    }
 
     /// Shown / hidden (⌃⌘S, the toolbar button); remembered.
     var sidebarVisible: Bool { didSet { UserDefaults.standard.set(sidebarVisible, forKey: Self.sidebarKey) } }
@@ -42,16 +95,20 @@ final class MacLayout {
     /// E1 — where AppKit puts the toolbar's first item (after the window buttons), in window points; measured from the
     /// toolbar once it's on screen (`MacWindowChrome.settle`), so the title starts at the content's edge.
     var toolbarLeadingX: CGFloat = 84
-    /// F5 — follows from the widths: the content would drop below `contentMinWidth`.
+    /// F5 — follows from the widths: the content would drop below `contentMinWidth`. (G2: from the settled widths —
+    /// the same outside a drag; during one the frame doesn't re-read per pointer event.)
     var librarianFloats: Bool {
-        windowWidth - (sidebarVisible ? sidebarWidth + 1 : 0) - (librarianWidth + 1) < Self.contentMinWidth
+        windowWidth - (sidebarVisible ? settledSidebarWidth + 1 : 0) - (settledLibrarianWidth + 1) < Self.contentMinWidth
     }
     /// The content column's width (window minus the sidebar), the floating Librarian's room.
-    var contentWidth: CGFloat { windowWidth - (sidebarVisible ? sidebarWidth + 1 : 0) }
+    var contentWidth: CGFloat { windowWidth - (sidebarVisible ? settledSidebarWidth + 1 : 0) }
     /// E5 — floating, the Librarian always leaves a strip beside it for the open entry's own + (56 pt and its gaps):
     /// at the smallest window with both panels widest it draws a little narrower (the remembered width is untouched).
     var floatingLibrarianWidth: CGFloat { max(MacLayout.librarianWidthRange.lowerBound - 40, min(librarianWidth, contentWidth - Self.entryPlusStrip - 10)) }
     static let entryPlusStrip: CGFloat = 84
+    var settledFloatingLibrarianWidth: CGFloat {
+        max(MacLayout.librarianWidthRange.lowerBound - 40, min(settledLibrarianWidth, contentWidth - Self.entryPlusStrip - 10))
+    }
     /// E5 — the open entry's floating + : 24 pt from the content's corner, or just left of a floating Librarian.
     var entryPlusTrailing: CGFloat { librarianOpen && librarianFloats ? floatingLibrarianWidth + 10 + 14 : 24 }
 
@@ -73,6 +130,8 @@ final class MacLayout {
             .map { min(max($0, Self.sidebarWidthRange.lowerBound), Self.sidebarWidthRange.upperBound) } ?? Self.sidebarWidthDefault
         librarianWidth = (d.object(forKey: Self.librarianWidthKey) == nil ? nil : CGFloat(d.double(forKey: Self.librarianWidthKey)))
             .map { min(max($0, Self.librarianWidthRange.lowerBound), Self.librarianWidthRange.upperBound) } ?? Self.librarianWidthDefault
+        settledSidebarWidth = sidebarWidth
+        settledLibrarianWidth = librarianWidth
         #if DEBUG
         // Stills: `-MacSidebar on|off`, `-MacLibrarian open|closed` (not remembered).
         if let s = d.string(forKey: "MacSidebar") { sidebarVisible = s == "on" }
@@ -103,21 +162,14 @@ struct MacDesktopFrame<Content: View>: View {
     var body: some View {
         HStack(spacing: 0) {
             if layout.sidebarVisible {
-                // E1 — full height: its ground runs up under the (transparent) title bar, where the window buttons and
-                // the sidebar toggle sit; the list starts below the bar.
-                MacSidebar()
-                    .padding(.top, toolbarInset)
-                    .frame(width: layout.sidebarWidth)
-                    .background { MacSidebar.ground(scheme).ignoresSafeArea() }
-                    .focusable()
-                    .focusEffectDisabled()
-                    .focused($region, equals: .sidebar)
-                    .overlay(alignment: .leading) { regionMark(.sidebar) }
+                // G2 — the sidebar's SLOT in the row follows the settled width (the content beside it re-lays out ≤ 10×/s
+                // during an edge drag); the sidebar and its hairline are drawn over the slot at the live width (over the
+                // content's edge, or with a strip of ground, for the moment).
+                Color.clear
+                    .frame(width: layout.settledSidebarWidth + 1)
+                    .overlay(alignment: .leading) { MacSidebarPanel(toolbarInset: toolbarInset, region: $region) }
+                    .zIndex(1)
                     .transition(.move(edge: .leading))
-                MacHairline()
-                    .overlay { MacResizeHandle(id: "resize.sidebar") { dx, start in
-                        layout.sidebarWidth = MacLayout.clamp(start + dx, MacLayout.sidebarWidthRange)
-                    } startValue: { layout.sidebarWidth } }
             }
             // E1 — the toolbar spans the content + Librarian only: its band is drawn here (AppKit's title bar is made
             // transparent), with the hairline under it; the columns start below it (D fix-up F2).
@@ -158,28 +210,16 @@ struct MacDesktopFrame<Content: View>: View {
                 .focused($region, equals: .content)
                 .overlay(alignment: .trailing) {
                     if layout.librarianOpen && layout.librarianFloats {
-                        MacLibrarianColumn(hostScope: hostScope)
-                            .frame(width: layout.floatingLibrarianWidth)
-                            .overlay(alignment: .leading) {
-                                MacResizeHandle(id: "resize.librarian") { dx, start in
-                                    layout.librarianWidth = MacLayout.clamp(start - dx, MacLayout.librarianWidthRange)
-                                } startValue: { layout.librarianWidth }
-                            }
-                            .clipShape(RoundedRectangle(cornerRadius: 14, style: .continuous))
-                            .overlay(RoundedRectangle(cornerRadius: 14, style: .continuous)
-                                .strokeBorder(AppearancePalette.ink.opacity(0.10), lineWidth: 1))
-                            .shadow(color: .black.opacity(0.22), radius: 18, y: 6)
-                            .padding(10)
+                        MacFloatingLibrarianPanel(hostScope: hostScope)
                             .transition(.move(edge: .trailing).combined(with: .opacity))
                     }
                 }
             if layout.librarianOpen && !layout.librarianFloats {
-                MacHairline()
-                    .overlay { MacResizeHandle(id: "resize.librarian") { dx, start in
-                        layout.librarianWidth = MacLayout.clamp(start - dx, MacLayout.librarianWidthRange)
-                    } startValue: { layout.librarianWidth } }
-                MacLibrarianColumn(hostScope: hostScope)
-                    .frame(width: layout.librarianWidth)
+                // G2 — the Librarian's slot follows the settled width; the panel and its hairline are drawn over it at the
+                // live width (as the sidebar's).
+                Color.clear
+                    .frame(width: layout.settledLibrarianWidth + 1)
+                    .overlay(alignment: .trailing) { MacLibrarianPanel(hostScope: hostScope) }
                     .transition(.move(edge: .trailing))
             }
         }
@@ -195,11 +235,80 @@ struct MacDesktopFrame<Content: View>: View {
         MacLayout.shared.focusedRegion = r
     }
 
-    /// A slim accent bar on the focused region's leading edge (the focus is otherwise invisible on a pane).
-    @ViewBuilder private func regionMark(_ r: MacRegion) -> some View {
-        if region == r {
-            RoundedRectangle(cornerRadius: 1.5).fill(Color.accentColor).frame(width: 3).padding(.vertical, 8)
+}
+
+/// G2 — the panels at the pointer's (live) width, drawn over their settled slots. Only these read the live widths, so an
+/// edge drag re-renders them and not the frame around the content.
+private struct MacSidebarPanel: View {
+    let toolbarInset: CGFloat
+    var region: FocusState<MacRegion?>.Binding
+    @State private var layout = MacLayout.shared
+    @Environment(\.colorScheme) private var scheme
+
+    var body: some View {
+        HStack(spacing: 0) {
+            // E1 — full height: its ground runs up under the (transparent) title bar, where the window buttons and the
+            // sidebar toggle sit; the list starts below the bar.
+            MacSidebar()
+                .padding(.top, toolbarInset)
+                .frame(width: layout.panelLayoutWidth(live: layout.sidebarWidth, settled: layout.settledSidebarWidth))
+                .frame(width: layout.sidebarWidth, alignment: .leading)
+                .clipped()
+                .background { MacSidebar.ground(scheme).ignoresSafeArea() }
+                .focusable()
+                .focusEffectDisabled()
+                .focused(region, equals: .sidebar)
+                .overlay(alignment: .leading) {
+                    // The focus is otherwise invisible on a pane: a slim accent bar on its leading edge.
+                    if region.wrappedValue == .sidebar {
+                        RoundedRectangle(cornerRadius: 1.5).fill(Color.accentColor).frame(width: 3).padding(.vertical, 8)
+                    }
+                }
+            MacHairline()
+                .overlay { MacResizeHandle(id: "resize.sidebar") { dx, start in
+                    layout.sidebarWidth = MacLayout.clamp(start + dx, MacLayout.sidebarWidthRange)
+                } startValue: { layout.sidebarWidth } }
         }
+    }
+}
+
+private struct MacLibrarianPanel: View {
+    let hostScope: CanvasScope
+    @State private var layout = MacLayout.shared
+
+    var body: some View {
+        HStack(spacing: 0) {
+            MacHairline()
+                .overlay { MacResizeHandle(id: "resize.librarian") { dx, start in
+                    layout.librarianWidth = MacLayout.clamp(start - dx, MacLayout.librarianWidthRange)
+                } startValue: { layout.librarianWidth } }
+            MacLibrarianColumn(hostScope: hostScope)
+                .frame(width: layout.columnDragging ? layout.settledLibrarianWidth : nil)   // text reflows ≤ 10×/s
+                .frame(width: layout.librarianWidth, alignment: .trailing)
+                .clipped()
+        }
+    }
+}
+
+private struct MacFloatingLibrarianPanel: View {
+    let hostScope: CanvasScope
+    @State private var layout = MacLayout.shared
+
+    var body: some View {
+        MacLibrarianColumn(hostScope: hostScope)
+            .frame(width: layout.columnDragging ? layout.settledFloatingLibrarianWidth : nil)
+            .frame(width: layout.floatingLibrarianWidth, alignment: .trailing)
+            .clipped()
+            .overlay(alignment: .leading) {
+                MacResizeHandle(id: "resize.librarian") { dx, start in
+                    layout.librarianWidth = MacLayout.clamp(start - dx, MacLayout.librarianWidthRange)
+                } startValue: { layout.librarianWidth }
+            }
+            .clipShape(RoundedRectangle(cornerRadius: 14, style: .continuous))
+            .overlay(RoundedRectangle(cornerRadius: 14, style: .continuous)
+                .strokeBorder(AppearancePalette.ink.opacity(0.10), lineWidth: 1))
+            .shadow(color: .black.opacity(0.22), radius: 18, y: 6)
+            .padding(10)
     }
 }
 
@@ -218,11 +327,12 @@ struct MacResizeHandle: View {
             .onHover { inside in MacCursor.resizeLeftRight(inside) }
             .gesture(DragGesture(minimumDistance: 1, coordinateSpace: .global)
                 .onChanged { g in
+                    if start == nil { MacLayout.shared.beginColumnDrag() }
                     let s = start ?? startValue()
                     start = s
                     apply(g.translation.width, s)
                 }
-                .onEnded { _ in start = nil })
+                .onEnded { _ in start = nil; MacLayout.shared.endColumnDrag() })
             .accessibilityElement()
             .accessibilityLabel(id == "resize.sidebar" ? "Resize the sidebar" : "Resize the Librarian")
             .accessibilityIdentifier(id)
@@ -788,12 +898,13 @@ struct MacToolbarLeading: View {
 
     /// E1 — with the sidebar shown, the toggle sits at the trailing end of the sidebar's top (beside the window buttons)
     /// and ‹ › start at the content's edge; hidden, they follow the window buttons.
+    /// G2 — from the settled sidebar width (the toolbar re-lays out ≤ 10×/s during an edge drag, not per event).
     private var toggleLead: CGFloat {
-        layout.sidebarVisible ? max(0, layout.sidebarWidth - 6 - MacToolbarMetrics.toggleWidth - layout.toolbarLeadingX) : 0
+        layout.sidebarVisible ? max(0, layout.settledSidebarWidth - 6 - MacToolbarMetrics.toggleWidth - layout.toolbarLeadingX) : 0
     }
     private var afterToggle: CGFloat {
         layout.sidebarVisible
-            ? max(4, layout.sidebarWidth + 1 + 8 - (layout.toolbarLeadingX + toggleLead + MacToolbarMetrics.toggleWidth))
+            ? max(4, layout.settledSidebarWidth + 1 + 8 - (layout.toolbarLeadingX + toggleLead + MacToolbarMetrics.toggleWidth))
             : 4
     }
 
@@ -864,12 +975,12 @@ extension View {
     static let toggleWidth: CGFloat = 32
     /// Search: 240 pt at a roomy window, narrower below.
     static func searchWidth(_ l: MacLayout) -> CGFloat {
-        let room = l.windowWidth - (l.sidebarVisible ? l.sidebarWidth : 0)
+        let room = l.windowWidth - (l.sidebarVisible ? l.settledSidebarWidth : 0)
         return room >= 1000 ? 240 : (room >= 860 ? 200 : 150)
     }
     /// The place's title truncates first (the sidebar shows the place too).
     static func titleMax(_ l: MacLayout) -> CGFloat {
-        let start = l.sidebarVisible ? l.sidebarWidth + 9 : l.toolbarLeadingX + toggleWidth + 4
+        let start = l.sidebarVisible ? l.settledSidebarWidth + 9 : l.toolbarLeadingX + toggleWidth + 4
         // ‹ › 68 · title padding 22 · view switch ~205 · trailing (search + Librarian + + + gaps) · margins 40
         let rest = start + 68 + 22 + 205 + searchWidth(l) + 170 + 40
         return max(40, min(260, l.windowWidth - rest))

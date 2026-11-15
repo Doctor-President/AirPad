@@ -227,6 +227,14 @@ struct ContentView: View {
                         NSLog("%@", await MacClickSelfTest.run(store: store, router: router))
                     }
                 }
+                // Mac E fix-up G2 — `-MacResizeSelfTest`: scripted panel-edge drags, per-step layout time.
+                if ProcessInfo.processInfo.arguments.contains("-MacResizeSelfTest") {
+                    Task { @MainActor in
+                        for _ in 0..<120 where store.nodes.count < 10 { try? await Task.sleep(nanoseconds: 250_000_000) }
+                        try? await Task.sleep(nanoseconds: 4_000_000_000)
+                        NSLog("%@", await MacResizeSelfTest.run(store: store, router: router))
+                    }
+                }
                 // Mac batch D — `-MacLayoutSelfTest`: the toolbar, sidebar and Librarian column.
                 if ProcessInfo.processInfo.arguments.contains("-MacLayoutSelfTest") {
                     Task { @MainActor in

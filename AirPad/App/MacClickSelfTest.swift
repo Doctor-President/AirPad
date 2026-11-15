@@ -1,6 +1,7 @@
 #if DEBUG && targetEnvironment(macCatalyst)
 import SwiftUI
 import UIKit
+import SpriteKit
 
 /// Mac E fix-up — REAL pointer events for the Mac checks: AppKit mouse / key events built with NSEvent's own factories
 /// and posted to the app's own event queue at a control's point in the window, so they go through the window's real hit-testing
@@ -375,6 +376,109 @@ enum MacClickSelfTest {
         let counted = rows.filter { $0.hasPrefix("PASS") || $0.hasPrefix("FAIL") }.count
         let held = rows.filter { $0.hasPrefix("T-CHECK") }.count
         return "[MacClickSelfTest] \(fails == 0 ? "PASS" : "FAIL") — \(counted - fails)/\(counted)\(held > 0 ? " · \(held) for T's real click" : "")\n" + rows.joined(separator: "\n")
+    }
+}
+#endif
+
+#if DEBUG && targetEnvironment(macCatalyst)
+/// E fix-up G2 — `-MacResizeSelfTest`: a scripted edge drag (the handle's own begin / move / end, 60 steps a second)
+/// on the Librarian's and the sidebar's edge over Map, List and Cards. Per step: the main thread's time to apply the
+/// width and lay the window out; per drag: how far it fell behind its 60 Hz schedule. `-MacResizeUnfrozen` = the old
+/// per-event layout (A/B).
+@MainActor
+enum MacResizeSelfTest {
+    /// Counts (and logs the first few of) SKView frames wider than 3,000 pt with the superview chain: a view laid out
+    /// wider than its slot once made the Map's SpriteView grow every pass to Metal's texture limit (G2).
+    static var hugeFrames = 0
+    static func traceHugeSKView() {
+        for selName in ["setFrame:", "setBounds:"] {
+            guard let m = class_getInstanceMethod(SKView.self, NSSelectorFromString(selName)) else { continue }
+            typealias O = @convention(c) (UIView, Selector, CGRect) -> Void
+            let orig = unsafeBitCast(method_getImplementation(m), to: O.self)
+            let sel = method_getName(m)
+            let b: @convention(block) (UIView, CGRect) -> Void = { v, r in
+                if r.width > 3000 {
+                    hugeFrames += 1
+                    guard hugeFrames <= 3 else { orig(v, sel, r); return }
+                    var chain: [String] = [], cur: UIView? = v.superview
+                    for _ in 0..<10 { guard let c = cur else { break }; chain.append("\(String(describing: type(of: c)).prefix(40)) \(Int(c.frame.minX)),\(Int(c.frame.width))"); cur = c.superview }
+                    NSLog("[G2] SKView %@ %@ ← %@", selName, "\(r)", chain.joined(separator: " < "))
+                }
+                orig(v, sel, r)
+            }
+            method_setImplementation(m, imp_implementationWithBlock(b))
+        }
+    }
+
+    static func skViews(_ v: UIView) -> [UIView] {
+        (String(describing: type(of: v)).contains("SKView") ? [v] : []) + v.subviews.flatMap { skViews($0) }
+    }
+
+    static func run(store: CorpusStore, router: AppRouter) async -> String {
+        var rows: [String] = [], fails = 0
+        func row(_ name: String, _ ok: Bool, _ detail: String = "") {
+            rows.append("\(ok ? "PASS" : "FAIL") \(name)" + (detail.isEmpty ? "" : " — \(detail)")); if !ok { fails += 1 }
+        }
+        let unfrozen = UserDefaults.standard.bool(forKey: "MacResizeUnfrozen")
+        let layout = MacLayout.shared
+        guard let window = UIApplication.shared.connectedScenes.compactMap({ $0 as? UIWindowScene }).flatMap(\.windows).first
+        else { return "[MacResizeSelfTest] FAIL — no window" }
+        traceHugeSKView()
+        rows.append("INFO \(unfrozen ? "UNFROZEN (old per-event layout)" : "settled widths (G2)") · window \(Int(layout.windowWidth)) pt")
+        layout.sidebarVisible = true; layout.librarianOpen = true
+        layout.sidebarWidth = MacLayout.sidebarWidthDefault; layout.librarianWidth = MacLayout.librarianWidthDefault
+        router.entryMode = .canvas
+        func pct(_ a: [Double], _ p: Double) -> Double { let s = a.sorted(); return s.isEmpty ? 0 : s[min(s.count - 1, Int(Double(s.count - 1) * p))] }
+
+        for (label, mode) in [("Map", ViewMode.systemGraph), ("List", .list), ("Cards", .grid)] {
+            var st = store.filterState(for: .corpus); st.viewMode = mode; store.setFilterState(st, for: .corpus)
+            await MacClick.settle(2.5)
+            for edge in ["Librarian", "sidebar"] {
+                let start = edge == "Librarian" ? layout.librarianWidth : layout.sidebarWidth
+                let range = edge == "Librarian" ? MacLayout.librarianWidthRange : MacLayout.sidebarWidthRange
+                // out to the max, back to the min, home: ~1.8 s of pointer at 60 Hz, 2–4 pt a step
+                var targets: [CGFloat] = []
+                var w = start
+                for goal in [range.upperBound, range.lowerBound, start] {
+                    let step: CGFloat = goal > w ? 3 : -3
+                    while abs(goal - w) > 3 { w += step; targets.append(w) }
+                    targets.append(goal); w = goal
+                }
+                var stepMs: [Double] = []
+                let t0 = CACurrentMediaTime()
+                layout.beginColumnDrag()
+                for (i, target) in targets.enumerated() {
+                    // the pointer's schedule: step i is due at t0 + i/60
+                    let due = t0 + Double(i) / 60
+                    let now = CACurrentMediaTime()
+                    if due > now { try? await Task.sleep(nanoseconds: UInt64((due - now) * 1_000_000_000)) }
+                    let a = CACurrentMediaTime()
+                    if edge == "Librarian" { layout.librarianWidth = MacLayout.clamp(target, range) } else { layout.sidebarWidth = MacLayout.clamp(target, range) }
+                    window.layoutIfNeeded()
+                    for v in MacToolbarController.shared.hosts.values { v.view.layoutIfNeeded() }
+                    stepMs.append((CACurrentMediaTime() - a) * 1000)
+                }
+                let late = (CACurrentMediaTime() - t0 - Double(targets.count - 1) / 60) * 1000
+                let libW = MacFixupSelfTest.elements(in: window) { _, i in i == "macLibrarianColumn" }.first?.accessibilityFrame.width ?? 0
+                if libW > MacLayout.librarianWidthRange.upperBound + 2 { hugeFrames += 1; NSLog("[G2] Librarian laid out %.0f pt wide", libW) }
+                let e0 = CACurrentMediaTime()
+                layout.endColumnDrag()
+                window.layoutIfNeeded()
+                let endMs = (CACurrentMediaTime() - e0) * 1000
+                let p95 = pct(stepMs, 0.95), mx = stepMs.max() ?? 0
+                // A pointer step ≤ 4 ms (p50); the content's own re-layout (≤ 10×/s) is in the p95/max; the drag never
+                // falls more than 100 ms behind its 60 Hz schedule (the old per-event layout fell seconds behind).
+                row("\(label) · \(edge) edge drag: pointer steps ≤ 4 ms (p50), stays on its 60 Hz schedule", pct(stepMs, 0.5) <= 4 && late <= 100,
+                    String(format: "%d steps · step p50 %.2f p95 %.2f max %.1f ms · behind schedule %.0f ms · release %.1f ms",
+                           targets.count, pct(stepMs, 0.5), p95, mx, late, endMs))
+                await MacClick.settle(1.0)
+            }
+        }
+        row("no runaway layout (no SKView wider than 3,000 pt, the Librarian within its range)", hugeFrames == 0, "\(hugeFrames) frames")
+        let saved = UserDefaults.standard.double(forKey: MacLayout.librarianWidthKey)
+        row("widths saved on release", abs(saved - Double(layout.librarianWidth)) < 0.5, "saved \(saved) · width \(layout.librarianWidth)")
+        var st = store.filterState(for: .corpus); st.viewMode = .systemGraph; store.setFilterState(st, for: .corpus)
+        return "[MacResizeSelfTest] \(fails == 0 ? "PASS" : "FAIL") — \(rows.count - 1 - fails)/\(rows.count - 1)\n" + rows.joined(separator: "\n")
     }
 }
 #endif

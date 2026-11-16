@@ -870,8 +870,9 @@ struct CanvasView: View {
             .onDisappear { router.mapShowing = false }
             .onChange(of: router.commandRequest) { _, request in
                 // G3 — strictly the Map's: only while the Map is the place's visible view (Cards owns ⌘+ ⌘− ⌘0 then).
-                guard let c = request?.command, [.zoomIn, .zoomOut, .zoomFit].contains(c), navigationPath.isEmpty,
+                guard let c = request?.command, [.zoomIn, .zoomOut, .zoomFit, .closePreview].contains(c), navigationPath.isEmpty,
                       store.filterState(for: scope).viewMode == .systemGraph else { return }
+                if c == .closePreview { canvasState.cardedNodeID = nil; return }
                 scene.keyboardZoom(c)
             }
             .onChange(of: navigationPath.count) { _, newCount in
@@ -1149,10 +1150,31 @@ struct CanvasView: View {
                                         .contentShape(Circle())
                                 }
                                 .buttonStyle(.plain)
+                                .accessibilityLabel("Close")
+                                .accessibilityIdentifier("mapCard.close")
                                 .transition(.opacity)
                             }
                         }
                         .frame(width: w, height: h)
+                        .accessibilityIdentifier("mapCard")
+                        #if targetEnvironment(macCatalyst)
+                        // E fix-up 3 (H5) — the Mac's swipe down: a two-finger trackpad swipe over the card follows and
+                        // dismisses as the iPhone's drag does (the mouse wheel never does); Esc dismisses too.
+                        .onGeometryChange(for: CGRect.self) { $0.frame(in: .global) } action: { MacCardSwipe.shared.cardFrame = $0 }
+                        .background {
+                            MacCardSwipeHost(active: isCarded && m > 0.5,
+                                             changed: { cardDragY = $0 },
+                                             ended: { dy, velocity in
+                                                 if isCarded && (dy > 120 || velocity > 1000) {
+                                                     MapHaptics.release()
+                                                     withAnimation(.easeOut(duration: 0.22)) { cardDragY = dismissDistance * 1.6 }
+                                                     canvasState.cardedNodeID = nil
+                                                 } else {
+                                                     withAnimation(.spring(response: 0.3, dampingFraction: 0.72)) { cardDragY = 0 }
+                                                 }
+                                             })
+                        }
+                        #endif
                         .scaleEffect(1 - dragFrac * 0.12)
                         .offset(y: cardDragY)
                         .opacity(m * (1 - dragFrac * 0.6))
@@ -1193,6 +1215,7 @@ struct CanvasView: View {
         // swipe-commit sets cardedNodeID nil and needs its slide-out animation intact).
         .onChange(of: canvasState.cardedNodeID) { _, newID in
             if newID != nil { cardDragY = 0 }
+            router.mapCardOpen = newID != nil   // H5 — View › Close Preview (Esc)
         }
     }
 
@@ -2232,5 +2255,71 @@ private struct MapRestTimeline<Content: View>: View {
     static var labelHex: [String: String] = [:]
     static var tints: [String: UIColor] = [:]
     static var territoryOfNode: [String: String] = [:]
+}
+#endif
+
+#if targetEnvironment(macCatalyst)
+/// E fix-up 3 (H5) — the Map card's two-finger swipe down on the Mac. SwiftUI's drag doesn't see trackpad scrolls, so a
+/// scroll-only pan (continuous = the trackpad; the mouse wheel's discrete clicks aren't in its mask, so a wheel never
+/// dismisses) on the window begins only for a downward swipe over the open card, and reports how far it has come.
+@MainActor final class MacCardSwipe: NSObject, UIGestureRecognizerDelegate {
+    static let shared = MacCardSwipe()
+    var cardFrame: CGRect = .null
+    var active = false
+    var changed: ((CGFloat) -> Void)?
+    var ended: ((CGFloat, CGFloat) -> Void)?
+    private weak var installedOn: UIWindow?
+
+    func install(on w: UIWindow) {
+        guard installedOn !== w else { return }
+        let g = UIPanGestureRecognizer(target: self, action: #selector(panned(_:)))
+        g.allowedScrollTypesMask = .continuous
+        g.allowedTouchTypes = []          // scrolls only: a click or a mouse drag never starts it
+        g.cancelsTouchesInView = false
+        g.delegate = self
+        w.addGestureRecognizer(g)
+        installedOn = w
+    }
+
+    func gestureRecognizerShouldBegin(_ g: UIGestureRecognizer) -> Bool {
+        guard active, let pan = g as? UIPanGestureRecognizer, let v = g.view else { return false }
+        let t = pan.translation(in: v), vel = pan.velocity(in: v)
+        let down = (t.y > 0 && abs(t.y) >= abs(t.x)) || (t == .zero && vel.y > 0 && abs(vel.y) >= abs(vel.x))
+        return down && cardFrame.contains(pan.location(in: v))
+    }
+    /// Over the card it takes the swipe from whatever else would scroll there (other scroll pans wait for it; clicks and
+    /// touch gestures never do).
+    func gestureRecognizer(_ g: UIGestureRecognizer, shouldBeRequiredToFailBy other: UIGestureRecognizer) -> Bool {
+        (other as? UIPanGestureRecognizer).map { !$0.allowedScrollTypesMask.isEmpty } ?? false
+    }
+
+    @objc private func panned(_ g: UIPanGestureRecognizer) {
+        guard let v = g.view else { return }
+        let dy = max(0, g.translation(in: v).y)
+        switch g.state {
+        case .changed: changed?(dy)
+        case .ended: ended?(dy, g.velocity(in: v).y)
+        case .cancelled, .failed: ended?(0, 0)
+        default: break
+        }
+    }
+}
+
+/// Installs the swipe on the card's window and keeps its callbacks pointed at the card on screen.
+struct MacCardSwipeHost: UIViewRepresentable {
+    let active: Bool
+    let changed: (CGFloat) -> Void
+    let ended: (CGFloat, CGFloat) -> Void
+    func makeUIView(context: Context) -> HostView { HostView() }
+    func updateUIView(_ v: HostView, context: Context) {
+        let s = MacCardSwipe.shared
+        s.active = active; s.changed = changed; s.ended = ended
+        if let w = v.window { s.install(on: w) }
+    }
+    static func dismantleUIView(_ v: HostView, coordinator: ()) { MacCardSwipe.shared.active = false }
+    final class HostView: UIView {
+        override func didMoveToWindow() { super.didMoveToWindow(); if let window { MacCardSwipe.shared.install(on: window) } }
+        override func hitTest(_ point: CGPoint, with event: UIEvent?) -> UIView? { nil }   // never takes a click
+    }
 }
 #endif

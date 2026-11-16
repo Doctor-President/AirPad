@@ -887,7 +887,7 @@ struct ContentView: View {
             store.runCorpusAnalysis(trigger: .manual)
         case .togglePrivate:
             if PrivateEntries.shared.revealed { PrivateEntries.shared.hide() } else { Task { await PrivateEntries.shared.reveal() } }
-        case .export, .back, .forward, .zoomIn, .zoomOut, .zoomFit, .editMap,
+        case .export, .back, .forward, .zoomIn, .zoomOut, .zoomFit, .editMap, .closePreview,
              .selectEntries, .sortEdited, .sortOldest, .sortTitle, .filter, .quarantine:
             break   // handled by the view on screen (CanvasChrome, NodeListView, …)
         }

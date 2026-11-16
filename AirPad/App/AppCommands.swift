@@ -10,6 +10,7 @@ enum AppCommand: String, CaseIterable, Sendable {
     case find
     case viewMap, viewList, viewCards, librarian
     case zoomIn, zoomOut, zoomFit, editMap
+    case closePreview   // E fix-up 3 (H5) — Esc closes the Map's preview card
     case toggleSidebar
     case back, forward, today
     case settings
@@ -74,6 +75,11 @@ struct AppCommands: Commands {
                 .disabled(!mapShowing && !cardsShowing)
             item("Zoom to Fit", .zoomFit, "view.zoomFit").keyboardShortcut("0")
                 .disabled(!mapShowing && !cardsShowing)
+            #if targetEnvironment(macCatalyst)
+            // E fix-up 3 (H5) — Esc closes the Map's preview card (the menu is the Mac's way to a key for an inline view).
+            item("Close Preview", .closePreview, "view.closePreview").keyboardShortcut(.escape, modifiers: [])
+                .disabled(!router.mapCardOpen)
+            #endif
             #if targetEnvironment(macCatalyst)
             // Mac D0.7 (T N4) — Edit Map… lives in the View menu once the toolbar replaces the floating view button.
             item("Edit Map…", .editMap, "view.editMap")

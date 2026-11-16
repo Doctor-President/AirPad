@@ -255,6 +255,8 @@ final class AppRouter {
 
     /// The Map is mounted (Mac batch C2: View › Zoom In / Out / to Fit).
     var mapShowing = false
+    /// E fix-up 3 (H5) — the Map's preview card is open (View › Close Preview, Esc).
+    var mapCardOpen = false
     /// The entry whose detail is on screen (the top of the stack), for File › Export Entry….
     var openEntryID: String? = nil
     /// File › New Collection and the Settings item present these sheets at the root.

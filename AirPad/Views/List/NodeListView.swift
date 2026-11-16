@@ -266,6 +266,7 @@ struct NodeListView: View {
                             ForEach(Array(rows.enumerated()), id: \.element.id) { index, node in
                                 MacListRow(node: node, showCollection: geo.size.width - 32 >= Self.macCollectionColumnMinWidth,
                                            keyboardFocused: keyIndex == index, appFont: appFont) { open(node) }
+                                    .equatable()
                                     .id(node.id)
                                     .entryContextMenu(node)
                                     .accessibilityIdentifier("listRow-\(node.id)")
@@ -450,7 +451,12 @@ struct NodeListView: View {
 }
 
 /// Mac batch D4 — one row of the desktop list.
-private struct MacListRow: View {
+/// E fix-up 3 (H1) — Equatable on what it draws (not the open action, a new closure every pass), so a width change (the
+/// Librarian or sidebar opening, animated) re-lays the rows out without re-running each row's body every frame.
+private struct MacListRow: View, Equatable {
+    static func == (a: Self, b: Self) -> Bool {
+        a.node == b.node && a.showCollection == b.showCollection && a.keyboardFocused == b.keyboardFocused && a.appFont == b.appFont
+    }
     let node: Node
     let showCollection: Bool
     let keyboardFocused: Bool

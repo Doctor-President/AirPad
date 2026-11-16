@@ -202,7 +202,9 @@ enum MacClick {
                     typealias O = @convention(c) (NSObject, Selector, NSObject?) -> Void
                     let orig = unsafeBitCast(method_getImplementation(m), to: O.self)
                     let b: @convention(block) (NSObject, NSObject?) -> Void = { o, a in
-                        MacClick.touchLog.append("\(name) -\(sname)"); orig(o, sel, a) }
+                        let t0 = CFAbsoluteTimeGetCurrent() * 1000
+                        orig(o, sel, a)
+                        MacClick.touchLog.append(String(format: "%@ -%@ in t=%.0f out +%.0f ms", name, sname, t0, CFAbsoluteTimeGetCurrent() * 1000 - t0)) }
                     method_setImplementation(m, imp_implementationWithBlock(b))
                 } else if e == "B24@0:8@16" || e == "c24@0:8@16" {
                     typealias O = @convention(c) (NSObject, Selector, NSObject?) -> Bool

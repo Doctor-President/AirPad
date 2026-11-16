@@ -47,6 +47,12 @@ final class MacLayout {
     /// content's minimum beside it; toggles back to the remembered width, which it never overwrites.
     private(set) var librarianExpanded = false
     private var widthBeforeExpand: CGFloat?
+    /// ⌘L and the toolbar's Librarian button: open / close the column (the panel model reads `librarianAtPeek`).
+    func toggleLibrarian(_ router: AppRouter) {
+        librarianOpen.toggle()
+        router.librarianAtPeek = !librarianOpen
+    }
+
     func toggleLibrarianExpanded() {
         if librarianExpanded {
             librarianExpanded = false
@@ -820,6 +826,8 @@ struct MacLibrarianToolbarButton: View {
             .background(Capsule().fill(AppearancePalette.ink.opacity(open ? 0.13 : (hovering ? 0.07 : 0))))
             .overlay(Capsule().strokeBorder(AppearancePalette.ink.opacity(open ? 0 : 0.14), lineWidth: 1))
             .contentShape(Capsule())
+            // E fix-up 3 (H1) — the button's own look changes at once; only the column slides (the frame's 0.2 s ease).
+            .animation(nil, value: open)
         }
         .buttonStyle(.plain)
         .onHover { hovering = $0; MacToolbarProbe.hovered("toolbar.librarian", $0) }
@@ -986,16 +994,25 @@ struct MacViewSwitch: View {
     @Environment(CorpusStore.self) private var store
     @Environment(\.appBodyFont) private var appFont
 
+    /// E fix-up 3 (H1) — the segment just clicked, lit at once; the view itself follows a frame later (building the Map or
+    /// the List takes 100–200 ms, and the switch's look would otherwise wait for it).
+    @State private var pending: ViewMode?
+
     var body: some View {
-        let current = store.filterState(for: scope).viewMode
+        let current = pending ?? store.filterState(for: scope).viewMode
         HStack(spacing: 2) {
             ForEach(ViewSwitchMenuContent.macDestinations, id: \.mode) { dest in
                 let on = dest.mode == current || (dest.mode == .grid && current != .list && current != .systemGraph)
                 Button {
+                    MacClickTrace.mark("view.\(dest.label)")
                     guard !on else { return }
-                    var s = store.filterState(for: scope)
-                    s.viewMode = dest.mode
-                    store.setFilterState(s, for: scope)
+                    pending = dest.mode
+                    DispatchQueue.main.asyncAfter(deadline: .now() + 0.012) {
+                        var s = store.filterState(for: scope)
+                        s.viewMode = dest.mode
+                        store.setFilterState(s, for: scope)
+                        pending = nil
+                    }
                 } label: {
                     Text(dest.label)
                         .font(appFont.font(size: 13, weight: on ? .semibold : .regular))
@@ -1039,7 +1056,7 @@ struct MacToolbarLeading: View {
         HStack(spacing: 0) {
             Color.clear.frame(width: toggleLead, height: 1)
             MacToolbarIconButton(systemName: "sidebar.left", help: layout.sidebarVisible ? "Hide Sidebar (⌃⌘S)" : "Show Sidebar (⌃⌘S)",
-                                 id: "toolbar.sidebar") { layout.sidebarVisible.toggle() }
+                                 id: "toolbar.sidebar") { MacClickTrace.mark("sidebar"); layout.sidebarVisible.toggle() }
                 .macToolbarProbe("toolbar.sidebar")
             Color.clear.frame(width: afterToggle, height: 1)
             HStack(spacing: 4) {
@@ -1088,6 +1105,98 @@ enum MacToolbarProbe {
         if inside { hover = id } else if hover == id { hover = nil }
         #endif
     }
+}
+
+/// E fix-up 3 (H1) — DEBUG `-MacClickTrace`: when each toolbar action runs, how old its click is (the AppKit event's
+/// timestamp), and every main-thread frame gap over 40 ms, all on the wall clock `rlat` prints, so a click's
+/// latency splits into delivery · action · render. Release: no-op.
+@MainActor enum MacClickTrace {
+    static func mark(_ label: String) {
+        #if DEBUG
+        guard on else { return }
+        let ev = (NSClassFromString("NSApplication") as? NSObject.Type)?.perform(NSSelectorFromString("sharedApplication"))?
+            .takeUnretainedValue().value(forKey: "currentEvent") as? NSObject
+        let age = (ev?.value(forKey: "timestamp") as? Double).map { (ProcessInfo.processInfo.systemUptime - $0) * 1000 } ?? -1
+        NSLog("[ClickTrace] action %@ t=%.0f eventAge=%.0f type=%@", label, CFAbsoluteTimeGetCurrent() * 1000, age,
+              "\(ev?.value(forKey: "type") ?? "-")")
+        #endif
+    }
+    #if DEBUG
+    static let on = ProcessInfo.processInfo.arguments.contains("-MacClickTrace")
+    private static var link: CADisplayLink?
+    private static var last: CFTimeInterval = 0
+    static func start() {
+        guard on, link == nil else { return }
+        let l = CADisplayLink(target: Ticker.shared, selector: #selector(Ticker.tick(_:)))
+        l.add(to: .main, forMode: .common)
+        link = l
+        if ProcessInfo.processInfo.arguments.contains("-MacClickTraceAppKit") { MacClick.traceWindowMethods() }
+        // AppKit: every left mouse down / up the window receives (before UIKit sees it).
+        if let cls = NSClassFromString("NSWindow"), let m = class_getInstanceMethod(cls, NSSelectorFromString("sendEvent:")) {
+            typealias O = @convention(c) (NSObject, Selector, NSObject) -> Void
+            let orig = unsafeBitCast(method_getImplementation(m), to: O.self)
+            let sel = method_getName(m)
+            let b: @convention(block) (NSObject, NSObject) -> Void = { w, e in
+                let type = (e.value(forKey: "type") as? UInt) ?? 0
+                if type == 1 || type == 2 {
+                    let p = (e.value(forKey: "locationInWindow") as? CGPoint) ?? .zero
+                    NSLog("[ClickTrace] nsevent %@ (%.0f,%.0f) clicks %@ t=%.0f", type == 1 ? "down" : "up", p.x, p.y,
+                          "\(e.value(forKey: "clickCount") ?? "-")", CFAbsoluteTimeGetCurrent() * 1000)
+                }
+                orig(w, sel, e)
+            }
+            method_setImplementation(m, imp_implementationWithBlock(b))
+        }
+        // UIKit's application: every event with its touches' windows (a began sent to another window would show here).
+        if let m = class_getInstanceMethod(UIApplication.self, #selector(UIApplication.sendEvent(_:))) {
+            typealias O = @convention(c) (UIApplication, Selector, UIEvent) -> Void
+            let orig = unsafeBitCast(method_getImplementation(m), to: O.self)
+            let b: @convention(block) (UIApplication, UIEvent) -> Void = { a, e in
+                if e.type != .hover {
+                    let ts = (e.allTouches ?? []).map { t in
+                        "\(t.phase.rawValue)/\(t.type.rawValue)@\(t.window.map { String(describing: type(of: $0)).prefix(18) } ?? "nil")"
+                    }.joined(separator: ",")
+                    NSLog("[ClickTrace] app event type %d sub %d touches [%@] t=%.0f", e.type.rawValue, e.subtype.rawValue, ts,
+                          CFAbsoluteTimeGetCurrent() * 1000)
+                }
+                orig(a, #selector(UIApplication.sendEvent(_:)), e)
+            }
+            method_setImplementation(m, imp_implementationWithBlock(b))
+        }
+        // Every touch phase UIKit's window receives: where it lands and which view the hit-test chose.
+        if let m = class_getInstanceMethod(UIWindow.self, #selector(UIWindow.sendEvent(_:))) {
+            typealias Orig = @convention(c) (UIWindow, Selector, UIEvent) -> Void
+            let orig = unsafeBitCast(method_getImplementation(m), to: Orig.self)
+            let block: @convention(block) (UIWindow, UIEvent) -> Void = { w, e in
+                for t in e.allTouches ?? [] where t.phase == .began || t.phase == .ended || t.phase == .cancelled {
+                    let p = t.location(in: w)
+                    let chain = "w \(String(describing: type(of: w)).prefix(20))@\(String(UInt(bitPattern: ObjectIdentifier(w).hashValue) % 100000)) " + sequence(first: t.view as UIView?, next: { $0?.superview }).prefix(3)
+                        .map { $0.map { "\(String(describing: type(of: $0)).prefix(24))@\(UInt(bitPattern: ObjectIdentifier($0).hashValue) % 100000)" } ?? "nil" }.joined(separator: "<")
+                    let grs = (t.gestureRecognizers ?? []).map { "\(type(of: $0)):\($0.state.rawValue)" }.joined(separator: ",")
+                    let fr = (w.value(forKey: "firstResponder") as AnyObject?).map { String(describing: type(of: $0)).prefix(60) } ?? "nil"
+                    NSLog("[ClickTrace] touch %@ (%.0f,%.0f) t=%.0f fr %@ view %@ · gr [%@]", t.phase == .began ? "began" : t.phase == .ended ? "ended" : "cancelled",
+                          p.x, p.y, CFAbsoluteTimeGetCurrent() * 1000, String(fr), chain, grs)
+                }
+                orig(w, #selector(UIWindow.sendEvent(_:)), e)
+            }
+            method_setImplementation(m, imp_implementationWithBlock(block))
+        }
+    }
+    @MainActor final class Ticker: NSObject {
+        static let shared = Ticker()
+        @objc func tick(_ l: CADisplayLink) {
+            let now = CACurrentMediaTime()
+            if !MacClick.touchLog.isEmpty {
+                for line in MacClick.touchLog { NSLog("[ClickTrace] appkit %@ t=%.0f", line, CFAbsoluteTimeGetCurrent() * 1000) }
+                MacClick.touchLog.removeAll()
+            }
+            if MacClickTrace.last > 0, now - MacClickTrace.last > 0.040 {
+                NSLog("[ClickTrace] gap %.0f ms ending t=%.0f", (now - MacClickTrace.last) * 1000, CFAbsoluteTimeGetCurrent() * 1000)
+            }
+            MacClickTrace.last = now
+        }
+    }
+    #endif
 }
 
 extension View {
@@ -1166,7 +1275,9 @@ struct MacToolbarTrailing: View {
             .onHover { searchHover = $0; MacToolbarProbe.hovered("toolbar.search", $0) }
             .macToolbarProbe("toolbar.search")
             .padding(.trailing, 4)
-            MacLibrarianToolbarButton(open: layout.librarianOpen) { router.perform(.librarian) }
+            // E fix-up 3 (H1) — straight to the column, not through `router.perform` (its command hop cost a SwiftUI pass over
+            // every view that watches commands, ~70 ms, before the column moved).
+            MacLibrarianToolbarButton(open: layout.librarianOpen) { MacClickTrace.mark("librarian"); layout.toggleLibrarian(router) }
             MacToolbarIconButton(systemName: "plus", help: "New Entry", id: "toolbar.newEntry") { router.perform(.newEntry) }
                 .macToolbarProbe("toolbar.newEntry")
         }

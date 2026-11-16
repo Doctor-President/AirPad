@@ -10,6 +10,8 @@
 //   rclick key   <pid> <keycode>                → one key (53 = Esc)
 //   rclick get   <pid> <id-or-title> <attr>     → an attribute (AXValue, AXFocused, AXSelected …)
 //   rclick has   <pid> <id-or-title>            → "yes <frame>" / "no"
+//   rclick hover <pid> <id-or-title>            → the pointer onto its centre, no press
+//   rclick focus <pid>                          → the app's focused element
 //   rclick winpos <pid>                         → the main window's frame
 //   rclick winmove <pid> <x> <y>                → move the main window (clear of banners in the screen's corners)
 // A press whose point another app covers (a notification banner, a window) is NOT posted: "COVERED … by <app>", exit 3.
@@ -51,7 +53,13 @@ func front() {
     }
 }
 func post(_ t: CGEventType, _ p: CGPoint) {
-    CGEvent(mouseEventSource: nil, mouseType: t, mouseCursorPosition: p, mouseButton: .left)?.post(tap: .cghidEventTap)
+    // A real click's down AND up carry click state 1 (an unset field posts the up with clickCount 0).
+    let e = CGEvent(mouseEventSource: nil, mouseType: t, mouseCursorPosition: p, mouseButton: .left)
+    // RCLICK_UP0=1 posts the up with the field unset (fix-up 2's events), for the A/B.
+    if t == .leftMouseDown || t == .leftMouseDragged || (t == .leftMouseUp && ProcessInfo.processInfo.environment["RCLICK_UP0"] == nil) {
+        e?.setIntegerValueField(.mouseEventClickState, value: 1)
+    }
+    e?.post(tap: .cghidEventTap)
 }
 /// Exits unless the topmost element at `p` belongs to the app (a banner over the point would take the click).
 func ensureOwned(_ p: CGPoint) {
@@ -64,6 +72,10 @@ func ensureOwned(_ p: CGPoint) {
 }
 func clickAt(_ p: CGPoint) {
     ensureOwned(p)
+    // E fix-up 3 (H1): who is frontmost right before the press (a click on an inactive app only activates it).
+    if let f = NSWorkspace.shared.frontmostApplication, f.processIdentifier != pid {
+        print("NOT-FRONT before press: \(f.bundleIdentifier ?? "pid \(f.processIdentifier)")")
+    }
     post(.mouseMoved, p); usleep(120_000)
     post(.leftMouseDown, p); usleep(70_000)
     post(.leftMouseUp, p); usleep(450_000)
@@ -92,6 +104,9 @@ case "dclickat":
         }
     }
     usleep(600_000); print("double-clicked at (\(Int(p.x)),\(Int(p.y)))")
+case "hover":   // move the pointer onto an element's centre, no press
+    front(); guard let e = target(args[3]) else { exit(1) }
+    let r = frame(e); post(.mouseMoved, CGPoint(x: r.midX, y: r.midY)); usleep(100_000); print("hovering \(args[3])")
 case "clickat":
     front(); let p = CGPoint(x: Double(args[3])!, y: Double(args[4])!); clickAt(p); print("clicked at (\(Int(p.x)),\(Int(p.y)))")
 case "drag":
@@ -117,6 +132,10 @@ case "key":
 case "get":
     guard let e = target(args[3]) else { exit(1) }
     print(a(e, args[4]).map { "\($0)" } ?? "nil")
+case "focus":   // the app's focused element: role · identifier · description
+    guard let f = a(app, kAXFocusedUIElementAttribute) else { print("none"); exit(0) }
+    let e = f as! AXUIElement
+    print("\(a(e, kAXRoleAttribute) ?? "?" as AnyObject) · \(a(e, "AXIdentifier") ?? "-" as AnyObject) · \(a(e, kAXDescriptionAttribute) ?? "-" as AnyObject) · \(fmt(frame(e)))")
 case "winpos":
     let w = ((a(app, kAXWindowsAttribute) as? [AXUIElement]) ?? []).first
     print(w.map { fmt(frame($0)) } ?? "none")

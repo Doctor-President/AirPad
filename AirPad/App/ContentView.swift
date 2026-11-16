@@ -219,6 +219,7 @@ struct ContentView: View {
                         NSLog("%@", await MacBatchESelfTest.run(store: store, router: router))
                     }
                 }
+                MacClickTrace.start()   // E fix-up 3 — DEBUG `-MacClickTrace`
                 // Mac E fix-up — `-MacClickSelfTest`: every toolbar item pressed with a real (AppKit) click.
                 if ProcessInfo.processInfo.arguments.contains("-MacClickSelfTest") {
                     Task { @MainActor in
@@ -844,8 +845,8 @@ struct ContentView: View {
         case .librarian:
             #if targetEnvironment(macCatalyst)
             // Mac batch D3 — ⌘L opens / closes the Librarian column, anywhere.
-            MacLayout.shared.librarianOpen.toggle()
-            router.librarianAtPeek = !MacLayout.shared.librarianOpen
+            MacClickTrace.mark("perform.librarian")
+            MacLayout.shared.toggleLibrarian(router)
             return
             #endif
             guard !busy else { return }

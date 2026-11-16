@@ -847,8 +847,12 @@ enum MacWindowChrome {
     static func dragOrZoomWithCurrentEvent() {
         guard let app = (NSClassFromString("NSApplication") as? NSObject.Type)?.perform(NSSelectorFromString("sharedApplication"))?
                 .takeUnretainedValue() as? NSObject,
-              let event = app.value(forKey: "currentEvent") as? NSObject, let w = nsWindow,
-              (event.value(forKey: "type") as? UInt) == 1 else { return }   // NSEventTypeLeftMouseDown
+              let event = app.value(forKey: "currentEvent") as? NSObject, let w = nsWindow else { return }
+        #if DEBUG
+        NSLog("[MacChrome] bar press: event type %@, clicks %@", "\(event.value(forKey: "type") ?? "?")",
+              "\(event.value(forKey: "clickCount") ?? "?")")
+        #endif
+        guard (event.value(forKey: "type") as? UInt) == 1 else { return }   // NSEventTypeLeftMouseDown
         if (event.value(forKey: "clickCount") as? Int ?? 1) >= 2 {
             switch UserDefaults.standard.string(forKey: "AppleActionOnDoubleClick") {
             case "None": return
@@ -859,6 +863,24 @@ enum MacWindowChrome {
         }
         w.perform(NSSelectorFromString("performWindowDragWithEvent:"), with: event)
     }
+
+    /// E fix-up 2 — while the pointer is over a toolbar control, AppKit's own title-bar drag is off (`isMovable` false),
+    /// so a press that wanders a few points stays the control's (real clicks: a 3 / 8 pt wander on Map dragged the window
+    /// 3 / 8 pt). The bar's empty part keeps AppKit's drag. Only while over a control: the system doesn't move a
+    /// non-movable window on a display change (Apple's `isMovable` doc).
+    static func setPointerOverControl(_ id: String, _ over: Bool) {
+        if over { controlsUnderPointer.insert(id) } else { controlsUnderPointer.remove(id) }
+        var movable = controlsUnderPointer.isEmpty
+        #if DEBUG
+        if UserDefaults.standard.string(forKey: "MacWindowMovable") == "yes" { movable = true }   // A/B
+        #endif
+        guard let w = nsWindow, (w.value(forKey: "movable") as? Bool) != movable else { return }
+        w.setValue(movable, forKey: "movable")
+        #if DEBUG
+        NSLog("[MacChrome] movable %@ (%@)", movable ? "yes" : "no", id)
+        #endif
+    }
+    private static var controlsUnderPointer: Set<String> = []
 
     /// Applies the transparent title bar and measures the leading item, now and once the toolbar has laid out.
     static func settle() {
@@ -1074,6 +1096,8 @@ extension View {
             MacToolbarProbe.x[id] = $0.minX; MacToolbarProbe.rect[id] = $0
         }
         .onGeometryChange(for: CGRect.self) { $0.frame(in: .global) } action: { MacToolbarProbe.windowRect[id] = $0 }
+        .onHover { MacWindowChrome.setPointerOverControl(id, $0) }
+        .onDisappear { MacWindowChrome.setPointerOverControl(id, false) }
     }
 }
 

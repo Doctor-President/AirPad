@@ -10,6 +10,8 @@
 //   rclick get   <pid> <id-or-title> <attr>     → an attribute (AXValue, AXFocused, AXSelected …)
 //   rclick has   <pid> <id-or-title>            → "yes <frame>" / "no"
 //   rclick winpos <pid>                         → the main window's frame
+//   rclick winmove <pid> <x> <y>                → move the main window (clear of banners in the screen's corners)
+// A press whose point another app covers (a notification banner, a window) is NOT posted: "COVERED … by <app>", exit 3.
 import AppKit
 import ApplicationServices
 
@@ -50,7 +52,17 @@ func front() {
 func post(_ t: CGEventType, _ p: CGPoint) {
     CGEvent(mouseEventSource: nil, mouseType: t, mouseCursorPosition: p, mouseButton: .left)?.post(tap: .cghidEventTap)
 }
+/// Exits unless the topmost element at `p` belongs to the app (a banner over the point would take the click).
+func ensureOwned(_ p: CGPoint) {
+    var e: AXUIElement?, owner: pid_t = 0
+    guard AXUIElementCopyElementAtPosition(AXUIElementCreateSystemWide(), Float(p.x), Float(p.y), &e) == .success, let e,
+          AXUIElementGetPid(e, &owner) == .success, owner == pid else {
+        let who = NSRunningApplication(processIdentifier: owner)?.bundleIdentifier ?? "pid \(owner)"
+        print("COVERED at (\(Int(p.x)),\(Int(p.y))) by \(who)"); exit(3)
+    }
+}
 func clickAt(_ p: CGPoint) {
+    ensureOwned(p)
     post(.mouseMoved, p); usleep(120_000)
     post(.leftMouseDown, p); usleep(70_000)
     post(.leftMouseUp, p); usleep(450_000)
@@ -74,6 +86,7 @@ case "clickat":
 case "drag":
     front()
     let p = CGPoint(x: Double(args[3])!, y: Double(args[4])!), dx = Double(args[5])!, dy = Double(args[6])!
+    ensureOwned(p)
     post(.mouseMoved, p); usleep(120_000); post(.leftMouseDown, p); usleep(120_000)
     for i in 1...10 { post(.leftMouseDragged, CGPoint(x: p.x + dx * Double(i) / 10, y: p.y + dy * Double(i) / 10)); usleep(30_000) }
     post(.leftMouseUp, CGPoint(x: p.x + dx, y: p.y + dy)); usleep(400_000); print("dragged from (\(Int(p.x)),\(Int(p.y))) by (\(Int(dx)),\(Int(dy)))")
@@ -96,5 +109,10 @@ case "get":
 case "winpos":
     let w = ((a(app, kAXWindowsAttribute) as? [AXUIElement]) ?? []).first
     print(w.map { fmt(frame($0)) } ?? "none")
+case "winmove":
+    guard let w = ((a(app, kAXWindowsAttribute) as? [AXUIElement]) ?? []).first else { exit(1) }
+    var p = CGPoint(x: Double(args[3])!, y: Double(args[4])!)
+    AXUIElementSetAttributeValue(w, kAXPositionAttribute as CFString, AXValueCreate(.cgPoint, &p)!)
+    usleep(500_000); print(fmt(frame(w)))
 default: print("unknown mode"); exit(2)
 }

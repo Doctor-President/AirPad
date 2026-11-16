@@ -6,12 +6,15 @@ set -u
 APP=${1:?app}; OUT=${2:?out}; mkdir -p $OUT
 R=${0:A:h:h:h:h}/build/mac-e/fixup2/rclick
 X=${R:h}/axids
-[[ -x $R ]] || swiftc -O -o $R ${0:A:h}/rclick.swift || exit 2
+[[ -x $R && $R -nt ${0:A:h}/rclick.swift ]] || swiftc -O -o $R ${0:A:h}/rclick.swift || exit 2
 [[ -x $X ]] || swiftc -O -o $X ${0:A:h}/axids.swift || exit 2
 caffeinate -d -u -w $$ &
 $APP/Contents/MacOS/AirPad -ApplePersistenceIgnoreState YES ${=EXTRA:-} > $OUT/app.log 2>&1 &
 P=$!; trap "kill $P 2>/dev/null" EXIT
 sleep 12
+# Clear of the screen's top-right corner, where notification banners sit over the trailing controls (a banner took
+# the + once and opened its own app). rclick refuses any press another app covers.
+$R winmove $P 0 160 > /dev/null
 PASS=0; FAIL=0; : > $OUT/matrix.txt
 row() { # row <ok 0/1> <name> <detail>
   if [[ $1 == 1 ]]; then PASS=$((PASS+1)); s=PASS; else FAIL=$((FAIL+1)); s=FAIL; fi
@@ -58,10 +61,18 @@ $R drag $P $gx $gy 60 40 >> $OUT/clicks.log; sleep 0.8; w1=$($R winpos $P)
 row $([[ $w0 != $w1 ]] && echo 1 || echo 0) "window drag on the empty bar at ($gx,$gy) by (60,40)" "$w0 → $w1"
 $R drag $P $((gx+60)) $((gy+40)) -60 -40 >> $OUT/clicks.log; sleep 0.8
 
-# A press on a control that wanders 3 pt before release is still the control's, never a window drag.
-w0=$($R winpos $P); m=$($R find $P toolbar.view.Map | tr -d '()' | awk -F'[, ×]' '{printf "%d %d", $1+$3/2, $2+$4/2}')
-$R drag $P ${=m} 3 2 >> $OUT/clicks.log; sleep 0.8; w1=$($R winpos $P)
-row $([[ $w0 == $w1 ]] && echo 1 || echo 0) "press on Map, 3 pt wander, release: the window stays" "$w0 → $w1"
+# A press on a control that wanders 8 pt before release is still the control's, never a window drag. Control: the same
+# wander on the empty bar moves the window by it (so the row can see a drag). Frames are read once they stop moving.
+stable() { local a b; a=$($R winpos $P); while :; do sleep 0.7; b=$($R winpos $P); [[ $a == $b ]] && break; a=$b; done; print -r -- $b }
+dy() { print -r -- $(( $(print -r -- $2 | tr -d '()' | cut -d, -f2 | cut -d' ' -f1) - $(print -r -- $1 | tr -d '()' | cut -d, -f2 | cut -d' ' -f1) )) }
+w0=$(stable); $R drag $P $gx $gy 8 8 >> $OUT/clicks.log; w1=$(stable)
+row $([[ $(dy $w0 $w1) -ge 6 ]] && echo 1 || echo 0) "CONTROL 8 pt wander on the empty bar moves the window (≥ 6 pt)" "$w0 → $w1"
+for v in Map Cards; do
+  s0=$(sel $v); [[ $s0 == 1 ]] && { click toolbar.view.List; sleep 1.2; s0=$(sel $v) }   # needs a change
+  w0=$(stable); m=$($R find $P toolbar.view.$v | tr -d '()' | awk -F'[, ×]' '{printf "%d %d", $1+$3/2, $2+$4/2}')
+  $R drag $P ${=m} 8 -8 >> $OUT/clicks.log; w1=$(stable); s=$(sel $v)
+  row $([[ $w0 == $w1 && $s0 == 0 && $s == 1 ]] && echo 1 || echo 0) "press on $v, 8 pt wander, release: the window stays, $v is on" "$w0 → $w1 · selected $s0 → $s"
+done
 
 # + New Entry: a new entry opens (Recents counts it; it goes on the place's NavigationStack, so ‹ lights up).
 n0=$($R get $P sidebar.recents AXDescription); click toolbar.newEntry; sleep 2.5; n1=$($R get $P sidebar.recents AXDescription)

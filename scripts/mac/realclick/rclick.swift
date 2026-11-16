@@ -4,6 +4,7 @@
 //   rclick find  <pid> <id-or-title>            → frame of the first match
 //   rclick click <pid> <id-or-title> [n]        → move + down/up at its centre (n-th match, default 0)
 //   rclick clickat <pid> <x> <y>                → at a screen point (top-left origin)
+//   rclick dclickat <pid> <x> <y>               → a double click at a screen point
 //   rclick drag  <pid> <x> <y> <dx> <dy>        → press, move in 10 steps, release
 //   rclick type  <pid> <text>                   → key events (a–z, space)
 //   rclick key   <pid> <keycode>                → one key (53 = Esc)
@@ -81,6 +82,16 @@ case "click":
     front()
     guard let e = target(args[3], args.count > 4 ? Int(args[4])! : 0) else { exit(1) }
     let r = frame(e); clickAt(CGPoint(x: r.midX, y: r.midY)); print("clicked \(args[3]) at (\(Int(r.midX)),\(Int(r.midY))) \(fmt(r))")
+case "dclickat":
+    front(); let p = CGPoint(x: Double(args[3])!, y: Double(args[4])!); ensureOwned(p)
+    post(.mouseMoved, p); usleep(120_000)
+    for n in 1...2 {
+        for t in [CGEventType.leftMouseDown, .leftMouseUp] {
+            let e = CGEvent(mouseEventSource: nil, mouseType: t, mouseCursorPosition: p, mouseButton: .left)
+            e?.setIntegerValueField(.mouseEventClickState, value: Int64(n)); e?.post(tap: .cghidEventTap); usleep(60_000)
+        }
+    }
+    usleep(600_000); print("double-clicked at (\(Int(p.x)),\(Int(p.y)))")
 case "clickat":
     front(); let p = CGPoint(x: Double(args[3])!, y: Double(args[4])!); clickAt(p); print("clicked at (\(Int(p.x)),\(Int(p.y)))")
 case "drag":

@@ -514,6 +514,7 @@ struct ContentView: View {
         .onChange(of: router.showChatsList) { _, show in
             guard show else { return }
             router.showChatsList = false
+            MacLayout.shared.closeSettings()
             MacLayout.shared.librarianOpen = true
             router.librarianAtPeek = false
             router.requestMacPanel(router.pendingChatToOpen.map { .chat($0) } ?? .history)
@@ -842,6 +843,10 @@ struct ContentView: View {
             guard !busy else { return }
             if router.entryMode != .dashboard { router.entryMode = .dashboard }   // on the Dashboard, it pops to its top
         case .settings:
+            #if targetEnvironment(macCatalyst)
+            MacLayout.shared.openSettings()   // E fix-up 3 (H4) — the right slide-out, not a sheet
+            return
+            #endif
             router.showSettings = true
         case .librarian:
             #if targetEnvironment(macCatalyst)
@@ -862,6 +867,7 @@ struct ContentView: View {
             }
         case .find:
             #if targetEnvironment(macCatalyst)
+            MacLayout.shared.closeSettings()
             MacLayout.shared.librarianOpen = true   // Mac batch D — the search lives in the toolbar; results in the column
             router.librarianAtPeek = false
             return

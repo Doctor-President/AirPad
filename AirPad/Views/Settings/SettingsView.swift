@@ -51,6 +51,13 @@ struct SettingsView: View {
         self.initialAnchor = initialAnchor
         _path = State(initialValue: Self.seededPath(anchor: initialAnchor))
     }
+
+    /// E fix-up 3 (H4) — Mac: Settings as the right slide-out, not a sheet. Done closes the panel (`close`).
+    var panelClose: (() -> Void)? = nil
+    init(initialAnchor: Anchor?, inPanel close: @escaping () -> Void) {
+        self.init(initialAnchor: initialAnchor)
+        panelClose = close
+    }
     #if DEBUG
     init(debugInitialDest: Dest?) {
         self.debugInitialDest = debugInitialDest
@@ -209,15 +216,14 @@ struct SettingsView: View {
                 ToolbarItem(placement: .confirmationAction) {
                     Button("Done") {
                         saveKeys()
-                        dismiss()
+                        if let panelClose { panelClose() } else { dismiss() }
                     }
                     .foregroundStyle(AppearancePalette.ink)
                     .fontWeight(.semibold)
                 }
             }
         }
-        .presentationBackground(AppearancePalette.bgBase)
-        .macSheetSize()   // Mac batch C6
+        .modifier(SettingsSheetSizing(inPanel: panelClose != nil))
         .onAppear {
             loadKeys()
             // Brief AL1 — pairing state is the shared observable `HostCatalog.shared.isPaired`
@@ -248,6 +254,7 @@ struct SettingsView: View {
             .padding(.vertical, 2)
         }
         .listRowBackground(AppearancePalette.ink.opacity(0.04))
+        .accessibilityIdentifier("settingsRow.\(title)")
     }
 
     @ViewBuilder
@@ -1724,6 +1731,18 @@ private struct FlowLayoutSettings: Layout {
             view.place(at: CGPoint(x: x, y: y), proposal: ProposedViewSize(size))
             x += size.width + spacing
             rowHeight = max(rowHeight, size.height)
+        }
+    }
+}
+
+/// The sheet's sizing (Mac batch C6) — not in the Mac's Settings panel (H4), which takes the slot's width.
+private struct SettingsSheetSizing: ViewModifier {
+    let inPanel: Bool
+    func body(content: Content) -> some View {
+        if inPanel {
+            content
+        } else {
+            content.presentationBackground(AppearancePalette.bgBase).macSheetSize()
         }
     }
 }

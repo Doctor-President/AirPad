@@ -27,10 +27,14 @@ final class MacLayout {
     private static let librarianKey = "mac.layout.librarian.v1"
     static let sidebarWidthKey = "mac.layout.sidebarWidth.v1"
     static let librarianWidthKey = "mac.layout.librarianWidth.v1"
+    static let settingsWidthKey = "mac.layout.settingsWidth.v1"
+    static let settingsWidthDefault: CGFloat = 420
 
     /// The panels' widths: during an edge drag they follow the pointer (only the panel frames read them live).
     var sidebarWidth: CGFloat { didSet { widthsMoved() } }
     var librarianWidth: CGFloat { didSet { widthsMoved() } }
+    /// E fix-up 3 (H4) — Settings' own width in the same slot (the Librarian's range), remembered.
+    var settingsWidth: CGFloat { didSet { widthsMoved() } }
 
     /// E fix-up G2 — the widths the heavy layout uses (the content: Map camera/regions, List/Cards reflow; the
     /// Librarian's text; the toolbar's spacing). Outside a drag they ARE the widths; during one they follow at most
@@ -39,6 +43,7 @@ final class MacLayout {
     /// @AppStorage reader in the app).
     private(set) var settledSidebarWidth: CGFloat = 0
     private(set) var settledLibrarianWidth: CGFloat = 0
+    private(set) var settledSettingsWidth: CGFloat = 0
     private(set) var columnDragging = false
     private var settleTask: Task<Void, Never>?
     static let dragSettleInterval: Double = 0.1
@@ -47,11 +52,34 @@ final class MacLayout {
     /// content's minimum beside it; toggles back to the remembered width, which it never overwrites.
     private(set) var librarianExpanded = false
     private var widthBeforeExpand: CGFloat?
-    /// ⌘L and the toolbar's Librarian button: open / close the column (the panel model reads `librarianAtPeek`).
+    /// ⌘L and the toolbar's Librarian button: open / close the column (the panel model reads `librarianAtPeek`). With
+    /// Settings in the slot, it closes Settings and shows the Librarian.
     func toggleLibrarian(_ router: AppRouter) {
-        librarianOpen.toggle()
+        if settingsOpen { settingsOpen = false; librarianOpen = true } else { librarianOpen.toggle() }
         router.librarianAtPeek = !librarianOpen
     }
+
+    // MARK: E fix-up 3 (H4) — Settings as a right slide-out (T ruled 2026-11-15 night)
+
+    /// Settings in the Librarian's slot: it replaces the Librarian while open; `librarianOpen` is left alone, so the
+    /// Librarian comes back on close (or stays closed). Not remembered across launches.
+    var settingsOpen = false
+    /// The section Settings opens on (a deep link: Web search, Models) and a serial that re-seeds the panel per open.
+    private(set) var settingsAnchor: SettingsView.Anchor?
+    private(set) var settingsSerial = 0
+    func openSettings(_ anchor: SettingsView.Anchor? = nil) {
+        if settingsOpen, anchor == nil { return }   // ⌘, / the gear again: it's already there, keep its place
+        settingsAnchor = anchor
+        settingsSerial += 1
+        settingsOpen = true
+    }
+    func closeSettings() { settingsOpen = false }
+    /// Something sits in the right slot (Settings or the Librarian), and the Librarian is the one showing.
+    var rightPanelOpen: Bool { settingsOpen || librarianOpen }
+    var librarianShowing: Bool { librarianOpen && !settingsOpen }
+    /// The slot's width: Settings' while it's there, else the Librarian's.
+    var rightWidth: CGFloat { settingsOpen ? settingsWidth : librarianWidth }
+    var settledRightWidth: CGFloat { settingsOpen ? settledSettingsWidth : settledLibrarianWidth }
 
     func toggleLibrarianExpanded() {
         if librarianExpanded {
@@ -90,6 +118,7 @@ final class MacLayout {
             guard let self, !Task.isCancelled else { return }
             self.settledSidebarWidth = self.sidebarWidth
             self.settledLibrarianWidth = self.librarianWidth
+            self.settledSettingsWidth = self.settingsWidth
             self.settleTask = nil
         }
     }
@@ -97,7 +126,9 @@ final class MacLayout {
     private func settleWidths() {
         if settledSidebarWidth != sidebarWidth { settledSidebarWidth = sidebarWidth }
         if settledLibrarianWidth != librarianWidth { settledLibrarianWidth = librarianWidth }
+        if settledSettingsWidth != settingsWidth { settledSettingsWidth = settingsWidth }
         let d = UserDefaults.standard
+        if d.double(forKey: Self.settingsWidthKey) != Double(settingsWidth) { d.set(Double(settingsWidth), forKey: Self.settingsWidthKey) }
         if d.double(forKey: Self.sidebarWidthKey) != Double(sidebarWidth) { d.set(Double(sidebarWidth), forKey: Self.sidebarWidthKey) }
         if !librarianExpanded, d.double(forKey: Self.librarianWidthKey) != Double(librarianWidth) { d.set(Double(librarianWidth), forKey: Self.librarianWidthKey) }
     }
@@ -124,19 +155,20 @@ final class MacLayout {
     /// F5 — follows from the widths: the content would drop below `contentMinWidth`. (G2: from the settled widths —
     /// the same outside a drag; during one the frame doesn't re-read per pointer event.)
     var librarianFloats: Bool {
-        windowWidth - (sidebarVisible ? settledSidebarWidth + 1 : 0) - (settledLibrarianWidth + 1) < Self.contentMinWidth
+        windowWidth - (sidebarVisible ? settledSidebarWidth + 1 : 0) - (settledRightWidth + 1) < Self.contentMinWidth
     }
     /// The content column's width (window minus the sidebar), the floating Librarian's room.
     var contentWidth: CGFloat { windowWidth - (sidebarVisible ? settledSidebarWidth + 1 : 0) }
     /// E5 — floating, the Librarian always leaves a strip beside it for the open entry's own + (56 pt and its gaps):
     /// at the smallest window with both panels widest it draws a little narrower (the remembered width is untouched).
-    var floatingLibrarianWidth: CGFloat { max(MacLayout.librarianWidthRange.lowerBound - 40, min(librarianWidth, contentWidth - Self.entryPlusStrip - 10)) }
+    var floatingLibrarianWidth: CGFloat { max(MacLayout.librarianWidthRange.lowerBound - 40, min(rightWidth, contentWidth - Self.entryPlusStrip - 10)) }
     static let entryPlusStrip: CGFloat = 84
     var settledFloatingLibrarianWidth: CGFloat {
-        max(MacLayout.librarianWidthRange.lowerBound - 40, min(settledLibrarianWidth, contentWidth - Self.entryPlusStrip - 10))
+        max(MacLayout.librarianWidthRange.lowerBound - 40, min(settledRightWidth, contentWidth - Self.entryPlusStrip - 10))
     }
-    /// E5 — the open entry's floating + : 24 pt from the content's corner, or just left of a floating Librarian.
-    var entryPlusTrailing: CGFloat { librarianOpen && librarianFloats ? floatingLibrarianWidth + 10 + 14 : 24 }
+    /// E5 — the open entry's floating + : 24 pt from the content's corner, or just left of a floating Librarian (or
+    /// Settings, H4).
+    var entryPlusTrailing: CGFloat { rightPanelOpen && librarianFloats ? floatingLibrarianWidth + 10 + 14 : 24 }
 
     /// The Librarian column's panel state: always fully open — there is no FloatingPanel on the Mac, so its moves are
     /// no-ops and the surface lays out as its expanded self.
@@ -156,8 +188,11 @@ final class MacLayout {
             .map { min(max($0, Self.sidebarWidthRange.lowerBound), Self.sidebarWidthRange.upperBound) } ?? Self.sidebarWidthDefault
         librarianWidth = (d.object(forKey: Self.librarianWidthKey) == nil ? nil : CGFloat(d.double(forKey: Self.librarianWidthKey)))
             .map { min(max($0, Self.librarianWidthRange.lowerBound), Self.librarianWidthRange.upperBound) } ?? Self.librarianWidthDefault
+        settingsWidth = (d.object(forKey: Self.settingsWidthKey) == nil ? nil : CGFloat(d.double(forKey: Self.settingsWidthKey)))
+            .map { min(max($0, Self.librarianWidthRange.lowerBound), Self.librarianWidthRange.upperBound) } ?? Self.settingsWidthDefault
         settledSidebarWidth = sidebarWidth
         settledLibrarianWidth = librarianWidth
+        settledSettingsWidth = settingsWidth
         #if DEBUG
         // Stills: `-MacSidebar on|off`, `-MacLibrarian open|closed` (not remembered).
         if let s = d.string(forKey: "MacSidebar") { sidebarVisible = s == "on" }
@@ -182,7 +217,7 @@ struct MacDesktopFrame<Content: View>: View {
 
     /// The regions on screen, in Tab order.
     private var regions: [MacRegion] {
-        (layout.sidebarVisible ? [.sidebar] : []) + [.content] + (layout.librarianOpen ? [.librarian] : [])
+        (layout.sidebarVisible ? [.sidebar] : []) + [.content] + (layout.librarianShowing ? [.librarian] : [])
     }
 
     var body: some View {
@@ -221,6 +256,7 @@ struct MacDesktopFrame<Content: View>: View {
         }
         .animation(.easeOut(duration: 0.2), value: layout.sidebarVisible)
         .animation(.easeOut(duration: 0.2), value: layout.librarianOpen)
+        .animation(.easeOut(duration: 0.2), value: layout.settingsOpen)
         .animation(.easeOut(duration: 0.2), value: layout.librarianFloats)
         // D7 — Tab / ⇧Tab: sidebar → content → Librarian (a text field keeps its own Tab: indent, next field).
         .onKeyPress(keys: [.tab]) { press in
@@ -241,16 +277,16 @@ struct MacDesktopFrame<Content: View>: View {
                 .focusEffectDisabled()
                 .focused($region, equals: .content)
                 .overlay(alignment: .trailing) {
-                    if layout.librarianOpen && layout.librarianFloats {
+                    if layout.rightPanelOpen && layout.librarianFloats {
                         MacFloatingLibrarianPanel(hostScope: hostScope)
                             .transition(.move(edge: .trailing).combined(with: .opacity))
                     }
                 }
-            if layout.librarianOpen && !layout.librarianFloats {
+            if layout.rightPanelOpen && !layout.librarianFloats {
                 // G2 — the Librarian's slot follows the settled width; the panel and its hairline are drawn over it at the
-                // live width (as the sidebar's).
+                // live width (as the sidebar's). H4 — Settings takes the same slot at its own width.
                 Color.clear
-                    .frame(width: layout.settledLibrarianWidth + 1)
+                    .frame(width: layout.settledRightWidth + 1)
                     .overlay(alignment: .trailing) { MacLibrarianPanel(hostScope: hostScope) }
                     .transition(.move(edge: .trailing))
             }
@@ -311,14 +347,53 @@ private struct MacLibrarianPanel: View {
     var body: some View {
         HStack(spacing: 0) {
             MacHairline()
-                .overlay { MacResizeHandle(id: "resize.librarian") { dx, start in
-                    layout.librarianWidth = MacLayout.clamp(start - dx, MacLayout.librarianWidthRange)
-                } startValue: { layout.librarianWidth } }
-            MacLibrarianColumn(hostScope: hostScope)
-                .frame(width: layout.columnDragging ? layout.settledLibrarianWidth : nil)   // text reflows ≤ 10×/s
-                .frame(width: layout.librarianWidth, alignment: .trailing)
+                .overlay { MacRightSlotResizeHandle() }
+            MacRightSlotContent(hostScope: hostScope)
+                .frame(width: layout.columnDragging ? layout.settledRightWidth : nil)   // text reflows ≤ 10×/s
+                .frame(width: layout.rightWidth, alignment: .trailing)
                 .clipped()
         }
+    }
+}
+
+/// H4 — the right slot's content: Settings while it's open, else the Librarian.
+private struct MacRightSlotContent: View {
+    let hostScope: CanvasScope
+    @State private var layout = MacLayout.shared
+    var body: some View {
+        if layout.settingsOpen {
+            MacSettingsColumn()
+        } else {
+            MacLibrarianColumn(hostScope: hostScope)
+        }
+    }
+}
+
+/// The right slot's edge: drags the width of whichever panel is in it (each remembers its own, in the same range).
+private struct MacRightSlotResizeHandle: View {
+    @State private var layout = MacLayout.shared
+    var body: some View {
+        if layout.settingsOpen {
+            MacResizeHandle(id: "resize.settings") { dx, start in
+                layout.settingsWidth = MacLayout.clamp(start - dx, MacLayout.librarianWidthRange)
+            } startValue: { layout.settingsWidth }
+        } else {
+            MacResizeHandle(id: "resize.librarian") { dx, start in
+                layout.librarianWidth = MacLayout.clamp(start - dx, MacLayout.librarianWidthRange)
+            } startValue: { layout.librarianWidth }
+        }
+    }
+}
+
+/// E fix-up 3 (H4) — Settings in the right slot: the same screens as the iPhone's sheet (each section pushes with a
+/// ‹ back to the panel's home), beside the live view; Done closes it.
+struct MacSettingsColumn: View {
+    @State private var layout = MacLayout.shared
+    var body: some View {
+        SettingsView(initialAnchor: layout.settingsAnchor, inPanel: { layout.closeSettings() })
+            .id(layout.settingsSerial)   // a deep link (Web search, Models) re-seeds the panel's path
+            .background(AppearancePalette.bgBase)
+            .accessibilityIdentifier("macSettingsPanel")
     }
 }
 
@@ -327,15 +402,11 @@ private struct MacFloatingLibrarianPanel: View {
     @State private var layout = MacLayout.shared
 
     var body: some View {
-        MacLibrarianColumn(hostScope: hostScope)
+        MacRightSlotContent(hostScope: hostScope)
             .frame(width: layout.columnDragging ? layout.settledFloatingLibrarianWidth : nil)
             .frame(width: layout.floatingLibrarianWidth, alignment: .trailing)
             .clipped()
-            .overlay(alignment: .leading) {
-                MacResizeHandle(id: "resize.librarian") { dx, start in
-                    layout.librarianWidth = MacLayout.clamp(start - dx, MacLayout.librarianWidthRange)
-                } startValue: { layout.librarianWidth }
-            }
+            .overlay(alignment: .leading) { MacRightSlotResizeHandle() }
             .clipShape(RoundedRectangle(cornerRadius: 14, style: .continuous))
             .overlay(RoundedRectangle(cornerRadius: 14, style: .continuous)
                 .strokeBorder(AppearancePalette.ink.opacity(0.10), lineWidth: 1))
@@ -537,6 +608,9 @@ struct MacSidebar: View {
             .padding(.vertical, 12)
         }
         .accessibilityIdentifier("macSidebar")
+        // E fix-up 3 (H4) — Settings: a gear at the sidebar's foot, always there (the list scrolls above it). After the
+        // sidebar's identifier, which would otherwise name the gear too.
+        .safeAreaInset(edge: .bottom, spacing: 0) { MacSidebarSettingsButton() }
         // D7 — with the sidebar focused, ↑ / ↓ go to the previous / next place.
         .onKeyPress(.downArrow) { step(+1); return .handled }
         .onKeyPress(.upArrow) { step(-1); return .handled }
@@ -609,6 +683,36 @@ struct MacSidebar: View {
                      action: @escaping () -> Void) -> some View {
         MacSidebarRow(title: title, icon: icon, dot: dot, count: count, selected: selected, action: action)
             .accessibilityIdentifier(id)
+    }
+}
+
+/// H4 — the sidebar's gear: opens Settings in the right slot (again: closes it). Lit while Settings is open.
+private struct MacSidebarSettingsButton: View {
+    @State private var layout = MacLayout.shared
+    @State private var hovering = false
+    @Environment(\.colorScheme) private var scheme
+    var body: some View {
+        HStack {
+            Button { layout.settingsOpen ? layout.closeSettings() : layout.openSettings() } label: {
+                Image(systemName: "gearshape")
+                    .font(.system(size: 15, weight: .medium))
+                    .foregroundStyle(AppearancePalette.ink.opacity(layout.settingsOpen ? 0.95 : 0.7))
+                    .frame(width: 32, height: 30)
+                    .background(Capsule().fill(AppearancePalette.ink.opacity(layout.settingsOpen ? 0.13 : (hovering ? 0.07 : 0))))
+                    .contentShape(Capsule())
+            }
+            .buttonStyle(.plain)
+            .onHover { hovering = $0 }
+            .help("Settings (⌘,)")
+            .accessibilityLabel("Settings")
+            .accessibilityValue(layout.settingsOpen ? "Open" : "Closed")
+            .accessibilityIdentifier("sidebar.settings")
+            Spacer()
+        }
+        .padding(.horizontal, 14)
+        .padding(.vertical, 8)
+        .background { MacSidebar.ground(scheme) }   // the list scrolls under the foot, not through it
+        .overlay(alignment: .top) { Rectangle().fill(AppearancePalette.ink.opacity(0.08)).frame(height: 1) }
     }
 }
 
@@ -1131,6 +1235,7 @@ enum MacToolbarProbe {
         l.add(to: .main, forMode: .common)
         link = l
         if ProcessInfo.processInfo.arguments.contains("-MacClickTraceAppKit") { MacClick.traceWindowMethods() }
+        if ProcessInfo.processInfo.arguments.contains("-MacClickTraceCancel") { traceCancels() }
         // AppKit: every left mouse down / up the window receives (before UIKit sees it).
         if let cls = NSClassFromString("NSWindow"), let m = class_getInstanceMethod(cls, NSSelectorFromString("sendEvent:")) {
             typealias O = @convention(c) (NSObject, Selector, NSObject) -> Void
@@ -1182,6 +1287,45 @@ enum MacToolbarProbe {
             method_setImplementation(m, imp_implementationWithBlock(block))
         }
     }
+    /// Every UIKit method named *cancel* / *ignor* on the app, its windows and the gesture environment, with its callers.
+    static func traceCancels() {
+        for name in ["UIApplication", "UIWindow", "UIGestureEnvironment", "_UIGestureEnvironment", "UIGestureRecognizer",
+                     "UIEventDispatcher", "UITouchesEvent", "UIEventEnvironment", "UIScene", "UIWindowScene"] {
+            guard let cls = NSClassFromString(name) else { continue }
+            var count: UInt32 = 0
+            guard let list = class_copyMethodList(cls, &count) else { continue }
+            for i in 0..<Int(count) {
+                let m = list[i]; let sel = method_getName(m); let sname = NSStringFromSelector(sel); let low = sname.lowercased()
+                guard low.contains("cancel") || low.contains("ignoringinteraction") || low.contains("ignoreinteraction"),
+                      let enc = method_getTypeEncoding(m) else { continue }
+                let e = String(cString: enc)
+                func log() {
+                    let callers = Thread.callStackSymbols.dropFirst(2).prefix(6).map { line -> String in
+                        let parts = line.split(separator: " ", omittingEmptySubsequences: true)
+                        return parts.count > 3 ? String(parts[3...].joined(separator: " ").prefix(70)) : String(line.prefix(70)) }
+                    NSLog("[ClickTrace] cancel %@ -%@ t=%.0f ← %@", name, sname, CFAbsoluteTimeGetCurrent() * 1000, callers.joined(separator: " ← "))
+                }
+                if e.hasPrefix("v16@0:8") {
+                    typealias O = @convention(c) (NSObject, Selector) -> Void
+                    let orig = unsafeBitCast(method_getImplementation(m), to: O.self)
+                    let b: @convention(block) (NSObject) -> Void = { o in log(); orig(o, sel) }
+                    method_setImplementation(m, imp_implementationWithBlock(b))
+                } else if e.hasPrefix("v24@0:8@16") {
+                    typealias O = @convention(c) (NSObject, Selector, NSObject?) -> Void
+                    let orig = unsafeBitCast(method_getImplementation(m), to: O.self)
+                    let b: @convention(block) (NSObject, NSObject?) -> Void = { o, a in log(); orig(o, sel, a) }
+                    method_setImplementation(m, imp_implementationWithBlock(b))
+                } else if e.hasPrefix("v20@0:8B16") || e.hasPrefix("v20@0:8c16") {
+                    typealias O = @convention(c) (NSObject, Selector, Bool) -> Void
+                    let orig = unsafeBitCast(method_getImplementation(m), to: O.self)
+                    let b: @convention(block) (NSObject, Bool) -> Void = { o, f in log(); orig(o, sel, f) }
+                    method_setImplementation(m, imp_implementationWithBlock(b))
+                }
+            }
+            free(list)
+        }
+    }
+
     @MainActor final class Ticker: NSObject {
         static let shared = Ticker()
         @objc func tick(_ l: CADisplayLink) {
@@ -1277,7 +1421,7 @@ struct MacToolbarTrailing: View {
             .padding(.trailing, 4)
             // E fix-up 3 (H1) — straight to the column, not through `router.perform` (its command hop cost a SwiftUI pass over
             // every view that watches commands, ~70 ms, before the column moved).
-            MacLibrarianToolbarButton(open: layout.librarianOpen) { MacClickTrace.mark("librarian"); layout.toggleLibrarian(router) }
+            MacLibrarianToolbarButton(open: layout.librarianShowing) { MacClickTrace.mark("librarian"); layout.toggleLibrarian(router) }
             MacToolbarIconButton(systemName: "plus", help: "New Entry", id: "toolbar.newEntry") { router.perform(.newEntry) }
                 .macToolbarProbe("toolbar.newEntry")
         }
@@ -1289,7 +1433,7 @@ struct MacToolbarTrailing: View {
             if request?.command == .find { searchFocused = true }
         }
         .onChange(of: librarian.searchText) { _, text in
-            if !text.isEmpty, !layout.librarianOpen { layout.librarianOpen = true; router.librarianAtPeek = false }
+            if !text.isEmpty, !layout.librarianShowing { layout.closeSettings(); layout.librarianOpen = true; router.librarianAtPeek = false }
         }
     }
 }

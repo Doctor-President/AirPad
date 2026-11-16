@@ -8,10 +8,13 @@
 //   rclick drag  <pid> <x> <y> <dx> <dy>        → press, move in 10 steps, release
 //   rclick type  <pid> <text>                   → key events (a–z, space)
 //   rclick key   <pid> <keycode>                → one key (53 = Esc)
+//   rclick cmdkey <pid> <keycode>               → the key with ⌘ (43 = ",")
 //   rclick get   <pid> <id-or-title> <attr>     → an attribute (AXValue, AXFocused, AXSelected …)
 //   rclick has   <pid> <id-or-title>            → "yes <frame>" / "no"
 //   rclick hover <pid> <id-or-title>            → the pointer onto its centre, no press
 //   rclick focus <pid>                          → the app's focused element
+//   rclick menu <pid> <menu> <item-prefix>      → press a menu-bar item (AX; for setup)
+//   rclick winsize <pid> <w> <h>                → resize the main window (AX)
 //   rclick winpos <pid>                         → the main window's frame
 //   rclick winmove <pid> <x> <y>                → move the main window (clear of banners in the screen's corners)
 // A press whose point another app covers (a notification banner, a window) is NOT posted: "COVERED … by <app>", exit 3.
@@ -129,6 +132,12 @@ case "key":
     front(); let k = CGKeyCode(args[3])!
     CGEvent(keyboardEventSource: nil, virtualKey: k, keyDown: true)?.post(tap: .cghidEventTap); usleep(40_000)
     CGEvent(keyboardEventSource: nil, virtualKey: k, keyDown: false)?.post(tap: .cghidEventTap); usleep(300_000); print("key \(k)")
+case "cmdkey":   // rclick cmdkey <pid> <keycode>: the key with ⌘ (43 = ",")
+    front(); let k = CGKeyCode(args[3])!
+    for down in [true, false] {
+        let e = CGEvent(keyboardEventSource: nil, virtualKey: k, keyDown: down); e?.flags = .maskCommand; e?.post(tap: .cghidEventTap); usleep(40_000)
+    }
+    usleep(500_000); print("⌘ key \(k)")
 case "get":
     guard let e = target(args[3]) else { exit(1) }
     print(a(e, args[4]).map { "\($0)" } ?? "nil")
@@ -136,6 +145,24 @@ case "focus":   // the app's focused element: role · identifier · description
     guard let f = a(app, kAXFocusedUIElementAttribute) else { print("none"); exit(0) }
     let e = f as! AXUIElement
     print("\(a(e, kAXRoleAttribute) ?? "?" as AnyObject) · \(a(e, "AXIdentifier") ?? "-" as AnyObject) · \(a(e, kAXDescriptionAttribute) ?? "-" as AnyObject) · \(fmt(frame(e)))")
+case "menu":   // rclick menu <pid> <menu> <item>: press a menu-bar item through Accessibility (setup, not a click test)
+    front()
+    guard let bar = a(app, kAXMenuBarAttribute) else { print("no menu bar"); exit(1) }
+    func kids(_ e: AnyObject) -> [AXUIElement] { (a(e as! AXUIElement, kAXChildrenAttribute) as? [AXUIElement]) ?? [] }
+    guard let top = kids(bar).first(where: { (a($0, kAXTitleAttribute) as? String) == args[3] }) else { print("no menu \(args[3])"); exit(1) }
+    let items = kids(top).flatMap { kids($0 as AnyObject) }
+    guard let it = items.first(where: { ((a($0, kAXTitleAttribute) as? String) ?? "").hasPrefix(args[4]) }) else {
+        print("no item \(args[4]) in \(items.compactMap { a($0, kAXTitleAttribute) as? String })"); exit(1) }
+    AXUIElementPerformAction(it, kAXPressAction as CFString); usleep(800_000); print("pressed \(args[3]) › \(args[4])")
+case "press":   // rclick press <pid> <id-or-title> [n|last]: AXPress (setup only, not a click test)
+    let m = matches(args[3]); guard !m.isEmpty else { print("no match"); exit(1) }
+    let e = args.count > 4 ? (args[4] == "last" ? m.last! : m[Int(args[4])!]) : m[0]
+    AXUIElementPerformAction(e, kAXPressAction as CFString); usleep(600_000); print("pressed \(args[3]) (\(m.count) found)")
+case "winsize":  // rclick winsize <pid> <w> <h>
+    guard let w = ((a(app, kAXWindowsAttribute) as? [AXUIElement]) ?? []).first else { exit(1) }
+    var sz = CGSize(width: Double(args[3])!, height: Double(args[4])!)
+    AXUIElementSetAttributeValue(w, kAXSizeAttribute as CFString, AXValueCreate(.cgSize, &sz)!)
+    usleep(700_000); print(fmt(frame(w)))
 case "winpos":
     let w = ((a(app, kAXWindowsAttribute) as? [AXUIElement]) ?? []).first
     print(w.map { fmt(frame($0)) } ?? "none")

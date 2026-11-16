@@ -218,8 +218,9 @@ enum MacMenuSelfTest {
         }
         row("fire/File›New Collection opens its sheet", await go("File", "New Collection") && router.showNewCollection && presented() != nil)
         await dismissPresented()
-        row("fire/Settings… opens Settings", await go("AirPad", "Settings…") && router.showSettings && presented() != nil)
-        await dismissPresented()
+        // E fix-up 3 (H4) — Settings opens as the right slide-out (no sheet).
+        row("fire/Settings… opens Settings (the panel)", await go("AirPad", "Settings…") && MacLayout.shared.settingsOpen && presented() == nil)
+        MacLayout.shared.closeSettings()
         let before = store.nodes.count
         row("fire/File›New Entry opens a new entry", await go("File", "New Entry") && router.isCapturing && store.isInDetailView,
             "capturing=\(router.isCapturing) depth=\(store.detailViewDepth) nodes \(before)→\(store.nodes.count)")

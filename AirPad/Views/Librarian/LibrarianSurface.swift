@@ -1163,9 +1163,16 @@ struct LibrarianSurface: View {
         .appSheet(isPresented: $showingLibrarianPinSheet) {
             PinChatSheet(chatID: router.chat.id).environment(store)
         }
-        .appSheet(item: $settingsPresentation) { presentation in
+        .appSheet(item: macSettingsAsPanel) { presentation in
             SettingsView(initialAnchor: presentation.anchor)
         }
+        #if targetEnvironment(macCatalyst)
+        .onChange(of: settingsPresentation?.id) { _, id in
+            guard id != nil, let p = settingsPresentation else { return }
+            settingsPresentation = nil
+            MacLayout.shared.openSettings(p.anchor)
+        }
+        #endif
         #if DEBUG
         // Mac D fix-up B1 — `-MacSettingsSelfTest` opens Settings from this in-view sheet too (the ≡ drawer is gone on the Mac).
         .onReceive(NotificationCenter.default.publisher(for: .debugOpenLibrarianSettings)) { _ in settingsPresentation = .root }
@@ -2377,6 +2384,15 @@ struct LibrarianSurface: View {
     /// chip selection survives remounts. Crossing into a different
     /// host (Corpus → Reading collection, say) re-seeds.
     /// Mac batch D3 — the Librarian as the Mac's column (no FloatingPanel): header, no in-panel search, scope follows.
+    /// E fix-up 3 (H4) — on the Mac, Settings from here (the gear, "Manage models", the web-search and no-model notices)
+    /// opens as the right slide-out at its section, in place of this panel; elsewhere the sheet, as before.
+    private var macSettingsAsPanel: Binding<SettingsView.Presentation?> {
+        #if targetEnvironment(macCatalyst)
+        .constant(nil)   // the panel opens from `settingsPresentation`'s onChange
+        #else
+        $settingsPresentation
+        #endif
+    }
     private var isMacColumn: Bool { proxy == nil }
 
     /// D3 — "Librarian" and its Library/General switch, where the phone's grabber is. Batch E2 (T's v3 pick): its glyph

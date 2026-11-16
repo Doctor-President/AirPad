@@ -2,8 +2,8 @@
 import UIKit
 
 /// Mac D fix-up B2 — `-MacWebKeySelfTest` (with `-WebSearchBaseURL http://127.0.0.1:<port>` → `brave_stub.py`): a dummy
-/// Brave key typed into the REAL Settings › Web search field, Settings closed the way the Mac closes a sheet (Esc / the
-/// window, not Done), then read back from the Keychain and used by the search route (the stub logs whether the request
+/// Brave key typed into the REAL Settings › Web search field, Settings closed without Done (E fix-up 3: the panel's gear /
+/// the Librarian button), then read back from the Keychain and used by the search route (the stub logs whether the request
 /// carried it). Never prints the key. Leaves the Keychain item deleted.
 @MainActor
 enum MacWebKeySelfTest {
@@ -28,8 +28,13 @@ enum MacWebKeySelfTest {
             for s in v.subviews { if let f = field(in: s) { return f } }
             return nil
         }
+        // E fix-up 3 (H4) — Settings is the right slide-out in the main window now (no sheet).
+        func mainWindow() -> UIWindow? {
+            UIApplication.shared.connectedScenes.compactMap { $0 as? UIWindowScene }.flatMap(\.windows).first { $0.isKeyWindow }
+        }
+        func panelRoot() -> UIWindow? { MacLayout.shared.settingsOpen ? mainWindow() : nil }
         func press(_ label: String) -> Bool {
-            guard let w = presented()?.view.window else { return false }
+            guard let w = panelRoot() else { return false }
             return CaptureClickSelfTest.elementObjects(label, in: w).first?.accessibilityActivate() ?? false
         }
         func readBack() -> String {
@@ -51,10 +56,10 @@ enum MacWebKeySelfTest {
         // 1. Typed into Settings › Web search, closed without Done.
         _ = MacMenuSelfTest.fire(menu: "AirPad", title: "Settings…")
         await settle(1.2)
-        row("Settings open", presented() != nil)
+        row("Settings open (the panel, no sheet)", MacLayout.shared.settingsOpen && presented() == nil)
         row("Web search row pressed", press("Web search"))
         await settle(1.2)
-        guard let tf = presented().flatMap({ field(in: $0.view) }) else {
+        guard let tf = panelRoot().flatMap({ field(in: $0) }) else {
             row("Brave key field found", false)
             return "[MacWebKeySelfTest] FAIL\n" + rows.joined(separator: "\n")
         }
@@ -62,10 +67,9 @@ enum MacWebKeySelfTest {
         tf.becomeFirstResponder()
         tf.insertText(dummy)
         await settle(0.8)
-        let doneHere = presented().flatMap { $0.view.window }.map { !CaptureClickSelfTest.elementObjects("Done", in: $0).isEmpty } ?? false
-        rows.append("INFO a Done button on the Web search screen: \(doneHere ? "yes" : "no (only Back; Esc / the window close it)")")
-        presented()?.dismiss(animated: true)   // what Esc / the sheet's close does — no Done
-        router.showSettings = false
+        let doneHere = panelRoot().map { !CaptureClickSelfTest.elementObjects("Done", in: $0).isEmpty } ?? false
+        rows.append("INFO a Done button on the Web search screen: \(doneHere ? "yes" : "no (only Back; the gear / ⌘L close it)")")
+        MacLayout.shared.closeSettings()   // what the sidebar gear / the Librarian button do — no Done
         await settle(1.5)
         row("key saved when Settings closes without Done", readBack() == "found (the dummy)", readBack())
         row("search route has the key (hasKey)", WebSearchBackend.hasKey)
@@ -81,10 +85,9 @@ enum MacWebKeySelfTest {
         await settle(1.2)
         _ = press("Web search")
         await settle(1.2)
-        let shown = presented().flatMap { field(in: $0.view) }?.text ?? ""
+        let shown = panelRoot().flatMap { field(in: $0) }?.text ?? ""
         row("reopened: the field holds the saved key", shown == dummy, shown.isEmpty ? "empty" : (shown == dummy ? "the dummy" : "another value"))
-        presented()?.dismiss(animated: true)
-        router.showSettings = false
+        MacLayout.shared.closeSettings()
         await settle(1.0)
 
         KeychainHelper.delete(key: WebSearchBackend.keychainKey)

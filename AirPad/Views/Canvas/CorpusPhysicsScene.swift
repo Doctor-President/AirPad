@@ -1933,7 +1933,7 @@ final class CorpusPhysicsScene: SKScene {
     /// The Map's trailing strip a floating Librarian covers (its width and the 10 pt inset either side), view points.
     private var macCardOcclusion: CGFloat {
         let l = MacLayout.shared
-        return l.librarianOpen && l.librarianFloats ? l.floatingLibrarianWidth + 20 : 0
+        return l.rightPanelOpen && l.librarianFloats ? l.floatingLibrarianWidth + 20 : 0
     }
     #endif
 

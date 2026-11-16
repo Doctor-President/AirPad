@@ -3,6 +3,7 @@ import UIKit
 
 /// Mac D fix-up B1 — `-MacSettingsSelfTest`: opens Settings from the real menu (AirPad › Settings…) `-SettingsRuns`
 /// times (default 50) in a row, from each place in turn (Map, List, Cards, Today), and closes it the way Done does.
+/// E fix-up 3 (H4): Settings opens as the right slide-out, so "opened" = in the panel with no sheet up.
 /// Odd rounds open it from inside the app's views instead: the Librarian's own Settings sheet (the ≡ drawer that crashed
 /// is gone on the Mac since F4). A crash ends the run (no PASS line); every round logs before it opens, so the log names
 /// the round that died.
@@ -33,10 +34,11 @@ enum MacSettingsSelfTest {
             } else if !MacMenuSelfTest.fire(menu: "AirPad", title: "Settings…") {
                 fails += 1; NSLog("[MacSettingsSelfTest] round %d menu item missing/disabled", i + 1); continue
             }
-            await settle(i % 3 == 0 ? 0.35 : 1.0)   // some rounds close while the sheet is still animating in
-            if presented() != nil { opened += 1; if inView { inViewOpened += 1 } } else { fails += 1; NSLog("[MacSettingsSelfTest] round %d not presented", i + 1) }
-            presented()?.dismiss(animated: true)
-            router.showSettings = false
+            await settle(i % 3 == 0 ? 0.35 : 1.0)   // some rounds close while the panel is still sliding in
+            // E fix-up 3 (H4) — Settings is the right slide-out now (no sheet): open = the panel is in the slot, no sheet.
+            if MacLayout.shared.settingsOpen && presented() == nil { opened += 1; if inView { inViewOpened += 1 } }
+            else { fails += 1; NSLog("[MacSettingsSelfTest] round %d not in the panel (open %d, sheet %d)", i + 1, MacLayout.shared.settingsOpen ? 1 : 0, presented() == nil ? 0 : 1) }
+            MacLayout.shared.closeSettings()
             await settle(0.7)
         }
         let ok = fails == 0 && opened == runs

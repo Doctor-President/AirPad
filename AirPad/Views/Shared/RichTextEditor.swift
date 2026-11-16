@@ -820,7 +820,7 @@ struct RichTextEditor: UIViewRepresentable {
             // shows inline (ActiveRichTextEditor + RichTextInlineBar), not on the keyboard. iPhone: today's bar.
             if ActiveRichTextEditor.usesInlineBar {
                 if textView.inputAccessoryView != nil { textView.inputAccessoryView = nil; textView.reloadInputViews() }
-                ActiveRichTextEditor.shared.begin(state)
+                ActiveRichTextEditor.shared.begin(state, textView: textView)
             } else if textView.inputAccessoryView == nil, let accessoryContainer {
                 textView.inputAccessoryView = accessoryContainer
                 textView.reloadInputViews()

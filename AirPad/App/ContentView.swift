@@ -456,6 +456,7 @@ struct ContentView: View {
         .overlay(alignment: .top) {
             if let editor = ActiveRichTextEditor.shared.state {
                 RichTextInlineBar(state: editor)
+                    .onGeometryChange(for: CGRect.self) { $0.frame(in: .global) } action: { ActiveRichTextEditor.shared.barFrame = $0 }
                     .padding(.top, 58)
                     .padding(.horizontal, 16)
                     .transition(.opacity)

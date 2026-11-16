@@ -1,7 +1,7 @@
 // rclick — REAL pointer/keyboard events (CGEvent → the window server, .cghidEventTap) on a running app, located and
 // checked through the Accessibility API from OUTSIDE the app, so it runs on a Release build with no hooks.
 // Needs Accessibility for the app that runs it (Terminal). Mac E fix-up 2.
-//   rclick find  <pid> <id-or-title>            → frame of the first match
+//   rclick find  <pid> <id-or-title>            → frame of the first match (an id ending in * matches a prefix)
 //   rclick click <pid> <id-or-title> [n]        → move + down/up at its centre (n-th match, default 0)
 //   rclick clickat <pid> <x> <y>                → at a screen point (top-left origin)
 //   rclick dclickat <pid> <x> <y>               → a double click at a screen point
@@ -33,7 +33,7 @@ func matches(_ key: String) -> [AXUIElement] {
     func walk(_ e: AXUIElement, _ d: Int) {
         let id = a(e, "AXIdentifier") as? String ?? ""
         let title = (a(e, kAXTitleAttribute) as? String) ?? (a(e, kAXDescriptionAttribute) as? String) ?? ""
-        if id == key || title == key { out.append(e) }
+        if id == key || title == key || (key.hasSuffix("*") && id.hasPrefix(key.dropLast())) { out.append(e) }
         guard d < 40, let kids = a(e, kAXChildrenAttribute) as? [AXUIElement] else { return }
         kids.forEach { walk($0, d + 1) }
     }

@@ -18,7 +18,19 @@ final class ActiveRichTextEditor {
         return UIDevice.current.userInterfaceIdiom == .pad && GCKeyboard.coalesced != nil
     }
 
-    func begin(_ s: RichTextEditorState) { state = s }
+    /// E fix-up 3 (H2) — the text view being edited and the bar's frame (window points), for the press-outside rule.
+    @ObservationIgnored private(set) weak var textView: UITextView?
+    @ObservationIgnored var barFrame: CGRect = .null
+
+    func begin(_ s: RichTextEditorState, textView: UITextView) {
+        state = s
+        self.textView = textView
+        #if targetEnvironment(macCatalyst)
+        if let w = textView.window, !(w.gestureRecognizers ?? []).contains(where: { $0 is EndEditingOnPressOutside }) {
+            w.addGestureRecognizer(EndEditingOnPressOutside())
+        }
+        #endif
+    }
 
     /// Focus left the editor. Held a moment: clicking a bar button can take focus first, and the command must still
     /// reach the editor; it's cleared only if the editor didn't take focus back.
@@ -29,6 +41,29 @@ final class ActiveRichTextEditor {
         }
     }
 }
+
+#if targetEnvironment(macCatalyst)
+/// E fix-up 3 (H2) — on a Mac a click on something that takes no keyboard focus (the toolbar, the Librarian column, a
+/// panel) left the note editing, so its format bar stayed up over the window. A press anywhere outside the note being
+/// edited and outside its bar now ends the editing (the bar follows, `end`). Watches only: it never claims the touch.
+final class EndEditingOnPressOutside: UIGestureRecognizer, UIGestureRecognizerDelegate {
+    init() {
+        super.init(target: nil, action: nil)
+        cancelsTouchesInView = false
+        delaysTouchesBegan = false
+        delaysTouchesEnded = false
+        delegate = self
+    }
+    override func touchesBegan(_ touches: Set<UITouch>, with event: UIEvent) {
+        defer { state = .failed }
+        guard let tv = ActiveRichTextEditor.shared.textView, tv.isFirstResponder, let t = touches.first, let w = view else { return }
+        if tv.bounds.contains(t.location(in: tv)) { return }
+        if ActiveRichTextEditor.shared.barFrame.insetBy(dx: -6, dy: -6).contains(t.location(in: w)) { return }
+        tv.resignFirstResponder()
+    }
+    func gestureRecognizer(_ g: UIGestureRecognizer, shouldRecognizeSimultaneouslyWith other: UIGestureRecognizer) -> Bool { true }
+}
+#endif
 
 /// Mac batch C3 — the formatting bar, inline: the text attributes the iPhone keeps behind `Aa` sit directly on it
 /// (there's room on a Mac / iPad), then lists, indent, link, image and table. Same capsule material as the keyboard bar.

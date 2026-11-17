@@ -1085,6 +1085,7 @@ private struct CollectionReorderSheet: View {
 
 /// Mac batch E3 — a small hero tile: the entry's cover (or its gradient) over its title.
 struct MacPickUpTile: View {
+    static let imageHeight: CGFloat = 96
     let node: Node
     let action: () -> Void
     @Environment(\.appBodyFont) private var appFont
@@ -1097,7 +1098,9 @@ struct MacPickUpTile: View {
                     NodeGradientLayer(node: node, animated: false)
                     GridTileHeroImage(node: node)
                 }
-                .frame(height: 64)
+                // E fix-up 5 (L7) — 96 pt (was 64): T, "slightly taller to accommodate the hero images"; at the ~260 pt
+                // tile of a 1,100–1,350 pt window a typical 4:3 hero keeps its subject instead of a thin strip.
+                .frame(height: Self.imageHeight)
                 .frame(maxWidth: .infinity)
                 .clipped()
                 Text(node.title.isEmpty ? (node.untitledDisplayText ?? "Untitled") : node.title)

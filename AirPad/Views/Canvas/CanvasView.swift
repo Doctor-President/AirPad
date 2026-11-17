@@ -1216,6 +1216,11 @@ struct CanvasView: View {
         .onChange(of: canvasState.cardedNodeID) { _, newID in
             if newID != nil { cardDragY = 0 }
             router.mapCardOpen = newID != nil   // H5 — View › Close Preview (Esc)
+            // E fix-up 5 (L4) — the card's morph runs in the scene's frame loop, which stops while the Map rests: a
+            // change that comes with no pointer over the Map (Esc / View › Close Preview) cleared the card's state but
+            // never ran its shrink, so the card stayed drawn without its ×. (The × worked: the pointer's hover wakes
+            // the Map.) Every change of the presented card wakes it. (iPhone: every change comes with a touch.)
+            if RunningOnMac.isMac { scene.wakeFromRest("card") }
         }
     }
 

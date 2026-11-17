@@ -207,6 +207,12 @@ final class MacLayout {
 enum MacRegion: Hashable { case sidebar, content, librarian }
 
 enum MacDesktopFrameDebug {
+    /// K3 bench — starts the frame log in DEBUG or a `-D PERFLOG` Release (a no-op in the shipping build).
+    @MainActor static func startBench() {
+        #if DEBUG || PERFLOG
+        MacFrameLog.shared.start()
+        #endif
+    }
     static var edgeEffectHidden: Bool {
         #if DEBUG
         if UserDefaults.standard.string(forKey: "MacScrollEdgeEffect") == "shown" { return false }
@@ -266,6 +272,7 @@ struct MacDesktopFrame<Content: View>: View {
         // Settings open, Librarian pressed 0.12 s after arriving: 4/4 lost with the effect, 0/4 without. Our bar is
         // drawn by us, so the effect had nothing to blend under. DEBUG `-MacScrollEdgeEffect shown` = the A/B.
         .scrollEdgeEffectHidden(MacDesktopFrameDebug.edgeEffectHidden, for: .top)
+        .onAppear { MacDesktopFrameDebug.startBench() }
         .background(AppearancePalette.bgBase.ignoresSafeArea())
         .onGeometryChange(for: CGFloat.self) { $0.safeAreaInsets.top } action: {
             if $0 > 0 { toolbarInset = MacToolbarController.route == .none ? 52 : $0 }
@@ -1226,6 +1233,40 @@ enum MacToolbarProbe {
         #endif
     }
 }
+
+#if DEBUG || PERFLOG
+/// E fix-up 4 (K3) — the performance bench (DEBUG, or a Release built with `-D PERFLOG`; never the shipping build).
+/// `-MacFrameLog`: every display-link interval on the main thread, 120 to a line ("[FrameLog] t=<wall ms> dt=<ms,…>"), so
+/// a scroll's frame times read against rperf's steps (scripts/mac/perf/k3frames.py). `-MacPerfAB <name>`: switch one
+/// suspect off for an A/B (read by the views that name it).
+@MainActor final class MacFrameLog: NSObject {
+    static let shared = MacFrameLog()
+    static let ab = UserDefaults.standard.string(forKey: "MacPerfAB") ?? ""
+    private var link: CADisplayLink?
+    private var last: CFTimeInterval = 0
+    private var buf: [Double] = []
+    private var bufStart: Double = 0
+    func start() {
+        guard ProcessInfo.processInfo.arguments.contains("-MacFrameLog"), link == nil else { return }
+        NSLog("[FrameLog] screen max %d fps · A/B %@", UIScreen.main.maximumFramesPerSecond, Self.ab.isEmpty ? "none" : Self.ab)
+        let l = CADisplayLink(target: self, selector: #selector(tick(_:)))
+        l.add(to: .main, forMode: .common)
+        link = l
+    }
+    @objc private func tick(_ l: CADisplayLink) {
+        let now = CACurrentMediaTime()
+        if last > 0 {
+            if buf.isEmpty { bufStart = Date().timeIntervalSince1970 * 1000 }
+            buf.append((now - last) * 1000)
+            if buf.count >= 120 {
+                NSLog("[FrameLog] t=%.0f dt=%@", bufStart, buf.map { String(format: "%.1f", $0) }.joined(separator: ","))
+                buf.removeAll()
+            }
+        }
+        last = now
+    }
+}
+#endif
 
 /// E fix-up 3 (H1) — DEBUG `-MacClickTrace`: when each toolbar action runs, how old its click is (the AppKit event's
 /// timestamp), and every main-thread frame gap over 40 ms, all on the wall clock `rlat` prints, so a click's

@@ -234,7 +234,11 @@ struct NodeListView: View {
         return GeometryReader { geo in
             ScrollViewReader { proxy in
                 ScrollView {
-                    LazyVStack(alignment: .leading, spacing: 0) {
+                    // E fix-up 4 (K3) — the header, then ONE lazy stack of rows (was a lazy stack nested in another:
+                    // List scrolling ran at ~17 fps on 265 entries, the bench's base). The rows' hover and right-click
+                    // menu are the list's, not 265 responders: SwiftUI hit-tested every row's hover / context-menu
+                    // responder on each scroll event (a third of the main thread while scrolling).
+                    VStack(alignment: .leading, spacing: 0) {
                         HStack(spacing: 6) {
                             Text("\(rows.count) \(rows.count == 1 ? "entry" : "entries") ·")
                             Menu {
@@ -265,14 +269,26 @@ struct NodeListView: View {
                         LazyVStack(alignment: .leading, spacing: 0) {
                             ForEach(Array(rows.enumerated()), id: \.element.id) { index, node in
                                 MacListRow(node: node, showCollection: geo.size.width - 32 >= Self.macCollectionColumnMinWidth,
-                                           keyboardFocused: keyIndex == index, appFont: appFont) { open(node) }
+                                           keyboardFocused: keyIndex == index, hover: macHover,
+                                           appFont: appFont) { open(node) }
                                     .equatable()
                                     .id(node.id)
-                                    .entryContextMenu(node)
+                                    .onGeometryChange(for: CGRect.self) { $0.frame(in: .named("macListRows")) } action: {
+                                        macHover.frames[node.id] = $0
+                                    }
                                     .accessibilityIdentifier("listRow-\(node.id)")
                             }
                         }
                         .padding(.vertical, 6)
+                        .coordinateSpace(.named("macListRows"))
+                        .onGeometryChange(for: CGRect.self) { $0.frame(in: .global) } action: { macHover.listGlobal = $0 }
+                        .onContinuousHover(coordinateSpace: .global) { phase in
+                            switch phase {
+                            case .active(let g): macHover.pointer(global: g)
+                            case .ended: macHover.pointer(global: nil)
+                            }
+                        }
+                        .contextMenu { MacListRowMenu(hover: macHover, rows: rows) }
                         .background(RoundedRectangle(cornerRadius: 14, style: .continuous)
                             .fill(colorScheme == .dark ? AnyShapeStyle(.ultraThinMaterial) : AnyShapeStyle(AppearancePalette.bgElevated))
                             .shadow(color: AppearancePalette.listRowLift, radius: 26, x: 0, y: 11))
@@ -304,6 +320,9 @@ struct NodeListView: View {
     }
 
     @State private var keyIndex: Int?
+    /// K3 — the row under the pointer (one tracker for the list; the rows' frames aren't observed).
+    @State private var macHover = MacListHover()
+
 
     private var sortLabel: String {
         switch sortKey {
@@ -450,21 +469,55 @@ struct NodeListView: View {
     }
 }
 
+/// E fix-up 4 (K3) — which row the pointer is over: one continuous-hover tracker for the whole list, against the rows'
+/// frames in the list's space (reported once per layout, not observed), instead of one hover responder per row.
+/// The list's right-click menu: the entry menu for the row under the pointer (nothing elsewhere in the list).
+private struct MacListRowMenu: View {
+    let hover: MacListHover
+    let rows: [Node]
+    @Environment(AppRouter.self) private var router
+    var body: some View {
+        if let id = hover.id, let node = rows.first(where: { $0.id == id }) {
+            EntryContextMenu.items(nodeID: node.id, isPrivate: node.isPrivate, router: router)
+        }
+    }
+}
+
+@Observable final class MacListHover {
+    var id: String?
+    @ObservationIgnored var frames: [String: CGRect] = [:]
+    @ObservationIgnored var listGlobal: CGRect = .zero
+    @ObservationIgnored private var lastPointer: CGPoint?
+    /// Only a pointer that MOVED re-picks the row: while the list scrolls under a still pointer, hover fires every frame
+    /// (the content moved), and re-picking then re-drew rows each frame (List scrolling ran at ~10–16 fps); the wash
+    /// goes until the pointer moves again.
+    func pointer(global g: CGPoint?) {
+        guard let g else { lastPointer = nil; if id != nil { id = nil }; return }
+        if let l = lastPointer, abs(l.x - g.x) < 0.5, abs(l.y - g.y) < 0.5 { if id != nil { id = nil }; return }
+        lastPointer = g
+        let p = CGPoint(x: g.x - listGlobal.minX, y: g.y - listGlobal.minY)
+        let hit = frames.first { $0.value.contains(p) }?.key
+        if hit != id { id = hit }
+    }
+}
+
 /// Mac batch D4 — one row of the desktop list.
 /// E fix-up 3 (H1) — Equatable on what it draws (not the open action, a new closure every pass), so a width change (the
 /// Librarian or sidebar opening, animated) re-lays the rows out without re-running each row's body every frame.
 private struct MacListRow: View, Equatable {
     static func == (a: Self, b: Self) -> Bool {
-        a.node == b.node && a.showCollection == b.showCollection && a.keyboardFocused == b.keyboardFocused && a.appFont == b.appFont
+        a.node == b.node && a.showCollection == b.showCollection && a.keyboardFocused == b.keyboardFocused && a.hover === b.hover
+            && a.appFont == b.appFont
     }
     let node: Node
     let showCollection: Bool
     let keyboardFocused: Bool
+    /// K3 — the list's hover tracker (read in the body: only rows on screen re-draw when the hovered row changes).
+    let hover: MacListHover
     let appFont: EntryBodyFont
     let action: () -> Void
     @Environment(CorpusStore.self) private var store
     @Environment(\.colorScheme) private var scheme
-    @State private var hovering = false
     @State private var thumb: UIImage?
 
     var body: some View {
@@ -510,12 +563,11 @@ private struct MacListRow: View, Equatable {
             .padding(.horizontal, 14)
             .padding(.vertical, 7)
             .background(RoundedRectangle(cornerRadius: 9, style: .continuous)
-                .fill(AppearancePalette.ink.opacity(keyboardFocused ? 0.11 : (hovering ? 0.05 : 0))))
+                .fill(AppearancePalette.ink.opacity(keyboardFocused ? 0.11 : (hover.id == node.id ? 0.05 : 0))))
             .contentShape(Rectangle())
         }
         .buttonStyle(.plain)
         .padding(.horizontal, 10)
-        .onHover { hovering = $0 }
         .task(id: node.coverImageRelativePath) {
             guard let url = await store.coverImageURL(for: node), let key = DisplayImageCache.coverKey(node) else { return }
             thumb = await DisplayImageCache.shared.load(path: key, url: url, pixels: Int(40 * DisplaySize.scale))

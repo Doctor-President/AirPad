@@ -1,0 +1,17 @@
+# K3 — scrolling and panning only, for Instruments' Animation Hitches (frame times at the display's 120 Hz).
+library      click sidebar.library
+view-list    click toolbar.view.List
+list-scroll  scroll 640,600 -2400 80 8
+list-scroll  scroll 640,600 2400 80 8
+list-scroll  scroll 640,600 -2400 80 8
+list-scroll  scroll 640,600 2400 80 8
+view-cards   click toolbar.view.Cards
+cards-scroll scroll 640,600 -2400 80 8
+cards-scroll scroll 640,600 2400 80 8
+cards-scroll scroll 640,600 -2400 80 8
+cards-scroll scroll 640,600 2400 80 8
+view-map     click toolbar.view.Map
+map-pan      scroll 640,560 -600 60 8
+map-pan      scroll 640,560 600 60 8
+map-pan      scroll 640,560 -600 60 8
+map-pan      scroll 640,560 600 60 8

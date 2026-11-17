@@ -262,6 +262,7 @@ actor iCloudDriveService {
             if ProcessInfo.processInfo.arguments.contains("-UITestSeedCardShowcase") { Self.seedUITestCardShowcase(root) }
             if ProcessInfo.processInfo.arguments.contains("-UITestSeedMarkupShowcase") { Self.seedUITestMarkupShowcase(root) }
             if ProcessInfo.processInfo.arguments.contains("-UITestSeedFadeShowcase") { Self.seedUITestFadeShowcase(root) }
+            if ProcessInfo.processInfo.arguments.contains("-UITestSeedPerfLibrary") { Self.seedUITestPerfLibrary(root) }
             return true
         } catch {
             return false
@@ -616,6 +617,149 @@ actor iCloudDriveService {
             }
             try? JSONEncoder.airPad.encode(n).write(to: d.appendingPathComponent("node.json"), options: .atomic)
         }
+    }
+
+    /// E fix-up 4 (K3) — `-UITestSeedPerfLibrary` (with `-UITestLibraryFresh`): a synthetic library the size and shape of
+    /// T's (257 entries, mixed media, long notes, 20+ collections, a journal, chats) for the Mac performance pass: 265
+    /// entries over two years — 45 journal days, 55 photo entries (1–8 photos, 1600×1200, a hero), 10 with PDFs, 8 voice
+    /// memos, 25 links, 40 long notes (1,500–6,000 words with headings, lists and checklists), 82 short notes — in 24
+    /// collections with ~60 tags, and 40 chats. Synthetic words and pixels only (a fixed seed: the same library every
+    /// time). Written once (the marker is the last thing written); the harness copies the scratch into the Release copy.
+    private static func seedUITestPerfLibrary(_ root: URL) {
+        let fm = FileManager.default
+        let marker = root.appendingPathComponent("perf-library.done")
+        guard !fm.fileExists(atPath: marker.path) else { return }
+        var g: UInt64 = 0x2545F4914F6CDD1D
+        func rnd() -> Double { g = g &* 6364136223846793005 &+ 1442695040888963407; return Double((g >> 33) % 1_000_000) / 1_000_000 }
+        func pick<T>(_ a: [T]) -> T { a[Int(rnd() * Double(a.count)) % a.count] }
+        let words = ("harbour tide wall slipway north reef morning lamp paper ink garden kitchen bread starter oven film roll lens " +
+            "camera print studio clay glaze kiln chord melody guitar piano scale french verb subject lesson chapter novel essay " +
+            "draft margin idea sketch plan budget invoice client meeting project deadline review notes river trail ridge forest " +
+            "coffee grinder roast bean filter recipe salt lemon garlic thyme onion stock dream window stair door letter friend " +
+            "mother brother city train station ticket map route weather rain wind cloud light shadow colour shape pattern rhythm " +
+            "memory question answer reason habit routine week month season winter spring summer autumn evening night quiet loud " +
+            "small large careful patient slow quick bright dark warm cold early late again always never perhaps because although")
+            .split(separator: " ").map(String.init)
+        func sentence(_ n: Int) -> String {
+            let w = (0..<n).map { _ in pick(words) }.joined(separator: " ")
+            return w.prefix(1).uppercased() + w.dropFirst() + "."
+        }
+        func paragraph() -> String { (0..<(3 + Int(rnd() * 5))).map { _ in sentence(6 + Int(rnd() * 14)) }.joined(separator: " ") }
+        func longNote(words target: Int) -> String {
+            var out: [String] = [], count = 0, section = 1
+            while count < target {
+                switch Int(rnd() * 10) {
+                case 0: out.append("## Part \(section)"); section += 1
+                case 1: out.append((0..<(3 + Int(rnd() * 4))).map { _ in "- " + sentence(4 + Int(rnd() * 8)) }.joined(separator: "\n"))
+                case 2: out.append((0..<(2 + Int(rnd() * 4))).map { _ in (rnd() < 0.5 ? #"- \[ ] "# : #"- \[x] "#) + sentence(3 + Int(rnd() * 6)) }.joined(separator: "\n"))
+                default: let p = paragraph(); out.append(p); count += p.split(separator: " ").count
+                }
+            }
+            return out.joined(separator: "\n\n")
+        }
+        let collectionNames = ["Field Notes", "Reading", "Studio", "Recipes", "Coffee", "Film", "Workshop", "Garden", "French",
+                               "Music", "Clients", "Invoices", "Travel", "Trails", "Dreams", "People", "Ideas", "House",
+                               "Health", "Pottery", "Photography", "Letters", "Archive", "Someday"]
+        let collections = collectionNames.map { (id: "perf-" + $0.lowercased().replacingOccurrences(of: " ", with: "-"), name: $0) }
+        let tags = Array(Set(words)).sorted().prefix(60).map { $0 }
+        let start = Date(timeIntervalSince1970: 1_700_000_000)   // 2023-11
+        let span = 2.0 * 365 * 86_400
+        let kinds: [(String, Int)] = [("journal", 45), ("photo", 55), ("doc", 10), ("voice", 8), ("link", 25), ("long", 40), ("short", 82)]
+        var n = 0
+        for (kind, count) in kinds {
+            for i in 0..<count {
+                n += 1
+                let id = String(format: "9E9F0000-0000-4000-8000-%012d", n)
+                let dir = root.appendingPathComponent("nodes/\(id)")
+                try? fm.createDirectory(at: dir.appendingPathComponent("items"), withIntermediateDirectories: true)
+                let created = start.addingTimeInterval(rnd() * span)
+                let updated = min(Date(timeIntervalSince1970: 1_763_200_000), created.addingTimeInterval(rnd() * 120 * 86_400))
+                var items: [NodeItem] = []
+                var title = sentence(2 + Int(rnd() * 5)).dropLast().description
+                var cover: String?
+                switch kind {
+                case "photo":
+                    let photos: [GalleryItem] = (0..<(1 + Int(rnd() * 8))).map { k in
+                        let pid = String(format: "%08X-0000-4000-8000-%012d", n, k), file = "items/\(pid).jpg"
+                        let jpeg = k % 3 == 0 ? syntheticLandscapeJPEG(width: 1600, height: 1200, seed: n * 10 + k)
+                            : syntheticPhotoJPEG(width: 1600, height: 1200, seed: UInt64(n * 10 + k) &* 0x9E3779B97F4A7C15)
+                        try? jpeg.write(to: dir.appendingPathComponent(file), options: .atomic)
+                        return GalleryItem(id: pid, mediaType: .image, file: file, aspectRatio: 4.0 / 3.0, capturedAt: created, originalName: nil)
+                    }
+                    var gallery = NodeItem(id: id + "-media", type: .imageVideo, createdAt: created)
+                    gallery.displayName = "Photos"; gallery.mediaItems = photos; gallery.isExpanded = true
+                    items = [gallery, NodeItem(id: id + "-note", type: .text, createdAt: created, content: paragraph(),
+                                               displayName: nil, isExpanded: true, updatedAt: updated)]
+                    cover = photos.first?.file
+                case "doc":
+                    let docs: [DocumentItem] = (0..<(1 + Int(rnd() * 3))).map { k in
+                        let did = String(format: "%08X-0000-4000-9000-%012d", n, k)
+                        let data = UIGraphicsPDFRenderer(bounds: CGRect(x: 0, y: 0, width: 612, height: 792)).pdfData { ctx in
+                            for page in 0..<(1 + Int(rnd() * 4)) {
+                                ctx.beginPage()
+                                ("Page \(page + 1). " + paragraph() as NSString).draw(in: CGRect(x: 72, y: 72, width: 468, height: 648),
+                                                                                   withAttributes: [.font: UIFont.systemFont(ofSize: 13)])
+                            }
+                        }
+                        try? data.write(to: dir.appendingPathComponent("items/\(did).pdf"), options: .atomic)
+                        return DocumentItem(id: did, filePath: "items/\(did).pdf", fileName: "\(title) \(k + 1).pdf", fileType: "pdf",
+                                            documentTitle: nil, extractedText: nil, thumbnailFile: nil, pageCount: nil, wordCount: nil,
+                                            capturedAt: created)
+                    }
+                    var entry = NodeItem(id: id + "-docs", type: .document, createdAt: created, file: docs[0].filePath,
+                                         displayName: docs.count >= 2 ? "Documents" : nil, isExpanded: true, updatedAt: updated,
+                                         documentItems: docs)
+                    entry.documentViewMode = docs.count >= 2 ? .carousel : nil
+                    items = [entry]
+                case "voice":
+                    let secs = 20 + rnd() * 40
+                    writeSpeechShapedTone(to: dir.appendingPathComponent("items/\(id)-audio.m4a"), seconds: secs)
+                    var voice = NodeItem.audio(itemID: id + "-audio", file: "items/\(id)-audio.m4a", transcript: paragraph(), duration: secs)
+                    voice.displayName = "Voice"; voice.isExpanded = true; voice.updatedAt = updated
+                    items = [voice]
+                case "link":
+                    var link = NodeItem(id: id + "-link", type: .link, createdAt: created)
+                    link.url = "https://example.com/\(pick(words))/\(n)"; link.title = title; link.isExpanded = true
+                    items = [link, NodeItem(id: id + "-note", type: .text, createdAt: created, content: sentence(12),
+                                            displayName: nil, isExpanded: true, updatedAt: updated)]
+                case "long":
+                    items = [NodeItem(id: id + "-note", type: .text, createdAt: created, content: longNote(words: 1_500 + Int(rnd() * 4_500)),
+                                      displayName: nil, isExpanded: true, updatedAt: updated)]
+                default:   // journal, short
+                    items = [NodeItem(id: id + "-note", type: .text, createdAt: created,
+                                      content: (0..<(1 + Int(rnd() * 3))).map { _ in paragraph() }.joined(separator: "\n\n"),
+                                      displayName: nil, isExpanded: true, updatedAt: updated)]
+                }
+                if kind == "journal" { title = "" }
+                var node = Node(id: id, createdAt: created, updatedAt: updated, title: title, summary: sentence(10),
+                                tags: (0..<Int(rnd() * 4)).map { _ in pick(tags) }, items: items, entrySchemaVersion: 4)
+                if kind == "journal" {
+                    node.journalDate = Calendar.current.startOfDay(for: created); node.isJournalEntry = true
+                } else {
+                    node.collectionIDs = (0..<Int(rnd() * 2.6)).map { _ in pick(collections).id }
+                }
+                node.coverImageRelativePath = cover
+                _ = i
+                try? JSONEncoder.airPad.encode(node).write(to: dir.appendingPathComponent("node.json"), options: .atomic)
+            }
+        }
+        let cols = collections.map { ["id": $0.id, "name": $0.name] }
+        if let data = try? JSONSerialization.data(withJSONObject: cols, options: [.prettyPrinted]) {
+            try? data.write(to: root.appendingPathComponent("collections.json"), options: .atomic)
+        }
+        let chats: [Chat] = (0..<40).map { c in
+            let t = start.addingTimeInterval(rnd() * span)
+            var messages: [ChatSession.Message] = []
+            for _ in 0..<(2 + Int(rnd() * 8)) {
+                messages.append(ChatSession.Message(role: .user, text: sentence(8 + Int(rnd() * 10)).dropLast() + "?"))
+                messages.append(ChatSession.Message(role: .assistant, text: (0..<(1 + Int(rnd() * 3))).map { _ in paragraph() }.joined(separator: "\n\n")))
+            }
+            return Chat(id: UUID(uuidString: String(format: "C4A70000-0000-4000-8000-%012d", c)) ?? UUID(),
+                        title: sentence(5).dropLast().description, createdAt: t, updatedAt: t, messages: messages)
+        }
+        try? JSONEncoder.airPad.encode(chats).write(to: root.appendingPathComponent("chats.json"), options: .atomic)
+        try? Data("265".utf8).write(to: marker, options: .atomic)
+        print("[PerfLibrary] seeded 265 entries, \(collections.count) collections, 40 chats at \(root.path)")
     }
 
     /// A busy synthetic photo: hard-edged blocks from near-white to near-black in many hues, with thin stripes over them.

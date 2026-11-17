@@ -17,20 +17,23 @@ struct EntryContextMenu: ViewModifier {
 
     func body(content: Content) -> some View {
         if Self.enabled {
-            content.contextMenu {
-                Button { router.requestEntryAction(.open, nodeID) } label: { Label("Open", systemImage: "arrow.up.forward.square") }
-                if PrivateEntries.shared.available {
-                    Button { router.requestEntryAction(.togglePrivate, nodeID) } label: {
-                        Label(isPrivate ? "Make Not Private" : "Make Private", systemImage: isPrivate ? "lock.open" : "lock")
-                    }
-                }
-                Button { router.requestEntryAction(.export, nodeID) } label: { Label("Export…", systemImage: "square.and.arrow.up") }
-                Divider()
-                Button(role: .destructive) { router.requestEntryAction(.delete, nodeID) } label: { Label("Delete…", systemImage: "trash") }
-            }
+            content.contextMenu { Self.items(nodeID: nodeID, isPrivate: isPrivate, router: router) }
         } else {
             content
         }
+    }
+
+    /// The menu's items (E fix-up 4 K3: the Mac List shows them from one list-level menu for the row under the pointer).
+    @ViewBuilder static func items(nodeID: String, isPrivate: Bool, router: AppRouter) -> some View {
+        Button { router.requestEntryAction(.open, nodeID) } label: { Label("Open", systemImage: "arrow.up.forward.square") }
+        if PrivateEntries.shared.available {
+            Button { router.requestEntryAction(.togglePrivate, nodeID) } label: {
+                Label(isPrivate ? "Make Not Private" : "Make Private", systemImage: isPrivate ? "lock.open" : "lock")
+            }
+        }
+        Button { router.requestEntryAction(.export, nodeID) } label: { Label("Export…", systemImage: "square.and.arrow.up") }
+        Divider()
+        Button(role: .destructive) { router.requestEntryAction(.delete, nodeID) } label: { Label("Delete…", systemImage: "trash") }
     }
 }
 

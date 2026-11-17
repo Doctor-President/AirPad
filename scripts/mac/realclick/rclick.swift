@@ -134,9 +134,16 @@ case "key":
     CGEvent(keyboardEventSource: nil, virtualKey: k, keyDown: false)?.post(tap: .cghidEventTap); usleep(300_000); print("key \(k)")
 case "cmdkey":   // rclick cmdkey <pid> <keycode>: the key with ⌘ (43 = ",")
     front(); let k = CGKeyCode(args[3])!
+    // E fix-up 4 — a real ⌘ down … up around the key. Posting only the key with the ⌘ flag left the window server's
+    // modifier state at ⌘ DOWN: every later event of every harness run was a ⌘-event (typing ran Format commands,
+    // a "q" quit the app). Checked after: the state must read ⌘ up.
+    let cmd = CGKeyCode(55)
+    let cd = CGEvent(keyboardEventSource: nil, virtualKey: cmd, keyDown: true); cd?.flags = .maskCommand; cd?.post(tap: .cghidEventTap); usleep(30_000)
     for down in [true, false] {
         let e = CGEvent(keyboardEventSource: nil, virtualKey: k, keyDown: down); e?.flags = .maskCommand; e?.post(tap: .cghidEventTap); usleep(40_000)
     }
+    let cu = CGEvent(keyboardEventSource: nil, virtualKey: cmd, keyDown: false); cu?.flags = []; cu?.post(tap: .cghidEventTap); usleep(30_000)
+    if CGEventSource.flagsState(.combinedSessionState).contains(.maskCommand) { print("WARNING ⌘ still down after cmdkey") }
     usleep(500_000); print("⌘ key \(k)")
 case "get":
     guard let e = target(args[3]) else { exit(1) }

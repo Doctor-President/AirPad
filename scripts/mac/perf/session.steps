@@ -1,0 +1,42 @@
+# E fix-up 4 · K3 — one round of "normal use" on the Mac (rperf steps). k3.sh runs it ROUNDS times (≈ 2 min a round).
+# Window 1,350 × 840 at (0,160), sidebar shown, Librarian docked. Map pan/zoom: trackpad two-finger swipes and ⌘= / ⌘− /
+# ⌘0 (a real pinch can't be posted from outside; ⌘= / ⌘− take the same zoom path, MapPointerInput).
+today        click sidebar.today
+library      click sidebar.library
+view-map     click toolbar.view.Map
+map-pan      scroll 640,560 -500 30
+map-pan      scroll 640,560 400 30
+map-zoom     cmdkey 24
+map-zoom     cmdkey 27
+map-fit      cmdkey 29
+view-list    click toolbar.view.List
+list-scroll  scroll 640,600 -1800 60
+list-scroll  scroll 640,600 1800 60
+view-cards   click toolbar.view.Cards
+cards-scroll scroll 640,600 -1800 60
+cards-scroll scroll 640,600 1800 60
+collection   click sidebar.collection#0
+collection   click sidebar.collection#5
+journal      click sidebar.journal
+back         click toolbar.back
+forward      click toolbar.forward
+library      click sidebar.library
+view-list    click toolbar.view.List
+open-entry   click listRow-*#3
+note-click   click role:AXTextArea
+note-type    type a quiet morning at the harbour
+close-entry  click toolbar.back
+open-entry   click listRow-*#8
+close-entry  click toolbar.back
+librarian    click toolbar.librarian
+librarian    click toolbar.librarian
+settings     click sidebar.settings
+settings     click sidebar.settings
+ask-click    click placeholder:Ask
+ask-type     type what did i write about bread
+ask-clear    cmdkey 0
+view-cards   click toolbar.view.Cards
+open-entry   click 560,430
+close-entry  click toolbar.back
+view-map     click toolbar.view.Map
+today        click sidebar.today

@@ -169,6 +169,9 @@ final class MacLayout {
     /// E5 — the open entry's floating + : 24 pt from the content's corner, or just left of a floating Librarian (or
     /// Settings, H4).
     var entryPlusTrailing: CGFloat { rightPanelOpen && librarianFloats ? floatingLibrarianWidth + 10 + 14 : 24 }
+    /// E fix-up 4 (K6) — what a floating right panel covers of the content, from its trailing edge (its width and its
+    /// 10 pt margins); 0 when the panel is docked or closed.
+    var floatingPanelFootprint: CGFloat { rightPanelOpen && librarianFloats ? floatingLibrarianWidth + 20 : 0 }
 
     /// The Librarian column's panel state: always fully open — there is no FloatingPanel on the Mac, so its moves are
     /// no-ops and the surface lays out as its expanded self.

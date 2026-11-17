@@ -171,7 +171,7 @@ struct DashboardView: View {
         let recent = macHomeNodes.sorted { $0.updatedAt > $1.updatedAt }
         let today = macHomeNodes.filter { Calendar.current.isDateInToday($0.createdAt) }.count
         let pickUp = Array(recent.dropFirst(3).prefix(3))
-        let side = macWidth >= 700
+        let side = macWidth - macFloatingInset >= 700
         return VStack(alignment: .leading, spacing: 14) {
             TodayCardView(recentNodes: [], onJournalPromptTap: openTodayJournal, onRecentTap: { push(.node($0)) },
                           showsActivity: false,
@@ -188,8 +188,19 @@ struct DashboardView: View {
         }
         .frame(maxWidth: 860)
         .frame(maxWidth: .infinity)
+        .padding(.trailing, macFloatingInset)
         .accessibilityElement(children: .contain)
         .accessibilityIdentifier("macTodayHome-\(side ? 2 : 1)")
+    }
+
+    /// E fix-up 4 (K6) — a floating Librarian / Settings panel covers the content's right side: Today centres in what's
+    /// left (as G4 does for the Map's card) and stacks Activity over Priority when that gets narrow. 0 when it's docked.
+    private var macFloatingInset: CGFloat {
+        #if targetEnvironment(macCatalyst)
+        MacLayout.shared.floatingPanelFootprint
+        #else
+        0
+        #endif
     }
 
     /// The entries Today reads: the user's own (the sample has its own place). DEBUG `-MacTodaySample YES` reads the

@@ -15,6 +15,9 @@ final class MacLayout {
     /// D fix-up F5 — both panels resize from their inner edge (drag the hairline); remembered.
     static let sidebarWidthRange: ClosedRange<CGFloat> = 200...300
     static let librarianWidthRange: ClosedRange<CGFloat> = 300...520
+    /// E fix-up 5 (L5) — the old "widen for long reading" mode went; the drag edge goes wider instead: up to about half
+    /// the window (never below 520), and a column never past the content's minimum. Remembered widths are kept up to this.
+    static let librarianWidthCeiling: CGFloat = 1_200
     static let sidebarWidthDefault: CGFloat = 232
     /// Batch E2 — T's v3 pick (was 360).
     static let librarianWidthDefault: CGFloat = 370
@@ -48,10 +51,12 @@ final class MacLayout {
     private var settleTask: Task<Void, Never>?
     static let dragSettleInterval: Double = 0.1
 
-    /// E fix-up G5 — the Librarian's expand control (its header): about half the window for long reading, keeping the
-    /// content's minimum beside it; toggles back to the remembered width, which it never overwrites.
-    private(set) var librarianExpanded = false
-    private var widthBeforeExpand: CGFloat?
+    /// E fix-up 5 (L5, T ruled 2026-11-17) — the header's switch: the right panel (Librarian or Settings) as its own
+    /// COLUMN or FLOATING over the content, which then gets the full width beneath. Remembered. It's a choice for a wide
+    /// window only: when a column would push the content under its minimum the panel floats anyway (and the switch
+    /// hides); widening the window again brings back the choice.
+    var floatChosen: Bool { didSet { UserDefaults.standard.set(floatChosen, forKey: Self.floatKey) } }
+    private static let floatKey = "mac.layout.librarianFloat.v1"
     /// ⌘L and the toolbar's Librarian button: open / close the column (the panel model reads `librarianAtPeek`). With
     /// Settings in the slot, it closes Settings and shows the Librarian.
     func toggleLibrarian(_ router: AppRouter) {
@@ -81,23 +86,18 @@ final class MacLayout {
     var rightWidth: CGFloat { settingsOpen ? settingsWidth : librarianWidth }
     var settledRightWidth: CGFloat { settingsOpen ? settledSettingsWidth : settledLibrarianWidth }
 
-    func toggleLibrarianExpanded() {
-        if librarianExpanded {
-            librarianExpanded = false
-            librarianWidth = widthBeforeExpand ?? Self.librarianWidthDefault
-            widthBeforeExpand = nil
-        } else {
-            let besideContent = windowWidth - (sidebarVisible ? sidebarWidth + 1 : 0) - Self.contentMinWidth - 1
-            let target = max(librarianWidth, min(windowWidth / 2, besideContent)).rounded()
-            guard target > librarianWidth + 1 else { return }   // no room to widen at this window size
-            widthBeforeExpand = librarianWidth
-            librarianExpanded = true
-            librarianWidth = target
-        }
+    /// L5 — the right panel's drag range at this window: 300 up to about half the window (at least 520). A column stops
+    /// where the content would go under its minimum (a drag never flips it to floating); floating, it keeps the strip
+    /// for the open entry's + beside it.
+    var rightWidthRange: ClosedRange<CGFloat> {
+        let room = librarianFloats
+            ? contentWidth - Self.entryPlusStrip - 10
+            : windowWidth - (sidebarVisible ? settledSidebarWidth + 1 : 0) - Self.contentMinWidth - 1
+        let upper = max(Self.librarianWidthRange.upperBound, min((windowWidth / 2).rounded(), room.rounded()))
+        return Self.librarianWidthRange.lowerBound...max(Self.librarianWidthRange.lowerBound, min(upper, Self.librarianWidthCeiling))
     }
 
     func beginColumnDrag() {
-        if librarianExpanded { librarianExpanded = false; widthBeforeExpand = nil }   // a drag takes the width from here
         #if DEBUG
         if UserDefaults.standard.bool(forKey: "MacResizeUnfrozen") { return }   // G2 A/B: the old per-event layout
         #endif
@@ -130,7 +130,7 @@ final class MacLayout {
         let d = UserDefaults.standard
         if d.double(forKey: Self.settingsWidthKey) != Double(settingsWidth) { d.set(Double(settingsWidth), forKey: Self.settingsWidthKey) }
         if d.double(forKey: Self.sidebarWidthKey) != Double(sidebarWidth) { d.set(Double(sidebarWidth), forKey: Self.sidebarWidthKey) }
-        if !librarianExpanded, d.double(forKey: Self.librarianWidthKey) != Double(librarianWidth) { d.set(Double(librarianWidth), forKey: Self.librarianWidthKey) }
+        if d.double(forKey: Self.librarianWidthKey) != Double(librarianWidth) { d.set(Double(librarianWidth), forKey: Self.librarianWidthKey) }
     }
 
     /// A panel's own layout width during a drag: the settled width while the panel is wider than it (a strip of its
@@ -152,11 +152,13 @@ final class MacLayout {
     /// E1 — where AppKit puts the toolbar's first item (after the window buttons), in window points; measured from the
     /// toolbar once it's on screen (`MacWindowChrome.settle`), so the title starts at the content's edge.
     var toolbarLeadingX: CGFloat = 84
-    /// F5 — follows from the widths: the content would drop below `contentMinWidth`. (G2: from the settled widths —
-    /// the same outside a drag; during one the frame doesn't re-read per pointer event.)
-    var librarianFloats: Bool {
-        windowWidth - (sidebarVisible ? settledSidebarWidth + 1 : 0) - (settledRightWidth + 1) < Self.contentMinWidth
+    /// F5 — a column fits: the content keeps `contentMinWidth` beside it. (G2: from the settled widths — the same
+    /// outside a drag; during one the frame doesn't re-read per pointer event.)
+    var columnFits: Bool {
+        windowWidth - (sidebarVisible ? settledSidebarWidth + 1 : 0) - (settledRightWidth + 1) >= Self.contentMinWidth
     }
+    /// L5 — floating by choice (the header's switch) or because a column wouldn't fit.
+    var librarianFloats: Bool { floatChosen || !columnFits }
     /// The content column's width (window minus the sidebar), the floating Librarian's room.
     var contentWidth: CGFloat { windowWidth - (sidebarVisible ? settledSidebarWidth + 1 : 0) }
     /// E5 — floating, the Librarian always leaves a strip beside it for the open entry's own + (56 pt and its gaps):
@@ -190,9 +192,10 @@ final class MacLayout {
         sidebarWidth = (d.object(forKey: Self.sidebarWidthKey) == nil ? nil : CGFloat(d.double(forKey: Self.sidebarWidthKey)))
             .map { min(max($0, Self.sidebarWidthRange.lowerBound), Self.sidebarWidthRange.upperBound) } ?? Self.sidebarWidthDefault
         librarianWidth = (d.object(forKey: Self.librarianWidthKey) == nil ? nil : CGFloat(d.double(forKey: Self.librarianWidthKey)))
-            .map { min(max($0, Self.librarianWidthRange.lowerBound), Self.librarianWidthRange.upperBound) } ?? Self.librarianWidthDefault
+            .map { min(max($0, Self.librarianWidthRange.lowerBound), Self.librarianWidthCeiling) } ?? Self.librarianWidthDefault
         settingsWidth = (d.object(forKey: Self.settingsWidthKey) == nil ? nil : CGFloat(d.double(forKey: Self.settingsWidthKey)))
-            .map { min(max($0, Self.librarianWidthRange.lowerBound), Self.librarianWidthRange.upperBound) } ?? Self.settingsWidthDefault
+            .map { min(max($0, Self.librarianWidthRange.lowerBound), Self.librarianWidthCeiling) } ?? Self.settingsWidthDefault
+        floatChosen = d.bool(forKey: Self.floatKey)
         settledSidebarWidth = sidebarWidth
         settledLibrarianWidth = librarianWidth
         settledSettingsWidth = settingsWidth
@@ -200,6 +203,7 @@ final class MacLayout {
         // Stills: `-MacSidebar on|off`, `-MacLibrarian open|closed` (not remembered).
         if let s = d.string(forKey: "MacSidebar") { sidebarVisible = s == "on" }
         if let s = d.string(forKey: "MacLibrarian") { librarianOpen = s == "open" }
+        if let s = d.string(forKey: "MacPanelFloat") { floatChosen = s == "on" }   // L5 stills
         #endif
     }
 }
@@ -402,11 +406,11 @@ private struct MacRightSlotResizeHandle: View {
     var body: some View {
         if layout.settingsOpen {
             MacResizeHandle(id: "resize.settings") { dx, start in
-                layout.settingsWidth = MacLayout.clamp(start - dx, MacLayout.librarianWidthRange)
+                layout.settingsWidth = MacLayout.clamp(start - dx, layout.rightWidthRange)
             } startValue: { layout.settingsWidth }
         } else {
             MacResizeHandle(id: "resize.librarian") { dx, start in
-                layout.librarianWidth = MacLayout.clamp(start - dx, MacLayout.librarianWidthRange)
+                layout.librarianWidth = MacLayout.clamp(start - dx, layout.rightWidthRange)
             } startValue: { layout.librarianWidth }
         }
     }
@@ -469,6 +473,28 @@ struct MacResizeHandle: View {
             .accessibilityElement()
             .accessibilityLabel(id == "resize.sidebar" ? "Resize the sidebar" : "Resize the Librarian")
             .accessibilityIdentifier(id)
+    }
+}
+
+/// E fix-up 5 (L5, T ruled 2026-11-17) — the right panel's header switch between a COLUMN and FLOATING over the content
+/// (the Librarian's ⤢ was "widen for reading", which T found did nothing meaningful). Hidden when a column wouldn't fit
+/// the window: there it floats regardless, and a control that does nothing doesn't show. The icon and tooltip say what
+/// a click does.
+struct MacPanelFloatSwitch: View {
+    @State private var layout = MacLayout.shared
+    var body: some View {
+        if layout.columnFits {
+            let floating = layout.floatChosen
+            Button { layout.floatChosen.toggle() } label: {
+                Image(systemName: floating ? "sidebar.right" : "rectangle.on.rectangle")
+                    .font(.system(size: 13, weight: .medium)).frame(width: 26, height: 26)
+            }
+            .buttonStyle(.plain)
+            .foregroundStyle(AppearancePalette.ink.opacity(0.7))
+            .help(floating ? "Show as column" : "Float over content")
+            .accessibilityLabel(floating ? "Show as column" : "Float over content")
+            .accessibilityIdentifier("macPanelFloatSwitch")
+        }
     }
 }
 

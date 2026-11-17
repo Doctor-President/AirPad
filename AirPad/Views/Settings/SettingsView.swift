@@ -213,6 +213,12 @@ struct SettingsView: View {
             .toolbarBackground(.visible, for: .navigationBar)
             .navigationDestination(for: Dest.self) { submenu(for: $0) }
             .toolbar {
+                #if targetEnvironment(macCatalyst)
+                // E fix-up 5 (L5) — Settings in the right slot follows the Librarian's column / floating switch.
+                if panelClose != nil {
+                    ToolbarItem(placement: .cancellationAction) { MacPanelFloatSwitch() }
+                }
+                #endif
                 ToolbarItem(placement: .confirmationAction) {
                     Button("Done") {
                         saveKeys()

@@ -394,7 +394,7 @@ enum MacClickSelfTest {
                     "hit \(h.chain.prefix(70)) · drag \(drag.map { "\($0)" } ?? "n/a")")
             }
             for id in ["sidebar.today", "sidebar.recents", "sidebar.chats", "sidebar.library", "sidebar.journal",
-                       "macLibrarianHistory", "macLibrarianExpand", "macLibrarianNewChat", "macLibrarianTry",
+                       "macLibrarianHistory", "macPanelFloatSwitch", "macLibrarianNewChat", "macLibrarianTry",
                        "macLibrarianHide.Try", "macLibrarianHide.Recent chats", "macLibrarianRecentChat", "macLibrarianAllChats",
                        "resize.sidebar", "resize.librarian"] { await target(id) }
             router.requestMacPanel(.history); await MacClick.settle(1.0)
@@ -831,26 +831,32 @@ enum MacChatsPanelSelfTest {
         row("a chat result opens in the panel", router.librarian.searchText.isEmpty && has("macLibrarianBack") && router.chat.messages.first?.text.contains("Bolex") == true)
         await press("macLibrarianBack")
 
-        // Expand: about half the window (the content keeps its minimum), toggles back, never saved.
+        // E fix-up 5 (L5) — the header's switch: column ↔ floating, remembered; hidden when a column wouldn't fit.
         layout.sidebarVisible = true
+        layout.floatChosen = false; await settle(0.6)
         let w0 = layout.librarianWidth
-        let saved0 = UserDefaults.standard.double(forKey: MacLayout.librarianWidthKey)
-        await press("macLibrarianExpand"); await settle(0.6)
-        let want = max(w0, min(layout.windowWidth / 2, layout.windowWidth - layout.sidebarWidth - 1 - MacLayout.contentMinWidth - 1)).rounded()
-        row("expand widens the Librarian (half the window, content ≥ 616 pt)", layout.librarianExpanded && abs(layout.librarianWidth - want) < 1 && !layout.librarianFloats,
-            "width \(Int(w0)) → \(Int(layout.librarianWidth)) (want \(Int(want))) · floats \(layout.librarianFloats)")
-        row("expanded width isn't saved as the remembered width", UserDefaults.standard.double(forKey: MacLayout.librarianWidthKey) == saved0)
+        row("L5: the switch shows in a wide window (column fits)", layout.columnFits && has("macPanelFloatSwitch") && !layout.librarianFloats,
+            "fits \(layout.columnFits) · floats \(layout.librarianFloats)")
+        await press("macPanelFloatSwitch"); await settle(0.6)
+        row("L5: a click floats it over the content (remembered)", layout.librarianFloats && layout.floatChosen
+            && UserDefaults.standard.bool(forKey: "mac.layout.librarianFloat.v1"), "floats \(layout.librarianFloats)")
         await press("macLibrarianRecentChat"); await settle(0.5)
-        _ = RunningOnMac.snapshot("g5-expanded-chat")
-        await press("macLibrarianExpand"); await settle(0.6)
-        row("expand toggles back", !layout.librarianExpanded && abs(layout.librarianWidth - w0) < 1, "width \(Int(layout.librarianWidth))")
+        _ = RunningOnMac.snapshot("l5-floating-chat")
+        await press("macPanelFloatSwitch"); await settle(0.6)
+        row("L5: a second click puts it back in its column", !layout.librarianFloats && !layout.floatChosen && abs(layout.librarianWidth - w0) < 1,
+            "floats \(layout.librarianFloats) · width \(Int(layout.librarianWidth))")
+        let range = layout.rightWidthRange
+        row("L5: the drag edge reaches about half the window, the content keeps its minimum",
+            range.upperBound >= 520 && range.upperBound <= max(520, layout.windowWidth / 2 + 1)
+            && (range.upperBound <= 520 || layout.windowWidth - layout.sidebarWidth - 1 - range.upperBound - 1 >= MacLayout.contentMinWidth - 1),
+            "300–\(Int(range.upperBound)) at \(Int(layout.windowWidth)) pt")
         // The header at the narrowest Librarian (300 pt), in a chat: ‹ · title · mode · new chat · clock · expand.
         layout.librarianWidth = MacLayout.librarianWidthRange.lowerBound; await settle(0.8)
         // the docked panel ends at the window's right edge (screen points, as accessibility frames are)
         let winRight = UIAccessibility.convertToScreenCoordinates(window.bounds, in: window).maxX
-        let expandF = els("macLibrarianExpand").first?.accessibilityFrame ?? .zero
+        let expandF = els("macPanelFloatSwitch").first?.accessibilityFrame ?? .zero
         let backF = els("macLibrarianBack").first?.accessibilityFrame ?? .zero
-        row("at 300 pt the header fits: ‹ … expand inside the panel", expandF.width > 0 && expandF.maxX <= winRight - 8 && backF.minX >= winRight - 300,
+        row("at 300 pt the header fits: ‹ … the float switch inside the panel", expandF.width > 0 && expandF.maxX <= winRight - 8 && backF.minX >= winRight - 300,
             String(format: "‹ minX %.0f · expand maxX %.0f · panel %.0f–%.0f", backF.minX, expandF.maxX, winRight - 300, winRight))
         _ = RunningOnMac.snapshot("g5-chat-300")
         layout.librarianWidth = w0; await settle(0.5)

@@ -126,6 +126,7 @@ enum MacFixupSelfTest {
         row("F5 limits: Librarian 300–520, sidebar 200–300",
             MacLayout.clamp(700, MacLayout.librarianWidthRange) == 520 && MacLayout.clamp(100, MacLayout.librarianWidthRange) == 300
             && MacLayout.clamp(900, MacLayout.sidebarWidthRange) == 300 && MacLayout.clamp(10, MacLayout.sidebarWidthRange) == 200)
+        layout.floatChosen = false   // E fix-up 5 (L5): the column, not the remembered float choice
         layout.librarianWidth = 520; layout.sidebarWidth = 300; await settle(0.8)
         row("F5 at 1,350 pt with both panels widest the Librarian floats (content would be 528 < 616)", layout.librarianFloats)
         layout.librarianWidth = MacLayout.librarianWidthDefault; layout.sidebarWidth = MacLayout.sidebarWidthDefault; await settle(0.8)

@@ -2454,16 +2454,8 @@ struct LibrarianSurface: View {
             .accessibilityAddTraits(macShowingHistory && !isViewingActiveChat ? .isSelected : [])
             .accessibilityIdentifier("macLibrarianHistory")
             #if targetEnvironment(macCatalyst)
-            // G5 — expand: about half the window for long reading; toggles back.
-            Button { MacLayout.shared.toggleLibrarianExpanded() } label: {
-                Image(systemName: MacLayout.shared.librarianExpanded ? "arrow.down.right.and.arrow.up.left" : "arrow.up.left.and.arrow.down.right")
-                    .font(.system(size: 13, weight: .medium)).frame(width: 26, height: 26)
-            }
-            .buttonStyle(.plain)
-            .foregroundStyle(AppearancePalette.ink.opacity(0.7))
-            .help(MacLayout.shared.librarianExpanded ? "Narrow the Librarian" : "Widen the Librarian for reading")
-            .accessibilityLabel(MacLayout.shared.librarianExpanded ? "Narrow the Librarian" : "Widen the Librarian")
-            .accessibilityIdentifier("macLibrarianExpand")
+            // E fix-up 5 (L5) — column / floating (was G5's "widen for reading").
+            MacPanelFloatSwitch()
             #endif
         }
         .padding(.horizontal, 16)

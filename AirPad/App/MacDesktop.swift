@@ -306,19 +306,21 @@ struct MacDesktopFrame<Content: View>: View {
                 .focusable()
                 .focusEffectDisabled()
                 .focused($region, equals: .content)
-                .overlay(alignment: .trailing) {
-                    if layout.rightPanelOpen && layout.librarianFloats {
-                        MacFloatingLibrarianPanel(hostScope: hostScope)
-                            .transition(.move(edge: .trailing).combined(with: .opacity))
-                    }
-                }
             if layout.rightPanelOpen && !layout.librarianFloats {
                 // G2 — the Librarian's slot follows the settled width; the panel and its hairline are drawn over it at the
                 // live width (as the sidebar's). H4 — Settings takes the same slot at its own width.
                 Color.clear
                     .frame(width: layout.settledRightWidth + 1)
-                    .overlay(alignment: .trailing) { MacLibrarianPanel(hostScope: hostScope) }
                     .transition(.move(edge: .trailing))
+            }
+        }
+        // E fix-up 5 (L5) — ONE panel over the row, docked over its slot or floating over the content: the header's
+        // column / floating switch restyles it in place, so an open chat (and the panel's scroll) stays where it was.
+        // (Two branches made a new Librarian on every switch: an open chat dropped back to the panel's home.)
+        .overlay(alignment: .trailing) {
+            if layout.rightPanelOpen {
+                MacRightPanel(hostScope: hostScope)
+                    .transition(.move(edge: .trailing).combined(with: .opacity))
             }
         }
     }
@@ -370,20 +372,32 @@ private struct MacSidebarPanel: View {
     }
 }
 
-private struct MacLibrarianPanel: View {
+/// L5 — the right slot's panel, docked (K4: flush in its column, a hairline where it meets the content) or floating
+/// (K4: one soft corner all round, inset 10 pt, a shadow). The same view either way: only its styling follows
+/// `librarianFloats`, never its structure, so the Librarian or Settings inside keeps its state across the switch.
+private struct MacRightPanel: View {
     let hostScope: CanvasScope
     @State private var layout = MacLayout.shared
 
     var body: some View {
+        let floats = layout.librarianFloats
+        let shape = RoundedRectangle(cornerRadius: floats ? LibrarianPanelShape.corner : 0, style: .continuous)
         HStack(spacing: 0) {
             MacHairline()
-                .overlay { MacRightSlotResizeHandle() }
+                .opacity(floats ? 0 : 1)
+                .frame(width: floats ? 0 : 1)
             MacRightSlotContent(hostScope: hostScope)
-                .frame(width: layout.columnDragging ? layout.settledRightWidth : nil)   // text reflows ≤ 10×/s
-                .frame(width: layout.rightWidth, alignment: .trailing)
+                // text reflows ≤ 10×/s during an edge drag
+                .frame(width: layout.columnDragging ? (floats ? layout.settledFloatingLibrarianWidth : layout.settledRightWidth) : nil)
+                .frame(width: floats ? layout.floatingLibrarianWidth : layout.rightWidth, alignment: .trailing)
                 .clipped()
-                .environment(\.librarianPanelShape, .macDocked)   // K4 — flush in its column
+                .environment(\.librarianPanelShape, floats ? .macFloating : .macDocked)
         }
+        .overlay(alignment: .leading) { MacRightSlotResizeHandle().offset(x: floats ? 0 : -3.5) }
+        .clipShape(shape)
+        .overlay(shape.strokeBorder(AppearancePalette.ink.opacity(floats ? 0.10 : 0), lineWidth: 1))
+        .shadow(color: .black.opacity(floats ? 0.22 : 0), radius: 18, y: 6)
+        .padding(floats ? 10 : 0)
     }
 }
 
@@ -425,27 +439,6 @@ struct MacSettingsColumn: View {
             .id(layout.settingsSerial)   // a deep link (Web search, Models) re-seeds the panel's path
             .background(AppearancePalette.bgBase)
             .accessibilityIdentifier("macSettingsPanel")
-    }
-}
-
-private struct MacFloatingLibrarianPanel: View {
-    let hostScope: CanvasScope
-    @State private var layout = MacLayout.shared
-
-    var body: some View {
-        MacRightSlotContent(hostScope: hostScope)
-            .frame(width: layout.columnDragging ? layout.settledFloatingLibrarianWidth : nil)
-            .frame(width: layout.floatingLibrarianWidth, alignment: .trailing)
-            .clipped()
-            .overlay(alignment: .leading) { MacRightSlotResizeHandle() }
-            // K4 (T ruled 2026-11-16) — one set of corners: the surface's own soft 40 pt corner, not a tighter 14 pt
-            // clip around it.
-            .environment(\.librarianPanelShape, .macFloating)
-            .clipShape(LibrarianPanelShape.macFloatingShape)
-            .overlay(LibrarianPanelShape.macFloatingShape
-                .strokeBorder(AppearancePalette.ink.opacity(0.10), lineWidth: 1))
-            .shadow(color: .black.opacity(0.22), radius: 18, y: 6)
-            .padding(10)
     }
 }
 

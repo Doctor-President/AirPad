@@ -519,6 +519,8 @@ private struct MacListRow: View, Equatable {
     @Environment(CorpusStore.self) private var store
     @Environment(\.colorScheme) private var scheme
     @State private var thumb: UIImage?
+    /// E fix-up 5 (L6) — no hero: a still of the entry's own gradient (`ListGradientThumbs`).
+    @State private var gradientThumb: UIImage?
 
     var body: some View {
         Button(action: action) {
@@ -526,6 +528,7 @@ private struct MacListRow: View, Equatable {
                 ZStack {
                     RoundedRectangle(cornerRadius: 7, style: .continuous).fill(AppearancePalette.ink.opacity(0.07))
                     if let thumb { Image(uiImage: thumb).resizable().scaledToFill() }
+                    else if let gradientThumb { Image(uiImage: gradientThumb).resizable().scaledToFill() }
                 }
                 .frame(width: 40, height: 40)
                 .clipShape(RoundedRectangle(cornerRadius: 7, style: .continuous))
@@ -572,6 +575,11 @@ private struct MacListRow: View, Equatable {
             guard let url = await store.coverImageURL(for: node), let key = DisplayImageCache.coverKey(node) else { return }
             thumb = await DisplayImageCache.shared.load(path: key, url: url, pixels: Int(40 * DisplaySize.scale))
         }
+        .task(id: node.coverImageRelativePath == nil ? ListGradientThumbs.key(node, dark: scheme == .dark) : "") {
+            guard node.coverImageRelativePath == nil else { gradientThumb = nil; return }
+            gradientThumb = ListGradientThumbs.shared.cached(node, dark: scheme == .dark)
+            if gradientThumb == nil { gradientThumb = await ListGradientThumbs.shared.image(node, dark: scheme == .dark) }
+        }
     }
 
     private var collection: NodeCollection? {
@@ -589,5 +597,67 @@ private struct MacListRow: View, Equatable {
         if s < 7 * 86_400 { return "\(Int(s / 86_400)) d" }
         if s < 60 * 86_400 { return "\(Int(s / (7 * 86_400))) wk" }
         return date.formatted(.dateTime.month(.abbreviated).day())
+    }
+}
+
+/// E fix-up 5 (L6) — T: rows without a hero showed a blank square ("we could do gradients sure"). The row shows a STILL
+/// of the entry's own gradient — the colours and composition its card shows (the card's `NodeGradientLayer` values),
+/// frozen at time 0, never animated in the List. Rendered once per entry and look, kept in memory and on disk
+/// (Caches/ListGradientThumbs); the key holds what the gradient is made from (the entry's id, its primary tag, light /
+/// dark), so a change there renders a new one. Rendering yields first, so a row draws its placeholder before it.
+@MainActor final class ListGradientThumbs {
+    static let shared = ListGradientThumbs()
+    /// Bump when the card's gradient values change (the stills on disk are then re-rendered).
+    static let version = 2
+    /// A card's proportions (5:7) at a typical card width; the row shows its centre, scaled to fill.
+    static let renderSize = CGSize(width: 200, height: 280)
+    private let memory = NSCache<NSString, UIImage>()
+    private let dir = FileManager.default.urls(for: .cachesDirectory, in: .userDomainMask)[0]
+        .appendingPathComponent("ListGradientThumbs", isDirectory: true)
+
+    static func key(_ node: Node, dark: Bool) -> String {
+        "v\(version)-\(node.id)-\(NodeGradientLayer.stableHash(node.primaryTag ?? ""))-\(dark ? "d" : "l")"
+    }
+
+    func cached(_ node: Node, dark: Bool) -> UIImage? { memory.object(forKey: Self.key(node, dark: dark) as NSString) }
+
+    func image(_ node: Node, dark: Bool) async -> UIImage? {
+        let key = Self.key(node, dark: dark)
+        if let i = memory.object(forKey: key as NSString) { return i }
+        let file = dir.appendingPathComponent(key + ".png")
+        let data = await Task.detached(priority: .utility) { try? Data(contentsOf: file) }.value
+        if let data, let i = UIImage(data: data) { memory.setObject(i, forKey: key as NSString); return i }
+        await Task.yield()
+        if let i = memory.object(forKey: key as NSString) { return i }
+        let renderer = ImageRenderer(content: Self.still(node)
+            .frame(width: Self.renderSize.width, height: Self.renderSize.height)
+            .environment(\.colorScheme, dark ? .dark : .light))
+        renderer.scale = 0.6 * DisplaySize.scale / 2   // the row's 40 pt square ≈ the render's centre 120 pt
+        renderer.isOpaque = true
+        guard let image = renderer.uiImage else { return nil }
+        memory.setObject(image, forKey: key as NSString)
+        let dir = self.dir
+        Task.detached(priority: .background) {
+            try? FileManager.default.createDirectory(at: dir, withIntermediateDirectories: true)
+            try? image.pngData()?.write(to: file, options: .atomic)
+        }
+        return image
+    }
+
+    /// The card's gradient (NodeCardView, a card without a hero), centred, at time 0, without the glass ribs.
+    private static func still(_ node: Node) -> some View {
+        NodeGradientLayer(node: node,
+                          vignette: GradientBake.cardVignette,
+                          glowStart: GradientBake.cardGlowStart,
+                          glowEnd: GradientBake.cardGlowEnd,
+                          glowStrength: GradientBake.cardRadial,
+                          bloom: GradientBake.cardBloom,
+                          undulation: GradientBake.cardAmplitude,
+                          warpScale: GradientBake.cardScale,
+                          animated: false,
+                          anchor: .center,
+                          blobExpr: 1,
+                          glassSurface: nil,   // no fluted ribs: at 40 pt they read as stripes, not glass
+                          showsBlobs: true)
     }
 }

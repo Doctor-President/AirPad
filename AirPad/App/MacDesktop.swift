@@ -375,6 +375,7 @@ private struct MacLibrarianPanel: View {
                 .frame(width: layout.columnDragging ? layout.settledRightWidth : nil)   // text reflows ≤ 10×/s
                 .frame(width: layout.rightWidth, alignment: .trailing)
                 .clipped()
+                .environment(\.librarianPanelShape, .macDocked)   // K4 — flush in its column
         }
     }
 }
@@ -430,8 +431,11 @@ private struct MacFloatingLibrarianPanel: View {
             .frame(width: layout.floatingLibrarianWidth, alignment: .trailing)
             .clipped()
             .overlay(alignment: .leading) { MacRightSlotResizeHandle() }
-            .clipShape(RoundedRectangle(cornerRadius: 14, style: .continuous))
-            .overlay(RoundedRectangle(cornerRadius: 14, style: .continuous)
+            // K4 (T ruled 2026-11-16) — one set of corners: the surface's own soft 40 pt corner, not a tighter 14 pt
+            // clip around it.
+            .environment(\.librarianPanelShape, .macFloating)
+            .clipShape(LibrarianPanelShape.macFloatingShape)
+            .overlay(LibrarianPanelShape.macFloatingShape
                 .strokeBorder(AppearancePalette.ink.opacity(0.10), lineWidth: 1))
             .shadow(color: .black.opacity(0.22), radius: 18, y: 6)
             .padding(10)

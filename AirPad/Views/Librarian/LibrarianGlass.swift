@@ -398,9 +398,10 @@ struct LibrarianGlassPanel: View {
     let dark: Bool
     @Environment(\.accessibilityReduceTransparency) private var reduceTransparency
     @Environment(\.colorSchemeContrast) private var contrast
+    @Environment(\.librarianPanelShape) private var panelShape
 
     var body: some View {
-        let shape = RoundedRectangle(cornerRadius: 40, style: .continuous)
+        let shape = panelShape.shape
         let a11y = LibrarianGlassAccessibility.resolve(reduceTransparency: reduceTransparency, increaseContrast: contrast == .increased)
         let veil = max(glass.veil, a11y.veilFloor)
         ZStack {
@@ -412,10 +413,12 @@ struct LibrarianGlassPanel: View {
                 if grade.on { GradedTintFill(shape: shape, grade: grade, center: UnitPoint(x: 0.5, y: 0.55)) }
                 if veil > 0 { ReadingVeil(dark: dark, opacity: veil) }
             }
-            shape.strokeBorder((dark ? Color.white : Color(hexString: "232A2E")).opacity(a11y.strokeOpacity),
-                               lineWidth: a11y.strokeOpacity > 0.2 ? 1 : 0.5)
+            if panelShape.strokes {
+                shape.strokeBorder((dark ? Color.white : Color(hexString: "232A2E")).opacity(a11y.strokeOpacity),
+                                   lineWidth: a11y.strokeOpacity > 0.2 ? 1 : 0.5)
+            }
         }
-        .padding(.bottom, -150)
+        .padding(.bottom, panelShape.bottomRunOff)
         .ignoresSafeArea(.container, edges: .bottom)
     }
 }

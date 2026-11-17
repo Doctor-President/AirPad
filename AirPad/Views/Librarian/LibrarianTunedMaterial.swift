@@ -55,9 +55,10 @@ struct LibrarianSurfaceSpec: Equatable, CustomStringConvertible {
 struct LibrarianTunedMaterial: View {
     let spec: LibrarianSurfaceSpec
     let dark: Bool
+    @Environment(\.librarianPanelShape) private var panelShape
 
     var body: some View {
-        let shape = RoundedRectangle(cornerRadius: 40, style: .continuous)
+        let shape = panelShape.shape
         let tint = dark ? Color(hexString: "141414") : Color(hexString: AppearancePalette.light.panelTint)
         let stroke = dark ? Color.white.opacity(0.10) : Color(hexString: AppearancePalette.light.panelStroke)
         Group {
@@ -72,13 +73,30 @@ struct LibrarianTunedMaterial: View {
                     }
                     // Today's light shadow (Brown @ 0.150, radius 24, offset (3, 2)); dark has none.
                     .shadow(color: dark ? .clear : Color(hexString: "43372A").opacity(0.15), radius: 24, x: 3, y: 2)
-                    shape.strokeBorder(stroke, lineWidth: dark ? 0.5 : 1.2)
+                    if panelShape.strokes { shape.strokeBorder(stroke, lineWidth: dark ? 0.5 : 1.2) }
                 }
             }
         }
-        .padding(.bottom, -150)
+        .padding(.bottom, panelShape.bottomRunOff)
         .ignoresSafeArea(.container, edges: .bottom)
     }
+}
+
+/// E fix-up 4 (K4, T ruled 2026-11-16) — the shape the Librarian's surface takes. The iPhone's sheet: a 40 pt continuous
+/// corner at the top, the bottom run off the screen. The Mac's floating panel: that same soft corner on all four sides,
+/// the only corners it has (the panel clips, strokes and shadows to `macFloatingShape`). The Mac's docked column: flush,
+/// square, no stroke (the column's hairline is the divider).
+enum LibrarianPanelShape {
+    case phone, macFloating, macDocked
+    static let corner: CGFloat = 40
+    static let macFloatingShape = RoundedRectangle(cornerRadius: corner, style: .continuous)
+    var shape: RoundedRectangle { RoundedRectangle(cornerRadius: self == .macDocked ? 0 : Self.corner, style: .continuous) }
+    var strokes: Bool { self == .phone }
+    var bottomRunOff: CGFloat { self == .phone ? -150 : 0 }
+}
+
+extension EnvironmentValues {
+    @Entry var librarianPanelShape: LibrarianPanelShape = .phone
 }
 
 /// The blurred, desaturated backdrop. UIKit has no public blur radius, and on iOS 27 the old paused-animator trick

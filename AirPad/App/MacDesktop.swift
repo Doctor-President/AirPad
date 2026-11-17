@@ -206,6 +206,15 @@ final class MacLayout {
 /// D7 — the three regions Tab / ⇧Tab move between.
 enum MacRegion: Hashable { case sidebar, content, librarian }
 
+enum MacDesktopFrameDebug {
+    static var edgeEffectHidden: Bool {
+        #if DEBUG
+        if UserDefaults.standard.string(forKey: "MacScrollEdgeEffect") == "shown" { return false }
+        #endif
+        return true
+    }
+}
+
 struct MacDesktopFrame<Content: View>: View {
     let hostScope: CanvasScope
     @ViewBuilder var content: Content
@@ -250,6 +259,13 @@ struct MacDesktopFrame<Content: View>: View {
             if MacToolbarController.controlsInWindow { MacToolbarInWindow(height: toolbarInset) }
         }
         .ignoresSafeArea(.container, edges: .top)
+        // E fix-up 4 (K1) — no top scroll-edge effect on the Mac. iOS 26 lays a touch-passthrough ScrollEdgeEffectView
+        // over the top of every scroll view (Settings' list, the List view, the sidebar) that reaches up into the
+        // title-bar band; a press on a toolbar control above one, made just after the pointer arrives, never became a
+        // UIKit touch (AppKit and Catalyst's translator got it; UIKit cancelled it at the release). Real clicks with
+        // Settings open, Librarian pressed 0.12 s after arriving: 4/4 lost with the effect, 0/4 without. Our bar is
+        // drawn by us, so the effect had nothing to blend under. DEBUG `-MacScrollEdgeEffect shown` = the A/B.
+        .scrollEdgeEffectHidden(MacDesktopFrameDebug.edgeEffectHidden, for: .top)
         .background(AppearancePalette.bgBase.ignoresSafeArea())
         .onGeometryChange(for: CGFloat.self) { $0.safeAreaInsets.top } action: {
             if $0 > 0 { toolbarInset = MacToolbarController.route == .none ? 52 : $0 }
@@ -1229,6 +1245,7 @@ enum MacToolbarProbe {
     static let on = ProcessInfo.processInfo.arguments.contains("-MacClickTrace")
     private static var link: CADisplayLink?
     private static var last: CFTimeInterval = 0
+    static var inPress = false
     static func start() {
         guard on, link == nil else { return }
         let l = CADisplayLink(target: Ticker.shared, selector: #selector(Ticker.tick(_:)))
@@ -1236,6 +1253,49 @@ enum MacToolbarProbe {
         link = l
         if ProcessInfo.processInfo.arguments.contains("-MacClickTraceAppKit") { MacClick.traceWindowMethods() }
         if ProcessInfo.processInfo.arguments.contains("-MacClickTraceCancel") { traceCancels() }
+        // E fix-up 4 (K1): the CA context id the Catalyst translator routes each mouse event to, beside the UIKit
+        // windows' own context ids (a press routed to a stale context would never become a touch).
+        if let cls = NSClassFromString("UINSMouseEventTranslator"),
+           let m = class_getInstanceMethod(cls, NSSelectorFromString("_handleMouseEvent:contextId:")),
+           let enc = method_getTypeEncoding(m) {
+            let e = String(cString: enc)
+            NSLog("[ClickTrace] translator _handleMouseEvent:contextId: encoding %@", e)
+            if e.hasPrefix("v28@0:8@16I24") || e.hasPrefix("v32@0:8@16I24") || e.hasPrefix("v32@0:8@16Q24") || e.hasPrefix("v28@0:8@16i24") {
+                typealias O = @convention(c) (NSObject, Selector, NSObject, UInt32) -> Void
+                let orig = unsafeBitCast(method_getImplementation(m), to: O.self)
+                let sel = method_getName(m)
+                let b: @convention(block) (NSObject, NSObject, UInt32) -> Void = { o, ev, ctx in
+                    let kind = (ev.value(forKey: "type") as? UInt) ?? 0
+                    if kind == 1 || kind == 2 {
+                        let wins = UIApplication.shared.connectedScenes.compactMap { $0 as? UIWindowScene }.flatMap(\.windows)
+                            .map { w in "\(String(describing: type(of: w)).prefix(22))=\((w.value(forKey: "_contextId") as? UInt32).map(String.init) ?? "?")\(w.isHidden ? "h" : "")" }
+                            .joined(separator: ",")
+                        let ign = UIApplication.shared.isIgnoringInteractionEvents
+                        NSLog("[ClickTrace] translator %@ ctx %u · ignoring %@ · windows [%@] t=%.0f", kind == 1 ? "down" : "up", ctx,
+                              ign ? "YES" : "no", wins, CFAbsoluteTimeGetCurrent() * 1000)
+                    }
+                    MacClickTrace.inPress = true
+                    orig(o, sel, ev, ctx)
+                    MacClickTrace.inPress = false
+                }
+                method_setImplementation(m, imp_implementationWithBlock(b))
+            }
+        }
+        // K1: every view hit-test made while the translator handles a press (UIView.hitTest, inherited by every view).
+        if let m = class_getInstanceMethod(UIWindow.self, #selector(UIView.hitTest(_:with:))) {
+            typealias O = @convention(c) (UIWindow, Selector, CGPoint, UIEvent?) -> UIView?
+            let orig = unsafeBitCast(method_getImplementation(m), to: O.self)
+            let b: @convention(block) (UIWindow, CGPoint, UIEvent?) -> UIView? = { w, p, e in
+                let v = orig(w, #selector(UIView.hitTest(_:with:)), p, e)
+                if inPress {
+                    let chain = sequence(first: v, next: { $0?.superview }).prefix(3)
+                        .map { $0.map { String(describing: type(of: $0)).prefix(30) } ?? "nil" }.joined(separator: "<")
+                    NSLog("[ClickTrace] hitTest (%.0f,%.0f) ev %@ → %@", p.x, p.y, e.map { "\($0.type.rawValue)" } ?? "nil", chain)
+                }
+                return v
+            }
+            method_setImplementation(m, imp_implementationWithBlock(b))
+        }
         // AppKit: every left mouse down / up the window receives (before UIKit sees it).
         if let cls = NSClassFromString("NSWindow"), let m = class_getInstanceMethod(cls, NSSelectorFromString("sendEvent:")) {
             typealias O = @convention(c) (NSObject, Selector, NSObject) -> Void
@@ -1257,7 +1317,11 @@ enum MacToolbarProbe {
             typealias O = @convention(c) (UIApplication, Selector, UIEvent) -> Void
             let orig = unsafeBitCast(method_getImplementation(m), to: O.self)
             let b: @convention(block) (UIApplication, UIEvent) -> Void = { a, e in
-                if e.type != .hover {
+                if e.type == .hover {
+                    let t = e.allTouches?.first
+                    NSLog("[ClickTrace] hover phase %d at %@ t=%.0f", t?.phase.rawValue ?? -1, t.map { "\($0.location(in: nil))" } ?? "-",
+                          CFAbsoluteTimeGetCurrent() * 1000)
+                } else {
                     let ts = (e.allTouches ?? []).map { t in
                         "\(t.phase.rawValue)/\(t.type.rawValue)@\(t.window.map { String(describing: type(of: $0)).prefix(18) } ?? "nil")"
                     }.joined(separator: ",")
@@ -1281,6 +1345,13 @@ enum MacToolbarProbe {
                     let fr = (w.value(forKey: "firstResponder") as AnyObject?).map { String(describing: type(of: $0)).prefix(60) } ?? "nil"
                     NSLog("[ClickTrace] touch %@ (%.0f,%.0f) t=%.0f fr %@ view %@ · gr [%@]", t.phase == .began ? "began" : t.phase == .ended ? "ended" : "cancelled",
                           p.x, p.y, CFAbsoluteTimeGetCurrent() * 1000, String(fr), chain, grs)
+                    // E fix-up 4 (K1): who delivers a cancelled touch (a lost press reaches the window only as a cancel).
+                    if t.phase == .cancelled {
+                        NSLog("[ClickTrace] cancelled-from %@", Thread.callStackSymbols.dropFirst(1).prefix(16)
+                            .map { l in let p = l.split(separator: " ", omittingEmptySubsequences: true)
+                                return p.count > 3 ? String(p[3...].joined(separator: " ").prefix(90)) : String(l.prefix(90)) }
+                            .joined(separator: " ← "))
+                    }
                 }
                 orig(w, #selector(UIWindow.sendEvent(_:)), e)
             }

@@ -187,7 +187,7 @@ enum MacClick {
     /// Every NSWindow / title-bar method whose name has "drag" or "mouse" in it and a one-object signature, traced
     /// (what takes a mouse-down before any view sees it).
     static func traceWindowMethods() {
-        for name in ["NSWindow", "UINSWindow", "NSThemeFrame", "NSTitlebarView", "NSTitlebarContainerView", "NSToolbarView", "NSNextStepFrame", "NSFrameView"] {
+        for name in ["NSWindow", "UINSWindow", "NSThemeFrame", "NSTitlebarView", "NSTitlebarContainerView", "NSToolbarView", "NSNextStepFrame", "NSFrameView", "UINSInputView", "UINSMouseEventTranslator", "UINSSceneView", "UINSView"] {
             guard let cls = NSClassFromString(name) else { continue }
             var count: UInt32 = 0
             guard let list = class_copyMethodList(cls, &count) else { continue }

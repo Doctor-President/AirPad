@@ -30,7 +30,11 @@ struct KeyboardDismissOnTapOutside: ViewModifier {
             // on the Related Nodes NavigationLinks below. A background recognizer with
             // `cancelsTouchesInView = false` only receives taps that fall THROUGH the
             // content (empty chrome / gaps), leaving controls to handle their own.
-            .background(KeyboardDismissTapCatcher())
+            // E fix-up 4 (K2) — not on the Mac: there a Toggle is a checkbox SwiftUI draws itself (no UIView of its own,
+            // unlike the iPhone's UISwitch), so UIKit's hit-test picked this catcher under it and the click never reached
+            // the checkbox (Settings › Appearance › Fluted glass / Gravity: real clicks 0 of 4 flipped). The Mac has no
+            // on-screen keyboard to dismiss, and a click outside a note already ends its editing (fix-up 3, H2).
+            .background { if !RunningOnMac.isMac { KeyboardDismissTapCatcher() } }
     }
 }
 

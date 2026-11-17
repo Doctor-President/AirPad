@@ -337,6 +337,18 @@ struct CanvasChrome: View {
                     }
                 }
 
+                #if targetEnvironment(macCatalyst)
+                // E fix-up 4 (K5, T ruled) — Analyze on the Map, bottom-left (the floating Librarian is on the right).
+                if filterState.viewMode == .systemGraph && !store.isInDetailView && !selection.isActive {
+                    VStack {
+                        Spacer()
+                        HStack { MacAnalyzeButton(); Spacer() }
+                    }
+                    .padding(.leading, 16)
+                    .padding(.bottom, 16)
+                }
+                #endif
+
                 if selection.isActive && !selection.isEmpty && !store.isInDetailView {
                     VStack {
                         Spacer()

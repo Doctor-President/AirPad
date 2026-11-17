@@ -884,7 +884,11 @@ struct ContentView: View {
             MacLayout.shared.sidebarVisible.toggle()
             #endif
         case .analyze:
+            #if targetEnvironment(macCatalyst)
+            MacAnalyze.shared.run(store)   // E fix-up 4 (K5) — the Map's Analyze button shows the run
+            #else
             store.runCorpusAnalysis(trigger: .manual)
+            #endif
         case .togglePrivate:
             if PrivateEntries.shared.revealed { PrivateEntries.shared.hide() } else { Task { await PrivateEntries.shared.reveal() } }
         case .export, .back, .forward, .zoomIn, .zoomOut, .zoomFit, .editMap, .closePreview,

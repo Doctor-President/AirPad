@@ -595,12 +595,14 @@ struct MacSidebar: View {
                 row("Library", icon: "books.vertical", count: userNodes.count, selected: router.entryMode == .canvas, id: "sidebar.library") {
                     router.entryMode = .canvas
                 }
+                .contextMenu { analyzeMenuItem }   // K5
                 if !store.sampleNodeIDs.isEmpty {
                     row("Sample Library", icon: "sparkles.rectangle.stack",
                         count: store.hidingPrivate(store.nodes).filter { store.isSample($0.id) }.count,
                         selected: router.entryMode == .sampleCanvas, id: "sidebar.sample") {
                         router.entryMode = .sampleCanvas
                     }
+                    .contextMenu { analyzeMenuItem }
                 }
 
                 // D fix-up B5 — Journals before the collections: last, it sat below a long collection list (off screen
@@ -709,10 +711,90 @@ struct MacSidebar: View {
             .accessibilityAddTraits(.isHeader)
     }
 
+    /// E fix-up 4 (K5, T ruled) — Analyze on a library's right-click menu (the same run as the Map's button).
+    private var analyzeMenuItem: some View {
+        Button { MacAnalyze.shared.run(store) } label: { Label("Analyze Library", systemImage: "point.3.connected.trianglepath.dotted") }
+            .disabled(MacAnalyze.shared.running)
+    }
+
     private func row(_ title: String, icon: String? = nil, dot: Color? = nil, count: Int? = nil, selected: Bool, id: String,
                      action: @escaping () -> Void) -> some View {
         MacSidebarRow(title: title, icon: icon, dot: dot, count: count, selected: selected, action: action)
             .accessibilityIdentifier(id)
+    }
+}
+
+/// E fix-up 4 (K5, T ruled 2026-11-16 "Map") — Analyze where people look for it: a small button in the Map's bottom-left
+/// corner (clear of the floating Librarian on the right), naming each step while it runs. The same run backs View ›
+/// Analyze Library and a library's right-click menu. The steps are the real ones: grouping (clusters + neighbourhoods,
+/// on the main thread), the Map re-forming its regions, then naming any new region (Foundation Models, when it runs).
+@MainActor @Observable
+final class MacAnalyze {
+    static let shared = MacAnalyze()
+    enum Phase: Equatable { case grouping, forming, naming, done }
+    private(set) var phase: Phase?
+    var running: Bool { phase != nil && phase != .done }
+
+    var label: String {
+        switch phase {
+        case .grouping: "Grouping entries…"
+        case .forming: "Forming regions…"
+        case .naming: "Naming regions…"
+        case .done: "Map updated"
+        case nil: "Analyze"
+        }
+    }
+
+    func run(_ store: CorpusStore) {
+        guard !running else { return }
+        Task { @MainActor in
+            phase = .grouping
+            try? await Task.sleep(for: .milliseconds(60))   // the label reaches the screen before the main-thread pass
+            store.runCorpusAnalysis(trigger: .manual)        // clusters + neighbourhoods, then asks the Map to re-form
+            phase = .forming
+            try? await Task.sleep(for: .milliseconds(900))  // the Map's re-form and its settle
+            var waited = 0.0
+            while SubstrateClusterLabelService.shared.isLabeling, waited < 60 {
+                phase = .naming
+                try? await Task.sleep(for: .milliseconds(250)); waited += 0.25
+            }
+            phase = .done
+            try? await Task.sleep(for: .seconds(1.6))
+            if phase == .done { phase = nil }
+        }
+    }
+}
+
+struct MacAnalyzeButton: View {
+    @Environment(CorpusStore.self) private var store
+    @Environment(\.appBodyFont) private var appFont
+    @State private var analyze = MacAnalyze.shared
+    @State private var hovering = false
+
+    var body: some View {
+        Button { analyze.run(store) } label: {
+            HStack(spacing: 6) {
+                if analyze.running {
+                    ProgressView().controlSize(.mini)
+                } else {
+                    Image(systemName: analyze.phase == .done ? "checkmark" : "point.3.connected.trianglepath.dotted")
+                        .font(.system(size: 12, weight: .medium))
+                }
+                Text(analyze.label).font(appFont.font(size: 12, weight: .medium, relativeTo: .caption1))
+            }
+            .foregroundStyle(AppearancePalette.ink.opacity(0.85))
+            .padding(.horizontal, 12)
+            .frame(height: 28)
+            .background(.ultraThinMaterial, in: Capsule())
+            .overlay(Capsule().strokeBorder(AppearancePalette.ink.opacity(hovering ? 0.24 : 0.12), lineWidth: 1))
+            .contentShape(Capsule())
+        }
+        .buttonStyle(.plain)
+        .disabled(analyze.running)
+        .onHover { hovering = $0 }
+        .help("Analyze the library: regroup entries and re-form the Map's regions")
+        .accessibilityIdentifier("map.analyze")
+        .accessibilityValue(analyze.label)
     }
 }
 

@@ -355,8 +355,15 @@ enum MacClickSelfTest {
             return (fr != nil, "first responder \(fr.map { String(describing: type(of: $0)) } ?? "none")")
         }
         let focused = searchResponder() != nil
-        if focused && !MacClick.viaWindow { await MacClick.typeText("co"); await MacClick.settle(0.6) }   // window-direct keys stall
-        effect("Search field — typing searches", router.librarian.searchText == "co", "text \"\(router.librarian.searchText)\" · Librarian open \(layout.librarianOpen)")
+        if live {
+            // E fix-up 4 (K7) — on an awake Mac the window is key and in-process synthetic key events never reach the field
+            // (fix-up 3: FAIL with real keys passing); typing is proved with real keys instead (rclick type, rperf's
+            // ask-type / note-type), so this test doesn't post them.
+            rows.append("INFO Search field — typing: proved with real keys (scripts/mac/realclick), not in-process events")
+        } else {
+            if focused && !MacClick.viaWindow { await MacClick.typeText("co"); await MacClick.settle(0.6) }   // window-direct keys stall
+            effect("Search field — typing searches", router.librarian.searchText == "co", "text \"\(router.librarian.searchText)\" · Librarian open \(layout.librarianOpen)")
+        }
         router.librarian.searchText = ""
         searchResponder()?.resignFirstResponder()
         await MacClick.settle(0.5)
@@ -409,11 +416,18 @@ enum MacClickSelfTest {
                 let d2 = MacClick.startsDrag(wb)
                 row("the sidebar's top strip still drags the window", d2 == true, "shouldStartWindowDrag \(d2.map { "\($0)" } ?? "n/a")")
             }
-            MacClick.send(MacClick.mouse(1, wp)); await MacClick.settle(0.05)
-            for i in 1...6 { MacClick.send(MacClick.mouse(6, CGPoint(x: wp.x + CGFloat(i * 6), y: wp.y))); await MacClick.settle(0.03) }
-            MacClick.send(MacClick.mouse(2, CGPoint(x: wp.x + 36, y: wp.y))); await MacClick.settle(0.4)
-            let after = w.value(forKey: "frame") as? CGRect ?? before
-            rows.append("INFO window drag from the empty bar: origin \(Int(before.minX)) → \(Int(after.minX)) (AppKit drags by the cursor, so a synthetic drag may not move it: T's check)")
+            if live {
+                // K7 — with the window key, a synthetic press on the bar enters AppKit's window-drag loop, which waits for a
+                // real mouse-up: the test hung there (fix-up 3). The drag itself is proved with real events (rclick drag,
+                // matrix.sh); here only AppKit's drag answer above is checked.
+                rows.append("INFO window drag from the empty bar: proved with real events (scripts/mac/realclick), not posted here")
+            } else {
+                MacClick.send(MacClick.mouse(1, wp)); await MacClick.settle(0.05)
+                for i in 1...6 { MacClick.send(MacClick.mouse(6, CGPoint(x: wp.x + CGFloat(i * 6), y: wp.y))); await MacClick.settle(0.03) }
+                MacClick.send(MacClick.mouse(2, CGPoint(x: wp.x + 36, y: wp.y))); await MacClick.settle(0.4)
+                let after = w.value(forKey: "frame") as? CGRect ?? before
+                rows.append("INFO window drag from the empty bar: origin \(Int(before.minX)) → \(Int(after.minX)) (AppKit drags by the cursor, so a synthetic drag may not move it: T's check)")
+            }
         }
 
         let counted = rows.filter { $0.hasPrefix("PASS") || $0.hasPrefix("FAIL") }.count

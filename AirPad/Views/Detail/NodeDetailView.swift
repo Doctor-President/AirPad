@@ -1075,6 +1075,9 @@ struct NodeDetailView: View {
             .onGeometryChange(for: CGFloat.self) { $0.size.width } action: { rightChromeWidth = $0 }
         }
         .padding(.horizontal, 16)
+        // E fix-up 5 (L8) — on the Mac the row sits right under the toolbar (the top safe area is the bar), so the ···
+        // capsule touched the bar's bottom edge (T's annotated screenshot): the same 16 pt it keeps from the side.
+        .padding(.top, RunningOnMac.isMac ? 16 : 0)
         } // close GlassRowContainer
         } // close ZStack
         } // close GeometryReader

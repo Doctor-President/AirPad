@@ -57,7 +57,8 @@ enum MacBatchESelfTest {
             let home = els("macTodayHome-\(want)").first?.accessibilityFrame
             let content = frame("macLibrarianColumn").map { lib -> CGRect in
                 let left = win().minX + (layout.sidebarVisible ? layout.sidebarWidth + 1 : 0)
-                return CGRect(x: left, y: 0, width: (layout.librarianFloats ? win().maxX : lib.minX - 1) - left, height: 1)
+                // E fix-up 4 (K6) — a floating panel covers the content's right side; Today centres in what's left.
+                return CGRect(x: left, y: 0, width: (layout.librarianFloats ? win().maxX - layout.floatingPanelFootprint : lib.minX - 1) - left, height: 1)
             }
             let centred = home.flatMap { h in content.map { abs(h.midX - $0.midX) < 3 } } ?? false
             let collectionsShown = MacFixupSelfTest.elements(in: window) { l, _ in l == "Collections" || l == "COLLECTIONS" }

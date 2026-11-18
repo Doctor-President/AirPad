@@ -113,6 +113,11 @@ struct ContentView: View {
                 #endif
                 // Mac batch C4 — `-ShowDropHighlight`: the drop highlight, for its still.
                 if ProcessInfo.processInfo.arguments.contains("-ShowDropHighlight") { dropTargeted = true }
+                // E fix-up 5 (L3) — `-ForceDropHighlightAfter <s>`: the highlight turned on with no drag (the stuck state),
+                // after <s> s, so the watchdog's recovery can be watched.
+                if let after = UserDefaults.standard.string(forKey: "ForceDropHighlightAfter").flatMap(Double.init) {
+                    DispatchQueue.main.asyncAfter(deadline: .now() + after) { NSLog("[DropWatch] forced on"); dropTargeted = true }
+                }
                 // Mac batch C3 — `-FocusNoteEditor <s>`: focus the first note editor on screen after <s> s (inline-bar stills).
                 if let after = UserDefaults.standard.string(forKey: "FocusNoteEditor").flatMap(Double.init) {
                     DispatchQueue.main.asyncAfter(deadline: .now() + after) {
@@ -471,6 +476,15 @@ struct ContentView: View {
             Task { await store.importDrop(providers, appendTo: target) }
             return true
         }
+        #if targetEnvironment(macCatalyst)
+        // E fix-up 5 (L3) — T saw a blue outline round the whole window "appearing unpredictably": this highlight is
+        // the only whole-window blue outline in the app, and SwiftUI's `isTargeted` can stay true after a drag that
+        // entered the window ends elsewhere (dropped into the note editor, or left the window). A drag needs a held
+        // mouse button: while the highlight is up, no button held for two checks in a row clears it.
+        .onChange(of: dropTargeted) { _, on in
+            if on, !ProcessInfo.processInfo.arguments.contains("-ShowDropHighlight") { DropHighlightWatchdog.watch { dropTargeted = false } }
+        }
+        #endif
         .overlay {
             if dropTargeted {
                 RoundedRectangle(cornerRadius: 12, style: .continuous)
@@ -990,3 +1004,22 @@ private struct DetailDepthWatcher: View {
         Color.clear.onChange(of: store.isInDetailView) { _, inDetail in changed(inDetail) }
     }
 }
+
+#if targetEnvironment(macCatalyst)
+/// E fix-up 5 (L3) — clears a drop highlight left on when no drag is in progress (no mouse button held, AppKit's
+/// `NSEvent.pressedMouseButtons`, read through the runtime: Catalyst has no drag-in-progress API).
+@MainActor enum DropHighlightWatchdog {
+    private static var timer: Timer?
+    static func watch(_ clear: @escaping @MainActor () -> Void) {
+        timer?.invalidate()
+        var idle = 0
+        timer = Timer.scheduledTimer(withTimeInterval: 0.3, repeats: true) { t in
+            MainActor.assumeIsolated {
+                let buttons = ((NSClassFromString("NSEvent") as? NSObject.Type)?.value(forKey: "pressedMouseButtons") as? Int) ?? 1
+                idle = buttons == 0 ? idle + 1 : 0
+                if idle >= 2 { t.invalidate(); timer = nil; NSLog("[DropWatch] no button held: cleared"); clear() }
+            }
+        }
+    }
+}
+#endif

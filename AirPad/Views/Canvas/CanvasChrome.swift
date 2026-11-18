@@ -1540,7 +1540,11 @@ struct ChromeEdgeBands: View {
         VStack(spacing: 0) {
             ChromeEdgeBand(edge: .top, height: v.topHeight, blur: v.blur, darken: v.darken, easing: v.easing)
             Spacer(minLength: 0)
-            ChromeEdgeBand(edge: .bottom, height: v.bottomHeight, blur: v.blur, darken: v.darken, easing: v.easing)
+            // E fix-up 6 (M5) — no bottom band on the Mac (T: "a good choice for iOS but a bit distracting on macOS"):
+            // there is no dock or home indicator under it there. The top band stays (it backs the toolbar).
+            if !RunningOnMac.isMac {
+                ChromeEdgeBand(edge: .bottom, height: v.bottomHeight, blur: v.blur, darken: v.darken, easing: v.easing)
+            }
         }
         .ignoresSafeArea()
         .allowsHitTesting(false)

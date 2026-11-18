@@ -2618,6 +2618,7 @@ struct RichTextToolbar: View {
                 .background(active ? Color.primary.opacity(0.18) : Color.clear)
                 .clipShape(Capsule(style: .continuous))
         }
+        .macPlainButton()   // E fix-up 6 (M3): no Mac bezel behind its own shape
         .disabled(!enabled)
     }
 }

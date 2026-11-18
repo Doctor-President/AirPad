@@ -150,6 +150,7 @@ struct VoiceCaptureSheet: View {
                         .clipShape(Capsule())
                 }
             }
+            .macPlainButton()   // E fix-up 6 (M3): no Mac bezel behind its own shape
             .disabled(elapsedSeconds < 1 || phase != .recording)
             .opacity(elapsedSeconds < 1 ? 0.4 : 1)
 

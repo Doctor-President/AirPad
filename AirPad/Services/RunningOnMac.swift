@@ -51,6 +51,17 @@ extension View {
 }
 
 extension View {
+    /// E fix-up 6 (M3) — a button that draws its own shape (a round icon, a glass circle, a pill) gets no second box
+    /// on the Mac. Under "Optimize for Mac" a default-style SwiftUI Button is a bordered push button: its bezel sat
+    /// behind the shape (T: a square box behind the media viewer's round play button). iPhone / iPad: unchanged.
+    @ViewBuilder func macPlainButton() -> some View {
+        #if targetEnvironment(macCatalyst)
+        buttonStyle(.plain)
+        #else
+        self
+        #endif
+    }
+
     /// Mac D0.11 (T N8) — a sheet that closed only by a swipe gets a visible × (top trailing) and Esc on the Mac, where
     /// a sheet has no swipe. iPhone / iPad: unchanged.
     @ViewBuilder func macSheetClose() -> some View {

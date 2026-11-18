@@ -854,6 +854,7 @@ private struct GalleryFullscreenPage: View {
                     .frame(width: 72, height: 72)
                     .modifier(ViewerGlassCircle())
             }
+            .macPlainButton()   // E fix-up 6 (M3): no Mac bezel behind its own shape
         }
     }
 }

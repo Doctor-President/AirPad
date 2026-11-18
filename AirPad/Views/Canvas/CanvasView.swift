@@ -977,6 +977,7 @@ struct CanvasView: View {
                         .background(.ultraThinMaterial)
                         .clipShape(Capsule())
                     }
+                    .macPlainButton()   // E fix-up 6 (M3): no Mac bezel behind its own shape
                     .padding(.leading, 16)
                     .padding(.top, 60)
                     Spacer()
@@ -1642,6 +1643,7 @@ struct NodeDetailOverlay: View {   // internal: live-20 (3) stills (TextRunsGall
                             .background(.ultraThinMaterial)
                             .clipShape(Circle())
                     }
+                    .macPlainButton()   // E fix-up 6 (M3): no Mac bezel behind its own shape
                     .padding(.top, 12)
                     .padding(.trailing, 12)
                 }

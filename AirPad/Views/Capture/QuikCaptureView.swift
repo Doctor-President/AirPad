@@ -1059,6 +1059,7 @@ private struct QuikCaptureCollectionChip: View {
                     .font(.system(size: 9, weight: .bold))
                     .foregroundStyle(AppearancePalette.ink.opacity(0.6))
             }
+            .macPlainButton()   // E fix-up 6 (M3): no Mac bezel behind its own shape
         }
         .padding(.horizontal, 10)
         .padding(.vertical, 5)
@@ -1096,6 +1097,7 @@ private struct QuikCaptureTagChip: View {
                     .font(.system(size: 9, weight: .bold))
                     .foregroundStyle(AppearancePalette.ink.opacity(0.6))
             }
+            .macPlainButton()   // E fix-up 6 (M3): no Mac bezel behind its own shape
         }
         .padding(.horizontal, 10)
         .padding(.vertical, 5)

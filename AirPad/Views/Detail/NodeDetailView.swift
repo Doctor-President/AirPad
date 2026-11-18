@@ -919,6 +919,7 @@ struct NodeDetailView: View {
                         .contentShape(Circle())
                         .modifier(InteractiveGlassCircle())
                 }
+                .macPlainButton()   // E fix-up 6 (M3): no Mac bezel behind its own shape
             }
             Spacer()
             // Round 2 (scroll-collapsed band) — measure the RIGHT chrome group's
@@ -940,6 +941,7 @@ struct NodeDetailView: View {
                         .frame(height: 48)
                         .modifier(InteractiveGlassCapsule())
                 }
+                .macPlainButton()   // E fix-up 6 (M3): no Mac bezel behind its own shape
             } else {
                 // ws-chrome-pill — EDIT + ••• combined into ONE two-segment
                 // interactive-glass capsule, mirroring the Map's ChromeBar
@@ -1884,6 +1886,7 @@ private struct CollectionChip: View {
                     .font(.system(size: 9, weight: .bold))
                     .foregroundStyle(AppearancePalette.ink.opacity(0.6))
             }
+            .macPlainButton()   // E fix-up 6 (M3): no Mac bezel behind its own shape
         }
         .padding(.horizontal, 10)
         .padding(.vertical, 5)
@@ -1921,6 +1924,7 @@ private struct TagChip: View {
                     .font(.system(size: 9, weight: .bold))
                     .foregroundStyle(AppearancePalette.ink.opacity(0.6))
             }
+            .macPlainButton()   // E fix-up 6 (M3): no Mac bezel behind its own shape
         }
         .padding(.horizontal, 10)
         .padding(.vertical, 5)

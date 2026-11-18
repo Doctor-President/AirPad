@@ -97,6 +97,7 @@ private struct ReviewBlockRow: View {
                         .background(AppearancePalette.ink.opacity(0.12))
                         .clipShape(Capsule())
                 }
+                .macPlainButton()   // E fix-up 6 (M3): no Mac bezel behind its own shape
 
                 Button(role: .destructive) {
                     store.removeFromReviewQueue(id: block.id)
@@ -109,6 +110,7 @@ private struct ReviewBlockRow: View {
                         .background(Color.red.opacity(0.08))
                         .clipShape(Capsule())
                 }
+                .macPlainButton()   // E fix-up 6 (M3): no Mac bezel behind its own shape
 
                 Spacer()
 

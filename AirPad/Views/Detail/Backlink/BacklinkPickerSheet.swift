@@ -193,6 +193,7 @@ private struct BacklinkTargetPicker: View {
             }
             .contentShape(Rectangle())
         }
+        .macPlainButton()   // E fix-up 6 (M3): no Mac bezel behind its own shape
         .listRowBackground(AppearancePalette.ink.opacity(0.04))
     }
 

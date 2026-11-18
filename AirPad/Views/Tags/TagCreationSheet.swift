@@ -212,6 +212,7 @@ private struct NewTagPill: View {
                     .fill(pillColor)
                     .frame(width: 12, height: 12)
             }
+            .macPlainButton()   // E fix-up 6 (M3): no Mac bezel behind its own shape
 
             // Tag name — tap to accept/reject
             Button(action: onToggle) {

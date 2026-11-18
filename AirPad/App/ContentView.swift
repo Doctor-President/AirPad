@@ -113,6 +113,20 @@ struct ContentView: View {
                 #endif
                 // Mac batch C4 — `-ShowDropHighlight`: the drop highlight, for its still.
                 if ProcessInfo.processInfo.arguments.contains("-ShowDropHighlight") { dropTargeted = true }
+                #if DEBUG
+                // E fix-up 6 (M2) — `-UITestDropFile <path>`: the file as a drop (a new entry), then opened (the iPhone
+                // Simulator's stills of the shared video player).
+                if let path = UserDefaults.standard.string(forKey: "UITestDropFile") {
+                    Task { @MainActor in
+                        for _ in 0..<40 where store.nodes.isEmpty { try? await Task.sleep(nanoseconds: 250_000_000) }
+                        guard let p = NSItemProvider(contentsOf: URL(fileURLWithPath: path)) else { return }
+                        if let id = await store.importDrop([p]).first {
+                            try? await Task.sleep(nanoseconds: 800_000_000)
+                            router.pendingNodeNavigationID = id
+                        }
+                    }
+                }
+                #endif
                 // E fix-up 5 (L3) — `-ForceDropHighlightAfter <s>`: the highlight turned on with no drag (the stuck state),
                 // after <s> s, so the watchdog's recovery can be watched.
                 if let after = UserDefaults.standard.string(forKey: "ForceDropHighlightAfter").flatMap(Double.init) {

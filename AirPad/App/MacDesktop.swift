@@ -1645,7 +1645,18 @@ struct MacToolbarTrailing: View {
                     .font(appFont.font(size: 14))
                     .foregroundStyle(AppearancePalette.ink)
                     .focused($searchFocused)
-                    .onKeyPress(.escape) { searchFocused = false; return .handled }
+                    // E fix-up 6 (M8) — no autocorrect suggestion under a search query (its bubble also took the first Esc).
+                    .autocorrectionDisabled()
+                    // E fix-up 6 (M8) — Esc leaves search (clears the field, as a Mac search field does): the panel
+                    // goes back to Ask, no mango fade.
+                    .onKeyPress(.escape) { librarian.searchText = ""; searchFocused = false; return .handled }
+                    .onChange(of: searchFocused) { _, focused in
+                        MacSearchEscape.active = focused
+                        MacSearchEscape.leave = focused ? { [librarian] in
+                            librarian.searchText = ""
+                            UIApplication.shared.sendAction(#selector(UIResponder.resignFirstResponder), to: nil, from: nil, for: nil)
+                        } : nil
+                    }
                     .accessibilityIdentifier("toolbar.search")
                 if librarian.searchText.isEmpty {
                     Text("⌘F")
@@ -1689,6 +1700,34 @@ struct MacToolbarTrailing: View {
         .onChange(of: librarian.searchText) { _, text in
             if !text.isEmpty, !layout.librarianShowing { layout.closeSettings(); layout.librarianOpen = true; router.librarianAtPeek = false }
         }
+    }
+}
+#endif
+
+#if targetEnvironment(macCatalyst)
+/// E fix-up 6 (M8) — Esc in the toolbar's Search field leaves search. The field never sees Esc itself: the system's
+/// text input takes it (logged: neither SwiftUI's onKeyPress, the View menu's Esc nor a priority UIKeyCommand fired).
+/// An AppKit local key monitor (through the runtime) sees it first; it acts only while that field is focused, so every
+/// other Esc (sheets, Close Preview) is untouched.
+@MainActor enum MacSearchEscape {
+    static var active = false { didSet { if active { installMonitor() } } }
+    static var leave: (() -> Void)?
+    private static var monitor: AnyObject?
+
+    private static func installMonitor() {
+        guard monitor == nil, let cls: AnyClass = NSClassFromString("NSEvent") else { return }
+        let sel = NSSelectorFromString("addLocalMonitorForEventsMatchingMask:handler:")
+        guard let m = class_getClassMethod(cls, sel) else { return }
+        typealias Add = @convention(c) (AnyClass, Selector, UInt64, @escaping @convention(block) (AnyObject) -> AnyObject?) -> AnyObject?
+        let handler: @convention(block) (AnyObject) -> AnyObject? = { event in
+            guard (event.value(forKey: "keyCode") as? NSNumber)?.intValue == 53 else { return event }   // Esc
+            return MainActor.assumeIsolated {
+                guard active, let leave else { return event }
+                leave()
+                return nil
+            }
+        }
+        monitor = unsafeBitCast(method_getImplementation(m), to: Add.self)(cls, sel, 1 << 10, handler)   // key down
     }
 }
 #endif

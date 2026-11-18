@@ -1092,6 +1092,15 @@ struct LibrarianSurface: View {
             }
         }
         .frame(maxHeight: .infinity)
+        #if targetEnvironment(macCatalyst)
+        // E fix-up 6 (M8) — the toolbar's Search shows its results in this panel; on the iPhone Search wears mango and
+        // Ask cyan, the Mac had lost that. While the panel shows SEARCH results: a subtle mango fade at the top (T's
+        // idea), strongest at the top edge, gone by `height`; none in the Ask state.
+        .background(alignment: .top) {
+            if isMacColumn && macIsSearching(librarian) { MacSearchFade().transition(.opacity) }
+        }
+        .animation(.easeOut(duration: 0.2), value: isMacColumn && macIsSearching(librarian))
+        #endif
         // Lifted field-agnostic Done (Move 2 fix-pass v3 / Item 1).
         // Mounted as a bottom safeAreaInset so SwiftUI's automatic
         // keyboard avoidance — the same mechanism that already lifts
@@ -2395,6 +2404,11 @@ struct LibrarianSurface: View {
     }
     private var isMacColumn: Bool { proxy == nil }
 
+    /// E fix-up 6 (M8) — the panel is showing the toolbar Search's results (not a chat, the field not empty).
+    private func macIsSearching(_ librarian: LibrarianState) -> Bool {
+        isMacColumn && !isViewingActiveChat && !librarian.searchText.isEmpty
+    }
+
     /// D3 — "Librarian" and its Library/General switch, where the phone's grabber is. Batch E2 (T's v3 pick): its glyph
     /// (the Ask field's feather) · "Librarian" · Library/General · New chat · Chat history; the scope line below.
     private func macColumnHeader(librarian: LibrarianState) -> some View {
@@ -2418,6 +2432,24 @@ struct LibrarianSurface: View {
                     .foregroundStyle(LibrarianPillChrome.accent(colorScheme))
                     .accessibilityHidden(true)
             }
+            if macIsSearching(librarian) {
+                // E fix-up 6 (M8) [T: "let's add that and see how it goes"] — searching, the header says so: "Search"
+                // and the query (cut short at the end), back to "Librarian" in the Ask state.
+                HStack(spacing: 6) {
+                    Text("Search")
+                        .font(appFont.font(size: 17, weight: .bold))
+                        .foregroundStyle(AppearancePalette.ink)
+                        .fixedSize()
+                        .accessibilityAddTraits(.isHeader)
+                    Text(librarian.searchText)
+                        .font(appFont.font(size: 15))
+                        .foregroundStyle(AppearancePalette.ink.opacity(0.55))
+                        .lineLimit(1)
+                        .truncationMode(.tail)
+                }
+                .layoutPriority(-1)
+                .accessibilityIdentifier("macLibrarianSearchTitle")
+            } else {
             // The title gives way first: at the narrowest panel it's left out rather than cut to "…".
             ViewThatFits(in: .horizontal) {
                 Text(macShowingHistory && !isViewingActiveChat ? "Chats" : "Librarian")
@@ -2428,6 +2460,7 @@ struct LibrarianSurface: View {
                 Color.clear.frame(width: 0, height: 0)
             }
             .layoutPriority(-1)
+            }
             Spacer(minLength: 4)
             corpusModeToggle(librarian: librarian)
             // D fix-up F4 — chat history and a new chat in the header (the phone's bottom Back bar is gone on the Mac).
@@ -2937,5 +2970,31 @@ private extension View {
 extension Notification.Name {
     /// Mac D fix-up B1 — `-MacSettingsSelfTest`: open Settings from the Librarian's own sheet.
     static let debugOpenLibrarianSettings = Notification.Name("debugOpenLibrarianSettings")
+}
+#endif
+
+#if targetEnvironment(macCatalyst)
+/// E fix-up 6 (M8) — the Search state's mango (`#E8820A`, the iPhone's Search colour) fade at the top of the Librarian
+/// panel: `strength` at the top edge, eased out to nothing at `height` pt. T tunes both by eye in Settings › About ›
+/// Mac feel (testing) (builds with DEVSWITCHES); an App Store archive draws the defaults.
+struct MacSearchFade: View {
+    #if DEBUG || DEVSWITCHES
+    @AppStorage(MacFeelSwitches.searchFadeStrengthKey) private var strength = MacFeelSwitches.searchFadeStrengthDefault
+    @AppStorage(MacFeelSwitches.searchFadeHeightKey) private var height = MacFeelSwitches.searchFadeHeightDefault
+    #else
+    private let strength = MacFeelSwitches.searchFadeStrengthDefault
+    private let height = MacFeelSwitches.searchFadeHeightDefault
+    #endif
+
+    var body: some View {
+        let mango = Color(hexString: "E8820A")
+        LinearGradient(stops: (0...8).map { i in
+            let t = Double(i) / 8
+            return .init(color: mango.opacity(strength * pow(1 - t, 2)), location: t)   // eased: no visible stop line
+        }, startPoint: .top, endPoint: .bottom)
+        .frame(height: max(0, height))
+        .allowsHitTesting(false)
+        .accessibilityHidden(true)
+    }
 }
 #endif

@@ -1034,194 +1034,11 @@ struct CanvasView: View {
     /// longer rasterizes focal text). The type is drawn at the FINAL focal size
     /// (`focalNodeFinalDiameter`) so it doesn't reflow as the node grows, with a
     /// single opacity crossfade in on engage / out on release.
-    @ViewBuilder
+    /// E fix-up 5 (L2) — its own view: the morph writes the card's size, progress and position every frame, and while
+    /// this was a computed property of CanvasView those reads made the whole CanvasView body (and its observers) run
+    /// every morph frame — on the Mac the open ran at 30–40 fps, stretching the per-frame morph to ~0.55 s.
     private var focalEngagementOverlay: some View {
-        let isFading = canvasState.currentFocalNodeID == nil
-        let trackedID = canvasState.currentFocalNodeID ?? canvasState.disengagingFocalNodeID
-
-        ZStack {
-            if let id = trackedID,
-               !canvasState.isZoomed,
-               !isDismissing,
-               canvasState.focalNodeDiameter > 0,
-               let node = store.nodes.first(where: { $0.id == id }) {
-                let diameter = canvasState.focalNodeDiameter
-                // Final (settled) focal size — the title renders at THIS size and
-                // just crossfades, so it doesn't reflow/scale as the node grows in.
-                let finalDiameter = canvasState.focalNodeFinalDiameter > 0
-                    ? canvasState.focalNodeFinalDiameter : diameter
-                let displayTitle = node.title.isEmpty ? (node.untitledDisplayText ?? "") : node.title
-
-                // MORPH-TO-CARD — one clock (focalMorph): the focal grows as a
-                // bubble, then morphs into the node's actual Card View face in
-                // place. Frame + corner interpolate circle → 5:7 card; the bubble
-                // crossfades out as the card fades in. Release runs it back.
-                let m = canvasState.focalMorph
-                // This overlay is now a COMMITTED card (tap-driven cardedNodeID),
-                // not a transient graze — so it catches taps (card→detail + X) once
-                // mostly morphed. During the dismiss fade cardedNodeID is nil → the
-                // card stops catching taps and empty taps pass through to the scene.
-                let isCarded = (canvasState.cardedNodeID == id)
-                let cardH = finalDiameter * 1.4          // 5:7 portrait
-                let w = diameter + (finalDiameter - diameter) * m
-                let h = diameter + (cardH - diameter) * m
-                let cardCorner: CGFloat = 30             // mirrors NodeCardView.cornerRadius
-                let corner = (diameter / 2) + (cardCorner - diameter / 2) * m
-
-                ZStack {
-                    // BUBBLE — gradient + centered title, clipped to the morphing
-                    // shape, crossfading out as the card comes in. Title opacity is
-                    // slaved to scale progress (one clock) so a fast graze never
-                    // lets it linger; it also hands off to the card's own title.
-                    ZStack {
-                        // Node wash (option 3) — a subtle DIAGONAL two-stop gradient
-                        // of the node's own territory shade (one hue, light → dark),
-                        // topLeading → bottomTrailing. The dark stop is clamped out
-                        // of the mid-luminance dead zone, so there's always a dark
-                        // region under the text.
-                        let (washLight, washDark) = NodeGradientLayer.washStops(
-                            baseHex: canvasState.focalNodeShadeHex ?? "#5B8FFF")
-                        LinearGradient(colors: [washLight, washDark],
-                                       startPoint: .topLeading, endPoint: .bottomTrailing)
-
-                        // The wash guarantees a dark region under the text, so the
-                        // contrast rule resolves to light ink + a dark halo (the
-                        // halo also carries the type across the lighter diagonal end).
-                        let ink = Color(red: 1.0, green: 0.98, blue: 0.95)
-                        let halo = Color.black.opacity(0.6)
-                        VStack(spacing: finalDiameter * 0.025) {
-                            Text(displayTitle)
-                                .font(appFont.font(size: finalDiameter * 0.085, weight: .bold))
-                                .foregroundStyle(ink)
-                                .shadow(color: halo, radius: 3)
-                                .shadow(color: halo, radius: 1)
-                                .multilineTextAlignment(.center)
-                                .lineLimit(2)
-
-                            if !node.summary.isEmpty {
-                                Text(MarkdownPlain.label(node.summary))   // live-29 (B4)
-                                    .font(appFont.font(size: finalDiameter * 0.05))
-                                    .foregroundStyle(ink)
-                                    .shadow(color: halo, radius: 3)
-                                    .shadow(color: halo, radius: 1)
-                                    .multilineTextAlignment(.center)
-                                    .lineLimit(4)
-                            }
-                        }
-                        .frame(width: finalDiameter * 0.7)
-                        .opacity(canvasState.focalScaleProgress)
-                    }
-                    .frame(width: w, height: h)
-                    .clipShape(RoundedRectangle(cornerRadius: corner))
-                    .opacity(1 - m)
-                    .allowsHitTesting(false)   // bubble never eats taps
-
-                    // CARD — the node's real face (same type voice), fading in as
-                    // the bubble morphs. Built only while morphing (m>0), so a fast
-                    // graze that never settles never instantiates the card.
-                    if m > 0.001 {
-                        // Swipe-down-to-dismiss: follow-finger offset + fade/scale.
-                        let dismissDistance: CGFloat = 240
-                        let dragFrac = min(cardDragY / dismissDistance, 1)
-                        ZStack(alignment: .topTrailing) {
-                            NodeCardView(nodeID: id, fallbackNode: node, animateEntry: false)
-                                .frame(width: w, height: h)
-                                // CARD → DETAIL: tapping the presented card pushes
-                                // NodeDetailView (reuses the working pendingNavigation
-                                // path) and clears the card.
-                                .contentShape(RoundedRectangle(cornerRadius: cardCorner))
-                                .onTapGesture {
-                                    MapHaptics.detail()   // the set's arrival tick
-                                    // live-16 — the card showed the cover (cached); prewarm the gallery's first photos.
-                                    Task { await store.prewarmOpening(node) }
-                                    canvasState.pendingNavigationNodeID = id  // → NodeDetailView (verified route)
-                                    canvasState.cardedNodeID = nil
-                                }
-                            // DISMISS X (upper-right) → back to browse.
-                            if isCarded && m > 0.5 {
-                                Button {
-                                    canvasState.cardedNodeID = nil
-                                } label: {
-                                    Image(systemName: "xmark.circle.fill")
-                                        .font(.system(size: 26))
-                                        .symbolRenderingMode(.palette)
-                                        .foregroundStyle(.white, .black.opacity(0.35))
-                                        .padding(10)
-                                        .contentShape(Circle())
-                                }
-                                .buttonStyle(.plain)
-                                .accessibilityLabel("Close")
-                                .accessibilityIdentifier("mapCard.close")
-                                .transition(.opacity)
-                            }
-                        }
-                        .frame(width: w, height: h)
-                        .accessibilityIdentifier("mapCard")
-                        #if targetEnvironment(macCatalyst)
-                        // E fix-up 3 (H5) — the Mac's swipe down: a two-finger trackpad swipe over the card follows and
-                        // dismisses as the iPhone's drag does (the mouse wheel never does); Esc dismisses too.
-                        .onGeometryChange(for: CGRect.self) { $0.frame(in: .global) } action: { MacCardSwipe.shared.cardFrame = $0 }
-                        .background {
-                            MacCardSwipeHost(active: isCarded && m > 0.5,
-                                             changed: { cardDragY = $0 },
-                                             ended: { dy, velocity in
-                                                 if isCarded && (dy > 120 || velocity > 1000) {
-                                                     MapHaptics.release()
-                                                     withAnimation(.easeOut(duration: 0.22)) { cardDragY = dismissDistance * 1.6 }
-                                                     canvasState.cardedNodeID = nil
-                                                 } else {
-                                                     withAnimation(.spring(response: 0.3, dampingFraction: 0.72)) { cardDragY = 0 }
-                                                 }
-                                             })
-                        }
-                        #endif
-                        .scaleEffect(1 - dragFrac * 0.12)
-                        .offset(y: cardDragY)
-                        .opacity(m * (1 - dragFrac * 0.6))
-                        // Only the committed, mostly-morphed card is interactive; a
-                        // transient/fading overlay lets taps reach the scene beneath.
-                        .allowsHitTesting(isCarded && m > 0.5)
-                        // SWIPE DOWN — follow-finger, threshold/flick-commit else spring
-                        // back. DOWN-ONLY (damp up + lateral) so it never fights the
-                        // canvas pan/pinch below. A third dismiss path beside X + tap-away.
-                        .gesture(
-                            DragGesture(minimumDistance: 8)
-                                .onChanged { value in
-                                    cardDragY = max(0, value.translation.height)
-                                }
-                                .onEnded { value in
-                                    let dy = max(0, value.translation.height)
-                                    let flick = value.predictedEndTranslation.height > 360
-                                    if isCarded && (dy > 120 || flick) {
-                                        MapHaptics.release()   // soft "let go"
-                                        withAnimation(.easeOut(duration: 0.22)) { cardDragY = dismissDistance * 1.6 }
-                                        canvasState.cardedNodeID = nil
-                                    } else {
-                                        withAnimation(.spring(response: 0.3, dampingFraction: 0.72)) { cardDragY = 0 }
-                                    }
-                                }
-                        )
-                    }
-                }
-                .position(canvasState.focalNodeScreenPosition)
-                .opacity(isFading ? 0 : 1)
-                .ignoresSafeArea()
-                // Single crossfade in/out — no scale/bounce.
-                .transition(.opacity)
-            }
-        }
-        .animation(.easeInOut(duration: 0.22), value: isFading)
-        // Reset the swipe offset when a NEW card commits/hops (not on dismiss — a
-        // swipe-commit sets cardedNodeID nil and needs its slide-out animation intact).
-        .onChange(of: canvasState.cardedNodeID) { _, newID in
-            if newID != nil { cardDragY = 0 }
-            router.mapCardOpen = newID != nil   // H5 — View › Close Preview (Esc)
-            // E fix-up 5 (L4) — the card's morph runs in the scene's frame loop, which stops while the Map rests: a
-            // change that comes with no pointer over the Map (Esc / View › Close Preview) cleared the card's state but
-            // never ran its shrink, so the card stayed drawn without its ×. (The × worked: the pointer's hover wakes
-            // the Map.) Every change of the presented card wakes it. (iPhone: every change comes with a touch.)
-            if RunningOnMac.isMac { scene.wakeFromRest("card") }
-        }
+        MapFocalOverlay(canvasState: canvasState, isDismissing: isDismissing, cardDragY: $cardDragY, scene: scene)
     }
 
     @ViewBuilder
@@ -2328,3 +2145,221 @@ struct MacCardSwipeHost: UIViewRepresentable {
     }
 }
 #endif
+
+/// The Map's tap-driven card (orb → card morph), moved out of CanvasView verbatim (E fix-up 5, L2): only this view
+/// re-renders per morph frame.
+private struct MapFocalOverlay: View {
+    let canvasState: CanvasState
+    let isDismissing: Bool
+    @Binding var cardDragY: CGFloat
+    let scene: CorpusPhysicsScene
+    @Environment(CorpusStore.self) private var store
+    @Environment(AppRouter.self) private var router
+    @Environment(\.appBodyFont) private var appFont
+
+    var body: some View {
+        let isFading = canvasState.currentFocalNodeID == nil
+        let trackedID = canvasState.currentFocalNodeID ?? canvasState.disengagingFocalNodeID
+
+        ZStack {
+            if let id = trackedID,
+               !canvasState.isZoomed,
+               !isDismissing,
+               canvasState.focalNodeDiameter > 0,
+               let node = store.nodes.first(where: { $0.id == id }) {
+                let diameter = canvasState.focalNodeDiameter
+                // Final (settled) focal size — the title renders at THIS size and
+                // just crossfades, so it doesn't reflow/scale as the node grows in.
+                let finalDiameter = canvasState.focalNodeFinalDiameter > 0
+                    ? canvasState.focalNodeFinalDiameter : diameter
+                let displayTitle = node.title.isEmpty ? (node.untitledDisplayText ?? "") : node.title
+
+                // MORPH-TO-CARD — one clock (focalMorph): the focal grows as a
+                // bubble, then morphs into the node's actual Card View face in
+                // place. Frame + corner interpolate circle → 5:7 card; the bubble
+                // crossfades out as the card fades in. Release runs it back.
+                let m = canvasState.focalMorph
+                // This overlay is now a COMMITTED card (tap-driven cardedNodeID),
+                // not a transient graze — so it catches taps (card→detail + X) once
+                // mostly morphed. During the dismiss fade cardedNodeID is nil → the
+                // card stops catching taps and empty taps pass through to the scene.
+                let isCarded = (canvasState.cardedNodeID == id)
+                let cardH = finalDiameter * 1.4          // 5:7 portrait
+                let w = diameter + (finalDiameter - diameter) * m
+                let h = diameter + (cardH - diameter) * m
+                let cardCorner: CGFloat = 30             // mirrors NodeCardView.cornerRadius
+                let corner = (diameter / 2) + (cardCorner - diameter / 2) * m
+
+                ZStack {
+                    // BUBBLE — gradient + centered title, clipped to the morphing
+                    // shape, crossfading out as the card comes in. Title opacity is
+                    // slaved to scale progress (one clock) so a fast graze never
+                    // lets it linger; it also hands off to the card's own title.
+                    ZStack {
+                        // Node wash (option 3) — a subtle DIAGONAL two-stop gradient
+                        // of the node's own territory shade (one hue, light → dark),
+                        // topLeading → bottomTrailing. The dark stop is clamped out
+                        // of the mid-luminance dead zone, so there's always a dark
+                        // region under the text.
+                        let (washLight, washDark) = NodeGradientLayer.washStops(
+                            baseHex: canvasState.focalNodeShadeHex ?? "#5B8FFF")
+                        LinearGradient(colors: [washLight, washDark],
+                                       startPoint: .topLeading, endPoint: .bottomTrailing)
+
+                        // The wash guarantees a dark region under the text, so the
+                        // contrast rule resolves to light ink + a dark halo (the
+                        // halo also carries the type across the lighter diagonal end).
+                        let ink = Color(red: 1.0, green: 0.98, blue: 0.95)
+                        let halo = Color.black.opacity(0.6)
+                        VStack(spacing: finalDiameter * 0.025) {
+                            Text(displayTitle)
+                                .font(appFont.font(size: finalDiameter * 0.085, weight: .bold))
+                                .foregroundStyle(ink)
+                                .shadow(color: halo, radius: 3)
+                                .shadow(color: halo, radius: 1)
+                                .multilineTextAlignment(.center)
+                                .lineLimit(2)
+
+                            if !node.summary.isEmpty {
+                                Text(MarkdownPlain.label(node.summary))   // live-29 (B4)
+                                    .font(appFont.font(size: finalDiameter * 0.05))
+                                    .foregroundStyle(ink)
+                                    .shadow(color: halo, radius: 3)
+                                    .shadow(color: halo, radius: 1)
+                                    .multilineTextAlignment(.center)
+                                    .lineLimit(4)
+                            }
+                        }
+                        .frame(width: finalDiameter * 0.7)
+                        .opacity(canvasState.focalScaleProgress)
+                    }
+                    .frame(width: w, height: h)
+                    .clipShape(RoundedRectangle(cornerRadius: corner))
+                    .opacity(1 - m)
+                    .allowsHitTesting(false)   // bubble never eats taps
+
+                    // CARD — the node's real face (same type voice), fading in as
+                    // the bubble morphs. Built only while morphing (m>0), so a fast
+                    // graze that never settles never instantiates the card.
+                    if m > 0.001 {
+                        // Swipe-down-to-dismiss: follow-finger offset + fade/scale.
+                        let dismissDistance: CGFloat = 240
+                        let dragFrac = min(cardDragY / dismissDistance, 1)
+                        ZStack(alignment: .topTrailing) {
+                            NodeCardView(nodeID: id, fallbackNode: node, animateEntry: false)
+                                .macMorphCard(final: CGSize(width: finalDiameter, height: cardH), current: CGSize(width: w, height: h),
+                                              corner: corner)
+                                // CARD → DETAIL: tapping the presented card pushes
+                                // NodeDetailView (reuses the working pendingNavigation
+                                // path) and clears the card.
+                                .contentShape(RoundedRectangle(cornerRadius: cardCorner))
+                                .onTapGesture {
+                                    MapHaptics.detail()   // the set's arrival tick
+                                    // live-16 — the card showed the cover (cached); prewarm the gallery's first photos.
+                                    Task { await store.prewarmOpening(node) }
+                                    canvasState.pendingNavigationNodeID = id  // → NodeDetailView (verified route)
+                                    canvasState.cardedNodeID = nil
+                                }
+                            // DISMISS X (upper-right) → back to browse.
+                            if isCarded && m > 0.5 {
+                                Button {
+                                    canvasState.cardedNodeID = nil
+                                } label: {
+                                    Image(systemName: "xmark.circle.fill")
+                                        .font(.system(size: 26))
+                                        .symbolRenderingMode(.palette)
+                                        .foregroundStyle(.white, .black.opacity(0.35))
+                                        .padding(10)
+                                        .contentShape(Circle())
+                                }
+                                .buttonStyle(.plain)
+                                .accessibilityLabel("Close")
+                                .accessibilityIdentifier("mapCard.close")
+                                .transition(.opacity)
+                            }
+                        }
+                        .frame(width: w, height: h)
+                        .accessibilityIdentifier("mapCard")
+                        #if targetEnvironment(macCatalyst)
+                        // E fix-up 3 (H5) — the Mac's swipe down: a two-finger trackpad swipe over the card follows and
+                        // dismisses as the iPhone's drag does (the mouse wheel never does); Esc dismisses too.
+                        .onGeometryChange(for: CGRect.self) { $0.frame(in: .global) } action: { MacCardSwipe.shared.cardFrame = $0 }
+                        .background {
+                            MacCardSwipeHost(active: isCarded && m > 0.5,
+                                             changed: { cardDragY = $0 },
+                                             ended: { dy, velocity in
+                                                 if isCarded && (dy > 120 || velocity > 1000) {
+                                                     MapHaptics.release()
+                                                     withAnimation(.easeOut(duration: 0.22)) { cardDragY = dismissDistance * 1.6 }
+                                                     canvasState.cardedNodeID = nil
+                                                 } else {
+                                                     withAnimation(.spring(response: 0.3, dampingFraction: 0.72)) { cardDragY = 0 }
+                                                 }
+                                             })
+                        }
+                        #endif
+                        .scaleEffect(1 - dragFrac * 0.12)
+                        .offset(y: cardDragY)
+                        .opacity(m * (1 - dragFrac * 0.6))
+                        // Only the committed, mostly-morphed card is interactive; a
+                        // transient/fading overlay lets taps reach the scene beneath.
+                        .allowsHitTesting(isCarded && m > 0.5)
+                        // SWIPE DOWN — follow-finger, threshold/flick-commit else spring
+                        // back. DOWN-ONLY (damp up + lateral) so it never fights the
+                        // canvas pan/pinch below. A third dismiss path beside X + tap-away.
+                        .gesture(
+                            DragGesture(minimumDistance: 8)
+                                .onChanged { value in
+                                    cardDragY = max(0, value.translation.height)
+                                }
+                                .onEnded { value in
+                                    let dy = max(0, value.translation.height)
+                                    let flick = value.predictedEndTranslation.height > 360
+                                    if isCarded && (dy > 120 || flick) {
+                                        MapHaptics.release()   // soft "let go"
+                                        withAnimation(.easeOut(duration: 0.22)) { cardDragY = dismissDistance * 1.6 }
+                                        canvasState.cardedNodeID = nil
+                                    } else {
+                                        withAnimation(.spring(response: 0.3, dampingFraction: 0.72)) { cardDragY = 0 }
+                                    }
+                                }
+                        )
+                    }
+                }
+                .position(canvasState.focalNodeScreenPosition)
+                .opacity(isFading ? 0 : 1)
+                .ignoresSafeArea()
+                // Single crossfade in/out — no scale/bounce.
+                .transition(.opacity)
+            }
+        }
+        .animation(.easeInOut(duration: 0.22), value: isFading)
+        // Reset the swipe offset when a NEW card commits/hops (not on dismiss — a
+        // swipe-commit sets cardedNodeID nil and needs its slide-out animation intact).
+        .onChange(of: canvasState.cardedNodeID) { _, newID in
+            if newID != nil { cardDragY = 0 }
+            router.mapCardOpen = newID != nil   // H5 — View › Close Preview (Esc)
+            // E fix-up 5 (L4) — the card's morph runs in the scene's frame loop, which stops while the Map rests: a
+            // change that comes with no pointer over the Map (Esc / View › Close Preview) cleared the card's state but
+            // never ran its shrink, so the card stayed drawn without its ×. (The × worked: the pointer's hover wakes
+            // the Map.) Every change of the presented card wakes it. (iPhone: every change comes with a touch.)
+            if RunningOnMac.isMac { scene.wakeFromRest("card") }
+        }
+    }
+}
+
+private extension View {
+    /// E fix-up 5 (L2) — the morphing card on the Mac: laid out ONCE at its final size and grown with a scale and a
+    /// growing rounded clip, instead of re-laid-out at a new size every frame (its text, gradient and chips were
+    /// rebuilt ~40 times per morph; with the rest of the Map's frame the open ran at 30–40 fps). iPhone: as before.
+    @ViewBuilder func macMorphCard(final: CGSize, current: CGSize, corner: CGFloat) -> some View {
+        if RunningOnMac.isMac && !perfAB("relayoutmorph") {
+            self.frame(width: final.width, height: final.height)
+                .scaleEffect(final.width > 0 ? current.width / final.width : 1)
+                .frame(width: current.width, height: current.height)
+                .clipShape(RoundedRectangle(cornerRadius: corner, style: .continuous))
+        } else {
+            self.frame(width: current.width, height: current.height)
+        }
+    }
+}

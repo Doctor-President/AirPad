@@ -1248,6 +1248,18 @@ struct SettingsView: View {
     #if DEBUG
     private var developerSection: some View {
         VStack(alignment: .leading, spacing: 8) {
+            #if targetEnvironment(macCatalyst)
+            // E fix-up 5 (L2) — T compares the Map's orb → card morph: the Mac proposal vs the iPhone's timing.
+            Picker("Mac card morph", selection: Binding(
+                get: { UserDefaults.standard.string(forKey: MacCardMorph.key) ?? "mac" },
+                set: { UserDefaults.standard.set($0, forKey: MacCardMorph.key) })) {
+                Text("Mac timing (shorter, 0.22 s)").tag("mac")
+                Text("iPhone timing (0.37 s)").tag("iphone")
+            }
+            .pickerStyle(.inline)
+            .padding(.horizontal, 16)
+            .accessibilityIdentifier("devMacCardMorph")
+            #endif
             reprocessRow
 
             backfillEmbeddingRow

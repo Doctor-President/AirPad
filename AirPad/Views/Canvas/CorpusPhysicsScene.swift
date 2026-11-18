@@ -1834,6 +1834,9 @@ final class CorpusPhysicsScene: SKScene {
     /// Per-frame lerp for the card morph (tap → grow / dismiss) — BAKED 0.10
     /// (T's device-final graceful inflate).
     private let cardMorphLerp: CGFloat = 0.10
+    #if targetEnvironment(macCatalyst)
+    private var cardLastStepTime: CFTimeInterval = 0   // L2 — the morph's wall-clock step on the Mac
+    #endif
     /// Orb→card cross-fade band: the tapped orb holds full alpha until `Start`,
     /// then fades to 0 by `End` as the SwiftUI card face fades IN — so the orb
     /// INFLATES into the card (no instant pop).
@@ -2758,7 +2761,18 @@ final class CorpusPhysicsScene: SKScene {
             activeCardID = carded
         }
         let target: CGFloat = (carded != nil) ? 1 : 0
+        #if targetEnvironment(macCatalyst) && (DEBUG || PERFLOG)
+        MorphLog.frame(target: target, progress: cardProgress)
+        #endif
+        #if targetEnvironment(macCatalyst)
+        // E fix-up 5 (L2) — the Mac's timing (MacCardMorph), on the wall clock; nil = the iPhone's per-frame step.
+        let now = CACurrentMediaTime()
+        let frameDt = cardLastStepTime > 0 ? min(max(now - cardLastStepTime, 0), 0.1) : 1.0 / 60
+        cardLastStepTime = now
+        cardProgress += (target - cardProgress) * (MacCardMorph.step(dt: frameDt) ?? cardMorphLerp)
+        #else
         cardProgress += (target - cardProgress) * cardMorphLerp
+        #endif
         if target == 0 && cardProgress < 0.01 {
             cardProgress = 0
             if let prev = activeCardID, let s = nodeSprites[prev] { s.alpha = 1 }
@@ -7996,3 +8010,59 @@ extension CorpusPhysicsScene {
 }
 #endif
 
+
+#if targetEnvironment(macCatalyst) && (DEBUG || PERFLOG)
+/// E fix-up 5 (L2) — `-MacMorphLog`: the orb → card morph frame by frame (wall clock ms, the frame's dt, the progress
+/// before this frame's step), from the frame the commit is seen until it settles, so its programmed length and its
+/// dropped frames can be told apart. One line per morph.
+@MainActor enum MorphLog {
+    static let on = ProcessInfo.processInfo.arguments.contains("-MacMorphLog")
+    private static var lastTarget: CGFloat = 0
+    private static var rows: [String] = []
+    private static var last: CFTimeInterval = 0
+    static func frame(target: CGFloat, progress: CGFloat) {
+        guard on else { return }
+        let now = CACurrentMediaTime()
+        if target != lastTarget {
+            if !rows.isEmpty { flush("cut") }
+            lastTarget = target; last = now
+            rows = ["start t=\(String(format: "%.0f", Date().timeIntervalSince1970 * 1000)) target=\(Int(target))"]
+        }
+        guard !rows.isEmpty else { return }
+        rows.append(String(format: "%.1f:%.3f", (now - last) * 1000, progress))
+        last = now
+        if abs(target - progress) < 0.01 { flush("settled") }
+    }
+    private static func flush(_ why: String) {
+        NSLog("[MorphLog] %@ %@ frames=%d", why, rows.joined(separator: " "), rows.count - 1)
+        rows.removeAll()
+    }
+}
+#endif
+
+#if targetEnvironment(macCatalyst)
+/// E fix-up 5 (L2) — the orb → card morph on the Mac. The iPhone's is a fixed step per frame (0.10 of the way, T's
+/// device-final "graceful inflate"): 90 % in 22 frames = 0.37 s at the iPhone's 60 fps, and slower still whenever a
+/// frame is late. The Mac proposal runs on the wall clock (a dropped frame doesn't stretch it) and shorter, as Mac
+/// motion usually is: 90 % in 0.22 s. T judges the feel (TASTE): until he rules, Release keeps the iPhone timing and a
+/// DEBUG build shows the proposal, with Settings › Developer › "Mac card morph" (or `-mac.cardMorph.timing iphone|mac`) to
+/// compare the two.
+enum MacCardMorph {
+    static let key = "mac.cardMorph.timing"
+    /// Time constant of the proposal (s): 1 − e^(−dt/τ) of the way per frame; 90 % at τ·ln 10 ≈ 0.22 s.
+    static let tau: Double = 0.095
+    static var usesMacTiming: Bool {
+        #if DEBUG
+        return (UserDefaults.standard.string(forKey: key) ?? "mac") == "mac"
+        #elseif PERFLOG
+        return UserDefaults.standard.string(forKey: key) == "mac"   // the bench: `-mac.cardMorph.timing mac`
+        #else
+        return false
+        #endif
+    }
+    /// This frame's step, or nil for the iPhone's per-frame 0.10.
+    static func step(dt: Double) -> CGFloat? {
+        usesMacTiming ? CGFloat(1 - exp(-dt / tau)) : nil
+    }
+}
+#endif

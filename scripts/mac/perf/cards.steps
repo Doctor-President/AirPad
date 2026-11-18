@@ -1,0 +1,7 @@
+# E fix-up 6 · M4 — Cards scrolling only (Time Profiler).
+library      click sidebar.library
+view-cards   click toolbar.view.Cards
+cards-scroll scroll 640,600 -2400 80 8
+cards-scroll scroll 640,600 2400 80 8
+cards-scroll scroll 640,600 -2400 80 8
+cards-scroll scroll 640,600 2400 80 8

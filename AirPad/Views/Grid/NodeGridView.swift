@@ -60,6 +60,10 @@ struct NodeGridView: View {
     /// The iPhone's 2-column card width (a 440 pt screen: (440 − 3 × 10) / 2), the size the card is designed at.
     static let macCardDesignWidth: CGFloat = 205
     @AppStorage(NodeGridView.macCardWidthKey) private var macCardWidth: Double = NodeGridView.macCardWidthDefault
+    /// E fix-up 6 (M4) — the card under the pointer: one tracker for the grid (the List's K3 fix), not a hover and a
+    /// right-click responder per card.
+    @State private var macHover = MacListHover()
+    @State private var macScroll = MacScrollState()
     private var topInset: CGFloat { RunningOnMac.isMac ? 6 : 110 }
     private var bottomInset: CGFloat { RunningOnMac.isMac ? 24 : 120 }
     private let haptic = UIImpactFeedbackGenerator(style: .medium)
@@ -290,6 +294,11 @@ struct NodeGridView: View {
                             // fields didn't change (NodeTileView.==), so a single
                             // node's enrichment re-renders only its tile.
                             .equatable()
+                            // E fix-up 6 (M4) — on the Mac nothing inside a card takes the pointer (the card opens with
+                            // the tap below, its menu is the grid's): SwiftUI then stops hit-testing every card's drawn
+                            // views (the gradient's Metal view among them) on each hover event, which fires every frame
+                            // while the grid scrolls under a still pointer (A/B, same session: 45 → 52 fps).
+                            .allowsHitTesting(!RunningOnMac.isMac)
                             .frame(width: cellW, height: cellH)
                             // R6 — specular sheen over the tile content, masked
                             // to the tile shape by the clip that follows.
@@ -330,13 +339,16 @@ struct NodeGridView: View {
                             }
                             // #3 — shared focus glow (matches the tile's 14pt clip).
                             .focusHighlight(nodeID: node.id, cornerRadius: 14)
-                            .pointerHover(cornerRadius: 14)   // Mac batch C5
-                            .entryContextMenu(node)
+                            .modifier(CardPointerResponders(node: node, hover: macHover))   // Mac batch C5 / E fix-up 6 M4
                             // A3 — one tile per entry, findable by id (the duplicate-entry check).
                             .accessibilityElement(children: .contain)
                             .accessibilityIdentifier("cardTile-\(node.id)")
                         }
                     }
+                    .modifier(MacCardsGridResponders(hover: macHover, nodes: nodes))
+                    .modifier(MacScrollHitGate(state: macScroll))
+                    .onChange(of: columnCount) { macHover.frames = [:] }
+                    .onChange(of: cellW) { macHover.frames = [:] }
                     .padding(.leading, tileSpacing)
                     .padding(.trailing, tileSpacing + railLane)
                     .padding(.top, topInset)
@@ -348,6 +360,7 @@ struct NodeGridView: View {
                     StopperProbe(stopper: momentumStopper)
                         .frame(width: 0, height: 0)
                 }
+                .onScrollPhaseChange { _, phase in if RunningOnMac.isMac { macScroll.scrolling = phase != .idle } }   // E fix-up 6 (M4)
                 // #3 — shared focus signal: scroll the grid to the focused tile.
                 .onFocusRequest { id in
                     withAnimation { proxy.scrollTo(id, anchor: .center) }
@@ -420,6 +433,86 @@ struct NodeGridView: View {
 // Thin cell wrapper around NodeGridTile — the lightweight browse primitive.
 // Renders the tile directly at cell size (no native-design / scaleEffect
 // trick the full card needed); the cell owns shape via `.frame` + `.clipShape`.
+
+/// E fix-up 6 (M4) — T: Cards scrolling slows "here and there" (the List is fine). Each card carried its own hover
+/// and right-click responders, which SwiftUI hit-tests on every scroll event (fix-up 4 measured this on the List: a
+/// third of the main thread). On the Mac the grid has one hover tracker and one right-click menu for the card under
+/// the pointer (`MacListHover`, the List's); each card only reports its frame in the grid (once per layout, not per
+/// scroll) and draws its wash from the tracker. iPhone / iPad: the per-card modifiers as before.
+private struct CardPointerResponders: ViewModifier {
+    let node: Node
+    let hover: MacListHover
+    func body(content: Content) -> some View {
+        if RunningOnMac.isMac {
+            content
+                .overlay(CardHoverWash(hover: hover, id: node.id))
+                .onGeometryChange(for: CGRect.self) { $0.frame(in: .named("macCardsGrid")) } action: { hover.frames[node.id] = $0 }
+        } else {
+            content
+                .pointerHover(cornerRadius: 14)
+                .entryContextMenu(node)
+        }
+    }
+}
+
+private struct CardHoverWash: View {
+    let hover: MacListHover
+    let id: String
+    var body: some View {
+        let on = hover.id == id || PointerHover<RoundedRectangle>.forced
+        RoundedRectangle(cornerRadius: 14, style: .continuous)
+            .fill(AppearancePalette.ink.opacity(on ? 0.05 : 0))
+            .allowsHitTesting(false)
+            .animation(.easeOut(duration: 0.12), value: on)
+    }
+}
+
+private struct MacCardsGridResponders: ViewModifier {
+    let hover: MacListHover
+    let nodes: [Node]
+    func body(content: Content) -> some View {
+        if RunningOnMac.isMac {
+            content
+                .coordinateSpace(.named("macCardsGrid"))
+                .onGeometryChange(for: CGRect.self) { $0.frame(in: .global) } action: { hover.listGlobal = $0 }
+                .onContinuousHover(coordinateSpace: .global) { phase in
+                    switch phase {
+                    case .active(let g): hover.pointer(global: g)
+                    case .ended: hover.pointer(global: nil)
+                    }
+                }
+                .contextMenu { MacCardMenu(hover: hover, nodes: nodes) }
+        } else {
+            content
+        }
+    }
+}
+
+/// E fix-up 6 (M4) — while the grid scrolls on the Mac its cards take no pointer events. Catalyst sends a hover event
+/// every frame the content moves under a still pointer, and SwiftUI answers each with a hit-test that walks down
+/// through the navigation container into every card's tap and shape responders (17 % of the main thread while
+/// scrolling, after the cards' own views were taken out). The scroll view itself still scrolls; a click stops the
+/// momentum as before; hit-testing returns at rest. Only this modifier re-evaluates when the phase flips, not the grid.
+@Observable final class MacScrollState { var scrolling = false }
+
+private struct MacScrollHitGate: ViewModifier {
+    let state: MacScrollState
+    func body(content: Content) -> some View {
+        content.allowsHitTesting(!(RunningOnMac.isMac && state.scrolling))
+    }
+}
+
+/// The grid's right-click menu: the entry menu for the card under the pointer (nothing between cards).
+private struct MacCardMenu: View {
+    let hover: MacListHover
+    let nodes: [Node]
+    @Environment(AppRouter.self) private var router
+    var body: some View {
+        if let id = hover.id, let node = nodes.first(where: { $0.id == id }) {
+            EntryContextMenu.items(nodeID: node.id, isPrivate: node.isPrivate, router: router)
+        }
+    }
+}
 
 private struct NodeTileView: View, Equatable {
     let node: Node

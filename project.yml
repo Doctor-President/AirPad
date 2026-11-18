@@ -39,6 +39,10 @@ settings:
     # A custom setting, not SWIFT_ACTIVE_COMPILATION_CONDITIONS itself: a command-line override of that would replace
     # every target's own value (the widget extension's WIDGET_EXTENSION).
     AIRPAD_TF_FLAG: ""
+    # E fix-up 6 (M7/M8) — T's Mac feel switches (Settings › About, 5 taps on the version) compile in everywhere
+    # T runs (Xcode Debug and Release, TestFlight) and OUT of App Store archives: `scripts/testflight_upload.sh`
+    # passes AIRPAD_DEVSWITCH_FLAG= (empty) with AIRPAD_APP_STORE_BUILD=1.
+    AIRPAD_DEVSWITCH_FLAG: "DEVSWITCHES"
     # Pin automatic signing with the CURRENT identity. Without this, xcodegen
     # defaults CODE_SIGN_IDENTITY to the deprecated "iPhone Developer", which the
     # CoreDevice installer rejects on device with "The executable is not
@@ -171,7 +175,7 @@ targets:
         SUPPORTS_MACCATALYST: "YES"
         MACOSX_DEPLOYMENT_TARGET: "26.0"
         DERIVE_MACCATALYST_PRODUCT_BUNDLE_IDENTIFIER: "NO"   # same bundle ID on Mac (universal purchase)
-        SWIFT_ACTIVE_COMPILATION_CONDITIONS: "$(inherited) $(AIRPAD_TF_FLAG)"   # live-19 (4) — see AIRPAD_TF_FLAG
+        SWIFT_ACTIVE_COMPILATION_CONDITIONS: "$(inherited) $(AIRPAD_TF_FLAG) $(AIRPAD_DEVSWITCH_FLAG)"   # live-19 (4) / E fix-up 6 — see the flags
         # live-19 (4) — Accelerate's current LAPACK interface (the CLAPACK one is deprecated since iOS 16.4): the Map's
         # SVDs (SubstrateWhitening, SubstrateBagLayout) call `dgesvd_` with `__LAPACK_int`.
         OTHER_SWIFT_FLAGS: "$(inherited) -Xcc -DACCELERATE_NEW_LAPACK"

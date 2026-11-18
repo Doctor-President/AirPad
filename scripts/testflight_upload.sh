@@ -67,7 +67,8 @@ DEV_TUNER_ARGS=()
 # live-19 (4) — TestFlight-only code (the speech-engine switch) compiles in via the TESTFLIGHT condition. The LAUNCH
 # submission must be archived with AIRPAD_APP_STORE_BUILD=1 so it is compiled out (App Review never sees it).
 if [[ "${AIRPAD_APP_STORE_BUILD:-0}" == "1" ]]; then
-  say "App Store build: TestFlight-only code compiled OUT"
+  say "App Store build: TestFlight-only code and the Mac feel switches compiled OUT"
+  DEV_TUNER_ARGS+=("AIRPAD_DEVSWITCH_FLAG=")
 else
   say "TestFlight build: TESTFLIGHT condition on (the speech-engine switch is compiled in)"
   DEV_TUNER_ARGS+=("AIRPAD_TF_FLAG=TESTFLIGHT")

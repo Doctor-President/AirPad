@@ -58,6 +58,7 @@
 		175B746967365892C2A892EA /* AppleDeclineSelfTest.swift in Sources */ = {isa = PBXBuildFile; fileRef = C73070A0B2F7E88665FE6A1C /* AppleDeclineSelfTest.swift */; };
 		17F85DF35043F1C03EB655BD /* CaretMeasure.swift in Sources */ = {isa = PBXBuildFile; fileRef = 2D22141DDFC181FE31634680 /* CaretMeasure.swift */; };
 		180A5BBD985A33703EA64E74 /* UMAP.swift in Sources */ = {isa = PBXBuildFile; fileRef = D685E8AE8B6D8F7C0D614C65 /* UMAP.swift */; };
+		1832AF68AE4CA858C63760C5 /* MacEntryDrop.swift in Sources */ = {isa = PBXBuildFile; fileRef = 7CCC93A22A12ED7C8756A2CD /* MacEntryDrop.swift */; };
 		1A4B4683A0B01732DEC94DBF /* FieldDefinition.swift in Sources */ = {isa = PBXBuildFile; fileRef = 003CEDBA7C8C183191D81F3E /* FieldDefinition.swift */; };
 		1A71668ACC87B6B9C0D804E7 /* Collection.swift in Sources */ = {isa = PBXBuildFile; fileRef = 909B3DB690784E89652659ED /* Collection.swift */; };
 		1A9E8EF4E13EF3D1B9009EB8 /* ReviewQueueSheet.swift in Sources */ = {isa = PBXBuildFile; fileRef = 8BDD458C42AD717CBB2269BE /* ReviewQueueSheet.swift */; };
@@ -765,6 +766,7 @@
 		7B05C305C5A28D74F771BA11 /* UMAPFuzzySet.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = UMAPFuzzySet.swift; sourceTree = "<group>"; };
 		7C5A469A992FC38A144111C7 /* IPadEditorKeys.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = IPadEditorKeys.swift; sourceTree = "<group>"; };
 		7C8D218A54294B5A75BA557D /* Cinzel-OFL.txt */ = {isa = PBXFileReference; lastKnownFileType = text; path = "Cinzel-OFL.txt"; sourceTree = "<group>"; };
+		7CCC93A22A12ED7C8756A2CD /* MacEntryDrop.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = MacEntryDrop.swift; sourceTree = "<group>"; };
 		7DA33E483A4D9242E12537AA /* UMAPFindAB.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = UMAPFindAB.swift; sourceTree = "<group>"; };
 		7E163AC58FD3A0154CA67BD2 /* EntryDeletionDiagnostic.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = EntryDeletionDiagnostic.swift; sourceTree = "<group>"; };
 		7E766D5A76F8E33EC9A24C07 /* AttributeTile.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = AttributeTile.swift; sourceTree = "<group>"; };
@@ -1368,6 +1370,7 @@
 				99AE7198F824D189DAD581EE /* LeverButton.swift */,
 				43F51F2790A2E3165CF44645 /* LeverTray.swift */,
 				3A582AE8DB1D9CEB0084017C /* LongPressDragRecognizer.swift */,
+				7CCC93A22A12ED7C8756A2CD /* MacEntryDrop.swift */,
 				E3F9189D5677C65F12E2D47F /* NodeDetailView.swift */,
 				88A13C2113DC9781B455DF42 /* PastePadView.swift */,
 				FEF2ED2E9FBB389157658D5A /* PrivateEntryPlaceholder.swift */,
@@ -2333,6 +2336,7 @@
 				7666EFC3587CC6AA2E798673 /* MacClickSelfTest.swift in Sources */,
 				05FD14E104D9CDCA47A884EC /* MacDesktop.swift in Sources */,
 				5AFB3DA829E4D444AE74108C /* MacEnrichServerSelfTest.swift in Sources */,
+				1832AF68AE4CA858C63760C5 /* MacEntryDrop.swift in Sources */,
 				6ABE6214365D588647344F6C /* MacFixupSelfTest.swift in Sources */,
 				5404E38C7AFC95CBE00F95D9 /* MacMenuSelfTest.swift in Sources */,
 				C476E58EFD2185BEE830A281 /* MacSettingsSelfTest.swift in Sources */,
@@ -2648,7 +2652,7 @@
 				PRODUCT_BUNDLE_IDENTIFIER = com.doctorpresident.airpad;
 				SDKROOT = iphoneos;
 				SUPPORTS_MACCATALYST = YES;
-				SWIFT_ACTIVE_COMPILATION_CONDITIONS = "$(inherited) $(AIRPAD_TF_FLAG)";
+				SWIFT_ACTIVE_COMPILATION_CONDITIONS = "$(inherited) $(AIRPAD_TF_FLAG) $(AIRPAD_DEVSWITCH_FLAG)";
 				TARGETED_DEVICE_FAMILY = "1,2,6";
 			};
 			name = Release;
@@ -2698,6 +2702,7 @@
 		886247D1B0A418D294C351B4 /* Debug */ = {
 			isa = XCBuildConfiguration;
 			buildSettings = {
+				AIRPAD_DEVSWITCH_FLAG = DEVSWITCHES;
 				AIRPAD_TF_FLAG = "";
 				ALWAYS_SEARCH_USER_PATHS = NO;
 				CLANG_ANALYZER_NONNULL = YES;
@@ -2787,7 +2792,7 @@
 				PRODUCT_BUNDLE_IDENTIFIER = com.doctorpresident.airpad;
 				SDKROOT = iphoneos;
 				SUPPORTS_MACCATALYST = YES;
-				SWIFT_ACTIVE_COMPILATION_CONDITIONS = "$(inherited) $(AIRPAD_TF_FLAG)";
+				SWIFT_ACTIVE_COMPILATION_CONDITIONS = "$(inherited) $(AIRPAD_TF_FLAG) $(AIRPAD_DEVSWITCH_FLAG)";
 				TARGETED_DEVICE_FAMILY = "1,2,6";
 			};
 			name = Debug;
@@ -2795,6 +2800,7 @@
 		B27FE73CB72B72670933BB24 /* Release */ = {
 			isa = XCBuildConfiguration;
 			buildSettings = {
+				AIRPAD_DEVSWITCH_FLAG = DEVSWITCHES;
 				AIRPAD_TF_FLAG = "";
 				ALWAYS_SEARCH_USER_PATHS = NO;
 				CLANG_ANALYZER_NONNULL = YES;

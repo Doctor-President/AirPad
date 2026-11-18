@@ -482,6 +482,7 @@ struct ContentView: View {
         // entered the window ends elsewhere (dropped into the note editor, or left the window). A drag needs a held
         // mouse button: while the highlight is up, no button held for two checks in a row clears it.
         .onChange(of: dropTargeted) { _, on in
+            if on { MacEntryDragState.shared.began() }   // E fix-up 6 (M6) — the open entry's gaps open up
             if on, !ProcessInfo.processInfo.arguments.contains("-ShowDropHighlight") { DropHighlightWatchdog.watch { dropTargeted = false } }
         }
         #endif
@@ -1010,14 +1011,21 @@ private struct DetailDepthWatcher: View {
 /// `NSEvent.pressedMouseButtons`, read through the runtime: Catalyst has no drag-in-progress API).
 @MainActor enum DropHighlightWatchdog {
     private static var timer: Timer?
-    static func watch(_ clear: @escaping @MainActor () -> Void) {
-        timer?.invalidate()
+    /// E fix-up 6 (M6) — several highlights at once (the window's, an entry item's, a gap's), each cleared by its key.
+    private static var clears: [String: @MainActor () -> Void] = [:]
+    static func watch(_ key: String = "window", _ clear: @escaping @MainActor () -> Void) {
+        clears[key] = clear
+        guard timer == nil else { return }
         var idle = 0
         timer = Timer.scheduledTimer(withTimeInterval: 0.3, repeats: true) { t in
             MainActor.assumeIsolated {
                 let buttons = ((NSClassFromString("NSEvent") as? NSObject.Type)?.value(forKey: "pressedMouseButtons") as? Int) ?? 1
                 idle = buttons == 0 ? idle + 1 : 0
-                if idle >= 2 { t.invalidate(); timer = nil; NSLog("[DropWatch] no button held: cleared"); clear() }
+                guard idle >= 2 else { return }
+                t.invalidate(); timer = nil
+                let all = clears; clears = [:]
+                NSLog("[DropWatch] no button held: cleared %d", all.count)
+                for c in all.values { c() }
             }
         }
     }

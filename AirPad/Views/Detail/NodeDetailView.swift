@@ -671,7 +671,9 @@ struct NodeDetailView: View {
                 }
                 }
 
-                VStack(alignment: .leading, spacing: visualSettings.interCardSpacing) {
+                // E fix-up 6 (M6) — on the Mac the space between items is a drop zone of the same height (below).
+                let firstShownIndex = payloadEntries.first { !inlineImageIDs.contains($0.element.id) }?.offset
+                VStack(alignment: .leading, spacing: RunningOnMac.isMac ? 0 : visualSettings.interCardSpacing) {
                     ForEach(perfAB("noentries") || !blocksShown ? [] : payloadEntries, id: \.element.id) { pair in
                         let rawIndex = pair.offset
                         let item = pair.element
@@ -687,9 +689,18 @@ struct NodeDetailView: View {
                         // `interCardSpacing`. FLAG: non-container types (link /
                         // voice / doc / single-media) lose their divider too this
                         // spike — throwaway.
+                        #if targetEnvironment(macCatalyst)
+                        if rawIndex != firstShownIndex {
+                            MacEntryGapDrop(nodeID: nodeID, insertAt: rawIndex, height: visualSettings.interCardSpacing)
+                        }
+                        #endif
                         EntryCard(item: item, nodeID: nodeID, index: rawIndex, snapshotIDs: payloadSnapshot,
                                   onBacklink: { backlinkSource = BacklinkSource(id: item.id) })
                             .id(item.id)
+                            #if targetEnvironment(macCatalyst)
+                            // E fix-up 6 (M6) — drop into this item.
+                            .modifier(MacEntryItemDrop(item: item, nodeID: nodeID, index: rawIndex))
+                            #endif
                         }
                     }
                 }

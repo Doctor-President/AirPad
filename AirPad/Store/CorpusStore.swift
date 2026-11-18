@@ -10021,6 +10021,121 @@ final class CorpusStore {
     }
 
     // MARK: - Mac batch C4 — drag and drop in
+    /// E fix-up 6 (M6) [T ruled 2026-11-18 "Hover"] — a drop onto an open entry, by where it lands: INTO one of its
+    /// items when everything dropped fits that item (images / videos → a gallery, files → a documents item, web links →
+    /// a Link item; added at its end), or as new items at a gap between items. Anything else keeps
+    /// `importDrop(appendTo:)` (new items at the end). Returns what the drop added, for its undo.
+    enum EntryDropPlacement: Equatable { case into(itemID: String), at(index: Int) }
+    enum EntryDropKind: Equatable { case media, document, link, other }
+
+    struct EntryDropUndo {
+        let nodeID: String
+        var gallery: [(entry: String, id: String)] = []
+        var documents: [(entry: String, id: String)] = []
+        var links: [(entry: String, id: String)] = []
+        var newItems: [String] = []
+    }
+
+    /// What a dragged provider becomes, in `ShareItemLoader.loadItem`'s order (movie → audio → image → URL → …).
+    nonisolated static func entryDropKind(_ p: NSItemProvider) -> EntryDropKind {
+        if isTextFile(p) { return .other }
+        if p.hasItemConformingToTypeIdentifier(UTType.movie.identifier) { return .media }
+        if p.hasItemConformingToTypeIdentifier(UTType.audio.identifier) { return .other }
+        if p.hasItemConformingToTypeIdentifier(UTType.image.identifier) { return .media }
+        if p.hasItemConformingToTypeIdentifier(UTType.fileURL.identifier) { return .document }
+        if p.hasItemConformingToTypeIdentifier(UTType.url.identifier) { return .link }
+        if p.hasItemConformingToTypeIdentifier(UTType.html.identifier) || p.hasItemConformingToTypeIdentifier(UTType.plainText.identifier) { return .other }
+        if p.hasItemConformingToTypeIdentifier(UTType.data.identifier) { return .document }
+        return .other
+    }
+
+    /// The kind an existing item takes, or nil (notes, voice, ratings… take no drop of their own).
+    nonisolated static func entryDropKind(of item: NodeItem) -> EntryDropKind? {
+        switch item.type {
+        case .imageVideo: return .media
+        case .document: return .document
+        case .link: return .link
+        default: return nil
+        }
+    }
+
+    /// Every provider fits `item` (a mixed drop goes into it only if all of it does).
+    nonisolated static func entryDropFits(_ providers: [NSItemProvider], into item: NodeItem) -> Bool {
+        guard let want = entryDropKind(of: item), !providers.isEmpty else { return false }
+        return providers.allSatisfy { entryDropKind($0) == want }
+    }
+
+    func dropIntoEntry(_ providers: [NSItemProvider], nodeID: String, placement: EntryDropPlacement) async -> EntryDropUndo? {
+        guard !providers.isEmpty, !LibraryFormatGuard.isReadOnly, let node = nodes.first(where: { $0.id == nodeID }) else { return nil }
+        var undo = EntryDropUndo(nodeID: nodeID)
+        if case .into(let itemID) = placement, let target = node.items.first(where: { $0.id == itemID }),
+           Self.entryDropFits(providers, into: target), let kind = Self.entryDropKind(of: target) {
+            let inbox = FileManager.default.temporaryDirectory.appendingPathComponent("drop-inbox-\(UUID().uuidString)")
+            defer { try? FileManager.default.removeItem(at: inbox) }
+            let now = Date()
+            var loaded: [NodeItem] = []
+            for p in providers {
+                if let item = await withCheckedContinuation({ (c: CheckedContinuation<NodeItem?, Never>) in
+                    ShareItemLoader.loadItem(from: p, nodeID: nodeID, now: now, inbox: inbox) { c.resume(returning: $0) }
+                }) { loaded.append(item) }
+            }
+            let staged = { (i: NodeItem) -> URL? in i.file.map { inbox.appendingPathComponent(nodeID).appendingPathComponent($0) } }
+            switch kind {
+            case .media:
+                let pending = loaded.compactMap { i -> PendingMediaItem? in
+                    guard let url = staged(i) else { return nil }
+                    return PendingMediaItem(itemID: i.id, mediaType: i.type == .video ? .video : .image, sourceURL: url,
+                                            fileExtension: url.pathExtension, originalName: i.originalName)
+                }
+                await appendMediaItems(toEntryID: itemID, nodeID: nodeID, mediaItems: pending)
+                undo.gallery = pending.map { (itemID, $0.itemID) }
+            case .document:
+                // The staged copy is `<uuid>.<ext>`; hand over the file under its real name (the item keeps that name).
+                var urls: [URL] = []
+                for i in loaded {
+                    guard let url = staged(i) else { continue }
+                    let name = DocumentNaming.storedName(i.description)
+                    guard !name.isEmpty else { urls.append(url); continue }
+                    let dir = inbox.appendingPathComponent("named-\(i.id)")
+                    let named = dir.appendingPathComponent(name.hasSuffix(".\(url.pathExtension)") ? name : "\(name).\(url.pathExtension)")
+                    try? FileManager.default.createDirectory(at: dir, withIntermediateDirectories: true)
+                    urls.append((try? FileManager.default.moveItem(at: url, to: named)) != nil ? named : url)
+                }
+                let docs = await appendDocumentItems(toEntryID: itemID, nodeID: nodeID, sourceURLs: urls)
+                undo.documents = docs.map { (itemID, $0.id) }
+            case .link:
+                for i in loaded {
+                    if let l = await appendLinkItem(toEntryID: itemID, nodeID: nodeID, url: i.url ?? "") { undo.links.append((itemID, l.id)) }
+                }
+            case .other:
+                break
+            }
+            return undo
+        }
+        // A gap, or an item that can't take all of it: new items (today's drop), then moved to the gap.
+        let before = Set(node.items.map(\.id))
+        _ = await importDrop(providers, appendTo: nodeID)
+        let added = (nodes.first { $0.id == nodeID }?.items ?? []).filter { !before.contains($0.id) }.map(\.id)
+        undo.newItems = added
+        // Past the last item (`.at(index: .max)` = "not here: at the end") they're already where they go.
+        if case .at(let index) = placement, index < node.items.count {
+            for (k, id) in added.enumerated() {
+                guard let items = nodes.first(where: { $0.id == nodeID })?.items,
+                      let from = items.firstIndex(where: { $0.id == id }) else { continue }
+                let to = min(max(0, index + k), items.count - 1)
+                if from != to { await moveEntry(nodeID: nodeID, from: from, to: to) }
+            }
+        }
+        return undo
+    }
+
+    /// Takes back what `dropIntoEntry` added (Edit › Undo).
+    func undoEntryDrop(_ u: EntryDropUndo) async {
+        for g in u.gallery { await deleteGalleryItem(entryID: g.entry, nodeID: u.nodeID, galleryItemID: g.id) }
+        for d in u.documents { await removeDocumentItem(entryID: d.entry, nodeID: u.nodeID, documentItemID: d.id) }
+        for l in u.links { await removeLinkItem(entryID: l.entry, nodeID: u.nodeID, linkItemID: l.id) }
+        for id in u.newItems { await deleteEntry(itemID: id, nodeID: u.nodeID) }
+    }
 
     /// A drop on the window: the dropped items are staged exactly as the share extension stages a share
     /// (`ShareItemLoader`, into AirPad's own temporary folder, never the library), then imported through the same code:

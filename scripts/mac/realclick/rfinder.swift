@@ -59,7 +59,8 @@ case "drag":
     move(from: p0, to: CGPoint(x: p0.x + 12, y: p0.y + 12), steps: 6, ms: 120)
     move(from: CGPoint(x: p0.x + 12, y: p0.y + 12), to: p1)
     // wander over the middle point so the target sees updates, then leave
-    move(from: p1, to: CGPoint(x: p1.x + 40, y: p1.y + 30), steps: 10, ms: linger); move(from: CGPoint(x: p1.x + 40, y: p1.y + 30), to: p1, steps: 10, ms: linger)
+    let (wx, wy) = a.contains("still") ? (3.0, 1.0) : (40.0, 30.0)   // "still": hover in place (a thin gap target)
+    move(from: p1, to: CGPoint(x: p1.x + wx, y: p1.y + wy), steps: 10, ms: linger); move(from: CGPoint(x: p1.x + wx, y: p1.y + wy), to: p1, steps: 10, ms: linger)
     if esc { key(53); usleep(300_000) }
     let fast = a.contains("fast")
     move(from: p1, to: p2, steps: fast ? 3 : 30, ms: fast ? 50 : 700); usleep(500_000)

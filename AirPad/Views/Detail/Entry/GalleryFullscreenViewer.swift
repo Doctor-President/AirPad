@@ -483,7 +483,10 @@ struct GalleryFullscreenViewer: View {
         // deactivates it; doing it here frees other apps' audio routing
         // back up the moment the viewer is gone. See
         // `PlaybackAudioSession` for the why-it's-shared rationale.
-        .onDisappear { PlaybackAudioSession.deactivate() }
+        .onDisappear {
+            // E fix-up 6 (M2): not while a video plays on in Picture in Picture.
+            if !SharedVideoPlayback.shared.anyPictureInPicture { PlaybackAudioSession.deactivate() }
+        }
         // #6 — inline caption editing. The Done button rides the keyboard (the
         // caption is multiline, so Return inserts a newline rather than
         // committing); tapping the image also commits (see `onSingleTap`).
@@ -883,7 +886,7 @@ private struct FullscreenVideoPlayer: View {
         ZStack {
             Color.black.ignoresSafeArea()
             if let player {
-                VideoPlayerRepresentable(player: player)
+                SharedVideoPlayerView(key: galleryItem.id, player: player)
                     .ignoresSafeArea()
             } else {
                 ProgressView().tint(.white)
@@ -911,18 +914,22 @@ private struct FullscreenVideoPlayer: View {
             )
             guard let resolved else { return }
             _ = PlaybackAudioSession.configure()
-            let p = AVPlayer(url: resolved)
+            // E fix-up 6 (M2): the video's one player (shared with the inline player and PiP): it carries on from
+            // where the entry left it, at the same volume.
+            SharedVideoPlayback.shared.hold(galleryItem.id)
+            let p = SharedVideoPlayback.shared.player(for: galleryItem.id, url: resolved)
             player = p
             p.play()
         }
         .onDisappear {
-            // Pause on dismiss; leave the audio session active so a
-            // subsequent play during the same viewer session doesn't have
-            // to renegotiate the category. The outer
-            // `GalleryFullscreenViewer.onDisappear` calls
-            // `PlaybackAudioSession.deactivate()` when the viewer fully
-            // closes.
-            player?.pause()
+            // Closing the player pauses the video, unless it's in Picture in Picture (T: closing the viewer paused
+            // a PiP video), which carries on until PiP's own ×. Leave the audio session active so a subsequent
+            // play during the same viewer session doesn't have to renegotiate the category. The outer
+            // `GalleryFullscreenViewer.onDisappear` calls `PlaybackAudioSession.deactivate()` when the viewer
+            // fully closes.
+            guard player != nil else { return }
+            if !SharedVideoPlayback.shared.isInPictureInPicture(galleryItem.id) { player?.pause() }
+            SharedVideoPlayback.shared.release(galleryItem.id)
         }
     }
 }
@@ -940,39 +947,6 @@ private struct ViewerGlassCircle: ViewModifier {
     @ViewBuilder
     func body(content: Content) -> some View {
         content.glassEffect(.regular.interactive(), in: .circle)
-    }
-}
-
-/// `UIViewControllerRepresentable` wrapper around `AVPlayerViewController`
-/// — the native fullscreen + PiP-capable host used by `FullscreenVideoPlayer`
-/// when the user taps a poster's play button. Distinct from SwiftUI's
-/// `VideoPlayer`, which is also AVKit-backed but doesn't surface the
-/// fullscreen button.
-///
-/// Configures the shared playback audio session in `makeUIViewController`
-/// so a session left in `.record` by `VoiceCaptureSheet` can't silently
-/// mute video. `PlaybackAudioSession.configure` is idempotent.
-///
-/// The player itself is owned by the parent `FullscreenVideoPlayer` so it
-/// can pause on dismiss without reaching into the view controller.
-private struct VideoPlayerRepresentable: UIViewControllerRepresentable {
-
-    let player: AVPlayer
-
-    func makeUIViewController(context: Context) -> AVPlayerViewController {
-        _ = PlaybackAudioSession.configure()
-        let controller = AVPlayerViewController()
-        controller.player = player
-        controller.videoGravity = .resizeAspect
-        controller.allowsPictureInPicturePlayback = true
-        controller.showsPlaybackControls = true
-        return controller
-    }
-
-    func updateUIViewController(_ controller: AVPlayerViewController, context: Context) {
-        if controller.player !== player {
-            controller.player = player
-        }
     }
 }
 

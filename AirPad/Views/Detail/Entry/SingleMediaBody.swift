@@ -64,10 +64,13 @@ struct SingleMediaBody: View {
     /// presents. The old `VideoPlayer(player: AVPlayer(url:))` had no reference
     /// to pause, so the inline player kept playing behind the cover and the
     /// system promoted the orphan to PiP (doubled audio).
+    /// E fix-up 6 (M2): the video's ONE player (`SharedVideoPlayback`), the same object the full-screen player and
+    /// Picture in Picture use, so position, play/pause and volume carry over.
     @State private var inlinePlayer: AVPlayer? = nil
-    /// Whether the inline player was playing when the lightbox took over, so
-    /// dismiss can restore it.
+    /// Whether the inline player was playing when the lightbox took over, and where, so dismiss can restore it
+    /// when nothing in the viewer touched it.
     @State private var inlineWasPlaying = false
+    @State private var inlinePausedAt: CMTime? = nil
     /// Import-failure surface — set when picked photos couldn't be copied (e.g.
     /// iCloud-hosted originals that failed to download). Failures are counted,
     /// not silently dropped.
@@ -96,11 +99,23 @@ struct SingleMediaBody: View {
                 onAdd: { showingPicker = true },
                 accessibilityLabel: "Add more media"
             ) {
-                // Commit 4 fills this slot with the Carousel/Bento view-mode
-                // toggle. Empty in commit 3 — the chrome row exists at full
-                // height so the transition single → gallery is visually
-                // continuous (no resize when commit 4 lands).
-                EmptyView()
+                // E fix-up 6 (M2): the viewer button for a video sits here, off the player: on the video it was
+                // stacked under AVKit's own volume control (T: "the volume slider appears right on top of the
+                // full-screen toggle").
+                if primaryItem?.mediaType == .video, inlinePlayer != nil {
+                    Button {
+                        viewerStart = GalleryViewerStart(index: 0)
+                    } label: {
+                        Image(systemName: "arrow.up.left.and.arrow.down.right")
+                            .font(.body.weight(.semibold))
+                            .foregroundStyle(AppearancePalette.ink.opacity(0.75))
+                            .frame(width: 32, height: 32)
+                            .background(AppearancePalette.ink.opacity(0.08))
+                            .clipShape(Circle())
+                    }
+                    .buttonStyle(.plain)
+                    .accessibilityLabel("Open fullscreen")
+                }
             }
         }
         .appSheet(isPresented: $showingPicker) {
@@ -112,12 +127,18 @@ struct SingleMediaBody: View {
         // still mounted behind it and keeps playing (the system then promotes
         // it to PiP). Pause + remember state so audio doesn't double up.
         .onChange(of: viewerStart) { _, newValue in
-            guard newValue != nil, let inlinePlayer else { return }
+            guard newValue != nil, let inlinePlayer, let key = primaryItem?.id else { return }
+            // A video already in Picture in Picture keeps playing there.
+            guard !SharedVideoPlayback.shared.isInPictureInPicture(key) else { inlineWasPlaying = false; return }
             inlineWasPlaying = (inlinePlayer.timeControlStatus == .playing)
             inlinePlayer.pause()
+            inlinePausedAt = inlinePlayer.currentTime()
         }
-        // Leaving the entry entirely (nav pop) also stops the inline audio.
-        .onDisappear { inlinePlayer?.pause() }
+        // Leaving the entry entirely (nav pop) stops the video, unless it's playing in Picture in Picture.
+        .onDisappear {
+            if inlinePlayer != nil, let key = primaryItem?.id { SharedVideoPlayback.shared.release(key) }
+            inlinePlayer = nil
+        }
         .alert("Couldn’t add \(importFailureCount) \(importFailureCount == 1 ? "item" : "items")",
                isPresented: $showImportFailure) {
             Button("OK", role: .cancel) { }
@@ -187,22 +208,9 @@ struct SingleMediaBody: View {
                 // tap-to-fullscreen affordance is a corner button instead. The
                 // player is a stable @State ref so it can be paused when the
                 // lightbox presents (see `.onChange(of: viewerStart)`).
-                VideoPlayer(player: player)
+                SharedVideoPlayerView(key: primaryItem?.id ?? item.id, player: player)
                     .frame(height: 220)
                     .clipShape(RoundedRectangle(cornerRadius: 12))
-                    .overlay(alignment: .topTrailing) {
-                        Button {
-                            viewerStart = GalleryViewerStart(index: 0)
-                        } label: {
-                            Image(systemName: "arrow.up.left.and.arrow.down.right")
-                                .font(.body.weight(.semibold))
-                                .foregroundStyle(.white)
-                                .frame(width: 32, height: 32)
-                                .background(.black.opacity(0.55), in: Circle())
-                        }
-                        .padding(8)
-                        .accessibilityLabel("Open fullscreen")
-                    }
             } else {
                 RoundedRectangle(cornerRadius: 12)
                     .fill(AppearancePalette.ink.opacity(0.08))
@@ -213,8 +221,9 @@ struct SingleMediaBody: View {
         }
         // Build the stable player once the URL resolves.
         .task(id: mediaURL) {
-            guard let url = mediaURL, inlinePlayer == nil else { return }
-            inlinePlayer = AVPlayer(url: url)
+            guard let url = mediaURL, inlinePlayer == nil, let key = primaryItem?.id else { return }
+            SharedVideoPlayback.shared.hold(key)
+            inlinePlayer = SharedVideoPlayback.shared.player(for: key, url: url)
         }
     }
 
@@ -244,8 +253,11 @@ struct SingleMediaBody: View {
     /// player to its pre-present state (resume only if it was playing).
     private func handleViewerDismiss() {
         flushPendingDeletion()
-        if inlineWasPlaying { inlinePlayer?.play() }
+        // Resume only if the viewer left the video where the entry paused it (one player: if it was played or
+        // moved in the viewer, the entry shows it as the viewer left it).
+        if inlineWasPlaying, let p = inlinePlayer, let at = inlinePausedAt, p.rate == 0, CMTimeCompare(p.currentTime(), at) == 0 { p.play() }
         inlineWasPlaying = false
+        inlinePausedAt = nil
     }
 
     private func flushPendingDeletion() {

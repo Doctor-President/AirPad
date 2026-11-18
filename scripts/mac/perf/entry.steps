@@ -1,0 +1,27 @@
+# E fix-up 5 · L1 — opening and closing entries (List and Cards), each followed by a rest so its stalls stand alone.
+# k3.sh with STEPS=entry.steps TL=<s>. Window 1,350 × 840, sidebar shown, Librarian docked (as session.steps).
+library      click sidebar.library
+view-list    click toolbar.view.List
+rest         wait 1500
+open-list    click listRow-*#3
+rest         wait 1500
+close-list   click toolbar.back
+rest         wait 1500
+open-list    click listRow-*#8
+rest         wait 1500
+close-list   click toolbar.back
+rest         wait 1500
+open-list    click listRow-*#12
+rest         wait 1500
+close-list   click toolbar.back
+rest         wait 1500
+view-cards   click toolbar.view.Cards
+rest         wait 1500
+open-card    click 560,430
+rest         wait 1500
+close-card   click toolbar.back
+rest         wait 1500
+open-card    click 820,430
+rest         wait 1500
+close-card   click toolbar.back
+rest         wait 1500

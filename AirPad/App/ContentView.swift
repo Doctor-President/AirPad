@@ -695,31 +695,13 @@ struct ContentView: View {
             if panelState.state == .full { panelState.dropToHalf(animated: true) }
             router.pendingNodeNavigationID = id
         }
-        .onChange(of: store.isInDetailView) { _, inDetail in
-            if inDetail {
-                // Rescue-raise ONLY when the current surface actually wants the
-                // Librarian (a canvas / collection-canvas detail). Any suppressed
-                // surface — capture mode OR QuikCapture / dashboard / recents —
-                // must stay ducked, so gate on the same SSOT (BUG 11). The bare
-                // `!isCapturing` guard let a detail-depth flip re-raise the peek
-                // over a non-canvas surface.
-                if panelState.state == .hidden && !librarianSuppressed {
-                    // BUG 15 — go through the visibility SSOT, not a bare
-                    // raiseToPeek: entering .recents both ducked the panel AND
-                    // disabled its UIKit interaction, so a raise alone would
-                    // surface a NON-tappable pill. `applyLibrarianVisibility`
-                    // re-enables interaction and raises (we only reach here when
-                    // hidden + unsuppressed, so no user detent is overridden).
-                    applyLibrarianVisibility(animated: true)
-                }
+        // E fix-up 5 (L1) — watched by a leaf view, not here: `.onChange(of: store.isInDetailView)` in this body made
+        // every entry open / close re-run ContentView's whole body (the depth flips on each).
+        .background {
+            if perfAB("oldwatch") {
+                Color.clear.onChange(of: store.isInDetailView) { _, inDetail in detailDepthChanged(inDetail) }
             } else {
-                // Leaving the detail ends capture mode (Done → Recents and a
-                // plain back-out both land here).
-                if router.isCapturing {
-                    router.isCapturing = false
-                    router.captureNodeID = nil
-                }
-                restorePanelForEntryMode()
+                DetailDepthWatcher(store: store) { detailDepthChanged($0) }
             }
         }
         // Selection coexistence. When batch selection activates in
@@ -775,6 +757,35 @@ struct ContentView: View {
         }
     }
 
+    /// The first detail entered / the last one left (was an `.onChange` in the body; see `DetailDepthWatcher`).
+    private func detailDepthChanged(_ inDetail: Bool) {
+        if inDetail {
+            // Rescue-raise ONLY when the current surface actually wants the
+            // Librarian (a canvas / collection-canvas detail). Any suppressed
+            // surface — capture mode OR QuikCapture / dashboard / recents —
+            // must stay ducked, so gate on the same SSOT (BUG 11). The bare
+            // `!isCapturing` guard let a detail-depth flip re-raise the peek
+            // over a non-canvas surface.
+            if panelState.state == .hidden && !librarianSuppressed {
+                // BUG 15 — go through the visibility SSOT, not a bare
+                // raiseToPeek: entering .recents both ducked the panel AND
+                // disabled its UIKit interaction, so a raise alone would
+                // surface a NON-tappable pill. `applyLibrarianVisibility`
+                // re-enables interaction and raises (we only reach here when
+                // hidden + unsuppressed, so no user detent is overridden).
+                applyLibrarianVisibility(animated: true)
+            }
+        } else {
+            // Leaving the detail ends capture mode (Done → Recents and a
+            // plain back-out both land here).
+            if router.isCapturing {
+                router.isCapturing = false
+                router.captureNodeID = nil
+            }
+            restorePanelForEntryMode()
+        }
+    }
+
     /// Drive the panel position from `librarianSuppressed`. Called on every
     /// input change (entry mode, capture) and at first-render alignment, so the
     /// position never drifts from the visible surface. Raise-intent callers
@@ -792,7 +803,10 @@ struct ContentView: View {
         // surface below. Instant (not animated), so it can't be raced.
         applyLibrarianInteraction()
         #if targetEnvironment(macCatalyst)
-        panelState.duck(animated: false)   // Mac batch D3 — the Librarian is the column, never the panel
+        // Mac batch D3 — the Librarian is the column, never the panel. E fix-up 5 (L1): only once — every entry
+        // open / close came through here, and each duck sent resignFirstResponder down the whole responder chain (a
+        // first-responder change rebuilds the Mac menu bar) for a panel that was already hidden.
+        if panelState.state != .hidden || perfAB("alwaysduck") { panelState.duck(animated: false) }
         panelState.controller?.view.isUserInteractionEnabled = false
         return
         #endif
@@ -964,5 +978,15 @@ struct ContentView: View {
         case .canvas, .dashboard, .quikCapture, .recents:
             return .corpus
         }
+    }
+}
+
+/// E fix-up 5 (L1) — observes the detail depth in its own (empty) body, so a change re-runs this leaf, not the view
+/// that owns the handler.
+private struct DetailDepthWatcher: View {
+    let store: CorpusStore
+    let changed: (Bool) -> Void
+    var body: some View {
+        Color.clear.onChange(of: store.isInDetailView) { _, inDetail in changed(inDetail) }
     }
 }

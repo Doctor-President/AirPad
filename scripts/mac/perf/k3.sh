@@ -24,9 +24,15 @@ for t in rclick rperf; do [[ $B/$t -nt $H/$t.swift ]] || swiftc -O -o $B/$t $H/$
 PREF=$C/Library/Preferences/com.doctorpresident.airpad.macA
 for k in view.buttons map.intro librarian.intro librarian.sample librarian.mode librarian.model entry.intro capture.title; do defaults write $PREF com.airpad.callouts.$k -bool true; done
 caffeinate -d -u -w $$ &
+# E fix-up 5 — the display sleeps between runs and the session then reads as locked (no window, every click NOT FOUND):
+# wake it and refuse to run locked.
+caffeinate -u -t 2; L=${0:A:h:h:h:h}/build/mac-e/fixup5/locked
+[[ -x $L ]] && [[ $($L) == "locked 1"* ]] && { echo "LOCKED: not running" | tee $OUT/setup.txt; exit 3 }
 $APP/Contents/MacOS/AirPad -ApplePersistenceIgnoreState YES ${=EXTRA:-} > $OUT/app.log 2>&1 &
 P=$!; trap "kill $P 2>/dev/null" EXIT
-sleep 15; $R winmove $P 0 160 >/dev/null; $R winsize $P 1350 840 >/dev/null; sleep 1
+# E fix-up 5 — wait for the window (a fixed 15 s once found none: "window (0,0 0×0)" and an empty run).
+sleep 10; for i in $(seq 1 30); do [[ $($R winpos $P) != *"0×0"* ]] && break; sleep 1; done
+$R winmove $P 0 160 >/dev/null; $R winsize $P 1350 840 >/dev/null; sleep 1
 [[ $($R has $P sidebar.today) == no ]] && { $R click $P toolbar.sidebar >/dev/null; sleep 1 }
 [[ $($R get $P toolbar.librarian AXValue) != Open ]] && { $R click $P toolbar.librarian >/dev/null; sleep 1 }
 $R click $P sidebar.library >/dev/null; sleep 3   # first Map build (not measured)
@@ -39,7 +45,7 @@ if [[ ${MODE:-profile} == frames ]]; then
   sleep 1 & STEPS=${0:A:h}/scroll.steps
 else
   xcrun xctrace record --template 'Time Profiler' --instrument 'Hangs' --time-limit ${TL:-400}s --attach $P --output $OUT/session.trace --no-prompt > $OUT/xctrace.log 2>&1 &
-  STEPS=${0:A:h}/session.steps
+  STEPS=${STEPS:-${0:A:h}/session.steps}   # E fix-up 5: STEPS=<file> for a focused bench (entry.steps)
 fi
 X=$!
 # Disk guard: an Instruments kernel trace that failed to stop grew to 31 GB in ~6 min (fix-up 4) — stop the recording

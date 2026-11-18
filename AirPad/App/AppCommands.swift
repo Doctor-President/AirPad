@@ -199,7 +199,7 @@ struct NavigationHistory: ViewModifier {
             .onChange(of: router.commandRequest) { _, request in
                 switch request?.command {
                 case .back?:
-                    if !path.isEmpty { path.removeLast() }
+                    if !path.isEmpty { macNavigate { path.removeLast() } }
                 case .forward?:
                     if let next = forward.popLast() { restoring = true; path = next }
                 default: break
@@ -217,4 +217,24 @@ struct NavigationHistory: ViewModifier {
 extension View {
     /// Mac batch C1 — Go › Back / Forward for this NavigationStack's path.
     func navigationHistory(_ path: Binding<NavigationPath>) -> some View { modifier(NavigationHistory(path: path)) }
+}
+
+/// E fix-up 5 (L1) — a NavigationStack change on the Mac; the bench's `noanim` A/B makes it without the slide.
+@MainActor func macNavigate(_ change: () -> Void) {
+    if perfAB("noanim") {
+        var t = Transaction(); t.disablesAnimations = true
+        withTransaction(t, change)
+    } else {
+        change()
+    }
+}
+
+/// E fix-up 5 (L1) — the root of a NavigationStack, re-evaluated when `key` or what its own body reads changes (the
+/// store, its environment), not each time the stack's path does: a push or pop re-ran the whole List / Cards body
+/// (re-filtering and re-sorting every entry, comparing every row's entry) before the first frame of the change.
+struct PathIsolated<Content: View>: View, Equatable {
+    let key: [AnyHashable]
+    @ViewBuilder let content: () -> Content
+    static func == (a: Self, b: Self) -> Bool { a.key == b.key }
+    var body: some View { content() }
 }

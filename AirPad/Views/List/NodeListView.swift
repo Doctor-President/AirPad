@@ -52,6 +52,9 @@ struct NodeListView: View {
 
                 if nodes.isEmpty {
                     emptyState
+                } else if RunningOnMac.isMac && !perfAB("noisolate") {
+                    // E fix-up 5 (L1) — not re-run by the stack's path; the key is every value of this view the rows read.
+                    PathIsolated(key: [scope, sortKey, keyIndex, colorScheme, appFont] as [AnyHashable]) { macList }.equatable()
                 } else if RunningOnMac.isMac {
                     macList   // Mac batch D4 — the desktop list (T asked for it)
                 } else {
@@ -341,7 +344,7 @@ struct NodeListView: View {
 
     private func open(_ node: Node) {
         if selection.isActive { selection.toggle(node.id); return }
-        store.openAfterPrewarm(node) { navigationPath.append(node) }
+        store.openAfterPrewarm(node) { macNavigate { navigationPath.append(node) } }
     }
 
     private var emptyState: some View {

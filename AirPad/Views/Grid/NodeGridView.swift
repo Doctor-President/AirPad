@@ -118,6 +118,14 @@ struct NodeGridView: View {
         }
     }
 
+    private var macIsolationKey: [AnyHashable] {
+        var k: [AnyHashable] = [scope, colorScheme, appFont, columnCount, macCardWidth]
+        #if DEBUG
+        k.append(showTileTuningPanel)
+        #endif
+        return k
+    }
+
     var body: some View {
         NavigationStack(path: $navigationPath) {
             ZStack(alignment: .bottomTrailing) {
@@ -126,7 +134,17 @@ struct NodeGridView: View {
                     .ignoresSafeArea()
                     .allowsHitTesting(false)
 
-                if RunningOnMac.isMac {
+                if RunningOnMac.isMac && !perfAB("noisolate") {
+                    // E fix-up 5 (L1) — not re-run by the stack's path (opening / closing an entry); the key is every
+                    // value of this view the cards read (the store, router and selection are tracked by the cards).
+                    PathIsolated(key: macIsolationKey) {
+                        VStack(spacing: 0) {
+                            macCardsHeader
+                            gridContent
+                        }
+                    }
+                    .equatable()
+                } else if RunningOnMac.isMac {
                     VStack(spacing: 0) {
                         macCardsHeader
                         gridContent
@@ -307,7 +325,7 @@ struct NodeGridView: View {
                                 } else {
                                     navHaptic.impactOccurred()
                                     // live-16 — the tile showed the cover (cached → pushes at once); prewarm the gallery's first photos.
-                                    store.openAfterPrewarm(node) { navigationPath.append(node) }
+                                    store.openAfterPrewarm(node) { macNavigate { navigationPath.append(node) } }
                                 }
                             }
                             // #3 — shared focus glow (matches the tile's 14pt clip).

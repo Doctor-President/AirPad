@@ -259,6 +259,10 @@ struct NodeDetailView: View {
     /// Live scroll distance from the top (`visibleRect.minY`), same reader the
     /// chat transcript uses. 0 at scroll-top; grows as content moves up.
     @State private var heroScrollOffset: CGFloat = 0
+    /// E fix-up 5 (L1) — on the Mac an opened entry draws its hero and header first and its blocks (and Related, the
+    /// paste pad) one frame later: the push's first frame no longer waits for every block's layout (−100 ms an open
+    /// on the 265-entry bench). iPhone: whole from the start, as before.
+    @State private var blocksShown = !RunningOnMac.isMac || perfAB("nostage")
     /// The hero's own VISIBLE content height, reported up from `heroZone` /
     /// `HeroImageBanner` (gradient → 200; `.fill` → its clamped visible height;
     /// `.fullHeight` → the crisp `contentHeight`, NOT the mirror-inset banner
@@ -335,6 +339,8 @@ struct NodeDetailView: View {
             if let node, node.isPrivate, !PrivateEntries.shared.revealed, !markedPrivateHere {
                 // 1.1-C (C3 / C4) — a private entry while private entries are hidden: hidden, never blurred.
                 PrivateEntryPlaceholder()
+            } else if let node, perfAB("detailstub") {
+                Text(node.title).frame(maxWidth: .infinity, maxHeight: .infinity)   // L1 A/B (PERFLOG bench only)
             } else if let node {
                 content(node: node)
             } else {
@@ -369,6 +375,7 @@ struct NodeDetailView: View {
         .appSheet(isPresented: $showExport) { EntryExportSheet(nodeID: nodeID) }   // 1.1-C (C5)
         // Mac batch C1 — this is the entry on screen (the top of the stack re-appears after a Back); File › Export Entry….
         .onAppear { router.openEntryID = nodeID }
+        .onAppear { if !blocksShown { AfterFirstFrame.run { blocksShown = true } } }   // L1
         .onChange(of: router.commandRequest) { _, request in
             if request?.command == .export, router.openEntryID == nodeID { showExport = true }
         }
@@ -550,9 +557,11 @@ struct NodeDetailView: View {
         ScrollViewReader { scrollProxy in
         ScrollView {
             VStack(spacing: 0) {
+                if perfAB("nohero") { Color.clear.frame(height: 200 + topInset) } else {
                 heroZone(node: node, topInset: topInset, width: proxy.size.width,
                          onVisibleHeight: { heroVisibleHeight = $0 })
                     .measureHeaderBound("hero")
+                }
                 VStack(alignment: .leading, spacing: 0) {
                 EntrySyncNotes(nodeID: node.id)   // Mac B1 — draws nothing unless catching up / a version was kept
                 // Detail-View outer rhythm — spacing:0 + explicit per-gap padding
@@ -585,6 +594,7 @@ struct NodeDetailView: View {
                 // (isCaptureMode == false) never computes a ghost config → never shows a ghost.
                 // Arc A — and only while Done names the entry (the delegate setting), as in Quick Capture.
                 let ghosts = isCaptureMode && autoNameCaptures
+                if !perfAB("noheader") {
                 let tGhostText = (ghosts && editedTitle.isEmpty) ? node.surfacedProposal(kind: .title)?.text : nil
                 let sGhostText = (ghosts && editedSummary.isEmpty) ? node.surfacedProposal(kind: .summary)?.text : nil
                 CaptureHeader(
@@ -659,9 +669,10 @@ struct NodeDetailView: View {
                 } attributes: {
                     CaptureAttributesSection(nodeID: nodeID, showFieldSheet: $showFieldSheet, measured: true, hidesEmptyFields: true)
                 }
+                }
 
                 VStack(alignment: .leading, spacing: visualSettings.interCardSpacing) {
-                    ForEach(payloadEntries, id: \.element.id) { pair in
+                    ForEach(perfAB("noentries") || !blocksShown ? [] : payloadEntries, id: \.element.id) { pair in
                         let rawIndex = pair.offset
                         let item = pair.element
                         if inlineImageIDs.contains(item.id) {
@@ -695,8 +706,10 @@ struct NodeDetailView: View {
                 // Backlinks v1 — Related Nodes (user channel). Renders nothing
                 // when the node has no connections. System-suggestion channel is
                 // a later phase.
+                if blocksShown {
                 RelatedNodesSection(nodeID: nodeID)
                     .padding(.top, visualSettings.entriesToRelated)
+                }
 
                 // Meta-node provenance + promotion
                 if node.isMeta {
@@ -719,9 +732,11 @@ struct NodeDetailView: View {
                 //
                 // Paste Pad — an always-available authoring affordance (Display/Edit
                 // mode retired; there is no read-only state to recede into).
+                if blocksShown {
                 PastePadView(onPaste: handlePastedContent)
                     .transition(.opacity)
                     .padding(.top, 24)   // tail past Related — fixed, not dialed
+                }
 
                 // Trailing spacer so the last entry isn't tucked under the
                 // floating "+" button. 80pt clears the 56pt button + 24pt
@@ -3277,3 +3292,38 @@ private struct BandHeroBackdrop: View {
     }
 }
 
+
+/// E fix-up 5 (L1) — the open/close bench's A/B switches (`-MacPerfAB a,b`), read only in DEBUG or the `-D PERFLOG`
+/// bench build; always false in the shipping build.
+func perfAB(_ mode: String) -> Bool {
+    #if DEBUG || PERFLOG
+    PerfABModes.modes.contains(mode)
+    #else
+    false
+    #endif
+}
+#if DEBUG || PERFLOG
+enum PerfABModes {
+    static let modes = Set((UserDefaults.standard.string(forKey: "MacPerfAB") ?? "").split(separator: ",").map(String.init))
+}
+#endif
+
+/// E fix-up 5 (L1) — runs `work` once the next frame has been drawn (the second display-link tick from now), so a view
+/// can show its light part first and add the heavy part after.
+@MainActor final class AfterFirstFrame: NSObject {
+    private var link: CADisplayLink?
+    private var ticks = 0
+    private var work: (() -> Void)?
+    private static var live: Set<AfterFirstFrame> = []
+    static func run(_ work: @escaping () -> Void) {
+        let a = AfterFirstFrame(); a.work = work; live.insert(a)
+        let l = CADisplayLink(target: a, selector: #selector(tick)); l.add(to: .main, forMode: .common); a.link = l
+    }
+    @objc private func tick() {
+        ticks += 1
+        guard ticks >= 2 else { return }
+        link?.invalidate(); link = nil
+        let w = work; work = nil; Self.live.remove(self)
+        w?()
+    }
+}

@@ -219,9 +219,16 @@ extension View {
     func navigationHistory(_ path: Binding<NavigationPath>) -> some View { modifier(NavigationHistory(path: path)) }
 }
 
-/// E fix-up 5 (L1) — a NavigationStack change on the Mac; the bench's `noanim` A/B makes it without the slide.
+/// E fix-up 5 (L1) — a NavigationStack change on the Mac; the bench's `noanim` A/B, or (DEBUG, for T to feel the R7
+/// option B) Settings › Developer › "Entry open / close: instant", makes it without the slide. Release: the slide.
+let macInstantNavigationKey = "mac.nav.instant"
 @MainActor func macNavigate(_ change: () -> Void) {
-    if perfAB("noanim") {
+    #if DEBUG
+    let instant = UserDefaults.standard.bool(forKey: macInstantNavigationKey)
+    #else
+    let instant = false
+    #endif
+    if perfAB("noanim") || (RunningOnMac.isMac && instant) {
         var t = Transaction(); t.disablesAnimations = true
         withTransaction(t, change)
     } else {

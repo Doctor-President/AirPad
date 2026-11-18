@@ -1259,6 +1259,16 @@ struct SettingsView: View {
             .pickerStyle(.inline)
             .padding(.horizontal, 16)
             .accessibilityIdentifier("devMacCardMorph")
+            // E fix-up 5 (L1, R7 option B) — opening / closing an entry with or without the slide.
+            Picker("Entry open / close", selection: Binding(
+                get: { UserDefaults.standard.bool(forKey: macInstantNavigationKey) },
+                set: { UserDefaults.standard.set($0, forKey: macInstantNavigationKey) })) {
+                Text("Slide (as today)").tag(false)
+                Text("Instant (no slide)").tag(true)
+            }
+            .pickerStyle(.inline)
+            .padding(.horizontal, 16)
+            .accessibilityIdentifier("devMacInstantNav")
             #endif
             reprocessRow
 

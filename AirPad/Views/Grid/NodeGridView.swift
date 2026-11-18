@@ -193,6 +193,7 @@ struct NodeGridView: View {
                 if newCount == 0 { currentDetailNodeID = nil }
             }
         }
+        .macInstantNavigation(navigationPath.count)   // E fix-up 6 (M7)
         .onAppear {
             // Clamp any out-of-ladder values back into {1, 2, 3, 4}. This
             // host only ever runs at 2 or 3; 1 routes to CoverFlowView and 4

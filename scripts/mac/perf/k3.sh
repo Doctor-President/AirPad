@@ -43,6 +43,8 @@ echo "nodes $(ls $C/Documents/AirPad/nodes | wc -l | tr -d ' ') · window $($R w
 # ~25 GB a minute and its tables came back empty.
 if [[ ${MODE:-profile} == frames ]]; then
   sleep 1 & STEPS=${0:A:h}/scroll.steps
+elif [[ ${MODE} == plain ]]; then   # E fix-up 6 — STEPS with no recording (rperf's visible / settled times only)
+  sleep 1 & STEPS=${STEPS:?STEPS}
 else
   xcrun xctrace record --template 'Time Profiler' --instrument 'Hangs' --time-limit ${TL:-400}s --attach $P --output $OUT/session.trace --no-prompt > $OUT/xctrace.log 2>&1 &
   STEPS=${STEPS:-${0:A:h}/session.steps}   # E fix-up 5: STEPS=<file> for a focused bench (entry.steps)

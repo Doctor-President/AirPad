@@ -219,16 +219,42 @@ extension View {
     func navigationHistory(_ path: Binding<NavigationPath>) -> some View { modifier(NavigationHistory(path: path)) }
 }
 
-/// E fix-up 5 (L1) — a NavigationStack change on the Mac; the bench's `noanim` A/B, or (DEBUG, for T to feel the R7
-/// option B) Settings › Developer › "Entry open / close: instant", makes it without the slide. Release: the slide.
+/// E fix-up 5 (L1) — a NavigationStack change on the Mac; the bench's `noanim` A/B, or the Mac's instant entry
+/// open / close (E fix-up 6 M7), makes it without the slide.
 let macInstantNavigationKey = "mac.nav.instant"
+
+/// E fix-up 6 (M7) — Companion's Mac defaults, pending T's feel: entries open and close INSTANTLY (no slide) and the
+/// orb → card morph uses the Mac timing. Today's behaviour (the slide, the iPhone timing) stays one switch away in
+/// Settings › About › Mac feel (testing), shown after 5 taps on the version, in builds with DEVSWITCHES (Xcode runs,
+/// TestFlight). An App Store archive has neither the switches nor the reads: the defaults, fixed.
+enum MacFeelSwitches {
+    /// M8 — the Librarian panel's Search fade (T tunes by eye).
+    static let searchFadeStrengthKey = "mac.searchFade.strength"
+    static let searchFadeHeightKey = "mac.searchFade.height"
+    static let searchFadeStrengthDefault = 0.22
+    static let searchFadeHeightDefault = 160.0
+    static let shownKey = "mac.feelSwitches.shown"
+    static var entryInstant: Bool {
+        #if DEBUG || DEVSWITCHES
+        return UserDefaults.standard.object(forKey: macInstantNavigationKey) as? Bool ?? true
+        #else
+        return true
+        #endif
+    }
+}
+
+extension View {
+    /// E fix-up 6 (M7) — every open / close in this stack (a row, a card, an orb, Recents, ‹, ⌘[) without the slide
+    /// on the Mac, unless T switched the slide back on.
+    func macInstantNavigation(_ depth: Int) -> some View {
+        transaction(value: depth) { t in
+            if RunningOnMac.isMac && MacFeelSwitches.entryInstant { t.disablesAnimations = true }
+        }
+    }
+}
+
 @MainActor func macNavigate(_ change: () -> Void) {
-    #if DEBUG
-    let instant = UserDefaults.standard.bool(forKey: macInstantNavigationKey)
-    #else
-    let instant = false
-    #endif
-    if perfAB("noanim") || (RunningOnMac.isMac && instant) {
+    if perfAB("noanim") || (RunningOnMac.isMac && MacFeelSwitches.entryInstant) {
         var t = Transaction(); t.disablesAnimations = true
         withTransaction(t, change)
     } else {

@@ -585,6 +585,7 @@ struct CanvasView: View {
         NavigationStack(path: $navigationPath) {
             canvasStack
         }
+        .macInstantNavigation(navigationPath.count)   // E fix-up 6 (M7)
         #if DEBUG
         // live-44 — the `-AuraSizeScript` "add an entry" step: a real store add (as Capture does), so the Map syncs it in.
         .onReceive(NotificationCenter.default.publisher(for: Notification.Name("AuraSizeAddEntry"))) { _ in

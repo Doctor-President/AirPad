@@ -104,6 +104,7 @@ struct NodeListView: View {
                 if newCount == 0 { currentDetailNodeID = nil }
             }
         }
+        .macInstantNavigation(navigationPath.count)   // E fix-up 6 (M7)
         .onAppear {
             navHaptic.prepare()
             store.detailViewDepth = navigationPath.count

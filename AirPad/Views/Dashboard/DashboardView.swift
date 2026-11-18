@@ -453,6 +453,7 @@ struct DashboardView: View {
                 Text("Its entries stay in your library.")
             }
         }
+        .macInstantNavigation(path.count)   // E fix-up 6 (M7)
     }
 
     private var deleteDialogBinding: Binding<Bool> {

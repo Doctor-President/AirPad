@@ -148,6 +148,10 @@ struct SettingsView: View {
     /// 1.1-A (8) — the hidden AirPad Host switch (observed so the Models screen follows it); written via `HostAccess`.
     @AppStorage(HostAccess.storageKey) private var hostAccessOn = false
     @State private var versionTaps = 0
+    #if targetEnvironment(macCatalyst) && (DEBUG || DEVSWITCHES)
+    /// E fix-up 6 (M7/M8) — 5 taps on the version show "Mac feel (testing)" (and it stays shown).
+    @AppStorage(MacFeelSwitches.shownKey) private var macFeelShown = false
+    #endif
     @State private var showImportIdeas = false
     @State private var showReviewQueue = false
     @State private var showClearConfirmation = false
@@ -794,6 +798,9 @@ struct SettingsView: View {
                         // 1.1-A (8) — the hidden AirPad Host switch: 7 taps on the version line toggle it.
                         .onTapGesture {
                             versionTaps += 1
+                            #if targetEnvironment(macCatalyst) && (DEBUG || DEVSWITCHES)
+                            if versionTaps == 5 { macFeelShown = true }   // E fix-up 6 — 7 still toggles AirPad Host
+                            #endif
                             guard versionTaps >= 7 else { return }
                             versionTaps = 0
                             HostAccess.enabled.toggle()
@@ -809,6 +816,9 @@ struct SettingsView: View {
                     Text("Developer: AirPad Host on").font(appFont.font(size: 11, relativeTo: .caption2)).foregroundStyle(AppearancePalette.ink.opacity(0.35))
                         .accessibilityIdentifier("aboutHostDeveloper")
                 }
+                #if targetEnvironment(macCatalyst) && (DEBUG || DEVSWITCHES)
+                if macFeelShown { MacFeelSwitchesPanel() }
+                #endif
             }
         }
         #if DEBUG || TESTFLIGHT
@@ -1248,28 +1258,7 @@ struct SettingsView: View {
     #if DEBUG
     private var developerSection: some View {
         VStack(alignment: .leading, spacing: 8) {
-            #if targetEnvironment(macCatalyst)
-            // E fix-up 5 (L2) — T compares the Map's orb → card morph: the Mac proposal vs the iPhone's timing.
-            Picker("Mac card morph", selection: Binding(
-                get: { UserDefaults.standard.string(forKey: MacCardMorph.key) ?? "mac" },
-                set: { UserDefaults.standard.set($0, forKey: MacCardMorph.key) })) {
-                Text("Mac timing (shorter, 0.22 s)").tag("mac")
-                Text("iPhone timing (0.37 s)").tag("iphone")
-            }
-            .pickerStyle(.inline)
-            .padding(.horizontal, 16)
-            .accessibilityIdentifier("devMacCardMorph")
-            // E fix-up 5 (L1, R7 option B) — opening / closing an entry with or without the slide.
-            Picker("Entry open / close", selection: Binding(
-                get: { UserDefaults.standard.bool(forKey: macInstantNavigationKey) },
-                set: { UserDefaults.standard.set($0, forKey: macInstantNavigationKey) })) {
-                Text("Slide (as today)").tag(false)
-                Text("Instant (no slide)").tag(true)
-            }
-            .pickerStyle(.inline)
-            .padding(.horizontal, 16)
-            .accessibilityIdentifier("devMacInstantNav")
-            #endif
+            // E fix-up 6 — the Mac card morph / entry open-close pickers moved to About › Mac feel (testing).
             reprocessRow
 
             backfillEmbeddingRow
@@ -1774,3 +1763,68 @@ private struct SettingsSheetSizing: ViewModifier {
         }
     }
 }
+
+#if targetEnvironment(macCatalyst) && (DEBUG || DEVSWITCHES)
+/// E fix-up 6 (M7/M8) — T's Mac feel switches: Settings › About, 5 taps on the version line. Defaults are Companion's
+/// recommendations (instant entries, the Mac morph timing, the search fade's starting values); each switch brings
+/// back today's behaviour or tunes by eye. Compiled out of App Store archives (DEVSWITCHES).
+private struct MacFeelSwitchesPanel: View {
+    @AppStorage(macInstantNavigationKey) private var instant = true
+    @AppStorage(MacCardMorph.key) private var morph = "mac"
+    @AppStorage(MacFeelSwitches.searchFadeStrengthKey) private var fadeStrength = MacFeelSwitches.searchFadeStrengthDefault
+    @AppStorage(MacFeelSwitches.searchFadeHeightKey) private var fadeHeight = MacFeelSwitches.searchFadeHeightDefault
+    @State private var copied = false
+
+    var body: some View {
+        VStack(alignment: .leading, spacing: 10) {
+            Text("Mac feel (testing)").font(.system(size: 13, weight: .semibold)).foregroundStyle(AppearancePalette.ink)
+            Picker("Entry open / close", selection: $instant) {
+                Text("Instant").tag(true)
+                Text("Slide (before)").tag(false)
+            }
+            .pickerStyle(.segmented)
+            .accessibilityIdentifier("macFeelEntryNav")
+            Picker("Orb → card", selection: $morph) {
+                Text("Mac timing (0.22 s)").tag("mac")
+                Text("iPhone timing (0.37 s)").tag("iphone")
+            }
+            .pickerStyle(.segmented)
+            .accessibilityIdentifier("macFeelMorph")
+            Text("Search fade (Librarian panel)").font(.system(size: 12, weight: .medium)).foregroundStyle(AppearancePalette.ink.opacity(0.7))
+            HStack {
+                Text("Strength").frame(width: 70, alignment: .leading)
+                Slider(value: $fadeStrength, in: 0...0.6).accessibilityIdentifier("macFeelFadeStrength")
+                Text(String(format: "%.2f", fadeStrength)).monospacedDigit().frame(width: 40)
+            }
+            HStack {
+                Text("Height").frame(width: 70, alignment: .leading)
+                Slider(value: $fadeHeight, in: 40...400, step: 10).accessibilityIdentifier("macFeelFadeHeight")
+                Text("\(Int(fadeHeight)) pt").monospacedDigit().frame(width: 50)
+            }
+            HStack(spacing: 12) {
+                Button(copied ? "Copied" : "Copy values") {
+                    UIPasteboard.general.string = """
+                    Mac feel (E fix-up 6)
+                    entry open / close: \(instant ? "instant" : "slide")
+                    orb → card morph: \(morph == "mac" ? "Mac timing" : "iPhone timing")
+                    search fade strength: \(String(format: "%.2f", fadeStrength))
+                    search fade height: \(Int(fadeHeight)) pt
+                    """
+                    copied = true
+                    DispatchQueue.main.asyncAfter(deadline: .now() + 1.5) { copied = false }
+                }
+                .accessibilityIdentifier("macFeelCopy")
+                Button("Reset") {
+                    instant = true; morph = "mac"
+                    fadeStrength = MacFeelSwitches.searchFadeStrengthDefault; fadeHeight = MacFeelSwitches.searchFadeHeightDefault
+                }
+            }
+        }
+        .font(.system(size: 12))
+        .padding(12)
+        .background(AppearancePalette.ink.opacity(0.05), in: RoundedRectangle(cornerRadius: 10))
+        .accessibilityElement(children: .contain)
+        .accessibilityIdentifier("macFeelSwitches")
+    }
+}
+#endif

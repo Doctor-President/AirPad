@@ -8051,13 +8051,12 @@ enum MacCardMorph {
     static let key = "mac.cardMorph.timing"
     /// Time constant of the proposal (s): 1 − e^(−dt/τ) of the way per frame; 90 % at τ·ln 10 ≈ 0.22 s.
     static let tau: Double = 0.095
+    /// E fix-up 6 (M7): the Mac timing is the Mac's default; the iPhone timing is a switch (`MacFeelSwitches`).
     static var usesMacTiming: Bool {
-        #if DEBUG
+        #if DEBUG || DEVSWITCHES
         return (UserDefaults.standard.string(forKey: key) ?? "mac") == "mac"
-        #elseif PERFLOG
-        return UserDefaults.standard.string(forKey: key) == "mac"   // the bench: `-mac.cardMorph.timing mac`
         #else
-        return false
+        return true
         #endif
     }
     /// This frame's step, or nil for the iPhone's per-frame 0.10.

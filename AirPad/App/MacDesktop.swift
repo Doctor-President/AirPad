@@ -219,6 +219,9 @@ enum MacDesktopFrameDebug {
         #if DEBUG || PERFLOG
         MacFrameLog.shared.start()
         #endif
+        #if DEBUG
+        if UserDefaults.standard.bool(forKey: "MacFocusLog") { MacFocusProbe.start() }
+        #endif
     }
     static var edgeEffectHidden: Bool {
         #if DEBUG
@@ -227,6 +230,37 @@ enum MacDesktopFrameDebug {
         return true
     }
 }
+
+#if DEBUG
+/// E fix-up 5 (L3) — `-MacFocusLog YES`: every UIKit focus move, with what took focus and its frame in the window, so a
+/// focus ring on the whole window can be traced to the item that drew it.
+@MainActor enum MacFocusProbe {
+    private static var token: NSObjectProtocol?
+    static func start() {
+        guard token == nil else { return }
+        token = NotificationCenter.default.addObserver(forName: UIFocusSystem.didUpdateNotification, object: nil, queue: .main) { note in
+            let ctx = note.userInfo?[UIFocusSystem.focusUpdateContextUserInfoKey] as? UIFocusUpdateContext
+            MainActor.assumeIsolated {
+                func describe(_ item: UIFocusItem?) -> String {
+                    guard let item else { return "nil" }
+                    var r = item.frame
+                    if let v = item as? UIView, let w = v.window { r = v.convert(v.bounds, to: w) }
+                    let win = (item as? UIView)?.window?.bounds.size ?? .zero
+                    var chain = String(describing: type(of: item))
+                    if let v = item as? UIView {
+                        var s = v.superview; var n = 0
+                        while let x = s, n < 4 { chain += " < " + String(describing: type(of: x)); s = x.superview; n += 1 }
+                    }
+                    return "\(chain) frame=\(Int(r.minX)),\(Int(r.minY)) \(Int(r.width))x\(Int(r.height)) window=\(Int(win.width))x\(Int(win.height)) effect=\(item.focusEffect.map { String(describing: type(of: $0)) } ?? "nil")"
+                }
+                NSLog("[FOCUS] next=%@ prev=%@ heading=%lu", describe(ctx?.nextFocusedItem), describe(ctx?.previouslyFocusedItem),
+                      ctx?.focusHeading.rawValue ?? 0)
+            }
+        }
+        NSLog("[FOCUS] probe on")
+    }
+}
+#endif
 
 struct MacDesktopFrame<Content: View>: View {
     let hostScope: CanvasScope

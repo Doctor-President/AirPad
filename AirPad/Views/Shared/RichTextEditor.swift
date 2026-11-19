@@ -257,8 +257,7 @@ struct RichTextEditor: UIViewRepresentable {
     /// `documentStyle` is set. The styling is display-only, so `encode` still
     /// recovers the identical markdown.
     private func decodedAttributedText(_ markdown: String) -> NSAttributedString {
-        let decoded = MarkdownCodec.decode(markdown)
-        return documentStyle ? NoteTypography.styled(decoded, font: documentFont) : decoded
+        NoteDecodeCache.decoded(markdown, documentStyle: documentStyle, font: documentFont)
     }
 
     func sizeThatFits(_ proposal: ProposedViewSize, uiView: RichTextUIView, context: Context) -> CGSize? {
@@ -4628,5 +4627,33 @@ enum NoteTypography {
         var depth = 0
         while work.hasPrefix("  "), depth < 5 { work = work.dropFirst(2); depth += 1 }
         return depth
+    }
+}
+
+/// Sweep 1 · 1.3 (sheet B, T: "This all sounds good.") — a note's decoded, styled text, kept so re-opening an entry doesn't
+/// decode its notes again (the Mac perf audit measured the heavy entry's open at 0.8–1.0 s of main-thread work, 27 % of
+/// it this decode). Only text without attachments is kept (an attachment object can't be shared by two text views). Keyed
+/// by the exact Markdown and the style, so an edit is simply a new key. (Decoding OFF the main thread needs the codec
+/// and typography taken off the main actor — parked, see the sweep report.)
+@MainActor
+enum NoteDecodeCache {
+    private static let cache: NSCache<NSString, NSAttributedString> = { let c = NSCache<NSString, NSAttributedString>(); c.countLimit = 96; return c }()
+
+    static func decoded(_ markdown: String, documentStyle: Bool, font: NoteFontChoice) -> NSAttributedString {
+        if perfAB("nonotecache") { return make(markdown, documentStyle, font) }   // bench A/B (false outside DEBUG / PERFLOG)
+        let k = "\(documentStyle ? 1 : 0)|\(font)|\(markdown)" as NSString
+        if let hit = cache.object(forKey: k) { return hit }
+        let made = make(markdown, documentStyle, font)
+        var hasAttachment = false
+        made.enumerateAttribute(.attachment, in: NSRange(location: 0, length: made.length)) { v, _, stop in
+            if v != nil { hasAttachment = true; stop.pointee = true }
+        }
+        if !hasAttachment { cache.setObject(made, forKey: k) }
+        return made
+    }
+
+    private static func make(_ markdown: String, _ documentStyle: Bool, _ font: NoteFontChoice) -> NSAttributedString {
+        let decoded = MarkdownCodec.decode(markdown)
+        return documentStyle ? NoteTypography.styled(decoded, font: font) : decoded
     }
 }

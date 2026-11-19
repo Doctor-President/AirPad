@@ -160,6 +160,15 @@ struct CanvasChrome: View {
         ViewSwitchMenuContent.destination(for: filterState.viewMode).icon
     }
 
+    /// Sweep 1 · 1.4 (sheet C) — no crossfade on a Mac view switch. On the Mac the 0.22 s fade never showed (60 fps
+    /// recordings of List → Cards, Cards → Map, Map → List: the content changes in ONE frame with or without it; each
+    /// view is its own NavigationStack), but it kept the outgoing view alive and updating for the fade's length: a
+    /// switch to the Map 322 → 232 ms of main thread, to Cards 351 → 297. The iPhone keeps it.
+    /// `-MacPerfAB viewfade` (bench) = as before.
+    private static var viewSwitchAnimation: Animation? {
+        RunningOnMac.isMac && !perfAB("viewfade") ? nil : .easeInOut(duration: 0.22)
+    }
+
     var body: some View {
         let _ = Perf.body(Self.self)   // perf recorder (P6): counts this rebuild
         ZStack {
@@ -188,7 +197,7 @@ struct CanvasChrome: View {
                     }
                 }
             }
-            .animation(.easeInOut(duration: 0.22), value: filterState.viewMode)
+            .animation(Self.viewSwitchAnimation, value: filterState.viewMode)
 
             // Chrome edge bands (shipped 1.0 treatment — eased blur + darken behind the chrome; cards
             // blur/darken passing under, chrome stays crisp). T 2026-10-03: kept this over the §4 scrim

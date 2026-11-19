@@ -65,9 +65,31 @@ enum WebGrounding {
     static func isNewsQuestion(_ q: String) -> Bool {
         let q = Live37.query ? q.replacingOccurrences(of: #"(?i)\b((up )?un)?till? today\b|\b(up to|as of|through|thru) today\b|\bto date\b"#,
                                                       with: " ", options: .regularExpression) : q
-        return q.range(of: #"\b(news|headlines?|breaking|happen(ed|ing)|today|tonight|yesterday|this (morning|afternoon|evening|week))\b"#,
+        // N12 — + "current events", "top stories", "last night", "the latest developments / updates" (time-sensitive too).
+        return q.range(of: #"\b(news|headlines?|breaking|happen(ed|ing)|today|tonight|yesterday|last night|this (morning|afternoon|evening|week)|current events|top stories)\b"#,
                 options: [.regularExpression, .caseInsensitive]) != nil
-            || q.range(of: #"\blatest (on|about|from|in)\b"#, options: [.regularExpression, .caseInsensitive]) != nil
+            || q.range(of: #"\blatest (on|about|from|in|developments|updates)\b"#, options: [.regularExpression, .caseInsensitive]) != nil
+    }
+
+    /// N12 (T 2026-11-18, "Not good.") — a TIME-SENSITIVE question: today's news, the latest headlines, this week's
+    /// events. Its answer is in today's web pages, not in an encyclopedia: it searches the web with a recency window
+    /// (`SearchFreshness.forTurn`), Wikipedia never joins its evidence, and with no web search the app says plainly it
+    /// can't look up today's news (T: "What are today's top stories?", no key → Wikipedia's search matched an album,
+    /// "(What's the Story) Morning Glory?", and the answer was about it). News-shaped (`isNewsQuestion`) with a recency
+    /// word — so history ("What happened at the Battle of Hastings?") and the date ("What's the date today?") aren't.
+    /// Wikipedia stays for stable reference and for who holds something now ("Who is the current president?").
+    static func isTimeSensitive(_ q: String) -> Bool {
+        guard isNewsQuestion(q) else { return false }
+        let t = q.replacingOccurrences(of: #"(?i)\b((up )?un)?till? today\b|\b(up to|as of|through|thru) today\b|\bto date\b"#,
+                                       with: " ", options: .regularExpression)
+        func has(_ p: String) -> Bool { t.range(of: p, options: [.regularExpression, .caseInsensitive]) != nil }
+        if has(#"\b(what|which) (day|date)\b|\bthe date\b|\btoday'?s date\b|\bday of the week\b"#) { return false }
+        return has(#"\b(news|headlines?|breaking|today|tonight|yesterday|last night|this (morning|afternoon|evening|week)|current events|top stories|happening)\b"#)
+            || has(#"\blatest (on|about|from|in|developments|updates)\b"#)
+    }
+    /// The user's question or the app's search query (a follow-up's standalone rewrite) is time-sensitive.
+    static func isTimeSensitive(question: String, query: String?) -> Bool {
+        isTimeSensitive(question) || (query.map(isTimeSensitive) ?? false)
     }
 
     /// A question about the world that a web page can answer: a wh-/yes-no question or "explain/describe/define/tell
@@ -740,6 +762,23 @@ enum WebGroundingSelfTest {
                           ("the last 10 US presidents up until today", !Live37.query), ("What happened today?", true)] {
             check("news-shaped: \(q)", WebGrounding.isNewsQuestion(q) == want)
         }
+        // N12 (T 2026-11-18) — time-sensitive → the web with recency, never Wikipedia; history, the date and who holds
+        // something now stay reference.
+        for (q, want) in [("What are today's top stories?", true), ("What are the latest headlines?", true),
+                          ("What happened in the world yesterday?", true), ("What are the current events in Japan?", true),
+                          ("What are the latest developments in the climate talks?", true), ("Who won last night?", true),
+                          ("What happened at the Battle of Hastings?", false), ("What's the date today?", false),
+                          ("Who is the current president of the United States?", false), ("What's the latest iPhone?", false),
+                          ("Can you print for me a table of the last 10 US presidents up until today", false),
+                          ("Who wrote Pride and Prejudice?", false)] {
+            check("time-sensitive: \(q)", WebGrounding.isTimeSensitive(q) == want)
+        }
+        if !Live34.red {
+            check("time-sensitive: today's window kept when the rewrite drops the cue",
+                  SearchFreshness.forTurn(question: "What are today's top stories?", query: "top stories") == .day)
+            check("time-sensitive: current events → the week's window",
+                  SearchFreshness.forTurn(question: "What are the current events in Japan?", query: nil) == .week)
+        }
         let pres = "Who is the current president of the United States?"
         let cited = WebGrounding.answerNote(question: pres, searchRan: true, resultCount: 3, citedCount: 2, rateLimited: false)
         let uncited = WebGrounding.answerNote(question: pres, searchRan: true, resultCount: 3, citedCount: 0, rateLimited: false)
@@ -942,7 +981,8 @@ enum SearchFreshness: String, Sendable {
     static func forTurn(question: String, query: String?) -> SearchFreshness {
         guard !Live34.red else { return .none }
         let q = query ?? question
-        if WebGrounding.isNewsQuestion(q) { return asksToday(question + " " + q) ? .day : .week }
+        // N12 — a time-sensitive question keeps its recency window even when the rewrite dropped the cue.
+        if WebGrounding.isNewsQuestion(q) || WebGrounding.isTimeSensitive(question) { return asksToday(question + " " + q) ? .day : .week }
         return WebGrounding.asksCurrentState(question) || WebGrounding.asksCurrentState(q) ? currentState : .none
     }
 

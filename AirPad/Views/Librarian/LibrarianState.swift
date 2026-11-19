@@ -689,6 +689,13 @@ final class LibrarianState {
             case .ollama, .host: toolCapable = true
             default: toolCapable = false
             }
+            // N12 (T 2026-11-18) — no web search and a time-sensitive question (today's news): the app says so plainly, on
+            // every route. Wikipedia never stands in for it (it read an album's article for "What are today's top stories?").
+            if !WebSearchBackend.hasKey, WebGrounding.isTimeSensitive(query) {
+                Self.logGeneralTurn(query: query, scope: selectedScope, tool: "none-news", retry: false, store: store)
+                chat.appendWebSearchKeyNotice(userText: query, news: true)
+                return
+            }
             guard toolCapable else {
                 // live-29 (B5) — Apple Intelligence + web: the APP searches (`AppleWebGrounding`) — the same rule, switch and
                 // "Web search is off" as the Host path; the on-device model only reads the numbered results.

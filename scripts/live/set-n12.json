@@ -1,0 +1,25 @@
+{
+ "about": "N12 (T 2026-11-18, \"Not good.\") — time-sensitive questions use the web search with recency and never Wikipedia; stable reference keeps Wikipedia. TS-* = time-sensitive (no key: the app says plainly it can't look up today's news; with a key: web only, a news/recency window). REF-* = stable reference (Wikipedia stays: no key → Wikipedia; key → web + Wikipedia). Generic public topics only. Answers: scripts/live/run.sh <out> <xctestrun> scripts/live/set-n12.json none <route args>; table: python3 scripts/live/n12_table.py scripts/live/set-n12.json <out>/webtrace.jsonl. Retrieval-only (key path): -WebRetrievalRun <this file>.",
+ "chats": [
+  {"id": "TS-01", "cat": "time", "turns": ["What are today's top stories?"]},
+  {"id": "TS-02", "cat": "time", "turns": ["What's in the news today?"]},
+  {"id": "TS-03", "cat": "time", "turns": ["What are the latest headlines?"]},
+  {"id": "TS-04", "cat": "time", "turns": ["What happened in the world yesterday?"]},
+  {"id": "TS-05", "cat": "time", "turns": ["Is there any breaking news this morning?"]},
+  {"id": "TS-06", "cat": "time", "turns": ["What are the current events in Japan this week?"]},
+  {"id": "TS-07", "cat": "time", "turns": ["What's the latest news about the stock market?"]},
+  {"id": "TS-08", "cat": "time", "turns": ["What are the top stories in technology this week?"]},
+  {"id": "TS-09", "cat": "time", "turns": ["What's happening in UK politics today?"]},
+  {"id": "TS-10", "cat": "time", "turns": ["What are the latest developments in the climate talks?"]},
+  {"id": "REF-01", "cat": "ref", "turns": ["Who wrote Pride and Prejudice?"]},
+  {"id": "REF-02", "cat": "ref", "turns": ["What is the capital of Australia?"]},
+  {"id": "REF-03", "cat": "ref", "turns": ["How tall is Mount Everest?"]},
+  {"id": "REF-04", "cat": "ref", "turns": ["When did the Berlin Wall fall?"]},
+  {"id": "REF-05", "cat": "ref", "turns": ["What is photosynthesis?"]},
+  {"id": "REF-06", "cat": "ref", "turns": ["Who painted the Mona Lisa?"]},
+  {"id": "REF-07", "cat": "ref", "turns": ["What happened at the Battle of Hastings?"]},
+  {"id": "REF-08", "cat": "ref", "turns": ["How many moons does Mars have?"]},
+  {"id": "REF-09", "cat": "ref", "turns": ["Who was Ada Lovelace?"]},
+  {"id": "REF-10", "cat": "ref", "turns": ["What is the speed of light?"]}
+ ]
+}

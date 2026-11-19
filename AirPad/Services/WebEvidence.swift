@@ -156,16 +156,18 @@ extension WebEvidence {
             rr: (links: [ToolLink], scored: [Scored], ms: Int, sources: [Source])) {
         let sq = await searchQuery(for: question, chat: chat)
         let searchQuery = sq.query
+        // N12 — a time-sensitive question's evidence is the web's, never Wikipedia's.
+        let wikiOff = WebGrounding.isTimeSensitive(question: question, query: searchQuery)
         #if DEBUG
         AppleWebGrounding.debugLastQuery = searchQuery
         AppleWebGrounding.debugLastHow = sq.how
         NSLog("[AppleWeb] query (%@): %@", sq.how, searchQuery)
         WebTrace.shared.beginTurn(question)
         WebTrace.shared.note("query", ["query": searchQuery, "wikiQuery": sq.wikiQuery, "how": sq.how, "rewriteMs": sq.ms,
-                                       "path": webKey ? "app-search" : "wikipedia-only"])
+                                       "path": webKey ? "app-search" : "wikipedia-only", "wikipedia": !wikiOff])
         let fetchStart = WebTrace.shared.ms
         #endif
-        async let wikiSources = WikipediaGrounding.sources(query: sq.wikiQuery)
+        async let wikiSources = Self.wikiSources(query: sq.wikiQuery, off: wikiOff)
         var result = ToolResult(textForModel: "", links: [])
         if webKey {
             result = await WebSearchBackend.make().execute(name: AgentTools.webSearch,
@@ -184,6 +186,11 @@ extension WebEvidence {
                                                                     "perSource": budget.perSource]) { $1 })
         #endif
         return (sq, result, rr)
+    }
+
+    /// N12 — the Wikipedia articles for the app's query; none for a time-sensitive question (`off`).
+    static func wikiSources(query: String, off: Bool) async -> [Source] {
+        off ? [] : await WikipediaGrounding.sources(query: query)
     }
 
     /// The Host / server path's evidence from one web search's results: social / video hosts out; for the app's own search

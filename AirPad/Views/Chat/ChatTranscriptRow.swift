@@ -508,6 +508,7 @@ struct ChatMessageRow: View {
                 }
                 .buttonStyle(.plain)
                 .accessibilityLabel("Choose voice")
+                .help("Choose voice")
 
                 // Copy the assistant turn's plain text; icon confirms for ~1.2s.
                 Button {
@@ -527,6 +528,7 @@ struct ChatMessageRow: View {
                 }
                 .buttonStyle(.plain)
                 .accessibilityLabel("Copy message")
+                .help("Copy message")
 
                 // Regenerate — LAST assistant turn only; disabled mid-stream.
                 if isLast {
@@ -542,6 +544,7 @@ struct ChatMessageRow: View {
                     .buttonStyle(.plain)
                     .disabled(session.isStreaming || session.isResuming)
                     .accessibilityLabel("Regenerate response")
+                    .help("Regenerate response")
                 }
             }
             .padding(.top, 2)

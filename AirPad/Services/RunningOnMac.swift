@@ -99,6 +99,7 @@ private struct MacSheetCloseButton: ViewModifier {
             .padding(.top, 12)
             .padding(.trailing, 12)
             .accessibilityLabel("Close")
+            .help("Close")
             .accessibilityIdentifier("sheetClose")
     }
 }

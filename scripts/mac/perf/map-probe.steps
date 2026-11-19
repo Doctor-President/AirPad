@@ -1,0 +1,7 @@
+# Mac perf audit P0a — the Map probe run after every appearance change (p0-appearance.sh): pan by drag, pan by
+# two-finger scroll, fit (⌘0). Screen points; the window is 1,350 × 840 at (0,160) with Settings open on the right.
+map-pan     drag 575,600 180 90 30
+map-pan     drag 575,600 -180 -90 30
+map-scroll  scroll 575,600 -400 40 8
+map-scroll  scroll 575,600 400 40 8
+map-fit     cmdkey 29

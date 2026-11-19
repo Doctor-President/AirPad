@@ -1,0 +1,72 @@
+# Mac perf audit P1 — the parity session (labels shared with the iPhone driver, AirPadUITests/PerfParity.swift).
+# Appearance changes are in p0-appearance.steps. run.sh … p1-session.steps 5
+place-today         click sidebar.today
+rest                wait 1000
+place-recents       click sidebar.recents
+rest                wait 1000
+open-recent         click entryRow-*#2
+rest                wait 1200
+close-recent        click toolbar.back
+rest                wait 1000
+place-library       click sidebar.library
+rest                wait 1500
+view-list           click toolbar.view.List
+rest                wait 1000
+open-list           click listRow-*#9
+rest                wait 1200
+note-click          click role:AXTextArea
+note-type           type a quiet morning at the harbour
+close-list          click toolbar.back
+rest                wait 1000
+list-scroll         scroll 640,600 -2400 80 8
+list-scroll         scroll 640,600 2400 80 8
+view-cards          click toolbar.view.Cards
+rest                wait 1000
+open-card           click 560,430
+rest                wait 1200
+close-card          click toolbar.back
+rest                wait 1000
+cards-scroll        scroll 640,600 -2400 80 8
+cards-scroll        scroll 640,600 2400 80 8
+view-map            click toolbar.view.Map
+rest                wait 2500
+map-pan             scroll 640,560 -500 30
+map-pan             scroll 640,560 500 30
+map-zoom            cmdkey 24
+map-zoom            cmdkey 27
+map-fit             cmdkey 29
+rest                wait 1500
+place-collection    click sidebar.collection#0
+rest                wait 1500
+place-library       click sidebar.library
+rest                wait 1500
+librarian-close     click toolbar.librarian
+rest                wait 1000
+librarian-open      click toolbar.librarian
+rest                wait 1000
+settings-open       click sidebar.settings
+rest                wait 1000
+settings-close      click sidebar.settings
+rest                wait 1000
+ask-click           click placeholder:Ask
+ask-type            type what did i write about bread
+ask-clear           cmdkey 0
+rest                wait 500
+search-click        click toolbar.search
+search-type         type harbour
+search-clear        esc
+rest                wait 1000
+view-list           click toolbar.view.List
+rest                wait 800
+open-heavy          click listRow-9E9F1000-0000-4000-8000-000000000001
+rest                wait 2500
+entry-scroll-heavy  scroll 640,600 -5000 160 8
+entry-scroll-heavy  scroll 640,600 5000 160 8
+close-heavy         click toolbar.back
+rest                wait 1200
+open-light          click listRow-9E9F1000-0000-4000-8000-000000000007
+rest                wait 1500
+entry-scroll-light  scroll 640,600 -1200 40 8
+entry-scroll-light  scroll 640,600 1200 40 8
+close-light         click toolbar.back
+rest                wait 1200

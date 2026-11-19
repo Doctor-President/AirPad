@@ -29,9 +29,8 @@ struct ModelProcessingIndicator: View {
             // `.variableColor.iterative` treatment and reads the same. App-wide
             // ban on sparkles/wand/magic iconography — it reads as an empty "AI"
             // promise; AirPad's posture is patient, legible work.
-            Image(systemName: "ellipsis")
+            WorkingEllipsis(size: 11)   // Mac: stepped, not a per-frame effect (Mac perf audit)
                 .font(.system(size: 11, weight: .semibold))
-                .symbolEffect(.variableColor.iterative, options: .repeating)
             Text("Thinking")
                 .font(appFont.font(size: 12, weight: .semibold, relativeTo: .caption1))
         }

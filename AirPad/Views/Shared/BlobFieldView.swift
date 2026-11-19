@@ -218,8 +218,13 @@ struct BlobFieldView: View {
 
     var body: some View {
         GeometryReader { geo in
-            let origin = geo.frame(in: .global).origin
-            if animated && slowWhenStill {
+            // Mac perf audit: the shader uses the global origin only for a shared field (the Dashboard lava). Reading it
+            // for every field made each gradient (every card, every entry header) re-evaluate whenever it MOVED on
+            // screen: each frame of a scroll, each step of a sidebar drag. `-MacPerfAB oldblob` = as before.
+            let origin = (sharedField || perfAB("oldblob")) ? geo.frame(in: .global).origin : .zero
+            if perfAB("blobstill") {   // bench: every gradient a still frame (which share of the cost is the animation?)
+                canvas(size: geo.size, origin: origin, time: 0)
+            } else if animated && slowWhenStill {
                 AmbientBlobTimeline(frameInterval: frameInterval) { clock in
                     canvas(size: geo.size, origin: origin, time: Self.frozenTime ?? clock)
                 }

@@ -1,0 +1,27 @@
+# Mac perf audit P0d — fast edge drags (sidebar, Librarian) and the Cards size keys (⌘= ×4, ⌘− ×4).
+library             click sidebar.library
+view-cards          click toolbar.view.Cards
+rest                wait 1500
+sidebar-drag        drag resize.sidebar 70 0 24
+sidebar-drag        drag resize.sidebar -70 0 24
+librarian-drag      drag resize.librarian -120 0 24
+librarian-drag      drag resize.librarian 120 0 24
+rest                wait 1000
+cards-zoom-in       cmdkey 24
+cards-zoom-in       cmdkey 24
+cards-zoom-in       cmdkey 24
+cards-zoom-in       cmdkey 24
+cards-zoom-out      cmdkey 27
+cards-zoom-out      cmdkey 27
+cards-zoom-out      cmdkey 27
+cards-zoom-out      cmdkey 27
+view-map            click toolbar.view.Map
+rest                wait 2500
+sidebar-drag-map    drag resize.sidebar 70 0 24
+sidebar-drag-map    drag resize.sidebar -70 0 24
+librarian-drag-map  drag resize.librarian -120 0 24
+librarian-drag-map  drag resize.librarian 120 0 24
+view-list           click toolbar.view.List
+rest                wait 1500
+sidebar-drag-list   drag resize.sidebar 70 0 24
+sidebar-drag-list   drag resize.sidebar -70 0 24

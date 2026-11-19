@@ -74,5 +74,5 @@ REC=$(ls -t $C/Library/Caches/PerfRecordings/*.json 2>/dev/null | head -1)
 [[ -n $REC ]] && cp $REC $OUT/recording.json || echo "NO RECORDING" >> $OUT/setup.txt
 [[ -n $X ]] && wait $X 2>/dev/null
 kill $P 2>/dev/null; trap - EXIT
-[[ -f $OUT/recording.json ]] && python3 $ROOT/scripts/perf/steps.py $OUT/recording.json $OUT/rperf.txt > $OUT/explain.txt 2>&1
+[[ -f $OUT/recording.json ]] && python3 $ROOT/scripts/perf/steps.py $OUT/recording.json $OUT/rperf.txt --json $OUT/table.json > $OUT/explain.txt 2>&1
 cat $OUT/setup.txt; tail -${TAIL:-40} $OUT/explain.txt

@@ -287,7 +287,7 @@ struct NodeGridView: View {
                                 isPicked: selection.isSelected(node.id),
                                 cellWidth: cellW,
                                 cellHeight: cellH,
-                                animateGradient: true,
+                                animateGradient: !perfAB("cardstatic"),   // perf audit A/B
                                 columnCount: RunningOnMac.isMac ? 2 : columnCount,   // F3 — the editorial card at every size
                                 designWidth: RunningOnMac.isMac ? Self.macCardDesignWidth : nil,
                                 appFont: appFont
@@ -500,7 +500,7 @@ private struct MacCardsGridResponders: ViewModifier {
 private struct MacScrollHitGate: ViewModifier {
     let state: MacScrollState
     func body(content: Content) -> some View {
-        content.allowsHitTesting(!(RunningOnMac.isMac && state.scrolling))
+        content.allowsHitTesting(!(RunningOnMac.isMac && state.scrolling && !perfAB("nogate")))   // perf audit A/B
     }
 }
 

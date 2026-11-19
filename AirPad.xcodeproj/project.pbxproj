@@ -65,6 +65,7 @@
 		1A9E8EF4E13EF3D1B9009EB8 /* ReviewQueueSheet.swift in Sources */ = {isa = PBXBuildFile; fileRef = 8BDD458C42AD717CBB2269BE /* ReviewQueueSheet.swift */; };
 		1AA3141530F04F4090790F8C /* ProStore.swift in Sources */ = {isa = PBXBuildFile; fileRef = 21F157A25C20FDDA011EFB0A /* ProStore.swift */; };
 		1AB937D63FE8F452D767344B /* Neighborhood.swift in Sources */ = {isa = PBXBuildFile; fileRef = AE402981E931009EBB3F93EE /* Neighborhood.swift */; };
+		1BBDAC7FD9284423BDE90C36 /* WorkingEllipsis.swift in Sources */ = {isa = PBXBuildFile; fileRef = B779503619D4A4A5095D2B2D /* WorkingEllipsis.swift */; };
 		1C3C8D561E55F06E8803826E /* SwiftUI.framework in Frameworks */ = {isa = PBXBuildFile; fileRef = 360617FDFF9D3F6D0175F257 /* SwiftUI.framework */; };
 		1C7BD8D8DAED08D89F04F795 /* LongPressDragRecognizer.swift in Sources */ = {isa = PBXBuildFile; fileRef = 3A582AE8DB1D9CEB0084017C /* LongPressDragRecognizer.swift */; };
 		1D608EF5021F6603E6048269 /* BackgroundGridNode.swift in Sources */ = {isa = PBXBuildFile; fileRef = ACE4CFCC06057A8055A511FC /* BackgroundGridNode.swift */; };
@@ -864,6 +865,7 @@
 		B56A34B5457EFF1B141C6A01 /* ChatProvenanceUI.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ChatProvenanceUI.swift; sourceTree = "<group>"; };
 		B6410795D74C090F46198216 /* CaptureChromeBar.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = CaptureChromeBar.swift; sourceTree = "<group>"; };
 		B65719255B960A7B6876EC2A /* CardBlurTest.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = CardBlurTest.swift; sourceTree = "<group>"; };
+		B779503619D4A4A5095D2B2D /* WorkingEllipsis.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = WorkingEllipsis.swift; sourceTree = "<group>"; };
 		B82EFAA92BF3BAFAAA22F11B /* LibrarianRenderHooks.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = LibrarianRenderHooks.swift; sourceTree = "<group>"; };
 		B8409C10F1DE36558E8D9BF5 /* HostCatalog.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = HostCatalog.swift; sourceTree = "<group>"; };
 		B88DD76629EBF533BCDC9ADE /* SourceSerif4-Regular.ttf */ = {isa = PBXFileReference; lastKnownFileType = file; path = "SourceSerif4-Regular.ttf"; sourceTree = "<group>"; };
@@ -1746,6 +1748,7 @@
 				F135F708282671E607C7C84B /* RichTextEditor.swift */,
 				A3ECFA625E940A0C55D6C2D6 /* RichTextInlineBar.swift */,
 				D9CF8F72B3DFB4EC66DDD986 /* TextRunsGallery.swift */,
+				B779503619D4A4A5095D2B2D /* WorkingEllipsis.swift */,
 			);
 			path = Shared;
 			sourceTree = "<group>";
@@ -2478,6 +2481,7 @@
 				D18F4D206417F1F7843170A1 /* WebTrace.swift in Sources */,
 				87C31FDACB1FF755B329BEB2 /* WikipediaGrounding.swift in Sources */,
 				72F74315A1038C544A682E36 /* WordPieceTokenizer.swift in Sources */,
+				1BBDAC7FD9284423BDE90C36 /* WorkingEllipsis.swift in Sources */,
 				8FCCD1C11E415D8FDC0322CA /* ZoomableImageView.swift in Sources */,
 				B65ED43BBCC3BFD9FFC1621F /* iCloudDriveService.swift in Sources */,
 			);

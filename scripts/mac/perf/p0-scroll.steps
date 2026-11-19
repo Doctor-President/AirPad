@@ -1,0 +1,39 @@
+# Mac perf audit P0b / P0c / P0e — scrolling: Recents, List, Cards, inside a heavy and a light entry; each with the
+# pointer still (scroll) and moving (scrollmove). run.sh … p0-scroll.steps 3
+recents             click sidebar.recents
+rest                wait 1500
+recents-scroll      scroll 640,600 -2400 80 8
+recents-scroll      scroll 640,600 2400 80 8
+recents-scroll-move scrollmove 640,600 -2400 80 8
+recents-scroll-move scrollmove 640,600 2400 80 8
+library             click sidebar.library
+view-list           click toolbar.view.List
+rest                wait 1500
+list-scroll         scroll 640,600 -2400 80 8
+list-scroll         scroll 640,600 2400 80 8
+list-scroll-move    scrollmove 640,600 -2400 80 8
+list-scroll-move    scrollmove 640,600 2400 80 8
+view-cards          click toolbar.view.Cards
+rest                wait 1500
+cards-scroll        scroll 640,600 -2400 80 8
+cards-scroll        scroll 640,600 2400 80 8
+cards-scroll-move   scrollmove 640,600 -2400 80 8
+cards-scroll-move   scrollmove 640,600 2400 80 8
+view-list           click toolbar.view.List
+rest                wait 1000
+open-heavy          click listRow-9E9F1000-0000-4000-8000-000000000001
+rest                wait 2500
+entry-scroll-heavy       scroll 640,600 -5000 160 8
+entry-scroll-heavy       scroll 640,600 5000 160 8
+entry-scroll-heavy-move  scrollmove 640,600 -5000 160 8
+entry-scroll-heavy-move  scrollmove 640,600 5000 160 8
+close-heavy         click toolbar.back
+rest                wait 1500
+open-light          click listRow-9E9F1000-0000-4000-8000-000000000007
+rest                wait 2000
+entry-scroll-light       scroll 640,600 -1200 40 8
+entry-scroll-light       scroll 640,600 1200 40 8
+entry-scroll-light-move  scrollmove 640,600 -1200 40 8
+entry-scroll-light-move  scrollmove 640,600 1200 40 8
+close-light         click toolbar.back
+rest                wait 1500

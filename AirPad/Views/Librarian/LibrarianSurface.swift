@@ -2060,10 +2060,9 @@ struct LibrarianSurface: View {
             // wonder. Dots fill in sequence via the built-in variableColor
             // animation — punctuation that reads as "ongoing" and nothing else.
             // NOT a shimmer (shimmer is reserved for THE LEVER).
-            Image(systemName: "ellipsis")
+            WorkingEllipsis()   // Mac: stepped, not a per-frame effect (Mac perf audit)
                 .font(.system(size: 12))
                 .foregroundStyle(AppearancePalette.ink.opacity(0.5))
-                .symbolEffect(.variableColor.iterative, options: .repeating)
             // No trailing "…" — the glyph IS the ellipsis; the copy would say it twice.
             Text("Still adding older items")
                 .font(appFont.font(size: 12, relativeTo: .caption1))

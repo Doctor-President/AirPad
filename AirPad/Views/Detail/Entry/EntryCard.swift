@@ -1008,6 +1008,8 @@ struct EntrySpineRow<Trailing: View>: View {
             }
             .buttonStyle(.plain)
             .disabled(reorderActive)
+            .accessibilityLabel("More")
+            .help("More")
             .accessibilityIdentifier("entryOptions")
         } else {
             Color.clear.frame(width: Self.optionsWidth, height: Self.rowHeight)

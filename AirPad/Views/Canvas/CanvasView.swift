@@ -944,7 +944,9 @@ struct CanvasView: View {
             focalEngagementOverlay
             nodeSummaryLayer
             // Mac D0.4 (T N1) — the hover tag draws above everything on the Map, region pills included.
-            MapHoverTagLayer(tag: canvasState.hoverTag)
+            // Mac perf audit: the layer reads the tag itself. Read here, every hover-tag move (each frame an orb moves
+            // under the pointer, e.g. while panning) re-ran this whole body. `-MacPerfAB oldhovertag` = as before.
+            MapHoverTagLayer(state: canvasState, fixedTag: perfAB("oldhovertag") ? canvasState.hoverTag : nil)
                 .allowsHitTesting(false)
                 .ignoresSafeArea()
             drillDownBackButton
@@ -1913,7 +1915,9 @@ enum MapHoverTagMetrics {
 /// Mac D0.4/D0.5 (T N1/N2, 2026-11-13) — the Map's hover tag, as a pill like the region labels' (glass, the orb's colour
 /// as tint + outline), in the user's app font, above the region pills.
 private struct MapHoverTagLayer: View {
-    let tag: CanvasState.HoverTagInfo?
+    let state: CanvasState
+    let fixedTag: CanvasState.HoverTagInfo?
+    private var tag: CanvasState.HoverTagInfo? { perfAB("oldhovertag") ? fixedTag : state.hoverTag }
     @Environment(\.colorScheme) private var colorScheme
     @Environment(\.appBodyFont) private var appFont
 
@@ -2282,6 +2286,7 @@ private struct MapFocalOverlay: View {
                                 }
                                 .buttonStyle(.plain)
                                 .accessibilityLabel("Close")
+                                .help("Close")
                                 .accessibilityIdentifier("mapCard.close")
                                 .transition(.opacity)
                             }

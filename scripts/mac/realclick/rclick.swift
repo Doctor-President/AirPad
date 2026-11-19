@@ -36,7 +36,7 @@ func matches(_ key: String) -> [AXUIElement] {
     func walk(_ e: AXUIElement, _ d: Int) {
         let id = a(e, "AXIdentifier") as? String ?? ""
         let title = (a(e, kAXTitleAttribute) as? String) ?? (a(e, kAXDescriptionAttribute) as? String) ?? ""
-        if id == key || title == key || (key.hasSuffix("*") && id.hasPrefix(key.dropLast())) { out.append(e) }
+        if id == key || title == key || (key.hasSuffix("*") && (id.hasPrefix(key.dropLast()) || title.hasPrefix(key.dropLast()))) { out.append(e) }
         guard d < 40, let kids = a(e, kAXChildrenAttribute) as? [AXUIElement] else { return }
         kids.forEach { walk($0, d + 1) }
     }

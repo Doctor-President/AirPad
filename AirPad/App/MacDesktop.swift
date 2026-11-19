@@ -1676,6 +1676,7 @@ struct MacToolbarTrailing: View {
                     }
                     .buttonStyle(.plain)
                     .accessibilityLabel("Clear search")
+                    .help("Clear search")
                 }
             }
             .padding(.horizontal, 10)

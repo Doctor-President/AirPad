@@ -20,6 +20,8 @@ struct RecentsView: View {
     @Environment(\.appBodyFont) private var appFont
 
     @State private var sortKey: SortKey = .modified
+    /// Mac perf audit — one hover tracker and one right-click menu for the whole list (as the List view, E fix-up 4).
+    @State private var macHover = MacListHover()
 
     enum SortKey: Hashable {
         case modified
@@ -159,8 +161,7 @@ struct RecentsView: View {
                                         .contentShape(Rectangle())
                                 }
                                 .buttonStyle(.plain)
-                                .pointerHover(Rectangle())   // Mac batch C5
-                                .entryContextMenu(node)
+                                .modifier(RecentRowPointer(node: node, hover: macHover))   // Mac batch C5 / perf audit
                                 .accessibilityIdentifier("entryRow-\(node.id)")   // Brief CD — XCUITest reopens a specific entry
                                 if index < bucket.nodes.count - 1 {
                                     rowHairline
@@ -171,6 +172,7 @@ struct RecentsView: View {
                     }
                 }
             }
+            .modifier(RecentsPointerTracker(hover: macHover, nodes: buckets.flatMap(\.nodes)))
             .padding(.horizontal, 20)
             .padding(.top, 4)
             .padding(.bottom, 120)
@@ -511,5 +513,69 @@ private struct PriorityReorderSheet: View {
         working.move(fromOffsets: source, toOffset: destination)
         let orderedIDs = working.map(\.id)
         Task { await store.setPriorityOrder(orderedIDs) }
+    }
+}
+
+
+/// Mac perf audit — Recents rows on the Mac. Each row used to carry its own hover responder and its own context menu
+/// (≈ 260 of each); on the Mac a hover event fires every frame the list moves under a still pointer and SwiftUI answers
+/// each by hit-testing through all of them (the cost measured on the List in E fix-up 4). Now a row only reports its
+/// frame and draws the wash when the list's one tracker says the pointer is on it. iPhone / iPad (and
+/// `-MacPerfAB oldrecents`): as before.
+private struct RecentRowPointer: ViewModifier {
+    let node: Node
+    let hover: MacListHover
+    func body(content: Content) -> some View {
+        if RunningOnMac.isMac && !perfAB("oldrecents") {
+            content
+                .overlay(RecentRowWash(id: node.id, hover: hover))
+                .onGeometryChange(for: CGRect.self) { $0.frame(in: .named("macRecentsRows")) } action: { hover.frames[node.id] = $0 }
+        } else {
+            content
+                .pointerHover(Rectangle())
+                .entryContextMenu(node)
+        }
+    }
+}
+
+private struct RecentRowWash: View {
+    let id: String
+    let hover: MacListHover
+    var body: some View {
+        Rectangle().fill(AppearancePalette.ink.opacity(hover.id == id ? 0.05 : 0)).allowsHitTesting(false)
+            .animation(.easeOut(duration: 0.12), value: hover.id == id)
+    }
+}
+
+private struct RecentsPointerTracker: ViewModifier {
+    let hover: MacListHover
+    let nodes: [Node]
+    func body(content: Content) -> some View {
+        if RunningOnMac.isMac && !perfAB("oldrecents") {
+            content
+                .coordinateSpace(.named("macRecentsRows"))
+                .onGeometryChange(for: CGRect.self) { $0.frame(in: .global) } action: { hover.listGlobal = $0 }
+                .onContinuousHover(coordinateSpace: .global) { phase in
+                    switch phase {
+                    case .active(let g): hover.pointer(global: g)
+                    case .ended: hover.pointer(global: nil)
+                    }
+                }
+                .contextMenu { RecentsRowMenu(hover: hover, nodes: nodes) }
+        } else {
+            content
+        }
+    }
+}
+
+/// The list's right-click menu: the entry menu for the row under the pointer (nothing between rows).
+private struct RecentsRowMenu: View {
+    let hover: MacListHover
+    let nodes: [Node]
+    @Environment(AppRouter.self) private var router
+    var body: some View {
+        if let id = hover.id, let node = nodes.first(where: { $0.id == id }) {
+            EntryContextMenu.items(nodeID: node.id, isPrivate: node.isPrivate, router: router)
+        }
     }
 }

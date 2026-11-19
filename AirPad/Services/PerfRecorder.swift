@@ -143,7 +143,7 @@ final class PerfRecorder: NSObject {
         let n = Int(seconds)
         frames = Ring(n * 125); spans = Ring(n * 130); inputs = Ring(n * 250); marks = Ring(max(256, n * 8))
         intervals = Ring(max(512, n * 40)); bodies = Ring(n * 5); mapSeconds = Ring(n + 4); vitals = Ring(n + 4)
-        samples = Ring(max(600, n * 20))
+        samples = Ring(max(600, n * ((0.1..<20).contains(UserDefaults.standard.double(forKey: "PerfSampleAfter")) ? 350 : 20)))
         busySince.pointee = 0
         mainThread = mach_thread_self()
         let me = pthread_self()
@@ -169,6 +169,9 @@ final class PerfRecorder: NSObject {
         for o in [wake, sleep].compactMap({ $0 }) { CFRunLoopAddObserver(CFRunLoopGetMain(), o, .commonModes); observers.append(o) }
 
         Self.swizzleSendEventOnce()
+        #if DEBUG || PERFLOG
+        hookLayerDrawsOnce()
+        #endif
         let t = Thread { [weak self] in self?.watch() }
         t.name = "PerfRecorder.watchdog"; t.qualityOfService = .userInteractive
         watchdog = t; t.start()
@@ -209,6 +212,44 @@ final class PerfRecorder: NSObject {
             else if mapBucket.frames == 0 { mapBucket.t = now }
         }
     }
+    // MARK: which drawn layers were redrawn (bench + DEBUG builds only: it names a system class)
+
+    /// One entry a second: how many times each of SwiftUI's drawn layers (text, shapes, symbols, shader fills) was
+    /// redrawn, keyed by its rectangle in the window ("x,y w×h", points). A screen at rest should redraw none; a
+    /// layer redrawn 60 times a second at rest is an animation that never stops, and its rectangle says where.
+    private var drawBucket: [String: Int] = [:], drawBucketStart = 0.0
+    private var draws: [(t: Double, counts: [String: Int])] = []
+    #if DEBUG || PERFLOG
+    private static var drawHooked = false
+    private func hookLayerDrawsOnce() {
+        guard !Self.drawHooked, let cls = NSClassFromString("RBLayer") else { return }
+        let sel = NSSelectorFromString("display")
+        guard let m = class_getInstanceMethod(cls, sel) else { return }
+        Self.drawHooked = true
+        typealias Fn = @convention(c) (AnyObject, Selector) -> Void
+        let orig = unsafeBitCast(method_getImplementation(m), to: Fn.self)
+        let block: @convention(block) (CALayer) -> Void = { layer in
+            orig(layer, sel)
+            PerfRecorder.shared.noteDraw(layer)
+        }
+        method_setImplementation(m, imp_implementationWithBlock(block))
+    }
+    private func noteDraw(_ layer: CALayer) {
+        guard running else { return }
+        var root = layer; while let s = root.superlayer { root = s }
+        let f = layer.convert(layer.bounds, to: root)
+        let key = "\(Int(f.minX)),\(Int(f.minY)) \(Int(f.width))×\(Int(f.height))"
+        let now = CACurrentMediaTime()
+        locked {
+            if now - drawBucketStart >= 1 {
+                if !drawBucket.isEmpty { draws.append((drawBucketStart, drawBucket)); if draws.count > 4000 { draws.removeFirst(500) } }
+                drawBucket.removeAll(keepingCapacity: true); drawBucketStart = now
+            }
+            drawBucket[key, default: 0] += 1
+        }
+    }
+    #endif
+
     func noteBody(_ id: ObjectIdentifier, name: () -> String) {
         locked {
             bodyBucket[id, default: 0] += 1
@@ -267,11 +308,16 @@ final class PerfRecorder: NSObject {
     private func watch() {
         var buf = [UInt](repeating: 0, count: 96)
         var lastVital = 0.0, lastCPU = Self.cpuSeconds(), lastMainCPU = Self.threadSeconds(mainThread), lastSample = 0.0
+        // `-PerfSampleAfter <ms>` (default 40): how long the main thread must have been busy before its stack is
+        // sampled. 40 catches stalls; a profiling run sets ~5 to also see steady per-frame work (scrolling).
+        let afterMs = UserDefaults.standard.double(forKey: "PerfSampleAfter")
+        let after = afterMs > 0 ? afterMs / 1000 : 0.04
+        let nap: useconds_t = after < 0.02 ? 1500 : 5000, gap = after < 0.02 ? 0.003 : 0.01
         while !Thread.current.isCancelled {
-            usleep(5000)
+            usleep(nap)
             let now = CACurrentMediaTime()
             let since = busySince.pointee
-            if since != 0, now - since > 0.04, now - lastSample >= 0.01 {
+            if since != 0, now - since > after, now - lastSample >= gap {
                 lastSample = now
                 let n = buf.withUnsafeMutableBufferPointer { Self.sampleStack(mainThread, lo: mainStackLo, hi: mainStackHi, into: $0) }
                 if n > 0 { let s = Sample(t: now, busyFor: Float((now - since) * 1000), frames: Array(buf[0..<n])); locked { samples.push(s) } }
@@ -413,6 +459,7 @@ final class PerfRecorder: NSObject {
             "map": ms.filter { $0.t >= from }.map { [r($0.t), Double($0.frames), Double($0.updateMs), Double($0.maxMs)] },
             "vitals": vt.filter { $0.t >= from }.map { [r($0.t), Double($0.footprintMB), Double($0.cpuPct), Double($0.mainCpuPct), Double($0.thermal), $0.lowPower ? 1 : 0] },
             "samples": sampleRows, "symbols": symbols, "images": images,
+            "draws": locked { draws + (drawBucket.isEmpty ? [] : [(drawBucketStart, drawBucket)]) }.filter { $0.t >= from }.map { [r($0.t), $0.counts] as [Any] },
             "why": Self.why ? Self.swiftUIChanges(since: wholeBuffer ? seconds : 15) : [],
         ]
         guard let dir = FileManager.default.urls(for: .cachesDirectory, in: .userDomainMask).first?.appendingPathComponent("PerfRecordings", isDirectory: true),

@@ -46,6 +46,7 @@ struct MediaEntryChrome<Trailing: View>: View {
             }
             .buttonStyle(.plain)
             .accessibilityLabel(accessibilityLabel)
+            .help(accessibilityLabel)
 
             Spacer(minLength: 0)
 

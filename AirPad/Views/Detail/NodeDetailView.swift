@@ -314,10 +314,14 @@ struct NodeDetailView: View {
     /// Continuous collapse progress 0…1, RELATIVE to the hero's own visible
     /// height. 0 until the hero reports a height (guards the divide).
     private var bandProgress: CGFloat {
+        // Mac perf audit: the scroll reader stores the CLAMPED progress (below), so this body re-runs only while the
+        // hero is collapsing, not on every frame of a long scroll. `-MacPerfAB oldband` = the raw offset, as before.
+        if !perfAB("oldband") { return bandProgressStored }
         let denom = heroVisibleHeight * bandCollapseFraction
         guard denom > 1 else { return 0 }
         return min(1, max(0, heroScrollOffset / denom))
     }
+    @State private var bandProgressStored: CGFloat = 0
 
     /// In-node capture surfaces. `.text` is intentionally absent: the "+"
     /// menu's Text action now appends an empty entry card inline (see
@@ -871,7 +875,10 @@ struct NodeDetailView: View {
         .onScrollGeometryChange(for: CGFloat.self) { geo in
             geo.visibleRect.minY
         } action: { _, offset in
-            heroScrollOffset = offset
+            if perfAB("oldband") { heroScrollOffset = offset; return }
+            let denom = heroVisibleHeight * bandCollapseFraction
+            let p = denom > 1 ? min(1, max(0, offset / denom)) : 0
+            if p != bandProgressStored { bandProgressStored = p }
         }
         // DISCRETE title hand-off with hysteresis: swap IN at the swap point,
         // back OUT only after dropping a full deadband below it, so a slow
@@ -1096,6 +1103,8 @@ struct NodeDetailView: View {
                         .frame(width: 48, height: 48)
                         .contentShape(Rectangle())
                 }
+                .accessibilityLabel("More")
+                .help("More")
                 .accessibilityIdentifier("entryMenu")   // 1.1-C — UI tests reach Private / Export
                 }  // close ws-chrome-pill HStack
                 .modifier(InteractiveGlassCapsule())
@@ -1475,6 +1484,8 @@ struct NodeDetailView: View {
             CaptureButtonLabel() // shared visual — unified with the map/list/card capture button
         }
         .macPlainMenuButton()   // Mac fix-up X4 — the round "+", not a pull-down chip
+        .accessibilityLabel("Add item")
+        .help("Add item")
         .accessibilityIdentifier("entryAddButton")   // Arc A — the "+"-capture voice XCUITest opens this menu
         .firstRunCalloutTarget(FirstRunCalloutTargetID.entryAddButton)  // Brief AJ6 — the entry.intro ring
     }

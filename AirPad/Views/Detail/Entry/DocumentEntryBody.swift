@@ -222,6 +222,7 @@ struct DocumentEntryBody: View {
         }
         .padding(6)
         .accessibilityLabel("Document options")
+        .help("Document options")
         .accessibilityIdentifier("documentMenu-\(documentItem?.id ?? item.id)")
     }
 

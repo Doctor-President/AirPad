@@ -506,6 +506,8 @@ struct GalleryFullscreenViewer: View {
     private var topBar: some View {
         HStack {
             chromeGlyphButton("xmark") { dismiss() }
+                .accessibilityLabel("Close viewer")
+                .help("Close viewer")
             Spacer()
             counterLabel
             Spacer()
@@ -525,6 +527,8 @@ struct GalleryFullscreenViewer: View {
                 } label: {
                     chromeGlyph("ellipsis")
                 }
+                .accessibilityLabel("More")
+                .help("More")
             } else {
                 Color.clear.frame(width: 44, height: 44)
             }
@@ -666,11 +670,13 @@ struct GalleryFullscreenViewer: View {
             chromeGlyphButton("square.and.arrow.up") {
                 Task { await resolveAndShare(item) }
             }
+            .help("Share").accessibilityLabel("Share")
             .accessibilityIdentifier("galleryShare-\(item.id)")
             Spacer()
             chromeGlyphButton("trash", tint: .red) {
                 pendingDelete = item
             }
+            .help("Delete").accessibilityLabel("Delete")
         }
         .padding(.horizontal, 22)
     }

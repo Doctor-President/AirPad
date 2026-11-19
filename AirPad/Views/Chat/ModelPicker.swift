@@ -84,12 +84,12 @@ struct ComposerSendControls: View {
             if isAnswering {
                 Button { onStop() } label: {
                     Image(systemName: "stop.circle.fill").font(.system(size: 28)).foregroundStyle(accent)
-                }.buttonStyle(.plain).accessibilityLabel("Stop answer")
+                }.buttonStyle(.plain).accessibilityLabel("Stop answer").help("Stop answer")
             } else if hasText {
                 Button { text = "" } label: {
                     Image(systemName: "xmark.circle.fill").font(.system(size: 16))
                         .foregroundStyle(AppearancePalette.ink.opacity(LibrarianPillChrome.clearGlyphOpacity(colorScheme)))
-                }.buttonStyle(.plain).accessibilityLabel("Clear input")
+                }.buttonStyle(.plain).accessibilityLabel("Clear input").help("Clear input")
                 Button {
                     if isHot { dictation.stop() }
                     onSend()
@@ -97,15 +97,15 @@ struct ComposerSendControls: View {
                     Image(systemName: "arrow.up.circle.fill").font(.system(size: 28))
                         .foregroundStyle(sendEnabled ? accent
                                                      : AnyShapeStyle(AppearancePalette.ink.opacity(0.2)))
-                }.buttonStyle(.plain).disabled(!sendEnabled).accessibilityLabel("Send")
+                }.buttonStyle(.plain).disabled(!sendEnabled).accessibilityLabel("Send").help("Send")
             } else if isHot {
                 Button { dictation.toggle(token: dictationToken, baseline: text, onUpdate: { text = $0 }) } label: {
                     Image(systemName: "stop.fill").font(.system(size: 22)).foregroundStyle(accent)
-                }.buttonStyle(.plain).accessibilityLabel("Stop dictation")
+                }.buttonStyle(.plain).accessibilityLabel("Stop dictation").help("Stop dictation")
             } else {
                 Button { dictation.toggle(token: dictationToken, baseline: text, onUpdate: { text = $0 }) } label: {
                     Image(systemName: "mic.fill").font(.system(size: 22)).foregroundStyle(accent).opacity(0.8)
-                }.buttonStyle(.plain).accessibilityLabel("Dictate")
+                }.buttonStyle(.plain).accessibilityLabel("Dictate").help("Dictate")
             }
         }
     }

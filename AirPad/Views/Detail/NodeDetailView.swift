@@ -323,6 +323,9 @@ struct NodeDetailView: View {
     }
     @State private var macDetailScroll = MacScrollState()   // Mac perf audit — the scroll hit-test guard
     @State private var bandProgressStored: CGFloat = 0
+    /// The last scroll offset, outside SwiftUI's state (reading it re-evaluates nothing).
+    @State private var bandOffset = BandOffsetBox()
+    final class BandOffsetBox { var value: CGFloat = 0 }
 
     /// In-node capture surfaces. `.text` is intentionally absent: the "+"
     /// menu's Text action now appends an empty entry card inline (see
@@ -879,8 +882,16 @@ struct NodeDetailView: View {
             geo.visibleRect.minY
         } action: { _, offset in
             if perfAB("oldband") { heroScrollOffset = offset; return }
+            bandOffset.value = offset
             let denom = heroVisibleHeight * bandCollapseFraction
             let p = denom > 1 ? min(1, max(0, offset / denom)) : 0
+            if p != bandProgressStored { bandProgressStored = p }
+        }
+        // The hero's height can change with no scroll (rotation, a window resize, Dynamic Type): the stored progress
+        // follows it, as the computed one did (independent review 2026-11-19).
+        .onChange(of: heroVisibleHeight) { _, h in
+            let denom = h * bandCollapseFraction
+            let p = denom > 1 ? min(1, max(0, bandOffset.value / denom)) : 0
             if p != bandProgressStored { bandProgressStored = p }
         }
         // DISCRETE title hand-off with hysteresis: swap IN at the swap point,

@@ -247,7 +247,7 @@ struct NodeGridView: View {
     /// Mac perf audit P0d (measured with real keys: of 16 presses, 5 changed nothing on screen) — ⌘+ / ⌘− used to move
     /// the wanted card width by 40 pt, but the grid shows whole columns, so a step that didn't cross into another
     /// column count changed nothing ("⌘+ sometimes doesn't register"). Now a press moves to the nearest width that
-    /// gives one column fewer (bigger cards) or one more (smaller), or to the end of the range.
+    /// gives one column fewer (bigger cards) or one more (smaller); at the last column count the range allows, nothing.
     /// `-MacPerfAB oldzoom` (bench) = the fixed 40 pt step.
     private func macZoomedWidth(bigger: Bool) -> Double {
         let range = Self.macCardWidthRange

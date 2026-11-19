@@ -496,7 +496,17 @@ private struct MacListRowMenu: View {
     /// Only a pointer that MOVED re-picks the row: while the list scrolls under a still pointer, hover fires every frame
     /// (the content moved), and re-picking then re-drew rows each frame (List scrolling ran at ~10–16 fps); the wash
     /// goes until the pointer moves again.
+    /// The row under the last pointer position whether or not it moved since (Recents' right-click menu: after a
+    /// scroll under a still pointer `id` is nil by design, and a right-click does not move the pointer).
+    @ObservationIgnored private var lastSeen: CGPoint?
+    var idForMenu: String? {
+        if let id { return id }
+        guard let g = lastSeen else { return nil }
+        let p = CGPoint(x: g.x - listGlobal.minX, y: g.y - listGlobal.minY)
+        return frames.first { $0.value.contains(p) }?.key
+    }
     func pointer(global g: CGPoint?) {
+        lastSeen = g
         guard let g else { lastPointer = nil; if id != nil { id = nil }; return }
         if let l = lastPointer, abs(l.x - g.x) < 0.5, abs(l.y - g.y) < 0.5 { if id != nil { id = nil }; return }
         lastPointer = g

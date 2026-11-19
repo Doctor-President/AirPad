@@ -562,6 +562,9 @@ private struct RecentsPointerTracker: ViewModifier {
                     }
                 }
                 .contextMenu { RecentsRowMenu(hover: hover, nodes: nodes) }
+                .onChange(of: nodes.map(\.id)) { _, ids in   // rows that left don't keep a rectangle
+                    let live = Set(ids); hover.frames = hover.frames.filter { live.contains($0.key) }
+                }
         } else {
             content
         }
@@ -574,7 +577,7 @@ private struct RecentsRowMenu: View {
     let nodes: [Node]
     @Environment(AppRouter.self) private var router
     var body: some View {
-        if let id = hover.id, let node = nodes.first(where: { $0.id == id }) {
+        if let id = hover.idForMenu, let node = nodes.first(where: { $0.id == id }) {
             EntryContextMenu.items(nodeID: node.id, isPrivate: node.isPrivate, router: router)
         }
     }

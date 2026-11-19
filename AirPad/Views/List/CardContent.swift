@@ -126,14 +126,21 @@ struct CardContentSummary: Equatable {
     /// note in the entry (paragraphs, list rows, the richest preview). On the Mac the whole grid re-evaluates on each
     /// step of a sidebar / Librarian edge drag and on ⌘+ / ⌘−: 16 % of the main thread, stalls to ~270 ms, ⌘+ visible
     /// after ~0.45 s. The result depends only on the entry's content, so it is kept per entry until the entry changes
-    /// (id + updatedAt + a cheap content fingerprint, in case an edit didn't move updatedAt). `-MacPerfAB nocardcache`.
+    /// (id + updatedAt + a hash of what the summary reads, in case an edit didn't move updatedAt). `-MacPerfAB nocardcache`.
     static func make(_ node: Node, hasHero: Bool) -> CardContentSummary {
         if perfAB("nocardcache") { return build(node, hasHero: hasHero) }
-        var print = node.items.count
+        // Everything `build` and `richestPreview` read, in item order (independent review 2026-11-19: lengths and
+        // counts alone would keep a stale card after a same-length edit such as ticking a checkbox, a transcript or
+        // page count arriving later, or a reorder).
+        var h = Hasher()
         for item in node.items {
-            print = print &* 31 &+ (item.content?.utf8.count ?? 0)
-            print = print &* 31 &+ (item.mediaItems?.count ?? 0) &+ (item.documentItems?.count ?? 0) &* 7 &+ (item.linkItems?.count ?? 0) &* 13
+            h.combine(item.id); h.combine(item.type); h.combine(item.content); h.combine(item.transcript)
+            h.combine(item.durationSeconds); h.combine(item.url); h.combine(item.title); h.combine(item.preview)
+            h.combine(item.description); h.combine(item.chatSessionIDs?.count); h.combine(item.linkItems?.count)
+            for m in item.mediaItems ?? [] { h.combine(m.id); h.combine(m.mediaType) }
+            for d in item.documentItems ?? [] { h.combine(d.id); h.combine(d.pageCount) }
         }
+        let print = h.finalize()
         let key = CacheKey(id: node.id, updatedAt: node.updatedAt, hasHero: hasHero, print: print)
         cacheLock.lock()
         if let hit = cache[key] { cacheLock.unlock(); return hit }

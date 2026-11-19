@@ -187,7 +187,9 @@ enum AppleWebSelfTest {
         let chat3 = ChatSession()
         await lib.groundedSend(query: "Search the web for the Lakeview Observatory telescope news", store: store, chat: chat3)
         let a3 = chat3.messages.last { $0.role == .assistant }
-        row("switch-off-says-web-search-is-off", a3?.text.hasPrefix("Web search is off.") == true && ModelRouter.debugLastApplePrompt.isEmpty,
+        // N12 — a news question: the plain "can't look up today's news" line first, then the switch.
+        row("switch-off-says-web-search-is-off", a3?.text.hasPrefix(ChatSession.noWebNewsLine + " Web search is off.") == true
+            && ModelRouter.debugLastApplePrompt.isEmpty,
             a3.map { String($0.text.prefix(60)) } ?? "nil")
 
         let fails = rows.filter { !$0.1 }

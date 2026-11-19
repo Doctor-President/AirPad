@@ -322,7 +322,8 @@ enum WebRetrievalRun {
                     if plan.prefetch != "none" {
                         let sq = await WebEvidence.searchQuery(for: q, chat: chat)
                         WebTrace.shared.note("query", ["query": sq.query, "wikiQuery": sq.wikiQuery, "how": sq.how, "rewriteMs": sq.ms])
-                        async let wiki = WikipediaGrounding.isOn ? WikipediaGrounding.sources(query: sq.wikiQuery) : []
+                        async let wiki = WebEvidence.wikiSources(query: sq.wikiQuery,   // N12: as `sendWithTools`
+                            off: !WikipediaGrounding.isOn || WebGrounding.isTimeSensitive(question: q, query: sq.query))
                         let executor = WebSearchBackend.make()
                         let args: [String: Any] = ["query": sq.query, "count": AppleWebQuery.requestCount,
                                                    "freshness": SearchFreshness.forTurn(question: q, query: sq.query).rawValue]

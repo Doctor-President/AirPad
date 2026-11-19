@@ -800,7 +800,9 @@ final class ChatSession {
         answerFilter = WebAnswerFilter(allowed: filterAllowed)
         // live-33 — the app's search brings the Wikipedia articles for the same query (alongside, not after it); every
         // search's results are reranked by meaning before the model sees them (`WebEvidence`).
+        // N12 — not for a time-sensitive question (today's news): its evidence is the web's alone.
         let wikiTask: Task<[WebEvidence.Source], Never>? = prefetch != .none && WikipediaGrounding.isOn
+            && !WebGrounding.isTimeSensitive(question: displayText, query: appQuery)
             ? Task { await WikipediaGrounding.sources(query: wikiQuery ?? appQuery ?? displayText) } : nil
         let now = Date()
         beginAnswerStream(candidates: [])
@@ -1207,16 +1209,17 @@ final class ChatSession {
         #endif
     }
 
-    func appendWebSearchKeyNotice(userText: String) {
+    /// `news` (N12) — a time-sensitive question: the line first says plainly that today's news needs web search.
+    func appendWebSearchKeyNotice(userText: String, news: Bool = false) {
         let text = userText.trimmingCharacters(in: .whitespacesAndNewlines)
         guard !text.isEmpty, !isStreaming else { return }
         lastError = nil
         messages.append(Message(role: .user, text: text))
         messages.append(Message(role: .assistant,
             // live-28 (A2) — the switch off reads as off (the key is kept); on with no key names the chosen provider.
-            text: WebSearchBackend.isEnabled
+            text: (news ? Self.noWebNewsLine + " " : "") + (WebSearchBackend.isEnabled
                 ? "Web search needs a \(WebSearchBackend.provider.keyName) key. [Add one in Settings → Web search.](airpad-settings://websearch)"
-                : "Web search is off. [Turn it on in Settings → Web search.](airpad-settings://websearch)"))
+                : "Web search is off. [Turn it on in Settings → Web search.](airpad-settings://websearch)")))
         pendingUser = nil
         flush()
         #if DEBUG
@@ -1224,8 +1227,15 @@ final class ChatSession {
         GauntletTap.shared.notePath("nokey")
         GauntletTap.shared.endTurn(finalText: messages.last?.text, citations: nil, receipt: nil, thinking: "",
                                    lastError: nil, isPartial: false)
+        if news {
+            WebTrace.shared.beginTurn(text)
+            WebTrace.shared.note("plan", ["path": "no-web-news"])
+            WebTrace.shared.note("answer", ["text": messages.last?.text ?? "", "cited": [String](), "line": "", "caption": ""])
+        }
         #endif
     }
+    /// N12 — the plain line for a time-sensitive question with no web search (Wikipedia has no today's news).
+    static let noWebNewsLine = "I can't look up today's news without web search."
 
     /// Append a collapsible activity row for one completed tool call.
     private func appendActivity(for call: ToolCall, result: ToolResult) {

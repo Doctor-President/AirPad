@@ -507,24 +507,64 @@ struct MacResizeHandle: View {
 }
 
 /// E fix-up 5 (L5, T ruled 2026-11-17) — the right panel's header switch between a COLUMN and FLOATING over the content
-/// (the Librarian's ⤢ was "widen for reading", which T found did nothing meaningful). Hidden when a column wouldn't fit
-/// the window: there it floats regardless, and a control that does nothing doesn't show. The icon and tooltip say what
-/// a click does.
+/// (the Librarian's ⤢ was "widen for reading", which T found did nothing meaningful). The icon and tooltip say what a
+/// click does. Sweep 1 · N7 [T ruled "yes"]: shown at ANY width. Choosing Column on a window too narrow for one widens
+/// the window by what the column needs (animated, as Pages' sidebar does), as far as the screen allows; with no room on
+/// the screen it stays floating and says "Widen the window to dock". Narrowing the window by hand still floats the
+/// panel (content ≥ 616 pt) and the choice comes back when it's wide again (`floatChosen` is untouched by that).
 struct MacPanelFloatSwitch: View {
     @State private var layout = MacLayout.shared
     var body: some View {
-        if layout.columnFits {
-            let floating = layout.floatChosen
-            Button { layout.floatChosen.toggle() } label: {
-                Image(systemName: floating ? "sidebar.right" : "rectangle.on.rectangle")
-                    .font(.system(size: 13, weight: .medium)).frame(width: 26, height: 26)
-            }
-            .buttonStyle(.plain)
-            .foregroundStyle(AppearancePalette.ink.opacity(0.7))
-            .help(floating ? "Show as column" : "Float over content")
-            .accessibilityLabel(floating ? "Show as column" : "Float over content")
-            .accessibilityIdentifier("macPanelFloatSwitch")
+        let floating = layout.librarianFloats
+        let noRoom = floating && !layout.floatChosen && MacWindowFrame.widthNeededForColumn(layout) > MacWindowFrame.roomToWiden()
+        let tip = noRoom ? "Widen the window to dock" : (floating ? "Show as column" : "Float over content")
+        Button { toggle() } label: {
+            Image(systemName: floating ? "sidebar.right" : "rectangle.on.rectangle")
+                .font(.system(size: 13, weight: .medium)).frame(width: 26, height: 26)
         }
+        .buttonStyle(.plain)
+        .foregroundStyle(AppearancePalette.ink.opacity(noRoom ? 0.35 : 0.7))
+        .help(tip)
+        .accessibilityLabel(tip)
+        .accessibilityIdentifier("macPanelFloatSwitch")
+    }
+
+    private func toggle() {
+        guard layout.librarianFloats else { layout.floatChosen = true; return }
+        let need = MacWindowFrame.widthNeededForColumn(layout)
+        if need > 0 {
+            guard need <= MacWindowFrame.roomToWiden() else { return }   // no room: stays floating (the tooltip says so)
+            MacWindowFrame.widen(by: need)
+        }
+        layout.floatChosen = false
+    }
+}
+
+/// Sweep 1 · N7 — the window's frame through AppKit (Catalyst's scene geometry request doesn't animate).
+@MainActor
+enum MacWindowFrame {
+    /// Points the window must grow for the right panel to fit as a column (0 = it fits).
+    static func widthNeededForColumn(_ l: MacLayout) -> CGFloat {
+        let content = l.windowWidth - (l.sidebarVisible ? l.settledSidebarWidth + 1 : 0) - (l.settledRightWidth + 1)
+        return max(0, (MacLayout.contentMinWidth - content).rounded(.up))
+    }
+    private static func rect(_ o: NSObject?, _ key: String) -> CGRect? { (o?.value(forKey: key) as? NSValue)?.cgRectValue }
+    /// How much wider the window can get on its screen (the visible frame: no menu bar, no Dock).
+    static func roomToWiden() -> CGFloat {
+        let w = MacWindowChrome.nsWindow
+        guard let f = rect(w, "frame"), let v = rect(w?.value(forKey: "screen") as? NSObject, "visibleFrame") else { return 0 }
+        return max(0, v.width - f.width)
+    }
+    /// Grow the window by `dx` (animated), keeping its left edge unless that would push it off the screen's right edge.
+    static func widen(by dx: CGFloat) {
+        let w = MacWindowChrome.nsWindow
+        guard let w, var f = rect(w, "frame"), let v = rect(w.value(forKey: "screen") as? NSObject, "visibleFrame") else { return }
+        f.size.width = min(f.width + dx, v.width)
+        if f.maxX > v.maxX { f.origin.x = v.maxX - f.width }
+        let sel = NSSelectorFromString("setFrame:display:animate:")
+        guard let m = class_getInstanceMethod(type(of: w), sel) else { return }
+        typealias SetFrame = @convention(c) (AnyObject, Selector, CGRect, Bool, Bool) -> Void
+        unsafeBitCast(method_getImplementation(m), to: SetFrame.self)(w, sel, f, true, true)
     }
 }
 

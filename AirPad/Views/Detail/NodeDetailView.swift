@@ -722,6 +722,11 @@ struct NodeDetailView: View {
                 .padding(.top, (isCaptureMode || atomicCount > 0)
                     ? CaptureHeaderMetrics.attributesToEntries
                     : visualSettings.dividerToEntries)
+                #if targetEnvironment(macCatalyst)
+                // Sweep 1 · N1 proof (0/3) — below the last item there was no drop zone (gaps sit only BEFORE items 2…n):
+                // a drop there landed nowhere. During a drag it opens to 56 pt: the drop sorts / ends up at the end.
+                MacEntryGapDrop(nodeID: nodeID, insertAt: node.items.count, height: 0, openHeight: 56)
+                #endif
 
                 // Backlinks v1 — Related Nodes (user channel). Renders nothing
                 // when the node has no connections. System-suggestion channel is
@@ -1193,7 +1198,7 @@ struct NodeDetailView: View {
                           onVisibleHeight: @escaping (CGFloat) -> Void) -> some View {
         #if targetEnvironment(macCatalyst)
         // Sweep 1 · N8 [T] — on the Mac the hero anchors LEFT and fades into the ground on the right (MacLeftHero).
-        MacLeftHero(width: width) { w in
+        MacLeftHero(width: width, gradientOnly: node.coverImageRelativePath == nil) { w in
             heroVisual(node: node, topInset: topInset, width: w, onVisibleHeight: onVisibleHeight)
         }
         #else
@@ -3403,6 +3408,9 @@ enum PerfABModes {
 /// sliders (Mac feel) redraw only the hero, not the entry.
 private struct MacLeftHero<Content: View>: View {
     let width: CGFloat
+    /// No cover image: the gradient keeps the banner's full width (its colour starts at the left edge, as before) and only
+    /// fades out on the right — drawn in a narrower box its blobs re-centred and left a plain strip on the left (proof 17/18).
+    var gradientOnly = false
     @ViewBuilder let content: (CGFloat) -> Content
     #if DEBUG || DEVSWITCHES
     @AppStorage(MacFeelSwitches.heroFullKey) private var full = false
@@ -3419,6 +3427,12 @@ private struct MacLeftHero<Content: View>: View {
     var body: some View {
         if full {
             content(width)
+        } else if gradientOnly {
+            let end = max(0.05, min(maxW, start + length))
+            content(width)
+                .mask(LinearGradient(stops: [.init(color: .black, location: min(start, end - 0.01)), .init(color: .clear, location: end)],
+                                     startPoint: .leading, endPoint: .trailing))
+                .accessibilityIdentifier("macHeroLeft")
         } else {
             let frac = max(0.05, min(maxW, start + length))
             let box = (width * frac).rounded()

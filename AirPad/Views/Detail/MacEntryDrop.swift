@@ -123,13 +123,14 @@ struct MacEntryGapDrop: View {
     let nodeID: String
     let insertAt: Int
     let height: CGFloat
+    var openHeight: CGFloat = MacEntryDrop.openGap
     @Environment(CorpusStore.self) private var store
     @Environment(\.undoManager) private var undoManager
     @State private var on = false
 
     var body: some View {
         Color.clear
-            .frame(height: MacEntryDragState.shared.active ? max(height, MacEntryDrop.openGap) : height)
+            .frame(height: MacEntryDragState.shared.active ? max(height, openHeight) : height)
             .animation(.easeOut(duration: 0.15), value: MacEntryDragState.shared.active)
             .contentShape(Rectangle())
             #if DEBUG

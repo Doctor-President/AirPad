@@ -1,0 +1,11 @@
+# Sweep 1 · 1.4 step 1 (B) — the heavy entry opened twice in a row (first = decode, second = the kept notes), List.
+view-list    click toolbar.view.List
+rest         wait 1500
+open-heavy-1 click listRow-9E9F1000-0000-4000-8000-000000000001
+rest         wait 3000
+close-heavy  click toolbar.back
+rest         wait 1500
+open-heavy-2 click listRow-9E9F1000-0000-4000-8000-000000000001
+rest         wait 3000
+close-heavy  click toolbar.back
+rest         wait 1500

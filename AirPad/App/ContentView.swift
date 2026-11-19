@@ -53,6 +53,13 @@ struct ContentView: View {
                 if ProcessInfo.processInfo.arguments.contains("-OpenMap"), router.entryMode != .canvas { router.entryMode = .canvas }
             }
             #endif
+            #if PANBENCH && targetEnvironment(macCatalyst)
+            Color.clear.frame(width: 0, height: 0).onAppear {   // sweep 1 · 1.4 — `-MacSwitchBench <rounds>` (bench builds)
+                if let n = Int(UserDefaults.standard.string(forKey: "MacSwitchBench") ?? "") {
+                    Task { @MainActor in await MacSwitchBench.run(rounds: n, store: store, router: router) }
+                }
+            }
+            #endif
             #if DEBUG
             // `-OpenCardView` companion — `entryMode` defaults to `.recents`, so the
             // viewMode seed alone never reaches the canvas.
@@ -1061,6 +1068,48 @@ private struct DetailDepthWatcher: View {
                 for c in all.values { c() }
             }
         }
+    }
+}
+#endif
+
+#if PANBENCH && targetEnvironment(macCatalyst)
+/// Sweep 1 · 1.4 (sheet C) — the view / place switches driven from inside the app, the way the toolbar's view switch and
+/// the sidebar make them (no real events: for profiling where a switch's main-thread time goes, e.g. while the screen is
+/// locked; the real-click run, `switch.steps`, is the measure). Writes `Library/Caches/switch-bench.tsv` (steps.py's
+/// `<label>\t<verb>\t<wall ms>` lines) when done; the harness then saves the recording.
+@MainActor enum MacSwitchBench {
+    static func run(rounds: Int, store: CorpusStore, router: AppRouter) async {
+        for _ in 0..<120 where store.nodes.count < 10 { try? await Task.sleep(nanoseconds: 250_000_000) }
+        try? await Task.sleep(nanoseconds: 6_000_000_000)
+        var out = ""
+        func step(_ label: String, _ wait: Double, _ change: () -> Void) async {
+            out += "\(label)\tclick\t\(Int(Date().timeIntervalSince1970 * 1000))\n"
+            Perf.mark("bench \(label)")
+            change()
+            try? await Task.sleep(nanoseconds: UInt64(wait * 1_000_000_000))
+        }
+        func view(_ m: ViewMode) {
+            var s = store.filterState(for: .corpus); s.viewMode = m; store.setFilterState(s, for: .corpus)
+        }
+        router.entryMode = .canvas; view(.systemGraph)
+        try? await Task.sleep(nanoseconds: 4_000_000_000)
+        for _ in 0..<rounds {
+            await step("view-list", 1.5) { view(.list) }
+            await step("view-cards", 1.5) { view(.grid) }
+            await step("view-map", 2.5) { view(.systemGraph) }
+            await step("place-today", 1.5) { router.entryMode = .dashboard }
+            await step("place-recents", 1.5) { router.entryMode = .recents }
+            await step("place-library", 2.5) { router.entryMode = .canvas }
+            await step("view-list", 1.5) { view(.list) }
+            await step("place-today", 1.5) { router.entryMode = .dashboard }
+            await step("place-recents", 1.5) { router.entryMode = .recents }
+            await step("place-library", 1.5) { router.entryMode = .canvas }
+            await step("view-cards", 1.5) { view(.grid) }
+            await step("view-map", 2.5) { view(.systemGraph) }
+        }
+        out += "end\twait\t\(Int(Date().timeIntervalSince1970 * 1000))\n"
+        let dir = FileManager.default.urls(for: .cachesDirectory, in: .userDomainMask)[0]
+        try? out.write(to: dir.appendingPathComponent("switch-bench.tsv"), atomically: true, encoding: .utf8)
     }
 }
 #endif

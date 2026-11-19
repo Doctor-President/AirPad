@@ -160,6 +160,12 @@ struct DashboardView: View {
         )
     }
 
+    /// Sweep 1 · 1.4 (sheet C) — on the Mac, the sidebar's Recents is a Dashboard whose stack starts with Recents pushed,
+    /// and popping it changes the place to Today (a NEW Dashboard: D fix-up B4), so this one's hub is never seen. It was
+    /// still built under Recents on every switch (the Today panes, their six tiles, a second lava lamp). The ground stays.
+    /// `-MacPerfAB oldrecents` (bench) = as before.
+    private var macRecentsHost: Bool { RunningOnMac.isMac && initialRoute == .recents && !perfAB("oldrecents") }
+
     /// Mac batch D4 — the Dashboard's width, for its pane grid.
     @State private var macWidth: CGFloat = 0
 
@@ -299,28 +305,30 @@ struct DashboardView: View {
         NavigationStack(path: $path) {
             ZStack {
                 Color.black.ignoresSafeArea()
-                DashboardLavaLamp()
+                if !macRecentsHost {
+                    DashboardLavaLamp()
 
-                ScrollView {
-                    VStack(alignment: .leading, spacing: 28) {
-                        if !RunningOnMac.isMac {   // D fix-up F4 — the logo + chats/≡ pill repeat the Mac toolbar
-                            header
-                                .padding(.top, 6)
+                    ScrollView {
+                        VStack(alignment: .leading, spacing: 28) {
+                            if !RunningOnMac.isMac {   // D fix-up F4 — the logo + chats/≡ pill repeat the Mac toolbar
+                                header
+                                    .padding(.top, 6)
+                            }
+                            if RunningOnMac.isMac {
+                                macCompactHome   // Mac batch E3 — T's v3 pick (was D4's reflowing pane grid)
+                                    .padding(.top, 28)
+                            } else {
+                                todaySection
+                                quickReentrySection
+                                if store.sampleLibraryPresent { samplePane }
+                                collectionsSection
+                            }
                         }
-                        if RunningOnMac.isMac {
-                            macCompactHome   // Mac batch E3 — T's v3 pick (was D4's reflowing pane grid)
-                                .padding(.top, 28)
-                        } else {
-                            todaySection
-                            quickReentrySection
-                            if store.sampleLibraryPresent { samplePane }
-                            collectionsSection
-                        }
+                        .padding(.horizontal, 20)
+                        .padding(.bottom, RunningOnMac.isMac ? 40 : 120)
                     }
-                    .padding(.horizontal, 20)
-                    .padding(.bottom, RunningOnMac.isMac ? 40 : 120)
+                    .onGeometryChange(for: CGFloat.self) { $0.size.width } action: { macWidth = $0 }
                 }
-                .onGeometryChange(for: CGFloat.self) { $0.size.width } action: { macWidth = $0 }
 
                 if !RunningOnMac.isMac { floatingPlusButton }   // Mac batch D1 — the toolbar's + New Entry
 

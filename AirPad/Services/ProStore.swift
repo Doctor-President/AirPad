@@ -552,6 +552,8 @@ final class ProStore {
         #if DEBUG
         if UserDefaults.standard.bool(forKey: "ProLocked") { isPro = false; return }   // `-ProLocked YES`: the locked rows' stills
         if UserDefaults.standard.bool(forKey: "ProUnlocked") || MapLookChoice.debugLookHookActive { isPro = true; return }   // 1.1-B: Pro stills
+        #elseif PANBENCH
+        if UserDefaults.standard.bool(forKey: "ProUnlocked") { isPro = true; return }   // bench builds (scripts/perf/ios_parity.sh)
         #endif
         isPro = v
         if v { proPending = false }

@@ -37,7 +37,7 @@ actor CardEmbeddingService {
         }
         let config = MLModelConfiguration()
         config.computeUnits = .all
-        #if DEBUG
+        #if DEBUG || PERFLOG   // PERFLOG: the Simulator perf bench (scripts/perf/ios_parity.sh) is a Release build
         // The Simulator's ANE/GPU path returns ZERO vectors for this BGE model
         // (bge-embedding-sim-zeros); `.cpuOnly` is exact and matches device within
         // parity noise. `-EmbedCPUOnly` forces CPU so headless retrieval diags

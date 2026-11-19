@@ -445,18 +445,38 @@ final class LibrarianState {
     /// is preserved when nothing distinguishes them. Falls back to
     /// the first sentence when no overlap is found, and truncates at
     /// ~240 chars so row height stays bounded for very long sentences.
-    static func pullQuote(from text: String, query: String) -> String {
+    /// A note's text without markup, and its sentences. Mac perf audit (2026-11-18, measured): search-as-you-type
+    /// ran this for every matching entry on EVERY keystroke, on the main thread (81 % of 4.6 s of main-thread work
+    /// over a seven-letter word; stalls to 626 ms on the Mac, 845 ms on the iPhone Simulator). The result depends
+    /// only on the text, so it is kept per text: the first letter still pays once, the rest of the word doesn't.
+    private static func plainSentences(_ text: String) -> (plain: String, sentences: [String], lowered: [String]) {
+        quoteLock.lock()
+        if let hit = quoteCache[text], !perfAB("nosearchcache") { quoteLock.unlock(); return hit }   // bench A/B
+        quoteLock.unlock()
         let trimmed = MarkdownPlain.text(text).trimmingCharacters(in: .whitespacesAndNewlines)   // live-26 (3b): no markup
-        guard !trimmed.isEmpty else { return "" }
-
-        let tokenizer = NLTokenizer(unit: .sentence)
-        tokenizer.string = trimmed
         var sentences: [String] = []
-        tokenizer.enumerateTokens(in: trimmed.startIndex..<trimmed.endIndex) { range, _ in
-            let s = String(trimmed[range]).trimmingCharacters(in: .whitespacesAndNewlines)
-            if !s.isEmpty { sentences.append(s) }
-            return true
+        if !trimmed.isEmpty {
+            let tokenizer = NLTokenizer(unit: .sentence)
+            tokenizer.string = trimmed
+            tokenizer.enumerateTokens(in: trimmed.startIndex..<trimmed.endIndex) { range, _ in
+                let s = String(trimmed[range]).trimmingCharacters(in: .whitespacesAndNewlines)
+                if !s.isEmpty { sentences.append(s) }
+                return true
+            }
         }
+        quoteLock.lock()
+        if quoteCache.count > 1200 { quoteCache.removeAll(keepingCapacity: true) }
+        let made = (plain: trimmed, sentences: sentences, lowered: sentences.map { $0.lowercased() })
+        quoteCache[text] = made
+        quoteLock.unlock()
+        return made
+    }
+    private static var quoteCache: [String: (plain: String, sentences: [String], lowered: [String])] = [:]
+    private static let quoteLock = NSLock()
+
+    static func pullQuote(from text: String, query: String) -> String {
+        let (trimmed, sentences, lowered) = plainSentences(text)
+        guard !trimmed.isEmpty else { return "" }
         guard !sentences.isEmpty else { return Self.cap(trimmed) }
 
         let queryWords = query.lowercased()
@@ -464,17 +484,14 @@ final class LibrarianState {
             .map(String.init)
             .filter { $0.count > 2 }
 
-        func score(_ s: String) -> Int {
-            let lower = s.lowercased()
-            return queryWords.reduce(0) { acc, w in acc + (lower.contains(w) ? 1 : 0) }
+        // The same choice as before (most query words; the earlier sentence on a tie), scored once per sentence
+        // on its kept lowercased copy instead of lowercasing every sentence twice per comparison.
+        guard !queryWords.isEmpty else { return Self.cap(sentences[0]) }
+        var bestIdx = 0, best = -1
+        for i in sentences.indices {
+            let sc = queryWords.reduce(0) { acc, w in acc + (lowered[i].contains(w) ? 1 : 0) }
+            if sc > best { best = sc; bestIdx = i }
         }
-
-        let bestIdx = sentences.indices.max { a, b in
-            let sa = score(sentences[a])
-            let sb = score(sentences[b])
-            if sa != sb { return sa < sb }
-            return a > b   // earlier sentence wins on tie
-        } ?? 0
         return Self.cap(sentences[bestIdx])
     }
 

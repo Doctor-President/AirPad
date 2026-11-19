@@ -1,7 +1,7 @@
 #!/usr/bin/env python3
 """gate.py — the standing speed gate (Mac perf audit P4).
 
-  gate.py --mac <table.json> [<table.json> …] [--iphone <table.json>] [--soak <soak.json>] [--out gate.md]
+  gate.py --mac <table.json> [<table.json> …] [--iphone <table.json>] [--rest <rest.json>] [--phases <phases.json>] [--out gate.md]
 
 Reads the per-action tables steps.py wrote (`--json`) for the Mac runs (scripts/mac/perf/gate.sh) and, when given,
 the iPhone run (scripts/perf/ios_parity.sh), and prints one small table with PASS / FAIL per action against the
@@ -12,8 +12,9 @@ Budgets (directive 2026-11-18):
   view / panel switch settled ≤ 150 ms p95   (labels in SWITCHES)
   no stall                   > 100 ms        (main thread, any action)
   scrolling                  at the display's rate (≥ 90 % of it; ≤ 10 % late frames)
-  the Map at rest            within ~1 s of any change (rest.json from gate.sh: 0 Map frames after 1.5 s)
-  no growth over the soak    memory ≤ +10 % from minute 5 to the end; frame p95 not worse than +20 %
+  the Map at rest            within ~1 s of any change (phases.json: 0 Map frames a second 2–4 s after each change)
+  every screen at rest       main thread busy ≤ 3 % of the time (rest.json)
+  no growth over the soak    memory ≤ +10 % first → last cycle; frame p95 not worse than +20 % (phases.json)
   every action               ≤ the iPhone's time (app-side input → main thread free, p50; 10 ms grace)
 """
 import json, sys
@@ -60,7 +61,9 @@ def main(a):
             checks.append(("scroll rate", ok, f"{f(fps)} fps of {hz}, {f(late)}% late"))
         else:
             v = m.get("visible_p95")
-            if v is not None: checks.append(("visible ≤ 50", v <= 50, f"{f(v)} ms"))
+            # Typing: one glyph is below the screen comparison's threshold, so a key's "visible" time is not reliable;
+            # typed steps are judged on stalls only.
+            if v is not None and m.get("verb") != "key": checks.append(("visible ≤ 50", v <= 50, f"{f(v)} ms"))
             if k.startswith(SWITCHES):
                 s = m.get("settled_p95")
                 if s is not None: checks.append(("settled ≤ 150", s <= 150, f"{f(s)} ms"))
@@ -74,16 +77,22 @@ def main(a):
         fails += len(bad)
         rows.append((k, m, i, checks, bad))
     extra = []
-    rest = arg("--rest")
+    phases = arg("--phases")   # scripts/perf/phases.py --json (p0-appearance.sh): the Map after each change + the soak
+    ph = json.load(open(phases)) if phases else {}
+    if ph.get("rest"):
+        bad_rest = {k: v for k, v in ph["rest"].items() if v > 0}
+        fails += 1 if bad_rest else 0
+        extra.append(f"| Map at rest after each appearance change ({len(ph['rest'])} changes) | {'FAIL' if bad_rest else 'PASS'} | "
+                     + (", ".join(f"{k}: {v:.0f} frames a second" for k, v in bad_rest.items()) or "0 Map frames a second 2–4 s after every change") + " |")
+    rest = arg("--rest")       # scripts/perf/rest.py --json (rest.sh): each screen with nothing happening
     if rest:
         r = json.load(open(rest))
-        for name, fps in r.items():
-            ok = fps == 0
+        for name, v in r.items():
+            ok = v["busy"] <= 3
             fails += 0 if ok else 1
-            extra.append(f"| Map at rest after {name} | {'PASS' if ok else 'FAIL'} | {fps} Map frames a second, 1.5–4 s after the change |")
-    soak = arg("--soak")
-    if soak:
-        s = json.load(open(soak))
+            extra.append(f"| at rest: {name} | {'PASS' if ok else 'FAIL'} | main thread busy {v['busy']:.0f} % of the time, {v['wakes']:.0f} wake-ups a second, CPU {v['cpu']:.0f} % of one core |")
+    if ph.get("soak"):
+        s = ph["soak"]
         ok = s["mem_growth_pct"] <= 10 and s["p95_growth_pct"] <= 20
         fails += 0 if ok else 1
         extra.append(f"| soak ({s['minutes']:.0f} min) | {'PASS' if ok else 'FAIL'} | memory {s['mem_first']} → {s['mem_last']} MB ({s['mem_growth_pct']:+.0f}%), frame p95 {s['p95_first']:.1f} → {s['p95_last']:.1f} ms ({s['p95_growth_pct']:+.0f}%) |")

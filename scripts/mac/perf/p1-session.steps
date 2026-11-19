@@ -12,7 +12,7 @@ place-library       click sidebar.library
 rest                wait 1500
 view-list           click toolbar.view.List
 rest                wait 1000
-open-list           click listRow-*#9
+open-list           click listRow-9E9F1000-0000-4000-8000-000000000008
 rest                wait 1200
 note-click          click role:AXTextArea
 note-type           type a quiet morning at the harbour

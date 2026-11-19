@@ -3417,11 +3417,13 @@ private struct MacLeftHero<Content: View>: View {
     @AppStorage(MacFeelSwitches.heroFadeStartKey) private var start = MacFeelSwitches.heroFadeStartDefault
     @AppStorage(MacFeelSwitches.heroFadeLengthKey) private var length = MacFeelSwitches.heroFadeLengthDefault
     @AppStorage(MacFeelSwitches.heroMaxWidthKey) private var maxW = MacFeelSwitches.heroMaxWidthDefault
+    @AppStorage(MacFeelSwitches.heroGradientShiftKey) private var shift = MacFeelSwitches.heroGradientShiftDefault
     #else
     private let full = false
     private let start = MacFeelSwitches.heroFadeStartDefault
     private let length = MacFeelSwitches.heroFadeLengthDefault
     private let maxW = MacFeelSwitches.heroMaxWidthDefault
+    private let shift = MacFeelSwitches.heroGradientShiftDefault
     #endif
 
     var body: some View {
@@ -3429,7 +3431,10 @@ private struct MacLeftHero<Content: View>: View {
             content(width)
         } else if gradientOnly {
             let end = max(0.05, min(maxW, start + length))
-            content(width)
+            content((width * (1 + shift)).rounded())
+                .offset(x: -(width * shift).rounded())
+                .frame(width: width, alignment: .leading)
+                .clipped()
                 .mask(LinearGradient(stops: [.init(color: .black, location: min(start, end - 0.01)), .init(color: .clear, location: end)],
                                      startPoint: .leading, endPoint: .trailing))
                 .accessibilityIdentifier("macHeroLeft")

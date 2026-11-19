@@ -256,6 +256,10 @@ enum MacFeelSwitches {
     static let heroFadeStartDefault = 0.60
     static let heroFadeLengthDefault = 0.25
     static let heroMaxWidthDefault = 0.85
+    /// Proof pass 2 (0/4): the gradient's own composition leaves its left ~20–25 % plain, so a gradient-only hero is drawn
+    /// this much wider and moved left by it (its colour then starts at the edge). A fraction of the banner's width.
+    static let heroGradientShiftKey = "mac.hero.gradientShift"
+    static let heroGradientShiftDefault = 0.25
     static var entryInstant: Bool {
         #if DEBUG || DEVSWITCHES
         return UserDefaults.standard.object(forKey: macInstantNavigationKey) as? Bool ?? true

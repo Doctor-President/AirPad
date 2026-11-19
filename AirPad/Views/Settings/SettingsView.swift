@@ -1788,6 +1788,7 @@ private struct MacFeelSwitchesPanel: View {
     @AppStorage(MacFeelSwitches.heroFadeStartKey) private var heroStart = MacFeelSwitches.heroFadeStartDefault
     @AppStorage(MacFeelSwitches.heroFadeLengthKey) private var heroLength = MacFeelSwitches.heroFadeLengthDefault
     @AppStorage(MacFeelSwitches.heroMaxWidthKey) private var heroMax = MacFeelSwitches.heroMaxWidthDefault
+    @AppStorage(MacFeelSwitches.heroGradientShiftKey) private var heroShift = MacFeelSwitches.heroGradientShiftDefault
     @State private var copied = false
 
     var body: some View {
@@ -1838,6 +1839,11 @@ private struct MacFeelSwitchesPanel: View {
                 Slider(value: $heroMax, in: 0.3...1.0, step: 0.01).accessibilityIdentifier("macFeelHeroMax")
                 Text("\(Int(heroMax * 100)) %").monospacedDigit().frame(width: 50)
             }
+            HStack {
+                Text("Gradient shift").frame(width: 70, alignment: .leading)
+                Slider(value: $heroShift, in: 0...0.5, step: 0.01).accessibilityIdentifier("macFeelHeroShift")
+                Text("\(Int(heroShift * 100)) %").monospacedDigit().frame(width: 50)
+            }
             HStack(spacing: 12) {
                 Button(copied ? "Copied" : "Copy values") {
                     UIPasteboard.general.string = """
@@ -1850,6 +1856,7 @@ private struct MacFeelSwitchesPanel: View {
                     hero fade start: \(Int(heroStart * 100)) % of the banner
                     hero fade length: \(Int(heroLength * 100)) %
                     hero max width: \(Int(heroMax * 100)) %
+                    hero gradient shift: \(Int(heroShift * 100)) %
                     """
                     copied = true
                     DispatchQueue.main.asyncAfter(deadline: .now() + 1.5) { copied = false }
@@ -1860,6 +1867,7 @@ private struct MacFeelSwitchesPanel: View {
                     fadeStrength = MacFeelSwitches.searchFadeStrengthDefault; fadeHeight = MacFeelSwitches.searchFadeHeightDefault
                     heroFull = false; heroStart = MacFeelSwitches.heroFadeStartDefault
                     heroLength = MacFeelSwitches.heroFadeLengthDefault; heroMax = MacFeelSwitches.heroMaxWidthDefault
+                    heroShift = MacFeelSwitches.heroGradientShiftDefault
                 }
             }
         }

@@ -9883,7 +9883,8 @@ final class CorpusStore {
         let links = kept.filter(isBareLink)
         if !others.isEmpty {
             await mutateNode(id: target) { n in
-                n.items.append(contentsOf: others)
+                let upgraded = upgradeAppendedItems(others, after: n)   // sweep 1 · N1: current item shape
+                n.items.append(contentsOf: upgraded)
                 n.updatedAt = Date()
             }
         }

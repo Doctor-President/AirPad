@@ -154,7 +154,7 @@ struct DocumentEntryBody: View {
                     .font(appFont.font(size: 12, relativeTo: .caption1))
                     .foregroundStyle(AppearancePalette.ink.opacity(0.5))
                     .lineLimit(1)
-            } else if let description = item.description {
+            } else if let description = item.description, documentItem != nil || DocumentNaming.storedName(description).isEmpty {
                 Text(description)
                     .font(appFont.font(size: 12, relativeTo: .caption1))
                     .foregroundStyle(AppearancePalette.ink.opacity(0.5))
@@ -177,7 +177,11 @@ struct DocumentEntryBody: View {
         if let docItem = documentItem {
             return docItem.displayName
         }
-        return item.file?.components(separatedBy: "/").last ?? "Document"
+        // Mac sweep 1 · N1 — a legacy-shaped item (appended by a drop/share before the fix): the real name it was given
+        // (`description`), never the stored `<UUID>.<ext>` (`shownName` falls back to "PDF · <date>").
+        let ext = ((item.file ?? "") as NSString).pathExtension.lowercased()
+        return DocumentNaming.shownName(fileName: item.description ?? "", documentTitle: nil, fileType: ext,
+                                        capturedAt: item.createdAt)
     }
 
     private var metricsLine: String? {
@@ -205,8 +209,7 @@ struct DocumentEntryBody: View {
                 Label("Share", systemImage: "square.and.arrow.up")
             }
             Button {
-                guard let docItem = documentItem else { return }
-                UIPasteboard.general.string = docItem.displayName
+                UIPasteboard.general.string = displayTitle   // sweep 1 · N2: the shown name, also for a legacy-shaped item
             } label: {
                 Label("Copy filename", systemImage: "doc.on.doc")
             }

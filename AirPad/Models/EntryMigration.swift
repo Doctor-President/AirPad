@@ -57,6 +57,21 @@ func migrateEntrySchemaIfNeeded(_ node: inout Node) -> Bool {
     return didMigrate
 }
 
+/// Mac sweep 1 · N1 — items a share or a drop APPENDS to an entry arrive in the legacy item shape (`ShareItemLoader`
+/// builds `.document` / `.image` / `.video` with only `file` + `description`), but an entry already at the current
+/// schema never migrates again, so they stayed legacy: a dropped PDF showed its stored `<UUID>.pdf` as its title and
+/// "Copy filename" found no document to copy. This brings just the new items to the current shape, exactly as the
+/// migration would, numbering their display names after the entry's own items (existing items pass through each
+/// step's idempotency guards unchanged).
+func upgradeAppendedItems(_ items: [NodeItem], after node: Node) -> [NodeItem] {
+    guard !items.isEmpty else { return items }
+    var temp = node
+    temp.items = node.items + items
+    temp.entrySchemaVersion = 0
+    migrateEntrySchemaIfNeeded(&temp)
+    return Array(temp.items.suffix(items.count))
+}
+
 // MARK: - v0 → v1 (Stage 3.1a entry primitive)
 
 /// Populates the four entry-primitive fields added in Stage 3.1a:

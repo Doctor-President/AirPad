@@ -271,6 +271,7 @@ struct EntryCard: View {
     }
 
     var body: some View {
+        let _ = Perf.body(Self.self)   // perf recorder (P6): counts this rebuild
         let presentation = reorder.presentation(forItemID: item.id, atIndex: index)
         VStack(alignment: .leading, spacing: 0) {
             // Stage 4.8 — atomic types (rating; cook time / serving

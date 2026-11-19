@@ -307,6 +307,7 @@ struct DashboardView: View {
     }
 
     var body: some View {
+        let _ = Perf.body(Self.self)   // perf recorder (P6): counts this rebuild
         NavigationStack(path: $path) {
             ZStack {
                 Color.black.ignoresSafeArea()

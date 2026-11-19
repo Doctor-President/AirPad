@@ -32,6 +32,7 @@ struct LinkGalleryBody: View {
     }
 
     var body: some View {
+        let _ = Perf.body(Self.self)   // perf recorder (P6): counts this rebuild
         // Contract: only reached from EntryCard when linkItems.count >= 2.
         // Belt-and-suspenders: render nothing for degenerate counts so a
         // future bypass of the dispatch can't feed the renderer into a

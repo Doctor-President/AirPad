@@ -119,6 +119,7 @@ private final class BackgroundGridScene: SKScene {
 struct BackgroundGridView: View {
     @Environment(\.colorScheme) private var colorScheme
     var body: some View {
+        let _ = Perf.body(Self.self)   // perf recorder (P6): counts this rebuild
         ZStack {
             // §4 background-pass bake (T 2026-10-02): the dark ground is a VERTICAL GRADIENT
             // (#161616 top → #0A0A0C bottom), replacing the flat #161616; light stays flat.

@@ -23,6 +23,7 @@ struct ContentView: View {
     @Environment(\.colorScheme) private var colorScheme   // live-23 (1) — the Librarian's dim is per mode
 
     var body: some View {
+        let _ = Perf.body(Self.self)   // perf recorder (P6): counts this rebuild
         @Bindable var routerBinding = router
         ZStack {
             // Brief AT5 — pin the window appearance to the user's choice (System = follow iOS). Live.
@@ -733,6 +734,9 @@ struct ContentView: View {
                 DetailDepthWatcher(store: store) { detailDepthChanged($0) }
             }
         }
+        #if DEBUG || DEVSWITCHES
+        .background { PerfScreenWatcher(router: router, store: store) }   // perf recorder (P6): which screen, as kinds and counts
+        #endif
         // Selection coexistence. When batch selection activates in
         // Map / List view, retract the panel to peek so the bottom
         // BatchActionBar (shifted up by peekDetentHeight + 12 in

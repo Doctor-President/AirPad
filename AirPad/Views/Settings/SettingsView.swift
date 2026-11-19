@@ -152,6 +152,10 @@ struct SettingsView: View {
     /// E fix-up 6 (M7/M8) — 5 taps on the version show "Mac feel (testing)" (and it stays shown).
     @AppStorage(MacFeelSwitches.shownKey) private var macFeelShown = false
     #endif
+    #if DEBUG || DEVSWITCHES
+    /// Mac perf audit (P6) — 5 taps on the version also show the performance recorder (Mac and iPhone; stays shown).
+    @AppStorage("perf.recorder.shown") private var perfRecorderShown = false
+    #endif
     @State private var showImportIdeas = false
     @State private var showReviewQueue = false
     @State private var showClearConfirmation = false
@@ -179,6 +183,7 @@ struct SettingsView: View {
     #endif
 
     var body: some View {
+        let _ = Perf.body(Self.self)   // perf recorder (P6): counts this rebuild
         NavigationStack(path: $path) {
             List {
                 // Group 1 — the library and its labels.
@@ -798,6 +803,9 @@ struct SettingsView: View {
                         // 1.1-A (8) — the hidden AirPad Host switch: 7 taps on the version line toggle it.
                         .onTapGesture {
                             versionTaps += 1
+                            #if DEBUG || DEVSWITCHES
+                            if versionTaps == 5 { perfRecorderShown = true }   // perf audit P6
+                            #endif
                             #if targetEnvironment(macCatalyst) && (DEBUG || DEVSWITCHES)
                             if versionTaps == 5 { macFeelShown = true }   // E fix-up 6 — 7 still toggles AirPad Host
                             #endif
@@ -818,6 +826,9 @@ struct SettingsView: View {
                 }
                 #if targetEnvironment(macCatalyst) && (DEBUG || DEVSWITCHES)
                 if macFeelShown { MacFeelSwitchesPanel() }
+                #endif
+                #if DEBUG || DEVSWITCHES
+                if perfRecorderShown { PerfRecorderPanel() }
                 #endif
             }
         }

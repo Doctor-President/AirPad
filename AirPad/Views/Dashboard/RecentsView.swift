@@ -27,6 +27,7 @@ struct RecentsView: View {
     }
 
     var body: some View {
+        let _ = Perf.body(Self.self)   // perf recorder (P6): counts this rebuild
         ZStack {
             Color.black.ignoresSafeArea()
             DashboardLavaLamp()
@@ -318,6 +319,7 @@ struct RecentNodeRow: View, Equatable {
     }
 
     var body: some View {
+        let _ = Perf.body(Self.self)   // perf recorder (P6): counts this rebuild
         HStack(spacing: 12) {
             Circle()
                 .fill(nodeColor)

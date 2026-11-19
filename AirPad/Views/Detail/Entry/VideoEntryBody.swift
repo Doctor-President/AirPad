@@ -14,6 +14,7 @@ struct VideoEntryBody: View {
     @State private var imageURL: URL? = nil
 
     var body: some View {
+        let _ = Perf.body(Self.self)   // perf recorder (P6): counts this rebuild
         VStack(alignment: .leading, spacing: 10) {
             if let url = imageURL {
                 VideoPlayer(player: AVPlayer(url: url))

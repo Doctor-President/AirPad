@@ -160,6 +160,7 @@ struct FieldPairsGrid: View {
     }
 
     var body: some View {
+        let _ = Perf.body(Self.self)   // perf recorder (P6): counts this rebuild
         VStack(alignment: .leading, spacing: 8) {
             if !resolvedTiles.isEmpty { grid }
             // live-29 (4) — an empty field never draws a bare "—" tile; it's one quiet, tappable name here instead.

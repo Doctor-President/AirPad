@@ -240,6 +240,7 @@ struct CardContentStrip: View {
     @Environment(\.appBodyFont) private var appFont
 
     var body: some View {
+        let _ = Perf.body(Self.self)   // perf recorder (P6): counts this rebuild
         HStack(spacing: iconsOnly ? size * 0.8 : size * 0.95) {
             ForEach(counts, id: \.kind) { c in
                 HStack(spacing: size * 0.3) {

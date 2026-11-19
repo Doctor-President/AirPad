@@ -207,6 +207,7 @@ struct LibrarianSurface: View {
     }
 
     var body: some View {
+        let _ = Perf.body(Self.self)   // perf recorder (P6): counts this rebuild
         @Bindable var librarian = router.librarian
 
         // GeometryReader exposes the LIVE surface size, which under

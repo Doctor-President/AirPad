@@ -82,6 +82,7 @@ struct GalleryBody: View {
     }
 
     var body: some View {
+        let _ = Perf.body(Self.self)   // perf recorder (P6): counts this rebuild
         // `GalleryBody` is only reached from `EntryCard` when `mediaItems.count >= 2`.
         // Belt-and-suspenders: 0/1 items → render nothing rather than feed the layout
         // planner degenerate input.

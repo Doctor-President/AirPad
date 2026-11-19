@@ -261,6 +261,7 @@ struct NodeGridTile: View {
     private var hasHero: Bool { node.coverImageRelativePath != nil }
 
     var body: some View {
+        let _ = Perf.body(Self.self)   // perf recorder (P6): counts this rebuild
         // Anchor the color blobs to the hero zone when no cover exists, so
         // a gradient-only tile and a hero tile share the same silhouette:
         // color form on top, dark text band below. Derived from the
@@ -631,6 +632,7 @@ struct GridTileHeroImage: View, Equatable {   // internal: the Mac Today tiles u
     }
 
     var body: some View {
+        let _ = Perf.body(Self.self)   // perf recorder (P6): counts this rebuild
         Group {
             if let image = shown {
                 // #7 — apply the node's hero crop so the tile framing matches

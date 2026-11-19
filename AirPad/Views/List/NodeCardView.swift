@@ -186,6 +186,7 @@ struct NodeCardView: View {
     }
 
     var body: some View {
+        let _ = Perf.body(Self.self)   // perf recorder (P6): counts this rebuild
         if animateEntry {
             cardBody
                 .transition(.scale(scale: 0.85, anchor: .center).combined(with: .opacity))

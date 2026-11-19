@@ -277,6 +277,7 @@ struct MacDesktopFrame<Content: View>: View {
     }
 
     var body: some View {
+        let _ = Perf.body(Self.self)   // perf recorder (P6): counts this rebuild
         HStack(spacing: 0) {
             if layout.sidebarVisible {
                 // G2 — the sidebar's SLOT in the row follows the settled width (the content beside it re-lays out ≤ 10×/s
@@ -380,6 +381,7 @@ private struct MacSidebarPanel: View {
     @Environment(\.colorScheme) private var scheme
 
     var body: some View {
+        let _ = Perf.body(Self.self)   // perf recorder (P6): counts this rebuild
         HStack(spacing: 0) {
             // E1 — full height: its ground runs up under the (transparent) title bar, where the window buttons and the
             // sidebar toggle sit; the list starts below the bar.
@@ -414,6 +416,7 @@ private struct MacRightPanel: View {
     @State private var layout = MacLayout.shared
 
     var body: some View {
+        let _ = Perf.body(Self.self)   // perf recorder (P6): counts this rebuild
         let floats = layout.librarianFloats
         let shape = RoundedRectangle(cornerRadius: floats ? LibrarianPanelShape.corner : 0, style: .continuous)
         HStack(spacing: 0) {
@@ -562,6 +565,7 @@ struct MacToolbarInWindow: View {
     let height: CGFloat
     @State private var layout = MacLayout.shared
     var body: some View {
+        let _ = Perf.body(Self.self)   // perf recorder (P6): counts this rebuild
         HStack(spacing: 0) {
             MacToolbarLeading().padding(.leading, layout.toolbarLeadingX)
             Spacer(minLength: 0)

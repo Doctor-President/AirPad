@@ -43,6 +43,7 @@ struct NodeListView: View {
     private var nodes: [Node] { store.filteredNodes(in: scope) }
 
     var body: some View {
+        let _ = Perf.body(Self.self)   // perf recorder (P6): counts this rebuild
         NavigationStack(path: $navigationPath) {
             ZStack(alignment: .bottom) {
                 AppearancePalette.libraryBackground(dark: colorScheme == .dark).ignoresSafeArea()
@@ -527,6 +528,7 @@ private struct MacListRow: View, Equatable {
     @State private var gradientThumb: UIImage?
 
     var body: some View {
+        let _ = Perf.body(Self.self)   // perf recorder (P6): counts this rebuild
         Button(action: action) {
             HStack(spacing: 12) {
                 ZStack {

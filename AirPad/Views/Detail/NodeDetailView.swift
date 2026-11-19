@@ -335,6 +335,7 @@ struct NodeDetailView: View {
     }
 
     var body: some View {
+        let _ = Perf.body(Self.self)   // perf recorder (P6): counts this rebuild
         Group {
             if let node, node.isPrivate, !PrivateEntries.shared.revealed, !markedPrivateHere {
                 // 1.1-C (C3 / C4) — a private entry while private entries are hidden: hidden, never blurred.

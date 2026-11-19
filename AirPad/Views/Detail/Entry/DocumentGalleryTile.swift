@@ -49,6 +49,7 @@ struct DocumentGalleryTile: View {
     private static let thumbnailHeight: CGFloat = 100
 
     var body: some View {
+        let _ = Perf.body(Self.self)   // perf recorder (P6): counts this rebuild
         VStack(alignment: .leading, spacing: 0) {
             thumbnailBlock
             textBlock

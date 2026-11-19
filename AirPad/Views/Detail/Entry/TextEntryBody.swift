@@ -72,6 +72,7 @@ struct TextEntryBody: View {
     private var effectiveBodyFont: EntryBodyFont { storeNode?.perEntryBodyFont ?? defaultBodyFont }
 
     var body: some View {
+        let _ = Perf.body(Self.self)   // perf recorder (P6): counts this rebuild
         container
         // editingText tracks item.content whether or not the editor is in the tree
         // (collapsed drops the editor, but the derived heading still reads

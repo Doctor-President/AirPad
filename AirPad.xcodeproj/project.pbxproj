@@ -8,6 +8,7 @@
 
 /* Begin PBXBuildFile section */
 		006A852ECAECCA4AC0F4865A /* spacegroteskbold_msdf.json in Resources */ = {isa = PBXBuildFile; fileRef = 1CF73692FBE1135F029C455E /* spacegroteskbold_msdf.json */; };
+		008DA658CF5D122B0AD74849 /* PerfRecorder.swift in Sources */ = {isa = PBXBuildFile; fileRef = 6D504338A1A5349DCDB6B3F7 /* PerfRecorder.swift */; };
 		00C63DC59D1A92B324588D5C /* spacegroteskbold_msdf.png in Resources */ = {isa = PBXBuildFile; fileRef = F292ED0AAF2B778F7A20C891 /* spacegroteskbold_msdf.png */; };
 		00F56459A4761D68A5980231 /* ShareItemLoader.swift in Sources */ = {isa = PBXBuildFile; fileRef = 1DA7C97349881D313C0A03D3 /* ShareItemLoader.swift */; };
 		019EF67755B6DCAB5D16F595 /* TextEntryBody.swift in Sources */ = {isa = PBXBuildFile; fileRef = 90A621BCC5001A67C9B05A19 /* TextEntryBody.swift */; };
@@ -743,6 +744,7 @@
 		6CA2C672B173696A7DD874CF /* SubstrateCanvasLayoutAdapter.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = SubstrateCanvasLayoutAdapter.swift; sourceTree = "<group>"; };
 		6CC9DA2E35A6A167254A44EC /* GalleryItemTile.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = GalleryItemTile.swift; sourceTree = "<group>"; };
 		6CEB84A4A23D03CBE6C82507 /* FolksonomyDiagnostic.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = FolksonomyDiagnostic.swift; sourceTree = "<group>"; };
+		6D504338A1A5349DCDB6B3F7 /* PerfRecorder.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = PerfRecorder.swift; sourceTree = "<group>"; };
 		6D5DA85B1BF96EDBE819DEC3 /* ArcAVoiceDone.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ArcAVoiceDone.swift; sourceTree = "<group>"; };
 		6DA455CC2574E70F9D6202E3 /* CanvasLayout.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = CanvasLayout.swift; sourceTree = "<group>"; };
 		6EDDB291F9F6170B93CE084E /* FieldKind.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = FieldKind.swift; sourceTree = "<group>"; };
@@ -1251,6 +1253,7 @@
 				50239A55AA4D3422B7844644 /* PagedRestProbe.swift */,
 				1AD54D0A6C6263DCCDE840CF /* PastePadTypeSelfTest.swift */,
 				12FFD0E4E7DD235786396C38 /* PasteProbe.swift */,
+				6D504338A1A5349DCDB6B3F7 /* PerfRecorder.swift */,
 				604EE7366522CD33DB9E8344 /* PickedFolder.swift */,
 				DC64642A8AD34593133AC155 /* PlaybackAudioSession.swift */,
 				6AD361DF778E4F885E259B82 /* PrivateEntries.swift */,
@@ -2377,6 +2380,7 @@
 				09AE21B8978FFA31BA8A26AF /* PastePadView.swift in Sources */,
 				A9D30911FB3F2FA2F59DA847 /* PasteProbe.swift in Sources */,
 				BC4D8EDC2E3EC93B74EF342F /* PeekPillStyle.swift in Sources */,
+				008DA658CF5D122B0AD74849 /* PerfRecorder.swift in Sources */,
 				95973AD12D5D10B23140EE1E /* PickedFolder.swift in Sources */,
 				8D99DC4617A52B993992A45E /* PlaybackAudioSession.swift in Sources */,
 				B5E9F4EDD8A5E613A198B1C0 /* PrivateEntries.swift in Sources */,

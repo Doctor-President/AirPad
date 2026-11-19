@@ -628,7 +628,8 @@ actor iCloudDriveService {
     private static func seedUITestPerfLibrary(_ root: URL) {
         let fm = FileManager.default
         let marker = root.appendingPathComponent("perf-library.done")
-        guard !fm.fileExists(atPath: marker.path) else { return }
+        guard !fm.fileExists(atPath: marker.path) else { seedUITestPerfHeavyEntries(root); return }
+        defer { seedUITestPerfHeavyEntries(root) }
         var g: UInt64 = 0x2545F4914F6CDD1D
         func rnd() -> Double { g = g &* 6364136223846793005 &+ 1442695040888963407; return Double((g >> 33) % 1_000_000) / 1_000_000 }
         func pick<T>(_ a: [T]) -> T { a[Int(rnd() * Double(a.count)) % a.count] }
@@ -760,6 +761,104 @@ actor iCloudDriveService {
         try? JSONEncoder.airPad.encode(chats).write(to: root.appendingPathComponent("chats.json"), options: .atomic)
         try? Data("265".utf8).write(to: marker, options: .atomic)
         print("[PerfLibrary] seeded 265 entries, \(collections.count) collections, 40 chats at \(root.path)")
+    }
+
+    /// Mac perf audit (P0e) — on top of the perf library: six HEAVY entries (a hero, a 6,000-word note, a gallery of 36
+    /// phone-sized photos (4032 × 3024) with two videos, a second gallery of 12, three multi-page PDFs, five links, two more
+    /// notes) and two LIGHT ones (one short note; a note and one photo), newest in the library so they lead the List and
+    /// Recents. Ids 9E9F1000-…-0001…0008. The two video files are written by the harness (ffmpeg) under the names here.
+    private static func seedUITestPerfHeavyEntries(_ root: URL) {
+        let fm = FileManager.default
+        let marker = root.appendingPathComponent("perf-heavy.done")
+        guard !fm.fileExists(atPath: marker.path) else { return }
+        var g: UInt64 = 0x9E3779B97F4A7C15
+        func rnd() -> Double { g = g &* 6364136223846793005 &+ 1442695040888963407; return Double((g >> 33) % 1_000_000) / 1_000_000 }
+        let words = "harbour tide wall slipway north reef morning lamp paper ink garden kitchen bread starter oven film roll lens camera print studio clay glaze kiln chord melody guitar piano scale lesson chapter novel essay draft margin idea sketch plan budget client meeting project deadline review notes river trail ridge forest coffee grinder roast bean filter recipe salt lemon garlic thyme".split(separator: " ").map(String.init)
+        func sentence(_ n: Int) -> String {
+            let w = (0..<n).map { _ in words[Int(rnd() * Double(words.count)) % words.count] }.joined(separator: " ")
+            return w.prefix(1).uppercased() + w.dropFirst() + "."
+        }
+        func paragraph() -> String { (0..<(3 + Int(rnd() * 5))).map { _ in sentence(6 + Int(rnd() * 14)) }.joined(separator: " ") }
+        func note(words target: Int) -> String {
+            var out: [String] = [], count = 0, section = 1
+            while count < target {
+                switch Int(rnd() * 10) {
+                case 0: out.append("## Part \(section)"); section += 1
+                case 1: out.append((0..<(3 + Int(rnd() * 4))).map { _ in "- " + sentence(4 + Int(rnd() * 8)) }.joined(separator: "\n"))
+                case 2: out.append((0..<(2 + Int(rnd() * 4))).map { _ in (rnd() < 0.5 ? #"- \[ ] "# : #"- \[x] "#) + sentence(3 + Int(rnd() * 6)) }.joined(separator: "\n"))
+                default: let p = paragraph(); out.append(p); count += p.split(separator: " ").count
+                }
+            }
+            return out.joined(separator: "\n\n")
+        }
+        let newest = Date(timeIntervalSince1970: 1_763_300_000)
+        for n in 1...8 {
+            let heavy = n <= 6
+            let id = String(format: "9E9F1000-0000-4000-8000-%012d", n)
+            let dir = root.appendingPathComponent("nodes/\(id)")
+            try? fm.createDirectory(at: dir.appendingPathComponent("items"), withIntermediateDirectories: true)
+            let when = newest.addingTimeInterval(Double(9 - n) * 600)
+            func gallery(_ tag: String, _ count: Int, videos: Int, size: (Int, Int)) -> NodeItem {
+                let media: [GalleryItem] = (0..<count).map { k in
+                    let pid = String(format: "%08X-1000-4000-8000-%@%011d", n, tag, k)
+                    if k < videos {
+                        return GalleryItem(id: pid, mediaType: .video, file: "items/perf-video-\(k).mp4", aspectRatio: 16.0 / 9.0, capturedAt: when, originalName: nil)
+                    }
+                    let file = "items/\(pid).jpg"
+                    let jpeg = k % 3 == 0 ? syntheticLandscapeJPEG(width: size.0, height: size.1, seed: n * 100 + k)
+                        : syntheticPhotoJPEG(width: size.0, height: size.1, seed: UInt64(n * 100 + k) &* 0x9E3779B97F4A7C15)
+                    try? jpeg.write(to: dir.appendingPathComponent(file), options: .atomic)
+                    return GalleryItem(id: pid, mediaType: .image, file: file, aspectRatio: Double(size.0) / Double(size.1), capturedAt: when, originalName: nil)
+                }
+                var item = NodeItem(id: id + "-media" + tag, type: .imageVideo, createdAt: when)
+                item.displayName = tag == "A" ? "Photos" : "More photos"; item.mediaItems = media; item.isExpanded = true
+                return item
+            }
+            func text(_ tag: String, _ content: String) -> NodeItem {
+                NodeItem(id: id + "-note" + tag, type: .text, createdAt: when, content: content, displayName: nil, isExpanded: true, updatedAt: when)
+            }
+            var items: [NodeItem] = []
+            var cover: String?
+            if heavy {
+                let big = gallery("A", 36, videos: 2, size: (4032, 3024))
+                cover = big.mediaItems?.first(where: { $0.mediaType == .image })?.file
+                let docs: [DocumentItem] = (0..<3).map { k in
+                    let did = String(format: "%08X-1000-4000-9000-%012d", n, k)
+                    let data = UIGraphicsPDFRenderer(bounds: CGRect(x: 0, y: 0, width: 612, height: 792)).pdfData { ctx in
+                        for page in 0..<10 {
+                            ctx.beginPage()
+                            ("Page \(page + 1). " + paragraph() + " " + paragraph() as NSString).draw(in: CGRect(x: 72, y: 72, width: 468, height: 648),
+                                                                                                    withAttributes: [.font: UIFont.systemFont(ofSize: 13)])
+                        }
+                    }
+                    try? data.write(to: dir.appendingPathComponent("items/\(did).pdf"), options: .atomic)
+                    return DocumentItem(id: did, filePath: "items/\(did).pdf", fileName: "Heavy \(n) paper \(k + 1).pdf", fileType: "pdf",
+                                        documentTitle: nil, extractedText: nil, thumbnailFile: nil, pageCount: nil, wordCount: nil, capturedAt: when)
+                }
+                var docItem = NodeItem(id: id + "-docs", type: .document, createdAt: when, file: docs[0].filePath, displayName: "Documents",
+                                       isExpanded: true, updatedAt: when, documentItems: docs)
+                docItem.documentViewMode = .carousel
+                let links: [NodeItem] = (0..<5).map { k in
+                    var link = NodeItem(id: id + "-link\(k)", type: .link, createdAt: when)
+                    link.url = "https://example.com/heavy/\(n)/\(k)"; link.title = sentence(4).dropLast().description; link.isExpanded = true
+                    return link
+                }
+                items = [text("A", note(words: 6_000)), big, text("B", note(words: 800)), gallery("B", 12, videos: 0, size: (4032, 3024)), docItem]
+                    + links + [text("C", note(words: 1_500))]
+            } else if n == 7 {
+                items = [text("A", paragraph())]
+            } else {
+                let one = gallery("A", 1, videos: 0, size: (4032, 3024))
+                cover = one.mediaItems?.first?.file
+                items = [text("A", paragraph() + "\n\n" + paragraph()), one]
+            }
+            var node = Node(id: id, createdAt: when, updatedAt: when, title: heavy ? "Heavy entry \(n)" : "Light entry \(n - 6)", summary: sentence(10),
+                            tags: [], items: items, entrySchemaVersion: 4)
+            node.coverImageRelativePath = cover
+            try? JSONEncoder.airPad.encode(node).write(to: dir.appendingPathComponent("node.json"), options: .atomic)
+        }
+        try? Data("8".utf8).write(to: marker, options: .atomic)
+        print("[PerfLibrary] seeded 6 heavy + 2 light entries")
     }
 
     /// A busy synthetic photo: hard-edged blocks from near-white to near-black in many hues, with thin stripes over them.

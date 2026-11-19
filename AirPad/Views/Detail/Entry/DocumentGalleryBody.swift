@@ -33,6 +33,7 @@ struct DocumentGalleryBody: View {
     }
 
     var body: some View {
+        let _ = Perf.body(Self.self)   // perf recorder (P6): counts this rebuild
         // Contract: only reached from EntryCard when documentItems.count >= 2.
         // Belt-and-suspenders: render nothing for degenerate counts so a
         // future dispatch bypass can't feed the renderer bad state.

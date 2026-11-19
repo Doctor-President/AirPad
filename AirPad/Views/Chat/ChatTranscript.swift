@@ -86,6 +86,7 @@ struct ChatTranscript: View {
     }
 
     var body: some View {
+        let _ = Perf.body(Self.self)   // perf recorder (P6): counts this rebuild
         #if DEBUG
         let _ = FreezeProbe.hit("transcript.body")
         #endif

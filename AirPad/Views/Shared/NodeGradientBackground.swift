@@ -382,6 +382,7 @@ struct NodeGradientLayer: View {
     }
 
     var body: some View {
+        let _ = Perf.body(Self.self)   // perf recorder (P6): counts this rebuild
         if colorScheme == .dark {
             darkBody
         } else {
@@ -694,6 +695,7 @@ struct NodeGradientBackground: View {
     var cornerRadius: CGFloat = 36
 
     var body: some View {
+        let _ = Perf.body(Self.self)   // perf recorder (P6): counts this rebuild
         ZStack {
             NodeGradientLayer(node: node)
             RoundedRectangle(cornerRadius: cornerRadius)

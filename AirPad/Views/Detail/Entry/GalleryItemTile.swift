@@ -77,6 +77,7 @@ struct GalleryItemTile: View {
     }
 
     var body: some View {
+        let _ = Perf.body(Self.self)   // perf recorder (P6): counts this rebuild
         ZStack {
             if let image = shown {
                 Image(uiImage: image)

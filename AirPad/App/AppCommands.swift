@@ -23,6 +23,9 @@ struct AppCommands: Commands {
     @AppStorage(MacLibrarianHome.hideTryKey) private var hideLibrarianTry = false
     @AppStorage(MacLibrarianHome.hideRecentKey) private var hideLibrarianRecent = false
     let store: CorpusStore
+    #if targetEnvironment(macCatalyst) && (DEBUG || DEVSWITCHES)
+    @AppStorage(PerfRecorder.onKey) private var perfRecorderOn = false
+    #endif
 
     var body: some Commands {
         // App menu: Settings… opens the existing Settings.
@@ -102,6 +105,14 @@ struct AppCommands: Commands {
                 .disabled(!PrivateEntries.shared.available)
             if (store.quarantineStore?.entries.count ?? 0) > 0 {
                 item("Review Quarantine…", .quarantine, "view.quarantine")
+            }
+            #endif
+            #if targetEnvironment(macCatalyst) && (DEBUG || DEVSWITCHES)
+            // Mac perf audit (P6) — the recorder's shortcut, only while it's switched on (Settings › About › Mac feel).
+            if perfRecorderOn {
+                Divider()
+                Button("Save Performance Recording") { PerfRecorder.shared.save(reason: "shortcut") }
+                    .keyboardShortcut("p", modifiers: [.control, .option, .command])
             }
             #endif
         }

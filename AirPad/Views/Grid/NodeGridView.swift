@@ -131,6 +131,7 @@ struct NodeGridView: View {
     }
 
     var body: some View {
+        let _ = Perf.body(Self.self)   // perf recorder (P6): counts this rebuild
         NavigationStack(path: $navigationPath) {
             ZStack(alignment: .bottomTrailing) {
                 AppearancePalette.libraryBackground(dark: colorScheme == .dark).ignoresSafeArea()
@@ -555,6 +556,7 @@ private struct NodeTileView: View, Equatable {
     }
 
     var body: some View {
+        let _ = Perf.body(Self.self)   // perf recorder (P6): counts this rebuild
         NodeGridTile(
             node: node,
             cellWidth: cellWidth,

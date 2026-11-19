@@ -161,6 +161,7 @@ struct CanvasChrome: View {
     }
 
     var body: some View {
+        let _ = Perf.body(Self.self)   // perf recorder (P6): counts this rebuild
         ZStack {
             // Main content — switches between graph, List, and Card View. Each
             // owns its own NavigationStack; the floating "+" trigger lives

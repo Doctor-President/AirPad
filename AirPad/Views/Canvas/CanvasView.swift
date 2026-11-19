@@ -535,6 +535,7 @@ struct CanvasView: View {
     // MARK: - Body
 
     var body: some View {
+        let _ = Perf.body(Self.self)   // perf recorder (P6): counts this rebuild
         canvasWithLateObservers
             // Live theme flip → push the authoritative colorScheme into the scene
             // (the orb-desync fix). Placed on `body` — a light chunk — so the
@@ -1778,6 +1779,7 @@ private struct ClusterLabelLayer: View {
     private static let halo: CGFloat = 4
 
     var body: some View {
+        let _ = Perf.body(Self.self)   // perf recorder (P6): counts this rebuild
         GeometryReader { geo in
             let bounds = CGRect(origin: .zero, size: geo.size)
             let visibleIDs = declutter(in: bounds)
@@ -1916,6 +1918,7 @@ private struct MapHoverTagLayer: View {
     @Environment(\.appBodyFont) private var appFont
 
     var body: some View {
+        let _ = Perf.body(Self.self)   // perf recorder (P6): counts this rebuild
         GeometryReader { _ in
             if let tag {
                 Text(tag.title)
@@ -1943,6 +1946,7 @@ private struct TerritoryLabelLayer: View {
     let labels: [CanvasState.TerritoryLabelInfo]
 
     var body: some View {
+        let _ = Perf.body(Self.self)   // perf recorder (P6): counts this rebuild
         // GeometryReader kept deliberately: it pins the pill coordinate space to the
         // full-bleed overlay bounds (origin = view-bounds origin), matching the
         // `view.convert` screen positions the scene bridges. Nothing here reads
@@ -2161,6 +2165,7 @@ private struct MapFocalOverlay: View {
     @Environment(\.appBodyFont) private var appFont
 
     var body: some View {
+        let _ = Perf.body(Self.self)   // perf recorder (P6): counts this rebuild
         let isFading = canvasState.currentFocalNodeID == nil
         let trackedID = canvasState.currentFocalNodeID ?? canvasState.disengagingFocalNodeID
 

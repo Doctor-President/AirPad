@@ -27,6 +27,7 @@ struct CollectionView: View {
     @Environment(CorpusStore.self) private var store
 
     var body: some View {
+        let _ = Perf.body(Self.self)   // perf recorder (P6): counts this rebuild
         CanvasChrome(scope: .collection(collectionID))
             .onAppear {
                 store.markCollectionUsed(collectionID)

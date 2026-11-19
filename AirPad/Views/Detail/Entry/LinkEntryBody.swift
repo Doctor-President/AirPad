@@ -59,6 +59,7 @@ struct LinkEntryBody: View {
     }
 
     var body: some View {
+        let _ = Perf.body(Self.self)   // perf recorder (P6): counts this rebuild
         VStack(alignment: .leading, spacing: 8) {
             OGPreviewView(
                 item: item,

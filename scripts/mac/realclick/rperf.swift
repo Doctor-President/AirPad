@@ -207,6 +207,29 @@ for raw in script.split(separator: "\n") {
             for i in 1...n { let want = (dy / Double(n) * Double(i)).rounded() - sent; scroll(p, Int32(want), phase: 2); sent += want; usleep(useconds_t(msPer * 1000)) }
             scroll(p, 0, phase: 4)
         }
+    case "scrollmove":
+        // Mac perf audit (P0b) — the same swipe with the pointer moving while it runs: every 4th scroll event the
+        // pointer moves 6 pt sideways (back and forth), as a hand resting on the trackpad does.
+        guard let p = point(rest[0]), let dy = Double(rest[1]), let n = Int(rest[2]) else { continue }
+        let msPer = rest.count > 3 ? Double(rest[3])! : 16
+        mouse(.mouseMoved, p); usleep(150_000)
+        measure(label, verb, intervals: true) {
+            scroll(p, 0, phase: 1); usleep(useconds_t(msPer * 1000))
+            var sent = 0.0
+            for i in 1...n {
+                let want = (dy / Double(n) * Double(i)).rounded() - sent; scroll(p, Int32(want), phase: 2); sent += want
+                if i % 4 == 0 { mouse(.mouseMoved, CGPoint(x: p.x + ((i / 4) % 2 == 0 ? 6 : -6) + Double(i % 9), y: p.y + Double(i % 5))) }
+                usleep(useconds_t(msPer * 1000))
+            }
+            scroll(p, 0, phase: 4)
+        }
+    case "move":
+        // The pointer travels from a to b in n steps (hover only), measured like a drag.
+        guard let p = point(rest[0]), let dx = Double(rest[1]), let dy = Double(rest[2]), let n = Int(rest[3]) else { continue }
+        mouse(.mouseMoved, p); usleep(150_000)
+        measure(label, verb, intervals: true) {
+            for i in 1...n { mouse(.mouseMoved, CGPoint(x: p.x + dx * Double(i) / Double(n), y: p.y + dy * Double(i) / Double(n))); usleep(8_000) }
+        }
     case "drag":
         guard let p = point(rest[0]), let dx = Double(rest[1]), let dy = Double(rest[2]), let n = Int(rest[3]) else { continue }
         mouse(.mouseMoved, p); usleep(150_000)

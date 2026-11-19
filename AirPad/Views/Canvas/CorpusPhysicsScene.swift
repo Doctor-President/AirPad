@@ -2536,6 +2536,7 @@ final class CorpusPhysicsScene: SKScene {
         }
         #endif
         noteFrameForRest()   // R1
+        let perfT0 = CACurrentMediaTime(); defer { Perf.mapFrame(updateMs: (CACurrentMediaTime() - perfT0) * 1000) }   // perf audit P6
         TitleTiles.shared.flush()   // R2 — upload new title tiles before this frame draws (no-op when none)
         #if DEBUG || PANBENCH
         let pbT0 = CACurrentMediaTime(); panBenchTick(currentTime)

@@ -543,8 +543,8 @@ private struct MacListRow: View, Equatable {
             HStack(spacing: 12) {
                 ZStack {
                     RoundedRectangle(cornerRadius: 7, style: .continuous).fill(AppearancePalette.ink.opacity(0.07))
-                    if let thumb { Image(uiImage: thumb).resizable().scaledToFill() }
-                    else if let gradientThumb { Image(uiImage: gradientThumb).resizable().scaledToFill() }
+                    if let thumb = shownThumb { Image(uiImage: thumb).resizable().scaledToFill() }
+                    else if let gradientThumb = shownGradientThumb { Image(uiImage: gradientThumb).resizable().scaledToFill() }
                 }
                 .frame(width: 40, height: 40)
                 .clipShape(RoundedRectangle(cornerRadius: 7, style: .continuous))
@@ -590,14 +590,34 @@ private struct MacListRow: View, Equatable {
         .buttonStyle(.plain)
         .padding(.horizontal, 10)
         .task(id: node.coverImageRelativePath) {
+            if Self.syncThumbs, thumb == nil, let c = cachedCover { kept.cover = c; return }   // already drawn from the cache
             guard let url = await store.coverImageURL(for: node), let key = DisplayImageCache.coverKey(node) else { return }
             thumb = await DisplayImageCache.shared.load(path: key, url: url, pixels: Int(40 * DisplaySize.scale))
         }
         .task(id: node.coverImageRelativePath == nil ? ListGradientThumbs.key(node, dark: scheme == .dark) : "") {
-            guard node.coverImageRelativePath == nil else { gradientThumb = nil; return }
+            guard node.coverImageRelativePath == nil else { if gradientThumb != nil { gradientThumb = nil }; return }
+            if Self.syncThumbs, gradientThumb == nil, let g = cachedGradient { kept.gradient = g; return }   // already drawn
             gradientThumb = ListGradientThumbs.shared.cached(node, dark: scheme == .dark)
             if gradientThumb == nil { gradientThumb = await ListGradientThumbs.shared.image(node, dark: scheme == .dark) }
         }
+    }
+
+    /// Sweep 1 · 1.4 (sheet C) — a row whose thumbnail is already decoded (the cover in `DisplayImageCache`, the gradient
+    /// still in `ListGradientThumbs`' memory) draws it in its FIRST pass. It waited for its `.task` to copy it into
+    /// state, so every such row was built twice on a switch to List, and the thumbnails landed a frame after the rows.
+    /// In-memory lookups only (no I/O); `kept` holds what was drawn so a later cache trim can't blank it (not state: no
+    /// second pass). `-MacPerfAB oldlistthumbs` (bench) = as before.
+    private static var syncThumbs: Bool { !perfAB("oldlistthumbs") }
+    @State private var kept = KeptThumbs()
+    private final class KeptThumbs { var cover: UIImage?; var gradient: UIImage? }
+    private var cachedCover: UIImage? {
+        DisplayImageCache.coverKey(node).flatMap { DisplayImageCache.shared.image(path: $0, atLeast: Int(40 * DisplaySize.scale)) }
+    }
+    private var cachedGradient: UIImage? { ListGradientThumbs.shared.cached(node, dark: scheme == .dark) }
+    private var shownThumb: UIImage? { thumb ?? (Self.syncThumbs ? (cachedCover ?? kept.cover) : nil) }
+    private var shownGradientThumb: UIImage? {
+        guard node.coverImageRelativePath == nil else { return gradientThumb }
+        return gradientThumb ?? (Self.syncThumbs ? (cachedGradient ?? kept.gradient) : nil)
     }
 
     private var collection: NodeCollection? {

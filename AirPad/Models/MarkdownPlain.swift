@@ -198,7 +198,20 @@ extension Node {
     /// there's none (the surface then says "Untitled").
     var untitledDisplayText: String? {
         guard let raw = items.first?.content, !raw.isEmpty else { return nil }
+        // Sweep 1 · 1.4 (sheet C) — kept per note text: the Map turned every untitled entry's whole first note from
+        // Markdown to plain text each time it was shown (8 % of a Map switch). (Models is shared with the share extension:
+        // no bench A/B here; the before is the build without it.)
+        if let hit = UntitledTextCache.shared.object(forKey: raw as NSString) { return hit.text }
         let plain = MarkdownPlain.text(raw).trimmingCharacters(in: .whitespacesAndNewlines)
-        return plain.isEmpty ? nil : plain
+        let out = plain.isEmpty ? nil : plain
+        UntitledTextCache.shared.setObject(UntitledTextCache.Box(out), forKey: raw as NSString)
+        return out
     }
+}
+
+/// The plain-text title of an untitled entry, by its first note's Markdown (a pure function of it). NSCache: thread-safe,
+/// trimmed by the system under memory pressure; capped at 2,000 notes.
+private enum UntitledTextCache {
+    final class Box { let text: String?; init(_ t: String?) { text = t } }
+    static let shared: NSCache<NSString, Box> = { let c = NSCache<NSString, Box>(); c.countLimit = 2000; return c }()
 }

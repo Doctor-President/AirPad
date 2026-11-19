@@ -654,7 +654,7 @@ struct DashboardView: View {
                         CollectionRow(collection: collection,
                                       onTap: { tap(collection) },
                                       onRename: nil, onDelete: nil,
-                                      onColor: { colorTarget = CollectionColorTarget(id: collection.id, name: collection.name) })
+                                      onColor: CollectionColors.retired ? nil : { colorTarget = CollectionColorTarget(id: collection.id, name: collection.name) })
                         collectionsHairline
                     }
                     sampleRemoveRow
@@ -776,7 +776,7 @@ struct DashboardView: View {
                         onTap: { tap(collection) },
                         onRename: canManage(collection) ? { renameTarget = collection } : nil,
                         onDelete: canDelete(collection) ? { deleteTarget = collection } : nil,
-                        onColor: collection.isCorpus ? nil : { colorTarget = CollectionColorTarget(id: collection.id, name: collection.name) }
+                        onColor: collection.isCorpus || CollectionColors.retired ? nil : { colorTarget = CollectionColorTarget(id: collection.id, name: collection.name) }
                     )
                     .accessibilityIdentifier("collectionRow-\(collection.id)")   // A3 — the user's Library row, not the sample's
                     // Hairline after every collection row. The final

@@ -8,6 +8,10 @@ import UIKit
 /// field there would be wiped by an older build; this file is one they never read or write. Synced like the other
 /// library files: merged by key (`AggregateMerge`), watched, conflict versions united.
 enum CollectionColors {
+    /// Mac sweep 1 · N16 [T ruled 2026-11-18 "Retire"]: collection colours are retired for now. No colour dots, no
+    /// Colour… picker, and the Map colours by region only. The file, its merge and `CorpusStore.collectionColors` stay
+    /// (no data deleted, the format rule holds): they're just not read by the UI. Flip to bring them back.
+    static let retired = true
     static let fileName = "collection-colors.json"
     static let currentVersion = 1
 

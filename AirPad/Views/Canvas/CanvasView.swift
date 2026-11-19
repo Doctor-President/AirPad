@@ -157,7 +157,7 @@ struct CanvasView: View {
     /// Mac batch E6 — a territory's base colour: the collection's chosen colour (both appearances; the orbs' shade and
     /// title ink still follow from it), else its palette slot ("Automatic").
     private func territoryBase(_ key: String, slot: Int, isLight: Bool) -> UIColor {
-        if let id = CollectionColors.collectionID(territoryKey: key), let hex = store.collectionColorHex(id),
+        if !CollectionColors.retired, let id = CollectionColors.collectionID(territoryKey: key), let hex = store.collectionColorHex(id),
            let c = CollectionColors.uiColor(hex) { return c }
         return RegionPalette.color(isLight: isLight, slot: slot)
     }
@@ -1227,7 +1227,7 @@ struct CanvasView: View {
     private func territoryHexMap(_ slots: [String: Int]) -> [String: String] {
         let isLight = mapColorScheme != .dark
         let out = Dictionary(uniqueKeysWithValues: slots.map { k, slot in
-            (k, CollectionColors.collectionID(territoryKey: k).flatMap { store.collectionColorHex($0) }.flatMap(CollectionColors.normalized)
+            (k, CollectionColors.collectionID(territoryKey: k).flatMap { CollectionColors.retired ? nil : store.collectionColorHex($0) }.flatMap(CollectionColors.normalized)
                 ?? RegionPalette.hex(isLight: isLight, slot: slot))
         })
         #if DEBUG

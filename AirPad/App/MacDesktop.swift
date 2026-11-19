@@ -672,7 +672,9 @@ struct MacSidebar: View {
                 }
                 .contextMenu {
                     Button { router.entryMode = .collectionCanvas(id: NodeCollection.journalID) } label: { Label("Open", systemImage: "arrow.right.circle") }
-                    Button { colorTarget = CollectionColorTarget(id: NodeCollection.journalID, name: "Journal") } label: { Label("Colour…", systemImage: "paintpalette") }
+                    if !CollectionColors.retired {
+                        Button { colorTarget = CollectionColorTarget(id: NodeCollection.journalID, name: "Journal") } label: { Label("Colour…", systemImage: "paintpalette") }
+                    }
                 }
 
                 let collections = store.collections.filter { !$0.isSystem }
@@ -686,7 +688,9 @@ struct MacSidebar: View {
                         .contextMenu {
                             Button { router.entryMode = .collectionCanvas(id: c.id) } label: { Label("Open", systemImage: "arrow.right.circle") }
                             Button { renameTarget = c } label: { Label("Rename", systemImage: "pencil") }
-                            Button { colorTarget = CollectionColorTarget(id: c.id, name: c.name) } label: { Label("Colour…", systemImage: "paintpalette") }
+                            if !CollectionColors.retired {
+                                Button { colorTarget = CollectionColorTarget(id: c.id, name: c.name) } label: { Label("Colour…", systemImage: "paintpalette") }
+                            }
                             Button(role: .destructive) { deleteTarget = c } label: { Label("Delete", systemImage: "trash") }
                         }
                     }
@@ -749,7 +753,9 @@ struct MacSidebar: View {
     private func count(in id: String) -> Int { store.hidingPrivate(store.nodes).filter { $0.collectionIDs.contains(id) }.count }
 
     /// E6 — the chosen colour, else Automatic.
-    private func dotColor(_ id: String) -> Color { CollectionDot.color(id, light: scheme == .light, chosen: store.collectionColorHex(id)) }
+    private func dotColor(_ id: String) -> Color? {   // sweep 1 · N16: retired → no dot (collections go by name)
+        CollectionColors.retired ? nil : CollectionDot.color(id, light: scheme == .light, chosen: store.collectionColorHex(id))
+    }
 
     /// The sidebar's ground (full height, under the title bar too — E1).
     static func ground(_ scheme: ColorScheme) -> some View {

@@ -1760,6 +1760,31 @@ struct MacToolbarTrailing: View {
 /// text input takes it (logged: neither SwiftUI's onKeyPress, the View menu's Esc nor a priority UIKeyCommand fired).
 /// An AppKit local key monitor (through the runtime) sees it first; it acts only while that field is focused, so every
 /// other Esc (sheets, Close Preview) is untouched.
+/// Sweep 1 · N3 — Esc ends selection mode (Catalyst delivers Esc to no SwiftUI handler here; taken where AppKit sees it,
+/// as `MacSearchEscape`). Not while text is being edited (Esc belongs to the field there).
+@MainActor enum MacSelectionEscape {
+    static var exit: (() -> Void)? { didSet { if exit != nil { install() } } }
+    private static var monitor: AnyObject?
+    private static func install() {
+        guard monitor == nil, let cls: AnyClass = NSClassFromString("NSEvent") else { return }
+        let sel = NSSelectorFromString("addLocalMonitorForEventsMatchingMask:handler:")
+        guard let m = class_getClassMethod(cls, sel) else { return }
+        typealias Add = @convention(c) (AnyClass, Selector, UInt64, @escaping @convention(block) (AnyObject) -> AnyObject?) -> AnyObject?
+        let handler: @convention(block) (AnyObject) -> AnyObject? = { event in
+            guard (event.value(forKey: "keyCode") as? NSNumber)?.intValue == 53 else { return event }   // Esc
+            return MainActor.assumeIsolated {
+                guard let exit, !MacSearchEscape.active else { return event }
+                FirstResponderProbe.current = nil
+                UIApplication.shared.sendAction(#selector(UIResponder.airpadCaptureFirstResponder), to: nil, from: nil, for: nil)
+                if FirstResponderProbe.current is UITextInput { return event }
+                exit()
+                return nil
+            }
+        }
+        monitor = unsafeBitCast(method_getImplementation(m), to: Add.self)(cls, sel, 1 << 10, handler)
+    }
+}
+
 @MainActor enum MacSearchEscape {
     static var active = false { didSet { if active { installMonitor() } } }
     static var leave: (() -> Void)?

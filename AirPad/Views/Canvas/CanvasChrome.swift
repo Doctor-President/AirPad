@@ -488,6 +488,12 @@ struct CanvasChrome: View {
             default: break
             }
         }
+        #if targetEnvironment(macCatalyst)
+        // Sweep 1 · N3 proof (Esc 0/3): Esc ends selection mode, as Done does (the full Mac selection model is Phase 3).
+        .onChange(of: selection.isActive, initial: true) { _, on in
+            MacSelectionEscape.exit = on ? { [selection] in selection.exit() } : nil
+        }
+        #endif
         .appSheet(isPresented: $showSettings) {
             SettingsView()
         }

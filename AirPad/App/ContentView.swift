@@ -924,6 +924,9 @@ struct ContentView: View {
             DispatchQueue.main.asyncAfter(deadline: .now() + 0.5) { if !librarianSuppressed { router.perform(.find) } }
         case .closeWindow:
             #if targetEnvironment(macCatalyst)
+            // Mac perf audit P5 (real keys: ⌘, then ⌘W closed the window and with it the app) — with Settings open,
+            // ⌘W closes Settings, as it does a Settings window in any Mac app; the next ⌘W closes the window.
+            if MacLayout.shared.settingsOpen { MacLayout.shared.closeSettings(); return }
             RunningOnMac.closeFrontWindow()   // one window for now; the same as its close button
             #endif
         case .toggleSidebar:

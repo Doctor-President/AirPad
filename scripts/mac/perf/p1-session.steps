@@ -22,7 +22,7 @@ list-scroll         scroll 640,600 -2400 80 8
 list-scroll         scroll 640,600 2400 80 8
 view-cards          click toolbar.view.Cards
 rest                wait 1000
-open-card           click 560,430
+open-card           click cardTile-*#1
 rest                wait 1200
 close-card          click toolbar.back
 rest                wait 1000
@@ -51,6 +51,7 @@ rest                wait 1000
 ask-click           click placeholder:Ask
 ask-type            type what did i write about bread
 ask-clear           cmdkey 0
+ask-clear           key 51
 rest                wait 500
 search-click        click toolbar.search
 search-type         type harbour

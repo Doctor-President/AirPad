@@ -122,7 +122,34 @@ struct CardContentSummary: Equatable {
 
     // MARK: Build
 
+    /// Mac perf audit (2026-11-18, measured): a card's body calls this every time it re-evaluates, and it parses every
+    /// note in the entry (paragraphs, list rows, the richest preview). On the Mac the whole grid re-evaluates on each
+    /// step of a sidebar / Librarian edge drag and on ⌘+ / ⌘−: 16 % of the main thread, stalls to ~270 ms, ⌘+ visible
+    /// after ~0.45 s. The result depends only on the entry's content, so it is kept per entry until the entry changes
+    /// (id + updatedAt + a cheap content fingerprint, in case an edit didn't move updatedAt). `-MacPerfAB nocardcache`.
     static func make(_ node: Node, hasHero: Bool) -> CardContentSummary {
+        if perfAB("nocardcache") { return build(node, hasHero: hasHero) }
+        var print = node.items.count
+        for item in node.items {
+            print = print &* 31 &+ (item.content?.utf8.count ?? 0)
+            print = print &* 31 &+ (item.mediaItems?.count ?? 0) &+ (item.documentItems?.count ?? 0) &* 7 &+ (item.linkItems?.count ?? 0) &* 13
+        }
+        let key = CacheKey(id: node.id, updatedAt: node.updatedAt, hasHero: hasHero, print: print)
+        cacheLock.lock()
+        if let hit = cache[key] { cacheLock.unlock(); return hit }
+        cacheLock.unlock()
+        let made = build(node, hasHero: hasHero)
+        cacheLock.lock()
+        if cache.count > 1500 { cache.removeAll(keepingCapacity: true) }
+        cache[key] = made
+        cacheLock.unlock()
+        return made
+    }
+    private struct CacheKey: Hashable { let id: Node.ID; let updatedAt: Date; let hasHero: Bool; let print: Int }
+    private static var cache: [CacheKey: CardContentSummary] = [:]
+    private static let cacheLock = NSLock()
+
+    private static func build(_ node: Node, hasHero: Bool) -> CardContentSummary {
         var paragraphs = 0, photos = 0, videos = 0, voices = 0, voiceSeconds = 0.0, docs = 0, pages = 0, links = 0, chats = 0
         var docPagesKnown = true
         for item in node.items {

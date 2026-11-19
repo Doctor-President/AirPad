@@ -70,12 +70,12 @@ func key(_ code: CGKeyCode, cmd: Bool = false) {
     }
     if cmd { let c = CGEvent(keyboardEventSource: nil, virtualKey: 55, keyDown: false); c?.flags = []; c?.post(tap: .cghidEventTap); usleep(20_000) }
 }
-func scroll(_ p: CGPoint, _ dy: Int32, phase: Int64) {
+func scroll(_ p: CGPoint, _ dy: Int32, phase: Int64, momentum: Int64 = 0) {
     guard let e = CGEvent(scrollWheelEvent2Source: nil, units: .pixel, wheelCount: 1, wheel1: dy, wheel2: 0, wheel3: 0) else { return }
     e.location = p
     e.setIntegerValueField(.scrollWheelEventIsContinuous, value: 1)
     e.setIntegerValueField(.scrollWheelEventScrollPhase, value: phase)
-    e.setIntegerValueField(.scrollWheelEventMomentumPhase, value: 0)
+    e.setIntegerValueField(.scrollWheelEventMomentumPhase, value: momentum)
     e.setIntegerValueField(.scrollWheelEventPointDeltaAxis1, value: Int64(dy))
     e.setDoubleValueField(.scrollWheelEventFixedPtDeltaAxis1, value: Double(dy))
     e.post(tap: .cghidEventTap)
@@ -222,6 +222,27 @@ for raw in script.split(separator: "\n") {
                 usleep(useconds_t(msPer * 1000))
             }
             scroll(p, 0, phase: 4)
+        }
+    case "flick", "flickmove":
+        // Mac perf audit (P0b) — a trackpad FLICK: a short swipe (12 events, 8 ms apart), fingers off, then the
+        // system's momentum events (decaying, ~1.4 s). `flickmove` moves the pointer 12 pt, five times, starting
+        // 300 ms into the momentum (the hand settling back on the trackpad). T: "scroll stops dead when the pointer
+        // moves mid-scroll" — compare `frames` and `settled` of the two.   flick <x,y> <first delta, e.g. -40>
+        guard let p = point(rest[0]), let v0 = Double(rest[1]) else { continue }
+        mouse(.mouseMoved, p); usleep(150_000)
+        measure(label, verb, timeout: 4000, intervals: true) {
+            scroll(p, 0, phase: 1); usleep(8_000)
+            for _ in 1...12 { scroll(p, Int32(v0), phase: 2); usleep(8_000) }
+            scroll(p, 0, phase: 4); usleep(8_000)
+            var v = v0, i = 0
+            scroll(p, Int32(v), phase: 0, momentum: 1); usleep(16_000)
+            while abs(v) >= 1 {
+                v *= 0.955; i += 1
+                scroll(p, Int32(v), phase: 0, momentum: 2)
+                if verb == "flickmove", i >= 18, i % 6 == 0, i < 48 { mouse(.mouseMoved, CGPoint(x: p.x + Double((i - 12) * 2), y: p.y + Double(i % 7))) }
+                usleep(16_000)
+            }
+            scroll(p, 0, phase: 0, momentum: 3)
         }
     case "move":
         // The pointer travels from a to b in n steps (hover only), measured like a drag.

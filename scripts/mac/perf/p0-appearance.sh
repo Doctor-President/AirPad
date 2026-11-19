@@ -15,7 +15,7 @@ APP=${1:?app}; OUT=${2:?out}; CYCLES=${3:-3}; mkdir -p $OUT; OUT=${OUT:A}
 now() { python3 -c 'import time; print("%.3f" % time.time())' }
 for k in view.buttons map.intro librarian.intro librarian.sample librarian.mode librarian.model entry.intro capture.title; do defaults write $PREF com.airpad.callouts.$k -bool true; done
 pkill -f "AirPadMacA.app/Contents/MacOS/AirPad"; sleep 1; rm -rf $C/Library/Caches/PerfRecordings
-$APP/Contents/MacOS/AirPad -ApplePersistenceIgnoreState YES -PerfRecorder YES -PerfRecorderSeconds $((CYCLES * 330 + 120)) -ProUnlocked YES ${=EXTRA:-} > $OUT/app.log 2>&1 &
+$APP/Contents/MacOS/AirPad -ApplePersistenceIgnoreState YES -PerfRecorder YES -PerfRecorderSeconds $((CYCLES * 480 + 240)) -ProUnlocked YES ${=EXTRA:-} > $OUT/app.log 2>&1 &
 P=$!; trap "kill $P 2>/dev/null" EXIT
 sleep 8; for i in $(seq 1 30); do [[ $($R winpos $P) != *"0×0"* ]] && break; sleep 1; done
 $R winmove $P 0 160 >/dev/null; $R winsize $P 1350 840 >/dev/null; sleep 1
@@ -28,7 +28,9 @@ phase() {   # phase <label> [press target…]
   local l=$1; shift
   for t in "$@"; do $R press $P "$t" >> $OUT/press.log 2>&1; sleep 0.4; done
   local t0=$(now); sleep 1.5; local t1=$(now)
-  $B/rperf $P $ROOT/scripts/mac/perf/map-probe.steps >> $OUT/rperf.txt 2>&1
+  $B/rperf $P $ROOT/scripts/mac/perf/map-probe.steps >> $OUT/rperf.txt 2>&1 & local W=$!   # has stalled once at start: 30 s cap
+  for i in $(seq 1 60); do kill -0 $W 2>/dev/null || break; sleep 0.5; done
+  kill -0 $W 2>/dev/null && { kill $W; echo "PROBE TIMEOUT cycle $CYCLE $l" >> $OUT/setup.txt }
   local t2=$(now); sleep 4
   print -- "$CYCLE\t$l\t$t0\t$t1\t$t2\t$(now)\t$(ps -o rss= -p $P | tr -d ' ')" >> $OUT/phases.tsv
 }

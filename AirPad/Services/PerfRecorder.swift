@@ -37,8 +37,7 @@ enum Perf {
     /// The screen the user is on, as kinds and counts only (never names): "Map · collection", "Entry · 3 items".
     @inline(__always) static func screen(_ label: @autoclosure () -> String) {
         #if DEBUG || DEVSWITCHES
-        guard PerfRecorder.on else { return }
-        PerfRecorder.shared.noteScreen(label())
+        PerfRecorder.shared.noteScreen(label())   // kept even while off, so a recorder switched on later knows the screen
         #endif
     }
     /// A measured stretch of main-thread (or any-thread) work: `Perf.interval("layout") { … }`.
@@ -183,6 +182,8 @@ final class PerfRecorder: NSObject {
         installGesture()
         Self.on = true
         noteMark("recorder on")
+        let current = locked { screenLabel }
+        if !current.isEmpty { noteMark("screen: " + current) }   // the screen it was switched on at (iPhone: on after launch)
     }
 
     @MainActor func stop() {
@@ -552,7 +553,6 @@ struct PerfScreenWatcher: View {
             .onChange(of: label, initial: true) { _, l in Perf.screen(l) }
     }
     private var label: String {
-        guard PerfRecorder.on else { return "" }
         if store.isInDetailView, let id = router.openEntryID, let n = store.nodes.first(where: { $0.id == id }) {
             var notes = 0, words = 0, galleries = 0, media = 0, docItems = 0, docs = 0, links = 0, other = 0
             for i in n.items {

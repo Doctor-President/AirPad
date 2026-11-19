@@ -1,0 +1,31 @@
+# Mac perf audit P0b — a flick with momentum, pointer still vs pointer moving mid-momentum: Cards, List, Recents.
+view-cards        click toolbar.view.Cards
+rest              wait 1500
+cards-flick       flick 600,600 -40
+rest              wait 600
+cards-flick       flick 600,600 40
+rest              wait 600
+cards-flick-move  flickmove 600,600 -40
+rest              wait 600
+cards-flick-move  flickmove 600,600 40
+rest              wait 600
+view-list         click toolbar.view.List
+rest              wait 1500
+list-flick        flick 600,600 -40
+rest              wait 600
+list-flick        flick 600,600 40
+rest              wait 600
+list-flick-move   flickmove 600,600 -40
+rest              wait 600
+list-flick-move   flickmove 600,600 40
+rest              wait 600
+recents           click sidebar.recents
+rest              wait 1500
+recents-flick       flick 600,600 -40
+rest              wait 600
+recents-flick       flick 600,600 40
+rest              wait 600
+recents-flick-move  flickmove 600,600 -40
+rest              wait 600
+recents-flick-move  flickmove 600,600 40
+rest              wait 600

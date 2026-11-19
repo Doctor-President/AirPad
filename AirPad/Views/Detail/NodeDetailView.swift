@@ -321,6 +321,7 @@ struct NodeDetailView: View {
         guard denom > 1 else { return 0 }
         return min(1, max(0, heroScrollOffset / denom))
     }
+    @State private var macDetailScroll = MacScrollState()   // Mac perf audit — the scroll hit-test guard
     @State private var bandProgressStored: CGFloat = 0
 
     /// In-node capture surfaces. `.text` is intentionally absent: the "+"
@@ -786,7 +787,9 @@ struct NodeDetailView: View {
             // Header parity measurement (DEBUG, `-HeaderMeasure`): rendered boundary
             // frames spanning hero → header → first entry.
             .collectHeaderMeasurements(surface: "Detail")
+            .modifier(MacDetailScrollGate(state: macDetailScroll))   // Mac perf audit — see the modifier
         }
+        .onScrollPhaseChange { _, phase in if RunningOnMac.isMac { macDetailScroll.scrolling = phase != .idle } }
         .overlay(alignment: .bottomTrailing) {
             // Stage 3.1a commit (c) — floating "+" replaces the inline
             // composer triad. Hidden whenever the keyboard is visible so
@@ -3319,6 +3322,20 @@ private struct BandHeroBackdrop: View {
     }
 }
 
+
+/// Mac perf audit (2026-11-18) — while an entry scrolls on the Mac, its content takes no pointer events. Measured on
+/// the heavy test entry (3 notes, 48 media, 3 documents, 5 links): 49 % of the main thread's busy time during a scroll
+/// was SwiftUI answering each scroll / hover event with a hit-test that walks every responder in the entry (tiles,
+/// editors, menus). The phone never pays this: a touch is hit-tested once, when it lands. The scroll view itself
+/// still scrolls, a click still stops the momentum, and hit-testing is back the moment the scroll ends (the same
+/// guard the Cards grid has had since E fix-up 6). Only this modifier re-evaluates when the phase flips.
+/// `-MacPerfAB noentrygate` (bench) = as before.
+private struct MacDetailScrollGate: ViewModifier {
+    let state: MacScrollState
+    func body(content: Content) -> some View {
+        content.allowsHitTesting(!(RunningOnMac.isMac && state.scrolling && !perfAB("noentrygate")))
+    }
+}
 
 /// E fix-up 5 (L1) — the open/close bench's A/B switches (`-MacPerfAB a,b`), read only in DEBUG or the `-D PERFLOG`
 /// bench build; always false in the shipping build.

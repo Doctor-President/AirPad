@@ -236,13 +236,39 @@ struct NodeGridView: View {
             let mode = store.filterState(for: scope).viewMode
             guard !store.isInDetailView, mode != .list, mode != .systemGraph else { return }
             switch request?.command {
-            case .zoomIn?:  macCardWidth = min(macCardWidth + Self.macCardWidthStep, Self.macCardWidthRange.upperBound)
-            case .zoomOut?: macCardWidth = max(macCardWidth - Self.macCardWidthStep, Self.macCardWidthRange.lowerBound)
+            case .zoomIn?:  macCardWidth = macZoomedWidth(bigger: true)
+            case .zoomOut?: macCardWidth = macZoomedWidth(bigger: false)
             case .zoomFit?: macCardWidth = Self.macCardWidthDefault
             default: break
             }
         }
     }
+
+    /// Mac perf audit P0d (measured with real keys: of 16 presses, 5 changed nothing on screen) — ⌘+ / ⌘− used to move
+    /// the wanted card width by 40 pt, but the grid shows whole columns, so a step that didn't cross into another
+    /// column count changed nothing ("⌘+ sometimes doesn't register"). Now a press moves to the nearest width that
+    /// gives one column fewer (bigger cards) or one more (smaller), or to the end of the range.
+    /// `-MacPerfAB oldzoom` (bench) = the fixed 40 pt step.
+    private func macZoomedWidth(bigger: Bool) -> Double {
+        let range = Self.macCardWidthRange
+        let avail = macGridWidth - tileSpacing - (scrubberMode != nil ? 30 : 0)
+        guard avail > 0, !perfAB("oldzoom") else {
+            return min(max(macCardWidth + (bigger ? 1 : -1) * Self.macCardWidthStep, range.lowerBound), range.upperBound)
+        }
+        func columns(_ w: Double) -> Int { max(1, Int((avail / (CGFloat(w) + tileSpacing)).rounded())) }
+        let now = columns(macCardWidth), d = bigger ? 5.0 : -5.0
+        var w = macCardWidth
+        while range.contains(w + d) {
+            w += d
+            if columns(w) != now { return w }
+        }
+        return macCardWidth   // already at the largest / smallest the window allows
+    }
+    /// The grid's width, for `macZoomedWidth`: kept outside SwiftUI's state so noting it never re-evaluates anything.
+    private var macGridWidth: CGFloat { macGridWidthBox.value }
+    @State private var macGridWidthBox = WidthBox()
+    private final class WidthBox { var value: CGFloat = 0 }
+    private func macNoteGridWidth(_ w: CGFloat) { macGridWidthBox.value = w }
 
     private var gridContent: some View {
         // Width is measured ONCE here, above the ScrollView. cellW/cellH are
@@ -257,6 +283,7 @@ struct NodeGridView: View {
             // always-on (large corpus) or always-off (small corpus), and
             // sort-switching never reflows the grid. ≤15 reclaims the lane.
             let railLane: CGFloat = scrubberMode != nil ? 30 : 0
+            let _ = macNoteGridWidth(geo.size.width)
             // Mac D fix-up F3 — on the Mac as many columns as keep the cards nearest the chosen size.
             let columnCount = RunningOnMac.isMac
                 ? max(1, Int(((geo.size.width - tileSpacing - railLane) / (CGFloat(macCardWidth) + tileSpacing)).rounded()))

@@ -52,7 +52,8 @@ def main(a):
     if cycles:
         def agg(c):
             rs = [r for r in rows if r["cycle"] == c]
-            return dict(p95=sum(r["p95"] or 0 for r in rs) / len(rs), late=sum(r["late_pct"] for r in rs) / len(rs),
+            ok = [r for r in rs if r["p95"] is not None] or rs
+            return dict(p95=sum(r["p95"] or 0 for r in ok) / len(ok), late=sum(r["late_pct"] for r in rs) / len(rs),
                         upd=sum(r["map_update"] for r in rs) / len(rs), mem=rs[-1]["mem"], rest=max(r["rest_fps"] for r in rs),
                         not_rest=[r["label"] for r in rs if r["rest_fps"] > 0])
         first, last = agg(cycles[0]), agg(cycles[-1])

@@ -1514,9 +1514,29 @@ final class CorpusPhysicsScene: SKScene {
     static func softHyphenated(_ s: String) -> String {
         guard let locale = CFLocaleCopyCurrent() as CFLocale?,
               CFStringIsHyphenationAvailableForLocale(locale) else { return s }
-        return s.split(separator: " ", omittingEmptySubsequences: true)
+        // Sweep 1 · 1.4 (sheet C) — kept per title: the Map builds a new scene each time it is shown, and every title that
+        // didn't fit by word-wrap went through the dictionary again (a quarter of the Mac's Map / List → Map switch).
+        // `-MacPerfAB nohyphencache` (bench) = as before.
+        let key = ((CFLocaleGetIdentifier(locale)?.rawValue as String?) ?? "") + "\u{1}" + s
+        if !perfAB("nohyphencache"), let hit = hyphenCache.get(key) { return hit }
+        let out = s.split(separator: " ", omittingEmptySubsequences: true)
             .map { softHyphenatedWord(String($0), locale) }
             .joined(separator: " ")
+        hyphenCache.set(key, out)
+        return out
+    }
+
+    /// The soft-hyphenated titles, by locale + title (a pure function of both). Bounded: emptied past 4,096 titles.
+    private static let hyphenCache = HyphenCache()
+    private final class HyphenCache: @unchecked Sendable {
+        private let lock = NSLock()
+        private var map: [String: String] = [:]
+        func get(_ k: String) -> String? { lock.lock(); defer { lock.unlock() }; return map[k] }
+        func set(_ k: String, _ v: String) {
+            lock.lock(); defer { lock.unlock() }
+            if map.count >= 4096 { map.removeAll(keepingCapacity: true) }
+            map[k] = v
+        }
     }
 
     /// Soft-hyphenate ONE word (no spaces). Indices are UTF-16; node titles are

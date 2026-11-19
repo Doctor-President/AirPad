@@ -183,8 +183,13 @@ def run_lmstudio(port, d):
                 if not m["loaded_instances"]: stats["reloads"] += 1; load(m["key"], 4096)   # JIT load at the default
                 stats["last_chat_model"] = b["model"]
                 self.send_response(200); self.send_header("Content-Type", "text/event-stream"); self.end_headers()
-                for w in ["This ", "is ", "a ", "fake ", "answer."]:
+                # sweep 1 · 1.2 — FAKE_FIRST_TOKEN_S / FAKE_WORDS / FAKE_WORD_S: a server's timing (prompt eval, then a stream)
+                time.sleep(float(os.environ.get("FAKE_FIRST_TOKEN_S", "0")))
+                n = int(os.environ.get("FAKE_WORDS", "0"))
+                ws = ["This ", "is ", "a ", "fake ", "answer."] if n == 0 else [f"word{i} " for i in range(n)] + ["end."]
+                for w in ws:
                     self.wfile.write(("data: " + json.dumps({"choices": [{"index": 0, "delta": {"content": w}}]}) + "\n\n").encode()); self.wfile.flush()
+                    time.sleep(float(os.environ.get("FAKE_WORD_S", "0")))
                 self.wfile.write(b"data: [DONE]\n\n"); return
             self.send(404, {"error": f"Unexpected endpoint or method. (POST {self.path})"})
     serve(port, H)

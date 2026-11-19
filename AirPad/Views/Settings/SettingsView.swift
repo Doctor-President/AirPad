@@ -1784,6 +1784,10 @@ private struct MacFeelSwitchesPanel: View {
     @AppStorage(MacCardMorph.key) private var morph = "mac"
     @AppStorage(MacFeelSwitches.searchFadeStrengthKey) private var fadeStrength = MacFeelSwitches.searchFadeStrengthDefault
     @AppStorage(MacFeelSwitches.searchFadeHeightKey) private var fadeHeight = MacFeelSwitches.searchFadeHeightDefault
+    @AppStorage(MacFeelSwitches.heroFullKey) private var heroFull = false
+    @AppStorage(MacFeelSwitches.heroFadeStartKey) private var heroStart = MacFeelSwitches.heroFadeStartDefault
+    @AppStorage(MacFeelSwitches.heroFadeLengthKey) private var heroLength = MacFeelSwitches.heroFadeLengthDefault
+    @AppStorage(MacFeelSwitches.heroMaxWidthKey) private var heroMax = MacFeelSwitches.heroMaxWidthDefault
     @State private var copied = false
 
     var body: some View {
@@ -1812,6 +1816,28 @@ private struct MacFeelSwitchesPanel: View {
                 Slider(value: $fadeHeight, in: 40...400, step: 10).accessibilityIdentifier("macFeelFadeHeight")
                 Text("\(Int(fadeHeight)) pt").monospacedDigit().frame(width: 50)
             }
+            Text("Entry hero (sweep 1 · N8)").font(.system(size: 12, weight: .medium)).foregroundStyle(AppearancePalette.ink.opacity(0.7))
+            Picker("Hero", selection: $heroFull) {
+                Text("Left, fading").tag(false)
+                Text("Full width (before)").tag(true)
+            }
+            .pickerStyle(.segmented)
+            .accessibilityIdentifier("macFeelHeroFull")
+            HStack {
+                Text("Fade start").frame(width: 70, alignment: .leading)
+                Slider(value: $heroStart, in: 0.2...0.9, step: 0.01).accessibilityIdentifier("macFeelHeroStart")
+                Text("\(Int(heroStart * 100)) %").monospacedDigit().frame(width: 50)
+            }
+            HStack {
+                Text("Fade length").frame(width: 70, alignment: .leading)
+                Slider(value: $heroLength, in: 0.05...0.6, step: 0.01).accessibilityIdentifier("macFeelHeroLength")
+                Text("\(Int(heroLength * 100)) %").monospacedDigit().frame(width: 50)
+            }
+            HStack {
+                Text("Max width").frame(width: 70, alignment: .leading)
+                Slider(value: $heroMax, in: 0.3...1.0, step: 0.01).accessibilityIdentifier("macFeelHeroMax")
+                Text("\(Int(heroMax * 100)) %").monospacedDigit().frame(width: 50)
+            }
             HStack(spacing: 12) {
                 Button(copied ? "Copied" : "Copy values") {
                     UIPasteboard.general.string = """
@@ -1820,6 +1846,10 @@ private struct MacFeelSwitchesPanel: View {
                     orb → card morph: \(morph == "mac" ? "Mac timing" : "iPhone timing")
                     search fade strength: \(String(format: "%.2f", fadeStrength))
                     search fade height: \(Int(fadeHeight)) pt
+                    hero: \(heroFull ? "full width" : "left, fading")
+                    hero fade start: \(Int(heroStart * 100)) % of the banner
+                    hero fade length: \(Int(heroLength * 100)) %
+                    hero max width: \(Int(heroMax * 100)) %
                     """
                     copied = true
                     DispatchQueue.main.asyncAfter(deadline: .now() + 1.5) { copied = false }
@@ -1828,6 +1858,8 @@ private struct MacFeelSwitchesPanel: View {
                 Button("Reset") {
                     instant = true; morph = "mac"
                     fadeStrength = MacFeelSwitches.searchFadeStrengthDefault; fadeHeight = MacFeelSwitches.searchFadeHeightDefault
+                    heroFull = false; heroStart = MacFeelSwitches.heroFadeStartDefault
+                    heroLength = MacFeelSwitches.heroFadeLengthDefault; heroMax = MacFeelSwitches.heroMaxWidthDefault
                 }
             }
         }

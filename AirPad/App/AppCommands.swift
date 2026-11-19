@@ -245,6 +245,17 @@ enum MacFeelSwitches {
     static let searchFadeStrengthDefault = 0.49   // T's value (fix-up 6 check, 2026-11-18)
     static let searchFadeHeightDefault = 250.0   // T's value
     static let shownKey = "mac.feelSwitches.shown"
+    /// Sweep 1 · N8 [T] — the entry's hero on the Mac anchors LEFT and fades into the ground on the right (`MacLeftHero`).
+    /// Fractions of the banner's width: opaque to `fadeStart`, clear by `fadeStart + fadeLength`, the visual box at most
+    /// `maxWidth` wide (an image keeps its own aspect ratio inside it). T tunes with his own entries; his values become
+    /// the defaults. `heroFull` = today's full-width hero.
+    static let heroFullKey = "mac.hero.full"
+    static let heroFadeStartKey = "mac.hero.fadeStart"
+    static let heroFadeLengthKey = "mac.hero.fadeLength"
+    static let heroMaxWidthKey = "mac.hero.maxWidth"
+    static let heroFadeStartDefault = 0.60
+    static let heroFadeLengthDefault = 0.25
+    static let heroMaxWidthDefault = 0.85
     static var entryInstant: Bool {
         #if DEBUG || DEVSWITCHES
         return UserDefaults.standard.object(forKey: macInstantNavigationKey) as? Bool ?? true

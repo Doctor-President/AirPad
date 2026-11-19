@@ -1191,6 +1191,19 @@ struct NodeDetailView: View {
     @ViewBuilder
     private func heroZone(node: Node, topInset: CGFloat, width: CGFloat,
                           onVisibleHeight: @escaping (CGFloat) -> Void) -> some View {
+        #if targetEnvironment(macCatalyst)
+        // Sweep 1 · N8 [T] — on the Mac the hero anchors LEFT and fades into the ground on the right (MacLeftHero).
+        MacLeftHero(width: width) { w in
+            heroVisual(node: node, topInset: topInset, width: w, onVisibleHeight: onVisibleHeight)
+        }
+        #else
+        heroVisual(node: node, topInset: topInset, width: width, onVisibleHeight: onVisibleHeight)
+        #endif
+    }
+
+    @ViewBuilder
+    private func heroVisual(node: Node, topInset: CGFloat, width: CGFloat,
+                            onVisibleHeight: @escaping (CGFloat) -> Void) -> some View {
         // Compact banner — top full-bleeds under the status bar (y=0),
         // bottom is a defined edge via rounded corners that match the
         // ~30pt card-family radius. No fade and no mask: the rounded
@@ -3382,3 +3395,41 @@ enum PerfABModes {
         w?()
     }
 }
+
+#if targetEnvironment(macCatalyst)
+/// Sweep 1 · N8 [T] — the entry hero on the Mac: anchored LEFT, fading into the ground on the right, so a wide window
+/// neither stretches nor hard-crops it (an image keeps its own aspect ratio in the box). Fractions of the banner's
+/// width: opaque to the fade start, clear by start + length, the box at most `maxWidth`. Its own view so T's live
+/// sliders (Mac feel) redraw only the hero, not the entry.
+private struct MacLeftHero<Content: View>: View {
+    let width: CGFloat
+    @ViewBuilder let content: (CGFloat) -> Content
+    #if DEBUG || DEVSWITCHES
+    @AppStorage(MacFeelSwitches.heroFullKey) private var full = false
+    @AppStorage(MacFeelSwitches.heroFadeStartKey) private var start = MacFeelSwitches.heroFadeStartDefault
+    @AppStorage(MacFeelSwitches.heroFadeLengthKey) private var length = MacFeelSwitches.heroFadeLengthDefault
+    @AppStorage(MacFeelSwitches.heroMaxWidthKey) private var maxW = MacFeelSwitches.heroMaxWidthDefault
+    #else
+    private let full = false
+    private let start = MacFeelSwitches.heroFadeStartDefault
+    private let length = MacFeelSwitches.heroFadeLengthDefault
+    private let maxW = MacFeelSwitches.heroMaxWidthDefault
+    #endif
+
+    var body: some View {
+        if full {
+            content(width)
+        } else {
+            let frac = max(0.05, min(maxW, start + length))
+            let box = (width * frac).rounded()
+            let opaqueTo = min(start / frac, 0.999)
+            content(box)
+                .frame(width: box)
+                .mask(LinearGradient(stops: [.init(color: .black, location: opaqueTo), .init(color: .clear, location: 1)],
+                                     startPoint: .leading, endPoint: .trailing))
+                .frame(width: width, alignment: .leading)
+                .accessibilityIdentifier("macHeroLeft")
+        }
+    }
+}
+#endif

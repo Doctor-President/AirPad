@@ -135,7 +135,7 @@ struct DocumentGalleryTile: View {
                 Label("Share", systemImage: "square.and.arrow.up")
             }
             Button {
-                UIPasteboard.general.string = documentItem.displayName
+                UIPasteboard.general.string = DocumentHandoff.fileName(documentItem.displayName, ext: documentItem.fileType)   // sweep 1 · N2
             } label: {
                 Label("Copy filename", systemImage: "doc.on.doc")
             }

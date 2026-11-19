@@ -158,7 +158,7 @@ enum MacDocumentActions {
 
     /// Copies are kept in Caches/Opened Copies/<id>/<name> (the other app may still have them open after AirPad quits);
     /// copies older than a week go at launch (`purgeOldCopies`).
-    static let copiesRoot = FileManager.default.urls(for: .cachesDirectory, in: .userDomainMask)[0]
+    static let copiesRoot = FileManager.default.urls(for: .applicationSupportDirectory, in: .userDomainMask)[0]
         .appendingPathComponent("Opened Copies", isDirectory: true)
 
     static func openCopy(of stored: URL, named title: String, ext: String) async {
@@ -180,8 +180,14 @@ enum MacDocumentActions {
         let fm = FileManager.default
         guard let dirs = try? fm.contentsOfDirectory(at: copiesRoot, includingPropertiesForKeys: [.creationDateKey]) else { return }
         let cutoff = Date().addingTimeInterval(-7 * 24 * 3600)
+        // Only copies nobody changed (sweep 1 review: an edit saved into a copy must never vanish); not the system's Caches.
         for d in dirs where ((try? d.resourceValues(forKeys: [.creationDateKey]).creationDate) ?? .distantPast) < cutoff {
-            try? fm.removeItem(at: d)
+            let files = (try? fm.contentsOfDirectory(at: d, includingPropertiesForKeys: [.creationDateKey, .contentModificationDateKey])) ?? []
+            let edited = files.contains { f in
+                let v = try? f.resourceValues(forKeys: [.creationDateKey, .contentModificationDateKey])
+                return (v?.contentModificationDate ?? .distantPast) > (v?.creationDate ?? .distantPast).addingTimeInterval(5)
+            }
+            if !edited { try? fm.removeItem(at: d) }
         }
     }
 }
@@ -198,6 +204,7 @@ enum MacDocumentKeys {
     static func hover(_ id: String, _ actions: Actions, _ on: Bool) {
         if on { hovered = (id, actions); install() } else if hovered?.id == id { hovered = nil }
     }
+    static func clear(_ id: String?) { if let id, hovered?.id == id { hovered = nil } }
 
     private static func editingText() -> Bool {
         FirstResponderProbe.current = nil
@@ -280,6 +287,7 @@ private struct MacDocumentActionsModifier: ViewModifier {
                 guard let id = doc?.id else { return }
                 MacDocumentKeys.hover(id, .init(quickLook: quickLook, open: { state.open() }, reveal: { state.reveal() }), on)
             }
+            .onDisappear { MacDocumentKeys.clear(doc?.id) }   // sweep 1 review: an entry closed under a still pointer
             .contextMenu {
                 Button { quickLook() } label: { Label("Quick Look", systemImage: "eye") }
                 MacDocumentMenuItems(state: state)

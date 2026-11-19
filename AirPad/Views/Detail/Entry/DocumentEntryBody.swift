@@ -75,7 +75,16 @@ struct DocumentEntryBody: View {
 
     private static let thumbnailHeight: CGFloat = 120
 
-    private var documentItem: DocumentItem? { item.documentItems?.first }
+    /// Sweep 1 review (N1) — a document appended before the fix is still a legacy-shaped item (no `documentItems`): it is
+    /// read as a document all the same (its stored file, its real name from `description`), so Quick Look, Share, Open a
+    /// Copy and Reveal work for it too. Display only — nothing is written back.
+    private var documentItem: DocumentItem? {
+        if let d = item.documentItems?.first { return d }
+        guard item.type == .document, let file = item.file, !file.isEmpty else { return nil }
+        return DocumentItem(id: item.id, filePath: file, fileName: DocumentNaming.storedName(item.description),
+                            fileType: (file as NSString).pathExtension.lowercased(), documentTitle: nil, extractedText: nil,
+                            thumbnailFile: nil, pageCount: nil, wordCount: nil, capturedAt: item.createdAt)
+    }
 
     var body: some View {
         VStack(alignment: .leading, spacing: 8) {
@@ -160,7 +169,7 @@ struct DocumentEntryBody: View {
                     .font(appFont.font(size: 12, relativeTo: .caption1))
                     .foregroundStyle(AppearancePalette.ink.opacity(0.5))
                     .lineLimit(1)
-            } else if let description = item.description, documentItem != nil || DocumentNaming.storedName(description).isEmpty {
+            } else if let description = item.description, item.documentItems != nil || DocumentNaming.storedName(description).isEmpty {
                 Text(description)
                     .font(appFont.font(size: 12, relativeTo: .caption1))
                     .foregroundStyle(AppearancePalette.ink.opacity(0.5))
@@ -218,7 +227,8 @@ struct DocumentEntryBody: View {
                 Label("Share", systemImage: "square.and.arrow.up")
             }
             Button {
-                UIPasteboard.general.string = displayTitle   // sweep 1 · N2: the shown name, also for a legacy-shaped item
+                // Sweep 1 · N2: the file's name as shown, with its extension (a legacy-shaped item too).
+                UIPasteboard.general.string = DocumentHandoff.fileName(displayTitle, ext: documentItem?.fileType ?? "")
             } label: {
                 Label("Copy filename", systemImage: "doc.on.doc")
             }

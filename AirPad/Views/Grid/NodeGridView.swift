@@ -376,6 +376,7 @@ struct NodeGridView: View {
                     }
                     .modifier(MacCardsGridResponders(hover: macHover, nodes: nodes))
                     .modifier(MacScrollHitGate(state: macScroll))
+                    .modifier(CardsPlaceShowing())   // sweep 1 · 1.5 (sheet E)
                     .onChange(of: columnCount) { macHover.frames = [:] }
                     .onChange(of: cellW) { macHover.frames = [:] }
                     .padding(.leading, tileSpacing)
@@ -557,6 +558,9 @@ private struct NodeTileView: View, Equatable {
     /// switch is invisible to it unless the face is in `==`; the inner `NodeGridTile` reads
     /// the same face from `@Environment` and re-renders when this wrapper does.
     let appFont: EntryBodyFont
+    /// Sweep 1 · 1.5 (sheet E) — on screen (any part of the card inside the scroll view's bounds).
+    @State private var onScreen = false
+    @Environment(\.cardsPlaceShowing) private var placeShowing
 
     // Commit 3 — targeted re-render. `Node.==` is id-only, so SwiftUI's default
     // diff hides title/summary/etc. edits and the tile renders stale until a
@@ -597,5 +601,25 @@ private struct NodeTileView: View, Equatable {
         // BUG 10 — shared selection treatment (checkmark + Klein outline),
         // replacing the low-contrast white stroke that didn't read on parchment.
         .selectionHighlight(isSelecting: isSelecting, isPicked: isPicked, cornerRadius: 14)
+        .environment(\.blobFieldPaused, !(onScreen && placeShowing))
+        .onScrollVisibilityChange(threshold: 0.01) { onScreen = $0 }
+    }
+}
+
+/// Sweep 1 · 1.5 (sheet E) — Cards is the place the user sees: no entry open over it, the app active.
+private struct CardsPlaceShowingKey: EnvironmentKey { static let defaultValue = true }
+extension EnvironmentValues {
+    var cardsPlaceShowing: Bool {
+        get { self[CardsPlaceShowingKey.self] }
+        set { self[CardsPlaceShowingKey.self] = newValue }
+    }
+}
+
+/// Reads the open-entry flag and the scene phase HERE, so a push / pop doesn't re-run the grid's body (L1).
+private struct CardsPlaceShowing: ViewModifier {
+    @Environment(CorpusStore.self) private var store
+    @Environment(\.scenePhase) private var phase
+    func body(content: Content) -> some View {
+        content.environment(\.cardsPlaceShowing, !store.isInDetailView && phase == .active)
     }
 }

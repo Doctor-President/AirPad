@@ -15,6 +15,8 @@ import UIKit
 ///   rim, composited source-over in absolute points. Used by the static
 ///   `NodeGradientLayer` path.
 struct BlobFieldView: View {
+    /// Sweep 1 · 1.5 (sheet E) — the drift holds still (the frame it was on) while its card isn't on screen.
+    @Environment(\.blobFieldPaused) private var paused
 
     /// Drives the per-appearance blob COMPOSITING mode (below). The blob surfaces are SwiftUI, so
     /// the scheme comes from the environment rather than the scene's pushed appearance flag.
@@ -229,7 +231,7 @@ struct BlobFieldView: View {
                     canvas(size: geo.size, origin: origin, time: Self.frozenTime ?? clock)
                 }
             } else if animated {
-                TimelineView(.animation(minimumInterval: frameInterval)) { timeline in
+                TimelineView(.animation(minimumInterval: frameInterval, paused: paused)) { timeline in
                     // Wrap time to keep Float precision usable across the app's
                     // multi-hundred-million-second reference clock (per brief).
                     let t = Self.frozenTime ?? Float(timeline.date.timeIntervalSinceReferenceDate
@@ -407,4 +409,15 @@ enum LavaAmbient {
         #endif
         return 10
     }()
+}
+
+/// Sweep 1 · 1.5 (sheet E, T: "This all sounds good.") — a card's gradient animates only while the card is on screen and
+/// its place is the one showing (the Mac perf audit measured every card redrawing 26–30 times a second, off screen and
+/// under an open entry too: 20–28 % of a core in Cards at rest). Set per card by the grid.
+private struct BlobFieldPausedKey: EnvironmentKey { static let defaultValue = false }
+extension EnvironmentValues {
+    var blobFieldPaused: Bool {
+        get { self[BlobFieldPausedKey.self] }
+        set { self[BlobFieldPausedKey.self] = newValue }
+    }
 }

@@ -1702,7 +1702,8 @@ struct MacToolbarTrailing: View {
                     .onKeyPress(.escape) { librarian.searchText = ""; searchFocused = false; return .handled }
                     .onChange(of: searchFocused) { _, focused in
                         MacSearchEscape.active = focused
-                        MacSearchEscape.leave = focused ? { [librarian] in
+                        MacSearchEscape.hasText = focused ? { [librarian] in !librarian.searchText.isEmpty } : nil
+                    MacSearchEscape.leave = focused ? { [librarian] in
                             librarian.searchText = ""
                             UIApplication.shared.sendAction(#selector(UIResponder.resignFirstResponder), to: nil, from: nil, for: nil)
                         } : nil
@@ -1773,10 +1774,14 @@ struct MacToolbarTrailing: View {
         let handler: @convention(block) (AnyObject) -> AnyObject? = { event in
             guard (event.value(forKey: "keyCode") as? NSNumber)?.intValue == 53 else { return event }   // Esc
             return MainActor.assumeIsolated {
-                guard let exit, !MacSearchEscape.active else { return event }
-                FirstResponderProbe.current = nil
-                UIApplication.shared.sendAction(#selector(UIResponder.airpadCaptureFirstResponder), to: nil, from: nil, for: nil)
-                if FirstResponderProbe.current is UITextInput { return event }
+                guard let exit else { return event }
+                if MacSearchEscape.active {
+                    if MacSearchEscape.hasText?() ?? true { return event }   // a search to clear first
+                } else {
+                    FirstResponderProbe.current = nil
+                    UIApplication.shared.sendAction(#selector(UIResponder.airpadCaptureFirstResponder), to: nil, from: nil, for: nil)
+                    if FirstResponderProbe.current is UITextInput { return event }
+                }
                 exit()
                 return nil
             }
@@ -1788,6 +1793,9 @@ struct MacToolbarTrailing: View {
 @MainActor enum MacSearchEscape {
     static var active = false { didSet { if active { installMonitor() } } }
     static var leave: (() -> Void)?
+    /// Sweep 1 · N3 — an EMPTY search field passes Esc on (selection mode then ends): after a search the cleared field
+    /// can keep focus, and swallowing Esc there left selection mode stuck (proof 3, 7/7).
+    static var hasText: (() -> Bool)?
     private static var monitor: AnyObject?
 
     private static func installMonitor() {
@@ -1798,7 +1806,7 @@ struct MacToolbarTrailing: View {
         let handler: @convention(block) (AnyObject) -> AnyObject? = { event in
             guard (event.value(forKey: "keyCode") as? NSNumber)?.intValue == 53 else { return event }   // Esc
             return MainActor.assumeIsolated {
-                guard active, let leave else { return event }
+                guard active, let leave, hasText?() ?? true else { return event }
                 leave()
                 return nil
             }

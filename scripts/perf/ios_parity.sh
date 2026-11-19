@@ -92,7 +92,7 @@ if [[ ! -f $WARMED/.warmed || -n ${REWARM:-} ]]; then
   # minute (at least WARM s, at most WARM_MAX s). WARM_FROM=<dir> starts from another copy of the library (a head start).
   disk; log "warming the library from ${WARM_FROM:-$LIB} (≥ ${WARM:-180} s, until the app idles; ≤ ${WARM_MAX:-7200} s)"
   fresh
-  ditto ${WARM_FROM:-$LIB} $(lib)/Caches/AirPadBenchScratch; rm -f $(lib)/Caches/AirPadBenchScratch/perf-*.done
+  ditto ${WARM_FROM:-$LIB} $(lib)/Caches/AirPadBenchScratch; rm -f $(lib)/Caches/AirPadBenchScratch/perf-*.done(N)
   PID=$(xcrun simctl launch $UDID $BID -UITestLibrary -EmbedCPUOnly -ProUnlocked YES -OpenMap $CALLOUTS | awk '{print $NF}')
   t=0; low=0; c=0
   while (( t < ${WARM_MAX:-7200} )); do

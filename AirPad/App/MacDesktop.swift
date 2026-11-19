@@ -516,7 +516,9 @@ struct MacPanelFloatSwitch: View {
     @State private var layout = MacLayout.shared
     var body: some View {
         let floating = layout.librarianFloats
-        let noRoom = floating && !layout.floatChosen && MacWindowFrame.widthNeededForColumn(layout) > MacWindowFrame.roomToWiden()
+        // No room to dock: floating, a column needs a wider window, and the screen can't give it (chosen float too).
+        let need = MacWindowFrame.widthNeededForColumn(layout)
+        let noRoom = floating && need > 0 && need > MacWindowFrame.roomToWiden()
         let tip = noRoom ? "Widen the window to dock" : (floating ? "Show as column" : "Float over content")
         Button { toggle() } label: {
             Image(systemName: floating ? "sidebar.right" : "rectangle.on.rectangle")
@@ -1765,6 +1767,8 @@ struct MacToolbarTrailing: View {
 /// as `MacSearchEscape`). Not while text is being edited (Esc belongs to the field there).
 @MainActor enum MacSelectionEscape {
     static var exit: (() -> Void)? { didSet { if exit != nil { install() } } }
+    /// Esc belongs to something else right now (an open Map card preview: View › Close Preview).
+    static var blocked: (() -> Bool)?
     private static var monitor: AnyObject?
     private static func install() {
         guard monitor == nil, let cls: AnyClass = NSClassFromString("NSEvent") else { return }
@@ -1774,7 +1778,7 @@ struct MacToolbarTrailing: View {
         let handler: @convention(block) (AnyObject) -> AnyObject? = { event in
             guard (event.value(forKey: "keyCode") as? NSNumber)?.intValue == 53 else { return event }   // Esc
             return MainActor.assumeIsolated {
-                guard let exit else { return event }
+                guard let exit, !MacPresentation.somethingPresented(), !(blocked?() ?? false) else { return event }
                 if MacSearchEscape.active {
                     if MacSearchEscape.hasText?() ?? true { return event }   // a search to clear first
                 } else {
@@ -1806,7 +1810,9 @@ struct MacToolbarTrailing: View {
         let handler: @convention(block) (AnyObject) -> AnyObject? = { event in
             guard (event.value(forKey: "keyCode") as? NSNumber)?.intValue == 53 else { return event }   // Esc
             return MainActor.assumeIsolated {
-                guard active, let leave, hasText?() ?? true else { return event }
+                guard active, let leave else { return event }
+                // Empty field: with selection mode on, Esc ends that instead (sweep 1 · N3); otherwise it leaves the field.
+                if !(hasText?() ?? true), MacSelectionEscape.exit != nil { return event }
                 leave()
                 return nil
             }

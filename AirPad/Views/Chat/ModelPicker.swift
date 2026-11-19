@@ -1135,11 +1135,14 @@ private struct MacReturnSendModifier: ViewModifier {
     }
     static func clear(_ id: UUID) { if owner == id { owner = nil; send = nil; enabled = false } }
 
-    /// The focused text input is composing (marked text): its Return belongs to the input method.
-    private static func composing() -> Bool {
+    /// Return is ours only when a text input has focus, isn't composing (marked text belongs to the input method), and
+    /// nothing (an alert, a sheet) is presented over the window (sweep 1 review).
+    private static func returnIsOurs() -> Bool {
+        if MacPresentation.somethingPresented() { return false }
         FirstResponderProbe.current = nil
         UIApplication.shared.sendAction(#selector(UIResponder.airpadCaptureFirstResponder), to: nil, from: nil, for: nil)
-        return (FirstResponderProbe.current as? UITextInput)?.markedTextRange != nil
+        guard let input = FirstResponderProbe.current as? UITextInput else { return false }
+        return input.markedTextRange == nil
     }
 
     private static func installMonitor() {
@@ -1154,7 +1157,7 @@ private struct MacReturnSendModifier: ViewModifier {
             // ⇧ (1<<17) ⌃ (1<<18) ⌥ (1<<19) ⌘ (1<<20): the text system's (a new line) or a menu's.
             guard flags & (0xF << 17) == 0 else { return event }
             return MainActor.assumeIsolated {
-                guard owner != nil, let send, !composing() else { return event }
+                guard owner != nil, let send, returnIsOurs() else { return event }
                 if enabled { send() }
                 return nil   // a disabled send still swallows Return: an empty field doesn't fill with blank lines
             }
@@ -1164,6 +1167,19 @@ private struct MacReturnSendModifier: ViewModifier {
 }
 
 @MainActor enum FirstResponderProbe { static weak var current: UIResponder? }
+
+/// Sweep 1 review — a sheet, alert or popover is up over the app's window (key monitors then leave keys to it).
+@MainActor enum MacPresentation {
+    static func somethingPresented() -> Bool {
+        // Catalyst puts a sheet in a window of its own; a presentation can also sit on the main window's root.
+        for scene in UIApplication.shared.connectedScenes.compactMap({ $0 as? UIWindowScene }) {
+            guard let main = scene.windows.first(where: { $0.windowLevel == .normal }) else { continue }
+            if main.rootViewController?.presentedViewController != nil { return true }
+            if let key = scene.windows.first(where: \.isKeyWindow), key !== main { return true }
+        }
+        return false
+    }
+}
 extension UIResponder {
     @objc func airpadCaptureFirstResponder() { FirstResponderProbe.current = self }
 }

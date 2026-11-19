@@ -139,9 +139,17 @@ enum MacBatchESelfTest {
         await store.setCollectionColor(id, hex: "#D6249F"); await settle(1.5)
         let want = hue(CollectionColors.uiColor("#D6249F")!)
         let hues = memberHues()
-        row("E6 Map: the region pill takes the chosen colour", MapColorProbe.labelHex[key] == "#D6249F", "\(autoHex ?? "nil") → \(MapColorProbe.labelHex[key] ?? "nil")")
-        row("E6 Map: its orbs take the chosen colour's family (hue)", !hues.isEmpty && hues.allSatisfy { abs($0 - want) < 0.02 },
-            "\(hues.count) orbs")
+        if CollectionColors.retired {
+            // Sweep 1 · N16 — collection colours are retired: a stored choice no longer recolours the Map.
+            row("E6 Map (colours retired): the region pill keeps its palette colour", MapColorProbe.labelHex[key] == autoHex,
+                "\(autoHex ?? "nil") → \(MapColorProbe.labelHex[key] ?? "nil")")
+            row("E6 Map (colours retired): its orbs don't take the stored colour", hues.isEmpty || !hues.allSatisfy { abs($0 - want) < 0.02 },
+                "\(hues.count) orbs")
+        } else {
+            row("E6 Map: the region pill takes the chosen colour", MapColorProbe.labelHex[key] == "#D6249F", "\(autoHex ?? "nil") → \(MapColorProbe.labelHex[key] ?? "nil")")
+            row("E6 Map: its orbs take the chosen colour's family (hue)", !hues.isEmpty && hues.allSatisfy { abs($0 - want) < 0.02 },
+                "\(hues.count) orbs")
+        }
         row("E6 sidebar / List: the resolver returns the chosen colour", CollectionDot.color(id, light: true, chosen: store.collectionColorHex(id))
             == Color(uiColor: CollectionColors.uiColor("#D6249F")!))
         await store.setCollectionColor(id, hex: nil); await settle(1.5)

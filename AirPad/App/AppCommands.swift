@@ -242,8 +242,8 @@ enum MacFeelSwitches {
     /// M8 — the Librarian panel's Search fade (T tunes by eye).
     static let searchFadeStrengthKey = "mac.searchFade.strength"
     static let searchFadeHeightKey = "mac.searchFade.height"
-    static let searchFadeStrengthDefault = 0.22
-    static let searchFadeHeightDefault = 160.0
+    static let searchFadeStrengthDefault = 0.49   // T's value (fix-up 6 check, 2026-11-18)
+    static let searchFadeHeightDefault = 250.0   // T's value
     static let shownKey = "mac.feelSwitches.shown"
     static var entryInstant: Bool {
         #if DEBUG || DEVSWITCHES

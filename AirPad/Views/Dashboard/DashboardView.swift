@@ -163,34 +163,26 @@ struct DashboardView: View {
     /// Mac batch D4 — the Dashboard's width, for its pane grid.
     @State private var macWidth: CGFloat = 0
 
-    /// Mac batch E3 — Today on the Mac, T's v3 pick "compact": one column (max 860 pt) centred on the Dashboard's ground —
-    /// the date with the journal field; Activity | Priority side by side (stacked under ~700 pt); "Pick up again" = the
-    /// next three recent entries as small hero tiles (Activity already lists the latest three). No collections: the
-    /// sidebar lists them (the Sample Library's remove lives in Settings › Sample Library).
+    /// Mac batch E3 — Today on the Mac, T's v3 pick "compact": one column (max 860 pt) centred on the Dashboard's ground.
+    /// Sweep 1 · N11 [T ruled "yes"]: Today = the date with the journal field, ONE "Recent" shelf (six tiles — hero image
+    /// or the entry's own gradient — most recently edited first, "See all" opens Recents; three a row when narrow), then
+    /// Priority. (Was Activity | Priority + "Pick up again".) No collections: the sidebar lists them.
     private var macCompactHome: some View {
         let recent = macHomeNodes.sorted { $0.updatedAt > $1.updatedAt }
         let today = macHomeNodes.filter { Calendar.current.isDateInToday($0.createdAt) }.count
-        let pickUp = Array(recent.dropFirst(3).prefix(3))
-        let side = macWidth - macFloatingInset >= 700
+        let wide = macWidth - macFloatingInset >= 700
         return VStack(alignment: .leading, spacing: 14) {
             TodayCardView(recentNodes: [], onJournalPromptTap: openTodayJournal, onRecentTap: { push(.node($0)) },
                           showsActivity: false,
                           dateNote: today == 0 ? nil : (today == 1 ? "1 entry today" : "\(today) entries today"))
-            let activity = macActivityPane(Array(recent.prefix(3)))
-            if side {
-                HStack(alignment: .top, spacing: 14) { activity; macPriorityPane }
-                    .fixedSize(horizontal: false, vertical: true)
-            } else {
-                activity
-                macPriorityPane
-            }
-            if !pickUp.isEmpty { macPickUpPane(pickUp) }
+            macRecentPane(Array(recent.prefix(6)), perRow: wide ? 6 : 3)
+            macPriorityPane
         }
         .frame(maxWidth: 860)
         .frame(maxWidth: .infinity)
         .padding(.trailing, macFloatingInset)
         .accessibilityElement(children: .contain)
-        .accessibilityIdentifier("macTodayHome-\(side ? 2 : 1)")
+        .accessibilityIdentifier("macTodayHome-\(wide ? 2 : 1)")
     }
 
     /// E fix-up 4 (K6) — a floating Librarian / Settings panel covers the content's right side: Today centres in what's
@@ -242,28 +234,6 @@ struct DashboardView: View {
         .buttonStyle(.plain)
     }
 
-    private func macActivityPane(_ nodes: [Node]) -> some View {
-        VStack(alignment: .leading, spacing: 4) {
-            macPaneLabel("Activity").padding(.bottom, 4)
-            if nodes.isEmpty {
-                Text("No recent activity").font(appFont.font(size: 14)).dashSecondaryInk(0.4).padding(.vertical, 8)
-            } else {
-                ForEach(nodes) { node in
-                    macPaneRow(node.title.isEmpty ? (node.untitledDisplayText ?? "Untitled") : node.title,
-                               trailing: node.updatedAt.formatted(.relative(presentation: .numeric, unitsStyle: .narrow))) {
-                        push(.node(node))
-                    }
-                }
-            }
-            Spacer(minLength: 0)
-        }
-        .padding(18)
-        .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .topLeading)
-        .dashboardPaneSurface()
-        .accessibilityElement(children: .contain)
-        .accessibilityIdentifier("macTodayActivity")
-    }
-
     private var macPriorityPane: some View {
         let flagged = store.priorityNodes
         return VStack(alignment: .leading, spacing: 4) {
@@ -289,21 +259,39 @@ struct DashboardView: View {
         .accessibilityIdentifier("macTodayPriority")
     }
 
-    private func macPickUpPane(_ nodes: [Node]) -> some View {
+    /// Sweep 1 · N11 — the "Recent" shelf: up to six tiles in rows of `perRow`; "See all" opens Recents.
+    private func macRecentPane(_ nodes: [Node], perRow: Int) -> some View {
         VStack(alignment: .leading, spacing: 12) {
-            macPaneLabel("Pick up again")
-            HStack(spacing: 12) {
-                ForEach(nodes) { node in
-                    MacPickUpTile(node: node) { push(.node(node)) }
+            HStack(alignment: .firstTextBaseline) {
+                macPaneLabel("Recent")
+                Spacer(minLength: 8)
+                if !nodes.isEmpty {
+                    Button { push(.recents) } label: {
+                        Text("See all").font(appFont.font(size: 13, weight: .medium)).dashSecondaryInk(0.6)
+                    }
+                    .buttonStyle(.plain)
+                    .accessibilityIdentifier("macTodayRecentSeeAll")
                 }
-                ForEach(0..<(3 - nodes.count), id: \.self) { _ in Color.clear.frame(maxWidth: .infinity, maxHeight: 1) }
+            }
+            if nodes.isEmpty {
+                Text("Nothing yet").font(appFont.font(size: 14)).dashSecondaryInk(0.4).padding(.vertical, 8)
+            } else {
+                let rows = stride(from: 0, to: nodes.count, by: perRow).map { Array(nodes[$0..<min($0 + perRow, nodes.count)]) }
+                VStack(spacing: 12) {
+                    ForEach(rows.indices, id: \.self) { r in
+                        HStack(spacing: 12) {
+                            ForEach(rows[r]) { node in MacPickUpTile(node: node) { push(.node(node)) } }
+                            ForEach(0..<(perRow - rows[r].count), id: \.self) { _ in Color.clear.frame(maxWidth: .infinity, maxHeight: 1) }
+                        }
+                    }
+                }
             }
         }
         .padding(18)
         .frame(maxWidth: .infinity, alignment: .leading)
         .dashboardPaneSurface()
         .accessibilityElement(children: .contain)
-        .accessibilityIdentifier("macTodayPickUp")
+        .accessibilityIdentifier("macTodayRecent")
     }
 
     var body: some View {

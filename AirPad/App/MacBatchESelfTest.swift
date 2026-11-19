@@ -63,16 +63,16 @@ enum MacBatchESelfTest {
             let centred = home.flatMap { h in content.map { abs(h.midX - $0.midX) < 3 } } ?? false
             let collectionsShown = MacFixupSelfTest.elements(in: window) { l, _ in l == "Collections" || l == "COLLECTIONS" }
                 .contains { $0.accessibilityFrame.minX > win().minX + layout.sidebarWidth + 2 }
-            row("E3 \(Int(window.bounds.width)) pt: \(want == 2 ? "Activity | Priority side by side" : "one column"), ≤ 860, centred, no collections",
+            row("E3/N11 \(Int(window.bounds.width)) pt: \(want == 2 ? "Recent six a row" : "Recent three a row"), ≤ 860, centred, no collections",
                 home != nil && (home?.width ?? 999) <= 861 && centred && !collectionsShown
-                && !els("macTodayActivity").isEmpty && !els("macTodayPriority").isEmpty,
+                && !els("macTodayRecent").isEmpty && !els("macTodayPriority").isEmpty && els("macTodayActivity").isEmpty,
                 "home \(home.map { "\(Int($0.width)) at \(Int($0.midX - win().minX))" } ?? "nil") · content mid \(content.map { Int($0.midX - win().minX) } ?? -1)")
             layout.sidebarWidth = MacLayout.sidebarWidthDefault
         }
         await resize(1350)
         let pickUp = Set(els("macTodayPickUpTile").map { Int($0.accessibilityFrame.minX.rounded()) }).count
         let homeCount = UserDefaults.standard.bool(forKey: "MacTodaySample") ? store.nodes.filter { store.isSample($0.id) }.count : store.userNodes.count
-        row("E3 Pick up again: up to 3 tiles (next three recent entries)", pickUp == max(0, min(3, homeCount - 3)),
+        row("N11 Recent: up to 6 tiles in one row at 1,350 pt (most recently edited first)", pickUp == min(6, homeCount),
             "tiles \(pickUp) · entries Today reads \(homeCount)")
 
         // E4 — Cards default 210 (a remembered size wins).

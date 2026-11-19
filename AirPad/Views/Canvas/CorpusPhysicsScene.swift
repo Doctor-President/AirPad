@@ -1841,6 +1841,12 @@ final class CorpusPhysicsScene: SKScene {
     private let cardMorphLerp: CGFloat = 0.10
     #if targetEnvironment(macCatalyst)
     private var cardLastStepTime: CFTimeInterval = 0   // L2 — the morph's wall-clock step on the Mac
+    #if targetEnvironment(macCatalyst)
+    /// Sweep 1 · N14 — what the open card was last centred for (the covered strip, the Map's size), and a short glide
+    /// to the new centre when a panel switches / opens / closes / resizes or the window resizes.
+    private var cardRecentreKey: SIMD3<Double>?
+    private var cardRecentre: (from: CGPoint, to: CGPoint, t0: CFTimeInterval)?
+    #endif
     #endif
     /// Orb→card cross-fade band: the tapped orb holds full alpha until `Start`,
     /// then fades to 0 by `End` as the SwiftUI card face fades IN — so the orb
@@ -2779,6 +2785,24 @@ final class CorpusPhysicsScene: SKScene {
         #else
         cardProgress += (target - cardProgress) * cardMorphLerp
         #endif
+        #if targetEnvironment(macCatalyst)
+        // Sweep 1 · N14 — G4's rule kept while the card is open: any change of the covered strip or the Map's size
+        // re-centres it in what's visible (a 0.28 s glide; the morph's own glide then holds the new centre).
+        if let id = activeCardID, carded == id, cardCamTarget != nil, let v = view {
+            let key = SIMD3<Double>(Double(macCardOcclusion), Double(v.bounds.width), Double(v.bounds.height))
+            if key != cardRecentreKey {
+                if cardRecentreKey != nil, let base = nodeRestingPositions[id] ?? nodeSprites[id]?.position {
+                    let dest = CGPoint(x: base.x + macCardOcclusion / 2 * cameraNode.xScale, y: base.y)
+                    cardRecentre = (from: cameraNode.position, to: dest, t0: now)
+                    cardCamStart = dest; cardCamTarget = dest
+                    restWakePending = true
+                }
+                cardRecentreKey = key
+            }
+        } else {
+            cardRecentreKey = nil; cardRecentre = nil
+        }
+        #endif
         if target == 0 && cardProgress < 0.01 {
             cardProgress = 0
             if let prev = activeCardID, let s = nodeSprites[prev] { s.alpha = 1 }
@@ -2796,6 +2820,13 @@ final class CorpusPhysicsScene: SKScene {
             cameraNode.position = CGPoint(x: start.x + (dest.x - start.x) * e,
                                           y: start.y + (dest.y - start.y) * e)
         }
+        #if targetEnvironment(macCatalyst)
+        if let r = cardRecentre, activeCardID != nil {
+            let u = min(1, (now - r.t0) / 0.28), e = u * u * (3 - 2 * u)
+            cameraNode.position = CGPoint(x: r.from.x + (r.to.x - r.from.x) * e, y: r.from.y + (r.to.y - r.from.y) * e)
+            if u >= 1 { cardRecentre = nil }
+        }
+        #endif
         syncFocalToCanvasState()
     }
 

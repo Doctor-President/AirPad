@@ -2358,8 +2358,22 @@ private struct MapFocalOverlay: View {
             // the Map.) Every change of the presented card wakes it. (iPhone: every change comes with a touch.)
             if RunningOnMac.isMac { scene.wakeFromRest("card") }
         }
+        #if targetEnvironment(macCatalyst)
+        // Sweep 1 · N14 — a panel switch / open / close / resize or a window resize with a card open: wake the Map so the
+        // scene re-centres the card in what's visible (the change comes with no pointer over the Map).
+        .onChange(of: macCardLayoutKey) { _, _ in
+            if canvasState.cardedNodeID != nil { scene.wakeFromRest("cardLayout") }
+        }
+        #endif
     }
 }
+
+#if targetEnvironment(macCatalyst)
+@MainActor private var macCardLayoutKey: [Double] {
+    let l = MacLayout.shared
+    return [l.rightPanelOpen ? 1 : 0, l.librarianFloats ? 1 : 0, Double(l.rightWidth), Double(l.windowWidth)]
+}
+#endif
 
 private extension View {
     /// E fix-up 5 (L2) — the morphing card on the Mac: laid out ONCE at its final size and grown with a scale and a

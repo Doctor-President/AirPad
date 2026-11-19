@@ -75,10 +75,9 @@ struct MacEntryItemDrop: ViewModifier {
         func dropUpdated(info: DropInfo) -> DropProposal? { DropProposal(operation: .copy) }
         func performDrop(info: DropInfo) -> Bool {
             let providers = info.itemProviders(for: [.item])
-            let into = CorpusStore.entryDropFits(providers, into: item)
             over = false
-            // Doesn't fit: today's drop (new items at the end).
-            perform(providers, into ? .into(itemID: item.id) : .at(index: .max))
+            // Sweep 1 · N5 — the hovered item takes what fits; the rest sorts (`dropIntoEntry`).
+            perform(providers, .into(itemID: item.id))
             return true
         }
     }
@@ -101,9 +100,17 @@ enum MacEntryDrop {
     @MainActor static func perform(_ providers: [NSItemProvider], _ placement: CorpusStore.EntryDropPlacement, nodeID: String,
                                    store: CorpusStore, undoManager: UndoManager?) {
         Task { @MainActor in
-            guard let undo = await store.dropIntoEntry(providers, nodeID: nodeID, placement: placement) else { return }
+            guard let undo = await store.dropIntoEntry(providers, nodeID: nodeID, placement: placement,
+                                                       choose: { kind, items in await MacDropNote.shared.ask(kind, items) })
+            else { return }
             undoManager?.registerUndo(withTarget: store) { s in Task { @MainActor in await s.undoEntryDrop(undo) } }
             undoManager?.setActionName("Add")
+            // Sweep 1 · N5 — say what went where, with Undo (⌘Z still works).
+            if !undo.summary.isEmpty {
+                MacDropNote.shared.show(undo.summary) { [weak undoManager] in
+                    if undoManager?.canUndo == true { undoManager?.undo() } else { Task { await store.undoEntryDrop(undo) } }
+                }
+            }
             NSLog("[EntryDrop] %@ → gallery %d docs %d links %d new %d", String(describing: placement),
                   undo.gallery.count, undo.documents.count, undo.links.count, undo.newItems.count)
         }
@@ -141,6 +148,68 @@ struct MacEntryGapDrop: View {
             .onChange(of: on) { _, v in
                 if v { MacEntryDragState.shared.began(); DropHighlightWatchdog.watch("gap-\(insertAt)") { on = false } }
             }
+    }
+}
+
+/// Sweep 1 · N5 — the short note after a sorted drop ("Added 1 photo to Gallery · 1 PDF to Documents", Undo), and the
+/// question when two items of the same kind could take a drop (a small choice naming them, plus "New Item").
+@MainActor @Observable final class MacDropNote {
+    static let shared = MacDropNote()
+    var message: String?
+    @ObservationIgnored var undo: (() -> Void)?
+    var question: (title: String, options: [(id: String, name: String)])?
+    @ObservationIgnored private var answer: CheckedContinuation<String?, Never>?
+    @ObservationIgnored private var token = UUID()
+
+    func show(_ text: String, undo: @escaping () -> Void) {
+        message = text; self.undo = undo
+        let t = UUID(); token = t
+        Task { try? await Task.sleep(for: .seconds(6)); if self.token == t { self.message = nil } }
+    }
+
+    func ask(_ kind: CorpusStore.EntryDropKind, _ items: [NodeItem]) async -> String? {
+        let noun = kind == .media ? "photos and videos" : kind == .document ? "files" : "links"
+        answer?.resume(returning: nil)
+        return await withCheckedContinuation { c in
+            answer = c
+            question = ("Add the \(noun) to…", items.map { ($0.id, $0.displayName ?? $0.type.defaultDisplayName) })
+        }
+    }
+
+    func reply(_ id: String?) {
+        answer?.resume(returning: id); answer = nil; question = nil
+    }
+}
+
+struct MacDropNoteView: View {
+    @State private var note = MacDropNote.shared
+    var body: some View {
+        VStack {
+            Spacer()
+            if let m = note.message {
+                HStack(spacing: 12) {
+                    Text(m).font(.system(size: 13)).foregroundStyle(AppearancePalette.ink).lineLimit(2)
+                    Button("Undo") { note.undo?(); note.message = nil }
+                        .buttonStyle(.plain).font(.system(size: 13, weight: .semibold)).foregroundStyle(Color.accentColor)
+                        .accessibilityIdentifier("entryDropNoteUndo")
+                }
+                .padding(.horizontal, 16).padding(.vertical, 10)
+                .background(Capsule().fill(.regularMaterial))
+                .overlay(Capsule().strokeBorder(AppearancePalette.ink.opacity(0.12)))
+                .padding(.bottom, 24)
+                .transition(.opacity)
+                .accessibilityElement(children: .contain)
+                .accessibilityIdentifier("entryDropNote")
+            }
+        }
+        .animation(.easeOut(duration: 0.2), value: note.message)
+        .allowsHitTesting(note.message != nil)
+        .confirmationDialog(note.question?.title ?? "", isPresented: Binding(
+            get: { note.question != nil }, set: { if !$0 && note.question != nil { note.reply(nil) } }
+        ), titleVisibility: .visible) {
+            ForEach(note.question?.options ?? [], id: \.id) { o in Button(o.name) { note.reply(o.id) } }
+            Button("New Item") { note.reply(nil) }
+        }
     }
 }
 #endif

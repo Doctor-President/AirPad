@@ -10035,6 +10035,14 @@ final class CorpusStore {
         var documents: [(entry: String, id: String)] = []
         var links: [(entry: String, id: String)] = []
         var newItems: [String] = []
+        /// Sweep 1 · N5 — what went into which existing item ("2 photos", "Gallery"), for the note.
+        var placed: [(what: String, item: String)] = []
+        /// "Added 1 photo to Gallery · 1 PDF to Documents · 1 new item".
+        var summary: String {
+            var parts = placed.map { "\($0.what) to \($0.item)" }
+            if !newItems.isEmpty { parts.append(newItems.count == 1 ? "1 new item" : "\(newItems.count) new items") }
+            return parts.isEmpty ? "" : "Added " + parts.joined(separator: " · ")
+        }
     }
 
     /// What a dragged provider becomes, in `ShareItemLoader.loadItem`'s order (movie → audio → image → URL → …).
@@ -10060,62 +10068,44 @@ final class CorpusStore {
         }
     }
 
-    /// Every provider fits `item` (a mixed drop goes into it only if all of it does).
+    /// Sweep 1 · N5 — some of the drag fits `item` (a hovered item takes what fits; the rest sorts).
     nonisolated static func entryDropFits(_ providers: [NSItemProvider], into item: NodeItem) -> Bool {
         guard let want = entryDropKind(of: item), !providers.isEmpty else { return false }
-        return providers.allSatisfy { entryDropKind($0) == want }
+        return providers.contains { entryDropKind($0) == want }
     }
 
-    func dropIntoEntry(_ providers: [NSItemProvider], nodeID: String, placement: EntryDropPlacement) async -> EntryDropUndo? {
+    /// Sweep 1 · N5 [T ruled "Sort"] — a drop into an open entry is SORTED by type: each file goes to the existing item that
+    /// takes its type (photos / videos → the gallery, files → the documents item, web links → the Link item); a hovered
+    /// item takes what fits first. A type with no such item becomes a new item at the gap it was dropped on (else at the
+    /// end), as does anything no item takes (text, audio). When two items of the same kind could take it and none is
+    /// hovered, `choose` asks (the item's id, or nil = a new item). The undo record also says what went where (the note).
+    func dropIntoEntry(_ providers: [NSItemProvider], nodeID: String, placement: EntryDropPlacement,
+                       choose: (@MainActor (EntryDropKind, [NodeItem]) async -> String?)? = nil) async -> EntryDropUndo? {
         guard !providers.isEmpty, !LibraryFormatGuard.isReadOnly, let node = nodes.first(where: { $0.id == nodeID }) else { return nil }
         var undo = EntryDropUndo(nodeID: nodeID)
-        if case .into(let itemID) = placement, let target = node.items.first(where: { $0.id == itemID }),
-           Self.entryDropFits(providers, into: target), let kind = Self.entryDropKind(of: target) {
-            let inbox = FileManager.default.temporaryDirectory.appendingPathComponent("drop-inbox-\(UUID().uuidString)")
-            defer { try? FileManager.default.removeItem(at: inbox) }
-            let now = Date()
-            var loaded: [NodeItem] = []
-            for p in providers {
-                if let item = await withCheckedContinuation({ (c: CheckedContinuation<NodeItem?, Never>) in
-                    ShareItemLoader.loadItem(from: p, nodeID: nodeID, now: now, inbox: inbox) { c.resume(returning: $0) }
-                }) { loaded.append(item) }
+        var byKind: [EntryDropKind: [NSItemProvider]] = [:]
+        for p in providers { byKind[Self.entryDropKind(p), default: []].append(p) }
+        var newProviders = byKind[.other] ?? []
+        for kind in [EntryDropKind.media, .document, .link] {
+            guard let ps = byKind[kind], !ps.isEmpty else { continue }
+            var target: NodeItem?
+            if case .into(let itemID) = placement, let hovered = node.items.first(where: { $0.id == itemID }),
+               Self.entryDropKind(of: hovered) == kind {
+                target = hovered
+            } else {
+                let candidates = node.items.filter { Self.entryDropKind(of: $0) == kind }
+                if candidates.count == 1 { target = candidates[0] }
+                else if candidates.count > 1 {
+                    let picked = await choose?(kind, candidates)
+                    target = picked.flatMap { id in candidates.first { $0.id == id } }
+                }
             }
-            let staged = { (i: NodeItem) -> URL? in i.file.map { inbox.appendingPathComponent(nodeID).appendingPathComponent($0) } }
-            switch kind {
-            case .media:
-                let pending = loaded.compactMap { i -> PendingMediaItem? in
-                    guard let url = staged(i) else { return nil }
-                    return PendingMediaItem(itemID: i.id, mediaType: i.type == .video ? .video : .image, sourceURL: url,
-                                            fileExtension: url.pathExtension, originalName: i.originalName)
-                }
-                await appendMediaItems(toEntryID: itemID, nodeID: nodeID, mediaItems: pending)
-                undo.gallery = pending.map { (itemID, $0.itemID) }
-            case .document:
-                // The staged copy is `<uuid>.<ext>`; hand over the file under its real name (the item keeps that name).
-                var urls: [URL] = []
-                for i in loaded {
-                    guard let url = staged(i) else { continue }
-                    let name = DocumentNaming.storedName(i.description)
-                    guard !name.isEmpty else { urls.append(url); continue }
-                    let dir = inbox.appendingPathComponent("named-\(i.id)")
-                    let named = dir.appendingPathComponent(name.hasSuffix(".\(url.pathExtension)") ? name : "\(name).\(url.pathExtension)")
-                    try? FileManager.default.createDirectory(at: dir, withIntermediateDirectories: true)
-                    urls.append((try? FileManager.default.moveItem(at: url, to: named)) != nil ? named : url)
-                }
-                let docs = await appendDocumentItems(toEntryID: itemID, nodeID: nodeID, sourceURLs: urls)
-                undo.documents = docs.map { (itemID, $0.id) }
-            case .link:
-                for i in loaded {
-                    if let l = await appendLinkItem(toEntryID: itemID, nodeID: nodeID, url: i.url ?? "") { undo.links.append((itemID, l.id)) }
-                }
-            case .other:
-                break
-            }
-            return undo
+            if let target { await addDrop(ps, kind: kind, into: target, nodeID: nodeID, undo: &undo) } else { newProviders += ps }
         }
-        // A gap, or an item that can't take all of it: new items (today's drop), then moved to the gap.
-        let before = Set(node.items.map(\.id))
-        _ = await importDrop(providers, appendTo: nodeID)
+        guard !newProviders.isEmpty else { return undo }
+        // New items (today's drop path), then moved to the gap they were dropped on.
+        let before = Set((nodes.first { $0.id == nodeID }?.items ?? []).map(\.id))
+        _ = await importDrop(newProviders, appendTo: nodeID)
         let added = (nodes.first { $0.id == nodeID }?.items ?? []).filter { !before.contains($0.id) }.map(\.id)
         undo.newItems = added
         // Past the last item (`.at(index: .max)` = "not here: at the end") they're already where they go.
@@ -10128,6 +10118,63 @@ final class CorpusStore {
             }
         }
         return undo
+    }
+
+    /// Adds `providers` (all of `kind`) at the end of the existing item `target`.
+    private func addDrop(_ providers: [NSItemProvider], kind: EntryDropKind, into target: NodeItem, nodeID: String,
+                         undo: inout EntryDropUndo) async {
+        let itemID = target.id
+        let inbox = FileManager.default.temporaryDirectory.appendingPathComponent("drop-inbox-\(UUID().uuidString)")
+        defer { try? FileManager.default.removeItem(at: inbox) }
+        let now = Date()
+        var loaded: [NodeItem] = []
+        for p in providers {
+            if let item = await withCheckedContinuation({ (c: CheckedContinuation<NodeItem?, Never>) in
+                ShareItemLoader.loadItem(from: p, nodeID: nodeID, now: now, inbox: inbox) { c.resume(returning: $0) }
+            }) { loaded.append(item) }
+        }
+        let staged = { (i: NodeItem) -> URL? in i.file.map { inbox.appendingPathComponent(nodeID).appendingPathComponent($0) } }
+        let name = target.displayName ?? target.type.defaultDisplayName
+        switch kind {
+        case .media:
+            let pending = loaded.compactMap { i -> PendingMediaItem? in
+                guard let url = staged(i) else { return nil }
+                return PendingMediaItem(itemID: i.id, mediaType: i.type == .video ? .video : .image, sourceURL: url,
+                                        fileExtension: url.pathExtension, originalName: i.originalName)
+            }
+            await appendMediaItems(toEntryID: itemID, nodeID: nodeID, mediaItems: pending)
+            undo.gallery += pending.map { (itemID, $0.itemID) }
+            let videos = pending.filter { $0.mediaType == .video }.count, photos = pending.count - videos
+            if photos > 0 { undo.placed.append((photos == 1 ? "1 photo" : "\(photos) photos", name)) }
+            if videos > 0 { undo.placed.append((videos == 1 ? "1 video" : "\(videos) videos", name)) }
+        case .document:
+            // The staged copy is `<uuid>.<ext>`; hand over the file under its real name (the item keeps that name).
+            var urls: [URL] = []
+            for i in loaded {
+                guard let url = staged(i) else { continue }
+                let real = DocumentNaming.storedName(i.description)
+                guard !real.isEmpty else { urls.append(url); continue }
+                let dir = inbox.appendingPathComponent("named-\(i.id)")
+                let named = dir.appendingPathComponent(real.hasSuffix(".\(url.pathExtension)") ? real : "\(real).\(url.pathExtension)")
+                try? FileManager.default.createDirectory(at: dir, withIntermediateDirectories: true)
+                urls.append((try? FileManager.default.moveItem(at: url, to: named)) != nil ? named : url)
+            }
+            let docs = await appendDocumentItems(toEntryID: itemID, nodeID: nodeID, sourceURLs: urls)
+            undo.documents += docs.map { (itemID, $0.id) }
+            if !docs.isEmpty {
+                let ext = Set(docs.map { $0.fileType.uppercased() })
+                let noun = ext.count == 1 && !(ext.first ?? "").isEmpty ? ext.first! : "file"
+                undo.placed.append((docs.count == 1 ? "1 \(noun)" : "\(docs.count) \(noun)s", name))
+            }
+        case .link:
+            var n = 0
+            for i in loaded {
+                if let l = await appendLinkItem(toEntryID: itemID, nodeID: nodeID, url: i.url ?? "") { undo.links.append((itemID, l.id)); n += 1 }
+            }
+            if n > 0 { undo.placed.append((n == 1 ? "1 link" : "\(n) links", name)) }
+        case .other:
+            break
+        }
     }
 
     /// Takes back what `dropIntoEntry` added (Edit › Undo).

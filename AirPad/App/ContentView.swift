@@ -5,6 +5,9 @@ struct ContentView: View {
 
     @Environment(AppRouter.self) private var router
     @Environment(CorpusStore.self) private var store
+    #if targetEnvironment(macCatalyst)
+    @Environment(\.undoManager) private var undoManager   // sweep 1 · N5 — a window drop into the open entry
+    #endif
     @Environment(SelectionService.self) private var selection
     @Environment(QuarantineStore.self) private var quarantineStore
 
@@ -488,9 +491,18 @@ struct ContentView: View {
         .onDrop(of: [.item], isTargeted: $dropTargeted) { providers in
             guard router.entryMode != .quikCapture else { return false }
             let target = store.isInDetailView ? router.openEntryID : nil
+            #if targetEnvironment(macCatalyst)
+            if let target {   // sweep 1 · N5 — anywhere in an open entry: sorted like a drop on the entry itself
+                MacEntryDrop.perform(providers, .at(index: .max), nodeID: target, store: store, undoManager: undoManager)
+                return true
+            }
+            #endif
             Task { await store.importDrop(providers, appendTo: target) }
             return true
         }
+        #if targetEnvironment(macCatalyst)
+        .overlay { MacDropNoteView() }   // sweep 1 · N5 — what a drop added where, with Undo
+        #endif
         #if targetEnvironment(macCatalyst)
         // E fix-up 5 (L3) — T saw a blue outline round the whole window "appearing unpredictably": this highlight is
         // the only whole-window blue outline in the app, and SwiftUI's `isTargeted` can stay true after a drag that

@@ -120,7 +120,12 @@ enum MapCompTuning {
         let t = min(max((x - a) / (b - a), 0), 1); return t * t * (3 - 2 * t)
     }
     static func defocus(_ yn: Float) -> Float {
-        max(1 - smoothstep(topEdge0, topEdge1, yn), smoothstep(botEdge0, botEdge1, yn))
+        #if targetEnvironment(macCatalyst)
+        // Mac sweep 1 · N6 [T: "It looks strange"]: no top/bottom focus band on the Mac (light + dark); the iPhone keeps it.
+        return 0
+        #else
+        return max(1 - smoothstep(topEdge0, topEdge1, yn), smoothstep(botEdge0, botEdge1, yn))
+        #endif
     }
     // Brief AU — focus is coupled to "READING MODE", NOT absolute camera scale (which didn't transfer
     // across library sizes: T's 5235-node library sits at a different absolute scale than the 210-node

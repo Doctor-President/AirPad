@@ -52,3 +52,8 @@ scripts/testflight.env
 
 # Brief Y — read-only real-corpus clones for the -CorpusFixture arg (never committed)
 fixtures/
+
+# Swift LSP build-server config (machine-specific; xcode-build-server)
+buildServer.json
+# Python bytecode anywhere
+__pycache__/

@@ -69,7 +69,19 @@ func upgradeAppendedItems(_ items: [NodeItem], after node: Node) -> [NodeItem] {
     temp.items = node.items + items
     temp.entrySchemaVersion = 0
     migrateEntrySchemaIfNeeded(&temp)
-    return Array(temp.items.suffix(items.count))
+    // The migration numbers by the legacy type, so a dropped photo can't see the entry's (already merged) gallery items:
+    // number each new name past the names the entry already uses (sweep 1 review: two "Image"s in the drop choice).
+    var used = Set(node.items.compactMap(\.displayName))
+    var out = Array(temp.items.suffix(items.count))
+    for i in out.indices {
+        guard let name = out[i].displayName, used.contains(name) else { if let n = out[i].displayName { used.insert(n) }; continue }
+        let base = name.replacingOccurrences(of: #" \d+$"#, with: "", options: .regularExpression)
+        var k = 2
+        while used.contains("\(base) \(k)") { k += 1 }
+        out[i].displayName = "\(base) \(k)"
+        used.insert(out[i].displayName!)
+    }
+    return out
 }
 
 // MARK: - v0 → v1 (Stage 3.1a entry primitive)

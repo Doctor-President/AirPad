@@ -559,7 +559,7 @@ private struct NodeTileView: View, Equatable {
     /// the same face from `@Environment` and re-renders when this wrapper does.
     let appFont: EntryBodyFont
     /// Sweep 1 · 1.5 (sheet E) — on screen (any part of the card inside the scroll view's bounds).
-    @State private var onScreen = false
+    @State private var onScreen = true   // until the scroll view says otherwise (a missed first callback must not freeze it)
     @Environment(\.cardsPlaceShowing) private var placeShowing
 
     // Commit 3 — targeted re-render. `Node.==` is id-only, so SwiftUI's default

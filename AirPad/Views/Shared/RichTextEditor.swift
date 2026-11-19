@@ -4641,7 +4641,9 @@ enum NoteDecodeCache {
 
     static func decoded(_ markdown: String, documentStyle: Bool, font: NoteFontChoice) -> NSAttributedString {
         if perfAB("nonotecache") { return make(markdown, documentStyle, font) }   // bench A/B (false outside DEBUG / PERFLOG)
-        let k = "\(documentStyle ? 1 : 0)|\(font)|\(markdown)" as NSString
+        // The text size is part of the style (fonts follow Dynamic Type / the Mac's text size; sweep 1 review).
+        let size = UIFont.preferredFont(forTextStyle: .body).pointSize
+        let k = "\(documentStyle ? 1 : 0)|\(font)|\(size)|\(markdown)" as NSString
         if let hit = cache.object(forKey: k) { return hit }
         let made = make(markdown, documentStyle, font)
         var hasAttachment = false

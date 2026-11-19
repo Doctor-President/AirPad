@@ -26,8 +26,18 @@ struct MapAdaptiveRate {
     static let fast = 120, steady = 60
 
     static let missInterval: TimeInterval = 1.5 / 120   // 12.5 ms
+    #if targetEnvironment(macCatalyst)
+    /// Mac sweep 1 · 1.1 (measured, T's "Map definitely not 120"): on the Mac a stray late frame (a 16.7 ms gap now and
+    /// then, from the window's other work) is normal, and 3 in 24 demoted the Map to 60 for 4–60 s on every pan; at 60
+    /// on a 120 Hz display it then alternated 16.7 / 25 ms gaps ≈ 42–45 fps (recorder, 284-entry library, every look).
+    /// Held at 120 the same pans ran at a median 8.3 ms (Map 42 → 75 fps). So the Mac demotes only on SUSTAINED misses:
+    /// a quarter of the frames late over half a second (a Mac whose GPU really can't keep 120 still gets the steady 60).
+    static let window = 60
+    static let missesToDrop = 15
+    #else
     static let window = 24
     static let missesToDrop = 3
+    #endif
     static let holds: [TimeInterval] = [4, 15, 60]
     /// Frames ignored after the rate changes (the display settles into the new cadence).
     static let settleFrames = 3
@@ -50,6 +60,9 @@ struct MapAdaptiveRate {
     /// `regime`: 1 while the wells draw, else 0. `gestureStart`: true on the first active frame after rest / a touch-down.
     mutating func frame(at t: TimeInterval, regime: Int, gestureStart: Bool) -> Int {
         guard Self.enabled else { return Self.steady }
+        #if PERFLOG
+        if perfAB("map120") { return Self.fast }   // sweep 1 · 1.1 bench A/B: never demote
+        #endif
         let r = max(0, min(1, regime))
         if gestureStart || !gestureActive {
             gestureActive = true
@@ -64,6 +77,9 @@ struct MapAdaptiveRate {
             if lastTime > 0 {
                 let dt = t - lastTime
                 if settle > 0 { settle -= 1 } else {
+                    #if PERFLOG
+                    recentDT.append(dt); if recentDT.count > Self.window { recentDT.removeFirst() }
+                    #endif
                     recent.append(dt > Self.missInterval)
                     if recent.count > Self.window { recent.removeFirst(recent.count - Self.window) }
                     if recent.filter({ $0 }).count >= Self.missesToDrop { demote(r, at: t) }
@@ -85,7 +101,16 @@ struct MapAdaptiveRate {
         lastTime = 0
     }
 
+    #if PERFLOG
+    private var recentDT: [TimeInterval] = []
+    #endif
+
     private mutating func demote(_ r: Int, at t: TimeInterval) {
+        #if PERFLOG
+        let gaps = recentDT.map { String(format: "%.1f", $0 * 1000) }.joined(separator: " ")
+        Perf.mark("map rate 120→60 regime \(r) gaps(ms) \(gaps)")
+        recentDT.removeAll()
+        #endif
         let hold = Self.holds[min(regimes[r].failures, Self.holds.count - 1)]
         regimes[r].failures += 1
         regimes[r].demoted = true

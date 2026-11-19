@@ -7189,8 +7189,15 @@ final class MapPointerInput: NSObject, UIGestureRecognizerDelegate, UIContextMen
     @objc private func scrolled(_ g: UIPanGestureRecognizer) {
         guard let scene, let view = g.view else { return }
         switch g.state {
-        case .began: scene.pointerGestureBegan()
+        case .began:
+            scene.pointerGestureBegan()
+            #if PERFLOG
+            scrollStamps.removeAll()
+            #endif
         case .changed:
+            #if PERFLOG
+            scrollStamps.append(CACurrentMediaTime())   // sweep 1 · 1.1 bench: how often the scroll reaches the Map
+            #endif
             let t = g.translation(in: view)
             g.setTranslation(.zero, in: view)
             if g.modifierFlags.contains(.alternate) {
@@ -7198,9 +7205,17 @@ final class MapPointerInput: NSObject, UIGestureRecognizerDelegate, UIContextMen
             } else {
                 scene.pointerPan(by: t)
             }
-        default: scene.pointerGestureEnded()
+        default:
+            scene.pointerGestureEnded()
+            #if PERFLOG
+            let d = zip(scrollStamps.dropFirst(), scrollStamps).map { ($0 - $1) * 1000 }.sorted()
+            if !d.isEmpty { Perf.mark(String(format: "map scroll events %d p50 %.1f p90 %.1f ms", scrollStamps.count, d[d.count / 2], d[d.count * 9 / 10])) }
+            #endif
         }
     }
+    #if PERFLOG
+    private var scrollStamps: [CFTimeInterval] = []
+    #endif
 
     @objc private func hovered(_ g: UIHoverGestureRecognizer) {
         guard let scene, let view = g.view else { return }

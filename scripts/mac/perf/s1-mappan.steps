@@ -1,0 +1,14 @@
+# Mac sweep 1 · 1.1 — the Map's own frame rate while panning and at rest (T: Map 8–18 fps while panning, 13–15 at
+# rest). Window 1,350 × 840 at (0,160); Library place. Read with explain.py (Map frames per second) and, on a Debug
+# copy with EXTRA="-MapHeatLog -MapRestLog", the [MapHeat] targetFPS / rendered lines.
+view-map     click toolbar.view.Map
+rest         wait 6000
+map-scroll   scroll 575,600 -400 40 8
+map-scroll   scroll 575,600 400 40 8
+map-scroll   scroll 575,600 -400 40 8
+map-scroll   scroll 575,600 400 40 8
+map-scroll   scroll 575,600 -400 40 8
+map-scroll   scroll 575,600 400 40 8
+map-pan      drag 575,600 180 90 30
+map-pan      drag 575,600 -180 -90 30
+rest         wait 6000

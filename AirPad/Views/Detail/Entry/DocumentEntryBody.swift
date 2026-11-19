@@ -69,6 +69,9 @@ struct DocumentEntryBody: View {
     @State private var showingAppendSheet = false
     @State private var previewIdentity: DocumentHandoff? = nil
     @State private var shareIdentity: DocumentHandoff? = nil
+    #if targetEnvironment(macCatalyst)
+    @State private var macDoc = MacDocumentState()   // sweep 1 · N4
+    #endif
 
     private static let thumbnailHeight: CGFloat = 120
 
@@ -132,6 +135,9 @@ struct DocumentEntryBody: View {
         .clipShape(RoundedRectangle(cornerRadius: 8))
         .contentShape(Rectangle())
         .onTapGesture { Task { await openInQuickLook() } }
+        #if targetEnvironment(macCatalyst)
+        .macDocumentActions(macDoc, doc: documentItem, nodeID: nodeID) { Task { await openInQuickLook() } }
+        #endif
         .overlay(alignment: .topTrailing) { tileMenu }
         .task(id: documentItem?.thumbnailFile) {
             thumbnail = nil
@@ -201,8 +207,11 @@ struct DocumentEntryBody: View {
             Button {
                 Task { await openInQuickLook() }
             } label: {
-                Label("Open", systemImage: "doc.text.magnifyingglass")
+                Label(RunningOnMac.isMac ? "Quick Look" : "Open", systemImage: "doc.text.magnifyingglass")   // N4
             }
+            #if targetEnvironment(macCatalyst)
+            MacDocumentMenuItems(state: macDoc)
+            #endif
             Button {
                 Task { await prepareShare() }
             } label: {

@@ -1,4 +1,6 @@
 import Foundation
+import UIKit
+import SwiftUI
 
 /// live-17 — what a document's viewer and Share sheet are HANDED: the title the viewer shows and the file name a
 /// recipient receives. The `DocumentHandoffName` UI test (run with `-DocumentHandoffProbe -StdoutToFile`) asserts both are
@@ -128,3 +130,161 @@ extension CorpusStore {
         return await DocumentHandoff.make(for: doc, storedURL: stored)
     }
 }
+
+#if targetEnvironment(macCatalyst)
+/// Sweep 1 · N4 [T] — a document item's three Mac actions: Quick Look (the in-app viewer), Open a COPY in its default
+/// app, Reveal in Finder (the stored file, selected). Open hands over a copy by design (`design-refs/mac-sweep-1/
+/// sheet-N4-open-in-app.md`): an edit made in the other app stays in that copy and never writes into the library outside
+/// its own write path; the menu says "Open a Copy with <App>". Edit-in-place is held for T. AppKit through the runtime
+/// (Catalyst has no NSWorkspace), on the main thread.
+@MainActor
+enum MacDocumentActions {
+    private static var workspace: NSObject? {
+        (NSClassFromString("NSWorkspace") as? NSObject.Type)?.perform(NSSelectorFromString("sharedWorkspace"))?
+            .takeUnretainedValue() as? NSObject
+    }
+
+    /// The app that opens this file by default ("Preview"), nil when none.
+    static func defaultAppName(for url: URL) -> String? {
+        guard let ws = workspace,
+              let app = ws.perform(NSSelectorFromString("URLForApplicationToOpenURL:"), with: url)?.takeUnretainedValue() as? URL
+        else { return nil }
+        return app.deletingPathExtension().lastPathComponent
+    }
+
+    static func reveal(_ url: URL) {
+        _ = workspace?.perform(NSSelectorFromString("activateFileViewerSelectingURLs:"), with: [url] as NSArray)
+    }
+
+    /// Copies are kept in Caches/Opened Copies/<id>/<name> (the other app may still have them open after AirPad quits);
+    /// copies older than a week go at launch (`purgeOldCopies`).
+    static let copiesRoot = FileManager.default.urls(for: .cachesDirectory, in: .userDomainMask)[0]
+        .appendingPathComponent("Opened Copies", isDirectory: true)
+
+    static func openCopy(of stored: URL, named title: String, ext: String) async {
+        let name = DocumentHandoff.fileName(title, ext: ext)
+        let folder = copiesRoot.appendingPathComponent(UUID().uuidString, isDirectory: true)
+        let copy = folder.appendingPathComponent(name)
+        let ok: Bool = await Task.detached(priority: .userInitiated) {
+            do {
+                try FileManager.default.createDirectory(at: folder, withIntermediateDirectories: true)
+                try FileManager.default.copyItem(at: stored, to: copy)
+                return true
+            } catch { return false }
+        }.value
+        guard ok else { return }
+        _ = workspace?.perform(NSSelectorFromString("openURL:"), with: copy)
+    }
+
+    static func purgeOldCopies() {
+        let fm = FileManager.default
+        guard let dirs = try? fm.contentsOfDirectory(at: copiesRoot, includingPropertiesForKeys: [.creationDateKey]) else { return }
+        let cutoff = Date().addingTimeInterval(-7 * 24 * 3600)
+        for d in dirs where ((try? d.resourceValues(forKeys: [.creationDateKey]).creationDate) ?? .distantPast) < cutoff {
+            try? fm.removeItem(at: d)
+        }
+    }
+}
+
+/// Sweep 1 · N4 — the keys for the document item under the pointer: Space = Quick Look, ⌘O = Open a Copy, ⌘⇧R = Reveal in
+/// Finder. Taken where AppKit first sees the key (a local monitor), only while a document item is hovered and no text is
+/// being edited (Space types a space in a note).
+@MainActor
+enum MacDocumentKeys {
+    struct Actions { let quickLook: () -> Void; let open: () -> Void; let reveal: () -> Void }
+    private static var hovered: (id: String, actions: Actions)?
+    private static var monitor: AnyObject?
+
+    static func hover(_ id: String, _ actions: Actions, _ on: Bool) {
+        if on { hovered = (id, actions); install() } else if hovered?.id == id { hovered = nil }
+    }
+
+    private static func editingText() -> Bool {
+        FirstResponderProbe.current = nil
+        UIApplication.shared.sendAction(#selector(UIResponder.airpadCaptureFirstResponder), to: nil, from: nil, for: nil)
+        return FirstResponderProbe.current is UITextInput
+    }
+
+    private static func install() {
+        guard monitor == nil, let cls: AnyClass = NSClassFromString("NSEvent") else { return }
+        let sel = NSSelectorFromString("addLocalMonitorForEventsMatchingMask:handler:")
+        guard let m = class_getClassMethod(cls, sel) else { return }
+        typealias Add = @convention(c) (AnyClass, Selector, UInt64, @escaping @convention(block) (AnyObject) -> AnyObject?) -> AnyObject?
+        let handler: @convention(block) (AnyObject) -> AnyObject? = { event in
+            let code = (event.value(forKey: "keyCode") as? NSNumber)?.intValue ?? -1
+            let flags = ((event.value(forKey: "modifierFlags") as? NSNumber)?.uintValue ?? 0) & (0xF << 17)
+            let cmd: UInt = 1 << 20, shift: UInt = 1 << 17
+            return MainActor.assumeIsolated {
+                guard let h = hovered, !editingText() else { return event }
+                switch (code, flags) {
+                case (49, 0): h.actions.quickLook(); return nil                 // Space
+                case (31, cmd): h.actions.open(); return nil                    // ⌘O
+                case (15, cmd | shift): h.actions.reveal(); return nil          // ⌘⇧R
+                default: return event
+                }
+            }
+        }
+        monitor = unsafeBitCast(method_getImplementation(m), to: Add.self)(cls, sel, 1 << 10, handler)
+    }
+}
+
+/// The stored file and its default app for one document item (the menus read it; resolved off the menu, on appear).
+@MainActor @Observable
+final class MacDocumentState {
+    var url: URL?
+    var appName: String?
+    var title = ""
+    var ext = ""
+    func open() { guard let url else { return }; Task { await MacDocumentActions.openCopy(of: url, named: title, ext: ext) } }
+    func reveal() { if let url { MacDocumentActions.reveal(url) } }
+}
+
+/// "Open a Copy with <App>" and "Reveal in Finder", for a document item's ··· menu and right-click menu.
+struct MacDocumentMenuItems: View {
+    let state: MacDocumentState
+    var body: some View {
+        Button { state.open() } label: {
+            Label(state.appName.map { "Open a Copy with \($0)" } ?? "Open a Copy", systemImage: "arrow.up.forward.app")
+        }
+        .disabled(state.url == nil)
+        Button { state.reveal() } label: { Label("Reveal in Finder", systemImage: "folder") }
+            .disabled(state.url == nil)
+    }
+}
+
+extension View {
+    /// Resolves the item's stored file + default app, takes the hover keys, and adds the right-click menu.
+    func macDocumentActions(_ state: MacDocumentState, doc: DocumentItem?, nodeID: String,
+                            quickLook: @escaping () -> Void) -> some View {
+        modifier(MacDocumentActionsModifier(state: state, doc: doc, nodeID: nodeID, quickLook: quickLook))
+    }
+}
+
+private struct MacDocumentActionsModifier: ViewModifier {
+    let state: MacDocumentState
+    let doc: DocumentItem?
+    let nodeID: String
+    let quickLook: () -> Void
+    @Environment(CorpusStore.self) private var store
+
+    func body(content: Content) -> some View {
+        content
+            .task(id: doc?.id) {
+                guard let doc, let url = await store.documentFileURL(for: doc, nodeID: nodeID) else { return }
+                state.url = url
+                state.title = doc.displayName
+                state.ext = doc.fileType.isEmpty ? url.pathExtension : doc.fileType
+                state.appName = MacDocumentActions.defaultAppName(for: url)
+            }
+            .onHover { on in
+                guard let id = doc?.id else { return }
+                MacDocumentKeys.hover(id, .init(quickLook: quickLook, open: { state.open() }, reveal: { state.reveal() }), on)
+            }
+            .contextMenu {
+                Button { quickLook() } label: { Label("Quick Look", systemImage: "eye") }
+                MacDocumentMenuItems(state: state)
+            }
+            .help("Space: Quick Look · ⌘O: Open a Copy · ⌘⇧R: Reveal in Finder")
+    }
+}
+#endif

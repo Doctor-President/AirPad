@@ -300,6 +300,7 @@ struct ChatTranscript: View {
             .tint(Color(hexString: "00BFFF"))
             .focused($inputFocused)
             .lineLimit(1...6)
+            .macReturnSends(focused: inputFocused, enabled: enabled) { sendMessage() }   // sweep 1 · N15
             .padding(.leading, 14)
             // Reserve for the INLINE send/mic control (shared with the Librarian) — the send is now
             // incorporated into the field's trailing end, not a separate circular button.
@@ -314,11 +315,7 @@ struct ChatTranscript: View {
                 ComposerSendControls(
                     text: $input,
                     sendEnabled: enabled,
-                    onSend: {
-                        let text = input.trimmingCharacters(in: .whitespacesAndNewlines)
-                        input = ""
-                        if let onSend { session.startTurn { await onSend(text) } } else { session.startTurn { await session.send(text) } }
-                    },
+                    onSend: { sendMessage() },
                     dictationToken: "chat",
                     isAnswering: session.isStreaming,
                     onStop: { session.stopAnswer() }
@@ -327,6 +324,12 @@ struct ChatTranscript: View {
                 .padding(.trailing, 10)
                 .padding(.bottom, ComposerMetrics.fieldTextVerticalPadding)
             }
+    }
+
+    private func sendMessage() {
+        let text = input.trimmingCharacters(in: .whitespacesAndNewlines)
+        input = ""
+        if let onSend { session.startTurn { await onSend(text) } } else { session.startTurn { await session.send(text) } }
     }
 
     // (was sendButton — a separate trailing circle) The send arrow is now the SHARED, INLINE

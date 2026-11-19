@@ -1330,6 +1330,16 @@ struct LibrarianSurface: View {
         return min(1, max(0, Double(chatScrollTopOffset) / cctTitleCollapse))
     }
 
+    /// The Ask send (the send button, and Return on the Mac — sweep 1 · N15).
+    private func sendAsk(librarian: LibrarianState) {
+        let text = librarian.inputText
+        librarian.inputText = ""
+        isViewingActiveChat = true
+        panelModel.expandToFull(animated: true)
+        let chat = router.chat
+        chat.startTurn { await librarian.groundedSend(query: text, store: store, chat: chat) }
+    }
+
     private func sendIsEnabled(librarian: LibrarianState) -> Bool {
         // STATE 2 — no free-text provider on this device (gated behind a connected model).
         // Reads the CACHED flag (resolved off-render in `refreshActiveModel`), never XPC here.
@@ -1912,6 +1922,7 @@ struct LibrarianSurface: View {
                 // forcing → glyphs stay locked to the text line box).
                 .padding(.vertical, askTextVPad)
                 .lineLimit(1...4)
+                .macReturnSends(focused: isInputFocused, enabled: sendIsEnabled(librarian: librarian)) { sendAsk(librarian: librarian) }
 
         }
         // live-24 — light text on a dense dark graded tint (the Siri-style pill), dark on a light one.
@@ -1948,14 +1959,7 @@ struct LibrarianSurface: View {
             ComposerSendControls(
                 text: Binding(get: { librarian.inputText }, set: { librarian.inputText = $0 }),
                 sendEnabled: sendIsEnabled(librarian: librarian),
-                onSend: {
-                    let text = librarian.inputText
-                    librarian.inputText = ""
-                    isViewingActiveChat = true
-                    panelModel.expandToFull(animated: true)
-                    let chat = router.chat
-                    chat.startTurn { await librarian.groundedSend(query: text, store: store, chat: chat) }
-                },
+                onSend: { sendAsk(librarian: librarian) },
                 dictationToken: "ask",
                 isAnswering: router.chat.isStreaming,
                 onStop: { router.chat.stopAnswer() }
@@ -2413,8 +2417,9 @@ struct LibrarianSurface: View {
     /// (the Ask field's feather) · "Librarian" · Library/General · New chat · Chat history; the scope line below.
     private func macColumnHeader(librarian: LibrarianState) -> some View {
         HStack(spacing: 10) {
-            if isViewingActiveChat || macShowingHistory {
-                // G5 — ‹ back to the panel's home (the first-open state) from a chat or the history.
+            if isViewingActiveChat || macShowingHistory || macIsSearching(librarian) {
+                // G5 — ‹ back to the panel's home (the first-open state) from a chat or the history; sweep 1 · N9: also
+                // from Search (it ends the search: the field clears).
                 Button { macGoHome() } label: {
                     Image(systemName: "chevron.left").font(.system(size: 15, weight: .semibold)).frame(width: 24, height: 26)
                 }
@@ -2474,16 +2479,18 @@ struct LibrarianSurface: View {
             .accessibilityLabel("New chat")
             .accessibilityIdentifier("macLibrarianNewChat")
             // G5 — the history shows IN the panel (was a menu + the Chats sheet); a second click goes back.
+            // Sweep 1 · N9: from Search it ends the search and shows the chats. N10 [T]: the chats glyph (the sidebar's
+            // "Chats" bubble), not a clock (the sidebar's clock is Recents).
             Button {
-                if macShowingHistory && !isViewingActiveChat { macGoHome() } else { macShowHistory() }
+                if macShowingHistory && !isViewingActiveChat && !macIsSearching(librarian) { macGoHome() } else { macShowHistory() }
             } label: {
-                Image(systemName: "clock").font(.system(size: 14, weight: .medium)).frame(width: 26, height: 26)
+                Image(systemName: "bubble.left.and.bubble.right").font(.system(size: 13, weight: .medium)).frame(width: 26, height: 26)
                     .background(Circle().fill(AppearancePalette.ink.opacity(macShowingHistory && !isViewingActiveChat ? 0.12 : 0)))
             }
             .buttonStyle(.plain)
             .foregroundStyle(AppearancePalette.ink.opacity(0.7))
-            .help("Chat history")
-            .accessibilityLabel("Chat history")
+            .help("Chats")
+            .accessibilityLabel("Chats")
             .accessibilityAddTraits(macShowingHistory && !isViewingActiveChat ? .isSelected : [])
             .accessibilityIdentifier("macLibrarianHistory")
             #if targetEnvironment(macCatalyst)
@@ -2514,11 +2521,13 @@ struct LibrarianSurface: View {
     private func macGoHome() {
         isViewingActiveChat = false
         macShowingHistory = false
+        router.librarian.searchText = ""   // sweep 1 · N9 — ‹ from Search ends the search
     }
 
     private func macShowHistory() {
         isViewingActiveChat = false
         macShowingHistory = true
+        router.librarian.searchText = ""   // sweep 1 · N9 — the chats, not the results (the results outrank history)
     }
 
     private func handleMacPanelRequest() {

@@ -1087,3 +1087,84 @@ extension View {
         }
     }
 }
+
+// MARK: - Return sends (Mac)
+
+extension View {
+    /// Mac sweep 1 · N15 [T]: in a send field on the Mac, Return sends and ⇧Return (or ⌥Return) adds a line; an input
+    /// method's Return (confirming marked text, e.g. Japanese or an accent) still goes to the text system. iPhone and iPad
+    /// are unchanged (the keyboard's return key adds a line). `send` runs only when `enabled`.
+    func macReturnSends(focused: Bool, enabled: Bool, send: @escaping () -> Void) -> some View {
+        #if targetEnvironment(macCatalyst)
+        return modifier(MacReturnSendModifier(focused: focused, enabled: enabled, send: send))
+        #else
+        return self
+        #endif
+    }
+}
+
+#if targetEnvironment(macCatalyst)
+private struct MacReturnSendModifier: ViewModifier {
+    let focused: Bool
+    let enabled: Bool
+    let send: () -> Void
+    @State private var token = UUID()
+
+    func body(content: Content) -> some View {
+        content
+            .onChange(of: focused, initial: true) { _, f in register(f) }
+            .onChange(of: enabled) { _, _ in register(focused) }
+            .onDisappear { MacReturnSend.clear(token) }
+    }
+
+    private func register(_ f: Bool) {
+        if f { MacReturnSend.set(token, enabled: enabled, send: send) } else { MacReturnSend.clear(token) }
+    }
+}
+
+/// The SwiftUI vertical TextField on Catalyst inserts a newline for Return before SwiftUI's key handlers see it, so the
+/// key is taken where AppKit first gets it: a local key-down monitor (through the runtime, as `MacSearchEscape`).
+@MainActor enum MacReturnSend {
+    private static var owner: UUID?
+    private static var enabled = false
+    private static var send: (() -> Void)?
+    private static var monitor: AnyObject?
+
+    static func set(_ id: UUID, enabled e: Bool, send s: @escaping () -> Void) {
+        owner = id; enabled = e; send = s; installMonitor()
+    }
+    static func clear(_ id: UUID) { if owner == id { owner = nil; send = nil; enabled = false } }
+
+    /// The focused text input is composing (marked text): its Return belongs to the input method.
+    private static func composing() -> Bool {
+        FirstResponderProbe.current = nil
+        UIApplication.shared.sendAction(#selector(UIResponder.airpadCaptureFirstResponder), to: nil, from: nil, for: nil)
+        return (FirstResponderProbe.current as? UITextInput)?.markedTextRange != nil
+    }
+
+    private static func installMonitor() {
+        guard monitor == nil, let cls: AnyClass = NSClassFromString("NSEvent") else { return }
+        let sel = NSSelectorFromString("addLocalMonitorForEventsMatchingMask:handler:")
+        guard let m = class_getClassMethod(cls, sel) else { return }
+        typealias Add = @convention(c) (AnyClass, Selector, UInt64, @escaping @convention(block) (AnyObject) -> AnyObject?) -> AnyObject?
+        let handler: @convention(block) (AnyObject) -> AnyObject? = { event in
+            let code = (event.value(forKey: "keyCode") as? NSNumber)?.intValue
+            guard code == 36 || code == 76 else { return event }   // Return, keypad Enter
+            let flags = (event.value(forKey: "modifierFlags") as? NSNumber)?.uintValue ?? 0
+            // ⇧ (1<<17) ⌃ (1<<18) ⌥ (1<<19) ⌘ (1<<20): the text system's (a new line) or a menu's.
+            guard flags & (0xF << 17) == 0 else { return event }
+            return MainActor.assumeIsolated {
+                guard owner != nil, let send, !composing() else { return event }
+                if enabled { send() }
+                return nil   // a disabled send still swallows Return: an empty field doesn't fill with blank lines
+            }
+        }
+        monitor = unsafeBitCast(method_getImplementation(m), to: Add.self)(cls, sel, 1 << 10, handler)   // key down
+    }
+}
+
+@MainActor enum FirstResponderProbe { static weak var current: UIResponder? }
+extension UIResponder {
+    @objc func airpadCaptureFirstResponder() { FirstResponderProbe.current = self }
+}
+#endif

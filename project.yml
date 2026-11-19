@@ -28,6 +28,18 @@ schemes:
       config: Debug
     archive:
       config: Release
+  # scripts/perf/ios_parity.sh — the iPhone-Simulator perf parity session (AirPadUITests/PerfParity) on a Release bench
+  # build. Its own scheme because the AirPad scheme's tests include AirPadTests (`@testable import`), which can't build
+  # in Release.
+  AirPadPerfParity:
+    build:
+      targets:
+        AirPad: all
+        AirPadUITests: [test]
+    test:
+      config: Release
+      targets:
+        - AirPadUITests
 
 settings:
   base:

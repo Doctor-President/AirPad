@@ -1784,7 +1784,11 @@ struct MacToolbarTrailing: View {
                 } else {
                     FirstResponderProbe.current = nil
                     UIApplication.shared.sendAction(#selector(UIResponder.airpadCaptureFirstResponder), to: nil, from: nil, for: nil)
-                    if FirstResponderProbe.current is UITextInput { return event }
+                    // An EMPTY one-line field still holding the keys doesn't take Esc from selection mode: after the
+                    // search field's own Esc (cleared, SwiftUI focus off) UIKit keeps it first responder (sweep 1 · proof
+                    // 4: 0/3). A note or any field with text keeps its Esc.
+                    if let input = FirstResponderProbe.current as? UITextInput,
+                       !((input as? UITextField)?.text?.isEmpty ?? false) { return event }
                 }
                 exit()
                 return nil

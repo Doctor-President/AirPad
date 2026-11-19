@@ -4632,7 +4632,8 @@ enum NoteTypography {
 
 /// Sweep 1 · 1.3 (sheet B, T: "This all sounds good.") — a note's decoded, styled text, kept so re-opening an entry doesn't
 /// decode its notes again (the Mac perf audit measured the heavy entry's open at 0.8–1.0 s of main-thread work, 27 % of
-/// it this decode). Only text without attachments is kept (an attachment object can't be shared by two text views). Keyed
+/// it this decode). Text with an inline image isn't kept (an attachment object can't be shared by two text views);
+/// checklist boxes are re-made per caller. Keyed
 /// by the exact Markdown and the style, so an edit is simply a new key. (Decoding OFF the main thread needs the codec
 /// and typography taken off the main actor — parked, see the sweep report.)
 @MainActor
@@ -4644,14 +4645,37 @@ enum NoteDecodeCache {
         // The text size is part of the style (fonts follow Dynamic Type / the Mac's text size; sweep 1 review).
         let size = UIFont.preferredFont(forTextStyle: .body).pointSize
         let k = "\(documentStyle ? 1 : 0)|\(font)|\(size)|\(markdown)" as NSString
-        if let hit = cache.object(forKey: k) { return hit }
+        if let hit = cache.object(forKey: k) { return freshChecklists(hit) }
         let made = make(markdown, documentStyle, font)
-        var hasAttachment = false
-        made.enumerateAttribute(.attachment, in: NSRange(location: 0, length: made.length)) { v, _, stop in
-            if v != nil { hasAttachment = true; stop.pointee = true }
+        // Checklist boxes are attachments too (the perf library's heavy note has them, so it was never kept: sweep 1 ·
+        // sheet C measured no gain on re-open). Those are kept, and each caller gets NEW box objects; a note with any
+        // other attachment (an inline image) still isn't kept.
+        var otherAttachment = false, checklist = false
+        made.enumerateAttribute(.attachment, in: NSRange(location: 0, length: made.length)) { v, r, stop in
+            guard v != nil else { return }
+            if made.attribute(.airpadChecklistGlyph, at: r.location, effectiveRange: nil) != nil { checklist = true }
+            else { otherAttachment = true; stop.pointee = true }
         }
-        if !hasAttachment { cache.setObject(made, forKey: k) }
-        return made
+        guard !otherAttachment else { return made }
+        cache.setObject(made, forKey: k)
+        return checklist ? freshChecklists(made) : made
+    }
+
+    /// A copy whose checklist boxes are new attachment objects (two text views must never share one; the box image also
+    /// re-resolves for the current appearance, as a fresh decode would).
+    private static func freshChecklists(_ s: NSAttributedString) -> NSAttributedString {
+        var ranges: [(NSRange, Bool)] = []
+        s.enumerateAttribute(.airpadChecklistGlyph, in: NSRange(location: 0, length: s.length)) { v, r, _ in
+            if let c = v as? Int { ranges.append((r, c == 1)) }
+        }
+        guard !ranges.isEmpty else { return s }
+        let mut = NSMutableAttributedString(attributedString: s)
+        for (r, checked) in ranges {
+            for i in r.location..<(r.location + r.length) where mut.attribute(.attachment, at: i, effectiveRange: nil) != nil {
+                mut.addAttribute(.attachment, value: MarkdownCodec.makeChecklistAttachment(checked: checked), range: NSRange(location: i, length: 1))
+            }
+        }
+        return mut
     }
 
     private static func make(_ markdown: String, _ documentStyle: Bool, _ font: NoteFontChoice) -> NSAttributedString {

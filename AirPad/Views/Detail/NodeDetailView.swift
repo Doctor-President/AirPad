@@ -714,6 +714,10 @@ struct NodeDetailView: View {
                     }
                 }
                 .animation(.easeInOut(duration: 0.22), value: reorderController.isReorderActive)
+                #if targetEnvironment(macCatalyst)
+                // Sweep 1 · drop diagnosis — around and between the cards (and their margins) takes a drop too.
+                .background { MacEntryAreaDrop(nodeID: nodeID).padding(.horizontal, -48) }
+                #endif
                 // #4 — ATTRIBUTES→first entry: the shared symmetric gap when the
                 // ATTRIBUTES section is present (capture / atomics); normal viewing
                 // with no atomics (no section) keeps its `dividerToEntries`. The

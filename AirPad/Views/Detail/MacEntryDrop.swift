@@ -38,6 +38,9 @@ struct MacEntryItemDrop: ViewModifier {
                         .accessibilityIdentifier("entryDropInto-\(item.id)")
                 }
             }
+            // Sweep 1 · drop diagnosis: SwiftUI offers a drop only where something hit-testable is under the pointer — on a
+            // card's empty space it fell through and was lost. The whole card frame takes it.
+            .contentShape(Rectangle())
             .onDrop(of: [.item], delegate: ItemDelegate(item: item, fits: $fits, over: $over, perform: perform))
             #if DEBUG
             // The harness finds each item's frame by this marker (the card's own identifiers stay as they are).
@@ -211,6 +214,22 @@ struct MacDropNoteView: View {
             ForEach(note.question?.options ?? [], id: \.id) { o in Button(o.name) { note.reply(o.id) } }
             Button("New Item") { note.reply(nil) }
         }
+    }
+}
+
+/// Sweep 1 · drop diagnosis — the open entry's whole area (its margins, around the cards) takes a drop: it sorts like any
+/// drop into the entry and anything new goes at the end. Behind the items, so an item or a gap under the pointer wins.
+struct MacEntryAreaDrop: View {
+    let nodeID: String
+    @Environment(CorpusStore.self) private var store
+    @Environment(\.undoManager) private var undoManager
+    var body: some View {
+        Color.clear
+            .contentShape(Rectangle())
+            .onDrop(of: [.item], isTargeted: nil) { providers in
+                MacEntryDrop.perform(providers, .at(index: .max), nodeID: nodeID, store: store, undoManager: undoManager)
+                return true
+            }
     }
 }
 #endif

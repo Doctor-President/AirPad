@@ -97,6 +97,9 @@ struct MacEntryItemDrop: ViewModifier {
     }
 }
 
+/// One drop's undo target (see `MacEntryDrop.perform`).
+final class DropUndoToken {}
+
 enum MacEntryDrop {
     static let openGap: CGFloat = 14
 
@@ -106,12 +109,16 @@ enum MacEntryDrop {
             guard let undo = await store.dropIntoEntry(providers, nodeID: nodeID, placement: placement,
                                                        choose: { kind, items in await MacDropNote.shared.ask(kind, items) })
             else { return }
-            undoManager?.registerUndo(withTarget: store) { s in Task { @MainActor in await s.undoEntryDrop(undo) } }
+            // Each drop is its own undo target, so the note's Undo takes back exactly this drop (not whatever was done last)
+            // and removes it from ⌘Z's list (sweep 1 review).
+            let token = DropUndoToken()
+            undoManager?.registerUndo(withTarget: token) { [token] _ in _ = token; Task { @MainActor in await store.undoEntryDrop(undo) } }
             undoManager?.setActionName("Add")
             // Sweep 1 · N5 — say what went where, with Undo (⌘Z still works).
             if !undo.summary.isEmpty {
                 MacDropNote.shared.show(undo.summary) { [weak undoManager] in
-                    if undoManager?.canUndo == true { undoManager?.undo() } else { Task { await store.undoEntryDrop(undo) } }
+                    undoManager?.removeAllActions(withTarget: token)
+                    Task { await store.undoEntryDrop(undo) }
                 }
             }
             NSLog("[EntryDrop] %@ → gallery %d docs %d links %d new %d", String(describing: placement),

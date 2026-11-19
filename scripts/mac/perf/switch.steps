@@ -1,0 +1,27 @@
+# Sweep 1 · 1.4 (sheet C) — the view and place switches alone, each followed by a rest so its work stands alone.
+# run.sh <bench app> <out> switch.steps <rounds>. Order per round: Library(Map) → List → Cards → Map → Today → Recents →
+# Library(Map) → List → Today (from List) → Recents → Library(List) → Cards → Map. Starts on Library (run.sh clicks it).
+view-list      click toolbar.view.List
+rest           wait 1500
+view-cards     click toolbar.view.Cards
+rest           wait 1500
+view-map       click toolbar.view.Map
+rest           wait 2500
+place-today    click sidebar.today
+rest           wait 1500
+place-recents  click sidebar.recents
+rest           wait 1500
+place-library  click sidebar.library
+rest           wait 2500
+view-list      click toolbar.view.List
+rest           wait 1500
+place-today    click sidebar.today
+rest           wait 1500
+place-recents  click sidebar.recents
+rest           wait 1500
+place-library  click sidebar.library
+rest           wait 1500
+view-cards     click toolbar.view.Cards
+rest           wait 1500
+view-map       click toolbar.view.Map
+rest           wait 2500

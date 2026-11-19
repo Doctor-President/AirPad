@@ -84,8 +84,13 @@ enum WebGrounding {
                                        with: " ", options: .regularExpression)
         func has(_ p: String) -> Bool { t.range(of: p, options: [.regularExpression, .caseInsensitive]) != nil }
         if has(#"\b(what|which) (day|date)\b|\bthe date\b|\btoday'?s date\b|\bday of the week\b"#) { return false }
-        return has(#"\b(news|headlines?|breaking|today|tonight|yesterday|last night|this (morning|afternoon|evening|week)|current events|top stories|happening)\b"#)
-            || has(#"\blatest (on|about|from|in|developments|updates)\b"#)
+        // Sweep 1 review: a recency word alone isn't news ("What should I cook tonight?", "What is Breaking Bad about?"
+        // were refused). A news word on its own, or a recency word WITH something that happens.
+        let newsWord = has(#"\b(news|headlines?|top stories|current events|breaking news)\b"#)
+            || has(#"\blatest (on|about|from|developments|updates|headlines|news)\b"#)
+        let recency = has(#"\b(today|tonight|yesterday|last night|this (morning|afternoon|evening|week)|right now)\b"#)
+        let event = has(#"\b(happen(ed|ing)|going on|announced|stories|events|scores?|results|won|wins|lost|elections?|markets?|stocks?)\b"#)
+        return newsWord || (recency && event)
     }
     /// The user's question or the app's search query (a follow-up's standalone rewrite) is time-sensitive.
     static func isTimeSensitive(question: String, query: String?) -> Bool {
@@ -770,7 +775,11 @@ enum WebGroundingSelfTest {
                           ("What happened at the Battle of Hastings?", false), ("What's the date today?", false),
                           ("Who is the current president of the United States?", false), ("What's the latest iPhone?", false),
                           ("Can you print for me a table of the last 10 US presidents up until today", false),
-                          ("Who wrote Pride and Prejudice?", false)] {
+                          ("Who wrote Pride and Prejudice?", false),
+                          // sweep 1 review — everyday questions with a recency word are not news
+                          ("What should I cook tonight?", false), ("What is Breaking Bad about?", false),
+                          ("What's a good book to read this week?", false), ("How do I say good morning in Japanese?", false),
+                          ("What's going on in the markets today?", true), ("Any news on the Mars mission?", true)] {
             check("time-sensitive: \(q)", WebGrounding.isTimeSensitive(q) == want)
         }
         if !Live34.red {

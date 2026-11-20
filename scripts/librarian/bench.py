@@ -20,7 +20,7 @@ HERE = Path(__file__).resolve().parent
 
 NOTES_CLAIM = re.compile(r"(according to|based on|from|in|per) your (own )?(notes?|entries|entry|library|journal)|your (notes?|entries|entry|library) (say|says|mention|mentions|show|shows|indicate|indicates|suggest|suggests|record|records|note|notes|state|states)|you (wrote|noted|mentioned|recorded|jotted) ", re.I)
 NEGATED = re.compile(r"\b(no|not|n't|n’t|nothing|none|neither|without|couldn|didn|don|doesn|unable|can.t find)\b", re.I)
-NO_MATCH = re.compile(r"(couldn.t|could not|didn.t|did not|don.t|do not|unable to|can.t|cannot|wasn.t able to|was not able to) (find|see|locate|spot|turn up)|no (close |exact |direct |relevant |matching |specific )?(match|matches|entry|entries|notes?|mentions?|record|results?)\b|not (in|among|part of) your|nothing (in|about|on|related)|(don.t|do not|doesn.t|does not) (appear|seem|look) to|isn.t (in|covered|mentioned)|aren.t (in|any)|no information (about|on)|not (covered|mentioned|found)|haven.t (written|noted|saved)", re.I)
+NO_MATCH = re.compile(r"(couldn.t|could not|didn.t|did not|don.t|do not|unable to|can.t|cannot|wasn.t able to|was not able to) (find|see|locate|spot|turn up)|no (close |exact |direct |relevant |matching |specific )?(match|matches|entry|entries|notes?|mentions?|record|results?)\b|not (in|among|part of) your|nothing (in|about|on|related)|(don.t|do not|doesn.t|does not) (appear|seem|look) to|isn.t (in|covered|mentioned)|aren.t (in|any)|no information (about|on)|not (covered|mentioned|found)|haven.t (written|noted|saved)|nothing (that|which|here|there)|none of (the|your|these|them)|no (sign|trace) of", re.I)
 NEWS_HONEST = re.compile(r"(can.t|cannot|unable to|don.t have|do not have|no) (look up|access|browse|search|check|provide|real.time|live|current)|web search|search key|search is off|turn on|real.time|up.to.date|as of my|training data|knowledge cutoff|don.t have access|not able to", re.I)
 DATED_HONEST = re.compile(r"as of my|training data|may be out of date|may have changed|might have changed|out of date|knowledge cutoff|can.t confirm|cannot confirm|verify|search the web|last update", re.I)
 
@@ -168,8 +168,12 @@ def grade(cases_path, results_path):
     def med(k):
         v = [r[k] for r in rows if r.get(k) not in (None, -1) and r["modelCalled"]]
         return round(statistics.median(v)) if v else None
+    # Which model really answered: the server's own name for it (the app's label can lag a debug model override).
+    names = [(r.get("record") or {}).get("servedModel") for r in res["rows"]]
+    names = [n for n in names if n and n != "?"]
+    served = max(set(names), key=names.count) if names else None
     summary = {
-        "library": doc.get("library"), "route": res.get("route"), "model": res.get("model"), "window": res.get("window"),
+        "library": doc.get("library"), "route": res.get("route"), "model": served or res.get("model"), "window": res.get("window"),
         "nodes": res.get("nodes"), "webKey": res.get("webKey"), "at": res.get("at"),
         "pass": sum(r["pass"] for r in rows), "total": len(rows), "missing": sorted(set(cases) - {r["id"] for r in rows}),
         "byType": {k: f"{v[0]}/{v[1]}" for k, v in sorted(by_type.items())}, "causes": dict(sorted(causes.items(), key=lambda x: -x[1])),

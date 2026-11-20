@@ -22,7 +22,8 @@ def load(path):
 
 
 def short(i):
-    return (i or "?")[:8]
+    i = i or "?"
+    return i if len(i) <= 13 else i[:4] + ".." + i[-6:]
 
 
 def summarise(t):

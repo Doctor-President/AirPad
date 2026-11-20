@@ -327,17 +327,23 @@ final class ChatSession {
     /// clears it in the same step, so the bubble never shows twice; `endPendingQuestion` covers a turn that adds nothing.
     private(set) var pendingUser: String? = nil
 
-    /// The Ask bars: show `text` as the question's bubble now (nothing while an answer streams).
+    /// The Ask bars: show `text` as the question's bubble now (nothing while an answer streams or another question reads).
     func showPendingQuestion(_ text: String) {
         let q = text.trimmingCharacters(in: .whitespacesAndNewlines)
-        guard !q.isEmpty, !isStreaming else { return }
+        guard !q.isEmpty, !isStreaming, pendingUser == nil else { return }
         pendingUser = q
     }
 
-    /// The turn is over: a question it never added (an empty or refused send) doesn't stay on screen.
-    func endPendingQuestion() {
-        if pendingUser != nil { pendingUser = nil }
+    /// The turn that asked `text` is over: its question, if it never added it (an empty or refused send), doesn't stay on
+    /// screen. Only its own — never a question asked after it (sweep 1 review).
+    func endPendingQuestion(_ text: String) {
+        if let p = pendingUser, p == text.trimmingCharacters(in: .whitespacesAndNewlines) { pendingUser = nil }
     }
+
+    /// A turn is under way: an answer streams, or a question is still reading the library (`pendingUser`). The Ask bars
+    /// don't take another question then (sweep 1 review: a second Return during the read replaced the first's bubble and
+    /// was then dropped by `send`'s streaming guard).
+    var isTurnBusy: Bool { isStreaming || pendingUser != nil }
     /// Non-message failure state for the most recent send. Endpoint /
     /// network / model-discovery errors set this INSTEAD of being appended
     /// to `messages`, so the transcript never carries raw error strings.

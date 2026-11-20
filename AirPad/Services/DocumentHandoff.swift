@@ -181,11 +181,14 @@ enum MacDocumentActions {
         guard let dirs = try? fm.contentsOfDirectory(at: copiesRoot, includingPropertiesForKeys: [.creationDateKey]) else { return }
         let cutoff = Date().addingTimeInterval(-7 * 24 * 3600)
         // Only copies nobody changed (sweep 1 review: an edit saved into a copy must never vanish); not the system's Caches.
-        for d in dirs where ((try? d.resourceValues(forKeys: [.creationDateKey]).creationDate) ?? .distantPast) < cutoff {
-            let files = (try? fm.contentsOfDirectory(at: d, includingPropertiesForKeys: [.creationDateKey, .contentModificationDateKey])) ?? []
+        for d in dirs {
+            let made = (try? d.resourceValues(forKeys: [.creationDateKey]).creationDate) ?? .distantPast
+            guard made < cutoff else { continue }
+            let files = (try? fm.contentsOfDirectory(at: d, includingPropertiesForKeys: [.contentModificationDateKey])) ?? []
+            // Edited = changed after the copy was made: against the FOLDER's creation (an editor that saves by writing a
+            // new file and renaming it gives the file a fresh creation date — sweep 1 review).
             let edited = files.contains { f in
-                let v = try? f.resourceValues(forKeys: [.creationDateKey, .contentModificationDateKey])
-                return (v?.contentModificationDate ?? .distantPast) > (v?.creationDate ?? .distantPast).addingTimeInterval(5)
+                ((try? f.resourceValues(forKeys: [.contentModificationDateKey]).contentModificationDate) ?? .distantPast) > made.addingTimeInterval(5)
             }
             if !edited { try? fm.removeItem(at: d) }
         }

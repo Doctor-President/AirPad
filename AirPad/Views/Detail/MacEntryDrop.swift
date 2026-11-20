@@ -109,6 +109,8 @@ enum MacEntryDrop {
             guard let undo = await store.dropIntoEntry(providers, nodeID: nodeID, placement: placement,
                                                        choose: { kind, items in await MacDropNote.shared.ask(kind, items) })
             else { return }
+            // Cancelled (nothing added): no Undo, no note.
+            guard !undo.summary.isEmpty else { NSLog("[EntryDrop] %@ → nothing added", String(describing: placement)); return }
             // Each drop is its own undo target, so the note's Undo takes back exactly this drop (not whatever was done last)
             // and removes it from ⌘Z's list (sweep 1 review).
             let token = DropUndoToken()
@@ -180,7 +182,7 @@ struct MacEntryGapDrop: View {
 
     func ask(_ kind: CorpusStore.EntryDropKind, _ items: [NodeItem]) async -> String? {
         let noun = kind == .media ? "photos and videos" : kind == .document ? "files" : "links"
-        answer?.resume(returning: nil)
+        answer?.resume(returning: CorpusStore.entryDropCancel)
         return await withCheckedContinuation { c in
             answer = c
             question = ("Add the \(noun) to…", items.map { ($0.id, $0.displayName ?? $0.type.defaultDisplayName) })
@@ -216,10 +218,12 @@ struct MacDropNoteView: View {
         .animation(.easeOut(duration: 0.2), value: note.message)
         .allowsHitTesting(note.message != nil)
         .confirmationDialog(note.question?.title ?? "", isPresented: Binding(
-            get: { note.question != nil }, set: { if !$0 && note.question != nil { note.reply(nil) } }
+            // Dismissed (Esc, a click outside) = Cancel: nothing added (sweep 1 · proof 6 — it made a new item).
+            get: { note.question != nil }, set: { if !$0 && note.question != nil { note.reply(CorpusStore.entryDropCancel) } }
         ), titleVisibility: .visible) {
             ForEach(note.question?.options ?? [], id: \.id) { o in Button(o.name) { note.reply(o.id) } }
             Button("New Item") { note.reply(nil) }
+            Button("Cancel", role: .cancel) { note.reply(CorpusStore.entryDropCancel) }
         }
     }
 }

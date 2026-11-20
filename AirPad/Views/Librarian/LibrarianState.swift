@@ -647,7 +647,9 @@ final class LibrarianState {
         // closes over the live store; `[weak chat]` so the session can't retain itself.
         chat.resendHandler = { [weak self, weak chat] text in
             guard let self, let chat else { return }
+            chat.showPendingQuestion(text)   // sweep 1 · 1.2 — a retried question shows while it reads, too
             await self.groundedSend(query: text, store: store, chat: chat)
+            chat.endPendingQuestion(text)
         }
         chat.thinkEnabled = thinkEnabled // Phase 2: the Librarian's per-session Thinking toggle → the Host
         pendingWebSearchOffer = nil      // Brief AI5 — any fresh send clears a stale web-search offer
@@ -941,7 +943,9 @@ final class LibrarianState {
         guard let query = pendingWebSearchOffer else { return }
         pendingWebSearchOffer = nil
         corpusAware = false
+        chat.showPendingQuestion(query)   // sweep 1 · 1.2
         await groundedSend(query: query, store: store, chat: chat)
+        chat.endPendingQuestion(query)
     }
 
     /// Brief BS3 — the user tapped "Read *Title* in full?" under a survey answer. Force-read that
@@ -955,7 +959,9 @@ final class LibrarianState {
         // Brief BU1 — this is a RE-ASK of the SAME question, so it REPLACES that turn's answer
         // instead of asking it twice (measured: 1 user turn → 2 before this).
         chat.prepareForReask()
+        chat.showPendingQuestion(offer.query)   // sweep 1 · 1.2 — the re-asked question stays on screen while it reads
         await groundedSend(query: offer.query, store: store, chat: chat)
+        chat.endPendingQuestion(offer.query)
     }
 
     /// ★ Brief BU1 — THE ONE CONSTRUCTOR. Given the routed candidates (or an empty room), assemble

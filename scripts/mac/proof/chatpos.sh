@@ -2,12 +2,14 @@
 # sweep-1 · 1.2 — does the question move after it shows? Asks each question inside the open chat (real click, keys,
 # Return) and logs the screen y of its bubble (and of the previous question's) for ~6 s: "t:new/prev".
 #   chatpos.sh <pid> <out> <question…>      PASS per question = shown by the first sample and one y throughout
+#   NEWCHAT=1: New Chat first, then ask from the Librarian's home (the transcript opens with the question)
 source ${0:A:h}/lib.sh; P=${1:?pid}; O=${2:?out}; shift 2; mkdir -p $O
 AC=$ROOT/build/runs/s1-proof/axcount; AT=$ROOT/build/runs/s1-proof/axtext
 y() { $AC $P "$1" 980 -5000 5000 v | awk '/AXStaticText/ {gsub(/[(),]/," "); print $3; exit}'; }
 prev=""
 for Q in "$@"; do
   for w in $(seq 1 90); do $R has $P 'Stop answer' | grep -q yes || break; sleep 1; done; sleep 1
+  [[ -n ${NEWCHAT:-} ]] && $R has $P macLibrarianNewChat | grep -q yes && { $R click $P macLibrarianNewChat >/dev/null; sleep 1.2; }
   f=($($AT $P | grep ' · macLibrarianColumn · ' | head -1 | sed -E 's/.*\(([0-9]+),([0-9]+) ([0-9]+)×([0-9]+)\).*/\1 \2 \3 \4/'))
   $R clickat $P $((f[1] + f[3] / 2)) $((f[2] + f[4] / 2)) >/dev/null; sleep 0.3; $R type $P "$Q" >/dev/null; sleep 0.5
   t0=$(python3 -c 'import time;print(time.time())'); $R key $P 36 >/dev/null; line=""; ys=()

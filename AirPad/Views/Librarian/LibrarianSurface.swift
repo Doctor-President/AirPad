@@ -1338,7 +1338,7 @@ struct LibrarianSurface: View {
         panelModel.expandToFull(animated: true)
         let chat = router.chat
         chat.showPendingQuestion(text)   // sweep 1 · 1.2 — the question shows at once (a Library turn reads first)
-        chat.startTurn { await librarian.groundedSend(query: text, store: store, chat: chat); chat.endPendingQuestion() }
+        chat.startTurn { await librarian.groundedSend(query: text, store: store, chat: chat); chat.endPendingQuestion(text) }
     }
 
     private func sendIsEnabled(librarian: LibrarianState) -> Bool {
@@ -1349,8 +1349,8 @@ struct LibrarianSurface: View {
             .trimmingCharacters(in: .whitespacesAndNewlines).isEmpty
         guard hasText else { return false }
         // Ask routes through the clean ChatSession lane, so its in-flight
-        // gate is the session's `isStreaming`.
-        return !router.chat.isStreaming
+        // gate is the session's turn: streaming, or a question still reading (sweep 1).
+        return !router.chat.isTurnBusy
     }
 
     // MARK: - Instant search (ws-instant-search C1)
@@ -2385,13 +2385,13 @@ struct LibrarianSurface: View {
     /// only resolve against the sample's entries — so the send runs in Library mode (the
     /// persisted default is Private). Same path as the composer's send.
     private func sendCalloutQuestion(_ question: String, librarian: LibrarianState) {
-        guard !librarian.askUnavailable, !router.chat.isStreaming else { return }
+        guard !librarian.askUnavailable, !router.chat.isTurnBusy else { return }
         librarian.corpusAware = true
         isViewingActiveChat = true
         panelModel.expandToFull(animated: true)
         let chat = router.chat
         chat.showPendingQuestion(question)   // sweep 1 · 1.2
-        Task { await librarian.groundedSend(query: question, store: store, chat: chat); chat.endPendingQuestion() }
+        Task { await librarian.groundedSend(query: question, store: store, chat: chat); chat.endPendingQuestion(question) }
     }
 
     /// Seeds `selectedScope` from the host the first time the surface

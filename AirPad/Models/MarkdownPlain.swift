@@ -204,7 +204,7 @@ extension Node {
         if let hit = UntitledTextCache.shared.object(forKey: raw as NSString) { return hit.text }
         let plain = MarkdownPlain.text(raw).trimmingCharacters(in: .whitespacesAndNewlines)
         let out = plain.isEmpty ? nil : plain
-        UntitledTextCache.shared.setObject(UntitledTextCache.Box(out), forKey: raw as NSString)
+        UntitledTextCache.shared.setObject(UntitledTextCache.Box(out), forKey: raw as NSString, cost: raw.utf16.count)
         return out
     }
 }
@@ -213,5 +213,6 @@ extension Node {
 /// trimmed by the system under memory pressure; capped at 2,000 notes.
 private enum UntitledTextCache {
     final class Box { let text: String?; init(_ t: String?) { text = t } }
-    static let shared: NSCache<NSString, Box> = { let c = NSCache<NSString, Box>(); c.countLimit = 2000; return c }()
+    // + a size cap (sweep 1 review: typing an untitled note keyed a new full text per edit)
+    static let shared: NSCache<NSString, Box> = { let c = NSCache<NSString, Box>(); c.countLimit = 2000; c.totalCostLimit = 4_000_000; return c }()
 }

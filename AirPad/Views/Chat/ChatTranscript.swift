@@ -294,7 +294,7 @@ struct ChatTranscript: View {
     // MARK: - Composer
 
     private var inputRow: some View {
-        let enabled = !input.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty && !session.isStreaming && !session.isResuming
+        let enabled = !input.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty && !session.isTurnBusy && !session.isResuming
         return TextField("Message", text: $input, axis: .vertical)
             .font(.system(size: ComposerMetrics.fieldFontSize))
             .foregroundStyle(AppearancePalette.ink)

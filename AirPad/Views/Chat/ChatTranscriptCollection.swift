@@ -192,7 +192,10 @@ extension ChatTranscriptCollection {
             // Sweep 1 · 1.2 — the pending question (shown at once) starts the turn; its message arriving later re-pins the
             // same place (nothing moves).
             let pendingArrived = !switched && !firstLoad && new.contains(.pending) && !had.contains(.pending)
-            let newQuestion = pendingArrived || (!switched && !firstLoad && lastUser.map { !had.contains(.message($0)) } == true)
+            let messageLanded = !switched && !firstLoad && lastUser.map { !had.contains(.message($0)) } == true
+            let newQuestion = pendingArrived || messageLanded
+            // A pending question that ended without its message (a refused send): the turn is over (sweep 1 review).
+            let pendingDropped = had.contains(.pending) && !new.contains(.pending) && !messageLanded && !nowStreaming
             let streamStarted = nowStreaming && !layout.streaming
             var pin: TranscriptItem? = nil
             if Self.live30 {
@@ -211,6 +214,10 @@ extension ChatTranscriptCollection {
                 pinnedThisTurn = true
             } else if newCount >= oldCount + 2, !nowStreaming {
                 layout.followsEnd = true   // a bulk change (a restore) lands on the end
+            }
+            if pendingDropped {
+                pinnedThisTurn = false
+                if !cv.isTracking, !cv.isDecelerating { layout.setRunwayAnchor(layout.runwayAnchor.map { min($0, cv.contentOffset.y) }) }
             }
             if layout.streaming, !nowStreaming {
                 // The answer is done: the runway keeps only what's on screen (now, or when the reader's scroll comes to

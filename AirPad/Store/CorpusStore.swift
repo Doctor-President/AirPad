@@ -10078,7 +10078,9 @@ final class CorpusStore {
     /// takes its type (photos / videos → the gallery, files → the documents item, web links → the Link item); a hovered
     /// item takes what fits first. A type with no such item becomes a new item at the gap it was dropped on (else at the
     /// end), as does anything no item takes (text, audio). When two items of the same kind could take it and none is
-    /// hovered, `choose` asks (the item's id, or nil = a new item). The undo record also says what went where (the note).
+    /// hovered, `choose` asks (the item's id, nil = a new item, `entryDropCancel` = don't add these). The undo record also
+    /// says what went where (the note).
+    static let entryDropCancel = "\u{1}cancel"
     func dropIntoEntry(_ providers: [NSItemProvider], nodeID: String, placement: EntryDropPlacement,
                        choose: (@MainActor (EntryDropKind, [NodeItem]) async -> String?)? = nil) async -> EntryDropUndo? {
         guard !providers.isEmpty, !LibraryFormatGuard.isReadOnly, let node = nodes.first(where: { $0.id == nodeID }) else { return nil }
@@ -10097,6 +10099,7 @@ final class CorpusStore {
                 if candidates.count == 1 { target = candidates[0] }
                 else if candidates.count > 1 {
                     let picked = await choose?(kind, candidates)
+                    if picked == Self.entryDropCancel { continue }   // sweep 1 · proof 6: Cancel added a new item
                     target = picked.flatMap { id in candidates.first { $0.id == id } }
                 }
             }

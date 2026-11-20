@@ -46,7 +46,7 @@ struct ChatView: View {
                            onSend: { text in
                                session.showPendingQuestion(text)   // sweep 1 · 1.2 — the question shows at once
                                await router.librarian.groundedSend(query: text, store: store, chat: session)
-                               session.endPendingQuestion()
+                               session.endPendingQuestion(text)
                            })
         }
         .task {

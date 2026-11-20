@@ -10,7 +10,7 @@ func a(_ e: AXUIElement, _ k: String) -> AnyObject? { var v: AnyObject?; return 
 var n = 0, vis = 0
 func walk(_ e: AXUIElement, _ d: Int) {
   let r = a(e, kAXRoleAttribute) as? String ?? ""
-  if r != "AXTextField" {
+  if r != "AXTextField" && r != "AXTextArea" {   // the Ask field (multi-line) holds the typed copy too
     var p = CGPoint.zero; if let v = a(e, kAXPositionAttribute) { AXValueGetValue(v as! AXValue, .cgPoint, &p) }
     let s = [kAXValueAttribute, kAXTitleAttribute, kAXDescriptionAttribute, "AXLabel"].compactMap { a(e, $0) as? String }.joined(separator: " ").lowercased()
     if Double(p.x) >= minX && s.contains(needle) {

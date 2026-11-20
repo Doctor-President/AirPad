@@ -4,6 +4,7 @@
   bench.py grade <cases.json> <results.json> [--md out.md] [--json out.json] [--private]
   bench.py table <graded.json> [<graded.json> ...]        one line per run (route x model), for the report
   bench.py compare <graded-before.json> <graded-after.json>
+  bench.py matrix <root>     Phase B: <root>/<arm>/<set>-<model>-r<rep>/graded.json folded into one table per library
 
 Per turn: required facts present, forbidden claims absent, every library citation actually supported (the chip's entry is
 one the case lists as supporting), a citation where one is due, provenance honest (general knowledge never dressed as "your
@@ -210,6 +211,55 @@ def fmt_ms(v):
     return "-" if v is None else f"{v / 1000:.1f} s"
 
 
+def matrix(root, private=False):
+    """Phase B: <root>/<arm>/<set>-<model>-r<rep>/graded.json → one table per library: each route × arm, with the
+    repeats folded (a case counts as passing only when it passed in every repeat), then the per-type and per-case detail."""
+    import glob, os
+    runs = {}
+    for g in sorted(glob.glob(os.path.join(root, "*", "*", "graded.json"))):
+        arm = g.split(os.sep)[-3]
+        name = g.split(os.sep)[-2]
+        setname, rest = name.split("-", 1) if not name.startswith("fixture-gk") else ("fixture-gk", name[len("fixture-gk-"):])
+        tag = rest.rsplit("-r", 1)[0]
+        runs.setdefault((setname, tag, arm), []).append(json.load(open(g)))
+    out = []
+    for setname in sorted({k[0] for k in runs}):
+        out += [f"### {setname} library", "",
+                "| model | arm | repeats | pass every repeat | pass (mean) | chips on unsupporting entries (mean per run) | first word | whole turn | prompt tokens | top causes |",
+                "|---|---|---|---|---|---|---|---|---|---|"]
+        detail = {}
+        for (sn, tag, arm), gs in sorted(runs.items()):
+            if sn != setname:
+                continue
+            ids = [r["id"] for r in gs[0]["rows"]]
+            per = {i: [next((r for r in g["rows"] if r["id"] == i), None) for g in gs] for i in ids}
+            allpass = sum(1 for i in ids if all(r and r["pass"] for r in per[i]))
+            mean = sum(g["summary"]["pass"] for g in gs) / len(gs)
+            uns = sum(g["summary"]["unsupportedChips"] for g in gs) / len(gs)
+            chips = sum(g["summary"]["chips"] for g in gs) / len(gs)
+            causes = {}
+            for g in gs:
+                for k, v in g["summary"]["causes"].items():
+                    causes[k] = causes.get(k, 0) + v
+
+            def med(k):
+                v = [g["summary"][k] for g in gs if g["summary"].get(k) is not None]
+                return statistics.median(v) if v else None
+            model = gs[0]["summary"]["model"]
+            out.append(f"| {model} | {arm} | {len(gs)} | {allpass}/{len(ids)} | {mean:.1f}/{len(ids)} | {uns:.1f} of {chips:.1f} | {fmt_ms(med('medianFirstMs'))} | "
+                       f"{fmt_ms(med('medianTotalMs'))} | {med('medianPromptTokens')} | "
+                       + ", ".join(f"{k} {v / len(gs):.1f}" for k, v in sorted(causes.items(), key=lambda x: -x[1])[:4]) + " |")
+            for i in ids:
+                detail.setdefault(i, {})[(model, arm)] = (sum(1 for r in per[i] if r and r["pass"]), len(gs), per[i][0]["type"] if per[i][0] else "?")
+        cols = sorted({k for d in detail.values() for k in d})
+        out += ["", "Per case (passes of repeats):", "", "| id | type | " + " | ".join(f"{m} {a}" for m, a in cols) + " |", "|---|---|" + "---|" * len(cols)]
+        for i, d in detail.items():
+            typ = next(iter(d.values()))[2]
+            out.append(f"| {i} | {typ} | " + " | ".join(f"{d[c][0]}/{d[c][1]}" if c in d else "-" for c in cols) + " |")
+        out.append("")
+    return "\n".join(out)
+
+
 if __name__ == "__main__":
     a = sys.argv[1:]
     if len(a) >= 3 and a[0] == "grade":
@@ -237,5 +287,7 @@ if __name__ == "__main__":
             o = bm.get(r["id"])
             if o and o["pass"] != r["pass"]:
                 print(f"  {r['id']} ({r['type']}): {'FAIL→PASS' if r['pass'] else 'PASS→FAIL ' + '; '.join(r['fails'])}")
+    elif len(a) >= 2 and a[0] == "matrix":
+        print(matrix(a[1], private="--private" in a))
     else:
         raise SystemExit(__doc__)

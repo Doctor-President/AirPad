@@ -5,11 +5,12 @@
 #   host   — a scratch Host from ~/Developer/airpad-host on :8799 (isolated state dir, Always-ready holding <model> —
 #            the same keep_alive -1 + num_ctx 20,480 T's Host stamps), attached to the running Ollama (no spawn).
 #   server — the user's-own-server route: -GauntletRoute endpoint -DebugEndpointURL <ollama> -DebugEndpointModel <model>.
+# GAUNTLET_OLLAMA=http://127.0.0.1:11500 points both routes at CC's own Ollama instead (sweep 2a: T's is never touched).
 # Records Ollama's loaded set before/after and samples /api/ps every 2 s; FAILS LOUDLY if the after set differs.
 # Run dirs hold answers from T's fixture: they stay in build/ (gitignored), never in Ops.
 set -u
 ROUTE=$1; MODEL=$2; SIM=$3; APP=$4; OUT=$5
-OLL=http://127.0.0.1:11434; BID=com.doctorpresident.airpad; PORT=8799; shift 5; EXTRA=("$@")   # extra launch args (e.g. -GauntletOnly 5)
+OLL=${GAUNTLET_OLLAMA:-http://127.0.0.1:11434}; BID=com.doctorpresident.airpad; PORT=8799; shift 5; EXTRA=("$@")   # extra launch args (e.g. -GauntletOnly 5)
 FIXTURE=~/Developer/fixtures/tom-corpus-2026-09-21
 mkdir -p $OUT; OUT=${OUT:A}
 ps_now() { curl -s -m 5 $OLL/api/ps | python3 -c 'import json,sys;[print(m["name"],m.get("context_length"),m.get("expires_at","")[:4]) for m in json.load(sys.stdin)["models"]]'; }
@@ -22,7 +23,7 @@ if [[ $ROUTE == host ]]; then
   SCR=$(mktemp -d); (cd ~/Developer/airpad-host && go build -o $SCR/airpad-host ./cmd/airpad-host) || exit 1
   print -r -- "{\"mode\":\"always-on\",\"held\":[\"$MODEL\"]}" > $SCR/residency.json
   SECRET=$(openssl rand -hex 32)
-  HOST_SECRET=$SECRET $SCR/airpad-host --headless --observe --listen 127.0.0.1:$PORT --ollama 127.0.0.1:11434 \
+  HOST_SECRET=$SECRET $SCR/airpad-host --headless --observe --listen 127.0.0.1:$PORT --ollama ${OLL#http://} \
     --ollama-bin /nonexistent --manifest ~/Developer/airpad-host/manifest.json --identity $SCR/identity.key --secret-file $SCR/secret > $OUT/host.log 2>&1 &
   HOSTPID=$!
   TOKEN=$(HOST_SECRET=$SECRET $SCR/airpad-host --print-token)

@@ -430,6 +430,12 @@ enum ModelRouter {
                     switch active {
                     case .foundationModel:
                         lastAnswerSource = AnswerSource(route: .apple, model: foundationModelName)
+                        if LibRec.isOn, #available(iOS 26.4, *) {   // sweep 2a — the request's size in the model's own tokens
+                            let req = AppleChat.request(messages)
+                            let whole = ([req.instructions] + req.history.map { $0.content } + [req.prompt]).joined(separator: "\n\n")
+                            LibRec.set("tokens", .row([("prompt", .int((try? await SystemLanguageModel.default.tokenCount(for: whole)) ?? -1)),
+                                                       ("modelWindow", .int(SystemLanguageModel.default.contextSize))]))
+                        }
                         #if DEBUG
                         debugLastApplePrompt = AppleChat.request(messages).prompt   // live-29 (B5) — what the turn carried
                         debugLastAppleInstructions = AppleChat.request(messages).instructions   // live-30 (A1) — where the results go
@@ -1862,6 +1868,10 @@ enum ModelRouter {
             if let obj = try? JSONSerialization.jsonObject(with: Data(payload.utf8)) as? [String: Any],
                let choices = obj["choices"] as? [[String: Any]],
                let delta = choices.first?["delta"] as? [String: Any] {
+                if LibRec.isOn, let u = obj["usage"] as? [String: Any] {   // sweep 2a — recorded when the Host sends it
+                    LibRec.set("tokens", .row([("prompt", .int((u["prompt_tokens"] as? Int) ?? -1)),
+                                               ("answer", .int((u["completion_tokens"] as? Int) ?? -1))]))
+                }
                 // Two channels (Host /api/chat, translated): reasoning = thought process, content
                 // = the answer. `.thinking` is rendered live + discarded; `.answer` is the reply.
                 if let r = delta["reasoning"] as? String, !r.isEmpty { yield(.thinking(r)) }

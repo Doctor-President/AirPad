@@ -829,6 +829,7 @@ struct SettingsView: View {
                 #endif
                 #if DEBUG || DEVSWITCHES
                 if perfRecorderShown { PerfRecorderPanel() }
+                if perfRecorderShown { LibrarianRecorderPanel() }   // sweep 2a — same hidden unlock
                 #endif
             }
         }

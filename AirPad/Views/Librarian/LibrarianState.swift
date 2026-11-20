@@ -661,6 +661,11 @@ final class LibrarianState {
         // path unambiguous — a `[turn] corpusAware=false` line = the General path (no read/footer).
         let userTurnNo = chat.messages.filter { $0.role == .user }.count + 1
         Self.logTurnEntry(turnNo: userTurnNo, corpusAware: corpusAware, scope: selectedScope, query: query, store: store)
+        // Sweep 2a — the Librarian recorder (testing builds, off unless switched on): one record per turn, closed on
+        // every way out of this function.
+        LibRec.begin()
+        defer { LibRec.end() }
+        recordTurnStart(query: query, turnNo: userTurnNo)
 
         // ★ Private mode (DEFAULT, corpusAware == false): do NOT retrieve. Send the
         // bare question with a plain assistant prompt — no passages, no citation
@@ -865,6 +870,7 @@ final class LibrarianState {
         if ProcessInfo.processInfo.arguments.contains("-LibrarianTrace") { logTrace(plan: plan, candidates: candidates) }
         #endif
         // Brief BW5 — the "Reading <Title>…" / "Skimming your library…" line shown until the first token.
+        if LibRec.isOn { Self.recordPacket(plan: plan, candidates: candidates) }
         chat.prefillNotice = plan.prefillNotice()
         if plan.mode == "read", plan.reusedEntries == 0 { chat.prefillSampleChars = plan.systemPrompt.count + plan.modelText.count }
         // live-29 (1b) — the absence guard: entries in this room name what was asked about, so an answer that still says
@@ -878,6 +884,7 @@ final class LibrarianState {
             }
             if !found.isEmpty { absenceGuard = AbsenceGuard(subject: subject, found: found) }
         }
+        LibRec.set("absenceGuardArmed", .bool(absenceGuard != nil))
         await chat.send(displayText: plan.displayText, modelText: plan.modelText,
                         systemPrompt: plan.systemPrompt, citations: plan.citations,
                         alwaysCiteIndices: plan.alwaysCiteIndices, readReceipt: plan.readReceipt, replayFrom: replayFrom,
@@ -887,6 +894,7 @@ final class LibrarianState {
         // Set after the answer commits; the surface renders the offer bar, tapping it flips to General
         // + re-sends (AI4). Only the empty branch: a grounded read/survey answered from the notes.
         if empty, Self.looksLikeSearchIntent(query) { pendingWebSearchOffer = query }
+        LibRec.set("offers", .row([("web", .bool(pendingWebSearchOffer != nil)), ("readInFull", .bool(pendingReadInFullOffer != nil))]))
         #if DEBUG
         // Brief CH-0 — `-GauntletSynthOffer YES`: BU2 case 4 must exercise the offer's RE-ASK even when
         // no offer fired (its firing is embedding-dependent and the Sim's CPU-BGE rarely clears it).
@@ -898,6 +906,94 @@ final class LibrarianState {
             NSLog("[GauntletTap] synthesized Read-in-full offer → '%@'", lead.title)
         }
         #endif
+    }
+
+    // MARK: - Sweep 2a — the Librarian recorder's rows (IDs, scores, counts; never text). No-ops unless it is on.
+
+    private func recordTurnStart(query: String, turnNo: Int) {
+        guard LibRec.isOn else { return }
+        LibRec.question(query)
+        LibRec.set("turn", .int(turnNo))
+        LibRec.set("mode", .token(corpusAware ? "library" : "general"))
+        let route: LibRecValue
+        switch ModelRouter.active {
+        case .foundationModel: route = .token("apple")
+        case .ollama: route = .token("server")
+        case .host: route = .token("host")
+        case .local: route = .token("local")
+        }
+        LibRec.set("route", route)
+        LibRec.set("model", .label(activeModelLabel.replacingOccurrences(of: " ", with: "-")))
+        LibRec.set("thinking", .bool(thinkEnabled))
+        let scope: LibRecValue
+        switch selectedScope {
+        case .corpus: scope = .token("library")
+        case .collection: scope = .token("collection")
+        case .nodeIDs: scope = .token("sample")
+        }
+        LibRec.set("scope", scope)
+        LibRec.set("webKey", .bool(WebSearchBackend.hasKey))
+        LibRec.set("wikipedia", .bool(WikipediaGrounding.isOn))
+        // The question's class, as the app's own rules see it (each is a phrase rule; none is a model call).
+        LibRec.set("rules", .row([
+            ("searchIntent", .bool(Self.looksLikeSearchIntent(query))),
+            ("timeSensitive", .bool(WebGrounding.isTimeSensitive(query))),
+            ("currentState", .bool(WebGrounding.asksCurrentState(query))),
+            ("factual", .bool(WebGrounding.isFactualQuestion(query))),
+            ("ownership", .bool(Self.looksLikeOwnershipQuestion(query))),
+            ("followUp", .bool(Self.looksLikeWorkingSetFollowUp(query))),
+            ("range", .bool(ComputedFacts.looksLikeRangeQuestion(query))),
+            ("writtenAbout", .bool(Self.writtenAboutSubject(query) != nil)),
+            ("namedTerms", .int(Self.namedTerms(query).count)),
+        ]))
+    }
+
+    private static func recordRetrieval(passages: [BlockMatch], cards: [CardMatch],
+                                        ranking: [(nodeID: String, aggregate: Float, top: Float, count: Int)],
+                                        augmented: Bool, pinned: [String], titleMatched: [String], dominant: String?,
+                                        narrowedTo: Int?, named: Bool) {
+        LibRec.set("retrievalAugmented", .bool(augmented))
+        LibRec.set("cutoffs", .row([
+            ("passageFloor", .num(Double(CorpusStore.minRelevanceScore))), ("namedPassageBar", .num(0.70)),
+            ("cardFloor", .num(Double(CorpusStore.cardRelevanceFloor))), ("dominanceTop", .num(0.70)),
+            ("dominanceCount", .int(2)), ("offerAggregate", .num(1.3)), ("offerLead", .num(1.5)),
+            ("perEntryPassages", .int(CorpusStore.maxBlocksPerNode)),
+        ]))
+        let bar = named ? Float(0.70) : CorpusStore.minRelevanceScore
+        for m in passages {
+            LibRec.add("passages", [("node", .id(m.nodeID)), ("block", .id(m.block.blockID)),
+                                    ("score", .num(Double(m.score))), ("clearsBar", .bool(m.score >= bar))])
+        }
+        LibRec.set("cardsOverFloor", .int(cards.count))
+        for c in cards.prefix(20) { LibRec.add("cards", [("node", .id(c.nodeID)), ("score", .num(Double(c.score)))]) }
+        for r in ranking.prefix(8) {
+            LibRec.add("ranking", [("node", .id(r.nodeID)), ("aggregate", .num(Double(r.aggregate))),
+                                   ("top", .num(Double(r.top))), ("count", .int(r.count))])
+        }
+        LibRec.set("pinned", .list(pinned.map { .id($0) }))
+        LibRec.set("titleMatched", .list(titleMatched.prefix(6).map { .id($0) }))
+        if let dominant { LibRec.set("dominant", .id(dominant)) }
+        if let narrowedTo { LibRec.set("narrowedTo", .int(narrowedTo)) }
+    }
+
+    private static func recordPacket(plan: TurnPlan, candidates: [NumberedCandidate]) {
+        LibRec.mark("retrievedMs")
+        LibRec.set("planMode", .label(plan.mode))
+        for c in candidates.sorted(by: { $0.number < $1.number }) {
+            let kind: LibRecValue = c.isEntryRead ? (c.isPartialRead ? .token("read-partial") : .token("read")) : (c.isCard ? .token("card") : .token("passage"))
+            LibRec.add("sent", [("n", .int(c.number)), ("node", .id(c.nodeID)), ("kind", kind),
+                                ("chars", .int(c.charCount)), ("score", .num(Double(c.score))),
+                                ("origin", .label(c.origin.rawValue))])
+        }
+        LibRec.set("packet", .row([
+            ("chars", .int(plan.packetChars)), ("systemChars", .int(plan.systemPrompt.count)),
+            ("estTokens", .int(plan.estTokens)), ("windowTokens", .int(plan.windowTokens)),
+            ("budgetChars", .int(plan.budgetChars)), ("reusedEntries", .int(plan.reusedEntries)),
+            ("computedFacts", .bool(plan.modelText.contains("COMPUTED FACTS"))),
+            ("readInFull", .int(plan.readReceipt?.readInFull ?? 0)), ("skimmed", .int(plan.readReceipt?.skimmed ?? 0)),
+            ("partial", .bool(plan.readReceipt?.partial ?? false)),
+        ]))
+        LibRec.set("alwaysCite", .list(plan.alwaysCiteIndicesList.map { .int($0) }))
     }
 
     /// live-29 (B5) — one Apple Intelligence turn grounded in the active provider's top results (`AppleWebGrounding`).
@@ -1127,6 +1223,7 @@ final class LibrarianState {
                                                                  sampleCount: await sampleEntriesNaming(lookup, store: store))
                     carriedCandidates = []; carriedChatID = chat.id
                     chat.workingSet = []   // nothing found → nothing stays open
+                    LibRec.set("decision", .token("none(subject)"))
                     NSLog("[LibrarianRouting] turn=%d mode=none(subject) subject=\"%@\" room=%@", chat.messages.filter { $0.role == .user }.count + 1,
                           subject, lookupRoomName(store: store))
                     return ([], true, nil)
@@ -1165,6 +1262,7 @@ final class LibrarianState {
         // live-29 (1) — a subject lookup that found ≤ 6 entries naming X READS them: the best one (and a second if it
         // fits) in full, the others as passages / chips. No carry: the question named its own subject.
         if !lookupRead.isEmpty {
+            LibRec.set("subjectFound", .int(lookupFoundIDs.count))
             let readTargets = Array(lookupRead.prefix(2))
             let readSet = Set(readTargets)
             let rest = lookupFoundIDs.filter { !readSet.contains($0) }
@@ -1213,6 +1311,11 @@ final class LibrarianState {
         }
         // live-29 (1) — a survey of the found entries / a named collection is a survey: no single entry takes it over.
         let dominant = surveyOnly != nil ? nil : Self.dominantReadEntry(ranking: decisionRanking, store: store)   // nil → no single dominator
+        if LibRec.isOn {
+            Self.recordRetrieval(passages: general, cards: cards, ranking: decisionRanking, augmented: retrievalQuery != query,
+                                 pinned: pinnedIDs, titleMatched: titleMatchedIDs, dominant: dominant,
+                                 narrowedTo: surveyOnly?.count, named: named)
+        }
         // Brief CI §2.6 — a RANGE question reads its range TABLE. "Which of my lab values are out of range?"
         // shares one title token with "Annual – Lab Tests" (title match needs 2) and the terse table embeds
         // too weakly to dominate → it surveyed a "Result [n]" fragment (CI-0 P1a, 9/9). Narrowed (Companion):
@@ -1256,6 +1359,10 @@ final class LibrarianState {
             // → CARRY; "capital of France" leaves it ~0.10 behind → the topic moved → let go. CPU-BGE
             // is exact (matches device), so the 0.08 margin transfers off the Simulator.
             wsStillRelevant = wsBest >= topOther - 0.08
+            LibRec.set("carryCheck", .row([("openEntries", .int(wsTargets.count)), ("openBest", .num(Double(wsBest))),
+                                           ("otherBest", .num(Double(topOther))), ("margin", .num(0.08)),
+                                           ("stillRelevant", .bool(wsStillRelevant)),
+                                           ("deictic", .bool(Self.looksLikeWorkingSetFollowUp(query)))]))
         }
         #if DEBUG
         if ProcessInfo.processInfo.arguments.contains("-LibrarianGauntlet"), !wsTargets.isEmpty {
@@ -1290,6 +1397,7 @@ final class LibrarianState {
             return (candidates, empty, empty ? nil : receipt)
         }
 
+        if let rangeTarget { LibRec.set("rangeTarget", .id(rangeTarget)) }
         if named || dominant != nil || rangeTarget != nil {
             // READ targets + BS1 AMBIGUITY. A pin reads all pinned entries; a title match that named
             // ONE entry reads it; a title match that named 2+ entries reads the TOP by aggregate
@@ -1402,6 +1510,12 @@ final class LibrarianState {
         }
 
         Self.logCandidates(turnIndex: turnIndex, query: retrievalQuery, candidates: candidates, shape: verdict, scope: selectedScope, empty: empty, store: store)
+        LibRec.set("decision", .token(empty ? "empty" : "survey"))
+        LibRec.set("shape", .label(verdict.shape.rawValue))
+        LibRec.set("survey", .row([("passagesOverFloor", .int(generalFiltered.count)), ("passageBudget", .int(verdict.shape.passageBudget)),
+                                   ("cardsOverFloor", .int(orderedCards.count)), ("cardBudget", .int(verdict.shape.cardBudget)),
+                                   ("ownFirst", .bool(Self.looksLikeOwnershipQuestion(query))),
+                                   ("readOffer", .bool(pendingReadInFullOffer != nil))]))
         let receipt: ChatSession.Message.ReadReceipt? = empty ? nil : Self.surveyReceipt(candidates: candidates)
         return (candidates, empty, receipt)
     }
@@ -2428,6 +2542,7 @@ final class LibrarianState {
     /// the model-derived char budget (BN3), then each candidate — full-entry reads first. Shares the
     /// os_log + "Copy Librarian log" buffer, so `-LibrarianRetrievalDiag` / device diagnostics show it.
     private static func logRouting(turnIndex: Int, query: String, mode: String, candidates: [NumberedCandidate], receipt: ChatSession.Message.ReadReceipt, budget: Int, scope: CanvasScope, store: CorpusStore) {
+        LibRec.set("decision", .label(mode))
         var lines: [String] = []
         let q = query.replacingOccurrences(of: "\n", with: " ⏎ ")
         lines.append("turn \(turnIndex) · scope=\(scopeLabel(scope, store: store)) · mode=\(mode) · read=\(receipt.readInFull) skim=\(receipt.skimmed) partial=\(receipt.partial) · budgetChars=\(budget) · \(candidates.count) candidate(s) · query=\"\(q)\"")
@@ -2469,6 +2584,7 @@ final class LibrarianState {
     }
 
     private static func logGeneralTurn(query: String, scope: CanvasScope, tool: String, retry: Bool, store: CorpusStore) {
+        LibRec.set("generalTool", .label(tool)); LibRec.set("generalRetry", .bool(retry))
         let q = query.replacingOccurrences(of: "\n", with: " ⏎ ")
         let record = "general · scope=\(scopeLabel(scope, store: store)) · tool=\(tool)\(retry ? " · retry=web" : "") · query=\"\(q)\""
         candidateLog.log("\(record, privacy: .public)")

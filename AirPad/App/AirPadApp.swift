@@ -26,6 +26,7 @@ struct AirPadApp: App {
         InstallChannel.resolve()   // 1.1-B — TestFlight or App Store (the Sheen switch)
         #if DEBUG || DEVSWITCHES
         Task { @MainActor in PerfRecorder.startIfEnabled() }   // Mac perf audit (P6) — off unless switched on
+        Task { @MainActor in LibrarianRecorder.startIfEnabled() }   // sweep 2a — off unless switched on
         #endif
         // Step 1 — off the launch path. (The DEBUG self-test runs the migration itself, on an item it seeds: a launch
         // migration racing it could move that item first and fail the test falsely.)

@@ -665,6 +665,16 @@ enum CustomServer {
             if !l.content.isEmpty { content += l.content; onContent(l.content) }
             for c in l.toolCalls { calls.append(ToolCall(id: "call_\(calls.count)", name: c.name, argumentsJSON: c.args)) }
             if l.done {
+                if LibRec.isOn, let d = try? JSONSerialization.jsonObject(with: Data(line.utf8)) as? [String: Any] {
+                    // Sweep 2a — the server's own counts for this request (numbers only).
+                    func ms(_ k: String) -> LibRecValue { .int(Int(((d[k] as? Double) ?? Double((d[k] as? Int) ?? 0)) / 1_000_000)) }
+                    LibRec.set("tokens", .row([("prompt", .int((d["prompt_eval_count"] as? Int) ?? -1)),
+                                               ("answer", .int((d["eval_count"] as? Int) ?? -1)),
+                                               ("loadMs", ms("load_duration")), ("promptMs", ms("prompt_eval_duration")),
+                                               ("answerMs", ms("eval_duration")), ("totalMs", ms("total_duration"))]))
+                    LibRec.set("servedModel", .label(body["model"] as? String ?? "?"))
+                    LibRec.set("servedNumCtx", .int((body["options"] as? [String: Any])?["num_ctx"] as? Int ?? 0))
+                }
                 #if DEBUG
                 let done = (try? JSONSerialization.jsonObject(with: Data(line.utf8)) as? [String: Any]) ?? [:]
                 NSLog("[ServerChat] done model=%@ num_ctx=%d roles=[%@] totalChars=%d tools=%d think=%@ prompt_eval=%d eval=%d done_reason=%@ toolCalls=%d",

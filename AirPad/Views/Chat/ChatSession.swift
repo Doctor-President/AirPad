@@ -521,6 +521,22 @@ final class ChatSession {
                                      history: history,
                                      userContent: modelText, numCtx: numCtx)
         #endif
+        // Sweep 2a — the Librarian recorder (testing builds; sizes and timings only).
+        var recFirst = false, recFirstAnswer = false
+        if LibRec.isOn {
+            LibRec.mark("sentMs")
+            var historyChars = 0
+            for m in history { historyChars += (m["content"] ?? "").count }
+            let candidateCount: Int = citations?.count ?? 0
+            let webCount: Int = webResults ?? -1
+            let request: [(StaticString, LibRecValue)] = [
+                ("systemChars", LibRecValue.int(systemPrompt.count)), ("turnChars", LibRecValue.int(modelText.count)),
+                ("historyMessages", LibRecValue.int(history.count)), ("historyChars", LibRecValue.int(historyChars)),
+                ("numCtx", LibRecValue.int(numCtx)), ("maxTokens", LibRecValue.int(maxTokens ?? -1)),
+                ("candidates", LibRecValue.int(candidateCount)), ("webResults", LibRecValue.int(webCount)),
+            ]
+            LibRec.set("request", .row(request))
+        }
         do {
             for try await delta in ModelRouter.generateStreaming(
                 systemPrompt: systemPrompt,
@@ -539,6 +555,8 @@ final class ChatSession {
                 }
                 #endif
                 if !sampled, let c = sampleChars { sampled = true; PrefillSpeed.record(chars: c, seconds: Date().timeIntervalSince(sentAt)) }
+                if !recFirst { recFirst = true; LibRec.mark("firstTokenMs") }
+                if !recFirstAnswer, case .answer = delta { recFirstAnswer = true; LibRec.mark("firstAnswerMs") }
                 switch delta {
                 case .thinking(let t):
                     streamingThinking += t   // ephemeral — the Thought-process block renders it (increment 7)
@@ -560,7 +578,10 @@ final class ChatSession {
             // incrementally; the empty-library branch passes no candidates, so every marker is dropped). Brief AD — a
             // model that dumps `<think>…</think>` INTO the answer must not have that chain-of-thought rendered.
             settleAnswer()
+            LibRec.mark("streamEndMs")
             var r = numberer.result(alwaysInclude: alwaysCiteIndices)
+            let recInline = LibRec.isOn ? numberer.result().citations : []   // what the prose itself cited, before always-cite
+            var recTitleFallback = false
             var finalText = Self.stripThinkTags(r.text).trimmingCharacters(in: .whitespacesAndNewlines)
             // live-29 (1b) — the absence guard: entries in the room name what was asked about, so an answer that says
             // there are none never reaches the transcript; what was found is listed instead (each entry cited).
@@ -585,6 +606,7 @@ final class ChatSession {
                     // for every PACKET entry the answer NAMES by title (case/punctuation-tolerant). Only
                     // `candidates` are considered, so a chip can never point at an entry not in the packet.
                     r = numberer.result(alwaysInclude: Set(titleMatched.map { $0.index }))
+                    recTitleFallback = true
                 }
                 // Brief BN5 — the read/skim receipt renders even when the answer cited nothing inline.
                 // T ruling (2026-10-09): the general-knowledge line only under a FACTUAL question (not a pep talk).
@@ -614,6 +636,26 @@ final class ChatSession {
                 if labelled && line?.unconfirmed == true { answer.searchUnconfirmed = true }
                 answer.stopped = stopRequest
                 messages.append(answer)
+                if LibRec.isOn {
+                    // Each chip shown, and whether the prose itself cited it (`inline`) or it was attached by a rule.
+                    let inlineKeys = Set(recInline.map { $0.nodeID ?? $0.url ?? "" })
+                    for c in r.citations {
+                        LibRec.add("cited", [("n", .int(c.index)), ("node", .id(c.nodeID ?? "")), ("web", .bool(c.url != nil)),
+                                             ("inline", .bool(inlineKeys.contains(c.nodeID ?? c.url ?? "")))])
+                    }
+                    LibRec.set("answer", .row([
+                        ("chars", .int(finalText.count)), ("thinkingChars", .int(streamingThinking.count)),
+                        ("chips", .int(r.citations.count)), ("inlineCited", .int(recInline.count)),
+                        ("candidates", .int(citations?.count ?? 0)),
+                        ("titleFallback", .bool(recTitleFallback)), ("absenceGuardFired", .bool(guardedCitations != nil)),
+                        ("declined", .bool(declined)), ("generalKnowledgeLine", .bool(labelled)),
+                        ("datedLine", .bool(labelled && line?.dated == true)),
+                        ("unconfirmedLine", .bool(labelled && line?.unconfirmed == true)),
+                        ("saysResultsDontAnswer", .bool(saysNoAnswer)),
+                        ("stopped", .bool(stopRequest != nil)),
+                        ("provenanceWeb", .bool(webResults != nil)), ("provenanceLibrary", .bool(packetTurn)),
+                    ]))
+                }
                 #if DEBUG
                 if generalKnowledge {
                     WebTrace.shared.note("answer", ["text": finalText, "cited": r.citations.compactMap(\.url), "line": line.map { "\($0)" } ?? "",
@@ -639,6 +681,7 @@ final class ChatSession {
             // genuine unreachable-Host error is still visible (and the trailing
             // `.user` message remains so retry can re-send it).
             settleAnswer()
+            LibRec.set("failed", .bool(true))
             let partial = numberer.result().text.trimmingCharacters(in: .whitespacesAndNewlines)
             if let stop = stopRequest {
                 // live-28 (1) — stopped (a cap or the user): keep what arrived as a STOPPED answer, never a partial — no

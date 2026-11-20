@@ -1380,6 +1380,10 @@ final class CorpusStore {
             if ProcessInfo.processInfo.arguments.contains("-RecorderSaveSelfTest") {
                 NSLog("%@", await RecorderSaveSelfTest.run())
             }
+            // Sweep 2a — the Librarian recorder keeps IDs and numbers, never the library's words (a real turn, scanned).
+            if ProcessInfo.processInfo.arguments.contains("-LibrarianRecorderSelfTest") {
+                NSLog("%@", await LibrarianRecorderSelfTest.run(store: self))
+            }
             // live-13 (3) — Paste Pad sorts a paste by what it is (a selection is text; only files are documents).
             if ProcessInfo.processInfo.arguments.contains("-PastePadTypeSelfTest") {
                 NSLog("%@", await PastePadTypeSelfTest.run())

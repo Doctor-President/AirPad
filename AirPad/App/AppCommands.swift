@@ -25,6 +25,7 @@ struct AppCommands: Commands {
     let store: CorpusStore
     #if targetEnvironment(macCatalyst) && (DEBUG || DEVSWITCHES)
     @AppStorage(PerfRecorder.onKey) private var perfRecorderOn = false
+    @AppStorage(LibrarianRecorder.onKey) private var librarianRecorderOn = false
     #endif
 
     var body: some Commands {
@@ -113,6 +114,12 @@ struct AppCommands: Commands {
                 Divider()
                 Button("Save Performance Recording") { PerfRecorder.shared.save(reason: "shortcut") }
                     .keyboardShortcut("p", modifiers: [.control, .option, .command])
+            }
+            // Sweep 2a — the Librarian recorder's shortcut, only while it's switched on (Settings › About).
+            if librarianRecorderOn {
+                if !perfRecorderOn { Divider() }
+                Button("Save Librarian Recording") { LibrarianRecorder.shared.save(reason: "shortcut") }
+                    .keyboardShortcut("l", modifiers: [.control, .option, .command])
             }
             #endif
         }

@@ -156,6 +156,7 @@ struct ChatTranscript: View {
     /// and the streaming answer (Brief AE2: the thought process heads the reply).
     private var items: [TranscriptItem] {
         var out = session.messages.map { TranscriptItem.message($0.id) }
+        if session.pendingUser != nil && !session.isStreaming { out.append(.pending) }   // sweep 1 · 1.2 — the question, at once
         if session.isStreaming && !session.streamingThinking.isEmpty { out.append(.thought) }
         if session.isStreaming && !Self.freezeNoTail { out.append(.tail) }
         return out

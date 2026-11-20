@@ -43,7 +43,11 @@ struct ChatView: View {
             ChatTranscript(session: session,
                            onOpenNode: { openCitation($0) },
                            leadingControl: AnyView(CorpusModeToggle(librarian: router.librarian, identifier: "chat.scopeToggle")),
-                           onSend: { text in await router.librarian.groundedSend(query: text, store: store, chat: session) })
+                           onSend: { text in
+                               session.showPendingQuestion(text)   // sweep 1 · 1.2 — the question shows at once
+                               await router.librarian.groundedSend(query: text, store: store, chat: session)
+                               session.endPendingQuestion()
+                           })
         }
         .task {
             guard !didRestoreOnAppear else { return }

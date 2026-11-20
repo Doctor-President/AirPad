@@ -320,9 +320,24 @@ final class ChatSession {
     /// T ruling (2026-10-09) — set by the Librarian on a FIRST read (chars sent): the time to the first token becomes a
     /// prefill-speed sample for the "~N s" estimate. Consumed by the next `send`.
     @ObservationIgnored var prefillSampleChars: Int? = nil
-    /// Echoed back as a `.user` message the moment send() fires so the
-    /// transcript shows the turn instantly while the model starts.
+    /// The question just asked, shown as its bubble (`TranscriptItem.pending`) until the turn adds the real message.
+    /// Sweep 1 · 1.2 (T: "the question disappeared for a while"): a Library turn reads the library BEFORE `send` adds
+    /// the question, so after Return the field was empty and the question nowhere for 1.5–2.5 s (Mac, 284 entries,
+    /// measured with real keys). Set by the Ask bars (`showPendingQuestion`); every place that adds the user message
+    /// clears it in the same step, so the bubble never shows twice; `endPendingQuestion` covers a turn that adds nothing.
     private(set) var pendingUser: String? = nil
+
+    /// The Ask bars: show `text` as the question's bubble now (nothing while an answer streams).
+    func showPendingQuestion(_ text: String) {
+        let q = text.trimmingCharacters(in: .whitespacesAndNewlines)
+        guard !q.isEmpty, !isStreaming else { return }
+        pendingUser = q
+    }
+
+    /// The turn is over: a question it never added (an empty or refused send) doesn't stay on screen.
+    func endPendingQuestion() {
+        if pendingUser != nil { pendingUser = nil }
+    }
     /// Non-message failure state for the most recent send. Endpoint /
     /// network / model-discovery errors set this INSTEAD of being appended
     /// to `messages`, so the transcript never carries raw error strings.

@@ -181,12 +181,20 @@ extension ChatTranscriptCollection {
             if had.contains(.tail), !new.contains(.tail), let added = new.last(where: { !had.contains($0) }) {
                 layout.carryHeight(from: .tail, to: added)
             }
+            // Sweep 1 · 1.2 — the pending question becomes its message in the same place: the message starts at its height.
+            if had.contains(.pending), !new.contains(.pending),
+               let u = session.messages.last(where: { $0.role == .user })?.id, !had.contains(.message(u)) {
+                layout.carryHeight(from: .pending, to: .message(u))
+            }
             // live-31 — where the reader is BEFORE this change: scrolled up by their own hand, or not.
             let readerAtEnd = !readerScrolledUp || layout.followsEnd || layout.endOffset(in: cv) - cv.contentOffset.y <= Self.arrowDistance
             let lastUser = session.messages.last(where: { $0.role == .user })?.id
-            let newQuestion = !switched && !firstLoad && lastUser.map { !had.contains(.message($0)) } == true
+            // Sweep 1 · 1.2 — the pending question (shown at once) starts the turn; its message arriving later re-pins the
+            // same place (nothing moves).
+            let pendingArrived = !switched && !firstLoad && new.contains(.pending) && !had.contains(.pending)
+            let newQuestion = pendingArrived || (!switched && !firstLoad && lastUser.map { !had.contains(.message($0)) } == true)
             let streamStarted = nowStreaming && !layout.streaming
-            var pin: UUID? = nil
+            var pin: TranscriptItem? = nil
             if Self.live30 {
                 // live-30: a new conversation, a restore, or a change other than one message arriving lands on the end.
                 if switched || firstLoad || (newCount != oldCount && newCount != oldCount + 1) { layout.followsEnd = true }
@@ -198,7 +206,7 @@ extension ChatTranscriptCollection {
             } else if newQuestion || (streamStarted && !pinnedThisTurn) {
                 // A turn starts (a question sent, or a retry / regenerate streaming again): at the end, its question is
                 // brought near the top once; scrolled up, nothing moves. Either way the view stops following.
-                if readerAtEnd { pin = lastUser; readerScrolledUp = false }
+                if readerAtEnd { pin = pendingArrived ? .pending : lastUser.map { .message($0) }; readerScrolledUp = false }
                 layout.followsEnd = false
                 pinnedThisTurn = true
             } else if newCount >= oldCount + 2, !nowStreaming {
@@ -211,6 +219,7 @@ extension ChatTranscriptCollection {
                 if !cv.isTracking, !cv.isDecelerating { layout.setRunwayAnchor(layout.runwayAnchor.map { min($0, cv.contentOffset.y) }) }
             }
             layout.streaming = nowStreaming
+            layout.questionPending = new.contains(.pending)
             #if DEBUG
             cv.debugAnswerStreaming = session.isStreaming
             #endif
@@ -225,7 +234,7 @@ extension ChatTranscriptCollection {
             snap.appendItems(new)
             dataSource.apply(snap, animatingDifferences: false)
             cv.layoutIfNeeded()
-            if let pin { bringNearTop(.message(pin)) }
+            if let pin { bringNearTop(pin) }
             else if layout.followsEnd, !layout.streaming { scrollToEnd(animated: false) }
             reportGeometry()
         }
@@ -246,6 +255,9 @@ extension ChatTranscriptCollection {
                 return
             }
             layout.setRunwayAnchor(target)
+            // Sweep 1 · 1.2 — the runway must be in the content size BEFORE the animated scroll, or the scroll stops at
+            // the old end (measured: the question stopped 50–58 pt short, then moved again when the answer started).
+            cv.layoutIfNeeded()
             cv.animatingToEnd = true   // no snap-to-end under the animation
             cv.setContentOffset(CGPoint(x: 0, y: target), animated: true)
         }
@@ -253,7 +265,7 @@ extension ChatTranscriptCollection {
         /// A rough height before a cell has measured itself (only the scroll indicator and far-away rows use it).
         private static func estimatedHeight(_ item: TranscriptItem, _ byID: [UUID: ChatSession.Message]) -> CGFloat {
             switch item {
-            case .tail, .thought: return 44
+            case .tail, .thought, .pending: return 44
             case .message(let id):
                 guard let m = byID[id] else { return 80 }
                 let lines = CGFloat(max(1, m.text.count / 42 + m.text.filter { $0 == "\n" }.count / 2))
@@ -384,6 +396,8 @@ final class ChatTranscriptCollectionView: UICollectionView {
     }
     override func accessibilityElementCount() -> Int { hidesElements ? 0 : super.accessibilityElementCount() }
     private var lastHeight: CGFloat = 0
+    /// The offset at the end of the last layout pass (sweep 1 · 1.2: UIKit clamps it when the view grows, before layoutSubviews).
+    private var lastOffset: CGFloat = 0
     private var reportedFirstLayout = false
 
     /// The ↓ arrow's animation is running (the end isn't re-snapped under it).
@@ -421,10 +435,15 @@ final class ChatTranscriptCollectionView: UICollectionView {
             let offset = contentOffset.y
             if layout.followsEnd, !layout.streaming {
                 contentOffset = CGPoint(x: 0, y: end)   // at the end: the end
-            } else if lastHeight > 0, layout.streaming || layout.naturalHeight < offset + lastHeight {
+            } else if lastHeight > 0, layout.streaming || layout.questionPending || layout.naturalHeight < offset + lastHeight {
                 // live-31 — while an answer streams, or with the runway showing at the bottom: the TOP edge stays put
                 // (nothing on screen moves); the runway keeps this offset reachable at the new height.
-                if offset + h > layout.naturalHeight { layout.setRunwayAnchor(max(layout.runwayAnchor ?? 0, offset), height: h) }
+                // Sweep 1 · 1.2 — a TALLER view (a bar under the transcript went away) arrives here with the offset already
+                // clamped by UIKit to the old content end: everything dropped by the bar's height (52 pt, measured). Keep
+                // the offset from before the resize.
+                let keep = isTracking || isDecelerating ? offset : max(offset, lastOffset)
+                if keep + h > layout.naturalHeight { layout.setRunwayAnchor(max(layout.runwayAnchor ?? 0, keep), height: h) }
+                if keep > offset + 0.5 { contentOffset = CGPoint(x: 0, y: keep) }
             } else if lastHeight > 0 {
                 // Elsewhere the bottom edge stays put: what sat above the composer stays there.
                 contentOffset = CGPoint(x: 0, y: min(max(0, offset + lastHeight - h), end))
@@ -432,6 +451,7 @@ final class ChatTranscriptCollectionView: UICollectionView {
         }
         lastHeight = h
         super.layoutSubviews()
+        lastOffset = contentOffset.y
         // Safety net for the end: after this pass's cells sized themselves, a transcript that follows the end shows it
         // (never under the reader's finger, a fling, the ↓ animation, or while an answer streams).
         if let layout, layout.followsEnd, !layout.streaming, !isTracking, !isDecelerating, !animatingToEnd {
@@ -483,6 +503,9 @@ final class ChatTranscriptLayout: UICollectionViewLayout {
     var followsEnd = true
     /// live-31 — an answer is streaming: nothing the layout learns moves what's on screen (no following the end).
     var streaming = false
+    /// Sweep 1 · 1.2 — a question shows while the turn reads the library: a change in the view's height (the read-in-full
+    /// bar under the transcript comes or goes) keeps the TOP edge, as while streaming — the question doesn't jump.
+    var questionPending = false
     /// live-31 — the runway: while set, the content is at least this offset + the view's height, so the offset that
     /// brought the question near the top stays reachable while the answer is still shorter than the screen.
     private(set) var runwayAnchor: CGFloat?

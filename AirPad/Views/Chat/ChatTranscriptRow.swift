@@ -13,6 +13,8 @@ enum TranscriptItem: Hashable {
     case thought
     /// The streaming answer (`StreamingTail`, the only reader of `session.streamingText`).
     case tail
+    /// Sweep 1 · 1.2 — the question just asked, before the turn adds its message (`ChatSession.pendingUser`).
+    case pending
 }
 
 /// Shared by every cell of one transcript. A reference type: a cell keeps it across reuse, and the transcript updates
@@ -38,6 +40,8 @@ final class TranscriptRowContext {
 
 /// The content of one cell.
 struct TranscriptItemView: View {
+    /// The pending question's row id (one at a time).
+    private static let pendingID = UUID()
     #if DEBUG
     static let cellSpace = "transcriptCell"
     #endif
@@ -62,6 +66,10 @@ struct TranscriptItemView: View {
                 // Brief AE2 — while streaming, the thought process renders at the HEAD of the reply (before the
                 // answer tail). On completion it moves INTO the committed assistant bubble's top (same position).
                 ThoughtProcessBlock(session: session)
+            case .pending:
+                if let q = session.pendingUser {
+                    ChatMessageRow(message: ChatSession.Message(id: Self.pendingID, role: .user, text: q), session: session, context: context)
+                }
             case .tail:
                 StreamingTail(session: session)
                     #if DEBUG
@@ -137,7 +145,10 @@ struct ChatMessageRow: View {
     /// Brief BN5 — the app-wide Font (serif/SF face), so the read/skim receipt line follows the Font.
     @Environment(\.appBodyFont) private var appFont
     private var speech: SpeechSynthesisService { SpeechSynthesisService.shared }
-    private var isLast: Bool { message.id == session.messages.last?.id }
+    /// Sweep 1 · 1.2 — a new question (pending) ends the last turn now: its last-turn-only controls (↻, Try again, Continue)
+    /// go at Return, with the question's move to the top, not 2–3 s later when the question's message lands (measured: the
+    /// row shrank then and everything under it hopped 25 pt).
+    private var isLast: Bool { message.id == session.messages.last?.id && session.pendingUser == nil }
 
     var body: some View {
         switch message.role {

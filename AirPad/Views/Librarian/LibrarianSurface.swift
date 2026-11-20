@@ -1337,7 +1337,8 @@ struct LibrarianSurface: View {
         isViewingActiveChat = true
         panelModel.expandToFull(animated: true)
         let chat = router.chat
-        chat.startTurn { await librarian.groundedSend(query: text, store: store, chat: chat) }
+        chat.showPendingQuestion(text)   // sweep 1 · 1.2 — the question shows at once (a Library turn reads first)
+        chat.startTurn { await librarian.groundedSend(query: text, store: store, chat: chat); chat.endPendingQuestion() }
     }
 
     private func sendIsEnabled(librarian: LibrarianState) -> Bool {
@@ -2388,7 +2389,9 @@ struct LibrarianSurface: View {
         librarian.corpusAware = true
         isViewingActiveChat = true
         panelModel.expandToFull(animated: true)
-        Task { await librarian.groundedSend(query: question, store: store, chat: router.chat) }
+        let chat = router.chat
+        chat.showPendingQuestion(question)   // sweep 1 · 1.2
+        Task { await librarian.groundedSend(query: question, store: store, chat: chat); chat.endPendingQuestion() }
     }
 
     /// Seeds `selectedScope` from the host the first time the surface

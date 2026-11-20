@@ -1141,7 +1141,9 @@ final class LibrarianState {
         """
         let chips = Self.citationChips(from: candidates, store: store)
         // Brief BS2 — an entry READ IN FULL is ALWAYS a source chip, even with no inline [n].
-        let alwaysCite = Set(candidates.filter { $0.isEntryRead }.map { $0.number })
+        // SCRATCH — `-StopgapNoAlwaysCite YES`: an entry read in full is a chip only when the answer cites or names it.
+        let alwaysCite = UserDefaults.standard.bool(forKey: "StopgapNoAlwaysCite") ? Set<Int>()
+            : Set(candidates.filter { $0.isEntryRead }.map { $0.number })
         let readTitle = candidates.first(where: { $0.isEntryRead })
             .flatMap { c in store.nodes.first(where: { $0.id == c.nodeID })?.title }
         var freshSystem = askSystemPrompt(hasReads: candidates.contains { $0.isEntryRead },
@@ -1430,6 +1432,25 @@ final class LibrarianState {
         }
 
         if let rangeTarget { LibRec.set("rangeTarget", .id(rangeTarget)) }
+        // ── SCRATCH (sweep 2a stopgap measurement; branch ws-2a-stopgap-scratch, never merge) ──────────────────────
+        // `-StopgapBar 0.66`: when the question names no entry and its best passage scores under the bar, nothing
+        // really matched: take the existing no-match path (one sentence, then general knowledge, nothing cited).
+        // One-line summaries alone no longer count as a match.
+        let stopgapBar = Float(UserDefaults.standard.double(forKey: "StopgapBar"))
+        if stopgapBar > 0, !named, rangeTarget == nil, surveyOnly == nil {
+            let top = decisionRanking.map(\.top).max() ?? 0
+            LibRec.set("stopgapTop", .num(Double(top)))
+            // A question about the user's own things ("my lab values", "did I…") keeps the old 0.60: a wrong
+            // "no close match" there costs more than a loose survey (`-StopgapOwnBar`, default 0.60).
+            let ownBar = Float(UserDefaults.standard.object(forKey: "StopgapOwnBar") == nil ? 0.60 : UserDefaults.standard.double(forKey: "StopgapOwnBar"))
+            let bar = Self.looksLikeOwnershipQuestion(query) ? min(stopgapBar, ownBar) : stopgapBar
+            if top < bar {
+                carriedCandidates = []; carriedChatID = chat.id
+                chat.workingSet = []
+                LibRec.set("decision", .token("empty(bar)"))
+                return ([], true, nil)
+            }
+        }
         if named || dominant != nil || rangeTarget != nil {
             // READ targets + BS1 AMBIGUITY. A pin reads all pinned entries; a title match that named
             // ONE entry reads it; a title match that named 2+ entries reads the TOP by aggregate

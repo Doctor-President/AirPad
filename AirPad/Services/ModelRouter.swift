@@ -433,8 +433,9 @@ enum ModelRouter {
                         if LibRec.isOn, #available(iOS 26.4, *) {   // sweep 2a — the request's size in the model's own tokens
                             let req = AppleChat.request(messages)
                             let whole = ([req.instructions] + req.history.map { $0.content } + [req.prompt]).joined(separator: "\n\n")
-                            LibRec.set("tokens", .row([("prompt", .int((try? await SystemLanguageModel.default.tokenCount(for: whole)) ?? -1)),
-                                                       ("modelWindow", .int(SystemLanguageModel.default.contextSize))]))
+                            let promptTokens = (try? await SystemLanguageModel.default.tokenCount(for: whole)) ?? -1
+                            let modelWindow = SystemLanguageModel.default.contextSize
+                            LibRec.set("tokens", .row([("prompt", .int(promptTokens)), ("modelWindow", .int(modelWindow))]))
                         }
                         #if DEBUG
                         debugLastApplePrompt = AppleChat.request(messages).prompt   // live-29 (B5) — what the turn carried

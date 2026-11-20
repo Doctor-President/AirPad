@@ -951,8 +951,22 @@ final class LibrarianState {
     private static func recordRetrieval(passages: [BlockMatch], cards: [CardMatch],
                                         ranking: [(nodeID: String, aggregate: Float, top: Float, count: Int)],
                                         augmented: Bool, pinned: [String], titleMatched: [String], dominant: String?,
-                                        narrowedTo: Int?, named: Bool) {
+                                        narrowedTo: Int?, named: Bool, question: String, store: CorpusStore) {
         LibRec.set("retrievalAugmented", .bool(augmented))
+        // Keyword evidence beside each score (measurement only — nothing reads it): how many of the question's content
+        // words the candidate contains, and how many of those are RARE in this library (in ≤ 5 % of entries' titles and
+        // summaries). The design sheet tests relevance bars against these.
+        let qTokens = contentTokens(question)
+        let (df, total) = lexicalDF(store)
+        func isRare(_ t: String) -> Bool { df[t, default: 0] * 20 <= max(total, 20) }
+        let qRare = qTokens.filter(isRare)
+        LibRec.set("questionTokens", .int(qTokens.count))
+        LibRec.set("questionRareTokens", .int(qRare.count))
+        func hits(_ text: String) -> (all: Int, rare: Int) {
+            let t = contentTokens(text)
+            return (qTokens.intersection(t).count, qRare.intersection(t).count)
+        }
+        let titles = Dictionary(store.nodes.map { ($0.id, $0.title) }, uniquingKeysWith: { a, _ in a })
         LibRec.set("cutoffs", .row([
             ("passageFloor", .num(Double(CorpusStore.minRelevanceScore))), ("namedPassageBar", .num(0.70)),
             ("cardFloor", .num(Double(CorpusStore.cardRelevanceFloor))), ("dominanceTop", .num(0.70)),
@@ -961,11 +975,17 @@ final class LibrarianState {
         ]))
         let bar = named ? Float(0.70) : CorpusStore.minRelevanceScore
         for m in passages {
+            let h = hits(m.block.text), th = hits(titles[m.nodeID] ?? "")
             LibRec.add("passages", [("node", .id(m.nodeID)), ("block", .id(m.block.blockID)),
-                                    ("score", .num(Double(m.score))), ("clearsBar", .bool(m.score >= bar))])
+                                    ("score", .num(Double(m.score))), ("clearsBar", .bool(m.score >= bar)),
+                                    ("lexHits", .int(h.all)), ("rareHits", .int(h.rare)), ("titleHits", .int(th.all))])
         }
         LibRec.set("cardsOverFloor", .int(cards.count))
-        for c in cards.prefix(20) { LibRec.add("cards", [("node", .id(c.nodeID)), ("score", .num(Double(c.score)))]) }
+        for c in cards.prefix(20) {
+            let h = hits(c.gist + " " + (titles[c.nodeID] ?? ""))
+            LibRec.add("cards", [("node", .id(c.nodeID)), ("score", .num(Double(c.score))),
+                                 ("lexHits", .int(h.all)), ("rareHits", .int(h.rare))])
+        }
         for r in ranking.prefix(8) {
             LibRec.add("ranking", [("node", .id(r.nodeID)), ("aggregate", .num(Double(r.aggregate))),
                                    ("top", .num(Double(r.top))), ("count", .int(r.count))])
@@ -974,6 +994,18 @@ final class LibrarianState {
         LibRec.set("titleMatched", .list(titleMatched.prefix(6).map { .id($0) }))
         if let dominant { LibRec.set("dominant", .id(dominant)) }
         if let narrowedTo { LibRec.set("narrowedTo", .int(narrowedTo)) }
+    }
+
+    /// Document frequency of each content word over the entries' titles and summaries (for the recorder's "rare word"
+    /// column). Rebuilt when the entry count changes; only ever computed while the recorder is on.
+    private static var lexicalDFCache: (count: Int, df: [String: Int]) = (0, [:])
+    private static func lexicalDF(_ store: CorpusStore) -> (df: [String: Int], total: Int) {
+        let nodes = store.nodes
+        if lexicalDFCache.count == nodes.count, !lexicalDFCache.df.isEmpty { return (lexicalDFCache.df, nodes.count) }
+        var df: [String: Int] = [:]
+        for n in nodes { for t in contentTokens(n.title + " " + n.summary) { df[t, default: 0] += 1 } }
+        lexicalDFCache = (nodes.count, df)
+        return (df, nodes.count)
     }
 
     private static func recordPacket(plan: TurnPlan, candidates: [NumberedCandidate]) {
@@ -1314,7 +1346,7 @@ final class LibrarianState {
         if LibRec.isOn {
             Self.recordRetrieval(passages: general, cards: cards, ranking: decisionRanking, augmented: retrievalQuery != query,
                                  pinned: pinnedIDs, titleMatched: titleMatchedIDs, dominant: dominant,
-                                 narrowedTo: surveyOnly?.count, named: named)
+                                 narrowedTo: surveyOnly?.count, named: named, question: query, store: store)
         }
         // Brief CI §2.6 — a RANGE question reads its range TABLE. "Which of my lab values are out of range?"
         // shares one title token with "Annual – Lab Tests" (title match needs 2) and the terse table embeds

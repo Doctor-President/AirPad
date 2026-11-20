@@ -1722,6 +1722,10 @@ final class CorpusStore {
             if ProcessInfo.processInfo.arguments.contains("-LibrarianGauntlet") {
                 await runLibrarianGauntlet()
             }
+            // Sweep 2a — the benchmark: cases from a file, any route (Apple Intelligence included), one results.json.
+            if ProcessInfo.processInfo.arguments.contains("-LibrarianBench") {
+                await runLibrarianBench()
+            }
             // Thinking-leak verification matrix (T, 2026-10-03): {qwen3:4b, qwen3:8b, deepseek-r1}
             // × Thinking{off,on} × 3 questions through the REAL turn path — no reasoning trace / no
             // system-prompt echo / citations resolve.

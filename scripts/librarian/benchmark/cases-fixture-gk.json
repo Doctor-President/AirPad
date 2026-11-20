@@ -1,0 +1,406 @@
+{
+ "_doc": "Sweep 2a benchmark, library 'fixture' = the existing T-corpus fixture clone. ONLY general-knowledge and no-match questions written by CC (no library content in this file): they measure how often a real library gets force-fitted onto a question it has nothing to do with. Results are reported by case ID and numbers only (bench.py --private). The fixture's fact / synthesis / follow-up cases are the existing gauntlet's (-LibrarianGauntlet, by ID).",
+ "library": "fixture",
+ "chats": [
+  {
+   "id": "tg1",
+   "turns": [
+    {
+     "id": "TG1",
+     "type": "gk-irrelevant",
+     "question": "What is the capital of France?",
+     "facts": [
+      [
+       "paris"
+      ]
+     ],
+     "minFacts": 1,
+     "supports": [],
+     "maxChips": 0,
+     "provenance": "general",
+     "noMatch": true
+    }
+   ]
+  },
+  {
+   "id": "tg2",
+   "turns": [
+    {
+     "id": "TG2",
+     "type": "gk-irrelevant",
+     "question": "How does photosynthesis work?",
+     "facts": [
+      [
+       "chlorophyll",
+       "chloroplast"
+      ],
+      [
+       "carbon dioxide",
+       "co2",
+       "co₂"
+      ],
+      [
+       "oxygen"
+      ]
+     ],
+     "minFacts": 1,
+     "supports": [],
+     "maxChips": 0,
+     "provenance": "general",
+     "noMatch": true
+    }
+   ]
+  },
+  {
+   "id": "tg3",
+   "turns": [
+    {
+     "id": "TG3",
+     "type": "gk-irrelevant",
+     "question": "Who wrote Pride and Prejudice?",
+     "facts": [
+      [
+       "austen"
+      ]
+     ],
+     "minFacts": 1,
+     "supports": [],
+     "maxChips": 0,
+     "provenance": "general",
+     "noMatch": true
+    }
+   ]
+  },
+  {
+   "id": "tg4",
+   "turns": [
+    {
+     "id": "TG4",
+     "type": "gk-irrelevant",
+     "question": "Why is the sky blue?",
+     "facts": [
+      [
+       "scatter"
+      ]
+     ],
+     "minFacts": 1,
+     "supports": [],
+     "maxChips": 0,
+     "provenance": "general",
+     "noMatch": true
+    }
+   ]
+  },
+  {
+   "id": "tg5",
+   "turns": [
+    {
+     "id": "TG5",
+     "type": "gk-irrelevant",
+     "question": "Explain how compound interest works.",
+     "facts": [
+      [
+       "interest on",
+       "interest earned",
+       "on the interest",
+       "exponential",
+       "principal"
+      ]
+     ],
+     "minFacts": 1,
+     "supports": [],
+     "maxChips": 0,
+     "provenance": "general",
+     "noMatch": true
+    }
+   ]
+  },
+  {
+   "id": "tg6",
+   "turns": [
+    {
+     "id": "TG6",
+     "type": "gk-irrelevant",
+     "question": "What is the boiling point of water at sea level in Fahrenheit?",
+     "facts": [
+      [
+       "212"
+      ]
+     ],
+     "minFacts": 1,
+     "supports": [],
+     "maxChips": 0,
+     "provenance": "general",
+     "noMatch": true
+    }
+   ]
+  },
+  {
+   "id": "tg7",
+   "turns": [
+    {
+     "id": "TG7",
+     "type": "gk-irrelevant",
+     "question": "How many planets are in the solar system?",
+     "facts": [
+      [
+       "eight",
+       "8"
+      ]
+     ],
+     "minFacts": 1,
+     "supports": [],
+     "maxChips": 0,
+     "provenance": "general",
+     "noMatch": true
+    }
+   ]
+  },
+  {
+   "id": "tg8",
+   "turns": [
+    {
+     "id": "TG8",
+     "type": "gk-irrelevant",
+     "question": "What causes the seasons on Earth?",
+     "facts": [
+      [
+       "tilt",
+       "axis"
+      ]
+     ],
+     "minFacts": 1,
+     "supports": [],
+     "maxChips": 0,
+     "provenance": "general",
+     "noMatch": true
+    }
+   ]
+  },
+  {
+   "id": "tg9",
+   "turns": [
+    {
+     "id": "TG9",
+     "type": "gk-irrelevant",
+     "question": "Who painted the Mona Lisa?",
+     "facts": [
+      [
+       "leonardo",
+       "da vinci"
+      ]
+     ],
+     "minFacts": 1,
+     "supports": [],
+     "maxChips": 0,
+     "provenance": "general",
+     "noMatch": true
+    }
+   ]
+  },
+  {
+   "id": "tg10",
+   "turns": [
+    {
+     "id": "TG10",
+     "type": "gk-irrelevant",
+     "question": "What is the difference between a virus and a bacterium?",
+     "facts": [
+      [
+       "cell",
+       "antibiotic",
+       "host"
+      ]
+     ],
+     "minFacts": 1,
+     "supports": [],
+     "maxChips": 0,
+     "provenance": "general",
+     "noMatch": true
+    }
+   ]
+  },
+  {
+   "id": "tg11",
+   "turns": [
+    {
+     "id": "TG11",
+     "type": "gk-irrelevant",
+     "question": "How do vaccines work?",
+     "facts": [
+      [
+       "immune",
+       "antibod"
+      ]
+     ],
+     "minFacts": 1,
+     "supports": [],
+     "maxChips": 0,
+     "provenance": "general",
+     "noMatch": true
+    }
+   ]
+  },
+  {
+   "id": "tg12",
+   "turns": [
+    {
+     "id": "TG12",
+     "type": "gk-irrelevant",
+     "question": "What is the Pythagorean theorem?",
+     "facts": [
+      [
+       "hypotenuse",
+       "a² + b²",
+       "a^2 + b^2",
+       "a2 + b2",
+       "square"
+      ]
+     ],
+     "minFacts": 1,
+     "supports": [],
+     "maxChips": 0,
+     "provenance": "general",
+     "noMatch": true
+    }
+   ]
+  },
+  {
+   "id": "tg13",
+   "turns": [
+    {
+     "id": "TG13",
+     "type": "gk-irrelevant",
+     "question": "Who was the first person to walk on the Moon?",
+     "facts": [
+      [
+       "armstrong"
+      ]
+     ],
+     "minFacts": 1,
+     "supports": [],
+     "maxChips": 0,
+     "provenance": "general",
+     "noMatch": true
+    }
+   ]
+  },
+  {
+   "id": "tg14",
+   "turns": [
+    {
+     "id": "TG14",
+     "type": "gk-irrelevant",
+     "question": "What is the speed of light?",
+     "facts": [
+      [
+       "299",
+       "300,000",
+       "186,"
+      ]
+     ],
+     "minFacts": 1,
+     "supports": [],
+     "maxChips": 0,
+     "provenance": "general",
+     "noMatch": true
+    }
+   ]
+  },
+  {
+   "id": "tg15",
+   "turns": [
+    {
+     "id": "TG15",
+     "type": "gk-irrelevant",
+     "question": "How does a refrigerator keep food cold?",
+     "facts": [
+      [
+       "refrigerant",
+       "compress",
+       "evaporat",
+       "heat"
+      ]
+     ],
+     "minFacts": 1,
+     "supports": [],
+     "maxChips": 0,
+     "provenance": "general",
+     "noMatch": true
+    }
+   ]
+  },
+  {
+   "id": "tg16",
+   "turns": [
+    {
+     "id": "TG16",
+     "type": "gk-irrelevant",
+     "question": "What is the largest ocean on Earth?",
+     "facts": [
+      [
+       "pacific"
+      ]
+     ],
+     "minFacts": 1,
+     "supports": [],
+     "maxChips": 0,
+     "provenance": "general",
+     "noMatch": true
+    }
+   ]
+  },
+  {
+   "id": "tgx1",
+   "turns": [
+    {
+     "id": "TX1",
+     "type": "no-match-named",
+     "question": "What did I write about Zanzibar Quellhorst?",
+     "supports": [],
+     "maxChips": 0,
+     "provenance": "app",
+     "noMatch": true
+    }
+   ]
+  },
+  {
+   "id": "tgn1",
+   "turns": [
+    {
+     "id": "TN1",
+     "type": "news-library",
+     "question": "What are today's top news stories?",
+     "forbid": [
+      "today's top stories are",
+      "here are today's top",
+      "breaking:"
+     ],
+     "supports": [],
+     "maxChips": 0,
+     "provenance": "general",
+     "newsHonest": true
+    }
+   ]
+  },
+  {
+   "id": "tgg",
+   "turns": [
+    {
+     "id": "TG1g",
+     "type": "gk-general-mode",
+     "mode": "general",
+     "question": "What is the capital of France?",
+     "facts": [
+      [
+       "paris"
+      ]
+     ],
+     "supports": [],
+     "maxChips": 0,
+     "provenance": "general"
+    }
+   ]
+  }
+ ]
+}

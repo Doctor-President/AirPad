@@ -197,6 +197,7 @@
 		62343BA6D7974D3B5B7001CF /* LibrarianFloatingPanel.swift in Sources */ = {isa = PBXBuildFile; fileRef = 296A6F341B3C366497500A55 /* LibrarianFloatingPanel.swift */; };
 		629990192B6017CAA6D5DF1D /* UberNode.swift in Sources */ = {isa = PBXBuildFile; fileRef = F98C5EDB7B8428ABB080668F /* UberNode.swift */; };
 		63AAFF05F80D2F390E77DC86 /* AppleNaming.swift in Sources */ = {isa = PBXBuildFile; fileRef = E04317C484DBF0C7715402A4 /* AppleNaming.swift */; };
+		643E19C62EC2CA05EEDF1DA0 /* LibrarianBench.swift in Sources */ = {isa = PBXBuildFile; fileRef = 2907A5F2E0E9E6DEA91AC112 /* LibrarianBench.swift */; };
 		64E84AB89CB8924A7DBBDE56 /* PrivacyInfo.xcprivacy in Resources */ = {isa = PBXBuildFile; fileRef = 4E0964276540E3E750A93B94 /* PrivacyInfo.xcprivacy */; };
 		6527693949A1FC7B2109F80A /* bigshouldersbold_msdf.png in Resources */ = {isa = PBXBuildFile; fileRef = BFEEDFEDD44210E97589A4FE /* bigshouldersbold_msdf.png */; };
 		654F40F89750833E114B8DC3 /* AppSheet.swift in Sources */ = {isa = PBXBuildFile; fileRef = 4E45366AE376049A7F705125 /* AppSheet.swift */; };
@@ -619,6 +620,7 @@
 		26DA962A10457FCFA38D1141 /* Lato-Regular.ttf */ = {isa = PBXFileReference; lastKnownFileType = file; path = "Lato-Regular.ttf"; sourceTree = "<group>"; };
 		283A15F3D5D4B6BB51F74DDB /* LibrarianSubjectLookup.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = LibrarianSubjectLookup.swift; sourceTree = "<group>"; };
 		2862477F5C82A15C1E3883BA /* RunawayAnswerUI.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = RunawayAnswerUI.swift; sourceTree = "<group>"; };
+		2907A5F2E0E9E6DEA91AC112 /* LibrarianBench.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = LibrarianBench.swift; sourceTree = "<group>"; };
 		296A6F341B3C366497500A55 /* LibrarianFloatingPanel.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = LibrarianFloatingPanel.swift; sourceTree = "<group>"; };
 		2A1EEB4C2D26F752F843736C /* DocumentHandoff.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = DocumentHandoff.swift; sourceTree = "<group>"; };
 		2B07B6921A9D5459F484188F /* CustomServerTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = CustomServerTests.swift; sourceTree = "<group>"; };
@@ -1246,6 +1248,7 @@
 				C729D9028EBF447A0241ABFD /* KeychainHelper.swift */,
 				19A7D40E298ACBC315ECFB6F /* LapackSVDSelfTest.swift */,
 				239B75A26B2BA53534F71428 /* LayoutService.swift */,
+				2907A5F2E0E9E6DEA91AC112 /* LibrarianBench.swift */,
 				55A77342922E9D9C2CD12BC0 /* LibrarianRecorder.swift */,
 				14867A0B45778C994E66A93D /* LibrarianRecorderSelfTest.swift */,
 				63415948576B3EC6DC78941B /* LibraryFormatGuard.swift */,
@@ -2322,6 +2325,7 @@
 				F80AAF8B81F515034F4CAE93 /* LayoutService.swift in Sources */,
 				514CFC25C6AAC1607E3E31E6 /* LeverButton.swift in Sources */,
 				DCBC7827653EB1DD100A5A46 /* LeverTray.swift in Sources */,
+				643E19C62EC2CA05EEDF1DA0 /* LibrarianBench.swift in Sources */,
 				62343BA6D7974D3B5B7001CF /* LibrarianFloatingPanel.swift in Sources */,
 				F3459186A31EB4A8E14182C2 /* LibrarianGlass.swift in Sources */,
 				EF7EF1E408D65483FF6DF353 /* LibrarianRecorder.swift in Sources */,

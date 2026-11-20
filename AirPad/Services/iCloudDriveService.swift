@@ -263,6 +263,7 @@ actor iCloudDriveService {
             if ProcessInfo.processInfo.arguments.contains("-UITestSeedMarkupShowcase") { Self.seedUITestMarkupShowcase(root) }
             if ProcessInfo.processInfo.arguments.contains("-UITestSeedFadeShowcase") { Self.seedUITestFadeShowcase(root) }
             if ProcessInfo.processInfo.arguments.contains("-UITestSeedPerfLibrary") { Self.seedUITestPerfLibrary(root) }
+            if ProcessInfo.processInfo.arguments.contains("-UITestSeedBenchNotes") { LibrarianBench.seedNotes(root) }   // sweep 2a
             return true
         } catch {
             return false

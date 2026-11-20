@@ -1,0 +1,860 @@
+{
+ "_doc": "Sample-library benchmark (library 'sample' = the bundled Sample Library, AirPad/Resources/SampleLibrary). Same schema as cases-bench.json (facts = synonym groups, minFacts, forbid, supports, mustCite, mustCiteKey, maxChips, provenance notes|general|mixed|app, noMatch, sides, mode), except that an entry is named by the key 'title:' + its title lowercased (supports / mustCiteKey). Each turn is graded on the DELIVERED answer by bench.py. Ids carry the prefix SL.",
+ "library": "sample",
+ "chats": [
+  {
+   "id": "sl-fact1",
+   "turns": [
+    {
+     "id": "SLF1",
+     "type": "fact",
+     "question": "What year was my Bolex made?",
+     "facts": [
+      [
+       "1956"
+      ]
+     ],
+     "forbid": [
+      "1955",
+      "1957"
+     ],
+     "supports": [
+      "title:bolex h16 — mine"
+     ],
+     "mustCite": true,
+     "provenance": "notes"
+    }
+   ]
+  },
+  {
+   "id": "sl-fact2",
+   "turns": [
+    {
+     "id": "SLF2",
+     "type": "fact",
+     "question": "How many books are in the Ethiopian canon?",
+     "facts": [
+      [
+       "81"
+      ]
+     ],
+     "forbid": [
+      "66 books",
+      "73 books"
+     ],
+     "supports": [
+      "title:the ethiopian canon is bigger"
+     ],
+     "mustCite": true,
+     "provenance": "notes"
+    }
+   ]
+  },
+  {
+   "id": "sl-fact3",
+   "turns": [
+    {
+     "id": "SLF3",
+     "type": "fact",
+     "question": "How many library positions were left unfilled last year?",
+     "facts": [
+      [
+       "78"
+      ]
+     ],
+     "forbid": [
+      "89 were left unfilled last year"
+     ],
+     "supports": [
+      "title:quiet layoffs"
+     ],
+     "mustCite": true,
+     "provenance": "notes"
+    }
+   ]
+  },
+  {
+   "id": "sl-fact4",
+   "turns": [
+    {
+     "id": "SLF4",
+     "type": "fact",
+     "question": "Where does the first list matching the modern 27-book canon show up?",
+     "facts": [
+      [
+       "easter letter",
+       "letter",
+       "athanasius"
+      ]
+     ],
+     "supports": [
+      "title:athanasius, 367"
+     ],
+     "mustCite": true,
+     "provenance": "notes"
+    }
+   ]
+  },
+  {
+   "id": "sl-fu1",
+   "turns": [
+    {
+     "id": "SLF5",
+     "type": "fact",
+     "question": "When was the Nag Hammadi library dug up?",
+     "facts": [
+      [
+       "1945"
+      ]
+     ],
+     "supports": [
+      "title:on the nag hammadi library"
+     ],
+     "mustCite": true,
+     "provenance": "notes"
+    },
+    {
+     "id": "SLU1",
+     "type": "follow-up",
+     "question": "And who dug it up?",
+     "facts": [
+      [
+       "farmer"
+      ]
+     ],
+     "supports": [
+      "title:on the nag hammadi library"
+     ],
+     "mustCite": true,
+     "provenance": "notes"
+    },
+    {
+     "id": "SLU2",
+     "type": "follow-up-switch",
+     "question": "Who wrote Hamlet?",
+     "facts": [
+      [
+       "shakespeare"
+      ]
+     ],
+     "supports": [],
+     "maxChips": 0,
+     "provenance": "general"
+    }
+   ]
+  },
+  {
+   "id": "sl-fu2",
+   "turns": [
+    {
+     "id": "SLF6",
+     "type": "fact",
+     "question": "What year did we go fine-free?",
+     "facts": [
+      [
+       "2019"
+      ]
+     ],
+     "supports": [
+      "title:what a fine actually does"
+     ],
+     "mustCite": true,
+     "provenance": "notes"
+    },
+    {
+     "id": "SLU3",
+     "type": "follow-up",
+     "question": "And what was the amount the people who stopped coming had stopped over?",
+     "facts": [
+      [
+       "$4",
+       "4 dollars",
+       "four dollars"
+      ]
+     ],
+     "supports": [
+      "title:what a fine actually does"
+     ],
+     "mustCite": true,
+     "provenance": "notes"
+    },
+    {
+     "id": "SLU4",
+     "type": "follow-up-switch",
+     "question": "What's the chemical symbol for gold?",
+     "facts": [
+      [
+       "au"
+      ]
+     ],
+     "supports": [],
+     "maxChips": 0,
+     "provenance": "general"
+    }
+   ]
+  },
+  {
+   "id": "sl-syn1",
+   "turns": [
+    {
+     "id": "SLS1",
+     "type": "synthesis",
+     "question": "What do I know about how the biblical canon got settled?",
+     "facts": [
+      [
+       "athanasius",
+       "367",
+       "easter letter"
+      ],
+      [
+       "muratorian"
+      ],
+      [
+       "nag hammadi",
+       "1945"
+      ],
+      [
+       "ethiopian",
+       "81 books"
+      ],
+      [
+       "apocrypha"
+      ]
+     ],
+     "minFacts": 3,
+     "supports": [
+      "title:athanasius, 367",
+      "title:the muratorian fragment",
+      "title:on the nag hammadi library",
+      "title:the ethiopian canon is bigger",
+      "title:how did they decide?",
+      "title:what \"apocryphal\" actually means",
+      "title:gutenberg has the apocrypha"
+     ],
+     "mustCite": true,
+     "provenance": "notes"
+    }
+   ]
+  },
+  {
+   "id": "sl-syn2",
+   "turns": [
+    {
+     "id": "SLS2",
+     "type": "synthesis",
+     "question": "What have I worked out about the Kuleshov effect and horror, and what am I doing with it?",
+     "facts": [
+      [
+       "gap",
+       "between the shots",
+       "between shots",
+       "interval"
+      ],
+      [
+       "monster",
+       "audience builds",
+       "audience puts"
+      ],
+      [
+       "nine shots",
+       "short film",
+       "door"
+      ],
+      [
+       "twenty-eight",
+       "28 seconds"
+      ]
+     ],
+     "minFacts": 2,
+     "supports": [
+      "title:the kuleshov effect",
+      "title:kuleshov, again, and what it implies about horror",
+      "title:nine shots",
+      "title:what the short film is actually about",
+      "title:after the short film",
+      "title:a tale of two sisters",
+      "title:outer wilds, without spoiling it"
+     ],
+     "mustCite": true,
+     "provenance": "notes"
+    }
+   ]
+  },
+  {
+   "id": "sl-syn3",
+   "turns": [
+    {
+     "id": "SLS3",
+     "type": "synthesis",
+     "question": "What would it take for me to shoot 16mm, and how has it gone so far?",
+     "facts": [
+      [
+       "900",
+       "nine hundred"
+      ],
+      [
+       "lab"
+      ],
+      [
+       "stock",
+       "double-x",
+       "$50",
+       "a roll"
+      ],
+      [
+       "27 seconds",
+       "28 seconds",
+       "wind"
+      ],
+      [
+       "22",
+       "twenty-two"
+      ]
+     ],
+     "minFacts": 3,
+     "supports": [
+      "title:bolex — what it would actually take",
+      "title:bolex h16 — mine",
+      "title:bolex h16",
+      "title:8mm vs 16mm, practically",
+      "title:stock, realistically",
+      "title:labs that still process 16mm",
+      "title:28 seconds",
+      "title:first roll",
+      "title:bought it",
+      "title:wanting it",
+      "title:learn to actually develop film",
+      "title:on finally making the thing instead of reading about it"
+     ],
+     "mustCite": true,
+     "provenance": "notes"
+    }
+   ]
+  },
+  {
+   "id": "sl-syn4",
+   "turns": [
+    {
+     "id": "SLS4",
+     "type": "synthesis",
+     "question": "How do my notes on the library's budget cuts fit together?",
+     "facts": [
+      [
+       "ten million",
+       "$10m",
+       "10 million",
+       "10m"
+      ],
+      [
+       "78",
+       "89"
+      ],
+      [
+       "fine"
+      ],
+      [
+       "security",
+       "custodial",
+       "cpd"
+      ],
+      [
+       "summer reading",
+       "signups"
+      ]
+     ],
+     "minFacts": 3,
+     "supports": [
+      "title:half",
+      "title:half the materials budget",
+      "title:quiet layoffs",
+      "title:the security line item",
+      "title:what a fine actually does",
+      "title:librarian ii",
+      "title:summer reading",
+      "title:a proposal that will not survive"
+     ],
+     "mustCite": true,
+     "provenance": "notes"
+    }
+   ]
+  },
+  {
+   "id": "sl-slg1",
+   "turns": [
+    {
+     "id": "SLG1",
+     "type": "gk-irrelevant",
+     "question": "Who painted the Mona Lisa?",
+     "facts": [
+      [
+       "leonardo",
+       "da vinci"
+      ]
+     ],
+     "supports": [],
+     "maxChips": 0,
+     "provenance": "general",
+     "noMatch": true
+    }
+   ]
+  },
+  {
+   "id": "sl-slg2",
+   "turns": [
+    {
+     "id": "SLG2",
+     "type": "gk-irrelevant",
+     "question": "What is the tallest mountain in the world?",
+     "facts": [
+      [
+       "everest"
+      ]
+     ],
+     "supports": [],
+     "maxChips": 0,
+     "provenance": "general",
+     "noMatch": true
+    }
+   ]
+  },
+  {
+   "id": "sl-slg3",
+   "turns": [
+    {
+     "id": "SLG3",
+     "type": "gk-irrelevant",
+     "question": "Who was the first person to walk on the moon?",
+     "facts": [
+      [
+       "armstrong"
+      ]
+     ],
+     "supports": [],
+     "maxChips": 0,
+     "provenance": "general",
+     "noMatch": true
+    }
+   ]
+  },
+  {
+   "id": "sl-slg4",
+   "turns": [
+    {
+     "id": "SLG4",
+     "type": "gk-irrelevant",
+     "question": "What does the derivative of a function tell you?",
+     "facts": [
+      [
+       "rate of change",
+       "slope",
+       "tangent"
+      ]
+     ],
+     "supports": [],
+     "maxChips": 0,
+     "provenance": "general",
+     "noMatch": true
+    }
+   ]
+  },
+  {
+   "id": "sl-slo1",
+   "turns": [
+    {
+     "id": "SLO1",
+     "type": "gk-irrelevant-overlap",
+     "question": "What is the rule of thirds in photography?",
+     "facts": [
+      [
+       "third",
+       "grid",
+       "intersect",
+       "lines"
+      ]
+     ],
+     "minFacts": 1,
+     "supports": [],
+     "maxChips": 0,
+     "provenance": "general",
+     "noMatch": true
+    }
+   ]
+  },
+  {
+   "id": "sl-slo2",
+   "turns": [
+    {
+     "id": "SLO2",
+     "type": "gk-irrelevant-overlap",
+     "question": "How do you form the passé composé in French?",
+     "facts": [
+      [
+       "avoir",
+       "être",
+       "etre"
+      ],
+      [
+       "participle",
+       "participe"
+      ]
+     ],
+     "minFacts": 1,
+     "supports": [],
+     "maxChips": 0,
+     "provenance": "general",
+     "noMatch": true
+    }
+   ]
+  },
+  {
+   "id": "sl-slo3",
+   "turns": [
+    {
+     "id": "SLO3",
+     "type": "gk-irrelevant-overlap",
+     "question": "How do you make a roux for a sauce?",
+     "facts": [
+      [
+       "flour"
+      ],
+      [
+       "butter",
+       "fat",
+       "oil"
+      ]
+     ],
+     "minFacts": 1,
+     "supports": [],
+     "maxChips": 0,
+     "provenance": "general",
+     "noMatch": true
+    }
+   ]
+  },
+  {
+   "id": "sl-slp1",
+   "turns": [
+    {
+     "id": "SLP1",
+     "type": "gk-partial",
+     "question": "What is the bloom when brewing coffee, and does it matter?",
+     "facts": [
+      [
+       "stale",
+       "free test",
+       "puff"
+      ],
+      [
+       "gas",
+       "degas",
+       "carbon dioxide",
+       "co2",
+       "co₂",
+       "fresh"
+      ]
+     ],
+     "supports": [
+      "title:bloom"
+     ],
+     "provenance": "mixed"
+    }
+   ]
+  },
+  {
+   "id": "sl-slp2",
+   "turns": [
+    {
+     "id": "SLP2",
+     "type": "gk-partial",
+     "question": "When is the French subjunctive used?",
+     "facts": [
+      [
+       "wish",
+       "doubt",
+       "maybe"
+      ],
+      [
+       "emotion",
+       "necessity",
+       "il faut que",
+       "bien que",
+       "after"
+      ]
+     ],
+     "supports": [
+      "title:the subjunctive is not optional"
+     ],
+     "provenance": "mixed"
+    }
+   ]
+  },
+  {
+   "id": "sl-slp3",
+   "turns": [
+    {
+     "id": "SLP3",
+     "type": "gk-partial",
+     "question": "How is decaf coffee made?",
+     "facts": [
+      [
+       "swiss water",
+       "green-coffee extract",
+       "green coffee extract",
+       "carbon"
+      ],
+      [
+       "solvent",
+       "methylene",
+       "ethyl acetate",
+       "co2",
+       "co₂",
+       "chemical"
+      ]
+     ],
+     "supports": [
+      "title:swiss water"
+     ],
+     "provenance": "mixed"
+    }
+   ]
+  },
+  {
+   "id": "sl-conf1",
+   "turns": [
+    {
+     "id": "SLC1",
+     "type": "conflict",
+     "question": "Did a fire destroy the Library of Alexandria?",
+     "sides": [
+      [
+       "your note",
+       "you wrote",
+       "you noted",
+       "your notes",
+       "your entry",
+       "you have",
+       "your own"
+      ],
+      [
+       "fire",
+       "burn",
+       "burned",
+       "burnt",
+       "caesar"
+      ]
+     ],
+     "supports": [
+      "title:the alexandria thing is a myth",
+      "title:what i've actually been doing for ten months"
+     ],
+     "provenance": "mixed"
+    }
+   ]
+  },
+  {
+   "id": "sl-conf2",
+   "turns": [
+    {
+     "id": "SLC2",
+     "type": "conflict",
+     "question": "What does apocryphal mean?",
+     "sides": [
+      [
+       "your note",
+       "you wrote",
+       "you noted",
+       "your notes",
+       "your entry",
+       "you have",
+       "your own",
+       "hidden"
+      ],
+      [
+       "doubtful",
+       "authenticity",
+       "dubious",
+       "spurious",
+       "fictitious",
+       "untrue",
+       "of questionable"
+      ]
+     ],
+     "supports": [
+      "title:what \"apocryphal\" actually means",
+      "title:gutenberg has the apocrypha"
+     ],
+     "provenance": "mixed"
+    }
+   ]
+  },
+  {
+   "id": "sl-amb1",
+   "turns": [
+    {
+     "id": "SLA1",
+     "type": "ambiguous",
+     "question": "How many seconds does the Bolex run on one wind?",
+     "facts": [
+      [
+       "27"
+      ],
+      [
+       "28"
+      ],
+      [
+       "which",
+       "do you mean",
+       "two entries",
+       "differ",
+       "slightly",
+       "about",
+       "close"
+      ]
+     ],
+     "minFacts": 2,
+     "supports": [
+      "title:bolex h16 — mine",
+      "title:bolex h16",
+      "title:bolex — what it would actually take",
+      "title:28 seconds",
+      "title:first roll"
+     ],
+     "mustCite": true,
+     "provenance": "notes"
+    }
+   ]
+  },
+  {
+   "id": "sl-amb2",
+   "turns": [
+    {
+     "id": "SLA2",
+     "type": "ambiguous",
+     "question": "How much does the Bolex cost?",
+     "facts": [
+      [
+       "520"
+      ],
+      [
+       "900",
+       "nine hundred"
+      ],
+      [
+       "which",
+       "do you mean",
+       "depends",
+       "different",
+       "two",
+       "several"
+      ]
+     ],
+     "minFacts": 2,
+     "supports": [
+      "title:bolex h16 — mine",
+      "title:bolex — what it would actually take",
+      "title:wanting it"
+     ],
+     "mustCite": true,
+     "provenance": "notes"
+    }
+   ]
+  },
+  {
+   "id": "sl-x1",
+   "turns": [
+    {
+     "id": "SLX1",
+     "type": "no-match-named",
+     "question": "What did I write about Reykjavik?",
+     "forbid": [
+      "you wrote that",
+      "your notes say",
+      "in your notes, you",
+      "you visited reykjavik",
+      "geysir"
+     ],
+     "supports": [],
+     "maxChips": 0,
+     "provenance": "app",
+     "noMatch": true
+    }
+   ]
+  },
+  {
+   "id": "sl-x2",
+   "turns": [
+    {
+     "id": "SLX2",
+     "type": "no-match",
+     "question": "What's my passport number?",
+     "forbid": [
+      "your passport number is",
+      "the number is"
+     ],
+     "supports": [],
+     "maxChips": 0,
+     "provenance": "general",
+     "noMatch": true
+    }
+   ]
+  },
+  {
+   "id": "sl-x3",
+   "turns": [
+    {
+     "id": "SLX3",
+     "type": "no-match",
+     "question": "How much did I spend on my trip to Spain?",
+     "forbid": [
+      "you spent",
+      "your trip to spain cost",
+      "euros"
+     ],
+     "supports": [],
+     "maxChips": 0,
+     "provenance": "general",
+     "noMatch": true
+    }
+   ]
+  },
+  {
+   "id": "sl-gg",
+   "turns": [
+    {
+     "id": "SLM1",
+     "type": "gk-general-mode",
+     "question": "What is the capital of Australia?",
+     "mode": "general",
+     "facts": [
+      [
+       "canberra"
+      ]
+     ],
+     "supports": [],
+     "maxChips": 0,
+     "provenance": "general"
+    },
+    {
+     "id": "SLM2",
+     "type": "gk-general-mode",
+     "question": "How do I make a roux for a sauce?",
+     "mode": "general",
+     "facts": [
+      [
+       "flour"
+      ],
+      [
+       "butter",
+       "fat",
+       "oil"
+      ]
+     ],
+     "minFacts": 1,
+     "supports": [],
+     "maxChips": 0,
+     "provenance": "general"
+    }
+   ]
+  }
+ ]
+}

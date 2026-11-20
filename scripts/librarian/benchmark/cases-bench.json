@@ -1,0 +1,136 @@
+{
+  "_doc": "Sweep 2a benchmark, library 'bench' = the 273-entry synthetic perf library (distractors) + notes.json (planted facts). Each turn is graded on the DELIVERED answer by bench.py: facts (each inner list = synonyms; minFacts of them needed, default all), forbid (must not appear), supports (note keys that genuinely support the answer: every library chip must be one of them), mustCite (a chip from supports is required), maxChips, provenance (notes | general | mixed | app), noMatch (must say it found no close match), sides (a conflict: one synonym from each list). mode: library | general. action: send (default) | acceptWebOffer | acceptReadOffer.",
+  "library": "bench",
+  "chats": [
+    {"id": "fact", "turns": [
+      {"id": "F1", "type": "fact", "question": "What grinder setting worked for the Ethiopian beans?", "facts": [["14"]], "forbid": ["setting 11", "setting 15 worked"], "supports": ["espresso"], "mustCite": true, "provenance": "notes"}
+    ]},
+    {"id": "fact2", "turns": [
+      {"id": "F2", "type": "fact", "question": "How long do I hold at peak temperature in my cone 6 glaze firing, and at what temperature?", "facts": [["15 min"], ["1222", "1,222"]], "supports": ["kiln"], "mustCite": true, "provenance": "notes"}
+    ]},
+    {"id": "fact3", "turns": [
+      {"id": "F3", "type": "fact", "question": "What's the budget for the Halvorsen kitchen project?", "facts": [["48,500", "48500", "48.500"]], "supports": ["halvorsen-meeting", "invoices"], "mustCite": true, "provenance": "notes"},
+      {"id": "U1", "type": "follow-up", "question": "And who is the cabinet supplier?", "facts": [["brandt"]], "supports": ["halvorsen-meeting"], "mustCite": true, "provenance": "notes"},
+      {"id": "U2", "type": "follow-up-switch", "question": "What is the capital of France?", "facts": [["paris"]], "supports": [], "maxChips": 0, "provenance": "general"}
+    ]},
+    {"id": "fact4", "turns": [
+      {"id": "F4", "type": "fact", "question": "Which invoice is still unpaid, and for how much?", "facts": [["1042"], ["12,125", "12125", "12.125"]], "forbid": ["1041 is unpaid", "1043 is unpaid"], "supports": ["invoices", "halvorsen-meeting"], "mustCite": true, "provenance": "notes"}
+    ]},
+    {"id": "fact5", "turns": [
+      {"id": "F5", "type": "fact", "question": "At how many kilometres did I replace my bike chain?", "facts": [["4,120", "4120", "4.120"]], "supports": ["bike"], "mustCite": true, "provenance": "notes"}
+    ]},
+    {"id": "fact6", "turns": [
+      {"id": "F6", "type": "fact", "question": "When did I plant out the tomatoes this year?", "facts": [["april 12", "12 april", "12th of april", "april 12th"]], "forbid": ["may 3 this year"], "supports": ["garden"], "mustCite": true, "provenance": "notes"}
+    ]},
+    {"id": "fact7", "turns": [
+      {"id": "F7", "type": "fact", "question": "What feed ratio do I use for my sourdough starter?", "facts": [["1:5:5"]], "supports": ["starter"], "mustCite": true, "provenance": "notes"}
+    ]},
+    {"id": "labs", "turns": [
+      {"id": "F8", "type": "fact-range", "question": "Which of my lab values are out of range?", "facts": [["ferritin"], ["cholesterol"]], "forbid": ["vitamin d is low", "vitamin d is out", "tsh is out", "tsh is high", "hba1c is out", "hba1c is high"], "supports": ["labs"], "mustCite": true, "provenance": "notes"},
+      {"id": "U3", "type": "follow-up-mixed", "question": "What usually causes low ferritin?", "facts": [["iron"]], "supports": ["labs"], "provenance": "mixed"}
+    ]},
+    {"id": "syn1", "turns": [
+      {"id": "S1", "type": "synthesis", "question": "What are my rules for how I work?", "facts": [["phone"], ["kiln load", "one load"], ["finish"], ["friday"], ["sweep"]], "minFacts": 3, "supports": ["studio-rules", "slow-work", "word-counts", "kiln", "overstory"], "mustCite": true, "provenance": "notes"}
+    ]},
+    {"id": "syn2", "turns": [
+      {"id": "S2", "type": "synthesis", "question": "Where does the Halvorsen project stand right now?", "facts": [["48,500", "48500"], ["march 6", "6 march"], ["unpaid", "not been paid", "hasn't been paid", "outstanding", "not paid"], ["brandt"]], "minFacts": 3, "supports": ["halvorsen-meeting", "invoices"], "mustCite": true, "provenance": "notes"}
+    ]},
+    {"id": "syn3", "turns": [
+      {"id": "S3", "type": "synthesis-own-vs-saved", "question": "What do I think about pour-over coffee?", "facts": [["better drink", "light roast", "fruit", "weekend"]], "forbid": ["you think pour-over is the best way to taste", "you believe many experts"], "supports": ["pour-over-own", "espresso", "pour-over-saved"], "mustCiteKey": "pour-over-own", "mustCite": true, "provenance": "notes"}
+    ]},
+    {"id": "syn4", "turns": [
+      {"id": "S4", "type": "synthesis", "question": "How do my thoughts on slow work connect to why I quit daily word counts?", "facts": [["speed", "rush"], ["attention", "looking", "look"], ["session", "hour", "pad"]], "minFacts": 2, "supports": ["slow-work", "word-counts", "overstory", "studio-rules"], "mustCite": true, "provenance": "notes"}
+    ]},
+    {"id": "gk1", "turns": [
+      {"id": "G1", "type": "gk-irrelevant", "question": "What is the capital of France?", "facts": [["paris"]], "supports": [], "maxChips": 0, "provenance": "general", "noMatch": true}
+    ]},
+    {"id": "gk2", "turns": [
+      {"id": "G2", "type": "gk-irrelevant", "question": "How does photosynthesis work?", "facts": [["chlorophyll", "chloroplast"], ["carbon dioxide", "co2", "co₂"], ["oxygen"]], "minFacts": 2, "supports": [], "maxChips": 0, "provenance": "general", "noMatch": true}
+    ]},
+    {"id": "gk3", "turns": [
+      {"id": "G3", "type": "gk-irrelevant", "question": "Who wrote Pride and Prejudice?", "facts": [["austen"]], "supports": [], "maxChips": 0, "provenance": "general", "noMatch": true}
+    ]},
+    {"id": "gk4", "turns": [
+      {"id": "G4", "type": "gk-irrelevant-overlap", "question": "What's a good recipe for chicken stock with garlic and thyme?", "facts": [["simmer", "boil"], ["onion", "carrot", "celery", "bones"]], "minFacts": 1, "supports": [], "maxChips": 0, "provenance": "general", "noMatch": true}
+    ]},
+    {"id": "gk5", "turns": [
+      {"id": "G5", "type": "gk-irrelevant-overlap", "question": "How do I tune a guitar?", "facts": [["e"], ["string"], ["tuner", "fifth fret", "5th fret", "pitch"]], "minFacts": 2, "supports": [], "maxChips": 0, "provenance": "general", "noMatch": true}
+    ]},
+    {"id": "gk6", "turns": [
+      {"id": "G6", "type": "gk-irrelevant-overlap", "question": "Why is the sky blue?", "facts": [["scatter"]], "supports": [], "maxChips": 0, "provenance": "general", "noMatch": true}
+    ]},
+    {"id": "gk7", "turns": [
+      {"id": "G7", "type": "gk-irrelevant", "question": "Explain how compound interest works.", "facts": [["interest on", "interest earned", "on the interest", "exponential", "principal"]], "supports": [], "maxChips": 0, "provenance": "general", "noMatch": true}
+    ]},
+    {"id": "gk8", "turns": [
+      {"id": "G8", "type": "gk-irrelevant-overlap", "question": "What's the best way to get to the train station in a new city?", "facts": [["map", "transit", "taxi", "bus", "walk", "app", "ask"]], "supports": [], "maxChips": 0, "provenance": "general", "noMatch": true}
+    ]},
+    {"id": "gkg", "turns": [
+      {"id": "G1g", "type": "gk-general-mode", "mode": "general", "question": "What is the capital of France?", "facts": [["paris"]], "supports": [], "maxChips": 0, "provenance": "general"},
+      {"id": "G4g", "type": "gk-general-mode", "mode": "general", "question": "What's a good recipe for chicken stock with garlic and thyme?", "facts": [["simmer", "boil"], ["onion", "carrot", "celery", "bones"]], "minFacts": 1, "supports": [], "maxChips": 0, "provenance": "general"}
+    ]},
+    {"id": "part1", "turns": [
+      {"id": "P1", "type": "gk-partial", "question": "How does a heat pump work, and what size was I quoted?", "facts": [["9 kw", "9kw", "9 kilowatt"], ["refrigerant", "compress", "transfer", "moves heat", "move heat", "extract"]], "supports": ["heat-pump"], "mustCite": true, "provenance": "mixed"}
+    ]},
+    {"id": "part2", "turns": [
+      {"id": "P2", "type": "gk-partial", "question": "Does magnesium help with sleep?", "facts": [["300 mg", "300mg", "glycinate", "fell asleep faster", "your own", "your notes", "you noted", "you found", "your experiment"], ["evidence", "studies", "research", "may", "mixed", "some"]], "supports": ["magnesium"], "provenance": "mixed"}
+    ]},
+    {"id": "part3", "turns": [
+      {"id": "P3", "type": "gk-partial", "question": "What temperature should espresso water be?", "facts": [["93"], ["90", "96", "between", "range", "typically", "generally", "usually"]], "supports": ["espresso", "pour-over-saved"], "provenance": "mixed"}
+    ]},
+    {"id": "part4", "turns": [
+      {"id": "P4", "type": "gk-partial", "question": "When does French use the subjunctive?", "facts": [["doubt"], ["desire", "wish", "want"], ["emotion", "necessity"]], "minFacts": 2, "supports": ["french"], "provenance": "mixed"}
+    ]},
+    {"id": "conf1", "turns": [
+      {"id": "C1", "type": "conflict", "question": "Is the Great Wall of China visible from space?", "sides": [["your note", "you wrote", "you noted", "your notes", "your entry", "your pub quiz", "you have", "your quiz"], ["myth", "not visible", "isn't visible", "is not visible", "cannot be seen", "can't be seen", "not actually", "misconception", "not true", "incorrect", "inaccurate", "difficult to see", "hard to see"]], "supports": ["great-wall"], "provenance": "mixed"}
+    ]},
+    {"id": "conf2", "turns": [
+      {"id": "C2", "type": "conflict", "question": "What is the capital of Australia?", "facts": [["canberra"]], "sides": [["your note", "you wrote", "you noted", "your notes", "your entry", "your quiz", "you have", "your pub quiz"], ["canberra"]], "supports": ["great-wall"], "provenance": "mixed"}
+    ]},
+    {"id": "conf3", "turns": [
+      {"id": "C3", "type": "conflict-own-definition", "question": "What counts as a long run for me?", "facts": [["8 km", "8km", "8 kilomet", "eight kilomet"]], "supports": ["long-run"], "mustCite": true, "provenance": "notes"}
+    ]},
+    {"id": "conf4", "turns": [
+      {"id": "C4", "type": "conflict", "question": "How much caffeine is in a shot of espresso?", "sides": [["200"], ["63", "64", "60", "65", "75", "80", "typically", "generally", "usually", "actually", "closer to", "lower", "however", "but "]], "supports": ["great-wall"], "provenance": "mixed"}
+    ]},
+    {"id": "amb1", "turns": [
+      {"id": "A1", "type": "ambiguous", "question": "Which hotel did I stay at in Paris?", "facts": [["verlaine"], ["corbeau"]], "supports": ["paris-2024", "paris-2025"], "mustCite": true, "provenance": "notes"}
+    ]},
+    {"id": "amb2", "turns": [
+      {"id": "A2", "type": "ambiguous", "question": "What's the ratio again?", "facts": [["1:5:5"], ["10 parts", "10:9", "10 to 9"], ["18 g", "38 g", "1:2", "1:16"], ["which", "do you mean", "several", "a few", "more than one", "different ratios", "depends"]], "minFacts": 2, "supports": ["starter", "glaze", "espresso", "pour-over-saved"], "provenance": "notes"}
+    ]},
+    {"id": "amb3", "turns": [
+      {"id": "A3", "type": "ambiguous", "question": "How much was the invoice?", "facts": [["12,125", "12125"], ["3,400", "3400"], ["950"], ["which", "do you mean", "three invoices", "several", "more than one"]], "minFacts": 2, "supports": ["invoices", "halvorsen-meeting"], "mustCite": true, "provenance": "notes"}
+    ]},
+    {"id": "none1", "turns": [
+      {"id": "X1", "type": "no-match-named", "question": "What did I write about Kyoto?", "forbid": ["you wrote that", "your notes say", "in your notes, you", "temple", "you visited kyoto"], "supports": [], "maxChips": 0, "provenance": "app", "noMatch": true}
+    ]},
+    {"id": "none2", "turns": [
+      {"id": "X2", "type": "no-match", "question": "What are my notes on beekeeping?", "forbid": ["you wrote that", "your notes say", "your hive", "your bees"], "supports": [], "maxChips": 0, "provenance": "general", "noMatch": true}
+    ]},
+    {"id": "none3", "turns": [
+      {"id": "X3", "type": "no-match", "question": "What's my dentist's phone number?", "forbid": ["555", "your dentist's number is", "the number is"], "supports": [], "maxChips": 0, "provenance": "general", "noMatch": true}
+    ]},
+    {"id": "none4", "turns": [
+      {"id": "X4", "type": "no-match", "question": "Summarise my notes from the Rotterdam conference.", "forbid": ["at the conference, you", "your notes from the rotterdam conference say", "keynote"], "supports": [], "maxChips": 0, "provenance": "general", "noMatch": true}
+    ]},
+    {"id": "news1", "turns": [
+      {"id": "N1", "type": "news-library", "question": "What are today's top news stories?", "forbid": ["today's top stories are", "here are today's top", "breaking:"], "supports": [], "maxChips": 0, "provenance": "general", "newsHonest": true}
+    ]},
+    {"id": "news2", "turns": [
+      {"id": "N2", "type": "news-general", "mode": "general", "question": "What are today's top news stories?", "forbid": ["today's top stories are", "here are today's top", "breaking:"], "supports": [], "provenance": "app", "newsHonest": true}
+    ]},
+    {"id": "news3", "turns": [
+      {"id": "N3", "type": "current-state-general", "mode": "general", "question": "Who is the current Secretary-General of the United Nations?", "facts": [["guterres", "as of my", "training data", "may be out of date", "may have changed", "search"]], "supports": [], "provenance": "general", "datedHonest": true}
+    ]},
+    {"id": "fu-general", "turns": [
+      {"id": "U4", "type": "follow-up-general", "mode": "general", "question": "Who wrote the novel Dune?", "facts": [["herbert"]], "supports": [], "provenance": "general"},
+      {"id": "U5", "type": "follow-up-general", "mode": "general", "question": "When was it first published?", "facts": [["1965"]], "supports": [], "provenance": "general"}
+    ]},
+    {"id": "fu-library", "turns": [
+      {"id": "U6", "type": "follow-up", "question": "What's my celadon glaze recipe?", "facts": [["feldspar"], ["silica"], ["whiting"]], "minFacts": 2, "supports": ["glaze", "kiln"], "mustCite": true, "provenance": "notes"},
+      {"id": "U7", "type": "follow-up", "question": "How much iron oxide goes in it?", "facts": [["1.5"]], "supports": ["glaze"], "mustCite": true, "provenance": "notes"},
+      {"id": "U8", "type": "follow-up-switch", "question": "When is Mika's birthday?", "facts": [["june 14", "14 june", "14th of june", "june 14th"]], "supports": ["mika"], "mustCite": true, "provenance": "notes"}
+    ]}
+  ]
+}

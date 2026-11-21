@@ -1122,7 +1122,11 @@ final class LibrarianState {
         // "No matching entries" (BR3 — every Library turn reports what it read).
         guard !empty else {
             let r = ChatSession.Message.ReadReceipt(readInFull: 0, skimmed: 0, partial: false)
-            return TurnPlan(displayText: query, modelText: query, systemPrompt: emptyLibrarySystemPrompt,
+            // SCRATCH (sweep 2a, never merge) `-StopgapPlainNoMatch YES`: the no-match turn goes to the model under the
+            // plain General prompt (no library voice); the "no close match" statement is the app's own footer line.
+            // Measured because Apple Intelligence invents entries under the library-voiced no-match prompt.
+            let plainNoMatch = UserDefaults.standard.bool(forKey: "StopgapPlainNoMatch")
+            return TurnPlan(displayText: query, modelText: query, systemPrompt: plainNoMatch ? privateSystemPrompt : emptyLibrarySystemPrompt,
                             citations: nil, alwaysCiteIndices: [], readReceipt: r,
                             mode: "empty", readNodeIDs: [], candidateCount: 0, cardCount: 0,
                             passageCount: 0, cardNodeIDs: [], chipIndices: [],

@@ -249,6 +249,25 @@ extension WebEvidence {
                                            snippet: String($0.text.prefix(300)), published: $0.published) }, [], 0, sources)
         }
         guard !sources.isEmpty else { return ([], [], 0, []) }
+        #if DEBUG
+        // SCRATCH (sweep 2a, never merge) — `-StopgapNewsHeadlines YES`: a "what's in the news" question with no topic is a
+        // BROWSE, not a lookup: there is nothing in the question for an article to resemble, so the similarity floor drops
+        // every article. The packet is then the articles' own headlines (title + the first of the snippet), front pages out.
+        if UserDefaults.standard.bool(forKey: "StopgapNewsHeadlines"), WebGrounding.isTimeSensitive(query),
+           WebGrounding.newsKeywords(query).filter({ !["new", "world", "web", "internet", "list", "out"].contains($0) }).isEmpty {
+            func frontPage(_ u: String) -> Bool {
+                guard let c = URLComponents(string: u) else { return false }
+                let parts = c.path.split(separator: "/")
+                return parts.count <= 1 && (parts.first?.count ?? 0) < 25 && c.path.range(of: #"\d{4}"#, options: .regularExpression) == nil
+            }
+            let arts = sources.filter { !$0.wikipedia && !frontPage($0.url) }.prefix(6)
+            if arts.count >= 3 {
+                let links = arts.map { ToolLink(title: $0.title, url: $0.url, snippet: String($0.text.prefix(180)), published: $0.published) }
+                WebTrace.shared.note("plan", ["path": "stopgap-news-headlines", "articles": links.count])
+                return (links, links.enumerated().map { Scored(source: $0.offset, text: $0.element.snippet ?? "", score: 1, kept: true) }, 0, Array(arts))
+            }
+        }
+        #endif
         // one source per page: the provider's copy of a Wikipedia article joins the article (seen: "2026 NBA Finals" twice)
         var merged: [Source] = []
         for src in sources {

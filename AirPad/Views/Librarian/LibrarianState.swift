@@ -696,6 +696,19 @@ final class LibrarianState {
             case .ollama, .host: toolCapable = true
             default: toolCapable = false
             }
+            #if DEBUG
+            // SCRATCH (sweep 2a, never merge) — `-StopgapSelfAnswer YES`: a question about the Librarian itself is the app's
+            // to answer (it knows whether search is on); it is never sent to web search.
+            if UserDefaults.standard.bool(forKey: "StopgapSelfAnswer"),
+               query.range(of: #"^\s*((can|could|are|do|will) you\b.{0,40}\b(web|internet|online|google)\b|what can you do\b|what are you (able to do|capable of)\b|who are you\b|how do you work\b)"#,
+                           options: [.regularExpression, .caseInsensitive]) != nil {
+                Self.logGeneralTurn(query: query, scope: selectedScope, tool: "none-self", retry: false, store: store)
+                chat.appendAppAnswer(userText: query, answer: WebSearchBackend.hasKey
+                    ? "Yes. Web search is on (\(WebSearchBackend.provider.keyName)), so I can look things up on the web and show where each fact came from. With Library on, I answer from your own entries instead. Ask me something and I'll look."
+                    : "I can answer from your library, and from what I know. Web search is off or has no key, so I can't look things up online yet. [Set it up in Settings → Web search.](airpad-settings://websearch)")
+                return
+            }
+            #endif
             // N12 (T 2026-11-18) — no web search and a time-sensitive question (today's news): the app says so plainly, on
             // every route. Wikipedia never stands in for it (it read an album's article for "What are today's top stories?").
             if !WebSearchBackend.hasKey, WebGrounding.isTimeSensitive(query) {

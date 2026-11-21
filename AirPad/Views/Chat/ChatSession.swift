@@ -1274,6 +1274,20 @@ final class ChatSession {
     }
 
     /// `news` (N12) — a time-sensitive question: the line first says plainly that today's news needs web search.
+    #if DEBUG
+    /// SCRATCH (sweep 2a, never merge) — the app's own answer to a question about the Librarian itself.
+    func appendAppAnswer(userText: String, answer: String) {
+        let text = userText.trimmingCharacters(in: .whitespacesAndNewlines)
+        guard !text.isEmpty, !isStreaming else { return }
+        lastError = nil
+        messages.append(Message(role: .user, text: text))
+        messages.append(Message(role: .assistant, text: answer))
+        pendingUser = nil
+        flush()
+        WebTrace.shared.beginTurn(text)
+        WebTrace.shared.note("plan", ["path": "stopgap-self-answer"])
+    }
+    #endif
     func appendWebSearchKeyNotice(userText: String, news: Bool = false) {
         let text = userText.trimmingCharacters(in: .whitespacesAndNewlines)
         guard !text.isEmpty, !isStreaming else { return }

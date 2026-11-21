@@ -11,17 +11,27 @@
   says no close match       the same cases: the delivered answer says there is no close match (today the model's wording).
   no chip when unsupported  the same cases: no source chip shown at all.
   chips on unsupporting     chips whose entry does not support the answer / all chips (1 − citation precision).
+  describes an entry …      turns where the app sent the model no library text, yet the answer describes an entry
+                            ("an entry titled …", "you've got a note …"): an invented source.
   conflict told             conflict cases: the note's claim and the disagreement are both in the answer.
   first word / whole turn   median over model-answered turns.
   delivered                 server route: largest prompt_eval_count vs the window asked for, and whether any turn's
                             characters-per-token is far off the run's median (a silent cut would show as a jump).
 Answers and questions are never printed; ids and counts only.
 """
-import json, sys, os, glob, statistics
+import json, sys, os, glob, statistics, re
 from pathlib import Path
 
 HERE = Path(__file__).resolve().parent
 ANSWER_KINDS = {"facts", "sides", "forbidden", "no-answer"}
+# An answer that describes an entry although the app sent the model no library text: "an entry titled …", "you've got a
+# note …". Sentences with a negation ("I didn't find an entry …") do not count.
+DESCRIBES = re.compile(r"\b(note|entry|sketch) (titled|called|labell?ed|named)\b|\b(you(?:'|’)ve got|you have|you(?:'|’)ve) (?:\w+ ){0,3}?(note|entry|notes|entries|sketch)\b|\bentries titled\b", re.I)
+NEGATED = re.compile(r"\b(didn(?:'|’)t|did not|don(?:'|’)t|do not|doesn(?:'|’)t|does not|couldn(?:'|’)t|could not|haven(?:'|’)t|no|not|nothing|none|isn(?:'|’)t|aren(?:'|’)t|without)\b", re.I)
+
+
+def invents(answer):
+    return any(DESCRIBES.search(x) and not NEGATED.search(x) for x in re.split(r"(?<=[.!?])\s+", answer or ""))
 
 
 def kinds(row):
@@ -44,11 +54,12 @@ def cover(setname, pairs):
     cases = {t["id"]: dict(t, mode=t.get("mode") or c.get("mode") or "library")
              for c in json.load(open(HERE / "benchmark" / f"cases-{setname}.json"))["chats"] for t in c["turns"]}
     c = dict(sup=0, supAns=0, cite=0, citeOK=0, uns=0, unsAbstain=0, unsNoChip=0, unsNoneSent=0, unsFacts=0, unsFactsOK=0, chips=0, badChips=0,
-             conf=0, confOK=0, passed=0, total=0, appAnswered=0)
+             conf=0, confOK=0, noneSent=0, invented=0, passed=0, total=0, appAnswered=0)
     first, whole, ptoks, ratio_flags, max_prompt, num_ctx, answer_chars = [], [], [], 0, 0, None, []
     per_case_abstain = {}
     for graded, res in pairs:
         recs = {r["id"]: (r.get("record") or {}) for r in res["rows"]}
+        answers = {r["id"]: r.get("answer") or "" for r in res["rows"]}
         ratios = []
         for r in graded["rows"]:
             case = cases.get(r["id"])
@@ -58,6 +69,8 @@ def cover(setname, pairs):
             c["total"] += 1; c["passed"] += r["pass"]
             c["chips"] += r["chips"]; c["badChips"] += r["unsupportedChips"]
             lib = case["mode"] == "library"
+            if lib and r["modelCalled"] and r["sent"] == 0 and r["mode"] == "library":
+                c["noneSent"] += 1; c["invented"] += invents(answers.get(r["id"]))
             if case.get("supports") and lib:
                 c["sup"] += 1; c["supAns"] += not (k & ANSWER_KINDS)
                 if case.get("mustCite"):
@@ -113,8 +126,8 @@ def main():
     for setname in sorted({k[0] for k in runs}):
         out += [f"### {setname} library", "",
                 "| model | route | arm | repeats | answer when supported | cites the support | nothing sent when unsupported (app) | says no close match when unsupported (answer) | no chip when unsupported | "
-                "chips on unsupporting entries | conflict told | first word | whole turn | answer length (median / 9 in 10 under) | delivered |",
-                "|---|---|---|---|---|---|---|---|---|---|---|---|---|---|---|"]
+                "chips on unsupporting entries | describes an entry although none was sent | conflict told | first word | whole turn | answer length (median / 9 in 10 under) | delivered |",
+                "|---|---|---|---|---|---|---|---|---|---|---|---|---|---|---|---|"]
         for (sn, tag, arm), pairs in sorted(runs.items()):
             if sn != setname:
                 continue
@@ -122,7 +135,7 @@ def main():
             alljs[f"{setname}/{tag}/{arm}"] = c
             deliv = "-" if not c["maxPrompt"] or c["route"] == "apple" else f"largest prompt {c['maxPrompt']} of {c['numCtx']}; cut suspects {c['cutSuspects']}"
             out.append(f"| {c['model']} | {c['route']} | {arm} | {c['repeats']} | {frac(c['supAns'], c['sup'])} | {frac(c['citeOK'], c['cite'])} | "
-                       f"{frac(c['unsNoneSent'], c['uns'])} | {frac(c['unsAbstain'], c['uns'])} | {frac(c['unsNoChip'], c['uns'])} | {frac(c['badChips'], c['chips'])} | "
+                       f"{frac(c['unsNoneSent'], c['uns'])} | {frac(c['unsAbstain'], c['uns'])} | {frac(c['unsNoChip'], c['uns'])} | {frac(c['badChips'], c['chips'])} | {frac(c['invented'], c['noneSent'])} | "
                        f"{frac(c['confOK'], c['conf'])} | {sec(c['firstMs'])} | {sec(c['totalMs'])} | {c['answerChars']} / {c['answerCharsP90']} chars | {deliv} |")
         out.append("")
     text = "\n".join(out)

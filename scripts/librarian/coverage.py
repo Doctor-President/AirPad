@@ -9,6 +9,8 @@
   cites the support         of the cases that must cite: a chip on an entry that supports the answer.
   nothing sent when unsupp. library-mode cases nothing supports: the app sent the model no library text (a code decision).
   says no close match       the same cases: the delivered answer says there is no close match (today the model's wording).
+  told no match (either)    the same cases: the answer says so OR the app's own footer reads "No matching entries"
+                            (the footer is written by code whenever nothing was sent).
   no chip when unsupported  the same cases: no source chip shown at all.
   chips on unsupporting     chips whose entry does not support the answer / all chips (1 − citation precision).
   describes an entry …      turns where the app sent the model no library text, yet the answer describes an entry
@@ -53,13 +55,14 @@ def load(root):
 def cover(setname, pairs):
     cases = {t["id"]: dict(t, mode=t.get("mode") or c.get("mode") or "library")
              for c in json.load(open(HERE / "benchmark" / f"cases-{setname}.json"))["chats"] for t in c["turns"]}
-    c = dict(sup=0, supAns=0, cite=0, citeOK=0, uns=0, unsAbstain=0, unsNoChip=0, unsNoneSent=0, unsFacts=0, unsFactsOK=0, chips=0, badChips=0,
+    c = dict(sup=0, supAns=0, cite=0, citeOK=0, uns=0, unsAbstain=0, unsTold=0, unsNoChip=0, unsNoneSent=0, unsFacts=0, unsFactsOK=0, chips=0, badChips=0,
              conf=0, confOK=0, noneSent=0, invented=0, passed=0, total=0, appAnswered=0)
     first, whole, ptoks, ratio_flags, max_prompt, num_ctx, answer_chars = [], [], [], 0, 0, None, []
     per_case_abstain = {}
     for graded, res in pairs:
         recs = {r["id"]: (r.get("record") or {}) for r in res["rows"]}
         answers = {r["id"]: r.get("answer") or "" for r in res["rows"]}
+        receipts = {r["id"]: r.get("receipt") or "" for r in res["rows"]}
         ratios = []
         for r in graded["rows"]:
             case = cases.get(r["id"])
@@ -77,7 +80,8 @@ def cover(setname, pairs):
                     c["cite"] += 1; c["citeOK"] += "must-cite" not in k and "no-answer" not in k
             if case.get("noMatch") and lib:
                 ok = "no-match-unsaid" not in k and "no-answer" not in k
-                c["uns"] += 1; c["unsAbstain"] += ok; c["unsNoChip"] += r["chips"] == 0; c["unsNoneSent"] += r["sent"] == 0
+                c["uns"] += 1; c["unsAbstain"] += ok
+                c["unsTold"] += ok or (r["sent"] == 0 and "No matching entries" in receipts.get(r["id"], "")); c["unsNoChip"] += r["chips"] == 0; c["unsNoneSent"] += r["sent"] == 0
                 per_case_abstain.setdefault(r["id"], [0, 0]); per_case_abstain[r["id"]][0] += ok; per_case_abstain[r["id"]][1] += 1
                 if case.get("facts"):
                     c["unsFacts"] += 1; c["unsFactsOK"] += not (k & ANSWER_KINDS)
@@ -125,9 +129,9 @@ def main():
     out, alljs = [], {}
     for setname in sorted({k[0] for k in runs}):
         out += [f"### {setname} library", "",
-                "| model | route | arm | repeats | answer when supported | cites the support | nothing sent when unsupported (app) | says no close match when unsupported (answer) | no chip when unsupported | "
+                "| model | route | arm | repeats | answer when supported | cites the support | nothing sent when unsupported (app) | says no close match when unsupported (answer) | told no match (answer or the app's footer) | no chip when unsupported | "
                 "chips on unsupporting entries | describes an entry although none was sent | conflict told | first word | whole turn | answer length (median / 9 in 10 under) | delivered |",
-                "|---|---|---|---|---|---|---|---|---|---|---|---|---|---|---|---|"]
+                "|---|---|---|---|---|---|---|---|---|---|---|---|---|---|---|---|---|"]
         for (sn, tag, arm), pairs in sorted(runs.items()):
             if sn != setname:
                 continue
@@ -135,7 +139,7 @@ def main():
             alljs[f"{setname}/{tag}/{arm}"] = c
             deliv = "-" if not c["maxPrompt"] or c["route"] == "apple" else f"largest prompt {c['maxPrompt']} of {c['numCtx']}; cut suspects {c['cutSuspects']}"
             out.append(f"| {c['model']} | {c['route']} | {arm} | {c['repeats']} | {frac(c['supAns'], c['sup'])} | {frac(c['citeOK'], c['cite'])} | "
-                       f"{frac(c['unsNoneSent'], c['uns'])} | {frac(c['unsAbstain'], c['uns'])} | {frac(c['unsNoChip'], c['uns'])} | {frac(c['badChips'], c['chips'])} | {frac(c['invented'], c['noneSent'])} | "
+                       f"{frac(c['unsNoneSent'], c['uns'])} | {frac(c['unsAbstain'], c['uns'])} | {frac(c['unsTold'], c['uns'])} | {frac(c['unsNoChip'], c['uns'])} | {frac(c['badChips'], c['chips'])} | {frac(c['invented'], c['noneSent'])} | "
                        f"{frac(c['confOK'], c['conf'])} | {sec(c['firstMs'])} | {sec(c['totalMs'])} | {c['answerChars']} / {c['answerCharsP90']} chars | {deliv} |")
         out.append("")
     text = "\n".join(out)

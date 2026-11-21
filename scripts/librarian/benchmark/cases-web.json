@@ -1,0 +1,22 @@
+{
+  "_doc": "Sweep 2a amendment (T, 2026-11-20 evening): web news and questions about the Librarian itself, General mode, a real search provider. Run with scripts/librarian/web_bench.sh (reads the live-harness test key from the Keychain; never written). Graded by scripts/librarian/web_grade.py from results.json + the web trace: news answers must name actual stories (not outlets or sections), a turn that searched must never say it can't search, and a question about the Librarian itself must not be sent to search.",
+  "library": "sample",
+  "chats": [
+    {"id": "news-t", "turns": [
+      {"id": "W1", "type": "news-top", "mode": "general", "question": "What are some of today's top new stories from the web?"},
+      {"id": "W1b", "type": "news-followup", "mode": "general", "question": "List them out for me"}]},
+    {"id": "news-top", "turns": [
+      {"id": "W2", "type": "news-top", "mode": "general", "question": "What are today's top news stories?"},
+      {"id": "W2b", "type": "news-followup", "mode": "general", "question": "List them"}]},
+    {"id": "news-topic1", "turns": [
+      {"id": "W3", "type": "news-topic", "mode": "general", "question": "What's the news about SpaceX this week?", "topic": ["spacex", "starship", "falcon", "musk"]}]},
+    {"id": "news-topic2", "turns": [
+      {"id": "W4", "type": "news-topic", "mode": "general", "question": "Any news about electric vehicles this week?", "topic": ["electric", "ev", "evs", "tesla", "battery", "charging"]}]},
+    {"id": "cap1", "turns": [
+      {"id": "C1", "type": "capability", "mode": "general", "question": "Can you search the web?"}]},
+    {"id": "cap2", "turns": [
+      {"id": "C2", "type": "capability", "mode": "general", "question": "What can you do?"}]},
+    {"id": "cap3", "turns": [
+      {"id": "C3", "type": "capability", "mode": "general", "question": "Are you able to look things up online?"}]}
+  ]
+}

@@ -1560,10 +1560,40 @@ final class CorpusStore {
                     && wire[1]["role"] == "user" && wire[2]["role"] == "assistant"
                     && wire[3]["role"] == "user" && wire[3]["content"] == "PACKET"
                     && !wire.contains { ($0["content"] ?? "").contains("\nAssistant:") }
-                let all = budgetOK && rankOK && followOK && receiptOK && deliveryOK
-                NSLog("[LibrarianRoutingSelfTest] %@ · budget(host=%d fm=%d medical=%d)=%@ rank=%@ followup=%@ receipt=%@ delivery=%@",
+                // Sweep 2b · 1a — the stopgap bar: 0.66, 0.60 for the user's own things ("my…", "did I…"); a turn whose
+                // best passage is under it takes the no-match path; cards alone (no passage → 0) never count as a match.
+                let france = "What is the capital of France?"
+                let barRows: [(String, Bool)] = [
+                    ("plain-0.66", LibrarianState.stopgapBar(for: france) == LibrarianState.stopgapBar),
+                    ("my-0.60", LibrarianState.stopgapBar(for: "What are my rules for writing?") == LibrarianState.stopgapOwnBar),
+                    ("didI-0.60", LibrarianState.stopgapBar(for: "Did I ever finish the novel?") == LibrarianState.stopgapOwnBar),
+                    ("ifIdid-0.66", LibrarianState.stopgapBar(for: "If I did that, what happens next?") == LibrarianState.stopgapBar),
+                    ("constants", LibrarianState.stopgapBar == 0.66 && LibrarianState.stopgapOwnBar == 0.60),
+                    ("under-nomatch", LibrarianState.stopgapSendsNoMatch(bestPassage: 0.65, query: france)),
+                    ("at-matches", !LibrarianState.stopgapSendsNoMatch(bestPassage: 0.66, query: france)),
+                    ("own-0.62-matches", !LibrarianState.stopgapSendsNoMatch(bestPassage: 0.62, query: "What did I write about rice?")),
+                    ("own-0.59-nomatch", LibrarianState.stopgapSendsNoMatch(bestPassage: 0.59, query: "Which of my lab values are high?")),
+                    ("cards-only-nomatch", LibrarianState.stopgapSendsNoMatch(bestPassage: 0, query: "my lab values")),
+                ]
+                let stopgapOK = barRows.allSatisfy(\.1)
+                if !stopgapOK { NSLog("[LibrarianRoutingSelfTest] stopgap rows: %@", barRows.map { "\($0.0)=\($0.1 ? "ok" : "BAD")" }.joined(separator: " ")) }
+                // Sweep 2b · 1b — an entry READ IN FULL keeps its chip with no inline [n]; surveyed cards / passages don't.
+                typealias Cit = ChatSession.Message.Citation
+                let readC = LibrarianState.NumberedCandidate(number: 3, payload: .entry(.init(nodeID: "R", title: "Read entry", text: "x", score: 1, partial: false)), origin: .new)
+                let cardC = LibrarianState.NumberedCandidate(number: 1, payload: .card(CardMatch(nodeID: "C", gist: "g", score: 0.61)), origin: .new)
+                let passC = LibrarianState.NumberedCandidate(number: 2, payload: .passage(bm("P", 0.70, "p1")), origin: .new)
+                let always = LibrarianState.alwaysCiteNumbers([cardC, passC, readC])
+                var chipN = CitationNumberer(candidates: [Cit(index: 1, nodeID: "C", title: "Card", snippet: ""),
+                                                          Cit(index: 2, nodeID: "P", title: "Passage", snippet: ""),
+                                                          Cit(index: 3, nodeID: "R", title: "Read entry", snippet: "")])
+                chipN.feed("An answer that cites nothing inline."); chipN.settleAll()
+                let chipR = chipN.result(alwaysInclude: always)
+                let chipOK = always == [3] && chipR.citations.compactMap(\.nodeID) == ["R"] && !chipR.text.contains("[")
+                let all = budgetOK && rankOK && followOK && receiptOK && deliveryOK && stopgapOK && chipOK
+                NSLog("[LibrarianRoutingSelfTest] %@ · budget(host=%d fm=%d medical=%d)=%@ rank=%@ followup=%@ receipt=%@ delivery=%@ stopgap=%@ readChip=%@",
                       all ? "PASS" : "FAIL", hostBudget, fmBudget, medicalChars,
-                      budgetOK ? "ok" : "BAD", rankOK ? "ok" : "BAD", followOK ? "ok" : "BAD", receiptOK ? "ok" : "BAD", deliveryOK ? "ok" : "BAD")
+                      budgetOK ? "ok" : "BAD", rankOK ? "ok" : "BAD", followOK ? "ok" : "BAD", receiptOK ? "ok" : "BAD", deliveryOK ? "ok" : "BAD",
+                      stopgapOK ? "ok" : "BAD", chipOK ? "ok" : "BAD")
                 if !receiptOK { NSLog("[LibrarianRoutingSelfTest] receipt strings: r1='%@' r2='%@' r3='%@' r4='%@' r5='%@'", r1, r2, r3, r4, r5) }
             }
             #endif

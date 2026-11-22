@@ -1104,12 +1104,13 @@ final class LibrarianState {
                       previous: (packets: [String], systemPrompt: String)? = nil) -> TurnPlan {
         let window = ModelRouter.contextWindowTokens
         let budget = askContextCharBudget()
-        // EMPTY room (Brief AB3/BU3 case 8) — the bare question under the honest empty-library prompt,
-        // NO candidates → no [n] instruction, no chips; a 0/0 receipt so the footer still reports
-        // "No matching entries" (BR3 — every Library turn reports what it read).
+        // EMPTY room (Brief AB3/BU3 case 8) — the bare question, NO candidates → no [n] instruction, no chips; a 0/0
+        // receipt so the footer still reports "No matching entries" (BR3 — every Library turn reports what it read).
+        // Sweep 2b · 1b (T 2026-11-21) — under the plain General prompt with nothing about notes in it, on every route
+        // (the measured arm); the app writes the no-match line above the answer (1c), never the model.
         guard !empty else {
             let r = ChatSession.Message.ReadReceipt(readInFull: 0, skimmed: 0, partial: false)
-            return TurnPlan(displayText: query, modelText: query, systemPrompt: emptyLibrarySystemPrompt,
+            return TurnPlan(displayText: query, modelText: query, systemPrompt: privateSystemPrompt,
                             citations: nil, alwaysCiteIndices: [], readReceipt: r,
                             mode: "empty", readNodeIDs: [], candidateCount: 0, cardCount: 0,
                             passageCount: 0, cardNodeIDs: [], chipIndices: [],
@@ -1140,8 +1141,7 @@ final class LibrarianState {
         \(Self.packetEnd)Question: \(query)
         """
         let chips = Self.citationChips(from: candidates, store: store)
-        // Brief BS2 — an entry READ IN FULL is ALWAYS a source chip, even with no inline [n].
-        let alwaysCite = Set(candidates.filter { $0.isEntryRead }.map { $0.number })
+        let alwaysCite = Self.alwaysCiteNumbers(candidates)
         let readTitle = candidates.first(where: { $0.isEntryRead })
             .flatMap { c in store.nodes.first(where: { $0.id == c.nodeID })?.title }
         var freshSystem = askSystemPrompt(hasReads: candidates.contains { $0.isEntryRead },
@@ -1430,6 +1430,24 @@ final class LibrarianState {
         }
 
         if let rangeTarget { LibRec.set("rangeTarget", .id(rangeTarget)) }
+        // Sweep 2b · 1a — THE STOPGAP BAR (T 2026-11-20). A question that names no entry (no pin, title match, subject
+        // lookup, range target or open-entry follow-up — all of which returned or set their flag above) and whose best
+        // passage scores under the bar found nothing that really matches: the no-match path (the app's line, the plain
+        // prompt, nothing cited). Passages only — one-line summaries (cards) alone no longer count as a match.
+        // `dominant` needs a 0.70 passage, so it never trips the bar.
+        if !named, rangeTarget == nil, surveyOnly == nil {
+            let top = decisionRanking.map(\.top).max() ?? 0
+            LibRec.set("stopgapTop", .num(Double(top)))
+            if Self.stopgapSendsNoMatch(bestPassage: top, query: query) {
+                carriedCandidates = []; carriedChatID = chat.id
+                chat.workingSet = []   // nothing matched → nothing stays open
+                Self.logRouting(turnIndex: turnIndex, query: retrievalQuery, mode: "empty(bar)", candidates: [],
+                                receipt: .init(readInFull: 0, skimmed: 0, partial: false), budget: budget,
+                                scope: selectedScope, store: store)
+                LibRec.set("decision", .token("empty(bar)"))
+                return ([], true, nil)
+            }
+        }
         if named || dominant != nil || rangeTarget != nil {
             // READ targets + BS1 AMBIGUITY. A pin reads all pinned entries; a title match that named
             // ONE entry reads it; a title match that named 2+ entries reads the TOP by aggregate
@@ -1622,12 +1640,39 @@ final class LibrarianState {
     /// the survey's own-first partition). Deliberately a phrase matcher, not a classifier (T's
     /// standing "no question classifier" ruling, same posture as `looksLikeWorkingSetFollowUp`).
     /// Possessives only — a bare "technology" question is a normal survey with no ownership claim.
+    /// Sweep 2b · 1a — also picks the stopgap's gentler bar. Kept a SUBSTRING match on purpose (the bar was measured
+    /// with it): "economy " / " minerals" also read as ownership — known, left for graded evidence.
     static func looksLikeOwnershipQuestion(_ query: String) -> Bool {
         let q = query.lowercased()
         let phrases = ["my ", " mine", "i think", "i thought", "i believe", "i wrote", "i've written",
                        "i have written", "i said", "i feel", "my own", "do i ", "did i ", "am i ",
                        "have i ", "about me", "of mine"]
         return phrases.contains(where: { q.contains($0) })
+    }
+
+    /// Sweep 2b · 1a — the stopgap relevance bar (T 2026-11-20): the best passage must reach 0.66, or 0.60 when the
+    /// question is about the user's own things ("my…", "did I…") — a wrong "no close match" costs more there.
+    static let stopgapBar: Float = 0.66
+    static let stopgapOwnBar: Float = 0.60
+    static func stopgapBar(for query: String) -> Float {
+        var bar = stopgapBar, own = stopgapOwnBar
+        #if DEBUG
+        // A/B only (`-StopgapBar 0` turns the bar off; `-StopgapOwnBar x`). Release always uses the constants.
+        if UserDefaults.standard.object(forKey: "StopgapBar") != nil { bar = Float(UserDefaults.standard.double(forKey: "StopgapBar")) }
+        if UserDefaults.standard.object(forKey: "StopgapOwnBar") != nil { own = Float(UserDefaults.standard.double(forKey: "StopgapOwnBar")) }
+        #endif
+        return looksLikeOwnershipQuestion(query) ? min(bar, own) : bar
+    }
+    /// True when the turn takes the no-match path: nothing named, and the best passage under the bar.
+    static func stopgapSendsNoMatch(bestPassage: Float, query: String) -> Bool {
+        bestPassage < stopgapBar(for: query)
+    }
+
+    /// Brief BS2, kept by sweep 2b · 1b (T 2026-11-21) — an entry the app READ IN FULL for this question (named, subject
+    /// lookup, dominance, range, open-entry carry) is always a source chip, even with no inline [n]. "No chip by rule"
+    /// covers SURVEYED entries only (cards and passages): they become chips only when the answer cites or names them.
+    static func alwaysCiteNumbers(_ candidates: [NumberedCandidate]) -> Set<Int> {
+        Set(candidates.filter { $0.isEntryRead }.map { $0.number })
     }
 
     /// Brief BN4 — does this question read as a FOLLOW-UP about the open entry (the working set)
@@ -2706,26 +2751,9 @@ final class LibrarianState {
         return [Self.librarianVoice, below, use, Self.librarianClosingVoice].joined(separator: "\n\n") + standingVoiceSuffix
     }
 
-    /// Brief AB3 — empty-library prompt: corpus mode found NOTHING in this room
-    /// (no candidates, or a survey with < 3 cards and no passages). Say so plainly
-    /// instead of answering from general knowledge and hallucinating citations. No
-    /// `[n]` instruction — there is nothing to cite. Keeps the personal-voice tone.
-    /// Brief BU3/BU2 case 8 — nothing in the library matched. Say so in ONE short sentence, then
-    /// ANSWER THE QUESTION NORMALLY from general knowledge.
-    ///
-    /// ★ This CHANGES Brief AB3's behaviour (which forbade answering from general knowledge here, so
-    /// "what's the capital of France?" in Library mode hit a dead end: *"There are no matches for that
-    /// question in my library."* and nothing else — measured in the gauntlet). AB3's real concern was
-    /// never "don't answer" but "don't DRESS UP general knowledge as an answer from the notes" — and
-    /// that is now structurally handled elsewhere: the turn carries a receipt, so the footer always
-    /// reads "No matching entries" (BR3), and there are no candidates, so any fabricated `[n]` is
-    /// stripped (AB3's own guard). Provenance stays honest while the user still gets an answer.
-    private var emptyLibrarySystemPrompt: String {
-        // Session 3 audit fix — "no entries match" is a claim the search can't make (it misses synonyms and aliases);
-        // say what happened instead: no CLOSE match was found.
-        let rules = "The search found no close match for this question in their library. Open by saying that in one short sentence — that you couldn't find a close match, not that they never wrote about it — then answer the question normally from your own general knowledge. Never imply the answer came from their entries, and never cite anything."
-        return Self.librarianVoice + "\n\n" + rules + standingVoiceSuffix
-    }
+    // Sweep 2b · 1b — `emptyLibrarySystemPrompt` (the Librarian's voice + "say you found no close match") is gone: under
+    // it Apple Intelligence described notes that were never sent on 31 of 93 no-match turns (Phase B). The no-match
+    // turn now uses `privateSystemPrompt` and the app writes the line itself (`ChatTranscript.noMatchLine`).
 
     /// ★ Private-mode system prompt (corpusAware OFF). A plain, direct assistant —
     /// deliberately ZERO corpus language: no "notes", no passages, no citation

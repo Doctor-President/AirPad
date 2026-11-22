@@ -292,7 +292,7 @@ enum MacViewerKeys {
 
 #if DEBUG || PERFLOG
 /// Sweep 2b · 4.x — `-Open4x <kind>` opens one test-library entry so the real-event steps land on it: `gallery` = the
-/// entry with the most photos in one gallery, `single` = a one-photo entry, `document` = the first entry with a document.
+/// biggest gallery that starts with six photos, `single` = a one-photo entry, `document` = the first entry with a document.
 /// Deterministic (ids sorted). Logs the kind, the id and counts — never a title.
 @MainActor
 enum Proof4x {
@@ -307,7 +307,16 @@ enum Proof4x {
         let sorted = store.nodes.sorted { $0.id < $1.id }
         let pick: Node?
         switch kind {
-        case "gallery": pick = sorted.max { photos($0) < photos($1) }
+        // The biggest gallery whose first six items are all photos (the steps hover / click tiles #0–#2; a video there
+        // has no highlight and no Quick Look by design).
+        case "gallery":
+            func leadPhotos(_ n: Node) -> Bool {
+                n.items.contains { i in
+                    let m = i.mediaItems ?? []
+                    return i.type == .imageVideo && m.count >= 6 && m.prefix(6).allSatisfy { $0.mediaType == .image }
+                }
+            }
+            pick = sorted.filter(leadPhotos).max { photos($0) < photos($1) }
         case "single": pick = sorted.first { n in n.items.contains { $0.type == .imageVideo && ($0.mediaItems ?? []).count == 1 && $0.mediaItems?.first?.mediaType == .image } }
         case "document": pick = sorted.first { n in n.items.contains { $0.type == .document } }
         default: pick = nil

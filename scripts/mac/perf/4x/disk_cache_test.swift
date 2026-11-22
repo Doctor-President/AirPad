@@ -75,7 +75,7 @@ let c = cache.snapshot
 check("counters", c.diskHits == 2 && c.diskMisses == 1 && c.writes == 2, "\(c)")
 
 // 4. The cap is enforced on disk: write ~12 × ~300 KB into a 2 MB cache → at most 2 MB stays; the newest survive.
-for i in 0..<12 { cache.write(image(1024, 768, alpha: false, seed: UInt32(100 + i)), key: "big-\(i)") }
+for i in 0..<12 { cache.write(image(1024, 768, alpha: false, seed: UInt32(100 + i)), key: "big-\(i)"); cache.flush() }
 cache.flush()
 let onDisk = (try? FileManager.default.contentsOfDirectory(at: dir, includingPropertiesForKeys: [.fileSizeKey])) ?? []
 let bytes = onDisk.reduce(0) { $0 + ((try? $1.resourceValues(forKeys: [.fileSizeKey]).fileSize) ?? 0) }

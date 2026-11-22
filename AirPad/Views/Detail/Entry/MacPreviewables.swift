@@ -14,10 +14,15 @@ enum MacSpaceHint {
     static let usesKey = "mac.spaceHint.uses"
     static let showUntil = 3
     static var shouldShow: Bool { UserDefaults.standard.integer(forKey: usesKey) < showUntil }
-    static func noteUsed() {
+    /// One use per second at most (a held Space repeats).
+    @MainActor static func noteUsed() {
+        let now = Date()
+        guard now.timeIntervalSince(lastUse) > 1 else { return }
+        lastUse = now
         let d = UserDefaults.standard
         d.set(d.integer(forKey: usesKey) + 1, forKey: usesKey)
     }
+    @MainActor private static var lastUse = Date.distantPast
 }
 
 /// The highlight. Ink-derived (the palette's own ink, no new colour): tint ink × 0.06, hairline ink × 0.30.
@@ -131,9 +136,16 @@ extension CorpusStore {
             return out.sorted { $0.0 < $1.0 }.map(\.1)
         }
         let ms = Int((ContinuousClock.now - t0) / .milliseconds(1))
-        MacProofLog.note("4.3", "photo viewer: \(handoffs.count) photos, start \(startIndex), copies in \(ms) ms, "
-                         + "\(handoffs.filter { $0.folder != nil }.count) named copies")
-        return MacPhotoQuickLookSet(handoffs: handoffs, start: startIndex)
+        // Only named copies go to Quick Look: a photo whose copy failed (`folder == nil` = the stored file) is left out,
+        // so Quick Look's Share can never send the stored file (review of 4.3).
+        let startID = resolved[startIndex].0.id
+        let copied = handoffs.filter { $0.folder != nil }
+        guard let start = copied.firstIndex(where: { $0.documentID == startID }) else {
+            MacProofLog.note("4.3", "photo \(startID) could not be copied: no viewer")
+            return nil
+        }
+        MacProofLog.note("4.3", "photo viewer: \(copied.count) of \(handoffs.count) photos copied in \(ms) ms, start \(start)")
+        return MacPhotoQuickLookSet(handoffs: copied, start: start)
     }
 }
 
@@ -221,18 +233,23 @@ enum MacDefaultApp {
 /// Look's own search). The item under the viewer is held off meanwhile (`MacDocumentKeys.suspendForViewer`).
 @MainActor
 enum MacViewerKeys {
-    private struct Viewer { let count: Int; let close: () -> Void; let step: (Int) -> Int? }
+    private struct Viewer { let token: Int; let count: Int; let close: () -> Void; let step: (Int) -> Int?; let isLive: () -> Bool }
     private static var current: Viewer?
     private static var monitor: AnyObject?
+    private static var lastToken = 0
 
-    static func open(count: Int, close: @escaping () -> Void, step: @escaping (Int) -> Int?) {
-        current = Viewer(count: count, close: close, step: step)
-        MacDocumentKeys.suspendForViewer()
+    /// Returns a token; only `close(token)` with it ends this viewer's keys (a late `onDisappear` of an earlier viewer
+    /// can't take a newer viewer's). `isLive` = its controller is still in a window: if not, keys pass through.
+    static func open(count: Int, close: @escaping () -> Void, step: @escaping (Int) -> Int?, isLive: @escaping () -> Bool) -> Int {
+        lastToken += 1
+        if current == nil { MacDocumentKeys.suspendForViewer() }
+        current = Viewer(token: lastToken, count: count, close: close, step: step, isLive: isLive)
         install()
+        return lastToken
     }
 
-    static func close() {
-        guard current != nil else { return }
+    static func close(_ token: Int) {
+        guard current?.token == token else { return }
         current = nil
         MacDocumentKeys.resumeAfterViewer()
         MacProofLog.note("4.3", "viewer closed")
@@ -252,8 +269,10 @@ enum MacViewerKeys {
         let handler: @convention(block) (AnyObject) -> AnyObject? = { event in
             let code = (event.value(forKey: "keyCode") as? NSNumber)?.intValue ?? -1
             let flags = ((event.value(forKey: "modifierFlags") as? NSNumber)?.uintValue ?? 0) & (0xF << 17)
+            let isRepeat = (event.value(forKey: "ARepeat") as? NSNumber)?.boolValue ?? false
             return MainActor.assumeIsolated {
-                guard let v = current, flags == 0, !editingText() else { return event }
+                guard let v = current, flags == 0, v.isLive(), !editingText() else { return event }
+                if isRepeat, code == 49 || code == 53 { return nil }          // a held Space / Esc: once, not open-close-open
                 switch code {
                 case 49, 53:                                                   // Space, Esc
                     MacProofLog.note("4.3", code == 49 ? "space closes the viewer" : "esc closes the viewer")

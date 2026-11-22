@@ -322,7 +322,7 @@ struct GalleryBody: View {
         #if targetEnvironment(macCatalyst)
         // Sweep 2b · 4.3 — click (and Space) on a photo = Quick Look on the Mac (T: click = Quick Look).
         if tappedItem.mediaType == .image {
-            guard !openingPhotos else { return }
+            guard !openingPhotos, photoQuickLook == nil else { return }
             openingPhotos = true
             Task {
                 photoQuickLook = await store.macPhotoQuickLook(galleryItems, parent: item, nodeID: nodeID, start: tappedItem)

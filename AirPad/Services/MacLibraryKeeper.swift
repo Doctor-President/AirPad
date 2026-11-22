@@ -57,6 +57,7 @@ actor MacLibraryKeeper {
 
     private var root: URL?
     private var sweep: Task<Void, Never>?
+    private var sweepID = 0
     private var timer: Task<Void, Never>?
     private var lastSweep: Date?
     private var observer: NSObjectProtocol?
@@ -85,19 +86,26 @@ actor MacLibraryKeeper {
         guard MacKeepDownloaded.isOn else { MacProofLog.note("4.6", "switch off: no sweep (\(reason))"); return }
         if let lastSweep, Date().timeIntervalSince(lastSweep) < minInterval { return }
         lastSweep = Date()
+        sweepID += 1
+        let id = sweepID
         sweep = Task.detached(priority: .utility) {
             let summary = await Self.run(root: root, reason: reason)
-            await self.finished(summary)
+            await self.finished(summary, id: id)
         }
     }
 
     /// The switch moved: off cancels a running sweep (it stops before its next batch); on sweeps now.
     func switchChanged() {
-        if MacKeepDownloaded.isOn { kick("switch on") } else { sweep?.cancel(); MacProofLog.note("4.6", "switch off: no more download requests") }
+        if MacKeepDownloaded.isOn {
+            kick("switch on")
+        } else {
+            sweep?.cancel(); sweep = nil   // a cancelled sweep stops before its next batch; on again can start a new one
+            MacProofLog.note("4.6", "switch off: no more download requests")
+        }
     }
 
-    private func finished(_ summary: String) async {
-        sweep = nil
+    private func finished(_ summary: String, id: Int) async {
+        if id == sweepID { sweep = nil }
         await MainActor.run { Self.lastSummary = summary }
     }
 
@@ -176,9 +184,12 @@ actor MacLibraryKeeper {
     /// Still not downloaded? A fresh URL each time (a URL caches its resource values).
     private static func notDownloaded(_ url: URL) -> Bool {
         let u = URL(fileURLWithPath: url.path)
-        // No status (not there yet under its real name, or not iCloud) → not waited for.
+        // No status: an old-style placeholder still there (`.<name>.icloud`) = still on its way; otherwise not iCloud.
         guard let status = (try? u.resourceValues(forKeys: [.ubiquitousItemDownloadingStatusKey]))?.ubiquitousItemDownloadingStatus
-        else { return false }
+        else {
+            let stub = u.deletingLastPathComponent().appendingPathComponent("." + u.lastPathComponent + ".icloud")
+            return FileManager.default.fileExists(atPath: stub.path)
+        }
         return status == .notDownloaded
     }
 }

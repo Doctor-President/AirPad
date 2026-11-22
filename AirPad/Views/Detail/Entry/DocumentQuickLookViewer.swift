@@ -98,6 +98,9 @@ struct DocumentViewerSheet: View {
     let handoffs: [DocumentHandoff]
     var startIndex = 0
     @State private var handle = QuickLookHandle()
+    #if targetEnvironment(macCatalyst)
+    @State private var keysToken = 0
+    #endif
     @Environment(\.dismiss) private var dismiss
 
     init(handoff: DocumentHandoff) { handoffs = [handoff] }
@@ -124,10 +127,11 @@ struct DocumentViewerSheet: View {
             #if targetEnvironment(macCatalyst)
             // Sweep 2b · 4.3 — Space (and Esc) closes, ← / → step between the photos, as in Finder's Quick Look.
             .onAppear {
-                MacViewerKeys.open(count: handoffs.count, close: { dismiss() }, step: { handle.step($0) })
+                keysToken = MacViewerKeys.open(count: handoffs.count, close: { dismiss() }, step: { handle.step($0) },
+                                               isLive: { [weak handle] in handle?.controller?.viewIfLoaded?.window != nil })
                 MacProofLog.note("4.3", "viewer open items \(handoffs.count) start \(startIndex)")
             }
-            .onDisappear { MacViewerKeys.close() }
+            .onDisappear { MacViewerKeys.close(keysToken) }
             #endif
     }
 }

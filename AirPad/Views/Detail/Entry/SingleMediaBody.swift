@@ -54,6 +54,7 @@ struct SingleMediaBody: View {
     @State private var viewerStart: GalleryViewerStart? = nil
     #if targetEnvironment(macCatalyst)
     @State private var photoQuickLook: MacPhotoQuickLookSet? = nil   // sweep 2b · 4.3
+    @State private var openingPhoto = false
     #endif
     /// Deferred-deletion buffer for the viewer's Delete action. The real
     /// store delete runs in the sheet's `onDismiss` callback so the
@@ -191,7 +192,12 @@ struct SingleMediaBody: View {
     private func openPhoto() {
         #if targetEnvironment(macCatalyst)
         if let p = primaryItem, p.mediaType == .image {
-            Task { photoQuickLook = await store.macPhotoQuickLook([p], parent: item, nodeID: nodeID, start: p) }
+            guard !openingPhoto, photoQuickLook == nil else { return }
+            openingPhoto = true
+            Task {
+                photoQuickLook = await store.macPhotoQuickLook([p], parent: item, nodeID: nodeID, start: p)
+                openingPhoto = false
+            }
             return
         }
         #endif

@@ -58,14 +58,22 @@ final class DisplayImageDiskCache: @unchecked Sendable {
     private let counterLock = NSLock()
     private var counters = Counters()
     struct Counters: Equatable {
-        var diskHits = 0, diskMisses = 0, originalDecodes = 0, posterExtracts = 0, writes = 0, evictions = 0
+        var diskHits = 0, diskMisses = 0, originalDecodes = 0, posterExtracts = 0, writes = 0, evictions = 0, writesSkipped = 0
         var writtenBytes = 0
     }
     var snapshot: Counters { counterLock.lock(); defer { counterLock.unlock() }; return counters }
     /// Called (debounced, off the main thread) with a one-line summary after the counters change. The app hangs the
     /// perf recorder's mark and the DEBUG / PERFLOG log on it.
-    var onReport: (@Sendable (String) -> Void)?
+    var onReport: (@Sendable (String) -> Void)? {
+        get { counterLock.lock(); defer { counterLock.unlock() }; return report }
+        set { counterLock.lock(); report = newValue; counterLock.unlock() }
+    }
+    private var report: (@Sendable (String) -> Void)?
     private var reportScheduled = false
+    /// Decoded images waiting for their encode + write (each up to ~25 MB at 3072 px, outside the memory cache's limit):
+    /// past `maxPendingWrites` a write is skipped (that photo is written on a later launch). Under `counterLock`.
+    private var pendingWrites = 0
+    static let maxPendingWrites = 4
 
     init(directory: URL, cap: Int) {
         self.directory = directory
@@ -116,10 +124,18 @@ final class DisplayImageDiskCache: @unchecked Sendable {
 
     /// Encodes and stores `image` under `key`, then trims to the cap. Returns at once.
     func write(_ image: CGImage, key: String) {
-        queue.async { self.writeNow(image, key: key) }
+        counterLock.lock()
+        let full = pendingWrites >= Self.maxPendingWrites
+        if !full { pendingWrites += 1 }
+        counterLock.unlock()
+        if full { count { $0.writesSkipped += 1 }; return }
+        queue.async {
+            self.writeNow(image, key: key)
+            self.counterLock.lock(); self.pendingWrites -= 1; self.counterLock.unlock()
+        }
     }
 
-    /// Waits for every queued write / trim (tests, the self-test).
+    /// Waits for every queued write / trim (tests, the self-test). Never from `queue` itself (nor from `onReport`).
     func flush() { queue.sync {} }
 
     private func writeNow(_ image: CGImage, key: String) {
@@ -184,12 +200,12 @@ final class DisplayImageDiskCache: @unchecked Sendable {
         try? FileManager.default.setAttributes([.modificationDate: now], ofItemAtPath: fileURL(key).path)
     }
 
-    /// Bytes and files the index holds right now (after loading it).
+    /// Bytes and files the index holds right now (after loading it). Never from `queue` (nor from `onReport`).
     func usage() -> (files: Int, bytes: Int) {
         queue.sync { let l = loadedLRU(); return (l.count, l.total) }
     }
 
-    /// Empties the folder (tests; a future "clear caches").
+    /// Empties the folder (tests; a future "clear caches"). Never from `queue` (nor from `onReport`).
     func removeAll() {
         queue.sync {
             try? FileManager.default.removeItem(at: directory)
@@ -203,21 +219,21 @@ final class DisplayImageDiskCache: @unchecked Sendable {
     private func count(_ change: (inout Counters) -> Void) {
         counterLock.lock()
         change(&counters)
-        let schedule = !reportScheduled && onReport != nil
+        let schedule = !reportScheduled && report != nil
         if schedule { reportScheduled = true }
         counterLock.unlock()
         guard schedule else { return }
         queue.asyncAfter(deadline: .now() + 1.0) { [weak self] in
             guard let self else { return }
-            self.counterLock.lock(); self.reportScheduled = false; let c = self.counters; self.counterLock.unlock()
+            self.counterLock.lock(); self.reportScheduled = false; let c = self.counters; let r = self.report; self.counterLock.unlock()
             let l = self.loadedLRU()
-            self.onReport?(Self.summary(c, files: l.count, bytes: l.total, cap: self.cap))
+            r?(Self.summary(c, files: l.count, bytes: l.total, cap: self.cap))
         }
     }
 
     static func summary(_ c: Counters, files: Int, bytes: Int, cap: Int) -> String {
         "thumbs disk-hits \(c.diskHits) disk-misses \(c.diskMisses) original-decodes \(c.originalDecodes) "
-            + "poster-extracts \(c.posterExtracts) writes \(c.writes) evicted \(c.evictions) "
+            + "poster-extracts \(c.posterExtracts) writes \(c.writes) write-skipped \(c.writesSkipped) evicted \(c.evictions) "
             + "on-disk \(files) files \(bytes / 1_048_576) MB cap \(cap / 1_048_576) MB"
     }
 }

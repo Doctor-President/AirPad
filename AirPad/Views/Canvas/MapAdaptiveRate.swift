@@ -52,7 +52,9 @@ struct MapAdaptiveRate {
     private var settle = 0
     private var lastTime: TimeInterval = 0
     private var gestureActive = false
-    private(set) var rate = fast
+    /// Sweep 2b · 2.1: starts at `steady` when the controller is off (bench `-MapRate60 YES`: the Map is held at 60 — before,
+    /// `rate` stayed at its initial 120 and the switch did nothing).
+    private(set) var rate = enabled ? fast : steady
     /// The last few decisions (for the bench report): (time, rate, regime).
     private(set) var switches: [(t: TimeInterval, rate: Int, regime: Int)] = []
 

@@ -2354,13 +2354,21 @@ final class CorpusPhysicsScene: SKScene {
 
     // MARK: - Scene lifecycle
 
+    #if DEBUG || DEVSWITCHES
+    private var probeViewsMarkTime: TimeInterval = 0
+    #endif
+    override func willMove(from view: SKView) {
+        super.willMove(from: view)
+        Perf.mark("map view \(Int(MapProbeID.of(view))) scene \(Int(MapProbeID.of(self))): willMove(from:)")
+    }
+
     override func didMove(to view: SKView) {
         self.isPaused = false
         installRestObservers(on: view)   // R1
         #if DEBUG || DEVSWITCHES
         // Sweep 2b · 2.1 probe — how many display ticks the SKView offers (its delegate is asked before each frame).
         if Perf.isAvailable {
-            Perf.mark("map view: delegate \(view.delegate.map { String(describing: type(of: $0)) } ?? "none") async \(view.isAsynchronous ? 1 : 0) rate \(view.preferredFramesPerSecond) layer \(String(describing: type(of: view.layer)))")
+            Perf.mark("map view \(Int(MapProbeID.of(view))) scene \(Int(MapProbeID.of(self))): delegate \(view.delegate.map { String(describing: type(of: $0)) } ?? "none") async \(view.isAsynchronous ? 1 : 0) rate \(view.preferredFramesPerSecond) layer \(String(describing: type(of: view.layer)))")
             if view.delegate == nil { view.delegate = MapTickProbe.shared }
         }
         #endif
@@ -2569,6 +2577,25 @@ final class CorpusPhysicsScene: SKScene {
     override func update(_ currentTime: TimeInterval) {
         if isPaused { Perf.probe(.updateEarlyReturn); return }
         Perf.probe(.update, Double(view?.preferredFramesPerSecond ?? 0))
+        #if DEBUG || DEVSWITCHES
+        if Perf.isAvailable, let v = view {
+            Perf.probe(.updateView, MapProbeID.of(v))
+            var bits = v.window == nil ? 1 : 0
+            var u: UIView? = v
+            while let w = u { if w.isHidden || w.alpha < 0.01 { bits |= 2; break }; u = w.superview }
+            if bits != 0 { Perf.probe(.updateViewHidden, Double(bits)) }
+            if currentTime - probeViewsMarkTime >= 1 {
+                probeViewsMarkTime = currentTime
+                let all = PerfRecorder.shared.knownSKViews().map { sv -> String in
+                    var hid = false; var u: UIView? = sv
+                    while let w = u { if w.isHidden || w.alpha < 0.01 { hid = true; break }; u = w.superview }
+                    return "\(Int(MapProbeID.of(sv)))[scene \(sv.scene === self ? "self" : sv.scene == nil ? "nil" : String(Int(MapProbeID.of(sv.scene))))"
+                        + " win \(sv.window == nil ? 0 : 1) hid \(hid ? 1 : 0) paused \(sv.isPaused ? 1 : 0) rate \(sv.preferredFramesPerSecond) \(Int(sv.bounds.width))x\(Int(sv.bounds.height))]"
+                }
+                Perf.mark("map views: scene \(Int(MapProbeID.of(self))) view \(Int(MapProbeID.of(v))) | " + all.joined(separator: " "))
+            }
+        }
+        #endif
         #if targetEnvironment(macCatalyst)
         // Mac D fix-up B3 — the first 30 s of Map frames after launch, for the next stutter's evidence.
         let launchLog = MapLaunchFrameLog.shared.active ? CACurrentMediaTime() : nil

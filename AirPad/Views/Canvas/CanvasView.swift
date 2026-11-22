@@ -923,7 +923,8 @@ struct CanvasView: View {
                 scene: scene,
                 preferredFramesPerSecond: 120,
                 options: [.allowsTransparency, .ignoresSiblingOrder],
-                debugOptions: mapDebugOptions
+                debugOptions: mapDebugOptions,
+                shouldRender: { _ in Perf.probe(.tickOffered, 1); return true }   // sweep 2b · 2.1 probe: ticks SpriteView offers
             )
             .ignoresSafeArea()
             .blur(radius: (canvasState.isZoomed || isDismissing) ? 8 : 0)

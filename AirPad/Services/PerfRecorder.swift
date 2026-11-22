@@ -101,6 +101,18 @@ enum MapProbe: UInt8 {
     case hoverWake = 27
     case pendingCamApplied = 28 // fix: queued pointer deltas applied inside update; value = how many events
     case tickSkipped = 29       // fix: the pacer declined a tick (clean 60 / 30)
+    case updateView = 30        // the SKView whose tick ran this update: value = view id (low pointer bits)
+    case drawableView = 31      // the SKView that took a drawable: value = view id (+ 100000 on the main thread)
+    case presentedView = 32     // the SKView whose drawable was presented: value = view id (+ 100000 if it reached the screen)
+    case updateViewHidden = 33  // the updating view is not on screen: bits 1 no window, 2 hidden/alpha 0 up the chain, 4 scene.view ≠ this view
+}
+
+/// Sweep 2b · 2.1 probe — a stable small number for a view (low pointer bits), to tell two SKViews apart.
+enum MapProbeID {
+    static func of(_ o: AnyObject?) -> Double {
+        guard let o else { return 0 }
+        return Double((UInt(bitPattern: ObjectIdentifier(o).hashValue) >> 4) & 0xFFFF)
+    }
 }
 
 /// Wake reasons as numbers (the marks carry the words).
@@ -323,6 +335,10 @@ final class PerfRecorder: NSObject {
             mapBucket.frames += 1; mapBucket.updateMs += Float(updateMs); mapBucket.maxMs = max(mapBucket.maxMs, Float(updateMs))
         }
     }
+    /// Every SKView that took a drawable while recording (weak), for the once-a-second "map views" mark.
+    private var skViews = NSHashTable<SKView>.weakObjects()
+    func noteSKView(_ v: SKView) { locked { if !skViews.contains(v) { skViews.add(v) } } }
+    func knownSKViews() -> [SKView] { locked { skViews.allObjects } }
     func noteProbe(_ code: UInt8, _ v: Double, at t: Double = CACurrentMediaTime()) {
         let e = ProbeEvent(t: t, code: code, v: Float(v))
         locked { probes.push(e) }
@@ -390,15 +406,19 @@ final class PerfRecorder: NSObject {
             typealias Fn = @convention(c) (CAMetalLayer, Selector) -> CAMetalDrawable?
             let orig = unsafeBitCast(method_getImplementation(m), to: Fn.self), sel = #selector(CAMetalLayer.nextDrawable)
             let block: @convention(block) (CAMetalLayer) -> CAMetalDrawable? = { layer in
-                guard PerfRecorder.on, layer.delegate is SKView || layer.superlayer?.delegate is SKView else { return orig(layer, sel) }
+                guard PerfRecorder.on, let skv = (layer.delegate as? SKView) ?? (layer.superlayer?.delegate as? SKView) else { return orig(layer, sel) }
+                let vid = MapProbeID.of(skv)
+                PerfRecorder.shared.noteSKView(skv)
                 let t0 = CACurrentMediaTime()
                 let d = orig(layer, sel)
                 let t1 = CACurrentMediaTime()
                 PerfRecorder.shared.noteProbe(MapProbe.drawableWait.rawValue, (t1 - t0) * 1000, at: t0)
+                PerfRecorder.shared.noteProbe(MapProbe.drawableView.rawValue, vid + (Thread.isMainThread ? 100000 : 0), at: t0)
                 d?.addPresentedHandler { dr in
                     // presentedTime is on the media clock; 0 = never shown (dropped).
-                    let pt = dr.presentedTime
-                    PerfRecorder.shared.noteProbe(MapProbe.presented.rawValue, pt > 0 ? 1 : 0, at: pt > 0 ? pt : CACurrentMediaTime())
+                    let pt = dr.presentedTime, at = pt > 0 ? pt : CACurrentMediaTime()
+                    PerfRecorder.shared.noteProbe(MapProbe.presented.rawValue, pt > 0 ? 1 : 0, at: at)
+                    PerfRecorder.shared.noteProbe(MapProbe.presentedView.rawValue, vid + (pt > 0 ? 100000 : 0), at: at)
                 }
                 return d
             }

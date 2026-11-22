@@ -29,7 +29,8 @@ def label(t):
     return cur
 
 C = dict(tick=1, upd=3, early=4, fin=5, ask=6, pause=7, wake=8, sb=9, sc=10, se=11, scp=12, pb=13, pc=14, pe=15, pcp=16,
-         cam=17, mode=18, wait=19, pres=20, skvrate=21, skvpause=22, flag=23, tb=24, tm=25, te=26, hover=27, pend=28, skip=29)
+         cam=17, mode=18, wait=19, pres=20, skvrate=21, skvpause=22, flag=23, tb=24, tm=25, te=26, hover=27, pend=28, skip=29,
+         updv=30, drawv=31, presv=32, updhid=33)
 N = {v: k for k, v in C.items()}
 rows = d.get("probe", [])
 if not rows:
@@ -71,7 +72,10 @@ for s in sorted(per):
           f"{len(e['pb']):2d}/{len(e['pc']):3d}/{len(e['pe']):2d}/{len(e['pcp']):2d}  {len(e['cam']):3d} "
           f"{modes[0]:3d}/{modes[1]:3d}/{modes[2]:2d}  {wmax:7.1f}  "
           f"{pct(ug,.5):5.1f}/{pct(ug,.95):5.1f}/{max(ug, default=0):6.1f}   {pct(pg,.5):5.1f}/{pct(pg,.95):5.1f}/{max(pg, default=0):6.1f}"
-          f"   {inputs[(s,'scroll')]:3d}/{inputs[(s,'transform')]:3d}/{inputs[(s,'hover')]:3d}")
+          f"   {inputs[(s,'scroll')]:3d}/{inputs[(s,'transform')]:3d}/{inputs[(s,'hover')]:3d}"
+          + (("  | upd-views " + " ".join(f"{k}:{c}" for k, c in collections.Counter(int(v) for _, v in e["updv"]).most_common())
+              + "  pres-views " + " ".join(f"{k % 100000}{'s' if k >= 100000 else 'd'}:{c}" for k, c in collections.Counter(int(v) for _, v in e["presv"]).most_common())
+              + (f"  hidden-upd {len(e['updhid'])}" if e["updhid"] else "")) if "--views" in flags else ""))
 
 marks = [m for m in d.get("marks", []) if str(m[1]).startswith(("map ", "recorder", "screen"))]
 wakes = collections.Counter(m[1] for m in marks if str(m[1]).startswith("map wake") and (not want or label(m[0]) in want))

@@ -1,0 +1,681 @@
+{
+ "_doc": "Sweep 2b · 3.1 — paraphrase sets (A7): 5 wordings per case, keyed by library then turn ID; wording 1 is the case file's question, unchanged. Drafted by a Sonnet subagent from the bench / Sample case files and reviewed one by one (11 rewritten); the planted set written with its cases. A case passes only if every wording passes (pass^k). Wording k of every turn of a chat runs as one chat, so follow-ups keep their history. The relevance spike reads wordings-<lib>.json (suite.py export-wordings; set RELEVANCE_WORDINGS_DIR to this folder).",
+ "bench": {
+  "F1": [
+   "What grinder setting worked for the Ethiopian beans?",
+   "ethiopian grinder setting?",
+   "hey, quick one - which grinder setting did I land on for the Ethiopian beans?",
+   "what setting did I use on the grinder for the Ethopian coffee",
+   "I wrote down a grinder setting that worked for the Ethiopian beans, what was it"
+  ],
+  "F2": [
+   "How long do I hold at peak temperature in my cone 6 glaze firing, and at what temperature?",
+   "cone 6 glaze firing hold time and temp?",
+   "hey, remind me - in my cone 6 glaze firing, how long's the hold and at what temperature?",
+   "how long do i hold at the top temprature for the cone 6 glaze firing and what is that temp",
+   "what peak temperature and hold did I write down for my cone 6 glaze schedule?"
+  ],
+  "F3": [
+   "What's the budget for the Halvorsen kitchen project?",
+   "Halvorsen kitchen budget?",
+   "hey, quick question - what budget did we agree for the Halvorsen kitchen job?",
+   "whats the budget on the halvorson kitchen project",
+   "my notes on the Halvorsen kitchen: how much is the budget?"
+  ],
+  "U1": [
+   "And who is the cabinet supplier?",
+   "and the cabinet supplier?",
+   "ok and who's supplying the cabinets?",
+   "and who is the supplyer for the cabinets",
+   "did I note who the cabinets come from?"
+  ],
+  "U2": [
+   "What is the capital of France?",
+   "capital of france?",
+   "totally different question - what's the capital city of France?",
+   "whats the capitol of France",
+   "can you tell me France's capital"
+  ],
+  "F4": [
+   "Which invoice is still unpaid, and for how much?",
+   "unpaid invoice, how much?",
+   "hey, which of my invoices hasn't been paid yet, and what's the amount?",
+   "whihc invoice is still outstanding and for how much",
+   "did I note an invoice that's still unpaid? which one and how much?"
+  ],
+  "F5": [
+   "At how many kilometres did I replace my bike chain?",
+   "bike chain replaced at how many km?",
+   "hey, at what distance in kilometres did I swap out my bike chain?",
+   "how many kilometers was my bike when I replced the chain",
+   "I wrote down when I changed my bike chain - at how many km was it?"
+  ],
+  "F6": [
+   "When did I plant out the tomatoes this year?",
+   "tomatoes planted out when?",
+   "hey, what date did I plant the tomatoes out this year?",
+   "when did i put the tomatos in the ground this year",
+   "my tomatoes - when did I plant them out this year?"
+  ],
+  "F7": [
+   "What feed ratio do I use for my sourdough starter?",
+   "sourdough starter feed ratio?",
+   "hey, what ratio do I feed my sourdough starter at?",
+   "what feeding ratio for my sourdogh starter",
+   "I wrote down a feeding ratio for my sourdough starter, what is it?"
+  ],
+  "F8": [
+   "Which of my lab values are out of range?",
+   "which lab values are out of range?",
+   "hey, looking at my lab results, which values are outside the normal range?",
+   "what labs of mine are out of rage",
+   "did any of my lab values come back out of range? which ones?"
+  ],
+  "U3": [
+   "What usually causes low ferritin?",
+   "causes of low ferritin?",
+   "ok and what usually causes ferritin to be low?",
+   "what typicaly causes low ferritn",
+   "and in general, why does ferritin end up low?"
+  ],
+  "S1": [
+   "What are my rules for how I work?",
+   "my working rules?",
+   "hey, what are the rules I follow for how I work?",
+   "what rules do i have for my work habbits",
+   "I wrote down some rules I work by, what are they?"
+  ],
+  "S2": [
+   "Where does the Halvorsen project stand right now?",
+   "Halvorsen project status?",
+   "hey, where are we at with the Halvorsen project right now?",
+   "whats the current state of the halvorson project",
+   "give me an update on my Halvorsen project"
+  ],
+  "S3": [
+   "What do I think about pour-over coffee?",
+   "pour-over coffee thoughts?",
+   "hey, what's my take on pour-over coffee?",
+   "what do i think of pourover coffe",
+   "did I write down what I think about pour-over coffee?"
+  ],
+  "S4": [
+   "How do my thoughts on slow work connect to why I quit daily word counts?",
+   "slow work and quitting daily word counts - how do they connect?",
+   "hey, how do my ideas about slow work tie into why I stopped counting words every day?",
+   "how does my thinking on slow work relate to quiting daily word counts",
+   "I wrote about slow work and about dropping word counts, how do those connect?"
+  ],
+  "G1": [
+   "What is the capital of France?",
+   "capital of france",
+   "hey, quick one - what's the capital of France?",
+   "whats the capital city of france",
+   "which city is the capitol of France"
+  ],
+  "G2": [
+   "How does photosynthesis work?",
+   "photosynthesis explained",
+   "hey, can you explain how photosynthesis works?",
+   "how dose photosynthesis work",
+   "what happens during photosynthesis in plants?"
+  ],
+  "G3": [
+   "Who wrote Pride and Prejudice?",
+   "pride and prejudice author?",
+   "quick question - who is the author of Pride and Prejudice?",
+   "who wrote pride and predjudice",
+   "pride and prejudice was written by whom"
+  ],
+  "G4": [
+   "What's a good recipe for chicken stock with garlic and thyme?",
+   "chicken stock recipe, garlic thyme",
+   "hey, can you give me a good chicken stock recipe with garlic and thyme?",
+   "whats a good recipie for chicken stock with garlic and thyme",
+   "how should I make chicken stock with garlic and thyme?"
+  ],
+  "G5": [
+   "How do I tune a guitar?",
+   "how to tune a guitar",
+   "hey, how do you tune a guitar?",
+   "how do i tune a gitar",
+   "what's the way to tune a guitar properly?"
+  ],
+  "G6": [
+   "Why is the sky blue?",
+   "why sky blue",
+   "hey, quick one - why is the sky blue?",
+   "whats the reason the sky looks blue",
+   "why is the sky blu"
+  ],
+  "G7": [
+   "Explain how compound interest works.",
+   "compound interest explained",
+   "hey, can you explain how compound interest works?",
+   "how does compond interest work",
+   "what is compound interest and how does it grow?"
+  ],
+  "G8": [
+   "What's the best way to get to the train station in a new city?",
+   "best way to reach train station new city",
+   "hey, what's the best way to find my way to the train station when I'm in a city I don't know?",
+   "whats the best way to get to the trian station in a new city",
+   "how do you get to the train station in an unfamiliar city?"
+  ],
+  "G1g": [
+   "What is the capital of France?",
+   "capital of france",
+   "hey, quick one - what's the capital of France?",
+   "whats the capital city of france",
+   "which city is the capitol of France"
+  ],
+  "G4g": [
+   "What's a good recipe for chicken stock with garlic and thyme?",
+   "chicken stock recipe, garlic thyme",
+   "hey, can you give me a good chicken stock recipe with garlic and thyme?",
+   "whats a good recipie for chicken stock with garlic and thyme",
+   "how should I make chicken stock with garlic and thyme?"
+  ],
+  "P1": [
+   "How does a heat pump work, and what size was I quoted?",
+   "how heat pump works, and my quoted size?",
+   "hey, how does a heat pump work, and what size did I get quoted?",
+   "how does a heatpump work and what size was i quoted",
+   "I got a heat pump quote - what size was it, and how does the thing work?"
+  ],
+  "P2": [
+   "Does magnesium help with sleep?",
+   "magnesium for sleep?",
+   "hey, does magnesium actually help you sleep?",
+   "does magnesum help with sleeping",
+   "did magnesium help my sleep, and does it help in general?"
+  ],
+  "P3": [
+   "What temperature should espresso water be?",
+   "ideal espresso water temp?",
+   "hey, what temperature should the water be for espresso?",
+   "what temprature should espresso water be at",
+   "espresso water temperature - what's right?"
+  ],
+  "P4": [
+   "When does French use the subjunctive?",
+   "french subjunctive usage?",
+   "hey, when do you use the subjunctive in French?",
+   "when does french use the subjuntive",
+   "in what cases is the French subjunctive needed?"
+  ],
+  "C1": [
+   "Is the Great Wall of China visible from space?",
+   "great wall of china visible from space?",
+   "hey, can you actually see the Great Wall of China from space?",
+   "is the great wall of china visable from space",
+   "can astronauts see the Great Wall of China from orbit?"
+  ],
+  "C2": [
+   "What is the capital of Australia?",
+   "capital of australia?",
+   "hey, quick one - what's the capital of Australia?",
+   "whats the capitol of australia",
+   "which city is Australia's capital?"
+  ],
+  "C3": [
+   "What counts as a long run for me?",
+   "what's a long run for me?",
+   "hey, what do I count as a long run?",
+   "what counts as a long run for me, distance wise",
+   "I wrote down my own definition of a long run, what is it?"
+  ],
+  "C4": [
+   "How much caffeine is in a shot of espresso?",
+   "caffeine in an espresso shot?",
+   "hey, how much caffeine is there in one shot of espresso?",
+   "how much cafeine in a shot of espresso",
+   "what's the caffeine content of a single espresso?"
+  ],
+  "A1": [
+   "Which hotel did I stay at in Paris?",
+   "which hotel in Paris?",
+   "hey, which hotel did I stay at when I was in Paris?",
+   "what hotel did i stay in in paris",
+   "my Paris trip - what was the hotel?"
+  ],
+  "A2": [
+   "What's the ratio again?",
+   "the ratio?",
+   "hey, what was the ratio again?",
+   "whats the ratoi again",
+   "remind me, what was that ratio again"
+  ],
+  "A3": [
+   "How much was the invoice?",
+   "invoice amount?",
+   "hey, how much was the invoice for?",
+   "how much was that invoce",
+   "the invoice - how much was it?"
+  ],
+  "X1": [
+   "What did I write about Kyoto?",
+   "my notes on Kyoto?",
+   "hey, what did I write down about Kyoto?",
+   "what did i rite about kyoto",
+   "do I have anything in my notes about Kyoto?"
+  ],
+  "X2": [
+   "What are my notes on beekeeping?",
+   "notes on beekeeping?",
+   "hey, what do my notes say about beekeeping?",
+   "what are my notes on beekeping",
+   "did I write anything down about beekeeping?"
+  ],
+  "X3": [
+   "What's my dentist's phone number?",
+   "dentist phone number?",
+   "hey, what's my dentist's number again?",
+   "whats my dentists phone numbr",
+   "do I have my dentist's phone number written down anywhere?"
+  ],
+  "X4": [
+   "Summarise my notes from the Rotterdam conference.",
+   "Rotterdam conference notes summary",
+   "hey, could you sum up my notes from the Rotterdam conference?",
+   "summarize my notes from the rotterdam confrence",
+   "what did I write down at the Rotterdam conference? give me a summary"
+  ],
+  "N1": [
+   "What are today's top news stories?",
+   "top news today?",
+   "hey, what's in the news today?",
+   "whats the top news storys today",
+   "what are the main headlines today?"
+  ],
+  "N2": [
+   "What are today's top news stories?",
+   "top news today?",
+   "hey, what's in the news today?",
+   "whats the top news storys today",
+   "what are the main headlines today?"
+  ],
+  "N3": [
+   "Who is the current Secretary-General of the United Nations?",
+   "current UN Secretary-General?",
+   "hey, who's the UN Secretary-General right now?",
+   "who is the current secretary general of the united nations",
+   "who holds the post of UN Secretary-General at the moment?"
+  ],
+  "U4": [
+   "Who wrote the novel Dune?",
+   "author of Dune?",
+   "hey, who wrote the novel Dune?",
+   "who wrote the book dune",
+   "Dune - who is the author?"
+  ],
+  "U5": [
+   "When was it first published?",
+   "and when did it first come out?",
+   "ok and what year was it first published?",
+   "when was it first publised",
+   "and the original publication date?"
+  ],
+  "U6": [
+   "What's my celadon glaze recipe?",
+   "my celadon glaze recipe?",
+   "hey, what's the recipe for my celadon glaze?",
+   "whats my celedon glaze recipe",
+   "I wrote down a celadon glaze recipe, what's in it?"
+  ],
+  "U7": [
+   "How much iron oxide goes in it?",
+   "and the iron oxide amount?",
+   "ok and how much iron oxide does it take?",
+   "how much iron oxyde goes in",
+   "and how much iron oxide is in that?"
+  ],
+  "U8": [
+   "When is Mika's birthday?",
+   "Mika's birthday?",
+   "totally different - when is Mika's birthday?",
+   "when is mikas birthay",
+   "did I note down when Mika's birthday is?"
+  ]
+ },
+ "sample": {
+  "SLF1": [
+   "What year was my Bolex made?",
+   "Bolex manufacture year?",
+   "hey, what year was my Bolex built?",
+   "what year was my bolex maid",
+   "I wrote down when my Bolex was made, what year?"
+  ],
+  "SLF2": [
+   "How many books are in the Ethiopian canon?",
+   "number of books in Ethiopian canon?",
+   "hey, how many books does the Ethiopian canon have?",
+   "how many books are in the ethiopian cannon",
+   "did I note how many books the Ethiopian canon contains?"
+  ],
+  "SLF3": [
+   "How many library positions were left unfilled last year?",
+   "library positions left unfilled last year?",
+   "hey, how many library positions went unfilled last year?",
+   "how many libary positions were left unfilled last year",
+   "I wrote down how many library positions stayed unfilled last year, how many?"
+  ],
+  "SLF4": [
+   "Where does the first list matching the modern 27-book canon show up?",
+   "first list matching 27-book canon?",
+   "hey, where does the first list that matches the modern 27-book canon appear?",
+   "where does the first list matching the modern 27 book cannon show up",
+   "I wrote about the earliest list of the modern 27-book canon, where is it from?"
+  ],
+  "SLF5": [
+   "When was the Nag Hammadi library dug up?",
+   "Nag Hammadi library discovery year?",
+   "hey, when was the Nag Hammadi library found?",
+   "when was the nag hamadi library dug up",
+   "I noted when the Nag Hammadi library was unearthed, what year?"
+  ],
+  "SLU1": [
+   "And who dug it up?",
+   "and who found it?",
+   "ok and who was it that dug it up?",
+   "and who disovered it",
+   "and who actually discovered it?"
+  ],
+  "SLU2": [
+   "Who wrote Hamlet?",
+   "who wrote hamlet",
+   "totally different - who wrote Hamlet?",
+   "whos the author of hamlet",
+   "Hamlet was written by whom?"
+  ],
+  "SLF6": [
+   "What year did we go fine-free?",
+   "fine-free year?",
+   "hey, what year did we stop charging fines?",
+   "what year did we go fine free",
+   "I wrote down the year we went fine-free, which was it?"
+  ],
+  "SLU3": [
+   "And what was the amount the people who stopped coming had stopped over?",
+   "and the amount people had stopped over?",
+   "ok and what was the sum that the people who quit coming had quit over?",
+   "and how much was it that those who stopped coming stoped over",
+   "and what amount made those people stop coming?"
+  ],
+  "SLU4": [
+   "What's the chemical symbol for gold?",
+   "gold chemical symbol?",
+   "totally different - what's the chemical symbol for gold?",
+   "whats the chemcial symbol for gold",
+   "which symbol stands for gold on the periodic table?"
+  ],
+  "SLS1": [
+   "What do I know about how the biblical canon got settled?",
+   "how the biblical canon got settled?",
+   "hey, what do I know about how the biblical canon came to be settled?",
+   "what do i know about how the bibical canon was settled",
+   "I took notes on the biblical canon, how did it get settled?"
+  ],
+  "SLS2": [
+   "What have I worked out about the Kuleshov effect and horror, and what am I doing with it?",
+   "Kuleshov effect and horror, my plans?",
+   "hey, what have I figured out about the Kuleshov effect and horror, and what am I doing with it?",
+   "what have i worked out about the kuleshov efect and horror and what am i doing with it",
+   "my notes on the Kuleshov effect and horror - what did I work out and what's the plan?"
+  ],
+  "SLS3": [
+   "What would it take for me to shoot 16mm, and how has it gone so far?",
+   "shooting 16mm: what's needed, how's it going?",
+   "hey, what would I need to shoot 16mm, and how has it gone so far?",
+   "what would it take for me to shoot 16 mm and how has it gone so fra",
+   "I wrote about shooting 16mm, what does it take and how's it going?"
+  ],
+  "SLS4": [
+   "How do my notes on the library's budget cuts fit together?",
+   "library budget cuts notes, how do they fit?",
+   "hey, how do my notes on the library's budget cuts all fit together?",
+   "how do my notes on the librarys budjet cuts fit together",
+   "I wrote several notes on the library budget cuts, how do they connect?"
+  ],
+  "SLG1": [
+   "Who painted the Mona Lisa?",
+   "Mona Lisa painter?",
+   "hey, who painted the Mona Lisa?",
+   "who painted the mona lissa",
+   "the Mona Lisa was painted by whom?"
+  ],
+  "SLG2": [
+   "What is the tallest mountain in the world?",
+   "tallest mountain in the world",
+   "hey, what's the tallest mountain on Earth?",
+   "whats the tallest mountian in the world",
+   "which mountain is the highest in the world?"
+  ],
+  "SLG3": [
+   "Who was the first person to walk on the moon?",
+   "first person on the moon?",
+   "hey, who was the first human to walk on the moon?",
+   "who was the first person to walk on the mon",
+   "who first set foot on the moon?"
+  ],
+  "SLG4": [
+   "What does the derivative of a function tell you?",
+   "what a derivative tells you",
+   "hey, what does the derivative of a function actually tell you?",
+   "what does the derivitive of a function tell you",
+   "what's the meaning of a derivative in calculus?"
+  ],
+  "SLO1": [
+   "What is the rule of thirds in photography?",
+   "rule of thirds photography",
+   "hey, what's the rule of thirds in photography?",
+   "whats the rule of thrids in photography",
+   "can you explain the photography rule of thirds?"
+  ],
+  "SLO2": [
+   "How do you form the passé composé in French?",
+   "passe compose formation in French",
+   "hey, how do you form the passe compose in French?",
+   "how do you form the passé compsé in french",
+   "how is the French passé composé built?"
+  ],
+  "SLO3": [
+   "How do you make a roux for a sauce?",
+   "how to make a roux",
+   "hey, how do you make a roux for a sauce?",
+   "how do you make a rue for a sauce",
+   "what's the method for making a roux to thicken a sauce?"
+  ],
+  "SLP1": [
+   "What is the bloom when brewing coffee, and does it matter?",
+   "coffee bloom - what is it, does it matter?",
+   "hey, what's the bloom when brewing coffee and does it matter?",
+   "what is the bloom when brewing cofee and does it matter",
+   "when brewing coffee, why do people bloom it, and is it important?"
+  ],
+  "SLP2": [
+   "When is the French subjunctive used?",
+   "French subjunctive usage?",
+   "hey, when do you use the subjunctive in French?",
+   "when is the french subjuntive used",
+   "in which situations does French call for the subjunctive?"
+  ],
+  "SLP3": [
+   "How is decaf coffee made?",
+   "how decaf is made",
+   "hey, how do they make decaf coffee?",
+   "how is decaff coffee made",
+   "what's the process for decaffeinating coffee?"
+  ],
+  "SLC1": [
+   "Did a fire destroy the Library of Alexandria?",
+   "Library of Alexandria fire?",
+   "hey, was the Library of Alexandria destroyed by a fire?",
+   "did a fire destory the library of alexandria",
+   "what happened to the Library of Alexandria, did it burn down?"
+  ],
+  "SLC2": [
+   "What does apocryphal mean?",
+   "apocryphal meaning?",
+   "hey, what does the word apocryphal mean?",
+   "what dose apocryphal mean",
+   "define apocryphal"
+  ],
+  "SLA1": [
+   "How many seconds does the Bolex run on one wind?",
+   "Bolex seconds per wind?",
+   "hey, how many seconds does the Bolex run on a single wind?",
+   "how many secs does the bolex run on one wind",
+   "how long does the Bolex run per wind, in seconds?"
+  ],
+  "SLA2": [
+   "How much does the Bolex cost?",
+   "Bolex price?",
+   "hey, how much does the Bolex cost?",
+   "how much does the bolex cots",
+   "the Bolex - what's the price?"
+  ],
+  "SLX1": [
+   "What did I write about Reykjavik?",
+   "my notes on Reykjavik?",
+   "hey, what did I write down about Reykjavik?",
+   "what did i rite about reykjavick",
+   "do I have anything in my notes about Reykjavik?"
+  ],
+  "SLX2": [
+   "What's my passport number?",
+   "my passport number?",
+   "hey, what's my passport number again?",
+   "whats my pasport number",
+   "did I write my passport number down somewhere?"
+  ],
+  "SLX3": [
+   "How much did I spend on my trip to Spain?",
+   "Spain trip spending?",
+   "hey, how much did I spend on my trip to Spain?",
+   "how much did i spned on my spain trip",
+   "did I note what the Spain trip cost me?"
+  ],
+  "SLM1": [
+   "What is the capital of Australia?",
+   "capital of australia?",
+   "hey, quick one - what's the capital of Australia?",
+   "whats the capitol of australia",
+   "which city is Australia's capital?"
+  ],
+  "SLM2": [
+   "How do I make a roux for a sauce?",
+   "how to make a roux",
+   "hey, how do I make a roux for a sauce?",
+   "how do i make a rue for a sauce",
+   "what's the method for making a roux to thicken a sauce?"
+  ]
+ },
+ "planted": {
+  "PW1": [
+   "Are bats blind?",
+   "are bats actually blind",
+   "hey, settle something for me - can bats see at all?",
+   "are bats blnd?",
+   "do bats have working eyes, or are they blind?"
+  ],
+  "PW2": [
+   "How long is a goldfish's memory?",
+   "goldfish memory span?",
+   "quick one: how long can a goldfish actually remember things?",
+   "how long is a goldfishs memmory",
+   "what's the memory span of a goldfish?"
+  ],
+  "PW3": [
+   "Is glass a liquid?",
+   "glass - liquid or solid?",
+   "hey, I've always wondered: is glass technically a liquid?",
+   "is glass a liqiud",
+   "is glass really a liquid?"
+  ],
+  "PW4": [
+   "How much was the quote for reglazing the Wren Street windows?",
+   "Wren Street reglazing quote?",
+   "hey, what did they quote me for reglazing the windows on Wren Street?",
+   "how much was the reglazing quote for wren st",
+   "what was I quoted to reglaze the Wren Street windows?"
+  ],
+  "PW5": [
+   "Does vitamin C cure a cold?",
+   "vitamin c cure a cold?",
+   "hey, quick one - will vitamin C actually cure a cold?",
+   "does vitamin c cure a cold",
+   "can taking vitamin C cure a cold?"
+  ],
+  "PK1": [
+   "Which storage unit is mine?",
+   "my storage unit number?",
+   "hey, remind me which storage unit is ours?",
+   "which storage unit is mine",
+   "what's the number of my storage unit?"
+  ],
+  "PK2": [
+   "How often should Biscuit get his carprofen?",
+   "Biscuit carprofen how often?",
+   "hey, how many times a day is Biscuit meant to have his carprofen?",
+   "how often does biscuit get his carprofin",
+   "how often am I supposed to give Biscuit the carprofen?"
+  ],
+  "PK3": [
+   "What's the gate code at my storage place?",
+   "storage gate code?",
+   "hey, what's the code for the gate at the storage place?",
+   "whats the gate code at my storage",
+   "what's the gate code for my storage unit?"
+  ],
+  "PH1": [
+   "How many migraines did I have in October?",
+   "migraines in October, how many?",
+   "hey, how many migraines did I end up having in October?",
+   "how many migranes did i have in october",
+   "did I have many migraines in October? how many?"
+  ],
+  "PH1U": [
+   "And what seemed to set them off?",
+   "and the triggers?",
+   "ok and what seemed to trigger them?",
+   "and what set them of",
+   "and what did I think caused them?"
+  ],
+  "PH2": [
+   "What's the most sumatriptan I'm allowed in a day, according to my doctor?",
+   "max sumatriptan per day, per my doctor?",
+   "hey, what's the most sumatriptan my doctor said I can take in a day?",
+   "whats the most sumatriptin i can take in a day according to my doctor",
+   "how much sumatriptan did my doctor say I can take in one day, at most?"
+  ],
+  "PH3": [
+   "What breathing exercise did my therapist give me?",
+   "my therapist's breathing exercise?",
+   "hey, what was the breathing exercise my therapist gave me?",
+   "what breathing excercise did my therapist give me",
+   "which breathing exercise did my therapist tell me to do?"
+  ],
+  "PH4": [
+   "Any tips for a long train journey?",
+   "tips for a long train journey",
+   "hey, any advice for surviving a really long train ride?",
+   "any tips for a long trian journey",
+   "how do I make a long train trip more comfortable?"
+  ],
+  "PH5": [
+   "Is my blood pressure where my doctor wants it?",
+   "my blood pressure vs my doctor's target?",
+   "hey, is my blood pressure where my doctor wants it to be?",
+   "is my blood presure where my doctor wants it",
+   "are my blood pressure readings at my doctor's target yet?"
+  ],
+  "PH6": [
+   "What dose of insulin am I on?",
+   "my insulin dose?",
+   "hey, what insulin dose am I on again?",
+   "what dose of insulen am i on",
+   "how much insulin am I taking?"
+  ]
+ }
+}

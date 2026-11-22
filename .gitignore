@@ -32,8 +32,9 @@ Package.resolved
 # Python bytecode (scripts/ helpers)
 scripts/__pycache__/
 
-# Local experiment spikes — not part of the shipping app
-spikes/
+# Local experiment spikes — not part of the shipping app (sweep 2b · 3.3's iPhone spike is tracked: its own project)
+spikes/*
+!spikes/iphone-2b/
 
 # Kokoro TTS spike — the model weights + voice styles are huge, dev-only, and
 # placed by hand (see AirPad/Resources/Kokoro/README-DROP-MODEL-HERE.txt).

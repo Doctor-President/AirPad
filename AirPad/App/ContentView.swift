@@ -282,6 +282,14 @@ struct ContentView: View {
                         NSLog("%@", await MacCardSizeSelfTest.run(store: store, router: router))
                     }
                 }
+                // Sweep 2b · 2.2 — `-MacCardsSpikeSelfTest` (with `-MacCardsCollection A|B [-MacCardsResize …]`): the spike's arms.
+                if ProcessInfo.processInfo.arguments.contains("-MacCardsSpikeSelfTest") {
+                    Task { @MainActor in
+                        for _ in 0..<120 where store.nodes.count < 10 { try? await Task.sleep(nanoseconds: 250_000_000) }
+                        try? await Task.sleep(nanoseconds: 4_000_000_000)
+                        NSLog("%@", await MacCardsSpikeSelfTest.run(store: store, router: router))
+                    }
+                }
                 // Mac E fix-up G5/G6 — `-MacChatsPanelSelfTest`: chats in the Librarian panel, hideable home sections.
                 if ProcessInfo.processInfo.arguments.contains("-MacChatsPanelSelfTest") {
                     Task { @MainActor in

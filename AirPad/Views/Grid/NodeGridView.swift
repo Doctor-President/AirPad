@@ -64,6 +64,22 @@ struct NodeGridView: View {
     /// right-click responder per card.
     @State private var macHover = MacListHover()
     @State private var macScroll = MacScrollState()
+    #if targetEnvironment(macCatalyst) && (DEBUG || DEVSWITCHES)
+    /// Sweep 2b · 2.2 — the Cards spike's switches (MacCardsSpike.swift); "today" = this grid, unchanged.
+    @AppStorage(MacCardsSpike.engineKey) private var spikeEngine = "today"
+    @AppStorage(MacCardsSpike.resizeKey) private var spikeResize = "relayout"
+    @AppStorage(MacCardsSpike.clickKey) private var spikeClick = "open"
+    @AppStorage(MacCardsSpike.selectionKey) private var spikeSelection = "own"
+    #endif
+    /// Sweep 2b · 2.2 — arm A: each card laid out at the design width and scaled into its cell. Always false outside
+    /// Mac builds with DEVSWITCHES.
+    private var spikeArmA: Bool {
+        #if targetEnvironment(macCatalyst) && (DEBUG || DEVSWITCHES)
+        return RunningOnMac.isMac && spikeEngine == "A"
+        #else
+        return false
+        #endif
+    }
     private var topInset: CGFloat { RunningOnMac.isMac ? 6 : 110 }
     private var bottomInset: CGFloat { RunningOnMac.isMac ? 24 : 120 }
     private let haptic = UIImpactFeedbackGenerator(style: .medium)
@@ -127,6 +143,9 @@ struct NodeGridView: View {
         #if DEBUG
         k.append(showTileTuningPanel)
         #endif
+        #if targetEnvironment(macCatalyst) && (DEBUG || DEVSWITCHES)
+        k.append(contentsOf: [spikeEngine, spikeResize, spikeClick, spikeSelection])
+        #endif
         return k
     }
 
@@ -145,14 +164,14 @@ struct NodeGridView: View {
                     PathIsolated(key: macIsolationKey) {
                         VStack(spacing: 0) {
                             macCardsHeader
-                            gridContent
+                            macGridContent
                         }
                     }
                     .equatable()
                 } else if RunningOnMac.isMac {
                     VStack(spacing: 0) {
                         macCardsHeader
-                        gridContent
+                        macGridContent
                     }
                 } else {
                     gridContent
@@ -270,6 +289,33 @@ struct NodeGridView: View {
     private final class WidthBox { var value: CGFloat = 0 }
     private func macNoteGridWidth(_ w: CGFloat) { macGridWidthBox.value = w }
 
+    /// The Mac's grid: today's (and arm A, inside it), or the spike's arm B (sweep 2b · 2.2) when switched on.
+    @ViewBuilder private var macGridContent: some View {
+        #if targetEnvironment(macCatalyst) && (DEBUG || DEVSWITCHES)
+        if spikeEngine == "B" {
+            MacCardsCollectionView(
+                nodes: nodes,
+                targetWidth: macCardWidth,
+                railLane: scrubberMode != nil ? 30 : 0,   // the lane today's grid keeps for the A–Z rail (no rail in arm B)
+                spacing: tileSpacing,
+                topInset: topInset,
+                bottomInset: bottomInset,
+                appFont: appFont,
+                store: store,
+                resize: spikeResize,
+                click: spikeClick,
+                selectionMode: spikeSelection,
+                onGridWidth: { macNoteGridWidth($0) },
+                onOpen: { node in store.openAfterPrewarm(node) { macNavigate { navigationPath.append(node) } } }
+            )
+        } else {
+            gridContent
+        }
+        #else
+        gridContent
+        #endif
+    }
+
     private var gridContent: some View {
         // Width is measured ONCE here, above the ScrollView. cellW/cellH are
         // the single source of truth and get handed down to each tile.
@@ -297,6 +343,10 @@ struct NodeGridView: View {
             let isDarkMode = colorScheme == .dark
             let tileShadowRadius = CardSurfaceResolved.shadowRadius(dark: isDarkMode)
             let tileShadowY = CardSurfaceResolved.shadowY(dark: isDarkMode)
+            // Sweep 2b · 2.2 arm A — the card's own size is the design size; it is scaled into the cell below.
+            let armA = spikeArmA
+            let tileW = armA ? Self.macCardDesignWidth : cellW
+            let tileH = armA ? Self.macCardDesignWidth * 7.0 / 5.0 : cellH
 
             ScrollViewReader { proxy in
                 ScrollView(.vertical) {
@@ -312,8 +362,8 @@ struct NodeGridView: View {
                                 node: node,
                                 isSelecting: selection.isActive,
                                 isPicked: selection.isSelected(node.id),
-                                cellWidth: cellW,
-                                cellHeight: cellH,
+                                cellWidth: tileW,
+                                cellHeight: tileH,
                                 animateGradient: !perfAB("cardstatic"),   // perf audit A/B
                                 columnCount: RunningOnMac.isMac ? 2 : columnCount,   // F3 — the editorial card at every size
                                 designWidth: RunningOnMac.isMac ? Self.macCardDesignWidth : nil,
@@ -323,6 +373,9 @@ struct NodeGridView: View {
                             // fields didn't change (NodeTileView.==), so a single
                             // node's enrichment re-renders only its tile.
                             .equatable()
+                            #if targetEnvironment(macCatalyst) && (DEBUG || DEVSWITCHES)
+                            .modifier(MacCardsArmAScale(on: armA, cellW: cellW, cellH: cellH))   // sweep 2b · 2.2 arm A
+                            #endif
                             // E fix-up 6 (M4) — on the Mac nothing inside a card takes the pointer (the card opens with
                             // the tap below, its menu is the grid's): SwiftUI then stops hit-testing every card's drawn
                             // views (the gradient's Metal view among them) on each hover event, which fires every frame

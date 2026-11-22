@@ -1790,6 +1790,10 @@ private struct MacFeelSwitchesPanel: View {
     @AppStorage(MacFeelSwitches.heroFadeLengthKey) private var heroLength = MacFeelSwitches.heroFadeLengthDefault
     @AppStorage(MacFeelSwitches.heroMaxWidthKey) private var heroMax = MacFeelSwitches.heroMaxWidthDefault
     @AppStorage(MacFeelSwitches.heroGradientShiftKey) private var heroShift = MacFeelSwitches.heroGradientShiftDefault
+    // Sweep 2b · 2.2 — the Cards collection-view spike (MacCardsSpike.swift); the same keys are the bench's launch args.
+    @AppStorage(MacCardsSpike.engineKey) private var cardsEngine = "today"
+    @AppStorage(MacCardsSpike.resizeKey) private var cardsResize = "relayout"
+    @AppStorage(MacCardsSpike.clickKey) private var cardsClick = "open"
     @State private var copied = false
 
     var body: some View {
@@ -1845,6 +1849,26 @@ private struct MacFeelSwitchesPanel: View {
                 Slider(value: $heroShift, in: 0...0.5, step: 0.01).accessibilityIdentifier("macFeelHeroShift")
                 Text("\(Int(heroShift * 100)) %").monospacedDigit().frame(width: 50)
             }
+            Text("Cards spike (sweep 2b)").font(.system(size: 12, weight: .medium)).foregroundStyle(AppearancePalette.ink.opacity(0.7))
+            Picker("Cards engine", selection: $cardsEngine) {
+                Text("Today").tag("today")
+                Text("A: grid, card not resized").tag("A")
+                Text("B: collection view").tag("B")
+            }
+            .pickerStyle(.segmented)
+            .accessibilityIdentifier("macFeelCardsEngine")
+            Picker("B: on a width change", selection: $cardsResize) {
+                Text("Re-lay out").tag("relayout")
+                Text("Scale, then settle").tag("scale")
+            }
+            .pickerStyle(.segmented)
+            .accessibilityIdentifier("macFeelCardsResize")
+            Picker("B: click", selection: $cardsClick) {
+                Text("Click opens").tag("open")
+                Text("Click selects (double-click / Return opens)").tag("select")
+            }
+            .pickerStyle(.segmented)
+            .accessibilityIdentifier("macFeelCardsClick")
             HStack(spacing: 12) {
                 Button(copied ? "Copied" : "Copy values") {
                     UIPasteboard.general.string = """
@@ -1858,6 +1882,9 @@ private struct MacFeelSwitchesPanel: View {
                     hero fade length: \(Int(heroLength * 100)) %
                     hero max width: \(Int(heroMax * 100)) %
                     hero gradient shift: \(Int(heroShift * 100)) %
+                    cards engine: \(cardsEngine)
+                    cards B width change: \(cardsResize)
+                    cards B click: \(cardsClick)
                     """
                     copied = true
                     DispatchQueue.main.asyncAfter(deadline: .now() + 1.5) { copied = false }
@@ -1869,6 +1896,7 @@ private struct MacFeelSwitchesPanel: View {
                     heroFull = false; heroStart = MacFeelSwitches.heroFadeStartDefault
                     heroLength = MacFeelSwitches.heroFadeLengthDefault; heroMax = MacFeelSwitches.heroMaxWidthDefault
                     heroShift = MacFeelSwitches.heroGradientShiftDefault
+                    cardsEngine = "today"; cardsResize = "relayout"; cardsClick = "open"
                 }
             }
         }

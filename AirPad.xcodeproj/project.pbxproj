@@ -90,6 +90,7 @@
 		2D797B443BD3042A6F78FC40 /* LinkAppendSheet.swift in Sources */ = {isa = PBXBuildFile; fileRef = 8BF1D622AE4FE341F4039341 /* LinkAppendSheet.swift */; };
 		2D8CCD981197441D1AA1F024 /* AirPadWidgetBundle.swift in Sources */ = {isa = PBXBuildFile; fileRef = 0D775E93481C7D942A38FABD /* AirPadWidgetBundle.swift */; };
 		2DDA27FA6C4F26BC05D7EA97 /* UMAPGraph.swift in Sources */ = {isa = PBXBuildFile; fileRef = BE499E529F1B439D3EDD8816 /* UMAPGraph.swift */; };
+		2E0C140188E043C20A7F3D40 /* MacCardsSpike.swift in Sources */ = {isa = PBXBuildFile; fileRef = 084901E3296A87F4556F38A7 /* MacCardsSpike.swift */; };
 		2E86EA279EA589C6F373EFCC /* PagedRestGeometry.swift in Sources */ = {isa = PBXBuildFile; fileRef = DB4EAC09C3FD8068935123CA /* PagedRestGeometry.swift */; };
 		2E8726CA49E4BE479EED79CC /* FeatureFlags.swift in Sources */ = {isa = PBXBuildFile; fileRef = C3FFA73288300E8E7B5FBA46 /* FeatureFlags.swift */; };
 		314DD82E20DEE1EAF48A2FDD /* AppearanceTuning.swift in Sources */ = {isa = PBXBuildFile; fileRef = 59706866FD48AC8400BD377E /* AppearanceTuning.swift */; };
@@ -565,6 +566,7 @@
 		066F0ECD5D6906ADAF3A2FDF /* ProScreenshots.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ProScreenshots.swift; sourceTree = "<group>"; };
 		06B1768239F02E6846F26864 /* SampleLibrarySeeder.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = SampleLibrarySeeder.swift; sourceTree = "<group>"; };
 		06B75637388695434A20A8B7 /* CaptureControlsStills.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = CaptureControlsStills.swift; sourceTree = "<group>"; };
+		084901E3296A87F4556F38A7 /* MacCardsSpike.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = MacCardsSpike.swift; sourceTree = "<group>"; };
 		09D0243E524E09781995DF68 /* CitationReference.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = CitationReference.swift; sourceTree = "<group>"; };
 		0A34A4DFFDC9B2517FDF2431 /* PrivacyInfo.xcprivacy */ = {isa = PBXFileReference; path = PrivacyInfo.xcprivacy; sourceTree = "<group>"; };
 		0AD607D873DD5FF571DE6C5D /* CardLinkTile.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = CardLinkTile.swift; sourceTree = "<group>"; };
@@ -1197,6 +1199,7 @@
 			isa = PBXGroup;
 			children = (
 				A78147F82EB55E186C5934A2 /* AlphabetScrubber.swift */,
+				084901E3296A87F4556F38A7 /* MacCardsSpike.swift */,
 				F189E8F160D5B6BD04D88706 /* NodeGridTile.swift */,
 				62E2EC2958AAC24AD281B70D /* NodeGridTileTuning.swift */,
 				E72BAB0716ACA80A097CBF4F /* NodeGridView.swift */,
@@ -2358,6 +2361,7 @@
 				1C7BD8D8DAED08D89F04F795 /* LongPressDragRecognizer.swift in Sources */,
 				BB9BDB30E58DC2856238105B /* MSDFLabel.swift in Sources */,
 				8D357FA2CB55E52BD3C5E6B6 /* MacBatchESelfTest.swift in Sources */,
+				2E0C140188E043C20A7F3D40 /* MacCardsSpike.swift in Sources */,
 				9CCD7FC1ADD91CE36C6E026D /* MacChatHistory.swift in Sources */,
 				7666EFC3587CC6AA2E798673 /* MacClickSelfTest.swift in Sources */,
 				05FD14E104D9CDCA47A884EC /* MacDesktop.swift in Sources */,

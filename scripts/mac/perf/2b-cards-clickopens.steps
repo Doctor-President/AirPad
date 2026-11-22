@@ -1,0 +1,11 @@
+# Sweep 2b · 2.2 — the other click behaviour (arm B, click opens; today's): EXTRA="-MacCardsCollection B
+# -MacCardsClick open -MacCardsLog YES". Grade with 2b-cards-select.py <run dir> --opens.
+view-cards      click toolbar.view.Cards
+rest            wait 2500
+o1-click        click cardTile-*#0
+rest            wait 1500
+back            cmdkey 33
+rest            wait 1500
+o2-cmdclick     click cardTile-*#1 cmd
+o3-cmdclick     click cardTile-*#2 cmd
+o4-esc          esc

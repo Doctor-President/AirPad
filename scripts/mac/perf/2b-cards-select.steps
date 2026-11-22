@@ -1,0 +1,38 @@
+# Sweep 2b · 2.2 — the spike's selection row with real clicks and keys (arm B, click selects). Run through run.sh with
+#   EXTRA="-MacCardsCollection B -MacCardsClick select -MacCardsLog YES [-MacCardsSelection own|system]"
+# then grade: python3 scripts/mac/perf/2b-cards-select.py <run dir>   (reads app.log's MACCARDS lines + rperf.txt).
+# The nine rows: click · ⌘-click · ⇧-click range · ⌘A · arrows · Return opens · Esc clears · box drag · right-click on 3.
+# Card targets are the n-th card in accessibility order (cardTile-*#n); the box starts in the grid's top-left inset.
+view-cards      click toolbar.view.Cards
+rest            wait 2500
+r1-click        click cardTile-*#0
+r2-cmdclick     click cardTile-*#2 cmd
+r3-shiftclick   click cardTile-*#5 shift
+r7-esc          esc
+r4-cmdA         cmdkey 0
+r7-esc2         esc
+r5-pick         click cardTile-*#1
+r5-right        key 124
+r5-down         key 125
+r5-left         key 123
+r5-up           key 126
+r7-esc3         esc
+r8-box          drag cardsCollection@4,3 430 330 30
+rest            wait 500
+r7-esc4         esc
+r9-pick         click cardTile-*#0
+r9-cmd1         click cardTile-*#1 cmd
+r9-cmd2         click cardTile-*#2 cmd
+r9-menu         rclick cardTile-*#1
+rest            wait 800
+r9-close        esc
+rest            wait 500
+r6-pick         click cardTile-*#3
+r6-return       key 36
+rest            wait 1500
+back            cmdkey 33
+rest            wait 1500
+r6b-double      dclick cardTile-*#4
+rest            wait 1500
+back            cmdkey 33
+rest            wait 1500

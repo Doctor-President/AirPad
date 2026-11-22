@@ -1,0 +1,66 @@
+# Sweep 2b · 2.2 — the Cards spike's speed rows, one arm / method per run (the arm is a launch argument; see
+# 2b-cards-spike.sh, which runs this for today / A / B relayout / B scale at 1703 × 924 and 1534 × 920).
+# Rows (sheet-collection-views.md "The spike"): width changes (12 sidebar + 12 Librarian edge drags, ⌘+ / ⌘−) — pass = no
+# stall over 100 ms; switch into Cards — pass = settled ≤ 150 ms; scroll with the pointer still and moving — pass =
+# ≥ 118 of 120, ≤ 2 % late; rest — pass = 0 frames (the recording's frames inside `cards-rest`).
+# run.sh starts on Library (its own click). Labels: steps.py groups by label.
+view-cards      click toolbar.view.Cards
+rest            wait 3000
+cards-sidebar   drag resize.sidebar 70 0 24
+cards-sidebar   drag resize.sidebar -70 0 24
+cards-sidebar   drag resize.sidebar 70 0 24
+cards-sidebar   drag resize.sidebar -70 0 24
+cards-sidebar   drag resize.sidebar 70 0 24
+cards-sidebar   drag resize.sidebar -70 0 24
+cards-sidebar   drag resize.sidebar 70 0 24
+cards-sidebar   drag resize.sidebar -70 0 24
+cards-sidebar   drag resize.sidebar 70 0 24
+cards-sidebar   drag resize.sidebar -70 0 24
+cards-sidebar   drag resize.sidebar 70 0 24
+cards-sidebar   drag resize.sidebar -70 0 24
+rest            wait 1000
+cards-librarian drag resize.librarian -120 0 24
+cards-librarian drag resize.librarian 120 0 24
+cards-librarian drag resize.librarian -120 0 24
+cards-librarian drag resize.librarian 120 0 24
+cards-librarian drag resize.librarian -120 0 24
+cards-librarian drag resize.librarian 120 0 24
+cards-librarian drag resize.librarian -120 0 24
+cards-librarian drag resize.librarian 120 0 24
+cards-librarian drag resize.librarian -120 0 24
+cards-librarian drag resize.librarian 120 0 24
+cards-librarian drag resize.librarian -120 0 24
+cards-librarian drag resize.librarian 120 0 24
+rest            wait 1000
+cards-zoom-in   cmdkey 24
+cards-zoom-in   cmdkey 24
+cards-zoom-in   cmdkey 24
+cards-zoom-out  cmdkey 27
+cards-zoom-out  cmdkey 27
+cards-zoom-out  cmdkey 27
+rest            wait 1500
+cards-scroll    scroll 640,600 -2400 80 8
+cards-scroll    scroll 640,600 2400 80 8
+cards-scroll    scroll 640,600 -2400 80 8
+cards-scroll    scroll 640,600 2400 80 8
+cards-scrollmv  scrollmove 640,600 -2400 80 8
+cards-scrollmv  scrollmove 640,600 2400 80 8
+cards-scrollmv  scrollmove 640,600 -2400 80 8
+cards-scrollmv  scrollmove 640,600 2400 80 8
+cards-hand      trackpad 640,600 10 wobble
+rest            wait 2000
+# rest: the pointer parked on the toolbar title, nothing moving — a measured step that posts only a pointer move there
+cards-rest      move toolbar.title 0 0 1
+rest            wait 5000
+view-map        click toolbar.view.Map
+rest            wait 2500
+view-cards      click toolbar.view.Cards
+rest            wait 2000
+view-list       click toolbar.view.List
+rest            wait 1500
+view-cards      click toolbar.view.Cards
+rest            wait 2000
+view-map        click toolbar.view.Map
+rest            wait 2500
+view-cards      click toolbar.view.Cards
+rest            wait 2000

@@ -7,7 +7,10 @@
 // Steps file, one per line (# comments):  <label> <verb> <args…>
 //   click <ax-id>[#n]        pointer onto it, 120 ms, press (n-th match); <ax-id> may be role:<AXRole>, placeholder:<text>,
 //                            or an id prefix ending in *
+//                            [cmd|shift] after the target holds that modifier (a real key down … up around the click);
+//                            <ax-id>@dx,dy = that point from the element's top-left instead of its centre (sweep 2b · 2.2)
 //   rclick <ax-id>[#n]       right-click (opens a context menu)
+//   dclick <ax-id>[#n]       double-click (click count 1 then 2)
 //   key <code> | cmdkey <code> | esc
 //   type <text>              letters and spaces, one key each (each key is its own measured step)
 //   scroll <ax-id|x,y> <dy> <events> [ms]   a trackpad two-finger swipe (continuous, phases)
@@ -53,16 +56,35 @@ func find(_ key: String, _ n: Int = 0) -> AXUIElement? {
     return out.count > n ? out[n] : nil
 }
 func point(_ spec: String) -> CGPoint? {
+    if let at = spec.firstIndex(of: "@") {   // sweep 2b · 2.2: <ax-id>@dx,dy — offset from the element's top-left
+        let o = spec[spec.index(after: at)...].split(separator: ",").compactMap { Double($0) }
+        let parts = spec[..<at].split(separator: "#"); let n = parts.count > 1 ? Int(parts[1]) ?? 0 : 0
+        guard o.count == 2, let e = find(String(parts[0]), n) else { return nil }
+        let f = frame(e); return CGPoint(x: f.minX + o[0], y: f.minY + o[1])
+    }
     let p = spec.split(separator: ",").compactMap { Double($0) }
     if p.count == 2 { return CGPoint(x: p[0], y: p[1]) }
     let parts = spec.split(separator: "#"); let n = parts.count > 1 ? Int(parts[1]) ?? 0 : 0
     guard let e = find(String(parts[0]), n) else { return nil }
     let f = frame(e); return CGPoint(x: f.midX, y: f.midY)
 }
-func mouse(_ t: CGEventType, _ p: CGPoint, button: CGMouseButton = .left) {
+func mouse(_ t: CGEventType, _ p: CGPoint, button: CGMouseButton = .left, clicks: Int64 = 1, flags: CGEventFlags = []) {
     let e = CGEvent(mouseEventSource: nil, mouseType: t, mouseCursorPosition: p, mouseButton: button)
-    if t != .mouseMoved { e?.setIntegerValueField(.mouseEventClickState, value: 1) }
+    if t != .mouseMoved { e?.setIntegerValueField(.mouseEventClickState, value: clicks) }
+    if !flags.isEmpty { e?.flags = flags }
     e?.post(tap: .cghidEventTap)
+}
+/// Sweep 2b · 2.2 — a modifier key really held: its key-down before, its key-up after (55 ⌘, 56 ⇧; see key()).
+func holding(_ mod: String?, _ act: (CGEventFlags) -> Void) {
+    let code: CGKeyCode, flag: CGEventFlags
+    switch mod {
+    case "cmd": (code, flag) = (55, .maskCommand)
+    case "shift": (code, flag) = (56, .maskShift)
+    default: act([]); return
+    }
+    let d = CGEvent(keyboardEventSource: nil, virtualKey: code, keyDown: true); d?.flags = flag; d?.post(tap: .cghidEventTap); usleep(30_000)
+    act(flag)
+    usleep(30_000); let u = CGEvent(keyboardEventSource: nil, virtualKey: code, keyDown: false); u?.flags = []; u?.post(tap: .cghidEventTap); usleep(20_000)
 }
 func key(_ code: CGKeyCode, cmd: Bool = false) {
     // A real ⌘ down … up around a ⌘-key (only flagging the key left the system's ⌘ state DOWN; see rclick cmdkey).
@@ -245,7 +267,14 @@ for raw in script.split(separator: "\n") {
         mouse(.mouseMoved, p); usleep(120_000)
         measure(label, verb) {
             let (d, u, b): (CGEventType, CGEventType, CGMouseButton) = verb == "click" ? (.leftMouseDown, .leftMouseUp, .left) : (.rightMouseDown, .rightMouseUp, .right)
-            mouse(d, p, button: b); usleep(60_000); mouse(u, p, button: b)
+            holding(rest.count > 1 ? rest[1] : nil) { fl in mouse(d, p, button: b, flags: fl); usleep(60_000); mouse(u, p, button: b, flags: fl) }
+        }
+    case "dclick":
+        guard let p = point(rest[0]) else { print("\(label) \(verb) NOT FOUND \(rest[0])"); continue }
+        mouse(.mouseMoved, p); usleep(120_000)
+        measure(label, verb) {
+            mouse(.leftMouseDown, p, clicks: 1); usleep(50_000); mouse(.leftMouseUp, p, clicks: 1); usleep(90_000)
+            mouse(.leftMouseDown, p, clicks: 2); usleep(50_000); mouse(.leftMouseUp, p, clicks: 2)
         }
     case "key": measure(label, verb) { key(CGKeyCode(rest[0])!) }
     case "cmdkey": measure(label, verb) { key(CGKeyCode(rest[0])!, cmd: true) }

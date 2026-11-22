@@ -264,6 +264,7 @@
 		8943F983244CAFA176DC3313 /* TagCreationSheet.swift in Sources */ = {isa = PBXBuildFile; fileRef = F6A18AD80C0FCB6B5E928844 /* TagCreationSheet.swift */; };
 		89E7C55E1D0C63E7C5D191D6 /* NodeItemType.swift in Sources */ = {isa = PBXBuildFile; fileRef = 7ED3DACE683F20031A4F5E03 /* NodeItemType.swift */; };
 		8A4950423895F7ECE2B4D88E /* ThreadService.swift in Sources */ = {isa = PBXBuildFile; fileRef = B01CAFC639E0B10C51EF1BE3 /* ThreadService.swift */; };
+		8A54C175B08A41422674671E /* LibrarianSelfAnswer.swift in Sources */ = {isa = PBXBuildFile; fileRef = 235C1261F79AAB3629858BC6 /* LibrarianSelfAnswer.swift */; };
 		8A76ED065850611081857D3C /* ChatProvenance.swift in Sources */ = {isa = PBXBuildFile; fileRef = 911C0F44FEBAE77AA39BAE9B /* ChatProvenance.swift */; };
 		8AEEE3F95E8567D135273B3B /* EntrySync.swift in Sources */ = {isa = PBXBuildFile; fileRef = 1C805A799D4977CD24D23D96 /* EntrySync.swift */; };
 		8B123FFA9CC1CE3B3C739AE3 /* LocalModelService.swift in Sources */ = {isa = PBXBuildFile; fileRef = E6395ED2F705BD95B1D64F56 /* LocalModelService.swift */; };
@@ -610,6 +611,7 @@
 		21F157A25C20FDDA011EFB0A /* ProStore.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ProStore.swift; sourceTree = "<group>"; };
 		2201BE07F6CDDB45F55D6B0B /* RunningOnMac.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = RunningOnMac.swift; sourceTree = "<group>"; };
 		22331897C26EB8AA6E253BD6 /* CollectionPickerMenu.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = CollectionPickerMenu.swift; sourceTree = "<group>"; };
+		235C1261F79AAB3629858BC6 /* LibrarianSelfAnswer.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = LibrarianSelfAnswer.swift; sourceTree = "<group>"; };
 		239B75A26B2BA53534F71428 /* LayoutService.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = LayoutService.swift; sourceTree = "<group>"; };
 		23ECDDE27DD9E25B6ED253D9 /* GauntletTap.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = GauntletTap.swift; sourceTree = "<group>"; };
 		24A6A32F900316F628EEF046 /* LongPaste.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = LongPaste.swift; sourceTree = "<group>"; };
@@ -1637,6 +1639,7 @@
 				296A6F341B3C366497500A55 /* LibrarianFloatingPanel.swift */,
 				5B35336B21B2B5161C241D7D /* LibrarianGlass.swift */,
 				B82EFAA92BF3BAFAAA22F11B /* LibrarianRenderHooks.swift */,
+				235C1261F79AAB3629858BC6 /* LibrarianSelfAnswer.swift */,
 				51379886273900EA232831C5 /* LibrarianSheetBackground.swift */,
 				7357D7DC38554C54BB982B6E /* LibrarianSheetDetentState.swift */,
 				B05B92C729C4833EC93C3A4A /* LibrarianState.swift */,
@@ -2331,6 +2334,7 @@
 				EF7EF1E408D65483FF6DF353 /* LibrarianRecorder.swift in Sources */,
 				8697CC7FB59852EAF7922A6C /* LibrarianRecorderSelfTest.swift in Sources */,
 				57B285C03D7431D640ACB054 /* LibrarianRenderHooks.swift in Sources */,
+				8A54C175B08A41422674671E /* LibrarianSelfAnswer.swift in Sources */,
 				3421335809DAF6820317ADDC /* LibrarianSheetBackground.swift in Sources */,
 				BE627965C351C4931B1BB439 /* LibrarianSheetDetentState.swift in Sources */,
 				07BB3A967E5BCDC6E3CB2B52 /* LibrarianState.swift in Sources */,

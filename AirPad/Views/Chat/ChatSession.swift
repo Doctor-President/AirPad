@@ -1297,6 +1297,27 @@ final class ChatSession {
         #endif
     }
 
+    /// Sweep 2b · 1e — an answer the APP writes from its own state (no model call, no provenance, no search): "What can
+    /// you do?" (`kind` "self"). Persisted like any turn; replayed as plain history text.
+    func appendAppAnswer(userText: String, text: String, kind: String) {
+        let q = userText.trimmingCharacters(in: .whitespacesAndNewlines)
+        guard !q.isEmpty, !isStreaming else { return }
+        lastError = nil
+        messages.append(Message(role: .user, text: q))
+        messages.append(Message(role: .assistant, text: text))
+        pendingUser = nil
+        flush()
+        LibRec.set("appAnswer", .label(kind))
+        #if DEBUG
+        GauntletTap.shared.beginTurn(requestID: nil, think: false, systemPrompt: "", history: [], userContent: q, numCtx: 0)
+        GauntletTap.shared.notePath("app-\(kind)")
+        GauntletTap.shared.endTurn(finalText: text, citations: nil, receipt: nil, thinking: "", lastError: nil, isPartial: false)
+        WebTrace.shared.beginTurn(q)
+        WebTrace.shared.note("plan", ["path": "app-\(kind)"])
+        WebTrace.shared.note("answer", ["text": text, "cited": [String](), "line": "", "caption": "", "app": kind])
+        #endif
+    }
+
     /// Sweep 2b · 1d (news route e) — an app-routed search for a news / time-sensitive question came back with nothing
     /// usable: the app writes `WebGrounding.searchEmptyLine` itself (no model call, no provenance → no "+ web" caption,
     /// no general-knowledge line), under the search row. The trace turn was begun by the search (`WebEvidence`).

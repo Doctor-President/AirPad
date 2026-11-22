@@ -1293,6 +1293,9 @@ final class CorpusStore {
                 Task { @MainActor in NSLog("[WebEvidenceSelfTest] %@", await WebEvidenceSelfTest.run()) }
             }
             // live-27 (4) — chat provenance: who wrote each answer, the caption, the switch divider.
+            if ProcessInfo.processInfo.arguments.contains("-LibrarianSelfAnswerSelfTest") {   // sweep 2b · 1d/1e
+                Task { @MainActor in NSLog("[LibrarianSelfAnswerSelfTest] %@", await LibrarianSelfAnswerSelfTest.run(store: self)) }
+            }
             if ProcessInfo.processInfo.arguments.contains("-ChatProvenanceSelfTest") {
                 Task { @MainActor in NSLog("[ChatProvenanceSelfTest] %@", await ChatProvenanceSelfTest.run()) }
             }

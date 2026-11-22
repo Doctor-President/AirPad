@@ -667,6 +667,15 @@ final class LibrarianState {
         defer { LibRec.end() }
         recordTurnStart(query: query, turnNo: userTurnNo)
 
+        // Sweep 2b · 1d (news route a) + 1e (decisions 2026-11-21) — a question about the Librarian itself ("Can you search
+        // the web?", "What can you do?") is the APP's to answer, from real settings, in both modes: never searched, never
+        // the model's guess, no model call.
+        if LibrarianSelfQuestion.matches(query) {
+            Self.logGeneralTurn(query: query, scope: selectedScope, tool: "app-self", retry: false, store: store)
+            chat.appendAppAnswer(userText: query, text: await selfAnswerText(), kind: "self")
+            return
+        }
+
         // ★ Private mode (DEFAULT, corpusAware == false): do NOT retrieve. Send the
         // bare question with a plain assistant prompt — no passages, no citation
         // chips, no "answer from your notes" framing. On T's corpus BGE scores
@@ -1026,6 +1035,37 @@ final class LibrarianState {
             ("partial", .bool(plan.readReceipt?.partial ?? false)),
         ]))
         LibRec.set("alwaysCite", .list(plan.alwaysCiteIndicesList.map { .int($0) }))
+    }
+
+    // MARK: - Sweep 2b · 1e — "What can you do?", from real settings
+
+    /// The answer to a question about the Librarian (`LibrarianSelfAnswer`): the model answering now, the web switch and
+    /// key, and whether another brain exists on this device.
+    func selfAnswerText() async -> String {
+        let route = ModelRouter.active
+        var apple = false, name = ""
+        switch route {
+        case .foundationModel:
+            apple = true
+        case .host:
+            let tag = await ModelRouter.resolveActiveModelName()   // the resident (else first) model's tag
+            name = tag == ModelRouter.remoteRestingName ? tag : ChatProvenance.displayName(route: .host, model: tag)
+        case .ollama, .local:
+            name = await ModelRouter.resolveActiveModelName()       // already the friendly name
+        }
+        let web: LibrarianSelfAnswer.Web = !WebSearchBackend.isEnabled ? .off
+            : WebSearchBackend.hasKey ? .on : .needsKey(WebSearchBackend.provider.keyName)
+        return LibrarianSelfAnswer.text(apple: apple, modelName: name, web: web, otherOptionExists: Self.brainOptionCount() > 1)
+    }
+
+    /// How many brains this device can use: Apple Intelligence when it runs here, each installed model on a paired Mac
+    /// (at least one), each installed model on the user's own server (at least one). "You can give me a stronger brain"
+    /// shows only when this is more than one.
+    static func brainOptionCount() -> Int {
+        var n = ModelRouter.onDeviceAvailable ? 1 : 0
+        if HostPairing.load() != nil { n += max(1, HostCatalog.shared.installed.count) }
+        if ModelRouter.configuredEndpoint != nil { n += max(1, HostCatalog.server.installed.count) }
+        return n
     }
 
     /// live-29 (B5) — one Apple Intelligence turn grounded in the active provider's top results (`AppleWebGrounding`).

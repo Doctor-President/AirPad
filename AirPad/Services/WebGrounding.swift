@@ -200,12 +200,29 @@ enum WebGrounding {
             "headlines", "headline", "current", "currently", "recent", "recently", "breaking", "right", "now", "this", "morning",
             "afternoon", "evening", "week", "yesterday", "most", "biggest", "main", "major", "happening", "going", "any",
             "tell", "me", "give", "show", "search", "web", "for", "please", "up", "updates", "update", "there", "some", "with",
-            "and", "or", "to", "do", "does", "did", "i", "you", "can", "could", "would", "should", "find", "look", "lookup"]
+            "and", "or", "to", "do", "does", "did", "i", "you", "can", "could", "would", "should", "find", "look", "lookup",
+            // Sweep 2b · 1d (news route b) — T's "today's top new stories from the web" became the query "new news" and
+            // returned eight front pages; these words name no topic either.
+            "new", "world", "internet", "list", "out", "happened"]
         return q.lowercased().replacingOccurrences(of: "’", with: "'")
             .split(whereSeparator: { !($0.isLetter || $0.isNumber || $0 == "'" || $0 == "-") })
             .map { String($0).trimmingCharacters(in: CharacterSet(charactersIn: "'-")) }
             .filter { !$0.isEmpty && !stop.contains($0) }
     }
+
+    /// Sweep 2b · 1d (news route b–d, decisions 2026-11-21) — a TOP-STORIES question: time-sensitive news with no topic
+    /// ("What are today's top news stories?"). Nothing in it for an article to resemble, so its query is built by rule
+    /// ("top news"), its packet is the articles' headlines and first lines with no similarity floor, and front / section
+    /// pages are dropped. A topic question ("news about SpaceX this week") keeps the relevance filter.
+    static func isTopStories(_ q: String) -> Bool {
+        isTimeSensitive(q) && newsKeywords(q).isEmpty
+    }
+    /// The query a top-stories search uses (the provider's freshness window carries the date).
+    static let topStoriesQuery = "top news"
+    /// Step g — the writer lists stories, not outlets or sections.
+    static let topStoriesClause = "This question asks for the top stories: list them one per line, each with its headline and the number of the result it came from in brackets, like [1]. List the stories themselves, never news outlets or sections."
+    /// Step c / e — the app's own answer when a news search brought back nothing usable (no model call, no "+ web").
+    static let searchEmptyLine = "The search returned nothing I can use."
 
     /// CH (T device 2026-10-09) — the country a news question names, as Brave's `country` code, so "top news in
     /// Mexico" asks for news FROM Mexico (without it Brave's news returned New Mexico, USA stories). Country NAMES only
@@ -741,7 +758,16 @@ enum WebGroundingSelfTest {
             check("factual: \(q)", WebGrounding.isFactualQuestion(q) == want)
         }
         check("news keywords: Mexico", WebGrounding.newsKeywords("What's the top news in Mexico today?") == ["mexico"], "\(WebGrounding.newsKeywords("What's the top news in Mexico today?"))")
-        check("news keywords: world", WebGrounding.newsKeywords("What are the top world news stories today?") == ["world"])
+        // Sweep 2b · 1d — "world" / "new" / "web" name no topic: a top-stories question, not "world news" or "new news".
+        check("news keywords: world", WebGrounding.newsKeywords("What are the top world news stories today?") == [])
+        check("news keywords: T's 'top new stories from the web'", WebGrounding.newsKeywords("What are some of today's top new stories from the web?") == [],
+              "\(WebGrounding.newsKeywords("What are some of today's top new stories from the web?"))")
+        check("top stories: yes", WebGrounding.isTopStories("What are today's top news stories?")
+              && WebGrounding.isTopStories("What are some of today's top new stories from the web?")
+              && WebGrounding.isTopStories("what happened in the news today?"))
+        check("top stories: a topic or not news → no", !WebGrounding.isTopStories("What's the news about SpaceX this week?")
+              && !WebGrounding.isTopStories("What's the top news in Mexico today?") && !WebGrounding.isTopStories("List them out for me")
+              && !WebGrounding.isTopStories("What is the capital of France?"))
         check("news keywords: telescope", WebGrounding.newsKeywords("What's the latest news about the Lakeview Observatory telescope?") == ["lakeview", "observatory", "telescope"])
         check("factual: pep talk is not", !WebGrounding.isFactualQuestion("Write a two-line pep talk for a Monday."))
         check("factual: give me a pep talk is not", !WebGrounding.isFactualQuestion("Give me a pep talk, I have a big day"))

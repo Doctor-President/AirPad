@@ -66,8 +66,33 @@ enum WebEvidenceSelfTest {
         WebEvidence.debugRewrite = nil
         row("year-back-on-current-state-only-not-news-not-timeless",
             yr == ["List of US presidents 2026 | wiki: List of US presidents", "Japan prime minister 2026 | wiki: Japan prime minister",
-                   "top news headlines today | wiki: top news headlines today", "why is the sky blue | wiki: why is the sky blue"],
+                   // Sweep 2b · 1d — a top-stories question's query is built by rule (the rewrite is bypassed)
+                   "top news | wiki: top news", "why is the sky blue | wiki: why is the sky blue"],
             yr.joined(separator: " · "))
+        // Sweep 2b · 1d (news route b–d) — top stories: the query by rule; front / section pages out; ≥ 3 articles kept as
+        // headline + first line with no floor; fewer → nothing (the app says the search returned nothing it can use).
+        WebEvidence.debugRewrite = .some("new news")   // the scratch run's rewrite: it must never be used
+        let tq = await WebEvidence.searchQuery(for: "What are some of today's top new stories from the web?", chat: fresh, now: now)
+        WebEvidence.debugRewrite = nil
+        row("top-stories-query-by-rule", tq.query == "top news" && tq.how == "top stories (by rule)", "\(tq.how): \(tq.query)")
+        let fronts = ["https://www.reuters.com/", "https://apnews.com/world-news", "https://www.bbc.com/news", "https://www.nytimes.com"]
+        let articles = ["https://www.reuters.com/world/europe/some-story-2026-11-22/", "https://apnews.com/article/abc123def456",
+                        "https://www.bbc.com/news/articles/c0abc123", "https://www.nytimes.com/2026/11/22/us/story.html"]
+        row("front-and-section-pages", fronts.allSatisfy(WebEvidence.isFrontOrSectionPage) && !articles.contains(where: WebEvidence.isFrontOrSectionPage),
+            (fronts + articles).map { "\($0)=\(WebEvidence.isFrontOrSectionPage($0))" }.joined(separator: " "))
+        func src(_ u: String, _ t: String, wiki: Bool = false) -> WebEvidence.Source {
+            WebEvidence.Source(title: t, url: u, published: nil, wikipedia: wiki, text: "First line of \(t).\nMore text that isn't sent.")
+        }
+        let mixed = fronts.map { src($0, "Front") } + [src("https://en.wikipedia.org/wiki/News", "News", wiki: true)]
+            + articles.enumerated().map { src($0.element, "Story \($0.offset + 1)") }
+        let tp = WebEvidence.topStoriesPacket(mixed)
+        row("top-stories-packet-headlines-first-lines-all-kept", tp.links.map(\.title) == ["Story 1", "Story 2", "Story 3", "Story 4"]
+            && tp.links.allSatisfy { $0.snippet?.hasPrefix("First line of") == true && $0.snippet?.contains("More text") == false }
+            && tp.scored.allSatisfy(\.kept), tp.links.map(\.title).joined(separator: ", "))
+        let thin = WebEvidence.topStoriesPacket(fronts.map { src($0, "Front") } + articles.prefix(2).map { src($0, "Story") })
+        row("top-stories-fewer-than-3-articles-sends-nothing", thin.links.isEmpty)
+        let topRR = await WebEvidence.rerank(query: "top news", sources: mixed, budget: WebEvidence.appleWebBudget, topStories: true)
+        row("rerank-top-stories-has-no-floor", topRR.links.count == 4, "\(topRR.links.count) kept")
         let fr = [("what happened in the news today?", SearchFreshness.day), ("any news on the Lakeview election this week?", .week),
                   ("Who is the chancellor of Germany?", SearchFreshness.currentState), ("Why is the sky blue?", .none),
                   ("What is the capital of Australia?", .none)]

@@ -31,6 +31,15 @@ extension WebEvidence {
     @MainActor static func searchQuery(for question: String, chat: ChatSession, now: Date = Date()) async
         -> (query: String, wikiQuery: String, how: String, ms: Int) {
         let t0 = Date()
+        // Sweep 2b · 1d (news route b) — a top-stories question's query is built by rule, never from its small words (the
+        // rewrite turned T's "top new stories" into "new news": eight front pages). The provider's window carries the date.
+        if WebGrounding.isTopStories(question) {
+            let q = WebGrounding.topStoriesQuery
+            #if DEBUG
+            debugLast = (q, "top stories (by rule)", 0)
+            #endif
+            return (q, q, "top stories (by rule)", 0)
+        }
         let prior = AppleWebGrounding.priorTurns(chat)
         let turns = AppleWebQuery.needsContext(question) ? prior : []
         let typed = (prior.map(\.question) + [question]).joined(separator: " ")
@@ -178,7 +187,8 @@ extension WebEvidence {
         let wiki = await wikiSources
         // the meaning to match: the query without the app's freshness year (that is for the provider)
         let budget = appleWebBudget
-        let rr = await rerank(query: sq.wikiQuery, sources: wiki + web.map(source), budget: budget)
+        let rr = await rerank(query: sq.wikiQuery, sources: wiki + web.map(source), budget: budget,
+                              topStories: WebGrounding.isTopStories(question))
         #if DEBUG
         WebTrace.shared.note("tool", ["name": "web_search", "id": "app_search", "startMs": fetchStart, "args": ["query": searchQuery],
                                       "links": WebTrace.links(result.links), "failed": result.failed, "rateLimited": result.rateLimited, "text": ""])
@@ -197,7 +207,7 @@ extension WebEvidence {
     /// the top page's text (`fetchTop`, a factual question) and the Wikipedia articles join; every passage reranked against
     /// `query` within the model's budget.
     static func hostEvidence(_ result: ToolResult, appSearch: Bool, fetchTop: Bool, executor: ToolExecutor,
-                             wiki: [Source]?, query: String, budget: Budget, callStart: Int = 0) async
+                             wiki: [Source]?, query: String, budget: Budget, callStart: Int = 0, topStories: Bool = false) async
         -> (links: [ToolLink], scored: [Scored], ms: Int, sources: [Source]) {
         let web = WebGrounding.hostLinks(result.links)
         var sources = web.map(source)
@@ -216,12 +226,39 @@ extension WebEvidence {
             }
             if let wiki { sources = wiki + sources }
         }
-        let rr = await rerank(query: query, sources: sources, budget: budget)
+        let rr = await rerank(query: query, sources: sources, budget: budget, topStories: topStories)
         #if DEBUG
         WebTrace.shared.note("rerank", WebTrace.rerank(rr).merging(["budget": budget.label, "budgetChars": budget.chars, "topK": budget.topK,
                                                                     "perSource": budget.perSource]) { $1 })
         #endif
         return rr
+    }
+
+    // MARK: - Sweep 2b · 1d — top stories (news route c, d)
+
+    /// A front page or a section page: no article path. One path segment at most, a short one, and no 4-digit run (an
+    /// article's date or id) — "/", "/world", "/us-news" are dropped; "/2026/11/22/…" and long slugs are articles.
+    static func isFrontOrSectionPage(_ url: String) -> Bool {
+        guard let c = URLComponents(string: url) else { return false }
+        let parts = c.path.split(separator: "/")
+        return parts.count <= 1 && (parts.first?.count ?? 0) < 25 && c.path.range(of: #"\d{4}"#, options: .regularExpression) == nil
+    }
+    /// The most articles a top-stories packet carries, and the fewest that make one (fewer → the app says so).
+    static let topStoriesMax = 6, topStoriesMin = 3
+    /// An article's first line for the packet: the provider's text up to its first line break, ≤ 180 characters.
+    static func firstLine(_ text: String) -> String {
+        let t = text.trimmingCharacters(in: .whitespacesAndNewlines)
+        let line = t.split(whereSeparator: \.isNewline).first.map(String.init) ?? t
+        return String(line.prefix(180))
+    }
+    /// The top-stories packet (by rule, not by score): Wikipedia and front / section pages out, the first
+    /// `topStoriesMax` articles as headline + first line, every one kept. Fewer than `topStoriesMin` → none (the app
+    /// writes `WebGrounding.searchEmptyLine`; it never summarises front pages).
+    static func topStoriesPacket(_ sources: [Source]) -> (links: [ToolLink], scored: [Scored], sources: [Source]) {
+        let arts = Array(sources.filter { !$0.wikipedia && !isFrontOrSectionPage($0.url) }.prefix(topStoriesMax))
+        guard arts.count >= topStoriesMin else { return ([], [], arts) }
+        let links = arts.map { ToolLink(title: $0.title, url: $0.url, snippet: firstLine($0.text), published: $0.published) }
+        return (links, links.enumerated().map { Scored(source: $0.offset, text: $0.element.snippet ?? "", score: 1, kept: true) }, arts)
     }
 
     // MARK: - 3. The rerank
@@ -242,7 +279,8 @@ extension WebEvidence {
     /// Rerank the fetched sources against the query: the passages the model sees (as links), every passage's score, the
     /// time, and the sources as scored (duplicates merged).
     /// live-32 (`-Live32Web`): every source passed whole, in order, no rerank.
-    static func rerank(query: String, sources: [Source], budget: Budget) async -> (links: [ToolLink], scored: [Scored], ms: Int, sources: [Source]) {
+    /// Sweep 2b · 1d — `topStories`: the packet is `topStoriesPacket` (no rerank, no floor).
+    static func rerank(query: String, sources: [Source], budget: Budget, topStories: Bool = false) async -> (links: [ToolLink], scored: [Scored], ms: Int, sources: [Source]) {
         let t0 = Date()
         guard !live32 else {
             return (sources.map { ToolLink(title: ($0.wikipedia ? WikipediaGrounding.titlePrefix : "") + $0.title, url: $0.url,
@@ -260,6 +298,13 @@ extension WebEvidence {
             } else { merged.append(src) }
         }
         let sources = merged
+        if topStories {
+            let p = topStoriesPacket(sources)
+            #if DEBUG
+            WebTrace.shared.note("plan", ["path": "top-stories", "articles": p.links.count, "frontOrSection": sources.filter { isFrontOrSectionPage($0.url) }.count])
+            #endif
+            return (p.links, p.scored, Int(Date().timeIntervalSince(t0) * 1000), p.sources)
+        }
         // every passage, with its source's title (it says what the page is about; the model sees the passage only)
         // live-37 (3) — boilerplate passages out: the title embedded with every passage lifted a page's menu text with it
         // (CNBC's "Skip Navigation Markets…" under an iPhone-pricing title scored 0.82, the answer 0.75). The passage alone

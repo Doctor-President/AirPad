@@ -924,6 +924,8 @@ final class ChatSession {
             // turn's user content (the display transcript keeps the clean question). It
             // returns the settled answer, its GLOBALLY-numbered citation links, whether
             // ANY tool ran, and whether a provider throttle was seen (for honest wording).
+            var appSearchEmpty = false   // 2b · 1d — the app's own search (prefetch) returned nothing usable
+            var appWroteEmpty = false    // … and the app answered it itself
             func runToolLoop(nudge: Bool) async throws -> (answer: String, links: [ToolLink], anyTool: Bool, rateLimited: Bool, searched: Bool) {
                 // OpenAI working-set (system + prior chat turns + this turn). Activity
                 // rows are display-only — skipped here.
@@ -993,7 +995,8 @@ final class ChatSession {
                             let budget = WebEvidence.hostWebBudget(model: await ModelRouter.webEvidenceModel())
                             let wiki = call.id == "app_search" ? await wikiTask?.value : nil
                             let rr = await WebEvidence.hostEvidence(result, appSearch: call.id == "app_search", fetchTop: prefetch == .searchAndFetch,
-                                                                    executor: executor, wiki: wiki, query: q, budget: budget, callStart: callStart)
+                                                                    executor: executor, wiki: wiki, query: q, budget: budget, callStart: callStart,
+                                                                    topStories: call.id == "app_search" && WebGrounding.isTopStories(displayText))
                             result = ToolResult(textForModel: result.textForModel, links: rr.links, rateLimited: result.rateLimited,
                                                 unavailable: result.unavailable, failed: result.failed)
                         }
@@ -1031,6 +1034,7 @@ final class ChatSession {
                             // The APP ran this search, not the model — an empty result read as the model's own failed
                             // call ("I apologize for the error…"). Say plainly what happened.
                             toolContent = "The web search found nothing for this question. Answer it from your own knowledge."
+                            appSearchEmpty = true
                         } else {
                             toolContent = result.textForModel
                         }
@@ -1043,6 +1047,7 @@ final class ChatSession {
                             working[working.count - 1]["content"] = WebGrounding.appSearchTurn(query: q, question: displayText,
                                                                                                links: result.links, now: now)
                             working[0]["content"] = systemPrompt + "\n\n" + WebGrounding.appSearchClause
+                                + (WebGrounding.isTopStories(displayText) ? " " + WebGrounding.topStoriesClause : "")   // 2b · 1d (g)
                             continue
                         }
                         working.append(["role": "tool", "tool_call_id": call.id, "content": toolContent])
@@ -1064,6 +1069,12 @@ final class ChatSession {
                     GauntletTap.shared.noteValue("prefetch", prefetch.rawValue)
                     GauntletTap.shared.noteValue("prefetchMs", Int(Date().timeIntervalSince(t0) * 1000))
                     #endif
+                    // Sweep 2b · 1d (news route e) — the app's news search came back with nothing usable: the app says so,
+                    // nothing is handed to the model to invent news. Other questions keep "answer from your own knowledge".
+                    if appSearchEmpty, WebGrounding.isTimeSensitive(question: displayText, query: appQuery) {
+                        appWroteEmpty = true
+                        return (WebGrounding.searchEmptyLine, [], true, false, true)
+                    }
                 }
 
                 for step in 0..<maxToolSteps {
@@ -1148,7 +1159,15 @@ final class ChatSession {
             }
 
             streamingText = ""
-            if !outcome.answer.isEmpty {
+            if appWroteEmpty {
+                // 2b · 1d — the app's own line: no provenance (no "+ web" caption), no general-knowledge line.
+                messages.append(Message(role: .assistant, text: outcome.answer))
+                LibRec.set("appAnswer", .token("search-empty"))
+                #if DEBUG
+                GauntletTap.shared.notePath("search-empty")
+                WebTrace.shared.note("answer", ["text": outcome.answer, "cited": [String](), "line": "", "caption": "", "app": "search-empty"])
+                #endif
+            } else if !outcome.answer.isEmpty {
                 // ★ Gate chips to CITED, not searched: a web citation ONLY for the [n] the answer actually
                 // referenced, each mapped to its real scraped URL; no [n] → no footer, exactly like corpus.
                 // CH ruling 7/8 — the SAME numberer as the corpus path, over the settled answer: an orphan
@@ -1275,6 +1294,28 @@ final class ChatSession {
         GauntletTap.shared.notePath("library-notice")
         GauntletTap.shared.endTurn(finalText: text, citations: nil, receipt: ChatTranscript.readReceiptText(answer.readReceipt!),
                                    thinking: "", lastError: nil, isPartial: false)
+        #endif
+    }
+
+    /// Sweep 2b · 1d (news route e) — an app-routed search for a news / time-sensitive question came back with nothing
+    /// usable: the app writes `WebGrounding.searchEmptyLine` itself (no model call, no provenance → no "+ web" caption,
+    /// no general-knowledge line), under the search row. The trace turn was begun by the search (`WebEvidence`).
+    func appendSearchEmptyAnswer(userText: String, activity: ToolActivity?) {
+        let q = userText.trimmingCharacters(in: .whitespacesAndNewlines)
+        guard !q.isEmpty, !isStreaming else { return }
+        lastError = nil
+        messages.append(Message(role: .user, text: q))
+        if let activity { messages.append(Message(role: .activity, text: activity.label, activity: activity)) }
+        messages.append(Message(role: .assistant, text: WebGrounding.searchEmptyLine))
+        pendingUser = nil
+        flush()
+        LibRec.set("appAnswer", .token("search-empty"))
+        #if DEBUG
+        GauntletTap.shared.beginTurn(requestID: nil, think: false, systemPrompt: "", history: [], userContent: q, numCtx: 0)
+        GauntletTap.shared.notePath("search-empty")
+        GauntletTap.shared.endTurn(finalText: WebGrounding.searchEmptyLine, citations: nil, receipt: nil, thinking: "",
+                                   lastError: nil, isPartial: false)
+        WebTrace.shared.note("answer", ["text": WebGrounding.searchEmptyLine, "cited": [String](), "line": "", "caption": "", "app": "search-empty"])
         #endif
     }
 

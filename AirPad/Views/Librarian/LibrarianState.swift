@@ -1048,12 +1048,21 @@ final class LibrarianState {
         // the row shows the query and the sources the model saw
         let row = ChatSession.ToolActivity(icon: "magnifyingglass", label: label, detail: searchQuery, links: links)
         guard !links.isEmpty else {
+            // Sweep 2b · 1d (news route e, decisions 2026-11-21) — a news / time-sensitive question whose search came back
+            // with nothing usable: the app says so itself. No model call (9 of 12 such answers were news from memory), no
+            // "+ web" caption; the "Searched the web — nothing relevant" row stays. Other questions keep the labelled
+            // general answer below.
+            if webKey, searched, WebGrounding.isTimeSensitive(question: query, query: searchQuery) {
+                chat.appendSearchEmptyAnswer(userText: query, activity: AppleWebGrounding.live29 ? nil : row)
+                return true
+            }
             await chat.send(displayText: query, modelText: query, systemPrompt: privateSystemPrompt, citations: nil,
                             generalKnowledge: true, webResults: searched ? 0 : nil, searchActivity: searched && !AppleWebGrounding.live29 ? row : nil)
             return true
         }
         let pk = AppleWebGrounding.packet(links: links)
-        let turn = AppleWebGrounding.turn(question: query, query: searchQuery, results: pk.results, voice: Self.plainVoice + standingVoiceSuffix)
+        let turn = AppleWebGrounding.turn(question: query, query: searchQuery, results: pk.results, voice: Self.plainVoice + standingVoiceSuffix,
+                                          topStories: WebGrounding.isTopStories(query))
         await chat.send(displayText: query, modelText: turn.modelText, systemPrompt: turn.systemPrompt,
                         citations: pk.citations, generalKnowledge: true, webResults: pk.citations.count,
                         searchActivity: AppleWebGrounding.live29 ? nil : row,

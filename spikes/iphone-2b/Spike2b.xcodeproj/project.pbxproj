@@ -1,0 +1,535 @@
+// !$*UTF8*$!
+{
+	archiveVersion = 1;
+	classes = {
+	};
+	objectVersion = 77;
+	objects = {
+
+/* Begin PBXBuildFile section */
+		043FF7560E86EDBCB0BC7A78 /* SpikeRunner.swift in Sources */ = {isa = PBXBuildFile; fileRef = E3B948FAAD85948DB15D2486 /* SpikeRunner.swift */; };
+		177FAAFA775E69F797A07BA7 /* SpikeDryRun.swift in Sources */ = {isa = PBXBuildFile; fileRef = EBF1702054F5DA3CB71C8839 /* SpikeDryRun.swift */; };
+		17BF675068595A4AC1D4B40B /* SpikeSuite.swift in Sources */ = {isa = PBXBuildFile; fileRef = FD3CFE46979CB92E2BF9400A /* SpikeSuite.swift */; };
+		23965473647EA0AC6843B76B /* MLXLMCommon in Frameworks */ = {isa = PBXBuildFile; productRef = 744B5A786C1056818F86B284 /* MLXLMCommon */; };
+		2F25AF1FE36A42A7ADDD6461 /* SpikeRunner.swift in Sources */ = {isa = PBXBuildFile; fileRef = E3B948FAAD85948DB15D2486 /* SpikeRunner.swift */; };
+		524CF042EA4803C5662972B5 /* SpikeSuite.swift in Sources */ = {isa = PBXBuildFile; fileRef = FD3CFE46979CB92E2BF9400A /* SpikeSuite.swift */; };
+		633826A64F55CA9916B3362A /* MLXLMCommon in Frameworks */ = {isa = PBXBuildFile; productRef = 0336ABC57B86EB8F860FE9A7 /* MLXLMCommon */; };
+		694403BE840B33A6C29A5CB2 /* MLXFoundationModels in Frameworks */ = {isa = PBXBuildFile; productRef = 5B8900EA1B8F40E22D2A8525 /* MLXFoundationModels */; };
+		766D92E03CC39B7FF0C3C8B1 /* Tokenizers in Frameworks */ = {isa = PBXBuildFile; productRef = 53098140C4316F8DFBBD8199 /* Tokenizers */; };
+		7F1D40CAD1C244DA1F5A3FDD /* main.swift in Sources */ = {isa = PBXBuildFile; fileRef = CEB5CDBE0B557B03BBF5B5DA /* main.swift */; };
+		A16C67F76053C1D35A299DE5 /* SpikeMLX.swift in Sources */ = {isa = PBXBuildFile; fileRef = 9B6CA7C81681034C710F8E0C /* SpikeMLX.swift */; };
+		AF9D011DB276E7B158905060 /* SpikeApp.swift in Sources */ = {isa = PBXBuildFile; fileRef = 4EDEC663511A6F89B569A602 /* SpikeApp.swift */; };
+		B103AEFFAD3E95135742EA90 /* MLXLLM in Frameworks */ = {isa = PBXBuildFile; productRef = 1D874F22043301529FA1D0B7 /* MLXLLM */; };
+		CD313C696C040D3F8D37513C /* Tokenizers in Frameworks */ = {isa = PBXBuildFile; productRef = A57832E57628A2244254F62A /* Tokenizers */; };
+		D18667DD37D913E76F3A7008 /* SpikeMetrics.swift in Sources */ = {isa = PBXBuildFile; fileRef = 0CDD04431F7E54D604A5E74A /* SpikeMetrics.swift */; };
+		DF2CD0E1B4AC1590D6049193 /* MLXFoundationModels in Frameworks */ = {isa = PBXBuildFile; productRef = 523251B9BF594F887E3B8F89 /* MLXFoundationModels */; };
+		ED407663A9AA11A711ABC1F3 /* SpikeDryRun.swift in Sources */ = {isa = PBXBuildFile; fileRef = EBF1702054F5DA3CB71C8839 /* SpikeDryRun.swift */; };
+		ED654F936DE7BF97BCD087E4 /* SpikeMetrics.swift in Sources */ = {isa = PBXBuildFile; fileRef = 0CDD04431F7E54D604A5E74A /* SpikeMetrics.swift */; };
+		F1EFD782CE3CE1B6B79E3BFA /* SpikeMLX.swift in Sources */ = {isa = PBXBuildFile; fileRef = 9B6CA7C81681034C710F8E0C /* SpikeMLX.swift */; };
+		FA5479616AA7F40E884FB9E5 /* MLXLLM in Frameworks */ = {isa = PBXBuildFile; productRef = 3A3C01965EA58F51A0DF84DF /* MLXLLM */; };
+/* End PBXBuildFile section */
+
+/* Begin PBXFileReference section */
+		0CDD04431F7E54D604A5E74A /* SpikeMetrics.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = SpikeMetrics.swift; sourceTree = "<group>"; };
+		4EDEC663511A6F89B569A602 /* SpikeApp.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = SpikeApp.swift; sourceTree = "<group>"; };
+		5B576146D6A080FA0016B219 /* Info.plist */ = {isa = PBXFileReference; lastKnownFileType = text.plist; path = Info.plist; sourceTree = "<group>"; };
+		9B6CA7C81681034C710F8E0C /* SpikeMLX.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = SpikeMLX.swift; sourceTree = "<group>"; };
+		B5EF7900DEDEE1B026A78657 /* Spike2b.app */ = {isa = PBXFileReference; includeInIndex = 0; lastKnownFileType = wrapper.application; path = Spike2b.app; sourceTree = BUILT_PRODUCTS_DIR; };
+		CEB5CDBE0B557B03BBF5B5DA /* main.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = main.swift; sourceTree = "<group>"; };
+		D101F25916EC434AC86D9BD7 /* Spike2b.entitlements */ = {isa = PBXFileReference; lastKnownFileType = text.plist.entitlements; path = Spike2b.entitlements; sourceTree = "<group>"; };
+		E3B948FAAD85948DB15D2486 /* SpikeRunner.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = SpikeRunner.swift; sourceTree = "<group>"; };
+		EBF1702054F5DA3CB71C8839 /* SpikeDryRun.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = SpikeDryRun.swift; sourceTree = "<group>"; };
+		F089C48E2803BD8643C8F492 /* spike-mac */ = {isa = PBXFileReference; includeInIndex = 0; path = "spike-mac"; sourceTree = BUILT_PRODUCTS_DIR; };
+		FD3CFE46979CB92E2BF9400A /* SpikeSuite.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = SpikeSuite.swift; sourceTree = "<group>"; };
+/* End PBXFileReference section */
+
+/* Begin PBXFrameworksBuildPhase section */
+		C67E4B2BA00B0D7909588AEB /* Frameworks */ = {
+			isa = PBXFrameworksBuildPhase;
+			buildActionMask = 2147483647;
+			files = (
+				694403BE840B33A6C29A5CB2 /* MLXFoundationModels in Frameworks */,
+				B103AEFFAD3E95135742EA90 /* MLXLLM in Frameworks */,
+				23965473647EA0AC6843B76B /* MLXLMCommon in Frameworks */,
+				CD313C696C040D3F8D37513C /* Tokenizers in Frameworks */,
+			);
+			runOnlyForDeploymentPostprocessing = 0;
+		};
+		CBF90CD955B181F08EDCCDAB /* Frameworks */ = {
+			isa = PBXFrameworksBuildPhase;
+			buildActionMask = 2147483647;
+			files = (
+				DF2CD0E1B4AC1590D6049193 /* MLXFoundationModels in Frameworks */,
+				FA5479616AA7F40E884FB9E5 /* MLXLLM in Frameworks */,
+				633826A64F55CA9916B3362A /* MLXLMCommon in Frameworks */,
+				766D92E03CC39B7FF0C3C8B1 /* Tokenizers in Frameworks */,
+			);
+			runOnlyForDeploymentPostprocessing = 0;
+		};
+/* End PBXFrameworksBuildPhase section */
+
+/* Begin PBXGroup section */
+		18BF78128E4DACCB3CEDADE1 /* Products */ = {
+			isa = PBXGroup;
+			children = (
+				F089C48E2803BD8643C8F492 /* spike-mac */,
+				B5EF7900DEDEE1B026A78657 /* Spike2b.app */,
+			);
+			name = Products;
+			sourceTree = "<group>";
+		};
+		47BED57EC1F2C819159FBEBF /* Shared */ = {
+			isa = PBXGroup;
+			children = (
+				EBF1702054F5DA3CB71C8839 /* SpikeDryRun.swift */,
+				0CDD04431F7E54D604A5E74A /* SpikeMetrics.swift */,
+				9B6CA7C81681034C710F8E0C /* SpikeMLX.swift */,
+				E3B948FAAD85948DB15D2486 /* SpikeRunner.swift */,
+				FD3CFE46979CB92E2BF9400A /* SpikeSuite.swift */,
+			);
+			path = Shared;
+			sourceTree = "<group>";
+		};
+		49722917237F4638525335C4 /* Mac */ = {
+			isa = PBXGroup;
+			children = (
+				CEB5CDBE0B557B03BBF5B5DA /* main.swift */,
+			);
+			path = Mac;
+			sourceTree = "<group>";
+		};
+		5502A6E181054166817E25FD = {
+			isa = PBXGroup;
+			children = (
+				82ABE803782B0D68FBC8E910 /* App */,
+				49722917237F4638525335C4 /* Mac */,
+				47BED57EC1F2C819159FBEBF /* Shared */,
+				18BF78128E4DACCB3CEDADE1 /* Products */,
+			);
+			sourceTree = "<group>";
+		};
+		82ABE803782B0D68FBC8E910 /* App */ = {
+			isa = PBXGroup;
+			children = (
+				5B576146D6A080FA0016B219 /* Info.plist */,
+				D101F25916EC434AC86D9BD7 /* Spike2b.entitlements */,
+				4EDEC663511A6F89B569A602 /* SpikeApp.swift */,
+			);
+			path = App;
+			sourceTree = "<group>";
+		};
+/* End PBXGroup section */
+
+/* Begin PBXNativeTarget section */
+		414789E659776214752D0BF3 /* spike-mac */ = {
+			isa = PBXNativeTarget;
+			buildConfigurationList = C43270C179304A4A75F936EE /* Build configuration list for PBXNativeTarget "spike-mac" */;
+			buildPhases = (
+				06DF2C3B9CA2E0EF25EE87F1 /* Sources */,
+				CBF90CD955B181F08EDCCDAB /* Frameworks */,
+			);
+			buildRules = (
+			);
+			dependencies = (
+			);
+			name = "spike-mac";
+			packageProductDependencies = (
+				523251B9BF594F887E3B8F89 /* MLXFoundationModels */,
+				3A3C01965EA58F51A0DF84DF /* MLXLLM */,
+				0336ABC57B86EB8F860FE9A7 /* MLXLMCommon */,
+				53098140C4316F8DFBBD8199 /* Tokenizers */,
+			);
+			productName = "spike-mac";
+			productReference = F089C48E2803BD8643C8F492 /* spike-mac */;
+			productType = "com.apple.product-type.tool";
+		};
+		DDA0ECC8536BC600E2338EC3 /* Spike2b */ = {
+			isa = PBXNativeTarget;
+			buildConfigurationList = A368A4190EC84CFEC6F0F613 /* Build configuration list for PBXNativeTarget "Spike2b" */;
+			buildPhases = (
+				A74B8EBEA3FB9E363EB23975 /* Sources */,
+				C67E4B2BA00B0D7909588AEB /* Frameworks */,
+			);
+			buildRules = (
+			);
+			dependencies = (
+			);
+			name = Spike2b;
+			packageProductDependencies = (
+				5B8900EA1B8F40E22D2A8525 /* MLXFoundationModels */,
+				1D874F22043301529FA1D0B7 /* MLXLLM */,
+				744B5A786C1056818F86B284 /* MLXLMCommon */,
+				A57832E57628A2244254F62A /* Tokenizers */,
+			);
+			productName = Spike2b;
+			productReference = B5EF7900DEDEE1B026A78657 /* Spike2b.app */;
+			productType = "com.apple.product-type.application";
+		};
+/* End PBXNativeTarget section */
+
+/* Begin PBXProject section */
+		E41257943AD9605B25A5E8FB /* Project object */ = {
+			isa = PBXProject;
+			attributes = {
+				BuildIndependentTargetsInParallel = YES;
+				LastUpgradeCheck = 1430;
+				TargetAttributes = {
+					414789E659776214752D0BF3 = {
+						DevelopmentTeam = "";
+						ProvisioningStyle = Manual;
+					};
+					DDA0ECC8536BC600E2338EC3 = {
+						DevelopmentTeam = 8XM4B5F42Y;
+						ProvisioningStyle = Automatic;
+					};
+				};
+			};
+			buildConfigurationList = BF77E0968D1B98CA9BA47D3E /* Build configuration list for PBXProject "Spike2b" */;
+			developmentRegion = en;
+			hasScannedForEncodings = 0;
+			knownRegions = (
+				Base,
+				en,
+			);
+			mainGroup = 5502A6E181054166817E25FD;
+			minimizedProjectReferenceProxies = 1;
+			packageReferences = (
+				3EE33ADE44120D1F4A7AB4BC /* XCRemoteSwiftPackageReference "mlx-swift-lm" */,
+				B63CDA56E08B5EEB35891D9C /* XCRemoteSwiftPackageReference "swift-transformers" */,
+			);
+			preferredProjectObjectVersion = 77;
+			productRefGroup = 18BF78128E4DACCB3CEDADE1 /* Products */;
+			projectDirPath = "";
+			projectRoot = "";
+			targets = (
+				DDA0ECC8536BC600E2338EC3 /* Spike2b */,
+				414789E659776214752D0BF3 /* spike-mac */,
+			);
+		};
+/* End PBXProject section */
+
+/* Begin PBXSourcesBuildPhase section */
+		06DF2C3B9CA2E0EF25EE87F1 /* Sources */ = {
+			isa = PBXSourcesBuildPhase;
+			buildActionMask = 2147483647;
+			files = (
+				177FAAFA775E69F797A07BA7 /* SpikeDryRun.swift in Sources */,
+				A16C67F76053C1D35A299DE5 /* SpikeMLX.swift in Sources */,
+				D18667DD37D913E76F3A7008 /* SpikeMetrics.swift in Sources */,
+				043FF7560E86EDBCB0BC7A78 /* SpikeRunner.swift in Sources */,
+				524CF042EA4803C5662972B5 /* SpikeSuite.swift in Sources */,
+				7F1D40CAD1C244DA1F5A3FDD /* main.swift in Sources */,
+			);
+			runOnlyForDeploymentPostprocessing = 0;
+		};
+		A74B8EBEA3FB9E363EB23975 /* Sources */ = {
+			isa = PBXSourcesBuildPhase;
+			buildActionMask = 2147483647;
+			files = (
+				AF9D011DB276E7B158905060 /* SpikeApp.swift in Sources */,
+				ED407663A9AA11A711ABC1F3 /* SpikeDryRun.swift in Sources */,
+				F1EFD782CE3CE1B6B79E3BFA /* SpikeMLX.swift in Sources */,
+				ED654F936DE7BF97BCD087E4 /* SpikeMetrics.swift in Sources */,
+				2F25AF1FE36A42A7ADDD6461 /* SpikeRunner.swift in Sources */,
+				17BF675068595A4AC1D4B40B /* SpikeSuite.swift in Sources */,
+			);
+			runOnlyForDeploymentPostprocessing = 0;
+		};
+/* End PBXSourcesBuildPhase section */
+
+/* Begin XCBuildConfiguration section */
+		01D43FACAD980262DCA7AEAB /* Release */ = {
+			isa = XCBuildConfiguration;
+			buildSettings = {
+				ASSETCATALOG_COMPILER_APPICON_NAME = AppIcon;
+				CODE_SIGN_ENTITLEMENTS = App/Spike2b.entitlements;
+				CODE_SIGN_IDENTITY = "Apple Development";
+				GENERATE_INFOPLIST_FILE = NO;
+				INFOPLIST_FILE = App/Info.plist;
+				LD_RUNPATH_SEARCH_PATHS = (
+					"$(inherited)",
+					"@executable_path/Frameworks",
+				);
+				PRODUCT_BUNDLE_IDENTIFIER = "$(SPIKE_BUNDLE_ID)";
+				SDKROOT = iphoneos;
+				TARGETED_DEVICE_FAMILY = 1;
+			};
+			name = Release;
+		};
+		10C612F6D2898026C640ED3B /* Release */ = {
+			isa = XCBuildConfiguration;
+			buildSettings = {
+				ALWAYS_SEARCH_USER_PATHS = NO;
+				CLANG_ANALYZER_NONNULL = YES;
+				CLANG_ANALYZER_NUMBER_OBJECT_CONVERSION = YES_AGGRESSIVE;
+				CLANG_CXX_LANGUAGE_STANDARD = "gnu++14";
+				CLANG_CXX_LIBRARY = "libc++";
+				CLANG_ENABLE_MODULES = YES;
+				CLANG_ENABLE_OBJC_ARC = YES;
+				CLANG_ENABLE_OBJC_WEAK = YES;
+				CLANG_WARN_BLOCK_CAPTURE_AUTORELEASING = YES;
+				CLANG_WARN_BOOL_CONVERSION = YES;
+				CLANG_WARN_COMMA = YES;
+				CLANG_WARN_CONSTANT_CONVERSION = YES;
+				CLANG_WARN_DEPRECATED_OBJC_IMPLEMENTATIONS = YES;
+				CLANG_WARN_DIRECT_OBJC_ISA_USAGE = YES_ERROR;
+				CLANG_WARN_DOCUMENTATION_COMMENTS = YES;
+				CLANG_WARN_EMPTY_BODY = YES;
+				CLANG_WARN_ENUM_CONVERSION = YES;
+				CLANG_WARN_INFINITE_RECURSION = YES;
+				CLANG_WARN_INT_CONVERSION = YES;
+				CLANG_WARN_NON_LITERAL_NULL_CONVERSION = YES;
+				CLANG_WARN_OBJC_IMPLICIT_RETAIN_SELF = YES;
+				CLANG_WARN_OBJC_LITERAL_CONVERSION = YES;
+				CLANG_WARN_OBJC_ROOT_CLASS = YES_ERROR;
+				CLANG_WARN_QUOTED_INCLUDE_IN_FRAMEWORK_HEADER = YES;
+				CLANG_WARN_RANGE_LOOP_ANALYSIS = YES;
+				CLANG_WARN_STRICT_PROTOTYPES = YES;
+				CLANG_WARN_SUSPICIOUS_MOVE = YES;
+				CLANG_WARN_UNGUARDED_AVAILABILITY = YES_AGGRESSIVE;
+				CLANG_WARN_UNREACHABLE_CODE = YES;
+				CLANG_WARN__DUPLICATE_METHOD_MATCH = YES;
+				CODE_SIGN_STYLE = Automatic;
+				COPY_PHASE_STRIP = NO;
+				CURRENT_PROJECT_VERSION = 1;
+				DEBUG_INFORMATION_FORMAT = "dwarf-with-dsym";
+				DEVELOPMENT_TEAM = 8XM4B5F42Y;
+				ENABLE_NS_ASSERTIONS = NO;
+				ENABLE_STRICT_OBJC_MSGSEND = YES;
+				GCC_C_LANGUAGE_STANDARD = gnu11;
+				GCC_NO_COMMON_BLOCKS = YES;
+				GCC_WARN_64_TO_32_BIT_CONVERSION = YES;
+				GCC_WARN_ABOUT_RETURN_TYPE = YES_ERROR;
+				GCC_WARN_UNDECLARED_SELECTOR = YES;
+				GCC_WARN_UNINITIALIZED_AUTOS = YES_AGGRESSIVE;
+				GCC_WARN_UNUSED_FUNCTION = YES;
+				GCC_WARN_UNUSED_VARIABLE = YES;
+				IPHONEOS_DEPLOYMENT_TARGET = 27.0;
+				MACOSX_DEPLOYMENT_TARGET = 27.0;
+				MARKETING_VERSION = 0.1;
+				MTL_ENABLE_DEBUG_INFO = NO;
+				MTL_FAST_MATH = YES;
+				PRODUCT_NAME = "$(TARGET_NAME)";
+				SPIKE_BUNDLE_ID = com.doctorpresident.spike.SpikeHarness;
+				SWIFT_COMPILATION_MODE = wholemodule;
+				SWIFT_OPTIMIZATION_LEVEL = "-O";
+				SWIFT_VERSION = 5.0;
+			};
+			name = Release;
+		};
+		274E715B1025BDB891CEC845 /* Release */ = {
+			isa = XCBuildConfiguration;
+			buildSettings = {
+				CODE_SIGN_IDENTITY = "-";
+				CODE_SIGN_STYLE = Manual;
+				COMBINE_HIDPI_IMAGES = YES;
+				DEVELOPMENT_TEAM = "";
+				ENABLE_HARDENED_RUNTIME = NO;
+				LD_RUNPATH_SEARCH_PATHS = (
+					"$(inherited)",
+					"@executable_path/../Frameworks",
+				);
+				PRODUCT_BUNDLE_IDENTIFIER = com.doctorpresident.airpad.spike2b.mac;
+				SDKROOT = macosx;
+			};
+			name = Release;
+		};
+		5D2AE7C65BC976E9E07B432B /* Debug */ = {
+			isa = XCBuildConfiguration;
+			buildSettings = {
+				ASSETCATALOG_COMPILER_APPICON_NAME = AppIcon;
+				CODE_SIGN_ENTITLEMENTS = App/Spike2b.entitlements;
+				CODE_SIGN_IDENTITY = "Apple Development";
+				GENERATE_INFOPLIST_FILE = NO;
+				INFOPLIST_FILE = App/Info.plist;
+				LD_RUNPATH_SEARCH_PATHS = (
+					"$(inherited)",
+					"@executable_path/Frameworks",
+				);
+				PRODUCT_BUNDLE_IDENTIFIER = "$(SPIKE_BUNDLE_ID)";
+				SDKROOT = iphoneos;
+				TARGETED_DEVICE_FAMILY = 1;
+			};
+			name = Debug;
+		};
+		D25294216B01D21718F55D95 /* Debug */ = {
+			isa = XCBuildConfiguration;
+			buildSettings = {
+				CODE_SIGN_IDENTITY = "-";
+				CODE_SIGN_STYLE = Manual;
+				COMBINE_HIDPI_IMAGES = YES;
+				DEVELOPMENT_TEAM = "";
+				ENABLE_HARDENED_RUNTIME = NO;
+				LD_RUNPATH_SEARCH_PATHS = (
+					"$(inherited)",
+					"@executable_path/../Frameworks",
+				);
+				PRODUCT_BUNDLE_IDENTIFIER = com.doctorpresident.airpad.spike2b.mac;
+				SDKROOT = macosx;
+			};
+			name = Debug;
+		};
+		D7759C28F72C5D89BFCEC789 /* Debug */ = {
+			isa = XCBuildConfiguration;
+			buildSettings = {
+				ALWAYS_SEARCH_USER_PATHS = NO;
+				CLANG_ANALYZER_NONNULL = YES;
+				CLANG_ANALYZER_NUMBER_OBJECT_CONVERSION = YES_AGGRESSIVE;
+				CLANG_CXX_LANGUAGE_STANDARD = "gnu++14";
+				CLANG_CXX_LIBRARY = "libc++";
+				CLANG_ENABLE_MODULES = YES;
+				CLANG_ENABLE_OBJC_ARC = YES;
+				CLANG_ENABLE_OBJC_WEAK = YES;
+				CLANG_WARN_BLOCK_CAPTURE_AUTORELEASING = YES;
+				CLANG_WARN_BOOL_CONVERSION = YES;
+				CLANG_WARN_COMMA = YES;
+				CLANG_WARN_CONSTANT_CONVERSION = YES;
+				CLANG_WARN_DEPRECATED_OBJC_IMPLEMENTATIONS = YES;
+				CLANG_WARN_DIRECT_OBJC_ISA_USAGE = YES_ERROR;
+				CLANG_WARN_DOCUMENTATION_COMMENTS = YES;
+				CLANG_WARN_EMPTY_BODY = YES;
+				CLANG_WARN_ENUM_CONVERSION = YES;
+				CLANG_WARN_INFINITE_RECURSION = YES;
+				CLANG_WARN_INT_CONVERSION = YES;
+				CLANG_WARN_NON_LITERAL_NULL_CONVERSION = YES;
+				CLANG_WARN_OBJC_IMPLICIT_RETAIN_SELF = YES;
+				CLANG_WARN_OBJC_LITERAL_CONVERSION = YES;
+				CLANG_WARN_OBJC_ROOT_CLASS = YES_ERROR;
+				CLANG_WARN_QUOTED_INCLUDE_IN_FRAMEWORK_HEADER = YES;
+				CLANG_WARN_RANGE_LOOP_ANALYSIS = YES;
+				CLANG_WARN_STRICT_PROTOTYPES = YES;
+				CLANG_WARN_SUSPICIOUS_MOVE = YES;
+				CLANG_WARN_UNGUARDED_AVAILABILITY = YES_AGGRESSIVE;
+				CLANG_WARN_UNREACHABLE_CODE = YES;
+				CLANG_WARN__DUPLICATE_METHOD_MATCH = YES;
+				CODE_SIGN_STYLE = Automatic;
+				COPY_PHASE_STRIP = NO;
+				CURRENT_PROJECT_VERSION = 1;
+				DEBUG_INFORMATION_FORMAT = dwarf;
+				DEVELOPMENT_TEAM = 8XM4B5F42Y;
+				ENABLE_STRICT_OBJC_MSGSEND = YES;
+				ENABLE_TESTABILITY = YES;
+				GCC_C_LANGUAGE_STANDARD = gnu11;
+				GCC_DYNAMIC_NO_PIC = NO;
+				GCC_NO_COMMON_BLOCKS = YES;
+				GCC_OPTIMIZATION_LEVEL = 0;
+				GCC_PREPROCESSOR_DEFINITIONS = (
+					"$(inherited)",
+					"DEBUG=1",
+				);
+				GCC_WARN_64_TO_32_BIT_CONVERSION = YES;
+				GCC_WARN_ABOUT_RETURN_TYPE = YES_ERROR;
+				GCC_WARN_UNDECLARED_SELECTOR = YES;
+				GCC_WARN_UNINITIALIZED_AUTOS = YES_AGGRESSIVE;
+				GCC_WARN_UNUSED_FUNCTION = YES;
+				GCC_WARN_UNUSED_VARIABLE = YES;
+				IPHONEOS_DEPLOYMENT_TARGET = 27.0;
+				MACOSX_DEPLOYMENT_TARGET = 27.0;
+				MARKETING_VERSION = 0.1;
+				MTL_ENABLE_DEBUG_INFO = INCLUDE_SOURCE;
+				MTL_FAST_MATH = YES;
+				ONLY_ACTIVE_ARCH = YES;
+				PRODUCT_NAME = "$(TARGET_NAME)";
+				SPIKE_BUNDLE_ID = com.doctorpresident.spike.SpikeHarness;
+				SWIFT_ACTIVE_COMPILATION_CONDITIONS = DEBUG;
+				SWIFT_OPTIMIZATION_LEVEL = "-Onone";
+				SWIFT_VERSION = 5.0;
+			};
+			name = Debug;
+		};
+/* End XCBuildConfiguration section */
+
+/* Begin XCConfigurationList section */
+		A368A4190EC84CFEC6F0F613 /* Build configuration list for PBXNativeTarget "Spike2b" */ = {
+			isa = XCConfigurationList;
+			buildConfigurations = (
+				5D2AE7C65BC976E9E07B432B /* Debug */,
+				01D43FACAD980262DCA7AEAB /* Release */,
+			);
+			defaultConfigurationIsVisible = 0;
+			defaultConfigurationName = Debug;
+		};
+		BF77E0968D1B98CA9BA47D3E /* Build configuration list for PBXProject "Spike2b" */ = {
+			isa = XCConfigurationList;
+			buildConfigurations = (
+				D7759C28F72C5D89BFCEC789 /* Debug */,
+				10C612F6D2898026C640ED3B /* Release */,
+			);
+			defaultConfigurationIsVisible = 0;
+			defaultConfigurationName = Debug;
+		};
+		C43270C179304A4A75F936EE /* Build configuration list for PBXNativeTarget "spike-mac" */ = {
+			isa = XCConfigurationList;
+			buildConfigurations = (
+				D25294216B01D21718F55D95 /* Debug */,
+				274E715B1025BDB891CEC845 /* Release */,
+			);
+			defaultConfigurationIsVisible = 0;
+			defaultConfigurationName = Debug;
+		};
+/* End XCConfigurationList section */
+
+/* Begin XCRemoteSwiftPackageReference section */
+		3EE33ADE44120D1F4A7AB4BC /* XCRemoteSwiftPackageReference "mlx-swift-lm" */ = {
+			isa = XCRemoteSwiftPackageReference;
+			repositoryURL = "https://github.com/ml-explore/mlx-swift-lm";
+			requirement = {
+				kind = exactVersion;
+				version = 3.33.0;
+			};
+		};
+		B63CDA56E08B5EEB35891D9C /* XCRemoteSwiftPackageReference "swift-transformers" */ = {
+			isa = XCRemoteSwiftPackageReference;
+			repositoryURL = "https://github.com/huggingface/swift-transformers";
+			requirement = {
+				kind = exactVersion;
+				version = 1.4.0;
+			};
+		};
+/* End XCRemoteSwiftPackageReference section */
+
+/* Begin XCSwiftPackageProductDependency section */
+		0336ABC57B86EB8F860FE9A7 /* MLXLMCommon */ = {
+			isa = XCSwiftPackageProductDependency;
+			package = 3EE33ADE44120D1F4A7AB4BC /* XCRemoteSwiftPackageReference "mlx-swift-lm" */;
+			productName = MLXLMCommon;
+		};
+		1D874F22043301529FA1D0B7 /* MLXLLM */ = {
+			isa = XCSwiftPackageProductDependency;
+			package = 3EE33ADE44120D1F4A7AB4BC /* XCRemoteSwiftPackageReference "mlx-swift-lm" */;
+			productName = MLXLLM;
+		};
+		3A3C01965EA58F51A0DF84DF /* MLXLLM */ = {
+			isa = XCSwiftPackageProductDependency;
+			package = 3EE33ADE44120D1F4A7AB4BC /* XCRemoteSwiftPackageReference "mlx-swift-lm" */;
+			productName = MLXLLM;
+		};
+		523251B9BF594F887E3B8F89 /* MLXFoundationModels */ = {
+			isa = XCSwiftPackageProductDependency;
+			package = 3EE33ADE44120D1F4A7AB4BC /* XCRemoteSwiftPackageReference "mlx-swift-lm" */;
+			productName = MLXFoundationModels;
+		};
+		53098140C4316F8DFBBD8199 /* Tokenizers */ = {
+			isa = XCSwiftPackageProductDependency;
+			package = B63CDA56E08B5EEB35891D9C /* XCRemoteSwiftPackageReference "swift-transformers" */;
+			productName = Tokenizers;
+		};
+		5B8900EA1B8F40E22D2A8525 /* MLXFoundationModels */ = {
+			isa = XCSwiftPackageProductDependency;
+			package = 3EE33ADE44120D1F4A7AB4BC /* XCRemoteSwiftPackageReference "mlx-swift-lm" */;
+			productName = MLXFoundationModels;
+		};
+		744B5A786C1056818F86B284 /* MLXLMCommon */ = {
+			isa = XCSwiftPackageProductDependency;
+			package = 3EE33ADE44120D1F4A7AB4BC /* XCRemoteSwiftPackageReference "mlx-swift-lm" */;
+			productName = MLXLMCommon;
+		};
+		A57832E57628A2244254F62A /* Tokenizers */ = {
+			isa = XCSwiftPackageProductDependency;
+			package = B63CDA56E08B5EEB35891D9C /* XCRemoteSwiftPackageReference "swift-transformers" */;
+			productName = Tokenizers;
+		};
+/* End XCSwiftPackageProductDependency section */
+	};
+	rootObject = E41257943AD9605B25A5E8FB /* Project object */;
+}

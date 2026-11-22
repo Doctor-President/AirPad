@@ -1,0 +1,115 @@
+# Sweep 2b · 3.3 — the iPhone spike: its OWN project (no AirPad code, no AirPad target touched).
+# Regenerate after editing: (cd spikes/iphone-2b && xcodegen generate)
+#   Spike2b    iOS app, bundle $(SPIKE_BUNDLE_ID) — a distinct app: uninstalling it removes its container and the
+#              model copied into it, and never touches AirPad or T's library.
+#              Default com.doctorpresident.spike.SpikeHarness: the ws-local-model spike's App ID, whose development
+#              profile (on this Mac, valid to 2027-08-12) already carries increased-memory-limit and T's iPhone. This
+#              Mac has no Xcode account, so a NEW App ID (com.doctorpresident.airpad.spike2b, the brief's choice) can only
+#              be registered with the App Store Connect API key — an ASC action the spike's rules forbid. Override with
+#              SPIKE_BUNDLE_ID=… on the xcodebuild line (run_on_phone.sh --bundle-id) once that ID is provisioned.
+#   spike-mac  macOS command-line runner: the same Shared/ sources, the same suite and jobs, on this Mac
+name: Spike2b
+
+options:
+  bundleIdPrefix: com.doctorpresident.airpad
+  deploymentTarget:
+    iOS: "27.0"
+    macOS: "27.0"
+  createIntermediateGroups: true
+
+settings:
+  base:
+    SWIFT_VERSION: "5.0"
+    DEVELOPMENT_TEAM: 8XM4B5F42Y
+    CODE_SIGN_STYLE: Automatic
+    CURRENT_PROJECT_VERSION: "1"
+    MARKETING_VERSION: "0.1"
+    SPIKE_BUNDLE_ID: com.doctorpresident.spike.SpikeHarness
+
+packages:
+  # mlx-swift-lm 3.33.0 (newest tag 2026-11-22): MLXFoundationModels (MLXLanguageModel: FoundationModels.LanguageModel),
+  # MLXLLM (qwen3_5 / qwen3_5_text), MLXLMCommon. mlx-swift 0.33.x comes transitively; Package.resolved pins it.
+  MLXSwiftLM:
+    url: https://github.com/ml-explore/mlx-swift-lm
+    exactVersion: 3.33.0
+  # Tokenizers (AutoTokenizer.from(modelFolder:)) — what mlx-swift-lm's README pairs with 3.x. Bridged by hand in
+  # Shared/SpikeMLX.swift (no HuggingFace downloader: the weights arrive by USB).
+  SwiftTransformers:
+    url: https://github.com/huggingface/swift-transformers
+    exactVersion: 1.4.0
+
+targets:
+  Spike2b:
+    type: application
+    platform: iOS
+    sources:
+      - path: Shared
+      - path: App
+    dependencies:
+      - package: MLXSwiftLM
+        product: MLXFoundationModels
+      - package: MLXSwiftLM
+        product: MLXLLM
+      - package: MLXSwiftLM
+        product: MLXLMCommon
+      - package: SwiftTransformers
+        product: Tokenizers
+    info:
+      path: App/Info.plist
+      properties:
+        CFBundleDisplayName: Spike 2b
+        CFBundleShortVersionString: $(MARKETING_VERSION)
+        CFBundleVersion: $(CURRENT_PROJECT_VERSION)
+        UILaunchScreen: {}
+        UIApplicationSupportsIndirectInputEvents: true
+        UISupportedInterfaceOrientations: [UIInterfaceOrientationPortrait]
+        ITSAppUsesNonExemptEncryption: false
+    entitlements:
+      path: App/Spike2b.entitlements
+      properties:
+        com.apple.developer.kernel.increased-memory-limit: true
+    settings:
+      base:
+        PRODUCT_BUNDLE_IDENTIFIER: $(SPIKE_BUNDLE_ID)
+        CODE_SIGN_IDENTITY: "Apple Development"
+        TARGETED_DEVICE_FAMILY: "1"
+        GENERATE_INFOPLIST_FILE: NO
+
+  spike-mac:
+    type: tool
+    platform: macOS
+    sources:
+      - path: Shared
+      - path: Mac
+    dependencies:
+      - package: MLXSwiftLM
+        product: MLXFoundationModels
+      - package: MLXSwiftLM
+        product: MLXLLM
+      - package: MLXSwiftLM
+        product: MLXLMCommon
+      - package: SwiftTransformers
+        product: Tokenizers
+    settings:
+      base:
+        PRODUCT_BUNDLE_IDENTIFIER: com.doctorpresident.airpad.spike2b.mac
+        CODE_SIGN_STYLE: Manual
+        CODE_SIGN_IDENTITY: "-"
+        DEVELOPMENT_TEAM: ""
+        ENABLE_HARDENED_RUNTIME: NO
+
+schemes:
+  Spike2b:
+    build:
+      targets:
+        Spike2b: all
+    run:
+      config: Release
+    archive:
+      config: Release
+  spike-mac:
+    build:
+      targets:
+        spike-mac: all
+    run:
+      config: Release

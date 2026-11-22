@@ -2171,6 +2171,13 @@ final class CorpusPhysicsScene: SKScene {
         #endif
     }
 
+    #if targetEnvironment(macCatalyst)
+    /// Sweep 2b · 2.1 — the view came back on screen (SKViewWindowWatcher paused it when it left): run again.
+    func viewReturnedToWindow() {
+        if restPaused { wakeFromRest("window") } else { view?.isPaused = false }
+    }
+    #endif
+
     /// Delayed work that touches the scene: wake first so it draws (a paused SKView runs no actions and draws nothing).
     private func afterWaking(_ delay: TimeInterval, _ work: @escaping () -> Void) {
         DispatchQueue.main.asyncAfter(deadline: .now() + delay) { [weak self] in
@@ -2365,6 +2372,11 @@ final class CorpusPhysicsScene: SKScene {
     override func didMove(to view: SKView) {
         self.isPaused = false
         installRestObservers(on: view)   // R1
+        #if targetEnvironment(macCatalyst)
+        SKViewWindowWatcher.install(in: view, name: "map") { [weak self] skv in   // Sweep 2b · 2.1
+            if let self, skv.scene === self { self.viewReturnedToWindow() }
+        }
+        #endif
         #if DEBUG || DEVSWITCHES
         // Sweep 2b · 2.1 probe — how many display ticks the SKView offers (its delegate is asked before each frame).
         if Perf.isAvailable {
@@ -7139,6 +7151,41 @@ final class CorpusPhysicsScene: SKScene {
 }
 
 #if DEBUG || DEVSWITCHES
+#if targetEnvironment(macCatalyst)
+/// Sweep 2b · 2.1 — an SKView that is not in a window does not run. Measured (map-trackpad-cause.md §8): the List / Cards
+/// background-dots SKView (`BackgroundGridSKView`, 10 fps, never paused) stayed alive OFF-window after a switch to the
+/// Map and kept presenting at 10 fps; while it ran, the on-screen Map's `update` came at exactly 10 Hz (its view still
+/// drew at 60 / 120: the camera moved, rings / pills / orb scales / the frame-rate controller did not), and the 100 ms
+/// gaps demoted the Map to 60. Structural: a zero-size subview of every SKView we mount pauses it the moment it is
+/// mounted off-window or leaves its window, and hands it back (`onReturn`) when it comes back.
+final class SKViewWindowWatcher: UIView {
+    private var onReturn: ((SKView) -> Void)?
+    private var name = ""
+    static func install(in view: SKView, name: String, onReturn: @escaping (SKView) -> Void) {
+        if let w = view.subviews.first(where: { $0 is SKViewWindowWatcher }) as? SKViewWindowWatcher { w.onReturn = onReturn; return }
+        let w = SKViewWindowWatcher(frame: .zero)
+        w.isUserInteractionEnabled = false
+        w.onReturn = onReturn; w.name = name
+        view.addSubview(w)
+        if view.window == nil {   // mounted off-window: a SwiftUI representable is built before it is placed
+            Perf.mark("\(name) view \(Int(MapProbeID.of(view))) mounted off-window: paused")
+            view.isPaused = true
+        }
+    }
+    override func didMoveToWindow() {
+        super.didMoveToWindow()
+        guard let skv = superview as? SKView else { return }
+        if window == nil {
+            Perf.mark("\(name) view \(Int(MapProbeID.of(skv))) left its window: paused")
+            skv.isPaused = true
+        } else {
+            Perf.mark("\(name) view \(Int(MapProbeID.of(skv))) in a window")
+            onReturn?(skv)
+        }
+    }
+}
+#endif
+
 /// Sweep 2b · 2.1 probe — the SKView's delegate: records every display tick it is offered (accepts all of them).
 final class MapTickProbe: NSObject, SKViewDelegate {
     static let shared = MapTickProbe()

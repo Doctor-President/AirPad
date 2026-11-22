@@ -58,6 +58,11 @@ struct BackgroundGridSKView: UIViewRepresentable {
         pushAppearance(to: grid)   // initial push, so frame 1 isn't the white default
 
         view.presentScene(scene)
+        #if targetEnvironment(macCatalyst)
+        // Sweep 2b · 2.1 — paused whenever it is not in a window: kept alive off-window after a switch to the Map, its
+        // 10 fps held the on-screen Map's scene updates to 10 Hz (map-trackpad-cause.md §8).
+        SKViewWindowWatcher.install(in: view, name: "grid") { $0.isPaused = false }
+        #endif
         return view
     }
 

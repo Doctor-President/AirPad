@@ -241,10 +241,25 @@ enum MapPinchReplaySelfTest {
             let seq = await pinch(name, deltas, ms)
             // Every event moves the zoom (no dead zone), opposite to its magnification (no reversal), by a step close to
             // −Δmag in ln(scale) (no compounding: the step doesn't grow along the gesture).
-            let cams = [start] + seq.map(\.2)
+            var cams = [start] + seq.map(\.2)
+            #if targetEnvironment(macCatalyst)
+            // Sweep 2b · 2.1 — the camera moves only inside `update` on the Mac: events closer together than a frame land
+            // in ONE camera step. So the check is per camera step: a step carries every event since the last one (none
+            // lost, none compounded), and the last event counts once the gesture has settled.
+            cams[cams.count - 1] = scene.debugCamera.scale
+            var steps: [Double] = [], groupDeltas: [Double] = [], acc = 0.0
+            for (i, d) in deltas.enumerated() {
+                acc += d
+                let st = Double(log(cams[i + 1] / cams[i]))
+                if abs(st) > 1e-5 { steps.append(st); groupDeltas.append(acc); acc = 0 }
+            }
+            let moved = deltas.count - (acc == 0 ? 0 : 1)   // events that reached the camera
+            let ratios = zip(steps, groupDeltas).map { -$0 / $1 }
+            #else
             let steps = zip(cams.dropFirst(), cams).map { Double(log($0 / $1)) }
             let moved = steps.filter { abs($0) > 1e-5 }.count
             let ratios = zip(steps, deltas).map { -$0 / $1 }   // 1 = exactly −Δmag
+            #endif
             let mono = ratios.allSatisfy { $0 > 0 }
             row("\(name): every event moves the zoom", moved == seq.count, "\(moved)/\(seq.count)")
             row("\(name): each step follows its event's direction", mono, "")

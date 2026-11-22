@@ -2253,6 +2253,15 @@ final class CorpusPhysicsScene: SKScene {
     func viewReturnedToWindow() {
         if restPaused { wakeFromRest("window") } else { view?.isPaused = false }
     }
+    /// The watcher paused the view off-window: the scene is at rest too (one state: paused view = resting Map, and the
+    /// return goes through `wakeFromRest`).
+    func viewLeftWindow() {
+        guard !restPaused else { return }
+        restPaused = true
+        restEligibleFrames = 0
+        Perf.probe(.pause)
+        if canvasState?.mapAtRest == false { canvasState?.mapAtRest = true }
+    }
     #endif
 
     /// Delayed work that touches the scene: wake first so it draws (a paused SKView runs no actions and draws nothing).
@@ -2451,7 +2460,9 @@ final class CorpusPhysicsScene: SKScene {
         installRestObservers(on: view)   // R1
         #if targetEnvironment(macCatalyst)
         if view.preferredFramesPerSecond != Self.displayFPS { view.preferredFramesPerSecond = Self.displayFPS }   // 2b · 2.1: once
-        SKViewWindowWatcher.install(in: view, name: "map") { [weak self] skv in   // Sweep 2b · 2.1
+        SKViewWindowWatcher.install(in: view, name: "map", onLeave: { [weak self] skv in   // Sweep 2b · 2.1
+            if let self, skv.scene === self { self.viewLeftWindow() }
+        }) { [weak self] skv in
             if let self, skv.scene === self { self.viewReturnedToWindow() }
         }
         #endif
@@ -7266,12 +7277,15 @@ struct MapInputSources: OptionSet {
 /// mounted off-window or leaves its window, and hands it back (`onReturn`) when it comes back.
 final class SKViewWindowWatcher: UIView {
     private var onReturn: ((SKView) -> Void)?
+    private var onLeave: ((SKView) -> Void)?
     private var name = ""
-    static func install(in view: SKView, name: String, onReturn: @escaping (SKView) -> Void) {
-        if let w = view.subviews.first(where: { $0 is SKViewWindowWatcher }) as? SKViewWindowWatcher { w.onReturn = onReturn; return }
+    static func install(in view: SKView, name: String, onLeave: ((SKView) -> Void)? = nil, onReturn: @escaping (SKView) -> Void) {
+        if let w = view.subviews.first(where: { $0 is SKViewWindowWatcher }) as? SKViewWindowWatcher {
+            w.onReturn = onReturn; w.onLeave = onLeave; return
+        }
         let w = SKViewWindowWatcher(frame: .zero)
         w.isUserInteractionEnabled = false
-        w.onReturn = onReturn; w.name = name
+        w.onReturn = onReturn; w.onLeave = onLeave; w.name = name
         view.addSubview(w)
         if view.window == nil {   // mounted off-window: a SwiftUI representable is built before it is placed
             Perf.mark("\(name) view \(Int(MapProbeID.of(view))) mounted off-window: paused")
@@ -7284,6 +7298,7 @@ final class SKViewWindowWatcher: UIView {
         if window == nil {
             Perf.mark("\(name) view \(Int(MapProbeID.of(skv))) left its window: paused")
             skv.isPaused = true
+            onLeave?(skv)
         } else {
             Perf.mark("\(name) view \(Int(MapProbeID.of(skv))) in a window")
             onReturn?(skv)

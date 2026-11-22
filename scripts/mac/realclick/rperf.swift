@@ -12,6 +12,10 @@
 //   type <text>              letters and spaces, one key each (each key is its own measured step)
 //   scroll <ax-id|x,y> <dy> <events> [ms]   a trackpad two-finger swipe (continuous, phases)
 //   drag <ax-id|x,y> <dx> <dy> <steps>     press, move, release
+//   trackpad <ax-id|x,y> <seconds> [hold] [wobble] [nomomentum]   sweep 2b 0.3: what a HAND posts — may-begin, both axes
+//                            with fractional deltas, jittered ~120 Hz spacing with bursts, curved paths and reversals,
+//                            [hold] fingers still 0.6–1.5 s mid-swipe, momentum after lift, a re-swipe during momentum,
+//                            [wobble] the pointer drifting a few points — repeated for <seconds>
 //   wait <ms>                not measured
 import AppKit
 import ApplicationServices
@@ -137,6 +141,60 @@ var rows: [Row] = []
 let still = 400.0, threshold = 0.003, visibleThreshold = 0.0012
 func pct(_ v: [Double], _ p: Double) -> Double? { let s = v.sorted(); return s.isEmpty ? nil : s[min(s.count - 1, max(0, Int((Double(s.count) * p).rounded(.up)) - 1))] }
 
+/// Sweep 2b (0.3) — a two-axis continuous scroll event with fractional deltas, as a real trackpad sends them.
+func scroll2(_ p: CGPoint, _ dx: Double, _ dy: Double, phase: Int64, momentum: Int64 = 0) {
+    guard let e = CGEvent(scrollWheelEvent2Source: nil, units: .pixel, wheelCount: 2, wheel1: Int32(dy.rounded()), wheel2: Int32(dx.rounded()), wheel3: 0) else { return }
+    e.location = p
+    e.setIntegerValueField(.scrollWheelEventIsContinuous, value: 1)
+    e.setIntegerValueField(.scrollWheelEventScrollPhase, value: phase)
+    e.setIntegerValueField(.scrollWheelEventMomentumPhase, value: momentum)
+    e.setIntegerValueField(.scrollWheelEventPointDeltaAxis1, value: Int64(dy.rounded()))
+    e.setIntegerValueField(.scrollWheelEventPointDeltaAxis2, value: Int64(dx.rounded()))
+    e.setDoubleValueField(.scrollWheelEventFixedPtDeltaAxis1, value: dy)
+    e.setDoubleValueField(.scrollWheelEventFixedPtDeltaAxis2, value: dx)
+    e.post(tap: .cghidEventTap)
+}
+var tpSeed: UInt64 = 0x9E3779B97F4A7C15
+func tpRnd() -> Double { tpSeed = tpSeed &* 6364136223846793005 &+ 1442695040888963407; return Double((tpSeed >> 33) % 1_000_000) / 1_000_000 }
+/// One hand session on the trackpad for `seconds`: swipes of 0.4–1.2 s along curved paths (some reversing without
+/// lifting), optional mid-swipe holds, momentum after each lift (every other one interrupted by the next swipe).
+func trackpadSession(_ p: CGPoint, seconds: Double, hold: Bool, wobble: Bool, momentum: Bool) {
+    let end = Date().addingTimeInterval(seconds)
+    var swipe = 0
+    func gap() { usleep(useconds_t((tpRnd() < 0.12 ? 0.8 : 6.0 + tpRnd() * 5.0) * 1000)) }   // ~120 Hz, jitter, bursts
+    var ptr = p
+    while Date() < end {
+        swipe += 1
+        let ang = tpRnd() * 2 * .pi, speed = 6 + tpRnd() * 22, curve = (tpRnd() - 0.5) * 0.08
+        let n = 40 + Int(tpRnd() * 100), reverseAt = tpRnd() < 0.3 ? n / 2 : -1, holdAt = hold && swipe % 2 == 1 ? n / 3 : -1
+        scroll2(ptr, 0, 0, phase: 128); usleep(25_000)
+        var a = ang, dir = 1.0, vx = 0.0, vy = 0.0
+        for i in 0..<n {
+            if i == reverseAt { dir = -dir }
+            if i == holdAt { usleep(useconds_t((600 + tpRnd() * 900) * 1000)) }
+            a += curve
+            let env = min(1, Double(i + 1) / 8) * min(1, Double(n - i) / 10 + 0.3)
+            vx = cos(a) * speed * env * dir + (tpRnd() - 0.5) * 0.6
+            vy = sin(a) * speed * env * dir + (tpRnd() - 0.5) * 0.6
+            scroll2(ptr, vx, vy, phase: i == 0 ? 1 : 2)
+            if wobble && i % 4 == 3 { ptr = CGPoint(x: p.x + (tpRnd() - 0.5) * 6, y: p.y + (tpRnd() - 0.5) * 6); mouse(.mouseMoved, ptr) }
+            gap()
+        }
+        scroll2(ptr, 0, 0, phase: 4); usleep(8_000)
+        if momentum {
+            let interrupt = swipe % 2 == 0
+            scroll2(ptr, vx, vy, phase: 0, momentum: 1); usleep(8_300)
+            var k = 0
+            while abs(vx) + abs(vy) > 0.4 {
+                vx *= 0.965; vy *= 0.965; k += 1
+                scroll2(ptr, vx, vy, phase: 0, momentum: 2); usleep(8_300)
+                if interrupt && k == 45 { break }
+            }
+            scroll2(ptr, 0, 0, phase: 0, momentum: 3)
+        }
+        usleep(useconds_t((40 + tpRnd() * 160) * 1000))
+    }
+}
 /// Measures one input: `act` posts it and returns when the input has ended (mouse-up / key-up / last scroll event).
 func measure(_ label: String, _ verb: String, timeout: Double = 3000, intervals: Bool = false, _ act: () -> Void) {
     usleep(150_000)
@@ -243,6 +301,12 @@ for raw in script.split(separator: "\n") {
                 usleep(16_000)
             }
             scroll(p, 0, phase: 0, momentum: 3)
+        }
+    case "trackpad":
+        guard let p = point(rest[0]), let secs = Double(rest.count > 1 ? rest[1] : "15") else { continue }
+        mouse(.mouseMoved, p); usleep(150_000)
+        measure(label, verb, timeout: 3000, intervals: true) {
+            trackpadSession(p, seconds: secs, hold: rest.contains("hold"), wobble: rest.contains("wobble"), momentum: !rest.contains("nomomentum"))
         }
     case "move":
         // The pointer travels from a to b in n steps (hover only), measured like a drag.

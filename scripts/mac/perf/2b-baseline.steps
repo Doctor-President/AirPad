@@ -1,0 +1,40 @@
+# Sweep 2b 0.2 — baselines on the realistic test library (run.sh with WIN="1703 924" and again WIN="1534 920"; Release
+# bench copy; LPM off; adapter; nothing else heavy). First step = Cards straight after launch: its `settled` is the
+# first image load after a cold launch (no thumbnail cache on disk yet in today's build).
+cards-cold     click toolbar.view.Cards
+rest           wait 3000
+cards-scroll   scroll 640,600 -2400 80 8
+cards-scroll   scroll 640,600 2400 80 8
+cards-hand     trackpad 640,600 10 wobble
+rest           wait 2000
+cards-width    drag resize.librarian -120 0 24
+cards-width    drag resize.librarian 120 0 24
+cards-width    drag resize.sidebar 70 0 24
+cards-width    drag resize.sidebar -70 0 24
+rest           wait 1500
+view-map       click toolbar.view.Map
+rest           wait 3000
+map-lib-hand   trackpad 700,560 12 hold wobble
+rest           wait 4000
+col-26         click sidebar.collection#2
+rest           wait 3000
+map-col-hand   trackpad 700,560 12 hold wobble
+rest           wait 3000
+place-library  click sidebar.library
+rest           wait 2500
+place-today    click sidebar.today
+rest           wait 2000
+place-recents  click sidebar.recents
+rest           wait 2000
+place-library  click sidebar.library
+rest           wait 2000
+view-list      click toolbar.view.List
+rest           wait 1500
+place-today    click sidebar.today
+rest           wait 2000
+place-recents  click sidebar.recents
+rest           wait 2000
+recents-scroll scroll 640,600 -2400 80 8
+recents-scroll scroll 640,600 2400 80 8
+place-library  click sidebar.library
+rest           wait 1500

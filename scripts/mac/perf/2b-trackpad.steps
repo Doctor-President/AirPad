@@ -1,0 +1,23 @@
+# Sweep 2b 0.3 / 2.1 — the Map under a HAND-shaped trackpad session (rperf `trackpad`: may-begin, two axes, jitter,
+# holds, momentum, re-swipes, pointer wobble). Realistic test library; the 6th collection holds 12 entries (a dozen
+# orbs, as T's 12:25 recording). Before the trackpad: switch views and rest the Map several times (T's state, 0.4).
+# Read with explain.py (Map frames per second) — RED = Map updates < 60 in a pan second, or a .changed while paused.
+lib          click sidebar.library
+view-map     click toolbar.view.Map
+rest         wait 4000
+view-list    click toolbar.view.List
+view-map     click toolbar.view.Map
+rest         wait 6000
+view-cards   click toolbar.view.Cards
+view-map     click toolbar.view.Map
+rest         wait 6000
+col12        click sidebar.collection#5
+rest         wait 4000
+col-plain    trackpad 700,560 8 nomomentum
+rest         wait 3000
+col-hand     trackpad 700,560 15 hold wobble
+rest         wait 6000
+lib2         click sidebar.library
+rest         wait 4000
+lib-hand     trackpad 700,560 15 hold wobble
+rest         wait 6000

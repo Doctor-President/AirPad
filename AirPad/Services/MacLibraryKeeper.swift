@@ -26,7 +26,8 @@ import UIKit
 enum MacKeepDownloaded {
     #if DEBUG || DEVSWITCHES
     static let key = "mac.keepDownloaded"
-    static var isOn: Bool { UserDefaults.standard.object(forKey: key) as? Bool ?? true }
+    /// On unless set off (the panel's Bool, or a bench launch argument `-mac.keepDownloaded NO`).
+    static var isOn: Bool { UserDefaults.standard.object(forKey: key) == nil || UserDefaults.standard.bool(forKey: key) }
     #else
     static var isOn: Bool { true }
     #endif
@@ -80,7 +81,8 @@ actor MacLibraryKeeper {
 
     /// Starts a sweep unless one runs, the switch is off, or the last one is younger than `minInterval`.
     func kick(_ reason: String, minInterval: TimeInterval = 0) {
-        guard let root, sweep == nil, MacKeepDownloaded.isOn else { return }
+        guard let root, sweep == nil else { return }
+        guard MacKeepDownloaded.isOn else { MacProofLog.note("4.6", "switch off: no sweep (\(reason))"); return }
         if let lastSweep, Date().timeIntervalSince(lastSweep) < minInterval { return }
         lastSweep = Date()
         sweep = Task.detached(priority: .utility) {

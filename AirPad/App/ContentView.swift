@@ -53,6 +53,13 @@ struct ContentView: View {
                 if ProcessInfo.processInfo.arguments.contains("-OpenMap"), router.entryMode != .canvas { router.entryMode = .canvas }
             }
             #endif
+            #if targetEnvironment(macCatalyst) && (DEBUG || PERFLOG)
+            Color.clear.frame(width: 0, height: 0).onAppear {   // sweep 2b · 4.x proof — `-Open4x gallery|single|document`
+                if let kind = UserDefaults.standard.string(forKey: "Open4x") {
+                    Task { @MainActor in await Proof4x.open(kind, store: store, router: router) }
+                }
+            }
+            #endif
             #if PANBENCH && targetEnvironment(macCatalyst)
             Color.clear.frame(width: 0, height: 0).onAppear {   // sweep 1 · 1.4 — `-MacSwitchBench <rounds>` (bench builds)
                 if let n = Int(UserDefaults.standard.string(forKey: "MacSwitchBench") ?? "") {

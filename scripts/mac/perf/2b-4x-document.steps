@@ -1,0 +1,21 @@
+# Sweep 2b · 4.2 / 4.3 / 4.4 on a DOCUMENT — same as 2b-4x-photos.steps, on the first test-library entry with a PDF:
+#   EXTRA="-Sweep4Log YES -Open4x document -Open4xDelay 18"
+# grade: python3 scripts/mac/perf/4x/grade4x.py <run dir> document
+open-wait      wait 8000
+search         click toolbar.search
+search-type    type light
+rest           wait 2000
+h1-hover0      move documentOpen-*#0 0 0 1
+h2-rest        wait 1000
+q1-space       key 49
+rest           wait 3000
+q3-space       key 49
+rest           wait 2000
+q4-click       click documentOpen-*#0
+rest           wait 3000
+q5-esc         esc
+rest           wait 2000
+o1-hover       move documentOpen-*#0 0 0 1
+rest           wait 500
+o1-cmdO        cmdkey 31
+rest           wait 4000

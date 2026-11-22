@@ -269,4 +269,34 @@ enum MacViewerKeys {
         monitor = unsafeBitCast(method_getImplementation(m), to: Add.self)(cls, sel, 1 << 10, handler)
     }
 }
+// MARK: - Proof hook (DEBUG / PERFLOG bench builds only)
+
+#if DEBUG || PERFLOG
+/// Sweep 2b · 4.x — `-Open4x <kind>` opens one test-library entry so the real-event steps land on it: `gallery` = the
+/// entry with the most photos in one gallery, `single` = a one-photo entry, `document` = the first entry with a document.
+/// Deterministic (ids sorted). Logs the kind, the id and counts — never a title.
+@MainActor
+enum Proof4x {
+    static func open(_ kind: String, store: CorpusStore, router: AppRouter) async {
+        for _ in 0..<80 where store.nodes.isEmpty { try? await Task.sleep(for: .milliseconds(250)) }
+        // `-Open4xDelay <s>`: open later than the bench's own setup clicks (run.sh clicks the sidebar ~14 s in).
+        let delay = Double(UserDefaults.standard.string(forKey: "Open4xDelay") ?? "") ?? 1.5
+        try? await Task.sleep(for: .seconds(delay))
+        func photos(_ n: Node) -> Int {
+            n.items.filter { $0.type == .imageVideo }.map { ($0.mediaItems ?? []).filter { $0.mediaType == .image }.count }.max() ?? 0
+        }
+        let sorted = store.nodes.sorted { $0.id < $1.id }
+        let pick: Node?
+        switch kind {
+        case "gallery": pick = sorted.max { photos($0) < photos($1) }
+        case "single": pick = sorted.first { n in n.items.contains { $0.type == .imageVideo && ($0.mediaItems ?? []).count == 1 && $0.mediaItems?.first?.mediaType == .image } }
+        case "document": pick = sorted.first { n in n.items.contains { $0.type == .document } }
+        default: pick = nil
+        }
+        guard let node = pick else { MacProofLog.note("4x", "open \(kind): none"); return }
+        MacProofLog.note("4x", "open \(kind) \(node.id) photos \(photos(node))")
+        router.pendingNodeNavigationID = node.id
+    }
+}
+#endif
 #endif

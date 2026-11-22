@@ -1,0 +1,35 @@
+# Sweep 2b · 4.2 / 4.3 / 4.4 on PHOTOS — real pointer + keys in T's focus state (the toolbar search field holding text,
+# the Librarian open in Search). Run with run.sh and
+#   EXTRA="-Sweep4Log YES -Open4x gallery -Open4xDelay 18"   (the entry with the biggest gallery opens ~4 s into the steps)
+# then grade: python3 scripts/mac/perf/4x/grade4x.py <run dir> photos   (reads app.log's "[4x]" lines + rperf.txt).
+# Rows: H1 highlight on hover · H2 ␣ hint after a rest · H3 highlight follows the pointer · Q1 Space opens Quick Look on
+# the hovered photo · Q2 → / ← step · Q3 Space closes · Q4 click = Quick Look · Q5 Esc closes · Z1 double-click zoom
+# (a visible change only; T's pinch is the touch) · O1 ⌘O opens a COPY (Preview comes to the front — last row).
+open-wait      wait 8000
+search         click toolbar.search
+search-type    type light
+rest           wait 2000
+h1-hover0      move galleryTile-*#0 0 0 1
+h2-rest        wait 1000
+h3-hover1      move galleryTile-*#1 0 0 1
+rest           wait 400
+q1-space       key 49
+rest           wait 3000
+q2-right       key 124
+rest           wait 900
+q2-right2      key 124
+rest           wait 900
+q2-left        key 123
+rest           wait 900
+z1-zoom        dclick 851,500
+rest           wait 1200
+q3-space       key 49
+rest           wait 2000
+q4-click       click galleryTile-*#2
+rest           wait 3000
+q5-esc         esc
+rest           wait 2000
+o1-hover       move galleryTile-*#0 0 0 1
+rest           wait 500
+o1-cmdO        cmdkey 31
+rest           wait 4000

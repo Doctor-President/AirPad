@@ -1,0 +1,17 @@
+# Sweep 2b · 4.5 — what a cold launch shows: the Cards view scrolled through, the List, then the biggest gallery.
+#   EXTRA="-Sweep4Log YES -Open4x gallery -Open4xDelay 40"
+# Run twice (4x/run4x.sh thumbs does both): A with the disk cache emptied, B straight after a rebuild of the same
+# app (a cold launch). grade: python3 scripts/mac/perf/4x/grade4x.py <run B dir> thumbs <run A dir>
+view-cards     click toolbar.view.Cards
+rest           wait 4000
+scroll1        scroll 700,500 -1800 60
+rest           wait 2500
+scroll2        scroll 700,500 -1800 60
+rest           wait 2500
+scroll3        scroll 700,500 3600 60
+rest           wait 2500
+view-list      click toolbar.view.List
+rest           wait 4000
+scroll4        scroll 700,500 -2400 60
+rest           wait 3000
+gallery-wait   wait 12000

@@ -1,0 +1,3 @@
+# Sweep 2b · 4.6 — nothing to do but wait for the launch sweep (EXTRA="-Sweep4Log YES -KeeperFakeEvicted YES" on the
+# bench copy, whose library is local: the fake marks every 3rd file evicted and sends no request). grade: keeper.
+rest           wait 25000

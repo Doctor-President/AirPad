@@ -45,6 +45,20 @@ actor MediaThumbnailLoader {
     /// cache state, not on the AVFoundation call (which is independent per
     /// URL and benefits from running off the actor).
     private static func extractFirstFrame(from url: URL) async -> UIImage? {
+        // Sweep 2b · 4.5 — the poster kept on disk between launches (the Mac): reading the clip again would download an
+        // evicted video just to draw its first frame. Keyed by the clip's modification date + size, like the photos.
+        let diskKey = DisplayImageDiskCache.enabled
+            ? DisplayImageDiskCache.key(memoryKey: "poster:" + url.path, bucket: 480, url: url) : nil
+        if let diskKey, let cg = DisplayImageDiskCache.shared.read(diskKey) { return UIImage(cgImage: cg) }
+        guard let poster = await extractFromAsset(url) else { return nil }
+        if let diskKey, let cg = poster.cgImage {
+            DisplayImageDiskCache.shared.notePosterExtract()
+            DisplayImageDiskCache.shared.write(cg, key: diskKey)
+        }
+        return poster
+    }
+
+    private static func extractFromAsset(_ url: URL) async -> UIImage? {
         let asset = AVURLAsset(url: url)
         let generator = AVAssetImageGenerator(asset: asset)
         generator.appliesPreferredTrackTransform = true

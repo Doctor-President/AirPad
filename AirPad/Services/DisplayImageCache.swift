@@ -17,6 +17,8 @@ import ImageIO
 ///     first frame from what the card already decoded, then upgrades to its own size in place (no placeholder between).
 ///   - Prewarm: `CorpusStore.prewarmOpening(_:)` starts the hero + first gallery decodes when an entry is chosen.
 ///   - Memory: an `NSCache` with a cost limit (bytes), emptied on a memory warning.
+///   - Disk (sweep 2b · 4.5, the Mac): under the memory tier, `DisplayImageDiskCache` keeps each decode between launches,
+///     so a cold launch reads the small decode instead of decoding the original again.
 final class DisplayImageCache: NSObject, NSCacheDelegate, @unchecked Sendable {
 
     static let shared = DisplayImageCache()
@@ -58,6 +60,9 @@ final class DisplayImageCache: NSObject, NSCacheDelegate, @unchecked Sendable {
         cache.delegate = self
         NotificationCenter.default.addObserver(forName: UIApplication.didReceiveMemoryWarningNotification,
                                                object: nil, queue: nil) { [weak self] _ in self?.purge(reason: "memory warning") }
+        if DisplayImageDiskCache.enabled {
+            DisplayImageDiskCache.shared.onReport = { line in MacProofLog.note("4.5", line) }
+        }
     }
 
     // MARK: - Synchronous lookups (safe in `body`: an in-memory dictionary + NSCache read, no I/O)
@@ -104,7 +109,7 @@ final class DisplayImageCache: NSObject, NSCacheDelegate, @unchecked Sendable {
             task = running
             lock.unlock()
         } else {
-            task = Task.detached(priority: .userInitiated) { Self.decode(url: url, maxPixel: b) }
+            task = Task.detached(priority: .userInitiated) { Self.decodeThroughDisk(path: path, url: url, maxPixel: b) }
             inFlight[k] = task
             lock.unlock()
         }
@@ -113,6 +118,21 @@ final class DisplayImageCache: NSObject, NSCacheDelegate, @unchecked Sendable {
         if inFlight[k] == task { inFlight[k] = nil }
         lock.unlock()
         if let image { insert(image, path: path, bucket: b) }
+        return image
+    }
+
+    /// Sweep 2b · 4.5 — the decode, from the disk tier when it holds this file (same modification date and size) at this
+    /// bucket; else from the original, then kept on disk for the next launch (written off this thread). Off the main
+    /// thread (the load's detached task). The iPhone: straight to `decode`.
+    static func decodeThroughDisk(path: String, url: URL, maxPixel: Int) -> UIImage? {
+        guard DisplayImageDiskCache.enabled,
+              let key = DisplayImageDiskCache.key(memoryKey: path, bucket: maxPixel, url: url) else {
+            return decode(url: url, maxPixel: maxPixel)
+        }
+        let disk = DisplayImageDiskCache.shared
+        if let cg = disk.read(key) { return UIImage(cgImage: cg) }
+        guard let image = decode(url: url, maxPixel: maxPixel) else { return nil }
+        if let cg = image.cgImage { disk.write(cg, key: key) }
         return image
     }
 
@@ -128,6 +148,7 @@ final class DisplayImageCache: NSObject, NSCacheDelegate, @unchecked Sendable {
             kCGImageSourceThumbnailMaxPixelSize: maxPixel
         ]
         guard let cg = CGImageSourceCreateThumbnailAtIndex(src, 0, opts as CFDictionary), cg.width > 0, cg.height > 0 else { return nil }
+        DisplayImageDiskCache.shared.noteOriginalDecode()   // 4.5 proof: decodes of an ORIGINAL file
         #if DEBUG
         let ms = Int((CFAbsoluteTimeGetCurrent() - t0) * 1000)
         print("[DisplayImage] decode \(url.lastPathComponent) → \(cg.width)×\(cg.height) (bucket \(maxPixel)) in \(ms) ms")

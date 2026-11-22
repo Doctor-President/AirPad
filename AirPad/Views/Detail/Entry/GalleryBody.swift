@@ -51,6 +51,11 @@ struct GalleryBody: View {
     /// start index so the viewer opens on whichever tile the user tapped;
     /// cleared on dismiss.
     @State private var viewerStart: GalleryViewerStart? = nil
+    #if targetEnvironment(macCatalyst)
+    /// Sweep 2b · 4.3 — the Mac opens a photo in Quick Look (over the entry's photos); videos keep the viewer above.
+    @State private var photoQuickLook: MacPhotoQuickLookSet? = nil
+    @State private var openingPhotos = false
+    #endif
     /// Deferred-deletion buffer (commit 7). Set when the user confirms a
     /// per-item delete inside the viewer; the actual store delete runs in
     /// the sheet's `onDismiss` closure so the card behind the sheet
@@ -244,6 +249,9 @@ struct GalleryBody: View {
             } message: {
                 Text("They may be stored in iCloud and need to be downloaded first. Try again once they’ve finished downloading.")
             }
+            #if targetEnvironment(macCatalyst)
+            .macPhotoQuickLookSheet($photoQuickLook)
+            #endif
     }
 
     /// Runs after the fullscreen viewer fully dismisses. If a per-item
@@ -276,7 +284,8 @@ struct GalleryBody: View {
                 onMeasuredAspect: { itemID, aspect in
                     recordMeasured(itemID: itemID, aspect: aspect)
                 },
-                onTapTile: openViewer
+                onTapTile: openViewer,
+                onShowInViewer: openCustomViewer
             )
         case .horizontalBento:
             GalleryHorizontalBento(
@@ -287,7 +296,8 @@ struct GalleryBody: View {
                 onMeasuredAspect: { itemID, aspect in
                     recordMeasured(itemID: itemID, aspect: aspect)
                 },
-                onTapTile: openViewer
+                onTapTile: openViewer,
+                onShowInViewer: openCustomViewer
             )
         case .bento:
             GalleryBento(
@@ -298,7 +308,8 @@ struct GalleryBody: View {
                 onMeasuredAspect: { itemID, aspect in
                     recordMeasured(itemID: itemID, aspect: aspect)
                 },
-                onTapTile: openViewer
+                onTapTile: openViewer,
+                onShowInViewer: openCustomViewer
             )
         }
     }
@@ -308,6 +319,23 @@ struct GalleryBody: View {
     /// found (e.g., the gallery shrank between tap-emit and handler run);
     /// the viewer's init also clamps defensively.
     private func openViewer(_ tappedItem: GalleryItem) {
+        #if targetEnvironment(macCatalyst)
+        // Sweep 2b · 4.3 — click (and Space) on a photo = Quick Look on the Mac (T: click = Quick Look).
+        if tappedItem.mediaType == .image {
+            guard !openingPhotos else { return }
+            openingPhotos = true
+            Task {
+                photoQuickLook = await store.macPhotoQuickLook(galleryItems, parent: item, nodeID: nodeID, start: tappedItem)
+                openingPhotos = false
+            }
+            return
+        }
+        #endif
+        openCustomViewer(tappedItem)
+    }
+
+    /// AirPad's own swipeable viewer (the iPhone's tap; on the Mac: videos, and a photo's "Show in Viewer…").
+    private func openCustomViewer(_ tappedItem: GalleryItem) {
         guard let idx = galleryItems.firstIndex(where: { $0.id == tappedItem.id }) else { return }
         viewerStart = GalleryViewerStart(index: idx)
     }
@@ -405,6 +433,7 @@ private struct GalleryHorizontalBento: View {
     let aspectFor: (GalleryItem) -> Double
     let onMeasuredAspect: (_ itemID: String, _ aspect: Double) -> Void
     let onTapTile: (GalleryItem) -> Void
+    var onShowInViewer: ((GalleryItem) -> Void)? = nil
 
     /// The fixed gallery band height (the retired carousel's `tileHeight`) — the
     /// footprint invariant across mode and count.
@@ -445,7 +474,8 @@ private struct GalleryHorizontalBento: View {
                             .contentShape(Rectangle())
                             .onTapGesture { onTapTile(galleryItem) }
                             #if targetEnvironment(macCatalyst)
-                            .macPhotoActions(galleryItem, cornerRadius: 10) { onTapTile(galleryItem) }   // sweep 2b · 4.2
+                            .macPhotoActions(galleryItem, cornerRadius: 10, open: { onTapTile(galleryItem) },
+                                             showInViewer: onShowInViewer.map { f in { f(galleryItem) } })   // sweep 2b · 4.2 / 4.3
                             #endif
                         }
                     }
@@ -472,6 +502,7 @@ private struct GalleryCarousel: View {
     let aspectFor: (GalleryItem) -> Double
     let onMeasuredAspect: (_ itemID: String, _ aspect: Double) -> Void
     let onTapTile: (GalleryItem) -> Void
+    var onShowInViewer: ((GalleryItem) -> Void)? = nil
 
     /// Uniform tile height — matches the horizontal bento's band and the
     /// commit-4 placeholder so a mode toggle never reflows the entry card.
@@ -498,7 +529,8 @@ private struct GalleryCarousel: View {
                     .contentShape(Rectangle())
                     .onTapGesture { onTapTile(galleryItem) }
                     #if targetEnvironment(macCatalyst)
-                    .macPhotoActions(galleryItem, cornerRadius: 10) { onTapTile(galleryItem) }   // sweep 2b · 4.2
+                    .macPhotoActions(galleryItem, cornerRadius: 10, open: { onTapTile(galleryItem) },
+                                             showInViewer: onShowInViewer.map { f in { f(galleryItem) } })   // sweep 2b · 4.2 / 4.3
                     #endif
                 }
             }
@@ -586,6 +618,7 @@ private struct GalleryBento: View {
     let aspectFor: (GalleryItem) -> Double
     let onMeasuredAspect: (_ itemID: String, _ aspect: Double) -> Void
     let onTapTile: (GalleryItem) -> Void
+    var onShowInViewer: ((GalleryItem) -> Void)? = nil
 
     @State private var availableWidth: CGFloat = 0
 
@@ -623,7 +656,8 @@ private struct GalleryBento: View {
                         .contentShape(Rectangle())
                         .onTapGesture { onTapTile(galleryItem) }
                         #if targetEnvironment(macCatalyst)
-                        .macPhotoActions(galleryItem, cornerRadius: 10) { onTapTile(galleryItem) }   // sweep 2b · 4.2
+                        .macPhotoActions(galleryItem, cornerRadius: 10, open: { onTapTile(galleryItem) },
+                                             showInViewer: onShowInViewer.map { f in { f(galleryItem) } })   // sweep 2b · 4.2 / 4.3
                         #endif
                     }
                 }

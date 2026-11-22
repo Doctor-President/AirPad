@@ -52,6 +52,9 @@ struct SingleMediaBody: View {
     /// Drives the tap-to-fullscreen unified viewer. Single-media entries
     /// always open at index 0 (their `mediaItems` array is length 1).
     @State private var viewerStart: GalleryViewerStart? = nil
+    #if targetEnvironment(macCatalyst)
+    @State private var photoQuickLook: MacPhotoQuickLookSet? = nil   // sweep 2b · 4.3
+    #endif
     /// Deferred-deletion buffer for the viewer's Delete action. The real
     /// store delete runs in the sheet's `onDismiss` callback so the
     /// transition to the empty-entry state (and the subsequent entry
@@ -184,14 +187,26 @@ struct SingleMediaBody: View {
         }
     }
 
+    /// A click on the photo: AirPad's viewer on the iPhone; Quick Look on the Mac (sweep 2b · 4.3, T: click = Quick Look).
+    private func openPhoto() {
+        #if targetEnvironment(macCatalyst)
+        if let p = primaryItem, p.mediaType == .image {
+            Task { photoQuickLook = await store.macPhotoQuickLook([p], parent: item, nodeID: nodeID, start: p) }
+            return
+        }
+        #endif
+        viewerStart = GalleryViewerStart(index: 0)
+    }
+
     @ViewBuilder
     private var imagePreview: some View {
         if let url = mediaURL {
             AsyncImageFromURL(url: url)
                 .contentShape(Rectangle())
-                .onTapGesture { viewerStart = GalleryViewerStart(index: 0) }
+                .onTapGesture { openPhoto() }
                 #if targetEnvironment(macCatalyst)
-                .modifier(MacSinglePhoto(item: primaryItem) { viewerStart = GalleryViewerStart(index: 0) })   // sweep 2b · 4.2
+                .modifier(MacSinglePhoto(item: primaryItem, open: openPhoto, showInViewer: { viewerStart = GalleryViewerStart(index: 0) }))   // sweep 2b · 4.2 / 4.3
+                .macPhotoQuickLookSheet($photoQuickLook)
                 #endif
         } else {
             RoundedRectangle(cornerRadius: 12)
@@ -321,8 +336,9 @@ struct SingleMediaBody: View {
 private struct MacSinglePhoto: ViewModifier {
     let item: GalleryItem?
     let open: () -> Void
+    let showInViewer: () -> Void
     func body(content: Content) -> some View {
-        if let item { content.macPhotoActions(item, cornerRadius: 12, open: open) } else { content }
+        if let item { content.macPhotoActions(item, cornerRadius: 12, open: open, showInViewer: showInViewer) } else { content }
     }
 }
 #endif

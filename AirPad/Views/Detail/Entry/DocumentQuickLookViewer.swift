@@ -23,21 +23,35 @@ import QuickLook
 /// live-17 — handed a `DocumentHandoff`: QuickLook titles the viewer with the document's display name and its own Share
 /// button sends the named copy, never the stored UUID file. The copy is removed when the viewer closes.
 struct DocumentQuickLookViewer: UIViewControllerRepresentable {
-    let handoff: DocumentHandoff
+    /// Sweep 2b · 4.3 — one item (a document) or several (an entry's photos on the Mac: arrows step between them).
+    let handoffs: [DocumentHandoff]
+    var startIndex = 0
+    /// Sweep 2b · 4.3 — lets the sheet step the controller from the keyboard (Mac ← / →).
+    var handle: QuickLookHandle? = nil
+
+    init(handoff: DocumentHandoff) { handoffs = [handoff] }
+    init(handoffs: [DocumentHandoff], startIndex: Int, handle: QuickLookHandle?) {
+        self.handoffs = handoffs
+        self.startIndex = min(max(startIndex, 0), max(handoffs.count - 1, 0))
+        self.handle = handle
+    }
 
     func makeUIViewController(context: Context) -> UINavigationController {
         let preview = QLPreviewController()
         preview.dataSource = context.coordinator
+        preview.currentPreviewItemIndex = startIndex
+        handle?.controller = preview
+        handle?.count = handoffs.count
         return UINavigationController(rootViewController: preview)
     }
 
     func updateUIViewController(_ controller: UINavigationController, context: Context) {}
 
     static func dismantleUIViewController(_ controller: UINavigationController, coordinator: Coordinator) {
-        coordinator.item.handoff.release()
+        for item in coordinator.items { item.handoff.release() }
     }
 
-    func makeCoordinator() -> Coordinator { Coordinator(handoff: handoff) }
+    func makeCoordinator() -> Coordinator { Coordinator(handoffs: handoffs) }
 
     /// The item QuickLook shows: the named copy, titled with the display name.
     final class PreviewItem: NSObject, QLPreviewItem {
@@ -48,15 +62,30 @@ struct DocumentQuickLookViewer: UIViewControllerRepresentable {
     }
 
     final class Coordinator: NSObject, QLPreviewControllerDataSource {
-        let item: PreviewItem
-        init(handoff: DocumentHandoff) { item = PreviewItem(handoff: handoff) }
+        let items: [PreviewItem]
+        init(handoffs: [DocumentHandoff]) { items = handoffs.map(PreviewItem.init(handoff:)) }
 
-        func numberOfPreviewItems(in controller: QLPreviewController) -> Int { 1 }
+        func numberOfPreviewItems(in controller: QLPreviewController) -> Int { items.count }
 
         func previewController(_ controller: QLPreviewController, previewItemAt index: Int) -> QLPreviewItem {
+            let item = items[min(max(index, 0), items.count - 1)]
             DocumentHandoffProbe.preview(doc: item.handoff.documentID, title: item.handoff.title, url: item.handoff.url)
             return item
         }
+    }
+}
+
+/// Sweep 2b · 4.3 — the viewer's controller, for keyboard stepping between several items.
+final class QuickLookHandle {
+    weak var controller: QLPreviewController?
+    var count = 1
+    /// Moves to the previous (−1) / next (+1) item, stopping at the ends. Returns the new index, nil when it can't move.
+    @MainActor @discardableResult func step(_ delta: Int) -> Int? {
+        guard let c = controller, count > 1 else { return nil }
+        let next = min(max(c.currentPreviewItemIndex + delta, 0), count - 1)
+        guard next != c.currentPreviewItemIndex else { return nil }
+        c.currentPreviewItemIndex = next
+        return next
     }
 }
 
@@ -66,11 +95,17 @@ struct DocumentQuickLookViewer: UIViewControllerRepresentable {
 /// all (found by `DocumentHandoffName` on the iOS 27 Simulator: the named copy was never released). A nav-bar item
 /// doesn't survive QuickLook's chrome, so a Close button is overlaid in its empty top-leading slot, on every OS.
 struct DocumentViewerSheet: View {
-    let handoff: DocumentHandoff
+    let handoffs: [DocumentHandoff]
+    var startIndex = 0
+    @State private var handle = QuickLookHandle()
     @Environment(\.dismiss) private var dismiss
 
+    init(handoff: DocumentHandoff) { handoffs = [handoff] }
+    /// Sweep 2b · 4.3 — an entry's photos (the Mac): Quick Look over all of them, opened on `startIndex`.
+    init(handoffs: [DocumentHandoff], startIndex: Int) { self.handoffs = handoffs; self.startIndex = startIndex }
+
     var body: some View {
-        DocumentQuickLookViewer(handoff: handoff)
+        DocumentQuickLookViewer(handoffs: handoffs, startIndex: startIndex, handle: handle)
             .overlay(alignment: .topLeading) {
                 Button { dismiss() } label: {
                     Image(systemName: "xmark")
@@ -86,5 +121,13 @@ struct DocumentViewerSheet: View {
                 .padding(.top, 19)
                 .padding(.leading, 19)
             }
+            #if targetEnvironment(macCatalyst)
+            // Sweep 2b · 4.3 — Space (and Esc) closes, ← / → step between the photos, as in Finder's Quick Look.
+            .onAppear {
+                MacViewerKeys.open(count: handoffs.count, close: { dismiss() }, step: { handle.step($0) })
+                MacProofLog.note("4.3", "viewer open items \(handoffs.count) start \(startIndex)")
+            }
+            .onDisappear { MacViewerKeys.close() }
+            #endif
     }
 }

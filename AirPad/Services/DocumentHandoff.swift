@@ -203,11 +203,33 @@ enum MacDocumentKeys {
     struct Actions { let quickLook: () -> Void; let open: () -> Void; let reveal: () -> Void }
     private static var hovered: (id: String, actions: Actions)?
     private static var monitor: AnyObject?
+    /// Sweep 2b · 4.3 — while a Quick Look viewer is open (`MacViewerKeys`) the item under it doesn't take Space / ⌘O
+    /// (Space closes the viewer); its hover is held here and handed back when the viewer closes.
+    private static var viewerOpen = false
+    private static var held: (id: String, actions: Actions)?
 
     static func hover(_ id: String, _ actions: Actions, _ on: Bool) {
-        if on { hovered = (id, actions); install() } else if hovered?.id == id { hovered = nil }
+        if on {
+            if viewerOpen { held = (id, actions) } else { hovered = (id, actions); install() }
+        } else {
+            if hovered?.id == id { hovered = nil }
+            if held?.id == id { held = nil }
+        }
     }
-    static func clear(_ id: String?) { if let id, hovered?.id == id { hovered = nil } }
+    static func clear(_ id: String?) {
+        if let id, hovered?.id == id { hovered = nil }
+        if let id, held?.id == id { held = nil }
+    }
+    static func suspendForViewer() {
+        viewerOpen = true
+        if let h = hovered { held = h }
+        hovered = nil
+    }
+    static func resumeAfterViewer() {
+        viewerOpen = false
+        if hovered == nil, let h = held { hovered = h; install() }
+        held = nil
+    }
 
     private static func editingText() -> Bool {
         FirstResponderProbe.current = nil

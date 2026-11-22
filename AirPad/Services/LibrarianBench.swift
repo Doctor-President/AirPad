@@ -182,4 +182,36 @@ extension CorpusStore {
         NSLog("[LibrarianBench] done")
     }
 }
+/// Sweep 2b · 3.2 — `-EmbedDump <in.jsonl> <out.jsonl>` (with `-EmbedCPUOnly` on the Simulator, where BGE on the ANE/GPU
+/// returns zeros): embeds each input line's `text` with the app's own `CardEmbeddingService` (the call `askMatches`
+/// makes for a question), writes `{"id", "vec"}` per line, logs `[EmbedDump] done`, exits. Replaces nothing else in the
+/// launch; the input may be a named pipe. The keyword-relevance spike (`scripts/librarian/relevance/`) reads the vectors. DEBUG only.
+enum EmbedDump {
+    static func startIfRequested() {
+        let args = ProcessInfo.processInfo.arguments
+        guard let i = args.firstIndex(of: "-EmbedDump"), i + 2 < args.count else { return }
+        let inURL = URL(fileURLWithPath: args[i + 1]), outURL = URL(fileURLWithPath: args[i + 2])
+        Task.detached(priority: .userInitiated) {
+            // FileHandle, not String(contentsOf:): the input may be a named pipe (the spike's private questions never
+            // touch the disk as text), read to its end.
+            guard let data = FileHandle(forReadingAtPath: inURL.path)?.readDataToEndOfFile(),
+                  let text = String(data: data, encoding: .utf8) else {
+                NSLog("[EmbedDump] ABORT cannot read %@", inURL.path); NSLog("[EmbedDump] done"); exit(2)
+            }
+            var out = "", n = 0, missing = 0
+            for line in text.split(separator: "\n") where !line.trimmingCharacters(in: .whitespaces).isEmpty {
+                guard let row = try? JSONSerialization.jsonObject(with: Data(line.utf8)) as? [String: Any],
+                      let id = row["id"] as? String, let t = row["text"] as? String else { missing += 1; continue }
+                let v = await CardEmbeddingService.shared.embed(t) ?? []
+                if v.isEmpty { missing += 1 }
+                let o: [String: Any] = ["id": id, "vec": v.map { Double($0) }]
+                if let d = try? JSONSerialization.data(withJSONObject: o), let s = String(data: d, encoding: .utf8) { out += s + "\n"; n += 1 }
+            }
+            try? out.write(to: outURL, atomically: true, encoding: .utf8)
+            NSLog("[EmbedDump] wrote %d vectors (%d empty or unreadable) to %@", n, missing, outURL.path)
+            NSLog("[EmbedDump] done")
+            exit(missing == 0 ? 0 : 1)
+        }
+    }
+}
 #endif

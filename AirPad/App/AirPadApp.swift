@@ -65,6 +65,7 @@ struct AirPadApp: App {
         if UserDefaults.standard.bool(forKey: "ResetLibrarianRoute") { ModelRouter.chosenRoute = nil }
         if UserDefaults.standard.bool(forKey: "KeychainMigrationSelfTest") { KeychainHelper.runMigrationSelfTest() }
         if UserDefaults.standard.bool(forKey: "AppLockSelfTest") { AppLock.runSelfTest() }   // 1.1-A (A6)
+        EmbedDump.startIfRequested()   // sweep 2b · 3.2 — question vectors for the keyword-relevance spike, then exit
         #endif
     }
 

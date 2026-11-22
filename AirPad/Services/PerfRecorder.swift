@@ -105,6 +105,9 @@ enum MapProbe: UInt8 {
     case drawableView = 31      // the SKView that took a drawable: value = view id (+ 100000 on the main thread)
     case presentedView = 32     // the SKView whose drawable was presented: value = view id (+ 100000 if it reached the screen)
     case updateViewHidden = 33  // the updating view is not on screen: bits 1 no window, 2 hidden/alpha 0 up the chain, 4 scene.view ≠ this view
+    case labelGap = 34          // at a tick: largest distance (pt) between a region pill's published position and its orbs now
+    case ringGap = 35           // at a tick: distance (pt) between the hover ring and its orb now
+    case coastSeeded = 36       // a scroll's lift launched a coast: value = speed (pt per 60 Hz frame)
 }
 
 /// Sweep 2b · 2.1 probe — a stable small number for a view (low pointer bits), to tell two SKViews apart.
@@ -414,12 +417,14 @@ final class PerfRecorder: NSObject {
                 let t1 = CACurrentMediaTime()
                 PerfRecorder.shared.noteProbe(MapProbe.drawableWait.rawValue, (t1 - t0) * 1000, at: t0)
                 PerfRecorder.shared.noteProbe(MapProbe.drawableView.rawValue, vid + (Thread.isMainThread ? 100000 : 0), at: t0)
+                #if !targetEnvironment(simulator)   // no presented handlers in the Simulator SDK
                 d?.addPresentedHandler { dr in
                     // presentedTime is on the media clock; 0 = never shown (dropped).
                     let pt = dr.presentedTime, at = pt > 0 ? pt : CACurrentMediaTime()
                     PerfRecorder.shared.noteProbe(MapProbe.presented.rawValue, pt > 0 ? 1 : 0, at: at)
                     PerfRecorder.shared.noteProbe(MapProbe.presentedView.rawValue, vid + (pt > 0 ? 100000 : 0), at: at)
                 }
+                #endif
                 return d
             }
             method_setImplementation(m, imp_implementationWithBlock(block))

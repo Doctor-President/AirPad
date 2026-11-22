@@ -1794,6 +1794,9 @@ private struct MacFeelSwitchesPanel: View {
     @AppStorage(MacCardsSpike.engineKey) private var cardsEngine = "today"
     @AppStorage(MacCardsSpike.resizeKey) private var cardsResize = "relayout"
     @AppStorage(MacCardsSpike.clickKey) private var cardsClick = "open"
+    // Sweep 2b · 4.6 — keep the library downloaded on the Mac (MacLibraryKeeper); on by default.
+    @AppStorage(MacKeepDownloaded.key) private var keepDownloaded = true
+    @State private var keeperSummary = ""
     @State private var copied = false
 
     var body: some View {
@@ -1869,6 +1872,20 @@ private struct MacFeelSwitchesPanel: View {
             }
             .pickerStyle(.segmented)
             .accessibilityIdentifier("macFeelCardsClick")
+            Text("Library on this Mac (sweep 2b · 4.6)").font(.system(size: 12, weight: .medium)).foregroundStyle(AppearancePalette.ink.opacity(0.7))
+            Picker("Keep downloaded", selection: $keepDownloaded) {
+                Text("Keep downloaded").tag(true)
+                Text("Let macOS evict (before)").tag(false)
+            }
+            .pickerStyle(.segmented)
+            .accessibilityIdentifier("macFeelKeepDownloaded")
+            .onChange(of: keepDownloaded) { _, _ in
+                Task { await MacLibraryKeeper.shared.switchChanged() }
+            }
+            Text(keeperSummary.isEmpty ? MacLibraryKeeper.lastSummary : keeperSummary)
+                .font(.system(size: 11)).foregroundStyle(AppearancePalette.ink.opacity(0.55))
+                .accessibilityIdentifier("macFeelKeepDownloadedStatus")
+                .onAppear { keeperSummary = MacLibraryKeeper.lastSummary }
             HStack(spacing: 12) {
                 Button(copied ? "Copied" : "Copy values") {
                     UIPasteboard.general.string = """
@@ -1885,6 +1902,7 @@ private struct MacFeelSwitchesPanel: View {
                     cards engine: \(cardsEngine)
                     cards B width change: \(cardsResize)
                     cards B click: \(cardsClick)
+                    keep library downloaded: \(keepDownloaded ? "on" : "off")
                     """
                     copied = true
                     DispatchQueue.main.asyncAfter(deadline: .now() + 1.5) { copied = false }
@@ -1897,6 +1915,7 @@ private struct MacFeelSwitchesPanel: View {
                     heroLength = MacFeelSwitches.heroFadeLengthDefault; heroMax = MacFeelSwitches.heroMaxWidthDefault
                     heroShift = MacFeelSwitches.heroGradientShiftDefault
                     cardsEngine = "today"; cardsResize = "relayout"; cardsClick = "open"
+                    keepDownloaded = true
                 }
             }
         }

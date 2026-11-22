@@ -1066,6 +1066,10 @@ final class CorpusStore {
         await load()
         await startSyncWatching()   // Mac batch B1 — other devices' changes while the app runs
         await recoverDrafts()       // F2 — typing that never reached the library (a crash / force-quit)
+        #if targetEnvironment(macCatalyst)
+        // Sweep 2b · 4.6 — keep the library downloaded on the Mac (asks iCloud again for what macOS evicted; off-main).
+        if let root = await service.containerRootURL() { await MacLibraryKeeper.shared.start(root: root) }
+        #endif
         #if DEBUG
         TwoDeviceHarness.startIfAsked(store: self)
         #endif

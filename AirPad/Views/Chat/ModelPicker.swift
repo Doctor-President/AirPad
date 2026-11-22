@@ -740,7 +740,7 @@ struct ModelPickerSheet: View {
             }
             Button("Cancel", role: .cancel) { installName = "" }
         } message: {
-            Text("Enter any Ollama model name. It installs and is checked on first load.")
+            Text("Enter any Ollama model name to install it.")   // sweep 2b · 1f — no probe talk
         }
         .task { await catalog.refresh(); await catalog.fetchResidency() } // fetch on sheet-open, off the render path
     }
@@ -749,7 +749,7 @@ struct ModelPickerSheet: View {
 
     /// 1.1-D — the quick switcher's line under a server model: loaded (with its window) or not, and where.
     private func serverRowSubtitle(_ m: CatalogModel, host: String) -> String {
-        let state = m.isResident ? (m.contextLine.map { "Loaded · \($0)" } ?? "Loaded") : "Not loaded"
+        let state = m.isResident ? "Loaded" : "Not loaded"   // sweep 2b · 1f — no "Context N tokens"
         return "\(state) · \(host)"
     }
 
@@ -767,7 +767,7 @@ struct ModelPickerSheet: View {
                                        : "Not reachable right now")
                     .font(appFont.font(size: 12, relativeTo: .caption1)).foregroundStyle(AppearancePalette.ink.opacity(0.5))
                 if catalog.reachable, let c = catalog.chosen {
-                    Text("Chats use \(catalog.name(c))" + (c.contextLine.map { " · \($0)" } ?? (c.isResident ? "" : " · not loaded yet")))
+                    Text("Chats use \(catalog.name(c))" + (c.isResident ? "" : " · not loaded yet"))   // sweep 2b · 1f
                         .font(appFont.font(size: 12, relativeTo: .caption1)).foregroundStyle(AppearancePalette.ink.opacity(0.7))
                         .accessibilityIdentifier("server.chosen")
                 }
@@ -883,6 +883,14 @@ struct ModelPickerSheet: View {
     }
 }
 
+extension CatalogModel {
+    /// Sweep 2b · 1f (decisions 2026-11-21: "no developer details in the model picker") — the row's meta line is the
+    /// size only. The capability list, the thinking / tools ladder ("Thinking (unverified)", "Tools (unverified)", "No
+    /// tools") and the context window stay on the model (logic, the testing-only recorder) but never reach the UI; the
+    /// curated prose (memory note, capability, posture) shows under it as before.
+    var pickerMeta: String { sizeBytes > 0 ? "\(Int((Double(sizeBytes) / 1e9).rounded())) GB" : "" }
+}
+
 /// One model row: name + (blue "in memory" badge on the resident) + Eject/Load/Download, and the
 /// FULL curated copy always-visible (T's ruling). The metadata line names thinking support via
 /// `thinkingCopy` — the honest ladder over BOTH measured traits (can-think + can-be-told-not-to).
@@ -894,19 +902,7 @@ private struct ModelSheetRow: View {
     var onDelete: (CatalogModel) -> Void = { _ in }
     var onLoad: (CatalogModel) -> Void = { _ in }
 
-    private var meta: String {
-        var parts = ["\(gb(model.sizeBytes))"]
-        // "tools" is shown via the MEASURED toolsCopy, not the raw inherited capability, so the
-        // claim can't read as verified when it isn't (it was false on the wire once — a receipt now).
-        let caps = model.capabilities.filter { $0 != "tools" }
-        if !caps.isEmpty { parts.append(caps.joined(separator: ", ")) }
-        if let t = model.thinkingLine { parts.append(t) }
-        if let toolsCopy = model.toolsCopy { parts.append(toolsCopy) }
-        if let ctx = model.contextLine { parts.append(ctx) }   // 1.1-D — a loaded server model's window
-        // Brief AJ3 — "candidate" / "✓ tested" removed (show nothing in their place).
-        return parts.filter { !$0.isEmpty }.joined(separator: " · ")
-    }
-    private func gb(_ b: Int64) -> String { b > 0 ? "\(Int((Double(b) / 1e9).rounded())) GB" : "" }
+    private var meta: String { model.pickerMeta }
 
     var body: some View {
         VStack(alignment: .leading, spacing: 6) {
@@ -933,7 +929,9 @@ private struct ModelSheetRow: View {
                 Spacer(minLength: 8)
                 action
             }
-            Text(meta).font(appFont.font(size: 12, relativeTo: .caption1)).foregroundStyle(AppearancePalette.ink.opacity(0.55))
+            if !meta.isEmpty {
+                Text(meta).font(appFont.font(size: 12, relativeTo: .caption1)).foregroundStyle(AppearancePalette.ink.opacity(0.55))
+            }
             // live-17 (2b) — the 30B: which Mac it needs, said plainly, above the curated prose.
             if let note = model.memoryNote {
                 Label(note, systemImage: "memorychip")

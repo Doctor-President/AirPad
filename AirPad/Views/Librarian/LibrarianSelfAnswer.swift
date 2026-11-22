@@ -48,6 +48,12 @@ enum LibrarianSelfAnswer {
         let model = (apple ? appleModelLine : modelLine(modelName)) + (otherOptionExists ? " " + strongerBrain : "")
         return [intro, webLine(web), model].joined(separator: "\n\n")
     }
+
+    /// Sweep 2b · 1f (decisions 2026-11-21) — one plain sentence at the moment it matters: the question needs the web,
+    /// search is on, and the model answering is MEASURED not to use tools (a real tool round-trip failed on the Host's
+    /// probe; an unprobed claim never counts).
+    static let cantSearchLine = "This model can't search the web. Switch brains in Settings → Models."
+    static func cantSearch(_ m: CatalogModel?) -> Bool { m.map { $0.toolsMeasured && !$0.supportsTools } ?? false }
 }
 
 #if DEBUG
@@ -85,6 +91,17 @@ enum LibrarianSelfAnswerSelfTest {
             ("server-off-only", LibrarianSelfAnswer.text(apple: false, modelName: "Qwen3.5 9B", web: .off, otherOptionExists: false), [intro, off, qwen].joined(separator: "\n\n")),
         ]
         for c in cases { row("answer-\(c.0)", c.1 == c.2, c.1 == c.2 ? "" : c.1.replacingOccurrences(of: "\n", with: "⏎")) }
+
+        // 1f — the measured no-tools model, and nothing else, can't search.
+        func cm(tools: Bool, measured: Bool) -> CatalogModel {
+            CatalogModel(tag: "t", display: "t", state: "installed-loaded", sizeBytes: 0, tier: 16, recommended: false, capabilities: [],
+                         verified: true, note: "", supportsThinking: false, thinkingMeasured: true, thinkingToggleable: false,
+                         toggleMeasured: true, supportsTools: tools, toolsMeasured: measured, capability: "", posture: "")
+        }
+        row("cant-search-measured-no-tools-only", LibrarianSelfAnswer.cantSearch(cm(tools: false, measured: true))
+            && !LibrarianSelfAnswer.cantSearch(cm(tools: false, measured: false)) && !LibrarianSelfAnswer.cantSearch(cm(tools: true, measured: true))
+            && !LibrarianSelfAnswer.cantSearch(nil))
+        row("cant-search-line", LibrarianSelfAnswer.cantSearchLine == "This model can't search the web. Switch brains in Settings → Models.")
 
         // The real send path, web search switched off (no network): General and Library mode both get the app's answer.
         let d = UserDefaults.standard, priorEnabled = d.object(forKey: WebSearchBackend.enabledKey)

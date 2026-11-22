@@ -792,6 +792,14 @@ final class LibrarianState {
             let plan = WebGrounding.hostPrefetch(query, searchIntent: Self.looksLikeSearchIntent(query),
                                                  lastAnswerSearched: AppleWebGrounding.lastAnswerSearched(chat))
             let forceWeb = plan.prefetch == "search"
+            // Sweep 2b · 1f — the question needs the web (the app would search it first), search is on, but the model
+            // answering is measured not to use tools: one plain sentence, no model call. (A factual "search and read" turn
+            // is not "needed": it falls back to the model's own answer as before.)
+            if forceWeb, Self.answeringModelCantSearch() {
+                Self.logGeneralTurn(query: query, scope: selectedScope, tool: "none-cant-search", retry: false, store: store)
+                chat.appendAppAnswer(userText: query, text: LibrarianSelfAnswer.cantSearchLine, kind: "cant-search")
+                return
+            }
             var prefetch = ChatSession.WebPrefetch(rawValue: plan.prefetch) ?? .none
             #if DEBUG
             if UserDefaults.standard.string(forKey: "GeneralPrefetch") == "off" { prefetch = .none }   // A/B latency
@@ -1056,6 +1064,16 @@ final class LibrarianState {
         let web: LibrarianSelfAnswer.Web = !WebSearchBackend.isEnabled ? .off
             : WebSearchBackend.hasKey ? .on : .needsKey(WebSearchBackend.provider.keyName)
         return LibrarianSelfAnswer.text(apple: apple, modelName: name, web: web, otherOptionExists: Self.brainOptionCount() > 1)
+    }
+
+    /// Sweep 2b · 1f — the catalog row of the model answering now (the Host's resident model / the server's chosen one)
+    /// is measured not to use tools.
+    static func answeringModelCantSearch() -> Bool {
+        switch ModelRouter.active {
+        case .host: return LibrarianSelfAnswer.cantSearch(HostCatalog.shared.models.first(where: \.isResident))
+        case .ollama: return LibrarianSelfAnswer.cantSearch(HostCatalog.server.chosen)
+        default: return false
+        }
     }
 
     /// How many brains this device can use: Apple Intelligence when it runs here, each installed model on a paired Mac

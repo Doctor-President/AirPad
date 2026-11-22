@@ -67,11 +67,16 @@ import Foundation
         check("rows: download row", rows[2].state == "not-installed" && rows[2].sizeBytes == 5_225_388_164)
         check("rows: memory note says computers", rows[3].memoryNote == "For computers with 32 GB of memory or more. Runs best with nothing else loaded.",
               rows[3].memoryNote ?? "nil")
-        check("rows: window shown on the loaded model only", rows[0].contextLine == "Context 20,480 tokens" && rows[1].contextLine == nil,
-              rows[0].contextLine ?? "nil")
-        check("rows: thinking claim unverified / unsaid → nothing", rows[2].thinkingLine == "Thinking (unverified)" && rows[0].thinkingLine == nil
-              && rows[1].thinkingLine == nil, "\(rows.map { $0.thinkingLine ?? "-" })")
-        check("rows: tools claim unverified", rows[0].toolsCopy == "Tools (unverified)")
+        // Sweep 2b · 1f — the window and the server's thinking / tools claims stay on the model (logic, the recorder) …
+        check("rows: window kept on the loaded model only", rows[0].contextTokens == 20_480 && rows[1].contextTokens == nil,
+              "\(rows[0].contextTokens ?? -1)")
+        check("rows: claims kept, never measured", rows[2].supportsThinking && rows[0].supportsTools && !rows[0].toolsMeasured
+              && rows.allSatisfy(\.claimsOnly))
+        // … but the picker shows the size only: no "unverified", no thinking / tools / context labels, no capability list.
+        let jargon = ["unverified", "Thinking", "thinking", "Tools", "tools", "Context", "tokens", "completion", "vision"]
+        let metas = rows.map(\.pickerMeta)
+        check("rows: picker meta is plain (size only)", metas.allSatisfy { m in !jargon.contains { m.contains($0) } }
+              && metas[2] == "5 GB", metas.joined(separator: " | "))
         check("CONTROL: the Host's measured ladder is unchanged", ModelPickSelfTestHook.hostThinkingLine() == "No thinking")
         let lmRows = S.catalogModels(kind: .lmStudio(version: nil), models: lm)
         check("lm rows: curated key matched, others offered", lmRows.map(\.tag) == ["google/gemma-4-26b-a4b", "qwen/qwen3-4b-2507",

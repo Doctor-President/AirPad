@@ -2,13 +2,16 @@
 """Sweep 2b · 2.1 — one line per step of a 2b-map-proof run: the Map's scene updates / drawn frames per second while
 input arrives (min / median), gaps (p50 / p95), what share of present gaps were a clean one or two vsyncs, the overlay
 gaps on drawn frames, and the updates per second at rest. Numbers only.
-  map_proof.py <recording.json> <rperf.txt>"""
+  map_proof.py <recording.json> [rperf.txt]   (without rperf.txt, rows are the screens the recording passed through)"""
 import json, sys, re, collections, bisect
 d = json.load(open(sys.argv[1])); wall = d.get("wallOffset", 0)
 steps = []
-for l in open(sys.argv[2]):
+for l in (open(sys.argv[2]) if len(sys.argv) > 2 else []):   # without rperf.txt (T's ⌃⌥⌘P file): one row per screen
     m = re.match(r"^(\S+) (\S+) .* at (\d+)", l)
     if m: steps.append((int(m.group(3)) / 1000 - wall, m.group(1)))
+if len(sys.argv) <= 2:
+    for t, name in d.get("marks", []):
+        if str(name).startswith("screen: "): steps.append((t, str(name)[8:].split(" · ")[0] + ("·" + str(name).split(" · ")[1] if " · " in str(name) else "")))
 # rest steps aren't timed by rperf: a second after the last measured step's end belongs to "rest after <step>"
 def label(t):
     cur = ""

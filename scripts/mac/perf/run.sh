@@ -72,6 +72,14 @@ $APP/Contents/MacOS/AirPad -ApplePersistenceIgnoreState YES -PerfRecorder YES -P
 P=$!; trap "kill $P 2>/dev/null" EXIT
 sleep 8; for i in $(seq 1 30); do [[ $($R winpos $P) != *"0×0"* ]] && break; sleep 1; done
 $R winmove $P 0 ${WINY:-40} >/dev/null; $R winsize $P ${=WIN:-1350 840} >/dev/null; sleep 1
+# Sweep 2b · 2.1: bring the copy to the front (a launch from a background shell can stay behind another app's window, and
+# then the real scrolls / drags land in THAT window and the screen capture sees nothing); refuse to run if it won't come.
+for i in 1 2 3 4 5; do
+  osascript -e "tell application \"System Events\" to set frontmost of (first process whose unix id is $P) to true" >/dev/null 2>&1; sleep 1
+  FRONT=$(osascript -e 'tell application "System Events" to get unix id of first application process whose frontmost is true' 2>/dev/null)
+  [[ $FRONT == $P ]] && break
+done
+[[ $FRONT != $P ]] && { echo "NOT FRONTMOST (front pid $FRONT): not running" | tee $OUT/setup.txt; kill $P; exit 4 }
 [[ $($R has $P sidebar.today) == no ]] && { $R click $P toolbar.sidebar >/dev/null; sleep 1 }
 LIB=$($R get $P toolbar.librarian AXValue)
 [[ ${LIBRARIAN:-open} == open && $LIB != Open ]] && { $R click $P toolbar.librarian >/dev/null; sleep 1 }

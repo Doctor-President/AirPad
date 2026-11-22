@@ -95,6 +95,36 @@ enum ChatProvenanceSelfTest {
         row("the-switch-shows-a-divider", answers.count == 2 && ChatProvenance.switches(in: s.messages)[answers[1].id]?.hasPrefix("Switched to ") == true)
         row("the-answer-text-is-unchanged (copy / share)", answers.allSatisfy { !$0.text.contains("·") && !$0.text.contains("Host") })
 
+        // Sweep 2b · 1c — the no-match line above the answer: derived from a Library turn's 0/0 receipt; never on an app
+        // notice (library provenance), a decline, a survey, a General answer, or an empty stopped answer.
+        let zero = ChatSession.Message.ReadReceipt(readInFull: 0, skimmed: 0, partial: false)
+        var nm = ChatSession.Message(role: .assistant, text: "Paris.", readReceipt: zero); nm.provenance = apple
+        var notice = ChatSession.Message(role: .assistant, text: "Nothing in your notes names it.", readReceipt: zero)
+        notice.provenance = { var p = apple; p.library = true; return p }()
+        let declinedNM = ChatSession.Message(role: .assistant, text: AppleChat.declineLine, readReceipt: zero, declined: true)
+        let surveyed = ChatSession.Message(role: .assistant, text: "From your notes.", readReceipt: .init(readInFull: 0, skimmed: 3, partial: false))
+        let readOne = ChatSession.Message(role: .assistant, text: "From the entry.", readReceipt: .init(readInFull: 1, skimmed: 0, partial: false))
+        let generalAns = ChatSession.Message(role: .assistant, text: "Paris.")
+        let stoppedEmpty = ChatSession.Message(role: .assistant, text: "", readReceipt: zero)
+        let legacyNM = ChatSession.Message(role: .assistant, text: "Paris.", readReceipt: zero)   // saved before live-27
+        row("no-match-line-on-a-no-match-answer", ChatTranscript.showsNoMatchLine(nm) && ChatTranscript.showsNoMatchLine(legacyNM))
+        row("no-match-line-absent-elsewhere", ![notice, declinedNM, surveyed, readOne, generalAns, stoppedEmpty].contains(where: ChatTranscript.showsNoMatchLine))
+        row("no-match-line-wording", ChatTranscript.noMatchLine == "This answer is from the model's general knowledge, not your notes.")
+        // The real send path: a Library no-match turn (bare question, 0/0 receipt) shows it; the line is chrome — not in
+        // the answer's text, so never in the history sent back; a survey turn (packet, receipt) doesn't.
+        d.set("apple,apple", forKey: "StubAnswerModels"); ModelRouter.stubAnswerCount = 0
+        let s2 = ChatSession()
+        await s2.send(displayText: "What is the capital of France?", modelText: "What is the capital of France?",
+                      systemPrompt: "plain", readReceipt: zero)
+        await s2.send(displayText: "What did I note?", modelText: "PACKET\nQuestion: What did I note?",
+                      systemPrompt: "library", readReceipt: .init(readInFull: 0, skimmed: 2, partial: false))
+        if let prior { d.set(prior, forKey: "StubAnswerModels") } else { d.removeObject(forKey: "StubAnswerModels") }
+        let a2s = s2.messages.filter { $0.role == .assistant }
+        row("send-no-match-turn-shows-the-line", a2s.count == 2 && ChatTranscript.showsNoMatchLine(a2s[0]) && !ChatTranscript.showsNoMatchLine(a2s[1]),
+            "\(a2s.map { ChatTranscript.showsNoMatchLine($0) })")
+        row("the-line-is-never-in-the-answer-or-history", a2s.allSatisfy { !$0.text.contains(ChatTranscript.noMatchLine) }
+            && !s2.streamingNoMatch)
+
         let fails = rows.filter { !$0.1 }
         return (fails.isEmpty ? "PASS — \(rows.count)/\(rows.count)" : "FAIL — \(rows.count - fails.count)/\(rows.count)")
             + rows.map { "\n\($0.1 ? "PASS" : "FAIL") \($0.0)\($0.2.isEmpty ? "" : " — \($0.2)")" }.joined()

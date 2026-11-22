@@ -194,6 +194,15 @@ struct ChatMessageRow: View {
                 if message.declined == true {
                     declinedRow   // live-23 (5b) — an honest decline, not an answer
                 } else {
+                    // Sweep 2b · 1c — a Library turn that found no close match says so above the answer (app chrome).
+                    if ChatTranscript.showsNoMatchLine(message) {
+                        Text(ChatTranscript.noMatchLine)
+                            .font(appFont.font(size: 13, relativeTo: .footnote))
+                            .foregroundStyle(ChatTypography.secondaryText)
+                            .frame(maxWidth: .infinity, alignment: .leading)
+                            .padding(.trailing, 40)
+                            .accessibilityIdentifier("chat.noMatchLine")
+                    }
                     MarkdownBlockText(raw: message.text)
                         .environment(\.chatAnswerGutter, 40)   // live-27 (4c) — a table reclaims the gutter
                         .frame(maxWidth: .infinity, alignment: .leading)

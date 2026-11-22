@@ -320,6 +320,9 @@ final class ChatSession {
     /// T ruling (2026-10-09) — set by the Librarian on a FIRST read (chars sent): the time to the first token becomes a
     /// prefill-speed sample for the "~N s" estimate. Consumed by the next `send`.
     @ObservationIgnored var prefillSampleChars: Int? = nil
+    /// Sweep 2b · 1c — the turn streaming now is a Library no-match turn (a 0/0 receipt, no packet): the streaming tail
+    /// shows `ChatTranscript.noMatchLine` above the answer so it doesn't pop in at commit. Ephemeral; set by `send`.
+    private(set) var streamingNoMatch = false
     /// The question just asked, shown as its bubble (`TranscriptItem.pending`) until the turn adds the real message.
     /// Sweep 1 · 1.2 (T: "the question disappeared for a while"): a Library turn reads the library BEFORE `send` adds
     /// the question, so after Return the field was empty and the question nowhere for 1.5–2.5 s (Mac, 284 entries,
@@ -476,6 +479,7 @@ final class ChatSession {
         // live-30 (A1) — an app-routed search shows the same "Searched the web" row the Host path's tool call does.
         if let searchActivity { messages.append(Message(role: .activity, text: searchActivity.label, activity: searchActivity)) }
         pendingUser = nil
+        streamingNoMatch = !packetTurn && webResults == nil && readReceipt.map { $0.readInFull == 0 && $0.skimmed == 0 } == true
         isStreaming = true
         filterAllowed = WebGrounding.urls(in: displayText) + (webResults != nil ? (citations ?? []).compactMap(\.url) : [])
         answerFilter = generalKnowledge ? WebAnswerFilter(allowed: filterAllowed) : nil
@@ -734,6 +738,7 @@ final class ChatSession {
         #endif
         streamingText = ""
         isStreaming = false
+        streamingNoMatch = false
         endTurnLimit()
         currentRequestID = nil
         prefillNotice = nil   // BW5 — never let a "Reading…" line outlive the turn

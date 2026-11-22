@@ -258,6 +258,22 @@ struct ChatTranscript: View {
         }
     }
 
+    // MARK: - Sweep 2b · 1c — the no-match line (T's wording, decisions 2026-11-21)
+
+    /// Shown ABOVE the answer on a Library no-match turn. App chrome: never part of the answer's text, its copy, its
+    /// share or the history sent back to the model. The footer under it still says "No matching entries".
+    static let noMatchLine = "This answer is from the model's general knowledge, not your notes."
+
+    /// Derived, not stored (no chat-format change): a Library turn that sent the model nothing (a 0/0 receipt) and
+    /// that the app did not write itself (`provenance.library` — an app notice such as "nothing names X"), not a
+    /// decline, and with an answer to label. Old chats' no-match answers show it too (still true of them).
+    static func showsNoMatchLine(_ m: ChatSession.Message) -> Bool {
+        guard m.role == .assistant, m.declined != true, m.provenance?.library != true,
+              !m.text.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty,
+              let r = m.readReceipt else { return false }
+        return r.readInFull == 0 && r.skimmed == 0
+    }
+
     // MARK: - Read/skim receipt (Brief BN5 — what the Librarian read)
 
     /// Pure string builder for the receipt line (BN5/BS3) — `static` so a self-test can exercise the
@@ -434,6 +450,15 @@ struct StreamingTail: View {
                     Spacer(minLength: 40)
                 }
             } else {
+                VStack(alignment: .leading, spacing: 10) {
+                // Sweep 2b · 1c — the no-match line sits above the streaming answer, where the settled bubble puts it.
+                if session.streamingNoMatch {
+                    Text(ChatTranscript.noMatchLine)
+                        .font(appFont.font(size: 13, relativeTo: .footnote))
+                        .foregroundStyle(ChatTypography.secondaryText)
+                        .frame(maxWidth: .infinity, alignment: .leading)
+                        .padding(.trailing, 40)
+                }
                 // Render the SAME blocks the settled bubble renders (parsed in
                 // commit(), held in @State) so nothing reflows at commit. Only
                 // the newest block carries the fade. Key on OFFSET — a block's
@@ -457,6 +482,7 @@ struct StreamingTail: View {
                 .environment(\.chatAnswerGutter, 40)   // live-27 (4c) — matches the settled bubble
                 .frame(maxWidth: .infinity, alignment: .leading)
                 .padding(.trailing, 40)
+                }
             }
         }
         .onChange(of: session.streamingText) { _, newValue in

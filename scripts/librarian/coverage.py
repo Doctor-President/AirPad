@@ -8,7 +8,8 @@
                             sides / forbidden / no-answer failure). Citation is counted separately.
   cites the support         of the cases that must cite: a chip on an entry that supports the answer.
   nothing sent when unsupp. library-mode cases nothing supports: the app sent the model no library text (a code decision).
-  says no close match       the same cases: the delivered answer says there is no close match (today the model's wording).
+  says no close match       the same cases: the delivered answer says there is no close match (the model's wording, or
+                            since sweep 2b · 1c the app's own line above the answer, `noMatchLine` in results.json).
   told no match (either)    the same cases: the answer says so OR the app's own footer reads "No matching entries"
                             (the footer is written by code whenever nothing was sent).
   no chip when unsupported  the same cases: no source chip shown at all.
@@ -63,6 +64,7 @@ def cover(setname, pairs):
         recs = {r["id"]: (r.get("record") or {}) for r in res["rows"]}
         answers = {r["id"]: r.get("answer") or "" for r in res["rows"]}
         receipts = {r["id"]: r.get("receipt") or "" for r in res["rows"]}
+        no_match_line = {r["id"]: bool(r.get("noMatchLine")) for r in res["rows"]}   # sweep 2b · 1c — the app's line
         ratios = []
         for r in graded["rows"]:
             case = cases.get(r["id"])
@@ -81,7 +83,7 @@ def cover(setname, pairs):
             if case.get("noMatch") and lib:
                 ok = "no-match-unsaid" not in k and "no-answer" not in k
                 c["uns"] += 1; c["unsAbstain"] += ok
-                c["unsTold"] += ok or (r["sent"] == 0 and "No matching entries" in receipts.get(r["id"], "")); c["unsNoChip"] += r["chips"] == 0; c["unsNoneSent"] += r["sent"] == 0
+                c["unsTold"] += ok or no_match_line.get(r["id"], False) or (r["sent"] == 0 and "No matching entries" in receipts.get(r["id"], "")); c["unsNoChip"] += r["chips"] == 0; c["unsNoneSent"] += r["sent"] == 0
                 per_case_abstain.setdefault(r["id"], [0, 0]); per_case_abstain[r["id"]][0] += ok; per_case_abstain[r["id"]][1] += 1
                 if case.get("facts"):
                     c["unsFacts"] += 1; c["unsFactsOK"] += not (k & ANSWER_KINDS)

@@ -127,7 +127,8 @@ def grade_row(case, row, keys):
                 break
     if prov == "notes" and mode == "library" and row.get("generalKnowledgeLine"):
         fails.append("general-line:shown under an answer from the notes")
-    if case.get("noMatch") and mode == "library" and ans and not NO_MATCH.search(row.get("answer") or ""):
+    # Sweep 2b · 1c — the app's own line above the answer ("…general knowledge, not your notes") says it too.
+    if case.get("noMatch") and mode == "library" and ans and not (row.get("noMatchLine") or NO_MATCH.search(row.get("answer") or "")):
         fails.append("no-match-unsaid:does not say it found no close match")
     if case.get("newsHonest") and ans and not NEWS_HONEST.search(row.get("answer") or ""):
         fails.append("news:presents news without a search")

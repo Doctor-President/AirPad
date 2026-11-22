@@ -1,0 +1,2006 @@
+@heading
+Recipe changes
+%%
+@heading
+Client feedback
+%%
+@para
+Small delight: when a note is finished, let it settle gently rather than vanish with a flourish. Keep the toolbar to 9 buttons; anything more and people stop looking at them. A map view could show clusters of related notes, though it is only useful past about 690 notes. Need to test with a library of 179 notes, because the demo with ten notes hides every performance problem. What if every note could hold a small table without any extra setup — just paste and go? Idea: a quiet inbox that shows only 9 things a day, chosen by the person the night before.
+%%
+@para
+Idea: swap texts with Ysolde once a week, each of us writing in the other's language. Class is on Tuesdays at 4:40 am, 55 minutes, and costs $199.00 a month through the Marrow Bridge community center. Exam in 5 weeks; the practice test on Thursday will show whether the reading section is the real problem.
+%%
+@chata
+I found a short note on this from March. It says you intended to cancel two subscriptions and that the total was around $416.50. There is also a related list item that is still unchecked, so that part looks open. Let me know if you want me to pull the exact wording. The plum tree is finally recovering after the pruning; I counted 2 new shoots this morning. We split the week: I cover Monday and Thursday, and Saskia takes Tuesday, with the weekend flexible.
+%%
+@list
+Tidy the desk and recycle old packaging
+Draft a short reply to the tailor email
+Look up opening hours for the Calder Mills library
+%%
+@para
+The capture screen should open in under a second, even with 852 notes already stored. What if every note could hold a small table without any extra setup — just paste and go? Search should forgive typos, and rank recent notes higher unless the query is very specific. Keep the toolbar to 9 buttons; anything more and people stop looking at them. Felix tried the prototype for 26 minutes and never found the share button, which is on me. Offline first: writes should never wait for the network, and conflicts should resolve quietly. Small delight: when a note is finished, let it settle gently rather than vanish with a flourish.
+%%
+@heading
+Rough timeline
+%%
+@para
+Frost warning for Thursday night — cover the courgettes with fleece and move the pots by the door. I need to measure the south wall properly before building the trellis (my guess of 4 meters is probably off). Honestly the best part is the first coffee in the garden at 6:15 am, before anyone else is up. Gideon suggested planting nasturtiums along the edge to draw aphids away from the beans. Ordered 5 packets of seeds from a small supplier near Wexcombe for $318.40 including postage. The plum tree is finally recovering after the pruning; I counted 2 new shoots this morning.
+%%
+@para
+Pick up the kids at 11:05 pm on Wednesday; Ysolde has the car until noon, so I need the bus pass. We split the week: I cover Monday and Thursday, and Linnea takes Tuesday, with the weekend flexible. Grocery list is on the fridge; milk, bread, oats, and something for the 6 lunchboxes. Holiday plan: drive to Vossbrook on the the 27th, two nights, and back before the storm if the forecast holds. Birthday dinner for Gran: table for 6 at the place near Calder Mills, booked under our surname. Dentist appointment on the 27th at 3:30 am, and the school form is due the same morning. Swim class moved to 5:15 am on Saturdays, which means breakfast has to be earlier.
+%%
+@heading
+Things to fix
+%%
+@heading
+Review notes
+%%
+@para
+Vocabulary deck is now 776 cards, with 3 new ones each morning before coffee. My tutor Gideon corrected my pronunciation of the double consonants, which I have been flattening for weeks. Exam in 8 weeks; the practice test on Saturday will show whether the reading section is the real problem. Flashcard review: seventy percent correct today, down from eighty, which usually means I am tired.
+%%
+@para
+The capture screen should open in under a second, even with 734 notes already stored. A map view could show clusters of related notes, though it is only useful past about 270 notes. Users probably want to group notes by project, but I suspect the real grouping is by week.
+%%
+@heading
+Still undecided
+%%
+@para
+We agreed on 9 rounds of revisions, with the first round of sketches due on Monday. Our studio rate goes up to $55.00 an hour in January for new clients; existing clients stay as they are until June. The packaging mock-up looks great on screen but the kraft paper will mute the colors by a surprising amount.
+%%
+@para
+Spoke only in the new language at the bakery today, and the baker smiled at my "please" and "thank you". Class is on Tuesdays at 8:00 am, 30 minutes, and costs $291.40 a month through the Kestrel Heath community center. Vocabulary deck is now 177 cards, with 8 new ones each morning before coffee. Exam in 7 weeks; the practice test on Wednesday will show whether the reading section is the real problem.
+%%
+@para
+I am reading about 7 pages a night, which feels slow but adds up to a book every ten days. The history of Pelling Cross salt trade was a surprise; I assumed it would be dry and instead lost an hour. Finished chapter 8 of the essay collection; the argument about slow attention is sharper than I expected. The translation reads a little stiff, though the footnotes more than make up for it. Want to reread the first section slowly, with a pencil, since I rushed it on the train. Quote to keep: the map is not the territory, but you still need a good map.
+%%
+@para
+Sleep matters more than the miles: after a bad night, my pace dropped by almost twenty seconds. Long run on Sunday, 27 kilometers along the canal, with a stop for water at the Kestrel Heath lock. The new shoes cost $333.50 and feel fine after two runs, though the left heel rubs a bit. Splits were uneven: five minutes forty for the first kilometer, then drifting to six ten by the end. Ran 9 kilometers this morning at an easy pace; my heart rate stayed low until the final hill. I log every run in a plain spreadsheet with date, distance, time, and one line about how it felt.
+%%
+@chata
+There are 8 notes that touch on this. Two are quick reminders, and one is a longer entry about Ostrava Lane that covers the schedule and the cost in detail. The longer entry is probably the one you want. The recipe from Linnea calls for 8 cloves of garlic, which seemed like a lot, but it mellows completely. Maren lent me the paperback with 3 pages of margin notes, which are better than some of the chapters.
+%%
+@heading
+Recipe changes March
+%%
+@para
+The tile order arrived with 6 boxes short, so the bathroom is on hold until March. Take photos of the wiring before the wall is closed, so future-us knows where everything runs. Decide on the countertop: stone looks lovely, but the wood is half the price and easier to repair. Paint samples are on the wall: the warm white looks yellow at 5:05 pm and gray by evening. The electrician found an old junction box behind the plaster, which explains the flickering hallway light. We measured the kitchen wall three times and it still came out 25 millimeters different each time.
+%%
+@para
+Transport cost is stable at $58.75, but the bike repair on Wednesday was an unplanned $38.95. The energy bill dropped 37 percent after we fixed the draughts, which pays for the weatherstripping in a year. Cash envelope for the market works better than the card, because I can see it running out. The subscription audit found 5 services I forgot about, saving about $261.40 a month once cancelled. Groceries ran $13.50 over plan, mostly because of the two dinners with guests. Emergency fund is at 4 months of expenses, and the goal is six by the end of next year.
+%%
+@heading
+Meeting summary
+%%
+@check
+Fix the squeaky hinge on the garden gate
+Water the seedlings every other morning
+Check the receipt for the bakery order
+%%
+@para
+We measured the kitchen wall three times and it still came out 16 millimeters different each time. Dust is everywhere, even in rooms we sealed off with plastic sheeting and tape. Budget check: spent $218.25 so far against a plan of $366.25, mostly because of the damp patch. Paint samples are on the wall: the warm white looks yellow at 3:05 am and gray by evening.
+%%
+@para
+Next meeting is a short check-in at 4:00 pm; bring only blockers, no slides. Follow up with Saskia about the contract renewal, which expires on Sunday. We agreed to stop the weekly report and replace it with a shared page that updates itself. Wren raised a fair point — the numbers from Pelling Cross are from last quarter and may not hold. Decision: move the launch to October, since the vendor cannot deliver before then.
+%%
+@heading
+Why it matters
+%%
+@heading
+Review notes the flat
+%%
+@list
+Check the receipt for the courier order
+Return the borrowed @para
+Weekly total is 26 kilometers, up from last month, and I am capping increases at ten percent. Stretch for ten minutes after, especially calves; skipping it caught up with me last spring. Knee felt tight at kilometer 5, so I shortened the stride and it eased off. Gideon wants to enter the Tarn Hollow ten-kilometer race on Sunday; entry is $65.25. Rain at 8:15 am, but the trail was quiet and the puddles were almost fun. The new shoes cost $346.50 and feel fine after two runs, though the left heel rubs a bit. I log every run in a plain spreadsheet with date, distance, time, and one line about how it felt. to Basil
+Charge the camera batteries and clear the cards
+Ask Perrin whether Thursday still works
+Look up opening hours for the Vossbrook library
+Put the clinic meeting on the shared calendar
+Tidy the desk and recycle old packaging
+%%
+@table
+| Item | Qty | Price | Bought |
+|---|---|---|---|
+| Tamsin | 5 | $60.50 | no |
+| invoice pack | 6 | $25.50 | no |
+| ticket run | 2 | $143.25 | no |
+| invoice batch | 11 | $65.95 | no |
+| Pelling Cross | 9 | $426.40 | no |
+| Ysolde | 5 | $127.00 | yes |
+| oil run | 12 | $59.95 | yes |
+| flour set | 7 | $204.40 | no |
+| Felix | 8 | $415.95 | no |
+| Tarn Hollow | 9 | $379.75 | no |
+| lens pack | 4 | $176.40 | yes |
+| Perrin | 9 | $4.75 | yes |
+| invoice run | 4 | $296.40 | no |
+| flour pack | 4 | $346.50 | yes |
+%%
+@summary
+A short plan for morning run with a rough budget and two open questions to settle before the weekend.
+Quick thoughts on monthly spending written on the train, mostly reminders about costs and timing.
+Notes from the conversation about the film roll, including the decisions made and who will follow up.
+A short plan for the studio rebrand with a rough budget and two open questions to settle before the weekend.
+Details on app capture screen: the schedule, the people involved, and the one thing that still needs checking.
+A short plan for app capture screen with a rough budget and two open questions to settle before the weekend.
+Notes from the conversation about app capture screen, including the decisions made and who will follow up.
+A checklist of small jobs connected to the film roll that should be finished before the end of the month.
+A running list of what went right and wrong during the language exam, with changes to try next time.
+A checklist of small jobs connected to the kitchen that should be finished before the end of the month.
+Notes from the conversation about the Marrow Bridge trip, including the decisions made and who will follow up.
+A running list of what went right and wrong during client call, with changes to try next time.
+A checklist of small jobs connected to the tile order that should be finished before the end of the month.
+Quick thoughts on the language exam written on the train, mostly reminders about costs and timing.
+A short plan for the language exam with a rough budget and two open questions to settle before the weekend.
+Details on the garden fence: the schedule, the people involved, and the one thing that still needs checking.
+Notes from the conversation about the recital, including the decisions made and who will follow up.
+A running list of what went right and wrong during monthly spending, with changes to try next time.
+A short plan for the tile order with a rough budget and two open questions to settle before the weekend.
+A running list of what went right and wrong during app capture screen, with changes to try next time.
+A checklist of small jobs connected to monthly spending that should be finished before the end of the month.
+A running list of what went right and wrong during the tile order, with changes to try next time.
+A running list of what went right and wrong during the Eastgarth race, with changes to try next time.
+Quick thoughts on the Pelling Cross trip written on the train, mostly reminders about costs and timing.
+A checklist of small jobs connected to app capture screen that should be finished before the end of the month.
+Notes from the conversation about morning run, including the decisions made and who will follow up.
+A short plan for Gran's birthday with a rough budget and two open questions to settle before the weekend.
+Notes from the conversation about the Ostrava Lane trip, including the decisions made and who will follow up.
+A short plan for spring planting with a rough budget and two open questions to settle before the weekend.
+A running list of what went right and wrong during the Calder Mills trip, with changes to try next time.
+Quick thoughts on the garden fence written on the train, mostly reminders about costs and timing.
+A checklist of small jobs connected to morning run that should be finished before the end of the month.
+Details on the Brindle Quay race: the schedule, the people involved, and the one thing that still needs checking.
+A running list of what went right and wrong during Gran's birthday, with changes to try next time.
+A running list of what went right and wrong during the studio rebrand, with changes to try next time.
+A short plan for the film roll with a rough budget and two open questions to settle before the weekend.
+Notes from the conversation about monthly spending, including the decisions made and who will follow up.
+A checklist of small jobs connected to the garden fence that should be finished before the end of the month.
+Quick thoughts on the studio rebrand written on the train, mostly reminders about costs and timing.
+Notes from the conversation about the garden fence, including the decisions made and who will follow up.
+%%
+@list
+Sort the folder of scans from last June
+Look up opening hours for the Ironwood Park library
+Check the receipt for the bakery order
+%%
+@para
+Small delight: when a note is finished, let it settle gently rather than vanish with a flourish. The capture screen should open in under a second, even with 439 notes already stored. Offline first: writes should never wait for the network, and conflicts should resolve quietly. Basil tried the prototype for 24 minutes and never found the share button, which is on me. Users probably want to group notes by project, but I suspect the real grouping is by week.
+%%
+@para
+I am reading about 4 pages a night, which feels slow but adds up to a book every ten days. The history of Ostrava Lane salt trade was a surprise; I assumed it would be dry and instead lost an hour. Finished chapter 6 of the essay collection; the argument about slow attention is sharper than I expected. Quote to keep: the map is not the territory, but you still need a good map. Library hold arrived early, so the 5 books I planned for winter are now due on the 3rd. Want to reread the first section slowly, with a pencil, since I rushed it on the train.
+%%
+@para
+A roll of film now costs $28.50 to buy and another $106.95 to process, so every frame has to count. The light at 11:15 am was perfect for about ten minutes, then a cloud came in and ruined it. Scanning at 416 dpi takes four minutes per frame, so I do it in batches over a weekend. The camera shutter sounds slightly sticky at slow speeds; get it serviced before the trip. I want to print one image a month, properly, and put it on the wall rather than leaving it on a drive.
+%%
+@chata
+I did not find anything that answers that directly. The closest match is a note from the 19th about a similar topic, where you planned to print the contact sheets. If you tell me more about what you are after, I can look again. Next meeting is a short check-in at 7:15 am; bring only blockers, no slides. The back bed gets sun until roughly 10:05 am, then the fence shadow takes over.
+%%
+@para
+The plum tree is finally recovering after the pruning; I counted 3 new shoots this morning. The back bed gets sun until roughly 10:15 am, then the fence shadow takes over. Honestly the best part is the first coffee in the garden at 2:40 am, before anyone else is up. Compost pile temperature read 33 degrees at midday, so it is working, but it needs turning.
+%%
+@list
+Buy @para
+Frost warning for Thursday night — cover the courgettes with fleece and move the pots by the door. I need to measure the south wall properly before building the trellis (my guess of 4 meters is probably off). Honestly the best part is the first coffee in the garden at 6:15 am, before anyone else is up. Gideon suggested planting nasturtiums along the edge to draw aphids away from the beans. Ordered 5 packets of seeds from a small supplier near Wexcombe for $318.40 including postage. The plum tree is finally recovering after the pruning; I counted 2 new shoots this morning. before the weekend market closes
+Buy @para
+I am reading about 7 pages a night, which feels slow but adds up to a book every ten days. Finished chapter 4 of the essay collection; the argument about slow attention is sharper than I expected. The translation reads a little stiff, though the footnotes more than make up for it. Want to reread the first section slowly, with a pencil, since I rushed it on the train. Gideon lent me the paperback with 7 pages of margin notes, which are better than some of the chapters. before the weekend market closes
+Look up opening hours for the Ironwood Park library
+Draft a short reply to the courier email
+%%
+@para
+Ran 5 kilometers this morning at an easy pace; my heart rate stayed low until the final hill. Weekly total is 22 kilometers, up from last month, and I am capping increases at ten percent. Knee felt tight at kilometer 5, so I shortened the stride and it eased off. The new shoes cost $101.00 and feel fine after two runs, though the left heel rubs a bit. Rain at 3:45 pm, but the trail was quiet and the puddles were almost fun. Ysolde wants to enter the Dunmere ten-kilometer race on Sunday; entry is $402.75. Sleep matters more than the miles: after a bad night, my pace dropped by almost twenty seconds.
+%%
+@para
+Passport renewal takes about 4 weeks, so check expiry dates well before booking anything. I kept a running tally of expenses, and by day 5 we had spent $364.50 on food alone. Weather turned on the last afternoon, but the covered market was the best place to wait it out. We walked 3 kilometers along the harbor and stopped for coffee where the menu was only in handwriting. Train from Ludenhall left at 5:40 am, and the connection at Pinecroft was only 39 minutes, so we ran.
+%%
+@heading
+Client feedback
+%%
+@para
+Attendees: Linnea, Wren, and me; we started at 4:40 am and finished 24 minutes later. Action item for Corwin: send the revised budget (currently $335.00) before the end of the week. Risk: the contractor has only 5 people available, so any slip in the schedule is a real slip. We spent half the meeting on the onboarding flow, and agreed it is too long by about 6 steps.
+%%
+@para
+Skip the cheap hinges; the cabinet doors sag within a year, and a good set is only about $168.95 more. Decide on the countertop: stone looks lovely, but the wood is half the price and easier to repair. Permit application went in on March; the office says to expect a reply in about 9 weeks. We measured the kitchen wall three times and it still came out 11 millimeters different each time.
+%%
+@para
+Notes to circulate: the three decisions, the two owners, and the single date everyone agreed on. Decision: move the launch to the first weekend of May, since the vendor cannot deliver before then. Teodor raised a fair point — the numbers from Halvermoor are from last quarter and may not hold. Attendees: Noor, Maren, and me; we started at 1:45 am and finished 15 minutes later. Open question: who owns the support inbox over the holidays, and does anyone have the passwords?
+%%
+@heading
+Budget notes
+%%
+@para
+Our studio rate goes up to $46.50 an hour in January for new clients; existing clients stay as they are until June. Odalys pushed back on the second logo direction, saying it felt "too corporate for a place that sells cinnamon rolls". We agreed on 7 rounds of revisions, with the first round of sketches due on March. Quick win for next week: a one-page checklist so every project starts with the same questions. Type pairing is still undecided: a sturdy serif for headlines and something quieter for the small print.
+%%
+@para
+Finished chapter 2 of the essay collection; the argument about slow attention is sharper than I expected. Library hold arrived early, so the 8 books I planned for winter are now due on the 12th. I am reading about 4 pages a night, which feels slow but adds up to a book every ten days. The novel drags in the middle, around page 790, but the ending earns it. Add to the list: the short story collection that Ambrose keeps mentioning, and the field guide to lichens. Want to reread the first section slowly, with a pencil, since I rushed it on the train.
+%%
+@para
+Follow up with Linnea about the contract renewal, which expires on March. Risk: the contractor has only 2 people available, so any slip in the schedule is a real slip. Teodor raised a fair point — the numbers from Pelling Cross are from last quarter and may not hold. Action item for Perrin: send the revised budget (currently $40.75) before the end of the week.
+%%
+@chata
+There are 2 notes that touch on this. Two are quick reminders, and one is a longer entry about Ludenhall that covers the schedule and the cost in detail. The longer entry is probably the one you want.
+%%
+@heading
+Follow-ups
+%%
+@chata
+Based on your notes, the answer seems to be yes, but with a caveat. You wrote that you would rebook the appointment before the 19th, and then added a reminder to check the price, which was $383.00 at the time. I can also list the related notes if that helps.
+%%
+@para
+The tomato seedlings went into the ground on March, about 27 centimeters apart, which may be too close. Rain is forecast for the next 9 days, so I will hold off on the watering schedule. I need to measure the south wall properly before building the trellis (my guess of 2 meters is probably off). Slugs have found the lettuce again, so I am trying crushed eggshells and a beer trap near the the oak shelf. Ordered 7 packets of seeds from a small supplier near Tarn Hollow for $252.75 including postage. Compost pile temperature read 40 degrees at midday, so it is working, but it needs turning.
+%%
+@para
+Keep the toolbar to 3 buttons; anything more and people stop looking at them. Offline first: writes should never wait for the network, and conflicts should resolve quietly. What if every note could hold a small table without any extra setup — just paste and go? Idea: a quiet inbox that shows only 7 things a day, chosen by the person the night before. Small delight: when a note is finished, let it settle gently rather than vanish with a flourish. Need to test with a library of 292 notes, because the demo with ten notes hides every performance problem. A map view could show clusters of related notes, though it is only useful past about 495 notes.
+%%
+@chata
+There are 5 notes that touch on this. Two are quick reminders, and one is a longer entry about Brindle Quay that covers the schedule and the cost in detail. The longer entry is probably the one you want. Review the contract clause on usage rights before anything is printed — the client wants unlimited reprints. The new shoes cost $220.50 and feel fine after two runs, though the left heel rubs a bit.
+%%
+@chata
+Your notes mention this in 6 places. The most recent one, written the 27th, says the plan is to order the missing boxes, and an earlier note adds a cost of $413.00. I could not find a final decision, so it may be worth confirming with Wren. Tell me if any of this looks out of date. Add to the list: the short story collection that Basil keeps mentioning, and the field guide to lichens. Skip the cheap hinges; the cabinet doors sag within a year, and a good set is only about $92.40 more.
+%%
+@para
+Scanning at 362 dpi takes four minutes per frame, so I do it in batches over a weekend. I want to print one image a month, properly, and put it on the wall rather than leaving it on a drive. Contact sheet shows 2 usable frames out of thirty-six, which is honestly a decent ratio for me. Developing at home: 7 minutes at twenty degrees, with agitation for the first thirty seconds. Shot one roll of black and white at Pelling Cross, rated at 135 ISO and pushed a stop in the developer.
+%%
+@para
+Contact sheet shows 3 usable frames out of thirty-six, which is honestly a decent ratio for me. Underexposed the market series by a stop; the shadows are muddy, but the faces are fine. Negative sleeves are filed by date, and I have started writing the location on each strip. Shot one roll of black and white at Halvermoor, rated at 222 ISO and pushed a stop in the developer. A roll of film now costs $41.50 to buy and another $270.25 to process, so every frame has to count. Developing at home: 9 minutes at twenty degrees, with agitation for the first thirty seconds. The camera shutter sounds slightly sticky at slow speeds; get it serviced before the trip.
+%%
+@para
+The packaging mock-up looks great on screen but the kraft paper will mute the colors by a surprising amount. Review the contract clause on usage rights before anything is printed — the client wants unlimited reprints. Invoice number 177 went out on Monday, net 51 days, and I should chase it if nothing arrives by month end.
+%%
+@para
+Developing at home: 5 minutes at twenty degrees, with agitation for the first thirty seconds. I want to print one image a month, properly, and put it on the wall rather than leaving it on a drive. A roll of film now costs $266.25 to buy and another $128.25 to process, so every frame has to count. Underexposed the market series by a stop; the shadows are muddy, but the faces are fine. Scanning at 228 dpi takes four minutes per frame, so I do it in batches over a weekend. Shot one roll of black and white at Calder Mills, rated at 792 ISO and pushed a stop in the developer.
+%%
+@para
+Keep the toolbar to 7 buttons; anything more and people stop looking at them. Offline first: writes should never wait for the network, and conflicts should resolve quietly. Small delight: when a note is finished, let it settle gently rather than vanish with a flourish. Pricing guess: free for the basics, then $225.00 a year for sync across devices and the assistant. Search should forgive typos, and rank recent notes higher unless the query is very specific.
+%%
+@para
+Monthly income came to $107.50, with fixed costs of $442.25, leaving a thinner margin than I would like. Review again on the 27th: compare spending against plan by category, and adjust only the two biggest gaps. Transport cost is stable at $70.40, but the bike repair on Friday was an unplanned $308.25. Groceries ran $303.95 over plan, mostly because of the two dinners with guests. Linnea suggested a no-spend weekend each month; we tried it and saved more than expected. Emergency fund is at 8 months of expenses, and the goal is six by the end of next year. Tax receipts go in the blue folder as they arrive, not in a pile at the end of the year.
+%%
+@para
+Training plan: three easy runs, one tempo, one long, and a full rest day after the long one. Rain at 3:45 pm, but the trail was quiet and the puddles were almost fun. Sleep matters more than the miles: after a bad night, my pace dropped by almost twenty seconds.
+%%
+@para
+Pricing guess: free for the basics, then $138.00 a year for sync across devices and the assistant. Search should forgive typos, and rank recent notes higher unless the query is very specific. Offline first: writes should never wait for the network, and conflicts should resolve quietly. Small delight: when a note is finished, let it settle gently rather than vanish with a flourish.
+%%
+@para
+Risk: the contractor has only 7 people available, so any slip in the schedule is a real slip. Parking lot: pricing tiers, the logo for the newsletter, and whether to open the Calder Mills office. Attendees: Noor, Maren, and me; we started at 6:45 am and finished 35 minutes later. Follow up with Felix about the contract renewal, which expires on Thursday. Maren raised a fair point — the numbers from Calder Mills are from last quarter and may not hold. We agreed to stop the weekly report and replace it with a shared page that updates itself. We spent half the meeting on the onboarding flow, and agreed it is too long by about 4 steps.
+%%
+@heading
+Things to fix
+%%
+@list
+Tidy the desk and recycle old packaging
+Write down what worked and what did not
+Practice the slow section with the metronome
+Return the borrowed @heading
+Review notes the flat to Iolo
+%%
+@para
+We spent half the meeting on the onboarding flow, and agreed it is too long by about 2 steps. Decision: move the launch to Tuesday, since the vendor cannot deliver before then. Notes to circulate: the three decisions, the two owners, and the single date everyone agreed on. Action item for Ambrose: send the revised budget (currently $404.50) before the end of the week. Attendees: Ysolde, Maren, and me; we started at 11:00 am and finished 14 minutes later. Parking lot: pricing tiers, the logo for the newsletter, and whether to open the Ironwood Park office.
+%%
+@heading
+Fridge inventory the trip
+%%
+@chata
+There are 6 notes that touch on this. Two are quick reminders, and one is a longer entry about Wexcombe that covers the schedule and the cost in detail. The longer entry is probably the one you want. Tell me if any of this looks out of date.
+%%
+@para
+The camera shutter sounds slightly sticky at slow speeds; get it serviced before the trip. Negative sleeves are filed by date, and I have started writing the location on each strip. The light at 6:05 am was perfect for about ten minutes, then a cloud came in and ruined it.
+%%
+@heading
+Why it matters
+%%
+@title
+The sourdough: what to buy
+The garden fence: next steps
+The dunmere trip: what to buy
+Client call: what to buy
+The studio rebrand: what to buy
+Spring planting list
+Notes on the language exam
+App capture screen ideas
+Draft for the recital
+Plan for Gran's birthday
+Monthly spending outline
+Client call questions
+Plan for the sourdough
+Thoughts on the Vossbrook race
+Morning run: what changed
+Notes for spring planting
+The kitchen: open questions
+Notes for client call
+Morning run: open questions
+Ideas about the film roll
+App capture screen: what to buy
+The tile order checklist
+Schedule for morning run
+The sourdough log
+The kitchen log
+The garden fence: what to buy
+Log for the sourdough
+Outline for morning run
+The halvermoor trip: what to buy
+Ideas about the recital
+The wexcombe race: what to buy
+Questions for the recital
+The kestrel heath trip: who does what
+Thoughts for the studio rebrand
+The saltfleet row race log
+Thoughts on the kitchen
+Thoughts on monthly spending
+Spring planting summary
+Rough plan for the studio rebrand
+Ideas about the studio rebrand
+%%
+@para
+Honestly the best part is the first coffee in the garden at 8:15 pm, before anyone else is up. The back bed gets sun until roughly 4:05 am, then the fence shadow takes over. Frost warning for Thursday night — cover the courgettes with fleece and move the pots by the door. Perrin suggested planting nasturtiums along the edge to draw aphids away from the beans. The plum tree is finally recovering after the pruning; I counted 6 new shoots this morning. Compost pile temperature read 43 degrees at midday, so it is working, but it needs turning. Rain is forecast for the next 9 days, so I will hold off on the watering schedule.
+%%
+@para
+Lesson 7 covered the past tense, and I still mix up the two auxiliary verbs about half the time. Flashcard review: seventy percent correct today, down from eighty, which usually means I am tired. Exam in 8 weeks; the practice test on the 12th will show whether the reading section is the real problem. Tip from class: guess first, look it up second, because the guessing is where the memory forms. Listening practice: a slow podcast, 45 minutes a day, then writing three sentences about what I heard.
+%%
+@para
+Tamsin and I might play the duet at the spring recital if we can find a slot before 7:05 pm. Practice log: 5 days in a row, then a missed day, then back; consistency beats heroics. I recorded a take on my phone and the timing in the middle section is wobbly, particularly at the repeat. Goal this month: one full run-through without stopping, even if it is messy. Trying to memorize the opening page without looking, in small chunks of 4 bars at a time. My teacher said the phrasing in bar 2 is rushed, and she is right, I can hear it on the recording.
+%%
+@para
+We agreed on 5 rounds of revisions, with the first round of sketches due on Wednesday. Invoice number 788 went out on Monday, net 43 days, and I should chase it if nothing arrives by month end. We lost half a day to a font licensing question that should have been settled at the start. Review the contract clause on usage rights before anything is printed — the client wants unlimited reprints. Our studio rate goes up to $385.25 an hour in January for new clients; existing clients stay as they are until June.
+%%
+@heading
+Rough timeline
+%%
+@summary
+A short plan for the kitchen with a rough budget and two open questions to settle before the weekend.
+Details on app capture screen: the schedule, the people involved, and the one thing that still needs checking.
+A running list of what went right and wrong during the film roll, with changes to try next time.
+Details on the sourdough: the schedule, the people involved, and the one thing that still needs checking.
+Notes from the conversation about the sourdough, including the decisions made and who will follow up.
+A short plan for client call with a rough budget and two open questions to settle before the weekend.
+A running list of what went right and wrong during client call, with changes to try next time.
+Quick thoughts on the garden fence written on the train, mostly reminders about costs and timing.
+A checklist of small jobs connected to the kitchen that should be finished before the end of the month.
+Quick thoughts on the sourdough written on the train, mostly reminders about costs and timing.
+A short plan for the tile order with a rough budget and two open questions to settle before the weekend.
+Notes from the conversation about spring planting, including the decisions made and who will follow up.
+A running list of what went right and wrong during the Pelling Cross race, with changes to try next time.
+Notes from the conversation about the kitchen, including the decisions made and who will follow up.
+Details on the tile order: the schedule, the people involved, and the one thing that still needs checking.
+Details on morning run: the schedule, the people involved, and the one thing that still needs checking.
+A short plan for the studio rebrand with a rough budget and two open questions to settle before the weekend.
+A running list of what went right and wrong during spring planting, with changes to try next time.
+A checklist of small jobs connected to spring planting that should be finished before the end of the month.
+A running list of what went right and wrong during monthly spending, with changes to try next time.
+A short plan for monthly spending with a rough budget and two open questions to settle before the weekend.
+Details on the kitchen: the schedule, the people involved, and the one thing that still needs checking.
+A short plan for morning run with a rough budget and two open questions to settle before the weekend.
+A running list of what went right and wrong during the kitchen, with changes to try next time.
+Notes from the conversation about the recital, including the decisions made and who will follow up.
+A running list of what went right and wrong during the garden fence, with changes to try next time.
+Notes from the conversation about the garden fence, including the decisions made and who will follow up.
+A checklist of small jobs connected to the tile order that should be finished before the end of the month.
+A short plan for the recital with a rough budget and two open questions to settle before the weekend.
+A short plan for Gran's birthday with a rough budget and two open questions to settle before the weekend.
+A running list of what went right and wrong during the tile order, with changes to try next time.
+A checklist of small jobs connected to the language exam that should be finished before the end of the month.
+A short plan for app capture screen with a rough budget and two open questions to settle before the weekend.
+A checklist of small jobs connected to monthly spending that should be finished before the end of the month.
+A checklist of small jobs connected to client call that should be finished before the end of the month.
+Details on the Saltfleet Row race: the schedule, the people involved, and the one thing that still needs checking.
+Notes from the conversation about client call, including the decisions made and who will follow up.
+Details on the garden fence: the schedule, the people involved, and the one thing that still needs checking.
+A short plan for the Tarn Hollow race with a rough budget and two open questions to settle before the weekend.
+A checklist of small jobs connected to morning run that should be finished before the end of the month.
+%%
+@list
+Return the borrowed @para
+Trying to memorize the opening page without looking, in small chunks of 2 bars at a time. Tamsin and I might play the duet at the spring recital if we can find a slot before 10:40 am. Tuning drifts when the room gets cold, so warm up for ten minutes before trusting the pitch. Practice log: 3 days in a row, then a missed day, then back; consistency beats heroics. Practiced for 36 minutes today, mostly scales and the left-hand part of the second piece. Reed order: a box of 8 for $231.00; the last box gave me only three good ones. The metronome at 134 beats per minute feels easy; I will nudge it up by four each day. to Teodor
+Write down what worked and what did not
+Buy @para
+Small delight: when a note is finished, let it settle gently rather than vanish with a flourish. Offline first: writes should never wait for the network, and conflicts should resolve quietly. Need to test with a library of 529 notes, because the demo with ten notes hides every performance problem. Idea: a quiet inbox that shows only 2 things a day, chosen by the person the night before. Pricing guess: free for the basics, then $9.00 a year for sync across devices and the assistant. Users probably want to group notes by project, but I suspect the real grouping is by week. before the weekend market closes
+%%
+@chata
+There are 5 notes that touch on this. Two are quick reminders, and one is a longer entry about Tarn Hollow that covers the schedule and the cost in detail. The longer entry is probably the one you want.
+%%
+@para
+The novel drags in the middle, around page 137, but the ending earns it. The history of Ironwood Park salt trade was a surprise; I assumed it would be dry and instead lost an hour. Quote to keep: the map is not the territory, but you still need a good map. "A habit is a decision you stop making," the author writes, and I underlined it twice. The translation reads a little stiff, though the footnotes more than make up for it. Finished chapter 9 of the essay collection; the argument about slow attention is sharper than I expected. Perrin lent me the paperback with 9 pages of margin notes, which are better than some of the chapters.
+%%
+@para
+Transport cost is stable at $204.25, but the bike repair on October was an unplanned $304.00. The subscription audit found 7 services I forgot about, saving about $476.25 a month once cancelled. Tax receipts go in the blue folder as they arrive, not in a pile at the end of the year.
+%%
+@para
+Quick win for next week: a one-page checklist so every project starts with the same questions. Moodboard now holds 256 images; I need to cut it back to a tight twelve before the call at 3:40 am. Invoice number 461 went out on Monday, net 50 days, and I should chase it if nothing arrives by month end. Our studio rate goes up to $420.00 an hour in January for new clients; existing clients stay as they are until June.
+%%
+@para
+Review again on Wednesday: compare spending against plan by category, and adjust only the two biggest gaps. I am moving $124.50 each payday into a separate account for the annual insurance bill. The subscription audit found 2 services I forgot about, saving about $469.00 a month once cancelled. Transport cost is stable at $9.75, but the bike repair on the 12th was an unplanned $339.50. Monthly income came to $75.25, with fixed costs of $105.75, leaving a thinner margin than I would like. Noor suggested a no-spend weekend each month; we tried it and saved more than expected.
+%%
+@heading
+Race week the trip
+%%
+@para
+Action item for Ambrose: send the revised budget (currently $188.95) before the end of the week. Ambrose raised a fair point — the numbers from Pelling Cross are from last quarter and may not hold. Decision: move the launch to Friday, since the vendor cannot deliver before then.
+%%
+@para
+The school trip costs $181.00, and the permission slip needs a signature by Friday. Holiday plan: drive to Pinecroft on the the 12th, two nights, and back before the storm if the forecast holds. Reminder to renew the library cards, since three of the four expire this month. Grocery list is on the fridge; milk, bread, oats, and something for the 5 lunchboxes. Tamsin is visiting in 2 weeks, so the spare room needs clearing and the mattress needs airing. We split the week: I cover Monday and Thursday, and Ysolde takes Tuesday, with the weekend flexible. Birthday dinner for Gran: table for 7 at the place near Calder Mills, booked under our surname.
+%%
+@para
+Negative sleeves are filed by date, and I have started writing the location on each strip. The camera shutter sounds slightly sticky at slow speeds; get it serviced before the trip. I want to print one image a month, properly, and put it on the wall rather than leaving it on a drive. Underexposed the market series by a stop; the shadows are muddy, but the faces are fine. Developing at home: 6 minutes at twenty degrees, with agitation for the first thirty seconds. Next week: try the long exposure of the bridge at Halvermoor, with a tripod and a cable release.
+%%
+@list
+Check the receipt for the clinic order
+Move @heading
+Follow-ups to the top shelf by the window
+Return the borrowed @para
+I am reading about 7 pages a night, which feels slow but adds up to a book every ten days. The history of Pelling Cross salt trade was a surprise; I assumed it would be dry and instead lost an hour. Finished chapter 8 of the essay collection; the argument about slow attention is sharper than I expected. The translation reads a little stiff, though the footnotes more than make up for it. Want to reread the first section slowly, with a pencil, since I rushed it on the train. Quote to keep: the map is not the territory, but you still need a good map. to Wren
+Print two copies of the draft for review
+Look up opening hours for the Wexcombe library
+Buy @para
+The studio kickoff with the Tarn Hollow bakery went well; they want a new identity before spring and a budget near $129.40. Moodboard now holds 454 images; I need to cut it back to a tight twelve before the call at 10:40 pm. The packaging mock-up looks great on screen but the kraft paper will mute the colors by a surprising amount. before the weekend market closes
+Put the studio meeting on the shared calendar
+%%
+@heading
+Meeting summary the studio
+%%
+@summary
+A running list of what went right and wrong during the kitchen, with changes to try next time.
+Quick thoughts on the tile order written on the train, mostly reminders about costs and timing.
+A checklist of small jobs connected to app capture screen that should be finished before the end of the month.
+Quick thoughts on the Ludenhall race written on the train, mostly reminders about costs and timing.
+Details on morning run: the schedule, the people involved, and the one thing that still needs checking.
+A checklist of small jobs connected to morning run that should be finished before the end of the month.
+A running list of what went right and wrong during the sourdough, with changes to try next time.
+A checklist of small jobs connected to the language exam that should be finished before the end of the month.
+Details on the sourdough: the schedule, the people involved, and the one thing that still needs checking.
+A checklist of small jobs connected to client call that should be finished before the end of the month.
+A running list of what went right and wrong during Gran's birthday, with changes to try next time.
+A checklist of small jobs connected to the recital that should be finished before the end of the month.
+A checklist of small jobs connected to the garden fence that should be finished before the end of the month.
+Quick thoughts on the garden fence written on the train, mostly reminders about costs and timing.
+A short plan for client call with a rough budget and two open questions to settle before the weekend.
+Details on the kitchen: the schedule, the people involved, and the one thing that still needs checking.
+A running list of what went right and wrong during spring planting, with changes to try next time.
+Details on the Halvermoor trip: the schedule, the people involved, and the one thing that still needs checking.
+Details on the tile order: the schedule, the people involved, and the one thing that still needs checking.
+A short plan for the garden fence with a rough budget and two open questions to settle before the weekend.
+Notes from the conversation about the recital, including the decisions made and who will follow up.
+Notes from the conversation about the language exam, including the decisions made and who will follow up.
+A short plan for spring planting with a rough budget and two open questions to settle before the weekend.
+Details on client call: the schedule, the people involved, and the one thing that still needs checking.
+Notes from the conversation about Gran's birthday, including the decisions made and who will follow up.
+Quick thoughts on the studio rebrand written on the train, mostly reminders about costs and timing.
+A short plan for Gran's birthday with a rough budget and two open questions to settle before the weekend.
+Quick thoughts on the recital written on the train, mostly reminders about costs and timing.
+A running list of what went right and wrong during the studio rebrand, with changes to try next time.
+A short plan for the tile order with a rough budget and two open questions to settle before the weekend.
+Notes from the conversation about the garden fence, including the decisions made and who will follow up.
+Quick thoughts on the film roll written on the train, mostly reminders about costs and timing.
+A short plan for the film roll with a rough budget and two open questions to settle before the weekend.
+Notes from the conversation about morning run, including the decisions made and who will follow up.
+Quick thoughts on app capture screen written on the train, mostly reminders about costs and timing.
+Notes from the conversation about the Ludenhall race, including the decisions made and who will follow up.
+Notes from the conversation about the tile order, including the decisions made and who will follow up.
+A running list of what went right and wrong during the film roll, with changes to try next time.
+Quick thoughts on Gran's birthday written on the train, mostly reminders about costs and timing.
+Details on the recital: the schedule, the people involved, and the one thing that still needs checking.
+%%
+@chata
+There are 6 notes that touch on this. Two are quick reminders, and one is a longer entry about Ostrava Lane that covers the schedule and the cost in detail. The longer entry is probably the one you want. I can also list the related notes if that helps.
+%%
+@para
+I am reading about 7 pages a night, which feels slow but adds up to a book every ten days. Finished chapter 4 of the essay collection; the argument about slow attention is sharper than I expected. The translation reads a little stiff, though the footnotes more than make up for it. Want to reread the first section slowly, with a pencil, since I rushed it on the train. Gideon lent me the paperback with 7 pages of margin notes, which are better than some of the chapters.
+%%
+@chata
+There are 2 notes that touch on this. Two are quick reminders, and one is a longer entry about Ludenhall that covers the schedule and the cost in detail. The longer entry is probably the one you want.
+%%
+@check
+Buy @list
+Water the seedlings every other morning
+Look up opening hours for the Pelling Cross library
+Check the receipt for the studio order
+Fix the squeaky hinge on the garden gate before the weekend market closes
+Update the budget sheet with this month's totals
+Charge the camera batteries and clear the cards
+Ask Perrin whether Thursday still works
+Check the receipt for the plumber order
+Return the borrowed @heading
+Lessons learned the flat to Perrin
+Return the borrowed @para
+Saskia pushed back on the second logo direction, saying it felt "too corporate for a place that sells cinnamon rolls". Our studio rate goes up to $378.95 an hour in January for new clients; existing clients stay as they are until June. Review the contract clause on usage rights before anything is printed — the client wants unlimited reprints. to Tamsin
+Fix the squeaky hinge on the garden gate
+Print two copies of the draft for review
+Sort the folder of scans from last August
+%%
+@para
+Reminder to renew the library cards, since three of the four expire this month. Dentist appointment on Sunday at 2:45 am, and the school form is due the same morning. We split the week: I cover Monday and Thursday, and Wren takes Tuesday, with the weekend flexible. Pick up the kids at 3:00 am on Wednesday; Gideon has the car until noon, so I need the bus pass. Teodor is visiting in 9 weeks, so the spare room needs clearing and the mattress needs airing. Grocery list is on the fridge; milk, bread, oats, and something for the 7 lunchboxes.
+%%
+@para
+The translation reads a little stiff, though the footnotes more than make up for it. Finished chapter 6 of the essay collection; the argument about slow attention is sharper than I expected. Add to the list: the short story collection that Odalys keeps mentioning, and the field guide to lichens. The novel drags in the middle, around page 840, but the ending earns it. I am reading about 7 pages a night, which feels slow but adds up to a book every ten days. The history of Marrow Bridge salt trade was a surprise; I assumed it would be dry and instead lost an hour.
+%%
+@list
+Return the borrowed @heading
+Recipe changes to Tamsin
+Draft a short reply to the studio email
+Return the borrowed @para
+We spent half the meeting on the onboarding flow, and agreed it is too long by about 2 steps. Decision: move the launch to Tuesday, since the vendor cannot deliver before then. Notes to circulate: the three decisions, the two owners, and the single date everyone agreed on. Action item for Ambrose: send the revised budget (currently $404.50) before the end of the week. Attendees: Ysolde, Maren, and me; we started at 11:00 am and finished 14 minutes later. Parking lot: pricing tiers, the logo for the newsletter, and whether to open the Ironwood Park office. to Odalys
+Write down what worked and what did not
+Ask Gideon whether Thursday still works
+%%
+@heading
+Travel checklist for March
+%%
+@list
+Put the framer meeting on the shared calendar
+Buy @heading
+Review notes before the weekend market closes
+Rebook the bakery for the first week of December
+Update the budget sheet with this month's totals
+Ask Saskia whether Thursday still works
+%%
+@para
+The tile order arrived with 5 boxes short, so the bathroom is on hold until the 19th. Dust is everywhere, even in rooms we sealed off with plastic sheeting and tape. Perrin thinks the floor beneath the old carpet is original pine; if so, we sand rather than replace.
+%%
+@para
+Tax receipts go in the blue folder as they arrive, not in a pile at the end of the year. Rule of thumb: wait 2 days before any purchase above $400.95, and most of the urges fade. Review again on Saturday: compare spending against plan by category, and adjust only the two biggest gaps. Transport cost is stable at $208.50, but the bike repair on October was an unplanned $174.40. Cash envelope for the market works better than the card, because I can see it running out. Monthly income came to $226.75, with fixed costs of $414.95, leaving a thinner margin than I would like.
+%%
+@para
+Tried the braised leeks again tonight, and 28 minutes longer in the oven made all the difference. Leftovers keep three days in the fridge; the soup freezes well, the dumplings do not. I want to build a small rotation of 4 weeknight dinners that take under 12 minutes. Pickled shallots are now a permanent fixture; a jar costs about $425.40 and lasts a month.
+%%
+@chata
+Your most relevant note is the one titled with the word plan. It lists 4 steps, starting with order the missing boxes, and finishing with a check on March. Costs mentioned are $160.50 and $132.75. My tutor Ysolde corrected my pronunciation of the double consonants, which I have been flattening for weeks. The metronome at 611 beats per minute feels easy; I will nudge it up by four each day.
+%%
+@para
+The plum tree is finally recovering after the pruning; I counted 9 new shoots this morning. The tomato seedlings went into the ground on March, about 23 centimeters apart, which may be too close. I need to measure the south wall properly before building the trellis (my guess of 6 meters is probably off). The back bed gets sun until roughly 10:00 pm, then the fence shadow takes over. Slugs have found the lettuce again, so I am trying crushed eggshells and a beer trap near the the tile order.
+%%
+@heading
+Client feedback
+%%
+@para
+Skip the cheap hinges; the cabinet doors sag within a year, and a good set is only about $237.25 more. Quote from the plumber: $363.00 for the work, plus parts, and he can start in about 8 weeks. Paint samples are on the wall: the warm white looks yellow at 6:40 pm and gray by evening. Permit application went in on the 12th; the office says to expect a reply in about 3 weeks. The tile order arrived with 3 boxes short, so the bathroom is on hold until the first weekend of May. Take photos of the wiring before the wall is closed, so future-us knows where everything runs.
+%%
+@chata
+I found a short note on this from Sunday. It says you intended to cancel two subscriptions and that the total was around $114.95. There is also a related list item that is still unchecked, so that part looks open. Tell me if any of this looks out of date.
+%%
+@para
+We agreed to stop the weekly report and replace it with a shared page that updates itself. Follow up with Gideon about the contract renewal, which expires on October. Decision: move the launch to Wednesday, since the vendor cannot deliver before then. We spent half the meeting on the onboarding flow, and agreed it is too long by about 9 steps. Open question: who owns the support inbox over the holidays, and does anyone have the passwords? Next meeting is a short check-in at 7:00 am; bring only blockers, no slides. Attendees: Teodor, Ysolde, and me; we started at 7:15 am and finished 38 minutes later.
+%%
+@chata
+There are 5 notes that touch on this. Two are quick reminders, and one is a longer entry about Calder Mills that covers the schedule and the cost in detail. The longer entry is probably the one you want.
+%%
+@list
+Put the tailor meeting on the shared calendar
+Look up opening hours for the Brindle Quay library
+Look up opening hours for the Eastgarth library
+Move @heading
+Ideas for spring for the studio to the top shelf by the window
+Update the budget sheet with this month's totals
+%%
+@chata
+Based on your notes, the answer seems to be yes, but with a caveat. You wrote that you would buy the spare reeds before Sunday, and then added a reminder to check the price, which was $241.00 at the time. Let me know if you want me to pull the exact wording.
+%%
+@tag
+music
+receipts
+plumbing
+photos
+long run
+health
+client work
+school
+questions
+branding
+house projects
+film photography
+habits
+paint
+grammar
+races
+sourdough starter
+tax
+garden
+travel days
+drafts
+trains
+budget
+essays
+lists
+reading notes
+baking
+darkroom
+prototype
+language
+savings
+invoices
+renovation
+ideas
+sleep
+scanning
+film
+training
+flashcards
+app ideas
+novels
+cooking
+birthdays
+practice
+actions
+home
+maps
+recipes
+recital
+tiles
+compost
+planning
+hotels
+seedlings
+studio
+running
+meeting notes
+work
+quotes
+decisions
+errands
+meetings
+weather
+travel
+app
+clients
+spring planting
+reading
+family
+weekend
+%%
+@para
+Ysolde thinks the floor beneath the old carpet is original pine; if so, we sand rather than replace. Budget check: spent $380.50 so far against a plan of $465.50, mostly because of the damp patch. Dust is everywhere, even in rooms we sealed off with plastic sheeting and tape. Skip the cheap hinges; the cabinet doors sag within a year, and a good set is only about $448.40 more. The electrician found an old junction box behind the plaster, which explains the flickering hallway light.
+%%
+@list
+Return the borrowed @heading
+Recipe changes March to Tamsin
+Water the seedlings every other morning
+Print two copies of the draft for review
+Return the borrowed @para
+Follow up with Linnea about the contract renewal, which expires on March. Risk: the contractor has only 2 people available, so any slip in the schedule is a real slip. Teodor raised a fair point — the numbers from Pelling Cross are from last quarter and may not hold. Action item for Perrin: send the revised budget (currently $40.75) before the end of the week. to Basil
+Look up opening hours for the Pelling Cross library
+Charge the camera batteries and clear the cards
+Call the clinic about the delivery window
+%%
+@para
+Passport renewal takes about 6 weeks, so check expiry dates well before booking anything. Next trip: fewer cities, more days in each, and a rule that no travel day starts before 3:30 pm. Packing list worked: one carry-on, 8 shirts, a spare charger, and a scarf that doubled as a blanket. The hotel room was small but clean, $186.40 a night, and the window faced a courtyard with a lemon tree. Train from Vossbrook left at 4:05 am, and the connection at Wexcombe was only 19 minutes, so we ran. Weather turned on the last afternoon, but the covered market was the best place to wait it out. Note: buy tickets at the machine, not the counter; the line at the counter was easily forty people.
+%%
+@heading
+Weekend plan for week 16
+%%
+@heading
+Fridge inventory Q2
+%%
+@check
+Move @para
+Dentist appointment on the 3rd at 1:40 am, and the school form is due the same morning. Reminder to renew the library cards, since three of the four expire this month. Birthday dinner for Gran: table for 3 at the place near Ironwood Park, booked under our surname. Grocery list is on the fridge; milk, bread, oats, and something for the 4 lunchboxes. Quiet evening tonight — pasta, a film, and absolutely no screens after nine. The school trip costs $226.00, and the permission slip needs a signature by Friday. to the top shelf by the window
+Sort the folder of scans from last March
+Tidy the desk and recycle old packaging
+Put the courier meeting on the shared calendar
+%%
+@heading
+Recipe changes
+%%
+@para
+Permit application went in on Thursday; the office says to expect a reply in about 3 weeks. The tile order arrived with 8 boxes short, so the bathroom is on hold until the first weekend of May. Decide on the countertop: stone looks lovely, but the wood is half the price and easier to repair. Dust is everywhere, even in rooms we sealed off with plastic sheeting and tape. Skip the cheap hinges; the cabinet doors sag within a year, and a good set is only about $252.50 more. Budget check: spent $344.50 so far against a plan of $85.40, mostly because of the damp patch.
+%%
+@para
+I bought a bag of rye flour at the Dunmere market for $218.00 and it was clearly worth it. Leftovers keep three days in the fridge; the soup freezes well, the dumplings do not. Pickled shallots are now a permanent fixture; a jar costs about $290.50 and lasts a month.
+%%
+@chata
+I did not find anything that answers that directly. The closest match is a note from Monday about a similar topic, where you planned to order the missing boxes. If you tell me more about what you are after, I can look again. Tell me if any of this looks out of date.
+%%
+@list
+Print two copies of the draft for review
+Sort the folder of scans from last March
+Rebook the bakery for the first week of March
+Fix the squeaky hinge on the garden gate
+Sort the folder of scans from last December
+%%
+@list
+Call the clinic about the delivery window
+Move @list
+Test the new flow on a slow connection
+Tidy the desk and recycle old packaging
+Water the seedlings every other morning to the top shelf by the window
+Draft a short reply to the tailor email
+Check the receipt for the clinic order
+%%
+@chatq
+What did I write about the Calder Mills trip last month?
+Which notes mention the tile order or the plumber?
+Summarize my notes on the sourdough experiments.
+When is the next recital and what do I need to prepare?
+How much did I spend on groceries last month?
+What action items did Maren get in the last meeting?
+Show me everything I wrote about the garden fence.
+Which books did I say I wanted to read next?
+What were my running totals for the week?
+List my open to-dos from the studio project.
+Did I ever decide on the countertop material?
+What was the recipe change I wanted to try next time?
+Find notes about the language exam and my weak areas.
+What ideas did I record for the app capture screen?
+Which notes are about family logistics this week?
+What did the electrician say about the hallway light?
+How many flashcards am I adding each morning?
+Which trip had the cheapest hotel I noted?
+What is my plan for the long run on Sunday?
+Remind me what I decided about the launch date.
+Are there any notes mentioning the passport renewal?
+What did I note about film developing times?
+Which meetings had decisions I still need to act on?
+What are the three biggest budget gaps I noted?
+Which notes talk about practice routines for the clarinet?
+What did I plan for the spring planting?
+Where did I put the notes about the insurance claim?
+What feedback did the bakery client give on logos?
+Which of my notes mention slowing down or resting?
+What are my reading notes on the essay collection?
+%%
+@check
+Write down what worked and what did not
+Water the seedlings every other morning
+Rebook the framer for the first week of December
+Check the receipt for the bakery order
+%%
+@para
+The ferry to Dunmere runs only twice a day, so missing the 3:45 am departure means an extra night. I kept a running tally of expenses, and by day 6 we had spent $324.75 on food alone. Next trip: fewer cities, more days in each, and a rule that no travel day starts before 8:30 pm.
+%%
+@heading
+Travel checklist
+%%
+@para
+Linnea pushed back on the second logo direction, saying it felt "too corporate for a place that sells cinnamon rolls". Presentation deck: keep it to 4 slides, lead with the problem, and show the quiet option last. We agreed on 4 rounds of revisions, with the first round of sketches due on the 12th.
+%%
+@para
+The metronome at 811 beats per minute feels easy; I will nudge it up by four each day. Trying to memorize the opening page without looking, in small chunks of 9 bars at a time. Goal this month: one full run-through without stopping, even if it is messy. I recorded a take on my phone and the timing in the middle section is wobbly, particularly at the repeat.
+%%
+@heading
+Ideas for spring
+%%
+@list
+Rebook the landlord for the first week of June
+Sort the folder of scans from last October
+Rebook the studio for the first week of August
+Update the budget sheet with this month's totals
+Write down what worked and what did not
+Look up opening hours for the Ostrava Lane library
+%%
+@table
+| Date | Place | Cost |
+|---|---|---|
+| 24 Sep | invoice pack | $478.95 |
+| 22 Jul | Kestrel Heath | $230.95 |
+| 10 Jun | Felix | $270.40 |
+| 2 Nov | Tamsin | $189.40 |
+| 1 Jan | paint run | $232.95 |
+| 25 Sep | Pinecroft | $20.95 |
+| 16 Mar | Saltfleet Row | $76.50 |
+%%
+@para
+Splits were uneven: five minutes forty for the first kilometer, then drifting to six ten by the end. Rain at 4:45 pm, but the trail was quiet and the puddles were almost fun. Sleep matters more than the miles: after a bad night, my pace dropped by almost twenty seconds. Stretch for ten minutes after, especially calves; skipping it caught up with me last spring.
+%%
+@list
+Tidy the desk and recycle old packaging
+Water the seedlings every other morning
+Charge the camera batteries and clear the cards
+%%
+@para
+Contact sheet shows 9 usable frames out of thirty-six, which is honestly a decent ratio for me. Next week: try the long exposure of the bridge at Ironwood Park, with a tripod and a cable release. Scanning at 596 dpi takes four minutes per frame, so I do it in batches over a weekend. Developing at home: 7 minutes at twenty degrees, with agitation for the first thirty seconds. Shot one roll of black and white at Calder Mills, rated at 548 ISO and pushed a stop in the developer. Negative sleeves are filed by date, and I have started writing the location on each strip. Perrin lent me a rangefinder, and focusing it is slower than I thought but the viewfinder is a joy.
+%%
+@para
+Emergency fund is at 8 months of expenses, and the goal is six by the end of next year. Cash envelope for the market works better than the card, because I can see it running out. Gideon suggested a no-spend weekend each month; we tried it and saved more than expected. The subscription audit found 3 services I forgot about, saving about $382.40 a month once cancelled. Monthly income came to $234.50, with fixed costs of $118.00, leaving a thinner margin than I would like. Rule of thumb: wait 6 days before any purchase above $121.40, and most of the urges fade.
+%%
+@list
+Test the new flow on a slow connection
+Rebook the printer for the first week of December
+Put the vendor meeting on the shared calendar
+%%
+@para
+Want to reread the first section slowly, with a pencil, since I rushed it on the train. Add to the list: the short story collection that Iolo keeps mentioning, and the field guide to lichens. "A habit is a decision you stop making," the author writes, and I underlined it twice. Quote to keep: the map is not the territory, but you still need a good map.
+%%
+@para
+Sleep matters more than the miles: after a bad night, my pace dropped by almost twenty seconds. Knee felt tight at kilometer 5, so I shortened the stride and it eased off. Weekly total is 11 kilometers, up from last month, and I am capping increases at ten percent. Rain at 7:30 pm, but the trail was quiet and the puddles were almost fun. I log every run in a plain spreadsheet with date, distance, time, and one line about how it felt. Ran 5 kilometers this morning at an easy pace; my heart rate stayed low until the final hill. Felix wants to enter the Saltfleet Row ten-kilometer race on Saturday; entry is $388.00.
+%%
+@check
+Print two copies of the draft for review
+Return the borrowed @para
+The packaging mock-up looks great on screen but the kraft paper will mute the colors by a surprising amount. Review the contract clause on usage rights before anything is printed — the client wants unlimited reprints. Invoice number 177 went out on Monday, net 51 days, and I should chase it if nothing arrives by month end. to Basil
+Check the receipt for the bakery order
+Charge the camera batteries and clear the cards
+Ask Maren whether Thursday still works
+%%
+@heading
+Travel checklist
+%%
+@para
+Flashcard review: seventy percent correct today, down from eighty, which usually means I am tired. Exam in 8 weeks; the practice test on the 19th will show whether the reading section is the real problem. Spoke only in the new language at the bakery today, and the baker smiled at my "please" and "thank you". Vocabulary deck is now 506 cards, with 5 new ones each morning before coffee.
+%%
+@para
+Contact sheet shows 2 usable frames out of thirty-six, which is honestly a decent ratio for me. Negative sleeves are filed by date, and I have started writing the location on each strip. Underexposed the market series by a stop; the shadows are muddy, but the faces are fine. Developing at home: 3 minutes at twenty degrees, with agitation for the first thirty seconds. Next week: try the long exposure of the bridge at Pinecroft, with a tripod and a cable release. Ambrose lent me a rangefinder, and focusing it is slower than I thought but the viewfinder is a joy.
+%%
+@heading
+Client feedback the trip
+%%
+@heading
+Client feedback Q3
+%%
+@para
+Holiday plan: drive to Kestrel Heath on the Thursday, two nights, and back before the storm if the forecast holds. The school trip costs $398.95, and the permission slip needs a signature by Friday. Call the insurance company about the claim; the reference number is on the blue folder. Noor is visiting in 2 weeks, so the spare room needs clearing and the mattress needs airing. Birthday dinner for Gran: table for 8 at the place near Ludenhall, booked under our surname. Grocery list is on the fridge; milk, bread, oats, and something for the 3 lunchboxes.
+%%
+@para
+Saskia pushed back on the second logo direction, saying it felt "too corporate for a place that sells cinnamon rolls". Our studio rate goes up to $378.95 an hour in January for new clients; existing clients stay as they are until June. Review the contract clause on usage rights before anything is printed — the client wants unlimited reprints.
+%%
+@para
+Saskia and I might play the duet at the spring recital if we can find a slot before 9:05 am. Goal this month: one full run-through without stopping, even if it is messy. Reed order: a box of 8 for $96.00; the last box gave me only three good ones. I recorded a take on my phone and the timing in the middle section is wobbly, particularly at the repeat.
+%%
+@para
+Negative sleeves are filed by date, and I have started writing the location on each strip. A roll of film now costs $133.00 to buy and another $309.40 to process, so every frame has to count. Underexposed the market series by a stop; the shadows are muddy, but the faces are fine. The camera shutter sounds slightly sticky at slow speeds; get it serviced before the trip.
+%%
+@chata
+Your notes mention this in 8 places. The most recent one, written the 27th, says the plan is to start the long run earlier, and an earlier note adds a cost of $259.40. I could not find a final decision, so it may be worth confirming with Noor. Tell me if any of this looks out of date. Finished chapter 7 of the essay collection; the argument about slow attention is sharper than I expected. What if every note could hold a small table without any extra setup — just paste and go?
+%%
+@heading
+Review notes
+%%
+@para
+Packing list worked: one carry-on, 6 shirts, a spare charger, and a scarf that doubled as a blanket. Note: buy tickets at the machine, not the counter; the line at the counter was easily forty people. Next trip: fewer cities, more days in each, and a rule that no travel day starts before 11:15 pm. The hotel room was small but clean, $89.95 a night, and the window faced a courtyard with a lemon tree.
+%%
+@para
+We spent half the meeting on the onboarding flow, and agreed it is too long by about 6 steps. Open question: who owns the support inbox over the holidays, and does anyone have the passwords? Action item for Noor: send the revised budget (currently $360.00) before the end of the week. Next meeting is a short check-in at 2:00 pm; bring only blockers, no slides.
+%%
+@para
+The metronome at 454 beats per minute feels easy; I will nudge it up by four each day. I recorded a take on my phone and the timing in the middle section is wobbly, particularly at the repeat. Maren and I might play the duet at the spring recital if we can find a slot before 11:30 pm. Sore fingertips after an hour, but the calluses are coming, which is a good sign. Goal this month: one full run-through without stopping, even if it is messy.
+%%
+@para
+Rain is forecast for the next 8 days, so I will hold off on the watering schedule. The tomato seedlings went into the ground on the 12th, about 20 centimeters apart, which may be too close. Frost warning for Thursday night — cover the courgettes with fleece and move the pots by the door.
+%%
+@check
+Charge the camera batteries and clear the cards
+Look up opening hours for the Marrow Bridge library
+Move @list
+Return the borrowed @heading
+Recipe changes to Tamsin
+Draft a short reply to the studio email
+Return the borrowed @para
+We spent half the meeting on the onboarding flow, and agreed it is too long by about 2 steps. Decision: move the launch to Tuesday, since the vendor cannot deliver before then. Notes to circulate: the three decisions, the two owners, and the single date everyone agreed on. Action item for Ambrose: send the revised budget (currently $404.50) before the end of the week. Attendees: Ysolde, Maren, and me; we started at 11:00 am and finished 14 minutes later. Parking lot: pricing tiers, the logo for the newsletter, and whether to open the Ironwood Park office. to Odalys
+Write down what worked and what did not
+Ask Gideon whether Thursday still works to the top shelf by the window
+Buy @list
+Buy @para
+Quick win for next week: a one-page checklist so every project starts with the same questions. Invoice number 152 went out on Monday, net 49 days, and I should chase it if nothing arrives by month end. Presentation deck: keep it to 8 slides, lead with the problem, and show the quiet option last. before the weekend market closes
+Write down what worked and what did not
+Draft a short reply to the landlord email
+Tidy the desk and recycle old packaging
+Test the new flow on a slow connection
+Sort the folder of scans from last August
+Check the receipt for the printer order
+Buy @para
+Ran 5 kilometers this morning at an easy pace; my heart rate stayed low until the final hill. Weekly total is 22 kilometers, up from last month, and I am capping increases at ten percent. Knee felt tight at kilometer 5, so I shortened the stride and it eased off. The new shoes cost $101.00 and feel fine after two runs, though the left heel rubs a bit. Rain at 3:45 pm, but the trail was quiet and the puddles were almost fun. Ysolde wants to enter the Dunmere ten-kilometer race on Sunday; entry is $402.75. Sleep matters more than the miles: after a bad night, my pace dropped by almost twenty seconds. before the weekend market closes before the weekend market closes
+%%
+@chata
+Your notes mention this in 5 places. The most recent one, written Saturday, says the plan is to clear the spare room, and an earlier note adds a cost of $248.40. I could not find a final decision, so it may be worth confirming with Felix. I can also list the related notes if that helps. Negative sleeves are filed by date, and I have started writing the location on each strip. Linnea suggested planting nasturtiums along the edge to draw aphids away from the beans.
+%%
+@para
+Users probably want to group notes by project, but I suspect the real grouping is by week. The capture screen should open in under a second, even with 352 notes already stored. Search should forgive typos, and rank recent notes higher unless the query is very specific. Small delight: when a note is finished, let it settle gently rather than vanish with a flourish. Idea: a quiet inbox that shows only 2 things a day, chosen by the person the night before.
+%%
+@heading
+Tile and paint
+%%
+@chata
+I found a short note on this from Friday. It says you intended to print the contact sheets and that the total was around $98.75. There is also a related list item that is still unchecked, so that part looks open. Tell me if any of this looks out of date.
+%%
+@heading
+House rules
+%%
+@chata
+I did not find anything that answers that directly. The closest match is a note from Tuesday about a similar topic, where you planned to order the missing boxes. If you tell me more about what you are after, I can look again. Let me know if you want me to pull the exact wording. The camera shutter sounds slightly sticky at slow speeds; get it serviced before the trip. We split the week: I cover Monday and Thursday, and Gideon takes Tuesday, with the weekend flexible.
+%%
+@heading
+Review notes
+%%
+@list
+Sort the folder of scans from last October
+Return the borrowed @para
+The back bed gets sun until roughly 8:15 pm, then the fence shadow takes over. Noor suggested planting nasturtiums along the edge to draw aphids away from the beans. Rain is forecast for the next 8 days, so I will hold off on the watering schedule. The plum tree is finally recovering after the pruning; I counted 8 new shoots this morning. The tomato seedlings went into the ground on the 3rd, about 32 centimeters apart, which may be too close. The herb spiral is thriving; thyme and sage love the drainage, while the mint is trying to escape. Slugs have found the lettuce again, so I am trying crushed eggshells and a beer trap near the the oak shelf. to Tamsin
+Water the seedlings every other morning
+Draft a short reply to the printer email
+Ask Ysolde whether Thursday still works
+%%
+@para
+Emergency fund is at 8 months of expenses, and the goal is six by the end of next year. Rule of thumb: wait 4 days before any purchase above $280.75, and most of the urges fade. The energy bill dropped 24 percent after we fixed the draughts, which pays for the weatherstripping in a year.
+%%
+@para
+Library hold arrived early, so the 4 books I planned for winter are now due on Sunday. "A habit is a decision you stop making," the author writes, and I underlined it twice. Quote to keep: the map is not the territory, but you still need a good map. The novel drags in the middle, around page 743, but the ending earns it. I am reading about 3 pages a night, which feels slow but adds up to a book every ten days. Add to the list: the short story collection that Iolo keeps mentioning, and the field guide to lichens.
+%%
+@para
+I want to build a small rotation of 7 weeknight dinners that take under 28 minutes. Note to self: warm the plates, because cold plates ruin a good risotto — or at least dull it. "Don't stir the rice," Saskia always says, and for once I actually listened. The recipe from Corwin calls for 6 cloves of garlic, which seemed like a lot, but it mellows completely. Pickled shallots are now a permanent fixture; a jar costs about $210.40 and lasts a month. Tried the braised leeks again tonight, and 25 minutes longer in the oven made all the difference.
+%%
+@chata
+There are 3 notes that touch on this. Two are quick reminders, and one is a longer entry about Ostrava Lane that covers the schedule and the cost in detail. The longer entry is probably the one you want.
+%%
+@title
+The language exam: open questions
+Thoughts on the tile order
+The garden fence list
+List for the garden fence
+The language exam summary
+The wexcombe trip review
+The marrow bridge race log
+Thoughts for the film roll
+Notes on the recital
+Gran's birthday: open questions
+Notes on the language exam
+The language exam thoughts
+Budget for the film roll
+The tarn hollow trip: who does what
+Notes on the garden fence
+The studio rebrand list
+Sketch for monthly spending
+The sourdough draft
+Notes for the tile order
+The garden fence: who does what
+The tile order: what to buy
+Thoughts on client call
+The ironwood park trip list
+Thoughts on morning run
+App capture screen log
+The tile order: who does what
+The recital thoughts
+Budget for the studio rebrand
+Ideas about the studio rebrand
+The studio rebrand thoughts
+The ludenhall race: what changed
+The garden fence: open questions
+Summary for the garden fence
+Rough plan for spring planting
+The sourdough: next steps
+App capture screen: open questions
+The tile order: what changed
+Rough plan for the kitchen
+Ideas about spring planting
+Ideas about the film roll
+%%
+@para
+Pickled shallots are now a permanent fixture; a jar costs about $219.95 and lasts a month. Tried the braised leeks again tonight, and 45 minutes longer in the oven made all the difference. Leftovers keep three days in the fridge; the soup freezes well, the dumplings do not. Note to self: warm the plates, because cold plates ruin a good risotto — or at least dull it.
+%%
+@para
+Take photos of the wiring before the wall is closed, so future-us knows where everything runs. The tile order arrived with 3 boxes short, so the bathroom is on hold until October. Skip the cheap hinges; the cabinet doors sag within a year, and a good set is only about $47.75 more. The electrician found an old junction box behind the plaster, which explains the flickering hallway light.
+%%
+@list
+Call the framer about the delivery window
+Water the seedlings every other morning
+Look up opening hours for the Pinecroft library
+Tidy the desk and recycle old packaging
+Fix the squeaky hinge on the garden gate
+Move @heading
+Reading queue to the top shelf by the window
+%%
+@para
+Budget check: spent $80.75 so far against a plan of $54.95, mostly because of the damp patch. Paint samples are on the wall: the warm white looks yellow at 10:00 am and gray by evening. Dust is everywhere, even in rooms we sealed off with plastic sheeting and tape. The electrician found an old junction box behind the plaster, which explains the flickering hallway light. We measured the kitchen wall three times and it still came out 23 millimeters different each time. Take photos of the wiring before the wall is closed, so future-us knows where everything runs. Permit application went in on the 19th; the office says to expect a reply in about 8 weeks.
+%%
+@list
+Ask Ysolde whether Thursday still works
+Move @heading
+Ideas for spring to the top shelf by the window
+Move @para
+The light at 7:00 am was perfect for about ten minutes, then a cloud came in and ruined it. Shot one roll of black and white at Halvermoor, rated at 730 ISO and pushed a stop in the developer. Negative sleeves are filed by date, and I have started writing the location on each strip. I want to print one image a month, properly, and put it on the wall rather than leaving it on a drive. to the top shelf by the window
+Charge the camera batteries and clear the cards
+Call the vendor about the delivery window
+%%
+@para
+I keep a notebook of phrases I overheard, because they teach more than the drills do. The subjunctive is the next hurdle; the textbook explains it in four pages that I find unreadable. Listening practice: a slow podcast, 10 minutes a day, then writing three sentences about what I heard. Lesson 8 covered the past tense, and I still mix up the two auxiliary verbs about half the time. Idea: swap texts with Perrin once a week, each of us writing in the other's language.
+%%
+@para
+Next time I will cut the salt by a third (the stock was already seasoned) and add lemon at the very end. I bought a bag of rye flour at the Wexcombe market for $443.25 and it was clearly worth it. The recipe from Iolo calls for 7 cloves of garlic, which seemed like a lot, but it mellows completely. Leftovers keep three days in the fridge; the soup freezes well, the dumplings do not. Dinner was at 6:40 pm, later than planned, because the oven took 40 minutes to come up to temperature.
+%%
+@para
+Perrin tried the prototype for 24 minutes and never found the share button, which is on me. Offline first: writes should never wait for the network, and conflicts should resolve quietly. Keep the toolbar to 6 buttons; anything more and people stop looking at them. Pricing guess: free for the basics, then $67.40 a year for sync across devices and the assistant. Need to test with a library of 528 notes, because the demo with ten notes hides every performance problem.
+%%
+@para
+Paint samples are on the wall: the warm white looks yellow at 2:40 pm and gray by evening. We measured the kitchen wall three times and it still came out 42 millimeters different each time. Wren thinks the floor beneath the old carpet is original pine; if so, we sand rather than replace. The tile order arrived with 4 boxes short, so the bathroom is on hold until Saturday. Dust is everywhere, even in rooms we sealed off with plastic sheeting and tape. Decide on the countertop: stone looks lovely, but the wood is half the price and easier to repair.
+%%
+@para
+Museum entry is free after 3:15 am on Thursdays, which we only discovered by accident. We walked 9 kilometers along the harbor and stopped for coffee where the menu was only in handwriting. I kept a running tally of expenses, and by day 6 we had spent $217.75 on food alone. Passport renewal takes about 6 weeks, so check expiry dates well before booking anything. Packing list worked: one carry-on, 9 shirts, a spare charger, and a scarf that doubled as a blanket. The hotel room was small but clean, $37.50 a night, and the window faced a courtyard with a lemon tree. Felix recommended a tiny place near the station; we queued for 53 minutes and it was entirely worth it.
+%%
+@para
+Dentist appointment on the 3rd at 1:40 am, and the school form is due the same morning. Reminder to renew the library cards, since three of the four expire this month. Birthday dinner for Gran: table for 3 at the place near Ironwood Park, booked under our surname. Grocery list is on the fridge; milk, bread, oats, and something for the 4 lunchboxes. Quiet evening tonight — pasta, a film, and absolutely no screens after nine. The school trip costs $226.00, and the permission slip needs a signature by Friday.
+%%
+@para
+We measured the kitchen wall three times and it still came out 54 millimeters different each time. Budget check: spent $116.75 so far against a plan of $326.95, mostly because of the damp patch. Skip the cheap hinges; the cabinet doors sag within a year, and a good set is only about $240.00 more. The tile order arrived with 4 boxes short, so the bathroom is on hold until Friday. The electrician found an old junction box behind the plaster, which explains the flickering hallway light. Decide on the countertop: stone looks lovely, but the wood is half the price and easier to repair.
+%%
+@para
+Review the contract clause on usage rights before anything is printed — the client wants unlimited reprints. Invoice number 148 went out on Monday, net 26 days, and I should chase it if nothing arrives by month end. Type pairing is still undecided: a sturdy serif for headlines and something quieter for the small print. We agreed on 5 rounds of revisions, with the first round of sketches due on Friday.
+%%
+@para
+Quick win for next week: a one-page checklist so every project starts with the same questions. Invoice number 152 went out on Monday, net 49 days, and I should chase it if nothing arrives by month end. Presentation deck: keep it to 8 slides, lead with the problem, and show the quiet option last.
+%%
+@para
+Note: buy tickets at the machine, not the counter; the line at the counter was easily forty people. Weather turned on the last afternoon, but the covered market was the best place to wait it out. Museum entry is free after 3:45 am on Thursdays, which we only discovered by accident.
+%%
+@heading
+Race week
+%%
+@para
+Train from Halvermoor left at 1:30 am, and the connection at Ironwood Park was only 23 minutes, so we ran. I kept a running tally of expenses, and by day 8 we had spent $321.75 on food alone. The ferry to Ostrava Lane runs only twice a day, so missing the 10:05 am departure means an extra night. The hotel room was small but clean, $19.00 a night, and the window faced a courtyard with a lemon tree. Odalys recommended a tiny place near the station; we queued for 16 minutes and it was entirely worth it. Weather turned on the last afternoon, but the covered market was the best place to wait it out.
+%%
+@chata
+Your notes mention this in 6 places. The most recent one, written March, says the plan is to cancel two subscriptions, and an earlier note adds a cost of $160.95. I could not find a final decision, so it may be worth confirming with Linnea. Packing list worked: one carry-on, 3 shirts, a spare charger, and a scarf that doubled as a blanket. I recorded a take on my phone and the timing in the middle section is wobbly, particularly at the repeat.
+%%
+@heading
+Reading queue for the trip
+%%
+@para
+Swim class moved to 3:40 pm on Saturdays, which means breakfast has to be earlier. Holiday plan: drive to Pelling Cross on the Wednesday, two nights, and back before the storm if the forecast holds. Birthday dinner for Gran: table for 7 at the place near Halvermoor, booked under our surname. Ysolde is visiting in 9 weeks, so the spare room needs clearing and the mattress needs airing. Reminder to renew the library cards, since three of the four expire this month.
+%%
+@para
+The back bed gets sun until roughly 7:45 am, then the fence shadow takes over. Compost pile temperature read 45 degrees at midday, so it is working, but it needs turning. Rain is forecast for the next 6 days, so I will hold off on the watering schedule. Frost warning for Thursday night — cover the courgettes with fleece and move the pots by the door.
+%%
+@check
+Practice the slow section with the metronome
+Update the budget sheet with this month's totals
+Buy @para
+Decide on the countertop: stone looks lovely, but the wood is half the price and easier to repair. Quote from the plumber: $415.00 for the work, plus parts, and he can start in about 3 weeks. Corwin thinks the floor beneath the old carpet is original pine; if so, we sand rather than replace. We measured the kitchen wall three times and it still came out 17 millimeters different each time. Paint samples are on the wall: the warm white looks yellow at 9:00 pm and gray by evening. The electrician found an old junction box behind the plaster, which explains the flickering hallway light. Take photos of the wiring before the wall is closed, so future-us knows where everything runs. before the weekend market closes
+Ask Ambrose whether Thursday still works
+Rebook the plumber for the first week of June
+Move @para
+Next time I will cut the salt by a third (the stock was already seasoned) and add lemon at the very end. The chili oil needs another 8 days before it is ready; the smell alone is promising. Leftovers keep three days in the fridge; the soup freezes well, the dumplings do not. Tried the braised leeks again tonight, and 21 minutes longer in the oven made all the difference. The recipe from Ysolde calls for 7 cloves of garlic, which seemed like a lot, but it mellows completely. to the top shelf by the window
+%%
+@chata
+There are 8 notes that touch on this. Two are quick reminders, and one is a longer entry about Ludenhall that covers the schedule and the cost in detail. The longer entry is probably the one you want. I can also list the related notes if that helps. Follow up with Saskia about the contract renewal, which expires on Sunday. We agreed to stop the weekly report and replace it with a shared page that updates itself.
+%%
+@list
+Draft a short reply to the landlord email
+Buy @para
+The tomato seedlings went into the ground on March, about 27 centimeters apart, which may be too close. Rain is forecast for the next 9 days, so I will hold off on the watering schedule. I need to measure the south wall properly before building the trellis (my guess of 2 meters is probably off). Slugs have found the lettuce again, so I am trying crushed eggshells and a beer trap near the the oak shelf. Ordered 7 packets of seeds from a small supplier near Tarn Hollow for $252.75 including postage. Compost pile temperature read 40 degrees at midday, so it is working, but it needs turning. before the weekend market closes
+Put the printer meeting on the shared calendar
+Write down what worked and what did not
+Draft a short reply to the clinic email
+Ask Basil whether Thursday still works
+Look up opening hours for the Tarn Hollow library
+Move @heading
+Packing list to the top shelf by the window
+%%
+@para
+Reed order: a box of 8 for $38.50; the last box gave me only three good ones. Sore fingertips after an hour, but the calluses are coming, which is a good sign. Trying to memorize the opening page without looking, in small chunks of 3 bars at a time. Tuning drifts when the room gets cold, so warm up for ten minutes before trusting the pitch. Goal this month: one full run-through without stopping, even if it is messy. Concert at the Calder Mills hall on Monday; tickets were $426.75 each, and we have seats near the back.
+%%
+@list
+Test the new flow on a slow connection
+Tidy the desk and recycle old packaging
+Water the seedlings every other morning
+%%
+@list
+Ask Basil whether Thursday still works
+Print two copies of the draft for review
+Fix the squeaky hinge on the garden gate
+Sort the folder of scans from last June
+Water the seedlings every other morning
+Write down what worked and what did not
+Buy @para
+The capture screen should open in under a second, even with 852 notes already stored. What if every note could hold a small table without any extra setup — just paste and go? Search should forgive typos, and rank recent notes higher unless the query is very specific. Keep the toolbar to 9 buttons; anything more and people stop looking at them. Felix tried the prototype for 26 minutes and never found the share button, which is on me. Offline first: writes should never wait for the network, and conflicts should resolve quietly. Small delight: when a note is finished, let it settle gently rather than vanish with a flourish. before the weekend market closes
+%%
+@para
+Training plan: three easy runs, one tempo, one long, and a full rest day after the long one. Splits were uneven: five minutes forty for the first kilometer, then drifting to six ten by the end. Basil wants to enter the Pelling Cross ten-kilometer race on Monday; entry is $461.95. Rain at 5:05 am, but the trail was quiet and the puddles were almost fun. Ran 6 kilometers this morning at an easy pace; my heart rate stayed low until the final hill. Long run on Sunday, 38 kilometers along the canal, with a stop for water at the Brindle Quay lock.
+%%
+@check
+Put the landlord meeting on the shared calendar
+Charge the camera batteries and clear the cards
+Ask Linnea whether Thursday still works
+%%
+@table
+| Task | Owner | Due | Done |
+|---|---|---|---|
+| Ambrose | Dunmere | 6 Apr | no |
+| invoice batch | Ambrose | 17 Oct | yes |
+| Vossbrook | tile set | 28 Mar | yes |
+| Pinecroft | oil batch | 24 Jun | yes |
+%%
+@para
+Next time I will cut the salt by a third (the stock was already seasoned) and add lemon at the very end. The chili oil needs another 8 days before it is ready; the smell alone is promising. Leftovers keep three days in the fridge; the soup freezes well, the dumplings do not. Tried the braised leeks again tonight, and 21 minutes longer in the oven made all the difference. The recipe from Ysolde calls for 7 cloves of garlic, which seemed like a lot, but it mellows completely.
+%%
+@para
+The ferry to Kestrel Heath runs only twice a day, so missing the 4:30 am departure means an extra night. Tamsin recommended a tiny place near the station; we queued for 51 minutes and it was entirely worth it. Museum entry is free after 6:45 am on Thursdays, which we only discovered by accident. I kept a running tally of expenses, and by day 3 we had spent $468.25 on food alone.
+%%
+@para
+The herb spiral is thriving; thyme and sage love the drainage, while the mint is trying to escape. The back bed gets sun until roughly 7:15 am, then the fence shadow takes over. Ordered 7 packets of seeds from a small supplier near Saltfleet Row for $479.95 including postage. Compost pile temperature read 13 degrees at midday, so it is working, but it needs turning. Ysolde suggested planting nasturtiums along the edge to draw aphids away from the beans. I need to measure the south wall properly before building the trellis (my guess of 7 meters is probably off).
+%%
+@heading
+Ideas for spring for the studio
+%%
+@heading
+Tile and paint
+%%
+@para
+The new shoes cost $231.75 and feel fine after two runs, though the left heel rubs a bit. Maren wants to enter the Tarn Hollow ten-kilometer race on Monday; entry is $127.00. Weekly total is 24 kilometers, up from last month, and I am capping increases at ten percent. Ran 4 kilometers this morning at an easy pace; my heart rate stayed low until the final hill. I log every run in a plain spreadsheet with date, distance, time, and one line about how it felt. Sleep matters more than the miles: after a bad night, my pace dropped by almost twenty seconds.
+%%
+@list
+Print two copies of the draft for review
+Check the receipt for the clinic order
+Rebook the vendor for the first week of March
+Check the receipt for the framer order
+%%
+@heading
+Meeting summary
+%%
+@list
+Practice the slow section with the metronome
+Look up opening hours for the Vossbrook library
+Look up opening hours for the Ludenhall library
+Check the receipt for the plumber order
+Move @heading
+Travel checklist to the top shelf by the window
+Rebook the plumber for the first week of June
+Ask Tamsin whether Thursday still works
+%%
+@list
+Water the seedlings every other morning
+Look up opening hours for the Pelling Cross library
+Check the receipt for the studio order
+Fix the squeaky hinge on the garden gate
+%%
+@para
+Perrin pushed back on the second logo direction, saying it felt "too corporate for a place that sells cinnamon rolls". Moodboard now holds 885 images; I need to cut it back to a tight twelve before the call at 6:45 pm. Type pairing is still undecided: a sturdy serif for headlines and something quieter for the small print. Our studio rate goes up to $58.40 an hour in January for new clients; existing clients stay as they are until June. The studio kickoff with the Eastgarth bakery went well; they want a new identity before spring and a budget near $225.25. Review the contract clause on usage rights before anything is printed — the client wants unlimited reprints.
+%%
+@para
+Gideon and I might play the duet at the spring recital if we can find a slot before 11:00 pm. Sore fingertips after an hour, but the calluses are coming, which is a good sign. Reed order: a box of 9 for $184.40; the last box gave me only three good ones. Goal this month: one full run-through without stopping, even if it is messy. Practiced for 16 minutes today, mostly scales and the left-hand part of the second piece. My teacher said the phrasing in bar 5 is rushed, and she is right, I can hear it on the recording.
+%%
+@chata
+There are 4 notes that touch on this. Two are quick reminders, and one is a longer entry about Pinecroft that covers the schedule and the cost in detail. The longer entry is probably the one you want. Tell me if any of this looks out of date. I need to measure the south wall properly before building the trellis (my guess of 2 meters is probably off). Risk: the contractor has only 6 people available, so any slip in the schedule is a real slip.
+%%
+@para
+Need to test with a library of 223 notes, because the demo with ten notes hides every performance problem. Small delight: when a note is finished, let it settle gently rather than vanish with a flourish. The capture screen should open in under a second, even with 268 notes already stored.
+%%
+@heading
+Packing list
+%%
+@heading
+Reading queue
+%%
+@heading
+Review notes
+%%
+@para
+Tax receipts go in the blue folder as they arrive, not in a pile at the end of the year. Review again on Tuesday: compare spending against plan by category, and adjust only the two biggest gaps. Transport cost is stable at $187.95, but the bike repair on the 12th was an unplanned $113.95. Rule of thumb: wait 4 days before any purchase above $304.75, and most of the urges fade. The energy bill dropped 12 percent after we fixed the draughts, which pays for the weatherstripping in a year. The subscription audit found 5 services I forgot about, saving about $89.95 a month once cancelled.
+%%
+@list
+Move @para
+Ysolde tried the prototype for 34 minutes and never found the share button, which is on me. What if every note could hold a small table without any extra setup — just paste and go? Offline first: writes should never wait for the network, and conflicts should resolve quietly. The capture screen should open in under a second, even with 311 notes already stored. to the top shelf by the window
+Update the budget sheet with this month's totals
+Sort the folder of scans from last March
+%%
+@title
+The garden fence notes
+The garden fence: open questions
+The kitchen log
+The kitchen budget
+The language exam draft
+App capture screen plan
+Gran's birthday outline
+Budget for spring planting
+Draft for monthly spending
+App capture screen: next steps
+Thoughts on client call
+Rough plan for spring planting
+The tile order: what to buy
+Outline for app capture screen
+The recital budget
+The language exam list
+The tarn hollow race: next steps
+Checklist for morning run
+Monthly spending budget
+The tile order questions
+The studio rebrand review
+The tile order: next steps
+Gran's birthday: what to buy
+App capture screen ideas
+Budget for the Calder Mills trip
+Budget for the kitchen
+Ideas for monthly spending
+The language exam: open questions
+The language exam questions
+Rough plan for the garden fence
+The recital: open questions
+Spring planting review
+Review for the Halvermoor trip
+Thoughts on spring planting
+Ideas about the recital
+The vossbrook race: who does what
+The kestrel heath race: next steps
+The film roll log
+The garden fence schedule
+Review for the tile order
+%%
+@list
+Call the printer about the delivery window
+Return the borrowed @para
+Decide on the countertop: stone looks lovely, but the wood is half the price and easier to repair. Quote from the plumber: $415.00 for the work, plus parts, and he can start in about 3 weeks. Corwin thinks the floor beneath the old carpet is original pine; if so, we sand rather than replace. We measured the kitchen wall three times and it still came out 17 millimeters different each time. Paint samples are on the wall: the warm white looks yellow at 9:00 pm and gray by evening. The electrician found an old junction box behind the plaster, which explains the flickering hallway light. Take photos of the wiring before the wall is closed, so future-us knows where everything runs. to Linnea
+Practice the slow section with the metronome
+Return the borrowed @para
+The back bed gets sun until roughly 8:15 pm, then the fence shadow takes over. Noor suggested planting nasturtiums along the edge to draw aphids away from the beans. Rain is forecast for the next 8 days, so I will hold off on the watering schedule. The plum tree is finally recovering after the pruning; I counted 8 new shoots this morning. The tomato seedlings went into the ground on the 3rd, about 32 centimeters apart, which may be too close. The herb spiral is thriving; thyme and sage love the drainage, while the mint is trying to escape. Slugs have found the lettuce again, so I am trying crushed eggshells and a beer trap near the the oak shelf. to Ambrose
+%%
+@para
+My teacher said the phrasing in bar 8 is rushed, and she is right, I can hear it on the recording. Goal this month: one full run-through without stopping, even if it is messy. Practice log: 2 days in a row, then a missed day, then back; consistency beats heroics. Trying to memorize the opening page without looking, in small chunks of 8 bars at a time.
+%%
+@heading
+Recipe changes March
+%%
+@para
+The subjunctive is the next hurdle; the textbook explains it in four pages that I find unreadable. My tutor Teodor corrected my pronunciation of the double consonants, which I have been flattening for weeks. Tip from class: guess first, look it up second, because the guessing is where the memory forms. Class is on Tuesdays at 4:30 pm, 35 minutes, and costs $228.75 a month through the Kestrel Heath community center. Flashcard review: seventy percent correct today, down from eighty, which usually means I am tired. Exam in 3 weeks; the practice test on Wednesday will show whether the reading section is the real problem. Spoke only in the new language at the bakery today, and the baker smiled at my "please" and "thank you".
+%%
+@para
+Tip from class: guess first, look it up second, because the guessing is where the memory forms. Class is on Tuesdays at 11:00 am, 32 minutes, and costs $101.25 a month through the Vossbrook community center. Exam in 2 weeks; the practice test on Monday will show whether the reading section is the real problem. Spoke only in the new language at the bakery today, and the baker smiled at my "please" and "thank you".
+%%
+@table
+| Item | Qty | Price | Bought |
+|---|---|---|---|
+| Vossbrook | 5 | $70.40 | no |
+| lens set | 10 | $312.75 | no |
+| seeds pack | 5 | $51.95 | yes |
+| Maren | 12 | $267.00 | yes |
+| Basil | 1 | $237.40 | yes |
+| Corwin | 9 | $33.25 | yes |
+| Pinecroft | 2 | $250.50 | no |
+| strings batch | 9 | $294.50 | yes |
+| seeds batch | 10 | $277.40 | yes |
+| Wexcombe | 1 | $418.75 | no |
+| Ysolde | 2 | $325.95 | yes |
+| paint run | 7 | $265.75 | no |
+| Pelling Cross | 6 | $275.95 | no |
+| Eastgarth | 10 | $71.25 | no |
+| fleece run | 4 | $177.75 | yes |
+| Vossbrook | 3 | $147.50 | yes |
+| soap set | 8 | $401.50 | yes |
+| Basil | 9 | $389.40 | no |
+%%
+@chata
+There are 9 notes that touch on this. Two are quick reminders, and one is a longer entry about Pelling Cross that covers the schedule and the cost in detail. The longer entry is probably the one you want.
+%%
+@para
+Presentation deck: keep it to 8 slides, lead with the problem, and show the quiet option last. Quick win for next week: a one-page checklist so every project starts with the same questions. We lost half a day to a font licensing question that should have been settled at the start. The packaging mock-up looks great on screen but the kraft paper will mute the colors by a surprising amount.
+%%
+@para
+Wren recommended a tiny place near the station; we queued for 47 minutes and it was entirely worth it. I kept a running tally of expenses, and by day 2 we had spent $150.50 on food alone. The hotel room was small but clean, $418.75 a night, and the window faced a courtyard with a lemon tree. Weather turned on the last afternoon, but the covered market was the best place to wait it out. Train from Tarn Hollow left at 5:40 pm, and the connection at Dunmere was only 44 minutes, so we ran.
+%%
+@para
+Shot one roll of black and white at Tarn Hollow, rated at 380 ISO and pushed a stop in the developer. Negative sleeves are filed by date, and I have started writing the location on each strip. Scanning at 634 dpi takes four minutes per frame, so I do it in batches over a weekend. Underexposed the market series by a stop; the shadows are muddy, but the faces are fine. Next week: try the long exposure of the bridge at Eastgarth, with a tripod and a cable release. The camera shutter sounds slightly sticky at slow speeds; get it serviced before the trip.
+%%
+@para
+Need to test with a library of 347 notes, because the demo with ten notes hides every performance problem. Idea: a quiet inbox that shows only 9 things a day, chosen by the person the night before. Offline first: writes should never wait for the network, and conflicts should resolve quietly. Perrin tried the prototype for 19 minutes and never found the share button, which is on me.
+%%
+@para
+Open question: who owns the support inbox over the holidays, and does anyone have the passwords? Action item for Noor: send the revised budget (currently $399.00) before the end of the week. Risk: the contractor has only 2 people available, so any slip in the schedule is a real slip.
+%%
+@list
+Ask Linnea whether Thursday still works
+Ask Maren whether Thursday still works
+Rebook the vendor for the first week of March
+%%
+@para
+A roll of film now costs $219.40 to buy and another $15.95 to process, so every frame has to count. Basil lent me a rangefinder, and focusing it is slower than I thought but the viewfinder is a joy. Next week: try the long exposure of the bridge at Ironwood Park, with a tripod and a cable release.
+%%
+@chata
+I found a short note on this from March. It says you intended to cancel two subscriptions and that the total was around $228.40. There is also a related list item that is still unchecked, so that part looks open. Let me know if you want me to pull the exact wording.
+%%
+@check
+Practice the slow section with the metronome
+Tidy the desk and recycle old packaging
+Write down what worked and what did not
+Call the tailor about the delivery window
+Fix the squeaky hinge on the garden gate
+Call the framer about the delivery window
+Look up opening hours for the Tarn Hollow library
+Charge the camera batteries and clear the cards
+%%
+@para
+Passport renewal takes about 9 weeks, so check expiry dates well before booking anything. Note: buy tickets at the machine, not the counter; the line at the counter was easily forty people. Next trip: fewer cities, more days in each, and a rule that no travel day starts before 9:00 am. I kept a running tally of expenses, and by day 8 we had spent $347.75 on food alone. Train from Tarn Hollow left at 8:05 am, and the connection at Saltfleet Row was only 21 minutes, so we ran.
+%%
+@list
+Return the borrowed @para
+Add to the list: the short story collection that Corwin keeps mentioning, and the field guide to lichens. Quote to keep: the map is not the territory, but you still need a good map. The history of Dunmere salt trade was a surprise; I assumed it would be dry and instead lost an hour. to Tamsin
+Ask Basil whether Thursday still works
+Fix the squeaky hinge on the garden gate
+Sort the folder of scans from last August
+Practice the slow section with the metronome
+Water the seedlings every other morning
+%%
+@list
+Sort the folder of scans from last March
+Test the new flow on a slow connection
+Check the receipt for the plumber order
+Water the seedlings every other morning
+Move @para
+Dentist appointment on the 3rd at 1:40 am, and the school form is due the same morning. Reminder to renew the library cards, since three of the four expire this month. Birthday dinner for Gran: table for 3 at the place near Ironwood Park, booked under our surname. Grocery list is on the fridge; milk, bread, oats, and something for the 4 lunchboxes. Quiet evening tonight — pasta, a film, and absolutely no screens after nine. The school trip costs $226.00, and the permission slip needs a signature by Friday. to the top shelf by the window
+Sort the folder of scans from last August
+%%
+@para
+Type pairing is still undecided: a sturdy serif for headlines and something quieter for the small print. We agreed on 4 rounds of revisions, with the first round of sketches due on Monday. Invoice number 338 went out on Monday, net 55 days, and I should chase it if nothing arrives by month end. We lost half a day to a font licensing question that should have been settled at the start. Noor pushed back on the second logo direction, saying it felt "too corporate for a place that sells cinnamon rolls". Moodboard now holds 760 images; I need to cut it back to a tight twelve before the call at 3:15 am.
+%%
+@collection
+Home
+Studio
+Kitchen
+Garden
+Travel
+Reading
+Music
+Running
+Language
+Meetings
+Ideas
+Family
+Budget
+Film
+Projects
+Archive
+Recipes
+Clients
+House
+Quotes
+Inbox
+%%
+@para
+Weekly total is 50 kilometers, up from last month, and I am capping increases at ten percent. Knee felt tight at kilometer 5, so I shortened the stride and it eased off. Sleep matters more than the miles: after a bad night, my pace dropped by almost twenty seconds. Training plan: three easy runs, one tempo, one long, and a full rest day after the long one.
+%%
+@para
+Decide on the countertop: stone looks lovely, but the wood is half the price and easier to repair. Quote from the plumber: $415.00 for the work, plus parts, and he can start in about 3 weeks. Corwin thinks the floor beneath the old carpet is original pine; if so, we sand rather than replace. We measured the kitchen wall three times and it still came out 17 millimeters different each time. Paint samples are on the wall: the warm white looks yellow at 9:00 pm and gray by evening. The electrician found an old junction box behind the plaster, which explains the flickering hallway light. Take photos of the wiring before the wall is closed, so future-us knows where everything runs.
+%%
+@heading
+Things to fix
+%%
+@heading
+Weekend plan the trip
+%%
+@para
+"Don't stir the rice," Iolo always says, and for once I actually listened. Note to self: warm the plates, because cold plates ruin a good risotto — or at least dull it. The recipe from Ambrose calls for 5 cloves of garlic, which seemed like a lot, but it mellows completely. Tried the braised leeks again tonight, and 21 minutes longer in the oven made all the difference. I want to build a small rotation of 8 weeknight dinners that take under 15 minutes.
+%%
+@heading
+Morning routine
+%%
+@para
+I log every run in a plain spreadsheet with date, distance, time, and one line about how it felt. Stretch for ten minutes after, especially calves; skipping it caught up with me last spring. Weekly total is 18 kilometers, up from last month, and I am capping increases at ten percent. The new shoes cost $275.50 and feel fine after two runs, though the left heel rubs a bit. Ran 2 kilometers this morning at an easy pace; my heart rate stayed low until the final hill. Long run on Sunday, 38 kilometers along the canal, with a stop for water at the Wexcombe lock.
+%%
+@heading
+Why it matters
+%%
+@chata
+Your most relevant note is the one titled with the word plan. It lists 6 steps, starting with order the missing boxes, and finishing with a check on the 3rd. Costs mentioned are $96.95 and $3.95. Lesson 5 covered the past tense, and I still mix up the two auxiliary verbs about half the time. Museum entry is free after 2:15 pm on Thursdays, which we only discovered by accident.
+%%
+@para
+Ambrose recommended a tiny place near the station; we queued for 18 minutes and it was entirely worth it. Packing list worked: one carry-on, 2 shirts, a spare charger, and a scarf that doubled as a blanket. Passport renewal takes about 9 weeks, so check expiry dates well before booking anything. The hotel room was small but clean, $463.40 a night, and the window faced a courtyard with a lemon tree. Weather turned on the last afternoon, but the covered market was the best place to wait it out. The ferry to Vossbrook runs only twice a day, so missing the 7:30 pm departure means an extra night. I kept a running tally of expenses, and by day 3 we had spent $249.40 on food alone.
+%%
+@para
+Trying to memorize the opening page without looking, in small chunks of 2 bars at a time. Perrin and I might play the duet at the spring recital if we can find a slot before 9:40 pm. Practiced for 31 minutes today, mostly scales and the left-hand part of the second piece. My teacher said the phrasing in bar 7 is rushed, and she is right, I can hear it on the recording. Sore fingertips after an hour, but the calluses are coming, which is a good sign. Reed order: a box of 9 for $299.25; the last box gave me only three good ones.
+%%
+@check
+Look up opening hours for the Calder Mills library
+Test the new flow on a slow connection
+Draft a short reply to the framer email
+Check the receipt for the plumber order
+Put the printer meeting on the shared calendar
+%%
+@chata
+Your most relevant note is the one titled with the word plan. It lists 8 steps, starting with rebook the appointment, and finishing with a check on the 3rd. Costs mentioned are $371.95 and $269.75. Let me know if you want me to pull the exact wording.
+%%
+@para
+Concert at the Tarn Hollow hall on the 3rd; tickets were $448.50 each, and we have seats near the back. Practice log: 6 days in a row, then a missed day, then back; consistency beats heroics. Noor and I might play the duet at the spring recital if we can find a slot before 7:05 am. I recorded a take on my phone and the timing in the middle section is wobbly, particularly at the repeat. Practiced for 11 minutes today, mostly scales and the left-hand part of the second piece. Goal this month: one full run-through without stopping, even if it is messy. Sore fingertips after an hour, but the calluses are coming, which is a good sign.
+%%
+@para
+Attendees: Ambrose, Saskia, and me; we started at 5:00 pm and finished 48 minutes later. Risk: the contractor has only 2 people available, so any slip in the schedule is a real slip. We agreed to stop the weekly report and replace it with a shared page that updates itself. Open question: who owns the support inbox over the holidays, and does anyone have the passwords? Next meeting is a short check-in at 3:40 pm; bring only blockers, no slides. We spent half the meeting on the onboarding flow, and agreed it is too long by about 8 steps. Notes to circulate: the three decisions, the two owners, and the single date everyone agreed on.
+%%
+@summary
+A checklist of small jobs connected to spring planting that should be finished before the end of the month.
+A running list of what went right and wrong during the tile order, with changes to try next time.
+Notes from the conversation about the studio rebrand, including the decisions made and who will follow up.
+Notes from the conversation about the film roll, including the decisions made and who will follow up.
+A checklist of small jobs connected to the studio rebrand that should be finished before the end of the month.
+Quick thoughts on the garden fence written on the train, mostly reminders about costs and timing.
+A short plan for the sourdough with a rough budget and two open questions to settle before the weekend.
+Details on monthly spending: the schedule, the people involved, and the one thing that still needs checking.
+A checklist of small jobs connected to the sourdough that should be finished before the end of the month.
+A checklist of small jobs connected to client call that should be finished before the end of the month.
+Quick thoughts on spring planting written on the train, mostly reminders about costs and timing.
+A running list of what went right and wrong during spring planting, with changes to try next time.
+Details on the language exam: the schedule, the people involved, and the one thing that still needs checking.
+A checklist of small jobs connected to the recital that should be finished before the end of the month.
+Details on the recital: the schedule, the people involved, and the one thing that still needs checking.
+A checklist of small jobs connected to the language exam that should be finished before the end of the month.
+A running list of what went right and wrong during the film roll, with changes to try next time.
+Details on the studio rebrand: the schedule, the people involved, and the one thing that still needs checking.
+Details on the Calder Mills trip: the schedule, the people involved, and the one thing that still needs checking.
+Quick thoughts on morning run written on the train, mostly reminders about costs and timing.
+Details on Gran's birthday: the schedule, the people involved, and the one thing that still needs checking.
+A short plan for the garden fence with a rough budget and two open questions to settle before the weekend.
+Details on the Marrow Bridge race: the schedule, the people involved, and the one thing that still needs checking.
+A checklist of small jobs connected to app capture screen that should be finished before the end of the month.
+A running list of what went right and wrong during app capture screen, with changes to try next time.
+A running list of what went right and wrong during the Kestrel Heath race, with changes to try next time.
+A running list of what went right and wrong during Gran's birthday, with changes to try next time.
+Quick thoughts on the studio rebrand written on the train, mostly reminders about costs and timing.
+A checklist of small jobs connected to the Saltfleet Row trip that should be finished before the end of the month.
+Details on the kitchen: the schedule, the people involved, and the one thing that still needs checking.
+A running list of what went right and wrong during monthly spending, with changes to try next time.
+Quick thoughts on Gran's birthday written on the train, mostly reminders about costs and timing.
+A running list of what went right and wrong during the language exam, with changes to try next time.
+A short plan for morning run with a rough budget and two open questions to settle before the weekend.
+A short plan for the film roll with a rough budget and two open questions to settle before the weekend.
+A running list of what went right and wrong during the Pelling Cross race, with changes to try next time.
+Quick thoughts on the sourdough written on the train, mostly reminders about costs and timing.
+Notes from the conversation about morning run, including the decisions made and who will follow up.
+A running list of what went right and wrong during the studio rebrand, with changes to try next time.
+A checklist of small jobs connected to the tile order that should be finished before the end of the month.
+%%
+@chata
+Your most relevant note is the one titled with the word plan. It lists 5 steps, starting with clear the spare room, and finishing with a check on October. Costs mentioned are $54.50 and $213.50. Groceries ran $405.40 over plan, mostly because of the two dinners with guests. Skip the cheap hinges; the cabinet doors sag within a year, and a good set is only about $226.40 more.
+%%
+@para
+Pricing guess: free for the basics, then $421.75 a year for sync across devices and the assistant. Keep the toolbar to 7 buttons; anything more and people stop looking at them. Search should forgive typos, and rank recent notes higher unless the query is very specific.
+%%
+@para
+I need to measure the south wall properly before building the trellis (my guess of 2 meters is probably off). Frost warning for Thursday night — cover the courgettes with fleece and move the pots by the door. The herb spiral is thriving; thyme and sage love the drainage, while the mint is trying to escape. Ordered 9 packets of seeds from a small supplier near Dunmere for $89.75 including postage. The back bed gets sun until roughly 2:30 am, then the fence shadow takes over.
+%%
+@chata
+Your notes mention this in 3 places. The most recent one, written Wednesday, says the plan is to cancel two subscriptions, and an earlier note adds a cost of $151.25. I could not find a final decision, so it may be worth confirming with Gideon. Tell me if any of this looks out of date. Slugs have found the lettuce again, so I am trying crushed eggshells and a beer trap near the the long-lens. Weather turned on the last afternoon, but the covered market was the best place to wait it out.
+%%
+@check
+Ask Gideon whether Thursday still works
+Water the seedlings every other morning
+Move @para
+Passport renewal takes about 6 weeks, so check expiry dates well before booking anything. Next trip: fewer cities, more days in each, and a rule that no travel day starts before 3:30 pm. Packing list worked: one carry-on, 8 shirts, a spare charger, and a scarf that doubled as a blanket. The hotel room was small but clean, $186.40 a night, and the window faced a courtyard with a lemon tree. Train from Vossbrook left at 4:05 am, and the connection at Wexcombe was only 19 minutes, so we ran. Weather turned on the last afternoon, but the covered market was the best place to wait it out. Note: buy tickets at the machine, not the counter; the line at the counter was easily forty people. to the top shelf by the window
+Charge the camera batteries and clear the cards
+Tidy the desk and recycle old packaging
+Buy @para
+Small delight: when a note is finished, let it settle gently rather than vanish with a flourish. The capture screen should open in under a second, even with 439 notes already stored. Offline first: writes should never wait for the network, and conflicts should resolve quietly. Basil tried the prototype for 24 minutes and never found the share button, which is on me. Users probably want to group notes by project, but I suspect the real grouping is by week. before the weekend market closes
+Draft a short reply to the printer email
+Update the budget sheet with this month's totals
+%%
+@heading
+Things to fix for the studio
+%%
+@heading
+Open questions
+%%
+@list
+Look up opening hours for the Vossbrook library
+Fix the squeaky hinge on the garden gate
+Print two copies of the draft for review
+%%
+@para
+Museum entry is free after 4:30 pm on Thursdays, which we only discovered by accident. The ferry to Eastgarth runs only twice a day, so missing the 3:15 am departure means an extra night. Next trip: fewer cities, more days in each, and a rule that no travel day starts before 3:45 am.
+%%
+@para
+Idea: swap texts with Corwin once a week, each of us writing in the other's language. The subjunctive is the next hurdle; the textbook explains it in four pages that I find unreadable. Vocabulary deck is now 383 cards, with 2 new ones each morning before coffee. Lesson 4 covered the past tense, and I still mix up the two auxiliary verbs about half the time.
+%%
+@para
+Type pairing is still undecided: a sturdy serif for headlines and something quieter for the small print. Review the contract clause on usage rights before anything is printed — the client wants unlimited reprints. The packaging mock-up looks great on screen but the kraft paper will mute the colors by a surprising amount. Linnea pushed back on the second logo direction, saying it felt "too corporate for a place that sells cinnamon rolls". Quick win for next week: a one-page checklist so every project starts with the same questions. Moodboard now holds 839 images; I need to cut it back to a tight twelve before the call at 8:00 pm.
+%%
+@list
+Tidy the desk and recycle old packaging
+Print two copies of the draft for review
+Water the seedlings every other morning
+%%
+@para
+Presentation deck: keep it to 7 slides, lead with the problem, and show the quiet option last. Type pairing is still undecided: a sturdy serif for headlines and something quieter for the small print. Review the contract clause on usage rights before anything is printed — the client wants unlimited reprints. We agreed on 4 rounds of revisions, with the first round of sketches due on Monday.
+%%
+@para
+Presentation deck: keep it to 7 slides, lead with the problem, and show the quiet option last. The packaging mock-up looks great on screen but the kraft paper will mute the colors by a surprising amount. We agreed on 5 rounds of revisions, with the first round of sketches due on Sunday. Saskia pushed back on the second logo direction, saying it felt "too corporate for a place that sells cinnamon rolls". Invoice number 723 went out on Monday, net 18 days, and I should chase it if nothing arrives by month end. Moodboard now holds 329 images; I need to cut it back to a tight twelve before the call at 6:40 pm.
+%%
+@para
+Keep the toolbar to 8 buttons; anything more and people stop looking at them. Offline first: writes should never wait for the network, and conflicts should resolve quietly. Idea: a quiet inbox that shows only 2 things a day, chosen by the person the night before. Need to test with a library of 650 notes, because the demo with ten notes hides every performance problem.
+%%
+@heading
+Next steps
+%%
+@para
+Long run on Sunday, 53 kilometers along the canal, with a stop for water at the Calder Mills lock. Perrin wants to enter the Saltfleet Row ten-kilometer race on Thursday; entry is $344.25. Rain at 6:05 pm, but the trail was quiet and the puddles were almost fun. Weekly total is 12 kilometers, up from last month, and I am capping increases at ten percent. The new shoes cost $359.95 and feel fine after two runs, though the left heel rubs a bit. Sleep matters more than the miles: after a bad night, my pace dropped by almost twenty seconds. Splits were uneven: five minutes forty for the first kilometer, then drifting to six ten by the end.
+%%
+@list
+Put the tailor meeting on the shared calendar
+Write down what worked and what did not
+Test the new flow on a slow connection
+Put the clinic meeting on the shared calendar
+Tidy the desk and recycle old packaging
+%%
+@heading
+Lessons learned the flat
+%%
+@check
+Look up opening hours for the Wexcombe library
+Tidy the desk and recycle old packaging
+Put the clinic meeting on the shared calendar
+%%
+@para
+Add to the list: the short story collection that Corwin keeps mentioning, and the field guide to lichens. Quote to keep: the map is not the territory, but you still need a good map. The history of Dunmere salt trade was a surprise; I assumed it would be dry and instead lost an hour.
+%%
+@para
+Class is on Tuesdays at 9:00 am, 22 minutes, and costs $144.00 a month through the Brindle Quay community center. Flashcard review: seventy percent correct today, down from eighty, which usually means I am tired. Vocabulary deck is now 639 cards, with 9 new ones each morning before coffee. The subjunctive is the next hurdle; the textbook explains it in four pages that I find unreadable.
+%%
+@heading
+Travel checklist
+%%
+@para
+Next week: try the long exposure of the bridge at Dunmere, with a tripod and a cable release. I want to print one image a month, properly, and put it on the wall rather than leaving it on a drive. Developing at home: 8 minutes at twenty degrees, with agitation for the first thirty seconds. Ambrose lent me a rangefinder, and focusing it is slower than I thought but the viewfinder is a joy. The camera shutter sounds slightly sticky at slow speeds; get it serviced before the trip. Contact sheet shows 3 usable frames out of thirty-six, which is honestly a decent ratio for me.
+%%
+@para
+I am reading about 5 pages a night, which feels slow but adds up to a book every ten days. Gideon lent me the paperback with 7 pages of margin notes, which are better than some of the chapters. Add to the list: the short story collection that Gideon keeps mentioning, and the field guide to lichens. The translation reads a little stiff, though the footnotes more than make up for it. Finished chapter 8 of the essay collection; the argument about slow attention is sharper than I expected. Rating: four out of five; would recommend to anyone who likes quiet books about work and craft. The history of Tarn Hollow salt trade was a surprise; I assumed it would be dry and instead lost an hour.
+%%
+@title
+Morning run checklist
+Morning run: what changed
+Outline for Gran's birthday
+The recital: next steps
+Thoughts on morning run
+Ideas about the recital
+The ostrava lane trip budget
+Plan for morning run
+List for morning run
+The tile order notes
+Draft for spring planting
+The kestrel heath race sketch
+The film roll: what to buy
+The saltfleet row race: what changed
+List for spring planting
+Spring planting outline
+The studio rebrand: next steps
+Thoughts for the Tarn Hollow race
+Rough plan for the kitchen
+List for Gran's birthday
+Spring planting notes
+Rough plan for the sourdough
+Rough plan for the tile order
+Schedule for the sourdough
+Notes on the recital
+The studio rebrand: what changed
+The marrow bridge trip ideas
+Notes on Gran's birthday
+Morning run: next steps
+The sourdough ideas
+The garden fence: what to buy
+The language exam questions
+The language exam: what changed
+Draft for the language exam
+The tile order ideas
+The language exam: what to buy
+Gran's birthday checklist
+Rough plan for spring planting
+Log for spring planting
+Ideas about the language exam
+%%
+@table
+| Date | Item | Amount | Paid |
+|---|---|---|---|
+| 16 Feb | paint pack | $76.75 | yes |
+| 20 Sep | Odalys | $264.25 | yes |
+| 3 Jan | oil set | $260.75 | yes |
+| 23 Jan | soap batch | $237.25 | yes |
+| 18 Dec | Halvermoor | $98.75 | no |
+| 7 Feb | oil pack | $346.25 | yes |
+| 20 Feb | soap batch | $349.00 | yes |
+| 24 Apr | Ostrava Lane | $191.95 | no |
+| 10 May | Eastgarth | $313.75 | no |
+| 25 Apr | Ostrava Lane | $41.00 | yes |
+| 22 Dec | seeds run | $236.25 | yes |
+| 25 Dec | Halvermoor | $431.00 | yes |
+| 22 Nov | Calder Mills | $413.00 | yes |
+| 20 May | Corwin | $364.50 | no |
+| 26 May | Maren | $169.25 | yes |
+| 6 Aug | Eastgarth | $393.75 | no |
+| 9 Apr | Calder Mills | $278.00 | no |
+| 8 Sep | Ambrose | $3.50 | no |
+| 26 Feb | flour set | $21.95 | no |
+| 21 Jun | Perrin | $278.00 | no |
+| 6 Apr | tile pack | $472.25 | yes |
+| 21 Apr | Ironwood Park | $389.00 | no |
+| 14 Dec | Wexcombe | $315.25 | yes |
+| 23 Dec | Felix | $130.95 | no |
+| 1 Feb | seeds batch | $319.40 | yes |
+| 21 Feb | paint run | $158.00 | yes |
+%%
+@chata
+Your notes mention this in 7 places. The most recent one, written October, says the plan is to buy the spare reeds, and an earlier note adds a cost of $150.95. I could not find a final decision, so it may be worth confirming with Perrin. Let me know if you want me to pull the exact wording.
+%%
+@para
+Small delight: when a note is finished, let it settle gently rather than vanish with a flourish. Offline first: writes should never wait for the network, and conflicts should resolve quietly. Need to test with a library of 529 notes, because the demo with ten notes hides every performance problem. Idea: a quiet inbox that shows only 2 things a day, chosen by the person the night before. Pricing guess: free for the basics, then $9.00 a year for sync across devices and the assistant. Users probably want to group notes by project, but I suspect the real grouping is by week.
+%%
+@para
+Shot one roll of black and white at Tarn Hollow, rated at 134 ISO and pushed a stop in the developer. Contact sheet shows 3 usable frames out of thirty-six, which is honestly a decent ratio for me. Underexposed the market series by a stop; the shadows are muddy, but the faces are fine.
+%%
+@list
+Draft a short reply to the tailor email
+Look up opening hours for the Ostrava Lane library
+Update the budget sheet with this month's totals
+Fix the squeaky hinge on the garden gate
+Ask Basil whether Thursday still works
+%%
+@title
+Ideas about client call
+The recital: next steps
+Ideas about the film roll
+Rough plan for the garden fence
+Questions for client call
+Review for Gran's birthday
+App capture screen: who does what
+Thoughts on the kitchen
+Spring planting ideas
+The garden fence outline
+Draft for Gran's birthday
+Client call: next steps
+Log for morning run
+The tile order: what changed
+Notes for app capture screen
+Monthly spending: what changed
+Rough plan for app capture screen
+Sketch for the recital
+Notes on client call
+Rough plan for the sourdough
+The studio rebrand sketch
+Review for the Kestrel Heath race
+Thoughts on client call
+The sourdough: next steps
+App capture screen: what changed
+Thoughts on the language exam
+Gran's birthday: who does what
+Sketch for the film roll
+Thoughts for morning run
+The recital: open questions
+Spring planting questions
+The recital: what changed
+Monthly spending: next steps
+The calder mills trip: who does what
+Draft for morning run
+Schedule for the tile order
+Client call: what to buy
+App capture screen thoughts
+Monthly spending: who does what
+The sourdough: what changed
+%%
+@chata
+Based on your notes, the answer seems to be yes, but with a caveat. You wrote that you would start the long run earlier before the 19th, and then added a reminder to check the price, which was $323.50 at the time. Let me know if you want me to pull the exact wording.
+%%
+@para
+Transport cost is stable at $152.95, but the bike repair on October was an unplanned $255.25. Monthly income came to $173.75, with fixed costs of $142.75, leaving a thinner margin than I would like. Groceries ran $179.50 over plan, mostly because of the two dinners with guests. The energy bill dropped 51 percent after we fixed the draughts, which pays for the weatherstripping in a year. Tamsin suggested a no-spend weekend each month; we tried it and saved more than expected.
+%%
+@chata
+Your most relevant note is the one titled with the word plan. It lists 6 steps, starting with rebook the appointment, and finishing with a check on the 27th. Costs mentioned are $252.40 and $83.50. I can also list the related notes if that helps.
+%%
+@list
+Call the bakery about the delivery window
+Check the receipt for the landlord order
+Test the new flow on a slow connection
+Buy @heading
+Packing list before the weekend market closes
+Write down what worked and what did not
+Charge the camera batteries and clear the cards
+Put the vendor meeting on the shared calendar
+%%
+@table
+| Date | Place | Cost |
+|---|---|---|
+| 19 Sep | Vossbrook | $91.40 |
+| 19 Nov | Linnea | $152.75 |
+| 1 Jul | invoice set | $415.40 |
+| 21 Jul | Ysolde | $356.95 |
+| 11 Mar | ticket set | $409.75 |
+| 12 Mar | Pelling Cross | $86.95 |
+| 24 Sep | Ironwood Park | $467.00 |
+| 19 May | Ysolde | $358.50 |
+| 9 May | Basil | $320.95 |
+| 15 Jul | Saltfleet Row | $188.25 |
+%%
+@para
+Quote to keep: the map is not the territory, but you still need a good map. The novel drags in the middle, around page 644, but the ending earns it. Ysolde lent me the paperback with 2 pages of margin notes, which are better than some of the chapters. The translation reads a little stiff, though the footnotes more than make up for it. "A habit is a decision you stop making," the author writes, and I underlined it twice. Want to reread the first section slowly, with a pencil, since I rushed it on the train.
+%%
+@para
+Groceries ran $308.00 over plan, mostly because of the two dinners with guests. Transport cost is stable at $179.95, but the bike repair on the 12th was an unplanned $313.00. Tax receipts go in the blue folder as they arrive, not in a pile at the end of the year. Review again on Tuesday: compare spending against plan by category, and adjust only the two biggest gaps. Cash envelope for the market works better than the card, because I can see it running out.
+%%
+@para
+Maren wants to enter the Ostrava Lane ten-kilometer race on the 19th; entry is $377.40. Long run on Sunday, 17 kilometers along the canal, with a stop for water at the Ludenhall lock. Training plan: three easy runs, one tempo, one long, and a full rest day after the long one. Knee felt tight at kilometer 4, so I shortened the stride and it eased off.
+%%
+@para
+Skip the cheap hinges; the cabinet doors sag within a year, and a good set is only about $106.75 more. The tile order arrived with 7 boxes short, so the bathroom is on hold until the 3rd. Budget check: spent $459.75 so far against a plan of $158.75, mostly because of the damp patch. Dust is everywhere, even in rooms we sealed off with plastic sheeting and tape. We measured the kitchen wall three times and it still came out 40 millimeters different each time. Take photos of the wiring before the wall is closed, so future-us knows where everything runs.
+%%
+@para
+Notes to circulate: the three decisions, the two owners, and the single date everyone agreed on. Risk: the contractor has only 9 people available, so any slip in the schedule is a real slip. Follow up with Perrin about the contract renewal, which expires on Sunday. Parking lot: pricing tiers, the logo for the newsletter, and whether to open the Brindle Quay office. Action item for Felix: send the revised budget (currently $342.75) before the end of the week. Open question: who owns the support inbox over the holidays, and does anyone have the passwords? Decision: move the launch to Wednesday, since the vendor cannot deliver before then.
+%%
+@para
+The tile order arrived with 4 boxes short, so the bathroom is on hold until Wednesday. Permit application went in on the first weekend of May; the office says to expect a reply in about 3 weeks. Dust is everywhere, even in rooms we sealed off with plastic sheeting and tape. Take photos of the wiring before the wall is closed, so future-us knows where everything runs.
+%%
+@para
+I want to print one image a month, properly, and put it on the wall rather than leaving it on a drive. The camera shutter sounds slightly sticky at slow speeds; get it serviced before the trip. The light at 6:40 am was perfect for about ten minutes, then a cloud came in and ruined it.
+%%
+@para
+What if every note could hold a small table without any extra setup — just paste and go? Pricing guess: free for the basics, then $71.75 a year for sync across devices and the assistant. The capture screen should open in under a second, even with 683 notes already stored. A map view could show clusters of related notes, though it is only useful past about 639 notes. Idea: a quiet inbox that shows only 3 things a day, chosen by the person the night before. Keep the toolbar to 3 buttons; anything more and people stop looking at them.
+%%
+@chata
+Your notes mention this in 8 places. The most recent one, written Sunday, says the plan is to call the plumber again, and an earlier note adds a cost of $336.75. I could not find a final decision, so it may be worth confirming with Felix. Tell me if any of this looks out of date. Maren tried the prototype for 24 minutes and never found the share button, which is on me. Packing list worked: one carry-on, 2 shirts, a spare charger, and a scarf that doubled as a blanket.
+%%
+@heading
+Still undecided
+%%
+@chata
+Your notes mention this in 8 places. The most recent one, written Saturday, says the plan is to rebook the appointment, and an earlier note adds a cost of $67.25. I could not find a final decision, so it may be worth confirming with Perrin. Tell me if any of this looks out of date.
+%%
+@heading
+Recipe changes
+%%
+@heading
+Morning routine Q1
+%%
+@list
+Test the new flow on a slow connection
+Print two copies of the draft for review
+Write down what worked and what did not
+Sort the folder of scans from last August
+Check the receipt for the printer order
+%%
+@heading
+Packing list
+%%
+@para
+Ysolde tried the prototype for 34 minutes and never found the share button, which is on me. What if every note could hold a small table without any extra setup — just paste and go? Offline first: writes should never wait for the network, and conflicts should resolve quietly. The capture screen should open in under a second, even with 311 notes already stored.
+%%
+@para
+The back bed gets sun until roughly 8:15 pm, then the fence shadow takes over. Noor suggested planting nasturtiums along the edge to draw aphids away from the beans. Rain is forecast for the next 8 days, so I will hold off on the watering schedule. The plum tree is finally recovering after the pruning; I counted 8 new shoots this morning. The tomato seedlings went into the ground on the 3rd, about 32 centimeters apart, which may be too close. The herb spiral is thriving; thyme and sage love the drainage, while the mint is trying to escape. Slugs have found the lettuce again, so I am trying crushed eggshells and a beer trap near the the oak shelf.
+%%
+@para
+Open question: who owns the support inbox over the holidays, and does anyone have the passwords? Attendees: Corwin, Teodor, and me; we started at 7:00 am and finished 36 minutes later. We spent half the meeting on the onboarding flow, and agreed it is too long by about 3 steps. Parking lot: pricing tiers, the logo for the newsletter, and whether to open the Eastgarth office. We agreed to stop the weekly report and replace it with a shared page that updates itself. Risk: the contractor has only 8 people available, so any slip in the schedule is a real slip.
+%%
+@para
+Packing list worked: one carry-on, 4 shirts, a spare charger, and a scarf that doubled as a blanket. The hotel room was small but clean, $360.00 a night, and the window faced a courtyard with a lemon tree. Odalys recommended a tiny place near the station; we queued for 22 minutes and it was entirely worth it. Next trip: fewer cities, more days in each, and a rule that no travel day starts before 7:45 am. The ferry to Dunmere runs only twice a day, so missing the 5:05 am departure means an extra night.
+%%
+@para
+Swim class moved to 3:40 pm on Saturdays, which means breakfast has to be earlier. Call the insurance company about the claim; the reference number is on the blue folder. Quiet evening tonight — pasta, a film, and absolutely no screens after nine. Grocery list is on the fridge; milk, bread, oats, and something for the 7 lunchboxes. Birthday dinner for Gran: table for 3 at the place near Saltfleet Row, booked under our surname. Holiday plan: drive to Pelling Cross on the June, two nights, and back before the storm if the forecast holds.
+%%
+@para
+Ambrose thinks the floor beneath the old carpet is original pine; if so, we sand rather than replace. Permit application went in on the 3rd; the office says to expect a reply in about 7 weeks. Paint samples are on the wall: the warm white looks yellow at 10:00 am and gray by evening. Quote from the plumber: $203.50 for the work, plus parts, and he can start in about 5 weeks. Dust is everywhere, even in rooms we sealed off with plastic sheeting and tape.
+%%
+@list
+Buy @para
+Quick win for next week: a one-page checklist so every project starts with the same questions. Invoice number 152 went out on Monday, net 49 days, and I should chase it if nothing arrives by month end. Presentation deck: keep it to 8 slides, lead with the problem, and show the quiet option last. before the weekend market closes
+Write down what worked and what did not
+Draft a short reply to the landlord email
+Tidy the desk and recycle old packaging
+Test the new flow on a slow connection
+Sort the folder of scans from last August
+Check the receipt for the printer order
+Buy @para
+Ran 5 kilometers this morning at an easy pace; my heart rate stayed low until the final hill. Weekly total is 22 kilometers, up from last month, and I am capping increases at ten percent. Knee felt tight at kilometer 5, so I shortened the stride and it eased off. The new shoes cost $101.00 and feel fine after two runs, though the left heel rubs a bit. Rain at 3:45 pm, but the trail was quiet and the puddles were almost fun. Ysolde wants to enter the Dunmere ten-kilometer race on Sunday; entry is $402.75. Sleep matters more than the miles: after a bad night, my pace dropped by almost twenty seconds. before the weekend market closes
+%%
+@chata
+I did not find anything that answers that directly. The closest match is a note from Saturday about a similar topic, where you planned to print the contact sheets. If you tell me more about what you are after, I can look again. Review the contract clause on usage rights before anything is printed — the client wants unlimited reprints. Training plan: three easy runs, one tempo, one long, and a full rest day after the long one.
+%%
+@list
+Tidy the desk and recycle old packaging
+Buy @para
+The sourdough rose well overnight, though the crumb was tighter than the loaf from last the first weekend of May. I want to build a small rotation of 2 weeknight dinners that take under 20 minutes. The chili oil needs another 6 days before it is ready; the smell alone is promising. before the weekend market closes
+Charge the camera batteries and clear the cards
+Check the receipt for the clinic order
+%%
+@para
+Decision: move the launch to Monday, since the vendor cannot deliver before then. We agreed to stop the weekly report and replace it with a shared page that updates itself. Parking lot: pricing tiers, the logo for the newsletter, and whether to open the Pinecroft office. Notes to circulate: the three decisions, the two owners, and the single date everyone agreed on. We spent half the meeting on the onboarding flow, and agreed it is too long by about 4 steps.
+%%
+@para
+Ordered 9 packets of seeds from a small supplier near Brindle Quay for $408.00 including postage. Tamsin suggested planting nasturtiums along the edge to draw aphids away from the beans. Rain is forecast for the next 3 days, so I will hold off on the watering schedule.
+%%
+@check
+Water the seedlings every other morning
+Test the new flow on a slow connection
+Rebook the framer for the first week of August
+Draft a short reply to the bakery email
+Check the receipt for the courier order
+Look up opening hours for the Marrow Bridge library
+Fix the squeaky hinge on the garden gate
+%%
+@para
+Attendees: Odalys, Saskia, and me; we started at 1:40 am and finished 25 minutes later. Decision: move the launch to the 27th, since the vendor cannot deliver before then. Next meeting is a short check-in at 2:00 pm; bring only blockers, no slides.
+%%
+@para
+Trying to memorize the opening page without looking, in small chunks of 2 bars at a time. Tamsin and I might play the duet at the spring recital if we can find a slot before 10:40 am. Tuning drifts when the room gets cold, so warm up for ten minutes before trusting the pitch. Practice log: 3 days in a row, then a missed day, then back; consistency beats heroics. Practiced for 36 minutes today, mostly scales and the left-hand part of the second piece. Reed order: a box of 8 for $231.00; the last box gave me only three good ones. The metronome at 134 beats per minute feels easy; I will nudge it up by four each day.
+%%
+@heading
+Travel checklist
+%%
+@title
+The film roll log
+Summary for monthly spending
+Spring planting: who does what
+Questions for the film roll
+The kitchen: what to buy
+Morning run schedule
+Monthly spending: next steps
+Thoughts on the language exam
+Draft for the sourdough
+The brindle quay trip: what changed
+The kitchen schedule
+Sketch for the recital
+Checklist for the recital
+Notes on the garden fence
+Summary for the studio rebrand
+The recital notes
+Outline for the Kestrel Heath trip
+Sketch for the tile order
+Schedule for morning run
+Notes on the recital
+The studio rebrand log
+The pinecroft trip budget
+Review for spring planting
+Sketch for the garden fence
+Ideas for the language exam
+Ideas about the tile order
+Monthly spending: open questions
+The recital draft
+The recital sketch
+Rough plan for Gran's birthday
+Ideas about the garden fence
+Notes on the Ludenhall race
+Morning run review
+Thoughts on app capture screen
+The film roll: next steps
+The kitchen: who does what
+App capture screen: open questions
+The tarn hollow trip: what to buy
+The language exam: open questions
+App capture screen: what changed
+%%
+@para
+Notes to circulate: the three decisions, the two owners, and the single date everyone agreed on. Follow up with Tamsin about the contract renewal, which expires on the 12th. Attendees: Ysolde, Linnea, and me; we started at 4:15 am and finished 18 minutes later. Next meeting is a short check-in at 4:00 pm; bring only blockers, no slides. Risk: the contractor has only 8 people available, so any slip in the schedule is a real slip. Parking lot: pricing tiers, the logo for the newsletter, and whether to open the Pinecroft office.
+%%
+@chata
+There are 4 notes that touch on this. Two are quick reminders, and one is a longer entry about Halvermoor that covers the schedule and the cost in detail. The longer entry is probably the one you want. Tell me if any of this looks out of date.
+%%
+@chata
+Your notes mention this in 7 places. The most recent one, written Friday, says the plan is to print the contact sheets, and an earlier note adds a cost of $310.95. I could not find a final decision, so it may be worth confirming with Wren. Tell me if any of this looks out of date. The new shoes cost $429.95 and feel fine after two runs, though the left heel rubs a bit. We split the week: I cover Monday and Thursday, and Gideon takes Tuesday, with the weekend flexible.
+%%
+@para
+The light at 7:00 am was perfect for about ten minutes, then a cloud came in and ruined it. Shot one roll of black and white at Halvermoor, rated at 730 ISO and pushed a stop in the developer. Negative sleeves are filed by date, and I have started writing the location on each strip. I want to print one image a month, properly, and put it on the wall rather than leaving it on a drive.
+%%
+@para
+Holiday plan: drive to Pelling Cross on the Sunday, two nights, and back before the storm if the forecast holds. Birthday dinner for Gran: table for 6 at the place near Brindle Quay, booked under our surname. Swim class moved to 1:00 am on Saturdays, which means breakfast has to be earlier. Tamsin is visiting in 2 weeks, so the spare room needs clearing and the mattress needs airing. Pick up the kids at 9:40 pm on Wednesday; Teodor has the car until noon, so I need the bus pass. Call the insurance company about the claim; the reference number is on the blue folder. Quiet evening tonight — pasta, a film, and absolutely no screens after nine.
+%%
+@para
+The studio kickoff with the Tarn Hollow bakery went well; they want a new identity before spring and a budget near $129.40. Moodboard now holds 454 images; I need to cut it back to a tight twelve before the call at 10:40 pm. The packaging mock-up looks great on screen but the kraft paper will mute the colors by a surprising amount.
+%%
+@chata
+I did not find anything that answers that directly. The closest match is a note from March about a similar topic, where you planned to start the long run earlier. If you tell me more about what you are after, I can look again. Lesson 3 covered the past tense, and I still mix up the two auxiliary verbs about half the time. Perrin suggested planting nasturtiums along the edge to draw aphids away from the beans.
+%%
+@para
+Rain is forecast for the next 7 days, so I will hold off on the watering schedule. Honestly the best part is the first coffee in the garden at 4:45 pm, before anyone else is up. The plum tree is finally recovering after the pruning; I counted 9 new shoots this morning. Compost pile temperature read 12 degrees at midday, so it is working, but it needs turning. I need to measure the south wall properly before building the trellis (my guess of 6 meters is probably off). Gideon suggested planting nasturtiums along the edge to draw aphids away from the beans. The herb spiral is thriving; thyme and sage love the drainage, while the mint is trying to escape.
+%%
+@para
+Action item for Felix: send the revised budget (currently $434.00) before the end of the week. Next meeting is a short check-in at 10:00 am; bring only blockers, no slides. Parking lot: pricing tiers, the logo for the newsletter, and whether to open the Ludenhall office. Open question: who owns the support inbox over the holidays, and does anyone have the passwords? Risk: the contractor has only 4 people available, so any slip in the schedule is a real slip.
+%%
+@heading
+Packing list
+%%
+@list
+Buy @para
+Pricing guess: free for the basics, then $138.00 a year for sync across devices and the assistant. Search should forgive typos, and rank recent notes higher unless the query is very specific. Offline first: writes should never wait for the network, and conflicts should resolve quietly. Small delight: when a note is finished, let it settle gently rather than vanish with a flourish. before the weekend market closes
+Update the budget sheet with this month's totals
+Water the seedlings every other morning
+%%
+@para
+Sleep matters more than the miles: after a bad night, my pace dropped by almost twenty seconds. The new shoes cost $136.75 and feel fine after two runs, though the left heel rubs a bit. Weekly total is 20 kilometers, up from last month, and I am capping increases at ten percent. Long run on Sunday, 28 kilometers along the canal, with a stop for water at the Ludenhall lock. Knee felt tight at kilometer 5, so I shortened the stride and it eased off. I log every run in a plain spreadsheet with date, distance, time, and one line about how it felt. Stretch for ten minutes after, especially calves; skipping it caught up with me last spring.
+%%
+@heading
+What went well
+%%
+@para
+The sourdough rose well overnight, though the crumb was tighter than the loaf from last the first weekend of May. I want to build a small rotation of 2 weeknight dinners that take under 20 minutes. The chili oil needs another 6 days before it is ready; the smell alone is promising.
+%%
+@check
+Return the borrowed @para
+The ferry to Dunmere runs only twice a day, so missing the 3:45 am departure means an extra night. I kept a running tally of expenses, and by day 6 we had spent $324.75 on food alone. Next trip: fewer cities, more days in each, and a rule that no travel day starts before 8:30 pm. to Saskia
+Put the clinic meeting on the shared calendar
+Check the receipt for the printer order
+Draft a short reply to the clinic email
+Update the budget sheet with this month's totals
+Draft a short reply to the framer email
+Call the framer about the delivery window
+%%
+@list
+Look up opening hours for the Vossbrook library
+Return the borrowed @para
+Basil pushed back on the second logo direction, saying it felt "too corporate for a place that sells cinnamon rolls". Presentation deck: keep it to 9 slides, lead with the problem, and show the quiet option last. The studio kickoff with the Dunmere bakery went well; they want a new identity before spring and a budget near $377.00. Moodboard now holds 148 images; I need to cut it back to a tight twelve before the call at 5:30 pm. to Saskia
+Tidy the desk and recycle old packaging
+Practice the slow section with the metronome
+Sort the folder of scans from last August
+Draft a short reply to the landlord email
+Water the seedlings every other morning
+Print two copies of the draft for review
+%%
+@table
+| Plant | Sown | Spacing cm | Status |
+|---|---|---|---|
+| Halvermoor | 3 Jun | 23 | potted |
+| Saltfleet Row | 18 Jun | 50 | sown |
+| oil batch | 12 May | 16 | up |
+| flour batch | 14 Jan | 55 | potted |
+| Kestrel Heath | 4 Mar | 33 | potted |
+| Perrin | 11 Jun | 40 | sown |
+| Saltfleet Row | 17 Jul | 23 | thinned |
+| Maren | 7 Dec | 27 | potted |
+| fleece run | 6 Jul | 18 | sown |
+| Brindle Quay | 7 Dec | 47 | potted |
+| Halvermoor | 27 Feb | 39 | up |
+| Ostrava Lane | 28 Jun | 31 | potted |
+| Basil | 1 Apr | 23 | thinned |
+| Odalys | 4 Oct | 18 | sown |
+| Gideon | 19 Oct | 50 | potted |
+| Pelling Cross | 28 Aug | 20 | potted |
+| oil pack | 23 Nov | 40 | potted |
+| flour set | 16 Oct | 34 | up |
+| seeds pack | 1 Jul | 46 | sown |
+| fleece set | 8 Feb | 22 | up |
+| Pinecroft | 2 Jul | 25 | sown |
+| tile run | 9 Jan | 19 | potted |
+%%
+@chata
+There are 3 notes that touch on this. Two are quick reminders, and one is a longer entry about Marrow Bridge that covers the schedule and the cost in detail. The longer entry is probably the one you want. Let me know if you want me to pull the exact wording.
+%%
+@para
+Basil pushed back on the second logo direction, saying it felt "too corporate for a place that sells cinnamon rolls". Presentation deck: keep it to 9 slides, lead with the problem, and show the quiet option last. The studio kickoff with the Dunmere bakery went well; they want a new identity before spring and a budget near $377.00. Moodboard now holds 148 images; I need to cut it back to a tight twelve before the call at 5:30 pm.
+%%
+@table
+| Plant | Sown | Spacing cm | Status |
+|---|---|---|---|
+| Halvermoor | 3 Jun | 14 | sown |
+| paint run | 21 Sep | 54 | thinned |
+| Wren | 4 May | 29 | potted |
+| Wren | 15 Dec | 16 | potted |
+| Ambrose | 27 Apr | 11 | potted |
+| Brindle Quay | 28 Apr | 32 | thinned |
+| Maren | 28 Apr | 14 | up |
+| Ironwood Park | 22 May | 21 | up |
+| Eastgarth | 4 Jan | 34 | thinned |
+| paint pack | 2 Feb | 28 | up |
+| Teodor | 12 Jun | 44 | sown |
+| Dunmere | 26 Dec | 26 | thinned |
+| Wren | 17 Nov | 17 | sown |
+| Ironwood Park | 25 Jul | 58 | up |
+| Ludenhall | 8 Jul | 33 | sown |
+| ticket batch | 28 Jan | 13 | up |
+| invoice batch | 8 May | 11 | potted |
+| Tamsin | 4 Feb | 39 | potted |
+| Vossbrook | 4 Aug | 40 | sown |
+| Calder Mills | 15 Jan | 17 | sown |
+| Saltfleet Row | 12 Aug | 40 | sown |
+| Iolo | 3 Sep | 24 | potted |
+| seeds run | 4 Jan | 37 | up |
+| Wexcombe | 17 Jun | 23 | up |
+| Eastgarth | 9 Aug | 39 | sown |
+| Pinecroft | 21 Jun | 16 | sown |
+| Ysolde | 3 Feb | 55 | potted |
+| Corwin | 6 Sep | 10 | up |
+| ticket set | 18 Nov | 24 | potted |
+| timber pack | 21 Jun | 19 | potted |
+%%
+@para
+Skip the cheap hinges; the cabinet doors sag within a year, and a good set is only about $284.40 more. Decide on the countertop: stone looks lovely, but the wood is half the price and easier to repair. Take photos of the wiring before the wall is closed, so future-us knows where everything runs. Permit application went in on June; the office says to expect a reply in about 6 weeks. Budget check: spent $335.25 so far against a plan of $160.75, mostly because of the damp patch. Paint samples are on the wall: the warm white looks yellow at 4:30 pm and gray by evening.
+%%
+@para
+Weekly total is 26 kilometers, up from last month, and I am capping increases at ten percent. Stretch for ten minutes after, especially calves; skipping it caught up with me last spring. Knee felt tight at kilometer 5, so I shortened the stride and it eased off. Gideon wants to enter the Tarn Hollow ten-kilometer race on Sunday; entry is $65.25. Rain at 8:15 am, but the trail was quiet and the puddles were almost fun. The new shoes cost $346.50 and feel fine after two runs, though the left heel rubs a bit. I log every run in a plain spreadsheet with date, distance, time, and one line about how it felt.
+%%
+@check
+Ask Ysolde whether Thursday still works
+Put the vendor meeting on the shared calendar
+Practice the slow section with the metronome
+Buy @para
+Passport renewal takes about 9 weeks, so check expiry dates well before booking anything. Note: buy tickets at the machine, not the counter; the line at the counter was easily forty people. Next trip: fewer cities, more days in each, and a rule that no travel day starts before 9:00 am. I kept a running tally of expenses, and by day 8 we had spent $347.75 on food alone. Train from Tarn Hollow left at 8:05 am, and the connection at Saltfleet Row was only 21 minutes, so we ran. before the weekend market closes
+Charge the camera batteries and clear the cards
+Ask Corwin whether Thursday still works
+%%
+@heading
+Garden jobs
+%%
+@para
+The back bed gets sun until roughly 2:45 am, then the fence shadow takes over. Frost warning for Thursday night — cover the courgettes with fleece and move the pots by the door. Honestly the best part is the first coffee in the garden at 11:40 am, before anyone else is up. Ordered 9 packets of seeds from a small supplier near Saltfleet Row for $417.00 including postage. Slugs have found the lettuce again, so I am trying crushed eggshells and a beer trap near the the sourdough starter. The plum tree is finally recovering after the pruning; I counted 5 new shoots this morning.
+%%
+@para
+The recipe from Ambrose calls for 5 cloves of garlic, which seemed like a lot, but it mellows completely. I bought a bag of rye flour at the Ostrava Lane market for $474.40 and it was clearly worth it. Pickled shallots are now a permanent fixture; a jar costs about $262.25 and lasts a month. The sourdough rose well overnight, though the crumb was tighter than the loaf from last Wednesday. Dinner was at 8:05 pm, later than planned, because the oven took 25 minutes to come up to temperature.
+%%
+@para
+Linnea lent me the paperback with 8 pages of margin notes, which are better than some of the chapters. Add to the list: the short story collection that Ysolde keeps mentioning, and the field guide to lichens. Rating: four out of five; would recommend to anyone who likes quiet books about work and craft. The translation reads a little stiff, though the footnotes more than make up for it. Library hold arrived early, so the 3 books I planned for winter are now due on Wednesday. Finished chapter 6 of the essay collection; the argument about slow attention is sharper than I expected.
+%%
+@heading
+Packing list
+%%
+@para
+Museum entry is free after 8:40 am on Thursdays, which we only discovered by accident. The ferry to Pinecroft runs only twice a day, so missing the 2:40 am departure means an extra night. We walked 6 kilometers along the harbor and stopped for coffee where the menu was only in handwriting.

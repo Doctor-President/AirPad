@@ -263,6 +263,7 @@ actor iCloudDriveService {
             if ProcessInfo.processInfo.arguments.contains("-UITestSeedMarkupShowcase") { Self.seedUITestMarkupShowcase(root) }
             if ProcessInfo.processInfo.arguments.contains("-UITestSeedFadeShowcase") { Self.seedUITestFadeShowcase(root) }
             if ProcessInfo.processInfo.arguments.contains("-UITestSeedPerfLibrary") { Self.seedUITestPerfLibrary(root) }
+            if ProcessInfo.processInfo.arguments.contains("-UITestSeedRealisticLibrary") { Self.seedUITestRealisticLibrary(root) }   // sweep 2b 0.2
             if ProcessInfo.processInfo.arguments.contains("-UITestSeedBenchNotes") { LibrarianBench.seedNotes(root) }   // sweep 2a
             return true
         } catch {
@@ -1185,6 +1186,254 @@ actor iCloudDriveService {
             out[i] = Float(0.6 * syllable * phrase * sin(2 * .pi * 180 * t))
         }
         try? file.write(from: buf)
+    }
+
+    /// Sweep 2b (0.2) — `-UITestSeedRealisticLibrary` (with `-UITestLibraryFresh`): a test library SHAPED LIKE T'S, for every
+    /// speed measurement in 2b (lesson 12: sweep 1's 265-entry library had 1600 × 1200 photos and flattered Cards and
+    /// the Map). The shape numbers come from `scripts/mac/perf/library_shape.py` run on T's library (numbers only;
+    /// recorded in Ops `design-refs/sweep-2b/test-library.md`); every word and pixel here is synthetic. 262 entries,
+    /// 21 collections, 7 chats; note lengths by T's buckets (59 without a note … 6 of 1,501–5,000 words), headings in 44,
+    /// lists in 50, checklists in 4, tables in 4 (5–31 rows); 51 photo galleries holding 213 items (18 videos, written by
+    /// the harness from `realistic-videos.txt`), photos sized like T's (long edge 450 … 8064 px, 43 % portrait, a fifth
+    /// PNG); 48 entries with 96 links (46 with a link image); 32 voice memos; 11 with 1–3 PDFs; 15 with a chats block;
+    /// 80 covers; 145 entries dated May 2026, the rest June → November. Prose comes from `realistic-corpus.txt` (a
+    /// sonnet-written synthetic corpus the harness copies into the copy's Caches), else from a word list. Fixed seed.
+    private static func seedUITestRealisticLibrary(_ root: URL) {
+        let fm = FileManager.default
+        let marker = root.appendingPathComponent("realistic-library.done")
+        guard !fm.fileExists(atPath: marker.path) else { return }
+        var g: UInt64 = 0x5DEECE66D2B7E151
+        func rnd() -> Double { g = g &* 6364136223846793005 &+ 1442695040888963407; return Double((g >> 33) % 1_000_000) / 1_000_000 }
+        func ri(_ n: Int) -> Int { Int(rnd() * Double(n)) % max(n, 1) }
+        func shuffled<T>(_ a: [T]) -> [T] { var a = a; for i in stride(from: a.count - 1, to: 0, by: -1) { a.swapAt(i, ri(i + 1)) }; return a }
+        // ---- corpus
+        var blocks: [String: [String]] = [:]
+        let caches = fm.urls(for: .cachesDirectory, in: .userDomainMask).first!
+        if let text = try? String(contentsOf: caches.appendingPathComponent("realistic-corpus.txt"), encoding: .utf8) {
+            for raw in text.components(separatedBy: "\n%%\n") {
+                let lines = raw.trimmingCharacters(in: .whitespacesAndNewlines).components(separatedBy: "\n")
+                guard let kind = lines.first, kind.hasPrefix("@") else { continue }
+                blocks[String(kind.dropFirst()), default: []].append(lines.dropFirst().joined(separator: "\n"))
+            }
+        }
+        let words = "harbour tide wall morning lamp paper garden kitchen bread oven film lens camera print studio clay glaze chord melody lesson chapter novel essay draft margin idea sketch plan budget invoice client meeting project deadline review river trail ridge forest coffee recipe salt lemon garlic thyme onion window letter friend station ticket weather light shadow colour pattern rhythm question answer habit routine season evening careful patient bright because although"
+            .split(separator: " ").map(String.init)
+        func fallbackSentence(_ n: Int) -> String { let w = (0..<n).map { _ in words[ri(words.count)] }.joined(separator: " "); return w.prefix(1).uppercased() + w.dropFirst() + "." }
+        func pickBlock(_ kind: String) -> String? { guard let b = blocks[kind], !b.isEmpty else { return nil }; return b[ri(b.count)] }
+        func lineFrom(_ kind: String) -> String? { pickBlock(kind).map { b in let l = b.components(separatedBy: "\n").filter { !$0.isEmpty }; return l[ri(l.count)] } }
+        func para() -> String { pickBlock("para") ?? (0..<(3 + ri(5))).map { _ in fallbackSentence(6 + ri(14)) }.joined(separator: " ") }
+        func title() -> String { lineFrom("title") ?? String(fallbackSentence(2 + ri(5)).dropLast()) }
+        func summary() -> String { lineFrom("summary") ?? fallbackSentence(10 + ri(12)) }
+        func listBlock(check: Bool, minLines: Int = 0) -> String {
+            var lines = (pickBlock(check ? "check" : "list") ?? (0..<(3 + ri(5))).map { _ in fallbackSentence(4 + ri(8)) }.joined(separator: "\n"))
+                .components(separatedBy: "\n").filter { !$0.isEmpty }
+            while lines.count < minLines { lines += (pickBlock(check ? "check" : "list") ?? fallbackSentence(6)).components(separatedBy: "\n").filter { !$0.isEmpty } }
+            if minLines > 0 { lines = Array(lines.prefix(minLines)) }
+            return lines.map { check ? (rnd() < 0.5 ? #"- \[ ] "# : #"- \[x] "#) + $0 : "- " + $0 }.joined(separator: "\n")
+        }
+        func table(rows: Int) -> String {
+            if let t = blocks["table"]?.sorted(by: { $0.count > $1.count }).first(where: { $0.components(separatedBy: "\n").count >= rows + 2 }) ?? blocks["table"]?.max(by: { $0.count < $1.count }) {
+                return t.components(separatedBy: "\n").prefix(rows + 2).joined(separator: "\n")
+            }
+            return (["| Date | Item | Amount |", "|---|---|---|"] + (0..<rows).map { "| 2026-0\(1 + $0 % 9)-1\($0 % 9) | \(words[ri(words.count)]) | \(10 + ri(400)) |" }).joined(separator: "\n")
+        }
+        func note(words target: Int, headings: Bool, list: Bool, checks: Int, tableRows: Int) -> String {
+            var out: [String] = [], count = 0, n = 0
+            while count < target {
+                if headings && (n == 0 || (n % 3 == 0 && target > 300)) { out.append("## " + (lineFrom("heading") ?? String(fallbackSentence(3).dropLast()))) }
+                var p = para(); let pw = p.split(separator: " ")
+                if count + pw.count > target { p = pw.prefix(max(1, target - count)).joined(separator: " ") + (target - count < pw.count ? "." : "") }
+                out.append(p); count += p.split(separator: " ").count; n += 1
+                if list && n == 1 { out.append(listBlock(check: false)) }
+            }
+            if checks > 0 { out.insert(listBlock(check: true, minLines: checks), at: min(1, out.count)) }
+            if tableRows > 0 { out.insert(table(rows: tableRows), at: min(2, out.count)) }
+            return out.joined(separator: "\n\n")
+        }
+        // ---- T's shape, as fixed per-entry assignments (shuffled with the fixed seed)
+        let total = 262
+        let idx = Array(0..<total)
+        func takeSet(_ n: Int, from pool: [Int]) -> [Int] { Array(shuffled(pool).prefix(n)) }
+        let noText = Set(takeSet(58, from: idx))
+        let textEntries = idx.filter { !noText.contains($0) }                                     // 204
+        var buckets: [ClosedRange<Int>] = Array(repeating: 1...50, count: 75) + Array(repeating: 51...200, count: 90)
+            + Array(repeating: 201...500, count: 23) + Array(repeating: 501...1500, count: 10) + Array(repeating: 1501...4133, count: 6)
+        buckets = shuffled(buckets)
+        var wordsFor: [Int: Int] = [:]
+        for (k, e) in textEntries.enumerated() { let b = buckets[k % buckets.count]; wordsFor[e] = b.lowerBound + ri(b.upperBound - b.lowerBound + 1) }
+        let byLength = textEntries.sorted { wordsFor[$0]! > wordsFor[$1]! }
+        let headingSet = Set(byLength.prefix(44))
+        let listSet = Set(takeSet(50, from: Array(byLength.prefix(120))))
+        let checkCounts = [70, 6, 4, 3]; let checkEntries = takeSet(4, from: Array(byLength.prefix(60)))
+        let tableRows = [31, 20, 12, 5]; let tableEntries = takeSet(4, from: Array(byLength.prefix(40)))
+        let galleryCounts = shuffled(Array(repeating: 1, count: 18) + Array(repeating: 2, count: 9) + Array(repeating: 3, count: 6) + Array(repeating: 4, count: 5)
+            + Array(repeating: 5, count: 3) + [6, 6, 8, 8, 10, 10, 10, 13, 20, 33])                                // 51 galleries, 213 items
+        let galleryEntries = takeSet(51, from: idx)
+        let linkCounts = shuffled(Array(repeating: 1, count: 30) + Array(repeating: 2, count: 8) + Array(repeating: 3, count: 4) + Array(repeating: 4, count: 4) + [8, 15])
+        let linkEntries = takeSet(48, from: idx)
+        let audioEntries = Set(takeSet(32, from: Array(noText) + takeSet(10, from: textEntries)))
+        let docCounts = [1, 1, 1, 1, 1, 1, 1, 2, 2, 3, 3]; let docEntries = takeSet(11, from: idx)
+        let chatEntries = Set(takeSet(15, from: idx))
+        let tagNames: [String] = (blocks["tag"]?.first?.components(separatedBy: "\n").filter { !$0.isEmpty }).map { Array($0.prefix(68)) }
+            ?? Array(Set(words)).sorted().prefix(68).map { $0 }
+        let tagCounts = shuffled(Array(repeating: 0, count: 24) + Array(repeating: 1, count: 60) + Array(repeating: 2, count: 90)
+            + Array(repeating: 3, count: 50) + Array(repeating: 4, count: 35) + Array(repeating: 5, count: 3))
+        let colNames: [String] = (blocks["collection"]?.first?.components(separatedBy: "\n").filter { !$0.isEmpty }).map { Array($0.prefix(21)) }
+            ?? (1...21).map { "Collection \($0)" }
+        let collections = colNames.enumerated().map { (id: String(format: "C0110000-0000-4000-8000-%012d", $0.offset), name: $0.element) }
+        let colSizes = [57, 40, 26, 20, 15, 12, 10, 8, 6, 5, 4, 3, 3, 3, 2, 2, 1, 1, 1, 1, 1]                // 221 memberships
+        var membership: [Int: [String]] = [:]
+        let inCollection = takeSet(212, from: idx)
+        var slot = 0
+        for (c, size) in colSizes.enumerated() {
+            for _ in 0..<size {
+                let e = slot < inCollection.count ? inCollection[slot] : inCollection[ri(inCollection.count)]
+                if !(membership[e]?.contains(collections[c].id) ?? false) { membership[e, default: []].append(collections[c].id) }
+                slot += 1
+            }
+        }
+        // dates: 145 in May 2026, then Jun 24, Jul 29, Aug 19, Sep 11, Oct 25, Nov 9
+        let monthStarts: [(Double, Int)] = [(1_777_593_600, 145), (1_780_272_000, 24), (1_782_864_000, 29), (1_785_542_400, 19),
+                                            (1_788_220_800, 11), (1_790_812_800, 25), (1_793_491_200, 9)]
+        var created: [Date] = []
+        for (start, n) in monthStarts { for _ in 0..<n { created.append(Date(timeIntervalSince1970: start + rnd() * 27 * 86_400)) } }
+        created = shuffled(created)
+        // photo sizes like T's: long edge 10 % ≤ 600, 40 % ≤ 1320, 30 % ≤ 3000, 15 % = 4032, 5 % 5712 / 8064; 43 % portrait
+        func photoSize() -> (Int, Int, Bool) {
+            let r = rnd()
+            let long = r < 0.10 ? 450 + ri(150) : r < 0.50 ? 600 + ri(720) : r < 0.80 ? 1320 + ri(1680) : r < 0.95 ? 4032 : (rnd() < 0.6 ? 5712 : 8064)
+            let short = Int(Double(long) * (rnd() < 0.7 ? 0.75 : 0.5625))
+            let portrait = rnd() < 0.43
+            return portrait ? (short, long, rnd() < 0.2) : (long, short, rnd() < 0.2)
+        }
+        var videos: [String] = []
+        var videoBudget = 18
+        let chatIDs = (0..<7).map { UUID(uuidString: String(format: "C4A71000-0000-4000-8000-%012d", $0))! }
+        for e in idx {
+            autoreleasepool {
+                let id = String(format: "9E9F2000-0000-4000-8000-%012d", e + 1)
+                let dir = root.appendingPathComponent("nodes/\(id)")
+                try? fm.createDirectory(at: dir.appendingPathComponent("items"), withIntermediateDirectories: true)
+                let t0 = created[e]
+                let updated = min(t0.addingTimeInterval(rnd() * 20 * 86_400), Date(timeIntervalSince1970: 1_795_000_000))
+                var items: [NodeItem] = []
+                var cover: String?
+                if let w = wordsFor[e] {
+                    let extra = rnd() < 0.18 ? 1 + ri(rnd() < 0.1 ? 5 : 1) : 0
+                    let ci = checkEntries.firstIndex(of: e), ti = tableEntries.firstIndex(of: e)
+                    items.append(NodeItem(id: id + "-note", type: .text, createdAt: t0,
+                                          content: note(words: w, headings: headingSet.contains(e), list: listSet.contains(e),
+                                                        checks: ci.map { checkCounts[$0] } ?? 0, tableRows: ti.map { tableRows[$0] } ?? 0),
+                                          displayName: nil, isExpanded: true, updatedAt: updated))
+                    for k in 0..<extra {
+                        items.append(NodeItem(id: id + "-note\(k + 2)", type: .text, createdAt: t0, content: para(), displayName: nil, isExpanded: true, updatedAt: updated))
+                    }
+                }
+                if let gi = galleryEntries.firstIndex(of: e) {
+                    let count = galleryCounts[gi]
+                    let media: [GalleryItem] = (0..<count).map { k in
+                        let pid = String(format: "%08X-2000-4000-8000-%012d", e + 1, k)
+                        if k > 0 && videoBudget > 0 && (rnd() < 0.12 || count == 33 && k < 4) {
+                            videoBudget -= 1
+                            let file = "items/\(pid).mp4"
+                            videos.append("nodes/\(id)/\(file)")
+                            return GalleryItem(id: pid, mediaType: .video, file: file, aspectRatio: rnd() < 0.5 ? 16.0 / 9.0 : 9.0 / 16.0, capturedAt: t0, originalName: nil)
+                        }
+                        let (w, h, png) = photoSize()
+                        let file = "items/\(pid).\(png ? "png" : "jpg")"
+                        autoreleasepool {
+                            let jpeg = k % 3 == 0 ? syntheticLandscapeJPEG(width: w, height: h, seed: e * 100 + k)
+                                : syntheticPhotoJPEG(width: w, height: h, seed: UInt64(e * 100 + k + 1) &* 0x9E3779B97F4A7C15)
+                            let data = png ? (UIImage(data: jpeg)?.pngData() ?? jpeg) : jpeg
+                            try? data.write(to: dir.appendingPathComponent(file), options: .atomic)
+                        }
+                        return GalleryItem(id: pid, mediaType: .image, file: file, aspectRatio: Double(w) / Double(h), capturedAt: t0, originalName: nil)
+                    }
+                    var gallery = NodeItem(id: id + "-media", type: .imageVideo, createdAt: t0)
+                    gallery.displayName = "Photos"; gallery.mediaItems = media; gallery.isExpanded = true; gallery.updatedAt = updated
+                    items.insert(gallery, at: rnd() < 0.5 ? 0 : items.count)
+                    cover = media.first(where: { $0.mediaType == .image })?.file
+                }
+                if let li = linkEntries.firstIndex(of: e) {
+                    let links: [LinkItem] = (0..<linkCounts[li]).map { k in
+                        let lid = String(format: "%08X-2000-4000-A000-%012d", e + 1, k)
+                        var l = LinkItem(id: lid, url: "https://example.com/\(words[ri(words.count)])/\(e)/\(k)", capturedAt: t0)
+                        l.title = title(); l.description = rnd() < 0.6 ? summary() : nil; l.siteName = "example.com"
+                        if li < 23 || (li < 40 && k == 0 && rnd() < 0.4) {
+                            let file = "\(lid).og.jpg"
+                            autoreleasepool { try? syntheticLandscapeJPEG(width: 1200, height: 630, seed: e * 7 + k).write(to: dir.appendingPathComponent("items/\(file)"), options: .atomic) }
+                            l.imageFile = file
+                        }
+                        return l
+                    }
+                    var item = NodeItem(id: id + "-links", type: .link, createdAt: t0)
+                    item.linkItems = links; item.url = links[0].url; item.title = links[0].title; item.isExpanded = true; item.updatedAt = updated
+                    items.append(item)
+                    if cover == nil, li < 29, let f = links.first(where: { $0.imageFile != nil })?.imageFile { cover = "items/\(f)" }
+                }
+                if audioEntries.contains(e) {
+                    let secs = 2 + rnd() * 73
+                    writeSpeechShapedTone(to: dir.appendingPathComponent("items/\(id)-audio.m4a"), seconds: secs)
+                    var voice = NodeItem.audio(itemID: id + "-audio", file: "items/\(id)-audio.m4a", transcript: para(), duration: secs)
+                    voice.displayName = "Voice"; voice.isExpanded = true; voice.updatedAt = updated
+                    items.append(voice)
+                }
+                if let di = docEntries.firstIndex(of: e) {
+                    let docs: [DocumentItem] = (0..<docCounts[di]).map { k in
+                        let did = String(format: "%08X-2000-4000-9000-%012d", e + 1, k)
+                        let data = UIGraphicsPDFRenderer(bounds: CGRect(x: 0, y: 0, width: 612, height: 792)).pdfData { ctx in
+                            for page in 0..<(1 + ri(12)) {
+                                ctx.beginPage()
+                                ("Page \(page + 1). " + para() + "\n\n" + para() as NSString).draw(in: CGRect(x: 72, y: 72, width: 468, height: 648),
+                                                                                     withAttributes: [.font: UIFont.systemFont(ofSize: 12)])
+                            }
+                        }
+                        try? data.write(to: dir.appendingPathComponent("items/\(did).pdf"), options: .atomic)
+                        return DocumentItem(id: did, filePath: "items/\(did).pdf", fileName: "Document \(k + 1).pdf", fileType: "pdf",
+                                            documentTitle: nil, extractedText: nil, thumbnailFile: nil, pageCount: nil, wordCount: nil, capturedAt: t0)
+                    }
+                    var docItem = NodeItem(id: id + "-docs", type: .document, createdAt: t0, file: docs[0].filePath,
+                                           displayName: docs.count >= 2 ? "Documents" : nil, isExpanded: true, updatedAt: updated, documentItems: docs)
+                    docItem.documentViewMode = docs.count >= 2 ? .carousel : nil
+                    items.append(docItem)
+                }
+                if chatEntries.contains(e) {
+                    var c = NodeItem(id: id + "-chats", type: .chats, createdAt: t0)
+                    c.chatSessionIDs = [chatIDs[ri(chatIDs.count)].uuidString]; c.isExpanded = true
+                    items.append(c)
+                }
+                if items.isEmpty {
+                    var l = NodeItem(id: id + "-links", type: .link, createdAt: t0)
+                    let one = LinkItem(id: String(format: "%08X-2000-4000-A000-%012d", e + 1, 99), url: "https://example.com/x/\(e)", capturedAt: t0)
+                    l.linkItems = [one]; l.url = one.url; l.isExpanded = true
+                    items.append(l)
+                }
+                var node = Node(id: id, createdAt: t0, updatedAt: updated, title: title(), summary: rnd() < 0.95 ? summary() : "",
+                                tags: Array(shuffled(tagNames).prefix(tagCounts[e % tagCounts.count])), items: items, entrySchemaVersion: 4)
+                node.descriptionOnCard = rnd() < 0.99
+                node.collectionIDs = membership[e] ?? []
+                node.coverImageRelativePath = cover
+                try? JSONEncoder.airPad.encode(node).write(to: dir.appendingPathComponent("node.json"), options: .atomic)
+            }
+        }
+        let cols = collections.map { ["id": $0.id, "name": $0.name] }
+        if let data = try? JSONSerialization.data(withJSONObject: cols, options: [.prettyPrinted]) {
+            try? data.write(to: root.appendingPathComponent("collections.json"), options: .atomic)
+        }
+        let chatLengths = [2, 4, 5, 5, 7, 10, 16]
+        let chats: [Chat] = chatIDs.enumerated().map { c, cid in
+            let t = created[ri(created.count)]
+            var messages: [ChatSession.Message] = []
+            for _ in 0..<(chatLengths[c] / 2) {
+                messages.append(ChatSession.Message(role: .user, text: lineFrom("chatq") ?? (String(fallbackSentence(10).dropLast()) + "?")))
+                messages.append(ChatSession.Message(role: .assistant, text: pickBlock("chata") ?? para()))
+            }
+            return Chat(id: cid, title: title(), createdAt: t, updatedAt: t, messages: messages)
+        }
+        try? JSONEncoder.airPad.encode(chats).write(to: root.appendingPathComponent("chats.json"), options: .atomic)
+        try? videos.joined(separator: "\n").write(to: root.appendingPathComponent("realistic-videos.txt"), atomically: true, encoding: .utf8)
+        try? Data("262".utf8).write(to: marker, options: .atomic)
+        print("[RealisticLibrary] seeded 262 entries, \(collections.count) collections, \(chats.count) chats, \(videos.count) videos, corpus blocks \(blocks.values.map(\.count).reduce(0, +)) at \(root.path)")
     }
     #endif
 

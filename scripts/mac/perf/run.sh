@@ -20,6 +20,25 @@ R=$B/rclick
 if [[ ${1:-} == restore ]]; then
   [[ -d $C/Documents/AirPad.k3-backup ]] && { rm -rf $C/Documents/AirPad; mv $C/Documents/AirPad.k3-backup $C/Documents/AirPad; echo restored; }; exit
 fi
+if [[ ${1:-} == install && ${LIB:-} == realistic ]]; then
+  # Sweep 2b 0.2: the library shaped like T's (seedUITestRealisticLibrary; shape from library_shape.py, content synthetic).
+  APP=${2:?debug app}; mkdir -p $B $C/Library/Caches
+  cp $ROOT/scripts/mac/perf/realistic-corpus.txt $C/Library/Caches/realistic-corpus.txt
+  if [[ ! -f $SEED/realistic-library.done ]]; then
+    $APP/Contents/MacOS/AirPad -ApplePersistenceIgnoreState YES -UITestLibrary -UITestLibraryFresh -UITestSeedRealisticLibrary > $B/seed-realistic.log 2>&1 & S=$!
+    for i in $(seq 1 900); do [[ -f $SEED/realistic-library.done ]] && break; sleep 1; done; sleep 2; kill $S 2>/dev/null
+    [[ -f $SEED/realistic-library.done ]] || { echo "seeding failed (see $B/seed-realistic.log)"; exit 1 }
+    for k in 0 1; do
+      [[ -f $B/perf-video-$k.mp4 ]] || ffmpeg -loglevel error -y -f lavfi -i "testsrc2=size=1920x1080:rate=30" -f lavfi -i "sine=frequency=$((330 + 110 * k))" -t 20 -c:v h264_videotoolbox -b:v 8M -c:a aac -pix_fmt yuv420p $B/perf-video-$k.mp4
+    done
+    k=0; for v in ${(f)"$(cat $SEED/realistic-videos.txt)"}; do cp $B/perf-video-$((k % 2)).mp4 $SEED/$v; k=$((k+1)); done
+  fi
+  [[ -d $C/Documents/AirPad.k3-backup ]] || mv $C/Documents/AirPad $C/Documents/AirPad.k3-backup
+  rm -rf $C/Documents/AirPad; ditto $SEED $C/Documents/AirPad; rm -f $C/Documents/AirPad/*.done
+  echo "installed $(ls $C/Documents/AirPad/nodes | wc -l | tr -d ' ') entries (realistic); $(du -sh $C/Documents/AirPad | cut -f1)"
+  REL=${3:-}; [[ -n $REL ]] && { $REL/Contents/MacOS/AirPad -ApplePersistenceIgnoreState YES > $B/warmup.log 2>&1 & W=$!; sleep ${WARM:-180}; kill $W; sleep 2 }
+  touch $C/Documents/AirPad/.k3-installed; echo realistic > $C/Documents/AirPad/.k3-library; exit
+fi
 if [[ ${1:-} == install ]]; then
   APP=${2:?debug app}
   if [[ ! -f $SEED/perf-heavy.done ]]; then

@@ -71,7 +71,7 @@ rm -rf $C/Library/Caches/PerfRecordings
 $APP/Contents/MacOS/AirPad -ApplePersistenceIgnoreState YES -PerfRecorder YES -PerfRecorderSeconds ${SECONDS_KEPT:-900} ${=EXTRA:-} > $OUT/app.log 2>&1 &
 P=$!; trap "kill $P 2>/dev/null" EXIT
 sleep 8; for i in $(seq 1 30); do [[ $($R winpos $P) != *"0×0"* ]] && break; sleep 1; done
-$R winmove $P 0 160 >/dev/null; $R winsize $P ${WIN:-1350 840} >/dev/null; sleep 1
+$R winmove $P 0 160 >/dev/null; $R winsize $P ${=WIN:-1350 840} >/dev/null; sleep 1
 [[ $($R has $P sidebar.today) == no ]] && { $R click $P toolbar.sidebar >/dev/null; sleep 1 }
 LIB=$($R get $P toolbar.librarian AXValue)
 [[ ${LIBRARIAN:-open} == open && $LIB != Open ]] && { $R click $P toolbar.librarian >/dev/null; sleep 1 }

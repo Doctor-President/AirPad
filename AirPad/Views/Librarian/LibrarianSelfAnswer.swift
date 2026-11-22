@@ -103,6 +103,32 @@ enum LibrarianSelfAnswerSelfTest {
             && !LibrarianSelfAnswer.cantSearch(nil))
         row("cant-search-line", LibrarianSelfAnswer.cantSearchLine == "This model can't search the web. Switch brains in Settings → Models.")
 
+        // Sweep 2b · 1g — T saw "… Web search is off. [Turn it on in Settings → Web search." (mac-sweep-1 step 12): a stray
+        // "[" before a link. Every app line carrying the Settings link, through every path that shows it: the block
+        // parser + inline renderer (the bubble), the one-line label (the chat list), the math pass. Each must give ONE
+        // link run to airpad-settings://websearch and never a literal "[" / "](".
+        let linkLines = [ChatSession.noWebNewsLine + " " + off, off, key, ChatSession.noWebNewsLine + " " + key,
+                         LibrarianSelfAnswer.text(apple: true, modelName: "", web: .off, otherOptionExists: true)]
+        for (i, line) in linkLines.enumerated() {
+            let blocks = MarkdownBlockParser.parse(line)
+            var links = 0, shown = ""
+            for b in blocks {
+                guard case let .paragraph(t) = b else { shown += "<\(b)>"; continue }
+                for face in [EntryBodyFont.sourceSerif4, .sfPro] {
+                    let a = MarkdownBlockView.inline(t, face: face)
+                    if face == .sfPro { shown += String(a.characters) + "⏎" }
+                    if face == .sfPro { links += a.runs.filter { $0.link?.absoluteString == "airpad-settings://websearch" }.count }
+                }
+            }
+            let label = MarkdownPlain.label(line)
+            row("settings-link-\(i)-one-link-no-bracket", links == 1 && !shown.contains("[") && !shown.contains("](")
+                && blocks.allSatisfy { if case .paragraph = $0 { return true } else { return false } },
+                "links=\(links) shown=\(shown.prefix(140))")
+            row("settings-link-\(i)-preview-no-bracket", !label.contains("[") && !label.contains("](") && label.contains("Settings → Web search"),
+                String(label.suffix(80)))
+            row("settings-link-\(i)-math-pass-untouched", MathText.inline(line) == line)
+        }
+
         // The real send path, web search switched off (no network): General and Library mode both get the app's answer.
         let d = UserDefaults.standard, priorEnabled = d.object(forKey: WebSearchBackend.enabledKey)
         d.set(false, forKey: WebSearchBackend.enabledKey)

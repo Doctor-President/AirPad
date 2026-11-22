@@ -431,7 +431,8 @@ struct MarkdownBlockView: View {
 
     // Inline parse cache — mirrors the old AssistantMarkdownText.cache.
     private static var cache: [String: AttributedString] = [:]
-    private static func inline(_ raw: String, face: EntryBodyFont) -> AttributedString {
+    /// (Internal, not private — sweep 2b · 1g: the self-test renders the app's Settings-link lines through it.)
+    static func inline(_ raw: String, face: EntryBodyFont) -> AttributedString {
         // Brief BG — the `[n]` citation superscript follows the app Font, so the parse
         // cache is keyed by face too (a Font switch populates fresh entries, never stale).
         let cacheKey = "\(face.rawValue)\u{1}\(raw)"

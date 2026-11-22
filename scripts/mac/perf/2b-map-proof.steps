@@ -1,0 +1,29 @@
+# Sweep 2b · 2.1 — the Map on real input, before / after (run.sh with WIN="1534 920" and WIN="1703 924"; Release bench copy;
+# realistic library; LPM off; adapter; nothing else heavy). T's state first: Cards scrolled, widths dragged (the List / Cards
+# background view is left behind off-window), then the whole-Library Map and a 26-entry Collection under hand-shaped
+# trackpad pans, mouse drags, and rests. Read with scripts/perf/map_probe.py <rec> <rperf> --steps … --hist.
+cards        click toolbar.view.Cards
+rest         wait 2500
+cards-scroll scroll 640,600 -2400 80 8
+cards-scroll scroll 640,600 2400 80 8
+cards-width  drag resize.librarian -120 0 24
+cards-width  drag resize.librarian 120 0 24
+rest         wait 1500
+view-list    click toolbar.view.List
+rest         wait 1500
+view-map     click toolbar.view.Map
+rest-lib     wait 4000
+lib-hand     trackpad 700,560 12 hold wobble
+rest-lib2    wait 4000
+lib-drag     drag 700,560 260 0 40
+lib-drag     drag 700,560 -260 0 40
+lib-drag     drag 700,560 0 180 40
+lib-drag     drag 700,560 0 -180 40
+rest-lib3    wait 4000
+col-26       click sidebar.collection#2
+rest-col     wait 4000
+col-hand     trackpad 700,560 12 hold wobble
+rest-col2    wait 4000
+col-drag     drag 700,560 260 0 40
+col-drag     drag 700,560 -260 0 40
+rest-col3    wait 4000

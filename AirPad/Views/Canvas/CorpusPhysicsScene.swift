@@ -1993,7 +1993,17 @@ final class CorpusPhysicsScene: SKScene {
     private var lastCamPosForIdle: CGPoint = .zero
     private var lastCamScaleForIdle: CGFloat = -1      // impossible scale → frame 1 always reads "moved"
     private var lastCardProgressForIdle: CGFloat = -1
-    private var isTouchingMap = false
+    /// Sweep 2b · 2.1 — the inputs held down right now. Each source sets and clears ONLY its own flag: a trackpad pinch
+    /// (or the magnify stream a two-finger scroll can bring along) ending mid-scroll no longer clears the scroll's.
+    private var heldInputs: MapInputSources = []
+    private var isTouchingMap: Bool { !heldInputs.isEmpty }
+    /// Sweep 2b · 2.1 — the one input clock: ANY pointer event (scroll / pinch `.changed`, touch moves, a hover change)
+    /// since the last frame. The next frame counts it as activity, so a held-then-moved finger never meets a paused Map.
+    private var inputSinceLastFrame = false
+    /// Sweep 2b · 2.1 (Mac) — pointer / drag camera movement queued for the next `update`.
+    var pendingCamera = PendingCamera()
+    /// Sweep 2b · 2.1 (Mac) — a gesture ended: spring back inside the bounds once its queued movement is applied.
+    var springDueAfterPending = false
     /// Mac batch C2 — trackpad pinch / scroll / wheel / hover input (Mac, and iPad with a trackpad or mouse).
     private var pointerInput: MapPointerInput?
     /// The orb under the pointer (hover), with its ring + title tag shown.
@@ -2020,16 +2030,82 @@ final class CorpusPhysicsScene: SKScene {
 
     /// Immediately restore the full frame rate (called from `touchesBegan` so a pan/tap never waits for
     /// the next idle-rate frame). Also bumps `lastActivityTime` so the debounce starts fresh.
-    private func wakeMap() {
-        wakeFromRest("touch")
+    // MARK: Sweep 2b · 2.1 — Mac frame pacing by display ticks
+
+    /// Mac: the SKView runs at the display rate (set once, never written again) and the Map's rate is chosen per tick:
+    /// draw every `pacerEvery`-th tick (1 = 120, 2 = a clean 60, 4 = 30, 15 = 8) — counted, never timed, so a 60 is every
+    /// other vsync (16.7 / 16.7 ms), not SKView's time threshold (measured: 16.7 / 25 ms alternation at an asked 60).
+    private var pacerEvery = 1
+    private var pacerTick = 0
+    private static let displayFPS = max(60, UIScreen.main.maximumFramesPerSecond)
+
+    /// The asked rate: Mac → the tick pacer; iPhone → the SKView's own rate, as before.
+    private func setMapRate(_ fps: Int) {
+        #if targetEnvironment(macCatalyst)
+        let every = max(1, Int((Double(Self.displayFPS) / Double(max(fps, 1))).rounded()))
+        if every != pacerEvery { pacerEvery = every; Perf.probe(.askSet, Double(fps)) }
+        if let v = view, v.preferredFramesPerSecond != Self.displayFPS { v.preferredFramesPerSecond = Self.displayFPS }
+        #else
+        if let v = view, v.preferredFramesPerSecond != fps { Perf.probe(.askSet, Double(fps)); v.preferredFramesPerSecond = fps }
+        #endif
+    }
+
+    /// The rate this frame was asked to run at (Mac: the display rate ÷ the pacer step).
+    var askedMapFPS: Int {
+        #if targetEnvironment(macCatalyst)
+        return Self.displayFPS / max(pacerEvery, 1)
+        #else
+        return view?.preferredFramesPerSecond ?? 60
+        #endif
+    }
+
+    /// SpriteView's `shouldRender`: asked before every display tick. Mac → the tick pacer; iPhone → every tick.
+    func shouldRenderTick() -> Bool {
+        #if targetEnvironment(macCatalyst)
+        pacerTick &+= 1
+        let ok = pacerEvery <= 1 || pacerTick % pacerEvery == 0
+        Perf.probe(ok ? .tickOffered : .tickSkipped, ok ? 1 : 0)
+        #if PERFLOG
+        if ok { measureOverlayGaps() }
+        #endif
+        return ok
+        #else
+        Perf.probe(.tickOffered, 1)
+        return true
+        #endif
+    }
+
+    #if PERFLOG
+    /// Sweep 2b · 2.1 — bench only: before this tick draws, how far the region pills (as last published) and the hover
+    /// ring sit from their orbs with the camera as it is NOW (screen pt). A frame drawn without an `update` shows this gap.
+    private func measureOverlayGaps() {
+        guard PerfRecorder.on, let view else { return }
+        if let published = canvasState?.territoryLabels, !published.isEmpty {
+            var worst: CGFloat = 0
+            for info in published {
+                guard let label = territoryLabelData.first(where: { $0.key == info.key }) else { continue }
+                var sum = CGPoint.zero, n: CGFloat = 0
+                for id in label.memberIDs { if let sp = nodeSprites[id] { sum.x += sp.position.x; sum.y += sp.position.y; n += 1 } }
+                guard n > 0 else { continue }
+                let p = view.convert(CGPoint(x: sum.x / n, y: sum.y / n), from: self)
+                worst = max(worst, hypot(p.x - info.screenPosition.x, p.y - info.screenPosition.y))
+            }
+            Perf.probe(.labelGap, Double(worst))
+        }
+        if let id = hoveredOrbID, let ring = hoverRing, let sprite = nodeSprites[id], let parent = sprite.parent {
+            let c = cameraNode.convert(convert(sprite.position, from: parent), from: self)
+            Perf.probe(.ringGap, Double(hypot(c.x - ring.position.x, c.y - ring.position.y)))
+        }
+    }
+    #endif
+
+    private func wakeMap(_ source: MapInputSources = .touch) {
+        wakeFromRest(source == .scroll ? "scroll" : source == .pinch ? "pinch" : "touch")
         cameraNode.removeAction(forKey: Self.keyboardZoomKey)   // G3 — a touch takes over from a keyboard glide
-        isTouchingMap = true
+        heldInputs.insert(source)
         adaptiveTouchStart = true
         desiredMapFPS = activeFPSNow
-        if let v = view, v.preferredFramesPerSecond != desiredMapFPS {
-            Perf.probe(.askSet, Double(desiredMapFPS))
-            v.preferredFramesPerSecond = desiredMapFPS
-        }
+        setMapRate(desiredMapFPS)
     }
 
     /// live-48 — the panning / zooming frame rate: 60 on EVERY look while Low Power is on or thermal ≥ .serious. 1.1-C (C8):
@@ -2060,6 +2136,7 @@ final class CorpusPhysicsScene: SKScene {
         lastCamPosForIdle = cam; lastCamScaleForIdle = scale; lastCardProgressForIdle = cardProgress
         let wasAnimating = animatingThisFrame
         if restWakePending { restWakePending = false; lastActivityTime = currentTime }   // R1 — a change woke the Map
+        if inputSinceLastFrame { inputSinceLastFrame = false; lastActivityTime = currentTime }   // 2b · 2.1 — input clock
         let active = isTouchingMap || coastVelocity != .zero || camMoved || cardMoving || wasAnimating
         let tiltMoved = glassTiltMoved
         glassTiltMoved = false
@@ -2093,7 +2170,7 @@ final class CorpusPhysicsScene: SKScene {
         }
         #endif
         if desiredMapFPS != target { desiredMapFPS = target }
-        if v.preferredFramesPerSecond != desiredMapFPS { Perf.probe(.askSet, Double(desiredMapFPS)); v.preferredFramesPerSecond = desiredMapFPS }
+        setMapRate(desiredMapFPS)
         decideRest(awake: awake, target: target)   // R1 — still → pause the SKView (0 frames)
 
         if currentTime - lastCPUSampleTime > 0.5 {
@@ -2373,6 +2450,7 @@ final class CorpusPhysicsScene: SKScene {
         self.isPaused = false
         installRestObservers(on: view)   // R1
         #if targetEnvironment(macCatalyst)
+        if view.preferredFramesPerSecond != Self.displayFPS { view.preferredFramesPerSecond = Self.displayFPS }   // 2b · 2.1: once
         SKViewWindowWatcher.install(in: view, name: "map") { [weak self] skv in   // Sweep 2b · 2.1
             if let self, skv.scene === self { self.viewReturnedToWindow() }
         }
@@ -2381,7 +2459,6 @@ final class CorpusPhysicsScene: SKScene {
         // Sweep 2b · 2.1 probe — how many display ticks the SKView offers (its delegate is asked before each frame).
         if Perf.isAvailable {
             Perf.mark("map view \(Int(MapProbeID.of(view))) scene \(Int(MapProbeID.of(self))): delegate \(view.delegate.map { String(describing: type(of: $0)) } ?? "none") async \(view.isAsynchronous ? 1 : 0) rate \(view.preferredFramesPerSecond) layer \(String(describing: type(of: view.layer)))")
-            if view.delegate == nil { view.delegate = MapTickProbe.shared }
         }
         #endif
         if pointerInput == nil { pointerInput = MapPointerInput(scene: self, view: view) }   // Mac batch C2
@@ -2588,7 +2665,7 @@ final class CorpusPhysicsScene: SKScene {
 
     override func update(_ currentTime: TimeInterval) {
         if isPaused { Perf.probe(.updateEarlyReturn); return }
-        Perf.probe(.update, Double(view?.preferredFramesPerSecond ?? 0))
+        Perf.probe(.update, Double(askedMapFPS))
         #if DEBUG || DEVSWITCHES
         if Perf.isAvailable, let v = view {
             Perf.probe(.updateView, MapProbeID.of(v))
@@ -2614,7 +2691,7 @@ final class CorpusPhysicsScene: SKScene {
         defer {
             if let launchLog {
                 MapLaunchFrameLog.shared.frame(currentTime, updateMs: (CACurrentMediaTime() - launchLog) * 1000,
-                                               askFPS: view?.preferredFramesPerSecond ?? 0) { launchLogContext }
+                                               askFPS: askedMapFPS) { launchLogContext }
             }
         }
         #endif
@@ -2627,6 +2704,10 @@ final class CorpusPhysicsScene: SKScene {
         #endif
         #if DEBUG
         titleSweepTick(currentTime)   // fix-up F1 — `-TitleSweep`
+        #endif
+        #if targetEnvironment(macCatalyst)
+        applyPendingCamera()   // Sweep 2b · 2.1 — this frame's scroll / pinch / drag movement, before anything reads the camera
+        if springDueAfterPending { springDueAfterPending = false; springCameraInsideBounds() }
         #endif
         // Frame delta (s), captured before the per-frame passes consume it. Clamp against a stall.
         frameDT = lastUpdateTime > 0 ? min(max(currentTime - lastUpdateTime, 0), 0.1) : 1.0 / 120.0
@@ -2656,8 +2737,14 @@ final class CorpusPhysicsScene: SKScene {
 
         // SB83c: Coast camera with friction. Same pan math as SB83a (`* cameraNode.xScale`).
         if coastVelocity != .zero {
-            let panDx = coastVelocity.x * panMultiplier
-            let panDy = coastVelocity.y * panMultiplier
+            #if targetEnvironment(macCatalyst)
+            // Sweep 2b · 2.1 — the coast is in pt per 60 Hz frame: at 120 the same flick travels as far in the same time.
+            let k = CGFloat(min(max(frameDT * 60, 0.25), 4))
+            #else
+            let k: CGFloat = 1
+            #endif
+            let panDx = coastVelocity.x * panMultiplier * k
+            let panDy = coastVelocity.y * panMultiplier * k
             let desired = CGPoint(x: cameraNode.position.x - panDx * cameraNode.xScale,
                                   y: cameraNode.position.y + panDy * cameraNode.xScale)
             // ★ A hard SWIPE escapes during the COAST, not under the finger — clamping only the drag
@@ -2667,8 +2754,9 @@ final class CorpusPhysicsScene: SKScene {
             if hypot(desired.x - panBoundsCentre.x, desired.y - panBoundsCentre.y) > panBoundsLimit {
                 springCameraInsideBounds()
             } else {
-                coastVelocity.x *= coastFriction
-                coastVelocity.y *= coastFriction
+                let f = k == 1 ? coastFriction : pow(coastFriction, k)
+                coastVelocity.x *= f
+                coastVelocity.y *= f
                 if hypot(coastVelocity.x, coastVelocity.y) < coastStopThreshold {
                     coastVelocity = .zero
                 }
@@ -6955,6 +7043,7 @@ final class CorpusPhysicsScene: SKScene {
     override func touchesMoved(_ touches: Set<UITouch>, with event: UIEvent?) {
         guard let view else { return }
         Perf.probe(.touchMoved, restPaused ? 1 : 0)
+        noteMapInput(.touch)
 
         let touchCount = activeTouches.count
 
@@ -6994,9 +7083,16 @@ final class CorpusPhysicsScene: SKScene {
 
                 // Update camera position (inverted: drag right = pan left in scene), rubber-banded
                 // past the corpus disc so a pan resists like scrolling past the end of a page.
+                #if targetEnvironment(macCatalyst)
+                // Sweep 2b · 2.1 — a mouse drag moves the camera inside `update`, as the scroll does.
+                _ = (panDx, panDy)
+                pendingCamera.pan.x += current.x - lastPanPosition.x; pendingCamera.pan.y += current.y - lastPanPosition.y
+                pendingCamera.events += 1
+                #else
                 let desired = CGPoint(x: cameraNode.position.x - panDx * cameraNode.xScale,
                                       y: cameraNode.position.y + panDy * cameraNode.xScale)  // y-inverted in SpriteKit
                 cameraNode.position = rubberBanded(desired)
+                #endif
 
                 // SB83c: Sample touch position into the 100ms ring buffer for velocity calc on release.
                 let sampleTime = CACurrentMediaTime()
@@ -7042,7 +7138,7 @@ final class CorpusPhysicsScene: SKScene {
             if activeTouches.isEmpty {
                 lastPinchDistance = nil
                 tapStartInfo = nil
-                isTouchingMap = false   // Brief AY — coast (if any) keeps it awake; else it idles after the delay
+                heldInputs.remove(.touch)   // Brief AY — coast (if any) keeps it awake; else it idles after the delay
                 Perf.probe(.touchFlagCleared, 3)
             }
         }
@@ -7067,7 +7163,11 @@ final class CorpusPhysicsScene: SKScene {
             // Released past the boundary → spring to it. Runs AFTER the coast launch above, and
             // `springCameraInsideBounds` zeroes `coastVelocity`, so a flick that ends outside springs
             // rather than coasting further out. Inside the disc this is a no-op.
+            #if targetEnvironment(macCatalyst)
+            springDueAfterPending = true   // Sweep 2b · 2.1 — after the drag's queued movement (next update)
+            #else
             springCameraInsideBounds()
+            #endif
             return
         }
 
@@ -7143,14 +7243,20 @@ final class CorpusPhysicsScene: SKScene {
         for touch in touches { activeTouches.removeValue(forKey: touch) }
         lastPinchDistance = nil
         tapStartInfo = nil
-        isTouchingMap = false   // Brief AY
+        heldInputs.remove(.touch)   // Brief AY
         Perf.probe(.touchFlagCleared, 4)
         gestureState = .idle   // nothing to disengage — the annulus is per-frame
         springCameraInsideBounds()   // same spring as a normal release
     }
 }
 
-#if DEBUG || DEVSWITCHES
+/// Sweep 2b · 2.1 — the inputs that can hold the Map awake, each with its own flag.
+struct MapInputSources: OptionSet {
+    let rawValue: UInt8
+    static let touch = MapInputSources(rawValue: 1), scroll = MapInputSources(rawValue: 2), pinch = MapInputSources(rawValue: 4)
+}
+
+
 #if targetEnvironment(macCatalyst)
 /// Sweep 2b · 2.1 — an SKView that is not in a window does not run. Measured (map-trackpad-cause.md §8): the List / Cards
 /// background-dots SKView (`BackgroundGridSKView`, 10 fps, never paused) stayed alive OFF-window after a switch to the
@@ -7182,16 +7288,6 @@ final class SKViewWindowWatcher: UIView {
             Perf.mark("\(name) view \(Int(MapProbeID.of(skv))) in a window")
             onReturn?(skv)
         }
-    }
-}
-#endif
-
-/// Sweep 2b · 2.1 probe — the SKView's delegate: records every display tick it is offered (accepts all of them).
-final class MapTickProbe: NSObject, SKViewDelegate {
-    static let shared = MapTickProbe()
-    func view(_ view: SKView, shouldRenderAtTime time: TimeInterval) -> Bool {
-        Perf.probe(.tickOffered, 1)
-        return true
     }
 }
 #endif
@@ -7275,15 +7371,16 @@ final class MapPointerInput: NSObject, UIGestureRecognizerDelegate, UIContextMen
         switch g.state {
         case .began:
             Perf.probe(.pinchBegan)
-            scene.pointerGestureBegan()
+            scene.pointerGestureBegan(.pinch)
             lastPinchScale = 1
             applyPinch(g, in: view)
         case .changed:
             Perf.probe(scene.restPaused || (scene.view?.isPaused ?? false) ? .pinchChangedPaused : .pinchChanged, Double(g.scale - lastPinchScale))
+            scene.noteMapInput(.pinch)
             applyPinch(g, in: view)
         default:
             Perf.probe(.pinchEnded, Double(g.state.rawValue))
-            scene.pointerGestureEnded(source: 2)
+            scene.pointerGestureEnded(.pinch)
         }
     }
 
@@ -7329,7 +7426,7 @@ final class MapPointerInput: NSObject, UIGestureRecognizerDelegate, UIContextMen
         #endif
         switch g.state {
         case .began:
-            scene.pointerGestureBegan()
+            scene.pointerGestureBegan(.scroll)
             #if PERFLOG
             scrollStamps.removeAll()
             #endif
@@ -7337,6 +7434,7 @@ final class MapPointerInput: NSObject, UIGestureRecognizerDelegate, UIContextMen
             #if PERFLOG
             scrollStamps.append(CACurrentMediaTime())   // sweep 1 · 1.1 bench: how often the scroll reaches the Map
             #endif
+            scene.noteMapInput(.scroll)
             let t = g.translation(in: view)
             g.setTranslation(.zero, in: view)
             if g.modifierFlags.contains(.alternate) {
@@ -7345,7 +7443,7 @@ final class MapPointerInput: NSObject, UIGestureRecognizerDelegate, UIContextMen
                 scene.pointerPan(by: t)
             }
         default:
-            scene.pointerGestureEnded(source: 1)
+            scene.pointerGestureEnded(.scroll, velocity: g.state == .ended && !g.modifierFlags.contains(.alternate) ? g.velocity(in: view) : nil)
             #if PERFLOG
             let d = zip(scrollStamps.dropFirst(), scrollStamps).map { ($0 - $1) * 1000 }.sorted()
             if !d.isEmpty { Perf.mark(String(format: "map scroll events %d p50 %.1f p90 %.1f ms", scrollStamps.count, d[d.count / 2], d[d.count * 9 / 10])) }
@@ -7375,8 +7473,8 @@ extension CorpusPhysicsScene {
     }
     func nodeIsPrivate(_ id: String) -> Bool { currentNodes.first { $0.id == id }?.isPrivate == true }
 
-    fileprivate func pointerGestureBegan() {
-        wakeMap()
+    fileprivate func pointerGestureBegan(_ source: MapInputSources) {
+        wakeMap(source)
         coastVelocity = .zero
         cameraNode.removeAction(forKey: PanBounds.springKey)
         cameraNode.removeAction(forKey: Self.keyboardZoomKey)   // G3 — the trackpad takes over from a ⌘0 / ⌘± glide
@@ -7385,15 +7483,41 @@ extension CorpusPhysicsScene {
         }
     }
 
-    fileprivate func pointerGestureEnded(source: Int) {
-        Perf.probe(.touchFlagCleared, Double(source))
-        isTouchingMap = false
+    /// Sweep 2b · 2.1 — the one input clock: every pointer / touch movement wakes a resting Map and counts as activity
+    /// on the next frame (before, only a gesture's START woke it: a scroll held still past the idle delay, then moved,
+    /// moved a paused Map until something else woke it).
+    func noteMapInput(_ source: MapInputSources) {
+        inputSinceLastFrame = true
+        if restPaused { wakeFromRest(source == .scroll ? "scroll" : source == .pinch ? "pinch" : "touch") }
+    }
+
+    fileprivate func pointerGestureEnded(_ source: MapInputSources, velocity: CGPoint? = nil) {
+        Perf.probe(.touchFlagCleared, source == .scroll ? 1 : 2)
+        heldInputs.remove(source)
+        #if targetEnvironment(macCatalyst)
+        // Sweep 2b · 2.1 — momentum: the pan recogniser ends when the fingers lift and the trackpad's momentum events
+        // never reach it (probe: 0 `.changed` after `.ended`), so a flick stopped dead. Coast from the lift velocity, as a
+        // touch pan does (pt / s → pt per 60 Hz frame). The spring (and the coast) wait for this frame's queued movement.
+        if let v = velocity, heldInputs.isEmpty {
+            let c = CGPoint(x: v.x / 60, y: v.y / 60)
+            if hypot(c.x, c.y) >= coastLaunchThreshold { coastVelocity = c; Perf.probe(.coastSeeded, Double(hypot(c.x, c.y))) }
+        }
+        springDueAfterPending = true
+        #else
         springCameraInsideBounds()
+        #endif
     }
 
     /// Pan by a scroll delta, the same sense and speed as a finger drag.
     fileprivate func pointerPan(by t: CGPoint) {
+        #if targetEnvironment(macCatalyst)
+        // Sweep 2b · 2.1 — the camera moves only inside `update`: queue the delta (60–170 scroll events a second become
+        // one camera write per frame, and no frame is drawn with a camera the ring and pills haven't seen).
+        pendingCamera.pan.x += t.x; pendingCamera.pan.y += t.y; pendingCamera.events += 1
+        return
+        #else
         Perf.probe(.cameraWriteOutsideUpdate)
+        #endif
         let desired = CGPoint(x: cameraNode.position.x - t.x * panMultiplier * cameraNode.xScale,
                               y: cameraNode.position.y + t.y * panMultiplier * cameraNode.xScale)
         cameraNode.position = rubberBanded(desired)
@@ -7401,13 +7525,43 @@ extension CorpusPhysicsScene {
 
     /// Zoom by `factor` (> 1 zooms out) keeping the scene point under `viewPoint` still — around the cursor.
     fileprivate func pointerZoom(by factor: CGFloat, at viewPoint: CGPoint) {
+        #if targetEnvironment(macCatalyst)
+        // Sweep 2b · 2.1 — queued like the pan (any pan queued before it is applied first, so the order holds).
+        if pendingCamera.pan != .zero { pendingCamera.zoomAfterPan = true }
+        pendingCamera.zoom *= factor; pendingCamera.anchor = viewPoint; pendingCamera.events += 1
+        return
+        #else
         Perf.probe(.cameraWriteOutsideUpdate)
+        #endif
+        applyPointerZoom(by: factor, at: viewPoint)
+    }
+
+    fileprivate func applyPointerZoom(by factor: CGFloat, at viewPoint: CGPoint) {
         let before = convertPoint(fromView: viewPoint)
         cameraNode.setScale((cameraNode.xScale * factor).clamped(to: 0.25...4.0))
         let after = convertPoint(fromView: viewPoint)
         cameraNode.position = rubberBanded(CGPoint(x: cameraNode.position.x + before.x - after.x,
                                                    y: cameraNode.position.y + before.y - after.y))
         applyOrbScales()
+    }
+
+    /// Sweep 2b · 2.1 (Mac) — the scroll / pinch / drag movement since the last frame, applied first thing in `update`.
+    struct PendingCamera { var pan = CGPoint.zero; var zoom: CGFloat = 1; var anchor = CGPoint.zero; var zoomAfterPan = false; var events = 0 }
+
+    func applyPendingCamera() {
+        let p = pendingCamera
+        guard p.events > 0 else { return }
+        pendingCamera = PendingCamera()
+        Perf.probe(.pendingCamApplied, Double(p.events))
+        func pan() {
+            guard p.pan != .zero else { return }
+            let desired = CGPoint(x: cameraNode.position.x - p.pan.x * panMultiplier * cameraNode.xScale,
+                                  y: cameraNode.position.y + p.pan.y * panMultiplier * cameraNode.xScale)
+            cameraNode.position = rubberBanded(desired)
+        }
+        if p.zoomAfterPan || p.zoom == 1 { pan() }
+        if p.zoom != 1 { applyPointerZoom(by: p.zoom, at: p.anchor) }
+        if !p.zoomAfterPan && p.zoom != 1 { pan() }
     }
 
     /// View › Zoom In / Zoom Out (around the middle) and Zoom to Fit (the whole library), eased like the other camera
@@ -7559,7 +7713,7 @@ extension CorpusPhysicsScene {
     var debugOrbIDs: [String] { nodeSprites.keys.sorted() }
     var debugTitledOrbIDs: [String] { currentNodes.filter { !$0.title.isEmpty }.map(\.id) }
     func debugPointerGesture(_ body: (CorpusPhysicsScene) -> Void) {
-        pointerGestureBegan(); body(self); pointerGestureEnded(source: 1)
+        pointerGestureBegan(.scroll); body(self); applyPendingCamera(); pointerGestureEnded(.scroll)
     }
     func debugPointerZoom(by f: CGFloat, at p: CGPoint) { pointerZoom(by: f, at: p) }
     func debugSetCameraScale(_ s: CGFloat) { wakeFromRest("debug"); cameraNode.setScale(s); applyOrbScales() }
@@ -8033,17 +8187,17 @@ extension CorpusPhysicsScene {
         let local = t - st.t0
         let f = st.flicks[st.k]
         if local < PanBench.drag {
-            isTouchingMap = true
+            heldInputs.insert(.touch)
             let d = PanBench.speed * dt * Double(panMultiplier)
             let desired = CGPoint(x: cameraNode.position.x - f.dir.x * CGFloat(d) * cameraNode.xScale,
                                   y: cameraNode.position.y + f.dir.y * CGFloat(d) * cameraNode.xScale)
             cameraNode.position = rubberBanded(desired)
         } else if !st.released {
             st.released = true
-            isTouchingMap = false
+            heldInputs.remove(.touch)
             coastVelocity = CGPoint(x: f.dir.x * PanBench.speed / 60, y: f.dir.y * PanBench.speed / 60)
         }
-        let askFPS = view?.preferredFramesPerSecond ?? 60
+        let askFPS = askedMapFPS
         if local > 0 {
             st.flicks[st.k].dts.append(dt * 1000); st.flicks[st.k].budgets.append(1000.0 / Double(max(askFPS, 1)))
             if askFPS >= 120 { st.flicks[st.k].n120 += 1 }

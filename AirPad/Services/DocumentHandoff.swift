@@ -264,9 +264,10 @@ struct MacDocumentMenuItems: View {
 
 extension View {
     /// Resolves the item's stored file + default app, takes the hover keys, and adds the right-click menu.
-    func macDocumentActions(_ state: MacDocumentState, doc: DocumentItem?, nodeID: String,
+    /// Sweep 2b · 4.2 — with the "Space opens this" highlight, drawn on `cornerRadius` (the item's own shape).
+    func macDocumentActions(_ state: MacDocumentState, doc: DocumentItem?, nodeID: String, cornerRadius: CGFloat = 12,
                             quickLook: @escaping () -> Void) -> some View {
-        modifier(MacDocumentActionsModifier(state: state, doc: doc, nodeID: nodeID, quickLook: quickLook))
+        modifier(MacDocumentActionsModifier(state: state, doc: doc, nodeID: nodeID, cornerRadius: cornerRadius, quickLook: quickLook))
     }
 }
 
@@ -274,6 +275,7 @@ private struct MacDocumentActionsModifier: ViewModifier {
     let state: MacDocumentState
     let doc: DocumentItem?
     let nodeID: String
+    let cornerRadius: CGFloat
     let quickLook: () -> Void
     @Environment(CorpusStore.self) private var store
 
@@ -286,9 +288,14 @@ private struct MacDocumentActionsModifier: ViewModifier {
                 state.ext = doc.fileType.isEmpty ? url.pathExtension : doc.fileType
                 state.appName = MacDocumentActions.defaultAppName(for: url)
             }
-            .onHover { on in
+            .macSpaceHighlight(cornerRadius: cornerRadius, probe: "document \(doc?.id ?? "-")") { on in
                 guard let id = doc?.id else { return }
-                MacDocumentKeys.hover(id, .init(quickLook: quickLook, open: { state.open() }, reveal: { state.reveal() }), on)
+                // Actions.quickLook runs only for Space (a click has its own gesture): it counts toward the ␣ hint.
+                MacDocumentKeys.hover(id, .init(quickLook: {
+                    MacSpaceHint.noteUsed()
+                    MacProofLog.note("4.2", "space opens document \(id)")
+                    quickLook()
+                }, open: { state.open() }, reveal: { state.reveal() }), on)
             }
             .onDisappear { MacDocumentKeys.clear(doc?.id) }   // sweep 1 review: an entry closed under a still pointer
             .contextMenu {

@@ -444,6 +444,9 @@ private struct GalleryHorizontalBento: View {
                             .clipShape(RoundedRectangle(cornerRadius: 10))
                             .contentShape(Rectangle())
                             .onTapGesture { onTapTile(galleryItem) }
+                            #if targetEnvironment(macCatalyst)
+                            .macPhotoActions(galleryItem, cornerRadius: 10) { onTapTile(galleryItem) }   // sweep 2b · 4.2
+                            #endif
                         }
                     }
                     .frame(width: column.width, height: Self.bandHeight)
@@ -494,6 +497,9 @@ private struct GalleryCarousel: View {
                     .clipShape(RoundedRectangle(cornerRadius: 10))
                     .contentShape(Rectangle())
                     .onTapGesture { onTapTile(galleryItem) }
+                    #if targetEnvironment(macCatalyst)
+                    .macPhotoActions(galleryItem, cornerRadius: 10) { onTapTile(galleryItem) }   // sweep 2b · 4.2
+                    #endif
                 }
             }
             .padding(.horizontal, 2)
@@ -616,6 +622,9 @@ private struct GalleryBento: View {
                         .clipShape(RoundedRectangle(cornerRadius: 10))
                         .contentShape(Rectangle())
                         .onTapGesture { onTapTile(galleryItem) }
+                        #if targetEnvironment(macCatalyst)
+                        .macPhotoActions(galleryItem, cornerRadius: 10) { onTapTile(galleryItem) }   // sweep 2b · 4.2
+                        #endif
                     }
                 }
             }

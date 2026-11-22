@@ -145,7 +145,7 @@ struct DocumentEntryBody: View {
         .contentShape(Rectangle())
         .onTapGesture { Task { await openInQuickLook() } }
         #if targetEnvironment(macCatalyst)
-        .macDocumentActions(macDoc, doc: documentItem, nodeID: nodeID) { Task { await openInQuickLook() } }
+        .macDocumentActions(macDoc, doc: documentItem, nodeID: nodeID, cornerRadius: 8) { Task { await openInQuickLook() } }
         #endif
         .overlay(alignment: .topTrailing) { tileMenu }
         .task(id: documentItem?.thumbnailFile) {

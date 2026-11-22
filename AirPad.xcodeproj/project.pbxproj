@@ -358,6 +358,7 @@
 		B0C29E98DF6C6DBE11E29DF1 /* SingleMediaBody.swift in Sources */ = {isa = PBXBuildFile; fileRef = 0B37326A27826C7715C130B6 /* SingleMediaBody.swift */; };
 		B11CC0100B96616EFF31AF9F /* CatalogCard.swift in Sources */ = {isa = PBXBuildFile; fileRef = 50172A80D6B3F46FAE1A4862 /* CatalogCard.swift */; };
 		B17DD9C767DE65A3033EC241 /* QuickCaptureControl.swift in Sources */ = {isa = PBXBuildFile; fileRef = C754F682AD01FF5801808F72 /* QuickCaptureControl.swift */; };
+		B215046B043AB490FC9098DB /* MacPreviewables.swift in Sources */ = {isa = PBXBuildFile; fileRef = FBD54F0946EAAACC8711EC1D /* MacPreviewables.swift */; };
 		B22143F553374028E0FCAF87 /* Lato-Bold.ttf in Resources */ = {isa = PBXBuildFile; fileRef = 1DBE8572AE138177283E2B18 /* Lato-Bold.ttf */; };
 		B22A6CB96BF27D473984F273 /* DropImportSelfTest.swift in Sources */ = {isa = PBXBuildFile; fileRef = E90A0EAC82B7FD92EDBAD7F3 /* DropImportSelfTest.swift */; };
 		B35E3505455954169FCEDDDB /* AVFoundation.framework in Frameworks */ = {isa = PBXBuildFile; fileRef = 7F65B5EE1F36033500EF4B74 /* AVFoundation.framework */; };
@@ -1008,6 +1009,7 @@
 		FA68215D2065B3D02251352C /* CardEmbeddingService.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = CardEmbeddingService.swift; sourceTree = "<group>"; };
 		FB2DFB50C4CBFDAC9D650DE9 /* PlusCaptureOverlap.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = PlusCaptureOverlap.swift; sourceTree = "<group>"; };
 		FB7866DE5FB6758202EA3AB1 /* CameraCaptureView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = CameraCaptureView.swift; sourceTree = "<group>"; };
+		FBD54F0946EAAACC8711EC1D /* MacPreviewables.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = MacPreviewables.swift; sourceTree = "<group>"; };
 		FC68B6E4E41E80E237C8FFBA /* LinkSnapshotService.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = LinkSnapshotService.swift; sourceTree = "<group>"; };
 		FCC9C2D2D1F417F790A23C5F /* ModelRouter.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ModelRouter.swift; sourceTree = "<group>"; };
 		FCF40AB94344E8686EA92E8C /* FieldValueEditorSheet.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = FieldValueEditorSheet.swift; sourceTree = "<group>"; };
@@ -1686,6 +1688,7 @@
 				E2EFF0C3EADAB643BFED4C8F /* LinkGalleryBody.swift */,
 				613177CF17502A7D0A1B2388 /* LinkGalleryTile.swift */,
 				770199F6D56D0EDB0BCA874A /* LinkViewModeToggle.swift */,
+				FBD54F0946EAAACC8711EC1D /* MacPreviewables.swift */,
 				47A0CAFA204942881B2074E6 /* MediaEntryChrome.swift */,
 				DEE52A59E0B190ECA764DE9A /* MediaThumbnailLoader.swift */,
 				11594822084B7CE33EB28C7D /* SharedVideoPlayback.swift */,
@@ -2380,6 +2383,7 @@
 				6ABE6214365D588647344F6C /* MacFixupSelfTest.swift in Sources */,
 				7DDDA041E4F3411BEEA11D51 /* MacLibraryKeeper.swift in Sources */,
 				5404E38C7AFC95CBE00F95D9 /* MacMenuSelfTest.swift in Sources */,
+				B215046B043AB490FC9098DB /* MacPreviewables.swift in Sources */,
 				67AA1D938F6EA88F13C37DD1 /* MacProofLog.swift in Sources */,
 				C476E58EFD2185BEE830A281 /* MacSettingsSelfTest.swift in Sources */,
 				98C431825B91D4819CE4096F /* MacWebKeySelfTest.swift in Sources */,

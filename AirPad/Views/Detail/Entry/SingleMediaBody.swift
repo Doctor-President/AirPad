@@ -190,6 +190,9 @@ struct SingleMediaBody: View {
             AsyncImageFromURL(url: url)
                 .contentShape(Rectangle())
                 .onTapGesture { viewerStart = GalleryViewerStart(index: 0) }
+                #if targetEnvironment(macCatalyst)
+                .modifier(MacSinglePhoto(item: primaryItem) { viewerStart = GalleryViewerStart(index: 0) })   // sweep 2b · 4.2
+                #endif
         } else {
             RoundedRectangle(cornerRadius: 12)
                 .fill(AppearancePalette.ink.opacity(0.08))
@@ -312,3 +315,14 @@ struct SingleMediaBody: View {
         await store.appendMediaItems(toEntryID: item.id, nodeID: nodeID, mediaItems: pending)
     }
 }
+
+#if targetEnvironment(macCatalyst)
+/// Sweep 2b · 4.2 — the single photo's highlight + Space (its shape: `AsyncImageFromURL`'s 12 pt corners).
+private struct MacSinglePhoto: ViewModifier {
+    let item: GalleryItem?
+    let open: () -> Void
+    func body(content: Content) -> some View {
+        if let item { content.macPhotoActions(item, cornerRadius: 12, open: open) } else { content }
+    }
+}
+#endif

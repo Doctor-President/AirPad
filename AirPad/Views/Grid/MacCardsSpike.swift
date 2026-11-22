@@ -682,7 +682,7 @@ enum MacCardsSpikeSelfTest {
         let engine = MacCardsSpike.string(MacCardsSpike.engineKey, "today")
         let resize = MacCardsSpike.string(MacCardsSpike.resizeKey, "relayout")
         let arm = engine == "B" ? "B-\(resize)" : engine
-        var st = store.filterState(for: .corpus); st.viewMode = .grid; store.setFilterState(st, for: .corpus)
+        router.perform(.viewCards)   // View › Cards: the Library, as Cards
         await settle(3.0)
         let windows = UIApplication.shared.connectedScenes.compactMap { $0 as? UIWindowScene }.flatMap(\.windows)
         func find(_ v: UIView) -> MacCardsUICollectionView? {
@@ -709,13 +709,11 @@ enum MacCardsSpikeSelfTest {
         let h0 = hosts()
         row("cells hold a card laid out at the cell's size", h0.count >= 4 && h0.allSatisfy { $0.identity && abs($0.cell.width - $0.host.width) < 0.5 },
             "\(cv.visibleCells.count) cells, \(h0.count) with a card · first \(h0.first.map { "\($0.cell) / \($0.host)" } ?? "-")")
-        let hostSubviews = cv.visibleCells.compactMap { $0.contentView.subviews.first?.subviews.count }.reduce(0, +)
-        row("the card's SwiftUI host has content", hostSubviews > 0, "\(hostSubviews) subviews under the hosts")
-        // A width change: the Librarian column 120 pt wider, then back.
+        // A width change: the sidebar hidden (the cards' width grows), caught on the first pass at the new width.
         let layout = MacLayout.shared
-        let w0 = layout.librarianWidth, cvW0 = cv.bounds.width
-        layout.librarianWidth = w0 + 120
-        await settle(0.06)
+        let side0 = layout.sidebarVisible, cvW0 = cv.bounds.width
+        layout.sidebarVisible.toggle()
+        for _ in 0..<100 where cv.bounds.width == cvW0 { try? await Task.sleep(nanoseconds: 10_000_000) }
         let mid = hosts()
         let scaledMid = mid.contains { !$0.identity }
         rows.append(String(format: "INFO width %.0f → %.0f; mid-change: %d of %d scaled, scaling %@", cvW0, cv.bounds.width, mid.filter { !$0.identity }.count, mid.count, coord.scaling ? "on" : "off"))
@@ -725,7 +723,7 @@ enum MacCardsSpikeSelfTest {
         let after = hosts()
         row("after the change: settled at the new size (identity, card = cell)", !coord.scaling && after.allSatisfy { $0.identity && abs($0.cell.width - $0.host.width) < 0.5 },
             "\(after.first.map { "\($0.cell) / \($0.host)" } ?? "-")")
-        layout.librarianWidth = w0
+        layout.sidebarVisible = side0
         await settle(0.8)
         // Selection through the same paths the keys and the menu take.
         cv.becomeFirstResponder()

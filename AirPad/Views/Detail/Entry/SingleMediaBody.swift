@@ -205,7 +205,7 @@ struct SingleMediaBody: View {
                 .contentShape(Rectangle())
                 .onTapGesture { openPhoto() }
                 #if targetEnvironment(macCatalyst)
-                .modifier(MacSinglePhoto(item: primaryItem, open: openPhoto, showInViewer: { viewerStart = GalleryViewerStart(index: 0) }))   // sweep 2b · 4.2 / 4.3
+                .modifier(MacSinglePhoto(item: primaryItem, nodeID: nodeID, parent: item, open: openPhoto, showInViewer: { viewerStart = GalleryViewerStart(index: 0) }))   // sweep 2b · 4.2 / 4.3
                 .macPhotoQuickLookSheet($photoQuickLook)
                 #endif
         } else {
@@ -335,10 +335,14 @@ struct SingleMediaBody: View {
 /// Sweep 2b · 4.2 — the single photo's highlight + Space (its shape: `AsyncImageFromURL`'s 12 pt corners).
 private struct MacSinglePhoto: ViewModifier {
     let item: GalleryItem?
+    let nodeID: String
+    let parent: NodeItem
     let open: () -> Void
     let showInViewer: () -> Void
     func body(content: Content) -> some View {
-        if let item { content.macPhotoActions(item, cornerRadius: 12, open: open, showInViewer: showInViewer) } else { content }
+        if let item {
+            content.macPhotoActions(item, nodeID: nodeID, parentItem: parent, cornerRadius: 12, open: open, showInViewer: showInViewer)
+        } else { content }
     }
 }
 #endif

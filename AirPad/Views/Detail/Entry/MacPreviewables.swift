@@ -147,27 +147,40 @@ extension View {
     }
 }
 
-/// A gallery / single photo on the Mac: the highlight, Space opens what a click opens (Quick Look), and a right-click
-/// menu (Quick Look · Show in Viewer… — AirPad's own viewer keeps caption, Set as Hero, Share and Delete). Videos: unchanged.
+/// A gallery / single photo on the Mac: the highlight, Space opens what a click opens (Quick Look), ⌘O opens a COPY in
+/// its default app (4.4), ⌘⇧R reveals it, and a right-click menu (Quick Look · Open a Copy with <App> · Reveal in
+/// Finder · Show in Viewer… — AirPad's own viewer keeps caption, Set as Hero, Share and Delete). Videos: unchanged.
 struct MacPhotoActionsModifier: ViewModifier {
     let galleryItem: GalleryItem
+    let nodeID: String
+    let parentItem: NodeItem?
     let cornerRadius: CGFloat
     let open: () -> Void
     let showInViewer: (() -> Void)?
+    @State private var state = MacDocumentState()
+    @Environment(CorpusStore.self) private var store
 
     func body(content: Content) -> some View {
         if galleryItem.mediaType == .image {
             content
+                .task(id: galleryItem.id) {
+                    guard let url = await store.resolveGalleryItemURL(galleryItem, nodeID: nodeID, fallbackParentItem: parentItem) else { return }
+                    state.url = url
+                    state.title = DocumentHandoff.displayName(for: galleryItem)
+                    state.ext = url.pathExtension
+                    state.appName = MacDefaultApp.name(for: url)
+                }
                 .macSpaceHighlight(cornerRadius: cornerRadius, probe: "photo \(galleryItem.id)") { on in
                     MacDocumentKeys.hover(galleryItem.id, .init(quickLook: {
                         MacSpaceHint.noteUsed()
                         MacProofLog.note("4.2", "space opens photo \(galleryItem.id)")
                         open()
-                    }, open: {}, reveal: {}), on)
+                    }, open: { state.open() }, reveal: { state.reveal() }), on)
                 }
                 .onDisappear { MacDocumentKeys.clear(galleryItem.id) }
                 .contextMenu {
                     Button { open() } label: { Label("Quick Look", systemImage: "eye") }
+                    MacDocumentMenuItems(state: state)
                     if let showInViewer {
                         Divider()
                         Button { showInViewer() } label: { Label("Show in Viewer…", systemImage: "photo") }
@@ -180,9 +193,24 @@ struct MacPhotoActionsModifier: ViewModifier {
 }
 
 extension View {
-    func macPhotoActions(_ galleryItem: GalleryItem, cornerRadius: CGFloat, open: @escaping () -> Void,
-                         showInViewer: (() -> Void)? = nil) -> some View {
-        modifier(MacPhotoActionsModifier(galleryItem: galleryItem, cornerRadius: cornerRadius, open: open, showInViewer: showInViewer))
+    func macPhotoActions(_ galleryItem: GalleryItem, nodeID: String, parentItem: NodeItem?, cornerRadius: CGFloat,
+                         open: @escaping () -> Void, showInViewer: (() -> Void)? = nil) -> some View {
+        modifier(MacPhotoActionsModifier(galleryItem: galleryItem, nodeID: nodeID, parentItem: parentItem,
+                                         cornerRadius: cornerRadius, open: open, showInViewer: showInViewer))
+    }
+}
+
+/// Sweep 2b · 4.4 — "Open a Copy with <App>": the default app per file extension, asked once per extension (a Launch
+/// Services query; a gallery of 30 photos asks once, not 30 times on the main thread).
+@MainActor
+enum MacDefaultApp {
+    private static var byExtension: [String: String?] = [:]
+    static func name(for url: URL) -> String? {
+        let ext = url.pathExtension.lowercased()
+        if let known = byExtension[ext] { return known }
+        let name = MacDocumentActions.defaultAppName(for: url)
+        byExtension[ext] = name
+        return name
     }
 }
 

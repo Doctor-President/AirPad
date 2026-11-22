@@ -36,7 +36,7 @@ struct AirPadApp: App {
         // live-17 — a document's named hand-off copies (viewer / share) a crash left behind; none is in use at launch.
         Task.detached(priority: .utility) { DocumentHandoff.purgeAll() }
         #if targetEnvironment(macCatalyst)
-        Task { @MainActor in MacDocumentActions.purgeOldCopies() }   // sweep 1 · N4 — opened copies older than a week
+        Task.detached(priority: .utility) { MacDocumentActions.purgeOldCopies() }   // sweep 1 · N4 — opened copies older than a week (2b · 4.4: off the main thread)
         #endif
         #if DEBUG
         // 1.1-A (8) test — `-ResetHostAccess YES` forgets the switch, as on a phone upgrading from 1.0, so the migration runs.

@@ -156,27 +156,46 @@ enum MacDocumentActions {
         _ = workspace?.perform(NSSelectorFromString("activateFileViewerSelectingURLs:"), with: [url] as NSArray)
     }
 
-    /// Copies are kept in Caches/Opened Copies/<id>/<name> (the other app may still have them open after AirPad quits);
-    /// copies older than a week go at launch (`purgeOldCopies`).
-    static let copiesRoot = FileManager.default.urls(for: .applicationSupportDirectory, in: .userDomainMask)[0]
+    /// Copies are kept in Application Support/Opened Copies/<id>/<name> — NOT the system's Caches, which macOS may purge
+    /// while the other app still has the copy open or after an edit was saved into it (sweep 1 review; the v1.1 "replace
+    /// the attachment with your edited version?" needs it kept). Copies older than a week that nobody changed go at
+    /// launch (`purgeOldCopies`).
+    nonisolated static let copiesRoot = FileManager.default.urls(for: .applicationSupportDirectory, in: .userDomainMask)[0]
         .appendingPathComponent("Opened Copies", isDirectory: true)
 
+    /// Sweep 2b · 4.4 (T, 11-22: "Open" opens a copy; no edits flow back) — the attachment's app is handed a COPY, never
+    /// the stored file: an APFS clone (copy-on-write: an edit saved in the other app changes the clone only) under
+    /// `copiesRoot`. The read is coordinated, so a file macOS evicted to iCloud downloads first instead of failing
+    /// (T's "⌘O does nothing" could be that silent failure). If the copy can't be made, nothing is opened — the stored
+    /// file is never handed out instead.
     static func openCopy(of stored: URL, named title: String, ext: String) async {
         let name = DocumentHandoff.fileName(title, ext: ext)
         let folder = copiesRoot.appendingPathComponent(UUID().uuidString, isDirectory: true)
         let copy = folder.appendingPathComponent(name)
-        let ok: Bool = await Task.detached(priority: .userInitiated) {
-            do {
-                try FileManager.default.createDirectory(at: folder, withIntermediateDirectories: true)
-                try FileManager.default.copyItem(at: stored, to: copy)
-                return true
-            } catch { return false }
+        let result: String? = await Task.detached(priority: .userInitiated) {
+            var failure: String?
+            var coordError: NSError?
+            NSFileCoordinator(filePresenter: nil).coordinate(readingItemAt: stored, options: [.withoutChanges], error: &coordError) { u in
+                do {
+                    try FileManager.default.createDirectory(at: folder, withIntermediateDirectories: true)
+                    try FileManager.default.copyItem(at: u, to: copy)
+                } catch { failure = (error as NSError).domain + " \((error as NSError).code)" }
+            }
+            if let coordError { failure = coordError.domain + " \(coordError.code)" }
+            if failure != nil { try? FileManager.default.removeItem(at: folder) }
+            return failure
         }.value
-        guard ok else { return }
+        if let result {
+            MacProofLog.note("4.4", "open a copy FAILED (\(result)) — nothing opened, the stored file is never handed out")
+            return
+        }
+        MacProofLog.note("4.4", "open a copy: .\(copy.pathExtension) in Opened Copies · stored file handed out: "
+                         + "\(copy.standardizedFileURL.path == stored.standardizedFileURL.path ? "YES" : "no")")
         _ = workspace?.perform(NSSelectorFromString("openURL:"), with: copy)
     }
 
-    static func purgeOldCopies() {
+    /// Off the main thread (sweep 2b · 4.4: was a main-actor folder walk at launch).
+    nonisolated static func purgeOldCopies() {
         let fm = FileManager.default
         guard let dirs = try? fm.contentsOfDirectory(at: copiesRoot, includingPropertiesForKeys: [.creationDateKey]) else { return }
         let cutoff = Date().addingTimeInterval(-7 * 24 * 3600)

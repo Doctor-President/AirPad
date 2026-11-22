@@ -474,7 +474,7 @@ private struct GalleryHorizontalBento: View {
                             .contentShape(Rectangle())
                             .onTapGesture { onTapTile(galleryItem) }
                             #if targetEnvironment(macCatalyst)
-                            .macPhotoActions(galleryItem, cornerRadius: 10, open: { onTapTile(galleryItem) },
+                            .macPhotoActions(galleryItem, nodeID: nodeID, parentItem: parentItem, cornerRadius: 10, open: { onTapTile(galleryItem) },
                                              showInViewer: onShowInViewer.map { f in { f(galleryItem) } })   // sweep 2b · 4.2 / 4.3
                             #endif
                         }
@@ -529,7 +529,7 @@ private struct GalleryCarousel: View {
                     .contentShape(Rectangle())
                     .onTapGesture { onTapTile(galleryItem) }
                     #if targetEnvironment(macCatalyst)
-                    .macPhotoActions(galleryItem, cornerRadius: 10, open: { onTapTile(galleryItem) },
+                    .macPhotoActions(galleryItem, nodeID: nodeID, parentItem: parentItem, cornerRadius: 10, open: { onTapTile(galleryItem) },
                                              showInViewer: onShowInViewer.map { f in { f(galleryItem) } })   // sweep 2b · 4.2 / 4.3
                     #endif
                 }
@@ -656,7 +656,7 @@ private struct GalleryBento: View {
                         .contentShape(Rectangle())
                         .onTapGesture { onTapTile(galleryItem) }
                         #if targetEnvironment(macCatalyst)
-                        .macPhotoActions(galleryItem, cornerRadius: 10, open: { onTapTile(galleryItem) },
+                        .macPhotoActions(galleryItem, nodeID: nodeID, parentItem: parentItem, cornerRadius: 10, open: { onTapTile(galleryItem) },
                                              showInViewer: onShowInViewer.map { f in { f(galleryItem) } })   // sweep 2b · 4.2 / 4.3
                         #endif
                     }

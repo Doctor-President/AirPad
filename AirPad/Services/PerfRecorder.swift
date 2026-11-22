@@ -3,6 +3,9 @@ import UIKit
 import SwiftUI
 import os
 import OSLog
+import SpriteKit
+import QuartzCore
+import Metal
 
 // Mac performance audit (P6) — the built-in performance recorder, Mac and iPhone.
 //
@@ -58,12 +61,57 @@ enum Perf {
         PerfRecorder.shared.noteMapFrame(updateMs)
         #endif
     }
+    /// Sweep 2b · 2.1 — one Map pacing event (a display tick offered to the SKView, an `update`, a pause, a scroll
+    /// `.changed` …) with an optional number. Read by `scripts/perf/map_probe.py`. Numbers only.
+    @inline(__always) static func probe(_ code: MapProbe, _ value: Double = 0) {
+        #if DEBUG || DEVSWITCHES
+        guard PerfRecorder.on else { return }
+        PerfRecorder.shared.noteProbe(code.rawValue, value)
+        #endif
+    }
     static var isAvailable: Bool {
         #if DEBUG || DEVSWITCHES
         true
         #else
         false
         #endif
+    }
+}
+
+/// Sweep 2b · 2.1 — the Map pacing probe's event codes (the recording's `probe` rows: [t, code, value]). Keep the
+/// numbers stable: `scripts/perf/map_probe.py` reads them.
+enum MapProbe: UInt8 {
+    case tickOffered = 1        // SKViewDelegate view(_:shouldRenderAtTime:) called; value = 1 if accepted
+    case update = 3             // the scene's update ran; value = the SKView's preferredFramesPerSecond
+    case updateEarlyReturn = 4  // update called while the scene is paused
+    case didFinishUpdate = 5
+    case askSet = 6             // the scene wrote preferredFramesPerSecond; value = fps
+    case pause = 7              // rest pause (value = 0) …
+    case wake = 8               // … and wake; value = MapProbeWake code
+    case scrollBegan = 9, scrollChanged = 10, scrollEnded = 11, scrollChangedPaused = 12
+    case pinchBegan = 13, pinchChanged = 14, pinchEnded = 15, pinchChangedPaused = 16   // pinchChanged value = travel Δ
+    case cameraWriteOutsideUpdate = 17
+    case runLoopMode = 18       // at a scroll callback: 0 default, 1 tracking, 2 other
+    case drawableWait = 19      // CAMetalLayer nextDrawable on the Map's layer: value = ms it blocked
+    case presented = 20         // the Map's drawable reached the screen: t = presentedTime (0 value = dropped)
+    case skvRateWrite = 21      // ANY write of SKView.preferredFramesPerSecond (scene or SwiftUI); value = fps
+    case skvPauseWrite = 22     // ANY write of SKView.isPaused; value = 1 paused
+    case touchFlagCleared = 23  // isTouchingMap cleared; value = 1 scroll, 2 pinch, 3 touch, 4 touch cancel
+    case touchBegan = 24, touchMoved = 25, touchEnded = 26
+    case hoverWake = 27
+    case pendingCamApplied = 28 // fix: queued pointer deltas applied inside update; value = how many events
+    case tickSkipped = 29       // fix: the pacer declined a tick (clean 60 / 30)
+}
+
+/// Wake reasons as numbers (the marks carry the words).
+enum MapProbeWake {
+    static func code(_ reason: String) -> Double {
+        switch reason {
+        case "touch": 1; case "scroll": 2; case "pinch": 3; case "hover": 4; case "defaults": 5; case "external": 6
+        case "delayed": 7; case "haloStep": 8; case "size": 9; case "appearance": 10; case "keyboardZoom": 11
+        case "momentum": 12; case "active": 13; case "foreground": 14
+        default: 99
+        }
     }
 }
 
@@ -94,12 +142,13 @@ final class PerfRecorder: NSObject {
     private struct MapSecond { var t: Double; var frames: Int32; var updateMs: Float; var maxMs: Float }
     private struct Vital { var t: Double; var footprintMB: Float; var cpuPct: Float; var mainCpuPct: Float; var thermal: Int8; var lowPower: Bool }
     private struct Sample { var t: Double; var busyFor: Float; var frames: [UInt] }
+    private struct ProbeEvent { var t: Double; var code: UInt8; var v: Float }
 
     private var lock = os_unfair_lock()
     private var seconds = 15.0
     private var frames = Ring<Frame>(1), spans = Ring<Span>(1), inputs = Ring<Input>(1), marks = Ring<Mark>(1)
     private var intervals = Ring<Interval>(1), bodies = Ring<Bodies>(1), mapSeconds = Ring<MapSecond>(1)
-    private var vitals = Ring<Vital>(1), samples = Ring<Sample>(1)
+    private var vitals = Ring<Vital>(1), samples = Ring<Sample>(1), probes = Ring<ProbeEvent>(1)
     private var bodyNames: [ObjectIdentifier: String] = [:]
     private var bodyBucket: [ObjectIdentifier: Int32] = [:]
     private var bodyBucketStart = 0.0
@@ -142,6 +191,7 @@ final class PerfRecorder: NSObject {
         let n = Int(seconds)
         frames = Ring(n * 125); spans = Ring(n * 130); inputs = Ring(n * 250); marks = Ring(max(256, n * 8))
         intervals = Ring(max(512, n * 40)); bodies = Ring(n * 5); mapSeconds = Ring(n + 4); vitals = Ring(n + 4)
+        probes = Ring(max(20_000, n * 900))
         samples = Ring(max(600, n * ((0.1..<20).contains(UserDefaults.standard.double(forKey: "PerfSampleAfter")) ? 350 : 20)))
         busySince.pointee = 0
         mainThread = mach_thread_self()
@@ -168,6 +218,7 @@ final class PerfRecorder: NSObject {
         for o in [wake, sleep].compactMap({ $0 }) { CFRunLoopAddObserver(CFRunLoopGetMain(), o, .commonModes); observers.append(o) }
 
         Self.swizzleSendEventOnce()
+        Self.hookMapViewOnce()
         #if DEBUG || PERFLOG
         hookLayerDrawsOnce()
         #endif
@@ -272,6 +323,10 @@ final class PerfRecorder: NSObject {
             mapBucket.frames += 1; mapBucket.updateMs += Float(updateMs); mapBucket.maxMs = max(mapBucket.maxMs, Float(updateMs))
         }
     }
+    func noteProbe(_ code: UInt8, _ v: Double, at t: Double = CACurrentMediaTime()) {
+        let e = ProbeEvent(t: t, code: code, v: Float(v))
+        locked { probes.push(e) }
+    }
     fileprivate func noteInput(_ e: UIEvent) {
         var kind: UInt8 = 0, phase: UInt8 = 0
         switch e.type {
@@ -302,6 +357,53 @@ final class PerfRecorder: NSObject {
             orig(app, sel, e)
         }
         method_setImplementation(m, imp_implementationWithBlock(block))
+    }
+
+    // MARK: Sweep 2b · 2.1 — the Map's frame delivery, seen from below the scene
+
+    /// Every write of the SKView's rate and pause (the scene's own AND SwiftUI's SpriteView re-applying its settings),
+    /// and the Map layer's drawables: how long `nextDrawable` blocked and when each one reached the screen
+    /// (`addPresentedHandler`, public API). Installed once, when the recorder starts; each hook calls the original.
+    private static var mapHooked = false
+    private static func hookMapViewOnce() {
+        guard !mapHooked else { return }
+        mapHooked = true
+        if let m = class_getInstanceMethod(SKView.self, #selector(setter: SKView.preferredFramesPerSecond)) {
+            typealias Fn = @convention(c) (SKView, Selector, Int) -> Void
+            let orig = unsafeBitCast(method_getImplementation(m), to: Fn.self), sel = #selector(setter: SKView.preferredFramesPerSecond)
+            let block: @convention(block) (SKView, Int) -> Void = { v, fps in
+                if PerfRecorder.on { PerfRecorder.shared.noteProbe(MapProbe.skvRateWrite.rawValue, Double(fps)) }
+                orig(v, sel, fps)
+            }
+            method_setImplementation(m, imp_implementationWithBlock(block))
+        }
+        if let m = class_getInstanceMethod(SKView.self, #selector(setter: SKView.isPaused)) {
+            typealias Fn = @convention(c) (SKView, Selector, Bool) -> Void
+            let orig = unsafeBitCast(method_getImplementation(m), to: Fn.self), sel = #selector(setter: SKView.isPaused)
+            let block: @convention(block) (SKView, Bool) -> Void = { v, p in
+                if PerfRecorder.on { PerfRecorder.shared.noteProbe(MapProbe.skvPauseWrite.rawValue, p ? 1 : 0) }
+                orig(v, sel, p)
+            }
+            method_setImplementation(m, imp_implementationWithBlock(block))
+        }
+        if let m = class_getInstanceMethod(CAMetalLayer.self, #selector(CAMetalLayer.nextDrawable)) {
+            typealias Fn = @convention(c) (CAMetalLayer, Selector) -> CAMetalDrawable?
+            let orig = unsafeBitCast(method_getImplementation(m), to: Fn.self), sel = #selector(CAMetalLayer.nextDrawable)
+            let block: @convention(block) (CAMetalLayer) -> CAMetalDrawable? = { layer in
+                guard PerfRecorder.on, layer.delegate is SKView || layer.superlayer?.delegate is SKView else { return orig(layer, sel) }
+                let t0 = CACurrentMediaTime()
+                let d = orig(layer, sel)
+                let t1 = CACurrentMediaTime()
+                PerfRecorder.shared.noteProbe(MapProbe.drawableWait.rawValue, (t1 - t0) * 1000, at: t0)
+                d?.addPresentedHandler { dr in
+                    // presentedTime is on the media clock; 0 = never shown (dropped).
+                    let pt = dr.presentedTime
+                    PerfRecorder.shared.noteProbe(MapProbe.presented.rawValue, pt > 0 ? 1 : 0, at: pt > 0 ? pt : CACurrentMediaTime())
+                }
+                return d
+            }
+            method_setImplementation(m, imp_implementationWithBlock(block))
+        }
     }
 
     // MARK: the watchdog (its own thread): stack samples of a busy main thread, and the once-a-second vitals
@@ -459,6 +561,7 @@ final class PerfRecorder: NSObject {
             "bodies": bd.filter { $0.t >= from }.map { b in [r(b.t), Dictionary(uniqueKeysWithValues: b.counts.map { (names[$0.key] ?? "?", Int($0.value)) })] as [Any] },
             "map": ms.filter { $0.t >= from }.map { [r($0.t), Double($0.frames), Double($0.updateMs), Double($0.maxMs)] },
             "vitals": vt.filter { $0.t >= from }.map { [r($0.t), Double($0.footprintMB), Double($0.cpuPct), Double($0.mainCpuPct), Double($0.thermal), $0.lowPower ? 1 : 0] },
+            "probe": locked { probes.ordered() }.filter { $0.t >= from }.map { [r($0.t), Double($0.code), Double(($0.v * 100).rounded() / 100)] },
             "samples": sampleRows, "symbols": symbols, "images": images,
             "draws": locked { draws + (drawBucket.isEmpty ? [] : [(drawBucketStart, drawBucket)]) }.filter { $0.t >= from }.map { [r($0.t), $0.counts] as [Any] },
             "why": Self.why ? Self.swiftUIChanges(since: wholeBuffer ? seconds : 15) : [],

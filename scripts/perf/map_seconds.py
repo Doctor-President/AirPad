@@ -19,7 +19,7 @@ inp = collections.Counter(); kinds = {3: "hover", 4: "scroll", 5: "transform"}
 for r in d["inputs"]:
     inp[(int(r[0]), kinds.get(r[2], str(r[2])))] += 1
 fr = collections.Counter(int(t) for t, _ in d["frames"])
-print("sec   step          map-upd  max-gap  mean-ms  scroll  transform  hover  window-frames")
+print("sec   step          map-upd  upd-sum-ms  upd-max-ms  scroll  transform  hover  window-frames")
 for row in d["map"]:
     t = row[0]; s = int(t)
     print(f"{t:9.1f} {label(t):13s} {row[1]:7d}  {row[2]:7.1f}  {row[3]:7.2f}  {inp[(s,'scroll')]:6d}  {inp[(s,'transform')]:9d}  {inp[(s,'hover')]:5d}  {fr[s]:5d}")

@@ -2027,6 +2027,7 @@ final class CorpusPhysicsScene: SKScene {
         adaptiveTouchStart = true
         desiredMapFPS = activeFPSNow
         if let v = view, v.preferredFramesPerSecond != desiredMapFPS {
+            Perf.probe(.askSet, Double(desiredMapFPS))
             v.preferredFramesPerSecond = desiredMapFPS
         }
     }
@@ -2092,7 +2093,7 @@ final class CorpusPhysicsScene: SKScene {
         }
         #endif
         if desiredMapFPS != target { desiredMapFPS = target }
-        if v.preferredFramesPerSecond != desiredMapFPS { v.preferredFramesPerSecond = desiredMapFPS }
+        if v.preferredFramesPerSecond != desiredMapFPS { Perf.probe(.askSet, Double(desiredMapFPS)); v.preferredFramesPerSecond = desiredMapFPS }
         decideRest(awake: awake, target: target)   // R1 — still → pause the SKView (0 frames)
 
         if currentTime - lastCPUSampleTime > 0.5 {
@@ -2157,6 +2158,7 @@ final class CorpusPhysicsScene: SKScene {
         if ["size", "appearance", "power", "heat", "ground"].contains(reason) { MapLaunchFrameLog.shared.event(reason) }
         #endif
         guard restPaused else { return }
+        Perf.probe(.wake, MapProbeWake.code(reason)); Perf.mark("map wake " + reason)
         restPaused = false
         restEligibleFrames = 0
         restHaloTimer?.invalidate(); restHaloTimer = nil
@@ -2184,6 +2186,7 @@ final class CorpusPhysicsScene: SKScene {
         restFramesThisTick += 1
         #endif
         if restPaused {
+            Perf.probe(.wake, MapProbeWake.code("external")); Perf.mark("map wake external")
             restPaused = false
             restEligibleFrames = 0
             if canvasState?.mapAtRest == true { canvasState?.mapAtRest = false }
@@ -2226,6 +2229,7 @@ final class CorpusPhysicsScene: SKScene {
         #endif
         guard restEligibleFrames >= 2, !restPaused else { return }
         restPaused = true
+        Perf.probe(.pause)
         v.isPaused = true
         #if targetEnvironment(macCatalyst)
         MapLaunchFrameLog.shared.event("rest (0 fps)", context: launchLogContext)
@@ -2353,6 +2357,13 @@ final class CorpusPhysicsScene: SKScene {
     override func didMove(to view: SKView) {
         self.isPaused = false
         installRestObservers(on: view)   // R1
+        #if DEBUG || DEVSWITCHES
+        // Sweep 2b · 2.1 probe — how many display ticks the SKView offers (its delegate is asked before each frame).
+        if Perf.isAvailable {
+            Perf.mark("map view: delegate \(view.delegate.map { String(describing: type(of: $0)) } ?? "none") async \(view.isAsynchronous ? 1 : 0) rate \(view.preferredFramesPerSecond) layer \(String(describing: type(of: view.layer)))")
+            if view.delegate == nil { view.delegate = MapTickProbe.shared }
+        }
+        #endif
         if pointerInput == nil { pointerInput = MapPointerInput(scene: self, view: view) }   // Mac batch C2
         #if DEBUG
         Self.debugCurrent = self
@@ -2543,6 +2554,7 @@ final class CorpusPhysicsScene: SKScene {
 
     /// Mac fix-up X2 — the hover overlay follows its orb after this frame's camera / orb-scale passes.
     override func didFinishUpdate() {
+        Perf.probe(.didFinishUpdate)
         if hoveredOrbID != nil { updateHoverOverlay() }
         if overlaySyncDue {   // G3 — after this frame's actions (see update)
             overlaySyncDue = false
@@ -2555,7 +2567,8 @@ final class CorpusPhysicsScene: SKScene {
     }
 
     override func update(_ currentTime: TimeInterval) {
-        if isPaused { return }
+        if isPaused { Perf.probe(.updateEarlyReturn); return }
+        Perf.probe(.update, Double(view?.preferredFramesPerSecond ?? 0))
         #if targetEnvironment(macCatalyst)
         // Mac D fix-up B3 — the first 30 s of Map frames after launch, for the next stutter's evidence.
         let launchLog = MapLaunchFrameLog.shared.active ? CACurrentMediaTime() : nil
@@ -6864,6 +6877,7 @@ final class CorpusPhysicsScene: SKScene {
 
     override func touchesBegan(_ touches: Set<UITouch>, with event: UIEvent?) {
         guard let view else { return }
+        Perf.probe(.touchBegan)
 
         wakeMap()   // Brief AY — restore 120 fps THIS touch, before the gesture moves anything (no wake hitch)
 
@@ -6901,6 +6915,7 @@ final class CorpusPhysicsScene: SKScene {
 
     override func touchesMoved(_ touches: Set<UITouch>, with event: UIEvent?) {
         guard let view else { return }
+        Perf.probe(.touchMoved, restPaused ? 1 : 0)
 
         let touchCount = activeTouches.count
 
@@ -6981,6 +6996,7 @@ final class CorpusPhysicsScene: SKScene {
 
     override func touchesEnded(_ touches: Set<UITouch>, with event: UIEvent?) {
         guard let view else { return }
+        Perf.probe(.touchEnded)
 
         defer {
             for touch in touches { activeTouches.removeValue(forKey: touch) }
@@ -6988,6 +7004,7 @@ final class CorpusPhysicsScene: SKScene {
                 lastPinchDistance = nil
                 tapStartInfo = nil
                 isTouchingMap = false   // Brief AY — coast (if any) keeps it awake; else it idles after the delay
+                Perf.probe(.touchFlagCleared, 3)
             }
         }
 
@@ -7088,10 +7105,22 @@ final class CorpusPhysicsScene: SKScene {
         lastPinchDistance = nil
         tapStartInfo = nil
         isTouchingMap = false   // Brief AY
+        Perf.probe(.touchFlagCleared, 4)
         gestureState = .idle   // nothing to disengage — the annulus is per-frame
         springCameraInsideBounds()   // same spring as a normal release
     }
 }
+
+#if DEBUG || DEVSWITCHES
+/// Sweep 2b · 2.1 probe — the SKView's delegate: records every display tick it is offered (accepts all of them).
+final class MapTickProbe: NSObject, SKViewDelegate {
+    static let shared = MapTickProbe()
+    func view(_ view: SKView, shouldRenderAtTime time: TimeInterval) -> Bool {
+        Perf.probe(.tickOffered, 1)
+        return true
+    }
+}
+#endif
 
 // MARK: - Mac batch C2 — the Map on a trackpad, a mouse and the keyboard
 
@@ -7171,11 +7200,16 @@ final class MapPointerInput: NSObject, UIGestureRecognizerDelegate, UIContextMen
         // camera × exp(−Δ), from the first event (see `pinchTravel`).
         switch g.state {
         case .began:
+            Perf.probe(.pinchBegan)
             scene.pointerGestureBegan()
             lastPinchScale = 1
             applyPinch(g, in: view)
-        case .changed: applyPinch(g, in: view)
-        default: scene.pointerGestureEnded()
+        case .changed:
+            Perf.probe(scene.restPaused || (scene.view?.isPaused ?? false) ? .pinchChangedPaused : .pinchChanged, Double(g.scale - lastPinchScale))
+            applyPinch(g, in: view)
+        default:
+            Perf.probe(.pinchEnded, Double(g.state.rawValue))
+            scene.pointerGestureEnded(source: 2)
         }
     }
 
@@ -7208,6 +7242,17 @@ final class MapPointerInput: NSObject, UIGestureRecognizerDelegate, UIContextMen
 
     @objc private func scrolled(_ g: UIPanGestureRecognizer) {
         guard let scene, let view = g.view else { return }
+        #if DEBUG || DEVSWITCHES
+        if Perf.isAvailable {
+            let mode = RunLoop.current.currentMode
+            Perf.probe(.runLoopMode, mode == .default ? 0 : mode?.rawValue == "UITrackingRunLoopMode" ? 1 : 2)
+            switch g.state {
+            case .began: Perf.probe(.scrollBegan)
+            case .changed: Perf.probe(scene.restPaused || (scene.view?.isPaused ?? false) ? .scrollChangedPaused : .scrollChanged)
+            default: Perf.probe(.scrollEnded, Double(g.state.rawValue))
+            }
+        }
+        #endif
         switch g.state {
         case .began:
             scene.pointerGestureBegan()
@@ -7226,7 +7271,7 @@ final class MapPointerInput: NSObject, UIGestureRecognizerDelegate, UIContextMen
                 scene.pointerPan(by: t)
             }
         default:
-            scene.pointerGestureEnded()
+            scene.pointerGestureEnded(source: 1)
             #if PERFLOG
             let d = zip(scrollStamps.dropFirst(), scrollStamps).map { ($0 - $1) * 1000 }.sorted()
             if !d.isEmpty { Perf.mark(String(format: "map scroll events %d p50 %.1f p90 %.1f ms", scrollStamps.count, d[d.count / 2], d[d.count * 9 / 10])) }
@@ -7266,13 +7311,15 @@ extension CorpusPhysicsScene {
         }
     }
 
-    fileprivate func pointerGestureEnded() {
+    fileprivate func pointerGestureEnded(source: Int) {
+        Perf.probe(.touchFlagCleared, Double(source))
         isTouchingMap = false
         springCameraInsideBounds()
     }
 
     /// Pan by a scroll delta, the same sense and speed as a finger drag.
     fileprivate func pointerPan(by t: CGPoint) {
+        Perf.probe(.cameraWriteOutsideUpdate)
         let desired = CGPoint(x: cameraNode.position.x - t.x * panMultiplier * cameraNode.xScale,
                               y: cameraNode.position.y + t.y * panMultiplier * cameraNode.xScale)
         cameraNode.position = rubberBanded(desired)
@@ -7280,6 +7327,7 @@ extension CorpusPhysicsScene {
 
     /// Zoom by `factor` (> 1 zooms out) keeping the scene point under `viewPoint` still — around the cursor.
     fileprivate func pointerZoom(by factor: CGFloat, at viewPoint: CGPoint) {
+        Perf.probe(.cameraWriteOutsideUpdate)
         let before = convertPoint(fromView: viewPoint)
         cameraNode.setScale((cameraNode.xScale * factor).clamped(to: 0.25...4.0))
         let after = convertPoint(fromView: viewPoint)
@@ -7333,6 +7381,7 @@ extension CorpusPhysicsScene {
         hoverTitle = nil
         if canvasState?.hoverTag != nil { canvasState?.hoverTag = nil }
         hoverRingRadius = 0
+        Perf.probe(.hoverWake, restPaused ? 1 : 0)
         wakeFromRest("hover")
         guard let id, nodeSprites[id] != nil else { return }
         // Mac fix-up X2 — both live on the CAMERA (screen space), drawn at the current zoom every frame they're up: a
@@ -7436,7 +7485,7 @@ extension CorpusPhysicsScene {
     var debugOrbIDs: [String] { nodeSprites.keys.sorted() }
     var debugTitledOrbIDs: [String] { currentNodes.filter { !$0.title.isEmpty }.map(\.id) }
     func debugPointerGesture(_ body: (CorpusPhysicsScene) -> Void) {
-        pointerGestureBegan(); body(self); pointerGestureEnded()
+        pointerGestureBegan(); body(self); pointerGestureEnded(source: 1)
     }
     func debugPointerZoom(by f: CGFloat, at p: CGPoint) { pointerZoom(by: f, at: p) }
     func debugSetCameraScale(_ s: CGFloat) { wakeFromRest("debug"); cameraNode.setScale(s); applyOrbScales() }

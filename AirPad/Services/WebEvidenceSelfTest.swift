@@ -80,6 +80,13 @@ enum WebEvidenceSelfTest {
                         "https://www.bbc.com/news/articles/c0abc123", "https://www.nytimes.com/2026/11/22/us/story.html"]
         row("front-and-section-pages", fronts.allSatisfy(WebEvidence.isFrontOrSectionPage) && !articles.contains(where: WebEvidence.isFrontOrSectionPage),
             (fronts + articles).map { "\($0)=\(WebEvidence.isFrontOrSectionPage($0))" }.joined(separator: " "))
+        // Sweep 2b · 1d follow-up — multi-segment section pages (every segment a section word) are dropped too; an
+        // article under a section keeps its article path.
+        let sections = ["https://www.npr.org/sections/world/", "https://www.usnews.com/news/top-news", "https://example.com/topics/latest"]
+        let underSection = ["https://www.npr.org/2026/11/22/nx-s1-5612345/some-story", "https://www.usnews.com/news/world/articles/2026-11-22/a-story",
+                            "https://www.bbc.com/news/world-us-canada-12345678"]
+        row("multi-segment-section-pages-dropped", sections.allSatisfy(WebEvidence.isFrontOrSectionPage) && !underSection.contains(where: WebEvidence.isFrontOrSectionPage),
+            (sections + underSection).map { "\($0)=\(WebEvidence.isFrontOrSectionPage($0))" }.joined(separator: " "))
         func src(_ u: String, _ t: String, wiki: Bool = false) -> WebEvidence.Source {
             WebEvidence.Source(title: t, url: u, published: nil, wikipedia: wiki, text: "First line of \(t).\nMore text that isn't sent.")
         }

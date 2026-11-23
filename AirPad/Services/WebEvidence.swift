@@ -245,11 +245,16 @@ extension WebEvidence {
 
     /// A front page or a section page: no article path. One path segment at most, a short one, and no 4-digit run (an
     /// article's date or id) — "/", "/world", "/us-news" are dropped; "/2026/11/22/…" and long slugs are articles.
+    /// Sweep 2b · 1d follow-up — and a longer path whose every segment is a section word ("/sections/world/",
+    /// "/news/top-news": Tavily's top result for "top news" was such a page, and it passed as an article).
     static func isFrontOrSectionPage(_ url: String) -> Bool {
         guard let c = URLComponents(string: url) else { return false }
         let parts = c.path.split(separator: "/")
+        if !parts.isEmpty, parts.allSatisfy({ sectionWords.contains($0.lowercased()) }) { return true }
         return parts.count <= 1 && (parts.first?.count ?? 0) < 25 && c.path.range(of: #"\d{4}"#, options: .regularExpression) == nil
     }
+    /// The path segments that name a section, never an article.
+    static let sectionWords: Set<String> = ["sections", "section", "news", "top-news", "world", "topic", "topics", "latest"]
     /// The most articles a top-stories packet carries, and the fewest that make one (fewer → the app says so).
     static let topStoriesMax = 6, topStoriesMin = 3
     /// An article's first line for the packet: the provider's text up to its first line break, ≤ 180 characters.

@@ -7,7 +7,7 @@
 # arm (its `library-cards` row is the rest = 0 frames check) → <out root>/<arm>-rest/. ~4 min per run, ~40 min in all.
 set -u
 ROOT=${0:A:h:h:h:h}; APP=${1:?bench app}; OUT=${2:?out root}; shift 2
-ARMS=(${@:-today A Brelayout Bscale})
+ARMS=("$@"); (( ${#ARMS} )) || ARMS=(today A Brelayout Bscale)   # (${@:-a b} would be ONE word in zsh: one run, no arm flags)
 mkdir -p $OUT
 [[ -f ~/Library/Containers/com.doctorpresident.airpad.macA/Data/Documents/AirPad/.k3-library ]] || echo "WARNING: the realistic library is not installed (LIB=realistic run.sh install …)"
 args() {

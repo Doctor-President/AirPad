@@ -219,8 +219,26 @@ enum WebGrounding {
     }
     /// The query a top-stories search uses (the provider's freshness window carries the date).
     static let topStoriesQuery = "top news"
-    /// Step g — the writer lists stories, not outlets or sections.
-    static let topStoriesClause = "This question asks for the top stories: list them one per line, each with its headline and the number of the result it came from in brackets, like [1]. List the stories themselves, never news outlets or sections."
+    /// Step g — the writer lists stories, not outlets or sections. Sweep 2b · 1d follow-up — three wordings, measured on
+    /// Apple Intelligence + Brave (the proof's 1d clause, "each with its headline", listed 2 of 6 stories: it clashes
+    /// with the base "in your own words, not by copying their sentences"). DEBUG `-TopStoriesClause off|reworded|current`;
+    /// Release = `topStoriesClauseRelease`. Both routes use the same wording.
+    enum TopStoriesClause: String { case off, reworded, current }
+    static let topStoriesClauseRelease: TopStoriesClause = .reworded
+    static var topStoriesClauseVariant: TopStoriesClause {
+        #if DEBUG
+        if let s = UserDefaults.standard.string(forKey: "TopStoriesClause"), let v = TopStoriesClause(rawValue: s) { return v }
+        #endif
+        return topStoriesClauseRelease
+    }
+    /// The clause for a packet of `count` articles ("" for `off`).
+    static func topStoriesClause(count: Int) -> String {
+        switch topStoriesClauseVariant {
+        case .off: ""
+        case .reworded: "List all \(count) results, one per line: a short headline in your own words, then its number like [1]."
+        case .current: "This question asks for the top stories: list them one per line, each with its headline and the number of the result it came from in brackets, like [1]. List the stories themselves, never news outlets or sections."
+        }
+    }
     /// Step c / e — the app's own answer when a news search brought back nothing usable (no model call, no "+ web").
     static let searchEmptyLine = "The search returned nothing I can use."
 

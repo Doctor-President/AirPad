@@ -1047,7 +1047,8 @@ final class ChatSession {
                             working[working.count - 1]["content"] = WebGrounding.appSearchTurn(query: q, question: displayText,
                                                                                                links: result.links, now: now)
                             working[0]["content"] = systemPrompt + "\n\n" + WebGrounding.appSearchClause
-                                + (WebGrounding.isTopStories(displayText) ? " " + WebGrounding.topStoriesClause : "")   // 2b · 1d (g)
+                                + (WebGrounding.isTopStories(displayText) && !WebGrounding.topStoriesClause(count: result.links.count).isEmpty
+                                   ? " " + WebGrounding.topStoriesClause(count: result.links.count) : "")   // 2b · 1d (g)
                             continue
                         }
                         working.append(["role": "tool", "tool_call_id": call.id, "content": toolContent])

@@ -87,10 +87,13 @@ enum AppleWebGrounding {
     /// The answer turn (`AppleWebQuery.turnPacket` / `turnInstructions`): the results in the turn, labelled as the app's
     /// own search today; the question at the end. (Kept short: refusal rate is the constraint — live-23.)
     /// Sweep 2b · 1d (news route g) — `topStories`: the writer lists the stories (`WebGrounding.topStoriesClause`).
+    /// 1d follow-up — and the packet's header names the user's question, not the rule's "top news" (as the scratch
+    /// build's header carried the question's own words).
     static func turn(question: String, query: String, results: [(title: String, date: String?, snippet: String)],
                      voice: String, now: Date = Date(), topStories: Bool = false) -> (systemPrompt: String, modelText: String) {
-        (voice + " " + AppleWebQuery.turnInstructions + (topStories ? " " + WebGrounding.topStoriesClause : ""),
-         AppleWebQuery.turnPacket(day: WebGrounding.dayString(now), query: query, question: question, results: results))
+        let clause = topStories ? WebGrounding.topStoriesClause(count: results.count) : ""
+        return (voice + " " + AppleWebQuery.turnInstructions + (clause.isEmpty ? "" : " " + clause),
+                AppleWebQuery.turnPacket(day: WebGrounding.dayString(now), query: topStories ? question : query, question: question, results: results))
     }
 }
 

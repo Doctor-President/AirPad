@@ -26,6 +26,8 @@
 //   reveal <ax-id>[#n]       sweep 2b · 4.1: real two-finger scrolls (phases, no momentum) over the element's column until
 //                            it sits inside the window (≤ 25 scrolls); not measured
 //   front                    sweep 2b · 4.1: activates the app again (after Preview took the front); not measured
+// RPERF_CONTINUOUS=1 (sweep 2b · 2.3a): no 150 ms pause before a step and no wait for the screen to settle after it, so
+//   input steps run back to back like a hand (each step's visible / settled then mean little; the intervals still count)
 //   focus                    sweep 2b · 4.1: prints the app's focused element: role · identifier
 //   pinch <ax-id|x,y> <total> [events=30] [ms=8]   sweep 2b · 2.3a: a trackpad pinch (magnify gesture), began · n changed
 //                            · ended; <total> = summed magnification (+ zooms in, − out), split smoothly over the events
@@ -240,8 +242,9 @@ func trackpadSession(_ p: CGPoint, seconds: Double, hold: Bool, wobble: Bool, mo
     }
 }
 /// Measures one input: `act` posts it and returns when the input has ended (mouse-up / key-up / last scroll event).
+let continuous = ProcessInfo.processInfo.environment["RPERF_CONTINUOUS"] != nil
 func measure(_ label: String, _ verb: String, timeout: Double = 3000, intervals: Bool = false, _ act: () -> Void) {
-    usleep(150_000)
+    if !continuous { usleep(150_000) }
     guard let before = sink.last() else { print("no frames"); return }
     sink.clear()
     let t0 = now(), wall = Date().timeIntervalSince1970 * 1000
@@ -249,7 +252,7 @@ func measure(_ label: String, _ verb: String, timeout: Double = 3000, intervals:
     let tIn = now()
     // Wait until the window has been still for `still` ms (or the timeout).
     var lastChange = tIn
-    while now() - tIn < timeout {
+    while !continuous, now() - tIn < timeout {
         usleep(20_000)
         let fr = sink.snapshot()
         if let l = fr.last, l.0 > lastChange { lastChange = l.0 }
@@ -309,7 +312,7 @@ for raw in script.split(separator: "\n") {
     case "scroll":
         guard let p = point(rest[0]), let dy = Double(rest[1]), let n = Int(rest[2]) else { continue }
         let msPer = rest.count > 3 ? Double(rest[3])! : 16
-        mouse(.mouseMoved, p); usleep(150_000)
+        mouse(.mouseMoved, p); usleep(continuous ? 0 : 150_000)
         measure(label, verb, intervals: true) {
             scroll(p, 0, phase: 1); usleep(useconds_t(msPer * 1000))
             var sent = 0.0
@@ -321,7 +324,7 @@ for raw in script.split(separator: "\n") {
         // pointer moves 6 pt sideways (back and forth), as a hand resting on the trackpad does.
         guard let p = point(rest[0]), let dy = Double(rest[1]), let n = Int(rest[2]) else { continue }
         let msPer = rest.count > 3 ? Double(rest[3])! : 16
-        mouse(.mouseMoved, p); usleep(150_000)
+        mouse(.mouseMoved, p); usleep(continuous ? 0 : 150_000)
         measure(label, verb, intervals: true) {
             scroll(p, 0, phase: 1); usleep(useconds_t(msPer * 1000))
             var sent = 0.0
@@ -338,7 +341,7 @@ for raw in script.split(separator: "\n") {
         // 300 ms into the momentum (the hand settling back on the trackpad). T: "scroll stops dead when the pointer
         // moves mid-scroll" — compare `frames` and `settled` of the two.   flick <x,y> <first delta, e.g. -40>
         guard let p = point(rest[0]), let v0 = Double(rest[1]) else { continue }
-        mouse(.mouseMoved, p); usleep(150_000)
+        mouse(.mouseMoved, p); usleep(continuous ? 0 : 150_000)
         measure(label, verb, timeout: 4000, intervals: true) {
             scroll(p, 0, phase: 1); usleep(8_000)
             for _ in 1...12 { scroll(p, Int32(v0), phase: 2); usleep(8_000) }
@@ -355,14 +358,14 @@ for raw in script.split(separator: "\n") {
         }
     case "trackpad":
         guard let p = point(rest[0]), let secs = Double(rest.count > 1 ? rest[1] : "15") else { continue }
-        mouse(.mouseMoved, p); usleep(150_000)
+        mouse(.mouseMoved, p); usleep(continuous ? 0 : 150_000)
         measure(label, verb, timeout: 3000, intervals: true) {
             trackpadSession(p, seconds: secs, hold: rest.contains("hold"), wobble: rest.contains("wobble"), momentum: !rest.contains("nomomentum"))
         }
     case "pinch":
         guard let p = point(rest[0]), let total = Double(rest.count > 1 ? rest[1] : "0.5") else { continue }
         let n = rest.count > 2 ? Int(rest[2]) ?? 30 : 30, ms = rest.count > 3 ? Double(rest[3]) ?? 8 : 8
-        mouse(.mouseMoved, p); usleep(150_000)
+        mouse(.mouseMoved, p); usleep(continuous ? 0 : 150_000)
         measure(label, verb, intervals: true) {
             magnify(p, 0, phase: 1); usleep(useconds_t(ms * 1000))
             var sent = 0.0   // a bell-shaped speed over the gesture, as fingers accelerate and settle
@@ -375,13 +378,13 @@ for raw in script.split(separator: "\n") {
     case "move":
         // The pointer travels from a to b in n steps (hover only), measured like a drag.
         guard let p = point(rest[0]), let dx = Double(rest[1]), let dy = Double(rest[2]), let n = Int(rest[3]) else { continue }
-        mouse(.mouseMoved, p); usleep(150_000)
+        mouse(.mouseMoved, p); usleep(continuous ? 0 : 150_000)
         measure(label, verb, intervals: true) {
             for i in 1...n { mouse(.mouseMoved, CGPoint(x: p.x + dx * Double(i) / Double(n), y: p.y + dy * Double(i) / Double(n))); usleep(8_000) }
         }
     case "drag":
         guard let p = point(rest[0]), let dx = Double(rest[1]), let dy = Double(rest[2]), let n = Int(rest[3]) else { continue }
-        mouse(.mouseMoved, p); usleep(150_000)
+        mouse(.mouseMoved, p); usleep(continuous ? 0 : 150_000)
         measure(label, verb, intervals: true) {
             mouse(.leftMouseDown, p); usleep(30_000)
             for i in 1...n { mouse(.leftMouseDragged, CGPoint(x: p.x + dx * Double(i) / Double(n), y: p.y + dy * Double(i) / Double(n))); usleep(16_000) }

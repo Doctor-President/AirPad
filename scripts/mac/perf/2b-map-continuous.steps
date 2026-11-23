@@ -1,0 +1,25 @@
+# Sweep 2b · 2.3a red hunt — T's third recording's input rhythm with no rests: run with RPERF_CONTINUOUS=1 (rperf runs the
+# input steps back to back), WIN="1728 1029" WINY=0 LIBRARIAN=closed EXTRA="-MapZoom 0.35", Release bench copy, realistic
+# library. T's state first, then ~16 s of pans, flicks and 2-second pinches (480 events 4 ms apart ≈ T's 220–234 a second).
+cards        click toolbar.view.Cards
+rest         wait 2500
+cards-scroll scroll 640,600 -2400 80 8
+cards-scroll scroll 640,600 2400 80 8
+cards-width  drag resize.sidebar 70 0 24
+cards-width  drag resize.sidebar -70 0 24
+cards-width  drag resize.sidebar 58 0 24
+rest         wait 1500
+view-list    click toolbar.view.List
+rest         wait 1500
+view-map     click toolbar.view.Map
+rest-zoom    wait 18000
+lib-pan      trackpad 1000,560 3 hold wobble
+lib-pinch    pinch 1000,560 0.8 480 4
+lib-pinch    pinch 1000,560 -0.45 480 4
+lib-pan      trackpad 1000,560 2 wobble
+lib-flick    flick 1000,560 -40
+lib-flick    flick 1000,560 40
+lib-pinch    pinch 1000,560 0.6 480 4
+lib-pinch    pinch 1000,560 -0.4 480 4
+lib-pan      trackpad 1000,560 3 hold wobble
+rest-after   wait 10000

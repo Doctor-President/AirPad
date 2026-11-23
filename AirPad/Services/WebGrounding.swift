@@ -223,8 +223,11 @@ enum WebGrounding {
     /// Apple Intelligence + Brave (the proof's 1d clause, "each with its headline", listed 2 of 6 stories: it clashes
     /// with the base "in your own words, not by copying their sentences"). DEBUG `-TopStoriesClause off|reworded|current`;
     /// Release = `topStoriesClauseRelease`. Both routes use the same wording.
+    /// Measured 2026-11-23 (Apple Intelligence + Brave, 3 runs each, W1 W2 W1b W2b): off 12 of 12, reworded 8 of 12
+    /// (one run listed 2 stories on W1 and W2, and the follow-ups repeated 2). So no clause: the base instructions and
+    /// the headline packet already list the stories.
     enum TopStoriesClause: String { case off, reworded, current }
-    static let topStoriesClauseRelease: TopStoriesClause = .reworded
+    static let topStoriesClauseRelease: TopStoriesClause = .off
     static var topStoriesClauseVariant: TopStoriesClause {
         #if DEBUG
         if let s = UserDefaults.standard.string(forKey: "TopStoriesClause"), let v = TopStoriesClause(rawValue: s) { return v }

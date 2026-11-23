@@ -93,6 +93,29 @@ let smaller = DisplayImageDiskCache(directory: dir, cap: 600 * 1024)
 let su = smaller.usage()
 check("relaunch-smaller-cap-trims", su.bytes <= 600 * 1024, "\(su)")
 
+// 6. A burst past maxPendingWrites (4): with `redo` the extra writes are deferred, then written once the burst is done
+// (sweep 2b · 4.5 proof: a skipped write meant the next cold launch decoded that original again); without it, skipped.
+let bdir = tmp.appendingPathComponent("burst")
+let burst = DisplayImageDiskCache(directory: bdir, cap: 64 * 1024 * 1024)
+let redone = NSLock(); nonisolated(unsafe) var redos = 0
+let burstImages = (0..<16).map { image(1024, 768, alpha: false, seed: UInt32(500 + $0)) }   // made first: a real burst
+for i in 0..<16 {
+    let seed = UInt32(500 + i)
+    burst.write(burstImages[i], key: "burst-\(i)", redo: {
+        redone.lock(); redos += 1; redone.unlock(); return image(1024, 768, alpha: false, seed: seed)
+    })
+}
+burst.flush(); burst.flush()
+let bs = burst.snapshot
+let all = (0..<16).allSatisfy { FileManager.default.fileExists(atPath: bdir.appendingPathComponent("burst-\($0)").path) }
+check("burst-deferred-then-written", all && bs.writesSkipped == 0 && bs.writesDeferred > 0 && bs.deferredWritten == bs.writesDeferred
+      && bs.writes == 16, "writes \(bs.writes) deferred \(bs.writesDeferred) written later \(bs.deferredWritten) redo \(redos) skipped \(bs.writesSkipped)")
+let sdir = tmp.appendingPathComponent("burst-noredo")
+let noRedo = DisplayImageDiskCache(directory: sdir, cap: 64 * 1024 * 1024)
+for i in 0..<16 { noRedo.write(burstImages[i], key: "n-\(i)") }
+noRedo.flush()
+check("burst-without-redo-skips", noRedo.snapshot.writesSkipped > 0 && noRedo.snapshot.writesDeferred == 0, "\(noRedo.snapshot)")
+
 print("\n\(fails == 0 ? "PASS" : "FAIL") \(passes)/\(passes + fails)")
 try? FileManager.default.removeItem(at: tmp)
 exit(fails == 0 ? 0 : 1)

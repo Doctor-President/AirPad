@@ -132,7 +132,7 @@ final class DisplayImageCache: NSObject, NSCacheDelegate, @unchecked Sendable {
         let disk = DisplayImageDiskCache.shared
         if let cg = disk.read(key) { return UIImage(cgImage: cg) }
         guard let image = decode(url: url, maxPixel: maxPixel) else { return nil }
-        if let cg = image.cgImage { disk.write(cg, key: key) }
+        if let cg = image.cgImage { disk.write(cg, key: key, redo: { decode(url: url, maxPixel: maxPixel)?.cgImage }) }
         return image
     }
 

@@ -59,6 +59,8 @@ final class DisplayImageDiskCache: @unchecked Sendable {
     private var counters = Counters()
     struct Counters: Equatable {
         var diskHits = 0, diskMisses = 0, originalDecodes = 0, posterExtracts = 0, writes = 0, evictions = 0, writesSkipped = 0
+        /// Writes past `maxPendingWrites` kept for later (`deferred`), and how many of them were written after the burst.
+        var writesDeferred = 0, deferredWritten = 0
         var writtenBytes = 0
     }
     var snapshot: Counters { counterLock.lock(); defer { counterLock.unlock() }; return counters }
@@ -74,6 +76,12 @@ final class DisplayImageDiskCache: @unchecked Sendable {
     /// past `maxPendingWrites` a write is skipped (that photo is written on a later launch). Under `counterLock`.
     private var pendingWrites = 0
     static let maxPendingWrites = 4
+    /// Sweep 2b · 4.5 proof (1703, B decoded 6 originals): a write skipped in a burst was lost until a later launch
+    /// happened to show that photo again, so the next cold launch decoded it once more. Now a write past the limit keeps
+    /// only its key and how to decode it again (`redo`, no image held); when the burst's writes are done the queue
+    /// decodes and writes them one at a time (memory stays bounded). Under `counterLock`.
+    private var deferred: [(key: String, redo: @Sendable () -> CGImage?)] = []
+    static let maxDeferred = 2048
 
     init(directory: URL, cap: Int) {
         self.directory = directory
@@ -123,15 +131,34 @@ final class DisplayImageDiskCache: @unchecked Sendable {
     // MARK: - Write (off the caller: the serial utility queue)
 
     /// Encodes and stores `image` under `key`, then trims to the cap. Returns at once.
-    func write(_ image: CGImage, key: String) {
+    /// `redo` decodes the same image again: past `maxPendingWrites` the write is deferred with it (written after the
+    /// burst); without it, skipped.
+    func write(_ image: CGImage, key: String, redo: (@Sendable () -> CGImage?)? = nil) {
         counterLock.lock()
         let full = pendingWrites >= Self.maxPendingWrites
-        if !full { pendingWrites += 1 }
+        var kept = false
+        if !full { pendingWrites += 1 } else if let redo, deferred.count < Self.maxDeferred { deferred.append((key, redo)); kept = true }
         counterLock.unlock()
-        if full { count { $0.writesSkipped += 1 }; return }
+        if full { count { if kept { $0.writesDeferred += 1 } else { $0.writesSkipped += 1 } }; return }
         queue.async {
             self.writeNow(image, key: key)
             self.counterLock.lock(); self.pendingWrites -= 1; self.counterLock.unlock()
+            self.drainDeferred()
+        }
+    }
+
+    /// On `queue`: the deferred writes, one at a time, while no new write is waiting (a new one runs first and drains
+    /// again when it's done). An entry a later load already wrote is dropped.
+    private func drainDeferred() {
+        while true {
+            counterLock.lock()
+            guard pendingWrites == 0, !deferred.isEmpty else { counterLock.unlock(); return }
+            let next = deferred.removeFirst()
+            counterLock.unlock()
+            if FileManager.default.fileExists(atPath: fileURL(next.key).path) { continue }
+            guard let image = next.redo() else { continue }
+            writeNow(image, key: next.key)
+            count { $0.deferredWritten += 1 }
         }
     }
 
@@ -233,7 +260,8 @@ final class DisplayImageDiskCache: @unchecked Sendable {
 
     static func summary(_ c: Counters, files: Int, bytes: Int, cap: Int) -> String {
         "thumbs disk-hits \(c.diskHits) disk-misses \(c.diskMisses) original-decodes \(c.originalDecodes) "
-            + "poster-extracts \(c.posterExtracts) writes \(c.writes) write-skipped \(c.writesSkipped) evicted \(c.evictions) "
+            + "poster-extracts \(c.posterExtracts) writes \(c.writes) write-skipped \(c.writesSkipped) write-deferred \(c.writesDeferred) "
+            + "deferred-written \(c.deferredWritten) evicted \(c.evictions) "
             + "on-disk \(files) files \(bytes / 1_048_576) MB cap \(cap / 1_048_576) MB"
     }
 }

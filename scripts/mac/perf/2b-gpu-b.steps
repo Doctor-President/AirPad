@@ -1,6 +1,6 @@
 # Sweep 2b · 2.3a measurement B (map-sticky-60 §2 B): Release bench copy held at 120 (-MacPerfAB map120), T's case
 # (WIN="1728 1029" WINY=0 LIBRARIAN=closed, -MapZoom 0.35, the sidebar 58 pt wider so the Map is ~1439 pt). Start the
-# Metal System Trace ~15 s after the view-map line (it then covers the input). Same steps again with -PerfWhy YES, no
+# Metal System Trace 34 s after run.sh starts (rperf.txt is only written at the end, so do not wait for its lines). Same steps again with -PerfWhy YES, no
 # trace, plus -PerfSampleAfter 1 and SAVEWAIT=90 (the default sampler only catches stalls over 40 ms; the big recording
 # needs longer to write); read with why.py / map_split.py <rec> <rperf.txt> lib-hand.
 sidebar    drag resize.sidebar 58 0 24

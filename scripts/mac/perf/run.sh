@@ -97,6 +97,8 @@ RPERF_CSV=$OUT/steps.csv $B/rperf $P $OUT/steps-all.steps > $OUT/rperf.txt 2>&1
 sleep ${REST:-3}
 ps -o %cpu= -p $P >> $OUT/setup.txt
 notifyutil -p com.airpad.perf.save; sleep 3
+# Sweep 2b · 2.3a: a big recording (-PerfWhy, -PerfSampleAfter 1) can take longer to write; SAVEWAIT=<s> waits up to that.
+for i in $(seq 1 ${SAVEWAIT:-0}); do ls $C/Library/Caches/PerfRecordings/*.json(N) | grep -q . && { sleep 2; break }; sleep 1; done
 REC=$(ls -t $C/Library/Caches/PerfRecordings/*.json 2>/dev/null | head -1)
 [[ -n $REC ]] && cp $REC $OUT/recording.json || echo "NO RECORDING" >> $OUT/setup.txt
 [[ -n $X ]] && wait $X 2>/dev/null

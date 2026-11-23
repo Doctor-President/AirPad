@@ -1,0 +1,5 @@
+# Sweep 2b · 2.3a measurement A (map-sticky-60 §2 A): the Map at T's size (sidebar dragged so the Map is ~1439 pt wide in a
+# 1728 window), then rest while -MapGPUBench renders the scene offscreen (Debug copy). Read Caches/mapgpubench.txt.
+sidebar    drag resize.sidebar 58 0 24
+view-map   click toolbar.view.Map
+rest       wait 60000

@@ -1,0 +1,32 @@
+# Sweep 2b · 2.3a — the renderer trial's scene 1 on SpriteKit (the red baseline): T's third recording's case. run.sh with
+# WIN="1728 1029" WINY=0 LIBRARIAN=closed EXTRA="-MapZoom 0.35" (titles show); Release bench copy; realistic library.
+# T's state first (Cards scrolled, widths dragged; the sidebar ends 58 pt wider so the Map is ~1439 pt, T's size), then the
+# whole-Library Map, rest past the 14 s zoom, then ~18 s of hand-shaped pans, flicks and pinches (rperf pinch, 5da42de1),
+# then 10 s of rest. Read with map_proof.py / map_probe.py <rec> <rperf.txt> (per second).
+cards        click toolbar.view.Cards
+rest         wait 2500
+cards-scroll scroll 640,600 -2400 80 8
+cards-scroll scroll 640,600 2400 80 8
+cards-width  drag resize.sidebar 70 0 24
+cards-width  drag resize.sidebar -70 0 24
+cards-width  drag resize.sidebar 58 0 24
+rest         wait 1500
+view-list    click toolbar.view.List
+rest         wait 1500
+view-map     click toolbar.view.Map
+rest-zoom    wait 18000
+lib-pan      trackpad 1000,560 4 hold wobble
+lib-pinch    pinch 1000,560 0.4 60 4
+lib-pinch    pinch 1000,560 -0.3 60 4
+lib-pan      trackpad 1000,560 3 wobble
+lib-pinch    pinch 1000,560 0.5 70 4
+lib-pinch    pinch 1000,560 -0.33 70 4
+lib-pinch    pinch 1000,560 0.4 60 4
+lib-pinch    pinch 1000,560 -0.3 60 4
+lib-flick    flick 1000,560 -40
+lib-flick    flick 1000,560 40
+lib-pan      trackpad 1000,560 4 hold wobble
+lib-pinch    pinch 1000,560 0.4 60 4
+lib-pinch    pinch 1000,560 -0.3 60 4
+lib-pan      trackpad 1000,560 3 wobble
+rest-after   wait 10000

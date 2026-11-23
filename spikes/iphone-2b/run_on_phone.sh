@@ -136,7 +136,7 @@ xcrun devicectl device install app --device $UDID $APP > $TMP/install.log 2>&1 |
 INSTALLED=1
 
 say "asking the app for the phone's free space"
-xcrun devicectl device process launch --device $UDID --terminate-existing $BUNDLE -SpikeFreeSpaceOnly YES > $TMP/launch-free.log 2>&1 || { tail -5 $TMP/launch-free.log; die "launch failed (is the phone unlocked? did it ask to trust the developer?)" 4; }
+xcrun devicectl device process launch --device $UDID --terminate-existing $BUNDLE -- -SpikeFreeSpaceOnly YES > $TMP/launch-free.log 2>&1 || { tail -5 $TMP/launch-free.log; die "launch failed (is the phone unlocked? did it ask to trust the developer?)" 4; }
 FREE_OK=0
 for i in {1..15}; do
   sleep 2
@@ -163,7 +163,7 @@ fi
 ARGS=(-SpikePhases $PHASES -SpikeRepeats $REPEATS -SpikeMLXRepeats $MLX_REPEATS)
 (( DRY )) && ARGS+=(-SpikeDryRun YES)
 say "launching the battery (${ARGS[*]})"
-xcrun devicectl device process launch --device $UDID --terminate-existing $BUNDLE $ARGS > $TMP/launch.log 2>&1 || { tail -5 $TMP/launch.log; die "launch failed" 4; }
+xcrun devicectl device process launch --device $UDID --terminate-existing $BUNDLE -- $ARGS > $TMP/launch.log 2>&1 || { tail -5 $TMP/launch.log; die "launch failed" 4; }
 
 deadline=$(( SECONDS + TIMEOUT_MIN * 60 )); last=""; last_change=$SECONDS; DONE=0
 while (( SECONDS < deadline )); do

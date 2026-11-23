@@ -27,6 +27,8 @@
 //                            it sits inside the window (≤ 25 scrolls); not measured
 //   front                    sweep 2b · 4.1: activates the app again (after Preview took the front); not measured
 //   focus                    sweep 2b · 4.1: prints the app's focused element: role · identifier
+//   pinch <ax-id|x,y> <total> [events=30] [ms=8]   sweep 2b · 2.3a: a trackpad pinch (magnify gesture), began · n changed
+//                            · ended; <total> = summed magnification (+ zooms in, − out), split smoothly over the events
 import AppKit
 import ApplicationServices
 import ScreenCaptureKit
@@ -181,6 +183,19 @@ func scroll2(_ p: CGPoint, _ dx: Double, _ dy: Double, phase: Int64, momentum: I
     e.setIntegerValueField(.scrollWheelEventPointDeltaAxis2, value: Int64(dx.rounded()))
     e.setDoubleValueField(.scrollWheelEventFixedPtDeltaAxis1, value: dy)
     e.setDoubleValueField(.scrollWheelEventFixedPtDeltaAxis2, value: dx)
+    e.post(tap: .cghidEventTap)
+}
+/// Sweep 2b · 2.3a — one synthetic magnify gesture event (CGEvent type 29 = NSEventTypeGesture) with the private gesture
+/// fields: 110 gesture subtype (8 = magnify), 113 magnification, 132 phase (IOHIDEventPhase: 1 began, 2 changed, 4 ended).
+/// Field numbers and phases follow Hammerspoon's hs.eventtap.event.newGesture (extensions/eventtap/TouchEvents.c, from
+/// Nathan Vander Wilt's TouchSynthesis; Hammerspoon is MIT-licensed, https://github.com/Hammerspoon/hammerspoon).
+func magnify(_ p: CGPoint, _ m: Double, phase: Int64) {
+    guard let e = CGEvent(source: nil) else { return }
+    e.type = CGEventType(rawValue: 29)!
+    e.location = p
+    e.setIntegerValueField(CGEventField(rawValue: 110)!, value: 8)
+    e.setDoubleValueField(CGEventField(rawValue: 113)!, value: m)
+    e.setIntegerValueField(CGEventField(rawValue: 132)!, value: phase)
     e.post(tap: .cghidEventTap)
 }
 var tpSeed: UInt64 = 0x9E3779B97F4A7C15
@@ -343,6 +358,19 @@ for raw in script.split(separator: "\n") {
         mouse(.mouseMoved, p); usleep(150_000)
         measure(label, verb, timeout: 3000, intervals: true) {
             trackpadSession(p, seconds: secs, hold: rest.contains("hold"), wobble: rest.contains("wobble"), momentum: !rest.contains("nomomentum"))
+        }
+    case "pinch":
+        guard let p = point(rest[0]), let total = Double(rest.count > 1 ? rest[1] : "0.5") else { continue }
+        let n = rest.count > 2 ? Int(rest[2]) ?? 30 : 30, ms = rest.count > 3 ? Double(rest[3]) ?? 8 : 8
+        mouse(.mouseMoved, p); usleep(150_000)
+        measure(label, verb, intervals: true) {
+            magnify(p, 0, phase: 1); usleep(useconds_t(ms * 1000))
+            var sent = 0.0   // a bell-shaped speed over the gesture, as fingers accelerate and settle
+            for i in 1...n {
+                let want = total * (1 - cos(Double.pi * Double(i) / Double(n))) / 2 - sent
+                magnify(p, want, phase: 2); sent += want; usleep(useconds_t(ms * 1000))
+            }
+            magnify(p, 0, phase: 4)
         }
     case "move":
         // The pointer travels from a to b in n steps (hover only), measured like a drag.

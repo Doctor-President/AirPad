@@ -1,16 +1,17 @@
 #!/bin/zsh
 # 1.1-D fix-up (D3) — the headless Librarian Gauntlet (`-LibrarianGauntlet`, fixture clone) over ONE route, against the
-# Mac's Ollama (127.0.0.1:11434), sharing the model T's Host already holds. Only with T's OK.
+# CC's own Ollama (default http://127.0.0.1:11500; sweep 2b amend b: T's Ollama and T's Host are refused, exit 2).
 #   gauntlet_routes.sh <host|server> <model> <sim> <AirPad.app (Debug)> <out-dir>
 #   host   — a scratch Host from ~/Developer/airpad-host on :8799 (isolated state dir, Always-ready holding <model> —
 #            the same keep_alive -1 + num_ctx 20,480 T's Host stamps), attached to the running Ollama (no spawn).
 #   server — the user's-own-server route: -GauntletRoute endpoint -DebugEndpointURL <ollama> -DebugEndpointModel <model>.
-# GAUNTLET_OLLAMA=http://127.0.0.1:11500 points both routes at CC's own Ollama instead (sweep 2a: T's is never touched).
+# GAUNTLET_OLLAMA overrides the address; scripts/gauntlet/safe_ollama.zsh refuses anything but a loopback scratch port.
 # Records Ollama's loaded set before/after and samples /api/ps every 2 s; FAILS LOUDLY if the after set differs.
 # Run dirs hold answers from T's fixture: they stay in build/ (gitignored), never in Ops.
 set -u
 ROUTE=$1; MODEL=$2; SIM=$3; APP=$4; OUT=$5
-OLL=${GAUNTLET_OLLAMA:-http://127.0.0.1:11434}; BID=com.doctorpresident.airpad; PORT=8799; shift 5; EXTRA=("$@")   # extra launch args (e.g. -GauntletOnly 5)
+source ${0:A:h:h}/gauntlet/safe_ollama.zsh
+OLL=${GAUNTLET_OLLAMA:-http://127.0.0.1:11500}; safe_ollama_or_die "$OLL"; BID=com.doctorpresident.airpad; PORT=8799; shift 5; EXTRA=("$@")   # extra launch args (e.g. -GauntletOnly 5)
 FIXTURE=~/Developer/fixtures/tom-corpus-2026-09-21
 mkdir -p $OUT; OUT=${OUT:A}
 ps_now() { curl -s -m 5 $OLL/api/ps | python3 -c 'import json,sys;[print(m["name"],m.get("context_length"),m.get("expires_at","")[:4]) for m in json.load(sys.stdin)["models"]]'; }

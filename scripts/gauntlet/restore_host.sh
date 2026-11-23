@@ -23,6 +23,13 @@ OPEN=${RESTORE_HOST_OPEN:-'open -a "AirPad Host"'}
 QUIT=${RESTORE_HOST_QUIT:-'osascript -e '"'"'quit app "AirPad Host"'"'"'; for i in {1..20}; do pgrep -f "AirPad Host.app/Contents" >/dev/null || break; sleep 1; done; pkill -9 -f "AirPad Host.app/Contents"'}
 SETTLE=${RESTORE_SETTLE:-60}                   # seconds to wait for the Host, then its Ollama
 WANT=${RESTORE_MODEL:-qwen3:4b-instruct-2507-q4_K_M}
+# Sweep 2b amend b: this script acts on T's real Host through its defaults, so it now runs ONLY with every
+# endpoint and Host-control command overridden (test_restore.sh's fake Host + Ollama on scratch ports).
+source ${0:A:h}/safe_ollama.zsh
+for v in RESTORE_OLL RESTORE_HOST_URL RESTORE_HOST_BIN RESTORE_HOST_RUNNING RESTORE_HOST_OPEN RESTORE_HOST_QUIT RESTORE_RESIDENCY; do
+  [[ -n ${(P)v:-} ]] || { print -u2 "REFUSED (never list): restore_host.sh acts on T's Host unless $v is overridden (test_restore.sh only)."; exit 2; }
+done
+safe_ollama_or_die "$OLL"; safe_ollama_or_die "$HOSTURL"
 CTX=${RESTORE_CTX:-20480}
 HERE=${0:A:h}
 export RESTORE_OLL=$OLL RESTORE_HOST_URL=$HOSTURL RESTORE_HOST_BIN=$BIN RESTORE_RESIDENCY=$RESIDENCY RESTORE_MODEL=$WANT

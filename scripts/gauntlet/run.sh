@@ -5,16 +5,17 @@
 #                           [--replay <chat>=<abs replay.json>]... [--expect-digest <sha prefix>] [--no-build]
 #
 # What it does (and what it restores):
-#   1. Records T's REAL Host residency (`/api/ps`), then QUITS the AirPad Host app — its Always-ready
-#      reconcile loop would otherwise fight every test load (it re-stamps its held model every 60 s).
+#   1. Never touches T's Host or T's Ollama (sweep 2b amend b, the never list): no residency read, no quit, no restore.
+#      Refuses (exit 2, scripts/gauntlet/safe_ollama.zsh) unless the Ollama is CC's own on a loopback scratch port
+#      (default http://127.0.0.1:11500, GAUNTLET_OLLAMA overrides) and its binary is not the Host app's bundled one.
 #   2. Builds the RELEASE-CANDIDATE Host from airpad-host's current branch (a production build, no dev
 #      tags) and runs it on its own port (8799) with --observe, an isolated --secret-file dir, the branch's
-#      manifest.json, and the SHIPPING Ollama binary from the installed Host app (it supervises it).
+#      manifest.json, attached to CC's own Ollama (or spawning CC's copy, build/scratch-ollama/ollama, with
+#      OLLAMA_MODELS=build/scratch-models; GAUNTLET_OLLAMA_BIN / GAUNTLET_OLLAMA_MODELS override).
 #   3. Records versions (Ollama server, Host commit, app commit, Xcode) + the model's digest; polls
 #      `/api/ps` every 2 s into ps.log for the digest/cold checks.
 #   4. Plans rows (gauntlet.py plan) and drives the REAL Librarian UI via XCUITest (LibrarianGauntletV2).
-#   5. Stops the scratch Host, then restore_host.sh: relaunches T's Host (again, if it came back attached to the scratch
-#      Ollama), Instruct resident + held, every other model resident before the run back, all VERIFIED.
+#   5. Stops the scratch Host and anything it spawned (T's Host was never stopped, so nothing to restore).
 #   6. Grades (gauntlet.py grade) → grades.json + table.md.
 set -uo pipefail
 
@@ -46,8 +47,11 @@ HOSTREPO=${GAUNTLET_HOSTREPO:-~/Developer/airpad-host}
 FIXTURE=~/Developer/fixtures/tom-corpus-2026-09-21
 SIM=${GAUNTLET_SIM:-CC2D6B5F-A6C2-494F-AC5E-555F8FF3C73A}   # iPhone 17 Pro Max, iOS 27.0
 DD=${GAUNTLET_DD:-$AIRPAD/build/gauntlet-dd}   # override for an A/B against another build
-SHIP_OLLAMA="/Applications/AirPad Host.app/Contents/Resources/ollama"
-OLL=http://127.0.0.1:11434
+source ${0:A:h}/safe_ollama.zsh
+SHIP_OLLAMA=${GAUNTLET_OLLAMA_BIN:-$AIRPAD/build/scratch-ollama/ollama}   # CC's own copy, never the Host app's
+OLL=${GAUNTLET_OLLAMA:-http://127.0.0.1:11500}
+safe_ollama_or_die "$OLL"; safe_ollama_bin_or_die "$SHIP_OLLAMA"
+export OLLAMA_HOST=${OLL#http://} OLLAMA_MODELS=${GAUNTLET_OLLAMA_MODELS:-$AIRPAD/build/scratch-models}
 PORT=8799
 export DEVELOPER_DIR=/Applications/Xcode.app/Contents/Developer
 
@@ -60,42 +64,22 @@ START=$(date +%s)
 $AIRPAD/scripts/disk/disk_hygiene.sh --check ${GAUNTLET_MIN_FREE_GB:-30} | tee -a "$RUN_DIR/run.log"
 (( ${pipestatus[1]} == 0 )) || { log "STOP: not enough free disk for a gauntlet — run scripts/disk/disk_hygiene.sh, then report"; exit 1; }
 
-# ── 1. T's real Host: record, then quit ──────────────────────────────────────────────────────────
-curl -s $OLL/api/ps > "$RUN_DIR/residency-before.json" 2>/dev/null || echo '{}' > "$RUN_DIR/residency-before.json"
-cp ~/.airpad-host/residency.json "$RUN_DIR/held-before.json" 2>/dev/null || echo '{}' > "$RUN_DIR/held-before.json"   # which were HELD (live-18 0a)
-REAL_HOST_PID=$(pgrep -f "/Applications/AirPad Host.app/Contents/MacOS/airpad-host" || true)
-log "T's Host pid=${REAL_HOST_PID:-none}; resident before: $(python3 -c "import json;print([m['name'] for m in json.load(open('$RUN_DIR/residency-before.json')).get('models',[])])")"
-if [[ -n $REAL_HOST_PID ]]; then
-  osascript -e 'quit app "AirPad Host"' 2>/dev/null || kill $REAL_HOST_PID
-  for i in {1..20}; do pgrep -f "AirPad Host.app/Contents" >/dev/null || break; sleep 1; done
-  pkill -9 -f "AirPad Host.app/Contents" 2>/dev/null || true   # zombie-tray gotcha
-  log "quit T's Host (+ its bundled Ollama)"
-fi
-restore_real_host() {
-  [[ -n ${SCRATCH_PID:-} ]] && kill $SCRATCH_PID 2>/dev/null; sleep 2
-  pkill -f "$SCR/airpad-host" 2>/dev/null; pkill -f "$SHIP_OLLAMA serve" 2>/dev/null; sleep 2
+# ── 1. T's Host and T's Ollama are never touched (sweep 2b amend b). Teardown = the scratch Host + its children ──
+stop_scratch() {
   [[ -n ${POLL_PID:-} ]] && kill $POLL_PID 2>/dev/null
-  if [[ -n $REAL_HOST_PID ]]; then
-    # live-18 (0a): restore_host.sh relaunches T's Host if it came back attached to the (now stopped) scratch Ollama,
-    # restores Instruct (held) + every other model resident before the run, and VERIFIES it (non-zero + FAIL if not).
-    RESTORE_HELD_BEFORE="$RUN_DIR/held-before.json" $AIRPAD/scripts/gauntlet/restore_host.sh "$RUN_DIR/residency-before.json" 2>&1 \
-      | while read -r l; do log "$l"; done
-    (( ${pipestatus[1]} == 0 )) || log "⚠️  T's HOST IS NOT RESTORED — see the restore lines above; fix it before anything else"
-    curl -s $OLL/api/ps > "$RUN_DIR/residency-after.json"
-    log "resident after restore: $(python3 -c "import json;print([(m['name'],m.get('context_length'),m['expires_at'][:4]) for m in json.load(open('$RUN_DIR/residency-after.json')).get('models',[])])")"
-  fi
+  [[ -n ${SCRATCH_PID:-} ]] && { pkill -P $SCRATCH_PID 2>/dev/null; kill $SCRATCH_PID 2>/dev/null; }; sleep 2
+  pkill -f "$SCR/airpad-host" 2>/dev/null
 }
-trap restore_real_host EXIT
+trap stop_scratch EXIT
 
 # ── 2. Release-candidate Host from the branch ───────────────────────────────────────────────────
 HOST_SHA=$(git -C $HOSTREPO rev-parse --short HEAD); HOST_BRANCH=$(git -C $HOSTREPO branch --show-current)
 HOST_DIRTY=$(git -C $HOSTREPO status --porcelain | grep -v '^??' | wc -l | tr -d ' ')
 (cd $HOSTREPO && go build -o "$SCR/airpad-host" ./cmd/airpad-host) || { log "Host build FAILED"; exit 1; }
 SECRET=$(openssl rand -hex 32)
-# Brief CJ — the scratch Host spawns the shipping Ollama with THIS environment (T's Host and its Ollama were quit
-# above), so the parallel-request setting reaches it. Checked against Ollama's own "server config" line below.
+# Brief CJ — the scratch Host spawns CC's Ollama copy with THIS environment (OLLAMA_HOST / OLLAMA_MODELS above), so the parallel-request setting reaches it. Checked against Ollama's own "server config" line below.
 (( SHARDS > 1 )) && export OLLAMA_NUM_PARALLEL=$SHARDS
-HOST_SECRET=$SECRET "$SCR/airpad-host" --headless --observe --listen 127.0.0.1:$PORT --ollama 127.0.0.1:11434 \
+HOST_SECRET=$SECRET "$SCR/airpad-host" --headless --observe --listen 127.0.0.1:$PORT --ollama ${OLL#http://} \
   --ollama-bin "$SHIP_OLLAMA" --manifest $HOSTREPO/manifest.json \
   --identity "$SCR/identity.key" --secret-file "$SCR/secret" >> "$RUN_DIR/host.log" 2>&1 &
 SCRATCH_PID=$!
@@ -103,7 +87,7 @@ TOKEN=$(HOST_SECRET=$SECRET "$SCR/airpad-host" --print-token)
 for i in {1..60}; do HPK=$(curl -s -m 3 127.0.0.1:$PORT/health -H "Authorization: Bearer $TOKEN" | python3 -c "import json,sys;print(json.load(sys.stdin).get('hostPublicKey',''))" 2>/dev/null); [[ -n $HPK ]] && break; sleep 1; done
 [[ -z ${HPK:-} ]] && { log "scratch Host never became healthy"; exit 1; }
 for i in {1..60}; do curl -s -m 2 $OLL/api/version >/dev/null && break; sleep 1; done
-log "scratch Host $HOST_BRANCH@$HOST_SHA (dirty=$HOST_DIRTY) pid=$SCRATCH_PID on :$PORT, shipping Ollama supervised"
+log "scratch Host $HOST_BRANCH@$HOST_SHA (dirty=$HOST_DIRTY) pid=$SCRATCH_PID on :$PORT, CC's Ollama at $OLL"
 if (( SHARDS > 1 )); then
   for i in {1..20}; do grep -q "OLLAMA_NUM_PARALLEL:" "$RUN_DIR/host.log" && break; sleep 1; done
   NP=$(grep -o "OLLAMA_NUM_PARALLEL:[0-9]*" "$RUN_DIR/host.log" | tail -1)
@@ -159,7 +143,7 @@ if (( ${#STORE_PASSES[@]} )); then
     python3 $AIRPAD/scripts/gauntlet/gauntlet.py grade-store "$PD" --model "$MODEL" --digest "$DIGEST" > /dev/null
     log "store pass $LABEL graded → $PD/table.md"
   done
-  restore_real_host; trap - EXIT
+  stop_scratch; trap - EXIT
   log "done (wall $(( $(date +%s) - START ))s)"
   exit 0
 fi
@@ -178,6 +162,6 @@ log "UI drive wall $(( $(date +%s) - T0 ))s"
 log "UI drive exit=$UIX ($(grep -c 'GAUNTLET_V2 ROW' $RUN_DIR/xcuitest.log) rows captured)"
 
 # ── 5/6. Restore (trap) + grade ─────────────────────────────────────────────────────────────────
-restore_real_host; trap - EXIT
+stop_scratch; trap - EXIT
 python3 $AIRPAD/scripts/gauntlet/gauntlet.py grade "$RUN_DIR" > /dev/null
 log "graded → $RUN_DIR/table.md  (wall $(( $(date +%s) - START ))s)"

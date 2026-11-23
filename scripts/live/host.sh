@@ -5,6 +5,9 @@
 #   scripts/live/host.sh <out_dir> <xctestrun> <set.json> <model> "<label>|<provider>|<extra app args>[|<xctestrun>]" …
 # (a pass's own xctestrun runs another build — "before" and "after" in one Host session)
 set -uo pipefail
+# RETIRED (sweep 2b amend b, the never list): this script quits T's Host and serves T's Ollama port. Host-route web
+# passes use a scratch Host on CC's own Ollama (127.0.0.1:11500), as scripts/server/gauntlet_routes.sh does.
+print -u2 "REFUSED (never list): scripts/live/host.sh quits T's Host; retired in sweep 2b (amend b)."; exit 2
 OUT=${1:?out_dir}; XCTR=${2:?xctestrun}; SET=${3:?set}; MODEL=${4:?model}; shift 4
 AIRPAD=${0:A:h:h:h}; HOSTREPO=${LIVE_HOSTREPO:-~/Developer/airpad-host}
 SHIP_OLLAMA="/Applications/AirPad Host.app/Contents/Resources/ollama"; OLL=http://127.0.0.1:11434; PORT=8799

@@ -459,7 +459,9 @@ final class LivingMapView: UIView, UIGestureRecognizerDelegate {
 
     // MARK: region labels (the scene's declutter: two-pass hysteresis, edge fade, eased alpha)
 
-    private func declutter(dt: Double, forceVisible: Bool) {
+    /// `visible`: the pills show at this zoom (or are forced). An eased alpha keeps the link awake only then: zoomed in,
+    /// the pills are faded out by the zoom, so their declutter easing is invisible and must not cost frames at rest.
+    private func declutter(dt: Double, forceVisible: Bool, visible: Bool) {
         labelsFading = false
         guard labelCount > 0 else { return }
         let bounds = self.bounds
@@ -490,7 +492,7 @@ final class LivingMapView: UIView, UIGestureRecognizerDelegate {
             let target: Float = keys.contains(i) ? edge : 0
             var a = labelAlpha[i]
             if target > a { a = min(target, a + step) } else if target < a { a = max(target, a - step) }
-            if a != target { labelsFading = true }
+            if a != target, visible { labelsFading = true }
             labelAlpha[i] = a
             if forceVisible, a > 0.001, let s = snapshot {
                 let l = s.labels[i]
@@ -521,7 +523,7 @@ final class LivingMapView: UIView, UIGestureRecognizerDelegate {
         applyPending(dt: dt)
         hovered = hitOrb()
         let regionRaw = Self.smooth(Double(RegionLabelTuning.fadeBandEnd), Double(RegionLabelTuning.fadeBandStart), camScale)
-        if !bare || arm == "pills" { declutter(dt: dt, forceVisible: arm == "pills") }
+        if !bare || arm == "pills" { declutter(dt: dt, forceVisible: arm == "pills", visible: arm == "pills" || regionRaw > 0.001) }
         if arm == "pills", let cs = canvasState, cs.mapAtRest { cs.mapAtRest = false }
 
         let light = snapshot?.isLight ?? true

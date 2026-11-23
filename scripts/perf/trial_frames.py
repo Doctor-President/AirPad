@@ -24,7 +24,11 @@ def gaps(ts): return [(b - a) * 1000 for a, b in zip(ts, ts[1:])]
 act = sorted(insec & set(int(t) for t in shown))
 per = collections.Counter(int(t) for t in shown)
 g = [x for x in gaps(shown) if int(shown[0]) >= 0]  # all gaps; keep those whose end lies in an input second
-g_in = [(b - a) * 1000 for a, b in zip(shown, shown[1:]) if int(b) in insec and int(a) in insec]
+# gaps inside an awake stretch only (a gap that holds a pause / wake is the rest rule, not a missed vsync)
+pw = sorted(t for c in (7, 8) for t, v in by[c])
+def crosses(a, b):
+    i = bisect.bisect_right(pw, a); return i < len(pw) and pw[i] < b
+g_in = [(b - a) * 1000 for a, b in zip(shown, shown[1:]) if int(b) in insec and int(a) in insec and not crosses(a, b)]
 main = [v for t, v in by[37] if int(t) in insec]
 gpu = [v for t, v in by[38] if int(t) in insec]
 vit = {int(v[0]): v[3] for v in d.get("vitals", [])}
@@ -56,6 +60,9 @@ if full:
     Ff = [per[s] for s in full]
     print(f"full awake input seconds {len(full)}: presented/s min {min(Ff)} p10 {pct(Ff,.1)} median {pct(Ff,.5)} · seconds < 118: {sum(1 for x in Ff if x < 118)}"
           f" · per second: {' '.join(str(x) for x in Ff)}")
+wmap = {round(t, 4): v for t, v in by[19]}
+work = [v - wmap.get(round(t, 4), 0) for t, v in by[37] if int(t) in insec]
+if work: print(f"main thread per frame WITHOUT the drawable wait (37 − 19): p50 {pct(work,.5):.2f}  p95 {pct(work,.95):.2f}  max {max(work):.2f} ms")
 wt = [v for t, v in by[19] if int(t) in insec]
 if wt: print(f"drawable wait (inside code 37): p50 {pct(wt,.5):.2f}  p95 {pct(wt,.95):.2f}  max {max(wt):.2f} ms")
 # changes that arrived while paused → time to the next shown frame

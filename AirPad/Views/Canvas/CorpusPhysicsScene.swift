@@ -2065,8 +2065,8 @@ final class CorpusPhysicsScene: SKScene {
         pacerTick &+= 1
         let ok = pacerEvery <= 1 || pacerTick % pacerEvery == 0
         Perf.probe(ok ? .tickOffered : .tickSkipped, ok ? 1 : 0)
-        #if PERFLOG
-        if ok { measureOverlayGaps() }
+        #if DEBUG || DEVSWITCHES
+        if ok { measureOverlayGaps() }   // only while the recorder is on (⌃⌥⌘P builds record probe rows 34 / 35)
         #endif
         return ok
         #else
@@ -2075,8 +2075,8 @@ final class CorpusPhysicsScene: SKScene {
         #endif
     }
 
-    #if PERFLOG
-    /// Sweep 2b · 2.1 — bench only: before this tick draws, how far the region pills (as last published) and the hover
+    #if DEBUG || DEVSWITCHES
+    /// Sweep 2b · 2.1 (amend d §4: also in T's DEVSWITCHES builds, recorder on only) — before this tick draws, how far the region pills (as last published) and the hover
     /// ring sit from their orbs with the camera as it is NOW (screen pt). A frame drawn without an `update` shows this gap.
     private func measureOverlayGaps() {
         guard PerfRecorder.on, let view else { return }

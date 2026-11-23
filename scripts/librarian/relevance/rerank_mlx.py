@@ -5,8 +5,17 @@
   rerank_mlx.py convert                       a 4-bit MLX copy (mlx_lm.convert -q) beside it
   rerank_mlx.py check                         C-d part 1: `yes` / `no` are single tokens; the prompt matches the card
   rerank_mlx.py smoke [--pairs N]             <= 20 synthetic pairs (bench planted notes vs Sample passages)
+  rerank_mlx.py verify --lib L                no model: the library opened here has the signals' passages, entries
+                                              and questions (same IDs, same order), or exit 2 with the counts
   rerank_mlx.py score --lib L [--precision bf16|q4] [--variants v0,v1,v2,v3] [--budget-min M]
-  rerank_mlx.py time  --lib bench             ms per pair and per question at pool 12 and 30 (warmed up, alone)
+  rerank_mlx.py time  --lib L [--pool 12,30] [--variants v0] [--questions N] [--all-wordings]
+                                              ms per question at each pool size (warmed up, alone), every timed
+                                              question listed by ID, peak memory (MLX + max RSS)
+
+Library: the nodes dir given on the command line (--sample-nodes …), else the one the signals recorded
+(signals-<lib>.json meta.nodes_dir), else the default. Whatever is opened must match the signals exactly (`verify`
+runs first inside `score` and `time`): sweep 2b's night scored 0 of 7,002 Sample pairs because the signals indexed
+the seeded Sample (712 passages) and this script opened the repo's (686), then wrote an empty cache.
 
 Score = P(yes) from the softmax over the `yes` / `no` logits at the last position. Pairs are cached on disk by
 (model, variant, question ID, block ID) — never by text — in OUT/rerank-cache/<lib>.jsonl; grade.py reads the cache.
@@ -146,13 +155,17 @@ def check_card_and_tokens(r=None):
     return ok, {"yes_id": y, "no_id": n, "single_tokens": single, "prompt_matches_model_card": card_ok}
 
 
-def cache_path(lib):
-    return CACHE / f"{lib}.jsonl"
+class PoolMismatch(Exception):
+    """The library opened here is not the one the signals were computed on (counts only in the message)."""
 
 
-def load_cache(lib):
+def cache_path(lib, out=None):
+    return (CACHE if out is None else Path(out) / "rerank-cache") / f"{lib}.jsonl"
+
+
+def load_cache(lib, out=None):
     d = {}
-    p = cache_path(lib)
+    p = cache_path(lib, out)
     if p.is_file():
         for line in p.read_text().splitlines():
             if line.strip():
@@ -161,26 +174,83 @@ def load_cache(lib):
     return d
 
 
-def score_library(lib_name, a, precision, variants, budget_min=None, t_start=None):
-    """Score every (question, pool passage) for the given variants; resumable from the cache."""
+def alignment_problems(lib, meta, rows_p, sig_qids, built_qids):
+    """Why the reranker's view of a library differs from the signals' (empty = identical). Counts and indices only."""
+    probs = []
+    blocks = meta.get("block_ids") or []
+    if lib.n != meta.get("passages", len(blocks)) or lib.n != len(blocks):
+        probs.append(f"passages: library {lib.n}, signals {meta.get('passages', len(blocks))}")
+    elif list(lib.p_block) != list(blocks):
+        first = next(i for i, (x, y) in enumerate(zip(lib.p_block, blocks)) if x != y)
+        probs.append(f"block IDs differ at passage index {first} (of {lib.n})")
+    nodes = meta.get("node_ids")
+    if nodes is not None and list(lib.node_ids) != list(nodes):
+        probs.append(f"entries: library {len(lib.node_ids)}, signals {len(nodes)} (or a different order)")
+    rows_p = np.asarray(rows_p)
+    if len(rows_p) == 0:
+        probs.append("signals have 0 pool rows")
+    elif int(rows_p.max()) >= lib.n:
+        probs.append(f"pool rows pointing past the library: {int((rows_p >= lib.n).sum())} of {len(rows_p)} "
+                     f"(max passage index {int(rows_p.max())}, library has {lib.n})")
+    built = set(built_qids)
+    missing = [q for q in sig_qids if q not in built]
+    if missing or len(sig_qids) != len(built_qids):
+        probs.append(f"questions: signals {len(sig_qids)}, built here {len(built_qids)}, "
+                     f"{len(missing)} signal question IDs not built here (first: {missing[0] if missing else '-'})")
+    return probs
+
+
+def open_for_signals(lib_name, a, out=None):
+    """(lib, {qid: question}, signals json, pool rows, signal qids) for the library the signals were computed on.
+    Raises PoolMismatch (counts only) instead of letting a scorer index the wrong passage set."""
     import export, questions as Q
+    out = Path(out or OUT)
+    sig = json.loads((out / f"signals-{lib_name}.json").read_text())
+    rows = dict(np.load(out / f"signals-{lib_name}.npz"))
+    meta = sig["meta"]
+    arg = {"bench": "bench_nodes", "sample": "sample_nodes", "fixture": "fixture_nodes"}.get(lib_name)
+    if arg and not getattr(a, arg, None) and meta.get("nodes_dir"):
+        setattr(a, arg, meta["nodes_dir"])
+        if lib_name == "bench" and not getattr(a, "bench_root", None):
+            a.bench_root = meta.get("bench_root") or str(Path(meta["nodes_dir"]).parent)
+    wf = meta.get("wordings_file") or ""
+    if wf and not os.environ.get("RELEVANCE_WORDINGS_DIR"):
+        os.environ["RELEVANCE_WORDINGS_DIR"] = str(Path(wf).parent)
     lib, keymap = export.open_library(lib_name, a)
-    qs, _ = Q.build(lib_name, lib, keymap, wordings=not getattr(a, "no_wordings", False))
-    qmap = {q["qid"]: q for q in qs}
-    sig = json.loads((OUT / f"signals-{lib_name}.json").read_text())
-    rows = np.load(OUT / f"signals-{lib_name}.npz")
-    qids = [x["qid"] for x in sig["questions"]]
-    cache = load_cache(lib_name)
-    CACHE.mkdir(parents=True, exist_ok=True)
-    r = Reranker(precision)
+    qs, info = Q.build(lib_name, lib, keymap, wordings=bool(wf) and not getattr(a, "no_wordings", False))
+    sig_qids = [x["qid"] for x in sig["questions"]]
+    probs = alignment_problems(lib, meta, rows["p"], sig_qids, [q["qid"] for q in qs])
+    if bool(wf) != bool(info.get("wordings_file")):
+        probs.append(f"wordings: signals used {'a wordings file' if wf else 'none'}, here "
+                     f"{'a wordings file' if info.get('wordings_file') else 'none'}")
+    if probs:
+        raise PoolMismatch(f"{lib_name}: the library opened here is not the one the signals used — "
+                           + "; ".join(probs) + f". Pass --{arg.replace('_', '-')} <the nodes dir the signals used>"
+                           " (or re-run signals.py, which now records it).")
+    return lib, {q["qid"]: q for q in qs}, sig, rows, sig_qids
+
+
+def needed_keys(rows, sig_qids, lib, precision, v):
+    return {(precision, v, sig_qids[int(qi)], lib.p_block[int(p)]) for qi, p in zip(rows["q"], rows["p"])}
+
+
+def score_library(lib_name, a, precision, variants, budget_min=None, t_start=None, out=None, reranker=None):
+    """Score every (question, pool passage) for the given variants; resumable from the cache. Refuses (PoolMismatch)
+    before touching the cache when the library differs from the signals; after scoring, every pool pair of every
+    variant not stopped by the time budget must be in the cache, or RuntimeError (no silent empty cache)."""
+    lib, qmap, sig, rows, qids = open_for_signals(lib_name, a, out)
+    cache = load_cache(lib_name, out)
+    cpath = cache_path(lib_name, out)
+    cpath.parent.mkdir(parents=True, exist_ok=True)
+    r = reranker or Reranker(precision)
     t_start = t_start or time.time()
     report = {}
-    with open(cache_path(lib_name), "a") as f:
+    with open(cpath, "a") as f:
         for v in variants:
             todo, seen = [], set()
             for qi, p in zip(rows["q"], rows["p"]):
-                q = qmap[qids[qi]]
-                key = (precision, v, q["qid"], lib.p_block[p])
+                q = qmap[qids[int(qi)]]
+                key = (precision, v, q["qid"], lib.p_block[int(p)])
                 if key not in cache and key not in seen:
                     seen.add(key)
                     todo.append((key, q, int(p)))
@@ -192,6 +262,8 @@ def score_library(lib_name, a, precision, variants, budget_min=None, t_start=Non
                 part = todo[s:s + 64]
                 pairs = [(str(q["text"]), str(lib.p_text[p]), str(lib.titles[lib.p_node[p]])) for _, q, p in part]
                 sc = r.score(pairs, v)
+                if len(sc) != len(part):
+                    raise RuntimeError(f"rerank {lib_name} {precision} {v}: {len(sc)} scores for {len(part)} pairs")
                 for (key, _, _), x in zip(part, sc):
                     cache[key] = float(x)
                     f.write(json.dumps({"m": key[0], "v": key[1], "q": key[2], "b": key[3], "s": round(float(x), 5)}) + "\n")
@@ -199,42 +271,71 @@ def score_library(lib_name, a, precision, variants, budget_min=None, t_start=Non
             else:
                 report[v] = {"scored": len(todo), "seconds": round(time.time() - t, 1),
                              "ms_per_pair": round(1000 * (time.time() - t) / max(len(todo), 1), 2)}
+            need = needed_keys(rows, qids, lib, precision, v)
+            have = sum(1 for k in need if k in cache)
+            report[v].update({"pool_pairs": len(need), "cached": have})
             say(f"rerank {lib_name} {precision} {v}: {report[v]}")
+            if have < len(need) and report[v].get("stopped") != "time budget":
+                raise RuntimeError(f"rerank {lib_name} {precision} {v}: {have} of {len(need)} pool pairs in the cache")
     return report
 
 
-def time_reranker(a, precision="bf16", n_questions=10):
-    """Warmed-up timings on bench: per pair (batched and one at a time) and per question at pool 12 and 30."""
-    import export, questions as Q
-    lib, keymap = export.open_library("bench", a)
-    qs, _ = Q.build("bench", lib, keymap, wordings=False)
-    sig = json.loads((OUT / "signals-bench.json").read_text())
-    rows = np.load(OUT / "signals-bench.npz")
-    qmap = {q["qid"]: q for q in qs}
-    r = Reranker(precision)
-    picks = [i for i, x in enumerate(sig["questions"]) if x.get("mode") == "library" and "error" not in x][:n_questions]
-
-    def pool_pairs(qi, k):
-        sel = [(int(p), int(d)) for q, p, d in zip(rows["q"], rows["p"], rows["dense_rank"]) if q == qi and d >= 0]
-        sel = [p for p, d in sorted(sel, key=lambda x: x[1])][:k]
-        q = qmap[sig["questions"][qi]["qid"]]
-        return [(str(q["text"]), str(lib.p_text[p]), str(lib.titles[lib.p_node[p]])) for p in sel]
-
-    r.score(pool_pairs(picks[0], 12))  # warm-up
-    out = {"precision": precision}
-    for k in (12, 30):
-        ms = []
-        for qi in picks:
-            pp = pool_pairs(qi, k)
-            t = time.perf_counter(); r.score(pp, batch=32); ms.append((time.perf_counter() - t) * 1000)
-        out[f"ms_per_question_pool{k}_p50"] = round(float(np.percentile(ms, 50)), 1)
-        out[f"ms_per_question_pool{k}_p95"] = round(float(np.percentile(ms, 95)), 1)
-    single = []
-    for pp in pool_pairs(picks[1], 12)[:12]:
-        t = time.perf_counter(); r.score([pp], batch=1); single.append((time.perf_counter() - t) * 1000)
-    out["ms_per_pair_one_at_a_time_p50"] = round(float(np.percentile(single, 50)), 1)
-    out["questions_timed"] = len(picks)
+def peak_memory():
+    """MLX's peak allocation and this process's max RSS, in MB (both None-safe)."""
+    import resource
+    out = {"max_rss_mb": round(resource.getrusage(resource.RUSAGE_SELF).ru_maxrss / (1 << 20 if sys.platform == "darwin" else 1 << 10), 1)}
+    try:
+        import mlx.core as mx
+        f = getattr(mx, "get_peak_memory", None) or mx.metal.get_peak_memory
+        out["mlx_peak_mb"] = round(f() / (1 << 20), 1)
+    except Exception as e:  # noqa: BLE001 — memory is reported, never fatal
+        out["mlx_peak_mb"] = None
+        out["mlx_peak_error"] = type(e).__name__
     return out
+
+
+def pool_pairs_for(rows, sig, lib, qmap, qi, k):
+    """Today's pool k for one question: its dense top k passages (dense rank order)."""
+    sel = [(int(p), int(d)) for q, p, d in zip(rows["q"], rows["p"], rows["dense_rank"]) if q == qi and d >= 0]
+    sel = [p for p, d in sorted(sel, key=lambda x: x[1])][:k]
+    q = qmap[sig["questions"][qi]["qid"]]
+    return [(str(q["text"]), str(lib.p_text[p]), str(lib.titles[lib.p_node[p]])) for p in sel]
+
+
+def time_reranker(a, precision="bf16", lib_name="bench", pools=(12, 30), variants=("v0",), n_questions=10,
+                  out=None, reranker=None, all_wordings=False):
+    """Warmed-up timings: ms per question at each pool size (one batch per question), every timed question by ID,
+    one-at-a-time ms per pair, peak memory. Questions: library mode, no error, original wording (all wordings with
+    `all_wordings`)."""
+    lib, qmap, sig, rows, _ = open_for_signals(lib_name, a, out)
+    r = reranker or Reranker(precision)
+    picks = [i for i, x in enumerate(sig["questions"]) if x.get("mode") == "library" and "error" not in x
+             and (all_wordings or int(x.get("wording", 0)) == 0)]
+    if n_questions:
+        picks = picks[:n_questions]
+    if len(picks) < 2:
+        raise RuntimeError(f"time {lib_name}: {len(picks)} questions to time")
+    res = {"precision": precision, "library": lib_name, "questions_timed": len(picks)}
+    r.score(pool_pairs_for(rows, sig, lib, qmap, picks[0], max(pools)), variants[0])  # warm-up
+    for v in variants:
+        for k in pools:
+            per_q = []
+            for qi in picks:
+                pp = pool_pairs_for(rows, sig, lib, qmap, qi, k)
+                t = time.perf_counter(); r.score(pp, v, batch=max(k, 1)); ms = (time.perf_counter() - t) * 1000
+                per_q.append([sig["questions"][qi]["qid"], len(pp), round(ms, 1)])
+            ms = np.array([x[2] for x in per_q])
+            res[f"{v}_pool{k}"] = {"ms_p50": round(float(np.percentile(ms, 50)), 1),
+                                   "ms_p95": round(float(np.percentile(ms, 95)), 1),
+                                   "ms_max": round(float(ms.max()), 1), "ms_mean": round(float(ms.mean()), 1),
+                                   "over_500ms": int((ms > 500).sum()), "over_1s": int((ms > 1000).sum()),
+                                   "per_question": per_q}
+    single = []
+    for pp in pool_pairs_for(rows, sig, lib, qmap, picks[1], 12)[:12]:
+        t = time.perf_counter(); r.score([pp], variants[0], batch=1); single.append((time.perf_counter() - t) * 1000)
+    res["ms_per_pair_one_at_a_time_p50"] = round(float(np.percentile(single, 50)), 1)
+    res["memory"] = peak_memory()
+    return res
 
 
 def smoke(n=10):
@@ -271,36 +372,53 @@ def smoke(n=10):
 def main():
     refuse_forbidden_ports()
     ap = argparse.ArgumentParser()
-    ap.add_argument("cmd", choices=["download", "convert", "check", "smoke", "score", "time"])
+    ap.add_argument("cmd", choices=["download", "convert", "check", "smoke", "verify", "score", "time"])
     ap.add_argument("--lib")
     ap.add_argument("--precision", default="bf16", choices=["bf16", "q4"])
     ap.add_argument("--variants", default="v0")
     ap.add_argument("--budget-min", type=float)
     ap.add_argument("--pairs", type=int, default=10)
+    ap.add_argument("--pool", default="12,30", help="time: pool sizes")
+    ap.add_argument("--questions", type=int, default=10, help="time: questions to time (0 = all)")
+    ap.add_argument("--all-wordings", action="store_true", help="time: every wording, not only the original")
     ap.add_argument("--bench-nodes"); ap.add_argument("--bench-root"); ap.add_argument("--sample-nodes")
     ap.add_argument("--fixture-nodes"); ap.add_argument("--allow-fixture", action="store_true")
     ap.add_argument("--no-wordings", action="store_true")
     a = ap.parse_args()
-    if a.cmd == "download":
-        download()
-    elif a.cmd == "convert":
-        convert()
-    elif a.cmd == "check":
-        ok, d = check_card_and_tokens()
-        say(json.dumps({"ok": ok, **d}))
-        sys.exit(0 if ok else 1)
-    elif a.cmd == "smoke":
-        say(json.dumps(smoke(min(a.pairs, 10))))
-    elif a.cmd == "score":
-        v = list(VARIANTS) if a.variants == "all" else a.variants.split(",")
-        rep = score_library(a.lib, a, a.precision, v, a.budget_min)
-        from common import dump_json
-        dump_json(rep, OUT / f"rerank-report-{a.lib}-{a.precision}.json")
-    elif a.cmd == "time":
-        from common import dump_json
-        res = time_reranker(a, a.precision)
-        dump_json(res, OUT / f"rerank-timing-{a.precision}.json")
-        say(json.dumps(res))
+    v = list(VARIANTS) if a.variants == "all" else a.variants.split(",")
+    try:
+        if a.cmd == "download":
+            download()
+        elif a.cmd == "convert":
+            convert()
+        elif a.cmd == "check":
+            ok, d = check_card_and_tokens()
+            say(json.dumps({"ok": ok, **d}))
+            sys.exit(0 if ok else 1)
+        elif a.cmd == "smoke":
+            say(json.dumps(smoke(min(a.pairs, 10))))
+        elif a.cmd == "verify":
+            lib, _, sig, rows, qids = open_for_signals(a.lib or "bench", a)
+            say(f"verify {a.lib or 'bench'}: OK · {lib.n} passages, {len(lib.node_ids)} entries, {len(qids)} questions, "
+                f"{len(rows['p'])} pool rows match the signals")
+        elif a.cmd == "score":
+            rep = score_library(a.lib, a, a.precision, v, a.budget_min)
+            from common import dump_json
+            dump_json(rep, OUT / f"rerank-report-{a.lib}-{a.precision}.json")
+        elif a.cmd == "time":
+            from common import dump_json
+            lib = a.lib or "bench"
+            res = time_reranker(a, a.precision, lib, tuple(int(x) for x in a.pool.split(",")), tuple(v), a.questions,
+                                all_wordings=a.all_wordings)
+            dump_json(res, OUT / f"rerank-timing-{lib}-{a.precision}.json")
+            say(json.dumps({k: ({kk: vv for kk, vv in x.items() if kk != "per_question"} if isinstance(x, dict) else x)
+                            for k, x in res.items()}))
+    except PoolMismatch as e:
+        print(f"REFUSED (nothing scored, cache untouched): {e}", file=sys.stderr, flush=True)
+        sys.exit(2)
+    except RuntimeError as e:
+        print(f"FAILED: {e}", file=sys.stderr, flush=True)
+        sys.exit(3)
 
 
 if __name__ == "__main__":

@@ -343,6 +343,10 @@ def main():
         raise SystemExit("no question vectors: pass --vectors <EmbedDump output> (or --standin for a plumbing check)")
     arr, qtable, meta = compute(lib, qs, vecs, standin=a.standin)
     meta.update(info)
+    # Which nodes dir these indices refer to, so the reranker opens the same passage set (never the fixture's path).
+    meta["nodes_dir"] = None if lib.private else str(Path(lib.source).resolve())
+    if a.lib == "bench" and a.bench_root:
+        meta["bench_root"] = str(Path(a.bench_root).resolve())
     save(a.lib, arr, qtable, meta, Path(a.out))
     say(f"{a.lib}{' (STAND-IN VECTORS: plumbing check, not a result)' if a.standin else ''}: "
         f"{len(qtable)} questions, {len(arr['q'])} pool rows, index {meta['index_build_ms']} ms, "

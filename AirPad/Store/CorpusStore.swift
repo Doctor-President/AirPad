@@ -1574,11 +1574,15 @@ final class CorpusStore {
                     ("plain-0.66", LibrarianState.stopgapBar(for: france) == LibrarianState.stopgapBar),
                     ("my-0.60", LibrarianState.stopgapBar(for: "What are my rules for writing?") == LibrarianState.stopgapOwnBar),
                     ("didI-0.60", LibrarianState.stopgapBar(for: "Did I ever finish the novel?") == LibrarianState.stopgapOwnBar),
-                    ("ifIdid-0.66", LibrarianState.stopgapBar(for: "If I did that, what happens next?") == LibrarianState.stopgapBar),
+                    // 1d follow-up (P6a): a first-person conditional takes the gentler bar (was 0.66 before)
+                    ("ifIdid-0.60", LibrarianState.stopgapBar(for: "If I did that, what happens next?") == LibrarianState.stopgapOwnBar),
                     ("constants", LibrarianState.stopgapBar == 0.66 && LibrarianState.stopgapOwnBar == 0.60),
                     ("under-nomatch", LibrarianState.stopgapSendsNoMatch(bestPassage: 0.65, query: france)),
                     ("at-matches", !LibrarianState.stopgapSendsNoMatch(bestPassage: 0.66, query: france)),
                     ("own-0.62-matches", !LibrarianState.stopgapSendsNoMatch(bestPassage: 0.62, query: "What did I write about rice?")),
+                    ("conditional-0.62-matches", !LibrarianState.stopgapSendsNoMatch(bestPassage: 0.62, query: "If I worked 12 hours a week, how much would I earn?")),
+                    ("france-0.65-nomatch", LibrarianState.stopgapSendsNoMatch(bestPassage: 0.65, query: france)),
+                    ("bare-if-I-0.62-nomatch", LibrarianState.stopgapSendsNoMatch(bestPassage: 0.62, query: "What happens if I mix bleach and vinegar?")),
                     ("own-0.59-nomatch", LibrarianState.stopgapSendsNoMatch(bestPassage: 0.59, query: "Which of my lab values are high?")),
                     ("cards-only-nomatch", LibrarianState.stopgapSendsNoMatch(bestPassage: 0, query: "my lab values")),
                 ]

@@ -1728,7 +1728,15 @@ final class LibrarianState {
         if UserDefaults.standard.object(forKey: "StopgapBar") != nil { bar = Float(UserDefaults.standard.double(forKey: "StopgapBar")) }
         if UserDefaults.standard.object(forKey: "StopgapOwnBar") != nil { own = Float(UserDefaults.standard.double(forKey: "StopgapOwnBar")) }
         #endif
-        return looksLikeOwnershipQuestion(query) ? min(bar, own) : bar
+        return looksLikeOwnershipQuestion(query) || asksFirstPersonConditional(query) ? min(bar, own) : bar
+    }
+    /// Sweep 2b · 1d follow-up (gauntlet P6a) — a first-person conditional ("If I worked 12 hours a week, how much would
+    /// I earn?") asks about the user's own situation too, so the stopgap uses the gentler bar. The stopgap's only:
+    /// `looksLikeOwnershipQuestion` also drives BU3's own-first survey partition and stays as it is. No bare "if i " /
+    /// "should i " (they catch general-knowledge questions: "What happens if I mix bleach and vinegar?").
+    static func asksFirstPersonConditional(_ query: String) -> Bool {
+        let q = query.lowercased().replacingOccurrences(of: "’", with: "'")
+        return ["if i did", "if i do", "would i ", "could i ", "i'd earn", "will i "].contains(where: { q.contains($0) })
     }
     /// True when the turn takes the no-match path: nothing named, and the best passage under the bar.
     static func stopgapSendsNoMatch(bestPassage: Float, query: String) -> Bool {

@@ -5,6 +5,7 @@ open-wait      wait 8000
 search         click toolbar.search
 search-type    type light
 rest           wait 2000
+reveal         reveal documentOpen-*#0
 h1-hover0      move documentOpen-*#0 0 0 1
 h2-rest        wait 1000
 q1-space       key 49

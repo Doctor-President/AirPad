@@ -20,6 +20,13 @@
 //                            [hold] fingers still 0.6–1.5 s mid-swipe, momentum after lift, a re-swipe during momentum,
 //                            [wobble] the pointer drifting a few points — repeated for <seconds>
 //   wait <ms>                not measured
+//   ax <ax-id>[#n] [attr]    sweep 2b · 4.1: not an event — prints "<label> ax <id> <attr>=<value>" (default AXValue) or
+//                            "absent"; keep it to synthetic test-library text (a field the steps typed into, a button)
+//   menu <Menu> <item prefix>  sweep 2b · 4.1: presses a menu-bar item through Accessibility (setup, not measured)
+//   reveal <ax-id>[#n]       sweep 2b · 4.1: real two-finger scrolls (phases, no momentum) over the element's column until
+//                            it sits inside the window (≤ 25 scrolls); not measured
+//   front                    sweep 2b · 4.1: activates the app again (after Preview took the front); not measured
+//   focus                    sweep 2b · 4.1: prints the app's focused element: role · identifier
 import AppKit
 import ApplicationServices
 import ScreenCaptureKit
@@ -352,6 +359,42 @@ for raw in script.split(separator: "\n") {
             for i in 1...n { mouse(.leftMouseDragged, CGPoint(x: p.x + dx * Double(i) / Double(n), y: p.y + dy * Double(i) / Double(n))); usleep(16_000) }
             mouse(.leftMouseUp, CGPoint(x: p.x + dx, y: p.y + dy))
         }
+    case "reveal":   // sweep 2b · 4.1: real two-finger scrolls over the element's column until it is inside the window
+        let parts = rest[0].split(separator: "#"); let n = parts.count > 1 ? Int(parts[1]) ?? 0 : 0
+        guard let w = ((a(app, kAXWindowsAttribute) as? [AXUIElement]) ?? []).first else { print("\(label) reveal no window"); continue }
+        let wf = frame(w); var tries = 0, ok = false
+        while tries < 25, let e = find(String(parts[0]), n) {
+            let f = frame(e)
+            if f.minY >= wf.minY + 90, f.maxY <= wf.maxY - 30 { ok = true; break }
+            let p = CGPoint(x: f.midX, y: wf.midY)
+            let dy: Double = f.maxY > wf.maxY - 30 ? -min(400, f.maxY - wf.maxY + 120) : min(400, wf.minY + 200 - f.minY)
+            mouse(.mouseMoved, p); usleep(100_000)
+            scroll(p, 0, phase: 1); usleep(16_000)
+            var sent = 0.0
+            for i in 1...12 { let want = (dy / 12 * Double(i)).rounded() - sent; scroll(p, Int32(want), phase: 2); sent += want; usleep(16_000) }
+            scroll(p, 0, phase: 4); usleep(600_000); tries += 1
+        }
+        print("\(label) reveal \(rest[0]) \(ok ? "visible" : "NOT VISIBLE") after \(tries) scrolls at \(Int(Date().timeIntervalSince1970 * 1000))")
+    case "front":   // sweep 2b · 4.1: the app back in front (after ⌘O hands a copy to Preview); not measured
+        NSRunningApplication(processIdentifier: pid)?.activate(); usleep(700_000)
+        print("\(label) front \(NSWorkspace.shared.frontmostApplication?.processIdentifier == pid ? "yes" : "NO") at \(Int(Date().timeIntervalSince1970 * 1000))")
+    case "ax":
+        let parts = rest[0].split(separator: "#"); let n = parts.count > 1 ? Int(parts[1]) ?? 0 : 0
+        let attr = rest.count > 1 ? rest[1] : "AXValue"
+        if let e = find(String(parts[0]), n) { print("\(label) ax \(rest[0]) \(attr)=\(a(e, attr).map { "\($0)" } ?? "nil") at \(Int(Date().timeIntervalSince1970 * 1000))") }
+        else { print("\(label) ax \(rest[0]) absent at \(Int(Date().timeIntervalSince1970 * 1000))") }
+    case "menu":
+        func kids(_ e: AXUIElement) -> [AXUIElement] { (a(e, kAXChildrenAttribute) as? [AXUIElement]) ?? [] }
+        guard let bar = a(app, kAXMenuBarAttribute),
+              let top = kids(bar as! AXUIElement).first(where: { (a($0, kAXTitleAttribute) as? String) == rest[0] }),
+              let it = kids(top).flatMap(kids).first(where: { ((a($0, kAXTitleAttribute) as? String) ?? "").hasPrefix(rest[1]) })
+        else { print("\(label) menu NOT FOUND \(rest.joined(separator: " "))"); continue }
+        AXUIElementPerformAction(it, kAXPressAction as CFString); usleep(800_000); print("\(label) menu pressed \(rest[0]) › \(rest[1])")
+    case "focus":
+        if let f = a(app, kAXFocusedUIElementAttribute) {
+            let e = f as! AXUIElement
+            print("\(label) focus \(a(e, kAXRoleAttribute).map { "\($0)" } ?? "?") · \(a(e, "AXIdentifier").map { "\($0)" } ?? "-") at \(Int(Date().timeIntervalSince1970 * 1000))")
+        } else { print("\(label) focus none at \(Int(Date().timeIntervalSince1970 * 1000))") }
     default: print("\(label) unknown verb \(verb)")
     }
 }

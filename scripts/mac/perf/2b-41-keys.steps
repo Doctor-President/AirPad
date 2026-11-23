@@ -1,0 +1,77 @@
+# Sweep 2b · 4.1 — Space, ⌘O and Esc with real keys, in T's focus state (the lines whose label starts "search": the
+# toolbar search field holding text, which opens the Librarian in Search) and plain (run41.sh drops those lines).
+#   EXTRA="-Sweep4Log YES -Open4x document -Open4xDelay 18"   (the first test-library entry with a PDF opens ~18 s in)
+# grade: python3 scripts/mac/perf/4x/grade41.py <run dir>   (app.log "[4x]" lines + rperf.txt's ax / focus lines)
+# Rows: K1 Space on a hovered document opens Quick Look (and the search text is untouched) · K2 ⌘O on a hovered
+# document opens a copy · K3 ⌘O while the clicked document is in Quick Look · K4 ⌘O after Quick Look closed (pointer
+# still on it) · K5 Esc ends selection (first press) · T1 typing in the field: Space types a space, no Quick Look.
+open-wait      wait 8000
+search         click toolbar.search
+search-type    type light
+rest           wait 2500
+f0             focus
+f0s            ax toolbar.search
+k1-reveal      reveal documentOpen-*#0
+k1-hover       move documentOpen-*#0 0 0 1
+rest           wait 800
+k1-space       key 49
+rest           wait 2500
+k1f            focus
+k1s            ax toolbar.search
+k1-close       key 49
+rest           wait 1500
+k2-hover       move documentOpen-*#0 0 0 1
+rest           wait 500
+k2-cmdO        cmdkey 31
+rest           wait 3500
+k2-front       front
+rest           wait 800
+k3-click       click documentOpen-*#0
+rest           wait 2500
+k3f            focus
+k3-cmdO        cmdkey 31
+rest           wait 3500
+k3-front       front
+rest           wait 800
+k3-esc         esc
+rest           wait 1500
+k4s            ax toolbar.search
+k4-cmdO        cmdkey 31
+rest           wait 3500
+k4-front       front
+rest           wait 800
+back           cmdkey 33
+rest           wait 2000
+view-cards     click toolbar.view.Cards
+rest           wait 2500
+search-again   click toolbar.search
+search-selall  cmdkey 0
+search-retype  type light
+rest           wait 2000
+k5-select      menu View Select
+rest           wait 1000
+k5-pick        click cardTile-*#0
+rest           wait 1000
+k5-on          ax Done AXRole
+k5f            focus
+k5s            ax toolbar.search
+k5-esc         esc
+rest           wait 1200
+k5-after       ax Done AXRole
+k5s2           ax toolbar.search
+k5-esc2        esc
+rest           wait 1200
+k5-after2      ax Done AXRole
+t1-fwd         cmdkey 30
+rest           wait 2500
+t1-reveal      reveal documentOpen-*#0
+t1-click       click toolbar.search
+t1-selall      cmdkey 0
+t1-hover       move documentOpen-*#0 0 0 1
+rest           wait 600
+t1-type        type a b
+rest           wait 1500
+t1s            ax toolbar.search
+t1d            ax documentOpen-*#0 AXRole
+t1-esc         esc
+rest           wait 1000

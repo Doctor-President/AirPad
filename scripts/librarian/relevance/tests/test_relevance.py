@@ -184,5 +184,170 @@ class TestPlumbing(unittest.TestCase):
         C.refuse_forbidden_ports(["--url", "http://127.0.0.1:11500", "12345"], {"P": "localhost:12345"})
 
 
+# ---------------------------------------------------------------------------------------------------------------
+# Sweep 2b rerun guards (2026-11-23): the reranker must open the signals' passage set, and the grade's supporting
+# denominator is the supporting entries IN THE POOL. Toy data only, no model.
+import json as _json
+import types as _types
+
+import export as _export
+import rerank_mlx as RM
+
+
+class _FakeReranker:
+    def __init__(self, broken=False):
+        self.broken, self.calls = broken, 0
+
+    def score(self, pairs, variant="v0", batch=16):
+        self.calls += 1
+        return np.zeros(0, np.float32) if self.broken else np.linspace(0.1, 0.9, len(pairs)).astype(np.float32)
+
+
+def _write_toy_signals(out, lib_name, passages, block_ids, node_ids, qids, rows_q, rows_p):
+    out.mkdir(parents=True, exist_ok=True)
+    meta = {"library": lib_name, "passages": passages, "block_ids": block_ids, "node_ids": node_ids,
+            "wordings_file": ""}
+    (out / f"signals-{lib_name}.json").write_text(_json.dumps({"meta": meta, "questions": [
+        {"qid": q, "mode": "library", "wording": 0} for q in qids]}))
+    np.savez(out / f"signals-{lib_name}.npz", q=np.array(rows_q), p=np.array(rows_p),
+             dense_rank=np.arange(len(rows_p)))
+
+
+class TestRerankCountGuard(unittest.TestCase):
+    """Sweep 2b night: signals on the seeded Sample (712 passages), reranker on the repo's (686) → IndexError × 8 and
+    an empty cache. Now a mismatch refuses before the cache is touched, and a short cache fails loudly."""
+
+    def setUp(self):
+        self.lib = toy_library()               # 6 passages b0…b5, entries E1…E4
+        self.qids = ["sample|C1|0", "sample|C2|0"]
+        self._orig = (_export.open_library, Q.build)
+        _export.open_library = lambda name, a=None: (self.lib, {})
+        Q.build = lambda lib_name, lib, keymap, results=None, wordings=True, gauntlet_entries=True: (
+            [{"qid": q, "text": f"question {i}"} for i, q in enumerate(self.qids)], {"wordings_file": ""})
+        self.a = _types.SimpleNamespace(sample_nodes=None, no_wordings=False)
+
+    def tearDown(self):
+        _export.open_library, Q.build = self._orig
+
+    def test_alignment_problems_counts(self):
+        meta = {"passages": 7, "block_ids": [f"b{i}" for i in range(7)], "node_ids": self.lib.node_ids}
+        probs = RM.alignment_problems(self.lib, meta, [0, 6], self.qids, self.qids)
+        self.assertTrue(any("library 6, signals 7" in x for x in probs), probs)
+        self.assertTrue(any("1 of 2" in x for x in probs), probs)
+        ok = {"passages": 6, "block_ids": list(self.lib.p_block), "node_ids": self.lib.node_ids}
+        self.assertEqual(RM.alignment_problems(self.lib, ok, [0, 5], self.qids, self.qids), [])
+        moved = dict(ok, block_ids=["b0", "b2", "b1", "b3", "b4", "b5"])
+        self.assertTrue(RM.alignment_problems(self.lib, moved, [0], self.qids, self.qids))
+        self.assertTrue(RM.alignment_problems(self.lib, ok, [0], self.qids + ["sample|C3|1"], self.qids))
+
+    def test_mismatch_refuses_and_leaves_no_cache(self):
+        with tempfile.TemporaryDirectory() as d:
+            out = Path(d)
+            _write_toy_signals(out, "sample", 7, [f"b{i}" for i in range(7)], self.lib.node_ids, self.qids,
+                               [0, 0, 1], [1, 6, 2])
+            fake = _FakeReranker()
+            with self.assertRaises(RM.PoolMismatch) as cm:
+                RM.score_library("sample", self.a, "bf16", ["v1"], out=out, reranker=fake)
+            self.assertIn("library 6, signals 7", str(cm.exception))
+            self.assertFalse(RM.cache_path("sample", out).exists(), "no (empty) cache written on a mismatch")
+            self.assertEqual(fake.calls, 0)
+
+    def test_match_scores_every_pool_pair(self):
+        with tempfile.TemporaryDirectory() as d:
+            out = Path(d)
+            _write_toy_signals(out, "sample", 6, list(self.lib.p_block), self.lib.node_ids, self.qids,
+                               [0, 0, 1, 1], [1, 5, 2, 3])
+            rep = RM.score_library("sample", self.a, "bf16", ["v1", "v3"], out=out, reranker=_FakeReranker())
+            self.assertEqual({v: (r["pool_pairs"], r["cached"]) for v, r in rep.items()}, {"v1": (4, 4), "v3": (4, 4)})
+            lines = RM.cache_path("sample", out).read_text().splitlines()
+            self.assertEqual(len(lines), 8)
+            self.assertEqual({(_json.loads(x)["q"], _json.loads(x)["b"]) for x in lines},
+                             {("sample|C1|0", "b1"), ("sample|C1|0", "b5"), ("sample|C2|0", "b2"), ("sample|C2|0", "b3")})
+            # resumable: a second run scores nothing new and still checks coverage
+            rep2 = RM.score_library("sample", self.a, "bf16", ["v1"], out=out, reranker=_FakeReranker())
+            self.assertEqual((rep2["v1"]["scored"], rep2["v1"]["cached"]), (0, 4))
+
+    def test_short_scores_fail_loudly(self):
+        with tempfile.TemporaryDirectory() as d:
+            out = Path(d)
+            _write_toy_signals(out, "sample", 6, list(self.lib.p_block), self.lib.node_ids, self.qids, [0], [1])
+            with self.assertRaises(RuntimeError):
+                RM.score_library("sample", self.a, "bf16", ["v1"], out=out, reranker=_FakeReranker(broken=True))
+
+    def test_signals_nodes_dir_is_followed(self):
+        with tempfile.TemporaryDirectory() as d:
+            out = Path(d)
+            _write_toy_signals(out, "sample", 6, list(self.lib.p_block), self.lib.node_ids, self.qids, [0], [1])
+            js = _json.loads((out / "signals-sample.json").read_text())
+            js["meta"]["nodes_dir"] = "/seeded/nodes"
+            (out / "signals-sample.json").write_text(_json.dumps(js))
+            seen = []
+            _export.open_library = lambda name, a=None: (seen.append(a.sample_nodes), (self.lib, {}))[1]
+            RM.open_for_signals("sample", self.a, out)
+            self.assertEqual(seen, ["/seeded/nodes"])
+            a2 = _types.SimpleNamespace(sample_nodes="/explicit", no_wordings=False)
+            RM.open_for_signals("sample", a2, out)
+            self.assertEqual(seen[-1], "/explicit")
+
+
+def _toy_grade_dir(d):
+    """Three cases on one 'bench' library. Rows: (question, passage, entry index, S1, supporting).
+    C1 supports E1 + E2 (E2 never reaches the pool) · C2 supports E2 · C3 no evidence."""
+    rows = [(0, 0, 0, 0.90, True), (0, 1, 0, 0.40, True), (0, 3, 2, 0.65, False),
+            (1, 2, 1, 0.60, True), (1, 4, 3, 0.55, False),
+            (2, 0, 0, 0.30, False)]
+    z = {"q": [r[0] for r in rows], "p": [r[1] for r in rows], "node": [r[2] for r in rows],
+         "S1": [r[3] for r in rows], "support": [r[4] for r in rows]}
+    n = len(rows)
+    arr = {k: np.array(v) for k, v in z.items()}
+    arr.update({"S6_A": np.ones(n, np.float32), "S3_A": np.ones(n, np.float32), "name_hit_A": np.zeros(n, bool),
+                "answer": np.array([r[4] for r in rows])})
+    np.savez(Path(d) / "signals-bench.npz", **arr)
+    base = {"mode": "library", "followup": False, "type": "", "france": False, "best_s1": 0.9, "named": False,
+            "ownership": False}
+    qs = [dict(base, qid="bench|C1|0", case="C1", evidence=True, no_evidence=False, supports=["E1", "E2"],
+               supports_in_library=["E1", "E2"]),
+          dict(base, qid="bench|C2|0", case="C2", evidence=True, no_evidence=False, supports=["E2"],
+               supports_in_library=["E2"]),
+          dict(base, qid="bench|C3|0", case="C3", evidence=False, no_evidence=True, supports=[],
+               supports_in_library=[])]
+    meta = {"block_ids": [f"b{i}" for i in range(5)], "entries": 4, "passages": 5}
+    (Path(d) / "signals-bench.json").write_text(_json.dumps({"meta": meta, "questions": qs}))
+
+
+class TestInPoolDenominator(unittest.TestCase):
+    def test_keep_all_reaches_the_bar(self):
+        with tempfile.TemporaryDirectory() as d:
+            _toy_grade_dir(d)
+            data = G.Data(["bench"], Path(d), "A")
+            self.assertEqual(list(data.q_sup_labelled), [2, 1, 0])
+            self.assertEqual(list(data.q_sup_inpool), [1, 1, 0])
+            keep = np.ones(len(data.r["q"]), bool)
+            m = G.metrics(data, keep, G.entry_kept(data, keep), data.q_bar)
+            self.assertEqual((m["sup_kept"], m["sup_total"], m["sup_labelled"], m["sup_out_of_pool"]), (2, 2, 3, 1))
+            self.assertEqual(m["sup_missed_cases"], [])   # an out-of-pool label is not a grading miss
+
+    def test_leave_one_case_out_vs_in_sample(self):
+        """In sample one cut-off (0.58) keeps both cases' supporting entries; held out, each case gets the cut-off
+        its partner alone would pick, and C2 loses its supporting entry: 1 / 2 held out vs 2 / 2 in sample."""
+        with tempfile.TemporaryDirectory() as d:
+            _toy_grade_dir(d)
+            data = G.Data(["bench"], Path(d), "A")
+            S1 = data.r["S1"]
+            arm = ([(0.5,), (0.58,), (0.7,)], lambda p: S1 >= p[0], 1, None)
+            qm = {"bench": data.q_bar}
+            folds, (gi, meets), cases = G.fit(data, arm, qm, data.q_case)
+            self.assertEqual((arm[0][gi], meets), ((0.58,), True))
+            self.assertEqual({c: arm[0][folds[c][0]] for c in ("bench:C1", "bench:C2")},
+                             {"bench:C1": (0.58,), "bench:C2": (0.7,)})
+            rk, gk = G.assemble(data, arm, folds, data.q_case, None)
+            held = G.metrics(data, rk, gk, data.q_bar)
+            rk_in = arm[1](arm[0][gi])
+            ins = G.metrics(data, rk_in, G.entry_kept(data, rk_in), data.q_bar)
+            self.assertEqual((held["sup_kept"], held["sup_total"], held["rest_kept"]), (1, 2, 1))
+            self.assertEqual((ins["sup_kept"], ins["sup_total"], ins["rest_kept"]), (2, 2, 1))
+            self.assertEqual(held["sup_missed_cases"], ["C2"])
+
+
 if __name__ == "__main__":
     unittest.main(verbosity=1)

@@ -16,7 +16,7 @@ for focus in tstate plain; do
   R=$OUT/$focus; mkdir -p $R
   if [[ $focus == tstate ]]; then cp $P/2b-41-keys.steps $R/steps; else grep -vE '^search' $P/2b-41-keys.steps > $R/steps; fi
   zsh $P/quiet_watch.sh $R/quiet.log & Q=$!
-  EXTRA="-Sweep4Log YES -Open4x document -Open4xDelay 18" zsh $P/run.sh $APP $R $R/steps > $R/run.txt 2>&1
+  EXTRA="-Sweep4Log YES" zsh $P/run.sh $APP $R $R/steps > $R/run.txt 2>&1
   kill $Q 2>/dev/null
   if pgrep -x Preview >/dev/null; then
     osascript -e 'tell application "Preview" to get path of every document' 2>/dev/null | tr ',' '\n' | sed 's/^ *//' | grep -v '^$' \

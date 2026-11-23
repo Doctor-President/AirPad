@@ -39,12 +39,14 @@ def row(name, ok, detail=""):
 
 tstate = at("search-type") is not None
 print(f"state {'T (search field holding text, Librarian in Search)' if tstate else 'plain'} · focus at start: {focus('f0')} · field {val('f0s')!r}")
-o = next((e[2] for e in ev if e[1] == "4x" and e[2].startswith("open ")), "no -Open4x line")
-row("entry with a document opened", "none" not in o and o.startswith("open document"), o)
+r = at("k1-reveal")
+row("entry opened by a click, its document in the window", r is not None and "visible" in r[3] and "NOT" not in r[3],
+    f"focus after the click {focus('k1f')}" if r else "no reveal line")
 w = win("k1-space", "k1f")
 row("K1 Space on a hovered document opens Quick Look", has(w, r"4\.2 space opens document") and has(w, r"4\.3 viewer open items"),
     f"focus {focus('k1f')} · field {val('f0s')!r} → {val('k1s')!r}")
-if tstate: row("K1b the search text is untouched by that Space", val("k1s") == val("f0s"), f"{val('f0s')!r} → {val('k1s')!r}")
+# (read after the viewer closed: while it is open its window is the AX front window and the toolbar field isn't listed)
+if tstate: row("K1b the search text is untouched by that Space", val("k1s2") == val("f0s"), f"{val('f0s')!r} → {val('k1s2')!r}")
 for k, a, b, what in (("K2", "k2-cmdO", "k2-front", "⌘O on a hovered document"),
                       ("K3", "k3-cmdO", "k3-front", "⌘O while the clicked document is in Quick Look"),
                       ("K4", "k4-cmdO", "k4-front", "⌘O after Quick Look closed (pointer still on it)")):

@@ -250,10 +250,11 @@ enum MacDocumentKeys {
         held = nil
     }
 
-    private static func editingText() -> Bool {
+    /// The class of the text input being edited (first responder), nil when none.
+    private static func editingTextClass() -> String? {
         FirstResponderProbe.current = nil
         UIApplication.shared.sendAction(#selector(UIResponder.airpadCaptureFirstResponder), to: nil, from: nil, for: nil)
-        return FirstResponderProbe.current is UITextInput
+        return FirstResponderProbe.current.flatMap { $0 is UITextInput ? String(describing: type(of: $0)) : nil }
     }
 
     private static func install() {
@@ -266,11 +267,24 @@ enum MacDocumentKeys {
             let flags = ((event.value(forKey: "modifierFlags") as? NSNumber)?.uintValue ?? 0) & (0xF << 17)
             let cmd: UInt = 1 << 20, shift: UInt = 1 << 17
             return MainActor.assumeIsolated {
-                guard let h = hovered, !editingText() else { return event }
+                // Sweep 2b · 4.1 — only Space is a typing key: it belongs to a text field that is being edited (a click
+                // outside a one-line field ends its editing first, `MacClickEndsFieldEditing`). ⌘O and ⌘⇧R type nothing,
+                // so they act on the hovered item whatever holds focus (T's Mac: the toolbar search held them).
                 switch (code, flags) {
-                case (49, 0): h.actions.quickLook(); return nil                 // Space
-                case (31, cmd): h.actions.open(); return nil                    // ⌘O
-                case (15, cmd | shift): h.actions.reveal(); return nil          // ⌘⇧R
+                case (49, 0):                                                   // Space
+                    guard let h = hovered else { return event }
+                    if let editing = editingTextClass() {
+                        MacProofLog.note("4.1", "space passes: typing in \(editing)")
+                        return event
+                    }
+                    h.actions.quickLook(); return nil
+                case (31, cmd):                                                 // ⌘O
+                    guard let h = hovered else { return event }                 // (an open viewer: `MacViewerKeys`)
+                    MacProofLog.note("4.1", "cmd-O opens a copy of \(h.id)")
+                    h.actions.open(); return nil
+                case (15, cmd | shift):                                         // ⌘⇧R
+                    guard let h = hovered else { return event }
+                    h.actions.reveal(); return nil
                 default: return event
                 }
             }

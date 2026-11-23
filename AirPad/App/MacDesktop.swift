@@ -1703,6 +1703,7 @@ struct MacToolbarTrailing: View {
                     // goes back to Ask, no mango fade.
                     .onKeyPress(.escape) { librarian.searchText = ""; searchFocused = false; return .handled }
                     .onChange(of: searchFocused) { _, focused in
+                        MacProofLog.note("4.1", "toolbar search focus \(focused)")
                         MacSearchEscape.active = focused
                         MacSearchEscape.hasText = focused ? { [librarian] in !librarian.searchText.isEmpty } : nil
                     MacSearchEscape.leave = focused ? { [librarian] in
@@ -1780,7 +1781,10 @@ struct MacToolbarTrailing: View {
             return MainActor.assumeIsolated {
                 guard let exit, !MacPresentation.somethingPresented(), !(blocked?() ?? false) else { return event }
                 if MacSearchEscape.active {
-                    if MacSearchEscape.hasText?() ?? true { return event }   // a search to clear first
+                    if MacSearchEscape.hasText?() ?? true {                  // a search to clear first
+                        MacProofLog.note("4.1", "esc clears the search first (typing in the search field)")
+                        return event
+                    }
                 } else {
                     FirstResponderProbe.current = nil
                     UIApplication.shared.sendAction(#selector(UIResponder.airpadCaptureFirstResponder), to: nil, from: nil, for: nil)
@@ -1788,13 +1792,75 @@ struct MacToolbarTrailing: View {
                     // search field's own Esc (cleared, SwiftUI focus off) UIKit keeps it first responder (sweep 1 · proof
                     // 4: 0/3). A note or any field with text keeps its Esc.
                     if let input = FirstResponderProbe.current as? UITextInput,
-                       !((input as? UITextField)?.text?.isEmpty ?? false) { return event }
+                       !((input as? UITextField)?.text?.isEmpty ?? false) {
+                        MacProofLog.note("4.1", "esc passes: typing in \(type(of: input))")
+                        return event
+                    }
                 }
+                MacProofLog.note("4.1", "esc ends selection")
                 exit()
                 return nil
             }
         }
         monitor = unsafeBitCast(method_getImplementation(m), to: Add.self)(cls, sel, 1 << 10, handler)
+    }
+}
+
+/// Sweep 2b · 4.1 — a click outside a one-line text field ends editing there, as a click in Finder's results takes the
+/// keys from its search field. Without it the toolbar search kept first responder after the user clicked on to a result,
+/// a card or a document (SwiftUI's buttons and views never take it), so Space typed into the search, ⌘O and Esc went to
+/// it, and the hovered item's keys never fired (T's Mac, sweep 1 steps 6 and 9; reproduced red in sweep 2b).
+/// Only a one-line field (`UITextField`: the searches, the rename fields): a note or the Librarian's Ask (multi-line
+/// `UITextView`s) keep focus while their own buttons (the format panel, send) are clicked. Clicks inside the field (its
+/// whole capsule for the toolbar search), on another text input (it takes focus itself) or inside a presented sheet are
+/// left alone. Called from the window's touch monitor (`FocusDismissTouchMonitor`, CanvasChrome).
+@MainActor enum MacClickEndsFieldEditing {
+    static func touchBegan(at p: CGPoint, in window: UIWindow) {
+        FirstResponderProbe.current = nil
+        UIApplication.shared.sendAction(#selector(UIResponder.airpadCaptureFirstResponder), to: nil, from: nil, for: nil)
+        guard let field = FirstResponderProbe.current as? UITextField, field.window === window else { return }
+        let own = field.convert(field.bounds, to: window)
+        var keep = own.insetBy(dx: -8, dy: -6)
+        if let capsule = MacToolbarProbe.windowRect["toolbar.search"], capsule.insetBy(dx: -4, dy: -4).contains(CGPoint(x: own.midX, y: own.midY)) {
+            keep = keep.union(capsule.insetBy(dx: -2, dy: -2))
+        }
+        guard !keep.contains(p) else { return }
+        if let hit = window.hitTest(p, with: nil), hit is UITextInput { return }
+        DispatchQueue.main.async {
+            guard field.isFirstResponder else { return }
+            // Observed (sweep 2b · 4.1, first green tries): `resignFirstResponder()` returned true and the field let go,
+            // but the field was first responder again by the next key (10 s later), so Space still went to it and Esc
+            // never reached selection. As Finder's results do, the content takes first responder instead (`sink`, a
+            // zero-size view in the window's root view, so the root's menu / key commands stay on the chain).
+            let resigned = field.resignFirstResponder()
+            let took = sink(in: window)?.becomeFirstResponder() ?? false
+            MacProofLog.note("4.1", "click outside ends editing in \(type(of: field)): resigned \(resigned) · content took the keys \(took)")
+            #if DEBUG || PERFLOG
+            if MacProofLog.on {
+                for delay in [0.3, 1.5, 5.0] {
+                    DispatchQueue.main.asyncAfter(deadline: .now() + delay) {
+                        MacProofLog.note("4.1", "+\(delay) s: field first responder \(field.isFirstResponder) · content \(sinks[ObjectIdentifier(window)]?.isFirstResponder ?? false)")
+                    }
+                }
+            }
+            #endif
+        }
+    }
+
+    /// The content's first-responder stand-in, one per window: a zero-size view at the back of the root view.
+    private static var sinks: [ObjectIdentifier: FocusSink] = [:]
+    private static func sink(in window: UIWindow) -> UIView? {
+        if let s = sinks[ObjectIdentifier(window)], s.window === window { return s }
+        guard let root = window.rootViewController?.view else { return nil }
+        let s = FocusSink(frame: .zero)
+        s.isUserInteractionEnabled = false
+        s.isAccessibilityElement = false
+        root.insertSubview(s, at: 0)
+        sinks[ObjectIdentifier(window)] = s
+        return s
+    }
+    private final class FocusSink: UIView {
+        override var canBecomeFirstResponder: Bool { true }
     }
 }
 
@@ -1814,7 +1880,7 @@ struct MacToolbarTrailing: View {
         let handler: @convention(block) (AnyObject) -> AnyObject? = { event in
             guard (event.value(forKey: "keyCode") as? NSNumber)?.intValue == 53 else { return event }   // Esc
             return MainActor.assumeIsolated {
-                guard active, let leave else { return event }
+                guard active, let leave, !MacViewerKeys.isOpen else { return event }   // 4.1: an open viewer's Esc closes it
                 // Empty field: with selection mode on, Esc ends that instead (sweep 1 · N3); otherwise it leaves the field.
                 if !(hasText?() ?? true), MacSelectionEscape.exit != nil { return event }
                 leave()

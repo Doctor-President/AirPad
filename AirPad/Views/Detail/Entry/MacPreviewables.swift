@@ -229,21 +229,29 @@ enum MacDefaultApp {
 // MARK: - The open viewer's keys (4.3)
 
 /// Sweep 2b · 4.3 — while a Quick Look viewer is open: Space or Esc closes it, ← / → step between several items. Taken
-/// where AppKit first sees the key (a local monitor, as `MacDocumentKeys`), unless a text field is being edited (Quick
-/// Look's own search). The item under the viewer is held off meanwhile (`MacDocumentKeys.suspendForViewer`).
+/// where AppKit first sees the key (a local monitor, as `MacDocumentKeys`), unless a text field INSIDE the viewer is being
+/// edited (Quick Look's own search). The item under the viewer is held off meanwhile (`MacDocumentKeys.suspendForViewer`).
+/// Sweep 2b · 4.1 — a field left focused under the viewer (T's toolbar search) no longer takes Space / Esc from it, and
+/// ⌘O opens a copy of the item the viewer shows (Finder: ⌘O works while Quick Look is up).
 @MainActor
 enum MacViewerKeys {
-    private struct Viewer { let token: Int; let count: Int; let close: () -> Void; let step: (Int) -> Int?; let isLive: () -> Bool }
+    private struct Viewer {
+        let token: Int; let count: Int; let close: () -> Void; let step: (Int) -> Int?; let isLive: () -> Bool
+        let openCurrent: () -> Void; let owns: (UIView) -> Bool
+    }
     private static var current: Viewer?
     private static var monitor: AnyObject?
     private static var lastToken = 0
+    /// A viewer is open: Esc / Space are its (the toolbar search's Esc defers to it — sweep 2b · 4.1).
+    static var isOpen: Bool { current?.isLive() ?? false }
 
     /// Returns a token; only `close(token)` with it ends this viewer's keys (a late `onDisappear` of an earlier viewer
     /// can't take a newer viewer's). `isLive` = its controller is still in a window: if not, keys pass through.
-    static func open(count: Int, close: @escaping () -> Void, step: @escaping (Int) -> Int?, isLive: @escaping () -> Bool) -> Int {
+    static func open(count: Int, close: @escaping () -> Void, step: @escaping (Int) -> Int?, isLive: @escaping () -> Bool,
+                     openCurrent: @escaping () -> Void, owns: @escaping (UIView) -> Bool) -> Int {
         lastToken += 1
         if current == nil { MacDocumentKeys.suspendForViewer() }
-        current = Viewer(token: lastToken, count: count, close: close, step: step, isLive: isLive)
+        current = Viewer(token: lastToken, count: count, close: close, step: step, isLive: isLive, openCurrent: openCurrent, owns: owns)
         install()
         return lastToken
     }
@@ -255,10 +263,13 @@ enum MacViewerKeys {
         MacProofLog.note("4.3", "viewer closed")
     }
 
-    private static func editingText() -> Bool {
+    /// A text input inside the viewer is being edited (Quick Look's own search). One outside it (a field left focused
+    /// in the window under the viewer) doesn't count: it isn't what the user is looking at (sweep 2b · 4.1).
+    private static func editingTextInViewer(_ v: Viewer) -> Bool {
         FirstResponderProbe.current = nil
         UIApplication.shared.sendAction(#selector(UIResponder.airpadCaptureFirstResponder), to: nil, from: nil, for: nil)
-        return FirstResponderProbe.current is UITextInput
+        guard let r = FirstResponderProbe.current, r is UITextInput else { return false }
+        return (r as? UIView).map(v.owns) ?? false
     }
 
     private static func install() {
@@ -270,8 +281,14 @@ enum MacViewerKeys {
             let code = (event.value(forKey: "keyCode") as? NSNumber)?.intValue ?? -1
             let flags = ((event.value(forKey: "modifierFlags") as? NSNumber)?.uintValue ?? 0) & (0xF << 17)
             let isRepeat = (event.value(forKey: "ARepeat") as? NSNumber)?.boolValue ?? false
+            let cmd: UInt = 1 << 20
             return MainActor.assumeIsolated {
-                guard let v = current, flags == 0, v.isLive(), !editingText() else { return event }
+                guard let v = current, v.isLive(), !editingTextInViewer(v) else { return event }
+                if code == 31, flags == cmd {                                  // ⌘O: a copy of what the viewer shows
+                    MacProofLog.note("4.1", "cmd-O in the viewer opens a copy")
+                    v.openCurrent(); return nil
+                }
+                guard flags == 0 else { return event }
                 if isRepeat, code == 49 || code == 53 { return nil }          // a held Space / Esc: once, not open-close-open
                 switch code {
                 case 49, 53:                                                   // Space, Esc

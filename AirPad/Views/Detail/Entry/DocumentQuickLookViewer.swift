@@ -128,7 +128,18 @@ struct DocumentViewerSheet: View {
             // Sweep 2b · 4.3 — Space (and Esc) closes, ← / → step between the photos, as in Finder's Quick Look.
             .onAppear {
                 keysToken = MacViewerKeys.open(count: handoffs.count, close: { dismiss() }, step: { handle.step($0) },
-                                               isLive: { [weak handle] in handle?.controller?.viewIfLoaded?.window != nil })
+                                               isLive: { [weak handle] in handle?.controller?.viewIfLoaded?.window != nil },
+                                               openCurrent: { [handoffs, weak handle] in
+                                                   // Sweep 2b · 4.1 — ⌘O: a copy of the shown item (from its named copy;
+                                                   // `openCopy` copies again, so the stored file is never handed out).
+                                                   let i = min(max(handle?.controller?.currentPreviewItemIndex ?? startIndex, 0), handoffs.count - 1)
+                                                   let h = handoffs[i]
+                                                   Task { await MacDocumentActions.openCopy(of: h.url, named: h.title, ext: h.url.pathExtension) }
+                                               },
+                                               owns: { [weak handle] view in
+                                                   guard let root = handle?.controller?.navigationController?.view ?? handle?.controller?.viewIfLoaded else { return false }
+                                                   return view.isDescendant(of: root)
+                                               })
                 MacProofLog.note("4.3", "viewer open items \(handoffs.count) start \(startIndex)")
             }
             .onDisappear { MacViewerKeys.close(keysToken) }

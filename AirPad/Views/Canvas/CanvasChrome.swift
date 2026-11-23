@@ -1419,7 +1419,15 @@ final class FocusDismissTouchMonitor: NSObject, UIGestureRecognizerDelegate {
     }
 
     @objc private func fire(_ recognizer: UIGestureRecognizer) {
-        if recognizer.state == .began { onTouch?() }
+        if recognizer.state == .began {
+            onTouch?()
+            #if targetEnvironment(macCatalyst)
+            // Sweep 2b · 4.1 — a click outside a one-line field ends its editing (Finder's search ↔ results).
+            if let window = recognizer.view as? UIWindow {
+                MacClickEndsFieldEditing.touchBegan(at: recognizer.location(in: window), in: window)
+            }
+            #endif
+        }
     }
 
     func gestureRecognizer(_ g: UIGestureRecognizer,

@@ -179,6 +179,47 @@ final class MSDFFont {
     }
 }
 
+#if targetEnvironment(macCatalyst) && (DEBUG || DEVSWITCHES)
+// MARK: - Sweep 2b · 2.3 renderer trial (scratch branch) — the atlas and glyph layout for the Metal Map
+
+extension MSDFFont {
+    /// One glyph quad: its plane rect in points (at `pointSize`, relative to the block's centre, y up) and its atlas rect
+    /// in texture coordinates (v = 0 is the atlas's top row, as `livingAtlas` uploads it).
+    struct LivingQuad { let plane: CGRect; let uv: CGRect }
+
+    /// The same layout as `MSDFLabel.addGlyphSprites` (lines centred, stacked by the line height, the block centred on the
+    /// cap middle), as quads. `tracking` (points) is added after every glyph's advance, for the region labels.
+    func livingQuads(lines: [String], pointSize: CGFloat, midCaps: CGFloat = 0.355, tracking: CGFloat = 0) -> [LivingQuad] {
+        guard loaded, pointSize > 0 else { return [] }
+        var out: [LivingQuad] = []
+        let lineSpacing = lineHeightEm * pointSize
+        let topOffset = CGFloat(lines.count - 1) / 2 * lineSpacing
+        for (li, line) in lines.enumerated() {
+            let lineY = topOffset - CGFloat(li) * lineSpacing
+            let n = CGFloat(line.unicodeScalars.count)
+            let lineWidth = width(line, pointSize: pointSize) + tracking * max(n - 1, 0)
+            var penX = -lineWidth / 2
+            for s in line.unicodeScalars {
+                let adv = advance(s.value)
+                defer { penX += adv * pointSize + tracking }
+                guard let g = glyph(s.value), let pb = g.planeBounds, let ab = g.atlasBounds else { continue }
+                let plane = CGRect(x: penX + CGFloat(pb.left) * pointSize,
+                                   y: (CGFloat(pb.bottom) - midCaps) * pointSize + lineY,
+                                   width: CGFloat(pb.right - pb.left) * pointSize,
+                                   height: CGFloat(pb.top - pb.bottom) * pointSize)
+                let uv = CGRect(x: CGFloat(ab.left) / atlasW, y: 1 - CGFloat(ab.top) / atlasH,
+                                width: CGFloat(ab.right - ab.left) / atlasW, height: CGFloat(ab.top - ab.bottom) / atlasH)
+                out.append(LivingQuad(plane: plane, uv: uv))
+            }
+        }
+        return out
+    }
+
+    /// The atlas texels (RGBX, row 0 = top) for a Metal texture.
+    var livingAtlas: (bytes: [UInt8], width: Int, height: Int) { (pixels, pixelW, pixelH) }
+}
+#endif
+
 // MARK: - MSDF label helper
 
 enum MSDFLabel {

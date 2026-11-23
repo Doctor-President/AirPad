@@ -53,6 +53,15 @@ struct CanvasView: View {
     /// Brief BF addendum — the Orb-font choice (Edit Map…). Independent of the app Font;
     /// the scene reads `MapOrbFont.current` from UserDefaults, this drives the live reload.
     @AppStorage(MapOrbFont.storageKey) private var orbFontRaw = MapOrbFont.fallback.rawValue
+    #if targetEnvironment(macCatalyst) && (DEBUG || DEVSWITCHES)
+    /// Sweep 2b · 2.3 renderer trial (scratch branch): "Trial Map" mounts the Metal Map instead of the SpriteView.
+    @AppStorage(LivingTrial.key) private var livingTrial = ""
+    private var livingMapOn: Bool { LivingTrial.mapOn(livingTrial) }
+    private var livingPillsAbove: Bool { !livingMapOn || LivingTrial.mapArm == "pills" }
+    #else
+    private var livingMapOn: Bool { false }
+    private var livingPillsAbove: Bool { true }
+    #endif
 
     /// SKView HUD (draw-call count / fps / nodes) for node-perf spikes. DEBUG only;
     /// empty in Release.
@@ -919,6 +928,14 @@ struct CanvasView: View {
                 // and List (pure SwiftUI) keep fading correctly. See ws-ios-polish (2026-09-16).
                 .animation(nil, value: mapColorScheme)
 
+            if livingMapOn {
+                #if targetEnvironment(macCatalyst) && (DEBUG || DEVSWITCHES)
+                LivingMapRepresentable(scene: scene, canvasState: canvasState) {
+                    withAnimation(.easeOut(duration: 0.2)) { mapContentRevealed = true }
+                }
+                .ignoresSafeArea()
+                #endif
+            } else {
             SpriteView(
                 scene: scene,
                 preferredFramesPerSecond: 120,
@@ -932,24 +949,29 @@ struct CanvasView: View {
             // White-flash fix: hidden until the scene's first frame; the labels
             // below carry the same gate so orbs + labels appear together.
             .opacity(mapContentRevealed ? 1 : 0)
+            }
 
             if store.nodes(in: scope).isEmpty {
                 EmptyStateOverlay()
                     .transition(.opacity)
             }
 
+            if livingPillsAbove {   // sweep 2b · 2.3: the trial Map draws its own labels (G1's `pills` arm keeps these)
             clusterLabelOverlay
                 .opacity(mapContentRevealed ? 1 : 0)
             territoryLabelOverlay
                 .opacity(mapContentRevealed ? 1 : 0)
+            }
             focalEngagementOverlay
             nodeSummaryLayer
             // Mac D0.4 (T N1) — the hover tag draws above everything on the Map, region pills included.
             // Mac perf audit: the layer reads the tag itself. Read here, every hover-tag move (each frame an orb moves
             // under the pointer, e.g. while panning) re-ran this whole body. `-MacPerfAB oldhovertag` = as before.
+            if !livingMapOn {
             MapHoverTagLayer(state: canvasState, fixedTag: perfAB("oldhovertag") ? canvasState.hoverTag : nil)
                 .allowsHitTesting(false)
                 .ignoresSafeArea()
+            }
             drillDownBackButton
 
         }

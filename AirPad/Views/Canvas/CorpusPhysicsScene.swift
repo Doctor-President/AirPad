@@ -563,6 +563,9 @@ final class CorpusPhysicsScene: SKScene {
         // sprite state — so engagements during a layout transition still resolve to the
         // correct fingerprint when they disengage.
         captureRestingState()
+        #if targetEnvironment(macCatalyst) && (DEBUG || DEVSWITCHES)
+        livingOnSync?()
+        #endif
     }
 
     #if DEBUG
@@ -1452,6 +1455,9 @@ final class CorpusPhysicsScene: SKScene {
         // C4: a rebuild / mode switch must not resurrect stale fade or incumbency.
         regionLabelDeclutterAlpha.removeAll()
         regionLabelPlacedLastFrame.removeAll()
+        #if targetEnvironment(macCatalyst) && (DEBUG || DEVSWITCHES)
+        livingOnSync?()
+        #endif
     }
 
     /// Condensed system label font (SF Compact / condensed width) for the tiny
@@ -1563,6 +1569,11 @@ final class CorpusPhysicsScene: SKScene {
     }
 
     private var territoryLabelData: [TerritoryLabel] = []
+    #if targetEnvironment(macCatalyst) && (DEBUG || DEVSWITCHES)
+    /// Sweep 2b · 2.3 renderer trial (scratch branch): told after every `syncNodes` / `setTerritoryLabels`, so the trial Map
+    /// (which reads this scene's derived values once, `livingSnapshot`) re-reads them when the library changes.
+    var livingOnSync: (() -> Void)?
+    #endif
     /// True after we last wrote an empty territory-label set, so we clear the
     /// overlay once instead of every idle frame.
     private var lastTerritoryLabelsEmpty = true
@@ -8426,6 +8437,57 @@ enum MacCardMorph {
     /// This frame's step, or nil for the iPhone's per-frame 0.10.
     static func step(dt: Double) -> CGFloat? {
         usesMacTiming ? CGFloat(1 - exp(-dt / tau)) : nil
+    }
+}
+#endif
+
+#if targetEnvironment(macCatalyst) && (DEBUG || DEVSWITCHES)
+// MARK: - Sweep 2b · 2.3 renderer trial (scratch branch, never merged) — the scene as a data source
+
+extension CorpusPhysicsScene {
+    /// The values the trial Map draws, read once from this scene's derived state after a `syncNodes` (positions, radii,
+    /// the look's fill, the title lines and ink, the region labels). The scene itself is never presented while the trial
+    /// Map is on: no SKView, so it never updates or renders.
+    func livingSnapshot() -> LivingMapSnapshot {
+        let light = currentIsLight
+        var orbs: [LivingMapSnapshot.Orb] = []
+        var index: [String: Int] = [:]
+        let font = MSDFFont.orb(atlas: MapOrbFont.current.atlasName)
+        for node in currentNodes {
+            guard let sprite = nodeSprites[node.id], let home = nodeRestingPositions[node.id] else { continue }
+            let radius = nodeRadii[node.id] ?? nodeIntrinsicRadii[node.id] ?? bubbleRadius(for: node)
+            let intrinsic = nodeIntrinsicRadii[node.id] ?? radius
+            let base = bubbleColor(for: node)
+            var fill: UIColor
+            if light {
+                fill = MapCompTuning.lightOrbColor(base)
+            } else {
+                var h: CGFloat = 0, s: CGFloat = 0, v: CGFloat = 0, a: CGFloat = 0
+                base.getHue(&h, saturation: &s, brightness: &v, alpha: &a)
+                fill = UIColor(hue: h, saturation: min(1, s * DarkOrbTuning.sat), brightness: min(1, v * DarkOrbTuning.val), alpha: 1)
+            }
+            fill = fill.withAlphaComponent(node.isMeta ? 0.55 : 1)
+            let text = node.title.isEmpty ? (node.untitledDisplayText ?? "") : node.title
+            var lines: [String] = [], pt: CGFloat = 0
+            var ink = SIMD4<Float>(0.08, 0.07, 0.06, 1)
+            if let title = sprite.children.first(where: { $0.name == "titleLabel" }) {
+                // The same wrap as makeTitleSprite (glyph-space, this face's advances, the intrinsic radius's box).
+                let r = resolveTitleLines(text, box: intrinsic * LensTuning.labelBoxFactor) { s, f in
+                    MSDFLabel.textWidth(s, pointSize: f.pointSize, font: font)
+                }
+                lines = r.lines; pt = r.font.pointSize
+                if let g = title.children.first as? SKSpriteNode, let c = g.value(forAttributeNamed: "a_glyph_color")?.vectorFloat4Value {
+                    ink = c
+                }
+            }
+            index[node.id] = orbs.count
+            orbs.append(.init(id: node.id, home: SIMD2(Float(home.x), Float(home.y)), radius: Float(radius),
+                              fill: Self.rgbaVec(fill), ink: ink, lines: lines, pointSize: Float(pt) * Float(radius / max(intrinsic, 0.0001))))
+        }
+        let labels = territoryLabelData.map { l in
+            LivingMapSnapshot.Label(key: l.key, name: l.name, colorHex: l.colorHex, members: l.memberIDs.compactMap { index[$0] })
+        }.filter { !$0.members.isEmpty }
+        return LivingMapSnapshot(orbs: orbs, labels: labels, isLight: light, atlasName: font.atlasName)
     }
 }
 #endif

@@ -108,6 +108,10 @@ enum MapProbe: UInt8 {
     case labelGap = 34          // at a tick: largest distance (pt) between a region pill's published position and its orbs now
     case ringGap = 35           // at a tick: distance (pt) between the hover ring and its orb now
     case coastSeeded = 36       // a scroll's lift launched a coast: value = speed (pt per 60 Hz frame)
+    // Sweep 2b · 2.3 renderer trial (scratch branch): the trial Map's own frame rows (it also writes 1, 3, 7, 8, 9–16, 20, 30, 32)
+    case trialFrameMain = 37    // main-thread ms from the display link's callback to the command buffer's commit
+    case trialGPU = 38          // GPU ms of the frame's command buffer (gpuEndTime − gpuStartTime)
+    case trialSnapshot = 39     // the trial re-read the scene's values: value = ms
 }
 
 /// Sweep 2b · 2.1 probe — a stable small number for a view (low pointer bits), to tell two SKViews apart.

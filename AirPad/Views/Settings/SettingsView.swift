@@ -1796,6 +1796,8 @@ private struct MacFeelSwitchesPanel: View {
     @AppStorage(MacCardsSpike.clickKey) private var cardsClick = "open"
     // Sweep 2b · 4.6 — keep the library downloaded on the Mac (MacLibraryKeeper); on by default.
     @AppStorage(MacKeepDownloaded.key) private var keepDownloaded = true
+    // Sweep 2b · 2.3 — the renderer trial (scratch branch ws-2b-renderer-trial; LivingMap.swift).
+    @AppStorage(LivingTrial.key) private var livingTrial = ""
     @State private var keeperSummary = ""
     @State private var copied = false
 
@@ -1872,6 +1874,13 @@ private struct MacFeelSwitchesPanel: View {
             }
             .pickerStyle(.segmented)
             .accessibilityIdentifier("macFeelCardsClick")
+            Text("Renderer trial (sweep 2b · 2.3)").font(.system(size: 12, weight: .medium)).foregroundStyle(AppearancePalette.ink.opacity(0.7))
+            Toggle("Trial Map (Metal; reopen the Map after switching)", isOn: Binding(
+                get: { LivingTrial.mapOn(livingTrial) }, set: { livingTrial = LivingTrial.toggled(livingTrial, "map", $0) }))
+                .accessibilityIdentifier("macFeelTrialMap")
+            Toggle("Trial Cards background (not built yet)", isOn: Binding(
+                get: { LivingTrial.cardsOn(livingTrial) }, set: { livingTrial = LivingTrial.toggled(livingTrial, "cards", $0) }))
+                .accessibilityIdentifier("macFeelTrialCards")
             Text("Library on this Mac (sweep 2b · 4.6)").font(.system(size: 12, weight: .medium)).foregroundStyle(AppearancePalette.ink.opacity(0.7))
             Picker("Keep downloaded", selection: $keepDownloaded) {
                 Text("Keep downloaded").tag(true)

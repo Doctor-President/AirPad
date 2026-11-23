@@ -41,6 +41,23 @@ if act:
     print(f"main thread per frame (callback→commit, code 37): p50 {pct(main,.5):.2f}  p95 {pct(main,.95):.2f}  max {max(main, default=0):.2f} ms (n {len(main)})")
     print(f"GPU per command buffer (code 38): p50 {pct(gpu,.5):.2f}  p95 {pct(gpu,.95):.2f}  max {max(gpu, default=0):.2f} ms (n {len(gpu)})")
     print(f"main-thread CPU per presented frame (vitals, seconds ≥ 30 frames): median {pct(mc,.5):.2f}  p95 {pct(mc,.95):.2f} ms (n {len(mc)} s)")
+# Full awake seconds: the link ran the whole second (no pause / wake inside it, awake at its start) and input arrived in
+# it. This is the "every pan second" row: per-second totals above also hold the rests between rperf steps (link paused).
+ev = sorted([(t, 0) for t, v in by[7]] + [(t, 1) for t, v in by[8]])
+def awake_at(x):
+    st = 1
+    for t, k in ev:
+        if t > x: break
+        st = k
+    return st
+evs = collections.Counter(int(t) for t, k in ev)
+full = [s for s in act if evs[s] == 0 and awake_at(s) == 1 and per[s] > 0]
+if full:
+    Ff = [per[s] for s in full]
+    print(f"full awake input seconds {len(full)}: presented/s min {min(Ff)} p10 {pct(Ff,.1)} median {pct(Ff,.5)} · seconds < 118: {sum(1 for x in Ff if x < 118)}"
+          f" · per second: {' '.join(str(x) for x in Ff)}")
+wt = [v for t, v in by[19] if int(t) in insec]
+if wt: print(f"drawable wait (inside code 37): p50 {pct(wt,.5):.2f}  p95 {pct(wt,.95):.2f}  max {max(wt):.2f} ms")
 # changes that arrived while paused → time to the next shown frame
 for code, name in ((12, "pan"), (16, "pinch")):
     ev = [t for t, v in by[code]]

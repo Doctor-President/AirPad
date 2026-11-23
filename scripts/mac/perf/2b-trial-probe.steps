@@ -1,0 +1,9 @@
+# Sweep 2b · 2.3 G1 link probe (short): the whole-Library Map, the -MapZoom rest, then pans and pinches, then rest.
+view-map     click toolbar.view.Map
+rest-zoom    wait 17000
+lib-pan      trackpad 1000,560 4 hold wobble
+lib-pinch    pinch 1000,560 0.4 60 4
+lib-pinch    pinch 1000,560 -0.3 60 4
+lib-flick    flick 1000,560 -40
+lib-pan      trackpad 1000,560 3 wobble
+rest-after   wait 11000

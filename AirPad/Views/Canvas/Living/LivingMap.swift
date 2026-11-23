@@ -36,6 +36,15 @@ enum LivingTrial {
     }
     static var mapArm: String { UserDefaults.standard.string(forKey: armKey) ?? "full" }
     static var rate: Int { UserDefaults.standard.integer(forKey: rateKey) == 60 ? 60 : 120 }
+    /// G1 probe knobs (bench only): `-LivingTrialLink display|metal` (default display: a CADisplayLink + nextDrawable, the
+    /// design's fallback; G1 measured CAMetalDisplayLink delivering 60 updates a second under Catalyst at a 120–120 or
+    /// 30–120 range while this link delivers 120), `-LivingTrialMin <fps>` (the range's minimum; default = the rate).
+    static var linkKind: String { UserDefaults.standard.string(forKey: "LivingTrialLink") ?? "display" }
+    /// `-LivingTrialCS none|srgb` (the layer's colour space; none = untagged, as I read SKView's) and
+    /// `-LivingTrialPresent now|target` (present as soon as the GPU is done, or at the link's target time).
+    static var colorspace: String { UserDefaults.standard.string(forKey: "LivingTrialCS") ?? "none" }
+    static var presentMode: String { UserDefaults.standard.string(forKey: "LivingTrialPresent") ?? "now" }
+    static var rangeMin: Int { let m = UserDefaults.standard.integer(forKey: "LivingTrialMin"); return m > 0 ? m : rate }
 }
 
 /// What the trial Map draws, read once from the scene's derived values after a sync (`CorpusPhysicsScene.livingSnapshot`).
@@ -123,11 +132,14 @@ private struct LMOrb { var o0: SIMD4<Float>; var fill: SIMD4<Float> }
 private struct LMGlyph { var plane: SIMD4<Float>; var uv: SIMD4<Float>; var ink: SIMD4<Float>; var g3: SIMD4<Float> }
 private struct LMLabel { var l0: SIMD4<Float>; var stroke: SIMD4<Float> }
 
-/// The display link's delegate, holding the view weakly (the run loop keeps the link alive).
+/// The display link's delegate / target, holding the view weakly (the run loop keeps the link alive).
 private final class LivingLinkProxy: NSObject, CAMetalDisplayLinkDelegate {
     weak var view: LivingMapView?
     func metalDisplayLink(_ link: CAMetalDisplayLink, needsUpdate update: CAMetalDisplayLink.Update) {
-        MainActor.assumeIsolated { view?.tick(update) }
+        MainActor.assumeIsolated { view?.tick(update.drawable, target: update.targetTimestamp, start: CACurrentMediaTime()) }
+    }
+    @objc func step(_ l: CADisplayLink) {
+        MainActor.assumeIsolated { view?.displayStep(l) }
     }
 }
 
@@ -145,6 +157,13 @@ final class LivingMapView: UIView, UIGestureRecognizerDelegate {
     private var bare: Bool { arm != "full" }
 
     private var link: CAMetalDisplayLink?
+    private var dlink: CADisplayLink?      // the fallback (`-LivingTrialLink display`)
+    let linkKind = LivingTrial.linkKind
+    private let presentAtTarget = LivingTrial.presentMode == "target"
+    private var linkPaused: Bool {
+        get { link?.isPaused ?? dlink?.isPaused ?? true }
+        set { link?.isPaused = newValue; dlink?.isPaused = newValue }
+    }
     private let proxy = LivingLinkProxy()
     private lazy var vid: Double = MapProbeID.of(self)
 
@@ -188,7 +207,7 @@ final class LivingMapView: UIView, UIGestureRecognizerDelegate {
         metalLayer.framebufferOnly = true
         metalLayer.isOpaque = true
         metalLayer.maximumDrawableCount = 3
-        metalLayer.colorspace = CGColorSpace(name: CGColorSpace.sRGB)
+        if LivingTrial.colorspace == "srgb" { metalLayer.colorspace = CGColorSpace(name: CGColorSpace.sRGB) }
         proxy.view = self
         // Input as on today's Map (MapPointerInput): two-finger scroll / wheel pans (⌥ + wheel zooms), the trackpad's
         // magnify pinches, hover rings an orb. Callbacks only queue; the tick applies.
@@ -203,7 +222,7 @@ final class LivingMapView: UIView, UIGestureRecognizerDelegate {
         accessibilityIdentifier = "livingMap"
     }
     required init?(coder: NSCoder) { fatalError() }
-    deinit { link?.invalidate() }
+    deinit { link?.invalidate(); dlink?.invalidate() }
 
     func gestureRecognizer(_ g: UIGestureRecognizer, shouldRecognizeSimultaneouslyWith other: UIGestureRecognizer) -> Bool { true }
 
@@ -216,16 +235,24 @@ final class LivingMapView: UIView, UIGestureRecognizerDelegate {
 
     override func didMoveToWindow() {
         super.didMoveToWindow()
-        guard let w = window else { link?.isPaused = true; Perf.mark("living map left its window: paused"); return }
+        guard let w = window else { linkPaused = true; Perf.mark("living map left its window: paused"); return }
         metalLayer.contentsScale = w.traitCollection.displayScale
-        if link == nil {
-            let l = CAMetalDisplayLink(metalLayer: metalLayer)
-            l.delegate = proxy
-            l.preferredFrameRateRange = CAFrameRateRange(minimum: Float(rate), maximum: Float(rate), preferred: Float(rate))
-            l.add(to: .main, forMode: .common)
-            link = l
+        if link == nil && dlink == nil {
+            let range = CAFrameRateRange(minimum: Float(LivingTrial.rangeMin), maximum: Float(rate), preferred: Float(rate))
+            if linkKind == "display" {
+                let l = CADisplayLink(target: proxy, selector: #selector(LivingLinkProxy.step(_:)))
+                l.preferredFrameRateRange = range
+                l.add(to: .main, forMode: .common)
+                dlink = l
+            } else {
+                let l = CAMetalDisplayLink(metalLayer: metalLayer)
+                l.delegate = proxy
+                l.preferredFrameRateRange = range
+                l.add(to: .main, forMode: .common)
+                link = l
+            }
             mountTime = CACurrentMediaTime()
-            Perf.mark("living map mounted · arm \(arm) · rate \(rate)")
+            Perf.mark("living map mounted · arm \(arm) · rate \(rate) · link \(linkKind) · range min \(LivingTrial.rangeMin) · cs \(LivingTrial.colorspace) · present \(LivingTrial.presentMode)")
             if let z = zoomArg {   // the bench's `-MapZoom <mult>`: 14 s after the Map mounts, as the scene does
                 DispatchQueue.main.asyncAfter(deadline: .now() + 14) { [weak self] in
                     guard let self else { return }
@@ -254,8 +281,8 @@ final class LivingMapView: UIView, UIGestureRecognizerDelegate {
         wake(MapProbeWake.code(why == "data" ? "external" : why == "size" ? "size" : why == "hover" ? "hover" : "delayed"))
     }
     private func wake(_ reason: Int) {
-        guard let link, link.isPaused, window != nil else { return }
-        link.isPaused = false
+        guard linkPaused, link != nil || dlink != nil, window != nil else { return }
+        linkPaused = false
         LivingLayer.probe(.wake, Double(reason))
     }
     private func wake(_ reason: Double) { wake(Int(reason)) }
@@ -263,7 +290,7 @@ final class LivingMapView: UIView, UIGestureRecognizerDelegate {
     // MARK: input
 
     @objc private func scrolled(_ g: UIPanGestureRecognizer) {
-        let paused = link?.isPaused ?? true
+        let paused = linkPaused
         switch g.state {
         case .began:
             LivingLayer.probe(.scrollBegan); coast = .zero; noteInput(2)
@@ -288,7 +315,7 @@ final class LivingMapView: UIView, UIGestureRecognizerDelegate {
     }
 
     @objc private func pinched(_ g: UIPinchGestureRecognizer) {
-        let paused = link?.isPaused ?? true
+        let paused = linkPaused
         switch g.state {
         case .began:
             LivingLayer.probe(.pinchBegan); coast = .zero; lastPinchScale = 1; applyPinch(g); noteInput(3)
@@ -312,7 +339,7 @@ final class LivingMapView: UIView, UIGestureRecognizerDelegate {
         default: hoverPoint = nil
         }
         // A moved pointer at rest draws only when the ringed orb changes.
-        if link?.isPaused ?? true, hitOrb() != hovered { requestFrame("hover") }
+        if linkPaused, hitOrb() != hovered { requestFrame("hover") }
     }
 
     // MARK: camera
@@ -477,8 +504,16 @@ final class LivingMapView: UIView, UIGestureRecognizerDelegate {
 
     // MARK: the tick
 
-    fileprivate func tick(_ update: CAMetalDisplayLink.Update) {
-        let t0 = CACurrentMediaTime()
+    /// The fallback's tick: the drawable from the layer (its wait is a probe row, as the SpriteKit Map's).
+    fileprivate func displayStep(_ l: CADisplayLink) {
+        let w0 = CACurrentMediaTime()
+        guard let d = metalLayer.nextDrawable() else { return }
+        LivingLayer.probe(.drawableWait, (CACurrentMediaTime() - w0) * 1000, at: w0)
+        tick(d, target: l.targetTimestamp, start: w0)
+    }
+
+    /// `start` = the link's callback (before any drawable wait): code 37 is callback → commit.
+    fileprivate func tick(_ drawable: CAMetalDrawable, target: CFTimeInterval, start t0: CFTimeInterval) {
         LivingLayer.probe(.tickOffered, 1)
         if snapshotDirty { reloadSnapshot() }
         let dt = lastTick > 0 ? min(max(t0 - lastTick, 0), 0.1) : 1.0 / Double(rate)
@@ -495,7 +530,7 @@ final class LivingMapView: UIView, UIGestureRecognizerDelegate {
         F.f1 = SIMD4(Float(camScale), Float(metalLayer.contentsScale), Float(ramp), Float(envelope))
         F.f2 = SIMD4(Float(CorpusPhysicsScene.AnnulusTuning.amplitude), Float(CorpusPhysicsScene.AnnulusTuning.radius),
                      Float(CorpusPhysicsScene.LensTuning.labelLOD), Float(CorpusPhysicsScene.LensTuning.labelLOD * 1.5))
-        F.f3 = SIMD4(light ? MapCompTuning.orbOpacity : 1, Float(hovered), bare ? 1 : 0, Float(update.targetTimestamp - L.start))
+        F.f3 = SIMD4(light ? MapCompTuning.orbOpacity : 1, Float(hovered), bare ? 1 : 0, Float(target - L.start))
         F.ring = light ? SIMD4(0, 0, 0, 0.35) : SIMD4(1, 1, 1, 0.5)
         let ground: SIMD3<Float> = light ? Self.rgb(MapCompTuning.lightGroundHex) : SIMD3(0.0667, 0.0667, 0.0824)
         let dot = AppearancePalette.mapGridDotRGB(dark: !light)
@@ -507,7 +542,6 @@ final class LivingMapView: UIView, UIGestureRecognizerDelegate {
         F.pillFill = light ? SIMD4(1, 1, 1, 0.62) : SIMD4(0.11, 0.11, 0.125, 0.62)
         F.f10 = SIMD4(Float(font.distanceRange), Float(font.atlasSize), Float(RegionLabelPillMetrics.fontSize), 0)
 
-        let drawable = update.drawable
         guard let cb = L.queue.makeCommandBuffer() else { return }
         let pass = MTLRenderPassDescriptor()
         pass.colorAttachments[0].texture = drawable.texture
@@ -558,7 +592,7 @@ final class LivingMapView: UIView, UIGestureRecognizerDelegate {
                 LivingLayer.probe(.trialGPU, (cb.gpuEndTime - cb.gpuStartTime) * 1000)
             }
         }
-        cb.present(drawable)
+        if presentAtTarget { cb.present(drawable, atTime: target) } else { cb.present(drawable) }
         cb.commit()
         let ms = (CACurrentMediaTime() - t0) * 1000
         LivingLayer.probe(.update, Double(rate), at: t0)
@@ -571,7 +605,7 @@ final class LivingMapView: UIView, UIGestureRecognizerDelegate {
         // The rest rule (structural): nothing but input, a coast or a fade keeps the link running.
         let awake = t0 - lastInput < 0.4 || coast != .zero || labelsFading || pendEvents > 0
         if !awake {
-            link?.isPaused = true
+            linkPaused = true
             LivingLayer.probe(.pause, 0)
             if arm == "pills", let cs = canvasState, !cs.mapAtRest { cs.mapAtRest = true }
         }

@@ -10,6 +10,8 @@ A run dir holds results.json (LibrarianBench rows) and webtrace.jsonl (the app's
   capability                 PASS = not sent to search, and the answer doesn't deny a capability the app has.
 Each FAIL names the stage: provider (what came back), filter (the relevance filter kept none / kept page furniture),
 no-search (a follow-up answered from memory), searched-self (a question about the Librarian was web-searched), writer.
+On the top-stories path (sweep 2b · 1d) the trace's plan row says how many articles survived the front/section drop:
+fewer than 3 → "app: fewer than 3 articles after the drop"; else too few stories named → "writer: listed N < 3 of a K-article packet".
 """
 import json, re, sys, os, math
 from collections import defaultdict
@@ -70,13 +72,17 @@ def load_trace(path):
 
 def trace_facts(rows):
     f = {"searched": False, "links": 0, "kept": None, "passages": 0, "evidence": "", "titles": [], "query": "", "how": "",
-         "provider": "", "promptTok": None, "hadResults": False, "frontPages": 0, "path": ""}
+         "provider": "", "promptTok": None, "hadResults": False, "frontPages": 0, "path": "", "articles": None, "dropped": None}
     for r in rows:
         k = r.get("kind")
         if k == "query":
             f["query"], f["how"] = r.get("query", ""), r.get("how", "")
         elif k == "plan":
-            f["path"] = r.get("path", "")
+            # the server route notes two plan rows (the prefetch decision, then the evidence path): keep the one with a path
+            if r.get("path"):
+                f["path"] = r["path"]
+            if r.get("path") == "top-stories":   # sweep 2b · 1d: the top-stories packet's article count after the drop
+                f["articles"], f["dropped"] = r.get("articles"), r.get("frontOrSection")
         elif k == "provider":
             f["provider"] = (f["provider"] + " " + r.get("name", "") + ":" + str(r.get("freshness", ""))).strip()
         elif k == "tool":
@@ -125,6 +131,11 @@ def grade_run(cases, run):
             need = 2 if typ == "news-topic" else 3
             if len(named) >= need and not denies:
                 g["verdict"], g["stage"] = "PASS", ""
+            elif f["path"] == "top-stories" and f["articles"] is not None and f["articles"] < 3:
+                g["verdict"], g["stage"] = "FAIL", "app: fewer than 3 articles after the drop (%d results, %s front/section pages)" % (
+                    f["links"], f["dropped"])
+            elif f["path"] == "top-stories" and f["articles"]:
+                g["verdict"], g["stage"] = "FAIL", "writer: listed %d < %d of a %d-article packet" % (len(named), need, f["articles"])
             elif typ == "news-followup" and not f["searched"]:
                 g["verdict"], g["stage"] = "FAIL", "no-search: the follow-up was answered from the chat alone"
             elif f["searched"] and f["links"] == 0:

@@ -41,8 +41,9 @@ if kind in ("photos", "document"):
         row("Q1b the entry's photos (more than one)", bool(n) and max(n) > 1, f"items {n}")
         row("Q2 → / ← step", seq(ev, r"arrow right → \d+", r"arrow right → \d+", r"arrow left → \d+"))
     row("Q3 Space closes", seq(ev, r"4\.3 viewer open items", r"space closes the viewer", r"4\.3 viewer closed"))
-    row("Q4 click = Quick Look (a second viewer)", len([e for e in ev if e[0] == "4.3" and e[1].startswith("viewer open items")]) >= 2)
-    row("Q5 Esc closes", seq(ev, r"esc closes the viewer", r"4\.3 viewer closed"))
+    # Order-anchored after Space closed the first viewer (T's-state runs also click + Esc once before the hover: 4.1).
+    row("Q4 click = Quick Look (a second viewer)", seq(ev, r"space closes the viewer", r"4\.3 viewer open items"))
+    row("Q5 Esc closes", seq(ev, r"space closes the viewer", r"4\.3 viewer open items", r"esc closes the viewer", r"4\.3 viewer closed"))
     o = [e[1] for e in ev if e[0] == "4.4"]
     row("O1 ⌘O opens a COPY, never the stored file", any("open a copy:" in x and "handed out: no" in x for x in o), "; ".join(o) or "no 4.4 line")
 elif kind == "thumbs":

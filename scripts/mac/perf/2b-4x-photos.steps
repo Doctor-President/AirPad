@@ -10,6 +10,12 @@ search         click toolbar.search
 search-type    type light
 rest           wait 2000
 reveal         reveal galleryTile-*#2
+# T's state: the entry was opened under a focused search; a click on the item (Quick Look, closed again) is the click
+# that takes the keys from the field (sweep 2b · 4.1: Finder's model; without it Space types into the search, by design).
+search-away    click galleryTile-*#2
+search-rest    wait 2500
+search-away2   esc
+search-rest2   wait 1500
 h1-hover0      move galleryTile-*#0 0 0 1
 h2-rest        wait 1000
 h3-hover1      move galleryTile-*#1 0 0 1

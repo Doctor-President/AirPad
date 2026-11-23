@@ -7,12 +7,15 @@ Reads OUT/signals-<lib>.{npz,json} and the reranker cache (OUT/rerank-cache/<lib
 OUT/grade.json: case IDs and numbers only, for every library.
 
 Unit = (question, entry); an entry is kept when any of its pool passages is kept (its best passage). Supporting =
-the case's `supports`; a supporting entry outside the pool counts as not kept. Bar (design §4): supporting kept
->= 95 % on bench and on Sample (bench: at most 1 miss in 28; Sample: none in 19), rest kept <= 10 %.
-Cut-offs: one global set fitted on bench + Sample pooled, by leave-one-case-out (all of a case's wordings in one
-fold): the lowest pooled "rest kept" that meets the supporting bar on both. Frozen, then applied once to the fixture.
-Oracle = fitted per library, in sample. Follow-up turns (search text folded with the previous turn) have their own
-row; general-mode turns are left out.
+the case's `supports`. Denominator = supporting entries IN THE POOL (a grader can only keep what reached it; a
+labelled entry outside the pool is a candidate-finding miss, reported beside as "labelled" and "out of pool").
+Bar (design §4): supporting kept >= 95 % of in-pool on bench and on Sample, rest kept <= 10 %.
+Cut-offs: one global set fitted on bench + Sample pooled. Held out = leave-one-case-out (all of a case's wordings in
+one fold; each case graded with cut-offs fitted on all the others; totals summed over the held-out cases): the
+decision numbers. In sample = the one set fitted on every case, shown beside (flatters every arm). Frozen, then
+applied once to the fixture. Oracle = fitted per library, in sample. Reranker variants are graded only when every
+pool pair of every calibration library in the run is scored (else listed as not graded, with the share scored).
+Follow-up turns (search text folded with the previous turn) have their own row; general-mode turns are left out.
 """
 from __future__ import annotations
 
@@ -42,7 +45,9 @@ def grid(lo, hi, step):
 S1G = grid(0.50, 0.84, 0.02)
 S1LOW = grid(0.40, 0.84, 0.02)
 FRAC = grid(0.0, 1.0, 0.05)
-RG = grid(0.05, 0.95, 0.05)
+# The reranker's P(yes) piles up near 0: the night's bench fit wanted a cut-off under 0.05 (Fable read: ~0.02), so
+# the grid starts at 0.001, or R1 cannot reach the supporting bar by construction.
+RG = [0.001, 0.002, 0.005, 0.01, 0.02, 0.03, 0.04] + grid(0.05, 0.95, 0.05)
 
 
 class Data:
@@ -93,13 +98,24 @@ class Data:
         self.q_ev = ev
         self.q_overlap = np.array([x.get("type") == "gk-irrelevant-overlap" for x in self.q])
         self.q_france = np.array([bool(x.get("france")) for x in self.q])
-        self.q_sup_total = np.array([len(x.get("supports_in_library", x.get("supports", []))) if x.get("evidence") else 0
-                                     for x in self.q])
+        # Supporting entries per question: labelled (in the library) and in the pool. The bar's denominator is the
+        # in-pool count (sweep 2b: 40 / 220 bench and 41 / 240 Sample labelled entries never reach the pool, so the
+        # labelled denominator made >= 95 % unreachable and the fitter fell back to "keep nearly everything").
+        self.q_sup_labelled = np.array([len(set(x.get("supports_in_library", x.get("supports", []))))
+                                        if x.get("evidence") else 0 for x in self.q])
+        inpool = np.bincount(self.g_q, weights=self.g_sup, minlength=nq).astype(np.int64)
+        self.q_sup_inpool = np.where(ev, inpool, 0)
+        self.q_sup_total = self.q_sup_inpool
         self.q_best = np.array([x.get("best_s1", 0.0) for x in self.q])
         self.q_named = np.array([bool(x.get("named")) for x in self.q])
         self.q_own = np.array([bool(x.get("ownership")) for x in self.q])
         self.q_general = ok & ~lib_mode
         self.nq = nq
+
+    def rerank_coverage(self, R):
+        """Share of pool rows scored, per library."""
+        return {l: float(np.isfinite(R[self.r["lib"] == l]).mean()) if (self.r["lib"] == l).any() else 0.0
+                for l in self.libs}
 
     def rerank(self, precision, variant):
         """R per row from the cache (NaN where not scored)."""
@@ -127,6 +143,7 @@ def arms(d, R=None, rtag=""):
     r = d.r
     S1 = r["S1"]
     A = {}
+    A["K0 keep everything in the pool (reference, not a candidate)"] = ([()], lambda p: np.ones(len(S1), bool), 0, None)
     A["T0 today (0.60 + stopgap)"] = ([()], lambda p: S1 >= PASSAGE_BAR, 0, "stopgap")
     A["T1 S1 alone"] = ([(t,) for t in S1LOW], lambda p: S1 >= p[0], 1, None)
     for w in (0, 1, 2):
@@ -234,6 +251,8 @@ def metrics(d, row_kept, gk, qmask):
     st = d.q_sup_total
     ev = qmask & d.q_ev
     out = {"sup_kept": int(sk[ev].sum()), "sup_total": int(st[ev].sum()),
+           "sup_labelled": int(d.q_sup_labelled[ev].sum()),
+           "sup_out_of_pool": int((d.q_sup_labelled[ev] - d.q_sup_inpool[ev]).sum()),
            "rest_kept": int(rk[qmask].sum()), "rest_total": int(rt[qmask].sum())}
     ov = qmask & d.q_overlap
     out["overlap_rest_kept"], out["overlap_rest_total"] = int(rk[ov].sum()), int(rt[ov].sum())
@@ -287,14 +306,21 @@ def run(libs, out=OUT, tok="A", precisions=("bf16", "q4")):
     fmask = {l: d.q_follow & (d.q_lib == l) for l in libs}
     result = {"libraries": {}, "arms": {}, "standin": standin, "tokenizer": tok, "tau_p": TAU_P,
               "wordings": {l: ("3.1 wordings" if worded[l] else "original wordings only") for l in libs}}
-    # reranker variants available
+    # reranker variants available: graded only when every calibration library in the run is fully scored
     R_sets = [(None, "")]
+    result["rerank_not_graded"] = {}
     for prec in precisions:
         for v in ("v0", "v1", "v2", "v3"):
             R = d.rerank(prec, v)
-            if np.isfinite(R).any():
-                cover = float(np.isfinite(R).mean())
-                R_sets.append((R, f" [{prec} {v}{'' if cover > 0.999 else f', {cover:.0%} scored'}]"))
+            if not np.isfinite(R).any():
+                continue
+            cov = d.rerank_coverage(R)
+            short = {l: c for l, c in cov.items() if c < 0.999}
+            if any(l in cal for l in short):
+                result["rerank_not_graded"][f"{prec} {v}"] = {l: round(c, 3) for l, c in cov.items()}
+                continue
+            tag = "".join(f", {l} {c:.0%} scored" for l, c in short.items())
+            R_sets.append((R, f" [{prec} {v}{tag}]"))
     seen = set()
     for R, rtag in R_sets:
         for name, A in arms(d, R, rtag).items():
@@ -311,7 +337,7 @@ def run(libs, out=OUT, tok="A", precisions=("bf16", "q4")):
                 for l in libs:
                     if l in cal:
                         row[l] = metrics(d, rk_loco, gk_loco, qmask[l]); row[l]["unit"] = "leave-one-case-out"
-                        row[l]["global"] = metrics(d, rk_glob, gk_glob, qmask[l])
+                        row[l]["global"] = metrics(d, rk_glob, gk_glob, qmask[l])   # in sample
                         o_folds, (oi, ometa), _ = fit(d, A, {l: qmask[l]}, case_ids)
                         rk_o = A[1](A[0][oi]); gk_o = entry_kept(d, rk_o, gate)
                         row[l]["oracle"] = metrics(d, rk_o, gk_o, qmask[l]); row[l]["oracle_params"] = [float(x) for x in A[0][oi]]
@@ -326,6 +352,8 @@ def run(libs, out=OUT, tok="A", precisions=("bf16", "q4")):
                     row[l] = metrics(d, rk, gk, qmask[l]); row[l]["unit"] = "fixed rule"
                     row[l]["followups"] = metrics(d, rk, gk, fmask[l])
             row["passes"] = passes(row, libs)
+            row["passes_in_sample"] = passes({l: (row[l].get("global", row[l]) if l in cal else row[l])
+                                              for l in libs if l in row}, libs)
             result["arms"][name] = row
     # The reranker variant is chosen on bench + Sample only (R1, leave-one-case-out: lowest pooled "rest kept" among
     # variants meeting the supporting bar, else the highest supporting share), then frozen for the fixture.
@@ -358,12 +386,18 @@ def run(libs, out=OUT, tok="A", precisions=("bf16", "q4")):
             "in_pool_dense": {k: sum(x["in_dense"][k] for x in evq) for k in ("12", "30")},
             "in_pool_fused": {k: sum(x["in_fused"][k] for x in evq) for k in ("12", "30")},
             "in_pool_at_all": sum(x["in_pool"] for x in evq),
+            "supporting_labelled": int(d.q_sup_labelled[m & d.q_ev].sum()),
+            "supporting_in_pool": int(d.q_sup_inpool[m & d.q_ev].sum()),
             "index_build_ms": d.meta[l]["index_build_ms"],
             "signals_ms_p50": d.meta[l]["signals_ms_p50"], "signals_ms_p95": d.meta[l]["signals_ms_p95"],
             "unresolved_gauntlet": d.meta[l].get("unresolved_gauntlet", []),
         }
-    for f in out.glob("rerank-timing-*.json"):
-        result.setdefault("rerank_timing", {})[f.stem.split("-")[-1]] = json.loads(f.read_text())
+    for f in sorted(out.glob("rerank-timing-*.json")):
+        t = json.loads(f.read_text())
+        for k, x in t.items():
+            if isinstance(x, dict):
+                x.pop("per_question", None)   # the per-question list stays in the timing file
+        result.setdefault("rerank_timing", {})[f.stem[len("rerank-timing-"):]] = t
     return result
 
 
@@ -456,8 +490,10 @@ def to_markdown(res):
     L.append(f"# {pre}Keyword-relevance spike: the grade")
     L.append("")
     L.append(f"Tokenizer {res['tokenizer']}; intent check τp = {res['tau_p']} (fixed). Unit = (question, entry); an entry "
-             "is kept when any of its pool passages is kept. Bench and Sample: leave-one-case-out (each case graded "
-             "with cut-offs fitted without it). Fixture: the global cut-offs, frozen, applied once. Case IDs and "
+             "is kept when any of its pool passages is kept. **Supporting kept is counted against the supporting "
+             "entries in the pool** (labelled and out-of-pool counts beside). Bench and Sample: held out = "
+             "leave-one-case-out (each case graded with cut-offs fitted on all the others; totals over the held-out "
+             "cases), in-sample fit beside. Fixture: the global cut-offs, frozen, applied once. Case IDs and "
              "numbers only.")
     for lib, info in res["libraries"].items():
         wl = res["wordings"][lib]
@@ -467,6 +503,9 @@ def to_markdown(res):
         L.append(f"Questions in the bar: {info['questions_in_bar']} ({info['evidence_questions']} with evidence) · "
                  f"follow-ups (own row): {info['followup_questions']} · general mode left out: "
                  f"{info['general_mode_left_out']} · {wl}")
+        L.append(f"Supporting entries: {info['supporting_in_pool']} in the pool of {info['supporting_labelled']} "
+                 f"labelled ({info['supporting_labelled'] - info['supporting_in_pool']} never reach the pool: a "
+                 f"candidate-finding miss, outside the grader's denominator)")
         L.append(f"In pool (evidence questions whose supporting entry is reached): dense top 12 "
                  f"{info['in_pool_dense']['12']}, fused (RRF k = 60) top 12 {info['in_pool_fused']['12']}; top 30 dense "
                  f"{info['in_pool_dense']['30']}, fused {info['in_pool_fused']['30']}; pool at all {info['in_pool_at_all']}"
@@ -475,21 +514,24 @@ def to_markdown(res):
             L.append(f"Gauntlet cases naming an entry that could not be resolved to an ID (left out): "
                      f"{', '.join(info['unresolved_gauntlet'])}")
         L.append("")
-        L.append("| Arm | supporting kept | rest kept | overlap class, rest kept | answer passages kept | Phase A unit "
+        L.append("| Arm | supporting kept (of in pool) · labelled | rest kept | in sample: supporting · rest | "
+                 "overlap class, rest kept | answer passages kept | Phase A unit "
                  "(passages: supporting / rest) | evidence Qs wrongly \"no match\" | no-evidence Qs still matched | "
-                 "France | rest kept: global · oracle | cut-offs (global) | follow-ups: supporting · rest |")
-        L.append("|" + "---|" * 12)
+                 "France | oracle rest kept | cut-offs (in-sample global) | follow-ups: supporting · rest |")
+        L.append("|" + "---|" * 13)
         for name, row in res["arms"].items():
             m = row.get(lib)
             if not m:
                 continue
-            go = "–"
+            ins, go = "same (fixed rule or frozen)", "–"
             if "global" in m:
-                go = (f"{pct(m['global']['rest_kept'], m['global']['rest_total'])} · "
-                      f"{pct(m['oracle']['rest_kept'], m['oracle']['rest_total'])}")
+                g = m["global"]
+                ins = f"{pct(g['sup_kept'], g['sup_total'])} · {pct(g['rest_kept'], g['rest_total'])}"
+                go = pct(m['oracle']['rest_kept'], m['oracle']['rest_total'])
             fu = m["followups"]
             L.append(
-                f"| {name} | {pct(m['sup_kept'], m['sup_total'])} | {pct(m['rest_kept'], m['rest_total'])} | "
+                f"| {name} | {pct(m['sup_kept'], m['sup_total'])} · {m['sup_labelled']} | "
+                f"{pct(m['rest_kept'], m['rest_total'])} | {ins} | "
                 f"{pct(m['overlap_rest_kept'], m['overlap_rest_total'])} | {pct(m['answer_kept'], m['answer_total'])} | "
                 f"{pct(m['passage_sup_kept'], m['passage_sup_total'])} / {pct(m['passage_rest_kept'], m['passage_rest_total'])} | "
                 f"{len(m['wrong_no_match'])} of {m['ev_questions']}{(': ' + ', '.join(m['wrong_no_match'])) if m['wrong_no_match'] else ''} | "
@@ -502,6 +544,11 @@ def to_markdown(res):
             m = row.get(lib)
             if m and m["sup_missed_cases"]:
                 L.append(f"- {name}: {', '.join(m['sup_missed_cases'])}")
+    if res.get("rerank_not_graded"):
+        L.append("")
+        L.append("Reranker variants NOT graded (a calibration library not fully scored; share of pool rows scored): "
+                 + "; ".join(f"{k}: " + ", ".join(f"{l} {c:.0%}" for l, c in cov.items())
+                             for k, cov in res["rerank_not_graded"].items()))
     if res.get("rerank_variant_chosen"):
         L.append("")
         L.append("Reranker variant chosen on bench + Sample (R1, leave-one-case-out), frozen for the fixture: " + ", ".join(
@@ -512,7 +559,10 @@ def to_markdown(res):
     L.append("")
     for name, row in res["arms"].items():
         p = row["passes"]
-        L.append(f"- {name}: {'PASS' if p['pass'] else 'no — ' + '; '.join(p['why_not'])} (free numbers: {row['free_numbers']})")
+        pi = row.get("passes_in_sample")
+        L.append(f"- {name}: held out {'PASS' if p['pass'] else 'no — ' + '; '.join(p['why_not'])}"
+                 + (f" · in sample {'PASS' if pi['pass'] else 'no'}" if pi else "")
+                 + f" (free numbers: {row['free_numbers']})")
     L.append("")
     L.append(f"## {pre}Time per question")
     L.append("")
@@ -531,14 +581,15 @@ def main():
     ap.add_argument("--libs", default="bench,sample,fixture")
     ap.add_argument("--out", default=str(OUT))
     ap.add_argument("--tok", default="A", choices=["A", "B"])
+    ap.add_argument("--name", default="grade", help="output stem (default grade → grade.md / grade-tokB.md)")
     a = ap.parse_args()
     out = Path(a.out)
     libs = [l for l in a.libs.split(",") if (out / f"signals-{l}.npz").is_file()]
     res = run(libs, out, a.tok)
-    suffix = "" if a.tok == "A" else "-tokB"
-    dump_json(res, out / f"grade{suffix}.json")
-    (out / f"grade{suffix}.md").write_text(to_markdown(res), encoding="utf-8")
-    say(f"grade{suffix}: {len(res['arms'])} arms × {libs} → {out / f'grade{suffix}.md'}")
+    stem = a.name + ("" if a.tok == "A" else "-tokB")
+    dump_json(res, out / f"{stem}.json")
+    (out / f"{stem}.md").write_text(to_markdown(res), encoding="utf-8")
+    say(f"{stem}: {len(res['arms'])} arms × {libs} → {out / f'{stem}.md'}")
 
 
 if __name__ == "__main__":

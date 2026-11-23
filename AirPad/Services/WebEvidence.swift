@@ -178,20 +178,25 @@ extension WebEvidence {
         #endif
         async let wikiSources = Self.wikiSources(query: sq.wikiQuery, off: wikiOff)
         var result = ToolResult(textForModel: "", links: [])
+        let topStories = WebGrounding.isTopStories(question)
+        var firstLinks: [ToolLink] = []
         if webKey {
-            result = await WebSearchBackend.make().execute(name: AgentTools.webSearch,
-                                                           arguments: ["query": searchQuery, "count": AppleWebQuery.requestCount,
-                                                                       "freshness": SearchFreshness.forTurn(question: question, query: searchQuery).rawValue])
+            let executor = WebSearchBackend.make()
+            let window = SearchFreshness.forTurn(question: question, query: searchQuery)
+            result = await executor.execute(name: AgentTools.webSearch,
+                                            arguments: ["query": searchQuery, "count": AppleWebQuery.requestCount, "freshness": window.rawValue])
+            firstLinks = result.links
+            // Sweep 2b · 1d follow-up — too few articles after the drop → the turn's second search (`topStoriesTopUp`)
+            if topStories { result = await topStoriesTopUp(result, executor: executor, freshness: window) }
         }
         let web = result.links.filter { AppleWebGrounding.live29 || !AppleWebQuery.isSocial($0.url) }
         let wiki = await wikiSources
         // the meaning to match: the query without the app's freshness year (that is for the provider)
         let budget = appleWebBudget
-        let rr = await rerank(query: sq.wikiQuery, sources: wiki + web.map(source), budget: budget,
-                              topStories: WebGrounding.isTopStories(question))
+        let rr = await rerank(query: sq.wikiQuery, sources: wiki + web.map(source), budget: budget, topStories: topStories)
         #if DEBUG
         WebTrace.shared.note("tool", ["name": "web_search", "id": "app_search", "startMs": fetchStart, "args": ["query": searchQuery],
-                                      "links": WebTrace.links(result.links), "failed": result.failed, "rateLimited": result.rateLimited, "text": ""])
+                                      "links": WebTrace.links(firstLinks), "failed": result.failed, "rateLimited": result.rateLimited, "text": ""])
         WebTrace.shared.note("rerank", WebTrace.rerank(rr).merging(["budget": budget.label, "budgetChars": budget.chars, "topK": budget.topK,
                                                                     "perSource": budget.perSource]) { $1 })
         #endif
@@ -209,6 +214,8 @@ extension WebEvidence {
     static func hostEvidence(_ result: ToolResult, appSearch: Bool, fetchTop: Bool, executor: ToolExecutor,
                              wiki: [Source]?, query: String, budget: Budget, callStart: Int = 0, topStories: Bool = false) async
         -> (links: [ToolLink], scored: [Scored], ms: Int, sources: [Source]) {
+        // Sweep 2b · 1d follow-up — too few articles after the drop → the turn's second search (`topStoriesTopUp`)
+        let result = appSearch && topStories ? await topStoriesTopUp(result, executor: executor) : result
         let web = WebGrounding.hostLinks(result.links)
         var sources = web.map(source)
         if appSearch {
@@ -259,6 +266,39 @@ extension WebEvidence {
         guard arts.count >= topStoriesMin else { return ([], [], arts) }
         let links = arts.map { ToolLink(title: $0.title, url: $0.url, snippet: firstLine($0.text), published: $0.published) }
         return (links, links.enumerated().map { Scored(source: $0.offset, text: $0.element.snippet ?? "", score: 1, kept: true) }, arts)
+    }
+
+    /// Sweep 2b · 1d follow-up (news route c) — a top-stories search that leaves fewer than `topStoriesMin` articles once
+    /// social / video hosts and front / section pages are out spends the turn's second search (`maxSearchesPerTurn` = 2)
+    /// on another neutral query; its results join the first's (duplicates out) and the packet is built from both. Front
+    /// pages still never reach the model. Measured on Tavily's news topic (this Mac, 2026-11-23): "top news" past day 2
+    /// results / 0 articles, past week 5 / 0; "world news today" past day 2 / 0, past week 7 / 1; "breaking news" past day
+    /// 8 / 8 (twice), past week 4 / 0. So: "breaking news", the same window as the first search.
+    static let topStoriesRetryQuery = "breaking news"
+    /// The results a top-stories packet could use: not social / video, not a front or section page.
+    static func topStoriesArticleCount(_ links: [ToolLink]) -> Int {
+        links.filter { !AppleWebQuery.isSocial($0.url) && !isFrontOrSectionPage($0.url) }.count
+    }
+    static func topStoriesTopUp(_ first: ToolResult, executor: ToolExecutor, count: Int = AppleWebQuery.requestCount,
+                                freshness: SearchFreshness = .day) async -> ToolResult {
+        let have = topStoriesArticleCount(first.links)
+        guard have < topStoriesMin, !first.rateLimited, !first.unavailable else { return first }
+        #if DEBUG
+        let start = WebTrace.shared.ms
+        #endif
+        let second = await executor.execute(name: AgentTools.webSearch, arguments: ["query": topStoriesRetryQuery, "count": count,
+                                                                                    "freshness": freshness.rawValue])
+        #if DEBUG
+        WebTrace.shared.note("tool", ["name": AgentTools.webSearch, "id": "app_search_retry", "startMs": start,
+                                      "args": ["query": topStoriesRetryQuery], "links": WebTrace.links(second.links),
+                                      "failed": second.failed, "rateLimited": second.rateLimited, "text": ""])
+        WebTrace.shared.note("retry", ["why": "top-stories: \(have) articles after the drop", "query": topStoriesRetryQuery,
+                                       "articles": topStoriesArticleCount(second.links)])
+        #endif
+        var seen = Set(first.links.map { WebGrounding.normalize($0.url) })
+        let merged = first.links + second.links.filter { seen.insert(WebGrounding.normalize($0.url)).inserted }
+        return ToolResult(textForModel: first.textForModel, links: merged, rateLimited: first.links.isEmpty && second.rateLimited,
+                          unavailable: false, failed: first.failed && second.failed)
     }
 
     // MARK: - 3. The rerank

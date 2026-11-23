@@ -93,6 +93,28 @@ enum WebEvidenceSelfTest {
         row("top-stories-fewer-than-3-articles-sends-nothing", thin.links.isEmpty)
         let topRR = await WebEvidence.rerank(query: "top news", sources: mixed, budget: WebEvidence.appleWebBudget, topStories: true)
         row("rerank-top-stories-has-no-floor", topRR.links.count == 4, "\(topRR.links.count) kept")
+        // Sweep 2b · 1d follow-up — fewer than 3 articles after the drop → one second search ("breaking news", same window),
+        // merged without duplicates; 3 or more → no second search.
+        final class Spy: ToolExecutor, @unchecked Sendable {
+            var calls: [[String: String]] = []
+            func execute(name: String, arguments: [String: Any]) async -> ToolResult {
+                calls.append(arguments.mapValues { "\($0)" })
+                return ToolResult(textForModel: "", links: (articles + [fronts[0]]).map { ToolLink(title: "T", url: $0, snippet: "s") })
+            }
+            let articles: [String], fronts: [String]
+            init(_ a: [String], _ f: [String]) { articles = a; fronts = f }
+        }
+        let thinFirst = ToolResult(textForModel: "", links: (fronts + [articles[0], "https://www.youtube.com/watch?v=1"]).map { ToolLink(title: "T", url: $0, snippet: "s") })
+        let spy = Spy(articles, fronts)
+        let topped = await WebEvidence.topStoriesTopUp(thinFirst, executor: spy, freshness: .day)
+        let fullFirst = ToolResult(textForModel: "", links: articles.map { ToolLink(title: "T", url: $0, snippet: "s") })
+        let spy2 = Spy(articles, fronts)
+        let untouched = await WebEvidence.topStoriesTopUp(fullFirst, executor: spy2)
+        row("top-stories-too-few-articles-spends-the-second-search",
+            spy.calls.count == 1 && spy.calls.first?["query"] == "breaking news" && spy.calls.first?["freshness"] == "day"
+            && WebEvidence.topStoriesArticleCount(topped.links) == 4 && topped.links.count == thinFirst.links.count + 3
+            && spy2.calls.isEmpty && untouched.links.count == 4,
+            "calls=\(spy.calls) articles=\(WebEvidence.topStoriesArticleCount(topped.links)) links=\(topped.links.count) · full: calls=\(spy2.calls.count)")
         let fr = [("what happened in the news today?", SearchFreshness.day), ("any news on the Lakeview election this week?", .week),
                   ("Who is the chancellor of Germany?", SearchFreshness.currentState), ("Why is the sky blue?", .none),
                   ("What is the capital of Australia?", .none)]

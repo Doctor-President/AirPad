@@ -383,6 +383,20 @@ def load_library(nodes_dir, name, private=False, dim=384):
     ids, titles, summaries, created, cards = [], {}, {}, {}, {}
     pn, pb, pt, pv = [], [], [], []
     skipped_private = 0
+    # The app's room rule (CorpusStore.corpusAskCandidateIDs → corpusRoomNodes = userNodesIncludingPrivate): once the
+    # library holds an entry of the user's own, the seeded Sample Library (`sample_library.json` beside `nodes/`)
+    # is left out of the search. Without this the fixture replay searched T's entries + the 210 sample entries and
+    # C-a reproduced 1 / 17 (sweep 2b, 2026-11-23); with it 17 / 17.
+    sample_ids, skipped_sample = set(), 0
+    manifest = nodes_dir.parent / "sample_library.json"
+    if manifest.is_file():
+        try:
+            sample_ids = set(json.loads(manifest.read_text(encoding="utf-8")).get("nodeIDs") or [])
+        except Exception:
+            sample_ids = set()
+        dirs = [d.name for d in nodes_dir.iterdir() if (d / "node.json").is_file()]
+        if not any(n not in sample_ids for n in dirs):
+            sample_ids = set()   # only the Sample Library: the room keeps all of it
     for d in sorted(nodes_dir.iterdir()):
         nj = d / "node.json"
         if not nj.is_file():
@@ -392,6 +406,9 @@ def load_library(nodes_dir, name, private=False, dim=384):
         except Exception:
             continue
         nid = node.get("id") or d.name
+        if nid in sample_ids or d.name in sample_ids:
+            skipped_sample += 1
+            continue
         if node.get("is_private"):
             skipped_private += 1
             continue
@@ -423,6 +440,7 @@ def load_library(nodes_dir, name, private=False, dim=384):
     lib = Library(name, private, ids, titles, summaries, pn, pb, pt, vecs, cv, created,
                   source="<fixture>" if private else str(nodes_dir))
     lib.skipped_private = skipped_private
+    lib.skipped_sample = skipped_sample
     return lib
 
 

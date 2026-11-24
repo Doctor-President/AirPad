@@ -263,14 +263,39 @@ def metrics(d, row_kept, gk, qmask):
     out["passage_sup_kept"], out["passage_sup_total"] = int((row_kept & ps).sum()), int(ps.sum())
     out["passage_rest_kept"], out["passage_rest_total"] = int((row_kept & pr).sum()), int(pr.sum())
     kept_any = np.bincount(d.g_q, weights=gk, minlength=d.nq) > 0
-    out["wrong_no_match"] = sorted({d.q_case[i].split(":", 1)[1] for i in np.where(ev & ~kept_any)[0]})
+    case = lambda i: d.q_case[i].split(":", 1)[1]
+
+    def by_case(mask):
+        """{case: questions (wordings) in `mask`}: the count is per question, as the column's "N of M" is."""
+        c = defaultdict(int)
+        for i in np.where(mask)[0]:
+            c[case(i)] += 1
+        return dict(sorted(c.items()))
+    # Step 5 fix-up: the question columns count QUESTIONS (every wording of a case is one), as their denominators do;
+    # the case lists stay beside (a case with several wordings names how many: "G1 ×4").
     noev = qmask & ~d.q_ev
-    out["still_matched"] = sorted({d.q_case[i].split(":", 1)[1] for i in np.where(noev & kept_any)[0]})
+    out["wrong_no_match_n"] = int((ev & ~kept_any).sum())
+    out["wrong_no_match_by_case"] = by_case(ev & ~kept_any)
+    out["wrong_no_match"] = sorted(out["wrong_no_match_by_case"])
+    out["still_matched_n"] = int((noev & kept_any).sum())
+    out["still_matched_by_case"] = by_case(noev & kept_any)
+    out["still_matched"] = sorted(out["still_matched_by_case"])
     out["noev_questions"] = int(noev.sum()); out["ev_questions"] = int(ev.sum())
-    out["sup_missed_cases"] = sorted({d.q_case[i].split(":", 1)[1] for i in np.where(ev & (sk < st))[0]})
+    out["sup_missed_cases"] = sorted({case(i) for i in np.where(ev & (sk < st))[0]})
+    # France, per wording (it kept one verdict per case: the last wording's): {case: {"fail": wordings matched, "of": n}}.
     fr = qmask & d.q_france
-    out["france"] = {d.q_case[i].split(":", 1)[1]: ("FAIL" if kept_any[i] else "pass") for i in np.where(fr)[0]}
+    out["france"] = {c: {"fail": by_case(fr & kept_any).get(c, 0), "of": n} for c, n in by_case(fr).items()}
     return out
+
+
+def france_text(fr):
+    """"G1 pass 5/5" · "SP-FR FAIL 3 of 5" (wordings that matched: each one is a France failure)."""
+    return ", ".join(f"{c} pass {v['of']}/{v['of']}" if not v["fail"] else f"{c} FAIL {v['fail']} of {v['of']}"
+                     for c, v in fr.items()) or "–"
+
+
+def cases_text(by_case):
+    return ", ".join(f"{c} ×{n}" if n > 1 else c for c, n in by_case.items())
 
 
 def assemble(d, A_entry, folds, case_ids, libs_mask):
@@ -412,7 +437,7 @@ def passes(row, libs):
             why.append(f"{l} supporting {m['sup_kept']}/{m['sup_total']}")
         if m["rest_total"] and m["rest_kept"] > REST_BAR * m["rest_total"] + 1e-9:
             why.append(f"{l} rest {m['rest_kept']}/{m['rest_total']}")
-        if any(v == "FAIL" for v in m["france"].values()):
+        if any(v["fail"] for v in m["france"].values()):
             why.append(f"{l} France")
         if l == "sample" and m["wrong_no_match"]:
             why.append(f"sample wrong no-match {','.join(m['wrong_no_match'])}")
@@ -534,9 +559,9 @@ def to_markdown(res):
                 f"{pct(m['rest_kept'], m['rest_total'])} | {ins} | "
                 f"{pct(m['overlap_rest_kept'], m['overlap_rest_total'])} | {pct(m['answer_kept'], m['answer_total'])} | "
                 f"{pct(m['passage_sup_kept'], m['passage_sup_total'])} / {pct(m['passage_rest_kept'], m['passage_rest_total'])} | "
-                f"{len(m['wrong_no_match'])} of {m['ev_questions']}{(': ' + ', '.join(m['wrong_no_match'])) if m['wrong_no_match'] else ''} | "
-                f"{len(m['still_matched'])} of {m['noev_questions']}{(': ' + ', '.join(m['still_matched'])) if m['still_matched'] else ''} | "
-                f"{', '.join(f'{k} {v}' for k, v in m['france'].items()) or '–'} | {go} | "
+                f"{m['wrong_no_match_n']} of {m['ev_questions']}{(': ' + cases_text(m['wrong_no_match_by_case'])) if m['wrong_no_match_n'] else ''} | "
+                f"{m['still_matched_n']} of {m['noev_questions']}{(': ' + cases_text(m['still_matched_by_case'])) if m['still_matched_n'] else ''} | "
+                f"{france_text(m['france'])} | {go} | "
                 f"{row.get('global_params')} | {pct(fu['sup_kept'], fu['sup_total'])} · {pct(fu['rest_kept'], fu['rest_total'])} |")
         L.append("")
         L.append(f"Supporting entries missed, by case (leave-one-case-out / frozen), per arm:")

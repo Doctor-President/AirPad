@@ -1819,6 +1819,11 @@ struct MacToolbarTrailing: View {
         FirstResponderProbe.current = nil
         UIApplication.shared.sendAction(#selector(UIResponder.airpadCaptureFirstResponder), to: nil, from: nil, for: nil)
         guard let field = FirstResponderProbe.current as? UITextField, field.window === window else { return }
+        // Step 5 fix-up (verifier finding 4) — "inside a presented sheet are left alone", made structural. Traced: Catalyst
+        // hosts a SwiftUI sheet outside the main UIWindow (`-MacSnapshot` logs the sheet's view `inWindow=false`), so the
+        // window check above already leaves a sheet's field alone. This also covers a presentation that does sit in this
+        // window (an alert, a popover, a later OS): a field in it, or a click in it, never moves the keys beneath it.
+        if presentedOwns(field, in: window) || window.hitTest(p, with: nil).map({ presentedOwns($0, in: window) }) == true { return }
         let own = field.convert(field.bounds, to: window)
         var keep = own.insetBy(dx: -8, dy: -6)
         if let capsule = MacToolbarProbe.windowRect["toolbar.search"], capsule.insetBy(dx: -4, dy: -4).contains(CGPoint(x: own.midX, y: own.midY)) {
@@ -1845,6 +1850,16 @@ struct MacToolbarTrailing: View {
             }
             #endif
         }
+    }
+
+    /// The view is inside a controller presented over the window's root (a sheet, an alert, a popover).
+    private static func presentedOwns(_ v: UIView, in window: UIWindow) -> Bool {
+        var vc = window.rootViewController?.presentedViewController
+        while let c = vc {
+            if c.isViewLoaded, v.isDescendant(of: c.view) { return true }
+            vc = c.presentedViewController
+        }
+        return false
     }
 
     /// The content's first-responder stand-in, one per window: a zero-size view at the back of the root view.

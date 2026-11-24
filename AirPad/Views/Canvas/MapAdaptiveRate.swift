@@ -128,3 +128,59 @@ struct MapAdaptiveRate {
         if switches.count > 64 { switches.removeFirst(switches.count - 64) }
     }
 }
+
+/// Sweep 2b · 2.1 — the Mac Map's frame pacer, pure (no view, so a self-test drives it with tick times): the SKView runs
+/// at the display rate and the Map draws every `every`-th display tick (1 = 120, 2 = a clean 60, 4 = 30, 15 = 8 on a
+/// 120 Hz display) — counted, never timed.
+/// Step 5 fix-up (verifier finding 3) — the step is keyed to the tick rate MEASURED from the ticks themselves, not to the
+/// launch-time `UIScreen.main` rate: a window on a 60 Hz display while the launch-time screen said 120 (a ProMotion
+/// MacBook with an external display) drew an asked 60 as every 2nd tick = 30 fps, 8 as 4. Until a second of ticks has
+/// been seen (and whenever the ticks can't be read) the launch-time rate stands, so the built-in 120 Hz display steps
+/// exactly as before. The lower quartile of the recent gaps: a late tick (a busy main thread) only lengthens a gap, so it
+/// never re-keys a 120 Hz display to 60.
+struct MapTickPacer {
+    private(set) var every = 1
+    private var count = 0
+    private var asked = 120
+    /// The display's tick rate the step is keyed to (Hz).
+    private(set) var tickHz: Int
+    private var lastTick: TimeInterval?
+    private var gaps: [Double] = []
+    private static let gapWindow = 32, minGaps = 16
+
+    init(launchHz: Int) { tickHz = launchHz }
+
+    /// A new asked rate (fps); true when the step changed.
+    mutating func ask(_ fps: Int) -> Bool {
+        asked = fps
+        return restep()
+    }
+
+    private mutating func restep() -> Bool {
+        let e = max(1, Int((Double(tickHz) / Double(max(asked, 1))).rounded()))
+        guard e != every else { return false }
+        every = e
+        return true
+    }
+
+    /// One display tick at `time` (s): draw it?
+    mutating func tick(at time: TimeInterval) -> Bool {
+        if let last = lastTick {
+            let g = time - last
+            if g > 0.002 && g < 0.05 {   // a pause (the Map at rest) or a clock step is not a tick gap
+                gaps.append(g)
+                if gaps.count > Self.gapWindow { gaps.removeFirst() }
+            }
+        }
+        lastTick = time
+        if gaps.count >= Self.minGaps {
+            let hz = Int((1 / gaps.sorted()[gaps.count / 4]).rounded())
+            if abs(hz - tickHz) > max(4, tickHz / 10) { tickHz = hz; _ = restep() }   // ±10 %: jitter never re-keys
+        }
+        count &+= 1
+        return every <= 1 || count % every == 0
+    }
+
+    /// The rate the Map is drawn at now.
+    var askedFPS: Int { tickHz / max(every, 1) }
+}

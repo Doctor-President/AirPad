@@ -240,6 +240,13 @@ struct ContentView: View {
                         NSLog("%@", await MacWebKeySelfTest.run(store: store, router: router))
                     }
                 }
+                // Sweep 2b · step 5 — `-Sweep2bFixupSelfTest`: the verifier's Mac finding 3 (tick pacer).
+                if ProcessInfo.processInfo.arguments.contains("-Sweep2bFixupSelfTest") {
+                    Task { @MainActor in
+                        try? await Task.sleep(nanoseconds: 2_000_000_000)
+                        NSLog("%@", await Sweep2bFixupSelfTest.run())
+                    }
+                }
                 // Mac D fix-up — `-MacFixupSelfTest`: the fix-up's layout items (B4–F5) in the running app.
                 if ProcessInfo.processInfo.arguments.contains("-MacFixupSelfTest") {
                     Task { @MainActor in

@@ -924,7 +924,7 @@ struct CanvasView: View {
                 preferredFramesPerSecond: 120,
                 options: [.allowsTransparency, .ignoresSiblingOrder],
                 debugOptions: mapDebugOptions,
-                shouldRender: { [scene] _ in scene.shouldRenderTick() }   // sweep 2b · 2.1: Mac paces the Map by display ticks
+                shouldRender: { [scene] t in scene.shouldRenderTick(at: t) }   // sweep 2b · 2.1: Mac paces the Map by display ticks
             )
             .ignoresSafeArea()
             .blur(radius: (canvasState.isZoomed || isDismissing) ? 8 : 0)

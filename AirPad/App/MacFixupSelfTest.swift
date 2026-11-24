@@ -136,4 +136,52 @@ enum MacFixupSelfTest {
         return "[MacFixupSelfTest] \(fails == 0 ? "PASS" : "FAIL") \(checks - fails)/\(checks)\n" + rows.joined(separator: "\n")
     }
 }
+
+/// Sweep 2b · step 5 fix-ups — `-Sweep2bFixupSelfTest`: the verifier's Mac findings that a headless run can prove.
+/// 3: the Map's tick pacer (`MapTickPacer`) fed display ticks at 120 Hz and at 60 Hz (a window on a 60 Hz display while
+/// the launch-time screen said 120).
+@MainActor
+enum Sweep2bFixupSelfTest {
+    static func run() async -> String {
+        var rows: [String] = [], fails = 0
+        func row(_ name: String, _ ok: Bool, _ detail: String = "") {
+            rows.append("\(ok ? "PASS" : "FAIL") \(name)" + (detail.isEmpty ? "" : " — \(detail)")); if !ok { fails += 1 }
+        }
+
+        // 3 — frames drawn per second of display ticks: `ticks` at `hz` (optional late ticks), asked `fps`, the
+        // launch-time screen saying `launch`. Counted over the last second (after the pacer has seen a second of ticks).
+        func drawn(hz: Double, launch: Int, fps: Int, lateEvery: Int = 0) -> (perSecond: Int, asked: Int) {
+            var p = MapTickPacer(launchHz: launch)
+            _ = p.ask(fps)
+            var t = 1000.0, n = 0
+            let gap = 1 / hz
+            for i in 0..<Int(hz * 2) {
+                // a late tick (the main thread busy): the next tick time is a whole period later, as vsync skips it
+                t += (lateEvery > 0 && i % lateEvery == lateEvery - 1) ? 2 * gap : gap
+                let drew = p.tick(at: t)
+                if i >= Int(hz) && drew { n += 1 }
+            }
+            let secs = (Double(Int(hz * 2) - Int(hz)) * gap) + (lateEvery > 0 ? Double(Int(hz) / lateEvery) * gap : 0)
+            return (Int((Double(n) / secs).rounded()), p.askedFPS)
+        }
+        // The proven case, unchanged: the built-in 120 Hz display.
+        for (fps, want) in [(120, 120), (60, 60), (30, 30), (8, 8)] {
+            let r = drawn(hz: 120, launch: 120, fps: fps)
+            row("pacer 120 Hz display, asked \(fps) → \(want) fps", r.perSecond == want && r.asked == want, "drawn \(r.perSecond)/s · asked \(r.asked)")
+        }
+        // A busy main thread (every 4th tick late) on the 120 Hz display keeps the 120 Hz step (a clean 60 stays every 2nd).
+        let busy = drawn(hz: 120, launch: 120, fps: 60, lateEvery: 4)
+        row("pacer 120 Hz display with late ticks keeps its step (asked 60)", busy.asked == 60, "asked \(busy.asked) · drawn \(busy.perSecond)/s")
+        // Finding 3: the window on a 60 Hz display while the launch-time screen said 120.
+        for (fps, want) in [(120, 60), (60, 60), (30, 30)] {
+            let r = drawn(hz: 60, launch: 120, fps: fps)
+            row("pacer 60 Hz display (launch said 120), asked \(fps) → \(want) fps", r.perSecond == want, "drawn \(r.perSecond)/s · asked \(r.asked)")
+        }
+        let idle60 = drawn(hz: 60, launch: 120, fps: 8)
+        row("pacer 60 Hz display, asked 8 → about 8 fps (not 4)", (7...9).contains(idle60.perSecond), "drawn \(idle60.perSecond)/s")
+
+        let checks = rows.count
+        return "[Sweep2bFixupSelfTest] \(fails == 0 ? "PASS" : "FAIL") \(checks - fails)/\(checks)\n" + rows.joined(separator: "\n")
+    }
+}
 #endif

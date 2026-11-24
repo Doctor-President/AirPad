@@ -2035,15 +2035,13 @@ final class CorpusPhysicsScene: SKScene {
     /// Mac: the SKView runs at the display rate (set once, never written again) and the Map's rate is chosen per tick:
     /// draw every `pacerEvery`-th tick (1 = 120, 2 = a clean 60, 4 = 30, 15 = 8) — counted, never timed, so a 60 is every
     /// other vsync (16.7 / 16.7 ms), not SKView's time threshold (measured: 16.7 / 25 ms alternation at an asked 60).
-    private var pacerEvery = 1
-    private var pacerTick = 0
+    private var pacer = MapTickPacer(launchHz: displayFPS)
     private static let displayFPS = max(60, UIScreen.main.maximumFramesPerSecond)
 
     /// The asked rate: Mac → the tick pacer; iPhone → the SKView's own rate, as before.
     private func setMapRate(_ fps: Int) {
         #if targetEnvironment(macCatalyst)
-        let every = max(1, Int((Double(Self.displayFPS) / Double(max(fps, 1))).rounded()))
-        if every != pacerEvery { pacerEvery = every; Perf.probe(.askSet, Double(fps)) }
+        if pacer.ask(fps) { Perf.probe(.askSet, Double(fps)) }
         if let v = view, v.preferredFramesPerSecond != Self.displayFPS { v.preferredFramesPerSecond = Self.displayFPS }
         #else
         if let v = view, v.preferredFramesPerSecond != fps { Perf.probe(.askSet, Double(fps)); v.preferredFramesPerSecond = fps }
@@ -2053,17 +2051,16 @@ final class CorpusPhysicsScene: SKScene {
     /// The rate this frame was asked to run at (Mac: the display rate ÷ the pacer step).
     var askedMapFPS: Int {
         #if targetEnvironment(macCatalyst)
-        return Self.displayFPS / max(pacerEvery, 1)
+        return pacer.askedFPS
         #else
         return view?.preferredFramesPerSecond ?? 60
         #endif
     }
 
     /// SpriteView's `shouldRender`: asked before every display tick. Mac → the tick pacer; iPhone → every tick.
-    func shouldRenderTick() -> Bool {
+    func shouldRenderTick(at time: TimeInterval) -> Bool {
         #if targetEnvironment(macCatalyst)
-        pacerTick &+= 1
-        let ok = pacerEvery <= 1 || pacerTick % pacerEvery == 0
+        let ok = pacer.tick(at: time)
         Perf.probe(ok ? .tickOffered : .tickSkipped, ok ? 1 : 0)
         #if DEBUG || DEVSWITCHES
         if ok { measureOverlayGaps() }   // only while the recorder is on (⌃⌥⌘P builds record probe rows 34 / 35)

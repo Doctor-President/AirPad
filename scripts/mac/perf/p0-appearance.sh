@@ -18,7 +18,7 @@ pkill -f "AirPadMacA.app/Contents/MacOS/AirPad"; sleep 1; rm -rf $C/Library/Cach
 $APP/Contents/MacOS/AirPad -ApplePersistenceIgnoreState YES -PerfRecorder YES -PerfRecorderSeconds $((CYCLES * 480 + 240)) -ProUnlocked YES ${=EXTRA:-} > $OUT/app.log 2>&1 &
 P=$!; trap "kill $P 2>/dev/null" EXIT
 sleep 8; for i in $(seq 1 30); do [[ $($R winpos $P) != *"0×0"* ]] && break; sleep 1; done
-$R winmove $P 0 160 >/dev/null; $R winsize $P 1350 840 >/dev/null; sleep 1
+$R winmove $P 0 ${WINY:-160} >/dev/null; $R winsize $P ${=WIN:-1350 840} >/dev/null; sleep 1   # WIN="w h" / WINY as run.sh
 [[ $($R has $P sidebar.today) == no ]] && { $R click $P toolbar.sidebar >/dev/null; sleep 1 }
 $R click $P sidebar.library >/dev/null; sleep 2; $R click $P toolbar.view.Map >/dev/null; sleep 4
 $R click $P sidebar.settings >/dev/null; sleep 2; $R click $P settingsRow.Appearance >/dev/null; sleep 2

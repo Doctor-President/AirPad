@@ -4,10 +4,12 @@
 # Goes to each screen with a real click, leaves the pointer parked over the window's title bar, waits 3 s, then
 # records 5 s of rest. scripts/perf/rest.py reads the recording: CPU, how busy the main thread was, what it was
 # doing, which views rebuilt, Map frames. A screen at rest should cost ~0. LIBRARIAN=closed closes the Librarian.
+# HEAVY / LIGHT = the entries opened (default: the synthetic perf library's); WIN="w h" / WINY = the window (default 1350 840 at y 160).
 set -u
 ROOT=${0:A:h:h:h:h}; B=$ROOT/build/mac-perf; R=$B/rclick
 C=~/Library/Containers/com.doctorpresident.airpad.macA/Data; PREF=$C/Library/Preferences/com.doctorpresident.airpad.macA
 APP=${1:?app}; OUT=${2:?out}; mkdir -p $OUT; OUT=${OUT:A}
+HEAVY=${HEAVY:-9E9F1000-0000-4000-8000-000000000001}; LIGHT=${LIGHT:-9E9F1000-0000-4000-8000-000000000007}
 [[ -f $C/Documents/AirPad/.k3-installed ]] || { echo "perf library not installed"; exit 1 }
 [[ $($B/locked) == "locked 1"* ]] && { echo "LOCKED: not running"; exit 3 }
 now() { python3 -c 'import time; print("%.3f" % time.time())' }
@@ -16,7 +18,7 @@ pkill -f "AirPadMacA.app/Contents/MacOS/AirPad"; sleep 1; rm -rf $C/Library/Cach
 $APP/Contents/MacOS/AirPad -ApplePersistenceIgnoreState YES -PerfRecorder YES -PerfRecorderSeconds 400 -PerfSampleAfter 3 -ProUnlocked YES ${=EXTRA:-} > $OUT/app.log 2>&1 &
 P=$!; trap "kill $P 2>/dev/null" EXIT
 sleep 8; for i in $(seq 1 30); do [[ $($R winpos $P) != *"0×0"* ]] && break; sleep 1; done
-$R winmove $P 0 160 >/dev/null; $R winsize $P 1350 840 >/dev/null; sleep 1
+$R winmove $P 0 ${WINY:-160} >/dev/null; $R winsize $P ${=WIN:-1350 840} >/dev/null; sleep 1
 [[ $($R has $P sidebar.today) == no ]] && { $R click $P toolbar.sidebar >/dev/null; sleep 1 }
 LIB=$($R get $P toolbar.librarian AXValue)
 [[ ${LIBRARIAN:-open} == open && $LIB != Open ]] && { $R click $P toolbar.librarian >/dev/null; sleep 1 }
@@ -34,8 +36,8 @@ rest today sidebar.today
 rest recents sidebar.recents
 rest library-map sidebar.library toolbar.view.Map
 rest library-list toolbar.view.List
-rest entry-heavy listRow-9E9F1000-0000-4000-8000-000000000001
-rest entry-light toolbar.back listRow-9E9F1000-0000-4000-8000-000000000007
+rest entry-heavy listRow-$HEAVY
+rest entry-light toolbar.back listRow-$LIGHT
 rest library-cards toolbar.back toolbar.view.Cards
 rest chats sidebar.chats
 rest journal sidebar.journal

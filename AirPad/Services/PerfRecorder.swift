@@ -123,6 +123,7 @@ enum MapProbe: UInt8 {
     case cardsOwnPath = 47      // visible cards that keep their own background (cover-image cards): value = count
     case cardsCoalesced = 48    // an offset change followed by another before any pass (two offsets in one transaction)
     case cardsPicture = 49      // arm d: one card's still rendered (ImageRenderer) on the main thread: value = ms
+    case cardsPassWhere = 50    // where a pass ran: 1 = the pre-commit flush (before Core Animation's commit), 0 = inside a layout pass UIKit ran (possibly the commit's own)
 }
 
 /// Sweep 2b · 2.1 probe — a stable small number for a view (low pointer bits), to tell two SKViews apart.

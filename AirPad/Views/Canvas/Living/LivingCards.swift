@@ -35,6 +35,12 @@ extension LivingTrial {
     static var cardsInTransaction: Bool {
         UserDefaults.standard.object(forKey: "LivingTrialCardsTxn") == nil ? true : UserDefaults.standard.bool(forKey: "LivingTrialCardsTxn")
     }
+    /// Scene 2 fix (offset stills, 2026-11-24): `precommit` (default) runs the collection view's layout (and so the pass) from
+    /// a run-loop observer just before Core Animation's commit observer, so the drawable is presented inside the open
+    /// transaction; `layout` = as first built (the pass ran in whatever layout pass UIKit ran, which can be the commit's own).
+    static var cardsWhen: String { UserDefaults.standard.string(forKey: "LivingTrialCardsWhen") ?? "precommit" }
+    /// Knob: drawables in the pass's pool (2 or 3; default 3).
+    static var cardsDrawables: Int { let n = UserDefaults.standard.integer(forKey: "LivingTrialCardsDrawables"); return n == 2 ? 2 : 3 }
     static func cardBG(_ arm: String?) -> LivingCardBG {
         switch arm {
         case "a": return .flat
@@ -107,7 +113,7 @@ final class LivingCardsView: UIView {
         ml.pixelFormat = .bgra8Unorm
         ml.framebufferOnly = true
         ml.isOpaque = false
-        ml.maximumDrawableCount = 3
+        ml.maximumDrawableCount = LivingTrial.cardsDrawables
         ml.presentsWithTransaction = inTxn
         if LivingTrial.colorspace == "srgb" { ml.colorspace = CGColorSpace(name: CGColorSpace.sRGB) }
         accessibilityIdentifier = "livingCards"
@@ -124,7 +130,31 @@ final class LivingCardsView: UIView {
         }
     }
     required init?(coder: NSCoder) { fatalError() }
-    deinit { drift?.invalidate() }
+    deinit {
+        drift?.invalidate()
+        if let o = flush { CFRunLoopRemoveObserver(CFRunLoopGetMain(), o, .commonModes) }
+    }
+
+    /// The pre-commit flush (`LivingTrial.cardsWhen == "precommit"`): before the run loop sleeps, and before Core Animation's
+    /// own commit observer (order 2,000,000), lay the collection view out if a scroll is pending, so the pass draws and
+    /// presents into the transaction that is about to commit with the cells' move.
+    private var flush: CFRunLoopObserver?
+    private var inFlush = false
+    private func installFlush() {
+        guard flush == nil, LivingTrial.cardsWhen == "precommit" else { return }
+        let o = CFRunLoopObserverCreateWithHandler(nil, CFRunLoopActivity.beforeWaiting.rawValue | CFRunLoopActivity.exit.rawValue,
+                                                   true, 1_999_000) { [weak self] _, _ in
+            MainActor.assumeIsolated {
+                guard let self, self.pendingScroll, let cv = self.collectionView, self.window != nil else { return }
+                self.inFlush = true
+                cv.layoutIfNeeded()
+                if self.pendingScroll { self.layoutDraw() }   // layout ran nothing (no layout was pending): draw anyway
+                self.inFlush = false
+            }
+        }
+        CFRunLoopAddObserver(CFRunLoopGetMain(), o, .commonModes)
+        flush = o
+    }
 
     override func didMoveToWindow() {
         super.didMoveToWindow()
@@ -137,7 +167,8 @@ final class LivingCardsView: UIView {
             drift = l
         }
         drift?.isPaused = false
-        Perf.mark("living cards mounted · arm \(arm) · in transaction \(inTxn)")
+        installFlush()
+        Perf.mark("living cards mounted · arm \(arm) · in transaction \(inTxn) · when \(LivingTrial.cardsWhen) · drawables \(ml.maximumDrawableCount)")
         appeared = false
         collectionView?.setNeedsLayout()
     }
@@ -171,6 +202,7 @@ final class LivingCardsView: UIView {
         appeared = true
         pendingScroll = false
         reason = 0
+        LivingLayer.probe(.cardsPassWhere, inFlush ? 1 : 0)
         draw(why)
     }
 

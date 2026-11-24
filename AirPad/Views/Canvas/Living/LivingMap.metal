@@ -199,3 +199,50 @@ vertex GlyphOut lm_pilltext_v(uint vid [[vertex_id]], uint iid [[instance_id]], 
     out.alpha = a;
     return out;
 }
+
+// MARK: the pill blur (leftover a): dual Kawase on a half-resolution (quarter-area) copy of the pass, sampled by the pills
+
+struct BlurOut { float4 pos [[position]]; float2 uv; };
+vertex BlurOut lm_blur_v(uint vid [[vertex_id]]) {
+    float2 p = float2(vid == 1 ? 3.0 : -1.0, vid == 2 ? 3.0 : -1.0);
+    BlurOut o; o.pos = float4(p, 0.0, 1.0); o.uv = float2(p.x * 0.5 + 0.5, 0.5 - p.y * 0.5); return o;
+}
+fragment float4 lm_kawase_down_f(BlurOut in [[stage_in]], texture2d<float> src [[texture(0)]], constant float2 &h [[buffer(0)]]) {
+    constexpr sampler s(filter::linear, address::clamp_to_edge);
+    float2 uv = in.uv;
+    float4 c = src.sample(s, uv) * 4.0;
+    c += src.sample(s, uv - h); c += src.sample(s, uv + h);
+    c += src.sample(s, uv + float2(h.x, -h.y)); c += src.sample(s, uv - float2(h.x, -h.y));
+    return c / 8.0;
+}
+fragment float4 lm_kawase_up_f(BlurOut in [[stage_in]], texture2d<float> src [[texture(0)]], constant float2 &h [[buffer(0)]]) {
+    constexpr sampler s(filter::linear, address::clamp_to_edge);
+    float2 uv = in.uv;
+    float4 c = src.sample(s, uv + float2(-h.x * 2.0, 0.0));
+    c += src.sample(s, uv + float2(-h.x, h.y)) * 2.0;
+    c += src.sample(s, uv + float2(0.0, h.y * 2.0));
+    c += src.sample(s, uv + float2(h.x, h.y)) * 2.0;
+    c += src.sample(s, uv + float2(h.x * 2.0, 0.0));
+    c += src.sample(s, uv + float2(h.x, -h.y)) * 2.0;
+    c += src.sample(s, uv + float2(0.0, -h.y * 2.0));
+    c += src.sample(s, uv + float2(-h.x, -h.y)) * 2.0;
+    return c / 12.0;
+}
+/// The capsule over the blurred copy: blur, then the tint (the flat pill's fill at 0.55 of its alpha), then the stroke.
+fragment float4 lm_pillblur_f(PillOut in [[stage_in]], constant LMFrame &F [[buffer(0)]], texture2d<float> blur [[texture(0)]]) {
+    constexpr sampler s(filter::linear, address::clamp_to_edge);
+    float r = in.hs.y;
+    float2 q = abs(in.lp) - in.hs + r;
+    float d = min(max(q.x, q.y), 0.0) + length(max(q, 0.0)) - r;
+    float aa = 1.0 / F.f1.y;
+    float inside = 1.0 - smoothstep(-aa, 0.0, d);
+    float strokeK = clamp(1.0 - smoothstep(0.0, aa, abs(d + 0.75) - 0.75), 0.0, 1.0);
+    float2 uv = in.pos.xy / (F.f0.xy * F.f1.y);
+    float3 b = blur.sample(s, uv).rgb;
+    float t = F.pillFill.a * 0.55;
+    float3 fill = b * (1.0 - t) + F.pillFill.rgb * t;
+    float4 c = float4(fill * inside, inside);
+    float sa = strokeK * in.stroke.a;
+    c = float4(in.stroke.rgb * sa, sa) + c * (1.0 - sa);
+    return c * in.alpha;
+}

@@ -45,6 +45,9 @@ enum LivingTrial {
     static var colorspace: String { UserDefaults.standard.string(forKey: "LivingTrialCS") ?? "none" }
     static var presentMode: String { UserDefaults.standard.string(forKey: "LivingTrialPresent") ?? "now" }
     static var rangeMin: Int { let m = UserDefaults.standard.integer(forKey: "LivingTrialMin"); return m > 0 ? m : rate }
+    /// Leftover (a): `-LivingTrialBlur on|off` — the region pills sample a dual-Kawase blur of the pass (on) or are flat
+    /// tinted capsules (off, scene 1 as measured).
+    static var pillBlur: Bool { UserDefaults.standard.string(forKey: "LivingTrialBlur") != "off" }
 }
 
 /// What the trial Map draws, read once from the scene's derived values after a sync (`CorpusPhysicsScene.livingSnapshot`).
@@ -78,6 +81,7 @@ final class LivingLayer {
 
     struct MapPipelines {
         let ground, orb, title, pill, pillText: MTLRenderPipelineState
+        let blurDown, blurUp, pillBlur: MTLRenderPipelineState
         init(_ L: LivingLayer) {
             func make(_ v: String, _ f: String, blend: Bool) -> MTLRenderPipelineState {
                 let d = MTLRenderPipelineDescriptor()
@@ -97,6 +101,9 @@ final class LivingLayer {
             title = make("lm_title_v", "lm_glyph_f", blend: true)
             pill = make("lm_pill_v", "lm_pill_f", blend: true)
             pillText = make("lm_pilltext_v", "lm_glyph_f", blend: true)
+            blurDown = make("lm_blur_v", "lm_kawase_down_f", blend: false)
+            blurUp = make("lm_blur_v", "lm_kawase_up_f", blend: false)
+            pillBlur = make("lm_pill_v", "lm_pillblur_f", blend: true)
         }
     }
 
@@ -185,6 +192,8 @@ final class LivingMapView: UIView, UIGestureRecognizerDelegate {
     private var snapshotDirty = true
     private var orbBuf: MTLBuffer?, titleBuf: MTLBuffer?, labelBuf: MTLBuffer?, pillTextBuf: MTLBuffer?
     private var orbCount = 0, titleCount = 0, labelCount = 0, pillTextCount = 0
+    private let blurOn = LivingTrial.pillBlur
+    private var blurTex: [MTLTexture] = []   // ½, ¼, ⅛ (down), ¼, ½ (up)
     private var atlas: MTLTexture?
     private var font: MSDFFont = .shared
     private var labelAnchors: [CGPoint] = []      // world
@@ -204,7 +213,7 @@ final class LivingMapView: UIView, UIGestureRecognizerDelegate {
         isOpaque = true
         metalLayer.device = L.device
         metalLayer.pixelFormat = .bgra8Unorm
-        metalLayer.framebufferOnly = true
+        metalLayer.framebufferOnly = !blurOn   // the blur reads the pass back from the drawable
         metalLayer.isOpaque = true
         metalLayer.maximumDrawableCount = 3
         if LivingTrial.colorspace == "srgb" { metalLayer.colorspace = CGColorSpace(name: CGColorSpace.sRGB) }
@@ -255,7 +264,7 @@ final class LivingMapView: UIView, UIGestureRecognizerDelegate {
             DispatchQueue.main.asyncAfter(deadline: .now() + 3) { [weak self] in   // leftover (b): our layer's settings
                 if let self, self.window != nil { LivingTrial.describeMetalLayers("trial map", in: self) }
             }
-            Perf.mark("living map mounted · arm \(arm) · rate \(rate) · link \(linkKind) · range min \(LivingTrial.rangeMin) · cs \(LivingTrial.colorspace) · present \(LivingTrial.presentMode)")
+            Perf.mark("living map mounted · arm \(arm) · rate \(rate) · link \(linkKind) · range min \(LivingTrial.rangeMin) · cs \(LivingTrial.colorspace) · present \(LivingTrial.presentMode) · blur \(blurOn)")
             if let z = zoomArg {   // the bench's `-MapZoom <mult>`: 14 s after the Map mounts, as the scene does
                 DispatchQueue.main.asyncAfter(deadline: .now() + 14) { [weak self] in
                     guard let self else { return }
@@ -553,6 +562,7 @@ final class LivingMapView: UIView, UIGestureRecognizerDelegate {
         pass.colorAttachments[0].loadAction = bare ? .clear : .dontCare
         pass.colorAttachments[0].clearColor = MTLClearColor(red: Double(ground.x), green: Double(ground.y), blue: Double(ground.z), alpha: 1)
         pass.colorAttachments[0].storeAction = .store
+        var encEnded = false
         if let enc = cb.makeRenderCommandEncoder(descriptor: pass) {
             let P = L.mapPipelines
             enc.setVertexBytes(&F, length: MemoryLayout<LMFrame>.stride, index: 0)
@@ -572,7 +582,54 @@ final class LivingMapView: UIView, UIGestureRecognizerDelegate {
                     enc.drawPrimitives(type: .triangleStrip, vertexStart: 0, vertexCount: 4, instanceCount: titleCount)
                 }
             }
-            if !bare, let lb = labelBuf, regionRaw > 0.001 {
+            if !bare, let lb = labelBuf, regionRaw > 0.001, blurOn {
+                // Leftover (a): end this pass, blur a half-size copy of it, then draw the pills over it in a second pass.
+                enc.endEncoding(); encEnded = true
+                let w = drawable.texture.width, h = drawable.texture.height
+                if blurTex.first.map({ $0.width != max(1, w / 2) || $0.height != max(1, h / 2) }) ?? true {
+                    blurTex = [2, 4, 8, 4, 2].compactMap { k in
+                        let d = MTLTextureDescriptor.texture2DDescriptor(pixelFormat: .bgra8Unorm, width: max(1, w / k), height: max(1, h / k), mipmapped: false)
+                        d.usage = [.renderTarget, .shaderRead]; d.storageMode = .private
+                        return L.device.makeTexture(descriptor: d)
+                    }
+                }
+                let chain: [(MTLTexture, MTLTexture, Bool)] = [(drawable.texture, blurTex[0], true), (blurTex[0], blurTex[1], true),
+                                                               (blurTex[1], blurTex[2], true), (blurTex[2], blurTex[3], false),
+                                                               (blurTex[3], blurTex[4], false)]
+                for (src, dst, down) in chain {
+                    let bp = MTLRenderPassDescriptor()
+                    bp.colorAttachments[0].texture = dst
+                    bp.colorAttachments[0].loadAction = .dontCare
+                    bp.colorAttachments[0].storeAction = .store
+                    guard let be = cb.makeRenderCommandEncoder(descriptor: bp) else { continue }
+                    be.setRenderPipelineState(down ? P.blurDown : P.blurUp)
+                    var half = SIMD2<Float>(0.5 / Float(dst.width), 0.5 / Float(dst.height))   // the dual filter's half texel
+                    be.setFragmentTexture(src, index: 0)
+                    be.setFragmentBytes(&half, length: MemoryLayout<SIMD2<Float>>.stride, index: 0)
+                    be.drawPrimitives(type: .triangle, vertexStart: 0, vertexCount: 3)
+                    be.endEncoding()
+                }
+                let pp = MTLRenderPassDescriptor()
+                pp.colorAttachments[0].texture = drawable.texture
+                pp.colorAttachments[0].loadAction = .load
+                pp.colorAttachments[0].storeAction = .store
+                if let pe = cb.makeRenderCommandEncoder(descriptor: pp) {
+                    pe.setVertexBytes(&F, length: MemoryLayout<LMFrame>.stride, index: 0)
+                    pe.setFragmentBytes(&F, length: MemoryLayout<LMFrame>.stride, index: 0)
+                    labelAlpha.withUnsafeBytes { pe.setVertexBytes($0.baseAddress!, length: max(4, $0.count), index: 2) }
+                    pe.setVertexBuffer(lb, offset: 0, index: 1)
+                    pe.setRenderPipelineState(P.pillBlur)
+                    pe.setFragmentTexture(blurTex[4], index: 0)
+                    pe.drawPrimitives(type: .triangleStrip, vertexStart: 0, vertexCount: 4, instanceCount: labelCount)
+                    if let pt = pillTextBuf, let atlas {
+                        pe.setRenderPipelineState(P.pillText)
+                        pe.setVertexBuffer(pt, offset: 0, index: 3)
+                        pe.setFragmentTexture(atlas, index: 0)
+                        pe.drawPrimitives(type: .triangleStrip, vertexStart: 0, vertexCount: 4, instanceCount: pillTextCount)
+                    }
+                    pe.endEncoding()
+                }
+            } else if !bare, let lb = labelBuf, regionRaw > 0.001 {
                 labelAlpha.withUnsafeBytes { enc.setVertexBytes($0.baseAddress!, length: max(4, $0.count), index: 2) }
                 enc.setVertexBuffer(lb, offset: 0, index: 1)
                 enc.setRenderPipelineState(P.pill)
@@ -584,7 +641,7 @@ final class LivingMapView: UIView, UIGestureRecognizerDelegate {
                     enc.drawPrimitives(type: .triangleStrip, vertexStart: 0, vertexCount: 4, instanceCount: pillTextCount)
                 }
             }
-            enc.endEncoding()
+            if !encEnded { enc.endEncoding() }
         }
         let v = vid
         if PerfRecorder.on {

@@ -1,0 +1,37 @@
+# Control for 2b-5-sheetfield.steps: the same sheet and pane, (A) Esc with the key field focused and no click-away;
+# then reopen, (B) a click on the field's label with no field focused, then Esc. grade: by reading (ax / focus lines).
+open-wait      wait 6000
+sheet-open     click sidebar.settings
+rest           wait 2500
+sheet-row      click settingsRow.Web*
+rest           wait 2000
+a0             ax settings.webSearchSwitch AXRole
+a-field        click placeholder:BSA...
+rest           wait 1200
+a1f            focus
+a-esc          esc
+rest           wait 1500
+a2             ax settings.webSearchSwitch AXRole
+a2r            ax settingsRow.Web* AXRole
+a2f            focus
+a-esc2         esc
+rest           wait 1500
+a3             ax settings.webSearchSwitch AXRole
+a3r            ax settingsRow.Web* AXRole
+a3s            ax sidebar.settings AXRole
+b-open         click sidebar.settings
+rest           wait 2500
+b-row          click settingsRow.Web*
+rest           wait 2000
+b0             ax settings.webSearchSwitch AXRole
+b-label        click placeholder:BSA...@30,-14
+rest           wait 1200
+b1f            focus
+b-esc          esc
+rest           wait 1500
+b2             ax settings.webSearchSwitch AXRole
+b2r            ax settingsRow.Web* AXRole
+b-esc2         esc
+rest           wait 1500
+b3             ax settings.webSearchSwitch AXRole
+b3r            ax settingsRow.Web* AXRole

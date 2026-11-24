@@ -1,0 +1,28 @@
+# Sweep 2b · step 5 re-proof (verifier 6, 734401c7) — ⌘O in the Quick Look viewer, then Space ~20 ms later (the viewer
+# closes while the copy is made). Run with RPERF_CONTINUOUS=1 (no settle wait between ⌘O and Space) and
+# EXTRA="-Sweep4Log YES". Two viewers: A opened by a click on the document, B by Space on the hovered document.
+# grade: grade5.py cmdo <dir>   (app.log "[4x]" 4.3 / 4.4 lines; Preview's documents counted, never named)
+open-wait      wait 6000
+view-list      click toolbar.view.List
+rest           wait 2500
+open-click     click listRow-9E9F2000-0000-4000-8000-000000000016
+rest           wait 3000
+reveal         reveal documentOpen-*#0
+rest           wait 1000
+a-click        click documentOpen-*#0
+rest           wait 2500
+a-cmdO         cmdkey 31
+a-space        key 49
+rest           wait 4000
+a-front        front
+rest           wait 1500
+b-hover        move documentOpen-*#0 0 0 1
+rest           wait 800
+b-space        key 49
+rest           wait 2500
+b-cmdO         cmdkey 31
+b-space2       key 49
+rest           wait 4000
+b-front        front
+rest           wait 1500
+b-end          ax documentOpen-*#0 AXRole

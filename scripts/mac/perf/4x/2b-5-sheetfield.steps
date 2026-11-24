@@ -1,0 +1,27 @@
+# Sweep 2b · step 5 re-proof (verifier 4, 3fa049b3) — a click inside a sheet never moves the keys out of the sheet's field.
+# Settings sheet › Web search › the Brave key field (SecureField, nothing typed), then real clicks elsewhere in the sheet
+# (its label, the sheet's header blank), then Esc. Run with run.sh, EXTRA="-Sweep4Log YES". grade: grade5.py sheet <dir>
+open-wait      wait 6000
+sheet-open     click sidebar.settings
+rest           wait 2500
+sheet-row      click settingsRow.Web*
+rest           wait 2000
+s0             ax settings.webSearchSwitch AXRole
+s-field        click placeholder:BSA...
+rest           wait 1200
+s1f            focus
+s-label        click placeholder:BSA...@30,-14
+rest           wait 1200
+s2f            focus
+s-switch-lbl   click settings.webSearchSwitch@20,10
+rest           wait 1200
+s3f            focus
+s3v            ax settings.webSearchSwitch AXValue
+s-esc          esc
+rest           wait 1500
+s4             ax settings.webSearchSwitch AXRole
+s4f            focus
+s-esc2         esc
+rest           wait 1500
+s5             ax settings.webSearchSwitch AXRole
+s5r            ax settingsRow.Web* AXRole

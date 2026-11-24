@@ -216,6 +216,9 @@ final class LivingMapView: UIView, UIGestureRecognizerDelegate {
         metalLayer.framebufferOnly = !blurOn   // the blur reads the pass back from the drawable
         metalLayer.isOpaque = true
         metalLayer.maximumDrawableCount = 3
+        // Leftover (b) knobs: `-LivingTrialMaxDrawables 2|3`, `-LivingTrialSync off`.
+        let md = UserDefaults.standard.integer(forKey: "LivingTrialMaxDrawables"); if md == 2 || md == 3 { metalLayer.maximumDrawableCount = md }
+        if UserDefaults.standard.string(forKey: "LivingTrialSync") == "off" { metalLayer.displaySyncEnabled = false }
         if LivingTrial.colorspace == "srgb" { metalLayer.colorspace = CGColorSpace(name: CGColorSpace.sRGB) }
         proxy.view = self
         // Input as on today's Map (MapPointerInput): two-finger scroll / wheel pans (⌥ + wheel zooms), the trackpad's

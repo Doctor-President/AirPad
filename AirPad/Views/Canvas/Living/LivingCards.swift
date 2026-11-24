@@ -53,7 +53,7 @@ extension LivingTrial {
         func walk(_ l: CALayer, _ depth: Int) {
             if let m = l as? CAMetalLayer {
                 let cs = m.colorspace.flatMap { $0.name as String? } ?? "untagged"
-                out.append("\(type(of: m)) depth \(depth) bounds \(Int(m.bounds.width))×\(Int(m.bounds.height)) scale \(m.contentsScale) drawable \(Int(m.drawableSize.width))×\(Int(m.drawableSize.height)) max \(m.maximumDrawableCount) sync \(m.displaySyncEnabled) txn \(m.presentsWithTransaction) timeout \(m.allowsNextDrawableTimeout) fbOnly \(m.framebufferOnly) fmt \(m.pixelFormat.rawValue) cs \(cs) opaque \(m.isOpaque) edr \(m.wantsExtendedDynamicRangeContent) gravity \(m.contentsGravity.rawValue)")
+                out.append("\(type(of: m)) depth \(depth) bounds \(m.bounds.width)×\(m.bounds.height) frame-in-window \(m.convert(m.bounds, to: nil).origin.x),\(m.convert(m.bounds, to: nil).origin.y) scale \(m.contentsScale) drawable \(Int(m.drawableSize.width))×\(Int(m.drawableSize.height)) max \(m.maximumDrawableCount) sync \(m.displaySyncEnabled) txn \(m.presentsWithTransaction) timeout \(m.allowsNextDrawableTimeout) fbOnly \(m.framebufferOnly) fmt \(m.pixelFormat.rawValue) cs \(cs) opaque \(m.isOpaque) edr \(m.wantsExtendedDynamicRangeContent) gravity \(m.contentsGravity.rawValue)")
             }
             for s in l.sublayers ?? [] { walk(s, depth + 1) }
         }

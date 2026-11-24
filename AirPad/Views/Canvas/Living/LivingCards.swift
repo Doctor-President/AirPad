@@ -39,6 +39,12 @@ extension LivingTrial {
     /// a run-loop observer just before Core Animation's commit observer, so the drawable is presented inside the open
     /// transaction; `layout` = as first built (the pass ran in whatever layout pass UIKit ran, which can be the commit's own).
     static var cardsWhen: String { UserDefaults.standard.string(forKey: "LivingTrialCardsWhen") ?? "precommit" }
+    /// Scene 2 fix 2 (2026-11-24): `tiles` (default) = the pass draws into content-anchored bands (CAMetalLayers inside the
+    /// pinned background view, 1,024 pt tall, moved by Core Animation in the same commit as the cells; each band drawn once
+    /// when it comes within one band of the visible area, presented on completion, redrawn only on a data / width /
+    /// appearance change or a drift tick). A drawable's latency then shows only as a band arriving late at the edge, never
+    /// as an offset. `screen` = the first build (one screen-sized drawable per scroll step, presented with the transaction).
+    static var cardsMode: String { UserDefaults.standard.string(forKey: "LivingTrialCardsMode") ?? "tiles" }
     /// Knob: drawables in the pass's pool (2 or 3; default 3).
     static var cardsDrawables: Int { let n = UserDefaults.standard.integer(forKey: "LivingTrialCardsDrawables"); return n == 2 ? 2 : 3 }
     static func cardBG(_ arm: String?) -> LivingCardBG {
@@ -190,10 +196,66 @@ final class LivingCardsView: UIView {
         lastOffset = offset
     }
 
+    // MARK: tiles mode
+    private let tiled = LivingTrial.cardsMode == "tiles"
+    private static let bandH: CGFloat = 1024
+    private final class Band { let layer = CAMetalLayer(); var index = Int.min; var drawnSig: [Double] = [] }
+    private var bands: [Band] = []
+    private var tileSig: [Double] = []
+
+    private func tileLayout(_ cv: UICollectionView) {
+        let b = cv.bounds, cs = cv.contentSize, s = ml.contentsScale
+        // What a band's picture depends on (not the offset): width, content size, data, look.
+        let sig = [Double(b.width), Double(cs.width), Double(cs.height), Double(dataVersion), Double(traitCollection.userInterfaceStyle.rawValue), Double(s)]
+        let changed = sig != tileSig
+        let why = !appeared ? 4 : changed ? (reason != 0 ? reason : 2) : 1
+        tileSig = sig; appeared = true; pendingScroll = false; reason = 0
+        let lo = Int(floor((b.minY - Self.bandH) / Self.bandH)), hi = Int(floor((b.maxY + Self.bandH) / Self.bandH))
+        let want = Set(max(0, lo)...max(0, hi))
+        CATransaction.begin(); CATransaction.setDisableActions(true)
+        // Free bands far from view; give wanted bands a layer (visible ones first).
+        for band in bands where !want.contains(band.index) { band.index = Int.min; band.layer.isHidden = true }
+        let order = want.sorted { abs(CGFloat($0) * Self.bandH - b.midY) < abs(CGFloat($1) * Self.bandH - b.midY) }
+        for i in order {
+            let band: Band
+            if let have = bands.first(where: { $0.index == i }) { band = have }
+            else if let free = bands.first(where: { $0.index == Int.min }) { band = free; band.index = i; band.drawnSig = []; band.layer.isHidden = true }
+            else {
+                band = Band(); band.index = i
+                let l = band.layer
+                l.isHidden = true
+                l.device = L.device; l.pixelFormat = .bgra8Unorm; l.framebufferOnly = true; l.isOpaque = false
+                l.maximumDrawableCount = 2; l.presentsWithTransaction = false; l.contentsScale = s
+                if LivingTrial.colorspace == "srgb" { l.colorspace = CGColorSpace(name: CGColorSpace.sRGB) }
+                l.anchorPoint = .zero
+                layer.addSublayer(l); bands.append(band)
+            }
+            // Content-anchored: band i covers content y [i·H, (i+1)·H); the host view is pinned to the visible area.
+            let r = CGRect(x: b.minX, y: CGFloat(i) * Self.bandH, width: b.width, height: Self.bandH)
+            band.layer.bounds = CGRect(origin: .zero, size: r.size)
+            band.layer.position = CGPoint(x: 0, y: r.minY - b.minY)
+            band.layer.contentsScale = s
+            if band.drawnSig != sig {
+                band.drawnSig = sig
+                LivingLayer.probe(.cardsPassWhere, 2)
+                // A new or reassigned band stays hidden until its picture is on the GPU (it would show the band it last
+                // held); a band redrawn in place (data / width / look) keeps showing its old picture until the new one lands.
+                draw(why, into: band.layer, rect: r, txn: false, done: band.layer.isHidden ? i : nil)
+            }
+        }
+        CATransaction.commit()
+    }
+
+    private func reveal(_ i: Int) {
+        guard let band = bands.first(where: { $0.index == i }), band.drawnSig == tileSig else { return }
+        CATransaction.begin(); CATransaction.setDisableActions(true); band.layer.isHidden = false; CATransaction.commit()
+    }
+
     /// From the collection view's layoutSubviews, after its own layout (same transaction as a scroll's cell moves).
     func layoutDraw() {
         guard let cv = collectionView, window != nil else { return }
         if frame != cv.bounds { frame = cv.bounds }
+        if tiled { tileLayout(cv); return }
         let b = cv.bounds, cs = cv.contentSize
         let sig = [Double(b.minX), Double(b.minY), Double(b.width), Double(b.height), Double(cs.width), Double(cs.height), Double(dataVersion)]
         guard sig != lastSig || !appeared else { pendingScroll = false; return }
@@ -206,7 +268,17 @@ final class LivingCardsView: UIView {
         draw(why)
     }
 
-    @objc private func driftStep(_ l: CADisplayLink) { MainActor.assumeIsolated { draw(5) } }
+    @objc private func driftStep(_ l: CADisplayLink) {
+        MainActor.assumeIsolated {
+            guard tiled else { draw(5); return }
+            guard let cv = collectionView else { return }
+            let b = cv.bounds
+            for band in bands where band.index != Int.min {
+                let r = CGRect(x: b.minX, y: CGFloat(band.index) * Self.bandH, width: b.width, height: Self.bandH)
+                if r.intersects(b) { draw(5, into: band.layer, rect: r, txn: false) }
+            }
+        }
+    }
 
     private func entry(_ n: Node) -> [Float] {
         let k = n.id + "|" + (n.primaryTag ?? "")
@@ -230,13 +302,19 @@ final class LivingCardsView: UIView {
     }
 
     private func draw(_ why: Int) {
-        guard let cv = collectionView, window != nil, let pipe = Self.pipeline, cv.bounds.width > 1 else { return }
+        guard let cv = collectionView else { return }
+        draw(why, into: ml, rect: cv.bounds, txn: inTxn)
+    }
+
+    /// One pass: the cards intersecting `b` (content coordinates) into `ml`, whose (0,0) is `b`'s top-left.
+    private func draw(_ why: Int, into ml: CAMetalLayer, rect b: CGRect, txn inTxn: Bool, done band: Int? = nil) {
+        guard let cv = collectionView, window != nil, let pipe = Self.pipeline, b.width > 1 else { return }
         let t0 = CACurrentMediaTime()
-        let b = cv.bounds
         let s = ml.contentsScale
         let px = CGSize(width: max(1, b.width * s), height: max(1, b.height * s))
         if ml.drawableSize != px { ml.drawableSize = px }
-        let attrs = (cv.collectionViewLayout.layoutAttributesForElements(in: b) ?? []).filter { $0.representedElementCategory == .cell }
+        // (cards just outside `b` still cast their shadow into it)
+        let attrs = (cv.collectionViewLayout.layoutAttributesForElements(in: b.insetBy(dx: 0, dy: -64)) ?? []).filter { $0.representedElementCategory == .cell }
         var floats: [Float] = []
         floats.reserveCapacity(attrs.count * 56)
         var n = 0, own = 0
@@ -297,6 +375,7 @@ final class LivingCardsView: UIView {
             }
             cb.addCompletedHandler { cb in LivingLayer.probe(.cardsGPU, (cb.gpuEndTime - cb.gpuStartTime) * 1000) }
         }
+        if let i = band { cb.addCompletedHandler { _ in Task { @MainActor [weak self] in self?.reveal(i) } } }
         if inTxn {
             cb.commit()
             cb.waitUntilScheduled()

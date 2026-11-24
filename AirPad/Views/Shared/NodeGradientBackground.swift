@@ -556,12 +556,12 @@ struct NodeGradientLayer: View {
     /// Map the three static circles to `BlobField` card blobs, preserving the
     /// original per-blob sin/cos drift, per-node `phase` seed, and every knob
     /// (`circleScale` via `size`, `blurScale`, `offsetScale`, `centerYOffset`).
-    private func cardBlobs(colors: (String, String, String), size: CGFloat) -> [BlobFieldView.CardBlob] {
+    private func cardBlobs(colors: (String, String, String), size: CGFloat, phaseOverride: Double? = nil) -> [BlobFieldView.CardBlob] {
         let radius: CGFloat = size / 2          // size = 180 * circleScale
         let blurWidth: CGFloat = 40 * effBlurScale
         let spread: CGFloat = 80 * effOffsetScale
         let amp: CGFloat = 30
-        let ph = CGFloat(phase)
+        let ph = CGFloat(phaseOverride ?? phase)
 
         func blob(baseX: CGFloat, fx: CGFloat, fy: CGFloat,
                   px: CGFloat, py: CGFloat, sd: CGFloat, hex: String) -> BlobFieldView.CardBlob {
@@ -589,6 +589,14 @@ struct NodeGradientLayer: View {
             blob(baseX: spread,  fx: 0.40, fy: 0.35, px: 2.1, py: 0.7, sd: ph + 3.4, hex: colors.2),
         ]
     }
+
+    #if targetEnvironment(macCatalyst) && (DEBUG || DEVSWITCHES)
+    /// Sweep 2b · 2.3 renderer trial (scratch branch): this layer's card-style blobs, packed in the CARD layout
+    /// (`BlobField.metal`), at a given phase (the view's own phase is a random @State per instance). Values once per entry.
+    func livingCardPacked(phase ph: Double) -> [Float] {
+        BlobFieldView.packCard(cardBlobs(colors: effectiveColors, size: 180 * circleScale, phaseOverride: ph))
+    }
+    #endif
 
     /// Build the four hero blobs, reproducing the CPU `morphBlob` math: per-blob
     /// seed, drift/buoyancy/breathe frequencies, and the three morph harmonics

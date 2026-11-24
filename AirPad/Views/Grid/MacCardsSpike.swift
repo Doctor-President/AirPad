@@ -131,6 +131,10 @@ struct MacCardsCollectionView: UIViewRepresentable {
         private var press: Press?
         private var bandBase: Set<IndexPath> = []
         private var ownSelection: Bool { selectionMode != "system" }
+        /// Sweep 2b · 2.3 renderer trial, scene 2 (scratch): the arm (nil = trial off) and what the cells draw for it.
+        let livingArm: String? = LivingTrial.cardsEnabled ? LivingTrial.cardsArm : nil
+        var cardBG: LivingCardBG { LivingTrial.cardBG(livingArm) }
+        private(set) var living: LivingCardsView?
 
         func apply(_ v: MacCardsCollectionView) {
             targetWidth = v.targetWidth; railLane = v.railLane; spacing = v.spacing
@@ -215,8 +219,20 @@ struct MacCardsCollectionView: UIViewRepresentable {
             cv.onKey = { [weak self] k in self?.key(k) }
             cv.onSelectAll = { [weak self] in self?.selectAll() }
             cv.ownArrows = ownSelection
+            if let arm = livingArm, arm == "c" || arm == "cdrift" {
+                let v = LivingCardsView(arm: arm)
+                v.collectionView = cv
+                v.nodeAt = { [weak self] ip in self?.node(at: ip) }
+                cv.backgroundView = v
+                living = v
+            }
+            if let arm = livingArm { Perf.mark("cards trial arm \(arm)") }
             applySnapshot(force: true)
         }
+
+        // MARK: Scene 2 trial: the scroll view is the clock while scrolling
+
+        func scrollViewDidScroll(_ sv: UIScrollView) { living?.noteScroll(sv.contentOffset) }
 
         func update(_ v: MacCardsCollectionView) {
             let oldTarget = targetWidth, oldFont = appFont, oldRail = railLane
@@ -237,10 +253,11 @@ struct MacCardsCollectionView: UIViewRepresentable {
             for n in new { if let o = byID[n.id], !Self.sameCard(o, n) { changed.append(n.id) } }
             nodes = new
             byID = Dictionary(new.map { ($0.id, $0) }, uniquingKeysWith: { a, _ in a })
-            if ids != oldIDs { applySnapshot(force: false) }
+            if ids != oldIDs { applySnapshot(force: false); living?.dataChanged() }
             if !changed.isEmpty, var snap = dataSource?.snapshot() {
                 snap.reconfigureItems(changed.filter { snap.indexOfItem($0) != nil })
                 dataSource?.apply(snap, animatingDifferences: false)
+                living?.dataChanged()
             }
         }
 
@@ -511,6 +528,7 @@ final class MacCardsUICollectionView: UICollectionView {
             onWidth?(bounds.width)   // before the cells take their new sizes (the scale method needs to know first)
         }
         super.layoutSubviews()
+        coordinator?.living?.layoutDraw()   // scene 2 trial: the background pass, in this layout pass's transaction
     }
 
     override var canBecomeFirstResponder: Bool { true }
@@ -597,7 +615,7 @@ final class MacCardCell: UICollectionViewCell {
         guard let node, let coordinator, let store = coordinator.store else { return }
         Perf.interval("cardsB.cell") {
             let config = UIHostingConfiguration {
-                MacCardCellContent(node: node, size: size, selected: isSelected, onScreen: onScreen)
+                MacCardCellContent(node: node, size: size, selected: isSelected, onScreen: onScreen, bg: coordinator.cardBG)
                     .environment(store)
                     .environment(\.appBodyFont, coordinator.appFont)
             }
@@ -628,6 +646,7 @@ private struct MacCardCellContent: View {
     let size: CGSize
     let selected: Bool
     let onScreen: Bool
+    var bg: LivingCardBG = .own
     @Environment(CorpusStore.self) private var store
     @Environment(\.scenePhase) private var phase
     @Environment(\.colorScheme) private var colorScheme
@@ -636,6 +655,8 @@ private struct MacCardCellContent: View {
         let _ = Perf.body(Self.self)
         let dark = colorScheme == .dark
         let shadowScale = min(size.width / 360, 1)
+        // Scene 2 trial, arm c: the pass behind draws the shadow with the field (a clear cell would shadow its text).
+        let shadowHere = !(bg == .clear && node.coverImageRelativePath == nil)
         NodeGridTile(
             node: node,
             cellWidth: size.width,
@@ -648,13 +669,14 @@ private struct MacCardCellContent: View {
         .clipShape(RoundedRectangle(cornerRadius: 14))
         .selectionHighlight(isSelecting: selected, isPicked: selected, cornerRadius: 14)
         .environment(\.blobFieldPaused, !(onScreen && !store.isInDetailView && phase == .active))
+        .environment(\.livingCardBG, bg)
         .allowsHitTesting(false)
         .overlay(NodeGridView.tileSheen)
         .clipShape(RoundedRectangle(cornerRadius: 14))
-        .shadow(color: AppearancePalette.cardShadow,
-                radius: CardSurfaceResolved.shadowRadius(dark: dark) * shadowScale,
+        .shadow(color: shadowHere ? AppearancePalette.cardShadow : .clear,
+                radius: shadowHere ? CardSurfaceResolved.shadowRadius(dark: dark) * shadowScale : 0,
                 x: 0,
-                y: CardSurfaceResolved.shadowY(dark: dark) * shadowScale)
+                y: shadowHere ? CardSurfaceResolved.shadowY(dark: dark) * shadowScale : 0)
         .overlay(
             RoundedRectangle(cornerRadius: 14)
                 .strokeBorder(CardSurfaceResolved.rimGradient(dark: dark), lineWidth: CardSurfaceResolved.rimWidth(dark: dark))

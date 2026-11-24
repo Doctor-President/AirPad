@@ -21,6 +21,26 @@
 import SwiftUI
 import UIKit
 
+/// Sweep 2b · 2.3 renderer trial (scratch branch, never merged): what a grid tile draws where its gradient is.
+/// own = today's animated field · flat = a flat base (arm a, backgrounds off) · clear = nothing (arm c: the one-pass layer
+/// behind the collection view draws it) · picture = a still drawn once per card and cached (arm d).
+enum LivingCardBG { case own, flat, clear, picture }
+private struct LivingCardBGKey: EnvironmentKey { static let defaultValue = LivingCardBG.own }
+extension EnvironmentValues {
+    var livingCardBG: LivingCardBG {
+        get { self[LivingCardBGKey.self] }
+        set { self[LivingCardBGKey.self] = newValue }
+    }
+}
+/// Arm a: the card's base, flat (the light parchment or the dark ground the field sits on).
+struct LivingCardFlat: View {
+    @Environment(\.colorScheme) private var scheme
+    var body: some View {
+        scheme == .dark ? AppearancePalette.mapBackground(dark: true)
+            : AppearancePalette.parchmentGround(AppearancePalette.cwParchmentHex, lightness: CardSurfaceResolved.baseLightness)
+    }
+}
+
 struct NodeGridTile: View {
     let node: Node
     let cellWidth: CGFloat
@@ -42,6 +62,7 @@ struct NodeGridTile: View {
     private static let denseGradientDriftScale: CGFloat = 0.4
 
     @Environment(CorpusStore.self) private var store
+    @Environment(\.livingCardBG) private var livingBG     // sweep 2b · 2.3 trial (scratch)
     @Environment(\.colorScheme) private var colorScheme   // live-23 (3) — the hero fade is per appearance (tuner)
 
     /// Brief BF — the app-wide content face. Grid tiles were `.system(design: .serif)`
@@ -266,9 +287,42 @@ struct NodeGridTile: View {
         // a gradient-only tile and a hero tile share the same silhouette:
         // color form on top, dark text band below. Derived from the
         // current heroPercent + cellHeight — not a separate knob (yet).
-        let gradientCenterY: CGFloat = (heroZoneHeight - cellHeight) / 2
         return ZStack {
-            NodeGradientLayer(
+            cardBackground
+            if hasHero {
+                heroOverlay
+            }
+            travelingScrim
+            identityContent
+                #if DEBUG
+                .opacity(UserDefaults.standard.bool(forKey: "CardHideText") ? 0 : 1)   // live-26 (3c): backdrop-only stills
+                #endif
+                // live-28 (A1) — light A / B: the band behind the dateline (under the text, kept in backdrop stills)
+                .backgroundPreferenceValue(DatelineRowKey.self) { DatelineBand(anchor: hasHero ? $0 : nil) }
+        }
+    }
+
+    /// Sweep 2b · 2.3 renderer trial (scratch branch): what sits where the gradient is. `.own` (default) = today. Cover
+    /// image cards always keep their own (their body is a still base, no colour field).
+    @ViewBuilder private var cardBackground: some View {
+        switch hasHero ? LivingCardBG.own : livingBG {
+        case .own: gradientLayer(animated: animateGradient)
+        case .flat: LivingCardFlat()
+        case .clear: Color.clear
+        case .picture:
+            #if targetEnvironment(macCatalyst) && (DEBUG || DEVSWITCHES)
+            LivingCardPicture(id: node.id + "|" + (node.primaryTag ?? ""), size: CGSize(width: cellWidth, height: cellHeight)) {
+                gradientLayer(animated: false)
+            }
+            #else
+            gradientLayer(animated: animateGradient)
+            #endif
+        }
+    }
+
+    private func gradientLayer(animated: Bool) -> NodeGradientLayer {
+        let gradientCenterY: CGFloat = (heroZoneHeight - cellHeight) / 2
+        return NodeGradientLayer(
                 node: node,
                 circleScale:   tuning.gradientCircleScale,
                 blurScale:     tuning.gradientBlurScale,
@@ -281,7 +335,7 @@ struct NodeGridTile: View {
                 glowStrength:  GradientBake.gridRadial,
                 bloom:         GradientBake.gridBloom,
                 centerYOffset: gradientCenterY,
-                animated:      animateGradient,
+                animated:      animated,
                 // Hero tiles pool the gradient at the floor beneath the photo.
                 anchor:        .center,
                 // Dense tiles now animate (motion is ~free on the GPU) but at
@@ -293,17 +347,6 @@ struct NodeGridTile: View {
                 // (was: blobs anchored `.bottom`, pooling colour under the text).
                 showsBlobs: !hasHero
             )
-            if hasHero {
-                heroOverlay
-            }
-            travelingScrim
-            identityContent
-                #if DEBUG
-                .opacity(UserDefaults.standard.bool(forKey: "CardHideText") ? 0 : 1)   // live-26 (3c): backdrop-only stills
-                #endif
-                // live-28 (A1) — light A / B: the band behind the dateline (under the text, kept in backdrop stills)
-                .backgroundPreferenceValue(DatelineRowKey.self) { DatelineBand(anchor: hasHero ? $0 : nil) }
-        }
     }
 
     // MARK: - Hero overlay

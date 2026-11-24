@@ -1798,6 +1798,7 @@ private struct MacFeelSwitchesPanel: View {
     @AppStorage(MacKeepDownloaded.key) private var keepDownloaded = true
     // Sweep 2b · 2.3 — the renderer trial (scratch branch ws-2b-renderer-trial; LivingMap.swift).
     @AppStorage(LivingTrial.key) private var livingTrial = ""
+    @AppStorage(LivingTrial.cardsArmKey) private var livingCardsArm = "c"
     @State private var keeperSummary = ""
     @State private var copied = false
 
@@ -1878,9 +1879,18 @@ private struct MacFeelSwitchesPanel: View {
             Toggle("Trial Map (Metal; reopen the Map after switching)", isOn: Binding(
                 get: { LivingTrial.mapOn(livingTrial) }, set: { livingTrial = LivingTrial.toggled(livingTrial, "map", $0) }))
                 .accessibilityIdentifier("macFeelTrialMap")
-            Toggle("Trial Cards background (not built yet)", isOn: Binding(
+            Toggle("Trial Cards background (runs on Cards engine B; reopen Cards after switching)", isOn: Binding(
                 get: { LivingTrial.cardsOn(livingTrial) }, set: { livingTrial = LivingTrial.toggled(livingTrial, "cards", $0) }))
                 .accessibilityIdentifier("macFeelTrialCards")
+            Picker("Cards background arm", selection: $livingCardsArm) {
+                Text("a · off").tag("a")
+                Text("b · today").tag("b")
+                Text("c · one pass").tag("c")
+                Text("c + drift").tag("cdrift")
+                Text("d · picture").tag("d")
+            }
+            .pickerStyle(.segmented)
+            .accessibilityIdentifier("macFeelTrialCardsArm")
             Text("Library on this Mac (sweep 2b · 4.6)").font(.system(size: 12, weight: .medium)).foregroundStyle(AppearancePalette.ink.opacity(0.7))
             Picker("Keep downloaded", selection: $keepDownloaded) {
                 Text("Keep downloaded").tag(true)

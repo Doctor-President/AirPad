@@ -134,6 +134,7 @@
 		45DE3BC906A059267EAAC6C2 /* CollectionColorsSelfTest.swift in Sources */ = {isa = PBXBuildFile; fileRef = 728BE33C0AE79DCCBBFA947B /* CollectionColorsSelfTest.swift */; };
 		460B456B553D07FAD0AAA28C /* SourceSerif4-Italic.ttf in Resources */ = {isa = PBXBuildFile; fileRef = 7A472A94A2947218490CED0B /* SourceSerif4-Italic.ttf */; };
 		477F08FD09F9D4C6A9418BB6 /* Security.framework in Frameworks */ = {isa = PBXBuildFile; fileRef = 6150CF6FB6E8BBB89B1C5C8F /* Security.framework */; };
+		47F1624B7C3B1A47FD055F38 /* LivingCards.metal in Sources */ = {isa = PBXBuildFile; fileRef = C46CC741338AB8018075041F /* LivingCards.metal */; };
 		48043B3C310828936B349842 /* BGEMicro.mlpackage in Sources */ = {isa = PBXBuildFile; fileRef = 8C73593D5F5CF884769506DE /* BGEMicro.mlpackage */; };
 		482DEB06493226E28C6252D5 /* SampleLibrary in Resources */ = {isa = PBXBuildFile; fileRef = FF17153136D015CF18EF722D /* SampleLibrary */; };
 		48F889B689808B42A745DCFB /* CardEmbeddingParityTest.swift in Sources */ = {isa = PBXBuildFile; fileRef = A68F48BA8AA932943F118533 /* CardEmbeddingParityTest.swift */; };
@@ -390,6 +391,7 @@
 		BCD5DDC7AA4CF6AB59A82FFA /* ShareImportItems.swift in Sources */ = {isa = PBXBuildFile; fileRef = 5CBFC13F8D66EB937FAA1B1E /* ShareImportItems.swift */; };
 		BCEA38610D7EEB032A314769 /* DocumentImportNaming.swift in Sources */ = {isa = PBXBuildFile; fileRef = 41588CCE3CAAFC09130BFE25 /* DocumentImportNaming.swift */; };
 		BDE1A97926919AFD785F9188 /* ChatTable.swift in Sources */ = {isa = PBXBuildFile; fileRef = D1771D5B4CE8299489D6EDF3 /* ChatTable.swift */; };
+		BDF2ECBB75E06B08FF42856F /* LivingCards.swift in Sources */ = {isa = PBXBuildFile; fileRef = B88F2DF491DB98E1861F0079 /* LivingCards.swift */; };
 		BE627965C351C4931B1BB439 /* LibrarianSheetDetentState.swift in Sources */ = {isa = PBXBuildFile; fileRef = 7357D7DC38554C54BB982B6E /* LibrarianSheetDetentState.swift */; };
 		BE64A66D74375B372C7F4013 /* Lato-OFL.txt in Resources */ = {isa = PBXBuildFile; fileRef = CAB00D11EDA08830EC33C8EC /* Lato-OFL.txt */; };
 		C04B73454671E6375E3F8B6A /* SampleLibrarySeeder.swift in Sources */ = {isa = PBXBuildFile; fileRef = 06B1768239F02E6846F26864 /* SampleLibrarySeeder.swift */; };
@@ -891,6 +893,7 @@
 		B82EFAA92BF3BAFAAA22F11B /* LibrarianRenderHooks.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = LibrarianRenderHooks.swift; sourceTree = "<group>"; };
 		B8409C10F1DE36558E8D9BF5 /* HostCatalog.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = HostCatalog.swift; sourceTree = "<group>"; };
 		B88DD76629EBF533BCDC9ADE /* SourceSerif4-Regular.ttf */ = {isa = PBXFileReference; lastKnownFileType = file; path = "SourceSerif4-Regular.ttf"; sourceTree = "<group>"; };
+		B88F2DF491DB98E1861F0079 /* LivingCards.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = LivingCards.swift; sourceTree = "<group>"; };
 		B8903D365A99288D29FD0840 /* RecorderSaveSelfTest.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = RecorderSaveSelfTest.swift; sourceTree = "<group>"; };
 		B8D87927EAE11D669A11A825 /* CardSwipeRepro.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = CardSwipeRepro.swift; sourceTree = "<group>"; };
 		B9C5245A09127ABECCBFEDC4 /* SubstrateWhitening.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = SubstrateWhitening.swift; sourceTree = "<group>"; };
@@ -912,6 +915,7 @@
 		C3FFA73288300E8E7B5FBA46 /* FeatureFlags.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = FeatureFlags.swift; sourceTree = "<group>"; };
 		C438DCDE3DCF26ECB6207FEA /* SourceSerif4-OFL.txt */ = {isa = PBXFileReference; lastKnownFileType = text; path = "SourceSerif4-OFL.txt"; sourceTree = "<group>"; };
 		C444FABBF789F31A3347DE13 /* AppleDeclineSheet.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = AppleDeclineSheet.swift; sourceTree = "<group>"; };
+		C46CC741338AB8018075041F /* LivingCards.metal */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.metal; path = LivingCards.metal; sourceTree = "<group>"; };
 		C49FE808E3476860F4E68D4F /* CoverFlowView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = CoverFlowView.swift; sourceTree = "<group>"; };
 		C6CE4B33C6F4682BF9799EC2 /* SpriteKit.framework */ = {isa = PBXFileReference; lastKnownFileType = wrapper.framework; name = SpriteKit.framework; path = System/Library/Frameworks/SpriteKit.framework; sourceTree = SDKROOT; };
 		C729D9028EBF447A0241ABFD /* KeychainHelper.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = KeychainHelper.swift; sourceTree = "<group>"; };
@@ -1710,6 +1714,8 @@
 		C679F1CD13037A43CAFF282E /* Living */ = {
 			isa = PBXGroup;
 			children = (
+				C46CC741338AB8018075041F /* LivingCards.metal */,
+				B88F2DF491DB98E1861F0079 /* LivingCards.swift */,
 				3A8E9F605D73470450A9E3C3 /* LivingMap.metal */,
 				4E712802FEC16E5369180531 /* LivingMap.swift */,
 			);
@@ -2383,6 +2389,8 @@
 				A2C5037009821DE621FC3B03 /* LiveDictationService.swift in Sources */,
 				C07C4B4D2D95F767DD7C63E7 /* LiveVoiceEngine.swift in Sources */,
 				E0B11AE9D6BA6895C646C8EE /* LiveVoiceRecorder.swift in Sources */,
+				47F1624B7C3B1A47FD055F38 /* LivingCards.metal in Sources */,
+				BDF2ECBB75E06B08FF42856F /* LivingCards.swift in Sources */,
 				0B755571DF6479F563FE1AF9 /* LivingMap.metal in Sources */,
 				C79CFB291F94C390D870E4A4 /* LivingMap.swift in Sources */,
 				4EDE0958B5A8E958DEAEF6AD /* LocalDrafts.swift in Sources */,

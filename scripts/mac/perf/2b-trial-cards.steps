@@ -1,0 +1,22 @@
+# Sweep 2b · 2.3 renderer trial, scene 2 (Cards backgrounds): the Cards spike's scripted swipes (pointer still and moving),
+# rperf trackpad 10 s, a few sidebar drags (width changes: the pass's one-shot draws), then a 12 s rest (rest window = from
+# 0.5 s after the last input, 10 s). The arm is a launch argument (trial_cards_run.sh). Labels: steps.py / trial_cards.py.
+view-cards      click toolbar.view.Cards
+rest            wait 4000
+cards-sidebar   drag resize.sidebar 70 0 24
+cards-sidebar   drag resize.sidebar -70 0 24
+cards-sidebar   drag resize.sidebar 70 0 24
+cards-sidebar   drag resize.sidebar -70 0 24
+rest            wait 1500
+cards-scroll    scroll 640,600 -2400 80 8
+cards-scroll    scroll 640,600 2400 80 8
+cards-scroll    scroll 640,600 -2400 80 8
+cards-scroll    scroll 640,600 2400 80 8
+cards-scrollmv  scrollmove 640,600 -2400 80 8
+cards-scrollmv  scrollmove 640,600 2400 80 8
+cards-scrollmv  scrollmove 640,600 -2400 80 8
+cards-scrollmv  scrollmove 640,600 2400 80 8
+cards-hand      trackpad 640,600 10 wobble
+rest            wait 2000
+cards-rest      move toolbar.title 0 0 1
+rest            wait 12000

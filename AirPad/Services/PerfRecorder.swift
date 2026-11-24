@@ -112,6 +112,17 @@ enum MapProbe: UInt8 {
     case trialFrameMain = 37    // main-thread ms from the display link's callback to the command buffer's commit
     case trialGPU = 38          // GPU ms of the frame's command buffer (gpuEndTime − gpuStartTime)
     case trialSnapshot = 39     // the trial re-read the scene's values: value = ms
+    // Sweep 2b · 2.3 renderer trial, scene 2 (Cards backgrounds in one pass behind the collection view)
+    case cardsDraw = 40         // one background pass on the main thread: value = ms (drawable wait, encode, commit, wait until scheduled, present)
+    case cardsGPU = 41          // GPU ms of that pass's command buffer
+    case cardsPresented = 42    // the pass reached the screen: t = presentedTime (value 0 = dropped)
+    case cardsOffset = 43       // scrollViewDidScroll with a changed offset: value = |Δy| pt
+    case cardsDrawableWait = 44 // nextDrawable blocked this long (ms)
+    case cardsDrawReason = 45   // why a pass ran: 1 scroll, 2 layout (size / width), 3 data, 4 appear, 5 drift tick, 6 appearance
+    case cardsDrawn = 46        // cards drawn in that pass (value = count)
+    case cardsOwnPath = 47      // visible cards that keep their own background (cover-image cards): value = count
+    case cardsCoalesced = 48    // an offset change followed by another before any pass (two offsets in one transaction)
+    case cardsPicture = 49      // arm d: one card's still rendered (ImageRenderer) on the main thread: value = ms
 }
 
 /// Sweep 2b · 2.1 probe — a stable small number for a view (low pointer bits), to tell two SKViews apart.

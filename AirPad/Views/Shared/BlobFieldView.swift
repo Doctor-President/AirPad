@@ -232,6 +232,7 @@ struct BlobFieldView: View {
                 }
             } else if animated {
                 TimelineView(.animation(minimumInterval: frameInterval, paused: paused)) { timeline in
+                    let _ = Perf.body(BlobFieldTick.self)   // sweep 2b · 2.3 trial (scratch): counts each drift redraw
                     // Wrap time to keep Float precision usable across the app's
                     // multi-hundred-million-second reference clock (per brief).
                     let t = Self.frozenTime ?? Float(timeline.date.timeIntervalSinceReferenceDate
@@ -318,7 +319,7 @@ struct BlobFieldView: View {
     }
 
     /// CARD layout, stride 16.
-    private static func packCard(_ blobs: [CardBlob]) -> [Float] {
+    static func packCard(_ blobs: [CardBlob]) -> [Float] {
         var out: [Float] = []
         out.reserveCapacity(blobs.count * 16)
         for blob in blobs {
@@ -383,6 +384,9 @@ struct BlobFieldView: View {
         return (Float(r), Float(g), Float(b))
     }
 }
+
+/// Sweep 2b · 2.3 trial (scratch): a name for `Perf.body` to count each card-field TimelineView redraw (the rest row).
+struct BlobFieldTick: View { var body: some View { EmptyView() } }
 
 /// Map in-place fix R1 (T 2026-11-05) — a blob field's TimelineView that keeps the ambient drift at a low frame rate
 /// while the phone is still, and runs at the full `frameInterval` while the tilt visibly moves

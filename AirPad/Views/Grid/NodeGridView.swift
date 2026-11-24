@@ -68,6 +68,7 @@ struct NodeGridView: View {
     /// Sweep 2b · 2.2 — the Cards spike's switches (MacCardsSpike.swift); "today" = this grid, unchanged.
     @AppStorage(MacCardsSpike.engineKey) private var spikeEngine = "today"
     @AppStorage(MacCardsSpike.resizeKey) private var spikeResize = "relayout"
+    @AppStorage(LivingTrial.key) private var livingTrial = ""   // sweep 2b · 2.3 trial (scratch): its Cards arms run on arm B
     @AppStorage(MacCardsSpike.clickKey) private var spikeClick = "open"
     @AppStorage(MacCardsSpike.selectionKey) private var spikeSelection = "own"
     #endif
@@ -144,7 +145,7 @@ struct NodeGridView: View {
         k.append(showTileTuningPanel)
         #endif
         #if targetEnvironment(macCatalyst) && (DEBUG || DEVSWITCHES)
-        k.append(contentsOf: [spikeEngine, spikeResize, spikeClick, spikeSelection])
+        k.append(contentsOf: [spikeEngine, spikeResize, spikeClick, spikeSelection, livingTrial])
         #endif
         return k
     }
@@ -292,7 +293,7 @@ struct NodeGridView: View {
     /// The Mac's grid: today's (and arm A, inside it), or the spike's arm B (sweep 2b · 2.2) when switched on.
     @ViewBuilder private var macGridContent: some View {
         #if targetEnvironment(macCatalyst) && (DEBUG || DEVSWITCHES)
-        if spikeEngine == "B" {
+        if spikeEngine == "B" || LivingTrial.cardsOn(livingTrial) {
             MacCardsCollectionView(
                 nodes: nodes,
                 targetWidth: macCardWidth,

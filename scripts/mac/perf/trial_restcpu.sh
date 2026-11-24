@@ -10,7 +10,7 @@ $APP/Contents/MacOS/AirPad -ApplePersistenceIgnoreState YES ${=EXTRA:-} > /dev/n
 sleep 8; for i in $(seq 1 30); do [[ $($R winpos $P) != *"0×0"* ]] && break; sleep 1; done
 $R winmove $P 0 ${WINY:-0} >/dev/null; $R winsize $P ${=WIN:-1728 1029} >/dev/null; sleep 1
 osascript -e "tell application \"System Events\" to set frontmost of (first process whose unix id is $P) to true" >/dev/null 2>&1; sleep 1
-$R click $P sidebar.library >/dev/null; sleep 2; $R click $P toolbar.view.Map >/dev/null
+$R click $P sidebar.library >/dev/null; sleep 2; $R click $P toolbar.view.${VIEW:-Map} >/dev/null   # VIEW=Cards for scene 2
 sleep $SET
 t() { ps -p $P -o time= | awk -F'[:.]' '{ if (NF==3) print $1*60+$2+$3/100; else print $1*3600+$2*60+$3+$4/100 }'; }
 c0=$(t); w0=$(python3 -c 'import time;print(time.time())')

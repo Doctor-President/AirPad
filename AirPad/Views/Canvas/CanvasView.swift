@@ -56,10 +56,13 @@ struct CanvasView: View {
     #if targetEnvironment(macCatalyst) && (DEBUG || DEVSWITCHES)
     /// Sweep 2b · 2.3 renderer trial (scratch branch): "Trial Map" mounts the Metal Map instead of the SpriteView.
     @AppStorage(LivingTrial.key) private var livingTrial = ""
-    private var livingMapOn: Bool { LivingTrial.mapOn(livingTrial) }
+    /// Option G (arm `g`): today's SpriteView stays, drawn by SKRenderer on our loop; the trial Map view is not mounted.
+    private var livingG: Bool { LivingTrial.mapOn(livingTrial) && LivingTrial.mapArm == "g" }
+    private var livingMapOn: Bool { LivingTrial.mapOn(livingTrial) && !livingG }
     private var livingPillsAbove: Bool { !livingMapOn || LivingTrial.mapArm == "pills" }
     #else
     private var livingMapOn: Bool { false }
+    private var livingG: Bool { false }
     private var livingPillsAbove: Bool { true }
     #endif
 
@@ -941,7 +944,12 @@ struct CanvasView: View {
                 preferredFramesPerSecond: 120,
                 options: [.allowsTransparency, .ignoresSiblingOrder],
                 debugOptions: mapDebugOptions,
-                shouldRender: { [scene] _ in scene.shouldRenderTick() }   // sweep 2b · 2.1: Mac paces the Map by display ticks
+                shouldRender: { [scene, livingG] _ in
+                    #if targetEnvironment(macCatalyst) && (DEBUG || DEVSWITCHES)
+                    if livingG { return scene.livingGShouldRender() }   // 2.3 trial option G: our loop draws
+                    #endif
+                    return scene.shouldRenderTick()   // sweep 2b · 2.1: Mac paces the Map by display ticks
+                }
             )
             .ignoresSafeArea()
             .blur(radius: (canvasState.isZoomed || isDismissing) ? 8 : 0)
@@ -949,6 +957,14 @@ struct CanvasView: View {
             // White-flash fix: hidden until the scene's first frame; the labels
             // below carry the same gate so orbs + labels appear together.
             .opacity(mapContentRevealed ? 1 : 0)
+            #if targetEnvironment(macCatalyst) && (DEBUG || DEVSWITCHES)
+            if livingG {
+                LivingGRepresentable(scene: scene)
+                    .ignoresSafeArea()
+                    .allowsHitTesting(false)
+                    .opacity(mapContentRevealed ? 1 : 0)
+            }
+            #endif
             }
 
             if store.nodes(in: scope).isEmpty {

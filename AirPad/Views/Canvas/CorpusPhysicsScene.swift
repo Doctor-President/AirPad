@@ -2061,6 +2061,12 @@ final class CorpusPhysicsScene: SKScene {
         #endif
     }
 
+    #if targetEnvironment(macCatalyst) && (DEBUG || DEVSWITCHES)
+    /// Renderer trial option G (scratch): the SKView's tick only wakes our loop (LivingGView); the SKView never draws.
+    var livingGWake: (() -> Void)?
+    func livingGShouldRender() -> Bool { livingGWake?(); return false }
+    #endif
+
     /// The rate this frame was asked to run at (Mac: the display rate ÷ the pacer step).
     var askedMapFPS: Int {
         #if targetEnvironment(macCatalyst)

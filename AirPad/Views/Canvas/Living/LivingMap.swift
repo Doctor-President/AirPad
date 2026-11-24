@@ -3,6 +3,7 @@ import SwiftUI
 import Metal
 import QuartzCore
 import simd
+import SpriteKit
 
 // Sweep 2b · 2.3 — the renderer trial (Ops design-refs/sweep-2b/renderer-trial-design.md). SCRATCH BRANCH
 // ws-2b-renderer-trial: never merged. Mac only, in builds with DEBUG or DEVSWITCHES (Xcode runs, TestFlight, the bench);
@@ -696,6 +697,117 @@ struct LivingMapRepresentable: UIViewRepresentable {
         return v
     }
     func updateUIView(_ v: LivingMapView, context: Context) {}
+}
+
+// MARK: - Option G (design §2, a stretch): today's scene on our loop
+
+/// `-LivingTrial map -LivingTrialArm g`: CanvasView keeps today's SpriteView (its SKView still owns the scene, the input and
+/// the rest rule) but the SKView never draws (`shouldRender` → false, which only wakes this view). Our CADisplayLink (120,
+/// common modes) asks the scene's own pacer (`shouldRenderTick`), then `SKRenderer.update` + `render` into this layer above
+/// it, presenting on completion as the trial Map does. Pause mirrors the scene: while its SKView is paused, the link is.
+/// The SwiftUI label layers stay as today. Probe rows: 19 (drawable wait), 32 (presented, the SKView's id), 37, 38.
+final class LivingGView: UIView {
+    override class var layerClass: AnyClass { CAMetalLayer.self }
+    private var ml: CAMetalLayer { layer as! CAMetalLayer }
+    private let L = LivingLayer.shared
+    weak var scene: CorpusPhysicsScene?
+    private var link: CADisplayLink?
+    private let renderer = SKRenderer(device: LivingLayer.shared.device)
+    private final class Target: NSObject {
+        weak var v: LivingGView?
+        @objc func step(_ l: CADisplayLink) { MainActor.assumeIsolated { v?.step(l) } }
+    }
+    private let target = Target()
+
+    override init(frame: CGRect) {
+        super.init(frame: frame)
+        isOpaque = false
+        isUserInteractionEnabled = false
+        backgroundColor = .clear
+        ml.device = L.device
+        ml.pixelFormat = .bgra8Unorm
+        ml.framebufferOnly = true
+        ml.isOpaque = false
+        ml.maximumDrawableCount = 3
+        target.v = self
+        accessibilityIdentifier = "livingG"
+    }
+    required init?(coder: NSCoder) { fatalError() }
+    deinit { link?.invalidate() }
+
+    func attach(_ s: CorpusPhysicsScene) {
+        scene = s
+        renderer.scene = s
+        renderer.ignoresSiblingOrder = true
+        s.livingGWake = { [weak self] in self?.wake() }
+    }
+
+    override func didMoveToWindow() {
+        super.didMoveToWindow()
+        guard let w = window else { link?.isPaused = true; return }
+        ml.contentsScale = w.traitCollection.displayScale
+        if link == nil {
+            let l = CADisplayLink(target: target, selector: #selector(Target.step(_:)))
+            l.preferredFrameRateRange = CAFrameRateRange(minimum: 120, maximum: 120, preferred: 120)
+            l.add(to: .main, forMode: .common)
+            link = l
+            Perf.mark("living G mounted (SKRenderer on our CADisplayLink)")
+            DispatchQueue.main.asyncAfter(deadline: .now() + 3) { [weak self] in
+                if let self, self.window != nil { LivingTrial.describeMetalLayers("option G", in: self) }
+            }
+        }
+        wake()
+    }
+
+    override func layoutSubviews() {
+        super.layoutSubviews()
+        let s = ml.contentsScale
+        let size = CGSize(width: max(1, bounds.width * s), height: max(1, bounds.height * s))
+        if ml.drawableSize != size { ml.drawableSize = size; wake() }
+    }
+
+    func wake() {
+        guard let link, link.isPaused, window != nil else { return }
+        link.isPaused = false
+        LivingLayer.probe(.wake, 99)
+    }
+
+    fileprivate func step(_ l: CADisplayLink) {
+        guard let scene, let skv = scene.view else { return }
+        if skv.isPaused { l.isPaused = true; LivingLayer.probe(.pause, 0); return }
+        guard scene.shouldRenderTick() else { return }   // today's pacer (clean 60 / the 8 Hz step-down)
+        let t0 = CACurrentMediaTime()
+        guard let drawable = ml.nextDrawable() else { return }
+        LivingLayer.probe(.drawableWait, (CACurrentMediaTime() - t0) * 1000, at: t0)
+        renderer.update(atTime: l.targetTimestamp)
+        guard let cb = L.queue.makeCommandBuffer() else { return }
+        let rpd = MTLRenderPassDescriptor()
+        rpd.colorAttachments[0].texture = drawable.texture
+        rpd.colorAttachments[0].loadAction = .clear
+        rpd.colorAttachments[0].clearColor = MTLClearColor(red: 0, green: 0, blue: 0, alpha: 0)
+        rpd.colorAttachments[0].storeAction = .store
+        renderer.render(withViewport: CGRect(origin: .zero, size: ml.drawableSize), commandBuffer: cb, renderPassDescriptor: rpd)
+        if PerfRecorder.on {
+            let v = MapProbeID.of(skv)
+            drawable.addPresentedHandler { d in
+                let pt = d.presentedTime, at = pt > 0 ? pt : CACurrentMediaTime()
+                LivingLayer.probe(.presented, pt > 0 ? 1 : 0, at: at)
+                LivingLayer.probe(.presentedView, v + (pt > 0 ? 100000 : 0), at: at)
+            }
+            cb.addCompletedHandler { cb in LivingLayer.probe(.trialGPU, (cb.gpuEndTime - cb.gpuStartTime) * 1000) }
+        }
+        cb.present(drawable)
+        cb.commit()
+        let ms = (CACurrentMediaTime() - t0) * 1000
+        LivingLayer.probe(.trialFrameMain, ms, at: t0)
+        Perf.mapFrame(updateMs: ms)
+    }
+}
+
+struct LivingGRepresentable: UIViewRepresentable {
+    let scene: CorpusPhysicsScene
+    func makeUIView(context: Context) -> LivingGView { let v = LivingGView(frame: .zero); v.attach(scene); return v }
+    func updateUIView(_ v: LivingGView, context: Context) {}
 }
 
 #endif

@@ -130,11 +130,9 @@ struct DocumentViewerSheet: View {
                 keysToken = MacViewerKeys.open(count: handoffs.count, close: { dismiss() }, step: { handle.step($0) },
                                                isLive: { [weak handle] in handle?.controller?.viewIfLoaded?.window != nil },
                                                openCurrent: { [handoffs, weak handle] in
-                                                   // Sweep 2b · 4.1 — ⌘O: a copy of the shown item (from its named copy;
-                                                   // `openCopy` copies again, so the stored file is never handed out).
+                                                   // Sweep 2b · 4.1 — ⌘O: a copy of the shown item.
                                                    let i = min(max(handle?.controller?.currentPreviewItemIndex ?? startIndex, 0), handoffs.count - 1)
-                                                   let h = handoffs[i]
-                                                   Task { await MacDocumentActions.openCopy(of: h.url, named: h.title, ext: h.url.pathExtension) }
+                                                   MacDocumentActions.openViewerItem(handoffs[i])
                                                },
                                                owns: { [weak handle] view in
                                                    guard let root = handle?.controller?.navigationController?.view ?? handle?.controller?.viewIfLoaded else { return false }

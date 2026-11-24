@@ -92,7 +92,7 @@ struct DocumentHandoff: Identifiable, Equatable {
         await make(id: item.id, title: displayName(for: item), ext: storedURL.pathExtension, storedURL: storedURL)
     }
 
-    private static func make(id: String, title: String, ext: String, storedURL: URL) async -> DocumentHandoff {
+    static func make(id: String, title: String, ext: String, storedURL: URL) async -> DocumentHandoff {
         let name = fileName(title, ext: ext)
         let folder = root.appendingPathComponent(UUID().uuidString, isDirectory: true)
         let copy = folder.appendingPathComponent(name)
@@ -110,11 +110,53 @@ struct DocumentHandoff: Identifiable, Equatable {
         return DocumentHandoff(documentID: id, url: ok ? copy : storedURL, title: title, folder: ok ? folder : nil)
     }
 
-    /// Removes the named copy. Idempotent.
+    /// Removes the named copy. Idempotent. While something still reads it (`hold`), the removal waits for the last
+    /// reader to finish.
     func release() {
         guard let folder else { return }
+        guard Holds.release(folder) else { return }
         try? FileManager.default.removeItem(at: folder)
         DocumentHandoffProbe.released(doc: documentID)
+    }
+
+    /// Sweep 2b · step 5 fix-up (verifier finding 6) — ⌘O in the viewer copies from the named copy in a task; Space
+    /// straight after closed the viewer, whose dismantle removed the named copy first, so the copy failed and nothing
+    /// opened. A reader holds the named copy for as long as it reads: take the hold BEFORE starting the task, `end()` it
+    /// when done; a `release()` in between removes the folder at the end instead.
+    struct Hold {
+        fileprivate let handoff: DocumentHandoff
+        func end() {
+            guard let folder = handoff.folder, Holds.end(folder) else { return }
+            try? FileManager.default.removeItem(at: folder)
+            DocumentHandoffProbe.released(doc: handoff.documentID)
+        }
+    }
+    func hold() -> Hold {
+        if let folder { Holds.begin(folder) }
+        return Hold(handoff: self)
+    }
+
+    /// The readers of each named copy, and the copies released while read. Thread-safe (the viewer's dismantle runs on
+    /// the main thread, a reader's end wherever its task ends).
+    private enum Holds {
+        private static let lock = NSLock()
+        nonisolated(unsafe) private static var readers: [URL: Int] = [:]
+        nonisolated(unsafe) private static var released: Set<URL> = []
+        static func begin(_ f: URL) { lock.lock(); readers[f, default: 0] += 1; lock.unlock() }
+        /// true = remove it now (nobody reads it)
+        static func release(_ f: URL) -> Bool {
+            lock.lock(); defer { lock.unlock() }
+            if readers[f, default: 0] > 0 { released.insert(f); return false }
+            return true
+        }
+        /// true = the last reader of a released copy: remove it now
+        static func end(_ f: URL) -> Bool {
+            lock.lock(); defer { lock.unlock() }
+            let n = readers[f, default: 1] - 1
+            if n > 0 { readers[f] = n; return false }
+            readers[f] = nil
+            return released.remove(f) != nil
+        }
     }
 
     /// Clears every named copy (at launch: none can be in use).
@@ -169,6 +211,26 @@ enum MacDocumentActions {
     /// (T's "⌘O does nothing" could be that silent failure). If the copy can't be made, nothing is opened — the stored
     /// file is never handed out instead.
     static func openCopy(of stored: URL, named title: String, ext: String) async {
+        guard let copy = await makeCopy(of: stored, named: title, ext: ext) else { return }
+        _ = workspace?.perform(NSSelectorFromString("openURL:"), with: copy)
+    }
+
+    /// Sweep 2b · 4.4 — ⌘O in the Quick Look viewer: a copy of the shown item, made from the viewer's named copy
+    /// (`makeCopy` copies again, so the stored file is never handed out). `launch: false` = make it only (self-test).
+    /// The named copy is held until the copy is made (the viewer may close straight after ⌘O; verifier finding 6).
+    @discardableResult
+    static func openViewerItem(_ h: DocumentHandoff, launch: Bool = true) -> Task<URL?, Never> {
+        let hold = h.hold()
+        return Task {
+            defer { hold.end() }
+            guard let copy = await makeCopy(of: h.url, named: h.title, ext: h.url.pathExtension) else { return nil }
+            if launch { _ = workspace?.perform(NSSelectorFromString("openURL:"), with: copy) }
+            return copy
+        }
+    }
+
+    /// The copy ⌘O hands out (nil when it can't be made: nothing is opened then).
+    static func makeCopy(of stored: URL, named title: String, ext: String) async -> URL? {
         let name = DocumentHandoff.fileName(title, ext: ext)
         let folder = copiesRoot.appendingPathComponent(UUID().uuidString, isDirectory: true)
         let copy = folder.appendingPathComponent(name)
@@ -187,11 +249,11 @@ enum MacDocumentActions {
         }.value
         if let result {
             MacProofLog.note("4.4", "open a copy FAILED (\(result)) — nothing opened, the stored file is never handed out")
-            return
+            return nil
         }
         MacProofLog.note("4.4", "open a copy: .\(copy.pathExtension) in Opened Copies · stored file handed out: "
                          + "\(copy.standardizedFileURL.path == stored.standardizedFileURL.path ? "YES" : "no")")
-        _ = workspace?.perform(NSSelectorFromString("openURL:"), with: copy)
+        return copy
     }
 
     /// Off the main thread (sweep 2b · 4.4: was a main-actor folder walk at launch).

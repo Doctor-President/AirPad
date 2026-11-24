@@ -139,7 +139,7 @@ enum MacFixupSelfTest {
 
 /// Sweep 2b · step 5 fix-ups — `-Sweep2bFixupSelfTest`: the verifier's Mac findings that a headless run can prove.
 /// 3: the Map's tick pacer (`MapTickPacer`) fed display ticks at 120 Hz and at 60 Hz (a window on a 60 Hz display while
-/// the launch-time screen said 120).
+/// the launch-time screen said 120). 6: ⌘O in the Quick Look viewer with the viewer closing straight after.
 @MainActor
 enum Sweep2bFixupSelfTest {
     static func run() async -> String {
@@ -179,6 +179,24 @@ enum Sweep2bFixupSelfTest {
         }
         let idle60 = drawn(hz: 60, launch: 120, fps: 8)
         row("pacer 60 Hz display, asked 8 → about 8 fps (not 4)", (7...9).contains(idle60.perSecond), "drawn \(idle60.perSecond)/s")
+
+        // 6 — ⌘O in the viewer, then the viewer closes straight away (Space): the copy is still made, and the viewer's
+        // named copy is still removed once ⌘O is done with it.
+        let fm = FileManager.default
+        let dir = fm.temporaryDirectory.appendingPathComponent("Sweep2bFixup6-\(UUID().uuidString)", isDirectory: true)
+        try? fm.createDirectory(at: dir, withIntermediateDirectories: true)
+        let stored = dir.appendingPathComponent("stored.txt")
+        try? Data("fixup 6".utf8).write(to: stored)
+        let h = await DocumentHandoff.make(id: "fixup6", title: "Fixup six", ext: "txt", storedURL: stored)
+        row("viewer item is a named copy", h.folder != nil)
+        let task = MacDocumentActions.openViewerItem(h, launch: false)
+        h.release()   // the viewer's dismantle, straight after ⌘O
+        let copy = await task.value
+        row("cmd-O right before the viewer closes still makes the copy", copy.map { fm.fileExists(atPath: $0.path) } == true,
+            copy == nil ? "no copy" : "")
+        row("the viewer's named copy is removed once cmd-O is done", h.folder.map { !fm.fileExists(atPath: $0.path) } == true)
+        if let copy { try? fm.removeItem(at: copy.deletingLastPathComponent()) }
+        try? fm.removeItem(at: dir)
 
         let checks = rows.count
         return "[Sweep2bFixupSelfTest] \(fails == 0 ? "PASS" : "FAIL") \(checks - fails)/\(checks)\n" + rows.joined(separator: "\n")

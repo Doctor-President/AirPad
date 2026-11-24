@@ -476,6 +476,8 @@ struct MacSettingsColumn: View {
             .id(layout.settingsSerial)   // a deep link (Web search, Models) re-seeds the panel's path
             .background(AppearancePalette.bgBase)
             .accessibilityIdentifier("macSettingsPanel")
+            .onGeometryChange(for: CGRect.self) { $0.frame(in: .global) } action: { MacClickEndsFieldEditing.formRect = $0 }
+            .onDisappear { MacClickEndsFieldEditing.formRect = nil }
     }
 }
 
@@ -1825,6 +1827,14 @@ struct MacToolbarTrailing: View {
         // window (an alert, a popover, a later OS): a field in it, or a click in it, never moves the keys beneath it.
         if presentedOwns(field, in: window) || window.hitTest(p, with: nil).map({ presentedOwns($0, in: window) }) == true { return }
         let own = field.convert(field.bounds, to: window)
+        // Step 5 (verifier 4, reproduced with real clicks 2026-11-24): Mac Settings is not a sheet but a column in this
+        // window (H4), so the check above never saw it, and a click on a field's label or beside a switch moved the keys
+        // to the content beneath. A click inside the form that holds the field leaves it editing, as an AppKit form does;
+        // a click out of the form (a card, a row, the Map) still ends editing.
+        if MacLayout.shared.settingsOpen, let form = formRect, form.contains(CGPoint(x: own.midX, y: own.midY)), form.contains(p) {
+            MacProofLog.note("4.1", "click inside the field's form leaves it editing")
+            return
+        }
         var keep = own.insetBy(dx: -8, dy: -6)
         if let capsule = MacToolbarProbe.windowRect["toolbar.search"], capsule.insetBy(dx: -4, dy: -4).contains(CGPoint(x: own.midX, y: own.midY)) {
             keep = keep.union(capsule.insetBy(dx: -2, dy: -2))
@@ -1851,6 +1861,9 @@ struct MacToolbarTrailing: View {
             #endif
         }
     }
+
+    /// The Settings column's frame in window points while it is open (`MacSettingsColumn`), nil once it closes.
+    static var formRect: CGRect?
 
     /// The view is inside a controller presented over the window's root (a sheet, an alert, a popover).
     private static func presentedOwns(_ v: UIView, in window: UIWindow) -> Bool {

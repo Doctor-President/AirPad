@@ -25,3 +25,12 @@ s-esc2         esc
 rest           wait 1500
 s5             ax settings.webSearchSwitch AXRole
 s5r            ax settingsRow.Web* AXRole
+# Out of the form (session 6): the field again, then a real click on a List row in the content → editing ends there.
+s-list         click toolbar.view.List
+rest           wait 2000
+s-field2       click placeholder:BSA...
+rest           wait 1200
+s6f            focus
+s-out          click listRow-9E9F2000-0000-4000-8000-000000000016
+rest           wait 1500
+s7f            focus

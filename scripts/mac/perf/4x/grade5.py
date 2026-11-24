@@ -35,6 +35,12 @@ if what == "sheet":
     w = win("s-label", "s3v")
     fired = [e[2] for e in (w or []) if e[1] == "4.1" and "click outside ends editing" in e[2]]
     row("S2b the click-away rule did not act on a click inside the sheet (app log)", w is not None and not fired, "; ".join(fired) or "no 4.1 line")
+    if at("s-out"):   # session 6: the rule still acts on a click out of the form
+        f6 = txt("s6f"); row("S6 the key field focused again", "AXTextField" in f6, f6)
+        w2 = win("s-out", "s7f")
+        row("S7 a click on a List row (out of the form) ends editing there (app log)",
+            has(w2, r"click outside ends editing in UIKitTextField: resigned true"), "; ".join(e[2] for e in (w2 or []) if e[1] == "4.1") or "no 4.1 line")
+        row("S7b the field no longer holds the keys", "AXTextField" not in txt("s7f"), txt("s7f"))
     # Information only: Esc does not close this pane even with no click-away (control 2b-5-sheetfield-ctl.steps, 2026-11-24).
     print(f"info Esc after the clicks: 1st {txt('s4')} · focus {txt('s4f')} · 2nd {txt('s5')} · row {txt('s5r')}")
 else:

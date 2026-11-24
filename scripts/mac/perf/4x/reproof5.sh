@@ -33,6 +33,11 @@ for part in $PARTS; do case $part in
   sheet)
     t=${SHEETTAG:-2b-5-sheet-1703}; one $t $K/2b-5-sheetfield.steps WIN="1703 924" EXTRA="-Sweep4Log YES"
     python3 $K/grade5.py sheet $RUNS/$t | tee $RUNS/$t/grade.txt ;;
+  sheett)   # the same in T's focus state: the toolbar search holding text first (Settings takes the Librarian's slot)
+    t=${SHEETTAG:-2b-5-sheet-tstate-1703}; ST=$RUNS/$t.steps
+    awk '{print} /^open-wait/ {print "search         click toolbar.search"; print "search-type    type light"; print "rest           wait 2500"}' $K/2b-5-sheetfield.steps > $ST
+    one $t $ST WIN="1703 924" EXTRA="-Sweep4Log YES"; mv $ST $RUNS/$t/steps
+    python3 $K/grade5.py sheet $RUNS/$t | tee $RUNS/$t/grade.txt ;;
   cmdo)
     t=2b-5-cmdo-1703; one $t $K/2b-5-cmdo-space.steps WIN="1703 924" EXTRA="-Sweep4Log YES" RPERF_CONTINUOUS=1
     previewcopies $RUNS/$t; python3 $K/grade5.py cmdo $RUNS/$t | tee $RUNS/$t/grade.txt ;;

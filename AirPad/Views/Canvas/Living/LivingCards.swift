@@ -45,6 +45,25 @@ extension LivingTrial {
     }
 }
 
+extension LivingTrial {
+    /// Leftover (b), one look at the ~8 ms nextDrawable episodes: every CAMetalLayer under `view` with the settings that
+    /// decide how drawables come back (logged once for SKView's layer and the trial Map's, to compare).
+    static func describeMetalLayers(_ name: String, in view: UIView) {
+        var out: [String] = []
+        func walk(_ l: CALayer, _ depth: Int) {
+            if let m = l as? CAMetalLayer {
+                let cs = m.colorspace.flatMap { $0.name as String? } ?? "untagged"
+                out.append("\(type(of: m)) depth \(depth) bounds \(Int(m.bounds.width))×\(Int(m.bounds.height)) scale \(m.contentsScale) drawable \(Int(m.drawableSize.width))×\(Int(m.drawableSize.height)) max \(m.maximumDrawableCount) sync \(m.displaySyncEnabled) txn \(m.presentsWithTransaction) timeout \(m.allowsNextDrawableTimeout) fbOnly \(m.framebufferOnly) fmt \(m.pixelFormat.rawValue) cs \(cs) opaque \(m.isOpaque) edr \(m.wantsExtendedDynamicRangeContent) gravity \(m.contentsGravity.rawValue)")
+            }
+            for s in l.sublayers ?? [] { walk(s, depth + 1) }
+        }
+        walk(view.layer, 0)
+        let line = "metal layers \(name): " + (out.isEmpty ? "none" : out.joined(separator: " | "))
+        Perf.mark(line)
+        FileHandle.standardError.write(Data(("LIVINGLAYERS " + line + "\n").utf8))
+    }
+}
+
 /// The background pass behind the cards. Owned by the collection view (its `backgroundView`).
 final class LivingCardsView: UIView {
     override class var layerClass: AnyClass { CAMetalLayer.self }

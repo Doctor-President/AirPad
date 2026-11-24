@@ -252,6 +252,9 @@ final class LivingMapView: UIView, UIGestureRecognizerDelegate {
                 link = l
             }
             mountTime = CACurrentMediaTime()
+            DispatchQueue.main.asyncAfter(deadline: .now() + 3) { [weak self] in   // leftover (b): our layer's settings
+                if let self, self.window != nil { LivingTrial.describeMetalLayers("trial map", in: self) }
+            }
             Perf.mark("living map mounted · arm \(arm) · rate \(rate) · link \(linkKind) · range min \(LivingTrial.rangeMin) · cs \(LivingTrial.colorspace) · present \(LivingTrial.presentMode)")
             if let z = zoomArg {   // the bench's `-MapZoom <mult>`: 14 s after the Map mounts, as the scene does
                 DispatchQueue.main.asyncAfter(deadline: .now() + 14) { [weak self] in

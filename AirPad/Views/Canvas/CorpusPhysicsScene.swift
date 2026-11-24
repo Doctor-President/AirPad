@@ -2477,6 +2477,11 @@ final class CorpusPhysicsScene: SKScene {
             if let self, skv.scene === self { self.viewReturnedToWindow() }
         }
         #endif
+        #if targetEnvironment(macCatalyst) && (DEBUG || DEVSWITCHES)
+        DispatchQueue.main.asyncAfter(deadline: .now() + 3) { [weak view] in   // 2.3 trial leftover (b): SKView's layer settings
+            if let view, view.window != nil { LivingTrial.describeMetalLayers("SKView", in: view) }
+        }
+        #endif
         #if DEBUG || DEVSWITCHES
         // Sweep 2b · 2.1 probe — how many display ticks the SKView offers (its delegate is asked before each frame).
         if Perf.isAvailable {

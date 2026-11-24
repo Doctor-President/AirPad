@@ -265,13 +265,20 @@ struct ChatTranscript: View {
     static let noMatchLine = "This answer is from the model's general knowledge, not your notes."
 
     /// Derived, not stored (no chat-format change): a Library turn that sent the model nothing (a 0/0 receipt) and
-    /// that the app did not write itself (`provenance.library` — an app notice such as "nothing names X"), not a
-    /// decline, and with an answer to label. Old chats' no-match answers show it too (still true of them).
+    /// that the app did not write itself (`provenance.library`: an app notice such as "nothing names X" always carries
+    /// `ChatProvenance.appNotice`, which has it; step 5 fix-up), not a decline, and with an answer to label. Old chats' no-match answers show it too (still true of them).
     static func showsNoMatchLine(_ m: ChatSession.Message) -> Bool {
         guard m.role == .assistant, m.declined != true, m.provenance?.library != true,
               !m.text.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty,
               let r = m.readReceipt else { return false }
         return r.readInFull == 0 && r.skimmed == 0
+    }
+
+    /// live-27 (4) — the "who wrote this" caption under an answer: when one was recorded; a decline already names Apple
+    /// Intelligence; an answer the app wrote has none (no model wrote it).
+    static func showsCaption(_ m: ChatSession.Message) -> Bool {
+        guard let p = m.provenance else { return false }
+        return !p.isAppNotice && m.declined != true
     }
 
     // MARK: - Read/skim receipt (Brief BN5 — what the Librarian read)

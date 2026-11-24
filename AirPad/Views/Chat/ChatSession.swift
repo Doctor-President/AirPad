@@ -110,8 +110,8 @@ final class ChatSession {
         /// The user turn whose packet began this turn's THREAD (the fresh read it follows up). The next follow-up replays
         /// packets from here on, so its request extends this one byte-for-byte. Nil on turns that sent no packet.
         var threadStart: UUID?
-        /// live-27 (4) — who wrote this answer (route, model, web / library). Nil on user turns, app notices, and answers
-        /// saved before live-27 (decode-tolerant: those show no caption).
+        /// live-27 (4) — who wrote this answer (route, model, web / library). Nil on user turns and answers saved before
+        /// live-27 (decode-tolerant: those show no caption); `ChatProvenance.appNotice` on an answer the app wrote.
         var provenance: ChatProvenance?
         /// live-27 (3) — the general-knowledge line is the DATED one ("From the model's training data — may be out of
         /// date."): a current-state request no web result backs. Nil on everything else (legacy decodes nil).
@@ -138,6 +138,15 @@ final class ChatSession {
             self.modelText = modelText
             self.systemPrompt = systemPrompt
             self.threadStart = threadStart
+        }
+
+        /// Sweep 2b · step 5 fix-up (verifier finding 1) — an answer the APP writes on a Library turn (no model call): a
+        /// 0/0 receipt ("No matching entries") and `ChatProvenance.appNotice`, whatever the router did last. The one way
+        /// to build one, so the no-match line can never mistake it for a model's answer.
+        static func appNotice(_ text: String) -> Message {
+            var m = Message(role: .assistant, text: text, readReceipt: .init(readInFull: 0, skimmed: 0, partial: false))
+            m.provenance = .appNotice
+            return m
         }
     }
 
@@ -1285,8 +1294,7 @@ final class ChatSession {
         guard !q.isEmpty, !isStreaming else { return }
         lastError = nil
         messages.append(Message(role: .user, text: q))
-        var answer = Message(role: .assistant, text: text, readReceipt: .init(readInFull: 0, skimmed: 0, partial: false))
-        answer.provenance = Self.answerProvenance(web: false, library: true)
+        let answer = Message.appNotice(text)
         messages.append(answer)
         pendingUser = nil
         flush()

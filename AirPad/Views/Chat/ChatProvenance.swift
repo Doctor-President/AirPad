@@ -14,6 +14,15 @@ struct ChatProvenance: Codable, Hashable, Sendable {
     var web: Bool? = nil
     var library: Bool? = nil
 
+    /// Sweep 2b · step 5 fix-up (verifier finding 1) — the mark on an answer the APP wrote (no model ran: "nothing in
+    /// your notes names X"). It was `answerProvenance(library: true)`, which is nil when `ModelRouter.lastAnswerSource`
+    /// is (every launch, and after a turn that failed before the model answered): the notice then looked like a model's
+    /// no-match answer and showed the no-match line above it. Built only by `ChatSession.Message.appNotice`; no caption
+    /// and no "Switched to" divider. In the existing fields (no new field in chats.json, format rule 11-15): a build from
+    /// before this shows it as an "AirPad" caption.
+    static let appNotice = ChatProvenance(route: .apple, model: "airpad.app-notice", name: "AirPad", library: true)
+    var isAppNotice: Bool { model == Self.appNotice.model }
+
     /// The caption under the answer, in the meta style: "Apple Intelligence" · "Qwen3 4B Instruct · Host" ·
     /// "… + web" when a search fed it.
     var caption: String {
@@ -33,7 +42,7 @@ struct ChatProvenance: Codable, Hashable, Sendable {
         var out: [UUID: String] = [:]
         var last: ChatProvenance?
         for m in messages where m.role == .assistant {
-            guard let p = m.provenance else { continue }
+            guard let p = m.provenance, !p.isAppNotice else { continue }   // no model wrote an app notice
             if let l = last, l.route != p.route || l.model != p.model { out[m.id] = "Switched to \(p.name)" }
             last = p
         }
@@ -124,6 +133,27 @@ enum ChatProvenanceSelfTest {
             "\(a2s.map { ChatTranscript.showsNoMatchLine($0) })")
         row("the-line-is-never-in-the-answer-or-history", a2s.allSatisfy { !$0.text.contains(ChatTranscript.noMatchLine) }
             && !s2.streamingNoMatch)
+
+        // Sweep 2b fix-up (verifier finding 1) — the app's own notice ("nothing in your notes names X"), built the way the
+        // app builds it (`appendLibraryNotice`, no hand-set provenance): never under the no-match line, with the router's
+        // last answer source nil (a fresh launch, or a turn that failed before the model answered) or set (an earlier
+        // answer). No model wrote it, so no "who wrote this" caption and no "Switched to" divider either.
+        let priorSource = ModelRouter.lastAnswerSource
+        let s3 = ChatSession()
+        ModelRouter.lastAnswerSource = nil
+        s3.appendLibraryNotice(userText: "What did I write about Zorblax?", text: "Nothing in your notes names Zorblax.")
+        let atLaunch = s3.messages.last
+        ModelRouter.lastAnswerSource = .init(route: .host, model: "qwen3:4b-instruct-2507-q4_K_M")
+        s3.appendLibraryNotice(userText: "What did I write about Quillow?", text: "Nothing in your notes names Quillow.")
+        let afterAnswer = s3.messages.last
+        ModelRouter.lastAnswerSource = priorSource
+        row("app-notice-at-launch-has-no-no-match-line", atLaunch?.role == .assistant && atLaunch.map(ChatTranscript.showsNoMatchLine) == false,
+            "line \(atLaunch.map(ChatTranscript.showsNoMatchLine) ?? true) · provenance \(atLaunch?.provenance?.caption ?? "nil")")
+        row("app-notice-after-an-answer-has-no-no-match-line", afterAnswer?.role == .assistant && afterAnswer.map(ChatTranscript.showsNoMatchLine) == false)
+        row("app-notice-has-no-caption-or-divider", [atLaunch, afterAnswer].allSatisfy { $0.map(ChatTranscript.showsCaption) == false }
+            && ChatProvenance.switches(in: s3.messages).isEmpty,
+            "captions \([atLaunch, afterAnswer].map { $0?.provenance?.caption ?? "none" }) · dividers \(ChatProvenance.switches(in: s3.messages).count)")
+        row("app-notice-keeps-its-receipt", [atLaunch, afterAnswer].allSatisfy { $0?.readReceipt?.readInFull == 0 && $0?.readReceipt?.skimmed == 0 })
 
         let fails = rows.filter { !$0.1 }
         return (fails.isEmpty ? "PASS — \(rows.count)/\(rows.count)" : "FAIL — \(rows.count - fails.count)/\(rows.count)")

@@ -151,7 +151,7 @@ extension CorpusStore {
                     "receipt": answerMsg?.readReceipt.map { ChatTranscript.readReceiptText($0) } ?? "",
                     "generalKnowledgeLine": answerMsg?.generalKnowledge == true, "declined": answerMsg?.declined == true,
                     "datedLine": answerMsg?.datedKnowledge == true, "unconfirmedLine": answerMsg?.searchUnconfirmed == true,
-                    "provenanceCaption": answerMsg?.provenance?.caption ?? "",
+                    "provenanceCaption": answerMsg.flatMap { ChatTranscript.showsCaption($0) ? $0.provenance?.caption : nil } ?? "",
                     // Sweep 2b · 1c — the app's no-match line shown above this answer (the graders count it as "said").
                     "noMatchLine": answerMsg.map { ChatTranscript.showsNoMatchLine($0) } ?? false,
                     "webOffer": librarian.pendingWebSearchOffer != nil, "readOffer": librarian.pendingReadInFullOffer != nil,

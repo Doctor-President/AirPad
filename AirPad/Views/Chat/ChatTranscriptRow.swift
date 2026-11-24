@@ -234,7 +234,7 @@ struct ChatMessageRow: View {
                 }
                 // live-27 (4) — who wrote this answer (app chrome, the meta style). None on answers saved before live-27;
                 // a decline already names Apple Intelligence.
-                if let p = message.provenance, message.declined != true {
+                if ChatTranscript.showsCaption(message), let p = message.provenance {
                     Text(p.caption)
                         .font(appFont.font(size: 12, relativeTo: .caption1))
                         .foregroundStyle(ChatTypography.secondaryText)

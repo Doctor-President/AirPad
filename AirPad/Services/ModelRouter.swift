@@ -2475,8 +2475,7 @@ final class BraveSearchToolExecutor: ToolExecutor, @unchecked Sendable {
             #endif
             func hay(_ l: ToolLink) -> String { l.title + " " + (l.snippet ?? "") + " " + l.url }
             if WebGrounding.isNewsQuestion(query) {   // live-29 (B3): news-shaped only; "who is the current …" → web
-                // "<keywords> news": the bare keyword "world" matched Disney World and the World Championships
-                let newsQuery = keywords.isEmpty ? "top news" : keywords.joined(separator: " ") + " news"
+                let newsQuery = WebGrounding.newsSearchQuery(query)
                 for news in (window == .week ? ["pw"] : ["pd", "pw"]) where links.isEmpty && !rateLimited {
                     (links, rateLimited) = await braveNews(newsQuery, freshness: news, country: country?.code, count: count)
                     if let c = country { links.removeAll { WebGrounding.isFalseFriend(hay($0), for: c) } }

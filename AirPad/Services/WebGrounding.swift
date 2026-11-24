@@ -194,20 +194,34 @@ enum WebGrounding {
 
     /// The keywords of a news question, for Brave's NEWS endpoint (which matches the whole question poorly: "What's
     /// the top news in Mexico today?" returned U.S. live blogs; "Mexico" returns Mexican news). Empty → nil.
+    /// Sweep 2b · step 5 fix-up (verifier finding 2) — the 1d words (`noTopicWords`) go only when they are ALL the
+    /// question has left (a top-stories question: "today's top new stories from the web"); next to a topic they are part
+    /// of it and stay in the Brave query and the topical filter ("New York", "World Cup", "World Series", "World Bank").
     static func newsKeywords(_ q: String) -> [String] {
+        let words = newsWords(q)
+        return words.allSatisfy(noTopicWords.contains) ? [] : words
+    }
+    /// Sweep 2b · 1d (news route b) — T's "today's top new stories from the web" became the query "new news" and returned
+    /// eight front pages: on their own these words name no topic.
+    static let noTopicWords: Set<String> = ["new", "world", "internet", "list", "out", "happened"]
+    private static func newsWords(_ q: String) -> [String] {
         let stop: Set<String> = ["what", "whats", "what's", "is", "are", "was", "were", "the", "a", "an", "top", "latest", "newest",
             "news", "today", "today's", "todays", "tonight", "in", "on", "about", "of", "for", "from", "stories", "story",
             "headlines", "headline", "current", "currently", "recent", "recently", "breaking", "right", "now", "this", "morning",
             "afternoon", "evening", "week", "yesterday", "most", "biggest", "main", "major", "happening", "going", "any",
             "tell", "me", "give", "show", "search", "web", "for", "please", "up", "updates", "update", "there", "some", "with",
-            "and", "or", "to", "do", "does", "did", "i", "you", "can", "could", "would", "should", "find", "look", "lookup",
-            // Sweep 2b · 1d (news route b) — T's "today's top new stories from the web" became the query "new news" and
-            // returned eight front pages; these words name no topic either.
-            "new", "world", "internet", "list", "out", "happened"]
+            "and", "or", "to", "do", "does", "did", "i", "you", "can", "could", "would", "should", "find", "look", "lookup"]
         return q.lowercased().replacingOccurrences(of: "’", with: "'")
             .split(whereSeparator: { !($0.isLetter || $0.isNumber || $0 == "'" || $0 == "-") })
             .map { String($0).trimmingCharacters(in: CharacterSet(charactersIn: "'-")) }
             .filter { !$0.isEmpty && !stop.contains($0) }
+    }
+
+    /// The query Brave's NEWS endpoint gets for a news question: "<keywords> news" (the bare keyword "world" matched
+    /// Disney World and the World Championships), "top news" when it names no topic.
+    static func newsSearchQuery(_ q: String) -> String {
+        let keywords = newsKeywords(q)
+        return keywords.isEmpty ? "top news" : keywords.joined(separator: " ") + " news"
     }
 
     /// Sweep 2b · 1d (news route b–d, decisions 2026-11-21) — a TOP-STORIES question: time-sensitive news with no topic
@@ -789,6 +803,21 @@ enum WebGroundingSelfTest {
         check("top stories: a topic or not news → no", !WebGrounding.isTopStories("What's the news about SpaceX this week?")
               && !WebGrounding.isTopStories("What's the top news in Mexico today?") && !WebGrounding.isTopStories("List them out for me")
               && !WebGrounding.isTopStories("What is the capital of France?"))
+        // Sweep 2b fix-up (verifier finding 2) — the 1d words ("new", "world", …) are dropped only from a question that
+        // names nothing else (top stories): a topic keeps them in the Brave news query and in the topical filter.
+        for (q, want, query) in [("What's the latest news in New York today?", ["new", "york"], "new york news"),
+                                 ("What's the latest World Cup news this week?", ["world", "cup"], "world cup news"),
+                                 ("Any World Series news today?", ["world", "series"], "world series news"),
+                                 ("What's the World Bank news this week?", ["world", "bank"], "world bank news"),
+                                 ("Latest news from New Zealand today", ["new", "zealand"], "new zealand news")] {
+            check("news keywords keep the topic: \(q)", WebGrounding.newsKeywords(q) == want && WebGrounding.newsSearchQuery(q) == query
+                  && !WebGrounding.isTopStories(q), "\(WebGrounding.newsKeywords(q)) → \(WebGrounding.newsSearchQuery(q))")
+        }
+        for q in ["What are some of today's top new stories from the web?", "What are the top world news stories today?",
+                  "what happened in the news today?", "What are today's top internet news stories?"] {
+            check("top stories still drop them: \(q)", WebGrounding.newsKeywords(q).isEmpty && WebGrounding.newsSearchQuery(q) == "top news"
+                  && WebGrounding.isTopStories(q), "\(WebGrounding.newsKeywords(q)) → \(WebGrounding.newsSearchQuery(q))")
+        }
         check("news keywords: telescope", WebGrounding.newsKeywords("What's the latest news about the Lakeview Observatory telescope?") == ["lakeview", "observatory", "telescope"])
         check("factual: pep talk is not", !WebGrounding.isFactualQuestion("Write a two-line pep talk for a Monday."))
         check("factual: give me a pep talk is not", !WebGrounding.isFactualQuestion("Give me a pep talk, I have a big day"))

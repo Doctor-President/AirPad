@@ -144,8 +144,14 @@ struct AirPadApp: App {
             .task {
                 store.quarantineStore = quarantineStore
                 await store.setup()
+                // ws-1.0-widget — keep the Pinned Entry widget's copy current, and open an entry a cold widget tap
+                // asked for now that the library is in memory.
+                WidgetEntryLink.store = store
+                PinnedEntryMirrorWriter.shared.start(store: store)
+                WidgetEntryLink.consumePending()
             }
             .onOpenURL { url in
+                if WidgetEntryLink.handle(url) { return }   // ws-1.0-widget — a Pinned Entry tap
                 guard url.scheme == "airpad", url.host == "quikcapture" else { return }
                 // Open the standalone QuikCapture screen DIRECTLY — rendered
                 // at the ContentView root, no Dashboard/Recents routing, so
@@ -157,6 +163,7 @@ struct AirPadApp: App {
             // already covered by `store.setup()` in `.task`; this adds every warm return to foreground.
             .onChange(of: scenePhase) { _, phase in
                 if phase == .active { Task { await store.refreshShareInbox() } }
+                if phase == .background { PinnedEntryMirrorWriter.shared.flush() }   // ws-1.0-widget
             }
         // (Both dev tuners were DELETED at the 2026-09-15 bake — every value they carried is now a
         // literal in source; Ops/reference/tuner-state-accepted.md is the permanent record.)

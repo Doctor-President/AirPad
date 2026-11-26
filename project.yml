@@ -352,6 +352,17 @@ targets:
       # The SHARED intent — compiled into the extension AND the app (no UIApplication.shared, so it
       # compiles here). One entry point, not two.
       - path: AirPad/Intents/CaptureIntent.swift
+      # ws-1.0-widget — the Pinned Entry widget's saved copy (the app writes it, the widget reads it).
+      - path: AirPad/Widget/PinnedEntryMirror.swift
+      # The widget draws the app's own faces (Settings → Font): Lato + Source Serif 4 at the weights it uses.
+      - path: AirPad/Resources/Fonts/Lato/Lato-Regular.ttf
+        buildPhase: resources
+      - path: AirPad/Resources/Fonts/Lato/Lato-Bold.ttf
+        buildPhase: resources
+      - path: AirPad/Resources/Fonts/SourceSerif4/SourceSerif4-Semibold.ttf
+        buildPhase: resources
+      - path: AirPad/Resources/Fonts/SourceSerif4/SourceSerif4-Bold.ttf
+        buildPhase: resources
     dependencies:
       - sdk: WidgetKit.framework
       - sdk: SwiftUI.framework
@@ -377,6 +388,11 @@ targets:
         CFBundleVersion: "$(CURRENT_PROJECT_VERSION)"
         CFBundleShortVersionString: "$(MARKETING_VERSION)"   # must match the app; see settings.base
         ITSAppUsesNonExemptEncryption: false
+        UIAppFonts:
+          - Lato-Regular.ttf
+          - Lato-Bold.ttf
+          - SourceSerif4-Semibold.ttf
+          - SourceSerif4-Bold.ttf
         NSExtension:
           NSExtensionPointIdentifier: com.apple.widgetkit-extension
 

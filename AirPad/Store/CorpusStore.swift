@@ -2230,7 +2230,7 @@ final class CorpusStore {
     }
 
     /// 1.1-C (C1) — set once `load()` has the Library in memory; an append record waits for it.
-    private var libraryLoaded = false
+    private(set) var libraryLoaded = false
 
     // MARK: - Brief BU2 — THE LIBRARIAN GAUNTLET (the standing gate)
 

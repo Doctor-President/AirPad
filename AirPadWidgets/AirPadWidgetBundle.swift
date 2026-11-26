@@ -10,5 +10,6 @@ import SwiftUI
 struct AirPadWidgetBundle: WidgetBundle {
     var body: some Widget {
         QuickCaptureControl()
+        PinnedEntryWidget()   // ws-1.0-widget — the Home Screen widget
     }
 }

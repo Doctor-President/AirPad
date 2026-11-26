@@ -47,6 +47,8 @@ final class SceneDelegate: NSObject, UIWindowSceneDelegate {
     private func applyURLs(_ urlContexts: Set<UIOpenURLContext>) {
         for urlContext in urlContexts {
             let url = urlContext.url
+            // ws-1.0-widget — a Pinned Entry tap: opens the entry (cold: latched until the library is loaded).
+            if WidgetEntryLink.handle(url) { return }
             if url.scheme == "airpad", url.host == "quikcapture" {
                 // Kept for a direct `airpad://quikcapture` open (not the Control path, which uses the
                 // App Group handoff above). Warm → set the router; cold → latch for its init.

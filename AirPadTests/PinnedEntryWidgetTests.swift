@@ -61,6 +61,7 @@ final class PinnedEntryWidgetTests: XCTestCase {
         let long = (1...40).map { "line \($0) " + String(repeating: "x", count: 300) }.joined(separator: "\n")
         let e = PinnedEntryMirrorWriter.entry(for: node("c", title: "Caps", text: long))
         XCTAssertEqual(e.lines.count, PinnedEntryMirror.maxLines)
+        XCTAssertEqual(e.lines.count + e.more, 40, "the rows not kept are counted for \"+N more\"")
         XCTAssertTrue(e.lines.allSatisfy { $0.text.count <= PinnedEntryMirror.maxLineLength })
     }
 
@@ -97,6 +98,37 @@ final class PinnedEntryWidgetTests: XCTestCase {
         XCTAssertEqual(reloads, 2)
         let m = PinnedEntryMirrorFile.read(at: fileURL)
         XCTAssertEqual(m?.entries.first?.lines, [.init(kind: .check, done: true, text: "one")])
+    }
+
+    func testChangesTheWidgetDoesNotShowWriteNothing() {
+        let w = writer()
+        var nodes = [node("a", title: "A", text: "one")]
+        XCTAssertTrue(w.write(nodes: nodes, locked: false, font: "lato"))
+        nodes[0].tags = ["x"]                       // not shown by the widget
+        nodes[0].contentEmbedding = [0.1, 0.2]      // a backfill
+        XCTAssertFalse(w.write(nodes: nodes, locked: false, font: "lato"))
+        XCTAssertFalse(w.lastBuildChanged)
+        XCTAssertEqual(reloads, 1)
+        XCTAssertTrue(w.write(nodes: nodes, locked: true, font: "lato"), "the lock empties it")
+        XCTAssertTrue(w.write(nodes: nodes, locked: false, font: "lato"), "and unlocking brings it back")
+        XCTAssertEqual(reloads, 3)
+    }
+
+    /// A large library (3,000 entries, ~2 KB of text each): the first build, and the pass that runs after every store
+    /// change (nothing changed for the widget). Logged, with a loose ceiling so a regression shows.
+    func testLargeLibraryCost() {
+        let body = (1...40).map { "- \\[ ] item \($0) with a few words of text in it" }.joined(separator: "\n")
+        let nodes = (0..<3000).map { node("n\($0)", title: "Entry \($0)", text: body, updated: Double($0)) }
+        let w = writer()
+        var t = Date()
+        XCTAssertTrue(w.write(nodes: nodes, locked: false, font: "lato"))
+        let first = Date().timeIntervalSince(t)
+        t = Date()
+        XCTAssertFalse(w.write(nodes: nodes, locked: false, font: "lato"))
+        let again = Date().timeIntervalSince(t)
+        let size = (try? Data(contentsOf: fileURL).count) ?? 0
+        print("[PinnedEntryWidgetTests] 3000 entries: first \(Int(first * 1000)) ms, unchanged pass \(Int(again * 1000)) ms, file \(size / 1024) KB")
+        XCTAssertLessThan(again, 0.1, "the pass after an unrelated store change stays cheap")
     }
 
     func testRemovedOnDelete() {

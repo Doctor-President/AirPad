@@ -186,8 +186,12 @@ final class PinnedEntryWidgetUI: XCTestCase {
         else { app.coordinate(withNormalizedOffset: CGVector(dx: 0.09, dy: 0.09)).tap() }
         sleep(3)
         shot("4-left-entry", app)
+        let left = Date()
         XCUIDevice.shared.press(.home)
-        XCTAssertTrue(waitForWidget("Edited"), "an edit made in the app reaches the widget without the user doing anything")
+        let reached = waitForWidget("Edited")
+        let a = XCTAttachment(string: String(format: "edit → widget: %.1f s after leaving the entry (polled ~1 s)", Date().timeIntervalSince(left)))
+        a.name = "freshness"; a.lifetime = .keepAlways; add(a)
+        XCTAssertTrue(reached, "an edit made in the app reaches the widget without the user doing anything")
         shot("4-widget-after-edit")
 
         // 5. Cold: AirPad not running → tap the small widget → AirPad launches onto that entry.

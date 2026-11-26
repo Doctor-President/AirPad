@@ -28,6 +28,8 @@ struct PinnedEntryMirror: Codable, Equatable {
         var title: String
         var updatedAt: Date
         var lines: [Line]
+        /// Rows after `lines` that aren't in the copy (a long list): the widget's "+N more" counts them.
+        var more: Int = 0
     }
 
     struct Line: Codable, Equatable {
@@ -38,7 +40,7 @@ struct PinnedEntryMirror: Codable, Equatable {
     }
 
     // MARK: Caps (keep the file small; a widget shows at most a handful of rows)
-    static let maxLines = 12
+    static let maxLines = 6        // a widget shows at most 5 rows; the rest are counted (`more`)
     static let maxLineLength = 200
     static let maxTitleLength = 80
 }

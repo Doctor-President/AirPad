@@ -21,8 +21,9 @@ final class PinnedEntryMirrorWriter {
 
     private weak var store: CorpusStore?
     private var pending: Task<Void, Never>?
+    private var inFlight: Task<Void, Never>?
     private var lastWritten: Data?
-    private var cache: [String: (fingerprint: Int, entry: PinnedEntryMirror.Entry)] = [:]
+    private var state = BuildState()
     private let fileURL: URL?
     private let reload: () -> Void
 
@@ -41,11 +42,13 @@ final class PinnedEntryMirrorWriter {
         schedule(after: .zero)
     }
 
-    /// Write now (AirPad is leaving the foreground: a pending rebuild must not be lost to suspension).
+    /// Write now, on this thread (AirPad is leaving the foreground: a pending rebuild must not be lost to suspension,
+    /// and a moment of main-thread work there is invisible).
     func flush() {
         pending?.cancel()
         pending = nil
-        writeNow()
+        guard let input = currentInput() else { return }
+        write(nodes: input.nodes, locked: input.locked, font: input.font)
     }
 
     private func observe() {
@@ -56,7 +59,9 @@ final class PinnedEntryMirrorWriter {
             _ = AppLock.shared.enabled
         } onChange: { [weak self] in
             Task { @MainActor [weak self] in
-                self?.schedule(after: self?.settle ?? .zero)
+                // The Face ID lock turning on empties the copy at once (no settle: a kill right after must not leave
+                // entry text on disk).
+                self?.schedule(after: AppLock.shared.enabled ? .zero : (self?.settle ?? .zero))
                 self?.observe()   // Observation fires once per registration: register again
             }
         }
@@ -66,25 +71,49 @@ final class PinnedEntryMirrorWriter {
         pending?.cancel()
         pending = Task { @MainActor [weak self] in
             if delay > .zero { try? await Task.sleep(for: delay) }
+            guard !Task.isCancelled, let self else { return }
+            await self.inFlight?.value          // one rebuild at a time, newest input last
             guard !Task.isCancelled else { return }
-            self?.writeNow()
+            let run = Task { @MainActor in await self.writeInBackground() }
+            self.inFlight = run
+            await run.value
         }
     }
 
-    /// Rebuild the copy; write + reload only when it changed. Never writes before the library is in memory (an empty
-    /// store during launch must not read to the widget as "nothing in your library").
-    @discardableResult
-    func writeNow() -> Bool {
-        guard let store, store.libraryLoaded else { return false }
+    /// What the copy is built from right now. Nil = nothing to write yet: entries are never written before the library
+    /// is in memory (an empty store during launch must not read to the widget as "nothing in your library"); the locked
+    /// copy (no entries) is written whenever the lock is on, loaded or not.
+    private func currentInput() -> (nodes: [Node], locked: Bool, font: String)? {
+        guard let store else { return nil }
         let font = UserDefaults.standard.string(forKey: EntryBodyFont.defaultStorageKey) ?? EntryBodyFont.fallback.rawValue
-        return write(nodes: store.nodes, locked: AppLock.shared.enabled, font: font)
+        if AppLock.shared.enabled { return ([], true, font) }
+        guard store.libraryLoaded else { return nil }
+        return (store.nodes, false, font)
     }
 
-    /// The write itself (unit-tested): build, compare with the bytes on disk, write + reload only on a change.
+    /// The normal path: snapshot on the main thread, build + encode + write off it, reload back on it.
+    private func writeInBackground() async {
+        guard let input = currentInput() else { return }
+        let prior = state, previous = lastWritten, url = fileURL
+        let result = await Task.detached(priority: .utility) { () -> (BuildState, Data?) in
+            let built = Self.makeMirror(nodes: input.nodes, locked: input.locked, font: input.font, prior: prior)
+            guard built.state.changed || previous == nil,
+                  let data = PinnedEntryMirrorFile.encode(built.mirror), data != previous,
+                  PinnedEntryMirrorFile.write(data, to: url) else { return (built.state, nil) }
+            return (built.state, data)
+        }.value
+        state = result.0
+        if let data = result.1 { lastWritten = data; reload() }
+    }
+
+    /// The write on the calling thread (unit-tested; `flush`): build, compare with the bytes on disk, write + reload
+    /// only on a change.
     @discardableResult
     func write(nodes: [Node], locked: Bool, font: String) -> Bool {
         if lastWritten == nil { lastWritten = PinnedEntryMirrorFile.readData(at: fileURL) }
         let mirror = build(nodes: nodes, locked: locked, font: font)
+        // Most store changes touch nothing the widget shows (embeddings, backfills, layout): skip the encode.
+        guard lastBuildChanged || lastWritten == nil else { return false }
         guard let data = PinnedEntryMirrorFile.encode(mirror), data != lastWritten else { return false }
         guard PinnedEntryMirrorFile.write(data, to: fileURL) else { return false }
         lastWritten = data
@@ -92,37 +121,61 @@ final class PinnedEntryMirrorWriter {
         return true
     }
 
-    // MARK: - Building the copy
+    // MARK: - Building the copy (pure; runs off the main thread)
+
+    /// What one build leaves for the next: the per-entry cache, the shape of the copy, and whether it changed.
+    struct BuildState {
+        var cache: [String: (fingerprint: Int, entry: PinnedEntryMirror.Entry)] = [:]
+        var shape: (locked: Bool, font: String, count: Int)?
+        /// False when the build produced exactly the copy before it (every entry from the cache, none gone, same lock
+        /// and font), so there is nothing to encode or write.
+        var changed = true
+    }
+
+    var lastBuildChanged: Bool { state.changed }
 
     func build(nodes: [Node], locked: Bool, font: String) -> PinnedEntryMirror {
+        let built = Self.makeMirror(nodes: nodes, locked: locked, font: font, prior: state)
+        state = built.state
+        return built.mirror
+    }
+
+    nonisolated static func makeMirror(nodes: [Node], locked: Bool, font: String,
+                                       prior: BuildState) -> (mirror: PinnedEntryMirror, state: BuildState) {
         var m = PinnedEntryMirror()
         m.font = font
+        var next = BuildState()
         guard !locked else {
             m.locked = true
-            cache.removeAll()
-            return m
+            next.changed = prior.shape.map { !$0.locked || $0.font != font } ?? true
+            next.shape = (true, font, 0)
+            return (m, next)
         }
-        var seen = Set<String>()
+        var misses = 0
         var entries: [PinnedEntryMirror.Entry] = []
         entries.reserveCapacity(nodes.count)
+        next.cache.reserveCapacity(nodes.count)
         for node in nodes where !node.isPrivate {
-            seen.insert(node.id)
-            let fp = Self.fingerprint(node)
-            if let hit = cache[node.id], hit.fingerprint == fp {
+            let fp = fingerprint(node)
+            if let hit = prior.cache[node.id], hit.fingerprint == fp {
                 entries.append(hit.entry)
+                next.cache[node.id] = hit
             } else {
-                let e = Self.entry(for: node)
-                cache[node.id] = (fp, e)
+                let e = entry(for: node)
+                next.cache[node.id] = (fp, e)
                 entries.append(e)
+                misses += 1
             }
         }
-        cache = cache.filter { seen.contains($0.key) }
+        next.changed = misses > 0
+            || prior.shape.map { $0.locked || $0.font != font || $0.count != entries.count } ?? true
+        next.shape = (false, font, entries.count)
         m.entries = entries.sorted { ($0.updatedAt, $0.id) > ($1.updatedAt, $1.id) }
-        return m
+        return (m, next)
     }
 
     /// Everything `entry(for:)` reads. In-process only (String hashing is seeded per launch), never stored.
-    static func fingerprint(_ node: Node) -> Int {
+    nonisolated static func fingerprint(_ node: Node) -> Int {
         var h = Hasher()
         h.combine(node.title)
         h.combine(node.summary)
@@ -132,13 +185,17 @@ final class PinnedEntryMirrorWriter {
     }
 
     /// One entry's title and first lines, as plain text. Read-only display data: the library is never changed.
-    static func entry(for node: Node) -> PinnedEntryMirror.Entry {
+    nonisolated static func entry(for node: Node) -> PinnedEntryMirror.Entry {
         var lines: [PinnedEntryMirror.Line] = []
-        outer: for item in node.items where item.type == .text {
+        var more = 0
+        for item in node.items where item.type == .text {
             guard let content = item.content, !content.isEmpty else { continue }
             for raw in TableConverter.flattenForPreview(content).components(separatedBy: "\n") {
-                if let line = line(raw) { lines.append(line) }
-                if lines.count >= PinnedEntryMirror.maxLines + 1 { break outer }   // +1: a derived title may use one
+                if lines.count < PinnedEntryMirror.maxLines + 1 {   // +1: a derived title may use one
+                    if let line = line(raw) { lines.append(line) }
+                } else if !raw.trimmingCharacters(in: .whitespaces).isEmpty {
+                    more += 1   // counted, not parsed (a rare rule or table separator counts too)
+                }
             }
         }
         var title = node.title.trimmingCharacters(in: .whitespacesAndNewlines)
@@ -157,15 +214,20 @@ final class PinnedEntryMirrorWriter {
             let summary = MarkdownPlain.label(node.summary)
             if !summary.isEmpty { lines = [.init(kind: .text, text: clip(summary))] }
         }
+        if lines.count > PinnedEntryMirror.maxLines {
+            more += lines.count - PinnedEntryMirror.maxLines
+            lines = Array(lines.prefix(PinnedEntryMirror.maxLines))
+        }
         return .init(id: node.id,
                      title: String(title.prefix(PinnedEntryMirror.maxTitleLength)),
                      updatedAt: node.updatedAt,
-                     lines: Array(lines.prefix(PinnedEntryMirror.maxLines)))
+                     lines: lines,
+                     more: more)
     }
 
     /// One stored line → a display row: a checklist row keeps its ticked state; headings and list items keep their
     /// kind; Markdown syntax goes (`MarkdownPlain`); blank lines and rules are dropped.
-    static func line(_ raw: String) -> PinnedEntryMirror.Line? {
+    nonisolated static func line(_ raw: String) -> PinnedEntryMirror.Line? {
         if let cb = MarkdownPlain.checkbox(raw) {
             let t = MarkdownPlain.inline(cb.text).trimmingCharacters(in: .whitespaces)
             return t.isEmpty ? nil : .init(kind: .check, done: cb.done, text: clip(t))
@@ -185,7 +247,7 @@ final class PinnedEntryMirrorWriter {
         return .init(kind: kind, text: clip(text))
     }
 
-    private static func clip(_ s: String) -> String { String(s.prefix(PinnedEntryMirror.maxLineLength)) }
+    nonisolated private static func clip(_ s: String) -> String { String(s.prefix(PinnedEntryMirror.maxLineLength)) }
 }
 
 // MARK: - Opening an entry from the widget

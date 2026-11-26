@@ -143,7 +143,8 @@ struct PinnedEntryView: View {
     private var rowBudget: Int { 5 }
 
     private func entryView(_ e: PinnedEntryMirror.Entry) -> some View {
-        let overflow = e.lines.count > rowBudget
+        let total = e.lines.count + e.more
+        let overflow = total > rowBudget
         let shown = overflow ? Array(e.lines.prefix(rowBudget - 1)) : e.lines
         return VStack(alignment: .leading, spacing: 5) {
             Text(e.title)
@@ -156,7 +157,7 @@ struct PinnedEntryView: View {
                 row(line)
             }
             if overflow {
-                Text("+\(e.lines.count - shown.count) more")
+                Text("+\(total - shown.count) more")
                     .font(type.body(size: 12))
                     .foregroundStyle(ink.opacity(0.55))
             }

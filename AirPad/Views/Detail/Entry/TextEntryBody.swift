@@ -1,5 +1,6 @@
 import SwiftUI
 import PhotosUI
+import UIKit
 
 /// Stage 3.1a commit (b) — body slot for `.text` entries. Renders inside an
 /// `EntryCard`, so the card supplies title row, chrome, and timestamps;
@@ -40,6 +41,10 @@ struct TextEntryBody: View {
     @Environment(AppRouter.self) private var router
     @State private var editingText = ""
     @State private var didConsumeAutoFocus = false
+    /// widget fix-up 1 — the scene phase, for the save when AirPad leaves the foreground; and the text that save last
+    /// handed to the store (`.inactive` then `.background` must not write the same text twice).
+    @Environment(\.scenePhase) private var scenePhase
+    @State private var lastLeaveSave: String?
 
     // Brief AZ4 — the app-wide "Default font" (shared with the Settings Appearance
     // submenu). New entries + entries with no per-entry override follow it; a @AppStorage
@@ -108,6 +113,15 @@ struct TextEntryBody: View {
             store.scheduleCaptureLiveCommit(itemID: item.id, nodeID: nodeID, text: newValue,
                                             pieceLanded: added > CorpusStore.pieceLandingChars)
         }
+        // widget fix-up 1 — typed text is saved when AirPad leaves the foreground (`.inactive`: the app switcher, Home,
+        // a call; `.background` again as a backstop), WITHOUT ending the edit: the same store call `onEndEditing`
+        // makes, nothing resigns first responder, so the caret, the keyboard and undo are as they were on return.
+        // iOS can end AirPad in the background without another word; before this, words typed since the field was
+        // focused were lost then. The Pinned Entry widget's copy is written after the save lands (`NoteLeaveSave`).
+        .onChange(of: scenePhase) { _, phase in
+            guard phase != .active else { lastLeaveSave = nil; return }   // back in front: a new leave saves anew
+            saveOnLeavingForeground()
+        }
         .onAppear {
             // DISPLAY-TRIM leading blank lines so the first non-empty line (the
             // styled title) sits at line 1 and the chevron/grip overlays align to it.
@@ -119,8 +133,20 @@ struct TextEntryBody: View {
         }
     }
 
+    /// widget fix-up 1 — the save when AirPad leaves the foreground (see the `scenePhase` hook above).
+    private func saveOnLeavingForeground() {
+        let text = editingText
+        guard NoteLeaveSave.needsSave(editing: text, stored: item.content, lastSaved: lastLeaveSave,
+                                      displayed: Self.trimmingLeadingBlankLines) else { return }
+        lastLeaveSave = text
+        let store = store, itemID = item.id, nodeID = nodeID
+        NoteLeaveSave.run {
+            await store.updateTextItem(itemID: itemID, newContent: text, nodeID: nodeID)
+        }
+    }
+
     /// R2 — drop leading whitespace-only lines (keeps the rest verbatim).
-    private static func trimmingLeadingBlankLines(_ s: String) -> String {
+    static func trimmingLeadingBlankLines(_ s: String) -> String {
         var lines = s.components(separatedBy: "\n")
         while let first = lines.first, first.trimmingCharacters(in: .whitespaces).isEmpty {
             lines.removeFirst()
@@ -371,6 +397,57 @@ struct TextEntryBody: View {
             let newText = trimmed.isEmpty ? token : editingText + "\n\n" + token
             editingText = newText
             await store.updateTextItem(itemID: item.id, newContent: newText, nodeID: nodeID)
+        }
+    }
+}
+
+// MARK: - widget fix-up 1 — the note's save when AirPad leaves the foreground
+
+/// When AirPad leaves the foreground, a note being typed in is saved through the store's existing save
+/// (`CorpusStore.updateTextItem`, the call `onEndEditing` makes) without ending the edit, and then the Pinned Entry
+/// widget's copy is written, so the widget shows the new words. Both run inside a background task, so the save and the
+/// copy reach disk before iOS suspends AirPad. Nothing here touches how the store writes or syncs.
+@MainActor
+enum NoteLeaveSave {
+    /// Save only words the user typed: not text that only differs from the stored note by the leading blank lines the
+    /// editor trims for display (`displayed`), and not the same text twice (`.inactive` then `.background`).
+    static func needsSave(editing: String, stored: String?, lastSaved: String?,
+                          displayed: (String) -> String) -> Bool {
+        let stored = stored ?? ""
+        guard editing != stored, editing != displayed(stored) else { return false }
+        return editing != lastSaved
+    }
+
+    /// The finite time iOS allows after leaving the foreground (`beginBackgroundTask`), injectable for the unit tests.
+    struct BackgroundTime {
+        var begin: (_ onExpire: @escaping @MainActor () -> Void) -> UIBackgroundTaskIdentifier
+        var end: (UIBackgroundTaskIdentifier) -> Void
+
+        static let system = BackgroundTime(
+            begin: { onExpire in
+                UIApplication.shared.beginBackgroundTask(withName: "AirPad.noteLeaveSave") {
+                    MainActor.assumeIsolated { onExpire() }
+                }
+            },
+            end: { UIApplication.shared.endBackgroundTask($0) })
+    }
+
+    /// Save, then write the widget's copy, then give the time back (once, even if iOS calls time first).
+    static func run(_ save: @escaping @MainActor () async -> Void,
+                    then flush: @escaping @MainActor () -> Void = { PinnedEntryMirrorWriter.shared.flush() },
+                    time: BackgroundTime = .system) {
+        final class Token { var id: UIBackgroundTaskIdentifier = .invalid; var ended = false }
+        let token = Token()
+        let finish: @MainActor () -> Void = {
+            guard !token.ended else { return }
+            token.ended = true
+            if token.id != .invalid { time.end(token.id) }
+        }
+        token.id = time.begin { finish() }
+        Task { @MainActor in
+            await save()
+            flush()
+            finish()
         }
     }
 }

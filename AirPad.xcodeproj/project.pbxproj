@@ -112,6 +112,7 @@
 		3BBE093DC9DAEEA88B7D5898 /* GroundPickerRepro.swift in Sources */ = {isa = PBXBuildFile; fileRef = F65726013657CF58491EA8A5 /* GroundPickerRepro.swift */; };
 		3BF81C58D40F6C131CDCDA99 /* OneEntryInvariant.swift in Sources */ = {isa = PBXBuildFile; fileRef = 78BE389CD3124C9CAA5D01C3 /* OneEntryInvariant.swift */; };
 		3C1C7C69B23FACE57AAD1E4D /* QRScannerView.swift in Sources */ = {isa = PBXBuildFile; fileRef = 5D1408F7F32D1B41467621B6 /* QRScannerView.swift */; };
+		3D0F085F368D20F77B7414AB /* TypedTextLeavesForegroundUI.swift in Sources */ = {isa = PBXBuildFile; fileRef = 511B6A3DBC72CC4CB2566BFA /* TypedTextLeavesForegroundUI.swift */; };
 		3E4BD1C91E3FE716BA0F0B71 /* HeroHeaderFlash.swift in Sources */ = {isa = PBXBuildFile; fileRef = D4FBCF8B7AC3CF84A924B74F /* HeroHeaderFlash.swift */; };
 		3EAA7FF97CF618DCA595A383 /* FieldValueFormatter.swift in Sources */ = {isa = PBXBuildFile; fileRef = E650D0049F1C1E20D3E562B1 /* FieldValueFormatter.swift */; };
 		3F3D03BCB7B579A34CFA9B92 /* CDGhostWhileTyping.swift in Sources */ = {isa = PBXBuildFile; fileRef = 1B6BEF2C32FEEC7F6D57FD03 /* CDGhostWhileTyping.swift */; };
@@ -159,6 +160,7 @@
 		56FF31C7DDB4234E9A985259 /* LapackSVDSelfTest.swift in Sources */ = {isa = PBXBuildFile; fileRef = 19A7D40E298ACBC315ECFB6F /* LapackSVDSelfTest.swift */; };
 		570D62A8CEA2A19CC44B383D /* ManageModelsRepro.swift in Sources */ = {isa = PBXBuildFile; fileRef = DD915DF68A27E1ED37382E19 /* ManageModelsRepro.swift */; };
 		573C4D53C4F372C3497BBEF1 /* WidgetKit.framework in Frameworks */ = {isa = PBXBuildFile; fileRef = 31D68FA628B933D53B524B98 /* WidgetKit.framework */; };
+		5769793B568F11FF061CE718 /* NoteLeaveSaveTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = 12A796B8BC25C323F6A01A12 /* NoteLeaveSaveTests.swift */; };
 		57B285C03D7431D640ACB054 /* LibrarianRenderHooks.swift in Sources */ = {isa = PBXBuildFile; fileRef = B82EFAA92BF3BAFAAA22F11B /* LibrarianRenderHooks.swift */; };
 		588C140B790E7DD63A55BCC1 /* MediaPickerWrapper.swift in Sources */ = {isa = PBXBuildFile; fileRef = 894DD6E70D91D9E9B00246B9 /* MediaPickerWrapper.swift */; };
 		598AB294337257CEED19A5BC /* LinkEntryBody.swift in Sources */ = {isa = PBXBuildFile; fileRef = 4E72F7C5BEAD8D357C8976F7 /* LinkEntryBody.swift */; };
@@ -541,6 +543,7 @@
 		1005ACA467AE3052F511365B /* TagSelectionSheet.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = TagSelectionSheet.swift; sourceTree = "<group>"; };
 		1051A2630769178DF195B38B /* ImageEntryBody.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ImageEntryBody.swift; sourceTree = "<group>"; };
 		10DC0179A159576BCDEFC62D /* ChatTranscriptCollection.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ChatTranscriptCollection.swift; sourceTree = "<group>"; };
+		12A796B8BC25C323F6A01A12 /* NoteLeaveSaveTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = NoteLeaveSaveTests.swift; sourceTree = "<group>"; };
 		12FFD0E4E7DD235786396C38 /* PasteProbe.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = PasteProbe.swift; sourceTree = "<group>"; };
 		13209372046A2ACD8BAB1789 /* DocumentNaming.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = DocumentNaming.swift; sourceTree = "<group>"; };
 		1418C24367159079E8597E6C /* RelatedNodesSection.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = RelatedNodesSection.swift; sourceTree = "<group>"; };
@@ -654,6 +657,7 @@
 		4FE654FD7C01A6BC0AAB228A /* CitationSheet.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = CitationSheet.swift; sourceTree = "<group>"; };
 		50172A80D6B3F46FAE1A4862 /* CatalogCard.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = CatalogCard.swift; sourceTree = "<group>"; };
 		50239A55AA4D3422B7844644 /* PagedRestProbe.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = PagedRestProbe.swift; sourceTree = "<group>"; };
+		511B6A3DBC72CC4CB2566BFA /* TypedTextLeavesForegroundUI.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = TypedTextLeavesForegroundUI.swift; sourceTree = "<group>"; };
 		51379886273900EA232831C5 /* LibrarianSheetBackground.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = LibrarianSheetBackground.swift; sourceTree = "<group>"; };
 		52F7466953998FA4739AC9C0 /* AppLock.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = AppLock.swift; sourceTree = "<group>"; };
 		544E9426775EDF9FEFBA6E5F /* CardContent.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = CardContent.swift; sourceTree = "<group>"; };
@@ -1022,6 +1026,7 @@
 			isa = PBXGroup;
 			children = (
 				2B07B6921A9D5459F484188F /* CustomServerTests.swift */,
+				12A796B8BC25C323F6A01A12 /* NoteLeaveSaveTests.swift */,
 				DCB7F8DA6861C81CB2D322AB /* PinnedEntryWidgetTests.swift */,
 				AC6736CCEB7AF941CE1C06BD /* ProStoreTests.swift */,
 				30BB6DB341B37E0A59BB0991 /* TitleInkRuleTests.swift */,
@@ -1103,6 +1108,7 @@
 				CC24979DB59D837E18440FAE /* ShareSheetUI.swift */,
 				ED924ABE8CD119DCD5194981 /* SpeechEngineSwitch.swift */,
 				CB533693BAEAB8B5A5A69BC9 /* TestFlightRestore.swift */,
+				511B6A3DBC72CC4CB2566BFA /* TypedTextLeavesForegroundUI.swift */,
 				AB1C29C713D0DA9D291C4661 /* WebEvidenceUI.swift */,
 				1E713BD5708D29B15EB4BB18 /* WebSearchAnswerUI.swift */,
 				8F80671DEB365A3C8A199A71 /* WebSearchSwitchUI.swift */,
@@ -2053,6 +2059,7 @@
 				36F9E4061BB1232B2A4EB8B1 /* ShareSheetUI.swift in Sources */,
 				804248449DE978D3C6F76331 /* SpeechEngineSwitch.swift in Sources */,
 				70696C7DE6DCC44361DBCC54 /* TestFlightRestore.swift in Sources */,
+				3D0F085F368D20F77B7414AB /* TypedTextLeavesForegroundUI.swift in Sources */,
 				06BE785481E7CAB51C38A8BE /* WebEvidenceUI.swift in Sources */,
 				230C621B2436337F906706A5 /* WebSearchAnswerUI.swift in Sources */,
 				A1F8BD95EB7CD927BD0FB491 /* WebSearchSwitchUI.swift in Sources */,
@@ -2378,6 +2385,7 @@
 			buildActionMask = 2147483647;
 			files = (
 				4A534CC92ACB3B8742716CFF /* CustomServerTests.swift in Sources */,
+				5769793B568F11FF061CE718 /* NoteLeaveSaveTests.swift in Sources */,
 				59AB8E869E1BA712F66D0809 /* PinnedEntryWidgetTests.swift in Sources */,
 				9BF2C1F06E9B86EF13A15EA7 /* ProStoreTests.swift in Sources */,
 				0F8BB1D5BEC4D0EFE6A711FC /* TitleInkRuleTests.swift in Sources */,

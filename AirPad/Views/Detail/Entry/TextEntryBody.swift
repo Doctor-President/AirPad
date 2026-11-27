@@ -93,6 +93,13 @@ struct TextEntryBody: View {
             // diverged locally (editingText still matches the old stored value),
             // so it never clobbers active typing.
             if editingText == (old ?? "") { editingText = new ?? "" }
+            // widget fix-up 1 (review) — `onAppear` display-trims leading blank lines, so for a stored note that
+            // starts with one the check above never matched and the editor stopped following the store; the
+            // leave-foreground save would then write that stale copy over an append or a merge. Match the
+            // display-trimmed form too (and keep showing it trimmed).
+            else if editingText == Self.trimmingLeadingBlankLines(old ?? "") {
+                editingText = Self.trimmingLeadingBlankLines(new ?? "")
+            }
         }
         // Capture-mode live signal + substrate mirror — hoisted off the editor so
         // it fires in spine mode whether the note is expanded or collapsed.

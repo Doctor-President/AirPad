@@ -235,4 +235,121 @@ final class PinnedEntryWidgetTests: XCTestCase {
                        "AirPad is locked. Open AirPad and unlock it with Face ID to read your entries.")
         XCTAssertEqual(PinnedEntryMirror.lockedAccessibilityLabel(nil), "AirPad is locked. Open AirPad to read your entries.")
     }
+
+    // MARK: - widget fix-up 2 · the locked widget is a per-widget choice
+
+    func testAllowedIDsOnlyShrinkWhileLocked() {
+        // Locked (Face ID not passed in this run): a switch flipped on adds nothing; one flipped off removes.
+        XCTAssertEqual(PinnedEntryMirror.allowedIDs(current: ["a"], configuredShow: ["a", "b"], unlocked: false), ["a"])
+        XCTAssertEqual(PinnedEntryMirror.allowedIDs(current: ["a", "b"], configuredShow: ["b"], unlocked: false), ["b"])
+        XCTAssertEqual(PinnedEntryMirror.allowedIDs(current: [], configuredShow: ["a"], unlocked: false), [])
+        // Unlocked: exactly the widgets' choice.
+        XCTAssertEqual(PinnedEntryMirror.allowedIDs(current: [], configuredShow: ["a", "b"], unlocked: true), ["a", "b"])
+        XCTAssertEqual(PinnedEntryMirror.allowedIDs(current: ["a", "c"], configuredShow: ["b"], unlocked: true), ["b"])
+        XCTAssertEqual(PinnedEntryMirror.allowedIDs(current: ["a"], configuredShow: [], unlocked: true), [])
+    }
+
+    func testLockedAllowedPlan() {
+        var lockedCopy = PinnedEntryMirror(); lockedCopy.locked = true
+        lockedCopy.entries = [PinnedEntryMirrorWriter.entry(for: node("a", title: "A"))]
+        let open = writer().build(nodes: [node("a", title: "A"), node("b", title: "B")], locked: false, font: "lato")
+        // The lock just turned on (the copy on disk isn't locked, or there is none): the empty locked copy, at once,
+        // whatever is known about the widgets.
+        XCTAssertEqual(PinnedEntryMirrorWriter.lockedAllowed(disk: open, configuredShow: ["a", "b"], libraryLoaded: true, unlocked: true), [])
+        XCTAssertEqual(PinnedEntryMirrorWriter.lockedAllowed(disk: nil, configuredShow: nil, libraryLoaded: false, unlocked: true), [])
+        // Already locked: wait for the library and the widgets' choices; then add only when unlocked.
+        XCTAssertNil(PinnedEntryMirrorWriter.lockedAllowed(disk: lockedCopy, configuredShow: nil, libraryLoaded: true, unlocked: true))
+        XCTAssertNil(PinnedEntryMirrorWriter.lockedAllowed(disk: lockedCopy, configuredShow: ["a"], libraryLoaded: false, unlocked: true))
+        XCTAssertEqual(PinnedEntryMirrorWriter.lockedAllowed(disk: lockedCopy, configuredShow: ["a", "b"], libraryLoaded: true, unlocked: false), ["a"])
+        XCTAssertEqual(PinnedEntryMirrorWriter.lockedAllowed(disk: lockedCopy, configuredShow: ["b"], libraryLoaded: true, unlocked: false), [])
+        XCTAssertEqual(PinnedEntryMirrorWriter.lockedAllowed(disk: lockedCopy, configuredShow: ["a", "b"], libraryLoaded: true, unlocked: true), ["a", "b"])
+    }
+
+    func testLockedCopyHoldsOnlyTheAllowedEntriesNeverAPrivateOne() {
+        let w = writer()
+        let nodes = [node("a", title: "Shown", text: "- \\[ ] milk", updated: 2), node("b", title: "Hidden", text: "x", updated: 1),
+                     node("p", title: "Secret", text: "y", isPrivate: true)]
+        XCTAssertTrue(w.write(nodes: nodes, locked: true, font: "lato", unlock: "faceID", allowed: ["a", "p"]))
+        let m = PinnedEntryMirrorFile.read(at: fileURL)
+        XCTAssertEqual(m?.locked, true)
+        XCTAssertEqual(m?.entries.map(\.id), ["a"], "only the allowed entry; a private one never, even if a widget asks")
+        let text = PinnedEntryMirrorFile.readData(at: fileURL).map { String(decoding: $0, as: UTF8.self) } ?? ""
+        XCTAssertFalse(text.contains("Hidden")); XCTAssertFalse(text.contains("Secret"))
+        // The picker while locked lists only what is in the copy.
+        XCTAssertEqual(m?.suggestions().map(\.title), ["Shown"])
+        XCTAssertTrue(m?.search("Hidden").isEmpty ?? false)
+        // Freshness: an edit to the shown entry rewrites the copy; an edit to a hidden one doesn't.
+        var edited = nodes
+        edited[1].items[0].content = "changed"
+        XCTAssertFalse(w.write(nodes: edited, locked: true, font: "lato", unlock: "faceID", allowed: ["a"]))
+        edited[0].items[0].content = "- \\[x] milk"
+        XCTAssertTrue(w.write(nodes: edited, locked: true, font: "lato", unlock: "faceID", allowed: ["a"]))
+        XCTAssertEqual(PinnedEntryMirrorFile.read(at: fileURL)?.entries.first?.lines, [.init(kind: .check, done: true, text: "milk")])
+        // Swapping one allowed entry for another (same count) rewrites; back to none empties it at once.
+        XCTAssertTrue(w.write(nodes: edited, locked: true, font: "lato", unlock: "faceID", allowed: ["b"]))
+        XCTAssertEqual(PinnedEntryMirrorFile.read(at: fileURL)?.entries.map(\.id), ["b"])
+        XCTAssertTrue(w.write(nodes: edited, locked: true, font: "lato", unlock: "faceID", allowed: []))
+        XCTAssertEqual(PinnedEntryMirrorFile.read(at: fileURL)?.entries.isEmpty, true)
+    }
+
+    func testLockedWriteComparesWithTheCopyOnDisk() {
+        // The extension may cut the copy behind the writer's back; the writer compares with the file, not its memory.
+        let w = writer()
+        let nodes = [node("a", title: "A", text: "x", updated: 2), node("b", title: "B", text: "y", updated: 1)]
+        XCTAssertTrue(w.write(nodes: nodes, locked: true, font: "lato", allowed: ["a", "b"]))
+        let cut = PinnedEntryMirrorFile.read(at: fileURL)!.pruned(keeping: ["a"])
+        PinnedEntryMirrorFile.write(PinnedEntryMirrorFile.encode(cut)!, to: fileURL)
+        XCTAssertTrue(w.write(nodes: nodes, locked: true, font: "lato", allowed: ["a"]) == false,
+                      "the file already holds exactly that: nothing to write")
+        XCTAssertTrue(w.write(nodes: nodes, locked: true, font: "lato", allowed: ["a", "b"]),
+                      "a stale memory of the old bytes doesn't stop a write")
+    }
+
+    func testDisplayFollowsTheWidgetsOwnSwitch() {
+        let w = writer()
+        let nodes = [node("a", title: "A", text: "x")]
+        let open = w.build(nodes: nodes, locked: false, font: "lato")
+        // Lock off: the switch changes nothing.
+        XCTAssertEqual(PinnedEntryMirror.display(chosenID: "a", showWhenLocked: true, mirror: open), .entry(open.entries[0]))
+        XCTAssertEqual(PinnedEntryMirror.display(chosenID: "a", showWhenLocked: false, mirror: open), .entry(open.entries[0]))
+        // Lock on, the entry in the copy (another widget shows it).
+        let locked = w.build(nodes: nodes, locked: true, font: "lato", allowed: ["a"])
+        XCTAssertEqual(PinnedEntryMirror.display(chosenID: "a", showWhenLocked: false, mirror: locked), .locked,
+                       "a hidden widget never reads the entry, even when the copy holds it")
+        XCTAssertEqual(PinnedEntryMirror.display(chosenID: "a", showWhenLocked: true, mirror: locked), .shownWhileLocked(locked.entries[0]))
+        XCTAssertEqual(PinnedEntryMirror.display(chosenID: "b", showWhenLocked: true, mirror: locked), .lockedNotYetShown)
+        XCTAssertEqual(PinnedEntryMirror.display(chosenID: nil, showWhenLocked: true, mirror: locked), .locked)
+        XCTAssertEqual(PinnedEntryMirror.display(chosenID: "a", mirror: locked), .locked, "default: hidden")
+        XCTAssertEqual(PinnedEntryMirror.notYetShownAccessibilityLabel("faceID"),
+                       "AirPad is locked. Open AirPad and unlock it with Face ID to show this entry.")
+    }
+
+    func testExtensionCutOnlyRemoves() {
+        let w = writer()
+        let nodes = [node("a", title: "A", updated: 2), node("b", title: "B", updated: 1)]
+        let locked = w.build(nodes: nodes, locked: true, font: "lato", allowed: ["a", "b"])
+        XCTAssertEqual(locked.pruned(keeping: ["b", "c"]).entries.map(\.id), ["b"], "never adds c")
+        XCTAssertEqual(locked.pruned(keeping: []).entries, [])
+        let open = w.build(nodes: nodes, locked: false, font: "lato")
+        XCTAssertEqual(open.pruned(keeping: []), open, "an unlocked copy is left alone")
+    }
+
+    func testShowIDsFromConfigurations() {
+        XCTAssertEqual(PinnedEntryConfigurations.reduce([("a", true), ("b", false), (nil, true), ("c", true)]),
+                       .init(show: ["a", "c"], settled: true))
+        // The system's twin right after a switch is flipped (old + new value, either order): a hide wins, unsettled.
+        XCTAssertEqual(PinnedEntryConfigurations.reduce([("a", false), ("a", true)]), .init(show: [], settled: false))
+        XCTAssertEqual(PinnedEntryConfigurations.reduce([("a", true), ("a", false), ("b", true)]), .init(show: ["b"], settled: false))
+        XCTAssertEqual(PinnedEntryConfigurations.reduce([("a", true), ("a", true)]), .init(show: ["a"], settled: true))
+        XCTAssertEqual(PinnedEntryConfigurations.reduce([]), .init(show: [], settled: true))
+        XCTAssertEqual(PinnedEntryIntent().showWhenLocked, false, "a widget placed before this build is hidden")
+    }
+
+    func testOpenCopyUnchangedByTheLockFields() {
+        // Lock off: the copy's bytes carry no `unlock` and the `allowed` list is ignored.
+        let w = writer()
+        let nodes = [node("a", title: "A"), node("b", title: "B")]
+        XCTAssertEqual(w.build(nodes: nodes, locked: false, font: "lato", unlock: "faceID", allowed: ["a"]).entries.count, 2)
+        XCTAssertNil(w.build(nodes: nodes, locked: false, font: "lato", unlock: "faceID").unlock)
+    }
 }

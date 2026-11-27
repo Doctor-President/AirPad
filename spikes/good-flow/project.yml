@@ -1,0 +1,89 @@
+# Good Flow spike · step 3 (throwaway, never merged): a standalone app that ports the bench's Good Flow shader to Metal.
+# Its OWN project: no AirPad code, no library code, synthetic entries only (look.json).
+# Regenerate after editing: (cd spikes/good-flow && xcodegen generate)
+#   GoodFlow  iOS app + Mac Catalyst, bundle com.doctorpresident.spike.SpikeHarness (the ws-local-model spike's App ID,
+#             whose development profile on this Mac is valid to 2027-08-12: no new App ID, no App Store Connect).
+#             iOS: Automatic, offline, finds that Xcode-managed profile + "Apple Development". Mac Catalyst: signed to run locally ("-"),
+#             App Sandbox, so its files land in its own container (~/Library/Containers/<bundle id>/Data).
+# Build:
+#   Mac:    xcodebuild -project GoodFlow.xcodeproj -scheme GoodFlow -configuration Release -destination 'platform=macOS,variant=Mac Catalyst' build
+#   iPhone: xcodebuild -project GoodFlow.xcodeproj -scheme GoodFlow -configuration Release -destination 'generic/platform=iOS' build
+name: GoodFlow
+
+options:
+  deploymentTarget:
+    iOS: "27.0"
+  createIntermediateGroups: true
+
+settings:
+  base:
+    SWIFT_VERSION: "5.0"
+    DEVELOPMENT_TEAM: 8XM4B5F42Y
+    CURRENT_PROJECT_VERSION: "1"
+    MARKETING_VERSION: "0.1"
+
+targets:
+  GoodFlow:
+    type: application
+    platform: iOS
+    sources:
+      - path: App
+        excludes: ["*.entitlements"]
+      - path: look.json
+        buildPhase: resources
+    info:
+      path: App/Info.plist
+      properties:
+        CFBundleDisplayName: Good Flow
+        CFBundleShortVersionString: $(MARKETING_VERSION)
+        CFBundleVersion: $(CURRENT_PROJECT_VERSION)
+        UILaunchScreen: {}
+        UIApplicationSupportsIndirectInputEvents: true
+        CADisableMinimumFrameDurationOnPhone: true
+        UIApplicationSceneManifest:
+          UIApplicationSupportsMultipleScenes: false
+        UISupportedInterfaceOrientations: [UIInterfaceOrientationPortrait]
+        UISupportedInterfaceOrientations~ipad: [UIInterfaceOrientationPortrait, UIInterfaceOrientationLandscapeLeft, UIInterfaceOrientationLandscapeRight, UIInterfaceOrientationPortraitUpsideDown]
+        ITSAppUsesNonExemptEncryption: false
+    postCompileScripts:
+      - name: Bundle shader source (run-time variants)
+        script: |
+          cp "${SRCROOT}/App/GoodFlow.metal" "${TARGET_BUILD_DIR}/${UNLOCALIZED_RESOURCES_FOLDER_PATH}/GoodFlow.metal.txt"
+          cp "${SRCROOT}/App/GFShared.h" "${TARGET_BUILD_DIR}/${UNLOCALIZED_RESOURCES_FOLDER_PATH}/GFShared.h.txt"
+        inputFiles:
+          - $(SRCROOT)/App/GoodFlow.metal
+          - $(SRCROOT)/App/GFShared.h
+        outputFiles:
+          - $(TARGET_BUILD_DIR)/$(UNLOCALIZED_RESOURCES_FOLDER_PATH)/GoodFlow.metal.txt
+          - $(TARGET_BUILD_DIR)/$(UNLOCALIZED_RESOURCES_FOLDER_PATH)/GFShared.h.txt
+    settings:
+      base:
+        PRODUCT_BUNDLE_IDENTIFIER: com.doctorpresident.spike.SpikeHarness
+        PRODUCT_NAME: GoodFlow
+        TARGETED_DEVICE_FAMILY: "1,2"
+        SUPPORTS_MACCATALYST: YES
+        DERIVE_MACCATALYST_PRODUCT_BUNDLE_IDENTIFIER: NO
+        SUPPORTS_MAC_DESIGNED_FOR_IPHONE_IPAD: NO
+        GENERATE_INFOPLIST_FILE: NO
+        SWIFT_OBJC_BRIDGING_HEADER: App/GoodFlow-Bridging-Header.h
+        MTL_FAST_MATH: NO
+        MTL_HEADER_SEARCH_PATHS: $(SRCROOT)/App
+        # iOS: Automatic, resolved OFFLINE to the existing Xcode-managed profile "iOS Team Provisioning Profile:
+        # com.doctorpresident.spike.SpikeHarness" (manual signing refuses an Xcode-managed profile). Never pass
+        # -allowProvisioningUpdates: the build must only find what is already on this Mac.
+        CODE_SIGN_STYLE: Automatic
+        "CODE_SIGN_IDENTITY[sdk=iphoneos*]": Apple Development
+        "CODE_SIGN_IDENTITY[sdk=macosx*]": "-"
+        "CODE_SIGN_ENTITLEMENTS[sdk=macosx*]": App/GoodFlowMac.entitlements
+        ENABLE_HARDENED_RUNTIME: NO
+        ENABLE_USER_SCRIPT_SANDBOXING: NO
+
+schemes:
+  GoodFlow:
+    build:
+      targets:
+        GoodFlow: all
+    run:
+      config: Release
+    archive:
+      config: Release

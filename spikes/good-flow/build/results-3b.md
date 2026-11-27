@@ -297,7 +297,7 @@ It builds (Automatic, offline, the existing SpikeHarness profile; no `-allowProv
 app installed. "Record" in the panel records T's own hand.
 
 ## 8. App size
-Release iOS `GoodFlow.app` on disk: **964 KB** (signed: Apple Development, profile "iOS Team Provisioning Profile:
+Release iOS `GoodFlow.app` on disk: **980 KB** (du -sk, HEAD 2d4b0879) (signed: Apple Development, profile "iOS Team Provisioning Profile:
 com.doctorpresident.spike.SpikeHarness", team 8XM4B5F42Y). Mac Catalyst Release builds and runs.
 
 ## 9. Departures from the bench, as T would see them

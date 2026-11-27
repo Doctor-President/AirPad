@@ -14,6 +14,10 @@ import UIKit
 final class GFAppDelegate: UIResponder, UIApplicationDelegate {
     func application(_ application: UIApplication, didFinishLaunchingWithOptions launchOptions: [UIApplication.LaunchOptionsKey: Any]?) -> Bool {
         _ = GFRecorder.shared
+        // Scripted runs on the phone (bench readings, stills): keep the screen awake, or Auto-Lock suspends the app mid-
+        // reading (T's touch, 2026-11-27: benches 2 and 4 stalled at "moving" ~5 min after the last touch).
+        let d = UserDefaults.standard
+        if d.string(forKey: "Bench") != nil || d.string(forKey: "RenderStills") != nil { application.isIdleTimerDisabled = true }
         if let dir = UserDefaults.standard.string(forKey: "RenderStills") {
             DispatchQueue.main.async {
                 GFStillsBatch.run(dir: dir)

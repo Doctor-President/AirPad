@@ -32,6 +32,10 @@ final class GFRecorder {
 
     private let lock = NSLock()
     private var frames: [Frame] = []
+    /// Bumped by reset(): a frame begun before a reset can still report its GPU / present time afterwards (Metal's
+    /// completion queue). Its handle carries the generation, so a stale report is dropped instead of indexing past the end
+    /// of the cleared list (the crash at T's touch, 2026-11-27: EXC_BREAKPOINT in the presented handler at a bench start).
+    private var generation = 0
     private var samples: [Sample] = []
     private var marks: [Mark] = []
     private var stills: [Still] = []
@@ -58,20 +62,25 @@ final class GFRecorder {
     func begin(surface: String, wake: String, linkT: Double, targetT: Double, vsync: Double, rate: Double, startT: Double, px: Int) -> Int {
         lock.lock(); defer { lock.unlock() }
         frames.append(Frame(surface: surface, wake: wake, linkT: linkT, targetT: targetT, vsync: vsync, rate: rate, startT: startT, mainMs: -1, px: px))
-        return frames.count - 1
+        return (generation << 32) | (frames.count - 1)
+    }
+    /// The live index for a handle from begin(), or nil if a reset came between.
+    private func slot(_ h: Int) -> Int? {
+        let i = h & 0xFFFF_FFFF
+        return (h >> 32) == generation && i < frames.count ? i : nil
     }
     /// Every display-link callback, drawn or not ("0 ticks at rest" is read from these).
     func tick(surface: String, at t: Double, drew: Bool) { lock.lock(); ticks.append((t, surface, drew)); lock.unlock() }
-    func setMain(_ i: Int, _ ms: Double) { lock.lock(); frames[i].mainMs = ms; lock.unlock() }
-    func setGPU(_ i: Int, _ ms: Double) { lock.lock(); frames[i].gpuMs = ms; lock.unlock() }
-    func setWait(_ i: Int, _ ms: Double) { lock.lock(); frames[i].waitMs = ms; lock.unlock() }
-    func setPresent(_ i: Int, _ t: Double) { lock.lock(); frames[i].presentT = t; lock.unlock() }
+    func setMain(_ h: Int, _ ms: Double) { lock.lock(); if let i = slot(h) { frames[i].mainMs = ms }; lock.unlock() }
+    func setGPU(_ h: Int, _ ms: Double) { lock.lock(); if let i = slot(h) { frames[i].gpuMs = ms }; lock.unlock() }
+    func setWait(_ h: Int, _ ms: Double) { lock.lock(); if let i = slot(h) { frames[i].waitMs = ms }; lock.unlock() }
+    func setPresent(_ h: Int, _ t: Double) { lock.lock(); if let i = slot(h) { frames[i].presentT = t }; lock.unlock() }
     /// Input events and other moments (part B marks gesture begin / end, live on / off…).
     func mark(_ what: String, at t: Double = CACurrentMediaTime()) { lock.lock(); marks.append(Mark(t: t, what: what)); lock.unlock() }
     func still(kind: String, reason: String, gpuMs: Double, mainMs: Double, px: Int, at t: Double = CACurrentMediaTime()) {
         lock.lock(); stills.append(Still(t: t, kind: kind, reason: reason, gpuMs: gpuMs, mainMs: mainMs, px: px)); lock.unlock()
     }
-    func reset() { lock.lock(); frames.removeAll(keepingCapacity: true); samples.removeAll(); marks.removeAll(); ticks.removeAll(); stills.removeAll(); lock.unlock() }
+    func reset() { lock.lock(); generation += 1; frames.removeAll(keepingCapacity: true); samples.removeAll(); marks.removeAll(); ticks.removeAll(); stills.removeAll(); lock.unlock() }
     var frameCount: Int { lock.lock(); defer { lock.unlock() }; return frames.count }
 
     // MARK: 1 Hz samples

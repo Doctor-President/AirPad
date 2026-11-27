@@ -69,6 +69,8 @@ struct PinnedEntryTimelineEntry: TimelineEntry {
     let date: Date
     let state: PinnedEntryMirror.Display
     var font: String = "lato"
+    /// widget fix-up 1 — how AirPad unlocks on this phone (the locked tile's glyph); nil = a plain lock.
+    var unlock: String? = nil
 }
 
 struct PinnedEntryProvider: AppIntentTimelineProvider {
@@ -96,7 +98,7 @@ struct PinnedEntryProvider: AppIntentTimelineProvider {
 
     static func resolve(_ chosenID: String?, mirror: PinnedEntryMirror?) -> PinnedEntryTimelineEntry {
         .init(date: .now, state: PinnedEntryMirror.display(chosenID: chosenID, mirror: mirror),
-              font: mirror?.font ?? "lato")
+              font: mirror?.font ?? "lato", unlock: mirror?.unlock)
     }
 }
 
@@ -131,7 +133,7 @@ struct PinnedEntryView: View {
         switch timeline.state {
         case .entry(let e): entryView(e)
         case .notSetUp:     message("square.and.pencil", "Open AirPad", "Then this widget can show an entry.")
-        case .locked:       message("lock.fill", "AirPad is locked", "Open AirPad to read your entries.")
+        case .locked:       lockedView
         case .emptyLibrary: message("square.and.pencil", "Nothing to pin yet", "Add an entry in AirPad.")
         case .notChosen:    message("pin", "Pin an entry", "Touch and hold, then choose Edit Widget.")
         case .missing:      message("questionmark.square.dashed", "Entry not found",
@@ -192,10 +194,19 @@ struct PinnedEntryView: View {
         }
     }
 
-    private func message(_ symbol: String, _ title: String, _ detail: String) -> some View {
+    /// widget fix-up 1 (T, ruling 1) — "AirPad is locked", with the system glyph for how it unlocks (Face ID, Touch ID,
+    /// Optic ID; a plain lock when not known) above the words, so the tile says how to get in. Read as one sentence.
+    private var lockedView: some View {
+        message(PinnedEntryMirror.unlockSymbol(timeline.unlock), "AirPad is locked", "Open AirPad to read your entries.",
+                symbolSize: 22)
+            .accessibilityElement(children: .ignore)
+            .accessibilityLabel(Text(PinnedEntryMirror.lockedAccessibilityLabel(timeline.unlock)))
+    }
+
+    private func message(_ symbol: String, _ title: String, _ detail: String, symbolSize: CGFloat = 18) -> some View {
         VStack(alignment: .leading, spacing: 6) {
             Image(systemName: symbol)
-                .font(.system(size: 18, weight: .regular))
+                .font(.system(size: symbolSize, weight: .regular))
                 .foregroundStyle(ink.opacity(0.7))
                 .widgetAccentable()
             Spacer(minLength: 0)

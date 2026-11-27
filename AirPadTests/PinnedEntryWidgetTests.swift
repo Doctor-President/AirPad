@@ -190,4 +190,49 @@ final class PinnedEntryWidgetTests: XCTestCase {
         XCTAssertEqual(WidgetEntryLink.entryID(from: url), "2C1F-entry id")
         XCTAssertNil(WidgetEntryLink.entryID(from: URL(string: "airpad://quikcapture")!))
     }
+    // MARK: - widget fix-up 1 · the locked tile says how AirPad unlocks
+
+    func testLockedCopyCarriesHowItUnlocksAndNothingElse() {
+        let w = writer()
+        let nodes = [node("a", title: "Public", text: "x")]
+        XCTAssertTrue(w.write(nodes: nodes, locked: true, font: "lato", unlock: "faceID"))
+        let m = PinnedEntryMirrorFile.read(at: fileURL)
+        XCTAssertEqual(m?.locked, true)
+        XCTAssertEqual(m?.unlock, "faceID")
+        XCTAssertEqual(m?.entries.isEmpty, true, "still no entries while locked: the picker stays empty")
+        XCTAssertEqual(m?.search("Public").isEmpty, true)
+        XCTAssertEqual(PinnedEntryMirror.display(chosenID: "a", mirror: m), .locked)
+        // The phone's method changing (Face ID turned off → passcode) rewrites the locked copy; the same one doesn't.
+        XCTAssertFalse(w.write(nodes: nodes, locked: true, font: "lato", unlock: "faceID"))
+        XCTAssertTrue(w.write(nodes: nodes, locked: true, font: "lato", unlock: nil))
+        XCTAssertNil(PinnedEntryMirrorFile.read(at: fileURL)?.unlock)
+        // Unlocked, the copy never carries it (its bytes are as before the fix-up).
+        XCTAssertTrue(w.write(nodes: nodes, locked: false, font: "lato", unlock: "faceID"))
+        let open = PinnedEntryMirrorFile.readData(at: fileURL).map { String(decoding: $0, as: UTF8.self) } ?? ""
+        XCTAssertFalse(open.contains("unlock"))
+    }
+
+    func testCopyWithoutUnlockStillReads() {
+        // A copy written by 673ace87 (no `unlock` key) reads as a plain lock, not as "Open AirPad".
+        let old = #"{"entries":[],"font":"lato","locked":true,"version":1}"#
+        let m = PinnedEntryMirrorFile.decode(Data(old.utf8))
+        XCTAssertEqual(m?.locked, true)
+        XCTAssertNil(m?.unlock)
+        XCTAssertEqual(PinnedEntryMirror.unlockSymbol(m?.unlock), "lock.fill")
+    }
+
+    func testUnlockGlyphAndSentence() {
+        XCTAssertEqual(PinnedEntryMirror.unlockSymbol("faceID"), "faceid")
+        XCTAssertEqual(PinnedEntryMirror.unlockSymbol("touchID"), "touchid")
+        XCTAssertEqual(PinnedEntryMirror.unlockSymbol("opticID"), "opticid")
+        XCTAssertEqual(PinnedEntryMirror.unlockSymbol("somethingNew"), "lock.fill")
+        XCTAssertEqual(PinnedEntryMirrorWriter.unlockKind(.faceID), "faceID")
+        XCTAssertEqual(PinnedEntryMirrorWriter.unlockKind(.touchID), "touchID")
+        XCTAssertEqual(PinnedEntryMirrorWriter.unlockKind(.opticID), "opticID")
+        XCTAssertNil(PinnedEntryMirrorWriter.unlockKind(.passcode))
+        XCTAssertNil(PinnedEntryMirrorWriter.unlockKind(.none))
+        XCTAssertEqual(PinnedEntryMirror.lockedAccessibilityLabel("faceID"),
+                       "AirPad is locked. Open AirPad and unlock it with Face ID to read your entries.")
+        XCTAssertEqual(PinnedEntryMirror.lockedAccessibilityLabel(nil), "AirPad is locked. Open AirPad to read your entries.")
+    }
 }

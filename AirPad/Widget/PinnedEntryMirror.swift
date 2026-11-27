@@ -20,6 +20,10 @@ struct PinnedEntryMirror: Codable, Equatable {
     var locked: Bool = false
     /// The app's chosen content face (`EntryBodyFont.rawValue`), so the widget's type follows Settings → Font.
     var font: String = "lato"
+    /// widget fix-up 1 — how this phone unlocks AirPad ("faceID" / "touchID" / "opticID"), written only in the locked
+    /// copy so the locked tile can show the system's glyph for it. Nil = not known or passcode only: a plain lock.
+    /// Optional, so a copy written before it decodes as nil, and a widget that doesn't know it ignores it.
+    var unlock: String? = nil
     /// Newest change first (the picker's suggestions are the head of this list).
     var entries: [Entry] = []
 
@@ -66,6 +70,26 @@ extension PinnedEntryMirror {
             return m.entries.isEmpty ? .emptyLibrary : .missing
         }
         return m.entries.isEmpty ? .emptyLibrary : .notChosen
+    }
+
+    /// The locked tile's glyph: the system symbol for the biometry this phone unlocks with, a plain lock otherwise.
+    static func unlockSymbol(_ unlock: String?) -> String {
+        switch unlock {
+        case "faceID":  return "faceid"
+        case "touchID": return "touchid"
+        case "opticID": return "opticid"
+        default:        return "lock.fill"
+        }
+    }
+
+    /// The locked tile's one VoiceOver sentence.
+    static func lockedAccessibilityLabel(_ unlock: String?) -> String {
+        switch unlock {
+        case "faceID":  return "AirPad is locked. Open AirPad and unlock it with Face ID to read your entries."
+        case "touchID": return "AirPad is locked. Open AirPad and unlock it with Touch ID to read your entries."
+        case "opticID": return "AirPad is locked. Open AirPad and unlock it with Optic ID to read your entries."
+        default:        return "AirPad is locked. Open AirPad to read your entries."
+        }
     }
 
     /// The picker's suggestions: the most recently changed entries.

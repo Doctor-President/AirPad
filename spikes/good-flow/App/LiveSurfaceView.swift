@@ -24,14 +24,18 @@ final class LiveSurfaceView: UIView {
     /// The shader's values (entry, case, theme). `res` is overwritten with the drawable's size; `time` with the clock.
     var base = GFUniforms() { didSet { requestFrame("data") } }
     /// The time value of the still this surface shows (the bench's uTime; look.json stillTime).
-    var stillTime: Double = GFLook.shared.stillTime { didSet { if !liveRunning { requestFrame("time") } } }
+    var stillTime: Double {
+        get { stillT }
+        set { stillT = newValue; if !liveRunning { requestFrame("time") } }
+    }
+    private var stillT = GFLook.shared.stillTime
     var isLive = false { didSet { if isLive != oldValue { GFRecorder.shared.mark("\(surfaceName) live \(isLive)"); reevaluate() } } }
     var liveRate = 30 { didSet { if liveRate != oldValue { applyRange(); reevaluate() } } }
     /// Called after each tick's commit (part B: apply pending input here, as the trial does).
     var onTick: ((LiveSurfaceView, _ dt: Double) -> Void)?
     var onLiveEnded: ((Double) -> Void)?
     /// The time value the next frame is drawn at.
-    var currentTime: Double { stillTime + liveElapsed }
+    var currentTime: Double { stillT + liveElapsed }
     private(set) var drawnFrames = 0, ticks = 0
 
     private var link: CADisplayLink?
@@ -115,7 +119,10 @@ final class LiveSurfaceView: UIView {
     }
     /// Re-read every live condition (visibility, app state, power, thermal, Reduce Motion). Wakes or pauses.
     func reevaluate() {
-        if liveAllowed { wake() } else if liveRunning { endLive() }
+        if liveAllowed { wake(); return }
+        if liveRunning { endLive() }
+        // Nothing else awake: pause now rather than spend one empty tick finding out.
+        if CACurrentMediaTime() - lastInput >= 0.4, oneShot == nil { link?.isPaused = true }
     }
 
     /// Wake 2's conditions.
@@ -148,9 +155,9 @@ final class LiveSurfaceView: UIView {
     }
     private func endLive() {
         liveRunning = false
-        stillTime += liveElapsed; liveElapsed = 0       // the last live frame becomes the still
-        GFRecorder.shared.mark("\(surfaceName) live ended at t=\(stillTime)")
-        onLiveEnded?(stillTime)
+        stillT += liveElapsed; liveElapsed = 0          // the last live frame becomes the still (no redraw: it is on screen)
+        GFRecorder.shared.mark("\(surfaceName) live ended at t=\(stillT)")
+        onLiveEnded?(stillT)
     }
 
     // MARK: the tick
@@ -163,6 +170,7 @@ final class LiveSurfaceView: UIView {
         let live = liveAllowed
         let wakeReason: String? = oneShot.map { "oneshot:" + $0 } ?? (inputAwake ? "input" : (live ? "live" : nil))
         guard let reason = wakeReason else {          // the rest rule: nothing keeps it awake
+            GFRecorder.shared.tick(surface: surfaceName, at: t0, drew: false)
             l.isPaused = true
             if liveRunning { endLive() }
             return
@@ -173,7 +181,8 @@ final class LiveSurfaceView: UIView {
             liveRunning = true; lastLiveTarget = l.targetTimestamp
         } else if liveRunning { endLive() }
 
-        guard let drawable = metalLayer.nextDrawable() else { return }
+        guard let drawable = metalLayer.nextDrawable() else { GFRecorder.shared.tick(surface: surfaceName, at: t0, drew: false); return }
+        GFRecorder.shared.tick(surface: surfaceName, at: t0, drew: true)
         let dt = lastTick > 0 ? t0 - lastTick : l.duration
         lastTick = t0
         let tex = drawable.texture
@@ -182,7 +191,7 @@ final class LiveSurfaceView: UIView {
         u.time = Float(currentTime)
         let rec = GFRecorder.shared
         let idx = rec.begin(surface: surfaceName, wake: reason, linkT: l.timestamp, targetT: l.targetTimestamp, vsync: l.duration,
-                            startT: t0, px: tex.width * tex.height)
+                            rate: Double(l.preferredFrameRateRange.preferred ?? 0), startT: t0, px: tex.width * tex.height)
         let cb = R.queue.makeCommandBuffer()!
         let rp = MTLRenderPassDescriptor()
         rp.colorAttachments[0].texture = tex; rp.colorAttachments[0].loadAction = .dontCare; rp.colorAttachments[0].storeAction = .store

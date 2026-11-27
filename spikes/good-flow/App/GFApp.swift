@@ -87,11 +87,59 @@ final class GFTestViewController: UIViewController, UIScrollViewDelegate {
         scroll.addSubview(controls)
         controls.tag = 7
         apply()
-        statusTimer = Timer.scheduledTimer(withTimeInterval: 1, repeats: true) { [weak self] _ in self?.updateStatus() }
+        if UserDefaults.standard.double(forKey: "AutoRecord") == 0 {   // scripted runs keep the main thread quiet
+            statusTimer = Timer.scheduledTimer(withTimeInterval: 1, repeats: true) { [weak self] _ in self?.updateStatus() }
+        }
     }
     private var flat = false
 
-    override func viewDidAppear(_ animated: Bool) { super.viewDidAppear(animated); becomeFirstResponder() }
+    override func viewDidAppear(_ animated: Bool) {
+        super.viewDidAppear(animated); becomeFirstResponder()
+        if !scripted { scripted = true; runScript() }
+    }
+    private var scripted = false
+
+    /// Headless checks of the rest rule (no taps needed). Arguments:
+    ///   -TestTheme light|dark  -TestEntry e0…e5  -TestMode still|live30|live60|flat30
+    ///   -TestInputPulse <s>    from 1 s after launch, an input wake every 50 ms for <s> seconds (stands in for a scroll)
+    ///   -TestLiveOffAt <s>     switch live off at <s> seconds (the rest that follows must be 0 ticks)
+    ///   -AutoRecord <s>        save the recording (Documents/recordings/<-AutoRecordName or auto>.json) at <s>, then
+    ///   -AutoQuit YES          quit
+    private func runScript() {
+        let d = UserDefaults.standard
+        if d.string(forKey: "TestTheme") == "dark" { theme = .dark }
+        if let e = d.string(forKey: "TestEntry"), let i = GFLook.shared.entries.firstIndex(where: { $0.id == e }) { entryIndex = i }
+        switch d.string(forKey: "TestMode") ?? "still" {
+        case "live30": surface.liveRate = 30; surface.isLive = true
+        case "live60": surface.liveRate = 60; surface.isLive = true
+        case "flat30": surface.liveRate = 30; flat = true; surface.isLive = true
+        default: break
+        }
+        apply()
+        let pulse = d.double(forKey: "TestInputPulse")
+        if pulse > 0 {
+            let start = CACurrentMediaTime() + 1
+            Timer.scheduledTimer(withTimeInterval: 0.05, repeats: true) { [weak self] t in
+                let now = CACurrentMediaTime()
+                if now > start + pulse { t.invalidate(); GFRecorder.shared.mark("input pulse end"); return }
+                if now >= start { self?.surface.noteInput() }
+            }
+            GFRecorder.shared.mark("input pulse start", at: start)
+        }
+        let off = d.double(forKey: "TestLiveOffAt")
+        if off > 0 { DispatchQueue.main.asyncAfter(deadline: .now() + off) { [weak self] in self?.surface.isLive = false } }
+        let rec = d.double(forKey: "AutoRecord")
+        if rec > 0 {
+            DispatchQueue.main.asyncAfter(deadline: .now() + rec) { [weak self] in
+                guard let self else { return }
+                GFRecorder.shared.save(name: d.string(forKey: "AutoRecordName"), meta: [
+                    "screen": "test", "mode": d.string(forKey: "TestMode") ?? "still", "entry": GFLook.shared.entries[self.entryIndex].id,
+                    "theme": self.theme.rawValue, "drawnFrames": self.surface.drawnFrames, "ticks": self.surface.ticks,
+                    "drawable": [self.surface.metalLayer.drawableSize.width, self.surface.metalLayer.drawableSize.height]])
+                if d.bool(forKey: "AutoQuit") { exit(0) }
+            }
+        }
+    }
 
     private var detailHeight: CGFloat {
         ProcessInfo.processInfo.isMacCatalystApp ? 252 : 262    // the reference's detail-mac / detail-iphone heights (pt)
@@ -121,7 +169,10 @@ final class GFTestViewController: UIViewController, UIScrollViewDelegate {
         overrideUserInterfaceStyle = theme == .light ? .light : .dark
     }
 
-    func scrollViewDidScroll(_ s: UIScrollView) { surface.noteInput(); surface.reevaluate() }
+    func scrollViewDidScroll(_ s: UIScrollView) {
+        guard s.isTracking || s.isDragging || s.isDecelerating else { return }   // layout-time offsets are not input
+        surface.noteInput(); surface.reevaluate()
+    }
 
     private func updateStatus() {
         let r = GFRecorder.shared

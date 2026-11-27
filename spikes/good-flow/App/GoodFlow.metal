@@ -7,9 +7,22 @@
 //   - only Flow (look 2), sdShape's theme-0 / shape-0 circle, tankSpace (gTank 1 only), body's Flow branch;
 //   - two spike switches the bench does not have: `grainOn` (0 = bake without the final grain term) and `flat`.
 // Compiled with MTL_FAST_MATH = NO (hash11 is fract(sin·43758): sin precision moves the pools).
+// Step 3B adds, without changing A's maths:
+//   - the STABLE HASH (default): hash11's argument snapped to 1/1024 and its sin = metal::fast::sin, the sin Chrome ran
+//     the bench on (function constant kBenchHash = false), so FMA / reassociation cannot move the pools; same entry, same
+//     picture on Mac, iPhone, still and live, and = the bench with the same snap. kBenchHash = true is the bench's own
+//     unsnapped sin hash as this compiler computes it (a switch: pools sit where they fall);
+//   - A's main() split into slotSetup() + finish() so the two-pass variants share every line with A;
+//   - the two-pass variants (B, BD75, BD50): gf_body draws the composed body once into an offscreen picture (linear,
+//     rgba16Float + the rim glow in r16Float) at s × the slot's pixels; gf_fringe takes R / G / B from it at p·(1−fr),
+//     p, p·(1+fr) (bilinear), composes over the ground and runs finish(). The edge bend and the glass flutes move p
+//     BEFORE the lookup, exactly as they move it before body() in A;
+//   - the Map pass (gf_map_*): the orb stills drawn as instanced quads, grain added at screen scale.
 #include <metal_stdlib>
 #include "GFShared.h"
 using namespace metal;
+
+constant bool kBenchHash [[function_constant(0)]];
 
 #ifndef GF_SIN
 #define GF_SIN(x) sin(x)
@@ -28,6 +41,11 @@ static float tOf(U, E e){ return u.live==1 ? u.liveT : u.time*(.06+1.3*e.tempo);
 static float hash11(float n){
 #ifdef GF_QHASH   // diagnostic only (-ShaderVariant …-qhash): snap the argument so FMA / reassociation cannot move it
   n = rint(n*1024.f)/1024.f;
+#else
+  // The stable hash (step 3B default): the argument snapped to 1/1024 AND the sin the bench ran on (Chrome compiles
+  // the bench with fast maths on Metal: metal::fast::sin). Measured: = the bench with the same snap, 120/120 stills,
+  // mean 0.03. The rest of the shader stays safe maths.
+  if(!kBenchHash){ n = rint(n*1024.f)/1024.f; return fract(metal::fast::sin(n*127.1f)*43758.5453f); }
 #endif
   return fract(GF_SIN(n*127.1f)*43758.5453f); }
 static float ihash(float2 p){ uint2 q = uint2(int2(p))*uint2(1597334673u,3812015801u); uint n = (q.x^q.y)*1597334673u; return float(n)*(1.f/4294967295.f); }
@@ -160,7 +178,7 @@ static Hit flowBody(U, thread G& g, float2 p, E e){
     cover *= clamp(fo+g.nz*u.gmix*3.*fo*(1.-fo), 0., 1.);
   }
   float v = (q.y*.9+Dl*.55)*u.lines*(.2+.8*e.patina)*30.;
-  float fw = max(fwidth(v),1e-4);
+  float fw = max(fwidth(v)*u.fwScale,1e-4);
   float line = (1.-smoothstep(.5,1.4,abs(fract(v)-.5)/fw))*(1.-smoothstep(.3,.6,fw))*cover;
   float3 paper = held ? (u.ground==1 ? float3(.90,.90,.885) : float3(.004,.004,.006)+deepC*.35) : g.ground;
   float3 pig = pow(em, float3(mix(.45,2.4,u.power)*(1.+.3*e.patina)));
@@ -205,25 +223,27 @@ vertex VOut gf_vertex(uint vid [[vertex_id]]){
   VOut o; o.pos = float4(a, 0., 1.); return o;
 }
 
-fragment float4 gf_fragment(VOut vin [[stage_in]], constant GFUniforms& u [[buffer(0)]]){
-  if(u.flat==1) return float4(pow(u.surf, float3(1./2.2)), 1.);
-  thread G g;
-  float2 fc = float2(vin.pos.x-u.org.x, u.res.y-(vin.pos.y-u.org.y));   // gl_FragCoord.xy − uOrg, y up
+// A's main(), split: everything before the fringe split …
+struct Slot { float2 fc; float2 p; float2 cuv; float lensK; float rib; float hm; E e; float3 ground; };
+
+static Slot slotSetup(U, thread G& g, float2 fc, bool displace){
+  Slot s; s.fc = fc;
   float2 uv = fc/u.res;
   float2 cuv = fract(uv*u.grid)-.5;
   float2 cs = u.res/u.grid;
   float2 p = cuv*cs/(.5*min(cs.x,cs.y));
   g.hlf = cs/min(cs.x,cs.y); g.px = 1./(.5*min(cs.x,cs.y));
-  if(u.slot==1){ float hm = .5*min(u.res.x,u.res.y)*u.zoom; p = (fc-.5*u.res-u.ctr)/hm; g.hlf = .5*u.res/hm; g.px = 1./hm; }
+  float hm = .5*min(cs.x,cs.y);
+  if(u.slot==1){ hm = .5*min(u.res.x,u.res.y)*u.zoom; p = (fc-.5*u.res-u.ctr)/hm; g.hlf = .5*u.res/hm; g.px = 1./hm; }
   float lensK = 0.;
   if(u.slot==1 && u.tank>0 && u.lens>0.){
     float2 ql = fc-.5*u.res; float band = 26.*u.pt; float2 m = max(abs(ql)-(.5*u.res-band), 0.);
     if(u.fadeB>0. && ql.y<0.) m.y = 0.;
     lensK = clamp(length(m)/band, 0., 1.);
-    p -= sign(ql)*m/max(length(m),1e-4)*pow(lensK,2.5)*band*1.5*u.lens*g.px;
+    if(displace) p -= sign(ql)*m/max(length(m),1e-4)*pow(lensK,2.5)*band*1.5*u.lens*g.px;
   }
   float rib = 0.;
-  if(u.slot==1 && u.tank>0 && u.glass==2){ float fwp = mix(5.,20.,u.flute)*u.pt; rib = fract(fc.x/fwp)-.5; p.x += rib*fwp*g.px*1.8*u.glassAmt; }
+  if(u.slot==1 && u.tank>0 && u.glass==2){ float fwp = mix(5.,20.,u.flute)*u.pt; rib = fract(fc.x/fwp)-.5; if(displace) p.x += rib*fwp*g.px*1.8*u.glassAmt; }
   E e = E{u.hue,u.mass,u.parts,u.conn,u.tempo,u.amp,u.patina,u.seed, u.slot==1 ? u.rot : 0.};
   g.nz = ihash(fc)-.5;
   // uSheet and uGrid > 1 (the entry sheet, the bench's grid) are not ported: always 0 and (1,1) here.
@@ -240,16 +260,13 @@ fragment float4 gf_fragment(VOut vin [[stage_in]], constant GFUniforms& u [[buff
     ground = u.ground==1 ? ground*(1.-.10*u.medium*(1.-yN)) : ground+float3(.010,.012,.018)*u.medium*yN*yN;
   }
   g.ground = ground;
-  float3 c;
-  float fr = u.fringe*.04*(1.+.6*e.patina);
-  float cf = cellFade(u, cuv);
-  if(fr>.0005){
-    Hit r=body(u,g,p*(1.-fr),e); Hit gg=body(u,g,p,e); Hit b=body(u,g,p*(1.+fr),e);
-    r.glow*=cf; gg.glow*=cf; b.glow*=cf;
-    c = float3(compose(u,r,ground).r, compose(u,gg,ground).g, compose(u,b,ground).b);
-  } else {
-    Hit h1=body(u,g,p,e); h1.glow*=cf; c = compose(u,h1,ground);
-  }
+  s.p = p; s.cuv = cuv; s.lensK = lensK; s.rib = rib; s.hm = hm; s.e = e; s.ground = ground;
+  return s;
+}
+
+// … and everything after it (gamma, the fades, glass, lens rim light, grain, mask), shared by A and pass 2.
+static float3 finish(U, float3 c, thread const Slot& s){
+  float2 fc = s.fc; float lensK = s.lensK, rib = s.rib; E e = s.e;
   c = pow(clamp(c,0.,1.), float3(1./2.2));
   if(u.slot==1 && u.fade.y>0.) c = mix(c, pow(u.surf,float3(1./2.2)), smoothstep(u.fade.x,u.fade.y,fc.x/u.res.x));
   if(u.slot==1 && u.fadeV.y>0.) c = mix(c, pow(u.surf,float3(1./2.2)), smoothstep(u.fadeV.x,u.fadeV.y,1.-fc.y/u.res.y));
@@ -274,5 +291,105 @@ fragment float4 gf_fragment(VOut vin [[stage_in]], constant GFUniforms& u [[buff
     c = mix(pow(u.back,float3(1./2.2)), c, 1.-smoothstep(-.7,.7,sd));
   }
   if(u.slot==1 && u.fadeB>0.) c = mix(pow(u.back,float3(1./2.2)), c, smoothstep(0.,u.fadeB,fc.y/u.res.y));
-  return float4(c,1.);
+  return c;
 }
+
+static float2 fcOf(U, float4 pos){ return float2(pos.x-u.org.x, u.res.y-(pos.y-u.org.y)); }   // gl_FragCoord.xy − uOrg, y up
+static float fringeOf(U){ return u.fringe*.04*(1.+.6*u.patina); }
+
+// A · the faithful port: the body three times per pixel.
+fragment float4 gf_fragment(VOut vin [[stage_in]], constant GFUniforms& u [[buffer(0)]]){
+  if(u.flat==1) return float4(pow(u.surf, float3(1./2.2)), 1.);
+  thread G g;
+  Slot s = slotSetup(u, g, fcOf(u, vin.pos), true);
+  float2 p = s.p; E e = s.e; float3 ground = s.ground;
+  float3 c;
+  float fr = u.fringe*.04*(1.+.6*e.patina);
+  float cf = cellFade(u, s.cuv);
+  if(fr>.0005){
+    Hit r=body(u,g,p*(1.-fr),e); Hit gg=body(u,g,p,e); Hit b=body(u,g,p*(1.+fr),e);
+    r.glow*=cf; gg.glow*=cf; b.glow*=cf;
+    c = float3(compose(u,r,ground).r, compose(u,gg,ground).g, compose(u,b,ground).b);
+  } else {
+    Hit h1=body(u,g,p,e); h1.glow*=cf; c = compose(u,h1,ground);
+  }
+  return float4(finish(u, c, s), 1.);
+}
+
+// B / BD · pass 1: the body once per texel of the offscreen picture (field space, linear). A texel's slot position:
+// fc = (x0 + x/s, y1 − y/s); at s = 1 with x0, y1 whole pixels, texel centres sit on slot pixel centres (G is exact).
+struct BodyOut { float4 colA [[color(0)]]; float glow [[color(1)]]; };
+fragment BodyOut gf_body(VOut vin [[stage_in]], constant GFUniforms& u [[buffer(0)]]){
+  thread G g;
+  float2 fc = float2(u.r1.x + vin.pos.x/u.r1.z, u.r1.y - vin.pos.y/u.r1.z);
+  Slot s = slotSetup(u, g, fc, false);
+  Hit h = body(u, g, s.p, s.e);
+  BodyOut o; o.colA = float4(h.col, h.a); o.glow = h.glow; return o;
+}
+
+static Hit tapBody(U, float2 p, float hm, texture2d<float> tc, texture2d<float> tg, sampler sm){
+  float2 fc = p*hm + .5*u.res + u.ctr;
+  float2 uv = float2((fc.x-u.r1.x)*u.r1.z, (u.r1.y-fc.y)*u.r1.z)/u.r1Size;
+  float4 ca = tc.sample(sm, uv); float gl = tg.sample(sm, uv).r;
+  return Hit{ca.rgb, ca.a, gl, ca.rgb};
+}
+
+// B / BD · pass 2, at the slot's full size: three bilinear taps, composed over the ground, then A's finish().
+fragment float4 gf_fringe(VOut vin [[stage_in]], constant GFUniforms& u [[buffer(0)]],
+                          texture2d<float> tc [[texture(0)]], texture2d<float> tg [[texture(1)]]){
+  if(u.flat==1) return float4(pow(u.surf, float3(1./2.2)), 1.);
+  constexpr sampler sm(filter::linear, address::clamp_to_edge);
+  thread G g;
+  Slot s = slotSetup(u, g, fcOf(u, vin.pos), true);
+  float fr = fringeOf(u), cf = cellFade(u, s.cuv);
+  float3 c;
+  if(fr>.0005){
+    Hit r = tapBody(u, s.p*(1.-fr), s.hm, tc, tg, sm), gg = tapBody(u, s.p, s.hm, tc, tg, sm), b = tapBody(u, s.p*(1.+fr), s.hm, tc, tg, sm);
+    r.glow*=cf; gg.glow*=cf; b.glow*=cf;
+    c = float3(compose(u,r,s.ground).r, compose(u,gg,s.ground).g, compose(u,b,s.ground).b);
+  } else {
+    Hit h1 = tapBody(u, s.p, s.hm, tc, tg, sm); h1.glow*=cf; c = compose(u,h1,s.ground);
+  }
+  return float4(finish(u, c, s), 1.);
+}
+
+// ── Case (c), the Map pass ────────────────────────────────────────────────────────────────────────────────────────
+// One quad per orb over its still (the centre 1.25 D of the bench's padded 1.5 D slot, baked WITHOUT grain). The still
+// is opaque (the orb on the bench's page colour); it is laid over the ground with an alpha that is 1 out to the disc's
+// soft edge and most of its rim glow (r ≤ 0.52 D) and 0 by 0.62 D, so a neighbour's padding never covers an orb. Grain
+// is added here, per SCREEN pixel (design §1's departure), with the bench's own formula and amplitude.
+struct MapVOut { float4 pos [[position]]; float2 q; float diam; float3 flatCol; float patina; float ready; float slice; float uvScale; };
+
+vertex MapVOut gf_map_vertex(uint vid [[vertex_id]], uint iid [[instance_id]],
+                             constant GFOrbInstance* orbs [[buffer(0)]], constant GFMapUniforms& m [[buffer(1)]]){
+  GFOrbInstance o = orbs[iid];
+  float2 corner = float2((vid & 1) ? 1. : -1., (vid & 2) ? 1. : -1.);
+  float2 w = o.center + corner*o.halfSize;
+  float2 sp = float2((w.x-m.cam.x)/m.camScale + .5*m.viewPt.x, .5*m.viewPt.y - (w.y-m.cam.y)/m.camScale);   // screen pt, y down
+  MapVOut v;
+  v.pos = float4(sp.x/m.viewPt.x*2.-1., 1.-sp.y/m.viewPt.y*2., 0., 1.);
+  v.q = corner*o.halfSize; v.diam = o.diam; v.flatCol = o.flatCol; v.patina = o.patina; v.ready = o.ready; v.slice = o.slice; v.uvScale = o.uvScale;
+  return v;
+}
+
+fragment float4 gf_map_fragment(MapVOut v [[stage_in]], constant GFMapUniforms& m [[buffer(1)]],
+                                texture2d_array<float> stills [[texture(0)]]){
+  constexpr sampler sm(filter::linear, mip_filter::linear, address::clamp_to_edge);
+  float r = length(v.q), D = v.diam;
+  float3 c;
+  if(m.flat==0 && v.ready > .5){
+    float2 uv = (v.q/(2.*float2(D*.625, -D*.625)) + .5)*v.uvScale;   // q is y up; texture rows run down
+    c = stills.sample(sm, uv, uint(v.slice + .5)).rgb;
+  } else {
+    c = mix(v.flatCol, m.ground, smoothstep(.5*D-.6*m.camScale, .5*D+.6*m.camScale, r));   // flat disc, ~1 pt soft edge
+  }
+  if(m.grainOn==1){
+    float2 px = floor(v.pos.xy);
+    float gr = ihash(px+floor(m.time*24.)*float2(37.,17.))-.5;
+    float gk = smoothstep(.004,.03,length(c-m.ground));
+    c += gk*gr*m.grain*.10*(1.+.8*v.patina)*(.3+.7*dot(c,float3(.33)));
+  }
+  float a = 1.-smoothstep(.52*D, .62*D, r);
+  return float4(c*a, a);
+}
+

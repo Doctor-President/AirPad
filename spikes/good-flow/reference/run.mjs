@@ -1,13 +1,22 @@
 // Usage: node spikes/good-flow/reference/run.mjs   (renders all reference stills in headless Chrome)
 //   Controls (step 3): OUT=build/reference-run2 (a second run, must equal the first); FRINGE=0 OUT=build/reference-fringe0
 //   (the look with fringe 0: must FAIL the equality bar against the reference). OUT is relative to spikes/good-flow.
+//   HASH=stable OUT=build/reference-stable (step 3B): the bench with the stable hash (hash11's argument snapped).
 import http from 'node:http'; import fs from 'node:fs'; import path from 'node:path'; import {spawn} from 'node:child_process'; import {fileURLToPath} from 'node:url';
 const here = path.dirname(fileURLToPath(import.meta.url)), root = path.resolve(here, '..');
 const out = path.resolve(root, process.env.OUT || 'build/reference'), prof = path.join(root, 'build/chrome-profile');
 const SRC = process.env.HOME + '/Developer/Ops/design-refs/living-layer/good-flow-bench-source.md';
 const md = fs.readFileSync(SRC, 'utf8'); const blocks = [...md.matchAll(/```glsl\n([\s\S]*?)```/g)].map(m => m[1]);
 if (blocks.length < 2) throw new Error('glsl blocks: ' + blocks.length);
-const shaders = {vs: blocks[0], fs: blocks[1]};
+const HASH_OLD = 'float hash11(float n){ return fract(sin(n*127.1)*43758.5453); }';
+// HASH=stable (step 3B): the spike's "stable hash" — hash11's argument snapped to 1/1024 (roundEven = Metal's rint), so
+// FMA / fast-maths differences between compilers cannot move the pools. Same snap as GoodFlow.metal's stable hash.
+let fsSrc = blocks[1];
+if (process.env.HASH === 'stable') {
+  if (!fsSrc.includes(HASH_OLD)) throw new Error('hash11 not found in the bench source');
+  fsSrc = fsSrc.replace(HASH_OLD, 'float hash11(float n){ n = roundEven(n*1024.)/1024.; return fract(sin(n*127.1)*43758.5453); }');
+}
+const shaders = {vs: blocks[0], fs: fsSrc};
 fs.mkdirSync(out, {recursive: true}); fs.rmSync(prof, {recursive: true, force: true});
 const flags = (process.env.CHROME_FLAGS || '--headless=new --use-angle=metal --enable-gpu --ignore-gpu-blocklist').split(' ');
 let finish; const done = new Promise(r => finish = r);

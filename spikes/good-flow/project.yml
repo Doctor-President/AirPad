@@ -66,7 +66,11 @@ targets:
         SUPPORTS_MAC_DESIGNED_FOR_IPHONE_IPAD: NO
         GENERATE_INFOPLIST_FILE: NO
         SWIFT_OBJC_BRIDGING_HEADER: App/GoodFlow-Bridging-Header.h
+        # Safe maths (no reassociation / FMA contraction games) with the FAST fp32 functions: what Chrome ran the bench
+        # with on Metal, and what MTLCompileOptions(.safe) gives at run time. Step 3B found -fno-fast-math alone also
+        # makes every pow / exp / sin precise: 6-7x slower and NOT the bench's sin (the stable hash then misses the bench).
         MTL_FAST_MATH: NO
+        MTL_COMPILER_FLAGS: "-fmetal-math-mode=safe -fmetal-math-fp32-functions=fast"
         MTL_HEADER_SEARCH_PATHS: $(SRCROOT)/App
         # iOS: Automatic, resolved OFFLINE to the existing Xcode-managed profile "iOS Team Provisioning Profile:
         # com.doctorpresident.spike.SpikeHarness" (manual signing refuses an Xcode-managed profile). Never pass

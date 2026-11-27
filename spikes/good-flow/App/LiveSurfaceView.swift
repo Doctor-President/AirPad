@@ -23,6 +23,11 @@ final class LiveSurfaceView: UIView {
     var surfaceName = "live"
     /// The shader's values (entry, case, theme). `res` is overwritten with the drawable's size; `time` with the clock.
     var base = GFUniforms() { didSet { requestFrame("data") } }
+    /// Variant + hash (step 3B). The still under / behind this surface is drawn with the same mode (GFDraw).
+    var mode = GFDrawMode() { didSet { if mode != oldValue { requestFrame("mode") } } }
+    private let scratch = GFScratch()
+    /// Called once with the first live frame's uniforms (the still ↔ live check renders them offscreen).
+    var onFirstLiveFrame: ((GFUniforms) -> Void)?
     /// The time value of the still this surface shows (the bench's uTime; look.json stillTime).
     var stillTime: Double {
         get { stillT }
@@ -73,6 +78,7 @@ final class LiveSurfaceView: UIView {
         observers.append(nc.addObserver(forName: .NSProcessInfoPowerStateDidChange, object: nil, queue: .main, using: re))
         observers.append(nc.addObserver(forName: ProcessInfo.thermalStateDidChangeNotification, object: nil, queue: .main, using: re))
         observers.append(nc.addObserver(forName: UIAccessibility.reduceMotionStatusDidChangeNotification, object: nil, queue: .main, using: re))
+        observers.append(nc.addObserver(forName: .gfSettingsChanged, object: nil, queue: .main, using: re))   // simulated states
     }
     required init?(coder: NSCoder) { fatalError() }
     deinit { link?.invalidate(); observers.forEach { NotificationCenter.default.removeObserver($0) } }
@@ -128,9 +134,7 @@ final class LiveSurfaceView: UIView {
     /// Wake 2's conditions.
     var liveAllowed: Bool {
         guard isLive, appActive, isVisibleOnScreen else { return false }
-        let pi = ProcessInfo.processInfo
-        if UIAccessibility.isReduceMotionEnabled || pi.isLowPowerModeEnabled { return false }
-        return pi.thermalState.rawValue < ProcessInfo.ThermalState.serious.rawValue
+        return GFSettings.shared.liveBlockedBy == nil      // Reduce Motion, Low Power, thermal ≥ serious (real or simulated)
     }
     var isVisibleOnScreen: Bool {
         guard let w = window, !isHidden, alpha > 0.01, bounds.width > 0, bounds.height > 0 else { return false }
@@ -160,6 +164,16 @@ final class LiveSurfaceView: UIView {
         onLiveEnded?(stillT)
     }
 
+    /// The uniforms of the frame drawn now (the still ↔ live check draws exactly these offscreen).
+    func frameUniforms(width: Int, height: Int) -> GFUniforms {
+        var u = base
+        u.res = SIMD2(Float(width), Float(height)); u.org = SIMD2(0, 0)
+        u.time = Float(currentTime)
+        return u
+    }
+    /// Pass-1 bytes held by this surface (memory accounting).
+    var scratchBytes: Int { scratch.bytes }
+
     // MARK: the tick
 
     private func tick(_ l: CADisplayLink) {
@@ -176,28 +190,26 @@ final class LiveSurfaceView: UIView {
             return
         }
         // The live clock: advances only between consecutive live-allowed frames; the first live frame is the still.
+        var firstLive = false
         if live {
-            if liveRunning { liveElapsed += min(max(l.targetTimestamp - lastLiveTarget, 0), 0.25) }
+            if liveRunning { liveElapsed += min(max(l.targetTimestamp - lastLiveTarget, 0), 0.25) } else { firstLive = true }
             liveRunning = true; lastLiveTarget = l.targetTimestamp
         } else if liveRunning { endLive() }
 
+        let tw = CACurrentMediaTime()
         guard let drawable = metalLayer.nextDrawable() else { GFRecorder.shared.tick(surface: surfaceName, at: t0, drew: false); return }
         GFRecorder.shared.tick(surface: surfaceName, at: t0, drew: true)
         let dt = lastTick > 0 ? t0 - lastTick : l.duration
         lastTick = t0
         let tex = drawable.texture
-        var u = base
-        u.res = SIMD2(Float(tex.width), Float(tex.height)); u.org = SIMD2(0, 0)
-        u.time = Float(currentTime)
+        let u = frameUniforms(width: tex.width, height: tex.height)
+        if firstLive { onFirstLiveFrame?(u) }
+        let waitMs = (CACurrentMediaTime() - tw) * 1000
         let rec = GFRecorder.shared
         let idx = rec.begin(surface: surfaceName, wake: reason, linkT: l.timestamp, targetT: l.targetTimestamp, vsync: l.duration,
                             rate: Double(l.preferredFrameRateRange.preferred ?? 0), startT: t0, px: tex.width * tex.height)
         let cb = R.queue.makeCommandBuffer()!
-        let rp = MTLRenderPassDescriptor()
-        rp.colorAttachments[0].texture = tex; rp.colorAttachments[0].loadAction = .dontCare; rp.colorAttachments[0].storeAction = .store
-        let enc = cb.makeRenderCommandEncoder(descriptor: rp)!
-        R.encode(enc, u)
-        enc.endEncoding()
+        GFDraw.encode(cb, target: tex, u, mode, scratch: scratch)
         drawable.addPresentedHandler { d in rec.setPresent(idx, d.presentedTime) }
         cb.addCompletedHandler { cb in rec.setGPU(idx, (cb.gpuEndTime - cb.gpuStartTime) * 1000) }
         cb.present(drawable)
@@ -205,7 +217,7 @@ final class LiveSurfaceView: UIView {
         oneShot = nil
         drawnFrames += 1
         onTick?(self, dt)
-        rec.setMain(idx, (CACurrentMediaTime() - t0) * 1000)
+        rec.setMain(idx, (CACurrentMediaTime() - t0) * 1000); rec.setWait(idx, waitMs)
         // Pause now if nothing will need the next tick (saves one empty tick).
         if !(CACurrentMediaTime() - lastInput < 0.4) && !live && oneShot == nil { l.isPaused = true }
     }

@@ -52,10 +52,113 @@ struct GFCase {
         return c
     }()
 
-    /// A detail image at any width (the test screen, part B).
+    /// A detail image at any width (case a).
     static func detail(widthPt: Double, heightPt: Double, scale: Double) -> GFCase {
         GFCase(name: "detail", kind: .hero, w: widthPt, h: heightPt, scale: scale)
     }
+    /// A card with its image zone on top (`heroFrac` of its height): the Mac grid tile (228 × 320, r 14, 0.43) or the
+    /// iPhone carousel card (348 × 532, r 30, 0.40).
+    static func card(w: Double, h: Double, r: Double, heroFrac: Double, scale: Double) -> GFCase {
+        GFCase(name: "card", kind: .card, w: w, h: h, scale: scale, r: r, heroRect: (0, 0, w, h * heroFrac))
+    }
+    /// An orb's padded slot (1.5 × D) at `scale`.
+    static func orb(diam: Double, scale: Double) -> GFCase {
+        GFCase(name: "orb", kind: .orb, w: 1.5 * diam, h: 1.5 * diam, scale: scale)
+    }
+}
+
+/// The synthetic library (cases b and c): 262 invented entries, e0–e5 among them (the first six), the rest spread so
+/// small and large, quiet and busy entries all show. Nothing here comes from a real library. Deterministic.
+struct GFLibrary {
+    struct Item {
+        let entry: GFEntry
+        let items: Int          // the entry's item count (the Map orb's size: 60 pt + 8 per further item, 120 at most)
+        let cluster: Int
+        var diam: Double { min(60 + 8 * Double(items - 1), 120) }
+        var title: String { "Entry \(entry.id.dropFirst()) · placeholder title" }
+    }
+    let items: [Item]
+    /// Map positions (world pt, y up), no two orbs closer than their radii + a gap.
+    let positions: [SIMD2<Double>]
+    static let shared = GFLibrary(count: 262)
+
+    struct RNG { var s: UInt64
+        mutating func next() -> Double { s &+= 0x9E3779B97F4A7C15; var z = s; z = (z ^ (z >> 30)) &* 0xBF58476D1CE4E5B9
+            z = (z ^ (z >> 27)) &* 0x94D049BB133111EB; z ^= z >> 31; return Double(z >> 11) / Double(1 << 53) }
+        mutating func gauss() -> Double { let u = max(next(), 1e-9), v = next(); return sqrt(-2 * log(u)) * cos(2 * .pi * v) }
+    }
+
+    init(count: Int) {
+        var r = RNG(s: 0x600D_F10E)
+        let L = GFLook.shared
+        let clusters = 8
+        let clusterHue = (0..<clusters).map { Double($0) * 45 + 12 }
+        let fixedItems = [3, 1, 2, 4, 7, 9]                      // e0…e5: one of each size band, two large
+        func drawItems() -> Int {
+            let x = r.next()
+            let cdf: [(Double, Int)] = [(0.50, 1), (0.67, 2), (0.77, 3), (0.84, 4), (0.89, 5), (0.92, 6), (0.94, 7), (0.96, 8)]
+            for (p, n) in cdf where x < p { return n }
+            return 9 + Int(r.next() * 4)                         // the tail: 120 pt
+        }
+        var out: [Item] = []
+        for k in 0..<count {
+            let c = k % clusters
+            if k < L.entries.count && k < 6 {
+                out.append(Item(entry: L.entries[k], items: fixedItems[k], cluster: c)); continue
+            }
+            let e = GFEntry(id: "e\(k)", hue: (clusterHue[c] + r.gauss() * 22 + 360).truncatingRemainder(dividingBy: 360),
+                            mass: pow(r.next(), 1.4), parts: 1 + 4 * r.next(), conn: r.next(), tempo: 0.05 + 0.9 * r.next(),
+                            amp: 0.1 + 0.85 * r.next(), patina: r.next(), seed: r.next())
+            out.append(Item(entry: e, items: drawItems(), cluster: c))
+        }
+        items = out
+        // Placement: 8 loose clusters on a ring, each orb by rejection around its cluster's centre, no overlap.
+        let centres = (0..<clusters).map { i -> SIMD2<Double> in
+            let a = Double(i) / Double(clusters) * 2 * .pi + 0.3
+            let rad = 1050.0 + 220 * sin(Double(i) * 1.7)
+            return SIMD2(rad * cos(a) * 1.25, rad * sin(a) * 0.85)
+        }
+        var pos: [SIMD2<Double>] = []
+        for (k, it) in out.enumerated() {
+            var spread = 120.0, placed = false
+            while !placed {
+                for _ in 0..<60 {
+                    let p = centres[it.cluster] + SIMD2(r.gauss() * spread, r.gauss() * spread)
+                    let ok = pos.enumerated().allSatisfy { j, q in
+                        let dj = out[j].diam, gap = 0.15 * max(dj, it.diam) + 6
+                        return simd_length(p - q) >= (dj + it.diam) / 2 + gap
+                    }
+                    if ok { pos.append(p); placed = true; break }
+                }
+                spread *= 1.15
+            }
+            _ = k
+        }
+        positions = pos
+    }
+}
+
+/// The bench's `vivid()` (OKLab), on the CPU: the flat fills shown until a still lands.
+enum GFColor {
+    static func vivid(_ hdeg: Double) -> SIMD3<Double> {
+        let h = hdeg * .pi / 180
+        let L = 0.66, a = 0.11 * cos(h), b = 0.11 * sin(h)
+        let l_ = L + 0.3963377774 * a + 0.2158037573 * b, m_ = L - 0.1055613458 * a - 0.0638541728 * b, s_ = L - 0.0894841775 * a - 1.2914855480 * b
+        let l = l_ * l_ * l_, m = m_ * m_ * m_, s = s_ * s_ * s_
+        var c = SIMD3(4.0767416621 * l - 3.3077115913 * m + 0.2309699292 * s, -1.2684380046 * l + 2.6097574011 * m - 0.3413193965 * s,
+                      -0.0041960863 * l - 0.7034186147 * m + 1.7076147010 * s)
+        c -= SIMD3(repeating: min(c.x, c.y, c.z) * 0.93)
+        c /= max(c.x, c.y, c.z, 1e-4)
+        let lum = max(c.x * 0.2126 + c.y * 0.7152 + c.z * 0.0722, 0.03)
+        return c * pow(0.45 / lum, 0.22)
+    }
+    /// A gamma-encoded flat colour in the entry's hue on the theme's ground (roughly what the still will show).
+    static func flat(_ hue: Double, _ theme: GFTheme) -> SIMD3<Double> {
+        let v = simd_min(vivid(hue), SIMD3(repeating: 1))
+        let lin = theme == .light ? simd_mix(SIMD3(0.9, 0.9, 0.885), v, SIMD3(repeating: 0.7)) : v * 0.55
+        return SIMD3(pow(lin.x, 1 / 2.2), pow(lin.y, 1 / 2.2), pow(lin.z, 1 / 2.2))
+    }
+    static func gamma(_ lin: SIMD3<Double>) -> SIMD3<Double> { SIMD3(pow(lin.x, 1 / 2.2), pow(lin.y, 1 / 2.2), pow(lin.z, 1 / 2.2)) }
 }
 
 private func frac(_ x: Double) -> Double { x - floor(x) }
@@ -111,7 +214,7 @@ extension GFUniforms {
         u.rot = f((frac(sin(e.seed * 91.7) * 43758.5453) - 0.5) * 1.4)
         u.hue = f(e.hue); u.mass = f(mass); u.parts = f(e.parts); u.conn = f(e.conn); u.tempo = f(e.tempo)
         u.amp = f(e.amp); u.patina = f(e.patina); u.seed = f(e.seed)
-        u.grainOn = 1; u.flat = 0
+        u.grainOn = 1; u.flat = 0; u.fwScale = 1
         return u
     }
 

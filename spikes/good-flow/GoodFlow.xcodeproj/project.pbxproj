@@ -7,24 +7,36 @@
 	objects = {
 
 /* Begin PBXBuildFile section */
+		071F03B2BDA63AD9E415C1D3 /* GFSettings.swift in Sources */ = {isa = PBXBuildFile; fileRef = 83473748F4FFB998AEDAC3D1 /* GFSettings.swift */; };
 		0E7BCA83BE2EF5F4B2989952 /* Look.swift in Sources */ = {isa = PBXBuildFile; fileRef = 57B1E814BDB77CCE8C1F91EF /* Look.swift */; };
 		14AEC082042D1C1FDDD81FE7 /* GFApp.swift in Sources */ = {isa = PBXBuildFile; fileRef = 281FA9403E3ABB2077C42C9E /* GFApp.swift */; };
 		5D376B3755A12C78B632794F /* GoodFlow.metal in Sources */ = {isa = PBXBuildFile; fileRef = F4EA5FC4F08DFB5943126A65 /* GoodFlow.metal */; };
 		5F8A429C6E7BABBC5DE2027F /* LiveSurfaceView.swift in Sources */ = {isa = PBXBuildFile; fileRef = 8B412645EADA9143BE050A69 /* LiveSurfaceView.swift */; };
+		655D075C0584144B90A72201 /* GFMeasure.swift in Sources */ = {isa = PBXBuildFile; fileRef = 3DDD59F617573D82BBBFC4FC /* GFMeasure.swift */; };
+		66336C9BA39E8F917624E1A9 /* GFMap.swift in Sources */ = {isa = PBXBuildFile; fileRef = AA0B11B4EE9CC8B636202E5C /* GFMap.swift */; };
 		7D4DF143B176E39BE68F31EA /* GFRecorder.swift in Sources */ = {isa = PBXBuildFile; fileRef = FB92170E665D417FDEFBB67F /* GFRecorder.swift */; };
 		8CA61F876F5CEF2B46049BD7 /* look.json in Resources */ = {isa = PBXBuildFile; fileRef = 5F6143276B86A8AEBF9B7032 /* look.json */; };
+		B4E2B7DCE124734DEC4D1BE3 /* GFDetail.swift in Sources */ = {isa = PBXBuildFile; fileRef = 86C6E930B8F3FC6A6729C6E9 /* GFDetail.swift */; };
 		B73CDD1C96BEF0F312F475FB /* GFRenderer.swift in Sources */ = {isa = PBXBuildFile; fileRef = BC95DADA6DF37FEC3108887C /* GFRenderer.swift */; };
+		C6E8BEFA790146E53425852A /* GFRoot.swift in Sources */ = {isa = PBXBuildFile; fileRef = B17F6D70FBFF56223D190BB0 /* GFRoot.swift */; };
+		CBEABA6DF014C2D320DD0D84 /* GFCards.swift in Sources */ = {isa = PBXBuildFile; fileRef = 88F3F0D21A97D6D20D3E6FF2 /* GFCards.swift */; };
 /* End PBXBuildFile section */
 
 /* Begin PBXFileReference section */
 		18F4B47664C0DB34385540B8 /* GFShared.h */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.c.h; path = GFShared.h; sourceTree = "<group>"; };
 		281FA9403E3ABB2077C42C9E /* GFApp.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = GFApp.swift; sourceTree = "<group>"; };
 		2E64A9E2FC87284EBD85FC56 /* GoodFlow-Bridging-Header.h */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.c.h; path = "GoodFlow-Bridging-Header.h"; sourceTree = "<group>"; };
+		3DDD59F617573D82BBBFC4FC /* GFMeasure.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = GFMeasure.swift; sourceTree = "<group>"; };
 		57B1E814BDB77CCE8C1F91EF /* Look.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = Look.swift; sourceTree = "<group>"; };
 		5F6143276B86A8AEBF9B7032 /* look.json */ = {isa = PBXFileReference; lastKnownFileType = text.json; path = look.json; sourceTree = "<group>"; };
+		83473748F4FFB998AEDAC3D1 /* GFSettings.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = GFSettings.swift; sourceTree = "<group>"; };
+		86C6E930B8F3FC6A6729C6E9 /* GFDetail.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = GFDetail.swift; sourceTree = "<group>"; };
+		88F3F0D21A97D6D20D3E6FF2 /* GFCards.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = GFCards.swift; sourceTree = "<group>"; };
 		8B412645EADA9143BE050A69 /* LiveSurfaceView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = LiveSurfaceView.swift; sourceTree = "<group>"; };
 		A597D6B31A76EFF6A16E2F03 /* Info.plist */ = {isa = PBXFileReference; lastKnownFileType = text.plist; path = Info.plist; sourceTree = "<group>"; };
 		A8F718CDF5927B1ED7514191 /* GoodFlow.app */ = {isa = PBXFileReference; includeInIndex = 0; lastKnownFileType = wrapper.application; path = GoodFlow.app; sourceTree = BUILT_PRODUCTS_DIR; };
+		AA0B11B4EE9CC8B636202E5C /* GFMap.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = GFMap.swift; sourceTree = "<group>"; };
+		B17F6D70FBFF56223D190BB0 /* GFRoot.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = GFRoot.swift; sourceTree = "<group>"; };
 		BC95DADA6DF37FEC3108887C /* GFRenderer.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = GFRenderer.swift; sourceTree = "<group>"; };
 		F4EA5FC4F08DFB5943126A65 /* GoodFlow.metal */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.metal; path = GoodFlow.metal; sourceTree = "<group>"; };
 		FB92170E665D417FDEFBB67F /* GFRecorder.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = GFRecorder.swift; sourceTree = "<group>"; };
@@ -44,8 +56,14 @@
 			isa = PBXGroup;
 			children = (
 				281FA9403E3ABB2077C42C9E /* GFApp.swift */,
+				88F3F0D21A97D6D20D3E6FF2 /* GFCards.swift */,
+				86C6E930B8F3FC6A6729C6E9 /* GFDetail.swift */,
+				AA0B11B4EE9CC8B636202E5C /* GFMap.swift */,
+				3DDD59F617573D82BBBFC4FC /* GFMeasure.swift */,
 				FB92170E665D417FDEFBB67F /* GFRecorder.swift */,
 				BC95DADA6DF37FEC3108887C /* GFRenderer.swift */,
+				B17F6D70FBFF56223D190BB0 /* GFRoot.swift */,
+				83473748F4FFB998AEDAC3D1 /* GFSettings.swift */,
 				18F4B47664C0DB34385540B8 /* GFShared.h */,
 				2E64A9E2FC87284EBD85FC56 /* GoodFlow-Bridging-Header.h */,
 				F4EA5FC4F08DFB5943126A65 /* GoodFlow.metal */,
@@ -162,8 +180,14 @@
 			buildActionMask = 2147483647;
 			files = (
 				14AEC082042D1C1FDDD81FE7 /* GFApp.swift in Sources */,
+				CBEABA6DF014C2D320DD0D84 /* GFCards.swift in Sources */,
+				B4E2B7DCE124734DEC4D1BE3 /* GFDetail.swift in Sources */,
+				66336C9BA39E8F917624E1A9 /* GFMap.swift in Sources */,
+				655D075C0584144B90A72201 /* GFMeasure.swift in Sources */,
 				7D4DF143B176E39BE68F31EA /* GFRecorder.swift in Sources */,
 				B73CDD1C96BEF0F312F475FB /* GFRenderer.swift in Sources */,
+				C6E8BEFA790146E53425852A /* GFRoot.swift in Sources */,
+				071F03B2BDA63AD9E415C1D3 /* GFSettings.swift in Sources */,
 				5D376B3755A12C78B632794F /* GoodFlow.metal in Sources */,
 				5F8A429C6E7BABBC5DE2027F /* LiveSurfaceView.swift in Sources */,
 				0E7BCA83BE2EF5F4B2989952 /* Look.swift in Sources */,
@@ -191,6 +215,7 @@
 					"$(inherited)",
 					"@executable_path/Frameworks",
 				);
+				MTL_COMPILER_FLAGS = "-fmetal-math-mode=safe -fmetal-math-fp32-functions=fast";
 				MTL_FAST_MATH = NO;
 				MTL_HEADER_SEARCH_PATHS = "$(SRCROOT)/App";
 				PRODUCT_BUNDLE_IDENTIFIER = com.doctorpresident.spike.SpikeHarness;
@@ -346,6 +371,7 @@
 					"$(inherited)",
 					"@executable_path/Frameworks",
 				);
+				MTL_COMPILER_FLAGS = "-fmetal-math-mode=safe -fmetal-math-fp32-functions=fast";
 				MTL_FAST_MATH = NO;
 				MTL_HEADER_SEARCH_PATHS = "$(SRCROOT)/App";
 				PRODUCT_BUNDLE_IDENTIFIER = com.doctorpresident.spike.SpikeHarness;

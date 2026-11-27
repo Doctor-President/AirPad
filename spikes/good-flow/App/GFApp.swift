@@ -5,7 +5,9 @@
 //   -RenderStills <dir>     render the 120 reference stills into <dir> (relative = Documents in the container), then quit
 //     -StillsGrain 0        bake without the final grain term     -StillsRepeat N   timing draws per still (default 5)
 //     -StillsOnly <substr>  only stills whose name contains it    -ShaderVariant metallib|safe|fast|precise-sin
-//   (none)                  the test screen: one entry's detail image live in a LiveSurfaceView
+//   -Measure3b <dir>        step 3B's offscreen numbers (variants, equality stills, Map memory per cap, fills), then quit
+//   -Screen test            part A's test screen
+//   (none)                  the three cases (GFRootViewController); switches in GFSettings.swift, bench runs below
 import UIKit
 
 @main
@@ -15,6 +17,12 @@ final class GFAppDelegate: UIResponder, UIApplicationDelegate {
         if let dir = UserDefaults.standard.string(forKey: "RenderStills") {
             DispatchQueue.main.async {
                 GFStillsBatch.run(dir: dir)
+                exit(0)
+            }
+        }
+        if let dir = UserDefaults.standard.string(forKey: "Measure3b") {   // step 3B's offscreen numbers (GFMeasure.swift)
+            DispatchQueue.global(qos: .userInitiated).async {
+                GFMeasure.run(dir: dir)
                 exit(0)
             }
         }
@@ -32,7 +40,7 @@ final class GFSceneDelegate: UIResponder, UIWindowSceneDelegate {
     func scene(_ scene: UIScene, willConnectTo session: UISceneSession, options: UIScene.ConnectionOptions) {
         guard let ws = scene as? UIWindowScene else { return }
         let w = UIWindow(windowScene: ws)
-        w.rootViewController = GFTestViewController()
+        w.rootViewController = UserDefaults.standard.string(forKey: "Screen") == "test" ? GFTestViewController() : GFRootViewController()
         w.makeKeyAndVisible()
         window = w
         #if targetEnvironment(macCatalyst)

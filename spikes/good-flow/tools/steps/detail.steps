@@ -1,0 +1,9 @@
+# Good Flow spike · case (a) detail, real trackpad events (rperf). Window at (0,0); points inside 1728 × 1028 and 1703 × 924.
+# ≥ 15 s of input: two-finger scrolls with phases, flicks with momentum, a hand session; then the rest row (10 s).
+rest           wait 3000
+detail-scroll  scroll 850,520 -2400 80 8
+detail-scroll  scroll 850,520 2400 80 8
+detail-flick   flick 850,520 -40
+detail-flick   flick 850,520 40
+detail-hand    trackpad 850,520 14 wobble
+rest-after     wait 10500

@@ -1,0 +1,7 @@
+# Good Flow spike · case (b) the live row: the pointer rests on one card for 12 s (it draws 30 a second, nothing else),
+# then leaves (the card goes back to a still: 0 frames after).
+rest           wait 4000
+cards-onto     move 400,300 10 10 10
+live-rest      wait 12000
+cards-leave    move 410,310 0 -400 30
+rest-after     wait 10500

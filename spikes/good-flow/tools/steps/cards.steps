@@ -1,0 +1,13 @@
+# Good Flow spike · case (b) cards (Mac grid, hovered card live), real events. Hover across a row (the live card follows),
+# scroll with the pointer still over the grid (content scrolls under it: the hovered card changes), a hand session, then
+# the pointer leaves the window (nothing hovered) and the rest row (10 s: 0 ticks, 0 frames).
+rest           wait 4000
+cards-hover    move 260,420 1200 0 240
+cards-scroll   scroll 850,520 -2400 80 8
+cards-scroll   scroll 850,520 2400 80 8
+cards-scrollmv scrollmove 850,520 -2400 80 8
+cards-scrollmv scrollmove 850,520 2400 80 8
+cards-flick    flick 850,520 -40
+cards-hand     trackpad 850,520 10 wobble
+cards-leave    move 850,520 0 -560 30
+rest-after     wait 10500

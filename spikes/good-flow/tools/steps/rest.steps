@@ -1,0 +1,2 @@
+# Good Flow spike · no input at all for 14 s (the live row of case a; the 0-frame row with -Live off).
+rest       wait 14000

@@ -2,6 +2,8 @@
 """Good Flow spike · summarise a GFRecorder recording (design §1 / §3 rows).
 
   python3 tools/frames.py <recording.json> [--surface NAME] [--rest-after S] [--json]
+  python3 tools/frames.py <recording.json> --design       the design §1 rows for one recording (step 3B)
+  python3 tools/frames.py --summary <run dir | recording.json> …   one line per run + per-group medians, flat arms beside
 
   cadence    share of present-to-present gaps that are one display vsync (1/maxFPS, ±25 %) and, separately, one LINK
              period (the rate the link asked for: 1/30 for a live-30 surface), counted inside awake runs only (a gap
@@ -117,6 +119,122 @@ def main():
     print(f"  last 10 s: ticks {out['last10s']['ticks']}, frames {out['last10s']['frames']}")
     if samples:
         s = out['samples']; print(f"  samples {s['n']}: CPU median {s['cpuMedian']:.1f} % (last 10 s {s['cpuLast10sMedian']}), footprint max {s['footprintMBMax']:.1f} MB, thermal max {s['thermalMax']}, low power {s['lowPowerEver']}")
+
+
+
+
+# ── step 3B: the design §1 rows ────────────────────────────────────────────────────────────────────────────────────
+MOVING = ('input', 'coast')
+
+
+def design(R):
+    """Every row design §1 asks for that one recording can answer."""
+    meta, frames, ticks, samples, stills = R['meta'], R['frames'], R.get('ticks', []), R.get('samples', []), R.get('stills', [])
+    marks = R.get('marks', [])
+    vs = 1.0 / meta.get('maxFPS', 120)
+    frames = sorted(frames, key=lambda f: f['linkT'])
+    mov = [f for f in frames if f['wake'] in MOVING]
+    d = {'screen': meta.get('screen', '?'), 'settings': meta.get('settings', {}), 'input': meta.get('input') or ('real or scripted' if any(f['wake'] in MOVING for f in frames) else 'no'),
+         'maxFPS': meta.get('maxFPS'), 'frames': len(frames), 'presentedShare': (sum(1 for f in frames if f['presentT'] > 0) / len(frames)) if frames else None}
+    # moving: per surface
+    surf = {}
+    for name in sorted(set(f['surface'] for f in mov)):
+        fs = [f for f in mov if f['surface'] == name]
+        n, one = cadence(fs, vs)
+        surf[name] = dict(frames=len(fs), gaps=n, oneVsync=one, mainP95=pct([f['mainMs'] for f in fs], 95),
+                          mainExWaitP95=pct([f['mainMs'] - f.get('waitMs', 0) for f in fs], 95), waitP95=pct([f.get('waitMs', 0) for f in fs], 95),
+                          gpuP95=pct([f['gpuMs'] for f in fs], 95), gpuP50=pct([f['gpuMs'] for f in fs], 50))
+    d['moving'] = surf
+    if mov:
+        t0, t1 = mov[0]['linkT'], mov[-1]['linkT']
+        inwin = [s for s in stills if t0 <= s['t'] <= t1]
+        d['stillsWhileMoving'] = dict(redrawn=sum(1 for s in inwin if s['reason'] not in ('fill', 'liveEnded')),
+                                      fill=sum(1 for s in inwin if s['reason'] == 'fill'), liveEnded=sum(1 for s in inwin if s['reason'] == 'liveEnded'),
+                                      fillGpuMsMax=max([s['gpuMs'] for s in inwin if s['reason'] == 'fill'], default=None))
+        rs = t1 + 0.5
+        d['rest'] = dict(fromT=rs, ticks=sum(1 for t in ticks if rs <= t['t'] < rs + 10),
+                         frames=dict(Counter(f"{f['surface']}:{f['wake'].split(':')[0]}" for f in frames if rs <= f['linkT'] < rs + 10)),
+                         cpuMedian=st.median([s['cpuPct'] for s in samples if rs <= s['t'] < rs + 10 and s['cpuPct'] >= 0] or [float('nan')]))
+    live = [f for f in frames if f['wake'] == 'live']
+    lv = {}
+    for name in sorted(set(f['surface'] for f in live)):
+        fs = [f for f in live if f['surface'] == name]
+        span = fs[-1]['linkT'] - fs[0]['linkT'] if len(fs) > 1 else 0
+        lv[name] = dict(frames=len(fs), perSecond=(len(fs) - 1) / span if span > 0 else None, gpuP95=pct([f['gpuMs'] for f in fs], 95),
+                        mainExWaitP95=pct([f['mainMs'] - f.get('waitMs', 0) for f in fs], 95),
+                        gpuP50=pct([f['gpuMs'] for f in fs], 50), mainP95=pct([f['mainMs'] for f in fs], 95),
+                        gpuBusyAt30=(pct([f['gpuMs'] for f in fs], 50) * 30 / 10) if fs else None)
+    d['live'] = lv
+    if samples:
+        cpu = [s['cpuPct'] for s in samples if s['cpuPct'] >= 0]
+        d['samples'] = dict(cpuMedian=st.median(cpu) if cpu else None, footprintMBMax=max(s['footprintMB'] for s in samples),
+                            thermalStart=samples[0]['thermal'], thermalMax=max(s['thermal'] for s in samples), lowPower=any(s['lowPower'] for s in samples))
+    d['marks'] = [m['what'] for m in marks if any(k in m['what'] for k in ('filled', 'jump', 'live ended', 'map stills', 'bench'))]
+    d['metaExtra'] = {k: meta[k] for k in ('stills', 'stillBytes', 'stillsKept', 'budgetTruncated', 'visibleFillMs', 'liveBlockedBy', 'jump') if k in meta}
+    return d
+
+
+def print_design(d, name=''):
+    S = d['settings']
+    print(f"## {name or d['screen']}  ({d['input']} input · {S.get('case')} {S.get('theme')} variant {S.get('variant')} hash {S.get('hash')} "
+          f"live {S.get('live')}@{S.get('liveRate')} flat {S.get('flat')} glass {S.get('glass')} bend {S.get('edgeBend')})")
+    print(f"frames {d['frames']} · presented {('%.0f %%' % (100 * d['presentedShare'])) if d['presentedShare'] is not None else '-'} "
+          f"(0 % = presentation times missing: a locked screen; cadence then reads link targets, not the screen)")
+    print('| moving surface | frames | one vsync (bar ≥ 95 %) | main p95 ms (≤ 2.0) | main p95 without the drawable wait | GPU p50 / p95 ms (≤ 4.0) |\n|---|---|---|---|---|---|')
+    for k, v in d['moving'].items():
+        print(f"| {k} | {v['frames']} | {v['oneVsync'] * 100:.1f} % | {v['mainP95']:.3f} | {v['mainExWaitP95']:.3f} (wait p95 {v['waitP95']:.2f}) | {v['gpuP50']:.2f} / {v['gpuP95']:.2f} |")
+    if 'stillsWhileMoving' in d:
+        s = d['stillsWhileMoving']; print(f"stills while moving: redrawn {s['redrawn']} (bar 0) · fill {s['fill']} (max GPU {s['fillGpuMsMax']} ms a batch, bar 2.0) · live-ended {s['liveEnded']}")
+    if 'rest' in d:
+        r = d['rest']; print(f"rest (10 s from 0.5 s after the last input): ticks {r['ticks']}, frames {r['frames'] or 0}, CPU median {r['cpuMedian']:.2f} %")
+    for k, v in d['live'].items():
+        print(f"live {k}: {v['frames']} frames, {v['perSecond'] and round(v['perSecond'], 2)} a second (bar 30), GPU p50 / p95 {v['gpuP50']:.2f} / {v['gpuP95']:.2f} ms "
+              f"(Mac ≤ 4.0, iPhone ≤ 5.0), main p95 {v['mainP95']:.3f} ms (≤ 1.0; {v['mainExWaitP95']:.3f} without the drawable wait)")
+    if 'samples' in d:
+        s = d['samples']; print(f"samples: CPU median {s['cpuMedian']:.2f} % · footprint max {s['footprintMBMax']:.1f} MB · thermal {s['thermalStart']} → max {s['thermalMax']} · low power {s['lowPower']}")
+    for m in d['marks']:
+        print('  ·', m)
+    if d['metaExtra']:
+        print('  meta:', json.dumps(d['metaExtra'])[:600])
+
+
+def summary(paths):
+    import os
+    rows = []
+    for p in paths:
+        f = os.path.join(p, 'recording.json') if os.path.isdir(p) else p
+        if not os.path.exists(f):
+            continue
+        d = design(json.load(open(f)))
+        rows.append((os.path.basename(p.rstrip('/')), d))
+    print('| run | moving surface | one vsync | main p95 | GPU p95 | rest ticks | rest frames | live/s | live GPU p95 | CPU rest |\n|---|---|---|---|---|---|---|---|---|---|')
+    for name, d in rows:
+        mv = d['moving'] or {'-': None}
+        for k, v in mv.items():
+            lv = next(iter(d['live'].values()), None)
+            r = d.get('rest', {})
+            print(f"| {name} | {k} | {v and '%.1f %%' % (100 * v['oneVsync'])} | {v and '%.3f' % v['mainP95']} | {v and '%.2f' % v['gpuP95']} | "
+                  f"{r.get('ticks', '-')} | {sum((r.get('frames') or {}).values()) if r else '-'} | {lv and lv['perSecond'] and round(lv['perSecond'], 1)} | "
+                  f"{lv and '%.2f' % lv['gpuP95']} | {('%.2f' % r['cpuMedian']) if r else ('%.2f (whole run)' % d['samples']['cpuMedian'] if d.get('samples') else '-')} |")
+    # per group (tag without -r<n>), median one-vsync per surface; flat arm beside its look arm
+    import re
+    groups = {}
+    for name, d in rows:
+        g = re.sub(r'-r\d+$', '', name)
+        for k, v in d['moving'].items():
+            groups.setdefault((g, k), []).append(v['oneVsync'])
+    print('\n| group | surface | runs | one vsync (median) | vs flat control (points) |\n|---|---|---|---|---|')
+    for (g, k), xs in sorted(groups.items()):
+        fl = groups.get((g.replace('-flat', '') if '-flat' in g else re.sub(r'-(detail|cards)-', r'-\1-flat-', g), k))
+        diff = '' if '-flat' in g or not fl else f"{100 * (st.median(xs) - st.median(fl)):+.1f} (bar: within 1)"
+        print(f"| {g} | {k} | {len(xs)} | {100 * st.median(xs):.1f} % | {diff} |")
+
+
+if __name__ == '__main__' and len(sys.argv) > 1 and sys.argv[1] == '--summary':
+    summary(sys.argv[2:]); sys.exit(0)
+if __name__ == '__main__' and '--design' in sys.argv:
+    p = [a for a in sys.argv[1:] if not a.startswith('--')][0]
+    print_design(design(json.load(open(p))), p); sys.exit(0)
 
 
 if __name__ == '__main__':

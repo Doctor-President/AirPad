@@ -1,0 +1,13 @@
+# Good Flow spike · case (c) Map, real events (the trial's rhythm): pans with holds, pinches in and out (magnify gestures
+# with phases), flicks with momentum (the Map's coast), ≥ 15 s of input; then the rest row (10 s: 0 ticks).
+rest       wait 6000
+map-pan    trackpad 850,500 3 hold wobble
+map-pinch  pinch 850,500 0.8 480 4
+map-pinch  pinch 850,500 -0.45 480 4
+map-pan    trackpad 850,500 3 wobble
+map-flick  flick 850,500 -40
+map-flick  flick 850,500 40
+map-pinch  pinch 850,500 0.6 480 4
+map-pinch  pinch 850,500 -0.4 480 4
+map-pan    trackpad 850,500 4 hold wobble
+rest-after wait 10500

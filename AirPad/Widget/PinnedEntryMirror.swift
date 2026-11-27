@@ -8,15 +8,16 @@ import Foundation
 /// iCloud Drive and is not synced (format rule 11-15: no field is added to any library file).
 ///
 /// What it holds: for every entry that is not private, its id, a title, when it last changed and its first few lines
-/// as plain text (checklist rows keep their ticked state). Private entries are never in it. With the Face ID lock on,
-/// it holds no entries at all (`locked`), so nothing of the library reaches the Home Screen or the widget's picker.
+/// as plain text (checklist rows keep their ticked state). Private entries are never in it. With the Face ID lock on
+/// (`locked`) it holds only the entries of widgets set to "Show while AirPad is locked" (widget fix-up 2), added only
+/// after Face ID passed (`allowedIDs`), so nothing else of the library reaches the Home Screen or the widget's picker.
 struct PinnedEntryMirror: Codable, Equatable {
     /// Bumped if the shape changes; a widget that reads a different version shows "Open AirPad" until the app
     /// rewrites it.
     static let currentVersion = 1
 
     var version: Int = PinnedEntryMirror.currentVersion
-    /// The Face ID lock is on: `entries` is empty and the widget says AirPad is locked.
+    /// The Face ID lock is on: `entries` holds only the entries some widget is set to show while locked (often none).
     var locked: Bool = false
     /// The app's chosen content face (`EntryBodyFont.rawValue`), so the widget's type follows Settings → Font.
     var font: String = "lato"
@@ -56,15 +57,27 @@ extension PinnedEntryMirror {
     enum Display: Equatable {
         case entry(Entry)
         case notSetUp          // no saved copy yet: AirPad hasn't run since the widget arrived
-        case locked            // the Face ID lock is on
+        case locked            // the Face ID lock is on and this widget is hidden (its switch is off): "AirPad is locked"
         case emptyLibrary      // nothing (that isn't private) in the library
         case notChosen         // no entry picked yet
         case missing           // the chosen entry was deleted or made private
+        /// widget fix-up 2 — the lock is on, this widget is set to show and its entry is in the locked copy: the entry,
+        /// marked privacy-sensitive so the system can hide it while the phone itself is locked.
+        case shownWhileLocked(Entry)
+        /// widget fix-up 2 — the lock is on, this widget is set to show, but its entry isn't in the locked copy yet
+        /// (switched on since AirPad was last unlocked): the locked tile, "Open AirPad to show this entry".
+        case lockedNotYetShown
     }
 
-    static func display(chosenID: String?, mirror: PinnedEntryMirror?) -> Display {
+    /// What one widget shows. `showWhenLocked` is THIS widget's own switch: with the lock on, a widget whose switch is
+    /// off draws the locked tile and never reads the copy's entries, whatever the copy holds.
+    static func display(chosenID: String?, showWhenLocked: Bool = false, mirror: PinnedEntryMirror?) -> Display {
         guard let m = mirror else { return .notSetUp }
-        if m.locked { return .locked }
+        if m.locked {
+            guard showWhenLocked, let id = chosenID else { return .locked }
+            if let e = m.entries.first(where: { $0.id == id }) { return .shownWhileLocked(e) }
+            return .lockedNotYetShown
+        }
         if let id = chosenID {
             if let e = m.entries.first(where: { $0.id == id }) { return .entry(e) }
             return m.entries.isEmpty ? .emptyLibrary : .missing
@@ -90,6 +103,34 @@ extension PinnedEntryMirror {
         case "opticID": return "AirPad is locked. Open AirPad and unlock it with Optic ID to read your entries."
         default:        return "AirPad is locked. Open AirPad to read your entries."
         }
+    }
+
+    /// widget fix-up 2 — the locked tile of a widget set to show whose entry isn't in the copy yet: one sentence.
+    static func notYetShownAccessibilityLabel(_ unlock: String?) -> String {
+        switch unlock {
+        case "faceID":  return "AirPad is locked. Open AirPad and unlock it with Face ID to show this entry."
+        case "touchID": return "AirPad is locked. Open AirPad and unlock it with Touch ID to show this entry."
+        case "opticID": return "AirPad is locked. Open AirPad and unlock it with Optic ID to show this entry."
+        default:        return "AirPad is locked. Open AirPad to show this entry."
+        }
+    }
+
+    /// widget fix-up 2 — which entries the LOCKED copy may hold. `current` = the ids the locked copy on disk holds now;
+    /// `configuredShow` = the entry ids of the placed widgets set to show while locked; `unlocked` = Face ID has passed
+    /// in this run (AirPad's lock screen isn't up). Locked, it can only shrink (`current ∩ configuredShow`): a switch
+    /// flipped on by someone holding the unlocked phone adds nothing until the owner next unlocks AirPad. Unlocked, it is
+    /// exactly the widgets' choice. Private entries are dropped later, when the copy is built.
+    static func allowedIDs(current: Set<String>, configuredShow: Set<String>, unlocked: Bool) -> Set<String> {
+        unlocked ? configuredShow : current.intersection(configuredShow)
+    }
+
+    /// widget fix-up 2 — the extension's cut: a locked copy keeps only the entries in `ids` (removal only, never adding).
+    /// An unlocked copy is returned as it is.
+    func pruned(keeping ids: Set<String>) -> PinnedEntryMirror {
+        guard locked else { return self }
+        var m = self
+        m.entries = entries.filter { ids.contains($0.id) }
+        return m
     }
 
     /// The picker's suggestions: the most recently changed entries.

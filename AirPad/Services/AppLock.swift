@@ -194,10 +194,25 @@ final class AppLock {
 
     #if DEBUG
     /// `-AppLockStubAuth success|fail|unavailable` — the stills / UI harness without a real Face ID prompt.
+    /// widget fix-up 2: the mode is also kept (DEBUG builds only, `AppLockStubAuthKept`) so a launch from a widget tap,
+    /// which carries no launch arguments, uses the same stub; `-AppLockStubAuthDelay <s>` holds the "Face ID" answer
+    /// for that long, so a test can see the lock screen up before it passes. `-AppLockStubAuth off` clears it.
     static func debugShared() -> AppLock? {
-        guard let mode = UserDefaults.standard.string(forKey: "AppLockStubAuth") else { return nil }
+        let d = UserDefaults.standard
+        if let given = d.volatileDomain(forName: UserDefaults.argumentDomain)["AppLockStubAuth"] as? String {
+            if given == "off" { d.removeObject(forKey: "AppLockStubAuthKept"); d.removeObject(forKey: "AppLockStubAuthDelayKept") }
+            else {
+                d.set(given, forKey: "AppLockStubAuthKept")
+                d.set(d.double(forKey: "AppLockStubAuthDelay"), forKey: "AppLockStubAuthDelayKept")
+            }
+        }
+        guard let mode = d.string(forKey: "AppLockStubAuthKept") else { return nil }
+        let delay = d.double(forKey: "AppLockStubAuthDelayKept")
         let r: AuthResult = mode == "fail" ? .failed : mode == "unavailable" ? .unavailable : .success
-        return AppLock(auth: Authenticator(method: { r == .unavailable ? .none : .faceID }, authenticate: { _ in r }))
+        return AppLock(auth: Authenticator(method: { r == .unavailable ? .none : .faceID }, authenticate: { _ in
+            if delay > 0 { try? await Task.sleep(for: .seconds(delay)) }
+            return r
+        }))
     }
     #endif
 }

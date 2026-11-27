@@ -163,6 +163,9 @@ struct AirPadApp: App {
             // already covered by `store.setup()` in `.task`; this adds every warm return to foreground.
             .onChange(of: scenePhase) { _, phase in
                 if phase == .active { Task { await store.refreshShareInbox() } }
+                // widget fix-up 2 — which Pinned Entry widgets are set to show while locked (they may have changed on
+                // the Home Screen); with AirPad still locked this can only remove from the widget's copy.
+                if phase == .active { PinnedEntryMirrorWriter.shared.refreshConfigurations() }
                 if phase == .background { PinnedEntryMirrorWriter.shared.flush() }   // ws-1.0-widget
             }
         // (Both dev tuners were DELETED at the 2026-09-15 bake — every value they carried is now a

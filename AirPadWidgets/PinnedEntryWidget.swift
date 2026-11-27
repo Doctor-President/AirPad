@@ -21,47 +21,10 @@ struct PinnedEntryWidget: Widget {
     }
 }
 
-// MARK: - Configuration: pick one entry
+// MARK: - Configuration: pick one entry, and whether it shows while AirPad is locked
 
-struct PinnedEntryIntent: WidgetConfigurationIntent {
-    static let title: LocalizedStringResource = "Pinned Entry"
-    static let description = IntentDescription("Choose the entry this widget shows.")
-
-    @Parameter(title: "Entry")
-    var entry: PinnedEntryEntity?
-
-    init() {}
-    init(entry: PinnedEntryEntity?) { self.entry = entry }
-}
-
-struct PinnedEntryEntity: AppEntity {
-    static let typeDisplayRepresentation: TypeDisplayRepresentation = "Entry"
-    static let defaultQuery = PinnedEntryQuery()
-
-    let id: String
-    let title: String
-
-    var displayRepresentation: DisplayRepresentation { DisplayRepresentation(title: "\(title)") }
-}
-
-/// The picker: suggestions = the most recently changed entries; search = title and first line. Reads the saved copy
-/// only. A saved choice whose entry is gone still resolves (so the widget can say it is gone instead of silently
-/// falling back to "choose an entry").
-struct PinnedEntryQuery: EntityStringQuery {
-    func entities(for identifiers: [String]) async throws -> [PinnedEntryEntity] {
-        let byID = Dictionary((PinnedEntryMirrorFile.read()?.entries ?? []).map { ($0.id, $0.title) },
-                              uniquingKeysWith: { a, _ in a })
-        return identifiers.map { PinnedEntryEntity(id: $0, title: byID[$0] ?? "Unavailable entry") }
-    }
-
-    func entities(matching string: String) async throws -> [PinnedEntryEntity] {
-        (PinnedEntryMirrorFile.read()?.search(string) ?? []).map { PinnedEntryEntity(id: $0.id, title: $0.title) }
-    }
-
-    func suggestedEntities() async throws -> [PinnedEntryEntity] {
-        (PinnedEntryMirrorFile.read()?.suggestions() ?? []).map { PinnedEntryEntity(id: $0.id, title: $0.title) }
-    }
-}
+// `PinnedEntryIntent`, `PinnedEntryEntity` and `PinnedEntryQuery` live in `AirPad/Widget/PinnedEntryIntent.swift`,
+// compiled into the app too, so the app can read each widget's choices (widget fix-up 2).
 
 // MARK: - Timeline
 
@@ -71,6 +34,9 @@ struct PinnedEntryTimelineEntry: TimelineEntry {
     var font: String = "lato"
     /// widget fix-up 1 — how AirPad unlocks on this phone (the locked tile's glyph); nil = a plain lock.
     var unlock: String? = nil
+    /// widget fix-up 2 — the id this widget is configured with (from its own configuration, never from the copy), so a
+    /// locked tile can still open its entry once Face ID passes. An id only: no title, no text.
+    var chosenID: String? = nil
 }
 
 struct PinnedEntryProvider: AppIntentTimelineProvider {
@@ -88,17 +54,36 @@ struct PinnedEntryProvider: AppIntentTimelineProvider {
         if context.isPreview, configuration.entry == nil, let m = mirror, !m.locked, let first = m.entries.first {
             return PinnedEntryTimelineEntry(date: .now, state: .entry(first), font: m.font)
         }
-        return Self.resolve(configuration.entry?.id, mirror: mirror)
+        return Self.resolve(configuration, mirror: mirror)
     }
 
     func timeline(for configuration: PinnedEntryIntent, in context: Context) async -> Timeline<PinnedEntryTimelineEntry> {
         // No schedule: the app reloads this widget whenever the saved copy changes.
-        Timeline(entries: [Self.resolve(configuration.entry?.id, mirror: PinnedEntryMirrorFile.read())], policy: .never)
+        Timeline(entries: [Self.resolve(configuration, mirror: await Self.readPruned())], policy: .never)
     }
 
-    static func resolve(_ chosenID: String?, mirror: PinnedEntryMirror?) -> PinnedEntryTimelineEntry {
-        .init(date: .now, state: PinnedEntryMirror.display(chosenID: chosenID, mirror: mirror),
-              font: mirror?.font ?? "lato", unlock: mirror?.unlock)
+    /// widget fix-up 2 — the locked copy, cut down to the entries of widgets still set to show (a widget switched back to
+    /// hidden on the Home Screen, with AirPad not running). Removal only: it never adds an entry. If the system doesn't
+    /// answer, the copy is left as it is and AirPad makes the same cut the next time it runs; either way a hidden
+    /// widget never reads its entry (`PinnedEntryMirror.display` decides from the widget's own switch).
+    static func readPruned() async -> PinnedEntryMirror? {
+        guard let m = PinnedEntryMirrorFile.read() else { return nil }
+        guard m.locked, !m.entries.isEmpty,
+              let show = await PinnedEntryConfigurations.read()?.show else { return m }
+        // Re-read: AirPad may have written meanwhile; cut what is there now.
+        guard let now = PinnedEntryMirrorFile.read(), now.locked else { return PinnedEntryMirrorFile.read() }
+        let cut = now.pruned(keeping: show)
+        if cut != now, let data = PinnedEntryMirrorFile.encode(cut) { PinnedEntryMirrorFile.write(data) }
+        PinnedEntryConfigurations.debugLog("extension cut: \(now.entries.count) → \(cut.entries.count)")
+        return cut
+    }
+
+    static func resolve(_ configuration: PinnedEntryIntent, mirror: PinnedEntryMirror?) -> PinnedEntryTimelineEntry {
+        let id = configuration.entry?.id
+        return .init(date: .now,
+                     state: PinnedEntryMirror.display(chosenID: id, showWhenLocked: configuration.showWhenLocked,
+                                                      mirror: mirror),
+                     font: mirror?.font ?? "lato", unlock: mirror?.unlock, chosenID: id)
     }
 }
 
@@ -124,14 +109,26 @@ struct PinnedEntryView: View {
             .widgetURL(entryURL)
     }
 
+    /// The tap. An entry opens itself; a locked tile opens the widget's configured entry once Face ID passes (widget
+    /// fix-up 2, T 11-27: "it just takes me to the dashboard"): the URL carries the id only.
     private var entryURL: URL? {
-        guard case .entry(let e) = timeline.state else { return nil }
-        return PinnedEntryMirrorFile.entryURL(for: e.id)
+        switch timeline.state {
+        case .entry(let e), .shownWhileLocked(let e):
+            return PinnedEntryMirrorFile.entryURL(for: e.id)
+        case .locked, .lockedNotYetShown:
+            return timeline.chosenID.flatMap(PinnedEntryMirrorFile.entryURL(for:))
+        case .notSetUp, .emptyLibrary, .notChosen, .missing:
+            return nil
+        }
     }
 
     @ViewBuilder private var content: some View {
         switch timeline.state {
         case .entry(let e): entryView(e)
+        // widget fix-up 2 — shown while AirPad is locked (this widget's switch): privacy-sensitive, so the system can
+        // hide it while the phone itself is locked. Only here: with AirPad's lock off the entry is never marked.
+        case .shownWhileLocked(let e): entryView(e).privacySensitive()
+        case .lockedNotYetShown:       notYetShownView
         case .notSetUp:     message("square.and.pencil", "Open AirPad", "Then this widget can show an entry.")
         case .locked:       lockedView
         case .emptyLibrary: message("square.and.pencil", "Nothing to pin yet", "Add an entry in AirPad.")
@@ -201,6 +198,14 @@ struct PinnedEntryView: View {
                 symbolSize: 22)
             .accessibilityElement(children: .ignore)
             .accessibilityLabel(Text(PinnedEntryMirror.lockedAccessibilityLabel(timeline.unlock)))
+    }
+
+    /// widget fix-up 2 — set to show, but its entry isn't in the locked copy yet: the locked tile, saying what to do.
+    private var notYetShownView: some View {
+        message(PinnedEntryMirror.unlockSymbol(timeline.unlock), "AirPad is locked", "Open AirPad to show this entry.",
+                symbolSize: 22)
+            .accessibilityElement(children: .ignore)
+            .accessibilityLabel(Text(PinnedEntryMirror.notYetShownAccessibilityLabel(timeline.unlock)))
     }
 
     private func message(_ symbol: String, _ title: String, _ detail: String, symbolSize: CGFloat = 18) -> some View {

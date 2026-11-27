@@ -354,6 +354,9 @@ targets:
       - path: AirPad/Intents/CaptureIntent.swift
       # ws-1.0-widget — the Pinned Entry widget's saved copy (the app writes it, the widget reads it).
       - path: AirPad/Widget/PinnedEntryMirror.swift
+      # widget fix-up 2 — the widget's configuration (entry + "Show while AirPad is locked"), shared so the app can
+      # read each placed widget's choices.
+      - path: AirPad/Widget/PinnedEntryIntent.swift
       # The widget draws the app's own faces (Settings → Font): Lato + Source Serif 4 at the weights it uses.
       - path: AirPad/Resources/Fonts/Lato/Lato-Regular.ttf
         buildPhase: resources

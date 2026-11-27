@@ -153,6 +153,7 @@
 		536D8F5AEBC887BD1A87C990 /* AutoScrollDriver.swift in Sources */ = {isa = PBXBuildFile; fileRef = 9640DF6602CDCA4B2689C33C /* AutoScrollDriver.swift */; };
 		53C50184B3A475F62CC9BDE2 /* FieldDefinition.swift in Sources */ = {isa = PBXBuildFile; fileRef = 003CEDBA7C8C183191D81F3E /* FieldDefinition.swift */; };
 		54AFC37A189FD4A44E8FA7B7 /* AppLock.swift in Sources */ = {isa = PBXBuildFile; fileRef = 52F7466953998FA4739AC9C0 /* AppLock.swift */; };
+		550EECAE1FA2A2C19830D09F /* PinnedEntryIntent.swift in Sources */ = {isa = PBXBuildFile; fileRef = 2049D3BF4959AB73F2409FE5 /* PinnedEntryIntent.swift */; };
 		55858A9A690EA3D459DE82E9 /* FilterState.swift in Sources */ = {isa = PBXBuildFile; fileRef = 48DBCBFAFA7298D82C3BB0FF /* FilterState.swift */; };
 		56061A0335E2973DF52243F1 /* NodeGridTile.swift in Sources */ = {isa = PBXBuildFile; fileRef = F189E8F160D5B6BD04D88706 /* NodeGridTile.swift */; };
 		5643368053997E604509A1A7 /* AppearanceTunerUI.swift in Sources */ = {isa = PBXBuildFile; fileRef = 4BBD207713633D26703AEE75 /* AppearanceTunerUI.swift */; };
@@ -215,6 +216,7 @@
 		782107DF917EB5B3B2AAA139 /* ShareImportItems.swift in Sources */ = {isa = PBXBuildFile; fileRef = 5CBFC13F8D66EB937FAA1B1E /* ShareImportItems.swift */; };
 		78579A9C8D4E96E338BD9557 /* TextRunsGallery.swift in Sources */ = {isa = PBXBuildFile; fileRef = D9CF8F72B3DFB4EC66DDD986 /* TextRunsGallery.swift */; };
 		790E62A06880D73E5FE759EA /* HostPairingSheet.swift in Sources */ = {isa = PBXBuildFile; fileRef = 93FCE9DB8410C90A3B0EFAC0 /* HostPairingSheet.swift */; };
+		79B117DE1A1C3D4A1D57C59B /* PinnedEntryIntent.swift in Sources */ = {isa = PBXBuildFile; fileRef = 2049D3BF4959AB73F2409FE5 /* PinnedEntryIntent.swift */; };
 		79EBBD07CEAF35CA5E4CF8A3 /* Neighborhood.swift in Sources */ = {isa = PBXBuildFile; fileRef = AE402981E931009EBB3F93EE /* Neighborhood.swift */; };
 		7A35344BA88803818AB82661 /* cinzelbold_msdf.png in Resources */ = {isa = PBXBuildFile; fileRef = A041B55F9CB72A7C37989EF0 /* cinzelbold_msdf.png */; };
 		7A36980AB2D45C9454C7C71F /* AirPadPro.storekit in Resources */ = {isa = PBXBuildFile; fileRef = 24E36764357B1A05ECCE72AC /* AirPadPro.storekit */; };
@@ -564,6 +566,7 @@
 		1CF73692FBE1135F029C455E /* spacegroteskbold_msdf.json */ = {isa = PBXFileReference; lastKnownFileType = text.json; path = spacegroteskbold_msdf.json; sourceTree = "<group>"; };
 		1DBE8572AE138177283E2B18 /* Lato-Bold.ttf */ = {isa = PBXFileReference; lastKnownFileType = file; path = "Lato-Bold.ttf"; sourceTree = "<group>"; };
 		1E713BD5708D29B15EB4BB18 /* WebSearchAnswerUI.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = WebSearchAnswerUI.swift; sourceTree = "<group>"; };
+		2049D3BF4959AB73F2409FE5 /* PinnedEntryIntent.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = PinnedEntryIntent.swift; sourceTree = "<group>"; };
 		20ED1D435BF9E254D634DF37 /* AirPadShare.appex */ = {isa = PBXFileReference; includeInIndex = 0; lastKnownFileType = "wrapper.app-extension"; path = AirPadShare.appex; sourceTree = BUILT_PRODUCTS_DIR; };
 		2130A9999E650B2EDAEFA80B /* SourceSerif4-BoldItalic.ttf */ = {isa = PBXFileReference; lastKnownFileType = file; path = "SourceSerif4-BoldItalic.ttf"; sourceTree = "<group>"; };
 		217AB37B8F4C87CAF915AFD6 /* FieldPairsGrid.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = FieldPairsGrid.swift; sourceTree = "<group>"; };
@@ -1016,6 +1019,7 @@
 		09F235C6E4C5E07EAF4CD7EC /* Widget */ = {
 			isa = PBXGroup;
 			children = (
+				2049D3BF4959AB73F2409FE5 /* PinnedEntryIntent.swift */,
 				DD70C3FD83ED5CD323F9AB0E /* PinnedEntryMirror.swift */,
 				A324576E2D353D807BFFFC9D /* PinnedEntryMirrorWriter.swift */,
 			);
@@ -1997,6 +2001,7 @@
 			files = (
 				2D8CCD981197441D1AA1F024 /* AirPadWidgetBundle.swift in Sources */,
 				87C2B621CF7711E7FF62598C /* CaptureIntent.swift in Sources */,
+				550EECAE1FA2A2C19830D09F /* PinnedEntryIntent.swift in Sources */,
 				E0EA25D4E4C475739B253D7B /* PinnedEntryMirror.swift in Sources */,
 				9971B068BD8011D39A00B811 /* PinnedEntryWidget.swift in Sources */,
 				B17DD9C767DE65A3033EC241 /* QuickCaptureControl.swift in Sources */,
@@ -2283,6 +2288,7 @@
 				A9D30911FB3F2FA2F59DA847 /* PasteProbe.swift in Sources */,
 				BC4D8EDC2E3EC93B74EF342F /* PeekPillStyle.swift in Sources */,
 				95973AD12D5D10B23140EE1E /* PickedFolder.swift in Sources */,
+				79B117DE1A1C3D4A1D57C59B /* PinnedEntryIntent.swift in Sources */,
 				FE77ADD55081AE13E60B1B54 /* PinnedEntryMirror.swift in Sources */,
 				8C7766BD74AABE5EC45C07C8 /* PinnedEntryMirrorWriter.swift in Sources */,
 				8D99DC4617A52B993992A45E /* PlaybackAudioSession.swift in Sources */,

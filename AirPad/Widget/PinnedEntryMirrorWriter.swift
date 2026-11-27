@@ -12,6 +12,11 @@ import WidgetKit
 /// Freshness, stated plainly: an edit made in the app reaches the widget about a second after the store holds it (a
 /// note's text is held when editing ends). A change that arrives by sync reaches it the next time AirPad runs and
 /// loads it. The widget itself never reads the library.
+///
+/// widget fix-up 2 — with the Face ID lock on, the copy holds the entries of the widgets set to "Show while AirPad is
+/// locked" and no others. Which widgets those are comes from the system (`PinnedEntryConfigurations`), read when AirPad
+/// becomes active, after an unlock, and when the lock is turned on. An entry is ADDED only while AirPad is unlocked
+/// (Face ID passed in this run); while it is locked the copy can only shrink (`PinnedEntryMirror.allowedIDs`).
 @MainActor
 final class PinnedEntryMirrorWriter {
     static let shared = PinnedEntryMirrorWriter()
@@ -26,11 +31,22 @@ final class PinnedEntryMirrorWriter {
     private var state = BuildState()
     private let fileURL: URL?
     private let reload: () -> Void
+    /// widget fix-up 2 — the entry ids of the placed widgets set to show while locked, as last read; nil = not read
+    /// since the lock was turned on (then nothing is added).
+    private var configuredShow: Set<String>?
+    private var configurationRead = 0          // a read started before the lock turned on is dropped
+    private var lastEnabled: Bool?
+    private var lastLocked: Bool?
+    private let readConfigurations: () async -> PinnedEntryConfigurations.Read?
+    /// While the system's answer hasn't settled (`Read.settled`), re-read every 3 s, at most this many times (~45 s).
+    static let unsettledRereads = 15
 
     init(fileURL: URL? = PinnedEntryMirrorFile.url,
-         reload: @escaping () -> Void = { WidgetCenter.shared.reloadTimelines(ofKind: PinnedEntryMirrorFile.widgetKind) }) {
+         reload: @escaping () -> Void = { WidgetCenter.shared.reloadTimelines(ofKind: PinnedEntryMirrorFile.widgetKind) },
+         readConfigurations: @escaping () async -> PinnedEntryConfigurations.Read? = { await PinnedEntryConfigurations.read() }) {
         self.fileURL = fileURL
         self.reload = reload
+        self.readConfigurations = readConfigurations
     }
 
     /// Called once the store has run `setup()`. Safe to call again.
@@ -38,8 +54,54 @@ final class PinnedEntryMirrorWriter {
         let first = self.store == nil
         self.store = store
         if lastWritten == nil { lastWritten = PinnedEntryMirrorFile.readData(at: fileURL) }
-        if first { observe() }
+        if first {
+            lastEnabled = AppLock.shared.enabled
+            lastLocked = AppLock.shared.isLocked
+            observe()
+        }
         schedule(after: .zero)
+        refreshConfigurations()
+    }
+
+    /// widget fix-up 2 — read which placed widgets are set to show while locked, then rebuild the copy. Called when
+    /// AirPad becomes active, after a successful unlock and when the lock is turned on. Only matters with the lock on.
+    func refreshConfigurations() { readConfigurations(attempt: 0) }
+
+    private func readConfigurations(attempt: Int) {
+        guard store != nil, AppLock.shared.enabled else { return }
+        configurationRead += 1
+        let read = configurationRead
+        Task { @MainActor [weak self] in
+            guard let self else { return }
+            let r = await self.readConfigurations()
+            PinnedEntryConfigurations.debugLog("app read #\(read) (current #\(self.configurationRead)): "
+                + (r.map { "\($0.show.count) shown, settled=\($0.settled)" } ?? "nil") + " locked=\(AppLock.shared.isLocked)")
+            guard read == self.configurationRead, AppLock.shared.enabled, let r else { return }
+            self.configuredShow = r.show
+            self.schedule(after: .zero)
+            // Not settled (a switch was just flipped): read again shortly; a newer read supersedes this chain.
+            guard !r.settled, attempt < Self.unsettledRereads else { return }
+            try? await Task.sleep(for: .seconds(3))
+            guard read == self.configurationRead else { return }
+            self.readConfigurations(attempt: attempt + 1)
+        }
+    }
+
+    /// The lock setting or the lock screen changed (Observation).
+    private func lockStateChanged() {
+        let lock = AppLock.shared
+        if lock.enabled != lastEnabled {
+            lastEnabled = lock.enabled
+            // Turned on: what was read before no longer counts. The empty locked copy is written at once; the allowed
+            // entries follow the read (turning the lock on needs Face ID, so AirPad is unlocked then).
+            configuredShow = nil
+            configurationRead += 1
+            if lock.enabled { refreshConfigurations() }
+        }
+        if lock.isLocked != lastLocked {
+            lastLocked = lock.isLocked
+            if !lock.isLocked { refreshConfigurations() }   // Face ID passed: the switches flipped since can now add
+        }
     }
 
     /// Write now, on this thread (AirPad is leaving the foreground: a pending rebuild must not be lost to suspension,
@@ -48,7 +110,7 @@ final class PinnedEntryMirrorWriter {
         pending?.cancel()
         pending = nil
         guard let input = currentInput() else { return }
-        write(nodes: input.nodes, locked: input.locked, font: input.font, unlock: input.unlock)
+        write(nodes: input.nodes, locked: input.locked, font: input.font, unlock: input.unlock, allowed: input.allowed)
     }
 
     private func observe() {
@@ -58,8 +120,10 @@ final class PinnedEntryMirrorWriter {
             _ = store.libraryLoaded
             _ = AppLock.shared.enabled
             _ = AppLock.shared.method   // widget fix-up 1 — the locked tile's glyph
+            _ = AppLock.shared.isLocked // widget fix-up 2 — an unlock lets the chosen entries in
         } onChange: { [weak self] in
             Task { @MainActor [weak self] in
+                self?.lockStateChanged()
                 // The Face ID lock turning on empties the copy at once (no settle: a kill right after must not leave
                 // entry text on disk).
                 self?.schedule(after: AppLock.shared.enabled ? .zero : (self?.settle ?? .zero))
@@ -81,15 +145,45 @@ final class PinnedEntryMirrorWriter {
         }
     }
 
+    struct Input {
+        var nodes: [Node]
+        var locked: Bool
+        var font: String
+        var unlock: String?
+        /// Locked only: the entry ids the copy may hold.
+        var allowed: Set<String> = []
+    }
+
     /// What the copy is built from right now. Nil = nothing to write yet: entries are never written before the library
-    /// is in memory (an empty store during launch must not read to the widget as "nothing in your library"); the locked
-    /// copy (no entries) is written whenever the lock is on, loaded or not.
-    private func currentInput() -> (nodes: [Node], locked: Bool, font: String, unlock: String?)? {
+    /// is in memory (an empty store during launch must not read to the widget as "nothing in your library").
+    private func currentInput() -> Input? {
         guard let store else { return nil }
         let font = UserDefaults.standard.string(forKey: EntryBodyFont.defaultStorageKey) ?? EntryBodyFont.fallback.rawValue
-        if AppLock.shared.enabled { return ([], true, font, Self.unlockKind(AppLock.shared.method)) }
-        guard store.libraryLoaded else { return nil }
-        return (store.nodes, false, font, nil)
+        let lock = AppLock.shared
+        guard lock.enabled else {
+            guard store.libraryLoaded else { return nil }
+            return Input(nodes: store.nodes, locked: false, font: font, unlock: nil)
+        }
+        // The copy on disk is the truth here, not what this writer last wrote: the widget extension may have cut it since.
+        let diskData = PinnedEntryMirrorFile.readData(at: fileURL)
+        lastWritten = diskData
+        guard let allowed = Self.lockedAllowed(disk: diskData.flatMap(PinnedEntryMirrorFile.decode),
+                                               configuredShow: configuredShow,
+                                               libraryLoaded: store.libraryLoaded,
+                                               unlocked: !lock.isLocked && !lock.coverShown) else { return nil }
+        return Input(nodes: allowed.isEmpty ? [] : store.nodes, locked: true, font: font,
+                     unlock: Self.unlockKind(lock.method), allowed: allowed)
+    }
+
+    /// widget fix-up 2 — with the lock on, which entries the locked copy is written with now; nil = leave the copy on
+    /// disk as it is. A copy that isn't locked yet (the lock just turned on) is replaced at once by the empty locked
+    /// copy. An already-locked copy waits until the library is in memory and the widgets' choices have been read, then
+    /// takes `allowedIDs` (only shrinking unless AirPad is unlocked). Pure (unit-tested).
+    nonisolated static func lockedAllowed(disk: PinnedEntryMirror?, configuredShow: Set<String>?, libraryLoaded: Bool,
+                                          unlocked: Bool) -> Set<String>? {
+        guard let disk, disk.locked else { return [] }
+        guard libraryLoaded, let show = configuredShow else { return nil }
+        return PinnedEntryMirror.allowedIDs(current: Set(disk.entries.map(\.id)), configuredShow: show, unlocked: unlocked)
     }
 
     /// widget fix-up 1 — the lock's cached method (`AppLock.method`, read from LocalAuthentication at launch and on
@@ -110,8 +204,9 @@ final class PinnedEntryMirrorWriter {
         let prior = state, previous = lastWritten, url = fileURL
         let result = await Task.detached(priority: .utility) { () -> (BuildState, Data?) in
             let built = Self.makeMirror(nodes: input.nodes, locked: input.locked, font: input.font,
-                                        unlock: input.unlock, prior: prior)
-            guard built.state.changed || previous == nil,
+                                        unlock: input.unlock, allowed: input.allowed, prior: prior)
+            // Locked: always compare with the bytes on disk (small; the extension may have rewritten them).
+            guard built.state.changed || previous == nil || input.locked,
                   let data = PinnedEntryMirrorFile.encode(built.mirror), data != previous,
                   PinnedEntryMirrorFile.write(data, to: url) else { return (built.state, nil) }
             return (built.state, data)
@@ -123,11 +218,11 @@ final class PinnedEntryMirrorWriter {
     /// The write on the calling thread (unit-tested; `flush`): build, compare with the bytes on disk, write + reload
     /// only on a change.
     @discardableResult
-    func write(nodes: [Node], locked: Bool, font: String, unlock: String? = nil) -> Bool {
-        if lastWritten == nil { lastWritten = PinnedEntryMirrorFile.readData(at: fileURL) }
-        let mirror = build(nodes: nodes, locked: locked, font: font, unlock: unlock)
+    func write(nodes: [Node], locked: Bool, font: String, unlock: String? = nil, allowed: Set<String> = []) -> Bool {
+        if lastWritten == nil || locked { lastWritten = PinnedEntryMirrorFile.readData(at: fileURL) }
+        let mirror = build(nodes: nodes, locked: locked, font: font, unlock: unlock, allowed: allowed)
         // Most store changes touch nothing the widget shows (embeddings, backfills, layout): skip the encode.
-        guard lastBuildChanged || lastWritten == nil else { return false }
+        guard lastBuildChanged || lastWritten == nil || locked else { return false }
         guard let data = PinnedEntryMirrorFile.encode(mirror), data != lastWritten else { return false }
         guard PinnedEntryMirrorFile.write(data, to: fileURL) else { return false }
         lastWritten = data
@@ -140,7 +235,7 @@ final class PinnedEntryMirrorWriter {
     /// What one build leaves for the next: the per-entry cache, the shape of the copy, and whether it changed.
     struct BuildState {
         var cache: [String: (fingerprint: Int, entry: PinnedEntryMirror.Entry)] = [:]
-        var shape: (locked: Bool, font: String, count: Int, unlock: String?)?
+        var shape: (locked: Bool, font: String, ids: Set<String>, unlock: String?)?
         /// False when the build produced exactly the copy before it (every entry from the cache, none gone, same lock
         /// and font), so there is nothing to encode or write.
         var changed = true
@@ -148,29 +243,28 @@ final class PinnedEntryMirrorWriter {
 
     var lastBuildChanged: Bool { state.changed }
 
-    func build(nodes: [Node], locked: Bool, font: String, unlock: String? = nil) -> PinnedEntryMirror {
-        let built = Self.makeMirror(nodes: nodes, locked: locked, font: font, unlock: unlock, prior: state)
+    func build(nodes: [Node], locked: Bool, font: String, unlock: String? = nil,
+               allowed: Set<String> = []) -> PinnedEntryMirror {
+        let built = Self.makeMirror(nodes: nodes, locked: locked, font: font, unlock: unlock, allowed: allowed,
+                                    prior: state)
         state = built.state
         return built.mirror
     }
 
+    /// `locked`: the copy holds only the entries in `allowed` (widget fix-up 2; empty = none). Private entries never.
     nonisolated static func makeMirror(nodes: [Node], locked: Bool, font: String, unlock: String? = nil,
+                                       allowed: Set<String> = [],
                                        prior: BuildState) -> (mirror: PinnedEntryMirror, state: BuildState) {
         var m = PinnedEntryMirror()
         m.font = font
+        m.locked = locked
+        m.unlock = locked ? unlock : nil   // only the locked copy says how AirPad unlocks
         var next = BuildState()
-        guard !locked else {
-            m.locked = true
-            m.unlock = unlock   // only the locked copy says how AirPad unlocks
-            next.changed = prior.shape.map { !$0.locked || $0.font != font || $0.unlock != unlock } ?? true
-            next.shape = (true, font, 0, unlock)
-            return (m, next)
-        }
         var misses = 0
         var entries: [PinnedEntryMirror.Entry] = []
-        entries.reserveCapacity(nodes.count)
-        next.cache.reserveCapacity(nodes.count)
-        for node in nodes where !node.isPrivate {
+        entries.reserveCapacity(locked ? allowed.count : nodes.count)
+        next.cache.reserveCapacity(locked ? allowed.count : nodes.count)
+        for node in nodes where !node.isPrivate && (!locked || allowed.contains(node.id)) {
             let fp = fingerprint(node)
             if let hit = prior.cache[node.id], hit.fingerprint == fp {
                 entries.append(hit.entry)
@@ -182,9 +276,10 @@ final class PinnedEntryMirrorWriter {
                 misses += 1
             }
         }
+        let ids = Set(next.cache.keys)
         next.changed = misses > 0
-            || prior.shape.map { $0.locked || $0.font != font || $0.count != entries.count } ?? true
-        next.shape = (false, font, entries.count, nil)
+            || prior.shape.map { $0.locked != locked || $0.font != font || $0.ids != ids || $0.unlock != m.unlock } ?? true
+        next.shape = (locked, font, ids, m.unlock)
         m.entries = entries.sorted { ($0.updatedAt, $0.id) > ($1.updatedAt, $1.id) }
         return (m, next)
     }

@@ -1,0 +1,14 @@
+{
+  "_what": "Good Flow spike (throwaway, never merged). The one source of values for the bench reference stills and the port. Look dials = 'Good Flow - Light 1' as stored (Ops design-refs/living-layer/good-flow-bench-source.md §1); dark = the same with ground 0. Housing = the bench defaults (T's housing dials were never saved). Entries are synthetic; entry e0 is the entry T was looking at on the bench (the preset's eight entry values).",
+  "look": {"amp":0.36,"band":0.35,"bodyl":0.64,"conn":0.66,"contrast":0.34,"core":0.2,"deep":0.5,"detail":0.21,"dist":0.4,"drift":0.5,"fall":2,"flow":0.35,"form":0.55,"fringe":0.52,"front":0.35,"fsoft":0,"gmix":0.24,"grain":0.13,"ground":1,"hue":77,"lblend":0,"light":180,"lineop":0.1,"lines":0.39,"look":2,"lsoft":0.84,"mass":0.08,"merge":0.45,"motion":0,"parts":4.22,"patina":0.64,"power":0.76,"range":0.6,"rim":0.06,"round":1,"sat":0.87,"seed":0.144,"shape":0,"size":0.43,"soft":0.05,"spread":204,"stir":0.81,"stretch":0.66,"tempo":0.96,"theme":0,"transl":0},
+  "housing": {"glass": 1, "glassAmt": 0.6, "flute": 0.45, "medium": 0.6, "tdrift": 0.6, "lens": 0.5},
+  "stillTime": 12.0,
+  "entries": [
+    {"id": "e0", "note": "the bench entry T approved the look on", "hue": 77,  "mass": 0.08, "parts": 4.22, "conn": 0.66, "tempo": 0.96, "amp": 0.36, "patina": 0.64, "seed": 0.144},
+    {"id": "e1", "note": "tiny, one part, quiet",                  "hue": 25,  "mass": 0.05, "parts": 1.0,  "conn": 0.10, "tempo": 0.15, "amp": 0.15, "patina": 0.10, "seed": 0.611},
+    {"id": "e2", "note": "small, two parts",                       "hue": 140, "mass": 0.25, "parts": 2.0,  "conn": 0.30, "tempo": 0.45, "amp": 0.35, "patina": 0.30, "seed": 0.287},
+    {"id": "e3", "note": "middle",                                 "hue": 205, "mass": 0.50, "parts": 3.0,  "conn": 0.50, "tempo": 0.65, "amp": 0.55, "patina": 0.50, "seed": 0.433},
+    {"id": "e4", "note": "large, many parts",                      "hue": 285, "mass": 0.80, "parts": 4.6,  "conn": 0.80, "tempo": 0.30, "amp": 0.75, "patina": 0.85, "seed": 0.759},
+    {"id": "e5", "note": "largest, every part, old",               "hue": 340, "mass": 1.00, "parts": 5.0,  "conn": 0.95, "tempo": 0.10, "amp": 0.95, "patina": 1.00, "seed": 0.902}
+  ]
+}

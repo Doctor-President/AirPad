@@ -1,0 +1,109 @@
+<!doctype html><meta charset=utf-8><body style="margin:0"><canvas id=c></canvas><script>
+const log = m => fetch('/log', {method:'POST', body:String(m)});
+const post = (u, b) => fetch(u, {method:'POST', body:b});
+const frac = x => x - Math.floor(x);
+(async () => {
+try {
+const sh = await (await fetch('/shaders.json')).json(), L = await (await fetch('/look.json')).json();
+const cv = document.getElementById('c');
+const gl = cv.getContext('webgl2', {preserveDrawingBuffer:true, antialias:false, premultipliedAlpha:false, alpha:false});
+if (!gl) throw new Error('no webgl2');
+const dbg = gl.getExtension('WEBGL_debug_renderer_info');
+const renderer = dbg ? gl.getParameter(dbg.UNMASKED_RENDERER_WEBGL) : 'unknown';
+const vendor = dbg ? gl.getParameter(dbg.UNMASKED_VENDOR_WEBGL) : 'unknown';
+log('renderer: ' + vendor + ' / ' + renderer);
+const mk = (t, s) => { const o = gl.createShader(t); gl.shaderSource(o, s); gl.compileShader(o); if (!gl.getShaderParameter(o, gl.COMPILE_STATUS)) throw new Error('compile: ' + gl.getShaderInfoLog(o)); return o; };
+const pr = gl.createProgram(); gl.attachShader(pr, mk(gl.VERTEX_SHADER, sh.vs)); gl.attachShader(pr, mk(gl.FRAGMENT_SHADER, sh.fs)); gl.linkProgram(pr);
+if (!gl.getProgramParameter(pr, gl.LINK_STATUS)) throw new Error('link: ' + gl.getProgramInfoLog(pr));
+gl.useProgram(pr); const vao = gl.createVertexArray(); gl.bindVertexArray(vao);
+const vb = gl.createBuffer(); gl.bindBuffer(gl.ARRAY_BUFFER, vb); gl.bufferData(gl.ARRAY_BUFFER, new Float32Array([-1,-1, 3,-1, -1,3]), gl.STATIC_DRAW);
+const al = gl.getAttribLocation(pr, 'a'); gl.enableVertexAttribArray(al); gl.vertexAttribPointer(al, 2, gl.FLOAT, false, 0, 0);
+const U = {}, T = {};
+for (let i = 0, n = gl.getProgramParameter(pr, gl.ACTIVE_UNIFORMS); i < n; i++) { const a = gl.getActiveUniform(pr, i); U[a.name] = gl.getUniformLocation(pr, a.name); T[a.name] = a.type; }
+log('active uniforms: ' + Object.keys(U).join(' '));
+let used;
+const f = (n, v) => { if (!(n in U)) { used[n] = 'MISSING'; return; } if (T[n] === gl.INT || T[n] === gl.BOOL) gl.uniform1i(U[n], Math.round(v)); else gl.uniform1f(U[n], v); used[n] = v; };
+const v2 = (n, a, b) => { if (!(n in U)) { used[n] = 'MISSING'; return; } gl.uniform2f(U[n], a, b); used[n] = [a, b]; };
+const v3 = (n, a) => { if (!(n in U)) { used[n] = 'MISSING'; return; } gl.uniform3f(U[n], a[0], a[1], a[2]); used[n] = a; };
+const cap = s => s[0].toUpperCase() + s.slice(1);
+const manifest = {renderer, vendor, userAgent: navigator.userAgent, stills: []};
+const CASES = [
+ {name:'detail-iphone', w:440, h:262, s:3, type:'hero'},
+ {name:'detail-mac', w:1728, h:252, s:2, type:'hero'},
+ {name:'card-iphone', w:348, h:532, s:3, type:'card', r:30, hero:[0,0,348,212.8]},
+ {name:'card-mac', w:228, h:320, s:2, type:'card', r:14, hero:[0,0,228,137.6]},
+];
+for (const d of [60, 90, 120]) for (const s of [2, 3]) CASES.push({name:`orb-${d}-@${s}`, w:1.5*d, h:1.5*d, s, type:'orb'});
+const surfs = g => { const page = g ? [.83,.83,.82] : [.0012,.0012,.0018]; return {page, card: g ? [.94,.93,.90] : [0,0,0], band: g ? [.90,.90,.885] : page}; };
+const contact = {light:[], dark:[]};
+function render(cs, e, theme, fill) {
+  const g = theme === 'light' ? 1 : 0, S = Object.assign({}, L.look, {ground: g}), H = L.housing, sf = surfs(g), sc = cs.s;
+  const w = Math.max(2, Math.round(cs.w*sc)), h = Math.max(2, Math.round(cs.h*sc));
+  cv.width = w; cv.height = h; gl.viewport(0, 0, w, h); gl.disable(gl.SCISSOR_TEST);
+  used = {};
+  // look dials -> u+Cap(name); entry-owned dials are overridden below
+  for (const k in S) { if (k === 'light') f('uLight', S.light*Math.PI/180); else f('u' + cap(k), S[k]); }
+  v2('uGrid', 1, 1); f('uSheet', 0); f('uSlot', 1); f('uShape', 0); f('uLive', 0); f('uLiveT', 0); f('uTime', L.stillTime);
+  v3('uBack', sf.page);
+  f('uGlass', H.glass); f('uGlassAmt', H.glassAmt); f('uMedium', H.medium); f('uTdrift', H.tdrift); f('uFlute', H.flute); f('uPt', sc); f('uLens', H.lens);
+  v2('uRes', w, h); v2('uOrg', 0, 0);
+  const fit = .986*1.3/1.5; let cx = 0, cy = 0, zoom = 1, mass = e.mass, theme_ = 1, tank = 2, mask = 0, maskR = 0, surf = sf.band, fadeV = [0,0], fadeB = 0, tankH = [1,1];
+  if (cs.type === 'hero') { surf = sf.band; fadeB = .24; }
+  else if (cs.type === 'card') {
+    const [hx,hy,hw,hh] = cs.hero, hmn = Math.min(hw, hh), hf = hh/cs.h;
+    cx = (hx+hw/2-cs.w/2)*sc; cy = -(hy+hh/2-cs.h/2)*sc; tankH = [hw/hmn, hh/hmn]; mask = 1; maskR = cs.r*sc; surf = sf.card; fadeV = [hf*.62, hf];
+  } else { theme_ = 0; tank = 0; surf = sf.page; if (!fill) { zoom = fit; mass = 1; } }
+  f('uTheme', theme_); f('uTank', tank); v2('uTankH', tankH[0], tankH[1]); f('uFadeB', fadeB); v2('uFadeV', fadeV[0], fadeV[1]); v2('uFade', 0, 0);
+  f('uMask', mask); f('uMaskR', maskR); f('uMaskR2', 0); v3('uSurf', surf); v2('uCtr', cx, cy); f('uZoom', zoom);
+  f('uRot', (frac(Math.sin(e.seed*91.7)*43758.5453)-.5)*1.4);
+  f('uHue', e.hue); f('uMass', mass); f('uParts', e.parts); f('uConn', e.conn); f('uTempo', e.tempo); f('uAmp', e.amp); f('uPatina', e.patina); f('uSeed', e.seed);
+  const t0 = performance.now();
+  gl.drawArrays(gl.TRIANGLES, 0, 3);
+  const px = new Uint8Array(w*h*4); gl.readPixels(0, 0, w, h, gl.RGBA, gl.UNSIGNED_BYTE, px);
+  const ms = performance.now() - t0; const ge = gl.getError(); if (ge) log('GL error ' + ge + ' in ' + cs.name);
+  return {w, h, px, used, ms};
+}
+const c2 = document.createElement('canvas'), x2 = c2.getContext('2d');
+async function save(name, r) {
+  c2.width = r.w; c2.height = r.h; const img = x2.createImageData(r.w, r.h);
+  for (let y = 0; y < r.h; y++) img.data.set(r.px.subarray((r.h-1-y)*r.w*4, (r.h-y)*r.w*4), y*r.w*4);
+  x2.putImageData(img, 0, 0);
+  const blob = await new Promise(res => c2.toBlob(res, 'image/png')); await post('/png?name=' + encodeURIComponent(name), blob);
+  return createImageBitmap(c2);
+}
+const T0 = performance.now();
+const jobs = [];
+for (const e of L.entries) for (const th of ['light','dark']) {
+  for (const cs of CASES) jobs.push({cs, e, th, fill:false, name:`${cs.name}__${e.id}__${th}.png`});
+  if (e.id === 'e0' || e.id === 'e4') for (const cs of CASES.filter(c => c.type === 'orb')) jobs.push({cs, e, th, fill:true, name:`${cs.name}-fillvariant__${e.id}__${th}.png`});
+}
+let nan = 0;
+for (const j of jobs) {
+  const r = render(j.cs, j.e, j.th, j.fill);
+  // stats: mean and fraction near-black/white
+  let sum = 0, mn = 255, mx = 0; for (let i = 0; i < r.px.length; i += 4) { const v = r.px[i]+r.px[i+1]+r.px[i+2]; sum += v; if (v < mn) mn = v; if (v > mx) mx = v; }
+  const bmp = await save(j.name, r);
+  if (!j.fill) contact[j.th].push({j, bmp});
+  manifest.stills.push({file:j.name, case:j.cs.name + (j.fill ? '-fillvariant' : ''), entry:j.e.id, theme:j.th, pt:[j.cs.w, j.cs.h], scale:j.cs.s, px:[r.w, r.h], ms:+r.ms.toFixed(1), meanRGB:+(sum/(r.w*r.h*3)).toFixed(1), uniforms:r.used});
+}
+manifest.totalMs = performance.now() - T0; manifest.count = jobs.length;
+await post('/json?name=manifest.json', JSON.stringify(manifest, null, 1));
+// contact sheets
+const CW = 150, CH = 150, LB = 14;
+for (const th of ['light','dark']) {
+  const cn = CASES.map(c => c.name), W = cn.length*(CW+4)+4, Hh = L.entries.length*(CH+LB+4)+20;
+  const cc = document.createElement('canvas'); cc.width = W; cc.height = Hh; const x = cc.getContext('2d');
+  x.fillStyle = th === 'light' ? '#999' : '#444'; x.fillRect(0, 0, W, Hh); x.font = '10px sans-serif'; x.fillStyle = '#fff';
+  cn.forEach((n, i) => x.fillText(n, 4+i*(CW+4), 12));
+  for (const {j, bmp} of contact[th]) {
+    const ci = cn.indexOf(j.cs.name), ri = L.entries.findIndex(e => e.id === j.e.id), sc = Math.min(CW/bmp.width, CH/bmp.height);
+    const px = 4+ci*(CW+4), py = 20+ri*(CH+LB+4);
+    x.drawImage(bmp, px, py+LB, bmp.width*sc, bmp.height*sc); x.fillStyle = '#fff'; x.fillText(j.e.id, px, py+10);
+  }
+  const blob = await new Promise(res => cc.toBlob(res, 'image/png')); await post(`/png?name=contact-${th}.png`, blob);
+}
+log('rendered ' + jobs.length + ' stills, ms in-page ' + manifest.totalMs.toFixed(0));
+} catch (e) { log('ERROR ' + e.message + '\n' + (e.stack||'')); }
+await post('/done', '');
+})();
+</script>

@@ -58,28 +58,63 @@ struct PinnedEntryProvider: AppIntentTimelineProvider {
     }
 
     func timeline(for configuration: PinnedEntryIntent, in context: Context) async -> Timeline<PinnedEntryTimelineEntry> {
-        // What this widget shows needs no configuration read (its own switch decides), so it is answered at once.
-        let mirror = PinnedEntryMirrorFile.read()
-        if let m = mirror, m.locked, !m.entries.isEmpty {
-            Task.detached(priority: .utility) { await Self.cutLockedCopy() }
+        var mirror = PinnedEntryMirrorFile.read()
+        var entry = Self.resolve(configuration, mirror: mirror)
+        var policy: TimelineReloadPolicy = .never   // otherwise the app reloads this widget whenever the copy changes
+        // widget fix-up 2 (review 2) — with the lock on, read the widgets' choices (bounded: `read` returns at its
+        // timeout) and finish before answering, so WidgetKit can't end the extension with the cut half done:
+        // - the locked copy is cut to the widgets still set to show (removal only);
+        // - a shown widget whose entry isn't in the copy learns whether another widget keeps it hidden.
+        // What a hidden widget shows never depends on this: its own switch decides.
+        if let m = mirror, m.locked {
+            let notYet = entry.state == .lockedNotYetShown
+            if !m.entries.isEmpty || notYet, let r = await PinnedEntryConfigurations.read() {
+                if !m.entries.isEmpty, let cut = Self.cutLockedCopy(keeping: r.show) {
+                    mirror = cut
+                    entry = Self.resolve(configuration, mirror: cut)
+                }
+                if entry.state == .lockedNotYetShown, let id = configuration.entry?.id {
+                    let split = Self.splits.check(id, split: r.conflicted.contains(id))
+                    if split?.heldBack == true {
+                        entry = PinnedEntryTimelineEntry(date: entry.date, state: .lockedHeldBack, font: entry.font,
+                                                         unlock: entry.unlock, chosenID: entry.chosenID)
+                    } else if let at = split?.recheckAt {
+                        policy = .after(at)   // the system's twin settles in ~30 s; look again then
+                    }
+                }
+            }
         }
-        // No schedule: the app reloads this widget whenever the saved copy changes.
-        return Timeline(entries: [Self.resolve(configuration, mirror: mirror)], policy: .never)
+        return Timeline(entries: [entry], policy: policy)
     }
 
-    /// widget fix-up 2 — the locked copy, cut down to the entries of widgets still set to show (a widget switched back to
-    /// hidden on the Home Screen, with AirPad not running). Runs after the timeline is answered; removal only, never
-    /// adding. The read is bounded (`PinnedEntryConfigurations.read`); the cut is one coordinated read-modify-write on
-    /// the copy as it is then (`PinnedEntryMirrorFile.update`), so it never writes back an older copy than AirPad's.
-    /// If the system doesn't answer, AirPad makes the same cut the next time it runs; either way a hidden widget never
-    /// reads its entry (`PinnedEntryMirror.display` decides from the widget's own switch).
-    static func cutLockedCopy() async {
-        guard let show = await PinnedEntryConfigurations.read()?.show else { return }
-        PinnedEntryMirrorFile.update { data in
+    /// widget fix-up 2 — the locked copy, cut down to the entries of widgets still set to show (a widget switched back
+    /// to hidden on the Home Screen, with AirPad not running). Removal only, never adding: one coordinated
+    /// read-modify-write on the copy as it is now (`PinnedEntryMirrorFile.update`, bounded; uncoordinated only for
+    /// a cut, which only shrinks). Returns the copy written, nil when nothing changed.
+    static func cutLockedCopy(keeping show: Set<String>) -> PinnedEntryMirror? {
+        let written = PinnedEntryMirrorFile.update { data in
             guard let now = data.flatMap(PinnedEntryMirrorFile.decode), now.locked else { return nil }
             let cut = now.pruned(keeping: show)
             PinnedEntryConfigurations.debugLog("extension cut: \(now.entries.count) → \(cut.entries.count)")
             return cut == now ? nil : PinnedEntryMirrorFile.encode(cut)
+        }
+        return written.flatMap(PinnedEntryMirrorFile.decode)
+    }
+
+    /// When this extension process first saw each entry reported both shown and hidden (in memory only; nothing is
+    /// written). See `PinnedEntryMirror.splitTile`.
+    static let splits = SplitClock()
+
+    final class SplitClock: @unchecked Sendable {
+        private let lock = NSLock()
+        private var firstSeen: [String: Date] = [:]
+        /// Nil when the entry isn't split (and forgets it); otherwise what its tile should say now.
+        func check(_ id: String, split: Bool, now: Date = .now) -> (heldBack: Bool, recheckAt: Date?)? {
+            lock.lock(); defer { lock.unlock() }
+            guard split else { firstSeen[id] = nil; return nil }
+            let first = firstSeen[id] ?? now
+            firstSeen[id] = first
+            return PinnedEntryMirror.splitTile(firstSeen: first, now: now)
         }
     }
 

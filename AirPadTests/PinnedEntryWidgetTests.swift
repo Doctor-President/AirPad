@@ -402,32 +402,80 @@ final class PinnedEntryWidgetTests: XCTestCase {
         await until("a failed read forgets") { w.configuredShow == nil }
     }
 
-    /// Nit b: still split after the re-reads run out = two widgets on one entry disagree (not the transient twin): the
-    /// shown one's tile says another widget keeps it hidden. A settled read clears it.
-    func testLastingSplitBecomesHeldBack() async {
+    /// The re-read loop is bounded: a split that lasts (two widgets on one entry) stops after `unsettledRereads`.
+    func testSplitReadsStopAfterTheirBound() async {
         let reader = LateReader()
         let w = lockedWriter(reader)
         w.rereadInterval = .milliseconds(1)
         w.refreshConfigurations()
         for i in 0...PinnedEntryMirrorWriter.unsettledRereads {
             await until("read \(i) asked") { reader.pending.count == 1 }
-            XCTAssertEqual(w.heldBack, [], "not while it may still be the twin (read \(i))")
             reader.answer(.init(show: [], conflicted: ["a"]))
         }
-        await until("held back after the last re-read") { w.heldBack == ["a"] }
-        try? await Task.sleep(for: .milliseconds(50))
+        try? await Task.sleep(for: .milliseconds(100))
         XCTAssertTrue(reader.pending.isEmpty, "the loop stops")
-        w.refreshConfigurations()
-        await until("next read asked") { reader.pending.count == 1 }
-        reader.answer(.init(show: ["a"]))
-        await until("a settled read clears it") { w.heldBack == [] }
+        XCTAssertEqual(w.configuredShow, [], "a hide wins meanwhile")
+    }
 
-        var m = PinnedEntryMirror(); m.locked = true; m.heldBack = ["a"]
-        XCTAssertEqual(PinnedEntryMirror.display(chosenID: "a", showWhenLocked: true, mirror: m), .lockedHeldBack)
-        XCTAssertEqual(PinnedEntryMirror.display(chosenID: "b", showWhenLocked: true, mirror: m), .lockedNotYetShown)
-        XCTAssertEqual(PinnedEntryMirror.display(chosenID: "a", showWhenLocked: false, mirror: m), .locked)
-        let built = writer().build(nodes: [node("a", title: "A")], locked: false, font: "lato", heldBack: ["a"])
-        XCTAssertNil(built.heldBack, "never in the unlocked copy")
+    /// Review 2 item 4: the extension decides "another widget keeps this hidden" itself, only once a split has lasted
+    /// longer than the system's ~30 s twin; nothing is written to the copy for it.
+    func testHeldBackOnlyOnceTheSplitLasts() {
+        let t0 = Date(timeIntervalSince1970: 1_700_000_000)
+        let early = PinnedEntryMirror.splitTile(firstSeen: t0, now: t0.addingTimeInterval(5))
+        XCTAssertFalse(early.heldBack)
+        XCTAssertEqual(early.recheckAt, t0.addingTimeInterval(PinnedEntryMirror.heldBackAfter + 1))
+        let later = PinnedEntryMirror.splitTile(firstSeen: t0, now: t0.addingTimeInterval(PinnedEntryMirror.heldBackAfter))
+        XCTAssertTrue(later.heldBack)
+        XCTAssertNil(later.recheckAt)
+        var m = PinnedEntryMirror(); m.locked = true
+        XCTAssertEqual(PinnedEntryMirror.display(chosenID: "a", showWhenLocked: true, mirror: m), .lockedNotYetShown)
+        let bytes = String(decoding: PinnedEntryMirrorFile.encode(m)!, as: UTF8.self)
+        XCTAssertFalse(bytes.contains("held"), "no held-back ids in the copy")
+    }
+
+    /// Review 2 items 2–3: the coordinator is never waited on past its deadline; when it can't be had, a copy that
+    /// only removes is still written, one that adds is not.
+    func testUncoordinatedWritesOnlyShrink() {
+        let w = writer()
+        let nodes = [node("a", title: "A", text: "x", updated: 2), node("b", title: "B", text: "y", updated: 1)]
+        XCTAssertTrue(w.write(nodes: nodes, locked: true, font: "lato", allowed: ["a", "b"]))
+        let both = PinnedEntryMirrorFile.read(at: fileURL)!
+        var onlyA = both; onlyA.entries = both.entries.filter { $0.id == "a" }
+        var empty = both; empty.entries = []
+        var open = both; open.locked = false
+
+        // Hold the claim from elsewhere (as a suspended extension would) for longer than the deadline.
+        let held = DispatchSemaphore(value: 0), release = DispatchSemaphore(value: 0)
+        let url = fileURL
+        DispatchQueue.global().async {
+            var e: NSError?
+            NSFileCoordinator(filePresenter: nil).coordinate(writingItemAt: url, options: [], error: &e) { _ in
+                held.signal(); _ = release.wait(timeout: .now() + 10)
+            }
+        }
+        held.wait()
+        var start = Date()
+        let cut = PinnedEntryMirrorFile.update(at: fileURL, deadline: 0.2) { _ in PinnedEntryMirrorFile.encode(onlyA) }
+        XCTAssertLessThan(Date().timeIntervalSince(start), 1.5, "the caller isn't held by the coordinator")
+        XCTAssertNotNil(cut, "a cut is written without coordination")
+        XCTAssertEqual(PinnedEntryMirrorFile.read(at: fileURL)?.entries.map(\.id), ["a"])
+        start = Date()
+        let add = PinnedEntryMirrorFile.update(at: fileURL, deadline: 0.2) { _ in PinnedEntryMirrorFile.encode(both) }
+        XCTAssertNil(add, "adding waits for coordination")
+        XCTAssertEqual(PinnedEntryMirrorFile.read(at: fileURL)?.entries.map(\.id), ["a"])
+        let unlock = PinnedEntryMirrorFile.update(at: fileURL, deadline: 0.2) { _ in PinnedEntryMirrorFile.encode(open) }
+        XCTAssertNil(unlock, "an unlocked copy is never written uncoordinated")
+        let lockOn = PinnedEntryMirrorFile.update(at: fileURL, deadline: 0.2) { _ in PinnedEntryMirrorFile.encode(empty) }
+        XCTAssertNotNil(lockOn, "the empty locked copy never waits")
+        XCTAssertEqual(PinnedEntryMirrorFile.read(at: fileURL)?.entries, [])
+        release.signal()
+
+        XCTAssertTrue(PinnedEntryMirror.onlyShrinks(empty, from: open), "lock on: the empty locked copy replaces an open one")
+        XCTAssertTrue(PinnedEntryMirror.onlyShrinks(onlyA, from: both))
+        XCTAssertFalse(PinnedEntryMirror.onlyShrinks(both, from: onlyA))
+        XCTAssertFalse(PinnedEntryMirror.onlyShrinks(open, from: both))
+        XCTAssertFalse(PinnedEntryMirror.onlyShrinks(onlyA, from: nil))
+        XCTAssertTrue(PinnedEntryMirror.onlyShrinks(empty, from: nil))
     }
 
     /// Review fix 2: a system call that never answers can't hold the read past its timeout.
@@ -447,14 +495,23 @@ final class PinnedEntryWidgetTests: XCTestCase {
     /// is repaired by the next pass even when nothing changed in the library; and while AirPad is locked a write never
     /// adds an entry the file doesn't hold now.
     func testWritesCompareWithTheFileAndNeverAddWhileLocked() {
-        let w = writer()
         let nodes = [node("a", title: "A", text: "x", updated: 2), node("b", title: "B", text: "y", updated: 1)]
-        XCTAssertTrue(w.write(nodes: nodes, locked: false, font: "lato"))
+        XCTAssertTrue(writer().write(nodes: nodes, locked: false, font: "lato"))
         var stale = PinnedEntryMirror(); stale.locked = true
         PinnedEntryMirrorFile.write(PinnedEntryMirrorFile.encode(stale)!, to: fileURL)
+        // A new run (nothing verified yet) compares with the file and repairs it, though nothing changed.
+        let w = writer()
         XCTAssertTrue(w.write(nodes: nodes, locked: false, font: "lato"), "nothing changed here, but the file did")
         XCTAssertEqual(PinnedEntryMirrorFile.read(at: fileURL)?.locked, false)
         XCTAssertEqual(PinnedEntryMirrorFile.read(at: fileURL)?.entries.count, 2)
+        // Review 2 nit: with the lock off and the file verified this run, an unchanged build doesn't touch the file
+        // (only a locked copy is ever cut by the extension).
+        PinnedEntryMirrorFile.write(Data("not read".utf8), to: fileURL)
+        XCTAssertFalse(w.write(nodes: nodes, locked: false, font: "lato"))
+        XCTAssertEqual(PinnedEntryMirrorFile.readData(at: fileURL), Data("not read".utf8))
+        XCTAssertTrue(w.write(nodes: nodes, locked: false, font: "lato", unlock: nil, allowed: []) == false)
+        w.write(nodes: [nodes[0]], locked: false, font: "lato")   // a real change goes through and repairs it
+        XCTAssertEqual(PinnedEntryMirrorFile.read(at: fileURL)?.entries.map(\.id), ["a"])
 
         // Locked copy holding a; AirPad locked; a stale input allows a and b: b is not added.
         XCTAssertTrue(w.write(nodes: nodes, locked: true, font: "lato", allowed: ["a"]))

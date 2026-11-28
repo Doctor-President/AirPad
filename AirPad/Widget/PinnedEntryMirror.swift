@@ -25,10 +25,6 @@ struct PinnedEntryMirror: Codable, Equatable {
     /// copy so the locked tile can show the system's glyph for it. Nil = not known or passcode only: a plain lock.
     /// Optional, so a copy written before it decodes as nil, and a widget that doesn't know it ignores it.
     var unlock: String? = nil
-    /// widget fix-up 2 (review) — locked copy only: ids of entries one widget is set to show and another widget pinned
-    /// to the same entry keeps hidden (a hide wins). The shown widget's tile says so instead of "Open AirPad". Ids only.
-    /// Optional, so an older copy decodes, and nil is left out of the bytes.
-    var heldBack: [String]? = nil
     /// Newest change first (the picker's suggestions are the head of this list).
     var entries: [Entry] = []
 
@@ -71,7 +67,8 @@ extension PinnedEntryMirror {
         /// widget fix-up 2 — the lock is on, this widget is set to show, but its entry isn't in the locked copy yet
         /// (switched on since AirPad was last unlocked): the locked tile, "Open AirPad to show this entry".
         case lockedNotYetShown
-        /// widget fix-up 2 (review) — set to show, but another widget pinned to the same entry keeps it hidden.
+        /// widget fix-up 2 (review) — set to show, but another widget pinned to the same entry keeps it hidden (decided
+        /// by the widget extension from its own configuration read; nothing about it is written to the copy).
         case lockedHeldBack
     }
 
@@ -82,7 +79,7 @@ extension PinnedEntryMirror {
         if m.locked {
             guard showWhenLocked, let id = chosenID else { return .locked }
             if let e = m.entries.first(where: { $0.id == id }) { return .shownWhileLocked(e) }
-            return (m.heldBack ?? []).contains(id) ? .lockedHeldBack : .lockedNotYetShown
+            return .lockedNotYetShown
         }
         if let id = chosenID {
             if let e = m.entries.first(where: { $0.id == id }) { return .entry(e) }
@@ -124,6 +121,27 @@ extension PinnedEntryMirror {
     /// widget fix-up 2 (review) — the locked tile of a widget whose entry another widget keeps hidden.
     static let heldBackAccessibilityLabel = "AirPad is locked. Another widget keeps this entry hidden."
 
+    /// widget fix-up 2 (review 2) — a shown widget whose entry the system reports both shown and hidden. Right after a
+    /// switch is flipped, iOS lists that one widget twice (old + new value) for ~30 s; two widgets pinned to one entry
+    /// with different switches look the same but last. So the tile says "Another widget keeps this entry hidden" only
+    /// once the split has lasted `heldBackAfter` (first seen by the extension, in memory only); before that it keeps
+    /// "Open AirPad to show this entry" and asks to be drawn again when the wait is over. Pure (unit-tested).
+    static let heldBackAfter: TimeInterval = 40
+    static func splitTile(firstSeen: Date, now: Date) -> (heldBack: Bool, recheckAt: Date?) {
+        now.timeIntervalSince(firstSeen) >= heldBackAfter
+            ? (true, nil) : (false, firstSeen.addingTimeInterval(heldBackAfter + 1))
+    }
+
+    /// widget fix-up 2 (review 2) — does `new` only take away from `current`? (A locked copy whose entries are all
+    /// in `current`: the empty locked copy when the lock turns on, a widget switched to hidden, an entry removed.) Only
+    /// such a copy may be written when the file can't be coordinated: removal never waits, adding always does.
+    static func onlyShrinks(_ new: PinnedEntryMirror, from current: PinnedEntryMirror?) -> Bool {
+        guard new.locked else { return false }
+        guard let current else { return new.entries.isEmpty }
+        let held = Set(current.entries.map(\.id))
+        return new.entries.allSatisfy { held.contains($0.id) }
+    }
+
     /// widget fix-up 2 — which entries the LOCKED copy may hold. `current` = the ids the locked copy on disk holds now;
     /// `configuredShow` = the entry ids of the placed widgets set to show while locked; `unlocked` = Face ID has passed
     /// in this run (AirPad's lock screen isn't up). Locked, it can only shrink (`current ∩ configuredShow`): a switch
@@ -139,7 +157,6 @@ extension PinnedEntryMirror {
         guard locked else { return self }
         var m = self
         m.entries = entries.filter { ids.contains($0.id) }
-        if let held = heldBack { m.heldBack = held.filter { !ids.contains($0) } }   // a widget that now shows it settles it
         return m
     }
 
@@ -208,18 +225,44 @@ enum PinnedEntryMirrorFile {
     /// extension (`NSFileCoordinator`), so neither writes back a copy built from bytes the other has since replaced.
     /// `change` gets the bytes on disk now (nil = none) and returns the bytes to write, or nil to leave the file as it
     /// is; identical bytes aren't rewritten. Returns the bytes written, nil when nothing was written.
+    ///
+    /// review 2 — the caller never waits on the coordinator for longer than `deadline` (the other process may hold the
+    /// claim, even suspended): the coordination runs on a background queue and is cancelled at the deadline. When it
+    /// fails or is cancelled, the new copy is still written directly if it only takes away from the file as it is
+    /// (`onlyShrinks`): the empty locked copy when the lock turns on must never wait. A copy that would add is not.
     @discardableResult
-    static func update(at url: URL? = PinnedEntryMirrorFile.url, _ change: (Data?) -> Data?) -> Data? {
+    static func update(at url: URL? = PinnedEntryMirrorFile.url, deadline: TimeInterval = 2,
+                       coordinator: NSFileCoordinator = NSFileCoordinator(filePresenter: nil),
+                       _ change: @escaping (Data?) -> Data?) -> Data? {
         guard let url else { return nil }
         try? FileManager.default.createDirectory(at: url.deletingLastPathComponent(), withIntermediateDirectories: true)
-        var written: Data?
-        var error: NSError?
-        NSFileCoordinator(filePresenter: nil).coordinate(writingItemAt: url, options: [], error: &error) { u in
-            let now = try? Data(contentsOf: u)
-            guard let next = change(now), next != now, write(next, to: u) else { return }
-            written = next
+        final class Box: @unchecked Sendable { var written: Data?; var failed = false; var entered = false }
+        let box = Box()
+        let done = DispatchSemaphore(value: 0)
+        DispatchQueue.global(qos: .userInitiated).async {
+            var error: NSError?
+            coordinator.coordinate(writingItemAt: url, options: [], error: &error) { u in
+                box.entered = true
+                let now = try? Data(contentsOf: u)
+                guard let next = change(now), next != now, write(next, to: u) else { return }
+                box.written = next
+            }
+            if error != nil { box.failed = true }
+            done.signal()
         }
-        return written
+        if done.wait(timeout: .now() + deadline) == .timedOut {
+            coordinator.cancel()
+            // Cancelled while waiting for the claim: returns at once. Already inside our own block: it is a small read
+            // and write, let it finish; if even that doesn't come back, give up without writing.
+            if done.wait(timeout: .now() + 1) == .timedOut { return nil }
+        }
+        guard box.failed, !box.entered else { return box.written }
+        // Not coordinated: write only a copy that removes.
+        let now = try? Data(contentsOf: url)
+        guard let next = change(now), next != now,
+              let new = decode(next), PinnedEntryMirror.onlyShrinks(new, from: now.flatMap(decode)),
+              write(next, to: url) else { return nil }
+        return next
     }
 
     @discardableResult

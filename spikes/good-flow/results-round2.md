@@ -111,8 +111,9 @@ glass + bend off).
 
 **Fix:** `deepC` is set from the hue before the pool loop (it never depended on the pool), so the paper carries the
 same tint everywhere. Switch **`-DeepFix on|off`** (panel "Dark-cast fix"), default **on**. "Without changing the look
-where it was right": with the fix, **115 of the 120 reference stills are unchanged against T's bench** (mean ≤ 0.02);
-the 5 that change are `detail-mac` dark, the one reference case whose slot already contained the edge. Across the whole
+where it was right": with the fix, **114 of the 120 reference stills are unchanged against T's bench** (mean ≤ 0.024);
+the 6 others are all `detail-mac` dark, the one reference case whose slot already contained the edge: e0 2.44, e2 4.72,
+e3 1.80, e5 5.75 (over the bar: the edge is gone), e4 0.57, e1 0.00. Across the whole
 dial (Scale −0.15, 0, 0.25, 0.5, 0.75, 1, 1.15; dark, BD50), the fix removes the edge at −0.15, 0 and 0.25 and changes
 nothing from 0.5 up (mean luminance identical): `results-round2/o1-dark-cast-scales.png` (left fix off, right fix on).
 For T's eye: with the fix, a dark band at Bench is tinted (brown for e0) wall to wall instead of a brown island on black;

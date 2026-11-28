@@ -24,6 +24,10 @@ WIN="1728 1028" ARGS="-Live off" zsh $R $DRY detail $STAMP-detail-liveoff $SPIKE
 WIN="1728 1028" ARGS="-Flat on" zsh $R $DRY detail $STAMP-detail-flatlive $SPIKE/tools/steps/rest.steps
 WIN="1728 1028" zsh $R $DRY cards $STAMP-cards-live $SPIKE/tools/steps/cards-live.steps
 for v in BD50 BD75 B; do WIN="1728 1028" ARGS="-Variant $v" zsh $R $DRY detail $STAMP-detail-live30-$v $SPIKE/tools/steps/rest.steps; done
+# round 2 controls (full screen): the Map with every orb Good Flow (round 1's state) beside the reveal rows above; the
+# detail band at the round-1 pool route (shader hash) beside the pool-table default
+for n in 1 2; do WIN="1728 1028" ARGS="-Reveal off" zsh $R $DRY map $STAMP-map-revealoff-r$n; (( ${#DRY} )) && break; done
+WIN="1728 1028" ARGS="-Pools shader" zsh $R $DRY detail $STAMP-detail-poolsshader
 # process CPU at rest (30 s)
 if (( ! ${#DRY} )); then
   {

@@ -112,6 +112,9 @@ struct GFLibrary {
         let entry: GFEntry
         let items: Int          // the entry's item count (the Map orb's size: 60 pt + 8 per further item, 120 at most)
         let cluster: Int
+        /// Round 2 (outcome 2): the entry's REGION (the Map is coloured by region, ruled 11-18): six regions over the
+        /// eight loose clusters (cluster mod 6), so two regions are split across two places, as a real region can be.
+        var region: Int { cluster % GFColor.regions.count }
         var diam: Double { min(60 + 8 * Double(items - 1), 120) }
         var title: String { "Entry \(entry.id.dropFirst()) · placeholder title" }
     }
@@ -196,6 +199,9 @@ enum GFColor {
         let lin = theme == .light ? simd_mix(SIMD3(0.9, 0.9, 0.885), v, SIMD3(repeating: 0.7)) : v * 0.55
         return SIMD3(pow(lin.x, 1 / 2.2), pow(lin.y, 1 / 2.2), pow(lin.z, 1 / 2.2))
     }
+    /// Round 2: the plain orbs' region colours (gamma-encoded sRGB, as hex).
+    static let regionHex: [UInt32] = [0x1B59C2, 0xE8820A, 0x2E9E6A, 0xC2365F, 0x7B5CC7, 0x00A3C4]
+    static var regions: [SIMD3<Double>] { regionHex.map { SIMD3(Double(($0 >> 16) & 0xFF), Double(($0 >> 8) & 0xFF), Double($0 & 0xFF)) / 255 } }
     static func gamma(_ lin: SIMD3<Double>) -> SIMD3<Double> { SIMD3(pow(lin.x, 1 / 2.2), pow(lin.y, 1 / 2.2), pow(lin.z, 1 / 2.2)) }
 }
 

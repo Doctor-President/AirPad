@@ -305,7 +305,7 @@ final class GFCardsViewController: UIViewController, UICollectionViewDataSource,
         switch what {
         case "liveRate": liveView?.liveRate = GFSettings.shared.liveRate
         case "live": updateLive()
-        case "case", "detailFit", "mapCap", "sim": break
+        case "case", "detailFit", "mapCap", "sim", "detailZoom", "scrolledBand", "reveal", "revealDial", "overrides": break
         default:   // theme, glass, edgeBend, variant, hash, flat: every still is redrawn
             applyTheme(); endLive(animated: false)
             cache.invalidate(); lastWantKey = ""

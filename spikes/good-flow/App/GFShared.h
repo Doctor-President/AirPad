@@ -53,6 +53,7 @@ typedef struct {
     float slice;            // texture array slice
     float uvScale;          // the still's used part of the slice (1 = all of it)
     float pad;
+    simd_float3 regionCol;  // round 2 (outcome 2): the plain orb's colour, by REGION (gamma-encoded)
 } GFOrbInstance;
 
 typedef struct {
@@ -66,6 +67,13 @@ typedef struct {
     int grainOn;            // grain at screen scale (design §1 departure); 0 = none
     int flat;               // flat control: every orb a flat disc
     float pad2;
+    // Round 2 (outcome 2): Good Flow REVEALED, not everywhere. An orb shows its still only when its on-screen diameter is
+    // ≥ revealSize AND its centre is inside the annulus (screen distance from the view's centre ≤ revealR); otherwise a
+    // plain disc in its region's colour. revealSoft = the blend band, a fraction of each threshold. revealOn 0 = all Good Flow.
+    int revealOn;
+    float revealSize;       // screen pt
+    float revealR;          // screen pt
+    float revealSoft;
 } GFMapUniforms;
 
 #endif

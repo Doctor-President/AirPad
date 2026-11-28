@@ -216,6 +216,10 @@ final class GFPanel: UIView {
             row("Scrolled band", ["On", "Off", "Only"], ["on", "off", "only"].firstIndex(of: S.scrolledBand) ?? 0) { S.scrolledBand = ["on", "off", "only"][$0] }
         }
         row("Dark-cast fix", ["Off", "On"], S.deepFix ? 1 : 0) { S.deepFix = $0 == 1 }
+        row("Map reveal", ["On", "All Good Flow"], S.reveal ? 0 : 1) { S.reveal = $0 == 0 }
+        slider("Reveal size (on-screen pt)", 20, 240, Float(S.revealSize)) { S.revealSize = $0 }
+        slider("Reveal annulus (pt from centre)", 60, 1400, Float(S.revealAnnulus)) { S.revealAnnulus = $0 }
+        slider("Reveal blend (soft)", 0.02, 0.6, Float(S.revealSoft)) { S.revealSoft = $0 }
         let simIdx = S.simReduceMotion ? 1 : S.simLowPower ? 2 : S.simThermal >= 2 ? 3 : 0
         row("Simulate", ["None", "Reduce Motion", "Low Power", "Thermal"], simIdx) { i in
             S.simReduceMotion = i == 1; S.simLowPower = i == 2; S.simThermal = i == 3 ? 2 : 0

@@ -39,27 +39,109 @@ final class GFOrbStillCache {
         return min(cap, (need + 15) / 16 * 16)
     }
 
-    init(cap: Int, scale: Double, theme: GFTheme, mode: GFDrawMode, flat: Bool) {
-        self.cap = cap; self.scale = scale; self.theme = theme; self.mode = mode; self.flat = flat
+    /// Round 2 (outcome 2): `near` = the reveal's still pool: one texture array of `slots` slices at one master size (the
+    /// largest orb at `cap`), filled ON DEMAND for the orbs near the reveal and recycled (least recently wanted first).
+    let near: Bool, slots: Int
+    private var slotOf: [Int: Int] = [:]          // orb → slot (main)
+    private var slotOrb: [Int?] = []              // slot → orb (main)
+    private var slotUsed: [Double] = []           // slot → last time its orb was wanted (main)
+    private(set) var nearFills = 0, nearEvictions = 0, nearWanted = 0
+
+    init(cap: Int, scale: Double, theme: GFTheme, mode: GFDrawMode, flat: Bool, near: Bool = false, slots: Int = 48) {
+        self.cap = cap; self.scale = scale; self.theme = theme; self.mode = mode; self.flat = flat; self.near = near; self.slots = slots
         let dev = GFRenderer.shared.device
         var groups: [Int: [Int]] = [:]
-        for (i, it) in lib.items.enumerated() { groups[Self.master(diam: it.diam, scale: scale, cap: cap), default: []].append(i) }
+        if near { groups[Self.master(diam: 120, scale: scale, cap: cap)] = Array(lib.items.indices) }
+        else { for (i, it) in lib.items.enumerated() { groups[Self.master(diam: it.diam, scale: scale, cap: cap), default: []].append(i) } }
+        let regions = GFColor.regions
         for m in groups.keys.sorted() {
             let orbs = groups[m]!
             let td = MTLTextureDescriptor()
-            td.textureType = .type2DArray; td.pixelFormat = .bgra8Unorm; td.width = m; td.height = m; td.arrayLength = orbs.count
+            td.textureType = .type2DArray; td.pixelFormat = .bgra8Unorm; td.width = m; td.height = m; td.arrayLength = near ? slots : orbs.count
             td.mipmapLevelCount = Int(log2(Double(m))) + 1; td.usage = [.shaderRead]; td.storageMode = .private
             let arr = dev.makeTexture(descriptor: td)!
             let buf = dev.makeBuffer(length: MemoryLayout<GFOrbInstance>.stride * orbs.count, options: .storageModeShared)!
             let p = buf.contents().bindMemory(to: GFOrbInstance.self, capacity: orbs.count)
             for (k, i) in orbs.enumerated() {
                 let it = lib.items[i], pos = lib.positions[i], fc = GFColor.flat(it.entry.hue, theme)
+                let rc = regions[it.region]
                 p[k] = GFOrbInstance(center: SIMD2(Float(pos.x), Float(pos.y)), diam: Float(it.diam), halfSize: Float(0.625 * it.diam),
                                      flatCol: SIMD3(Float(fc.x), Float(fc.y), Float(fc.z)), patina: Float(it.entry.patina),
-                                     ready: 0, slice: Float(k), uvScale: 1, pad: 0)
+                                     ready: 0, slice: near ? 0 : Float(k), uvScale: 1, pad: 0, regionCol: SIMD3(Float(rc.x), Float(rc.y), Float(rc.z)))
                 where_[i] = (buckets.count, k)
             }
             buckets.append(Bucket(m: m, orbs: orbs, array: arr, instances: buf))
+        }
+        if near { slotOrb = Array(repeating: nil, count: slots); slotUsed = Array(repeating: 0, count: slots) }
+    }
+
+    private func instance(_ i: Int) -> UnsafeMutablePointer<GFOrbInstance> {
+        let (b, s) = where_[i]!
+        return buckets[b].instances.contents().bindMemory(to: GFOrbInstance.self, capacity: buckets[b].orbs.count) + s
+    }
+    var nearInUse: Int { slotOf.count }
+
+    /// Near mode: the orbs that should hold a still now (nearest the reveal first). Gives each a slot (a free one, else
+    /// the slot of an orb no longer wanted, least recently wanted first) and queues its fill. Main thread; O(262).
+    func want(near wanted: [Int]) {
+        guard near, !cancelled else { return }
+        let now = CACurrentMediaTime()
+        let keep = Array(wanted.prefix(slots)); nearWanted = wanted.count
+        let keepSet = Set(keep)
+        for i in keep { if let sl = slotOf[i] { slotUsed[sl] = now } }
+        var jobs: [(Int, Int)] = []
+        for i in keep where slotOf[i] == nil {
+            var sl = slotOrb.firstIndex(where: { $0 == nil })
+            if sl == nil {
+                sl = slotOrb.indices.filter { slotOrb[$0].map { !keepSet.contains($0) } ?? false }.min { slotUsed[$0] < slotUsed[$1] }
+                if let s0 = sl, let old = slotOrb[s0] { slotOf[old] = nil; instance(old).pointee.ready = 0; nearEvictions += 1 }
+            }
+            guard let s1 = sl else { break }
+            slotOrb[s1] = i; slotOf[i] = s1; slotUsed[s1] = now
+            instance(i).pointee.slice = Float(s1)
+            jobs.append((i, s1))
+        }
+        guard !jobs.isEmpty else { return }
+        if fillStart == 0 { fillStart = now }
+        let m = buckets[0].m
+        let us = jobs.map { uniforms($0.0, m: m) }
+        fillQ.async { [weak self] in self?.runNear(jobs, us) }
+    }
+
+    private func runNear(_ jobs: [(Int, Int)], _ us: [GFUniforms]) {
+        let dev = GFRenderer.shared.device
+        let m = buckets[0].m
+        let td = MTLTextureDescriptor.texture2DDescriptor(pixelFormat: .bgra8Unorm, width: m, height: m, mipmapped: true)
+        td.usage = [.renderTarget, .shaderRead]; td.storageMode = .private
+        let t = dev.makeTexture(descriptor: td)!
+        let scratch = GFScratch()
+        var k = 0, perOrbGuess = 2.0          // a 256 px orb is ~1.4 ms: start at one a batch
+        while k < jobs.count, !cancelled {
+            let n = max(1, min(8, Int(2.0 / max(perOrbGuess, 0.05))))   // ~2 ms of GPU a batch, as round 1's fill
+            let batch = Array(k..<min(jobs.count, k + n)); k += batch.count
+            let cb = cq.makeCommandBuffer()!
+            for j in batch {
+                GFDraw.encode(cb, target: t, us[j], mode, scratch: scratch)
+                let bl = cb.makeBlitCommandEncoder()!
+                bl.generateMipmaps(for: t)
+                for lv in 0..<t.mipmapLevelCount {
+                    let sz = max(1, m >> lv)
+                    bl.copy(from: t, sourceSlice: 0, sourceLevel: lv, sourceOrigin: MTLOrigin(), sourceSize: MTLSize(width: sz, height: sz, depth: 1),
+                            to: buckets[0].array, destinationSlice: jobs[j].1, destinationLevel: lv, destinationOrigin: MTLOrigin())
+                }
+                bl.endEncoding()
+            }
+            cb.commit(); cb.waitUntilCompleted()
+            let g = (cb.gpuEndTime - cb.gpuStartTime) * 1000
+            batchGpuMs.append(g); perOrbGuess = g / Double(batch.count); gpuPerOrbMs.append(perOrbGuess)
+            let done = batch.map { jobs[$0] }
+            DispatchQueue.main.async { [weak self] in
+                guard let self, !self.cancelled else { return }
+                for (i, sl) in done where self.slotOf[i] == sl { self.instance(i).pointee.ready = 1 }
+                self.nearFills += done.count; self.readyCount = self.slotOf.count
+                GFRecorder.shared.still(kind: "orb×\(done.count)", reason: "reveal", gpuMs: g, mainMs: 0, px: done.count * m * m)
+                self.onBatch?()
+            }
         }
     }
     deinit { cancelled = true }
@@ -137,7 +219,8 @@ final class GFOrbStillCache {
     }
 
     var summary: [String: Any] {
-        ["cap": cap, "scale": scale, "theme": theme.rawValue, "mode": mode.label, "bytes": bytes, "MB": Double(bytes) / 1_048_576,
+        ["near": near, "slots": slots, "nearInUse": slotOf.count, "nearFills": nearFills, "nearEvictions": nearEvictions, "nearWanted": nearWanted,
+         "cap": cap, "scale": scale, "theme": theme.rawValue, "mode": mode.label, "bytes": bytes, "MB": Double(bytes) / 1_048_576,
          "buckets": buckets.map { ["m": $0.m, "n": $0.orbs.count, "bytes": $0.array.allocatedSize] },
          "visibleFillMs": visibleDone.map { ($0 - fillStart) * 1000 } ?? -1, "allFillMs": allDone.map { ($0 - fillStart) * 1000 } ?? -1,
          "batchGpuMsMax": batchGpuMs.max() ?? -1, "batches": batchGpuMs.count, "batchGpuMs": batchGpuMs,
@@ -177,6 +260,18 @@ final class GFMapView: UIView, UIGestureRecognizerDelegate {
     private var lastPinchScale: CGFloat = 1
     var cache: GFOrbStillCache? { didSet { requestFrame("data") } }
     var onTick: ((Double) -> Void)?        // the programmatic driver adds its input here
+    var onCamera: (() -> Void)?            // round 2: after the camera moved (the reveal's still pool follows it)
+
+    /// Round 2: the reveal (as the shader computes it) for orb i at the current camera; `margin` widens both gates so a
+    /// still is filled before its orb starts to reveal.
+    func reveal(_ i: Int, margin: Double = 1) -> Double {
+        let S = GFSettings.shared, lib = GFLibrary.shared
+        let p = lib.positions[i], ds = lib.items[i].diam / camScale, d = hypot(p.x - camX, p.y - camY) / camScale, k = S.revealSoft
+        func ss(_ a: Double, _ b: Double, _ x: Double) -> Double { let t = min(max((x - a) / max(b - a, 1e-9), 0), 1); return t * t * (3 - 2 * t) }
+        let size = ss(S.revealSize * (1 - k) / margin, S.revealSize * (1 + k) / margin, ds)
+        let ring = 1 - ss(S.revealAnnulus * (1 - k) * margin, S.revealAnnulus * (1 + k) * margin, d)
+        return size * ring
+    }
     private(set) var drawnFrames = 0, ticks = 0
 
     override init(frame: CGRect) {
@@ -316,6 +411,7 @@ final class GFMapView: UIView, UIGestureRecognizerDelegate {
             GFRecorder.shared.tick(surface: "map", at: t0, drew: false); l.isPaused = true; return
         }
         applyPending(dt: dt)
+        onCamera?()
         let tw = CACurrentMediaTime()
         guard let drawable = metalLayer.nextDrawable() else { GFRecorder.shared.tick(surface: "map", at: t0, drew: false); return }
         GFRecorder.shared.tick(surface: "map", at: t0, drew: true)
@@ -344,7 +440,8 @@ final class GFMapView: UIView, UIGestureRecognizerDelegate {
         if let cache {
             var m = GFMapUniforms(cam: SIMD2(Float(camX), Float(camY)), camScale: Float(camScale), pxPerPt: Float(metalLayer.contentsScale),
                                   viewPt: SIMD2(Float(bounds.width), Float(bounds.height)), ground: SIMD3(Float(ground.x), Float(ground.y), Float(ground.z)),
-                                  grain: Float(GFLook.shared.dial("grain")), time: Float(GFLook.shared.stillTime), grainOn: 1, flat: S.flat ? 1 : 0, pad2: 0)
+                                  grain: Float(GFLook.shared.dial("grain")), time: Float(GFLook.shared.stillTime), grainOn: 1, flat: S.flat ? 1 : 0, pad2: 0,
+                                  revealOn: S.reveal ? 1 : 0, revealSize: Float(S.revealSize), revealR: Float(S.revealAnnulus), revealSoft: Float(S.revealSoft))
             cache.draw(enc, &m)
         }
         enc.endEncoding()
@@ -360,14 +457,32 @@ final class GFMapViewController: UIViewController, GFCaseScreen {
     /// -MapCap / the panel (default 128: the only cap whose 262 mipmapped stills fit both memory bars; results-3b.md).
     static var cap: Int { GFSettings.shared.mapCap }
 
+    private let revealLabel = UILabel()
+    private var labelTick = 0.0
+
     override func viewDidLoad() {
         super.viewDidLoad()
         view.addSubview(map)
+        revealLabel.font = .monospacedDigitSystemFont(ofSize: 12, weight: .medium)
+        revealLabel.textColor = .white; revealLabel.backgroundColor = UIColor(white: 0, alpha: 0.45)
+        revealLabel.layer.cornerRadius = 6; revealLabel.layer.masksToBounds = true; revealLabel.textAlignment = .center
+        revealLabel.isUserInteractionEnabled = false
+        view.addSubview(revealLabel)
+        map.onCamera = { [weak self] in
+            guard let self else { return }
+            self.wantNear()
+            let now = CACurrentMediaTime()
+            if now - self.labelTick > 0.25 { self.labelTick = now; self.updateRevealLabel() }   // the label, 4 a second at most while moving
+        }
         map.cache = nil
         let p0 = GFLibrary.shared.positions[0]          // start at zoom 1 on e0's cluster
         map.camX = p0.x; map.camY = p0.y
         if let z = UserDefaults.standard.object(forKey: "MapZoom") as? String, let v = Double(z) { map.camScale = v }
-        settingsObs = NotificationCenter.default.addObserver(forName: .gfSettingsChanged, object: nil, queue: .main) { [weak self] _ in self?.rebuildIfNeeded() }
+        settingsObs = NotificationCenter.default.addObserver(forName: .gfSettingsChanged, object: nil, queue: .main) { [weak self] n in
+            self?.rebuildIfNeeded()
+            if (n.userInfo?["what"] as? String) == "revealDial" { self?.wantNear(); self?.map.requestFrame("reveal"); self?.updateRevealLabel() }
+            else if (n.userInfo?["what"] as? String) == "reveal" { self?.map.requestFrame("reveal") }
+        }
         map.onTick = { [weak self] dt in self?.progStep(dt) }
     }
     deinit { settingsObs.map(NotificationCenter.default.removeObserver); map.cache?.cancel() }
@@ -380,17 +495,38 @@ final class GFMapViewController: UIViewController, GFCaseScreen {
         guard map.bounds.width > 0, view.window != nil else { return }
         let S = GFSettings.shared
         let scale = Double(view.window!.traitCollection.displayScale)
-        let key = "\(S.theme)|\(S.mode.label)|\(S.flat)|\(scale)|\(Self.cap)|\(S.pools)"
-        guard key != cacheKey else { return }
+        let near = S.reveal && S.revealStills == "near"
+        let key = "\(S.theme)|\(S.mode.label)|\(S.flat)|\(scale)|\(Self.cap)|\(S.pools)|\(S.deepFix)|\(near)|\(S.revealCap)|\(S.revealSlots)"
+        guard key != cacheKey else { updateRevealLabel(); return }
         cacheKey = key
         map.cache?.cancel()
         let before = GFRecorder.physFootprintMB()
-        let c = GFOrbStillCache(cap: Self.cap, scale: scale, theme: S.theme, mode: S.mode, flat: S.flat)
-        c.onBatch = { [weak self] in self?.map.requestFrame("fill") }
+        let c = GFOrbStillCache(cap: near ? S.revealCap : Self.cap, scale: scale, theme: S.theme, mode: S.mode, flat: S.flat, near: near, slots: S.revealSlots)
+        c.onBatch = { [weak self] in self?.map.requestFrame("fill"); self?.updateRevealLabel() }
         map.cache = c
         view.backgroundColor = GFSettings.pageColor(S.theme)
-        GFRecorder.shared.mark(String(format: "map stills: cap %d, %.1f MB of textures, footprint before %.1f MB", Self.cap, Double(c.bytes) / 1_048_576, before))
-        c.fill(first: map.visibleOrbs())
+        GFRecorder.shared.mark(String(format: "map stills: %@ cap %d, %.1f MB of textures, footprint before %.1f MB", near ? "reveal pool" : "all", c.cap, Double(c.bytes) / 1_048_576, before))
+        if near { wantNear() } else { c.fill(first: map.visibleOrbs()) }
+        updateRevealLabel()
+    }
+    /// Round 2: the orbs that should hold a still (reveal > 0 with a 15 % margin on both gates), nearest the centre first.
+    private func wantNear() {
+        guard let c = map.cache, c.near else { return }
+        let lib = GFLibrary.shared
+        let cand = lib.items.indices.filter { map.reveal($0, margin: 1.15) > 0 }
+            .sorted { hypot(lib.positions[$0].x - map.camX, lib.positions[$0].y - map.camY) < hypot(lib.positions[$1].x - map.camX, lib.positions[$1].y - map.camY) }
+        c.want(near: cand)
+    }
+    private func updateRevealLabel() {
+        let S = GFSettings.shared
+        guard let c = map.cache else { return }
+        let revealed = S.reveal ? GFLibrary.shared.items.indices.filter { map.reveal($0) > 0.01 }.count : 262
+        revealLabel.text = (S.reveal ? String(format: "Reveal ON · size ≥ %.0f pt · annulus %.0f pt · soft %.2f · ", S.revealSize, S.revealAnnulus, S.revealSoft) : "Reveal OFF (all Good Flow) · ")
+            + (c.near ? String(format: "stills %d/%d @%dpx (%.1f MB)", c.nearInUse, c.slots, c.buckets.first?.m ?? 0, Double(c.bytes) / 1_048_576)
+                      : String(format: "stills 262 @≤%dpx (%.1f MB)", c.cap, Double(c.bytes) / 1_048_576))
+            + String(format: " · revealed now %d · zoom %.2f", revealed, 1 / map.camScale)
+        let sz = revealLabel.sizeThatFits(CGSize(width: view.bounds.width - 140, height: 40))
+        revealLabel.frame = CGRect(x: 12 + view.safeAreaInsets.left, y: view.bounds.height - sz.height - 20 - view.safeAreaInsets.bottom, width: sz.width + 16, height: sz.height + 6)
     }
 
     // MARK: programmatic motion: a slow circle pan with a zoom breathing 0.6 ↔ 1.6, plus a pinch every 3 s.
@@ -407,6 +543,106 @@ final class GFMapViewController: UIViewController, GFCaseScreen {
         let target = 1.1 + 0.5 * sin(progT * 2 * .pi / 6)
         let z = pow(target / map.camScale, min(1, dt * 4))
         map.queue(pan: pan, zoom: z, anchor: CGPoint(x: map.bounds.midX, y: map.bounds.midY))
+    }
+
+    /// Round 2 · -Script verbs: reveal:on|off, rsize:<pt>, rannulus:<pt>, rsoft:<k>, cam:<x>|<y>|<scale> (absolute),
+    /// zoomto:<scale> (keeps the centre), still:<name> (the Map pass offscreen at the view's size → Documents/r2/<name>.png).
+    func scriptAction(_ verb: String, _ arg: String) -> Bool {
+        let S = GFSettings.shared
+        switch verb {
+        case "reveal": S.reveal = arg == "on"
+        case "rsize": S.revealSize = Double(arg) ?? S.revealSize
+        case "rannulus": S.revealAnnulus = Double(arg) ?? S.revealAnnulus
+        case "rsoft": S.revealSoft = Double(arg) ?? S.revealSoft
+        case "zoomto": map.camScale = Double(arg) ?? map.camScale; wantNear(); map.requestFrame("script"); updateRevealLabel()
+        case "cam":
+            let v = arg.split(separator: "|").compactMap { Double($0) }
+            if v.count == 3 { map.camX = v[0]; map.camY = v[1]; map.camScale = v[2]; wantNear(); map.requestFrame("script"); updateRevealLabel() }
+        case "measure": measureOffscreen(name: arg)
+        case "still":
+            let R = GFRenderer.shared, sc = Double(map.metalLayer.contentsScale)
+            let w = Int(map.bounds.width * sc), h = Int(map.bounds.height * sc)
+            let td = MTLTextureDescriptor.texture2DDescriptor(pixelFormat: .bgra8Unorm, width: w, height: h, mipmapped: false)
+            td.usage = [.renderTarget, .shaderRead]; td.storageMode = .private
+            let t = R.device.makeTexture(descriptor: td)!
+            let cb = R.queue.makeCommandBuffer()!
+            map.encode(cb, target: t); cb.commit(); cb.waitUntilCompleted()
+            let px = GFStillRenderer.readRGBA(t)
+            let dir = FileManager.default.urls(for: .documentDirectory, in: .userDomainMask)[0].appendingPathComponent("r2")
+            try? FileManager.default.createDirectory(at: dir, withIntermediateDirectories: true)
+            try? GFStillRenderer.writePNG(.init(width: w, height: h, rgba: px, gpuMs: 0, encodeMs: 0), to: dir.appendingPathComponent(arg + ".png"))
+        default: return false
+        }
+        return true
+    }
+    var diagnostics: [String: Any] { var m = recordingMeta; m["label"] = revealLabel.text ?? ""; return m }
+
+    /// Round 2 · `measure:<name>[|frames]`: the Map pass drawn OFFSCREEN at the view's pixel size, one command buffer a frame
+    /// at 120 a second (a main-thread timer), along round 1's programmatic path (pan circle + zoom breathing 0.6 ↔ 1.6), the
+    /// reveal's pool following the camera exactly as on screen. Valid with the screen locked (no drawables). Writes
+    /// Documents/r2/<name>.json: GPU ms a frame (p50 / p95 / max), main ms a frame, fills and their GPU during the path,
+    /// still bytes, footprint.
+    private func measureOffscreen(name: String) {
+        let parts = name.split(separator: "|"); let nm = String(parts[0]); let frames = parts.count > 1 ? Int(parts[1]) ?? 1200 : 1200
+        // path "wide" (default): round 1's programmatic path from where the camera is. Path "orbit": the camera circles e0's
+        // cluster (radius 320 pt, one turn in 12 s) with the zoom breathing 0.6 ↔ 1.0, so orbs keep crossing the annulus
+        // large enough to reveal (the reveal busy).
+        let orbit = parts.count > 2 && parts[2] == "orbit"
+        let c0 = GFLibrary.shared.positions[0]
+        let R = GFRenderer.shared, sc = Double(map.metalLayer.contentsScale)
+        let w = Int(map.bounds.width * sc), h = Int(map.bounds.height * sc)
+        let td = MTLTextureDescriptor.texture2DDescriptor(pixelFormat: .bgra8Unorm, width: w, height: h, mipmapped: false)
+        td.usage = [.renderTarget]; td.storageMode = .private
+        let targets = (0..<3).map { _ in R.device.makeTexture(descriptor: td)! }
+        var gpu = [Double](repeating: -1, count: frames), mainMs: [Double] = [], k = 0, t = 0.0
+        let fillsBefore = (map.cache?.batchGpuMs.count ?? 0), stillsBefore = map.cache?.nearFills ?? 0
+        let fp0 = GFRecorder.physFootprintMB(), cam0 = (map.camX, map.camY, map.camScale)
+        var revealedSum = 0, revealedMax = 0
+        let timer = Timer(timeInterval: 1.0 / 120, repeats: true) { [weak self] tm in
+            guard let self else { tm.invalidate(); return }
+            let t0 = CACurrentMediaTime()
+            // round 1's programmatic path (GFMapViewController.progStep), applied directly
+            t += 1.0 / 120
+            if orbit {
+                let a = t * 2 * .pi / 12
+                self.map.camX = c0.x + 320 * cos(a); self.map.camY = c0.y + 320 * sin(a); self.map.camScale = 0.8 + 0.2 * sin(t * 2 * .pi / 6)
+            } else {
+                let v = 9.0, target = 1.1 + 0.5 * sin(t * 2 * .pi / 6)
+                self.map.camX -= cos(t * 0.7) * v * self.map.camScale; self.map.camY += sin(t * 0.9) * v * self.map.camScale
+                self.map.camScale *= pow(target / self.map.camScale, min(1, 4.0 / 120))
+            }
+            self.wantNear()
+            if k % 30 == 0 { let n = GFLibrary.shared.items.indices.filter { self.map.reveal($0) > 0.01 }.count; revealedSum += n; revealedMax = max(revealedMax, n) }
+            let cb = R.queue.makeCommandBuffer()!
+            self.map.encode(cb, target: targets[k % 3])
+            let idx = k
+            cb.addCompletedHandler { cb in let g = (cb.gpuEndTime - cb.gpuStartTime) * 1000; DispatchQueue.main.async { gpu[idx] = g } }
+            cb.commit()
+            mainMs.append((CACurrentMediaTime() - t0) * 1000)
+            k += 1
+            if k >= frames {
+                tm.invalidate()
+                DispatchQueue.main.asyncAfter(deadline: .now() + 0.5) {
+                    let g = gpu.filter { $0 >= 0 }.dropFirst(10).map { $0 }
+                    let c = self.map.cache
+                    let fills = Array((c?.batchGpuMs ?? []).dropFirst(fillsBefore))
+                    let res: [String: Any] = [
+                        "name": nm, "frames": frames, "px": [w, h], "settings": GFSettings.shared.dict, "cam0": [cam0.0, cam0.1, cam0.2],
+                        "gpuMsP50": GFMeasure.pct(g, 50), "gpuMsP95": GFMeasure.pct(g, 95), "gpuMsMax": g.max() ?? -1, "gpuN": g.count,
+                        "mainMsP50": GFMeasure.pct(mainMs, 50), "mainMsP95": GFMeasure.pct(mainMs, 95),
+                        "fillBatches": fills.count, "fillGpuMsSum": fills.reduce(0, +), "fillGpuMsMax": fills.max() ?? 0,
+                        "fillGpuMsP50": GFMeasure.pct(fills, 50), "fillGpuMsP95": GFMeasure.pct(fills, 95), "revealedMax": revealedMax,
+                        "stillsFilledDuring": (c?.nearFills ?? 0) - stillsBefore, "evictions": c?.nearEvictions ?? 0,
+                        "stillMB": Double(c?.bytes ?? 0) / 1_048_576, "footprintMB": GFRecorder.physFootprintMB(), "footprintStartMB": fp0,
+                        "revealedAvg": Double(revealedSum) / Double(max(1, frames / 30)), "cache": c?.summary ?? [:]]
+                    let dir = FileManager.default.urls(for: .documentDirectory, in: .userDomainMask)[0].appendingPathComponent("r2")
+                    try? FileManager.default.createDirectory(at: dir, withIntermediateDirectories: true)
+                    try? JSONSerialization.data(withJSONObject: res, options: [.prettyPrinted, .sortedKeys]).write(to: dir.appendingPathComponent(nm + ".json"))
+                    GFRecorder.shared.mark("measure \(nm) done")
+                }
+            }
+        }
+        RunLoop.main.add(timer, forMode: .common)
     }
 
     var recordingMeta: [String: Any] {

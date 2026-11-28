@@ -129,3 +129,49 @@ Good Flow at **Width** scale, a still (drawn once; the fade is the view's alpha,
 Conditions: every still here is drawn offscreen by the band's own uniforms and mode (script verb `still:`), Mac
 Catalyst Release, screen locked; window 1728 × 1028 Mac pt (2245 × 1336 UIKit pt, the build is iPad-scaled), band
 2245 × 241 pt (the title-bar inset is 41 pt windowed; T's full-screen band was 2245 × 200).
+
+## 2 · The Map: Good Flow revealed, not everywhere
+
+**Built.** An orb shows its Good Flow still only when its **on-screen diameter ≥ Reveal size** AND its centre is
+**inside the annulus** (screen distance from the view's centre ≤ Reveal annulus); otherwise it is a **plain disc in its
+region's colour**. Both gates are smooth (a blend band = `soft` × each threshold), so an orb crossing either edge fades
+between the two states; an orb whose still has not landed stays plain. Computed per orb in the Map's vertex shader
+(`revealOf`, GoodFlow.metal), mirrored on the CPU (`GFMapView.reveal`) to pick which stills to keep.
+- **Dials / switches** (panel rows + launch arguments, values on screen bottom-left of the Map, e.g. `Reveal ON · size ≥
+  80 pt · annulus 300 pt · soft 0.25 · stills 35/48 @256px (16.7 MB) · revealed now 11 · zoom 1.00`):
+  **`-RevealSize <pt>`** (20–240, default 80), **`-RevealAnnulus <pt>`** (60–1400, default 300), **`-RevealSoft <k>`**
+  (0.02–0.6, default 0.25), **`-Reveal on|off`** (panel "Map reveal: On / All Good Flow"; off = round 1),
+  `-RevealStills near|all`, `-RevealCap`, `-RevealSlots`.
+- **Regions:** six regions over the eight synthetic clusters (cluster mod 6), colours by hex `#1B59C2 #E8820A #2E9E6A
+  #C2365F #7B5CC7 #00A3C4` (GFColor.regionHex); plain orbs no longer use the entry's hue.
+- **Annulus source: AirPad's own lens geometry, not the spike's** (the spike's Map has no lens). Read from `ws-mac`
+  `CorpusPhysicsScene.AnnulusTuning`: viewport-centred, radius in SCREEN points, 300 pt (the default here). AirPad's bloom
+  envelope (on only zoomed in past camera scale 3 → 1.5) is not copied: the size gate plays that part here.
+- **Fewer stills, sharper:** with the reveal on, stills are kept only for orbs near the reveal (both gates widened 15 %),
+  filled on demand into a pool of 48 slots at **256 px** (round 1: all 262 at 128 px) and recycled least recently wanted
+  first. `-RevealStills all` keeps round 1's 262 for comparison.
+
+**Measured** (Mac, M1 Max, Release, screen LOCKED, so OFFSCREEN: the Map pass drawn at the window's pixel size 4490 × 2672
+(1728 × 1028 Mac pt), one command buffer a frame at 120 a second from a main-thread timer, 1 440 frames; light; two
+launches per arm; nothing of mine beside it, but system daemons were busy: mobileassetd 71 %, BackgroundShortcutRunner
+98 % CPU at the starts). Path "orbit": the camera circles e0's cluster at zoom 1.0–1.25 so orbs keep crossing the annulus
+(10.6 revealed on average, 22 at most); path "wide" = round 1's programmatic path (1.1 revealed on average).
+
+| arm | frame GPU p50 / p95 (orbit) | (wide) | still textures | footprint after fill | fills while moving (orbit, 12 s) |
+|---|---|---|---|---|---|
+| reveal off: all Good Flow, 262 stills @128 (round 1) | 0.83–0.84 / 1.01–1.27 ms | 0.32–0.33 / 0.70–0.71 | 24.8 MB | 162–229 MB | 0 |
+| **reveal on, pool 48 @256** (default) | **0.72–0.74 / 0.87–0.89** | 0.32–0.34 / 0.61–0.63 | **16.7 MB** | 122 MB (both) | 31–32 stills, 18–34 evictions |
+| reveal on, pool 48 @128 | 0.74 / 0.90 | 0.34 / 0.63 | **4.6 MB** | 111 MB | 31 |
+| reveal on, all 262 @128 | 0.74 / 0.89 | 0.34 / 0.63–0.64 | 24.8 MB | 224–225 MB | 0 |
+
+- **Companion's "cheaper" holds, modestly:** a frame costs about 12 % less GPU when the reveal is busy (plain discs skip
+  the texture and the grain), and the stills take a third less memory while being twice as sharp (16.7 vs 24.8 MB), or a
+  fifth of it at round 1's sharpness (4.6 MB). Every arm is far under the 4.0 ms bar; the frame was never the problem.
+- **What the reveal adds:** fills WHILE moving (round 1 filled once and never again): ~2.5 stills a second on the
+  orbit path. Per batch (one orb) p50 0.9–1.3 ms GPU; p95 4–7 ms and max 5–12 ms, at 128 px as much as at 256 px, so the
+  tails are the fill's command buffer sharing the GPU with the 120 Hz frames (its start-to-end span), not the orb. Not seen
+  as a lost frame here (offscreen: no presents to lose); the real port paces fills and reads it presented, unlocked.
+- Footprint after fill is one sample per launch and noisy (the "off" arm read 162 and 229 MB); the texture bytes are exact.
+
+Still: `results-round2/o2-map-reveal.png` (reveal off vs on at zoom 1, zoomed in, zoomed out (all plain: too small),
+and dark). Offscreen Map passes (`-Script still:`), Release, the same build.

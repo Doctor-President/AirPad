@@ -233,7 +233,7 @@ enum GFMeasure {
         let p0 = GFLibrary.shared.positions[0]
         var m = GFMapUniforms(cam: SIMD2(Float(p0.x + 80), Float(p0.y)), camScale: 1, pxPerPt: Float(scale), viewPt: SIMD2(Float(vw), Float(vh)),
                               ground: SIMD3(Float(g.x), Float(g.y), Float(g.z)), grain: Float(GFLook.shared.dial("grain")), time: Float(GFLook.shared.stillTime),
-                              grainOn: 1, flat: 0, pad2: 0)
+                              grainOn: 1, flat: 0, pad2: 0, revealOn: 0, revealSize: 0, revealR: 0, revealSoft: 0)
         let cb = R.queue.makeCommandBuffer()!
         let rp = MTLRenderPassDescriptor()
         rp.colorAttachments[0].texture = t; rp.colorAttachments[0].loadAction = .clear; rp.colorAttachments[0].storeAction = .store

@@ -361,7 +361,19 @@ fragment float4 gf_fringe(VOut vin [[stage_in]], constant GFUniforms& u [[buffer
 // is opaque (the orb on the bench's page colour); it is laid over the ground with an alpha that is 1 out to the disc's
 // soft edge and most of its rim glow (r ≤ 0.52 D) and 0 by 0.62 D, so a neighbour's padding never covers an orb. Grain
 // is added here, per SCREEN pixel (design §1's departure), with the bench's own formula and amplitude.
-struct MapVOut { float4 pos [[position]]; float2 q; float diam; float3 flatCol; float patina; float ready; float slice; float uvScale; };
+struct MapVOut { float4 pos [[position]]; float2 q; float diam; float3 flatCol; float patina; float ready; float slice; float uvScale;
+                 float3 regionCol; float reveal; };
+
+/// Round 2: how much of an orb is revealed (1 = its Good Flow still, 0 = the plain region disc), per orb, from its
+/// on-screen size and its screen distance to the view's centre (the annulus). Smooth across both thresholds.
+static float revealOf(constant GFMapUniforms& m, float2 center, float diam){
+  if(m.revealOn == 0) return 1.;
+  float2 sc = float2((center.x-m.cam.x)/m.camScale, (center.y-m.cam.y)/m.camScale);   // screen pt from the view's centre
+  float Ds = diam/m.camScale, d = length(sc), k = m.revealSoft;
+  float sizeGate = smoothstep(m.revealSize*(1.-k), m.revealSize*(1.+k), Ds);
+  float ringGate = 1. - smoothstep(m.revealR*(1.-k), m.revealR*(1.+k), d);
+  return sizeGate*ringGate;
+}
 
 vertex MapVOut gf_map_vertex(uint vid [[vertex_id]], uint iid [[instance_id]],
                              constant GFOrbInstance* orbs [[buffer(0)]], constant GFMapUniforms& m [[buffer(1)]]){
@@ -372,6 +384,7 @@ vertex MapVOut gf_map_vertex(uint vid [[vertex_id]], uint iid [[instance_id]],
   MapVOut v;
   v.pos = float4(sp.x/m.viewPt.x*2.-1., 1.-sp.y/m.viewPt.y*2., 0., 1.);
   v.q = corner*o.halfSize; v.diam = o.diam; v.flatCol = o.flatCol; v.patina = o.patina; v.ready = o.ready; v.slice = o.slice; v.uvScale = o.uvScale;
+  v.regionCol = o.regionCol; v.reveal = revealOf(m, o.center, o.diam);
   return v;
 }
 
@@ -379,12 +392,18 @@ fragment float4 gf_map_fragment(MapVOut v [[stage_in]], constant GFMapUniforms& 
                                 texture2d_array<float> stills [[texture(0)]]){
   constexpr sampler sm(filter::linear, mip_filter::linear, address::clamp_to_edge);
   float r = length(v.q), D = v.diam;
+  float edge = smoothstep(.5*D-.6*m.camScale, .5*D+.6*m.camScale, r);          // the flat disc's ~1 pt soft edge
+  // Round 2: with the reveal on, an orb that is not revealed (or whose still has not landed) is the plain region disc.
+  float rv = m.revealOn == 1 ? (v.ready > .5 ? v.reveal : 0.) : 1.;
+  float3 plain = mix(v.regionCol, m.ground, edge);
   float3 c;
-  if(m.flat==0 && v.ready > .5){
+  if(m.flat==0 && v.ready > .5 && rv > 0.){
     float2 uv = (v.q/(2.*float2(D*.625, -D*.625)) + .5)*v.uvScale;   // q is y up; texture rows run down
     c = stills.sample(sm, uv, uint(v.slice + .5)).rgb;
+  } else if(m.revealOn == 1) {
+    c = plain;
   } else {
-    c = mix(v.flatCol, m.ground, smoothstep(.5*D-.6*m.camScale, .5*D+.6*m.camScale, r));   // flat disc, ~1 pt soft edge
+    c = mix(v.flatCol, m.ground, edge);   // flat disc in the entry's hue until the still lands (round 1)
   }
   if(m.grainOn==1){
     float2 px = floor(v.pos.xy);
@@ -393,6 +412,9 @@ fragment float4 gf_map_fragment(MapVOut v [[stage_in]], constant GFMapUniforms& 
     c += gk*gr*m.grain*.10*(1.+.8*v.patina)*(.3+.7*dot(c,float3(.33)));
   }
   float a = 1.-smoothstep(.52*D, .62*D, r);
+  if(m.revealOn == 1 && rv < 1.){                     // the soft blend between the two states
+    float ap = 1.-edge;
+    c = mix(plain, c, rv); a = mix(ap, a, rv);
+  }
   return float4(c*a, a);
 }
-

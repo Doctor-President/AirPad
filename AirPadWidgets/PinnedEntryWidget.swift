@@ -58,24 +58,29 @@ struct PinnedEntryProvider: AppIntentTimelineProvider {
     }
 
     func timeline(for configuration: PinnedEntryIntent, in context: Context) async -> Timeline<PinnedEntryTimelineEntry> {
+        // What this widget shows needs no configuration read (its own switch decides), so it is answered at once.
+        let mirror = PinnedEntryMirrorFile.read()
+        if let m = mirror, m.locked, !m.entries.isEmpty {
+            Task.detached(priority: .utility) { await Self.cutLockedCopy() }
+        }
         // No schedule: the app reloads this widget whenever the saved copy changes.
-        Timeline(entries: [Self.resolve(configuration, mirror: await Self.readPruned())], policy: .never)
+        return Timeline(entries: [Self.resolve(configuration, mirror: mirror)], policy: .never)
     }
 
     /// widget fix-up 2 — the locked copy, cut down to the entries of widgets still set to show (a widget switched back to
-    /// hidden on the Home Screen, with AirPad not running). Removal only: it never adds an entry. If the system doesn't
-    /// answer, the copy is left as it is and AirPad makes the same cut the next time it runs; either way a hidden
-    /// widget never reads its entry (`PinnedEntryMirror.display` decides from the widget's own switch).
-    static func readPruned() async -> PinnedEntryMirror? {
-        guard let m = PinnedEntryMirrorFile.read() else { return nil }
-        guard m.locked, !m.entries.isEmpty,
-              let show = await PinnedEntryConfigurations.read()?.show else { return m }
-        // Re-read: AirPad may have written meanwhile; cut what is there now.
-        guard let now = PinnedEntryMirrorFile.read(), now.locked else { return PinnedEntryMirrorFile.read() }
-        let cut = now.pruned(keeping: show)
-        if cut != now, let data = PinnedEntryMirrorFile.encode(cut) { PinnedEntryMirrorFile.write(data) }
-        PinnedEntryConfigurations.debugLog("extension cut: \(now.entries.count) → \(cut.entries.count)")
-        return cut
+    /// hidden on the Home Screen, with AirPad not running). Runs after the timeline is answered; removal only, never
+    /// adding. The read is bounded (`PinnedEntryConfigurations.read`); the cut is one coordinated read-modify-write on
+    /// the copy as it is then (`PinnedEntryMirrorFile.update`), so it never writes back an older copy than AirPad's.
+    /// If the system doesn't answer, AirPad makes the same cut the next time it runs; either way a hidden widget never
+    /// reads its entry (`PinnedEntryMirror.display` decides from the widget's own switch).
+    static func cutLockedCopy() async {
+        guard let show = await PinnedEntryConfigurations.read()?.show else { return }
+        PinnedEntryMirrorFile.update { data in
+            guard let now = data.flatMap(PinnedEntryMirrorFile.decode), now.locked else { return nil }
+            let cut = now.pruned(keeping: show)
+            PinnedEntryConfigurations.debugLog("extension cut: \(now.entries.count) → \(cut.entries.count)")
+            return cut == now ? nil : PinnedEntryMirrorFile.encode(cut)
+        }
     }
 
     static func resolve(_ configuration: PinnedEntryIntent, mirror: PinnedEntryMirror?) -> PinnedEntryTimelineEntry {
@@ -115,7 +120,7 @@ struct PinnedEntryView: View {
         switch timeline.state {
         case .entry(let e), .shownWhileLocked(let e):
             return PinnedEntryMirrorFile.entryURL(for: e.id)
-        case .locked, .lockedNotYetShown:
+        case .locked, .lockedNotYetShown, .lockedHeldBack:
             return timeline.chosenID.flatMap(PinnedEntryMirrorFile.entryURL(for:))
         case .notSetUp, .emptyLibrary, .notChosen, .missing:
             return nil
@@ -129,6 +134,7 @@ struct PinnedEntryView: View {
         // hide it while the phone itself is locked. Only here: with AirPad's lock off the entry is never marked.
         case .shownWhileLocked(let e): entryView(e).privacySensitive()
         case .lockedNotYetShown:       notYetShownView
+        case .lockedHeldBack:          heldBackView
         case .notSetUp:     message("square.and.pencil", "Open AirPad", "Then this widget can show an entry.")
         case .locked:       lockedView
         case .emptyLibrary: message("square.and.pencil", "Nothing to pin yet", "Add an entry in AirPad.")
@@ -206,6 +212,14 @@ struct PinnedEntryView: View {
                 symbolSize: 22)
             .accessibilityElement(children: .ignore)
             .accessibilityLabel(Text(PinnedEntryMirror.notYetShownAccessibilityLabel(timeline.unlock)))
+    }
+
+    /// widget fix-up 2 (review) — set to show, but another widget pinned to the same entry keeps it hidden.
+    private var heldBackView: some View {
+        message(PinnedEntryMirror.unlockSymbol(timeline.unlock), "AirPad is locked", "Another widget keeps this entry hidden.",
+                symbolSize: 22)
+            .accessibilityElement(children: .ignore)
+            .accessibilityLabel(Text(PinnedEntryMirror.heldBackAccessibilityLabel))
     }
 
     private func message(_ symbol: String, _ title: String, _ detail: String, symbolSize: CGFloat = 18) -> some View {

@@ -166,7 +166,12 @@ struct AirPadApp: App {
                 // widget fix-up 2 — which Pinned Entry widgets are set to show while locked (they may have changed on
                 // the Home Screen); with AirPad still locked this can only remove from the widget's copy.
                 if phase == .active { PinnedEntryMirrorWriter.shared.refreshConfigurations() }
-                if phase == .background { PinnedEntryMirrorWriter.shared.flush() }   // ws-1.0-widget
+                if phase == .background {
+                    // widget fix-up 2 (review) — the widgets' choices may change while AirPad is away: forget the last
+                    // read before the copy is written (it then only shrinks until AirPad reads them again).
+                    PinnedEntryMirrorWriter.shared.sceneDidEnterBackground()
+                    PinnedEntryMirrorWriter.shared.flush()   // ws-1.0-widget
+                }
             }
         // (Both dev tuners were DELETED at the 2026-09-15 bake — every value they carried is now a
         // literal in source; Ops/reference/tuner-state-accepted.md is the permanent record.)

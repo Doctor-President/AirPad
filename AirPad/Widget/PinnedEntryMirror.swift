@@ -25,6 +25,10 @@ struct PinnedEntryMirror: Codable, Equatable {
     /// copy so the locked tile can show the system's glyph for it. Nil = not known or passcode only: a plain lock.
     /// Optional, so a copy written before it decodes as nil, and a widget that doesn't know it ignores it.
     var unlock: String? = nil
+    /// widget fix-up 2 (review) — locked copy only: ids of entries one widget is set to show and another widget pinned
+    /// to the same entry keeps hidden (a hide wins). The shown widget's tile says so instead of "Open AirPad". Ids only.
+    /// Optional, so an older copy decodes, and nil is left out of the bytes.
+    var heldBack: [String]? = nil
     /// Newest change first (the picker's suggestions are the head of this list).
     var entries: [Entry] = []
 
@@ -67,6 +71,8 @@ extension PinnedEntryMirror {
         /// widget fix-up 2 — the lock is on, this widget is set to show, but its entry isn't in the locked copy yet
         /// (switched on since AirPad was last unlocked): the locked tile, "Open AirPad to show this entry".
         case lockedNotYetShown
+        /// widget fix-up 2 (review) — set to show, but another widget pinned to the same entry keeps it hidden.
+        case lockedHeldBack
     }
 
     /// What one widget shows. `showWhenLocked` is THIS widget's own switch: with the lock on, a widget whose switch is
@@ -76,7 +82,7 @@ extension PinnedEntryMirror {
         if m.locked {
             guard showWhenLocked, let id = chosenID else { return .locked }
             if let e = m.entries.first(where: { $0.id == id }) { return .shownWhileLocked(e) }
-            return .lockedNotYetShown
+            return (m.heldBack ?? []).contains(id) ? .lockedHeldBack : .lockedNotYetShown
         }
         if let id = chosenID {
             if let e = m.entries.first(where: { $0.id == id }) { return .entry(e) }
@@ -115,6 +121,9 @@ extension PinnedEntryMirror {
         }
     }
 
+    /// widget fix-up 2 (review) — the locked tile of a widget whose entry another widget keeps hidden.
+    static let heldBackAccessibilityLabel = "AirPad is locked. Another widget keeps this entry hidden."
+
     /// widget fix-up 2 — which entries the LOCKED copy may hold. `current` = the ids the locked copy on disk holds now;
     /// `configuredShow` = the entry ids of the placed widgets set to show while locked; `unlocked` = Face ID has passed
     /// in this run (AirPad's lock screen isn't up). Locked, it can only shrink (`current ∩ configuredShow`): a switch
@@ -130,6 +139,7 @@ extension PinnedEntryMirror {
         guard locked else { return self }
         var m = self
         m.entries = entries.filter { ids.contains($0.id) }
+        if let held = heldBack { m.heldBack = held.filter { !ids.contains($0) } }   // a widget that now shows it settles it
         return m
     }
 
@@ -192,6 +202,24 @@ enum PinnedEntryMirrorFile {
     static func readData(at url: URL? = PinnedEntryMirrorFile.url) -> Data? {
         guard let url else { return nil }
         return try? Data(contentsOf: url)
+    }
+
+    /// widget fix-up 2 (review) — one read-modify-write of the copy, coordinated across the app and the widget
+    /// extension (`NSFileCoordinator`), so neither writes back a copy built from bytes the other has since replaced.
+    /// `change` gets the bytes on disk now (nil = none) and returns the bytes to write, or nil to leave the file as it
+    /// is; identical bytes aren't rewritten. Returns the bytes written, nil when nothing was written.
+    @discardableResult
+    static func update(at url: URL? = PinnedEntryMirrorFile.url, _ change: (Data?) -> Data?) -> Data? {
+        guard let url else { return nil }
+        try? FileManager.default.createDirectory(at: url.deletingLastPathComponent(), withIntermediateDirectories: true)
+        var written: Data?
+        var error: NSError?
+        NSFileCoordinator(filePresenter: nil).coordinate(writingItemAt: url, options: [], error: &error) { u in
+            let now = try? Data(contentsOf: u)
+            guard let next = change(now), next != now, write(next, to: u) else { return }
+            written = next
+        }
+        return written
     }
 
     @discardableResult

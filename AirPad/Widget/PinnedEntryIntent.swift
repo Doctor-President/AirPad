@@ -64,38 +64,64 @@ enum PinnedEntryConfigurations {
     struct Read: Equatable {
         /// Entry ids every placed widget naming them has set to show.
         var show: Set<String>
-        /// False while the system reports one entry both shown and hidden. Seen on iOS 27 (Simulator): for about 30 s
-        /// after a switch is flipped in Edit Widget, `currentConfigurations()` lists that widget twice, with the old
-        /// value and the new one, in either order. The reader re-reads until it settles.
-        var settled: Bool
+        /// Entry ids the system reports both shown and hidden. Seen on iOS 27 (Simulator): for about 30 s after a
+        /// switch is flipped in Edit Widget, `currentConfigurations()` lists that widget twice, with the old value and
+        /// the new one, in either order. Two widgets pinned to one entry, one shown and one hidden, look the same and
+        /// stay that way.
+        var conflicted: Set<String> = []
+        var settled: Bool { conflicted.isEmpty }
     }
 
     /// The placed Pinned Entry widgets' choices. Nil = the system didn't answer (an error, or not within `timeout`):
-    /// callers then add nothing.
-    static func read(timeout: Duration = .seconds(3)) async -> Read? {
-        await withTaskGroup(of: Read?.self) { group in
-            group.addTask {
-                let infos: [WidgetInfo]
-                do { infos = try await WidgetCenter.shared.currentConfigurations() } catch {
-                    debugLog("currentConfigurations error: \(error)")
-                    return nil
-                }
-                let configs = infos.compactMap { info -> (entryID: String?, show: Bool)? in
-                    guard info.kind == PinnedEntryMirrorFile.widgetKind,
-                          let intent = info.widgetConfigurationIntent(of: PinnedEntryIntent.self) else { return nil }
-                    return (intent.entry?.id, intent.showWhenLocked)
-                }
-                debugLog("read \(infos.count) widgets: \(configs.map { "\($0.entryID?.prefix(8) ?? "nil"):\($0.show)" }) families=\(infos.map { "\($0.family)" })")
-                return reduce(configs)
-            }
-            group.addTask {
+    /// callers then add nothing. The timeout really returns: the system call runs in its own task and is raced through
+    /// a continuation resumed exactly once (a task group would wait for an XPC call that ignores cancellation).
+    static func read(timeout: Duration = .seconds(3),
+                     system: @escaping @Sendable () async -> Read? = { await systemRead() }) async -> Read? {
+        let once = ResumeOnce()
+        let result: Read? = await withCheckedContinuation { (cont: CheckedContinuation<Read?, Never>) in
+            once.set(cont)
+            Task.detached(priority: .utility) { once.resume(await system()) }
+            Task.detached(priority: .utility) {
                 try? await Task.sleep(for: timeout)
-                return nil
+                once.resume(nil)
             }
-            let first = await group.next() ?? nil
-            group.cancelAll()
-            if first == nil { debugLog("no answer (error or timeout)") }
-            return first
+        }
+        if result == nil { debugLog("no answer (error or timeout)") }
+        return result
+    }
+
+    /// The system's answer: every placed widget of this kind, reduced.
+    static func systemRead() async -> Read? {
+        let infos: [WidgetInfo]
+        do { infos = try await WidgetCenter.shared.currentConfigurations() } catch {
+            debugLog("currentConfigurations error: \(error)")
+            return nil
+        }
+        let configs = infos.compactMap { info -> (entryID: String?, show: Bool)? in
+            guard info.kind == PinnedEntryMirrorFile.widgetKind,
+                  let intent = info.widgetConfigurationIntent(of: PinnedEntryIntent.self) else { return nil }
+            return (intent.entry?.id, intent.showWhenLocked)
+        }
+        debugLog("read \(infos.count) widgets: \(configs.map { "\($0.entryID?.prefix(8) ?? "nil"):\($0.show)" })")
+        return reduce(configs)
+    }
+
+    /// Resumes a continuation exactly once, whichever of the system call and the timeout finishes first.
+    final class ResumeOnce: @unchecked Sendable {
+        private let lock = NSLock()
+        private var cont: CheckedContinuation<Read?, Never>?
+        private var early: Read??
+        func set(_ c: CheckedContinuation<Read?, Never>) {
+            lock.lock()
+            if let value = early { lock.unlock(); c.resume(returning: value); return }
+            cont = c
+            lock.unlock()
+        }
+        func resume(_ value: Read?) {
+            lock.lock()
+            if let c = cont { cont = nil; early = .some(nil); lock.unlock(); c.resume(returning: value); return }
+            if early == nil { early = .some(value) }   // arrived before `set`: hand it over then
+            lock.unlock()
         }
     }
 
@@ -116,6 +142,6 @@ enum PinnedEntryConfigurations {
             guard let id = c.entryID else { continue }
             if c.show { show.insert(id) } else { hide.insert(id) }
         }
-        return Read(show: show.subtracting(hide), settled: show.isDisjoint(with: hide))
+        return Read(show: show.subtracting(hide), conflicted: show.intersection(hide))
     }
 }

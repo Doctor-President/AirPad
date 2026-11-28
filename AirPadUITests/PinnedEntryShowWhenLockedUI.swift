@@ -271,6 +271,25 @@ final class PinnedEntryShowWhenLockedUI: XCTestCase {
         app.swipeDown(velocity: .fast); sleep(2)
     }
 
+    /// Dashboard → Menu → Settings → Privacy → Lock → `choice` ("After 5 minutes", …).
+    func setLockAfter(_ app: XCUIApplication, _ choice: String) {
+        let back = app.buttons["Back"].firstMatch
+        for _ in 0..<3 where !app.buttons["dashboard.menu"].firstMatch.exists && back.exists { back.tap(); sleep(2) }
+        let menu = app.buttons["dashboard.menu"].firstMatch
+        XCTAssertTrue(menu.waitForExistence(timeout: 10)); menu.tap(); sleep(2)
+        let settings = app.buttons["menu.settings"].firstMatch
+        XCTAssertTrue(settings.waitForExistence(timeout: 5)); settings.tap(); sleep(2)
+        let privacy = app.buttons.matching(NSPredicate(format: "label == 'Privacy'")).firstMatch
+        XCTAssertTrue(privacy.waitForExistence(timeout: 5)); privacy.tap(); sleep(2)
+        let picker = app.buttons["settings.lockAfter"].firstMatch
+        XCTAssertTrue(picker.waitForExistence(timeout: 5)); picker.tap(); sleep(1)
+        let option = app.buttons[choice].firstMatch
+        XCTAssertTrue(option.waitForExistence(timeout: 5)); option.tap(); sleep(1)
+        note("lock-after", (picker.value as? String) ?? picker.label)
+        if app.buttons["BackButton"].exists { app.buttons["BackButton"].tap(); sleep(1) }
+        app.swipeDown(velocity: .fast); sleep(2)
+    }
+
     func editorShowing(_ app: XCUIApplication, _ title: String, timeout: TimeInterval = 20) -> Bool {
         app.descendants(matching: .any).matching(NSPredicate(format: "label CONTAINS %@ OR value CONTAINS %@", title, title))
             .firstMatch.waitForExistence(timeout: timeout)
@@ -460,15 +479,38 @@ final class PinnedEntryShowWhenLockedUI: XCTestCase {
         sleep(2)
         shot("7-sim-unlocked")
 
-        // 8 · the switch back to hidden: the tile hides at once; the copy is emptied.
+        // 8 · the switch back to hidden, flipped while AirPad is in the background, then back to AirPad inside its
+        // 1-minute grace (still unlocked): the tile hides at once, the copy is emptied, and the entry never comes back
+        // (review fix 1: a stale read must not re-add it).
+        app.activate()
+        for _ in 0..<15 where lockScreen(app).exists { sleep(1) }   // past the 1-minute lock: the stub's Face ID passes
+        sleep(2)
+        // XCUITest's idle waits make Home → Edit Widget → back take ~2 minutes here, so the grace period is set to
+        // 5 minutes for this row: AirPad must come back still unlocked for the stale read to matter.
+        setLockAfter(app, "After 5 minutes")
+        XCUIDevice.shared.press(.home)
+        let leftAt = Date()
+        sleep(1)
         setSwitch(small: false, on: false)
         XCTAssertTrue(waitForWidget(small: false, containing: "AirPad is locked"))
         XCTAssertFalse(widgetText(small: false).contains("Come and See"))
         let c8 = waitForCopy("8-hidden-again-before-airpad-runs", timeout: 15) { $0.ids.isEmpty }
         note("8-extension-cut", (c8?.ids ?? ["?"]).isEmpty ? "the widget extension emptied the copy" : "copy still holds \(c8?.ids ?? [])")
         app.activate()
-        let c8b = waitForCopy("8-hidden-again-after-airpad-active", timeout: 15) { $0.ids.isEmpty }
-        XCTAssertEqual(c8b?.ids, [], "emptied once AirPad is active, at the latest")
+        let away = Date().timeIntervalSince(leftAt)
+        note("8-back-in-airpad-after", String(format: "%.0f s away (lock after 5 minutes)", away))
+        XCTAssertLessThan(away, 280, "back inside the 5-minute grace")
+        XCTAssertFalse(lockScreen(app).waitForExistence(timeout: 2), "AirPad is still unlocked")
+        var seen: [String] = []
+        for _ in 0..<40 {   // 10 s, every 0.25 s
+            if let url = copyURL(), let data = try? Data(contentsOf: url),
+               String(decoding: data, as: UTF8.self).contains(Self.sidsListID) { seen.append("present") }
+            usleep(250_000)
+        }
+        note("8-entry-reappeared", seen.isEmpty ? "never (40 reads over 10 s)" : "\(seen.count) of 40 reads")
+        XCTAssertTrue(seen.isEmpty, "the hidden entry never comes back into the copy")
+        let c8b = readCopy("8-hidden-again-after-airpad-active")
+        XCTAssertEqual(c8b?.ids, [], "emptied")
 
         // 9 · lock off: unchanged — every entry in the copy, both widgets show their entries.
         setLock(app, on: false)

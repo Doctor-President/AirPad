@@ -257,8 +257,9 @@ final class PinnedEntryWidgetTests: XCTestCase {
         // whatever is known about the widgets.
         XCTAssertEqual(PinnedEntryMirrorWriter.lockedAllowed(disk: open, configuredShow: ["a", "b"], libraryLoaded: true, unlocked: true), [])
         XCTAssertEqual(PinnedEntryMirrorWriter.lockedAllowed(disk: nil, configuredShow: nil, libraryLoaded: false, unlocked: true), [])
-        // Already locked: wait for the library and the widgets' choices; then add only when unlocked.
-        XCTAssertNil(PinnedEntryMirrorWriter.lockedAllowed(disk: lockedCopy, configuredShow: nil, libraryLoaded: true, unlocked: true))
+        // Already locked: wait for the library. The widgets' choices not known (AirPad just came back, or the read failed):
+        // keep what the copy holds, add nothing, even unlocked (review fix 1). Known: add only when unlocked.
+        XCTAssertEqual(PinnedEntryMirrorWriter.lockedAllowed(disk: lockedCopy, configuredShow: nil, libraryLoaded: true, unlocked: true), ["a"])
         XCTAssertNil(PinnedEntryMirrorWriter.lockedAllowed(disk: lockedCopy, configuredShow: ["a"], libraryLoaded: false, unlocked: true))
         XCTAssertEqual(PinnedEntryMirrorWriter.lockedAllowed(disk: lockedCopy, configuredShow: ["a", "b"], libraryLoaded: true, unlocked: false), ["a"])
         XCTAssertEqual(PinnedEntryMirrorWriter.lockedAllowed(disk: lockedCopy, configuredShow: ["b"], libraryLoaded: true, unlocked: false), [])
@@ -336,12 +337,13 @@ final class PinnedEntryWidgetTests: XCTestCase {
 
     func testShowIDsFromConfigurations() {
         XCTAssertEqual(PinnedEntryConfigurations.reduce([("a", true), ("b", false), (nil, true), ("c", true)]),
-                       .init(show: ["a", "c"], settled: true))
+                       .init(show: ["a", "c"]))
         // The system's twin right after a switch is flipped (old + new value, either order): a hide wins, unsettled.
-        XCTAssertEqual(PinnedEntryConfigurations.reduce([("a", false), ("a", true)]), .init(show: [], settled: false))
-        XCTAssertEqual(PinnedEntryConfigurations.reduce([("a", true), ("a", false), ("b", true)]), .init(show: ["b"], settled: false))
-        XCTAssertEqual(PinnedEntryConfigurations.reduce([("a", true), ("a", true)]), .init(show: ["a"], settled: true))
-        XCTAssertEqual(PinnedEntryConfigurations.reduce([]), .init(show: [], settled: true))
+        XCTAssertEqual(PinnedEntryConfigurations.reduce([("a", false), ("a", true)]), .init(show: [], conflicted: ["a"]))
+        XCTAssertEqual(PinnedEntryConfigurations.reduce([("a", true), ("a", false), ("b", true)]), .init(show: ["b"], conflicted: ["a"]))
+        XCTAssertFalse(PinnedEntryConfigurations.reduce([("a", true), ("a", false)]).settled)
+        XCTAssertEqual(PinnedEntryConfigurations.reduce([("a", true), ("a", true)]), .init(show: ["a"]))
+        XCTAssertTrue(PinnedEntryConfigurations.reduce([]).settled)
         XCTAssertEqual(PinnedEntryIntent().showWhenLocked, false, "a widget placed before this build is hidden")
     }
 
@@ -351,5 +353,138 @@ final class PinnedEntryWidgetTests: XCTestCase {
         let nodes = [node("a", title: "A"), node("b", title: "B")]
         XCTAssertEqual(w.build(nodes: nodes, locked: false, font: "lato", unlock: "faceID", allowed: ["a"]).entries.count, 2)
         XCTAssertNil(w.build(nodes: nodes, locked: false, font: "lato", unlock: "faceID").unlock)
+    }
+
+    // MARK: - widget fix-up 2 · review fixes
+
+    /// A configuration reader the test answers by hand (late, or not at all).
+    @MainActor final class LateReader {
+        var pending: [CheckedContinuation<PinnedEntryConfigurations.Read?, Never>] = []
+        func read() async -> PinnedEntryConfigurations.Read? { await withCheckedContinuation { pending.append($0) } }
+        func answer(_ r: PinnedEntryConfigurations.Read?) { pending.removeFirst().resume(returning: r) }
+    }
+
+    private func until(_ what: String, _ cond: @MainActor () -> Bool) async {
+        for _ in 0..<300 where !cond() { try? await Task.sleep(for: .milliseconds(10)) }
+        XCTAssertTrue(cond(), "timed out: \(what)")
+    }
+
+    private func lockedWriter(_ reader: LateReader) -> PinnedEntryMirrorWriter {
+        PinnedEntryMirrorWriter(fileURL: fileURL, reload: {}, readConfigurations: { await reader.read() },
+                                lockState: { .init(enabled: true, isLocked: false, coverShown: false, method: .faceID) })
+    }
+
+    /// Review fix 1: AirPad leaving, or a read that fails, forgets the widgets' last answer, and a read started before
+    /// AirPad left doesn't count when it answers late.
+    func testBackgroundAndFailedReadsForgetTheWidgetsChoices() async {
+        let reader = LateReader()
+        let w = lockedWriter(reader)
+        w.refreshConfigurations()
+        await until("first read asked") { reader.pending.count == 1 }
+        reader.answer(.init(show: ["a"]))
+        await until("first answer applied") { w.configuredShow == ["a"] }
+
+        w.refreshConfigurations()
+        await until("second read asked") { reader.pending.count == 1 }
+        w.sceneDidEnterBackground()
+        XCTAssertNil(w.configuredShow, "AirPad left: the last answer no longer counts")
+        reader.answer(.init(show: ["a", "b"]))   // late: started before AirPad left
+        try? await Task.sleep(for: .milliseconds(100))
+        XCTAssertNil(w.configuredShow, "a read from before AirPad left is dropped")
+
+        w.refreshConfigurations()
+        await until("third read asked") { reader.pending.count == 1 }
+        reader.answer(.init(show: ["a"]))
+        await until("third answer applied") { w.configuredShow == ["a"] }
+        w.refreshConfigurations()
+        await until("fourth read asked") { reader.pending.count == 1 }
+        reader.answer(nil)                         // the system didn't answer
+        await until("a failed read forgets") { w.configuredShow == nil }
+    }
+
+    /// Nit b: still split after the re-reads run out = two widgets on one entry disagree (not the transient twin): the
+    /// shown one's tile says another widget keeps it hidden. A settled read clears it.
+    func testLastingSplitBecomesHeldBack() async {
+        let reader = LateReader()
+        let w = lockedWriter(reader)
+        w.rereadInterval = .milliseconds(1)
+        w.refreshConfigurations()
+        for i in 0...PinnedEntryMirrorWriter.unsettledRereads {
+            await until("read \(i) asked") { reader.pending.count == 1 }
+            XCTAssertEqual(w.heldBack, [], "not while it may still be the twin (read \(i))")
+            reader.answer(.init(show: [], conflicted: ["a"]))
+        }
+        await until("held back after the last re-read") { w.heldBack == ["a"] }
+        try? await Task.sleep(for: .milliseconds(50))
+        XCTAssertTrue(reader.pending.isEmpty, "the loop stops")
+        w.refreshConfigurations()
+        await until("next read asked") { reader.pending.count == 1 }
+        reader.answer(.init(show: ["a"]))
+        await until("a settled read clears it") { w.heldBack == [] }
+
+        var m = PinnedEntryMirror(); m.locked = true; m.heldBack = ["a"]
+        XCTAssertEqual(PinnedEntryMirror.display(chosenID: "a", showWhenLocked: true, mirror: m), .lockedHeldBack)
+        XCTAssertEqual(PinnedEntryMirror.display(chosenID: "b", showWhenLocked: true, mirror: m), .lockedNotYetShown)
+        XCTAssertEqual(PinnedEntryMirror.display(chosenID: "a", showWhenLocked: false, mirror: m), .locked)
+        let built = writer().build(nodes: [node("a", title: "A")], locked: false, font: "lato", heldBack: ["a"])
+        XCTAssertNil(built.heldBack, "never in the unlocked copy")
+    }
+
+    /// Review fix 2: a system call that never answers can't hold the read past its timeout.
+    func testReadReturnsAtItsTimeoutWhenTheSystemNeverAnswers() async {
+        let start = Date()
+        let r = await PinnedEntryConfigurations.read(timeout: .milliseconds(300)) {
+            try? await Task.sleep(for: .seconds(30))   // stands in for an XPC call that ignores cancellation
+            return .init(show: ["a"])
+        }
+        XCTAssertNil(r)
+        XCTAssertLessThan(Date().timeIntervalSince(start), 2)
+        let quick = await PinnedEntryConfigurations.read(timeout: .seconds(5)) { .init(show: ["b"]) }
+        XCTAssertEqual(quick, .init(show: ["b"]))
+    }
+
+    /// Review fix 3: the app compares with the file, not its memory. The extension (or anything) replacing the copy
+    /// is repaired by the next pass even when nothing changed in the library; and while AirPad is locked a write never
+    /// adds an entry the file doesn't hold now.
+    func testWritesCompareWithTheFileAndNeverAddWhileLocked() {
+        let w = writer()
+        let nodes = [node("a", title: "A", text: "x", updated: 2), node("b", title: "B", text: "y", updated: 1)]
+        XCTAssertTrue(w.write(nodes: nodes, locked: false, font: "lato"))
+        var stale = PinnedEntryMirror(); stale.locked = true
+        PinnedEntryMirrorFile.write(PinnedEntryMirrorFile.encode(stale)!, to: fileURL)
+        XCTAssertTrue(w.write(nodes: nodes, locked: false, font: "lato"), "nothing changed here, but the file did")
+        XCTAssertEqual(PinnedEntryMirrorFile.read(at: fileURL)?.locked, false)
+        XCTAssertEqual(PinnedEntryMirrorFile.read(at: fileURL)?.entries.count, 2)
+
+        // Locked copy holding a; AirPad locked; a stale input allows a and b: b is not added.
+        XCTAssertTrue(w.write(nodes: nodes, locked: true, font: "lato", allowed: ["a"]))
+        w.write(nodes: nodes, locked: true, font: "lato", allowed: ["a", "b"], unlocked: false)
+        XCTAssertEqual(PinnedEntryMirrorFile.read(at: fileURL)?.entries.map(\.id), ["a"])
+        XCTAssertTrue(w.write(nodes: nodes, locked: true, font: "lato", allowed: ["a", "b"], unlocked: true))
+        XCTAssertEqual(PinnedEntryMirrorFile.read(at: fileURL)?.entries.map(\.id), ["a", "b"])
+    }
+
+    /// Review fix 4: a build that finishes after a newer write started (flush) doesn't land.
+    func testAnOlderBuildNeverLandsAfterANewerWrite() {
+        let gens = PinnedEntryMirrorWriter.WriteGeneration()
+        let older = gens.next(), newer = gens.next()
+        var lockedCopy = PinnedEntryMirror(); lockedCopy.locked = true
+        let open = writer().build(nodes: [node("a", title: "A")], locked: false, font: "lato")
+        let flushInput = PinnedEntryMirrorWriter.Input(nodes: [], locked: true, font: "lato", unlock: nil)
+        XCTAssertNotNil(PinnedEntryMirrorWriter.commit(lockedCopy, changed: true, input: flushInput, previous: nil,
+                                                       previousLanded: false, url: fileURL, generation: newer,
+                                                       generations: gens).written)
+        let lateInput = PinnedEntryMirrorWriter.Input(nodes: [], locked: false, font: "lato", unlock: nil)
+        let late = PinnedEntryMirrorWriter.commit(open, changed: true, input: lateInput, previous: nil,
+                                                  previousLanded: false, url: fileURL, generation: older, generations: gens)
+        XCTAssertNil(late.written, "the older lock-off build is dropped")
+        XCTAssertFalse(late.landed, "and the next pass won't treat it as on disk")
+        XCTAssertEqual(PinnedEntryMirrorFile.read(at: fileURL)?.locked, true)
+        XCTAssertEqual(PinnedEntryMirrorFile.read(at: fileURL)?.entries, [])
+        let again = PinnedEntryMirrorWriter.commit(open, changed: false, input: lateInput, previous: nil,
+                                                   previousLanded: late.landed, url: fileURL, generation: gens.next(),
+                                                   generations: gens)
+        XCTAssertNotNil(again.written, "the same lock-off build, now current, lands though nothing changed since it")
+        XCTAssertEqual(PinnedEntryMirrorFile.read(at: fileURL)?.locked, false)
     }
 }

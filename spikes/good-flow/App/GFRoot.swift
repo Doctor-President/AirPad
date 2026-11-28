@@ -36,6 +36,7 @@ final class GFRootViewController: UIViewController {
         panel.isHidden = true
         panel.onSave = { [weak self] in self?.saveNow() }
         panel.onDetailScale = { [weak self] v in _ = self?.screen?.scriptAction("scale", String(v)) }
+        panel.onCopy = { [weak self] in self?.copyValues() }
         view.addSubview(panel)
         obs = NotificationCenter.default.addObserver(forName: .gfSettingsChanged, object: nil, queue: .main) { [weak self] n in
             if (n.userInfo?["what"] as? String) == "case" { self?.showCase() }
@@ -113,12 +114,55 @@ final class GFRootViewController: UIViewController {
                 case "dump": self.writeR2(arg + ".json", try? JSONSerialization.data(withJSONObject: self.diagnosticsNow(), options: [.prettyPrinted, .sortedKeys]))
                 case "snap": self.writeR2(arg + ".png", self.snapshotPNG())
                 case "save": GFRecorder.shared.save(name: arg, meta: self.screen?.recordingMeta ?? [:])
+                case "copy": self.copyValues()
                 case "reset": GFRecorder.shared.reset()
                 case "quit": exit(0)
                 default: if self.screen?.scriptAction(verb, arg) != true { GFRecorder.shared.mark("script: unknown \(verb)") }
                 }
             }
         }
+    }
+    /// "Copy values": every current setting as a labelled plain-text list on the pasteboard (UIPasteboard; on Catalyst the
+    /// Mac's general pasteboard), then "Copied" on screen for 1.5 s.
+    func copyValues() {
+        let S = GFSettings.shared
+        let win = view.window?.bounds.size ?? view.bounds.size
+        let scale = view.window?.traitCollection.displayScale ?? traitCollection.displayScale
+        var L: [String] = ["Good Flow spike · round 2 · values (\(GFRecorder.stamp()))"]
+        L.append("device: \(ProcessInfo.processInfo.isMacCatalystApp ? "Mac (Catalyst)" : UIDevice.current.model) · \(UIDevice.current.systemName) \(UIDevice.current.systemVersion) · display scale \(scale)")
+        L.append(String(format: "window: %.0f × %.0f pt", win.width, win.height))
+        L.append("case: \(S.caseName.rawValue)")
+        L.append("theme: \(S.theme.rawValue)")
+        L.append("variant: \(S.variant.rawValue)")
+        if let d = screen as? GFDetailViewController {
+            let b = d.band.bounds.size, r = GFDetailViewController.zoomRange(widthPt: Double(b.width), heightPt: Double(b.height)), z = d.currentZoom()
+            L.append(String(format: "detail band: %.0f × %.0f pt", b.width, b.height))
+            L.append(String(format: "detail zoom: %.2f× (Bench 1.00×, Width %.2f× for this band; scale %.2f on Bench 0 → Width 1)", z, r.width, log(z) / max(log(r.width), 1e-6)))
+        } else {
+            L.append("detail zoom: " + (S.detailZoom.map { String(format: "%.2f×", $0) } ?? (S.detailFitWidth ? "Width" : "Bench (1.00×)")) + " (open Detail for its band's Bench/Width)")
+        }
+        L.append("DeepFix (dark-cast fix): \(S.deepFix ? "on" : "off")")
+        L.append("ScrolledBand: \(S.scrolledBand)")
+        L.append("Reveal: \(S.reveal ? "on" : "off (all Good Flow)") · size \(String(format: "%.0f", S.revealSize)) pt · annulus \(String(format: "%.0f", S.revealAnnulus)) pt · soft \(String(format: "%.2f", S.revealSoft)) · stills \(S.revealStills)")
+        L.append("LiveScale: \(S.liveScale.map { String(format: "%.0f×", $0) } ?? "display (\(scale)×)")")
+        L.append("LiveZone: \(S.liveZoneImage ? "image zone" : "whole card")")
+        L.append("ScrollRedraw: \(S.scrollRedraw ? "on" : "off")")
+        L.append("live: \(S.live ? "on @\(S.liveRate)" : "off")")
+        L.append("Pools: \(S.pools.rawValue)")
+        L.append("glass: \(S.glass ? "on (Clear 0.6)" : "off")")
+        L.append("edge bend: \(S.edgeBend ? "on (0.5)" : "off")")
+        L.append("flat control: \(S.flat ? "on" : "off") · hash \(S.benchHash ? "bench" : "stable") · map master \(S.mapCap) px")
+        let text = L.joined(separator: "\n")
+        UIPasteboard.general.string = text
+        GFRecorder.shared.mark("copied values")
+        panel.status("Copied")
+        let t = UILabel()
+        t.text = "  Copied  "; t.font = .systemFont(ofSize: 15, weight: .semibold); t.textColor = .white
+        t.backgroundColor = UIColor(white: 0.1, alpha: 0.85); t.layer.cornerRadius = 8; t.layer.masksToBounds = true
+        t.sizeToFit(); t.frame.size.height += 10; t.center = CGPoint(x: view.bounds.midX, y: view.bounds.height * 0.12)
+        t.accessibilityIdentifier = "copied.toast"
+        view.addSubview(t)
+        DispatchQueue.main.asyncAfter(deadline: .now() + 1.5) { t.removeFromSuperview() }
     }
     private func diagnosticsNow() -> [String: Any] {
         var d = screen?.diagnostics ?? [:]
@@ -228,6 +272,11 @@ final class GFPanel: UIView {
             S.simReduceMotion = i == 1; S.simLowPower = i == 2; S.simThermal = i == 3 ? 2 : 0
         }
         row("Record", ["Off", "Recording"], 0) { [weak self] i in self?.setRecording(i == 1) }
+        // Standing rule (AirPad CLAUDE.md, dev tuners): a "Copy values" button. T dials, then reports what he landed on.
+        let copy = UIButton(type: .system, primaryAction: UIAction(title: "Copy values") { [weak self] _ in self?.onCopy?() })
+        copy.contentHorizontalAlignment = .leading
+        copy.accessibilityIdentifier = "panel.copyValues"
+        stack.addArrangedSubview(copy)
         let save = UIButton(type: .system, primaryAction: UIAction(title: isMac ? "Save recording now (⌃⌥⌘P)" : "Save recording now") { [weak self] _ in self?.onSave?() })
         save.contentHorizontalAlignment = .leading
         stack.addArrangedSubview(save)
@@ -243,6 +292,7 @@ final class GFPanel: UIView {
     required init?(coder: NSCoder) { fatalError() }
 
     var onDetailScale: ((Double) -> Void)?
+    var onCopy: (() -> Void)?
     /// A continuous dial; its value is shown beside its name.
     func slider(_ title: String, _ lo: Float, _ hi: Float, _ v: Float, _ act: @escaping (Double) -> Void) {
         let l = UILabel(); l.font = .systemFont(ofSize: 12, weight: .semibold); l.textColor = .white

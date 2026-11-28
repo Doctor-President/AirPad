@@ -2,6 +2,7 @@
 //   Controls (step 3): OUT=build/reference-run2 (a second run, must equal the first); FRINGE=0 OUT=build/reference-fringe0
 //   (the look with fringe 0: must FAIL the equality bar against the reference). OUT is relative to spikes/good-flow.
 //   HASH=stable OUT=build/reference-stable (step 3B): the bench with the stable hash (hash11's argument snapped).
+//   POOLS=table (round 2): the pools from look.json's table (uPool); CHROME_FLAGS='--headless=new --use-angle=swiftshader' = a different renderer.
 import http from 'node:http'; import fs from 'node:fs'; import path from 'node:path'; import {spawn} from 'node:child_process'; import {fileURLToPath} from 'node:url';
 const here = path.dirname(fileURLToPath(import.meta.url)), root = path.resolve(here, '..');
 const out = path.resolve(root, process.env.OUT || 'build/reference'), prof = path.join(root, 'build/chrome-profile');
@@ -15,6 +16,13 @@ let fsSrc = blocks[1];
 if (process.env.HASH === 'stable') {
   if (!fsSrc.includes(HASH_OLD)) throw new Error('hash11 not found in the bench source');
   fsSrc = fsSrc.replace(HASH_OLD, 'float hash11(float n){ n = roundEven(n*1024.)/1024.; return fract(sin(n*127.1)*43758.5453); }');
+}
+// POOLS=table (round 2, outcome 5): the bench reads the pool table (look.json "pools", the values the port passes in)
+// instead of calling hash11 for the pools, so ANY renderer (another GPU, SwiftShader on the CPU) draws T's bench arrangement.
+if (process.env.POOLS === 'table') {
+  const subs = [['hash11(fi*7.3+e.seed*19.)', 'uPool[i].x'], ['hash11(fi*3.9+e.seed*29.)', 'uPool[i].y'], ['hash11(fi*5.7+e.seed*7.)', 'uPool[i].z']];
+  for (const [a, b] of subs) { if (!fsSrc.includes(a)) throw new Error('not found: ' + a); fsSrc = fsSrc.replace(a, b); }
+  fsSrc = fsSrc.replace('float hash11(float n){', 'uniform vec3 uPool[6];\nfloat hash11(float n){');
 }
 const shaders = {vs: blocks[0], fs: fsSrc};
 fs.mkdirSync(out, {recursive: true}); fs.rmSync(prof, {recursive: true, force: true});

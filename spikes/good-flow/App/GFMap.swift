@@ -380,7 +380,7 @@ final class GFMapViewController: UIViewController, GFCaseScreen {
         guard map.bounds.width > 0, view.window != nil else { return }
         let S = GFSettings.shared
         let scale = Double(view.window!.traitCollection.displayScale)
-        let key = "\(S.theme)|\(S.mode.label)|\(S.flat)|\(scale)|\(Self.cap)"
+        let key = "\(S.theme)|\(S.mode.label)|\(S.flat)|\(scale)|\(Self.cap)|\(S.pools)"
         guard key != cacheKey else { return }
         cacheKey = key
         map.cache?.cancel()

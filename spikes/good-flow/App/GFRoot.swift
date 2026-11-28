@@ -147,6 +147,7 @@ final class GFPanel: UIView {
         row("Edge bend", ["Off", "0.5"], S.edgeBend ? 1 : 0) { S.edgeBend = $0 == 1 }
         row("Variant", GFVariant.allCases.map(\.rawValue), GFVariant.allCases.firstIndex(of: S.variant)!) { S.variant = GFVariant.allCases[$0] }
         row("Hash", ["Stable", "Bench"], S.benchHash ? 1 : 0) { S.benchHash = $0 == 1 }
+        row("Pools", GFPoolsMode.allCases.map(\.rawValue), GFPoolsMode.allCases.firstIndex(of: S.pools)!) { S.pools = GFPoolsMode.allCases[$0] }
         row("Live", ["Off", "30", "60"], !S.live ? 0 : (S.liveRate == 60 ? 2 : 1)) { i in
             if i == 0 { S.live = false } else { S.liveRate = i == 2 ? 60 : 30; S.live = true }
         }

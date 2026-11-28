@@ -33,6 +33,11 @@ typedef struct {
     float fwScale;          // flowBody's fwidth(v) × this: 1 in A and pass 2; s in pass 1 (a pass-1 texel is 1/s slot pixels)
     simd_float4 r1;         // pass-1 picture: (x0, y1, s, 0) — its left and top edge in the slot's y-up fc pixels, and its scale
     simd_float2 r1Size;     // pass-1 picture size in texels
+    // Round 2 (outcome 5): the POOL TABLE. hash11 only places and sizes the six pools, from the entry's seed; the values
+    // are worked out once on the CPU (or are the bench's own, look.json "pools") and passed in, so every GPU draws the
+    // same entry the same way. pool[i] = (centre-x hash, centre-y hash, radius hash, unused). poolTable 0 = hash11 here.
+    simd_float4 pool[6];
+    int poolTable;
 } GFUniforms;
 
 /// The Map pass (case c): one instance per orb, drawn as a quad over the orb's baked still (texture array slice).

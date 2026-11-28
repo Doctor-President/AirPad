@@ -24,6 +24,9 @@ final class GFAppDelegate: UIResponder, UIApplicationDelegate {
                 exit(0)
             }
         }
+        if let dir = UserDefaults.standard.string(forKey: "PoolsFromAngle") {   // round 2: the bench's own pool table
+            DispatchQueue.main.async { GFPoolsAngle.run(dir: dir); exit(0) }
+        }
         if let dir = UserDefaults.standard.string(forKey: "Measure3b") {   // step 3B's offscreen numbers (GFMeasure.swift)
             DispatchQueue.global(qos: .userInitiated).async {
                 GFMeasure.run(dir: dir)

@@ -245,3 +245,52 @@ enum GFMeasure {
         try? GFStillRenderer.writePNG(.init(width: w, height: h, rgba: px, gpuMs: 0, encodeMs: 0), to: url)
     }
 }
+
+/// Round 2 (outcome 5) · `-PoolsFromAngle <dir>`: draws Chrome's own ANGLE translation of the bench shader, instrumented
+/// (tools/angle_pools.py → Documents/angle_pools.metal), compiled fast / fast fp32 functions (the compile that reproduces T's
+/// bench stills), and reads back the three hash11 values of every pool exactly as that shader computed them while drawing.
+/// Writes <dir>/angle-pools.json {entry: 6 × [h1,h2,h3]} and the stills it drew (<case>__<entry>__<theme>.png, which must
+/// still equal the reference: the instrumentation must not have changed the compile). Then quits.
+enum GFPoolsAngle {
+    static func run(dir: String) {
+        let fm = FileManager.default
+        let docs = fm.urls(for: .documentDirectory, in: .userDomainMask)[0]
+        let out = docs.appendingPathComponent(dir)
+        try? fm.createDirectory(at: out, withIntermediateDirectories: true)
+        let R = GFRenderer.shared
+        let hdr = try! String(contentsOf: Bundle.main.url(forResource: "GFShared", withExtension: "h.txt")!, encoding: .utf8)
+        var src = try! String(contentsOf: docs.appendingPathComponent("angle_pools.metal"), encoding: .utf8)
+        src = src.replacingOccurrences(of: "#include \"GFShared.h\"", with: hdr)
+        let o = MTLCompileOptions(); o.mathMode = .fast; o.mathFloatingPointFunctions = .fast
+        let lib = try! R.device.makeLibrary(source: src, options: o)
+        let d = MTLRenderPipelineDescriptor()
+        d.vertexFunction = lib.makeFunction(name: "gf_vertex"); d.fragmentFunction = lib.makeFunction(name: "gf_fragment")
+        d.colorAttachments[0].pixelFormat = R.pixelFormat
+        let pipe = try! R.device.makeRenderPipelineState(descriptor: d)
+        var res: [String: Any] = [:]
+        let L = GFLook.shared
+        for e in L.entries { for th in GFTheme.allCases { for cs in GFCase.reference where cs.name == "detail-iphone" || cs.name == "card-mac" || cs.name == "orb-90-@2" {
+            let u = GFUniforms.make(cs, e, th)
+            let buf = R.device.makeBuffer(length: 18 * 4, options: .storageModeShared)!
+            let p = buf.contents().bindMemory(to: Float.self, capacity: 18)
+            for k in 0..<18 { p[k] = -1 }
+            let td = MTLTextureDescriptor.texture2DDescriptor(pixelFormat: R.pixelFormat, width: Int(u.res.x), height: Int(u.res.y), mipmapped: false)
+            td.usage = [.renderTarget, .shaderRead]; td.storageMode = .private
+            let tex = R.device.makeTexture(descriptor: td)!
+            let cb = R.queue.makeCommandBuffer()!
+            let rp = MTLRenderPassDescriptor()
+            rp.colorAttachments[0].texture = tex; rp.colorAttachments[0].loadAction = .dontCare; rp.colorAttachments[0].storeAction = .store
+            let enc = cb.makeRenderCommandEncoder(descriptor: rp)!
+            enc.setFragmentBuffer(buf, offset: 0, index: 1)
+            R.encode(enc, u, pipeline: pipe)
+            enc.endEncoding(); cb.commit(); cb.waitUntilCompleted()
+            let rgba = GFStillRenderer.readRGBA(tex)
+            try? GFStillRenderer.writePNG(.init(width: tex.width, height: tex.height, rgba: rgba, gpuMs: 0, encodeMs: 0),
+                                          to: out.appendingPathComponent("\(cs.name)__\(e.id)__\(th.rawValue).png"))
+            let vals = (0..<6).map { i in (0..<3).map { k in Double(p[i * 3 + k]) } }
+            res["\(e.id)|\(cs.name)|\(th.rawValue)"] = vals
+        } } }
+        try? JSONSerialization.data(withJSONObject: res, options: [.prettyPrinted, .sortedKeys]).write(to: out.appendingPathComponent("angle-pools.json"))
+        try? "done\n".write(to: out.appendingPathComponent("DONE"), atomically: true, encoding: .utf8)
+    }
+}

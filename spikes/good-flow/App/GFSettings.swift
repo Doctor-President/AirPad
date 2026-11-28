@@ -3,6 +3,7 @@
 //   -Case Detail|Cards|Map   -Theme light|dark   -Glass on|off   -EdgeBend on|off   -Variant A|B|BD75|BD50
 //   -Hash stable|bench       -LiveRate 30|60     -Live on|off    -Flat on|off       -DetailFit bench|width
 //   -MapCap 128|256 (the Map stills' master cap; 128 = the measured choice)
+// Round 2:  -Pools bench|cpu|shader (the pool table, Look.swift GFPools; default bench)
 // Simulated platform states (the live rule's other inputs; the real APIs are read as well):
 //   -SimReduceMotion YES   -SimLowPower YES   -SimThermal serious|critical
 import Foundation
@@ -28,6 +29,7 @@ final class GFSettings {
     var flat = false { didSet { changed("flat") } }               // the flat control arm
     var detailFitWidth = false { didSet { changed("detailFit") } }// Mac: bench (short side) | width
     var mapCap = 128 { didSet { changed("mapCap") } }             // the Map stills' master size cap (px): 128 meets both memory bars
+    var pools: GFPoolsMode = .bench { didSet { changed("pools") } }  // round 2: the pool table (Look.swift GFPools)
 
     var simReduceMotion = false { didSet { changed("sim") } }
     var simLowPower = false { didSet { changed("sim") } }
@@ -52,6 +54,7 @@ final class GFSettings {
         if let v = on("Flat") { flat = v }
         if d.string(forKey: "DetailFit")?.lowercased() == "width" { detailFitWidth = true }
         if d.integer(forKey: "MapCap") > 0 { mapCap = d.integer(forKey: "MapCap") }
+        if let v = GFPoolsMode.parse(d.string(forKey: "Pools")) { pools = v }
         simReduceMotion = d.bool(forKey: "SimReduceMotion")
         simLowPower = d.bool(forKey: "SimLowPower")
         switch d.string(forKey: "SimThermal")?.lowercased() { case "serious": simThermal = 2; case "critical": simThermal = 3; default: break }
@@ -87,12 +90,12 @@ final class GFSettings {
 
     var describe: String {
         "case \(caseName.rawValue) theme \(theme.rawValue) glass \(glass ? "on" : "off") bend \(edgeBend ? "on" : "off") variant \(variant.rawValue) "
-            + "hash \(benchHash ? "bench" : "stable") rate \(liveRate) live \(live ? "on" : "off") flat \(flat ? "on" : "off") fit \(detailFitWidth ? "width" : "bench") cap \(mapCap)"
+            + "hash \(benchHash ? "bench" : "stable") rate \(liveRate) live \(live ? "on" : "off") flat \(flat ? "on" : "off") fit \(detailFitWidth ? "width" : "bench") cap \(mapCap) pools \(pools.rawValue)"
             + (simReduceMotion || simLowPower || simThermal > 0 ? " sim[rm \(simReduceMotion) lp \(simLowPower) th \(simThermal)]" : "")
     }
     var dict: [String: Any] {
         ["case": caseName.rawValue, "theme": theme.rawValue, "glass": glass, "edgeBend": edgeBend, "variant": variant.rawValue,
-         "hash": benchHash ? "bench" : "stable", "liveRate": liveRate, "live": live, "flat": flat, "detailFit": detailFitWidth ? "width" : "bench", "mapCap": mapCap,
+         "hash": benchHash ? "bench" : "stable", "liveRate": liveRate, "live": live, "flat": flat, "detailFit": detailFitWidth ? "width" : "bench", "mapCap": mapCap, "pools": pools.rawValue,
          "simReduceMotion": simReduceMotion, "simLowPower": simLowPower, "simThermal": simThermal]
     }
 

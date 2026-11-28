@@ -147,9 +147,11 @@ static Hit flowBody(U, thread G& g, float2 p, E e){
     float w = (i==0) ? min(u.bodyl*1.3,1.)*(tank ? mix(.35,1.,smoothstep(1.,3.,e.parts)) : 1.) : ((i==1) ? 1. : clamp(e.parts-(fi-1.),0.,1.));
     gsA[i] = 0.;
     if(w<=0.) continue;
-    float2 c = float2((hash11(fi*7.3+e.seed*19.)-.5)*(i==0 ? .7 : 2.3), YO[i]*.85+(hash11(fi*3.9+e.seed*29.)-.5)*.3);
+    // round 2: the pool table (GFUniforms.pool) replaces the three hash11 calls when poolTable is 1
+    float3 ph = u.poolTable==1 ? u.pool[i].xyz : float3(hash11(fi*7.3+e.seed*19.), hash11(fi*3.9+e.seed*29.), hash11(fi*5.7+e.seed*7.));
+    float2 c = float2((ph.x-.5)*(i==0 ? .7 : 2.3), YO[i]*.85+(ph.y-.5)*.3);
     c += wand*float2(sin(t*.21+fi*2.1), cos(t*.17+fi*1.3));
-    float r = r0*(.75+.5*hash11(fi*5.7+e.seed*7.));
+    float r = r0*(.75+.5*ph.z);
     float2 dq = q-c; dq.x /= st; dq.y /= mix(1.,.55,u.stretch);
     float d2 = dot(dq,dq)/(r*r);
     Dl += exp(-d2)*w;

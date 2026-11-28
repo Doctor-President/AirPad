@@ -56,6 +56,7 @@ function render(cs, e, theme, fill) {
   f('uTheme', theme_); f('uTank', tank); v2('uTankH', tankH[0], tankH[1]); f('uFadeB', fadeB); v2('uFadeV', fadeV[0], fadeV[1]); v2('uFade', 0, 0);
   f('uMask', mask); f('uMaskR', maskR); f('uMaskR2', 0); v3('uSurf', surf); v2('uCtr', cx, cy); f('uZoom', zoom);
   f('uRot', (frac(Math.sin(e.seed*91.7)*43758.5453)-.5)*1.4);
+  if ('uPool[0]' in U && e.pools) { gl.uniform3fv(U['uPool[0]'], new Float32Array(e.pools.flat())); used.uPool = e.pools; }
   f('uHue', e.hue); f('uMass', mass); f('uParts', e.parts); f('uConn', e.conn); f('uTempo', e.tempo); f('uAmp', e.amp); f('uPatina', e.patina); f('uSeed', e.seed);
   const t0 = performance.now();
   gl.drawArrays(gl.TRIANGLES, 0, 3);

@@ -7,6 +7,44 @@ import simd
 struct GFEntry: Decodable {
     let id: String
     let hue, mass, parts, conn, tempo, amp, patina, seed: Double
+    /// Round 2 (outcome 5): the bench's own pool table for this entry (6 × [h1, h2, h3]), as headless Chrome (ANGLE Metal,
+    /// M1 Max) computed it: tools/bench_pools.mjs. nil for the invented library entries (the CPU works theirs out).
+    var pools: [[Double]]? = nil
+    init(id: String, hue: Double, mass: Double, parts: Double, conn: Double, tempo: Double, amp: Double, patina: Double, seed: Double) {
+        self.id = id; self.hue = hue; self.mass = mass; self.parts = parts; self.conn = conn; self.tempo = tempo; self.amp = amp
+        self.patina = patina; self.seed = seed
+    }
+}
+
+/// Round 2 (outcome 5): the pool table. hash11 = fract(sin(n·127.1)·43758.5453) only places and sizes the six pools, once
+/// per entry; on the GPU its sin is the chip's fast sin, which differs per GPU family (the phone drew every entry
+/// differently, 0/120). Worked out here instead and passed in (GFUniforms.pool), every chip draws the same entry the same way.
+///   bench  (default) the bench's own values where look.json has them (e0–e5: T's bench draw), the CPU's for the rest
+///   cpu    the CPU's for every entry (what a real build would compute: double-precision sin, the same on every device)
+///   shader the old in-shader hash (with -Hash stable|bench), for comparison
+enum GFPoolsMode: String, CaseIterable { case bench, cpu, shader
+    static func parse(_ s: String?) -> GFPoolsMode? { s.flatMap { v in allCases.first { $0.rawValue == v.lowercased() } } }
+}
+enum GFPools {
+    /// The three hash values of pool i, worked out on the CPU: the argument in float32 as the shader forms it, sin in double.
+    static func cpu(seed: Double, i: Int) -> SIMD3<Float> {
+        func h(_ a: Float, _ b: Float) -> Float {
+            let fi = Float(i), sd = Float(seed)
+            let n = Double(fi * a + sd * b)
+            let x = sin(n * 127.1) * 43758.5453
+            return Float(x - floor(x))
+        }
+        return SIMD3(h(7.3, 19), h(3.9, 29), h(5.7, 7))
+    }
+    static func table(_ e: GFEntry, _ mode: GFPoolsMode) -> [SIMD3<Float>] {
+        if mode == .bench, let p = e.pools, p.count == 6 { return p.map { SIMD3(Float($0[0]), Float($0[1]), Float($0[2])) } }
+        return (0..<6).map { cpu(seed: e.seed, i: $0) }
+    }
+    static func apply(_ u: inout GFUniforms, _ e: GFEntry, _ mode: GFPoolsMode) {
+        guard mode != .shader else { u.poolTable = 0; return }
+        let t = table(e, mode).map { SIMD4<Float>($0, 0) }
+        u.pool = (t[0], t[1], t[2], t[3], t[4], t[5]); u.poolTable = 1
+    }
 }
 
 struct GFLook: Decodable {
@@ -215,6 +253,7 @@ extension GFUniforms {
         u.hue = f(e.hue); u.mass = f(mass); u.parts = f(e.parts); u.conn = f(e.conn); u.tempo = f(e.tempo)
         u.amp = f(e.amp); u.patina = f(e.patina); u.seed = f(e.seed)
         u.grainOn = 1; u.flat = 0; u.fwScale = 1
+        GFPools.apply(&u, e, GFSettings.shared.pools)
         return u
     }
 

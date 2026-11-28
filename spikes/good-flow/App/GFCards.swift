@@ -36,6 +36,7 @@ final class GFCardStillCache {
     private(set) var stills: [Int: GFCardStill] = [:]
     private var jobs: [Job] = []            // guarded by lock, highest priority first
     private var inFlight = Set<Int>()       // main
+    var inFlightCount: Int { inFlight.count }
     private let lock = NSLock()
     private let queue = DispatchQueue(label: "gf.cards.fill", qos: .userInitiated)
     private let cq = GFRenderer.shared.device.makeCommandQueue()!
@@ -71,14 +72,29 @@ final class GFCardStillCache {
         } else { truncated = 0 }
         let keepSet = Set(keep)
         for k in stills.keys where !keepSet.contains(k) { stills[k] = nil }
+        // Round 2 fix (outcome 3, the light Cards break): the queue is rebuilt in the new priority order, and an item whose
+        // queued job is dropped LEAVES inFlight. Before, a second want() while fills were queued threw their jobs away but
+        // left them inFlight, so they were never queued again: those cards showed the flat fill until a theme / variant
+        // switch cleared the cache (T's 16:06: the first want ran at the layout's default 50 × 50 item size, queued all
+        // 262, the next want dropped 252 of them).
+        lock.lock()
+        let dropped = jobs.filter { !(keepSet.contains($0.item) && $0.gen == generation) || $0.reason == "fill" }
+        jobs.removeAll { !(keepSet.contains($0.item) && $0.gen == generation) || $0.reason == "fill" }
+        lock.unlock()
+        var orphanedDone: [() -> Void] = []
+        for j in dropped {
+            inFlight.remove(j.item)
+            if j.reason != "fill", let d = pendingDone.removeValue(forKey: j.item) { orphanedDone.append(d) }   // its live surface goes
+        }
         let missing = keep.filter { stills[$0] == nil && !inFlight.contains($0) }
         if fillStart == nil, !missing.isEmpty { fillStart = CACurrentMediaTime(); visibleWaiting = visible.filter { stills[$0] == nil } }
         let newJobs = missing.map { i -> Job in let u = make(i); return Job(item: i, u: u, time: Double(u.time), gen: generation, reason: "fill") }
         lock.lock()
-        jobs = jobs.filter { keepSet.contains($0.item) && $0.gen == generation && $0.reason != "fill" } + newJobs
+        jobs += newJobs
         missing.forEach { inFlight.insert($0) }
         let start = !running && !jobs.isEmpty; if start { running = true }
         lock.unlock()
+        orphanedDone.forEach { $0() }
         if start { queue.async { [weak self] in self?.drain() } }
     }
 
@@ -151,7 +167,18 @@ final class GFCardCell: UICollectionViewCell {
     }
     required init?(coder: NSCoder) { fatalError() }
 
+    private var geo: (CGFloat, CGFloat)?
+    /// Round 2 fix (outcome 3): the cell lays its parts out on EVERY layout pass at its current bounds. Before, only
+    /// configure() did, so a cell configured at any other size than its final one (the flow layout's default 50 × 50 item
+    /// before viewDidLayoutSubviews set the real one) kept a thumbnail-sized picture and cut titles ("E…", "1 it…").
+    override func layoutSubviews() {
+        super.layoutSubviews()
+        if let g = geo { place(heroFrac: g.0, radius: g.1) }
+    }
     func layout(heroFrac: CGFloat, radius: CGFloat) {
+        geo = (heroFrac, radius); place(heroFrac: heroFrac, radius: radius); setNeedsLayout()
+    }
+    private func place(heroFrac: CGFloat, radius: CGFloat) {
         stillView.frame = contentView.bounds
         let b = contentView.bounds
         hueLayer.frame = CGRect(x: 0, y: 0, width: b.width, height: b.height * heroFrac)
@@ -210,6 +237,7 @@ final class GFCardsViewController: UIViewController, UICollectionViewDataSource,
         super.viewDidLoad()
         layoutF.scrollDirection = isMac ? .vertical : .horizontal
         layoutF.minimumInteritemSpacing = 10; layoutF.minimumLineSpacing = isMac ? 10 : 14
+        if isMac { layoutF.itemSize = CGSize(width: 228, height: 320) }   // round 2: never lay out at the default 50 × 50
         cv = UICollectionView(frame: view.bounds, collectionViewLayout: layoutF)
         cv.dataSource = self; cv.delegate = self
         cv.register(GFCardCell.self, forCellWithReuseIdentifier: "c")
@@ -228,12 +256,12 @@ final class GFCardsViewController: UIViewController, UICollectionViewDataSource,
     }
     deinit { settingsObs.map(NotificationCenter.default.removeObserver); hostLink.stop(); programmatic?.invalidate() }
 
+    private var stillPxKey = ""
     override func viewDidLayoutSubviews() {
         super.viewDidLayoutSubviews()
         let changed = cv.frame != view.bounds
-        cv.frame = view.bounds
         let cs = cardSize
-        if layoutF.itemSize != cs || changed {
+        if layoutF.itemSize != cs || changed {   // round 2: the item size is set BEFORE the frame (whose scroll callback asks for stills)
             layoutF.itemSize = cs
             if isMac {
                 let cols = max(1, floor((view.bounds.width - 48 + 10) / (cs.width + 10)))
@@ -244,9 +272,15 @@ final class GFCardsViewController: UIViewController, UICollectionViewDataSource,
                 layoutF.sectionInset = UIEdgeInsets(top: max(0, (view.bounds.height - cs.height) / 2 - 20), left: side, bottom: 0, right: side)
             }
             layoutF.invalidateLayout()
-            if changed { cache.invalidate(); lastWantKey = ""; endLive(animated: false) }   // a new size = new stills (design §1)
-            DispatchQueue.main.async { [weak self] in self?.refreshWanted(); self?.updateLive() }
         }
+        cv.frame = view.bounds
+        sized = true
+        // Round 2: stills are redrawn when the CARD's pixel size changes (design §1), not on every window size: on the Mac
+        // the card is 228 × 320 whatever the window, so a resize (or the full-screen animation) keeps every still.
+        let (pw, ph) = cardCase().pixelSize, key = "\(pw)x\(ph)"
+        if key != stillPxKey { if !stillPxKey.isEmpty { cache.invalidate(); endLive(animated: false) }; stillPxKey = key; lastWantKey = "" }
+        if changed { lastWantKey = "" }
+        DispatchQueue.main.async { [weak self] in self?.refreshWanted(); self?.updateLive() }
     }
     override func viewDidAppear(_ animated: Bool) {
         super.viewDidAppear(animated); applyTheme(); refreshWanted(); updateLive()
@@ -306,6 +340,9 @@ final class GFCardsViewController: UIViewController, UICollectionViewDataSource,
             cell.live = nil
         }
         cell.item = i
+        if abs(cell.contentView.bounds.width - layoutF.itemSize.width) > 0.5 || abs(cell.contentView.bounds.height - layoutF.itemSize.height) > 0.5 {
+            GFRecorder.shared.mark("r2 configure item \(i) at \(cell.contentView.bounds.size) (layout item \(layoutF.itemSize))")
+        }
         cell.contentView.backgroundColor = GFSettings.pageColor(t)
         cell.layout(heroFrac: heroFrac, radius: radius)
         let it = lib.items[i]
@@ -328,8 +365,9 @@ final class GFCardsViewController: UIViewController, UICollectionViewDataSource,
     }
 
     // MARK: which stills to keep (visible first, then one screen each way)
+    private var sized = false        // round 2: viewDidLayoutSubviews has set the real item size for these bounds
     private func refreshWanted() {
-        guard cv.bounds.width > 0 else { return }
+        guard cv.bounds.width > 0, sized else { return }
         let b = cv.bounds
         let ahead = isMac ? b.insetBy(dx: 0, dy: -b.height) : b.insetBy(dx: -b.width, dy: 0)
         let vis = Set((layoutF.layoutAttributesForElements(in: b) ?? []).map(\.indexPath.item))
@@ -460,6 +498,61 @@ final class GFCardsViewController: UIViewController, UICollectionViewDataSource,
         hostLink.noteInput()
     }
     func scrollViewDidEndScrollingAnimation(_ s: UIScrollView) { updateLive() }
+
+    /// Round 2 · -Script verbs: scroll:<dy pt> (animated, as a wheel scroll would), jump:<y pt> (no animation),
+    /// hover:<item> / hover:off (a still pointer over that card, as -SimHoverItem).
+    func scriptAction(_ verb: String, _ arg: String) -> Bool {
+        switch verb {
+        case "scroll", "jump":
+            guard let v = Double(arg) else { return false }
+            let maxY = max(0, cv.contentSize.height - cv.bounds.height)
+            let y = verb == "scroll" ? cv.contentOffset.y + v : v
+            cv.setContentOffset(CGPoint(x: 0, y: min(max(-cv.adjustedContentInset.top, y), maxY)), animated: verb == "scroll")
+            return true
+        case "hover":
+            if arg == "off" { hoverPoint = nil } else if let i = Int(arg), let a = layoutF.layoutAttributesForItem(at: IndexPath(item: i, section: 0)) {
+                hoverPoint = cv.convert(a.center, to: view)
+            }
+            updateLive(); return true
+        default: return false
+        }
+    }
+
+    /// Round 2: what each visible cell actually shows (frames, contents, flat fill) and the cache's state.
+    var diagnostics: [String: Any] {
+        var m = recordingMeta
+        m["cv"] = ["bounds": [cv.bounds.minX, cv.bounds.minY, cv.bounds.width, cv.bounds.height], "contentSize": [cv.contentSize.width, cv.contentSize.height]]
+        m["layout"] = ["itemSize": [layoutF.itemSize.width, layoutF.itemSize.height], "estimated": [layoutF.estimatedItemSize.width, layoutF.estimatedItemSize.height],
+                       "inset": [layoutF.sectionInset.left, layoutF.sectionInset.top]]
+        let cells = cv.visibleCells.compactMap { $0 as? GFCardCell }.sorted { $0.item < $1.item }
+        var rows: [[String: Any]] = []
+        for c in cells {
+            var r: [String: Any] = ["item": c.item]
+            r["frame"] = [c.frame.minX, c.frame.minY, c.frame.width, c.frame.height]
+            r["content"] = [c.contentView.bounds.width, c.contentView.bounds.height]
+            r["still"] = [c.stillView.frame.width, c.stillView.frame.height]
+            r["title"] = [c.title.frame.minX, c.title.frame.minY, c.title.frame.width]
+            r["hasContents"] = c.stillView.layer.contents != nil
+            r["flatFill"] = !c.hueLayer.isHidden
+            let st = cache.still(for: c.item)
+            r["cached"] = st != nil
+            r["contentsIsCached"] = st != nil && (c.stillView.layer.contents as AnyObject?) === st!.surface
+            rows.append(r)
+        }
+        m["cells"] = rows
+        m["cachedItems"] = cache.stills.keys.sorted()
+        m["inFlight"] = cache.inFlightCount
+        let item = layoutF.itemSize
+        func cnt(_ f: (GFCardCell) -> Bool) -> Int { cells.filter(f).count }
+        var sm: [String: Int] = ["visible": cells.count]
+        sm["wrongFrame"] = cnt { abs($0.frame.width - item.width) > 0.5 || abs($0.frame.height - item.height) > 0.5 }
+        sm["stillViewNotFull"] = cnt { abs($0.stillView.frame.width - $0.contentView.bounds.width) > 0.5 || abs($0.stillView.frame.height - $0.contentView.bounds.height) > 0.5 }
+        sm["flatFill"] = cnt { !$0.hueLayer.isHidden }
+        sm["flatButCached"] = cnt { !$0.hueLayer.isHidden && self.cache.still(for: $0.item) != nil }
+        sm["staleContents"] = cnt { $0.stillView.layer.contents != nil && ($0.stillView.layer.contents as AnyObject?) !== self.cache.still(for: $0.item)?.surface }
+        m["summary"] = sm
+        return m
+    }
 
     var recordingMeta: [String: Any] {
         ["screen": "cards", "card": [cardSize.width, cardSize.height], "stillsKept": cache.stills.count, "stillBytes": cache.totalBytes,

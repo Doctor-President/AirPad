@@ -50,3 +50,39 @@ theme. Pools an entry never uses (weight 0) keep the WebGL page's values; they n
 
 Still: `results-round2/o5-pool-table.png` (detail-iphone e0 / e4 / e5 dark: T's bench, old port, port + table,
 SwiftShader bench, SwiftShader + table). Commit: see the round-2 log at the end.
+
+## 3 · Cards: the light-mode grid break
+
+**Plainly: it is the still pipeline (the fill queue's bookkeeping), set off by the spike's grid.** Light had nothing to
+do with it: T opened Cards in light (16:05, from Detail, already light since 16:01 by his recording's marks), and his
+switch to dark refilled every still, which is why dark was whole a minute later.
+
+**Reproduced** (scripted, screen locked, window 1728 × 1028 Mac pt = 2245 × 1336 UIKit pt since the Catalyst build
+is iPad-scaled, light, A; `tools/r2_mac.sh` with `-Script "case:Cards@5,dump:a@6,…"`; dumps = what every visible cell
+shows, read from the view tree):
+- Detail → Cards, 1 s later: **36 of 36 visible cards show the flat fill; 10 stills kept; 252 items "in flight" for
+  ever.** After scrolling: 45 of 45 flat. A theme switch: 0 flat (the cache is cleared). Launching straight into Cards: 0 flat.
+- Cause, from the marks: the first `want()` ran while the flow layout still had UIKit's **default 50 × 50 item size**
+  (the frame was set before the item size, and its scroll callback asks for stills): "visible 262", so all 262 were
+  queued. The next `want()` (real size, 36 visible) rebuilt the queue and **dropped the queued fill jobs but left their
+  items marked in flight**, so they were never queued again. Any later `want()` with fills still queued (fast scroll,
+  hover churn) strands more. That is a fault a real still cache can have too: **2c's step 1 should carry the rule
+  "a dropped job leaves in-flight", with a test that calls want() twice before the queue drains.**
+- The collapsed cells ("E…", "1 it…"): **not reproduced by script.** The mechanism is in the code and the 50 × 50 pass
+  is now shown: a cell laid out its picture and labels only in configure(), at whatever size it had then; a cell that
+  lived through a 50 × 50 pass kept a thumbnail picture and cut titles until reconfigured (a theme switch does that).
+  That part is the spike's grid.
+
+**Fixed** (GFCards.swift): the queue is rebuilt in priority order and a dropped job leaves in-flight (a dropped live-end
+redraw also removes its live surface); the item size is set before the frame, and no stills are asked for before it is
+set; the cell lays itself out on every layout pass; stills are redrawn when the CARD's pixel size changes, not on every
+window resize (a Mac card is 228 × 320 at any window size, so the full-screen animation no longer empties the grid).
+After: the same script gives **0 flat, 0 in flight**, after the case switch, three scrolls, hovers, a scroll back and
+a resize. Still: `results-round2/o3-cards-before-after.png`.
+
+**Still ↔ live jump.** Off screen it is exact: the first live frame vs the still **0.0000 mean, 0 max** (in the app,
+`-CheckJump`, card 3, this build), and leaving live the still is redrawn at the last live frame's time value (round
+1's offscreen check, 0.0000). **On screen it is unread:** with the screen locked the live layer drew 7 frames in 1.7 s
+and presented none, and a window snapshot does not capture a Metal layer. The one way it could still jump: the live
+layer is inserted over the still before its first frame is presented (an empty Metal layer for one frame). Owed in the
+unlocked run: a screen recording of one hover on and off (`-Script "hover:3@6,hover:off@8"` with `-Case Cards`).

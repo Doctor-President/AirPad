@@ -13,6 +13,14 @@ protocol GFCaseScreen: UIViewController {
     func setProgrammatic(_ on: Bool)
     /// What the screen adds to a saved recording.
     var recordingMeta: [String: Any] { get }
+    /// Round 2: the screen's geometry / state for a `-Script` dump (what is on screen, measured, not inferred).
+    var diagnostics: [String: Any] { get }
+    /// Round 2: a screen-specific `-Script` action (e.g. "scroll:300"); returns false if it is not this screen's.
+    func scriptAction(_ verb: String, _ arg: String) -> Bool
+}
+extension GFCaseScreen {
+    var diagnostics: [String: Any] { recordingMeta }
+    func scriptAction(_ verb: String, _ arg: String) -> Bool { false }
 }
 
 final class GFDetailViewController: UIViewController, UIScrollViewDelegate, GFCaseScreen {

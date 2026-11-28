@@ -72,6 +72,7 @@ final class GFRootViewController: UIViewController {
         becomeFirstResponder()
         let d = UserDefaults.standard
         if !benchStarted, let b = d.string(forKey: "Bench") { benchStarted = true; runBench(b, seconds: max(5, d.double(forKey: "Seconds") == 0 ? 60 : d.double(forKey: "Seconds"))) }
+        if let sc = d.string(forKey: "Script") { runScript(sc) }
         let at = d.double(forKey: "AutoSaveAt")
         if at > 0 {
             DispatchQueue.main.asyncAfter(deadline: .now() + at) {
@@ -79,6 +80,61 @@ final class GFRootViewController: UIViewController {
                 if d.bool(forKey: "AutoQuit") { exit(0) }
             }
         }
+    }
+
+    /// Round 2 · `-Script "verb:arg@seconds,…"` (scripted runs with the screen locked; also usable by hand-free checks):
+    ///   theme:light|dark  variant:A|B|BD75|BD50  case:Detail|Cards|Map  pools:…  size:WxH (window, Mac)  panel:open|closed
+    ///   dump:<name> (Documents/r2/<name>.json: the screen's diagnostics)  snap:<name> (Documents/r2/<name>.png: the window,
+    ///   drawHierarchy)  save:<name> (a recording)  reset (recorder)  quit;  any other verb goes to the screen
+    ///   (scriptAction: e.g. scroll:<pt>, scale:<x>, hover:<item>, reveal:on|off …).
+    private func runScript(_ sc: String) {
+        let S = GFSettings.shared
+        for part in sc.split(separator: ",") {
+            let at = part.split(separator: "@", maxSplits: 1)
+            guard at.count == 2, let t = Double(at[1]) else { continue }
+            let va = at[0].split(separator: ":", maxSplits: 1).map(String.init)
+            let verb = va[0], arg = va.count > 1 ? va[1] : ""
+            DispatchQueue.main.asyncAfter(deadline: .now() + t) { [weak self] in
+                guard let self else { return }
+                GFRecorder.shared.mark("script \(verb):\(arg)")
+                switch verb {
+                case "theme": S.theme = arg == "dark" ? .dark : .light
+                case "variant": if let v = GFVariant.parse(arg) { S.variant = v }
+                case "case": if let c = GFSettings.Case.allCases.first(where: { $0.rawValue.lowercased() == arg.lowercased() }) { S.caseName = c }
+                case "pools": if let v = GFPoolsMode.parse(arg) { S.pools = v }
+                case "live": S.live = arg == "on"
+                case "size":
+                    let wh = arg.split(separator: "x").compactMap { Double($0) }
+                    if wh.count == 2, let ws = self.view.window?.windowScene {
+                        ws.requestGeometryUpdate(.Mac(systemFrame: CGRect(x: 0, y: 0, width: wh[0], height: wh[1]))) { e in GFRecorder.shared.mark("size failed \(e)") }
+                    }
+                case "panel": if (arg == "open") == self.panel.isHidden { self.togglePanel() }
+                case "dump": self.writeR2(arg + ".json", try? JSONSerialization.data(withJSONObject: self.diagnosticsNow(), options: [.prettyPrinted, .sortedKeys]))
+                case "snap": self.writeR2(arg + ".png", self.snapshotPNG())
+                case "save": GFRecorder.shared.save(name: arg, meta: self.screen?.recordingMeta ?? [:])
+                case "reset": GFRecorder.shared.reset()
+                case "quit": exit(0)
+                default: if self.screen?.scriptAction(verb, arg) != true { GFRecorder.shared.mark("script: unknown \(verb)") }
+                }
+            }
+        }
+    }
+    private func diagnosticsNow() -> [String: Any] {
+        var d = screen?.diagnostics ?? [:]
+        d["window"] = [view.window?.bounds.width ?? 0, view.window?.bounds.height ?? 0]
+        d["settings"] = GFSettings.shared.dict; d["footprintMB"] = GFRecorder.physFootprintMB(); d["t"] = CACurrentMediaTime()
+        return d
+    }
+    private func snapshotPNG() -> Data? {
+        guard let w = view.window else { return nil }
+        let f = UIGraphicsImageRendererFormat(); f.scale = 1
+        let img = UIGraphicsImageRenderer(bounds: w.bounds, format: f).image { _ in _ = w.drawHierarchy(in: w.bounds, afterScreenUpdates: true) }
+        return img.pngData()
+    }
+    private func writeR2(_ name: String, _ data: Data?) {
+        let dir = FileManager.default.urls(for: .documentDirectory, in: .userDomainMask)[0].appendingPathComponent("r2")
+        try? FileManager.default.createDirectory(at: dir, withIntermediateDirectories: true)
+        if let data { try? data.write(to: dir.appendingPathComponent(name)) } else { GFRecorder.shared.mark("script: \(name) had no data") }
     }
 
     private func togglePanel() {

@@ -165,6 +165,30 @@ def design(R):
                         gpuP50=pct([f['gpuMs'] for f in fs], 50), mainP95=pct([f['mainMs'] for f in fs], 95),
                         gpuBusyAt30=(pct([f['gpuMs'] for f in fs], 50) * 30 / 10) if fs else None)
     d['live'] = lv
+    # Round 2 (outcome 4; fable-read-device §1 "How to read"): ON-SCREEN figures per surface. Only frames drawn while the
+    # surface was on screen (`vis`, recorded since round 2), cadence only between frames that came back with a present time
+    # (no link-target fallback), the live surface judged against its OWN period (1/30 s), and the frames drawn off screen
+    # counted apart (round 1 redrew the band on every scroll frame: 72 % of Detail's frames were never shown).
+    onsc = {}
+    for name in sorted(set(f['surface'] for f in frames if f['surface'] != 'host')):
+        fs = [f for f in frames if f['surface'] == name]
+        vis = [f for f in fs if f.get('vis', True)]
+        pres = [f for f in vis if f['presentT'] > 0]
+        ts = [f['presentT'] for f in pres]
+        gaps = [b - a for a, b in zip(ts, ts[1:]) if 0 < b - a < 0.25]
+        rates = [f.get('rate', 0) for f in vis if f['wake'] == 'live' and f.get('rate', 0) > 0]
+        per = 1 / st.median(rates) if rates else vs
+        onsc[name] = dict(drawn=len(fs), offScreen=len(fs) - len(vis), onScreen=len(vis), presented=len(pres),
+                          gaps=len(gaps), oneVsync=(sum(1 for g in gaps if abs(g - vs) <= .25 * vs) / len(gaps)) if gaps else None,
+                          oneOwnPeriod=(sum(1 for g in gaps if abs(g - per) <= .25 * per) / len(gaps)) if gaps else None, ownPeriodMs=per * 1000,
+                          gpuP50=pct([f['gpuMs'] for f in vis], 50), gpuP95=pct([f['gpuMs'] for f in vis], 95),
+                          liveGpuP50=pct([f['gpuMs'] for f in vis if f['wake'] == 'live'], 50), liveGpuP95=pct([f['gpuMs'] for f in vis if f['wake'] == 'live'], 95),
+                          px=st.median([f['px'] for f in fs]) if fs else 0)
+    d['onScreen'] = onsc
+    host = [f for f in frames if f['surface'] == 'host']
+    if host:   # the page's own scroll cadence: the main thread's link callbacks while input is recent (no present times)
+        ts = [f['linkT'] for f in host]; gaps = [b - a for a, b in zip(ts, ts[1:]) if 0 < b - a < 0.25]
+        d['hostCadence'] = dict(frames=len(host), oneVsync=(sum(1 for g in gaps if abs(g - vs) <= .25 * vs) / len(gaps)) if gaps else None)
     if samples:
         cpu = [s['cpuPct'] for s in samples if s['cpuPct'] >= 0]
         d['samples'] = dict(cpuMedian=st.median(cpu) if cpu else None, footprintMBMax=max(s['footprintMB'] for s in samples),
@@ -190,6 +214,14 @@ def print_design(d, name=''):
     for k, v in d['live'].items():
         print(f"live {k}: {v['frames']} frames, {v['perSecond'] and round(v['perSecond'], 2)} a second (bar 30), GPU p50 / p95 {v['gpuP50']:.2f} / {v['gpuP95']:.2f} ms "
               f"(Mac ≤ 4.0, iPhone ≤ 5.0), main p95 {v['mainP95']:.3f} ms (≤ 1.0; {v['mainExWaitP95']:.3f} without the drawable wait)")
+    if d.get('onScreen'):
+        print('| on screen (round 2) | drawn | off screen | presented | one vsync | own period | GPU p50 / p95 (live) | px |\n|---|---|---|---|---|---|---|---|')
+        for k, v in d['onScreen'].items():
+            f = lambda x: '-' if x is None else '%.1f %%' % (100 * x)
+            print(f"| {k} | {v['drawn']} | {v['offScreen']} | {v['presented']} | {f(v['oneVsync'])} | {f(v['oneOwnPeriod'])} @ {v['ownPeriodMs']:.1f} ms | "
+                  f"{v['gpuP50']:.2f} / {v['gpuP95']:.2f} ({v['liveGpuP50']:.2f} / {v['liveGpuP95']:.2f}) | {v['px']:.0f} |")
+    if d.get('hostCadence'):
+        h = d['hostCadence']; print(f"page scroll cadence (host link, main thread): {h['frames']} callbacks, one vsync {('%.1f %%' % (100 * h['oneVsync'])) if h['oneVsync'] is not None else '-'}")
     if 'samples' in d:
         s = d['samples']; print(f"samples: CPU median {s['cpuMedian']:.2f} % · footprint max {s['footprintMBMax']:.1f} MB · thermal {s['thermalStart']} → max {s['thermalMax']} · low power {s['lowPower']}")
     for m in d['marks']:

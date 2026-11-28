@@ -118,16 +118,22 @@ final class GFScratch {
 /// THE draw: every still and every live frame goes through here, so a still and its live surface cannot differ in
 /// variant or hash by construction.
 enum GFDraw {
+    /// Round 2 (outcome 4): `-Pass2Only YES`, a timing arm for the LIVE surfaces only (LiveSurfaceView passes it): pass 1
+    /// once, then pass 2 alone each frame. Stills never use it.
+    static let pass2OnlyArm = UserDefaults.standard.bool(forKey: "Pass2Only")
     /// The pass-1 picture's rectangle in the slot's y-up fc pixels: every point the three taps can reach (the slot
     /// scaled by 1 ± fr about the field's centre), plus two texels for the bilinear taps. x0 / y1 whole pixels.
-    static func pass1Rect(_ u: GFUniforms, s: Double) -> (x0: Double, y1: Double, w: Int, h: Int) {
+    static func pass1Rect(_ u: GFUniforms, s: Double, visibleH: Double? = nil) -> (x0: Double, y1: Double, w: Int, h: Int) {
         let W = Double(u.res.x), H = Double(u.res.y)
+        // Round 2: a target showing only the slot's top `visibleH` pixels (a card's image zone) needs pass 1 only for the
+        // points the three taps reach FROM those pixels: the slot's rows fc.y ∈ [H − visibleH, H].
+        let yLo = visibleH.map { max(0, H - $0) } ?? 0
         let fr = Double(u.fringe) * 0.04 * (1 + 0.6 * Double(u.patina))
         let cx = W * 0.5 + Double(u.ctr.x), cy = H * 0.5 + Double(u.ctr.y)
         var xs: [Double] = [], ys: [Double] = []
         for k in [1 - fr, 1.0, 1 + fr] {
             for x in [0, W] { xs.append(cx + (x - cx) * k) }
-            for y in [0, H] { ys.append(cy + (y - cy) * k) }
+            for y in [yLo, H] { ys.append(cy + (y - cy) * k) }
         }
         var m = 2.0 / s + 1
         if u.glass == 2 { m += 20 * Double(u.pt) }            // the flutes move p sideways (not a spike switch; kept honest)
@@ -138,7 +144,7 @@ enum GFDraw {
     /// Encodes the picture `u` into `target` (whole target; `u.res` / `u.org` place the slot in it).
     /// Returns the pass-1 picture's pixel count (0 for A or flat).
     @discardableResult
-    static func encode(_ cb: MTLCommandBuffer, target: MTLTexture, _ u: GFUniforms, _ mode: GFDrawMode, scratch: GFScratch?) -> Int {
+    static func encode(_ cb: MTLCommandBuffer, target: MTLTexture, _ u: GFUniforms, _ mode: GFDrawMode, scratch: GFScratch?, pass2Only: Bool = false) -> Int {
         let R = GFRenderer.shared
         guard let s = mode.variant.passScale, u.flat == 0 else {
             let rp = MTLRenderPassDescriptor()
@@ -148,8 +154,9 @@ enum GFDraw {
             enc.endEncoding()
             return 0
         }
-        let r = pass1Rect(u, s: s)
+        let r = pass1Rect(u, s: s, visibleH: target.height < Int(u.res.y) ? Double(target.height) : nil)
         let sc = scratch ?? GFScratch()
+        let reuse = pass2Only && sc.col?.width == r.w && sc.col?.height == r.h
         let (tc, tg) = sc.ensure(r.w, r.h)
         var u1 = u
         u1.r1 = SIMD4(Float(r.x0), Float(r.y1), Float(s), 0); u1.r1Size = SIMD2(Float(r.w), Float(r.h)); u1.fwScale = Float(s)
@@ -157,9 +164,11 @@ enum GFDraw {
         let rp1 = MTLRenderPassDescriptor()
         rp1.colorAttachments[0].texture = tc; rp1.colorAttachments[0].loadAction = .dontCare; rp1.colorAttachments[0].storeAction = .store
         rp1.colorAttachments[1].texture = tg; rp1.colorAttachments[1].loadAction = .dontCare; rp1.colorAttachments[1].storeAction = .store
-        let e1 = cb.makeRenderCommandEncoder(descriptor: rp1)!
-        R.encode(e1, u1, pipeline: R.pipe("gf_body", benchHash: mode.benchHash))
-        e1.endEncoding()
+        if !reuse {   // -Pass2Only: a TIMING arm (the picture freezes): pass 1 is drawn once, then only pass 2 a frame
+            let e1 = cb.makeRenderCommandEncoder(descriptor: rp1)!
+            R.encode(e1, u1, pipeline: R.pipe("gf_body", benchHash: mode.benchHash))
+            e1.endEncoding()
+        }
         let rp2 = MTLRenderPassDescriptor()
         rp2.colorAttachments[0].texture = target; rp2.colorAttachments[0].loadAction = .dontCare; rp2.colorAttachments[0].storeAction = .store
         let e2 = cb.makeRenderCommandEncoder(descriptor: rp2)!
@@ -266,9 +275,11 @@ enum GFStillsBatch {
         _ = r.render(GFUniforms.make(GFCase.reference[4], L.entries[0], .light))
         var rows: [[String: Any]] = [], unis: [String: Any] = [:]
         let t0 = CACurrentMediaTime()
-        for e in L.entries { for th in GFTheme.allCases { for cs in GFCase.reference {
-            let name = "\(cs.name)__\(e.id)__\(th.rawValue).png"
+        let scaleOver = d.double(forKey: "StillsScale3to")   // round 2: draw the 3× cases at this scale (the 2× live layer)
+        for e in L.entries { for th in GFTheme.allCases { for cs0 in GFCase.reference {
+            let name = "\(cs0.name)__\(e.id)__\(th.rawValue).png"
             if let only, !name.contains(only) { continue }
+            let cs = (scaleOver > 0 && cs0.scale == 3) ? GFCase(name: cs0.name, kind: cs0.kind, w: cs0.w, h: cs0.h, scale: scaleOver, r: cs0.r, heroRect: cs0.heroRect) : cs0
             var u = GFUniforms.make(cs, e, th); u.grainOn = grainOn
             let first = r.render(u)
             var gpus = [first.gpuMs], encs = [first.encodeMs]

@@ -24,6 +24,7 @@ final class GFRecorder {
         var presentT: Double = -1
         var px: Int = 0          // pixels drawn
         var waitMs: Double = 0   // of mainMs: the time nextDrawable() blocked (a locked screen stalls it; reported apart)
+        var vis = true           // round 2: the surface was on screen when this frame was drawn (frames.py reads on-screen figures)
     }
     struct Sample { var t: Double; var thermal: Int; var footprintMB: Double; var cpuPct: Double; var lowPower: Bool }
     struct Mark { var t: Double; var what: String }
@@ -59,9 +60,9 @@ final class GFRecorder {
     // MARK: frames
 
     /// Begin a frame; returns its index for the GPU / present handlers.
-    func begin(surface: String, wake: String, linkT: Double, targetT: Double, vsync: Double, rate: Double, startT: Double, px: Int) -> Int {
+    func begin(surface: String, wake: String, linkT: Double, targetT: Double, vsync: Double, rate: Double, startT: Double, px: Int, vis: Bool = true) -> Int {
         lock.lock(); defer { lock.unlock() }
-        frames.append(Frame(surface: surface, wake: wake, linkT: linkT, targetT: targetT, vsync: vsync, rate: rate, startT: startT, mainMs: -1, px: px))
+        frames.append(Frame(surface: surface, wake: wake, linkT: linkT, targetT: targetT, vsync: vsync, rate: rate, startT: startT, mainMs: -1, px: px, vis: vis))
         return (generation << 32) | (frames.count - 1)
     }
     /// The live index for a handle from begin(), or nil if a reset came between.
@@ -132,7 +133,7 @@ final class GFRecorder {
         let obj: [String: Any] = [
             "meta": m,
             "frames": fr.map { ["surface": $0.surface, "wake": $0.wake, "linkT": $0.linkT, "targetT": $0.targetT, "vsync": $0.vsync, "rate": $0.rate,
-                                "startT": $0.startT, "mainMs": $0.mainMs, "gpuMs": $0.gpuMs, "presentT": $0.presentT, "px": $0.px, "waitMs": $0.waitMs] },
+                                "startT": $0.startT, "mainMs": $0.mainMs, "gpuMs": $0.gpuMs, "presentT": $0.presentT, "px": $0.px, "waitMs": $0.waitMs, "vis": $0.vis] },
             "samples": sa.map { ["t": $0.t, "thermal": $0.thermal, "footprintMB": $0.footprintMB, "cpuPct": $0.cpuPct, "lowPower": $0.lowPower] },
             "marks": mk.map { ["t": $0.t, "what": $0.what] },
             "ticks": tk.map { ["t": $0.0, "surface": $0.1, "drew": $0.2] },

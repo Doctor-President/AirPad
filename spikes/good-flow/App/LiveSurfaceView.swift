@@ -39,6 +39,14 @@ final class LiveSurfaceView: UIView {
     /// Called after each tick's commit (part B: apply pending input here, as the trial does).
     var onTick: ((LiveSurfaceView, _ dt: Double) -> Void)?
     var onLiveEnded: ((Double) -> Void)?
+    /// Round 2 (outcome 4): the live layer's pixels per point, below the display's (2 on a 3× phone: 0.44 of the pixels;
+    /// the compositor scales it up). nil = the display's scale.
+    var layerScale: CGFloat? { didSet { if layerScale != oldValue { applyScale() } } }
+    /// Round 2: the SLOT this surface shows part of, in points (nil = the surface's own bounds). A card's live layer over
+    /// its image zone only keeps the card as its slot (res = the card's pixels, the zone at its top), so every pixel it
+    /// draws is the same pixel the whole card would draw.
+    var slotSize: CGSize? { didSet { requestFrame("slot") } }
+    var currentScale: CGFloat { metalLayer.contentsScale }
     /// The time value the next frame is drawn at.
     var currentTime: Double { stillT + liveElapsed }
     private(set) var drawnFrames = 0, ticks = 0
@@ -85,10 +93,15 @@ final class LiveSurfaceView: UIView {
 
     // MARK: lifecycle
 
+    private func applyScale() {
+        guard let w = window else { return }
+        metalLayer.contentsScale = min(w.traitCollection.displayScale, layerScale ?? w.traitCollection.displayScale)
+        setNeedsLayout()
+    }
     override func didMoveToWindow() {
         super.didMoveToWindow()
         guard let w = window else { link?.isPaused = true; return }
-        metalLayer.contentsScale = w.traitCollection.displayScale
+        metalLayer.contentsScale = min(w.traitCollection.displayScale, layerScale ?? w.traitCollection.displayScale)
         if link == nil {
             let l = CADisplayLink(target: proxy, selector: #selector(Proxy.step(_:)))
             l.isPaused = true
@@ -167,7 +180,17 @@ final class LiveSurfaceView: UIView {
     /// The uniforms of the frame drawn now (the still ↔ live check draws exactly these offscreen).
     func frameUniforms(width: Int, height: Int) -> GFUniforms {
         var u = base
-        u.res = SIMD2(Float(width), Float(height)); u.org = SIMD2(0, 0)
+        if let ss = slotSize {
+            let sc = Float(metalLayer.contentsScale)
+            u.res = SIMD2((Float(ss.width) * sc).rounded(), (Float(ss.height) * sc).rounded())
+        } else { u.res = SIMD2(Float(width), Float(height)) }
+        u.org = SIMD2(0, 0)
+        // Round 2: a layer drawn below the scale its uniforms were made at (layerScale): every pixel-unit value follows.
+        let sc = Float(metalLayer.contentsScale)
+        if base.pt > 0, abs(base.pt - sc) > 0.001 {
+            let k = sc / base.pt
+            u.ctr *= k; u.maskR *= k; u.maskR2 *= k; u.pt = sc
+        }
         u.time = Float(currentTime)
         return u
     }
@@ -207,10 +230,12 @@ final class LiveSurfaceView: UIView {
         let waitMs = (CACurrentMediaTime() - tw) * 1000
         let rec = GFRecorder.shared
         let idx = rec.begin(surface: surfaceName, wake: reason, linkT: l.timestamp, targetT: l.targetTimestamp, vsync: l.duration,
-                            rate: Double(l.preferredFrameRateRange.preferred ?? 0), startT: t0, px: tex.width * tex.height)
+                            rate: Double(l.preferredFrameRateRange.preferred ?? 0), startT: t0, px: tex.width * tex.height, vis: isVisibleOnScreen)
         let cb = R.queue.makeCommandBuffer()!
-        GFDraw.encode(cb, target: tex, u, mode, scratch: scratch)
+        GFDraw.encode(cb, target: tex, u, mode, scratch: scratch, pass2Only: GFDraw.pass2OnlyArm)
+        #if !targetEnvironment(simulator)   // round 2: the Simulator SDK has no presented handler (no present times there)
         drawable.addPresentedHandler { d in rec.setPresent(idx, d.presentedTime) }
+        #endif
         cb.addCompletedHandler { cb in rec.setGPU(idx, (cb.gpuEndTime - cb.gpuStartTime) * 1000) }
         cb.present(drawable)
         cb.commit()

@@ -421,7 +421,9 @@ final class GFMapView: UIView, UIGestureRecognizerDelegate {
                             rate: Double(l.preferredFrameRateRange.preferred ?? 0), startT: t0, px: drawable.texture.width * drawable.texture.height)
         let cb = R.queue.makeCommandBuffer()!
         encode(cb, target: drawable.texture)
+        #if !targetEnvironment(simulator)   // round 2: the Simulator SDK has no presented handler (no present times there)
         drawable.addPresentedHandler { d in rec.setPresent(idx, d.presentedTime) }
+        #endif
         cb.addCompletedHandler { cb in rec.setGPU(idx, (cb.gpuEndTime - cb.gpuStartTime) * 1000) }
         cb.present(drawable); cb.commit()
         oneShot = nil; drawnFrames += 1

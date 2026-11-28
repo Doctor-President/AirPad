@@ -152,7 +152,7 @@ final class GFRootViewController: UIViewController {
     private func runBench(_ name: String, seconds: Double) {
         let S = GFSettings.shared
         let rec = GFRecorder.shared
-        let tag = "bench-\(name.lowercased())-\(S.variant.rawValue)-\(S.theme.rawValue)\(S.flat ? "-flat" : "")\(S.live ? "" : "-liveoff")-r\(S.liveRate)-" + GFRecorder.stamp()
+        let tag = "bench-\(name.lowercased())-\(S.variant.rawValue)-\(S.theme.rawValue)\(S.flat ? "-flat" : "")\(S.live ? "" : "-liveoff")-r\(S.liveRate)" + (S.liveScale.map { "-x\(Int($0))" } ?? "") + (S.liveZoneImage ? "-zone" : "") + (S.scrollRedraw ? "-redraw" : "") + (GFDraw.pass2OnlyArm ? "-pass2" : "") + "-" + GFRecorder.stamp()
         writeProgress(["state": "settling", "tag": tag])
         DispatchQueue.main.asyncAfter(deadline: .now() + 3) { [weak self] in
             guard let self else { return }
@@ -216,6 +216,9 @@ final class GFPanel: UIView {
             row("Scrolled band", ["On", "Off", "Only"], ["on", "off", "only"].firstIndex(of: S.scrolledBand) ?? 0) { S.scrolledBand = ["on", "off", "only"][$0] }
         }
         row("Dark-cast fix", ["Off", "On"], S.deepFix ? 1 : 0) { S.deepFix = $0 == 1 }
+        row("Live layer scale", ["Display", "2×"], S.liveScale == 2 ? 1 : 0) { S.liveScale = $0 == 1 ? 2 : nil }
+        row("Live card zone", ["Whole card", "Image zone"], S.liveZoneImage ? 1 : 0) { S.liveZoneImage = $0 == 1 }
+        row("Scroll redraw", ["Off (move)", "On (round 1)"], S.scrollRedraw ? 1 : 0) { S.scrollRedraw = $0 == 1 }
         row("Map reveal", ["On", "All Good Flow"], S.reveal ? 0 : 1) { S.reveal = $0 == 0 }
         slider("Reveal size (on-screen pt)", 20, 240, Float(S.revealSize)) { S.revealSize = $0 }
         slider("Reveal annulus (pt from centre)", 60, 1400, Float(S.revealAnnulus)) { S.revealAnnulus = $0 }

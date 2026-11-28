@@ -187,7 +187,12 @@ final class GFCardCell: UICollectionViewCell {
         let y = b.height * heroFrac + 14
         title.frame = CGRect(x: 16, y: y, width: b.width - 32, height: 46)
         sub.frame = CGRect(x: 16, y: y + 50, width: b.width - 32, height: 36)
-        live?.frame = b
+        if let lv = live { lv.frame = Self.liveFrame(lv, b, heroFrac) }
+    }
+    /// Round 2: the live layer covers the whole card, or (-LiveZone image) only its image zone: the top `heroFrac`, where
+    /// the colour fades out (uFadeV ends at heroFrac; below it the card is plain paper).
+    static func liveFrame(_ lv: LiveSurfaceView, _ b: CGRect, _ heroFrac: CGFloat) -> CGRect {
+        lv.slotSize == nil ? b : CGRect(x: 0, y: 0, width: b.width, height: (b.height * heroFrac).rounded(.up))
     }
     /// The still (IOSurface contents) or the flat fill in the entry's hue.
     func show(_ st: GFCardStill?, hue: Double, theme: GFTheme) {
@@ -304,6 +309,7 @@ final class GFCardsViewController: UIViewController, UICollectionViewDataSource,
     private func settingsChanged(_ what: String) {
         switch what {
         case "liveRate": liveView?.liveRate = GFSettings.shared.liveRate
+        case "liveLayer": endLive(animated: false); updateLive()      // round 2: a new live layer with the new scale / zone
         case "live": updateLive()
         case "case", "detailFit", "mapCap", "sim", "detailZoom", "scrolledBand", "reveal", "revealDial", "overrides": break
         default:   // theme, glass, edgeBend, variant, hash, flat: every still is redrawn
@@ -353,7 +359,7 @@ final class GFCardsViewController: UIViewController, UICollectionViewDataSource,
         cell.show(cache.still(for: i), hue: it.entry.hue, theme: t)
         cell.accessibilityIdentifier = "card.\(i)"
         if let lv = liveView, liveItem == i, lv.superview !== cell.contentView {
-            cell.contentView.insertSubview(lv, aboveSubview: cell.stillView); cell.live = lv; lv.frame = cell.contentView.bounds
+            cell.contentView.insertSubview(lv, aboveSubview: cell.stillView); cell.live = lv; lv.frame = GFCardCell.liveFrame(lv, cell.contentView.bounds, heroFrac)
         }
     }
     func collectionView(_ c: UICollectionView, didEndDisplaying cell: UICollectionViewCell, forItemAt ip: IndexPath) {
@@ -388,7 +394,8 @@ final class GFCardsViewController: UIViewController, UICollectionViewDataSource,
     func scrollViewDidScroll(_ s: UIScrollView) {
         refreshWanted()
         guard s.isTracking || s.isDragging || s.isDecelerating || programmatic != nil else { return }
-        hostLink.noteInput(); liveView?.noteInput()
+        hostLink.noteInput()
+        if GFSettings.shared.scrollRedraw { liveView?.noteInput() }   // round 2: off = the live card MOVES with its cell, never redraws on scroll
         updateLive()
     }
     func scrollViewWillEndDragging(_ s: UIScrollView, withVelocity v: CGPoint, targetContentOffset t: UnsafeMutablePointer<CGPoint>) {
@@ -431,10 +438,16 @@ final class GFCardsViewController: UIViewController, UICollectionViewDataSource,
         let lv = LiveSurfaceView(frame: cell.contentView.bounds)
         lv.surfaceName = isMac ? "hoverCard" : "centreCard"
         lv.mode = S.mode; lv.liveRate = S.liveRate
+        lv.layerScale = S.liveScale.map { CGFloat($0) }
+        if S.liveZoneImage { lv.slotSize = cell.contentView.bounds.size; lv.frame = GFCardCell.liveFrame(lv, cell.contentView.bounds, heroFrac) }
         lv.base = uniforms(want, time: t0)
         lv.stillTime = t0
         if checkJump, let st {
-            lv.onFirstLiveFrame = { [weak self] u in self?.checkFirstFrame(item: want, u: u, still: st, mode: lv.mode) }
+            lv.onFirstLiveFrame = { [weak self, weak lv] u in
+                guard let lv else { return }
+                let sz = lv.metalLayer.drawableSize
+                self?.checkFirstFrame(item: want, u: u, still: st, mode: lv.mode, live: (Int(sz.width), Int(sz.height)))
+            }
         }
         cell.contentView.insertSubview(lv, aboveSubview: cell.stillView); cell.live = lv
         liveView = lv; liveItem = want
@@ -461,9 +474,12 @@ final class GFCardsViewController: UIViewController, UICollectionViewDataSource,
 
     /// Still ↔ live (design §1): draw the first live frame's uniforms offscreen with the live surface's own path and compare
     /// with the still's pixels (mean absolute difference, 8-bit steps).
-    private func checkFirstFrame(item: Int, u: GFUniforms, still: GFCardStill, mode: GFDrawMode) {
+    private func checkFirstFrame(item: Int, u: GFUniforms, still: GFCardStill, mode: GFDrawMode, live: (Int, Int)) {
         DispatchQueue.global(qos: .utility).async { [weak self] in
-            let d = GFJump.compare(u: u, mode: mode, still: still.tex)
+            // Round 2: a live layer at another scale or over the image zone only is drawn at ITS size and upscaled to the
+            // still's pixels (bilinear, as the compositor does) over the part it covers: the jump T would see.
+            let sameSize = live.0 == still.tex.width && live.1 == still.tex.height
+            let d = sameSize ? GFJump.compare(u: u, mode: mode, still: still.tex) : GFJump.compareLive(u: u, w: live.0, h: live.1, mode: mode, still: still.tex)
             DispatchQueue.main.async {
                 self?.jumpResults.append(["item": item, "mean": d.mean, "max": d.max, "stillTime": still.time, "liveT": Double(u.time)])
                 GFRecorder.shared.mark(String(format: "jump card %d: first live frame vs still mean %.4f max %.0f (8-bit steps)", item, d.mean, d.max))
@@ -514,6 +530,7 @@ final class GFCardsViewController: UIViewController, UICollectionViewDataSource,
                 hoverPoint = cv.convert(a.center, to: view)
             }
             updateLive(); return true
+        case "relive": endLive(animated: false); updateLive(); return true   // a fresh live layer over the (now filled) still
         default: return false
         }
     }
@@ -541,6 +558,11 @@ final class GFCardsViewController: UIViewController, UICollectionViewDataSource,
         }
         m["cells"] = rows
         m["cachedItems"] = cache.stills.keys.sorted()
+        if let lv = liveView {
+            m["liveLayer"] = ["frame": [lv.frame.minX, lv.frame.minY, lv.frame.width, lv.frame.height], "contentsScale": lv.currentScale,
+                              "drawable": [lv.metalLayer.drawableSize.width, lv.metalLayer.drawableSize.height],
+                              "slot": lv.slotSize.map { [$0.width, $0.height] } ?? [], "drawn": lv.drawnFrames, "ticks": lv.ticks]
+        }
         m["inFlight"] = cache.inFlightCount
         let item = layoutF.itemSize
         func cnt(_ f: (GFCardCell) -> Bool) -> Int { cells.filter(f).count }
@@ -565,6 +587,31 @@ final class GFCardsViewController: UIViewController, UICollectionViewDataSource,
 
 /// The still ↔ live check: the live surface's uniforms drawn by GFDraw offscreen, compared with a still's texture.
 enum GFJump {
+    /// Round 2: the live frame at its own pixel size (w × h, a 2× layer and / or the image zone only), upscaled bilinearly
+    /// onto the still's pixels it covers (its width spans the still's width; its height is h × the still's scale ÷ its own).
+    static func compareLive(u: GFUniforms, w: Int, h: Int, mode: GFDrawMode, still: MTLTexture) -> (mean: Double, max: Double) {
+        let R = GFRenderer.shared
+        let td = MTLTextureDescriptor.texture2DDescriptor(pixelFormat: .bgra8Unorm, width: w, height: h, mipmapped: false)
+        td.usage = [.renderTarget, .shaderRead]; td.storageMode = .private
+        let t = R.device.makeTexture(descriptor: td)!
+        let cb = R.queue.makeCommandBuffer()!
+        GFDraw.encode(cb, target: t, u, mode, scratch: nil)
+        cb.commit(); cb.waitUntilCompleted()
+        let a = GFStillRenderer.readRGBA(t), b = GFStillRenderer.readRGBA(still)
+        let W = still.width, k = Double(w) / Double(W)          // live px per still px
+        let H = min(still.height, Int(Double(h) / k))
+        var sum = 0.0, mx = 0.0, n = 0
+        func px(_ x: Int, _ y: Int, _ c: Int) -> Double { Double(a[(min(max(y, 0), h - 1) * w + min(max(x, 0), w - 1)) * 4 + c]) }
+        for Y in 0..<H { for X in 0..<W {
+            let fx = (Double(X) + 0.5) * k - 0.5, fy = (Double(Y) + 0.5) * k - 0.5
+            let x0 = Int(floor(fx)), y0 = Int(floor(fy)), tx = fx - floor(fx), ty = fy - floor(fy)
+            for c in 0..<3 {
+                let v = (px(x0, y0, c) * (1 - tx) + px(x0 + 1, y0, c) * tx) * (1 - ty) + (px(x0, y0 + 1, c) * (1 - tx) + px(x0 + 1, y0 + 1, c) * tx) * ty
+                let dd = abs(v.rounded() - Double(b[(Y * W + X) * 4 + c])); sum += dd; mx = max(mx, dd); n += 1
+            }
+        } }
+        return (sum / Double(max(n, 1)), mx)
+    }
     static func compare(u: GFUniforms, mode: GFDrawMode, still: MTLTexture) -> (mean: Double, max: Double) {
         let R = GFRenderer.shared
         let td = MTLTextureDescriptor.texture2DDescriptor(pixelFormat: .bgra8Unorm, width: still.width, height: still.height, mipmapped: false)

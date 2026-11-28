@@ -125,6 +125,7 @@ final class GFDetailViewController: UIViewController, UIScrollViewDelegate, GFCa
         let s = Double(view.window?.traitCollection.displayScale ?? traitCollection.displayScale)
         band.mode = S.mode
         band.liveRate = S.liveRate
+        band.layerScale = S.liveScale.map { CGFloat($0) }
         let bw = Double(band.bounds.width), bh = Double(band.bounds.height)
         band.base = Self.uniforms(widthPt: bw, heightPt: bh, scale: s, entry: entry, theme: S.theme, zoom: currentZoom())
         band.isLive = S.live
@@ -163,7 +164,10 @@ final class GFDetailViewController: UIViewController, UIScrollViewDelegate, GFCa
     func scrollViewDidScroll(_ s: UIScrollView) {
         updatePinned()
         guard s.isTracking || s.isDragging || s.isDecelerating || programmatic != nil else { return }   // layout offsets are not input
-        band.noteInput(); band.reevaluate(); hostLink.noteInput()
+        // Round 2 (outcome 4): the band is a subview of the page, so a scroll MOVES it; it is redrawn only by its own live
+        // clock (30 a second while on screen). -ScrollRedraw on = round 1 (an input wake: the display's rate while scrolling).
+        if GFSettings.shared.scrollRedraw { band.noteInput() }
+        band.reevaluate(); hostLink.noteInput()
     }
 
     // MARK: programmatic motion (bench runs): the page scrolls down 900 pt and back every 4 s, eased.

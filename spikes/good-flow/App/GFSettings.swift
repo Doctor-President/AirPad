@@ -6,6 +6,7 @@
 // Round 2:  -Pools bench|cpu|shader (the pool table, Look.swift GFPools; default bench)
 //           -DetailZoom <z> (Mac detail scale: 1 = Bench, band w/h = Width)  -ScrolledBand on|off|only  -DeepFix on|off
 //           -Override "fringe=0,grain=0,deep=0,…" (bisecting)
+//           -LiveScale 2  -LiveZone card|image  -ScrollRedraw on|off  -Pass2Only YES (timing arm)
 //           -Reveal on|off  -RevealSize <pt>  -RevealAnnulus <pt>  -RevealSoft <k>  -RevealStills near|all  -RevealCap  -RevealSlots
 // Simulated platform states (the live rule's other inputs; the real APIs are read as well):
 //   -SimReduceMotion YES   -SimLowPower YES   -SimThermal serious|critical
@@ -52,6 +53,12 @@ final class GFSettings {
     var revealStills = "near" { didSet { changed("reveal") } }
     var revealCap = 256 { didSet { changed("reveal") } }
     var revealSlots = 48 { didSet { changed("reveal") } }
+    /// Round 2 (outcome 4): the phone's live layer. -LiveScale <px per pt> (2 on the 3× phone; default: the display's),
+    /// -LiveZone card|image (image = the live card drawn over its image zone only), -ScrollRedraw on|off (default OFF:
+    /// a scroll MOVES the live layer and never redraws it; round 1 redrew at the display's rate on every scroll frame).
+    var liveScale: Double? = nil { didSet { changed("liveLayer") } }
+    var liveZoneImage = false { didSet { changed("liveLayer") } }
+    var scrollRedraw = false { didSet { changed("liveLayer") } }
     /// Round 2: the deep pool's tint set everywhere (the dark-cast fix). -DeepFix on|off, default on.
     var deepFix = true { didSet { changed("deepFix") } }
 
@@ -82,6 +89,9 @@ final class GFSettings {
         if let z = d.string(forKey: "DetailZoom").flatMap(Double.init), z > 0 { detailZoom = z }
         if let v = d.string(forKey: "ScrolledBand")?.lowercased(), ["on", "off", "only"].contains(v) { scrolledBand = v }
         if let v = on("DeepFix") { deepFix = v }
+        if let v = d.string(forKey: "LiveScale").flatMap(Double.init), v > 0 { liveScale = v }
+        if d.string(forKey: "LiveZone")?.lowercased() == "image" { liveZoneImage = true }
+        if let v = on("ScrollRedraw") { scrollRedraw = v }
         if let v = on("Reveal") { reveal = v }
         if let v = d.string(forKey: "RevealSize").flatMap(Double.init) { revealSize = v }
         if let v = d.string(forKey: "RevealAnnulus").flatMap(Double.init) { revealAnnulus = v }
@@ -156,12 +166,12 @@ final class GFSettings {
 
     var describe: String {
         "case \(caseName.rawValue) theme \(theme.rawValue) glass \(glass ? "on" : "off") bend \(edgeBend ? "on" : "off") variant \(variant.rawValue) "
-            + "hash \(benchHash ? "bench" : "stable") rate \(liveRate) live \(live ? "on" : "off") flat \(flat ? "on" : "off") fit \(detailFitWidth ? "width" : "bench") zoom \(detailZoom.map { String(format: "%.2f", $0) } ?? "-") cap \(mapCap) pools \(pools.rawValue) deepFix \(deepFix ? "on" : "off") band \(scrolledBand) reveal \(reveal ? "on" : "off") \(Int(revealSize))pt/\(Int(revealAnnulus))pt/\(revealSoft) stills \(revealStills)" + (overrides.isEmpty ? "" : " override \(overrides)")
+            + "hash \(benchHash ? "bench" : "stable") rate \(liveRate) live \(live ? "on" : "off") flat \(flat ? "on" : "off") fit \(detailFitWidth ? "width" : "bench") zoom \(detailZoom.map { String(format: "%.2f", $0) } ?? "-") cap \(mapCap) pools \(pools.rawValue) deepFix \(deepFix ? "on" : "off") band \(scrolledBand) reveal \(reveal ? "on" : "off") \(Int(revealSize))pt/\(Int(revealAnnulus))pt/\(revealSoft) stills \(revealStills) liveScale \(liveScale.map { String($0) } ?? "display") zone \(liveZoneImage ? "image" : "card") scrollRedraw \(scrollRedraw ? "on" : "off")\(GFDraw.pass2OnlyArm ? " PASS2ONLY" : "")" + (overrides.isEmpty ? "" : " override \(overrides)")
             + (simReduceMotion || simLowPower || simThermal > 0 ? " sim[rm \(simReduceMotion) lp \(simLowPower) th \(simThermal)]" : "")
     }
     var dict: [String: Any] {
         ["case": caseName.rawValue, "theme": theme.rawValue, "glass": glass, "edgeBend": edgeBend, "variant": variant.rawValue,
-         "hash": benchHash ? "bench" : "stable", "liveRate": liveRate, "live": live, "flat": flat, "detailFit": detailFitWidth ? "width" : "bench", "mapCap": mapCap, "pools": pools.rawValue, "detailZoom": detailZoom ?? -1, "scrolledBand": scrolledBand, "deepFix": deepFix, "reveal": reveal, "revealSize": revealSize, "revealAnnulus": revealAnnulus, "revealSoft": revealSoft, "revealStills": revealStills, "revealCap": revealCap, "revealSlots": revealSlots, "overrides": overrides,
+         "hash": benchHash ? "bench" : "stable", "liveRate": liveRate, "live": live, "flat": flat, "detailFit": detailFitWidth ? "width" : "bench", "mapCap": mapCap, "pools": pools.rawValue, "detailZoom": detailZoom ?? -1, "scrolledBand": scrolledBand, "deepFix": deepFix, "reveal": reveal, "revealSize": revealSize, "revealAnnulus": revealAnnulus, "revealSoft": revealSoft, "revealStills": revealStills, "revealCap": revealCap, "revealSlots": revealSlots, "liveScale": liveScale ?? -1, "liveZone": liveZoneImage ? "image" : "card", "scrollRedraw": scrollRedraw, "pass2Only": GFDraw.pass2OnlyArm, "overrides": overrides,
          "simReduceMotion": simReduceMotion, "simLowPower": simLowPower, "simThermal": simThermal]
     }
 

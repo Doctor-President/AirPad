@@ -154,7 +154,7 @@ between the two states; an orb whose still has not landed stays plain. Computed 
 **Measured** (Mac, M1 Max, Release, screen LOCKED, so OFFSCREEN: the Map pass drawn at the window's pixel size 4490 × 2672
 (1728 × 1028 Mac pt), one command buffer a frame at 120 a second from a main-thread timer, 1 440 frames; light; two
 launches per arm; nothing of mine beside it, but system daemons were busy: mobileassetd 71 %, BackgroundShortcutRunner
-98 % CPU at the starts). Path "orbit": the camera circles e0's cluster at zoom 1.0–1.25 so orbs keep crossing the annulus
+98 % CPU at the starts). Path "orbit": the camera circles e0's cluster at zoom 1.0–1.67 (camera scale 0.6–1.0) so orbs keep crossing the annulus
 (10.6 revealed on average, 22 at most); path "wide" = round 1's programmatic path (1.1 revealed on average).
 
 | arm | frame GPU p50 / p95 (orbit) | (wide) | still textures | footprint after fill | fills while moving (orbit, 12 s) |
@@ -175,3 +175,53 @@ launches per arm; nothing of mine beside it, but system daemons were busy: mobil
 
 Still: `results-round2/o2-map-reveal.png` (reveal off vs on at zoom 1, zoomed in, zoomed out (all plain: too small),
 and dark). Offscreen Map passes (`-Script still:`), Release, the same build.
+
+## 4 · The phone's live image inside its bar: built, verified on the Mac and in a Simulator, NOT read on the phone
+
+**Switches** (launch arguments + panel rows; every one also in the bench file name and the recording's settings):
+- **`-LiveScale 2`** (panel "Live layer scale: Display / 2×"): the live layer at 2 px per pt on the 3× phone (the
+  compositor scales it up). Pixel-unit uniforms (glass band, mask radius, centre offset) follow the layer's scale.
+- **`-LiveZone image`** (panel "Live card zone: Whole card / Image zone"): the live card covers only its image zone (the
+  top 40 % on the phone, where the colour fades out); the slot stays the whole card, so every pixel it draws is the pixel
+  the whole card draws there, and pass 1 of the two-pass variants only covers what the zone's taps reach.
+- **`-ScrollRedraw on|off`**, **default OFF** (panel "Scroll redraw"): a scroll MOVES the live layer (it is a subview of
+  the page / the cell) and only its own 30 Hz live clock redraws it, and only while it is on screen. `on` = round 1.
+- **`-Pass2Only YES`**: a timing arm for the live surfaces only (pass 1 once, then pass 2 alone each frame; the
+  picture freezes). Stills never use it.
+
+**Harness:** every recorded frame now says whether its surface was on screen (`vis`). `frames.py --design` adds an
+"on screen" table per surface (frames drawn off screen counted apart, cadence only between frames with a present time,
+no link-target fallback, the live surface judged against its own 33 ms period) and the page's own scroll cadence (the
+host link). This is fable-read-device §1's "How to read" made mechanical.
+
+**Verified (switches work):**
+- Simulator "CC good-flow r2" (iPhone 17 Pro Max, iOS 27.0; created for this and deleted after), Release:
+  - Detail BD50 @2×, scripted scroll loop, 8 s + rest: **0 frames drawn off screen, 0 input-wake frames**; the band drew
+    428 live frames, only while on screen; drawable 880 × 524 (= 440 × 262 pt × 2). Same run with `-ScrollRedraw on`:
+    524 input-wake frames, **306 of them drawn off screen** (round 1's harness, reproduced).
+  - Cards BD50, centred card @2× over its image zone, 8 s of swipes: the live layer 348 × 213 pt, **drawable 696 × 426
+    = 296 496 px (round 1: 1 044 × 1 596 = 1 666 224 px, 0.18 of it)**, 576 live frames, 0 input-wake frames, 0 off screen,
+    7 stills redrawn at live-end, 0 redrawn while moving. (The Simulator draws on the Mac's GPU: its ms are not the phone's.)
+- Mac (locked, scripted): hovered card over its image zone: drawable 456 × 276 (of 456 × 640), and the first live frame
+  equals the still **0.0000 mean, 0 max** (A and BD50).
+- **The jump 3× still → 2× live**, the one this route adds: the first 2× zone frame upscaled onto the 3× still, Simulator,
+  card 0: **mean 1.32, max 49** (A; BD50 1.30). Offscreen over the six entries × two themes, BD50, 2× bilinear-upscaled vs
+  3×: detail mean 1.06 (p99 ≤ 6), card 0.94 (p99 ≤ 5); without the grain 0.47 and 0.18, so half of it is the grain re-landing
+  on a coarser grid. At or just over the equality bar (mean ≤ 1.0): a softening, T's eye judges it (panel row, on his phone).
+
+**Phone readings: prepared, not run** (the orchestrator runs them with T present; "running on your device, watch for the
+Allow / passcode prompt" first). One line, about 17 minutes on the cable (4 × 120 s + rests + the stills):
+
+    tools/run_on_phone.sh <UDID> --i-warned-T --seconds 120 --cooldown 90 --stills \
+      --benches "detail:light:BD50:scale2,detail:light:BD50,cards:light:BD50:scale2+zone,detail:light:BD50:scale2+pass2"
+
+1. Detail BD50 @2×, no scroll redraw: the proposal (Fable: ≈ 2.5 ms). 2. Detail BD50 @3×, no scroll redraw: the 2× vs 3×
+control under the same harness. 3. Cards: centred card BD50 @2× over its image zone. 4. Detail BD50 @2× pass 2 only: how
+much of BD50's cost is pass 2. `--stills` renders the 120 stills on the phone and compares them with the Mac's pool-table
+stills (`build/r2/pools-bench`) and with T's bench: the outcome 5 check on a second chip. Optional fifth bench if time
+allows: `cards:light:A:scale2+zone` (A instead of BD50 on the zone card). Read each with `python3 tools/frames.py
+<bench>.json --design`: the "on screen" table is the number, the bar is the live GPU p95 ≤ 5.0 ms and 30 a second.
+
+**If a live card still cannot hold** at 2× + zone + BD50 on the phone, the next steps in order: the live layer at 30 Hz
+but with pass 1 every other frame (the field drifts slowly; pass 2 still runs per frame), then 1.5×, then live only
+while the finger rests (a still while swiping), which costs nothing while moving.

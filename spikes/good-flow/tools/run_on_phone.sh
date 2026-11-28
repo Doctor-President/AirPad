@@ -4,8 +4,8 @@
 #
 #   tools/run_on_phone.sh <UDID> --i-warned-T [--benches LIST] [--seconds 240] [--cooldown 120] [--stills] [--no-build]
 #                                            [--power] [--uninstall]
-#   LIST = comma-separated <case>[:<theme>[:<variant>[:<extra>]]], e.g. "map:light:A,cards:light:A,detail:light:BD50"
-#          (extra: flat | liveoff | live60). Default: map, cards, detail (light, A), each --seconds of programmatic
+#   LIST = comma-separated <case>[:<theme>[:<variant>[:<extra>[+<extra>…]]]], e.g. "map:light:A,detail:light:BD50:scale2"
+#          (extra: flat | liveoff | still | live60 | scale2 | zone | redraw | pass2; see the loop below). Default: map, cards, detail (light, A), each --seconds of programmatic
 #          motion + 10 s rest; then --stills renders the 120 reference stills ON THE PHONE (phone vs Mac equality).
 #   --power   also records xctrace (Power Profiler, if this Xcode has the template) over each bench (attached by pid).
 #
@@ -76,7 +76,13 @@ i=0
 for b in ${(s:,:)BENCHES}; do
   i=$((i+1)); parts=(${(s.:.)b}); CASE=${parts[1]}; TH=${parts[2]:-light}; VAR=${parts[3]:-A}; EXTRA=${parts[4]:-}
   ARGS=(-Bench $CASE -Seconds $SECS -Theme $TH -Variant $VAR)
-  [[ $EXTRA == flat ]] && ARGS+=(-Flat on); [[ $EXTRA == liveoff ]] && ARGS+=(-Live off); [[ $EXTRA == live60 ]] && ARGS+=(-LiveRate 60)
+  # extras, joined by "+": flat | liveoff | live60 | scale2 (-LiveScale 2) | zone (-LiveZone image) | redraw (-ScrollRedraw on,
+  # round 1's harness) | pass2 (-Pass2Only YES, a timing arm) | still (-Live off, the still arm) | dark handled by <theme>
+  for x in ${(s:+:)EXTRA}; do case $x in
+    flat) ARGS+=(-Flat on) ;; liveoff|still) ARGS+=(-Live off) ;; live60) ARGS+=(-LiveRate 60) ;;
+    scale2) ARGS+=(-LiveScale 2) ;; zone) ARGS+=(-LiveZone image) ;; redraw) ARGS+=(-ScrollRedraw on) ;; pass2) ARGS+=(-Pass2Only YES) ;;
+    "") ;; *) say "unknown extra $x"; exit 64 ;;
+  esac; done
   say "bench $i/$N: ${ARGS[*]}"
   xcrun devicectl device process launch --device $UDID --terminate-existing $BUNDLE -- ${ARGS[@]} > $TMP/launch-$i.log 2>&1 || { tail -5 $TMP/launch-$i.log; die "launch failed (trusted developer? unlocked?)" 4; }
   XP=
@@ -103,7 +109,9 @@ if (( STILLS )); then
   xcrun devicectl device process launch --device $UDID --terminate-existing $BUNDLE -- -RenderStills phone-stills -StillsRepeat 3 > $TMP/launch-stills.log 2>&1
   for k in $(seq 1 30); do sleep 6; pull phone-stills/DONE stills-DONE && break; done
   xcrun devicectl device copy from --device $UDID --domain-type appDataContainer --domain-identifier $BUNDLE --source Documents/phone-stills --destination $OUT/phone-stills > /dev/null 2>&1
-  python3 $SPIKE/tools/compare.py --ref $SPIKE/build/port-A-stable --port $OUT/phone-stills > $OUT/phone-vs-mac.md 2>&1; tail -3 $OUT/phone-vs-mac.md
+  # round 2: the Mac's stills with the pool table (tools/r2_stills.sh pools-bench); REF= to compare with another set
+  python3 $SPIKE/tools/compare.py --ref ${REF:-$SPIKE/build/r2/pools-bench} --port $OUT/phone-stills > $OUT/phone-vs-mac.md 2>&1; tail -3 $OUT/phone-vs-mac.md
+  python3 $SPIKE/tools/compare.py --ref $SPIKE/build/reference --port $OUT/phone-stills --title "phone vs T's bench" > $OUT/phone-vs-bench.md 2>&1; tail -2 $OUT/phone-vs-bench.md
   python3 $SPIKE/tools/timings.py $OUT/phone-stills/timings.json > $OUT/phone-still-timings.md 2>&1
 fi
 if (( UNINSTALL )); then xcrun devicectl device uninstall app --device $UDID $BUNDLE > $TMP/uninstall.log 2>&1 && say "uninstalled"

@@ -35,6 +35,7 @@ final class GFRootViewController: UIViewController {
         view.addSubview(toggle)
         panel.isHidden = true
         panel.onSave = { [weak self] in self?.saveNow() }
+        panel.onDetailScale = { [weak self] v in _ = self?.screen?.scriptAction("scale", String(v)) }
         view.addSubview(panel)
         obs = NotificationCenter.default.addObserver(forName: .gfSettingsChanged, object: nil, queue: .main) { [weak self] n in
             if (n.userInfo?["what"] as? String) == "case" { self?.showCase() }
@@ -209,7 +210,12 @@ final class GFPanel: UIView {
         }
         row("Flat control", ["Off", "On"], S.flat ? 1 : 0) { S.flat = $0 == 1 }
         row("Map master", ["128 px", "256 px"], S.mapCap >= 256 ? 1 : 0) { S.mapCap = $0 == 1 ? 256 : 128 }
-        if isMac { row("Detail fit", ["Bench", "Width"], S.detailFitWidth ? 1 : 0) { S.detailFitWidth = $0 == 1 } }
+        if isMac {
+            row("Detail fit (presets)", ["Bench", "Width"], S.detailFitWidth ? 1 : 0) { S.detailZoom = nil; S.detailFitWidth = $0 == 1 }
+            slider("Detail scale (Bench 0 → Width 1)", -0.15, 1.15, 0) { [weak self] v in self?.onDetailScale?(v) }
+            row("Scrolled band", ["On", "Off", "Only"], ["on", "off", "only"].firstIndex(of: S.scrolledBand) ?? 0) { S.scrolledBand = ["on", "off", "only"][$0] }
+        }
+        row("Dark-cast fix", ["Off", "On"], S.deepFix ? 1 : 0) { S.deepFix = $0 == 1 }
         let simIdx = S.simReduceMotion ? 1 : S.simLowPower ? 2 : S.simThermal >= 2 ? 3 : 0
         row("Simulate", ["None", "Reduce Motion", "Low Power", "Thermal"], simIdx) { i in
             S.simReduceMotion = i == 1; S.simLowPower = i == 2; S.simThermal = i == 3 ? 2 : 0
@@ -229,6 +235,19 @@ final class GFPanel: UIView {
     }
     required init?(coder: NSCoder) { fatalError() }
 
+    var onDetailScale: ((Double) -> Void)?
+    /// A continuous dial; its value is shown beside its name.
+    func slider(_ title: String, _ lo: Float, _ hi: Float, _ v: Float, _ act: @escaping (Double) -> Void) {
+        let l = UILabel(); l.font = .systemFont(ofSize: 12, weight: .semibold); l.textColor = .white
+        l.text = String(format: "%@: %.2f", title, v)
+        let sl = UISlider(); sl.minimumValue = lo; sl.maximumValue = hi; sl.value = v
+        sl.accessibilityIdentifier = "slider." + title.lowercased().replacingOccurrences(of: " ", with: "")
+        sl.addAction(UIAction { a in
+            let x = Double((a.sender as! UISlider).value); l.text = String(format: "%@: %.2f", title, x); act(x)
+        }, for: .valueChanged)
+        let v = UIStackView(arrangedSubviews: [l, sl]); v.axis = .vertical; v.spacing = 3
+        stack.addArrangedSubview(v)
+    }
     private func row(_ title: String, _ items: [String], _ sel: Int, _ act: @escaping (Int) -> Void) {
         let l = UILabel(); l.text = title; l.font = .systemFont(ofSize: 12, weight: .semibold); l.textColor = .white
         let seg = UISegmentedControl(items: items); seg.selectedSegmentIndex = sel

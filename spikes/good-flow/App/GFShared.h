@@ -38,6 +38,8 @@ typedef struct {
     // same entry the same way. pool[i] = (centre-x hash, centre-y hash, radius hash, unused). poolTable 0 = hash11 here.
     simd_float4 pool[6];
     int poolTable;
+    int deepAlways;         // round 2 (outcome 1, the dark cast): 1 = the deep pool's tint (deepC) is set whatever the
+                            // pool's reach; 0 = the bench's (set only where gsA[0] > 0, a hard edge in dark at large scale)
 } GFUniforms;
 
 /// The Map pass (case c): one instance per orb, drawn as a quad over the orb's baked still (texture array slice).

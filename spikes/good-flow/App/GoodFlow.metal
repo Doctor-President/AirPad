@@ -142,6 +142,7 @@ static Hit flowBody(U, thread G& g, float2 p, E e){
   }
   float r0 = mix(.25,.8,u.size), sh = mix(9.,1.3,u.lsoft), wand = .12*(.2+.8*e.amp);
   float3 em = float3(0.), deepC = float3(0.); float Dl = 0., sw = 0., swc = 0., wd = 0., gmax = 1e-6; float gsA[6];
+  if(u.deepAlways==1) deepC = pow(min(vivid(e.hue),float3(1.)),float3(1.7))*.1;   // round 2: the dark cast fix (see GFShared.h)
   for(int i=0;i<6;i++){
     float fi = float(i);
     float w = (i==0) ? min(u.bodyl*1.3,1.)*(tank ? mix(.35,1.,smoothstep(1.,3.,e.parts)) : 1.) : ((i==1) ? 1. : clamp(e.parts-(fi-1.),0.,1.));

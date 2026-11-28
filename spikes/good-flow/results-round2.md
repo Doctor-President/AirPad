@@ -86,3 +86,45 @@ a resize. Still: `results-round2/o3-cards-before-after.png`.
 and presented none, and a window snapshot does not capture a Metal layer. The one way it could still jump: the live
 layer is inserted over the still before its first frame is presented (an empty Metal layer for one frame). Owed in the
 unlocked run: a screen recording of one hover on and off (`-Script "hover:3@6,hover:off@8"` with `-Case Cards`).
+
+## 1 · Mac detail: the Scale dial, the dark cast, the scrolled band
+
+**Scale dial.** Panel row "Detail scale (Bench 0 → Width 1)", a slider from −0.15 to 1.15; launch argument
+**`-DetailZoom <z>`** (script verbs `scale:<s>` / `zoom:<z>`). The field's half-size is `zoom` × half the band's
+height: Bench = 1×, Width = band width ÷ band height (9.3× at a 2245 × 241 pt band, 11.2× at T's full-screen 2245 × 200).
+The slider is log-spaced, so `s` = ln(zoom) ÷ ln(Width zoom). **On screen, bottom left:** `Scale 0.41 · zoom 2.50×
+(Bench 1×, Width 9.32×) · band on · BD50`: T reads **zoom** off (it means the same at any window width; `s` does not).
+The field is centred on the document column (= the window's centre here: the spike has no Librarian column). The old
+"Detail fit" row stays as two presets. Cost: zoom does not change the work (same pixels), so the BD50 / A numbers of
+round 1 hold at every scale.
+
+**The dark cast: it was the deep pool's tint, cut off at the deep pool's reach.** In dark, the paper behind the field
+is near-black plus a tint of the entry's hue (`deepC · .35`), and the bench sets `deepC` only inside its second pool
+loop for pools with `gsA > 0`, i.e. within about seven radii of the deep pool (d² < 50 + ln w). Beyond that, the paper
+drops from the tint to near-black in one pixel: a broad dull shape in the entry's hue (brown for e0's hue 77) with a
+hard edge, and the fringe's three scales split that edge into a reddish outline. At the bench's own slots (phone detail,
+cards, orbs) and at Width the edge lies outside the picture; at Bench on the 6.9 : 1 Mac band it falls inside it. Light
+hides it (light paper is a constant; `deepC` is not used there). **Not** the BD50 route (A shows it identically), **not**
+the glass or edge bend (still there with both off), **not** the grain; the fringe only colours the edge (fringe 0: the
+same edge, grey). Stills: `results-round2/o1-dark-cast-bisect.png` (dark BD50, dark A, light A, the fix, fringe 0,
+glass + bend off).
+
+**Fix:** `deepC` is set from the hue before the pool loop (it never depended on the pool), so the paper carries the
+same tint everywhere. Switch **`-DeepFix on|off`** (panel "Dark-cast fix"), default **on**. "Without changing the look
+where it was right": with the fix, **115 of the 120 reference stills are unchanged against T's bench** (mean ≤ 0.02);
+the 5 that change are `detail-mac` dark, the one reference case whose slot already contained the edge. Across the whole
+dial (Scale −0.15, 0, 0.25, 0.5, 0.75, 1, 1.15; dark, BD50), the fix removes the edge at −0.15, 0 and 0.25 and changes
+nothing from 0.5 up (mean luminance identical): `results-round2/o1-dark-cast-scales.png` (left fix off, right fix on).
+For T's eye: with the fix, a dark band at Bench is tinted (brown for e0) wall to wall instead of a brown island on black;
+that is the bench's own dark paper, but it is a different picture from what he saw.
+
+**The scrolled band: built (cheap).** Today's AirPad Mac detail (`ws-mac`, NodeDetailView `collapsedBand`, read only):
+the hero scrolls away with the page and a **pinned band** (top inset + 52 pt, full width) fades in over it, opacity =
+scroll offset ÷ the hero's visible height (0…1), showing a static blurred wash of the hero. The spike does the same with
+Good Flow at **Width** scale, a still (drawn once; the fade is the view's alpha, no redraw: 1 frame drawn over a scroll to
+400 pt), while the hero above stays at T's dialled scale. **`-ScrolledBand on|off|only`** (panel "Scrolled band";
+`only` = the narrow band alone, pinned, full opacity). Still: `results-round2/o1-scrolled-band.png`.
+
+Conditions: every still here is drawn offscreen by the band's own uniforms and mode (script verb `still:`), Mac
+Catalyst Release, screen locked; window 1728 × 1028 Mac pt (2245 × 1336 UIKit pt, the build is iPad-scaled), band
+2245 × 241 pt (the title-bar inset is 41 pt windowed; T's full-screen band was 2245 × 200).

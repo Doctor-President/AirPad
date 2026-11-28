@@ -4,6 +4,8 @@
 //   -Hash stable|bench       -LiveRate 30|60     -Live on|off    -Flat on|off       -DetailFit bench|width
 //   -MapCap 128|256 (the Map stills' master cap; 128 = the measured choice)
 // Round 2:  -Pools bench|cpu|shader (the pool table, Look.swift GFPools; default bench)
+//           -DetailZoom <z> (Mac detail scale: 1 = Bench, band w/h = Width)  -ScrolledBand on|off|only  -DeepFix on|off
+//           -Override "fringe=0,grain=0,deep=0,…" (bisecting)
 // Simulated platform states (the live rule's other inputs; the real APIs are read as well):
 //   -SimReduceMotion YES   -SimLowPower YES   -SimThermal serious|critical
 import Foundation
@@ -30,6 +32,16 @@ final class GFSettings {
     var detailFitWidth = false { didSet { changed("detailFit") } }// Mac: bench (short side) | width
     var mapCap = 128 { didSet { changed("mapCap") } }             // the Map stills' master size cap (px): 128 meets both memory bars
     var pools: GFPoolsMode = .bench { didSet { changed("pools") } }  // round 2: the pool table (Look.swift GFPools)
+    /// Round 2 (outcome 1): the Mac detail field's scale as a zoom over the bench's own sizing (field half-size = zoom ×
+    /// half the band's height; Bench = 1, Width = band width / band height). nil = Bench (or Width with -DetailFit width).
+    var detailZoom: Double? = nil { didSet { changed("detailZoom") } }
+    /// Round 2: the scrolled band (today's AirPad Mac detail: a pinned band fades in as the hero scrolls away), drawn at
+    /// Width scale. -ScrolledBand on|off|only (only = the narrow band alone, pinned, at full opacity).
+    var scrolledBand = "on" { didSet { changed("scrolledBand") } }
+    /// Round 2: uniform overrides for bisecting (-Override "fringe=0,grain=0,deep=0,…"; GFSettings.apply).
+    var overrides: [String: Double] = [:] { didSet { changed("overrides") } }
+    /// Round 2: the deep pool's tint set everywhere (the dark-cast fix). -DeepFix on|off, default on.
+    var deepFix = true { didSet { changed("deepFix") } }
 
     var simReduceMotion = false { didSet { changed("sim") } }
     var simLowPower = false { didSet { changed("sim") } }
@@ -55,6 +67,10 @@ final class GFSettings {
         if d.string(forKey: "DetailFit")?.lowercased() == "width" { detailFitWidth = true }
         if d.integer(forKey: "MapCap") > 0 { mapCap = d.integer(forKey: "MapCap") }
         if let v = GFPoolsMode.parse(d.string(forKey: "Pools")) { pools = v }
+        if let z = d.string(forKey: "DetailZoom").flatMap(Double.init), z > 0 { detailZoom = z }
+        if let v = d.string(forKey: "ScrolledBand")?.lowercased(), ["on", "off", "only"].contains(v) { scrolledBand = v }
+        if let v = on("DeepFix") { deepFix = v }
+        if let o = d.string(forKey: "Override") { overrides = Self.parseOverrides(o) }
         simReduceMotion = d.bool(forKey: "SimReduceMotion")
         simLowPower = d.bool(forKey: "SimLowPower")
         switch d.string(forKey: "SimThermal")?.lowercased() { case "serious": simThermal = 2; case "critical": simThermal = 3; default: break }
@@ -73,6 +89,37 @@ final class GFSettings {
         u.glass = glass ? Int32(H["glass"] ?? 1) : 0
         u.lens = edgeBend ? Float(H["lens"] ?? 0.5) : 0
         u.flat = flat ? 1 : 0
+        Self.applyOverrides(&u, overrides)
+    }
+    static func parseOverrides(_ s: String) -> [String: Double] {
+        var o: [String: Double] = [:]
+        for kv in s.split(whereSeparator: { $0 == "," || $0 == "|" }) {
+            let p = kv.split(separator: "="); if p.count == 2, let v = Double(p[1]) { o[String(p[0])] = v }
+        }
+        return o
+    }
+    /// Bisecting switches (the shader's own uniforms; keys as the bench names them, lower case).
+    static func applyOverrides(_ u: inout GFUniforms, _ o: [String: Double]) {
+        for (k, v) in o {
+            let f = Float(v)
+            switch k {
+            case "fringe": u.fringe = f
+            case "grain": u.grainOn = v == 0 ? 0 : 1
+            case "lineop": u.lineop = f
+            case "lines": u.lines = f
+            case "glass": u.glass = Int32(v)
+            case "lens": u.lens = f
+            case "medium": u.medium = f
+            case "gmix": u.gmix = f
+            case "rim": u.rim = f
+            case "contrast": u.contrast = f
+            case "sat": u.sat = f
+            case "power": u.power = f
+            case "deep": u.deepAlways = Int32(v)
+            case "fadeB": u.fadeB = f
+            default: break
+            }
+        }
     }
 
     /// The live rule's platform inputs (design §1): Reduce Motion, Low Power Mode, thermal ≥ serious → the still.
@@ -90,12 +137,12 @@ final class GFSettings {
 
     var describe: String {
         "case \(caseName.rawValue) theme \(theme.rawValue) glass \(glass ? "on" : "off") bend \(edgeBend ? "on" : "off") variant \(variant.rawValue) "
-            + "hash \(benchHash ? "bench" : "stable") rate \(liveRate) live \(live ? "on" : "off") flat \(flat ? "on" : "off") fit \(detailFitWidth ? "width" : "bench") cap \(mapCap) pools \(pools.rawValue)"
+            + "hash \(benchHash ? "bench" : "stable") rate \(liveRate) live \(live ? "on" : "off") flat \(flat ? "on" : "off") fit \(detailFitWidth ? "width" : "bench") zoom \(detailZoom.map { String(format: "%.2f", $0) } ?? "-") cap \(mapCap) pools \(pools.rawValue) deepFix \(deepFix ? "on" : "off") band \(scrolledBand)" + (overrides.isEmpty ? "" : " override \(overrides)")
             + (simReduceMotion || simLowPower || simThermal > 0 ? " sim[rm \(simReduceMotion) lp \(simLowPower) th \(simThermal)]" : "")
     }
     var dict: [String: Any] {
         ["case": caseName.rawValue, "theme": theme.rawValue, "glass": glass, "edgeBend": edgeBend, "variant": variant.rawValue,
-         "hash": benchHash ? "bench" : "stable", "liveRate": liveRate, "live": live, "flat": flat, "detailFit": detailFitWidth ? "width" : "bench", "mapCap": mapCap, "pools": pools.rawValue,
+         "hash": benchHash ? "bench" : "stable", "liveRate": liveRate, "live": live, "flat": flat, "detailFit": detailFitWidth ? "width" : "bench", "mapCap": mapCap, "pools": pools.rawValue, "detailZoom": detailZoom ?? -1, "scrolledBand": scrolledBand, "deepFix": deepFix, "overrides": overrides,
          "simReduceMotion": simReduceMotion, "simLowPower": simLowPower, "simThermal": simThermal]
     }
 

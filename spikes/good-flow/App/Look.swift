@@ -254,6 +254,7 @@ extension GFUniforms {
         u.amp = f(e.amp); u.patina = f(e.patina); u.seed = f(e.seed)
         u.grainOn = 1; u.flat = 0; u.fwScale = 1
         GFPools.apply(&u, e, GFSettings.shared.pools)
+        u.deepAlways = GFSettings.shared.deepFix ? 1 : 0
         return u
     }
 

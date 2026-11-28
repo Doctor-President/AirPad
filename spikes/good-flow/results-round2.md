@@ -225,3 +225,25 @@ allows: `cards:light:A:scale2+zone` (A instead of BD50 on the zone card). Read e
 **If a live card still cannot hold** at 2× + zone + BD50 on the phone, the next steps in order: the live layer at 30 Hz
 but with pass 1 every other frame (the field drifts slowly; pass 2 still runs per frame), then 1.5×, then live only
 while the finger rests (a still while swiping), which costs nothing while moving.
+
+## Round-2 log
+
+| outcome | commit | status |
+|---|---|---|
+| 5 · pool table | 640f6b50 | done (Mac); the phone check is in the phone run (`--stills`) |
+| 3 · Cards break | ab1046e7 | done: cause found and fixed (still queue + 50 × 50 first layout); the collapsed cells not reproduced by script, fixed structurally; on-screen jump owed to an unlocked run |
+| 1 · Mac detail | b229f3c8, e7200b7b | done: Scale dial, dark cast explained + fixed, scrolled band built |
+| 2 · Map reveal | 185ec0d1 | done, measured offscreen (locked) |
+| 4 · phone live layer | 1e5d7960 | built + verified (Mac, Simulator); phone readings prepared, not run |
+
+**Launch arguments added in round 2** (all also panel rows; values shown on screen where marked):
+`-Pools bench|cpu|shader` · `-DetailZoom <z>` (on screen) · `-ScrolledBand on|off|only` · `-DeepFix on|off` ·
+`-Reveal on|off`, `-RevealSize <pt>`, `-RevealAnnulus <pt>`, `-RevealSoft <k>` (on screen), `-RevealStills near|all`,
+`-RevealCap`, `-RevealSlots` · `-LiveScale 2`, `-LiveZone image`, `-ScrollRedraw on|off`, `-Pass2Only YES` ·
+`-Override "k=v,…"` (bisecting) · `-Script "verb:arg@s,…"` (scripted runs: GFRoot.runScript lists the verbs).
+Tools: `tools/r2_stills.sh`, `tools/r2_mac.sh`, `tools/r2_sim.sh`, `tools/bench_pools.mjs`, `tools/angle_pools.py`;
+`reference/run.mjs POOLS=table`.
+
+Never list kept: synthetic entries only (no Library opened); no device touched; no T machine, model or setting
+contacted; AirPad `main`, `ws-mac`, `ws-1.0-widget`, `ws-2b-renderer-trial` only read (`git show` / `git grep` on
+`ws-mac`); nothing merged; no TestFlight; the Simulator was CC's own and is deleted.
